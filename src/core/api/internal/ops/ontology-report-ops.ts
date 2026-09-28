@@ -35,8 +35,8 @@
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type {
-  MethodNamePatternQuery,
-  MethodNameRow,
+  MethodNameScopeQuery,
+  MethodTailVerbRow,
   OntologyEvidenceCounts,
   OntologyGenericNameRow,
   OntologyLocationRow,
@@ -57,7 +57,9 @@ import {
   isTypeFamilyRoleName,
   isWeakerNamingShape,
   judgeGenericNames,
-  methodVerbHeadPattern,
+  methodVerbLexiconHeads,
+  methodVerbLexicons,
+  MIN_ROLE_MEMBERS,
   singularizeIdentifierWord,
   spellsTypeName,
   splitIdentifierWords,
@@ -355,7 +357,8 @@ export class OntologyReportOps {
 
     let rows: OntologyReportRows;
     let genericNames: OntologyGenericName[];
-    let methodNames: MethodNameRow[] | undefined;
+    let tailVerbs: MethodTailVerbRow[] | undefined;
+    let lexicons: Map<string, ReadonlySet<string>> | undefined;
     try {
       // Two phases over one reader: judge the summary's generic candidates, then
       // read the sections with exactly the judged names excluded — the summary
@@ -368,7 +371,11 @@ export class OntologyReportOps {
       );
       rows = { ...summary, ...sections };
       if (verbsRequested(req)) {
-        methodNames = await handle.graphDb.readMethodNamesMatching(this.verbQuery(req, language));
+        const scope = this.verbScope(req, language);
+        const headWords = await handle.graphDb.readMethodHeadWords({ ...scope, minTails: MIN_ROLE_MEMBERS });
+        lexicons = methodVerbLexicons(headWords, (lang) => this.verbNamespaces.get(lang));
+        const heads = methodVerbLexiconHeads(lexicons);
+        tailVerbs = heads.length > 0 ? await handle.graphDb.readMethodTailVerbs({ ...scope, heads }) : [];
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -380,7 +387,7 @@ export class OntologyReportOps {
       await handle.graphDb.close().catch(() => undefined);
     }
     const response = this.shape(req, rows, genericNames);
-    if (methodNames) response.verbs = this.verbs(methodNames, reportLimit(req));
+    if (tailVerbs && lexicons) response.verbs = this.verbs(tailVerbs, lexicons, reportLimit(req));
     return response;
   }
 
@@ -423,17 +430,16 @@ export class OntologyReportOps {
   }
 
   /**
-   * The one `verbs` read: every production method name opening with a lexicon
-   * verb, per file language, scoped by the request's path prefix and language
-   * like the other sections.
+   * The scope of the `verbs` reads — head words, then the lexicon heads'
+   * contested tails — per file language, scoped by the request's path prefix
+   * and language like the other sections.
    */
-  private verbQuery(
+  private verbScope(
     req: GetOntologyReportRequest,
     language: OntologyLanguageProfile | undefined,
-  ): MethodNamePatternQuery {
+  ): MethodNameScopeQuery {
     const prefix = pathPatternLiteralPrefix(req.pathPattern);
     return {
-      patterns: [methodVerbHeadPattern()],
       groupByLanguage: true,
       ...(prefix ? { pathPrefixes: [prefix] } : {}),
       ...(language ? { languages: [language.language] } : {}),
@@ -442,9 +448,14 @@ export class OntologyReportOps {
   }
 
   /** The `verbs` section: the naming lexicon's verb groups, capped per group like the other sections' items. */
-  private verbs(rows: readonly MethodNameRow[], limit: number): OntologyVerbGroup[] {
+  private verbs(
+    rows: readonly MethodTailVerbRow[],
+    lexicons: ReadonlyMap<string, ReadonlySet<string>>,
+    limit: number,
+  ): OntologyVerbGroup[] {
     return buildMethodVerbGroups(rows, {
       namespaceOf: (language) => this.verbNamespaces.get(language),
+      lexicons,
       limit,
       namesPerGroup: ONTOLOGY_REPORT_THRESHOLDS.namesPerItem,
     });

@@ -1,25 +1,32 @@
 /**
  * The method-vocabulary evidence `get_naming_lexicon` judges untyped `return`
- * drafts by (spec 2026-09-28 naming coverage, §D4): at most three bounded
- * store reads per answer, whatever the number of drafts — the project's verb
- * vocabulary (memoized per request), the names carrying any verbed draft's noun
- * tail, and the names ending in any verbless draft's last word. Each draft's
- * {@link UntypedMethodEvidence} is then filtered from those rows with its own
- * patterns. The reader is the answer's scoped reader: its excluded files and
- * language namespace are already bound.
+ * drafts by (spec 2026-09-28 naming coverage, §D4 / §D4a): at most three
+ * bounded store reads per answer, whatever the number of drafts — the head
+ * words the namespace's verb lexicon is derived from (memoized per request),
+ * then the names carrying any verbed draft's noun tail and the names ending in
+ * any verbless draft's last word. Which draft is verbed depends on the lexicon,
+ * so the head-word read comes first. Each draft's {@link UntypedMethodEvidence}
+ * is then filtered from those rows with its own patterns. The reader is the
+ * answer's scoped reader: its excluded files and language namespace are
+ * already bound.
  */
-import type { GraphDbClient, MethodNameRow, MethodVerbRow, TypeNameQuery } from "../../../contracts/types/codegraph.js";
+import type {
+  GraphDbClient,
+  MethodHeadWordRow,
+  MethodNameRow,
+  TypeNameQuery,
+} from "../../../contracts/types/codegraph.js";
 import {
+  deriveMethodVerbLexicon,
   methodLastWordPattern,
-  methodNounTail,
   methodTailPattern,
   methodVerbOf,
-  NAMING_VERB_PREFIXES,
+  MIN_ROLE_MEMBERS,
   splitIdentifierWords,
   type UntypedMethodEvidence,
 } from "../../../domains/explore/naming-lexicon/index.js";
 
-type MethodVocabularyReader = Pick<GraphDbClient, "readMethodVerbs" | "readMethodNamesMatching">;
+type MethodVocabularyReader = Pick<GraphDbClient, "readMethodHeadWords" | "readMethodNamesMatching">;
 
 /** Where the method reads look: the answer's path prefixes and the non-production paths they skip. */
 export interface MethodEvidenceScope {
@@ -28,21 +35,41 @@ export interface MethodEvidenceScope {
 }
 
 /**
- * The request's verb-vocabulary reads, keyed by the reader's scope (its
- * language namespace, excluded files and prefixes): diff mode answers once per
+ * The request's head-word reads, keyed by the reader's scope (its language
+ * namespace, excluded files and prefixes): diff mode answers once per
  * language, and names mode once per owned file, so one request reads each
- * scope's vocabulary once.
+ * scope's head words — and so derives its verb lexicon — once.
  */
-export interface MethodVerbMemo {
-  reads: Map<string, Promise<MethodVerbRow[]>>;
+export interface MethodHeadWordMemo {
+  reads: Map<string, Promise<MethodHeadWordRow[]>>;
   key: string;
 }
 
-/** The RE2 pattern a draft's name slice is read and filtered by; none for a verbed draft's empty tail. */
-function draftPattern(name: string): string | undefined {
-  if (methodVerbOf(name) !== undefined) return methodTailPattern(methodNounTail(name));
+/**
+ * The RE2 pattern of a multi-word draft's tail slice: the names spelling its
+ * words after the head under any head (`modify_user` → `…_user`). The judge
+ * compares a dominant lexicon verb there whether or not the draft's own head
+ * is one. None for a one-word draft.
+ */
+function tailPattern(name: string): string | undefined {
+  const words = splitIdentifierWords(name);
+  return words.length > 1 ? methodTailPattern(words.slice(1)) : undefined;
+}
+
+/** The RE2 pattern of a verbless draft's last-word slice (its analogues); none for a draft with no word. */
+function lastWordPattern(name: string): string | undefined {
   const lastWord = splitIdentifierWords(name).at(-1);
   return lastWord === undefined ? undefined : methodLastWordPattern(lastWord);
+}
+
+/**
+ * The RE2 pattern of the names ending in a multi-word draft's head when the head
+ * is outside the lexicon — the positional evidence that tells a project noun
+ * (`user_name`) from a new synonym verb (`modify_user`). None otherwise.
+ */
+function headLastWordPattern(name: string, lexicon: ReadonlySet<string>): string | undefined {
+  const [head, ...tail] = splitIdentifierWords(name);
+  return tail.length > 0 && !lexicon.has(head) ? methodLastWordPattern(head) : undefined;
 }
 
 /** Rows whose name matches `pattern` — the store matched the batch, this splits it per draft. */
@@ -62,32 +89,40 @@ export async function readUntypedMethodEvidence(
   drafts: readonly { name: string }[],
   scope: MethodEvidenceScope,
   declared: ReadonlySet<string>,
-  memo?: MethodVerbMemo,
+  memo?: MethodHeadWordMemo,
 ): Promise<(name: string) => UntypedMethodEvidence> {
   const names = [...new Set(drafts.map((d) => d.name))];
-  const verbed = names.filter((name) => methodVerbOf(name) !== undefined);
-  const verbless = names.filter((name) => methodVerbOf(name) === undefined);
   const base = {
     ...(scope.pathPrefixes ? { pathPrefixes: scope.pathPrefixes } : {}),
     nonProductionPaths: scope.nonProductionPaths,
   };
-  const patternsOf = (group: readonly string[]) => [...new Set(group.flatMap((name) => draftPattern(name) ?? []))];
-  const tailPatterns = patternsOf(verbed);
-  const lastWordPatterns = patternsOf(verbless);
 
-  const readVerbs = async (): Promise<MethodVerbRow[]> =>
-    reader.readMethodVerbs({ ...base, verbs: NAMING_VERB_PREFIXES });
-  const verbsRead = async (): Promise<MethodVerbRow[]> => {
-    if (!memo) return readVerbs();
+  const readHeadWords = async (): Promise<MethodHeadWordRow[]> =>
+    reader.readMethodHeadWords({ ...base, minTails: MIN_ROLE_MEMBERS });
+  const headWordsRead = async (): Promise<MethodHeadWordRow[]> => {
+    if (!memo) return readHeadWords();
     let read = memo.reads.get(memo.key);
     if (read === undefined) {
-      read = readVerbs();
+      read = readHeadWords();
       memo.reads.set(memo.key, read);
     }
     return read;
   };
-  const [verbs, tailRows, lastWordRows] = await Promise.all([
-    verbed.length > 0 ? verbsRead() : Promise.resolve<MethodVerbRow[]>([]),
+  const headWords = names.length > 0 ? await headWordsRead() : [];
+  const lexicon = deriveMethodVerbLexicon(headWords);
+
+  const verbless = names.filter((name) => methodVerbOf(name, lexicon) === undefined);
+  const patternsOf = (group: readonly string[], patternOf: (name: string) => string | undefined) => [
+    ...new Set(group.flatMap((name) => patternOf(name) ?? [])),
+  ];
+  const tailPatterns = patternsOf(names, tailPattern);
+  const lastWordPatterns = [
+    ...new Set([
+      ...patternsOf(verbless, lastWordPattern),
+      ...patternsOf(verbless, (name) => headLastWordPattern(name, lexicon)),
+    ]),
+  ];
+  const [tailRows, lastWordRows] = await Promise.all([
     tailPatterns.length > 0
       ? reader.readMethodNamesMatching({ ...base, patterns: tailPatterns })
       : Promise.resolve<MethodNameRow[]>([]),
@@ -97,12 +132,13 @@ export async function readUntypedMethodEvidence(
   ]);
 
   return (name) => {
-    const pattern = draftPattern(name);
-    const isVerbed = methodVerbOf(name) !== undefined;
+    const isVerbed = methodVerbOf(name, lexicon) !== undefined;
     return {
-      verbs,
-      tailNames: isVerbed ? rowsMatching(tailRows, pattern) : [],
-      lastWordNames: isVerbed ? [] : rowsMatching(lastWordRows, pattern),
+      lexicon,
+      headWords,
+      tailNames: rowsMatching(tailRows, tailPattern(name)),
+      lastWordNames: isVerbed ? [] : rowsMatching(lastWordRows, lastWordPattern(name)),
+      headLastNames: rowsMatching(lastWordRows, headLastWordPattern(name, lexicon)),
       declared: declared.has(name),
     };
   };

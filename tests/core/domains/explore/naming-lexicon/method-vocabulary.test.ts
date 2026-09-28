@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  deriveMethodVerbLexicon,
   groupMethodsByTail,
   judgeUntypedMethodName,
   methodLastWordPattern,
@@ -15,9 +16,23 @@ import {
   methodVerbOf,
 } from "../../../../../src/core/domains/explore/naming-lexicon/index.js";
 
-const verbs = (entries: [string, number][]) => entries.map(([verb, holders]) => ({ verb, holders }));
+/** Every verb the fixtures below use — the lexicon the judgement reads verbs by. */
+const LEXICON: ReadonlySet<string> = new Set([
+  "load",
+  "fetch",
+  "find",
+  "get",
+  "read",
+  "build",
+  "create",
+  "new",
+  "make",
+]);
+/** Head-word rows: `holders` names opened, two tails each, never a last word. */
+const verbs = (entries: [string, number][]) =>
+  entries.map(([head, headHolders]) => ({ head, headHolders, headTails: 2, lastHolders: 0 }));
 const names = (entries: [string, number][]) => entries.map(([shortName, holders]) => ({ shortName, holders }));
-const none = { verbs: [], tailNames: [], lastWordNames: [], declared: false };
+const none = { lexicon: LEXICON, headWords: [], tailNames: [], lastWordNames: [], declared: false };
 
 describe("judgeUntypedMethodName", () => {
   it("MISFIT when the noun tail has a dominant verb the draft does not use", () => {
@@ -30,7 +45,7 @@ describe("judgeUntypedMethodName", () => {
           ["load_user", 7],
           ["fetch_user", 1],
         ]),
-        verbs: verbs([["load", 30]]),
+        headWords: verbs([["load", 30]]),
       },
     });
     expect(v).toEqual({ verdict: "MISFIT", suggestion: "load_user", holder: "load_user" });
@@ -47,7 +62,7 @@ describe("judgeUntypedMethodName", () => {
     const v = judgeUntypedMethodName({
       name: "fetch_user",
       casing: "snake",
-      evidence: { ...none, tailNames: names([["load_user", 1]]), verbs: verbs([["fetch", 4]]) },
+      evidence: { ...none, tailNames: names([["load_user", 1]]), headWords: verbs([["fetch", 4]]) },
     });
     expect(v).toEqual({ verdict: "CONFORMS" });
   });
@@ -57,7 +72,7 @@ describe("judgeUntypedMethodName", () => {
       casing: "snake",
       evidence: {
         ...none,
-        verbs: verbs([
+        headWords: verbs([
           ["load", 9],
           ["build", 3],
           ["make", 1],
@@ -121,7 +136,7 @@ describe("judgeUntypedMethodName", () => {
       casing: "snake",
       evidence: {
         ...none,
-        verbs: verbs([
+        headWords: verbs([
           ["find", 2],
           ["get", 8],
           ["new", 1],
@@ -137,17 +152,114 @@ describe("judgeUntypedMethodName", () => {
   });
 });
 
+describe("judgeUntypedMethodName with a derived lexicon", () => {
+  const lexicon = deriveMethodVerbLexicon([
+    { head: "update", headHolders: 4, headTails: 2, lastHolders: 0 },
+    { head: "sync", headHolders: 2, headTails: 2, lastHolders: 0 },
+    { head: "can", headHolders: 2, headTails: 2, lastHolders: 0 },
+    { head: "user", headHolders: 1, headTails: 2, lastHolders: 6 },
+  ]);
+  const headWords = [
+    { head: "update", headHolders: 4, headTails: 2, lastHolders: 0 },
+    { head: "sync", headHolders: 2, headTails: 2, lastHolders: 0 },
+    { head: "can", headHolders: 2, headTails: 2, lastHolders: 0 },
+  ];
+
+  it("a verb outside NAMING_VERB_PREFIXES dominating a tail makes another verb a MISFIT", () => {
+    const v = judgeUntypedMethodName({
+      name: "sync_user",
+      casing: "snake",
+      evidence: { ...none, lexicon, headWords, tailNames: names([["update_user", 3]]) },
+    });
+    expect(v).toEqual({ verdict: "MISFIT", suggestion: "update_user", holder: "update_user" });
+  });
+
+  it("a predicate head the project uses conforms, marker and all", () => {
+    const v = judgeUntypedMethodName({
+      name: "can_resolve?",
+      casing: "snake",
+      evidence: { ...none, lexicon, headWords },
+    });
+    expect(v).toEqual({ verdict: "CONFORMS" });
+  });
+
+  it("a head outside the lexicon on a tail a lexicon verb dominates is a MISFIT — a new synonym verb", () => {
+    const v = judgeUntypedMethodName({
+      name: "modify_user",
+      casing: "snake",
+      evidence: { ...none, lexicon, headWords, tailNames: names([["update_user", 5]]) },
+    });
+    expect(v).toEqual({ verdict: "MISFIT", suggestion: "update_user", holder: "update_user" });
+  });
+
+  it("a noun head outside the lexicon is no synonym verb: a dominated tail stays verbless", () => {
+    // `user` ends more names than it opens — a noun of the project, so `user_name` is not a verb + `name`.
+    const v = judgeUntypedMethodName({
+      name: "user_name",
+      casing: "snake",
+      evidence: {
+        ...none,
+        tailNames: names([["get_name", 5]]),
+        headLastNames: names([["load_user", 3]]),
+      },
+    });
+    expect(v).toEqual({ verdict: "NO_CONVENTION", prefer: { analogous: [] } });
+  });
+
+  it("a head outside the lexicon on a tail no verb dominates is verbless", () => {
+    const v = judgeUntypedMethodName({
+      name: "modify_order",
+      casing: "snake",
+      evidence: { ...none, lexicon, headWords },
+    });
+    expect(v).toEqual({ verdict: "NO_CONVENTION", prefer: { analogous: [] } });
+  });
+
+  it("a head the lexicon does not hold is verbless", () => {
+    const v = judgeUntypedMethodName({
+      name: "user_name",
+      casing: "snake",
+      evidence: { ...none, lexicon, headWords, lastWordNames: names([["full_name", 2]]) },
+    });
+    expect(v).toEqual({ verdict: "NO_CONVENTION", prefer: { analogous: ["full_name"] } });
+  });
+});
+
+describe("deriveMethodVerbLexicon", () => {
+  it("keeps a head opening two tails more often than it ends names", () => {
+    const lexicon = deriveMethodVerbLexicon([
+      { head: "update", headHolders: 5, headTails: 3, lastHolders: 0 },
+      { head: "user", headHolders: 1, headTails: 2, lastHolders: 7 },
+      { head: "load", headHolders: 3, headTails: 1, lastHolders: 0 },
+      { head: "sync", headHolders: 2, headTails: 2, lastHolders: 2 },
+    ]);
+    expect([...lexicon]).toEqual(["update"]);
+  });
+
+  it("sums the language rows of one namespace before applying the criterion", () => {
+    const lexicon = deriveMethodVerbLexicon([
+      { head: "update", headHolders: 1, headTails: 1, lastHolders: 0, language: "typescript" },
+      { head: "update", headHolders: 1, headTails: 1, lastHolders: 0, language: "javascript" },
+      { head: "order", headHolders: 2, headTails: 2, lastHolders: 1, language: "typescript" },
+      { head: "order", headHolders: 0, headTails: 0, lastHolders: 3, language: "javascript" },
+    ]);
+    expect([...lexicon]).toEqual(["update"]);
+  });
+});
+
 describe("methodVerbOf / methodNounTail", () => {
   it("reads the lexicon verb of a multi-word name in either casing", () => {
-    expect(methodVerbOf("load_user")).toBe("load");
-    expect(methodVerbOf("loadUser")).toBe("load");
+    expect(methodVerbOf("load_user", LEXICON)).toBe("load");
+    expect(methodVerbOf("loadUser", LEXICON)).toBe("load");
   });
-  it("has no verb for a verbless name or a bare verb", () => {
-    expect(methodVerbOf("total")).toBeUndefined();
-    expect(methodVerbOf("load")).toBeUndefined();
+  it("has no verb for a verbless name, a bare verb, or a head outside the lexicon", () => {
+    expect(methodVerbOf("total", LEXICON)).toBeUndefined();
+    expect(methodVerbOf("load", LEXICON)).toBeUndefined();
+    expect(methodVerbOf("update_user", LEXICON)).toBeUndefined();
+    expect(methodVerbOf("update_user", new Set(["update"]))).toBe("update");
   });
   it("the noun tail drops the verb and the trailing marker", () => {
-    expect(methodNounTail("load_user!")).toEqual(["user"]);
+    expect(methodNounTail("load_user!", LEXICON)).toEqual(["user"]);
   });
 });
 
@@ -161,6 +273,7 @@ describe("groupMethodsByTail", () => {
         ["find_user_name", 4],
         ["total", 9],
       ]),
+      LEXICON,
     );
     expect([...groups.keys()].sort()).toEqual(["user", "user_name"]);
     expect(groups.get("user")).toEqual([
@@ -172,9 +285,10 @@ describe("groupMethodsByTail", () => {
 });
 
 describe("method name patterns", () => {
-  it("the tail pattern matches both casings under every lexicon verb", () => {
+  it("the tail pattern matches both casings under any head word — it enumerates no verbs", () => {
+    expect(methodTailPattern(["user"])).toBe("^[a-z][a-z0-9]*(?:_user|User)[!?]?$");
     const re = new RegExp(methodTailPattern(["user"]));
-    for (const s of ["load_user", "fetch_user?", "findUser"]) expect(re.test(s)).toBe(true);
+    for (const s of ["load_user", "fetch_user?", "findUser", "updateUser"]) expect(re.test(s)).toBe(true);
     for (const s of ["load_users", "user_load", "loadUserName"]) expect(re.test(s)).toBe(false);
   });
   it("a multi-word tail matches the whole tail in both casings", () => {

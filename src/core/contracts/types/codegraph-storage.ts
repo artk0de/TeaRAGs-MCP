@@ -385,9 +385,20 @@ export interface MethodNameScopeQuery extends IdentifierScopeQuery, IdentifierLa
   nonProductionPaths: TypeNameQuery["nonProductionPaths"];
 }
 
-/** Holders per leading verb, for the verbs of `verbs` only (`find_x`, `findX` → `find`). Empty `verbs` reads nothing. */
-export interface MethodVerbQuery extends MethodNameScopeQuery {
-  verbs: readonly string[];
+/**
+ * Head words of multi-word method names — the leading lowercase run before `_`
+ * or a capital (`update_user`, `updateUser` → `update`) — that open at least
+ * `minTails` distinct noun tails (tail normalized across casings, trailing
+ * `!` / `?` dropped). The candidates a language namespace's verb lexicon is
+ * derived from (spec §D4a).
+ */
+export interface MethodHeadWordQuery extends MethodNameScopeQuery {
+  minTails: number;
+}
+
+/** Noun tails more than one of `heads` opens (`load_user` and `fetch_user` contest `user`). Empty `heads` reads nothing. */
+export interface MethodTailVerbQuery extends MethodNameScopeQuery {
+  heads: readonly string[];
 }
 
 /** Names matching any of `patterns` (RE2, anchored by the caller). Empty `patterns` reads nothing. */
@@ -395,10 +406,29 @@ export interface MethodNamePatternQuery extends MethodNameScopeQuery {
   patterns: readonly string[];
 }
 
-/** One leading verb of {@link MethodVerbQuery}; `holders` = distinct method symbols. */
-export interface MethodVerbRow extends IdentifierLanguageGroupedRow {
-  verb: string;
+/**
+ * One head word of {@link MethodHeadWordQuery}: `headHolders` = distinct method
+ * symbols whose name it opens, `headTails` = distinct noun tails after it,
+ * `lastHolders` = distinct method symbols of two or more words whose LAST word
+ * it is (`load_user`, `loadUser` → `user`).
+ */
+export interface MethodHeadWordRow extends IdentifierLanguageGroupedRow {
+  head: string;
+  headHolders: number;
+  headTails: number;
+  lastHolders: number;
+}
+
+/**
+ * One (tail, head) pair of {@link MethodTailVerbQuery}: `tail` is the
+ * normalized noun tail (lowercase, no `_`), `holders` = distinct method
+ * symbols, `name` = the pair's most-held spelling (ties by name).
+ */
+export interface MethodTailVerbRow extends IdentifierLanguageGroupedRow {
+  tail: string;
+  head: string;
   holders: number;
+  name: string;
 }
 
 /** One method name matched by {@link MethodNamePatternQuery}; `holders` = distinct method symbols. */
@@ -1154,11 +1184,20 @@ export interface GraphDbClient {
   ) => Promise<string[]>;
 
   /**
-   * Production method / function holders per leading verb of `q.verbs`, one
-   * row per verb (per verb and file language under `groupByLanguage`), largest
-   * first. Aggregated in SQL — the method table never reaches the caller.
+   * Head words of production method / function names opening at least
+   * `q.minTails` noun tails, with how often each opens and ends a name — one
+   * row per head (per head and file language under `groupByLanguage`, where
+   * `minTails` applies per language), largest first. Aggregated in SQL — the
+   * method table never reaches the caller.
    */
-  readMethodVerbs: (q: MethodVerbQuery) => Promise<MethodVerbRow[]>;
+  readMethodHeadWords: (q: MethodHeadWordQuery) => Promise<MethodHeadWordRow[]>;
+
+  /**
+   * Holders per (noun tail, head of `q.heads`) for the tails two or more of
+   * those heads open across the read — contested tails only, so the answer is
+   * bounded by the conflicts, not by the method table.
+   */
+  readMethodTailVerbs: (q: MethodTailVerbQuery) => Promise<MethodTailVerbRow[]>;
 
   /** Production method / function names matching any of `q.patterns`, with their holders, largest first. */
   readMethodNamesMatching: (q: MethodNamePatternQuery) => Promise<MethodNameRow[]>;

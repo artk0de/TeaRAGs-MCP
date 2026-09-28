@@ -6,24 +6,30 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildMethodVerbGroups,
-  methodVerbHeadPattern,
-  NAMING_VERB_PREFIXES,
+  methodVerbLexicons,
 } from "../../../../../src/core/domains/explore/naming-lexicon/index.js";
 
+const namespaceOf = (language: string) => (language === "ruby" ? { key: "ruby", casing: "snake" as const } : undefined);
 const options = {
-  namespaceOf: (language: string) => (language === "ruby" ? { key: "ruby", casing: "snake" as const } : undefined),
+  namespaceOf,
+  lexicons: new Map([["ruby", new Set(["load", "fetch", "get"])]]),
   limit: 10,
   namesPerGroup: 6,
+};
+/** A readMethodTailVerbs row spelled by `name` (`load_user` → head `load`, tail `user`). */
+const pair = (name: string, holders: number, language: string | null) => {
+  const [head, ...tail] = name.replace(/[!?]+$/, "").split("_");
+  return { tail: tail.join(""), head, name, holders, language };
 };
 
 describe("buildMethodVerbGroups", () => {
   it("drops rows with no file language, no profiled namespace, or no lexicon verb", () => {
     const groups = buildMethodVerbGroups(
       [
-        { shortName: "load_user", holders: 2, language: "ruby" },
-        { shortName: "load_user", holders: 5, language: null },
-        { shortName: "load_user", holders: 5, language: "cobol" },
-        { shortName: "user_count", holders: 5, language: "ruby" },
+        pair("load_user", 2, "ruby"),
+        pair("load_user", 5, null),
+        pair("load_user", 5, "cobol"),
+        pair("user_count", 5, "ruby"),
       ],
       options,
     );
@@ -34,11 +40,7 @@ describe("buildMethodVerbGroups", () => {
 
   it("keeps a deviant's trailing marker in its suggestion and caps verbs and deviants per group", () => {
     const groups = buildMethodVerbGroups(
-      [
-        { shortName: "load_user", holders: 8, language: "ruby" },
-        { shortName: "fetch_user!", holders: 1, language: "ruby" },
-        { shortName: "get_user", holders: 1, language: "ruby" },
-      ],
+      [pair("load_user", 8, "ruby"), pair("fetch_user!", 1, "ruby"), pair("get_user", 1, "ruby")],
       { ...options, namesPerGroup: 1 },
     );
     expect(groups[0].verbs).toEqual([{ verb: "load", holders: 8 }]);
@@ -46,13 +48,17 @@ describe("buildMethodVerbGroups", () => {
   });
 });
 
-describe("methodVerbHeadPattern", () => {
-  it("anchors every lexicon verb before a snake or camel word boundary", () => {
-    const pattern = new RegExp(methodVerbHeadPattern());
-    expect(methodVerbHeadPattern()).toBe(`^(?:${NAMING_VERB_PREFIXES.join("|")})(?:_|[A-Z])`);
-    expect(pattern.test("load_user")).toBe(true);
-    expect(pattern.test("loadUser")).toBe(true);
-    expect(pattern.test("loader")).toBe(false);
-    expect(pattern.test("load")).toBe(false);
+describe("methodVerbLexicons", () => {
+  it("derives one lexicon per namespace from its languages' head-word rows; unprofiled languages drop", () => {
+    const lexicons = methodVerbLexicons(
+      [
+        { head: "update", headHolders: 2, headTails: 2, lastHolders: 0, language: "ruby" },
+        { head: "user", headHolders: 2, headTails: 2, lastHolders: 5, language: "ruby" },
+        { head: "sync", headHolders: 9, headTails: 9, lastHolders: 0, language: "cobol" },
+        { head: "sync", headHolders: 9, headTails: 9, lastHolders: 0, language: null },
+      ],
+      namespaceOf,
+    );
+    expect([...lexicons]).toEqual([["ruby", new Set(["update"])]]);
   });
 });

@@ -74,6 +74,16 @@ describe("NamingLexiconOps — untyped methods judged by the method vocabulary",
     }
   }
 
+  /**
+   * The Ruby verb lexicon the fixtures judge by (spec §D4a): `load` and `fetch`
+   * each open two noun tails and end no name, so both are verbs.
+   */
+  async function rubyVerbs(): Promise<void> {
+    await methods("ruby", ".rb", 1, "load_order");
+    await methods("ruby", ".rb", 1, "fetch_order");
+    await methods("ruby", ".rb", 1, "fetch_invoice");
+  }
+
   function build(): NamingLexiconOps {
     // The ops closes its reader in `finally`; the fixture owns the connection.
     const graphDb = new Proxy(db, {
@@ -110,6 +120,7 @@ describe("NamingLexiconOps — untyped methods judged by the method vocabulary",
 
   describe("names mode", () => {
     it("a verb the project's methods of that tail do not use is a MISFIT pointing at theirs", async () => {
+      await rubyVerbs();
       await methods("ruby", ".rb", 3, "load_user");
       const result = await ops.getNamingLexicon({
         collection: "c",
@@ -120,6 +131,7 @@ describe("NamingLexiconOps — untyped methods judged by the method vocabulary",
     });
 
     it("another language's methods are no convention for the draft", async () => {
+      await rubyVerbs();
       await methods("ruby", ".rb", 3, "load_user");
       const result = await ops.getNamingLexicon({
         collection: "c",
@@ -130,8 +142,9 @@ describe("NamingLexiconOps — untyped methods judged by the method vocabulary",
     });
 
     it("reads the verb vocabulary once and each name slice once per request, however many drafts", async () => {
+      await rubyVerbs();
       await methods("ruby", ".rb", 3, "load_user");
-      const verbs = vi.spyOn(db, "readMethodVerbs");
+      const verbs = vi.spyOn(db, "readMethodHeadWords");
       const matching = vi.spyOn(db, "readMethodNamesMatching");
       await ops.getNamingLexicon({
         collection: "c",
@@ -160,6 +173,7 @@ describe("NamingLexiconOps — untyped methods judged by the method vocabulary",
     });
 
     it("an added method whose verb the project's methods of that tail contradict is a MISFIT finding", async () => {
+      await rubyVerbs();
       await methods("ruby", ".rb", 3, "load_user");
       writeFileSync(join(repo, "app/users/finder.rb"), "class Finder\n  def fetch_user\n    1\n  end\nend\n");
       const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
@@ -174,6 +188,50 @@ describe("NamingLexiconOps — untyped methods judged by the method vocabulary",
       );
       expect(review?.notJudgedBy).toBeUndefined();
       expect(review?.checked).toBe(review!.conforming + review!.novel + review!.findings.length);
+    });
+
+    it("a verb outside NAMING_VERB_PREFIXES is read from the corpus: its tail's dominant verb makes a MISFIT", async () => {
+      // update opens user and account, sync opens order and invoice; neither is an accessor verb.
+      await methods("ruby", ".rb", 3, "update_user");
+      await methods("ruby", ".rb", 1, "update_account");
+      await methods("ruby", ".rb", 1, "sync_order");
+      await methods("ruby", ".rb", 1, "sync_invoice");
+      writeFileSync(join(repo, "app/users/syncer.rb"), "class Syncer\n  def sync_user\n    1\n  end\nend\n");
+      const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
+      expect(review?.findings).toContainEqual(
+        expect.objectContaining({
+          relPath: "app/users/syncer.rb",
+          name: "sync_user",
+          verdict: "MISFIT",
+          suggestion: "update_user",
+        }),
+      );
+    });
+
+    it("an added method opening with a verb the project never uses is a MISFIT on a dominated tail", async () => {
+      // update opens user and account; modify opens nothing — a new synonym verb.
+      await methods("ruby", ".rb", 3, "update_user");
+      await methods("ruby", ".rb", 1, "update_account");
+      writeFileSync(join(repo, "app/users/editor.rb"), "class Editor\n  def modify_user\n    1\n  end\nend\n");
+      const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
+      expect(review?.findings).toContainEqual(
+        expect.objectContaining({
+          relPath: "app/users/editor.rb",
+          name: "modify_user",
+          verdict: "MISFIT",
+          suggestion: "update_user",
+        }),
+      );
+    });
+
+    it("an added method opening with a project noun is no synonym verb, however dominated its tail", async () => {
+      // get opens name and title; user ends three names and opens none — a noun.
+      await methods("ruby", ".rb", 3, "get_name");
+      await methods("ruby", ".rb", 1, "get_title");
+      await methods("ruby", ".rb", 3, "load_user");
+      writeFileSync(join(repo, "app/users/label.rb"), "class Label\n  def user_name\n    1\n  end\nend\n");
+      const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
+      expect(review?.findings.filter((f) => f.name === "user_name")).toEqual([]);
     });
 
     it("an added verbless method with no convention counts as novel, not as a finding", async () => {

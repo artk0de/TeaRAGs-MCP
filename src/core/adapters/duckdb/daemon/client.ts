@@ -39,10 +39,12 @@ import type {
   IdentifierTypeAggregateRow,
   IdentifierTypeScopeQuery,
   InheritanceEdge,
+  MethodHeadWordQuery,
+  MethodHeadWordRow,
   MethodNamePatternQuery,
   MethodNameRow,
-  MethodVerbQuery,
-  MethodVerbRow,
+  MethodTailVerbQuery,
+  MethodTailVerbRow,
   NonPublicMemberEdge,
   OntologyReportQuery,
   OntologyReportSectionRows,
@@ -941,8 +943,12 @@ export class DaemonGraphDbClient implements GraphDbClient {
     })) as string[];
   }
 
-  async readMethodVerbs(q: MethodVerbQuery): Promise<MethodVerbRow[]> {
-    return (await this.call("readMethodVerbs", { query: q })) as MethodVerbRow[];
+  async readMethodHeadWords(q: MethodHeadWordQuery): Promise<MethodHeadWordRow[]> {
+    return (await this.call("readMethodHeadWords", { query: q })) as MethodHeadWordRow[];
+  }
+
+  async readMethodTailVerbs(q: MethodTailVerbQuery): Promise<MethodTailVerbRow[]> {
+    return (await this.call("readMethodTailVerbs", { query: q })) as MethodTailVerbRow[];
   }
 
   async readMethodNamesMatching(q: MethodNamePatternQuery): Promise<MethodNameRow[]> {

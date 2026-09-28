@@ -8,8 +8,9 @@ import type {
   GraphFileNode,
   IdentifierBoundCallee,
   IdentifierReplaceEntry,
+  MethodHeadWordQuery,
   MethodNamePatternQuery,
-  MethodVerbQuery,
+  MethodTailVerbQuery,
   OntologyReportQuery,
   RelPath,
   ResolveRunStatsRow,
@@ -163,7 +164,8 @@ export const DAEMON_OPS = [
   "existingSymbolShortNames",
   // Method-name reads over cg_symbols (naming coverage for untyped methods).
   // REQUIRED: an older daemon's empty answer would read as a project with no methods.
-  "readMethodVerbs",
+  "readMethodHeadWords",
+  "readMethodTailVerbs",
   "readMethodNamesMatching",
   "countIdentifiers",
   "aggregateIdentifiersByName",
@@ -269,7 +271,8 @@ export interface DaemonRequest {
     | { collection: string; query: OntologyReportQuery } // readOntologyReportSummary
     | { collection: string; query: OntologyReportQuery; excludedGenericNames: string[] } // readOntologyReportSections
     | { collection: string; query: TypeNameQuery } // readTypeNameRows
-    | { collection: string; query: MethodVerbQuery } // readMethodVerbs
+    | { collection: string; query: MethodHeadWordQuery } // readMethodHeadWords
+    | { collection: string; query: MethodTailVerbQuery } // readMethodTailVerbs
     | { collection: string; query: MethodNamePatternQuery }; // readMethodNamesMatching
 }
 

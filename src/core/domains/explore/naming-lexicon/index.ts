@@ -16,15 +16,15 @@ export type { GenericNameThresholds, JudgedGenericName } from "./generic-names.j
 export { isTypeFamilyRoleName, mergeUnqualifiedTypeSpellings } from "./homonyms.js";
 export type { HomonymTypeCount, HomonymTypeShape } from "./homonyms.js";
 export {
+  deriveMethodVerbLexicon,
   groupMethodsByTail,
   judgeUntypedMethodName,
   methodLastWordPattern,
   methodNounTail,
   methodTailPattern,
-  methodVerbHeadPattern,
   methodVerbOf,
 } from "./method-vocabulary.js";
-export { buildMethodVerbGroups } from "./method-verb-groups.js";
+export { buildMethodVerbGroups, methodVerbLexiconHeads, methodVerbLexicons } from "./method-verb-groups.js";
 export type { MethodVerbGroup, MethodVerbGroupOptions, MethodVerbNamespace } from "./method-verb-groups.js";
 export type { UntypedMethodEvidence, UntypedMethodVerdict } from "./method-vocabulary.js";
 export { CONNECTOR_WORDS, splitNameSlots, typeNameParts } from "./name-slots.js";
@@ -72,7 +72,13 @@ export { extractConceptTerms } from "./terms.js";
 export type { ConceptTerm, ConceptTermHolder } from "./terms.js";
 export { typeNameHeadCarriers } from "./type-name-heads.js";
 export type { TypeNameHeadCarriers } from "./type-name-heads.js";
-export { TYPE_ROLE_THRESHOLDS, deriveTypeRoles, expectedRoleFor, filePrimaryDeclaration } from "./type-roles.js";
+export {
+  MIN_ROLE_MEMBERS,
+  TYPE_ROLE_THRESHOLDS,
+  deriveTypeRoles,
+  expectedRoleFor,
+  filePrimaryDeclaration,
+} from "./type-roles.js";
 export type { TypeNameRow, TypeRoleAssignment, TypeRoleEvidence, TypeRoleThresholds } from "./type-roles.js";
 export {
   TYPE_DRAFT_KINDS,

@@ -91,7 +91,7 @@ import type {
   IdentifierLanguageCountRow,
   IdentifierTypeAggregateRow,
   IdentifierTypeMultiplicity,
-  MethodVerbRow,
+  MethodHeadWordRow,
   TypeNameRow,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
@@ -165,7 +165,7 @@ import type {
   NamingReviewResult,
 } from "../../public/dto/naming-lexicon.js";
 import { resolveCollection } from "../collection-resolver.js";
-import { readUntypedMethodEvidence, type MethodVerbMemo } from "./naming-lexicon-method-evidence.js";
+import { readUntypedMethodEvidence, type MethodHeadWordMemo } from "./naming-lexicon-method-evidence.js";
 import type {
   NamingReviewExtractor,
   NamingReviewFileDeclarations,
@@ -338,8 +338,8 @@ interface TypeAlignmentState {
    * namespace share the read.
    */
   typeNameRows?: Map<string, Promise<TypeNameRow[]>>;
-  /** The method verb vocabulary per evidence scope ({@link MethodVerbMemo}), read at most once per request. */
-  methodVerbRows?: MethodVerbMemo["reads"];
+  /** The method head words (verb lexicon) per evidence scope ({@link MethodHeadWordMemo}), read at most once per request. */
+  methodHeadWordRows?: MethodHeadWordMemo["reads"];
   /** The project's index metrics — its label thresholds — read at most once per request. */
   metrics?: Promise<IndexMetrics>;
 }
@@ -371,7 +371,8 @@ type IdentifierReader = Pick<
   | "anchorIdentifierTypes"
   | "identifierNameTypes"
   | "existingSymbolShortNames"
-  | "readMethodVerbs"
+  | "readMethodHeadWords"
+  | "readMethodTailVerbs"
   | "readMethodNamesMatching"
   | "countIdentifiers"
   | "identifierLanguageCounts"
@@ -791,8 +792,8 @@ export class NamingLexiconOps {
             conceptTerms,
             pathPrefixes,
             ontologyLanguages: namespaceProfiles(this.deps.ontologyLanguages, namespace),
-            methodVerbs: {
-              reads: (alignment.methodVerbRows ??= new Map<string, Promise<MethodVerbRow[]>>()),
+            methodHeadWords: {
+              reads: (alignment.methodHeadWordRows ??= new Map<string, Promise<MethodHeadWordRow[]>>()),
               key: JSON.stringify([
                 typeNamespaceKey(scopedLate ? namespace : declaredNamespace),
                 pathPrefixes ?? [],
@@ -1643,7 +1644,7 @@ interface DraftJudgementContext {
   /** The symbols a colliding name collides with; absent → not looked up. */
   collisionHolders?: (name: string) => Promise<string[]>;
   /** The request's verb-vocabulary reads, keyed by the reader's evidence scope. */
-  methodVerbs?: MethodVerbMemo;
+  methodHeadWords?: MethodHeadWordMemo;
 }
 
 /**
@@ -1703,7 +1704,7 @@ async function judgeDrafts(
           untypedMethods,
           { pathPrefixes: ctx.pathPrefixes, nonProductionPaths: ontologyNonProductionPaths() },
           taken,
-          ctx.methodVerbs,
+          ctx.methodHeadWords,
         );
   const overridden = new Map<NamingLexiconValueDraft, string[]>();
   for (const draft of drafts) {
@@ -2365,7 +2366,8 @@ function scopedEvidence(reader: IdentifierReader, scope: EvidenceReadScope): Ide
         ? reader.existingSymbolShortNames(names, excludePaths)
         : reader.existingSymbolShortNames(names, excludePaths, languages),
     // The caller's explicit `languages` wins, as in `readTypeNameRows`.
-    readMethodVerbs: async (q) => reader.readMethodVerbs({ ...q, ...excluded, ...languagesOf(q.languages) }),
+    readMethodHeadWords: async (q) => reader.readMethodHeadWords({ ...q, ...excluded, ...languagesOf(q.languages) }),
+    readMethodTailVerbs: async (q) => reader.readMethodTailVerbs({ ...q, ...excluded, ...languagesOf(q.languages) }),
     readMethodNamesMatching: async (q) =>
       reader.readMethodNamesMatching({ ...q, ...excluded, ...languagesOf(q.languages) }),
     countIdentifiers: async (q) => reader.countIdentifiers({ ...q, ...bound }),

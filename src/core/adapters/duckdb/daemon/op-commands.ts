@@ -9,8 +9,9 @@ import type {
   GraphFileNode,
   IdentifierBoundCallee,
   IdentifierReplaceEntry,
+  MethodHeadWordQuery,
   MethodNamePatternQuery,
-  MethodVerbQuery,
+  MethodTailVerbQuery,
   OntologyReportQuery,
   Pass1AggregateReadScope,
   RelPath,
@@ -309,7 +310,8 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
     ),
   ),
   // Method-name reads over cg_symbols: the query carries the non-production masks, so it travels whole.
-  readMethodVerbs: read(async (graphDb, p) => graphDb.readMethodVerbs(p.query as MethodVerbQuery)),
+  readMethodHeadWords: read(async (graphDb, p) => graphDb.readMethodHeadWords(p.query as MethodHeadWordQuery)),
+  readMethodTailVerbs: read(async (graphDb, p) => graphDb.readMethodTailVerbs(p.query as MethodTailVerbQuery)),
   readMethodNamesMatching: read(async (graphDb, p) =>
     graphDb.readMethodNamesMatching(p.query as MethodNamePatternQuery),
   ),

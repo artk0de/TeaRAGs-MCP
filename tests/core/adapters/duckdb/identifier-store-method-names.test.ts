@@ -1,7 +1,8 @@
 /**
  * Bounded method-name reads over `cg_symbols` (naming coverage for untyped
- * methods, spec §D4): the store answers "how many production methods open with
- * verb V" and "which method names match these patterns" in SQL, so the naming
+ * methods, spec §D4 / §D4a): the store answers "which heads open names with how
+ * many noun tails, and how often they end a name", "which verbs contest a tail"
+ * and "which method names match these patterns" in SQL, so the naming
  * lexicon never pulls the project's method table into memory. Only `method` /
  * `function` symbols count, constructors never do, non-production files never
  * do, and the evidence scope (exclude paths, languages) applies as it does to
@@ -39,6 +40,23 @@ const FILES: readonly (readonly [string, string, readonly SymbolDefinition[]])[]
   ["app/d.rb", "ruby", [symbol("app/d.rb", "User", "class")]],
   ["web/e.ts", "typescript", [symbol("web/e.ts", "Api#loadUser", "method")]],
   ["spec/f_spec.rb", "ruby", [symbol("spec/f_spec.rb", "X#load_user", "method")]],
+  [
+    "app/g.rb",
+    "ruby",
+    [
+      symbol("app/g.rb", "G#update_user", "method"),
+      symbol("app/g.rb", "G#update_account", "method"),
+      symbol("app/g.rb", "G#user_name", "method"),
+    ],
+  ],
+  ["app/k.rb", "ruby", [symbol("app/k.rb", "K#update_user!", "method")]],
+  [
+    "web/h.ts",
+    "typescript",
+    [symbol("web/h.ts", "H#updateOrder", "method"), symbol("web/h.ts", "H#updateUser", "method")],
+  ],
+  ["spec/i_spec.rb", "ruby", [symbol("spec/i_spec.rb", "I#update_invoice", "method")]],
+  ["lib/m.py", "python", [symbol("lib/m.py", "M#__init__", "method")]],
 ];
 
 describe("method-name reads over cg_symbols", () => {
@@ -63,48 +81,74 @@ describe("method-name reads over cg_symbols", () => {
 
   const scope = { nonProductionPaths: NON_PRODUCTION_PATHS };
 
-  describe("readMethodVerbs", () => {
-    it("counts production method holders per leading verb, snake_case and camelCase alike", async () => {
-      expect(await db.readMethodVerbs({ ...scope, verbs: ["load", "fetch"] })).toEqual([
-        { verb: "load", holders: 3 },
-        { verb: "fetch", holders: 1 },
+  describe("readMethodHeadWords", () => {
+    it("counts a head's holders, distinct noun tails across casings, and the names it ends", async () => {
+      // update: update_user, update_user!, update_account, updateOrder, updateUser — tails user/account/order.
+      // load and fetch open one tail each, so two tails keep them out.
+      expect(await db.readMethodHeadWords({ ...scope, minTails: 2 })).toEqual([
+        { head: "update", headHolders: 5, headTails: 3, lastHolders: 0 },
       ]);
     });
 
-    it("splits a camelCase name at its first capital", async () => {
-      expect(await db.readMethodVerbs({ ...scope, verbs: ["load"], languages: ["typescript"] })).toEqual([
-        { verb: "load", holders: 1 },
+    it("computes lastHolders from the last word of snake and camel names, markers dropped", async () => {
+      // user opens user_name once and ends load_user ×2, fetch_user, loadUser, update_user, update_user!, updateUser.
+      expect(await db.readMethodHeadWords({ ...scope, minTails: 1 })).toEqual([
+        { head: "update", headHolders: 5, headTails: 3, lastHolders: 0 },
+        { head: "load", headHolders: 3, headTails: 1, lastHolders: 0 },
+        { head: "fetch", headHolders: 1, headTails: 1, lastHolders: 0 },
+        { head: "user", headHolders: 1, headTails: 1, lastHolders: 7 },
       ]);
     });
 
     it("stays within the languages; an empty language scope reads nothing", async () => {
-      expect(await db.readMethodVerbs({ ...scope, verbs: ["load", "fetch"], languages: ["ruby"] })).toEqual([
-        { verb: "load", holders: 2 },
-        { verb: "fetch", holders: 1 },
+      expect(await db.readMethodHeadWords({ ...scope, minTails: 1, languages: ["typescript"] })).toEqual([
+        { head: "update", headHolders: 2, headTails: 2, lastHolders: 0 },
+        { head: "load", headHolders: 1, headTails: 1, lastHolders: 0 },
       ]);
-      expect(await db.readMethodVerbs({ ...scope, verbs: ["load", "fetch"], languages: [] })).toEqual([]);
+      expect(await db.readMethodHeadWords({ ...scope, minTails: 1, languages: [] })).toEqual([]);
     });
 
-    it("drops the excluded files", async () => {
-      expect(await db.readMethodVerbs({ ...scope, verbs: ["load"], excludePaths: ["app/a.rb"] })).toEqual([
-        { verb: "load", holders: 2 },
+    it("drops the excluded files and never reads a non-production file", async () => {
+      // spec/i_spec.rb declares update_invoice: counted, update would open four tails.
+      expect(await db.readMethodHeadWords({ ...scope, minTails: 2, excludePaths: ["app/g.rb", "app/k.rb"] })).toEqual([
+        { head: "update", headHolders: 2, headTails: 2, lastHolders: 0 },
       ]);
     });
 
-    it("never counts a constructor", async () => {
-      expect(await db.readMethodVerbs({ ...scope, verbs: ["initialize"] })).toEqual([]);
+    it("never reads a constructor as a head or a last word", async () => {
+      expect(await db.readMethodHeadWords({ ...scope, minTails: 1, languages: ["python"] })).toEqual([]);
+    });
+
+    it("applies minTails per file language when grouping by it", async () => {
+      expect(await db.readMethodHeadWords({ ...scope, minTails: 2, groupByLanguage: true })).toEqual([
+        { head: "update", headHolders: 3, headTails: 2, lastHolders: 0, language: "ruby" },
+        { head: "update", headHolders: 2, headTails: 2, lastHolders: 0, language: "typescript" },
+      ]);
+    });
+  });
+
+  describe("readMethodTailVerbs", () => {
+    it("returns only tails more than one of the heads opens, with the most-held spelling (ties by name)", async () => {
+      // user: load ×3, fetch ×1, update ×3 — contested. account (update only) and order (update only) are not.
+      expect(await db.readMethodTailVerbs({ ...scope, heads: ["load", "fetch", "update"] })).toEqual([
+        { tail: "user", head: "load", holders: 3, name: "load_user" },
+        { tail: "user", head: "update", holders: 3, name: "updateUser" },
+        { tail: "user", head: "fetch", holders: 1, name: "fetch_user" },
+      ]);
+    });
+
+    it("reads only the heads asked for; one head contests nothing", async () => {
+      expect(await db.readMethodTailVerbs({ ...scope, heads: ["update"] })).toEqual([]);
+      expect(await db.readMethodTailVerbs({ ...scope, heads: [] })).toEqual([]);
     });
 
     it("reports the file language per row when grouping by it", async () => {
-      expect(await db.readMethodVerbs({ ...scope, verbs: ["load", "fetch"], groupByLanguage: true })).toEqual([
-        { verb: "load", holders: 2, language: "ruby" },
-        { verb: "fetch", holders: 1, language: "ruby" },
-        { verb: "load", holders: 1, language: "typescript" },
+      expect(await db.readMethodTailVerbs({ ...scope, heads: ["load", "update"], groupByLanguage: true })).toEqual([
+        { tail: "user", head: "load", holders: 2, name: "load_user", language: "ruby" },
+        { tail: "user", head: "update", holders: 2, name: "update_user", language: "ruby" },
+        { tail: "user", head: "load", holders: 1, name: "loadUser", language: "typescript" },
+        { tail: "user", head: "update", holders: 1, name: "updateUser", language: "typescript" },
       ]);
-    });
-
-    it("reads nothing for no verbs", async () => {
-      expect(await db.readMethodVerbs({ ...scope, verbs: [] })).toEqual([]);
     });
   });
 

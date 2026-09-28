@@ -40,11 +40,13 @@ import type {
   IdentifierTypeMultiplicity,
   IdentifierTypeScopeQuery,
   IdentifierTypeSource,
+  MethodHeadWordQuery,
+  MethodHeadWordRow,
   MethodNamePatternQuery,
   MethodNameRow,
   MethodNameScopeQuery,
-  MethodVerbQuery,
-  MethodVerbRow,
+  MethodTailVerbQuery,
+  MethodTailVerbRow,
   RelPath,
   SymbolId,
 } from "../../contracts/types/codegraph.js";
@@ -86,10 +88,14 @@ export const DECLARED_IDENTIFIER_SQL = "NOT (kind = 'return' AND type_name IS NU
 /** Constructor names across the supported languages — never a method name the lexicon judges. */
 const CONSTRUCTOR_NAMES = ["initialize", "constructor", "__init__"] as const;
 
-/** `value` as an RE2 literal: every metacharacter escaped. */
-function escapeRegexLiteral(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+/** A method name without its trailing `!` / `?` markers. */
+const METHOD_UNMARKED_SQL = "regexp_replace(short_name, '[!?]+$', '')";
+/** A method name's head word: its leading lowercase run before `_` or a capital; `''` for none. */
+const METHOD_HEAD_SQL = "regexp_extract(short_name, '^([a-z][a-z0-9]*)[_A-Z]', 1)";
+/** The noun tail after {@link METHOD_HEAD_SQL}, normalized across casings: `_user_name!`, `UserName` → `username`. */
+const METHOD_TAIL_SQL = `lower(replace(regexp_replace(${METHOD_UNMARKED_SQL}, '^[a-z][a-z0-9]*', ''), '_', ''))`;
+/** A method name's last word, lowercased: `load_user`, `loadUser` → `user`. */
+const METHOD_LAST_WORD_SQL = `lower(regexp_extract(${METHOD_UNMARKED_SQL}, '([A-Z]?[a-z0-9]+)$', 1))`;
 
 /**
  * The `cg_symbols` rows a method-name read sees: `method` / `function`
@@ -694,27 +700,107 @@ export class DuckDbIdentifierStore {
     return out;
   }
 
-  /** The verb is the name's head up to `_`, a capital, or its end — `load_user`, `loadUser`, `load` → `load`. */
-  async readMethodVerbs(q: MethodVerbQuery): Promise<MethodVerbRow[]> {
-    if (q.verbs.length === 0) return [];
+  /**
+   * Head-word candidates of the verb lexicon (spec §D4a), one statement: the
+   * head is the leading lowercase run before `_` or a capital, its tail the
+   * rest lowercased with `_` and trailing `!` / `?` dropped (`update_user!`,
+   * `updateUser` → `update` + `user`). `lastHolders` is read only for the heads
+   * that clear `minTails`, from names of two or more words.
+   */
+  async readMethodHeadWords(q: MethodHeadWordQuery): Promise<MethodHeadWordRow[]> {
     const scope = methodNameScopePredicate(q);
-    const verbRegex = `^(${q.verbs.map(escapeRegexLiteral).join("|")})(?:_|[A-Z]|$)`;
     const lang = fileLanguageGrouping("cg_symbols", q.groupByLanguage);
+    const grouped = q.groupByLanguage === true;
     const rows = await this.session.queryAll<{
-      verb: string;
-      holders: number | string | bigint;
+      head: string;
+      head_holders: number | string | bigint;
+      head_tails: number | string | bigint;
+      last_holders: number | string | bigint;
       file_language?: string | null;
     }>(
-      `SELECT regexp_extract(short_name, ?, 1) AS verb, count(DISTINCT symbol_id) AS holders${lang.column}
-         FROM ${lang.from}
-        WHERE ${scope.sql} AND regexp_matches(short_name, ?)
-        GROUP BY verb${lang.column}
-        ORDER BY holders DESC, verb${lang.order}`,
-      [verbRegex, ...scope.params, verbRegex],
+      `WITH named AS (
+         SELECT symbol_id, short_name${lang.column}
+           FROM ${lang.from}
+          WHERE ${scope.sql}
+       ),
+       headed AS (
+         SELECT symbol_id${lang.column}, ${METHOD_HEAD_SQL} AS head, ${METHOD_TAIL_SQL} AS tail
+           FROM named
+       ),
+       heads AS (
+         SELECT head${lang.column}, count(DISTINCT symbol_id) AS head_holders, count(DISTINCT tail) AS head_tails
+           FROM headed
+          WHERE head <> '' AND tail <> ''
+          GROUP BY head${lang.column}
+         HAVING count(DISTINCT tail) >= ?
+       ),
+       lasts AS (
+         SELECT last_word${lang.column}, count(DISTINCT symbol_id) AS last_holders
+           FROM (SELECT symbol_id${lang.column}, ${METHOD_LAST_WORD_SQL} AS last_word
+                   FROM named
+                  WHERE regexp_matches(${METHOD_UNMARKED_SQL}, '[a-z0-9][_A-Z]'))
+          WHERE last_word IN (SELECT head FROM heads)
+          GROUP BY last_word${lang.column}
+       )
+       SELECT h.head, h.head_holders, h.head_tails, coalesce(l.last_holders, 0) AS last_holders${grouped ? ", h.file_language" : ""}
+         FROM heads h
+         LEFT JOIN lasts l
+           ON l.last_word = h.head${grouped ? " AND l.file_language IS NOT DISTINCT FROM h.file_language" : ""}
+        ORDER BY h.head_holders DESC, h.head${grouped ? ", h.file_language NULLS LAST" : ""}`,
+      [...scope.params, q.minTails],
     );
     return rows.map((r) => ({
-      verb: r.verb,
+      head: r.head,
+      headHolders: Number(r.head_holders),
+      headTails: Number(r.head_tails),
+      lastHolders: Number(r.last_holders),
+      ...languageField(q.groupByLanguage, r),
+    }));
+  }
+
+  /**
+   * The (tail, head) pairs of `q.heads` over the tails two or more of them open
+   * across the read — a tail one head owns contests nothing and is not read.
+   * `name` is the pair's most-held spelling, ties by name.
+   */
+  async readMethodTailVerbs(q: MethodTailVerbQuery): Promise<MethodTailVerbRow[]> {
+    if (q.heads.length === 0) return [];
+    const scope = methodNameScopePredicate(q);
+    const lang = fileLanguageGrouping("cg_symbols", q.groupByLanguage);
+    const rows = await this.session.queryAll<{
+      tail: string;
+      head: string;
+      holders: number | string | bigint;
+      name: string;
+      file_language?: string | null;
+    }>(
+      `WITH verbed AS (
+         SELECT *
+           FROM (SELECT symbol_id, short_name${lang.column}, ${METHOD_HEAD_SQL} AS head, ${METHOD_TAIL_SQL} AS tail
+                   FROM ${lang.from}
+                  WHERE ${scope.sql})
+          WHERE head IN (${placeholders(q.heads)}) AND tail <> ''
+       ),
+       contested AS (
+         SELECT tail FROM verbed GROUP BY tail HAVING count(DISTINCT head) > 1
+       ),
+       spelled AS (
+         SELECT tail, head${lang.column}, short_name, count(DISTINCT symbol_id) AS n
+           FROM verbed
+          WHERE tail IN (SELECT tail FROM contested)
+          GROUP BY tail, head${lang.column}, short_name
+       )
+       SELECT tail, head${lang.column}, sum(n) AS holders, first(short_name ORDER BY n DESC, short_name) AS name
+         FROM spelled
+        GROUP BY tail, head${lang.column}
+        ORDER BY tail, holders DESC, head${lang.order}`,
+      [...scope.params, ...q.heads],
+    );
+    return rows.map((r) => ({
+      tail: r.tail,
+      head: r.head,
       holders: Number(r.holders),
+      name: r.name,
       ...languageField(q.groupByLanguage, r),
     }));
   }
