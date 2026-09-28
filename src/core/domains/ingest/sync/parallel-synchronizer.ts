@@ -37,7 +37,7 @@ const INVALIDATED_SNAPSHOT_HASH = "invalidated:rechunk";
 /**
  * Checkpoint data for resumable indexing
  */
-export interface Checkpoint {
+export interface ParallelCheckpoint {
   processedFiles: string[]; // Relative paths of files already indexed
   totalFiles: number; // Total files to process
   timestamp: number; // When checkpoint was created
@@ -402,7 +402,7 @@ export class ParallelFileSynchronizer {
     totalFiles: number,
     phase: "deleting" | "indexing" = "indexing",
   ): Promise<void> {
-    const checkpoint: Checkpoint = {
+    const checkpoint: ParallelCheckpoint = {
       processedFiles,
       totalFiles,
       timestamp: Date.now(),
@@ -422,10 +422,10 @@ export class ParallelFileSynchronizer {
   /**
    * Load checkpoint if exists
    */
-  async loadCheckpoint(): Promise<Checkpoint | null> {
+  async loadCheckpoint(): Promise<ParallelCheckpoint | null> {
     try {
       const data = await fs.readFile(this.checkpointPath, "utf-8");
-      const checkpoint = JSON.parse(data) as Checkpoint;
+      const checkpoint = JSON.parse(data) as ParallelCheckpoint;
 
       if (!checkpoint.processedFiles || !checkpoint.totalFiles) {
         return null;
@@ -471,7 +471,7 @@ export class ParallelFileSynchronizer {
   /**
    * Filter out already processed files based on checkpoint
    */
-  filterProcessedFiles(allFiles: string[], checkpoint: Checkpoint): string[] {
+  filterProcessedFiles(allFiles: string[], checkpoint: ParallelCheckpoint): string[] {
     const processedSet = new Set(checkpoint.processedFiles);
     return allFiles.filter((f) => !processedSet.has(f));
   }
