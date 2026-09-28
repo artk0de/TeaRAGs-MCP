@@ -1,4 +1,4 @@
-import { CODEGRAPH_FILTER_INDEXES } from "../../../../adapters/qdrant/schema-manager.js";
+import { CODEGRAPH_SYMBOLS_FILTER_INDEXES } from "../../../../contracts/codegraph-payload.js";
 import type { IndexStore, Migration, StepResult } from "../types.js";
 
 /**
@@ -12,9 +12,13 @@ import type { IndexStore, Migration, StepResult } from "../types.js";
  * not fail: Qdrant falls back to reading the payload of every candidate point,
  * so the filter silently costs a full scan.
  *
- * The list is mirrored in the adapter layer for the reason documented on
- * {@link CODEGRAPH_FILTER_INDEXES} — the paths must stay byte-identical to the
- * keys `codegraphFilters` emits.
+ * The paths come from `CODEGRAPH_SYMBOLS_FILTER_INDEXES`
+ * (`contracts/codegraph-payload.ts`) — the same module `codegraphFilters`
+ * builds its keys from — so this migration and the codegraph trajectory
+ * compile against one spelling of the namespace. The adapter's
+ * `CODEGRAPH_FILTER_INDEXES` remains a literal mirror for `initializeSchema`
+ * (adapters may not import a domain) and is pinned byte-identical to the
+ * contract list by the adapter parity tests.
  *
  * It also ensures `parentSymbolId`, which has the same hole from the other
  * side: `schema-v11` creates that text index, and a collection created after
@@ -35,7 +39,7 @@ export class SchemaV15CodegraphFilterIndexes implements Migration {
 
   async apply(): Promise<StepResult> {
     const applied: string[] = [];
-    for (const { path, schema } of CODEGRAPH_FILTER_INDEXES) {
+    for (const { path, schema } of CODEGRAPH_SYMBOLS_FILTER_INDEXES) {
       await this.store.ensureIndex(this.collection, path, schema);
       applied.push(`${path}:${schema}`);
     }
