@@ -15,6 +15,15 @@ export { judgeGenericNames } from "./generic-names.js";
 export type { GenericNameThresholds, JudgedGenericName } from "./generic-names.js";
 export { isTypeFamilyRoleName, mergeUnqualifiedTypeSpellings } from "./homonyms.js";
 export type { HomonymTypeCount, HomonymTypeShape } from "./homonyms.js";
+export {
+  groupMethodsByTail,
+  judgeUntypedMethodName,
+  methodLastWordPattern,
+  methodNounTail,
+  methodTailPattern,
+  methodVerbOf,
+} from "./method-vocabulary.js";
+export type { UntypedMethodEvidence, UntypedMethodVerdict } from "./method-vocabulary.js";
 export { CONNECTOR_WORDS, splitNameSlots, typeNameParts } from "./name-slots.js";
 export type { NameSlots, TypeNameParser, TypeNameParts } from "./name-slots.js";
 export {
