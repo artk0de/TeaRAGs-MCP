@@ -236,7 +236,13 @@ conforms, with `genericName`. `checked = conforming + novel + findings`.
 `checked` counts only what was judged. A method whose return type is unknown —
 most of them in Ruby — still becomes a draft: it is judged against the
 project's method vocabulary instead of a type, so it counts in `checked` like
-any other name. Only files go unjudged. `notJudgedBy` says what the review
+any other name. A verb the project uses conforms and a rare one is a
+`NEW_TERM`; a method is never asked to swap its verb for another verb of the
+same noun, because `find_user` and `build_user` are different operations. A
+method a macro composes — `has_one :account` adds `build_account`,
+`create_account` and `account=` — is not a draft: its name is not written on
+its declaration line, so the review neither judges nor counts it. Only files go
+unjudged. `notJudgedBy` says what the review
 skipped, per reason:
 `{ "file": { "nonProduction": 3, "noCodegraphLanguage": 1 } }`.
 Reasons are `nonProduction`, `noCodegraphLanguage` and `unreadable`, and they

@@ -13,8 +13,9 @@
  *   where that is ambiguous (see {@link OntologyCollisionRule}).
  *
  * Opt-in `verbs` (spec 2026-09-28 naming coverage, §D5): method names, not
- * values — per noun tail, the verbs the project uses and the names off the
- * dominant one ({@link OntologyVerbGroup}).
+ * values — per noun tail, the verbs the project uses, with holders
+ * ({@link OntologyVerbGroup}). Descriptive only: the verbs of one tail are
+ * mostly distinct operations, so none is named a deviant of another.
  *
  * Evidence is a row whose EFFECTIVE type is a concept type: persisted
  * (`annotation`, `constructor`, `binding`, `finder`, …) or `call-return`, each
@@ -154,8 +155,6 @@ export interface OntologyVerbGroup {
   /** Method symbols holding a name of the group. */
   holders: number;
   verbs: { verb: string; holders: number }[];
-  /** Names off the tail's dominant verb, each with the name the lexicon would suggest. */
-  deviants: { name: string; holders: number; suggestion: string }[];
 }
 
 export interface OntologyReportSummary {
@@ -174,7 +173,7 @@ export interface GetOntologyReportResponse {
   homonyms?: OntologyHomonym[];
   outliers?: OntologyOutlier[];
   collisions?: OntologyCollision[];
-  /** Opt-in: per language namespace and noun tail, the verbs and the names off the dominant one. */
+  /** Opt-in: per language namespace and noun tail, the verbs the project uses with holders. */
   verbs?: OntologyVerbGroup[];
   /** Why sections are empty for a reason other than the data — e.g. the codegraph store could not be opened. */
   notices?: string[];

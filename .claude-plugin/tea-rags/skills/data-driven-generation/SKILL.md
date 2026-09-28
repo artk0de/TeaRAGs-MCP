@@ -237,9 +237,10 @@ while writing, so misfits are prevented, not detected:
   `{ name, kind: "type", path: <its file>, extends?: <planned ancestor> }`: the
   ancestor's family and the directory set the expected role suffix.
 - A `return` draft with no known `type` is judged too — never invent a type to
-  force a verdict. MISFIT swaps the verb in `suggestion` (its noun tail's
-  dominant project verb); a verb the project already uses for the tail →
-  CONFORMS; verbless → CONFORMS if declared elsewhere, else NO_CONVENTION.
+  force a verdict. A verb the project uses → CONFORMS; a rare one → NEW_TERM
+  (`topTerms`); never a MISFIT toward another verb of the same noun (`find_user`
+  and `build_user` are different operations — pick the verb for what the method
+  does). Verbless → CONFORMS if declared elsewhere, else NO_CONVENTION.
 
 Reading the answer — the dominant shape per kind IS the convention:
 

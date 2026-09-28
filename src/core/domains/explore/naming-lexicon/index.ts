@@ -21,7 +21,6 @@ export {
   judgeUntypedMethodName,
   methodLastWordPattern,
   methodNounTail,
-  methodTailPattern,
   methodVerbOf,
 } from "./method-vocabulary.js";
 export { buildMethodVerbGroups, methodVerbLexiconHeads, methodVerbLexicons } from "./method-verb-groups.js";

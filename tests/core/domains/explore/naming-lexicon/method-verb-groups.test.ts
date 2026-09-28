@@ -9,7 +9,7 @@ import {
   methodVerbLexicons,
 } from "../../../../../src/core/domains/explore/naming-lexicon/index.js";
 
-const namespaceOf = (language: string) => (language === "ruby" ? { key: "ruby", casing: "snake" as const } : undefined);
+const namespaceOf = (language: string) => (language === "ruby" ? { key: "ruby" } : undefined);
 const options = {
   namespaceOf,
   lexicons: new Map([["ruby", new Set(["load", "fetch", "get"])]]),
@@ -33,18 +33,28 @@ describe("buildMethodVerbGroups", () => {
       ],
       options,
     );
-    expect(groups).toEqual([
-      { tail: "user", language: "ruby", holders: 2, verbs: [{ verb: "load", holders: 2 }], deviants: [] },
-    ]);
+    expect(groups).toEqual([{ tail: "user", language: "ruby", holders: 2, verbs: [{ verb: "load", holders: 2 }] }]);
   });
 
-  it("keeps a deviant's trailing marker in its suggestion and caps verbs and deviants per group", () => {
+  it("describes the verbs only — no deviants, no suggestions — and caps verbs per group", () => {
     const groups = buildMethodVerbGroups(
       [pair("load_user", 8, "ruby"), pair("fetch_user!", 1, "ruby"), pair("get_user", 1, "ruby")],
       { ...options, namesPerGroup: 1 },
     );
-    expect(groups[0].verbs).toEqual([{ verb: "load", holders: 8 }]);
-    expect(groups[0].deviants).toEqual([{ name: "fetch_user!", holders: 1, suggestion: "load_user!" }]);
+    expect(groups).toEqual([{ tail: "user", language: "ruby", holders: 10, verbs: [{ verb: "load", holders: 8 }] }]);
+  });
+
+  it("ranks the most contested tails first: distinct verbs, then holders", () => {
+    const groups = buildMethodVerbGroups(
+      [
+        pair("load_account", 9, "ruby"),
+        pair("load_user", 1, "ruby"),
+        pair("fetch_user", 1, "ruby"),
+        pair("get_user", 1, "ruby"),
+      ],
+      options,
+    );
+    expect(groups.map((g) => g.tail)).toEqual(["user", "account"]);
   });
 });
 

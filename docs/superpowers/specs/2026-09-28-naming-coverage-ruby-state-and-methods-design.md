@@ -124,6 +124,28 @@ which is already 2 100+ lines):
 Thresholds reuse the existing minima (`MIN_ROLE_MEMBERS = 2`, the 0.5 dominance
 share used by `supportedReturnVerb`); no new tuning constants.
 
+**Revised after live validation (user decision).** The tail-dominance MISFIT of
+step 4 is removed. On taxdome it fired almost only on distinct operations
+(`find_user` → `build_user`, `resolve_actor` → `build_actor`, `fetch_contact!` →
+`build_contact!`); true synonym pairs share 0 tails, so tail dominance cannot
+find them; and the `build` / `create` evidence is inflated by DSL-generated pairs
+(419 shared tails, 417 of them in one owner). The judgement is now: verbless →
+step 3 unchanged; a lexicon verb with ≥ `MIN_ROLE_MEMBERS` holders → `CONFORMS`;
+otherwise `NEW_TERM { topTerms }`. The noun-tail read and the head-word
+last-position read that fed only the MISFIT are gone, leaving at most two
+bounded reads per answer. Behavioural synonymy (two verbs doing the same thing)
+is a separate future bead.
+
+Macro-derived names are not drafts. In review mode an untyped callable whose
+exact name (trailing `=` / `!` / `?` included) is not a whole token on its
+declaration line is a name a macro composed (`has_one :x` → `build_x`,
+`create_x`, `x=`; `belongs_to :x` → `x_id=`), not one the author wrote: it is
+skipped, neither judged nor counted in `notJudged`. `def refresh_auth_token`,
+the `x` reader of `has_one :x` and `scope :with_firm` spell their names and stay
+drafts. The check is textual and language-agnostic, computed where the file
+text is (the review extraction), and matches identifier boundaries —
+`account` is not spelled by `account_id`.
+
 ### D4a. The verb lexicon is derived from the corpus, not listed
 
 Amendment (bd tea-rags-mcp-tfhop, user decision 2026-09-28). The first cut of
@@ -195,6 +217,14 @@ language namespace — no
 second implementation. Sections enum, DTO (`api/public/dto/ontology.ts`) and the
 MCP schema list gain `"verbs"`; the tool description budget (300 chars / 1536
 bytes) is measured, never raised.
+
+**Revised after live validation (user decision).** The section is descriptive
+only: per contested noun tail, the verbs the project uses with holders. The
+`deviants` field is dropped with the D4 MISFIT it mirrored — on taxdome the
+"deviants" were distinct operations (`find_user` beside `build_user`), true
+synonym pairs share 0 tails, and `build` / `create` counts are inflated by
+DSL-generated pairs (419 shared tails, 417 in one owner). Groups rank by
+distinct verbs, then holders.
 
 ## Affected code
 

@@ -119,7 +119,7 @@ describe("NamingLexiconOps — untyped methods judged by the method vocabulary",
   });
 
   describe("names mode", () => {
-    it("a verb the project's methods of that tail do not use is a MISFIT pointing at theirs", async () => {
+    it("a verb the project uses conforms, even where the tail's other names use another verb", async () => {
       await rubyVerbs();
       await methods("ruby", ".rb", 3, "load_user");
       const result = await ops.getNamingLexicon({
@@ -127,7 +127,7 @@ describe("NamingLexiconOps — untyped methods judged by the method vocabulary",
         language: "ruby",
         names: [{ name: "fetch_user", kind: "return" }],
       });
-      expect(result.names[0]).toMatchObject({ name: "fetch_user", verdict: "MISFIT", suggestion: "load_user" });
+      expect(result.names[0]).toMatchObject({ name: "fetch_user", verdict: "CONFORMS" });
     });
 
     it("another language's methods are no convention for the draft", async () => {
@@ -141,7 +141,7 @@ describe("NamingLexiconOps — untyped methods judged by the method vocabulary",
       expect(result.names[0].verdict).not.toBe("MISFIT");
     });
 
-    it("reads the verb vocabulary once and each name slice once per request, however many drafts", async () => {
+    it("reads the verb vocabulary once and the verbless drafts' last-word slice once per request", async () => {
       await rubyVerbs();
       await methods("ruby", ".rb", 3, "load_user");
       const verbs = vi.spyOn(db, "readMethodHeadWords");
@@ -156,7 +156,7 @@ describe("NamingLexiconOps — untyped methods judged by the method vocabulary",
         ],
       });
       expect(verbs).toHaveBeenCalledTimes(1);
-      expect(matching).toHaveBeenCalledTimes(2);
+      expect(matching).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -172,25 +172,18 @@ describe("NamingLexiconOps — untyped methods judged by the method vocabulary",
       git(repo, "commit", "-q", "-m", "init");
     });
 
-    it("an added method whose verb the project's methods of that tail contradict is a MISFIT finding", async () => {
+    it("an added method whose verb the project uses conforms, whatever verb the tail's other names use", async () => {
       await rubyVerbs();
       await methods("ruby", ".rb", 3, "load_user");
       writeFileSync(join(repo, "app/users/finder.rb"), "class Finder\n  def fetch_user\n    1\n  end\nend\n");
       const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
-      expect(review?.findings).toContainEqual(
-        expect.objectContaining({
-          relPath: "app/users/finder.rb",
-          line: 2,
-          name: "fetch_user",
-          verdict: "MISFIT",
-          suggestion: "load_user",
-        }),
-      );
+      expect(review?.findings).toEqual([]);
+      expect(review?.conforming).toBe(1);
       expect(review?.notJudgedBy).toBeUndefined();
       expect(review?.checked).toBe(review!.conforming + review!.novel + review!.findings.length);
     });
 
-    it("a verb outside NAMING_VERB_PREFIXES is read from the corpus: its tail's dominant verb makes a MISFIT", async () => {
+    it("a verb outside NAMING_VERB_PREFIXES is read from the corpus: it conforms beside the tail's other verb", async () => {
       // update opens user and account, sync opens order and invoice; neither is an accessor verb.
       await methods("ruby", ".rb", 3, "update_user");
       await methods("ruby", ".rb", 1, "update_account");
@@ -198,30 +191,36 @@ describe("NamingLexiconOps — untyped methods judged by the method vocabulary",
       await methods("ruby", ".rb", 1, "sync_invoice");
       writeFileSync(join(repo, "app/users/syncer.rb"), "class Syncer\n  def sync_user\n    1\n  end\nend\n");
       const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
-      expect(review?.findings).toContainEqual(
-        expect.objectContaining({
-          relPath: "app/users/syncer.rb",
-          name: "sync_user",
-          verdict: "MISFIT",
-          suggestion: "update_user",
-        }),
-      );
+      expect(review?.findings).toEqual([]);
+      expect(review?.conforming).toBe(1);
     });
 
-    it("an added method opening with a verb the project never uses is a MISFIT on a dominated tail", async () => {
-      // update opens user and account; modify opens nothing — a new synonym verb.
+    it("an added method opening with a verb the project never uses is verbless: novel, never a rename", async () => {
+      // update opens user and account; modify opens nothing — outside the lexicon, so no verb to judge.
       await methods("ruby", ".rb", 3, "update_user");
       await methods("ruby", ".rb", 1, "update_account");
-      writeFileSync(join(repo, "app/users/editor.rb"), "class Editor\n  def modify_user\n    1\n  end\nend\n");
+      writeFileSync(join(repo, "app/users/editor.rb"), "def modify_user\n  1\nend\n");
       const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
-      expect(review?.findings).toContainEqual(
-        expect.objectContaining({
-          relPath: "app/users/editor.rb",
-          name: "modify_user",
-          verdict: "MISFIT",
-          suggestion: "update_user",
-        }),
+      expect(review?.findings).toEqual([]);
+      expect(review?.checked).toBe(1);
+      expect(review?.novel).toBe(1);
+    });
+
+    it("a macro-composed method is no draft: only the names written on the macro line are judged", async () => {
+      // `has_one :account` composes build_account / create_account / account= besides the account reader.
+      await rubyVerbs();
+      writeFileSync(
+        join(repo, "app/users/firm.rb"),
+        "class Firm < ApplicationRecord\n  has_one :account\n\n  def refresh_auth_token = 1\nend\n",
       );
+      const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
+      const judged = [...review!.findings.map((f) => f.name)];
+      expect(judged).not.toContain("build_account");
+      expect(judged).not.toContain("create_account");
+      expect(judged).not.toContain("account=");
+      // Firm (the type), its typed `account` reader and refresh_auth_token — not the three composed names.
+      expect(review?.checked).toBe(3);
+      expect(review?.notJudgedBy).toBeUndefined();
     });
 
     it("an added method opening with a project noun is no synonym verb, however dominated its tail", async () => {

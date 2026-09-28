@@ -268,15 +268,10 @@ function reportLimit(req: Pick<GetOntologyReportRequest, "limit">): number {
 /**
  * The `verbs` grouping of each profiled language: its `typeNamespace` when it
  * declares one (TypeScript and JavaScript read one vocabulary), else its own
- * name; suggestions in the language's canonical method casing.
+ * name.
  */
 function methodVerbNamespaces(languages: readonly OntologyLanguageProfile[]): Map<string, MethodVerbNamespace> {
-  return new Map(
-    languages.map((p) => [
-      p.language,
-      { key: p.naming.typeNamespace ?? p.language, casing: p.naming.casing.method[0] },
-    ]),
-  );
+  return new Map(languages.map((p) => [p.language, { key: p.naming.typeNamespace ?? p.language }]));
 }
 
 function confidence(n: number, support: number): number {

@@ -2091,12 +2091,16 @@ function readDiffFile(
  * carries — their return type is unknown (bd tea-rags-mcp-y33ee). Each becomes
  * an untyped `return` draft, judged by the method vocabulary (spec 2026-09-28
  * naming coverage, §D4); one per declaration, however many symbols it carries.
+ * A name its declaration line does not spell is one a macro composed
+ * (`has_one :account` → `build_account`), not one the author wrote: no draft,
+ * and not counted as not judged either.
  */
 function untypedCallables(file: DiffFile): DiffFile["declarations"]["callables"] {
   const { ranges, declarations } = file;
   const returned = new Set(declarations.values.filter((row) => row.kind === "return").map((row) => row.ownerSymbolId));
   return declarations.callables.filter(
-    (callable) => inRanges(callable.line, ranges) && !callable.symbolIds.some((id) => returned.has(id)),
+    (callable) =>
+      callable.spelledOnLine && inRanges(callable.line, ranges) && !callable.symbolIds.some((id) => returned.has(id)),
   );
 }
 

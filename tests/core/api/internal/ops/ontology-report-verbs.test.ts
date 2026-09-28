@@ -1,8 +1,9 @@
 /**
  * `get_ontology_report` `verbs` section (spec 2026-09-28 naming coverage, §D5):
  * per language namespace and noun tail, the verbs the project reads the tail
- * with, and the names the untyped-method judgement calls MISFIT against their
- * own group. Opt-in: never computed unless `sections` names it.
+ * with — descriptive only, no deviants (revised after live validation: the
+ * verbs of one tail are mostly distinct operations, not synonyms). Opt-in:
+ * never computed unless `sections` names it.
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -143,7 +144,7 @@ describe("OntologyReportOps#report — verbs over a seeded codegraph", () => {
     });
   }
 
-  it("groups per language and tail, with verb holders and the MISFIT names suggested by the dominant verb", async () => {
+  it("groups per language and tail, with verb holders and no deviants", async () => {
     const res = await ops().report({ collection: "code_x", sections: ["verbs"] });
 
     const rubyUser = res.verbs?.find((g) => g.tail === "user" && g.language === "ruby");
@@ -155,7 +156,6 @@ describe("OntologyReportOps#report — verbs over a seeded codegraph", () => {
         { verb: "load", holders: 3 },
         { verb: "fetch", holders: 1 },
       ],
-      deviants: [{ name: "fetch_user", holders: 1, suggestion: "load_user" }],
     });
     // The TS `loadUser` is never merged into the Ruby group (load holds 3 there, not 4); TS has no verb
     // lexicon of its own (load opens one tail), so it forms no group. `account` has one verb: not contested.
@@ -166,7 +166,7 @@ describe("OntologyReportOps#report — verbs over a seeded codegraph", () => {
     expect(res.collisions).toBeUndefined();
   });
 
-  it("a verb outside NAMING_VERB_PREFIXES is read from the corpus and its deviants named", async () => {
+  it("a verb outside NAMING_VERB_PREFIXES is read from the corpus and listed beside the tail's other verbs", async () => {
     const files: [string, SymbolDefinition[]][] = [
       ["app/u1.rb", [symbol("app/u1.rb", "U1#update_profile"), symbol("app/u1.rb", "U1#update_account")]],
       ["app/u2.rb", [symbol("app/u2.rb", "U2#update_profile")]],
@@ -185,7 +185,6 @@ describe("OntologyReportOps#report — verbs over a seeded codegraph", () => {
         { verb: "update", holders: 2 },
         { verb: "sync", holders: 1 },
       ],
-      deviants: [{ name: "sync_profile", holders: 1, suggestion: "update_profile" }],
     });
   });
 
@@ -229,7 +228,7 @@ describe("OntologyReportOps#report — verbs read and shaping", () => {
     expect(graphDb.readOntologyReportSections.mock.calls[0][0].sections).toEqual(["synonyms"]);
   });
 
-  it("languages sharing a type namespace form one group, suggested in the namespace's method casing", async () => {
+  it("languages sharing a type namespace form one group", async () => {
     const { ops } = makeOps(
       [
         verb("load", "typescript"),
@@ -248,12 +247,11 @@ describe("OntologyReportOps#report — verbs read and shaping", () => {
           { verb: "load", holders: 3 },
           { verb: "fetch", holders: 1 },
         ],
-        deviants: [{ name: "fetchUser", holders: 1, suggestion: "loadUser" }],
       },
     ]);
   });
 
-  it("ranks by deviant holders, then holders, and caps groups at limit", async () => {
+  it("ranks by distinct verbs, then holders, and caps groups at limit", async () => {
     const { ops } = makeOps(
       ["load", "fetch", "build", "make", "create"].map((head) => verb(head, "ruby")),
       [
@@ -266,9 +264,9 @@ describe("OntologyReportOps#report — verbs read and shaping", () => {
       ],
     );
     const res = await ops.report({ collection: "code_x", sections: ["verbs"], limit: 2 });
-    expect(res.verbs?.map((g) => [g.tail, g.deviants.reduce((s, d) => s + d.holders, 0)])).toEqual([
+    expect(res.verbs?.map((g) => [g.tail, g.verbs.length])).toEqual([
       ["invoice", 3],
-      ["user", 1],
+      ["user", 2],
     ]);
   });
 

@@ -146,7 +146,7 @@ const GetOntologyReportInputShape = {
   sections: z
     .array(z.enum(["synonyms", "homonyms", "outliers", "collisions", "verbs"]))
     .optional()
-    .describe("Sections (default all but verbs: per noun tail, method verbs and deviants)."),
+    .describe("Sections (default all but verbs: per noun tail, the method verbs with holders)."),
   limit: z.number().int().positive().max(100).optional().describe("Items per section (default 20)."),
 };
 

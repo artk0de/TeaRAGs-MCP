@@ -283,11 +283,11 @@ declare \`kind: "field"\` rows, same as \`@ivar =\`.
   notJudged, notJudgedBy?, notJudgedNames?, truncated? }; changedFiles = files differing from mergeBase
   (with files: of the listed); notJudgedBy = kind (file) → reason → count — only files go unjudged;
   a method with no known return type is never skipped — it is an untyped return draft, judged by
-  the project's method vocabulary: its noun tail's dominant project verb → MISFIT (verb-swapped
-  suggestion), even when the draft's own head sits outside the verb lexicon, unless that head is
-  itself a project noun (ends more names than it starts); a verb the project already uses for the
-  tail → CONFORMS; verbless → CONFORMS when declared elsewhere in scope, else NO_CONVENTION
-  (analogues); notJudgedNames = first 50 { relPath, line?, name?, kind, reason } — read them yourself;
+  the project's method vocabulary: a lexicon verb the project uses → CONFORMS, a rare one →
+  NEW_TERM (topTerms), never a MISFIT toward another verb of its noun (find_user and build_user are
+  distinct operations, not synonyms); verbless → CONFORMS when declared elsewhere in scope, else
+  NO_CONVENTION (analogues). A name a macro composed (has_one :account → build_account,
+  account=) is not spelled on its declaration line: no draft, not counted; notJudgedNames = first 50 { relPath, line?, name?, kind, reason } — read them yourself;
   findings flat { relPath, line, name, kind, type?, verdict, … } — non-CONFORMS verdicts and
   CONFORMS with alternatives. notes = CONFORMS on a generic name (genericName; information, counted
   in conforming). novel = NO_CONVENTION, or NEW_TERM with nothing to compare (not listed). notJudged = files
@@ -330,8 +330,8 @@ word the name owes.
 ## get_ontology_report Examples
 
 - Project-wide naming audit → sections=["synonyms","homonyms","outliers","collisions"], pathPattern="src/**"
-- Method-naming audit (opt-in) → sections=["verbs"]: per noun tail, the verbs the project uses plus
-  the deviants D4 would call MISFIT — contested tails only.
+- Method-naming audit (opt-in) → sections=["verbs"]: per noun tail, the verbs the project uses,
+  with holders — descriptive, contested tails only; no verb is a deviant of another.
 
 ## Pagination
 

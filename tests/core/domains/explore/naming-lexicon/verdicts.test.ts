@@ -1961,16 +1961,14 @@ describe("judgeDraftName — an untyped method judged by the method vocabulary",
   const vocabulary = {
     lexicon: new Set(["load", "fetch"]),
     headWords: [{ head: "load", headHolders: 3, headTails: 2, lastHolders: 0, valueCompounds: 0 }],
-    tailNames: [{ shortName: "load_user", holders: 3 }],
     lastWordNames: [{ shortName: "grand_total", holders: 2 }],
     declared: false,
   };
 
-  it("a verb the tail's dominant verb contradicts is a MISFIT", () => {
+  it("a lexicon verb the project holds too rarely is a NEW_TERM offering the verbs it holds", () => {
     expect(judgeDraftName({ name: "fetch_user", kind: "return", casing: "snake", untypedMethod: vocabulary })).toEqual({
-      verdict: "MISFIT",
-      suggestion: "load_user",
-      holder: "load_user",
+      verdict: "NEW_TERM",
+      topTerms: ["load"],
     });
   });
 
@@ -1988,7 +1986,7 @@ describe("judgeDraftName — an untyped method judged by the method vocabulary",
         kind: "return",
         typeName: "SymbolId",
         casing: "camel",
-        untypedMethod: { ...vocabulary, tailNames: [{ shortName: "fetchRegistry", holders: 9 }] },
+        untypedMethod: vocabulary,
       }),
     ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
   });
