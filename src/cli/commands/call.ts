@@ -33,7 +33,7 @@ export interface CallDeps {
   /** One stdout write (a newline is appended). */
   out: (text: string) => void;
   /** One stderr write (a newline is appended). */
-  err: (text: string) => void;
+  errOut: (text: string) => void;
   rememberToolNames?: (names: string[]) => void;
   /**
    * Replay the target project's registry env before the server is built (bd
@@ -97,7 +97,7 @@ export async function runCall(args: CallArgs, deps: CallDeps): Promise<number> {
     if (args.json === true) {
       deps.out(JSON.stringify(result));
     } else {
-      const sink = result.isError === true ? deps.err : deps.out;
+      const sink = result.isError === true ? deps.errOut : deps.out;
       for (const text of renderContent(result)) sink(text);
     }
     return exitCode;
@@ -114,7 +114,7 @@ async function listTools(args: CallArgs, deps: CallDeps): Promise<number> {
     }
     const width = Math.max(0, ...tools.map((t) => t.name.length));
     for (const t of tools) deps.out(`${t.name.padEnd(width)}  ${oneLine(t)}`);
-    deps.err(`Served by dedicated CLI commands: ${cliOwned.map((o) => `${o.name} → ${o.command}`).join(", ")}`);
+    deps.errOut(`Served by dedicated CLI commands: ${cliOwned.map((o) => `${o.name} → ${o.command}`).join(", ")}`);
     return CALL_EXIT_CODES.ok;
   });
 }
@@ -161,7 +161,7 @@ function fail(
   error: { code: CallErrorCode; message: string } & Record<string, unknown>,
 ): number {
   if (args.json === true) deps.out(JSON.stringify({ error }));
-  else deps.err(error.message);
+  else deps.errOut(error.message);
   return exitCode;
 }
 
@@ -313,7 +313,7 @@ export const callCommand: CommandModule<object, CallArgs> = {
           openSession: openInProcessMcpSession,
           readStdin: readAllStdin,
           out: (text) => process.stdout.write(`${text}\n`),
-          err: (text) => process.stderr.write(`${text}\n`),
+          errOut: (text) => process.stderr.write(`${text}\n`),
           rememberToolNames: (names) => {
             rememberCallToolNames(names);
           },

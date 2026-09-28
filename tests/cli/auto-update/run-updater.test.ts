@@ -63,7 +63,7 @@ function deps(over: DepsOverrides = {}): RunUpdaterDeps & { recorded: () => unkn
     } as RunUpdaterDeps["app"],
     freshness: over.freshness ?? { check: () => ({ kind: "eligible", entry }) },
     clock: () => NOW,
-    log: () => {},
+    out: () => {},
   };
   return {
     ...base,
@@ -165,7 +165,7 @@ describe("runUpdater", () => {
         },
       },
     });
-    d.log = (line) => lines.push(line);
+    d.out = (line) => lines.push(line);
 
     expect(await runUpdater("code_abc", d)).toBe(AUTO_UPDATE_EXIT.lockHeld);
     expect(d.recorded()).toMatchObject({ outcome: "lock-held", filesChanged: 0 });
@@ -253,7 +253,7 @@ describe("runUpdater against a real CollectionRegistry", () => {
       } as RunUpdaterDeps["app"],
       freshness: { check: () => ({ kind: "eligible", entry: loaded }) },
       clock: () => NOW,
-      log: () => {},
+      out: () => {},
     };
 
     expect(await runUpdater("code_abc", d)).toBe(AUTO_UPDATE_EXIT.ok);

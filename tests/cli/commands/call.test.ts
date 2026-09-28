@@ -90,7 +90,7 @@ function harness(app: App, opts: { stdin?: string } = {}): Harness {
     },
     readStdin: async () => opts.stdin ?? "",
     out: (text) => stdout.push(text),
-    err: (text) => stderr.push(text),
+    errOut: (text) => stderr.push(text),
     rememberToolNames: (names) => remembered.push(names),
   };
   return { deps, stdout, stderr, closed: () => closed, opened: () => opened, remembered };

@@ -194,7 +194,7 @@ describe("runCall — a server that fails to start", () => {
         },
         readStdin: async () => "",
         out: (text) => out.push(text),
-        err: (text) => err.push(text),
+        errOut: (text) => err.push(text),
       },
     );
 
