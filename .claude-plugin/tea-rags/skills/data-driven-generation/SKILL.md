@@ -223,6 +223,10 @@ while writing, so misfits are prevented, not detected:
 
 - `language` = target language (required with `concept`); `pathPattern` = target
   area (the tool widens it under 5 rows and reports `scope`).
+- Evidence = ONE language namespace per call (languages sharing a
+  `typeNamespace`, e.g. TS + JS); other languages' rows never count. So always
+  pass `language` with `names[]`; polyglot drafts → one call per language.
+  `changes`/`files` split by file language themselves.
 - `concept` = a DESCRIPTION of what the new symbol denotes ("pulls signed
   envelopes from the e-signature vendor into tax documents") — never the draft
   name: a draft pulls in its own lexical neighbours.

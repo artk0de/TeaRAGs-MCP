@@ -224,7 +224,8 @@ bindings. Phrasing stays runner-agnostic — list scenarios, never name a runner
 ## Step 3b — Naming comments (codegraph on)
 
 Rename / "unclear name" comment →
-`get_naming_lexicon(names=[{current}, {proposed}], pathPattern=<targetPathPattern>)`.
+`get_naming_lexicon(names=[{current}, {proposed}], language=<file's>, pathPattern=<targetPathPattern>)`
+— evidence never crosses languages.
 Proposed `CONFORMS` → agree on the name (unless it carries `alternatives` — the
 project's word for the same concept); proposed `MISFIT` → counter-propose its
 `suggestion` (holder as precedent); proposed `NEW_TERM` while current `CONFORMS`

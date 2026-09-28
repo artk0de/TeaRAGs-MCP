@@ -1398,8 +1398,9 @@ describe("NamingLexiconOps", () => {
         expect(spy, read).toHaveBeenCalled();
         for (const [query] of spy.mock.calls) expect(query, read).toMatchObject({ excludePaths });
       }
-      expect(nameTypes).toHaveBeenCalledWith(expect.anything(), excludePaths);
-      expect(shortNames).toHaveBeenCalledWith(expect.anything(), excludePaths);
+      // The positional reads carry the answer's language namespace beside the exclusion (bd tea-rags-mcp-0qaht).
+      expect(nameTypes).toHaveBeenCalledWith(expect.anything(), excludePaths, ["ruby"]);
+      expect(shortNames).toHaveBeenCalledWith(expect.anything(), excludePaths, ["ruby"]);
     });
   });
 

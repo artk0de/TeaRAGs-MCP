@@ -285,7 +285,8 @@ decides WHETHER to invoke.
 | **Trivial**: typo, comment / log-message text, single-token swap, no behavior change                         | Skip Step 5 AND skip wrapper entirely — direct Edit                                              |
 
 **Naming note (rename / extract, codegraph on):** the new name goes through
-`get_naming_lexicon(names=[{name, kind, type?}], pathPattern)` before the Edit —
+`get_naming_lexicon(names=[{name, kind, type?}], language, pathPattern)` before
+the Edit (`language` = the edited file's; evidence never crosses languages) —
 `MISFIT` → use `suggestion`; `NEW_TERM` → a `topTerms` word if it means the
 same; `NO_CONVENTION` → `prefer.exact` or a name like `prefer.analogous`. A
 plan-fixed name is checked too. Reading:

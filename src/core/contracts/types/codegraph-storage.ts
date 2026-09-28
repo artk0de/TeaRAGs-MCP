@@ -175,10 +175,23 @@ export interface IdentifierEvidenceExclusion {
 }
 
 /**
+ * Restricts an identifier read to rows whose file language
+ * (`cg_symbols_files.language`) is one of `languages` (bd tea-rags-mcp-0qaht):
+ * a draft's evidence stays within its language namespace, so Ruby locals never
+ * vote on a TypeScript field. Absent = every language; empty = no rows (as
+ * `readTypeNameRows` reads it). A row whose file language is unknown (no files
+ * row) is kept: nothing places it in another language, and the lexicon cases
+ * it as the answer's own.
+ */
+export interface IdentifierLanguageScope {
+  languages?: readonly string[];
+}
+
+/**
  * The scope of an identifier read: the effective types asked for, optionally
  * narrowed to files under any of `pathPrefixes` (a literal rel_path prefix).
  */
-export interface IdentifierTypeScopeQuery extends IdentifierEvidenceExclusion {
+export interface IdentifierTypeScopeQuery extends IdentifierEvidenceExclusion, IdentifierLanguageScope {
   types: readonly string[];
   pathPrefixes?: readonly string[];
 }
@@ -231,7 +244,8 @@ export interface IdentifierLanguageGroupedRow {
  * without `receiver` matches the member under ANY receiver, receiverless
  * included.
  */
-export interface IdentifierCalleeScopeQuery extends IdentifierLanguageGroupingQuery, IdentifierEvidenceExclusion {
+export interface IdentifierCalleeScopeQuery
+  extends IdentifierLanguageGroupingQuery, IdentifierEvidenceExclusion, IdentifierLanguageScope {
   callees: readonly IdentifierBoundCallee[];
   pathPrefixes?: readonly string[];
   /**
@@ -295,7 +309,7 @@ export interface IdentifierNameTypeRow {
 }
 
 /** A read over every identifier row, optionally narrowed to files under any of `pathPrefixes`. */
-export interface IdentifierScopeQuery extends IdentifierEvidenceExclusion {
+export interface IdentifierScopeQuery extends IdentifierEvidenceExclusion, IdentifierLanguageScope {
   pathPrefixes?: readonly string[];
 }
 
@@ -1086,11 +1100,25 @@ export interface GraphDbClient {
   /** The typed `param` and `return` rows of the given owner symbols. */
   anchorIdentifierTypes: (symbolIds: readonly SymbolId[]) => Promise<AnchorIdentifierTypeRow[]>;
 
-  /** Homonymy: per name, which effective types it is bound to and how often (`null` = untyped); `excludePaths` files unread. */
-  identifierNameTypes: (names: readonly string[], excludePaths?: readonly string[]) => Promise<IdentifierNameTypeRow[]>;
+  /**
+   * Homonymy: per name, which effective types it is bound to and how often (`null` = untyped);
+   * `excludePaths` files unread, `languages` scoped as {@link IdentifierLanguageScope}.
+   */
+  identifierNameTypes: (
+    names: readonly string[],
+    excludePaths?: readonly string[],
+    languages?: readonly string[],
+  ) => Promise<IdentifierNameTypeRow[]>;
 
-  /** Collision: the given names that are already a `cg_symbols.short_name` outside the `excludePaths` files. */
-  existingSymbolShortNames: (names: readonly string[], excludePaths?: readonly string[]) => Promise<string[]>;
+  /**
+   * Collision: the given names that are already a `cg_symbols.short_name` outside the `excludePaths`
+   * files, in files of `languages` ({@link IdentifierLanguageScope}: absent = every language).
+   */
+  existingSymbolShortNames: (
+    names: readonly string[],
+    excludePaths?: readonly string[],
+    languages?: readonly string[],
+  ) => Promise<string[]>;
 
   /** Row count behind {@link aggregateIdentifiersByType} for the same scope — drives scope widening. */
   countIdentifiers: (q: IdentifierTypeScopeQuery) => Promise<number>;

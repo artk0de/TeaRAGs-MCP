@@ -890,6 +890,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
       types: [...q.types],
       pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
       excludePaths: q.excludePaths === undefined ? undefined : [...q.excludePaths],
+      languages: q.languages === undefined ? undefined : [...q.languages],
       groupByLanguage: q.groupByLanguage,
       groupByMultiplicity: q.groupByMultiplicity,
       countSameTypeSiblings: q.countSameTypeSiblings,
@@ -902,6 +903,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
       callees: [...q.callees],
       pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
       excludePaths: q.excludePaths === undefined ? undefined : [...q.excludePaths],
+      languages: q.languages === undefined ? undefined : [...q.languages],
       groupByLanguage: q.groupByLanguage,
       countHolders: q.countHolders,
     })) as IdentifierCalleeAggregateRow[];
@@ -914,17 +916,24 @@ export class DaemonGraphDbClient implements GraphDbClient {
   async identifierNameTypes(
     names: readonly string[],
     excludePaths?: readonly string[],
+    languages?: readonly string[],
   ): Promise<IdentifierNameTypeRow[]> {
     return (await this.call("identifierNameTypes", {
       names: [...names],
       excludePaths: excludePaths === undefined ? undefined : [...excludePaths],
+      languages: languages === undefined ? undefined : [...languages],
     })) as IdentifierNameTypeRow[];
   }
 
-  async existingSymbolShortNames(names: readonly string[], excludePaths?: readonly string[]): Promise<string[]> {
+  async existingSymbolShortNames(
+    names: readonly string[],
+    excludePaths?: readonly string[],
+    languages?: readonly string[],
+  ): Promise<string[]> {
     return (await this.call("existingSymbolShortNames", {
       names: [...names],
       excludePaths: excludePaths === undefined ? undefined : [...excludePaths],
+      languages: languages === undefined ? undefined : [...languages],
     })) as string[];
   }
 
@@ -933,6 +942,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
       types: [...q.types],
       pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
       excludePaths: q.excludePaths === undefined ? undefined : [...q.excludePaths],
+      languages: q.languages === undefined ? undefined : [...q.languages],
     })) as number;
   }
 
@@ -941,6 +951,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
       names: [...q.names],
       pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
       excludePaths: q.excludePaths === undefined ? undefined : [...q.excludePaths],
+      languages: q.languages === undefined ? undefined : [...q.languages],
       groupByLanguage: q.groupByLanguage,
       countHolders: q.countHolders,
     })) as IdentifierNameKindTypeRow[];
@@ -951,6 +962,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
       pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
       pathSuffixes: q.pathSuffixes === undefined ? undefined : [...q.pathSuffixes],
       excludePaths: q.excludePaths === undefined ? undefined : [...q.excludePaths],
+      languages: q.languages === undefined ? undefined : [...q.languages],
     })) as IdentifierLanguageCountRow[];
   }
 
@@ -959,6 +971,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
       limit: q.limit,
       pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
       excludePaths: q.excludePaths === undefined ? undefined : [...q.excludePaths],
+      languages: q.languages === undefined ? undefined : [...q.languages],
       groupByLanguage: q.groupByLanguage,
     })) as IdentifierShapeSampleRow[];
   }

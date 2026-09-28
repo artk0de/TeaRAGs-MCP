@@ -254,7 +254,9 @@ search.
 ## get_naming_lexicon Examples
 
 Codegraph on only. Judges names against project's own vocabulary; never judge a
-name by grep or semantic_search on the draft.
+name by grep or semantic_search on the draft. Evidence read within draft's language
+namespace (languages sharing a naming convention's typeNamespace, e.g. TS + JS);
+never another language's rows.
 
 - "What does the project call values of type T?" → types=["TaxAutomationDocument"], language="ruby"
 - "Is Helper or Concern this area's suffix?" → types=["Helper","Concern"], pathPattern="app/lib/**" —

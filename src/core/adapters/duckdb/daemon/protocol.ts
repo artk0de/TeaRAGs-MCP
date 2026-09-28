@@ -220,6 +220,7 @@ export interface DaemonRequest {
         types: string[];
         pathPrefixes?: string[];
         excludePaths?: string[];
+        languages?: string[];
         groupByLanguage?: boolean;
         groupByMultiplicity?: boolean;
         countSameTypeSiblings?: boolean;
@@ -230,24 +231,33 @@ export interface DaemonRequest {
         callees: IdentifierBoundCallee[];
         pathPrefixes?: string[];
         excludePaths?: string[];
+        languages?: string[];
         groupByLanguage?: boolean;
         countHolders?: boolean;
       } // aggregateIdentifiersByCallee
-    | { collection: string; names: string[]; excludePaths?: string[] } // identifierNameTypes | existingSymbolShortNames
+    | { collection: string; names: string[]; excludePaths?: string[]; languages?: string[] } // identifierNameTypes | existingSymbolShortNames
     | {
         collection: string;
         names: string[];
         pathPrefixes?: string[];
         excludePaths?: string[];
+        languages?: string[];
         groupByLanguage?: boolean;
         countHolders?: boolean;
       } // aggregateIdentifiersByName
-    | { collection: string; pathPrefixes?: string[]; pathSuffixes?: string[]; excludePaths?: string[] } // identifierLanguageCounts
+    | {
+        collection: string;
+        pathPrefixes?: string[];
+        pathSuffixes?: string[];
+        excludePaths?: string[];
+        languages?: string[];
+      } // identifierLanguageCounts
     | {
         collection: string;
         limit: number;
         pathPrefixes?: string[];
         excludePaths?: string[];
+        languages?: string[];
         groupByLanguage?: boolean;
       } // sampleIdentifierShapes
     | { collection: string; query: OntologyReportQuery } // readOntologyReportSummary

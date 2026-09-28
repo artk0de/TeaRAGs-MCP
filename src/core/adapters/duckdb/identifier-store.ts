@@ -112,15 +112,43 @@ export function excludedPathsPredicate(paths: readonly string[] | undefined): Sq
   return { sql: `rel_path NOT IN (${placeholders(paths)})`, params: [...paths] };
 }
 
-/** An evidence read's file scope: under any of `pathPrefixes` AND outside `excludePaths`. */
+/**
+ * `rel_path` of a file not written in another language than `languages`
+ * (`IdentifierLanguageScope`, bd tea-rags-mcp-0qaht) — the rel_path → language
+ * mapping {@link fileLanguageGrouping} joins, read as a filter: a predicate over
+ * `rel_path`, so it narrows the rows BEFORE the call-return join and before the
+ * shape sample's reservoir, where the grouping's join comes too late. A file
+ * whose language is unknown (no files row, or a null language) stays: nothing
+ * places it outside the scope, and the lexicon already cases such a row as the
+ * answer's own. Absent → `TRUE`; empty → `FALSE`.
+ */
+export function fileLanguagePredicate(languages: readonly string[] | undefined): SqlPredicate {
+  if (languages === undefined) return { sql: "TRUE", params: [] };
+  if (languages.length === 0) return { sql: "FALSE", params: [] };
+  return {
+    sql: `rel_path NOT IN (SELECT rel_path FROM cg_symbols_files
+                            WHERE language IS NOT NULL AND language NOT IN (${placeholders(languages)}))`,
+    params: [...languages],
+  };
+}
+
+/**
+ * An evidence read's file scope: under any of `pathPrefixes`, outside
+ * `excludePaths`, and in a file of `languages` (absent = every language).
+ */
 export function evidenceScopePredicate(
   pathPrefixes: readonly string[] | undefined,
   excludePaths: readonly string[] | undefined,
+  languages?: readonly string[],
 ): SqlPredicate {
   const prefix = pathPrefixPredicate(pathPrefixes);
-  const excluded = excludedPathsPredicate(excludePaths);
-  if (excluded.params.length === 0) return prefix;
-  return { sql: `(${prefix.sql} AND ${excluded.sql})`, params: [...prefix.params, ...excluded.params] };
+  // An unscoped narrowing adds nothing, so a read without one keeps its SQL byte-identical.
+  const narrowing = [excludedPathsPredicate(excludePaths), fileLanguagePredicate(languages)].filter(
+    (p) => p.sql !== "TRUE",
+  );
+  if (narrowing.length === 0) return prefix;
+  const parts = [prefix, ...narrowing];
+  return { sql: `(${parts.map((p) => p.sql).join(" AND ")})`, params: parts.flatMap((p) => p.params) };
 }
 
 /**
@@ -381,7 +409,7 @@ export class DuckDbIdentifierStore {
 
   async aggregateIdentifiersByType(q: IdentifierTypeAggregateQuery): Promise<IdentifierTypeAggregateRow[]> {
     if (q.types.length === 0) return [];
-    const cte = resolvedIdentifiersCte(evidenceScopePredicate(q.pathPrefixes, q.excludePaths));
+    const cte = resolvedIdentifiersCte(evidenceScopePredicate(q.pathPrefixes, q.excludePaths, q.languages));
     const siblings = sameTypeSiblingPieces(q.countSameTypeSiblings, q.types);
     const lang = fileLanguageGrouping(siblings.from, q.groupByLanguage);
     const multiplicity = q.groupByMultiplicity ? ", type_multiplicity" : "";
@@ -424,7 +452,7 @@ export class DuckDbIdentifierStore {
 
   async countIdentifiers(q: IdentifierTypeScopeQuery): Promise<number> {
     if (q.types.length === 0) return 0;
-    const cte = resolvedIdentifiersCte(evidenceScopePredicate(q.pathPrefixes, q.excludePaths));
+    const cte = resolvedIdentifiersCte(evidenceScopePredicate(q.pathPrefixes, q.excludePaths, q.languages));
     const rows = await this.session.queryAll<{ n: number | string }>(
       `${cte.sql}
        SELECT count(*) AS n FROM resolved WHERE type_name IN (${placeholders(q.types)})`,
@@ -435,7 +463,7 @@ export class DuckDbIdentifierStore {
 
   async aggregateIdentifiersByCallee(q: IdentifierCalleeScopeQuery): Promise<IdentifierCalleeAggregateRow[]> {
     if (q.callees.length === 0) return [];
-    const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths);
+    const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths, q.languages);
     const calleeParams: unknown[] = [];
     const calleeSql = q.callees
       .map((callee) => {
@@ -499,13 +527,14 @@ export class DuckDbIdentifierStore {
   async identifierNameTypes(
     names: readonly string[],
     excludePaths?: readonly string[],
+    languages?: readonly string[],
   ): Promise<IdentifierNameTypeRow[]> {
     const out: IdentifierNameTypeRow[] = [];
-    const excluded = excludedPathsPredicate(excludePaths);
+    const scope = evidenceScopePredicate(undefined, excludePaths, languages);
     for (const chunk of chunked([...new Set(names)])) {
       const cte = resolvedIdentifiersCte({
-        sql: `name IN (${placeholders(chunk)}) AND ${excluded.sql}`,
-        params: [...chunk, ...excluded.params],
+        sql: `name IN (${placeholders(chunk)}) AND ${scope.sql}`,
+        params: [...chunk, ...scope.params],
       });
       const rows = await this.session.queryAll<{ name: string; type_name: string | null; n: number | string }>(
         `${cte.sql}
@@ -521,7 +550,7 @@ export class DuckDbIdentifierStore {
 
   async aggregateIdentifiersByName(q: IdentifierNameScopeQuery): Promise<IdentifierNameKindTypeRow[]> {
     const out: IdentifierNameKindTypeRow[] = [];
-    const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths);
+    const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths, q.languages);
     for (const chunk of chunked([...new Set(q.names)])) {
       const cte = resolvedIdentifiersCte({
         sql: `name IN (${placeholders(chunk)}) AND ${scope.sql}`,
@@ -561,7 +590,7 @@ export class DuckDbIdentifierStore {
   }
 
   async identifierLanguageCounts(q: IdentifierLanguageCountQuery): Promise<IdentifierLanguageCountRow[]> {
-    const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths);
+    const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths, q.languages);
     const suffix = pathSuffixPredicate(q.pathSuffixes);
     const rows = await this.session.queryAll<{ language: string | null; n: number | string }>(
       `SELECT f.language, count(*) AS n
@@ -576,7 +605,8 @@ export class DuckDbIdentifierStore {
   }
 
   async sampleIdentifierShapes(q: IdentifierShapeSampleQuery): Promise<IdentifierShapeSampleRow[]> {
-    const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths);
+    // The language scope is in the WHERE the reservoir samples from: a post-filter would thin the sample.
+    const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths, q.languages);
     // The reservoir size is inlined: DuckDB takes no bind parameter there. It is
     // coerced to a positive integer first, so no caller value reaches the SQL text.
     const limit = Math.max(1, Math.floor(Number(q.limit) || 1));
@@ -615,15 +645,20 @@ export class DuckDbIdentifierStore {
     }));
   }
 
-  async existingSymbolShortNames(names: readonly string[], excludePaths?: readonly string[]): Promise<string[]> {
+  /** `languages` scopes by the language of the file declaring the symbol (`cg_symbols.rel_path`). */
+  async existingSymbolShortNames(
+    names: readonly string[],
+    excludePaths?: readonly string[],
+    languages?: readonly string[],
+  ): Promise<string[]> {
     const out: string[] = [];
-    const excluded = excludedPathsPredicate(excludePaths);
+    const scope = evidenceScopePredicate(undefined, excludePaths, languages);
     for (const chunk of chunked([...new Set(names)])) {
       const rows = await this.session.queryAll<{ short_name: string }>(
         `SELECT DISTINCT short_name FROM cg_symbols
-          WHERE short_name IN (${placeholders(chunk)}) AND ${excluded.sql}
+          WHERE short_name IN (${placeholders(chunk)}) AND ${scope.sql}
           ORDER BY short_name`,
-        [...chunk, ...excluded.params],
+        [...chunk, ...scope.params],
       );
       for (const r of rows) out.push(r.short_name);
     }

@@ -357,12 +357,17 @@ export class DuckDbGraphClient implements GraphDbClient {
   async identifierNameTypes(
     names: readonly string[],
     excludePaths?: readonly string[],
+    languages?: readonly string[],
   ): Promise<IdentifierNameTypeRow[]> {
-    return this.identifiers.identifierNameTypes(names, excludePaths);
+    return this.identifiers.identifierNameTypes(names, excludePaths, languages);
   }
 
-  async existingSymbolShortNames(names: readonly string[], excludePaths?: readonly string[]): Promise<string[]> {
-    return this.identifiers.existingSymbolShortNames(names, excludePaths);
+  async existingSymbolShortNames(
+    names: readonly string[],
+    excludePaths?: readonly string[],
+    languages?: readonly string[],
+  ): Promise<string[]> {
+    return this.identifiers.existingSymbolShortNames(names, excludePaths, languages);
   }
 
   async countIdentifiers(q: IdentifierTypeScopeQuery): Promise<number> {
