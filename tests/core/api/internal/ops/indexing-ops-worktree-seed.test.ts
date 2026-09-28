@@ -106,7 +106,7 @@ function harness(
     snapshotDir: "/tmp/snap",
     allPayloadSignals: [],
     languageCodeVersions,
-    collectionRegistry: { stampLanguageVersions: vi.fn() },
+    languageVersionStamper: { stampLanguageVersions: vi.fn() },
     driftReporter: { reset: vi.fn() },
     resolveCollectionForPath: async (path) => Promise.resolve(collectionOf(path)),
     envSnapshot: { INGEST_CHUNK_SIZE: "2500" },
@@ -185,7 +185,7 @@ describe("IndexingOps — first index seeded from a sibling worktree", () => {
     // An incremental never stamps — this one does, because the seed gate proved
     // the sibling's data was produced by exactly this build.
     expect(deps.indexing.indexCodebase).not.toHaveBeenCalled();
-    expect(deps.collectionRegistry?.stampLanguageVersions).toHaveBeenCalledWith("code_wt", {
+    expect(deps.languageVersionStamper?.stampLanguageVersions).toHaveBeenCalledWith("code_wt", {
       typescript: { grammar: "0.23.2", chunking: 1, walker: 2, codegraphSchema: 1 },
     });
     expect(deps.driftReporter?.reset).toHaveBeenLastCalledWith("code_wt");

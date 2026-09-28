@@ -67,7 +67,7 @@ export class ParallelFileSynchronizer {
   private readonly codebasePath: string;
   private readonly collectionName: string;
   private readonly snapshotDir: string;
-  private readonly snapshotManager: ShardedSnapshotManager;
+  private readonly shardedSnapshotManager: ShardedSnapshotManager;
   private readonly concurrency: number;
   private readonly hashRing: ConsistentHash;
   private readonly checkpointPath: string;
@@ -92,7 +92,7 @@ export class ParallelFileSynchronizer {
     this.concurrency = concurrency ?? 1;
 
     this.hashRing = new ConsistentHash(this.concurrency);
-    this.snapshotManager = new ShardedSnapshotManager(snapshotDir, collectionName, this.concurrency);
+    this.shardedSnapshotManager = new ShardedSnapshotManager(snapshotDir, collectionName, this.concurrency);
     this.checkpointPath = join(snapshotDir, `${collectionName}.checkpoint.json`);
   }
 
@@ -109,7 +109,7 @@ export class ParallelFileSynchronizer {
   async initialize(): Promise<boolean> {
     const startTime = Date.now();
 
-    this.previousSnapshot = await this.snapshotManager.load();
+    this.previousSnapshot = await this.shardedSnapshotManager.load();
 
     if (isDebug()) {
       const elapsed = Date.now() - startTime;
@@ -124,7 +124,7 @@ export class ParallelFileSynchronizer {
    * Check if snapshot exists
    */
   async hasSnapshot(): Promise<boolean> {
-    return this.snapshotManager.exists();
+    return this.shardedSnapshotManager.exists();
   }
 
   /**
@@ -165,7 +165,7 @@ export class ParallelFileSynchronizer {
       fileMetadata = this.withPreviousEntries(fileMetadata, retainPrevious);
     }
 
-    await this.snapshotManager.save(this.codebasePath, fileMetadata, saveOptions);
+    await this.shardedSnapshotManager.save(this.codebasePath, fileMetadata, saveOptions);
 
     // Clear cache after use
     this.lastComputedHashes = null;
@@ -258,7 +258,7 @@ export class ParallelFileSynchronizer {
     }
     if (marked === 0) return 0;
     const { aliasVersion } = this.previousSnapshot;
-    await this.snapshotManager.save(this.codebasePath, files, aliasVersion !== 0 ? { aliasVersion } : undefined);
+    await this.shardedSnapshotManager.save(this.codebasePath, files, aliasVersion !== 0 ? { aliasVersion } : undefined);
     this.previousSnapshot = { ...this.previousSnapshot, files };
     return marked;
   }
@@ -387,7 +387,7 @@ export class ParallelFileSynchronizer {
    * Delete snapshot
    */
   async deleteSnapshot(): Promise<void> {
-    await this.snapshotManager.delete();
+    await this.shardedSnapshotManager.delete();
     this.previousSnapshot = null;
     this.lastComputedHashes = null;
   }
