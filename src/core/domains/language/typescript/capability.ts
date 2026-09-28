@@ -163,6 +163,10 @@ export const capability: LanguageCapability = {
   // object-type alias carries a member census (methods vs fields) on
   // `cg_type_declarations` (migration 040); a walker-12 row written before it
   // reads as unknown until `--force-enrichments codegraph` rewrites it.
+  // Same walker 12, bd tea-rags-mcp-0qaht.25: a `.jsx` specifier's source
+  // candidates gain `.d.ts` at tsc's position (.tsx, .ts, .d.ts, .jsx), where
+  // `.js` already had it — `import "./view.jsx"` with only `view.d.ts` beside
+  // it resolved for tsc and dropped the edge here (unverified head `.tsx`).
   versions: { chunking: 2, walker: 12, codegraphSchema: 2 },
   // Google TypeScript Style Guide: classes, interfaces, types and enums
   // UpperCamelCase; functions, methods, parameters, locals and properties

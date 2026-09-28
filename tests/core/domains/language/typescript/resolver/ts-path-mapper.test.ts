@@ -807,6 +807,18 @@ describe("mapImportToFile rule-registry matrix (TS_SOURCE_PATH_RULES)", () => {
     expect(mapImportToFile(specifier, CALLER, NO_ALIASES, (rel) => rel === `src/module${extension}`)).toBe(expected);
   });
 
+  it("a .jsx specifier resolves through the .d.ts declaration in tsc's order (.tsx, .ts, .d.ts, .jsx)", () => {
+    // bd tea-rags-mcp-0qaht.25 — the 0qaht.1 matrix recorded the asymmetry:
+    // `.js` mapped to [.ts, .tsx, .d.ts, .js] while `.jsx` mapped to
+    // [.tsx, .ts, .jsx] with no `.d.ts`. tsc resolves a `.jsx` specifier
+    // .tsx/.ts/.d.ts/.jsx, so `import "./view.jsx"` with only `view.d.ts`
+    // beside it resolved for tsc and dropped the edge here: the probe
+    // confirmed no candidate and the unverified head `.tsx` matched no file
+    // table entry.
+    const exists = (rel: string) => rel === "src/module.d.ts";
+    expect(mapImportToFile("./module.jsx", CALLER, NO_ALIASES, exists)).toBe("src/module.d.ts");
+  });
+
   describe("extensionless candidates", () => {
     const candidates = TS_SOURCE_PATH_RULES.extensionlessCandidates;
     const stem = TS_SOURCE_PATH_RULES.directoryModuleStem;
