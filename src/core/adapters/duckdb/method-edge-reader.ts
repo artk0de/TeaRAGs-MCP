@@ -105,13 +105,13 @@ export class DuckDbMethodEdgeReader {
 
   /**
    * Re-derive the overriding-subtype callee edges for a capped `poly-base` edge
-   * (bd tea-rags-mcp-2jet-E). `baseTarget` is `T#m`; for each direct subtype `S`
+   * (bd tea-rags-mcp-2jet-E). `baseTargetSymbolId` is `T#m`; for each direct subtype `S`
    * of `T` that declares its own `S#m`, emit one callee edge. Subtypes that only
    * inherit `m` (no own declaration) are skipped — synthesizing `S#m` for them
    * would point at a symbol that does not exist.
    */
-  private async expandPolyBaseCallees(baseTarget: SymbolId, callExpression: string): Promise<CalleeEdge[]> {
-    const split = splitMethodSymbol(baseTarget);
+  private async expandPolyBaseCallees(baseTargetSymbolId: SymbolId, callExpression: string): Promise<CalleeEdge[]> {
+    const split = splitMethodSymbol(baseTargetSymbolId);
     if (!split) return [];
     const rows = await this.session.queryAll<{ targetSymbolId: SymbolId; targetRelPath: RelPath }>(
       `SELECT s.symbol_id AS "targetSymbolId", s.rel_path AS "targetRelPath"

@@ -76,13 +76,13 @@ export class ForeignBuildDaemonLockArbiter {
   constructor(private readonly options: ForeignBuildDaemonLockArbiterOptions) {}
 
   /**
-   * Settle `openError` — a lock-contention open failure of `collection` —
-   * against its holder. Reads a few lifecycle files; connects to the holder
-   * only to drain it.
+   * Settle `openError` — a lock-contention open failure of
+   * `physicalCollectionName` — against its holder. Reads a few lifecycle
+   * files; connects to the holder only to drain it.
    */
   async settle(
     openError: DuckDbOpenFailedError,
-    collection: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
   ): Promise<ForeignBuildLockSettlement> {
     const pid = openError.lockHolderPid;
     if (pid === undefined) return { kind: "notForeignBuildDaemon" };
@@ -94,7 +94,7 @@ export class ForeignBuildDaemonLockArbiter {
     const holder: ForeignBuildDaemonLockHolder = { pid, buildDir: status.keyDir, buildFingerprint: undefined };
     // Read BEFORE connecting: our own control connection counts as a client.
     if (readRefs(status.paths) > 0) return { kind: "held", holder, reason: "clientConnected" };
-    return this.drain(status, holder, collection);
+    return this.drain(status, holder, physicalCollectionName);
   }
 
   /**
@@ -105,10 +105,10 @@ export class ForeignBuildDaemonLockArbiter {
    */
   async describe(
     holder: ForeignBuildDaemonLockHolder,
-    collection: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
   ): Promise<ForeignBuildDaemonLockHolder> {
     if (holder.buildFingerprint !== undefined) return holder;
-    const client = this.controlClient(holder.buildDir, collection);
+    const client = this.controlClient(holder.buildDir, physicalCollectionName);
     try {
       await client.init();
       return { ...holder, buildFingerprint: (await client.handshake(this.options.buildFingerprint))?.buildFingerprint };
@@ -129,9 +129,9 @@ export class ForeignBuildDaemonLockArbiter {
   private async drain(
     status: DaemonKeyDirStatus,
     holder: ForeignBuildDaemonLockHolder,
-    collection: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
   ): Promise<ForeignBuildLockSettlement> {
-    const client = this.controlClient(status.keyDir, collection);
+    const client = this.controlClient(status.keyDir, physicalCollectionName);
     try {
       await client.init();
     } catch {
@@ -155,7 +155,7 @@ export class ForeignBuildDaemonLockArbiter {
     if (isDebug()) {
       process.stderr.write(
         `[tea-rags] codegraph: drained idle daemon pid ${holder.pid} of another build (${status.keyDir}) — it held ` +
-          `${collection}'s database file and no client was connected (bd tea-rags-mcp-hw27k)\n`,
+          `${physicalCollectionName}'s database file and no client was connected (bd tea-rags-mcp-hw27k)\n`,
       );
     }
     const exited = await waitForDaemonExit(status.paths, holder.pid, {
@@ -164,8 +164,8 @@ export class ForeignBuildDaemonLockArbiter {
     return exited ? { kind: "drained", holder: described } : { kind: "held", holder: described, reason: "exitTimeout" };
   }
 
-  private controlClient(keyDir: string, collection: PhysicalCollectionName): DaemonGraphDbClient {
-    return new DaemonGraphDbClient(daemonPathsForKeyDir(keyDir).socketPath, collection, {
+  private controlClient(keyDir: string, physicalCollectionName: PhysicalCollectionName): DaemonGraphDbClient {
+    return new DaemonGraphDbClient(daemonPathsForKeyDir(keyDir).socketPath, physicalCollectionName, {
       connectTimeoutMs: CONTROL_CONNECT_TIMEOUT_MS,
     });
   }

@@ -121,7 +121,7 @@ export interface IndexingOpsDeps {
    * because the stamp is a claim about WHICH layer this run rebuilt, and only
    * this layer knows the run mode. Omitted → nothing is stamped.
    */
-  collectionRegistry?: LanguageVersionStamper;
+  languageVersionStamper?: LanguageVersionStamper;
   /** Per-language code versions of this build, from the composition root. */
   languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
   /**
@@ -202,7 +202,7 @@ export class IndexingOps {
   private readonly healthCheckRetryAttempts: number;
   private readonly healthCheckRetryDelayMs: number;
   private readonly status: StatusModule;
-  private readonly collectionRegistry?: LanguageVersionStamper;
+  private readonly languageVersionStamper?: LanguageVersionStamper;
   private readonly languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
   private readonly languageChunkSetBumpScopes: ReadonlyMap<string, ChunkSetBumpScopes>;
   private readonly driftReporter?: IndexDriftConsumptionResetter;
@@ -269,7 +269,7 @@ export class IndexingOps {
       // still lives (bd tea-rags-mcp-f93ao).
       deps.indexingLock,
     );
-    this.collectionRegistry = deps.collectionRegistry;
+    this.languageVersionStamper = deps.languageVersionStamper;
     this.languageCodeVersions = deps.languageCodeVersions;
     this.languageChunkSetBumpScopes = deps.languageChunkSetBumpScopes ?? new Map();
     this.driftReporter = deps.driftReporter;
@@ -799,7 +799,7 @@ export class IndexingOps {
    * `Run:` line from), so the run clears exactly the findings it repaired.
    */
   private stampRechunkedChunkSet(collectionName: string, rechunk: RechunkFileSelector): void {
-    const registry = this.collectionRegistry;
+    const registry = this.languageVersionStamper;
     const versions = this.languageCodeVersions;
     if (!registry?.get || !versions) return;
     const indexed = registry.get(collectionName)?.languageVersions ?? {};
@@ -1023,8 +1023,8 @@ export class IndexingOps {
 
   /** Write the stamp a pending seed carries — nothing when it carries none (already paid, or a build without versions). */
   private stampWorktreeSeed(collectionName: string, pending: WorktreeSeedPending): void {
-    if (this.collectionRegistry && Object.keys(pending.languageVersions).length > 0) {
-      this.collectionRegistry.stampLanguageVersions(collectionName, pending.languageVersions);
+    if (this.languageVersionStamper && Object.keys(pending.languageVersions).length > 0) {
+      this.languageVersionStamper.stampLanguageVersions(collectionName, pending.languageVersions);
     }
   }
 
@@ -1314,9 +1314,9 @@ export class IndexingOps {
     languages: readonly string[] | undefined,
     scope: "all" | "codegraph",
   ): void {
-    if (!this.collectionRegistry) return;
+    if (!this.languageVersionStamper) return;
     const stamp = this.languageVersionsStamp(languages, scope);
-    if (Object.keys(stamp).length > 0) this.collectionRegistry.stampLanguageVersions(collectionName, stamp);
+    if (Object.keys(stamp).length > 0) this.languageVersionStamper.stampLanguageVersions(collectionName, stamp);
   }
 
   /** The stamp {@link stampLanguageVersions} writes — empty when this build declares no versions. */

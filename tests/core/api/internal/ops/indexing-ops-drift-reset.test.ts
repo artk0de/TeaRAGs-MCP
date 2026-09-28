@@ -76,7 +76,7 @@ function makeRun() {
   const calls: string[] = [];
   return {
     calls,
-    collectionRegistry: { stampLanguageVersions: (name: string) => calls.push(`stamp:${name}`) },
+    languageVersionStamper: { stampLanguageVersions: (name: string) => calls.push(`stamp:${name}`) },
     driftReporter: { reset: (name: string) => calls.push(`reset:${name}`) },
   };
 }
@@ -94,7 +94,7 @@ describe("IndexingOps — drift consumption reset", () => {
     const ops = new IndexingOps(
       makeDeps({
         driftReporter: run.driftReporter,
-        collectionRegistry: run.collectionRegistry,
+        languageVersionStamper: run.languageVersionStamper,
         languageCodeVersions,
       }),
     );
@@ -108,7 +108,7 @@ describe("IndexingOps — drift consumption reset", () => {
     const run = makeRun();
     const deps = makeDeps({
       driftReporter: run.driftReporter,
-      collectionRegistry: run.collectionRegistry,
+      languageVersionStamper: run.languageVersionStamper,
       languageCodeVersions,
       qdrant: {
         collectionExists: vi.fn().mockResolvedValue(false),
@@ -126,7 +126,7 @@ describe("IndexingOps — drift consumption reset", () => {
     const ops = new IndexingOps(
       makeDeps({
         driftReporter: run.driftReporter,
-        collectionRegistry: run.collectionRegistry,
+        languageVersionStamper: run.languageVersionStamper,
         languageCodeVersions,
       }),
     );
@@ -141,7 +141,7 @@ describe("IndexingOps — drift consumption reset", () => {
     const ops = new IndexingOps(
       makeDeps({
         driftReporter: run.driftReporter,
-        collectionRegistry: run.collectionRegistry,
+        languageVersionStamper: run.languageVersionStamper,
         languageCodeVersions,
       }),
     );
@@ -234,7 +234,7 @@ describe("IndexingOps — drift consumption reset", () => {
       const ops = new IndexingOps(
         makeDeps({
           driftReporter: run.driftReporter,
-          collectionRegistry: run.collectionRegistry,
+          languageVersionStamper: run.languageVersionStamper,
           languageCodeVersions,
           resolveCollectionForPath,
         }),
@@ -250,7 +250,7 @@ describe("IndexingOps — drift consumption reset", () => {
       const ops = new IndexingOps(
         makeDeps({
           driftReporter: run.driftReporter,
-          collectionRegistry: run.collectionRegistry,
+          languageVersionStamper: run.languageVersionStamper,
           languageCodeVersions,
           resolveCollectionForPath,
         }),
@@ -269,7 +269,7 @@ describe("IndexingOps — drift consumption reset", () => {
       const run = makeRun();
       const deps = makeDeps({
         driftReporter: run.driftReporter,
-        collectionRegistry: run.collectionRegistry,
+        languageVersionStamper: run.languageVersionStamper,
         languageCodeVersions,
         resolveCollectionForPath,
         qdrant: {
