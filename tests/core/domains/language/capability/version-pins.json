@@ -80,7 +80,7 @@
     },
     "walker": {
       "version": 7,
-      "digest": "sha256:42333180788336f3cac95f47a37a5f971144deddeb711bf26c6e74b56494fce5"
+      "digest": "sha256:e42078acde4c95b1bfdc714f29cd65d41663b1d737b09e5ec1d553c43646e1fc"
     }
   },
   "typescript": {

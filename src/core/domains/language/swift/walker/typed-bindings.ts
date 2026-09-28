@@ -1,10 +1,11 @@
 /**
  * Typed bindings — the `localBindings` / `callResultBindings` engine: the
  * scope machinery (`SwiftTypeScope`, `SwiftScopedBinding`), the one walk that
- * types every binding this file can prove (`collectSwiftTypedBindings`), the
- * expression-fact evaluator it consults (`swiftExpressionFact` and its arms),
- * and the innermost-chunk attribution that emits the bindings per chunk
- * (`assignBindingsToInnermostChunks`).
+ * types every binding this file can prove (`collectSwiftTypedBindings`,
+ * dispatching each declaration kind to its `recordSwift*` stage over a shared
+ * `SwiftBindingRecorder`), the expression-fact evaluator it consults
+ * (`swiftExpressionFact` and its arms), and the innermost-chunk attribution
+ * that emits the bindings per chunk (`assignBindingsToInnermostChunks`).
  */
 
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
@@ -272,15 +273,62 @@ interface SwiftTypeScope {
  * innermost-chunk attribution keeps them off the method chunks.
  */
 export function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidence): SwiftScopedBinding[] {
-  const collected: SwiftScopedBinding[] = [];
-  const bindingsByName = new Map<string, SwiftScopedBinding[]>();
-  const siteOf = (node: AstNode): SwiftBindingSite => ({
-    line: node.startPosition.row + 1,
-    functionKey: enclosingSwiftFunctionKey(node),
-    enclosingType: enclosingSwiftTypeName(node),
-    enclosingTypePath: enclosingSwiftTypePath(node),
+  const recorder = swiftBindingRecorder(evidence);
+  walk(root, (node) => {
+    switch (node.type) {
+      case "parameter":
+      case "lambda_parameter": {
+        recordSwiftParameterBindings(node, recorder);
+        return;
+      }
+      case "property_declaration": {
+        recordSwiftPropertyBindings(node, recorder);
+        return;
+      }
+      case "guard_statement":
+      case "if_statement":
+      case "while_statement": {
+        recordSwiftOptionalBindings(node, recorder);
+        return;
+      }
+      case "for_statement": {
+        recordSwiftLoopItemBindings(node, recorder);
+        return;
+      }
+      case "switch_statement": {
+        recordSwiftEnumPayloadBindings(node, recorder);
+        return;
+      }
+      case "catch_block": {
+        recordSwiftCatchErrorBinding(node, recorder);
+        return;
+      }
+      case "lambda_literal": {
+        recordSwiftClosureParameterBindings(node, recorder);
+        break;
+      }
+      default:
+        break;
+    }
   });
-  const record = (
+  return recorder.collected;
+}
+
+/**
+ * The one collection walk's shared state: the file evidence every inferred
+ * fact consults, the bindings recorded so far, and the name index
+ * {@link swiftExpressionFact} reads through its scope — one object so each
+ * declaration stage records without threading three arguments.
+ */
+interface SwiftBindingRecorder {
+  readonly evidence: SwiftFileTypeEvidence;
+  readonly collected: SwiftScopedBinding[];
+  readonly bindingsByName: Map<string, SwiftScopedBinding[]>;
+  /**
+   * Append one binding, unless it is a pseudo name or proves nothing the
+   * resolver can fold.
+   */
+  record: (
     name: string,
     fact: SwiftTypeFact,
     site: SwiftBindingSite,
@@ -290,205 +338,255 @@ export function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileType
     enumPayload?: { readonly caseName: string; readonly index: number },
     optional?: boolean,
     sequenceElement?: true,
-  ): void => {
-    if (SWIFT_PSEUDO_BINDING_NAMES.has(name)) return;
-    if (!fact.nominal && !fact.element && valueChain === undefined) return;
-    const binding: SwiftScopedBinding = {
-      name,
-      fact,
-      line: site.line,
-      functionKey: site.functionKey,
-      scopeEndLine,
-      valueChain,
-      ...(closureParameter === undefined ? {} : { closureParameter }),
-      ...(enumPayload === undefined ? {} : { enumPayload }),
-      ...(optional === true ? { optional: true as const } : {}),
-      ...(sequenceElement === undefined ? {} : { sequenceElement }),
-    };
-    collected.push(binding);
-    const sameName = bindingsByName.get(name);
-    if (sameName) sameName.push(binding);
-    else bindingsByName.set(name, [binding]);
+  ) => void;
+}
+
+/** The walk's accumulator: an empty binding list and an empty name index. */
+function swiftBindingRecorder(evidence: SwiftFileTypeEvidence): SwiftBindingRecorder {
+  const collected: SwiftScopedBinding[] = [];
+  const bindingsByName = new Map<string, SwiftScopedBinding[]>();
+  return {
+    evidence,
+    collected,
+    bindingsByName,
+    record: (
+      name: string,
+      fact: SwiftTypeFact,
+      site: SwiftBindingSite,
+      scopeEndLine?: number,
+      valueChain?: string,
+      closureParameter?: number,
+      enumPayload?: { readonly caseName: string; readonly index: number },
+      optional?: boolean,
+      sequenceElement?: true,
+    ): void => {
+      if (SWIFT_PSEUDO_BINDING_NAMES.has(name)) return;
+      if (!fact.nominal && !fact.element && valueChain === undefined) return;
+      const binding: SwiftScopedBinding = {
+        name,
+        fact,
+        line: site.line,
+        functionKey: site.functionKey,
+        scopeEndLine,
+        valueChain,
+        ...(closureParameter === undefined ? {} : { closureParameter }),
+        ...(enumPayload === undefined ? {} : { enumPayload }),
+        ...(optional === true ? { optional: true as const } : {}),
+        ...(sequenceElement === undefined ? {} : { sequenceElement }),
+      };
+      collected.push(binding);
+      const sameName = bindingsByName.get(name);
+      if (sameName) sameName.push(binding);
+      else bindingsByName.set(name, [binding]);
+    },
   };
-  // A local only: a type-level property's initializer is not a scope a
-  // receiver is read in.
-  const deferredSpelling = (fact: SwiftTypeFact, value: AstNode | null, site: SwiftBindingSite): string | undefined =>
-    fact.nominal || fact.element || site.functionKey === -1 ? undefined : (swiftValueChainSpelling(value) ?? undefined);
-  walk(root, (node) => {
-    switch (node.type) {
-      case "parameter":
-      case "lambda_parameter": {
-        const name = node.childForFieldName("name");
-        if (name) {
-          // Past `inout` / `@escaping`, which sit between the colon and the type.
-          const typeNode = swiftParameterTypeNode(node);
-          const declared = swiftTypeFactOf(typeNode);
-          const optional = typeNode?.type === "optional_type";
-          record(
-            name.text,
-            swiftGenericResolvedFact(declared, node),
-            siteOf(node),
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            optional,
-          );
-        }
-        return;
-      }
-      case "property_declaration": {
-        const name = singleIdentifierPatternName(node.childForFieldName("name"));
-        if (!name) return;
-        const site = siteOf(node);
-        const declared = swiftDeclaredPropertyFact(node);
-        const value = node.childForFieldName("value");
-        const fact = declared.nominal ? declared : swiftExpressionFact(value, { evidence, bindingsByName, site }, 0);
-        const spelling = deferredSpelling(fact, value, site);
-        record(
-          name,
-          fact,
-          site,
-          enclosingSwiftClosureEndLine(node),
-          spelling,
-          undefined,
-          undefined,
-          declared.nominal !== null
-            ? swiftDeclaresOptional(node)
-            : spelling !== undefined && swiftValueIsOptionalChained(value),
-        );
-        // `didSet { oldValue… }` / `willSet { newValue… }`: an observer's
-        // parameter is a value of the property's DECLARED type, for the
-        // clause's own body (bd tea-rags-mcp-y99pg.31).
-        if (declared.nominal) {
-          for (const clause of swiftPropertyObserverClauses(node)) {
-            record(clause.name, declared, siteOf(clause.node), clause.node.endPosition.row + 1);
-          }
-        }
-        return;
-      }
-      case "guard_statement":
-      case "if_statement":
-      case "while_statement": {
-        const scopeEndLine =
-          node.type === "guard_statement" ? enclosingSwiftBlockEndLine(node) : swiftThenBlockEndLine(node);
-        for (const clause of swiftOptionalBindingClauses(node)) {
-          // Each clause on its OWN line: a multi-line condition's later clause
-          // folds the earlier ones, and a spelling is visible strictly below
-          // its line (bd tea-rags-mcp-y99pg.32).
-          const site = siteOf(clause.nameNode);
-          const annotated = swiftGenericResolvedFact(swiftTypeFactOf(clause.annotation), node);
-          const annotatedOrInferred =
-            annotated.nominal || annotated.element
-              ? annotated
-              : swiftExpressionFact(clause.value, { evidence, bindingsByName, site }, 0);
-          // Unwrapping `[T]?` yields `[T]`, so the element slot survives the
-          // unwrap — the array still binds no receiver, and a `for` over the
-          // unwrapped name still types its item.
-          const spelling = deferredSpelling(annotatedOrInferred, clause.value, site);
-          record(clause.name, annotatedOrInferred, site, scopeEndLine, spelling);
-        }
-        return;
-      }
-      case "for_statement": {
-        const item = node.childForFieldName("item");
-        const name = singleIdentifierPatternName(item);
-        const pair = name ? null : swiftTuplePatternNames(item);
-        if (!name && !pair) return;
-        const site = siteOf(node);
-        const collection = swiftExpressionFact(
-          node.childForFieldName("collection"),
-          { evidence, bindingsByName, site },
-          0,
-        );
-        const scopeEnd = swiftThenBlockEndLine(node);
-        if (name && collection.element) record(name, { nominal: collection.element, element: null }, site, scopeEnd);
-        // A sequence only the resolver can type: the item is its element (bd tea-rags-mcp-y99pg.37).
-        const sequence =
-          name && !collection.element && site.functionKey !== -1
-            ? swiftValueChainSpelling(node.childForFieldName("collection"))
-            : null;
-        if (name && sequence !== null) {
-          record(name, NO_TYPE, site, scopeEnd, sequence, undefined, undefined, undefined, true);
-        }
-        // `for (key, value) in dictionary` (bd tea-rags-mcp-y99pg.17).
-        if (pair && collection.entry) {
-          pair.forEach((slotName, i) => {
-            const nominal = collection.entry?.[i] ?? null;
-            if (slotName !== null && nominal !== null) record(slotName, { nominal, element: null }, site, scopeEnd);
-          });
-        }
-        break;
-      }
-      // `switch unit { case .group(let g): … }` — each payload name is bound
-      // to its case's slot on the subject's enum, which another file
-      // declares (bd tea-rags-mcp-y99pg.16).
-      case "switch_statement": {
-        const subject = swiftValueChainSpelling(
-          node.childForFieldName("expr") ?? node.namedChildren.find((c) => c.type !== "switch_entry") ?? null,
-        );
-        if (subject === null) return;
-        for (const entry of node.namedChildren) {
-          if (entry.type !== "switch_entry") continue;
-          const patterns = entry.namedChildren.filter((c) => c.type === "switch_pattern");
-          if (patterns.length !== 1) continue;
-          const site = siteOf(entry);
-          // The entry and its `statements` run on to the next `case`; the last
-          // statement is where the scope ends.
-          let last = entry.namedChildren[entry.namedChildCount - 1];
-          while (last.type === "statements" && last.namedChildCount > 0) {
-            last = last.namedChildren[last.namedChildCount - 1];
-          }
-          const endLine = last.endPosition.row + 1;
-          for (const payload of swiftEnumCasePayloadNames(patterns[0])) {
-            record(payload.name, NO_TYPE, site, endLine, subject, undefined, payload.slot);
-          }
-        }
-        return;
-      }
-      // `catch { error… }` — a clause with no pattern binds `error: any Error`
-      // for its own block (bd tea-rags-mcp-y99pg.10).
-      case "catch_block": {
-        if (node.namedChildren.some((c) => c.type !== "catch_keyword" && c.type !== "statements")) return;
-        const body = node.namedChildren.find((c) => c.type === "statements");
-        if (!body) return;
-        record("error", { nominal: "Error", element: null }, siteOf(body), node.endPosition.row + 1);
-        return;
-      }
-      case "lambda_literal": {
-        const site = siteOf(node);
-        const facts = swiftClosureArgumentFacts(node, { evidence, bindingsByName, site });
-        // No declaration in this file types the closure: hand its callee to
-        // the resolver, which reads the callee's closure signature run-wide
-        // (bd tea-rags-mcp-y99pg.13).
-        const callee = facts ? undefined : swiftClosureCalleeSpelling(node);
-        if (!facts && callee === undefined) return;
-        const endLine = node.endPosition.row + 1;
-        const bind = (name: string, i: number): void => {
-          if (facts) {
-            if (i < facts.length) record(name, facts[i], site, endLine);
-          } else record(name, NO_TYPE, site, endLine, callee, i);
-        };
-        const named = swiftLambdaParameters(node);
-        if (named === null) {
-          if (nestsImplicitParameterClosure(node)) return;
-          const count = facts ? facts.length : swiftImplicitParameterCount(node);
-          for (let i = 0; i < count; i++) bind(`$${i}`, i);
-          return;
-        }
-        named.forEach((parameter, i) => {
-          const name = parameter.childForFieldName("name")?.text;
-          // An annotated parameter is typed by its own `lambda_parameter` arm.
-          if (!name || name === "_" || parameter.children.some((c) => c.type === ":")) return;
-          bind(name, i);
-        });
-        break;
-      }
-      default:
-        break;
+}
+
+/** Where a node's own binding sits — the scope coordinates every lookup is relative to. */
+function swiftBindingSite(node: AstNode): SwiftBindingSite {
+  return {
+    line: node.startPosition.row + 1,
+    functionKey: enclosingSwiftFunctionKey(node),
+    enclosingType: enclosingSwiftTypeName(node),
+    enclosingTypePath: enclosingSwiftTypePath(node),
+  };
+}
+
+/**
+ * A local only: a type-level property's initializer is not a scope a
+ * receiver is read in.
+ */
+function swiftDeferredSpelling(fact: SwiftTypeFact, value: AstNode | null, site: SwiftBindingSite): string | undefined {
+  return fact.nominal || fact.element || site.functionKey === -1
+    ? undefined
+    : (swiftValueChainSpelling(value) ?? undefined);
+}
+
+/** An annotated `parameter` / `lambda_parameter` is bound by its own `: T` annotation. */
+function recordSwiftParameterBindings(node: AstNode, recorder: SwiftBindingRecorder): void {
+  const { record } = recorder;
+  const name = node.childForFieldName("name");
+  if (name) {
+    // Past `inout` / `@escaping`, which sit between the colon and the type.
+    const typeNode = swiftParameterTypeNode(node);
+    const declared = swiftTypeFactOf(typeNode);
+    const optional = typeNode?.type === "optional_type";
+    record(
+      name.text,
+      swiftGenericResolvedFact(declared, node),
+      swiftBindingSite(node),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      optional,
+    );
+  }
+}
+
+/**
+ * A `property_declaration`'s stored property — declared or inferred from its
+ * initializer — plus its observers' parameters.
+ */
+function recordSwiftPropertyBindings(node: AstNode, recorder: SwiftBindingRecorder): void {
+  const { evidence, bindingsByName, record } = recorder;
+  const name = singleIdentifierPatternName(node.childForFieldName("name"));
+  if (!name) return;
+  const site = swiftBindingSite(node);
+  const declared = swiftDeclaredPropertyFact(node);
+  const value = node.childForFieldName("value");
+  const fact = declared.nominal ? declared : swiftExpressionFact(value, { evidence, bindingsByName, site }, 0);
+  const spelling = swiftDeferredSpelling(fact, value, site);
+  record(
+    name,
+    fact,
+    site,
+    enclosingSwiftClosureEndLine(node),
+    spelling,
+    undefined,
+    undefined,
+    declared.nominal !== null
+      ? swiftDeclaresOptional(node)
+      : spelling !== undefined && swiftValueIsOptionalChained(value),
+  );
+  // `didSet { oldValue… }` / `willSet { newValue… }`: an observer's
+  // parameter is a value of the property's DECLARED type, for the
+  // clause's own body (bd tea-rags-mcp-y99pg.31).
+  if (declared.nominal) {
+    for (const clause of swiftPropertyObserverClauses(node)) {
+      record(clause.name, declared, swiftBindingSite(clause.node), clause.node.endPosition.row + 1);
     }
+  }
+}
+
+/** A `guard` / `if` / `while` condition's `let` / `var` optional-binding clauses. */
+function recordSwiftOptionalBindings(node: AstNode, recorder: SwiftBindingRecorder): void {
+  const { evidence, bindingsByName, record } = recorder;
+  const scopeEndLine = node.type === "guard_statement" ? enclosingSwiftBlockEndLine(node) : swiftThenBlockEndLine(node);
+  for (const clause of swiftOptionalBindingClauses(node)) {
+    // Each clause on its OWN line: a multi-line condition's later clause
+    // folds the earlier ones, and a spelling is visible strictly below
+    // its line (bd tea-rags-mcp-y99pg.32).
+    const site = swiftBindingSite(clause.nameNode);
+    const annotated = swiftGenericResolvedFact(swiftTypeFactOf(clause.annotation), node);
+    const annotatedOrInferred =
+      annotated.nominal || annotated.element
+        ? annotated
+        : swiftExpressionFact(clause.value, { evidence, bindingsByName, site }, 0);
+    // Unwrapping `[T]?` yields `[T]`, so the element slot survives the
+    // unwrap — the array still binds no receiver, and a `for` over the
+    // unwrapped name still types its item.
+    const spelling = swiftDeferredSpelling(annotatedOrInferred, clause.value, site);
+    record(clause.name, annotatedOrInferred, site, scopeEndLine, spelling);
+  }
+}
+
+/**
+ * A `for` statement's item — a single name over a typed collection's
+ * element, a `(key, value)` pair over a dictionary's entries, or a
+ * resolver-typed sequence's element.
+ */
+function recordSwiftLoopItemBindings(node: AstNode, recorder: SwiftBindingRecorder): void {
+  const { evidence, bindingsByName, record } = recorder;
+  const item = node.childForFieldName("item");
+  const name = singleIdentifierPatternName(item);
+  const pair = name ? null : swiftTuplePatternNames(item);
+  if (!name && !pair) return;
+  const site = swiftBindingSite(node);
+  const collection = swiftExpressionFact(node.childForFieldName("collection"), { evidence, bindingsByName, site }, 0);
+  const scopeEnd = swiftThenBlockEndLine(node);
+  if (name && collection.element) record(name, { nominal: collection.element, element: null }, site, scopeEnd);
+  // A sequence only the resolver can type: the item is its element (bd tea-rags-mcp-y99pg.37).
+  const sequence =
+    name && !collection.element && site.functionKey !== -1
+      ? swiftValueChainSpelling(node.childForFieldName("collection"))
+      : null;
+  if (name && sequence !== null) {
+    record(name, NO_TYPE, site, scopeEnd, sequence, undefined, undefined, undefined, true);
+  }
+  // `for (key, value) in dictionary` (bd tea-rags-mcp-y99pg.17).
+  if (pair && collection.entry) {
+    pair.forEach((slotName, i) => {
+      const nominal = collection.entry?.[i] ?? null;
+      if (slotName !== null && nominal !== null) record(slotName, { nominal, element: null }, site, scopeEnd);
+    });
+  }
+}
+
+/**
+ * `switch unit { case .group(let g): … }` — each payload name is bound
+ * to its case's slot on the subject's enum, which another file
+ * declares (bd tea-rags-mcp-y99pg.16).
+ */
+function recordSwiftEnumPayloadBindings(node: AstNode, recorder: SwiftBindingRecorder): void {
+  const { record } = recorder;
+  const subject = swiftValueChainSpelling(
+    node.childForFieldName("expr") ?? node.namedChildren.find((c) => c.type !== "switch_entry") ?? null,
+  );
+  if (subject === null) return;
+  for (const entry of node.namedChildren) {
+    if (entry.type !== "switch_entry") continue;
+    const patterns = entry.namedChildren.filter((c) => c.type === "switch_pattern");
+    if (patterns.length !== 1) continue;
+    const site = swiftBindingSite(entry);
+    // The entry and its `statements` run on to the next `case`; the last
+    // statement is where the scope ends.
+    let last = entry.namedChildren[entry.namedChildCount - 1];
+    while (last.type === "statements" && last.namedChildCount > 0) {
+      last = last.namedChildren[last.namedChildCount - 1];
+    }
+    const endLine = last.endPosition.row + 1;
+    for (const payload of swiftEnumCasePayloadNames(patterns[0])) {
+      record(payload.name, NO_TYPE, site, endLine, subject, undefined, payload.slot);
+    }
+  }
+}
+
+/**
+ * `catch { error… }` — a clause with no pattern binds `error: any Error`
+ * for its own block (bd tea-rags-mcp-y99pg.10).
+ */
+function recordSwiftCatchErrorBinding(node: AstNode, recorder: SwiftBindingRecorder): void {
+  const { record } = recorder;
+  if (node.namedChildren.some((c) => c.type !== "catch_keyword" && c.type !== "statements")) return;
+  const body = node.namedChildren.find((c) => c.type === "statements");
+  if (!body) return;
+  record("error", { nominal: "Error", element: null }, swiftBindingSite(body), node.endPosition.row + 1);
+}
+
+/**
+ * A closure literal's parameters: typed by the call it is an argument of,
+ * or handed to the resolver by the callee's spelling when no declaration in
+ * this file types them.
+ */
+function recordSwiftClosureParameterBindings(node: AstNode, recorder: SwiftBindingRecorder): void {
+  const { evidence, bindingsByName, record } = recorder;
+  const site = swiftBindingSite(node);
+  const facts = swiftClosureArgumentFacts(node, { evidence, bindingsByName, site });
+  // No declaration in this file types the closure: hand its callee to
+  // the resolver, which reads the callee's closure signature run-wide
+  // (bd tea-rags-mcp-y99pg.13).
+  const callee = facts ? undefined : swiftClosureCalleeSpelling(node);
+  if (!facts && callee === undefined) return;
+  const endLine = node.endPosition.row + 1;
+  const bind = (name: string, i: number): void => {
+    if (facts) {
+      if (i < facts.length) record(name, facts[i], site, endLine);
+    } else record(name, NO_TYPE, site, endLine, callee, i);
+  };
+  const named = swiftLambdaParameters(node);
+  if (named === null) {
+    if (nestsImplicitParameterClosure(node)) return;
+    const count = facts ? facts.length : swiftImplicitParameterCount(node);
+    for (let i = 0; i < count; i++) bind(`$${i}`, i);
+    return;
+  }
+  named.forEach((parameter, i) => {
+    const name = parameter.childForFieldName("name")?.text;
+    // An annotated parameter is typed by its own `lambda_parameter` arm.
+    if (!name || name === "_" || parameter.children.some((c) => c.type === ":")) return;
+    bind(name, i);
   });
-  return collected;
 }
 
 /**
