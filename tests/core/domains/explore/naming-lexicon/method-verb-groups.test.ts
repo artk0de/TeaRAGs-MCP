@@ -52,10 +52,10 @@ describe("methodVerbLexicons", () => {
   it("derives one lexicon per namespace from its languages' head-word rows; unprofiled languages drop", () => {
     const lexicons = methodVerbLexicons(
       [
-        { head: "update", headHolders: 2, headTails: 2, lastHolders: 0, language: "ruby" },
-        { head: "user", headHolders: 2, headTails: 2, lastHolders: 5, language: "ruby" },
-        { head: "sync", headHolders: 9, headTails: 9, lastHolders: 0, language: "cobol" },
-        { head: "sync", headHolders: 9, headTails: 9, lastHolders: 0, language: null },
+        { head: "update", headHolders: 2, headTails: 2, lastHolders: 0, valueCompounds: 0, language: "ruby" },
+        { head: "user", headHolders: 2, headTails: 2, lastHolders: 5, valueCompounds: 0, language: "ruby" },
+        { head: "sync", headHolders: 9, headTails: 9, lastHolders: 0, valueCompounds: 0, language: "cobol" },
+        { head: "sync", headHolders: 9, headTails: 9, lastHolders: 0, valueCompounds: 0, language: null },
       ],
       namespaceOf,
     );

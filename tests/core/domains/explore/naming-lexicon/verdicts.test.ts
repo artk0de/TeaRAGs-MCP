@@ -1960,7 +1960,7 @@ describe("withFamilyAnalogues", () => {
 describe("judgeDraftName — an untyped method judged by the method vocabulary", () => {
   const vocabulary = {
     lexicon: new Set(["load", "fetch"]),
-    headWords: [{ head: "load", headHolders: 3, headTails: 2, lastHolders: 0 }],
+    headWords: [{ head: "load", headHolders: 3, headTails: 2, lastHolders: 0, valueCompounds: 0 }],
     tailNames: [{ shortName: "load_user", holders: 3 }],
     lastWordNames: [{ shortName: "grand_total", holders: 2 }],
     declared: false,

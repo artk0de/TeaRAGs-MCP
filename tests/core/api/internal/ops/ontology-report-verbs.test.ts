@@ -62,6 +62,7 @@ const verb = (head: string, language: string): MethodHeadWordRow => ({
   headHolders: 2,
   headTails: 2,
   lastHolders: 0,
+  valueCompounds: 0,
   language,
 });
 /** A readMethodTailVerbs row spelled by `name` (`load_user`, `loadUser` → head `load`, tail `user`). */

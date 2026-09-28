@@ -7,7 +7,8 @@
  *
  * The verbs are the language namespace's own ({@link deriveMethodVerbLexicon},
  * §D4a): a head word opening names with several noun tails more often than it
- * ends names — `update`, `send`, `can` — not a closed list.
+ * ends names, whose compounds are not themselves names of values — `update`,
+ * `send`, `can` — not a closed list.
  *
  * Pure: the evidence is read by the ops layer through `readMethodHeadWords` /
  * `readMethodNamesMatching`, whose `regexp_matches` patterns
@@ -58,24 +59,42 @@ export type UntypedMethodVerdict =
   | { verdict: "NO_CONVENTION"; prefer: { analogous: string[] } };
 
 /**
+ * True when `valueCompounds` (summed per head) marks a noun modifier: at least
+ * {@link MIN_ROLE_MEMBERS} of the head's compound names also name a value — a
+ * name that names a value is a noun phrase (`pagination_collection`,
+ * `media_attachment`), so two of them make the head a noun convention.
+ */
+function namesValues(valueCompounds: number): boolean {
+  return valueCompounds >= MIN_ROLE_MEMBERS;
+}
+
+/**
  * The verb lexicon of one language namespace from its head-word rows (spec
  * §D4a), rows of the namespace's languages summed per head: a head is a verb
- * when it opens at least {@link MIN_ROLE_MEMBERS} distinct noun tails AND opens
+ * when it opens at least {@link MIN_ROLE_MEMBERS} distinct noun tails, opens
  * names more often than it ends them (`update` heads many tails; `user` ends
- * more names than it opens).
+ * more names than it opens), AND fewer than {@link MIN_ROLE_MEMBERS} of its
+ * compounds also name a value (`pagination_collection` is a variable too, so
+ * `pagination` modifies nouns rather than acting on them).
  */
 export function deriveMethodVerbLexicon(rows: readonly MethodHeadWordRow[]): ReadonlySet<string> {
-  const sums = new Map<string, { headHolders: number; headTails: number; lastHolders: number }>();
+  const sums = new Map<
+    string,
+    { headHolders: number; headTails: number; lastHolders: number; valueCompounds: number }
+  >();
   for (const row of rows) {
-    const sum = sums.get(row.head) ?? { headHolders: 0, headTails: 0, lastHolders: 0 };
+    const sum = sums.get(row.head) ?? { headHolders: 0, headTails: 0, lastHolders: 0, valueCompounds: 0 };
     sum.headHolders += row.headHolders;
     sum.headTails += row.headTails;
     sum.lastHolders += row.lastHolders;
+    sum.valueCompounds += row.valueCompounds;
     sums.set(row.head, sum);
   }
   const lexicon = new Set<string>();
   for (const [head, sum] of sums) {
-    if (sum.headTails >= MIN_ROLE_MEMBERS && sum.headHolders > sum.lastHolders) lexicon.add(head);
+    if (sum.headTails >= MIN_ROLE_MEMBERS && sum.headHolders > sum.lastHolders && !namesValues(sum.valueCompounds)) {
+      lexicon.add(head);
+    }
   }
   return lexicon;
 }
@@ -178,11 +197,12 @@ export function groupMethodsByTail(
 }
 
 /**
- * True when `head` is a noun of the project by the lexicon's own positional
- * criterion ({@link deriveMethodVerbLexicon}): it ends more multi-word names
- * than it opens. Opening holders come from the head-word rows when the head has
- * one, else from the draft's tail slice (the names spelling its tail under
- * `head`) — 0 for a head the project never opens a name with.
+ * True when `head` is a noun of the project by the lexicon's own criteria
+ * ({@link deriveMethodVerbLexicon}): its head-word rows' compounds name at
+ * least {@link MIN_ROLE_MEMBERS} values (summed), or it ends more multi-word
+ * names than it opens. Opening holders come from the head-word rows when the
+ * head has one, else from the draft's tail slice (the names spelling its tail
+ * under `head`) — 0 for a head the project never opens a name with.
  */
 function isProjectNoun(head: string, evidence: UntypedMethodEvidence): boolean {
   const opens = (row: MethodNameRow) => splitIdentifierWords(row.shortName)[0] === head;
@@ -191,6 +211,7 @@ function isProjectNoun(head: string, evidence: UntypedMethodEvidence): boolean {
     return words.length > 1 && words.at(-1) === head;
   };
   const headRows = evidence.headWords.filter((row) => row.head === head);
+  if (namesValues(headRows.reduce((sum, row) => sum + row.valueCompounds, 0))) return true;
   const headHolders =
     headRows.length > 0
       ? headRows.reduce((sum, row) => sum + row.headHolders, 0)

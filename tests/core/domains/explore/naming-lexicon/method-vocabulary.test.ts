@@ -30,7 +30,7 @@ const LEXICON: ReadonlySet<string> = new Set([
 ]);
 /** Head-word rows: `holders` names opened, two tails each, never a last word. */
 const verbs = (entries: [string, number][]) =>
-  entries.map(([head, headHolders]) => ({ head, headHolders, headTails: 2, lastHolders: 0 }));
+  entries.map(([head, headHolders]) => ({ head, headHolders, headTails: 2, lastHolders: 0, valueCompounds: 0 }));
 const names = (entries: [string, number][]) => entries.map(([shortName, holders]) => ({ shortName, holders }));
 const none = { lexicon: LEXICON, headWords: [], tailNames: [], lastWordNames: [], declared: false };
 
@@ -154,15 +154,15 @@ describe("judgeUntypedMethodName", () => {
 
 describe("judgeUntypedMethodName with a derived lexicon", () => {
   const lexicon = deriveMethodVerbLexicon([
-    { head: "update", headHolders: 4, headTails: 2, lastHolders: 0 },
-    { head: "sync", headHolders: 2, headTails: 2, lastHolders: 0 },
-    { head: "can", headHolders: 2, headTails: 2, lastHolders: 0 },
-    { head: "user", headHolders: 1, headTails: 2, lastHolders: 6 },
+    { head: "update", headHolders: 4, headTails: 2, lastHolders: 0, valueCompounds: 0 },
+    { head: "sync", headHolders: 2, headTails: 2, lastHolders: 0, valueCompounds: 0 },
+    { head: "can", headHolders: 2, headTails: 2, lastHolders: 0, valueCompounds: 0 },
+    { head: "user", headHolders: 1, headTails: 2, lastHolders: 6, valueCompounds: 0 },
   ]);
   const headWords = [
-    { head: "update", headHolders: 4, headTails: 2, lastHolders: 0 },
-    { head: "sync", headHolders: 2, headTails: 2, lastHolders: 0 },
-    { head: "can", headHolders: 2, headTails: 2, lastHolders: 0 },
+    { head: "update", headHolders: 4, headTails: 2, lastHolders: 0, valueCompounds: 0 },
+    { head: "sync", headHolders: 2, headTails: 2, lastHolders: 0, valueCompounds: 0 },
+    { head: "can", headHolders: 2, headTails: 2, lastHolders: 0, valueCompounds: 0 },
   ];
 
   it("a verb outside NAMING_VERB_PREFIXES dominating a tail makes another verb a MISFIT", () => {
@@ -228,22 +228,74 @@ describe("judgeUntypedMethodName with a derived lexicon", () => {
 describe("deriveMethodVerbLexicon", () => {
   it("keeps a head opening two tails more often than it ends names", () => {
     const lexicon = deriveMethodVerbLexicon([
-      { head: "update", headHolders: 5, headTails: 3, lastHolders: 0 },
-      { head: "user", headHolders: 1, headTails: 2, lastHolders: 7 },
-      { head: "load", headHolders: 3, headTails: 1, lastHolders: 0 },
-      { head: "sync", headHolders: 2, headTails: 2, lastHolders: 2 },
+      { head: "update", headHolders: 5, headTails: 3, lastHolders: 0, valueCompounds: 0 },
+      { head: "user", headHolders: 1, headTails: 2, lastHolders: 7, valueCompounds: 0 },
+      { head: "load", headHolders: 3, headTails: 1, lastHolders: 0, valueCompounds: 0 },
+      { head: "sync", headHolders: 2, headTails: 2, lastHolders: 2, valueCompounds: 0 },
     ]);
     expect([...lexicon]).toEqual(["update"]);
   });
 
   it("sums the language rows of one namespace before applying the criterion", () => {
     const lexicon = deriveMethodVerbLexicon([
-      { head: "update", headHolders: 1, headTails: 1, lastHolders: 0, language: "typescript" },
-      { head: "update", headHolders: 1, headTails: 1, lastHolders: 0, language: "javascript" },
-      { head: "order", headHolders: 2, headTails: 2, lastHolders: 1, language: "typescript" },
-      { head: "order", headHolders: 0, headTails: 0, lastHolders: 3, language: "javascript" },
+      { head: "update", headHolders: 1, headTails: 1, lastHolders: 0, valueCompounds: 0, language: "typescript" },
+      { head: "update", headHolders: 1, headTails: 1, lastHolders: 0, valueCompounds: 0, language: "javascript" },
+      { head: "order", headHolders: 2, headTails: 2, lastHolders: 1, valueCompounds: 0, language: "typescript" },
+      { head: "order", headHolders: 0, headTails: 0, lastHolders: 3, valueCompounds: 0, language: "javascript" },
     ]);
     expect([...lexicon]).toEqual(["update"]);
+  });
+
+  it("drops a head whose compounds name two values — a noun modifier, not a verb", () => {
+    // `pagination_collection` and `pagination_params` are also names of values: `pagination` modifies nouns.
+    const lexicon = deriveMethodVerbLexicon([
+      { head: "build", headHolders: 126, headTails: 90, lastHolders: 0, valueCompounds: 0 },
+      { head: "fetch", headHolders: 21, headTails: 15, lastHolders: 0, valueCompounds: 1 },
+      { head: "pagination", headHolders: 51, headTails: 4, lastHolders: 0, valueCompounds: 2 },
+    ]);
+    expect([...lexicon]).toEqual(["build", "fetch"]);
+  });
+
+  it("sums valueCompounds across the language rows of one namespace", () => {
+    const lexicon = deriveMethodVerbLexicon([
+      { head: "media", headHolders: 30, headTails: 5, lastHolders: 10, valueCompounds: 1, language: "typescript" },
+      { head: "media", headHolders: 12, headTails: 3, lastHolders: 6, valueCompounds: 1, language: "javascript" },
+      { head: "update", headHolders: 4, headTails: 2, lastHolders: 0, valueCompounds: 1, language: "typescript" },
+    ]);
+    expect([...lexicon]).toEqual(["update"]);
+  });
+});
+
+describe("judgeUntypedMethodName with a value-naming head", () => {
+  it("a head whose compounds name values is a project noun: a dominated tail stays verbless", () => {
+    // `date_published` opens more names than `date` ends, but two `date_*` compounds name values.
+    const v = judgeUntypedMethodName({
+      name: "date_published",
+      casing: "snake",
+      evidence: {
+        ...none,
+        headWords: [{ head: "date", headHolders: 6, headTails: 4, lastHolders: 2, valueCompounds: 2 }],
+        tailNames: names([["set_published", 5]]),
+        headLastNames: names([["updated_date", 2]]),
+        lexicon: new Set([...LEXICON, "set"]),
+      },
+    });
+    expect(v).toEqual({ verdict: "NO_CONVENTION", prefer: { analogous: [] } });
+  });
+
+  it("one value-naming compound keeps the head a candidate synonym verb", () => {
+    const v = judgeUntypedMethodName({
+      name: "date_published",
+      casing: "snake",
+      evidence: {
+        ...none,
+        headWords: [{ head: "date", headHolders: 6, headTails: 4, lastHolders: 2, valueCompounds: 1 }],
+        tailNames: names([["set_published", 5]]),
+        headLastNames: names([["updated_date", 2]]),
+        lexicon: new Set([...LEXICON, "set"]),
+      },
+    });
+    expect(v).toEqual({ verdict: "MISFIT", suggestion: "set_published", holder: "set_published" });
   });
 });
 

@@ -143,6 +143,23 @@ project's language namespace when both hold:
   them. `update` heads dozens of tails and rarely ends a name; `user` is the
   reverse.
 
+A third condition, added after live validation on mastodon: `valueCompounds(w)
+< MIN_ROLE_MEMBERS`, where `valueCompounds(w)` counts the distinct compound
+names `w` opens (trailing `!` / `?` / `=` dropped) that are also the name of a
+value — a non-`return` `cg_identifiers` row in the same evidence scope (and file
+language), leading `@` / `@@` dropped. The first two conditions admitted noun
+modifiers as verbs (`collection` 63 head / 59 last, `pagination` 51 / 0, `media`
+42 / 16, plus `page`, `date`, `status`, `target`, `current`, `domain`), which
+produced false MISFITs (`set_published` → `date_published`) and garbage verb
+groups (`build_collection` → `pagination_collection`). A name that names a value
+is a noun phrase: measured over params / fields / locals, real verbs have 0 or 1
+such compounds (set 0 of 173, build 0/126, create 0/118, update 0/41, fetch
+1/21, send 1/10) and noun modifiers have 2 or more (collection 5, status 8,
+target 5, page 3, media 2, pagination 2, date 2). The floor is the same
+two-holders-make-a-convention `MIN_ROLE_MEMBERS`. The same count feeds the
+MISFIT guard's noun test: a draft head whose summed `valueCompounds` reaches the
+floor is a project noun, so `date_published` is not a misspelt `set_published`.
+
 No new constant: the minimum and the majority are the ones D4 already uses.
 Predicate heads (`is`, `has`, `can`) and converters (`to`) qualify on the same
 evidence, which is correct for a method vocabulary.

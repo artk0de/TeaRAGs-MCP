@@ -410,13 +410,18 @@ export interface MethodNamePatternQuery extends MethodNameScopeQuery {
  * One head word of {@link MethodHeadWordQuery}: `headHolders` = distinct method
  * symbols whose name it opens, `headTails` = distinct noun tails after it,
  * `lastHolders` = distinct method symbols of two or more words whose LAST word
- * it is (`load_user`, `loadUser` → `user`).
+ * it is (`load_user`, `loadUser` → `user`), `valueCompounds` = distinct
+ * compound names it opens (trailing `!` / `?` / `=` dropped) that also name a
+ * value: a non-`return` `cg_identifiers` row of the same evidence scope (and
+ * file language, when grouped) whose name, a leading `@` / `@@` dropped, equals
+ * the compound (`media_attachment` beside `@media_attachment`).
  */
 export interface MethodHeadWordRow extends IdentifierLanguageGroupedRow {
   head: string;
   headHolders: number;
   headTails: number;
   lastHolders: number;
+  valueCompounds: number;
 }
 
 /**

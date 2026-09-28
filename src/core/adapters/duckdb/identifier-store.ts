@@ -94,6 +94,10 @@ const METHOD_UNMARKED_SQL = "regexp_replace(short_name, '[!?]+$', '')";
 const METHOD_HEAD_SQL = "regexp_extract(short_name, '^([a-z][a-z0-9]*)[_A-Z]', 1)";
 /** The noun tail after {@link METHOD_HEAD_SQL}, normalized across casings: `_user_name!`, `UserName` → `username`. */
 const METHOD_TAIL_SQL = `lower(replace(regexp_replace(${METHOD_UNMARKED_SQL}, '^[a-z][a-z0-9]*', ''), '_', ''))`;
+/** A method name as the compound it spells, trailing `!` / `?` / `=` dropped: `date_published=` → `date_published`. */
+const METHOD_COMPOUND_SQL = "regexp_replace(short_name, '[!?=]+$', '')";
+/** A declared identifier's name without a leading `@` / `@@` sigil: `@@media_attachment` → `media_attachment`. */
+const IDENTIFIER_VALUE_NAME_SQL = "regexp_replace(name, '^@@?', '')";
 /** A method name's last word, lowercased: `load_user`, `loadUser` → `user`. */
 const METHOD_LAST_WORD_SQL = `lower(regexp_extract(${METHOD_UNMARKED_SQL}, '([A-Z]?[a-z0-9]+)$', 1))`;
 
@@ -109,6 +113,20 @@ function methodNameScopePredicate(q: MethodNameScopeQuery): SqlPredicate {
             AND short_name NOT IN (${placeholders(CONSTRUCTOR_NAMES)})
             AND ${scope.sql} AND NOT ${nonProduction("rel_path")}`,
     params: [...CONSTRUCTOR_NAMES, ...scope.params],
+  };
+}
+
+/**
+ * The `cg_identifiers` rows a method-name read may meet as names of values:
+ * every declaration but a `return` row, in production files of the SAME
+ * evidence scope {@link methodNameScopePredicate} reads the methods from.
+ */
+function methodValueScopePredicate(q: MethodNameScopeQuery): SqlPredicate {
+  const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths, q.languages);
+  const nonProduction = compileNonProductionPathPredicate(q.nonProductionPaths);
+  return {
+    sql: `kind <> 'return' AND ${scope.sql} AND NOT ${nonProduction("rel_path")}`,
+    params: [...scope.params],
   };
 }
 
@@ -705,17 +723,29 @@ export class DuckDbIdentifierStore {
    * head is the leading lowercase run before `_` or a capital, its tail the
    * rest lowercased with `_` and trailing `!` / `?` dropped (`update_user!`,
    * `updateUser` → `update` + `user`). `lastHolders` is read only for the heads
-   * that clear `minTails`, from names of two or more words.
+   * that clear `minTails`, from names of two or more words. `valueCompounds` is
+   * read for the same heads: the distinct compounds (`short_name` without
+   * trailing `!` / `?` / `=`) that equal a value's name ({@link
+   * methodValueScopePredicate}, leading `@` / `@@` dropped), matched within the
+   * file language when grouping.
    */
   async readMethodHeadWords(q: MethodHeadWordQuery): Promise<MethodHeadWordRow[]> {
     const scope = methodNameScopePredicate(q);
+    const valueScope = methodValueScopePredicate(q);
     const lang = fileLanguageGrouping("cg_symbols", q.groupByLanguage);
+    const valueLang = fileLanguageGrouping(
+      `(SELECT rel_path, ${IDENTIFIER_VALUE_NAME_SQL} AS value_name FROM cg_identifiers WHERE ${valueScope.sql})`,
+      q.groupByLanguage,
+    );
     const grouped = q.groupByLanguage === true;
+    const sameLanguage = (left: string, right: string): string =>
+      grouped ? ` AND ${left}.file_language IS NOT DISTINCT FROM ${right}.file_language` : "";
     const rows = await this.session.queryAll<{
       head: string;
       head_holders: number | string | bigint;
       head_tails: number | string | bigint;
       last_holders: number | string | bigint;
+      value_compounds: number | string | bigint;
       file_language?: string | null;
     }>(
       `WITH named AS (
@@ -724,7 +754,8 @@ export class DuckDbIdentifierStore {
           WHERE ${scope.sql}
        ),
        headed AS (
-         SELECT symbol_id${lang.column}, ${METHOD_HEAD_SQL} AS head, ${METHOD_TAIL_SQL} AS tail
+         SELECT symbol_id${lang.column}, ${METHOD_HEAD_SQL} AS head, ${METHOD_TAIL_SQL} AS tail,
+                ${METHOD_COMPOUND_SQL} AS compound
            FROM named
        ),
        heads AS (
@@ -741,19 +772,34 @@ export class DuckDbIdentifierStore {
                   WHERE regexp_matches(${METHOD_UNMARKED_SQL}, '[a-z0-9][_A-Z]'))
           WHERE last_word IN (SELECT head FROM heads)
           GROUP BY last_word${lang.column}
+       ),
+       valued AS (
+         SELECT DISTINCT value_name${lang.column}
+           FROM ${valueLang.from}
+       ),
+       compounds AS (
+         SELECT d.head${grouped ? ", d.file_language" : ""}, count(DISTINCT d.compound) AS value_compounds
+           FROM headed d
+           JOIN valued v ON v.value_name = d.compound${sameLanguage("v", "d")}
+          WHERE d.head <> '' AND d.tail <> '' AND d.head IN (SELECT head FROM heads)
+          GROUP BY d.head${grouped ? ", d.file_language" : ""}
        )
-       SELECT h.head, h.head_holders, h.head_tails, coalesce(l.last_holders, 0) AS last_holders${grouped ? ", h.file_language" : ""}
+       SELECT h.head, h.head_holders, h.head_tails, coalesce(l.last_holders, 0) AS last_holders,
+              coalesce(c.value_compounds, 0) AS value_compounds${grouped ? ", h.file_language" : ""}
          FROM heads h
          LEFT JOIN lasts l
-           ON l.last_word = h.head${grouped ? " AND l.file_language IS NOT DISTINCT FROM h.file_language" : ""}
+           ON l.last_word = h.head${sameLanguage("l", "h")}
+         LEFT JOIN compounds c
+           ON c.head = h.head${sameLanguage("c", "h")}
         ORDER BY h.head_holders DESC, h.head${grouped ? ", h.file_language NULLS LAST" : ""}`,
-      [...scope.params, q.minTails],
+      [...scope.params, q.minTails, ...valueScope.params],
     );
     return rows.map((r) => ({
       head: r.head,
       headHolders: Number(r.head_holders),
       headTails: Number(r.head_tails),
       lastHolders: Number(r.last_holders),
+      valueCompounds: Number(r.value_compounds),
       ...languageField(q.groupByLanguage, r),
     }));
   }

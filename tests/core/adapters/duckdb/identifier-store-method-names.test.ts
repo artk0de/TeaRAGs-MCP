@@ -15,7 +15,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
-import type { SymbolDefinition, SymbolDefinitionKind } from "../../../../src/core/contracts/types/codegraph.js";
+import type {
+  IdentifierDeclarationKind,
+  IdentifierRow,
+  SymbolDefinition,
+  SymbolDefinitionKind,
+} from "../../../../src/core/contracts/types/codegraph.js";
 import { languageTestFileConventions } from "../../../../src/core/domains/language/capability/native.js";
 import { DATABASE_MIGRATIONS } from "../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
@@ -86,24 +91,24 @@ describe("method-name reads over cg_symbols", () => {
       // update: update_user, update_user!, update_account, updateOrder, updateUser — tails user/account/order.
       // load and fetch open one tail each, so two tails keep them out.
       expect(await db.readMethodHeadWords({ ...scope, minTails: 2 })).toEqual([
-        { head: "update", headHolders: 5, headTails: 3, lastHolders: 0 },
+        { head: "update", headHolders: 5, headTails: 3, lastHolders: 0, valueCompounds: 0 },
       ]);
     });
 
     it("computes lastHolders from the last word of snake and camel names, markers dropped", async () => {
       // user opens user_name once and ends load_user ×2, fetch_user, loadUser, update_user, update_user!, updateUser.
       expect(await db.readMethodHeadWords({ ...scope, minTails: 1 })).toEqual([
-        { head: "update", headHolders: 5, headTails: 3, lastHolders: 0 },
-        { head: "load", headHolders: 3, headTails: 1, lastHolders: 0 },
-        { head: "fetch", headHolders: 1, headTails: 1, lastHolders: 0 },
-        { head: "user", headHolders: 1, headTails: 1, lastHolders: 7 },
+        { head: "update", headHolders: 5, headTails: 3, lastHolders: 0, valueCompounds: 0 },
+        { head: "load", headHolders: 3, headTails: 1, lastHolders: 0, valueCompounds: 0 },
+        { head: "fetch", headHolders: 1, headTails: 1, lastHolders: 0, valueCompounds: 0 },
+        { head: "user", headHolders: 1, headTails: 1, lastHolders: 7, valueCompounds: 0 },
       ]);
     });
 
     it("stays within the languages; an empty language scope reads nothing", async () => {
       expect(await db.readMethodHeadWords({ ...scope, minTails: 1, languages: ["typescript"] })).toEqual([
-        { head: "update", headHolders: 2, headTails: 2, lastHolders: 0 },
-        { head: "load", headHolders: 1, headTails: 1, lastHolders: 0 },
+        { head: "update", headHolders: 2, headTails: 2, lastHolders: 0, valueCompounds: 0 },
+        { head: "load", headHolders: 1, headTails: 1, lastHolders: 0, valueCompounds: 0 },
       ]);
       expect(await db.readMethodHeadWords({ ...scope, minTails: 1, languages: [] })).toEqual([]);
     });
@@ -111,7 +116,7 @@ describe("method-name reads over cg_symbols", () => {
     it("drops the excluded files and never reads a non-production file", async () => {
       // spec/i_spec.rb declares update_invoice: counted, update would open four tails.
       expect(await db.readMethodHeadWords({ ...scope, minTails: 2, excludePaths: ["app/g.rb", "app/k.rb"] })).toEqual([
-        { head: "update", headHolders: 2, headTails: 2, lastHolders: 0 },
+        { head: "update", headHolders: 2, headTails: 2, lastHolders: 0, valueCompounds: 0 },
       ]);
     });
 
@@ -121,8 +126,61 @@ describe("method-name reads over cg_symbols", () => {
 
     it("applies minTails per file language when grouping by it", async () => {
       expect(await db.readMethodHeadWords({ ...scope, minTails: 2, groupByLanguage: true })).toEqual([
-        { head: "update", headHolders: 3, headTails: 2, lastHolders: 0, language: "ruby" },
-        { head: "update", headHolders: 2, headTails: 2, lastHolders: 0, language: "typescript" },
+        { head: "update", headHolders: 3, headTails: 2, lastHolders: 0, valueCompounds: 0, language: "ruby" },
+        { head: "update", headHolders: 2, headTails: 2, lastHolders: 0, valueCompounds: 0, language: "typescript" },
+      ]);
+    });
+  });
+
+  describe("readMethodHeadWords valueCompounds", () => {
+    const identifier = (name: string, kind: IdentifierDeclarationKind): IdentifierRow => ({
+      ownerSymbolId: "Owner#m",
+      kind,
+      name,
+      line: 1,
+    });
+
+    beforeEach(async () => {
+      const files: readonly (readonly [string, string, readonly IdentifierRow[]])[] = [
+        // Fields name a value with their sigil dropped; two spellings of one compound count once.
+        ["app/x.rb", "ruby", [identifier("@update_account", "field"), identifier("update_account", "local")]],
+        ["app/y.rb", "ruby", [identifier("@@update_user", "field")]],
+        // A ruby param spelled like the typescript method updateUser.
+        ["app/q.rb", "ruby", [identifier("updateUser", "param")]],
+        // A return row names no value; a non-production file is outside the evidence.
+        ["web/r.ts", "typescript", [identifier("updateOrder", "return")]],
+        ["spec/s_spec.rb", "ruby", [identifier("updateOrder", "local")]],
+      ];
+      for (const [relPath, language] of files) {
+        await db.run("INSERT INTO cg_symbols_files (rel_path, language) VALUES (?, ?)", [relPath, language]);
+      }
+      await db.replaceIdentifiersBulk(files.map(([relPath, , rows]) => ({ relPath, rows: [...rows] })));
+    });
+
+    it("counts the distinct compounds a head opens that name a non-return value in scope", async () => {
+      // update opens update_user(!), update_account, updateOrder, updateUser: three name a value.
+      expect(await db.readMethodHeadWords({ ...scope, minTails: 1 })).toEqual([
+        { head: "update", headHolders: 5, headTails: 3, lastHolders: 0, valueCompounds: 3 },
+        { head: "load", headHolders: 3, headTails: 1, lastHolders: 0, valueCompounds: 0 },
+        { head: "fetch", headHolders: 1, headTails: 1, lastHolders: 0, valueCompounds: 0 },
+        { head: "user", headHolders: 1, headTails: 1, lastHolders: 7, valueCompounds: 0 },
+      ]);
+    });
+
+    it("reads the values from the evidence scope the methods are read from", async () => {
+      expect(await db.readMethodHeadWords({ ...scope, minTails: 2, excludePaths: ["app/q.rb"] })).toEqual([
+        { head: "update", headHolders: 5, headTails: 3, lastHolders: 0, valueCompounds: 2 },
+      ]);
+      // typescript names updateUser, but the only value spelled so is declared in a ruby file.
+      expect(await db.readMethodHeadWords({ ...scope, minTails: 2, languages: ["typescript"] })).toEqual([
+        { head: "update", headHolders: 2, headTails: 2, lastHolders: 0, valueCompounds: 0 },
+      ]);
+    });
+
+    it("matches a value within the method's file language when grouping by it", async () => {
+      expect(await db.readMethodHeadWords({ ...scope, minTails: 2, groupByLanguage: true })).toEqual([
+        { head: "update", headHolders: 3, headTails: 2, lastHolders: 0, valueCompounds: 2, language: "ruby" },
+        { head: "update", headHolders: 2, headTails: 2, lastHolders: 0, valueCompounds: 0, language: "typescript" },
       ]);
     });
   });
