@@ -3,86 +3,171 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## [1.45.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.45.0...v1.45.1) (2026-09-28)
+
+### Features
+
+* **scripts:** bold lead markers, monospace every project identifier in release notes ([d7ef438](https://github.com/artk0de/TeaRAGs-MCP/commit/d7ef43809d2d4e36cb08b7bb6e8bca9177cd8043))
+* **scripts:** release notes separate the agent plugin from documentation ([cce4900](https://github.com/artk0de/TeaRAGs-MCP/commit/cce49007c8479ddfe37d7c0cbbd93f4f0f2bc315))
+
+### Bug Fixes
+
+* **release:** non-release scopes never bump the version ([ede741d](https://github.com/artk0de/TeaRAGs-MCP/commit/ede741d193e416919b2a0df44b4a37b30fc03455))
+
 ## [1.45.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.44.2...v1.45.0) (2026-09-27)
 
 ### 🔎 Search & ranking
 
-* **Breaking:** `metaOnly` results keep every payload value raw, and every search tool carries the labels on `rankingOverlay`. `payload.preset` is gone; read `rankingOverlay.preset` instead
-* **Breaking:** `level: "file"` results are reduced to file scope. Members and chunk-level fields are no longer attached (outline a file with `find_symbol` by `relativePath`), and `payload.score` is replaced by the top-level `score`
-* Search tools take `fields`, an allow-list of payload paths, and return only those fields, which keeps large result sets small
-* A response now says when a rerank preset's default `filter` narrowed the result set, and names the param that clears it
-* Tool schemas list only the filter parameters a tool really applies and describe the item shape it really returns
+- **Breaking:** `metaOnly` results keep every payload value raw, and every
+  search tool carries the labels on `rankingOverlay`. `payload.preset` is gone;
+  read `rankingOverlay.preset` instead
+- **Breaking:** `level: "file"` results are reduced to file scope. Members and
+  chunk-level fields are no longer attached (outline a file with `find_symbol`
+  by `relativePath`), and `payload.score` is replaced by the top-level `score`
+- Search tools take `fields`, an allow-list of payload paths, and return only
+  those fields, which keeps large result sets small
+- A response now says when a rerank preset's default `filter` narrowed the
+  result set, and names the param that clears it
+- Tool schemas list only the filter parameters a tool really applies and
+  describe the item shape it really returns
 
 ### 🧠 Code intelligence
 
-* New `get_architecture_report` tool: finds convention-privacy leaks, leaking abstractions, facade leaks, components in the zone of pain (gated on how volatile their git history is), and files that always change together without any code link, each explained by the neighbour they share
-* **Breaking:** `stableDependencies` findings in `get_architecture_report` are judged per component, not per file, and carry component names and afferent/efferent counts
-* New `get_naming_lexicon` tool: before you name something, it shows the project's own vocabulary for that concept, judges a draft name by the role its type plays and by the terms it aligns with, and suggests alternatives the project already uses
-* `get_naming_lexicon` reviews a diff with `changes`: the names a branch introduces are checked against the project's vocabulary before merge
-* New `get_ontology_report` tool audits a whole codebase's naming: synonyms for one concept, generic names, and outliers
-* Graph tools and the `find_symbol` outline show each symbol's declared visibility, for every native language
-* `get_callers` and `get_callees` answer at file scope from the import graph when given a file path
-* Callers of an inherited member are found through the class that actually defines it
-* ***TypeScript*** call graph reaches implementers that conform structurally, object-literal and factory-returned members, and type-alias contracts
-* Test examples are addressable by name in ***TypeScript***, ***JavaScript*** and ***RSpec***, and `find_symbol` outlines a test file example by example
+- New `get_architecture_report` tool: finds convention-privacy leaks, leaking
+  abstractions, facade leaks, components in the zone of pain (gated on how
+  volatile their git history is), and files that always change together without
+  any code link, each explained by the neighbour they share
+- **Breaking:** `stableDependencies` findings in `get_architecture_report` are
+  judged per component, not per file, and carry component names and
+  afferent/efferent counts
+- New `get_naming_lexicon` tool: before you name something, it shows the
+  project's own vocabulary for that concept, judges a draft name by the role its
+  type plays and by the terms it aligns with, and suggests alternatives the
+  project already uses
+- `get_naming_lexicon` reviews a diff with `changes`: the names a branch
+  introduces are checked against the project's vocabulary before merge
+- New `get_ontology_report` tool audits a whole codebase's naming: synonyms for
+  one concept, generic names, and outliers
+- Graph tools and the `find_symbol` outline show each symbol's declared
+  visibility, for every native language
+- `get_callers` and `get_callees` answer at file scope from the import graph
+  when given a file path
+- Callers of an inherited member are found through the class that actually
+  defines it
+- **_TypeScript_** call graph reaches implementers that conform structurally,
+  object-literal and factory-returned members, and type-alias contracts
+- Test examples are addressable by name in **_TypeScript_**, **_JavaScript_**
+  and **_RSpec_**, and `find_symbol` outlines a test file example by example
 
 ### ⚡ Indexing & performance
 
-* **Breaking:** `--force --languages` (and `forceReindex` with `languages`) re-chunks only the selected files in place and leaves every other point untouched, instead of building a new collection of just those languages. `--path-pattern`, `--file-extension`, `--test-file` and `--files` narrow it further, and drift reports point at this scoped run when only one language's chunking changed
-* **Breaking:** files above 5000 lines skip chunk-level git churn by default (was 10000); file-level git signals are unchanged. Set `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES=10000` for the old limit
-* **Ollama** models can be quantized server-side through `OLLAMA_QUANTIZATION`; it is opt-in and off by default, and a refused quantization says why
+- **Breaking:** `--force --languages` (and `forceReindex` with `languages`)
+  re-chunks only the selected files in place and leaves every other point
+  untouched, instead of building a new collection of just those languages.
+  `--path-pattern`, `--file-extension`, `--test-file` and `--files` narrow it
+  further, and drift reports point at this scoped run when only one language's
+  chunking changed
+- **Breaking:** files above 5000 lines skip chunk-level git churn by default
+  (was 10000); file-level git signals are unchanged. Set
+  `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES=10000` for the old limit
+- **Ollama** models can be quantized server-side through `OLLAMA_QUANTIZATION`;
+  it is opt-in and off by default, and a refused quantization says why
 
 ### 🗣 Language support
 
-* ***Swift*** call graph: members are typed through protocols, extensions, generics, closures, overloads picked by labels and argument types, SwiftUI modifier chains and the Apple SDKs, so navigation in ***Swift*** projects reaches much further
-* ***JavaScript*** lookup-table dispatch and ***Python*** dict-table dispatch show up as call edges
-* ***Ruby*** entry-point narrowing follows a hook named by a literal argument
+- **_Swift_** call graph: members are typed through protocols, extensions,
+  generics, closures, overloads picked by labels and argument types, SwiftUI
+  modifier chains and the Apple SDKs, so navigation in **_Swift_** projects
+  reaches much further
+- **_JavaScript_** lookup-table dispatch and **_Python_** dict-table dispatch
+  show up as call edges
+- **_Ruby_** entry-point narrowing follows a hook named by a literal argument
 
 ### 🛠 CLI & workflow
 
-* `tea-rags call` runs any **MCP** tool from the command line, in-process, with the target project's registered environment
-* **Breaking:** the project registry pins only environment values you set explicitly, and a newly indexed project starts from code defaults instead of inheriting another project's settings. Pins left behind at old release defaults are dropped once on upgrade; re-pin one on purpose with `tea-rags projects set-env`
-* `prime` shows how far each language's chunking, test chunking and call graph can be trusted on this index
-* `tea-rags qdrant recover` repairs a collection whose optimizer failed
-* The `index-codebase --json` report includes the state of each embedding endpoint
-* `add_documents` accepts an optional metadata schema for typed collections
-* `doctor`, `projects`, `update` and `tune` share one coloured output style
+- `tea-rags call` runs any **MCP** tool from the command line, in-process, with
+  the target project's registered environment
+- **Breaking:** the project registry pins only environment values you set
+  explicitly, and a newly indexed project starts from code defaults instead of
+  inheriting another project's settings. Pins left behind at old release
+  defaults are dropped once on upgrade; re-pin one on purpose with
+  `tea-rags projects set-env`
+- `prime` shows how far each language's chunking, test chunking and call graph
+  can be trusted on this index
+- `tea-rags qdrant recover` repairs a collection whose optimizer failed
+- The `index-codebase --json` report includes the state of each embedding
+  endpoint
+- `add_documents` accepts an optional metadata schema for typed collections
+- `doctor`, `projects`, `update` and `tune` share one coloured output style
 
 ### 🧩 Agent plugin
 
-* New `architecture-diagnostics` skill
-* Skills name things with the project's own vocabulary: `data-driven-generation` runs a naming step, `mr-review` reviews a branch's new names, and naming audits go to `get_ontology_report`
-* `dinopowers` wrappers check index freshness on reads, route modifications through `data-driven-generation` and report root causes
-* `report-issue` opens the bug form
-* Agent guidance: labels are read from `rankingOverlay`, a split symbol is read whole before reasoning about it, file-level import questions go to `get_callers` / `get_callees`, visibility is read in graph navigation, and god classes are attributed through the file outline
+- New `architecture-diagnostics` skill
+- Skills name things with the project's own vocabulary: `data-driven-generation`
+  runs a naming step, `mr-review` reviews a branch's new names, and naming
+  audits go to `get_ontology_report`
+- `dinopowers` wrappers check index freshness on reads, route modifications
+  through `data-driven-generation` and report root causes
+- `report-issue` opens the bug form
+- Agent guidance: labels are read from `rankingOverlay`, a split symbol is read
+  whole before reasoning about it, file-level import questions go to
+  `get_callers` / `get_callees`, visibility is read in graph navigation, and god
+  classes are attributed through the file outline
 
 ### 📚 Documentation
 
-* **README:** indexing speed on a LAN GPU, the five-layer index with one question per layer, a comparison with alternatives, a client and provider matrix, and an FAQ
-* **Docusaurus:** silent coupling, naming alignment, structural conformance and **codegraph** read errors, explicit env pinning, embedding failover and hard-kill recovery, the scoped `--force`, the `mr-review` and `report-issue` skills, and every ingest error code
+- **README:** indexing speed on a LAN GPU, the five-layer index with one
+  question per layer, a comparison with alternatives, a client and provider
+  matrix, and an FAQ
+- **Docusaurus:** silent coupling, naming alignment, structural conformance and
+  **codegraph** read errors, explicit env pinning, embedding failover and
+  hard-kill recovery, the scoped `--force`, the `mr-review` and `report-issue`
+  skills, and every ingest error code
 
 ### 🩹 Fixes
 
-* Embedding failover: after consecutive failures indexing switches to the fallback endpoint, a call caught mid-failover is retried there, and a provider that is down at startup fails with an actionable message within its wait budget
-* A batch that crashes the **Ollama** runner is split and retried at a smaller size instead of stalling the run
-* A hard-killed index run is reported as `stale_indexing` at once, and the next run takes over and reclaims its unfinished build
-* `--force-enrichments` fully rebuilds the selected layers, including files without chunks and stale skip markers
-* Incremental reindexing retries failed deletions, reports partial runs, and keeps derived **call-graph** data in step with deleted files
-* Git signals follow file renames, and a chunk is credited only for lines a commit actually changed
-* Chunking keeps doc comments with their symbol, splits oversized symbols on statement boundaries, keeps distinct symbols apart in ***TypeScript*** classes and bash, and indexes code outside extracted members
-* **Call-graph** database files shrink after updates, and a corrupt or locked database fails fast with a clear error instead of hanging
-* **Call-graph** precision: ***TypeScript*** bare calls bind by lexical scope, ***Java*** `new X()` receivers, ***Rust*** type paths, ***Ruby*** mixin order, ***Python*** re-exports and same-named classes across languages resolve correctly
-* **Qdrant** requests survive a reset keep-alive socket, and every filterable field gets a payload index on existing collections too
-* The **MCP** server releases its resources and exits when the client goes away
-* `projects unregister` works for path-registered projects, and `projects orphans` counts chunks
-* `prime` shows the real status error, and `tune` prints a pasteable **MCP** config for any tuned subset
-* One-contributor files are labelled `solo` in `recentDominantAuthorPct`, and `instability` labels are banded over what the corpus measured
+- Embedding failover: after consecutive failures indexing switches to the
+  fallback endpoint, a call caught mid-failover is retried there, and a provider
+  that is down at startup fails with an actionable message within its wait
+  budget
+- A batch that crashes the **Ollama** runner is split and retried at a smaller
+  size instead of stalling the run
+- A hard-killed index run is reported as `stale_indexing` at once, and the next
+  run takes over and reclaims its unfinished build
+- `--force-enrichments` fully rebuilds the selected layers, including files
+  without chunks and stale skip markers
+- Incremental reindexing retries failed deletions, reports partial runs, and
+  keeps derived **call-graph** data in step with deleted files
+- Git signals follow file renames, and a chunk is credited only for lines a
+  commit actually changed
+- Chunking keeps doc comments with their symbol, splits oversized symbols on
+  statement boundaries, keeps distinct symbols apart in **_TypeScript_** classes
+  and bash, and indexes code outside extracted members
+- **Call-graph** database files shrink after updates, and a corrupt or locked
+  database fails fast with a clear error instead of hanging
+- **Call-graph** precision: **_TypeScript_** bare calls bind by lexical scope,
+  **_Java_** `new X()` receivers, **_Rust_** type paths, **_Ruby_** mixin order,
+  **_Python_** re-exports and same-named classes across languages resolve
+  correctly
+- **Qdrant** requests survive a reset keep-alive socket, and every filterable
+  field gets a payload index on existing collections too
+- The **MCP** server releases its resources and exits when the client goes away
+- `projects unregister` works for path-registered projects, and
+  `projects orphans` counts chunks
+- `prime` shows the real status error, and `tune` prints a pasteable **MCP**
+  config for any tuned subset
+- One-contributor files are labelled `solo` in `recentDominantAuthorPct`, and
+  `instability` labels are banded over what the corpus measured
 
 ### 🔧 Environment Variables
 
-* `OLLAMA_QUANTIZATION` · Server-side quantization level for the **Ollama** embedding model. Opt-in · default: `off` (new)
-* `EMBEDDING_TUNE_FAILOVER_CONSECUTIVE_FAILURES` · Consecutive embedding failures before switching to `EMBEDDING_FALLBACK_URL`; 0 disables · default: `3` (new)
-* `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES` · Files above this many lines skip chunk-level git churn · default: `5000` (changed)
+- `OLLAMA_QUANTIZATION` · Server-side quantization level for the **Ollama**
+  embedding model. Opt-in · default: `off` (new)
+- `EMBEDDING_TUNE_FAILOVER_CONSECUTIVE_FAILURES` · Consecutive embedding
+  failures before switching to `EMBEDDING_FALLBACK_URL`; 0 disables · default:
+  `3` (new)
+- `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES` · Files above this many lines skip
+  chunk-level git churn · default: `5000` (changed)
 
 ## [1.44.2](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.44.1...v1.44.2) (2026-09-23)
 
