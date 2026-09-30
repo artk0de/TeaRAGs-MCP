@@ -68,6 +68,12 @@ export type {
   ArchitectureViolation,
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
+  // Co-change partners DTOs (find_co_changed)
+  CoChangeBuildProvenance,
+  CoChangedFileResult,
+  CoChangedPartner,
+  FindCoChangedRequest,
+  FindCoChangedResult,
   // Naming lexicon DTOs
   NamingLexiconRequest,
   NamingLexiconResult,

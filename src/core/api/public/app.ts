@@ -25,6 +25,7 @@ import type { ExploreFacade } from "../internal/facades/explore-facade.js";
 import type { GraphFacade } from "../internal/facades/graph-facade.js";
 import type { IngestFacade } from "../internal/facades/ingest-facade.js";
 import { ArchitectureReportOps } from "../internal/ops/architecture-report-ops.js";
+import { CochangeOps } from "../internal/ops/cochange-ops.js";
 import { CollectionOps } from "../internal/ops/collection-ops.js";
 import { DocumentMetadataSchemaCompiler } from "../internal/ops/document-metadata-schema.js";
 import { DocumentOps } from "../internal/ops/document-ops.js";
@@ -41,6 +42,8 @@ import type {
   EnrichmentProgressCallback,
   ExploreCodeRequest,
   ExploreResponse,
+  FindCoChangedRequest,
+  FindCoChangedResult,
   FindCyclesRequest,
   FindCyclesResponse,
   FindSimilarRequest,
@@ -162,6 +165,8 @@ export interface App {
   getNamingLexicon: (request: NamingLexiconRequest) => Promise<NamingLexiconResult>;
   /** Naming ontology audit (bd tea-rags-mcp-4p3sb.20) — synonyms, homonyms, outliers, symbol collisions. */
   getOntologyReport: (request: GetOntologyReportRequest) => Promise<GetOntologyReportResponse>;
+  /** Co-change partners (bd tea-rags-mcp-l1ot.1) — the temporal sub-graph: which files historically changed together. */
+  findCoChanged: (request: FindCoChangedRequest) => Promise<FindCoChangedResult>;
 
   // -- Provider availability — sync query used by MCP tool registrars to
   // skip registration when a required trajectory provider is not loaded.
@@ -368,6 +373,8 @@ export function createApp(deps: AppDeps): App {
       deps.namingLexiconOps ? deps.namingLexiconOps.getNamingLexicon(req) : { scope: "", byType: [], names: [] },
     getOntologyReport: async (req) =>
       deps.ontologyReportOps ? deps.ontologyReportOps.report(req) : OntologyReportOps.empty(req),
+    findCoChanged: async (req) =>
+      deps.graphFacade ? deps.graphFacade.findCoChanged(req) : CochangeOps.empty(req.files),
 
     // -- Provider availability — backs MCP tool-registrar gating. Source
     // of truth is `registeredProviderKeys` populated by composition from

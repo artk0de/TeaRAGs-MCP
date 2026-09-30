@@ -136,6 +136,16 @@ const GetOntologyReportInputShape = {
   limit: z.number().int().positive().max(100).optional().describe("Items per section (default 20)."),
 };
 
+/** `find_co_changed` (bd tea-rags-mcp-l1ot.1) — co-change partners of the named files. */
+const FindCoChangedInputShape = {
+  ...collectionPathFields(),
+  files: z
+    .array(z.string().min(1))
+    .min(1)
+    .describe("Project-relative paths to query, at least one (e.g. ['src/core/app.ts'])."),
+  limit: z.number().int().positive().max(100).optional().describe("Max partners per file (default 10)"),
+};
+
 /**
  * Build the `trace_path` input shape. The `rerank` field is a curated preset
  * ENUM derived from the registry (presets that tag `"trace_path"` in their
@@ -376,6 +386,27 @@ export function registerCodegraphTools(
         sections,
         limit,
       });
+      return formatMcpText(JSON.stringify(response, null, 2));
+    },
+  );
+
+  registerToolSafe(
+    server,
+    "find_co_changed",
+    {
+      title: "Find Co-Changed Files",
+      description:
+        "File co-change partners from git history (cg_temporal sub-graph). Ranked by Wilson lower-bound strength; " +
+        "each partner carries support, both directed confidences (pPartnerGivenFile, pFileGivenPartner), lift, " +
+        "sample commits, structurallyLinked — an import/method/barrel edge joins the pair, false = silent coupling. " +
+        "Provenance echoes head, window and build cuts; partners deleted from the working tree are dropped. " +
+        "built:false = no co-change build yet (run a codegraph enrichment), NEVER read it as 'no partners'. " +
+        "Before editing a file, surface silent high-strength partners as change-context.",
+      inputSchema: FindCoChangedInputShape,
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ project, collection, path, files, limit }) => {
+      const response = await app.findCoChanged({ project, collection, path, files, limit });
       return formatMcpText(JSON.stringify(response, null, 2));
     },
   );
