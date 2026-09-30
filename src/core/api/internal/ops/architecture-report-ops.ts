@@ -45,6 +45,7 @@ import {
   FACADE_AGGREGATION_REASON,
   FACADE_MODULE_EXCLUSION_REASONS,
   inducedDomainGraph,
+  layeringKnotKeepCosts,
   lookupLayeringKnot,
   MAIN_SEQUENCE_STABLE_CONCRETE_CALM_REASON,
   MAIN_SEQUENCE_UNOBSERVABLE_REASON,
@@ -56,6 +57,7 @@ import {
   type LayeringFeedbackEdge as DomainLayeringFeedbackEdge,
   type LayeringViolation as DomainLayeringViolation,
   type FacadeModuleAssessment,
+  type LayeringKeepCost,
   type LayeringKnotLookup,
   type LayeringModel,
   type LayeringReport,
@@ -274,8 +276,23 @@ export class ArchitectureReportOps {
       // boundary edges carry levels consistent with the summary.
       ...(request.layerMap ? { layerMap: buildLayerMap(layeringComponents, production.graph, request.layerMap) } : {}),
       // The knot VIEW only when asked (bd tea-rags-mcp-r8hme.38), paged here.
+      // Keep costs price the page's cut edges on the WHOLE knot (bd
+      // tea-rags-mcp-r8hme.40), whatever projection the page shows.
       ...(knotLookup
-        ? { knot: knotView(knotLookup, layeringComponents, domainKnot?.instabilitySpread ?? 0, limit, offset) }
+        ? {
+            knot: knotView(
+              knotLookup,
+              layeringComponents,
+              domainKnot?.instabilitySpread ?? 0,
+              (edges) => {
+                // An inKnot lookup always names a knot of the same model.
+                if (!domainKnot) throw new Error("knotOf lookup found a knot the layering model does not hold");
+                return layeringKnotKeepCosts(layeringComponents, layeringModel, domainKnot, edges);
+              },
+              limit,
+              offset,
+            ),
+          }
         : {}),
       // The domain block only in domain mode (bd tea-rags-mcp-xb669.1): the
       // domain's own layering counts plus its border against the system.
@@ -852,12 +869,16 @@ function toLayeringBackEdgeViolation(v: DomainLayeringBackEdgeViolation): Layeri
  * `[offset, offset + limit)` — members and cut edges by the same window,
  * back-edges capped at `limit` — the counts kept before paging. Each member
  * carries its coupling on the partition the knot was found in (bd
- * tea-rags-mcp-r8hme.39).
+ * tea-rags-mcp-r8hme.39); each cut edge on the page its keep cost (bd
+ * tea-rags-mcp-r8hme.40), priced only for the page — never the whole cut.
  */
 function knotView(
   lookup: Exclude<LayeringKnotLookup, { kind: "unknownComponent" }>,
   layeringPartition: ComponentGraph,
   instabilitySpread: number,
+  keepCostsOf: (
+    edges: readonly DomainLayeringFeedbackEdge[],
+  ) => { edge: DomainLayeringFeedbackEdge; keepCost: LayeringKeepCost }[],
   limit: number,
   offset: number,
 ): ArchitectureKnotView {
@@ -879,7 +900,10 @@ function knotView(
       members: knot.components.slice(offset, end).map((component) => knotMember(component, layeringPartition)),
       memberCount: knot.components.length,
       instabilitySpread: round3(instabilitySpread),
-      feedbackArcSet: knot.feedbackArcSet.slice(offset, end).map(toLayeringFeedbackEdge),
+      feedbackArcSet: keepCostsOf(knot.feedbackArcSet.slice(offset, end)).map(({ edge, keepCost }) => ({
+        ...toLayeringFeedbackEdge(edge),
+        keepCost,
+      })),
       cutEdgeCount: knot.cutEdgeCount,
       levelsAfterCut: knot.levelsAfterCut,
       composition: knot.composition,

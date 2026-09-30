@@ -408,6 +408,23 @@ export interface ArchitectureKnotMember {
   efferentCount: number;
 }
 
+/**
+ * What keeping one cut edge costs (bd tea-rags-mcp-r8hme.40): the knot's
+ * internal edges with every OTHER cut edge removed, priced on the whole knot
+ * even when the page is a pathPattern projection.
+ */
+export interface LayeringKeepCost {
+  /** Members that fall back into a cycle. 0 = the greedy cut includes this edge needlessly; it can stay. */
+  recollapsedMemberCount: number;
+  /** Distinct levels the members occupy, re-collapsed cycles condensed, components outside the knot at their levels. */
+  levelsAfterKeep: number;
+}
+
+/** A cut edge on the knotOf page, with what keeping it would cost. */
+export interface LayeringKnotPageFeedbackEdge extends LayeringFeedbackEdge {
+  keepCost: LayeringKeepCost;
+}
+
 /** One page of a knot: members and cut edges both windowed at `[offset, offset + limit)`. */
 export interface ArchitectureKnotPage {
   /** This page of the members, most depended-on (Ca) first, then path. */
@@ -416,8 +433,8 @@ export interface ArchitectureKnotPage {
   memberCount: number;
   /** Whole-knot max − min member instability, rounded to 3 decimals — the knot finding's ranking key. */
   instabilitySpread: number;
-  /** This page of the feedback arc set, heaviest call weight first. */
-  feedbackArcSet: LayeringFeedbackEdge[];
+  /** This page of the feedback arc set, heaviest call weight first, each with its keep cost. */
+  feedbackArcSet: LayeringKnotPageFeedbackEdge[];
   /** Whole-knot cut size. */
   cutEdgeCount: number;
   levelsAfterCut: number;

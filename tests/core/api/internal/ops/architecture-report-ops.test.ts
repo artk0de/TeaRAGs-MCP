@@ -1342,6 +1342,69 @@ describe("ArchitectureReportOps#build — knotOf view and drillDown (bd tea-rags
 });
 
 /**
+ * Keep cost per cut edge on the knotOf page (bd tea-rags-mcp-r8hme.40). On the
+ * bidirectional ring every weight is equal, so the greedy sequence is
+ * c00, c01, …, c29 and the cut is the 29 edges c_{i+1}→c_i plus c29→c00; what
+ * remains is the chain c00→c01→…→c29 and c00→c29. Keeping c_{i+1}→c_i
+ * re-collapses exactly c_i⇄c_{i+1} (c_i reaches c_{i+1} only directly), 30
+ * members on 29 levels. Keeping c29→c00 closes the whole chain: all 30
+ * members, one level.
+ */
+describe("ArchitectureReportOps#build — knotOf keep cost per cut edge (bd tea-rags-mcp-r8hme.40)", () => {
+  const pairs = (edges: readonly { sourceComponent: string; targetComponent: string }[] | undefined) =>
+    (edges ?? []).map((edge) => `${edge.sourceComponent}->${edge.targetComponent}`);
+
+  it("prices every cut edge on the page by the members it re-collapses and the levels they keep", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), { knotOf: "c07", limit: 10 });
+
+    const page = report.knot?.knot?.feedbackArcSet ?? [];
+    expect(pairs(page)).toEqual(
+      Array.from({ length: 10 }, (_, i) => `c${String(i + 1).padStart(2, "0")}->c${String(i).padStart(2, "0")}`),
+    );
+    for (const edge of page) {
+      expect(edge.keepCost).toEqual({ recollapsedMemberCount: 2, levelsAfterKeep: 29 });
+    }
+  });
+
+  it("prices the edge that closes the whole ring as re-collapsing every member", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), {
+      knotOf: "c07",
+      limit: 10,
+      offset: 20,
+    });
+
+    const closing = report.knot?.knot?.feedbackArcSet.find(
+      (edge) => edge.sourceComponent === "c29" && edge.targetComponent === "c00",
+    );
+    expect(closing?.keepCost).toEqual({ recollapsedMemberCount: 30, levelsAfterKeep: 1 });
+  });
+
+  it("prices the projected page's edges on the WHOLE knot under pathPattern", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), {
+      knotOf: "c07",
+      limit: 10,
+      pathPattern: "{c00,c01,c02}/**",
+    });
+
+    const page = report.knot?.knot?.feedbackArcSet ?? [];
+    expect(pairs(page)).toEqual(["c01->c00", "c02->c01"]);
+    // 29 levels is a 30-member reading — the 3 in-scope members alone could span at most 3.
+    for (const edge of page) {
+      expect(edge.keepCost).toEqual({ recollapsedMemberCount: 2, levelsAfterKeep: 29 });
+    }
+  });
+
+  it("leaves the report's knot findings without a keep cost", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), {});
+
+    const knot = report.violations.find((v) => v.detector === "layering" && v.kind === "knot");
+    if (knot?.detector !== "layering" || knot.kind !== "knot") throw new Error("no knot finding");
+    expect(knot.evidence.feedbackArcSet.length).toBeGreaterThan(0);
+    for (const edge of knot.evidence.feedbackArcSet) expect(edge).not.toHaveProperty("keepCost");
+  });
+});
+
+/**
  * knotOf mode (bd tea-rags-mcp-r8hme.39): a knotOf call answers for the knot
  * — its members with their coupling, and what the other detectors found
  * INSIDE it — instead of resending the whole-project report every page.

@@ -11,6 +11,7 @@ import type {
   LayeringComponentPosition,
   LayeringFeedbackEdge,
   LayeringIslandViolation,
+  LayeringKeepCost,
   LayeringKnot,
   LayeringKnotDetail,
   LayeringKnotDrillDown,
@@ -338,14 +339,76 @@ export function lookupLayeringKnot(
   };
 }
 
-function adjacency(dependencies: readonly ComponentDependency[]): Map<string, readonly string[]> {
+/**
+ * The keep cost of each named cut edge of one WHOLE knot (bd
+ * tea-rags-mcp-r8hme.40): the knot's internal edges minus every OTHER
+ * feedback-arc-set edge, Tarjan over the members alone, the re-collapsed SCCs
+ * condensed, then the member-local levels — components outside the knot at
+ * their levels in `model`. O(|K| + E_K) per edge after one O(E) pass that
+ * gathers the knot's edges, so the caller prices a page of edges, never the
+ * whole cut. Takes the prebuilt `model` of the same component graph; an edge
+ * outside the knot's cut prices as the full cut.
+ */
+export function layeringKnotKeepCosts<Edge extends Pick<LayeringFeedbackEdge, "sourceComponent" | "targetComponent">>(
+  componentGraph: ComponentGraph,
+  model: LayeringModel,
+  knot: Pick<LayeringKnot, "components" | "feedbackArcSet">,
+  edges: readonly Edge[],
+): { edge: Edge; keepCost: LayeringKeepCost }[] {
+  const members = knot.components;
+  const memberSet = new Set(members);
+  const internal: (readonly [string, string])[] = [];
+  const external: (readonly [string, string])[] = [];
+  for (const dependency of componentGraph.dependencies) {
+    if (!memberSet.has(dependency.sourceComponent)) continue;
+    (memberSet.has(dependency.targetComponent) ? internal : external).push(dependencyPair(dependency));
+  }
+  const cut = new Set(knot.feedbackArcSet.map((edge) => dependencyKey(edge.sourceComponent, edge.targetComponent)));
+  const baseLevelOf = (component: string) => model.positions.get(component)?.level ?? 0;
+
+  return edges.map((edge) => {
+    const kept = dependencyKey(edge.sourceComponent, edge.targetComponent);
+    const keptInternal = internal.filter(([source, target]) => {
+      const key = dependencyKey(source, target);
+      return key === kept || !cut.has(key);
+    });
+    const recollapsed = tarjanScc(pairAdjacency(keptInternal));
+    const sccOf = new Map<string, number>();
+    recollapsed.forEach((scc, index) => {
+      scc.forEach((member) => sccOf.set(member, index));
+    });
+    const nodeOf = (member: string) => {
+      const scc = sccOf.get(member);
+      return scc === undefined ? member : knotNode(scc);
+    };
+    const level = memberLevelsAfterCut(
+      [...new Set(members.map(nodeOf))],
+      keptInternal.map(([source, target]) => [nodeOf(source), nodeOf(target)] as const),
+      external.map(([source, target]) => [nodeOf(source), target] as const),
+      baseLevelOf,
+    );
+    return {
+      edge,
+      keepCost: {
+        recollapsedMemberCount: recollapsed.reduce((sum, scc) => sum + scc.length, 0),
+        levelsAfterKeep: new Set(members.map((member) => level.get(nodeOf(member)) ?? 0)).size,
+      },
+    };
+  });
+}
+
+function pairAdjacency(pairs: readonly (readonly [string, string])[]): Map<string, readonly string[]> {
   const out = new Map<string, string[]>();
-  for (const dependency of dependencies) {
-    const targets = out.get(dependency.sourceComponent) ?? [];
-    if (!targets.includes(dependency.targetComponent)) targets.push(dependency.targetComponent);
-    out.set(dependency.sourceComponent, targets);
+  for (const [source, target] of pairs) {
+    const targets = out.get(source) ?? [];
+    if (!targets.includes(target)) targets.push(target);
+    out.set(source, targets);
   }
   return out;
+}
+
+function adjacency(dependencies: readonly ComponentDependency[]): Map<string, readonly string[]> {
+  return pairAdjacency(dependencies.map(dependencyPair));
 }
 
 /** Condensation node name for SCC #index — NUL keeps it disjoint from every component path. */

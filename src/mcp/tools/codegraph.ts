@@ -389,7 +389,8 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "counts), levels by longest path (L0 = foundation), per-knot greedy weighted feedback arc set " +
       "(cut these N edges -> k levels); knot lists top-20 members by Ca + memberCount, top-10 cut edges by " +
       "weight + cutEdgeCount total, evidence.drillDown names the knotOf handle; a knotOf call returns that knot " +
-      "(members with I/Ca/Ce, cut edges, paged) plus only the findings inside it on offset 0, not the project " +
+      "(members with I/Ca/Ce, cut edges with keepCost — recollapsedMemberCount 0 = needless cut, paged) plus only " +
+      "the findings inside it on offset 0, not the project " +
       "report (summary stays whole-project); violations knot (ranked by " +
       "member-instability spread — spread > 0 is an SDP break inside the cycle) / backEdge (minority-weight direction, equal weights never " +
       "guessed) / abstractionBypass (consumer reaches measured-concrete component past measured-abstract one beneath); " +
