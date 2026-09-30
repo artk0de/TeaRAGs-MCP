@@ -1,5 +1,6 @@
 import type { FileDependencyEdge, FileDependencyGraph } from "../../../../../contracts/types/codegraph.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
+import { classifyDirectoryRelation } from "./directory-relation.js";
 import {
   compareCodePoints,
   condensedPositions,
@@ -8,6 +9,7 @@ import {
   weightedFeedbackArcSet,
   type SimpleEdge,
 } from "./layer-graph.js";
+import { isFacadeAggregationEdge } from "./facade-aggregation.js";
 import { buildLayeringModel, cappedFileEdges } from "./layering.js";
 import type {
   ComponentGraph,
@@ -61,6 +63,23 @@ export function buildLayerMap(
   const boundaryOut = new Map<string, LayerMapBoundaryEdge>();
   const boundaryIn = new Map<string, LayerMapBoundaryEdge>();
   for (const fileEdge of fileEdges) {
+    // An endpoint outside `componentOf` the walk never extracted: the
+    // component graph counts the edge `unwalkedEndpoints` instead of a
+    // dependency, and the map levels the same dependencies — minting a node
+    // for it would put a phantom component at the map's root (measured live:
+    // a whole-repo map showed one more node than the summary's component
+    // count, bd tea-rags-mcp-r8hme.30).
+    if (
+      !componentGraph.componentOf.has(fileEdge.sourceRelPath) ||
+      !componentGraph.componentOf.has(fileEdge.targetRelPath) ||
+      // Facade aggregation is the component graph's fourth exclusion: a
+      // facade re-exporting a nested facade is the child joining the parent's
+      // surface, not a dependency — leveling it merges the knots the detector
+      // reports and drops the whole stack one level (measured live, bd
+      // tea-rags-mcp-r8hme.30).
+      isFacadeAggregationEdge(fileEdge)
+    )
+      continue;
     const sourceIn = inScope(fileEdge.sourceRelPath);
     const targetIn = inScope(fileEdge.targetRelPath);
     if (sourceIn && targetIn) {
@@ -76,7 +95,7 @@ export function buildLayerMap(
         inner.set(key, { source, target, callWeight: fileEdge.callWeight, count: 1 });
       }
     } else if (sourceIn) {
-      const external = componentGraph.componentOf.get(fileEdge.targetRelPath) ?? "";
+      const external = componentGraph.componentOf.get(fileEdge.targetRelPath) as string;
       aggregateBoundary(boundaryOut, {
         sourceNode: nodeOf(fileEdge.sourceRelPath),
         externalComponent: external,
@@ -84,7 +103,7 @@ export function buildLayerMap(
         callWeight: fileEdge.callWeight,
       });
     } else if (targetIn) {
-      const external = componentGraph.componentOf.get(fileEdge.sourceRelPath) ?? "";
+      const external = componentGraph.componentOf.get(fileEdge.sourceRelPath) as string;
       aggregateBoundary(boundaryIn, {
         targetNode: nodeOf(fileEdge.targetRelPath),
         externalComponent: external,
@@ -246,5 +265,14 @@ function buildKnot(
     })),
     cutEdgeCount: arcSet.length,
     levelsAfterCut: new Set(members.map(afterCut.levelOf)).size,
+    // Same verdict rule as `LayeringKnot.composition`: every internal edge
+    // joins a directory to one nested inside it. The summary reports such a
+    // cycle as an informational `compositionCycle`, not a `knot`, so a reader
+    // comparing the map against the summary counts them separately too.
+    composition: internal.every(
+      (edge) =>
+        classifyDirectoryRelation(`${edge.source}/_`, `${edge.target}/_`) === "descendant" ||
+        classifyDirectoryRelation(`${edge.source}/_`, `${edge.target}/_`) === "ancestor",
+    ),
   };
 }

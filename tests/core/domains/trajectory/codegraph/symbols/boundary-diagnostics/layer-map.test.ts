@@ -74,6 +74,55 @@ describe("buildLayerMap — whole repo, directory granularity", () => {
     expect(map.boundaryIn).toEqual([]);
     expect(map.moveCandidates).toEqual([]);
   });
+
+  it("skips an edge whose endpoint the graph never walked, instead of minting a phantom node (bd tea-rags-mcp-r8hme.30)", () => {
+    const g = graph();
+    g.edges.push(edge("app/m.ts", "vendor/unwalked.ts", 2), edge("ghost.ts", "core/c.ts"));
+
+    const map = judge(g);
+
+    // The component graph excludes unwalked endpoints from its dependencies;
+    // the map levels the same dependencies, so an endpoint outside
+    // `componentOf` is not a node, an inner edge, or a boundary to nowhere.
+    expect(map.nodes.map((n) => n.node)).toEqual(["core", "vpn", "weather", "tiles", "app"]);
+    expect(map.summary.nodeCount).toBe(5);
+    expect(map.summary.innerEdgeCount).toBe(5);
+    expect(map.boundaryOut).toEqual([]);
+    expect(map.boundaryIn).toEqual([]);
+  });
+
+  it("excludes facade-aggregation edges, leveling the same dependencies the detector judges (bd tea-rags-mcp-r8hme.30)", () => {
+    const g = graph();
+    g.files.push(file("app/index.ts"), file("app/nested/index.ts"));
+    // The `app` facade re-exports its nested `app/nested` facade: aggregation,
+    // not a dependency — without the exclusion it levels app below app/nested.
+    g.edges.push({ ...edge("app/index.ts", "app/nested/index.ts", 0), reexportedExportNames: ["Nested"] });
+
+    const map = judge(g);
+
+    expect(map.summary.innerEdgeCount).toBe(5);
+    expect(map.nodes.find((n) => n.node === "app")).toMatchObject({ level: 3, innerAfferentCount: 0 });
+  });
+
+  it("marks a knot whose every edge joins a directory to one nested inside it as composition, like the summary does (bd tea-rags-mcp-r8hme.30)", () => {
+    const g = graph();
+    g.files.push(file("app/index.ts"), file("app/nested/index.ts"));
+    // `app` reaches into `app/nested` and `app/nested` reaches back up: a
+    // parent and its own sub-part cycling — composition. `core` and `weather`
+    // are disjoint peers: a real knot.
+    g.edges.push(
+      edge("app/index.ts", "app/nested/index.ts", 1),
+      edge("app/nested/index.ts", "app/m.ts", 1),
+      edge("core/c.ts", "weather/w.ts", 1),
+    );
+
+    const map = judge(g);
+
+    expect(map.knots.map((k) => [k.components, k.composition])).toEqual([
+      [["app", "app/nested"], true],
+      [["core", "weather"], false],
+    ]);
+  });
 });
 
 describe("buildLayerMap — scoped to one domain, file granularity", () => {

@@ -254,6 +254,77 @@ describe("ArchitectureReportOps#build", () => {
     expect(report.rootCauses).toEqual([]);
     expect(report.summary.stableDependencies.edgeCount).toBe(0);
   });
+
+  /**
+   * INVARIANT CHANGED (bd tea-rags-mcp-r8hme.30): the layering detector judges
+   * the DOMAIN partition — every directory with a facade file, adoption
+   * notwithstanding. `lang/` has a facade one file imports, so the
+   * facade-adoption partition leaves `lang/walker.ts`, `lang/resolver.ts` and
+   * the `lang/strategies/` subtree to their own directory components and
+   * levels them separately; the domain partition collapses them into `lang`.
+   * `kernel/` has three facade importers — a judged module under both.
+   */
+  function domainFixture(): FileDependencyGraph {
+    const files = [
+      "kernel/index.ts",
+      "kernel/core.ts",
+      "lang/index.ts",
+      "lang/walker.ts",
+      "lang/resolver.ts",
+      "lang/strategies/strat.ts",
+      "app/main.ts",
+    ].map(file);
+    const edges = [
+      { sourceRelPath: "app/main.ts", targetRelPath: "lang/walker.ts", callWeight: 1 },
+      { sourceRelPath: "lang/walker.ts", targetRelPath: "lang/strategies/strat.ts", callWeight: 1 },
+      { sourceRelPath: "lang/walker.ts", targetRelPath: "kernel/index.ts", callWeight: 2 },
+      { sourceRelPath: "lang/resolver.ts", targetRelPath: "kernel/index.ts", callWeight: 1 },
+      { sourceRelPath: "lang/strategies/strat.ts", targetRelPath: "kernel/core.ts", callWeight: 1 },
+    ];
+    return { files, edges };
+  }
+
+  it("judges layering on the domain partition and reports both partitions' counts", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(domainFixture()), {});
+
+    // Domain partition: kernel, lang, app — three levels, kernel the foundation.
+    // Facade-adoption partition: kernel, lang, lang/strategies, app — the
+    // intra-domain walker→strategies edge levels strategies below lang, one
+    // level deeper.
+    expect(report.summary.layering).toMatchObject({
+      componentCount: 3,
+      levelCount: 3,
+      violationCount: 0,
+      facadePartition: { componentCount: 4, levelCount: 4 },
+    });
+  });
+
+  it("builds the layer map over the same domain partition the detector judges", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(domainFixture()), {
+      layerMap: { scopePathPattern: "lang/**", granularity: "file" },
+    });
+
+    // The files of `lang/` leveled on the RAW file edges (the partition
+    // excludes intra-component edges); kernel sits outside the scope, its
+    // global level 0 riding on every boundary edge. depth counts from the
+    // roots of the INDUCED graph: walker and resolver depend on nothing
+    // inside the scope.
+    const map = report.layerMap;
+    expect(map?.granularity).toBe("file");
+    expect(map?.nodes).toEqual([
+      { node: "lang/index.ts", level: 0, depth: 0, inKnot: false, innerAfferentCount: 0, innerEfferentCount: 0 },
+      { node: "lang/resolver.ts", level: 0, depth: 0, inKnot: false, innerAfferentCount: 0, innerEfferentCount: 0 },
+      { node: "lang/strategies/strat.ts", level: 0, depth: 1, inKnot: false, innerAfferentCount: 1, innerEfferentCount: 0 },
+      { node: "lang/walker.ts", level: 1, depth: 0, inKnot: false, innerAfferentCount: 0, innerEfferentCount: 1 },
+    ]);
+    expect(
+      map?.boundaryOut.map((e) => [e.sourceNode, e.externalComponent, e.externalLevel, e.callWeight]),
+    ).toEqual([
+      ["lang/resolver.ts", "kernel", 0, 1],
+      ["lang/strategies/strat.ts", "kernel", 0, 1],
+      ["lang/walker.ts", "kernel", 0, 2],
+    ]);
+  });
 });
 
 /**
