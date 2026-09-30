@@ -326,6 +326,13 @@ export interface LayeringKnotViolationEvidence {
    */
   memberCount: number;
   /**
+   * Max member instability minus min, 3 decimals (bd tea-rags-mcp-r8hme.32):
+   * a spread above 0 is an SDP break inside the cycle — a stable member
+   * leaning on volatile peers or the reverse; 0 is a tangle of alike members.
+   * Knot findings rank by it.
+   */
+  instabilitySpread: number;
+  /**
    * Members the pathPattern scope dropped (the knot lists only in-scope
    * members) — present only when scoped.
    */

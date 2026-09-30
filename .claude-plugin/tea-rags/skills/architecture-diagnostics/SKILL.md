@@ -262,27 +262,27 @@ with no `volatility` = no git reading for its files, hedge.
 No declared architecture needed: SCC condensation of the DOMAIN graph — every
 facade directory is a unit, adoption notwithstanding (a vertical with an
 unadopted facade counts ONCE, not once per subdirectory; a Go package too).
-Longest-path levels: `level` = longest path from sinks (0 = foundation);
-`depth` = longest path from roots (0 = nothing depends on it). Component with
-no layering edge sits at level 0, depth 0.
+Longest-path levels: `level` = longest path from sinks (0 = foundation); `depth`
+= longest path from roots (0 = nothing depends on it). Component with no
+layering edge sits at level 0, depth 0.
 
-| Summary field (`summary.layering`) | Read as                                                                              |
-| ---------------------------------- | ------------------------------------------------------------------------------------ |
-| `levelCount`                       | distinct levels, 0-based; 0 = no layering edge at all                                |
+| Summary field (`summary.layering`) | Read as                                                                                                                           |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `levelCount`                       | distinct levels, 0-based; 0 = no layering edge at all                                                                             |
 | `facadePartition`                  | `{componentCount, levelCount}` of the facade-adoption partition — its per-subdirectory split reads deeper levels; comparison only |
-| `coverage`                         | share of components outside multi-component knots — low = knot(s) dominate           |
-| `coherence`                        | rank correlation level vs instability — high = low layers really are the stable ones |
+| `coverage`                         | share of components outside multi-component knots — low = knot(s) dominate                                                        |
+| `coherence`                        | rank correlation level vs instability — high = low layers really are the stable ones                                              |
 
 Violations first, informational last, in `violations` order:
 
-| `kind`              | Meaning                                                                        | Read as                                                                                                                     |
-| ------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| `knot`              | multi-component SCC — a cycle ACROSS directories                               | `feedbackArcSet` = lightest cut that levels the members (`cutEdgeCount`, `levelsAfterCut` = distinct levels once cut)       |
-| `backEdge`          | minority-weight direction inside a knot pair                                   | `callWeight` vs `counterFlowWeight` — unequal weights decide; equal never judged; `fileEdges` name where                    |
-| `abstractionBypass` | consumer takes a measured-concrete component, measured-abstract one beneath it | `bypassedComponent`, `concreteAbstractness` / `bypassedAbstractness`; census-gated (≥5 types), same-knot pairs never judged |
-| `compositionCycle`  | parent ↔ own nested directories cycling                                        | informational — `nestedPairs`; composition of a module with its sub-parts                                                   |
-| `island`            | nothing depends on it AND it does not reach the top of the stack               | informational — `height`/`depth`, `afferentCount: 0`                                                                        |
-| `layerSkip`         | dependency jumping ≥2 levels to a lower one, never between knot members        | informational, weakest — `skippedLevels`, `callWeight`; hints a missing middle layer                                        |
+| `kind`              | Meaning                                                                        | Read as                                                                                                                                                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `knot`              | multi-component SCC — a cycle ACROSS directories                               | ranked by `instabilitySpread` (max−min member instability; > 0 = an SDP break INSIDE the cycle, 0 = a tangle of alike members); `feedbackArcSet` = lightest cut that levels the members (`cutEdgeCount`, `levelsAfterCut` = distinct levels once cut) |
+| `backEdge`          | minority-weight direction inside a knot pair                                   | `callWeight` vs `counterFlowWeight` — unequal weights decide; equal never judged; `fileEdges` name where                                                                                                                                              |
+| `abstractionBypass` | consumer takes a measured-concrete component, measured-abstract one beneath it | `bypassedComponent`, `concreteAbstractness` / `bypassedAbstractness`; census-gated (≥5 types), same-knot pairs never judged                                                                                                                           |
+| `compositionCycle`  | parent ↔ own nested directories cycling                                        | informational — `nestedPairs`; composition of a module with its sub-parts                                                                                                                                                                             |
+| `island`            | nothing depends on it AND it does not reach the top of the stack               | informational — `height`/`depth`, `afferentCount: 0`                                                                                                                                                                                                  |
+| `layerSkip`         | dependency jumping ≥2 levels to a lower one, never between knot members        | informational, weakest — `skippedLevels`, `callWeight`; hints a missing middle layer                                                                                                                                                                  |
 
 ## Phase 3f — LAYER MAP
 
@@ -296,13 +296,13 @@ phase otherwise. The map is the layering model read as a VIEW: per-node `level`
 | `granularity`      | `"directory"` (default) nodes = components; `"file"` nodes = FILES leveled on raw file edges (partition excludes intra-component edges — component deps cannot level files) |
 | `directoryDepth`   | with `"directory"`: collapse every directory DEEPER than this many segments below the scope root into its ancestor; `0` = one node                                          |
 
-| Field            | Read as                                                                                               |
-| ---------------- | ----------------------------------------------------------------------------------------------------- |
-| `boundaryOut`    | edge leaving the scope — names the EXTERNAL component and its `externalLevel` in the WHOLE-repo stack |
-| `boundaryIn`     | edge entering the scope — same shape                                                                  |
-| `moveCandidates` | inner node, 0 inner afferents, every outward edge points into ONE other domain — move-it-there signal |
+| Field            | Read as                                                                                                                                                                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `boundaryOut`    | edge leaving the scope — names the EXTERNAL component and its `externalLevel` in the WHOLE-repo stack                                                                                                                                |
+| `boundaryIn`     | edge entering the scope — same shape                                                                                                                                                                                                 |
+| `moveCandidates` | inner node, 0 inner afferents, every outward edge points into ONE other domain — move-it-there signal                                                                                                                                |
 | `knots`          | cycles among the map's own nodes, with the cut that levels them; `composition: true` = parent ↔ own nested parts — the summary reports those as `compositionCycle`, not `knot`, so `knotCount` + `compositionCycleCount` = map knots |
-| `summary.*`      | `nodeCount`, `innerEdgeCount`, `boundaryOutEdgeCount`, `boundaryInEdgeCount`                          |
+| `summary.*`      | `nodeCount`, `innerEdgeCount`, `boundaryOutEdgeCount`, `boundaryInEdgeCount`                                                                                                                                                         |
 
 Empty scope = empty map (`nodeCount: 0`), not an error. Bad `granularity` =
 validation error naming the enum, before any detector runs.

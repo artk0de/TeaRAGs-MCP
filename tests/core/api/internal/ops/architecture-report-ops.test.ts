@@ -127,6 +127,7 @@ describe("ArchitectureReportOps#build", () => {
           cutEdgeCount: 1,
           levelsAfterCut: 2,
           memberCount: 2,
+          instabilitySpread: 0.333,
         },
       },
       {
