@@ -95,6 +95,16 @@ get_architecture_report(project: "<alias>", pathPattern?: "<glob>", limit?: 50,
   judged when ≥1 carrying file edge's source matches; silent coupling: by EITHER
   file of pair). Instability, facade adoption, strength cut always whole-graph —
   scoped run sees same numbers as full run.
+- `domain: "<dir>"` judges one directory AS ITS OWN SYSTEM (bd xb669.1): the
+  induced sub-graph — files under the root, edges with both endpoints inside —
+  and EVERY metric recomputed inside it. Not `pathPattern`, which keeps
+  whole-graph metrics and only filters findings. `response.domain` carries
+  `componentCount` / `levelCount` (the same numbers `summary.layering` holds)
+  plus the border: `boundaryOut` / `boundaryIn`, aggregated per (inner,
+  external) component, each naming the external component and its
+  `externalLevel` on the WHOLE-graph stack — the one thing an internal view
+  cannot recompute. Read `domain` first; the violations then describe the
+  domain's own internals. Facade-aggregation edges never count as border.
 - Tooling paths (scripts, spikes, benchmarks, examples, fixtures) removed before
   any detector — `summary.nonProduction` counts them.
 - `limit` caps `violations` + `rootCauses` PER DETECTOR; each
@@ -379,6 +389,10 @@ knots [knotCount] (composition N), backEdges [backEdgeCount], bypasses [abstract
 ## Layer map — [levelCount] levels, [nodeCount] nodes ([granularity], scope [scope|whole repo])
 boundary-out N (→ top external: [component] at L[externalLevel]), boundary-in N; move candidates N
 | # | Level | Node | depth | inKnot | inner in/out |
+
+## Domain [path] — [componentCount] components, [levelCount] levels (domain mode)
+boundary-out N (heaviest → [externalComponent] at L[externalLevel]), boundary-in N
+| # | Dir | Inner component | External component | L ext | calls |
 ```
 
 Every line cites evidence numbers from report. No evidence → no claim.

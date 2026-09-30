@@ -126,6 +126,14 @@ const GetArchitectureReportInputShape = {
     .describe(
       "Glob scoping judged edges by SOURCE file. Instability, adoption and layer levels stay whole-graph. Omit for whole project.",
     ),
+  domain: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Directory root judged AS ITS OWN SYSTEM: induced sub-graph, every metric recomputed inside; " +
+        "response.domain carries border edges with whole-graph levels.",
+    ),
   limit: z
     .number()
     .int()
@@ -388,7 +396,10 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "informational compositionCycle / island (nothing depends on it, below the top) / layerSkip (>=2 levels straight " +
       "down); summary.layering: coverage, levelCount, coherence (rank correlation level vs instability). layerMap " +
       "option: also return the map VIEW — levels per node in scopePathPattern (file|directory granularity, directoryDepth " +
-      "collapse), boundary edges with the outside component's global level, move candidates; absent unless asked. Summary " +
+      "collapse), boundary edges with the outside component's global level, move candidates; absent unless asked. domain " +
+      "option: judge one directory AS ITS OWN SYSTEM (induced sub-graph, every metric recomputed inside — unlike " +
+      "pathPattern which filters findings only); response.domain carries its layering counts + border edges naming the " +
+      "external component and its whole-graph level. Summary " +
       "counts exclusions with named reasons. Diagnosis, not prescription.",
     schemaKey: "get_architecture_report",
     invoke: async (app, request) =>

@@ -126,6 +126,20 @@ scopes the judged edges — you can judge one area and map another in the same
 call. Without the `layerMap` object the response carries no map at all, so a
 full node list never bloats an unqualified report.
 
+Where `layerMap` annotates a whole-system report with a scoped view, the
+`domain` parameter inverts the question: it judges one directory AS ITS OWN
+SYSTEM. The report runs every detector over the induced sub-graph — the files
+under the root and the edges with both endpoints inside — so components,
+instabilities and levels are recomputed from the domain's internal structure
+alone, the way they would read if the directory were a repository of its own.
+The response carries a `domain` block with the domain's own component and level
+counts plus its border: `boundaryOut` and `boundaryIn` edges aggregated per
+(inner, external) component pair, each naming the external component and that
+component's level in the whole-repository stack — a domain's place in the
+system is the one thing its internal view cannot recompute. This is distinct
+from `pathPattern`, which leaves every metric whole-graph and only filters
+which findings the response lists.
+
 ## Generation
 
 ### `/tea-rags:data-driven-generation`
