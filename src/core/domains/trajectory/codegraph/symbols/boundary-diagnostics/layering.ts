@@ -444,52 +444,86 @@ function levelsAfterCutOf(dependencies: readonly ComponentDependency[]): (compon
  * arc set is every edge pointing from later to earlier in the final sequence —
  * removing it leaves the sequence a topological order. Ties break by path, so
  * the cut is deterministic.
+ *
+ * O(V² + E): live degree counts and weights toward the REMAINING vertices are
+ * kept per vertex and decremented along a removed vertex's own edges, so every
+ * sink/source check and every weighted delta is O(1). Rescanning every internal
+ * edge per check cost O(V²·E) and never finished on a knot of hundreds of
+ * components.
  */
 function eadesLinSmyth(internal: readonly ComponentDependency[]): LayeringFeedbackEdge[] {
-  const position = new Map<string, number>();
-  const remaining = new Set(internal.flatMap((d) => [d.sourceComponent, d.targetComponent]));
-  const sequence: string[] = [];
-  const liveOut = (node: string) =>
-    internal.some((d) => d.sourceComponent === node && remaining.has(d.targetComponent));
-  const liveIn = (node: string) => internal.some((d) => d.targetComponent === node && remaining.has(d.sourceComponent));
-  const weightDelta = (node: string) => {
-    let outWeight = 0;
-    let inWeight = 0;
-    for (const d of internal) {
-      if (!remaining.has(d.sourceComponent) || !remaining.has(d.targetComponent)) continue;
-      if (d.sourceComponent === node) outWeight += d.callWeight;
-      if (d.targetComponent === node) inWeight += d.callWeight;
+  const nodes = [...new Set(internal.flatMap((d) => [d.sourceComponent, d.targetComponent]))].sort(compareCodePoints);
+  const indexOf = new Map(nodes.map((node, index) => [node, index]));
+  const outgoing: { target: number; weight: number }[][] = nodes.map(() => []);
+  const incoming: { source: number; weight: number }[][] = nodes.map(() => []);
+  const liveOutCount = new Array<number>(nodes.length).fill(0);
+  const liveInCount = new Array<number>(nodes.length).fill(0);
+  const liveOutWeight = new Array<number>(nodes.length).fill(0);
+  const liveInWeight = new Array<number>(nodes.length).fill(0);
+  for (const d of internal) {
+    const source = indexOf.get(d.sourceComponent) ?? 0;
+    const target = indexOf.get(d.targetComponent) ?? 0;
+    outgoing[source]?.push({ target, weight: d.callWeight });
+    incoming[target]?.push({ source, weight: d.callWeight });
+    liveOutCount[source] = (liveOutCount[source] ?? 0) + 1;
+    liveInCount[target] = (liveInCount[target] ?? 0) + 1;
+    liveOutWeight[source] = (liveOutWeight[source] ?? 0) + d.callWeight;
+    liveInWeight[target] = (liveInWeight[target] ?? 0) + d.callWeight;
+  }
+  const isRemaining = new Array<boolean>(nodes.length).fill(true);
+  let remainingCount = nodes.length;
+  const remove = (node: number) => {
+    isRemaining[node] = false;
+    for (const { target, weight } of outgoing[node] ?? []) {
+      if (!isRemaining[target]) continue;
+      liveInCount[target] = (liveInCount[target] ?? 0) - 1;
+      liveInWeight[target] = (liveInWeight[target] ?? 0) - weight;
     }
-    return outWeight - inWeight;
+    for (const { source, weight } of incoming[node] ?? []) {
+      if (!isRemaining[source]) continue;
+      liveOutCount[source] = (liveOutCount[source] ?? 0) - 1;
+      liveOutWeight[source] = (liveOutWeight[source] ?? 0) - weight;
+    }
   };
 
-  while (remaining.size > 0) {
+  // Sources collect in `front` in peel order — reversed, that is exactly the
+  // order repeated unshifts would leave. Sinks and max-delta picks append to
+  // `back`. `nodes` is already in code-point order, so each pass walks the
+  // remaining vertices in that order and reads live state as it changes.
+  const front: string[] = [];
+  const back: string[] = [];
+  while (remainingCount > 0) {
     let moved = true;
-    while (moved && remaining.size > 0) {
+    while (moved && remainingCount > 0) {
       moved = false;
-      for (const node of [...remaining].sort(compareCodePoints)) {
-        if (liveOut(node) && liveIn(node)) continue;
-        if (!liveOut(node)) sequence.push(node);
-        else sequence.unshift(node);
-        remaining.delete(node);
+      for (let node = 0; node < nodes.length; node++) {
+        if (!isRemaining[node]) continue;
+        const liveOut = (liveOutCount[node] ?? 0) > 0;
+        if (liveOut && (liveInCount[node] ?? 0) > 0) continue;
+        (liveOut ? front : back).push(nodes[node] ?? "");
+        remove(node);
+        remainingCount--;
         moved = true;
       }
     }
-    if (remaining.size === 0) break;
-    let best: string | undefined;
+    if (remainingCount === 0) break;
+    let best = -1;
     let bestDelta = Number.NEGATIVE_INFINITY;
-    for (const node of [...remaining].sort(compareCodePoints)) {
-      const delta = weightDelta(node);
+    for (let node = 0; node < nodes.length; node++) {
+      if (!isRemaining[node]) continue;
+      const delta = (liveOutWeight[node] ?? 0) - (liveInWeight[node] ?? 0);
       if (delta > bestDelta) {
         bestDelta = delta;
         best = node;
       }
     }
-    if (best === undefined) break;
-    remaining.delete(best);
-    sequence.push(best);
+    if (best < 0) break;
+    remove(best);
+    remainingCount--;
+    back.push(nodes[best] ?? "");
   }
-  sequence.forEach((node, index) => position.set(node, index));
+  const position = new Map<string, number>();
+  [...front.reverse(), ...back].forEach((node, index) => position.set(node, index));
 
   return internal
     .filter((d) => (position.get(d.sourceComponent) ?? 0) > (position.get(d.targetComponent) ?? 0))
