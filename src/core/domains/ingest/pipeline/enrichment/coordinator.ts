@@ -340,6 +340,14 @@ export class EnrichmentCoordinator {
    * bound, so TypeScript Program admission follows the live count rule
    * (`CallEdgeResolutionRunner#prepareResolvePass`): a repair is slower per file
    * when small, never less precise.
+   *
+   * The pass holds its OWN daemon keep-alive (bd tea-rags-mcp-as1zl), like
+   * `runRecovery`: it runs before `beginRun`, so the run's guard is not open
+   * yet, and its batches reach the codegraph daemon through a connect-only
+   * worker pool that cannot spawn one. A store with no DuckDB file yet never
+   * triggers the reader-side ensure, reads empty, and sends every eligible file
+   * to a worker that finds no socket. The guard is begun at the first dispatch
+   * and released after the last, so a converged store pays no handshake.
    */
   async runRepairPass(
     physicalCollectionName: PhysicalCollectionName,
@@ -376,87 +384,97 @@ export class EnrichmentCoordinator {
   ): Promise<number> {
     let repaired = 0;
     this.runContentHashes = scanned;
-    for (const provider of this.providers) {
-      const readPersisted = provider.readPersistedFileHashes;
-      if (!readPersisted) continue;
+    // Begun lazily at the first worker dispatch, once per pass (see docblock).
+    let release: IndexRunDaemonRelease | undefined;
+    try {
+      for (const provider of this.providers) {
+        const readPersisted = provider.readPersistedFileHashes;
+        if (!readPersisted) continue;
 
-      const providerEligible = this.repairEligibleFiles(provider, scanned);
-      const forced = [...(forcedPaths?.get(provider.key) ?? [])].filter((path) => providerEligible.has(path));
-      const forcedBySelector = forceProviders?.has(provider.key) ?? false;
+        const providerEligible = this.repairEligibleFiles(provider, scanned);
+        const forced = [...(forcedPaths?.get(provider.key) ?? [])].filter((path) => providerEligible.has(path));
+        const forcedBySelector = forceProviders?.has(provider.key) ?? false;
 
-      let persisted: Map<string, string | null> | undefined;
-      try {
-        persisted = await readPersisted.call(provider, physicalCollectionName);
-      } catch (err) {
-        // An unreadable store does not abort the run (the next one retries), but
-        // a permanently broken provider must not stay silent: pipeline log.
-        pipelineLog.enrichmentPhase("REPAIR_READ_FAILED", {
-          provider: provider.key,
-          collection: physicalCollectionName,
-          error: err instanceof Error ? err.message : String(err),
-        });
-        onStoreReadFailure?.(provider.key);
-        // The drift check needs the store; the forced walk does not, and the
-        // run has already been promised those files' chunks.
-        if (forced.length === 0) continue;
-      }
-
-      const initial: ExtractionRepair = persisted
-        ? computeExtractionRepair(providerEligible, persisted, this.forceResolveAll || forcedBySelector)
-        : { repair: [], orphans: [] };
-      const { orphans } = initial;
-      let { repair } = initial;
-      // Selector-forced eligibility is the run's stored-chunk scope, not the
-      // file universe: rows outside it are the unselected languages' live
-      // rows, and pruning them would delete the graph this run was told not
-      // to touch. The env knob keeps pruning — its eligibility is the full
-      // working-tree scan, where an out-of-set row really is an orphan.
-      if (!forcedBySelector && orphans.length > 0) {
-        await provider.handleDeletedPaths?.(orphans, { collectionName: physicalCollectionName });
-        // Pruning a file can invalidate OTHER files' rows — a caller whose
-        // dispatch cone held a class the file declared (bd
-        // tea-rags-mcp-7t2ee) — so the drift is re-read after it, and this run
-        // repairs them rather than the next.
+        let persisted: Map<string, string | null> | undefined;
         try {
           persisted = await readPersisted.call(provider, physicalCollectionName);
-          ({ repair } = computeExtractionRepair(providerEligible, persisted, this.forceResolveAll));
         } catch (err) {
+          // An unreadable store does not abort the run (the next one retries), but
+          // a permanently broken provider must not stay silent: pipeline log.
           pipelineLog.enrichmentPhase("REPAIR_READ_FAILED", {
             provider: provider.key,
             collection: physicalCollectionName,
             error: err instanceof Error ? err.message : String(err),
           });
+          onStoreReadFailure?.(provider.key);
+          // The drift check needs the store; the forced walk does not, and the
+          // run has already been promised those files' chunks.
+          if (forced.length === 0) continue;
+        }
+
+        const initial: ExtractionRepair = persisted
+          ? computeExtractionRepair(providerEligible, persisted, this.forceResolveAll || forcedBySelector)
+          : { repair: [], orphans: [] };
+        const { orphans } = initial;
+        let { repair } = initial;
+        // Selector-forced eligibility is the run's stored-chunk scope, not the
+        // file universe: rows outside it are the unselected languages' live
+        // rows, and pruning them would delete the graph this run was told not
+        // to touch. The env knob keeps pruning — its eligibility is the full
+        // working-tree scan, where an out-of-set row really is an orphan.
+        if (!forcedBySelector && orphans.length > 0) {
+          await provider.handleDeletedPaths?.(orphans, { collectionName: physicalCollectionName });
+          // Pruning a file can invalidate OTHER files' rows — a caller whose
+          // dispatch cone held a class the file declared (bd
+          // tea-rags-mcp-7t2ee) — so the drift is re-read after it, and this run
+          // repairs them rather than the next.
+          try {
+            persisted = await readPersisted.call(provider, physicalCollectionName);
+            ({ repair } = computeExtractionRepair(providerEligible, persisted, this.forceResolveAll));
+          } catch (err) {
+            pipelineLog.enrichmentPhase("REPAIR_READ_FAILED", {
+              provider: provider.key,
+              collection: physicalCollectionName,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+        const drifted = new Set(repair);
+        const handedOff = forced.filter((path) => !drifted.has(path));
+        repair.push(...handedOff);
+        if (repair.length > 0) {
+          pipelineLog.enrichmentPhase("REPAIR_PASS", {
+            provider: provider.key,
+            collection: physicalCollectionName,
+            repaired: repair.length,
+            orphaned: forcedBySelector ? 0 : orphans.length,
+            // Attributes a profile to a forced run; omitted when off, keeping the
+            // ordinary run's log line byte-identical.
+            ...(this.forceResolveAll || forcedBySelector
+              ? { forcedResolve: true, forcedBy: this.forceResolveAll ? "env" : "selector" }
+              : {}),
+            // Files walked only because recovery handed their chunks to this run
+            // (bd tea-rags-mcp-fxio5). Omitted when none, for the same reason.
+            ...(handedOff.length > 0 ? { handedOff: handedOff.length } : {}),
+          });
+          // begin never rejects per the guard contract; the catch keeps a stray
+          // rejection from going unhandled.
+          release ??= await this.daemonGuard.begin(physicalCollectionName).catch(() => NOOP_RELEASE);
+          // `runFileBatch`, NOT `runFileSignalsRecovery`: repair runs INSIDE the live
+          // run and must share its `runBatchChains`-serialized sink, so a repaired
+          // file that also reaches the run another way is deduped, not resolved
+          // twice. The recovery path is isolated by design (enrichment-executor.ts)
+          // and would pay a whole-graph overlay read per file this caller discards.
+          await this.executor.runFileBatch(provider, root, repair, {
+            collectionName: physicalCollectionName,
+            contentHashes: scanned,
+          });
+          repaired += repair.length;
         }
       }
-      const drifted = new Set(repair);
-      const handedOff = forced.filter((path) => !drifted.has(path));
-      repair.push(...handedOff);
-      if (repair.length > 0) {
-        pipelineLog.enrichmentPhase("REPAIR_PASS", {
-          provider: provider.key,
-          collection: physicalCollectionName,
-          repaired: repair.length,
-          orphaned: forcedBySelector ? 0 : orphans.length,
-          // Attributes a profile to a forced run; omitted when off, keeping the
-          // ordinary run's log line byte-identical.
-          ...(this.forceResolveAll || forcedBySelector
-            ? { forcedResolve: true, forcedBy: this.forceResolveAll ? "env" : "selector" }
-            : {}),
-          // Files walked only because recovery handed their chunks to this run
-          // (bd tea-rags-mcp-fxio5). Omitted when none, for the same reason.
-          ...(handedOff.length > 0 ? { handedOff: handedOff.length } : {}),
-        });
-        // `runFileBatch`, NOT `runFileSignalsRecovery`: repair runs INSIDE the live
-        // run and must share its `runBatchChains`-serialized sink, so a repaired
-        // file that also reaches the run another way is deduped, not resolved
-        // twice. The recovery path is isolated by design (enrichment-executor.ts)
-        // and would pay a whole-graph overlay read per file this caller discards.
-        await this.executor.runFileBatch(provider, root, repair, {
-          collectionName: physicalCollectionName,
-          contentHashes: scanned,
-        });
-        repaired += repair.length;
-      }
+    } finally {
+      // Never let a failing release mask the repair outcome.
+      if (release) await release().catch(() => undefined);
     }
     return repaired;
   }
