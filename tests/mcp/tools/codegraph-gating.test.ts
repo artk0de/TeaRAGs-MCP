@@ -229,6 +229,16 @@ describe("get_architecture_report", () => {
     expect(schema.safeParse({ project: "tea-rags", knotOf: "app", offset: 1.5 }).success).toBe(false);
   });
 
+  it("takes a domain root judged as its own system, and names it in the description (bd tea-rags-mcp-xb669.1)", () => {
+    const { call } = registered();
+    const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny>; description: string };
+    const schema = z.object(config.inputSchema);
+
+    expect(config.description).toMatch(/AS ITS OWN SYSTEM/);
+    expect(schema.safeParse({ project: "tea-rags", domain: "src/core/domains/explore" }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", domain: "" }).success).toBe(false);
+  });
+
   it("forwards the address, pathPattern and limit into app.getArchitectureReport and returns its report as text", async () => {
     const { app, call } = registered();
     const report = { summary: {}, rootCauses: [], violations: [] };

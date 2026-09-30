@@ -29,6 +29,15 @@ export interface GetArchitectureReportRequest {
    * the whole graph.
    */
   pathPattern?: string;
+  /**
+   * A directory root: judge it AS ITS OWN SYSTEM (bd tea-rags-mcp-xb669.1) —
+   * the induced sub-graph, every detector and metric recomputed inside it —
+   * distinct from `pathPattern`, which keeps whole-system metrics and only
+   * filters findings. `response.domain` carries the domain's border: edges
+   * leaving or entering, each naming the external component and its level on
+   * the WHOLE-graph stack.
+   */
+  domain?: string;
   /** Max violations and max root causes returned per detector (default 50); the summary keeps the totals. */
   limit?: number;
   /**
@@ -977,6 +986,39 @@ export interface ArchitectureReportSummary {
   layering: LayeringReportSummary;
 }
 
+/**
+ * One edge crossing a domain's border (bd tea-rags-mcp-xb669.1), aggregated
+ * per (inner component, external component) with call weights summed.
+ */
+export interface ArchitectureDomainBoundaryEdge {
+  /** The domain component the edge leaves from (boundary-out). */
+  innerComponent: string;
+  /** The whole-graph component the edge enters on the outside (boundary-out). */
+  externalComponent: string;
+  /** The external component's level on the WHOLE-graph stack: 0 = foundation. */
+  externalLevel: number;
+  /** Confidence-weighted resolved calls carried by the aggregated file edges. */
+  callWeight: number;
+}
+
+/**
+ * The domain-mode block (bd tea-rags-mcp-xb669.1), present only when the
+ * request carried `domain`: the domain's own layering counts (the same ones
+ * `summary.layering` reports) plus its border against the rest of the system.
+ */
+export interface ArchitectureDomainReport {
+  /** The requested domain root, echoed. */
+  path: string;
+  /** Components of the domain-internal partition. */
+  componentCount: number;
+  /** Levels of the domain-internal stack, 0-based. */
+  levelCount: number;
+  /** By call weight, heaviest first. */
+  boundaryOut: ArchitectureDomainBoundaryEdge[];
+  /** By call weight, heaviest first. */
+  boundaryIn: ArchitectureDomainBoundaryEdge[];
+}
+
 export interface GetArchitectureReportResponse {
   /** The scope the report was judged under, echoed; absent = whole graph. */
   pathPattern?: string;
@@ -1000,4 +1042,6 @@ export interface GetArchitectureReportResponse {
   layerMap?: ArchitectureLayerMap;
   /** The knot VIEW (bd tea-rags-mcp-r8hme.38), present only when the request carried `knotOf`. */
   knot?: ArchitectureKnotView;
+  /** The domain-mode block (bd tea-rags-mcp-xb669.1), present only when the request carried `domain`. */
+  domain?: ArchitectureDomainReport;
 }
