@@ -43,7 +43,10 @@ export interface GetArchitectureReportRequest {
    * A component path as the report names components — ask for the knot VIEW
    * (bd tea-rags-mcp-r8hme.38): the knot holding it in full, members and cut
    * edges paged by `limit` / `offset`. A knot finding's
-   * `evidence.drillDown.knotOf` is such a path.
+   * `evidence.drillDown.knotOf` is such a path. Knot mode (bd
+   * tea-rags-mcp-r8hme.39): `violations` / `rootCauses` hold only the
+   * findings inside the knot, and only on the first page (`offset` 0);
+   * `summary` stays whole-project.
    */
   knotOf?: string;
   /** Page start for the `knotOf` view (default 0). */
@@ -381,12 +384,29 @@ export interface ArchitectureKnotView {
   knot?: ArchitectureKnotPage;
 }
 
+/**
+ * One knot member and its Martin coupling on the layering (DOMAIN) partition
+ * (bd tea-rags-mcp-r8hme.39) — the stable member a cycle drags in is the one
+ * with the lowest instability.
+ */
+export interface ArchitectureKnotMember {
+  component: string;
+  /** Ce / (Ca + Ce), rounded to 3 decimals. */
+  instability: number;
+  /** Ca: distinct files outside the component with an edge into it. */
+  afferentCount: number;
+  /** Ce: distinct files inside the component with an edge out of it. */
+  efferentCount: number;
+}
+
 /** One page of a knot: members and cut edges both windowed at `[offset, offset + limit)`. */
 export interface ArchitectureKnotPage {
   /** This page of the members, most depended-on (Ca) first, then path. */
-  components: string[];
+  members: ArchitectureKnotMember[];
   /** Members before paging — in scope only when scoped. */
   memberCount: number;
+  /** Whole-knot max − min member instability, rounded to 3 decimals — the knot finding's ranking key. */
+  instabilitySpread: number;
   /** This page of the feedback arc set, heaviest call weight first. */
   feedbackArcSet: LayeringFeedbackEdge[];
   /** Whole-knot cut size. */

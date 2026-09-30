@@ -6,7 +6,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { UnknownArchitectureComponentError } from "../../../../../src/core/api/errors.js";
-import { ArchitectureReportOps } from "../../../../../src/core/api/internal/ops/architecture-report-ops.js";
+import {
+  ArchitectureReportOps,
+  buildArchitectureKnotMembership,
+} from "../../../../../src/core/api/internal/ops/architecture-report-ops.js";
 import type {
   FileDependencyGraph,
   NonPublicMemberEdge,
@@ -1204,7 +1207,7 @@ describe("ArchitectureReportOps#build — knotOf view and drillDown (bd tea-rags
     const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), { knotOf: "c07", limit: 10 });
 
     expect(report.knot).toMatchObject({ component: "c07", inKnot: true, offset: 0, limit: 10 });
-    expect(report.knot?.knot?.components).toEqual(ring(0, 10));
+    expect(report.knot?.knot?.members.map((m) => m.component)).toEqual(ring(0, 10));
     expect(report.knot?.knot?.feedbackArcSet).toHaveLength(10);
     expect(report.knot?.knot).toMatchObject({
       memberCount: 30,
@@ -1222,7 +1225,7 @@ describe("ArchitectureReportOps#build — knotOf view and drillDown (bd tea-rags
     });
 
     expect(report.knot?.offset).toBe(20);
-    expect(report.knot?.knot?.components).toEqual(ring(20, 30));
+    expect(report.knot?.knot?.members.map((m) => m.component)).toEqual(ring(20, 30));
     expect(report.knot?.knot?.feedbackArcSet).toHaveLength(10);
     expect(report.knot?.knot).not.toHaveProperty("nextOffset");
   });
@@ -1234,7 +1237,7 @@ describe("ArchitectureReportOps#build — knotOf view and drillDown (bd tea-rags
       pathPattern: "{c00,c01,c02}/**",
     });
 
-    expect(report.knot?.knot?.components).toEqual(["c00", "c01", "c02"]);
+    expect(report.knot?.knot?.members.map((m) => m.component)).toEqual(["c00", "c01", "c02"]);
     expect(report.knot?.knot).toMatchObject({ memberCount: 3, outOfScopeMemberCount: 27, cutEdgeCount: 30 });
     expect(report.knot?.knot).not.toHaveProperty("nextOffset");
   });
@@ -1249,7 +1252,7 @@ describe("ArchitectureReportOps#build — knotOf view and drillDown (bd tea-rags
   it("lists the knot's back-edges in the view", async () => {
     const report = await new ArchitectureReportOps().build(graphDb(), { knotOf: "lib" });
 
-    expect(report.knot?.knot?.components).toEqual(["core", "lib"]);
+    expect(report.knot?.knot?.members.map((m) => m.component)).toEqual(["core", "lib"]);
     expect(report.knot?.knot?.backEdges).toEqual([
       {
         detector: "layering",
@@ -1276,5 +1279,110 @@ describe("ArchitectureReportOps#build — knotOf view and drillDown (bd tea-rags
     await expect(
       new ArchitectureReportOps().build(graphDb(bidirectionalRing()), { knotOf: "nowhere" }),
     ).rejects.toBeInstanceOf(UnknownArchitectureComponentError);
+  });
+});
+
+/**
+ * knotOf mode (bd tea-rags-mcp-r8hme.39): a knotOf call answers for the knot
+ * — its members with their coupling, and what the other detectors found
+ * INSIDE it — instead of resending the whole-project report every page.
+ */
+describe("ArchitectureReportOps#build — knotOf mode scopes the findings to the knot (bd tea-rags-mcp-r8hme.39)", () => {
+  it("lists only the findings with both ends in the knot on the first page, and no layering finding", async () => {
+    // graph(): core ⇄ lib is the knot; base → lib runs uphill from outside it, core → lib inside it.
+    const whole = await new ArchitectureReportOps().build(graphDb(), {});
+    expect(whole.violations.filter((v) => v.detector === "stableDependencies")).toHaveLength(2);
+
+    const report = await new ArchitectureReportOps().build(graphDb(), { knotOf: "lib" });
+
+    expect(report.violations).toEqual([
+      expect.objectContaining({ detector: "stableDependencies", sourceComponent: "core", targetComponent: "lib" }),
+    ]);
+    expect(report.rootCauses).toEqual([
+      expect.objectContaining({ detector: "stableDependencies", targetComponent: "lib" }),
+    ]);
+  });
+
+  it("carries only the view on a later page", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(), { knotOf: "lib", limit: 1, offset: 1 });
+
+    expect(report.violations).toEqual([]);
+    expect(report.rootCauses).toEqual([]);
+    expect(report.knot?.knot?.members.map((m) => m.component)).toEqual(["lib"]);
+  });
+
+  it("gives every member its instability, Ca and Ce, and the view the knot's instability spread", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(), { knotOf: "lib" });
+
+    expect(report.knot?.knot?.members).toEqual([
+      { component: "core", instability: 0.222, afferentCount: 7, efferentCount: 2 },
+      { component: "lib", instability: 0.556, afferentCount: 4, efferentCount: 5 },
+    ]);
+    expect(report.knot?.knot?.instabilitySpread).toBe(0.333);
+  });
+
+  it("lists the projected members under pathPattern, with their stats", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), {
+      knotOf: "c07",
+      pathPattern: "{c00,c01,c02}/**",
+    });
+
+    // Ring member: two neighbours' files import it, its one file imports both → Ca 2, Ce 1.
+    expect(report.knot?.knot?.members).toEqual(
+      ["c00", "c01", "c02"].map((component) => ({ component, instability: 0.333, afferentCount: 2, efferentCount: 1 })),
+    );
+  });
+
+  it("keeps a silent-coupling pair whose files both sit in knot members and drops one reaching outside", async () => {
+    // silentCouplingGraph(): app ⇄ lib is the knot (s1 → hub, hub → s1); web sits outside it.
+    const cochange = cochangeGraph();
+    const outside = { ...cochange.edges[0], relPathA: "app/private.ts", relPathB: "web/s2.ts" };
+    const withOutside = { ...cochange, edges: [...cochange.edges, outside] };
+    const pairs = (violations: Awaited<ReturnType<ArchitectureReportOps["build"]>>["violations"]) =>
+      violations.flatMap((v) => (v.detector === "silentCoupling" ? [[v.sourceRelPath, v.targetRelPath]] : []));
+
+    const whole = await new ArchitectureReportOps().build(graphDb(silentCouplingGraph(), [], withOutside), {});
+    expect(pairs(whole.violations)).toContainEqual(["app/private.ts", "web/s2.ts"]);
+
+    const report = await new ArchitectureReportOps().build(graphDb(silentCouplingGraph(), [], withOutside), {
+      knotOf: "lib",
+    });
+    expect(report.knot?.knot?.members.map((m) => m.component).sort()).toEqual(["app", "lib"]);
+    expect(pairs(report.violations)).toEqual([["app/s1.ts", "lib/hub.ts"]]);
+  });
+
+  it("places an adoption-partition directory under an unadopted facade inside the knot through its files", () => {
+    const partition = (componentOf: Record<string, string>) => ({
+      components: new Map(),
+      componentOf: new Map(Object.entries(componentOf)),
+      dependencies: [],
+      excluded: { selfEdges: 0, unwalkedEndpoints: 0, intraComponent: 0, facadeAggregations: 0 },
+      fileEdgeCount: 0,
+    });
+    // Domain partition: lang/ owns its subtree. Adoption partition: nobody
+    // adopted lang/index.ts, so lang/strategies/ stands as its own directory.
+    const domain = partition({ "lang/index.ts": "lang", "lang/strategies/s.ts": "lang", "kernel/k.ts": "kernel" });
+    const adoption = partition({
+      "lang/index.ts": "lang",
+      "lang/strategies/s.ts": "lang/strategies",
+      "kernel/k.ts": "kernel",
+    });
+
+    const membership = buildArchitectureKnotMembership(["lang"], domain, adoption);
+
+    expect(membership.holdsComponent("lang")).toBe(true);
+    expect(membership.holdsComponent("lang/strategies")).toBe(true);
+    expect(membership.holdsComponent("kernel")).toBe(false);
+    expect(membership.holdsFile("lang/strategies/s.ts")).toBe(true);
+    expect(membership.holdsFile("kernel/k.ts")).toBe(false);
+    // A file the walk never extracted belongs to no member.
+    expect(membership.holdsFile("assets/style.css")).toBe(false);
+  });
+
+  it("keeps the summary whole-project", async () => {
+    const whole = await new ArchitectureReportOps().build(graphDb(), {});
+    const report = await new ArchitectureReportOps().build(graphDb(), { knotOf: "lib" });
+
+    expect(report.summary).toEqual(whole.summary);
   });
 });

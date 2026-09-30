@@ -146,9 +146,7 @@ const GetArchitectureReportInputShape = {
   knotOf: z
     .string()
     .optional()
-    .describe(
-      "Component path: return the knot containing it in full, paged by limit/offset (see drillDown on knot findings)",
-    ),
+    .describe("Component path from drillDown: return its knot view and the findings inside it, paged by limit/offset"),
   offset: z.number().int().min(0).optional().describe("Page start for the knotOf view"),
 };
 
@@ -382,7 +380,9 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "facade counts once, not once per subdirectory; facadePartition keeps the adoption partition's component/level " +
       "counts), levels by longest path (L0 = foundation), per-knot greedy weighted feedback arc set " +
       "(cut these N edges -> k levels); knot lists top-20 members by Ca + memberCount, top-10 cut edges by " +
-      "weight + cutEdgeCount total, evidence.drillDown names the knotOf handle to page it whole; violations knot (ranked by " +
+      "weight + cutEdgeCount total, evidence.drillDown names the knotOf handle; a knotOf call returns that knot " +
+      "(members with I/Ca/Ce, cut edges, paged) plus only the findings inside it on offset 0, not the project " +
+      "report (summary stays whole-project); violations knot (ranked by " +
       "member-instability spread — spread > 0 is an SDP break inside the cycle) / backEdge (minority-weight direction, equal weights never " +
       "guessed) / abstractionBypass (consumer reaches measured-concrete component past measured-abstract one beneath); " +
       "informational compositionCycle / island (nothing depends on it, below the top) / layerSkip (>=2 levels straight " +

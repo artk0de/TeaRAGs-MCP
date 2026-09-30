@@ -98,6 +98,7 @@ export type {
   // Architecture diagnostics (get_architecture_report)
   ArchitectureDirectoryRelation,
   ArchitectureFileEdge,
+  ArchitectureKnotMember,
   ArchitectureKnotPage,
   ArchitectureKnotView,
   ArchitectureReportSummary,

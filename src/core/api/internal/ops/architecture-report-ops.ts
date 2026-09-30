@@ -46,6 +46,7 @@ import {
   MAIN_SEQUENCE_STABLE_CONCRETE_CALM_REASON,
   MAIN_SEQUENCE_UNOBSERVABLE_REASON,
   NON_PRODUCTION_REASON,
+  type ComponentGraph,
   type ComponentStableDependenciesReport,
   type ConventionPrivacyReport,
   type LayeringBackEdgeViolation as DomainLayeringBackEdgeViolation,
@@ -68,6 +69,7 @@ import {
 import { buildNonProductionPathFilter } from "../../../infra/file-classification/index.js";
 import { UnknownArchitectureComponentError } from "../../errors.js";
 import type {
+  ArchitectureKnotMember,
   ArchitectureKnotView,
   ArchitectureRootCause,
   ArchitectureViolation,
@@ -203,6 +205,20 @@ export class ArchitectureReportOps {
       levelCount: buildLayeringModel(components).levelCount,
     };
     const limit = request.limit ?? DEFAULT_ARCHITECTURE_REPORT_LIMIT;
+    const offset = request.offset ?? 0;
+    // Knot mode (bd tea-rags-mcp-r8hme.39): the WHOLE knot the lookup found
+    // (members before any scope projection) decides which findings sit inside it.
+    const domainKnot =
+      knotLookup?.kind === "inKnot"
+        ? layeringModel.knots.find((k) => k.components.includes(knotLookup.component))
+        : undefined;
+    const findings = knotLookup
+      ? findingsInKnot(
+          { sdp, leaks, privacy, silent, mainSequence },
+          buildArchitectureKnotMembership(domainKnot?.components ?? [], layeringComponents, components),
+          offset,
+        )
+      : { sdp, leaks, privacy, silent, mainSequence, layering };
     return {
       ...(request.pathPattern ? { pathPattern: request.pathPattern } : {}),
       summary: {
@@ -217,13 +233,17 @@ export class ArchitectureReportOps {
         mainSequence: summariseMainSequence(mainSequence),
         layering: summariseLayering(layering, facadePartition),
       },
-      rootCauses: [...sdpRootCauses(sdp, limit), ...leakRootCauses(leaks, limit), ...silentRootCauses(silent, limit)],
+      rootCauses: [
+        ...sdpRootCauses(findings.sdp, limit),
+        ...leakRootCauses(findings.leaks, limit),
+        ...silentRootCauses(findings.silent, limit),
+      ],
       violations: [
-        ...sdpViolations(sdp, limit),
-        ...leakViolations(leaks, privacy, limit),
-        ...silentViolations(silent, limit),
-        ...mainSequenceViolations(mainSequence, limit),
-        ...layeringViolations(layering, limit),
+        ...sdpViolations(findings.sdp, limit),
+        ...leakViolations(findings.leaks, findings.privacy, limit),
+        ...silentViolations(findings.silent, limit),
+        ...mainSequenceViolations(findings.mainSequence, limit),
+        ...(findings.layering ? layeringViolations(findings.layering, limit) : []),
       ],
       // The layer map VIEW only when asked (bd tea-rags-mcp-r8hme.26) — a full
       // map never bloats an unqualified report. Same DOMAIN partition the
@@ -231,7 +251,9 @@ export class ArchitectureReportOps {
       // boundary edges carry levels consistent with the summary.
       ...(request.layerMap ? { layerMap: buildLayerMap(layeringComponents, production.graph, request.layerMap) } : {}),
       // The knot VIEW only when asked (bd tea-rags-mcp-r8hme.38), paged here.
-      ...(knotLookup ? { knot: knotView(knotLookup, limit, request.offset ?? 0) } : {}),
+      ...(knotLookup
+        ? { knot: knotView(knotLookup, layeringComponents, domainKnot?.instabilitySpread ?? 0, limit, offset) }
+        : {}),
     };
   }
 
@@ -720,10 +742,14 @@ function toLayeringBackEdgeViolation(v: DomainLayeringBackEdgeViolation): Layeri
 /**
  * The knot view (bd tea-rags-mcp-r8hme.38): the lookup's full lists paged at
  * `[offset, offset + limit)` — members and cut edges by the same window,
- * back-edges capped at `limit` — the counts kept before paging.
+ * back-edges capped at `limit` — the counts kept before paging. Each member
+ * carries its coupling on the partition the knot was found in (bd
+ * tea-rags-mcp-r8hme.39).
  */
 function knotView(
   lookup: Exclude<LayeringKnotLookup, { kind: "unknownComponent" }>,
+  layeringPartition: ComponentGraph,
+  instabilitySpread: number,
   limit: number,
   offset: number,
 ): ArchitectureKnotView {
@@ -742,8 +768,9 @@ function knotView(
   return {
     ...head,
     knot: {
-      components: knot.components.slice(offset, end),
+      members: knot.components.slice(offset, end).map((component) => knotMember(component, layeringPartition)),
       memberCount: knot.components.length,
+      instabilitySpread: round3(instabilitySpread),
       feedbackArcSet: knot.feedbackArcSet.slice(offset, end).map(toLayeringFeedbackEdge),
       cutEdgeCount: knot.cutEdgeCount,
       levelsAfterCut: knot.levelsAfterCut,
@@ -754,6 +781,107 @@ function knotView(
         ? { outOfScopeFeedbackEdgeCount: knot.outOfScopeFeedbackEdgeCount }
         : {}),
       ...(hasMore ? { nextOffset: end } : {}),
+    },
+  };
+}
+
+function knotMember(component: string, layeringPartition: ComponentGraph): ArchitectureKnotMember {
+  const measured = layeringPartition.components.get(component);
+  return {
+    component,
+    instability: round3(measured?.instability ?? 0),
+    afferentCount: measured?.afferentCount ?? 0,
+    efferentCount: measured?.efferentCount ?? 0,
+  };
+}
+
+/**
+ * Which findings sit inside one knot (bd tea-rags-mcp-r8hme.39). The knot's
+ * members are components of the layering (DOMAIN) partition, while SDP and
+ * the main sequence judge the adoption partition, so each question is
+ * answered through files: a file is inside when its domain component is a
+ * member, and an adoption component is inside when it IS a member or every
+ * file it holds is inside — a plain directory under an unadopted facade
+ * belongs to that facade's domain component.
+ */
+export interface ArchitectureKnotMembership {
+  holdsFile: (relPath: RelPath) => boolean;
+  holdsComponent: (component: string) => boolean;
+}
+
+export function buildArchitectureKnotMembership(
+  members: readonly string[],
+  layeringPartition: ComponentGraph,
+  adoptionPartition: ComponentGraph,
+): ArchitectureKnotMembership {
+  const memberSet = new Set(members);
+  const holdsFile = (relPath: RelPath) => {
+    const component = layeringPartition.componentOf.get(relPath);
+    return component !== undefined && memberSet.has(component);
+  };
+  const everyFileInside = new Map<string, boolean>();
+  for (const [relPath, component] of adoptionPartition.componentOf) {
+    everyFileInside.set(component, (everyFileInside.get(component) ?? true) && holdsFile(relPath));
+  }
+  return {
+    holdsFile,
+    holdsComponent: (component) => memberSet.has(component) || everyFileInside.get(component) === true,
+  };
+}
+
+interface ArchitectureDetectorReports {
+  sdp: ComponentStableDependenciesReport;
+  leaks: LeakingAbstractionReport;
+  privacy: ConventionPrivacyReport;
+  silent: SilentCouplingReport;
+  mainSequence: MainSequenceReport;
+  /** Absent in knot mode: the view carries the knot's own back-edges. */
+  layering?: LayeringReport;
+}
+
+/**
+ * The detector reports narrowed to the findings inside the knot, before any
+ * `limit` cap (bd tea-rags-mcp-r8hme.39) — so a page lists up to `limit`
+ * in-knot findings per detector. Only the first page (`offset` 0) carries
+ * them; later pages page the view alone. The summaries keep reading the
+ * unfiltered reports.
+ */
+function findingsInKnot(
+  reports: Required<Omit<ArchitectureDetectorReports, "layering">>,
+  membership: ArchitectureKnotMembership,
+  offset: number,
+): ArchitectureDetectorReports {
+  const firstPage = offset === 0;
+  const keep = <T>(items: readonly T[], inside: (item: T) => boolean): T[] => (firstPage ? items.filter(inside) : []);
+  const { sdp, leaks, privacy, silent, mainSequence } = reports;
+  const bothFiles = (v: { sourceRelPath: RelPath; targetRelPath: RelPath }) =>
+    membership.holdsFile(v.sourceRelPath) && membership.holdsFile(v.targetRelPath);
+  return {
+    sdp: {
+      ...sdp,
+      violations: keep(
+        sdp.violations,
+        (v) => membership.holdsComponent(v.sourceComponent) && membership.holdsComponent(v.targetComponent),
+      ),
+      rootCauses: keep(sdp.rootCauses, (r) => membership.holdsComponent(r.targetComponent)),
+    },
+    leaks: {
+      ...leaks,
+      violations: keep(leaks.violations, bothFiles),
+      rootCauses: keep(
+        leaks.rootCauses,
+        (r) => membership.holdsComponent(r.moduleDir) || membership.holdsFile(r.facadeRelPath),
+      ),
+    },
+    privacy: { ...privacy, violations: keep(privacy.violations, bothFiles) },
+    silent: {
+      ...silent,
+      violations: keep(silent.violations, (v) => membership.holdsFile(v.relPathA) && membership.holdsFile(v.relPathB)),
+      rootCauses: keep(silent.rootCauses, (r) => membership.holdsFile(r.relPath)),
+    },
+    mainSequence: {
+      ...mainSequence,
+      violations: keep(mainSequence.violations, (v) => membership.holdsComponent(v.component)),
     },
   };
 }
