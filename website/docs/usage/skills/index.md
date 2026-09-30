@@ -140,6 +140,19 @@ system is the one thing its internal view cannot recompute. This is distinct
 from `pathPattern`, which leaves every metric whole-graph and only filters
 which findings the response lists.
 
+The `norms: true` flag adds a different kind of answer again: not what the
+architecture should be, but what THIS repository actually does. Every file
+carries the role of its primary type (the naming lexicon's type-role layer),
+the report counts the project's own precedents per (source role, target role,
+locality) — same directory, same domain component, cross-domain — and every
+typed file edge below the adaptive cut gets a verdict. A `misfit` is a direct
+edge whose roles normally meet through a mid role: the finding names that
+transit as the expected path, so a controller reaching a repository reads
+"expected controller → service → repository". A `newPattern` is a pair two
+frequent roles have simply never shown each other. Edges touching an untyped
+or suffix-only-named file are never judged — a suffix suggests a role, it does
+not assert one, and a guessed role would misfit every edge it touches.
+
 ## Generation
 
 ### `/tea-rags:data-driven-generation`

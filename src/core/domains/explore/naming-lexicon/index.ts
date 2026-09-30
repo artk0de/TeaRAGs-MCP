@@ -79,6 +79,7 @@ export {
   filePrimaryDeclaration,
 } from "./type-roles.js";
 export type { TypeNameRow, TypeRoleAssignment, TypeRoleEvidence, TypeRoleThresholds } from "./type-roles.js";
+export { buildDependencyNormFileRoles } from "./file-roles.js";
 export {
   TYPE_DRAFT_KINDS,
   judgeDraftName,

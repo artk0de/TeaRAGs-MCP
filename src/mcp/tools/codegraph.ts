@@ -134,6 +134,13 @@ const GetArchitectureReportInputShape = {
       "Directory root judged AS ITS OWN SYSTEM: induced sub-graph, every metric recomputed inside; " +
         "response.domain carries border edges with whole-graph levels.",
     ),
+  norms: z
+    .boolean()
+    .optional()
+    .describe(
+      "Judge typed file edges against the project's own role precedents: response.norms + norms " +
+        "violations (MISFIT with expected path, NEW_PATTERN).",
+    ),
   limit: z
     .number()
     .int()
@@ -399,7 +406,9 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "collapse), boundary edges with the outside component's global level, move candidates; absent unless asked. domain " +
       "option: judge one directory AS ITS OWN SYSTEM (induced sub-graph, every metric recomputed inside — unlike " +
       "pathPattern which filters findings only); response.domain carries its layering counts + border edges naming the " +
-      "external component and its whole-graph level. Summary " +
+      "external component and its whole-graph level. norms " +
+      "option: the project's own dependency precedents per (roleSrc, roleDst, locality) from primary-type roles — " +
+      "norms violations flag a MISFIT (with the expected transit path) or a NEW_PATTERN edge. Summary " +
       "counts exclusions with named reasons. Diagnosis, not prescription.",
     schemaKey: "get_architecture_report",
     invoke: async (app, request) =>

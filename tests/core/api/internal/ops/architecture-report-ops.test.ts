@@ -60,11 +60,13 @@ function graphDb(
   g: FileDependencyGraph = graph(),
   nonPublicEdges: NonPublicMemberEdge[] = [],
   cochange: TemporalCochangeGraph = { meta: null, edges: [] },
+  typeRows: unknown[] = [],
 ) {
   return {
     readFileDependencyGraph: vi.fn().mockResolvedValue(g),
     readNonPublicMemberEdges: vi.fn().mockResolvedValue(nonPublicEdges),
     readTemporalCochangeGraph: vi.fn().mockResolvedValue(cochange),
+    readTypeNameRows: vi.fn().mockResolvedValue(typeRows),
   };
 }
 
@@ -940,6 +942,102 @@ describe("ArchitectureReportOps#build — domain mode (bd tea-rags-mcp-xb669.1)"
     const report = await new ArchitectureReportOps().build(graphDb(domainFixture()), {});
 
     expect(report.domain).toBeUndefined();
+  });
+});
+
+/**
+ * bd tea-rags-mcp-rpx0v (epic xb669.2): `norms: true` adds the dependency-
+ * norms view — every file's primary-type role (derived from the type rows
+ * the graph db reads), the project's own precedent ledgers per
+ * (roleSrc, roleDst, locality), and a verdict for every precedent-less edge.
+ * Four inheritance families: controllers call services, services call
+ * repositories, presenters call services; two edges have no precedent.
+ */
+describe("ArchitectureReportOps#build — dependency norms (bd tea-rags-mcp-rpx0v)", () => {
+  const FAMILIES: readonly [string, string, string, readonly string[]][] = [
+    ["ui/list.ts", "UiListController", "controller", ["IViewController"]],
+    ["ui/form.ts", "UiFormController", "controller", ["IViewController"]],
+    ["ui/nav.ts", "UiNavController", "controller", ["IViewController"]],
+    ["ui/modal.ts", "UiModalController", "controller", ["IViewController"]],
+    ["logic/tasks.ts", "TasksService", "service", ["IService"]],
+    ["logic/billing.ts", "BillingService", "service", ["IService"]],
+    ["logic/reports.ts", "ReportsService", "service", ["IService"]],
+    ["data/taskRepo.ts", "TaskRepository", "repository", ["IRepository"]],
+    ["data/billRepo.ts", "BillRepository", "repository", ["IRepository"]],
+    ["present/board.ts", "BoardPresenter", "presenter", ["IPresenter"]],
+    ["present/kanban.ts", "KanbanPresenter", "presenter", ["IPresenter"]],
+  ];
+
+  function typeRows() {
+    return FAMILIES.map(([relPath, shortName], i) => ({
+      symbolId: `${relPath}#${shortName}`,
+      relPath,
+      shortName,
+      symbolKind: "class" as const,
+      ancestors: FAMILIES[i][3],
+    }));
+  }
+
+  function normsGraph(): FileDependencyGraph {
+    const files = FAMILIES.map(([relPath]) => file(relPath));
+    const edges: FileDependencyGraph["edges"] = [];
+    const add = (sourceRelPath: string, targetRelPath: string, callWeight = 1) => {
+      edges.push({ sourceRelPath, targetRelPath, callWeight });
+    };
+    const ofRole = (role: string) => FAMILIES.filter(([, , r]) => r === role).map(([f]) => f);
+    for (const c of ofRole("controller")) for (const s of ofRole("service")) add(c, s);
+    for (const s of ofRole("service")) for (const r of ofRole("repository")) add(s, r);
+    for (const p of ofRole("presenter")) for (const s of ofRole("service")) add(p, s);
+    add("ui/list.ts", "data/taskRepo.ts", 2);
+    add("logic/tasks.ts", "present/board.ts");
+    return { files, edges };
+  }
+
+  it("judges every precedent-less edge when the request asks for norms", async () => {
+    const report = await new ArchitectureReportOps().build(
+      graphDb(normsGraph(), [], { meta: null, edges: [] }, typeRows()),
+      {
+        norms: true,
+      },
+    );
+
+    expect(report.norms?.summary).toMatchObject({ typedEdgeCount: 26, judgedEdgeCount: 26, violationCount: 2 });
+    expect(report.norms?.threshold.method).toBe("otsu");
+    expect(report.norms?.findings).toEqual([
+      expect.objectContaining({
+        kind: "misfit",
+        sourceRelPath: "ui/list.ts",
+        targetRelPath: "data/taskRepo.ts",
+        roleSrc: "controller",
+        roleDst: "repository",
+        expectedPath: { via: "service", support: 6 },
+      }),
+      expect.objectContaining({
+        kind: "newPattern",
+        sourceRelPath: "logic/tasks.ts",
+        targetRelPath: "present/board.ts",
+        roleSrc: "service",
+        roleDst: "presenter",
+      }),
+    ]);
+    expect(
+      report.violations
+        .filter((v) => v.detector === "norms")
+        .map((v) => (v.detector === "norms" ? [v.kind, v.sourceRelPath, v.evidence.roleSrc] : [])),
+    ).toEqual([
+      ["misfit", "ui/list.ts", "controller"],
+      ["newPattern", "logic/tasks.ts", "service"],
+    ]);
+  });
+
+  it("carries no norms block and no norms violations when the request does not ask", async () => {
+    const report = await new ArchitectureReportOps().build(
+      graphDb(normsGraph(), [], { meta: null, edges: [] }, typeRows()),
+      {},
+    );
+
+    expect(report.norms).toBeUndefined();
+    expect(report.violations.some((v) => v.detector === "norms")).toBe(false);
   });
 });
 

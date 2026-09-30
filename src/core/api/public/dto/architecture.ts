@@ -38,6 +38,14 @@ export interface GetArchitectureReportRequest {
    * the WHOLE-graph stack.
    */
   domain?: string;
+  /**
+   * Ask for the dependency-norms view (bd tea-rags-mcp-rpx0v): the project's
+   * own P(edge | roleSrc, roleDst, locality), judged per file edge —
+   * `response.norms` plus `norms` violations for every precedent-less edge.
+   * Roles come from each file's primary type (naming's type-role layer);
+   * edges touching an untyped or suffix-only file are never judged.
+   */
+  norms?: boolean;
   /** Max violations and max root causes returned per detector (default 50); the summary keeps the totals. */
   limit?: number;
   /**
@@ -601,7 +609,29 @@ export type ArchitectureViolation =
   | LeakingAbstractionArchitectureViolation
   | SilentCouplingArchitectureViolation
   | MainSequenceArchitectureViolation
-  | LayeringArchitectureViolation;
+  | LayeringArchitectureViolation
+  | NormArchitectureViolation;
+
+/**
+ * A file edge the project's own norms find precedent-less (bd
+ * tea-rags-mcp-rpx0v): a MISFIT names the transit its roles normally follow,
+ * a NEW_PATTERN names a pair the corpus has never seen between two roles it
+ * knows well.
+ */
+export interface NormArchitectureViolation {
+  detector: "norms";
+  kind: "misfit" | "newPattern";
+  sourceRelPath: RelPath;
+  targetRelPath: RelPath;
+  evidence: {
+    roleSrc: string;
+    roleDst: string;
+    locality: ArchitectureNormFinding["locality"];
+    callWeight: number;
+    pairSupport: number;
+    expectedPath?: ArchitectureNormExpectedPath;
+  };
+}
 
 /**
  * The layer map VIEW (bd tea-rags-mcp-r8hme.26): levels per node inside a
@@ -1019,6 +1049,54 @@ export interface ArchitectureDomainReport {
   boundaryIn: ArchitectureDomainBoundaryEdge[];
 }
 
+/** The adaptive pair-support cut, rounded for the report. */
+export interface ArchitectureNormsThreshold {
+  method: "otsu" | "majority";
+  threshold: number;
+  separability?: number;
+}
+
+/** The frequent transit a MISFIT names as the path the edge should follow. */
+export interface ArchitectureNormExpectedPath {
+  via: string;
+  support: number;
+}
+
+/** One precedent-less file edge, with the evidence that makes it one. */
+export interface ArchitectureNormFinding {
+  kind: "misfit" | "newPattern";
+  sourceRelPath: RelPath;
+  targetRelPath: RelPath;
+  roleSrc: string;
+  roleDst: string;
+  locality: "sameDirectory" | "sameDomain" | "crossDomain";
+  callWeight: number;
+  pairSupport: number;
+  expectedPath?: ArchitectureNormExpectedPath;
+}
+
+/**
+ * The dependency-norms view (bd tea-rags-mcp-rpx0v), present only when the
+ * request carried `norms`: the project's empirical ledgers per
+ * (roleSrc, roleDst, locality) and the verdict for every precedent-less
+ * edge between strongly-typed files.
+ */
+export interface ArchitectureNormsReport {
+  summary: {
+    roleFileCount: number;
+    weakRoleFileCount: number;
+    untypedFileCount: number;
+    typedEdgeCount: number;
+    judgedEdgeCount: number;
+    violationCount: number;
+    pairCount: number;
+    excluded: { lowRoleSupportEdgeCount: number };
+  };
+  threshold: ArchitectureNormsThreshold;
+  /** MISFITs first, then by weight, then by path. */
+  findings: ArchitectureNormFinding[];
+}
+
 export interface GetArchitectureReportResponse {
   /** The scope the report was judged under, echoed; absent = whole graph. */
   pathPattern?: string;
@@ -1044,4 +1122,6 @@ export interface GetArchitectureReportResponse {
   knot?: ArchitectureKnotView;
   /** The domain-mode block (bd tea-rags-mcp-xb669.1), present only when the request carried `domain`. */
   domain?: ArchitectureDomainReport;
+  /** The dependency-norms view (bd tea-rags-mcp-rpx0v), present only when the request carried `norms`. */
+  norms?: ArchitectureNormsReport;
 }
