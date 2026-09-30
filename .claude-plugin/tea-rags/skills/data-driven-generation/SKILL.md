@@ -54,16 +54,16 @@ Probe ambiguous → ask user which mode. One question, genuine ambiguity only.
 
 **Step matrix** — mode selects steps + signal sources:
 
-| Step        | CREATE                      | EXTEND                         | MODIFY                     |
-| ----------- | --------------------------- | ------------------------------ | -------------------------- |
-| 1 STRATEGY  | area labels                 | container labels               | symbol's own labels        |
-| 2 TEMPLATE  | run                         | run                            | skip                       |
-| 3 PLACEMENT | run                         | fixed = container; guard fires | skip                       |
-| 4 REUSE     | run                         | run                            | run — for introduced logic |
-| 5 STYLE     | blame-owner + lexicon       | container file + lexicon       | symbol itself + lexicon    |
-| 6 GENERATE  | strategy + style + manifest | same                           | minimal diff per strategy  |
-| 7 VERIFY    | symbol risks + N-th-way     | same                           | + tests-at-risk            |
-| 8 IMPACT    | blastRadius of new code     | container fanIn                | `get_callers` — MANDATORY  |
+| Step        | CREATE                      | EXTEND                         | MODIFY                                      |
+| ----------- | --------------------------- | ------------------------------ | ------------------------------------------- |
+| 1 STRATEGY  | area labels                 | container labels               | symbol's own labels                         |
+| 2 TEMPLATE  | run                         | run                            | skip                                        |
+| 3 PLACEMENT | run                         | fixed = container; guard fires | skip                                        |
+| 4 REUSE     | run                         | run                            | run — for introduced logic                  |
+| 5 STYLE     | blame-owner + lexicon       | container file + lexicon       | symbol itself + lexicon                     |
+| 6 GENERATE  | strategy + style + manifest | same                           | find_co_changed + minimal diff per strategy |
+| 7 VERIFY    | symbol risks + N-th-way     | same                           | + tests-at-risk                             |
+| 8 IMPACT    | blastRadius of new code     | container fanIn                | `get_callers` — MANDATORY                   |
 
 - **Hotfix** (user gives exact location) = MODIFY, additionally skip STRATEGY
   and the blame part of STYLE. REUSE still applies to introduced logic; the
@@ -289,6 +289,12 @@ Output: the vocabulary for Step 6.
 
 Apply strategy + style + reuse manifest — call manifest helpers, NEVER
 reimplement them. MODIFY: minimal diff per strategy.
+
+MODIFY, before the first edit: `find_co_changed(project, files: [target])` on
+the target file (registered when codegraph is on). Silent partners —
+`structurallyLinked: false` — with `strength >= 0.5`, top 5: check whether the
+change belongs in them too. Context, not a requirement — never expand the diff
+on co-change alone.
 
 Names come from the Step 5 vocabulary, built by the dominant shape. A word
 outside it is `NEW_TERM` and gets one line in the output:

@@ -36,7 +36,12 @@ import type {
 // ops/schema construction lives in the composition root, and the handler
 // TYPES arrive through the api barrel (`../index.js`), which already legally
 // aggregates composition + facades. No deep `../internal/` path is imported.
-import { composeAppOps, emptyArchitectureReport, emptyOntologyReport } from "../internal/composition.js";
+import {
+  composeAppOps,
+  emptyArchitectureReport,
+  emptyCochangeResult,
+  emptyOntologyReport,
+} from "../internal/composition.js";
 import type {
   AddDocumentsRequest,
   CollectionInfo,
@@ -46,6 +51,8 @@ import type {
   EnrichmentProgressCallback,
   ExploreCodeRequest,
   ExploreResponse,
+  FindCoChangedRequest,
+  FindCoChangedResult,
   FindCyclesRequest,
   FindCyclesResponse,
   FindSimilarRequest,
@@ -167,6 +174,8 @@ export interface App {
   getNamingLexicon: (request: NamingLexiconRequest) => Promise<NamingLexiconResult>;
   /** Naming ontology audit (bd tea-rags-mcp-4p3sb.20) — synonyms, homonyms, outliers, symbol collisions. */
   getOntologyReport: (request: GetOntologyReportRequest) => Promise<GetOntologyReportResponse>;
+  /** Co-change partners (bd tea-rags-mcp-l1ot.1) — the temporal sub-graph: which files historically changed together. */
+  findCoChanged: (request: FindCoChangedRequest) => Promise<FindCoChangedResult>;
 
   // -- Provider availability — sync query used by MCP tool registrars to
   // skip registration when a required trajectory provider is not loaded.
@@ -382,6 +391,7 @@ export function createApp(deps: AppDeps): App {
       deps.namingLexiconOps ? deps.namingLexiconOps.getNamingLexicon(req) : { scope: "", byType: [], names: [] },
     getOntologyReport: async (req) =>
       deps.ontologyReportOps ? deps.ontologyReportOps.report(req) : emptyOntologyReport(req),
+    findCoChanged: async (req) => (deps.graphFacade ? deps.graphFacade.findCoChanged(req) : emptyCochangeResult(req)),
 
     // -- Provider availability — backs MCP tool-registrar gating. Source
     // of truth is `registeredProviderKeys` populated by composition from

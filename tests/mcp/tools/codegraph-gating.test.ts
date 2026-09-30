@@ -4,9 +4,9 @@
  *
  * When `app.hasProvider("codegraph.symbols") === false`, the registrar must
  * be a complete no-op — neither `get_callers`, `get_callees`, `find_cycles`,
- * `trace_path`, `get_architecture_report`, `get_naming_lexicon` nor
- * `get_ontology_report` appears in the MCP tool list. When true, all of them
- * register.
+ * `trace_path`, `get_architecture_report`, `get_naming_lexicon`,
+ * `get_ontology_report` nor `find_co_changed` appears in the MCP tool list.
+ * When true, all of them register.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -25,6 +25,7 @@ function makeApp(hasCodegraph: boolean): App {
     tracePath: vi.fn(),
     getArchitectureReport: vi.fn(),
     getOntologyReport: vi.fn(),
+    findCoChanged: vi.fn(),
   } as unknown as App;
 }
 
@@ -47,15 +48,16 @@ function makeServer(): McpServer {
 }
 
 describe("registerCodegraphTools — provider gating", () => {
-  it("registers all 7 codegraph tools when hasProvider('codegraph.symbols') is true", () => {
+  it("registers all 8 codegraph tools when hasProvider('codegraph.symbols') is true", () => {
     const register = vi.fn();
     const app = makeApp(true);
 
     registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
 
-    expect(register).toHaveBeenCalledTimes(7);
+    expect(register).toHaveBeenCalledTimes(8);
     const names = register.mock.calls.map((c) => c[1] as string).sort();
     expect(names).toEqual([
+      "find_co_changed",
       "find_cycles",
       "get_architecture_report",
       "get_callees",
@@ -281,5 +283,58 @@ describe("get_callers / get_callees — file scope", () => {
     await handler({ project: "p", relativePath: "src/a.ts" });
 
     expect(app.getCallees).toHaveBeenCalledWith(expect.objectContaining({ project: "p", relativePath: "src/a.ts" }));
+  });
+});
+
+// bd tea-rags-mcp-l1ot.1 — co-change partners from the temporal sub-graph.
+describe("find_co_changed", () => {
+  function registered(hasCodegraph = true) {
+    const register = vi.fn();
+    const app = makeApp(hasCodegraph);
+    registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
+    const call = register.mock.calls.find((c) => c[1] === "find_co_changed");
+    const config = call?.[2] as {
+      inputSchema: Record<string, z.ZodTypeAny>;
+      description: string;
+      annotations: Record<string, boolean>;
+    };
+    const handler = call?.[3] as (args: Record<string, unknown>) => Promise<{ content: { text: string }[] }>;
+    return { app, config, handler };
+  }
+
+  it("is not registered when codegraph.symbols is absent", () => {
+    expect(registered(false).config).toBeUndefined();
+  });
+
+  it("is a read-only tool whose schema requires files and takes the address triad and an optional limit", () => {
+    const { config } = registered();
+    const schema = z.object(config.inputSchema);
+
+    expect(config.annotations).toMatchObject({ readOnlyHint: true, idempotentHint: true });
+    expect(config.description).toMatch(/co-change/);
+    expect(config.description).toMatch(/built:false/);
+    // files is the one required field; the address triad stays optional.
+    expect(schema.safeParse({ project: "tea-rags", files: ["src/a.ts"] }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", files: ["src/a.ts", "src/b.ts"], limit: 5 }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags" }).success).toBe(false);
+    expect(schema.safeParse({ project: "tea-rags", files: [] }).success).toBe(false);
+    expect(schema.safeParse({ project: "tea-rags", files: ["src/a.ts"], limit: 0 }).success).toBe(false);
+  });
+
+  it("forwards the address, files and limit into app.findCoChanged and returns the result as text", async () => {
+    const { app, handler } = registered();
+    const result = { built: true, files: [] };
+    (app.findCoChanged as ReturnType<typeof vi.fn>).mockResolvedValue(result);
+
+    const response = await handler({ project: "tea-rags", files: ["src/a.ts"], limit: 5 });
+
+    expect(app.findCoChanged).toHaveBeenCalledWith({
+      project: "tea-rags",
+      collection: undefined,
+      path: undefined,
+      files: ["src/a.ts"],
+      limit: 5,
+    });
+    expect(JSON.parse(response.content[0].text)).toEqual(result);
   });
 });

@@ -18,6 +18,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import type {
+  FindCoChangedRequest,
   FindCyclesRequest,
   GetArchitectureReportRequest,
   GetCalleesRequest,
@@ -150,6 +151,16 @@ const GetOntologyReportInputShape = {
   limit: z.number().int().positive().max(100).optional().describe("Items per section (default 20)."),
 };
 
+/** `find_co_changed` (bd tea-rags-mcp-l1ot.1) — co-change partners of the named files. */
+const FindCoChangedInputShape = {
+  ...collectionPathFields(),
+  files: z
+    .array(z.string().min(1))
+    .min(1)
+    .describe("Project-relative paths to query, at least one (e.g. ['src/core/app.ts'])."),
+  limit: z.number().int().positive().max(100).optional().describe("Max partners per file (default 10)"),
+};
+
 /**
  * Build the `trace_path` input shape. The `rerank` field is a curated preset
  * ENUM derived from the registry (presets that tag `"trace_path"` in their
@@ -261,6 +272,7 @@ function createCodegraphSchemas(schemaBuilder: SchemaBuilder) {
     find_cycles: FindCyclesInputShape,
     get_architecture_report: GetArchitectureReportInputShape,
     get_ontology_report: GetOntologyReportInputShape,
+    find_co_changed: FindCoChangedInputShape,
     trace_path: buildTracePathInputShape(schemaBuilder),
     get_naming_lexicon: buildNamingLexiconInputSchema(),
   };
@@ -364,6 +376,20 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
     schemaKey: "get_ontology_report",
     invoke: async (app, request) =>
       formatMcpText(JSON.stringify(await app.getOntologyReport(request as GetOntologyReportRequest), null, 2)),
+  },
+  {
+    name: "find_co_changed",
+    title: "Find Co-Changed Files",
+    description:
+      "File co-change partners from git history (cg_temporal sub-graph). Ranked by Wilson lower-bound strength; " +
+      "each partner carries support, both directed confidences (pPartnerGivenFile, pFileGivenPartner), lift, " +
+      "sample commits, structurallyLinked — an import/method/barrel edge joins the pair, false = silent coupling. " +
+      "Provenance echoes head, window and build cuts; partners deleted from the working tree are dropped. " +
+      "built:false = no co-change build yet (run a codegraph enrichment), NEVER read it as 'no partners'. " +
+      "Before editing a file, surface silent high-strength partners as change-context.",
+    schemaKey: "find_co_changed",
+    invoke: async (app, request) =>
+      formatMcpText(JSON.stringify(await app.findCoChanged(request as FindCoChangedRequest), null, 2)),
   },
   {
     name: "trace_path",

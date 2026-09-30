@@ -64,8 +64,10 @@ import { STATIC_FILTER_PRESETS } from "../../domains/trajectory/static/filter-pr
 import { StaticTrajectory } from "../../domains/trajectory/static/index.js";
 import { staticStatsAccumulators } from "../../domains/trajectory/static/stats/index.js";
 import type { GetArchitectureReportRequest, GetArchitectureReportResponse } from "../public/dto/architecture.js";
+import type { FindCoChangedRequest, FindCoChangedResult } from "../public/dto/cochange.js";
 import type { GetOntologyReportRequest, GetOntologyReportResponse } from "../public/dto/ontology.js";
 import { ArchitectureReportOps } from "./ops/architecture-report-ops.js";
+import { CochangeOps } from "./ops/cochange-ops.js";
 import { CollectionOps } from "./ops/collection-ops.js";
 import { DocumentMetadataSchemaCompiler } from "./ops/document-metadata-schema.js";
 import { DocumentOps } from "./ops/document-ops.js";
@@ -438,4 +440,14 @@ export function emptyArchitectureReport(request: GetArchitectureReportRequest): 
  */
 export function emptyOntologyReport(request: GetOntologyReportRequest): GetOntologyReportResponse {
   return OntologyReportOps.empty(request);
+}
+
+/**
+ * The co-change answer for a collection with no codegraph database: `built
+ * false`, every requested file listed with no partners — honest empty, never
+ * "no partners". `CochangeOps.empty`, surfaced by the composition root for
+ * the same reason as `emptyArchitectureReport`.
+ */
+export function emptyCochangeResult(request: FindCoChangedRequest): FindCoChangedResult {
+  return CochangeOps.empty(request.files);
 }
