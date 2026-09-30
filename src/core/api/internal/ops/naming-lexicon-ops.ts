@@ -71,17 +71,11 @@
  * migration 033 → `driftWarning` naming the reindex, not a silent empty answer.
  */
 
-import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
-import { listRepoWorkTrees, resolveGitCommonDir } from "../../../adapters/vcs/git/common-dir.js";
-import {
-  listChangedFiles,
-  readAddedLineRangesOfFiles,
-  readMergeBase,
-  type AddedLineRange,
-} from "../../../adapters/vcs/git/git-cli/client.js";
+import type { AddedLineRange } from "../../../adapters/vcs/git/git-cli/client.js";
 import type {
   GraphDbClient,
   IdentifierBoundCallee,
@@ -142,7 +136,6 @@ import {
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import { pathPatternLiteralPrefix } from "../../../infra/path-pattern.js";
-import { readRepoGitState } from "../../../infra/repo-git-state.js";
 import { cosine } from "../../../infra/vector-math.js";
 import { InputValidationError, InvalidParameterError, MissingArgumentError } from "../../errors.js";
 import type { ExploreResponse, FindSymbolRequest, SemanticSearchRequest } from "../../public/dto/explore.js";
@@ -165,6 +158,7 @@ import type {
   NamingReviewResult,
 } from "../../public/dto/naming-lexicon.js";
 import { resolveCollection } from "../collection-resolver.js";
+import { DIFF_FILE_CAP, readDiffScope, readTreeLag, resolveWorkTree } from "./diff-scope-reader.js";
 import { readUntypedMethodEvidence, type MethodHeadWordMemo } from "./naming-lexicon-method-evidence.js";
 import type {
   NamingReviewExtractor,
@@ -173,7 +167,6 @@ import type {
 } from "./naming-review-extraction.js";
 import {
   GENERIC_NAME_BAR,
-  ontologyNonProductionPathFilter,
   ontologyNonProductionPaths,
   ontologyReportQuery,
   ontologyRowCasing,
@@ -199,20 +192,14 @@ const CONCEPT_FIELDS = ["symbolId", "relativePath", "parentSymbolId"];
 /** Casing when neither a descriptor nor the observed names decide one. */
 const FALLBACK_CASING: IdentifierCasing = "snake";
 
-/** Diff mode: changed files one call reviews; the rest are reported as `truncated`. */
-const DIFF_FILE_CAP = 200;
 /**
  * Diff mode: characters of a type declaration's enclosing chunk its concept
  * query carries (spec §4.1) — the head of the chunk, where the declaration and
  * its first members are; the embedding reads a bounded query anyway.
  */
 const DIFF_CONCEPT_CODE_CHARS = 1500;
-/** Diff mode's base when the request names none: the working tree against HEAD (spec §6). */
-const DIFF_DEFAULT_BASE = "HEAD";
 /** Diff mode: how many not-judged entries `notJudgedNames` lists; `notJudgedBy` counts them all. */
 const NOT_JUDGED_NAME_CAP = 50;
-/** Diff mode: a listed file with no diff is reviewed whole — every line reads as added. */
-const WHOLE_FILE: readonly AddedLineRange[] = [{ start: 1, end: Number.MAX_SAFE_INTEGER }];
 
 /** Collided symbol ids a value / return draft's evidence lists — as many as a head alternative's example types. */
 const MAX_COLLISION_EXAMPLES = 3;
@@ -461,8 +448,9 @@ export class NamingLexiconOps {
     // Every sub-read — concept search, metrics — addresses the index resolved HERE, never
     // re-resolves the path: a worktree path hashes to a collection that does not exist (bd tea-rags-mcp-2kplu).
     const addressed = addressedRequest(req, collectionName, repoRoot);
-    const workTree = resolveWorkTree(req, repoRoot);
-    const indexLag = workTree === undefined ? undefined : this.indexLag(collectionName, workTree);
+    const workTree = resolveWorkTree({ project: req.project, collection: req.collection, path: req.path }, repoRoot);
+    const indexLag =
+      workTree === undefined ? undefined : readTreeLag(this.deps.collectionRegistry, collectionName, workTree);
     // Diff mode reads the change first: its files are the evidence every read excludes.
     const diff = isDiffRequest(req) ? await this.readDiff(req, workTree) : undefined;
     const excludePaths = [...(scope.excludePaths ?? []), ...(diff?.files ?? [])];
@@ -502,51 +490,24 @@ export class NamingLexiconOps {
   }
 
   /**
-   * The evidence corpus's lag behind the tree the answer is about (lexicon
-   * friction F2): the registry's `indexedCommit` (stamped at finalize, read by
-   * `CommitDriftMonitor` too) against the tree's HEAD. Undefined when either is
-   * unknown or they agree — the verdicts then rest on the tree's own commit.
-   */
-  private indexLag(collectionName: string, workTree: string): NamingLexiconResult["indexLag"] {
-    const indexedCommit = this.deps.collectionRegistry.get?.(collectionName)?.git?.indexedCommit;
-    if (!indexedCommit) return undefined;
-    const treeCommit = readRepoGitState(workTree)?.commit;
-    if (!treeCommit || treeCommit === indexedCommit) return undefined;
-    return { indexedCommit, treeCommit };
-  }
-
-  /**
-   * Diff mode's git reads (spec §6.1–6.3): the changed files against the base
-   * resolved to its merge-base with HEAD (bd tea-rags-mcp-y33ee) — `files` when
-   * given, else `git diff --name-only` plus untracked files — capped at
-   * {@link DIFF_FILE_CAP}; per file its added line ranges and, when something
-   * was added and a codegraph language walks it, its declarations. A listed
-   * file with no diff is read whole: on a clean tree `files` names committed
-   * code to review, and an empty answer would read as "all conforms".
+   * Diff mode's read, mapped onto the naming-specific half: per reviewed file
+   * its added lines and — when something was added and a codegraph language
+   * walks it — its declarations. A file the ontology calls non-production, one
+   * no codegraph language walks, or an unreadable one is not judged; a listed
+   * file with no diff was read whole by {@link readDiffScope}.
    */
   private async readDiff(req: NamingLexiconRequest, repoRoot: string | undefined): Promise<DiffRead> {
+    const read = await readDiffScope(repoRoot, { base: req.changes?.base, files: req.files });
     // `repoRoot` is the tree the change is read from (`resolveWorkTree`).
-    if (!repoRoot) {
-      throw new InvalidParameterError("path", "changes / files review the working tree: pass project or path");
-    }
-    const base = req.changes?.base ?? DIFF_DEFAULT_BASE;
-    const mergeBase = await resolveReviewMergeBase(repoRoot, base);
-    const changed = await gitRead(base, async () => listChangedFiles(repoRoot, mergeBase));
-    const listed = req.files ? unique(req.files) : undefined;
-    const all = listed ?? changed;
-    const files = all.slice(0, DIFF_FILE_CAP);
-    const ranges = await gitRead(base, async () => readAddedLineRangesOfFiles(repoRoot, mergeBase, files));
-    const changedSet = new Set(changed);
-    const whole = new Set(listed ? files.filter((relPath) => !changedSet.has(relPath)) : []);
-
-    const nonProduction = ontologyNonProductionPathFilter();
-    const extract = this.deps.extractDeclarations?.forWorkingTree(repoRoot);
+    const extract = this.deps.extractDeclarations?.forWorkingTree(read.workTree);
     const judged: DiffFile[] = [];
     const notJudged: NamingReviewNotJudgedEntry[] = [];
-    for (const relPath of files) {
-      const added = whole.has(relPath) ? WHOLE_FILE : (ranges.get(relPath) ?? []);
+    for (const relPath of read.files) {
+      const added = read.addedRanges.get(relPath) ?? [];
       if (added.length === 0) continue;
-      const file = nonProduction.ignores(relPath) ? "nonProduction" : readDiffFile(extract, repoRoot, relPath, added);
+      const file = read.nonProduction.has(relPath)
+        ? "nonProduction"
+        : readDiffFile(extract, read.workTree, relPath, added);
       if (typeof file === "string") {
         notJudged.push({ relPath, kind: "file", reason: file });
         continue;
@@ -554,16 +515,16 @@ export class NamingLexiconOps {
       judged.push(file);
     }
     return {
-      workTree: repoRoot,
-      base,
-      mergeBase,
-      notices: !listed && changed.length === 0 ? [emptyDiffNotice(repoRoot, base, mergeBase)] : [],
-      changedFiles: listed ? listed.filter((relPath) => changedSet.has(relPath)).length : changed.length,
-      wholeFiles: whole.size,
-      files,
+      workTree: read.workTree,
+      base: read.base,
+      mergeBase: read.mergeBase,
+      notices: [...read.notices],
+      changedFiles: read.changedFiles,
+      wholeFiles: read.wholeFiles,
+      files: [...read.files],
       judged,
       notJudged,
-      skipped: all.length - files.length,
+      skipped: read.skipped,
     };
   }
 
@@ -1283,53 +1244,6 @@ function asksLexicon(req: NamingLexiconRequest): boolean {
   );
 }
 
-/**
- * The working tree an answer is about (lexicon friction F1). The addressing
- * params already split index from tree — `collection` + `path` reads the
- * collection's index and the tree at `path` — and `project` + `path` now does
- * the same: the alias addresses the index (registered at the main checkout),
- * `path` a checkout of the SAME repository, a linked git worktree. `project`
- * alone reads the main checkout.
- */
-function resolveWorkTree(req: NamingLexiconRequest, repoRoot: string | undefined): string | undefined {
-  if (req.project === undefined || req.collection !== undefined || req.path === undefined || !repoRoot) {
-    return repoRoot;
-  }
-  const absolute = resolve(req.path);
-  if (!existsSync(absolute)) throw new InvalidParameterError("path", `'${req.path}' does not exist`);
-  const tree = realpathSync(absolute);
-  if (resolveGitCommonDir(tree) !== resolveGitCommonDir(repoRoot)) {
-    throw new InvalidParameterError(
-      "path",
-      `'${req.path}' is not a checkout of project '${req.project}' (${repoRoot}): its change is no diff of this project`,
-    );
-  }
-  return tree;
-}
-
-/**
- * The notice an empty diff carries (lexicon friction F1): `changedFiles: 0`
- * alone reads as "nothing to review" when the review looked at the wrong tree
- * or the wrong base. Names both ways out and the repository's other trees.
- */
-function emptyDiffNotice(workTree: string, base: string, mergeBase: string): string {
-  const tree = realpathOrSelf(workTree);
-  const others = listRepoWorkTrees(tree).filter((other) => other !== tree);
-  const elsewhere = others.length === 0 ? "" : ` — this repository's other working trees: ${others.join(", ")}`;
-  return (
-    `no changes in ${workTree} against ${base} (${mergeBase.slice(0, 7)}): committed work needs changes.base ` +
-    `(e.g. main); edits in a git worktree need path=<worktree> beside project${elsewhere}`
-  );
-}
-
-function realpathOrSelf(path: string): string {
-  try {
-    return realpathSync(path);
-  } catch {
-    return path;
-  }
-}
-
 /** Diff mode: `changes`, or a non-empty `files`. */
 function isDiffRequest(req: NamingLexiconRequest): boolean {
   return req.changes !== undefined || (req.files?.length ?? 0) > 0;
@@ -2035,35 +1949,6 @@ function inDraftOrder(
 }
 
 // ── diff mode ────────────────────────────────────────────────────────────
-
-/** A git read of diff mode; a failure (unknown base, not a repository) is the caller's input. */
-async function gitRead<T>(base: string, read: () => Promise<T>): Promise<T> {
-  try {
-    return await read();
-  } catch (error) {
-    throw new InvalidParameterError("changes.base", `git diff against '${base}' failed: ${errorMessage(error)}`);
-  }
-}
-
-/**
- * Diff mode's comparison commit (bd tea-rags-mcp-y33ee): `base`'s merge-base
- * with HEAD. A reviewer's `base: "origin/master"` means "what this branch
- * changed", not "how the working tree differs from master's tip" — against a
- * tip that moved on, every file only the base touched reads as the branch's
- * (live on taxdome: 1527 files for a 61-file branch). A commit HEAD descends
- * from is its own merge-base, so an explicit sha is compared as given.
- */
-async function resolveReviewMergeBase(repoRoot: string, base: string): Promise<string> {
-  const mergeBase = await gitRead(base, async () => readMergeBase(repoRoot, base));
-  if (mergeBase === null) {
-    throw new InvalidParameterError(
-      "changes.base",
-      `'${base}' and HEAD share no merge-base — unrelated histories, or a shallow clone cut the fork point off ` +
-        `(git fetch --deepen / --unshallow); pass as base a commit HEAD descends from`,
-    );
-  }
-  return mergeBase;
-}
 
 /**
  * One changed file with its text and declarations, or why it is not judged —
