@@ -259,14 +259,17 @@ with no `volatility` = no git reading for its files, hedge.
 
 ## Phase 3e — LAYERING
 
-No declared architecture needed: SCC condensation of the SAME component graph,
-longest-path levels. `level` = longest path from sinks (0 = foundation); `depth`
-= longest path from roots (0 = nothing depends on it). Component with no
-layering edge sits at level 0, depth 0.
+No declared architecture needed: SCC condensation of the DOMAIN graph — every
+facade directory is a unit, adoption notwithstanding (a vertical with an
+unadopted facade counts ONCE, not once per subdirectory; a Go package too).
+Longest-path levels: `level` = longest path from sinks (0 = foundation);
+`depth` = longest path from roots (0 = nothing depends on it). Component with
+no layering edge sits at level 0, depth 0.
 
 | Summary field (`summary.layering`) | Read as                                                                              |
 | ---------------------------------- | ------------------------------------------------------------------------------------ |
 | `levelCount`                       | distinct levels, 0-based; 0 = no layering edge at all                                |
+| `facadePartition`                  | `{componentCount, levelCount}` of the facade-adoption partition — its per-subdirectory split reads deeper levels; comparison only |
 | `coverage`                         | share of components outside multi-component knots — low = knot(s) dominate           |
 | `coherence`                        | rank correlation level vs instability — high = low layers really are the stable ones |
 
@@ -298,7 +301,7 @@ phase otherwise. The map is the layering model read as a VIEW: per-node `level`
 | `boundaryOut`    | edge leaving the scope — names the EXTERNAL component and its `externalLevel` in the WHOLE-repo stack |
 | `boundaryIn`     | edge entering the scope — same shape                                                                  |
 | `moveCandidates` | inner node, 0 inner afferents, every outward edge points into ONE other domain — move-it-there signal |
-| `knots`          | cycles among the map's own nodes, with the cut that levels them                                       |
+| `knots`          | cycles among the map's own nodes, with the cut that levels them; `composition: true` = parent ↔ own nested parts — the summary reports those as `compositionCycle`, not `knot`, so `knotCount` + `compositionCycleCount` = map knots |
 | `summary.*`      | `nodeCount`, `innerEdgeCount`, `boundaryOutEdgeCount`, `boundaryInEdgeCount`                          |
 
 Empty scope = empty map (`nodeCount: 0`), not an error. Bad `granularity` =

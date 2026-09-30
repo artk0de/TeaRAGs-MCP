@@ -430,6 +430,12 @@ export type LayeringArchitectureViolation =
   | LayeringIslandArchitectureViolation
   | LayeringLayerSkipArchitectureViolation;
 
+/** Component and level counts of one partition the layering model was read off. */
+export interface LayeringPartitionCounts {
+  componentCount: number;
+  levelCount: number;
+}
+
 /** The inferred layering of the whole graph, as the `layering` summary reports it. */
 export interface LayeringReportSummary {
   componentCount: number;
@@ -437,6 +443,13 @@ export interface LayeringReportSummary {
   componentEdgeCount: number;
   /** Number of distinct levels, 0-based; 0 when the graph holds no layering edge. */
   levelCount: number;
+  /**
+   * The counts the facade-adoption partition reports (bd tea-rags-mcp-r8hme.30)
+   * — the pre-.30 default, kept alongside for comparison: a language vertical
+   * with an unadopted facade is one domain component here but a directory per
+   * subdirectory there, which is where the deeper level count comes from.
+   */
+  facadePartition: LayeringPartitionCounts;
   /** Share of components outside non-trivial SCCs, 3 decimals; 0 for an empty graph. */
   coverage: number;
   /** Spearman rank correlation of level vs instability, 3 decimals; 0 under two judged components. */
