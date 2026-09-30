@@ -311,12 +311,20 @@ export interface LayeringFeedbackEdge {
 
 /** Why these components form one knot. */
 export interface LayeringKnotViolationEvidence {
-  /** The greedy weighted feedback arc set (Eades–Lin–Smyth) that dissolves the knot. */
+  /**
+   * The greedy weighted feedback arc set (Eades–Lin–Smyth) that dissolves the
+   * knot — the first 10 by call weight; `cutEdgeCount` keeps the total.
+   */
   feedbackArcSet: LayeringFeedbackEdge[];
   /** How many edges the feedback arc set holds. */
   cutEdgeCount: number;
   /** Distinct levels the members occupy once the feedback arc set is cut. */
   levelsAfterCut: number;
+  /**
+   * How many members the knot has — in scope only when scoped (the whole knot
+   * is `memberCount + outOfScopeMemberCount`); `components` lists the first 20.
+   */
+  memberCount: number;
   /**
    * Members the pathPattern scope dropped (the knot lists only in-scope
    * members) — present only when scoped.
@@ -334,7 +342,7 @@ export interface LayeringKnotViolationEvidence {
 export interface LayeringKnotArchitectureViolation {
   detector: "layering";
   kind: "knot";
-  /** Members, most depended-on (Ca) first, then path. */
+  /** Members, most depended-on (Ca) first, then path — the first 20; `evidence.memberCount` keeps the total. */
   components: string[];
   evidence: LayeringKnotViolationEvidence;
 }
@@ -384,8 +392,18 @@ export interface LayeringAbstractionBypassArchitectureViolation {
 
 /** Why a cycle is composition, not a layering defect. */
 export interface LayeringCompositionCycleViolationEvidence {
-  /** Every parent↔nested pair inside the cycle, each named once. */
+  /**
+   * The parent↔nested pairs inside the cycle, each named once — the first 10
+   * by parent then nested path; `nestedPairCount` keeps the total.
+   */
   nestedPairs: { parentComponent: string; nestedComponent: string }[];
+  /** How many parent↔nested pairs the cycle holds. */
+  nestedPairCount: number;
+  /**
+   * How many members the cycle has — in scope only when scoped (the whole
+   * cycle is `memberCount + outOfScopeMemberCount`); `components` lists the first 20.
+   */
+  memberCount: number;
   /** Members the pathPattern scope dropped — present only when scoped. */
   outOfScopeMemberCount?: number;
 }
@@ -394,6 +412,7 @@ export interface LayeringCompositionCycleViolationEvidence {
 export interface LayeringCompositionCycleArchitectureViolation {
   detector: "layering";
   kind: "compositionCycle";
+  /** Members, most depended-on (Ca) first, then path — the first 20; `evidence.memberCount` keeps the total. */
   components: string[];
   evidence: LayeringCompositionCycleViolationEvidence;
 }

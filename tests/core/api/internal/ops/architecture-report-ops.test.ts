@@ -126,6 +126,7 @@ describe("ArchitectureReportOps#build", () => {
           ],
           cutEdgeCount: 1,
           levelsAfterCut: 2,
+          memberCount: 2,
         },
       },
       {
@@ -329,12 +330,17 @@ describe("ArchitectureReportOps#build", () => {
     expect(map?.nodes).toEqual([
       { node: "lang/index.ts", level: 0, depth: 0, inKnot: false, innerAfferentCount: 0, innerEfferentCount: 0 },
       { node: "lang/resolver.ts", level: 0, depth: 0, inKnot: false, innerAfferentCount: 0, innerEfferentCount: 0 },
-      { node: "lang/strategies/strat.ts", level: 0, depth: 1, inKnot: false, innerAfferentCount: 1, innerEfferentCount: 0 },
+      {
+        node: "lang/strategies/strat.ts",
+        level: 0,
+        depth: 1,
+        inKnot: false,
+        innerAfferentCount: 1,
+        innerEfferentCount: 0,
+      },
       { node: "lang/walker.ts", level: 1, depth: 0, inKnot: false, innerAfferentCount: 0, innerEfferentCount: 1 },
     ]);
-    expect(
-      map?.boundaryOut.map((e) => [e.sourceNode, e.externalComponent, e.externalLevel, e.callWeight]),
-    ).toEqual([
+    expect(map?.boundaryOut.map((e) => [e.sourceNode, e.externalComponent, e.externalLevel, e.callWeight])).toEqual([
       ["lang/resolver.ts", "kernel", 0, 1],
       ["lang/strategies/strat.ts", "kernel", 0, 1],
       ["lang/walker.ts", "kernel", 0, 2],
@@ -1088,5 +1094,80 @@ describe("ArchitectureReportOps#build — mainSequence (bd tea-rags-mcp-r8hme.8)
       expect(summary.volatility).toBeUndefined();
       expect(summary.excluded.stableConcreteCalm).toBe(0);
     });
+  });
+});
+
+/**
+ * Layering evidence cap (bd tea-rags-mcp-r8hme.37): a taxdome knot of 4628
+ * components with a 14437-edge feedback arc set made one finding 9.5 MB. The
+ * public DTO lists the first members / cut edges and carries the totals.
+ *
+ * Ring of 30 directory components, one file each, with both directions of
+ * every neighbour pair (c_i ⇄ c_{i+1 mod 30}), all weights equal: one knot,
+ * every member at Ca 2 (so path order), and 30 edge-disjoint 2-cycles — no cut
+ * of fewer than 30 edges dissolves it.
+ */
+function bidirectionalRing(size = 30): FileDependencyGraph {
+  const dir = (i: number) => `c${String(i % size).padStart(2, "0")}`;
+  const files = Array.from({ length: size }, (_, i) => file(`${dir(i)}/m.ts`));
+  const edges: FileDependencyGraph["edges"] = [];
+  for (let i = 0; i < size; i++) {
+    edges.push({ sourceRelPath: `${dir(i)}/m.ts`, targetRelPath: `${dir(i + 1)}/m.ts`, callWeight: 1 });
+    edges.push({ sourceRelPath: `${dir(i + 1)}/m.ts`, targetRelPath: `${dir(i)}/m.ts`, callWeight: 1 });
+  }
+  return { files, edges };
+}
+
+/** `parent/` ⇄ each of 12 nested `parent/nNN/` directories: one composition cycle, 12 nested pairs. */
+function wideComposition(nestedCount = 12): FileDependencyGraph {
+  const files = [file("parent/p.ts")];
+  const edges: FileDependencyGraph["edges"] = [];
+  for (let i = 0; i < nestedCount; i++) {
+    const nested = `parent/n${String(i).padStart(2, "0")}/x.ts`;
+    files.push(file(nested));
+    edges.push({ sourceRelPath: "parent/p.ts", targetRelPath: nested, callWeight: 1 });
+    edges.push({ sourceRelPath: nested, targetRelPath: "parent/p.ts", callWeight: 1 });
+  }
+  return { files, edges };
+}
+
+describe("ArchitectureReportOps#build — layering evidence cap (bd tea-rags-mcp-r8hme.37)", () => {
+  const findKnot = (report: Awaited<ReturnType<ArchitectureReportOps["build"]>>) => {
+    const knot = report.violations.find((v) => v.detector === "layering" && v.kind === "knot");
+    if (knot?.detector !== "layering" || knot.kind !== "knot") throw new Error("no knot finding");
+    return knot;
+  };
+
+  it("lists the first 20 knot members and 10 cut edges while carrying the member and cut totals", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), { limit: 500 });
+
+    const knot = findKnot(report);
+    expect(knot.components).toEqual(Array.from({ length: 20 }, (_, i) => `c${String(i).padStart(2, "0")}`));
+    expect(knot.evidence.memberCount).toBe(30);
+    expect(knot.evidence.feedbackArcSet).toHaveLength(10);
+    expect(knot.evidence.cutEdgeCount).toBeGreaterThanOrEqual(30);
+  });
+
+  it("counts only the in-scope members when scoped, the rest riding in outOfScopeMemberCount", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), {
+      limit: 500,
+      pathPattern: "{c00,c01,c02}/**",
+    });
+
+    const knot = findKnot(report);
+    expect(knot.components).toEqual(["c00", "c01", "c02"]);
+    expect(knot.evidence.memberCount).toBe(3);
+    expect(knot.evidence.outOfScopeMemberCount).toBe(27);
+  });
+
+  it("lists the first 10 nested pairs of a composition cycle with the member and pair totals", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(wideComposition()), { limit: 500 });
+
+    const cycle = report.violations.find((v) => v.detector === "layering" && v.kind === "compositionCycle");
+    if (cycle?.detector !== "layering" || cycle.kind !== "compositionCycle") throw new Error("no composition cycle");
+    expect(cycle.components).toHaveLength(13);
+    expect(cycle.evidence.memberCount).toBe(13);
+    expect(cycle.evidence.nestedPairs).toHaveLength(10);
+    expect(cycle.evidence.nestedPairCount).toBe(12);
   });
 });

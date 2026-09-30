@@ -27,6 +27,8 @@ import type {
 import { DOCUMENTATION_LANGUAGES, LANGUAGE_MAP } from "../../../domains/ingest/pipeline/chunker/config.js";
 import {
   buildComponentGraph,
+  buildDomainComponentGraph,
+  buildLayeringModel,
   buildLayerMap,
   COMPONENT_CONTAINMENT_REASON,
   CONVENTION_PRIVACY_LANGUAGES,
@@ -43,8 +45,6 @@ import {
   MAIN_SEQUENCE_STABLE_CONCRETE_CALM_REASON,
   MAIN_SEQUENCE_UNOBSERVABLE_REASON,
   NON_PRODUCTION_REASON,
-  buildDomainComponentGraph,
-  buildLayeringModel,
   type ComponentStableDependenciesReport,
   type ConventionPrivacyReport,
   type LayeringFeedbackEdge as DomainLayeringFeedbackEdge,
@@ -80,6 +80,15 @@ import type {
 
 /** Default `GetArchitectureReportRequest.limit`. */
 export const DEFAULT_ARCHITECTURE_REPORT_LIMIT = 50;
+
+/** Knot / composition-cycle members listed per finding (most depended-on first); `memberCount` keeps the total. */
+export const LAYERING_KNOT_MEMBER_LIMIT = 20;
+
+/** Feedback-arc-set edges listed per knot (heaviest first); `cutEdgeCount` keeps the total. */
+export const LAYERING_FEEDBACK_EDGE_LIMIT = 10;
+
+/** Parent↔nested pairs listed per composition cycle; `nestedPairCount` keeps the total. */
+export const LAYERING_NESTED_PAIR_LIMIT = 10;
 
 type ArchitectureReportScope = Pick<GetArchitectureReportRequest, "pathPattern" | "limit" | "layerMap">;
 
@@ -197,9 +206,7 @@ export class ArchitectureReportOps {
       // map never bloats an unqualified report. Same DOMAIN partition the
       // layering detector judges (bd tea-rags-mcp-r8hme.30), so its
       // boundary edges carry levels consistent with the summary.
-      ...(request.layerMap
-        ? { layerMap: buildLayerMap(layeringComponents, production.graph, request.layerMap) }
-        : {}),
+      ...(request.layerMap ? { layerMap: buildLayerMap(layeringComponents, production.graph, request.layerMap) } : {}),
     };
   }
 
@@ -243,10 +250,10 @@ export class ArchitectureReportOps {
         mainSequence: summariseMainSequence(
           detectMainSequenceDeviations(buildComponentGraph({ files: [], edges: [] }, []), []),
         ),
-        layering: summariseLayering(
-          detectLayeringViolations(buildComponentGraph({ files: [], edges: [] }, []), []),
-          { componentCount: 0, levelCount: 0 },
-        ),
+        layering: summariseLayering(detectLayeringViolations(buildComponentGraph({ files: [], edges: [] }, []), []), {
+          componentCount: 0,
+          levelCount: 0,
+        }),
       },
       rootCauses: [],
       violations: [],
@@ -571,10 +578,7 @@ function summariseMainSequence(report: MainSequenceReport): MainSequenceReportSu
   };
 }
 
-function summariseLayering(
-  report: LayeringReport,
-  facadePartition: LayeringPartitionCounts,
-): LayeringReportSummary {
+function summariseLayering(report: LayeringReport, facadePartition: LayeringPartitionCounts): LayeringReportSummary {
   const { summary } = report;
   return {
     componentCount: summary.componentCount,
@@ -604,11 +608,12 @@ function toLayeringArchitectureViolation(v: DomainLayeringViolation): Architectu
       return {
         detector: "layering",
         kind: "knot",
-        components: v.components,
+        components: v.components.slice(0, LAYERING_KNOT_MEMBER_LIMIT),
         evidence: {
-          feedbackArcSet: v.feedbackArcSet.map(toLayeringFeedbackEdge),
+          feedbackArcSet: v.feedbackArcSet.slice(0, LAYERING_FEEDBACK_EDGE_LIMIT).map(toLayeringFeedbackEdge),
           cutEdgeCount: v.cutEdgeCount,
           levelsAfterCut: v.levelsAfterCut,
+          memberCount: v.components.length,
           ...(v.outOfScopeMemberCount !== undefined ? { outOfScopeMemberCount: v.outOfScopeMemberCount } : {}),
           ...(v.outOfScopeFeedbackEdgeCount !== undefined
             ? { outOfScopeFeedbackEdgeCount: v.outOfScopeFeedbackEdgeCount }
@@ -645,9 +650,11 @@ function toLayeringArchitectureViolation(v: DomainLayeringViolation): Architectu
       return {
         detector: "layering",
         kind: "compositionCycle",
-        components: v.components,
+        components: v.components.slice(0, LAYERING_KNOT_MEMBER_LIMIT),
         evidence: {
-          nestedPairs: v.nestedPairs,
+          nestedPairs: v.nestedPairs.slice(0, LAYERING_NESTED_PAIR_LIMIT),
+          memberCount: v.components.length,
+          nestedPairCount: v.nestedPairs.length,
           ...(v.outOfScopeMemberCount !== undefined ? { outOfScopeMemberCount: v.outOfScopeMemberCount } : {}),
         },
       };
