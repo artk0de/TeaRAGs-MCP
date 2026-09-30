@@ -109,6 +109,39 @@ function composition(): FileDependencyGraph {
   };
 }
 
+/**
+ * Two same-size knots whose names sort the opposite way from their harm (bd
+ * tea-rags-mcp-r8hme.32). `a1 ⇄ a2` is a tangle: both members volatile
+ * (I = 2/3, spread 0). `ms ⇄ mv` fuses a stable member with a volatile one:
+ * three `use*` directories depend on `ms` (I = 1/5) while `mv` leans on it and
+ * on the foundation (I = 2/3) — an SDP break inside a cycle, spread 7/15.
+ */
+function spreadKnots(): FileDependencyGraph {
+  const files = [
+    file("zz/f.ts"),
+    file("ms/index.ts"),
+    file("mv/core.ts"),
+    file("use1/u.ts"),
+    file("use2/u.ts"),
+    file("use3/u.ts"),
+    file("a1/a.ts"),
+    file("a2/a.ts"),
+  ];
+  const edges = [
+    edge("use1/u.ts", "ms/index.ts"),
+    edge("use2/u.ts", "ms/index.ts"),
+    edge("use3/u.ts", "ms/index.ts"),
+    edge("ms/index.ts", "mv/core.ts"),
+    edge("mv/core.ts", "ms/index.ts"),
+    edge("mv/core.ts", "zz/f.ts"),
+    edge("a1/a.ts", "a2/a.ts"),
+    edge("a2/a.ts", "a1/a.ts"),
+    edge("a1/a.ts", "zz/f.ts"),
+    edge("a2/a.ts", "zz/f.ts"),
+  ];
+  return { files, edges };
+}
+
 function judge(g: FileDependencyGraph) {
   return detectLayeringViolations(buildComponentGraph(g, []), g.files);
 }
@@ -149,15 +182,46 @@ describe("buildLayeringModel", () => {
         cutEdgeCount: 1,
         levelsAfterCut: 2,
         composition: false,
+        // ulanzi reads 2/5, clock 2/3 — the cycle leans on the stable side.
+        // Same arithmetic as the implementation, so the doubles agree.
+        instabilitySpread: 2 / 3 - 2 / 5,
       },
     ]);
     expect(model.coverage).toBe(0.5);
     // Pearson over average ranks: the ulanzi/clock tie in level costs a little.
     expect(model.coherence).toBeCloseTo(Math.sqrt(0.9), 6);
   });
+
+  it("reports each knot member's own instability as the spread (bd tea-rags-mcp-r8hme.32)", () => {
+    const model = buildLayeringModel(buildComponentGraph(spreadKnots(), []));
+
+    // Per-member, never a condensed value: `mv` reads 1/2 (one file reaching
+    // two targets counts Ce once) while `ms` reads 1/5 inside the same knot.
+    expect(model.knots.map((k) => [k.components, k.instabilitySpread])).toEqual([
+      [["a1", "a2"], 0],
+      [["ms", "mv"], 1 / 2 - 1 / 5],
+    ]);
+    // Coherence keeps per-component instability inside knots too: the number
+    // is the hand-computed Pearson over the average ranks of level (0; 1×4;
+    // 2×3 → ranks 1; 3.5; 7) and instability (0; 1/5; 1/2; 1/2; 1/2; 1×3 →
+    // ranks 1; 2; 4; 4; 4; 7) for zz, ms, mv, a1, a2 and the three use*
+    // directories.
+    expect(model.coherence).toBeCloseTo(35 / Math.sqrt(35 * 38), 9);
+  });
 });
 
 describe("detectLayeringViolations", () => {
+  it("ranks knot findings by member-instability spread, not by name (bd tea-rags-mcp-r8hme.32)", () => {
+    const report = judge(spreadKnots());
+
+    // `ms ⇄ mv` carries an SDP break inside the cycle (0.2 vs 2/3); the
+    // uniform `a1 ⇄ a2` tangle ranks below it despite sorting first by name.
+    expect(report.violations.filter((v) => v.kind === "knot").map((v) => [v.components, v.instabilitySpread])).toEqual([
+      [["ms", "mv"], 1 / 2 - 1 / 5],
+      [["a1", "a2"], 0],
+    ]);
+  });
+
   it("reports a clean stack with its coherence, and no violation", () => {
     // core ← lib ← svc ← app, every instability distinct, so the monotone
     // stack reads coherence 1 — the inferred layers are real.
@@ -222,6 +286,7 @@ describe("detectLayeringViolations", () => {
         cutEdgeCount: 1,
         levelsAfterCut: 2,
         drillDown: { knotOf: "ulanzi" },
+        instabilitySpread: 2 / 3 - 2 / 5,
       },
       {
         kind: "backEdge",
@@ -273,6 +338,8 @@ describe("detectLayeringViolations", () => {
         cutEdgeCount: 1,
         levelsAfterCut: 2,
         drillDown: { knotOf: "x" },
+        // x and y read the same instability (1/2 each) — a tangle, not a break.
+        instabilitySpread: 0,
       },
     ]);
     expect(report.summary).toMatchObject({

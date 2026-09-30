@@ -101,7 +101,18 @@ export function detectLayeringViolations(
 ): LayeringReport {
   const model = options.model ?? buildLayeringModel(componentGraph);
   const compositionKnots = model.knots.filter((knot) => knot.composition);
-  const realKnots = model.knots.filter((knot) => !knot.composition);
+  // Knot findings rank by member-instability spread (bd tea-rags-mcp-r8hme.32):
+  // a knot fusing a stable member with a volatile one is an SDP break inside a
+  // cycle and leads; same-size tangles of uniform instability follow. Ties keep
+  // the model's member-count order.
+  const realKnots = model.knots
+    .filter((knot) => !knot.composition)
+    .sort(
+      (a, b) =>
+        b.instabilitySpread - a.instabilitySpread ||
+        b.components.length - a.components.length ||
+        compareCodePoints(a.components.join("\u0000"), b.components.join("\u0000")),
+    );
 
   const allFindings: LayeringViolation[] = [
     ...realKnots.map(
@@ -112,6 +123,7 @@ export function detectLayeringViolations(
         cutEdgeCount: knot.cutEdgeCount,
         levelsAfterCut: knot.levelsAfterCut,
         drillDown: knotDrillDown(knot.components),
+        instabilitySpread: knot.instabilitySpread,
       }),
     ),
     ...backEdges(componentGraph, realKnots),
@@ -477,6 +489,7 @@ function buildKnot(componentGraph: ComponentGraph, members: readonly string[]): 
     (d) => !cut.has(`${d.sourceComponent}\u0000${d.targetComponent}`),
   );
   const dissolvedLevel = levelsAfterCutOf(withoutCut);
+  const memberInstabilities = members.map((m) => componentGraph.components.get(m)?.instability ?? 0);
 
   return {
     components: [...members].sort(byCa),
@@ -484,6 +497,7 @@ function buildKnot(componentGraph: ComponentGraph, members: readonly string[]): 
     cutEdgeCount: feedbackArcSet.length,
     levelsAfterCut: new Set(members.map(dissolvedLevel)).size,
     composition: internal.every((d) => d.directoryRelation === "descendant" || d.directoryRelation === "ancestor"),
+    instabilitySpread: Math.max(...memberInstabilities) - Math.min(...memberInstabilities),
   };
 }
 

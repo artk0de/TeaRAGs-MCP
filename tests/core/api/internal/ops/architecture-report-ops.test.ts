@@ -132,6 +132,7 @@ describe("ArchitectureReportOps#build", () => {
             knotOf: "core",
             hint: "call get_architecture_report with knotOf to page every member and cut edge of this knot",
           },
+          instabilitySpread: 0.333,
         },
       },
       {
