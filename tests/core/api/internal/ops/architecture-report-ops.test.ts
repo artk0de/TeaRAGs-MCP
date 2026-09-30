@@ -108,6 +108,52 @@ describe("ArchitectureReportOps#build", () => {
           ],
         },
       },
+      // The same core⇄lib cycle the SDP detector reads as root cause, as the
+      // layering detector (bd tea-rags-mcp-r8hme.22) reports it: a knot and
+      // its minority-weight back-edge.
+      {
+        detector: "layering",
+        kind: "knot",
+        components: ["core", "lib"],
+        evidence: {
+          feedbackArcSet: [
+            {
+              sourceComponent: "lib",
+              targetComponent: "core",
+              callWeight: 1,
+              fileEdges: [{ sourceRelPath: "lib/f5.ts", targetRelPath: "core/a.ts", callWeight: 1 }],
+            },
+          ],
+          cutEdgeCount: 1,
+          levelsAfterCut: 2,
+        },
+      },
+      {
+        detector: "layering",
+        kind: "backEdge",
+        sourceComponent: "lib",
+        targetComponent: "core",
+        evidence: {
+          callWeight: 1,
+          counterFlowWeight: 3,
+          fileEdgeCount: 1,
+          fileEdges: [{ sourceRelPath: "lib/f5.ts", targetRelPath: "core/a.ts", callWeight: 1 }],
+        },
+      },
+      // `app` and `other` hang off the side of the stack: nothing depends on
+      // either, and neither reaches the top level the way `users` does.
+      {
+        detector: "layering",
+        kind: "island",
+        component: "app",
+        evidence: { height: 2, depth: 0, afferentCount: 0, instability: 1 },
+      },
+      {
+        detector: "layering",
+        kind: "island",
+        component: "other",
+        evidence: { height: 2, depth: 0, afferentCount: 0, instability: 1 },
+      },
     ]);
   });
 
@@ -164,7 +210,9 @@ describe("ArchitectureReportOps#build", () => {
 
     expect(report.pathPattern).toBe("base/**");
     expect(
-      report.violations.map((v) => (v.detector === "stableDependencies" ? v.sourceComponent : v.sourceRelPath)),
+      report.violations
+        .filter((v) => v.detector === "stableDependencies")
+        .map((v) => (v.detector === "stableDependencies" ? v.sourceComponent : v.sourceRelPath)),
     ).toEqual(["base"]);
     expect(report.summary.stableDependencies.outOfScopeEdgeCount).toBe(6);
   });
@@ -172,7 +220,9 @@ describe("ArchitectureReportOps#build", () => {
   it("caps violations and root causes at limit while the summary keeps the totals", async () => {
     const report = await new ArchitectureReportOps().build(graphDb(), { limit: 1 });
 
-    expect(report.violations).toHaveLength(1);
+    // The cap is per detector: the layering knot joins the SDP finding at one each.
+    expect(report.violations.filter((v) => v.detector === "stableDependencies")).toHaveLength(1);
+    expect(report.violations.filter((v) => v.detector === "layering")).toHaveLength(1);
     expect(report.violations[0]).toMatchObject({ sourceComponent: "base" });
     expect(report.rootCauses).toHaveLength(1);
     expect(report.summary.stableDependencies.violationCount).toBe(2);
@@ -481,7 +531,9 @@ describe("ArchitectureReportOps#build — silentCoupling (bd tea-rags-mcp-b4dcz)
         },
       },
     ]);
-    expect(report.violations.at(-1)?.detector).toBe("silentCoupling");
+    // Silent coupling comes after every detector except layering, the newest.
+    const detectors = report.violations.map((v) => v.detector);
+    expect(new Set(detectors.slice(detectors.indexOf("silentCoupling") + 1))).toEqual(new Set(["layering"]));
   });
 
   it("summarises the build, the adaptive cut and the exclusions, documentation included", async () => {
