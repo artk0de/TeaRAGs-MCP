@@ -25,6 +25,7 @@ import type {
   RelPath,
   TemporalCochangeGraph,
 } from "../../../contracts/types/codegraph.js";
+import { buildDependencyNormFileRoles, TYPE_DRAFT_KINDS } from "../../../domains/explore/naming-lexicon/index.js";
 import { DOCUMENTATION_LANGUAGES, LANGUAGE_MAP } from "../../../domains/ingest/pipeline/chunker/config.js";
 import {
   buildComponentGraph,
@@ -32,6 +33,7 @@ import {
   buildLayeringModel,
   buildLayerMap,
   COMPONENT_CONTAINMENT_REASON,
+  computeDependencyNorms,
   CONVENTION_PRIVACY_LANGUAGES,
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   DEFAULT_SDP_TOLERANCE,
@@ -53,6 +55,7 @@ import {
   type ComponentGraph,
   type ComponentStableDependenciesReport,
   type ConventionPrivacyReport,
+  type DependencyNormsReport,
   type LayeringBackEdgeViolation as DomainLayeringBackEdgeViolation,
   type LayeringFeedbackEdge as DomainLayeringFeedbackEdge,
   type LayeringViolation as DomainLayeringViolation,
@@ -79,6 +82,7 @@ import type {
   ArchitectureDomainReport,
   ArchitectureKnotMember,
   ArchitectureKnotView,
+  ArchitectureNormsReport,
   ArchitectureRootCause,
   ArchitectureViolation,
   FacadeModuleSummary,
@@ -89,10 +93,12 @@ import type {
   LayeringReportSummary,
   LeakingAbstractionReportSummary,
   MainSequenceReportSummary,
+  NormArchitectureViolation,
   SilentCouplingArchitectureViolation,
   SilentCouplingReportSummary,
   StableDependenciesReportSummary,
 } from "../../public/dto/architecture.js";
+import { ontologyNonProductionPaths } from "./ontology-report-ops.js";
 
 /** Default `GetArchitectureReportRequest.limit`. */
 export const DEFAULT_ARCHITECTURE_REPORT_LIMIT = 50;
@@ -112,7 +118,7 @@ export const LAYERING_KNOT_DRILL_DOWN_HINT =
 
 type ArchitectureReportScope = Pick<
   GetArchitectureReportRequest,
-  "pathPattern" | "domain" | "limit" | "layerMap" | "knotOf" | "offset"
+  "pathPattern" | "domain" | "norms" | "limit" | "layerMap" | "knotOf" | "offset"
 >;
 
 /**
@@ -154,7 +160,10 @@ export class ArchitectureReportOps {
    * change verdict.
    */
   async build(
-    graphDb: Pick<GraphDbClient, "readFileDependencyGraph" | "readNonPublicMemberEdges" | "readTemporalCochangeGraph">,
+    graphDb: Pick<
+      GraphDbClient,
+      "readFileDependencyGraph" | "readNonPublicMemberEdges" | "readTemporalCochangeGraph" | "readTypeNameRows"
+    >,
     request: ArchitectureReportScope,
     readImportSpecifiers?: ModuleImportSpecifierLookup,
     readFileCommitCounts?: GitFileCommitCountLookup,
@@ -225,6 +234,11 @@ export class ArchitectureReportOps {
             sourcePathPattern: request.pathPattern,
           });
     if (knotLookup?.kind === "unknownComponent") throw new UnknownArchitectureComponentError(knotLookup.component);
+    // Dependency norms (bd tea-rags-mcp-rpx0v), read-time only when asked:
+    // roles from each file's primary type, ledgers and verdicts off the graph
+    // already in memory. Same domain partition the layering judges for
+    // sameDomain locality.
+    const norms = request.norms ? await computeReportNorms(graphDb, graph, layeringComponents.componentOf) : undefined;
     const facadePartition = {
       componentCount: components.components.size,
       levelCount: buildLayeringModel(components).levelCount,
@@ -269,6 +283,7 @@ export class ArchitectureReportOps {
         ...silentViolations(findings.silent, limit),
         ...mainSequenceViolations(findings.mainSequence, limit),
         ...(findings.layering ? layeringViolations(findings.layering, limit) : []),
+        ...(norms ? normsViolations(norms, limit) : []),
       ],
       // The layer map VIEW only when asked (bd tea-rags-mcp-r8hme.26) — a full
       // map never bloats an unqualified report. Same DOMAIN partition the
@@ -297,6 +312,9 @@ export class ArchitectureReportOps {
       // The domain block only in domain mode (bd tea-rags-mcp-xb669.1): the
       // domain's own layering counts plus its border against the system.
       ...(whole ? { domain: domainView(whole, layeringComponents, layering) } : {}),
+      // The norms view only when asked (bd tea-rags-mcp-rpx0v) — the
+      // project's own dependency precedents, judged per typed file edge.
+      ...(norms ? { norms: normsDto(norms) } : {}),
     };
   }
 
@@ -458,6 +476,57 @@ function aggregateBoundaryEdges(
       b.callWeight - a.callWeight ||
       compareCodePoints(a.innerComponent, b.innerComponent) ||
       compareCodePoints(a.externalComponent, b.externalComponent),
+  );
+}
+
+/**
+ * Dependency norms, read-time (bd tea-rags-mcp-rpx0v): the type rows naming's
+ * role layer reads anyway (whole project, production paths), each file's
+ * PRIMARY type's role, and the verdicts over the graph the report already
+ * holds. `componentOf` is the same DOMAIN partition the layering judges, so
+ * `sameDomain` locality means "one unit of r8hme.30".
+ */
+async function computeReportNorms(
+  graphDb: Pick<GraphDbClient, "readTypeNameRows">,
+  graph: FileDependencyGraph,
+  componentOf: ReadonlyMap<RelPath, string>,
+): Promise<DependencyNormsReport> {
+  const rows = await graphDb.readTypeNameRows({
+    pathPrefixes: [],
+    kinds: TYPE_DRAFT_KINDS,
+    nonProductionPaths: ontologyNonProductionPaths(),
+  });
+  return computeDependencyNorms({ graph, fileRoles: buildDependencyNormFileRoles(rows), componentOf });
+}
+
+function normsDto(report: DependencyNormsReport): ArchitectureNormsReport {
+  return {
+    summary: { ...report.summary },
+    threshold: {
+      method: report.threshold.method,
+      threshold: report.threshold.threshold,
+      ...(report.threshold.separability === undefined ? {} : { separability: round3(report.threshold.separability) }),
+    },
+    findings: report.findings.map((f) => ({ ...f })),
+  };
+}
+
+function normsViolations(report: DependencyNormsReport, limit: number): NormArchitectureViolation[] {
+  return report.findings.slice(0, limit).map(
+    (f): NormArchitectureViolation => ({
+      detector: "norms",
+      kind: f.kind,
+      sourceRelPath: f.sourceRelPath,
+      targetRelPath: f.targetRelPath,
+      evidence: {
+        roleSrc: f.roleSrc,
+        roleDst: f.roleDst,
+        locality: f.locality,
+        callWeight: f.callWeight,
+        pairSupport: f.pairSupport,
+        ...(f.expectedPath ? { expectedPath: { ...f.expectedPath } } : {}),
+      },
+    }),
   );
 }
 
