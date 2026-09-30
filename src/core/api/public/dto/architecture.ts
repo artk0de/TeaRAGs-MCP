@@ -256,11 +256,181 @@ export interface MainSequenceArchitectureViolation {
   evidence: MainSequenceViolationEvidence;
 }
 
+/**
+ * What a `layering` finding says (bd tea-rags-mcp-r8hme.22): `knot` — a
+ * multi-component cycle, `backEdge` — the minority-weight direction inside
+ * one, `abstractionBypass` — a consumer reaching a measured-concrete component
+ * past the measured-abstract one beneath it; informational:
+ * `compositionCycle` (a parent and its own nested directories cycling),
+ * `island` (nothing depends on it, and it does not reach the top),
+ * `layerSkip` (a dependency jumping two or more levels straight down).
+ */
+export type LayeringViolationKind =
+  | "knot"
+  | "backEdge"
+  | "abstractionBypass"
+  | "compositionCycle"
+  | "island"
+  | "layerSkip";
+
+/** One edge the knot's feedback arc set removes, with the file edges that carry it. */
+export interface LayeringFeedbackEdge {
+  sourceComponent: string;
+  targetComponent: string;
+  /** Sum of the carried file edges' call weights — the weight the cut pays. */
+  callWeight: number;
+  /** The carrying file edges, heaviest call weight first, capped at 5. */
+  fileEdges: ArchitectureFileEdge[];
+}
+
+/** Why these components form one knot. */
+export interface LayeringKnotViolationEvidence {
+  /** The greedy weighted feedback arc set (Eades–Lin–Smyth) that dissolves the knot. */
+  feedbackArcSet: LayeringFeedbackEdge[];
+  /** How many edges the feedback arc set holds. */
+  cutEdgeCount: number;
+  /** Distinct levels the members occupy once the feedback arc set is cut. */
+  levelsAfterCut: number;
+}
+
+/** A multi-component strongly-connected set of the component graph. */
+export interface LayeringKnotArchitectureViolation {
+  detector: "layering";
+  kind: "knot";
+  /** Members, most depended-on (Ca) first, then path. */
+  components: string[];
+  evidence: LayeringKnotViolationEvidence;
+}
+
+/** Why an edge inside a knot is the back-edge. */
+export interface LayeringBackEdgeViolationEvidence {
+  /** The back edge's weight — the minority direction. */
+  callWeight: number;
+  /** The majority direction's weight; equal weights are never judged. */
+  counterFlowWeight: number;
+  fileEdgeCount: number;
+  /** The carrying file edges, heaviest call weight first, capped at 5. */
+  fileEdges: ArchitectureFileEdge[];
+}
+
+/** The minority-weight direction inside a knot. */
+export interface LayeringBackEdgeArchitectureViolation {
+  detector: "layering";
+  kind: "backEdge";
+  sourceComponent: string;
+  targetComponent: string;
+  evidence: LayeringBackEdgeViolationEvidence;
+}
+
+/** Why a consumer→concrete edge is an abstraction bypass. */
+export interface LayeringAbstractionBypassViolationEvidence {
+  /** The measured-abstract component beneath, which the consumer never touches. */
+  bypassedComponent: string;
+  /** A of the concrete component, from the walker's type census, 3 decimals. */
+  concreteAbstractness: number;
+  /** A of the bypassed component, 3 decimals. */
+  bypassedAbstractness: number;
+  /** Confidence-weighted resolved calls across the consumer→concrete edge. */
+  callWeight: number;
+}
+
+/** A consumer reaching a measured-concrete component that depends on a measured-abstract one below. */
+export interface LayeringAbstractionBypassArchitectureViolation {
+  detector: "layering";
+  kind: "abstractionBypass";
+  /** The consumer. */
+  sourceComponent: string;
+  /** The concrete component reached. */
+  targetComponent: string;
+  evidence: LayeringAbstractionBypassViolationEvidence;
+}
+
+/** Why a cycle is composition, not a layering defect. */
+export interface LayeringCompositionCycleViolationEvidence {
+  /** Every parent↔nested pair inside the cycle, each named once. */
+  nestedPairs: { parentComponent: string; nestedComponent: string }[];
+}
+
+/** A parent and its own nested directories cycling — informational. */
+export interface LayeringCompositionCycleArchitectureViolation {
+  detector: "layering";
+  kind: "compositionCycle";
+  components: string[];
+  evidence: LayeringCompositionCycleViolationEvidence;
+}
+
+/** Why a component is a detached island. */
+export interface LayeringIslandViolationEvidence {
+  /** Longest dependency path from the sinks — a low height is no foundation. */
+  height: number;
+  /** Longest dependency path from the roots: 0 — nothing depends on it. */
+  depth: number;
+  afferentCount: number;
+  instability: number;
+}
+
+/** A component nothing depends on that does not reach the top of the stack — informational. */
+export interface LayeringIslandArchitectureViolation {
+  detector: "layering";
+  kind: "island";
+  component: string;
+  evidence: LayeringIslandViolationEvidence;
+}
+
+/** Why an edge is a layer skip. */
+export interface LayeringLayerSkipViolationEvidence {
+  sourceLevel: number;
+  targetLevel: number;
+  /** `sourceLevel − targetLevel`, at least 2. */
+  skippedLevels: number;
+  /** Confidence-weighted resolved calls across the edge. */
+  callWeight: number;
+}
+
+/** A dependency jumping at least two levels straight to a lower one — informational. */
+export interface LayeringLayerSkipArchitectureViolation {
+  detector: "layering";
+  kind: "layerSkip";
+  sourceComponent: string;
+  targetComponent: string;
+  evidence: LayeringLayerSkipViolationEvidence;
+}
+
+export type LayeringArchitectureViolation =
+  | LayeringKnotArchitectureViolation
+  | LayeringBackEdgeArchitectureViolation
+  | LayeringAbstractionBypassArchitectureViolation
+  | LayeringCompositionCycleArchitectureViolation
+  | LayeringIslandArchitectureViolation
+  | LayeringLayerSkipArchitectureViolation;
+
+/** The inferred layering of the whole graph, as the `layering` summary reports it. */
+export interface LayeringReportSummary {
+  componentCount: number;
+  /** Component dependencies the model judged — every entry of the component graph. */
+  componentEdgeCount: number;
+  /** Number of distinct levels, 0-based; 0 when the graph holds no layering edge. */
+  levelCount: number;
+  /** Share of components outside non-trivial SCCs, 3 decimals; 0 for an empty graph. */
+  coverage: number;
+  /** Spearman rank correlation of level vs instability, 3 decimals; 0 under two judged components. */
+  coherence: number;
+  knotCount: number;
+  backEdgeCount: number;
+  abstractionBypassCount: number;
+  compositionCycleCount: number;
+  islandCount: number;
+  layerSkipCount: number;
+  /** Every finding, violations and informational alike. */
+  violationCount: number;
+}
+
 export type ArchitectureViolation =
   | StableDependencyArchitectureViolation
   | LeakingAbstractionArchitectureViolation
   | SilentCouplingArchitectureViolation
-  | MainSequenceArchitectureViolation;
+  | MainSequenceArchitectureViolation
+  | LayeringArchitectureViolation;
 
 /** Every Stable Dependencies violation into one unstable target component, as one finding. */
 export interface StableDependencyArchitectureRootCause {
@@ -568,6 +738,7 @@ export interface ArchitectureReportSummary {
   leakingAbstraction: LeakingAbstractionReportSummary;
   silentCoupling: SilentCouplingReportSummary;
   mainSequence: MainSequenceReportSummary;
+  layering: LayeringReportSummary;
 }
 
 export interface GetArchitectureReportResponse {

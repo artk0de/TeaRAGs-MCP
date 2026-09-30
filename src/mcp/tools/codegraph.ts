@@ -360,7 +360,12 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "unstable+abstract; A from walker type census, D > max(0.5, Otsu cut); components whose language " +
       "rarely declares abstractions excluded (unobservableAbstractness); census needs codegraph recompute; pain " +
       "also needs volatility (mean git.file.commitCount per file > max(median file, log-scale Otsu cut)), calm ones " +
-      "counted as stableConcreteCalm. Summary " +
+      "counted as stableConcreteCalm. layering: inferred layers without a declared architecture — SCC-condensed " +
+      "component graph, levels by longest path (L0 = foundation), per-knot greedy weighted feedback arc set " +
+      "(cut these N edges -> k levels); violations knot / backEdge (minority-weight direction, equal weights never " +
+      "guessed) / abstractionBypass (consumer reaches measured-concrete component past measured-abstract one beneath); " +
+      "informational compositionCycle / island (nothing depends on it, below the top) / layerSkip (>=2 levels straight " +
+      "down); summary.layering: coverage, levelCount, coherence (rank correlation level vs instability). Summary " +
       "counts exclusions with named reasons. Diagnosis, not prescription.",
     schemaKey: "get_architecture_report",
     invoke: async (app, request) =>

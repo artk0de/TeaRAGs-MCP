@@ -33,6 +33,7 @@ import {
   DEFAULT_SDP_TOLERANCE,
   detectComponentStableDependencyViolations,
   detectConventionPrivacyLeaks,
+  detectLayeringViolations,
   detectLeakingAbstractions,
   detectMainSequenceDeviations,
   excludeNonProductionFiles,
@@ -43,7 +44,10 @@ import {
   NON_PRODUCTION_REASON,
   type ComponentStableDependenciesReport,
   type ConventionPrivacyReport,
+  type LayeringFeedbackEdge as DomainLayeringFeedbackEdge,
+  type LayeringViolation as DomainLayeringViolation,
   type FacadeModuleAssessment,
+  type LayeringReport,
   type LeakingAbstractionReport,
   type MainSequenceReport,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
@@ -62,6 +66,7 @@ import type {
   FacadeModuleSummary,
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
+  LayeringReportSummary,
   LeakingAbstractionReportSummary,
   MainSequenceReportSummary,
   SilentCouplingArchitectureViolation,
@@ -148,6 +153,8 @@ export class ArchitectureReportOps {
       request,
       readImportSpecifiers,
     );
+    // Inferred layering over the same components (bd tea-rags-mcp-r8hme.22).
+    const layering = detectLayeringViolations(components, graph.files);
     const limit = request.limit ?? DEFAULT_ARCHITECTURE_REPORT_LIMIT;
     return {
       ...(request.pathPattern ? { pathPattern: request.pathPattern } : {}),
@@ -161,6 +168,7 @@ export class ArchitectureReportOps {
         leakingAbstraction: summariseLeaks(leaks, privacy, limit),
         silentCoupling: summariseSilentCoupling(silent, limit),
         mainSequence: summariseMainSequence(mainSequence),
+        layering: summariseLayering(layering),
       },
       rootCauses: [...sdpRootCauses(sdp, limit), ...leakRootCauses(leaks, limit), ...silentRootCauses(silent, limit)],
       violations: [
@@ -168,6 +176,7 @@ export class ArchitectureReportOps {
         ...leakViolations(leaks, privacy, limit),
         ...silentViolations(silent, limit),
         ...mainSequenceViolations(mainSequence, limit),
+        ...layeringViolations(layering, limit),
       ],
     };
   }
@@ -211,6 +220,7 @@ export class ArchitectureReportOps {
         mainSequence: summariseMainSequence(
           detectMainSequenceDeviations(buildComponentGraph({ files: [], edges: [] }, []), []),
         ),
+        layering: summariseLayering(detectLayeringViolations(buildComponentGraph({ files: [], edges: [] }, []), [])),
       },
       rootCauses: [],
       violations: [],
@@ -532,6 +542,111 @@ function summariseMainSequence(report: MainSequenceReport): MainSequenceReportSu
         }
       : {}),
     ...(summary.scope ? { outOfScopeComponentCount: summary.scope.outOfScopeComponentCount } : {}),
+  };
+}
+
+function summariseLayering(report: LayeringReport): LayeringReportSummary {
+  const { summary } = report;
+  return {
+    componentCount: summary.componentCount,
+    componentEdgeCount: summary.componentEdgeCount,
+    levelCount: summary.levelCount,
+    coverage: round3(summary.coverage),
+    coherence: round3(summary.coherence),
+    knotCount: summary.knotCount,
+    backEdgeCount: summary.backEdgeCount,
+    abstractionBypassCount: summary.abstractionBypassCount,
+    compositionCycleCount: summary.compositionCycleCount,
+    islandCount: summary.islandCount,
+    layerSkipCount: summary.layerSkipCount,
+    violationCount: summary.violationCount,
+  };
+}
+
+function layeringViolations(report: LayeringReport, limit: number): ArchitectureViolation[] {
+  return report.violations.slice(0, limit).map((v): ArchitectureViolation => toLayeringArchitectureViolation(v));
+}
+
+function toLayeringArchitectureViolation(v: DomainLayeringViolation): ArchitectureViolation {
+  switch (v.kind) {
+    case "knot":
+      return {
+        detector: "layering",
+        kind: "knot",
+        components: v.components,
+        evidence: {
+          feedbackArcSet: v.feedbackArcSet.map(toLayeringFeedbackEdge),
+          cutEdgeCount: v.cutEdgeCount,
+          levelsAfterCut: v.levelsAfterCut,
+        },
+      };
+    case "backEdge":
+      return {
+        detector: "layering",
+        kind: "backEdge",
+        sourceComponent: v.sourceComponent,
+        targetComponent: v.targetComponent,
+        evidence: {
+          callWeight: v.callWeight,
+          counterFlowWeight: v.counterFlowWeight,
+          fileEdgeCount: v.fileEdgeCount,
+          fileEdges: v.fileEdges,
+        },
+      };
+    case "abstractionBypass":
+      return {
+        detector: "layering",
+        kind: "abstractionBypass",
+        sourceComponent: v.sourceComponent,
+        targetComponent: v.targetComponent,
+        evidence: {
+          bypassedComponent: v.bypassedComponent,
+          concreteAbstractness: round3(v.concreteAbstractness),
+          bypassedAbstractness: round3(v.bypassedAbstractness),
+          callWeight: v.callWeight,
+        },
+      };
+    case "compositionCycle":
+      return {
+        detector: "layering",
+        kind: "compositionCycle",
+        components: v.components,
+        evidence: { nestedPairs: v.nestedPairs },
+      };
+    case "island":
+      return {
+        detector: "layering",
+        kind: "island",
+        component: v.component,
+        evidence: {
+          height: v.height,
+          depth: v.depth,
+          afferentCount: v.afferentCount,
+          instability: round3(v.instability),
+        },
+      };
+    case "layerSkip":
+      return {
+        detector: "layering",
+        kind: "layerSkip",
+        sourceComponent: v.sourceComponent,
+        targetComponent: v.targetComponent,
+        evidence: {
+          sourceLevel: v.sourceLevel,
+          targetLevel: v.targetLevel,
+          skippedLevels: v.skippedLevels,
+          callWeight: v.callWeight,
+        },
+      };
+  }
+}
+
+function toLayeringFeedbackEdge(edge: DomainLayeringFeedbackEdge) {
+  return {
+    sourceComponent: edge.sourceComponent,
+    targetComponent: edge.targetComponent,
+    callWeight: edge.callWeight,
+    fileEdges: edge.fileEdges,
   };
 }
 

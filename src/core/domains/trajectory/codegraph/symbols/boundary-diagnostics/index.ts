@@ -25,6 +25,7 @@ export {
   MAIN_SEQUENCE_STABLE_CONCRETE_CALM_REASON,
   MAIN_SEQUENCE_UNOBSERVABLE_REASON,
 } from "./main-sequence.js";
+export { buildLayeringModel, detectLayeringViolations } from "./layering.js";
 export {
   otsuSplit,
   resolveMajorityFlooredOtsuThreshold,
@@ -66,6 +67,20 @@ export type {
   FacadeAdoption,
   FacadeLeakKind,
   FacadeLeakRootCause,
+  LayeringAbstractionBypassViolation,
+  LayeringBackEdgeViolation,
+  LayeringCompositionCycleViolation,
+  LayeringComponentPosition,
+  LayeringFeedbackEdge,
+  LayeringIslandViolation,
+  LayeringKnot,
+  LayeringKnotViolation,
+  LayeringLayerSkipViolation,
+  LayeringModel,
+  LayeringReport,
+  LayeringSummary,
+  LayeringViolation,
+  LayeringViolationKind,
   MainSequenceExclusionCounts,
   MainSequenceOptions,
   MainSequenceReport,
