@@ -16,6 +16,7 @@ import type {
   Pass1AggregateReadScope,
   RelPath,
   ResolveRunStatsRow,
+  ReviewFileEdge,
   SymbolDefinition,
   SymbolId,
   TemporalCochangeSnapshot,
@@ -243,6 +244,20 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   deleteTemporalSymbolCommitFiles: write(async (graphDb, p) =>
     graphDb.deleteTemporalSymbolCommitFiles([...(p.relPaths as string[])]),
   ),
+  // Per-review working-tree file-edge temp tables (bd tea-rags-mcp-89k7k.1.2);
+  // JSON-shaped on the wire.
+  putReviewFileEdges: write(async (graphDb, p) =>
+    graphDb.putReviewFileEdges(p.reviewId as string, p.edges as ReviewFileEdge[]),
+  ),
+  dropReviewFileEdges: write(async (graphDb, p) => graphDb.dropReviewFileEdges(p.reviewId as string)),
+  // A write that answers with its OUTCOME — the dropped table names — instead
+  // of the `null` ack (same shape as compactStorage): the caller logs what the
+  // sweep collected, and the null ack would throw the contract away.
+  sweepExpiredReviewFileEdges: {
+    access: "write",
+    run: async (graphDb, p) =>
+      graphDb.sweepExpiredReviewFileEdges(p.nowEpochSeconds as number, p.maxAgeSeconds as number),
+  },
   checkpoint: write(async (graphDb) => graphDb.checkpoint()),
   rebuildEdgeFileTargetIndex: write(async (graphDb) => graphDb.rebuildEdgeFileTargetIndex()),
   recordRunStats: write(async (graphDb, p) => graphDb.recordRunStats(p.rows as ResolveRunStatsRow[])),
@@ -418,6 +433,8 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   // Symbol-commit rows of the temporal sub-graph (bd tea-rags-mcp-3gz4f).
   storedTemporalSymbolCommitFilePaths: read(async (graphDb) => graphDb.storedTemporalSymbolCommitFilePaths()),
   readTemporalSymbolCommits: read(async (graphDb, p) => graphDb.readTemporalSymbolCommits(p.relPath as string)),
+  // One review's working-tree file edges (bd tea-rags-mcp-89k7k.1.2).
+  readReviewFileEdges: read(async (graphDb, p) => graphDb.readReviewFileEdges(p.reviewId as string)),
   // File-scope get_callers / get_callees (bd tea-rags-mcp-gfvr8). Plain data.
   getFileImporters: read(async (graphDb, p) => graphDb.getFileImporters(p.relPath as RelPath)),
   getFileImports: read(async (graphDb, p) => graphDb.getFileImports(p.relPath as RelPath)),

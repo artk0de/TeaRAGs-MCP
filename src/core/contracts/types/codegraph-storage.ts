@@ -811,6 +811,19 @@ export type CodegraphStorageCompactionOutcome =
     };
 
 /**
+ * One working-tree file edge of one diff-scoped review (bd
+ * tea-rags-mcp-89k7k.1.2): the changed file imports/knows the target file.
+ * Lived in the slice-A overlay module (`api/internal/ops/review-edge-overlay`)
+ * until the persistence slice needed it too — the adapters layer may not
+ * import api, so the shared shape belongs here, beside the other
+ * {@link GraphDbClient} call shapes.
+ */
+export interface ReviewFileEdge {
+  sourceRelPath: string;
+  targetRelPath: string;
+}
+
+/**
  * Driver-agnostic graph DB client.
  *
  * Slice 1 ships `DuckDbGraphClient`; slice 4 ships `PostgresGraphClient`.
@@ -1364,6 +1377,39 @@ export interface GraphDbClient {
 
   /** One file's symbol-commit rows, `commitShas` parsed. */
   readTemporalSymbolCommits: (relPath: RelPath) => Promise<TemporalSymbolCommitFileSnapshot>;
+
+  // ── Per-review working-tree file edges (bd tea-rags-mcp-89k7k.1.2) ──
+  //
+  // One throwaway `cg_review_file_edges_<reviewId>` table per review — the
+  // review id embeds its epoch, so the age sweep reads it off the NAME.
+  // Deliberately outside the migration catalog: the DDL is issued at runtime
+  // and the table is dropped the moment the review ends.
+
+  /**
+   * Create this review's table when absent and APPEND the edges to it, in one
+   * transaction. An empty `edges` still creates the table, so "review with no
+   * edges" stays distinguishable from "review never written". Reviews write
+   * once; a second put to the same id appends — the retry contract, never a
+   * replace.
+   */
+  putReviewFileEdges: (reviewId: string, edges: readonly ReviewFileEdge[]) => Promise<void>;
+
+  /** Drop this review's table. Idempotent — a table already gone is fine. */
+  dropReviewFileEdges: (reviewId: string) => Promise<void>;
+
+  /**
+   * Drop every `cg_review_file_edges_*` table whose embedded epoch is at least
+   * `maxAgeSeconds` behind `nowEpochSeconds`, plus every malformed-named one —
+   * a crashed process's tables die on the next review anywhere. Returns the
+   * dropped table names.
+   */
+  sweepExpiredReviewFileEdges: (nowEpochSeconds: number, maxAgeSeconds: number) => Promise<string[]>;
+
+  /**
+   * This review's edges ordered by (source_rel_path, target_rel_path). A table
+   * that does not exist reads as no edges — never a throw.
+   */
+  readReviewFileEdges: (reviewId: string) => Promise<ReviewFileEdge[]>;
 
   /**
    * The `cg_symbols_edges_file` rows whose TARGET is `relPath` — the files

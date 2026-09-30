@@ -23,6 +23,7 @@
  * | `DuckDbGraphAnalyticsStore`  | adjacency out, cycles + PageRank back in        |
  * | `DuckDbRunStatsStore`        | `cg_run_stats` + edge-kind distribution         |
  * | `DuckDbTemporalCochangeStore`| `cg_temporal_*` co-change sub-graph             |
+ * | `DuckDbReviewEdgeStore`      | per-review `cg_review_file_edges_*` throwaways  |
  * | `DuckDbIdentifierStore`      | `cg_identifiers` (naming lexicon)               |
  * | `DuckDbOntologyReportStore`  | `cg_identifiers` ontology audit reads           |
  * | `DuckDbTypeNameStore`        | type-level `cg_symbols` rows + their ancestors  |
@@ -86,6 +87,7 @@ import type {
   PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
+  ReviewFileEdge,
   SymbolChunkIdJoinEntry,
   SymbolChunkLocation,
   SymbolDefinition,
@@ -107,6 +109,7 @@ import { DuckDbHierarchyReader } from "./hierarchy-reader.js";
 import { DuckDbIdentifierStore } from "./identifier-store.js";
 import { DuckDbMethodEdgeReader } from "./method-edge-reader.js";
 import { DuckDbOntologyReportStore } from "./ontology-report-store.js";
+import { DuckDbReviewEdgeStore } from "./review-edge-store.js";
 import { DuckDbRunStatsStore } from "./run-stats-store.js";
 import { DuckDbSignalDriftStore } from "./signal-drift-store.js";
 import { DuckDbSymbolStore } from "./symbol-store.js";
@@ -142,6 +145,7 @@ export class DuckDbGraphClient implements GraphDbClient {
   private readonly signalDrift: DuckDbSignalDriftStore;
   private readonly temporalCochange: DuckDbTemporalCochangeStore;
   private readonly temporalSymbolCommits: DuckDbTemporalSymbolCommitStore;
+  private readonly reviewEdges: DuckDbReviewEdgeStore;
   private readonly identifiers: DuckDbIdentifierStore;
   private readonly ontology: DuckDbOntologyReportStore;
   private readonly typeNames: DuckDbTypeNameStore;
@@ -158,6 +162,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     this.signalDrift = new DuckDbSignalDriftStore(this.session);
     this.temporalCochange = new DuckDbTemporalCochangeStore(this.session);
     this.temporalSymbolCommits = new DuckDbTemporalSymbolCommitStore(this.session);
+    this.reviewEdges = new DuckDbReviewEdgeStore(this.session);
     this.identifiers = new DuckDbIdentifierStore(this.session);
     this.ontology = new DuckDbOntologyReportStore(this.session);
     this.typeNames = new DuckDbTypeNameStore(this.session);
@@ -546,6 +551,28 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async readTemporalSymbolCommits(relPath: RelPath): Promise<TemporalSymbolCommitFileSnapshot> {
     return this.temporalSymbolCommits.readFile(relPath);
+  }
+
+  // ── Per-review working-tree file edges (bd tea-rags-mcp-89k7k.1.2) ──
+  //
+  // Throwaway `cg_review_file_edges_<reviewId>` tables — one per diff-scoped
+  // review, runtime DDL, never in the migration catalog. Cleanup layers and
+  // the append contract are owned by the store's docblock.
+
+  async putReviewFileEdges(reviewId: string, edges: readonly ReviewFileEdge[]): Promise<void> {
+    return this.reviewEdges.putReviewFileEdges(reviewId, edges);
+  }
+
+  async dropReviewFileEdges(reviewId: string): Promise<void> {
+    return this.reviewEdges.dropReviewTable(reviewId);
+  }
+
+  async sweepExpiredReviewFileEdges(nowEpochSeconds: number, maxAgeSeconds: number): Promise<string[]> {
+    return this.reviewEdges.sweepExpiredReviewTables(nowEpochSeconds, maxAgeSeconds);
+  }
+
+  async readReviewFileEdges(reviewId: string): Promise<ReviewFileEdge[]> {
+    return this.reviewEdges.readReviewFileEdges(reviewId);
   }
 
   /** File-scope `get_callers` (bd tea-rags-mcp-gfvr8): the files importing `relPath`. */

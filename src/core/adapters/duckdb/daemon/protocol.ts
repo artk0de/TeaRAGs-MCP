@@ -14,6 +14,7 @@ import type {
   OntologyReportQuery,
   RelPath,
   ResolveRunStatsRow,
+  ReviewFileEdge,
   SymbolDefinition,
   SymbolId,
   TemporalCochangeSnapshot,
@@ -78,6 +79,12 @@ export const DAEMON_OPS = [
   // Per-file symbol-commit rows of the temporal sub-graph (bd tea-rags-mcp-3gz4f).
   "replaceTemporalSymbolCommits",
   "deleteTemporalSymbolCommitFiles",
+  // Per-review working-tree file-edge temp tables (bd tea-rags-mcp-89k7k.1.2).
+  // REQUIRED, not legacy-tolerated: an older daemon's silence would read as
+  // "the review wrote no edges" — a dropped review signal, never a fallback.
+  "putReviewFileEdges",
+  "dropReviewFileEdges",
+  "sweepExpiredReviewFileEdges",
   "checkpoint",
   "rebuildEdgeFileTargetIndex",
   "recordRunStats",
@@ -146,6 +153,9 @@ export const DAEMON_OPS = [
   // as "no symbol co-change data".
   "storedTemporalSymbolCommitFilePaths",
   "readTemporalSymbolCommits",
+  // One review's working-tree file edges (bd tea-rags-mcp-89k7k.1.2).
+  // REQUIRED: an older daemon's empty answer would read as "no review edges".
+  "readReviewFileEdges",
   // One file's importers / imports for file-scope get_callers / get_callees
   // (bd tea-rags-mcp-gfvr8). REQUIRED, not legacy-tolerated: an empty answer
   // would read as "nothing imports this file".
@@ -209,6 +219,9 @@ export interface DaemonRequest {
     | { collection: string; buildFingerprint?: string } // handshake (fingerprint absent on legacy peers)
     | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile
     | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut | getFileImporters | getFileImports | readTemporalSymbolCommits
+    | { collection: string; reviewId: string } // dropReviewFileEdges | readReviewFileEdges
+    | { collection: string; reviewId: string; edges: ReviewFileEdge[] } // putReviewFileEdges
+    | { collection: string; nowEpochSeconds: number; maxAgeSeconds: number } // sweepExpiredReviewFileEdges
     | { collection: string; relPath: RelPath; definitions: SymbolDefinition[] } // upsertSymbols
     | { collection: string; entries: BulkSymbolUpsertEntry[] } // upsertSymbolsBulk
     | { collection: string; entries: BulkFileUpsertEntry[] } // upsertFilesBulk

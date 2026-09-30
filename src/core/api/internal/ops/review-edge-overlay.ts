@@ -25,6 +25,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import type { ReviewFileEdge } from "../../../contracts/types/codegraph-storage.js";
 import type { CallContext, FileExtraction, GlobalSymbolTable, GraphEdges } from "../../../contracts/types/codegraph.js";
 import type {
   CollectSymbolsFn,
@@ -34,11 +35,13 @@ import type {
 import { extractFileInMemory, type InMemoryExtractionContext } from "../../../domains/trajectory/codegraph/index.js";
 import { collectDependencyManifestSources, readDeclaredDependencies } from "../../../infra/dependency-manifests.js";
 
-/** One working-tree file edge: the changed file imports/knows the target file. */
-export interface ReviewFileEdge {
-  sourceRelPath: string;
-  targetRelPath: string;
-}
+/**
+ * One working-tree file edge: the changed file imports/knows the target file.
+ * Declared in `contracts/types/codegraph-storage` (bd tea-rags-mcp-89k7k.1.2) —
+ * the edges' DuckDB persistence is adapter code, and adapters may not import
+ * api — and re-exported here so this module's public surface is unchanged.
+ */
+export type { ReviewFileEdge };
 
 /** Why a changed file yielded no edges (upstream renders it as notJudged, never edge-free). */
 export type ReviewEdgeSkipReason = "noCodegraphLanguage" | "unreadable" | "unsupportedLanguage" | "parseFailed";
