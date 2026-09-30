@@ -307,6 +307,33 @@ export class CollectionRegistry {
     this.flush();
   }
 
+  /**
+   * Record that this collection's enrichment layer includes the codegraph
+   * trajectory (bd tea-rags-mcp-5m8g3).
+   *
+   * `resolveRegistryEnv` replays the dedicated `codegraphEnabled` field into
+   * `CODEGRAPH_ENABLED`, and an entry written before the field existed carries
+   * no value — it composes without the codegraph tools at call time even
+   * though its index holds a full graph. A full pipeline run stamps the field
+   * through `recordRegistryEntry`; the enrichment recompute rebuilds the same
+   * graph without ever reaching that path, so it stamps here. Only a run that
+   * actually rebuilt the layer may claim it — the same rule as
+   * {@link stampLanguageVersions} — and an entry set to `false` explicitly is
+   * overridden by that run, exactly as any set-env decision yields to the
+   * ambient env of the run that follows it.
+   *
+   * Silently no-ops for an unregistered collection. The caller is a finished
+   * run; failing it after the data landed would report the whole run as
+   * failed over a bookkeeping write.
+   */
+  stampCodegraphEnabled(collectionName: string): void {
+    const map = this.ensureLoaded();
+    const entry = map.get(collectionName);
+    if (!entry) return;
+    map.set(collectionName, { ...entry, codegraphEnabled: true });
+    this.flush();
+  }
+
   setWorktreeProvenance(collectionName: string, worktreeOf: string, worktreeName: string): void {
     const map = this.ensureLoaded();
     const entry = map.get(collectionName);
