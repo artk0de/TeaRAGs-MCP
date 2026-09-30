@@ -615,6 +615,12 @@ export interface LayeringKnot {
    * composition of a module with its own sub-parts, not a layering defect.
    */
   composition: boolean;
+  /**
+   * Max member instability minus min (bd tea-rags-mcp-r8hme.32): a knot fusing
+   * a stable member with a volatile one is an SDP break inside a cycle; a knot
+   * of equally volatile members is a tangle. Knot findings rank by it.
+   */
+  instabilitySpread: number;
 }
 
 /**
@@ -651,6 +657,8 @@ export interface LayeringKnotViolation {
   feedbackArcSet: LayeringFeedbackEdge[];
   cutEdgeCount: number;
   levelsAfterCut: number;
+  /** Max member instability minus min (bd tea-rags-mcp-r8hme.32) — findings rank by it. */
+  instabilitySpread: number;
   /** Members dropped by the source scope — present only when scoped. */
   outOfScopeMemberCount?: number;
   /** Feedback-arc-set edges no in-scope file carries, dropped — present only when scoped. */
