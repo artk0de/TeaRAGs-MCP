@@ -374,7 +374,8 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "DOMAIN graph (every facade directory is a unit, adoption notwithstanding — a vertical with an unadopted " +
       "facade counts once, not once per subdirectory; facadePartition keeps the adoption partition's component/level " +
       "counts), levels by longest path (L0 = foundation), per-knot greedy weighted feedback arc set " +
-      "(cut these N edges -> k levels); violations knot / backEdge (minority-weight direction, equal weights never " +
+      "(cut these N edges -> k levels); violations knot (ranked by member-instability spread — spread > 0 is an SDP " +
+      "break inside the cycle) / backEdge (minority-weight direction, equal weights never " +
       "guessed) / abstractionBypass (consumer reaches measured-concrete component past measured-abstract one beneath); " +
       "informational compositionCycle / island (nothing depends on it, below the top) / layerSkip (>=2 levels straight " +
       "down); summary.layering: coverage, levelCount, coherence (rank correlation level vs instability). layerMap " +

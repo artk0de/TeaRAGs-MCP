@@ -609,6 +609,7 @@ function toLayeringArchitectureViolation(v: DomainLayeringViolation): Architectu
           feedbackArcSet: v.feedbackArcSet.map(toLayeringFeedbackEdge),
           cutEdgeCount: v.cutEdgeCount,
           levelsAfterCut: v.levelsAfterCut,
+          instabilitySpread: round3(v.instabilitySpread),
           ...(v.outOfScopeMemberCount !== undefined ? { outOfScopeMemberCount: v.outOfScopeMemberCount } : {}),
           ...(v.outOfScopeFeedbackEdgeCount !== undefined
             ? { outOfScopeFeedbackEdgeCount: v.outOfScopeFeedbackEdgeCount }
