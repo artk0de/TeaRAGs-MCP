@@ -584,6 +584,10 @@ function toLayeringArchitectureViolation(v: DomainLayeringViolation): Architectu
           feedbackArcSet: v.feedbackArcSet.map(toLayeringFeedbackEdge),
           cutEdgeCount: v.cutEdgeCount,
           levelsAfterCut: v.levelsAfterCut,
+          ...(v.outOfScopeMemberCount !== undefined ? { outOfScopeMemberCount: v.outOfScopeMemberCount } : {}),
+          ...(v.outOfScopeFeedbackEdgeCount !== undefined
+            ? { outOfScopeFeedbackEdgeCount: v.outOfScopeFeedbackEdgeCount }
+            : {}),
         },
       };
     case "backEdge":
@@ -617,7 +621,10 @@ function toLayeringArchitectureViolation(v: DomainLayeringViolation): Architectu
         detector: "layering",
         kind: "compositionCycle",
         components: v.components,
-        evidence: { nestedPairs: v.nestedPairs },
+        evidence: {
+          nestedPairs: v.nestedPairs,
+          ...(v.outOfScopeMemberCount !== undefined ? { outOfScopeMemberCount: v.outOfScopeMemberCount } : {}),
+        },
       };
     case "island":
       return {

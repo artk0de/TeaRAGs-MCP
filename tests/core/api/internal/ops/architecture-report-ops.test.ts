@@ -236,6 +236,21 @@ describe("ArchitectureReportOps#build", () => {
     expect(whole.summary.layering.outOfScopeFindingCount).toBeUndefined();
   });
 
+  it("projects a scoped knot onto its in-scope members in the public evidence (bd tea-rags-mcp-r8hme.33)", async () => {
+    const scoped = await new ArchitectureReportOps().build(graphDb(), { pathPattern: "lib/**" });
+    const whole = await new ArchitectureReportOps().build(graphDb(), {});
+
+    const knot = scoped.violations.find((v) => v.detector === "layering" && v.kind === "knot");
+    // core owns no lib/** file; the cut edge lib → core is carried by lib/f5.ts.
+    expect(knot).toMatchObject({
+      components: ["lib"],
+      evidence: { outOfScopeMemberCount: 1, outOfScopeFeedbackEdgeCount: 0 },
+    });
+    const wholeKnot = whole.violations.find((v) => v.detector === "layering" && v.kind === "knot");
+    expect(wholeKnot).toBeDefined();
+    expect(wholeKnot && "evidence" in wholeKnot ? wholeKnot.evidence : {}).not.toHaveProperty("outOfScopeMemberCount");
+  });
+
   it("caps violations and root causes at limit while the summary keeps the totals", async () => {
     const report = await new ArchitectureReportOps().build(graphDb(), { limit: 1 });
 

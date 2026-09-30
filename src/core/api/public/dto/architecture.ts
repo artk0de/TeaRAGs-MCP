@@ -317,6 +317,17 @@ export interface LayeringKnotViolationEvidence {
   cutEdgeCount: number;
   /** Distinct levels the members occupy once the feedback arc set is cut. */
   levelsAfterCut: number;
+  /**
+   * Members the pathPattern scope dropped (the knot lists only in-scope
+   * members) — present only when scoped.
+   */
+  outOfScopeMemberCount?: number;
+  /**
+   * Feedback-arc-set edges no in-scope file carries, dropped from
+   * `feedbackArcSet` — present only when scoped. `cutEdgeCount` and
+   * `levelsAfterCut` still describe the whole knot.
+   */
+  outOfScopeFeedbackEdgeCount?: number;
 }
 
 /** A multi-component strongly-connected set of the component graph. */
@@ -375,6 +386,8 @@ export interface LayeringAbstractionBypassArchitectureViolation {
 export interface LayeringCompositionCycleViolationEvidence {
   /** Every parent↔nested pair inside the cycle, each named once. */
   nestedPairs: { parentComponent: string; nestedComponent: string }[];
+  /** Members the pathPattern scope dropped — present only when scoped. */
+  outOfScopeMemberCount?: number;
 }
 
 /** A parent and its own nested directories cycling — informational. */

@@ -463,4 +463,53 @@ describe("detectLayeringViolations — source scope (bd tea-rags-mcp-r8hme.33)",
     expect(judge(g).summary.scope).toBeUndefined();
     expect(detectLayeringViolations(buildComponentGraph(g, []), g.files, {}).summary.scope).toBeUndefined();
   });
+
+  it("projects a kept knot onto its in-scope members and the cut edges an in-scope file carries", () => {
+    const whole = judge(knot()).violations.find((v) => v.kind === "knot");
+    const scoped = judgeScoped(knot(), "clock/**").violations.find((v) => v.kind === "knot");
+
+    // ulanzi owns no clock/** file; the only cut edge ulanzi → clock is carried by ulanzi/u1.ts.
+    expect(scoped).toMatchObject({
+      kind: "knot",
+      components: ["clock"],
+      outOfScopeMemberCount: 1,
+      feedbackArcSet: [],
+      outOfScopeFeedbackEdgeCount: 1,
+    });
+    // The cost of dissolving the WHOLE knot does not shrink with the scope.
+    expect(whole).toBeDefined();
+    expect(scoped).toMatchObject({
+      cutEdgeCount: whole?.kind === "knot" ? whole.cutEdgeCount : -1,
+      levelsAfterCut: whole?.kind === "knot" ? whole.levelsAfterCut : -1,
+    });
+  });
+
+  it("keeps a cut edge in a projected knot when an in-scope file carries it", () => {
+    const scoped = judgeScoped(knot(), "ulanzi/**").violations.find((v) => v.kind === "knot");
+
+    expect(scoped).toMatchObject({
+      components: ["ulanzi"],
+      outOfScopeMemberCount: 1,
+      feedbackArcSet: [{ sourceComponent: "ulanzi", targetComponent: "clock" }],
+      outOfScopeFeedbackEdgeCount: 0,
+    });
+  });
+
+  it("carries no projection counts on an unscoped knot", () => {
+    const whole = judge(knot()).violations.find((v) => v.kind === "knot");
+
+    expect(whole).not.toHaveProperty("outOfScopeMemberCount");
+    expect(whole).not.toHaveProperty("outOfScopeFeedbackEdgeCount");
+  });
+
+  it("projects a composition cycle onto its in-scope members, keeping the pairs they belong to", () => {
+    const scoped = judgeScoped(composition(), "parent/nested/**").violations.find((v) => v.kind === "compositionCycle");
+
+    expect(scoped).toEqual({
+      kind: "compositionCycle",
+      components: ["parent/nested"],
+      nestedPairs: [{ parentComponent: "parent", nestedComponent: "parent/nested" }],
+      outOfScopeMemberCount: 1,
+    });
+  });
 });

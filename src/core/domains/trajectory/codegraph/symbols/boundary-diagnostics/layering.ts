@@ -124,10 +124,12 @@ export function detectLayeringViolations(
   ];
 
   const inScope = compilePathPatternMatcher(options.sourcePathPattern);
-  const carried = inScope && findingInScope(componentGraph, inScope);
-  const violations = carried ? allFindings.filter(carried) : allFindings;
+  const sourceScope = inScope && layeringSourceScope(componentGraph, inScope);
+  const violations = sourceScope
+    ? allFindings.filter((finding) => findingInScope(sourceScope, finding)).map((f) => projectOntoScope(sourceScope, f))
+    : allFindings;
   const scope =
-    carried && options.sourcePathPattern
+    sourceScope && options.sourcePathPattern
       ? { sourcePathPattern: options.sourcePathPattern, outOfScopeFindingCount: allFindings.length - violations.length }
       : undefined;
 
@@ -151,41 +153,93 @@ export function detectLayeringViolations(
 }
 
 /**
- * The source-scope test for one finding (bd tea-rags-mcp-r8hme.33): a
- * dependency finding is carried by the source files of its component edge —
- * the full edge, not the evidence cap — a component finding by the
- * component's own files.
+ * What a source path pattern reaches in the component graph (bd
+ * tea-rags-mcp-r8hme.33): a component is in scope when it owns a matching
+ * file; a component dependency when a matching source file carries it — the
+ * full edge, not the evidence cap.
  */
-function findingInScope(
-  componentGraph: ComponentGraph,
-  inScope: PathPatternMatcher,
-): (finding: LayeringViolation) => boolean {
+interface LayeringSourceScope {
+  componentMatches: (component: string) => boolean;
+  dependencyMatches: (sourceComponent: string, targetComponent: string) => boolean;
+}
+
+function layeringSourceScope(componentGraph: ComponentGraph, inScope: PathPatternMatcher): LayeringSourceScope {
   const filesOf = new Map<string, string[]>();
   for (const [relPath, component] of componentGraph.componentOf) {
     filesOf.set(component, [...(filesOf.get(component) ?? []), relPath]);
   }
-  const componentMatches = (component: string) => (filesOf.get(component) ?? []).some(inScope);
-  const dependencyMatches = (source: string, target: string) =>
-    componentGraph.dependencies.some(
-      (d) =>
-        d.sourceComponent === source &&
-        d.targetComponent === target &&
-        d.fileEdges.some((e) => inScope(e.sourceRelPath)),
-    );
-
-  return (finding) => {
-    switch (finding.kind) {
-      case "knot":
-      case "compositionCycle":
-        return finding.components.some(componentMatches);
-      case "island":
-        return componentMatches(finding.component);
-      case "backEdge":
-      case "abstractionBypass":
-      case "layerSkip":
-        return dependencyMatches(finding.sourceComponent, finding.targetComponent);
-    }
+  return {
+    componentMatches: (component) => (filesOf.get(component) ?? []).some(inScope),
+    dependencyMatches: (source, target) =>
+      componentGraph.dependencies.some(
+        (d) =>
+          d.sourceComponent === source &&
+          d.targetComponent === target &&
+          d.fileEdges.some((e) => inScope(e.sourceRelPath)),
+      ),
   };
+}
+
+/**
+ * The keep/drop test for one finding: a dependency finding by the files
+ * carrying its component edge, a component finding by the component's own
+ * files, a knot or composition cycle when ANY member is in scope.
+ */
+function findingInScope(scope: LayeringSourceScope, finding: LayeringViolation): boolean {
+  switch (finding.kind) {
+    case "knot":
+    case "compositionCycle":
+      return finding.components.some(scope.componentMatches);
+    case "island":
+      return scope.componentMatches(finding.component);
+    case "backEdge":
+    case "abstractionBypass":
+    case "layerSkip":
+      return scope.dependencyMatches(finding.sourceComponent, finding.targetComponent);
+  }
+}
+
+/**
+ * A kept knot or composition cycle, projected onto the scope: only the
+ * in-scope members, and (for a knot) only the cut edges an in-scope file
+ * carries, with how many of each the scope dropped. A large knot is kept
+ * under almost any scope — a 55-member knot on mastodon was — and printing it
+ * whole buries the part the scope asked about. `cutEdgeCount` and
+ * `levelsAfterCut` stay whole-knot: they price dissolving the whole knot.
+ */
+function projectOntoScope(scope: LayeringSourceScope, finding: LayeringViolation): LayeringViolation {
+  switch (finding.kind) {
+    case "knot": {
+      const components = finding.components.filter(scope.componentMatches);
+      const feedbackArcSet = finding.feedbackArcSet.filter((edge) =>
+        scope.dependencyMatches(edge.sourceComponent, edge.targetComponent),
+      );
+      return {
+        ...finding,
+        components,
+        feedbackArcSet,
+        outOfScopeMemberCount: finding.components.length - components.length,
+        outOfScopeFeedbackEdgeCount: finding.feedbackArcSet.length - feedbackArcSet.length,
+      };
+    }
+    case "compositionCycle": {
+      const components = finding.components.filter(scope.componentMatches);
+      const inScopeMembers = new Set(components);
+      return {
+        ...finding,
+        components,
+        nestedPairs: finding.nestedPairs.filter(
+          (pair) => inScopeMembers.has(pair.parentComponent) || inScopeMembers.has(pair.nestedComponent),
+        ),
+        outOfScopeMemberCount: finding.components.length - components.length,
+      };
+    }
+    case "island":
+    case "backEdge":
+    case "abstractionBypass":
+    case "layerSkip":
+      return finding;
+  }
 }
 
 function adjacency(dependencies: readonly ComponentDependency[]): Map<string, readonly string[]> {

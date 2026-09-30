@@ -651,6 +651,10 @@ export interface LayeringKnotViolation {
   feedbackArcSet: LayeringFeedbackEdge[];
   cutEdgeCount: number;
   levelsAfterCut: number;
+  /** Members dropped by the source scope — present only when scoped. */
+  outOfScopeMemberCount?: number;
+  /** Feedback-arc-set edges no in-scope file carries, dropped — present only when scoped. */
+  outOfScopeFeedbackEdgeCount?: number;
 }
 
 /**
@@ -688,6 +692,8 @@ export interface LayeringCompositionCycleViolation {
   kind: "compositionCycle";
   components: string[];
   nestedPairs: { parentComponent: string; nestedComponent: string }[];
+  /** Members dropped by the source scope — present only when scoped. */
+  outOfScopeMemberCount?: number;
 }
 
 /** A component nothing depends on that does not reach the top of the stack. */
