@@ -442,7 +442,7 @@ function backEdges(componentGraph: ComponentGraph, knots: readonly LayeringKnot[
   );
 }
 
-function cappedFileEdges(fileEdges: readonly FileDependencyEdge[]): FileDependencyEdge[] {
+export function cappedFileEdges(fileEdges: readonly FileDependencyEdge[]): FileDependencyEdge[] {
   return [...fileEdges]
     .sort((a, b) => b.callWeight - a.callWeight || compareCodePoints(a.sourceRelPath, b.sourceRelPath))
     .slice(0, COMPONENT_EVIDENCE_FILE_EDGE_LIMIT);

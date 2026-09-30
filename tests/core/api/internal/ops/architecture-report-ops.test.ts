@@ -721,6 +721,47 @@ describe("ArchitectureReportOps.empty", () => {
     expect(report.summary.stableDependencies.edgeCount).toBe(0);
     expect(report.summary.stableDependencies.judgedEdgeCount).toBe(0);
   });
+
+  it("maps a scoped domain at file granularity, boundary edges carrying the outside component's global level (bd tea-rags-mcp-r8hme.26)", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(), {
+      layerMap: { scopePathPattern: "lib/**", granularity: "file" },
+    });
+
+    const map = report.layerMap!;
+    expect(map.scope).toBe("lib/**");
+    expect(map.granularity).toBe("file");
+    expect(map.nodes.map((n) => n.node).sort()).toEqual([
+      "lib/f1.ts",
+      "lib/f2.ts",
+      "lib/f3.ts",
+      "lib/f4.ts",
+      "lib/f5.ts",
+    ]);
+    // No file inside lib imports another — every file sits at the foundation of the induced stack.
+    expect(map.levelCount).toBe(0);
+    // The knot {core, lib} condenses to level 1 on the whole-repo stack: that is the global level boundary findings carry.
+    expect(map.boundaryOut).toEqual([
+      { sourceNode: "lib/f5.ts", externalComponent: "core", externalLevel: 1, callWeight: 1 },
+      { sourceNode: "lib/f1.ts", externalComponent: "vendor", externalLevel: 0, callWeight: 1 },
+      { sourceNode: "lib/f2.ts", externalComponent: "vendor", externalLevel: 0, callWeight: 1 },
+      { sourceNode: "lib/f3.ts", externalComponent: "vendor", externalLevel: 0, callWeight: 1 },
+      { sourceNode: "lib/f4.ts", externalComponent: "vendor", externalLevel: 0, callWeight: 1 },
+      { sourceNode: "lib/f5.ts", externalComponent: "vendor", externalLevel: 0, callWeight: 1 },
+    ]);
+    // The upstream pulls the other way: core, base and other files reach into lib.
+    expect(map.boundaryIn).toEqual([
+      { targetNode: "lib/f4.ts", externalComponent: "base", externalLevel: 2, callWeight: 3 },
+      { targetNode: "lib/f1.ts", externalComponent: "core", externalLevel: 1, callWeight: 2 },
+      { targetNode: "lib/f2.ts", externalComponent: "core", externalLevel: 1, callWeight: 1 },
+      { targetNode: "lib/f3.ts", externalComponent: "other", externalLevel: 2, callWeight: 1 },
+    ]);
+  });
+
+  it("omits the layer map unless the request asks for one", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(), {});
+
+    expect(report).not.toHaveProperty("layerMap");
+  });
 });
 
 // bd tea-rags-mcp-r8hme.9 — scripts, spikes, benchmarks, examples and fixtures
