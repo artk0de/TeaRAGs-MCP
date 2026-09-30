@@ -61,6 +61,27 @@
   NEW pattern that can match a directory name must be checked against that
   probe. A pruned directory is skipped silently, with no error and no count, so
   the loss shows up only as missing files.
+- **A wire seam is ONE contract split across a process boundary — its halves
+  co-change with NO import edge, and `get_architecture_report` silentCoupling
+  pairs across the seam are by design.** The chunker worker protocol
+  (`chunker/infra/worker-protocol.ts`: `WorkerRequest` / `WorkerResponse`) is
+  the exemplar: the pool loads the worker by path (`ChunkerPool#constructor`'s
+  `ProcessTransport(WORKER_PATH)`), the messages cross as structural clones, and
+  no file in `src/` imports the protocol module at all — so the report sees its
+  co-change with the language facade (`WorkerRequest.language` and the
+  `emitExtraction` cross-pass extraction reuse reference the factory surface),
+  with the codegraph provider that consumes `WorkerResponse.extraction`, and
+  with the bootstrap wiring that injects `languageModulePath`. Membership
+  contract, judge any reported pair by it: a pair belongs to the seam when one
+  side reaches the other only by PATH (forked entry script, injected module
+  path) or by structured-clone messages across a process boundary, or when one
+  op surface is realized twice — an in-process client beside a daemon transport
+  dispatching op-name strings to handlers. The codegraph DuckDB daemon
+  (`adapters/duckdb/daemon/`) and the CLI index worker (`cli/index-progress/`)
+  carry the same seam shape. Why: the graph cannot cross a process boundary and
+  must not be "fixed" into crossing it — adding the missing import re-couples
+  two transports the seam exists to keep apart, and the duplicated op surface is
+  the price of process isolation for `node-tree-sitter`, not an oversight.
 
 ## See also
 

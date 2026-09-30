@@ -17,6 +17,7 @@ import { randomUUID } from "node:crypto";
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
 import { servicePointExclusions } from "../../../../adapters/qdrant/service-points.js";
+import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../../../contracts/codegraph-payload.js";
 import { selectProviderKeys } from "../../../../contracts/provider-selector.js";
 import type { FileExtraction } from "../../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
@@ -1166,7 +1167,7 @@ export class EnrichmentCoordinator {
     if (run.crossPass && this.progressCb && this.acceptsExtractions()) {
       run.codegraphSymbolsApplied += 1;
       this.progressCb({
-        providerKey: "codegraph.symbols",
+        providerKey: CODEGRAPH_SYMBOLS_PROVIDER_KEY,
         level: "symbols",
         applied: run.codegraphSymbolsApplied,
         total: run.grandFileCount || run.codegraphSymbolsApplied,

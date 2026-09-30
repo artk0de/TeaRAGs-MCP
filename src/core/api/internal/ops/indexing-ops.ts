@@ -121,7 +121,16 @@ export interface IndexingOpsDeps {
    * because the stamp is a claim about WHICH layer this run rebuilt, and only
    * this layer knows the run mode. Omitted → nothing is stamped.
    */
-  collectionRegistry?: LanguageVersionStamper;
+  languageVersionStamper?: LanguageVersionStamper;
+  /**
+   * Registry surface for the codegraph-enabled fact of the finished run
+   * (bd tea-rags-mcp-5m8g3). A recompute that rebuilt the codegraph layer
+   * proves the flag belongs on — it never reaches the pipeline's `record()`,
+   * the only other run-time writer of the dedicated field — so without this
+   * stamp a legacy entry that predates the field composes without the
+   * codegraph tools at call time. Omitted → nothing is stamped.
+   */
+  codegraphEnabledStamper?: CodegraphEnabledStamper;
   /** Per-language code versions of this build, from the composition root. */
   languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
   /**
@@ -184,6 +193,15 @@ export interface IndexDriftConsumptionResetter {
   reset: (collectionName: string) => void;
 }
 
+/**
+ * The one codegraph-fact registry mutation this ops layer performs
+ * (bd tea-rags-mcp-5m8g3). Method-shaped so the concrete `CollectionRegistry`
+ * satisfies it structurally, the way `LanguageVersionStamper` does.
+ */
+export interface CodegraphEnabledStamper {
+  stampCodegraphEnabled: (collectionName: string) => void;
+}
+
 export class IndexingOps {
   private readonly qdrant: QdrantManager;
   private readonly embeddings: EmbeddingProvider;
@@ -202,7 +220,8 @@ export class IndexingOps {
   private readonly healthCheckRetryAttempts: number;
   private readonly healthCheckRetryDelayMs: number;
   private readonly status: StatusModule;
-  private readonly collectionRegistry?: LanguageVersionStamper;
+  private readonly languageVersionStamper?: LanguageVersionStamper;
+  private readonly codegraphEnabledStamper?: CodegraphEnabledStamper;
   private readonly languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
   private readonly languageChunkSetBumpScopes: ReadonlyMap<string, ChunkSetBumpScopes>;
   private readonly driftReporter?: IndexDriftConsumptionResetter;
@@ -269,7 +288,8 @@ export class IndexingOps {
       // still lives (bd tea-rags-mcp-f93ao).
       deps.indexingLock,
     );
-    this.collectionRegistry = deps.collectionRegistry;
+    this.languageVersionStamper = deps.languageVersionStamper;
+    this.codegraphEnabledStamper = deps.codegraphEnabledStamper;
     this.languageCodeVersions = deps.languageCodeVersions;
     this.languageChunkSetBumpScopes = deps.languageChunkSetBumpScopes ?? new Map();
     this.driftReporter = deps.driftReporter;
@@ -799,7 +819,7 @@ export class IndexingOps {
    * `Run:` line from), so the run clears exactly the findings it repaired.
    */
   private stampRechunkedChunkSet(collectionName: string, rechunk: RechunkFileSelector): void {
-    const registry = this.collectionRegistry;
+    const registry = this.languageVersionStamper;
     const versions = this.languageCodeVersions;
     if (!registry?.get || !versions) return;
     const indexed = registry.get(collectionName)?.languageVersions ?? {};
@@ -1023,8 +1043,8 @@ export class IndexingOps {
 
   /** Write the stamp a pending seed carries — nothing when it carries none (already paid, or a build without versions). */
   private stampWorktreeSeed(collectionName: string, pending: WorktreeSeedPending): void {
-    if (this.collectionRegistry && Object.keys(pending.languageVersions).length > 0) {
-      this.collectionRegistry.stampLanguageVersions(collectionName, pending.languageVersions);
+    if (this.languageVersionStamper && Object.keys(pending.languageVersions).length > 0) {
+      this.languageVersionStamper.stampLanguageVersions(collectionName, pending.languageVersions);
     }
   }
 
@@ -1247,6 +1267,12 @@ export class IndexingOps {
     // advance. Claiming `grammar` / `chunking` here would silence a hint that
     // is still true. A git-only recompute touches no language layer at all.
     if (selectors.some(isCodegraphSelector)) {
+      // The recompute re-extracted the whole graph — the same claim a full run
+      // makes via recordRegistryEntry's codegraphEnabled. Stamping here is
+      // what heals a legacy entry that predates the dedicated field: its
+      // call-time composition drops the codegraph tools until this runs
+      // (bd tea-rags-mcp-5m8g3).
+      this.codegraphEnabledStamper?.stampCodegraphEnabled(aliasCollectionName);
       this.stampLanguageVersions(aliasCollectionName, languages, "codegraph");
     }
     // A git rebuild of every point is the rest of what the seed owed, so the
@@ -1314,9 +1340,9 @@ export class IndexingOps {
     languages: readonly string[] | undefined,
     scope: "all" | "codegraph",
   ): void {
-    if (!this.collectionRegistry) return;
+    if (!this.languageVersionStamper) return;
     const stamp = this.languageVersionsStamp(languages, scope);
-    if (Object.keys(stamp).length > 0) this.collectionRegistry.stampLanguageVersions(collectionName, stamp);
+    if (Object.keys(stamp).length > 0) this.languageVersionStamper.stampLanguageVersions(collectionName, stamp);
   }
 
   /** The stamp {@link stampLanguageVersions} writes — empty when this build declares no versions. */

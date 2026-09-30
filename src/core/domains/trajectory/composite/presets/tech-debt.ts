@@ -1,3 +1,4 @@
+import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../../../contracts/index.js";
 import type { ScoringWeights } from "../../../../contracts/types/provider.js";
 import type { CompositeRerankPreset, OverlayMask } from "../../../../contracts/types/reranker.js";
 
@@ -12,7 +13,7 @@ export class TechDebtCompositePreset implements CompositeRerankPreset {
   readonly filter = { presets: "production" } as const;
   readonly description = "Legacy code with high churn, bug rate, and architectural blast radius";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar", "trace_path"];
-  readonly requires = ["codegraph.symbols", "git"] as const;
+  readonly requires = [CODEGRAPH_SYMBOLS_PROVIDER_KEY, "git"] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.13,
     age: 0.15,

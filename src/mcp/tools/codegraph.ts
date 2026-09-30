@@ -17,8 +17,23 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { PROJECT_NAME_RE, type App, type SchemaBuilder } from "../../core/api/public/index.js";
-import { formatMcpText } from "../format.js";
+import type {
+  FindCoChangedRequest,
+  FindCyclesRequest,
+  GetArchitectureReportRequest,
+  GetCalleesRequest,
+  GetCallersRequest,
+  GetOntologyReportRequest,
+  NamingLexiconRequest,
+  TracePathRequest,
+} from "../../core/api/public/dto/index.js";
+import {
+  CODEGRAPH_SYMBOLS_PROVIDER_KEY,
+  PROJECT_NAME_RE,
+  type App,
+  type SchemaBuilder,
+} from "../../core/api/public/index.js";
+import { formatMcpText, type McpToolResult } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 
 /**
@@ -130,10 +145,20 @@ const GetOntologyReportInputShape = {
   pathPattern: z.string().optional().describe("Glob scope; its literal prefix filters files. Omit for whole project."),
   language: z.string().optional().describe("Only this language's files."),
   sections: z
-    .array(z.enum(["synonyms", "homonyms", "outliers", "collisions"]))
+    .array(z.enum(["synonyms", "homonyms", "outliers", "collisions", "verbs"]))
     .optional()
-    .describe("Sections to compute (default all)."),
+    .describe("Sections (default all but verbs: per noun tail, the method verbs with holders)."),
   limit: z.number().int().positive().max(100).optional().describe("Items per section (default 20)."),
+};
+
+/** `find_co_changed` (bd tea-rags-mcp-l1ot.1) — co-change partners of the named files. */
+const FindCoChangedInputShape = {
+  ...collectionPathFields(),
+  files: z
+    .array(z.string().min(1))
+    .min(1)
+    .describe("Project-relative paths to query, at least one (e.g. ['src/core/app.ts'])."),
+  limit: z.number().int().positive().max(100).optional().describe("Max partners per file (default 10)"),
 };
 
 /**
@@ -184,10 +209,10 @@ function buildTracePathInputShape(schemaBuilder: SchemaBuilder) {
  * ≤ 1.5 KB serialized.
  */
 const NAMING_LEXICON_DESCRIPTION =
-  "Codegraph naming. `types`/`anchors` → names/kind+shape; " +
-  "`names[]`(attr: field; method: return; class/const: type+path) → CONFORMS(vocabulary, not behaviour)|" +
-  "MISFIT{suggestion}|NEW_TERM{topTerms}|COLLISION,+alternatives,genericName; `concept`+`language` → terms; " +
-  "`changes{base=HEAD}`/`files` → review.";
+  "Codegraph naming. `types`/`anchors`→names/kind+shape; " +
+  "`names[]`(attr:field; method:return; class/const:type+path)→CONFORMS(vocabulary, not behaviour)|" +
+  "MISFIT{suggestion}|NEW_TERM{topTerms}|NO_CONVENTION{prefer}|COLLISION,+alternatives,genericName; " +
+  "`concept`+`language`→terms; `changes`/`files`→review.";
 
 function buildNamingLexiconInputSchema() {
   const draftName = z.object({
@@ -234,6 +259,164 @@ function buildNamingLexiconInputSchema() {
     });
 }
 
+/**
+ * Input schema per codegraph tool, built once per registration — the two
+ * dynamic rows need it (`trace_path` derives its preset enum from the live
+ * registry via the SchemaBuilder, `get_naming_lexicon` compiles its refined
+ * object).
+ */
+function createCodegraphSchemas(schemaBuilder: SchemaBuilder) {
+  return {
+    get_callers: GetCallersInputShape,
+    get_callees: GetCalleesInputShape,
+    find_cycles: FindCyclesInputShape,
+    get_architecture_report: GetArchitectureReportInputShape,
+    get_ontology_report: GetOntologyReportInputShape,
+    find_co_changed: FindCoChangedInputShape,
+    trace_path: buildTracePathInputShape(schemaBuilder),
+    get_naming_lexicon: buildNamingLexiconInputSchema(),
+  };
+}
+type CodegraphSchemas = ReturnType<typeof createCodegraphSchemas>;
+
+/**
+ * One row of the codegraph tool table — same shape as `SearchToolDef` in
+ * explore.ts. The SDK's zod parse strips unknown keys and applies defaults, so
+ * `invoke` receives exactly the schema's fields and casts the parsed input to
+ * the App method's request DTO.
+ */
+interface CodegraphToolDef {
+  name: string;
+  title: string;
+  description: string;
+  schemaKey: keyof CodegraphSchemas;
+  invoke: (app: App, request: unknown) => Promise<McpToolResult>;
+}
+
+const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
+  {
+    name: "get_callers",
+    title: "Get Callers",
+    description:
+      `Return symbols that invoke given symbolId. Backed by codegraph DuckDB. ${RESOLVED_SYMBOL_ID_CONTRACT}` +
+      "Top-level visibility = queried symbol's declared level; each caller carries its own " +
+      "(private|protected|public; absent = unknown). " +
+      "Pass includeAmbiguous:true to also list ambiguous dispatch sites (member-matched, " +
+      "MAY reach target among candidateCount candidates; not materialized as edges). " +
+      "File scope: pass relativePath instead of symbolId → {relativePath, importers[], total} — " +
+      "files that import it, each {relativePath, importText, callWeight}, heaviest callWeight first; " +
+      "unknown file → empty importers + message.",
+    schemaKey: "get_callers",
+    invoke: async (app, request) =>
+      formatMcpText(JSON.stringify(await app.getCallers(request as GetCallersRequest), null, 2)),
+  },
+  {
+    name: "get_callees",
+    title: "Get Callees",
+    description:
+      `Return symbols invoked by given symbolId. Backed by codegraph DuckDB. ${RESOLVED_SYMBOL_ID_CONTRACT}` +
+      "Each callee carries the target's declared visibility (private|protected|public; absent = unknown). " +
+      "File scope: pass relativePath instead of symbolId → {relativePath, imports[], total} — " +
+      "files it imports, each {relativePath, importText, callWeight}, heaviest callWeight first; " +
+      "unknown file → empty imports + message.",
+    schemaKey: "get_callees",
+    invoke: async (app, request) =>
+      formatMcpText(JSON.stringify(await app.getCallees(request as GetCalleesRequest), null, 2)),
+  },
+  {
+    name: "find_cycles",
+    title: "Find Cycles",
+    description:
+      "Return strongly-connected components (cycles) from import or call graph. " +
+      "Cycles length >= 2; single-node 'cycles' excluded. Read from pre-computed " +
+      "table — sub-millisecond per call. scope=method: members are symbol ids and " +
+      "memberLocations lists {symbolId, relativePath} per member in the same order — " +
+      "namesakes in different files are distinct members; an empty relativePath means " +
+      "the cycle was not recomputed since the index upgrade.",
+    schemaKey: "find_cycles",
+    invoke: async (app, request) =>
+      formatMcpText(JSON.stringify(await app.findCycles(request as FindCyclesRequest), null, 2)),
+  },
+  {
+    name: "get_architecture_report",
+    title: "Get Architecture Report",
+    description:
+      "Architecture diagnostics: is code laid out correctly (NOT is it risky to touch — use risk-assessment). " +
+      "Typed violations with per-line evidence, per detector; scripts/spikes/benchmarks/examples/fixtures excluded. " +
+      "stableDependencies (Stable Dependencies Principle): stable COMPONENT depending on less stable one — " +
+      "component = module with measured facade, else directory; evidence = instabilities, Ca/Ce, delta, carrying " +
+      "file edges; dependency on nested component not judged; rootCauses by unstable target component, " +
+      "cycleWithDependents = target depends on own dependents. leakingAbstraction: " +
+      "import past a module facade (index.ts/__init__.py/mod.rs) its importers adopted (>=3 importers, " +
+      "adoption >0.5 and >= adaptive Otsu cut; summary gives threshold, method, separability); kind " +
+      "bypass = facade re-exports what import takes (by imported names when indexed, else target file), " +
+      "internal-reach = it does not (nonExportedNames), conventionPrivacy = Python _name " +
+      "used from other package or Ruby send(:private) from outside its class; rootCauses per module. " +
+      "silentCoupling: file pair co-changing strongly in git history with no import/re-export/resolved call " +
+      "between them (support, P(B|A), P(A|B), lift, strength = Wilson lower bound, sample commits, " +
+      "structuralVisibility); strong = >0.5 and >= adaptive Otsu cut; rootCauses = file with >=2 silent " +
+      "partners; summary.silentCoupling.built false = no co-change build, not clean. mainSequence " +
+      "(Stable Abstractions Principle): component far from A+I=1 — pain = stable+concrete, uselessness = " +
+      "unstable+abstract; A from walker type census, D > max(0.5, Otsu cut); components whose language " +
+      "rarely declares abstractions excluded (unobservableAbstractness); census needs codegraph recompute; pain " +
+      "also needs volatility (mean git.file.commitCount per file > max(median file, log-scale Otsu cut)), calm ones " +
+      "counted as stableConcreteCalm. Summary " +
+      "counts exclusions with named reasons. Diagnosis, not prescription.",
+    schemaKey: "get_architecture_report",
+    invoke: async (app, request) =>
+      formatMcpText(JSON.stringify(await app.getArchitectureReport(request as GetArchitectureReportRequest), null, 2)),
+  },
+  {
+    name: "get_ontology_report",
+    title: "Get Ontology Report",
+    description:
+      "Project-wide naming ontology audit from the codegraph. synonyms: one type, many names; " +
+      "homonyms: one name, many types; outliers: names off their type's dominant shape; " +
+      "collisions: names equal to other symbols. Ranked, with counts and an example each.",
+    schemaKey: "get_ontology_report",
+    invoke: async (app, request) =>
+      formatMcpText(JSON.stringify(await app.getOntologyReport(request as GetOntologyReportRequest), null, 2)),
+  },
+  {
+    name: "find_co_changed",
+    title: "Find Co-Changed Files",
+    description:
+      "File co-change partners from git history (cg_temporal sub-graph). Ranked by Wilson lower-bound strength; " +
+      "each partner carries support, both directed confidences (pPartnerGivenFile, pFileGivenPartner), lift, " +
+      "sample commits, structurallyLinked — an import/method/barrel edge joins the pair, false = silent coupling. " +
+      "Provenance echoes head, window and build cuts; partners deleted from the working tree are dropped. " +
+      "built:false = no co-change build yet (run a codegraph enrichment), NEVER read it as 'no partners'. " +
+      "Before editing a file, surface silent high-strength partners as change-context.",
+    schemaKey: "find_co_changed",
+    invoke: async (app, request) =>
+      formatMcpText(JSON.stringify(await app.findCoChanged(request as FindCoChangedRequest), null, 2)),
+  },
+  {
+    name: "trace_path",
+    title: "Trace Path",
+    description:
+      "Trace all simple call paths from one symbol to another, in execution order. " +
+      "Lean path enumeration by default. Pass `rerank` danger preset to annotate each step " +
+      "with git/churn overlay and sort paths most-dangerous first. Steps carry declared visibility " +
+      "when known (absent = unknown). Backed by codegraph DuckDB. " +
+      "from/to: host-class id with no node of its own → traced via the member's first definer up " +
+      "hierarchy in MRO order; resolvedEndpoints names the id traced.",
+    schemaKey: "trace_path",
+    // `TracePathRequest.rerank` is the string preset name the curated enum
+    // (z.ZodTypeAny erases to unknown after .optional()) narrows to.
+    invoke: async (app, request) =>
+      formatMcpText(JSON.stringify(await app.tracePath(request as TracePathRequest), null, 2)),
+  },
+  {
+    name: "get_naming_lexicon",
+    title: "Get Naming Lexicon",
+    description: NAMING_LEXICON_DESCRIPTION,
+    schemaKey: "get_naming_lexicon",
+    invoke: async (app, request) =>
+      formatMcpText(JSON.stringify(await app.getNamingLexicon(request as NamingLexiconRequest), null, 2)),
+  },
+];
+
 export function registerCodegraphTools(
   server: McpServer,
   deps: { app: App; schemaBuilder: SchemaBuilder; register: RegisterToolFn },
@@ -244,201 +427,20 @@ export function registerCodegraphTools(
   // tools should appear in the MCP `list_tools` response. Silent no-op
   // (no error, no log) — the upstream gate at composition is what controls
   // the surface.
-  if (!app.hasProvider("codegraph.symbols")) return;
+  if (!app.hasProvider(CODEGRAPH_SYMBOLS_PROVIDER_KEY)) return;
 
-  registerToolSafe(
-    server,
-    "get_callers",
-    {
-      title: "Get Callers",
-      description:
-        `Return symbols that invoke given symbolId. Backed by codegraph DuckDB. ${RESOLVED_SYMBOL_ID_CONTRACT}` +
-        "Top-level visibility = queried symbol's declared level; each caller carries its own " +
-        "(private|protected|public; absent = unknown). " +
-        "Pass includeAmbiguous:true to also list ambiguous dispatch sites (member-matched, " +
-        "MAY reach target among candidateCount candidates; not materialized as edges). " +
-        "File scope: pass relativePath instead of symbolId → {relativePath, importers[], total} — " +
-        "files that import it, each {relativePath, importText, callWeight}, heaviest callWeight first; " +
-        "unknown file → empty importers + message.",
-      inputSchema: GetCallersInputShape,
-      annotations: { readOnlyHint: true, idempotentHint: true },
-    },
-    async ({ project, collection, path, symbolId, relativePath, limit, includeAmbiguous }) => {
-      const response = await app.getCallers({
-        project,
-        collection,
-        path,
-        symbolId,
-        relativePath,
-        limit,
-        includeAmbiguous,
-      });
-      return formatMcpText(JSON.stringify(response, null, 2));
-    },
-  );
-
-  registerToolSafe(
-    server,
-    "get_callees",
-    {
-      title: "Get Callees",
-      description:
-        `Return symbols invoked by given symbolId. Backed by codegraph DuckDB. ${RESOLVED_SYMBOL_ID_CONTRACT}` +
-        "Each callee carries the target's declared visibility (private|protected|public; absent = unknown). " +
-        "File scope: pass relativePath instead of symbolId → {relativePath, imports[], total} — " +
-        "files it imports, each {relativePath, importText, callWeight}, heaviest callWeight first; " +
-        "unknown file → empty imports + message.",
-      inputSchema: GetCalleesInputShape,
-      annotations: { readOnlyHint: true, idempotentHint: true },
-    },
-    async ({ project, collection, path, symbolId, relativePath, limit }) => {
-      const response = await app.getCallees({ project, collection, path, symbolId, relativePath, limit });
-      return formatMcpText(JSON.stringify(response, null, 2));
-    },
-  );
-
-  registerToolSafe(
-    server,
-    "find_cycles",
-    {
-      title: "Find Cycles",
-      description:
-        "Return strongly-connected components (cycles) from import or call graph. " +
-        "Cycles length >= 2; single-node 'cycles' excluded. Read from pre-computed " +
-        "table — sub-millisecond per call. scope=method: members are symbol ids and " +
-        "memberLocations lists {symbolId, relativePath} per member in the same order — " +
-        "namesakes in different files are distinct members; an empty relativePath means " +
-        "the cycle was not recomputed since the index upgrade.",
-      inputSchema: FindCyclesInputShape,
-      annotations: { readOnlyHint: true, idempotentHint: true },
-    },
-    async ({ project, collection, path, scope, pathPattern }) => {
-      const response = await app.findCycles({ project, collection, path, scope, pathPattern });
-      return formatMcpText(JSON.stringify(response, null, 2));
-    },
-  );
-
-  registerToolSafe(
-    server,
-    "get_architecture_report",
-    {
-      title: "Get Architecture Report",
-      description:
-        "Architecture diagnostics: is code laid out correctly (NOT is it risky to touch — use risk-assessment). " +
-        "Typed violations with per-line evidence, per detector; scripts/spikes/benchmarks/examples/fixtures excluded. " +
-        "stableDependencies (Stable Dependencies Principle): stable COMPONENT depending on less stable one — " +
-        "component = module with measured facade, else directory; evidence = instabilities, Ca/Ce, delta, carrying " +
-        "file edges; dependency on nested component not judged; rootCauses by unstable target component, " +
-        "cycleWithDependents = target depends on own dependents. leakingAbstraction: " +
-        "import past a module facade (index.ts/__init__.py/mod.rs) its importers adopted (>=3 importers, " +
-        "adoption >0.5 and >= adaptive Otsu cut; summary gives threshold, method, separability); kind " +
-        "bypass = facade re-exports what import takes (by imported names when indexed, else target file), " +
-        "internal-reach = it does not (nonExportedNames), conventionPrivacy = Python _name " +
-        "used from other package or Ruby send(:private) from outside its class; rootCauses per module. " +
-        "silentCoupling: file pair co-changing strongly in git history with no import/re-export/resolved call " +
-        "between them (support, P(B|A), P(A|B), lift, strength = Wilson lower bound, sample commits, " +
-        "structuralVisibility); strong = >0.5 and >= adaptive Otsu cut; rootCauses = file with >=2 silent " +
-        "partners; summary.silentCoupling.built false = no co-change build, not clean. mainSequence " +
-        "(Stable Abstractions Principle): component far from A+I=1 — pain = stable+concrete, uselessness = " +
-        "unstable+abstract; A from walker type census, D > max(0.5, Otsu cut); components whose language " +
-        "rarely declares abstractions excluded (unobservableAbstractness); census needs codegraph recompute; pain " +
-        "also needs volatility (mean git.file.commitCount per file > max(median file, log-scale Otsu cut)), calm ones " +
-        "counted as stableConcreteCalm. Summary " +
-        "counts exclusions with named reasons. Diagnosis, not prescription.",
-      inputSchema: GetArchitectureReportInputShape,
-      annotations: { readOnlyHint: true, idempotentHint: true },
-    },
-    async ({ project, collection, path, pathPattern, limit }) => {
-      const response = await app.getArchitectureReport({ project, collection, path, pathPattern, limit });
-      return formatMcpText(JSON.stringify(response, null, 2));
-    },
-  );
-
-  registerToolSafe(
-    server,
-    "get_ontology_report",
-    {
-      title: "Get Ontology Report",
-      description:
-        "Project-wide naming ontology audit from the codegraph. synonyms: one type, many names; " +
-        "homonyms: one name, many types; outliers: names off their type's dominant shape; " +
-        "collisions: names equal to other symbols. Ranked, with counts and an example each.",
-      inputSchema: GetOntologyReportInputShape,
-      annotations: { readOnlyHint: true, idempotentHint: true },
-    },
-    async ({ project, collection, path, pathPattern, language, sections, limit }) => {
-      const response = await app.getOntologyReport({
-        project,
-        collection,
-        path,
-        pathPattern,
-        language,
-        sections,
-        limit,
-      });
-      return formatMcpText(JSON.stringify(response, null, 2));
-    },
-  );
-
-  registerToolSafe(
-    server,
-    "trace_path",
-    {
-      title: "Trace Path",
-      description:
-        "Trace all simple call paths from one symbol to another, in execution order. " +
-        "Lean path enumeration by default. Pass `rerank` danger preset to annotate each step " +
-        "with git/churn overlay and sort paths most-dangerous first. Steps carry declared visibility " +
-        "when known (absent = unknown). Backed by codegraph DuckDB. " +
-        "from/to: host-class id with no node of its own → traced via the member's first definer up " +
-        "hierarchy in MRO order; resolvedEndpoints names the id traced.",
-      inputSchema: buildTracePathInputShape(schemaBuilder),
-      annotations: { readOnlyHint: true, idempotentHint: true },
-    },
-    async ({ project, collection, path, from, to, fromPath, toPath, rerank, maxDepth, maxPaths }) => {
-      // `rerank` is a curated preset enum (z.ZodTypeAny erases to unknown after
-      // .optional()); narrow to the string preset name the DTO expects.
-      const preset = rerank as string | undefined;
-      const response = await app.tracePath({
-        project,
-        collection,
-        path,
-        from,
-        to,
-        fromPath,
-        toPath,
-        rerank: preset,
-        maxDepth,
-        maxPaths,
-      });
-      return formatMcpText(JSON.stringify(response, null, 2));
-    },
-  );
-
-  registerToolSafe(
-    server,
-    "get_naming_lexicon",
-    {
-      title: "Get Naming Lexicon",
-      description: NAMING_LEXICON_DESCRIPTION,
-      inputSchema: buildNamingLexiconInputSchema(),
-      annotations: { readOnlyHint: true, idempotentHint: true },
-    },
-    async ({ project, collection, path, pathPattern, language, types, anchors, concept, names, changes, files }) => {
-      const response = await app.getNamingLexicon({
-        project,
-        collection,
-        path,
-        pathPattern,
-        language,
-        types,
-        anchors,
-        concept,
-        names,
-        changes,
-        files,
-      });
-      return formatMcpText(JSON.stringify(response, null, 2));
-    },
-  );
+  const schemas = createCodegraphSchemas(schemaBuilder);
+  for (const tool of CODEGRAPH_TOOLS) {
+    registerToolSafe(
+      server,
+      tool.name,
+      {
+        title: tool.title,
+        description: tool.description,
+        inputSchema: schemas[tool.schemaKey],
+        annotations: { readOnlyHint: true, idempotentHint: true },
+      },
+      async (request: unknown) => tool.invoke(app, request),
+    );
+  }
 }

@@ -175,10 +175,23 @@ export interface IdentifierEvidenceExclusion {
 }
 
 /**
+ * Restricts an identifier read to rows whose file language
+ * (`cg_symbols_files.language`) is one of `languages` (bd tea-rags-mcp-0qaht):
+ * a draft's evidence stays within its language namespace, so Ruby locals never
+ * vote on a TypeScript field. Absent = every language; empty = no rows (as
+ * `readTypeNameRows` reads it). A row whose file language is unknown (no files
+ * row) is kept: nothing places it in another language, and the lexicon cases
+ * it as the answer's own.
+ */
+export interface IdentifierLanguageScope {
+  languages?: readonly string[];
+}
+
+/**
  * The scope of an identifier read: the effective types asked for, optionally
  * narrowed to files under any of `pathPrefixes` (a literal rel_path prefix).
  */
-export interface IdentifierTypeScopeQuery extends IdentifierEvidenceExclusion {
+export interface IdentifierTypeScopeQuery extends IdentifierEvidenceExclusion, IdentifierLanguageScope {
   types: readonly string[];
   pathPrefixes?: readonly string[];
 }
@@ -231,7 +244,8 @@ export interface IdentifierLanguageGroupedRow {
  * without `receiver` matches the member under ANY receiver, receiverless
  * included.
  */
-export interface IdentifierCalleeScopeQuery extends IdentifierLanguageGroupingQuery, IdentifierEvidenceExclusion {
+export interface IdentifierCalleeScopeQuery
+  extends IdentifierLanguageGroupingQuery, IdentifierEvidenceExclusion, IdentifierLanguageScope {
   callees: readonly IdentifierBoundCallee[];
   pathPrefixes?: readonly string[];
   /**
@@ -295,7 +309,7 @@ export interface IdentifierNameTypeRow {
 }
 
 /** A read over every identifier row, optionally narrowed to files under any of `pathPrefixes`. */
-export interface IdentifierScopeQuery extends IdentifierEvidenceExclusion {
+export interface IdentifierScopeQuery extends IdentifierEvidenceExclusion, IdentifierLanguageScope {
   pathPrefixes?: readonly string[];
 }
 
@@ -358,6 +372,74 @@ export interface IdentifierShapeSampleRow extends IdentifierLanguageGroupedRow {
   boundMember: string | null;
   boundReceiver: string | null;
   n: number;
+}
+
+// ── Method-name reads over cg_symbols (naming coverage for untyped methods) ──
+
+/**
+ * A read over declared method / function names (`cg_symbols`, symbol_kind
+ * `method` | `function`), production files only. Constructors
+ * (`initialize`, `constructor`, `__init__`) are never read.
+ */
+export interface MethodNameScopeQuery extends IdentifierScopeQuery, IdentifierLanguageGroupingQuery {
+  nonProductionPaths: TypeNameQuery["nonProductionPaths"];
+}
+
+/**
+ * Head words of multi-word method names — the leading lowercase run before `_`
+ * or a capital (`update_user`, `updateUser` → `update`) — that open at least
+ * `minTails` distinct noun tails (tail normalized across casings, trailing
+ * `!` / `?` dropped). The candidates a language namespace's verb lexicon is
+ * derived from (spec §D4a).
+ */
+export interface MethodHeadWordQuery extends MethodNameScopeQuery {
+  minTails: number;
+}
+
+/** Noun tails more than one of `heads` opens (`load_user` and `fetch_user` contest `user`). Empty `heads` reads nothing. */
+export interface MethodTailVerbQuery extends MethodNameScopeQuery {
+  heads: readonly string[];
+}
+
+/** Names matching any of `patterns` (RE2, anchored by the caller). Empty `patterns` reads nothing. */
+export interface MethodNamePatternQuery extends MethodNameScopeQuery {
+  patterns: readonly string[];
+}
+
+/**
+ * One head word of {@link MethodHeadWordQuery}: `headHolders` = distinct method
+ * symbols whose name it opens, `headTails` = distinct noun tails after it,
+ * `lastHolders` = distinct method symbols of two or more words whose LAST word
+ * it is (`load_user`, `loadUser` → `user`), `valueCompounds` = distinct
+ * compound names it opens (trailing `!` / `?` / `=` dropped) that also name a
+ * value: a non-`return` `cg_identifiers` row of the same evidence scope (and
+ * file language, when grouped) whose name, a leading `@` / `@@` dropped, equals
+ * the compound (`media_attachment` beside `@media_attachment`).
+ */
+export interface MethodHeadWordRow extends IdentifierLanguageGroupedRow {
+  head: string;
+  headHolders: number;
+  headTails: number;
+  lastHolders: number;
+  valueCompounds: number;
+}
+
+/**
+ * One (tail, head) pair of {@link MethodTailVerbQuery}: `tail` is the
+ * normalized noun tail (lowercase, no `_`), `holders` = distinct method
+ * symbols, `name` = the pair's most-held spelling (ties by name).
+ */
+export interface MethodTailVerbRow extends IdentifierLanguageGroupedRow {
+  tail: string;
+  head: string;
+  holders: number;
+  name: string;
+}
+
+/** One method name matched by {@link MethodNamePatternQuery}; `holders` = distinct method symbols. */
+export interface MethodNameRow extends IdentifierLanguageGroupedRow {
+  shortName: string;
+  holders: number;
 }
 
 // ── Ontology audit over cg_identifiers (bd tea-rags-mcp-4p3sb.20) ──
@@ -1086,11 +1168,44 @@ export interface GraphDbClient {
   /** The typed `param` and `return` rows of the given owner symbols. */
   anchorIdentifierTypes: (symbolIds: readonly SymbolId[]) => Promise<AnchorIdentifierTypeRow[]>;
 
-  /** Homonymy: per name, which effective types it is bound to and how often (`null` = untyped); `excludePaths` files unread. */
-  identifierNameTypes: (names: readonly string[], excludePaths?: readonly string[]) => Promise<IdentifierNameTypeRow[]>;
+  /**
+   * Homonymy: per name, which effective types it is bound to and how often (`null` = untyped);
+   * `excludePaths` files unread, `languages` scoped as {@link IdentifierLanguageScope}.
+   */
+  identifierNameTypes: (
+    names: readonly string[],
+    excludePaths?: readonly string[],
+    languages?: readonly string[],
+  ) => Promise<IdentifierNameTypeRow[]>;
 
-  /** Collision: the given names that are already a `cg_symbols.short_name` outside the `excludePaths` files. */
-  existingSymbolShortNames: (names: readonly string[], excludePaths?: readonly string[]) => Promise<string[]>;
+  /**
+   * Collision: the given names that are already a `cg_symbols.short_name` outside the `excludePaths`
+   * files, in files of `languages` ({@link IdentifierLanguageScope}: absent = every language).
+   */
+  existingSymbolShortNames: (
+    names: readonly string[],
+    excludePaths?: readonly string[],
+    languages?: readonly string[],
+  ) => Promise<string[]>;
+
+  /**
+   * Head words of production method / function names opening at least
+   * `q.minTails` noun tails, with how often each opens and ends a name — one
+   * row per head (per head and file language under `groupByLanguage`, where
+   * `minTails` applies per language), largest first. Aggregated in SQL — the
+   * method table never reaches the caller.
+   */
+  readMethodHeadWords: (q: MethodHeadWordQuery) => Promise<MethodHeadWordRow[]>;
+
+  /**
+   * Holders per (noun tail, head of `q.heads`) for the tails two or more of
+   * those heads open across the read — contested tails only, so the answer is
+   * bounded by the conflicts, not by the method table.
+   */
+  readMethodTailVerbs: (q: MethodTailVerbQuery) => Promise<MethodTailVerbRow[]>;
+
+  /** Production method / function names matching any of `q.patterns`, with their holders, largest first. */
+  readMethodNamesMatching: (q: MethodNamePatternQuery) => Promise<MethodNameRow[]>;
 
   /** Row count behind {@link aggregateIdentifiersByType} for the same scope — drives scope widening. */
   countIdentifiers: (q: IdentifierTypeScopeQuery) => Promise<number>;

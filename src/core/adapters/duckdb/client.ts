@@ -71,6 +71,12 @@ import type {
   IdentifierTypeAggregateRow,
   IdentifierTypeScopeQuery,
   InheritanceEdge,
+  MethodHeadWordQuery,
+  MethodHeadWordRow,
+  MethodNamePatternQuery,
+  MethodNameRow,
+  MethodTailVerbQuery,
+  MethodTailVerbRow,
   NonPublicMemberEdge,
   OntologyReportQuery,
   OntologyReportSectionRows,
@@ -357,12 +363,29 @@ export class DuckDbGraphClient implements GraphDbClient {
   async identifierNameTypes(
     names: readonly string[],
     excludePaths?: readonly string[],
+    languages?: readonly string[],
   ): Promise<IdentifierNameTypeRow[]> {
-    return this.identifiers.identifierNameTypes(names, excludePaths);
+    return this.identifiers.identifierNameTypes(names, excludePaths, languages);
   }
 
-  async existingSymbolShortNames(names: readonly string[], excludePaths?: readonly string[]): Promise<string[]> {
-    return this.identifiers.existingSymbolShortNames(names, excludePaths);
+  async existingSymbolShortNames(
+    names: readonly string[],
+    excludePaths?: readonly string[],
+    languages?: readonly string[],
+  ): Promise<string[]> {
+    return this.identifiers.existingSymbolShortNames(names, excludePaths, languages);
+  }
+
+  async readMethodHeadWords(q: MethodHeadWordQuery): Promise<MethodHeadWordRow[]> {
+    return this.identifiers.readMethodHeadWords(q);
+  }
+
+  async readMethodTailVerbs(q: MethodTailVerbQuery): Promise<MethodTailVerbRow[]> {
+    return this.identifiers.readMethodTailVerbs(q);
+  }
+
+  async readMethodNamesMatching(q: MethodNamePatternQuery): Promise<MethodNameRow[]> {
+    return this.identifiers.readMethodNamesMatching(q);
   }
 
   async countIdentifiers(q: IdentifierTypeScopeQuery): Promise<number> {

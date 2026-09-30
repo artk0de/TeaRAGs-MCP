@@ -29,6 +29,12 @@ export {
   resolveRateMiss,
 } from "../../contracts/resolve-rate.js";
 export type { ResolveRateCell, ResolveRateCounts } from "../../contracts/resolve-rate.js";
+
+// ── Codegraph payload vocabulary ─────────────────────────────────────
+// The provider key the codegraph tool surface gates its registration on.
+// Re-exported because mcp/ may not import contracts/ directly (dependency-
+// direction guard), and the literal must exist in exactly one place.
+export { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../contracts/codegraph-payload.js";
 export type {
   // Explore DTOs
   CollectionRef,
@@ -68,6 +74,12 @@ export type {
   ArchitectureViolation,
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
+  // Co-change partners DTOs (find_co_changed)
+  CoChangeBuildProvenance,
+  CoChangedFileResult,
+  CoChangedPartner,
+  FindCoChangedRequest,
+  FindCoChangedResult,
   // Naming lexicon DTOs
   NamingLexiconRequest,
   NamingLexiconResult,

@@ -136,14 +136,14 @@ describe("judgeDraftName — with nothing to compare, the name's own use elsewhe
   it("a draft bound to a call with no rows, never used elsewhere, stays novel either way", () => {
     const bound = (member: string) =>
       judgeDraftName({ name: "thing", kind: "local", casing: "snake", callee: { member }, nameRows: 0 });
-    expect(bound("call")).toEqual({ verdict: "NEW_TERM", topTerms: [] });
-    expect(bound("fetch_payload")).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+    expect(bound("call")).toEqual({ verdict: "NO_CONVENTION", prefer: { analogous: [] } });
+    expect(bound("fetch_payload")).toEqual({ verdict: "NO_CONVENTION", prefer: { analogous: [] } });
   });
 
   it("a typed draft's name used for OTHER types is no evidence for this one", () => {
     expect(
       judgeDraftName({ name: "envelope", typeName: "VendorEnvelope", casing: "snake", byTypeRows: [], nameRows: 40 }),
-    ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+    ).toEqual({ verdict: "NO_CONVENTION", prefer: { exact: "vendor_envelope", analogous: [] } });
   });
 });
 
@@ -170,7 +170,7 @@ describe("judgeDraftName — a value MISFIT needs a convention, not one row", ()
   });
 
   // bd tea-rags-mcp-bjfa0: still no rename, but one owner's name is context, not a term to offer — topTerms [].
-  it("any other draft against one row is not demanded a rename: NEW_TERM with the row as context", () => {
+  it("any other draft against one row is not demanded a rename: NO_CONVENTION with the row as context", () => {
     expect(
       judgeDraftName({
         name: "tax_automation_document",
@@ -181,7 +181,7 @@ describe("judgeDraftName — a value MISFIT needs a convention, not one row", ()
           { member: "find_tax_automation_document!", kind: "local", name: "row", n: 1, exampleOwner: "A#m" },
         ],
       }),
-    ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+    ).toEqual({ verdict: "NO_CONVENTION", prefer: { analogous: ["row"] } });
   });
 
   it("one return row is too thin to name the type's noun", () => {

@@ -86,6 +86,15 @@ export type {
 } from "./graph.js";
 
 export type {
+  // Co-change partners (find_co_changed)
+  CoChangeBuildProvenance,
+  CoChangedFileResult,
+  CoChangedPartner,
+  FindCoChangedRequest,
+  FindCoChangedResult,
+} from "./cochange.js";
+
+export type {
   // Architecture diagnostics (get_architecture_report)
   ArchitectureDirectoryRelation,
   ArchitectureFileEdge,

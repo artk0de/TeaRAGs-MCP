@@ -54,16 +54,16 @@ Probe ambiguous → ask user which mode. One question, genuine ambiguity only.
 
 **Step matrix** — mode selects steps + signal sources:
 
-| Step        | CREATE                      | EXTEND                         | MODIFY                     |
-| ----------- | --------------------------- | ------------------------------ | -------------------------- |
-| 1 STRATEGY  | area labels                 | container labels               | symbol's own labels        |
-| 2 TEMPLATE  | run                         | run                            | skip                       |
-| 3 PLACEMENT | run                         | fixed = container; guard fires | skip                       |
-| 4 REUSE     | run                         | run                            | run — for introduced logic |
-| 5 STYLE     | blame-owner + lexicon       | container file + lexicon       | symbol itself + lexicon    |
-| 6 GENERATE  | strategy + style + manifest | same                           | minimal diff per strategy  |
-| 7 VERIFY    | symbol risks + N-th-way     | same                           | + tests-at-risk            |
-| 8 IMPACT    | blastRadius of new code     | container fanIn                | `get_callers` — MANDATORY  |
+| Step        | CREATE                      | EXTEND                         | MODIFY                                      |
+| ----------- | --------------------------- | ------------------------------ | ------------------------------------------- |
+| 1 STRATEGY  | area labels                 | container labels               | symbol's own labels                         |
+| 2 TEMPLATE  | run                         | run                            | skip                                        |
+| 3 PLACEMENT | run                         | fixed = container; guard fires | skip                                        |
+| 4 REUSE     | run                         | run                            | run — for introduced logic                  |
+| 5 STYLE     | blame-owner + lexicon       | container file + lexicon       | symbol itself + lexicon                     |
+| 6 GENERATE  | strategy + style + manifest | same                           | find_co_changed + minimal diff per strategy |
+| 7 VERIFY    | symbol risks + N-th-way     | same                           | + tests-at-risk                             |
+| 8 IMPACT    | blastRadius of new code     | container fanIn                | `get_callers` — MANDATORY                   |
 
 - **Hotfix** (user gives exact location) = MODIFY, additionally skip STRATEGY
   and the blame part of STYLE. REUSE still applies to introduced logic; the
@@ -223,6 +223,10 @@ while writing, so misfits are prevented, not detected:
 
 - `language` = target language (required with `concept`); `pathPattern` = target
   area (the tool widens it under 5 rows and reports `scope`).
+- Evidence = ONE language namespace per call (languages sharing a
+  `typeNamespace`, e.g. TS + JS); other languages' rows never count. So always
+  pass `language` with `names[]`; polyglot drafts → one call per language.
+  `changes`/`files` split by file language themselves.
 - `concept` = a DESCRIPTION of what the new symbol denotes ("pulls signed
   envelopes from the e-signature vendor into tax documents") — never the draft
   name: a draft pulls in its own lexical neighbours.
@@ -232,6 +236,11 @@ while writing, so misfits are prevented, not detected:
   constant →
   `{ name, kind: "type", path: <its file>, extends?: <planned ancestor> }`: the
   ancestor's family and the directory set the expected role suffix.
+- A `return` draft with no known `type` is judged too — never invent a type to
+  force a verdict. A verb the project uses → CONFORMS; a rare one → NEW_TERM
+  (`topTerms`); never a MISFIT toward another verb of the same noun (`find_user`
+  and `build_user` are different operations — pick the verb for what the method
+  does). Verbless → CONFORMS if declared elsewhere, else NO_CONVENTION.
 
 Reading the answer — the dominant shape per kind IS the convention:
 
@@ -259,8 +268,10 @@ Reading the answer — the dominant shape per kind IS the convention:
   type belongs to `role.examples`' family, else keep the name, reconsider the
   location). `NEW_TERM` → adopt a `topTerms` term or an `alternatives` word if
   it denotes the same concept; otherwise the concept is new — keep the term,
-  justify it in Step 6. `COLLISION` → the short name is already a type elsewhere
-  (`existing`); pick a distinct name.
+  justify it in Step 6. `NO_CONVENTION` (value) → no demand, not free: take
+  `prefer.exact` (type spelled) or a name like `prefer.analogous` (family's);
+  justify only a name unlike both. `COLLISION` → the short name is already a
+  type elsewhere (`existing`); pick a distinct name.
 - `driftWarning` or empty `byType` → no history for the type; take names from
   the template's code and say so.
 
@@ -278,6 +289,12 @@ Output: the vocabulary for Step 6.
 
 Apply strategy + style + reuse manifest — call manifest helpers, NEVER
 reimplement them. MODIFY: minimal diff per strategy.
+
+MODIFY, before the first edit: `find_co_changed(project, files: [target])` on
+the target file (registered when codegraph is on). Silent partners —
+`structurallyLinked: false` — with `strength >= 0.5`, top 5: check whether the
+change belongs in them too. Context, not a requirement — never expand the diff
+on co-change alone.
 
 Names come from the Step 5 vocabulary, built by the dominant shape. A word
 outside it is `NEW_TERM` and gets one line in the output:

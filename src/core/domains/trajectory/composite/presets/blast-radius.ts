@@ -1,3 +1,4 @@
+import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../../../contracts/index.js";
 import type { ScoringWeights } from "../../../../contracts/types/provider.js";
 import type { CompositeRerankPreset, OverlayMask } from "../../../../contracts/types/reranker.js";
 
@@ -49,7 +50,7 @@ export class BlastRadiusPreset implements CompositeRerankPreset {
   readonly description =
     "Rank by blast radius — transitive reach + churn dominant, structural overlays expose hub-ness";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "trace_path"];
-  readonly requires = ["codegraph.symbols", "git"] as const;
+  readonly requires = [CODEGRAPH_SYMBOLS_PROVIDER_KEY, "git"] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.2,
     transitiveImpact: 0.2,

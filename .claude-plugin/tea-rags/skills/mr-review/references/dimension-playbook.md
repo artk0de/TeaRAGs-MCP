@@ -194,6 +194,12 @@ MISFIT with `role.evidence: "directory"` is location-based: comment only when
 the type IS one of `role.examples`' family; a non-member (a copier among
 artifacts) = placement question → drop, or note the location, never a rename.
 
+Method-naming audit over the whole diff (not just added declarations) →
+`get_ontology_report sections=["verbs"]`: per noun tail, the project's verbs
+with holders — descriptive, contested tails only, complements the per-name
+`changes` review above. A tail's verbs are distinct operations, not synonyms:
+never ask to rename one verb to another on this evidence.
+
 fix: the suggested name citing the holder file (MISFIT); a distinct name, or a
 reason the homonym is intended, citing the existing file (COLLISION); the
 alternative term, when it denotes the same concept (NEW_TERM).

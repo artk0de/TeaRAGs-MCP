@@ -457,11 +457,14 @@ describe("seeded support versions", () => {
       // ONE walker bump, so the branch-local 7..66 collapse into 7.
       // Every other language is still at its seed.
       // Every walker collapses to (release v1.44.2) + 1: one bump per release cycle.
+      // ruby 6: bd tea-rags-mcp-0qaht — class variables, `||=` memoization and
+      // accessor macros declare naming-lexicon rows, so an index built by walker
+      // 5 (shipped in v1.45.1) holds none of them.
       const WALKER_BUMPED = new Map([
         ["typescript", 12],
         ["javascript", 4],
         ["python", 9],
-        ["ruby", 5],
+        ["ruby", 6],
         ["java", 3],
         ["rust", 3],
         ["go", 5],

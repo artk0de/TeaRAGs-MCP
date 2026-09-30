@@ -41,8 +41,7 @@ import type {
   LocalBinding,
   TypeDeclarationFact,
 } from "../../../../contracts/types/codegraph.js";
-import { assignCallsToInnermostChunks } from "../../kernel/index.js";
-import { symbolIdNames } from "../../kernel/symbol-id.js";
+import { assignCallsToInnermostChunks, symbolIdNames } from "../../kernel/index.js";
 import { javaNameOf } from "./name-of.js";
 import { symbolKindOf } from "./symbol-kind.js";
 import { isJavaTypeBody, javaConformedTypeNames, javaConstantNames } from "./type-declarations.js";

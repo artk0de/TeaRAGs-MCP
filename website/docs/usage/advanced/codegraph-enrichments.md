@@ -141,6 +141,7 @@ the pre-computed DuckDB graph directly — no embedding):
 | `get_architecture_report` | Architecture violations with per-line evidence. Stable Dependencies Principle judged on components (modules with a measured facade, else directories) — a stable component depending on a less stable one, grouped into root causes by unstable target, with the file edges that carry it; plus leaking abstractions, silent coupling and main-sequence distance (zone of pain / uselessness, abstractness from the walker type census). Scripts, spikes, benchmarks, examples and fixtures are left out. Optional `pathPattern` scopes the judged edges by source file |
 | `get_naming_lexicon` | The project's naming vocabulary: names per declaration kind for given `types` / `anchors`, a `CONFORMS` / `MISFIT` / `NEW_TERM` / `COLLISION` verdict per draft in `names` (values, and types or constants with `kind: "type"`), project terms for a `concept` (with `language`), and a review of the names a diff adds (`changes`) |
 | `get_ontology_report` | Project-wide naming ontology audit over declared identifiers: `synonyms` (one type, many names), `homonyms` (one name, many types), `outliers` (a name off its type's dominant naming shape) and `collisions` (a name equal to another symbol). Ranked, with counts and one example location each |
+| `find_co_changed` | Co-change partners of the given files from git history — support, both directed confidences, Wilson lower-bound strength, lift, up to three sample commits, and `structurallyLinked` (an import / method edge / re-export barrel chain joins the pair; `false` = silent coupling). Ranked by strength; partners deleted from the working tree are dropped; `built: false` means no co-change build yet, not "no partners" |
 
 **Call-graph resolution scope.** `get_callers` / `get_callees` walk the run-time
 hierarchy (Class Hierarchy Analysis), which reaches **structural**
@@ -233,14 +234,21 @@ line. A finding carries its verdict's fields: `suggestion` and `holder` (or
 `alternatives` on a `NEW_TERM`. A name judged generic is listed even when it
 conforms, with `genericName`. `checked = conforming + novel + findings`.
 
-`checked` counts only what was judged. A method's name is judged through its
-return type, so a new method whose return type is unknown — most of them in
-Ruby — never becomes a draft and is in neither `checked` nor `conforming`.
-`notJudgedBy` says what the review skipped, per kind and reason:
-`{ "method": { "unknownReturnType": 12 }, "file": { "nonProduction": 3 } }`.
-File reasons are `nonProduction`, `noCodegraphLanguage` and `unreadable`, and
-they add up to `notJudged`. `notJudgedNames` lists the first 50 of them with
-path, line and name, so a reviewer knows what still needs reading by hand. An
+`checked` counts only what was judged. A method whose return type is unknown —
+most of them in Ruby — still becomes a draft: it is judged against the
+project's method vocabulary instead of a type, so it counts in `checked` like
+any other name. A verb the project uses conforms and a rare one is a
+`NEW_TERM`; a method is never asked to swap its verb for another verb of the
+same noun, because `find_user` and `build_user` are different operations. A
+method a macro composes — `has_one :account` adds `build_account`,
+`create_account` and `account=` — is not a draft: its name is not written on
+its declaration line, so the review neither judges nor counts it. Only files go
+unjudged. `notJudgedBy` says what the review
+skipped, per reason:
+`{ "file": { "nonProduction": 3, "noCodegraphLanguage": 1 } }`.
+Reasons are `nonProduction`, `noCodegraphLanguage` and `unreadable`, and they
+add up to `notJudged`. `notJudgedNames` lists the first 50 of them with path,
+line and name, so a reviewer knows what still needs reading by hand. An
 excerpt from a live run on this repository:
 
 ```json

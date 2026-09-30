@@ -9,6 +9,9 @@ import type {
   GraphFileNode,
   IdentifierBoundCallee,
   IdentifierReplaceEntry,
+  MethodHeadWordQuery,
+  MethodNamePatternQuery,
+  MethodTailVerbQuery,
   OntologyReportQuery,
   Pass1AggregateReadScope,
   RelPath,
@@ -273,6 +276,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
       types: p.types as string[],
       pathPrefixes: p.pathPrefixes as string[] | undefined,
       excludePaths: p.excludePaths as string[] | undefined,
+      languages: p.languages as string[] | undefined,
       groupByLanguage: p.groupByLanguage as boolean | undefined,
       groupByMultiplicity: p.groupByMultiplicity as boolean | undefined,
       countSameTypeSiblings: p.countSameTypeSiblings as boolean | undefined,
@@ -284,22 +288,39 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
       callees: p.callees as IdentifierBoundCallee[],
       pathPrefixes: p.pathPrefixes as string[] | undefined,
       excludePaths: p.excludePaths as string[] | undefined,
+      languages: p.languages as string[] | undefined,
       groupByLanguage: p.groupByLanguage as boolean | undefined,
       countHolders: p.countHolders as boolean | undefined,
     }),
   ),
   anchorIdentifierTypes: read(async (graphDb, p) => graphDb.anchorIdentifierTypes(p.symbolIds as SymbolId[])),
+  // The language scope travels only when set: an unscoped call keeps its two-argument shape.
   identifierNameTypes: read(async (graphDb, p) =>
-    graphDb.identifierNameTypes(p.names as string[], p.excludePaths as string[] | undefined),
+    graphDb.identifierNameTypes(
+      p.names as string[],
+      p.excludePaths as string[] | undefined,
+      ...(p.languages === undefined ? [] : [p.languages as string[]]),
+    ),
   ),
   existingSymbolShortNames: read(async (graphDb, p) =>
-    graphDb.existingSymbolShortNames(p.names as string[], p.excludePaths as string[] | undefined),
+    graphDb.existingSymbolShortNames(
+      p.names as string[],
+      p.excludePaths as string[] | undefined,
+      ...(p.languages === undefined ? [] : [p.languages as string[]]),
+    ),
+  ),
+  // Method-name reads over cg_symbols: the query carries the non-production masks, so it travels whole.
+  readMethodHeadWords: read(async (graphDb, p) => graphDb.readMethodHeadWords(p.query as MethodHeadWordQuery)),
+  readMethodTailVerbs: read(async (graphDb, p) => graphDb.readMethodTailVerbs(p.query as MethodTailVerbQuery)),
+  readMethodNamesMatching: read(async (graphDb, p) =>
+    graphDb.readMethodNamesMatching(p.query as MethodNamePatternQuery),
   ),
   countIdentifiers: read(async (graphDb, p) =>
     graphDb.countIdentifiers({
       types: p.types as string[],
       pathPrefixes: p.pathPrefixes as string[] | undefined,
       excludePaths: p.excludePaths as string[] | undefined,
+      languages: p.languages as string[] | undefined,
     }),
   ),
   // Naming-lexicon scope reads (bd tea-rags-mcp-4p3sb.11).
@@ -308,6 +329,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
       names: p.names as string[],
       pathPrefixes: p.pathPrefixes as string[] | undefined,
       excludePaths: p.excludePaths as string[] | undefined,
+      languages: p.languages as string[] | undefined,
       groupByLanguage: p.groupByLanguage as boolean | undefined,
       countHolders: p.countHolders as boolean | undefined,
     }),
@@ -317,6 +339,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
       pathPrefixes: p.pathPrefixes as string[] | undefined,
       pathSuffixes: p.pathSuffixes as string[] | undefined,
       excludePaths: p.excludePaths as string[] | undefined,
+      languages: p.languages as string[] | undefined,
     }),
   ),
   sampleIdentifierShapes: read(async (graphDb, p) =>
@@ -324,6 +347,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
       limit: p.limit as number,
       pathPrefixes: p.pathPrefixes as string[] | undefined,
       excludePaths: p.excludePaths as string[] | undefined,
+      languages: p.languages as string[] | undefined,
       groupByLanguage: p.groupByLanguage as boolean | undefined,
     }),
   ),

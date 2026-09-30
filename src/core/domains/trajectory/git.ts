@@ -12,12 +12,10 @@
 import type { WorkerEnrichmentDescriptor } from "../../contracts/types/provider.js";
 import type { Trajectory } from "../../contracts/types/trajectory.js";
 import { gitFilters } from "./git/filters.js";
+import { GIT_PRESETS, gitDerivedSignals, gitStatsAccumulators } from "./git/index.js";
 import type { SquashOptions } from "./git/infra/metrics.js";
 import { gitPayloadSignalDescriptors } from "./git/payload-signals.js";
 import { GitEnrichmentProvider, type GitProviderConfig } from "./git/provider.js";
-import { gitDerivedSignals } from "./git/rerank/derived-signals/index.js";
-import { GIT_PRESETS } from "./git/rerank/presets/index.js";
-import { gitStatsAccumulators } from "./git/stats/index.js";
 
 export class GitTrajectory implements Trajectory {
   readonly key = "git";

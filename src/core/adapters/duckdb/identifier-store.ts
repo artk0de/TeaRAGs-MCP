@@ -40,10 +40,18 @@ import type {
   IdentifierTypeMultiplicity,
   IdentifierTypeScopeQuery,
   IdentifierTypeSource,
+  MethodHeadWordQuery,
+  MethodHeadWordRow,
+  MethodNamePatternQuery,
+  MethodNameRow,
+  MethodNameScopeQuery,
+  MethodTailVerbQuery,
+  MethodTailVerbRow,
   RelPath,
   SymbolId,
 } from "../../contracts/types/codegraph.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
+import { compileNonProductionPathPredicate } from "./non-production-path-sql.js";
 import { escapeLikeLiteral, placeholders } from "./sql-binding.js";
 
 /** Column order of every `cg_identifiers` write and of the diff read. */
@@ -76,6 +84,51 @@ const IDENTIFIER_IN_LIST_CHUNK = 200;
  * filter on it, so they see the rows they saw before such rows existed.
  */
 export const DECLARED_IDENTIFIER_SQL = "NOT (kind = 'return' AND type_name IS NULL)";
+
+/** Constructor names across the supported languages — never a method name the lexicon judges. */
+const CONSTRUCTOR_NAMES = ["initialize", "constructor", "__init__"] as const;
+
+/** A method name without its trailing `!` / `?` markers. */
+const METHOD_UNMARKED_SQL = "regexp_replace(short_name, '[!?]+$', '')";
+/** A method name's head word: its leading lowercase run before `_` or a capital; `''` for none. */
+const METHOD_HEAD_SQL = "regexp_extract(short_name, '^([a-z][a-z0-9]*)[_A-Z]', 1)";
+/** The noun tail after {@link METHOD_HEAD_SQL}, normalized across casings: `_user_name!`, `UserName` → `username`. */
+const METHOD_TAIL_SQL = `lower(replace(regexp_replace(${METHOD_UNMARKED_SQL}, '^[a-z][a-z0-9]*', ''), '_', ''))`;
+/** A method name as the compound it spells, trailing `!` / `?` / `=` dropped: `date_published=` → `date_published`. */
+const METHOD_COMPOUND_SQL = "regexp_replace(short_name, '[!?=]+$', '')";
+/** A declared identifier's name without a leading `@` / `@@` sigil: `@@media_attachment` → `media_attachment`. */
+const IDENTIFIER_VALUE_NAME_SQL = "regexp_replace(name, '^@@?', '')";
+/** A method name's last word, lowercased: `load_user`, `loadUser` → `user`. */
+const METHOD_LAST_WORD_SQL = `lower(regexp_extract(${METHOD_UNMARKED_SQL}, '([A-Z]?[a-z0-9]+)$', 1))`;
+
+/**
+ * The `cg_symbols` rows a method-name read sees: `method` / `function`
+ * symbols, no constructor, in production files of the evidence scope.
+ */
+function methodNameScopePredicate(q: MethodNameScopeQuery): SqlPredicate {
+  const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths, q.languages);
+  const nonProduction = compileNonProductionPathPredicate(q.nonProductionPaths);
+  return {
+    sql: `symbol_kind IN ('method', 'function')
+            AND short_name NOT IN (${placeholders(CONSTRUCTOR_NAMES)})
+            AND ${scope.sql} AND NOT ${nonProduction("rel_path")}`,
+    params: [...CONSTRUCTOR_NAMES, ...scope.params],
+  };
+}
+
+/**
+ * The `cg_identifiers` rows a method-name read may meet as names of values:
+ * every declaration but a `return` row, in production files of the SAME
+ * evidence scope {@link methodNameScopePredicate} reads the methods from.
+ */
+function methodValueScopePredicate(q: MethodNameScopeQuery): SqlPredicate {
+  const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths, q.languages);
+  const nonProduction = compileNonProductionPathPredicate(q.nonProductionPaths);
+  return {
+    sql: `kind <> 'return' AND ${scope.sql} AND NOT ${nonProduction("rel_path")}`,
+    params: [...scope.params],
+  };
+}
 
 /** Fixed reservoir seed, so the same table state yields the same shape sample. */
 const SHAPE_SAMPLE_SEED = 42;
@@ -112,15 +165,43 @@ export function excludedPathsPredicate(paths: readonly string[] | undefined): Sq
   return { sql: `rel_path NOT IN (${placeholders(paths)})`, params: [...paths] };
 }
 
-/** An evidence read's file scope: under any of `pathPrefixes` AND outside `excludePaths`. */
+/**
+ * `rel_path` of a file not written in another language than `languages`
+ * (`IdentifierLanguageScope`, bd tea-rags-mcp-0qaht) — the rel_path → language
+ * mapping {@link fileLanguageGrouping} joins, read as a filter: a predicate over
+ * `rel_path`, so it narrows the rows BEFORE the call-return join and before the
+ * shape sample's reservoir, where the grouping's join comes too late. A file
+ * whose language is unknown (no files row, or a null language) stays: nothing
+ * places it outside the scope, and the lexicon already cases such a row as the
+ * answer's own. Absent → `TRUE`; empty → `FALSE`.
+ */
+export function fileLanguagePredicate(languages: readonly string[] | undefined): SqlPredicate {
+  if (languages === undefined) return { sql: "TRUE", params: [] };
+  if (languages.length === 0) return { sql: "FALSE", params: [] };
+  return {
+    sql: `rel_path NOT IN (SELECT rel_path FROM cg_symbols_files
+                            WHERE language IS NOT NULL AND language NOT IN (${placeholders(languages)}))`,
+    params: [...languages],
+  };
+}
+
+/**
+ * An evidence read's file scope: under any of `pathPrefixes`, outside
+ * `excludePaths`, and in a file of `languages` (absent = every language).
+ */
 export function evidenceScopePredicate(
   pathPrefixes: readonly string[] | undefined,
   excludePaths: readonly string[] | undefined,
+  languages?: readonly string[],
 ): SqlPredicate {
   const prefix = pathPrefixPredicate(pathPrefixes);
-  const excluded = excludedPathsPredicate(excludePaths);
-  if (excluded.params.length === 0) return prefix;
-  return { sql: `(${prefix.sql} AND ${excluded.sql})`, params: [...prefix.params, ...excluded.params] };
+  // An unscoped narrowing adds nothing, so a read without one keeps its SQL byte-identical.
+  const narrowing = [excludedPathsPredicate(excludePaths), fileLanguagePredicate(languages)].filter(
+    (p) => p.sql !== "TRUE",
+  );
+  if (narrowing.length === 0) return prefix;
+  const parts = [prefix, ...narrowing];
+  return { sql: `(${parts.map((p) => p.sql).join(" AND ")})`, params: parts.flatMap((p) => p.params) };
 }
 
 /**
@@ -381,7 +462,7 @@ export class DuckDbIdentifierStore {
 
   async aggregateIdentifiersByType(q: IdentifierTypeAggregateQuery): Promise<IdentifierTypeAggregateRow[]> {
     if (q.types.length === 0) return [];
-    const cte = resolvedIdentifiersCte(evidenceScopePredicate(q.pathPrefixes, q.excludePaths));
+    const cte = resolvedIdentifiersCte(evidenceScopePredicate(q.pathPrefixes, q.excludePaths, q.languages));
     const siblings = sameTypeSiblingPieces(q.countSameTypeSiblings, q.types);
     const lang = fileLanguageGrouping(siblings.from, q.groupByLanguage);
     const multiplicity = q.groupByMultiplicity ? ", type_multiplicity" : "";
@@ -424,7 +505,7 @@ export class DuckDbIdentifierStore {
 
   async countIdentifiers(q: IdentifierTypeScopeQuery): Promise<number> {
     if (q.types.length === 0) return 0;
-    const cte = resolvedIdentifiersCte(evidenceScopePredicate(q.pathPrefixes, q.excludePaths));
+    const cte = resolvedIdentifiersCte(evidenceScopePredicate(q.pathPrefixes, q.excludePaths, q.languages));
     const rows = await this.session.queryAll<{ n: number | string }>(
       `${cte.sql}
        SELECT count(*) AS n FROM resolved WHERE type_name IN (${placeholders(q.types)})`,
@@ -435,7 +516,7 @@ export class DuckDbIdentifierStore {
 
   async aggregateIdentifiersByCallee(q: IdentifierCalleeScopeQuery): Promise<IdentifierCalleeAggregateRow[]> {
     if (q.callees.length === 0) return [];
-    const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths);
+    const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths, q.languages);
     const calleeParams: unknown[] = [];
     const calleeSql = q.callees
       .map((callee) => {
@@ -499,13 +580,14 @@ export class DuckDbIdentifierStore {
   async identifierNameTypes(
     names: readonly string[],
     excludePaths?: readonly string[],
+    languages?: readonly string[],
   ): Promise<IdentifierNameTypeRow[]> {
     const out: IdentifierNameTypeRow[] = [];
-    const excluded = excludedPathsPredicate(excludePaths);
+    const scope = evidenceScopePredicate(undefined, excludePaths, languages);
     for (const chunk of chunked([...new Set(names)])) {
       const cte = resolvedIdentifiersCte({
-        sql: `name IN (${placeholders(chunk)}) AND ${excluded.sql}`,
-        params: [...chunk, ...excluded.params],
+        sql: `name IN (${placeholders(chunk)}) AND ${scope.sql}`,
+        params: [...chunk, ...scope.params],
       });
       const rows = await this.session.queryAll<{ name: string; type_name: string | null; n: number | string }>(
         `${cte.sql}
@@ -521,7 +603,7 @@ export class DuckDbIdentifierStore {
 
   async aggregateIdentifiersByName(q: IdentifierNameScopeQuery): Promise<IdentifierNameKindTypeRow[]> {
     const out: IdentifierNameKindTypeRow[] = [];
-    const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths);
+    const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths, q.languages);
     for (const chunk of chunked([...new Set(q.names)])) {
       const cte = resolvedIdentifiersCte({
         sql: `name IN (${placeholders(chunk)}) AND ${scope.sql}`,
@@ -561,7 +643,7 @@ export class DuckDbIdentifierStore {
   }
 
   async identifierLanguageCounts(q: IdentifierLanguageCountQuery): Promise<IdentifierLanguageCountRow[]> {
-    const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths);
+    const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths, q.languages);
     const suffix = pathSuffixPredicate(q.pathSuffixes);
     const rows = await this.session.queryAll<{ language: string | null; n: number | string }>(
       `SELECT f.language, count(*) AS n
@@ -576,7 +658,8 @@ export class DuckDbIdentifierStore {
   }
 
   async sampleIdentifierShapes(q: IdentifierShapeSampleQuery): Promise<IdentifierShapeSampleRow[]> {
-    const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths);
+    // The language scope is in the WHERE the reservoir samples from: a post-filter would thin the sample.
+    const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths, q.languages);
     // The reservoir size is inlined: DuckDB takes no bind parameter there. It is
     // coerced to a positive integer first, so no caller value reaches the SQL text.
     const limit = Math.max(1, Math.floor(Number(q.limit) || 1));
@@ -615,18 +698,179 @@ export class DuckDbIdentifierStore {
     }));
   }
 
-  async existingSymbolShortNames(names: readonly string[], excludePaths?: readonly string[]): Promise<string[]> {
+  /** `languages` scopes by the language of the file declaring the symbol (`cg_symbols.rel_path`). */
+  async existingSymbolShortNames(
+    names: readonly string[],
+    excludePaths?: readonly string[],
+    languages?: readonly string[],
+  ): Promise<string[]> {
     const out: string[] = [];
-    const excluded = excludedPathsPredicate(excludePaths);
+    const scope = evidenceScopePredicate(undefined, excludePaths, languages);
     for (const chunk of chunked([...new Set(names)])) {
       const rows = await this.session.queryAll<{ short_name: string }>(
         `SELECT DISTINCT short_name FROM cg_symbols
-          WHERE short_name IN (${placeholders(chunk)}) AND ${excluded.sql}
+          WHERE short_name IN (${placeholders(chunk)}) AND ${scope.sql}
           ORDER BY short_name`,
-        [...chunk, ...excluded.params],
+        [...chunk, ...scope.params],
       );
       for (const r of rows) out.push(r.short_name);
     }
     return out;
+  }
+
+  /**
+   * Head-word candidates of the verb lexicon (spec §D4a), one statement: the
+   * head is the leading lowercase run before `_` or a capital, its tail the
+   * rest lowercased with `_` and trailing `!` / `?` dropped (`update_user!`,
+   * `updateUser` → `update` + `user`). `lastHolders` is read only for the heads
+   * that clear `minTails`, from names of two or more words. `valueCompounds` is
+   * read for the same heads: the distinct compounds (`short_name` without
+   * trailing `!` / `?` / `=`) that equal a value's name ({@link
+   * methodValueScopePredicate}, leading `@` / `@@` dropped), matched within the
+   * file language when grouping.
+   */
+  async readMethodHeadWords(q: MethodHeadWordQuery): Promise<MethodHeadWordRow[]> {
+    const scope = methodNameScopePredicate(q);
+    const valueScope = methodValueScopePredicate(q);
+    const lang = fileLanguageGrouping("cg_symbols", q.groupByLanguage);
+    const valueLang = fileLanguageGrouping(
+      `(SELECT rel_path, ${IDENTIFIER_VALUE_NAME_SQL} AS value_name FROM cg_identifiers WHERE ${valueScope.sql})`,
+      q.groupByLanguage,
+    );
+    const grouped = q.groupByLanguage === true;
+    const sameLanguage = (left: string, right: string): string =>
+      grouped ? ` AND ${left}.file_language IS NOT DISTINCT FROM ${right}.file_language` : "";
+    const rows = await this.session.queryAll<{
+      head: string;
+      head_holders: number | string | bigint;
+      head_tails: number | string | bigint;
+      last_holders: number | string | bigint;
+      value_compounds: number | string | bigint;
+      file_language?: string | null;
+    }>(
+      `WITH named AS (
+         SELECT symbol_id, short_name${lang.column}
+           FROM ${lang.from}
+          WHERE ${scope.sql}
+       ),
+       headed AS (
+         SELECT symbol_id${lang.column}, ${METHOD_HEAD_SQL} AS head, ${METHOD_TAIL_SQL} AS tail,
+                ${METHOD_COMPOUND_SQL} AS compound
+           FROM named
+       ),
+       heads AS (
+         SELECT head${lang.column}, count(DISTINCT symbol_id) AS head_holders, count(DISTINCT tail) AS head_tails
+           FROM headed
+          WHERE head <> '' AND tail <> ''
+          GROUP BY head${lang.column}
+         HAVING count(DISTINCT tail) >= ?
+       ),
+       lasts AS (
+         SELECT last_word${lang.column}, count(DISTINCT symbol_id) AS last_holders
+           FROM (SELECT symbol_id${lang.column}, ${METHOD_LAST_WORD_SQL} AS last_word
+                   FROM named
+                  WHERE regexp_matches(${METHOD_UNMARKED_SQL}, '[a-z0-9][_A-Z]'))
+          WHERE last_word IN (SELECT head FROM heads)
+          GROUP BY last_word${lang.column}
+       ),
+       valued AS (
+         SELECT DISTINCT value_name${lang.column}
+           FROM ${valueLang.from}
+       ),
+       compounds AS (
+         SELECT d.head${grouped ? ", d.file_language" : ""}, count(DISTINCT d.compound) AS value_compounds
+           FROM headed d
+           JOIN valued v ON v.value_name = d.compound${sameLanguage("v", "d")}
+          WHERE d.head <> '' AND d.tail <> '' AND d.head IN (SELECT head FROM heads)
+          GROUP BY d.head${grouped ? ", d.file_language" : ""}
+       )
+       SELECT h.head, h.head_holders, h.head_tails, coalesce(l.last_holders, 0) AS last_holders,
+              coalesce(c.value_compounds, 0) AS value_compounds${grouped ? ", h.file_language" : ""}
+         FROM heads h
+         LEFT JOIN lasts l
+           ON l.last_word = h.head${sameLanguage("l", "h")}
+         LEFT JOIN compounds c
+           ON c.head = h.head${sameLanguage("c", "h")}
+        ORDER BY h.head_holders DESC, h.head${grouped ? ", h.file_language NULLS LAST" : ""}`,
+      [...scope.params, q.minTails, ...valueScope.params],
+    );
+    return rows.map((r) => ({
+      head: r.head,
+      headHolders: Number(r.head_holders),
+      headTails: Number(r.head_tails),
+      lastHolders: Number(r.last_holders),
+      valueCompounds: Number(r.value_compounds),
+      ...languageField(q.groupByLanguage, r),
+    }));
+  }
+
+  /**
+   * The (tail, head) pairs of `q.heads` over the tails two or more of them open
+   * across the read — a tail one head owns contests nothing and is not read.
+   * `name` is the pair's most-held spelling, ties by name.
+   */
+  async readMethodTailVerbs(q: MethodTailVerbQuery): Promise<MethodTailVerbRow[]> {
+    if (q.heads.length === 0) return [];
+    const scope = methodNameScopePredicate(q);
+    const lang = fileLanguageGrouping("cg_symbols", q.groupByLanguage);
+    const rows = await this.session.queryAll<{
+      tail: string;
+      head: string;
+      holders: number | string | bigint;
+      name: string;
+      file_language?: string | null;
+    }>(
+      `WITH verbed AS (
+         SELECT *
+           FROM (SELECT symbol_id, short_name${lang.column}, ${METHOD_HEAD_SQL} AS head, ${METHOD_TAIL_SQL} AS tail
+                   FROM ${lang.from}
+                  WHERE ${scope.sql})
+          WHERE head IN (${placeholders(q.heads)}) AND tail <> ''
+       ),
+       contested AS (
+         SELECT tail FROM verbed GROUP BY tail HAVING count(DISTINCT head) > 1
+       ),
+       spelled AS (
+         SELECT tail, head${lang.column}, short_name, count(DISTINCT symbol_id) AS n
+           FROM verbed
+          WHERE tail IN (SELECT tail FROM contested)
+          GROUP BY tail, head${lang.column}, short_name
+       )
+       SELECT tail, head${lang.column}, sum(n) AS holders, first(short_name ORDER BY n DESC, short_name) AS name
+         FROM spelled
+        GROUP BY tail, head${lang.column}
+        ORDER BY tail, holders DESC, head${lang.order}`,
+      [...scope.params, ...q.heads],
+    );
+    return rows.map((r) => ({
+      tail: r.tail,
+      head: r.head,
+      holders: Number(r.holders),
+      name: r.name,
+      ...languageField(q.groupByLanguage, r),
+    }));
+  }
+
+  async readMethodNamesMatching(q: MethodNamePatternQuery): Promise<MethodNameRow[]> {
+    if (q.patterns.length === 0) return [];
+    const scope = methodNameScopePredicate(q);
+    const lang = fileLanguageGrouping("cg_symbols", q.groupByLanguage);
+    const rows = await this.session.queryAll<{
+      short_name: string;
+      holders: number | string | bigint;
+      file_language?: string | null;
+    }>(
+      `SELECT short_name, count(DISTINCT symbol_id) AS holders${lang.column}
+         FROM ${lang.from}
+        WHERE ${scope.sql} AND (${q.patterns.map(() => "regexp_matches(short_name, ?)").join(" OR ")})
+        GROUP BY short_name${lang.column}
+        ORDER BY holders DESC, short_name${lang.order}`,
+      [...scope.params, ...q.patterns],
+    );
+    return rows.map((r) => ({
+      shortName: r.short_name,
+      holders: Number(r.holders),
+      ...languageField(q.groupByLanguage, r),
+    }));
   }
 }

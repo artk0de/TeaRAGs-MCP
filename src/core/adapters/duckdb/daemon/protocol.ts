@@ -8,6 +8,9 @@ import type {
   GraphFileNode,
   IdentifierBoundCallee,
   IdentifierReplaceEntry,
+  MethodHeadWordQuery,
+  MethodNamePatternQuery,
+  MethodTailVerbQuery,
   OntologyReportQuery,
   RelPath,
   ResolveRunStatsRow,
@@ -159,6 +162,11 @@ export const DAEMON_OPS = [
   "anchorIdentifierTypes",
   "identifierNameTypes",
   "existingSymbolShortNames",
+  // Method-name reads over cg_symbols (naming coverage for untyped methods).
+  // REQUIRED: an older daemon's empty answer would read as a project with no methods.
+  "readMethodHeadWords",
+  "readMethodTailVerbs",
+  "readMethodNamesMatching",
   "countIdentifiers",
   "aggregateIdentifiersByName",
   "identifierLanguageCounts",
@@ -220,6 +228,7 @@ export interface DaemonRequest {
         types: string[];
         pathPrefixes?: string[];
         excludePaths?: string[];
+        languages?: string[];
         groupByLanguage?: boolean;
         groupByMultiplicity?: boolean;
         countSameTypeSiblings?: boolean;
@@ -230,29 +239,41 @@ export interface DaemonRequest {
         callees: IdentifierBoundCallee[];
         pathPrefixes?: string[];
         excludePaths?: string[];
+        languages?: string[];
         groupByLanguage?: boolean;
         countHolders?: boolean;
       } // aggregateIdentifiersByCallee
-    | { collection: string; names: string[]; excludePaths?: string[] } // identifierNameTypes | existingSymbolShortNames
+    | { collection: string; names: string[]; excludePaths?: string[]; languages?: string[] } // identifierNameTypes | existingSymbolShortNames
     | {
         collection: string;
         names: string[];
         pathPrefixes?: string[];
         excludePaths?: string[];
+        languages?: string[];
         groupByLanguage?: boolean;
         countHolders?: boolean;
       } // aggregateIdentifiersByName
-    | { collection: string; pathPrefixes?: string[]; pathSuffixes?: string[]; excludePaths?: string[] } // identifierLanguageCounts
+    | {
+        collection: string;
+        pathPrefixes?: string[];
+        pathSuffixes?: string[];
+        excludePaths?: string[];
+        languages?: string[];
+      } // identifierLanguageCounts
     | {
         collection: string;
         limit: number;
         pathPrefixes?: string[];
         excludePaths?: string[];
+        languages?: string[];
         groupByLanguage?: boolean;
       } // sampleIdentifierShapes
     | { collection: string; query: OntologyReportQuery } // readOntologyReportSummary
     | { collection: string; query: OntologyReportQuery; excludedGenericNames: string[] } // readOntologyReportSections
-    | { collection: string; query: TypeNameQuery }; // readTypeNameRows
+    | { collection: string; query: TypeNameQuery } // readTypeNameRows
+    | { collection: string; query: MethodHeadWordQuery } // readMethodHeadWords
+    | { collection: string; query: MethodTailVerbQuery } // readMethodTailVerbs
+    | { collection: string; query: MethodNamePatternQuery }; // readMethodNamesMatching
 }
 
 /**

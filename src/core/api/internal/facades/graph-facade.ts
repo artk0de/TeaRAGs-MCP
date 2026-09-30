@@ -24,6 +24,9 @@
  * message rather than a silent empty list.
  */
 
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 import { splitMethodSymbol } from "../../../adapters/duckdb/client.js";
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type {
@@ -41,6 +44,7 @@ import {
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import { InvalidParameterError, MissingArgumentError } from "../../errors.js";
 import type { GetArchitectureReportRequest, GetArchitectureReportResponse } from "../../public/dto/architecture.js";
+import type { FindCoChangedRequest, FindCoChangedResult } from "../../public/dto/cochange.js";
 import type {
   FindCyclesRequest,
   FindCyclesResponse,
@@ -51,6 +55,7 @@ import type {
 } from "../../public/dto/graph.js";
 import { resolveCollection } from "../collection-resolver.js";
 import { ArchitectureReportOps } from "../ops/architecture-report-ops.js";
+import { CochangeOps } from "../ops/cochange-ops.js";
 import { decorateCallees, decorateCallers } from "../ops/declared-visibility-lookup.js";
 import { FileImportOps, normalizeRelativePath } from "../ops/file-import-ops.js";
 
@@ -159,6 +164,7 @@ function resolvedField(read: SymbolEdgeRead<unknown>): { resolvedSymbolId?: Symb
 
 export class GraphFacade {
   private readonly architectureReport = new ArchitectureReportOps();
+  private readonly cochange = new CochangeOps();
   private readonly fileImports = new FileImportOps();
 
   constructor(private readonly deps: GraphFacadeDeps) {}
@@ -310,6 +316,24 @@ export class GraphFacade {
       req,
       async (handle) => this.architectureReport.build(handle.graphDb, req, importSpecifiers, fileCommitCounts),
       ArchitectureReportOps.empty(req),
+    );
+  }
+
+  /**
+   * `find_co_changed` (bd tea-rags-mcp-l1ot.1) — co-change partners from the
+   * temporal sub-graph. The addressed project's root becomes the liveness
+   * predicate: a partner deleted from the working tree after the last build
+   * never surfaces. The guard applies to partners only — a queried file's own
+   * history stays answerable even when the file itself is gone.
+   */
+  async findCoChanged(req: FindCoChangedRequest): Promise<FindCoChangedResult> {
+    if (req.files.length === 0) throw new MissingArgumentError(["files"]);
+    const { path } = resolveCollection(this.deps.collectionRegistry, req);
+    const pathExists = path ? (relPath: RelPath) => existsSync(join(path, relPath)) : undefined;
+    return this.withReadHandle(
+      req,
+      async (handle) => this.cochange.find(handle.graphDb, req, pathExists),
+      CochangeOps.empty(req.files.map(normalizeRelativePath)),
     );
   }
 

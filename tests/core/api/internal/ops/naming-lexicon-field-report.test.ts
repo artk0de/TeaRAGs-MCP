@@ -234,7 +234,8 @@ describe("NamingLexiconOps — the bjfa0 field report", () => {
         language: "ruby",
         names: [{ name: "can_resolve?", kind: "return", path: INQUIRY }],
       });
-      expect(result.names[0]).toMatchObject({ verdict: "NEW_TERM", topTerms: [] });
+      // Spec D4 (bd tea-rags-mcp-0qaht): an untyped method is judged by method vocabulary; verbless → NO_CONVENTION.
+      expect(result.names[0]).toMatchObject({ verdict: "NO_CONVENTION" });
       expect(result.names[0]).not.toHaveProperty("override");
     });
 

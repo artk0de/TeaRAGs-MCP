@@ -67,6 +67,12 @@ describe("get_ontology_report — schema", () => {
     expect(schema.safeParse({ project: "tea-rags", limit: 0 }).success).toBe(false);
     expect(schema.safeParse({ project: "tea-rags", limit: 101 }).success).toBe(false);
   });
+
+  it("accepts the opt-in verbs section", () => {
+    const schema = z.object(registered().config.inputSchema);
+    expect(schema.safeParse({ project: "tea-rags", sections: ["verbs"] }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", sections: ["synonyms", "verbs"] }).success).toBe(true);
+  });
 });
 
 describe("get_ontology_report — handler", () => {

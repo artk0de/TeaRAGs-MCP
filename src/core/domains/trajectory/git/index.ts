@@ -2,7 +2,11 @@ export { TrajectoryGitError, GitBlameFailedError, GitLogTimeoutError, GitNotAvai
 export { GitEnrichmentProvider, type GitProviderConfig } from "./provider.js";
 export { createGitEnrichmentProvider, type GitWorkerConfig } from "./factory.js";
 export { gitFilters } from "./filters.js";
+export { GIT_FILTER_PRESETS } from "./filter-presets/index.js";
 export { gitPayloadSignalDescriptors } from "./payload-signals.js";
+export { gitDerivedSignals } from "./rerank/derived-signals/index.js";
+export { GIT_PRESETS } from "./rerank/presets/index.js";
+export { gitStatsAccumulators } from "./stats/index.js";
 export {
   AGE_DERIVATION,
   AGE_STAMP_FIELD,
