@@ -16,6 +16,7 @@
  */
 
 import type { GitAdapterKind } from "../../../../adapters/vcs/types.js";
+import type { TemporalSymbolCommitBuffer } from "../../../../contracts/types/codegraph.js";
 import type { Trajectory } from "../../../../contracts/types/trajectory.js";
 import type { CodegraphCollectionCompletionHook } from "../collection-completion-hook.js";
 import { TemporalCochangeBuilder } from "./cochange/builder.js";
@@ -39,9 +40,17 @@ export interface TemporalCochangeConfig {
   gitTimeoutMs: number;
 }
 
-/** The temporal sub-graph's completion hooks; none when git history is off. */
-export function createTemporalCochangeHooks(config?: TemporalCochangeConfig): CodegraphCollectionCompletionHook[] {
-  return config ? [new TemporalCochangeBuilder(config)] : [];
+/**
+ * The temporal sub-graph's completion hooks; none when git history is off.
+ * `symbolCommits` is the run-scoped main-thread buffer the git provider
+ * absorbs into (bd tea-rags-mcp-3gz4f) — main-thread only, never worker
+ * config, exactly like the builder itself.
+ */
+export function createTemporalCochangeHooks(
+  config?: TemporalCochangeConfig,
+  symbolCommits?: TemporalSymbolCommitBuffer,
+): CodegraphCollectionCompletionHook[] {
+  return config ? [new TemporalCochangeBuilder(config, symbolCommits)] : [];
 }
 
 export function createTemporalTrajectory(): Trajectory {
@@ -58,3 +67,4 @@ export function createTemporalTrajectory(): Trajectory {
 
 export * from "./boundary-diagnostics/index.js";
 export * from "./cochange/index.js";
+export * from "./cohesion/index.js";

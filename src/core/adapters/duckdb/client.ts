@@ -94,6 +94,7 @@ import type {
   TemporalCochangeBuildMeta,
   TemporalCochangeGraph,
   TemporalCochangeSnapshot,
+  TemporalSymbolCommitFileSnapshot,
   TypeDeclarationReplaceEntry,
   TypeNameQuery,
   TypeNameRow,
@@ -110,6 +111,7 @@ import { DuckDbRunStatsStore } from "./run-stats-store.js";
 import { DuckDbSignalDriftStore } from "./signal-drift-store.js";
 import { DuckDbSymbolStore } from "./symbol-store.js";
 import { DuckDbTemporalCochangeStore } from "./temporal-cochange-store.js";
+import { DuckDbTemporalSymbolCommitStore } from "./temporal-symbol-commit-store.js";
 import { DuckDbTypeNameStore } from "./type-name-store.js";
 
 // Graph algorithms (Tarjan SCC, PageRank) intentionally NOT imported
@@ -139,6 +141,7 @@ export class DuckDbGraphClient implements GraphDbClient {
   private readonly runStats: DuckDbRunStatsStore;
   private readonly signalDrift: DuckDbSignalDriftStore;
   private readonly temporalCochange: DuckDbTemporalCochangeStore;
+  private readonly temporalSymbolCommits: DuckDbTemporalSymbolCommitStore;
   private readonly identifiers: DuckDbIdentifierStore;
   private readonly ontology: DuckDbOntologyReportStore;
   private readonly typeNames: DuckDbTypeNameStore;
@@ -154,6 +157,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     this.runStats = new DuckDbRunStatsStore(this.session);
     this.signalDrift = new DuckDbSignalDriftStore(this.session);
     this.temporalCochange = new DuckDbTemporalCochangeStore(this.session);
+    this.temporalSymbolCommits = new DuckDbTemporalSymbolCommitStore(this.session);
     this.identifiers = new DuckDbIdentifierStore(this.session);
     this.ontology = new DuckDbOntologyReportStore(this.session);
     this.typeNames = new DuckDbTypeNameStore(this.session);
@@ -524,6 +528,24 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async readTemporalCochangeGraph(): Promise<TemporalCochangeGraph> {
     return this.temporalCochange.readGraph();
+  }
+
+  // ── Temporal symbol-commit store (bd tea-rags-mcp-3gz4f) ──
+
+  async replaceTemporalSymbolCommits(files: TemporalSymbolCommitFileSnapshot[]): Promise<void> {
+    return this.temporalSymbolCommits.replaceFiles(files);
+  }
+
+  async storedTemporalSymbolCommitFilePaths(): Promise<string[]> {
+    return this.temporalSymbolCommits.storedFilePaths();
+  }
+
+  async deleteTemporalSymbolCommitFiles(relPaths: string[]): Promise<void> {
+    return this.temporalSymbolCommits.deleteFiles(relPaths);
+  }
+
+  async readTemporalSymbolCommits(relPath: RelPath): Promise<TemporalSymbolCommitFileSnapshot> {
+    return this.temporalSymbolCommits.readFile(relPath);
   }
 
   /** File-scope `get_callers` (bd tea-rags-mcp-gfvr8): the files importing `relPath`. */

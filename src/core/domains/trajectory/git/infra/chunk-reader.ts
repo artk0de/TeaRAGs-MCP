@@ -13,6 +13,7 @@ import { assembleOverlays } from "./assemble-overlays.js";
 import { buildAccumulators } from "./build-accumulators.js";
 import type { GitEnrichmentCache } from "./cache.js";
 import type { SquashOptions } from "./metrics.js";
+import { collectSymbolCommitSets } from "./symbol-commit-sets.js";
 import {
   walkCommits,
   type ChunkChurnWalkStats,
@@ -58,6 +59,12 @@ export async function buildChunkChurnMap(
   diffMemo?: WalkCommitDiffMemo,
   commitDiscovery?: WalkCommitDiscovery,
   onWalkStats?: (stats: ChunkChurnWalkStats) => void,
+  /**
+   * Filled with the walk's per-symbol commit sets (bd tea-rags-mcp-3gz4f) when
+   * provided. The CACHED path returns without filling it — the cache stores
+   * overlays only, and the pipeline always runs uncached.
+   */
+  symbolCommitsOut?: Map<string, Map<string, Set<string>>>,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   if (!skipCache) {
     const cached = await enrichmentCache.getChunkChurn(adapter);
@@ -80,6 +87,7 @@ export async function buildChunkChurnMap(
     diffMemo,
     commitDiscovery,
     onWalkStats,
+    symbolCommitsOut,
   );
 
   if (!skipCache) {
@@ -105,6 +113,8 @@ export async function buildChunkChurnMapUncached(
   diffMemo?: WalkCommitDiffMemo,
   commitDiscovery?: WalkCommitDiscovery,
   onWalkStats?: (stats: ChunkChurnWalkStats) => void,
+  /** bd tea-rags-mcp-3gz4f — the walk's per-symbol commit sets, see the caller's docblock. */
+  symbolCommitsOut?: Map<string, Map<string, Set<string>>>,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   // Phase 1: initialize per-chunk accumulator state
   // Files past maxFileLines are dropped here — no accumulator, so no overlay.
@@ -150,6 +160,12 @@ export async function buildChunkChurnMapUncached(
     squashOpts,
     blameByPath,
   });
+
+  if (symbolCommitsOut) {
+    for (const [relPath, symbols] of collectSymbolCommitSets(relativeChunkMap, accumulators)) {
+      symbolCommitsOut.set(relPath, symbols);
+    }
+  }
 
   // bd tea-rags-mcp-iqpuu: ONE instrumentation snapshot per walk — wall time
   // covers the whole uncached build (discovery slice → walk → assembly).

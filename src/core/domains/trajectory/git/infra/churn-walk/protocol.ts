@@ -64,6 +64,12 @@ export interface ChunkChurnWalkJobInput {
 export interface ChunkChurnWalkOutcome {
   overlays: Map<string, Map<string, ChunkChurnOverlay>>;
   stats: ChunkChurnWalkStats;
+  /**
+   * The walk's per-symbol commit sets (bd tea-rags-mcp-3gz4f): the main thread
+   * absorbs them into the run-scoped temporal buffer. Absent on the empty-map
+   * short-circuit (no walk happened).
+   */
+  symbolCommits?: Map<string, Map<string, Set<string>>>;
 }
 
 /** One serializable BLAME job — the shallow-history files the main side routed
@@ -91,7 +97,13 @@ export type ChurnWalkThreadRequest =
   | { type: "close" };
 
 export type ChurnWalkThreadResponse =
-  | { type: "walked"; id: number; overlays: ChunkChurnWalkOutcome["overlays"]; stats: ChunkChurnWalkStats }
+  | {
+      type: "walked";
+      id: number;
+      overlays: ChunkChurnWalkOutcome["overlays"];
+      stats: ChunkChurnWalkStats;
+      symbolCommits?: ChunkChurnWalkOutcome["symbolCommits"];
+    }
   | { type: "walk-failed"; id: number; error: string }
   | { type: "blamed"; id: number; blameByPath: Map<string, BlameLine[]> }
   | { type: "blame-failed"; id: number; error: string };
