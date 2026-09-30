@@ -27,6 +27,7 @@ import { VcsAdapterFactory } from "../../../../../adapters/vcs/factory.js";
 import { resolveRepoRoot } from "../../../../../adapters/vcs/git/git-cli/client.js";
 import type { GitAdapterKind } from "../../../../../adapters/vcs/types.js";
 import type { RelPath, TemporalCochangeBuildMeta } from "../../../../../contracts/types/codegraph.js";
+import { isDebug } from "../../../../../infra/runtime.js";
 import { GitCommitDiscovery, GitCommitDiscoveryStore, type GitCommitDiscoveryEntry } from "../../../git/index.js";
 import type {
   CodegraphCollectionCompletionContext,
@@ -151,16 +152,19 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
     projectRoot,
     graphDb,
   }: CodegraphCollectionCompletionContext): Promise<TemporalCochangeBuildOutcome> {
+    const t0 = this.now();
     const history = await this.historySource.open(projectRoot);
     const projectPrefix = projectPrefixOf(history.repoRoot, projectRoot);
     const fingerprint = this.fingerprint(projectPrefix, history.worktreeDeletions);
-    const nowSeconds = Math.floor(this.now() / 1000);
+    const nowSeconds = Math.floor(t0 / 1000);
     const previous = await graphDb.readTemporalCochangeMeta();
+    const t1 = this.now();
     if (
       previous?.head === history.head &&
       previous.fingerprint === fingerprint &&
       nowSeconds - previous.builtAt < DAY_SECONDS
     ) {
+      this.emitTiming({ status: "fresh", totalMs: t1 - t0, skipCheckMs: t1 - t0 });
       return { status: "fresh", meta: previous };
     }
 
@@ -170,6 +174,7 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
       projectPrefix,
       fileExists: (relPath: RelPath) => live.has(`${projectPrefix}${relPath}`),
     });
+    const t2 = this.now();
     const bundles = bundleCochangeCommits(commits, this.options.sessionGapMinutes);
     const maxFilesPerBundle = computeMassChangeCut(bundles.map((b) => b.files.length));
     const graph = extractCochangeGraph(bundles, {
@@ -177,6 +182,7 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
       maxPartnersPerFile: TEMPORAL_COCHANGE_MAX_PARTNERS_PER_FILE,
       maxFilesPerBundle,
     });
+    const t3 = this.now();
     const meta: TemporalCochangeBuildMeta = {
       head: history.head,
       fingerprint,
@@ -191,7 +197,28 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
       sessionGapMinutes: this.options.sessionGapMinutes,
     };
     await graphDb.replaceTemporalCochange({ meta, files: graph.files, edges: graph.edges });
+    const t4 = this.now();
+    this.emitTiming({
+      status: "built",
+      totalMs: t4 - t0,
+      skipCheckMs: t1 - t0,
+      historyMs: t2 - t1,
+      extractMs: t3 - t2,
+      writeMs: t4 - t3,
+      commitCount: commits.length,
+      bundleCount: bundles.length,
+      admittedBundleCount: graph.admittedBundleCount,
+      maxFilesPerBundle,
+      fileCount: graph.files.length,
+      edgeCount: graph.edges.length,
+    });
     return { status: "built", meta, fileCount: graph.files.length, edgeCount: graph.edges.length };
+  }
+
+  /** One single-line `[GitEnrich] PHASE:` record per hook invocation, the l1ot.3 measurement surface. */
+  private emitTiming(fields: Record<string, unknown>): void {
+    if (!isDebug()) return;
+    console.error(`[GitEnrich] PHASE: TEMPORAL_COCHANGE ${JSON.stringify(fields)}`);
   }
 
   /**
