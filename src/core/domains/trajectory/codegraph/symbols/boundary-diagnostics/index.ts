@@ -13,6 +13,7 @@ export {
 export { classifyDirectoryRelation } from "./directory-relation.js";
 export { FACADE_AGGREGATION_REASON, isFacadeAggregationEdge } from "./facade-aggregation.js";
 export { computeFileInstabilities } from "./file-instability.js";
+export { domainBoundaryFileEdges, inducedDomainGraph, type DomainBoundaryFileEdges } from "./induced-domain-graph.js";
 export {
   detectLeakingAbstractions,
   FACADE_ADOPTION_MAJORITY,

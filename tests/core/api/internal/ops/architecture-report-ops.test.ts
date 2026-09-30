@@ -881,6 +881,65 @@ describe("ArchitectureReportOps.empty", () => {
   });
 });
 
+/**
+ * bd tea-rags-mcp-xb669.1: `domain:` judges one directory AS ITS OWN SYSTEM —
+ * the induced subgraph (files under the root, edges with both endpoints
+ * inside), every detector and metric recomputed inside it. Distinct from
+ * `pathPattern`, which keeps whole-system metrics and only filters findings.
+ * Edges crossing the domain border are kept as boundary findings naming the
+ * external component and its level on the WHOLE-graph stack — a domain's
+ * place in the system is the one thing an internal view cannot recompute.
+ *
+ * `d/` holds three facade directories (a, b, c — too few importers to be
+ * adoption components, still domains); `a ⇄ b` cycles inside; `a → kernel`
+ * leaves the domain; `app → b` enters it.
+ */
+function domainFixture(): FileDependencyGraph {
+  const files = ["d/a/index.ts", "d/a/x.ts", "d/b/index.ts", "d/b/y.ts", "d/c/index.ts", "kernel/k.ts", "app/m.ts"].map(
+    file,
+  );
+  const edges: FileDependencyGraph["edges"] = [
+    { sourceRelPath: "d/b/y.ts", targetRelPath: "d/a/x.ts", callWeight: 1 },
+    { sourceRelPath: "d/a/x.ts", targetRelPath: "d/b/y.ts", callWeight: 2 },
+    { sourceRelPath: "d/c/index.ts", targetRelPath: "d/a/index.ts", callWeight: 1 },
+    { sourceRelPath: "d/a/x.ts", targetRelPath: "kernel/k.ts", callWeight: 3 },
+    { sourceRelPath: "app/m.ts", targetRelPath: "d/b/y.ts", callWeight: 1 },
+  ];
+  return { files, edges };
+}
+
+describe("ArchitectureReportOps#build — domain mode (bd tea-rags-mcp-xb669.1)", () => {
+  it("judges a domain as its own system, keeping border edges with the outside component's global level", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(domainFixture()), { domain: "d" });
+
+    // Inside: three components over three component deps; the whole graph
+    // would also hold kernel and app (five). The a⇄b cycle is the domain's
+    // own knot; d/c stacks one level above it. Outside: kernel condenses to
+    // the foundation of the whole graph, app sits two levels up (it reaches
+    // the d/a⇄d/b knot through d/b), so the border edges carry 0 and 2.
+    expect(report.domain).toEqual({
+      path: "d",
+      componentCount: 3,
+      levelCount: 2,
+      boundaryOut: [{ innerComponent: "d/a", externalComponent: "kernel", externalLevel: 0, callWeight: 3 }],
+      boundaryIn: [{ innerComponent: "d/b", externalComponent: "app", externalLevel: 2, callWeight: 1 }],
+    });
+    expect(report.summary.layering.componentCount).toBe(3);
+    expect(report.summary.stableDependencies.componentEdgeCount).toBe(3);
+    expect(
+      report.violations
+        .filter((v) => v.detector === "layering" && v.kind === "knot")
+        .map((v) => (v.kind === "knot" ? v.components : [])),
+    ).toEqual([["d/a", "d/b"]]);
+  });
+
+  it("carries no domain block when the request names none", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(domainFixture()), {});
+
+    expect(report.domain).toBeUndefined();
+  });
+});
+
 // bd tea-rags-mcp-r8hme.9 — scripts, spikes, benchmarks, examples and fixtures
 // are tooling, not architecture: every detector judges the graph without them.
 describe("ArchitectureReportOps#build — non-production paths (bd tea-rags-mcp-r8hme.9)", () => {
