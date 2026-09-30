@@ -104,7 +104,10 @@ describe("compactStorage daemon op", () => {
     try {
       const { graphDb } = await pool.acquire(collection);
       const db = graphDb as DuckDbGraphClient;
-      for (let run = 0; run < 4; run++) {
+      // Six dead generations, not four: the footprint counts schema_migrations
+      // rows as LIVE rows, so at four the stored/live ratio sits exactly on the
+      // 2× threshold and the next migration tips it to "skipped".
+      for (let run = 0; run < 6; run++) {
         await db.run("DELETE FROM cg_symbols_files");
         for (let f = 0; f < 20; f++) {
           await db.run("INSERT INTO cg_symbols_files (rel_path, language) VALUES (?, 'go')", [`f${f}.go`]);

@@ -17,6 +17,7 @@ import type {
   SymbolDefinition,
   SymbolId,
   TemporalCochangeSnapshot,
+  TemporalSymbolCommitFileSnapshot,
   TypeDeclarationReplaceEntry,
   TypeNameQuery,
 } from "../../../contracts/types/codegraph.js";
@@ -74,6 +75,9 @@ export const DAEMON_OPS = [
   "replacePageRanks",
   // Wholesale rewrite of the temporal co-change sub-graph (bd tea-rags-mcp-x4rpp).
   "replaceTemporalCochange",
+  // Per-file symbol-commit rows of the temporal sub-graph (bd tea-rags-mcp-3gz4f).
+  "replaceTemporalSymbolCommits",
+  "deleteTemporalSymbolCommitFiles",
   "checkpoint",
   "rebuildEdgeFileTargetIndex",
   "recordRunStats",
@@ -136,6 +140,12 @@ export const DAEMON_OPS = [
   // graph would read as "no silent coupling".
   "readTemporalCochangeMeta",
   "readTemporalCochangeGraph",
+  // Symbol-commit rows of the temporal sub-graph (bd tea-rags-mcp-3gz4f): the
+  // stored-file universe the flush hook prunes gone files against, and one
+  // file's slice. REQUIRED, not legacy-tolerated: an empty answer would read
+  // as "no symbol co-change data".
+  "storedTemporalSymbolCommitFilePaths",
+  "readTemporalSymbolCommits",
   // One file's importers / imports for file-scope get_callers / get_callees
   // (bd tea-rags-mcp-gfvr8). REQUIRED, not legacy-tolerated: an empty answer
   // would read as "nothing imports this file".
@@ -193,12 +203,12 @@ export interface DaemonRequest {
   id: number;
   op: DaemonOp;
   params:
-    | { collection: string } // checkpoint | compactStorage | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | readFileDependencyGraph | readTemporalCochangeMeta | readTemporalCochangeGraph | refreshSymbolSignalsPrev | hasStaleDerivedTables | shutdown | ping
-    | { collection: string; relPaths: RelPath[] } // pruneDerivedForDeletedFiles | invalidateHierarchyDependentsOfDeletedFiles
+    | { collection: string } // checkpoint | compactStorage | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | readFileDependencyGraph | readTemporalCochangeMeta | readTemporalCochangeGraph | storedTemporalSymbolCommitFilePaths | refreshSymbolSignalsPrev | hasStaleDerivedTables | shutdown | ping
+    | { collection: string; relPaths: RelPath[] } // pruneDerivedForDeletedFiles | invalidateHierarchyDependentsOfDeletedFiles | deleteTemporalSymbolCommitFiles
     | { collection: string; languages: string[] } // readNonPublicMemberEdges
     | { collection: string; buildFingerprint?: string } // handshake (fingerprint absent on legacy peers)
     | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile
-    | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut | getFileImporters | getFileImports
+    | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut | getFileImporters | getFileImports | readTemporalSymbolCommits
     | { collection: string; relPath: RelPath; definitions: SymbolDefinition[] } // upsertSymbols
     | { collection: string; entries: BulkSymbolUpsertEntry[] } // upsertSymbolsBulk
     | { collection: string; entries: BulkFileUpsertEntry[] } // upsertFilesBulk
@@ -218,6 +228,7 @@ export interface DaemonRequest {
     | { collection: string; scope: CycleScope; sccs: readonly (readonly string[])[] } // replaceCycles
     | { collection: string; ranks: [string, number][] } // replacePageRanks
     | { collection: string; snapshot: TemporalCochangeSnapshot } // replaceTemporalCochange
+    | { collection: string; files: TemporalSymbolCommitFileSnapshot[] } // replaceTemporalSymbolCommits
     | { collection: string; rows: ResolveRunStatsRow[] } // recordRunStats
     | { collection: string; write: FileResolveStatsWrite } // recordFileResolveStats
     | { collection: string; fqName: string } // getSupertypes | getSubtypes | getTransitiveSubtypes

@@ -76,6 +76,7 @@ import {
   type TemporalCochangeConfig,
 } from "../core/domains/trajectory/codegraph/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import { InMemoryTemporalSymbolCommitBuffer } from "../core/domains/trajectory/codegraph/temporal/index.js";
 import { setDebug } from "../core/infra/runtime.js";
 import { StatsCache } from "../core/infra/stats-cache.js";
 import type { HealthProbes } from "../mcp/middleware/error-handler.js";
@@ -353,7 +354,14 @@ function wireComposition(
     languageFactory,
   } = createComposition({
     // w2dlu T6: the provider builds its per-root VcsGitAdapter from this kind.
-    git: { config: { ...zodConfig.trajectoryGit, vcsAdapter: zodConfig.vcs.adapter }, squashOpts },
+    // The symbol-commit buffer rides the codegraph deps (minted once in
+    // wireCodegraph, bd tea-rags-mcp-3gz4f) — the same instance the temporal
+    // completion hook drains.
+    git: {
+      config: { ...zodConfig.trajectoryGit, vcsAdapter: zodConfig.vcs.adapter },
+      squashOpts,
+      temporalSymbolCommits: codegraph?.temporalSymbolCommits,
+    },
     codegraph,
   });
   const schemaBuilder = new SchemaBuilder(reranker);
@@ -858,6 +866,15 @@ export function wireCodegraph(
         gitTimeoutMs: trajectoryGit.chunkTimeoutMs,
       }
     : undefined;
+  // bd tea-rags-mcp-3gz4f — ONE buffer per app context, minted beside the
+  // temporal config it drains under: the git provider absorbs per-symbol
+  // commit sets into it during the walk, the temporal completion hook drains
+  // it at every collection completion. Carried on `CodegraphDeps` so both
+  // `wireComposition` call sites hand the same instance to GitTrajectory
+  // (createIngestFacade re-runs wireComposition per registry env; the buffer
+  // outlives those re-runs). Main-thread only — never part of the worker's
+  // serializableConfig.
+  const temporalSymbolCommits = temporal ? new InMemoryTemporalSymbolCommitBuffer() : undefined;
 
   const codegraphWorkerConfig: CodegraphWorkerConfig = {
     languageModulePath: LANGUAGE_MODULE_PATH,
@@ -901,6 +918,7 @@ export function wireCodegraph(
     exclusion: { customPatterns: codegraph.customExcludePatterns ?? [] },
     workerDescriptor,
     ...(temporal ? { temporal } : {}),
+    ...(temporalSymbolCommits ? { temporalSymbolCommits } : {}),
   };
   const graphFacade = new GraphFacade({
     pool,

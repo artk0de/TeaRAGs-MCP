@@ -51,6 +51,7 @@ import type {
   TemporalCochangeBuildMeta,
   TemporalCochangeGraph,
   TemporalCochangeSnapshot,
+  TemporalSymbolCommitFileSnapshot,
 } from "./codegraph-temporal.js";
 import type { CaseSplitPathPatterns } from "./file-classification.js";
 
@@ -1349,6 +1350,20 @@ export interface GraphDbClient {
    * tea-rags-mcp-b4dcz).
    */
   readTemporalCochangeGraph: () => Promise<TemporalCochangeGraph>;
+
+  // ── Temporal symbol-commit store (bd tea-rags-mcp-3gz4f) ──
+
+  /** Replace each named file's symbol-commit rows; files not named stand. */
+  replaceTemporalSymbolCommits: (files: TemporalSymbolCommitFileSnapshot[]) => Promise<void>;
+
+  /** Every file holding symbol-commit rows, sorted — the universe the flush hook prunes against. */
+  storedTemporalSymbolCommitFilePaths: () => Promise<string[]>;
+
+  /** Drop every symbol-commit row of the named files. */
+  deleteTemporalSymbolCommitFiles: (relPaths: string[]) => Promise<void>;
+
+  /** One file's symbol-commit rows, `commitShas` parsed. */
+  readTemporalSymbolCommits: (relPath: RelPath) => Promise<TemporalSymbolCommitFileSnapshot>;
 
   /**
    * The `cg_symbols_edges_file` rows whose TARGET is `relPath` — the files
