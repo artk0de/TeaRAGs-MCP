@@ -4,10 +4,12 @@ description:
   Check if code laid out correctly — dependency direction, module borders,
   Stable Dependencies Principle violations, leaking abstractions (imports past
   an adopted facade), silent coupling (files changing together with no
-  import/call between them) and main-sequence distance (zone of pain /
-  uselessness) with evidence per line, grouped into root causes. Use when asked
-  "is architecture right", "layering violations", "wrong dependency direction",
-  "SDP", "stable depends on unstable", "module borders", "facade bypass", "deep
+  import/call between them), main-sequence distance (zone of pain / uselessness)
+  and the inferred layer stack (SCC-condensed levels, knots, back-edges, layer
+  map, move candidates) with evidence per line, grouped into root causes. Use
+  when asked "is architecture right", "layering violations", "layer map", "which
+  layer", "levels", "move candidate", "wrong dependency direction", "SDP",
+  "stable depends on unstable", "module borders", "facade bypass", "deep
   imports", "leaking abstraction", "hidden coupling", "change together",
   "shotgun surgery", "zone of pain", "main sequence", "abstractness",
   "архитектурные нарушения" — NOT for risk/health of code (use risk-assessment),
@@ -28,8 +30,10 @@ Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
 5. Phase 3b — LEAKING ABSTRACTION (`detector: "leakingAbstraction"`)
 6. Phase 3c — SILENT COUPLING (`detector: "silentCoupling"`)
 7. Phase 3d — MAIN SEQUENCE (`detector: "mainSequence"`)
-8. Phase 4 — EXCLUSIONS: say what not judged
-9. Phase 5 — OUTPUT
+8. Phase 3e — LAYERING (`detector: "layering"`)
+9. Phase 3f — LAYER MAP (only when the request carried `layerMap`)
+10. Phase 4 — EXCLUSIONS: say what not judged
+11. Phase 5 — OUTPUT
 
 ## Top Anti-patterns
 
@@ -57,6 +61,16 @@ Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
   index predates type census — say "needs codegraph recompute".
   `unobservableAbstractness` = language rarely declares abstractions (Ruby duck
   typing) — A 0 is idiom, not verdict.
+- **`layerMap` expected in a bare report.** `response.layerMap` appears ONLY
+  when the request carried `layerMap` — absent = not asked, never "no layers".
+- **`island` / `layerSkip` / `compositionCycle` read as violations.**
+  Informational findings — count separately, say informational.
+- **`knot` with `composition: true` read as a defect.** Every edge joins a
+  directory to one nested inside it — composition of a module with its own
+  sub-parts, not a layering defect.
+- **Map `scopePathPattern` confused with report `pathPattern`.** The report's
+  scopes JUDGED edges by source; the map's picks map MEMBERS (induced subgraph).
+  Independent — one, both, or neither.
 
 ## Rules
 
@@ -73,7 +87,8 @@ prime `## Enrichment` lists `codegraph.symbols`? No → tool not registered. Say
 ## Phase 1 — REPORT
 
 ```text
-get_architecture_report(project: "<alias>", pathPattern?: "<glob>", limit?: 50)
+get_architecture_report(project: "<alias>", pathPattern?: "<glob>", limit?: 50,
+                        layerMap?: { scopePathPattern?, granularity?: "directory"|"file", directoryDepth? })
 ```
 
 - `pathPattern` scopes JUDGED edges by SOURCE file (SDP: component dependency
@@ -86,8 +101,8 @@ get_architecture_report(project: "<alias>", pathPattern?: "<glob>", limit?: 50)
   `summary.<detector>` keeps totals (`violationCount`, `rootCauseCount`).
   Totals > returned → say truncated.
 - Every finding carries `detector`: `stableDependencies` (Phases 2–3),
-  `leakingAbstraction` (Phase 3b), `silentCoupling` (Phase 3c) or `mainSequence`
-  (Phase 3d). Never mix groups across detectors.
+  `leakingAbstraction` (Phase 3b), `silentCoupling` (Phase 3c), `mainSequence`
+  (Phase 3d) or `layering` (Phase 3e). Never mix groups across detectors.
 
 ## Phase 2 — ROOT CAUSES
 
@@ -242,6 +257,53 @@ Ca/Ce, `unmeasuredFileCount` (> 0 = partial census, hedge), `volatility`
 component is volatile — it is rigid AND keeps changing, so it hurts now. Pain
 with no `volatility` = no git reading for its files, hedge.
 
+## Phase 3e — LAYERING
+
+No declared architecture needed: SCC condensation of the SAME component graph,
+longest-path levels. `level` = longest path from sinks (0 = foundation); `depth`
+= longest path from roots (0 = nothing depends on it). Component with no
+layering edge sits at level 0, depth 0.
+
+| Summary field (`summary.layering`) | Read as                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------ |
+| `levelCount`                       | distinct levels, 0-based; 0 = no layering edge at all                                |
+| `coverage`                         | share of components outside multi-component knots — low = knot(s) dominate           |
+| `coherence`                        | rank correlation level vs instability — high = low layers really are the stable ones |
+
+Violations first, informational last, in `violations` order:
+
+| `kind`              | Meaning                                                                        | Read as                                                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `knot`              | multi-component SCC — a cycle ACROSS directories                               | `feedbackArcSet` = lightest cut that levels the members (`cutEdgeCount`, `levelsAfterCut` = distinct levels once cut)       |
+| `backEdge`          | minority-weight direction inside a knot pair                                   | `callWeight` vs `counterFlowWeight` — unequal weights decide; equal never judged; `fileEdges` name where                    |
+| `abstractionBypass` | consumer takes a measured-concrete component, measured-abstract one beneath it | `bypassedComponent`, `concreteAbstractness` / `bypassedAbstractness`; census-gated (≥5 types), same-knot pairs never judged |
+| `compositionCycle`  | parent ↔ own nested directories cycling                                        | informational — `nestedPairs`; composition of a module with its sub-parts                                                   |
+| `island`            | nothing depends on it AND it does not reach the top of the stack               | informational — `height`/`depth`, `afferentCount: 0`                                                                        |
+| `layerSkip`         | dependency jumping ≥2 levels to a lower one, never between knot members        | informational, weakest — `skippedLevels`, `callWeight`; hints a missing middle layer                                        |
+
+## Phase 3f — LAYER MAP
+
+`response.layerMap` exists ONLY when the request carried `layerMap` — skip this
+phase otherwise. The map is the layering model read as a VIEW: per-node `level`
+/ `depth` / `inKnot` + inner afferent/efferent counts.
+
+| Option             | Read as                                                                                                                                                                     |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scopePathPattern` | nodes whose path matches live INSIDE the map; absent = whole repository, no boundary findings                                                                               |
+| `granularity`      | `"directory"` (default) nodes = components; `"file"` nodes = FILES leveled on raw file edges (partition excludes intra-component edges — component deps cannot level files) |
+| `directoryDepth`   | with `"directory"`: collapse every directory DEEPER than this many segments below the scope root into its ancestor; `0` = one node                                          |
+
+| Field            | Read as                                                                                               |
+| ---------------- | ----------------------------------------------------------------------------------------------------- |
+| `boundaryOut`    | edge leaving the scope — names the EXTERNAL component and its `externalLevel` in the WHOLE-repo stack |
+| `boundaryIn`     | edge entering the scope — same shape                                                                  |
+| `moveCandidates` | inner node, 0 inner afferents, every outward edge points into ONE other domain — move-it-there signal |
+| `knots`          | cycles among the map's own nodes, with the cut that levels them                                       |
+| `summary.*`      | `nodeCount`, `innerEdgeCount`, `boundaryOutEdgeCount`, `boundaryInEdgeCount`                          |
+
+Empty scope = empty map (`nodeCount: 0`), not an error. Bad `granularity` =
+validation error naming the enum, before any detector runs.
+
 ## Phase 4 — EXCLUSIONS
 
 `summary.stableDependencies.excluded` — edges read, NOT judged:
@@ -306,6 +368,14 @@ Threshold [strengthThreshold] ([method], η [separability]); history [commitCoun
 ## Main sequence — [violationCount] (pain N, uselessness N); mean D [meanDistance]
 Threshold [distanceThreshold] ([method]); volatility cut [volatility.threshold] ([volatility.thresholdMethod]); judged [judgedComponentCount]; excluded: unmeasured N, unobservable N, calm N
 | # | Component | Zone | D | A (abstract/types) | I | Ca/Ce | Commits/file |
+
+## Layering — [levelCount] levels; coverage [coverage], coherence [coherence]
+knots [knotCount] (composition N), backEdges [backEdgeCount], bypasses [abstractionBypassCount]; islands N, skips N, composition cycles N
+| # | Kind | Components | Evidence (cut / weights / abstractness) |
+
+## Layer map — [levelCount] levels, [nodeCount] nodes ([granularity], scope [scope|whole repo])
+boundary-out N (→ top external: [component] at L[externalLevel]), boundary-in N; move candidates N
+| # | Level | Node | depth | inKnot | inner in/out |
 ```
 
 Every line cites evidence numbers from report. No evidence → no claim.

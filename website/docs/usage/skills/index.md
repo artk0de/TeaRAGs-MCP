@@ -96,6 +96,36 @@ the component to keep changing: its mean commits per file must clear a cut drawn
 from the codebase's own history, so a stable, concrete utility that nobody
 touches is counted as calm instead of reported.
 
+When no architecture declares itself, the skill can still answer "which layer
+is this in". The layering detector condenses the component graph into its
+strongly-connected sets and reads longest-path levels off the result: level 0
+is the foundation everything else builds on, and a component's depth counts how
+far the roots are from it. Two summary numbers say how much to trust the stack:
+coverage (the share of components outside multi-component knots) and coherence
+(the rank correlation of level against instability — high means the low layers
+really are the stable ones). Knots are reported with the lightest set of edges
+whose removal levels their members, so a cycle across directories comes with
+its own fix, and back-edges name the minority-weight direction inside a knot
+pair. An abstraction bypass flags a consumer reaching a measured-concrete
+component while a measured-abstract one sits beneath it. Composition cycles,
+islands and layer skips are informational: a parent cycling with its own nested
+directories, a component nothing depends on, a dependency jumping two or more
+levels down.
+
+For a closer look at one area, the report request carries an optional
+`layerMap` object, and the response gains a `layerMap` view — per-node levels
+inside a scope, at directory or file granularity, with deeper directories
+collapsible into their ancestors. Edges crossing the scope boundary are kept
+rather than dropped: each boundary edge names the external component it reaches
+(or comes from) together with that component's level in the whole-repository
+stack, so an inner file reaching a high-level domain shows up as a back-edge at
+the border. A node nothing inside depends on whose outward edges all point into
+one other domain is listed as a move candidate. The map's `scopePathPattern`
+picks map members and is independent of the report's `pathPattern`, which
+scopes the judged edges — you can judge one area and map another in the same
+call. Without the `layerMap` object the response carries no map at all, so a
+full node list never bloats an unqualified report.
+
 ## Generation
 
 ### `/tea-rags:data-driven-generation`
