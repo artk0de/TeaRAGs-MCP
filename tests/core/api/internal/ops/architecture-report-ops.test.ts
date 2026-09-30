@@ -217,6 +217,25 @@ describe("ArchitectureReportOps#build", () => {
     expect(report.summary.stableDependencies.outOfScopeEdgeCount).toBe(6);
   });
 
+  it("scopes the layering findings to pathPattern while levelling the whole graph (bd tea-rags-mcp-r8hme.33)", async () => {
+    const whole = await new ArchitectureReportOps().build(graphDb(), {});
+    const scoped = await new ArchitectureReportOps().build(graphDb(), { pathPattern: "lib/**" });
+
+    // The core⇄lib knot has lib as a member and its back-edge is carried by
+    // lib/f5.ts; the app and other islands are out of scope.
+    expect(scoped.violations.filter((v) => v.detector === "layering").map((v) => v.kind)).toEqual(["knot", "backEdge"]);
+    expect(scoped.summary.layering).toMatchObject({
+      levelCount: whole.summary.layering.levelCount,
+      coverage: whole.summary.layering.coverage,
+      knotCount: 1,
+      backEdgeCount: 1,
+      islandCount: 0,
+      violationCount: 2,
+      outOfScopeFindingCount: 2,
+    });
+    expect(whole.summary.layering.outOfScopeFindingCount).toBeUndefined();
+  });
+
   it("caps violations and root causes at limit while the summary keeps the totals", async () => {
     const report = await new ArchitectureReportOps().build(graphDb(), { limit: 1 });
 

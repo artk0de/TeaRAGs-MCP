@@ -423,6 +423,11 @@ export interface LayeringReportSummary {
   layerSkipCount: number;
   /** Every finding, violations and informational alike. */
   violationCount: number;
+  /**
+   * Findings no file matching `pathPattern` carries; present only when scoped.
+   * Levels, coverage and coherence stay whole-graph under a scope.
+   */
+  outOfScopeFindingCount?: number;
 }
 
 export type ArchitectureViolation =

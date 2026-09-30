@@ -124,7 +124,7 @@ const GetArchitectureReportInputShape = {
     .string()
     .optional()
     .describe(
-      "Glob scoping judged edges by SOURCE file. Instability and adoption stay whole-graph. Omit for whole project.",
+      "Glob scoping judged edges by SOURCE file. Instability, adoption and layer levels stay whole-graph. Omit for whole project.",
     ),
   limit: z
     .number()

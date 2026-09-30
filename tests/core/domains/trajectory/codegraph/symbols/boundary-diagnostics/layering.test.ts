@@ -406,3 +406,61 @@ describe("detectLayeringViolations", () => {
     });
   });
 });
+
+describe("detectLayeringViolations — source scope (bd tea-rags-mcp-r8hme.33)", () => {
+  function judgeScoped(g: FileDependencyGraph, sourcePathPattern: string) {
+    return detectLayeringViolations(buildComponentGraph(g, []), g.files, { sourcePathPattern });
+  }
+
+  it("keeps the findings carried by a matching source file, and levels the whole graph", () => {
+    const report = judgeScoped(knot(), "app/**");
+
+    // The knot and its back-edge live in ulanzi/clock — out of scope. The
+    // bypass starts in app — in scope.
+    expect(report.violations.map((v) => v.kind)).toEqual(["abstractionBypass"]);
+    expect(report.summary).toMatchObject({
+      componentCount: 4,
+      levelCount: 3,
+      coverage: 0.5,
+      knotCount: 0,
+      backEdgeCount: 0,
+      abstractionBypassCount: 1,
+      violationCount: 1,
+      scope: { sourcePathPattern: "app/**", outOfScopeFindingCount: 2 },
+    });
+  });
+
+  it("keeps a knot when any member owns a matching file, and a back-edge by the file carrying it", () => {
+    const report = judgeScoped(knot(), "ulanzi/**");
+
+    expect(report.violations.map((v) => v.kind)).toEqual(["knot", "backEdge"]);
+    expect(report.summary.scope).toEqual({ sourcePathPattern: "ulanzi/**", outOfScopeFindingCount: 1 });
+  });
+
+  it("drops a back-edge whose carrying file is outside the pattern even when its knot stays", () => {
+    const report = judgeScoped(knot(), "clock/**");
+
+    // clock is a knot member, but the minority edge ulanzi → clock is carried by ulanzi/u1.ts.
+    expect(report.violations.map((v) => v.kind)).toEqual(["knot"]);
+    expect(report.summary).toMatchObject({ knotCount: 1, backEdgeCount: 0, abstractionBypassCount: 0 });
+  });
+
+  it("scopes islands by their own files and layer skips by the file carrying the dependency", () => {
+    expect(judgeScoped(layered(), "proto/**").violations.map((v) => v.kind)).toEqual(["island"]);
+    expect(judgeScoped(layered(), "app/deep.ts").violations.map((v) => v.kind)).toEqual(["layerSkip"]);
+    expect(judgeScoped(layered(), "app/m.ts").violations).toEqual([]);
+  });
+
+  it("honours a negated pattern", () => {
+    const report = judgeScoped(layered(), "!proto/**");
+
+    expect(report.violations.map((v) => v.kind)).toEqual(["layerSkip"]);
+    expect(report.summary.scope).toEqual({ sourcePathPattern: "!proto/**", outOfScopeFindingCount: 1 });
+  });
+
+  it("reports no scope when no pattern is given", () => {
+    const g = knot();
+    expect(judge(g).summary.scope).toBeUndefined();
+    expect(detectLayeringViolations(buildComponentGraph(g, []), g.files, {}).summary.scope).toBeUndefined();
+  });
+});

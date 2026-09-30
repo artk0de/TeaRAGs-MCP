@@ -1,5 +1,6 @@
 import type { FileDependencyEdge, FileDependencyGraphFile } from "../../../../../contracts/types/codegraph.js";
 import { tarjanScc } from "../../../../../infra/graph/tarjan-scc.js";
+import { compilePathPatternMatcher, type PathPatternMatcher } from "../../../../../infra/path-pattern.js";
 import { COMPONENT_EVIDENCE_FILE_EDGE_LIMIT } from "./component-stable-dependencies.js";
 import { DEFAULT_MAIN_SEQUENCE_MIN_TYPE_COUNT } from "./main-sequence.js";
 import type {
@@ -13,6 +14,7 @@ import type {
   LayeringKnot,
   LayeringLayerSkipViolation,
   LayeringModel,
+  LayeringOptions,
   LayeringReport,
   LayeringSummary,
   LayeringViolation,
@@ -92,12 +94,13 @@ export function buildLayeringModel(componentGraph: ComponentGraph): LayeringMode
 export function detectLayeringViolations(
   componentGraph: ComponentGraph,
   files: readonly FileDependencyGraphFile[],
+  options: LayeringOptions = {},
 ): LayeringReport {
   const model = buildLayeringModel(componentGraph);
   const compositionKnots = model.knots.filter((knot) => knot.composition);
   const realKnots = model.knots.filter((knot) => !knot.composition);
 
-  const violations: LayeringViolation[] = [
+  const allFindings: LayeringViolation[] = [
     ...realKnots.map(
       (knot): LayeringViolation => ({
         kind: "knot",
@@ -120,6 +123,14 @@ export function detectLayeringViolations(
     ...layerSkips(componentGraph, model),
   ];
 
+  const inScope = compilePathPatternMatcher(options.sourcePathPattern);
+  const carried = inScope && findingInScope(componentGraph, inScope);
+  const violations = carried ? allFindings.filter(carried) : allFindings;
+  const scope =
+    carried && options.sourcePathPattern
+      ? { sourcePathPattern: options.sourcePathPattern, outOfScopeFindingCount: allFindings.length - violations.length }
+      : undefined;
+
   const count = (kind: LayeringViolation["kind"]) => violations.filter((v) => v.kind === kind).length;
   const summary: LayeringSummary = {
     componentCount: componentGraph.components.size,
@@ -127,15 +138,54 @@ export function detectLayeringViolations(
     levelCount: model.levelCount,
     coverage: model.coverage,
     coherence: model.coherence,
-    knotCount: realKnots.length,
+    knotCount: count("knot"),
     backEdgeCount: count("backEdge"),
     abstractionBypassCount: count("abstractionBypass"),
-    compositionCycleCount: compositionKnots.length,
+    compositionCycleCount: count("compositionCycle"),
     islandCount: count("island"),
     layerSkipCount: count("layerSkip"),
     violationCount: violations.length,
+    ...(scope ? { scope } : {}),
   };
   return { violations, summary };
+}
+
+/**
+ * The source-scope test for one finding (bd tea-rags-mcp-r8hme.33): a
+ * dependency finding is carried by the source files of its component edge —
+ * the full edge, not the evidence cap — a component finding by the
+ * component's own files.
+ */
+function findingInScope(
+  componentGraph: ComponentGraph,
+  inScope: PathPatternMatcher,
+): (finding: LayeringViolation) => boolean {
+  const filesOf = new Map<string, string[]>();
+  for (const [relPath, component] of componentGraph.componentOf) {
+    filesOf.set(component, [...(filesOf.get(component) ?? []), relPath]);
+  }
+  const componentMatches = (component: string) => (filesOf.get(component) ?? []).some(inScope);
+  const dependencyMatches = (source: string, target: string) =>
+    componentGraph.dependencies.some(
+      (d) =>
+        d.sourceComponent === source &&
+        d.targetComponent === target &&
+        d.fileEdges.some((e) => inScope(e.sourceRelPath)),
+    );
+
+  return (finding) => {
+    switch (finding.kind) {
+      case "knot":
+      case "compositionCycle":
+        return finding.components.some(componentMatches);
+      case "island":
+        return componentMatches(finding.component);
+      case "backEdge":
+      case "abstractionBypass":
+      case "layerSkip":
+        return dependencyMatches(finding.sourceComponent, finding.targetComponent);
+    }
+  };
 }
 
 function adjacency(dependencies: readonly ComponentDependency[]): Map<string, readonly string[]> {

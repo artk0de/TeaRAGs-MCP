@@ -734,6 +734,27 @@ export interface LayeringSummary {
   layerSkipCount: number;
   /** Every finding, violations and informational alike. */
   violationCount: number;
+  scope?: LayeringScope;
+}
+
+/**
+ * Present when `LayeringOptions.sourcePathPattern` scoped the run. Levels,
+ * knots, coverage and coherence stay whole-graph — only findings are scoped.
+ */
+export interface LayeringScope {
+  sourcePathPattern: string;
+  /** Findings the model produced whose source matched no file — dropped, not counted above. */
+  outOfScopeFindingCount: number;
+}
+
+export interface LayeringOptions {
+  /**
+   * Keep only findings a matching file carries: a dependency finding (back-edge,
+   * bypass, layer skip) by its carrying source files, a component finding
+   * (island) by the component's files, a knot or composition cycle by any
+   * member's files.
+   */
+  sourcePathPattern?: string;
 }
 
 export interface LayeringReport {

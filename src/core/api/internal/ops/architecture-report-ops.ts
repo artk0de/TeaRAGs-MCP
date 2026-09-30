@@ -154,7 +154,7 @@ export class ArchitectureReportOps {
       readImportSpecifiers,
     );
     // Inferred layering over the same components (bd tea-rags-mcp-r8hme.22).
-    const layering = detectLayeringViolations(components, graph.files);
+    const layering = detectLayeringViolations(components, graph.files, { sourcePathPattern: request.pathPattern });
     const limit = request.limit ?? DEFAULT_ARCHITECTURE_REPORT_LIMIT;
     return {
       ...(request.pathPattern ? { pathPattern: request.pathPattern } : {}),
@@ -560,6 +560,7 @@ function summariseLayering(report: LayeringReport): LayeringReportSummary {
     islandCount: summary.islandCount,
     layerSkipCount: summary.layerSkipCount,
     violationCount: summary.violationCount,
+    ...(summary.scope ? { outOfScopeFindingCount: summary.scope.outOfScopeFindingCount } : {}),
   };
 }
 
