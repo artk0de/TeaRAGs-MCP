@@ -19,6 +19,7 @@ import type {
   SymbolDefinition,
   SymbolId,
   TemporalCochangeSnapshot,
+  TemporalSymbolCommitFileSnapshot,
   TypeDeclarationReplaceEntry,
   TypeNameQuery,
 } from "../../../contracts/types/codegraph.js";
@@ -235,6 +236,13 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   replaceTemporalCochange: write(async (graphDb, p) =>
     graphDb.replaceTemporalCochange(p.snapshot as TemporalCochangeSnapshot),
   ),
+  // Per-file symbol-commit rows (bd tea-rags-mcp-3gz4f); JSON-shaped on the wire.
+  replaceTemporalSymbolCommits: write(async (graphDb, p) =>
+    graphDb.replaceTemporalSymbolCommits(p.files as TemporalSymbolCommitFileSnapshot[]),
+  ),
+  deleteTemporalSymbolCommitFiles: write(async (graphDb, p) =>
+    graphDb.deleteTemporalSymbolCommitFiles([...(p.relPaths as string[])]),
+  ),
   checkpoint: write(async (graphDb) => graphDb.checkpoint()),
   rebuildEdgeFileTargetIndex: write(async (graphDb) => graphDb.rebuildEdgeFileTargetIndex()),
   recordRunStats: write(async (graphDb, p) => graphDb.recordRunStats(p.rows as ResolveRunStatsRow[])),
@@ -407,6 +415,9 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   readNonPublicMemberEdges: read(async (graphDb, p) => graphDb.readNonPublicMemberEdges(p.languages as string[])),
   readTemporalCochangeMeta: read(async (graphDb) => graphDb.readTemporalCochangeMeta()),
   readTemporalCochangeGraph: read(async (graphDb) => graphDb.readTemporalCochangeGraph()),
+  // Symbol-commit rows of the temporal sub-graph (bd tea-rags-mcp-3gz4f).
+  storedTemporalSymbolCommitFilePaths: read(async (graphDb) => graphDb.storedTemporalSymbolCommitFilePaths()),
+  readTemporalSymbolCommits: read(async (graphDb, p) => graphDb.readTemporalSymbolCommits(p.relPath as string)),
   // File-scope get_callers / get_callees (bd tea-rags-mcp-gfvr8). Plain data.
   getFileImporters: read(async (graphDb, p) => graphDb.getFileImporters(p.relPath as RelPath)),
   getFileImports: read(async (graphDb, p) => graphDb.getFileImports(p.relPath as RelPath)),

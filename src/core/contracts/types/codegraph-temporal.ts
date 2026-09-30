@@ -102,3 +102,36 @@ export interface TemporalCochangeGraph {
   meta: TemporalCochangeBuildMeta | null;
   edges: TemporalCochangeEdgeWithLinkage[];
 }
+
+/**
+ * One `cg_temporal_symbol_commits` row (bd tea-rags-mcp-3gz4f): the commits
+ * whose hunks touched a symbol's chunk lines inside one file — the chunk
+ * walk's offset tracking collapsed from chunk ids to symbols (`#partN`
+ * windows unioned into the parent, chunks without a symbolId dropped).
+ */
+export interface TemporalSymbolCommitRow {
+  relPath: RelPath;
+  symbolId: string;
+  commitShas: string[];
+}
+
+/** One flushed file's symbol commit sets — the unit the store replaces. */
+export interface TemporalSymbolCommitFileSnapshot {
+  relPath: RelPath;
+  symbols: { symbolId: string; commitShas: string[] }[];
+}
+
+/**
+ * Run-scoped handoff from the git chunk walk to the temporal completion hook
+ * (bd tea-rags-mcp-3gz4f). The git provider ABSORBS each dispatched batch's
+ * per-symbol commit sets on the main thread — the walk thread cannot hold it,
+ * and one file's chunks arrive in several batches — and the temporal hook
+ * DRAINS it at collection completion, replacing each flushed file's rows.
+ * Absorbing a symbol twice unions its sets: the split batches saw disjoint
+ * chunks of the same symbol.
+ */
+export interface TemporalSymbolCommitBuffer {
+  absorb: (relPath: RelPath, symbols: ReadonlyMap<string, ReadonlySet<string>>) => void;
+  /** Every buffered file snapshot, insertion order; empties the buffer. */
+  drainFiles: () => TemporalSymbolCommitFileSnapshot[];
+}

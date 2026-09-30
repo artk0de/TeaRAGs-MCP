@@ -59,6 +59,7 @@ import type {
   TemporalCochangeBuildMeta,
   TemporalCochangeGraph,
   TemporalCochangeSnapshot,
+  TemporalSymbolCommitFileSnapshot,
   TypeDeclarationReplaceEntry,
   TypeNameQuery,
   TypeNameRow,
@@ -676,6 +677,22 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async replaceTemporalCochange(snapshot: TemporalCochangeSnapshot): Promise<void> {
     await this.call("replaceTemporalCochange", { snapshot });
+  }
+
+  async replaceTemporalSymbolCommits(files: TemporalSymbolCommitFileSnapshot[]): Promise<void> {
+    await this.call("replaceTemporalSymbolCommits", { files });
+  }
+
+  async deleteTemporalSymbolCommitFiles(relPaths: string[]): Promise<void> {
+    await this.call("deleteTemporalSymbolCommitFiles", { relPaths: [...relPaths] });
+  }
+
+  async storedTemporalSymbolCommitFilePaths(): Promise<string[]> {
+    return (await this.call("storedTemporalSymbolCommitFilePaths", {})) as string[];
+  }
+
+  async readTemporalSymbolCommits(relPath: string): Promise<TemporalSymbolCommitFileSnapshot> {
+    return (await this.call("readTemporalSymbolCommits", { relPath })) as TemporalSymbolCommitFileSnapshot;
   }
 
   async readTemporalCochangeMeta(): Promise<TemporalCochangeBuildMeta | null> {
