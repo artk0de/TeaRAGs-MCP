@@ -17,6 +17,7 @@ import {
 } from "../../adapters/qdrant/schema-manager.js";
 import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../contracts/index.js";
 import { toPhysicalPayloadKey } from "../../contracts/signal-utils.js";
+import type { TemporalSymbolCommitBuffer } from "../../contracts/types/codegraph.js";
 import type { FilterPresetDef } from "../../contracts/types/filter-preset.js";
 import type {
   IdentifierNamingConvention,
@@ -141,6 +142,13 @@ export interface CompositionOptions {
      * inline-only (graceful fallback). bd tea-rags-mcp-dz7f.
      */
     workerDescriptor?: WorkerEnrichmentDescriptor;
+    /**
+     * Run-scoped main-thread buffer absorbing per-symbol commit sets during
+     * the chunk walk (bd tea-rags-mcp-3gz4f). The composition root must pass
+     * the SAME instance here and to `codegraph.temporalSymbolCommits` — the
+     * git provider fills it, the temporal completion hook drains it.
+     */
+    temporalSymbolCommits?: TemporalSymbolCommitBuffer;
   };
   /**
    * When provided, registers the codegraph L1 family (Slice 1: Symbols).
@@ -301,7 +309,14 @@ export function createComposition(options: CompositionOptions = {}): Composition
 
   const registry = new TrajectoryRegistry();
   registry.register(new StaticTrajectory());
-  registry.register(new GitTrajectory(options.git?.config, options.git?.squashOpts, options.git?.workerDescriptor));
+  registry.register(
+    new GitTrajectory(
+      options.git?.config,
+      options.git?.squashOpts,
+      options.git?.workerDescriptor,
+      options.git?.temporalSymbolCommits,
+    ),
+  );
   if (options.codegraph) {
     for (const trajectory of createCodegraphTrajectories({ ...options.codegraph, languageFactory })) {
       registry.register(trajectory);

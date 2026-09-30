@@ -9,7 +9,7 @@
  */
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
-import type { AmbiguousResolveMode } from "../../../contracts/types/codegraph.js";
+import type { AmbiguousResolveMode, TemporalSymbolCommitBuffer } from "../../../contracts/types/codegraph.js";
 import type {
   CollectSymbolsFn,
   LanguageFactoryDescriptor,
@@ -86,6 +86,12 @@ export interface CodegraphDeps {
    * history off, tests) ⇒ the temporal trajectory registers but builds nothing.
    */
   temporal?: TemporalCochangeConfig;
+  /**
+   * Run-scoped main-thread buffer the git provider absorbs per-symbol commit
+   * sets into (bd tea-rags-mcp-3gz4f); the temporal completion hook drains it.
+   * The SAME instance must reach both legs — injected by the composition root.
+   */
+  temporalSymbolCommits?: TemporalSymbolCommitBuffer;
 }
 
 /**
@@ -102,9 +108,12 @@ export interface CodegraphDeps {
 export function createCodegraphTrajectories(
   deps: CodegraphDeps & { languageFactory: LanguageFactoryDescriptor },
 ): Trajectory[] {
-  const { temporal, ...symbolsDeps } = deps;
+  const { temporal, temporalSymbolCommits, ...symbolsDeps } = deps;
   return [
-    createSymbolsTrajectory({ ...symbolsDeps, collectionCompletionHooks: createTemporalCochangeHooks(temporal) }),
+    createSymbolsTrajectory({
+      ...symbolsDeps,
+      collectionCompletionHooks: createTemporalCochangeHooks(temporal, temporalSymbolCommits),
+    }),
     createTemporalTrajectory(),
   ];
 }

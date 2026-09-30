@@ -26,7 +26,11 @@ import { relative, sep } from "node:path";
 import { VcsAdapterFactory } from "../../../../../adapters/vcs/factory.js";
 import { resolveRepoRoot } from "../../../../../adapters/vcs/git/git-cli/client.js";
 import type { GitAdapterKind } from "../../../../../adapters/vcs/types.js";
-import type { RelPath, TemporalCochangeBuildMeta } from "../../../../../contracts/types/codegraph.js";
+import type {
+  RelPath,
+  TemporalCochangeBuildMeta,
+  TemporalSymbolCommitBuffer,
+} from "../../../../../contracts/types/codegraph.js";
 import { isDebug } from "../../../../../infra/runtime.js";
 import { GitCommitDiscovery, GitCommitDiscoveryStore, type GitCommitDiscoveryEntry } from "../../../git/index.js";
 import type {
@@ -137,7 +141,11 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
   private readonly historySource: TemporalCochangeHistorySource;
   private readonly now: () => number;
 
-  constructor(private readonly options: TemporalCochangeBuilderOptions) {
+  constructor(
+    private readonly options: TemporalCochangeBuilderOptions,
+    /** bd tea-rags-mcp-3gz4f — drained and flushed at every completion. */
+    private readonly symbolCommits?: TemporalSymbolCommitBuffer,
+  ) {
     this.historySource =
       options.historySource ??
       new GitTemporalCochangeHistorySource({
@@ -164,6 +172,9 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
       previous.fingerprint === fingerprint &&
       nowSeconds - previous.builtAt < DAY_SECONDS
     ) {
+      // Content edits at the same HEAD land here: no live-set read, only the
+      // re-walked files' rows are replaced (bd tea-rags-mcp-3gz4f).
+      await this.flushSymbolCommits(graphDb);
       this.emitTiming({ status: "fresh", totalMs: t1 - t0, skipCheckMs: t1 - t0 });
       return { status: "fresh", meta: previous };
     }
@@ -197,6 +208,7 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
       sessionGapMinutes: this.options.sessionGapMinutes,
     };
     await graphDb.replaceTemporalCochange({ meta, files: graph.files, edges: graph.edges });
+    await this.flushSymbolCommits(graphDb, live, projectPrefix);
     const t4 = this.now();
     this.emitTiming({
       status: "built",
@@ -219,6 +231,30 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
   private emitTiming(fields: Record<string, unknown>): void {
     if (!isDebug()) return;
     console.error(`[GitEnrich] PHASE: TEMPORAL_COCHANGE ${JSON.stringify(fields)}`);
+  }
+
+  /**
+   * Drains the run-scoped symbol-commit buffer into `cg_temporal_symbol_commits`
+   * (bd tea-rags-mcp-3gz4f) — replace per file the git walk absorbed, so a
+   * re-walked file's stale rows go with its diff. Only a build read the live
+   * path set: on it, stored rows whose path left the project subtree are
+   * pruned; on the fresh path the buffer carries the full delta (nothing left
+   * the subtree when HEAD and the deletions fingerprint both stood still).
+   * No buffer — a hook built without the composition wiring, or a test — is a
+   * no-op, never an error: the hook is best-effort by contract.
+   */
+  private async flushSymbolCommits(
+    graphDb: CodegraphCollectionCompletionContext["graphDb"],
+    live?: ReadonlySet<string>,
+    projectPrefix = "",
+  ): Promise<void> {
+    if (!this.symbolCommits) return;
+    const files = this.symbolCommits.drainFiles();
+    await graphDb.replaceTemporalSymbolCommits(files);
+    if (!live) return;
+    const stored = await graphDb.storedTemporalSymbolCommitFilePaths();
+    const gone = stored.filter((relPath) => !live.has(`${projectPrefix}${relPath}`));
+    if (gone.length > 0) await graphDb.deleteTemporalSymbolCommitFiles(gone);
   }
 
   /**

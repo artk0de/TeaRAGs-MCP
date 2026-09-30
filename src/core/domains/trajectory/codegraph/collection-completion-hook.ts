@@ -26,8 +26,19 @@ import type { GraphDbClient } from "../../../contracts/types/codegraph.js";
 export interface CodegraphCollectionCompletionContext {
   /** Absolute root of the indexed project (the codegraph provider's `resolveRoot`). */
   projectRoot: string;
-  /** The collection's graph DB, write-capable (daemon-proxied in production). */
-  graphDb: Pick<GraphDbClient, "readTemporalCochangeMeta" | "replaceTemporalCochange">;
+  /**
+   * The collection's graph DB, write-capable (daemon-proxied in production).
+   * The temporal-cochange methods of both sub-graphs only — a hook never
+   * touches the symbol graph's own tables.
+   */
+  graphDb: Pick<
+    GraphDbClient,
+    | "readTemporalCochangeMeta"
+    | "replaceTemporalCochange"
+    | "replaceTemporalSymbolCommits"
+    | "storedTemporalSymbolCommitFilePaths"
+    | "deleteTemporalSymbolCommitFiles"
+  >;
 }
 
 export interface CodegraphCollectionCompletionHook {

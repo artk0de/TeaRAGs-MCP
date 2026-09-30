@@ -20,6 +20,7 @@ import type {
   GitAdapterKind,
   OidBatchResolver,
 } from "../../../adapters/vcs/types.js";
+import type { TemporalSymbolCommitBuffer } from "../../../contracts/types/codegraph.js";
 import type { TrajectoryGitConfig } from "../../../contracts/types/config.js";
 import type { FileClassification } from "../../../contracts/types/file-classification.js";
 import type {
@@ -43,6 +44,7 @@ import { GitEnrichmentCache } from "./infra/cache.js";
 import { buildChunkChurnMap } from "./infra/chunk-reader.js";
 import { defaultBlamePoolSize } from "./infra/churn-walk/blame-pool-defaults.js";
 import { BlameWorkerPool } from "./infra/churn-walk/blame-pool.js";
+import type { ChunkChurnWalkOutcome } from "./infra/churn-walk/protocol.js";
 import { ChunkChurnWalkPool } from "./infra/churn-walk/walk-pool.js";
 import { GitCommitDiscoveryStore } from "./infra/commit-discovery-store.js";
 import { GitCommitDiscovery } from "./infra/commit-discovery.js";
@@ -208,14 +210,25 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    */
   readonly workerDescriptor?: WorkerEnrichmentDescriptor;
 
+  /** bd tea-rags-mcp-3gz4f — run-scoped symbol commit sets, drained by the temporal hook. */
+  private readonly temporalSymbolCommits?: TemporalSymbolCommitBuffer;
+
   constructor(
     config?: Partial<GitProviderConfig>,
     squashOpts?: SquashOptions,
     workerDescriptor?: WorkerEnrichmentDescriptor,
+    /**
+     * bd tea-rags-mcp-3gz4f — the run-scoped buffer the temporal hook drains.
+     * Main-thread only: never rides the worker config (a class instance cannot
+     * cross postMessage), the off-thread walk returns its sets as data and the
+     * absorption happens here.
+     */
+    temporalSymbolCommits?: TemporalSymbolCommitBuffer,
   ) {
     this.config = { ...DEFAULT_PROVIDER_CONFIG, ...config };
     this.squashOpts = squashOpts;
     this.workerDescriptor = workerDescriptor;
+    this.temporalSymbolCommits = temporalSymbolCommits;
     this.fileSignalTransform = (data, maxEndLine) => {
       const churnData = data as unknown as FileChurnData;
       const blameLines = this.blameByChurnData.get(churnData);
@@ -728,9 +741,10 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     const relPaths = [...chunkMap.keys()].map((key) => (key.startsWith(root) ? key.slice(root.length + 1) : key));
     const handoff = this.sliceChunkHandoff(relPaths);
     let rawResult: Map<string, Map<string, ChunkChurnOverlay>>;
+    let symbolCommits: Map<string, Map<string, Set<string>>> | undefined;
     try {
       if (walkThread && options?.commitDiscovery && options.skipCache) {
-        rawResult = await this.walkChunkChurnOffThread(
+        const outcome = await this.walkChunkChurnOffThread(
           root,
           chunkMap,
           walkThread,
@@ -738,7 +752,9 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
           handoff,
           options,
         );
+        ({ overlays: rawResult, symbolCommits } = outcome);
       } else {
+        const collected = new Map<string, Map<string, Set<string>>>();
         rawResult = await buildChunkChurnMap(
           await this.adapterFor(root),
           chunkMap,
@@ -764,7 +780,14 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
           options?.commitDiscovery,
           // iqpuu: per-walk instrumentation for the [ChunkChurn] pipeline line.
           options?.onWalkStats,
+          collected,
         );
+        symbolCommits = collected;
+      }
+      if (this.temporalSymbolCommits && symbolCommits) {
+        for (const [relPath, symbols] of symbolCommits) {
+          this.temporalSymbolCommits.absorb(relPath, symbols);
+        }
       }
     } finally {
       // Released on failure too: a failed walk is healed by backfill/recovery,
@@ -799,9 +822,16 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     discovery: NonNullable<ChunkSignalOptions["commitDiscovery"]>,
     handoff: ChunkPhaseHandoffSlice,
     options?: ChunkSignalOptions,
-  ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
+  ): Promise<ChunkChurnWalkOutcome> {
     const relativeChunkMap = relativizeChunkMap(root, chunkMap);
-    if (relativeChunkMap.size === 0) return new Map();
+    // 3gz4f: the short-circuit reports no symbolCommits — no walk, nothing to
+    // absorb; the zeroed stats keep the shape the caller destructures.
+    if (relativeChunkMap.size === 0) {
+      return {
+        overlays: new Map(),
+        stats: { files: 0, commits: 0, holdCount: 0, semWaitMs: 0, blobReads: 0, patches: 0, memoHits: 0, wallMs: 0 },
+      };
+    }
 
     // Same failure semantics as walkCommits' discovery branch: a broken
     // discovery ⇒ no churn for this batch, never a thrown enrichment error.
@@ -843,6 +873,6 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       useSharedLimiter: options?.concurrencySemaphore !== undefined,
     });
     options?.onWalkStats?.(outcome.stats);
-    return outcome.overlays;
+    return outcome;
   }
 }

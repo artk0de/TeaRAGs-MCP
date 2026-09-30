@@ -21,3 +21,4 @@ export {
   type CochangeExtractionOptions,
   type CochangeGraphExtraction,
 } from "./pair-extractor.js";
+export { InMemoryTemporalSymbolCommitBuffer } from "./symbol-commit-buffer.js";
