@@ -7,3 +7,9 @@
 
 export { tarjanScc, type AdjacencyMap, type Scc } from "./tarjan-scc.js";
 export { pageRank, type PageRankOptions, type PageRankResult } from "./page-rank.js";
+export {
+  weightThresholdComponents,
+  type WeightedComponent,
+  type WeightedComponentAnalysis,
+  type WeightedNodeEdge,
+} from "./weight-threshold-components.js";
