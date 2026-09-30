@@ -31,6 +31,32 @@ export interface GetArchitectureReportRequest {
   pathPattern?: string;
   /** Max violations and max root causes returned per detector (default 50); the summary keeps the totals. */
   limit?: number;
+  /**
+   * Ask for the layer map VIEW (bd tea-rags-mcp-r8hme.26) alongside the
+   * violations — `response.layerMap` appears only when requested, so a full
+   * map never bloats an unqualified report. Its `scopePathPattern` means
+   * "layers of the induced subgraph", deliberately NOT this request's
+   * `pathPattern` (judge edges by source, whole-graph instability).
+   */
+  layerMap?: ArchitectureLayerMapOptions;
+}
+
+/** How the layer map view picks its nodes (bd tea-rags-mcp-r8hme.26). */
+export interface ArchitectureLayerMapOptions {
+  /**
+   * Picomatch glob: nodes whose path matches live inside the map; edges
+   * crossing the boundary are kept as boundary findings naming the external
+   * component and its GLOBAL level. Absent: the whole repository.
+   */
+  scopePathPattern?: string;
+  /** `file` nodes are files; `directory` nodes are components (default). */
+  granularity?: "directory" | "file";
+  /**
+   * With `directory`: collapse every directory DEEPER than this many segments
+   * below the scope root into its ancestor — 0 collapses the whole scope into
+   * one node.
+   */
+  directoryDepth?: number;
 }
 
 /** Where a dependency's target sits relative to its source, by directory. */
@@ -437,6 +463,80 @@ export type ArchitectureViolation =
   | MainSequenceArchitectureViolation
   | LayeringArchitectureViolation;
 
+/**
+ * The layer map VIEW (bd tea-rags-mcp-r8hme.26): levels per node inside a
+ * scope, at directory or file granularity, with the boundary edges kept (not
+ * dropped) and the move-candidate signal. Lives in the report response under
+ * `layerMap`, present only when the request asked for one.
+ */
+export interface ArchitectureLayerMap {
+  /** Present when the request scoped the map. */
+  scope?: string;
+  granularity: "directory" | "file";
+  /** Number of distinct levels, 0-based; 0 when the scope holds no edge. */
+  levelCount: number;
+  /** By level, then node. */
+  nodes: LayerMapNodeDto[];
+  /** By member count, then members. */
+  knots: LayerMapKnotDto[];
+  /** By external component, then source node. */
+  boundaryOut: LayerMapBoundaryEdgeDto[];
+  /** By external component, then target node. */
+  boundaryIn: LayerMapBoundaryEdgeDto[];
+  moveCandidates: LayerMapMoveCandidateDto[];
+  summary: {
+    nodeCount: number;
+    innerEdgeCount: number;
+    boundaryOutEdgeCount: number;
+    boundaryInEdgeCount: number;
+  };
+}
+
+/** One node of the map with its position in the induced layer stack. */
+export interface LayerMapNodeDto {
+  /** A component directory, a collapsed directory prefix, or a file path. */
+  node: string;
+  /** Longest dependency path from the sinks of the induced graph: 0 = foundation. */
+  level: number;
+  /** Longest path from the roots: 0 = nothing inside depends on it. */
+  depth: number;
+  inKnot: boolean;
+  innerAfferentCount: number;
+  innerEfferentCount: number;
+}
+
+/** One edge crossing the scope boundary — kept, with the outside endpoint's global level. */
+export interface LayerMapBoundaryEdgeDto {
+  /** The inside node the edge leaves from (boundary-out). */
+  sourceNode?: string;
+  /** The inside node the edge enters (boundary-in). */
+  targetNode?: string;
+  externalComponent: string;
+  externalLevel: number;
+  callWeight: number;
+}
+
+/** An inside node nothing inside depends on whose outward edges point into one other domain. */
+export interface LayerMapMoveCandidateDto {
+  node: string;
+  level: number;
+  externalComponent: string;
+  callWeight: number;
+}
+
+/** One multi-node cycle among the map's nodes, with the cut that levels them. */
+export interface LayerMapKnotDto {
+  components: string[];
+  feedbackArcSet: {
+    sourceComponent: string;
+    targetComponent: string;
+    callWeight: number;
+    fileEdges: ArchitectureFileEdge[];
+  }[];
+  cutEdgeCount: number;
+  levelsAfterCut: number;
+}
+
 /** Every Stable Dependencies violation into one unstable target component, as one finding. */
 export interface StableDependencyArchitectureRootCause {
   detector: "stableDependencies";
@@ -761,4 +861,10 @@ export interface GetArchitectureReportResponse {
    * component, no root cause), each capped at `limit`, most severe first.
    */
   violations: ArchitectureViolation[];
+  /**
+   * The layer map VIEW (bd tea-rags-mcp-r8hme.26), present only when the
+   * request carried `layerMap` — levels per node, boundary edges with the
+   * outside component's global level, move candidates.
+   */
+  layerMap?: ArchitectureLayerMap;
 }

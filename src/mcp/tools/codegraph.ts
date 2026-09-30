@@ -133,6 +133,16 @@ const GetArchitectureReportInputShape = {
     .max(500)
     .optional()
     .describe("Max violations and max root causes per detector (default 50). Summary keeps totals."),
+  layerMap: z
+    .object({
+      scopePathPattern: z.string().optional(),
+      granularity: z.enum(["directory", "file"]).optional(),
+      directoryDepth: z.number().int().min(0).max(10).optional(),
+    })
+    .optional()
+    .describe(
+      "Also return the layer map VIEW: levels per node in scopePathPattern, boundary edges with global levels, move candidates.",
+    ),
 };
 
 /**
@@ -365,7 +375,9 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "(cut these N edges -> k levels); violations knot / backEdge (minority-weight direction, equal weights never " +
       "guessed) / abstractionBypass (consumer reaches measured-concrete component past measured-abstract one beneath); " +
       "informational compositionCycle / island (nothing depends on it, below the top) / layerSkip (>=2 levels straight " +
-      "down); summary.layering: coverage, levelCount, coherence (rank correlation level vs instability). Summary " +
+      "down); summary.layering: coverage, levelCount, coherence (rank correlation level vs instability). layerMap " +
+      "option: also return the map VIEW — levels per node in scopePathPattern (file|directory granularity, directoryDepth " +
+      "collapse), boundary edges with the outside component's global level, move candidates; absent unless asked. Summary " +
       "counts exclusions with named reasons. Diagnosis, not prescription.",
     schemaKey: "get_architecture_report",
     invoke: async (app, request) =>

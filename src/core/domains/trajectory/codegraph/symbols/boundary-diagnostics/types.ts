@@ -762,3 +762,95 @@ export interface LayeringReport {
   violations: LayeringViolation[];
   summary: LayeringSummary;
 }
+
+/**
+ * Layer map options (bd tea-rags-mcp-r8hme.26): a VIEW over the layering
+ * model. The scope picks the domain, the granularity picks the node.
+ */
+export interface LayerMapOptions {
+  /**
+   * Picomatch glob: nodes whose path matches live inside the map; edges
+   * crossing the boundary are kept as boundary-out / boundary-in findings
+   * naming the EXTERNAL component and its global level. Absent: the whole
+   * repository, no boundary findings.
+   */
+  scopePathPattern?: string;
+  /** `file` nodes are files; `directory` nodes are components (default). */
+  granularity?: "directory" | "file";
+  /**
+   * With `directory`: collapse every directory DEEPER than this many segments
+   * below the scope root into its ancestor — `0` collapses the whole scope
+   * into one node. The same mapping r8hme.30's domain partition reuses.
+   */
+  directoryDepth?: number;
+}
+
+/** One node of the map with its position in the induced layer stack. */
+export interface LayerMapNode {
+  /** A component directory, a collapsed directory prefix, or a file path. */
+  node: string;
+  level: number;
+  /** Longest path from the roots of the induced graph: 0 = nothing inside depends on it. */
+  depth: number;
+  inKnot: boolean;
+  /** Dependencies (or file edges) from inside the scope into the node. */
+  innerAfferentCount: number;
+  /** Dependencies (or file edges) from the node to inside the scope. */
+  innerEfferentCount: number;
+}
+
+/** One edge crossing the scope boundary, kept — not dropped — by the map. */
+export interface LayerMapBoundaryEdge {
+  /** The inside node the edge leaves from (boundary-out) / enters (boundary-in). */
+  sourceNode?: string;
+  targetNode?: string;
+  /** The component outside the scope the edge reaches / comes from. */
+  externalComponent: string;
+  /** That component's level in the WHOLE-repository stack. */
+  externalLevel: number;
+  /** Sum of the carrying file edges' call weights. */
+  callWeight: number;
+}
+
+/** An inner node with no inner afferents whose outward edges point into one other domain. */
+export interface LayerMapMoveCandidate {
+  node: string;
+  level: number;
+  externalComponent: string;
+  callWeight: number;
+}
+
+/** One multi-node cycle among the map's nodes, with the cut that levels them. */
+export interface LayerMapKnot {
+  components: string[];
+  feedbackArcSet: {
+    sourceComponent: string;
+    targetComponent: string;
+    callWeight: number;
+    fileEdges: { sourceRelPath: string; targetRelPath: string; callWeight: number }[];
+  }[];
+  cutEdgeCount: number;
+  levelsAfterCut: number;
+}
+
+export interface LayerMap {
+  scope?: string;
+  granularity: "directory" | "file";
+  levelCount: number;
+  /** By level, then node. */
+  nodes: LayerMapNode[];
+  /** By member count, then members. */
+  knots: LayerMapKnot[];
+  /** By external component, then source node. */
+  boundaryOut: LayerMapBoundaryEdge[];
+  /** By external component, then target node. */
+  boundaryIn: LayerMapBoundaryEdge[];
+  /** By external component, then node. */
+  moveCandidates: LayerMapMoveCandidate[];
+  summary: {
+    nodeCount: number;
+    innerEdgeCount: number;
+    boundaryOutEdgeCount: number;
+    boundaryInEdgeCount: number;
+  };
+}

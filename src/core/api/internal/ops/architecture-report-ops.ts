@@ -27,6 +27,7 @@ import type {
 import { DOCUMENTATION_LANGUAGES, LANGUAGE_MAP } from "../../../domains/ingest/pipeline/chunker/config.js";
 import {
   buildComponentGraph,
+  buildLayerMap,
   COMPONENT_CONTAINMENT_REASON,
   CONVENTION_PRIVACY_LANGUAGES,
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
@@ -77,7 +78,7 @@ import type {
 /** Default `GetArchitectureReportRequest.limit`. */
 export const DEFAULT_ARCHITECTURE_REPORT_LIMIT = 50;
 
-type ArchitectureReportScope = Pick<GetArchitectureReportRequest, "pathPattern" | "limit">;
+type ArchitectureReportScope = Pick<GetArchitectureReportRequest, "pathPattern" | "limit" | "layerMap">;
 
 /**
  * The module specifiers each named file declares (`payload.imports`), keyed by
@@ -178,12 +179,16 @@ export class ArchitectureReportOps {
         ...mainSequenceViolations(mainSequence, limit),
         ...layeringViolations(layering, limit),
       ],
+      // The layer map VIEW only when asked (bd tea-rags-mcp-r8hme.26) — a full
+      // map never bloats an unqualified report.
+      ...(request.layerMap ? { layerMap: buildLayerMap(components, production.graph, request.layerMap) } : {}),
     };
   }
 
   /**
-   * The report for a collection that has no codegraph database: nothing read.
-   * `edgeCount: 0` is what tells it apart from a judged, clean graph.
+   * The layer map view (bd tea-rags-mcp-r8hme.26), computed over the SAME
+   * production graph and component partition the detectors judge, only when
+   * the request asked for one.
    */
   static empty(request: ArchitectureReportScope): GetArchitectureReportResponse {
     return {

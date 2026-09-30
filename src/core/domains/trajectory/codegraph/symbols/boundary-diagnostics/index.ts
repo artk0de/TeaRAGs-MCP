@@ -26,6 +26,8 @@ export {
   MAIN_SEQUENCE_UNOBSERVABLE_REASON,
 } from "./main-sequence.js";
 export { buildLayeringModel, detectLayeringViolations } from "./layering.js";
+export { buildLayerMap, collapseDirectory, nodeMapping } from "./layer-map.js";
+export { condensedPositions, sccKnots, weightedFeedbackArcSet, type SimpleEdge } from "./layer-graph.js";
 export {
   otsuSplit,
   resolveMajorityFlooredOtsuThreshold,
@@ -77,6 +79,12 @@ export type {
   LayeringKnotViolation,
   LayeringLayerSkipViolation,
   LayeringModel,
+  LayerMap,
+  LayerMapBoundaryEdge,
+  LayerMapKnot,
+  LayerMapMoveCandidate,
+  LayerMapNode,
+  LayerMapOptions,
   LayeringReport,
   LayeringSummary,
   LayeringViolation,
