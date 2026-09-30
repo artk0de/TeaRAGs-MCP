@@ -43,6 +43,8 @@ import {
   MAIN_SEQUENCE_STABLE_CONCRETE_CALM_REASON,
   MAIN_SEQUENCE_UNOBSERVABLE_REASON,
   NON_PRODUCTION_REASON,
+  buildDomainComponentGraph,
+  buildLayeringModel,
   type ComponentStableDependenciesReport,
   type ConventionPrivacyReport,
   type LayeringFeedbackEdge as DomainLayeringFeedbackEdge,
@@ -67,6 +69,7 @@ import type {
   FacadeModuleSummary,
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
+  LayeringPartitionCounts,
   LayeringReportSummary,
   LeakingAbstractionReportSummary,
   MainSequenceReportSummary,
@@ -154,8 +157,19 @@ export class ArchitectureReportOps {
       request,
       readImportSpecifiers,
     );
-    // Inferred layering over the same components (bd tea-rags-mcp-r8hme.22).
-    const layering = detectLayeringViolations(components, graph.files, { sourcePathPattern: request.pathPattern });
+    // Inferred layering over the DOMAIN partition (bd tea-rags-mcp-r8hme.30):
+    // every facade directory is a unit whether importers adopted it or not —
+    // the adoption partition levels a language vertical one component per
+    // subdirectory and measures intra-vertical depth, not inter-domain
+    // layering. The adoption partition's counts ride along for comparison.
+    const layeringComponents = buildDomainComponentGraph(graph, leaks.modules);
+    const layering = detectLayeringViolations(layeringComponents, graph.files, {
+      sourcePathPattern: request.pathPattern,
+    });
+    const facadePartition = {
+      componentCount: components.components.size,
+      levelCount: buildLayeringModel(components).levelCount,
+    };
     const limit = request.limit ?? DEFAULT_ARCHITECTURE_REPORT_LIMIT;
     return {
       ...(request.pathPattern ? { pathPattern: request.pathPattern } : {}),
@@ -169,7 +183,7 @@ export class ArchitectureReportOps {
         leakingAbstraction: summariseLeaks(leaks, privacy, limit),
         silentCoupling: summariseSilentCoupling(silent, limit),
         mainSequence: summariseMainSequence(mainSequence),
-        layering: summariseLayering(layering),
+        layering: summariseLayering(layering, facadePartition),
       },
       rootCauses: [...sdpRootCauses(sdp, limit), ...leakRootCauses(leaks, limit), ...silentRootCauses(silent, limit)],
       violations: [
@@ -180,8 +194,12 @@ export class ArchitectureReportOps {
         ...layeringViolations(layering, limit),
       ],
       // The layer map VIEW only when asked (bd tea-rags-mcp-r8hme.26) — a full
-      // map never bloats an unqualified report.
-      ...(request.layerMap ? { layerMap: buildLayerMap(components, production.graph, request.layerMap) } : {}),
+      // map never bloats an unqualified report. Same DOMAIN partition the
+      // layering detector judges (bd tea-rags-mcp-r8hme.30), so its
+      // boundary edges carry levels consistent with the summary.
+      ...(request.layerMap
+        ? { layerMap: buildLayerMap(layeringComponents, production.graph, request.layerMap) }
+        : {}),
     };
   }
 
@@ -225,7 +243,10 @@ export class ArchitectureReportOps {
         mainSequence: summariseMainSequence(
           detectMainSequenceDeviations(buildComponentGraph({ files: [], edges: [] }, []), []),
         ),
-        layering: summariseLayering(detectLayeringViolations(buildComponentGraph({ files: [], edges: [] }, []), [])),
+        layering: summariseLayering(
+          detectLayeringViolations(buildComponentGraph({ files: [], edges: [] }, []), []),
+          { componentCount: 0, levelCount: 0 },
+        ),
       },
       rootCauses: [],
       violations: [],
@@ -550,12 +571,16 @@ function summariseMainSequence(report: MainSequenceReport): MainSequenceReportSu
   };
 }
 
-function summariseLayering(report: LayeringReport): LayeringReportSummary {
+function summariseLayering(
+  report: LayeringReport,
+  facadePartition: LayeringPartitionCounts,
+): LayeringReportSummary {
   const { summary } = report;
   return {
     componentCount: summary.componentCount,
     componentEdgeCount: summary.componentEdgeCount,
     levelCount: summary.levelCount,
+    facadePartition,
     coverage: round3(summary.coverage),
     coherence: round3(summary.coherence),
     knotCount: summary.knotCount,

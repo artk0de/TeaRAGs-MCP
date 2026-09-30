@@ -837,6 +837,14 @@ export interface LayerMapKnot {
   }[];
   cutEdgeCount: number;
   levelsAfterCut: number;
+  /**
+   * Every edge inside the set joins a directory to one nested inside it —
+   * composition of a module with its own sub-parts, the same verdict the
+   * layering summary reports these cycles under (`compositionCycle`, not
+   * `knot`), so the map's knot count reconciles with the summary's
+   * `knotCount` + `compositionCycleCount`.
+   */
+  composition: boolean;
 }
 
 export interface LayerMap {

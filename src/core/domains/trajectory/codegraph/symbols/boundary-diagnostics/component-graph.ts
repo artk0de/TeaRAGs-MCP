@@ -24,6 +24,24 @@ import type {
  */
 export const COMPONENT_MODULE_STATUSES: ReadonlySet<FacadeModuleStatus> = new Set(["active", "facade-not-adopted"]);
 
+/**
+ * Every candidate module (bd tea-rags-mcp-r8hme.30): the DOMAIN partition of
+ * the layering detector. Whether importers ADOPTED the facade says whether a
+ * boundary can be LEAKED PAST — it says nothing about whether the directory
+ * declares itself a unit. A language vertical's `<lang>/index.ts` is its
+ * domain even where the factory is the only importer; a Go package is a
+ * domain its compiler drew. The adoption-stable SDP / main-sequence detectors
+ * keep {@link COMPONENT_MODULE_STATUSES} — the `src` catch-all that this
+ * wider set allows is what those must not judge (see above); layers have no
+ * such risk, they are read off the dependency direction, not off instability.
+ */
+export const DOMAIN_MODULE_STATUSES: ReadonlySet<FacadeModuleStatus> = new Set([
+  "active",
+  "facade-not-adopted",
+  "too-few-importers",
+  "language-enforced",
+]);
+
 /** What the containment exclusion takes out of SDP judgement, named for a report. */
 export const COMPONENT_CONTAINMENT_REASON =
   "containment: a component depending on a component nested inside its directory - composition, not a peer dependency";
@@ -56,9 +74,10 @@ export const COMPONENT_CONTAINMENT_REASON =
 export function buildComponentGraph(
   graph: FileDependencyGraph,
   modules: readonly FacadeModuleAssessment[],
+  statuses: ReadonlySet<FacadeModuleStatus> = COMPONENT_MODULE_STATUSES,
 ): ComponentGraph {
   const componentModules = new Map<string, FacadeModuleAssessment>();
-  for (const m of modules) if (COMPONENT_MODULE_STATUSES.has(m.status)) componentModules.set(m.moduleDir, m);
+  for (const m of modules) if (statuses.has(m.status)) componentModules.set(m.moduleDir, m);
 
   const componentOf = new Map<RelPath, string>();
   const members = new Map<string, number>();
@@ -125,6 +144,25 @@ export function buildComponentGraph(
     );
 
   return { components, componentOf, dependencies, excluded, fileEdgeCount: graph.edges.length };
+}
+
+/**
+ * The DOMAIN partition (bd tea-rags-mcp-r8hme.30): every directory that
+ * declares a facade is a component, whether importers adopted it or not —
+ * a Go package too. This is the partition the layering detector judges by
+ * default and the layer map reads: the A1/A7 partition measures whether a
+ * boundary can be leaked past, while levels ask which units the dependency
+ * DIRECTION stacks, and a language vertical's `<lang>/index.ts` is such a
+ * unit even where the factory is its only importer. Files outside every
+ * facade directory still belong to their own directory, and a facade's
+ * subtree is still minus the nested facades' subtrees — same rules as
+ * {@link buildComponentGraph}, only the module set is wider.
+ */
+export function buildDomainComponentGraph(
+  graph: FileDependencyGraph,
+  modules: readonly FacadeModuleAssessment[],
+): ComponentGraph {
+  return buildComponentGraph(graph, modules, DOMAIN_MODULE_STATUSES);
 }
 
 /** The innermost component module containing `relPath`, else the file's own directory. */
