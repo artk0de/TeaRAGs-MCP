@@ -75,7 +75,22 @@ export function buildLayeringModel(componentGraph: ComponentGraph): LayeringMode
     [...componentGraph.components.keys()].map((component) => [component, positionOf(component)]),
   );
 
-  const knots = sccs.map((members) => buildKnot(componentGraph, members)).sort(byMemberCountThenMembers);
+  // One pass buckets every dependency leaving a knot member: into the knot's
+  // internal edges, or its edges to external components.
+  const internalOf = sccs.map((): ComponentDependency[] => []);
+  const externalOf = sccs.map((): ComponentDependency[] => []);
+  for (const dependency of edges) {
+    const sourceKnot = knotOf.get(dependency.sourceComponent);
+    if (sourceKnot === undefined) continue;
+    const bucket = knotOf.get(dependency.targetComponent) === sourceKnot ? internalOf : externalOf;
+    bucket[sourceKnot]?.push(dependency);
+  }
+  const baseLevelOf = (component: string) => positionOf(component).level;
+  const knots = sccs
+    .map((members, index) =>
+      buildKnot(componentGraph, members, internalOf[index] ?? [], externalOf[index] ?? [], baseLevelOf),
+    )
+    .sort(byMemberCountThenMembers);
 
   return {
     positions,
@@ -470,54 +485,109 @@ function pearson(xs: readonly number[], ys: readonly number[]): number {
  * whose every internal edge joins a directory to one nested inside it is
  * composition — a module and its own sub-parts, not a layering defect.
  *
- * `levelsAfterCut` re-runs the whole condensation with the cut applied, so
- * other knots stay condensed and the number is a level count the members
- * really reach, not a wish.
+ * `levelsAfterCut` is the level count the members reach in the FULL graph
+ * with the cut applied, computed member-locally (bd tea-rags-mcp-r8hme.36):
+ * the cut removes only edges inside this knot, so every other SCC stays as it
+ * was, and every component a member reaches outside the knot sits below it in
+ * the base condensation — it cannot reach the knot back — with its base level
+ * unchanged. A member's level is then the longest path over the knot's
+ * remaining internal edges, an edge out of the knot counting 1 + that
+ * component's base level. O(|K| + E_K) per knot instead of a whole-graph
+ * Tarjan + condensation per knot.
  */
-function buildKnot(componentGraph: ComponentGraph, members: readonly string[]): LayeringKnot {
-  const memberSet = new Set(members);
-  const internal = componentGraph.dependencies.filter(
-    (d) => memberSet.has(d.sourceComponent) && memberSet.has(d.targetComponent),
-  );
+function buildKnot(
+  componentGraph: ComponentGraph,
+  members: readonly string[],
+  internal: readonly ComponentDependency[],
+  external: readonly ComponentDependency[],
+  baseLevelOf: (component: string) => number,
+): LayeringKnot {
   const byCa = (a: string, b: string) =>
     (componentGraph.components.get(b)?.afferentCount ?? 0) - (componentGraph.components.get(a)?.afferentCount ?? 0) ||
     compareCodePoints(a, b);
 
   const feedbackArcSet = eadesLinSmyth(internal);
-  const cut = new Set(feedbackArcSet.map((edge) => `${edge.sourceComponent}\u0000${edge.targetComponent}`));
-  const withoutCut = componentGraph.dependencies.filter(
-    (d) => !cut.has(`${d.sourceComponent}\u0000${d.targetComponent}`),
+  const cut = new Set(feedbackArcSet.map((edge) => dependencyKey(edge.sourceComponent, edge.targetComponent)));
+  const dissolvedLevel = memberLevelsAfterCut(
+    members,
+    internal.filter((d) => !cut.has(dependencyKey(d.sourceComponent, d.targetComponent))).map(dependencyPair),
+    external.map(dependencyPair),
+    baseLevelOf,
   );
-  const dissolvedLevel = levelsAfterCutOf(withoutCut);
   const memberInstabilities = members.map((m) => componentGraph.components.get(m)?.instability ?? 0);
 
   return {
     components: [...members].sort(byCa),
     feedbackArcSet,
     cutEdgeCount: feedbackArcSet.length,
-    levelsAfterCut: new Set(members.map(dissolvedLevel)).size,
+    levelsAfterCut: new Set(members.map((member) => dissolvedLevel.get(member) ?? 0)).size,
     composition: internal.every((d) => d.directoryRelation === "descendant" || d.directoryRelation === "ancestor"),
     instabilitySpread: Math.max(...memberInstabilities) - Math.min(...memberInstabilities),
   };
 }
 
+function dependencyKey(source: string, target: string): string {
+  return `${source}\u0000${target}`;
+}
+
+function dependencyPair(dependency: ComponentDependency): readonly [string, string] {
+  return [dependency.sourceComponent, dependency.targetComponent];
+}
+
 /**
- * The levels of the FULL graph with `cutEdges` removed: re-run Tarjan (the cut
- * dissolves this knot; other knots re-condense), then the longest path. Every
- * component — knot member or not — answers with the level it would sit at.
+ * The level of every member over the member-local graph: 0 for a member with
+ * no outgoing edge, else the largest of 1 + a member successor's level and
+ * 1 + `baseLevelOf` an external successor. `internalEdges` join members,
+ * `externalEdges` run from a member to a component outside the member set.
+ *
+ * Iterative memoized DFS, so a long member chain cannot exhaust the stack. The
+ * edges are expected acyclic (a feedback arc set removed, or SCCs already
+ * condensed); a residual cycle does not loop — a successor still on the DFS
+ * path counts as level 0, the same break `longestPath` applies.
  */
-function levelsAfterCutOf(dependencies: readonly ComponentDependency[]): (component: string) => number {
-  const postSccs = tarjanScc(adjacency(dependencies));
-  const postKnotOf = new Map<string, number>();
-  postSccs.forEach((members, index) => {
-    members.forEach((member) => postKnotOf.set(member, index));
-  });
-  const postCondensation = condense(dependencies, postKnotOf);
-  const postLevel = longestPath(nodesOf(postCondensation, postKnotOf), postCondensation.outgoing);
-  return (component: string) => {
-    const knot = postKnotOf.get(component);
-    return postLevel.get(knot === undefined ? component : knotNode(knot)) ?? 0;
-  };
+function memberLevelsAfterCut(
+  members: readonly string[],
+  internalEdges: readonly (readonly [string, string])[],
+  externalEdges: readonly (readonly [string, string])[],
+  baseLevelOf: (component: string) => number,
+): Map<string, number> {
+  const successors = new Map<string, string[]>();
+  for (const [source, target] of internalEdges) {
+    if (source === target) continue;
+    const list = successors.get(source) ?? [];
+    list.push(target);
+    successors.set(source, list);
+  }
+  const externalFloor = new Map<string, number>();
+  for (const [source, target] of externalEdges) {
+    externalFloor.set(source, Math.max(externalFloor.get(source) ?? 0, 1 + baseLevelOf(target)));
+  }
+
+  const level = new Map<string, number>();
+  const onPath = new Set<string>();
+  for (const root of members) {
+    if (level.has(root)) continue;
+    const frames: { node: string; nextChild: number }[] = [{ node: root, nextChild: 0 }];
+    onPath.add(root);
+    while (frames.length > 0) {
+      const frame = frames[frames.length - 1];
+      if (!frame) break;
+      const next = successors.get(frame.node) ?? [];
+      if (frame.nextChild < next.length) {
+        const child = next[frame.nextChild++] ?? frame.node;
+        if (level.has(child) || onPath.has(child)) continue;
+        onPath.add(child);
+        frames.push({ node: child, nextChild: 0 });
+        continue;
+      }
+      let value = externalFloor.get(frame.node) ?? 0;
+      for (const child of next) value = Math.max(value, 1 + (level.get(child) ?? 0));
+      level.set(frame.node, value);
+      onPath.delete(frame.node);
+      frames.pop();
+    }
+  }
+  return level;
 }
 
 /**
