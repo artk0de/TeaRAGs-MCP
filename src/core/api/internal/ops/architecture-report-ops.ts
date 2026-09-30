@@ -42,14 +42,17 @@ import {
   excludeNonProductionFiles,
   FACADE_AGGREGATION_REASON,
   FACADE_MODULE_EXCLUSION_REASONS,
+  lookupLayeringKnot,
   MAIN_SEQUENCE_STABLE_CONCRETE_CALM_REASON,
   MAIN_SEQUENCE_UNOBSERVABLE_REASON,
   NON_PRODUCTION_REASON,
   type ComponentStableDependenciesReport,
   type ConventionPrivacyReport,
+  type LayeringBackEdgeViolation as DomainLayeringBackEdgeViolation,
   type LayeringFeedbackEdge as DomainLayeringFeedbackEdge,
   type LayeringViolation as DomainLayeringViolation,
   type FacadeModuleAssessment,
+  type LayeringKnotLookup,
   type LayeringReport,
   type LeakingAbstractionReport,
   type MainSequenceReport,
@@ -63,12 +66,15 @@ import {
   type SilentCouplingViolation,
 } from "../../../domains/trajectory/codegraph/temporal/index.js";
 import { buildNonProductionPathFilter } from "../../../infra/file-classification/index.js";
+import { UnknownArchitectureComponentError } from "../../errors.js";
 import type {
+  ArchitectureKnotView,
   ArchitectureRootCause,
   ArchitectureViolation,
   FacadeModuleSummary,
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
+  LayeringBackEdgeArchitectureViolation,
   LayeringPartitionCounts,
   LayeringReportSummary,
   LeakingAbstractionReportSummary,
@@ -90,7 +96,14 @@ export const LAYERING_FEEDBACK_EDGE_LIMIT = 10;
 /** Parent↔nested pairs listed per composition cycle; `nestedPairCount` keeps the total. */
 export const LAYERING_NESTED_PAIR_LIMIT = 10;
 
-type ArchitectureReportScope = Pick<GetArchitectureReportRequest, "pathPattern" | "limit" | "layerMap">;
+/** Points a knot finding at the `knotOf` view (bd tea-rags-mcp-r8hme.38). */
+export const LAYERING_KNOT_DRILL_DOWN_HINT =
+  "call get_architecture_report with knotOf to page every member and cut edge of this knot";
+
+type ArchitectureReportScope = Pick<
+  GetArchitectureReportRequest,
+  "pathPattern" | "limit" | "layerMap" | "knotOf" | "offset"
+>;
 
 /**
  * The module specifiers each named file declares (`payload.imports`), keyed by
@@ -172,9 +185,19 @@ export class ArchitectureReportOps {
     // subdirectory and measures intra-vertical depth, not inter-domain
     // layering. The adoption partition's counts ride along for comparison.
     const layeringComponents = buildDomainComponentGraph(graph, leaks.modules);
+    // Built once: the knot view reads the same model the detector judges.
+    const layeringModel = buildLayeringModel(layeringComponents);
     const layering = detectLayeringViolations(layeringComponents, graph.files, {
       sourcePathPattern: request.pathPattern,
+      model: layeringModel,
     });
+    const knotLookup =
+      request.knotOf === undefined
+        ? undefined
+        : lookupLayeringKnot(layeringComponents, layeringModel, request.knotOf, {
+            sourcePathPattern: request.pathPattern,
+          });
+    if (knotLookup?.kind === "unknownComponent") throw new UnknownArchitectureComponentError(knotLookup.component);
     const facadePartition = {
       componentCount: components.components.size,
       levelCount: buildLayeringModel(components).levelCount,
@@ -207,6 +230,8 @@ export class ArchitectureReportOps {
       // layering detector judges (bd tea-rags-mcp-r8hme.30), so its
       // boundary edges carry levels consistent with the summary.
       ...(request.layerMap ? { layerMap: buildLayerMap(layeringComponents, production.graph, request.layerMap) } : {}),
+      // The knot VIEW only when asked (bd tea-rags-mcp-r8hme.38), paged here.
+      ...(knotLookup ? { knot: knotView(knotLookup, limit, request.offset ?? 0) } : {}),
     };
   }
 
@@ -618,21 +643,11 @@ function toLayeringArchitectureViolation(v: DomainLayeringViolation): Architectu
           ...(v.outOfScopeFeedbackEdgeCount !== undefined
             ? { outOfScopeFeedbackEdgeCount: v.outOfScopeFeedbackEdgeCount }
             : {}),
+          drillDown: { ...v.drillDown, hint: LAYERING_KNOT_DRILL_DOWN_HINT },
         },
       };
     case "backEdge":
-      return {
-        detector: "layering",
-        kind: "backEdge",
-        sourceComponent: v.sourceComponent,
-        targetComponent: v.targetComponent,
-        evidence: {
-          callWeight: v.callWeight,
-          counterFlowWeight: v.counterFlowWeight,
-          fileEdgeCount: v.fileEdgeCount,
-          fileEdges: v.fileEdges,
-        },
-      };
+      return toLayeringBackEdgeViolation(v);
     case "abstractionBypass":
       return {
         detector: "layering",
@@ -684,6 +699,62 @@ function toLayeringArchitectureViolation(v: DomainLayeringViolation): Architectu
         },
       };
   }
+}
+
+function toLayeringBackEdgeViolation(v: DomainLayeringBackEdgeViolation): LayeringBackEdgeArchitectureViolation {
+  return {
+    detector: "layering",
+    kind: "backEdge",
+    sourceComponent: v.sourceComponent,
+    targetComponent: v.targetComponent,
+    evidence: {
+      callWeight: v.callWeight,
+      counterFlowWeight: v.counterFlowWeight,
+      fileEdgeCount: v.fileEdgeCount,
+      fileEdges: v.fileEdges,
+    },
+  };
+}
+
+/**
+ * The knot view (bd tea-rags-mcp-r8hme.38): the lookup's full lists paged at
+ * `[offset, offset + limit)` — members and cut edges by the same window,
+ * back-edges capped at `limit` — the counts kept before paging.
+ */
+function knotView(
+  lookup: Exclude<LayeringKnotLookup, { kind: "unknownComponent" }>,
+  limit: number,
+  offset: number,
+): ArchitectureKnotView {
+  const head = {
+    component: lookup.component,
+    inKnot: lookup.kind === "inKnot",
+    level: lookup.position.level,
+    depth: lookup.position.depth,
+    offset,
+    limit,
+  };
+  if (lookup.kind === "notInKnot") return head;
+  const { knot } = lookup;
+  const end = offset + limit;
+  const hasMore = end < knot.components.length || end < knot.feedbackArcSet.length;
+  return {
+    ...head,
+    knot: {
+      components: knot.components.slice(offset, end),
+      memberCount: knot.components.length,
+      feedbackArcSet: knot.feedbackArcSet.slice(offset, end).map(toLayeringFeedbackEdge),
+      cutEdgeCount: knot.cutEdgeCount,
+      levelsAfterCut: knot.levelsAfterCut,
+      composition: knot.composition,
+      backEdges: knot.backEdges.slice(0, limit).map(toLayeringBackEdgeViolation),
+      ...(knot.outOfScopeMemberCount !== undefined ? { outOfScopeMemberCount: knot.outOfScopeMemberCount } : {}),
+      ...(knot.outOfScopeFeedbackEdgeCount !== undefined
+        ? { outOfScopeFeedbackEdgeCount: knot.outOfScopeFeedbackEdgeCount }
+        : {}),
+      ...(hasMore ? { nextOffset: end } : {}),
+    },
+  };
 }
 
 function toLayeringFeedbackEdge(edge: DomainLayeringFeedbackEdge) {

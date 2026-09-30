@@ -98,6 +98,8 @@ export type {
   // Architecture diagnostics (get_architecture_report)
   ArchitectureDirectoryRelation,
   ArchitectureFileEdge,
+  ArchitectureKnotPage,
+  ArchitectureKnotView,
   ArchitectureReportSummary,
   ArchitectureRootCause,
   ArchitectureViolation,
@@ -137,6 +139,7 @@ export type {
   LayeringIslandArchitectureViolation,
   LayeringIslandViolationEvidence,
   LayeringKnotArchitectureViolation,
+  LayeringKnotDrillDown,
   LayeringKnotViolationEvidence,
   LayeringLayerSkipArchitectureViolation,
   LayeringLayerSkipViolationEvidence,

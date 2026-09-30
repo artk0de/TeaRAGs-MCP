@@ -17,6 +17,7 @@ import {
   buildComponentGraph,
   buildLayeringModel,
   detectLayeringViolations,
+  lookupLayeringKnot,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
 
 function file(relPath: string, typeAbstractness?: TypeAbstractnessCensus) {
@@ -220,6 +221,7 @@ describe("detectLayeringViolations", () => {
         ],
         cutEdgeCount: 1,
         levelsAfterCut: 2,
+        drillDown: { knotOf: "ulanzi" },
       },
       {
         kind: "backEdge",
@@ -270,6 +272,7 @@ describe("detectLayeringViolations", () => {
         ],
         cutEdgeCount: 1,
         levelsAfterCut: 2,
+        drillDown: { knotOf: "x" },
       },
     ]);
     expect(report.summary).toMatchObject({
@@ -511,5 +514,137 @@ describe("detectLayeringViolations — source scope (bd tea-rags-mcp-r8hme.33)",
       nestedPairs: [{ parentComponent: "parent", nestedComponent: "parent/nested" }],
       outOfScopeMemberCount: 1,
     });
+  });
+});
+
+/**
+ * `x/a ⇄ x/b` under one subtree, with `ext` also depending on `x/b` — the
+ * knot's top member by Ca is `x/b`, and every member sits under `x/`.
+ */
+function subtreeKnot(): FileDependencyGraph {
+  return {
+    files: [file("x/a/a.ts"), file("x/b/b.ts"), file("ext/e.ts")],
+    edges: [edge("x/a/a.ts", "x/b/b.ts", 3), edge("x/b/b.ts", "x/a/a.ts"), edge("ext/e.ts", "x/b/b.ts")],
+  };
+}
+
+describe("detectLayeringViolations — knot drillDown (bd tea-rags-mcp-r8hme.38)", () => {
+  const knotFinding = (violations: ReturnType<typeof judge>["violations"]) => {
+    const found = violations.find((v) => v.kind === "knot");
+    if (found?.kind !== "knot") throw new Error("no knot finding");
+    return found;
+  };
+
+  it("names the top member by Ca and the deepest common ancestor of every member", () => {
+    expect(knotFinding(judge(subtreeKnot()).violations).drillDown).toEqual({ knotOf: "x/b", pathPattern: "x/**" });
+  });
+
+  it("omits the pathPattern when the members share no directory below the repository root", () => {
+    expect(knotFinding(judge(knot()).violations).drillDown).toEqual({ knotOf: "ulanzi" });
+  });
+
+  it("keeps the whole-knot drillDown on a finding projected onto a scope", () => {
+    const g = knot();
+    const scoped = detectLayeringViolations(buildComponentGraph(g, []), g.files, { sourcePathPattern: "clock/**" });
+
+    // ulanzi is out of scope, yet it stays the handle of the whole knot.
+    expect(knotFinding(scoped.violations)).toMatchObject({ components: ["clock"], drillDown: { knotOf: "ulanzi" } });
+  });
+
+  it("carries no drillDown on a composition cycle", () => {
+    const cycle = judge(composition()).violations.find((v) => v.kind === "compositionCycle");
+
+    expect(cycle).toBeDefined();
+    expect(cycle).not.toHaveProperty("drillDown");
+  });
+
+  it("judges a prebuilt model exactly as it judges the graph it was built from", () => {
+    const g = knot();
+    const componentGraph = buildComponentGraph(g, []);
+
+    expect(detectLayeringViolations(componentGraph, g.files, { model: buildLayeringModel(componentGraph) })).toEqual(
+      detectLayeringViolations(componentGraph, g.files),
+    );
+  });
+});
+
+describe("lookupLayeringKnot (bd tea-rags-mcp-r8hme.38)", () => {
+  const lookup = (g: FileDependencyGraph, component: string, sourcePathPattern?: string) => {
+    const componentGraph = buildComponentGraph(g, []);
+    return lookupLayeringKnot(componentGraph, buildLayeringModel(componentGraph), component, { sourcePathPattern });
+  };
+
+  it("returns the whole knot of a member: every member, the full cut, and its back-edges", () => {
+    expect(lookup(knot(), "clock")).toEqual({
+      kind: "inKnot",
+      component: "clock",
+      position: { level: 1, depth: 1, inKnot: true },
+      knot: {
+        components: ["ulanzi", "clock"],
+        feedbackArcSet: [
+          {
+            sourceComponent: "ulanzi",
+            targetComponent: "clock",
+            callWeight: 1,
+            fileEdges: [{ sourceRelPath: "ulanzi/u1.ts", targetRelPath: "clock/c1.ts", callWeight: 1 }],
+          },
+        ],
+        cutEdgeCount: 1,
+        levelsAfterCut: 2,
+        composition: false,
+        backEdges: [
+          {
+            kind: "backEdge",
+            sourceComponent: "ulanzi",
+            targetComponent: "clock",
+            callWeight: 1,
+            counterFlowWeight: 4,
+            fileEdgeCount: 1,
+            fileEdges: [{ sourceRelPath: "ulanzi/u1.ts", targetRelPath: "clock/c1.ts", callWeight: 1 }],
+          },
+        ],
+      },
+    });
+  });
+
+  it("returns the position of a known component outside every knot", () => {
+    expect(lookup(knot(), "device")).toEqual({
+      kind: "notInKnot",
+      component: "device",
+      position: { level: 0, depth: 2, inKnot: false },
+    });
+  });
+
+  it("returns a composition cycle's member with the composition flag and no back-edge", () => {
+    expect(lookup(composition(), "parent/nested")).toMatchObject({
+      kind: "inKnot",
+      knot: { components: expect.arrayContaining(["parent", "parent/nested"]), composition: true, backEdges: [] },
+    });
+  });
+
+  it("says a component the graph does not hold is unknown", () => {
+    expect(lookup(knot(), "nowhere")).toEqual({ kind: "unknownComponent", component: "nowhere" });
+  });
+
+  it("projects the knot onto a scope the way the knot finding is projected", () => {
+    // ulanzi owns no clock/** file; the cut edge and the back-edge are carried by ulanzi/u1.ts.
+    expect(lookup(knot(), "ulanzi", "clock/**")).toMatchObject({
+      kind: "inKnot",
+      position: { level: 1, depth: 1, inKnot: true },
+      knot: {
+        components: ["clock"],
+        feedbackArcSet: [],
+        cutEdgeCount: 1,
+        backEdges: [],
+        outOfScopeMemberCount: 1,
+        outOfScopeFeedbackEdgeCount: 1,
+      },
+    });
+  });
+
+  it("carries no projection counts when unscoped", () => {
+    const found = lookup(knot(), "clock");
+
+    expect(found.kind === "inKnot" ? found.knot : {}).not.toHaveProperty("outOfScopeMemberCount");
   });
 });

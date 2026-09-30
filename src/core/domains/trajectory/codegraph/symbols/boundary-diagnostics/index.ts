@@ -31,7 +31,7 @@ export {
   MAIN_SEQUENCE_STABLE_CONCRETE_CALM_REASON,
   MAIN_SEQUENCE_UNOBSERVABLE_REASON,
 } from "./main-sequence.js";
-export { buildLayeringModel, detectLayeringViolations } from "./layering.js";
+export { buildLayeringModel, detectLayeringViolations, lookupLayeringKnot } from "./layering.js";
 export { buildLayerMap, collapseDirectory, nodeMapping } from "./layer-map.js";
 export { condensedPositions, sccKnots, weightedFeedbackArcSet, type SimpleEdge } from "./layer-graph.js";
 export {
@@ -82,6 +82,9 @@ export type {
   LayeringFeedbackEdge,
   LayeringIslandViolation,
   LayeringKnot,
+  LayeringKnotDetail,
+  LayeringKnotDrillDown,
+  LayeringKnotLookup,
   LayeringKnotViolation,
   LayeringLayerSkipViolation,
   LayeringModel,

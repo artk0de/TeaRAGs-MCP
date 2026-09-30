@@ -39,6 +39,15 @@ export interface GetArchitectureReportRequest {
    * `pathPattern` (judge edges by source, whole-graph instability).
    */
   layerMap?: ArchitectureLayerMapOptions;
+  /**
+   * A component path as the report names components — ask for the knot VIEW
+   * (bd tea-rags-mcp-r8hme.38): the knot holding it in full, members and cut
+   * edges paged by `limit` / `offset`. A knot finding's
+   * `evidence.drillDown.knotOf` is such a path.
+   */
+  knotOf?: string;
+  /** Page start for the `knotOf` view (default 0). */
+  offset?: number;
 }
 
 /** How the layer map view picks its nodes (bd tea-rags-mcp-r8hme.26). */
@@ -336,6 +345,56 @@ export interface LayeringKnotViolationEvidence {
    * `levelsAfterCut` still describe the whole knot.
    */
   outOfScopeFeedbackEdgeCount?: number;
+  /** How to page this WHOLE knot — computed before the member cap and any scope projection. */
+  drillDown: LayeringKnotDrillDown;
+}
+
+/** The handles that reach one whole knot (bd tea-rags-mcp-r8hme.38). */
+export interface LayeringKnotDrillDown {
+  /** The knot's first member by Ca — pass it as `knotOf`. */
+  knotOf: string;
+  /** Deepest common ancestor directory of every member plus `/**`; absent when that is the repository root. */
+  pathPattern?: string;
+  hint: string;
+}
+
+/**
+ * The knot VIEW (bd tea-rags-mcp-r8hme.38), present only when the request
+ * carried `knotOf`. Level and depth are whole-graph; the knot page follows the
+ * request's `pathPattern` projection like the knot finding does.
+ */
+export interface ArchitectureKnotView {
+  component: string;
+  inKnot: boolean;
+  level: number;
+  depth: number;
+  offset: number;
+  limit: number;
+  /** Present when `inKnot`. */
+  knot?: ArchitectureKnotPage;
+}
+
+/** One page of a knot: members and cut edges both windowed at `[offset, offset + limit)`. */
+export interface ArchitectureKnotPage {
+  /** This page of the members, most depended-on (Ca) first, then path. */
+  components: string[];
+  /** Members before paging — in scope only when scoped. */
+  memberCount: number;
+  /** This page of the feedback arc set, heaviest call weight first. */
+  feedbackArcSet: LayeringFeedbackEdge[];
+  /** Whole-knot cut size. */
+  cutEdgeCount: number;
+  levelsAfterCut: number;
+  /** A composition cycle (a directory with its own nested ones), not a layering knot. */
+  composition: boolean;
+  /** Back-edge findings with both ends in the knot, report order, first `limit` (not paged by `offset`). */
+  backEdges: LayeringBackEdgeArchitectureViolation[];
+  /** Members the pathPattern scope dropped — present only when scoped. */
+  outOfScopeMemberCount?: number;
+  /** Cut edges no in-scope file carries — present only when scoped. */
+  outOfScopeFeedbackEdgeCount?: number;
+  /** The next page's `offset`; present while members or cut edges remain. */
+  nextOffset?: number;
 }
 
 /** A multi-component strongly-connected set of the component graph. */
@@ -912,4 +971,6 @@ export interface GetArchitectureReportResponse {
    * outside component's global level, move candidates.
    */
   layerMap?: ArchitectureLayerMap;
+  /** The knot VIEW (bd tea-rags-mcp-r8hme.38), present only when the request carried `knotOf`. */
+  knot?: ArchitectureKnotView;
 }

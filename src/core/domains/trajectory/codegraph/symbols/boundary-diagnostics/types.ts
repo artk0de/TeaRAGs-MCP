@@ -655,7 +655,50 @@ export interface LayeringKnotViolation {
   outOfScopeMemberCount?: number;
   /** Feedback-arc-set edges no in-scope file carries, dropped — present only when scoped. */
   outOfScopeFeedbackEdgeCount?: number;
+  /** How to reach the WHOLE knot (bd tea-rags-mcp-r8hme.38) — computed before any scope projection. */
+  drillDown: LayeringKnotDrillDown;
 }
+
+/**
+ * The handles that reach one whole knot (bd tea-rags-mcp-r8hme.38): the knot
+ * lookup takes `knotOf`; `pathPattern` selects the smallest subtree holding
+ * every member, when one below the repository root does.
+ */
+export interface LayeringKnotDrillDown {
+  /** The first member by Ca — an exact handle however the members are spread. */
+  knotOf: string;
+  /** Deepest common ancestor directory of every member plus `/**`; absent when that ancestor is the root. */
+  pathPattern?: string;
+}
+
+/**
+ * One knot looked up by a member (bd tea-rags-mcp-r8hme.38): full lists, no
+ * paging or evidence cap — those belong to the caller. Under a source scope
+ * the members and the cut are the same projection the knot finding gets;
+ * `cutEdgeCount` and `levelsAfterCut` stay whole-knot.
+ */
+export interface LayeringKnotDetail {
+  /** Members, most depended-on (Ca) first, then path. */
+  components: string[];
+  /** The feedback arc set, heaviest call weight first. */
+  feedbackArcSet: LayeringFeedbackEdge[];
+  cutEdgeCount: number;
+  levelsAfterCut: number;
+  /** A composition cycle (a directory and its own nested ones), not a layering knot. */
+  composition: boolean;
+  /** The back-edge findings whose both ends are members, in report order; none for a composition cycle. */
+  backEdges: LayeringBackEdgeViolation[];
+  /** Members dropped by the source scope — present only when scoped. */
+  outOfScopeMemberCount?: number;
+  /** Feedback-arc-set edges no in-scope file carries, dropped — present only when scoped. */
+  outOfScopeFeedbackEdgeCount?: number;
+}
+
+/** What `lookupLayeringKnot` found for one component path. */
+export type LayeringKnotLookup =
+  | { kind: "unknownComponent"; component: string }
+  | { kind: "notInKnot"; component: string; position: LayeringComponentPosition }
+  | { kind: "inKnot"; component: string; position: LayeringComponentPosition; knot: LayeringKnotDetail };
 
 /**
  * The minority-weight direction inside a knot, when the pair's weights
@@ -761,6 +804,13 @@ export interface LayeringOptions {
    * member's files.
    */
   sourcePathPattern?: string;
+  /**
+   * The model `buildLayeringModel` already built from THIS component graph —
+   * a caller that also looks a knot up passes it so the model (seconds of
+   * CPU on a large repository) is built once per request. A model of any
+   * other graph gives meaningless findings.
+   */
+  model?: LayeringModel;
 }
 
 export interface LayeringReport {

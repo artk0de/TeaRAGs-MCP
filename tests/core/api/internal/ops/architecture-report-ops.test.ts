@@ -5,6 +5,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
+import { UnknownArchitectureComponentError } from "../../../../../src/core/api/errors.js";
 import { ArchitectureReportOps } from "../../../../../src/core/api/internal/ops/architecture-report-ops.js";
 import type {
   FileDependencyGraph,
@@ -127,6 +128,10 @@ describe("ArchitectureReportOps#build", () => {
           cutEdgeCount: 1,
           levelsAfterCut: 2,
           memberCount: 2,
+          drillDown: {
+            knotOf: "core",
+            hint: "call get_architecture_report with knotOf to page every member and cut edge of this knot",
+          },
         },
       },
       {
@@ -1169,5 +1174,106 @@ describe("ArchitectureReportOps#build — layering evidence cap (bd tea-rags-mcp
     expect(cycle.evidence.memberCount).toBe(13);
     expect(cycle.evidence.nestedPairs).toHaveLength(10);
     expect(cycle.evidence.nestedPairCount).toBe(12);
+  });
+});
+
+describe("ArchitectureReportOps#build — knotOf view and drillDown (bd tea-rags-mcp-r8hme.38)", () => {
+  const ring = (from: number, to: number) =>
+    Array.from({ length: to - from }, (_, i) => `c${String(from + i).padStart(2, "0")}`);
+
+  it("points every knot finding at its top member by Ca, before the member cap", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), {});
+
+    const knot = report.violations.find((v) => v.detector === "layering" && v.kind === "knot");
+    if (knot?.detector !== "layering" || knot.kind !== "knot") throw new Error("no knot finding");
+    // Every member sits at Ca 2, so path order: c00 leads. The ring spans c00..c29 — no common subtree.
+    expect(knot.evidence.drillDown).toEqual({
+      knotOf: "c00",
+      hint: "call get_architecture_report with knotOf to page every member and cut edge of this knot",
+    });
+  });
+
+  it("returns no knot view unless the request names a component", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), {});
+
+    expect(report).not.toHaveProperty("knot");
+  });
+
+  it("pages the members by Ca and the cut by weight, pointing at the next page", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), { knotOf: "c07", limit: 10 });
+
+    expect(report.knot).toMatchObject({ component: "c07", inKnot: true, offset: 0, limit: 10 });
+    expect(report.knot?.knot?.components).toEqual(ring(0, 10));
+    expect(report.knot?.knot?.feedbackArcSet).toHaveLength(10);
+    expect(report.knot?.knot).toMatchObject({
+      memberCount: 30,
+      cutEdgeCount: 30,
+      composition: false,
+      nextOffset: 10,
+    });
+  });
+
+  it("returns the last page without a next offset", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), {
+      knotOf: "c07",
+      limit: 10,
+      offset: 20,
+    });
+
+    expect(report.knot?.offset).toBe(20);
+    expect(report.knot?.knot?.components).toEqual(ring(20, 30));
+    expect(report.knot?.knot?.feedbackArcSet).toHaveLength(10);
+    expect(report.knot?.knot).not.toHaveProperty("nextOffset");
+  });
+
+  it("projects the view onto pathPattern before paging it", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), {
+      knotOf: "c07",
+      limit: 10,
+      pathPattern: "{c00,c01,c02}/**",
+    });
+
+    expect(report.knot?.knot?.components).toEqual(["c00", "c01", "c02"]);
+    expect(report.knot?.knot).toMatchObject({ memberCount: 3, outOfScopeMemberCount: 27, cutEdgeCount: 30 });
+    expect(report.knot?.knot).not.toHaveProperty("nextOffset");
+  });
+
+  it("gives a component outside every knot its level and depth, and no knot", async () => {
+    // graph(): vendor is the foundation every lib file depends on.
+    const report = await new ArchitectureReportOps().build(graphDb(), { knotOf: "vendor" });
+
+    expect(report.knot).toEqual({ component: "vendor", inKnot: false, level: 0, depth: 3, offset: 0, limit: 50 });
+  });
+
+  it("lists the knot's back-edges in the view", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(), { knotOf: "lib" });
+
+    expect(report.knot?.knot?.components).toEqual(["core", "lib"]);
+    expect(report.knot?.knot?.backEdges).toEqual([
+      {
+        detector: "layering",
+        kind: "backEdge",
+        sourceComponent: "lib",
+        targetComponent: "core",
+        evidence: {
+          callWeight: 1,
+          counterFlowWeight: 3,
+          fileEdgeCount: 1,
+          fileEdges: [{ sourceRelPath: "lib/f5.ts", targetRelPath: "core/a.ts", callWeight: 1 }],
+        },
+      },
+    ]);
+  });
+
+  it("returns a composition cycle's member with the composition flag", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(wideComposition()), { knotOf: "parent/n03" });
+
+    expect(report.knot?.knot).toMatchObject({ memberCount: 13, composition: true, backEdges: [] });
+  });
+
+  it("rejects a component the graph does not hold with a typed input error", async () => {
+    await expect(
+      new ArchitectureReportOps().build(graphDb(bidirectionalRing()), { knotOf: "nowhere" }),
+    ).rejects.toBeInstanceOf(UnknownArchitectureComponentError);
   });
 });

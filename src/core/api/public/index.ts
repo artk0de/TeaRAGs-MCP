@@ -105,6 +105,7 @@ export {
   StaleProjectAliasError,
   InvalidDocumentMetadataSchemaError,
   DocumentMetadataSchemaViolationError,
+  UnknownArchitectureComponentError,
 } from "../errors.js";
 export type { InputErrorCode, DocumentMetadataViolation } from "../errors.js";
 

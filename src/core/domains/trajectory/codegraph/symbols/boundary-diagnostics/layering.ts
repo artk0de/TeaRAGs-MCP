@@ -12,6 +12,9 @@ import type {
   LayeringFeedbackEdge,
   LayeringIslandViolation,
   LayeringKnot,
+  LayeringKnotDetail,
+  LayeringKnotDrillDown,
+  LayeringKnotLookup,
   LayeringLayerSkipViolation,
   LayeringModel,
   LayeringOptions,
@@ -96,7 +99,7 @@ export function detectLayeringViolations(
   files: readonly FileDependencyGraphFile[],
   options: LayeringOptions = {},
 ): LayeringReport {
-  const model = buildLayeringModel(componentGraph);
+  const model = options.model ?? buildLayeringModel(componentGraph);
   const compositionKnots = model.knots.filter((knot) => knot.composition);
   const realKnots = model.knots.filter((knot) => !knot.composition);
 
@@ -108,6 +111,7 @@ export function detectLayeringViolations(
         feedbackArcSet: knot.feedbackArcSet,
         cutEdgeCount: knot.cutEdgeCount,
         levelsAfterCut: knot.levelsAfterCut,
+        drillDown: knotDrillDown(knot.components),
       }),
     ),
     ...backEdges(componentGraph, realKnots),
@@ -209,19 +213,8 @@ function findingInScope(scope: LayeringSourceScope, finding: LayeringViolation):
  */
 function projectOntoScope(scope: LayeringSourceScope, finding: LayeringViolation): LayeringViolation {
   switch (finding.kind) {
-    case "knot": {
-      const components = finding.components.filter(scope.componentMatches);
-      const feedbackArcSet = finding.feedbackArcSet.filter((edge) =>
-        scope.dependencyMatches(edge.sourceComponent, edge.targetComponent),
-      );
-      return {
-        ...finding,
-        components,
-        feedbackArcSet,
-        outOfScopeMemberCount: finding.components.length - components.length,
-        outOfScopeFeedbackEdgeCount: finding.feedbackArcSet.length - feedbackArcSet.length,
-      };
-    }
+    case "knot":
+      return { ...finding, ...projectKnotOntoScope(scope, finding.components, finding.feedbackArcSet) };
     case "compositionCycle": {
       const components = finding.components.filter(scope.componentMatches);
       const inScopeMembers = new Set(components);
@@ -240,6 +233,82 @@ function projectOntoScope(scope: LayeringSourceScope, finding: LayeringViolation
     case "layerSkip":
       return finding;
   }
+}
+
+/**
+ * A knot's members and cut, projected onto the scope — shared by the knot
+ * finding and the knot lookup so both read the same projection.
+ */
+function projectKnotOntoScope(
+  scope: LayeringSourceScope,
+  members: readonly string[],
+  cut: readonly LayeringFeedbackEdge[],
+): Pick<LayeringKnotDetail, "components" | "feedbackArcSet" | "outOfScopeMemberCount" | "outOfScopeFeedbackEdgeCount"> {
+  const components = members.filter(scope.componentMatches);
+  const feedbackArcSet = cut.filter((edge) => scope.dependencyMatches(edge.sourceComponent, edge.targetComponent));
+  return {
+    components,
+    feedbackArcSet,
+    outOfScopeMemberCount: members.length - components.length,
+    outOfScopeFeedbackEdgeCount: cut.length - feedbackArcSet.length,
+  };
+}
+
+/**
+ * The drill-down handles of one WHOLE knot (bd tea-rags-mcp-r8hme.38), from
+ * its full Ca-ordered member list: the top member, and the deepest common
+ * ancestor directory of every member as a glob — omitted at the root, where
+ * `**` would select the whole repository rather than the knot.
+ */
+function knotDrillDown(members: readonly string[]): LayeringKnotDrillDown {
+  const [first = [], ...rest] = members.map((member) => member.split("/").filter((segment) => segment !== ""));
+  let shared = first.length;
+  for (const segments of rest) {
+    let i = 0;
+    while (i < shared && i < segments.length && segments[i] === first[i]) i++;
+    shared = i;
+  }
+  const ancestor = first.slice(0, shared).join("/");
+  return { knotOf: members[0] ?? "", ...(ancestor ? { pathPattern: `${ancestor}/**` } : {}) };
+}
+
+/**
+ * One knot looked up by any member (bd tea-rags-mcp-r8hme.38) — the handle a
+ * knot finding's `drillDown.knotOf` names. Full lists, no paging: the caller
+ * pages. A composition cycle is a knot of the model too and comes back with
+ * `composition: true`. Under `sourcePathPattern` the members and the cut are
+ * the projection the knot finding gets, and a back-edge is kept by the file
+ * carrying it; positions stay whole-graph. Takes the prebuilt `model` of the
+ * same component graph — building it is the expensive part.
+ */
+export function lookupLayeringKnot(
+  componentGraph: ComponentGraph,
+  model: LayeringModel,
+  component: string,
+  options: Pick<LayeringOptions, "sourcePathPattern"> = {},
+): LayeringKnotLookup {
+  const position = model.positions.get(component);
+  if (!position) return { kind: "unknownComponent", component };
+  const knot = position.inKnot ? model.knots.find((k) => k.components.includes(component)) : undefined;
+  if (!knot) return { kind: "notInKnot", component, position };
+
+  const inScope = compilePathPatternMatcher(options.sourcePathPattern);
+  const scope = inScope && layeringSourceScope(componentGraph, inScope);
+  const knotBackEdges = knot.composition ? [] : backEdges(componentGraph, [knot]);
+  return {
+    kind: "inKnot",
+    component,
+    position,
+    knot: {
+      components: knot.components,
+      feedbackArcSet: knot.feedbackArcSet,
+      cutEdgeCount: knot.cutEdgeCount,
+      levelsAfterCut: knot.levelsAfterCut,
+      composition: knot.composition,
+      backEdges: scope ? knotBackEdges.filter((edge) => findingInScope(scope, edge)) : knotBackEdges,
+      ...(scope ? projectKnotOntoScope(scope, knot.components, knot.feedbackArcSet) : {}),
+    },
+  };
 }
 
 function adjacency(dependencies: readonly ComponentDependency[]): Map<string, readonly string[]> {

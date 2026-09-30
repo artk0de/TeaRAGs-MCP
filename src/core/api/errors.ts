@@ -21,7 +21,8 @@ export type InputErrorCode =
   | "INPUT_PROJECT_ENV_KEY_UNKNOWN"
   | "INPUT_PATH_NOT_EXISTS"
   | "INPUT_INVALID_DOCUMENT_METADATA_SCHEMA"
-  | "INPUT_DOCUMENT_METADATA_SCHEMA_VIOLATION";
+  | "INPUT_DOCUMENT_METADATA_SCHEMA_VIOLATION"
+  | "INPUT_UNKNOWN_ARCHITECTURE_COMPONENT";
 
 /**
  * Abstract base for all input validation errors (httpStatus 400).
@@ -256,6 +257,21 @@ export interface DocumentMetadataViolation {
   expected: string;
   /** The value found at `field`; `undefined` when the field is absent. */
   received: unknown;
+}
+
+/**
+ * Thrown by `get_architecture_report` when `knotOf` names a component the
+ * layering component graph does not hold (bd tea-rags-mcp-r8hme.38) — an
+ * empty knot view would read as "not in any knot".
+ */
+export class UnknownArchitectureComponentError extends InputValidationError {
+  constructor(component: string) {
+    super({
+      code: "INPUT_UNKNOWN_ARCHITECTURE_COMPONENT",
+      message: `Unknown architecture component "${component}": no component of the layering graph has this path.`,
+      hint: "Take the component from a knot finding's evidence.drillDown.knotOf, or from any finding's component names.",
+    });
+  }
 }
 
 const MAX_REPORTED_VIOLATIONS = 10;

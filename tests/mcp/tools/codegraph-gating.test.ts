@@ -216,6 +216,19 @@ describe("get_architecture_report", () => {
     expect(schema.safeParse({ project: "tea-rags", limit: 501 }).success).toBe(false);
   });
 
+  it("takes a knotOf component paged by offset, and names drillDown in the description (bd tea-rags-mcp-r8hme.38)", () => {
+    const { call } = registered();
+    const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny>; description: string };
+    const schema = z.object(config.inputSchema);
+
+    expect(config.description).toMatch(/drillDown/);
+    expect(schema.safeParse({ project: "tea-rags", knotOf: "src/core/domains/explore" }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", knotOf: "app", limit: 100, offset: 200 }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", knotOf: "app", offset: 0 }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", knotOf: "app", offset: -1 }).success).toBe(false);
+    expect(schema.safeParse({ project: "tea-rags", knotOf: "app", offset: 1.5 }).success).toBe(false);
+  });
+
   it("forwards the address, pathPattern and limit into app.getArchitectureReport and returns its report as text", async () => {
     const { app, call } = registered();
     const report = { summary: {}, rootCauses: [], violations: [] };
