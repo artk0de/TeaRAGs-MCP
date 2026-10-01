@@ -161,26 +161,19 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
 
   /**
    * The grouped test chunk that carries the queried example id among its
-   * `exampleSymbolIds`. The id's scope is not known — a scope name may itself
-   * contain `.` — so every `.`-prefix of the id is a candidate parent, each
-   * served by the `parentSymbolId` text index; the member list decides.
+   * `exampleSymbolIds` (bd tea-rags-mcp-5xpq4). The key is text-indexed like
+   * `symbolId`, so the member id is matched as the same text token + value
+   * pair — index-served, exact.
    */
   private async scrollGroupedExample(
     collectionName: string,
   ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
     const fqn = this.input.symbol;
-    const scopes = [...fqn.matchAll(/\./g)].map((m) => fqn.slice(0, m.index)).filter((scope) => scope.length > 0);
-    if (scopes.length === 0) return [];
-    const must: Record<string, unknown>[] = [{ key: "exampleSymbolIds", match: { value: fqn } }];
+    const must: Record<string, unknown>[] = [
+      ...exactMatchOnTextIndexed("exampleSymbolIds", fqn, symbolIdTextToken(fqn)),
+    ];
     if (this.input.language) must.push({ key: "language", match: { value: this.input.language } });
-    const filter = {
-      must,
-      should: scopes.map((scope) => ({
-        must: exactMatchOnTextIndexed("parentSymbolId", scope, symbolIdTextToken(scope)),
-      })),
-    };
-    const chunks = await this.qdrant.scrollFiltered(collectionName, filter, SCROLL_LIMIT);
-    return chunks.filter((c) => Array.isArray(c.payload.exampleSymbolIds) && c.payload.exampleSymbolIds.includes(fqn));
+    return this.qdrant.scrollFiltered(collectionName, { must }, SCROLL_LIMIT);
   }
 
   /**

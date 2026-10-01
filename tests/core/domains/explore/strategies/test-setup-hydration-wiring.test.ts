@@ -34,12 +34,18 @@ const examplePayload = {
   startLine: 4,
   endLine: 6,
   content: "RSpec.describe User do\nit 'can invite' do\n  expect(user.invite).to be(true)\nend",
-  setupScopeIds: [ROOT],
 };
 
 const setupPoint = {
   id: "setup-1",
-  payload: { symbolId: ROOT, relativePath: SPEC, content: "RSpec.describe User do\nlet(:user) { create(:user) }" },
+  payload: {
+    symbolId: ROOT,
+    relativePath: SPEC,
+    chunkType: "test_setup",
+    startLine: 2,
+    scopeLineRange: { start: 1, end: 20 },
+    content: "RSpec.describe User do\nlet(:user) { create(:user) }",
+  },
 };
 
 const HYDRATED = [
@@ -131,7 +137,6 @@ describe("test setup hydration in explore strategies", () => {
         name: "it",
         content: "RSpec.describe User do\nit { is_expected.to be_valid }\nit { is_expected.to be_persisted }",
         exampleSymbolIds: [groupId, memberId],
-        setupScopeIds: undefined,
       },
     };
     const scrollFiltered = vi.fn(async (_c: string, filter: Record<string, unknown>) =>
@@ -147,6 +152,12 @@ describe("test setup hydration in explore strategies", () => {
 
     expect(results.map((r) => r.payload?.content)).toEqual([group.payload.content]);
     const memberFetch = scrollFiltered.mock.calls.find(([, f]) => JSON.stringify(f).includes('"exampleSymbolIds"'));
-    expect(memberFetch?.[1]).toMatchObject({ must: [{ key: "exampleSymbolIds", match: { value: memberId } }] });
+    // exampleSymbolIds is text-indexed: the member id is matched as the text + value pair, nothing else.
+    expect(memberFetch?.[1]).toEqual({
+      must: [
+        { key: "exampleSymbolIds", match: { text: "it~2" } },
+        { key: "exampleSymbolIds", match: { value: memberId } },
+      ],
+    });
   });
 });

@@ -157,13 +157,14 @@ describe("createIngestDependencies — schema v16 reconciliation", () => {
       "git.file.isHub",
       "git.file.transitiveImpact",
     ]);
-    expect(summary).toMatchObject({ fromVersion: 15, toVersion: 18 });
+    expect(summary).toMatchObject({ fromVersion: 15, toVersion: 19 });
   });
 
   // bd tea-rags-mcp-9mwny — the same sweep then gives the self-index the
   // last-commit timestamp indexes the age / modifiedAfter filters range over,
   // and bd tea-rags-mcp-y1870 the recentAuthors keyword index the `contributor`
-  // typed filter matches on.
+  // typed filter matches on, and bd tea-rags-mcp-5xpq4 the exampleSymbolIds
+  // text index find_symbol resolves a grouped test example through.
   it("ensures both last-commit timestamp indexes after the drop", async () => {
     const qdrant = selfIndexQdrant();
     const deps = createIngestDependencies(
@@ -181,13 +182,15 @@ describe("createIngestDependencies — schema v16 reconciliation", () => {
       "schema-v16-drop-undeclared-payload-indexes",
       "schema-v17-last-commit-time-indexes",
       "schema-v18-recent-authors-index",
+      "schema-v19-example-symbol-ids-text",
     ]);
     expect(qdrant.ensurePayloadIndex).toHaveBeenCalledWith("code_8b243ffe", "git.file.lastModifiedAt", "integer");
     expect(qdrant.ensurePayloadIndex).toHaveBeenCalledWith("code_8b243ffe", "git.chunk.lastModifiedAt", "integer");
     expect(qdrant.ensurePayloadIndex).toHaveBeenCalledWith("code_8b243ffe", "git.file.recentAuthors", "keyword");
+    expect(qdrant.ensurePayloadIndex).toHaveBeenCalledWith("code_8b243ffe", "exampleSymbolIds", "text");
   });
 
-  it("stamps new collections at the latest version, which includes v16 through v18", async () => {
+  it("stamps new collections at the latest version, which includes v16 through v19", async () => {
     const qdrant = { ...selfIndexQdrant(), getPoint: vi.fn().mockResolvedValue(null), createPayloadIndex: vi.fn() };
     const deps = createIngestDependencies(
       qdrant as unknown as QdrantManager,
@@ -201,7 +204,7 @@ describe("createIngestDependencies — schema v16 reconciliation", () => {
     await deps.createSchemaManager("code_new").initializeSchema("code_new");
 
     expect(qdrant.addPoints).toHaveBeenCalledWith("code_new", [
-      expect.objectContaining({ payload: expect.objectContaining({ schemaVersion: 18 }) }),
+      expect.objectContaining({ payload: expect.objectContaining({ schemaVersion: 19 }) }),
     ]);
   });
 });

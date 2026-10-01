@@ -11,6 +11,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import { setupChainOf } from "../../__helpers__/setup-chain.js";
 import type { CodeChunk } from "../../../../../../src/core/contracts/types/chunker.js";
 import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
@@ -64,7 +65,7 @@ describe("TypeScript DSL call with a conditional callee (bd tea-rags-mcp-rvuun)"
     expect(example?.metadata.parentSymbolId).toBe(CURRENT_DIR);
     // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): the scope's hook is its own
     // setup chunk under the scope id, referenced by the example.
-    expect(example?.metadata.setupScopeIds).toEqual([CURRENT_DIR]);
+    expect(setupChainOf(chunks, example)).toEqual([CURRENT_DIR]);
     expect(chunks.find((c) => c.metadata.symbolId === CURRENT_DIR)?.content).toContain("this.app = createApp('.')");
     expect(example?.content).toContain("var dest = relative.split(path.sep).join('/')");
   });
@@ -126,7 +127,7 @@ describe("TypeScript DSL call with a conditional callee (bd tea-rags-mcp-rvuun)"
     );
     // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): the non-DSL statements are the
     // root scope's own lines — its setup chunk, which the example references.
-    expect(example?.metadata.setupScopeIds).toEqual(["Cart.describe 'Cart'"]);
+    expect(setupChainOf(chunks, example)).toEqual(["Cart.describe 'Cart'"]);
     const rootSetup = chunks.find((c) => c.metadata.symbolId === "Cart.describe 'Cart'");
     expect(rootSetup?.content).toContain("(onCi ? describe : it)('mixes a container and an example word'");
     expect(rootSetup?.content).toContain("(onCi ? runSuite : describe)('names a helper in one arm'");

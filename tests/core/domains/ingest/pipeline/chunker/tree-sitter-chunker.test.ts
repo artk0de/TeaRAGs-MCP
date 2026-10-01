@@ -6,6 +6,7 @@ import { generateChunkId } from "../../../../../../src/core/domains/ingest/pipel
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
 import { extractClassHeader } from "../../../../../../src/core/domains/language/ruby/chunking/class-body-chunker.js";
 import type { ChunkerConfig } from "../../../../../../src/core/types.js";
+import { setupChainOf } from "../../../language/__helpers__/setup-chain.js";
 
 // Mirror the composition roots (composition.ts / the chunker worker): the factory
 // builds every native language provider itself — so factory.create("ruby")
@@ -981,7 +982,7 @@ function farewell(name) {
   });
 
   describe("chunk - Ruby", () => {
-    it("stores RSpec setup once per scope and links examples to it (bd tea-rags-mcp-5xpq4)", async () => {
+    it("stores RSpec setup once per scope, linked to its examples by scope span (bd tea-rags-mcp-5xpq4)", async () => {
       const code = `RSpec.describe User do
   let(:user) { create(:user, name: 'Alice', email: 'alice@example.com') }
 
@@ -1002,8 +1003,13 @@ end
       const examples = chunks.filter((c) => c.metadata.parentType === "test_scope");
 
       expect(setups.map((c) => c.metadata.symbolId)).toEqual(["User.RSpec.describe User", "User.context 'when admin'"]);
+      // Each setup chunk carries its whole scope's span, in file lines.
+      expect(setups.map((c) => c.metadata.scopeLineRange)).toEqual([
+        { start: 1, end: 14 },
+        { start: 4, end: 13 },
+      ]);
       expect(examples.every((c) => !c.content.includes("let(:user)") && !c.content.includes("before {"))).toBe(true);
-      expect(examples.map((c) => c.metadata.setupScopeIds)).toEqual([
+      expect(examples.map((c) => setupChainOf(chunks, c))).toEqual([
         ["User.RSpec.describe User", "User.context 'when admin'"],
         ["User.RSpec.describe User", "User.context 'when admin'"],
       ]);
@@ -4387,7 +4393,7 @@ end`;
       const setupChunk = chunks.find((c) => c.metadata.chunkType === "test_setup");
       expect(testChunk).toBeDefined();
       expect(setupChunk!.content).toContain("let(:gateway)");
-      expect(testChunk!.metadata.setupScopeIds).toEqual([setupChunk!.metadata.symbolId]);
+      expect(setupChainOf(chunks, testChunk!)).toEqual([setupChunk!.metadata.symbolId]);
       expect(testChunk!.content).toContain("initializes with a gateway");
     });
 
@@ -4474,13 +4480,13 @@ end`;
       const adminChunk = testChunks.find((c) => c.content.includes("admin access"));
       expect(adminChunk).toBeDefined();
       expect(adminChunk!.content).not.toContain("let(:user)");
-      expect(adminChunk!.metadata.setupScopeIds).toEqual(["User.describe User", "User.context 'when admin'"]);
+      expect(setupChainOf(chunks, adminChunk!)).toEqual(["User.describe User", "User.context 'when admin'"]);
       expect(adminChunk!.metadata.chunkType).toBe("test");
 
       // 'when regular' leaf references only the parent setup
       const regularChunk = testChunks.find((c) => c.content.includes("limited access"));
       expect(regularChunk).toBeDefined();
-      expect(regularChunk!.metadata.setupScopeIds).toEqual(["User.describe User"]);
+      expect(setupChainOf(chunks, regularChunk!)).toEqual(["User.describe User"]);
     });
 
     it("should NOT affect non-spec Ruby files", async () => {
@@ -5012,7 +5018,7 @@ end`;
       // the example's setup chain.
       const emailChunk = testChunks.find((c) => c.content.includes("sends an email"));
       expect(emailChunk).toBeDefined();
-      const [rootSetupId] = emailChunk!.metadata.setupScopeIds ?? [];
+      const [rootSetupId] = setupChainOf(chunks, emailChunk!);
       expect(chunks.find((c) => c.metadata.symbolId === rootSetupId)!.content).toContain("let(:service)");
     });
   });
@@ -5105,7 +5111,7 @@ end`;
       // levels is referenced root to leaf, each level its own setup chunk.
       const testChunk = chunks.find((c) => c.metadata.chunkType === "test");
       expect(testChunk).toBeDefined();
-      const chain = (testChunk!.metadata.setupScopeIds ?? []).map(
+      const chain = setupChainOf(chunks, testChunk!).map(
         (id) => chunks.find((c) => c.metadata.symbolId === id)!.content,
       );
       expect(chain).toHaveLength(3);

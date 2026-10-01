@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { setupChainOf } from "../__helpers__/setup-chain.js";
 import {
   TEST_SCOPE_PARENT_TYPE,
   type BodyChunkResult,
@@ -168,6 +169,7 @@ describe("produceTestScopeChunks", () => {
           symbolId: "User.describe User",
           name: "describe User",
           parentSymbolId: "User",
+          scopeLineRange: { start: 1, end: 30 },
         },
         {
           content: "before { user.update!(admin: true) }\n    ROLE = :admin",
@@ -177,11 +179,12 @@ describe("produceTestScopeChunks", () => {
           symbolId: "User.context 'when admin'",
           name: "context 'when admin'",
           parentSymbolId: "User",
+          scopeLineRange: { start: 4, end: 20 },
         },
       ]);
     });
 
-    it("lists on every example the setup-bearing scopes above it, root to leaf, by their exact ids", () => {
+    it("links every example to the setup-bearing scopes whose span contains it, outermost first", () => {
       const root = scope("describe User", 1, 60, {
         setupLines: [line("  let(:user) { create(:user) }", 2)],
         children: [
@@ -200,12 +203,47 @@ describe("produceTestScopeChunks", () => {
         ],
       });
 
-      const examples = exampleChunks(produceTestScopeChunks(root, "User", CONFIG));
+      const chunks = produceTestScopeChunks(root, "User", CONFIG);
+      const examples = exampleChunks(chunks);
 
-      expect(examples.map((c) => [c.symbolId, c.setupScopeIds])).toEqual([
+      expect(examples.map((c) => [c.symbolId, setupChainOf(chunks, c)])).toEqual([
         ["User.context 'bare'.it 'answers'", ["User.describe User", "User.context 'v1.2 api'"]],
         ["User.context 'v1.2 api'~2.it 'answers in beta'", ["User.describe User", "User.context 'v1.2 api'~2"]],
       ]);
+    });
+
+    it("never links an example to a sibling scope's setup", () => {
+      const root = scope("describe User", 1, 40, {
+        children: [
+          scope("context 'as guest'", 2, 12, {
+            setupLines: [line("    let(:user) { build(:user, role: :guest) }", 3)],
+            examples: [example("it 'cannot manage accounts'", 5)],
+          }),
+          scope("context 'as admin'", 14, 24, {
+            setupLines: [line("    let(:user) { build(:user, role: :admin) }", 15)],
+            examples: [example("it 'manages accounts'", 17)],
+          }),
+        ],
+      });
+
+      const chunks = produceTestScopeChunks(root, "User", CONFIG);
+
+      expect(exampleChunks(chunks).map((c) => setupChainOf(chunks, c))).toEqual([
+        ["User.context 'as guest'"],
+        ["User.context 'as admin'"],
+      ]);
+    });
+
+    it("stores the setup link on the setup chunk only — an example carries no setup reference", () => {
+      const root = scope("describe A", 1, 10, {
+        setupLines: [line("  let(:a) { 1 }", 2)],
+        examples: [example("it 'reads a'", 4)],
+      });
+
+      const [example1] = exampleChunks(produceTestScopeChunks(root, "A", CONFIG));
+
+      expect(example1).not.toHaveProperty("scopeLineRange");
+      expect(example1).not.toHaveProperty("setupScopeIds");
     });
 
     it("keeps a short setup chunk an example depends on, so hydration can render it", () => {
@@ -217,15 +255,15 @@ describe("produceTestScopeChunks", () => {
       const chunks = produceTestScopeChunks(root, "A", CONFIG);
 
       expect(setupChunks(chunks).map((c) => c.content)).toEqual(["let(:a) { 1 }"]);
-      expect(exampleChunks(chunks)[0].setupScopeIds).toEqual(["A.describe A"]);
+      expect(setupChainOf(chunks, exampleChunks(chunks)[0])).toEqual(["A.describe A"]);
     });
 
-    it("omits setupScopeIds when no scope above the example has setup", () => {
+    it("inherits no setup when no scope above the example has setup", () => {
       const root = scope("describe A", 1, 10, { examples: [example("it 'stands alone'", 4)] });
 
-      const [chunk] = produceTestScopeChunks(root, "A", CONFIG);
+      const chunks = produceTestScopeChunks(root, "A", CONFIG);
 
-      expect(chunk.setupScopeIds).toBeUndefined();
+      expect(setupChainOf(chunks, chunks[0])).toEqual([]);
     });
 
     it("types a scope's setup chunk as test when a setup line delegates to shared examples", () => {
@@ -316,15 +354,15 @@ describe("produceTestScopeChunks", () => {
       );
     });
 
-    it("carries the scope's setupScopeIds on a tiny group", () => {
+    it("links a tiny group to its scope's setup chain", () => {
       const root = scope("describe User", 1, 10, {
         setupLines: [line("  subject { build(:user) }", 2)],
         examples: [tiny("it", 3), tiny("it", 4)],
       });
 
-      const [group] = exampleChunks(produceTestScopeChunks(root, "User", CONFIG));
+      const chunks = produceTestScopeChunks(root, "User", CONFIG);
 
-      expect(group.setupScopeIds).toEqual(["User.describe User"]);
+      expect(setupChainOf(chunks, exampleChunks(chunks)[0])).toEqual(["User.describe User"]);
     });
   });
 

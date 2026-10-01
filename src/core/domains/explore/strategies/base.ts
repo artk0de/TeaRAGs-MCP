@@ -115,9 +115,9 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
    * content (bd tea-rags-mcp-5xpq4) — ONE batched fetch per page. The single
    * hydration seam: every strategy calls it as the last step of a
    * content-bearing answer, after ranking, slicing and file-scope shaping, so
-   * only the returned page pays and a file-level hit (whose `setupScopeIds`
-   * the file scope dropped) never does. A metaOnly answer carries no content
-   * and never calls it.
+   * only the returned page pays and a file-level hit (no `content`, no
+   * `parentType` left after file scoping) never does. A metaOnly answer
+   * carries no content and never calls it.
    */
   protected async hydrateTestSetup(results: ExploreResult[], ctx: ExploreContext): Promise<ExploreResult[]> {
     return this.testSetupHydrator.hydrate(results, ctx.collectionName);

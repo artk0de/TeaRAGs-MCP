@@ -70,15 +70,14 @@ export interface BodyChunkResult {
    */
   partHeader?: string;
   /**
-   * A test example chunk's setup chain (bd tea-rags-mcp-5xpq4): the ids of the
-   * scopes above it, root to leaf and its own scope included, that carry a
-   * setup chunk of their own (`symbolId` = the scope id). Setup is stored once
-   * per scope and prepended to the example when it is returned, so the list is
-   * explicit — a scope name may contain `.` and a `~N` suffix, so an ancestor
-   * is never derived from the example id by prefix. Absent when no scope above
-   * the example declares setup.
+   * A test scope's setup chunk only (bd tea-rags-mcp-5xpq4): the lines of the
+   * whole SCOPE whose setup the chunk holds — its `startLine` / `endLine` keep
+   * describing the setup lines themselves. Setup is stored once per scope; an
+   * example inherits every setup chunk whose scope span contains its start
+   * line, outermost first, which is lexical setup inheritance read without
+   * parsing a single id. Read by explore's hydration, never filtered on.
    */
-  setupScopeIds?: string[];
+  scopeLineRange?: { start: number; end: number };
   /**
    * The ids of the test examples a GROUPED chunk carries, in source order
    * (bd tea-rags-mcp-5xpq4): sibling examples each too short to be a chunk of

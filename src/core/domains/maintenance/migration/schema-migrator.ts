@@ -14,6 +14,7 @@ import {
   SchemaV16DropUndeclaredPayloadIndexes,
   SchemaV17LastCommitTimeIndexes,
   SchemaV18RecentAuthorsIndex,
+  SchemaV19ExampleSymbolIdsText,
 } from "./schema_migrations/index.js";
 import type { EnrichmentStore, IndexStore, Migration, MigrationRunner, SnapshotStore } from "./types.js";
 
@@ -81,6 +82,7 @@ export class SchemaMigrator implements MigrationRunner {
             ),
             new SchemaV17LastCommitTimeIndexes(collection, indexStore),
             new SchemaV18RecentAuthorsIndex(collection, indexStore),
+            new SchemaV19ExampleSymbolIdsText(collection, indexStore),
           ]
         : []),
     ];

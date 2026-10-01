@@ -2,6 +2,7 @@ import Parser from "tree-sitter";
 import JsLang from "tree-sitter-javascript";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { setupChainOf } from "../../__helpers__/setup-chain.js";
 import {
   buildScopeTree,
   produceScopeChunks,
@@ -179,7 +180,7 @@ describe("produceScopeChunks — composition rules", () => {
     for (const chunk of examples) {
       expect(chunk.chunkType).toBe("test");
       expect(chunk.content).not.toContain("signIn(user)");
-      expect(chunk.setupScopeIds).toEqual(["User.describe 'User'"]);
+      expect(setupChainOf(chunks, chunk)).toEqual(["User.describe 'User'"]);
     }
     expect([examples[0].startLine, examples[0].endLine]).toEqual([6, 8]);
     expect([examples[1].startLine, examples[1].endLine]).toEqual([10, 12]);
@@ -237,13 +238,13 @@ describe("produceScopeChunks — composition rules", () => {
     expect(root.content).not.toContain("resetDb()");
     expect(root.content).toContain("is constructable");
     expect(root.content).not.toContain("has admin role");
-    expect(root.setupScopeIds).toEqual(["User.describe 'User'"]);
+    expect(setupChainOf(chunks, root)).toEqual(["User.describe 'User'"]);
     expect([root.startLine, root.endLine]).toEqual([6, 8]);
 
     expect(nested.parentSymbolId).toBe("User.describe 'when admin'");
     expect(nested.content).not.toContain("resetDb()");
     expect(nested.content).toContain("has admin role");
-    expect(nested.setupScopeIds).toEqual(["User.describe 'User'"]);
+    expect(setupChainOf(chunks, nested)).toEqual(["User.describe 'User'"]);
     expect(chunks).toHaveLength(3);
   });
 
@@ -285,12 +286,12 @@ describe("produceScopeChunks — composition rules", () => {
     expect(testChunks[0].symbolId).toBe(
       "User.describe 'validations'.it 'rejects an empty name with a meaningful validation message'",
     );
-    expect(testChunks[0].setupScopeIds).toEqual(["User.describe 'validations'"]);
+    expect(setupChainOf(chunks, testChunks[0])).toEqual(["User.describe 'validations'"]);
     // …and the deepest example still chunks separately, referencing ancestor setup.
     expect(testChunks[1].symbolId).toBe(
       "User.describe 'when admin'.it 'has admin role and full permission set for management ops'",
     );
-    expect(testChunks[1].setupScopeIds).toEqual(["User.describe 'validations'"]);
+    expect(setupChainOf(chunks, testChunks[1])).toEqual(["User.describe 'validations'"]);
     expect(testChunks[1].content).toContain("has admin role");
   });
 

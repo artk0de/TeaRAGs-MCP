@@ -11,11 +11,13 @@
  * The unit is the EXAMPLE. Every example is its own chunk — its scope title
  * path, then the example — so `find_symbol` can address one example. Setup is
  * stored ONCE per scope (bd tea-rags-mcp-5xpq4): a scope with its own setup or
- * other lines gets a chunk of them, named after the scope, and every example
- * below lists those scopes in `setupScopeIds`. Explore prepends that chain when
- * it returns the example, which keeps the example "runnable in the head"
- * without embedding the same `let` / `beforeEach` once per example — on
- * taxdome that repetition had tests embedded at x1.75 of their source size.
+ * other lines gets a chunk of them, named after the scope and carrying the
+ * scope's whole line span (`scopeLineRange`). An example inherits every setup
+ * chunk whose span contains its start line — lexical inheritance, no id
+ * parsing — and explore prepends that chain when it returns the example. That
+ * keeps the example "runnable in the head" without embedding the same `let` /
+ * `beforeEach` once per example — on taxdome that repetition had tests embedded
+ * at x1.75 of their source size.
  *
  * Examples too short to carry a searchable signal on their own
  * (`it { is_expected.to be_valid }`) are GROUPED with their tiny siblings, never
@@ -86,7 +88,6 @@ export function produceTestScopeChunks(
   };
 
   const scopeIds = new Map<TestScope, string>();
-  const setupScopes = new Set<TestScope>();
   // Source order: a scope's setup chunk, or an example waiting for grouping.
   const slots: (BodyChunkResult | PendingExample)[] = [];
   const pendingOf = new Map<TestExample, PendingExample>();
@@ -96,10 +97,7 @@ export function produceTestScopeChunks(
       const scopeId = disambiguate(`${topLevelName}.${event.scope.name}`);
       scopeIds.set(event.scope, scopeId);
       const setup = scopeSetupChunk(event.scope, scopeId, topLevelName);
-      if (setup) {
-        setupScopes.add(event.scope);
-        slots.push(setup);
-      }
+      if (setup) slots.push(setup);
       continue;
     }
 
@@ -117,14 +115,10 @@ export function produceTestScopeChunks(
     slots.push(pending);
   }
 
-  const chainOf = (scope: TestScope, ancestors: TestScope[]): string[] =>
-    [...ancestors, scope].filter((s) => setupScopes.has(s)).map((s) => scopeIds.get(s) as string);
-  const ancestorsOf = scopeAncestors(root);
-
   // Each tiny group is emitted at the slot of its earliest member.
   const groupAt = new Map<PendingExample, PendingExample[]>();
   const grouped = new Set<PendingExample>();
-  for (const scope of ancestorsOf.keys()) {
+  for (const scope of scopesOf(root)) {
     for (const group of tinyGroups(scope, pendingOf, contentBudget)) {
       groupAt.set(group[0], group);
       for (const member of group) grouped.add(member);
@@ -137,11 +131,9 @@ export function produceTestScopeChunks(
       results.push(slot);
       continue;
     }
-    const chain = chainOf(slot.scope, ancestorsOf.get(slot.scope) ?? []);
-    const setupScopeIds = chain.length > 0 ? { setupScopeIds: chain } : {};
     const group = groupAt.get(slot);
     if (group) {
-      results.push({ ...groupChunk(group, scopeIds.get(slot.scope) as string, contentBudget), ...setupScopeIds });
+      results.push(groupChunk(group, scopeIds.get(slot.scope) as string, contentBudget));
       continue;
     }
     if (grouped.has(slot)) continue;
@@ -158,7 +150,6 @@ export function produceTestScopeChunks(
       // title row above, so it opens its chunk, and the engine repeats it on
       // every `#part2+` it cuts (bd tea-rags-mcp-l24yk).
       partHeader: slot.example.text.split("\n", 1)[0].trim(),
-      ...setupScopeIds,
     });
   }
 
@@ -191,15 +182,9 @@ function isScope(member: TestScope | TestExample): member is TestScope {
   return "children" in member;
 }
 
-/** Every scope of the tree mapped to its ancestors, outermost first. */
-function scopeAncestors(root: TestScope): Map<TestScope, TestScope[]> {
-  const result = new Map<TestScope, TestScope[]>();
-  const visit = (scope: TestScope, ancestors: TestScope[]): void => {
-    result.set(scope, ancestors);
-    for (const child of scope.children) visit(child, [...ancestors, scope]);
-  };
-  visit(root, []);
-  return result;
+/** Every scope of the tree, a scope before its children. */
+function scopesOf(scope: TestScope): TestScope[] {
+  return [scope, ...scope.children.flatMap(scopesOf)];
 }
 
 /**
@@ -327,6 +312,7 @@ function scopeSetupChunk(scope: TestScope, scopeId: string, topLevelName: string
     symbolId: scopeId,
     name: scope.name,
     parentSymbolId: topLevelName,
+    scopeLineRange: { start: scope.startLine, end: scope.endLine },
   };
 }
 

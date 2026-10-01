@@ -2,6 +2,7 @@ import Parser from "tree-sitter";
 import Ruby from "tree-sitter-ruby";
 import { describe, expect, it } from "vitest";
 
+import { setupChainOf } from "../../__helpers__/setup-chain.js";
 import {
   buildScopeTree,
   produceScopeChunks,
@@ -206,7 +207,7 @@ end`;
 
     // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): parent setup is stored ONCE,
     // as the root scope's own test_setup chunk, and the example references it
-    // through setupScopeIds instead of carrying it — explore prepends it on read.
+    // through the root scope span instead of carrying it — explore prepends it on read.
     expect(chunks).toHaveLength(2);
     const [setup, example] = chunks;
     expect(setup).toMatchObject({ chunkType: "test_setup", symbolId: "User.describe User" });
@@ -215,7 +216,7 @@ end`;
     expect(example.chunkType).toBe("test");
     expect(example.content).not.toContain("let(:user)");
     expect(example.content).toContain("has admin role");
-    expect(example.setupScopeIds).toEqual(["User.describe User"]);
+    expect(setupChainOf(chunks, example)).toEqual(["User.describe User"]);
     // But line range should NOT span back to parent setup lines
     // Parent setup is at lines 2-3, context starts at line 5
     expect(example.startLine).toBeGreaterThanOrEqual(5);
@@ -558,7 +559,7 @@ end`;
     expect(testChunks[1].content).toContain("has admin role and can manage");
     for (const example of testChunks) {
       expect(example.content).not.toContain("let(:user)");
-      expect(example.setupScopeIds).toEqual(["User.describe User"]);
+      expect(setupChainOf(chunks, example)).toEqual(["User.describe User"]);
     }
   });
 
@@ -636,7 +637,7 @@ end`;
     // the root's own test_setup chunk, which the example references.
     const rootExample = chunks.find((c) => c.chunkType === "test" && c.content.includes("can be instantiated"));
     expect(rootExample).toBeDefined();
-    expect(rootExample!.setupScopeIds).toEqual(["AuthenticationService.describe AuthenticationService"]);
+    expect(setupChainOf(chunks, rootExample!)).toEqual(["AuthenticationService.describe AuthenticationService"]);
     const rootSetup = chunks.find((c) => c.symbolId === "AuthenticationService.describe AuthenticationService");
     expect(rootSetup!.content).toContain("let(:service)");
     expect(rootSetup!.content).toContain("TIMEOUT = 30");
@@ -684,10 +685,10 @@ end`;
     const authExample = chunks.find((c) => c.content.includes("validates credentials format"));
     expect(authExample).toBeDefined();
     expect(authExample!.chunkType).toBe("test");
-    expect(authExample!.setupScopeIds).toEqual(["User.context 'authentication with various credential types'"]);
+    expect(setupChainOf(chunks, authExample!)).toEqual(["User.context 'authentication with various credential types'"]);
 
     const leafExample = chunks.find((c) => c.content.includes("authenticates successfully"));
-    expect(leafExample!.setupScopeIds).toEqual(["User.context 'authentication with various credential types'"]);
+    expect(setupChainOf(chunks, leafExample!)).toEqual(["User.context 'authentication with various credential types'"]);
   });
 
   it("should handle leaf scope with setup, otherLines, but no it blocks producing test_setup", () => {
@@ -814,7 +815,7 @@ describe("produceScopeChunks — addressable examples (bd tea-rags-mcp-99gkm)", 
       );
       expect(chunk.parentType).toBe("test_scope");
       expect(chunk.content).not.toContain("let(:worker)");
-      expect(chunk.setupScopeIds).toEqual([setup.symbolId]);
+      expect(setupChainOf([setup, ...chunks], chunk)).toEqual([setup.symbolId]);
     }
   });
 

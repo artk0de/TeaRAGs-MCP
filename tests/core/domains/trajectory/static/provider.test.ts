@@ -72,7 +72,7 @@ describe("StaticPayloadBuilder", () => {
     expect(payload.imports).toEqual(["./utils.js", "./types.js"]);
   });
 
-  it("writes a test example's setupScopeIds and a grouped chunk's exampleSymbolIds (5xpq4)", () => {
+  it("writes a grouped chunk's exampleSymbolIds (5xpq4)", () => {
     const testChunk = {
       content: "it { is_expected.to be_valid }\nit { is_expected.to be_persisted }",
       startLine: 4,
@@ -82,21 +82,36 @@ describe("StaticPayloadBuilder", () => {
         language: "ruby",
         chunkIndex: 2,
         chunkType: "test",
-        setupScopeIds: ["User.RSpec.describe User", "User.context 'v1.2'~2"],
         exampleSymbolIds: ["User.context 'v1.2'~2.it", "User.context 'v1.2'~2.it~2"],
       } as Record<string, unknown>,
     };
     const payload = builder.buildPayload(testChunk, "/project");
-    expect(payload.setupScopeIds).toEqual(["User.RSpec.describe User", "User.context 'v1.2'~2"]);
     expect(payload.exampleSymbolIds).toEqual(["User.context 'v1.2'~2.it", "User.context 'v1.2'~2.it~2"]);
   });
 
-  it("omits setupScopeIds and exampleSymbolIds when absent or empty", () => {
+  it("writes a test setup chunk's scopeLineRange (5xpq4)", () => {
+    const setupChunk = {
+      content: "let(:user) { create(:user) }",
+      startLine: 2,
+      endLine: 2,
+      metadata: {
+        filePath: "/project/spec/user_spec.rb",
+        language: "ruby",
+        chunkIndex: 0,
+        chunkType: "test_setup",
+        scopeLineRange: { start: 1, end: 30 },
+      } as Record<string, unknown>,
+    };
+    const payload = builder.buildPayload(setupChunk, "/project");
+    expect(payload.scopeLineRange).toEqual({ start: 1, end: 30 });
+  });
+
+  it("omits scopeLineRange and exampleSymbolIds when absent or empty", () => {
     const payload = builder.buildPayload(
-      { ...chunk, metadata: { ...chunk.metadata, setupScopeIds: [], exampleSymbolIds: [] } },
+      { ...chunk, metadata: { ...chunk.metadata, exampleSymbolIds: [] } },
       "/project",
     );
-    expect(payload).not.toHaveProperty("setupScopeIds");
+    expect(payload).not.toHaveProperty("scopeLineRange");
     expect(payload).not.toHaveProperty("exampleSymbolIds");
   });
 

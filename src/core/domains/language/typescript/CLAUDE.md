@@ -19,10 +19,10 @@ is `.claude/rules/test-spec-chunking.md` — read it before touching a hook.
   tea-rags-mcp-b55x2, epic tea-rags-mcp-phftd).
 - **`setupLines` are the scope's OWN hooks** — `beforeEach` / `beforeAll` /
   `afterEach` / `afterAll` / `before` / `after` / `setup` / `teardown`. The
-  kernel stores each scope's own once and links every example to its chain;
-  copying an ancestor's in here stores it twice. Non-DSL statements of the body
-  (`const`, `vi.mock(...)`, a `for` loop) are `otherLines` and land in that same
-  scope's setup chunk.
+  kernel stores each scope's own once and scopes it by line span; copying an
+  ancestor's in here stores it twice. Non-DSL statements of the body (`const`,
+  `vi.mock(...)`, a `for` loop) are `otherLines` and land in that same scope's
+  setup chunk.
 - **No TypeScript line sets `delegatesExamples`.** A parametrized
   `it.each(table)(name, fn)` / `test.for(cases)(name, fn)` is ONE example
   defined inline, not a statement running examples defined elsewhere; there is

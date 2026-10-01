@@ -42,12 +42,12 @@ import { SymbolIdDisambiguator } from "./symbol-id-disambiguator.js";
 
 /**
  * A test chunk's links a hook body chunk carries into the chunk metadata (bd
- * tea-rags-mcp-5xpq4): the setup chain explore hydrates, and the members of a
- * grouped chunk find_symbol answers from. Both persist; absent keys stay absent.
+ * tea-rags-mcp-5xpq4): a setup chunk's scope span explore hydrates examples
+ * against, and the members of a grouped chunk find_symbol answers from. Both persist; absent keys stay absent.
  */
-function testChunkLinks(result: BodyChunkResult): Pick<CodeChunk["metadata"], "setupScopeIds" | "exampleSymbolIds"> {
+function testChunkLinks(result: BodyChunkResult): Pick<CodeChunk["metadata"], "scopeLineRange" | "exampleSymbolIds"> {
   return {
-    ...(result.setupScopeIds === undefined ? {} : { setupScopeIds: result.setupScopeIds }),
+    ...(result.scopeLineRange === undefined ? {} : { scopeLineRange: result.scopeLineRange }),
     ...(result.exampleSymbolIds === undefined ? {} : { exampleSymbolIds: result.exampleSymbolIds }),
   };
 }

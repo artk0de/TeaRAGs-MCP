@@ -25,10 +25,9 @@ canonical cross-language test-chunk contract is
   shape, ids (`<top>.<scope>.<example>`, `~N`), line ranges and the per-scope
   setup chunks (bd tea-rags-mcp-dppnr, epic tea-rags-mcp-phftd).
 - **`setupLines` are the scope's OWN hooks** — the kernel stores each scope's
-  once and links every example to its chain. No JavaScript line sets
-  `delegatesExamples`: a parametrized `it.each(table)(name, fn)` is ONE example
-  defined inline, and a shared-behaviour helper function is not DSL, so it lands
-  in `otherLines`.
+  once and scopes it by line span. No JavaScript line sets `delegatesExamples`:
+  a parametrized `it.each(table)(name, fn)` is ONE example defined inline, and a
+  shared-behaviour helper function is not DSL, so it lands in `otherLines`.
 
 ## Mechanics
 

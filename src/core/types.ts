@@ -651,11 +651,11 @@ export interface CodeChunk {
     navigation?: { prevSymbolId?: string; nextSymbolId?: string };
 
     /**
-     * A test example's setup chain: the scope ids (root to leaf) whose own
-     * setup chunk explore prepends when it returns the example. See
-     * `BodyChunkResult.setupScopeIds` (bd tea-rags-mcp-5xpq4).
+     * A test scope's setup chunk: the whole scope's line span, which explore
+     * matches an example's start line against. See
+     * `BodyChunkResult.scopeLineRange` (bd tea-rags-mcp-5xpq4).
      */
-    setupScopeIds?: string[];
+    scopeLineRange?: { start: number; end: number };
 
     /** The example ids a grouped test chunk carries — `BodyChunkResult.exampleSymbolIds`. */
     exampleSymbolIds?: string[];

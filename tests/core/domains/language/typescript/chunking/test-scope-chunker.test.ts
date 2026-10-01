@@ -1,6 +1,7 @@
 import Parser from "tree-sitter";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { setupChainOf } from "../../__helpers__/setup-chain.js";
 import {
   buildScopeTree,
   isDslContainerCall,
@@ -265,7 +266,7 @@ describe("produceScopeChunks", () => {
     expect(example.chunkType).toBe("test");
     expect(example.content).not.toContain("signIn(user)");
     expect(example.content).toContain("has admin role");
-    expect(example.setupScopeIds).toEqual(["User.describe 'User'"]);
+    expect(setupChainOf(chunks, example)).toEqual(["User.describe 'User'"]);
     // Line range must NOT include ancestor setup lines — only own scope lines.
     // Ancestor setup is at lines 2-3, child describe starts at line 5.
     expect(example.startLine).toBeGreaterThanOrEqual(5);
@@ -565,7 +566,7 @@ describe("produceScopeChunks edge cases", () => {
     expect(testChunks[1].content).toContain("has admin role");
     for (const example of testChunks) {
       expect(example.content).not.toContain("signIn(user)");
-      expect(example.setupScopeIds).toEqual(["User.describe 'User'"]);
+      expect(setupChainOf(chunks, example)).toEqual(["User.describe 'User'"]);
     }
   });
 });
@@ -715,11 +716,11 @@ describe("produceScopeChunks intermediate-scope branches", () => {
 
     const middle = testChunks.find((c) => c.content.includes("has a token assigned"));
     expect(middle).toBeDefined();
-    expect(middle!.setupScopeIds).toEqual(["User.describe 'authenticated'"]);
+    expect(setupChainOf(chunks, middle!)).toEqual(["User.describe 'authenticated'"]);
     expect(middle!.parentSymbolId).toBe("User.describe 'authenticated'");
 
     const leaf = testChunks.find((c) => c.content.includes("admin role"));
-    expect(leaf!.setupScopeIds).toEqual(["User.describe 'authenticated'"]);
+    expect(setupChainOf(chunks, leaf!)).toEqual(["User.describe 'authenticated'"]);
     expect(leaf!.parentSymbolId).toBe("User.describe 'admin'");
   });
 
@@ -753,7 +754,7 @@ describe("produceScopeChunks intermediate-scope branches", () => {
     // root example references.
     const rootExample = chunks.find((c) => c.content.includes("sensible defaults"));
     expect(rootExample).toBeDefined();
-    expect(rootExample!.setupScopeIds).toEqual(["User.describe 'User'"]);
+    expect(setupChainOf(chunks, rootExample!)).toEqual(["User.describe 'User'"]);
     const rootSetup = chunks.find((c) => c.symbolId === "User.describe 'User'");
     expect(rootSetup!.content).toContain("ROLES");
     expect(rootSetup!.content).toContain("DEFAULT_TIMEOUT");

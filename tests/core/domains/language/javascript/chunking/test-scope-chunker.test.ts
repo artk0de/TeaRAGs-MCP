@@ -2,6 +2,7 @@ import Parser from "tree-sitter";
 import JsLang from "tree-sitter-javascript";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { setupChainOf } from "../../__helpers__/setup-chain.js";
 import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
 import { javascriptHooks } from "../../../../../../src/core/domains/language/javascript/chunking/index.js";
@@ -267,7 +268,7 @@ describe("produceScopeChunks", () => {
     expect(example.chunkType).toBe("test");
     expect(example.content).not.toContain("signIn(user)");
     expect(example.content).toContain("has admin role");
-    expect(example.setupScopeIds).toEqual(["User.describe 'User'"]);
+    expect(setupChainOf(chunks, example)).toEqual(["User.describe 'User'"]);
     // Line range must NOT include ancestor setup lines — only own scope lines.
     // Ancestor setup is at lines 2-3, child describe starts at line 5.
     expect(example.startLine).toBeGreaterThanOrEqual(5);
@@ -487,7 +488,7 @@ describe("TreeSitterChunker JS test-scope chunking (end-to-end)", () => {
     const adminChunk = testChunks.find((c) => c.content.includes("admin access"));
     expect(adminChunk).toBeDefined();
     expect(adminChunk!.content).not.toContain("signIn(user)");
-    expect(adminChunk!.metadata.setupScopeIds).toEqual(["UserService.describe 'UserService'"]);
+    expect(setupChainOf(chunks, adminChunk!)).toEqual(["UserService.describe 'UserService'"]);
     expect(adminChunk!.metadata.chunkType).toBe("test");
     // 2-level symbolId: TopLevel.leafScope
     expect(adminChunk!.metadata.symbolId).toContain("UserService");
@@ -495,7 +496,7 @@ describe("TreeSitterChunker JS test-scope chunking (end-to-end)", () => {
     // 'when regular' leaf references the same parent setup.
     const regularChunk = testChunks.find((c) => c.content.includes("limited access"));
     expect(regularChunk).toBeDefined();
-    expect(regularChunk!.metadata.setupScopeIds).toEqual(["UserService.describe 'UserService'"]);
+    expect(setupChainOf(chunks, regularChunk!)).toEqual(["UserService.describe 'UserService'"]);
   });
 
   it("does not claim DSL containers in non-test JS files", async () => {
