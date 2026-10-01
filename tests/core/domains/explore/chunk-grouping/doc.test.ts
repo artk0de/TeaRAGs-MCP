@@ -249,4 +249,75 @@ describe("DocChunkGrouper", () => {
       ]);
     });
   });
+  // bd tea-rags-mcp-8gbh3: a chunk the markdown chunker grew by accumulation
+  // OWNS every heading from the one that opened it (its `name`) to the end of
+  // its headingPath; the entries before the opener are ancestors.
+  describe("group — a merged chunk owns every heading it accumulated (bd tea-rags-mcp-8gbh3)", () => {
+    const merged = (id: string, name: string, headingPath: [number, string][], startLine: number): ScrollChunk => ({
+      id,
+      payload: {
+        relativePath: "fn.md",
+        language: "markdown",
+        isDocumentation: true,
+        name,
+        parentSymbolId: "fn.md",
+        symbolId: `doc:${id}`,
+        headingPath: headingPath.map(([depth, text]) => ({ depth, text })),
+        content: "",
+        startLine,
+        endLine: startLine + 5,
+      },
+    });
+
+    it("lists the chunk id on the opener and on every heading merged after it, not on ancestors", () => {
+      const toc = DocChunkGrouper.group([
+        merged(
+          "aaa",
+          "Rules",
+          [
+            [1, "Doc"],
+            [2, "Rules"],
+            [3, "First"],
+            [3, "Second"],
+          ],
+          3,
+        ),
+        merged(
+          "bbb",
+          "Effects",
+          [
+            [1, "Doc"],
+            [2, "Effects"],
+            [2, "Notes"],
+          ],
+          20,
+        ),
+      ]).payload?.content as string;
+
+      expect(toc.split("\n")).toEqual([
+        "# Doc",
+        "  ## Rules  doc:aaa",
+        "    ### First  doc:aaa",
+        "    ### Second  doc:aaa",
+        "  ## Effects  doc:bbb",
+        "  ## Notes  doc:bbb",
+      ]);
+    });
+
+    it("gives an h1 that opened its chunk the chunk id", () => {
+      const toc = DocChunkGrouper.group([
+        merged(
+          "ccc",
+          "Doc",
+          [
+            [1, "Doc"],
+            [2, "Only"],
+          ],
+          1,
+        ),
+      ]).payload?.content as string;
+
+      expect(toc.split("\n")).toEqual(["# Doc  doc:ccc", "  ## Only  doc:ccc"]);
+    });
+  });
 });
