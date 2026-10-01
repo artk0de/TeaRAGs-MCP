@@ -28,11 +28,24 @@
   `isTestExampleChunk` (`chunk-grouping/code.ts`) is the one gate for the scope
   lines of `CodeChunkGrouper.groupFile`, the scope-id outline in
   `resolveSymbols`, and the `#partN` admission in `SymbolSearchStrategy`. Never
-  infer a scope from the id shape: a setup-only scope under its top-level name
-  and an example under its scope are both `<parent>.<name>`. Id and emission
-  contract: `.claude/rules/test-spec-chunking.md`. Why: a pre-example-era test
-  chunk parented to a CLASS would be outlined instead of merged, reversing the
-  u74dj decision its tests pin.
+  infer a scope from the id shape: a scope's setup chunk under its top-level
+  name and an example under its scope are both `<parent>.<name>`. Id and
+  emission contract: `.claude/rules/test-spec-chunking.md`. Why: a
+  pre-example-era test chunk parented to a CLASS would be outlined instead of
+  merged, reversing the u74dj decision its tests pin.
+- **Test setup is hydrated at ONE seam, after the page is final.**
+  `BaseExploreStrategy#hydrateTestSetup` (`TestSetupHydrator`,
+  `test-setup-hydration.ts`) is the last step of every content-bearing
+  `postProcess` — the base one, `ScrollRankStrategy#postProcess`,
+  `SymbolSearchStrategy#postProcess` — and never runs on a metaOnly answer. It
+  fetches the setup of a whole page in one scroll, matched by file AND scope id.
+  Why: the index stores each scope's setup once (bd tea-rags-mcp-5xpq4), so an
+  example returned without it is not runnable in the head; hydrating before the
+  slice pays for results the caller never sees, and a per-strategy copy is the
+  drift this seam exists to prevent. `setupScopeIds` / `exampleSymbolIds` are
+  deliberately NOT payload signal descriptors (like `navigation`): a declared
+  key would raise schema drift on every existing index, and metaOnly and
+  `level: "file"` drop them by design.
 - **A `level: "file"` hit is reduced to file scope AFTER ranking, never
   before.** `FileLevelGrouper` keeps the top chunk per file with its full
   payload; `BaseExploreStrategy#shapeFileLevel` then applies

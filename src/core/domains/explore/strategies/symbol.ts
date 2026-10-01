@@ -56,6 +56,7 @@ import {
   symbolIdLastSegment,
   symbolIdTextToken,
 } from "../../../adapters/qdrant/filters/symbolid-text-token.js";
+import { exactMatchOnTextIndexed } from "../../../adapters/qdrant/filters/text-indexed-exact.js";
 import type {
   SymbolChunkLocation,
   SymbolChunkResolver,
@@ -130,9 +131,17 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     //     the Qdrant tokenized superset leaks middle-of-name hits
     //     (`setValue` for `set`, `Baroque` for `bar`).
     // See class doc-comment for the tokenization + short-name rationale.
-    const filtered = isFullyQualified(this.input.symbol)
+    const exact = isFullyQualified(this.input.symbol)
       ? filterByExactSymbolId(allChunks, this.input.symbol)
       : filterByLastSegment(allChunks, this.input.symbol);
+    // A tiny test example shares a chunk with its tiny siblings and is named
+    // only in that chunk's `exampleSymbolIds` (bd tea-rags-mcp-5xpq4) — asked
+    // only when nothing answered the id itself.
+    const grouped =
+      exact.length === 0 && isFullyQualified(this.input.symbol)
+        ? await this.scrollGroupedExample(ctx.collectionName)
+        : [];
+    const filtered = pathMatcher ? [...exact, ...keepPathPatternMatches(grouped, pathMatcher)] : [...exact, ...grouped];
 
     // Outline member lines carry declared visibility (bd tea-rags-mcp-sqqkz);
     // metaOnly strips the outline text, so there is nothing to decorate.
@@ -148,6 +157,30 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     // different symbolId. Two-hop: symbol_id → chunk_id → getPoint → result.
     const covering = await this.resolveViaCodegraph(ctx);
     return pathMatcher ? keepPathPatternMatches(covering, pathMatcher) : covering;
+  }
+
+  /**
+   * The grouped test chunk that carries the queried example id among its
+   * `exampleSymbolIds`. The id's scope is not known — a scope name may itself
+   * contain `.` — so every `.`-prefix of the id is a candidate parent, each
+   * served by the `parentSymbolId` text index; the member list decides.
+   */
+  private async scrollGroupedExample(
+    collectionName: string,
+  ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
+    const fqn = this.input.symbol;
+    const scopes = [...fqn.matchAll(/\./g)].map((m) => fqn.slice(0, m.index)).filter((scope) => scope.length > 0);
+    if (scopes.length === 0) return [];
+    const must: Record<string, unknown>[] = [{ key: "exampleSymbolIds", match: { value: fqn } }];
+    if (this.input.language) must.push({ key: "language", match: { value: this.input.language } });
+    const filter = {
+      must,
+      should: scopes.map((scope) => ({
+        must: exactMatchOnTextIndexed("parentSymbolId", scope, symbolIdTextToken(scope)),
+      })),
+    };
+    const chunks = await this.qdrant.scrollFiltered(collectionName, filter, SCROLL_LIMIT);
+    return chunks.filter((c) => Array.isArray(c.payload.exampleSymbolIds) && c.payload.exampleSymbolIds.includes(fqn));
   }
 
   /**
@@ -232,10 +265,12 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     processed = processed.slice(0, limit);
 
     if (originalCtx.metaOnly) {
-      processed = processed.map((r) => applyEssentialSignals(r, this.essentialKeys) as ExploreResult);
+      return processed.map((r) => applyEssentialSignals(r, this.essentialKeys) as ExploreResult);
     }
 
-    return processed;
+    // An example id answers with the example runnable in the head (msv3l):
+    // its scope setup is stored once per scope and put back here (5xpq4).
+    return this.hydrateTestSetup(processed, originalCtx);
   }
 
   private buildSymbolFilter(key: "symbolId" | "parentSymbolId"): Record<string, unknown> {

@@ -200,6 +200,6 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
       return this.applyMetaOnly(processed);
     }
 
-    return processed;
+    return this.hydrateTestSetup(processed, originalCtx);
   }
 }

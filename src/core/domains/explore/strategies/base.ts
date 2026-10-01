@@ -12,6 +12,7 @@ import type { PayloadSignalDescriptor } from "../../../contracts/types/trajector
 import { fileScopeOf, reduceToFileScope, type FileScope } from "../chunk-grouping/file-scope.js";
 import { filterMetaOnly } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
+import { TestSetupHydrator } from "../test-setup-hydration.js";
 import type { ExploreContext, ExploreResult, ExploreStrategy } from "./types.js";
 
 /** Page size when the caller gives no (or a non-positive) limit. */
@@ -33,6 +34,9 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
   /** Payload keys a `level: "file"` hit keeps, derived once from payloadSignals. */
   private readonly fileScope: FileScope;
 
+  /** Puts a test example's scope setup back in front of it (bd tea-rags-mcp-5xpq4). */
+  private readonly testSetupHydrator: TestSetupHydrator;
+
   constructor(
     protected readonly qdrant: QdrantManager,
     protected readonly reranker: Reranker,
@@ -40,6 +44,7 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
     protected readonly essentialKeys: string[],
   ) {
     this.fileScope = fileScopeOf(payloadSignals);
+    this.testSetupHydrator = new TestSetupHydrator(qdrant);
   }
 
   /** Main entry point: apply defaults → execute search → post-process. */
@@ -72,7 +77,7 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
    *   1. Rerank (if non-relevance preset)
    *   2. Trim to requested limit
    *   3. Reduce file-level hits to file scope (after ranking — see `shapeFileLevel`)
-   *   4. metaOnly formatting (if ctx.metaOnly)
+   *   4. metaOnly formatting (if ctx.metaOnly), else test setup hydration
    */
   protected async postProcess(results: ExploreResult[], originalCtx: ExploreContext): Promise<ExploreResult[]> {
     const requestedLimit = requestedPageSize(originalCtx.limit);
@@ -102,7 +107,20 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
       return this.applyMetaOnly(filtered);
     }
 
-    return filtered;
+    return this.hydrateTestSetup(filtered, originalCtx);
+  }
+
+  /**
+   * The final page with every test example's scope setup prepended to its
+   * content (bd tea-rags-mcp-5xpq4) — ONE batched fetch per page. The single
+   * hydration seam: every strategy calls it as the last step of a
+   * content-bearing answer, after ranking, slicing and file-scope shaping, so
+   * only the returned page pays and a file-level hit (whose `setupScopeIds`
+   * the file scope dropped) never does. A metaOnly answer carries no content
+   * and never calls it.
+   */
+  protected async hydrateTestSetup(results: ExploreResult[], ctx: ExploreContext): Promise<ExploreResult[]> {
+    return this.testSetupHydrator.hydrate(results, ctx.collectionName);
   }
 
   /**

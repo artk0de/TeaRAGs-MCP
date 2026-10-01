@@ -33,11 +33,13 @@
   truncate silently.** Both override `applyDefaults` to identity (no overfetch)
   and scroll a hard-coded `SCROLL_LIMIT = 200`. find_symbol issues two such
   scrolls (symbolId + parentSymbolId, `SymbolSearchStrategy#executeExplore`) and
-  unions them → hard ceiling 400 chunks before post-filtering; a file outline
-  sees at most 200 chunks of that file. Neither `postProcess` emits a cursor or
-  truncation flag. Why: a class with ~200+ member chunks, or a large file,
-  yields a silently incomplete outline, and raising the request `limit` changes
-  nothing — it only trims an already-truncated set.
+  unions them → hard ceiling 400 chunks before post-filtering (a fully-qualified
+  id neither answers adds one more, for a grouped tiny test example —
+  `SymbolSearchStrategy#scrollGroupedExample`); a file outline sees at most 200
+  chunks of that file. Neither `postProcess` emits a cursor or truncation flag.
+  Why: a class with ~200+ member chunks, or a large file, yields a silently
+  incomplete outline, and raising the request `limit` changes nothing — it only
+  trims an already-truncated set.
 
 ## See also
 

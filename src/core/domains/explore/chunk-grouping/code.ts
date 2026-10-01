@@ -64,11 +64,26 @@ function memberLines(sortedMembers: ScrollChunk[], visibilityOf?: MemberVisibili
   const lines: string[] = [];
   for (const chunk of sortedMembers) {
     const symbolId = (chunk.payload.symbolId as string | undefined) ?? "";
-    if (seen.has(symbolId)) continue;
-    seen.add(symbolId);
-    lines.push(`  ${formatMember(symbolId)}${visibilitySuffix(chunk, visibilityOf)}`);
+    for (const id of addressesOf(chunk)) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      lines.push(`  ${formatMember(id)}${id === symbolId ? visibilitySuffix(chunk, visibilityOf) : ""}`);
+    }
   }
   return lines;
+}
+
+/**
+ * The ids a chunk answers `find_symbol` for: its own, or — for a chunk grouping
+ * several tiny test examples — every member's (bd tea-rags-mcp-5xpq4), so an
+ * outline lists each example however it was stored.
+ */
+function addressesOf(chunk: ScrollChunk): string[] {
+  const members = chunk.payload.exampleSymbolIds;
+  if (Array.isArray(members) && members.length > 0) {
+    return members.filter((id): id is string => typeof id === "string");
+  }
+  return [(chunk.payload.symbolId as string | undefined) ?? ""];
 }
 
 /** A DSL test chunk — an example, or a scope's setup. */
@@ -114,24 +129,41 @@ function testScopeLines(roots: ScrollChunk[]): Map<ScrollChunk, string[]> {
   const byChunk = new Map<ScrollChunk, string[]>();
   for (const chunk of tests) {
     const base = splitFragmentBase(chunk.payload);
-    const id = base ?? (chunk.payload.symbolId as string | undefined) ?? "";
+    const ids = (base !== undefined ? [base] : addressesOf(chunk)).filter((id) => !printed.has(id));
     const scope = base !== undefined ? scopeOf(base) : (chunk.payload.parentSymbolId as string | undefined);
-    if (printed.has(id)) continue;
-    printed.add(id);
+    if (ids.length === 0) continue;
+    for (const id of ids) printed.add(id);
     if (scope === undefined) {
-      byChunk.set(chunk, [`  ${id}`]);
+      byChunk.set(
+        chunk,
+        ids.map((id) => `  ${id}`),
+      );
       continue;
     }
     const existing = opened.get(scope);
     if (existing) {
-      existing.push(`    ${id}`);
+      existing.push(...ids.map((id) => `    ${id}`));
       continue;
     }
-    const block = [`  ${scope}`, `    ${id}`];
+    const block = [`  ${scope}`, ...ids.map((id) => `    ${id}`)];
     opened.set(scope, block);
     byChunk.set(chunk, block);
   }
   return byChunk;
+}
+
+/**
+ * The scope ids a test file's example chunks draw as scope lines. A scope's own
+ * setup chunk carries that id as its symbolId (bd tea-rags-mcp-5xpq4); the
+ * scope line already addresses it, so it prints nothing of its own.
+ */
+function drawnScopeIds(roots: ScrollChunk[]): Set<string> {
+  return new Set(
+    roots
+      .filter((c) => isTestExampleChunk(c) && splitFragmentBase(c.payload) === undefined)
+      .map((c) => c.payload.parentSymbolId)
+      .filter((id): id is string => typeof id === "string"),
+  );
 }
 
 function contentSizeOf(chunks: ScrollChunk[]): number {
@@ -240,12 +272,14 @@ export const CodeChunkGrouper = {
     // a bare `rerank` would lose the class it belongs to. Test chunks are drawn
     // by scope instead (see `testScopeLines`), each scope at its first example.
     const scopeLines = testScopeLines(roots);
+    const scopeIds = drawnScopeIds(roots);
     const lines: string[] = [relativePath];
     for (const root of roots) {
       if (isTestExampleChunk(root)) {
         lines.push(...(scopeLines.get(root) ?? []));
         continue;
       }
+      if (isTestChunk(root) && scopeIds.has((root.payload.symbolId as string | undefined) ?? "")) continue;
       const name = root.payload.name as string | undefined;
       const symbolId = root.payload.symbolId as string | undefined;
       const label = root.payload.parentSymbolId ? (symbolId ?? name ?? "") : (name ?? symbolId ?? "");
