@@ -2770,6 +2770,125 @@ describe("OllamaEmbeddings", () => {
     });
   });
 
+  // Invariant: an embed request asks Ollama for a context (and a batch, which
+  // bounds a non-causal input) as wide as the model's own context length. With
+  // Ollama's defaults the per-input ceiling is the 2048-token ubatch, and an
+  // input past it is either silently truncated or fails the whole request.
+  describe("embed request context window", () => {
+    const PRIMARY = "http://primary:11434";
+    const vector = Array(768).fill(0.1);
+
+    /** Route by endpoint: /api/show answers `show`, embed endpoints answer a vector per input. */
+    function routeFetch(show: () => Promise<unknown>): void {
+      mockFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url.endsWith("/api/show")) return show();
+        const body = JSON.parse(init?.body as string) as { input?: string[] };
+        if (url.endsWith("/api/embed")) {
+          return { ok: true, json: async () => ({ embeddings: (body.input ?? []).map(() => vector) }) };
+        }
+        return { ok: true, json: async () => ({ embedding: vector }) };
+      });
+    }
+
+    const showWithContext = async () => ({
+      ok: true,
+      json: async () => ({
+        model_info: { "jina-bert-v2.context_length": 8192, "jina-bert-v2.embedding_length": 768 },
+      }),
+    });
+
+    function embedOptions(endpoint: string): Record<string, unknown>[] {
+      return mockFetch.mock.calls
+        .filter((c: any[]) => typeof c[0] === "string" && c[0].endsWith(endpoint))
+        .map((c: any[]) => JSON.parse((c[1] as RequestInit).body as string).options);
+    }
+
+    it("sends num_ctx and num_batch equal to the context length on the batch API", async () => {
+      routeFetch(showWithContext);
+      const provider = new OllamaEmbeddings("jina", undefined, undefined, PRIMARY, false, 999);
+
+      await provider.resolveModelInfo();
+      await provider.embedBatch(["a", "b"]);
+
+      expect(embedOptions("/api/embed")).toEqual([{ num_gpu: 999, num_ctx: 8192, num_batch: 8192 }]);
+    });
+
+    it("sends num_ctx and num_batch equal to the context length on the legacy API", async () => {
+      routeFetch(showWithContext);
+      const provider = new OllamaEmbeddings("jina", undefined, undefined, PRIMARY, true, 0);
+
+      await provider.resolveModelInfo();
+      await provider.embed("a");
+
+      expect(embedOptions("/api/embeddings")).toEqual([{ num_gpu: 0, num_ctx: 8192, num_batch: 8192 }]);
+    });
+
+    it("caps the window at 8192 for a model whose context length is larger", async () => {
+      routeFetch(async () => ({
+        ok: true,
+        json: async () => ({
+          model_info: { "qwen3.context_length": 40960, "qwen3.embedding_length": 1024 },
+        }),
+      }));
+      const provider = new OllamaEmbeddings("qwen3-embedding", undefined, undefined, PRIMARY, false, 999);
+
+      await provider.resolveModelInfo();
+      await provider.embedBatch(["a"]);
+
+      expect(embedOptions("/api/embed")).toEqual([{ num_gpu: 999, num_ctx: 8192, num_batch: 8192 }]);
+    });
+
+    it("omits num_ctx and num_batch when /api/show fails", async () => {
+      routeFetch(async () => {
+        throw new Error("connection refused");
+      });
+      const provider = new OllamaEmbeddings("jina", undefined, undefined, PRIMARY, false, 999);
+
+      await provider.resolveModelInfo();
+      await provider.embedBatch(["a"]);
+
+      expect(embedOptions("/api/embed")).toEqual([{ num_gpu: 999 }]);
+    });
+
+    it("omits num_ctx and num_batch when the model reports no context length", async () => {
+      routeFetch(async () => ({ ok: true, json: async () => ({ model_info: { "bert.embedding_length": 768 } }) }));
+      const provider = new OllamaEmbeddings("jina", undefined, undefined, PRIMARY, true, 999);
+
+      await provider.resolveModelInfo();
+      await provider.embed("a");
+
+      expect(embedOptions("/api/embeddings")).toEqual([{ num_gpu: 999 }]);
+    });
+
+    it("asks /api/show once, not per embed request", async () => {
+      routeFetch(showWithContext);
+      const provider = new OllamaEmbeddings("jina", undefined, undefined, PRIMARY, false, 999);
+
+      await provider.resolveModelInfo();
+      await provider.embedBatch(["a"]);
+      await provider.embedBatch(["b", "c"]);
+      await provider.embed("d");
+
+      const showCalls = mockFetch.mock.calls.filter((c: any[]) => (c[0] as string).endsWith("/api/show"));
+      expect(showCalls).toHaveLength(1);
+      expect(embedOptions("/api/embed").every((o) => o.num_ctx === 8192 && o.num_batch === 8192)).toBe(true);
+    });
+
+    it("waits for an in-flight model-info probe instead of embedding with the default window", async () => {
+      routeFetch(showWithContext);
+      const provider = new OllamaEmbeddings("jina", undefined, undefined, PRIMARY, false, 999);
+
+      // Startup fired the probe and moved on without awaiting it.
+      const pending = provider.resolveModelInfo();
+      await provider.embedBatch(["a"]);
+      await pending;
+
+      expect(embedOptions("/api/embed")).toEqual([{ num_gpu: 999, num_ctx: 8192, num_batch: 8192 }]);
+      const showCalls = mockFetch.mock.calls.filter((c: any[]) => (c[0] as string).endsWith("/api/show"));
+      expect(showCalls).toHaveLength(1);
+    });
+  });
+
   describe("model quantization", () => {
     const PRIMARY = "http://primary:11434";
     const BASE = "unclemusclez/jina-embeddings-v2-base-code:latest";

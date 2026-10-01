@@ -1,8 +1,8 @@
 {
   "*": {
     "chunking": {
-      "version": 2,
-      "digest": "sha256:358af6b97ef32454b535e77d3168e7ab5b35a09083892291b4ca3d6e2bc24e7b"
+      "version": 3,
+      "digest": "sha256:53a4fadf6721acff5a6cf69b2c55692fa6c2c74c8f226e824dd38d8389bc43d2"
     },
     "walker": {
       "version": 3,

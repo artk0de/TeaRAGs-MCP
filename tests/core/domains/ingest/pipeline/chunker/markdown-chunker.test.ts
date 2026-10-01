@@ -696,3 +696,163 @@ describe("MarkdownChunker", () => {
     });
   });
 });
+
+// The pipeline hard cap (`maxChunkSize`, wired as `chunkSize` in
+// `createChunkerPool`) is the embedding model's context budget: a heading-less
+// document or a long preamble emitted whole overflowed it (taxdome PROMPT.md,
+// 129 KB with no headings → one 81 159-char chunk → embedding 400 → file
+// quarantined). Both paths are cut like an oversized section.
+describe("MarkdownChunker — heading-less documents and preambles respect maxChunkSize", () => {
+  const CAP = 500;
+  const paragraph = (i: number) =>
+    [
+      `Paragraph ${i} explains one step of the prompt in a sentence long enough to matter.`,
+      `It continues on a second line so the block spans rows ${i}.`,
+      `- bullet one of paragraph ${i}`,
+      `- bullet two of paragraph ${i}`,
+    ].join("\n");
+  const body = Array.from({ length: 12 }, (_, i) => paragraph(i)).join("\n\n");
+
+  const expectWithinCapAndTiled = (
+    chunks: { content: string; startLine: number; endLine: number }[],
+    sourceLines: string[],
+  ) => {
+    for (const c of chunks) {
+      expect(c.content.length).toBeLessThanOrEqual(CAP);
+      expect(c.startLine).toBeGreaterThanOrEqual(1);
+      expect(c.endLine).toBeGreaterThanOrEqual(c.startLine);
+      expect(c.endLine).toBeLessThanOrEqual(sourceLines.length);
+      expect(c.content).toBe(sourceLines.slice(c.startLine - 1, c.endLine).join("\n"));
+    }
+    for (let i = 1; i < chunks.length; i++) expect(chunks[i].startLine).toBeGreaterThan(chunks[i - 1].endLine);
+  };
+
+  it("cuts a heading-less document larger than the cap into parts, each within it, tiling the document", async () => {
+    expect(body.length).toBeGreaterThan(CAP * 3);
+    const sourceLines = body.split("\n");
+    const chunks = await new MarkdownChunker({ maxChunkSize: CAP }).chunk(body, "PROMPT.md", "markdown");
+
+    expect(chunks.length).toBeGreaterThan(2);
+    expectWithinCapAndTiled(chunks, sourceLines);
+    expect(chunks[0].startLine).toBe(1);
+    expect(chunks[chunks.length - 1].endLine).toBe(sourceLines.length);
+    const covered = new Set(chunks.flatMap((c) => c.content.split("\n")));
+    for (const line of sourceLines) if (line.trim() !== "") expect(covered.has(line), line).toBe(true);
+    chunks.forEach((c, i) => {
+      expect(c.metadata.chunkIndex).toBe(i);
+      expect(c.metadata.chunkType).toBe("block");
+      expect(c.metadata.isDocumentation).toBe(true);
+      expect(c.metadata.headingPath).toEqual([]);
+      expect(c.metadata.filePath).toBe("PROMPT.md");
+      expect(c.metadata.language).toBe("markdown");
+    });
+  });
+
+  it("cuts a heading-less document made of one line wider than the cap", async () => {
+    const line = "word ".repeat(400).trim();
+    const chunks = await new MarkdownChunker({ maxChunkSize: CAP }).chunk(line, "wide.md", "markdown");
+
+    expect(chunks.length).toBeGreaterThan(2);
+    for (const c of chunks) {
+      expect(c.content.length).toBeLessThanOrEqual(CAP);
+      expect(c.startLine).toBe(1);
+      expect(c.endLine).toBe(1);
+    }
+    expect(chunks.map((c) => c.content).join("")).toBe(line);
+  });
+
+  it("cuts an oversized preamble into Preamble parts within the cap, leaving the sections intact", async () => {
+    const section = "## Section\n\nThe section after the preamble keeps its own single chunk and its own id.";
+    const code = `${body}\n\n${section}`;
+    const sourceLines = code.split("\n");
+    const chunks = await new MarkdownChunker({ maxChunkSize: CAP }).chunk(code, "doc.md", "markdown");
+
+    const preamble = chunks.filter((c) => c.metadata.name === "Preamble");
+    expect(preamble.length).toBeGreaterThan(2);
+    expect(chunks.slice(0, preamble.length)).toEqual(preamble);
+    expectWithinCapAndTiled(preamble, sourceLines);
+    expect(preamble[0].startLine).toBe(1);
+    const sectionLine = sourceLines.indexOf("## Section") + 1;
+    expect(preamble[preamble.length - 1].endLine).toBeLessThan(sectionLine);
+    for (const p of preamble) {
+      expect(p.metadata.parentSymbolId).toBe("Preamble");
+      expect(p.metadata.symbolId).toBeUndefined();
+      expect(p.metadata.isDocumentation).toBe(true);
+      expect(p.metadata.headingPath).toEqual([]);
+    }
+
+    const sectionChunk = chunks[preamble.length];
+    expect(sectionChunk.metadata.name).toBe("Section");
+    expect(sectionChunk.metadata.symbolId).toBe("Section");
+    expect(sectionChunk.content).toBe(section);
+    expect(sectionChunk.startLine).toBe(sectionLine);
+    chunks.forEach((c, i) => {
+      expect(c.metadata.chunkIndex).toBe(i);
+    });
+  });
+
+  // Pinned from the output BEFORE the cap was enforced on these paths:
+  // content under the cap must come out byte-identical.
+  it("leaves a heading-less document under the cap as one whole chunk, unchanged", async () => {
+    const code = ["---", "title: T", "---", "", "First line of a short note body.", "Second line of it."].join("\n");
+    const chunks = await new MarkdownChunker({ maxChunkSize: CAP }).chunk(code, "note.md", "markdown");
+    expect(chunks).toEqual([
+      {
+        content: "First line of a short note body.\nSecond line of it.",
+        startLine: 5,
+        endLine: 6,
+        metadata: {
+          filePath: "note.md",
+          language: "markdown",
+          chunkIndex: 0,
+          chunkType: "block",
+          isDocumentation: true,
+          headingPath: [],
+        },
+      },
+    ]);
+  });
+
+  it("leaves a preamble under the cap as one Preamble chunk, unchanged", async () => {
+    const code = [
+      "Intro text before any heading, long enough to be its own preamble chunk.",
+      "",
+      "## Section",
+      "",
+      "Section body long enough to clear the minimum section size threshold.",
+    ].join("\n");
+    const chunks = await new MarkdownChunker({ maxChunkSize: CAP }).chunk(code, "doc.md", "markdown");
+    expect(chunks).toEqual([
+      {
+        content: "Intro text before any heading, long enough to be its own preamble chunk.",
+        startLine: 1,
+        endLine: 2,
+        metadata: {
+          filePath: "doc.md",
+          language: "markdown",
+          chunkIndex: 0,
+          chunkType: "block",
+          name: "Preamble",
+          symbolId: "Preamble",
+          isDocumentation: true,
+          headingPath: [],
+        },
+      },
+      {
+        content: "## Section\n\nSection body long enough to clear the minimum section size threshold.",
+        startLine: 3,
+        endLine: 5,
+        metadata: {
+          filePath: "doc.md",
+          language: "markdown",
+          chunkIndex: 1,
+          chunkType: "block",
+          name: "Section",
+          symbolId: "Section",
+          isDocumentation: true,
+          headingPath: [{ depth: 2, text: "Section" }],
+        },
+      },
+    ]);
+  });
+});

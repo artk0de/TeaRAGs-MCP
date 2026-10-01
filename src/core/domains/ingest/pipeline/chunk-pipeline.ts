@@ -16,12 +16,12 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
 import type { PayloadBuilder } from "../../../contracts/types/provider.js";
+import { isDebug } from "../../../infra/runtime.js";
 import { PipelineNotStartedError } from "../errors.js";
 import { classifyEmbeddingQuarantinable, type QuarantineStore } from "../sync/index.js";
 import { AdaptiveBatchSizer } from "./adaptive-batch-sizer.js";
 import { BatchAccumulator } from "./infra/batch-accumulator.js";
 import { pipelineLog } from "./infra/debug-logger.js";
-import { isDebug } from "../../../infra/runtime.js";
 import { WorkerPool } from "./infra/worker-pool.js";
 import type {
   Batch,
@@ -353,7 +353,7 @@ export class ChunkPipeline {
         // poison chunk(s) from the batch instead of aborting the whole pass.
         const quarantinable = this.quarantineStore ? classifyEmbeddingQuarantinable(wrapped, "") : null;
         if (!quarantinable) throw wrapped;
-        ({ items, embeddings } = await this.isolateEmbeddingFailures(items));
+        ({ items, embeddings } = await this.isolateEmbeddingFailures(items, wrapped));
         if (items.length === 0) {
           // Every chunk in the batch was quarantined — nothing left to store.
           return;
@@ -411,31 +411,52 @@ export class ChunkPipeline {
   }
 
   /**
-   * Re-embed a failed batch one chunk at a time to find the poison chunk(s).
-   * Chunks whose solo embedding fails with a quarantinable error have their
-   * file recorded in the quarantine and are dropped; the rest are returned as
-   * survivors with their embeddings. A transient solo failure is rethrown so
-   * the WorkerPool retries the whole batch.
+   * Find the poison chunk(s) of a batch whose `embedBatch` already failed with
+   * a quarantinable error, by recursive bisection: the failed batch is NOT
+   * resent; its two halves are embedded as one request each, a failing half is
+   * split again, and a failing single chunk has its file recorded in the
+   * quarantine and is dropped. One poison chunk in n costs O(log n) requests;
+   * a batch-level failure that does not reproduce on the halves costs exactly
+   * two. Survivors are returned in input order with index-aligned embeddings.
+   * A non-quarantinable failure is rethrown so the WorkerPool retries the
+   * whole batch.
+   *
+   * `failure` is the error `embedBatch(items)` already threw — `items` is
+   * never resent as a whole.
    */
   private async isolateEmbeddingFailures(
     items: ChunkItem[],
+    failure: unknown,
   ): Promise<{ items: ChunkItem[]; embeddings: Awaited<ReturnType<EmbeddingProvider["embedBatch"]>> }> {
-    const survivors: ChunkItem[] = [];
-    const survivorEmbeddings: Awaited<ReturnType<EmbeddingProvider["embedBatch"]>> = [];
-    for (const item of items) {
-      try {
-        const [embedding] = await this.embeddings.embedBatch([item.chunk.content]);
-        survivors.push(item);
-        survivorEmbeddings.push(embedding);
-      } catch (error) {
-        const relativePath = this.toRelativePath(item);
-        const quarantinable = classifyEmbeddingQuarantinable(error, relativePath);
-        if (!quarantinable) throw error;
-        await this.quarantineStore?.markFailed(relativePath, quarantinable);
-        this.stats.errors++;
-      }
+    if (items.length === 1) {
+      const [culprit] = items;
+      const relativePath = this.toRelativePath(culprit);
+      const quarantinable = classifyEmbeddingQuarantinable(failure, relativePath);
+      if (!quarantinable) throw failure;
+      await this.quarantineStore?.markFailed(relativePath, quarantinable);
+      this.stats.errors++;
+      return { items: [], embeddings: [] };
     }
-    return { items: survivors, embeddings: survivorEmbeddings };
+    if (!classifyEmbeddingQuarantinable(failure, "")) throw failure;
+    const mid = Math.ceil(items.length / 2);
+    const left = await this.embedOrBisect(items.slice(0, mid));
+    const right = await this.embedOrBisect(items.slice(mid));
+    return {
+      items: [...left.items, ...right.items],
+      embeddings: [...left.embeddings, ...right.embeddings],
+    };
+  }
+
+  /** Embed `items` in one request; on failure, bisect them further. */
+  private async embedOrBisect(
+    items: ChunkItem[],
+  ): Promise<{ items: ChunkItem[]; embeddings: Awaited<ReturnType<EmbeddingProvider["embedBatch"]>> }> {
+    try {
+      const embeddings = await this.embeddings.embedBatch(items.map((item) => item.chunk.content));
+      return { items, embeddings };
+    } catch (error) {
+      return this.isolateEmbeddingFailures(items, error);
+    }
   }
 
   /** Convert a chunk's absolute filePath to a path relative to its codebase root. */

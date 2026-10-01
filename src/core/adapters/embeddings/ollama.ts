@@ -78,6 +78,12 @@ const UNAVAILABLE_RETRY_DEFAULT_BASE_DELAY_MS = 2_000;
  * ~2s + 4s of backoff instead of the whole 240s budget.
  */
 const FAILOVER_CONSECUTIVE_FAILURES_DEFAULT = 3;
+/**
+ * Ceiling for the per-request embedding window (`num_ctx` = `num_batch`). A
+ * chunk is capped in characters, and even at one token per character the
+ * chunk-size cap stays well inside 8192 tokens.
+ */
+const EMBED_WINDOW_MAX_TOKENS = 8192;
 
 async function fetchWithTimeout(
   url: string,
@@ -172,6 +178,8 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private primaryAliveAt = 0;
   private primaryFailedAt = 0;
   private cachedModelInfo?: OllamaModelInfo;
+  /** The `/api/show` probe currently on the wire, so concurrent callers share one round trip. */
+  private modelInfoInFlight?: Promise<OllamaModelInfo | undefined>;
   private readonly healthReady?: Promise<void>;
   /** Resolves once the quantized model copy (if any) is provisioned and live. */
   private readonly modelReady?: Promise<void>;
@@ -249,6 +257,39 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private async startupReady(): Promise<void> {
     await this.healthReady;
     await this.modelReady;
+  }
+
+  /**
+   * Hold an embed until a model-info probe already on the wire has answered, so
+   * the first request of a run carries the context window. Never STARTS a probe:
+   * the composition root and the index path resolve model info, and a failed
+   * probe must not turn into one `/api/show` per embed request.
+   */
+  private async awaitPendingModelInfo(): Promise<void> {
+    await this.modelInfoInFlight;
+  }
+
+  /**
+   * Runtime options for an embed request.
+   *
+   * `num_ctx` and `num_batch` are pinned to the model's context length because
+   * Ollama's defaults (`n_ctx` 4096, `n_batch` = `n_ubatch` 2048) cap a single
+   * embedding input at 2048 tokens: a non-causal input must fit one ubatch. An
+   * input past that is, nondeterministically, either silently truncated to 2048
+   * tokens or fails the WHOLE request with HTTP 400 "input length exceeds the
+   * context length" — dense prose (Cyrillic markdown) at the chunk-size cap
+   * crosses it. With both options at the model's context length the input
+   * embeds in full, and anything past the model's own limit truncates with 200.
+   * The window is capped at `EMBED_WINDOW_MAX_TOKENS`: the runner's compute
+   * buffers grow with `num_batch`, and a 32K–40K model (qwen3-embedding) would
+   * pay that VRAM for inputs the chunk cap never produces.
+   * Unknown context length → the options are omitted, leaving server defaults.
+   */
+  private embedRequestOptions(): Record<string, number> {
+    const contextLength = this.cachedModelInfo?.contextLength;
+    if (contextLength === undefined || contextLength <= 0) return { num_gpu: this.numGpu };
+    const window = Math.min(contextLength, EMBED_WINDOW_MAX_TOKENS);
+    return { num_gpu: this.numGpu, num_ctx: window, num_batch: window };
   }
 
   /** Provision (or reuse) the server-side quantized copy and switch to it. */
@@ -576,7 +617,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         body: JSON.stringify({
           model: this.model,
           input: texts,
-          options: { num_gpu: this.numGpu },
+          options: this.embedRequestOptions(),
         }),
         signal: controller.signal,
       });
@@ -625,7 +666,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         body: JSON.stringify({
           model: this.model,
           prompt: text,
-          options: { num_gpu: this.numGpu },
+          options: this.embedRequestOptions(),
         }),
       });
 
@@ -699,6 +740,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
   async embed(text: string): Promise<EmbeddingResult> {
     await this.startupReady();
+    await this.awaitPendingModelInfo();
     return this.limiter.schedule(async () => this.retryWithBackoff(async (url) => this.embedSingle(text, url)));
   }
 
@@ -721,6 +763,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    */
   async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
     await this.startupReady();
+    await this.awaitPendingModelInfo();
     if (texts.length === 0) {
       return [];
     }
@@ -796,7 +839,14 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
   async resolveModelInfo(): Promise<OllamaModelInfo | undefined> {
     if (this.cachedModelInfo) return this.cachedModelInfo;
+    if (this.modelInfoInFlight) return this.modelInfoInFlight;
+    this.modelInfoInFlight = this.fetchModelInfo().finally(() => {
+      this.modelInfoInFlight = undefined;
+    });
+    return this.modelInfoInFlight;
+  }
 
+  private async fetchModelInfo(): Promise<OllamaModelInfo | undefined> {
     // Same ordering as embed()/checkHealth(): the active URL is only decided
     // once the constructor's failover check has settled.
     await this.startupReady();
