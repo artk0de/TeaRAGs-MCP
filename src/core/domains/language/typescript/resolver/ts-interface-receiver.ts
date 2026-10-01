@@ -34,11 +34,12 @@
  * no project symbol of the member's name neither consumer could change an edge.
  */
 
-import ts from "typescript";
+import type ts from "typescript";
 
 import type { CallContext, CallRef, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
 import { lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import { findReceiverExpression } from "./strategies/ts-type-checker-shared.js";
+import { loadTypeScriptCompiler } from "./ts-compiler-loader.js";
 import type { TSProgramCache } from "./ts-program-cache.js";
 import { typeConstituents } from "./ts-type-constituents.js";
 
@@ -80,6 +81,7 @@ export function receiverProjectInterfaceNames(
  * `getSymbol()` alone dropped every alias contract (bd tea-rags-mcp-6ea2k).
  */
 function contractSymbolOf(type: ts.Type): ts.Symbol | undefined {
+  const ts = loadTypeScriptCompiler();
   const symbol = type.getSymbol();
   const declarations = symbol?.getDeclarations() ?? [];
   if (symbol !== undefined && declarations.length > 0 && declarations.every((d) => ts.isInterfaceDeclaration(d))) {

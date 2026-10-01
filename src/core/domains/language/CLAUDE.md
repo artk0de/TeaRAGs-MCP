@@ -393,6 +393,18 @@
 
 ## Gotchas
 
+- **A TS resolver module never VALUE-imports `typescript`.** It holds
+  `import type ts from "typescript"` and calls `loadTypeScriptCompiler()`
+  (`typescript/resolver/ts-compiler-loader.ts`) at use time — a function-local
+  `const ts = loadTypeScriptCompiler()` shadows only the value meaning, so
+  `ts.Node` in a type position still resolves. A module-level value use (a
+  constant built from `ts.SyntaxKind` / `ts.sys`) must be a memoized getter. The
+  loader is a `createRequire`, so `vi.mock("typescript")` no longer reaches the
+  resolver: mock the loader module instead (`ts-program-cache.test.ts`). Why:
+  one static value import makes every importer of the language domain — the
+  whole test suite, and the chunker worker on each fork, which never resolves a
+  call — load the ~9MB compiler (~100-300ms); guarded by
+  `ts-compiler-loader.test.ts` (bd tea-rags-mcp-bbo1h.2).
 - **`defaultImportFileEdges` asks the CALL chain a MODULE question.**
   `trajectory/codegraph/symbols/resolution-runner.ts` synthesises
   `{ receiver: basename, member: basename }` per import — `member` is a

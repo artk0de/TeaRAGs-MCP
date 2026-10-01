@@ -52,7 +52,7 @@
  * is what `thisMember`'s same-file fallback applies to its own.
  */
 
-import ts from "typescript";
+import type ts from "typescript";
 
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type {
@@ -64,6 +64,7 @@ import type {
 import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import { reexportOriginFile, type ResolverConfig } from "./strategies/shared.js";
 import { calledMemberDeclarations, declarationOwnerName } from "./strategies/ts-type-checker-shared.js";
+import { loadTypeScriptCompiler } from "./ts-compiler-loader.js";
 import { receiverTypeName } from "./ts-external-call.js";
 import { mapImportToFile } from "./ts-path-mapper.js";
 import type { TSProgramCache } from "./ts-program-cache.js";
@@ -485,6 +486,7 @@ function candidateOwnerReturnsDeclaringType(declaration: ts.Declaration, candida
 function enclosingNamedTypeDeclaration(
   declaration: ts.Declaration,
 ): ts.InterfaceDeclaration | ts.TypeAliasDeclaration | null {
+  const ts = loadTypeScriptCompiler();
   let node: ts.Node | undefined = declaration.parent;
   while (node !== undefined) {
     if (ts.getNameOfDeclaration(node as ts.Declaration) !== undefined) {
@@ -497,6 +499,7 @@ function enclosingNamedTypeDeclaration(
 
 /** The declared return type of the top-level function or function-valued `const` called `name`. */
 function topLevelFactoryReturnAnnotation(sourceFile: ts.SourceFile, name: string): ts.TypeNode | undefined {
+  const ts = loadTypeScriptCompiler();
   for (const statement of sourceFile.statements) {
     if (ts.isFunctionDeclaration(statement) && statement.name?.text === name) return statement.type;
     if (!ts.isVariableStatement(statement)) continue;
@@ -513,6 +516,7 @@ function topLevelFactoryReturnAnnotation(sourceFile: ts.SourceFile, name: string
 
 /** `T` or `Promise<T>` — the annotation names the type `typeName` itself. */
 function annotationNamesType(annotation: ts.TypeNode, typeName: string): boolean {
+  const ts = loadTypeScriptCompiler();
   if (!ts.isTypeReferenceNode(annotation) || !ts.isIdentifier(annotation.typeName)) return false;
   if (annotation.typeName.text === typeName) return true;
   const [awaited] = annotation.typeArguments ?? [];
@@ -537,6 +541,7 @@ function candidateEnclosesDeclaration(
   candidate: EvidenceCandidate,
   sameFile: boolean,
 ): boolean {
+  const ts = loadTypeScriptCompiler();
   if (!sameFile) return ts.isSourceFile(declaration.parent) && candidate.scope.length === 0;
   const { startLine, endLine } = candidate;
   if (startLine === undefined || endLine === undefined) return false;
@@ -558,6 +563,7 @@ function candidateEnclosesDeclaration(
  * refuses. The caller has already pinned the file to the candidate's.
  */
 function candidateOwnerEnclosesDeclaration(declaration: ts.Declaration, candidateOwner: string): boolean {
+  const ts = loadTypeScriptCompiler();
   let node: ts.Node | undefined = declaration.parent;
   while (node !== undefined) {
     const name = ts.getNameOfDeclaration(node as ts.Declaration);
