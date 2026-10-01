@@ -5,7 +5,10 @@ import type {
   DependencyNormsInput,
   DependencyNormsReport,
   DependencyNormsSummary,
+  NormLedgers,
   NormLocality,
+  NormPlannedEdge,
+  PlannedEdgeVerdict,
 } from "./types.js";
 
 /**
@@ -43,21 +46,19 @@ export const DEFAULT_NORMS_FREQUENT_ROLE_EDGES = 4;
  * file never enter a ledger — a suffix never asserts a role, so it must not
  * misfit an edge either (naming's entry gate, bd tea-rags-mcp-vi0wx).
  */
-export function computeDependencyNorms(input: DependencyNormsInput): DependencyNormsReport {
+/**
+ * The ledgers the report walk and the write-time verdict share (bd
+ * tea-rags-mcp-23iii): pair support per (roleSrc, roleDst, locality), each
+ * role's edge activity, the adaptive cut with its live predicate. Built once
+ * per input — `computeDependencyNorms` consumes it for every edge it walks,
+ * `judgePlannedEdge` for one planned edge a writer is about to add.
+ */
+export function buildNormLedgers(input: DependencyNormsInput): NormLedgers {
   const { graph, fileRoles, componentOf } = input;
   const roleOf = (relPath: RelPath) => fileRoles.get(relPath);
-
-  let weakRoleFileCount = 0;
-  let untypedFileCount = 0;
-  for (const f of graph.files) {
-    const role = fileRoles.get(f.relPath);
-    if (role === undefined) untypedFileCount++;
-    else if (!role.strong) weakRoleFileCount++;
-  }
-
-  const ledgers = new Map<string, number>();
+  const pairs = new Map<string, number>();
   const activity = new Map<string, number>();
-  let typedEdgeCount = 0;
+  const byLocality = new Map<NormLocality, Map<string, number>>();
   const localityOf = (sourceRelPath: RelPath, targetRelPath: RelPath): NormLocality => {
     if (directoryOf(sourceRelPath) === directoryOf(targetRelPath)) return "sameDirectory";
     if (componentOf) {
@@ -71,81 +72,130 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
     const sourceRole = roleOf(edge.sourceRelPath);
     const targetRole = roleOf(edge.targetRelPath);
     if (sourceRole?.strong !== true || targetRole?.strong !== true) continue;
-    typedEdgeCount++;
     const { role: roleSrc } = sourceRole;
     const { role: roleDst } = targetRole;
     const locality = localityOf(edge.sourceRelPath, edge.targetRelPath);
     const key = `${roleSrc}\u0000${roleDst}\u0000${locality}`;
-    ledgers.set(key, (ledgers.get(key) ?? 0) + 1);
+    const support = (pairs.get(key) ?? 0) + 1;
+    pairs.set(key, support);
     activity.set(roleSrc, (activity.get(roleSrc) ?? 0) + 1);
     activity.set(roleDst, (activity.get(roleDst) ?? 0) + 1);
-  }
-
-  const threshold = resolveMajorityFlooredOtsuThreshold([...ledgers.values()], {
-    majority: DEFAULT_NORMS_MIN_PAIR_SUPPORT,
-    minPopulation: DEFAULT_NORMS_OTSU_MIN_POPULATION,
-  });
-
-  // Ledger lookup by (roleSrc, roleDst) within one locality, for the transit walk.
-  const byLocality = new Map<NormLocality, Map<string, number>>();
-  for (const [key, support] of ledgers) {
-    const [roleSrc, roleDst, locality] = key.split("\u0000") as [string, string, NormLocality];
     const local = byLocality.get(locality) ?? new Map<string, number>();
     local.set(`${roleSrc}\u0000${roleDst}`, support);
     byLocality.set(locality, local);
   }
 
-  const frequent = (role: string) => (activity.get(role) ?? 0) >= DEFAULT_NORMS_FREQUENT_ROLE_EDGES;
-  const midRoles = (locality: NormLocality) => {
-    const roles = new Set<string>();
-    const local = byLocality.get(locality);
-    if (!local) return roles;
-    for (const key of local.keys()) {
-      const [from, to] = key.split("\u0000");
-      roles.add(from);
-      roles.add(to);
+  const threshold = resolveMajorityFlooredOtsuThreshold([...pairs.values()], {
+    majority: DEFAULT_NORMS_MIN_PAIR_SUPPORT,
+    minPopulation: DEFAULT_NORMS_OTSU_MIN_POPULATION,
+  });
+  return {
+    pairs,
+    activity,
+    byLocality,
+    threshold: {
+      method: threshold.method,
+      threshold: threshold.threshold,
+      ...(threshold.separability === undefined ? {} : { separability: threshold.separability }),
+    },
+    admitsPairSupport: threshold.admits,
+    pairCount: pairs.size,
+  };
+}
+
+/** The write-time verdict (bd tea-rags-mcp-23iii): "I am about to add this edge — does the project do that?" */
+export function judgePlannedEdge(ledgers: NormLedgers, planned: NormPlannedEdge): PlannedEdgeVerdict {
+  const { roleSrc, roleDst, locality } = planned;
+  const pairSupport = ledgers.pairs.get(`${roleSrc}\u0000${roleDst}\u0000${locality}`) ?? 0;
+  if (ledgers.admitsPairSupport(pairSupport)) return { kind: "conforms", pairSupport };
+
+  const local = ledgers.byLocality.get(locality) ?? new Map<string, number>();
+  const midRoles = new Set<string>();
+  for (const key of local.keys()) {
+    const [from, to] = key.split("\u0000");
+    midRoles.add(from);
+    midRoles.add(to);
+  }
+  let via: string | undefined;
+  let viaSupport = 0;
+  for (const mid of midRoles) {
+    if (mid === roleSrc || mid === roleDst) {
+      continue;
     }
-    return roles;
+    const inLeg = local.get(`${roleSrc}\u0000${mid}`);
+    const outLeg = local.get(`${mid}\u0000${roleDst}`);
+    if (
+      inLeg === undefined ||
+      outLeg === undefined ||
+      !ledgers.admitsPairSupport(inLeg) ||
+      !ledgers.admitsPairSupport(outLeg)
+    ) {
+      continue;
+    }
+    const support = Math.min(inLeg, outLeg);
+    if (support > viaSupport) {
+      via = mid;
+      viaSupport = support;
+    }
+  }
+  if (via !== undefined) return { kind: "misfit", pairSupport, expectedPath: { via, support: viaSupport } };
+  const frequent = (role: string) => (ledgers.activity.get(role) ?? 0) >= DEFAULT_NORMS_FREQUENT_ROLE_EDGES;
+  if (frequent(roleSrc) && frequent(roleDst)) return { kind: "newPattern", pairSupport };
+  return { kind: "insufficientSupport", pairSupport };
+}
+
+export function computeDependencyNorms(input: DependencyNormsInput): DependencyNormsReport {
+  const { graph, fileRoles } = input;
+  const roleOf = (relPath: RelPath) => fileRoles.get(relPath);
+
+  let weakRoleFileCount = 0;
+  let untypedFileCount = 0;
+  for (const f of graph.files) {
+    const role = fileRoles.get(f.relPath);
+    if (role === undefined) untypedFileCount++;
+    else if (!role.strong) weakRoleFileCount++;
+  }
+
+  const ledgers = buildNormLedgers(input);
+  const localityOf = (sourceRelPath: RelPath, targetRelPath: RelPath): NormLocality => {
+    if (directoryOf(sourceRelPath) === directoryOf(targetRelPath)) return "sameDirectory";
+    if (input.componentOf) {
+      const sourceComponent = input.componentOf.get(sourceRelPath);
+      const targetComponent = input.componentOf.get(targetRelPath);
+      if (sourceComponent !== undefined && sourceComponent === targetComponent) return "sameDomain";
+    }
+    return "crossDomain";
   };
 
   const findings: DependencyNormFinding[] = [];
   let lowRoleSupportEdgeCount = 0;
+  let typedEdgeCount = 0;
   for (const edge of graph.edges) {
     const sourceRole = roleOf(edge.sourceRelPath);
     const targetRole = roleOf(edge.targetRelPath);
     if (sourceRole?.strong !== true || targetRole?.strong !== true) continue;
-    const { role: roleSrc } = sourceRole;
-    const { role: roleDst } = targetRole;
+    typedEdgeCount++;
     const locality = localityOf(edge.sourceRelPath, edge.targetRelPath);
-    const pairSupport = ledgers.get(`${roleSrc}\u0000${roleDst}\u0000${locality}`) ?? 0;
-    if (threshold.admits(pairSupport)) continue;
-
-    // The edge's own ledger lives here, so the locality is always present.
-    const local = byLocality.get(locality) ?? new Map<string, number>();
-    let via: string | undefined;
-    let viaSupport = 0;
-    for (const mid of midRoles(locality)) {
-      if (mid === roleSrc || mid === roleDst) {
-        continue;
-      }
-      const inLeg = local.get(`${roleSrc}\u0000${mid}`);
-      const outLeg = local.get(`${mid}\u0000${roleDst}`);
-      if (inLeg === undefined || outLeg === undefined || !threshold.admits(inLeg) || !threshold.admits(outLeg)) {
-        continue;
-      }
-      const support = Math.min(inLeg, outLeg);
-      if (support > viaSupport) {
-        via = mid;
-        viaSupport = support;
-      }
-    }
-
-    if (via !== undefined) {
-      findings.push(finding("misfit", edge, roleSrc, roleDst, locality, pairSupport, { via, support: viaSupport }));
-    } else if (frequent(roleSrc) && frequent(roleDst)) {
-      findings.push(finding("newPattern", edge, roleSrc, roleDst, locality, pairSupport));
-    } else {
+    const verdict = judgePlannedEdge(ledgers, {
+      roleSrc: sourceRole.role,
+      roleDst: targetRole.role,
+      locality,
+    });
+    if (verdict.kind === "conforms") continue;
+    if (verdict.kind === "insufficientSupport") {
       lowRoleSupportEdgeCount++;
+    } else {
+      findings.push(
+        finding(
+          verdict.kind,
+          edge,
+          sourceRole.role,
+          targetRole.role,
+          locality,
+          verdict.pairSupport,
+          verdict.expectedPath,
+        ),
+      );
     }
   }
 
@@ -164,16 +214,12 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
     typedEdgeCount,
     judgedEdgeCount: typedEdgeCount,
     violationCount: findings.length,
-    pairCount: ledgers.size,
+    pairCount: ledgers.pairCount,
     excluded: { lowRoleSupportEdgeCount },
   };
   return {
     summary,
-    threshold: {
-      method: threshold.method,
-      threshold: threshold.threshold,
-      ...(threshold.separability === undefined ? {} : { separability: threshold.separability }),
-    },
+    threshold: ledgers.threshold,
     findings,
   };
 }

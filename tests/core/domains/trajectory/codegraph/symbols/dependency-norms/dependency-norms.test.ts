@@ -17,7 +17,11 @@ import type {
   DependencyNormFileRole,
   FileDependencyGraph,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
-import { computeDependencyNorms } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/index.js";
+import {
+  buildNormLedgers,
+  computeDependencyNorms,
+  judgePlannedEdge,
+} from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/index.js";
 
 function file(relPath: string) {
   return { relPath, language: "typescript", symbolCount: 1 };
@@ -159,4 +163,80 @@ describe("computeDependencyNorms", () => {
     expect(report.findings.some((f) => f.roleSrc === "bootstrap")).toBe(false);
     expect(report.summary.violationCount).toBe(2);
   });
+});
+
+/**
+ * bd tea-rags-mcp-23iii (xb669.3): the WRITE-TIME verdict — "I am about to
+ * add this edge; does the project do that?" — reads the same ledgers the
+ * report findings came from, so one judgment rule serves both.
+ */
+describe("judgePlannedEdge", () => {
+  const { graph, roles } = verdictsFixture();
+  const ledgers = buildNormLedgers({ graph, fileRoles: roles });
+
+  it("conforms a precedented pair", () => {
+    expect(judgePlannedEdge(ledgers, { roleSrc: "controller", roleDst: "service", locality: "crossDomain" })).toEqual({
+      kind: "conforms",
+      pairSupport: 12,
+    });
+  });
+
+  it("names the transit for a pair the project routes through a mid role", () => {
+    expect(
+      judgePlannedEdge(ledgers, { roleSrc: "controller", roleDst: "repository", locality: "crossDomain" }),
+    ).toEqual({ kind: "misfit", pairSupport: 1, expectedPath: { via: "service", support: 6 } });
+  });
+
+  it("names a NEW_PATTERN between two frequent roles the corpus never showed meeting", () => {
+    expect(judgePlannedEdge(ledgers, { roleSrc: "service", roleDst: "presenter", locality: "crossDomain" })).toEqual({
+      kind: "newPattern",
+      pairSupport: 1,
+    });
+  });
+
+  it("refuses to name a pattern between two roles the corpus barely observed", () => {
+    const files = [...graph.files, file("legacy/main.ts")];
+    const bootstrapRoles = new Map(roles);
+    bootstrapRoles.set("legacy/main.ts", { role: "bootstrap", strong: true });
+    const bootstrapLedgers = buildNormLedgers({
+      graph: {
+        files,
+        edges: [...graph.edges, { sourceRelPath: "legacy/main.ts", targetRelPath: "present/board.ts", callWeight: 1 }],
+      },
+      fileRoles: bootstrapRoles,
+    });
+
+    expect(
+      judgePlannedEdge(bootstrapLedgers, { roleSrc: "bootstrap", roleDst: "presenter", locality: "crossDomain" }),
+    ).toEqual({ kind: "insufficientSupport", pairSupport: 1 });
+  });
+
+  it("answers an unseen pair with zero support, not a fabricated verdict", () => {
+    // presenter→repository HAS a transit (via service — a misfit); this pair
+    // has no frequent transit either way, so zero support reads NEW_PATTERN.
+    expect(judgePlannedEdge(ledgers, { roleSrc: "presenter", roleDst: "controller", locality: "crossDomain" })).toEqual(
+      {
+        kind: "newPattern",
+        pairSupport: 0,
+      },
+    );
+  });
+});
+
+it("the report's findings and judgePlannedEdge agree on every finding pair (one judgment rule)", () => {
+  const { graph, roles } = verdictsFixture();
+  const report = computeDependencyNorms({ graph, fileRoles: roles });
+  const ledgers = buildNormLedgers({ graph, fileRoles: roles });
+
+  for (const finding of report.findings) {
+    const verdict = judgePlannedEdge(ledgers, {
+      roleSrc: finding.roleSrc,
+      roleDst: finding.roleDst,
+      locality: finding.locality,
+    });
+    expect(verdict.kind).toBe(finding.kind);
+    expect(verdict.pairSupport).toBe(finding.pairSupport);
+    expect(verdict.expectedPath).toEqual(finding.expectedPath);
+  }
+  expect(report.findings.length).toBeGreaterThan(0);
 });
