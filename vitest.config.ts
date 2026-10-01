@@ -1,5 +1,7 @@
 import { defineConfig } from "vitest/config";
 
+import { listModuleSharingTestFiles } from "./tests/test-module-isolation.js";
+
 const isCI = !!process.env.CI;
 const coverageRun = process.argv.some((arg) => arg.includes("coverage"));
 // Retry is the one concession that stays environment-gated: it hides a genuinely
@@ -36,6 +38,12 @@ const resilient = isCI || coverageRun;
  * figure the suite already used in ~15 hand-written per-test overrides.
  */
 const WALL_CLOCK_BUDGET_MS = 30_000;
+
+// Test files whose source shows no module-state side effect run with
+// `isolate: false` (one module registry per worker); every other file keeps
+// per-file isolation. Recomputed from the source on every config load — the
+// rule set and its rationale live in tests/test-module-isolation.ts.
+const moduleSharingTestFiles = listModuleSharingTestFiles(import.meta.dirname, "tests");
 
 export default defineConfig({
   test: {
@@ -78,6 +86,13 @@ export default defineConfig({
       // Exclude legacy integration test files
       "test-*.mjs",
       "test-*.ts",
+    ],
+    // Both projects extend this config (the vitest 5 inline-project default) and
+    // concatenate its `exclude`, so their union is exactly the file set the root
+    // would run and they are disjoint by construction. Coverage stays root-level.
+    projects: [
+      { test: { name: "isolated", exclude: moduleSharingTestFiles } },
+      { test: { name: "module-sharing", include: moduleSharingTestFiles, isolate: false } },
     ],
     coverage: {
       provider: "v8",
