@@ -60,7 +60,7 @@ function snapshot(edges: TemporalCochangeEdge[], meta = META): TemporalCochangeS
     partnerCount: 1,
     lastChangedAt: 1_700_000_000,
   }));
-  return { meta, files, edges };
+  return { meta, files, edges, bundles: [] };
 }
 
 describe("CochangeOps#find", () => {

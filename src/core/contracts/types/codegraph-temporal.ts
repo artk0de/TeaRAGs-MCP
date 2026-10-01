@@ -85,6 +85,13 @@ export interface TemporalCochangeSnapshot {
   meta: TemporalCochangeBuildMeta;
   files: TemporalCochangeFile[];
   edges: TemporalCochangeEdge[];
+  /**
+   * The admitted bundles' file memberships, index = bundle id — the
+   * `cg_temporal_bundle_files` rows (bd tea-rags-mcp-c3v6o). Component-level
+   * counts the pair table cannot answer: a bundle touching a component
+   * through three files still counts once, and pair caps never truncated it.
+   */
+  bundles: readonly (readonly RelPath[])[];
 }
 
 /** A stored co-change pair plus whether the structural graph links its endpoints. */
@@ -101,6 +108,14 @@ export interface TemporalCochangeGraph {
   /** `null` = no build has run for this collection yet. */
   meta: TemporalCochangeBuildMeta | null;
   edges: TemporalCochangeEdgeWithLinkage[];
+  /**
+   * The admitted bundles' file memberships, keyed by bundle id (bd
+   * tea-rags-mcp-c3v6o) — the same rows `readTemporalBundleFiles` answers.
+   * Absent = the read carries no membership (a fixture, or a daemon from a
+   * build before the table existed): absence is silence, never "no bundles"
+   * — an empty build reads as an EMPTY map. The store always sets it.
+   */
+  bundles?: ReadonlyMap<number, readonly RelPath[]>;
 }
 
 /**

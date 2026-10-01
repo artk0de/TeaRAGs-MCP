@@ -42,6 +42,16 @@ export interface CochangeGraphExtraction {
   edges: TemporalCochangeEdge[];
   /** N — the admitted bundles every metric is counted over. */
   admittedBundleCount: number;
+  /**
+   * The admitted bundles' file memberships in extraction order (bundle id =
+   * index). Component-level counts — `|bundles touching both|` and
+   * `|bundles touching one|`, the split/merge verdicts' input (bd
+   * tea-rags-mcp-c3v6o) — need the bundle, not the pair: the pair table is
+   * capped and its pair-level support double-counts a multi-file bundle.
+   * Memory: the paths are interned references the `paths` table already
+   * holds; each inner array only adds one entry per file per bundle.
+   */
+  admittedBundles: readonly (readonly RelPath[])[];
 }
 
 /** Up to this many sample SHAs per stored pair. */
@@ -132,7 +142,12 @@ export function extractCochangeGraph(
     }))
     .sort((x, y) => compareCodePoints(x.relPath, y.relPath));
 
-  return { files, edges, admittedBundleCount: n };
+  return {
+    files,
+    edges,
+    admittedBundleCount: n,
+    admittedBundles: bundleIds.map((ids) => ids.map((id) => paths[id])),
+  };
 }
 
 function forEachPair(fileIds: readonly number[], visit: (key: number) => void): void {

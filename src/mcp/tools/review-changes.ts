@@ -30,8 +30,8 @@ const REVIEW_CHANGES_DESCRIPTION =
   "incompleteChange: co-change partners of the diff's files the diff does NOT touch (support, confidence, " +
   "lastCoChangeAt; cap 50). cohesion: per changed file, symbol co-change clusters + split candidates; a file with " +
   "no data = notJudged noCohesionData, never zero (cap 50 reports). architecture: the diff's added edges judged by " +
-  "the boundary detectors (stableDependencies, leakingAbstraction, cycles, mainSequence delta, silentCoupling; " +
-  "findings cap 100, per-detector statuses). " +
+  "the boundary detectors (stableDependencies, leakingAbstraction, cycles, mainSequence delta, silentCoupling, " +
+  "facadeContract); findings cap 100, per-detector statuses. " +
   "Envelope: workTree, base, mergeBase, changedFiles, skipped+truncated, indexLag, notices (an empty diff names the " +
   "trees and bases it did not look at).";
 

@@ -62,10 +62,11 @@ const SNAPSHOT: TemporalCochangeSnapshot = {
       sampleCommits: ["s2", "s1"],
     },
   ],
+  bundles: [["a.ts", "b.yml"]],
 };
 
 describe("CodegraphDaemonServer.handle — temporal co-change ops", () => {
-  it("writes a build and answers its meta and graph", async () => {
+  it("writes a build and answers its meta, graph and bundle membership", async () => {
     const { server, pool } = makeServer();
     const c = "code_temporal_v1";
 
@@ -76,16 +77,22 @@ describe("CodegraphDaemonServer.handle — temporal co-change ops", () => {
     });
     const meta = await server.handle({ id: 2, op: "readTemporalCochangeMeta", params: { collection: c } });
     const graph = await server.handle({ id: 3, op: "readTemporalCochangeGraph", params: { collection: c } });
+    const bundleFiles = await server.handle({ id: 4, op: "readTemporalBundleFiles", params: { collection: c } });
 
     expect(DAEMON_OP_COMMANDS.replaceTemporalCochange.access).toBe("write");
     expect(DAEMON_OP_COMMANDS.readTemporalCochangeMeta.access).toBe("read");
     expect(DAEMON_OP_COMMANDS.readTemporalCochangeGraph.access).toBe("read");
+    expect(DAEMON_OP_COMMANDS.readTemporalBundleFiles.access).toBe("read");
     expect(write.ok).toBe(true);
     expect((meta as { result: unknown }).result).toEqual(SNAPSHOT.meta);
+    // The graph's bundle Map travels as `[id, paths][]` entries — the client
+    // rebuilds it; the standalone read serialises the same way.
     expect((graph as { result: unknown }).result).toEqual({
       meta: SNAPSHOT.meta,
       edges: [{ ...SNAPSHOT.edges[0], structurallyLinked: false }],
+      bundles: [[0, ["a.ts", "b.yml"]]],
     });
+    expect((bundleFiles as { result: unknown }).result).toEqual([[0, ["a.ts", "b.yml"]]]);
     await pool.closeAll();
   });
 });

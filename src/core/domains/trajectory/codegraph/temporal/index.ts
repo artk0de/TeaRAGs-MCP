@@ -68,3 +68,4 @@ export function createTemporalTrajectory(): Trajectory {
 export * from "./boundary-diagnostics/index.js";
 export * from "./cochange/index.js";
 export * from "./cohesion/index.js";
+export * from "./verdicts/index.js";

@@ -147,6 +147,10 @@ export const DAEMON_OPS = [
   // graph would read as "no silent coupling".
   "readTemporalCochangeMeta",
   "readTemporalCochangeGraph",
+  // The admitted bundles' file memberships (bd tea-rags-mcp-c3v6o) — the
+  // split/merge verdicts' component-level counts. REQUIRED likewise: an older
+  // daemon's empty map would read as "nothing changes together".
+  "readTemporalBundleFiles",
   // Symbol-commit rows of the temporal sub-graph (bd tea-rags-mcp-3gz4f): the
   // stored-file universe the flush hook prunes gone files against, and one
   // file's slice. REQUIRED, not legacy-tolerated: an empty answer would read
@@ -213,7 +217,7 @@ export interface DaemonRequest {
   id: number;
   op: DaemonOp;
   params:
-    | { collection: string } // checkpoint | compactStorage | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | readFileDependencyGraph | readTemporalCochangeMeta | readTemporalCochangeGraph | storedTemporalSymbolCommitFilePaths | refreshSymbolSignalsPrev | hasStaleDerivedTables | shutdown | ping
+    | { collection: string } // checkpoint | compactStorage | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | readFileDependencyGraph | readTemporalCochangeMeta | readTemporalCochangeGraph | readTemporalBundleFiles | storedTemporalSymbolCommitFilePaths | refreshSymbolSignalsPrev | hasStaleDerivedTables | shutdown | ping
     | { collection: string; relPaths: RelPath[] } // pruneDerivedForDeletedFiles | invalidateHierarchyDependentsOfDeletedFiles | deleteTemporalSymbolCommitFiles
     | { collection: string; languages: string[] } // readNonPublicMemberEdges
     | { collection: string; buildFingerprint?: string } // handshake (fingerprint absent on legacy peers)

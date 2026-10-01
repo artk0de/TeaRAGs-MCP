@@ -27,6 +27,8 @@ import { randomInt } from "node:crypto";
 
 import { REVIEW_EDGE_MAX_AGE_SECONDS } from "../../../../adapters/duckdb/review-edge-store.js";
 import type { FileDependencyEdge, TemporalCochangeGraph } from "../../../../contracts/types/codegraph.js";
+import type { ComponentGraph } from "../../../../domains/trajectory/codegraph/symbols/index.js";
+import { computeSplitMergeVerdicts } from "../../../../domains/trajectory/codegraph/temporal/index.js";
 import type { ReviewSectionNotJudgedEntry } from "../../../public/dto/review.js";
 import {
   ArchitectureFactsCatalog,
@@ -36,8 +38,10 @@ import {
 } from "../architecture-facts.js";
 import {
   DiffDetectorRun,
+  type DiffDetectorContractReader,
   type DiffDetectorCouplingReader,
   type DiffDetectorGraphReader,
+  type DiffDetectorRunDeps,
 } from "../diff-detector-run.js";
 import {
   readReviewFileEdges,
@@ -125,6 +129,85 @@ export class WiredCouplingReader implements DiffDetectorCouplingReader {
 const EMPTY_PARTNERS: readonly { partner: string; support: number }[] = [];
 
 /**
+ * `DiffDetectorContractReader` over the report's component partition and the
+ * SAME production graph the other ports read (bd tea-rags-mcp-89k7k.1.6):
+ * `facadeComponentOf` answers only for a MEASURED module's entry file;
+ * `indexedConsumersOf` serves the indexed demand on that facade — distinct
+ * sources outside the facade's own component, the names their imports
+ * recorded, absent when none did ("not recorded" is never "names nothing").
+ */
+export class WiredContractReader implements DiffDetectorContractReader {
+  private readonly componentByFacade: ReadonlyMap<string, string>;
+  private readonly consumersByFacade: ReadonlyMap<string, readonly { source: string; importedNames?: string[] }[]>;
+
+  constructor(components: ComponentGraph, edges: readonly FileDependencyEdge[]) {
+    this.componentByFacade = new Map(
+      [...components.components].flatMap(([componentDir, component]) =>
+        component.facadeRelPath === null ? [] : [[component.facadeRelPath, componentDir] as const],
+      ),
+    );
+    const consumersByFacade = new Map<string, { source: string; importedNames?: string[] }[]>();
+    const served = new Set<string>();
+    for (const edge of edges) {
+      const componentDir = this.componentByFacade.get(edge.targetRelPath);
+      if (componentDir === undefined) continue;
+      // A source inside the facade's own component is the module's own file —
+      // the contract judges consumers the module SURVES, not its internals.
+      if (components.componentOf.get(edge.sourceRelPath) === componentDir) continue;
+      // Distinct by source: the persisted graph holds one row per (source,
+      // target) with that row's names already unioned over its statements, so
+      // the first row per source IS that source's recorded demand.
+      if (!served.add(`${edge.targetRelPath}\u0000${edge.sourceRelPath}`)) continue;
+      pushTo(consumersByFacade, edge.targetRelPath, {
+        source: edge.sourceRelPath,
+        ...(edge.importedExportNames !== undefined ? { importedNames: [...edge.importedExportNames] } : {}),
+      });
+    }
+    this.consumersByFacade = consumersByFacade;
+  }
+
+  facadeComponentOf(relPath: string): string | undefined {
+    return this.componentByFacade.get(relPath);
+  }
+
+  indexedConsumersOf(facade: string): readonly { source: string; importedNames?: string[] }[] {
+    return this.consumersByFacade.get(facade) ?? EMPTY_CONSUMERS;
+  }
+}
+
+const EMPTY_CONSUMERS: readonly { source: string; importedNames?: string[] }[] = [];
+
+/**
+ * The split/merge port over the pre-read co-change snapshot (bd
+ * tea-rags-mcp-c3v6o): the phase-1 verdicts drawn over the SAME component
+ * partition the other ports read, exactly as the whole-repo report's
+ * `summariseSplitMerge` draws them. Absent substrate yields the absent reason
+ * instead of a port — the report's own vocabulary (`noCochangeBuild`,
+ * `noBundleMembership`) plus `cochangeUnreadable` when the read failed — so
+ * the family answers built:false, never a zero verdict.
+ */
+export function wireSplitMerge(
+  snapshot: TemporalCochangeGraph | null | undefined,
+  readError: string | undefined,
+  components: ComponentGraph,
+): Pick<DiffDetectorRunDeps, "splitMerge" | "splitMergeAbsentReason"> {
+  if (readError !== undefined) return { splitMergeAbsentReason: "cochangeUnreadable" };
+  if (!snapshot?.meta) return { splitMergeAbsentReason: "noCochangeBuild" };
+  if (!snapshot.bundles || snapshot.bundles.size === 0) return { splitMergeAbsentReason: "noBundleMembership" };
+  const { componentOf } = components;
+  return {
+    splitMerge: {
+      verdicts: computeSplitMergeVerdicts({
+        components: { componentOf },
+        edges: snapshot.edges,
+        bundles: snapshot.bundles,
+      }),
+      componentOf: (relPath) => componentOf.get(relPath),
+    },
+  };
+}
+
+/**
  * The review id the temp table hangs on: `<epochSeconds>-<pid>-<6 alnum>`,
  * minted to the store's validation pattern `/^\d{10}-\d{1,7}-[a-z0-9]{6}$/`
  * exactly — the pattern is the injection guard for a SQL identifier that
@@ -172,6 +255,8 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       );
       const graph = new WiredGraphReader(production.graph.edges);
       const coupling = new WiredCouplingReader(context.temporalCochange);
+      const contract = new WiredContractReader(facts.components, production.graph.edges);
+      const splitMerge = wireSplitMerge(context.temporalCochange, context.temporalCochangeError, facts.components);
 
       // The working-tree side: every scope file the extraction can walk, one
       // shared run-level context; a file that cannot be read or resolved lands
@@ -189,7 +274,10 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       // The SAME reads feed the overlay — the table is persistence, the
       // overlay is the judgement's view; neither re-reads the other.
       const overlay = new ReviewEdgeOverlay(reads);
-      const result = new DiffDetectorRun({ graph, catalog, coupling }).run({ changedFiles: scope.files }, overlay);
+      const result = new DiffDetectorRun({ graph, catalog, coupling, contract, ...splitMerge }).run(
+        { changedFiles: scope.files },
+        overlay,
+      );
       const findings = result.findings.slice(0, ARCHITECTURE_FINDING_CAP);
       const notJudged: ReviewSectionNotJudgedEntry[] = overlay.unsupported().map((skip) => ({
         relPath: skip.relPath,

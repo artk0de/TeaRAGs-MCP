@@ -11,15 +11,29 @@ import { describe, expect, it } from "vitest";
 import {
   DiffDetectorRun,
   type DiffDetectorCatalog,
+  type DiffDetectorContractReader,
   type DiffDetectorCouplingReader,
   type DiffDetectorFinding,
   type DiffDetectorFindings,
   type DiffDetectorGraphReader,
+  type DiffDetectorSplitMergeReader,
 } from "../../../../../src/core/api/internal/ops/diff-detector-run.js";
 import { ReviewEdgeOverlay } from "../../../../../src/core/api/internal/ops/review-edge-overlay.js";
+import type { SplitMergeVerdicts } from "../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
 
 /** A file edge as a fixture tuple. */
 type FixtureEdge = readonly [source: string, target: string];
+
+/**
+ * A file edge plus the export names its statements recorded — the fixture
+ * shape `facadeContract` judges (the tree's re-export surface lives on the
+ * overlay's own edges, bd tea-rags-mcp-89k7k.1.6).
+ */
+type FixtureNamedEdge = readonly [
+  source: string,
+  target: string,
+  names: { imported?: readonly string[]; reexported?: readonly string[] },
+];
 
 /** The report's markedly-less-stable band, stubbed at a 0.3 tolerance. */
 const MARKEDLY_LESS_STABLE_TOLERANCE = 0.3;
@@ -57,6 +71,39 @@ function couplingOf(
   return { partnersOf: (relPath) => pairs.get(relPath) ?? [] };
 }
 
+/** Facade-contract facts the way the port serves them: facades by component, consumers by facade. */
+function contractOf(
+  facades: ReadonlyMap<string, string>,
+  consumers: ReadonlyMap<string, readonly { source: string; importedNames?: string[] }[]>,
+): DiffDetectorContractReader {
+  return {
+    facadeComponentOf: (relPath) => facades.get(relPath),
+    indexedConsumersOf: (facade) => consumers.get(facade) ?? [],
+  };
+}
+
+/**
+ * The phase-1 verdicts as a hand-built port: the verdicts are the layer's
+ * INPUT (precomputed by the wiring), so tests construct them directly — every
+ * entry of `splitCandidates` / `mergeCandidates` is already admitted.
+ */
+function splitMergeOf(
+  verdicts: Partial<SplitMergeVerdicts>,
+  components: ReadonlyMap<string, string>,
+): DiffDetectorSplitMergeReader {
+  return {
+    verdicts: {
+      splitCandidates: [],
+      mergeCandidates: [],
+      threshold: 0.5,
+      thresholdMethod: "majority",
+      excluded: { unpartitionedEndpoints: 0, crossComponentPairs: 0 },
+      ...verdicts,
+    },
+    componentOf: (relPath) => components.get(relPath),
+  };
+}
+
 /** The review's overlay: one read per changed file, its edges picked from the tuples. */
 function overlayOf(edges: readonly FixtureEdge[], changed: readonly string[]): ReviewEdgeOverlay {
   return new ReviewEdgeOverlay(
@@ -74,6 +121,8 @@ function runWith(
     graph?: DiffDetectorGraphReader;
     catalog?: DiffDetectorCatalog;
     coupling?: DiffDetectorCouplingReader;
+    splitMerge?: DiffDetectorSplitMergeReader;
+    splitMergeAbsentReason?: string;
     maxTraceHops?: number;
   },
   changedFiles: readonly string[],
@@ -83,6 +132,8 @@ function runWith(
     graph: deps.graph ?? graphOf([]),
     catalog: deps.catalog ?? catalogOf(new Map()),
     coupling: deps.coupling ?? couplingOf(new Map()),
+    ...(deps.splitMerge !== undefined ? { splitMerge: deps.splitMerge } : {}),
+    ...(deps.splitMergeAbsentReason !== undefined ? { splitMergeAbsentReason: deps.splitMergeAbsentReason } : {}),
     ...(deps.maxTraceHops !== undefined ? { maxTraceHops: deps.maxTraceHops } : {}),
   });
   return run.run({ changedFiles }, overlayOf(overlayEdges, changedFiles));
@@ -91,6 +142,40 @@ function runWith(
 /** Subjects of one detector's findings, in emission order. */
 function subjectsOf(result: DiffDetectorFindings, detector: DiffDetectorFinding["detector"]): string[] {
   return result.findings.filter((finding) => finding.detector === detector).map((finding) => finding.subject);
+}
+
+/** The review's overlay with name-carrying edges: one read per changed file, its edges picked from the tuples. */
+function namedOverlayOf(edges: readonly FixtureNamedEdge[], changed: readonly string[]): ReviewEdgeOverlay {
+  return new ReviewEdgeOverlay(
+    changed.map((relPath) => ({
+      relPath,
+      edges: Object.freeze(
+        edges
+          .filter(([source]) => source === relPath)
+          .map(([sourceRelPath, targetRelPath, names]) => ({
+            sourceRelPath,
+            targetRelPath,
+            ...(names.imported !== undefined ? { importedExportNames: [...names.imported] } : {}),
+            ...(names.reexported !== undefined ? { reexportedExportNames: [...names.reexported] } : {}),
+          })),
+      ),
+    })),
+  );
+}
+
+/** One judged run over name-carrying overlay edges, with only the contract port injected. */
+function runWithContract(
+  contract: DiffDetectorContractReader | undefined,
+  changedFiles: readonly string[],
+  overlayEdges: readonly FixtureNamedEdge[],
+): DiffDetectorFindings {
+  const run = new DiffDetectorRun({
+    graph: graphOf([]),
+    catalog: catalogOf(new Map()),
+    coupling: couplingOf(new Map()),
+    ...(contract !== undefined ? { contract } : {}),
+  });
+  return run.run({ changedFiles }, namedOverlayOf(overlayEdges, changedFiles));
 }
 
 function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
@@ -309,6 +394,293 @@ describe("silentCoupling", () => {
   });
 });
 
+describe("facadeContract", () => {
+  const FACADE = "src/lib/index.ts";
+  const facades = new Map([[FACADE, "src/lib"]]);
+
+  it("reports the facade that stopped re-exporting a name an indexed consumer still imports", () => {
+    const result = runWithContract(
+      contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["a", "b"] }]]])),
+      [FACADE],
+      [[FACADE, "src/lib/x.ts", { reexported: ["a"] }]],
+    );
+    expect(subjectsOf(result, "facadeContract")).toEqual([FACADE]);
+    const finding = result.findings.find((f) => f.detector === "facadeContract");
+    expect(finding?.evidence).toEqual(["b: consumed by src/app/a.ts"]);
+    expect(finding?.detail).toContain("stops re-exporting");
+  });
+
+  it("stays silent when every consumed name is still re-exported", () => {
+    const result = runWithContract(
+      contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["a", "b"] }]]])),
+      [FACADE],
+      [[FACADE, "src/lib/x.ts", { reexported: ["a", "b"] }]],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("skips a consumer the diff itself changes — its indexed row is stale, the diff judges its own read", () => {
+    const result = runWithContract(
+      contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["b"] }]]])),
+      [FACADE, "src/app/a.ts"],
+      [[FACADE, "src/lib/x.ts", { reexported: ["a"] }]],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("skips a consumer whose indexed row recorded no imported names", () => {
+    const result = runWithContract(
+      contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts" }]]])),
+      [FACADE],
+      [[FACADE, "src/lib/x.ts", { reexported: ["a"] }]],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("skips a whole-module consumer — `*` pins no name", () => {
+    const result = runWithContract(
+      contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["*"] }]]])),
+      [FACADE],
+      [[FACADE, "src/lib/x.ts", { reexported: ["a"] }]],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("skips a changed file no measured module claims as its facade", () => {
+    const result = runWithContract(
+      contractOf(new Map(), new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["b"] }]]])),
+      ["src/lib/plain.ts"],
+      [["src/lib/plain.ts", "src/lib/x.ts", { reexported: ["a"] }]],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("skips a facade whose tree read recorded no re-export surface — not recorded is not exports-nothing", () => {
+    const result = runWithContract(
+      contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["b"] }]]])),
+      [FACADE],
+      [[FACADE, "src/lib/x.ts", { imported: ["b"] }]],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("answers built:false with its reason without the contract port, built:true with it", () => {
+    const absent = runWithContract(undefined, [FACADE], [[FACADE, "src/lib/x.ts", { reexported: ["a"] }]]);
+    expect(absent.detectors.find((entry) => entry.detector === "facadeContract")).toEqual({
+      detector: "facadeContract",
+      built: false,
+      reason: "no contract reader",
+      findingCount: 0,
+    });
+
+    const present = runWithContract(
+      contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["b"] }]]])),
+      [FACADE],
+      [[FACADE, "src/lib/x.ts", { reexported: ["a"] }]],
+    );
+    expect(present.detectors.find((entry) => entry.detector === "facadeContract")).toEqual({
+      detector: "facadeContract",
+      built: true,
+      findingCount: 1,
+    });
+  });
+
+  it("aggregates one finding per facade: names sorted, sources sorted and distinct", () => {
+    const result = runWithContract(
+      contractOf(
+        facades,
+        new Map([
+          [
+            FACADE,
+            [
+              { source: "src/app/z.ts", importedNames: ["zz", "aa"] },
+              { source: "src/app/a.ts", importedNames: ["aa", "mm"] },
+            ],
+          ],
+        ]),
+      ),
+      [FACADE],
+      [[FACADE, "src/lib/x.ts", { reexported: ["kept"] }]],
+    );
+    const finding = result.findings.find((f) => f.detector === "facadeContract");
+    expect(finding?.evidence).toEqual([
+      "aa: consumed by src/app/a.ts, src/app/z.ts",
+      "mm: consumed by src/app/a.ts",
+      "zz: consumed by src/app/z.ts",
+    ]);
+  });
+
+  it("judging the same overlay twice yields the identical findings and statuses", () => {
+    const overlay = namedOverlayOf([[FACADE, "src/lib/x.ts", { reexported: ["a"] }]], [FACADE]);
+    const run = new DiffDetectorRun({
+      graph: graphOf([]),
+      catalog: catalogOf(new Map()),
+      coupling: couplingOf(new Map()),
+      contract: contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["b"] }]]])),
+    });
+    const first = run.run({ changedFiles: [FACADE] }, overlay);
+    const second = run.run({ changedFiles: [FACADE] }, overlay);
+    expect(second.findings).toEqual(first.findings);
+    expect(second.detectors).toEqual(first.detectors);
+  });
+});
+
+describe("splitCandidates", () => {
+  /** One component whose history splits into a y-group and an x-group (heaviest first). */
+  const WIDE = new Map([
+    ["src/wide/x1.ts", "wide"],
+    ["src/wide/x2.ts", "wide"],
+    ["src/wide/y1.ts", "wide"],
+    ["src/wide/y2.ts", "wide"],
+  ]);
+  const splitVerdicts = {
+    splitCandidates: [
+      {
+        component: "wide",
+        clusters: 2,
+        largestWeightShare: 0.52,
+        files: [
+          ["src/wide/y1.ts", "src/wide/y2.ts"],
+          ["src/wide/x1.ts", "src/wide/x2.ts"],
+        ],
+      },
+    ],
+  } satisfies Partial<SplitMergeVerdicts>;
+
+  it("fires when the diff touches two clusters of one component's split candidate", () => {
+    const result = runWith({ splitMerge: splitMergeOf(splitVerdicts, WIDE) }, ["src/wide/x1.ts", "src/wide/y1.ts"], []);
+    expect(result.findings.find((f) => f.detector === "splitCandidates")).toEqual({
+      detector: "splitCandidates",
+      subject: "wide",
+      evidence: [
+        "cluster 1: 1 of 2 changed files — src/wide/y1.ts",
+        "cluster 2: 1 of 2 changed files — src/wide/x1.ts",
+      ],
+      detail:
+        "the diff works across the seam of wide, a component whose history already splits into 2 co-change groups",
+    });
+  });
+
+  it("stays silent when the diff touches one cluster only", () => {
+    const result = runWith({ splitMerge: splitMergeOf(splitVerdicts, WIDE) }, ["src/wide/x1.ts", "src/wide/x2.ts"], []);
+    expect(subjectsOf(result, "splitCandidates")).toEqual([]);
+  });
+
+  it("caps each evidence line's file list at 4 while the counts stay honest", () => {
+    const cluster = Array.from({ length: 6 }, (_, i) => `src/wide/c${i}.ts`);
+    const wide = new Map([...cluster, "src/wide/other.ts"].map((relPath) => [relPath, "wide"]));
+    const result = runWith(
+      {
+        splitMerge: splitMergeOf(
+          {
+            splitCandidates: [
+              { component: "wide", clusters: 2, largestWeightShare: 0.5, files: [cluster, ["src/wide/other.ts"]] },
+            ],
+          },
+          wide,
+        ),
+      },
+      [...cluster, "src/wide/other.ts"],
+      [],
+    );
+    const finding = result.findings.find((f) => f.detector === "splitCandidates");
+    expect(finding?.evidence).toEqual([
+      `cluster 1: 6 of 6 changed files — ${cluster.slice(0, 4).join(", ")}`,
+      "cluster 2: 1 of 1 changed files — src/wide/other.ts",
+    ]);
+  });
+
+  it("fires a merge finding when changed files sit on both sides of a candidate pair", () => {
+    const sides = new Map([
+      ["src/alpha/a1.ts", "alpha"],
+      ["src/alpha/a2.ts", "alpha"],
+      ["src/beta/b1.ts", "beta"],
+    ]);
+    const result = runWith(
+      {
+        splitMerge: splitMergeOf(
+          {
+            mergeCandidates: [
+              { componentA: "alpha", componentB: "beta", support: 30, strength: 0.852, changesA: 32, changesB: 30 },
+            ],
+          },
+          sides,
+        ),
+      },
+      ["src/alpha/a1.ts", "src/alpha/a2.ts", "src/beta/b1.ts"],
+      [],
+    );
+    expect(result.findings.find((f) => f.detector === "splitCandidates")).toEqual({
+      detector: "splitCandidates",
+      subject: "alpha ~ beta",
+      evidence: ["strength 0.852", "alpha: src/alpha/a1.ts, src/alpha/a2.ts", "beta: src/beta/b1.ts"],
+      detail: "the diff bridges alpha and beta, two components whose admitted bundles already move them as one unit",
+    });
+  });
+
+  it("is silent when a changed file maps to no component — undefined componentOf is silence", () => {
+    const result = runWith(
+      {
+        splitMerge: splitMergeOf(
+          {
+            ...splitVerdicts,
+            mergeCandidates: [
+              { componentA: "alpha", componentB: "beta", support: 30, strength: 0.852, changesA: 32, changesB: 30 },
+            ],
+          },
+          WIDE,
+        ),
+      },
+      ["src/nowhere/n.ts"],
+      [],
+    );
+    expect(result.findings.filter((f) => f.detector === "splitCandidates")).toEqual([]);
+  });
+
+  it("answers built:false with the passed reason without the port, built:true with it", () => {
+    const absentWithReason = runWith({ splitMergeAbsentReason: "noBundleMembership" }, ["src/a.ts"], []);
+    expect(absentWithReason.detectors.find((entry) => entry.detector === "splitCandidates")).toEqual({
+      detector: "splitCandidates",
+      built: false,
+      reason: "noBundleMembership",
+      findingCount: 0,
+    });
+
+    const absentBare = runWith({}, ["src/a.ts"], []);
+    expect(absentBare.detectors.find((entry) => entry.detector === "splitCandidates")).toEqual({
+      detector: "splitCandidates",
+      built: false,
+      reason: "noSplitMergeReader",
+      findingCount: 0,
+    });
+
+    const present = runWith(
+      { splitMerge: splitMergeOf(splitVerdicts, WIDE) },
+      ["src/wide/x1.ts", "src/wide/y1.ts"],
+      [],
+    );
+    expect(present.detectors.find((entry) => entry.detector === "splitCandidates")).toEqual({
+      detector: "splitCandidates",
+      built: true,
+      findingCount: 1,
+    });
+  });
+
+  it("judging the same overlay twice yields the identical findings and statuses", () => {
+    const overlay = overlayOf([], ["src/wide/x1.ts", "src/wide/y1.ts"]);
+    const run = new DiffDetectorRun({
+      graph: graphOf([]),
+      catalog: catalogOf(new Map()),
+      coupling: couplingOf(new Map()),
+      splitMerge: splitMergeOf(splitVerdicts, WIDE),
+    });
+    const first = run.run({ changedFiles: ["src/wide/x1.ts", "src/wide/y1.ts"] }, overlay);
+    const second = run.run({ changedFiles: ["src/wide/x1.ts", "src/wide/y1.ts"] }, overlay);
+    expect(second.findings).toEqual(first.findings);
+    expect(second.detectors).toEqual(first.detectors);
+  });
+});
+
 describe("detectors", () => {
   it("lists the five built families with their counts, plus splitCandidates not built", () => {
     const result = runWith(
@@ -340,10 +712,11 @@ describe("detectors", () => {
       "cycles",
       "mainSequence",
       "silentCoupling",
+      "facadeContract",
       "splitCandidates",
     ]);
     for (const entry of result.detectors) {
-      if (entry.detector === "splitCandidates") continue;
+      if (entry.detector === "splitCandidates" || entry.detector === "facadeContract") continue;
       expect(entry.built).toBe(true);
       expect(entry.reason).toBeUndefined();
       expect(entry.findingCount).toBe(result.findings.filter((finding) => finding.detector === entry.detector).length);
@@ -351,7 +724,15 @@ describe("detectors", () => {
     expect(result.detectors.find((entry) => entry.detector === "splitCandidates")).toEqual({
       detector: "splitCandidates",
       built: false,
-      reason: "A5/c3v6o substrate not built",
+      reason: "noSplitMergeReader",
+      findingCount: 0,
+    });
+    // No contract port injected here, so the facade-contract family is the
+    // second honestly-unbuilt row.
+    expect(result.detectors.find((entry) => entry.detector === "facadeContract")).toEqual({
+      detector: "facadeContract",
+      built: false,
+      reason: "no contract reader",
       findingCount: 0,
     });
   });

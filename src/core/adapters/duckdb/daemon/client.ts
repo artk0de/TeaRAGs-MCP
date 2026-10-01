@@ -724,7 +724,18 @@ export class DaemonGraphDbClient implements GraphDbClient {
   }
 
   async readTemporalCochangeGraph(): Promise<TemporalCochangeGraph> {
-    return (await this.call("readTemporalCochangeGraph", {})) as TemporalCochangeGraph;
+    // The server serialises the bundle Map as `[id, paths][]` entries — rebuild
+    // it here (same pattern as getFileMetricsBulk). An older daemon's reply
+    // carries no `bundles` at all: absence stays absence, never "no bundles".
+    const { bundles, ...rest } = (await this.call("readTemporalCochangeGraph", {})) as Omit<
+      TemporalCochangeGraph,
+      "bundles"
+    > & { bundles?: [number, readonly RelPath[]][] };
+    return { ...rest, ...(bundles ? { bundles: new Map(bundles) } : {}) };
+  }
+
+  async readTemporalBundleFiles(): Promise<ReadonlyMap<number, readonly RelPath[]>> {
+    return new Map((await this.call("readTemporalBundleFiles", {})) as [number, readonly RelPath[]][]);
   }
 
   async getFileImporters(relPath: RelPath): Promise<FileImportLookup> {

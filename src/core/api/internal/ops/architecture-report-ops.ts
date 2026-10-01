@@ -67,12 +67,14 @@ import {
   type MainSequenceReport,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import {
+  computeSplitMergeVerdicts,
   detectSilentCoupling,
   linkImportedCochangePairs,
   oneWalkedViolationImporters,
   SILENT_COUPLING_EXPLAINED_REASON,
   type SilentCouplingReport,
   type SilentCouplingViolation,
+  type SplitMergeVerdicts,
 } from "../../../domains/trajectory/codegraph/temporal/index.js";
 import { UnknownArchitectureComponentError } from "../../errors.js";
 import type {
@@ -94,6 +96,8 @@ import type {
   NormArchitectureViolation,
   SilentCouplingArchitectureViolation,
   SilentCouplingReportSummary,
+  SplitMergeReportSummary,
+  SplitMergeVerdictsSummary,
   StableDependenciesReportSummary,
 } from "../../public/dto/architecture.js";
 import { deriveArchitectureComponentFacts, readProductionArchitectureGraph } from "./architecture-facts.js";
@@ -210,12 +214,10 @@ export class ArchitectureReportOps {
       ),
       { sourcePathPattern: request.pathPattern },
     );
-    const silent = await detectSilentCouplingSeeingAssetImports(
-      await graphDb.readTemporalCochangeGraph(),
-      graph,
-      request,
-      readImportSpecifiers,
-    );
+    // One co-change read feeds both temporal detectors: silent coupling's
+    // pairs and the split/merge verdicts' bundle membership.
+    const cochange = await graphDb.readTemporalCochangeGraph();
+    const silent = await detectSilentCouplingSeeingAssetImports(cochange, graph, request, readImportSpecifiers);
     // Inferred layering over the DOMAIN partition (bd tea-rags-mcp-r8hme.30):
     // every facade directory is a unit whether importers adopted it or not —
     // the adoption partition levels a language vertical one component per
@@ -273,6 +275,7 @@ export class ArchitectureReportOps {
         stableDependencies: summarise(sdp),
         leakingAbstraction: summariseLeaks(leaks, privacy, limit),
         silentCoupling: summariseSilentCoupling(silent, limit),
+        splitMerge: summariseSplitMerge(cochange, components.componentOf),
         mainSequence: summariseMainSequence(mainSequence),
         layering: summariseLayering(layering, facadePartition),
       },
@@ -359,6 +362,7 @@ export class ArchitectureReportOps {
           0,
         ),
         silentCoupling: summariseSilentCoupling(detectSilentCoupling({ meta: null, edges: [] }, []), 0),
+        splitMerge: { built: false, reason: "noCochangeBuild" },
         mainSequence: summariseMainSequence(
           detectMainSequenceDeviations(buildComponentGraph({ files: [], edges: [] }, []), []),
         ),
@@ -748,6 +752,55 @@ function summariseSilentCoupling(report: SilentCouplingReport, limit: number): S
 
 function roundTo3(value: number): number {
   return Math.round(value * 1000) / 1000;
+}
+
+/**
+ * The split/merge block (bd tea-rags-mcp-c3v6o): the report's own component
+ * partition judged against the same co-change build silent coupling reads.
+ * Absence of data is silence — no build, or a build that persisted no bundle
+ * membership (pre-042 index, nothing admitted), reports `built: false` with
+ * the reason, never zeros posing as verdicts. Provenance rides whenever a
+ * build exists, so a not-built block still names what was absent.
+ */
+function summariseSplitMerge(
+  cochange: TemporalCochangeGraph,
+  componentOf: ReadonlyMap<RelPath, string>,
+): SplitMergeReportSummary {
+  const { meta } = cochange;
+  if (!meta) return { built: false, reason: "noCochangeBuild" };
+  const provenance = { head: meta.head, builtAt: meta.builtAt, sessionGapMinutes: meta.sessionGapMinutes };
+  if (!cochange.bundles || cochange.bundles.size === 0) {
+    return { built: false, reason: "noBundleMembership", ...provenance };
+  }
+  return {
+    built: true,
+    ...provenance,
+    verdicts: toSplitMergeVerdictsSummary(
+      computeSplitMergeVerdicts({ components: { componentOf }, edges: cochange.edges, bundles: cochange.bundles }),
+    ),
+  };
+}
+
+function toSplitMergeVerdictsSummary(verdicts: SplitMergeVerdicts): SplitMergeVerdictsSummary {
+  return {
+    splitCandidates: verdicts.splitCandidates.map((candidate) => ({
+      component: candidate.component,
+      clusters: candidate.clusters,
+      largestWeightShare: round3(candidate.largestWeightShare),
+      files: candidate.files.map((files) => [...files]),
+    })),
+    mergeCandidates: verdicts.mergeCandidates.map((candidate) => ({
+      componentA: candidate.componentA,
+      componentB: candidate.componentB,
+      support: candidate.support,
+      strength: round3(candidate.strength),
+      changesA: candidate.changesA,
+      changesB: candidate.changesB,
+    })),
+    threshold: verdicts.threshold,
+    thresholdMethod: verdicts.thresholdMethod,
+    excluded: { ...verdicts.excluded },
+  };
 }
 
 function silentRootCauses(report: SilentCouplingReport, limit: number): ArchitectureRootCause[] {

@@ -382,7 +382,14 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "silentCoupling: file pair co-changing strongly in git history with no import/re-export/resolved call " +
       "between them (support, P(B|A), P(A|B), lift, strength = Wilson lower bound, sample commits, " +
       "structuralVisibility); strong = >0.5 and >= adaptive Otsu cut; rootCauses = file with >=2 silent " +
-      "partners; summary.silentCoupling.built false = no co-change build, not clean. mainSequence " +
+      "partners; summary.silentCoupling.built false = no co-change build, not clean. splitMerge: component " +
+      "partition vs history over same sub-graph — splitCandidate = one component whose stored internal pairs " +
+      "cluster >=2 groups, largestWeightShare < 0.7 (cohesion's cut), files = per-cluster exemplars (<=8); " +
+      "mergeCandidate = two components whose admitted bundles overlap (support = bundles touching both, " +
+      "changesA/B = bundles touching each, strength = Wilson lower bound of support/changes, same " +
+      ">0.5 + Otsu cut, ONE draw over internal-pair and component-pair strengths); excluded counts " +
+      "unpartitionedEndpoints / crossComponentPairs; summary.splitMerge.built false = no co-change build or " +
+      "no persisted bundle membership (pre-042 index), not clean. mainSequence " +
       "(Stable Abstractions Principle): component far from A+I=1 — pain = stable+concrete, uselessness = " +
       "unstable+abstract; A from walker type census, D > max(0.5, Otsu cut); components whose language " +
       "rarely declares abstractions excluded (unobservableAbstractness); census needs codegraph recompute; pain " +

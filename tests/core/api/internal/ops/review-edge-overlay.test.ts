@@ -71,7 +71,7 @@ describe("readReviewFileEdges", () => {
     expect(read.relPath).toBe("src/a.ts");
     expect(read.language).toBe("typescript");
     expect(read.skip).toBeUndefined();
-    expect(read.edges).toEqual([{ sourceRelPath: "src/a.ts", targetRelPath: "src/b.ts" }]);
+    expect(read.edges).toEqual([{ sourceRelPath: "src/a.ts", targetRelPath: "src/b.ts", importedExportNames: ["B"] }]);
   });
 
   it("gives no edge for a package-style import a tsconfig-less tree cannot resolve", async () => {
@@ -94,7 +94,9 @@ describe("readReviewFileEdges", () => {
 
     const read = await readReviewFileEdges(realDeps(), tree, "src/alias.ts");
 
-    expect(read.edges).toEqual([{ sourceRelPath: "src/alias.ts", targetRelPath: "src/b.ts" }]);
+    expect(read.edges).toEqual([
+      { sourceRelPath: "src/alias.ts", targetRelPath: "src/b.ts", importedExportNames: ["B"] },
+    ]);
   });
 
   it("drops an import whose target the working tree no longer holds", async () => {
@@ -154,7 +156,9 @@ describe("readReviewFileEdges", () => {
     // review gains the edge. `parseFailed` fires only when the walk THROWS.
     expect(read.language).toBe("typescript");
     expect(read.skip).toBeUndefined();
-    expect(read.edges).toEqual([{ sourceRelPath: "src/broken.ts", targetRelPath: "src/b.ts" }]);
+    expect(read.edges).toEqual([
+      { sourceRelPath: "src/broken.ts", targetRelPath: "src/b.ts", importedExportNames: ["B"] },
+    ]);
   });
 
   it("reports parseFailed for a file whose extraction throws, without killing the batch", async () => {
@@ -176,7 +180,7 @@ describe("readReviewFileEdges", () => {
     expect(bad.skip?.detail).toContain("collectSymbols exploded");
     expect(bad.edges).toEqual([]);
     expect(good.skip).toBeUndefined();
-    expect(good.edges).toEqual([{ sourceRelPath: "src/a.ts", targetRelPath: "src/b.ts" }]);
+    expect(good.edges).toEqual([{ sourceRelPath: "src/a.ts", targetRelPath: "src/b.ts", importedExportNames: ["B"] }]);
   });
 
   it("drops self-edges and dedupes imports that resolve to the same target", async () => {
@@ -195,7 +199,36 @@ describe("readReviewFileEdges", () => {
     const twice = await readReviewFileEdges(realDeps(), tree, "src/twice.ts");
 
     expect(self.edges).toEqual([]);
-    expect(twice.edges).toEqual([{ sourceRelPath: "src/twice.ts", targetRelPath: "src/b.ts" }]);
+    expect(twice.edges).toEqual([
+      { sourceRelPath: "src/twice.ts", targetRelPath: "src/b.ts", importedExportNames: ["B"] },
+    ]);
+  });
+
+  it("keeps the export names each statement records — imported and re-exported — through read and overlay", async () => {
+    const tree = freshWorkTree();
+    writeFile("src/b.ts", "export const B = 1;\n");
+    writeFile("src/c.ts", "export const C = 1;\n");
+    writeFile("src/facade.ts", 'import { C } from "./c";\nexport { B } from "./b";\nexport const F = 1;\n');
+
+    const read = await readReviewFileEdges(realDeps(), tree, "src/facade.ts");
+    const overlay = new ReviewEdgeOverlay([read]);
+
+    expect(overlay.edgesFrom("src/facade.ts")).toEqual([
+      { sourceRelPath: "src/facade.ts", targetRelPath: "src/c.ts", importedExportNames: ["C"] },
+      { sourceRelPath: "src/facade.ts", targetRelPath: "src/b.ts", reexportedExportNames: ["B"] },
+    ]);
+  });
+
+  it("unions the names of duplicate targets in first-seen order — two statements, one edge", async () => {
+    const tree = freshWorkTree();
+    writeFile("src/b.ts", "export const B = 1;\nexport const C = 2;\n");
+    writeFile("src/twice.ts", 'import { B } from "./b";\nimport { C } from "./b.js";\nexport const T = B + C;\n');
+
+    const read = await readReviewFileEdges(realDeps(), tree, "src/twice.ts");
+
+    expect(read.edges).toEqual([
+      { sourceRelPath: "src/twice.ts", targetRelPath: "src/b.ts", importedExportNames: ["B", "C"] },
+    ]);
   });
 });
 

@@ -535,6 +535,10 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.temporalCochange.readGraph();
   }
 
+  async readTemporalBundleFiles(): Promise<ReadonlyMap<number, readonly RelPath[]>> {
+    return this.temporalCochange.readBundleFiles();
+  }
+
   // ── Temporal symbol-commit store (bd tea-rags-mcp-3gz4f) ──
 
   async replaceTemporalSymbolCommits(files: TemporalSymbolCommitFileSnapshot[]): Promise<void> {

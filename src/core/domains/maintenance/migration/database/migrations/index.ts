@@ -44,6 +44,7 @@ import { SQL_038_CG_TYPE_DECLARATIONS } from "./038-cg-type-declarations.js";
 import { SQL_039_CG_HIERARCHY_DEPENDENCIES } from "./039-cg-hierarchy-dependencies.js";
 import { SQL_040_CG_TYPE_DECLARATIONS_MEMBER_COUNTS } from "./040-cg-type-declarations-member-counts.js";
 import { SQL_041_CG_TEMPORAL_SYMBOL_COMMITS } from "./041-cg-temporal-symbol-commits.js";
+import { SQL_042_CG_TEMPORAL_BUNDLE_FILES } from "./042-cg-temporal-bundle-files.js";
 
 export interface DatabaseMigration {
   filename: string;
@@ -92,4 +93,5 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "039-cg-hierarchy-dependencies.sql", sql: SQL_039_CG_HIERARCHY_DEPENDENCIES },
   { filename: "040-cg-type-declarations-member-counts.sql", sql: SQL_040_CG_TYPE_DECLARATIONS_MEMBER_COUNTS },
   { filename: "041-cg-temporal-symbol-commits.sql", sql: SQL_041_CG_TEMPORAL_SYMBOL_COMMITS },
+  { filename: "042-cg-temporal-bundle-files.sql", sql: SQL_042_CG_TEMPORAL_BUNDLE_FILES },
 ];
