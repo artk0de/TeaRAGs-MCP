@@ -1358,8 +1358,8 @@ export interface GraphDbClient {
 
   /**
    * Replace `cg_temporal_files` / `cg_temporal_edges_cochange` /
-   * `cg_temporal_meta` with one build, atomically. Wholesale: nothing of the
-   * previous build survives.
+   * `cg_temporal_meta` / `cg_temporal_bundle_files` with one build, atomically.
+   * Wholesale: nothing of the previous build survives.
    */
   replaceTemporalCochange: (snapshot: TemporalCochangeSnapshot) => Promise<void>;
 
@@ -1373,6 +1373,16 @@ export interface GraphDbClient {
    * tea-rags-mcp-b4dcz).
    */
   readTemporalCochangeGraph: () => Promise<TemporalCochangeGraph>;
+
+  /**
+   * The admitted bundles' file memberships (bd tea-rags-mcp-c3v6o), keyed by
+   * bundle id — `cg_temporal_bundle_files`. The component-level counts the
+   * split/merge verdicts need: a bundle counts once per component it touches,
+   * whatever the pair table's caps kept. Empty before the first build, and
+   * empty-but-distinct-from-absent on every index the build populated before
+   * the table existed.
+   */
+  readTemporalBundleFiles: () => Promise<ReadonlyMap<number, readonly RelPath[]>>;
 
   // ── Temporal symbol-commit store (bd tea-rags-mcp-3gz4f) ──
 

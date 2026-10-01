@@ -744,6 +744,65 @@ describe("ArchitectureReportOps#build — silentCoupling (bd tea-rags-mcp-b4dcz)
   });
 });
 
+describe("ArchitectureReportOps#build — splitMerge (bd tea-rags-mcp-c3v6o)", () => {
+  /**
+   * The default `graph()` partition: plain directories, so `core` holds
+   * core/a.ts and core/b.ts, `lib` holds lib/f1..f5. Thirty admitted bundles
+   * touch core/a.ts AND lib/f1.ts; two more touch core alone — one unit of
+   * change across two components, at Wilson strength 30/32.
+   */
+  function mergingBundles(): ReadonlyMap<number, readonly string[]> {
+    return new Map([
+      ...Array.from({ length: 30 }, (_, id) => [id, ["core/a.ts", "lib/f1.ts"]] as const),
+      ...Array.from({ length: 2 }, (_, i) => [30 + i, ["core/a.ts", "core/b.ts"]] as const),
+    ]);
+  }
+
+  it("renders the block beside silentCoupling with provenance from the build meta and the merge verdicts", async () => {
+    const cochange: TemporalCochangeGraph = { ...cochangeGraph(), edges: [], bundles: mergingBundles() };
+    const report = await new ArchitectureReportOps().build(graphDb(graph(), [], cochange), {});
+
+    expect(report.summary.splitMerge).toEqual({
+      built: true,
+      head: "abc123",
+      builtAt: 1_700_000_100,
+      sessionGapMinutes: 30,
+      verdicts: {
+        splitCandidates: [],
+        mergeCandidates: [
+          // Strength rounded to 3 decimals, like every summary number.
+          { componentA: "core", componentB: "lib", support: 30, strength: 0.886, changesA: 32, changesB: 30 },
+        ],
+        threshold: 0.5,
+        thresholdMethod: "majority",
+        excluded: { unpartitionedEndpoints: 0, crossComponentPairs: 0 },
+      },
+    });
+  });
+
+  it("degrades to built:false when the bundle table is empty or the read carries no membership", async () => {
+    const emptyTable = (
+      await new ArchitectureReportOps().build(graphDb(graph(), [], { ...cochangeGraph(), bundles: new Map() }), {})
+    ).summary.splitMerge;
+    expect(emptyTable).toEqual({
+      built: false,
+      reason: "noBundleMembership",
+      head: "abc123",
+      builtAt: 1_700_000_100,
+      sessionGapMinutes: 30,
+    });
+
+    // A read with no `bundles` at all (a fixture, or a daemon from an older
+    // build) is the same silence — never zeros posing as verdicts.
+    const noMembership = (await new ArchitectureReportOps().build(graphDb(graph(), [], cochangeGraph()), {})).summary
+      .splitMerge;
+    expect(noMembership).toEqual(emptyTable);
+
+    const noBuild = (await new ArchitectureReportOps().build(graphDb(), {})).summary.splitMerge;
+    expect(noBuild).toEqual({ built: false, reason: "noCochangeBuild" });
+  });
+});
+
 /**
  * bd tea-rags-mcp-r8hme.13: a co-change pair a SPECIFIC shared neighbour
  * explains leaves the violations and is counted under `excluded`, with the

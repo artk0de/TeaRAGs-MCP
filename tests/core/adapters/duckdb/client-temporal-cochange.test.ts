@@ -63,7 +63,7 @@ function snapshot(edges: TemporalCochangeEdge[], meta: TemporalCochangeBuildMeta
     partnerCount: 1,
     lastChangedAt: 1_700_000_000,
   }));
-  return { meta, files, edges };
+  return { meta, files, edges, bundles: [] };
 }
 
 describe("DuckDbGraphClient — temporal co-change store (bd tea-rags-mcp-x4rpp)", () => {
@@ -84,7 +84,7 @@ describe("DuckDbGraphClient — temporal co-change store (bd tea-rags-mcp-x4rpp)
 
   it("reads no meta and no edges before the first build", async () => {
     expect(await db.readTemporalCochangeMeta()).toBeNull();
-    expect(await db.readTemporalCochangeGraph()).toEqual({ meta: null, edges: [] });
+    expect(await db.readTemporalCochangeGraph()).toEqual({ meta: null, edges: [], bundles: new Map() });
   });
 
   it("round-trips a build and replaces it wholesale on the next one", async () => {
@@ -97,6 +97,27 @@ describe("DuckDbGraphClient — temporal co-change store (bd tea-rags-mcp-x4rpp)
     expect(await db.queryAll("SELECT rel_path FROM cg_temporal_files ORDER BY rel_path")).toEqual([
       { rel_path: "b.ts" },
       { rel_path: "d.ts" },
+    ]);
+  });
+
+  it("writes bundle membership with the build and replaces it wholesale on the next one (bd tea-rags-mcp-c3v6o)", async () => {
+    expect(await db.readTemporalBundleFiles()).toEqual(new Map());
+
+    await db.replaceTemporalCochange({
+      ...snapshot([edge("a.ts", "b.ts")]),
+      bundles: [["a.ts", "b.ts"], ["c.yml"]],
+    });
+    const membership = new Map([
+      [0, ["a.ts", "b.ts"]],
+      [1, ["c.yml"]],
+    ]);
+    expect(await db.readTemporalBundleFiles()).toEqual(membership);
+    expect((await db.readTemporalCochangeGraph()).bundles).toEqual(membership);
+
+    await db.replaceTemporalCochange({ ...snapshot([edge("b.ts", "d.ts", 5)]), bundles: [["b.ts"]] });
+    expect(await db.readTemporalBundleFiles()).toEqual(new Map([[0, ["b.ts"]]]));
+    expect(await db.queryAll("SELECT bundle_id, rel_path FROM cg_temporal_bundle_files")).toEqual([
+      { bundle_id: 0, rel_path: "b.ts" },
     ]);
   });
 

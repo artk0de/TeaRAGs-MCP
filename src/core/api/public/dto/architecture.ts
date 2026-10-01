@@ -962,6 +962,92 @@ export interface SilentCouplingReportSummary {
   outOfScopePairCount?: number;
 }
 
+/**
+ * One component whose files cluster into two or more co-change groups (bd
+ * tea-rags-mcp-c3v6o): history votes for a finer cut than the partition makes.
+ */
+export interface SplitMergeSplitCandidate {
+  component: string;
+  /** Co-change clusters the component's admitted internal pairs form. */
+  clusters: number;
+  /** Largest cluster's share of the component's admitted co-change weight, 3 decimals. */
+  largestWeightShare: number;
+  /** Per cluster its exemplar files (≤ 8 each, code-point order), heaviest cluster first. */
+  files: readonly (readonly RelPath[])[];
+}
+
+/**
+ * Two components whose admitted bundles overlap strongly enough that they
+ * change as one unit: history votes for a coarser cut than the partition makes.
+ */
+export interface SplitMergeMergeCandidate {
+  componentA: string;
+  componentB: string;
+  /** Admitted change bundles (commits, or author sessions) touching both components. */
+  support: number;
+  /**
+   * The larger direction's 95% Wilson lower bound on support / changes —
+   * `cochangeStrength` over the synthetic component edge, 3 decimals. The severity.
+   */
+  strength: number;
+  /** Admitted bundles touching componentA. */
+  changesA: number;
+  /** Admitted bundles touching componentB. */
+  changesB: number;
+}
+
+/** The verdicts over the report's component partition, with their one threshold. */
+export interface SplitMergeVerdictsSummary {
+  /** Worst first: most clusters, then smallest largest-cluster share, then path. */
+  splitCandidates: SplitMergeSplitCandidate[];
+  /** Strongest first: strength, then support, then paths. */
+  mergeCandidates: SplitMergeMergeCandidate[];
+  /**
+   * The majority-floored Otsu cut over every judged strength — internal pair
+   * strengths and component-pair strengths in ONE population (one history,
+   * one draw); 0.5 under `majority`.
+   */
+  threshold: number;
+  thresholdMethod: "otsu" | "majority";
+  /** Stored pairs read but not judged, by the first reason that applied. */
+  excluded: {
+    /** A pair endpoint no component of the partition holds. */
+    unpartitionedEndpoints: number;
+    /** Endpoints in different components — MERGE's question is answered from bundles, not pairs. */
+    crossComponentPairs: number;
+  };
+}
+
+/** Why a `splitMerge` block is not built: which substrate was absent. */
+export type SplitMergeAbsentReason =
+  /** No co-change build at all (git history off, or none since the feature landed). */
+  | "noCochangeBuild"
+  /** A build exists but persisted no bundle membership (pre-042 index, or nothing admitted). */
+  | "noBundleMembership";
+
+/**
+ * The split/merge block (bd tea-rags-mcp-c3v6o), beside `silentCoupling` in
+ * the summary: component partition vs the partition history votes for, judged
+ * over the same temporal co-change sub-graph.
+ */
+export interface SplitMergeReportSummary {
+  /**
+   * `false` when no co-change build exists or the build persisted no bundle
+   * membership — absence of verdicts, never zeros posing as clean ones.
+   */
+  built: boolean;
+  /** Present only when not built: which substrate was absent. */
+  reason?: SplitMergeAbsentReason;
+  /** HEAD the co-change build read; present whenever a build exists. */
+  head?: string;
+  /** Unix seconds of the build; present whenever a build exists. */
+  builtAt?: number;
+  /** Author-session gap the build bundled commits over; `null` = per commit. */
+  sessionGapMinutes?: number | null;
+  /** Present when built. */
+  verdicts?: SplitMergeVerdictsSummary;
+}
+
 /** How the volatility cut on the zone of pain was drawn. */
 export interface MainSequenceVolatilityReportSummary {
   /** The per-file reading a component's volatility averages. */
@@ -1029,6 +1115,7 @@ export interface ArchitectureReportSummary {
   stableDependencies: StableDependenciesReportSummary;
   leakingAbstraction: LeakingAbstractionReportSummary;
   silentCoupling: SilentCouplingReportSummary;
+  splitMerge: SplitMergeReportSummary;
   mainSequence: MainSequenceReportSummary;
   layering: LayeringReportSummary;
 }

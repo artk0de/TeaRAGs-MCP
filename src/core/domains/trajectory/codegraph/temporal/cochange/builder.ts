@@ -207,7 +207,12 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
       maxPartnersPerFile: TEMPORAL_COCHANGE_MAX_PARTNERS_PER_FILE,
       sessionGapMinutes: this.options.sessionGapMinutes,
     };
-    await graphDb.replaceTemporalCochange({ meta, files: graph.files, edges: graph.edges });
+    await graphDb.replaceTemporalCochange({
+      meta,
+      files: graph.files,
+      edges: graph.edges,
+      bundles: graph.admittedBundles,
+    });
     await this.flushSymbolCommits(graphDb, live, projectPrefix);
     const t4 = this.now();
     this.emitTiming({
