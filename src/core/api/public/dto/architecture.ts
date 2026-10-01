@@ -38,6 +38,14 @@ export interface GetArchitectureReportRequest {
    * the WHOLE-graph stack.
    */
   domain?: string;
+  /**
+   * Ask for the dependency-norms view (bd tea-rags-mcp-rpx0v): the project's
+   * own P(edge | roleSrc, roleDst, locality), judged per file edge —
+   * `response.norms` plus `norms` violations for every precedent-less edge.
+   * Roles come from each file's primary type (naming's type-role layer);
+   * edges touching an untyped or suffix-only file are never judged.
+   */
+  norms?: boolean;
   /** Max violations and max root causes returned per detector (default 50); the summary keeps the totals. */
   limit?: number;
   /**
@@ -52,7 +60,10 @@ export interface GetArchitectureReportRequest {
    * A component path as the report names components — ask for the knot VIEW
    * (bd tea-rags-mcp-r8hme.38): the knot holding it in full, members and cut
    * edges paged by `limit` / `offset`. A knot finding's
-   * `evidence.drillDown.knotOf` is such a path.
+   * `evidence.drillDown.knotOf` is such a path. Knot mode (bd
+   * tea-rags-mcp-r8hme.39): `violations` / `rootCauses` hold only the
+   * findings inside the knot, and only on the first page (`offset` 0);
+   * `summary` stays whole-project.
    */
   knotOf?: string;
   /** Page start for the `knotOf` view (default 0). */
@@ -390,14 +401,48 @@ export interface ArchitectureKnotView {
   knot?: ArchitectureKnotPage;
 }
 
+/**
+ * One knot member and its Martin coupling on the layering (DOMAIN) partition
+ * (bd tea-rags-mcp-r8hme.39) — the stable member a cycle drags in is the one
+ * with the lowest instability.
+ */
+export interface ArchitectureKnotMember {
+  component: string;
+  /** Ce / (Ca + Ce), rounded to 3 decimals. */
+  instability: number;
+  /** Ca: distinct files outside the component with an edge into it. */
+  afferentCount: number;
+  /** Ce: distinct files inside the component with an edge out of it. */
+  efferentCount: number;
+}
+
+/**
+ * What keeping one cut edge costs (bd tea-rags-mcp-r8hme.40): the knot's
+ * internal edges with every OTHER cut edge removed, priced on the whole knot
+ * even when the page is a pathPattern projection.
+ */
+export interface LayeringKeepCost {
+  /** Members that fall back into a cycle. 0 = the greedy cut includes this edge needlessly; it can stay. */
+  recollapsedMemberCount: number;
+  /** Distinct levels the members occupy, re-collapsed cycles condensed, components outside the knot at their levels. */
+  levelsAfterKeep: number;
+}
+
+/** A cut edge on the knotOf page, with what keeping it would cost. */
+export interface LayeringKnotPageFeedbackEdge extends LayeringFeedbackEdge {
+  keepCost: LayeringKeepCost;
+}
+
 /** One page of a knot: members and cut edges both windowed at `[offset, offset + limit)`. */
 export interface ArchitectureKnotPage {
   /** This page of the members, most depended-on (Ca) first, then path. */
-  components: string[];
+  members: ArchitectureKnotMember[];
   /** Members before paging — in scope only when scoped. */
   memberCount: number;
-  /** This page of the feedback arc set, heaviest call weight first. */
-  feedbackArcSet: LayeringFeedbackEdge[];
+  /** Whole-knot max − min member instability, rounded to 3 decimals — the knot finding's ranking key. */
+  instabilitySpread: number;
+  /** This page of the feedback arc set, heaviest call weight first, each with its keep cost. */
+  feedbackArcSet: LayeringKnotPageFeedbackEdge[];
   /** Whole-knot cut size. */
   cutEdgeCount: number;
   levelsAfterCut: number;
@@ -581,7 +626,29 @@ export type ArchitectureViolation =
   | LeakingAbstractionArchitectureViolation
   | SilentCouplingArchitectureViolation
   | MainSequenceArchitectureViolation
-  | LayeringArchitectureViolation;
+  | LayeringArchitectureViolation
+  | NormArchitectureViolation;
+
+/**
+ * A file edge the project's own norms find precedent-less (bd
+ * tea-rags-mcp-rpx0v): a MISFIT names the transit its roles normally follow,
+ * a NEW_PATTERN names a pair the corpus has never seen between two roles it
+ * knows well.
+ */
+export interface NormArchitectureViolation {
+  detector: "norms";
+  kind: "misfit" | "newPattern";
+  sourceRelPath: RelPath;
+  targetRelPath: RelPath;
+  evidence: {
+    roleSrc: string;
+    roleDst: string;
+    locality: ArchitectureNormFinding["locality"];
+    callWeight: number;
+    pairSupport: number;
+    expectedPath?: ArchitectureNormExpectedPath;
+  };
+}
 
 /**
  * The layer map VIEW (bd tea-rags-mcp-r8hme.26): levels per node inside a
@@ -999,6 +1066,54 @@ export interface ArchitectureDomainReport {
   boundaryIn: ArchitectureDomainBoundaryEdge[];
 }
 
+/** The adaptive pair-support cut, rounded for the report. */
+export interface ArchitectureNormsThreshold {
+  method: "otsu" | "majority";
+  threshold: number;
+  separability?: number;
+}
+
+/** The frequent transit a MISFIT names as the path the edge should follow. */
+export interface ArchitectureNormExpectedPath {
+  via: string;
+  support: number;
+}
+
+/** One precedent-less file edge, with the evidence that makes it one. */
+export interface ArchitectureNormFinding {
+  kind: "misfit" | "newPattern";
+  sourceRelPath: RelPath;
+  targetRelPath: RelPath;
+  roleSrc: string;
+  roleDst: string;
+  locality: "sameDirectory" | "sameDomain" | "crossDomain";
+  callWeight: number;
+  pairSupport: number;
+  expectedPath?: ArchitectureNormExpectedPath;
+}
+
+/**
+ * The dependency-norms view (bd tea-rags-mcp-rpx0v), present only when the
+ * request carried `norms`: the project's empirical ledgers per
+ * (roleSrc, roleDst, locality) and the verdict for every precedent-less
+ * edge between strongly-typed files.
+ */
+export interface ArchitectureNormsReport {
+  summary: {
+    roleFileCount: number;
+    weakRoleFileCount: number;
+    untypedFileCount: number;
+    typedEdgeCount: number;
+    judgedEdgeCount: number;
+    violationCount: number;
+    pairCount: number;
+    excluded: { lowRoleSupportEdgeCount: number };
+  };
+  threshold: ArchitectureNormsThreshold;
+  /** MISFITs first, then by weight, then by path. */
+  findings: ArchitectureNormFinding[];
+}
+
 export interface GetArchitectureReportResponse {
   /** The scope the report was judged under, echoed; absent = whole graph. */
   pathPattern?: string;
@@ -1024,4 +1139,6 @@ export interface GetArchitectureReportResponse {
   knot?: ArchitectureKnotView;
   /** The domain-mode block (bd tea-rags-mcp-xb669.1), present only when the request carried `domain`. */
   domain?: ArchitectureDomainReport;
+  /** The dependency-norms view (bd tea-rags-mcp-rpx0v), present only when the request carried `norms`. */
+  norms?: ArchitectureNormsReport;
 }

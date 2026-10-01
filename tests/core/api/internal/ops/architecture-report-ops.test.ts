@@ -6,7 +6,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { UnknownArchitectureComponentError } from "../../../../../src/core/api/errors.js";
-import { ArchitectureReportOps } from "../../../../../src/core/api/internal/ops/architecture-report-ops.js";
+import {
+  ArchitectureReportOps,
+  buildArchitectureKnotMembership,
+} from "../../../../../src/core/api/internal/ops/architecture-report-ops.js";
 import type {
   FileDependencyGraph,
   NonPublicMemberEdge,
@@ -57,11 +60,13 @@ function graphDb(
   g: FileDependencyGraph = graph(),
   nonPublicEdges: NonPublicMemberEdge[] = [],
   cochange: TemporalCochangeGraph = { meta: null, edges: [] },
+  typeRows: unknown[] = [],
 ) {
   return {
     readFileDependencyGraph: vi.fn().mockResolvedValue(g),
     readNonPublicMemberEdges: vi.fn().mockResolvedValue(nonPublicEdges),
     readTemporalCochangeGraph: vi.fn().mockResolvedValue(cochange),
+    readTypeNameRows: vi.fn().mockResolvedValue(typeRows),
   };
 }
 
@@ -940,6 +945,102 @@ describe("ArchitectureReportOps#build — domain mode (bd tea-rags-mcp-xb669.1)"
   });
 });
 
+/**
+ * bd tea-rags-mcp-rpx0v (epic xb669.2): `norms: true` adds the dependency-
+ * norms view — every file's primary-type role (derived from the type rows
+ * the graph db reads), the project's own precedent ledgers per
+ * (roleSrc, roleDst, locality), and a verdict for every precedent-less edge.
+ * Four inheritance families: controllers call services, services call
+ * repositories, presenters call services; two edges have no precedent.
+ */
+describe("ArchitectureReportOps#build — dependency norms (bd tea-rags-mcp-rpx0v)", () => {
+  const FAMILIES: readonly [string, string, string, readonly string[]][] = [
+    ["ui/list.ts", "UiListController", "controller", ["IViewController"]],
+    ["ui/form.ts", "UiFormController", "controller", ["IViewController"]],
+    ["ui/nav.ts", "UiNavController", "controller", ["IViewController"]],
+    ["ui/modal.ts", "UiModalController", "controller", ["IViewController"]],
+    ["logic/tasks.ts", "TasksService", "service", ["IService"]],
+    ["logic/billing.ts", "BillingService", "service", ["IService"]],
+    ["logic/reports.ts", "ReportsService", "service", ["IService"]],
+    ["data/taskRepo.ts", "TaskRepository", "repository", ["IRepository"]],
+    ["data/billRepo.ts", "BillRepository", "repository", ["IRepository"]],
+    ["present/board.ts", "BoardPresenter", "presenter", ["IPresenter"]],
+    ["present/kanban.ts", "KanbanPresenter", "presenter", ["IPresenter"]],
+  ];
+
+  function typeRows() {
+    return FAMILIES.map(([relPath, shortName], i) => ({
+      symbolId: `${relPath}#${shortName}`,
+      relPath,
+      shortName,
+      symbolKind: "class" as const,
+      ancestors: FAMILIES[i][3],
+    }));
+  }
+
+  function normsGraph(): FileDependencyGraph {
+    const files = FAMILIES.map(([relPath]) => file(relPath));
+    const edges: FileDependencyGraph["edges"] = [];
+    const add = (sourceRelPath: string, targetRelPath: string, callWeight = 1) => {
+      edges.push({ sourceRelPath, targetRelPath, callWeight });
+    };
+    const ofRole = (role: string) => FAMILIES.filter(([, , r]) => r === role).map(([f]) => f);
+    for (const c of ofRole("controller")) for (const s of ofRole("service")) add(c, s);
+    for (const s of ofRole("service")) for (const r of ofRole("repository")) add(s, r);
+    for (const p of ofRole("presenter")) for (const s of ofRole("service")) add(p, s);
+    add("ui/list.ts", "data/taskRepo.ts", 2);
+    add("logic/tasks.ts", "present/board.ts");
+    return { files, edges };
+  }
+
+  it("judges every precedent-less edge when the request asks for norms", async () => {
+    const report = await new ArchitectureReportOps().build(
+      graphDb(normsGraph(), [], { meta: null, edges: [] }, typeRows()),
+      {
+        norms: true,
+      },
+    );
+
+    expect(report.norms?.summary).toMatchObject({ typedEdgeCount: 26, judgedEdgeCount: 26, violationCount: 2 });
+    expect(report.norms?.threshold.method).toBe("otsu");
+    expect(report.norms?.findings).toEqual([
+      expect.objectContaining({
+        kind: "misfit",
+        sourceRelPath: "ui/list.ts",
+        targetRelPath: "data/taskRepo.ts",
+        roleSrc: "controller",
+        roleDst: "repository",
+        expectedPath: { via: "service", support: 6 },
+      }),
+      expect.objectContaining({
+        kind: "newPattern",
+        sourceRelPath: "logic/tasks.ts",
+        targetRelPath: "present/board.ts",
+        roleSrc: "service",
+        roleDst: "presenter",
+      }),
+    ]);
+    expect(
+      report.violations
+        .filter((v) => v.detector === "norms")
+        .map((v) => (v.detector === "norms" ? [v.kind, v.sourceRelPath, v.evidence.roleSrc] : [])),
+    ).toEqual([
+      ["misfit", "ui/list.ts", "controller"],
+      ["newPattern", "logic/tasks.ts", "service"],
+    ]);
+  });
+
+  it("carries no norms block and no norms violations when the request does not ask", async () => {
+    const report = await new ArchitectureReportOps().build(
+      graphDb(normsGraph(), [], { meta: null, edges: [] }, typeRows()),
+      {},
+    );
+
+    expect(report.norms).toBeUndefined();
+    expect(report.violations.some((v) => v.detector === "norms")).toBe(false);
+  });
+});
+
 // bd tea-rags-mcp-r8hme.9 — scripts, spikes, benchmarks, examples and fixtures
 // are tooling, not architecture: every detector judges the graph without them.
 describe("ArchitectureReportOps#build — non-production paths (bd tea-rags-mcp-r8hme.9)", () => {
@@ -1263,7 +1364,7 @@ describe("ArchitectureReportOps#build — knotOf view and drillDown (bd tea-rags
     const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), { knotOf: "c07", limit: 10 });
 
     expect(report.knot).toMatchObject({ component: "c07", inKnot: true, offset: 0, limit: 10 });
-    expect(report.knot?.knot?.components).toEqual(ring(0, 10));
+    expect(report.knot?.knot?.members.map((m) => m.component)).toEqual(ring(0, 10));
     expect(report.knot?.knot?.feedbackArcSet).toHaveLength(10);
     expect(report.knot?.knot).toMatchObject({
       memberCount: 30,
@@ -1281,7 +1382,7 @@ describe("ArchitectureReportOps#build — knotOf view and drillDown (bd tea-rags
     });
 
     expect(report.knot?.offset).toBe(20);
-    expect(report.knot?.knot?.components).toEqual(ring(20, 30));
+    expect(report.knot?.knot?.members.map((m) => m.component)).toEqual(ring(20, 30));
     expect(report.knot?.knot?.feedbackArcSet).toHaveLength(10);
     expect(report.knot?.knot).not.toHaveProperty("nextOffset");
   });
@@ -1293,7 +1394,7 @@ describe("ArchitectureReportOps#build — knotOf view and drillDown (bd tea-rags
       pathPattern: "{c00,c01,c02}/**",
     });
 
-    expect(report.knot?.knot?.components).toEqual(["c00", "c01", "c02"]);
+    expect(report.knot?.knot?.members.map((m) => m.component)).toEqual(["c00", "c01", "c02"]);
     expect(report.knot?.knot).toMatchObject({ memberCount: 3, outOfScopeMemberCount: 27, cutEdgeCount: 30 });
     expect(report.knot?.knot).not.toHaveProperty("nextOffset");
   });
@@ -1308,7 +1409,7 @@ describe("ArchitectureReportOps#build — knotOf view and drillDown (bd tea-rags
   it("lists the knot's back-edges in the view", async () => {
     const report = await new ArchitectureReportOps().build(graphDb(), { knotOf: "lib" });
 
-    expect(report.knot?.knot?.components).toEqual(["core", "lib"]);
+    expect(report.knot?.knot?.members.map((m) => m.component)).toEqual(["core", "lib"]);
     expect(report.knot?.knot?.backEdges).toEqual([
       {
         detector: "layering",
@@ -1335,5 +1436,173 @@ describe("ArchitectureReportOps#build — knotOf view and drillDown (bd tea-rags
     await expect(
       new ArchitectureReportOps().build(graphDb(bidirectionalRing()), { knotOf: "nowhere" }),
     ).rejects.toBeInstanceOf(UnknownArchitectureComponentError);
+  });
+});
+
+/**
+ * Keep cost per cut edge on the knotOf page (bd tea-rags-mcp-r8hme.40). On the
+ * bidirectional ring every weight is equal, so the greedy sequence is
+ * c00, c01, …, c29 and the cut is the 29 edges c_{i+1}→c_i plus c29→c00; what
+ * remains is the chain c00→c01→…→c29 and c00→c29. Keeping c_{i+1}→c_i
+ * re-collapses exactly c_i⇄c_{i+1} (c_i reaches c_{i+1} only directly), 30
+ * members on 29 levels. Keeping c29→c00 closes the whole chain: all 30
+ * members, one level.
+ */
+describe("ArchitectureReportOps#build — knotOf keep cost per cut edge (bd tea-rags-mcp-r8hme.40)", () => {
+  const pairs = (edges: readonly { sourceComponent: string; targetComponent: string }[] | undefined) =>
+    (edges ?? []).map((edge) => `${edge.sourceComponent}->${edge.targetComponent}`);
+
+  it("prices every cut edge on the page by the members it re-collapses and the levels they keep", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), { knotOf: "c07", limit: 10 });
+
+    const page = report.knot?.knot?.feedbackArcSet ?? [];
+    expect(pairs(page)).toEqual(
+      Array.from({ length: 10 }, (_, i) => `c${String(i + 1).padStart(2, "0")}->c${String(i).padStart(2, "0")}`),
+    );
+    for (const edge of page) {
+      expect(edge.keepCost).toEqual({ recollapsedMemberCount: 2, levelsAfterKeep: 29 });
+    }
+  });
+
+  it("prices the edge that closes the whole ring as re-collapsing every member", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), {
+      knotOf: "c07",
+      limit: 10,
+      offset: 20,
+    });
+
+    const closing = report.knot?.knot?.feedbackArcSet.find(
+      (edge) => edge.sourceComponent === "c29" && edge.targetComponent === "c00",
+    );
+    expect(closing?.keepCost).toEqual({ recollapsedMemberCount: 30, levelsAfterKeep: 1 });
+  });
+
+  it("prices the projected page's edges on the WHOLE knot under pathPattern", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), {
+      knotOf: "c07",
+      limit: 10,
+      pathPattern: "{c00,c01,c02}/**",
+    });
+
+    const page = report.knot?.knot?.feedbackArcSet ?? [];
+    expect(pairs(page)).toEqual(["c01->c00", "c02->c01"]);
+    // 29 levels is a 30-member reading — the 3 in-scope members alone could span at most 3.
+    for (const edge of page) {
+      expect(edge.keepCost).toEqual({ recollapsedMemberCount: 2, levelsAfterKeep: 29 });
+    }
+  });
+
+  it("leaves the report's knot findings without a keep cost", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), {});
+
+    const knot = report.violations.find((v) => v.detector === "layering" && v.kind === "knot");
+    if (knot?.detector !== "layering" || knot.kind !== "knot") throw new Error("no knot finding");
+    expect(knot.evidence.feedbackArcSet.length).toBeGreaterThan(0);
+    for (const edge of knot.evidence.feedbackArcSet) expect(edge).not.toHaveProperty("keepCost");
+  });
+});
+
+/**
+ * knotOf mode (bd tea-rags-mcp-r8hme.39): a knotOf call answers for the knot
+ * — its members with their coupling, and what the other detectors found
+ * INSIDE it — instead of resending the whole-project report every page.
+ */
+describe("ArchitectureReportOps#build — knotOf mode scopes the findings to the knot (bd tea-rags-mcp-r8hme.39)", () => {
+  it("lists only the findings with both ends in the knot on the first page, and no layering finding", async () => {
+    // graph(): core ⇄ lib is the knot; base → lib runs uphill from outside it, core → lib inside it.
+    const whole = await new ArchitectureReportOps().build(graphDb(), {});
+    expect(whole.violations.filter((v) => v.detector === "stableDependencies")).toHaveLength(2);
+
+    const report = await new ArchitectureReportOps().build(graphDb(), { knotOf: "lib" });
+
+    expect(report.violations).toEqual([
+      expect.objectContaining({ detector: "stableDependencies", sourceComponent: "core", targetComponent: "lib" }),
+    ]);
+    expect(report.rootCauses).toEqual([
+      expect.objectContaining({ detector: "stableDependencies", targetComponent: "lib" }),
+    ]);
+  });
+
+  it("carries only the view on a later page", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(), { knotOf: "lib", limit: 1, offset: 1 });
+
+    expect(report.violations).toEqual([]);
+    expect(report.rootCauses).toEqual([]);
+    expect(report.knot?.knot?.members.map((m) => m.component)).toEqual(["lib"]);
+  });
+
+  it("gives every member its instability, Ca and Ce, and the view the knot's instability spread", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(), { knotOf: "lib" });
+
+    expect(report.knot?.knot?.members).toEqual([
+      { component: "core", instability: 0.222, afferentCount: 7, efferentCount: 2 },
+      { component: "lib", instability: 0.556, afferentCount: 4, efferentCount: 5 },
+    ]);
+    expect(report.knot?.knot?.instabilitySpread).toBe(0.333);
+  });
+
+  it("lists the projected members under pathPattern, with their stats", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), {
+      knotOf: "c07",
+      pathPattern: "{c00,c01,c02}/**",
+    });
+
+    // Ring member: two neighbours' files import it, its one file imports both → Ca 2, Ce 1.
+    expect(report.knot?.knot?.members).toEqual(
+      ["c00", "c01", "c02"].map((component) => ({ component, instability: 0.333, afferentCount: 2, efferentCount: 1 })),
+    );
+  });
+
+  it("keeps a silent-coupling pair whose files both sit in knot members and drops one reaching outside", async () => {
+    // silentCouplingGraph(): app ⇄ lib is the knot (s1 → hub, hub → s1); web sits outside it.
+    const cochange = cochangeGraph();
+    const outside = { ...cochange.edges[0], relPathA: "app/private.ts", relPathB: "web/s2.ts" };
+    const withOutside = { ...cochange, edges: [...cochange.edges, outside] };
+    const pairs = (violations: Awaited<ReturnType<ArchitectureReportOps["build"]>>["violations"]) =>
+      violations.flatMap((v) => (v.detector === "silentCoupling" ? [[v.sourceRelPath, v.targetRelPath]] : []));
+
+    const whole = await new ArchitectureReportOps().build(graphDb(silentCouplingGraph(), [], withOutside), {});
+    expect(pairs(whole.violations)).toContainEqual(["app/private.ts", "web/s2.ts"]);
+
+    const report = await new ArchitectureReportOps().build(graphDb(silentCouplingGraph(), [], withOutside), {
+      knotOf: "lib",
+    });
+    expect(report.knot?.knot?.members.map((m) => m.component).sort()).toEqual(["app", "lib"]);
+    expect(pairs(report.violations)).toEqual([["app/s1.ts", "lib/hub.ts"]]);
+  });
+
+  it("places an adoption-partition directory under an unadopted facade inside the knot through its files", () => {
+    const partition = (componentOf: Record<string, string>) => ({
+      components: new Map(),
+      componentOf: new Map(Object.entries(componentOf)),
+      dependencies: [],
+      excluded: { selfEdges: 0, unwalkedEndpoints: 0, intraComponent: 0, facadeAggregations: 0 },
+      fileEdgeCount: 0,
+    });
+    // Domain partition: lang/ owns its subtree. Adoption partition: nobody
+    // adopted lang/index.ts, so lang/strategies/ stands as its own directory.
+    const domain = partition({ "lang/index.ts": "lang", "lang/strategies/s.ts": "lang", "kernel/k.ts": "kernel" });
+    const adoption = partition({
+      "lang/index.ts": "lang",
+      "lang/strategies/s.ts": "lang/strategies",
+      "kernel/k.ts": "kernel",
+    });
+
+    const membership = buildArchitectureKnotMembership(["lang"], domain, adoption);
+
+    expect(membership.holdsComponent("lang")).toBe(true);
+    expect(membership.holdsComponent("lang/strategies")).toBe(true);
+    expect(membership.holdsComponent("kernel")).toBe(false);
+    expect(membership.holdsFile("lang/strategies/s.ts")).toBe(true);
+    expect(membership.holdsFile("kernel/k.ts")).toBe(false);
+    // A file the walk never extracted belongs to no member.
+    expect(membership.holdsFile("assets/style.css")).toBe(false);
+  });
+
+  it("keeps the summary whole-project", async () => {
+    const whole = await new ArchitectureReportOps().build(graphDb(), {});
+    const report = await new ArchitectureReportOps().build(graphDb(), { knotOf: "lib" });
+
+    expect(report.summary).toEqual(whole.summary);
   });
 });

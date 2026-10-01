@@ -135,6 +135,13 @@ const GetArchitectureReportInputShape = {
       "Directory root judged AS ITS OWN SYSTEM: induced sub-graph, every metric recomputed inside; " +
         "response.domain carries border edges with whole-graph levels.",
     ),
+  norms: z
+    .boolean()
+    .optional()
+    .describe(
+      "Judge typed file edges against the project's own role precedents: response.norms + norms " +
+        "violations (MISFIT with expected path, NEW_PATTERN).",
+    ),
   limit: z
     .number()
     .int()
@@ -155,9 +162,7 @@ const GetArchitectureReportInputShape = {
   knotOf: z
     .string()
     .optional()
-    .describe(
-      "Component path: return the knot containing it in full, paged by limit/offset (see drillDown on knot findings)",
-    ),
+    .describe("Component path from drillDown: return its knot view and the findings inside it, paged by limit/offset"),
   offset: z.number().int().min(0).optional().describe("Page start for the knotOf view"),
 };
 
@@ -391,7 +396,10 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "facade counts once, not once per subdirectory; facadePartition keeps the adoption partition's component/level " +
       "counts), levels by longest path (L0 = foundation), per-knot greedy weighted feedback arc set " +
       "(cut these N edges -> k levels); knot lists top-20 members by Ca + memberCount, top-10 cut edges by " +
-      "weight + cutEdgeCount total, evidence.drillDown names the knotOf handle to page it whole; violations knot (ranked by " +
+      "weight + cutEdgeCount total, evidence.drillDown names the knotOf handle; a knotOf call returns that knot " +
+      "(members with I/Ca/Ce, cut edges with keepCost — recollapsedMemberCount 0 = needless cut, paged) plus only " +
+      "the findings inside it on offset 0, not the project " +
+      "report (summary stays whole-project); violations knot (ranked by " +
       "member-instability spread — spread > 0 is an SDP break inside the cycle) / backEdge (minority-weight direction, equal weights never " +
       "guessed) / abstractionBypass (consumer reaches measured-concrete component past measured-abstract one beneath); " +
       "informational compositionCycle / island (nothing depends on it, below the top) / layerSkip (>=2 levels straight " +
@@ -400,7 +408,9 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "collapse), boundary edges with the outside component's global level, move candidates; absent unless asked. domain " +
       "option: judge one directory AS ITS OWN SYSTEM (induced sub-graph, every metric recomputed inside — unlike " +
       "pathPattern which filters findings only); response.domain carries its layering counts + border edges naming the " +
-      "external component and its whole-graph level. Summary " +
+      "external component and its whole-graph level. norms " +
+      "option: the project's own dependency precedents per (roleSrc, roleDst, locality) from primary-type roles — " +
+      "norms violations flag a MISFIT (with the expected transit path) or a NEW_PATTERN edge. Summary " +
       "counts exclusions with named reasons. Diagnosis, not prescription.",
     schemaKey: "get_architecture_report",
     invoke: async (app, request) =>

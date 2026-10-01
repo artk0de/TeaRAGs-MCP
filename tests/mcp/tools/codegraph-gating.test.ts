@@ -239,6 +239,16 @@ describe("get_architecture_report", () => {
     expect(schema.safeParse({ project: "tea-rags", domain: "" }).success).toBe(false);
   });
 
+  it("takes a norms flag, and names MISFIT and NEW_PATTERN in the description (bd tea-rags-mcp-rpx0v)", () => {
+    const { call } = registered();
+    const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny>; description: string };
+    const schema = z.object(config.inputSchema);
+
+    expect(config.description).toMatch(/NEW_PATTERN/);
+    expect(schema.safeParse({ project: "tea-rags", norms: true }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", norms: "yes" }).success).toBe(false);
+  });
+
   it("forwards the address, pathPattern and limit into app.getArchitectureReport and returns its report as text", async () => {
     const { app, call } = registered();
     const report = { summary: {}, rootCauses: [], violations: [] };

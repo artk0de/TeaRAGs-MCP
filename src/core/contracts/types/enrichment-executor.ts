@@ -171,6 +171,9 @@ export type IndexRunDaemonRelease = () => Promise<void>;
  *
  * Owned by `EnrichmentCoordinator`: `begin` at `beginRun`, release in
  * `awaitCompletion`'s finally — that span is exactly chunk-write + enrichment.
+ * The worker dispatches that run BEFORE `beginRun` hold their own span:
+ * `runRecovery` around recovery, and `runRepairPass` around its repair
+ * batches (bd tea-rags-mcp-as1zl).
  *
  * No-op implementation is used when codegraph is disabled or in tests.
  */

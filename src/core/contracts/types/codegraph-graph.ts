@@ -85,6 +85,18 @@ export interface FileDependencyGraph {
 }
 
 /**
+ * The role one FILE carries in the dependency-norms model (bd
+ * tea-rags-mcp-rpx0v): its primary type's role. `strong: false` marks a
+ * project-suffix assignment — naming's entry gate treats suffix evidence as
+ * confirming, never asserting, so edges touching a weak file are excluded
+ * from norm judgement instead of misfitting on it.
+ */
+export interface DependencyNormFileRole {
+  role: string;
+  strong: boolean;
+}
+
+/**
  * One resolved method edge into a member whose name or declaration marks it
  * non-public — declared `private` / `protected`, or named with a leading
  * underscore (bd tea-rags-mcp-r8hme.1). Which of those is a convention-privacy

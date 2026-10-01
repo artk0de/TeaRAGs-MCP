@@ -1,6 +1,7 @@
 import type { FileDependencyEdge, FileDependencyGraph } from "../../../../../contracts/types/codegraph.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
 import { classifyDirectoryRelation } from "./directory-relation.js";
+import { isFacadeAggregationEdge } from "./facade-aggregation.js";
 import {
   compareCodePoints,
   condensedPositions,
@@ -9,7 +10,6 @@ import {
   weightedFeedbackArcSet,
   type SimpleEdge,
 } from "./layer-graph.js";
-import { isFacadeAggregationEdge } from "./facade-aggregation.js";
 import { buildLayeringModel, cappedFileEdges } from "./layering.js";
 import type {
   ComponentGraph,
@@ -78,8 +78,9 @@ export function buildLayerMap(
       // reports and drops the whole stack one level (measured live, bd
       // tea-rags-mcp-r8hme.30).
       isFacadeAggregationEdge(fileEdge)
-    )
+    ) {
       continue;
+    }
     const sourceIn = inScope(fileEdge.sourceRelPath);
     const targetIn = inScope(fileEdge.targetRelPath);
     if (sourceIn && targetIn) {

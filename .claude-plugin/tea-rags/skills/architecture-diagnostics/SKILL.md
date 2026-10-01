@@ -87,7 +87,7 @@ prime `## Enrichment` lists `codegraph.symbols`? No → tool not registered. Say
 ## Phase 1 — REPORT
 
 ```text
-get_architecture_report(project: "<alias>", pathPattern?: "<glob>", limit?: 50,
+get_architecture_report(project: "<alias>", pathPattern?: "<glob>", limit?: 50, norms?: true,
                         layerMap?: { scopePathPattern?, granularity?: "directory"|"file", directoryDepth? })
 ```
 
@@ -95,6 +95,14 @@ get_architecture_report(project: "<alias>", pathPattern?: "<glob>", limit?: 50,
   judged when ≥1 carrying file edge's source matches; silent coupling: by EITHER
   file of pair). Instability, facade adoption, strength cut always whole-graph —
   scoped run sees same numbers as full run.
+- `norms: true` adds the dependency-norms view (bd rpx0v): the project's own
+  precedents per (roleSrc, roleDst, locality), roles = each file's PRIMARY
+  type's role (naming's type-role layer; suffix-only roles stay weak — never
+  asserted). `response.norms` carries the ledgers' adaptive cut + findings;
+  `norms` violations flag every precedent-less edge: `misfit` names the transit
+  its roles normally follow (`expectedPath.via`), `newPattern` names a pair both
+  roles are frequent in but the corpus never shows. Absent flag = no norms
+  block, no `norms` violations.
 - `domain: "<dir>"` judges one directory AS ITS OWN SYSTEM (bd xb669.1): the
   induced sub-graph — files under the root, edges with both endpoints inside —
   and EVERY metric recomputed inside it. Not `pathPattern`, which keeps
@@ -317,6 +325,26 @@ phase otherwise. The map is the layering model read as a VIEW: per-node `level`
 Empty scope = empty map (`nodeCount: 0`), not an error. Bad `granularity` =
 validation error naming the enum, before any detector runs.
 
+## Phase 3g — DEPENDENCY NORMS
+
+`response.norms` exists ONLY when the request carried `norms: true` — skip
+otherwise. The project judged by ITS OWN precedents: ledgers of (roleSrc,
+roleDst, locality) over every typed file edge, one adaptive cut
+(majority-floored Otsu, `threshold.threshold`), then a verdict per edge below
+it. Roles = each file's PRIMARY type's role; `summary.roleFileCount` counts the
+strong ones, `weakRoleFileCount` / `untypedFileCount` never judge.
+
+| Finding      | Read as                                                                                                                                                                                                                 |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `misfit`     | pair below the cut, but its roles meet THROUGH a mid role frequently — `expectedPath: { via, support }` is the precedent the edge bypasses (`Controller -> Repository` should go `Controller -> Service -> Repository`) |
+| `newPattern` | pair below the cut, no frequent transit — both roles frequent on their own (`summary`'s activity), the corpus has simply never seen them meet                                                                           |
+| excluded     | rare pair between two RARE roles (`summary.excluded.lowRoleSupportEdgeCount`) — too little support to name a pattern, never a finding                                                                                   |
+
+`locality` says which ledger judged it: `sameDirectory` / `sameDomain` (one
+r8hme.30 domain component) / `crossDomain` — the same edge can conform at home
+and misfit across domains. Read `threshold.threshold` with the findings: support
+1 in a codebase of 30-ledger precedents is noise, not a pattern.
+
 ## Phase 4 — EXCLUSIONS
 
 `summary.stableDependencies.excluded` — edges read, NOT judged:
@@ -393,6 +421,10 @@ boundary-out N (→ top external: [component] at L[externalLevel]), boundary-in 
 ## Domain [path] — [componentCount] components, [levelCount] levels (domain mode)
 boundary-out N (heaviest → [externalComponent] at L[externalLevel]), boundary-in N
 | # | Dir | Inner component | External component | L ext | calls |
+
+## Dependency norms — [violationCount] findings; cut [threshold] ([method]); [roleFileCount] typed files
+MISFIT N, NEW_PATTERN N; excluded low-support N; typed [typedEdgeCount] of graph edges
+| # | Kind | Edge (src → dst) | Roles | Locality | Pair support | Expected path |
 ```
 
 Every line cites evidence numbers from report. No evidence → no claim.

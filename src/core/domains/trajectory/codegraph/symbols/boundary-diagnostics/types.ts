@@ -600,6 +600,21 @@ export interface LayeringFeedbackEdge {
   fileEdges: FileDependencyEdge[];
 }
 
+/**
+ * What keeping ONE cut edge costs (bd tea-rags-mcp-r8hme.40): the knot's
+ * internal edges with every OTHER feedback-arc-set edge removed. Priced on the
+ * whole knot, never a scope projection.
+ */
+export interface LayeringKeepCost {
+  /**
+   * Members that fall back into a multi-member SCC. 0 means the greedy cut
+   * includes this edge needlessly: it can stay.
+   */
+  recollapsedMemberCount: number;
+  /** Distinct levels the members occupy, re-collapsed SCCs condensed; components outside the knot keep their levels. */
+  levelsAfterKeep: number;
+}
+
 /** One multi-component strongly-connected set of the component graph. */
 export interface LayeringKnot {
   /** Members, most depended-on (Ca) first, then path. */
