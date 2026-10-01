@@ -74,6 +74,7 @@ export { TracePathOps } from "./internal/ops/trace-path-ops.js";
 export { WorktreeOps } from "./internal/ops/worktree-ops.js";
 export { ReviewChangesOps } from "./internal/ops/review-changes-ops.js";
 export type { ReviewChangesOpsDeps } from "./internal/ops/review-changes-ops.js";
+export type { ReviewEdgeExtractionDeps } from "./internal/ops/review-edge-overlay.js";
 export { createNamingReviewExtractor } from "./internal/ops/naming-review-extraction.js";
 export { createPathCollectionResolver } from "./internal/collection-resolver.js";
 export { readPayloadFileCommitCounts } from "./internal/infra/payload-file-commit-count-reader.js";

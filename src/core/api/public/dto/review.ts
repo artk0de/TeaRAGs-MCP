@@ -14,14 +14,14 @@
  */
 
 import type { TemporalCohesionReport } from "../../../domains/trajectory/codegraph/temporal/index.js";
+import type { DiffDetectorFinding, DiffDetectorStatus } from "../../internal/ops/diff-detector-run.js";
 import type { CollectionRef } from "./explore.js";
 import type { NamingReviewResult } from "./naming-lexicon.js";
 
 /**
  * Section ids the review knows. The MCP enum is NOT this union — it is derived
- * from the live provider registry (`reviewSectionIds`), so an id whose
- * provider has not shipped (`architecture`, F3 slice 2) is rejected at the
- * boundary and appears here only as future vocabulary.
+ * from the live provider registry (`reviewSectionIds`) — so the two lists stay
+ * in step by construction, not by hand.
  */
 export type ReviewSectionId = "naming" | "incompleteChange" | "cohesion" | "architecture";
 
@@ -106,11 +106,29 @@ export interface CohesionSectionPayload {
 
 export type CohesionSectionResult = ReviewSectionEnvelope & CohesionSectionPayload;
 
+/**
+ * `architecture` payload (bd tea-rags-mcp-89k7k.1.4, F3 slice 2): the diff's
+ * edges judged by the detector run — findings in the whole-repo report's
+ * detector kinds (plus `cycles`), per-family statuses with `splitCandidates`
+ * honestly unbuilt until A5/c3v6o lands.
+ */
+export interface ArchitectureSectionPayload {
+  /** Detector findings over the diff's overlay edges, capped at 100. */
+  findings: readonly DiffDetectorFinding[];
+  /** Per-detector verdict row — the sixth family (`splitCandidates`) is `built: false` until its substrate ships. */
+  detectors: readonly DiffDetectorStatus[];
+  /** Findings past the cap of 100 — counted, not listed. */
+  truncated?: number;
+}
+
+export type ArchitectureSectionResult = ReviewSectionEnvelope & ArchitectureSectionPayload;
+
 /** One section's answer: the envelope plus that section's own payload fields. */
 export type ReviewSectionResult =
   | NamingSectionResult
   | IncompleteChangeSectionResult
   | CohesionSectionResult
+  | ArchitectureSectionResult
   | ReviewSectionEnvelope;
 
 /** What one read of the change says about itself, beside the sections' answers. */

@@ -17,6 +17,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InvalidParameterError } from "../../../../../src/core/api/errors.js";
 import { ReviewChangesOps } from "../../../../../src/core/api/internal/ops/review-changes-ops.js";
 import type { ReviewChangesRequest } from "../../../../../src/core/api/public/dto/review.js";
+import {
+  collectSymbols,
+  DefaultSymbolIdComposer,
+  LanguageFactory,
+} from "../../../../../src/core/domains/language/index.js";
 import type { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/index.js";
 
 const CHANGED = "src/git/file-reader.ts";
@@ -78,6 +83,10 @@ interface GraphStub {
   close: ReturnType<typeof vi.fn>;
   readTemporalCochangeGraph: ReturnType<typeof vi.fn>;
   readTemporalSymbolCommits: ReturnType<typeof vi.fn>;
+  readFileDependencyGraph: ReturnType<typeof vi.fn>;
+  putReviewFileEdges: ReturnType<typeof vi.fn>;
+  dropReviewFileEdges: ReturnType<typeof vi.fn>;
+  sweepExpiredReviewFileEdges: ReturnType<typeof vi.fn>;
 }
 
 function graphDbStub(overrides: Partial<GraphStub> = {}): GraphStub {
@@ -109,6 +118,13 @@ function graphDbStub(overrides: Partial<GraphStub> = {}): GraphStub {
     readTemporalSymbolCommits: vi.fn(
       async (relPath: string) => stub.symbolCommits[relPath] ?? { relPath, symbols: [] },
     ),
+    // The architecture section's indexed side: an empty graph is a valid
+    // substrate (no components, no edges — no findings), and the temp-table
+    // lifecycle runs as spies.
+    readFileDependencyGraph: vi.fn(async () => ({ files: [], edges: [] })),
+    putReviewFileEdges: vi.fn(async () => undefined),
+    dropReviewFileEdges: vi.fn(async () => undefined),
+    sweepExpiredReviewFileEdges: vi.fn(async () => []),
     ...overrides,
   };
   return stub;
@@ -122,6 +138,11 @@ function makeOps(graph: GraphStub, registryEntry: unknown = {}) {
     },
     collectionRegistry: { get: () => registryEntry } as unknown as CollectionRegistry,
     lexiconOps: lexiconOpsStub(),
+    reviewEdgeExtraction: {
+      languageFactory: new LanguageFactory({}),
+      collectSymbols,
+      composer: new DefaultSymbolIdComposer(),
+    },
     windowMonths: 6,
   });
 }
@@ -161,8 +182,13 @@ describe("ReviewChangesOps", () => {
     const graph = graphDbStub();
     const result = await makeOps(graph).reviewChanges(request());
 
-    expect(Object.keys(result.review.sections).sort()).toEqual(["cohesion", "incompleteChange", "naming"]);
-    for (const id of ["cohesion", "incompleteChange", "naming"] as const) {
+    expect(Object.keys(result.review.sections).sort()).toEqual([
+      "architecture",
+      "cohesion",
+      "incompleteChange",
+      "naming",
+    ]);
+    for (const id of ["architecture", "cohesion", "incompleteChange", "naming"] as const) {
       expect(result.review.sections[id]?.built, id).toBe(true);
     }
     expect(result.review.workTree).toBe(repo);
@@ -179,6 +205,18 @@ describe("ReviewChangesOps", () => {
     });
     // cohesion analyzed the changed file
     expect(result.review.sections.cohesion).toMatchObject({ analyzedFiles: 1, nullReports: 0 });
+    // architecture judged the change over an empty indexed graph: the one
+    // finding the fixture can make is silentCoupling (the co-change partner
+    // outside the diff, no structural edge anywhere) — and its temp table was
+    // minted, put and dropped exactly once.
+    expect(result.review.sections.architecture).toMatchObject({
+      built: true,
+      findings: [{ detector: "silentCoupling", subject: `${CHANGED} ~ ${PARTNER}` }],
+    });
+    expect(graph.putReviewFileEdges).toHaveBeenCalledTimes(1);
+    expect(graph.dropReviewFileEdges).toHaveBeenCalledTimes(1);
+    expect(graph.putReviewFileEdges.mock.calls[0]?.[0]).toMatch(/^\d{10}-\d{1,7}-[a-z0-9]{6}$/);
+    expect(graph.dropReviewFileEdges.mock.calls[0]?.[0]).toBe(graph.putReviewFileEdges.mock.calls[0]?.[0]);
     // the reader is released after the review
     expect(graph.close).toHaveBeenCalledTimes(1);
   });
@@ -198,8 +236,8 @@ describe("ReviewChangesOps", () => {
     await expect(ops.reviewChanges(request({ sections: ["nope" as "cohesion"] }))).rejects.toBeInstanceOf(
       InvalidParameterError,
     );
-    await expect(ops.reviewChanges(request({ sections: ["architecture"] }))).rejects.toThrow(
-      /architecture.*registered.*naming/s,
+    await expect(ops.reviewChanges(request({ sections: ["nope" as "cohesion"] }))).rejects.toThrow(
+      /nope.*registered: naming.*architecture/s,
     );
   });
 
@@ -220,6 +258,7 @@ describe("ReviewChangesOps", () => {
     expect(result.review.sections.cohesion?.built).toBe(false);
     expect(result.review.sections.incompleteChange?.built).toBe(false);
     expect(result.review.sections.incompleteChange?.reason).toMatch(/codegraph/);
+    expect(result.review.sections.architecture?.built).toBe(false);
   });
 
   it("a graph that exists but cannot be read fails loud, not as a clean review", async () => {
@@ -244,6 +283,10 @@ describe("ReviewChangesOps", () => {
     expect(result.review.sections.incompleteChange).toMatchObject({ built: false });
     expect(result.review.sections.incompleteChange?.reason).toMatch(/wal corrupt/);
     expect(result.review.sections.cohesion?.built).toBe(true);
+    // architecture degrades its coupling port to silence (the run's absence
+    // contract) instead of failing four working detectors on one unreadable
+    // read — the error itself is incompleteChange's to report.
+    expect(result.review.sections.architecture).toMatchObject({ built: true, findings: [] });
   });
 
   it("a file with no symbol commits is a cohesion notJudged entry — absence, never a zero", async () => {
@@ -274,6 +317,7 @@ describe("ReviewChangesOps", () => {
     expect(result.review.sections.incompleteChange).toMatchObject({ built: true, partners: [] });
     expect(result.review.sections.cohesion).toMatchObject({ built: true, analyzedFiles: 0, nullReports: 0 });
     expect(result.review.sections.naming?.built).toBe(true);
+    expect(result.review.sections.architecture).toMatchObject({ built: true, findings: [] });
   });
 
   it("ReviewChangesOps.empty answers every requested section not built — the codegraph-off fallback", () => {
@@ -281,7 +325,7 @@ describe("ReviewChangesOps", () => {
     expect(empty.review.sections.naming).toMatchObject({ built: false });
     expect(empty.review.sections.naming?.reason).toMatch(/codegraph/);
     const all = ReviewChangesOps.empty({});
-    expect(Object.keys(all.review.sections).sort()).toEqual(["cohesion", "incompleteChange", "naming"]);
+    expect(Object.keys(all.review.sections).sort()).toEqual(["architecture", "cohesion", "incompleteChange", "naming"]);
   });
 
   it("a diff over the cap reports skipped and truncated in the envelope", async () => {

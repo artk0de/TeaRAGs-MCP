@@ -3,10 +3,8 @@
  * report behind one id. Sections are independent providers — adding one must
  * not touch the others — and the orchestration (`ReviewChangesOps`) knows them
  * only through this interface: `isBuilt` decides from the build context, `run`
- * answers over the run context. `architecture` is in the id union but no
- * provider ships for it until F3 slice 2; the id being in the type is future
- * vocabulary, while the MCP enum is derived from the live provider registry so
- * asking for a provider-less id fails loud at the boundary.
+ * answers over the run context. The MCP enum is derived from the live provider
+ * registry, so an id whose provider has not shipped fails loud at the boundary.
  *
  * Absence contract: a section's missing substrate is `built: false` with a
  * reason — never an exception, never a silent empty answer; a file the section
@@ -17,9 +15,23 @@ import type { GraphDbClient, TemporalCochangeGraph } from "../../../../contracts
 import type { ReviewSectionId } from "../../../public/dto/review.js";
 import type { DiffScopeRead, DiffScopeRequest } from "../diff-scope-reader.js";
 import type { NamingLexiconOps } from "../naming-lexicon-ops.js";
+import type { ReviewEdgeExtractionDeps } from "../review-edge-overlay.js";
 
-/** The indexed graph reads a review section may perform. */
-export type ReviewGraphDb = Pick<GraphDbClient, "readTemporalCochangeGraph" | "readTemporalSymbolCommits">;
+/**
+ * The indexed graph reads a review section may perform: the temporal
+ * sub-graph's two reads, the whole file dependency graph (the `architecture`
+ * section's indexed side), and the per-review temp table's write lifecycle
+ * (`architecture`, F3 slice 2 — put once, drop in the finally).
+ */
+export type ReviewGraphDb = Pick<
+  GraphDbClient,
+  | "readTemporalCochangeGraph"
+  | "readTemporalSymbolCommits"
+  | "readFileDependencyGraph"
+  | "putReviewFileEdges"
+  | "dropReviewFileEdges"
+  | "sweepExpiredReviewFileEdges"
+>;
 
 /** The naming lexicon operations, as a review section needs them. */
 export type ReviewNamingLexicon = Pick<NamingLexiconOps, "getNamingLexicon">;
@@ -45,6 +57,12 @@ export interface ReviewSectionBuildContext {
   temporalCochangeError: string | undefined;
   /** The naming lexicon operations; `undefined` when not wired (codegraph off). */
   lexiconOps: ReviewNamingLexicon | undefined;
+  /**
+   * The working-tree edge extraction trio (languageFactory + collectSymbols +
+   * composer) the `architecture` section walks changed files with — the same
+   * wires `createNamingReviewExtractor` uses; `undefined` when not wired.
+   */
+  reviewEdgeExtraction: ReviewEdgeExtractionDeps | undefined;
 }
 
 /** What a section needs to ANSWER, once it has decided it can build. */
@@ -65,6 +83,13 @@ export interface ReviewSectionContext extends ReviewSectionBuildContext {
 /** One diff-scoped report provider. */
 export interface ReviewSectionProvider {
   readonly id: ReviewSectionId;
+  /**
+   * This section consumes the pre-read temporal co-change snapshot, so the
+   * orchestration reads it once for a review that requested ANY such section —
+   * `incompleteChange` and `architecture` today. Absent = never read for this
+   * review's sake.
+   */
+  readonly consumesTemporalCochange?: boolean;
   /**
    * Decide from the build context; `{ built: false, reason }` when the
    * substrate is missing. Never throws, never reads.

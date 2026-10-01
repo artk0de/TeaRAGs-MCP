@@ -1374,6 +1374,18 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
             collectionRegistry,
             resolveActiveCollection,
             lexiconOps: namingLexiconOps,
+            // The `architecture` section's working-tree walks run on the same
+            // extraction trio the naming review extractor and the index path
+            // use (languageFactory + collectSymbols + composer), so walk
+            // semantics cannot drift between them.
+            reviewEdgeExtraction: {
+              languageFactory: composition.languageFactory,
+              collectSymbols,
+              // A fresh composer, the same choice `createNamingReviewExtractor`
+              // makes: the mapper is stateless, and this wiring sits outside
+              // `wireCodegraph`'s single-instance scope.
+              composer: new DefaultSymbolIdComposer(),
+            },
             windowMonths: zodConfig.trajectoryGit.chunkMaxAgeMonths,
           }),
         })

@@ -32,6 +32,7 @@ import type {
 } from "../../public/dto/review.js";
 import { resolveCollection } from "../collection-resolver.js";
 import { DIFF_FILE_CAP, readDiffScope, readTreeLag, resolveWorkTree } from "./diff-scope-reader.js";
+import type { ReviewEdgeExtractionDeps } from "./review-edge-overlay.js";
 import {
   REVIEW_SECTION_PROVIDERS,
   reviewSectionIds,
@@ -52,6 +53,13 @@ export interface ReviewChangesOpsDeps {
   resolveActiveCollection?: (collectionName: string) => Promise<PhysicalCollectionName>;
   /** The naming lexicon the `naming` section forwards to — the SAME instance the endpoint uses. */
   lexiconOps: ReviewNamingLexicon;
+  /**
+   * The working-tree edge extraction trio the `architecture` section walks
+   * changed files with — the same wires `createNamingReviewExtractor` uses,
+   * threaded from the composition root (which holds the languageFactory).
+   * Absent → the section answers not built.
+   */
+  reviewEdgeExtraction?: ReviewEdgeExtractionDeps;
   /** The temporal walk's history window (the git trajectory's `chunkMaxAgeMonths`). */
   windowMonths: number;
 }
@@ -95,7 +103,11 @@ export class ReviewChangesOps {
       const graphDb: ReviewGraphDb | undefined = handle?.graphDb;
       let temporalCochange: Awaited<ReturnType<ReviewGraphDb["readTemporalCochangeGraph"]>> | undefined;
       let temporalCochangeError: string | undefined;
-      if (graphDb !== undefined && providers.some((provider) => provider.id === "incompleteChange")) {
+      // ONE read per call for every consumer: any section that declares
+      // `consumesTemporalCochange` (incompleteChange, architecture) shares
+      // this snapshot — the coupling reader never re-reads what a sibling
+      // already holds.
+      if (graphDb !== undefined && providers.some((provider) => provider.consumesTemporalCochange)) {
         try {
           temporalCochange = await graphDb.readTemporalCochangeGraph();
         } catch (error) {
@@ -108,6 +120,7 @@ export class ReviewChangesOps {
         temporalCochange,
         temporalCochangeError,
         lexiconOps: this.deps.lexiconOps,
+        reviewEdgeExtraction: this.deps.reviewEdgeExtraction,
       };
       const sections: Partial<Record<ReviewSectionId, ReviewSectionResult>> = {};
       for (const provider of providers) {

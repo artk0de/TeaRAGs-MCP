@@ -1,10 +1,11 @@
 /**
- * `review_changes` MCP tool (bd tea-rags-mcp-89k7k.1.4, F3 slice 1): the
- * sections enum is DERIVED from the live provider registry (an id with no
- * provider — `architecture`, slice 2 — is rejected at the boundary, so an
- * agent asking for a section never has to guess whether it ran), the default
- * is all registered sections, and the handler forwards to
- * `app.reviewChanges`. Absence without codegraph is the registrar's gate.
+ * `review_changes` MCP tool (bd tea-rags-mcp-89k7k.1.4, F3): the sections enum
+ * is DERIVED from the live provider registry (an id with no provider is
+ * rejected at the boundary, so an agent asking for a section never has to
+ * guess whether it ran; `architecture` joined the accepted set when its
+ * provider shipped, slice 2), the default is all registered sections, and the
+ * handler forwards to `app.reviewChanges`. Absence without codegraph is the
+ * registrar's gate.
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { describe, expect, it, vi } from "vitest";
@@ -47,12 +48,13 @@ describe("review_changes registration", () => {
 });
 
 describe("review_changes schema", () => {
-  it("rejects an unknown section id — including one whose provider has not shipped yet", () => {
+  it("rejects an unknown section id; every registered id — architecture included — is accepted", () => {
     const { inputSchema } = registered()!.config;
     expect(inputSchema.safeParse({ project: "p", sections: ["nope"] }).success).toBe(false);
-    // `architecture` is in the TYPE union but no provider ships this slice — the
-    // enum is derived from the live registry, so asking for it fails loud.
-    expect(inputSchema.safeParse({ project: "p", sections: ["architecture"] }).success).toBe(false);
+    // INVARIANT CHANGE (F3 slice 2, bd tea-rags-mcp-89k7k.1.4): `architecture`
+    // shipped its provider, so the derived enum now ACCEPTS it — previously it
+    // was the rejected id-with-no-provider.
+    expect(inputSchema.safeParse({ project: "p", sections: ["architecture"] }).success).toBe(true);
     expect(inputSchema.safeParse({ project: "p", sections: ["naming", "cohesion"] }).success).toBe(true);
     expect(inputSchema.safeParse({ project: "p", sections: [] }).success).toBe(false);
   });

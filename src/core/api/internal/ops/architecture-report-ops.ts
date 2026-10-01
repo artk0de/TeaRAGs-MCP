@@ -43,7 +43,6 @@ import {
   detectLeakingAbstractions,
   detectMainSequenceDeviations,
   domainBoundaryFileEdges,
-  excludeNonProductionFiles,
   FACADE_AGGREGATION_REASON,
   FACADE_MODULE_EXCLUSION_REASONS,
   inducedDomainGraph,
@@ -75,7 +74,6 @@ import {
   type SilentCouplingReport,
   type SilentCouplingViolation,
 } from "../../../domains/trajectory/codegraph/temporal/index.js";
-import { buildNonProductionPathFilter } from "../../../infra/file-classification/index.js";
 import { UnknownArchitectureComponentError } from "../../errors.js";
 import type {
   ArchitectureDomainBoundaryEdge,
@@ -98,6 +96,7 @@ import type {
   SilentCouplingReportSummary,
   StableDependenciesReportSummary,
 } from "../../public/dto/architecture.js";
+import { deriveArchitectureComponentFacts, readProductionArchitectureGraph } from "./architecture-facts.js";
 import { ontologyNonProductionPaths } from "./ontology-report-ops.js";
 
 /** Default `GetArchitectureReportRequest.limit`. */
@@ -168,9 +167,11 @@ export class ArchitectureReportOps {
     readImportSpecifiers?: ModuleImportSpecifierLookup,
     readFileCommitCounts?: GitFileCommitCountLookup,
   ): Promise<GetArchitectureReportResponse> {
-    // Every detector judges the production graph (bd tea-rags-mcp-r8hme.9).
-    const nonProduction = buildNonProductionPathFilter();
-    const production = excludeNonProductionFiles(await graphDb.readFileDependencyGraph(), nonProduction);
+    // Every detector judges the production graph (bd tea-rags-mcp-r8hme.9) —
+    // the read and the exclusion live in `architecture-facts.ts` now, shared
+    // with the diff-scoped run (bd tea-rags-mcp-89k7k.1.4).
+    const production = await readProductionArchitectureGraph(graphDb);
+    const { nonProduction } = production;
     // Domain mode (bd tea-rags-mcp-xb669.1): judge one directory as its own
     // system — every detector below sees the induced sub-graph. Its border is
     // read from the WHOLE graph and positioned on the whole-graph stack,
@@ -180,9 +181,9 @@ export class ArchitectureReportOps {
         ? null
         : buildWholeGraphPartition(production.graph, request.domain, request.pathPattern);
     const graph = whole ? inducedDomainGraph(production.graph, whole.domainRoot) : production.graph;
-    const leaks = detectLeakingAbstractions(graph, { sourcePathPattern: request.pathPattern });
-    // Components: the modules A4 measured, plain directories elsewhere (bd tea-rags-mcp-r8hme.7).
-    const components = buildComponentGraph(graph, leaks.modules);
+    // Facade classification + components (bd tea-rags-mcp-r8hme.7): the
+    // report-owned derivation in `architecture-facts.ts`.
+    const { leaks, components } = deriveArchitectureComponentFacts(graph, request.pathPattern);
     const sdp = detectComponentStableDependencyViolations(components, { sourcePathPattern: request.pathPattern });
     // Same components, A from the walker's type census (bd tea-rags-mcp-r8hme.8),
     // the zone of pain gated on git volatility (bd tea-rags-mcp-r8hme.14).

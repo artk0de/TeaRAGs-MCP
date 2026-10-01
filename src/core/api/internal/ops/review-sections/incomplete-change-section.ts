@@ -23,6 +23,7 @@ const PARTNER_CAP = 50;
 
 export const incompleteChangeSectionProvider: ReviewSectionProvider = {
   id: "incompleteChange",
+  consumesTemporalCochange: true,
 
   isBuilt: (context) => {
     if (context.graphDb === undefined) {
