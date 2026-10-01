@@ -105,7 +105,10 @@ describe("find_symbol over a test example split into #partN parts", () => {
   it("stitches the parts back into exactly the chunk the engine would have indexed unsplit", async () => {
     // The engine prepends the claimed container's header to every hook body
     // chunk; the kernel's chunk under that header is the unsplit example.
-    const [kernelChunk] = produceTestScopeChunks(scope, "Cart", { maxChunkSize: MAX_CHUNK_SIZE });
+    // The scope's setup leads as its own chunk since bd tea-rags-mcp-5xpq4.
+    const kernelChunk = produceTestScopeChunks(scope, "Cart", { maxChunkSize: MAX_CHUNK_SIZE }).find(
+      (c) => c.symbolId === exampleId,
+    )!;
     const unsplit = `describe("Cart", () => {\n${kernelChunk.content}`;
 
     const results = resolveSymbols(await indexedPayloads(), exampleId);
@@ -210,7 +213,9 @@ describe("find_symbol over a test example whose container header pushes it past 
 
     expect(results).toHaveLength(1);
     const lines = (results[0].payload?.content as string).split("\n");
-    expect(lines.slice(-3)).toEqual([itLine, ...body]);
+    // The example now opens its chunk (its setup is a chunk of its own since
+    // bd tea-rags-mcp-5xpq4), so the chunk's trim takes the `it(` row's indent.
+    expect(lines.slice(-3)).toEqual([itLine.trim(), ...body]);
     expect(results[0].payload?.startLine).toBe(tightExampleStart);
     expect(results[0].payload?.endLine).toBe(tightExampleEnd);
   });

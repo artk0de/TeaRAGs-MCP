@@ -169,16 +169,20 @@ describe("produceScopeChunks — composition rules", () => {
     // INVARIANT CHANGED (bd tea-rags-mcp-dppnr): one chunk per example, each
     // carrying the leaf's own setup and statements; its line range is the
     // example's own rows (was one leaf chunk spanning setup through last it).
-    expect(chunks).toHaveLength(2);
-    for (const chunk of chunks) {
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): the leaf's own setup and
+    // non-DSL statements are ONE test_setup chunk the examples reference.
+    const [setup, ...examples] = chunks;
+    expect(setup.chunkType).toBe("test_setup");
+    expect(setup.content).toContain("signIn(user)");
+    expect(setup.content).toContain("const repo = buildRepo();");
+    expect(examples).toHaveLength(2);
+    for (const chunk of examples) {
       expect(chunk.chunkType).toBe("test");
-      // Own setup is part of the content…
-      expect(chunk.content).toContain("signIn(user)");
-      // …and so are the leaf's own non-DSL statements.
-      expect(chunk.content).toContain("const repo = buildRepo();");
+      expect(chunk.content).not.toContain("signIn(user)");
+      expect(chunk.setupScopeIds).toEqual(["User.describe 'User'"]);
     }
-    expect([chunks[0].startLine, chunks[0].endLine]).toEqual([6, 8]);
-    expect([chunks[1].startLine, chunks[1].endLine]).toEqual([10, 12]);
+    expect([examples[0].startLine, examples[0].endLine]).toEqual([6, 8]);
+    expect([examples[1].startLine, examples[1].endLine]).toEqual([10, 12]);
   });
 
   it("emits a test_setup chunk for a leaf scope holding only setup and other lines", () => {
@@ -222,21 +226,25 @@ describe("produceScopeChunks — composition rules", () => {
     const tree = parseJs(code);
     const chunks = produceScopeChunks(findTopLevelCall(tree), code, defaultConfig);
 
-    expect(chunks.filter((c) => c.chunkType === "test_setup")).toHaveLength(0);
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): the root's setup and
+    // statements are its own test_setup chunk; both examples reference it.
+    const [setup, root, nested] = chunks;
+    expect(setup).toMatchObject({ chunkType: "test_setup", symbolId: "User.describe 'User'" });
+    expect(setup.content).toContain("resetDb()");
+    expect(setup.content).toContain("const factory = makeFactory();");
 
-    const [root, nested] = chunks;
     expect(root.parentSymbolId).toBe("User.describe 'User'");
-    expect(root.content).toContain("resetDb()");
-    expect(root.content).toContain("const factory = makeFactory();");
+    expect(root.content).not.toContain("resetDb()");
     expect(root.content).toContain("is constructable");
     expect(root.content).not.toContain("has admin role");
+    expect(root.setupScopeIds).toEqual(["User.describe 'User'"]);
     expect([root.startLine, root.endLine]).toEqual([6, 8]);
 
     expect(nested.parentSymbolId).toBe("User.describe 'when admin'");
-    expect(nested.content).toContain("resetDb()");
-    expect(nested.content).not.toContain("const factory = makeFactory();");
+    expect(nested.content).not.toContain("resetDb()");
     expect(nested.content).toContain("has admin role");
-    expect(chunks).toHaveLength(2);
+    expect(nested.setupScopeIds).toEqual(["User.describe 'User'"]);
+    expect(chunks).toHaveLength(3);
   });
 
   // INVARIANT CHANGED (bd tea-rags-mcp-dppnr): an intermediate scope's own it
@@ -264,24 +272,31 @@ describe("produceScopeChunks — composition rules", () => {
     const tree = parseJs(code);
     const chunks = produceScopeChunks(findTopLevelCall(tree), code, defaultConfig);
 
-    expect(chunks.filter((c) => c.chunkType === "test_setup")).toHaveLength(0);
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): the intermediate scope's setup
+    // and statements are its own test_setup chunk; both examples reference it.
+    const setupChunks = chunks.filter((c) => c.chunkType === "test_setup");
+    expect(setupChunks).toHaveLength(1);
+    expect(setupChunks[0].symbolId).toBe("User.describe 'validations'");
+    expect(setupChunks[0].content).toContain("loadFixtures()");
+    expect(setupChunks[0].content).toContain("const validator = buildValidator();");
     const testChunks = chunks.filter((c) => c.chunkType === "test");
     expect(testChunks).toHaveLength(2);
     // The intermediate 'validations' scope's own example…
     expect(testChunks[0].symbolId).toBe(
       "User.describe 'validations'.it 'rejects an empty name with a meaningful validation message'",
     );
-    expect(testChunks[0].content).toContain("loadFixtures()");
-    expect(testChunks[0].content).toContain("const validator = buildValidator();");
-    // …and the deepest example still chunks separately, inheriting ancestor setup.
+    expect(testChunks[0].setupScopeIds).toEqual(["User.describe 'validations'"]);
+    // …and the deepest example still chunks separately, referencing ancestor setup.
     expect(testChunks[1].symbolId).toBe(
       "User.describe 'when admin'.it 'has admin role and full permission set for management ops'",
     );
-    expect(testChunks[1].content).toContain("loadFixtures()");
+    expect(testChunks[1].setupScopeIds).toEqual(["User.describe 'validations'"]);
     expect(testChunks[1].content).toContain("has admin role");
   });
 
-  it("produces no chunks when a scope's composed content sits under the minimum size", () => {
+  // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): an example under the minimum
+  // size is never dropped — a lone one stays its own chunk.
+  it("keeps a lone example whose content sits under the minimum size", () => {
     const code = `describe('tiny', () => {
   it('x', () => {});
 });`;
@@ -289,7 +304,7 @@ describe("produceScopeChunks — composition rules", () => {
     const tree = parseJs(code);
     const chunks = produceScopeChunks(findTopLevelCall(tree), code, defaultConfig);
 
-    expect(chunks).toHaveLength(0);
+    expect(chunks.map((c) => c.symbolId)).toEqual(["tiny.describe 'tiny'.it 'x'"]);
   });
 
   it("splits an oversized leaf without shared setup into bare per-it chunks, skipping fragments under the floor", () => {
@@ -309,11 +324,12 @@ ${longBody}    });
     const tree = parseJs(code);
     const chunks = produceScopeChunks(findTopLevelCall(tree), code, { maxChunkSize: 100 });
 
-    // No setup/other lines exist, so each split part is just its it block —
-    // and the tiny it ('x') drops below the minimum-size floor and is skipped.
+    // No setup/other lines exist, so each split part is just its it block.
     // INVARIANT CHANGED (bd tea-rags-mcp-dppnr): the per-it chunks are
     // addressed by their own example ids under the shared scope parent.
-    expect(chunks).toHaveLength(2);
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): the tiny it ('x') is kept as
+    // its own chunk — it has no tiny sibling to group with.
+    expect(chunks).toHaveLength(3);
     for (const chunk of chunks) {
       expect(chunk.chunkType).toBe("test");
       expect(chunk.parentSymbolId).toBe("User.describe 'validations'");
@@ -321,9 +337,9 @@ ${longBody}    });
     }
     expect(chunks.map((c) => c.symbolId)).toEqual([
       "User.describe 'validations'.it 'validates name'",
+      "User.describe 'validations'.it 'x'",
       "User.describe 'validations'.it 'validates email'",
     ]);
-    expect(chunks.map((c) => c.content)).not.toContain("it('x', () => {});");
   });
 
   it("falls back to the full scope name for parentSymbolId when the first arg is neither a string nor an identifier", () => {

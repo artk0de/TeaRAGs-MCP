@@ -69,6 +69,23 @@ export interface BodyChunkResult {
    * the parts carry the container prefix alone.
    */
   partHeader?: string;
+  /**
+   * A test example chunk's setup chain (bd tea-rags-mcp-5xpq4): the ids of the
+   * scopes above it, root to leaf and its own scope included, that carry a
+   * setup chunk of their own (`symbolId` = the scope id). Setup is stored once
+   * per scope and prepended to the example when it is returned, so the list is
+   * explicit — a scope name may contain `.` and a `~N` suffix, so an ancestor
+   * is never derived from the example id by prefix. Absent when no scope above
+   * the example declares setup.
+   */
+  setupScopeIds?: string[];
+  /**
+   * The ids of the test examples a GROUPED chunk carries, in source order
+   * (bd tea-rags-mcp-5xpq4): sibling examples each too short to be a chunk of
+   * their own share one, whose `symbolId` is the first member's. `find_symbol`
+   * answers any member id with this chunk. Absent on a single-example chunk.
+   */
+  exampleSymbolIds?: string[];
 }
 
 /**

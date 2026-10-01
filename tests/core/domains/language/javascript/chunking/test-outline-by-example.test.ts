@@ -163,7 +163,9 @@ ${body("second")}
     ]);
   });
 
-  it("prefixes every ancestor's hooks and the scope's own before each example, line range the example's own", () => {
+  // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): hooks were prefixed into every
+  // example; each scope's hooks are now ONE setup chunk the example references.
+  it("references every ancestor's hooks and the scope's own as setup chunks, line range the example's own", () => {
     const code = `describe('Cart', () => {
   beforeEach(() => { signIn(customer); });
 
@@ -176,11 +178,14 @@ ${body("discount")}
   });
 });`;
 
-    const [chunk] = runHook(code);
+    const chunks = runHook(code);
+    const chunk = chunks.find((c) => c.parentType === "test_scope")!;
 
     expect(chunk.symbolId).toBe("Cart.describe 'with a coupon'.it 'discounts the subtotal'");
-    expect(chunk.content.indexOf("signIn(customer)")).toBeLessThan(chunk.content.indexOf("cart.apply(coupon)"));
-    expect(chunk.content.indexOf("cart.apply(coupon)")).toBeLessThan(chunk.content.indexOf("discounts the subtotal"));
+    expect(chunk.setupScopeIds).toEqual(["Cart.describe 'Cart'", "Cart.describe 'with a coupon'"]);
+    expect(chunk.content).not.toContain("signIn(customer)");
+    expect(chunks.find((c) => c.symbolId === "Cart.describe 'Cart'")?.content).toContain("signIn(customer)");
+    expect(chunks.find((c) => c.symbolId === "Cart.describe 'with a coupon'")?.content).toContain("cart.apply(coupon)");
     expect([chunk.startLine, chunk.endLine]).toEqual([7, 10]);
   });
 

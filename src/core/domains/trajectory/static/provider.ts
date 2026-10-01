@@ -37,6 +37,14 @@ export class StaticPayloadBuilder implements PayloadBuilder {
     if (headingPath?.length) payload.headingPath = headingPath;
     const navigation = m.navigation as { prevSymbolId?: string; nextSymbolId?: string } | undefined;
     if (navigation) payload.navigation = navigation;
+    // Test-chunk links (bd tea-rags-mcp-5xpq4): the setup chain explore
+    // hydrates an example from, and the members a grouped chunk answers
+    // find_symbol for. Why they are not payload signal descriptors:
+    // `domains/explore/CLAUDE.md`.
+    const setupScopeIds = m.setupScopeIds as string[] | undefined;
+    if (setupScopeIds?.length) payload.setupScopeIds = setupScopeIds;
+    const exampleSymbolIds = m.exampleSymbolIds as string[] | undefined;
+    if (exampleSymbolIds?.length) payload.exampleSymbolIds = exampleSymbolIds;
     if (methodLines) {
       payload.methodLines = methodLines;
     }

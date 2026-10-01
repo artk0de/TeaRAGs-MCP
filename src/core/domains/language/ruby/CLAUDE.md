@@ -108,7 +108,7 @@
 - **The RSpec chunker READS; the kernel EMITS.** `buildScopeTree`
   (`chunking/rspec-scope-chunker.ts`) turns a container call into the neutral
   `TestScope` and `produceScopeChunks` hands it to `produceTestScopeChunks` —
-  ids, inherited setup, `~N` and line ranges are the kernel's, per
+  ids, per-scope setup chunks, `~N` and line ranges are the kernel's, per
   `.claude/rules/test-spec-chunking.md`. What stays Ruby: an example is named by
   `extractScopeName` exactly as a scope is, so a description-less one-liner
   (`it { is_expected.to be_valid }`) carries its whole line and a multi-line

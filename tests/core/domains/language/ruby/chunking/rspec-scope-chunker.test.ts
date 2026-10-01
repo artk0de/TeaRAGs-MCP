@@ -204,15 +204,21 @@ end`;
     const scope = buildScopeTree(node, code);
     const chunks = produceScopeChunks(scope, code, defaultConfig);
 
-    expect(chunks).toHaveLength(1);
-    expect(chunks[0].chunkType).toBe("test");
-    // Parent setup should be injected into the leaf chunk content
-    expect(chunks[0].content).toContain("let(:user)");
-    expect(chunks[0].content).toContain("before");
-    expect(chunks[0].content).toContain("has admin role");
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): parent setup is stored ONCE,
+    // as the root scope's own test_setup chunk, and the example references it
+    // through setupScopeIds instead of carrying it — explore prepends it on read.
+    expect(chunks).toHaveLength(2);
+    const [setup, example] = chunks;
+    expect(setup).toMatchObject({ chunkType: "test_setup", symbolId: "User.describe User" });
+    expect(setup.content).toContain("let(:user)");
+    expect(setup.content).toContain("before");
+    expect(example.chunkType).toBe("test");
+    expect(example.content).not.toContain("let(:user)");
+    expect(example.content).toContain("has admin role");
+    expect(example.setupScopeIds).toEqual(["User.describe User"]);
     // But line range should NOT span back to parent setup lines
     // Parent setup is at lines 2-3, context starts at line 5
-    expect(chunks[0].startLine).toBeGreaterThanOrEqual(5);
+    expect(example.startLine).toBeGreaterThanOrEqual(5);
   });
 
   it("should produce test_setup chunk for intermediate scope with own it blocks", () => {
@@ -485,8 +491,9 @@ end`;
     const scope = buildScopeTree(node, code);
     const chunks = produceScopeChunks(scope, code, defaultConfig);
 
-    // Content is very short — should be filtered out (< 50 chars)
-    expect(chunks).toHaveLength(0);
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): a short example is never
+    // dropped — a lone one stays its own chunk, siblings are grouped.
+    expect(chunks.map((c) => c.symbolId)).toEqual(["User.context 'tiny'.it 'ok'"]);
   });
 
   it("should include otherLines in leaf scope test chunk content", () => {
@@ -542,12 +549,17 @@ end`;
     const testChunks = chunks.filter((c) => c.chunkType === "test");
     const setupChunks = chunks.filter((c) => c.chunkType === "test_setup");
 
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): the root's setup is its own
+    // test_setup chunk, referenced by both examples instead of copied into them.
     expect(testChunks).toHaveLength(2);
-    expect(setupChunks).toHaveLength(0);
+    expect(setupChunks).toHaveLength(1);
+    expect(setupChunks[0].content).toContain("let(:user)");
     expect(testChunks[0].content).toContain("is a class that exists");
-    expect(testChunks[0].content).toContain("let(:user)");
-    expect(testChunks[1].content).toContain("let(:user)");
     expect(testChunks[1].content).toContain("has admin role and can manage");
+    for (const example of testChunks) {
+      expect(example.content).not.toContain("let(:user)");
+      expect(example.setupScopeIds).toEqual(["User.describe User"]);
+    }
   });
 
   it("should produce test_setup for leaf scope with only setup lines", () => {
@@ -620,10 +632,14 @@ end`;
 
     // INVARIANT CHANGED (bd tea-rags-mcp-99gkm): the root's own example is a
     // `test` chunk carrying the root's setup and otherLines (was `test_setup`).
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): that setup and otherLines are
+    // the root's own test_setup chunk, which the example references.
     const rootExample = chunks.find((c) => c.chunkType === "test" && c.content.includes("can be instantiated"));
     expect(rootExample).toBeDefined();
-    expect(rootExample!.content).toContain("let(:service)");
-    expect(rootExample!.content).toContain("TIMEOUT = 30");
+    expect(rootExample!.setupScopeIds).toEqual(["AuthenticationService.describe AuthenticationService"]);
+    const rootSetup = chunks.find((c) => c.symbolId === "AuthenticationService.describe AuthenticationService");
+    expect(rootSetup!.content).toContain("let(:service)");
+    expect(rootSetup!.content).toContain("TIMEOUT = 30");
   });
 
   it("should produce test_setup for intermediate scope with setup, otherLines, it blocks, and children", () => {
@@ -656,18 +672,22 @@ end`;
     // INVARIANT CHANGED (bd tea-rags-mcp-99gkm): the intermediate scope's own
     // example is a `test` chunk with that scope's setup + otherLines; the
     // nested leaf example inherits the intermediate setup. No `test_setup`.
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): that setup + otherLines are the
+    // intermediate scope's own test_setup chunk; both examples reference it.
     const setupChunks = chunks.filter((c) => c.chunkType === "test_setup");
-    expect(setupChunks).toHaveLength(0);
+    expect(setupChunks).toHaveLength(1);
+    expect(setupChunks[0].symbolId).toBe("User.context 'authentication with various credential types'");
+    expect(setupChunks[0].content).toContain("let(:credentials)");
+    expect(setupChunks[0].content).toContain("AuthService.configure");
+    expect(setupChunks[0].content).toContain("RETRY_COUNT = 3");
 
     const authExample = chunks.find((c) => c.content.includes("validates credentials format"));
     expect(authExample).toBeDefined();
     expect(authExample!.chunkType).toBe("test");
-    expect(authExample!.content).toContain("let(:credentials)");
-    expect(authExample!.content).toContain("AuthService.configure");
-    expect(authExample!.content).toContain("RETRY_COUNT = 3");
+    expect(authExample!.setupScopeIds).toEqual(["User.context 'authentication with various credential types'"]);
 
     const leafExample = chunks.find((c) => c.content.includes("authenticates successfully"));
-    expect(leafExample!.content).toContain("let(:credentials)");
+    expect(leafExample!.setupScopeIds).toEqual(["User.context 'authentication with various credential types'"]);
   });
 
   it("should handle leaf scope with setup, otherLines, but no it blocks producing test_setup", () => {
@@ -753,12 +773,13 @@ end`;
     // Trigger oversized split
     const chunks = produceScopeChunks(scope, code, { maxChunkSize: 300 });
 
-    // The 'ok' it block is very short — should be skipped (< 50 chars after trim)
-    // Only the two long it blocks should produce chunks
-    expect(chunks.length).toBe(2);
-    for (const chunk of chunks) {
-      expect(chunk.content.length).toBeGreaterThanOrEqual(50);
-    }
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): the short 'ok' example is
+    // kept — it has no tiny sibling to group with, so it stays its own chunk.
+    expect(chunks.map((c) => c.name)).toEqual([
+      "it 'validates name thoroughly'",
+      "it 'ok'",
+      "it 'validates email thoroughly'",
+    ]);
   });
 });
 
@@ -777,8 +798,11 @@ describe("produceScopeChunks — addressable examples (bd tea-rags-mcp-99gkm)", 
     ).join("\n");
     const code = `RSpec.describe Platform::Async::Operation::Worker do\n  let(:worker) { described_class.new }\n\n${examples}end`;
 
-    const chunks = chunksOf(code);
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): the shared `let(:worker)` is
+    // one test_setup chunk ahead of the examples, which reference it.
+    const [setup, ...chunks] = chunksOf(code);
 
+    expect(setup).toMatchObject({ chunkType: "test_setup", content: "let(:worker) { described_class.new }" });
     expect(chunks).toHaveLength(16);
     expect(new Set(chunks.map((c) => c.symbolId)).size).toBe(16);
     expect(chunks[0].symbolId).toBe(
@@ -789,7 +813,8 @@ describe("produceScopeChunks — addressable examples (bd tea-rags-mcp-99gkm)", 
         "Platform::Async::Operation::Worker.RSpec.describe Platform::Async::Operation::Worker",
       );
       expect(chunk.parentType).toBe("test_scope");
-      expect(chunk.content).toContain("let(:worker)");
+      expect(chunk.content).not.toContain("let(:worker)");
+      expect(chunk.setupScopeIds).toEqual([setup.symbolId]);
     }
   });
 
@@ -823,12 +848,18 @@ end`;
   end
 end`;
 
-    const names = chunksOf(code).map((c) => c.name);
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): the `let` is the scope's own
+    // test_setup chunk, and the two short examples (`it { … }`, `specify`) share
+    // one grouped chunk — so the names are read off every example id, grouped
+    // members included.
+    const ids = chunksOf(code)
+      .filter((c) => c.parentType === "test_scope")
+      .flatMap((c) => c.exampleSymbolIds ?? [c.symbolId]);
 
-    expect(names).toEqual([
-      "it { is_expected.to validate_presence_of(:name) }",
-      "its(:email) { is_expected.to eq('john@example.com') }",
-      "specify",
+    expect(ids).toEqual([
+      "User.describe User.it { is_expected.to validate_presence_of(:name) }",
+      "User.describe User.specify",
+      "User.describe User.its(:email) { is_expected.to eq('john@example.com') }",
     ]);
   });
 
@@ -845,7 +876,8 @@ end`;
   end
 end`;
 
-    const [chunk] = chunksOf(code);
+    // Setup chunks lead since bd tea-rags-mcp-5xpq4; the case is the example's range.
+    const [chunk] = chunksOf(code).filter((c) => c.parentType === "test_scope");
 
     expect(chunk.startLine).toBe(7);
     expect(chunk.endLine).toBe(9);

@@ -58,6 +58,10 @@ export interface ChunkItem extends WorkItem {
       methodLines?: number;
       /** Physical line count of the file (symbol-mass pass); the enrichment policy's size input. */
       moduleLines?: number;
+      /** A test example's setup chain, root to leaf (bd tea-rags-mcp-5xpq4). */
+      setupScopeIds?: string[];
+      /** The example ids a grouped test chunk carries (bd tea-rags-mcp-5xpq4). */
+      exampleSymbolIds?: string[];
     };
   };
   /** Pre-computed chunk ID */

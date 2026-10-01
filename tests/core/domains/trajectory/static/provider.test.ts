@@ -72,6 +72,34 @@ describe("StaticPayloadBuilder", () => {
     expect(payload.imports).toEqual(["./utils.js", "./types.js"]);
   });
 
+  it("writes a test example's setupScopeIds and a grouped chunk's exampleSymbolIds (5xpq4)", () => {
+    const testChunk = {
+      content: "it { is_expected.to be_valid }\nit { is_expected.to be_persisted }",
+      startLine: 4,
+      endLine: 5,
+      metadata: {
+        filePath: "/project/spec/user_spec.rb",
+        language: "ruby",
+        chunkIndex: 2,
+        chunkType: "test",
+        setupScopeIds: ["User.RSpec.describe User", "User.context 'v1.2'~2"],
+        exampleSymbolIds: ["User.context 'v1.2'~2.it", "User.context 'v1.2'~2.it~2"],
+      } as Record<string, unknown>,
+    };
+    const payload = builder.buildPayload(testChunk, "/project");
+    expect(payload.setupScopeIds).toEqual(["User.RSpec.describe User", "User.context 'v1.2'~2"]);
+    expect(payload.exampleSymbolIds).toEqual(["User.context 'v1.2'~2.it", "User.context 'v1.2'~2.it~2"]);
+  });
+
+  it("omits setupScopeIds and exampleSymbolIds when absent or empty", () => {
+    const payload = builder.buildPayload(
+      { ...chunk, metadata: { ...chunk.metadata, setupScopeIds: [], exampleSymbolIds: [] } },
+      "/project",
+    );
+    expect(payload).not.toHaveProperty("setupScopeIds");
+    expect(payload).not.toHaveProperty("exampleSymbolIds");
+  });
+
   it("writes navigation to payload", () => {
     const navChunk = {
       content: "test",

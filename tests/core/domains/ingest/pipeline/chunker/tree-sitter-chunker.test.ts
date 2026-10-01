@@ -981,6 +981,38 @@ function farewell(name) {
   });
 
   describe("chunk - Ruby", () => {
+    it("stores RSpec setup once per scope and links examples to it (bd tea-rags-mcp-5xpq4)", async () => {
+      const code = `RSpec.describe User do
+  let(:user) { create(:user, name: 'Alice', email: 'alice@example.com') }
+
+  context 'when admin' do
+    before { user.update!(admin: true, confirmed_at: Time.current) }
+
+    it 'can manage every account in the organization' do
+      expect(user.can_manage?(Account.all)).to be(true)
+    end
+
+    it { is_expected.to be_valid }
+    it { is_expected.to be_persisted }
+  end
+end
+`;
+      const chunks = await chunker.chunk(code, "spec/models/user_spec.rb", "ruby");
+      const setups = chunks.filter((c) => c.metadata.chunkType === "test_setup");
+      const examples = chunks.filter((c) => c.metadata.parentType === "test_scope");
+
+      expect(setups.map((c) => c.metadata.symbolId)).toEqual(["User.RSpec.describe User", "User.context 'when admin'"]);
+      expect(examples.every((c) => !c.content.includes("let(:user)") && !c.content.includes("before {"))).toBe(true);
+      expect(examples.map((c) => c.metadata.setupScopeIds)).toEqual([
+        ["User.RSpec.describe User", "User.context 'when admin'"],
+        ["User.RSpec.describe User", "User.context 'when admin'"],
+      ]);
+      expect(examples[1].metadata.exampleSymbolIds).toEqual([
+        "User.context 'when admin'.it { is_expected.to be_valid }",
+        "User.context 'when admin'.it { is_expected.to be_persisted }",
+      ]);
+    });
+
     it("should always extract methods from classes regardless of class size", async () => {
       const code = `
 class UserService
@@ -4349,10 +4381,13 @@ end`;
 end`;
 
       const chunks = await chunker.chunk(code, "spec/services/payment_service_spec.rb", "ruby");
-      // Scope chunker: leaf scope = describe PaymentService with setup + it
+      // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): the setup is the scope's own
+      // test_setup chunk, which the example references by scope id.
       const testChunk = chunks.find((c) => c.metadata.chunkType === "test");
+      const setupChunk = chunks.find((c) => c.metadata.chunkType === "test_setup");
       expect(testChunk).toBeDefined();
-      expect(testChunk!.content).toContain("let(:gateway)");
+      expect(setupChunk!.content).toContain("let(:gateway)");
+      expect(testChunk!.metadata.setupScopeIds).toEqual([setupChunk!.metadata.symbolId]);
       expect(testChunk!.content).toContain("initializes with a gateway");
     });
 
@@ -4430,17 +4465,22 @@ end`;
       ]);
       expect(testChunks.every((c) => c.metadata.parentType === "test_scope")).toBe(true);
 
-      // 'when admin' leaf should contain injected let(:user) from parent
+      // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): let(:user) and let(:role) are
+      // their scopes' own test_setup chunks; the examples reference them.
+      const setupOf = (id: string) => chunks.find((c) => c.metadata.symbolId === id);
+      expect(setupOf("User.describe User")!.content).toContain("let(:user)");
+      expect(setupOf("User.context 'when admin'")!.content).toContain("let(:role)");
+
       const adminChunk = testChunks.find((c) => c.content.includes("admin access"));
       expect(adminChunk).toBeDefined();
-      expect(adminChunk!.content).toContain("let(:user)");
-      expect(adminChunk!.content).toContain("let(:role)");
+      expect(adminChunk!.content).not.toContain("let(:user)");
+      expect(adminChunk!.metadata.setupScopeIds).toEqual(["User.describe User", "User.context 'when admin'"]);
       expect(adminChunk!.metadata.chunkType).toBe("test");
 
-      // 'when regular' leaf should also have injected let(:user)
+      // 'when regular' leaf references only the parent setup
       const regularChunk = testChunks.find((c) => c.content.includes("limited access"));
       expect(regularChunk).toBeDefined();
-      expect(regularChunk!.content).toContain("let(:user)");
+      expect(regularChunk!.metadata.setupScopeIds).toEqual(["User.describe User"]);
     });
 
     it("should NOT affect non-spec Ruby files", async () => {
@@ -4967,10 +5007,13 @@ end`;
       expect(allContent).toContain("sends an email through the mailer");
       expect(allContent).toContain("enqueues a push notification job");
 
-      // Setup should be injected into leaf chunks
+      // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): setup is referenced, not
+      // injected — the root's let(:service) is its own setup chunk, first on
+      // the example's setup chain.
       const emailChunk = testChunks.find((c) => c.content.includes("sends an email"));
       expect(emailChunk).toBeDefined();
-      expect(emailChunk!.content).toContain("let(:service)");
+      const [rootSetupId] = emailChunk!.metadata.setupScopeIds ?? [];
+      expect(chunks.find((c) => c.metadata.symbolId === rootSetupId)!.content).toContain("let(:service)");
     });
   });
 
@@ -5058,12 +5101,17 @@ end`;
 
       const chunks = await chunker.chunk(code, "spec/services/payment_processor_spec.rb", "ruby");
 
+      // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): setup from all ancestor
+      // levels is referenced root to leaf, each level its own setup chunk.
       const testChunk = chunks.find((c) => c.metadata.chunkType === "test");
       expect(testChunk).toBeDefined();
-      // Should contain setup from all ancestor levels
-      expect(testChunk!.content).toContain("let(:processor)");
-      expect(testChunk!.content).toContain("let(:card)");
-      expect(testChunk!.content).toContain("let(:amount)");
+      const chain = (testChunk!.metadata.setupScopeIds ?? []).map(
+        (id) => chunks.find((c) => c.metadata.symbolId === id)!.content,
+      );
+      expect(chain).toHaveLength(3);
+      expect(chain[0]).toContain("let(:processor)");
+      expect(chain[1]).toContain("let(:card)");
+      expect(chain[2]).toContain("let(:amount)");
       expect(testChunk!.content).toContain("processes the charge successfully");
     });
   });

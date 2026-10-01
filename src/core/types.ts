@@ -651,6 +651,16 @@ export interface CodeChunk {
     navigation?: { prevSymbolId?: string; nextSymbolId?: string };
 
     /**
+     * A test example's setup chain: the scope ids (root to leaf) whose own
+     * setup chunk explore prepends when it returns the example. See
+     * `BodyChunkResult.setupScopeIds` (bd tea-rags-mcp-5xpq4).
+     */
+    setupScopeIds?: string[];
+
+    /** The example ids a grouped test chunk carries — `BodyChunkResult.exampleSymbolIds`. */
+    exampleSymbolIds?: string[];
+
+    /**
      * Transient. Set by the engine for chunks produced by a classifier `emit`
      * decision, and read by `mergeSmallChunks` to exempt them from adjacent
      * merging. NOT part of the persisted Qdrant payload (the payload builder

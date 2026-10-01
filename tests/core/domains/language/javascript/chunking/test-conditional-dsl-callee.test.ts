@@ -62,7 +62,10 @@ describe("JavaScript DSL call with a conditional callee (bd tea-rags-mcp-rvuun)"
     const example = chunks.find((c) => c.metadata.symbolId === `${CURRENT_DIR}.it 'should be served with "."'`);
     expect(example?.metadata.chunkType).toBe("test");
     expect(example?.metadata.parentSymbolId).toBe(CURRENT_DIR);
-    expect(example?.content).toContain("this.app = createApp('.')");
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): the scope's hook is its own
+    // setup chunk under the scope id, referenced by the example.
+    expect(example?.metadata.setupScopeIds).toEqual([CURRENT_DIR]);
+    expect(chunks.find((c) => c.metadata.symbolId === CURRENT_DIR)?.content).toContain("this.app = createApp('.')");
     expect(example?.content).toContain("var dest = relative.split(path.sep).join('/')");
   });
 
@@ -121,8 +124,12 @@ describe("JavaScript DSL call with a conditional callee (bd tea-rags-mcp-rvuun)"
     const example = chunks.find(
       (c) => c.metadata.symbolId === "Cart.describe 'Cart'.it 'totals every line item the cart holds'",
     );
-    expect(example?.content).toContain("(onCi ? describe : it)('mixes a container and an example word'");
-    expect(example?.content).toContain("(onCi ? runSuite : describe)('names a helper in one arm'");
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): the non-DSL statements are the
+    // root scope's own lines — its setup chunk, which the example references.
+    expect(example?.metadata.setupScopeIds).toEqual(["Cart.describe 'Cart'"]);
+    const rootSetup = chunks.find((c) => c.metadata.symbolId === "Cart.describe 'Cart'");
+    expect(rootSetup?.content).toContain("(onCi ? describe : it)('mixes a container and an example word'");
+    expect(rootSetup?.content).toContain("(onCi ? runSuite : describe)('names a helper in one arm'");
   });
 
   it("never emits two chunks with one symbolId except the #partN windows of one symbol", async () => {

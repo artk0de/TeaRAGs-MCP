@@ -12,7 +12,7 @@ import { extname } from "node:path";
 import Parser from "tree-sitter";
 
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
-import type { ChunkDecision } from "../../../../contracts/types/chunker.js";
+import type { BodyChunkResult, ChunkDecision } from "../../../../contracts/types/chunker.js";
 import type {
   LanguageChunkerHooks,
   LanguageFactoryDescriptor,
@@ -39,6 +39,18 @@ import { planContainerRemainder } from "./container-remainder.js";
 import { createHookContext, type ChunkingHook, type HookContext } from "./hooks/types.js";
 import { MarkdownChunker } from "./markdown-chunker.js";
 import { SymbolIdDisambiguator } from "./symbol-id-disambiguator.js";
+
+/**
+ * A test chunk's links a hook body chunk carries into the chunk metadata (bd
+ * tea-rags-mcp-5xpq4): the setup chain explore hydrates, and the members of a
+ * grouped chunk find_symbol answers from. Both persist; absent keys stay absent.
+ */
+function testChunkLinks(result: BodyChunkResult): Pick<CodeChunk["metadata"], "setupScopeIds" | "exampleSymbolIds"> {
+  return {
+    ...(result.setupScopeIds === undefined ? {} : { setupScopeIds: result.setupScopeIds }),
+    ...(result.exampleSymbolIds === undefined ? {} : { exampleSymbolIds: result.exampleSymbolIds }),
+  };
+}
 
 /**
  * Everything one `processChildren` pass holds constant while it routes each
@@ -753,6 +765,7 @@ export class TreeSitterChunker implements CodeChunker {
                 lineRanges: result.lineRanges,
                 contextPrefix: body.contextPrefix,
                 ...(result.partHeader === undefined ? {} : { partHeader: result.partHeader }),
+                ...testChunkLinks(result),
               },
             });
           }
@@ -1486,6 +1499,7 @@ export class TreeSitterChunker implements CodeChunker {
           lineRanges: result.lineRanges,
           ...(body.contextPrefix === undefined ? {} : { contextPrefix: body.contextPrefix }),
           ...(result.partHeader === undefined ? {} : { partHeader: result.partHeader }),
+          ...testChunkLinks(result),
         },
       });
     }

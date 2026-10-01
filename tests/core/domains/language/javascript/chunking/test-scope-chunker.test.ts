@@ -257,14 +257,20 @@ describe("produceScopeChunks", () => {
     const node = findTopLevelCall(tree);
     const chunks = produceScopeChunks(node, code, defaultConfig);
 
-    expect(chunks).toHaveLength(1);
-    expect(chunks[0].chunkType).toBe("test");
-    expect(chunks[0].content).toContain("signIn(user)");
-    expect(chunks[0].content).toContain("setupDatabase()");
-    expect(chunks[0].content).toContain("has admin role");
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): the parent hooks are the root
+    // scope's own test_setup chunk, referenced by the example, not copied in.
+    expect(chunks).toHaveLength(2);
+    const [setup, example] = chunks;
+    expect(setup).toMatchObject({ chunkType: "test_setup", symbolId: "User.describe 'User'" });
+    expect(setup.content).toContain("signIn(user)");
+    expect(setup.content).toContain("setupDatabase()");
+    expect(example.chunkType).toBe("test");
+    expect(example.content).not.toContain("signIn(user)");
+    expect(example.content).toContain("has admin role");
+    expect(example.setupScopeIds).toEqual(["User.describe 'User'"]);
     // Line range must NOT include ancestor setup lines — only own scope lines.
     // Ancestor setup is at lines 2-3, child describe starts at line 5.
-    expect(chunks[0].startLine).toBeGreaterThanOrEqual(5);
+    expect(example.startLine).toBeGreaterThanOrEqual(5);
   });
 
   it("uses 2-level symbolId format: TopLevelName.leafScopeName", () => {
@@ -472,18 +478,24 @@ describe("TreeSitterChunker JS test-scope chunking (end-to-end)", () => {
     const testChunks = chunks.filter((c) => c.metadata.chunkType === "test");
     expect(testChunks).toHaveLength(2);
 
-    // 'when admin' leaf should contain injected beforeEach from parent scope.
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): the parent beforeEach is the
+    // root's own test_setup chunk; each leaf example references it.
+    const setupChunk = chunks.find((c) => c.metadata.chunkType === "test_setup");
+    expect(setupChunk?.metadata.symbolId).toBe("UserService.describe 'UserService'");
+    expect(setupChunk?.content).toContain("signIn(user)");
+
     const adminChunk = testChunks.find((c) => c.content.includes("admin access"));
     expect(adminChunk).toBeDefined();
-    expect(adminChunk!.content).toContain("signIn(user)");
+    expect(adminChunk!.content).not.toContain("signIn(user)");
+    expect(adminChunk!.metadata.setupScopeIds).toEqual(["UserService.describe 'UserService'"]);
     expect(adminChunk!.metadata.chunkType).toBe("test");
     // 2-level symbolId: TopLevel.leafScope
     expect(adminChunk!.metadata.symbolId).toContain("UserService");
 
-    // 'when regular' leaf also gets the injected parent setup.
+    // 'when regular' leaf references the same parent setup.
     const regularChunk = testChunks.find((c) => c.content.includes("limited access"));
     expect(regularChunk).toBeDefined();
-    expect(regularChunk!.content).toContain("signIn(user)");
+    expect(regularChunk!.metadata.setupScopeIds).toEqual(["UserService.describe 'UserService'"]);
   });
 
   it("does not claim DSL containers in non-test JS files", async () => {
