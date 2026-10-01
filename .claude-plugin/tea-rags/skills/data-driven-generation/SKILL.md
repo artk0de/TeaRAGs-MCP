@@ -332,14 +332,16 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
    SKIP verdict → note behavior unpinned, proceed.
 4. **Naming review before commit** (codegraph on): GENERATE writes names Step 5
    never judged (helpers, locals, constants, types). ONE
-   `get_naming_lexicon(changes: {})` — every name added lines declare vs HEAD.
-   Skip when every added declaration was a Step 5 draft. `review.findings` (flat
-   `{relPath, line, name, kind, type?, verdict, …}`) grouped by verdict:
-   `MISFIT` → rename to `suggestion` before commit; `COLLISION` → rename;
-   `NEW_TERM` → take an `alternatives` word for same concept, else keep +
-   justify (soft); `genericName` → generic name, rename. `review.novel` = no
-   precedent to compare, no action. Tests not judged (`notJudged`). Never
-   hand-list written names into `names[]`.
+   `review_changes(changes: {}, sections: ["naming", "incompleteChange"])` — the
+   naming section judges every name the added lines declare vs HEAD (same
+   findings shape the old `get_naming_lexicon changes` returned: `MISFIT` →
+   rename to `suggestion` before commit; `COLLISION` → rename; `NEW_TERM` → take
+   an `alternatives` word, else keep + justify (soft); `genericName` → rename;
+   `novel` = no action). incompleteChange = co-change partners the change
+   ignores (`support`/`confidence` attached) — a forgotten sibling edit is
+   caught here, not in review. Skip naming when every added declaration was a
+   Step 5 draft. Tests not judged (`notJudged`). Never hand-list written names
+   into `names[]`.
 
 Step 7 is the extension point for post-generation structural checks — add them
 here, not as a second verification step.

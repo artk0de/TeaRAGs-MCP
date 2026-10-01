@@ -288,6 +288,9 @@ Intent matches a skill? (check FIRST — skills handle tool selection internally
 ├─ Code generation/modification → /tea-rags:data-driven-generation
 ├─ Risk/health assessment → /tea-rags:risk-assessment
 ├─ Layout / dependency direction / SDP → /tea-rags:architecture-diagnostics
+├─ Review a diff / MR ("what does my change break") → `review_changes(changes:{base})`
+│   sections: naming | incompleteChange | cohesion | architecture — default all;
+│   unknown = error; absent section = not asked; NOT a search tool, never discovery
 ├─ Filter shape beyond pathPattern → /tea-rags:filter-building
 ├─ Pick rerank preset / build custom weights → /tea-rags:analytics-rerank
 └─ No skill matches → direct tool selection below

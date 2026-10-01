@@ -115,16 +115,17 @@ parameters + severity mapping:
 [references/dimension-playbook.md](./references/dimension-playbook.md) — execute
 its parameter blocks byte-exact.
 
-| Dimension     | Catches                              | Mechanism                                             |
-| ------------- | ------------------------------------ | ----------------------------------------------------- |
-| blast-radius  | hidden coupling, hub edits           | `get_callers` + overlay fanIn/transitiveImpact/isHub  |
-| shotgun-twins | co-change siblings untouched in MR   | `find_similar` batch on changed chunks + taskIds      |
-| fragile-zone  | edits in panic zones                 | overlay bugFixRate/churnVolatility/burst — 0 calls    |
-| silo-style    | non-owner edits silo file            | blameDominantAuthor\* + proven neighbors as reference |
-| tests         | scenarios at risk, uncovered changes | tests-as-context + stratified per-cluster coverage    |
-| invariants    | diff contradicts docs/specs          | `semantic_search documentation="only"` on concepts    |
-| cycles        | MR introduces import/call cycle      | `find_cycles` scoped to touched dirs                  |
-| naming        | new names off the project vocabulary | `get_naming_lexicon` `changes` (external: `names[]`)  |
+| Dimension     | Catches                                                | Mechanism                                                          |
+| ------------- | ------------------------------------------------------ | ------------------------------------------------------------------ |
+| blast-radius  | hidden coupling, hub edits                             | `get_callers` + overlay fanIn/transitiveImpact/isHub               |
+| shotgun-twins | co-change siblings untouched in MR                     | `find_similar` batch on changed chunks + taskIds                   |
+| fragile-zone  | edits in panic zones                                   | overlay bugFixRate/churnVolatility/burst — 0 calls                 |
+| silo-style    | non-owner edits silo file                              | blameDominantAuthor\* + proven neighbors as reference              |
+| tests         | scenarios at risk, uncovered changes                   | tests-as-context + stratified per-cluster coverage                 |
+| invariants    | diff contradicts docs/specs                            | `semantic_search documentation="only"` on concepts                 |
+| cycles        | MR introduces import/call cycle                        | `find_cycles` scoped to touched dirs                               |
+| naming        | new names off the project vocabulary                   | `review_changes` `naming` section                                  |
+| diff-review   | incomplete changes, cohesion, diff-scoped architecture | `review_changes(changes:{base})` — default all, `sections` narrows |
 
 Gating: prime lists `codegraph.symbols` → D1 + D7 + D8 run on the graph. Absent
 → D7 and D8 "not assessed" (no substitute); D1 degrades to name-matched callers

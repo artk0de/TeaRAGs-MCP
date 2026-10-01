@@ -32,6 +32,14 @@ explicit "verify dependents" rec) = core value.
 Only new files created (no edits to existing): skip scan, verdict
 `SAFE (no existing-file edits)`. Don't fabricate pathPattern.
 
+**Diff review, same gate** (codegraph on): one
+`review_changes(changes:{base}) sections ["incompleteChange","architecture"]`
+BEFORE "done" when the session edited existing files. incompleteChange =
+co-change partners the diff ignores (forgotten sibling edits). architecture =
+what the diff ADDS judged against the indexed graph (unstable targets, facade
+bypasses, new cycles). Findings are gate input, like the blast ladder — address
+or state why not.
+
 ## Verdict Ladder (PRESCRIPTIVE — apply before claiming done)
 
 🛑 STOP — read the ladder, then act.
