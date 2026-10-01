@@ -87,7 +87,20 @@ export type {
   GetOntologyReportRequest,
   GetOntologyReportResponse,
   OntologyReportSectionName,
+  // Diff-scoped review DTOs (review_changes)
+  ReviewChangesRequest,
+  ReviewChangesResult,
+  ReviewSectionId,
+  ReviewSectionResult,
 } from "./dto/index.js";
+
+// ── Review sections — ids derived from the live provider registry ─────
+// `reviewSectionIds` is the MCP `sections` enum's single source (bd
+// tea-rags-mcp-89k7k.1.4): a new section appears in the schema with no
+// hand-edited union, and an id whose provider has not shipped is rejected at
+// the boundary. Re-exported here because mcp/ may not import api/internal
+// (dependency-direction guard).
+export { reviewSectionIds } from "../internal/ops/review-sections/index.js";
 
 // ── Error classes — input validation hierarchy (api/errors.ts) ────────
 export {

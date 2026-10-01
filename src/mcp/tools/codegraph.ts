@@ -42,9 +42,10 @@ import type { RegisterToolFn } from "../middleware/error-handler.js";
  * `SchemaBuilder.collectionIdentifier()` mixin — kept inline here
  * because the codegraph tool surface is independent of the dynamic
  * search-tool schema pipeline. Resolution priority: collection >
- * project > path.
+ * project > path. Exported for the codegraph-family registrars that
+ * live in their own files (`review-changes.ts`).
  */
-function collectionPathFields() {
+export function collectionPathFields() {
   return {
     project: z
       .string()

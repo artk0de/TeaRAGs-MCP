@@ -38,6 +38,8 @@ import {
   ProjectRegistryOps,
   readPayloadFileCommitCounts,
   readPayloadImportSpecifiers,
+  ReviewChangesOps,
+  ReviewFacade,
   SchemaBuilder,
   TracePathOps,
   WorktreeOps,
@@ -1358,6 +1360,24 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
         embeddings: infra.embeddings,
       })
     : undefined;
+  // The diff-scoped review (bd tea-rags-mcp-89k7k.1.4): built beside the
+  // lexicon so its naming section SHARES that instance — one wiring, not a
+  // second lexicon. The cohesion window is the temporal walk's own (the git
+  // trajectory's chunkMaxAgeMonths — the same number wireCodegraph hands the
+  // temporal co-change config). Absent → App.reviewChanges answers the
+  // not-built envelope.
+  const reviewFacade =
+    codegraphContext && namingLexiconOps
+      ? new ReviewFacade({
+          ops: new ReviewChangesOps({
+            pool: codegraphContext.pool,
+            collectionRegistry,
+            resolveActiveCollection,
+            lexiconOps: namingLexiconOps,
+            windowMonths: zodConfig.trajectoryGit.chunkMaxAgeMonths,
+          }),
+        })
+      : undefined;
   // App-layer ops (bd tea-rags-mcp-0qaht.12): composed by the api composition
   // root and injected as ready handlers — createApp's own fallback exists only
   // for callers that hand bare AppDeps handles.
@@ -1386,6 +1406,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     graphFacade: codegraphContext?.graphFacade,
     tracePathOps,
     namingLexiconOps,
+    reviewFacade,
     ontologyReportOps,
     codegraphPool: codegraphContext?.pool,
     registeredProviderKeys: new Set(composition.registry.getRegisteredKeys()),

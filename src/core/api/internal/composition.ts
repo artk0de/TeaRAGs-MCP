@@ -67,12 +67,14 @@ import { staticStatsAccumulators } from "../../domains/trajectory/static/stats/i
 import type { GetArchitectureReportRequest, GetArchitectureReportResponse } from "../public/dto/architecture.js";
 import type { FindCoChangedRequest, FindCoChangedResult } from "../public/dto/cochange.js";
 import type { GetOntologyReportRequest, GetOntologyReportResponse } from "../public/dto/ontology.js";
+import type { ReviewChangesRequest, ReviewChangesResult } from "../public/dto/review.js";
 import { ArchitectureReportOps } from "./ops/architecture-report-ops.js";
 import { CochangeOps } from "./ops/cochange-ops.js";
 import { CollectionOps } from "./ops/collection-ops.js";
 import { DocumentMetadataSchemaCompiler } from "./ops/document-metadata-schema.js";
 import { DocumentOps } from "./ops/document-ops.js";
 import { OntologyReportOps } from "./ops/ontology-report-ops.js";
+import { ReviewChangesOps } from "./ops/review-changes-ops.js";
 
 export interface CompositionResult {
   registry: TrajectoryRegistry;
@@ -465,4 +467,13 @@ export function emptyOntologyReport(request: GetOntologyReportRequest): GetOntol
  */
 export function emptyCochangeResult(request: FindCoChangedRequest): FindCoChangedResult {
   return CochangeOps.empty(request.files);
+}
+
+/**
+ * The review answer for a server with no codegraph wiring: every requested
+ * section not built, envelope zeroed — `ReviewChangesOps.empty`, surfaced by
+ * the composition root for the same reason as `emptyArchitectureReport`.
+ */
+export function emptyReviewChangesResult(request: ReviewChangesRequest): ReviewChangesResult {
+  return ReviewChangesOps.empty(request);
 }
