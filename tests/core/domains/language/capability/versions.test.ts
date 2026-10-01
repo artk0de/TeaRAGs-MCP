@@ -86,7 +86,9 @@ describe("resolveLanguageCodeVersions", () => {
     // bd tea-rags-mcp-msv3l — test files chunked by example.
     // chunking 3: bd tea-rags-mcp-nu05a — heading-less markdown documents and
     // oversized preambles split under maxChunkSize (scoped to .md/.markdown).
-    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 3, walker: 3, codegraphSchema: 2 });
+    // chunking 4: bd tea-rags-mcp-8gbh3 — small markdown sections share a chunk
+    // and tiny sections join a neighbour (unscoped, shared with the release).
+    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 4, walker: 3, codegraphSchema: 2 });
     // `*` parses nothing of its own, so there is no grammar package to read —
     // and borrowing one language's would make the axis a lie for every other.
     expect(resolved.get(SHARED_LANGUAGE)?.grammar).toBeUndefined();

@@ -1586,15 +1586,17 @@ Use the library like this. This is a separate top-level section.
 
       const chunks = await chunker.chunk(code, "README.md", "markdown");
       const sectionChunks = chunks.filter((c) => c.metadata.chunkType === "block" && c.metadata.name);
-      const sectionNames = sectionChunks.map((c) => c.metadata.name);
+      // bd tea-rags-mcp-8gbh3: the small h1 intro and the small h2 share a
+      // chunk, so sections are checked by heading, not by chunk name.
+      const sectionHeadings = sectionChunks.flatMap((c) => c.metadata.headingPath.map((h) => h.text));
 
       // Small h3 sections grouped into parent h2 chunks
-      expect(sectionNames).toContain("Introduction");
-      expect(sectionNames).toContain("Getting Started"); // includes Installation + Configuration
-      expect(sectionNames).toContain("Usage");
+      expect(sectionHeadings).toContain("Introduction");
+      expect(sectionHeadings).toContain("Getting Started"); // includes Installation + Configuration
+      expect(sectionHeadings).toContain("Usage");
 
       // Getting Started chunk contains h3 content
-      const gs = sectionChunks.find((c) => c.metadata.name === "Getting Started");
+      const gs = sectionChunks.find((c) => c.content.includes("## Getting Started"));
       expect(gs!.content).toContain("Installation");
       expect(gs!.content).toContain("Configuration");
     });
@@ -1638,9 +1640,10 @@ This is the first real section with enough content for a valid chunk size.
       const chunks = await chunker.chunk(code, "README.md", "markdown");
       const names = chunks.map((c) => c.metadata.name);
 
-      // h3 before first h2 is now its own chunk (not preamble)
+      // h3 before first h2 is now its own chunk (not preamble). bd
+      // tea-rags-mcp-8gbh3: the small h2 after it joins that chunk.
       expect(names).toContain("A Minor Heading");
-      expect(names).toContain("First Real Section");
+      expect(chunks.flatMap((c) => c.metadata.headingPath.map((h) => h.text))).toContain("First Real Section");
     });
 
     it("should include breadcrumb from ancestor headings in h3 chunks", async () => {
@@ -1667,8 +1670,10 @@ List of available API endpoints and their documentation with examples.
 
       const chunks = await chunker.chunk(code, "api.md", "markdown");
 
-      // h3 sections grouped into h2 "Authentication" chunk with breadcrumbs
-      const authChunk = chunks.find((c) => c.metadata.name === "Authentication");
+      // h3 sections grouped into h2 "Authentication" chunk with breadcrumbs. bd
+      // tea-rags-mcp-8gbh3: the tiny h1 intro opens that chunk, so it is found
+      // by its heading.
+      const authChunk = chunks.find((c) => c.content.includes("## Authentication"));
       expect(authChunk).toBeDefined();
       expect(authChunk!.content).toContain("# API Guide");
       expect(authChunk!.content).toContain("### OAuth Flow");
@@ -3785,7 +3790,8 @@ function funcB() {
   });
 
   describe("markdown section with very small content", () => {
-    it("should skip sections with content under 50 chars", async () => {
+    // bd tea-rags-mcp-8gbh3: a tiny section is kept, never dropped.
+    it("should keep sections with content under 50 chars", async () => {
       const code = [
         "# Short",
         "",
@@ -3798,9 +3804,9 @@ function funcB() {
 
       const chunks = await chunker.chunk(code, "doc.md", "markdown");
 
-      // The "Short" section has < 50 chars total, should be skipped
+      // The "Short" section has < 50 chars total and no sibling under its h1
       const shortSection = chunks.find((c) => c.metadata.name === "Short");
-      expect(shortSection).toBeUndefined();
+      expect(shortSection).toBeDefined();
 
       // The "Detailed Section" should be included
       const detailedSection = chunks.find((c) => c.metadata.name === "Detailed Section");

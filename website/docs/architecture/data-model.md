@@ -52,7 +52,7 @@ Written only when relevant — absent for chunks where they don't apply:
 | `isDocumentation` | boolean | Markdown / doc chunks | `true` for doc sections |
 | `isTest` | boolean | Test files | `true` when file matches test naming for the language |
 | `imports` | string[] | Code chunks with file-level imports | File-level imports inherited by every chunk of the file |
-| `headingPath` | `{depth, text}[]` | Doc chunks | Heading hierarchy leading to this chunk (used by `documentationRelevance` preset) |
+| `headingPath` | `{depth, text}[]` | Doc chunks | Ancestor headings of the section that opened this chunk, that heading, then every sibling section merged into the chunk (used by `documentationRelevance` preset and the doc TOC) |
 | `navigation` | `{prevSymbolId?, nextSymbolId?}` | Chunks with adjacent symbols | Enables chunk-to-chunk navigation without re-reading the file |
 | `methodLines` | number | Function chunks | Original method line count before chunk splitting (used by `decomposition` preset) |
 | `methodDensity` | number | Function chunks | Characters per line, dampened for small chunks — a code density heuristic |

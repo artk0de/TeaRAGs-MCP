@@ -74,7 +74,11 @@ export const sharedVersions: LanguageSupportVersions = {
   // chunking 3, bd tea-rags-mcp-nu05a: a heading-less markdown document and an
   // oversized preamble are split under maxChunkSize instead of emitted whole.
   // Only markdown files move — scoped in `sharedChunkSetBumpScopes`.
-  chunking: 3,
+  // chunking 4, bd tea-rags-mcp-8gbh3: small markdown h1/h2 sections share a
+  // chunk with their siblings and a section under 50 chars joins a neighbour
+  // instead of being dropped. Shared, unscoped bump with the release's other
+  // chunking 4 changes.
+  chunking: 4,
   // walker 3: release v1.44.2 shipped shared walker 2 and a release cycle gets
   // ONE bump, so the branch-local 3..5 collapse into 3. Same walker 3, bd
   // tea-rags-mcp-r8hme.12: the resolution runner resolves `typeOnlyImports`
