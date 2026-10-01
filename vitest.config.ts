@@ -41,6 +41,11 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
+    // vitest 5 flipped the default to true; pinned to the v4 semantics the suite was written against.
+    clearMocks: false,
+    // Persist transformed modules across runs (default dir node_modules/.vitest-cache, gitignored
+    // with node_modules/). Invalidated on dependency reinstall.
+    fsModuleCache: true,
     // One budget for every invocation — see WALL_CLOCK_BUDGET_MS above. hookTimeout
     // was never set at all, so real-git fixture setups ran against vitest's 10s
     // default even on CI; that is what timed out blame-cache's beforeAll while its
@@ -77,10 +82,13 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: isCI ? ["json", "lcov"] : ["text", "json", "lcov", "html"],
+      // vitest 5 matches these anchored against the root-relative path (v4 matched
+      // them as substrings of the absolute path), so a directory needs an explicit
+      // `/**` — a bare `build/` would match nothing.
       exclude: [
-        "node_modules/",
-        "build/",
-        "dist/",
+        "node_modules/**",
+        "build/**",
+        "dist/**",
         "**/*.test.ts",
         "**/*.spec.ts",
         "vitest.config.ts",
