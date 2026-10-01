@@ -136,14 +136,14 @@ describe("SchemaMigrator", () => {
     expect(migrator.getMigrations().find((m) => m.version === 18)?.name).toBe("schema-v18-recent-authors-index");
   });
 
-  // bd tea-rags-mcp-5xpq4 — v19 ensures the exampleSymbolIds text index
-  // find_symbol resolves a grouped tiny test example's member id through.
+  // bd tea-rags-mcp-5xpq4 — v19 ensures the memberSymbolIds text index
+  // find_symbol resolves a packed test chunk's member id through.
   it("registers v19 after v18 when the declared keys are supplied", () => {
     const migrator = new SchemaMigrator(COLLECTION, createMockIndexStore(), {
       enableHybrid: false,
       declaredPayloadKeys: new Set(["git.chunk.ageDays"]),
     });
-    expect(migrator.getMigrations().find((m) => m.version === 19)?.name).toBe("schema-v19-example-symbol-ids-text");
+    expect(migrator.getMigrations().find((m) => m.version === 19)?.name).toBe("schema-v19-member-symbol-ids-text");
   });
 
   // Any migration above 16 stamps the collection past 16: registering v17

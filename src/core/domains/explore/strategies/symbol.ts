@@ -134,12 +134,14 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     const exact = isFullyQualified(this.input.symbol)
       ? filterByExactSymbolId(allChunks, this.input.symbol)
       : filterByLastSegment(allChunks, this.input.symbol);
-    // A tiny test example shares a chunk with its tiny siblings and is named
-    // only in that chunk's `exampleSymbolIds` (bd tea-rags-mcp-5xpq4) — asked
-    // only when nothing answered the id itself.
+    // A tiny test example shares a chunk with its tiny siblings, and a test
+    // scope's setup a chunk with its neighbours' setup; either is named only in
+    // that chunk's `memberSymbolIds` (bd tea-rags-mcp-5xpq4) — asked only when
+    // no chunk answered the id as its own (a scope id is still answered by its
+    // examples' parentSymbolId, which outlines them but is not its setup).
     const grouped =
-      exact.length === 0 && isFullyQualified(this.input.symbol)
-        ? await this.scrollGroupedExample(ctx.collectionName)
+      isFullyQualified(this.input.symbol) && !answersOwnId(exact, this.input.symbol)
+        ? await this.scrollPackMembers(ctx.collectionName)
         : [];
     const filtered = pathMatcher ? [...exact, ...keepPathPatternMatches(grouped, pathMatcher)] : [...exact, ...grouped];
 
@@ -160,17 +162,18 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
   }
 
   /**
-   * The grouped test chunk that carries the queried example id among its
-   * `exampleSymbolIds` (bd tea-rags-mcp-5xpq4). The key is text-indexed like
+   * The packed test chunk that carries the queried id among its
+   * `memberSymbolIds` (bd tea-rags-mcp-5xpq4): a tiny example's group, or the
+   * setup pack holding a scope's setup. The key is text-indexed like
    * `symbolId`, so the member id is matched as the same text token + value
    * pair — index-served, exact.
    */
-  private async scrollGroupedExample(
+  private async scrollPackMembers(
     collectionName: string,
   ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
     const fqn = this.input.symbol;
     const must: Record<string, unknown>[] = [
-      ...exactMatchOnTextIndexed("exampleSymbolIds", fqn, symbolIdTextToken(fqn)),
+      ...exactMatchOnTextIndexed("memberSymbolIds", fqn, symbolIdTextToken(fqn)),
     ];
     if (this.input.language) must.push({ key: "language", match: { value: this.input.language } });
     return this.qdrant.scrollFiltered(collectionName, { must }, SCROLL_LIMIT);
@@ -320,6 +323,18 @@ function formatCodegraphFallbackSkipped(err: CodegraphUnavailableError): string 
  * The Qdrant scroll returns a SUPERSET when matched by a single text
  * token — this filter narrows that superset before resolveSymbols runs.
  */
+/**
+ * Did a chunk answer `fqn` as ITS OWN id — the chunk itself, or a `#partN`
+ * window of it? Members matched through their `parentSymbolId` do not count:
+ * they outline the id, they are not its body.
+ */
+function answersOwnId(chunks: readonly { payload: Record<string, unknown> }[], fqn: string): boolean {
+  return chunks.some((c) => {
+    const { symbolId } = c.payload;
+    return typeof symbolId === "string" && symbolId.replace(/#part\d+$/, "") === fqn;
+  });
+}
+
 function filterByExactSymbolId(
   chunks: readonly { id: string | number; payload: Record<string, unknown> }[],
   fqn: string,

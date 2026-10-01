@@ -1384,7 +1384,7 @@ describe("resolveSymbols", () => {
 
     it("lists every member of a grouped tiny-example chunk in the scope outline (5xpq4)", () => {
       const group = exampleChunk("g-1", `${scopeId}.it`, scopeId, 10);
-      (group.payload as Record<string, unknown>).exampleSymbolIds = [`${scopeId}.it`, `${scopeId}.it~2`];
+      (group.payload as Record<string, unknown>).memberSymbolIds = [`${scopeId}.it`, `${scopeId}.it~2`];
 
       const results = resolveSymbols([group, exampleChunk("e-1", `${scopeId}.it 'can invite'`, scopeId, 20)], scopeId);
 

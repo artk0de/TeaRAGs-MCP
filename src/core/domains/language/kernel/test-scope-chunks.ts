@@ -10,19 +10,23 @@
  *
  * The unit is the EXAMPLE. Every example is its own chunk — its scope title
  * path, then the example — so `find_symbol` can address one example. Setup is
- * stored ONCE per scope (bd tea-rags-mcp-5xpq4): a scope with its own setup or
- * other lines gets a chunk of them, named after the scope and carrying the
- * scope's whole line span (`scopeLineRange`). An example inherits every setup
- * chunk whose span contains its start line — lexical inheritance, no id
- * parsing — and explore prepends that chain when it returns the example. That
+ * stored ONCE per scope (bd tea-rags-mcp-5xpq4): the own setup and other lines
+ * of consecutive scopes are PACKED into one `test_setup` chunk up to the
+ * content budget (one chunk per scope doubled the point count of a
+ * context-heavy spec), each member carrying its scope's whole line span
+ * (`scopeLineRanges`) and its row count (`memberRowCounts`). An example
+ * inherits every member whose span contains its start line — lexical
+ * inheritance, no id parsing — and explore prepends those members' rows when
+ * it returns the example. That
  * keeps the example "runnable in the head" without embedding the same `let` /
  * `beforeEach` once per example — on taxdome that repetition had tests embedded
  * at x1.75 of their source size.
  *
  * Examples too short to carry a searchable signal on their own
  * (`it { is_expected.to be_valid }`) are GROUPED with their tiny siblings, never
- * dropped: a group chunk is named after its first member and lists every member
- * in `exampleSymbolIds`, the field `find_symbol` answers a member id from.
+ * dropped. A group chunk, like a setup pack, is named after its first member
+ * and lists every member in `memberSymbolIds`, the field `find_symbol` answers
+ * a member id from.
  *
  * symbolIds (`.claude/rules/test-spec-chunking.md`):
  *   scope    `${topLevelName}.${scope.name}`
@@ -58,6 +62,17 @@ const MIN_TEST_CHUNK_CONTENT = 50;
 type ScopeEvent = { kind: "scope"; scope: TestScope; ancestors: TestScope[] };
 type ExampleEvent = { kind: "example"; example: TestExample; scope: TestScope; ancestors: TestScope[] };
 
+/** A scope's own setup, waiting to be packed with its neighbours'. */
+interface PendingSetup {
+  scope: TestScope;
+  scopeId: string;
+  content: string;
+  startLine: number;
+  endLine: number;
+  /** A setup line runs shared examples: the scope keeps a `test` chunk of its own. */
+  delegates: boolean;
+}
+
 /** An example with its id and its own (ungrouped) content, waiting to be emitted. */
 interface PendingExample {
   example: TestExample;
@@ -88,15 +103,16 @@ export function produceTestScopeChunks(
   };
 
   const scopeIds = new Map<TestScope, string>();
-  // Source order: a scope's setup chunk, or an example waiting for grouping.
-  const slots: (BodyChunkResult | PendingExample)[] = [];
+  // Source order: a scope's setup waiting for packing, or an example waiting
+  // for grouping.
+  const slots: (PendingSetup | PendingExample)[] = [];
   const pendingOf = new Map<TestExample, PendingExample>();
 
   for (const event of sourceOrder(root, [])) {
     if (event.kind === "scope") {
       const scopeId = disambiguate(`${topLevelName}.${event.scope.name}`);
       scopeIds.set(event.scope, scopeId);
-      const setup = scopeSetupChunk(event.scope, scopeId, topLevelName);
+      const setup = pendingScopeSetup(event.scope, scopeId);
       if (setup) slots.push(setup);
       continue;
     }
@@ -125,10 +141,25 @@ export function produceTestScopeChunks(
     }
   }
 
+  // Setup is packed across scopes (bd tea-rags-mcp-5xpq4): one chunk per
+  // scope doubled the point count of a context-heavy spec with chunks of a
+  // line or two. Each pack is emitted at the slot of its first member; a
+  // delegating scope keeps a chunk of its own.
+  const setups = slots.filter((slot): slot is PendingSetup => !isPending(slot));
+  const packAt = new Map<PendingSetup, PendingSetup[]>();
+  for (const pack of packSetups(
+    setups.filter((s) => !s.delegates),
+    contentBudget,
+  )) {
+    packAt.set(pack[0], pack);
+  }
+  for (const setup of setups) if (setup.delegates) packAt.set(setup, [setup]);
+
   const results: BodyChunkResult[] = [];
   for (const slot of slots) {
     if (!isPending(slot)) {
-      results.push(slot);
+      const pack = packAt.get(slot);
+      if (pack) results.push(setupChunk(pack, topLevelName));
       continue;
     }
     const group = groupAt.get(slot);
@@ -156,7 +187,7 @@ export function produceTestScopeChunks(
   return results;
 }
 
-function isPending(slot: BodyChunkResult | PendingExample): slot is PendingExample {
+function isPending(slot: PendingSetup | PendingExample): slot is PendingExample {
   return "example" in slot;
 }
 
@@ -284,18 +315,17 @@ function groupChunk(members: PendingExample[], scopeId: string, budget: number):
     name: first.example.name,
     parentSymbolId: scopeId,
     parentType: TEST_SCOPE_PARENT_TYPE,
-    exampleSymbolIds: members.map((m) => m.symbolId),
+    memberSymbolIds: members.map((m) => m.symbolId),
   };
 }
 
 /**
- * A scope's own setup and other lines as one chunk, named after the scope. A
- * `test` when a setup line runs shared examples, else `test_setup`. Kept
- * whatever its size when an example below depends on it — hydration renders it
- * into those examples; a leaf with setup and nothing else must clear the
- * minimum like any other chunk.
+ * A scope's own setup and other lines, waiting to be packed. Kept whatever its
+ * size when an example below depends on it — hydration renders it into those
+ * examples; a leaf with setup and nothing else must clear the minimum like any
+ * other chunk.
  */
-function scopeSetupChunk(scope: TestScope, scopeId: string, topLevelName: string): BodyChunkResult | undefined {
+function pendingScopeSetup(scope: TestScope, scopeId: string): PendingSetup | undefined {
   const own: TestScopeLine[] = [...scope.setupLines, ...scope.otherLines];
   if (own.length === 0) return undefined;
   const content = own
@@ -305,14 +335,63 @@ function scopeSetupChunk(scope: TestScope, scopeId: string, topLevelName: string
   if (content.length < MIN_TEST_CHUNK_CONTENT && !hasExamples(scope)) return undefined;
   const lines = own.map((l) => l.sourceLine);
   return {
+    scope,
+    scopeId,
     content,
     startLine: Math.min(...lines),
     endLine: Math.max(...lines),
-    chunkType: scope.setupLines.some((s) => s.delegatesExamples === true) ? "test" : "test_setup",
-    symbolId: scopeId,
-    name: scope.name,
+    delegates: scope.setupLines.some((s) => s.delegatesExamples === true),
+  };
+}
+
+/**
+ * Consecutive setup members, in source order, cut into packs that fit the
+ * content budget. A member oversized on its own is a pack of one — the
+ * engine's hard cap splits it into `#partN` windows.
+ */
+function packSetups(members: PendingSetup[], budget: number): PendingSetup[][] {
+  const packs: PendingSetup[][] = [];
+  let pack: PendingSetup[] = [];
+  let length = 0;
+  for (const member of members) {
+    const size = member.content.length;
+    const grown = pack.length === 0 ? size : length + 1 + size;
+    if (pack.length > 0 && grown > budget) {
+      packs.push(pack);
+      pack = [member];
+      length = size;
+    } else {
+      pack.push(member);
+      length = grown;
+    }
+  }
+  if (pack.length > 0) packs.push(pack);
+  return packs;
+}
+
+/**
+ * One setup chunk carrying the setup of every member scope, in source order.
+ * Named after the first member; `test` when its member runs shared examples
+ * (such a scope is never packed with others), else `test_setup`. Per member,
+ * aligned: its scope's span (what an example's start line is matched
+ * against), its row count in `content` (what lets hydration render one member
+ * alone), and — on a pack of several — its id and own line range.
+ */
+function setupChunk(members: PendingSetup[], topLevelName: string): BodyChunkResult {
+  const [first] = members;
+  const packed = members.length > 1;
+  return {
+    content: members.map((m) => m.content).join("\n"),
+    startLine: Math.min(...members.map((m) => m.startLine)),
+    endLine: Math.max(...members.map((m) => m.endLine)),
+    chunkType: first.delegates ? "test" : "test_setup",
+    symbolId: first.scopeId,
+    name: first.scope.name,
     parentSymbolId: topLevelName,
-    scopeLineRange: { start: scope.startLine, end: scope.endLine },
+    ...(packed ? { lineRanges: members.map((m) => ({ start: m.startLine, end: m.endLine })) } : {}),
+    scopeLineRanges: members.map((m) => ({ start: m.scope.startLine, end: m.scope.endLine })),
+    memberRowCounts: members.map((m) => m.content.split("\n").length),
+    ...(packed ? { memberSymbolIds: members.map((m) => m.scopeId) } : {}),
   };
 }
 

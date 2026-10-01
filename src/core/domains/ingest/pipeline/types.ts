@@ -58,10 +58,12 @@ export interface ChunkItem extends WorkItem {
       methodLines?: number;
       /** Physical line count of the file (symbol-mass pass); the enrichment policy's size input. */
       moduleLines?: number;
-      /** A test scope setup chunk's scope span (bd tea-rags-mcp-5xpq4). */
-      scopeLineRange?: { start: number; end: number };
-      /** The example ids a grouped test chunk carries (bd tea-rags-mcp-5xpq4). */
-      exampleSymbolIds?: string[];
+      /** A test setup chunk's member scope spans (bd tea-rags-mcp-5xpq4). */
+      scopeLineRanges?: { start: number; end: number }[];
+      /** A test setup chunk's rows per member (bd tea-rags-mcp-5xpq4). */
+      memberRowCounts?: number[];
+      /** The member ids a packed test chunk answers find_symbol for (bd tea-rags-mcp-5xpq4). */
+      memberSymbolIds?: string[];
     };
   };
   /** Pre-computed chunk ID */

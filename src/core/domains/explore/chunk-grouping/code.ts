@@ -74,12 +74,12 @@ function memberLines(sortedMembers: ScrollChunk[], visibilityOf?: MemberVisibili
 }
 
 /**
- * The ids a chunk answers `find_symbol` for: its own, or — for a chunk grouping
- * several tiny test examples — every member's (bd tea-rags-mcp-5xpq4), so an
- * outline lists each example however it was stored.
+ * The ids a chunk answers `find_symbol` for: its own, or — for a packed test
+ * chunk (tiny examples grouped, or several scopes' setup) — every member's (bd
+ * tea-rags-mcp-5xpq4), so an outline lists each member however it was stored.
  */
 function addressesOf(chunk: ScrollChunk): string[] {
-  const members = chunk.payload.exampleSymbolIds;
+  const members = chunk.payload.memberSymbolIds;
   if (Array.isArray(members) && members.length > 0) {
     return members.filter((id): id is string => typeof id === "string");
   }
@@ -279,7 +279,17 @@ export const CodeChunkGrouper = {
         lines.push(...(scopeLines.get(root) ?? []));
         continue;
       }
-      if (isTestChunk(root) && scopeIds.has((root.payload.symbolId as string | undefined) ?? "")) continue;
+      if (isTestChunk(root)) {
+        // A setup chunk packs the setup of several scopes (bd
+        // tea-rags-mcp-5xpq4): a member whose scope line is drawn folds into
+        // it, the others print one line each.
+        const undrawn = addressesOf(root).filter((id) => !scopeIds.has(id));
+        if (undrawn.length === 0) continue;
+        if (Array.isArray(root.payload.memberSymbolIds)) {
+          lines.push(...undrawn.map((id) => `  ${id}`));
+          continue;
+        }
+      }
       const name = root.payload.name as string | undefined;
       const symbolId = root.payload.symbolId as string | undefined;
       const label = root.payload.parentSymbolId ? (symbolId ?? name ?? "") : (name ?? symbolId ?? "");

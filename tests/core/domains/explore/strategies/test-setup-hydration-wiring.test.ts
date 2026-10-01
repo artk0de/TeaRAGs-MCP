@@ -43,7 +43,8 @@ const setupPoint = {
     relativePath: SPEC,
     chunkType: "test_setup",
     startLine: 2,
-    scopeLineRange: { start: 1, end: 20 },
+    scopeLineRanges: [{ start: 1, end: 20 }],
+    memberRowCounts: [1],
     content: "RSpec.describe User do\nlet(:user) { create(:user) }",
   },
 };
@@ -136,11 +137,11 @@ describe("test setup hydration in explore strategies", () => {
         symbolId: groupId,
         name: "it",
         content: "RSpec.describe User do\nit { is_expected.to be_valid }\nit { is_expected.to be_persisted }",
-        exampleSymbolIds: [groupId, memberId],
+        memberSymbolIds: [groupId, memberId],
       },
     };
     const scrollFiltered = vi.fn(async (_c: string, filter: Record<string, unknown>) =>
-      JSON.stringify(filter).includes('"exampleSymbolIds"') ? [group] : [],
+      JSON.stringify(filter).includes('"memberSymbolIds"') ? [group] : [],
     );
     const qdrant = { scrollFiltered } as unknown as QdrantManager;
     const registry = { buildMergedFilter: vi.fn() } as never;
@@ -151,13 +152,56 @@ describe("test setup hydration in explore strategies", () => {
     });
 
     expect(results.map((r) => r.payload?.content)).toEqual([group.payload.content]);
-    const memberFetch = scrollFiltered.mock.calls.find(([, f]) => JSON.stringify(f).includes('"exampleSymbolIds"'));
-    // exampleSymbolIds is text-indexed: the member id is matched as the text + value pair, nothing else.
+    const memberFetch = scrollFiltered.mock.calls.find(([, f]) => JSON.stringify(f).includes('"memberSymbolIds"'));
+    // memberSymbolIds is text-indexed: the member id is matched as the text + value pair, nothing else.
     expect(memberFetch?.[1]).toEqual({
       must: [
-        { key: "exampleSymbolIds", match: { text: "it~2" } },
-        { key: "exampleSymbolIds", match: { value: memberId } },
+        { key: "memberSymbolIds", match: { text: "it~2" } },
+        { key: "memberSymbolIds", match: { value: memberId } },
       ],
     });
+  });
+
+  it("find_symbol on a scope id whose setup is packed behind another scope returns the outline and that pack", async () => {
+    const ADMIN = "User.context 'admin'";
+    const adminExample = {
+      id: "ex-admin",
+      payload: { ...examplePayload, symbolId: `${ADMIN}.it 'manages'`, parentSymbolId: ADMIN, startLine: 12 },
+    };
+    const pack = {
+      id: "pack-1",
+      payload: {
+        symbolId: ROOT,
+        name: "RSpec.describe User",
+        parentSymbolId: "User",
+        chunkType: "test_setup",
+        relativePath: SPEC,
+        startLine: 2,
+        endLine: 11,
+        scopeLineRanges: [
+          { start: 1, end: 20 },
+          { start: 10, end: 18 },
+        ],
+        memberRowCounts: [1, 1],
+        memberSymbolIds: [ROOT, ADMIN],
+        content: "RSpec.describe User do\nlet(:user) { create(:user) }\nlet(:role) { :admin }",
+      },
+    };
+    const scrollFiltered = vi.fn(async (_c: string, filter: Record<string, unknown>) => {
+      const text = JSON.stringify(filter);
+      if (text.includes('"memberSymbolIds"')) return [pack];
+      if (isSetupFetch(filter)) return [];
+      return text.includes('"parentSymbolId"') ? [adminExample] : [];
+    });
+    const qdrant = { scrollFiltered } as unknown as QdrantManager;
+    const registry = { buildMergedFilter: vi.fn() } as never;
+
+    const results = await new SymbolSearchStrategy(qdrant, reranker, [], [], registry, { symbol: ADMIN }).execute({
+      collectionName: "code_x",
+      limit: 50,
+    });
+
+    expect(results.some((r) => r.payload?.content === pack.payload.content)).toBe(true);
+    expect(results.some((r) => String(r.payload?.content).includes("manages"))).toBe(true);
   });
 });

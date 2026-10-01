@@ -16,7 +16,7 @@ import { resolve } from "node:path";
 import Parser from "tree-sitter";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { setupChainOf } from "../../__helpers__/setup-chain.js";
+import { memberSetupText, setupChainOf } from "../../__helpers__/setup-chain.js";
 import type { BodyChunkResult } from "../../../../../../src/core/contracts/types/chunker.js";
 import { resolveSymbols } from "../../../../../../src/core/domains/explore/symbol-resolve.js";
 import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
@@ -202,8 +202,8 @@ ${body("discount")}
     expect(chunk.symbolId).toBe("Cart.describe 'with a coupon'.it 'discounts the subtotal'");
     expect(setupChainOf(chunks, chunk)).toEqual(["Cart.describe 'Cart'", "Cart.describe 'with a coupon'"]);
     expect(chunk.content).not.toContain("signIn(customer)");
-    expect(chunks.find((c) => c.symbolId === "Cart.describe 'Cart'")?.content).toContain("signIn(customer)");
-    expect(chunks.find((c) => c.symbolId === "Cart.describe 'with a coupon'")?.content).toContain("cart.apply(coupon)");
+    expect(memberSetupText(chunks, "Cart.describe 'Cart'")).toContain("signIn(customer)");
+    expect(memberSetupText(chunks, "Cart.describe 'with a coupon'")).toContain("cart.apply(coupon)");
     expect([chunk.startLine, chunk.endLine]).toEqual([7, 10]);
   });
 

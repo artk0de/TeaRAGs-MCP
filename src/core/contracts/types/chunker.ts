@@ -70,21 +70,31 @@ export interface BodyChunkResult {
    */
   partHeader?: string;
   /**
-   * A test scope's setup chunk only (bd tea-rags-mcp-5xpq4): the lines of the
-   * whole SCOPE whose setup the chunk holds — its `startLine` / `endLine` keep
-   * describing the setup lines themselves. Setup is stored once per scope; an
-   * example inherits every setup chunk whose scope span contains its start
-   * line, outermost first, which is lexical setup inheritance read without
-   * parsing a single id. Read by explore's hydration, never filtered on.
+   * A test setup chunk only (bd tea-rags-mcp-5xpq4): per MEMBER scope, in the
+   * order the members appear in `content`, the lines of that whole scope. Setup
+   * is stored once per scope, and the setup of consecutive scopes is PACKED into
+   * one chunk up to the content budget; a chunk of one scope is a pack of one,
+   * same shape. An example inherits every member whose scope span contains its
+   * start line, outermost first — lexical setup inheritance, no id parsed. Read
+   * by explore's hydration, never filtered on.
    */
-  scopeLineRange?: { start: number; end: number };
+  scopeLineRanges?: { start: number; end: number }[];
   /**
-   * The ids of the test examples a GROUPED chunk carries, in source order
-   * (bd tea-rags-mcp-5xpq4): sibling examples each too short to be a chunk of
-   * their own share one, whose `symbolId` is the first member's. `find_symbol`
-   * answers any member id with this chunk. Absent on a single-example chunk.
+   * A test setup chunk only, aligned with {@link scopeLineRanges}: how many rows
+   * of the chunk's own `content` (after any container header the engine
+   * prepends) each member takes. The members' own lines are not contiguous in
+   * the source — a scope's `let` above and below a child context — so their
+   * source line ranges cannot say where one member's rows end; this does, and
+   * is what lets hydration render ONE member and never its pack siblings.
    */
-  exampleSymbolIds?: string[];
+  memberRowCounts?: number[];
+  /**
+   * The ids a PACKED chunk answers `find_symbol` for, in source order (bd
+   * tea-rags-mcp-5xpq4): the tiny sibling examples grouped into one chunk, or
+   * the scopes whose setup shares one. The chunk's `symbolId` is the first
+   * member's. Absent on a chunk of one member.
+   */
+  memberSymbolIds?: string[];
 }
 
 /**

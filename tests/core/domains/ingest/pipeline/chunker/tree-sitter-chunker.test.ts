@@ -6,7 +6,7 @@ import { generateChunkId } from "../../../../../../src/core/domains/ingest/pipel
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
 import { extractClassHeader } from "../../../../../../src/core/domains/language/ruby/chunking/class-body-chunker.js";
 import type { ChunkerConfig } from "../../../../../../src/core/types.js";
-import { setupChainOf } from "../../../language/__helpers__/setup-chain.js";
+import { memberSetupText, setupChainOf } from "../../../language/__helpers__/setup-chain.js";
 
 // Mirror the composition roots (composition.ts / the chunker worker): the factory
 // builds every native language provider itself — so factory.create("ruby")
@@ -1002,9 +1002,11 @@ end
       const setups = chunks.filter((c) => c.metadata.chunkType === "test_setup");
       const examples = chunks.filter((c) => c.metadata.parentType === "test_scope");
 
-      expect(setups.map((c) => c.metadata.symbolId)).toEqual(["User.RSpec.describe User", "User.context 'when admin'"]);
-      // Each setup chunk carries its whole scope's span, in file lines.
-      expect(setups.map((c) => c.metadata.scopeLineRange)).toEqual([
+      // Both scopes' setup is packed into one chunk; each member carries its
+      // whole scope's span, in file lines.
+      expect(setups).toHaveLength(1);
+      expect(setups[0].metadata.memberSymbolIds).toEqual(["User.RSpec.describe User", "User.context 'when admin'"]);
+      expect(setups[0].metadata.scopeLineRanges).toEqual([
         { start: 1, end: 14 },
         { start: 4, end: 13 },
       ]);
@@ -1013,7 +1015,7 @@ end
         ["User.RSpec.describe User", "User.context 'when admin'"],
         ["User.RSpec.describe User", "User.context 'when admin'"],
       ]);
-      expect(examples[1].metadata.exampleSymbolIds).toEqual([
+      expect(examples[1].metadata.memberSymbolIds).toEqual([
         "User.context 'when admin'.it { is_expected.to be_valid }",
         "User.context 'when admin'.it { is_expected.to be_persisted }",
       ]);
@@ -4472,10 +4474,9 @@ end`;
       expect(testChunks.every((c) => c.metadata.parentType === "test_scope")).toBe(true);
 
       // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): let(:user) and let(:role) are
-      // their scopes' own test_setup chunks; the examples reference them.
-      const setupOf = (id: string) => chunks.find((c) => c.metadata.symbolId === id);
-      expect(setupOf("User.describe User")!.content).toContain("let(:user)");
-      expect(setupOf("User.context 'when admin'")!.content).toContain("let(:role)");
+      // their scopes' members of the packed test_setup; the examples reference them.
+      expect(memberSetupText(chunks, "User.describe User")).toContain("let(:user)");
+      expect(memberSetupText(chunks, "User.context 'when admin'")).toContain("let(:role)");
 
       const adminChunk = testChunks.find((c) => c.content.includes("admin access"));
       expect(adminChunk).toBeDefined();
@@ -5108,12 +5109,10 @@ end`;
       const chunks = await chunker.chunk(code, "spec/services/payment_processor_spec.rb", "ruby");
 
       // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): setup from all ancestor
-      // levels is referenced root to leaf, each level its own setup chunk.
+      // levels is referenced root to leaf, each level a member of the packed setup.
       const testChunk = chunks.find((c) => c.metadata.chunkType === "test");
       expect(testChunk).toBeDefined();
-      const chain = setupChainOf(chunks, testChunk!).map(
-        (id) => chunks.find((c) => c.metadata.symbolId === id)!.content,
-      );
+      const chain = setupChainOf(chunks, testChunk!).map((id) => memberSetupText(chunks, id));
       expect(chain).toHaveLength(3);
       expect(chain[0]).toContain("let(:processor)");
       expect(chain[1]).toContain("let(:card)");

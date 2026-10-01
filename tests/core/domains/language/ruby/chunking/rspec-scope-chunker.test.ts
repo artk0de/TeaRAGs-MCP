@@ -855,7 +855,7 @@ end`;
     // members included.
     const ids = chunksOf(code)
       .filter((c) => c.parentType === "test_scope")
-      .flatMap((c) => c.exampleSymbolIds ?? [c.symbolId]);
+      .flatMap((c) => c.memberSymbolIds ?? [c.symbolId]);
 
     expect(ids).toEqual([
       "User.describe User.it { is_expected.to validate_presence_of(:name) }",

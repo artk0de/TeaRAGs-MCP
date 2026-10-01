@@ -650,15 +650,14 @@ export interface CodeChunk {
     /** Navigation links to adjacent chunks in the same file. */
     navigation?: { prevSymbolId?: string; nextSymbolId?: string };
 
-    /**
-     * A test scope's setup chunk: the whole scope's line span, which explore
-     * matches an example's start line against. See
-     * `BodyChunkResult.scopeLineRange` (bd tea-rags-mcp-5xpq4).
-     */
-    scopeLineRange?: { start: number; end: number };
+    /** A test setup chunk's member scope spans — `BodyChunkResult.scopeLineRanges` (bd tea-rags-mcp-5xpq4). */
+    scopeLineRanges?: { start: number; end: number }[];
 
-    /** The example ids a grouped test chunk carries — `BodyChunkResult.exampleSymbolIds`. */
-    exampleSymbolIds?: string[];
+    /** A test setup chunk's rows per member — `BodyChunkResult.memberRowCounts`. */
+    memberRowCounts?: number[];
+
+    /** The member ids a packed test chunk carries — `BodyChunkResult.memberSymbolIds`. */
+    memberSymbolIds?: string[];
 
     /**
      * Transient. Set by the engine for chunks produced by a classifier `emit`

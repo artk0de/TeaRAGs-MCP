@@ -1,8 +1,9 @@
 /**
  * TestSetupHydrator — prepends a test example's setup chain, stored once per
  * scope as its own chunk at index time (bd tea-rags-mcp-5xpq4), back into the
- * example when explore returns it. An example inherits every setup chunk whose
- * SCOPE span (`scopeLineRange`) contains its start line, outermost first.
+ * example when explore returns it. An example inherits every packed setup
+ * MEMBER whose SCOPE span (`scopeLineRanges`) contains its start line,
+ * outermost first, and only those members' rows are rendered.
  */
 
 import { describe, expect, it, vi } from "vitest";
@@ -33,17 +34,32 @@ function setupPoint(
   symbolId: string,
   scope: { start: number; end: number },
   body: string,
-  { relativePath = SPEC, startLine = scope.start + 1 } = {},
+  {
+    relativePath = SPEC,
+    startLine = scope.start + 1,
+    rows = body.split("\n").length,
+  }: { relativePath?: string; startLine?: number; rows?: number } = {},
+) {
+  return packPoint(symbolId, [{ scope, rows }], body, { relativePath, startLine });
+}
+
+/** A packed setup chunk: members aligned by scope span and row count, content under the container header. */
+function packPoint(
+  symbolId: string,
+  members: { scope: { start: number; end: number }; rows: number }[],
+  body: string,
+  { relativePath = SPEC, startLine = members[0].scope.start + 1, withHeader = true, chunkType = "test_setup" } = {},
 ) {
   return {
     id: `pt-${symbolId}`,
     payload: {
       symbolId,
       relativePath,
-      chunkType: "test_setup",
+      chunkType,
       startLine,
-      scopeLineRange: scope,
-      content: `${HEADER}\n${body}`,
+      scopeLineRanges: members.map((m) => m.scope),
+      memberRowCounts: members.map((m) => m.rows),
+      content: withHeader ? `${HEADER}\n${body}` : body,
     },
   };
 }
@@ -159,13 +175,106 @@ describe("TestSetupHydrator", () => {
   it("reassembles a setup chunk split into #partN windows in line order", async () => {
     const scope = { start: 1, end: 400 };
     const { hydrator } = hydratorReturning([
-      setupPoint("User.RSpec.describe User#part2", scope, "let(:b) { 2 }", { startLine: 120 }),
-      setupPoint("User.RSpec.describe User#part1", scope, "let(:a) { 1 }", { startLine: 2 }),
+      setupPoint("User.RSpec.describe User#part2", scope, "let(:b) { 2 }", { startLine: 120, rows: 2 }),
+      setupPoint("User.RSpec.describe User#part1", scope, "let(:a) { 1 }", { startLine: 2, rows: 2 }),
     ]);
 
     const [hydrated] = await hydrator.hydrate([example("User.it 'a'", 300, "it 'a' do\nend")], "code_x");
 
     expect(hydrated.payload.content).toBe(`${HEADER}\nlet(:a) { 1 }\nlet(:b) { 2 }\nit 'a' do\nend`);
+  });
+
+  describe("packed setup chunks", () => {
+    // root 1-40 (1 row), guest 2-12 (1 row), admin 14-24 (2 rows) in ONE chunk.
+    const PACK = [
+      { scope: { start: 1, end: 40 }, rows: 1 },
+      { scope: { start: 2, end: 12 }, rows: 1 },
+      { scope: { start: 14, end: 24 }, rows: 2 },
+    ];
+    const PACK_BODY = [
+      "let(:user) { create(:user) }",
+      "let(:role) { :guest }",
+      "let(:role) { :admin }",
+      "let(:extra) { true }",
+    ].join("\n");
+
+    it("renders only the members whose scope contains the example — never a sibling packed beside them", async () => {
+      const { hydrator } = hydratorReturning([packPoint("User.RSpec.describe User", PACK, PACK_BODY)]);
+
+      const [guest, admin] = await hydrator.hydrate(
+        [
+          example("User.context 'guest'.it 'a'", 5, "it 'a' do\nend"),
+          example("User.context 'admin'.it 'b'", 17, "it 'b' do\nend"),
+        ],
+        "code_x",
+      );
+
+      expect(guest.payload.content).toBe(
+        `${HEADER}\nlet(:user) { create(:user) }\nlet(:role) { :guest }\nit 'a' do\nend`,
+      );
+      expect(admin.payload.content).toBe(
+        `${HEADER}\nlet(:user) { create(:user) }\nlet(:role) { :admin }\nlet(:extra) { true }\nit 'b' do\nend`,
+      );
+    });
+
+    it("slices a pack whose content carries no container header", async () => {
+      const { hydrator } = hydratorReturning([
+        packPoint("User.RSpec.describe User", PACK, PACK_BODY, { withHeader: false }),
+      ]);
+      const hit = example("User.context 'admin'.it 'b'", 17, "");
+      hit.payload.content = "it 'b' do\nend";
+
+      const [hydrated] = await hydrator.hydrate([hit], "code_x");
+
+      expect(hydrated.payload.content).toBe(
+        "let(:user) { create(:user) }\nlet(:role) { :admin }\nlet(:extra) { true }\nit 'b' do\nend",
+      );
+    });
+
+    it("slices a pack the engine split into #partN windows, each under the container header", async () => {
+      const windows = [
+        { ...packPoint("User.RSpec.describe User#part1", PACK, PACK_BODY.split("\n").slice(0, 2).join("\n")) },
+        { ...packPoint("User.RSpec.describe User#part2", PACK, PACK_BODY.split("\n").slice(2).join("\n")) },
+      ];
+      windows[1].payload.startLine = 15;
+      const { hydrator } = hydratorReturning([windows[1], windows[0]]);
+
+      const [admin] = await hydrator.hydrate([example("User.context 'admin'.it 'b'", 17, "it 'b' do\nend")], "code_x");
+
+      expect(admin.payload.content).toBe(
+        `${HEADER}\nlet(:user) { create(:user) }\nlet(:role) { :admin }\nlet(:extra) { true }\nit 'b' do\nend`,
+      );
+    });
+
+    it("renders nothing from a pack whose rows do not add up — never a guessed slice", async () => {
+      const broken = packPoint("User.RSpec.describe User", PACK, "let(:user) { create(:user) }");
+      const { hydrator } = hydratorReturning([broken]);
+      const hit = example("User.context 'guest'.it 'a'", 5, "it 'a' do\nend");
+
+      const [hydrated] = await hydrator.hydrate([hit], "code_x");
+
+      expect(hydrated).toBe(hit);
+    });
+
+    it("hydrates a delegating scope's own test chunk like any setup", async () => {
+      const { hydrator } = hydratorReturning([
+        packPoint(
+          "Mailer.context 'notifier'",
+          [{ scope: { start: 4, end: 14 }, rows: 1 }],
+          "it_behaves_like 'a notifier'",
+          {
+            chunkType: "test",
+          },
+        ),
+      ]);
+
+      const [hydrated] = await hydrator.hydrate(
+        [example("Mailer.context 'notifier'.it 'x'", 7, "it 'x' do\nend")],
+        "code_x",
+      );
+
+      expect(hydrated.payload.content).toBe(`${HEADER}\nit_behaves_like 'a notifier'\nit 'x' do\nend`);
+    });
   });
 
   it("hydrates the #partN windows of one oversized example once, on its earliest part on the page", async () => {

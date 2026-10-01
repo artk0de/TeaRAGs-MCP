@@ -2,24 +2,29 @@
  * TestSetupHydrator — puts a test example's setup back in front of it when
  * explore returns it (bd tea-rags-mcp-5xpq4).
  *
- * The test-scope chunker stores each scope's own setup ONCE, as a chunk that
- * carries the line span of its whole scope (`scopeLineRange`). Embedding the
- * example without the setup is what took tests from x1.75 of their source size
- * back towards x1.0; this is the other half — an example a search or
- * `find_symbol` returns is still "runnable in the head".
+ * The test-scope chunker stores each scope's own setup ONCE, and PACKS the
+ * setup of consecutive scopes into one chunk up to the content budget. Per
+ * member scope, aligned, the chunk carries that scope's whole line span
+ * (`scopeLineRanges`) and how many of its content rows the member takes
+ * (`memberRowCounts`). Embedding the example without the setup is what took
+ * tests from x1.75 of their source size back towards x1.0; this is the other
+ * half — an example a search or `find_symbol` returns is still "runnable in
+ * the head".
  *
- * An example inherits every setup chunk of its file whose scope span CONTAINS
- * the example's start line, outermost scope first: lexical setup inheritance,
- * as RSpec `let` / `before` and Jest `beforeEach` define it, read off line
- * numbers without parsing a single id. A sibling scope's span never contains
- * the example, so its setup never leaks in.
+ * An example inherits every MEMBER of its file's setup chunks whose scope span
+ * CONTAINS the example's start line, outermost scope first: lexical setup
+ * inheritance, as RSpec `let` / `before` and Jest `beforeEach` define it, read
+ * off line numbers without parsing a single id. Only those members' rows are
+ * rendered, sliced out of the pack (`slicePack`): a sibling scope packed into
+ * the same chunk has a span that never contains the example, so its setup
+ * never leaks in.
  *
  * One page → one Qdrant scroll over the setup chunks of every file the page's
  * examples come from. The filter is index-served only: `relativePath` through
  * its text index (the exact text + value pair) and `chunkType` through its
  * keyword index. `chunkType` admits `test` as well as `test_setup` because a
  * scope whose setup runs shared examples is typed `test`; the examples that
- * arm also returns carry no `scopeLineRange` and are dropped here, client-side,
+ * arm also returns carry no `scopeLineRanges` and are dropped here, client-side,
  * rather than by a condition on an unindexed key.
  *
  * Out of scope: setup that arrives from a definition elsewhere —
@@ -40,7 +45,7 @@ import { TEST_SCOPE_PARENT_TYPE } from "../../contracts/types/chunker.js";
 const SETUP_SCROLL_LIMIT = 4096;
 
 /** Payload keys the hydration reads off a setup chunk. */
-const SETUP_PAYLOAD_KEYS = ["relativePath", "startLine", "scopeLineRange", "content"];
+const SETUP_PAYLOAD_KEYS = ["relativePath", "startLine", "scopeLineRanges", "memberRowCounts", "content"];
 
 /** A setup chunk's scope is typed `test` when one of its lines runs shared examples. */
 const SETUP_CHUNK_TYPES = ["test_setup", "test"];
@@ -56,10 +61,11 @@ interface LineRange {
   end: number;
 }
 
-/** One scope's setup: its span and its windows' content in line order. */
-interface ScopeSetup {
+/** One scope's setup, sliced out of its pack: the scope's span, the pack's container header, its own rows. */
+interface SetupMember {
   scope: LineRange;
-  windows: string[];
+  header: string[];
+  rows: string[];
 }
 
 export class TestSetupHydrator {
@@ -84,22 +90,19 @@ export class TestSetupHydrator {
       undefined,
       SETUP_PAYLOAD_KEYS,
     );
-    const setupsByFile = scopeSetups(points);
+    const membersByFile = setupMembers(points);
     const hydratedOn = firstPartOnPage(examples);
 
     return results.map((result, i) => {
       const example = examples[i];
       if (!example || hydratedOn.get(baseKey(example)) !== i) return result;
-      const chain = enclosingSetups(setupsByFile.get(example.relativePath) ?? [], example.startLine);
+      const chain = enclosingMembers(membersByFile.get(example.relativePath) ?? [], example.startLine);
       if (chain.length === 0) return result;
       return {
         ...result,
         payload: {
           ...result.payload,
-          content: prependSetup(
-            example.content,
-            chain.flatMap((s) => s.windows),
-          ),
+          content: prependSetup(example.content, chain),
         },
       };
     });
@@ -151,31 +154,90 @@ function setupFilter(relativePaths: string[]): Record<string, unknown> {
 }
 
 /**
- * The setup scopes per file, each with its windows in line order. A setup
- * chunk split into `#partN` windows repeats its scope span on every window, so
- * the span is the key — no id is parsed. Anything without a span (an example,
- * a setup chunk of an older index) is dropped.
+ * The setup MEMBERS per file. A setup chunk packs the setup of several scopes;
+ * its windows (one, or the `#partN` windows the engine cut it into — each
+ * repeats the per-member arrays, so those arrays are the key and no id is
+ * parsed) are reassembled in line order and sliced into one entry per member.
+ * Anything without the arrays (an example, a setup chunk of an older index) is
+ * dropped, and so is a pack whose rows do not add up.
  */
-function scopeSetups(points: { payload: Record<string, unknown> }[]): Map<string, ScopeSetup[]> {
-  const byScope = new Map<
+function setupMembers(points: { payload: Record<string, unknown> }[]): Map<string, SetupMember[]> {
+  const packs = new Map<
     string,
-    { relativePath: string; scope: LineRange; parts: { line: number; content: string }[] }
+    { relativePath: string; scopes: LineRange[]; rowCounts: number[]; windows: { line: number; content: string }[] }
   >();
   for (const { payload } of points) {
-    const { relativePath, startLine, scopeLineRange, content } = payload;
-    if (typeof relativePath !== "string" || typeof content !== "string" || !isLineRange(scopeLineRange)) continue;
-    const key = `${relativePath}\u0000${scopeLineRange.start}:${scopeLineRange.end}`;
-    const entry = byScope.get(key) ?? { relativePath, scope: scopeLineRange, parts: [] };
-    entry.parts.push({ line: typeof startLine === "number" ? startLine : 0, content });
-    byScope.set(key, entry);
+    const { relativePath, startLine, scopeLineRanges, memberRowCounts, content } = payload;
+    if (typeof relativePath !== "string" || typeof content !== "string") continue;
+    if (!Array.isArray(scopeLineRanges) || !scopeLineRanges.every(isLineRange)) continue;
+    if (!Array.isArray(memberRowCounts) || memberRowCounts.length !== scopeLineRanges.length) continue;
+    if (!memberRowCounts.every((n) => Number.isInteger(n) && (n as number) > 0)) continue;
+    const key = `${relativePath}\u0000${JSON.stringify(scopeLineRanges)}\u0000${JSON.stringify(memberRowCounts)}`;
+    const pack = packs.get(key) ?? {
+      relativePath,
+      scopes: scopeLineRanges,
+      rowCounts: memberRowCounts as number[],
+      windows: [],
+    };
+    pack.windows.push({ line: typeof startLine === "number" ? startLine : 0, content });
+    packs.set(key, pack);
   }
-  const byFile = new Map<string, ScopeSetup[]>();
-  for (const { relativePath, scope, parts } of byScope.values()) {
+  const byFile = new Map<string, SetupMember[]>();
+  for (const { relativePath, scopes, rowCounts, windows } of packs.values()) {
+    const sliced = slicePack(
+      windows.sort((a, b) => a.line - b.line).map((w) => w.content),
+      rowCounts,
+    );
+    if (!sliced) continue;
     const list = byFile.get(relativePath) ?? [];
-    list.push({ scope, windows: parts.sort((a, b) => a.line - b.line).map((p) => p.content) });
+    list.push(...scopes.map((scope, i) => ({ scope, header: sliced.header, rows: sliced.members[i] })));
     byFile.set(relativePath, list);
   }
   return byFile;
+}
+
+/**
+ * A pack's windows → the container header and each member's rows.
+ *
+ * The kernel stores the members' own rows back to back; the engine prepends
+ * the container header (zero or more rows), and when it cuts a pack into
+ * `#partN` windows it repeats that header on every window — or, when the
+ * header is too large to repeat, puts it on the first window only. Both
+ * layouts are recognised from the row arithmetic: the rows that are not
+ * members' rows are the header, and they must be identical where they repeat.
+ * A pack that fits neither (a row the engine character-sliced) returns
+ * nothing rather than a slice that might render a sibling's setup.
+ */
+function slicePack(windows: string[], rowCounts: number[]): { header: string[]; members: string[][] } | undefined {
+  const rowsOf = windows.map((w) => w.split("\n"));
+  const memberRows = rowCounts.reduce((sum, n) => sum + n, 0);
+  const totalRows = rowsOf.reduce((sum, rows) => sum + rows.length, 0);
+  const extra = totalRows - memberRows;
+  if (extra < 0) return undefined;
+
+  let header: string[] | undefined;
+  let body: string[] = [];
+  if (extra % rowsOf.length === 0) {
+    const perWindow = extra / rowsOf.length;
+    const first = rowsOf[0].slice(0, perWindow);
+    if (rowsOf.every((rows) => rows.length > perWindow && first.every((row, i) => rows[i] === row))) {
+      header = first;
+      body = rowsOf.flatMap((rows) => rows.slice(perWindow));
+    }
+  }
+  if (header === undefined && rowsOf[0].length > extra) {
+    header = rowsOf[0].slice(0, extra);
+    body = [...rowsOf[0].slice(extra), ...rowsOf.slice(1).flat()];
+  }
+  if (header === undefined) return undefined;
+
+  const members: string[][] = [];
+  let offset = 0;
+  for (const count of rowCounts) {
+    members.push(body.slice(offset, offset + count));
+    offset += count;
+  }
+  return { header, members };
 }
 
 function isLineRange(value: unknown): value is LineRange {
@@ -184,40 +246,30 @@ function isLineRange(value: unknown): value is LineRange {
   return typeof start === "number" && typeof end === "number";
 }
 
-/** The setups whose scope contains `line`, outermost first (earlier start, then the wider span). */
-function enclosingSetups(setups: ScopeSetup[], line: number): ScopeSetup[] {
-  return setups
+/** The members whose scope contains `line`, outermost first (earlier start, then the wider span). */
+function enclosingMembers(members: SetupMember[], line: number): SetupMember[] {
+  return members
     .filter(({ scope }) => scope.start <= line && line <= scope.end)
     .sort((a, b) => a.scope.start - b.scope.start || b.scope.end - a.scope.end);
 }
 
 /**
- * The example's content with the setup windows inserted after the leading rows
- * every chunk of the file shares — the container header(s) the engine
- * prepends — so it reads header, setup outermost first, example. Each window
- * carries its own copy of those rows, which is dropped.
+ * The example's content with the members' setup rows inserted after the
+ * leading rows it shares with the setup's container header — the header(s)
+ * the engine prepends to every chunk of the file — so it reads header, setup
+ * outermost first, example.
  */
-function prependSetup(content: string, setupWindowsInOrder: string[]): string {
+function prependSetup(content: string, chain: SetupMember[]): string {
   const exampleLines = content.split("\n");
-  let insertAt = exampleLines.length;
-  const bodies: string[] = [];
-  for (const window of setupWindowsInOrder) {
-    const lines = window.split("\n");
-    const shared = sharedLeadingRows(lines, exampleLines);
-    insertAt = Math.min(insertAt, shared);
-    bodies.push(...lines.slice(shared));
-  }
+  const insertAt = Math.min(...chain.map(({ header }) => sharedLeadingRows(header, exampleLines)));
+  const bodies = chain.flatMap(({ rows }) => rows);
   return [...exampleLines.slice(0, insertAt), ...bodies, ...exampleLines.slice(insertAt)].join("\n");
 }
 
-/** Leading rows two texts have in common, always leaving the window one row of its own. */
-function sharedLeadingRows(windowLines: string[], exampleLines: string[]): number {
+/** Leading rows the setup header and the example have in common. */
+function sharedLeadingRows(headerLines: string[], exampleLines: string[]): number {
   let shared = 0;
-  while (
-    shared < windowLines.length - 1 &&
-    shared < exampleLines.length &&
-    windowLines[shared] === exampleLines[shared]
-  ) {
+  while (shared < headerLines.length && shared < exampleLines.length && headerLines[shared] === exampleLines[shared]) {
     shared++;
   }
   return shared;

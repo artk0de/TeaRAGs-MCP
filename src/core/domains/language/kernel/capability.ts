@@ -74,8 +74,8 @@ export const sharedVersions: LanguageSupportVersions = {
   // chunking 3, bd tea-rags-mcp-nu05a: a heading-less markdown document and an
   // oversized preamble are split under maxChunkSize instead of emitted whole.
   // Only markdown files move — scoped in `sharedChunkSetBumpScopes`.
-  // chunking 4, bd tea-rags-mcp-5xpq4: test setup is stored once per scope as
-  // its own chunk carrying its scope's line span (`scopeLineRange`), tiny
+  // chunking 4, bd tea-rags-mcp-5xpq4: test setup is stored once per scope,
+  // packed across consecutive scopes with per-member scope spans, tiny
   // examples are grouped instead of dropped. Unscoped — no entry below.
   chunking: 4,
   // walker 3: release v1.44.2 shipped shared walker 2 and a release cycle gets

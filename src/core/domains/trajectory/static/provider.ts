@@ -37,14 +37,16 @@ export class StaticPayloadBuilder implements PayloadBuilder {
     if (headingPath?.length) payload.headingPath = headingPath;
     const navigation = m.navigation as { prevSymbolId?: string; nextSymbolId?: string } | undefined;
     if (navigation) payload.navigation = navigation;
-    // Test-chunk links (bd tea-rags-mcp-5xpq4): a setup chunk's scope span,
-    // which explore matches an example's start line against, and the members
-    // a grouped chunk answers find_symbol for. Why they are not payload signal
-    // descriptors: `domains/explore/CLAUDE.md`.
-    const scopeLineRange = m.scopeLineRange as { start: number; end: number } | undefined;
-    if (scopeLineRange) payload.scopeLineRange = scopeLineRange;
-    const exampleSymbolIds = m.exampleSymbolIds as string[] | undefined;
-    if (exampleSymbolIds?.length) payload.exampleSymbolIds = exampleSymbolIds;
+    // Test-chunk links (bd tea-rags-mcp-5xpq4): a setup chunk's member scope
+    // spans and row counts, which explore hydrates examples from, and the
+    // members a packed chunk answers find_symbol for. Why they are not
+    // payload signal descriptors: `domains/explore/CLAUDE.md`.
+    const scopeLineRanges = m.scopeLineRanges as { start: number; end: number }[] | undefined;
+    if (scopeLineRanges?.length) payload.scopeLineRanges = scopeLineRanges;
+    const memberRowCounts = m.memberRowCounts as number[] | undefined;
+    if (memberRowCounts?.length) payload.memberRowCounts = memberRowCounts;
+    const memberSymbolIds = m.memberSymbolIds as string[] | undefined;
+    if (memberSymbolIds?.length) payload.memberSymbolIds = memberSymbolIds;
     if (methodLines) {
       payload.methodLines = methodLines;
     }

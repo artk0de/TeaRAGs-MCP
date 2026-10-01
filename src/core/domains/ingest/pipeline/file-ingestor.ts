@@ -200,8 +200,9 @@ export class SourceFileIngestor {
           moduleMethodCount: chunk.metadata.moduleMethodCount,
           headingPath: chunk.metadata.headingPath,
           navigation: chunk.metadata.navigation,
-          scopeLineRange: chunk.metadata.scopeLineRange,
-          exampleSymbolIds: chunk.metadata.exampleSymbolIds,
+          scopeLineRanges: chunk.metadata.scopeLineRanges,
+          memberRowCounts: chunk.metadata.memberRowCounts,
+          memberSymbolIds: chunk.metadata.memberSymbolIds,
           ...(imports.length > 0 && { imports }),
         } as CodeChunk["metadata"],
       };

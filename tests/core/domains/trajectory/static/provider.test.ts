@@ -72,7 +72,7 @@ describe("StaticPayloadBuilder", () => {
     expect(payload.imports).toEqual(["./utils.js", "./types.js"]);
   });
 
-  it("writes a grouped chunk's exampleSymbolIds (5xpq4)", () => {
+  it("writes a grouped chunk's memberSymbolIds (5xpq4)", () => {
     const testChunk = {
       content: "it { is_expected.to be_valid }\nit { is_expected.to be_persisted }",
       startLine: 4,
@@ -82,14 +82,14 @@ describe("StaticPayloadBuilder", () => {
         language: "ruby",
         chunkIndex: 2,
         chunkType: "test",
-        exampleSymbolIds: ["User.context 'v1.2'~2.it", "User.context 'v1.2'~2.it~2"],
+        memberSymbolIds: ["User.context 'v1.2'~2.it", "User.context 'v1.2'~2.it~2"],
       } as Record<string, unknown>,
     };
     const payload = builder.buildPayload(testChunk, "/project");
-    expect(payload.exampleSymbolIds).toEqual(["User.context 'v1.2'~2.it", "User.context 'v1.2'~2.it~2"]);
+    expect(payload.memberSymbolIds).toEqual(["User.context 'v1.2'~2.it", "User.context 'v1.2'~2.it~2"]);
   });
 
-  it("writes a test setup chunk's scopeLineRange (5xpq4)", () => {
+  it("writes a packed test setup chunk's per-member scopeLineRanges and memberRowCounts (5xpq4)", () => {
     const setupChunk = {
       content: "let(:user) { create(:user) }",
       startLine: 2,
@@ -99,20 +99,29 @@ describe("StaticPayloadBuilder", () => {
         language: "ruby",
         chunkIndex: 0,
         chunkType: "test_setup",
-        scopeLineRange: { start: 1, end: 30 },
+        scopeLineRanges: [
+          { start: 1, end: 30 },
+          { start: 4, end: 20 },
+        ],
+        memberRowCounts: [1, 2],
       } as Record<string, unknown>,
     };
     const payload = builder.buildPayload(setupChunk, "/project");
-    expect(payload.scopeLineRange).toEqual({ start: 1, end: 30 });
+    expect(payload.scopeLineRanges).toEqual([
+      { start: 1, end: 30 },
+      { start: 4, end: 20 },
+    ]);
+    expect(payload.memberRowCounts).toEqual([1, 2]);
   });
 
-  it("omits scopeLineRange and exampleSymbolIds when absent or empty", () => {
+  it("omits scopeLineRanges, memberRowCounts and memberSymbolIds when absent or empty", () => {
     const payload = builder.buildPayload(
-      { ...chunk, metadata: { ...chunk.metadata, exampleSymbolIds: [] } },
+      { ...chunk, metadata: { ...chunk.metadata, memberSymbolIds: [] } },
       "/project",
     );
-    expect(payload).not.toHaveProperty("scopeLineRange");
-    expect(payload).not.toHaveProperty("exampleSymbolIds");
+    expect(payload).not.toHaveProperty("scopeLineRanges");
+    expect(payload).not.toHaveProperty("memberRowCounts");
+    expect(payload).not.toHaveProperty("memberSymbolIds");
   });
 
   it("writes navigation to payload", () => {
