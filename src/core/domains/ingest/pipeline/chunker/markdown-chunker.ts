@@ -72,8 +72,17 @@ export class MarkdownChunker {
       language,
     );
     await this.buildCodeBlockChunks(chunks, codeBlocks, sectionHeadings, headings, filePath, language);
-    this.buildPreambleChunk(chunks, tree.children, sectionHeadings, lines, codeBlockLineRanges, filePath, language);
-    this.buildWholeDocumentFallback(chunks, tree.children, lines, filePath, language);
+    this.buildPreambleChunk(
+      chunks,
+      tree.children,
+      sectionHeadings,
+      lines,
+      codeBlockLineRanges,
+      blockSpans,
+      filePath,
+      language,
+    );
+    this.buildWholeDocumentFallback(chunks, tree.children, lines, blockSpans, filePath, language);
 
     return chunks;
   }
@@ -137,13 +146,19 @@ export class MarkdownChunker {
     }
   }
 
-  /** Extract preamble content before first section heading, after frontmatter. */
+  /**
+   * Extract preamble content before first section heading, after frontmatter.
+   * A preamble over `maxChunkSize` is cut between its blocks like an oversized
+   * section, and its parts follow the section-window convention: `name` and
+   * `parentSymbolId` are "Preamble", no `symbolId`.
+   */
   private buildPreambleChunk(
     chunks: CodeChunk[],
     children: Content[],
     sectionHeadings: HeadingInfo[],
     lines: string[],
     codeBlockLineRanges: { startLine: number; endLine: number }[],
+    blockSpans: { startLine: number; endLine: number }[],
     filePath: string,
     language: string,
   ): void {
@@ -155,42 +170,68 @@ export class MarkdownChunker {
     if (firstContentLine <= 0 || firstContentLine > preambleEndLine) return;
 
     const preambleLines: string[] = [];
+    const preambleSourceLines: number[] = [];
     for (let line = firstContentLine - 1; line < preambleEndLine; line++) {
       const lineNum = line + 1;
       const inCodeBlock = codeBlockLineRanges.some((r) => lineNum >= r.startLine && lineNum <= r.endLine);
       if (!inCodeBlock) {
         preambleLines.push(lines[line]);
+        preambleSourceLines.push(lineNum);
       }
     }
     const preamble = preambleLines.join("\n").trim();
 
     if (preamble.length < MIN_SECTION_SIZE) return;
 
-    chunks.unshift({
-      content: preamble,
-      startLine: firstContentLine,
-      endLine: preambleEndLine,
-      metadata: {
-        filePath,
-        language,
-        chunkIndex: 0,
-        chunkType: "block",
-        name: "Preamble",
-        symbolId: "Preamble",
-        isDocumentation: true,
-        headingPath: [],
-      },
-    });
-    for (let i = 1; i < chunks.length; i++) {
+    const preambleChunks: CodeChunk[] =
+      preamble.length > this.config.maxChunkSize
+        ? this.splitSection(preambleSourceLines, lines, blockSpans, "", []).map((window) => ({
+            ...window,
+            metadata: {
+              filePath,
+              language,
+              chunkIndex: 0,
+              chunkType: "block",
+              name: "Preamble",
+              parentSymbolId: "Preamble",
+              isDocumentation: true,
+              headingPath: [],
+            },
+          }))
+        : [
+            {
+              content: preamble,
+              startLine: firstContentLine,
+              endLine: preambleEndLine,
+              metadata: {
+                filePath,
+                language,
+                chunkIndex: 0,
+                chunkType: "block",
+                name: "Preamble",
+                symbolId: "Preamble",
+                isDocumentation: true,
+                headingPath: [],
+              },
+            },
+          ];
+
+    chunks.unshift(...preambleChunks);
+    for (let i = 0; i < chunks.length; i++) {
       chunks[i].metadata.chunkIndex = i;
     }
   }
 
-  /** Whole-document fallback when no chunks were produced. Strips frontmatter. */
+  /**
+   * Whole-document fallback when no chunks were produced. Strips frontmatter.
+   * A document over `maxChunkSize` is cut between its blocks like an oversized
+   * section; the parts carry no name, as the whole-document chunk does not.
+   */
   private buildWholeDocumentFallback(
     chunks: CodeChunk[],
     children: Content[],
     lines: string[],
+    blockSpans: { startLine: number; endLine: number }[],
     filePath: string,
     language: string,
   ): void {
@@ -204,6 +245,24 @@ export class MarkdownChunker {
       .trim();
 
     if (content.length < MIN_SECTION_SIZE) return;
+
+    if (content.length > this.config.maxChunkSize) {
+      const sourceLines = Array.from({ length: lines.length - startLine + 1 }, (_, i) => startLine + i);
+      for (const window of this.splitSection(sourceLines, lines, blockSpans, "", [])) {
+        chunks.push({
+          ...window,
+          metadata: {
+            filePath,
+            language,
+            chunkIndex: chunks.length,
+            chunkType: "block",
+            isDocumentation: true,
+            headingPath: [],
+          },
+        });
+      }
+      return;
+    }
 
     chunks.push({
       content,
@@ -312,11 +371,13 @@ export class MarkdownChunker {
       .map((s) => ({ startRow: toRow(s.startLine, false), endRow: toRow(s.endLine, true) }))
       .filter((s) => s.endRow > s.startRow);
 
-    const pathLine = headingPath.map((h) => `${"#".repeat(h.depth)} ${h.text}`).join(" > ");
+    // An empty heading path (preamble, heading-less document) frames no window.
+    const pathPrefix =
+      headingPath.length > 0 ? `${headingPath.map((h) => `${"#".repeat(h.depth)} ${h.text}`).join(" > ")}\n` : "";
     const splitter = new NestingLineSplitter({
       rows,
       spans,
-      capacityAt: (row) => this.config.maxChunkSize - (row === 0 ? breadcrumb.length : pathLine.length + 1),
+      capacityAt: (row) => this.config.maxChunkSize - (row === 0 ? breadcrumb.length : pathPrefix.length),
       openingRows: [0],
     });
 
@@ -332,7 +393,7 @@ export class MarkdownChunker {
         : rows.slice(startRow, endRow + 1).join("\n");
       if (body.trim() === "") continue;
       windows.push({
-        content: part.startRow === 0 ? breadcrumb + body : `${pathLine}\n${body}`,
+        content: part.startRow === 0 ? breadcrumb + body : pathPrefix + body,
         startLine: sourceLines[startRow],
         endLine: sourceLines[endRow],
       });

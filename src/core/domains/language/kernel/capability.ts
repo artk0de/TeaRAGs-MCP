@@ -71,7 +71,10 @@ export { SHARED_LANGUAGE } from "../../../contracts/types/language.js";
  * declared, so every index needs `tea-rags index-codebase --force`.
  */
 export const sharedVersions: LanguageSupportVersions = {
-  chunking: 2,
+  // chunking 3, bd tea-rags-mcp-nu05a: a heading-less markdown document and an
+  // oversized preamble are split under maxChunkSize instead of emitted whole.
+  // Only markdown files move — scoped in `sharedChunkSetBumpScopes`.
+  chunking: 3,
   // walker 3: release v1.44.2 shipped shared walker 2 and a release cycle gets
   // ONE bump, so the branch-local 3..5 collapse into 3. Same walker 3, bd
   // tea-rags-mcp-r8hme.12: the resolution runner resolves `typeOnlyImports`
@@ -95,4 +98,6 @@ export const sharedVersions: LanguageSupportVersions = {
  * that changed only test chunking declares `{ testFile: "only" }` under its
  * revision, and the drift report names the scoped force instead.
  */
-export const sharedChunkSetBumpScopes: ChunkSetBumpScopes = {};
+export const sharedChunkSetBumpScopes: ChunkSetBumpScopes = {
+  chunking: { 3: { fileExtensions: [".md", ".markdown"] } },
+};

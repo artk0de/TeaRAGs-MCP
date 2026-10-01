@@ -7,17 +7,21 @@
   (`ChunkPipeline#createBatchHandler`): `embedBatch` throws →
   `classifyEmbeddingQuarantinable` decides → non-quarantinable rethrows →
   quarantinable routes to `ChunkPipeline#isolateEmbeddingFailures`, which
-  re-embeds each item alone, calls `markFailed` per culprit (one write each, so
-  distinct error codes survive), drops them, and RETURNS the survivor subset
-  (early `return` in `createBatchHandler` when the batch is fully quarantined).
-  Do NOT add a character-length threshold: the model limit is in TOKENS and the
-  char↔token ratio collapses exactly on the poison case (code ≈3–4 chars/token,
-  base64/minified ≈1), so any char cap either misses the poison or quarantines
-  healthy files. Bisection (O(log n)) was considered and rejected as unneeded
-  complexity on a rare path. Why: "returns success after a failure" reads as
-  swallowed error handling; it is the mechanism that stops one bad chunk from
-  aborting a whole index — the pool would otherwise retry a deterministic
-  overflow and the rejection would bubble as `IndexingFailedError`.
+  bisects the failed batch (`ChunkPipeline#embedOrBisect` sends each half as one
+  batch, recursing only into a half that fails), calls `markFailed` per
+  single-item culprit (one write each, so distinct error codes survive), drops
+  them, and RETURNS the survivor subset (early `return` in `createBatchHandler`
+  when the batch is fully quarantined). Do NOT add a character-length threshold:
+  the model limit is in TOKENS and the char↔token ratio collapses exactly on the
+  poison case (code ≈3–4 chars/token, base64/minified ≈1), so any char cap
+  either misses the poison or quarantines healthy files. Never go back to
+  re-embedding item by item: the path is not rare — a taxdome incremental spent
+  417s and 432s in two such loops on a local GPU, one of them for a batch-level
+  400 that no single item reproduced (bd tea-rags-mcp-nu05a). Why: "returns
+  success after a failure" reads as swallowed error handling; it is the
+  mechanism that stops one bad chunk from aborting a whole index — the pool
+  would otherwise retry a deterministic overflow and the rejection would bubble
+  as `IndexingFailedError`.
 
 ## Gotchas
 
