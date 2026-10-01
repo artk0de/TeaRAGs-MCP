@@ -30,6 +30,7 @@ import type {
   NamingLexiconOps,
   OntologyReportOps,
   ProjectRegistryOps,
+  ReviewFacade,
   TracePathOps,
 } from "../index.js";
 // The one facade-level internal reach this file keeps (bd tea-rags-mcp-0qaht.12):
@@ -41,6 +42,7 @@ import {
   emptyArchitectureReport,
   emptyCochangeResult,
   emptyOntologyReport,
+  emptyReviewChangesResult,
 } from "../internal/composition.js";
 import type {
   AddDocumentsRequest,
@@ -78,6 +80,8 @@ import type {
   ProgressCallback,
   ProjectRegistryAddress,
   RankChunksRequest,
+  ReviewChangesRequest,
+  ReviewChangesResult,
   SemanticSearchRequest,
   TracePathRequest,
 } from "./dto/index.js";
@@ -176,6 +180,12 @@ export interface App {
   getOntologyReport: (request: GetOntologyReportRequest) => Promise<GetOntologyReportResponse>;
   /** Co-change partners (bd tea-rags-mcp-l1ot.1) — the temporal sub-graph: which files historically changed together. */
   findCoChanged: (request: FindCoChangedRequest) => Promise<FindCoChangedResult>;
+  /**
+   * Diff-scoped review (bd tea-rags-mcp-89k7k.1.4) — every report over ONE
+   * working-tree change in one call, as sections keyed by id (naming,
+   * incompleteChange, cohesion; architecture when its provider ships).
+   */
+  reviewChanges: (request: ReviewChangesRequest) => Promise<ReviewChangesResult>;
 
   // -- Provider availability — sync query used by MCP tool registrars to
   // skip registration when a required trajectory provider is not loaded.
@@ -219,6 +229,14 @@ export interface AppDeps {
   namingLexiconOps?: NamingLexiconOps;
   /** Optional — present when codegraph is wired (built in bootstrap alongside graphFacade). */
   ontologyReportOps?: OntologyReportOps;
+  /**
+   * The diff-scoped review facade (bd tea-rags-mcp-89k7k.1.4). Built in
+   * bootstrap beside `namingLexiconOps` — the review's naming section shares
+   * that instance — and present only when codegraph is wired. Absent →
+   * `App.reviewChanges` answers the not-built envelope
+   * (`emptyReviewChangesResult`).
+   */
+  reviewFacade?: ReviewFacade;
   /**
    * Collection/document CRUD handlers, pre-built by the api composition root
    * (`composeAppOps` in internal/composition.ts) and injected here. Omitted →
@@ -392,6 +410,8 @@ export function createApp(deps: AppDeps): App {
     getOntologyReport: async (req) =>
       deps.ontologyReportOps ? deps.ontologyReportOps.report(req) : emptyOntologyReport(req),
     findCoChanged: async (req) => (deps.graphFacade ? deps.graphFacade.findCoChanged(req) : emptyCochangeResult(req)),
+    reviewChanges: async (req) =>
+      deps.reviewFacade ? deps.reviewFacade.reviewChanges(req) : emptyReviewChangesResult(req),
 
     // -- Provider availability — backs MCP tool-registrar gating. Source
     // of truth is `registeredProviderKeys` populated by composition from

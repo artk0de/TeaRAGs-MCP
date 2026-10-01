@@ -16,7 +16,6 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
-import { InvalidParameterError } from "../../../../../src/core/api/errors.js";
 import {
   NamingLexiconOps,
   type NamingLexiconEmbeddings,
@@ -293,17 +292,6 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     expect(result.review?.conforming).toBe(1);
   });
 
-  it("a non-production changed file is not judged, and counts as not judged", async () => {
-    writeFileSync(
-      join(repo, "src/git/reader.test.ts"),
-      "export function t(): void {\n  const meta: GitFileSignals = read();\n  use(meta);\n}\n",
-    );
-    const result = await ops.getNamingLexicon({ collection: "c", path: repo, files: ["src/git/reader.test.ts"] });
-    expect(result.review?.findings).toEqual([]);
-    expect(result.review?.checked).toBe(0);
-    expect(result.review?.notJudged).toBe(1);
-  });
-
   it("a type draft's concept query carries its words and the code of its enclosing chunk", async () => {
     writeFileSync(
       join(repo, "src/git/calculated.ts"),
@@ -347,13 +335,6 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     expect(result.review?.findings.map((f) => f.verdict)).toEqual(["COLLISION", "COLLISION"]);
     expect(result.notices).toEqual(["type-name alignment skipped: ollama unreachable"]);
     expect(semanticSearch).toHaveBeenCalledTimes(1);
-  });
-
-  it("caps the changed files at 200 per call", async () => {
-    mkdirSync(join(repo, "notes"));
-    for (let i = 0; i < 201; i++) writeFileSync(join(repo, `notes/n${String(i).padStart(3, "0")}.md`), "x\n");
-    const result = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
-    expect(result.review?.truncated).toEqual({ cap: 200, skipped: 2 });
   });
 
   // bd tea-rags-mcp-433d2: a synonym head passes the project-suffix rule; its alternative makes it a finding.
@@ -433,68 +414,6 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     expect(misfits).toEqual([
       expect.objectContaining({ name: "SyncLedger", line: 3, suggestion: "SyncLedgerWorker", kind: "class" }),
     ]);
-  });
-
-  // bd tea-rags-mcp-y33ee: a base branch that moved on flooded the review with files only the base changed.
-  describe("a base branch that moved on since the branch left it", () => {
-    const SHARED = "src/git/shared.ts";
-    let forkPoint: string;
-
-    beforeEach(() => {
-      // The fork point carries `shared.ts`; the branch commits its change; main then rewrites `shared.ts`.
-      writeFileSync(join(repo, CHANGED), ORIGINAL);
-      writeFileSync(join(repo, SHARED), "export class Commit {}\n");
-      git(repo, "add", "-A");
-      git(repo, "commit", "-q", "-m", "shared");
-      forkPoint = git(repo, "rev-parse", "HEAD").trim();
-      git(repo, "checkout", "-q", "-b", "feat");
-      writeFileSync(join(repo, CHANGED), CHANGED_TEXT);
-      git(repo, "add", "-A");
-      git(repo, "commit", "-q", "-m", "feat");
-      git(repo, "checkout", "-q", "main");
-      writeFileSync(join(repo, SHARED), "export class Kommit {}\n");
-      git(repo, "add", "-A");
-      git(repo, "commit", "-q", "-m", "main moves on");
-      git(repo, "checkout", "-q", "feat");
-    });
-
-    it("reviews what the branch changed since its merge-base with the base, and reports that commit", async () => {
-      const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: { base: "main" } });
-      expect(review?.base).toBe("main");
-      expect(review?.mergeBase).toBe(forkPoint);
-      expect(review?.changedFiles).toBe(1);
-      expect(new Set(review?.findings.map((f) => f.relPath))).toEqual(new Set([CHANGED]));
-      // bd tea-rags-mcp-bjfa0: the conforming generic `result` is a note, not a finding.
-      expect(review?.findings.map((f) => f.name).sort()).toEqual(["Commit", "meta"]);
-      expect(review?.notes?.map((n) => n.name)).toEqual(["result"]);
-    });
-
-    it("a base HEAD descends from is compared as given", async () => {
-      const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: { base: forkPoint } });
-      expect(review?.mergeBase).toBe(forkPoint);
-      expect(review?.changedFiles).toBe(1);
-    });
-
-    it("a base HEAD shares no history with is a parameter error saying there is no merge-base", async () => {
-      const emptyTree = git(repo, "hash-object", "-t", "tree", "/dev/null").trim();
-      const orphan = git(repo, "commit-tree", emptyTree, "-m", "orphan").trim();
-      const call = ops.getNamingLexicon({ collection: "c", path: repo, changes: { base: orphan } });
-      await expect(call).rejects.toBeInstanceOf(InvalidParameterError);
-      await expect(call).rejects.toThrow(/no merge-base/);
-    });
-
-    it("an unknown base is a parameter error", async () => {
-      await expect(
-        ops.getNamingLexicon({ collection: "c", path: repo, changes: { base: "no-such-branch" } }),
-      ).rejects.toBeInstanceOf(InvalidParameterError);
-    });
-  });
-
-  it("the default base is HEAD itself: its merge-base is HEAD's commit", async () => {
-    const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
-    expect(review?.mergeBase).toBe(git(repo, "rev-parse", "HEAD").trim());
-    expect(review?.changedFiles).toBe(1);
-    expect(review?.wholeFiles).toBeUndefined();
   });
 
   // bd tea-rags-mcp-y33ee: `files` on a clean tree checked 0 — the files were committed, so nothing was "added".
@@ -626,10 +545,6 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     expect(after.review?.findings.map((f) => f.name)).not.toContain("sameFirm");
   });
 
-  it("diff mode needs the project's working tree", async () => {
-    await expect(ops.getNamingLexicon({ collection: "c", changes: {} })).rejects.toBeInstanceOf(InvalidParameterError);
-  });
-
   // Lexicon friction F1: a project alias resolves to the MAIN checkout, so a change made in a
   // linked worktree was reviewed as `changedFiles: 0` — success-shaped and blind.
   describe("the working tree the review reads", () => {
@@ -659,23 +574,6 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     it("an alias alone reads the main checkout the alias is registered at", async () => {
       const { review } = await aliased().getNamingLexicon({ project: "p", changes: {} });
       expect(review?.workTree).toBe(repo);
-    });
-
-    it("an alias with a path reviews that linked worktree against the project's evidence", async () => {
-      const tree = addWorkTree();
-      const { review } = await aliased().getNamingLexicon({ project: "p", path: tree, changes: {} });
-      expect(review?.workTree).toBe(tree);
-      expect(review?.changedFiles).toBe(1);
-      expect(review?.findings).toContainEqual(expect.objectContaining({ relPath: "src/git/extra.ts", name: "blob" }));
-    });
-
-    it("refuses a tree of another repository: its change is no diff of this project", async () => {
-      const other = join(dir, "other");
-      mkdirSync(other);
-      git(other, "init", "-q", "-b", "main");
-      await expect(aliased().getNamingLexicon({ project: "p", path: other, changes: {} })).rejects.toBeInstanceOf(
-        InvalidParameterError,
-      );
     });
 
     it("an empty diff says what it could not see — never a bare changedFiles: 0", async () => {

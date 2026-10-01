@@ -225,10 +225,10 @@ describe("Resource builders", () => {
       expect(md).toContain("Reranker#rerank");
     });
 
-    // bd tea-rags-mcp-fdef2 — the portable routing guide for non-Claude clients
-    // listed neither naming tool; a client without the plugin cascade never
-    // learned that a diff is reviewed through `changes`, not hand-listed names.
-    it("routes naming questions to both codegraph naming tools", () => {
+    // bd tea-rags-mcp-89k7k — the portable routing guide for non-Claude clients:
+    // the naming examples keep the lexicon surface, and the diff review routes
+    // to review_changes, the tool that owns it now.
+    it("routes naming questions and sends the diff review to review_changes", () => {
       const md = buildSearchGuide();
       const start = md.indexOf("## get_naming_lexicon Examples");
       expect(start).toBeGreaterThanOrEqual(0);
@@ -236,8 +236,9 @@ describe("Resource builders", () => {
       const section = rest.slice(0, rest.indexOf("\n## "));
       expect(section).toMatch(/names=\[/);
       expect(section).toMatch(/types=\[/);
-      expect(section).toMatch(/changes=\{/);
       expect(section).toMatch(/kind: "type"/);
+      expect(section).toMatch(/review_changes/);
+      expect(section).not.toMatch(/get_naming_lexicon.*changes=\{/);
       expect(md).toContain("get_ontology_report");
     });
   });

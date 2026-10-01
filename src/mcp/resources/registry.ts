@@ -269,7 +269,8 @@ declare \`kind: "field"\` rows, same as \`@ivar =\`.
   review leaves out changed files — a declaration never counts, collides with or confirms itself.
 - New class / constant → names=[{ name: "RubyConstReceiverPass", kind: "type", path: "<its file>", extends: "SymbolResolutionStrategy" }]
 - Words for a concept → concept="<what the symbol denotes, not its name>", language="typescript"
-- Review names a diff adds → changes={} (uncommitted vs HEAD) or changes={ base: "origin/main" } (branch).
+- Review names a diff adds → review_changes (changes={} = uncommitted vs HEAD, changes={ base: "origin/main" } =
+  branch, sections: ["naming"]) — the same lexicon pipeline; get_naming_lexicon itself takes no diff.
   base is read at its merge-base with HEAD (git merge-base <base> HEAD): only the branch's side plus
   uncommitted work, however far base moved on; no merge-base (unrelated / shallow clone) → error.
   files=[...] → those files only: a file with a diff by its added hunks, one with no diff (committed,

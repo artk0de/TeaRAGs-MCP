@@ -203,6 +203,23 @@ export type {
   OntologyValueKind,
 } from "./ontology.js";
 
+export type {
+  // Diff-scoped review (review_changes)
+  CohesionSectionPayload,
+  CohesionSectionResult,
+  IncompleteChangePartner,
+  IncompleteChangeSectionPayload,
+  IncompleteChangeSectionResult,
+  NamingSectionResult,
+  ReviewChangesRequest,
+  ReviewChangesResult,
+  ReviewChangesReviewBlock,
+  ReviewSectionEnvelope,
+  ReviewSectionId,
+  ReviewSectionNotJudgedEntry,
+  ReviewSectionResult,
+} from "./review.js";
+
 export { projectSearchResultPayloads } from "./payload-projection.js";
 export type { PayloadProjectionOutcome } from "./payload-projection.js";
 

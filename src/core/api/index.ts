@@ -43,7 +43,12 @@ export type { CompositionResult } from "./internal/composition.js";
 // ops createApp delegates to, plus the codegraph-off empty-report builders,
 // lives in the composition root. public/app.ts reaches them through the
 // composition module; bootstrap constructs them here for DI.
-export { composeAppOps, emptyArchitectureReport, emptyOntologyReport } from "./internal/composition.js";
+export {
+  composeAppOps,
+  emptyArchitectureReport,
+  emptyOntologyReport,
+  emptyReviewChangesResult,
+} from "./internal/composition.js";
 export type { AppOpsComposition, AppOpsDeps } from "./internal/composition.js";
 
 // Internal exports needed by bootstrap/factory.ts for DI wiring
@@ -53,6 +58,8 @@ export { IngestFacade } from "./internal/facades/ingest-facade.js";
 export type { IngestFacadeDeps } from "./internal/facades/ingest-facade.js";
 export { GraphFacade } from "./internal/facades/graph-facade.js";
 export type { GraphFacadeDeps } from "./internal/facades/graph-facade.js";
+export { ReviewFacade, validateReviewChangesRequest } from "./internal/facades/review-facade.js";
+export type { ReviewFacadeDeps } from "./internal/facades/review-facade.js";
 // Ops/facade handler types AppDeps references — public/app.ts imports them
 // from this barrel instead of deep internal paths. The four classes below are
 // exported as runtime symbols (bootstrap constructs them), which carries the
@@ -65,6 +72,9 @@ export { OntologyReportOps, ontologyLanguageProfiles } from "./internal/ops/onto
 export { ProjectRegistryOps } from "./internal/ops/project-registry-ops.js";
 export { TracePathOps } from "./internal/ops/trace-path-ops.js";
 export { WorktreeOps } from "./internal/ops/worktree-ops.js";
+export { ReviewChangesOps } from "./internal/ops/review-changes-ops.js";
+export type { ReviewChangesOpsDeps } from "./internal/ops/review-changes-ops.js";
+export type { ReviewEdgeExtractionDeps } from "./internal/ops/review-edge-overlay.js";
 export { createNamingReviewExtractor } from "./internal/ops/naming-review-extraction.js";
 export { createPathCollectionResolver } from "./internal/collection-resolver.js";
 export { readPayloadFileCommitCounts } from "./internal/infra/payload-file-commit-count-reader.js";

@@ -175,8 +175,9 @@ monolith without tuning.
 
 ### 2. 🔤 _"Do the names in my diff speak the project's language?"_
 
-`get_naming_lexicon { changes: { base: "main" } }` — also step D8 of
-`/tea-rags:mr-review` and the last check of `/tea-rags:data-driven-generation`
+`review_changes { changes: { base: "main" }, sections: ["naming"] }` — also step
+D8 of `/tea-rags:mr-review` and the last check of
+`/tea-rags:data-driven-generation`
 
 The project's vocabulary is read from its call graph: how values of each type
 are named, which role word each directory gives its types, which word the
@@ -291,7 +292,7 @@ The right column shows what runs under the hood.
   between them, and distance from the main sequence (`get_architecture_report`)
 - 🔤 **Naming review** — the project's vocabulary inferred from the call graph:
   verdicts on value and type names, the project's own word for a synonym, a
-  review of every name a diff declares (`get_naming_lexicon`), and a whole-code
+  review of every name a diff declares (`review_changes`), and a whole-code
   audit of synonyms, homonyms and outliers (`get_ontology_report`)
 - 🧠 **Agent skills** — the plugin routes every question to the right tools and
   presets on its own; 15 ready-made workflows (`explore`, `bug-hunt`,
