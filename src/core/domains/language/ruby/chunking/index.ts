@@ -11,7 +11,13 @@ export const rubyHooks: ChunkingHook[] = [
   rubyBodyChunkingHook, // Reads excludedRows, classifies body by keyword (Rails class bodies)
 ];
 
-export { rubyBodyChunkingHook, extractBodyChunks, extractClassHeader, RubyClassBodyChunker } from "./class-body-chunker.js";
+export {
+  rubyBodyChunkingHook,
+  extractBodyChunks,
+  extractClassHeader,
+  RubyClassBodyChunker,
+} from "./class-body-chunker.js";
 export { rubyCommentCaptureHook, collectMethodCommentRows } from "./comment-capture.js";
+export { isRubyModuleImport } from "./module-import.js";
 export { rspecFilterHook, isRspecFile } from "./rspec-filter.js";
 export { rspecScopeChunkerHook, buildScopeTree, produceScopeChunks } from "./rspec-scope-chunker.js";

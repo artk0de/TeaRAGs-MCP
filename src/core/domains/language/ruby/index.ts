@@ -40,7 +40,7 @@ import type {
   LanguageWalker,
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker } from "../kernel/index.js";
-import { rubyHooks } from "./chunking/index.js";
+import { isRubyModuleImport, rubyHooks } from "./chunking/index.js";
 import { RUBY_CODEGRAPH_EXCLUSION_GLOBS } from "./codegraph-exclusions.js";
 import { catalogueForGemfile } from "./gemfile.js";
 import { RUBY_IDENTIFIER_FINDER_METHODS } from "./identifier-finder-methods.js";
@@ -85,6 +85,7 @@ const rubyChunkerHooks: LanguageChunkerHooks = {
     return methodName || undefined;
   },
   hooks: rubyHooks,
+  isModuleImport: isRubyModuleImport,
   // Class-body DSL macros are represented in chunks by category grouping
   // (`class-body-chunker.ts` via `CATEGORY_TO_GROUP`), NOT as per-method chunks.
   // The synthesised methods they declare are a codegraph concern only — emitted
