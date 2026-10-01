@@ -15,6 +15,41 @@ export interface DependencyNormsInput {
 /** How far apart an edge's endpoints are — the ledger an edge is judged against. */
 export type NormLocality = "sameDirectory" | "sameDomain" | "crossDomain";
 
+/**
+ * The project's precedent ledgers, built once per input and shared by the
+ * report walk and the write-time verdict. Key format of `pairs` and of each
+ * `byLocality` map is `${roleSrc}\u0000${roleDst}\u0000${locality}` and
+ * `${roleSrc}\u0000${roleDst}` respectively — compose through
+ * {@link judgePlannedEdge}, never by hand.
+ */
+export interface NormLedgers {
+  readonly pairs: ReadonlyMap<string, number>;
+  /** File edges each role carries across every ledger — the frequency test a NEW_PATTERN needs. */
+  readonly activity: ReadonlyMap<string, number>;
+  readonly byLocality: ReadonlyMap<NormLocality, ReadonlyMap<string, number>>;
+  readonly threshold: DependencyNormsThreshold;
+  /** The un-rounded predicate: `>= threshold` AND strictly above the majority floor. */
+  admitsPairSupport: (value: number) => boolean;
+  readonly pairCount: number;
+}
+
+/** The edge the writer is about to add, in the same terms the ledgers count. */
+export interface NormPlannedEdge {
+  roleSrc: string;
+  roleDst: string;
+  locality: NormLocality;
+}
+
+export type PlannedEdgeVerdictKind = "conforms" | "misfit" | "newPattern" | "insufficientSupport";
+
+/** The write-time answer for one planned edge (bd tea-rags-mcp-23iii). */
+export interface PlannedEdgeVerdict {
+  kind: PlannedEdgeVerdictKind;
+  pairSupport: number;
+  /** MISFIT only: the frequent transit the planned edge should follow. */
+  expectedPath?: DependencyNormExpectedPath;
+}
+
 /** The two verdicts a precedent-less edge can carry; a precedented edge CONFORMS and is not listed. */
 export type NormFindingKind = "misfit" | "newPattern";
 
