@@ -11,6 +11,7 @@ import {
   MockEmbeddingProvider,
   MockQdrantManager,
 } from "./__helpers__/test-helpers.js";
+import { warmChunkerPoolFactory } from "./__helpers__/warm-chunker-pool.js";
 
 vi.mock("tree-sitter", () => ({
   default: class MockParser {
@@ -57,6 +58,7 @@ describe("EnrichmentModule", () => {
       embeddings,
       config,
       trajectoryConfig: defaultTrajectoryConfig(),
+      createChunkerPool: warmChunkerPoolFactory,
     });
   });
 

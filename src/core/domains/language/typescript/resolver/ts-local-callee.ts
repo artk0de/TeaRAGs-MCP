@@ -37,11 +37,12 @@
  * the same trade bd tea-rags-mcp-335eu made one pass over for receivers.
  */
 
-import ts from "typescript";
+import type ts from "typescript";
 
 import type { CallContext, CallRef } from "../../../../contracts/types/codegraph.js";
 import { lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import { findCallExpression } from "./strategies/ts-type-checker-fallback.js";
+import { loadTypeScriptCompiler } from "./ts-compiler-loader.js";
 import type { TSProgramCache } from "./ts-program-cache.js";
 import { isFunctionValuedInitializer, sameWalkerScope, walkerScopeOf } from "./ts-walker-scope.js";
 
@@ -154,7 +155,7 @@ export function classifyLexicalCallee(
   const handle = programCache.acquire(ctx.callerFile);
   if (handle === null) return NO_LEXICAL_BINDING;
   const node = findCallExpression(handle.sourceFile, call.startLine, call.member);
-  if (node === null || !ts.isIdentifier(node.expression)) return NO_LEXICAL_BINDING;
+  if (node === null || !loadTypeScriptCompiler().isIdentifier(node.expression)) return NO_LEXICAL_BINDING;
   const declarations = handle.checker.getSymbolAtLocation(node.expression)?.getDeclarations() ?? [];
   if (declarations.length === 0) return NO_LEXICAL_BINDING;
 
@@ -171,6 +172,7 @@ export function classifyLexicalCallee(
 
 /** A parameter, or a binding element anywhere inside a parameter's pattern. */
 function isParameterBinding(declaration: ts.Declaration): boolean {
+  const ts = loadTypeScriptCompiler();
   if (ts.isParameter(declaration)) return true;
   if (!ts.isBindingElement(declaration)) return false;
   let cursor: ts.Node = declaration.parent;
@@ -187,6 +189,7 @@ function isParameterBinding(declaration: ts.Declaration): boolean {
  * file's top-level declarations, which the short-name passes already own.
  */
 function isLocalFunctionDeclaration(declaration: ts.Declaration): boolean {
+  const ts = loadTypeScriptCompiler();
   if (ts.isFunctionDeclaration(declaration)) return declaredInsideFunctionBody(declaration);
   return (
     ts.isVariableDeclaration(declaration) &&
@@ -222,7 +225,7 @@ function classifyLocalCallee(
   const handle = programCache.acquire(ctx.callerFile);
   if (handle === null) return "notLocalBinding";
   const node = findCallExpression(handle.sourceFile, call.startLine, call.member);
-  if (node === null || !ts.isIdentifier(node.expression)) return "notLocalBinding";
+  if (node === null || !loadTypeScriptCompiler().isIdentifier(node.expression)) return "notLocalBinding";
   const declarations = handle.checker.getSymbolAtLocation(node.expression)?.getDeclarations() ?? [];
   if (declarations.length === 0 || !declarations.every(isLocalValueBinding)) return "notLocalBinding";
   return signaturesDeclaredOutsideProject(handle.checker, node.expression, programCache)
@@ -293,6 +296,7 @@ function signaturesDeclaredOutsideProject(
  * in-project declaration, so a local holding a `ProjectStore` keeps its edge.
  */
 export function isLocalValueBinding(declaration: ts.Declaration): boolean {
+  const ts = loadTypeScriptCompiler();
   if (ts.isParameter(declaration) || ts.isBindingElement(declaration)) return true;
   return ts.isVariableDeclaration(declaration) && declaredInsideFunctionBody(declaration);
 }
@@ -308,6 +312,7 @@ export function isLocalValueBinding(declaration: ts.Declaration): boolean {
  * edge, which is the conservative answer for shapes this bead did not measure.
  */
 function declaredInsideFunctionBody(node: ts.Node): boolean {
+  const ts = loadTypeScriptCompiler();
   for (let ancestor = node.parent; !ts.isSourceFile(ancestor); ancestor = ancestor.parent) {
     if (ts.isFunctionLike(ancestor)) return true;
   }

@@ -14,6 +14,9 @@ dist/
 # Test coverage
 coverage/
 
+# Vitest 5 run artifacts (attachments; json/junit reporter output)
+.vitest/
+
 # Environment variables
 .env
 .env.local

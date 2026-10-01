@@ -18,6 +18,13 @@ vi.mock("typescript", async (importOriginal) => {
   const actual = await importOriginal<{ default: typeof ts }>();
   return { ...actual, default: { ...actual.default, createProgram: vi.fn(actual.default.createProgram) } };
 });
+// The resolver obtains the compiler through `loadTypeScriptCompiler` (a
+// `createRequire`, which `vi.mock` does not intercept — bd tea-rags-mcp-bbo1h.2),
+// so the loader is pointed at the mocked module above.
+vi.mock("../../../../../../src/core/domains/language/typescript/resolver/ts-compiler-loader.js", async () => {
+  const mocked = await import("typescript");
+  return { loadTypeScriptCompiler: () => mocked.default };
+});
 
 /** Write `content` at `repoRoot/relPath`, creating parent directories. */
 function writeSource(repoRoot: string, relPath: string, content: string): string {

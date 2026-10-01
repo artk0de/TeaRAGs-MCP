@@ -66,6 +66,23 @@ export interface FileChunkResult {
   imports?: string[];
 }
 
+/**
+ * What an indexing run needs from a chunker pool: dispatch a file, release the
+ * pool when the run ends. `ChunkerPool` is the production implementation; the
+ * port is what `BaseIndexingPipeline` and the file-processing path depend on,
+ * so a `ChunkerPoolFactory` can hand a run something other than a fresh fork.
+ */
+export type ChunkerPoolPort = Pick<ChunkerPool, "processFile" | "shutdown">;
+
+/**
+ * Builds the chunker pool for one run from the run's pool size and chunker
+ * config (`languageModulePath` is the pool's own concern and is never set by
+ * the caller). Injected through `IngestDependencies.createChunkerPool`; absent
+ * → the pipeline constructs a `ChunkerPool` per run. The run calls `shutdown()`
+ * on what it was handed exactly once, when it finishes processing.
+ */
+export type ChunkerPoolFactory = (poolSize: number, config: ChunkerConfig) => ChunkerPoolPort;
+
 export class ChunkerPool {
   private readonly pool: WorkerDispatchPool<WorkerRequest, WorkerResponse>;
 

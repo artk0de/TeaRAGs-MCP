@@ -28,7 +28,7 @@
  * classifier to bucket the call as it does for every other external call.
  */
 
-import ts from "typescript";
+import type ts from "typescript";
 
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
@@ -37,6 +37,7 @@ import {
   lookupEcmascriptSymbols,
   lookupEcmascriptSymbolsByShortName,
 } from "../../../shared/ecmascript-symbol-lookup.js";
+import { loadTypeScriptCompiler } from "../ts-compiler-loader.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import { pinFunctionByWalkerScope } from "../ts-walker-scope.js";
 import type { ResolverConfig } from "./shared.js";
@@ -163,6 +164,7 @@ type ResolvedSignatureDeclaration = ts.SignatureDeclaration | ts.JSDocSignature;
  * is indistinguishable in the report from a real one.
  */
 export function composeSymbolId(declaration: ResolvedSignatureDeclaration): ComposedDeclarationSymbol | null {
+  const ts = loadTypeScriptCompiler();
   if (ts.isJSDocSignature(declaration)) return null;
   const shortName = declarationShortName(declaration);
   if (shortName === null) return null;
@@ -184,6 +186,7 @@ export function composeSymbolId(declaration: ResolvedSignatureDeclaration): Comp
  * name, which is how most TS callbacks and factories are declared.
  */
 function declarationShortName(declaration: ts.SignatureDeclaration): string | null {
+  const ts = loadTypeScriptCompiler();
   if (ts.isConstructorDeclaration(declaration)) return "constructor";
   const { name } = declaration;
   if (name !== undefined && ts.isIdentifier(name)) return name.text;

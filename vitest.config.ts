@@ -1,5 +1,7 @@
 import { defineConfig } from "vitest/config";
 
+import { listModuleSharingTestFiles } from "./tests/test-module-isolation.js";
+
 const isCI = !!process.env.CI;
 const coverageRun = process.argv.some((arg) => arg.includes("coverage"));
 // Retry is the one concession that stays environment-gated: it hides a genuinely
@@ -37,10 +39,21 @@ const resilient = isCI || coverageRun;
  */
 const WALL_CLOCK_BUDGET_MS = 30_000;
 
+// Test files whose source shows no module-state side effect run with
+// `isolate: false` (one module registry per worker); every other file keeps
+// per-file isolation. Recomputed from the source on every config load — the
+// rule set and its rationale live in tests/test-module-isolation.ts.
+const moduleSharingTestFiles = listModuleSharingTestFiles(import.meta.dirname, "tests");
+
 export default defineConfig({
   test: {
     globals: true,
     environment: "node",
+    // vitest 5 flipped the default to true; pinned to the v4 semantics the suite was written against.
+    clearMocks: false,
+    // Persist transformed modules across runs (default dir node_modules/.vitest-cache, gitignored
+    // with node_modules/). Invalidated on dependency reinstall.
+    fsModuleCache: true,
     // One budget for every invocation — see WALL_CLOCK_BUDGET_MS above. hookTimeout
     // was never set at all, so real-git fixture setups ran against vitest's 10s
     // default even on CI; that is what timed out blame-cache's beforeAll while its
@@ -74,13 +87,23 @@ export default defineConfig({
       "test-*.mjs",
       "test-*.ts",
     ],
+    // Both projects extend this config (the vitest 5 inline-project default) and
+    // concatenate its `exclude`, so their union is exactly the file set the root
+    // would run and they are disjoint by construction. Coverage stays root-level.
+    projects: [
+      { test: { name: "isolated", exclude: moduleSharingTestFiles } },
+      { test: { name: "module-sharing", include: moduleSharingTestFiles, isolate: false } },
+    ],
     coverage: {
       provider: "v8",
       reporter: isCI ? ["json", "lcov"] : ["text", "json", "lcov", "html"],
+      // vitest 5 matches these anchored against the root-relative path (v4 matched
+      // them as substrings of the absolute path), so a directory needs an explicit
+      // `/**` — a bare `build/` would match nothing.
       exclude: [
-        "node_modules/",
-        "build/",
-        "dist/",
+        "node_modules/**",
+        "build/**",
+        "dist/**",
         "**/*.test.ts",
         "**/*.spec.ts",
         "vitest.config.ts",

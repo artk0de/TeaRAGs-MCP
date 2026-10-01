@@ -26,7 +26,9 @@
 
 import { dirname } from "node:path";
 
-import ts from "typescript";
+import type ts from "typescript";
+
+import { loadTypeScriptCompiler } from "./ts-compiler-loader.js";
 
 /** What the memo holds per key — nothing a Program does not read. */
 type MemoizedResolution = ts.ResolvedModuleWithFailedLookupLocations;
@@ -46,6 +48,7 @@ export class TSModuleResolutionMemo {
   }
 
   private createLookups(packageJsonInfo?: ts.PackageJsonInfoCache): ts.ModuleResolutionCache {
+    const ts = loadTypeScriptCompiler();
     return ts.createModuleResolutionCache(
       process.cwd(),
       (fileName) => (ts.sys.useCaseSensitiveFileNames ? fileName : fileName.toLowerCase()),
@@ -70,6 +73,7 @@ export class TSModuleResolutionMemo {
     options: ts.CompilerOptions = this.options,
     redirectedReference?: ts.ResolvedProjectReference,
   ): MemoizedResolution {
+    const ts = loadTypeScriptCompiler();
     if (options !== this.options || redirectedReference !== undefined) {
       return ts.resolveModuleName(specifier, containingFile, options, this.host, undefined, redirectedReference, mode);
     }

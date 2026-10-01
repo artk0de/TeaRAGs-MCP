@@ -51,6 +51,9 @@ fresh_repo() {
   git -C "$REPO" add -A
   git -C "$REPO" commit -qm seed
   cp "$HOOK" "$REPO/.husky/pre-commit"
+  # The hook runs this repo-relative script first; outside a merge it is a no-op.
+  mkdir -p "$REPO/scripts/git"
+  cp "$ROOT/scripts/git/repin-on-merge.sh" "$REPO/scripts/git/repin-on-merge.sh"
 }
 
 stage() { mkdir -p "$REPO/$(dirname "$1")"; printf '%s\n' "${2:-x}" > "$REPO/$1"; git -C "$REPO" add -- "$1"; }
@@ -96,14 +99,14 @@ run_hook
 [ "$STATUS" = 0 ] && ! called "npm run build" && ! called "npm test"
 note $? "a commit with no src/ changes does not build"
 
-# 5. bd 3xtg7: a spawn-heavy related set dies on 5s timeouts at default fork
-#    concurrency — the vitest invocation carries the --maxWorkers=4 cap
+# 5. bd 3xtg7 / 0qaht.27 / bbo1h.5: the related-tests run carries an explicit
+#    --maxWorkers cap (re-measured at 6 once the per-file process fleets shrank)
 fresh_repo
 mkdir -p "$REPO/build"
 stage "src/core/foo.ts" "export const foo = 1;"
 run_hook
-[ "$STATUS" = 0 ] && grep -E "^npm test -- related .*--maxWorkers=4( |$)" "$CALLS" >/dev/null
-note $? "the related-tests run is capped at --maxWorkers=4"
+[ "$STATUS" = 0 ] && grep -E "^npm test -- related .*--maxWorkers=6( |$)" "$CALLS" >/dev/null
+note $? "the related-tests run is capped at --maxWorkers=6"
 
 rm -rf "$TMPD"
 echo "---"; echo "PASS=$PASS FAIL=$FAIL"

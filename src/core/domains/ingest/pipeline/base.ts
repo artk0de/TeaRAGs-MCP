@@ -28,7 +28,7 @@ import { readRepoGitState, readWorkingTreeDirty } from "../../../infra/repo-git-
 import type { ChunkLookupEntry, EnrichmentMetrics, IngestCodeConfig } from "../../../types.js";
 import type { IngestDependencies } from "../factory.js";
 import type { CodegraphDbLister, CodegraphDbRemover } from "../infra/alias-cleanup.js";
-import { ChunkerPool } from "./chunker/infra/pool.js";
+import { ChunkerPool, type ChunkerPoolPort } from "./chunker/infra/pool.js";
 import type { EnrichmentCoordinator } from "./enrichment/coordinator.js";
 import { reindexRunSpec, type EnrichmentRunSpec, type StreamedEnrichmentRunInput } from "./enrichment/run-spec.js";
 import { ChunkPipeline } from "./index.js";
@@ -40,7 +40,7 @@ import { FileScanner } from "./scanner.js";
 import type { PipelineConfig } from "./types.js";
 
 export interface ProcessingContext {
-  chunkerPool: ChunkerPool;
+  chunkerPool: ChunkerPoolPort;
   chunkPipeline: ChunkPipeline;
   /** The enrichment run this processing feeds; every per-run coordinator call names it. */
   enrichmentRun: EnrichmentRunHandle;
@@ -419,9 +419,16 @@ export abstract class BaseIndexingPipeline {
 
   // ── Processing components (private) ────────────────────
 
-  private createChunkerPool(chunkSizeOverride?: number, gemfileContent?: string, projectRoot?: string): ChunkerPool {
+  private createChunkerPool(
+    chunkSizeOverride?: number,
+    gemfileContent?: string,
+    projectRoot?: string,
+  ): ChunkerPoolPort {
     const chunkSize = chunkSizeOverride ?? this.config.chunkSize;
-    return new ChunkerPool(this.tuning.chunkerPoolSize, {
+    // Injected factory (tests lease warm pools, bd tea-rags-mcp-bbo1h.1) or a
+    // fresh forked pool per run — the production composition injects nothing.
+    const build = this.deps.createChunkerPool ?? ((poolSize, config) => new ChunkerPool(poolSize, config));
+    return build(this.tuning.chunkerPoolSize, {
       chunkSize,
       chunkOverlap: this.config.chunkOverlap,
       // Hard cap = chunkSize. The chunker MUST emit chunks <= maxChunkSize so
@@ -496,7 +503,7 @@ export abstract class BaseIndexingPipeline {
 
   // ── Teardown ─────────────────────────────────────────────
 
-  private async flushAndShutdown(chunkPipeline: ChunkPipeline, chunkerPool: ChunkerPool): Promise<void> {
+  private async flushAndShutdown(chunkPipeline: ChunkPipeline, chunkerPool: ChunkerPoolPort): Promise<void> {
     await chunkPipeline.flush();
     await Promise.all([chunkPipeline.shutdown(), chunkerPool.shutdown()]);
   }

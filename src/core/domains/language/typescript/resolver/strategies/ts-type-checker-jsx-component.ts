@@ -43,7 +43,7 @@
  * degrades to a file-only edge rather than an invented id.
  */
 
-import ts from "typescript";
+import type ts from "typescript";
 
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
@@ -52,6 +52,7 @@ import {
   lookupEcmascriptSymbols,
   lookupEcmascriptSymbolsByShortName,
 } from "../../../shared/ecmascript-symbol-lookup.js";
+import { loadTypeScriptCompiler } from "../ts-compiler-loader.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import type { ResolverConfig } from "./shared.js";
 
@@ -155,6 +156,7 @@ export class TSTypeCheckerJsxComponentSymbolResolutionStrategy implements Symbol
  */
 function resolveAlias(checker: ts.TypeChecker, symbol: ts.Symbol | undefined): ts.Symbol | undefined {
   if (!symbol) return undefined;
+  const ts = loadTypeScriptCompiler();
   return symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
 }
 
@@ -167,6 +169,7 @@ function resolveAlias(checker: ts.TypeChecker, symbol: ts.Symbol | undefined): t
 function declarationName(declaration: ts.Declaration): string | null {
   const named = declaration as ts.Declaration & { name?: ts.Node };
   const { name } = named;
+  const ts = loadTypeScriptCompiler();
   return name !== undefined && ts.isIdentifier(name) ? name.text : null;
 }
 
@@ -212,6 +215,7 @@ export function jsxTagMemberDeclarations(
   startLine: number,
   member: string,
 ): readonly ts.Declaration[] {
+  const ts = loadTypeScriptCompiler();
   const tag = findJsxTagName(sourceFile, startLine, member);
   if (tag === null || !ts.isPropertyAccessExpression(tag)) return [];
   return resolveAlias(checker, checker.getSymbolAtLocation(tag.name))?.getDeclarations() ?? [];
@@ -244,6 +248,7 @@ const jsxTagIndexes = new WeakMap<ts.SourceFile, Map<string, ts.JsxTagNameExpres
  * minutes to a projected ~60 (bd tea-rags-mcp-2mvc2).
  */
 function buildJsxTagIndex(sourceFile: ts.SourceFile): Map<string, ts.JsxTagNameExpression> {
+  const ts = loadTypeScriptCompiler();
   const index = new Map<string, ts.JsxTagNameExpression>();
 
   const visit = (node: ts.Node): void => {
@@ -264,6 +269,7 @@ function buildJsxTagIndex(sourceFile: ts.SourceFile): Map<string, ts.JsxTagNameE
 
 /** Rightmost identifier of a tag — `Panel` in `<UI.Panel />`, `Card` in `<Card>`. */
 function tagShortName(tagName: ts.JsxTagNameExpression): string | null {
+  const ts = loadTypeScriptCompiler();
   if (ts.isPropertyAccessExpression(tagName) && ts.isIdentifier(tagName.name)) return tagName.name.text;
   if (ts.isIdentifier(tagName)) return tagName.text;
   return null;

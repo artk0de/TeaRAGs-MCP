@@ -138,9 +138,10 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, posix, relative, resolve as resolvePath, sep } from "node:path";
 
-import ts from "typescript";
+import type ts from "typescript";
 
 import type { RelPath } from "../../../../contracts/types/codegraph.js";
+import { loadTypeScriptCompiler } from "./ts-compiler-loader.js";
 import { TSModuleResolutionMemo } from "./ts-module-resolution-memo.js";
 import { TSParsedSourceLru } from "./ts-parsed-source-lru.js";
 import {
@@ -551,6 +552,7 @@ interface BatchUnits {
  * values pinned the edge set is identical.
  */
 function buildCompilerOptions(repoRoot: string, tsOptions: TsCompilerOptions): ts.CompilerOptions {
+  const ts = loadTypeScriptCompiler();
   return {
     allowJs: true,
     noEmit: true,
@@ -1750,6 +1752,7 @@ export class TSProgramCache {
    * owns a run boundary, though nothing in `src` is such a caller today.
    */
   private buildHost(): ts.CompilerHost {
+    const ts = loadTypeScriptCompiler();
     const base = ts.createCompilerHost(this.compilerOptions, true);
     const getSourceFile = base.getSourceFile.bind(base);
     base.getSourceFile = (fileName, languageVersionOrOptions, onError, shouldCreate) => {
@@ -1885,7 +1888,11 @@ export class TSProgramCache {
   private buildFrom(rootFiles: readonly string[], entryAbsolute: string): CacheEntry | null {
     let program: ts.Program;
     try {
-      program = ts.createProgram({ rootNames: [...rootFiles], options: this.compilerOptions, host: this.host });
+      program = loadTypeScriptCompiler().createProgram({
+        rootNames: [...rootFiles],
+        options: this.compilerOptions,
+        host: this.host,
+      });
     } catch {
       return null;
     } finally {
@@ -1959,7 +1966,7 @@ export class TSProgramCache {
       return [];
     }
     const out: string[] = [];
-    for (const ref of ts.preProcessFile(source, true, true).importedFiles) {
+    for (const ref of loadTypeScriptCompiler().preProcessFile(source, true, true).importedFiles) {
       const targetRel = mapImportToFile(ref.fileName, callerRel, this.tsOptions, this.fileExists);
       if (targetRel === null) continue;
       out.push(resolvePath(this.repoRoot, posix.normalize(targetRel)));

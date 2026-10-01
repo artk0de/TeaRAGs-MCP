@@ -3,7 +3,7 @@
  * Dispatch, Combine and the UI frameworks declare, as the resolver asks it
  * (bd tea-rags-mcp-y99pg).
  *
- * The data is GENERATED (`./sdk-vocabulary.generated.ts`, by
+ * The data is GENERATED (`./sdk-vocabulary.generated.json`, by
  * `scripts/gen-swift-sdk-vocabulary.ts` from `swift-symbolgraph-extract`) and
  * replaces the hand-written name lists the resolver used to carry: which
  * UpperCamelCase names are SDK types, which supertypes an SDK type has, and
@@ -14,12 +14,18 @@
  * closure a member takes is called with — and, for the module-level
  * functions that take one, what that closure is called with.
  *
- * Constructed only through {@link swiftSdkVocabulary}: the JSON is parsed once
- * per process, on first use, and every resolver shares the result — it is
- * immutable, so nothing about a run can leak through it.
+ * Constructed only through {@link swiftSdkVocabulary}: the JSON is read and
+ * parsed once per process, on first use, and every resolver shares the result
+ * — it is immutable, so nothing about a run can leak through it. The data is a
+ * file beside this module, never an import: importing the language domain
+ * (every chunker worker does) must not pay for 2.3 MB a run without Swift never
+ * reads (bd tea-rags-mcp-bbo1h.3). `npm run build` copies it into `build/`.
  */
 
-import { SWIFT_SDK_VOCABULARY_JSON } from "./sdk-vocabulary.generated.js";
+import { readFileSync } from "node:fs";
+
+/** The generated asset, resolved beside this module in `src/` and in `build/` alike. */
+const VOCABULARY_ASSET = new URL("./sdk-vocabulary.generated.json", import.meta.url);
 
 /** What a member of an SDK type is. */
 export type SwiftSdkMemberKind = "property" | "method" | "init" | "case" | "subscript";
@@ -67,6 +73,8 @@ interface RawType {
 
 interface RawVocabulary {
   readonly v: number;
+  /** Provenance — generator, toolchain, SDKs, modules. Never read by resolution. */
+  readonly meta?: unknown;
   readonly types: Readonly<Record<string, RawType>>;
   /** Module-level functions that take a closure, by base name (bd tea-rags-mcp-y99pg.29). */
   readonly functions?: Readonly<Record<string, readonly string[]>>;
@@ -256,8 +264,8 @@ function parseSignature(signature: string): SwiftSdkMember {
 
 let shared: SwiftSdkVocabulary | undefined;
 
-/** The process-wide SDK vocabulary, parsed on first use. */
+/** The process-wide SDK vocabulary, read and parsed on first use. */
 export function swiftSdkVocabulary(): SwiftSdkVocabulary {
-  shared ??= new SwiftSdkVocabulary(JSON.parse(SWIFT_SDK_VOCABULARY_JSON) as RawVocabulary);
+  shared ??= new SwiftSdkVocabulary(JSON.parse(readFileSync(VOCABULARY_ASSET, "utf8")) as RawVocabulary);
   return shared;
 }
