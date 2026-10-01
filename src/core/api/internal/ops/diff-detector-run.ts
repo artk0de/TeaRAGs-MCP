@@ -13,13 +13,18 @@
  *
  * Shapes contract: findings carry the whole-repo report's detector kinds
  * (stableDependencies, leakingAbstraction, silentCoupling, mainSequence) plus
- * the `cycles` kind the `find_cycles` substrate exposes and the diff-native
+ * the `cycles` kind the `find_cycles` substrate exposes, the diff-native
  * `facadeContract` (bd tea-rags-mcp-89k7k.1.6 — no whole-repo-report
  * counterpart: the report judges the project's facades as they STAND, while
  * this family judges what the DIFF did to a facade's re-export surface against
- * the indexed demand); `splitCandidates` joins when A5/c3v6o builds its
- * substrate. The layering map is the layering session's territory and is never
- * judged here.
+ * the indexed demand), and `splitCandidates` (bd tea-rags-mcp-c3v6o, A5): the
+ * diff judged against the phase-1 split/merge verdicts (`computeSplitMergeVerdicts`,
+ * precomputed over the diff's components by the wiring and delivered through the
+ * port below) — the diff working across a component whose history already
+ * splits, or bridging two whose bundles move as one unit. Built when the
+ * wiring passes the port; absent, the family answers `built: false` with the
+ * wiring's dynamic reason — still silence-not-zero on absent data. The
+ * layering map is the layering session's territory and is never judged here.
  *
  * Absence of data is NEVER a violation: every judgement's absent-fact path —
  * `componentOf` undefined, `facadeOf` undefined, no co-change partners, no
@@ -38,6 +43,7 @@
  * never again from a reverse or duplicated read.
  */
 
+import type { SplitMergeVerdicts } from "../../../domains/trajectory/codegraph/temporal/index.js";
 import type { ReviewEdgeOverlay } from "./review-edge-overlay.js";
 
 /**
@@ -82,12 +88,38 @@ export interface DiffDetectorContractReader {
   indexedConsumersOf: (facade: string) => readonly { source: string; importedNames?: string[] }[];
 }
 
+/**
+ * The phase-1 split/merge verdict facts (bd tea-rags-mcp-c3v6o, A5): the
+ * verdicts `computeSplitMergeVerdicts` already drew over the diff's components
+ * — this layer JUDGES THE DIFF against them, it never re-draws thresholds or
+ * re-clusters. Absent port = the family answers built:false, never a zero
+ * verdict. The type crosses the api/ → domains edge as a type-only import,
+ * the edge api/internal already holds for the report's split/merge summary.
+ */
+export interface DiffDetectorSplitMergeReader {
+  /** The phase-1 verdicts, precomputed by the wiring for the diff's components. */
+  verdicts: SplitMergeVerdicts;
+  /** The partition the verdicts were computed over — the same map the catalog's componentOf answers. */
+  componentOf: (relPath: string) => string | undefined;
+}
+
 export interface DiffDetectorRunDeps {
   graph: DiffDetectorGraphReader;
   catalog: DiffDetectorCatalog;
   coupling: DiffDetectorCouplingReader;
   /** The facade-contract facts; absent = the family is unbuilt for this run. */
   contract?: DiffDetectorContractReader;
+  /**
+   * The phase-1 split/merge verdicts; absent = the family answers built:false.
+   */
+  splitMerge?: DiffDetectorSplitMergeReader;
+  /**
+   * Why the split/merge port is absent, when it is — the WIRING's dynamic
+   * reason (which substrate was missing), passed through verbatim; this layer
+   * never interprets it. Bare absent port and no reason reads as this layer's
+   * own `noSplitMergeReader`.
+   */
+  splitMergeAbsentReason?: string;
   /** BFS hop cap for cycle traces (default 8 — the report's own trace depth). */
   maxTraceHops?: number;
 }
@@ -104,14 +136,15 @@ export interface DiffDetectorFinding {
     | "cycles"
     | "mainSequence"
     | "silentCoupling"
-    | "facadeContract";
+    | "facadeContract"
+    | "splitCandidates";
   /** What the judgement anchors on — an edge, a pair, a component delta. */
   subject: string; // e.g. "A -> B" | "a.ts ~ b.ts" | "component X"
   evidence: string[]; // trace path for cycles; the facade import for leakingAbstraction; deltas for mainSequence
   detail: string; // one sentence a reviewer reads
 }
 
-/** One detector family's verdict for the run — `splitCandidates` is built:false until A5 lands. */
+/** One detector family's verdict for the run. */
 export interface DiffDetectorStatus {
   detector: string;
   built: boolean;
@@ -121,7 +154,7 @@ export interface DiffDetectorStatus {
 
 export interface DiffDetectorFindings {
   findings: readonly DiffDetectorFinding[];
-  /** Per-family verdict — splitCandidates is built:false with its reason until A5 lands. */
+  /** Per-family verdict — `splitCandidates` carries the wiring's reason when its port is absent. */
   detectors: readonly DiffDetectorStatus[];
 }
 
@@ -135,8 +168,18 @@ interface OverlayEdge {
 const DEFAULT_MAX_TRACE_HOPS = 8;
 /** Below this |deltaD| a touched component's main-sequence move reads as no move. */
 const MAIN_SEQUENCE_EPSILON = 0.001;
-/** The split-candidate family's standing verdict until its substrate exists. */
-const SPLIT_CANDIDATES_REASON = "A5/c3v6o substrate not built";
+/**
+ * Changed files listed per split-cluster / merge-side evidence line — exemplars
+ * a reviewer can open, not the full census; the line's count ("N of M changed
+ * files") keeps the total honest past the cap.
+ */
+const SPLIT_MERGE_EVIDENCE_FILE_CAP = 4;
+/**
+ * The split-candidate family's verdict when the wiring passed no port and no
+ * reason of its own — the phase-1 DTO's camelCase reason style. Every other
+ * absent reason is the wiring's dynamic string, passed through uninterpreted.
+ */
+const NO_SPLIT_MERGE_READER_REASON = "noSplitMergeReader";
 /** The facade-contract family's verdict when no contract port was injected. */
 const NO_CONTRACT_READER_REASON = "no contract reader";
 /**
@@ -151,6 +194,8 @@ export class DiffDetectorRun {
   private readonly catalog: DiffDetectorCatalog;
   private readonly coupling: DiffDetectorCouplingReader;
   private readonly contract: DiffDetectorContractReader | undefined;
+  private readonly splitMerge: DiffDetectorSplitMergeReader | undefined;
+  private readonly splitMergeAbsentReason: string;
   private readonly maxTraceHops: number;
 
   constructor(deps: DiffDetectorRunDeps) {
@@ -158,6 +203,8 @@ export class DiffDetectorRun {
     this.catalog = deps.catalog;
     this.coupling = deps.coupling;
     this.contract = deps.contract;
+    this.splitMerge = deps.splitMerge;
+    this.splitMergeAbsentReason = deps.splitMergeAbsentReason ?? NO_SPLIT_MERGE_READER_REASON;
     this.maxTraceHops = deps.maxTraceHops ?? DEFAULT_MAX_TRACE_HOPS;
   }
 
@@ -177,6 +224,7 @@ export class DiffDetectorRun {
     const mainSequence = this.judgeMainSequence(scope.changedFiles, overlayEdges);
     const silentCoupling = this.judgeSilentCoupling(scope.changedFiles, overlay, changed);
     const facadeContract = this.judgeFacadeContract(scope.changedFiles, overlay, changed);
+    const splitCandidates = this.judgeSplitCandidates(scope.changedFiles);
     return {
       findings: Object.freeze([
         ...stableDependencies,
@@ -185,6 +233,7 @@ export class DiffDetectorRun {
         ...mainSequence,
         ...silentCoupling,
         ...facadeContract,
+        ...splitCandidates,
       ]),
       detectors: Object.freeze([
         detectorStatus("stableDependencies", stableDependencies.length),
@@ -202,12 +251,14 @@ export class DiffDetectorRun {
               }) satisfies DiffDetectorStatus,
             ]
           : [detectorStatus("facadeContract", facadeContract.length)]),
-        Object.freeze({
-          detector: "splitCandidates",
-          built: false,
-          reason: SPLIT_CANDIDATES_REASON,
-          findingCount: 0,
-        }) satisfies DiffDetectorStatus,
+        this.splitMerge === undefined
+          ? (Object.freeze({
+              detector: "splitCandidates",
+              built: false,
+              reason: this.splitMergeAbsentReason,
+              findingCount: 0,
+            }) satisfies DiffDetectorStatus)
+          : detectorStatus("splitCandidates", splitCandidates.length),
       ]),
     };
   }
@@ -476,6 +527,86 @@ export class DiffDetectorRun {
     }
     return findings;
   }
+
+  /**
+   * The diff judged against the phase-1 split/merge verdicts — never a
+   * re-draw. SPLIT: changed files land in ≥ 2 clusters of one split candidate,
+   * so the change works across the seam history already draws inside that
+   * component; one cluster touched is the history's own grouping, never a
+   * finding. Cluster membership is the verdict's own per-cluster file list,
+   * so "N of M" counts against that list. MERGE: changed files on both sides
+   * of a merge candidate — the diff bridges two components whose bundles
+   * already move as one. A changed file the partition does not hold is
+   * silence, never a verdict.
+   */
+  private judgeSplitCandidates(changedFiles: readonly string[]): DiffDetectorFinding[] {
+    if (this.splitMerge === undefined) return [];
+    const { verdicts, componentOf } = this.splitMerge;
+    const changedInOrder = [...new Set(changedFiles)];
+    const findings: DiffDetectorFinding[] = [];
+    for (const candidate of verdicts.splitCandidates) {
+      const touched = candidate.files
+        .map((files, index) => {
+          const members = new Set(files);
+          return { index, size: files.length, hit: changedInOrder.filter((relPath) => members.has(relPath)) };
+        })
+        .filter((cluster) => cluster.hit.length > 0);
+      if (touched.length < 2) continue;
+      findings.push({
+        detector: "splitCandidates",
+        subject: candidate.component,
+        evidence: touched.map(
+          (cluster) =>
+            `cluster ${cluster.index + 1}: ${cluster.hit.length} of ${cluster.size} changed files — ` +
+            `${cluster.hit.slice(0, SPLIT_MERGE_EVIDENCE_FILE_CAP).join(", ")}`,
+        ),
+        detail:
+          `the diff works across the seam of ${candidate.component}, a component whose history already splits ` +
+          `into ${candidate.clusters} co-change groups`,
+      });
+    }
+
+    const changedByComponent = new Map<string, string[]>();
+    for (const relPath of changedInOrder) {
+      const component = componentOf(relPath);
+      if (component !== undefined) pushTo(changedByComponent, component, relPath);
+    }
+    for (const candidate of verdicts.mergeCandidates) {
+      const sideA = changedByComponent.get(candidate.componentA);
+      const sideB = changedByComponent.get(candidate.componentB);
+      if (sideA === undefined || sideB === undefined) continue;
+      findings.push({
+        detector: "splitCandidates",
+        subject: `${candidate.componentA} ~ ${candidate.componentB}`,
+        evidence: [
+          `strength ${format3(candidate.strength)}`,
+          `${candidate.componentA}: ${cappedFileList(sideA)}`,
+          `${candidate.componentB}: ${cappedFileList(sideB)}`,
+        ],
+        detail:
+          `the diff bridges ${candidate.componentA} and ${candidate.componentB}, two components whose admitted ` +
+          `bundles already move them as one unit`,
+      });
+    }
+    return findings;
+  }
+}
+
+/**
+ * A merge side's changed files capped at {@link SPLIT_MERGE_EVIDENCE_FILE_CAP}
+ * exemplars; a merge line carries no "N of M" count, so the overflow is
+ * counted here instead of silently dropped.
+ */
+function cappedFileList(files: readonly string[]): string {
+  const shown = files.slice(0, SPLIT_MERGE_EVIDENCE_FILE_CAP).join(", ");
+  const overflow = files.length - SPLIT_MERGE_EVIDENCE_FILE_CAP;
+  return overflow > 0 ? `${shown} (+${overflow} more)` : shown;
+}
+
+function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+  const list = map.get(key);
+  if (list === undefined) map.set(key, [value]);
+  else list.push(value);
 }
 
 /**

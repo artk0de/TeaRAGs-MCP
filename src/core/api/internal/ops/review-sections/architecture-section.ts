@@ -28,6 +28,7 @@ import { randomInt } from "node:crypto";
 import { REVIEW_EDGE_MAX_AGE_SECONDS } from "../../../../adapters/duckdb/review-edge-store.js";
 import type { FileDependencyEdge, TemporalCochangeGraph } from "../../../../contracts/types/codegraph.js";
 import type { ComponentGraph } from "../../../../domains/trajectory/codegraph/symbols/index.js";
+import { computeSplitMergeVerdicts } from "../../../../domains/trajectory/codegraph/temporal/index.js";
 import type { ReviewSectionNotJudgedEntry } from "../../../public/dto/review.js";
 import {
   ArchitectureFactsCatalog,
@@ -40,6 +41,7 @@ import {
   type DiffDetectorContractReader,
   type DiffDetectorCouplingReader,
   type DiffDetectorGraphReader,
+  type DiffDetectorRunDeps,
 } from "../diff-detector-run.js";
 import {
   readReviewFileEdges,
@@ -176,6 +178,36 @@ export class WiredContractReader implements DiffDetectorContractReader {
 const EMPTY_CONSUMERS: readonly { source: string; importedNames?: string[] }[] = [];
 
 /**
+ * The split/merge port over the pre-read co-change snapshot (bd
+ * tea-rags-mcp-c3v6o): the phase-1 verdicts drawn over the SAME component
+ * partition the other ports read, exactly as the whole-repo report's
+ * `summariseSplitMerge` draws them. Absent substrate yields the absent reason
+ * instead of a port — the report's own vocabulary (`noCochangeBuild`,
+ * `noBundleMembership`) plus `cochangeUnreadable` when the read failed — so
+ * the family answers built:false, never a zero verdict.
+ */
+export function wireSplitMerge(
+  snapshot: TemporalCochangeGraph | null | undefined,
+  readError: string | undefined,
+  components: ComponentGraph,
+): Pick<DiffDetectorRunDeps, "splitMerge" | "splitMergeAbsentReason"> {
+  if (readError !== undefined) return { splitMergeAbsentReason: "cochangeUnreadable" };
+  if (!snapshot?.meta) return { splitMergeAbsentReason: "noCochangeBuild" };
+  if (!snapshot.bundles || snapshot.bundles.size === 0) return { splitMergeAbsentReason: "noBundleMembership" };
+  const { componentOf } = components;
+  return {
+    splitMerge: {
+      verdicts: computeSplitMergeVerdicts({
+        components: { componentOf },
+        edges: snapshot.edges,
+        bundles: snapshot.bundles,
+      }),
+      componentOf: (relPath) => componentOf.get(relPath),
+    },
+  };
+}
+
+/**
  * The review id the temp table hangs on: `<epochSeconds>-<pid>-<6 alnum>`,
  * minted to the store's validation pattern `/^\d{10}-\d{1,7}-[a-z0-9]{6}$/`
  * exactly — the pattern is the injection guard for a SQL identifier that
@@ -224,6 +256,7 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       const graph = new WiredGraphReader(production.graph.edges);
       const coupling = new WiredCouplingReader(context.temporalCochange);
       const contract = new WiredContractReader(facts.components, production.graph.edges);
+      const splitMerge = wireSplitMerge(context.temporalCochange, context.temporalCochangeError, facts.components);
 
       // The working-tree side: every scope file the extraction can walk, one
       // shared run-level context; a file that cannot be read or resolved lands
@@ -241,7 +274,7 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       // The SAME reads feed the overlay — the table is persistence, the
       // overlay is the judgement's view; neither re-reads the other.
       const overlay = new ReviewEdgeOverlay(reads);
-      const result = new DiffDetectorRun({ graph, catalog, coupling, contract }).run(
+      const result = new DiffDetectorRun({ graph, catalog, coupling, contract, ...splitMerge }).run(
         { changedFiles: scope.files },
         overlay,
       );

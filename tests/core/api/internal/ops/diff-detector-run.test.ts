@@ -16,8 +16,10 @@ import {
   type DiffDetectorFinding,
   type DiffDetectorFindings,
   type DiffDetectorGraphReader,
+  type DiffDetectorSplitMergeReader,
 } from "../../../../../src/core/api/internal/ops/diff-detector-run.js";
 import { ReviewEdgeOverlay } from "../../../../../src/core/api/internal/ops/review-edge-overlay.js";
+import type { SplitMergeVerdicts } from "../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
 
 /** A file edge as a fixture tuple. */
 type FixtureEdge = readonly [source: string, target: string];
@@ -80,6 +82,28 @@ function contractOf(
   };
 }
 
+/**
+ * The phase-1 verdicts as a hand-built port: the verdicts are the layer's
+ * INPUT (precomputed by the wiring), so tests construct them directly — every
+ * entry of `splitCandidates` / `mergeCandidates` is already admitted.
+ */
+function splitMergeOf(
+  verdicts: Partial<SplitMergeVerdicts>,
+  components: ReadonlyMap<string, string>,
+): DiffDetectorSplitMergeReader {
+  return {
+    verdicts: {
+      splitCandidates: [],
+      mergeCandidates: [],
+      threshold: 0.5,
+      thresholdMethod: "majority",
+      excluded: { unpartitionedEndpoints: 0, crossComponentPairs: 0 },
+      ...verdicts,
+    },
+    componentOf: (relPath) => components.get(relPath),
+  };
+}
+
 /** The review's overlay: one read per changed file, its edges picked from the tuples. */
 function overlayOf(edges: readonly FixtureEdge[], changed: readonly string[]): ReviewEdgeOverlay {
   return new ReviewEdgeOverlay(
@@ -97,6 +121,8 @@ function runWith(
     graph?: DiffDetectorGraphReader;
     catalog?: DiffDetectorCatalog;
     coupling?: DiffDetectorCouplingReader;
+    splitMerge?: DiffDetectorSplitMergeReader;
+    splitMergeAbsentReason?: string;
     maxTraceHops?: number;
   },
   changedFiles: readonly string[],
@@ -106,6 +132,8 @@ function runWith(
     graph: deps.graph ?? graphOf([]),
     catalog: deps.catalog ?? catalogOf(new Map()),
     coupling: deps.coupling ?? couplingOf(new Map()),
+    ...(deps.splitMerge !== undefined ? { splitMerge: deps.splitMerge } : {}),
+    ...(deps.splitMergeAbsentReason !== undefined ? { splitMergeAbsentReason: deps.splitMergeAbsentReason } : {}),
     ...(deps.maxTraceHops !== undefined ? { maxTraceHops: deps.maxTraceHops } : {}),
   });
   return run.run({ changedFiles }, overlayOf(overlayEdges, changedFiles));
@@ -497,6 +525,162 @@ describe("facadeContract", () => {
   });
 });
 
+describe("splitCandidates", () => {
+  /** One component whose history splits into a y-group and an x-group (heaviest first). */
+  const WIDE = new Map([
+    ["src/wide/x1.ts", "wide"],
+    ["src/wide/x2.ts", "wide"],
+    ["src/wide/y1.ts", "wide"],
+    ["src/wide/y2.ts", "wide"],
+  ]);
+  const splitVerdicts = {
+    splitCandidates: [
+      {
+        component: "wide",
+        clusters: 2,
+        largestWeightShare: 0.52,
+        files: [
+          ["src/wide/y1.ts", "src/wide/y2.ts"],
+          ["src/wide/x1.ts", "src/wide/x2.ts"],
+        ],
+      },
+    ],
+  } satisfies Partial<SplitMergeVerdicts>;
+
+  it("fires when the diff touches two clusters of one component's split candidate", () => {
+    const result = runWith({ splitMerge: splitMergeOf(splitVerdicts, WIDE) }, ["src/wide/x1.ts", "src/wide/y1.ts"], []);
+    expect(result.findings.find((f) => f.detector === "splitCandidates")).toEqual({
+      detector: "splitCandidates",
+      subject: "wide",
+      evidence: [
+        "cluster 1: 1 of 2 changed files — src/wide/y1.ts",
+        "cluster 2: 1 of 2 changed files — src/wide/x1.ts",
+      ],
+      detail:
+        "the diff works across the seam of wide, a component whose history already splits into 2 co-change groups",
+    });
+  });
+
+  it("stays silent when the diff touches one cluster only", () => {
+    const result = runWith({ splitMerge: splitMergeOf(splitVerdicts, WIDE) }, ["src/wide/x1.ts", "src/wide/x2.ts"], []);
+    expect(subjectsOf(result, "splitCandidates")).toEqual([]);
+  });
+
+  it("caps each evidence line's file list at 4 while the counts stay honest", () => {
+    const cluster = Array.from({ length: 6 }, (_, i) => `src/wide/c${i}.ts`);
+    const wide = new Map([...cluster, "src/wide/other.ts"].map((relPath) => [relPath, "wide"]));
+    const result = runWith(
+      {
+        splitMerge: splitMergeOf(
+          {
+            splitCandidates: [
+              { component: "wide", clusters: 2, largestWeightShare: 0.5, files: [cluster, ["src/wide/other.ts"]] },
+            ],
+          },
+          wide,
+        ),
+      },
+      [...cluster, "src/wide/other.ts"],
+      [],
+    );
+    const finding = result.findings.find((f) => f.detector === "splitCandidates");
+    expect(finding?.evidence).toEqual([
+      `cluster 1: 6 of 6 changed files — ${cluster.slice(0, 4).join(", ")}`,
+      "cluster 2: 1 of 1 changed files — src/wide/other.ts",
+    ]);
+  });
+
+  it("fires a merge finding when changed files sit on both sides of a candidate pair", () => {
+    const sides = new Map([
+      ["src/alpha/a1.ts", "alpha"],
+      ["src/alpha/a2.ts", "alpha"],
+      ["src/beta/b1.ts", "beta"],
+    ]);
+    const result = runWith(
+      {
+        splitMerge: splitMergeOf(
+          {
+            mergeCandidates: [
+              { componentA: "alpha", componentB: "beta", support: 30, strength: 0.852, changesA: 32, changesB: 30 },
+            ],
+          },
+          sides,
+        ),
+      },
+      ["src/alpha/a1.ts", "src/alpha/a2.ts", "src/beta/b1.ts"],
+      [],
+    );
+    expect(result.findings.find((f) => f.detector === "splitCandidates")).toEqual({
+      detector: "splitCandidates",
+      subject: "alpha ~ beta",
+      evidence: ["strength 0.852", "alpha: src/alpha/a1.ts, src/alpha/a2.ts", "beta: src/beta/b1.ts"],
+      detail: "the diff bridges alpha and beta, two components whose admitted bundles already move them as one unit",
+    });
+  });
+
+  it("is silent when a changed file maps to no component — undefined componentOf is silence", () => {
+    const result = runWith(
+      {
+        splitMerge: splitMergeOf(
+          {
+            ...splitVerdicts,
+            mergeCandidates: [
+              { componentA: "alpha", componentB: "beta", support: 30, strength: 0.852, changesA: 32, changesB: 30 },
+            ],
+          },
+          WIDE,
+        ),
+      },
+      ["src/nowhere/n.ts"],
+      [],
+    );
+    expect(result.findings.filter((f) => f.detector === "splitCandidates")).toEqual([]);
+  });
+
+  it("answers built:false with the passed reason without the port, built:true with it", () => {
+    const absentWithReason = runWith({ splitMergeAbsentReason: "noBundleMembership" }, ["src/a.ts"], []);
+    expect(absentWithReason.detectors.find((entry) => entry.detector === "splitCandidates")).toEqual({
+      detector: "splitCandidates",
+      built: false,
+      reason: "noBundleMembership",
+      findingCount: 0,
+    });
+
+    const absentBare = runWith({}, ["src/a.ts"], []);
+    expect(absentBare.detectors.find((entry) => entry.detector === "splitCandidates")).toEqual({
+      detector: "splitCandidates",
+      built: false,
+      reason: "noSplitMergeReader",
+      findingCount: 0,
+    });
+
+    const present = runWith(
+      { splitMerge: splitMergeOf(splitVerdicts, WIDE) },
+      ["src/wide/x1.ts", "src/wide/y1.ts"],
+      [],
+    );
+    expect(present.detectors.find((entry) => entry.detector === "splitCandidates")).toEqual({
+      detector: "splitCandidates",
+      built: true,
+      findingCount: 1,
+    });
+  });
+
+  it("judging the same overlay twice yields the identical findings and statuses", () => {
+    const overlay = overlayOf([], ["src/wide/x1.ts", "src/wide/y1.ts"]);
+    const run = new DiffDetectorRun({
+      graph: graphOf([]),
+      catalog: catalogOf(new Map()),
+      coupling: couplingOf(new Map()),
+      splitMerge: splitMergeOf(splitVerdicts, WIDE),
+    });
+    const first = run.run({ changedFiles: ["src/wide/x1.ts", "src/wide/y1.ts"] }, overlay);
+    const second = run.run({ changedFiles: ["src/wide/x1.ts", "src/wide/y1.ts"] }, overlay);
+    expect(second.findings).toEqual(first.findings);
+    expect(second.detectors).toEqual(first.detectors);
+  });
+});
+
 describe("detectors", () => {
   it("lists the five built families with their counts, plus splitCandidates not built", () => {
     const result = runWith(
@@ -540,7 +724,7 @@ describe("detectors", () => {
     expect(result.detectors.find((entry) => entry.detector === "splitCandidates")).toEqual({
       detector: "splitCandidates",
       built: false,
-      reason: "A5/c3v6o substrate not built",
+      reason: "noSplitMergeReader",
       findingCount: 0,
     });
     // No contract port injected here, so the facade-contract family is the

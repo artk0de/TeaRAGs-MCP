@@ -226,7 +226,8 @@ describe("architectureSectionProvider.run", () => {
       { relPath: "src/gone.ts", reason: "unreadable", detail: expect.stringContaining("ENOENT") },
     ]);
 
-    // The detector statuses ride along, splitCandidates honestly unbuilt;
+    // The detector statuses ride along, splitCandidates honestly unbuilt — the
+    // snapshot carries a build but no bundle membership (the phase-1 reason);
     // facadeContract is wired here (the section always builds the port) and
     // found nothing on this fixture.
     const detectors = payload.detectors as { detector: string; built: boolean; findingCount: number }[];
@@ -240,7 +241,11 @@ describe("architectureSectionProvider.run", () => {
       "splitCandidates",
     ]);
     expect(detectors.find((d) => d.detector === "facadeContract")).toMatchObject({ built: true, findingCount: 0 });
-    expect(detectors.find((d) => d.detector === "splitCandidates")).toMatchObject({ built: false });
+    expect(detectors.find((d) => d.detector === "splitCandidates")).toMatchObject({
+      built: false,
+      reason: "noBundleMembership",
+      findingCount: 0,
+    });
     expect(payload.truncated).toBeUndefined();
   });
 
@@ -381,6 +386,139 @@ describe("architectureSectionProvider.run — facadeContract wiring", () => {
     expect(detectors.find((d) => d.detector === "facadeContract")).toEqual({
       detector: "facadeContract",
       built: true,
+      findingCount: 0,
+    });
+  });
+});
+
+describe("architectureSectionProvider.run — splitCandidates wiring", () => {
+  /** A co-change pair with explicit bundle counts — the strengths phase 1 clusters by. */
+  function temporalPair(
+    a: RelPath,
+    b: RelPath,
+    support: number,
+    changesA: number,
+    changesB: number,
+  ): TemporalCochangeGraph["edges"][number] {
+    return {
+      relPathA: a,
+      relPathB: b,
+      support,
+      confidenceAB: support / changesA,
+      confidenceBA: support / changesB,
+      lift: 2,
+      lastCoChangeAt: 0,
+      sampleCommits: [],
+      structurallyLinked: false,
+    };
+  }
+
+  /**
+   * The snapshot that makes `src/wide` a split candidate: an x-group (support
+   * 16) and a y-group (support 20) joined by a weak bridge (support 2, under
+   * the majority floor) — the same shape the phase-1 verdict test splits.
+   */
+  function wideSplitSnapshot(): TemporalCochangeGraph {
+    const bundles = new Map<number, readonly RelPath[]>();
+    for (let i = 0; i < 16; i++) bundles.set(bundles.size, ["src/wide/x1.ts", "src/wide/x2.ts"]);
+    for (let i = 0; i < 20; i++) bundles.set(bundles.size, ["src/wide/y1.ts", "src/wide/y2.ts"]);
+    bundles.set(bundles.size, ["src/wide/x2.ts", "src/wide/y1.ts"]);
+    bundles.set(bundles.size, ["src/wide/x2.ts", "src/wide/y1.ts"]);
+    return {
+      meta: { head: "h" },
+      edges: [
+        temporalPair("src/wide/x1.ts", "src/wide/x2.ts", 16, 16, 18),
+        temporalPair("src/wide/y1.ts", "src/wide/y2.ts", 20, 22, 20),
+        temporalPair("src/wide/x2.ts", "src/wide/y1.ts", 2, 18, 22),
+      ],
+      bundles,
+    };
+  }
+
+  it("computes the phase-1 verdicts over the snapshot and reports the diff working across the seam", async () => {
+    for (const relPath of ["src/wide/x1.ts", "src/wide/x2.ts", "src/wide/y1.ts", "src/wide/y2.ts"]) {
+      writeFile(relPath, "export const W = 1;\n");
+    }
+    const graph = graphDbStub({
+      files: ["src/wide/x1.ts", "src/wide/x2.ts", "src/wide/y1.ts", "src/wide/y2.ts"].map(graphFile),
+      edges: [],
+    });
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({
+        graphDb: graph,
+        scope: scopeOf(["src/wide/x1.ts", "src/wide/y1.ts"]),
+        temporalCochange: wideSplitSnapshot(),
+      }),
+    )) as Record<string, unknown>;
+
+    const findings = payload.findings as { detector: string; subject: string; evidence: string[] }[];
+    expect(findings.find((f) => f.detector === "splitCandidates")).toEqual({
+      detector: "splitCandidates",
+      subject: "src/wide",
+      evidence: [
+        "cluster 1: 1 of 2 changed files — src/wide/y1.ts",
+        "cluster 2: 1 of 2 changed files — src/wide/x1.ts",
+      ],
+      detail:
+        "the diff works across the seam of src/wide, a component whose history already splits into 2 co-change groups",
+    });
+    const detectors = payload.detectors as { detector: string; built: boolean; findingCount: number }[];
+    expect(detectors.find((d) => d.detector === "splitCandidates")).toEqual({
+      detector: "splitCandidates",
+      built: true,
+      findingCount: 1,
+    });
+  });
+
+  it("a snapshot whose build persisted no bundle membership reports the family noBundleMembership", async () => {
+    writeFile("src/wide/x1.ts", "export const W = 1;\n");
+    const graph = graphDbStub({ files: [graphFile("src/wide/x1.ts")], edges: [] });
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({
+        graphDb: graph,
+        scope: scopeOf(["src/wide/x1.ts"]),
+        temporalCochange: { meta: { head: "h" }, edges: [], bundles: new Map() },
+      }),
+    )) as Record<string, unknown>;
+
+    const detectors = payload.detectors as {
+      detector: string;
+      built: boolean;
+      reason?: string;
+      findingCount: number;
+    }[];
+    expect(detectors.find((d) => d.detector === "splitCandidates")).toEqual({
+      detector: "splitCandidates",
+      built: false,
+      reason: "noBundleMembership",
+      findingCount: 0,
+    });
+  });
+
+  it("a null snapshot (no co-change build) reports the family noCochangeBuild", async () => {
+    writeFile("src/wide/x1.ts", "export const W = 1;\n");
+    const graph = graphDbStub({ files: [graphFile("src/wide/x1.ts")], edges: [] });
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({
+        graphDb: graph,
+        scope: scopeOf(["src/wide/x1.ts"]),
+        temporalCochange: null,
+      }),
+    )) as Record<string, unknown>;
+
+    const detectors = payload.detectors as {
+      detector: string;
+      built: boolean;
+      reason?: string;
+      findingCount: number;
+    }[];
+    expect(detectors.find((d) => d.detector === "splitCandidates")).toEqual({
+      detector: "splitCandidates",
+      built: false,
+      reason: "noCochangeBuild",
       findingCount: 0,
     });
   });
