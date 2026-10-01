@@ -86,6 +86,14 @@ export interface DiffDetectorContractReader {
   facadeComponentOf: (relPath: string) => string | undefined;
   /** Distinct indexed consumers OUTSIDE the facade's component, imported names when recorded. */
   indexedConsumersOf: (facade: string) => readonly { source: string; importedNames?: string[] }[];
+  /**
+   * The facade's INDEXED re-export surface — the names its persisted edges
+   * forward; undefined when none were recorded. A name is dropped only when
+   * it leaves THIS surface: demand alone cannot tell a removed re-export from
+   * one the walker never records (type-only `export type { X } from`), which
+   * a consumer's inline `import { type X }` still names.
+   */
+  indexedSurfaceOf: (facade: string) => readonly string[] | undefined;
 }
 
 /**
@@ -496,6 +504,10 @@ export class DiffDetectorRun {
         for (const name of edge.reexportedExportNames) treeExposed.add(name);
       }
       if (!reexportsRecorded) continue;
+      const indexedSurface = this.contract.indexedSurfaceOf(relPath);
+      if (indexedSurface === undefined || indexedSurface.length === 0) continue;
+      const dropped = new Set(indexedSurface.filter((name) => !treeExposed.has(name)));
+      if (dropped.size === 0) continue;
 
       const consumersByDroppedName = new Map<string, Set<string>>();
       for (const consumer of this.contract.indexedConsumersOf(relPath)) {
@@ -503,7 +515,7 @@ export class DiffDetectorRun {
         if (consumer.importedNames === undefined) continue;
         if (consumer.importedNames.includes(WHOLE_MODULE_EXPORT_NAME)) continue;
         for (const name of consumer.importedNames) {
-          if (treeExposed.has(name)) continue;
+          if (!dropped.has(name)) continue;
           const sources = consumersByDroppedName.get(name);
           if (sources === undefined) consumersByDroppedName.set(name, new Set([consumer.source]));
           else sources.add(consumer.source);

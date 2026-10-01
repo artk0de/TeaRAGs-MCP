@@ -134,11 +134,14 @@ const EMPTY_PARTNERS: readonly { partner: string; support: number }[] = [];
  * `facadeComponentOf` answers only for a MEASURED module's entry file;
  * `indexedConsumersOf` serves the indexed demand on that facade — distinct
  * sources outside the facade's own component, the names their imports
- * recorded, absent when none did ("not recorded" is never "names nothing").
+ * recorded, absent when none did ("not recorded" is never "names nothing");
+ * `indexedSurfaceOf` serves the facade's own persisted re-export names, the
+ * pre-diff surface a dropped name must have left.
  */
 export class WiredContractReader implements DiffDetectorContractReader {
   private readonly componentByFacade: ReadonlyMap<string, string>;
   private readonly consumersByFacade: ReadonlyMap<string, readonly { source: string; importedNames?: string[] }[]>;
+  private readonly surfaceByFacade: ReadonlyMap<string, readonly string[]>;
 
   constructor(components: ComponentGraph, edges: readonly FileDependencyEdge[]) {
     this.componentByFacade = new Map(
@@ -147,8 +150,14 @@ export class WiredContractReader implements DiffDetectorContractReader {
       ),
     );
     const consumersByFacade = new Map<string, { source: string; importedNames?: string[] }[]>();
+    const surfaceByFacade = new Map<string, Set<string>>();
     const served = new Set<string>();
     for (const edge of edges) {
+      if (edge.reexportedExportNames !== undefined && this.componentByFacade.has(edge.sourceRelPath)) {
+        const surface = surfaceByFacade.get(edge.sourceRelPath) ?? new Set<string>();
+        for (const name of edge.reexportedExportNames) surface.add(name);
+        surfaceByFacade.set(edge.sourceRelPath, surface);
+      }
       const componentDir = this.componentByFacade.get(edge.targetRelPath);
       if (componentDir === undefined) continue;
       // A source inside the facade's own component is the module's own file —
@@ -164,6 +173,7 @@ export class WiredContractReader implements DiffDetectorContractReader {
       });
     }
     this.consumersByFacade = consumersByFacade;
+    this.surfaceByFacade = new Map([...surfaceByFacade].map(([facade, names]) => [facade, [...names]]));
   }
 
   facadeComponentOf(relPath: string): string | undefined {
@@ -172,6 +182,10 @@ export class WiredContractReader implements DiffDetectorContractReader {
 
   indexedConsumersOf(facade: string): readonly { source: string; importedNames?: string[] }[] {
     return this.consumersByFacade.get(facade) ?? EMPTY_CONSUMERS;
+  }
+
+  indexedSurfaceOf(facade: string): readonly string[] | undefined {
+    return this.surfaceByFacade.get(facade);
   }
 }
 

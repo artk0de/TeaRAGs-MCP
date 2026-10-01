@@ -332,7 +332,8 @@ describe("architectureSectionProvider.run — facadeContract wiring", () => {
     writeFile("src/lib/y.ts", "export const z = 1;\n");
     writeFile("src/lib/index.ts", 'export { a } from "./x";\nexport { z } from "./y";\n');
     // The indexed side keeps the module MEASURED (three external importers, all
-    // through the facade — adoption 1), and one of them still imports `b`.
+    // through the facade — adoption 1), and one of them still imports `b`. The
+    // indexed facade still re-exports `a`, `b` and `z`: its pre-diff surface.
     const graph = graphDbStub({
       files: [
         graphFile("src/lib/index.ts"),
@@ -343,6 +344,18 @@ describe("architectureSectionProvider.run — facadeContract wiring", () => {
         graphFile("src/app/c3.ts"),
       ],
       edges: [
+        {
+          sourceRelPath: "src/lib/index.ts",
+          targetRelPath: "src/lib/x.ts",
+          callWeight: 1,
+          reexportedExportNames: ["a", "b"],
+        },
+        {
+          sourceRelPath: "src/lib/index.ts",
+          targetRelPath: "src/lib/y.ts",
+          callWeight: 1,
+          reexportedExportNames: ["z"],
+        },
         namedGraphEdge("src/app/c1.ts", "src/lib/index.ts", ["a"]),
         namedGraphEdge("src/app/c2.ts", "src/lib/index.ts", ["a"]),
         namedGraphEdge("src/app/c3.ts", "src/lib/index.ts", ["a", "b"]),

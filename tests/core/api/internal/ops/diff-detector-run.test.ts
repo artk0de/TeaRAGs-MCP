@@ -72,13 +72,23 @@ function couplingOf(
 }
 
 /** Facade-contract facts the way the port serves them: facades by component, consumers by facade. */
+/**
+ * The contract port. `surfaces` is each facade's INDEXED re-export surface;
+ * unset, it defaults to every name the facade's consumers import — the
+ * realistic pre-diff state, where what consumers import the facade exported.
+ */
 function contractOf(
   facades: ReadonlyMap<string, string>,
   consumers: ReadonlyMap<string, readonly { source: string; importedNames?: string[] }[]>,
+  surfaces?: ReadonlyMap<string, readonly string[] | undefined>,
 ): DiffDetectorContractReader {
   return {
     facadeComponentOf: (relPath) => facades.get(relPath),
     indexedConsumersOf: (facade) => consumers.get(facade) ?? [],
+    indexedSurfaceOf: (facade) =>
+      surfaces !== undefined
+        ? surfaces.get(facade)
+        : [...new Set((consumers.get(facade) ?? []).flatMap((consumer) => consumer.importedNames ?? []))],
   };
 }
 
@@ -460,6 +470,33 @@ describe("facadeContract", () => {
       contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["b"] }]]])),
       [FACADE],
       [[FACADE, "src/lib/x.ts", { imported: ["b"] }]],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("never reports a consumed name the indexed surface did not record — a type-only re-export is unrecorded on both sides", () => {
+    const result = runWithContract(
+      contractOf(
+        facades,
+        new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["a", "b", "SomeType"] }]]]),
+        new Map([[FACADE, ["a", "b"]]]),
+      ),
+      [FACADE],
+      [[FACADE, "src/lib/x.ts", { reexported: ["a"] }]],
+    );
+    const finding = result.findings.find((f) => f.detector === "facadeContract");
+    expect(finding?.evidence).toEqual(["b: consumed by src/app/a.ts"]);
+  });
+
+  it("skips a facade whose indexed read recorded no re-export surface — nothing recorded, nothing to drop from", () => {
+    const result = runWithContract(
+      contractOf(
+        facades,
+        new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["b"] }]]]),
+        new Map([[FACADE, undefined]]),
+      ),
+      [FACADE],
+      [[FACADE, "src/lib/x.ts", { reexported: ["a"] }]],
     );
     expect(result.findings).toEqual([]);
   });
