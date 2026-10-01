@@ -161,8 +161,8 @@ away.
 ## D8 naming (codegraph-gated)
 
 ```text
-local:    get_naming_lexicon changes={ base: <target branch, e.g. main> }
-                             project=<alias>
+local:    review_changes changes={ base: <target branch, e.g. main> },
+                             sections: ["naming"], project=<alias>
           (tool reads base at its merge-base with HEAD — no git merge-base)
           (on main, uncommitted only → changes={})
 external: get_naming_lexicon names=[<declarations on the diff's added lines:
@@ -175,11 +175,12 @@ severity: MISFIT → minor; COLLISION → minor; NEW_TERM → minor only when
           CONFORMS → nothing
 ```
 
-Local: ONE `changes` call judges every name added hunks declare (values, types,
-constants) — no hand-listed drafts. Changed files excluded from evidence →
-already-indexed names cannot vouch for themselves. External: MR branch never
-checked out, working tree lacks its code → `names[]` from diff. `truncated`
-(>200 changed files) → state unreviewed file count, never "no naming issues".
+Local: ONE `review_changes(changes, sections: ["naming"])` call judges every
+name added hunks declare (values, types, constants) — no hand-listed drafts.
+Changed files excluded from evidence → already-indexed names cannot vouch for
+themselves. External: MR branch never checked out, working tree lacks its code →
+`names[]` from diff. `truncated` (>200 changed files) → state unreviewed file
+count, never "no naming issues".
 
 Answer = `review` {base, checked, conforming, novel, findings, notJudged,
 truncated?}; each finding flat `{relPath, line, name, kind, type?, verdict, …}`.

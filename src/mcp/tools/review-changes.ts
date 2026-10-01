@@ -26,7 +26,7 @@ const REVIEW_CHANGES_DESCRIPTION =
   "merge-base with HEAD = what THIS branch changed; path beside project = linked worktree of the same repo. " +
   "sections = ALLOWLIST, default all registered; unknown id = error; a section NOT requested is OMITTED from the " +
   "map, a requested one whose substrate is missing answers built:false+reason — absence is not not-built. " +
-  "naming: declarations the change adds, judged against project vocabulary (get_naming_lexicon review verbatim). " +
+  "naming: declarations the change adds, judged against project vocabulary (the naming-lexicon review, verbatim). " +
   "incompleteChange: co-change partners of the diff's files the diff does NOT touch (support, confidence, " +
   "lastCoChangeAt; cap 50). cohesion: per changed file, symbol co-change clusters + split candidates; a file with " +
   "no data = notJudged noCohesionData, never zero (cap 50 reports). architecture: the diff's added edges judged by " +

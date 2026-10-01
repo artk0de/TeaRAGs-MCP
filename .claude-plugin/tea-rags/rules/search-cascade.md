@@ -319,7 +319,7 @@ Has query?
    │   named", "is this name right") → get_naming_lexicon (codegraph on);
    │     reading the answer: /tea-rags:data-driven-generation Step 5 Naming
    │     One name / rename → `names[]`; review names a diff introduces →
-   │     `changes` ({} = uncommitted, { base } = branch) → `review.findings`
+   │     review_changes ({} = uncommitted, { base } = branch) → `review.findings`
    │
    ├─ Audit naming consistency / find ontology collisions project-wide
    │   → get_ontology_report (codegraph on; synonyms, homonyms, outliers, collisions)
@@ -403,8 +403,8 @@ non-search tasks.
 - **Mixed-axis broad exploration** — one unfiltered query over src+tests+docs
   lets dominant class take all slots; split per `references/axis-splitting.md`
 - **Judging a name by grep or semantic_search on the draft name** — the draft
-  pulls in its own lexical neighbours; use get_naming_lexicon (`names[]`, a diff
-  → `changes`; never hand-list a diff's names)
+  pulls in its own lexical neighbours; use get_naming_lexicon (`names[]`); a
+  diff → review_changes `naming` (never hand-list a diff's names)
 - **hybrid_search for TODO/FIXME/HACK markers** — use ripgrep MCP
 - **git log/diff for code history** — overlay already has git signals
 - **10+ ripgrep calls instead of reading a file** — just read it
@@ -425,7 +425,7 @@ non-search tasks.
 | Call path A→B (codegraph on)  | trace_path                        | get_callees breadth-first (manual)                |
 | Call path A→B (codegraph off) | semantic_search / hybrid + manual | — (graph tools unavailable; see Graph navigation) |
 | Naming vocabulary / verdict   | get_naming_lexicon                | codegraph off: DDG Step 5 Naming concept recipe   |
-| Naming review of a diff       | get_naming_lexicon `changes`      | codegraph off: not assessed (no substitute)       |
+| Naming review of a diff       | review_changes `naming`           | codegraph off: not assessed (no substitute)       |
 
 ## pathPattern Rules
 

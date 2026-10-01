@@ -243,7 +243,7 @@ const NAMING_LEXICON_DESCRIPTION =
   "Codegraph naming. `types`/`anchors`→names/kind+shape; " +
   "`names[]`(attr:field; method:return; class/const:type+path)→CONFORMS(vocabulary, not behaviour)|" +
   "MISFIT{suggestion}|NEW_TERM{topTerms}|NO_CONVENTION{prefer}|COLLISION,+alternatives,genericName; " +
-  "`concept`+`language`→terms; `changes`/`files`→review.";
+  "`concept`+`language`→terms.";
 
 function buildNamingLexiconInputSchema() {
   const draftName = z.object({
@@ -267,18 +267,14 @@ function buildNamingLexiconInputSchema() {
       anchors: z.array(z.string()).optional().describe("SymbolIds: +param/return types"),
       concept: z.string().optional().describe("Domain, not a name"),
       names: z.array(draftName).optional(),
-      changes: z.object({ base: z.string().optional() }).optional(),
-      files: z.array(z.string()).optional(),
     })
     .refine(
       (req) =>
         (req.types?.length ?? 0) > 0 ||
         (req.anchors?.length ?? 0) > 0 ||
         (req.names?.length ?? 0) > 0 ||
-        (req.concept ?? "").length > 0 ||
-        req.changes !== undefined ||
-        (req.files?.length ?? 0) > 0,
-      { message: "Provide at least one of types, anchors, concept, names, changes, files" },
+        (req.concept ?? "").length > 0,
+      { message: "Provide at least one of types, anchors, concept, names" },
     )
     .refine((req) => req.concept === undefined || req.language !== undefined, {
       message: "concept requires language",
