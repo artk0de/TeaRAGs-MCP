@@ -10,6 +10,13 @@ export interface DependencyNormsInput {
    * `sameDomain` locality reads off it. Absent: two-level locality only.
    */
   componentOf?: ReadonlyMap<RelPath, string>;
+  /**
+   * Picomatch glob scoping the FINDINGS by source file (bd tea-rags-mcp-mv8yv),
+   * the way every other detector scopes. Ledgers, supports and the cut stay
+   * whole-graph; findings the scope drops are counted in
+   * `summary.outOfScopeFindingCount`, never lost silently.
+   */
+  sourcePathPattern?: string;
 }
 
 /** How far apart an edge's endpoints are — the ledger an edge is judged against. */
@@ -90,6 +97,11 @@ export interface DependencyNormsSummary {
   violationCount: number;
   /** Distinct (roleSrc, roleDst, locality) ledgers. */
   pairCount: number;
+  /**
+   * Findings no source file matching `sourcePathPattern` carries; present
+   * only when scoped (bd tea-rags-mcp-mv8yv).
+   */
+  outOfScopeFindingCount?: number;
   excluded: {
     /** Rare pairs whose BOTH roles are rare — too little support to name a pattern. */
     lowRoleSupportEdgeCount: number;

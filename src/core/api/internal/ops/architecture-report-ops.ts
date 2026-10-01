@@ -238,8 +238,11 @@ export class ArchitectureReportOps {
     // Dependency norms (bd tea-rags-mcp-rpx0v), read-time only when asked:
     // roles from each file's primary type, ledgers and verdicts off the graph
     // already in memory. Same domain partition the layering judges for
-    // sameDomain locality.
-    const norms = request.norms ? await computeReportNorms(graphDb, graph, layeringComponents.componentOf) : undefined;
+    // sameDomain locality. Findings scope by the request's pathPattern, the
+    // way every other detector scopes (bd tea-rags-mcp-mv8yv).
+    const norms = request.norms
+      ? await computeReportNorms(graphDb, graph, layeringComponents.componentOf, request.pathPattern)
+      : undefined;
     const facadePartition = {
       componentCount: components.components.size,
       levelCount: buildLayeringModel(components).levelCount,
@@ -491,13 +494,19 @@ async function computeReportNorms(
   graphDb: Pick<GraphDbClient, "readTypeNameRows">,
   graph: FileDependencyGraph,
   componentOf: ReadonlyMap<RelPath, string>,
+  sourcePathPattern: string | undefined,
 ): Promise<DependencyNormsReport> {
   const rows = await graphDb.readTypeNameRows({
     pathPrefixes: [],
     kinds: TYPE_DRAFT_KINDS,
     nonProductionPaths: ontologyNonProductionPaths(),
   });
-  return computeDependencyNorms({ graph, fileRoles: buildDependencyNormFileRoles(rows), componentOf });
+  return computeDependencyNorms({
+    graph,
+    fileRoles: buildDependencyNormFileRoles(rows),
+    componentOf,
+    sourcePathPattern,
+  });
 }
 
 function normsDto(report: DependencyNormsReport): ArchitectureNormsReport {

@@ -1039,6 +1039,20 @@ describe("ArchitectureReportOps#build — dependency norms (bd tea-rags-mcp-rpx0
     expect(report.norms).toBeUndefined();
     expect(report.violations.some((v) => v.detector === "norms")).toBe(false);
   });
+
+  // bd tea-rags-mcp-mv8yv: the request's pathPattern scopes the norms FINDINGS
+  // by source, the way it scopes every other detector — dropped findings are
+  // counted in the summary, not silently mixed into the scoped answer.
+  it("scopes norms findings by the request's pathPattern and counts the dropped ones", async () => {
+    const report = await new ArchitectureReportOps().build(
+      graphDb(normsGraph(), [], { meta: null, edges: [] }, typeRows()),
+      { norms: true, pathPattern: "ui/**" },
+    );
+
+    expect(report.norms?.summary).toMatchObject({ violationCount: 1, outOfScopeFindingCount: 1 });
+    expect(report.norms?.findings.map((f) => f.sourceRelPath)).toEqual(["ui/list.ts"]);
+    expect(report.violations.filter((v) => v.detector === "norms").map((v) => v.sourceRelPath)).toEqual(["ui/list.ts"]);
+  });
 });
 
 // bd tea-rags-mcp-r8hme.9 — scripts, spikes, benchmarks, examples and fixtures

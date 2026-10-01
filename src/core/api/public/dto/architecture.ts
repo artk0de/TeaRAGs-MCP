@@ -1107,6 +1107,11 @@ export interface ArchitectureNormsReport {
     judgedEdgeCount: number;
     violationCount: number;
     pairCount: number;
+    /**
+     * Findings the request's `pathPattern` scoped out by source — present only
+     * when the request carried one (bd tea-rags-mcp-mv8yv).
+     */
+    outOfScopeFindingCount?: number;
     excluded: { lowRoleSupportEdgeCount: number };
   };
   threshold: ArchitectureNormsThreshold;

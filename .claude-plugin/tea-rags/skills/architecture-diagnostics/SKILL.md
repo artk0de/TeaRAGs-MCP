@@ -345,6 +345,10 @@ r8hme.30 domain component) / `crossDomain` — the same edge can conform at home
 and misfit across domains. Read `threshold.threshold` with the findings: support
 1 in a codebase of 30-ledger precedents is noise, not a pattern.
 
+`pathPattern` scopes the FINDINGS by source — ledgers and the cut stay
+whole-graph. Findings it drops count in `summary.outOfScopeFindingCount`, never
+silently lost.
+
 ## Phase 4 — EXCLUSIONS
 
 `summary.stableDependencies.excluded` — edges read, NOT judged:
