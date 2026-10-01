@@ -817,10 +817,20 @@ export type CodegraphStorageCompactionOutcome =
  * until the persistence slice needed it too — the adapters layer may not
  * import api, so the shared shape belongs here, beside the other
  * {@link GraphDbClient} call shapes.
+ *
+ * The export-name fields (bd tea-rags-mcp-89k7k.1.6) mirror
+ * `FileEdgeExportNames` with the same absence semantics: absent = not
+ * recorded, never read as "names nothing". They are in-memory judgement input
+ * for the diff detectors only — the review edge store persists source and
+ * target alone, so neither field round-trips a table.
  */
 export interface ReviewFileEdge {
   sourceRelPath: string;
   targetRelPath: string;
+  /** The names this edge's import statements take from the target's export surface, unioned per target. */
+  importedExportNames?: string[];
+  /** The names this edge's statements re-export out of the target — the facade-contract detector's supply side. */
+  reexportedExportNames?: string[];
 }
 
 /**

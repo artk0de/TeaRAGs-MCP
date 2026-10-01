@@ -74,6 +74,15 @@ function graphEdge(sourceRelPath: RelPath, targetRelPath: RelPath): FileDependen
   return { sourceRelPath, targetRelPath, callWeight: 1 };
 }
 
+/** An indexed edge that recorded the names its import takes — the facade-contract demand side. */
+function namedGraphEdge(
+  sourceRelPath: RelPath,
+  targetRelPath: RelPath,
+  importedExportNames: string[],
+): FileDependencyEdge {
+  return { sourceRelPath, targetRelPath, callWeight: 1, importedExportNames };
+}
+
 interface GraphDbStub {
   readFileDependencyGraph: ReturnType<typeof vi.fn>;
   putReviewFileEdges: ReturnType<typeof vi.fn>;
@@ -187,7 +196,9 @@ describe("architectureSectionProvider.run", () => {
     expect(graph.putReviewFileEdges).toHaveBeenCalledTimes(1);
     const [putId, putEdges] = graph.putReviewFileEdges.mock.calls[0] as [string, { sourceRelPath: string }[]];
     expect(putId).toMatch(REVIEW_ID_PATTERN);
-    expect(putEdges).toEqual([{ sourceRelPath: "src/app/a.ts", targetRelPath: "src/lib/b.ts" }]);
+    expect(putEdges).toEqual([
+      { sourceRelPath: "src/app/a.ts", targetRelPath: "src/lib/b.ts", importedExportNames: ["B"] },
+    ]);
     expect(graph.dropReviewFileEdges).toHaveBeenCalledTimes(1);
     expect(graph.dropReviewFileEdges.mock.calls[0]?.[0]).toBe(putId);
     // sweep → put → drop, in that order.
@@ -215,7 +226,9 @@ describe("architectureSectionProvider.run", () => {
       { relPath: "src/gone.ts", reason: "unreadable", detail: expect.stringContaining("ENOENT") },
     ]);
 
-    // The detector statuses ride along, splitCandidates honestly unbuilt.
+    // The detector statuses ride along, splitCandidates honestly unbuilt;
+    // facadeContract is wired here (the section always builds the port) and
+    // found nothing on this fixture.
     const detectors = payload.detectors as { detector: string; built: boolean; findingCount: number }[];
     expect(detectors.map((d) => d.detector)).toEqual([
       "stableDependencies",
@@ -223,8 +236,10 @@ describe("architectureSectionProvider.run", () => {
       "cycles",
       "mainSequence",
       "silentCoupling",
+      "facadeContract",
       "splitCandidates",
     ]);
+    expect(detectors.find((d) => d.detector === "facadeContract")).toMatchObject({ built: true, findingCount: 0 });
     expect(detectors.find((d) => d.detector === "splitCandidates")).toMatchObject({ built: false });
     expect(payload.truncated).toBeUndefined();
   });
@@ -302,6 +317,72 @@ describe("architectureSectionProvider.run", () => {
       runContext({ graphDb: graph, scope: scopeOf(["src/app/a.ts"]) }),
     )) as Record<string, unknown>;
     expect(payload.findings).toEqual([]);
+  });
+});
+
+describe("architectureSectionProvider.run — facadeContract wiring", () => {
+  it("emits a facadeContract finding end-to-end: the diff drops a re-export indexed consumers still import", async () => {
+    // The tree's facade keeps `a` and `z` but no longer re-exports `b`.
+    writeFile("src/lib/x.ts", "export const a = 1;\nexport const b = 2;\n");
+    writeFile("src/lib/y.ts", "export const z = 1;\n");
+    writeFile("src/lib/index.ts", 'export { a } from "./x";\nexport { z } from "./y";\n');
+    // The indexed side keeps the module MEASURED (three external importers, all
+    // through the facade — adoption 1), and one of them still imports `b`.
+    const graph = graphDbStub({
+      files: [
+        graphFile("src/lib/index.ts"),
+        graphFile("src/lib/x.ts"),
+        graphFile("src/lib/y.ts"),
+        graphFile("src/app/c1.ts"),
+        graphFile("src/app/c2.ts"),
+        graphFile("src/app/c3.ts"),
+      ],
+      edges: [
+        namedGraphEdge("src/app/c1.ts", "src/lib/index.ts", ["a"]),
+        namedGraphEdge("src/app/c2.ts", "src/lib/index.ts", ["a"]),
+        namedGraphEdge("src/app/c3.ts", "src/lib/index.ts", ["a", "b"]),
+      ],
+    });
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({ graphDb: graph, scope: scopeOf(["src/lib/index.ts"]) }),
+    )) as Record<string, unknown>;
+
+    const findings = payload.findings as { detector: string; subject: string; evidence: string[] }[];
+    expect(findings.filter((f) => f.detector === "facadeContract")).toEqual([
+      {
+        detector: "facadeContract",
+        subject: "src/lib/index.ts",
+        evidence: ["b: consumed by src/app/c3.ts"],
+        detail: expect.stringContaining("stops re-exporting"),
+      },
+    ]);
+    const detectors = payload.detectors as { detector: string; built: boolean; findingCount: number }[];
+    expect(detectors.find((d) => d.detector === "facadeContract")).toEqual({
+      detector: "facadeContract",
+      built: true,
+      findingCount: 1,
+    });
+  });
+
+  it("a non-facade diff reports the family built with zero findings", async () => {
+    writeFile("src/lib/b.ts", "export const B = 1;\n");
+    writeFile("src/app/a.ts", 'import { B } from "../lib/b";\nexport const A = B;\n');
+    const graph = graphDbStub({
+      files: [graphFile("src/app/a.ts"), graphFile("src/lib/b.ts")],
+      edges: [],
+    });
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({ graphDb: graph, scope: scopeOf(["src/app/a.ts"]) }),
+    )) as Record<string, unknown>;
+
+    const detectors = payload.detectors as { detector: string; built: boolean; findingCount: number }[];
+    expect(detectors.find((d) => d.detector === "facadeContract")).toEqual({
+      detector: "facadeContract",
+      built: true,
+      findingCount: 0,
+    });
   });
 });
 

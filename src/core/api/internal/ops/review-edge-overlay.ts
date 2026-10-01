@@ -190,25 +190,65 @@ export function workingTreeExtractionContext(
  * dropped (the review judges a file's COUPLING, not its self-reference),
  * targets the working tree no longer holds dropped (the mapper's unverified
  * extension fallback must not name a deleted file), duplicates collapsed —
- * `./b` and `./b.js` from one file are one dependency. Only the RUNTIME
- * `fileEdges` channel is read: F2's detectors judge the same table
- * `cg_symbols_edges_file` persists, so type-only imports stay out.
+ * `./b` and `./b.js` from one file are one dependency. The export names each
+ * statement takes and forwards SURVIVE the collapse (bd
+ * tea-rags-mcp-89k7k.1.6): one edge per target carries the UNION of its
+ * statements' names in first-seen order, each list absent when no statement
+ * recorded one — the facade-contract detector judges the tree's re-export
+ * surface against the indexed demand, and "not recorded" must never reach it
+ * as "names nothing". Only the RUNTIME `fileEdges` channel is read: F2's
+ * detectors judge the same table `cg_symbols_edges_file` persists, so
+ * type-only imports stay out.
  */
 function reviewEdgesOfFile(
   relPath: string,
   fileEdges: readonly GraphEdges["fileEdges"][number][],
   workTree: string,
 ): readonly ReviewFileEdge[] {
-  const seen = new Set<string>();
-  const edges: ReviewFileEdge[] = [];
+  // First-seen target order preserved: Map iteration is insertion order, so
+  // the emitted edges keep the order the statements were walked in.
+  const namesByTarget = new Map<string, { imported?: string[]; reexported?: string[] }>();
   for (const edge of fileEdges) {
     if (edge.targetRelPath === relPath) continue;
     if (!existsSync(join(workTree, edge.targetRelPath))) continue;
-    if (seen.has(edge.targetRelPath)) continue;
-    seen.add(edge.targetRelPath);
-    edges.push({ sourceRelPath: relPath, targetRelPath: edge.targetRelPath });
+    const names = namesByTarget.get(edge.targetRelPath);
+    if (names === undefined) {
+      namesByTarget.set(edge.targetRelPath, {
+        ...(edge.importedExportNames !== undefined ? { imported: [...edge.importedExportNames] } : {}),
+        ...(edge.reexportedExportNames !== undefined ? { reexported: [...edge.reexportedExportNames] } : {}),
+      });
+      continue;
+    }
+    names.imported = unionRecordedNames(names.imported, edge.importedExportNames);
+    names.reexported = unionRecordedNames(names.reexported, edge.reexportedExportNames);
+  }
+  const edges: ReviewFileEdge[] = [];
+  for (const [targetRelPath, names] of namesByTarget) {
+    edges.push({
+      sourceRelPath: relPath,
+      targetRelPath,
+      ...(names.imported !== undefined ? { importedExportNames: names.imported } : {}),
+      ...(names.reexported !== undefined ? { reexportedExportNames: names.reexported } : {}),
+    });
   }
   return Object.freeze(edges);
+}
+
+/**
+ * Union of two recorded name lists in first-seen order; `undefined` only when
+ * neither side recorded one — a second statement of the same target adds its
+ * names, it never erases the first's.
+ */
+function unionRecordedNames(first: string[] | undefined, second: readonly string[] | undefined): string[] | undefined {
+  if (second === undefined) return first;
+  if (first === undefined) return [...second];
+  const seen = new Set(first);
+  for (const name of second) {
+    if (seen.has(name)) continue;
+    seen.add(name);
+    first.push(name);
+  }
+  return first;
 }
 
 /**

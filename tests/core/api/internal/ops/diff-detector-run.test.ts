@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   DiffDetectorRun,
   type DiffDetectorCatalog,
+  type DiffDetectorContractReader,
   type DiffDetectorCouplingReader,
   type DiffDetectorFinding,
   type DiffDetectorFindings,
@@ -20,6 +21,17 @@ import { ReviewEdgeOverlay } from "../../../../../src/core/api/internal/ops/revi
 
 /** A file edge as a fixture tuple. */
 type FixtureEdge = readonly [source: string, target: string];
+
+/**
+ * A file edge plus the export names its statements recorded — the fixture
+ * shape `facadeContract` judges (the tree's re-export surface lives on the
+ * overlay's own edges, bd tea-rags-mcp-89k7k.1.6).
+ */
+type FixtureNamedEdge = readonly [
+  source: string,
+  target: string,
+  names: { imported?: readonly string[]; reexported?: readonly string[] },
+];
 
 /** The report's markedly-less-stable band, stubbed at a 0.3 tolerance. */
 const MARKEDLY_LESS_STABLE_TOLERANCE = 0.3;
@@ -57,6 +69,17 @@ function couplingOf(
   return { partnersOf: (relPath) => pairs.get(relPath) ?? [] };
 }
 
+/** Facade-contract facts the way the port serves them: facades by component, consumers by facade. */
+function contractOf(
+  facades: ReadonlyMap<string, string>,
+  consumers: ReadonlyMap<string, readonly { source: string; importedNames?: string[] }[]>,
+): DiffDetectorContractReader {
+  return {
+    facadeComponentOf: (relPath) => facades.get(relPath),
+    indexedConsumersOf: (facade) => consumers.get(facade) ?? [],
+  };
+}
+
 /** The review's overlay: one read per changed file, its edges picked from the tuples. */
 function overlayOf(edges: readonly FixtureEdge[], changed: readonly string[]): ReviewEdgeOverlay {
   return new ReviewEdgeOverlay(
@@ -91,6 +114,40 @@ function runWith(
 /** Subjects of one detector's findings, in emission order. */
 function subjectsOf(result: DiffDetectorFindings, detector: DiffDetectorFinding["detector"]): string[] {
   return result.findings.filter((finding) => finding.detector === detector).map((finding) => finding.subject);
+}
+
+/** The review's overlay with name-carrying edges: one read per changed file, its edges picked from the tuples. */
+function namedOverlayOf(edges: readonly FixtureNamedEdge[], changed: readonly string[]): ReviewEdgeOverlay {
+  return new ReviewEdgeOverlay(
+    changed.map((relPath) => ({
+      relPath,
+      edges: Object.freeze(
+        edges
+          .filter(([source]) => source === relPath)
+          .map(([sourceRelPath, targetRelPath, names]) => ({
+            sourceRelPath,
+            targetRelPath,
+            ...(names.imported !== undefined ? { importedExportNames: [...names.imported] } : {}),
+            ...(names.reexported !== undefined ? { reexportedExportNames: [...names.reexported] } : {}),
+          })),
+      ),
+    })),
+  );
+}
+
+/** One judged run over name-carrying overlay edges, with only the contract port injected. */
+function runWithContract(
+  contract: DiffDetectorContractReader | undefined,
+  changedFiles: readonly string[],
+  overlayEdges: readonly FixtureNamedEdge[],
+): DiffDetectorFindings {
+  const run = new DiffDetectorRun({
+    graph: graphOf([]),
+    catalog: catalogOf(new Map()),
+    coupling: couplingOf(new Map()),
+    ...(contract !== undefined ? { contract } : {}),
+  });
+  return run.run({ changedFiles }, namedOverlayOf(overlayEdges, changedFiles));
 }
 
 function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
@@ -309,6 +366,137 @@ describe("silentCoupling", () => {
   });
 });
 
+describe("facadeContract", () => {
+  const FACADE = "src/lib/index.ts";
+  const facades = new Map([[FACADE, "src/lib"]]);
+
+  it("reports the facade that stopped re-exporting a name an indexed consumer still imports", () => {
+    const result = runWithContract(
+      contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["a", "b"] }]]])),
+      [FACADE],
+      [[FACADE, "src/lib/x.ts", { reexported: ["a"] }]],
+    );
+    expect(subjectsOf(result, "facadeContract")).toEqual([FACADE]);
+    const finding = result.findings.find((f) => f.detector === "facadeContract");
+    expect(finding?.evidence).toEqual(["b: consumed by src/app/a.ts"]);
+    expect(finding?.detail).toContain("stops re-exporting");
+  });
+
+  it("stays silent when every consumed name is still re-exported", () => {
+    const result = runWithContract(
+      contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["a", "b"] }]]])),
+      [FACADE],
+      [[FACADE, "src/lib/x.ts", { reexported: ["a", "b"] }]],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("skips a consumer the diff itself changes — its indexed row is stale, the diff judges its own read", () => {
+    const result = runWithContract(
+      contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["b"] }]]])),
+      [FACADE, "src/app/a.ts"],
+      [[FACADE, "src/lib/x.ts", { reexported: ["a"] }]],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("skips a consumer whose indexed row recorded no imported names", () => {
+    const result = runWithContract(
+      contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts" }]]])),
+      [FACADE],
+      [[FACADE, "src/lib/x.ts", { reexported: ["a"] }]],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("skips a whole-module consumer — `*` pins no name", () => {
+    const result = runWithContract(
+      contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["*"] }]]])),
+      [FACADE],
+      [[FACADE, "src/lib/x.ts", { reexported: ["a"] }]],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("skips a changed file no measured module claims as its facade", () => {
+    const result = runWithContract(
+      contractOf(new Map(), new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["b"] }]]])),
+      ["src/lib/plain.ts"],
+      [["src/lib/plain.ts", "src/lib/x.ts", { reexported: ["a"] }]],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("skips a facade whose tree read recorded no re-export surface — not recorded is not exports-nothing", () => {
+    const result = runWithContract(
+      contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["b"] }]]])),
+      [FACADE],
+      [[FACADE, "src/lib/x.ts", { imported: ["b"] }]],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("answers built:false with its reason without the contract port, built:true with it", () => {
+    const absent = runWithContract(undefined, [FACADE], [[FACADE, "src/lib/x.ts", { reexported: ["a"] }]]);
+    expect(absent.detectors.find((entry) => entry.detector === "facadeContract")).toEqual({
+      detector: "facadeContract",
+      built: false,
+      reason: "no contract reader",
+      findingCount: 0,
+    });
+
+    const present = runWithContract(
+      contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["b"] }]]])),
+      [FACADE],
+      [[FACADE, "src/lib/x.ts", { reexported: ["a"] }]],
+    );
+    expect(present.detectors.find((entry) => entry.detector === "facadeContract")).toEqual({
+      detector: "facadeContract",
+      built: true,
+      findingCount: 1,
+    });
+  });
+
+  it("aggregates one finding per facade: names sorted, sources sorted and distinct", () => {
+    const result = runWithContract(
+      contractOf(
+        facades,
+        new Map([
+          [
+            FACADE,
+            [
+              { source: "src/app/z.ts", importedNames: ["zz", "aa"] },
+              { source: "src/app/a.ts", importedNames: ["aa", "mm"] },
+            ],
+          ],
+        ]),
+      ),
+      [FACADE],
+      [[FACADE, "src/lib/x.ts", { reexported: ["kept"] }]],
+    );
+    const finding = result.findings.find((f) => f.detector === "facadeContract");
+    expect(finding?.evidence).toEqual([
+      "aa: consumed by src/app/a.ts, src/app/z.ts",
+      "mm: consumed by src/app/a.ts",
+      "zz: consumed by src/app/z.ts",
+    ]);
+  });
+
+  it("judging the same overlay twice yields the identical findings and statuses", () => {
+    const overlay = namedOverlayOf([[FACADE, "src/lib/x.ts", { reexported: ["a"] }]], [FACADE]);
+    const run = new DiffDetectorRun({
+      graph: graphOf([]),
+      catalog: catalogOf(new Map()),
+      coupling: couplingOf(new Map()),
+      contract: contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["b"] }]]])),
+    });
+    const first = run.run({ changedFiles: [FACADE] }, overlay);
+    const second = run.run({ changedFiles: [FACADE] }, overlay);
+    expect(second.findings).toEqual(first.findings);
+    expect(second.detectors).toEqual(first.detectors);
+  });
+});
+
 describe("detectors", () => {
   it("lists the five built families with their counts, plus splitCandidates not built", () => {
     const result = runWith(
@@ -340,10 +528,11 @@ describe("detectors", () => {
       "cycles",
       "mainSequence",
       "silentCoupling",
+      "facadeContract",
       "splitCandidates",
     ]);
     for (const entry of result.detectors) {
-      if (entry.detector === "splitCandidates") continue;
+      if (entry.detector === "splitCandidates" || entry.detector === "facadeContract") continue;
       expect(entry.built).toBe(true);
       expect(entry.reason).toBeUndefined();
       expect(entry.findingCount).toBe(result.findings.filter((finding) => finding.detector === entry.detector).length);
@@ -352,6 +541,14 @@ describe("detectors", () => {
       detector: "splitCandidates",
       built: false,
       reason: "A5/c3v6o substrate not built",
+      findingCount: 0,
+    });
+    // No contract port injected here, so the facade-contract family is the
+    // second honestly-unbuilt row.
+    expect(result.detectors.find((entry) => entry.detector === "facadeContract")).toEqual({
+      detector: "facadeContract",
+      built: false,
+      reason: "no contract reader",
       findingCount: 0,
     });
   });

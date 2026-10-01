@@ -115,7 +115,7 @@ export type CohesionSectionResult = ReviewSectionEnvelope & CohesionSectionPaylo
 export interface ArchitectureSectionPayload {
   /** Detector findings over the diff's overlay edges, capped at 100. */
   findings: readonly DiffDetectorFinding[];
-  /** Per-detector verdict row — the sixth family (`splitCandidates`) is `built: false` until its substrate ships. */
+  /** Per-detector verdict row — the `splitCandidates` family is `built: false` until its substrate ships. */
   detectors: readonly DiffDetectorStatus[];
   /** Findings past the cap of 100 — counted, not listed. */
   truncated?: number;

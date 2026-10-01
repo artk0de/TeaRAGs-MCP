@@ -13,9 +13,13 @@
  *
  * Shapes contract: findings carry the whole-repo report's detector kinds
  * (stableDependencies, leakingAbstraction, silentCoupling, mainSequence) plus
- * the `cycles` kind the `find_cycles` substrate exposes; `splitCandidates`
- * joins when A5/c3v6o builds its substrate. The layering map is the layering
- * session's territory and is never judged here.
+ * the `cycles` kind the `find_cycles` substrate exposes and the diff-native
+ * `facadeContract` (bd tea-rags-mcp-89k7k.1.6 — no whole-repo-report
+ * counterpart: the report judges the project's facades as they STAND, while
+ * this family judges what the DIFF did to a facade's re-export surface against
+ * the indexed demand); `splitCandidates` joins when A5/c3v6o builds its
+ * substrate. The layering map is the layering session's territory and is never
+ * judged here.
  *
  * Absence of data is NEVER a violation: every judgement's absent-fact path —
  * `componentOf` undefined, `facadeOf` undefined, no co-change partners, no
@@ -63,10 +67,27 @@ export interface DiffDetectorCouplingReader {
   partnersOf: (relPath: string) => readonly { partner: string; support: number }[];
 }
 
+/**
+ * The facade-contract facts (bd tea-rags-mcp-89k7k.1.6): which files ARE a
+ * measured module's facade, and which indexed consumers outside that module
+ * still import which names — the pre-diff DEMAND on a facade's export surface.
+ * The supply side is the overlay's own (`reexportedExportNames` the tree read
+ * recorded), so this port never reads the working tree. Absent port = the
+ * family answers built:false, never a zero verdict.
+ */
+export interface DiffDetectorContractReader {
+  /** The measured component whose facade this file is; undefined = not a facade. */
+  facadeComponentOf: (relPath: string) => string | undefined;
+  /** Distinct indexed consumers OUTSIDE the facade's component, imported names when recorded. */
+  indexedConsumersOf: (facade: string) => readonly { source: string; importedNames?: string[] }[];
+}
+
 export interface DiffDetectorRunDeps {
   graph: DiffDetectorGraphReader;
   catalog: DiffDetectorCatalog;
   coupling: DiffDetectorCouplingReader;
+  /** The facade-contract facts; absent = the family is unbuilt for this run. */
+  contract?: DiffDetectorContractReader;
   /** BFS hop cap for cycle traces (default 8 — the report's own trace depth). */
   maxTraceHops?: number;
 }
@@ -77,7 +98,13 @@ export interface DiffDetectorScope {
 }
 
 export interface DiffDetectorFinding {
-  detector: "stableDependencies" | "leakingAbstraction" | "cycles" | "mainSequence" | "silentCoupling";
+  detector:
+    | "stableDependencies"
+    | "leakingAbstraction"
+    | "cycles"
+    | "mainSequence"
+    | "silentCoupling"
+    | "facadeContract";
   /** What the judgement anchors on — an edge, a pair, a component delta. */
   subject: string; // e.g. "A -> B" | "a.ts ~ b.ts" | "component X"
   evidence: string[]; // trace path for cycles; the facade import for leakingAbstraction; deltas for mainSequence
@@ -110,17 +137,27 @@ const DEFAULT_MAX_TRACE_HOPS = 8;
 const MAIN_SEQUENCE_EPSILON = 0.001;
 /** The split-candidate family's standing verdict until its substrate exists. */
 const SPLIT_CANDIDATES_REASON = "A5/c3v6o substrate not built";
+/** The facade-contract family's verdict when no contract port was injected. */
+const NO_CONTRACT_READER_REASON = "no contract reader";
+/**
+ * The whole-module import name (the `WHOLE_MODULE_EXPORT_NAME` precedent the
+ * facade-leak classifier set): a consumer taking `*` re-imports whatever the
+ * surface holds, so no single name drop can break it.
+ */
+const WHOLE_MODULE_EXPORT_NAME = "*";
 
 export class DiffDetectorRun {
   private readonly graph: DiffDetectorGraphReader;
   private readonly catalog: DiffDetectorCatalog;
   private readonly coupling: DiffDetectorCouplingReader;
+  private readonly contract: DiffDetectorContractReader | undefined;
   private readonly maxTraceHops: number;
 
   constructor(deps: DiffDetectorRunDeps) {
     this.graph = deps.graph;
     this.catalog = deps.catalog;
     this.coupling = deps.coupling;
+    this.contract = deps.contract;
     this.maxTraceHops = deps.maxTraceHops ?? DEFAULT_MAX_TRACE_HOPS;
   }
 
@@ -139,6 +176,7 @@ export class DiffDetectorRun {
     const cycles = this.judgeCycles(overlayEdges, changed);
     const mainSequence = this.judgeMainSequence(scope.changedFiles, overlayEdges);
     const silentCoupling = this.judgeSilentCoupling(scope.changedFiles, overlay, changed);
+    const facadeContract = this.judgeFacadeContract(scope.changedFiles, overlay, changed);
     return {
       findings: Object.freeze([
         ...stableDependencies,
@@ -146,6 +184,7 @@ export class DiffDetectorRun {
         ...cycles,
         ...mainSequence,
         ...silentCoupling,
+        ...facadeContract,
       ]),
       detectors: Object.freeze([
         detectorStatus("stableDependencies", stableDependencies.length),
@@ -153,6 +192,16 @@ export class DiffDetectorRun {
         detectorStatus("cycles", cycles.length),
         detectorStatus("mainSequence", mainSequence.length),
         detectorStatus("silentCoupling", silentCoupling.length),
+        ...(this.contract === undefined
+          ? [
+              Object.freeze({
+                detector: "facadeContract",
+                built: false,
+                reason: NO_CONTRACT_READER_REASON,
+                findingCount: 0,
+              }) satisfies DiffDetectorStatus,
+            ]
+          : [detectorStatus("facadeContract", facadeContract.length)]),
         Object.freeze({
           detector: "splitCandidates",
           built: false,
@@ -362,6 +411,68 @@ export class DiffDetectorRun {
             `(support ${format3(pair.support)})`,
         });
       }
+    }
+    return findings;
+  }
+
+  /**
+   * Facade-contract breaks: a changed file that IS a measured module's facade
+   * stops re-exporting names indexed consumers outside the module still
+   * import — the SUPPLY side of the export surface (the demand side, a new
+   * deep import past a facade, is leakingAbstraction's). The tree's re-export
+   * surface is the overlay's own recorded names; the pre-diff demand is the
+   * indexed graph's. Judged only when the tree recorded a re-export surface
+   * at all — "not recorded" must never read as "exports nothing" (the same
+   * guard `classifyFacadeLeak`'s `facadeNamesRecorded` makes on the report
+   * side). A consumer the diff also changes is skipped: its indexed row is
+   * stale, the diff judges its own read.
+   */
+  private judgeFacadeContract(
+    changedFiles: readonly string[],
+    overlay: ReviewEdgeOverlay,
+    changed: ReadonlySet<string>,
+  ): DiffDetectorFinding[] {
+    if (this.contract === undefined) return [];
+    const findings: DiffDetectorFinding[] = [];
+    for (const relPath of changedFiles) {
+      const componentDir = this.contract.facadeComponentOf(relPath);
+      if (componentDir === undefined) continue;
+      const treeExposed = new Set<string>();
+      let reexportsRecorded = false;
+      for (const edge of overlay.edgesFrom(relPath)) {
+        if (edge.reexportedExportNames === undefined) continue;
+        reexportsRecorded = true;
+        for (const name of edge.reexportedExportNames) treeExposed.add(name);
+      }
+      if (!reexportsRecorded) continue;
+
+      const consumersByDroppedName = new Map<string, Set<string>>();
+      for (const consumer of this.contract.indexedConsumersOf(relPath)) {
+        if (changed.has(consumer.source)) continue;
+        if (consumer.importedNames === undefined) continue;
+        if (consumer.importedNames.includes(WHOLE_MODULE_EXPORT_NAME)) continue;
+        for (const name of consumer.importedNames) {
+          if (treeExposed.has(name)) continue;
+          const sources = consumersByDroppedName.get(name);
+          if (sources === undefined) consumersByDroppedName.set(name, new Set([consumer.source]));
+          else sources.add(consumer.source);
+        }
+      }
+      if (consumersByDroppedName.size === 0) continue;
+
+      const droppedNames = [...consumersByDroppedName.keys()].sort();
+      findings.push({
+        detector: "facadeContract",
+        subject: relPath,
+        evidence: droppedNames.map((name) => {
+          const sources = [...(consumersByDroppedName.get(name) ?? [])].sort();
+          return `${name}: consumed by ${sources.join(", ")}`;
+        }),
+        detail:
+          `the diff stops re-exporting names the module's consumers still import: ` +
+          `${droppedNames.join(", ")} left ${relPath}'s re-export surface while indexed files outside ` +
+          `${componentDir} still import them`,
+      });
     }
     return findings;
   }
