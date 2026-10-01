@@ -11,3 +11,8 @@ coverage/
 # Docusaurus markdown uses admonition syntax (:::tip, :::warning, etc.)
 # that prettier collapses into a single line, breaking Docusaurus parsing.
 website/docs/**/*.md
+
+# Generated, single-line data asset (bd tea-rags-mcp-bbo1h.3): reformatting
+# 2.3 MB of JSON into pretty-printed lines would only bloat it and churn the
+# Swift walker's version-pin digest. Regenerate via scripts/gen-swift-sdk-vocabulary.ts.
+src/core/domains/language/swift/vocabulary/sdk-vocabulary.generated.json

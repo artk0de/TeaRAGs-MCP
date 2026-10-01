@@ -8,7 +8,7 @@
   },
   "scripts": {
     "prebuild": "tsx scripts/prebuild-worker-sweep.ts",
-    "build": "tsc && chmod +x build/cli/index.js",
+    "build": "tsc && tsx scripts/copy-build-assets.ts && chmod +x build/cli/index.js",
     "dev": "tsx src/index.ts",
     "test": "vitest",
     "test:ui": "vitest --ui",
