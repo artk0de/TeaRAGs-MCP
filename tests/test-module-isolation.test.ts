@@ -26,6 +26,7 @@ describe("requiresModuleIsolation", () => {
     ["process.exit", "process.exit(1);"],
     ["process.on", 'process.on("exit", f);'],
     ["process.once", 'process.once("exit", f);'],
+    ["a process property redefinition", 'Object.defineProperty(process, "cwd", { value: () => tmp });'],
     ["child_process", 'import { fork } from "node:child_process";'],
     ["execFileSync", 'execFileSync("git", ["status"]);'],
     ["execSync", 'execSync("git status");'],

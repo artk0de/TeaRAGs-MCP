@@ -20,6 +20,9 @@ const TEST_MODULE_ISOLATION_RULES: readonly RegExp[] = [
   /process\.env(\.\w+|\[[^\]]+\])\s*=(?!=)/,
   /delete\s+process\.env/,
   /process\.(chdir|exit|on\(|once\()/,
+  // Redefining a process property (e.g. `process.cwd` redirected to a temp
+  // root) outlives the file if a test dies before restoring it.
+  /defineProperty\(\s*process\b/,
   /child_process|execFileSync|execSync|spawnSync|\bfork\(|\bspawn\(/,
   /ChunkerPool|ProcessTransport|worker_threads|new Worker\(/,
   /globalThis\.\w+\s*=(?!=)/,
