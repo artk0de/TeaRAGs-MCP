@@ -530,6 +530,15 @@ export interface LanguageChunkerHooks {
    * does for any file whose parse produced no tree.
    */
   readImportSpecifiers?: (root: AstNode) => string[];
+  /**
+   * Whether a TOP-LEVEL statement only brings another module in, for a language
+   * whose import is not a dedicated node type — Ruby's `require` is an ordinary
+   * `call`. The engine keeps such statements out of the module remainder (the
+   * top-level code no chunk carries). Import node types every grammar names
+   * as such (`import_statement`, `use_declaration`, a re-export `from`) are
+   * recognized by the engine without it.
+   */
+  isModuleImport?: (node: AstNode) => boolean;
 }
 
 /**

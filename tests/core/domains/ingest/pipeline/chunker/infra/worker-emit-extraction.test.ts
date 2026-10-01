@@ -11,7 +11,7 @@ import Parser from "tree-sitter";
 import RbLang from "tree-sitter-ruby";
 import { describe, expect, it } from "vitest";
 
-import type { MaterializedTree } from "../../../../../../../src/core/contracts/types/ast.js";
+import type { AstNode, MaterializedTree } from "../../../../../../../src/core/contracts/types/ast.js";
 import type { FileExtraction } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import type {
   LanguageFactoryDescriptor,
@@ -140,6 +140,15 @@ describe("cross-pass extraction walks under the extension's codegraph grammar (v
     const callTexts = (crossPass?.chunks ?? []).flatMap((chunk) => chunk.calls.map((call) => call.callText));
     expect(callTexts.some((text) => text.includes("formatPriority"))).toBe(true);
     expect(callTexts.some((text) => text.includes("track"))).toBe(true);
+  });
+
+  it("a .tsx file walks the chunk parse itself — the chunker already parsed it under the tsx grammar", async () => {
+    const chunker = new TreeSitterChunker(config, composer, factory);
+    const { tree } = await chunker.chunkWithTree(TSX, TSX_PATH, "typescript");
+    const errorNodes = (node: AstNode): number =>
+      node.children.reduce((sum, child) => sum + errorNodes(child), node.type === "ERROR" ? 1 : 0);
+    expect(errorNodes((tree as MaterializedTree).rootNode)).toBe(0);
+    expect(await chunker.walkTreeFor(TSX, TSX_PATH, "typescript", tree as MaterializedTree)).toBe(tree);
   });
 
   it("a .ts file walks the chunk parse itself — no second parse when the grammars agree", async () => {

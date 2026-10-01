@@ -74,6 +74,18 @@ every emission path — the leaf chunk's prefix, the head of an oversized child'
 `#part1`, a recursed child's remainder (bd tea-rags-mcp-u7tjf / 6wy02). Only
 exclude rows you set a prefix for.
 
+## Module remainder (engine-owned)
+
+The file-level counterpart: after the top-level chunks are emitted, the engine
+emits ONE remainder for the top-level statements none of whose rows any chunk
+carries (`TreeSitterChunker#withModuleRemainder` — same planner, same 50-char
+floor, `lineRanges`, `#partN`). Imports never join it: grammar import node types
+and `export … from` / bare `export { … }` lists are recognized by the engine; a
+language whose import is an ordinary call (Ruby `require`) declares
+`LanguageChunkerHooks.isModuleImport`. A remainder that is exactly one named
+declaration takes its name as symbolId. A hook never re-emits top-level code to
+keep it searchable.
+
 ## Container header: once per chunk, on every member part
 
 A chunk names its container exactly ONCE (bd tea-rags-mcp-4i6ab). A body chunk
