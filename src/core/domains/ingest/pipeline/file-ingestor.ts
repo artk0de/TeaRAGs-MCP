@@ -20,7 +20,7 @@ import type { CodeChunk } from "../../../types.js";
 import { classifyQuarantinable } from "../sync/index.js";
 import type { ChunkPipeline } from "./chunk-pipeline.js";
 import { assignNavigationAndDocSymbolId } from "./chunker/chunk-navigation.js";
-import type { ChunkerPool } from "./chunker/infra/pool.js";
+import type { ChunkerPoolPort } from "./chunker/infra/pool.js";
 import { assignSymbolMass } from "./chunker/symbol-mass.js";
 import { generateChunkId } from "./chunker/utils/chunk-id.js";
 import { extractImportsExports } from "./chunker/utils/import-extractor.js";
@@ -41,7 +41,7 @@ interface FileChunkSubmissionOutcome {
 
 export interface SourceFileIngestorDeps {
   basePath: string;
-  chunkerPool: ChunkerPool;
+  chunkerPool: ChunkerPoolPort;
   chunkPipeline: ChunkPipeline;
   options: FileProcessorOptions;
   callbacks?: FileProcessCallbacks;

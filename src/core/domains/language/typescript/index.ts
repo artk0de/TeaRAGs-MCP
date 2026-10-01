@@ -17,11 +17,10 @@
  * only then is the root of the project being indexed known.
  *
  * Two grammars, one provider: `.ts` and `.tsx` both map to language "typescript"
- * (`LANGUAGE_MAP`). The CHUNKER uses the kernel's `.typescript` grammar for both
- * (`kernel.ts` note). The CODEGRAPH engine loads the `.tsx` grammar for `.tsx`
- * files through the same kernel (`extractLanguage(mod, ".tsx")`) — both reach
- * the SAME `walker.walk` (`extractFromTypescriptFile`, grammar-agnostic for the
- * node types it reads).
+ * (`LANGUAGE_MAP`). The chunker and the codegraph engine both load the `.tsx`
+ * grammar for `.tsx` files through the same kernel (`extractLanguage(mod,
+ * ".tsx")`, `kernel.ts` note) — both grammars reach the SAME `walker.walk`
+ * (`extractFromTypescriptFile`, grammar-agnostic for the node types it reads).
  */
 
 import {

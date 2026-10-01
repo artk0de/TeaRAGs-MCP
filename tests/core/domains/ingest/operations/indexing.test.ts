@@ -11,6 +11,7 @@ import {
   MockEmbeddingProvider,
   MockQdrantManager,
 } from "../__helpers__/test-helpers.js";
+import { warmChunkerPoolFactory } from "../__helpers__/warm-chunker-pool.js";
 import { OllamaUnavailableError } from "../../../../../src/core/adapters/embeddings/ollama/errors.js";
 import { EmbeddingModelGuard } from "../../../../../src/core/adapters/qdrant/embedding-model-guard.js";
 import { IngestFacade } from "../../../../../src/core/api/index.js";
@@ -64,6 +65,7 @@ describe("IndexPipeline", () => {
       embeddings,
       config,
       trajectoryConfig: defaultTrajectoryConfig(),
+      createChunkerPool: warmChunkerPoolFactory,
     });
   });
 

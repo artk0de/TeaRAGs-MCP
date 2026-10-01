@@ -104,6 +104,8 @@ export interface LanguageConfig {
   classifier?: LanguageChunkClassifier;
   /** `LanguageChunkerHooks.readImportSpecifiers`, threaded the same way. */
   readImportSpecifiers?: (root: AstNode) => string[];
+  /** `LanguageChunkerHooks.isModuleImport`, threaded the same way. */
+  isModuleImport?: (node: AstNode) => boolean;
 }
 
 /**

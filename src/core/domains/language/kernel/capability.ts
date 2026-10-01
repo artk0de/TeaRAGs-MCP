@@ -74,9 +74,18 @@ export const sharedVersions: LanguageSupportVersions = {
   // chunking 3, bd tea-rags-mcp-nu05a: a heading-less markdown document and an
   // oversized preamble are split under maxChunkSize instead of emitted whole.
   // Only markdown files move — scoped in `sharedChunkSetBumpScopes`.
-  // chunking 4, bd tea-rags-mcp-5xpq4: test setup is stored once per scope,
-  // packed across consecutive scopes with per-member scope spans, tiny
-  // examples are grouped instead of dropped. Unscoped — no entry below.
+  // chunking 4 (one unscoped bump for the release — plain `--force`):
+  //   - bd tea-rags-mcp-1xnij: `.tsx` files are chunked under the `tsx` grammar
+  //     instead of the plain `typescript` one (JSX parsed into ERROR nodes and
+  //     the component was never chunked), and every code file gains its MODULE
+  //     remainder — the top-level statements no chunk carried (a
+  //     `const loaders = { … }` beside a function was dropped whole).
+  //   - bd tea-rags-mcp-8gbh3: small markdown h1/h2 sections share a chunk with
+  //     their siblings and a section under 50 chars joins a neighbour instead of
+  //     being dropped.
+  //   - bd tea-rags-mcp-5xpq4: test setup is stored once per scope, packed
+  //     across consecutive scopes with per-member scope spans; tiny examples are
+  //     grouped instead of dropped.
   chunking: 4,
   // walker 3: release v1.44.2 shipped shared walker 2 and a release cycle gets
   // ONE bump, so the branch-local 3..5 collapse into 3. Same walker 3, bd

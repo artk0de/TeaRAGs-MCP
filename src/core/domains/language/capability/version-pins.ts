@@ -16,12 +16,21 @@ export type VersionPins = Record<string, Partial<Record<PinnedVersionAxis, Versi
 /** The half of an axis descriptor a digest is computed from. */
 export type VersionAxisSourceSet = Pick<VersionAxisSources, "paths" | "exclude">;
 
+/**
+ * A digested source: non-test TypeScript, and the JSON data assets a vertical
+ * reads from disk (the Swift SDK vocabulary, bd tea-rags-mcp-bbo1h.3) — data a
+ * walker reads moves its output exactly as its code does.
+ */
+function isDigestedSource(file: string): boolean {
+  return (file.endsWith(".ts") && !file.endsWith(".test.ts")) || file.endsWith(".json");
+}
+
 function sourceFiles(path: string): string[] {
   if (!existsSync(path)) return [];
   if (statSync(path).isFile()) return [path];
   return readdirSync(path, { recursive: true, encoding: "utf8" })
     .map((entry) => join(path, entry))
-    .filter((file) => statSync(file).isFile() && file.endsWith(".ts") && !file.endsWith(".test.ts"));
+    .filter((file) => statSync(file).isFile() && isDigestedSource(file));
 }
 
 /** A file is pruned when it IS an excluded path or sits under an excluded directory. */

@@ -29,9 +29,10 @@
  * which only a pass already holding a checker result ever has.
  */
 
-import ts from "typescript";
+import type ts from "typescript";
 
 import { INSTANCE_METHOD_SEPARATOR } from "../../../../../infra/symbolid/index.js";
+import { loadTypeScriptCompiler } from "../ts-compiler-loader.js";
 
 /** TypeScript joins namespaces and static members with a dot. */
 export const TS_SCOPE_SEPARATOR = ".";
@@ -68,6 +69,7 @@ const callSiteIndexes = new WeakMap<ts.SourceFile, TSCallSiteIndex>();
 
 /** Rightmost identifier of a callee — `fetch` in `repo.fetch(…)`, `run` in `run(…)`. */
 function calleeName(node: ts.CallExpression): string | null {
+  const ts = loadTypeScriptCompiler();
   const callee = node.expression;
   if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name)) return callee.name.text;
   if (ts.isIdentifier(callee)) return callee.text;
@@ -86,6 +88,7 @@ function calleeName(node: ts.CallExpression): string | null {
  * independently, which is what preserves the mixed-shape line.
  */
 function buildCallSiteIndex(sourceFile: ts.SourceFile): TSCallSiteIndex {
+  const ts = loadTypeScriptCompiler();
   const index: TSCallSiteIndex = new Map();
 
   const visit = (node: ts.Node): void => {
@@ -187,6 +190,7 @@ export function calledMemberDeclarations(
   startLine: number,
   member: string,
 ): readonly ts.Declaration[] {
+  const ts = loadTypeScriptCompiler();
   const receiver = findReceiverExpression(sourceFile, startLine, member);
   const access = receiver?.parent;
   if (receiver === null || access === undefined || !ts.isPropertyAccessExpression(access)) return [];
@@ -207,6 +211,7 @@ export function calledMemberDeclarations(
  * every call site pays for.
  */
 export function findSuperKeyword(sourceFile: ts.SourceFile, startLine: number): ts.Node | null {
+  const ts = loadTypeScriptCompiler();
   let found: ts.Node | null = null;
   const visit = (node: ts.Node): void => {
     if (found !== null) return;
@@ -225,6 +230,7 @@ export function findSuperKeyword(sourceFile: ts.SourceFile, startLine: number): 
 
 /** `#` for instance members, `.` for `static` ones — the universal convention. */
 export function memberSeparator(declaration: ts.Declaration): string {
+  const ts = loadTypeScriptCompiler();
   const isStatic = ts.canHaveModifiers(declaration)
     ? (ts.getModifiers(declaration)?.some((m) => m.kind === ts.SyntaxKind.StaticKeyword) ?? false)
     : false;
@@ -233,6 +239,7 @@ export function memberSeparator(declaration: ts.Declaration): string {
 
 /** Prepend the enclosing `namespace` / `module` names, outermost first. */
 export function prefixWithNamespaces(node: ts.Node, name: string): string {
+  const ts = loadTypeScriptCompiler();
   const scopes: string[] = [];
   let cursor: ts.Node | undefined = node.parent;
   while (cursor !== undefined) {
@@ -251,6 +258,7 @@ export function prefixWithNamespaces(node: ts.Node, name: string): string {
 export function declarationOwnerName(declaration: ts.Declaration): string | null {
   const owner = declaration.parent as ts.Node | undefined;
   if (owner === undefined) return null;
+  const ts = loadTypeScriptCompiler();
   if (!ts.isClassLike(owner) && !ts.isInterfaceDeclaration(owner)) return null;
   return owner.name?.text ?? null;
 }

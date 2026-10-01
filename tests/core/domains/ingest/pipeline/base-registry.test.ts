@@ -20,6 +20,7 @@ import {
   MockEmbeddingProvider,
   MockQdrantManager,
 } from "../__helpers__/test-helpers.js";
+import { warmChunkerPoolFactory } from "../__helpers__/warm-chunker-pool.js";
 import { IngestFacade } from "../../../../../src/core/api/index.js";
 import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
 import type { IngestCodeConfig } from "../../../../../src/core/types.js";
@@ -74,6 +75,7 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
       embeddings,
       config,
       trajectoryConfig: defaultTrajectoryConfig(),
+      createChunkerPool: warmChunkerPoolFactory,
       collectionRegistry: registry,
     });
   });

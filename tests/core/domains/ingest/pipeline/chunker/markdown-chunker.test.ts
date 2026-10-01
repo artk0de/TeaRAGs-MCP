@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { DocChunkGrouper } from "../../../../../../src/core/domains/explore/chunk-grouping/doc.js";
 import { assignNavigationAndDocSymbolId } from "../../../../../../src/core/domains/ingest/pipeline/chunker/chunk-navigation.js";
 import { MarkdownChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/markdown-chunker.js";
 
@@ -93,10 +94,14 @@ describe("MarkdownChunker", () => {
 
       const chunks = await chunker.chunk(code, "doc.md", "markdown");
 
-      const names = chunks.filter((c) => c.metadata.language === "markdown").map((c) => c.metadata.name);
-      expect(names).toContain("Introduction");
-      expect(names).toContain("Getting Started");
-      expect(names).toContain("Usage");
+      // bd tea-rags-mcp-8gbh3: these small sections share one chunk; every
+      // heading stays on its headingPath.
+      const headings = chunks
+        .filter((c) => c.metadata.language === "markdown")
+        .flatMap((c) => c.metadata.headingPath.map((h) => h.text));
+      expect(headings).toContain("Introduction");
+      expect(headings).toContain("Getting Started");
+      expect(headings).toContain("Usage");
     });
 
     it("should group small h3 sections into parent h2 chunk", async () => {
@@ -173,16 +178,15 @@ describe("MarkdownChunker", () => {
 
       const chunks = await chunker.chunk(code, "doc.md", "markdown");
 
-      // Section A should group Sub 1 + Sub 2
-      const sectionA = chunks.find((c) => c.metadata.name === "Section A");
+      // Section A should group Sub 1 + Sub 2. bd tea-rags-mcp-8gbh3: the small
+      // h1 intro opens the same chunk, so it starts at # Title.
+      const sectionA = chunks.find((c) => c.content.includes("## Section A"));
       expect(sectionA).toBeDefined();
-      expect(sectionA!.startLine).toBe(5); // starts at ## Section A
-      expect(sectionA!.endLine).toBe(16); // ends before ## Section B
-
-      // Section B standalone
-      const sectionB = chunks.find((c) => c.metadata.name === "Section B");
-      expect(sectionB).toBeDefined();
-      expect(sectionB!.startLine).toBe(17);
+      expect(sectionA!.startLine).toBe(1);
+      // bd tea-rags-mcp-8gbh3: the small Section B joins the same chunk, which
+      // therefore runs to the end of the document.
+      expect(sectionA!.endLine).toBe(19);
+      expect(sectionA!.content).toContain("## Section B");
     });
 
     it("should set isDocumentation on all chunks", async () => {
@@ -208,7 +212,9 @@ describe("MarkdownChunker", () => {
       expect(section!.metadata.symbolId).toBe("My Section");
     });
 
-    it("should skip sections under 50 chars", async () => {
+    // bd tea-rags-mcp-8gbh3: a tiny section is no longer dropped; with no
+    // sibling under its h1 it stays its own chunk.
+    it("should keep sections under 50 chars", async () => {
       const code = [
         "# Short",
         "",
@@ -220,7 +226,7 @@ describe("MarkdownChunker", () => {
       ].join("\n");
 
       const chunks = await chunker.chunk(code, "doc.md", "markdown");
-      expect(chunks.find((c) => c.metadata.name === "Short")).toBeUndefined();
+      expect(chunks.find((c) => c.metadata.name === "Short")).toBeDefined();
       expect(chunks.find((c) => c.metadata.name === "Detailed Section")).toBeDefined();
     });
 
@@ -474,9 +480,12 @@ describe("MarkdownChunker", () => {
 
       const chunks = await smallChunker.chunk(md, "code.md", "markdown");
 
-      // Should produce multiple sub-chunks from the oversized code block
-      expect(chunks.length).toBeGreaterThan(1);
-      for (const chunk of chunks) {
+      // Should produce multiple sub-chunks from the oversized code block. bd
+      // tea-rags-mcp-8gbh3: the heading-only "# Setup" section is kept as its
+      // own markdown chunk instead of dropped.
+      const codeChunks = chunks.filter((c) => c.metadata.language !== "markdown");
+      expect(codeChunks.length).toBeGreaterThan(1);
+      for (const chunk of codeChunks) {
         expect(chunk.metadata.isDocumentation).toBe(true);
         expect(chunk.metadata.chunkType).toBe("block");
         expect(chunk.metadata.language).toBe("typescript");
@@ -553,8 +562,10 @@ describe("MarkdownChunker", () => {
       expect(orphan).toBeDefined();
       expect(orphan!.content).not.toContain(" > ");
 
-      // h3 grouped into h2 — "Middle Section" chunk contains "Sub of Middle" content
-      const middle = chunks.find((c) => c.metadata.name === "Middle Section");
+      // h3 grouped into h2 — "Middle Section" chunk contains "Sub of Middle"
+      // content. bd tea-rags-mcp-8gbh3: the small h2 joins the small orphan h3's
+      // chunk, so it is found by its heading, not by the chunk name.
+      const middle = chunks.find((c) => c.content.includes("## Middle Section"));
       expect(middle).toBeDefined();
       expect(middle!.content).toContain("Sub of Middle");
       expect(middle!.content).toContain("## Middle Section");
@@ -854,5 +865,325 @@ describe("MarkdownChunker — heading-less documents and preambles respect maxCh
         },
       },
     ]);
+  });
+});
+
+// bd tea-rags-mcp-8gbh3: a small h2 used to open its own chunk however tiny,
+// and a section under MIN_SECTION_SIZE was dropped from the index. Small
+// siblings under one h1 now share a chunk the way small h3s share their h2's,
+// and no section is lost.
+describe("MarkdownChunker — small h1/h2 sections share a chunk (bd tea-rags-mcp-8gbh3)", () => {
+  const chunker = new MarkdownChunker({ maxChunkSize: 4500 });
+  const filler = (label: string, length: number) => {
+    const sentence = `${label} explains one rule of the domain in plain words. `;
+    return sentence
+      .repeat(Math.ceil(length / sentence.length))
+      .slice(0, length)
+      .trim();
+  };
+  const sectionChunks = (chunks: Awaited<ReturnType<MarkdownChunker["chunk"]>>) =>
+    chunks.filter((c) => c.metadata.language === "markdown");
+
+  it("accumulates consecutive small h2 siblings into one chunk, extending headingPath", async () => {
+    const code = [
+      "# fn-approve · Approve a document",
+      "",
+      "## Preconditions",
+      "",
+      "- the document is uploaded",
+      "- the client is active",
+      "",
+      "## Effects",
+      "",
+      "Marks the document approved and notifies the firm.",
+    ].join("\n");
+
+    const chunks = sectionChunks(await chunker.chunk(code, "fn-approve.md", "markdown"));
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].startLine).toBe(1);
+    expect(chunks[0].endLine).toBe(10);
+    expect(chunks[0].metadata.name).toBe("fn-approve · Approve a document");
+    expect(chunks[0].content).toContain("## Preconditions");
+    expect(chunks[0].content).toContain("the client is active");
+    expect(chunks[0].content).toContain("## Effects");
+    expect(chunks[0].metadata.headingPath).toEqual([
+      { depth: 1, text: "fn-approve · Approve a document" },
+      { depth: 2, text: "Preconditions" },
+      { depth: 2, text: "Effects" },
+    ]);
+  });
+
+  it("joins a small h2 to a chunk already past the small-section threshold while it fits", async () => {
+    const code = [
+      "## One",
+      "",
+      filler("One", 200),
+      "",
+      "## Two",
+      "",
+      filler("Two", 200),
+      "",
+      "## Three",
+      "",
+      filler("Three", 200),
+    ].join("\n");
+
+    const chunks = sectionChunks(await chunker.chunk(code, "doc.md", "markdown"));
+
+    expect(chunks.map((c) => c.metadata.name)).toEqual(["One"]);
+    expect(chunks[0].metadata.headingPath).toEqual([
+      { depth: 2, text: "One" },
+      { depth: 2, text: "Two" },
+      { depth: 2, text: "Three" },
+    ]);
+  });
+
+  it("joins a trailing small h2 to the large section before it", async () => {
+    const code = [
+      "# Payment method",
+      "",
+      "## Attributes",
+      "",
+      filler("Attributes", 600),
+      "",
+      "## Related model objects",
+      "",
+      "- [firm](firm.md) — the firm that holds this payment method on file.",
+    ].join("\n");
+
+    const chunks = sectionChunks(await chunker.chunk(code, "payment-method.md", "markdown"));
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].endLine).toBe(9);
+    expect(chunks[0].content).toContain(
+      "## Related model objects\n\n- [firm](firm.md) — the firm that holds this payment method on file.",
+    );
+    expect(chunks[0].metadata.headingPath.map((h) => h.text)).toEqual([
+      "Payment method",
+      "Attributes",
+      "Related model objects",
+    ]);
+  });
+
+  it("starts a small h2 in its own chunk when joining would pass maxChunkSize", async () => {
+    const tight = new MarkdownChunker({ maxChunkSize: 700 });
+    const code = ["## Large", "", filler("Large", 600), "", "## Small", "", filler("Small", 120)].join("\n");
+
+    const chunks = sectionChunks(await tight.chunk(code, "doc.md", "markdown"));
+
+    expect(chunks.map((c) => c.metadata.name)).toEqual(["Large", "Small"]);
+  });
+
+  it("starts a large h2 in its own chunk", async () => {
+    const code = [
+      "## Small",
+      "",
+      "A short note, still long enough to clear the tiny floor.",
+      "",
+      "## Large",
+      "",
+      filler("Large", 600),
+    ].join("\n");
+
+    const chunks = sectionChunks(await chunker.chunk(code, "doc.md", "markdown"));
+
+    expect(chunks.map((c) => c.metadata.name)).toEqual(["Small", "Large"]);
+  });
+
+  it("never merges across an h1 boundary", async () => {
+    const code = [
+      "# First topic",
+      "",
+      "A short note on the first topic.",
+      "",
+      "# Second topic",
+      "",
+      "A short note on the second topic.",
+    ].join("\n");
+
+    const chunks = sectionChunks(await chunker.chunk(code, "doc.md", "markdown"));
+
+    expect(chunks.map((c) => c.metadata.name)).toEqual(["First topic", "Second topic"]);
+  });
+
+  it("joins an h1 with only a short intro to its first h2, even a large one", async () => {
+    const code = ["# Billing", "", "Short intro.", "", "## Invoices", "", filler("Invoices", 900)].join("\n");
+
+    const chunks = sectionChunks(await chunker.chunk(code, "doc.md", "markdown"));
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].metadata.name).toBe("Billing");
+    expect(chunks[0].metadata.headingPath).toEqual([
+      { depth: 1, text: "Billing" },
+      { depth: 2, text: "Invoices" },
+    ]);
+  });
+
+  it("keeps a section under 50 chars, joined to the previous section of the same h1", async () => {
+    const code = [
+      "# Topic",
+      "",
+      "## Large A",
+      "",
+      filler("A", 600),
+      "",
+      "## Tiny",
+      "",
+      "See A.",
+      "",
+      "## Large B",
+      "",
+      filler("B", 600),
+    ].join("\n");
+
+    const chunks = sectionChunks(await chunker.chunk(code, "doc.md", "markdown"));
+
+    const holder = chunks.find((c) => c.content.includes("See A."));
+    expect(holder).toBeDefined();
+    expect(holder!.metadata.name).toBe("Topic");
+    expect(holder!.metadata.headingPath.map((h) => h.text)).toEqual(["Topic", "Large A", "Tiny"]);
+    expect(chunks.find((c) => c.metadata.name === "Large B")).toBeDefined();
+  });
+
+  it("opens a heading-only section with its own subsections instead of the previous section", async () => {
+    const code = ["## Large A", "", filler("A", 600), "", "## Group", "", "### Child", "", filler("Child", 120)].join(
+      "\n",
+    );
+
+    const chunks = sectionChunks(await chunker.chunk(code, "doc.md", "markdown"));
+
+    expect(chunks.map((c) => c.metadata.name)).toEqual(["Large A", "Group"]);
+    expect(chunks[1].metadata.headingPath).toEqual([
+      { depth: 2, text: "Group" },
+      { depth: 3, text: "Child" },
+    ]);
+  });
+
+  it("keeps a lone tiny h1 section rather than dropping it", async () => {
+    const code = ["# Short", "", "Tiny.", "", "# Detailed", "", filler("Detailed", 400)].join("\n");
+
+    const chunks = sectionChunks(await chunker.chunk(code, "doc.md", "markdown"));
+
+    expect(chunks.map((c) => c.metadata.name)).toEqual(["Short", "Detailed"]);
+    expect(chunks[0].content).toBe("# Short\n\nTiny.");
+  });
+
+  it("covers every non-blank source line of a document made of tiny sections", async () => {
+    const code = [
+      "# T",
+      "",
+      "## A",
+      "",
+      "Alpha applies first.",
+      "",
+      "## B",
+      "",
+      "Beta applies second.",
+      "",
+      "### C",
+      "",
+      "Gamma applies third.",
+    ].join("\n");
+
+    const chunks = sectionChunks(await chunker.chunk(code, "doc.md", "markdown"));
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].startLine).toBe(1);
+    expect(chunks[0].endLine).toBe(13);
+    for (const line of [
+      "# T",
+      "## A",
+      "Alpha applies first.",
+      "## B",
+      "Beta applies second.",
+      "### C",
+      "Gamma applies third.",
+    ]) {
+      expect(chunks[0].content.split("\n")).toContain(line);
+    }
+  });
+
+  it("still yields nothing for a document whose whole content is under 50 chars", async () => {
+    expect(await chunker.chunk("# T\n\n## A\n\nshort", "doc.md", "markdown")).toEqual([]);
+  });
+
+  it("joins a tiny preamble to the first section", async () => {
+    const code = ["[badge]", "", "## Section", "", filler("Section", 200)].join("\n");
+
+    const chunks = await chunker.chunk(code, "doc.md", "markdown");
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].metadata.name).toBe("Section");
+    expect(chunks[0].startLine).toBe(1);
+    expect(chunks[0].content.startsWith("[badge]\n\n## Section")).toBe(true);
+  });
+
+  it("leaves documents whose sections all clear the threshold unchanged", async () => {
+    const code = [
+      "# Guide",
+      "",
+      filler("Guide", 400),
+      "",
+      "## Setup",
+      "",
+      filler("Setup", 400),
+      "",
+      "## Usage",
+      "",
+      filler("Usage", 400),
+    ].join("\n");
+
+    const chunks = sectionChunks(await chunker.chunk(code, "doc.md", "markdown"));
+
+    expect(chunks.map((c) => [c.metadata.name, c.metadata.headingPath.length, c.startLine])).toEqual([
+      ["Guide", 1, 1],
+      ["Setup", 2, 5],
+      ["Usage", 2, 9],
+    ]);
+  });
+
+  it("keeps every heading of a merged chunk addressable in the doc TOC", async () => {
+    const code = [
+      "# fn-approve",
+      "",
+      "## Preconditions",
+      "",
+      "- uploaded",
+      "",
+      "## Effects",
+      "",
+      "Marks the document approved.",
+      "",
+      "### Notifications",
+      "",
+      "Notifies the firm.",
+      "",
+      "## Details",
+      "",
+      filler("Details", 700),
+    ].join("\n");
+    const chunks = await chunker.chunk(code, "/repo/fn-approve.md", "markdown");
+    assignNavigationAndDocSymbolId(chunks, "/repo");
+    const toc = DocChunkGrouper.group(
+      chunks.map((c, i) => ({
+        id: `p${i}`,
+        payload: {
+          ...c.metadata,
+          content: c.content,
+          startLine: c.startLine,
+          endLine: c.endLine,
+          relativePath: "fn-approve.md",
+        },
+      })),
+    ).payload?.content as string;
+
+    for (const line of toc.split("\n")) {
+      const id = /(doc:[0-9a-f]{12})$/.exec(line)?.[1];
+      expect(id, line).toBeDefined();
+      const heading = line.trim().replace(/ {2}doc:[0-9a-f]{12}$/, "");
+      const owner = chunks.find((c) => c.metadata.symbolId === id);
+      expect(owner!.content.split("\n"), line).toContain(heading);
+    }
   });
 });

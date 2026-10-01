@@ -34,8 +34,9 @@
 
 import { dirname, posix, resolve as resolvePath } from "node:path";
 
-import ts from "typescript";
+import type ts from "typescript";
 
+import { loadTypeScriptCompiler } from "./ts-compiler-loader.js";
 import type { TSModuleResolutionMemo } from "./ts-module-resolution-memo.js";
 
 /** One file of the graph: project source, dependency declaration or lib. */
@@ -154,7 +155,7 @@ class ImportGraphWalk {
     const text = this.texts.get(node) ?? "";
     this.texts.delete(node);
     const isJs = JS_FILE.test(fileName);
-    const scanned = ts.preProcessFile(text, true, isJs);
+    const scanned = loadTypeScriptCompiler().preProcessFile(text, true, isJs);
     const targets = new Set<number>();
     const add = (target: string | undefined): void => {
       if (target === undefined) return;
@@ -203,7 +204,7 @@ class ImportGraphWalk {
   }
 
   private resolveTypeReference(name: string, containingFile: string): string | undefined {
-    const { resolvedTypeReferenceDirective } = ts.resolveTypeReferenceDirective(
+    const { resolvedTypeReferenceDirective } = loadTypeScriptCompiler().resolveTypeReferenceDirective(
       name,
       containingFile,
       this.input.compilerOptions,
@@ -234,6 +235,7 @@ function declaresGlobals(fileName: string, text: string, isJs: boolean, scanned:
   if (!isDependency && !DECLARATION_FILE.test(fileName)) return false;
   const hasAmbientModules = scanned.ambientExternalModules !== undefined && scanned.ambientExternalModules.length > 0;
   if (!isDependency && hasAmbientModules) return true;
+  const ts = loadTypeScriptCompiler();
   const sourceFile = ts.createSourceFile(fileName, text, ts.ScriptTarget.ES2022, false, scriptKindOf(fileName));
   if (sourceFile.statements.some(isGlobalAugmentation)) return true;
   if (!isDependency && sourceFile.statements.some(isAmbientModuleDeclaration)) return true;
@@ -248,6 +250,7 @@ function declaresGlobals(fileName: string, text: string, isJs: boolean, scanned:
 
 /** A top-level `module.exports = …` / `exports.name = …` assignment. */
 function isCommonJsExport(statement: ts.Statement): boolean {
+  const ts = loadTypeScriptCompiler();
   if (!ts.isExpressionStatement(statement)) return false;
   const { expression } = statement;
   if (!ts.isBinaryExpression(expression) || expression.operatorToken.kind !== ts.SyntaxKind.EqualsToken) return false;
@@ -262,15 +265,18 @@ function isCommonJsExport(statement: ts.Statement): boolean {
 
 /** `declare global { … }` at the top level. */
 function isGlobalAugmentation(statement: ts.Statement): boolean {
+  const ts = loadTypeScriptCompiler();
   return ts.isModuleDeclaration(statement) && (statement.flags & ts.NodeFlags.GlobalAugmentation) !== 0;
 }
 
 /** `declare module "…" { … }` at the top level. */
 function isAmbientModuleDeclaration(statement: ts.Statement): boolean {
+  const ts = loadTypeScriptCompiler();
   return ts.isModuleDeclaration(statement) && ts.isStringLiteral(statement.name);
 }
 
 function scriptKindOf(fileName: string): ts.ScriptKind {
+  const ts = loadTypeScriptCompiler();
   if (fileName.endsWith(".tsx")) return ts.ScriptKind.TSX;
   if (fileName.endsWith(".jsx")) return ts.ScriptKind.JSX;
   if (JS_FILE.test(fileName)) return ts.ScriptKind.JS;

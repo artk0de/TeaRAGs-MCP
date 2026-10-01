@@ -10,9 +10,9 @@ import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/cl
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
+import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolve(__dirname, "../../../../../../src/core/domains/maintenance/migration/database/migrations");
@@ -28,6 +28,7 @@ describe("CodegraphEnrichmentProvider — run-reset seams (G2 characterization)"
   let tmp: string;
   let client: DuckDbGraphClient;
   let provider: CodegraphEnrichmentProvider;
+  let origCwd: () => string;
 
   const makeRoot = (): string => {
     const root = mkdtempSync(join(tmpdir(), "cg-reset-seams-"));
@@ -60,10 +61,16 @@ describe("CodegraphEnrichmentProvider — run-reset seams (G2 characterization)"
       composer: new DefaultSymbolIdComposer(),
       collectSymbols,
     });
+    // `beginExtractionRun()` truncates the direct-mode `xpass-__direct__.ndjson`
+    // under `process.cwd()`; keep it in this test's temp root so it never touches
+    // a sibling file's spill under the shared repo root (bd tea-rags-mcp-bbo1h.8).
+    origCwd = process.cwd;
+    Object.defineProperty(process, "cwd", { value: () => tmp, configurable: true });
   });
 
   afterEach(async () => {
     await client.close();
+    Object.defineProperty(process, "cwd", { value: origCwd, configurable: true });
     rmSync(tmp, { recursive: true, force: true });
   });
 

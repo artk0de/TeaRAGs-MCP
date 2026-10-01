@@ -55,9 +55,10 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 
-import ts from "typescript";
+import type ts from "typescript";
 
 import { isDebug } from "../../../../infra/runtime.js";
+import { loadTypeScriptCompiler } from "./ts-compiler-loader.js";
 import type { TsCompilerOptions } from "./ts-path-mapper.js";
 
 /** No `baseUrl`, no aliases — every non-relative specifier is then external. */
@@ -82,18 +83,27 @@ function readFileOrUndefined(path: string): string | undefined {
   }
 }
 
-const GLOB_FREE_PARSE_HOST: ts.ParseConfigHost = {
-  useCaseSensitiveFileNames: ts.sys?.useCaseSensitiveFileNames ?? true,
-  readDirectory: () => [],
-  fileExists: (path: string): boolean => {
-    try {
-      return statSync(path).isFile();
-    } catch {
-      return false;
-    }
-  },
-  readFile: readFileOrUndefined,
-};
+let globFreeParseHostMemo: ts.ParseConfigHost | undefined;
+
+/**
+ * The glob-free config host, built on first use: `ts.sys` lives in the compiler
+ * module, which is loaded only when a config is actually parsed.
+ */
+function globFreeParseHost(): ts.ParseConfigHost {
+  globFreeParseHostMemo ??= {
+    useCaseSensitiveFileNames: loadTypeScriptCompiler().sys?.useCaseSensitiveFileNames ?? true,
+    readDirectory: () => [],
+    fileExists: (path: string): boolean => {
+      try {
+        return statSync(path).isFile();
+      } catch {
+        return false;
+      }
+    },
+    readFile: readFileOrUndefined,
+  };
+  return globFreeParseHostMemo;
+}
 
 /**
  * Report a config we could not fully read. Degrading to "no aliases" is the
@@ -136,10 +146,11 @@ export function loadTsConfigFileNames(repoRoot: string): readonly string[] {
   const configPath = join(repoRoot, "tsconfig.json");
   if (!existsSync(configPath)) return [];
 
+  const ts = loadTypeScriptCompiler();
   const read = ts.readConfigFile(configPath, readFileOrUndefined);
   if (read.error !== undefined || read.config === undefined) return [];
 
-  // `ts.sys` rather than GLOB_FREE_PARSE_HOST: the file list IS the point here.
+  // `ts.sys` rather than globFreeParseHost(): the file list IS the point here.
   const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, repoRoot, undefined, configPath);
   return parsed.fileNames;
 }
@@ -148,6 +159,7 @@ export function loadTsConfig(repoRoot: string): TsCompilerOptions {
   const configPath = join(repoRoot, "tsconfig.json");
   if (!existsSync(configPath)) return NO_PATH_MAPPING;
 
+  const ts = loadTypeScriptCompiler();
   const read = ts.readConfigFile(configPath, readFileOrUndefined);
   if (read.error !== undefined || read.config === undefined) {
     const detail =
@@ -156,7 +168,7 @@ export function loadTsConfig(repoRoot: string): TsCompilerOptions {
     return NO_PATH_MAPPING;
   }
 
-  const parsed = ts.parseJsonConfigFileContent(read.config, GLOB_FREE_PARSE_HOST, repoRoot, undefined, configPath);
+  const parsed = ts.parseJsonConfigFileContent(read.config, globFreeParseHost(), repoRoot, undefined, configPath);
   for (const diagnostic of parsed.errors) {
     if (diagnostic.code === NO_INPUTS_FOUND_DIAGNOSTIC) continue;
     reportDegraded(configPath, ts.flattenDiagnosticMessageText(diagnostic.messageText, " "));

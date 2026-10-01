@@ -160,17 +160,19 @@ if [ -n "$RUN_TESTS" ]; then
   TESTED_FILES=$(git diff --cached --name-only)
   # `|| TEST_EXIT=$?`: husky runs this hook under `sh -e`, which exits on the
   # failing command itself — before the summary below could say what failed.
-  # `--maxWorkers=2` (bd tea-rags-mcp-0qaht.27, revising 3xtg7): each file
-  # worker of this suite spawns its own process fleet (chunker/blame/walk
-  # forks + real git + codegraph daemons), so 4 file workers oversubscribe a
-  # 12-core box on WIDE related sets — measured on the client.ts related set
-  # (178 files / 1838 tests): 4w = rotating 30s-timeout coin-flip failures,
-  # 1089s wall; 2w = 1838/1838 green, 166s wall. Fewer file workers is both
-  # deterministic AND faster past a set width that 3xtg7's 5s-budget era never
-  # measured. A CLI flag — vitest 4 has no VITEST_MAX_FORKS env.
+  # `--maxWorkers=6` (bd tea-rags-mcp-bbo1h.5, revising 0qaht.27's 2). The cap
+  # was 2 because each file worker spawned its own process fleet — a cold
+  # chunker fork per pipeline run, hundreds per ingest test file — and 4 workers
+  # oversubscribed the box into 30s-timeout coin flips. bbo1h.1 reuses a warm
+  # chunker pool in those files (reindexing + status-module: 408 forks -> 12),
+  # bbo1h.2/.3 stopped every importer of the language domain loading the TS
+  # compiler and the 2.3MB Swift vocabulary. Re-measured on the
+  # collection-name.ts related set (422 files / 4290 tests, load 8-26):
+  # 2w 163s, 4w 117s, 6w 93s mean of two, every run green, no timeouts.
+  # A CLI flag — vitest has no VITEST_MAX_FORKS env.
   TEST_EXIT=0
   # shellcheck disable=SC2086 # word splitting IS the argument list
-  npm test -- related --run --reporter=dot --maxWorkers=2 $TESTED_FILES >"$TEST_LOG" 2>&1 || TEST_EXIT=$?
+  npm test -- related --run --reporter=dot --maxWorkers=6 $TESTED_FILES >"$TEST_LOG" 2>&1 || TEST_EXIT=$?
   if [ $TEST_EXIT -ne 0 ]; then
     grep -E "FAIL|×|Error|failed" "$TEST_LOG" | head -20
     echo ""

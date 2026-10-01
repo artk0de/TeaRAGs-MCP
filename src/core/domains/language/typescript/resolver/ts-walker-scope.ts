@@ -18,13 +18,15 @@
  * disagree on declines instead of guessing.
  */
 
-import ts from "typescript";
+import type ts from "typescript";
 
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import { lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
+import { loadTypeScriptCompiler } from "./ts-compiler-loader.js";
 
 /** An arrow or function expression — the value `functionValuedDeclaratorName` accepts. */
 export function isFunctionValuedInitializer(initializer: ts.Expression | undefined): boolean {
+  const ts = loadTypeScriptCompiler();
   return initializer !== undefined && (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer));
 }
 
@@ -37,6 +39,7 @@ export function sameWalkerScope(a: readonly string[], b: readonly string[]): boo
  * or `null` when an ancestor sits in a shape the mirror does not reproduce.
  */
 export function walkerScopeOf(declaration: ts.Node): string[] | null {
+  const ts = loadTypeScriptCompiler();
   const names: string[] = [];
   for (let ancestor = declaration.parent; !ts.isSourceFile(ancestor); ancestor = ancestor.parent) {
     const name = walkerScopeName(ancestor);
@@ -65,6 +68,7 @@ export function pinFunctionByWalkerScope(declaration: ts.Node, targetRelPath: st
 
 /** The node `tsNameOf` names for a callable declaration, with the name it records. */
 function walkerNamedNodeOf(declaration: ts.Node): { node: ts.Node; shortName: string } | null {
+  const ts = loadTypeScriptCompiler();
   if (ts.isFunctionDeclaration(declaration)) {
     if (declaration.asteriskToken !== undefined || declaration.name === undefined) return null;
     return { node: declaration, shortName: declaration.name.text };
@@ -88,6 +92,7 @@ function walkerNamedNodeOf(declaration: ts.Node): { node: ts.Node; shortName: st
 
 /** `undefined` = the walker names nothing here; `null` = a name the mirror cannot reproduce. */
 function walkerScopeName(node: ts.Node): string | null | undefined {
+  const ts = loadTypeScriptCompiler();
   if (ts.isFunctionDeclaration(node)) {
     // tsNameOf names `function_declaration`, not `generator_function_declaration`.
     if (node.asteriskToken !== undefined || node.name === undefined) return undefined;
@@ -110,11 +115,13 @@ function walkerScopeName(node: ts.Node): string | null | undefined {
 }
 
 function memberName(name: ts.PropertyName): string | null {
+  const ts = loadTypeScriptCompiler();
   if (ts.isIdentifier(name) || ts.isPrivateIdentifier(name)) return name.text;
   return null;
 }
 
 function unwrapTypeAssertions(expression: ts.Expression): ts.Expression {
+  const ts = loadTypeScriptCompiler();
   let current = expression;
   while (ts.isAsExpression(current) || ts.isSatisfiesExpression(current) || ts.isParenthesizedExpression(current)) {
     current = current.expression;
@@ -124,6 +131,7 @@ function unwrapTypeAssertions(expression: ts.Expression): ts.Expression {
 
 /** `constObjectNamespaceName`: an object literal carrying at least one method. */
 function isObjectNamespaceInitializer(initializer: ts.Expression | undefined): boolean {
+  const ts = loadTypeScriptCompiler();
   if (initializer === undefined) return false;
   const object = unwrapTypeAssertions(initializer);
   return (
@@ -139,6 +147,7 @@ function isObjectNamespaceInitializer(initializer: ts.Expression | undefined): b
 
 /** `classExpressionName`'s binding arm: `const X = class {}` / `{ X: class {} }`. */
 function classExpressionBindingName(node: ts.ClassExpression): string | undefined {
+  const ts = loadTypeScriptCompiler();
   let value: ts.Node = node;
   let { parent } = node;
   while (ts.isAsExpression(parent) || ts.isSatisfiesExpression(parent) || ts.isParenthesizedExpression(parent)) {
