@@ -240,3 +240,39 @@ it("the report's findings and judgePlannedEdge agree on every finding pair (one 
   }
   expect(report.findings.length).toBeGreaterThan(0);
 });
+
+/**
+ * bd tea-rags-mcp-mv8yv: `sourcePathPattern` scopes the FINDINGS by source
+ * file, the way every other detector scopes - ledgers, supports and the cut
+ * stay whole-graph (instability, adoption and strength cut do too), and the
+ * findings the scope drops are counted, not silently lost.
+ */
+describe("computeDependencyNorms - sourcePathPattern", () => {
+  it("keeps findings whose source matches and counts the rest as out of scope", () => {
+    const { graph, roles } = verdictsFixture();
+    const report = computeDependencyNorms({ graph, fileRoles: roles, sourcePathPattern: "ui/**" });
+
+    // Both precedent-less edges are ui-list-sourced? No: the misfit is
+    // ui/list.ts -> data/taskRepo.ts (ui source, kept); the newPattern is
+    // logic/tasks.ts -> present/board.ts (logic source, dropped).
+    expect(report.findings.map((f) => [f.kind, f.sourceRelPath])).toEqual([["misfit", "ui/list.ts"]]);
+    expect(report.summary.outOfScopeFindingCount).toBe(1);
+    expect(report.summary.violationCount).toBe(1);
+  });
+
+  it("leaves the summary untouched when the pattern names no scope", () => {
+    const { graph, roles } = verdictsFixture();
+    const report = computeDependencyNorms({ graph, fileRoles: roles });
+
+    expect(report.summary).not.toHaveProperty("outOfScopeFindingCount");
+    expect(report.summary.violationCount).toBe(2);
+  });
+
+  it("admits all findings under a pattern every source matches", () => {
+    const { graph, roles } = verdictsFixture();
+    const report = computeDependencyNorms({ graph, fileRoles: roles, sourcePathPattern: "{ui,logic,present,data}/**" });
+
+    expect(report.findings).toHaveLength(2);
+    expect(report.summary.outOfScopeFindingCount).toBe(0);
+  });
+});

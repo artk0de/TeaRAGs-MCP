@@ -1,4 +1,5 @@
 import type { RelPath } from "../../../../../contracts/types/codegraph.js";
+import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../boundary-diagnostics/otsu-split.js";
 import type {
   DependencyNormFinding,
@@ -207,20 +208,27 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
       compareCodePoints(a.targetRelPath, b.targetRelPath),
   );
 
+  // bd tea-rags-mcp-mv8yv: the pattern scopes the FINDINGS by source, the way
+  // every other detector scopes — ledgers, supports and the cut stay
+  // whole-graph. Dropped findings are counted, never lost silently.
+  const inScope = compilePathPatternMatcher(input.sourcePathPattern);
+  const scopedFindings = inScope ? findings.filter((f) => inScope(f.sourceRelPath)) : findings;
+
   const summary: DependencyNormsSummary = {
     roleFileCount: [...new Set([...fileRoles].filter(([, r]) => r.strong).map(([p]) => p))].length,
     weakRoleFileCount,
     untypedFileCount,
     typedEdgeCount,
     judgedEdgeCount: typedEdgeCount,
-    violationCount: findings.length,
+    violationCount: scopedFindings.length,
     pairCount: ledgers.pairCount,
+    ...(inScope ? { outOfScopeFindingCount: findings.length - scopedFindings.length } : {}),
     excluded: { lowRoleSupportEdgeCount },
   };
   return {
     summary,
     threshold: ledgers.threshold,
-    findings,
+    findings: scopedFindings,
   };
 }
 
