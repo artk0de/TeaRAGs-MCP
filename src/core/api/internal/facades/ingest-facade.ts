@@ -29,6 +29,7 @@ import { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
 import type { PipelineRegistryDeps, PipelineTuning } from "../../../domains/ingest/pipeline/base.js";
 import { SELECTABLE_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/config.js";
+import type { ChunkerPoolFactory } from "../../../domains/ingest/pipeline/chunker/infra/pool.js";
 import { EnrichmentApplier } from "../../../domains/ingest/pipeline/enrichment/applier.js";
 import type { BlobReaderFactory } from "../../../domains/ingest/pipeline/enrichment/chunk-phase.js";
 import type { CodegraphStorageCompactionRunner } from "../../../domains/ingest/pipeline/enrichment/completion-runner.js";
@@ -153,6 +154,13 @@ export interface IngestFacadeDeps {
    * descriptors are all present; omitted → every first index is an ordinary one.
    */
   footprintFactory?: Pick<CollectionFootprintFactory, "build">;
+  /**
+   * Builds each run's chunker pool (bd tea-rags-mcp-bbo1h.1). Forwarded onto
+   * `IngestDependencies`; omitted → every run forks a fresh `ChunkerPool`, which
+   * is what the production composition does. Tests inject a factory that
+   * leases warm pools so a run does not pay the worker fork.
+   */
+  createChunkerPool?: ChunkerPoolFactory;
 }
 
 export class IngestFacade {
@@ -305,15 +313,18 @@ export class IngestFacade {
     // collection's stats outside any indexing run, and `configTimePeriodMonths`
     // is carried by the walk configuration rather than by the payload — omit it
     // and a migrated stats file loses the window its git signals were read over.
-    const ingestDeps = createIngestDependencies(
-      qdrant,
-      snapshotDir,
-      new StaticPayloadBuilder(),
-      syncTuning,
-      config.enableHybridSearch,
-      enrichmentProviderKey,
-      gitTimePeriods,
-    );
+    const ingestDeps = {
+      ...createIngestDependencies(
+        qdrant,
+        snapshotDir,
+        new StaticPayloadBuilder(),
+        syncTuning,
+        config.enableHybridSearch,
+        enrichmentProviderKey,
+        gitTimePeriods,
+      ),
+      createChunkerPool: deps.createChunkerPool,
+    };
 
     // Single shared executor — Coordinator and Recovery dispatch through the
     // same seam. Phase-2 of the worker-pool spec wires WorkerPoolEnrichment-

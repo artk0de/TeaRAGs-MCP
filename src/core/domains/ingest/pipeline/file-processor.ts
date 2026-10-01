@@ -15,7 +15,7 @@ import type { ChunkLookupEntry } from "../../../types.js";
 import type { ReindexCoordinator } from "../sync/deletion/reindex-coordinator.js";
 import type { QuarantineStore } from "../sync/index.js";
 import type { ChunkPipeline } from "./chunk-pipeline.js";
-import type { ChunkerPool } from "./chunker/infra/pool.js";
+import type { ChunkerPoolPort } from "./chunker/infra/pool.js";
 import { SourceFileIngestor } from "./file-ingestor.js";
 import { parallelLimit } from "./infra/parallel.js";
 
@@ -84,7 +84,7 @@ export interface FileProcessCallbacks {
 export async function processFiles(
   absolutePaths: string[],
   basePath: string,
-  chunkerPool: ChunkerPool,
+  chunkerPool: ChunkerPoolPort,
   chunkPipeline: ChunkPipeline,
   options: FileProcessorOptions,
   callbacks?: FileProcessCallbacks,
@@ -132,7 +132,7 @@ export async function processFiles(
 export async function processRelativeFiles(
   relativePaths: string[],
   basePath: string,
-  chunkerPool: ChunkerPool,
+  chunkerPool: ChunkerPoolPort,
   chunkPipeline: ChunkPipeline,
   options: FileProcessorOptions,
   chunkMap: Map<string, ChunkLookupEntry[]>,
