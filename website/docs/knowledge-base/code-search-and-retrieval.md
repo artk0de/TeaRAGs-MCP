@@ -62,7 +62,7 @@ The practical consequence: **a retrieval system tuned for prose does worse on co
 Tree-sitter-parsed chunks at function/class granularity are the sweet spot for most languages. Exceptions:
 
 - **Ruby-like DSL** — class bodies are often pure declarations (associations, validations). Raw AST chunking produces oversized "body" chunks. TeaRAGs addresses this with custom hooks (`class-body-chunker.ts`). See [RFC 0005](/rfc/0005-trajectory-enrichment-evolution).
-- **Markdown** — heading hierarchy replaces AST. Each section becomes a chunk with a `headingPath`; small sections share a chunk with their siblings under the same `h1` (`h3`s with their `h2`, small `h2`s with each other) up to `maxChunkSize`, and no section is dropped for being short.
+- **Markdown** — heading hierarchy replaces AST. Each section becomes a chunk with a `headingPath`; small sections share a chunk with their siblings under the same `h1` (`h3`s with their `h2`, small `h2`s with the section before them) up to `maxChunkSize`, and no section is dropped for being short.
 - **Data / config** — no semantic AST. Character chunker as fallback; ranking suffers but search still works.
 
 ### 2. What to embed

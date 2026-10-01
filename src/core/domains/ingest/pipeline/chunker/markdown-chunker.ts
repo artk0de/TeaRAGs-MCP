@@ -40,9 +40,10 @@ const MIN_CODE_BLOCK_SIZE = 50;
 const MIN_SECTION_SIZE = 50;
 
 /**
- * Section content under this many chars is SMALL: consecutive small h2
- * siblings under one h1 share a chunk, as small h3s share their h2's, until the
- * chunk reaches this size (bd tea-rags-mcp-8gbh3).
+ * Section content under this many chars is SMALL: a small h2 joins the chunk
+ * open before it under the same h1, as a small h3 joins its h2's, whatever that
+ * chunk's size, while the merge fits `maxChunkSize`. A larger h2 opens its own
+ * chunk (bd tea-rags-mcp-8gbh3).
  */
 const SMALL_SECTION_SIZE = 300;
 
@@ -471,8 +472,8 @@ export class MarkdownChunker {
    * Which section joins (`joinsAccumulator`):
    *   - an h3 joins whenever it fits;
    *   - an h2 joins a tiny accumulator, an accumulator that is still only a
-   *     small h1 intro (the h1 is not left a lone tiny chunk), or — both small
-   *     (`SMALL_SECTION_SIZE`) — while the accumulator is itself small;
+   *     small h1 intro (the h1 is not left a lone tiny chunk), or any
+   *     accumulator when the h2 itself is small (`SMALL_SECTION_SIZE`);
    *   - a tiny h2 joins the previous section, unless subsections follow it:
    *     then it opens the chunk they join (bd tea-rags-mcp-8gbh3).
    * No section is dropped: one that can join nothing becomes its own chunk.
@@ -580,7 +581,7 @@ export class MarkdownChunker {
         const next = i + 1 < sections.length ? sections[i + 1] : undefined;
         return !next || next.heading.depth <= heading.depth;
       }
-      return accumSize < SMALL_SECTION_SIZE && content.length < SMALL_SECTION_SIZE;
+      return content.length < SMALL_SECTION_SIZE;
     };
 
     for (let i = 0; i < sections.length; i++) {

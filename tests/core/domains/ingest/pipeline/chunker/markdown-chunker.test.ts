@@ -183,12 +183,10 @@ describe("MarkdownChunker", () => {
       const sectionA = chunks.find((c) => c.content.includes("## Section A"));
       expect(sectionA).toBeDefined();
       expect(sectionA!.startLine).toBe(1);
-      expect(sectionA!.endLine).toBe(16); // ends before ## Section B
-
-      // Section B standalone
-      const sectionB = chunks.find((c) => c.metadata.name === "Section B");
-      expect(sectionB).toBeDefined();
-      expect(sectionB!.startLine).toBe(17);
+      // bd tea-rags-mcp-8gbh3: the small Section B joins the same chunk, which
+      // therefore runs to the end of the document.
+      expect(sectionA!.endLine).toBe(19);
+      expect(sectionA!.content).toContain("## Section B");
     });
 
     it("should set isDocumentation on all chunks", async () => {
@@ -916,7 +914,7 @@ describe("MarkdownChunker — small h1/h2 sections share a chunk (bd tea-rags-mc
     ]);
   });
 
-  it("stops accumulating once the chunk reaches the small-section threshold", async () => {
+  it("joins a small h2 to a chunk already past the small-section threshold while it fits", async () => {
     const code = [
       "## One",
       "",
@@ -933,11 +931,48 @@ describe("MarkdownChunker — small h1/h2 sections share a chunk (bd tea-rags-mc
 
     const chunks = sectionChunks(await chunker.chunk(code, "doc.md", "markdown"));
 
-    expect(chunks.map((c) => c.metadata.name)).toEqual(["One", "Three"]);
+    expect(chunks.map((c) => c.metadata.name)).toEqual(["One"]);
     expect(chunks[0].metadata.headingPath).toEqual([
       { depth: 2, text: "One" },
       { depth: 2, text: "Two" },
+      { depth: 2, text: "Three" },
     ]);
+  });
+
+  it("joins a trailing small h2 to the large section before it", async () => {
+    const code = [
+      "# Payment method",
+      "",
+      "## Attributes",
+      "",
+      filler("Attributes", 600),
+      "",
+      "## Related model objects",
+      "",
+      "- [firm](firm.md) — the firm that holds this payment method on file.",
+    ].join("\n");
+
+    const chunks = sectionChunks(await chunker.chunk(code, "payment-method.md", "markdown"));
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].endLine).toBe(9);
+    expect(chunks[0].content).toContain(
+      "## Related model objects\n\n- [firm](firm.md) — the firm that holds this payment method on file.",
+    );
+    expect(chunks[0].metadata.headingPath.map((h) => h.text)).toEqual([
+      "Payment method",
+      "Attributes",
+      "Related model objects",
+    ]);
+  });
+
+  it("starts a small h2 in its own chunk when joining would pass maxChunkSize", async () => {
+    const tight = new MarkdownChunker({ maxChunkSize: 700 });
+    const code = ["## Large", "", filler("Large", 600), "", "## Small", "", filler("Small", 120)].join("\n");
+
+    const chunks = sectionChunks(await tight.chunk(code, "doc.md", "markdown"));
+
+    expect(chunks.map((c) => c.metadata.name)).toEqual(["Large", "Small"]);
   });
 
   it("starts a large h2 in its own chunk", async () => {
