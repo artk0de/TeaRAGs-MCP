@@ -8,6 +8,7 @@
  * orchestration lives here; the facade only dispatches.
  */
 
+import { getBuildFingerprint, readOnDiskBuildFingerprint } from "../../../adapters/duckdb/daemon/build-fingerprint.js";
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import { isProviderRecoveryWaitSpent } from "../../../adapters/embeddings/errors.js";
@@ -23,7 +24,11 @@ import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-
 import type { PayloadSignalDescriptor, ScoreBackground } from "../../../contracts/types/trajectory.js";
 import type { WorktreeSeedReport } from "../../../contracts/types/worktree.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
-import { IndexingAlreadyInProgressError, NotIndexedError } from "../../../domains/ingest/errors.js";
+import {
+  IndexingAlreadyInProgressError,
+  IndexingProcessBuildStaleError,
+  NotIndexedError,
+} from "../../../domains/ingest/errors.js";
 import { computeCollectionStats } from "../../../domains/ingest/infra/collection-stats.js";
 import {
   cleanupOrphanedVersions,
@@ -175,7 +180,29 @@ export interface IndexingOpsDeps {
    * gate compares a sibling's stamp against. Omitted → that axis is not compared.
    */
   envSnapshot?: Record<string, string>;
+  /**
+   * This process's build as loaded vs as on disk now (bd tea-rags-mcp-r4z09).
+   * Every run compares them before any work and refuses on a mismatch.
+   * Defaults to the codegraph daemon's build fingerprint — the same identity
+   * the worker pools derive their daemon key from.
+   */
+  processBuildFingerprint?: ProcessBuildFingerprintSource;
 }
+
+/**
+ * The build a process LOADED next to the build on disk NOW. `onDisk` is
+ * undefined when the tree cannot be read — then there is nothing to compare,
+ * and the run proceeds.
+ */
+export interface ProcessBuildFingerprintSource {
+  loaded: () => string;
+  onDisk: () => string | undefined;
+}
+
+const DEFAULT_PROCESS_BUILD_FINGERPRINT: ProcessBuildFingerprintSource = {
+  loaded: getBuildFingerprint,
+  onDisk: readOnDiskBuildFingerprint,
+};
 
 /** The one registry mutation this ops layer performs. */
 export interface LanguageVersionStamper {
@@ -246,6 +273,7 @@ export class IndexingOps {
   private readonly heldIndexingLocks = new Map<string, HeldCollectionIndexingLock>();
   private readonly worktreeSeed?: Pick<WorktreeSeedOps, "seed">;
   private readonly envSnapshot?: Record<string, string>;
+  private readonly processBuildFingerprint: ProcessBuildFingerprintSource;
   /**
    * Enrichment an operation started AFTER its pipeline run, keyed like
    * `indexingCollections` — today only the git rebuild of a seeded collection.
@@ -296,6 +324,7 @@ export class IndexingOps {
     this.indexingLock = deps.indexingLock;
     this.worktreeSeed = deps.worktreeSeed;
     this.envSnapshot = deps.envSnapshot;
+    this.processBuildFingerprint = deps.processBuildFingerprint ?? DEFAULT_PROCESS_BUILD_FINGERPRINT;
   }
 
   /**
@@ -319,6 +348,9 @@ export class IndexingOps {
     progressCallback?: ProgressCallback,
     enrichmentProgress?: EnrichmentProgressCallback,
   ): Promise<IndexStats> {
+    // First of all: a stale process would run its worker pools on another build
+    // than itself (bd tea-rags-mcp-r4z09). Nothing is claimed, deleted or written.
+    this.assertProcessBuildCurrent();
     // Claimed before anything shared is touched: a refused call must not reset
     // the profiler or swap the progress sink out from under the running one.
     const collectionName = await this.claimCollectionForIndexing(path, options);
@@ -384,6 +416,21 @@ export class IndexingOps {
     }
     const stats = await this.fullIndex(path, options, progressCallback);
     return worktreeSeed ? { ...stats, worktreeSeed } : stats;
+  }
+
+  /**
+   * Refuse a run from a process whose loaded build is no longer the build on
+   * disk (bd tea-rags-mcp-r4z09). The worker pools a run spawns load their
+   * modules from disk, so after a rebuild under a live server the run would
+   * span two builds — on taxdome every codegraph prefetch failed against a
+   * daemon keyed by the other build, and the run still completed. An unreadable
+   * tree (`onDisk` undefined) has nothing to compare and proceeds.
+   */
+  private assertProcessBuildCurrent(): void {
+    const onDisk = this.processBuildFingerprint.onDisk();
+    if (onDisk === undefined) return;
+    const loaded = this.processBuildFingerprint.loaded();
+    if (onDisk !== loaded) throw new IndexingProcessBuildStaleError({ loaded, onDisk });
   }
 
   /**
@@ -578,6 +625,7 @@ export class IndexingOps {
    * which forwards here.
    */
   async reindexChanges(path: string, progressCallback?: ProgressCallback): Promise<ChangeStats> {
+    this.assertProcessBuildCurrent();
     // Session start for the deprecated explicit-reindex entry — reset the
     // profiler here too so "embed-warmup" survives to the stage summary (csyve).
     pipelineLog.resetProfiler();
