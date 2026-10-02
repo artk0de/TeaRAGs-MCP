@@ -187,6 +187,11 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.session.compactDatabaseFile();
   }
 
+  /** See `GraphDbClient.exportSnapshot`; the protocol is `DuckDbGraphSession#exportSnapshot`. */
+  async exportSnapshot(targetPath: string): Promise<void> {
+    return this.session.exportSnapshot(targetPath);
+  }
+
   /** The database file this client holds open now — what the pool checks its path against. */
   openedDatabaseFile(): OpenedDatabaseFile | undefined {
     return this.session.openedDatabaseFile();

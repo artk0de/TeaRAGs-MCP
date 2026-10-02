@@ -14,7 +14,7 @@
  * contract.
  */
 
-import { mkdirSync, renameSync, statSync } from "node:fs";
+import { mkdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { DuckDBInstance, type DuckDBConnection, type DuckDBValue } from "@duckdb/node-api";
@@ -24,11 +24,16 @@ import { compactionStagingPath } from "./codegraph-db-files.js";
 import {
   readStorageFootprint,
   removeStagedCopy,
+  snapshotStagingPath,
   walHoldsData,
   writeCompactedCopy,
   type CompactedCopyVerdict,
 } from "./database-file-compaction.js";
-import { CodegraphStorageCompactionFailedError, DuckDbStreamIncompleteError } from "./errors.js";
+import {
+  CodegraphSnapshotExportFailedError,
+  CodegraphStorageCompactionFailedError,
+  DuckDbStreamIncompleteError,
+} from "./errors.js";
 import { asBindable, bindParams } from "./sql-binding.js";
 import {
   DEFAULT_CODEGRAPH_COMPACTION_POLICY,
@@ -569,6 +574,73 @@ export class DuckDbGraphSession {
       throw new CodegraphStorageCompactionFailedError(path, "reopen", err instanceof Error ? err : undefined);
     }
     return statSync(path).size;
+  }
+
+  /**
+   * Write a consistent, verified copy of this database to `targetPath` (bd
+   * tea-rags-mcp-xi2r9, WTO-7 base snapshot): the base a working-tree graph is
+   * built on. It is taken HERE because only the session holding the file sees
+   * all of it — rows committed since the last checkpoint live in a WAL no other
+   * reader may open while this session holds the lock, and a raw file copy
+   * races its writes and checkpoints.
+   *
+   * The protocol, inside one slot of the write queue so no queued write lands
+   * mid-copy:
+   *
+   * 1. Create the target's directory; clear a staging file an interrupted
+   *    export left at `<target>.snapshot-tmp`.
+   * 2. `COPY FROM DATABASE` into the staging file, verified table by table and
+   *    key by key (`writeCompactedCopy`), with no WAL beside it. No CHECKPOINT
+   *    of the live database first: the copy reads the connection's view, WAL
+   *    included, and the export must not change the live file.
+   * 3. Publish by `rename` onto the target — a fresh inode, never bytes copied
+   *    over an existing path (the r4veq rename-only rule). A `<target>.wal` left
+   *    by the previous occupant is removed first, or its log would replay into
+   *    the new snapshot.
+   *
+   * No swap, no reopen: the live instance, its connection and its file are as
+   * they were. Reads are NOT gated. They never wrote, so they cannot tear the
+   * copy; they share the one connection with the copy statements as they
+   * already share it with every queued write. A write issued outside the queue
+   * could still land between the copy and its verification — that surfaces as
+   * a `mismatch` and the export is refused, never published torn.
+   *
+   * A READ_ONLY session exports too: `writeCompactedCopy` attaches the staging
+   * file `(READ_WRITE)` explicitly, which a read-only instance otherwise refuses.
+   *
+   * @throws CodegraphSnapshotExportFailedError at `copy` or `publish`; the live
+   *   database is untouched either way and no staging file is left.
+   */
+  async exportSnapshot(targetPath: string): Promise<void> {
+    const { path } = this.options;
+    const staging = snapshotStagingPath(targetPath);
+    return this.serialize(async () => {
+      try {
+        mkdirSync(dirname(targetPath), { recursive: true });
+        await removeStagedCopy(staging);
+        const verdict = await this.onConnection(async (conn) => writeCompactedCopy(conn, staging));
+        if (verdict.kind === "mismatch") {
+          await removeStagedCopy(staging);
+          throw new CodegraphSnapshotExportFailedError(path, targetPath, "copy", undefined, verdict.detail);
+        }
+      } catch (err) {
+        if (err instanceof CodegraphSnapshotExportFailedError) throw err;
+        await removeStagedCopy(staging);
+        throw new CodegraphSnapshotExportFailedError(path, targetPath, "copy", err instanceof Error ? err : undefined);
+      }
+      try {
+        rmSync(`${targetPath}.wal`, { force: true });
+        renameSync(staging, targetPath);
+      } catch (err) {
+        await removeStagedCopy(staging);
+        throw new CodegraphSnapshotExportFailedError(
+          path,
+          targetPath,
+          "publish",
+          err instanceof Error ? err : undefined,
+        );
+      }
+    });
   }
 
   /** Resolve once no native call is running on the connection. */

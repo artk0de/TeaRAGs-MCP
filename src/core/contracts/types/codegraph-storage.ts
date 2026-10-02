@@ -1484,6 +1484,20 @@ export interface GraphDbClient {
   compactStorage: () => Promise<CodegraphStorageCompactionOutcome>;
 
   /**
+   * Write a consistent copy of the whole store to `targetPath`, a standalone
+   * database file a separate client can open read-write (bd
+   * tea-rags-mcp-xi2r9) — the base a working-tree graph is built on. The copy
+   * holds every committed row, including those not yet checkpointed, and lands
+   * at the target atomically: a reader of `targetPath` sees the previous file
+   * or the complete new one, never a partial copy. The live store is left
+   * exactly as it was.
+   *
+   * A failure — including a store host that cannot export — rejects with a
+   * typed error; nothing is left at `targetPath` that was not there before.
+   */
+  exportSnapshot: (targetPath: string) => Promise<void>;
+
+  /**
    * Atomically replace the cycles table for `scope` with the supplied
    * SCC list. Domain runs Tarjan; adapter persists the result.
    * Each inner array is one SCC's members in walk order; cycle_id is

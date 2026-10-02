@@ -45,6 +45,7 @@ const LEGACY_TOLERATED_OP_LIST = [
   "diffSymbolSignals",
   "refreshSymbolSignalsPrev",
   "compactStorage",
+  "exportSnapshot",
   "ping",
   "removeCollectionDatabase",
   "cloneCollectionDatabase",
@@ -72,6 +73,11 @@ export type LegacyToleratedDaemonOp = (typeof LEGACY_TOLERATED_OP_LIST)[number];
  * - `compactStorage` — "not compacted": the file stays as large as it was, the
  *   pre-dvzdm behaviour. Requiring it would drain a daemon other sessions are
  *   using for the sake of disk space.
+ * - `exportSnapshot` — a typed refusal (`CodegraphSnapshotExportFailedError`,
+ *   stage `unsupported`), never a stand-in copy: no other process can read the
+ *   rows that daemon's WAL holds. The working-tree graph it would seed is
+ *   optional and degrades on the refusal (bd tea-rags-mcp-xi2r9); requiring the
+ *   op would drain a daemon other sessions are using for the sake of it.
  * - `ping` — the liveness probe (bd tea-rags-mcp-f924y). An older daemon's
  *   "unknown daemon op" answer is itself the proof of life the probe asks for.
  * - `removeCollectionDatabase` / `cloneCollectionDatabase` — the caller unlinks

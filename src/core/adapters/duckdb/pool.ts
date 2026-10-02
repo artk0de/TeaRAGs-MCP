@@ -929,6 +929,44 @@ export class GraphDbClientPool {
     return this.acquireRead(physicalCollectionName);
   }
 
+  /**
+   * Write a consistent copy of the collection's graph to `targetPath` (bd
+   * tea-rags-mcp-xi2r9, WTO-7) — taken by whoever holds the file, because only
+   * the holder sees the rows its WAL keeps (`DuckDbGraphSession#exportSnapshot`):
+   *
+   * - daemon mode — the daemon, over its own connection (`exportSnapshot` op);
+   * - direct mode with a read-write client cached in this pool — that client,
+   *   as a pinned collection op. A READ_ONLY attach beside it would be refused
+   *   by the lock it holds; the client stays cached afterwards;
+   * - direct mode otherwise — a READ_ONLY attach, closed once the copy is done.
+   *
+   * Like `acquireReader`, it never creates the database it is asked to copy.
+   *
+   * @throws CodegraphDatabaseMissingError when the collection has no database.
+   * @throws CodegraphSnapshotExportFailedError when the copy or its publish fails,
+   *   or the running daemon predates the op.
+   */
+  async exportSnapshot(physicalCollectionName: PhysicalCollectionName, targetPath: string): Promise<void> {
+    if (!this.hasDatabase(physicalCollectionName)) {
+      throw new CodegraphDatabaseMissingError(this.pathFor(physicalCollectionName));
+    }
+    if (this.options.daemonSocketPath) {
+      const { graphDb } = await this.acquireDaemonHandle(physicalCollectionName);
+      await graphDb.exportSnapshot(targetPath);
+      return;
+    }
+    if (this.clients.has(physicalCollectionName)) {
+      await this.runCollectionOp(physicalCollectionName, async ({ graphDb }) => graphDb.exportSnapshot(targetPath));
+      return;
+    }
+    const { graphDb } = await this.acquireRead(physicalCollectionName);
+    try {
+      await graphDb.exportSnapshot(targetPath);
+    } finally {
+      await graphDb.close();
+    }
+  }
+
   private async openCollection(physicalCollectionName: PhysicalCollectionName): Promise<PoolEntry> {
     // Bounded open retry (bd tea-rags-mcp-42hno): two build-keyed daemons
     // serve the same on-disk collections, so a loser's first open loses the
