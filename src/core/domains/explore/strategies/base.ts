@@ -51,8 +51,8 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
 
   /**
    * Whether this strategy has the working-tree CHUNK floor: it substitutes the
-   * tree's rows for base rows of delta files (`substituteFromWorkingTree`)
-   * instead of flagging them with `treeState`.
+   * tree's rows for base rows of delta files (`substituteFromWorkingTree`, or
+   * hybrid's sparse floor on top of it) instead of flagging them with `treeState`.
    */
   protected readonly hasChunkFloor: boolean = false;
 

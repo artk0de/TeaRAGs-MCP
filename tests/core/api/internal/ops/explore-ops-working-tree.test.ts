@@ -242,6 +242,18 @@ describe("ExploreOps working-tree floors (bd tea-rags-mcp-xi2r9.3)", () => {
     expect(response.results[0].treeState).toBe("modified");
   });
 
+  it("should declare the chunks and sparse floors on hybrid_search and answer touched files from the tree (xi2r9.4)", async () => {
+    const response = await makeFacade([HIT], chunkedView([TREE_ROW])).hybridSearch({
+      collection: "code_x",
+      query: "tree",
+    });
+
+    expect(response.workingTree?.floors).toEqual(["chunks", "sparse"]);
+    expect(response.workingTree?.unparsed).toEqual(["src/broken.ts"]);
+    expect(response.results.map((r) => r.id)).toContain("t");
+    expect(response.results.every((r) => r.treeState === undefined)).toBe(true);
+  });
+
   it("should declare no floor on find_symbol when no chunk layer is wired", async () => {
     const view: WorkingTreeView = { marker: MARKER, touchedPaths: new Set(["src/a.ts"]), deletedPaths: new Set() };
 

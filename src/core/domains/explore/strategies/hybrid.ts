@@ -8,8 +8,11 @@
 
 import { QdrantInvalidQueryParameterError } from "../../../adapters/qdrant/errors.js";
 import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
+import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
+import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { InvalidQueryError } from "../errors.js";
+import { excludeWorkingTreeTouched, fuseWorkingTreeRows, scoreWorkingTreeRows } from "../working-tree/sparse-floor.js";
 import { BaseExploreStrategy } from "./base.js";
 import { fetchPathPatternMatches } from "./path-pattern-fill.js";
 import { buildSymbolIdentityFilter, isSymbolIdentifierQuery } from "./symbol-identity-leg.js";
@@ -29,6 +32,9 @@ function rethrowAsInvalidQuery(error: unknown): never {
 export class HybridSearchStrategy extends BaseExploreStrategy {
   readonly type = "hybrid" as const;
 
+  /** The sparse floor substitutes the tree's rows for touched files, so they carry no `treeState`. */
+  protected override readonly hasChunkFloor = true;
+
   protected async executeExplore(ctx: ExploreContext): Promise<ExploreResult[]> {
     const { embedding } = ctx;
     if (!embedding) {
@@ -46,7 +52,12 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
     // One identifier → add the identity leg (see ./symbol-identity-leg.ts);
     // any other query sends exactly the two-prefetch request it always did.
     const identityFilter = isSymbolIdentifierQuery(ctx.query) ? buildSymbolIdentityFilter(ctx.query) : undefined;
-    const results = await fetchPathPatternMatches(
+    // Sparse floor (bd tea-rags-mcp-xi2r9.4): the tree's rows of the files it
+    // touched replace their base rows. Absent → today's request, byte for byte.
+    const treeRows = await this.readWorkingTreeRows(ctx);
+    const view = ctx.workingTreeView;
+    const filter = treeRows && view ? excludeWorkingTreeTouched(ctx.filter, view.touchedPaths) : ctx.filter;
+    const baseResults = await fetchPathPatternMatches(
       ctx.pathPattern,
       { fetchLimit, fetchUnit: "chunk", target: ctx.limit, targetUnit: ctx.level === "file" ? "file" : "chunk" },
       async (limit) =>
@@ -56,13 +67,26 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
               embedding,
               sparseVector,
               limit,
-              ctx.filter,
+              filter,
               undefined,
               identityFilter,
             )
-          : this.qdrant.hybridSearch(ctx.collectionName, embedding, sparseVector, limit, ctx.filter)
+          : this.qdrant.hybridSearch(ctx.collectionName, embedding, sparseVector, limit, filter)
         ).catch(rethrowAsInvalidQuery),
     );
+    const results = treeRows
+      ? fuseWorkingTreeRows(
+          baseResults,
+          scoreWorkingTreeRows(treeRows, {
+            querySparse: sparseVector,
+            requestFilter: ctx.filter,
+            identityFilter,
+            pathMatcher: compilePathPatternMatcher(ctx.pathPattern),
+            legLimit: fetchLimit,
+          }),
+          Math.max(fetchLimit, baseResults.length),
+        )
+      : baseResults;
 
     // queryGroups has no fusion=rrf option; fetch limit*3 above and group client-side.
     if (ctx.level === "file") {
@@ -70,5 +94,12 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
     }
 
     return results;
+  }
+
+  /** The tree's rows when this request reads a tree that touched files and can chunk them. */
+  private async readWorkingTreeRows(ctx: ExploreContext): Promise<readonly ScrollChunk[] | undefined> {
+    const view = ctx.workingTreeView;
+    if (!view?.readDeltaChunks || view.touchedPaths.size === 0) return undefined;
+    return view.readDeltaChunks();
   }
 }

@@ -239,12 +239,14 @@ export class ExploreOps {
   // ---------------------------------------------------------------------------
 
   async semanticSearch(request: SemanticSearchRequest): Promise<ExploreResponse> {
-    return this.embedAndDispatch(request, this.vectorStrategy, true);
+    return this.embedAndDispatch(request, this.vectorStrategy, true, []);
   }
 
   async hybridSearch(request: HybridSearchRequest): Promise<ExploreResponse> {
     // No confidence: RRF fusion scores are a function of rank, not similarity.
-    return this.embedAndDispatch(request, this.hybridStrategy, false);
+    // Sparse floor (bd tea-rags-mcp-xi2r9.4): touched files answer from the
+    // tree's chunks, scored on the BM25 leg.
+    return this.embedAndDispatch(request, this.hybridStrategy, false, ["chunks", "sparse"]);
   }
 
   async rankChunks(request: RankChunksRequest): Promise<ExploreResponse> {
@@ -435,6 +437,7 @@ export class ExploreOps {
     request: SemanticSearchRequest | HybridSearchRequest,
     strategy: BaseExploreStrategy,
     attachConfidence: boolean,
+    workingTreeFloors: readonly WorkingTreeFloor[],
   ): Promise<ExploreResponse> {
     const { collectionName, path, workingTreeView } = await this.resolveAndGuard(
       request.collection,
@@ -454,7 +457,7 @@ export class ExploreOps {
       strategy,
       buildVectorSearchContext(request, collectionName, embedding, filter, rerank, level),
       path,
-      { attachConfidence, presetFilterNotice, fields: request.fields, workingTreeView },
+      { attachConfidence, presetFilterNotice, fields: request.fields, workingTreeView, workingTreeFloors },
     );
   }
 
