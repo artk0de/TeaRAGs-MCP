@@ -9,16 +9,22 @@
  */
 
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
-import type { PathCollectionResolver } from "../../contracts/types/registry.js";
+import { resolveGitCommonDir } from "../../adapters/vcs/git/common-dir.js";
+import type { CollectionEntry, PathCollectionResolver } from "../../contracts/types/registry.js";
 import type { CollectionRegistry } from "../../domains/maintenance/registry/collection-registry.js";
 import {
   collectionAliasOfRegistryEntry,
   resolveCollectionName,
   validatePathSync,
 } from "../../infra/collection-name.js";
-import { CollectionNotProvidedError, ProjectNotRegisteredError, StaleProjectAliasError } from "../errors.js";
+import {
+  CollectionNotProvidedError,
+  InvalidParameterError,
+  ProjectNotRegisteredError,
+  StaleProjectAliasError,
+} from "../errors.js";
 
 /**
  * Input for resolveCollection — 3-priority resolution:
@@ -108,6 +114,128 @@ export function resolveCollection(
     };
   }
   throw new CollectionNotProvidedError();
+}
+
+/**
+ * The working tree a request reads, and the index it reads that tree against
+ * (bd tea-rags-mcp-xi2r9).
+ *
+ * One MCP server serves every subagent, and only the agent knows which tree it
+ * stands in — so its working directory alone has to address both. The tree is
+ * the caller's; the index is the lower layer the tree is compared with, which
+ * for an unregistered linked worktree is its repository's main checkout.
+ */
+export interface WorkingTree {
+  /** realpath of the tree the caller stands in (git toplevel, not a subdir) */
+  root: string;
+  /** lower layer the tree is read against */
+  baseIndex: { collectionName: string; root: string | undefined };
+}
+
+/**
+ * Nearest ancestor (inclusive) holding `.git` — the tree's toplevel. Filesystem
+ * only, for the reason `resolveGitCommonDir` is: this sits on the serving query
+ * path, where a git spawn per request is the scarce resource. A linked worktree
+ * holds a `.git` FILE, so `existsSync` covers both layouts.
+ */
+export function findWorkingTreeRoot(path: string): string | undefined {
+  let dir = validatePathSync(path);
+  for (;;) {
+    if (existsSync(join(dir, ".git"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+/**
+ * Resolve a request to the {@link WorkingTree} it reads.
+ *
+ * An explicit `collection` / `project` names the index and keeps
+ * {@link resolveCollection}'s rules; a `path` beside it only picks the tree,
+ * and must be a checkout of the same repository — reading one repository's tree
+ * against another's index would report every file as changed.
+ *
+ * `path` alone: the tree is its git toplevel, and the index is, in order, the
+ * entry registered AT that tree (a worktree clone keeps its own index), the
+ * repository's main-checkout entry, or its only entry. Several entries and none
+ * at main is a question only the caller can answer, so it is refused rather
+ * than guessed. A tree of no registered repository keeps the path-hash fallback.
+ */
+export function resolveWorkingTree(registry: CollectionRegistry, input: ResolveInput): WorkingTree {
+  if (input.collection !== undefined || input.project !== undefined) {
+    const resolved = resolveCollection(registry, input);
+    const indexRoot =
+      input.project !== undefined ? resolved.path : (registry.get?.(resolved.collectionName)?.path ?? undefined);
+    const root = input.path === undefined ? indexRoot : requireSameRepositoryTree(input, input.path, indexRoot);
+    return { root: root ?? "", baseIndex: { collectionName: resolved.collectionName, root: indexRoot } };
+  }
+  if (input.path === undefined) throw new CollectionNotProvidedError();
+
+  const gitRoot = findWorkingTreeRoot(input.path);
+  const treeRoot = gitRoot ?? validatePathSync(input.path);
+  const entry =
+    registry.findByPath?.(treeRoot) ?? (gitRoot === undefined ? null : selectSameRepositoryEntry(registry, gitRoot));
+  if (entry) return { root: treeRoot, baseIndex: { collectionName: entry.collectionName, root: entry.path } };
+
+  const resolved = resolveCollection(registry, { path: input.path });
+  return { root: treeRoot, baseIndex: { collectionName: resolved.collectionName, root: resolved.path } };
+}
+
+/**
+ * The tree `path` addresses, provided it is a checkout of the repository the
+ * named index was built from. An index with no recorded root (an unregistered
+ * collection, a recoverFromQdrant stub) has nothing to compare against, so the
+ * path is taken at its word.
+ */
+function requireSameRepositoryTree(input: ResolveInput, path: string, indexRoot: string | undefined): string {
+  const treeRoot = findWorkingTreeRoot(path) ?? validatePathSync(path);
+  if (!indexRoot) return treeRoot;
+  if (resolveGitCommonDir(treeRoot) !== commonDirOf(indexRoot)) {
+    const index = input.project !== undefined ? `project "${input.project}"` : `collection "${input.collection}"`;
+    throw new InvalidParameterError("path", `'${path}' is not a checkout of ${index} (${indexRoot})`);
+  }
+  return treeRoot;
+}
+
+/**
+ * The registry entry indexing the repository behind `treeRoot`, when the tree
+ * itself is not registered: the main checkout's entry, else the only one.
+ * Entries with an empty `path` (recoverFromQdrant stubs) belong to no tree.
+ */
+function selectSameRepositoryEntry(registry: CollectionRegistry, treeRoot: string): CollectionEntry | null {
+  const commonDir = resolveGitCommonDir(treeRoot);
+  const candidates = registry.list().filter((entry) => entry.path && commonDirOf(entry.path) === commonDir);
+  if (candidates.length === 0) return null;
+
+  // The main checkout is the tree whose `.git` IS the shared dir; a bare
+  // repository has none, and then only a single candidate is unambiguous.
+  const mainCheckout = basename(commonDir) === ".git" ? dirname(commonDir) : undefined;
+  const atMain = candidates.find((entry) => entry.path === mainCheckout);
+  if (atMain) return atMain;
+  if (candidates.length === 1) return candidates[0];
+
+  const aliases = candidates.map((entry) => entry.name ?? entry.collectionName).join(", ");
+  throw new InvalidParameterError(
+    "path",
+    `'${treeRoot}' belongs to a repository indexed under several projects: ${aliases} — pass project=<alias>`,
+  );
+}
+
+/**
+ * `resolveGitCommonDir` per registered root, memoised for the process: entry
+ * roots are few and stable, and every path-addressed request scans them all.
+ * The unreadable fallback (the root itself) is not memoised: a root that is not
+ * a repository yet may become one.
+ */
+const commonDirByEntryRoot = new Map<string, string>();
+
+function commonDirOf(entryRoot: string): string {
+  const memoised = commonDirByEntryRoot.get(entryRoot);
+  if (memoised !== undefined) return memoised;
+  const commonDir = resolveGitCommonDir(entryRoot);
+  if (commonDir !== entryRoot) commonDirByEntryRoot.set(entryRoot, commonDir);
+  return commonDir;
 }
 
 /**
