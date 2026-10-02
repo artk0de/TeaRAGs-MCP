@@ -53,7 +53,7 @@ export interface RegistryAutoUpdateConfig {
  */
 export interface EmbeddingThroughputOptimum {
   batchSize: number;
-  /** Embed concurrency the run used on this endpoint (1 on a loopback endpoint). */
+  /** Embed concurrency the measured climb settled on for this endpoint. */
   concurrency: number;
   /** Measured throughput at `batchSize`, normalised by input size. */
   charsPerSecond: number;

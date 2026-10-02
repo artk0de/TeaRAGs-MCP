@@ -11,7 +11,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   EmbeddingThroughputTuner,
-  isLoopbackEmbeddingEndpoint,
   type EmbeddingEndpointIdentity,
   type EmbeddingThroughputAdaptation,
   type EmbeddingThroughputTunerConfig,
@@ -253,26 +252,9 @@ describe("EmbeddingThroughputTuner", () => {
     });
   });
 
-  describe("concurrency by endpoint locality", () => {
-    it.each([
-      ["http://localhost:11434", true],
-      ["http://127.0.0.1:11434", true],
-      ["http://127.1.2.3:11434", true],
-      ["http://[::1]:11434", true],
-      ["http://192.168.1.71:11434", false],
-      ["http://10.0.0.5:11434", false],
-      ["https://api.openai.com/v1", false],
-    ])("%s is loopback = %s", (url, expected) => {
-      expect(isLoopbackEmbeddingEndpoint(url)).toBe(expected);
-    });
-
-    it("treats an absent or unparsable url as unknown", () => {
-      expect(isLoopbackEmbeddingEndpoint(undefined)).toBeUndefined();
-      expect(isLoopbackEmbeddingEndpoint("not a url")).toBeUndefined();
-    });
-
-    it("runs a local endpoint at concurrency 1 and a remote one at the configured concurrency", () => {
-      expect(makeTuner().tuner.begin(LOCAL).concurrency).toBe(1);
+  describe("concurrency start and failover", () => {
+    it("starts every endpoint at the configured concurrency, whatever its locality", () => {
+      expect(makeTuner().tuner.begin(LOCAL).concurrency).toBe(4);
       expect(makeTuner().tuner.begin(REMOTE).concurrency).toBe(4);
     });
 
@@ -280,23 +262,36 @@ describe("EmbeddingThroughputTuner", () => {
       expect(makeTuner().tuner.begin({ model: "onnx" }).concurrency).toBe(4);
     });
 
-    it("re-evaluates concurrency and re-seeds the size when failover moves the active endpoint", () => {
-      const { tuner, adaptations } = makeTuner({ seed: (e) => (e.url === LOCAL.url ? 32 : 128) });
+    it("seeds concurrency from the stored optimum, clamped to [1, configured]", () => {
+      const { tuner, adaptations } = makeTuner({ seedConcurrency: () => 2 });
+      expect(tuner.begin(REMOTE).concurrency).toBe(2);
+      expect(adaptations()).toContainEqual(
+        expect.objectContaining({ kind: "concurrency", from: 4, to: 2, reason: "seed" }),
+      );
+      expect(makeTuner({ seedConcurrency: () => 64 }).tuner.begin(REMOTE).concurrency).toBe(4);
+      expect(makeTuner({ seedConcurrency: () => 0 }).tuner.begin(REMOTE).concurrency).toBe(4);
+    });
+
+    it("re-seeds the size and the concurrency of the endpoint a failover moves to", () => {
+      const { tuner, adaptations } = makeTuner({
+        seed: (e) => (e.url === LOCAL.url ? 32 : 128),
+        seedConcurrency: (e) => (e.url === LOCAL.url ? 1 : undefined),
+      });
       expect(tuner.begin(REMOTE)).toEqual({ batchSize: 128, concurrency: 4 });
       tuner.observe({ size: 128, inputChars: 1000, durationMs: 10, ok: true, endpoint: LOCAL });
       expect(tuner.decision()).toEqual({ batchSize: 32, concurrency: 1 });
       expect(adaptations()).toContainEqual(
-        expect.objectContaining({ kind: "concurrency", from: 4, to: 1, reason: "endpoint-local" }),
+        expect.objectContaining({ kind: "concurrency", from: 4, to: 1, reason: "seed" }),
       );
       tuner.observe({ size: 32, inputChars: 1000, durationMs: 10, ok: true, endpoint: REMOTE });
       expect(tuner.decision()).toEqual({ batchSize: 128, concurrency: 4 });
       expect(adaptations()).toContainEqual(
-        expect.objectContaining({ kind: "concurrency", from: 1, to: 4, reason: "endpoint-remote" }),
+        expect.objectContaining({ kind: "concurrency", from: 1, to: 4, reason: "seed" }),
       );
     });
 
     it("keeps a separate settled optimum per endpoint", () => {
-      const { tuner } = makeTuner();
+      const { tuner } = makeTuner({ seedConcurrency: (e) => (e.url === LOCAL.url ? 1 : undefined) });
       tuner.begin(REMOTE);
       drive(tuner, { rate: peakedCurve(64) }, 40, REMOTE);
       tuner.observe({ size: 64, inputChars: 1, durationMs: 1, ok: true, endpoint: LOCAL });
@@ -304,6 +299,157 @@ describe("EmbeddingThroughputTuner", () => {
       const byUrl = Object.fromEntries(tuner.settledOptima().map((o) => [o.endpoint.url, o.optimum]));
       expect(byUrl[REMOTE.url!]).toMatchObject({ batchSize: 64, concurrency: 4 });
       expect(byUrl[LOCAL.url!]).toMatchObject({ batchSize: 32, concurrency: 1 });
+    });
+  });
+
+  describe("concurrency hill-climb", () => {
+    /**
+     * A server whose AGGREGATE throughput depends on how many batches are in
+     * flight. Batches go out in waves of `concurrency`; every batch of a wave
+     * takes as long as the whole wave, so the per-call rate is aggregate/c —
+     * judged per call, concurrency 1 would always win.
+     */
+    function makeClockedTuner(overrides: Partial<EmbeddingThroughputTunerConfig> = {}) {
+      let clock = 1_000_000;
+      const drained: EmbeddingThroughputAdaptation[] = [];
+      const tuner = new EmbeddingThroughputTuner({
+        ceiling: 256,
+        floor: 16,
+        configuredConcurrency: 8,
+        samplesPerSize: 2,
+        recoveryStreak: 1000,
+        reprobeAfterBatches: 100_000,
+        minImprovement: 0.05,
+        now: () => clock,
+        ...overrides,
+      });
+      return {
+        tuner,
+        adaptations: (): EmbeddingThroughputAdaptation[] => {
+          drained.push(...tuner.drainAdaptations());
+          return drained;
+        },
+        /** Run `count` waves; `aggregate(c)` is the server's total chars/s at concurrency c. */
+        waves(aggregate: (concurrency: number) => number, count: number, explicitStart = false): number[] {
+          const concurrencies: number[] = [];
+          for (let w = 0; w < count; w++) {
+            const { batchSize, concurrency } = tuner.decision();
+            concurrencies.push(concurrency);
+            const inputChars = batchSize * CHARS_PER_TEXT;
+            const startedAt = clock;
+            const durationMs = ((concurrency * inputChars) / aggregate(concurrency)) * 1000;
+            clock = startedAt + durationMs;
+            for (let i = 0; i < concurrency; i++) {
+              tuner.observe({
+                size: batchSize,
+                inputChars,
+                durationMs,
+                ok: true,
+                endpoint: REMOTE,
+                ...(explicitStart ? { startedAt } : {}),
+              });
+            }
+          }
+          return concurrencies;
+        },
+      };
+    }
+
+    const AGGREGATE_PEAK_AT_4: Record<number, number> = { 1: 1000, 2: 2000, 4: 4000, 8: 3000 };
+    const peakAt4 = (c: number) => AGGREGATE_PEAK_AT_4[c] ?? 1;
+    // A serialising server: parallel requests only queue, and each doubling costs 10%.
+    const serialising = (c: number) => 1000 * Math.pow(0.9, Math.log2(c));
+
+    it("converges to the concurrency with the best aggregate chars/s (peak 4, configured 8)", () => {
+      const { tuner, waves, adaptations } = makeClockedTuner();
+      expect(tuner.begin(REMOTE).concurrency).toBe(8);
+      const sent = waves(peakAt4, 40);
+      expect(tuner.decision().concurrency).toBe(4);
+      expect(sent.every((c) => c >= 1 && c <= 8)).toBe(true);
+      expect(adaptations()).toContainEqual(
+        expect.objectContaining({ kind: "concurrency", from: 8, to: 4, reason: "concurrency-probe" }),
+      );
+      const settle = adaptations().find((a) => a.reason === "concurrency-settle");
+      expect(settle).toMatchObject({ kind: "concurrency", to: 4 });
+      expect(settle?.charsPerSecond).toBeCloseTo(4000, 0);
+    });
+
+    it("converges to 1 on a serialising server", () => {
+      const { tuner, waves } = makeClockedTuner();
+      tuner.begin(REMOTE);
+      waves(serialising, 60);
+      expect(tuner.decision().concurrency).toBe(1);
+    });
+
+    it("climbs up from a low seed", () => {
+      const { tuner, waves } = makeClockedTuner({ seedConcurrency: () => 1 });
+      expect(tuner.begin(REMOTE).concurrency).toBe(1);
+      waves(peakAt4, 60);
+      expect(tuner.decision().concurrency).toBe(4);
+    });
+
+    it("probes concurrency only after the batch size settles", () => {
+      const { tuner, waves, adaptations } = makeClockedTuner();
+      tuner.begin(REMOTE);
+      waves(peakAt4, 40);
+      const log = adaptations();
+      const sizeSettle = log.findIndex((a) => a.reason === "settle");
+      const firstProbe = log.findIndex((a) => a.reason === "concurrency-probe");
+      expect(sizeSettle).toBeGreaterThanOrEqual(0);
+      expect(firstProbe).toBeGreaterThan(sizeSettle);
+    });
+
+    it("persists the settled concurrency in the optimum", () => {
+      const { tuner, waves } = makeClockedTuner();
+      tuner.begin(REMOTE);
+      waves(peakAt4, 40);
+      expect(tuner.settledOptima()[0].optimum).toMatchObject({ batchSize: 256, concurrency: 4 });
+    });
+
+    it("measures from an explicit startedAt the same as from a derived one", () => {
+      const { tuner, waves } = makeClockedTuner();
+      tuner.begin(REMOTE);
+      waves(peakAt4, 40, true);
+      expect(tuner.decision().concurrency).toBe(4);
+    });
+
+    it("never counts a batch that started before the probe toward it", () => {
+      const { tuner } = makeClockedTuner({ now: () => 5_000 });
+      tuner.begin(REMOTE);
+      // Each batch "started" before the clock the probe began at — it was in
+      // flight under the previous concurrency, so nothing may settle concurrency.
+      for (let i = 0; i < 200; i++) {
+        const size = tuner.decision().batchSize;
+        tuner.observe({ size, inputChars: size * CHARS_PER_TEXT, durationMs: 100, ok: true, endpoint: REMOTE });
+      }
+      expect(tuner.settledOptima()).toHaveLength(1); // the size did settle — concurrency is what waits
+      expect(tuner.drainAdaptations().some((a) => a.reason === "concurrency-settle")).toBe(false);
+      expect(tuner.decision().concurrency).toBe(8);
+    });
+
+    it("re-probes concurrency together with the batch size and follows a drifted server", () => {
+      const { tuner, waves, adaptations } = makeClockedTuner({ reprobeAfterBatches: 50 });
+      tuner.begin(REMOTE);
+      waves(peakAt4, 12);
+      expect(tuner.settledOptima()[0].optimum.concurrency).toBe(4);
+      adaptations();
+      waves(serialising, 120);
+      const settles = adaptations().filter((a) => a.reason === "concurrency-settle");
+      expect(settles.at(-1)?.to).toBe(1);
+      expect(tuner.settledOptima()[0].optimum.concurrency).toBe(1);
+    });
+
+    it("returns to the working concurrency when a size failure interrupts a probe", () => {
+      const { tuner, waves, adaptations } = makeClockedTuner();
+      tuner.begin(REMOTE);
+      // Run until the first concurrency probe moves off the working value.
+      for (let i = 0; i < 40 && tuner.decision().concurrency === 8; i++) waves(peakAt4, 1);
+      expect(tuner.decision().concurrency).toBe(4);
+      tuner.observe({ size: 256, inputChars: 1, durationMs: 1, ok: false, endpoint: REMOTE });
+      expect(tuner.decision()).toEqual({ batchSize: 128, concurrency: 8 });
+      expect(adaptations()).toContainEqual(
+        expect.objectContaining({ kind: "concurrency", from: 4, to: 8, reason: "failure" }),
+      );
     });
   });
 });

@@ -14,13 +14,23 @@
  *    neighbour only when it beats the current size by `minImprovement`, and
  *    settles when neither does. A settled size is re-probed every
  *    `reprobeAfterBatches` batches so a drifting server is followed.
- * 3. Concurrency by locality. A loopback endpoint serialises requests anyway,
- *    so it runs at 1 — parallel batches only queue on the server and blur every
- *    throughput sample. A remote endpoint keeps the configured concurrency.
- *    The decision is re-made whenever an observation reports a different
- *    endpoint, which is how a primary ⇄ fallback failover reaches it.
+ * 3. Concurrency hill-climb (bd tea-rags-mcp-gdo7h.4). Once the size settles,
+ *    concurrency is climbed the same way — ×½ and ×2 inside
+ *    [1, configuredConcurrency] — but judged on AGGREGATE chars/s: the input
+ *    chars of every full batch the probe saw, over the wall-clock span from the
+ *    earliest start to the latest end. Per-call chars/s would always crown 1.
+ *    A probe needs `samplesPerSize` rounds of in-flight batches
+ *    (`samplesPerSize × concurrency` observations), and a batch that started
+ *    before the probe did ran under the previous concurrency, so it is not
+ *    counted. Whether a server serialises (Ollama on loopback converges to 1)
+ *    is measured, never inferred from its address. A size re-probe, failure or
+ *    recovery abandons the concurrency climb back to the working value; it
+ *    restarts when the size settles again. Each endpoint seeds both values from
+ *    its own stored optimum, so a primary ⇄ fallback failover never inherits the
+ *    other server's shape.
  *
- * Pure: no clock reads beyond the injected `now` (used only to stamp a settle),
+ * Pure: no clock reads beyond the injected `now` (stamps a settle, opens a
+ * concurrency probe, and dates an observation that carries no `startedAt`),
  * no timers, no I/O. The caller measures each batch and feeds it in.
  */
 
@@ -40,6 +50,11 @@ export interface EmbeddingBatchObservation {
   /** Total characters across the batch's texts. */
   inputChars: number;
   durationMs: number;
+  /**
+   * Epoch ms the call started. Optional: when absent the tuner takes
+   * `now() - durationMs`, exact for a caller that observes on completion.
+   */
+  startedAt?: number;
   /** False only for a failure the server attributes to the batch SIZE. */
   ok: boolean;
   endpoint: EmbeddingEndpointIdentity;
@@ -58,8 +73,8 @@ export type EmbeddingThroughputAdaptationReason =
   | "probe"
   | "reprobe"
   | "settle"
-  | "endpoint-local"
-  | "endpoint-remote";
+  | "concurrency-probe"
+  | "concurrency-settle";
 
 /** One change of the decision, for the pipeline debug log. */
 export interface EmbeddingThroughputAdaptation {
@@ -77,7 +92,7 @@ export interface EmbeddingThroughputTunerConfig {
   ceiling: number;
   /** Smallest size the tuner may choose. */
   floor: number;
-  /** Configured INGEST_PIPELINE_CONCURRENCY — what a remote endpoint runs at. */
+  /** Configured INGEST_PIPELINE_CONCURRENCY — the start without a seed, and the climb's ceiling. */
   configuredConcurrency: number;
   /** Full batches measured per size before it is judged. Default 3. */
   samplesPerSize?: number;
@@ -91,6 +106,8 @@ export interface EmbeddingThroughputTunerConfig {
   now?: () => number;
   /** Stored optimum for an endpoint (a runtime hint); clamped to the bounds. */
   seed?: (endpoint: EmbeddingEndpointIdentity) => number | undefined;
+  /** Stored concurrency for an endpoint (a runtime hint); clamped to [1, configuredConcurrency]. */
+  seedConcurrency?: (endpoint: EmbeddingEndpointIdentity) => number | undefined;
 }
 
 /** A settled optimum together with the endpoint it belongs to. */
@@ -99,32 +116,26 @@ export interface EmbeddingEndpointThroughputOptimum {
   optimum: EmbeddingThroughputOptimum;
 }
 
-const LOOPBACK_HOSTNAMES = new Set(["localhost", "::1", "[::1]"]);
-
-/**
- * Is this embedding endpoint on the loopback interface? Undefined when there is
- * no URL or it cannot be parsed — the caller then keeps the configured
- * concurrency instead of guessing. A LAN address is remote: it is another
- * machine with its own GPU, whatever the network distance.
- */
-export function isLoopbackEmbeddingEndpoint(url: string | undefined): boolean | undefined {
-  if (url === undefined) return undefined;
-  let hostname: string;
-  try {
-    ({ hostname } = new URL(url));
-  } catch {
-    return undefined;
-  }
-  const host = hostname.toLowerCase();
-  if (LOOPBACK_HOSTNAMES.has(host) || host.endsWith(".localhost")) return true;
-  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
-}
-
 interface SizeSample {
   chars: number;
   ms: number;
   count: number;
 }
+
+/** Full batches seen at one concurrency, measured as one wall-clock window. */
+interface ConcurrencySample {
+  chars: number;
+  count: number;
+  firstStart: number;
+  lastEnd: number;
+}
+
+/**
+ * Where the concurrency climb stands: `idle` while the size is still climbing
+ * (concurrency held at `concurrencyWorking`), `climbing` once the size settled,
+ * `settled` when no neighbour beat the working concurrency.
+ */
+type ConcurrencyClimbPhase = "idle" | "climbing" | "settled";
 
 interface EndpointTuneState {
   endpoint: EmbeddingEndpointIdentity;
@@ -138,7 +149,14 @@ interface EndpointTuneState {
   samples: Map<number, SizeSample>;
   successStreak: number;
   batchesSinceSettle: number;
+  /** Concurrency in force — `concurrencyWorking`, or a neighbour under probe. */
   concurrency: number;
+  /** Best concurrency known so far — where the climb returns between probes. */
+  concurrencyWorking: number;
+  concurrencyPhase: ConcurrencyClimbPhase;
+  concurrencySamples: Map<number, ConcurrencySample>;
+  /** Clock at which the current concurrency probe opened; earlier-started batches don't count. */
+  concurrencyProbeStartedAt: number;
   optimum?: EmbeddingThroughputOptimum;
 }
 
@@ -201,6 +219,8 @@ export class EmbeddingThroughputTuner {
       if (state.batchesSinceSettle >= this.reprobeAfterBatches) {
         state.samples.clear();
         this.continueClimb(state, "reprobe");
+      } else if (state.concurrencyPhase === "climbing") {
+        this.sampleConcurrency(state, observation);
       }
       return this.decision();
     }
@@ -246,15 +266,21 @@ export class EmbeddingThroughputTuner {
     });
   }
 
-  private concurrencyFor(endpoint: EmbeddingEndpointIdentity): number {
-    return isLoopbackEmbeddingEndpoint(endpoint.url) === true ? 1 : this.config.configuredConcurrency;
+  private get maxConcurrency(): number {
+    return Math.max(1, this.config.configuredConcurrency);
+  }
+
+  private startConcurrency(endpoint: EmbeddingEndpointIdentity): number {
+    const seeded = this.config.seedConcurrency?.(endpoint);
+    if (seeded === undefined || !(seeded > 0)) return this.maxConcurrency;
+    return Math.min(this.maxConcurrency, Math.max(1, Math.round(seeded)));
   }
 
   /**
    * Make `endpoint` the active one, creating its state (seeded from the stored
-   * optimum) on first sight. A change of endpoint re-decides concurrency and
-   * resumes that endpoint's own batch size — a failover never inherits the
-   * other server's curve.
+   * optimum) on first sight. A change of endpoint resumes that endpoint's own
+   * batch size and concurrency — a failover never inherits the other server's
+   * curve.
    */
   private switchTo(endpoint: EmbeddingEndpointIdentity): EndpointTuneState {
     const key = endpointKey(endpoint);
@@ -265,6 +291,7 @@ export class EmbeddingThroughputTuner {
     if (!state) {
       const seeded = this.config.seed?.(endpoint);
       const start = seeded !== undefined && seeded > 0 ? this.clamp(seeded) : this.ceiling;
+      const concurrency = this.startConcurrency(endpoint);
       state = {
         endpoint: { ...endpoint },
         working: start,
@@ -274,7 +301,11 @@ export class EmbeddingThroughputTuner {
         samples: new Map(),
         successStreak: 0,
         batchesSinceSettle: 0,
-        concurrency: this.concurrencyFor(endpoint),
+        concurrency,
+        concurrencyWorking: concurrency,
+        concurrencyPhase: "idle",
+        concurrencySamples: new Map(),
+        concurrencyProbeStartedAt: 0,
       };
       this.states.set(key, state);
     }
@@ -286,13 +317,7 @@ export class EmbeddingThroughputTuner {
       this.emit(state, { kind: "batchSize", from: fromSize, to: state.target, reason: "seed" });
     }
     if (state.concurrency !== fromConcurrency) {
-      const local = isLoopbackEmbeddingEndpoint(endpoint.url) === true;
-      this.emit(state, {
-        kind: "concurrency",
-        from: fromConcurrency,
-        to: state.concurrency,
-        reason: local ? "endpoint-local" : "endpoint-remote",
-      });
+      this.emit(state, { kind: "concurrency", from: fromConcurrency, to: state.concurrency, reason: "seed" });
     }
     return state;
   }
@@ -320,6 +345,7 @@ export class EmbeddingThroughputTuner {
    */
   private continueClimb(state: EndpointTuneState, reason: "probe" | "reprobe" | "recovery"): void {
     state.settled = false;
+    this.abandonConcurrencyClimb(state, reason);
     for (;;) {
       const workingRate = this.rate(state, state.working);
       if (workingRate === undefined) {
@@ -364,11 +390,136 @@ export class EmbeddingThroughputTuner {
     state.batchesSinceSettle = 0;
     state.optimum = {
       batchSize: state.working,
-      concurrency: state.concurrency,
+      concurrency: state.concurrencyWorking,
       charsPerSecond,
       settledAt: new Date(this.now()).toISOString(),
     };
     this.emit(state, { kind: "batchSize", from, to: state.working, reason: "settle", charsPerSecond });
+    // The size is fixed now — climb concurrency at it.
+    state.concurrencyPhase = "climbing";
+    state.concurrencySamples.clear();
+    this.continueConcurrencyClimb(state);
+  }
+
+  /**
+   * Leave the concurrency climb: the size is moving again, so every aggregate
+   * sample (measured at the old size) is void. Concurrency returns to the
+   * working value; the climb restarts when the size next settles.
+   */
+  private abandonConcurrencyClimb(state: EndpointTuneState, reason: EmbeddingThroughputAdaptationReason): void {
+    state.concurrencyPhase = "idle";
+    state.concurrencySamples.clear();
+    if (state.concurrency === state.concurrencyWorking) return;
+    const from = state.concurrency;
+    state.concurrency = state.concurrencyWorking;
+    this.emit(state, { kind: "concurrency", from, to: state.concurrency, reason });
+  }
+
+  /**
+   * Count one observation toward the concurrency under probe. Only full batches
+   * at the settled size count, and only those that started once the probe was
+   * open — an earlier one ran under the previous concurrency.
+   */
+  private sampleConcurrency(state: EndpointTuneState, observation: EmbeddingBatchObservation): void {
+    if (observation.size !== state.target || observation.durationMs <= 0) return;
+    const startedAt = observation.startedAt ?? this.now() - observation.durationMs;
+    if (startedAt < state.concurrencyProbeStartedAt) return;
+    const sample = state.concurrencySamples.get(state.concurrency) ?? {
+      chars: 0,
+      count: 0,
+      firstStart: startedAt,
+      lastEnd: startedAt + observation.durationMs,
+    };
+    sample.chars += observation.inputChars;
+    sample.count++;
+    sample.firstStart = Math.min(sample.firstStart, startedAt);
+    sample.lastEnd = Math.max(sample.lastEnd, startedAt + observation.durationMs);
+    state.concurrencySamples.set(state.concurrency, sample);
+    if (sample.count >= this.samplesPerSize * state.concurrency) this.continueConcurrencyClimb(state);
+  }
+
+  /** Aggregate chars/s at `concurrency`: total input over the window's wall-clock span. */
+  private aggregateRate(state: EndpointTuneState, concurrency: number): number | undefined {
+    const sample = state.concurrencySamples.get(concurrency);
+    if (!sample || sample.count < this.samplesPerSize * concurrency) return undefined;
+    const spanMs = sample.lastEnd - sample.firstStart;
+    return spanMs > 0 ? (sample.chars / spanMs) * 1000 : undefined;
+  }
+
+  private concurrencyNeighbours(concurrency: number): number[] {
+    const out: number[] = [];
+    const up = Math.min(concurrency * 2, this.maxConcurrency);
+    if (up > concurrency) out.push(up);
+    const down = Math.max(Math.floor(concurrency / 2), 1);
+    if (down < concurrency) out.push(down);
+    return out;
+  }
+
+  /** `continueClimb` for concurrency, judged on aggregate chars/s. */
+  private continueConcurrencyClimb(state: EndpointTuneState): void {
+    for (;;) {
+      const workingRate = this.aggregateRate(state, state.concurrencyWorking);
+      if (workingRate === undefined) {
+        this.probeConcurrency(state, state.concurrencyWorking);
+        return;
+      }
+      const neighbours = this.concurrencyNeighbours(state.concurrencyWorking);
+      const unmeasured = neighbours.find((c) => this.aggregateRate(state, c) === undefined);
+      if (unmeasured !== undefined) {
+        this.probeConcurrency(state, unmeasured);
+        return;
+      }
+      let best = state.concurrencyWorking;
+      let bestRate = workingRate;
+      for (const c of neighbours) {
+        const r = this.aggregateRate(state, c) ?? 0;
+        if (r > bestRate) {
+          best = c;
+          bestRate = r;
+        }
+      }
+      if (best !== state.concurrencyWorking && bestRate > workingRate * (1 + this.minImprovement)) {
+        state.concurrencyWorking = best;
+        continue;
+      }
+      this.settleConcurrency(state, workingRate);
+      return;
+    }
+  }
+
+  /** Open a probe window at `concurrency`; batches started before now do not count toward it. */
+  private probeConcurrency(state: EndpointTuneState, concurrency: number): void {
+    state.concurrencyProbeStartedAt = this.now();
+    if (state.concurrency === concurrency) return;
+    const from = state.concurrency;
+    state.concurrency = concurrency;
+    this.emit(state, {
+      kind: "concurrency",
+      from,
+      to: concurrency,
+      reason: "concurrency-probe",
+      charsPerSecond: this.aggregateRate(state, from),
+    });
+  }
+
+  private settleConcurrency(state: EndpointTuneState, charsPerSecond: number): void {
+    const from = state.concurrency;
+    state.concurrency = state.concurrencyWorking;
+    state.concurrencyPhase = "settled";
+    if (state.optimum) {
+      state.optimum = {
+        ...state.optimum,
+        concurrency: state.concurrencyWorking,
+        settledAt: new Date(this.now()).toISOString(),
+      };
+    }
+    this.emit(state, {
+      kind: "concurrency",
+      from,
+      to: state.concurrencyWorking,
+      reason: "concurrency-settle",
+      charsPerSecond,
+    });
   }
 
   /**
@@ -383,6 +534,7 @@ export class EmbeddingThroughputTuner {
     const newCap = Math.max(this.floor, Math.floor(failedSize / 2));
     if (newCap >= state.cap) return;
     state.cap = newCap;
+    this.abandonConcurrencyClimb(state, "failure");
     for (const size of [...state.samples.keys()]) {
       if (size > newCap) state.samples.delete(size);
     }
