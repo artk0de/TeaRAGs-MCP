@@ -143,6 +143,12 @@ export interface PipelineConfig {
   upsertAccumulator: BatchAccumulatorConfig;
   /** Batch accumulator settings for deletes */
   deleteAccumulator: BatchAccumulatorConfig;
+  /**
+   * Let the embedding throughput tuner move the upsert batch size and the
+   * upsert concurrency inside their configured bounds (bd tea-rags-mcp-7ju66).
+   * Absent / false = the configured values for the whole run.
+   */
+  adaptiveEmbedding?: boolean;
 }
 
 /**
@@ -198,6 +204,8 @@ export function buildPipelineConfig(
     batchSize: number;
     minBatchSize?: number;
     batchTimeoutMs: number;
+    /** EMBEDDING_TUNE_STATIC — pin the configured batch size and concurrency. */
+    static?: boolean;
   },
   qdrantTune: {
     deleteConcurrency: number;
@@ -229,5 +237,6 @@ export function buildPipelineConfig(
       flushTimeoutMs: qdrantTune.deleteFlushTimeoutMs,
       maxQueueSize: qdrantTune.deleteConcurrency * 2,
     },
+    adaptiveEmbedding: embeddingTune.static !== true,
   };
 }

@@ -20,6 +20,7 @@ import { selectProviderKeys } from "../../../contracts/provider-selector.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
 import type { ChunkSetBumpScopes, RechunkFileSelector } from "../../../contracts/types/rechunk.js";
+import type { CollectionRegistryPort } from "../../../contracts/types/registry.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor, ScoreBackground } from "../../../contracts/types/trajectory.js";
 import type { WorktreeSeedReport } from "../../../contracts/types/worktree.js";
@@ -136,6 +137,12 @@ export interface IndexingOpsDeps {
    * codegraph tools at call time. Omitted → nothing is stamped.
    */
   codegraphEnabledStamper?: CodegraphEnabledStamper;
+  /**
+   * Where the settled embedding throughput optimum of an endpoint + model is
+   * read back for `infraHealth.embedding.throughputTune` (bd tea-rags-mcp-7ju66).
+   * Omitted → the field is never reported.
+   */
+  embeddingThroughputOptima?: Pick<CollectionRegistryPort, "readEmbeddingThroughputOptimum">;
   /** Per-language code versions of this build, from the composition root. */
   languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
   /**
@@ -249,6 +256,7 @@ export class IndexingOps {
   private readonly status: StatusModule;
   private readonly languageVersionStamper?: LanguageVersionStamper;
   private readonly codegraphEnabledStamper?: CodegraphEnabledStamper;
+  private readonly embeddingThroughputOptima?: Pick<CollectionRegistryPort, "readEmbeddingThroughputOptimum">;
   private readonly languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
   private readonly languageChunkSetBumpScopes: ReadonlyMap<string, ChunkSetBumpScopes>;
   private readonly driftReporter?: IndexDriftConsumptionResetter;
@@ -318,6 +326,7 @@ export class IndexingOps {
     );
     this.languageVersionStamper = deps.languageVersionStamper;
     this.codegraphEnabledStamper = deps.codegraphEnabledStamper;
+    this.embeddingThroughputOptima = deps.embeddingThroughputOptima;
     this.languageCodeVersions = deps.languageCodeVersions;
     this.languageChunkSetBumpScopes = deps.languageChunkSetBumpScopes ?? new Map();
     this.driftReporter = deps.driftReporter;
@@ -687,6 +696,12 @@ export class IndexingOps {
     // Best-effort probe of the RUNNING daemon's reported version. getServerVersion
     // swallows all errors → undefined, so this never blocks or fails get_index_status.
     const qdrantVersion = await this.qdrant.getServerVersion();
+    // What the throughput tuner last settled on for the endpoint + model in use
+    // right now — the run that just finished recorded it before this read.
+    const throughputTune =
+      activeUrl !== undefined
+        ? this.embeddingThroughputOptima?.readEmbeddingThroughputOptimum?.(activeUrl, this.embeddings.getModel())
+        : undefined;
     const infraHealth: IndexStatus["infraHealth"] = {
       qdrant: {
         available: true,
@@ -701,6 +716,7 @@ export class IndexingOps {
         ...(primaryAvailable !== undefined ? { primaryAvailable } : {}),
         ...(fallbackUrl !== undefined ? { fallbackUrl } : {}),
         ...(fallbackAvailable !== undefined ? { fallbackAvailable } : {}),
+        ...(throughputTune !== undefined ? { throughputTune } : {}),
       },
     };
 

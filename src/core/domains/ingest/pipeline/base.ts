@@ -17,10 +17,12 @@ import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
 import type { CollectionAlias, PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { EnrichmentRunHandle } from "../../../contracts/types/enrichment-executor.js";
-import type {
-  CollectionRegistryPort,
-  PathCollectionResolver,
-  RegistryGitState,
+import {
+  embeddingThroughputOptimumKey,
+  type CollectionRegistryPort,
+  type EmbeddingThroughputOptimum,
+  type PathCollectionResolver,
+  type RegistryGitState,
 } from "../../../contracts/types/registry.js";
 import { hashCollectionForPath, validatePath } from "../../../infra/collection-name.js";
 import { TeaRagsError } from "../../../infra/errors.js";
@@ -29,6 +31,7 @@ import type { ChunkLookupEntry, EnrichmentMetrics, IngestCodeConfig } from "../.
 import type { IngestDependencies } from "../factory.js";
 import type { CodegraphDbLister, CodegraphDbRemover } from "../infra/alias-cleanup.js";
 import { ChunkerPool, type ChunkerPoolPort } from "./chunker/infra/pool.js";
+import { EmbeddingThroughputTuner, type EmbeddingEndpointThroughputOptimum } from "./embedding-throughput-tuner.js";
 import type { EnrichmentCoordinator } from "./enrichment/coordinator.js";
 import { reindexRunSpec, type EnrichmentRunSpec, type StreamedEnrichmentRunInput } from "./enrichment/run-spec.js";
 import { ChunkPipeline } from "./index.js";
@@ -74,6 +77,8 @@ export interface IndexingRunSealSpec {
   promote?: () => Promise<void>;
   /** Persist the run's sync state (snapshot, checkpoint) once the marker landed. */
   persist: () => Promise<void>;
+  /** What the run's embedding throughput tuner settled on, per endpoint (bd tea-rags-mcp-7ju66). */
+  embeddingThroughputOptima?: EmbeddingEndpointThroughputOptimum[];
 }
 
 export interface PipelineTuning {
@@ -297,7 +302,7 @@ export abstract class BaseIndexingPipeline {
     await spec.promote?.();
     await storeIndexingMarker(this.qdrant, this.embeddings, spec.targetCollection, true, spec.modelInfo);
     await spec.persist();
-    await this.recordRegistryEntry(spec.collectionAlias, spec.absolutePath);
+    await this.recordRegistryEntry(spec.collectionAlias, spec.absolutePath, spec.embeddingThroughputOptima);
   }
 
   /**
@@ -314,7 +319,9 @@ export abstract class BaseIndexingPipeline {
   ): Promise<EnrichmentStatusResult> {
     const getEnrichmentStatus = await this.finalizeProcessing(ctx, chunkMap);
     onFlushed?.();
-    await this.sealRun(seal);
+    // The drained chunk pipeline knows what its throughput tuner settled on;
+    // the registry entry this seal records carries it to the next run.
+    await this.sealRun({ ...seal, embeddingThroughputOptima: ctx.chunkPipeline?.settledThroughputOptima() });
     return getEnrichmentStatus();
   }
 
@@ -340,7 +347,11 @@ export abstract class BaseIndexingPipeline {
     }
   }
 
-  protected async recordRegistryEntry(collectionName: string, absolutePath: string): Promise<void> {
+  protected async recordRegistryEntry(
+    collectionName: string,
+    absolutePath: string,
+    throughputOptima: readonly EmbeddingEndpointThroughputOptimum[] = [],
+  ): Promise<void> {
     if (!this.registry) return;
     try {
       // Chunks only — the indexing marker and schema metadata point are not
@@ -369,6 +380,14 @@ export abstract class BaseIndexingPipeline {
       // general rule (outer env > registry env > code default).
       const { envSnapshot } = this;
       const gitState = this.buildRegistryGitState(absolutePath);
+      // Settled embedding batch optima, keyed by endpoint + model; the registry
+      // MERGES them into what earlier runs learnt (bd tea-rags-mcp-7ju66). An
+      // endpoint without a URL (in-process provider) has no stable key.
+      const embeddingThroughputOptima: Record<string, EmbeddingThroughputOptimum> = {};
+      for (const { endpoint, optimum } of throughputOptima) {
+        if (endpoint.url === undefined) continue;
+        embeddingThroughputOptima[embeddingThroughputOptimumKey(endpoint.url, endpoint.model)] = optimum;
+      }
       this.registry.record({
         collectionName,
         path: absolutePath,
@@ -393,6 +412,7 @@ export abstract class BaseIndexingPipeline {
         // freshness checks compare live HEAD against this block. Absent when
         // the codebase is not a git repository.
         ...(gitState !== undefined ? { git: gitState } : {}),
+        ...(Object.keys(embeddingThroughputOptima).length > 0 ? { embeddingThroughputOptima } : {}),
         indexedAt: new Date().toISOString(),
         teaRagsVersion: this.teaRagsVersion,
         chunksCount,
@@ -460,10 +480,36 @@ export abstract class BaseIndexingPipeline {
   }
 
   private createChunkPipeline(collectionName: string): ChunkPipeline {
+    const throughputTuner = this.createThroughputTuner();
     return new ChunkPipeline(this.qdrant, this.embeddings, collectionName, this.deps.payloadBuilder, {
       workerPool: this.tuning.pipelineConfig.workerPool,
       accumulator: this.tuning.pipelineConfig.upsertAccumulator,
       enableHybrid: this.config.enableHybridSearch,
+      ...(throughputTuner ? { throughputTuner } : {}),
+    });
+  }
+
+  /**
+   * One tuner per run (bd tea-rags-mcp-7ju66), bounded by the configured tuning:
+   * the configured batch size is the ceiling, EMBEDDING_TUNE_MIN_BATCH_SIZE the
+   * floor (ceiling/16 when unset), the configured concurrency what a remote
+   * endpoint runs at. It starts from the registry's stored optimum for the
+   * active endpoint + model — a hint the bounds clamp. Undefined when
+   * EMBEDDING_TUNE_STATIC pins the static behaviour.
+   */
+  protected createThroughputTuner(): EmbeddingThroughputTuner | undefined {
+    const { pipelineConfig } = this.tuning;
+    if (pipelineConfig.adaptiveEmbedding !== true) return undefined;
+    const ceiling = pipelineConfig.upsertAccumulator.batchSize;
+    const { registry } = this;
+    return new EmbeddingThroughputTuner({
+      ceiling,
+      floor: pipelineConfig.upsertAccumulator.minBatchSize ?? Math.max(1, Math.floor(ceiling / 16)),
+      configuredConcurrency: pipelineConfig.workerPool.concurrency,
+      seed: (endpoint) =>
+        endpoint.url === undefined
+          ? undefined
+          : registry?.readEmbeddingThroughputOptimum?.(endpoint.url, endpoint.model)?.batchSize,
     });
   }
 

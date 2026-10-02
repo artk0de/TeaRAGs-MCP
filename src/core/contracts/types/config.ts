@@ -24,6 +24,11 @@ export interface EmbeddingTuneConfig {
    * passes its health probe. 0 disables.
    */
   failoverConsecutiveFailures: number;
+  /**
+   * EMBEDDING_TUNE_STATIC: pin the configured batch size and concurrency for
+   * the whole run instead of letting the ingest throughput tuner adapt them.
+   */
+  static: boolean;
 }
 
 export interface EmbeddingConfig {

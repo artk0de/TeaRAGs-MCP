@@ -22,7 +22,14 @@
   clone, `tea-rags worktree remove <name>` threw `WorktreeNotFoundError`, and
   the plugin cleanup hook's sweep never saw it — silently (bd
   tea-rags-mcp-ghk1f). Any new field set outside the pipeline must be added to
-  the sticky preserve list here.
+  the sticky preserve list here. `embeddingThroughputOptima` is the one field
+  that MERGES instead: the run's keys (endpoint URL + model) overwrite theirs,
+  every other key survives (`mergeEmbeddingThroughputOptima`), and
+  `CollectionRegistry#readEmbeddingThroughputOptimum` answers across ALL entries
+  with the freshest `settledAt`. Why: a run that lived only on the primary must
+  not erase what an earlier run learnt about the fallback, and how fast a server
+  embeds is a fact about the server, not the project that measured it (bd
+  tea-rags-mcp-7ju66).
 
 - **A registry `env` stamp records operator DECISIONS, and only its own project
   replays it whole.** A run pins the env families its env set explicitly —

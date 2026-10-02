@@ -66,6 +66,16 @@ export const embeddingTuneSchema = z.object({
    * 0 disables. Default 3.
    */
   failoverConsecutiveFailures: intWithDefault(3),
+  /**
+   * Opt-out of adaptive embedding (bd tea-rags-mcp-7ju66). By default the
+   * ingest pipeline's throughput tuner moves the embed batch size inside
+   * [EMBEDDING_TUNE_MIN_BATCH_SIZE, EMBEDDING_TUNE_BATCH_SIZE] — down after a
+   * batch the server fails on size, toward the measured fastest size otherwise —
+   * and runs a loopback endpoint at concurrency 1. `true` pins the configured
+   * batch size and INGEST_PIPELINE_CONCURRENCY for the whole run, ignoring any
+   * stored optimum.
+   */
+  static: booleanFromEnv,
 });
 
 export const embeddingSchema = z.object({

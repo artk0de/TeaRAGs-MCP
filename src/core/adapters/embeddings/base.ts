@@ -92,6 +92,24 @@ export interface EmbeddingProvider {
   checkPrimaryHealth?: () => Promise<boolean | undefined>;
   /** Resolve model capabilities (context length, dimensions) from provider API. */
   resolveModelInfo?: () => Promise<{ model: string; contextLength: number; dimensions: number } | undefined>;
+  /**
+   * Watch the batches the SERVER fails on their size and the provider retries
+   * in halves internally — invisible to the caller otherwise, because the call
+   * still succeeds. While an observer is attached the provider keeps no
+   * run-long batch ceiling of its own; the observer owns the working size.
+   * Returns the detach. Absent on providers that never split a batch.
+   */
+  observeServerBatchFailures?: (observer: (event: EmbeddingServerBatchFailure) => void) => () => void;
+}
+
+/** A native batch the embedding server failed on its SIZE (bd tea-rags-mcp-7ju66). */
+export interface EmbeddingServerBatchFailure {
+  /** Texts in the batch that failed. */
+  failedSize: number;
+  /** Size the provider retries the batch's slices at. */
+  retrySize: number;
+  /** Endpoint the batch went to. */
+  endpointUrl?: string;
 }
 
 export interface ProviderConfig {

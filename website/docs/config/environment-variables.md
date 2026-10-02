@@ -171,9 +171,10 @@ bottlenecks.
 
 | Variable                                 | Description                            | Default           |
 | ---------------------------------------- | -------------------------------------- | ----------------- |
-| `INGEST_PIPELINE_CONCURRENCY`            | Pipeline worker concurrency            | `1`               |
-| `EMBEDDING_TUNE_BATCH_SIZE`              | Chunks per embedding batch             | `1024`            |
-| `EMBEDDING_TUNE_MIN_BATCH_SIZE`          | Min chunks before timeout flush        | `batchSize × 0.5` |
+| `INGEST_PIPELINE_CONCURRENCY`            | Pipeline worker concurrency. With adaptive embedding a loopback endpoint (`localhost`, `127.x`, `::1`) runs at 1 and a remote one at this value | `1`               |
+| `EMBEDDING_TUNE_BATCH_SIZE`              | Chunks per embedding batch. With adaptive embedding this is the ceiling the throughput tuner works below | `1024`            |
+| `EMBEDDING_TUNE_MIN_BATCH_SIZE`          | Min chunks before timeout flush; also the floor of the adaptive batch size (`batchSize / 16` when unset) | `batchSize × 0.5` |
+| `EMBEDDING_TUNE_STATIC`                  | `true` pins the configured batch size and concurrency for the whole run. Default (`false`): the batch size drops for every later batch after one the server fails on size, recovers after a streak of successes, hill-climbs toward the fastest size by measured chars/s, and starts each run from the optimum the registry stored for the active endpoint + model | `false` |
 | `EMBEDDING_TUNE_BATCH_TIMEOUT_MS`        | Flush partial batch after timeout (ms) | `2000`            |
 | `EMBEDDING_TUNE_MAX_REQUESTS_PER_MINUTE` | Rate limit for embedding API           | Provider-specific |
 | `EMBEDDING_TUNE_RETRY_ATTEMPTS`          | Retry count for failed embedding calls | `3`               |

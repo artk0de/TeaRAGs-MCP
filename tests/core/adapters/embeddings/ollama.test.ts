@@ -953,6 +953,52 @@ describe("OllamaEmbeddings", () => {
         expect(results.map((r) => r.embedding)).toEqual([[5], [6], [7], [8]]);
       });
 
+      describe("with a server-batch-failure observer attached (bd tea-rags-mcp-7ju66)", () => {
+        it("reports every size failure with the size it retries at", async () => {
+          serverFailingAbove(2);
+          const events: unknown[] = [];
+          batchEmbeddings.observeServerBatchFailures((event) => events.push(event));
+
+          await batchEmbeddings.embedBatch(["t1", "t2", "t3", "t4", "t5"]);
+
+          expect(events[0]).toEqual({ failedSize: 5, retrySize: 3, endpointUrl: "http://localhost:11434" });
+          expect(events).toContainEqual(expect.objectContaining({ failedSize: 3, retrySize: 2 }));
+        });
+
+        it("leaves the working size of LATER calls to the observer instead of pinning it for the run", async () => {
+          serverFailingAbove(2);
+          batchEmbeddings.observeServerBatchFailures(() => {});
+          await batchEmbeddings.embedBatch(["t1", "t2", "t3", "t4"]);
+          mockFetch.mockClear();
+
+          await batchEmbeddings.embedBatch(["t5", "t6", "t7", "t8"]);
+
+          expect(sentBatchSizes()[0]).toBe(4);
+        });
+
+        it("still sends the remaining slices of the failing call at the size that worked", async () => {
+          serverFailingAbove(1);
+          batchEmbeddings.observeServerBatchFailures(() => {});
+
+          const results = await batchEmbeddings.embedBatch(["t1", "t2", "t3", "t4"]);
+
+          expect(sentBatchSizes()).toEqual([4, 2, 1, 1, 1, 1]);
+          expect(results.map((r) => r.embedding)).toEqual([[1], [2], [3], [4]]);
+        });
+
+        it("restores the run-long ceiling once the last observer detaches", async () => {
+          serverFailingAbove(2);
+          const detach = batchEmbeddings.observeServerBatchFailures(() => {});
+          detach();
+          await batchEmbeddings.embedBatch(["t1", "t2", "t3", "t4"]);
+          mockFetch.mockClear();
+
+          await batchEmbeddings.embedBatch(["t5", "t6", "t7", "t8"]);
+
+          expect(sentBatchSizes()).toEqual([2, 2]);
+        });
+      });
+
       it("does not split on a caller-side 4xx", async () => {
         mockFetch.mockResolvedValue({ ok: false, status: 400, text: async () => "bad request" });
 

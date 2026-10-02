@@ -194,6 +194,12 @@ export function formatIndexStatusJson(status: IndexStatus, extra: FormatIndexSta
         ...(status.infraHealth.embedding.fallbackAvailable !== undefined
           ? { fallbackAvailable: status.infraHealth.embedding.fallbackAvailable }
           : {}),
+        // The batch size and concurrency the throughput tuner settled on for
+        // the active endpoint (bd tea-rags-mcp-7ju66) — the other half of
+        // "why was this run fast or slow".
+        ...(status.infraHealth.embedding.throughputTune !== undefined
+          ? { throughputTune: status.infraHealth.embedding.throughputTune }
+          : {}),
       },
     };
   }

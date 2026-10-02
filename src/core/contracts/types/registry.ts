@@ -44,6 +44,33 @@ export interface RegistryAutoUpdateConfig {
   lastRun?: AutoUpdateRunRecord;
 }
 
+/**
+ * The embedding batch shape a run's throughput tuner settled on for ONE
+ * endpoint + model (bd tea-rags-mcp-7ju66). A runtime HINT, never config: the
+ * next run starts its hill-climb here instead of at the configured ceiling, the
+ * configured bounds still clamp it, the climb still re-probes, and the
+ * `EMBEDDING_TUNE_STATIC` opt-out ignores it entirely.
+ */
+export interface EmbeddingThroughputOptimum {
+  batchSize: number;
+  /** Embed concurrency the run used on this endpoint (1 on a loopback endpoint). */
+  concurrency: number;
+  /** Measured throughput at `batchSize`, normalised by input size. */
+  charsPerSecond: number;
+  /** ISO timestamp of the settle. Freshest wins when several entries know the endpoint. */
+  settledAt: string;
+}
+
+/**
+ * Key of `CollectionEntry.embeddingThroughputOptima`: endpoint URL + model, so
+ * a primary and a fallback endpoint each keep their own optimum and a model
+ * swap never inherits another model's batch shape. A trailing slash on the URL
+ * is not part of the identity.
+ */
+export function embeddingThroughputOptimumKey(endpointUrl: string, model: string): string {
+  return `${endpointUrl.replace(/\/+$/, "")}|${model}`;
+}
+
 export interface CollectionEntry {
   collectionName: string;
   path: string;
@@ -127,6 +154,13 @@ export interface CollectionEntry {
    * none, and an enrichment recompute advances only the two it rebuilt.
    */
   languageVersions?: Record<string, Partial<LanguageCodeVersions>>;
+  /**
+   * Settled embedding batch optima, keyed by `embeddingThroughputOptimumKey`
+   * (bd tea-rags-mcp-7ju66). MERGED on `record()`: a run overwrites only the
+   * endpoints it settled on, every other key survives — a run that lived on
+   * the primary must not erase what an earlier run learnt about the fallback.
+   */
+  embeddingThroughputOptima?: Record<string, EmbeddingThroughputOptimum>;
   indexedAt: string;
   teaRagsVersion: string;
   chunksCount: number;
@@ -172,6 +206,13 @@ export type ProjectInfo = CollectionEntry;
  */
 export interface CollectionRegistryPort {
   record: (entry: RecordEntryInput) => void;
+  /**
+   * The freshest settled throughput optimum any entry holds for this endpoint +
+   * model — a machine-wide fact about the embedding server, not about one
+   * project. Optional: a registry that cannot answer leaves every run starting
+   * at the configured ceiling.
+   */
+  readEmbeddingThroughputOptimum?: (endpointUrl: string, model: string) => EmbeddingThroughputOptimum | undefined;
 }
 
 /**

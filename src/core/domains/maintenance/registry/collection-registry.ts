@@ -1,12 +1,14 @@
 import { watch, type FSWatcher } from "node:fs";
 
 import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
-import type {
-  AutoUpdateRunRecord,
-  CollectionEntry,
-  RecordEntryInput,
-  RegistryAutoUpdateConfig,
-  RegistryFileV1,
+import {
+  embeddingThroughputOptimumKey,
+  type AutoUpdateRunRecord,
+  type CollectionEntry,
+  type EmbeddingThroughputOptimum,
+  type RecordEntryInput,
+  type RegistryAutoUpdateConfig,
+  type RegistryFileV1,
 } from "../../../contracts/types/registry.js";
 import { PROJECT_NAME_RE } from "./constants.js";
 import {
@@ -17,6 +19,14 @@ import {
 } from "./env-pin-migration.js";
 import { RegistryConcurrencyError, RegistryNameConflictError, RegistryWriteError } from "./errors.js";
 import { flushWithCAS, loadRegistryFile, migrateRegistryFileWithCAS } from "./registry-file.js";
+
+function mergeEmbeddingThroughputOptima(
+  existing: CollectionEntry["embeddingThroughputOptima"],
+  incoming: CollectionEntry["embeddingThroughputOptima"],
+): Pick<CollectionEntry, "embeddingThroughputOptima"> {
+  if (existing === undefined && incoming === undefined) return {};
+  return { embeddingThroughputOptima: { ...existing, ...incoming } };
+}
 
 function snapshotEntries(map: ReadonlyMap<string, CollectionEntry>): Map<string, CollectionEntry> {
   const snapshot = new Map<string, CollectionEntry>();
@@ -137,6 +147,11 @@ export class CollectionRegistry {
       // stamp would have auto-update silently clearing the reindex hint
       // (bd tea-rags-mcp-frwka).
       ...(existing?.languageVersions !== undefined ? { languageVersions: existing.languageVersions } : {}),
+      // embeddingThroughputOptima MERGES rather than sticks: a run overwrites the
+      // endpoints its throughput tuner settled on and keeps every other one, so a
+      // run that lived on the primary does not erase what an earlier run learnt
+      // about the fallback (bd tea-rags-mcp-7ju66).
+      ...mergeEmbeddingThroughputOptima(existing?.embeddingThroughputOptima, entry.embeddingThroughputOptima),
       // Worktree provenance is written once, at clone time
       // (setWorktreeProvenance), and the pipeline never passes it — yet the
       // prescribed lifecycle indexes the clone right after `worktree create`.
@@ -155,6 +170,23 @@ export class CollectionRegistry {
 
   get(collectionName: string): CollectionEntry | null {
     return this.ensureLoaded().get(collectionName) ?? null;
+  }
+
+  /**
+   * The freshest settled embedding throughput optimum any entry holds for this
+   * endpoint + model (bd tea-rags-mcp-7ju66). How fast a server embeds at a
+   * given batch size is a fact about the server, not about the project that
+   * measured it, so every entry is consulted. A runtime hint only — the caller
+   * clamps it to its configured bounds and keeps re-probing.
+   */
+  readEmbeddingThroughputOptimum(endpointUrl: string, model: string): EmbeddingThroughputOptimum | undefined {
+    const key = embeddingThroughputOptimumKey(endpointUrl, model);
+    let freshest: EmbeddingThroughputOptimum | undefined;
+    for (const entry of this.ensureLoaded().values()) {
+      const candidate = entry.embeddingThroughputOptima?.[key];
+      if (candidate && (!freshest || candidate.settledAt > freshest.settledAt)) freshest = candidate;
+    }
+    return freshest;
   }
 
   findByName(name: string): CollectionEntry | null {

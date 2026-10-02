@@ -20,6 +20,12 @@ import { isDebug } from "../../../infra/runtime.js";
 import { PipelineNotStartedError } from "../errors.js";
 import { classifyEmbeddingQuarantinable, type QuarantineStore } from "../sync/index.js";
 import { AdaptiveBatchSizer } from "./adaptive-batch-sizer.js";
+import type {
+  EmbeddingEndpointIdentity,
+  EmbeddingEndpointThroughputOptimum,
+  EmbeddingThroughputDecision,
+  EmbeddingThroughputTuner,
+} from "./embedding-throughput-tuner.js";
 import { BatchAccumulator } from "./infra/batch-accumulator.js";
 import { pipelineLog } from "./infra/debug-logger.js";
 import { WorkerPool } from "./infra/worker-pool.js";
@@ -56,6 +62,12 @@ export interface ChunkPipelineConfig {
   accumulator: BatchAccumulatorConfig;
   /** Enable hybrid search (sparse vectors) */
   enableHybrid: boolean;
+  /**
+   * Owner of the embed batch size and concurrency (bd tea-rags-mcp-7ju66).
+   * Absent = today's static behaviour (`EMBEDDING_TUNE_STATIC`): the configured
+   * batch size and concurrency for the whole run.
+   */
+  throughputTuner?: EmbeddingThroughputTuner;
 }
 
 export class ChunkPipeline {
@@ -69,6 +81,10 @@ export class ChunkPipeline {
   private readonly workerPool: WorkerPool;
   private readonly accumulator: BatchAccumulator<ChunkItem>;
   private readonly batchSizer: AdaptiveBatchSizer;
+  private readonly throughputTuner?: EmbeddingThroughputTuner;
+  /** Batch size the tuner asks for; the accumulator uses min(this, Qdrant sizer). */
+  private tunedBatchSize: number;
+  private detachServerBatchFailures?: () => void;
   private pendingBatches: Promise<BatchResult>[] = [];
 
   private onBatchUpsertedCb?: (items: ChunkItem[]) => void;
@@ -122,8 +138,9 @@ export class ChunkPipeline {
       },
     );
 
-    // Initialize accumulator
-    this.accumulator = new BatchAccumulator(this.config.accumulator, "upsert", (batch) => {
+    // Initialize accumulator. It gets its own copy of the config: `updateBatchSize`
+    // mutates it in place, and the caller's object is the run-spanning tuning.
+    this.accumulator = new BatchAccumulator({ ...this.config.accumulator }, "upsert", (batch) => {
       this.submitBatch(batch);
     });
 
@@ -135,6 +152,9 @@ export class ChunkPipeline {
       min: Math.max(32, Math.floor(initialBatchSize / 16)),
       recoveryThreshold: 5,
     });
+
+    this.throughputTuner = config?.throughputTuner;
+    this.tunedBatchSize = initialBatchSize;
   }
 
   /**
@@ -178,7 +198,26 @@ export class ChunkPipeline {
       flushTimeoutMs: this.config.accumulator.flushTimeoutMs,
       hybrid: this.config.enableHybrid,
       collection: this.collectionName,
+      adaptiveEmbedding: this.throughputTuner !== undefined,
     });
+
+    const tuner = this.throughputTuner;
+    if (tuner) {
+      // A size failure the provider absorbs by halving internally never fails
+      // the call, so it reaches the tuner only through this hook.
+      this.detachServerBatchFailures = this.embeddings.observeServerBatchFailures?.((event) => {
+        this.applyThroughputDecision(
+          tuner.observe({
+            size: event.failedSize,
+            inputChars: 0,
+            durationMs: 0,
+            ok: false,
+            endpoint: this.currentEmbeddingEndpoint(event.endpointUrl),
+          }),
+        );
+      });
+      this.applyThroughputDecision(tuner.begin(this.currentEmbeddingEndpoint()));
+    }
 
     if (isDebug()) {
       console.error(
@@ -260,6 +299,7 @@ export class ChunkPipeline {
     await this.flush();
     await this.workerPool.shutdown();
     this.isRunning = false;
+    this.detachFromProvider();
 
     const stats = this.getStats();
     pipelineLog.summary(LOG_CTX, {
@@ -289,6 +329,50 @@ export class ChunkPipeline {
     this.accumulator.clear();
     this.workerPool.forceShutdown();
     this.pendingBatches = [];
+    this.detachFromProvider();
+  }
+
+  /**
+   * The embed batch shapes the throughput tuner settled on this run, one per
+   * endpoint + model — what the run records into the project registry so the
+   * next run starts there. Empty without a tuner or when nothing settled.
+   */
+  settledThroughputOptima(): EmbeddingEndpointThroughputOptimum[] {
+    return this.throughputTuner?.settledOptima() ?? [];
+  }
+
+  /** Feed one embed call to the tuner (no-op without one) and apply what it decides. */
+  private observeEmbedBatch(size: number, inputChars: number, durationMs: number, ok: boolean): void {
+    const tuner = this.throughputTuner;
+    if (!tuner) return;
+    this.applyThroughputDecision(
+      tuner.observe({ size, inputChars, durationMs, ok, endpoint: this.currentEmbeddingEndpoint() }),
+    );
+  }
+
+  private detachFromProvider(): void {
+    this.detachServerBatchFailures?.();
+    this.detachServerBatchFailures = undefined;
+  }
+
+  /** The endpoint + model the next embed goes to, as the tuner keys it. */
+  private currentEmbeddingEndpoint(url?: string): EmbeddingEndpointIdentity {
+    const endpointUrl = url ?? this.embeddings.getBaseUrl?.();
+    return { ...(endpointUrl !== undefined ? { url: endpointUrl } : {}), model: this.embeddings.getModel() };
+  }
+
+  /**
+   * Push a tuner decision into the accumulator and the worker pool, and log
+   * every change the tuner made. The accumulator size is the smaller of the
+   * tuner's and the Qdrant yellow sizer's — two governors, one batch.
+   */
+  private applyThroughputDecision(decision: EmbeddingThroughputDecision): void {
+    for (const adaptation of this.throughputTuner?.drainAdaptations() ?? []) {
+      pipelineLog.step(LOG_CTX, "EMBED_TUNE_ADAPTED", { ...adaptation });
+    }
+    this.tunedBatchSize = decision.batchSize;
+    this.accumulator.updateBatchSize(Math.min(this.tunedBatchSize, this.batchSizer.current()));
+    this.workerPool.setConcurrency(decision.concurrency);
   }
 
   /**
@@ -345,6 +429,8 @@ export class ChunkPipeline {
       // 2. Generate embeddings
       const embedStart = Date.now();
       let embeddings: Awaited<ReturnType<EmbeddingProvider["embedBatch"]>>;
+      // A bisected batch's wall clock is not a throughput sample of its size.
+      let isolated = false;
       try {
         embeddings = await this.embeddings.embedBatch(texts);
       } catch (error) {
@@ -353,13 +439,22 @@ export class ChunkPipeline {
         // poison chunk(s) from the batch instead of aborting the whole pass.
         const quarantinable = this.quarantineStore ? classifyEmbeddingQuarantinable(wrapped, "") : null;
         if (!quarantinable) throw wrapped;
+        const sent = items.length;
         ({ items, embeddings } = await this.isolateEmbeddingFailures(items, wrapped));
+        // Every chunk survived the bisection: the server rejected the BATCH, not
+        // any chunk in it (bd tea-rags-mcp-nu05a) — a size fact for the tuner.
+        if (items.length === sent) this.observeEmbedBatch(sent, 0, 0, false);
         if (items.length === 0) {
           // Every chunk in the batch was quarantined — nothing left to store.
           return;
         }
+        isolated = true;
       }
       const embedDuration = Date.now() - embedStart;
+      if (!isolated) {
+        const inputChars = texts.reduce((sum, text) => sum + text.length, 0);
+        this.observeEmbedBatch(texts.length, inputChars, embedDuration, true);
+      }
       pipelineLog.embedCall(ctx, texts.length, embedDuration);
       pipelineLog.addStageTime("embed", embedDuration);
 
@@ -476,7 +571,7 @@ export class ChunkPipeline {
     this.batchSizer.onSuccess();
     const after = this.batchSizer.current();
     if (before !== after) {
-      this.accumulator.updateBatchSize(after);
+      this.accumulator.updateBatchSize(Math.min(after, this.tunedBatchSize));
       pipelineLog.step(LOG_CTX, "BATCH_SIZE_ADJUSTED", {
         from: before,
         to: after,
@@ -496,7 +591,7 @@ export class ChunkPipeline {
     this.batchSizer.onFailure(error);
     const after = this.batchSizer.current();
     if (before !== after) {
-      this.accumulator.updateBatchSize(after);
+      this.accumulator.updateBatchSize(Math.min(after, this.tunedBatchSize));
       pipelineLog.step(LOG_CTX, "BATCH_SIZE_ADJUSTED", {
         from: before,
         to: after,

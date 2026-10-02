@@ -22,6 +22,21 @@
   mechanism that stops one bad chunk from aborting a whole index — the pool
   would otherwise retry a deterministic overflow and the rejection would bubble
   as `IndexingFailedError`.
+- **The embed batch size and concurrency have ONE owner per run:
+  `EmbeddingThroughputTuner`, and it hears about size failures the caller never
+  sees.** `ChunkPipeline#applyThroughputDecision` sets the accumulator to the
+  SMALLER of the tuner's size and `AdaptiveBatchSizer` (Qdrant yellow) and sets
+  `WorkerPool#setConcurrency`. A provider that halves a failing batch internally
+  still returns success, so the failure reaches the tuner only through
+  `EmbeddingProvider.observeServerBatchFailures`, attached in
+  `ChunkPipeline#start` and detached on shutdown; a quarantinable batch
+  rejection whose bisection quarantines nothing is fed as a failure too. While
+  an observer is attached `OllamaEmbeddings` keeps no run-long ceiling of its
+  own — the tuner owns stickiness and recovery. `EMBEDDING_TUNE_STATIC` builds
+  no tuner (`BaseIndexingPipeline#createThroughputTuner`), which restores the
+  adapter's own ceiling. Why: two independent "sticky" sizes on one batch never
+  recover together — the adapter's run-long cap silently undid every upward
+  probe of the tuner.
 
 ## Gotchas
 

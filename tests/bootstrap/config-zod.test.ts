@@ -251,6 +251,17 @@ describe("parseAppConfigZod", () => {
       delete process.env.EMBEDDING_TUNE_UNAVAILABLE_RETRY_BASE_DELAY_MS;
     });
 
+    it("adapts embedding batch size and concurrency unless EMBEDDING_TUNE_STATIC pins them", async () => {
+      const { parseAppConfigZod } = await freshImport();
+      expect(parseAppConfigZod().embedding.tune.static).toBe(false);
+
+      process.env.EMBEDDING_TUNE_STATIC = "true";
+      const fresh = await freshImport();
+      expect(fresh.parseAppConfigZod().embedding.tune.static).toBe(true);
+
+      delete process.env.EMBEDDING_TUNE_STATIC;
+    });
+
     it("defaults embed-failure failover to 3 consecutive failures", async () => {
       const { parseAppConfigZod } = await freshImport();
       const { embedding } = parseAppConfigZod();

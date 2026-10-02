@@ -9,6 +9,7 @@ import {
   type RechunkFileSelector,
   type RechunkTestFileScope,
 } from "../../../contracts/types/rechunk.js";
+import type { EmbeddingThroughputOptimum } from "../../../contracts/types/registry.js";
 import type { WorktreeSeedReport } from "../../../contracts/types/worktree.js";
 import type { EnrichmentHealthMap } from "../../../domains/ingest/pipeline/enrichment/types.js";
 import type {
@@ -322,6 +323,12 @@ export interface IndexStatus {
       fallbackUrl?: string;
       /** Live reachability of the fallback endpoint. Omitted when no fallback configured. */
       fallbackAvailable?: boolean;
+      /**
+       * Embed batch size and concurrency the throughput tuner last settled on
+       * for the ACTIVE endpoint + model (bd tea-rags-mcp-7ju66), read from the
+       * registry the run recorded into. Omitted when nothing has settled yet.
+       */
+      throughputTune?: EmbeddingThroughputOptimum;
     };
   };
 }

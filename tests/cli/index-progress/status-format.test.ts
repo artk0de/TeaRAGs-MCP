@@ -190,6 +190,26 @@ describe("formatIndexStatusJson", () => {
     });
   });
 
+  it("carries the settled embedding batch size and concurrency into the JSON (bd tea-rags-mcp-7ju66)", () => {
+    const throughputTune = {
+      batchSize: 64,
+      concurrency: 1,
+      charsPerSecond: 81_000,
+      settledAt: "2026-10-02T00:00:00.000Z",
+    };
+    const status: IndexStatus = {
+      ...baseStatus,
+      infraHealth: {
+        qdrant: { available: true, url: "http://localhost:6333" },
+        embedding: { available: true, provider: "ollama", activeUrl: "http://localhost:11434", throughputTune },
+      },
+    };
+    const o = formatIndexStatusJson(status, { path: "/p" }) as {
+      infraHealth: { embedding: Record<string, unknown> };
+    };
+    expect(o.infraHealth.embedding.throughputTune).toEqual(throughputTune);
+  });
+
   it("returns a stable machine object with expected shape", () => {
     const status: IndexStatus = {
       ...baseStatus,

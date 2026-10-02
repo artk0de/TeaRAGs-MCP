@@ -15,7 +15,7 @@
 import Bottleneck from "bottleneck";
 
 import { isDebug } from "../../infra/runtime.js";
-import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
+import type { EmbeddingProvider, EmbeddingResult, EmbeddingServerBatchFailure, RateLimitConfig } from "./base.js";
 import {
   isOllamaRunnerCrashBody,
   OllamaContextOverflowError,
@@ -186,6 +186,8 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private readonly quantizationLevel: OllamaQuantizationLevel = "off";
   /** Largest native batch the server has handled since it last failed on one; unset until a failure. */
   private maxServerBatchSize?: number;
+  /** See `observeServerBatchFailures`. */
+  private readonly serverBatchFailureObservers = new Set<(event: EmbeddingServerBatchFailure) => void>();
   private lastHealthResult?: boolean;
   private lastHealthAt = 0;
 
@@ -489,11 +491,85 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     return error instanceof OllamaResponseError && error.responseStatus >= 500;
   }
 
+  /**
+   * Watch the native batches the server fails on SIZE (bd tea-rags-mcp-7ju66).
+   * While at least one observer is attached the provider stops pinning a
+   * run-long batch ceiling of its own: the observer (the ingest pipeline's
+   * throughput tuner) owns the working size and may recover it upward. The
+   * failing call itself still bisects to completion. Returns the detach.
+   */
+  observeServerBatchFailures(observer: (event: EmbeddingServerBatchFailure) => void): () => void {
+    this.serverBatchFailureObservers.add(observer);
+    return () => {
+      this.serverBatchFailureObservers.delete(observer);
+    };
+  }
+
+  /** One native request for exactly `texts`. */
+  private async embedNativeOnce(texts: string[]): Promise<EmbeddingResult[]> {
+    const batchEmbed = async (url: string): Promise<EmbeddingResult[]> => {
+      const timeout = this.batchTimeout(texts.length);
+      if (isDebug()) {
+        console.error(`[Ollama] Native batch: ${texts.length} texts in 1 request to ${url} (timeout=${timeout}ms)`);
+      }
+      const response = await this.callBatchApi(texts, url, timeout);
+      if (response.embeddings?.length !== texts.length) {
+        throw new OllamaMalformedResponseError(url, texts.length, response.embeddings?.length ?? 0);
+      }
+      return response.embeddings.map((embedding: number[]) => ({
+        embedding,
+        dimensions: this.dimensions,
+      }));
+    };
+    return this.limiter.schedule(async () => this.retryWithBackoff(async (url) => batchEmbed(url)));
+  }
+
+  /**
+   * Embed `texts` natively, never sending more than `bound.ceiling` in one
+   * request. A batch the server fails on size is halved and its slices sent
+   * one after another; the halved size becomes the bound for the rest of THIS
+   * call — and, when nobody observes, for the rest of the run: each failure
+   * costs a runner restart plus a model reload on the server.
+   */
+  private async embedNativeBounded(
+    texts: string[],
+    bound: { ceiling: number | undefined; observed: boolean },
+  ): Promise<EmbeddingResult[]> {
+    if (bound.ceiling !== undefined && texts.length > bound.ceiling) {
+      return this.embedNativeSlices(texts, bound.ceiling, bound);
+    }
+    try {
+      return await this.embedNativeOnce(texts);
+    } catch (error) {
+      if (texts.length <= 1 || !this.isServerBatchFailure(error)) throw error;
+      const half = Math.ceil(texts.length / 2);
+      bound.ceiling = Math.min(bound.ceiling ?? half, half);
+      if (!bound.observed) this.maxServerBatchSize = Math.min(this.maxServerBatchSize ?? half, half);
+      // Unconditional: a batch size the server cannot take is an operator-facing
+      // tuning fact (EMBEDDING_TUNE_BATCH_SIZE), not debug noise.
+      console.error(
+        `[Ollama] server failed a ${texts.length}-text batch (${error instanceof Error ? error.message : String(error)}); ` +
+          `retrying in batches of ${half}`,
+      );
+      const event: EmbeddingServerBatchFailure = {
+        failedSize: texts.length,
+        retrySize: half,
+        endpointUrl: this.getBaseUrl(),
+      };
+      for (const observer of this.serverBatchFailureObservers) observer(event);
+      return this.embedNativeSlices(texts, half, bound);
+    }
+  }
+
   /** Embed consecutive slices one after another, preserving input order. */
-  private async embedBatchInSlices(texts: string[], sliceSize: number): Promise<EmbeddingResult[]> {
+  private async embedNativeSlices(
+    texts: string[],
+    sliceSize: number,
+    bound: { ceiling: number | undefined; observed: boolean },
+  ): Promise<EmbeddingResult[]> {
     const results: EmbeddingResult[] = [];
     for (let start = 0; start < texts.length; start += sliceSize) {
-      results.push(...(await this.embedBatch(texts.slice(start, start + sliceSize))));
+      results.push(...(await this.embedNativeBounded(texts.slice(start, start + sliceSize), bound)));
     }
     return results;
   }
@@ -773,40 +849,12 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
     // Use native batch API - ONE request for ALL texts
     if (this.useNativeBatch) {
-      const batchEmbed = async (url: string): Promise<EmbeddingResult[]> => {
-        const timeout = this.batchTimeout(texts.length);
-        if (isDebug()) {
-          console.error(`[Ollama] Native batch: ${texts.length} texts in 1 request to ${url} (timeout=${timeout}ms)`);
-        }
-        const response = await this.callBatchApi(texts, url, timeout);
-        if (response.embeddings?.length !== texts.length) {
-          throw new OllamaMalformedResponseError(url, texts.length, response.embeddings?.length ?? 0);
-        }
-        return response.embeddings.map((embedding: number[]) => ({
-          embedding,
-          dimensions: this.dimensions,
-        }));
-      };
-
-      // A size the server already failed on is never sent again this run: each
-      // failure costs a runner restart plus a model reload on the server.
-      if (this.maxServerBatchSize !== undefined && texts.length > this.maxServerBatchSize) {
-        return this.embedBatchInSlices(texts, this.maxServerBatchSize);
-      }
-      try {
-        return await this.limiter.schedule(async () => this.retryWithBackoff(async (url) => batchEmbed(url)));
-      } catch (error) {
-        if (texts.length <= 1 || !this.isServerBatchFailure(error)) throw error;
-        const half = Math.ceil(texts.length / 2);
-        this.maxServerBatchSize = Math.min(this.maxServerBatchSize ?? half, half);
-        // Unconditional: a batch size the server cannot take is an operator-facing
-        // tuning fact (EMBEDDING_TUNE_BATCH_SIZE), not debug noise.
-        console.error(
-          `[Ollama] server failed a ${texts.length}-text batch (${error instanceof Error ? error.message : String(error)}); ` +
-            `retrying in batches of ${half}`,
-        );
-        return this.embedBatchInSlices(texts, half);
-      }
+      // With an observer attached the observer owns the working size across
+      // calls, so the run-long ceiling is neither applied nor recorded; the
+      // call-local bound still keeps the failing call's remaining slices at the
+      // size that worked.
+      const observed = this.serverBatchFailureObservers.size > 0;
+      return this.embedNativeBounded(texts, { ceiling: observed ? undefined : this.maxServerBatchSize, observed });
     }
 
     // Fallback: Legacy parallel individual requests (old Ollama without /api/embed)

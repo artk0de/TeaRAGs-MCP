@@ -1,7 +1,13 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OllamaUnavailableError } from "../../../src/core/adapters/embeddings/ollama/errors.js";
 import { IngestFacade } from "../../../src/core/api/internal/facades/ingest-facade.js";
+import { embeddingThroughputOptimumKey } from "../../../src/core/contracts/types/registry.js";
+import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/collection-registry.js";
 
 const { mockIndexCodebase, mockReindexChanges, mockScrollAllPoints, mockComputeStats } = vi.hoisted(() => ({
   mockIndexCodebase: vi.fn().mockResolvedValue({ chunksIndexed: 10 }),
@@ -366,6 +372,57 @@ describe("IngestFacade", () => {
       activeUrl: "http://127.0.0.1:11434",
     });
     expect(status.infraHealth?.embedding).not.toHaveProperty("fallbackUrl");
+  });
+
+  it("reports the settled embedding throughput optimum of the ACTIVE endpoint + model (bd tea-rags-mcp-7ju66)", async () => {
+    const registryDir = mkdtempSync(join(tmpdir(), "tea-rags-7ju66-"));
+    try {
+      const registry = new CollectionRegistry(registryDir);
+      const settled = { batchSize: 64, concurrency: 1, charsPerSecond: 81_000, settledAt: "2026-10-02T00:00:00.000Z" };
+      registry.record({
+        collectionName: "code_other",
+        path: "/repo/other",
+        embeddingModel: "jina",
+        embeddingDimensions: 768,
+        qdrantUrl: "http://localhost:6333",
+        indexedAt: "2026-10-02T00:00:00.000Z",
+        teaRagsVersion: "0.0.0",
+        chunksCount: 1,
+        embeddingThroughputOptima: {
+          [embeddingThroughputOptimumKey("http://127.0.0.1:11434", "jina")]: settled,
+          [embeddingThroughputOptimumKey("http://gpu-server:11434", "jina")]: { ...settled, batchSize: 256 },
+        },
+      });
+      const qdrant = {
+        collectionExists: vi.fn().mockResolvedValue(false),
+        checkHealth: vi.fn().mockResolvedValue(true),
+        getCollectionInfo: vi.fn(),
+        aliases: { listAliases: vi.fn().mockResolvedValue([]) },
+        url: "http://localhost:6333",
+        getServerVersion: vi.fn().mockResolvedValue(undefined),
+        getCollectionDiskBytes: vi.fn().mockResolvedValue(undefined),
+      };
+      const facade = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings: {
+          embed: vi.fn().mockResolvedValue({ embedding: [0.1], dimensions: 1 }),
+          checkHealth: vi.fn().mockResolvedValue(true),
+          getProviderName: vi.fn().mockReturnValue("ollama"),
+          getModel: vi.fn().mockReturnValue("jina"),
+          getPrimaryBaseUrl: vi.fn().mockReturnValue("http://gpu-server:11434"),
+          getBaseUrl: vi.fn().mockReturnValue("http://127.0.0.1:11434"),
+        } as any,
+        config: {} as any,
+        trajectoryConfig: { enableGitMetadata: false },
+        collectionRegistry: registry,
+      });
+
+      const status = await facade.getIndexStatus("/tmp/test-project");
+
+      expect(status.infraHealth?.embedding.throughputTune).toEqual(settled);
+    } finally {
+      rmSync(registryDir, { recursive: true, force: true });
+    }
   });
 
   it("delegates clearIndex", async () => {

@@ -162,6 +162,9 @@ export const REGISTRY_ENV_GROUPS: readonly RegistryEnvGroup[] = [
     consequence: "runtime",
   },
   { canonical: "EMBEDDING_TUNE_FAILOVER_CONSECUTIVE_FAILURES", aliases: [], consequence: "runtime" },
+  // Pins the static batch size / concurrency instead of the throughput tuner —
+  // how fast vectors are computed, never which vectors.
+  { canonical: "EMBEDDING_TUNE_STATIC", aliases: [], consequence: "runtime" },
   // qdrantTune (parse.ts `qdrantTune` section) — write path and storage
   // settings only; quantization is applied in place on the live collection.
   {

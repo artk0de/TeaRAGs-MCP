@@ -8,6 +8,7 @@
  * - Graceful shutdown
  */
 
+import { isDebug } from "../../../../infra/runtime.js";
 import type {
   Batch,
   BatchCompletionCallback,
@@ -16,7 +17,6 @@ import type {
   WorkerPoolConfig,
   WorkItem,
 } from "../types.js";
-import { isDebug } from "../../../../infra/runtime.js";
 
 interface QueuedBatch<T extends WorkItem> {
   batch: Batch<T>;
@@ -45,7 +45,8 @@ export class WorkerPool {
     onCompletion?: BatchCompletionCallback,
     onQueueChange?: (queueSize: number) => void,
   ) {
-    this.config = config;
+    // Own copy: `setConcurrency` must not leak into the caller's (often shared) tuning object.
+    this.config = { ...config };
     this.onCompletion = onCompletion;
     this.onQueueChange = onQueueChange;
     this.startTime = Date.now();
@@ -116,6 +117,19 @@ export class WorkerPool {
       activeWorkers: this.activeWorkers,
       throughput: uptimeMs > 0 ? (this.totalProcessed / uptimeMs) * 1000 : 0,
     };
+  }
+
+  /**
+   * Change how many batches may run at once. Raising it starts queued batches
+   * immediately; lowering it never cancels in-flight work, it only holds new
+   * starts until the active count drops below the new limit.
+   */
+  setConcurrency(concurrency: number): void {
+    if (concurrency < 1 || concurrency === this.config.concurrency) return;
+    this.config.concurrency = concurrency;
+    while (this.queue.length > 0 && this.activeWorkers < this.config.concurrency && !this.isShuttingDown) {
+      this.tryProcessNext();
+    }
   }
 
   /**

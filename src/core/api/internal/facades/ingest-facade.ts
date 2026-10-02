@@ -214,6 +214,7 @@ export class IngestFacade {
       healthCheckRetryDelayMs: deps.healthCheckRetryDelayMs,
       languageVersionStamper: deps.collectionRegistry,
       codegraphEnabledStamper: deps.collectionRegistry,
+      embeddingThroughputOptima: deps.collectionRegistry,
       languageCodeVersions: deps.languageCodeVersions,
       ...(deps.languageChunkSetBumpScopes ? { languageChunkSetBumpScopes: deps.languageChunkSetBumpScopes } : {}),
       driftReporter: deps.driftReporter,
