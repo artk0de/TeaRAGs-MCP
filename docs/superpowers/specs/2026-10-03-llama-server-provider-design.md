@@ -75,10 +75,10 @@ Location: `src/core/adapters/embeddings/llama-server/`. Selected with
 - Model check at startup: if `/props.model_path` exists and its file name does
   not match the configured model's GGUF digest or name, the provider logs a
   warning. The warning names the remedy:
-  `tea-rags llama-server fetch-model <model>` plus the `serve` command. It does
-  not refuse, because a renamed GGUF of the same model is legitimate. Dimension
-  mismatch against the collection is already caught by the existing model-mixing
-  guard.
+  `tea-rags llama-server fetch-model <model>` plus
+  `tea-rags llama-server command`. It does not refuse, because a renamed GGUF of
+  the same model is legitimate. Dimension mismatch against the collection is
+  already caught by the existing model-mixing guard.
 
 ## 2. `EmbeddingEndpointPool`
 
