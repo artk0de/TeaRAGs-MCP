@@ -165,6 +165,26 @@ export async function createCodegraphEnrichmentProvider(
   config: CodegraphWorkerConfig,
   descriptor?: WorkerEnrichmentDescriptor,
 ): Promise<CodegraphEnrichmentProvider> {
+  return (await createCodegraphProviderRuntime(config, descriptor)).provider;
+}
+
+/**
+ * A provider together with the `GraphDbClientPool` it writes through. The pool
+ * is otherwise private to the provider, and a caller that OWNS the database
+ * files — the working-tree graph build, which must CHECKPOINT and close every
+ * client before its output is self-contained — needs it. Long-lived callers
+ * keep `createCodegraphEnrichmentProvider`.
+ */
+export interface CodegraphProviderRuntime {
+  provider: CodegraphEnrichmentProvider;
+  pool: GraphDbClientPool;
+}
+
+/** {@link createCodegraphEnrichmentProvider}, returning the pool the provider was built on as well. */
+export async function createCodegraphProviderRuntime(
+  config: CodegraphWorkerConfig,
+  descriptor?: WorkerEnrichmentDescriptor,
+): Promise<CodegraphProviderRuntime> {
   const lang = (await import(config.languageModulePath)) as LanguageModule;
   // NO root is passed here on purpose. `config.rootDir` is the DuckDB storage
   // root (`paths.appData`), fixed at bootstrap before any collection exists —
@@ -211,7 +231,7 @@ export async function createCodegraphEnrichmentProvider(
     },
   });
 
-  return new CodegraphEnrichmentProvider(
+  const provider = new CodegraphEnrichmentProvider(
     {
       pool,
       composer,
@@ -227,4 +247,5 @@ export async function createCodegraphEnrichmentProvider(
     },
     descriptor,
   );
+  return { provider, pool };
 }

@@ -140,3 +140,4 @@ export { buildCodegraphExclusionFilter } from "./exclusion.js";
 export type { CodegraphExclusionOptions } from "./exclusion.js";
 export { createCodegraphEnrichmentProvider } from "./factory.js";
 export type { CodegraphWorkerConfig } from "./factory.js";
+export * from "./working-tree/index.js";

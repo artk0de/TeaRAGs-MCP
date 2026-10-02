@@ -18,7 +18,8 @@ export type TrajectoryErrorCode =
   | "TRAJECTORY_CODEGRAPH_SPILL_IO_FAILED"
   | "TRAJECTORY_CODEGRAPH_RESOLVE_FAILED"
   | "TRAJECTORY_CODEGRAPH_CHECKPOINT_FAILED"
-  | "TRAJECTORY_CODEGRAPH_METRICS_FAILED";
+  | "TRAJECTORY_CODEGRAPH_METRICS_FAILED"
+  | "TRAJECTORY_CODEGRAPH_WORKING_TREE_GRAPH_INCOMPLETE";
 
 /**
  * Abstract base for all trajectory domain errors.
@@ -214,6 +215,32 @@ export class CodegraphMetricsError extends TrajectoryCodegraphError {
         "Graph data is consistent but cycle/pagerank tables may be stale. " +
         "Re-run index_codebase to refresh the derived metrics.",
       cause,
+    });
+  }
+}
+
+/**
+ * What left a working-tree graph unfit to publish: the derived tables still
+ * describe a graph that held the deleted files, or the database still needs a
+ * WAL beside it that a publisher would not carry along.
+ */
+export type WorkingTreeGraphDefect = "staleDerivedTables" | "walLeftBehind";
+
+/**
+ * A working-tree graph build (epic xi2r9, WTO-7) finished but its output is not
+ * a complete, self-contained graph. Raised inside the build's child process,
+ * whose spawner turns it into a `failed` outcome — the reader then degrades to
+ * the base graph instead of serving cycles / PageRank of a graph that no longer
+ * exists, or a database whose last writes sit in a WAL nobody copies.
+ */
+export class WorkingTreeGraphIncompleteError extends TrajectoryCodegraphError {
+  constructor(dbPath: string, defect: WorkingTreeGraphDefect) {
+    super({
+      code: "TRAJECTORY_CODEGRAPH_WORKING_TREE_GRAPH_INCOMPLETE",
+      message: `Working-tree graph at ${dbPath} is incomplete: ${defect}`,
+      hint:
+        "The answer falls back to the indexed graph. Re-run with DEBUG=true to see the " +
+        "codegraph metrics recompute or checkpoint failure behind it.",
     });
   }
 }
