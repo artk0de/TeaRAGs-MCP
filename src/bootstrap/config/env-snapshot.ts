@@ -79,6 +79,7 @@ export function buildRegistryEnvSnapshot(config: RegistryEnvSnapshotSource): Rec
   put("OLLAMA_LEGACY_API", embedding.ollamaLegacyApi);
   put("OLLAMA_NUM_GPU", embedding.ollamaNumGpu);
   put("OLLAMA_QUANTIZATION", embedding.ollamaQuantization);
+  put("EMBEDDING_AUTO_PULL", embedding.autoPull);
 
   put("TRAJECTORY_GIT_ENABLED", trajectoryGit.enabled);
   put("TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS", trajectoryGit.logMaxAgeMonths);

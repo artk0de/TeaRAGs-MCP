@@ -70,6 +70,7 @@ describe("REGISTRY_ENV_GROUPS", () => {
       "EMBEDDING_DEVICE",
       "OLLAMA_LEGACY_API",
       "OLLAMA_NUM_GPU",
+      "EMBEDDING_AUTO_PULL",
       // trajectoryGit
       "TRAJECTORY_GIT_ENABLED",
       "TRAJECTORY_GIT_CHUNK_CONCURRENCY",

@@ -30,6 +30,7 @@ describe("parseAppConfigZod", () => {
       "EMBEDDING_MODEL",
       "OLLAMA_QUANTIZATION",
       "EMBEDDING_OLLAMA_QUANTIZATION",
+      "EMBEDDING_AUTO_PULL",
       "EMBEDDING_DIMENSIONS",
       "EMBEDDING_BASE_URL",
       "OLLAMA_LEGACY_API",
@@ -249,6 +250,17 @@ describe("parseAppConfigZod", () => {
 
       delete process.env.EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS;
       delete process.env.EMBEDDING_TUNE_UNAVAILABLE_RETRY_BASE_DELAY_MS;
+    });
+
+    it("auto-pulls a missing Ollama model unless EMBEDDING_AUTO_PULL=false", async () => {
+      const { parseAppConfigZod } = await freshImport();
+      expect(parseAppConfigZod().embedding.autoPull).toBe(true);
+
+      process.env.EMBEDDING_AUTO_PULL = "false";
+      const fresh = await freshImport();
+      expect(fresh.parseAppConfigZod().embedding.autoPull).toBe(false);
+
+      delete process.env.EMBEDDING_AUTO_PULL;
     });
 
     it("adapts embedding batch size and concurrency unless EMBEDDING_TUNE_STATIC pins them", async () => {
