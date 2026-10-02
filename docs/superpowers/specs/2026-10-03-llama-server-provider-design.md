@@ -56,6 +56,11 @@ Out of scope:
 Location: `src/core/adapters/embeddings/llama-server/`. Selected with
 `EMBEDDING_PROVIDER=llama-server`.
 
+- Primary deployment target is a REMOTE GPU host on the LAN. Localhost is the
+  fallback tier (§2), not the main case.
+- When `EMBEDDING_API_KEY` is set, it is sent as `Authorization: Bearer <key>`
+  to every endpoint. This matches llama-server `--api-key`, which a server bound
+  to the LAN should use.
 - Embeds through `POST /v1/embeddings` with `{ input: string[] }` and reads
   `data[i].embedding` in `index` order. When `model` is configured it is sent
   too; llama-server ignores it and the mock server in tests checks it.
@@ -90,6 +95,12 @@ provider-agnostic, and Ollama will move onto it later.
   `EMBEDDING_FALLBACK_URL` is a single URL or a comma-separated list of FALLBACK
   endpoints. A single URL behaves exactly as today. No new env variables are
   needed for endpoints.
+- Topology: the PEERS are remote llama-server instances, one per GPU on the GPU
+  host. The FALLBACK is a llama-server on the client machine,
+  `http://127.0.0.1:<port>`, serving the SAME GGUF from `fetch-model`. Every
+  endpoint in the pool is llama-server; Ollama is never a fallback for this
+  provider, because Ollama may not serve the model chosen for llama-server. The
+  fallback list may also hold another remote host.
 - Endpoint state: `healthy | failed`, consecutive-failure counter, and an EWMA
   throughput in chars/s.
 - Failover: an endpoint fails after
@@ -179,6 +190,27 @@ the operator runs them, once per build.
   `<bin> --list-devices`, so the operator can pick device ids and re-run.
   `--slots` defaults to 4, the measured optimum on RX 7800M and M3 Pro.
   `--model` defaults to the GGUF from `fetch-model`.
+- The commands target the REMOTE GPU host, so `--os windows|linux|macos`
+  (default: the current platform) selects path syntax, shell and autostart
+  flavour. The output is copy-paste ready for that OS.
+- Model on the remote host: the first printed step downloads the GGUF straight
+  from the Ollama registry blob URL and verifies its sha256. On Windows this is
+  PowerShell `Invoke-WebRequest` + `Get-FileHash`; on Linux and macOS it is
+  `curl -L` + `sha256sum` / `shasum -a 256`. The GPU host needs no Node and no
+  tea-rags. tea-rags resolves the manifest itself, so the printed URL and digest
+  are exact. `fetch-model` stays the local equivalent for the fallback tier.
+- LAN exposure: `--host` defaults to `0.0.0.0`. `--advertise <lan-ip-or-name>`
+  is the address the client uses and goes into the printed `EMBEDDING_BASE_URL`.
+  `--api-key <key>` is added to every launch line and printed as
+  `EMBEDDING_API_KEY` for the client.
+- Host hygiene printed alongside: an inbound firewall rule for the port range
+  (`netsh advfirewall firewall add rule` / `ufw allow`), and keeping the host
+  awake while serving (`powercfg /change standby-timeout-ac 0`, a
+  `systemd-inhibit` wrapper, or `caffeinate -s`). A sleeping GPU host is the
+  failure we hit on 2026-10-02.
+- Fallback tier:
+  `tea-rags llama-server command --os macos --host 127.0.0.1 --bin <local llama-server>`
+  prints the local launch line. Its URL goes into `EMBEDDING_FALLBACK_URL`.
 - With `--autostart`, it also prints the command that registers that line to
   start at boot: `schtasks /Create … /SC ONSTART /RL HIGHEST` on Windows, a
   systemd user unit plus `systemctl --user enable --now` on Linux, or a launchd
