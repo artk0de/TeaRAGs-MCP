@@ -19,6 +19,7 @@ import { isTestPath } from "../../../infra/scope-detection.js";
 import type { CodeChunk } from "../../../types.js";
 import { classifyQuarantinable } from "../sync/index.js";
 import type { ChunkPipeline } from "./chunk-pipeline.js";
+import { toChunkPointInput } from "./chunk-point-payload.js";
 import { assignNavigationAndDocSymbolId } from "./chunker/chunk-navigation.js";
 import type { ChunkerPoolPort } from "./chunker/infra/pool.js";
 import { assignSymbolMass } from "./chunker/symbol-mass.js";
@@ -180,33 +181,7 @@ export class SourceFileIngestor {
         return { chunksAdded, hitChunkLimit: true };
       }
 
-      const baseChunk = {
-        content: chunk.content,
-        startLine: chunk.startLine,
-        endLine: chunk.endLine,
-        metadata: {
-          filePath: chunk.metadata.filePath,
-          language: chunk.metadata.language,
-          chunkIndex: chunk.metadata.chunkIndex,
-          name: chunk.metadata.name,
-          chunkType: chunk.metadata.chunkType,
-          parentSymbolId: chunk.metadata.parentSymbolId,
-          parentType: chunk.metadata.parentType,
-          symbolId: chunk.metadata.symbolId,
-          isDocumentation: chunk.metadata.isDocumentation,
-          methodLines: chunk.metadata.methodLines,
-          memberCount: chunk.metadata.memberCount,
-          moduleLines: chunk.metadata.moduleLines,
-          moduleMethodCount: chunk.metadata.moduleMethodCount,
-          headingPath: chunk.metadata.headingPath,
-          navigation: chunk.metadata.navigation,
-          scopeLineRanges: chunk.metadata.scopeLineRanges,
-          memberRowCounts: chunk.metadata.memberRowCounts,
-          memberSymbolIds: chunk.metadata.memberSymbolIds,
-          memberLineRanges: chunk.metadata.memberLineRanges,
-          ...(imports.length > 0 && { imports }),
-        } as CodeChunk["metadata"],
-      };
+      const baseChunk = toChunkPointInput(chunk, imports);
 
       // Wait for backpressure if needed
       if (chunkPipeline.isBackpressured()) {
