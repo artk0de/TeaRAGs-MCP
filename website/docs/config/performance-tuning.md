@@ -7,6 +7,65 @@ import MermaidTeaRAGs from '@site/src/components/MermaidTeaRAGs';
 
 # Performance Tuning
 
+## Adaptive Embedding
+
+The embedding batch size and the embedding concurrency are chosen during each
+index run; you no longer have to find them by hand. The settings you configure
+are bounds, not fixed values:
+
+| Variable                        | Role under adaptive embedding                          |
+| ------------------------------- | ------------------------------------------------------ |
+| `EMBEDDING_TUNE_BATCH_SIZE`     | **Ceiling** for the batch size                         |
+| `EMBEDDING_TUNE_MIN_BATCH_SIZE` | **Floor** for the batch size; unset: ceiling / 16      |
+| `INGEST_PIPELINE_CONCURRENCY`   | Concurrency for a **remote** endpoint (loopback: 1)    |
+
+A loopback endpoint is an Ollama URL on `localhost`, `127.x` or `::1`.
+
+What happens during a run:
+
+- **Downshift on server failures.** When the embedding server fails a batch
+  because of its size (an Ollama runner crash, an HTTP 400 on an oversized
+  batch), the batch size is halved for every later batch, not just the failing
+  one. After a streak of successful batches it is doubled back one step.
+- **Throughput hill-climb.** Each size is measured over several full batches
+  in characters per second. The neighbours at half and double the size,
+  inside the bounds, are probed, and the run moves to one only when it is more
+  than 5% faster. A settled size is re-probed every 200 batches, so a server
+  whose speed drifts is followed.
+- **Concurrency by locality.** A local embedding server processes requests one
+  at a time, so parallel batches only queue on it and blur the measurements; a
+  loopback endpoint therefore runs at concurrency 1. A LAN or cloud endpoint
+  runs at `INGEST_PIPELINE_CONCURRENCY`. The decision is made again when the
+  run fails over between `EMBEDDING_BASE_URL` and `EMBEDDING_FALLBACK_URL`.
+- **Remembered optima.** The settled batch size is stored per endpoint URL and
+  model in the indexed project's [registry](/usage/advanced/project-registry)
+  entry. The next run against the same endpoint and model — in any project,
+  since the value describes the server — starts from the freshest stored
+  optimum, clamped to the current bounds, instead of starting at the ceiling.
+  A primary and a fallback endpoint each keep their own value.
+
+The batch-size downshift and hill-climb run for every provider. Concurrency by
+locality and remembered optima need the endpoint URL, which only the Ollama
+provider reports; ONNX, OpenAI, Cohere and Voyage keep
+`INGEST_PIPELINE_CONCURRENCY` and start every run at the ceiling.
+
+**Where to see the settled values:**
+
+- `get_index_status` and `tea-rags index-codebase --json` report
+  `infraHealth.embedding.throughputTune` for the active endpoint and model:
+  `batchSize`, `concurrency`, `charsPerSecond` and `settledAt`. It is absent
+  until a run has settled, and for providers that report no endpoint URL.
+- With `DEBUG=1`, every change is logged in `~/.tea-rags/logs/pipeline-*.log`
+  as an `EMBED_TUNE_ADAPTED` line with the old and new value, the reason
+  (`seed`, `failure`, `recovery`, `probe`, `reprobe`, `settle`,
+  `endpoint-local`, `endpoint-remote`) and the measured chars/s.
+
+**Pinning static behaviour.** Set `EMBEDDING_TUNE_STATIC=true` to use
+`EMBEDDING_TUNE_BATCH_SIZE` and `INGEST_PIPELINE_CONCURRENCY` unchanged for the
+whole run and ignore any stored optimum. Use it when you benchmark one fixed
+configuration, or when a provider bills or rate-limits per request and you want
+a known request shape.
+
 ## Auto-Tuning Benchmark
 
 Don't guess — let the benchmark find optimal settings for your hardware:
@@ -39,7 +98,10 @@ Phase 2: Embedding Concurrency ... Optimal: 2
 Phase 3: Qdrant Batch Size ... Optimal: 384
 ```
 
-Then add tuned values to your MCP config:
+Then add tuned values to your MCP config. With
+[adaptive embedding](#adaptive-embedding) on (the default), the batch size and
+concurrency you set act as the ceiling and the remote-endpoint concurrency, not
+as fixed values:
 
 ```bash
 claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
@@ -248,6 +310,12 @@ Network latency crushes remote Qdrant storage: 6966 ch/s → 1810 ch/s (3.8x dro
 
 ### Batch Size
 
+These values are the bounds [adaptive embedding](#adaptive-embedding) works
+inside: the run lowers the batch size below `EMBEDDING_TUNE_BATCH_SIZE` when a
+smaller one is faster or the server fails on size, and a loopback endpoint runs
+at concurrency 1 whatever `INGEST_PIPELINE_CONCURRENCY` says. Set
+`EMBEDDING_TUNE_STATIC=true` to apply them exactly as written.
+
 **Rule of thumb:**
 - **Local GPU**: Use large batches (512) + CONCURRENCY=1 to minimize per-batch overhead
 - **Remote GPU**: Use smaller batches (256) + CONCURRENCY=4-6 to hide network latency
@@ -264,7 +332,7 @@ export INGEST_PIPELINE_CONCURRENCY=4
 
 ### Concurrency
 
-**Critical insight:** Concurrency is **only beneficial for remote GPU**. Local GPU sees no improvement — it adds overhead without benefit.
+**Critical insight:** Concurrency is **only beneficial for remote GPU**. Local GPU sees no improvement — it adds overhead without benefit. Adaptive embedding applies this rule itself: a loopback endpoint runs at 1, a remote one at `INGEST_PIPELINE_CONCURRENCY`.
 
 | Setup | Concurrency | Why |
 |-------|-------------|-----|

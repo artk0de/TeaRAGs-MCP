@@ -68,7 +68,7 @@ Optional variables:
 |----------|-------------|---------|
 | `EMBEDDING_MODEL` | Voyage model name | `voyage-2` |
 | `EMBEDDING_DIMENSIONS` | Vector dimensions | `1024` (auto-detected) |
-| `EMBEDDING_TUNE_BATCH_SIZE` | Texts per embedding batch | `128` |
+| `EMBEDDING_TUNE_BATCH_SIZE` | Ceiling on texts per embedding batch ([adaptive](/config/performance-tuning#adaptive-embedding)) | `128` |
 | `EMBEDDING_BASE_URL` | Custom API URL | `https://api.voyageai.com/v1` |
 | `EMBEDDING_TUNE_MAX_REQUESTS_PER_MINUTE` | RPM limit for rate limiter | `300` |
 

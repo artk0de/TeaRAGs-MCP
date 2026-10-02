@@ -76,7 +76,7 @@ A **snapshot** of the current index state is written before any mutation, so int
 
 1. **Chunk** — AST-aware chunker splits code by language-specific hooks (Ruby uses `alwaysExtractChildren`, TypeScript uses `comment-capture` + `class-body-chunker`, etc.). Markdown is split by heading hierarchy.
 2. **Build payload** — [`StaticPayloadBuilder`](/architecture/data-model#base--always-present) writes the base payload (content, relativePath, symbolId, imports, navigation, …).
-3. **Embed** — the embedding provider (ONNX / Ollama / OpenAI / Cohere / Voyage) computes a dense vector per chunk. Configurable batch size via `EMBEDDING_TUNE_BATCH_SIZE`.
+3. **Embed** — the embedding provider (ONNX / Ollama / OpenAI / Cohere / Voyage) computes a dense vector per chunk. The batch size and embed concurrency are owned by one `EmbeddingThroughputTuner` per run: it halves the batch size after a batch the server fails on size, hill-climbs toward the fastest measured size inside [`EMBEDDING_TUNE_MIN_BATCH_SIZE`, `EMBEDDING_TUNE_BATCH_SIZE`], runs a loopback endpoint at concurrency 1, and seeds the next run from the optimum stored in the registry. `EMBEDDING_TUNE_STATIC=true` disables it. A failed batch is isolated by bisection — each half is one embed call — so one poison chunk costs O(log n) calls, not one call per chunk.
 4. **Sparse vectors** — when hybrid is enabled, BM25 token frequencies are computed alongside.
 5. **Batch upsert** — dense + sparse + payload written to Qdrant in configurable batches. Concurrency controlled by `INGEST_PIPELINE_CONCURRENCY` (default 1 — most providers are bottlenecked inside, not in flight).
 
@@ -121,7 +121,7 @@ This separation means users get working search within seconds even on fresh inde
 |------|-----------|--------|
 | File discovery | Sequential (IO-bound, fast) | — |
 | Chunking | Worker pool | `INGEST_TUNE_CHUNKER_POOL_SIZE` |
-| Embedding | Provider batches + optional concurrency | `EMBEDDING_TUNE_BATCH_SIZE`, `INGEST_PIPELINE_CONCURRENCY` |
+| Embedding | Provider batches + concurrency, both adapted per run | `EMBEDDING_TUNE_BATCH_SIZE` (ceiling), `EMBEDDING_TUNE_MIN_BATCH_SIZE` (floor), `INGEST_PIPELINE_CONCURRENCY` (remote endpoints), `EMBEDDING_TUNE_STATIC` |
 | File-level concurrency | `BaseIndexingPipeline` | `INGEST_TUNE_FILE_CONCURRENCY` |
 | Qdrant upserts | Async batch queue | `INGEST_BATCH_SIZE` |
 | Git enrichment | Chunk-level worker pool | `TRAJECTORY_GIT_CHUNK_CONCURRENCY` |

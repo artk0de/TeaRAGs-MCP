@@ -138,9 +138,10 @@ the pre-computed DuckDB graph directly — no embedding):
 | `get_callers` | Symbols that **invoke** the given `symbolId` (who depends on this)                   |
 | `get_callees` | Symbols **invoked by** the given `symbolId` (what this depends on)                   |
 | `find_cycles` | Strongly-connected components (cycles ≥ 2) in the import graph (`scope: "file"`) or call graph (`scope: "method"`) |
-| `get_architecture_report` | Architecture violations with per-line evidence. Stable Dependencies Principle judged on components (modules with a measured facade, else directories) — a stable component depending on a less stable one, grouped into root causes by unstable target, with the file edges that carry it; plus leaking abstractions, silent coupling, main-sequence distance (zone of pain / uselessness, abstractness from the walker type census) and the inferred layer stack: the DOMAIN graph (every directory with a facade file counts once, adoption aside; the facade-adoption partition's counts ride along in `summary.layering.facadePartition`), SCC-condensed longest-path levels (L0 = foundation), coverage, rank-correlation coherence, and findings for knots (multi-component cycles, with the lightest feedback-arc cut that levels them), back-edges, abstraction bypasses, plus informational composition cycles, islands and layer skips. Scripts, spikes, benchmarks, examples and fixtures are left out. Optional `pathPattern` scopes the judged edges by source file; an optional `layerMap` object (`scopePathPattern`, `granularity: "directory" \| "file"`, `directoryDepth`) adds the `layerMap` view to the response — per-node levels inside a scope at directory or file granularity, boundary edges naming the outside component and its global level, knots among the map's own nodes (each marked `composition` when it is just a module cycling with its own sub-parts), and move candidates (inner nodes nothing inside depends on whose outward edges all point into one other domain). A `domain` directory root (`"src/core/domains/explore"`) judges that directory AS ITS OWN SYSTEM instead: every detector runs over the induced sub-graph, and `response.domain` reports the domain's own component/level counts plus its border — `boundaryOut`/`boundaryIn` edges aggregated per component pair, each naming the external component and its whole-graph level. A `norms: true` flag adds the dependency-norms view: every typed file edge judged against the project's own precedent ledgers per (source role, target role, locality), roles derived from each file's primary type — a `misfit` names the transit path its roles normally follow, a `newPattern` names a pair two frequent roles have never shown; edges touching an untyped or suffix-only file are never judged. Absent from the response unless requested |
-| `get_naming_lexicon` | The project's naming vocabulary: names per declaration kind for given `types` / `anchors`, a `CONFORMS` / `MISFIT` / `NEW_TERM` / `COLLISION` verdict per draft in `names` (values, and types or constants with `kind: "type"`), project terms for a `concept` (with `language`) |
-| `get_ontology_report` | Project-wide naming ontology audit over declared identifiers: `synonyms` (one type, many names), `homonyms` (one name, many types), `outliers` (a name off its type's dominant naming shape) and `collisions` (a name equal to another symbol). Ranked, with counts and one example location each |
+| `get_architecture_report` | Architecture violations with per-line evidence. Stable Dependencies Principle judged on components (modules with a measured facade, else directories) — a stable component depending on a less stable one, grouped into root causes by unstable target, with the file edges that carry it; plus leaking abstractions, silent coupling, main-sequence distance (zone of pain / uselessness, abstractness from the walker type census) and the inferred layer stack: the DOMAIN graph (every directory with a facade file counts once, adoption aside; the facade-adoption partition's counts ride along in `summary.layering.facadePartition`), SCC-condensed longest-path levels (L0 = foundation), coverage, rank-correlation coherence, and findings for knots (multi-component cycles, with the lightest feedback-arc cut that levels them), back-edges, abstraction bypasses, plus informational composition cycles, islands and layer skips. Scripts, spikes, benchmarks, examples and fixtures are left out. Optional `pathPattern` scopes the judged edges by source file; an optional `layerMap` object (`scopePathPattern`, `granularity: "directory" \| "file"`, `directoryDepth`) adds the `layerMap` view to the response — per-node levels inside a scope at directory or file granularity, boundary edges naming the outside component and its global level, knots among the map's own nodes (each marked `composition` when it is just a module cycling with its own sub-parts), and move candidates (inner nodes nothing inside depends on whose outward edges all point into one other domain). A `domain` directory root (`"src/core/domains/explore"`) judges that directory AS ITS OWN SYSTEM instead: every detector runs over the induced sub-graph, and `response.domain` reports the domain's own component/level counts plus its border — `boundaryOut`/`boundaryIn` edges aggregated per component pair, each naming the external component and its whole-graph level. A `norms: true` flag adds the dependency-norms view: every typed file edge judged against the project's own precedent ledgers per (source role, target role, locality), roles derived from each file's primary type — a `misfit` names the transit path its roles normally follow, a `newPattern` names a pair two frequent roles have never shown; edges touching an untyped or suffix-only file are never judged. Absent from the response unless requested. `summary.splitMerge` compares the component partition with git history: split candidates (one component whose files change in separate groups) and merge candidates (two components that change together). Knot findings are capped and carry `evidence.drillDown`; a `knotOf` call pages through one knot — see [Knots and drill-down](#knots-and-drill-down) |
+| `get_naming_lexicon` | The project's naming vocabulary: names per declaration kind for given `types` / `anchors`, a `CONFORMS` / `MISFIT` / `NEW_TERM` / `NO_CONVENTION` / `COLLISION` verdict per draft in `names` (values, and types or constants with `kind: "type"`), project terms for a `concept` (with `language`). Reviewing the names a diff adds moved to `review_changes` |
+| `get_ontology_report` | Project-wide naming ontology audit over declared identifiers: `synonyms` (one type, many names), `homonyms` (one name, many types), `outliers` (a name off its type's dominant naming shape) and `collisions` (a name equal to another symbol). Ranked, with counts and one example location each. The opt-in `verbs` section lists, per language and noun, the method verbs the project uses with their holder counts, and the methods whose verb is a misfit, each with a suggestion |
+| `review_changes` | Every diff-scoped report over one working-tree change in one call: `naming` (the names the change declares, judged against the project's vocabulary), `incompleteChange` (co-change partners of the changed files that the change does not touch), `cohesion` (per changed file, groups of symbols that change together and split candidates) and `architecture` (the change's new edges judged by the boundary detectors). See [Reviewing a change](#reviewing-a-change) |
 | `find_co_changed` | Co-change partners of the given files from git history — support, both directed confidences, Wilson lower-bound strength, lift, up to three sample commits, and `structurallyLinked` (an import / method edge / re-export barrel chain joins the pair; `false` = silent coupling). Ranked by strength; partners deleted from the working tree are dropped; `built: false` means no co-change build yet, not "no partners" |
 
 **Call-graph resolution scope.** `get_callers` / `get_callees` walk the run-time
@@ -166,6 +167,41 @@ and friends) instead of answering an empty path list, while a project the
 codegraph never indexed still answers empty — the same rule every other graph
 tool follows on an unbuilt graph. No graph read, successful or not, ever
 creates a database file as a side effect.
+
+### Knots and drill-down
+
+A layering knot is a cycle across several components. Knot findings in
+`get_architecture_report` are ranked by the instability spread of their
+members (`instabilitySpread`: the most unstable member's instability minus the
+most stable one's). A spread above 0 means a stable component is caught in a
+cycle with volatile ones — a Stable Dependencies break inside the knot, which
+ranks above a tangle of equally volatile members.
+
+A large knot can hold thousands of components, so each finding carries a capped
+evidence list: the first 20 members by afferent coupling plus `memberCount`,
+and the first 10 edges of the feedback-arc cut by call weight plus
+`cutEdgeCount`. Composition cycles are capped the same way. To see the rest,
+every knot finding carries `evidence.drillDown`: a `knotOf` component and, when
+the members share a directory, a `pathPattern`.
+
+Pass that component back as `knotOf` (with `offset` for later pages) and the
+response carries a `knot` view instead of the project report:
+
+- members as `{ component, instability, afferentCount, efferentCount }`,
+  paged by `limit` / `offset`, with the whole knot's `instabilitySpread`;
+- the cut edges, paged, each with `keepCost { recollapsedMemberCount,
+  levelsAfterKeep }` — what happens if this one edge is kept while every other
+  cut edge is removed. `recollapsedMemberCount: 0` means the greedy cut took the
+  edge needlessly and it can stay;
+- `memberCount`, `cutEdgeCount`, `levelsAfterCut`, the knot's back-edges, and
+  `nextOffset` while either list has more;
+- on `offset: 0` only, the findings of the other detectors that lie inside the
+  knot. `summary` stays whole-project.
+
+A component outside every knot answers `inKnot: false` with its level and
+depth; a component the graph does not hold is an input error.
+
+### Naming lexicon
 
 `get_naming_lexicon` reads the identifier declarations the codegraph records —
 params, locals, fields and return types, each with the type it is known to hold.
@@ -204,7 +240,66 @@ many candidates the draft was scored against, so it holds the same ~10% false-po
 rate regardless of the draft's directory or family size. That verdict stays
 soft: the agent decides whether to reuse the term.
 
-**Reviewing a diff** (`review_changes`, its `naming` section). `changes: {}` reviews the working tree against `HEAD`,
+A value draft (param, local, field) whose type has no name shared by at least
+two owners in the project gets `NO_CONVENTION` instead of a bare `NEW_TERM`,
+with `prefer: { exact?, analogous }`: the type's name spelled in the draft's
+casing (plural for a collection), and names used by analogy — the thin rows'
+own, then the value names of related types. A return draft keeps `NEW_TERM`.
+When a directory's role suffix applies, only a draft that would be its file's
+primary declaration is held to it, so a helper interface next to an `…Ops`
+class is not told to end in `Ops`.
+
+### Reviewing a change
+
+`review_changes` runs every diff-scoped report over one working-tree change in
+one call. It is registered only when codegraph is enabled.
+
+```json
+{
+  "project": "myapp",
+  "changes": { "base": "origin/main" },
+  "sections": ["naming", "architecture"]
+}
+```
+
+- `changes.base` (default `HEAD`) is read at its merge-base with `HEAD`, so a
+  branch review covers what the branch changed plus uncommitted work.
+  Untracked files are included; at most 200 changed files are reviewed.
+- `files` narrows the review to the listed files; a listed file with no diff is
+  reviewed whole.
+- `path` next to `project` points the review at a linked worktree of the same
+  repository — `project` picks the index, `path` the tree.
+- `sections` is an allowlist; the default is every section. An unknown id is an
+  error. A section you did not ask for is absent from the answer, and a section
+  whose data is missing answers `built: false` with a `reason` — absence never
+  means "nothing found".
+
+The answer sits under `review`: `workTree`, `base`, `mergeBase`,
+`changedFiles`, `skipped` / `truncated`, `indexLag { indexedCommit, treeCommit }`
+when the index was built at another commit than the tree's `HEAD`, `notices`
+(an empty diff names the trees and bases it did not look at, instead of a bare
+`changedFiles: 0`), and `sections`, keyed by id:
+
+- **`naming`** — the names the change declares, judged against the project's
+  vocabulary; described below.
+- **`incompleteChange`** — co-change partners of the changed files that the
+  change does not touch: `support`, `confidence` and `lastCoChangeAt` per pair,
+  up to 50.
+- **`cohesion`** — per changed file, the groups of symbols that change together
+  in history, a cohesion score and a split verdict. A file with no data is
+  listed under `notJudged` as `noCohesionData`, never scored zero. Up to 50
+  reports.
+- **`architecture`** — the edges the change adds, judged by the boundary
+  detectors: `stableDependencies`, `leakingAbstraction`, `cycles`,
+  `mainSequence` (delta), `silentCoupling`, `facadeContract` and
+  `splitCandidates`. `facadeContract` flags a change to a module's facade that
+  stops re-exporting names consumers outside the module still import, judged
+  against the facade's indexed re-export surface. `splitCandidates` flags a
+  change that spans two co-change clusters of one split candidate, or touches
+  both sides of a merge candidate. `detectors` gives a status per detector,
+  including `built: false` with its reason. Up to 100 findings.
+
+**Reviewing a diff** (the `naming` section). `changes: {}` reviews the working tree against `HEAD`,
 untracked files included; `changes: { base }` reviews a branch. The base is
 read at its merge-base with `HEAD` (`git merge-base <base> HEAD`), so
 `base: "origin/main"` reviews what the branch changed, plus uncommitted work,
@@ -225,9 +320,9 @@ changed files; the rest are reported as `truncated`. Test and other
 non-production files are skipped, as are files no codegraph language walks;
 both count toward `notJudged`.
 
-The answer sits under `review`. Declarations that conform are only counted
-(`conforming`), and so are `novel` ones: a `NEW_TERM` with no `topTerms` and no
-`alternatives`, where the project has nothing to compare the name with, so
+The section's answer sits under `review.sections.naming`. Declarations that
+conform are only counted (`conforming`), and so are `novel` ones: a
+`NO_CONVENTION`, or a `NEW_TERM` with no `topTerms` and no `alternatives`, where the project has nothing to compare the name with, so
 there is nothing to act on. Everything else is a finding with its file and
 line. A finding carries its verdict's fields: `suggestion` and `holder` (or
 `role`) on a `MISFIT`, `existing` on a `COLLISION`, `topTerms` and
@@ -254,33 +349,38 @@ excerpt from a live run on this repository:
 ```json
 {
   "review": {
-    "base": "HEAD",
-    "checked": 163,
-    "conforming": 93,
-    "novel": 58,
-    "findings": [
-      {
-        "relPath": "src/core/api/internal/ops/naming-lexicon-ops.ts",
-        "line": 373,
-        "name": "req",
-        "kind": "param",
-        "type": "NamingLexiconRequest",
-        "verdict": "NEW_TERM",
-        "topTerms": [],
-        "genericName": { "typeCount": 7, "n": 10 }
-      },
-      {
-        "relPath": "src/core/domains/trajectory/git/provider.ts",
-        "line": 846,
-        "name": "meta",
-        "kind": "local",
-        "type": "GitFileSignals",
-        "verdict": "MISFIT",
-        "suggestion": "fileSignals",
-        "holder": "assembleFileSignals"
+    "sections": {
+      "naming": {
+        "built": true,
+        "base": "HEAD",
+        "checked": 163,
+        "conforming": 93,
+        "novel": 58,
+        "findings": [
+          {
+            "relPath": "src/core/api/internal/ops/naming-lexicon-ops.ts",
+            "line": 373,
+            "name": "req",
+            "kind": "param",
+            "type": "NamingLexiconRequest",
+            "verdict": "NEW_TERM",
+            "topTerms": [],
+            "genericName": { "typeCount": 7, "n": 10 }
+          },
+          {
+            "relPath": "src/core/domains/trajectory/git/provider.ts",
+            "line": 846,
+            "name": "meta",
+            "kind": "local",
+            "type": "GitFileSignals",
+            "verdict": "MISFIT",
+            "suggestion": "fileSignals",
+            "holder": "assembleFileSignals"
+          }
+        ],
+        "notJudged": 19
       }
-    ],
-    "notJudged": 19
+    }
   }
 }
 ```
@@ -288,7 +388,10 @@ excerpt from a live run on this repository:
 The excerpt keeps two of the run's 12 findings.
 
 Use `names` for a single proposed name or a rename; a whole change is reviewed
-by `review_changes` (its `naming` section).
+by `review_changes` (its `naming` section). `get_naming_lexicon` no longer
+accepts `changes` or `files`.
+
+### Ontology report
 
 `get_ontology_report` counts a declaration as evidence only when its type is
 known — annotated, constructor, resolver binding, finder or the return type of
@@ -298,6 +401,11 @@ report cannot confirm its own convention. Names bound to many unrelated types
 section and listed in the summary; primitive and top types per language are
 ignored. An index built before the identifier table existed answers a
 `driftWarning` instead of an empty, clean-looking report.
+
+The `verbs` section is left out unless requested in `sections`. It groups
+methods by language and noun tail and lists the verbs the project uses for
+each noun with their holder counts, plus the methods whose verb the method
+vocabulary judges a `MISFIT`, each with its suggestion.
 
 These pair naturally with [`find_symbol`](/usage/advanced/mcp-tools), which
 resolves a name to a `symbolId` using the same `Class#method` (instance) /
@@ -310,6 +418,7 @@ resolves a name to a `symbolId` using the same `Class#method` (instance) /
 <AiQuery>Are there any circular imports between modules?</AiQuery>
 <AiQuery>Is this codebase laid out correctly? Which modules depend on less stable ones?</AiQuery>
 <AiQuery>Show me entry-point files nothing else imports from</AiQuery>
+<AiQuery>Review my branch against main before I open the MR</AiQuery>
 <AiQuery>What does this service depend on transitively?</AiQuery>
 
 ## Reranking Presets
@@ -371,6 +480,6 @@ only graph extraction skips them.
 - [Code Quality Metrics](/knowledge-base/code-quality-metrics) — fan-in/fan-out,
   instability, and centrality theory with research references
 - [MCP Tools Atlas](/usage/advanced/mcp-tools) — full tool reference including
-  `get_callers`, `get_callees`, `find_cycles`, `find_symbol`
+  `get_callers`, `get_callees`, `find_cycles`, `find_symbol`, `review_changes`
 - [Configuration Variables](/config/environment-variables) — full list of all
   configuration options

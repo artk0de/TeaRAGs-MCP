@@ -67,7 +67,7 @@ Optional variables:
 |----------|-------------|---------|
 | `EMBEDDING_MODEL` | OpenAI model name | `text-embedding-3-small` |
 | `EMBEDDING_DIMENSIONS` | Vector dimensions (supports reduction) | `1536` (auto-detected) |
-| `EMBEDDING_TUNE_BATCH_SIZE` | Texts per embedding batch | `2048` |
+| `EMBEDDING_TUNE_BATCH_SIZE` | Ceiling on texts per embedding batch ([adaptive](/config/performance-tuning#adaptive-embedding)) | `2048` |
 | `EMBEDDING_TUNE_MAX_REQUESTS_PER_MINUTE` | RPM limit for rate limiter | `3500` |
 
 ## Available Models

@@ -24,6 +24,7 @@ Returned fields (selected):
 | `enrichment.progress` | `{ done, total, pending, failed }` per enrichment provider |
 | `enrichment.lastEnrichedAt` | Freshness of `git.*` signals |
 | `indexingInProgress` | `true` if another session is actively indexing |
+| `infraHealth.embedding.throughputTune` | Batch size, concurrency and chars/s the last run settled on for the active embedding endpoint + model ([Adaptive Embedding](/config/performance-tuning#adaptive-embedding)); absent until a run has settled |
 
 Interpreting combinations:
 
@@ -104,7 +105,7 @@ Rough breakdown for a first-time index of ~100k chunks (Apple M3 Pro, Ollama loc
 
 **Optimization knobs** (see [Performance Tuning](/config/performance-tuning) for details):
 
-- `EMBEDDING_TUNE_BATCH_SIZE` — the biggest lever. Larger batches = fewer GPU round-trips.
+- `EMBEDDING_TUNE_BATCH_SIZE` — the ceiling for the batch size, which each run tunes on its own below it. Compare it with `throughputTune.batchSize` in `get_index_status`: a settled size equal to the ceiling means a higher ceiling may help. `EMBED_TUNE_ADAPTED` lines in the `DEBUG=1` pipeline log show every change and its reason.
 - `INGEST_TUNE_CHUNKER_POOL_SIZE` — parallelism for AST parsing; bump when chunking dominates (rare).
 - `INGEST_TUNE_FILE_CONCURRENCY` — how many files in flight through the pipeline at once.
 - `TRAJECTORY_GIT_CHUNK_CONCURRENCY` — parallel commits processed during chunk-churn overlay.

@@ -290,6 +290,10 @@ The right column shows what runs under the hood.
 - 🏛️ **Architecture report** — Stable Dependencies at component level, imports
   that leak past an adopted facade, files that change together with no edge
   between them, and distance from the main sequence (`get_architecture_report`)
+- 🔎 **Change review** — one call over a working-tree change or a branch: names
+  off the project vocabulary, co-change partners the change left untouched,
+  per-file cohesion, and new edges that break architecture boundaries
+  (`review_changes`)
 - 🔤 **Naming review** — the project's vocabulary inferred from the call graph:
   verdicts on value and type names, the project's own word for a synonym, a
   review of every name a diff declares (`review_changes`), and a whole-code
@@ -417,7 +421,7 @@ competitor cell links to that product's own documentation, checked on
 
 |                                                                                                                      | Ranks by git history                                                                                | Semantic search                                         | Call graph                                                                                                               | Serves context over MCP                                                                 | Runs locally                                                                               | Rerank presets |
 | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------- |
-| **TeaRAGs**                                                                                                          | ✅ churn, bug-fix rate, ownership and age, per file and per chunk                                   | ✅ dense + hybrid (BM25)                                | ✅ callers, callees, cycles, A→B paths                                                                                   | ✅ 26 tools                                                                             | ✅ embedded Qdrant and DuckDB, local embeddings                                            | ✅ 23          |
+| **TeaRAGs**                                                                                                          | ✅ churn, bug-fix rate, ownership and age, per file and per chunk                                   | ✅ dense + hybrid (BM25)                                | ✅ callers, callees, cycles, A→B paths                                                                                   | ✅ 28 tools                                                                             | ✅ embedded Qdrant and DuckDB, local embeddings                                            | ✅ 23          |
 | [Aider](https://github.com/Aider-AI/aider)                                                                           | —                                                                                                   | —                                                       | ⚠️ [internal only](https://aider.chat/docs/repomap.html): a file dependency graph ranks the repo map it sends to the LLM | ❌ [not built in — open feature request](https://github.com/Aider-AI/aider/issues/4506) | ✅ [terminal CLI, works with local models](https://github.com/Aider-AI/aider)              | —              |
 | [Repomix](https://github.com/yamadashy/repomix)                                                                      | ⚠️ [orders files by git change count](https://github.com/yamadashy/repomix) inside the packed file  | —                                                       | —                                                                                                                        | ✅ [`repomix --mcp`](https://github.com/yamadashy/repomix)                              | ✅ CLI                                                                                     | —              |
 | [Sourcegraph](https://sourcegraph.com/docs/api/mcp) (incl. [Cody Enterprise](https://sourcegraph.com/docs/cody/faq)) | ⚠️ [commit and diff search](https://sourcegraph.com/docs/api/mcp); no ranking by history documented | ✅ [`nls_search`](https://sourcegraph.com/docs/api/mcp) | ✅ [`go_to_definition`, `find_references`](https://sourcegraph.com/docs/api/mcp)                                         | ✅ [MCP server on Enterprise plans](https://sourcegraph.com/docs/api/mcp)               | ⚠️ [your Sourcegraph instance](https://sourcegraph.com/docs/api/mcp), self-hosted or cloud | —              |
@@ -442,7 +446,7 @@ flowchart LR
     Agent[🤖 Coding agent<br/>+ TeaRAGs skills]
 
     subgraph pkg["🍵 tea-rags"]
-        MCP[🔌 MCP server<br/>26 tools]
+        MCP[🔌 MCP server<br/>28 tools]
         CLI[⌨️ CLI<br/>index · prime · projects · auto-update]
         Core[⚙️ Core<br/>chunk · enrich · search · rerank]
         MCP --> Core
@@ -503,9 +507,11 @@ tree-sitter parser and git-blame worker pools, GPU batches of up to 512 chunks,
 and the call graph in its own DuckDB process under a hard 2 GB memory cap, with
 SCC and PageRank computed as streams. Embeddings dominate a full rebuild, so a
 change to git or call-graph signals is recomputed with `--force-enrichments`
-without re-embedding a single chunk — minutes instead of a full reindex.
-`tea-rags tune` measures your hardware and picks batch size and concurrency in
-about 90 seconds; details in
+without re-embedding a single chunk — minutes instead of a full reindex. Each
+run picks its embedding batch size and concurrency itself — backing off when the
+server fails on a batch, climbing toward the fastest measured size, remembering
+the result per endpoint — within bounds that `tea-rags tune` measures for your
+hardware in about 90 seconds; details in
 [Performance Tuning](https://artk0de.github.io/TeaRAGs-MCP/config/performance-tuning).
 
 ## 📏 Measured

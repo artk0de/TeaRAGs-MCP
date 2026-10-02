@@ -170,7 +170,7 @@ exist in the conversation. If missing, `explore` is invoked first to gather it.
 ### `/tea-rags:mr-review [MR/PR URL]`
 
 **Signal-driven review of a merge request or a local branch.** The skill maps
-the diff onto indexed symbols, then scans it along 7 dimensions:
+the diff onto indexed symbols, then scans it along 9 dimensions:
 
 | Dimension     | What it catches                                            |
 | ------------- | ---------------------------------------------------------- |
@@ -181,6 +181,8 @@ the diff onto indexed symbols, then scans it along 7 dimensions:
 | tests         | Scenarios put at risk, changes with no covering tests      |
 | invariants    | The diff contradicting the project's docs or specs         |
 | cycles        | A new import or call cycle introduced by the diff          |
+| naming        | New names that do not match the project's vocabulary       |
+| diff-review   | Incomplete changes (co-change partners left untouched), cohesion, new edges that break architecture boundaries — one `review_changes` call |
 
 Signals decide _what_ to flag; each comment states the fact in plain words
 ("30+ modules import this") and names a concrete fix. A finding the skill cannot
@@ -196,8 +198,9 @@ at 8 comments, 5 of them major.
   batch**. Style nits carry a `[minor]` prefix. The repository must be checked
   out and indexed locally.
 
-Blast-radius and cycle checks use the call graph when `codegraph.symbols` is
-enabled. Without it, cycles are reported as "not assessed" and callers are
+Blast-radius, cycle, naming and diff-review checks use the call graph when
+`codegraph.symbols` is enabled. Without it, cycles, naming and diff-review are
+reported as "not assessed" and callers are
 found by name, which the comments call out as a lower bound.
 
 Not for your own pre-merge flow (use `dinopowers:requesting-code-review`), not

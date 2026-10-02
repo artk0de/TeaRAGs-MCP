@@ -280,13 +280,24 @@ release that touches a walker, a resolver chain or the shared kernel bumps the
 version the build declares, so every index built before it now carries an older
 stamp: the code moved, the payload did not.
 
-This release bumps the shared walker, so every index built before it reports
-`*.walker: 1 → 2` once. The shared sources run under every language, so the
-recompute it recommends is deliberately not narrowed by `--languages`:
+This release bumps the shared chunking version, so every index built before it
+reports `*.chunking: 2 → 4` once. The bump is unscoped: top-level module code
+is now indexed for every code file, `.tsx` files are parsed with the `tsx`
+grammar, small Markdown sections are grouped instead of standing alone or being
+dropped, and test files store their setup once per scope and pack small
+examples (see [How Chunking Works](/usage/indexing-repositories#how-chunking-works)).
+Each of these moves the chunk set, so the remedy is the plain force:
 
 ```bash
-tea-rags index-codebase --force-enrichments codegraph
+tea-rags index-codebase --project <alias> --force
 ```
+
+An index with codegraph enabled may also report `ruby.walker: 5 → 6`: Ruby
+class variables, `||=` memoization and accessor macros (`attr_reader` and
+friends) now record the declarations the naming tools read. The
+force rebuilds the enrichment layer too, so the one command settles both. Until
+you run it, search keeps working on the old chunks: test examples come back
+with their setup inlined as before, and module-level code stays unindexed.
 
 After that run the stamp catches up and the report goes quiet.
 

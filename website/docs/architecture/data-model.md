@@ -45,7 +45,7 @@ Written only when relevant — absent for chunks where they don't apply:
 | Field | Type | When written | Description |
 |-------|------|--------------|-------------|
 | `name` | string | Code chunks with an identifier | Class/function/symbol name |
-| `chunkType` | string | Chunks emitted by AST chunker | `"function"`, `"class"`, `"interface"`, `"block"` |
+| `chunkType` | string | Chunks emitted by AST chunker | `"function"`, `"class"`, `"interface"`, `"block"` (also a file's top-level module remainder), `"test"` (test examples), `"test_setup"` (per-scope test setup) |
 | `symbolId` | string | Named code chunks | Unique ID: `Class#method` (instance), `Class.method` (static), `functionName` (top-level), `doc:<hash>` (docs) |
 | `parentSymbolId` | string | Methods inside a class | Parent class/module name |
 | `parentType` | string | Methods inside a class | Parent AST node type (`"class_declaration"`, etc.) |
@@ -54,6 +54,10 @@ Written only when relevant — absent for chunks where they don't apply:
 | `imports` | string[] | Code chunks with file-level imports | File-level imports inherited by every chunk of the file |
 | `headingPath` | `{depth, text}[]` | Doc chunks | Ancestor headings of the section that opened this chunk, that heading, then every sibling section merged into the chunk (used by `documentationRelevance` preset and the doc TOC) |
 | `navigation` | `{prevSymbolId?, nextSymbolId?}` | Chunks with adjacent symbols | Enables chunk-to-chunk navigation without re-reading the file |
+| `memberSymbolIds` | string[] | Packed test chunks with more than one member | The ids the chunk answers `find_symbol` for, in source order: grouped examples of one scope, or the scopes whose setup shares a `test_setup` chunk. The chunk's own `symbolId` is the first member's. Text-indexed |
+| `memberLineRanges` | `{start, end}[]` | Packed example chunks | Each member example's own line range, aligned with `memberSymbolIds` |
+| `scopeLineRanges` | `{start, end}[]` | `test_setup` chunks | The whole line span of each member scope. An example inherits every setup member whose span contains its start line — read at hydration, never filtered on |
+| `memberRowCounts` | number[] | `test_setup` and packed example chunks | Rows of `content` each member takes, so a single member can be cut out of the pack |
 | `methodLines` | number | Function chunks | Original method line count before chunk splitting (used by `decomposition` preset) |
 | `methodDensity` | number | Function chunks | Characters per line, dampened for small chunks — a code density heuristic |
 

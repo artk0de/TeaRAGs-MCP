@@ -92,6 +92,15 @@ Every line of an outline or TOC is an address: pass it back as
 `symbol: "Reranker#rerank"` or `symbol: "doc:<hash>"` to read that one member or
 section.
 
+**Test examples.** A test example comes back with the setup of its enclosing
+scopes (`let`, `before`, `beforeEach`, …) prepended, outermost first — the index
+stores that setup once per scope and adds it back on read. The same happens for
+test hits from the search tools; `metaOnly` answers skip it. Small adjacent
+examples of one scope share a chunk, but each keeps its own id: `find_symbol`
+on any of them returns that example alone with its own line range, and a scope
+id returns the outline of its examples together with the chunk holding its
+setup. See [How Chunking Works](/usage/indexing-repositories#how-chunking-works).
+
 ```json
 {
   "path": "/project",
@@ -275,6 +284,7 @@ Two differences from a long-running server:
 | Scan for risks | `/tea-rags:risk-assessment` | `rank_chunks` (4 presets) |
 | Debug a bug | `/tea-rags:bug-hunt` | `semantic_search` + `rank_chunks` (bugHunt preset) |
 | Generate new code | `/tea-rags:data-driven-generation` | (reads overlay from prior `explore`) |
+| Review a branch or MR | `/tea-rags:mr-review` | `review_changes` (codegraph) + `get_callers` / `find_similar` / `find_cycles` |
 
 ## See Also
 

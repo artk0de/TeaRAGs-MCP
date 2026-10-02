@@ -54,10 +54,13 @@ All providers share these tuning variables:
 | Cohere | 96 | API limit: 96 texts per request |
 | Voyage | 128 | Balanced for 120k token/request limit |
 
-Override with `EMBEDDING_TUNE_BATCH_SIZE` if needed.
+Override with `EMBEDDING_TUNE_BATCH_SIZE` if needed. The value is a ceiling:
+during a run the batch size moves below it toward the fastest measured size, and
+drops after a batch the server fails on size. See
+[Adaptive Embedding](/config/performance-tuning#adaptive-embedding).
 
 :::note Pipeline Concurrency
-`INGEST_PIPELINE_CONCURRENCY` controls pipeline worker concurrency (default: `1`). The pipeline already handles parallelism via batch accumulation, and increasing concurrency adds complexity without improving throughput for most providers. Leave at `1` unless you have a specific reason to change it.
+`INGEST_PIPELINE_CONCURRENCY` controls embedding concurrency (default: `1`). An Ollama endpoint on `localhost` / `127.x` / `::1` always runs at 1, because a local server processes one request at a time. For most providers the pipeline already gets its parallelism from batch accumulation; raise the value only for a remote endpoint with headroom. `EMBEDDING_TUNE_STATIC=true` applies it to every endpoint as written.
 :::
 
 See individual provider pages for provider-specific variables and setup instructions.

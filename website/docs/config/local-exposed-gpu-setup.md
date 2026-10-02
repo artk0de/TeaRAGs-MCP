@@ -536,6 +536,13 @@ QDRANT_TUNE_UPSERT_BATCH_SIZE=512
 QDRANT_TUNE_UPSERT_ORDERING=strong
 ```
 
+With adaptive embedding (the default), `EMBEDDING_TUNE_BATCH_SIZE` is the
+ceiling the run tunes below and `INGEST_PIPELINE_CONCURRENCY` is used as is,
+because a LAN address counts as a remote endpoint. If you also set
+`EMBEDDING_FALLBACK_URL` to a local Ollama, a failover to it drops the
+concurrency to 1 until the run returns to the GPU server. See
+[Adaptive Embedding](/config/performance-tuning#adaptive-embedding).
+
 See **[Performance Tuning](/config/performance-tuning)** for detailed benchmarks and topology comparison.
 
 ## Troubleshooting
