@@ -38,6 +38,13 @@ export interface RateLimitConfig {
    * never touch the network for provisioning. Ollama-only.
    */
   ollamaQuantization?: string;
+  /**
+   * Pull the model over /api/pull at startup when /api/show reports it
+   * missing (EMBEDDING_AUTO_PULL). Undefined at the class level (off) for the
+   * same reason as `ollamaQuantization`; the product default (on) lives in
+   * the config schema. Ollama-only.
+   */
+  ollamaAutoPull?: boolean;
 }
 
 export interface EmbeddingProvider {

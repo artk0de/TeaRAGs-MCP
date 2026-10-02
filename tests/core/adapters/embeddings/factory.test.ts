@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { EmbeddingConfig } from "../../../../src/bootstrap/config/index.js";
 import { ConfigValueInvalidError, ConfigValueMissingError } from "../../../../src/bootstrap/errors.js";
@@ -210,6 +210,20 @@ describe("EmbeddingProviderFactory", () => {
         );
 
         expect(provider).toBeInstanceOf(OllamaEmbeddings);
+      });
+
+      it("passes autoPull through, so a configured provider probes the model at startup", async () => {
+        const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+        try {
+          EmbeddingProviderFactory.create(
+            makeConfig({ provider: "ollama", baseUrl: "http://box:11434", autoPull: true }),
+          );
+          await vi.waitFor(() => {
+            expect(fetchSpy).toHaveBeenCalledWith("http://box:11434/api/show", expect.anything());
+          });
+        } finally {
+          fetchSpy.mockRestore();
+        }
       });
     });
 

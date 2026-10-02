@@ -97,6 +97,13 @@ export const embeddingSchema = z.object({
    * model guard enforces it). Defaults to `off` (unquantized) — opt in.
    */
   ollamaQuantization: z.enum(["off", "q8_0", "q5_K_M", "q4_K_M", "turbo"]).default("off"),
+  /**
+   * EMBEDDING_AUTO_PULL: when the Ollama server answers `/api/show` with 404
+   * for the configured model, pull it over `/api/pull` at startup instead of
+   * failing every embed with "model not found". Defaults to true; `false`
+   * restores the manual `ollama pull` step.
+   */
+  autoPull: booleanFromEnvWithDefault(true),
   openaiApiKey: z.string().optional(),
   cohereApiKey: z.string().optional(),
   voyageApiKey: z.string().optional(),

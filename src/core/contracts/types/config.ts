@@ -42,6 +42,8 @@ export interface EmbeddingConfig {
   ollamaNumGpu: number;
   /** Requested server-side model quantization: `turbo` | `q4_K_M` | `q5_K_M` | `q8_0` | `off`. Ollama-only. */
   ollamaQuantization: string;
+  /** EMBEDDING_AUTO_PULL: pull a model the Ollama server lacks at startup. Ollama-only. */
+  autoPull: boolean;
   openaiApiKey?: string;
   cohereApiKey?: string;
   voyageApiKey?: string;

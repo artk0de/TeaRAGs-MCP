@@ -243,3 +243,18 @@ export class OllamaModelMissingError extends EmbeddingError {
     });
   }
 }
+
+/** EMBEDDING_AUTO_PULL tried to fetch a missing model and the server could not. */
+export class OllamaModelPullFailedError extends EmbeddingError {
+  constructor(model: string, url: string, reason: string) {
+    super({
+      code: "INFRA_OLLAMA_MODEL_PULL_FAILED",
+      message: `Ollama model "${model}" is missing at ${url} and pulling it failed: ${reason}`,
+      hint:
+        `Try: ollama pull ${model}\n` +
+        `If pull fails, the model name may be wrong — check EMBEDDING_MODEL in your config.\n` +
+        `Set EMBEDDING_AUTO_PULL=false to skip the automatic pull.`,
+      httpStatus: 503,
+    });
+  }
+}

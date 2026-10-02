@@ -2979,4 +2979,54 @@ describe("OllamaEmbeddings", () => {
       }
     });
   });
+
+  describe("model auto-pull", () => {
+    const PRIMARY = "http://primary:11434";
+    const BASE = "unclemusclez/jina-embeddings-v2-base-code:latest";
+    const mockEmbedding = Array(768)
+      .fill(0)
+      .map((_, i) => i * 0.001);
+    const urls = () => mockFetch.mock.calls.map((c: any[]) => c[0] as string);
+
+    it("pulls a model the server does not have before the first embed", async () => {
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        mockFetch.mockResolvedValueOnce(new Response("", { status: 404 }));
+        mockFetch.mockResolvedValueOnce(new Response(`${JSON.stringify({ status: "success" })}\n`, { status: 200 }));
+        mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embeddings: [mockEmbedding] }) });
+
+        const provider = new OllamaEmbeddings(BASE, 768, { ollamaAutoPull: true }, PRIMARY, false, 999);
+        await provider.embedBatch(["chunk"]);
+
+        expect(urls()).toEqual([`${PRIMARY}/api/show`, `${PRIMARY}/api/pull`, `${PRIMARY}/api/embed`]);
+      } finally {
+        errSpy.mockRestore();
+      }
+    });
+
+    it("fails the first embed with the pull remedy when the pull fails", async () => {
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        mockFetch.mockResolvedValueOnce(new Response("", { status: 404 }));
+        mockFetch.mockResolvedValueOnce(new Response('{"error":"manifest unknown"}', { status: 500 }));
+
+        const provider = new OllamaEmbeddings(BASE, 768, { ollamaAutoPull: true }, PRIMARY, false, 999);
+
+        await expect(provider.embedBatch(["chunk"])).rejects.toMatchObject({
+          hint: expect.stringContaining(`ollama pull ${BASE}`),
+        });
+      } finally {
+        errSpy.mockRestore();
+      }
+    });
+
+    it("never probes or pulls when auto-pull is off (EMBEDDING_AUTO_PULL=false)", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embeddings: [mockEmbedding] }) });
+
+      const provider = new OllamaEmbeddings(BASE, 768, { ollamaAutoPull: false }, PRIMARY, false, 999);
+      await provider.embedBatch(["chunk"]);
+
+      expect(urls()).toEqual([`${PRIMARY}/api/embed`]);
+    });
+  });
 });

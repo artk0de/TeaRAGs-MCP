@@ -71,6 +71,8 @@ export const REGISTRY_ENV_GROUPS: readonly RegistryEnvGroup[] = [
   { canonical: "EMBEDDING_DEVICE", aliases: [], consequence: "runtime" },
   { canonical: "OLLAMA_LEGACY_API", aliases: [], consequence: "runtime" },
   { canonical: "OLLAMA_NUM_GPU", aliases: [], consequence: "runtime" },
+  // Whether a missing model is fetched before embedding — never which vectors.
+  { canonical: "EMBEDDING_AUTO_PULL", aliases: [], consequence: "runtime" },
   // trajectoryGit (parse.ts `trajectoryGit` section). The windows and the
   // session model change the COMPUTED signals; the timeouts, pool sizes and
   // concurrency only change how long computing them takes.

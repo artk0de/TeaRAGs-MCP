@@ -59,6 +59,7 @@ describe("buildRegistryEnvSnapshot", () => {
       EMBEDDING_DEVICE: "auto",
       OLLAMA_LEGACY_API: "false",
       OLLAMA_NUM_GPU: "999",
+      EMBEDDING_AUTO_PULL: "true",
       TRAJECTORY_GIT_ENABLED: "true",
       TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS: "12",
       TRAJECTORY_GIT_LOG_TIMEOUT_MS: "60000",

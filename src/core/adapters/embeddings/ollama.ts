@@ -27,6 +27,7 @@ import {
   OllamaUnavailableError,
 } from "./ollama/errors.js";
 import { parseModelInfo, type OllamaModelInfo } from "./ollama/model-info.js";
+import { ensureOllamaModelPresent } from "./ollama/model-pull.js";
 import {
   provisionQuantizedOllamaModel,
   resolveOllamaQuantizationLevel,
@@ -246,9 +247,25 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     }
 
     this.quantizationLevel = resolveOllamaQuantizationLevel(rateLimitConfig?.ollamaQuantization);
-    if (this.quantizationLevel !== "off") {
-      this.modelReady = this.applyQuantizedModel();
+    if (rateLimitConfig?.ollamaAutoPull || this.quantizationLevel !== "off") {
+      this.modelReady = this.provisionModel(rateLimitConfig?.ollamaAutoPull === true);
+      // A failed pull belongs to the first embed that awaits it, not to Node's unhandled-rejection hook.
+      void this.modelReady.catch(() => undefined);
     }
+  }
+
+  /** Pull the model when the server lacks it (EMBEDDING_AUTO_PULL), then provision the quantized copy. */
+  private async provisionModel(autoPull: boolean): Promise<void> {
+    if (autoPull) {
+      await this.healthReady;
+      await ensureOllamaModelPresent(this.resolveActiveUrl(), this.model, {
+        fetch,
+        log: (line) => {
+          console.error(`[Ollama] ${line}`);
+        },
+      });
+    }
+    if (this.quantizationLevel !== "off") await this.applyQuantizedModel();
   }
 
   /**
