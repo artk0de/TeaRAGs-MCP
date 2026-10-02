@@ -229,7 +229,7 @@ the operator runs them, once per build.
 - Tuner tests: concurrency climb converges to the fake server's optimum, seeds
   from the stored optimum, static pin.
 - CLI tests for `fetch-model` (mock registry, digest mismatch rejected) and for
-  `command` (`--list-devices` parsing, flag building, autostart command
+  `command` (flag building per device, the no-device hint, autostart command
   rendering per OS). The command must spawn nothing: assert no child process.
 - Live (user-gated): taxdome `--force` with llama-server on nucbox, compared
   with the 7600 s localhost run and with an Ollama run on the same host.
