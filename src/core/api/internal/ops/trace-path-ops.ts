@@ -40,6 +40,7 @@ import {
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { RankingOverlay } from "../../../contracts/types/reranker.js";
+import type { WorkingTreeOverlay } from "../../../domains/explore/index.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolveInheritedMemberDefiner } from "../../../domains/trajectory/codegraph/inherited-member-definer.js";
@@ -47,7 +48,7 @@ import { enumeratePaths } from "../../../domains/trajectory/codegraph/symbols/in
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import type { DeclaredVisibilityIndex } from "../../../infra/declared-visibility-index.js";
 import type { PathStep, PathTraceResult, TracedPath, TracePathRequest } from "../../public/dto/graph.js";
-import { resolveCollection } from "../collection-resolver.js";
+import { resolveWorkingTree } from "../collection-resolver.js";
 import { lookupDeclaredVisibility } from "./declared-visibility-lookup.js";
 
 const DEFAULT_MAX_DEPTH = 8;
@@ -70,6 +71,8 @@ export interface TracePathOpsDeps {
   reranker: Reranker;
   collectionRegistry: CollectionRegistry;
   resolveActiveCollection?: (collectionName: string) => Promise<PhysicalCollectionName>;
+  /** The `workingTree` marker source (bd tea-rags-mcp-xi2r9). Optional: absent (unit wiring), no marker. */
+  workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
 }
 
 const EMPTY: PathTraceResult = { paths: [], truncated: false };
@@ -91,12 +94,23 @@ type StepDanger = { score: number; overlay?: RankingOverlay };
 export class TracePathOps {
   constructor(private readonly deps: TracePathOpsDeps) {}
 
+  /**
+   * The trace, carrying the `workingTree` marker on every return path (bd
+   * tea-rags-mcp-xi2r9). The tree is measured beside the graph walk; edges stay
+   * the INDEX's, so `floors` is `[]`.
+   */
   async tracePath(req: TracePathRequest): Promise<PathTraceResult> {
+    const workingTree = resolveWorkingTree(this.deps.collectionRegistry, req);
+    const view = this.deps.workingTreeOverlay?.view(workingTree, req.project);
+    const result = await this.traceInCollection(req, workingTree.baseIndex.collectionName);
+    return view ? { ...result, workingTree: (await view).marker } : result;
+  }
+
+  private async traceInCollection(req: TracePathRequest, collectionName: string): Promise<PathTraceResult> {
     const maxDepth = req.maxDepth ?? DEFAULT_MAX_DEPTH;
     const maxPaths = req.maxPaths ?? DEFAULT_MAX_PATHS;
     const preset = req.rerank; // no default — danger overlay is opt-in (tea-rags-mcp-prqsj)
 
-    const { collectionName } = resolveCollection(this.deps.collectionRegistry, req);
     // No resolver, or a failed one: the addressed name, resolved against no aliases.
     const activePhysicalCollectionName = this.deps.resolveActiveCollection
       ? await this.deps

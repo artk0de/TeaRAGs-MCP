@@ -183,3 +183,27 @@ describe("SearchResultOutputSchema", () => {
     expect(result.codegraphWarning).toBe("codegraph fallback skipped [INFRA_CODEGRAPH_DAEMON_STALE_BUILD]");
   });
 });
+
+describe("SearchResultOutputSchema — workingTree (xi2r9.1)", () => {
+  const schema = z.object(SearchResultOutputSchema).strict();
+
+  it("validates a measured marker and a degraded one", () => {
+    const measured = {
+      tree: "/repo/wt",
+      indexedCommit: "a".repeat(40),
+      treeCommit: null,
+      indexedDirty: true,
+      changedFiles: 0,
+      deletedFiles: 0,
+      floors: [],
+    };
+    const degraded = {
+      ...measured,
+      indexedCommit: null,
+      degraded: { reason: "index has no indexedCommit stamp", remedy: "tea-rags index-codebase --project p" },
+    };
+
+    expect(schema.parse({ results: [], workingTree: measured }).workingTree).toEqual(measured);
+    expect(schema.parse({ results: [], workingTree: degraded }).workingTree).toEqual(degraded);
+  });
+});

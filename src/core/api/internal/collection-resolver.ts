@@ -13,6 +13,7 @@ import { basename, dirname, join, resolve } from "node:path";
 
 import { resolveGitCommonDir } from "../../adapters/vcs/git/common-dir.js";
 import type { CollectionEntry, PathCollectionResolver } from "../../contracts/types/registry.js";
+import type { WorkingTree } from "../../contracts/types/working-tree.js";
 import type { CollectionRegistry } from "../../domains/maintenance/registry/collection-registry.js";
 import {
   collectionAliasOfRegistryEntry,
@@ -123,14 +124,10 @@ export function resolveCollection(
  * One MCP server serves every subagent, and only the agent knows which tree it
  * stands in — so its working directory alone has to address both. The tree is
  * the caller's; the index is the lower layer the tree is compared with, which
- * for an unregistered linked worktree is its repository's main checkout.
+ * for an unregistered linked worktree is its repository's main checkout. The
+ * shape is declared in contracts, where the explore overlay can name it.
  */
-export interface WorkingTree {
-  /** realpath of the tree the caller stands in (git toplevel, not a subdir) */
-  root: string;
-  /** lower layer the tree is read against */
-  baseIndex: { collectionName: string; root: string | undefined };
-}
+export type { WorkingTree };
 
 /**
  * Nearest ancestor (inclusive) holding `.git` — the tree's toplevel. Filesystem
@@ -166,7 +163,7 @@ export function resolveWorkingTree(registry: CollectionRegistry, input: ResolveI
   if (input.collection !== undefined || input.project !== undefined) {
     const resolved = resolveCollection(registry, input);
     const indexRoot =
-      input.project !== undefined ? resolved.path : (registry.get?.(resolved.collectionName)?.path ?? undefined);
+      input.project !== undefined ? resolved.path : (registry?.get?.(resolved.collectionName)?.path ?? undefined);
     const root = input.path === undefined ? indexRoot : requireSameRepositoryTree(input, input.path, indexRoot);
     return { root: root ?? "", baseIndex: { collectionName: resolved.collectionName, root: indexRoot } };
   }
@@ -175,7 +172,7 @@ export function resolveWorkingTree(registry: CollectionRegistry, input: ResolveI
   const gitRoot = findWorkingTreeRoot(input.path);
   const treeRoot = gitRoot ?? validatePathSync(input.path);
   const entry =
-    registry.findByPath?.(treeRoot) ?? (gitRoot === undefined ? null : selectSameRepositoryEntry(registry, gitRoot));
+    registry?.findByPath?.(treeRoot) ?? (gitRoot === undefined ? null : selectSameRepositoryEntry(registry, gitRoot));
   if (entry) return { root: treeRoot, baseIndex: { collectionName: entry.collectionName, root: entry.path } };
 
   const resolved = resolveCollection(registry, { path: input.path });
@@ -205,7 +202,7 @@ function requireSameRepositoryTree(input: ResolveInput, path: string, indexRoot:
  */
 function selectSameRepositoryEntry(registry: CollectionRegistry, treeRoot: string): CollectionEntry | null {
   const commonDir = resolveGitCommonDir(treeRoot);
-  const candidates = registry.list().filter((entry) => entry.path && commonDirOf(entry.path) === commonDir);
+  const candidates = (registry?.list?.() ?? []).filter((entry) => entry.path && commonDirOf(entry.path) === commonDir);
   if (candidates.length === 0) return null;
 
   // The main checkout is the tree whose `.git` IS the shared dir; a bare

@@ -18,6 +18,7 @@ import {
   InvalidQueryError,
 } from "../../../domains/explore/errors.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
+import type { WorkingTreeOverlay } from "../../../domains/explore/working-tree/index.js";
 import type { IndexDriftReporter } from "../../../domains/maintenance/drift/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
@@ -58,6 +59,8 @@ export interface ExploreFacadeDeps {
    * per project (bd tea-rags-mcp-uebug).
    */
   enrichmentHealthFrameForPath?: (path: string) => readonly string[];
+  /** The `workingTree` marker source (bd tea-rags-mcp-xi2r9), threaded through to ExploreOps. */
+  workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
 }
 
 export class ExploreFacade {
@@ -79,6 +82,7 @@ export class ExploreFacade {
       visibilityResolver: deps.visibilityResolver,
       signalFloors: deps.signalFloors,
       enrichmentHealthFrameForPath: deps.enrichmentHealthFrameForPath,
+      workingTreeOverlay: deps.workingTreeOverlay,
     });
   }
 

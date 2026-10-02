@@ -282,3 +282,48 @@ describe("registerSearchTools — fields projection", () => {
     }
   });
 });
+
+// bd tea-rags-mcp-xi2r9.1 — every read answer says which working tree it read
+// and how far that tree is from the index. The marker rides structuredContent
+// next to driftWarning, on every search tool.
+describe("registerSearchTools — workingTree", () => {
+  const marker = {
+    tree: "/repo/wt",
+    indexedCommit: "a".repeat(40),
+    treeCommit: "b".repeat(40),
+    indexedDirty: false,
+    changedFiles: 3,
+    deletedFiles: 1,
+    floors: [],
+  };
+  const appMethods = {
+    semantic_search: "semanticSearch",
+    hybrid_search: "hybridSearch",
+    rank_chunks: "rankChunks",
+    find_similar: "findSimilar",
+    find_symbol: "findSymbol",
+  } as const;
+
+  it.each(Object.keys(appMethods) as (keyof typeof appMethods)[])(
+    "%s passes workingTree through to structuredContent",
+    async (toolName) => {
+      const { captured } = makeHarness({
+        [appMethods[toolName]]: vi.fn().mockResolvedValue({ results: [], workingTree: marker }),
+      });
+      const tool = captured.find((t) => t.name === toolName);
+
+      const result = (await tool!.handler({ path: "/x", query: "q", symbol: "s" }, {})) as {
+        structuredContent: { workingTree?: unknown };
+      };
+
+      expect(result.structuredContent.workingTree).toEqual(marker);
+    },
+  );
+
+  it("declares workingTree on the shared search output schema", () => {
+    const { captured } = makeHarness();
+    for (const tool of captured) {
+      expect(tool.config.outputSchema).toHaveProperty("workingTree");
+    }
+  });
+});

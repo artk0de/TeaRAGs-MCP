@@ -51,9 +51,11 @@ import type { PhysicalCollectionName } from "../core/contracts/types/collection-
 import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-executor.js";
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
 import type { PayloadKeyOwner } from "../core/contracts/types/trajectory.js";
+import { createWorkingTreeDeltaReader, WorkingTreeOverlay } from "../core/domains/explore/index.js";
 import { CollectionIndexingLock } from "../core/domains/ingest/infra/index.js";
 import { WorkerPoolEnrichmentExecutor } from "../core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
+import { FileScanner } from "../core/domains/ingest/pipeline/scanner.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import { QuarantineStore } from "../core/domains/ingest/sync/index.js";
 import { ShardedSnapshotManager } from "../core/domains/ingest/sync/snapshot/index.js";
@@ -681,6 +683,12 @@ export function wireCodegraph(
    * app's Qdrant by `createAppContext`; optional for the same reason as above.
    */
   readFileCommitCounts?: GraphFacadeDeps["readFileCommitCounts"],
+  /**
+   * The `workingTree` marker source for the graph tools (bd
+   * tea-rags-mcp-xi2r9). Built by `createAppContext`; optional for the same
+   * reason as above.
+   */
+  workingTreeOverlay?: GraphFacadeDeps["workingTreeOverlay"],
 ): CodegraphContext | undefined {
   // Defensive: legacy/mocked configs may omit the codegraph section
   // entirely. Treat that as "disabled" so the `codegraph.enabled` config
@@ -928,6 +936,7 @@ export function wireCodegraph(
     resolveActiveCollection,
     ...(readImportSpecifiers ? { readImportSpecifiers } : {}),
     ...(readFileCommitCounts ? { readFileCommitCounts } : {}),
+    ...(workingTreeOverlay ? { workingTreeOverlay } : {}),
   });
 
   // Keep-alive guard for the index run — see `createIndexRunDaemonGuard`. The
@@ -1113,6 +1122,13 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   });
   const resolveActiveCollection = async (name: string): Promise<PhysicalCollectionName> =>
     infra.qdrant.aliases.resolveActive(name);
+  // One overlay per process (bd tea-rags-mcp-xi2r9): its delta reader caches per
+  // tree, and every read surface — explore, graph, trace_path — shares it.
+  const workingTreeOverlay = new WorkingTreeOverlay({
+    registry: collectionRegistry,
+    deltaReader: createWorkingTreeDeltaReader(),
+    createFileFilter: createWorkingTreeFileFilter(config.ingestCode),
+  });
   const codegraphContext = wireCodegraph(
     config,
     zodConfig,
@@ -1120,6 +1136,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     resolveActiveCollection,
     async (collectionName, relPaths) => readPayloadImportSpecifiers(infra.qdrant, collectionName, relPaths),
     async (collectionName) => readPayloadFileCommitCounts(infra.qdrant, collectionName),
+    workingTreeOverlay,
   );
   const composition = wireComposition(zodConfig, config.trajectoryIngest, codegraphContext?.deps);
 
@@ -1137,6 +1154,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
         reranker: composition.reranker,
         collectionRegistry,
         resolveActiveCollection,
+        workingTreeOverlay,
       })
     : undefined;
 
@@ -1340,6 +1358,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     // slice `App.getIndexStatus` reads. A project whose registry env disables
     // git then has no git row on either surface (bd tea-rags-mcp-uebug).
     enrichmentHealthFrameForPath: (path) => projectIngestFactory.forPath(path).enrichmentProviderKeys,
+    workingTreeOverlay,
   });
   // NamingLexiconOps (bd tea-rags-mcp-4p3sb.12) reads cg_identifiers through the
   // same pool as TracePathOps, under the same codegraphContext guard, and runs
@@ -1520,6 +1539,26 @@ export function createConfiguredServer(
 // undefined when codegraph is disabled, so the whole fallback degrades to
 // today's behaviour end-to-end.
 // ---------------------------------------------------------------------------
+
+/**
+ * The ingest admission rule for one working tree (bd tea-rags-mcp-xi2r9): the
+ * same `FileScanner` ingest builds — extensions, built-in and project ignore
+ * files, configured patterns — loaded at the tree's root, so the working-tree
+ * delta never names a file an index run would not have indexed.
+ */
+export function createWorkingTreeFileFilter(
+  ingestCode: AppConfig["ingestCode"],
+): (root: string) => Promise<(relativePath: string) => boolean> {
+  return async (root) => {
+    const scanner = new FileScanner({
+      supportedExtensions: ingestCode.supportedExtensions,
+      ignorePatterns: ingestCode.ignorePatterns,
+      customIgnorePatterns: ingestCode.customIgnorePatterns,
+    });
+    await scanner.loadIgnorePatterns(root);
+    return (relativePath) => scanner.accepts(relativePath);
+  };
+}
 
 export function createSymbolChunkResolver(graphFacade?: GraphFacade): SymbolChunkResolver | undefined {
   if (!graphFacade) return undefined;

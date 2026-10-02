@@ -4,6 +4,7 @@
 
 import type { RankingOverlay, SignalLevel } from "../../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
+import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 import type { SearchConfidence } from "../../../domains/explore/index.js";
 import type { CollectionIdentifier } from "./common.js";
 
@@ -263,6 +264,13 @@ export interface ExploreResponse {
    * in the returned payloads carrying the same leaf. Results still return.
    */
   fieldsWarning?: string;
+  /**
+   * Which working tree the answer read and how far it is from the index (bd
+   * tea-rags-mcp-xi2r9). Present whenever the server wires the overlay — on
+   * every return path, empty results and `metaOnly` included. `degraded` names
+   * what could not be measured.
+   */
+  workingTree?: WorkingTreeMarker;
 }
 
 // ---------------------------------------------------------------------------

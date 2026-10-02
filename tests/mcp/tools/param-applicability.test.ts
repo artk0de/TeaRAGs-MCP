@@ -17,7 +17,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { buildToolSurface, type ToolSurface } from "../../../scripts/measure-tools-list.js";
-import { TYPED_FILTER_PARAM_NAMES } from "../../../src/mcp/tools/schemas.js";
+import { TYPED_FILTER_PARAM_NAMES, WORKING_TREE_PATH_HINT } from "../../../src/mcp/tools/schemas.js";
 
 /** Longest inline param hint; reference prose belongs to tea-rags://schema/overview. */
 const MAX_PARAM_HINT_WORDS = 20;
@@ -82,6 +82,19 @@ describe("MCP param × tool applicability", () => {
     expect(exposure.size).toBeGreaterThan(0);
     const distinct = new Set([...exposure.values()].map((params) => params.join(",")));
     expect(distinct.size).toBe(1);
+  });
+
+  // bd tea-rags-mcp-xi2r9: every read tool addressed by the { collection, project, path }
+  // triad resolves `path` through resolveWorkingTree, so all of them state ONE hint.
+  it("every triad-addressed tool states the working-tree path hint", () => {
+    const triadTools = on.tools.filter((tool) =>
+      ["collection", "project", "path"].every((p) => paramNames(tool).includes(p)),
+    );
+    expect(triadTools.length).toBeGreaterThan(0);
+    const drifted = triadTools
+      .filter((tool) => Object.fromEntries(paramDescriptions(tool)).path !== WORKING_TREE_PATH_HINT)
+      .map((tool) => tool.name);
+    expect(drifted).toEqual([]);
   });
 
   it("every param hint stays within the inline word budget", () => {

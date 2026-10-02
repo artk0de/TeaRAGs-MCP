@@ -3,6 +3,8 @@
  * All MCP tool handlers use these to format responses.
  */
 
+import type { WorkingTreeMarker } from "../core/api/public/dto/working-tree.js";
+
 export interface McpToolResult {
   [key: string]: unknown;
   content: { type: "text"; text: string }[];
@@ -40,6 +42,19 @@ export function appendDriftWarning(result: McpToolResult, warning: string | null
   const last = result.content[result.content.length - 1];
   last.text += `\n\n${warning}`;
   return result;
+}
+
+/**
+ * One-line text render of the `workingTree` marker (bd tea-rags-mcp-xi2r9) for
+ * the text-output tools; structured tools carry the object itself.
+ */
+export function formatWorkingTreeMarker(marker: WorkingTreeMarker): string {
+  const sha = (commit: string | null): string => (commit ? commit.slice(0, 7) : "none");
+  const floors = marker.floors.length > 0 ? marker.floors.join(",") : "none";
+  const line =
+    `workingTree: ${marker.tree} · index @${sha(marker.indexedCommit)} · tree @${sha(marker.treeCommit)}` +
+    ` · changed ${marker.changedFiles} · deleted ${marker.deletedFiles} · floors ${floors}`;
+  return marker.degraded ? `${line} · degraded: ${marker.degraded.reason} → ${marker.degraded.remedy}` : line;
 }
 
 /**

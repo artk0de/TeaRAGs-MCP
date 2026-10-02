@@ -11,6 +11,7 @@
 
 import type { CycleScope, DeclaredSymbolVisibility, RelPath, SymbolId } from "../../../contracts/types/codegraph.js";
 import type { RankingOverlay } from "../../../contracts/types/reranker.js";
+import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 
 export interface GetCallersRequest {
   /** Project alias from the collection registry — RECOMMENDED. */
@@ -71,8 +72,18 @@ export interface AmbiguousCallerResult {
  * `get_callers` / `get_callees` answer: symbol scope when the request named a
  * `symbolId`, file scope when it named a `relativePath`.
  */
-export type GetCallersResponse = SymbolCallersResponse | FileImportersResponse;
-export type GetCalleesResponse = SymbolCalleesResponse | FileImportsResponse;
+export type GetCallersResponse = (SymbolCallersResponse | FileImportersResponse) & WorkingTreeMarkerField;
+export type GetCalleesResponse = (SymbolCalleesResponse | FileImportsResponse) & WorkingTreeMarkerField;
+
+/**
+ * Which working tree a graph answer was read for (bd tea-rags-mcp-xi2r9). The
+ * codegraph has no working-tree floor, so `floors` is always `[]`: edges are
+ * the INDEX's, and `changedFiles` says how far the tree has moved from them.
+ * Present whenever the server wires the overlay, on every return path.
+ */
+export interface WorkingTreeMarkerField {
+  workingTree?: WorkingTreeMarker;
+}
 
 /**
  * One file on the other end of a file edge (bd tea-rags-mcp-gfvr8): an importer
@@ -210,7 +221,7 @@ export interface CycleMemberLocation {
   relativePath: RelPath;
 }
 
-export interface FindCyclesResponse {
+export interface FindCyclesResponse extends WorkingTreeMarkerField {
   cycles: CycleResult[];
 }
 
@@ -279,7 +290,7 @@ export interface TracedPath {
   aggregateDanger?: number;
 }
 
-export interface PathTraceResult {
+export interface PathTraceResult extends WorkingTreeMarkerField {
   /** Sorted by aggregateDanger, most dangerous first. */
   paths: TracedPath[];
   /** True if maxPaths/maxDepth capped enumeration. */

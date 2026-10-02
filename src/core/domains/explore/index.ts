@@ -40,3 +40,12 @@ export type {
   ExploreStrategy,
   SimilarSearchInput,
 } from "./strategies/index.js";
+export { createWorkingTreeDeltaReader, WORKING_TREE_DELTA_FILE_CAP, WorkingTreeOverlay } from "./working-tree/index.js";
+export type {
+  WorkingTreeDelta,
+  WorkingTreeDeltaRead,
+  WorkingTreeDeltaReader,
+  WorkingTreeIndexLookup,
+  WorkingTreeOverlayDeps,
+  WorkingTreeView,
+} from "./working-tree/index.js";

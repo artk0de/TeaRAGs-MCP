@@ -95,7 +95,7 @@ import type {
   OntologyValueKind,
   OntologyVerbGroup,
 } from "../../public/dto/ontology.js";
-import { resolveCollection } from "../collection-resolver.js";
+import { resolveWorkingTree } from "../collection-resolver.js";
 
 /** Default `GetOntologyReportRequest.limit`. */
 export const DEFAULT_ONTOLOGY_REPORT_LIMIT = 20;
@@ -334,7 +334,7 @@ export class OntologyReportOps {
     const language = req.language ? this.languageProfile(req.language) : undefined;
     const query = this.buildQuery(req, language);
 
-    const { collectionName } = resolveCollection(this.deps.collectionRegistry, req);
+    const { collectionName } = resolveWorkingTree(this.deps.collectionRegistry, req).baseIndex;
     const activePhysicalCollectionName = this.deps.resolveActiveCollection
       ? await this.deps
           .resolveActiveCollection(collectionName)

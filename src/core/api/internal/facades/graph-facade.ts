@@ -36,6 +36,8 @@ import type {
   SymbolVisibilityRow,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
+import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
+import type { WorkingTreeOverlay } from "../../../domains/explore/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import {
   resolveInheritedMemberDefiner,
@@ -53,7 +55,7 @@ import type {
   GetCallersRequest,
   GetCallersResponse,
 } from "../../public/dto/graph.js";
-import { resolveCollection } from "../collection-resolver.js";
+import { resolveCollection, resolveWorkingTree } from "../collection-resolver.js";
 import { ArchitectureReportOps } from "../ops/architecture-report-ops.js";
 import { CochangeOps } from "../ops/cochange-ops.js";
 import { decorateCallees, decorateCallers } from "../ops/declared-visibility-lookup.js";
@@ -91,6 +93,11 @@ export interface GraphFacadeDeps {
    * (bd tea-rags-mcp-r8hme.14). Optional: absent, pain is judged on D alone.
    */
   readFileCommitCounts?: (collectionName: string) => Promise<ReadonlyMap<RelPath, number>>;
+  /**
+   * The `workingTree` marker source (bd tea-rags-mcp-xi2r9) for get_callers,
+   * get_callees and find_cycles. Optional: absent (unit wiring), no marker.
+   */
+  workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
 }
 
 const DEFAULT_LIMIT = 50;
@@ -189,7 +196,32 @@ export class GraphFacade {
     fn: (handle: CollectionGraphHandle) => Promise<T>,
     fallback: T,
   ): Promise<T> {
-    const { collectionName } = resolveCollection(this.deps.collectionRegistry, addr);
+    const { collectionName } = resolveWorkingTree(this.deps.collectionRegistry, addr).baseIndex;
+    return this.readGraph(collectionName, fn, fallback);
+  }
+
+  /**
+   * {@link withReadHandle} for the answers that carry the `workingTree` marker
+   * (bd tea-rags-mcp-xi2r9): the tree is measured beside the graph read, and
+   * the marker rides on whatever the read returns — the no-graph fallback
+   * included. The overlay never rejects; a read failure still throws.
+   */
+  private async withMarkedReadHandle<T extends object>(
+    addr: GraphAddressing,
+    fn: (handle: CollectionGraphHandle) => Promise<T>,
+    fallback: T,
+  ): Promise<T & { workingTree?: WorkingTreeMarker }> {
+    const workingTree = resolveWorkingTree(this.deps.collectionRegistry, addr);
+    const view = this.deps.workingTreeOverlay?.view(workingTree, addr.project);
+    const result = await this.readGraph(workingTree.baseIndex.collectionName, fn, fallback);
+    return view ? { ...result, workingTree: (await view).marker } : result;
+  }
+
+  private async readGraph<T>(
+    collectionName: string,
+    fn: (handle: CollectionGraphHandle) => Promise<T>,
+    fallback: T,
+  ): Promise<T> {
     // Expand a Qdrant alias to the active versioned collection so the codegraph
     // pool opens the DuckDB file the write path actually populated (see
     // resolveActiveCollection doc). No resolver, or a failed one, falls back to
@@ -228,14 +260,14 @@ export class GraphFacade {
         throw new InvalidParameterError("includeAmbiguous", "applies to a symbolId target only, not to relativePath");
       }
       const limit = req.limit ?? DEFAULT_LIMIT;
-      return this.withReadHandle(
+      return this.withMarkedReadHandle(
         req,
         async (handle) => this.fileImports.importers(handle.graphDb, target.relativePath, limit),
         FileImportOps.emptyImporters(target.relativePath),
       );
     }
     const { symbolId } = target;
-    return this.withReadHandle(
+    return this.withMarkedReadHandle(
       req,
       async (handle) => {
         const read = await readSymbolEdges(handle.graphDb, symbolId, async (id) => handle.graphDb.getCallers(id));
@@ -273,14 +305,14 @@ export class GraphFacade {
     const target = graphTarget(req);
     if (target.kind === "file") {
       const limit = req.limit ?? DEFAULT_LIMIT;
-      return this.withReadHandle(
+      return this.withMarkedReadHandle(
         req,
         async (handle) => this.fileImports.imports(handle.graphDb, target.relativePath, limit),
         FileImportOps.emptyImports(target.relativePath),
       );
     }
     const { symbolId } = target;
-    return this.withReadHandle(
+    return this.withMarkedReadHandle(
       req,
       async (handle) => {
         const read = await readSymbolEdges(handle.graphDb, symbolId, async (id) => handle.graphDb.getCallees(id));
@@ -307,7 +339,7 @@ export class GraphFacade {
 
   async getArchitectureReport(req: GetArchitectureReportRequest): Promise<GetArchitectureReportResponse> {
     const { readImportSpecifiers, readFileCommitCounts } = this.deps;
-    const addressedCollection = () => resolveCollection(this.deps.collectionRegistry, req).collectionName;
+    const addressedCollection = () => resolveWorkingTree(this.deps.collectionRegistry, req).baseIndex.collectionName;
     const importSpecifiers = readImportSpecifiers
       ? async (relPaths: readonly RelPath[]) => readImportSpecifiers(addressedCollection(), relPaths)
       : undefined;
@@ -338,7 +370,7 @@ export class GraphFacade {
   }
 
   async findCycles(req: FindCyclesRequest): Promise<FindCyclesResponse> {
-    return this.withReadHandle(
+    return this.withMarkedReadHandle(
       req,
       async (handle) => {
         const entries = await handle.graphDb.findCycles(req.scope, req.pathPattern);

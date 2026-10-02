@@ -85,6 +85,21 @@ export const SearchResultOutputSchema = {
         "answer may be the default, not the corpus. Re-run with the named clearWith param to see " +
         "the excluded population. Absent whenever you passed your own 'filter'.",
     ),
+  workingTree: z
+    .object({
+      tree: z.string(),
+      indexedCommit: z.string().nullable(),
+      treeCommit: z.string().nullable(),
+      indexedDirty: z.boolean(),
+      changedFiles: z.number(),
+      deletedFiles: z.number(),
+      floors: z.array(z.enum(["chunks", "sparse"])),
+      degraded: z.object({ reason: z.string(), remedy: z.string() }).optional(),
+    })
+    .optional()
+    .describe(
+      "Tree read vs index commit. changedFiles 0 = measured clean; floors = rows reflect tree; degraded = run remedy.",
+    ),
   codegraphWarning: z
     .string()
     .optional()

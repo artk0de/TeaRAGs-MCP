@@ -6,7 +6,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { App, SchemaBuilder } from "../../../core/api/public/index.js";
-import { appendDriftWarning, formatMcpText, sanitizeRerank } from "../../format.js";
+import { appendDriftWarning, formatMcpText, formatWorkingTreeMarker, sanitizeRerank } from "../../format.js";
 import type { RegisterToolFn } from "../../middleware/error-handler.js";
 import { createSearchSchemas } from "../schemas.js";
 
@@ -37,8 +37,9 @@ export function registerSearchTools(
         rerank: sanitizeRerank(rerank as string | { custom: Record<string, number | undefined> } | undefined),
       });
 
+      const workingTreeLine = response.workingTree ? `\n\n${formatWorkingTreeMarker(response.workingTree)}` : "";
       if (response.results.length === 0) {
-        return formatMcpText(`No results found for query: "${rest.query}"`);
+        return formatMcpText(`No results found for query: "${rest.query}"${workingTreeLine}`);
       }
 
       // Format ExploreResult payload → human-readable text (MCP layer responsibility)
@@ -60,7 +61,7 @@ export function registerSearchTools(
         })
         .join("\n");
 
-      const text = `Found ${response.results.length} result(s):\n${formattedResults}`;
+      const text = `Found ${response.results.length} result(s):\n${formattedResults}${workingTreeLine}`;
       return appendDriftWarning(formatMcpText(text), response.driftWarning);
     },
   );
