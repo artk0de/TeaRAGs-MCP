@@ -203,6 +203,7 @@ export class SourceFileIngestor {
           scopeLineRanges: chunk.metadata.scopeLineRanges,
           memberRowCounts: chunk.metadata.memberRowCounts,
           memberSymbolIds: chunk.metadata.memberSymbolIds,
+          memberLineRanges: chunk.metadata.memberLineRanges,
           ...(imports.length > 0 && { imports }),
         } as CodeChunk["metadata"],
       };

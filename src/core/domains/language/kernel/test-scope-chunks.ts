@@ -8,8 +8,11 @@
  * that once is what makes a test file's outline read the same in every
  * language, and what keeps the symbolId shape out of eight hooks.
  *
- * The unit is the EXAMPLE. Every example is its own chunk — its scope title
- * path, then the example — so `find_symbol` can address one example. Setup is
+ * The unit is the EXAMPLE: every example is addressable by its own id — its
+ * scope title path, then the example. Adjacent examples of one scope are
+ * PACKED into one chunk up to `EXAMPLE_GROUP_BUDGET_CHARS` (bd
+ * tea-rags-mcp-g5i0a), each member carrying its id, line range and row count,
+ * so `find_symbol` still answers one example with that example alone. Setup is
  * stored ONCE per scope (bd tea-rags-mcp-5xpq4): the own setup and other lines
  * of consecutive scopes are PACKED into one `test_setup` chunk up to the
  * content budget (one chunk per scope doubled the point count of a
@@ -23,10 +26,10 @@
  * at x1.75 of their source size.
  *
  * Examples too short to carry a searchable signal on their own
- * (`it { is_expected.to be_valid }`) are GROUPED with their tiny siblings, never
- * dropped. A group chunk, like a setup pack, is named after its first member
- * and lists every member in `memberSymbolIds`, the field `find_symbol` answers
- * a member id from.
+ * (`it { is_expected.to be_valid }`) are never dropped: alone in their run,
+ * they join the nearest pack of their scope. A pack chunk, like a setup pack,
+ * is named after its first member and lists every member in
+ * `memberSymbolIds`, the field `find_symbol` answers a member id from.
  *
  * symbolIds (`.claude/rules/test-spec-chunking.md`):
  *   scope    `${topLevelName}.${scope.name}`
@@ -58,6 +61,17 @@ import {
  * example is grouped with its tiny siblings, a setup-only leaf is dropped.
  */
 const MIN_TEST_CHUNK_CONTENT = 50;
+
+/**
+ * The most characters one pack of adjacent examples may hold (bd
+ * tea-rags-mcp-g5i0a). Packing only examples under `MIN_TEST_CHUNK_CONTENT`
+ * grouped 7 of 74,952 test points on the taxdome index; one point per example
+ * of a one-line-assertion spec is the same tiny-chunk problem the setup packs
+ * solved. 1500 holds the run of short siblings a policy or component spec is
+ * made of while staying a third of the 4500 chunk cap, so a search hit still
+ * reads as a handful of examples rather than a file.
+ */
+export const EXAMPLE_GROUP_BUDGET_CHARS = 1500;
 
 type ScopeEvent = { kind: "scope"; scope: TestScope; ancestors: TestScope[] };
 type ExampleEvent = { kind: "example"; example: TestExample; scope: TestScope; ancestors: TestScope[] };
@@ -131,11 +145,11 @@ export function produceTestScopeChunks(
     slots.push(pending);
   }
 
-  // Each tiny group is emitted at the slot of its earliest member.
+  // Each example pack is emitted at the slot of its earliest member.
   const groupAt = new Map<PendingExample, PendingExample[]>();
   const grouped = new Set<PendingExample>();
   for (const scope of scopesOf(root)) {
-    for (const group of tinyGroups(scope, pendingOf, contentBudget)) {
+    for (const group of examplePacks(scope, pendingOf, contentBudget)) {
       groupAt.set(group[0], group);
       for (const member of group) grouped.add(member);
     }
@@ -235,22 +249,31 @@ function withScopeHeader(header: string[], body: string, maxChunkSize: number): 
 }
 
 /**
- * The tiny examples of one scope, grouped. A run of consecutive tiny siblings
- * (no larger example and no child scope between them) is a group; a lone tiny
- * example joins the nearest group of its scope, or — with no group to join —
- * the other lone ones; a single tiny example in its scope stays alone. Each
- * group is cut at the content budget in source order. Groups of one are not
- * returned: that example is emitted as itself.
+ * The example packs of one scope (bd tea-rags-mcp-g5i0a). A run is the
+ * examples of the scope with no child scope between them — packing never
+ * crosses one, and every member therefore shares one setup chain. Its own
+ * setup lines between two examples do not break a run: they live in the
+ * scope's setup chunk, so no example text is re-ordered around them.
+ *
+ * Each run is cut greedily, in source order, into packs whose content stays
+ * within the pack budget (`EXAMPLE_GROUP_BUDGET_CHARS`, never above the
+ * engine's content budget); an example over the budget on its own stays
+ * single. A lone tiny example — the only example of its run, under
+ * `MIN_TEST_CHUNK_CONTENT` — first joins the nearest run of several in its
+ * scope, or with none to join the other lone tiny ones, so the bd
+ * tea-rags-mcp-5xpq4 grouping of signal-free examples still holds across a
+ * child scope. Packs of one are not returned: that example is emitted as itself.
  */
-function tinyGroups(scope: TestScope, pendingOf: Map<TestExample, PendingExample>, budget: number): PendingExample[][] {
+function examplePacks(
+  scope: TestScope,
+  pendingOf: Map<TestExample, PendingExample>,
+  contentBudget: number,
+): PendingExample[][] {
   const runs: PendingExample[][] = [];
   let run: PendingExample[] = [];
   for (const member of membersOf(scope)) {
     const pending = isScope(member) ? undefined : pendingOf.get(member);
-    // Judged on the example's own text: the title rows are context, and a
-    // header long enough to clear the floor would carry an example whose own
-    // signal is still nil (bd tea-rags-mcp-5xpq4 — grouped, not header-padded).
-    if (pending && pending.example.text.trim().length < MIN_TEST_CHUNK_CONTENT) {
+    if (pending) {
       run.push(pending);
       continue;
     }
@@ -260,16 +283,22 @@ function tinyGroups(scope: TestScope, pendingOf: Map<TestExample, PendingExample
   if (run.length > 0) runs.push(run);
 
   const groups = runs.filter((r) => r.length > 1);
-  const lones = runs.filter((r) => r.length === 1).map((r) => r[0]);
+  const singles = runs.filter((r) => r.length === 1).map((r) => r[0]);
+  // Judged on the example's own text: the title rows are context, and a header
+  // long enough to clear the floor would carry an example whose own signal is
+  // still nil (bd tea-rags-mcp-5xpq4 — grouped, not header-padded).
+  const lones = singles.filter((s) => s.example.text.trim().length < MIN_TEST_CHUNK_CONTENT);
   if (groups.length === 0) {
     if (lones.length > 1) groups.push(lones);
   } else {
     for (const lone of lones) nearestGroup(groups, lone).push(lone);
   }
+  const packBudget = Math.min(EXAMPLE_GROUP_BUDGET_CHARS, contentBudget);
   return groups.flatMap((group) =>
     cutAtBudget(
       group.sort((a, b) => a.example.startLine - b.example.startLine),
-      budget,
+      packBudget,
+      contentBudget,
     ).filter((piece) => piece.length > 1),
   );
 }
@@ -280,13 +309,13 @@ function nearestGroup(groups: PendingExample[][], lone: PendingExample): Pending
   return groups.reduce((best, group) => (distance(group) < distance(best) ? group : best));
 }
 
-/** Consecutive pieces of a group, each fitting the budget under the scope title path. */
-function cutAtBudget(members: PendingExample[], budget: number): PendingExample[][] {
+/** Consecutive pieces of a group, each fitting the pack budget under the scope title path. */
+function cutAtBudget(members: PendingExample[], packBudget: number, contentBudget: number): PendingExample[][] {
   const pieces: PendingExample[][] = [];
   let piece: PendingExample[] = [];
   for (const member of members) {
     const candidate = [...piece, member];
-    if (piece.length > 0 && groupContent(candidate, budget).length > budget) {
+    if (piece.length > 0 && groupContent(candidate, contentBudget).length > packBudget) {
       pieces.push(piece);
       piece = [member];
     } else {
@@ -301,7 +330,13 @@ function groupContent(members: PendingExample[], budget: number): string {
   return withScopeHeader(members[0].header, members.map((m) => m.example.text.trim()).join("\n"), budget);
 }
 
-/** One chunk carrying a group of tiny sibling examples, named after its first member. */
+/**
+ * One chunk packing adjacent examples of one scope, named after its first
+ * member. Per member, aligned and in source order — the shape a setup pack
+ * carries: its id (`memberSymbolIds`), its own line range (`lineRanges`) and
+ * its row count in `content` after the scope title rows (`memberRowCounts`),
+ * which is what lets explore answer one member's id with that member alone.
+ */
 function groupChunk(members: PendingExample[], scopeId: string, budget: number): BodyChunkResult {
   const [first] = members;
   const last = members[members.length - 1];
@@ -315,6 +350,7 @@ function groupChunk(members: PendingExample[], scopeId: string, budget: number):
     name: first.example.name,
     parentSymbolId: scopeId,
     parentType: TEST_SCOPE_PARENT_TYPE,
+    memberRowCounts: members.map((m) => m.example.text.trim().split("\n").length),
     memberSymbolIds: members.map((m) => m.symbolId),
   };
 }

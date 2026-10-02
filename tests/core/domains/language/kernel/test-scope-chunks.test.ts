@@ -8,7 +8,10 @@ import {
   type TestScope,
   type TestScopeLine,
 } from "../../../../../src/core/contracts/types/chunker.js";
-import { produceTestScopeChunks } from "../../../../../src/core/domains/language/kernel/test-scope-chunks.js";
+import {
+  EXAMPLE_GROUP_BUDGET_CHARS,
+  produceTestScopeChunks,
+} from "../../../../../src/core/domains/language/kernel/test-scope-chunks.js";
 
 const CONFIG = { maxChunkSize: 2500 };
 
@@ -24,6 +27,25 @@ function example(name: string, startLine: number, body = "expect(subject.value).
 /** A one-line example whose own chunk is under the 50-character floor. */
 function tiny(name: string, startLine: number): TestExample {
   return { name, text: `${name} { is_expected.to be_valid }`, startLine, endLine: startLine };
+}
+
+/** A three-row example whose own text is exactly `chars` long. */
+function sized(name: string, startLine: number, chars: number): TestExample {
+  const shell = `  ${name} do\n    \n  end`;
+  return example(name, startLine, "x".repeat(Math.max(0, chars - shell.length)));
+}
+
+/** A packed chunk's members, each as its own rows: the shared header, then the member's rows. */
+function sliceMembers(chunk: BodyChunkResult): string[] {
+  const rows = chunk.content.split("\n");
+  const counts = chunk.memberRowCounts ?? [];
+  const header = rows.length - counts.reduce((a, b) => a + b, 0);
+  let offset = header;
+  return counts.map((n) => {
+    const member = [...rows.slice(0, header), ...rows.slice(offset, offset + n)].join("\n");
+    offset += n;
+    return member;
+  });
 }
 
 function exampleChunks(chunks: BodyChunkResult[]): BodyChunkResult[] {
@@ -57,11 +79,13 @@ describe("produceTestScopeChunks", () => {
 
       const chunks = exampleChunks(produceTestScopeChunks(root, "Worker", CONFIG));
 
-      expect(chunks.map((c) => c.symbolId)).toEqual([
+      // INVARIANT CHANGED (bd tea-rags-mcp-g5i0a): the two adjacent examples
+      // share one pack, each still addressed by its own member id.
+      expect(chunks.flatMap((c) => c.memberSymbolIds ?? [c.symbolId])).toEqual([
         "Worker.RSpec.describe Worker.it 'performs the operation'",
         "Worker.RSpec.describe Worker.it 'finalizes the operation'",
       ]);
-      expect(chunks.map((c) => c.name)).toEqual(["it 'performs the operation'", "it 'finalizes the operation'"]);
+      expect(chunks.map((c) => c.name)).toEqual(["it 'performs the operation'"]);
       expect(chunks.every((c) => c.parentSymbolId === "Worker.RSpec.describe Worker")).toBe(true);
       expect(chunks.every((c) => c.chunkType === "test")).toBe(true);
       expect(chunks.every((c) => c.parentType === TEST_SCOPE_PARENT_TYPE)).toBe(true);
@@ -408,19 +432,34 @@ describe("produceTestScopeChunks", () => {
 
       const chunks = exampleChunks(produceTestScopeChunks(root, "User", CONFIG));
 
-      expect(chunks.map((c) => c.symbolId)).toEqual([
-        "User.describe User.it 'a'",
-        "User.describe User.it 'is a real example'",
-      ]);
+      // INVARIANT CHANGED (bd tea-rags-mcp-g5i0a): the real example sits in the
+      // same run as its tiny siblings, so all four share one pack.
+      expect(chunks.map((c) => c.symbolId)).toEqual(["User.describe User.it 'a'"]);
       expect(chunks[0].memberSymbolIds).toEqual([
         "User.describe User.it 'a'",
+        "User.describe User.it 'is a real example'",
         "User.describe User.it 'b'",
         "User.describe User.it 'c'",
       ]);
       expect(chunks[0].lineRanges).toEqual([
         { start: 2, end: 2 },
+        { start: 4, end: 6 },
         { start: 10, end: 10 },
         { start: 11, end: 11 },
+      ]);
+    });
+
+    it("folds a lone tiny example across a child scope into the nearest pack of its own scope (g5i0a)", () => {
+      const root = scope("describe User", 1, 30, {
+        examples: [tiny("it 'a'", 2), tiny("it 'b'", 10), tiny("it 'c'", 11)],
+        children: [scope("context 'nested'", 4, 8, { examples: [example("it 'is a real example'", 5)] })],
+      });
+
+      const chunks = exampleChunks(produceTestScopeChunks(root, "User", CONFIG));
+
+      expect(chunks.map((c) => c.memberSymbolIds ?? [c.symbolId])).toEqual([
+        ["User.describe User.it 'a'", "User.describe User.it 'b'", "User.describe User.it 'c'"],
+        ["User.context 'nested'.it 'is a real example'"],
       ]);
     });
 
@@ -464,6 +503,144 @@ describe("produceTestScopeChunks", () => {
     });
   });
 
+  describe("adjacent examples of one scope are packed up to the group budget (g5i0a)", () => {
+    it("budgets a pack at 1500 characters", () => {
+      expect(EXAMPLE_GROUP_BUDGET_CHARS).toBe(1500);
+    });
+
+    it("packs adjacent examples greedily in source order while the pack stays within the budget", () => {
+      const examples = Array.from({ length: 5 }, (_, i) => sized(`it 'case ${i}'`, 2 + i * 4, 700));
+      const root = scope("describe Policy", 1, 30, { examples });
+
+      const chunks = produceTestScopeChunks(root, "Policy", { maxChunkSize: 4500 });
+
+      expect(chunks.map((c) => c.memberSymbolIds ?? [c.symbolId])).toEqual([
+        ["Policy.describe Policy.it 'case 0'", "Policy.describe Policy.it 'case 1'"],
+        ["Policy.describe Policy.it 'case 2'", "Policy.describe Policy.it 'case 3'"],
+        ["Policy.describe Policy.it 'case 4'"],
+      ]);
+      expect(chunks.every((c) => c.content.length <= EXAMPLE_GROUP_BUDGET_CHARS)).toBe(true);
+      expect(chunks.every((c) => c.chunkType === "test" && c.parentType === TEST_SCOPE_PARENT_TYPE)).toBe(true);
+      expect(chunks[2]).not.toHaveProperty("memberSymbolIds");
+      expect(chunks[2].content).toBe(examples[4].text.trim());
+    });
+
+    it("never packs across a child scope between examples, nor across scopes", () => {
+      const root = scope("describe Cart", 1, 40, {
+        examples: [
+          example("it 'starts empty'", 2),
+          example("it 'adds an item'", 6),
+          example("it 'totals'", 30),
+          example("it 'clears'", 34),
+        ],
+        children: [
+          scope("context 'with a coupon'", 10, 20, {
+            examples: [example("it 'applies the discount'", 12), example("it 'caps the discount'", 16)],
+          }),
+        ],
+      });
+
+      const chunks = produceTestScopeChunks(root, "Cart", CONFIG);
+
+      expect(chunks.map((c) => c.memberSymbolIds ?? [c.symbolId])).toEqual([
+        ["Cart.describe Cart.it 'starts empty'", "Cart.describe Cart.it 'adds an item'"],
+        [
+          "Cart.context 'with a coupon'.it 'applies the discount'",
+          "Cart.context 'with a coupon'.it 'caps the discount'",
+        ],
+        ["Cart.describe Cart.it 'totals'", "Cart.describe Cart.it 'clears'"],
+      ]);
+      expect(chunks[1].parentSymbolId).toBe("Cart.context 'with a coupon'");
+    });
+
+    it("keeps an example over the budget single and packs its neighbours around it", () => {
+      const big = sized("it 'is huge'", 6, EXAMPLE_GROUP_BUDGET_CHARS + 100);
+      const root = scope("describe Report", 1, 30, {
+        examples: [example("it 'starts'", 2), big, example("it 'renders'", 10), example("it 'exports'", 14)],
+      });
+
+      const chunks = produceTestScopeChunks(root, "Report", { maxChunkSize: 4500 });
+
+      expect(chunks.map((c) => c.memberSymbolIds ?? [c.symbolId])).toEqual([
+        ["Report.describe Report.it 'starts'"],
+        ["Report.describe Report.it 'is huge'"],
+        ["Report.describe Report.it 'renders'", "Report.describe Report.it 'exports'"],
+      ]);
+      expect(chunks[1].content).toBe(big.text.trim());
+      expect(chunks[1].partHeader).toBe("it 'is huge' do");
+    });
+
+    it("never packs a delegating setup line with examples: it keeps its own test chunk", () => {
+      const root = scope("describe Mailer", 1, 20, {
+        setupLines: [line("  it_behaves_like 'a notifier that retries delivery'", 6, true)],
+        examples: [example("it 'delivers'", 2), example("it 'retries'", 8)],
+      });
+
+      const chunks = produceTestScopeChunks(root, "Mailer", CONFIG);
+      const [pack] = exampleChunks(chunks);
+
+      expect(pack.memberSymbolIds).toEqual([
+        "Mailer.describe Mailer.it 'delivers'",
+        "Mailer.describe Mailer.it 'retries'",
+      ]);
+      expect(pack.content).not.toContain("it_behaves_like");
+      expect(setupChunks(chunks).map((c) => [c.chunkType, c.symbolId])).toEqual([["test", "Mailer.describe Mailer"]]);
+    });
+
+    it("makes every member addressable: id, own line range and own rows, in source order", () => {
+      const first = example("it 'creates'", 5);
+      const second: TestExample = {
+        name: "it 'updates'",
+        text: "  it 'updates' do\n    record.update!(name: 'b')\n    expect(record.name).to eq('b')\n  end",
+        startLine: 9,
+        endLine: 12,
+      };
+      const root = scope("describe Record", 1, 30, {
+        children: [scope("context 'persisted'", 3, 20, { examples: [first, second] })],
+      });
+
+      const [pack] = produceTestScopeChunks(root, "Record", CONFIG);
+
+      expect(pack).toMatchObject({
+        symbolId: "Record.context 'persisted'.it 'creates'",
+        name: "it 'creates'",
+        parentSymbolId: "Record.context 'persisted'",
+        parentType: TEST_SCOPE_PARENT_TYPE,
+        startLine: 5,
+        endLine: 12,
+        lineRanges: [
+          { start: 5, end: 7 },
+          { start: 9, end: 12 },
+        ],
+        memberSymbolIds: ["Record.context 'persisted'.it 'creates'", "Record.context 'persisted'.it 'updates'"],
+        memberRowCounts: [3, 4],
+      });
+      expect(pack).not.toHaveProperty("scopeLineRanges");
+      expect(sliceMembers(pack)).toEqual([
+        `context 'persisted'\n${first.text.trim()}`,
+        `context 'persisted'\n${second.text.trim()}`,
+      ]);
+    });
+
+    it("gives a pack the setup chain its members share", () => {
+      const root = scope("describe User", 1, 20, {
+        setupLines: [line("  let(:user) { create(:user) }", 2)],
+        children: [
+          scope("context 'admin'", 4, 18, {
+            setupLines: [line("    before { user.update!(admin: true) }", 5)],
+            examples: [example("it 'manages'", 7), example("it 'invites'", 11)],
+          }),
+        ],
+      });
+
+      const chunks = produceTestScopeChunks(root, "User", CONFIG);
+      const [pack] = exampleChunks(chunks);
+
+      expect(pack.memberSymbolIds).toHaveLength(2);
+      expect(setupChainOf(chunks, pack)).toEqual(["User.describe User", "User.context 'admin'"]);
+    });
+  });
+
   describe("repeated descriptions (~N)", () => {
     it("suffixes a repeated example description within one scope with ~N, first occurrence unchanged", () => {
       const root = scope("describe Parser", 1, 20, {
@@ -472,7 +649,8 @@ describe("produceTestScopeChunks", () => {
 
       const chunks = produceTestScopeChunks(root, "Parser", CONFIG);
 
-      expect(chunks.map((c) => c.symbolId)).toEqual([
+      // The three share one pack (bd tea-rags-mcp-g5i0a); the ids are its members.
+      expect(chunks.flatMap((c) => c.memberSymbolIds ?? [c.symbolId])).toEqual([
         "Parser.describe Parser.it 'parses'",
         "Parser.describe Parser.it 'parses'~2",
         "Parser.describe Parser.it 'parses'~3",

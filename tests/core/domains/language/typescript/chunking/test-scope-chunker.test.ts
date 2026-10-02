@@ -232,11 +232,17 @@ describe("produceScopeChunks", () => {
     const node = findTopLevelCall(tree);
     const chunks = produceScopeChunks(node, code, defaultConfig);
 
-    expect(chunks).toHaveLength(2);
-    expect(chunks.map((c) => c.chunkType)).toEqual(["test", "test"]);
+    // INVARIANT CHANGED (bd tea-rags-mcp-g5i0a): the two adjacent examples share
+    // one pack, each addressable as a member.
+    expect(chunks).toHaveLength(1);
+    expect(chunks.map((c) => c.chunkType)).toEqual(["test"]);
     expect(chunks[0].content).toContain("validates name");
-    expect(chunks[1].content).toContain("validates email");
-    expect(chunks.map((c) => c.parentSymbolId)).toEqual(["User.describe 'User'", "User.describe 'User'"]);
+    expect(chunks[0].content).toContain("validates email");
+    expect(chunks[0].memberSymbolIds).toEqual([
+      "User.describe 'User'.it 'validates name correctly with full assertion coverage'",
+      "User.describe 'User'.it 'validates email correctly with full assertion coverage'",
+    ]);
+    expect(chunks.map((c) => c.parentSymbolId)).toEqual(["User.describe 'User'"]);
   });
 
   it("injects parent setup into leaf chunks", () => {

@@ -3,6 +3,7 @@ import Ruby from "tree-sitter-ruby";
 import { describe, expect, it } from "vitest";
 
 import { setupChainOf } from "../../__helpers__/setup-chain.js";
+import { EXAMPLE_GROUP_BUDGET_CHARS } from "../../../../../../src/core/domains/language/kernel/test-scope-chunks.js";
 import {
   buildScopeTree,
   produceScopeChunks,
@@ -178,12 +179,18 @@ end`;
     const chunks = produceScopeChunks(scope, code, defaultConfig);
 
     // INVARIANT CHANGED (bd tea-rags-mcp-99gkm): the unit is the example, not
-    // the leaf scope — two `it` blocks are two chunks, each parented to the
-    // scope id instead of the bare top-level name (kernel emission, msv3l).
-    expect(chunks).toHaveLength(2);
+    // the leaf scope — each `it` is addressable, parented to the scope id
+    // instead of the bare top-level name (kernel emission, msv3l).
+    // INVARIANT CHANGED (bd tea-rags-mcp-g5i0a): the two adjacent `it` blocks
+    // share one pack, one member each.
+    expect(chunks).toHaveLength(1);
     expect(chunks.every((c) => c.chunkType === "test")).toBe(true);
     expect(chunks[0].content).toContain("validates name");
-    expect(chunks[1].content).toContain("validates email");
+    expect(chunks[0].content).toContain("validates email");
+    expect(chunks[0].memberSymbolIds).toEqual([
+      "User.describe User.it 'validates name'",
+      "User.describe User.it 'validates email'",
+    ]);
     expect(chunks[0].parentSymbolId).toBe("User.describe User");
   });
 
@@ -804,8 +811,13 @@ describe("produceScopeChunks — addressable examples (bd tea-rags-mcp-99gkm)", 
     const [setup, ...chunks] = chunksOf(code);
 
     expect(setup).toMatchObject({ chunkType: "test_setup", content: "let(:worker) { described_class.new }" });
-    expect(chunks).toHaveLength(16);
-    expect(new Set(chunks.map((c) => c.symbolId)).size).toBe(16);
+    // INVARIANT CHANGED (bd tea-rags-mcp-g5i0a): the 16 adjacent examples are
+    // packed up to the group budget; every example keeps its own member id.
+    const ids = chunks.flatMap((c) => c.memberSymbolIds ?? [c.symbolId]);
+    expect(chunks.length).toBeLessThan(16);
+    expect(ids).toHaveLength(16);
+    expect(new Set(ids).size).toBe(16);
+    expect(chunks.every((c) => c.content.length <= EXAMPLE_GROUP_BUDGET_CHARS)).toBe(true);
     expect(chunks[0].symbolId).toBe(
       "Platform::Async::Operation::Worker.RSpec.describe Platform::Async::Operation::Worker.it 'handles operation case number 0'",
     );
@@ -830,7 +842,8 @@ describe("produceScopeChunks — addressable examples (bd tea-rags-mcp-99gkm)", 
   end
 end`;
 
-    const ids = chunksOf(code).map((c) => c.symbolId);
+    // Both share one pack (bd tea-rags-mcp-g5i0a); the ids are its members.
+    const ids = chunksOf(code).flatMap((c) => c.memberSymbolIds ?? [c.symbolId]);
 
     expect(ids).toEqual([
       "User.describe User.it 'is valid with the factory defaults and all attributes'",
@@ -857,10 +870,12 @@ end`;
       .filter((c) => c.parentType === "test_scope")
       .flatMap((c) => c.memberSymbolIds ?? [c.symbolId]);
 
+    // INVARIANT CHANGED (bd tea-rags-mcp-g5i0a): all three adjacent examples
+    // share one pack, so the member ids follow source order.
     expect(ids).toEqual([
       "User.describe User.it { is_expected.to validate_presence_of(:name) }",
-      "User.describe User.specify",
       "User.describe User.its(:email) { is_expected.to eq('john@example.com') }",
+      "User.describe User.specify",
     ]);
   });
 

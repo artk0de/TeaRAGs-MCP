@@ -47,6 +47,10 @@ export class StaticPayloadBuilder implements PayloadBuilder {
     if (memberRowCounts?.length) payload.memberRowCounts = memberRowCounts;
     const memberSymbolIds = m.memberSymbolIds as string[] | undefined;
     if (memberSymbolIds?.length) payload.memberSymbolIds = memberSymbolIds;
+    // An example pack's own line range per member (bd tea-rags-mcp-g5i0a):
+    // find_symbol answers one member with that member's lines.
+    const memberLineRanges = m.memberLineRanges as { start: number; end: number }[] | undefined;
+    if (memberLineRanges?.length) payload.memberLineRanges = memberLineRanges;
     if (methodLines) {
       payload.methodLines = methodLines;
     }

@@ -659,6 +659,9 @@ export interface CodeChunk {
     /** The member ids a packed test chunk carries — `BodyChunkResult.memberSymbolIds`. */
     memberSymbolIds?: string[];
 
+    /** A packed test chunk's own line range per member, aligned with `memberSymbolIds` (bd tea-rags-mcp-g5i0a). */
+    memberLineRanges?: { start: number; end: number }[];
+
     /**
      * Transient. Set by the engine for chunks produced by a classifier `emit`
      * decision, and read by `mergeSmallChunks` to exempt them from adjacent

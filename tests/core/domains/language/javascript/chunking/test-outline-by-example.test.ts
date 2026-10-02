@@ -53,6 +53,11 @@ function runHook(code: string, maxChunkSize = 5000): BodyChunkResult[] {
   return ctx.bodyChunks;
 }
 
+/** Every id the chunks answer find_symbol for: a pack's members, else the chunk's own id (bd tea-rags-mcp-g5i0a). */
+function addresses(chunks: BodyChunkResult[]): (string | undefined)[] {
+  return chunks.flatMap((c) => c.memberSymbolIds ?? [c.symbolId]);
+}
+
 const body = (label: string): string =>
   `    const result = computeTheExpectedValueFor('${label}');\n    expect(result).toEqual(expected['${label}']);`;
 
@@ -70,7 +75,9 @@ ${body("remove")}
 
     const chunks = runHook(code);
 
-    expect(chunks.map((c) => c.symbolId)).toEqual([
+    // INVARIANT CHANGED (bd tea-rags-mcp-g5i0a): the two adjacent examples
+    // share one pack; each is addressed by its member id and own line range.
+    expect(addresses(chunks)).toEqual([
       "Cart.describe 'Cart'.it 'adds an item'",
       "Cart.describe 'Cart'.it 'removes an item'",
     ]);
@@ -79,8 +86,10 @@ ${body("remove")}
       expect(chunk.parentSymbolId).toBe("Cart.describe 'Cart'");
       expect(chunk.parentType).toBe("test_scope");
     }
-    expect(chunks[0].content).not.toContain("removes an item");
-    expect([chunks[0].startLine, chunks[0].endLine]).toEqual([2, 5]);
+    expect(chunks[0].lineRanges).toEqual([
+      { start: 2, end: 5 },
+      { start: 7, end: 10 },
+    ]);
   });
 
   it("keeps .skip / .only / .todo / .concurrent visible in scope and example names", () => {
@@ -104,7 +113,7 @@ ${body("ship")}
 
     const scopeId = "Cart.context.only 'focused checkout flow'";
 
-    expect(runHook(code).map((c) => c.symbolId)).toEqual([
+    expect(addresses(runHook(code))).toEqual([
       `${scopeId}.it.skip 'applies a coupon'`,
       `${scopeId}.it.only 'charges the card'`,
       `${scopeId}.test.concurrent 'ships the parcel'`,
@@ -125,11 +134,12 @@ ${body("empty")}
 
     const chunks = runHook(code);
 
-    expect(chunks.map((c) => c.name)).toEqual([
-      "it.each 'sums %i and %i into the running total'",
-      "it 'keeps the running total at zero when empty'",
+    // INVARIANT CHANGED (bd tea-rags-mcp-g5i0a): both examples share one pack.
+    expect(addresses(chunks)).toEqual([
+      "Cart.describe 'Cart'.it.each 'sums %i and %i into the running total'",
+      "Cart.describe 'Cart'.it 'keeps the running total at zero when empty'",
     ]);
-    expect(chunks[1].content).not.toContain("it.each");
+    expect(chunks[0].memberRowCounts).toEqual([4, 4]);
   });
 
   it("claims a top-level describe.each(table)(name, fn) container and names it with .each", () => {
@@ -158,7 +168,7 @@ ${body("second")}
   });
 });`;
 
-    expect(runHook(code).map((c) => c.symbolId)).toEqual([
+    expect(addresses(runHook(code))).toEqual([
       "Cart.describe 'Cart'.it 'recalculates the total'",
       "Cart.describe 'Cart'.it 'recalculates the total'~2",
     ]);
