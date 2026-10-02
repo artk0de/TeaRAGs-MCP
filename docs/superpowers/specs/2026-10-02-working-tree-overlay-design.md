@@ -141,6 +141,33 @@ no delta applied.
 Parity: a test chunks a file through the layer and through the ingest file path
 and asserts identical chunk ids.
 
+### `WorkingTreeChunkStore` — persistent delta-chunk cache with retention
+
+The chunk cache outlives the MCP process, so a restarted server does not
+re-chunk a worktree it has seen. It lives under
+`~/.tea-rags/working-tree/<collection>/` (resolved through the same data-dir
+helper the other `~/.tea-rags/*` stores use), one JSON entry per
+`(relativePath, sha256(content))`. The `ScrollChunk` rows, the tree root that
+produced the entry, the content's git blob id, and `lastReadAt` are stored.
+WTO-5 dense vectors will join the same entry.
+
+Retention (sweep at server start, then every 6 h on an unref'd timer):
+
+| Entry state                                                      | Action    |
+| ---------------------------------------------------------------- | --------- |
+| tree root no longer exists (worktree removed)                    | evict now |
+| content committed and `now − max(commitTime, lastReadAt) ≥ 96 h` | evict     |
+| content uncommitted, tree alive                                  | keep      |
+| store above its size cap (default 512 MB)                        | evict LRU |
+
+"Committed" means the blob id appears in the tree's history for that path:
+`git log -1 --format=%ct --find-object=<blobId> HEAD -- <relativePath>`; its
+`%ct` is the commit time. Once the next index run absorbs the commit, the
+overlay stops asking for that content, so the entry ages out on its own.
+
+The store writes only under its own directory. It never touches the shared
+index, registry, or snapshots.
+
 ### Sparse floor (WTO-4)
 
 Delta chunks get BM25 vectors from the ingest sparse vectorizer. `hybrid_search`

@@ -112,8 +112,8 @@ export interface WorkingTreeView {
 
 - Modify: `src/core/api/internal/collection-resolver.ts` (additive:
   `WorkingTree`, `resolveWorkingTree`, `findWorkingTreeRoot`)
-- Create: `tests/helpers/git-working-tree-fixture.ts` — reuse first: read
-  `tests/core/api/internal/ops/diff-scope-reader.test.ts` and
+- Create: `tests/core/__helpers__/git-working-tree-fixture.ts` — reuse first:
+  read `tests/core/api/internal/ops/diff-scope-reader.test.ts` and
   `tests/core/domains/maintenance/worktree-seed-source.test.ts`. If one already
   builds a repo + `git worktree add`, lift that code into the helper; do not
   edit those tests' assertions.
@@ -128,7 +128,7 @@ export interface WorkingTreeView {
 - Produces: `WorkingTree`, `resolveWorkingTree`, `findWorkingTreeRoot`, and:
 
 ```ts
-// tests/helpers/git-working-tree-fixture.ts
+// tests/core/__helpers__/git-working-tree-fixture.ts
 export interface GitWorkingTreeFixture {
   mainRoot: string; // realpath of the main checkout
   addWorktree: (name: string) => string; // git worktree add -b wt-<name>; returns realpath
@@ -227,7 +227,9 @@ when `resolveGitCommonDir` differs, else returns `findWorkingTreeRoot(path)`.
 `selectSameRepositoryEntry` filters `registry.list()` by
 `commonDirOf(entry.path) === resolveGitCommonDir(treeRoot)` (`commonDirOf`
 memoised in a module `Map<string, string>`), prefers the entry whose realpath
-equals `listRepoWorkTrees(treeRoot)[0]`, then a single candidate, else throws
+equals `dirname(commonDir)` when `basename(commonDir) === ".git"`
+(`listRepoWorkTrees` sorts alphabetically, so its `[0]` is not the main
+checkout), then a single candidate, else throws
 `InvalidParameterError("path", "'<treeRoot>' belongs to a repository indexed under several projects: <a>, <b> — pass project=<alias>")`.
 Entries with an empty `path` (recoverFromQdrant stubs) are skipped. Confirm the
 real `CollectionRegistry` method shapes in
@@ -501,6 +503,84 @@ chunks).
       `refactor(pipeline): extract buildChunkPointPayload from the ingest path (xi2r9.3)`
       then
       `feat(explore): WorkingTreeChunkLayer chunks delta files with the production chunker (xi2r9.3)`.
+
+---
+
+### Task 5b: `WorkingTreeChunkStore` — persistent delta-chunk cache with 96 h retention
+
+**Bead:** tea-rags-mcp-xi2r9.3 (part c)
+
+**Files:**
+
+- Create: `src/core/domains/explore/working-tree/chunk-store.ts`
+- Modify: `src/core/domains/explore/working-tree/chunk-layer.ts` (memory cache
+  in front of the store), `src/core/adapters/vcs/git/git-cli/client.ts`
+  (additive `readBlobCommitTime`), `src/bootstrap/factory.ts` (store under the
+  data dir; sweep at start + every 6 h, `timer.unref()`; stop on dispose)
+- Test: `tests/core/domains/explore/working-tree/chunk-store.test.ts`
+
+**Interfaces:**
+
+```ts
+// git-cli/client.ts — `git log -1 --format=%ct --find-object=<blobId> HEAD -- <relativePath>`
+export async function readBlobCommitTime(
+  root: string,
+  relativePath: string,
+  blobId: string,
+): Promise<number | null>; // epoch ms, null = uncommitted
+
+export interface WorkingTreeChunkStoreEntry {
+  relativePath: string;
+  contentSha256: string;
+  blobId: string; // git hash-object id of the content
+  treeRoot: string;
+  rows: readonly ScrollChunk[];
+  lastReadAt: number;
+}
+export interface WorkingTreeChunkStore {
+  get(
+    collectionName: string,
+    relativePath: string,
+    contentSha256: string,
+  ): Promise<WorkingTreeChunkStoreEntry | undefined>; // bumps lastReadAt
+  put(
+    collectionName: string,
+    entry: Omit<WorkingTreeChunkStoreEntry, "lastReadAt">,
+  ): Promise<void>;
+  sweep(
+    now?: number,
+  ): Promise<{ evicted: number; kept: number; bytes: number }>;
+}
+export const WORKING_TREE_CHUNK_RETENTION_MS = 96 * 3600_000;
+export const WORKING_TREE_CHUNK_STORE_CAP_BYTES = 512 * 1024 * 1024;
+export function createWorkingTreeChunkStore(deps: {
+  rootDir: string; // <dataDir>/working-tree
+  readBlobCommitTime?: typeof readBlobCommitTime;
+  now?: () => number;
+}): WorkingTreeChunkStore;
+```
+
+Find the data-dir helper the other `~/.tea-rags/*` stores use (e.g. how
+`snapshots/` or `git-blame/` resolve their root) and use it — no hard-coded home
+path. Writes are atomic (temp file + rename), as the registry does.
+
+- [ ] **Step 1: Failing tests** (real git fixture for commit detection, `now`
+      injected): put/get round-trip; `get` bumps `lastReadAt`; sweep evicts an
+      entry whose `treeRoot` was removed (`git worktree remove`) regardless of
+      age; committed content idle 95 h → kept, 97 h → evicted, measured from
+      `max(commitTime, lastReadAt)` (a read at 90 h after commit keeps it until
+      186 h); uncommitted content of a live tree idle 1000 h → kept; store over
+      cap → least-recently-read evicted until under cap; sweep never touches
+      files outside `rootDir` (assert directory listing of a sibling dir
+      unchanged); layer: a second layer instance (fresh process memory) over the
+      same store does not call `processFile` for unchanged content.
+- [ ] **Step 2: Run** — FAIL.
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4: Run** + `npx vitest related` on chunk-layer and factory — PASS;
+      tsc; eslint.
+- [ ] **Step 5: Commit**
+      `feat(explore): persistent working-tree chunk cache with 96h post-commit retention (xi2r9.3)`
+      — `Why:` line (git-cli client is deep-silo).
 
 ---
 
