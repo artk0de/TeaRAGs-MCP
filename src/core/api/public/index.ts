@@ -231,6 +231,13 @@ export type {
 // Interfaces/classes stay in adapters; we re-export so cli reaches them via
 // the public facade rather than importing core/adapters directly.
 export type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
+// GGUF weights from the Ollama registry — `tea-rags llama-server fetch-model`.
+export {
+  downloadVerifiedGguf,
+  parseOllamaModelReference,
+  resolveOllamaRegistryGguf,
+  type OllamaRegistryGgufSource,
+} from "../../adapters/embeddings/ollama-registry/gguf-source.js";
 export { QdrantManager } from "../../adapters/qdrant/client.js";
 // The one definition of "chunk points only" — every CLI chunk count passes it
 // to countPoints so it agrees with get_index_status (bd tea-rags-mcp-39xca.16).

@@ -5,6 +5,7 @@ import { autoUpdateCommand } from "./commands/auto-update.js";
 import { callCommand } from "./commands/call.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { indexCodebaseCommand } from "./commands/index-codebase.js";
+import { llamaServerCommand } from "./commands/llama-server.js";
 import { primeCommand } from "./commands/prime.js";
 import { projectCommand } from "./commands/project.js";
 import { projectsCommand } from "./commands/projects.js";
@@ -34,6 +35,7 @@ export function createCli(argv?: string[]): ReturnType<typeof yargs> {
     .command(doctorCommand)
     .command(qdrantCommand)
     .command(indexCodebaseCommand)
+    .command(llamaServerCommand)
     .command(autoUpdateCommand)
     .completion(
       "completion",
