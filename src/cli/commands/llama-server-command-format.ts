@@ -8,9 +8,8 @@
  * printed endpoint lists.
  *
  * Every launch is held as an argv token list and rendered per consumer, since
- * each one quotes differently: PowerShell, a POSIX shell, the Windows
- * CreateProcess command line a scheduled task stores, a systemd `ExecStart=`,
- * and a launchd plist.
+ * each one quotes differently: PowerShell, a POSIX shell, the `.cmd` launcher
+ * a Windows scheduled task runs, a systemd `ExecStart=`, and a launchd plist.
  */
 
 import type { OllamaRegistryGgufSource } from "../../core/api/public/index.js";
@@ -54,8 +53,6 @@ export interface LlamaServerCommandSheet {
 
 /** Context tokens each llama-server slot gets. */
 const CONTEXT_PER_SLOT = 8192;
-/** schtasks rejects a `/TR` value longer than this. */
-const SCHTASKS_TR_LIMIT = 261;
 
 // ── quoting ──────────────────────────────────────────────────────────────
 
@@ -90,9 +87,14 @@ function posixCommand(argv: string[]): string {
   return argv.map(posixToken).join(" ");
 }
 
-/** The command line CreateProcess parses — what a scheduled task stores. */
-function windowsCommandLine(argv: string[]): string {
-  return argv.map((t) => (/[\s"]/.test(t) ? `"${t.replace(/"/g, '\\"')}"` : t)).join(" ");
+/** A line in a `.cmd` file: cmd metacharacters stay inside quotes, `%` is doubled. */
+function batchCommandLine(argv: string[]): string {
+  return argv
+    .map((raw) => {
+      const t = raw.replace(/%/g, "%%");
+      return /[\s"&|<>^]/.test(t) ? `"${t.replace(/"/g, '\\"')}"` : t;
+    })
+    .join(" ");
 }
 
 /** systemd expands `%h` (the user's home), never `~`; `%` itself must be doubled. */
@@ -250,18 +252,24 @@ function keepAwakeSection(o: LlamaServerCommandOptions): LlamaServerCommandSecti
   };
 }
 
-function windowsAutostart(launches: LlamaServerLaunch[]): string[] {
+/**
+ * A `.cmd` launcher per port, next to the model, and a scheduled task that runs
+ * it. The full launch line does not fit the 261 chars schtasks allows in `/TR`;
+ * the launcher path does. `--%` hands the rest of the line to schtasks verbatim,
+ * so the `\"` quoting is the same on Windows PowerShell 5.1 and PowerShell 7.
+ */
+function windowsAutostart(o: LlamaServerCommandOptions, launches: LlamaServerLaunch[]): string[] {
+  const dir = parentDir(o.os, o.modelPath);
   const lines: string[] = [];
   for (const l of launches) {
-    const commandLine = windowsCommandLine(l.argv);
+    const launcher = `${dir}\\tea-rags-llama-server-${l.port}.cmd`;
+    const task = `"tea-rags llama-server ${l.port}"`;
     lines.push(
-      `schtasks /Create /TN "tea-rags llama-server ${l.port}" /SC ONSTART /RL HIGHEST /RU SYSTEM /TR "${commandLine.replace(/"/g, '\\"')}"`,
+      `Set-Content -Path ${powershellQuote(launcher)} -Encoding ASCII -Value '@echo off', ${powershellQuote(batchCommandLine(l.argv))}`,
+      `schtasks --% /Create /TN ${task} /SC ONSTART /RL HIGHEST /RU SYSTEM /TR "\\"${launcher}\\""`,
+      "# Optional, start it now:",
+      `schtasks /Run /TN ${task}`,
     );
-    if (commandLine.length > SCHTASKS_TR_LIMIT) {
-      lines.push(
-        `REM The /TR value above is ${commandLine.length} chars; schtasks accepts ${SCHTASKS_TR_LIMIT}. If it refuses, save the launch line to a .cmd file and point /TR at that file.`,
-      );
-    }
   }
   return lines;
 }
@@ -320,7 +328,7 @@ function macosAutostart(launches: LlamaServerLaunch[]): string[] {
 }
 
 function autostartSection(o: LlamaServerCommandOptions, launches: LlamaServerLaunch[]): LlamaServerCommandSection {
-  if (o.os === "windows") return { title: "Start at boot (elevated cmd.exe)", lines: windowsAutostart(launches) };
+  if (o.os === "windows") return { title: "Start at boot (elevated PowerShell)", lines: windowsAutostart(o, launches) };
   if (o.os === "linux") return { title: "Start at boot (shell)", lines: linuxAutostart(launches) };
   return { title: "Start at boot (shell)", lines: macosAutostart(launches) };
 }

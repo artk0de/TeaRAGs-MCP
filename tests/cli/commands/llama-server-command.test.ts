@@ -87,7 +87,7 @@ describe("llama-server command", () => {
       `Invoke-WebRequest -Uri 'https://registry.ollama.ai/v2/library/nomic-embed-text/blobs/sha256:${SHA}' -OutFile 'C:\\llama-models\\${file}'`,
     );
     expect(printed).toContain("--device ROCm1 --host 0.0.0.0 --port 8082 --api-key k");
-    expect(printed).toContain("schtasks /Create");
+    expect(printed).toContain("schtasks --% /Create");
     expect(printed).toContain("EMBEDDING_BASE_URL=http://192.168.1.71:8081,http://192.168.1.71:8082");
     expect(printed).toContain("EMBEDDING_API_KEY=k");
     expectNoChildProcess();

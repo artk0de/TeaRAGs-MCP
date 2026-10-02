@@ -61,7 +61,7 @@ describe("renderLlamaServerCommands — windows (ROCm build, --device ROCm0)", (
       "2. Launch llama-server (PowerShell)",
       "3. Open the firewall (elevated PowerShell)",
       "4. Keep the host awake (elevated PowerShell)",
-      "5. Start at boot (elevated cmd.exe)",
+      "5. Start at boot (elevated PowerShell)",
       "6. Client configuration (tea-rags host)",
     ]);
   });
@@ -90,10 +90,39 @@ describe("renderLlamaServerCommands — windows (ROCm build, --device ROCm0)", (
     expect(section(sheet, "4.")).toContain("powercfg /change standby-timeout-ac 0");
   });
 
-  it("registers each launch line as an ONSTART scheduled task", () => {
-    expect(section(sheet, "5.")).toContain(
-      `schtasks /Create /TN "tea-rags llama-server 8081" /SC ONSTART /RL HIGHEST /RU SYSTEM /TR "${WIN_BIN} -m ${WIN_MODEL} --embedding -ngl 999 -fa on -np 4 -c 32768 -b 8192 -ub 8192 --device ROCm0 --host 0.0.0.0 --port 8081"`,
+  it("writes a .cmd launcher next to the model and registers it as an ONSTART scheduled task", () => {
+    const launcher = "C:\\llama-models\\tea-rags-llama-server-8081.cmd";
+    expect(section(sheet, "5.")).toEqual([
+      `Set-Content -Path '${launcher}' -Encoding ASCII -Value '@echo off', '${WIN_BIN} -m ${WIN_MODEL} --embedding -ngl 999 -fa on -np 4 -c 32768 -b 8192 -ub 8192 --device ROCm0 --host 0.0.0.0 --port 8081'`,
+      `schtasks --% /Create /TN "tea-rags llama-server 8081" /SC ONSTART /RL HIGHEST /RU SYSTEM /TR "\\"${launcher}\\""`,
+      "# Optional, start it now:",
+      'schtasks /Run /TN "tea-rags llama-server 8081"',
+    ]);
+  });
+
+  it("keeps the schtasks /TR value within its 261-char limit for a long launch line", () => {
+    const long = renderLlamaServerCommands(
+      options({
+        os: "windows",
+        bin: WIN_BIN,
+        devices: ["ROCm0", "Vulkan1"],
+        modelPath: WIN_MODEL,
+        apiKey: "a-long-enough-api-key-0123456789",
+        autostart: true,
+      }),
     );
+    const lines = section(long, "4.");
+    const launchers = lines.filter((l) => l.startsWith("Set-Content"));
+    expect(launchers).toHaveLength(2);
+    expect(launchers[1]).toContain(
+      "--device Vulkan1 --host 0.0.0.0 --port 8082 --api-key a-long-enough-api-key-0123456789'",
+    );
+    const trValues = lines
+      .filter((l) => l.startsWith("schtasks --% /Create"))
+      .map((l) => /\/TR "(.*)"$/.exec(l)?.[1] ?? "");
+    expect(trValues).toHaveLength(2);
+    expect(trValues.every((v) => v.length > 0 && v.length <= 261)).toBe(true);
+    expect(lines.some((l) => l.startsWith("REM"))).toBe(false);
   });
 
   it("advertises the LAN address, not 0.0.0.0, to the client", () => {
@@ -249,7 +278,9 @@ describe("renderLlamaServerCommands — options", () => {
     expect(section(sheet, "1.")).toContain("New-Item -ItemType Directory -Force -Path 'C:\\My Models' | Out-Null");
     const launch = section(sheet, "2.").find((l) => !l.startsWith("#"));
     expect(launch?.startsWith(`& '${bin}' -m '${model}' --embedding`)).toBe(true);
-    expect(section(sheet, "5.")[0]).toContain(`/TR "\\"${bin}\\" -m \\"${model}\\" --embedding`);
+    const autostart = section(sheet, "5.");
+    expect(autostart[0]).toContain(`-Value '@echo off', '"${bin}" -m "${model}" --embedding`);
+    expect(autostart[1]).toContain('/TR "\\"C:\\My Models\\tea-rags-llama-server-8081.cmd\\""');
   });
 
   it("quotes a POSIX path with spaces while keeping ~ expandable", () => {
