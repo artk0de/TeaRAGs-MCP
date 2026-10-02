@@ -10,6 +10,11 @@
  * worker is forked from the compiled build) and `chunkFile` (ingest's
  * `buildFileChunkPoints`). `src/bootstrap/factory.ts` wires both.
  *
+ * Behind the memory cache sits an optional {@link WorkingTreeChunkStore}: a
+ * memory miss for a call that names its collection reads the store before
+ * chunking, and a fresh chunk is written to it, so a restarted process does not
+ * re-chunk a tree it has seen. The store is a cache — its failures are misses.
+ *
  * Pool lifecycle: built on the first call that has a file to chunk (a cache
  * hit chunks nothing), replaced when the chunker config changes, shut down
  * once no call has been in flight for `idleShutdownMs`, and by `dispose`.
@@ -21,6 +26,7 @@ import { join } from "node:path";
 
 import type { ChunkerConfig } from "../../../types.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
+import { computeGitBlobId, type WorkingTreeChunkStore } from "./chunk-store.js";
 
 /** What one `chunk` call read from the tree. */
 export interface WorkingTreeChunkLayerRead {
@@ -31,8 +37,17 @@ export interface WorkingTreeChunkLayerRead {
 }
 
 export interface WorkingTreeChunkLayer {
-  /** Rows for the given tree files, exactly as ingest would store them (minus git/codegraph payload). */
-  chunk: (tree: string, relativePaths: readonly string[], config: ChunkerConfig) => Promise<WorkingTreeChunkLayerRead>;
+  /**
+   * Rows for the given tree files, exactly as ingest would store them (minus
+   * git/codegraph payload). `collectionName` — the base index — selects the
+   * persistent store's namespace; without it only the memory cache is used.
+   */
+  chunk: (
+    tree: string,
+    relativePaths: readonly string[],
+    config: ChunkerConfig,
+    collectionName?: string,
+  ) => Promise<WorkingTreeChunkLayerRead>;
   dispose: () => Promise<void>;
 }
 
@@ -53,6 +68,10 @@ export interface WorkingTreeChunkLayerDeps<P extends WorkingTreeChunkerPool> {
   /** Ingest's file → point rows; rejects when the file cannot be parsed. */
   chunkFile: (pool: P, file: WorkingTreeSourceFile) => Promise<readonly ScrollChunk[]>;
   idleShutdownMs?: number;
+  /** Persistent cache behind the memory cache. */
+  store?: WorkingTreeChunkStore;
+  /** Identifies the chunker build (package version): a new build must not read an old build's rows. */
+  chunkerBuildId?: string;
 }
 
 const DEFAULT_IDLE_SHUTDOWN_MS = 60_000;
@@ -102,23 +121,41 @@ export function createWorkingTreeChunkLayer<P extends WorkingTreeChunkerPool>(
   };
 
   return {
-    async chunk(tree, relativePaths, config) {
+    async chunk(tree, relativePaths, config, collectionName) {
       if (relativePaths.length === 0) return { chunks: [], unparsed: [] };
       clearTimeout(idleTimer);
       idleTimer = undefined;
       inFlight++;
       try {
         const configKey = JSON.stringify(config);
+        const chunkerFingerprint = createHash("sha256")
+          .update(`${deps.chunkerBuildId ?? ""}\0${configKey}`)
+          .digest("hex");
         const chunks: ScrollChunk[] = [];
         const unparsed: string[] = [];
         for (const relativePath of relativePaths) {
           try {
-            const code = await readFile(join(tree, relativePath), "utf8");
-            const contentHash = createHash("sha256").update(code).digest("hex");
-            const key = `${configKey}\0${tree}\0${relativePath}\0${contentHash}`;
+            const content = await readFile(join(tree, relativePath));
+            const contentSha256 = createHash("sha256").update(content).digest("hex");
+            const key = `${configKey}\0${tree}\0${relativePath}\0${contentSha256}`;
             let rows = cache.get(key);
             if (!rows) {
-              rows = await deps.chunkFile(await poolFor(config, configKey), { root: tree, relativePath, code });
+              const storeKey = { treeRoot: tree, relativePath, contentSha256, chunkerFingerprint };
+              const { store } = deps;
+              const stored =
+                store && collectionName !== undefined
+                  ? await store.get(collectionName, storeKey).catch(() => undefined)
+                  : undefined;
+              rows = stored?.rows;
+              if (!rows) {
+                const code = content.toString("utf8");
+                rows = await deps.chunkFile(await poolFor(config, configKey), { root: tree, relativePath, code });
+                if (store && collectionName !== undefined) {
+                  await store
+                    .put(collectionName, { ...storeKey, blobId: computeGitBlobId(content), rows })
+                    .catch(() => undefined);
+                }
+              }
               remember(key, rows);
             }
             chunks.push(...rows);

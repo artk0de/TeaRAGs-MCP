@@ -672,6 +672,28 @@ export async function listWorktreeDeletions(repoRoot: string, timeoutMs = TREE_L
   return splitNulTerminated(out);
 }
 
+/**
+ * When content was committed (bd tea-rags-mcp-xi2r9.3): the commit time, in
+ * epoch ms, of the newest commit on HEAD's history whose diff of
+ * `relativePath` adds or drops the blob `blobId`
+ * (`git log -1 --format=%ct --find-object`). `null` when no such commit
+ * exists — the content is not committed. A path outside a repository rejects.
+ */
+export async function readBlobCommitTime(
+  root: string,
+  relativePath: string,
+  blobId: string,
+  timeoutMs = TREE_LISTING_STALL_MS,
+): Promise<number | null> {
+  const out = await execWithStallGuard(
+    resolveGitExecutable(),
+    ["log", "-1", "--format=%ct", `--find-object=${blobId}`, "HEAD", "--", relativePath],
+    { cwd: root, stallTimeoutMs: timeoutMs },
+  );
+  const seconds = Number(out.trim());
+  return out.trim() === "" || !Number.isFinite(seconds) ? null : seconds * 1000;
+}
+
 function splitNulTerminated(out: string): string[] {
   return out.split("\0").filter((p) => p.length > 0);
 }

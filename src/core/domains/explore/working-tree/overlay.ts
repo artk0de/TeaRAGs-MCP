@@ -116,7 +116,7 @@ async function readDeltaChunks(
 ): Promise<readonly ScrollChunk[]> {
   if (changed.length === 0) return [];
   const config = await source.resolveChunkerConfig(tree);
-  const read = await source.layer.chunk(tree.root, changed, config);
+  const read = await source.layer.chunk(tree.root, changed, config, tree.baseIndex.collectionName);
   if (read.unparsed.length > 0) marker.unparsed = [...read.unparsed];
   return read.chunks;
 }

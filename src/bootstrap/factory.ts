@@ -53,7 +53,9 @@ import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provide
 import type { PayloadKeyOwner } from "../core/contracts/types/trajectory.js";
 import {
   createWorkingTreeChunkLayer,
+  createWorkingTreeChunkStore,
   createWorkingTreeDeltaReader,
+  scheduleWorkingTreeChunkSweep,
   WorkingTreeOverlay,
 } from "../core/domains/explore/index.js";
 import { CollectionIndexingLock } from "../core/domains/ingest/infra/index.js";
@@ -1134,11 +1136,19 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   // injects are the ones `BaseIndexingPipeline#createChunkerPool` forks), one
   // worker because a delta is capped at 200 files, released after 60 s idle
   // and on dispose. The payload is shaped by the builder ingest's pipeline uses.
+  // Behind its memory cache, a persistent store under `<appData>/working-tree`
+  // keeps chunked files across restarts; it is swept now and every 6 h on an
+  // unref'd timer, stopped by cleanup. Rows are keyed by this package version
+  // too, so an upgraded chunker never serves an older build's ids.
   const workingTreePayloadBuilder = new StaticPayloadBuilder();
+  const workingTreeChunkStore = createWorkingTreeChunkStore({ rootDir: join(config.paths.appData, "working-tree") });
+  const stopWorkingTreeChunkSweep = scheduleWorkingTreeChunkSweep(workingTreeChunkStore);
   const workingTreeChunkLayer = createWorkingTreeChunkLayer({
     createPool: (chunkerConfig) => new ChunkerPool(1, chunkerConfig),
     chunkFile: async (pool, file) => buildFileChunkPoints(pool, file, workingTreePayloadBuilder),
     idleShutdownMs: 60_000,
+    store: workingTreeChunkStore,
+    chunkerBuildId: pkg.version,
   });
   // One overlay per process (bd tea-rags-mcp-xi2r9): its delta reader caches per
   // tree, and every read surface — explore, graph, trace_path — shares it.
@@ -1478,6 +1488,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     if (cleanedUp) return;
     cleanedUp = true;
     registryWatchStop();
+    stopWorkingTreeChunkSweep();
     void workingTreeChunkLayer.dispose().catch(() => undefined);
     // In-process enrichment (MCP index_codebase, inline git trajectory) spawns
     // git as a direct child of THIS process; no parent-death guard reaches it,

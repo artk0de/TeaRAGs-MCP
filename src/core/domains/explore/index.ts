@@ -42,7 +42,9 @@ export type {
 } from "./strategies/index.js";
 export {
   createWorkingTreeChunkLayer,
+  createWorkingTreeChunkStore,
   createWorkingTreeDeltaReader,
+  scheduleWorkingTreeChunkSweep,
   WORKING_TREE_DELTA_FILE_CAP,
   WorkingTreeOverlay,
 } from "./working-tree/index.js";
@@ -51,6 +53,9 @@ export type {
   WorkingTreeChunkLayer,
   WorkingTreeChunkLayerDeps,
   WorkingTreeChunkLayerRead,
+  WorkingTreeChunkStore,
+  WorkingTreeChunkStoreEntry,
+  WorkingTreeChunkStoreKey,
   WorkingTreeDeltaChunkSource,
   WorkingTreeSourceFile,
   WorkingTreeDelta,
