@@ -171,10 +171,12 @@ Intel iGPU, CUDA for NVIDIA, Metal on macOS), so one supervisor that runs a
 single binary across every device is the wrong model. tea-rags prints commands;
 the operator runs them, once per build.
 
-- `tea-rags llama-server command --bin <path> [--device <id>...] [--port <n>] [--slots <n>] [--host <addr>] [--model <gguf>]`.
-  It runs `<bin> --list-devices` (the only process it starts) and prints, for
-  each selected device of THAT build, a launch line:
+- `tea-rags llama-server command --bin <path> [--device <id>...] [--port <n>] [--slots <n>] [--host <addr>] [--model <gguf>]`
+  starts NO process: it never runs the binary, not even `--list-devices`. It
+  prints one launch line per `--device` given:
   `<bin> -m <gguf> --embedding -ngl 999 -fa on -np <slots> -c <slots*8192> -b 8192 -ub 8192 --device <id> --host <host> --port <port+i>`.
+  Without `--device` it prints a single all-default launch line and the hint
+  `<bin> --list-devices`, so the operator can pick device ids and re-run.
   `--slots` defaults to 4, the measured optimum on RX 7800M and M3 Pro.
   `--model` defaults to the GGUF from `fetch-model`.
 - With `--autostart`, it also prints the command that registers that line to
@@ -228,6 +230,6 @@ the operator runs them, once per build.
   from the stored optimum, static pin.
 - CLI tests for `fetch-model` (mock registry, digest mismatch rejected) and for
   `command` (`--list-devices` parsing, flag building, autostart command
-  rendering per OS). No real binaries are spawned.
+  rendering per OS). The command must spawn nothing: assert no child process.
 - Live (user-gated): taxdome `--force` with llama-server on nucbox, compared
   with the 7600 s localhost run and with an Ollama run on the same host.
