@@ -70,6 +70,7 @@ import { applyEssentialSignals } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import { memberOwnerOf, splitFragmentBase } from "../split-fragment.js";
 import { resolveSymbols } from "../symbol-resolve.js";
+import { examplePackMember } from "../test-pack.js";
 import { BaseExploreStrategy } from "./base.js";
 import { keepPathPatternMatches } from "./path-pattern-fill.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
@@ -143,7 +144,15 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
       isFullyQualified(this.input.symbol) && !answersOwnId(exact, this.input.symbol)
         ? await this.scrollPackMembers(ctx.collectionName)
         : [];
-    const filtered = pathMatcher ? [...exact, ...keepPathPatternMatches(grouped, pathMatcher)] : [...exact, ...grouped];
+    const matched = pathMatcher ? [...exact, ...keepPathPatternMatches(grouped, pathMatcher)] : [...exact, ...grouped];
+    // An example pack answers one of its members with that member alone (bd
+    // tea-rags-mcp-g5i0a) — its own rows and lines, as if it were unpacked —
+    // whether the id is the pack's own (first member) or reached through
+    // `memberSymbolIds`. A pack matched as a MEMBER of the queried scope stays
+    // whole: it is outlined, not answered.
+    const filtered = isFullyQualified(this.input.symbol)
+      ? matched.map((chunk) => answerPackMember(chunk, this.input.symbol))
+      : matched;
 
     // Outline member lines carry declared visibility (bd tea-rags-mcp-sqqkz);
     // metaOnly strips the outline text, so there is nothing to decorate.
@@ -323,6 +332,12 @@ function formatCodegraphFallbackSkipped(err: CodegraphUnavailableError): string 
  * The Qdrant scroll returns a SUPERSET when matched by a single text
  * token — this filter narrows that superset before resolveSymbols runs.
  */
+/** The chunk itself, or — for an example pack carrying `fqn` — that one member's view of it. */
+function answerPackMember<C extends { payload: Record<string, unknown> }>(chunk: C, fqn: string): C {
+  const member = examplePackMember(chunk.payload, fqn);
+  return member ? { ...chunk, payload: member } : chunk;
+}
+
 /**
  * Did a chunk answer `fqn` as ITS OWN id — the chunk itself, or a `#partN`
  * window of it? Members matched through their `parentSymbolId` do not count:

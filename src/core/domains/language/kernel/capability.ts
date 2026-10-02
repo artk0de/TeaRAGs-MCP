@@ -86,6 +86,9 @@ export const sharedVersions: LanguageSupportVersions = {
   //   - bd tea-rags-mcp-5xpq4: test setup is stored once per scope, packed
   //     across consecutive scopes with per-member scope spans; tiny examples are
   //     grouped instead of dropped.
+  //   - bd tea-rags-mcp-g5i0a: adjacent examples of one scope are packed into
+  //     one test chunk up to 1500 chars, each member addressable by its id,
+  //     own line range and row count.
   chunking: 4,
   // walker 3: release v1.44.2 shipped shared walker 2 and a release cycle gets
   // ONE bump, so the branch-local 3..5 collapse into 3. Same walker 3, bd

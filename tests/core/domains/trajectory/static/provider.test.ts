@@ -89,6 +89,32 @@ describe("StaticPayloadBuilder", () => {
     expect(payload.memberSymbolIds).toEqual(["User.context 'v1.2'~2.it", "User.context 'v1.2'~2.it~2"]);
   });
 
+  it("writes an example pack's per-member memberLineRanges (g5i0a)", () => {
+    const packChunk = {
+      content: "it 'a' do\n  ok\nend\nit 'b' do\n  ok\nend",
+      startLine: 2,
+      endLine: 9,
+      metadata: {
+        filePath: "/project/spec/user_spec.rb",
+        language: "ruby",
+        chunkIndex: 1,
+        chunkType: "test",
+        memberSymbolIds: ["User.describe User.it 'a'", "User.describe User.it 'b'"],
+        memberLineRanges: [
+          { start: 2, end: 4 },
+          { start: 7, end: 9 },
+        ],
+        memberRowCounts: [3, 3],
+      } as Record<string, unknown>,
+    };
+    const payload = builder.buildPayload(packChunk, "/project");
+    expect(payload.memberLineRanges).toEqual([
+      { start: 2, end: 4 },
+      { start: 7, end: 9 },
+    ]);
+    expect(payload.memberRowCounts).toEqual([3, 3]);
+  });
+
   it("writes a packed test setup chunk's per-member scopeLineRanges and memberRowCounts (5xpq4)", () => {
     const setupChunk = {
       content: "let(:user) { create(:user) }",
@@ -122,6 +148,7 @@ describe("StaticPayloadBuilder", () => {
     expect(payload).not.toHaveProperty("scopeLineRanges");
     expect(payload).not.toHaveProperty("memberRowCounts");
     expect(payload).not.toHaveProperty("memberSymbolIds");
+    expect(payload).not.toHaveProperty("memberLineRanges");
   });
 
   it("writes navigation to payload", () => {

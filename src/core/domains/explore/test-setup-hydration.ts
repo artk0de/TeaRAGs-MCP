@@ -40,6 +40,7 @@
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import { exactMatchOnTextIndexed } from "../../adapters/qdrant/filters/text-indexed-exact.js";
 import { TEST_SCOPE_PARENT_TYPE } from "../../contracts/types/chunker.js";
+import { isLineRange, slicePack } from "./test-pack.js";
 
 /** Ceiling on chunks the setup scroll reads per page: setup windows plus the examples the `test` arm brings. */
 const SETUP_SCROLL_LIMIT = 4096;
@@ -194,56 +195,6 @@ function setupMembers(points: { payload: Record<string, unknown> }[]): Map<strin
     byFile.set(relativePath, list);
   }
   return byFile;
-}
-
-/**
- * A pack's windows → the container header and each member's rows.
- *
- * The kernel stores the members' own rows back to back; the engine prepends
- * the container header (zero or more rows), and when it cuts a pack into
- * `#partN` windows it repeats that header on every window — or, when the
- * header is too large to repeat, puts it on the first window only. Both
- * layouts are recognised from the row arithmetic: the rows that are not
- * members' rows are the header, and they must be identical where they repeat.
- * A pack that fits neither (a row the engine character-sliced) returns
- * nothing rather than a slice that might render a sibling's setup.
- */
-function slicePack(windows: string[], rowCounts: number[]): { header: string[]; members: string[][] } | undefined {
-  const rowsOf = windows.map((w) => w.split("\n"));
-  const memberRows = rowCounts.reduce((sum, n) => sum + n, 0);
-  const totalRows = rowsOf.reduce((sum, rows) => sum + rows.length, 0);
-  const extra = totalRows - memberRows;
-  if (extra < 0) return undefined;
-
-  let header: string[] | undefined;
-  let body: string[] = [];
-  if (extra % rowsOf.length === 0) {
-    const perWindow = extra / rowsOf.length;
-    const first = rowsOf[0].slice(0, perWindow);
-    if (rowsOf.every((rows) => rows.length > perWindow && first.every((row, i) => rows[i] === row))) {
-      header = first;
-      body = rowsOf.flatMap((rows) => rows.slice(perWindow));
-    }
-  }
-  if (header === undefined && rowsOf[0].length > extra) {
-    header = rowsOf[0].slice(0, extra);
-    body = [...rowsOf[0].slice(extra), ...rowsOf.slice(1).flat()];
-  }
-  if (header === undefined) return undefined;
-
-  const members: string[][] = [];
-  let offset = 0;
-  for (const count of rowCounts) {
-    members.push(body.slice(offset, offset + count));
-    offset += count;
-  }
-  return { header, members };
-}
-
-function isLineRange(value: unknown): value is LineRange {
-  if (!value || typeof value !== "object") return false;
-  const { start, end } = value as Record<string, unknown>;
-  return typeof start === "number" && typeof end === "number";
 }
 
 /** The members whose scope contains `line`, outermost first (earlier start, then the wider span). */

@@ -90,7 +90,8 @@ describe("resolveLanguageCodeVersions", () => {
     // tsx grammar, module remainder keeps top-level code no chunk carried;
     // bd tea-rags-mcp-8gbh3 — small markdown sections share a chunk and tiny
     // sections join a neighbour; bd tea-rags-mcp-5xpq4 — test setup stored once
-    // per scope and packed, tiny examples grouped.
+    // per scope and packed, tiny examples grouped; bd tea-rags-mcp-g5i0a —
+    // adjacent examples of one scope packed up to 1500 chars, member-addressable.
     expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 4, walker: 3, codegraphSchema: 2 });
     // `*` parses nothing of its own, so there is no grammar package to read —
     // and borrowing one language's would make the axis a lie for every other.

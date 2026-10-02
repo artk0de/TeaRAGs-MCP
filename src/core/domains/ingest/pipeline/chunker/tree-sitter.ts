@@ -44,15 +44,21 @@ import { SymbolIdDisambiguator } from "./symbol-id-disambiguator.js";
  * A test chunk's links a hook body chunk carries into the chunk metadata (bd
  * tea-rags-mcp-5xpq4): a setup chunk's member scope spans and row counts,
  * which explore hydrates examples from, and the member ids of a packed chunk,
- * which find_symbol answers from. All persist; absent keys stay absent.
+ * which find_symbol answers from. On a packed chunk `lineRanges` is aligned
+ * with `memberSymbolIds` (one own range per member) and persists as
+ * `memberLineRanges` (bd tea-rags-mcp-g5i0a): it is what lets find_symbol
+ * answer one member of an example pack with that member's own lines. All
+ * persist; absent keys stay absent.
  */
 function testChunkLinks(
   result: BodyChunkResult,
-): Pick<CodeChunk["metadata"], "scopeLineRanges" | "memberRowCounts" | "memberSymbolIds"> {
+): Pick<CodeChunk["metadata"], "scopeLineRanges" | "memberRowCounts" | "memberSymbolIds" | "memberLineRanges"> {
+  const packed = result.memberSymbolIds !== undefined && result.lineRanges?.length === result.memberSymbolIds.length;
   return {
     ...(result.scopeLineRanges === undefined ? {} : { scopeLineRanges: result.scopeLineRanges }),
     ...(result.memberRowCounts === undefined ? {} : { memberRowCounts: result.memberRowCounts }),
     ...(result.memberSymbolIds === undefined ? {} : { memberSymbolIds: result.memberSymbolIds }),
+    ...(packed ? { memberLineRanges: result.lineRanges } : {}),
   };
 }
 

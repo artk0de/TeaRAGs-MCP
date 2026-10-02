@@ -1011,13 +1011,48 @@ end
         { start: 4, end: 13 },
       ]);
       expect(examples.every((c) => !c.content.includes("let(:user)") && !c.content.includes("before {"))).toBe(true);
+      // INVARIANT CHANGED (bd tea-rags-mcp-g5i0a): the three adjacent examples
+      // of the context share one pack, so one chain serves all of them.
       expect(examples.map((c) => setupChainOf(chunks, c))).toEqual([
         ["User.RSpec.describe User", "User.context 'when admin'"],
-        ["User.RSpec.describe User", "User.context 'when admin'"],
       ]);
-      expect(examples[1].metadata.memberSymbolIds).toEqual([
+      expect(examples[0].metadata.memberSymbolIds).toEqual([
+        "User.context 'when admin'.it 'can manage every account in the organization'",
         "User.context 'when admin'.it { is_expected.to be_valid }",
         "User.context 'when admin'.it { is_expected.to be_persisted }",
+      ]);
+    });
+
+    it("persists a pack's per-member line ranges and row counts, aligned with its member ids (bd tea-rags-mcp-g5i0a)", async () => {
+      const code = `RSpec.describe Invoice do
+  it 'totals its line items' do
+    expect(invoice.total).to eq(30)
+  end
+
+  it 'applies the discount' do
+    invoice.discount = 10
+    expect(invoice.total).to eq(20)
+  end
+end
+`;
+      const chunks = await chunker.chunk(code, "spec/models/invoice_spec.rb", "ruby");
+      const [pack] = chunks.filter((c) => c.metadata.parentType === "test_scope");
+
+      expect(pack.metadata.memberSymbolIds).toEqual([
+        "Invoice.RSpec.describe Invoice.it 'totals its line items'",
+        "Invoice.RSpec.describe Invoice.it 'applies the discount'",
+      ]);
+      expect(pack.metadata.memberLineRanges).toEqual([
+        { start: 2, end: 4 },
+        { start: 6, end: 9 },
+      ]);
+      expect(pack.metadata.memberRowCounts).toEqual([3, 4]);
+      const rows = pack.content.split("\n");
+      expect(rows.slice(-4)).toEqual([
+        "it 'applies the discount' do",
+        "    invoice.discount = 10",
+        "    expect(invoice.total).to eq(20)",
+        "  end",
       ]);
     });
 
@@ -4470,9 +4505,11 @@ end`;
 
       // INVARIANT CHANGED (bd tea-rags-mcp-99gkm): one test chunk per EXAMPLE
       // (3 `it` blocks), no longer one per leaf context (was 2).
+      // INVARIANT CHANGED (bd tea-rags-mcp-g5i0a): the two adjacent 'when admin'
+      // examples share one pack; every example keeps its own member id.
       const testChunks = chunks.filter((c) => c.metadata.chunkType === "test");
-      expect(testChunks).toHaveLength(3);
-      expect(testChunks.map((c) => c.metadata.symbolId)).toEqual([
+      expect(testChunks).toHaveLength(2);
+      expect(testChunks.flatMap((c) => c.metadata.memberSymbolIds ?? [c.metadata.symbolId])).toEqual([
         "User.context 'when admin'.it 'has admin access'",
         "User.context 'when admin'.it 'can manage users'",
         "User.context 'when regular'.it 'has limited access'",

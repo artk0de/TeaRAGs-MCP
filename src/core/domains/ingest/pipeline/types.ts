@@ -64,6 +64,8 @@ export interface ChunkItem extends WorkItem {
       memberRowCounts?: number[];
       /** The member ids a packed test chunk answers find_symbol for (bd tea-rags-mcp-5xpq4). */
       memberSymbolIds?: string[];
+      /** A packed test chunk's own line range per member, aligned with memberSymbolIds (bd tea-rags-mcp-g5i0a). */
+      memberLineRanges?: { start: number; end: number }[];
     };
   };
   /** Pre-computed chunk ID */

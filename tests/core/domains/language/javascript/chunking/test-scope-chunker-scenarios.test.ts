@@ -176,14 +176,18 @@ describe("produceScopeChunks — composition rules", () => {
     expect(setup.chunkType).toBe("test_setup");
     expect(setup.content).toContain("signIn(user)");
     expect(setup.content).toContain("const repo = buildRepo();");
-    expect(examples).toHaveLength(2);
+    // INVARIANT CHANGED (bd tea-rags-mcp-g5i0a): the two adjacent examples share
+    // one pack; each member keeps the example's own rows as its line range.
+    expect(examples).toHaveLength(1);
     for (const chunk of examples) {
       expect(chunk.chunkType).toBe("test");
       expect(chunk.content).not.toContain("signIn(user)");
       expect(setupChainOf(chunks, chunk)).toEqual(["User.describe 'User'"]);
     }
-    expect([examples[0].startLine, examples[0].endLine]).toEqual([6, 8]);
-    expect([examples[1].startLine, examples[1].endLine]).toEqual([10, 12]);
+    expect(examples[0].lineRanges).toEqual([
+      { start: 6, end: 8 },
+      { start: 10, end: 12 },
+    ]);
   });
 
   it("emits a test_setup chunk for a leaf scope holding only setup and other lines", () => {

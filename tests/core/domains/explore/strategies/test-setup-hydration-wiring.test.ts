@@ -162,6 +162,136 @@ describe("test setup hydration in explore strategies", () => {
     });
   });
 
+  describe("example packs (bd tea-rags-mcp-g5i0a)", () => {
+    const FIRST = `${ROOT}.it 'manages'`;
+    const SECOND = `${ROOT}.it 'invites'`;
+    const pack = {
+      id: "pack-ex-1",
+      payload: {
+        ...examplePayload,
+        symbolId: FIRST,
+        name: "it 'manages'",
+        startLine: 4,
+        endLine: 10,
+        content: [
+          "RSpec.describe User do",
+          "it 'manages' do",
+          "  expect(user).to be_admin",
+          "end",
+          "it 'invites' do",
+          "  expect(user.invite).to be(true)",
+          "end",
+        ].join("\n"),
+        memberSymbolIds: [FIRST, SECOND],
+        memberLineRanges: [
+          { start: 4, end: 6 },
+          { start: 8, end: 10 },
+        ],
+        memberRowCounts: [3, 3],
+      },
+    };
+
+    it("find_symbol on a non-first member returns exactly that example, sliced out of the pack, with its setup", async () => {
+      const scrollFiltered = vi.fn(async (_c: string, filter: Record<string, unknown>) => {
+        if (isSetupFetch(filter)) return [setupPoint];
+        return JSON.stringify(filter).includes('"memberSymbolIds"') ? [pack] : [];
+      });
+      const qdrant = { scrollFiltered } as unknown as QdrantManager;
+      const registry = { buildMergedFilter: vi.fn() } as never;
+
+      const results = await new SymbolSearchStrategy(qdrant, reranker, [], [], registry, { symbol: SECOND }).execute({
+        collectionName: "code_x",
+        limit: 50,
+      });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].payload).toMatchObject({
+        symbolId: SECOND,
+        name: "it 'invites'",
+        parentSymbolId: ROOT,
+        startLine: 8,
+        endLine: 10,
+        content: [
+          "RSpec.describe User do",
+          "let(:user) { create(:user) }",
+          "it 'invites' do",
+          "  expect(user.invite).to be(true)",
+          "end",
+        ].join("\n"),
+      });
+      expect(results[0].payload).not.toHaveProperty("memberSymbolIds");
+      expect(results[0].payload).not.toHaveProperty("memberRowCounts");
+      expect(results[0].payload).not.toHaveProperty("memberLineRanges");
+    });
+
+    it("find_symbol on the first member (the pack's own id) returns that example alone", async () => {
+      const scrollFiltered = vi.fn(async (_c: string, filter: Record<string, unknown>) => {
+        const text = JSON.stringify(filter);
+        if (isSetupFetch(filter)) return [];
+        return text.includes('"symbolId"') && !text.includes('"memberSymbolIds"') ? [pack] : [];
+      });
+      const qdrant = { scrollFiltered } as unknown as QdrantManager;
+      const registry = { buildMergedFilter: vi.fn() } as never;
+
+      const results = await new SymbolSearchStrategy(qdrant, reranker, [], [], registry, { symbol: FIRST }).execute({
+        collectionName: "code_x",
+        limit: 50,
+      });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].payload).toMatchObject({
+        symbolId: FIRST,
+        startLine: 4,
+        endLine: 6,
+        content: ["RSpec.describe User do", "it 'manages' do", "  expect(user).to be_admin", "end"].join("\n"),
+      });
+    });
+
+    it("find_symbol on the scope id outlines every member of the pack", async () => {
+      const scrollFiltered = vi.fn(async (_c: string, filter: Record<string, unknown>) =>
+        JSON.stringify(filter).includes('"parentSymbolId"') ? [pack] : [],
+      );
+      const qdrant = { scrollFiltered } as unknown as QdrantManager;
+      const registry = { buildMergedFilter: vi.fn() } as never;
+
+      const results = await new SymbolSearchStrategy(qdrant, reranker, [], [], registry, { symbol: ROOT }).execute({
+        collectionName: "code_x",
+        limit: 50,
+      });
+
+      const outline = results.map((r) => String(r.payload?.content)).join("\n");
+      expect(outline).toContain(FIRST);
+      expect(outline).toContain(SECOND);
+    });
+
+    it("semantic_search returns the pack as one hit, its shared setup chain prepended once", async () => {
+      const qdrant = {
+        search: vi.fn().mockResolvedValue([{ id: pack.id, score: 0.9, payload: pack.payload }]),
+        scrollFiltered: vi.fn().mockResolvedValue([setupPoint]),
+      } as unknown as QdrantManager;
+
+      const hits = await new VectorSearchStrategy(qdrant, reranker, [], []).execute({
+        collectionName: "code_x",
+        embedding: [0.1],
+        limit: 5,
+      });
+
+      expect(hits).toHaveLength(1);
+      expect(hits[0].payload?.content).toBe(
+        [
+          "RSpec.describe User do",
+          "let(:user) { create(:user) }",
+          "it 'manages' do",
+          "  expect(user).to be_admin",
+          "end",
+          "it 'invites' do",
+          "  expect(user.invite).to be(true)",
+          "end",
+        ].join("\n"),
+      );
+    });
+  });
+
   it("find_symbol on a scope id whose setup is packed behind another scope returns the outline and that pack", async () => {
     const ADMIN = "User.context 'admin'";
     const adminExample = {
