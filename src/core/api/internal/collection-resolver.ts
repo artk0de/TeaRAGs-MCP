@@ -8,8 +8,8 @@
  * (`validatePath`, `resolveCollectionName`) that every layer needs.
  */
 
-import { existsSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
 import { resolveGitCommonDir } from "../../adapters/vcs/git/common-dir.js";
 import type { CollectionEntry, PathCollectionResolver } from "../../contracts/types/registry.js";
@@ -20,11 +20,13 @@ import {
   resolveCollectionName,
   validatePathSync,
 } from "../../infra/collection-name.js";
+import { findGitToplevel } from "../../infra/repo-git-state.js";
 import {
   CollectionNotProvidedError,
   InvalidParameterError,
   ProjectNotRegisteredError,
   StaleProjectAliasError,
+  SubmoduleNotIndexedError,
 } from "../errors.js";
 
 /**
@@ -136,13 +138,7 @@ export type { WorkingTree };
  * holds a `.git` FILE, so `existsSync` covers both layouts.
  */
 export function findWorkingTreeRoot(path: string): string | undefined {
-  let dir = validatePathSync(path);
-  for (;;) {
-    if (existsSync(join(dir, ".git"))) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
+  return findGitToplevel(validatePathSync(path));
 }
 
 /**
@@ -153,13 +149,33 @@ export function findWorkingTreeRoot(path: string): string | undefined {
  * and must be a checkout of the same repository — reading one repository's tree
  * against another's index would report every file as changed.
  *
- * `path` alone: the tree is its git toplevel, and the index is, in order, the
- * entry registered AT that tree (a worktree clone keeps its own index), the
- * repository's main-checkout entry, or its only entry. Several entries and none
- * at main is a question only the caller can answer, so it is refused rather
- * than guessed. A tree of no registered repository keeps the path-hash fallback.
+ * `path` alone: the index is, in order of preference, an entry registered in
+ * the caller's own tree (a worktree clone keeps its own index), one registered
+ * in the repository's main checkout, or any entry of the repository; within the
+ * preferred group the deepest entry containing `path` wins, and a group with
+ * several and none containing `path` is a question only the caller can answer,
+ * so it is refused rather than guessed. A tree of no registered repository keeps
+ * the path-hash fallback — unless it is a submodule of an indexed superproject,
+ * which is refused by name instead of hashing to a collection nobody created.
+ *
+ * Either way the tree root is the tree's counterpart of the index root (see
+ * {@link WorkingTree.root}): an index registered at `<repo>/sub` reads
+ * `<tree toplevel>/sub`, not the toplevel (live P2-2).
+ *
+ * A `path` that does not exist inside a git working tree is refused: walking up
+ * from it would silently answer for whatever repository encloses the typo (live
+ * P2-9). Outside every repository a missing path keeps the path-hash rule, which
+ * addresses an index by the path it was built at and needs no tree on disk. A
+ * relative `path` resolves against the process's working directory, which the
+ * CLI relies on.
  */
 export function resolveWorkingTree(registry: CollectionRegistry, input: ResolveInput): WorkingTree {
+  if (input.path !== undefined) {
+    const absolutePath = resolve(input.path);
+    if (!existsSync(absolutePath) && findGitToplevel(dirname(absolutePath)) !== undefined) {
+      throw new InvalidParameterError("path", `'${input.path}' does not exist`);
+    }
+  }
   if (input.collection !== undefined || input.project !== undefined) {
     const resolved = resolveCollection(registry, input);
     const indexRoot =
@@ -169,69 +185,185 @@ export function resolveWorkingTree(registry: CollectionRegistry, input: ResolveI
   }
   if (input.path === undefined) throw new CollectionNotProvidedError();
 
-  const gitRoot = findWorkingTreeRoot(input.path);
-  const treeRoot = gitRoot ?? validatePathSync(input.path);
-  const entry =
-    registry?.findByPath?.(treeRoot) ?? (gitRoot === undefined ? null : selectSameRepositoryEntry(registry, gitRoot));
-  if (entry) return { root: treeRoot, baseIndex: { collectionName: entry.collectionName, root: entry.path } };
+  const requestPath = validatePathSync(input.path);
+  const gitRoot = findGitToplevel(requestPath);
+  if (gitRoot === undefined) {
+    const entry = registry?.findByPath?.(requestPath);
+    if (entry) return { root: requestPath, baseIndex: { collectionName: entry.collectionName, root: entry.path } };
+    const resolved = resolveCollection(registry, { path: input.path });
+    return { root: requestPath, baseIndex: { collectionName: resolved.collectionName, root: resolved.path } };
+  }
+
+  const selected = selectSameRepositoryEntry(registry, gitRoot, requestPath);
+  if (selected) {
+    return {
+      root: selected.root,
+      baseIndex: { collectionName: selected.entry.collectionName, root: selected.entry.path },
+    };
+  }
+  const atToplevel = registry?.findByPath?.(gitRoot);
+  if (atToplevel) {
+    return { root: gitRoot, baseIndex: { collectionName: atToplevel.collectionName, root: atToplevel.path } };
+  }
+  rejectUnindexedSubmodule(registry, input.path, gitRoot);
 
   const resolved = resolveCollection(registry, { path: input.path });
-  return { root: treeRoot, baseIndex: { collectionName: resolved.collectionName, root: resolved.path } };
+  return { root: gitRoot, baseIndex: { collectionName: resolved.collectionName, root: resolved.path } };
 }
 
 /**
- * The tree `path` addresses, provided it is a checkout of the repository the
- * named index was built from. An index with no recorded root (an unregistered
- * collection, a recoverFromQdrant stub) has nothing to compare against, so the
- * path is taken at its word.
+ * The tree `path` addresses — the counterpart of the index root in the tree's
+ * toplevel — provided it is a checkout of the repository the named index was
+ * built from. An index with no recorded root (an unregistered collection, a
+ * recoverFromQdrant stub) has nothing to compare against, so the path's
+ * toplevel is taken at its word.
  */
 function requireSameRepositoryTree(input: ResolveInput, path: string, indexRoot: string | undefined): string {
   const treeRoot = findWorkingTreeRoot(path) ?? validatePathSync(path);
   if (!indexRoot) return treeRoot;
   if (resolveGitCommonDir(treeRoot) !== commonDirOf(indexRoot)) {
     const index = input.project !== undefined ? `project "${input.project}"` : `collection "${input.collection}"`;
-    throw new InvalidParameterError("path", `'${path}' is not a checkout of ${index} (${indexRoot})`);
+    const nested = findEnclosingNestedRepository(treeRoot);
+    const insideIndexRepository =
+      nested !== undefined && resolveGitCommonDir(nested.superproject) === commonDirOf(indexRoot);
+    const detail = insideIndexRepository
+      ? `'${path}' is inside ${nested.kind} '${relative(nested.superproject, nested.root)}' of ${index} (${indexRoot}) — ` +
+        "a separate repository, not a checkout of it; address the superproject or index the submodule"
+      : `'${path}' is not a checkout of ${index} (${indexRoot})`;
+    throw new InvalidParameterError("path", detail);
   }
-  return treeRoot;
+  return counterpartRoot(treeRoot, indexRoot);
 }
 
 /**
- * The registry entry indexing the repository behind `treeRoot`, when the tree
- * itself is not registered: the main checkout's entry, else the only one.
+ * The index root's counterpart in the tree whose toplevel is `treeToplevel`:
+ * the same path below the toplevel that the index root has below its own.
+ */
+function counterpartRoot(treeToplevel: string, indexRoot: string): string {
+  const indexToplevel = toplevelOf(indexRoot);
+  if (indexToplevel === undefined) return treeToplevel;
+  const below = relative(indexToplevel, indexRoot);
+  return below === "" ? treeToplevel : join(treeToplevel, below);
+}
+
+function contains(root: string, path: string): boolean {
+  return path === root || path.startsWith(root + sep);
+}
+
+interface SameRepositoryCandidate {
+  entry: CollectionEntry;
+  /** the entry root's counterpart in the requesting tree */
+  root: string;
+}
+
+/**
+ * The registry entry indexing the repository behind `treeToplevel`, and the
+ * tree root it is read at. Groups in order: entries registered inside this very
+ * tree, entries inside the main checkout, any entry of the repository; the first
+ * non-empty group decides. Inside it, the deepest counterpart containing
+ * `requestPath` wins; none containing it leaves only a group of one unambiguous.
  * Entries with an empty `path` (recoverFromQdrant stubs) belong to no tree.
  */
-function selectSameRepositoryEntry(registry: CollectionRegistry, treeRoot: string): CollectionEntry | null {
-  const commonDir = resolveGitCommonDir(treeRoot);
-  const candidates = (registry?.list?.() ?? []).filter((entry) => entry.path && commonDirOf(entry.path) === commonDir);
+function selectSameRepositoryEntry(
+  registry: CollectionRegistry,
+  treeToplevel: string,
+  requestPath: string,
+): SameRepositoryCandidate | null {
+  const commonDir = resolveGitCommonDir(treeToplevel);
+  const candidates = (registry?.list?.() ?? [])
+    .filter((entry) => entry.path && commonDirOf(entry.path) === commonDir)
+    .map((entry) => ({ entry, toplevel: toplevelOf(entry.path), root: counterpartRoot(treeToplevel, entry.path) }));
   if (candidates.length === 0) return null;
 
   // The main checkout is the tree whose `.git` IS the shared dir; a bare
-  // repository has none, and then only a single candidate is unambiguous.
+  // repository has none.
   const mainCheckout = basename(commonDir) === ".git" ? dirname(commonDir) : undefined;
-  const atMain = candidates.find((entry) => entry.path === mainCheckout);
-  if (atMain) return atMain;
-  if (candidates.length === 1) return candidates[0];
+  const groups = [
+    candidates.filter((candidate) => candidate.toplevel === treeToplevel),
+    candidates.filter((candidate) => mainCheckout !== undefined && candidate.toplevel === mainCheckout),
+    candidates,
+  ];
+  const group = groups.find((members) => members.length > 0) ?? candidates;
 
-  const aliases = candidates.map((entry) => entry.name ?? entry.collectionName).join(", ");
+  const containing = group.filter((candidate) => contains(candidate.root, requestPath));
+  if (containing.length === 0 && group.length === 1) return group[0];
+  const deepest = Math.max(...containing.map((candidate) => candidate.root.length));
+  const winners = containing.filter((candidate) => candidate.root.length === deepest);
+  if (winners.length === 1) return winners[0];
+
+  const aliases = (winners.length > 0 ? winners : group)
+    .map((candidate) => candidate.entry.name ?? candidate.entry.collectionName)
+    .join(", ");
   throw new InvalidParameterError(
     "path",
-    `'${treeRoot}' belongs to a repository indexed under several projects: ${aliases} — pass project=<alias>`,
+    `'${requestPath}' belongs to a repository indexed under several projects: ${aliases} — pass project=<alias>`,
   );
 }
 
 /**
- * `resolveGitCommonDir` per registered root, memoised for the process: entry
- * roots are few and stable, and every path-addressed request scans them all.
- * The unreadable fallback (the root itself) is not memoised: a root that is not
- * a repository yet may become one.
+ * The repository `treeToplevel` is nested in, when it is one: a submodule (the
+ * superproject's `.gitmodules` lists it) or a plain nested repository.
+ */
+function findEnclosingNestedRepository(
+  treeToplevel: string,
+): { kind: "submodule" | "nested repository"; root: string; superproject: string } | undefined {
+  const superproject = findGitToplevel(dirname(treeToplevel));
+  if (superproject === undefined) return undefined;
+  const below = relative(superproject, treeToplevel).split(sep).join("/");
+  let gitmodules = "";
+  try {
+    gitmodules = readFileSync(join(superproject, ".gitmodules"), "utf8");
+  } catch {
+    // No .gitmodules: a nested repository, not a submodule.
+  }
+  const listed = gitmodules
+    .split("\n")
+    .some((line) => /^\s*path\s*=/.test(line) && line.split("=")[1]?.trim() === below);
+  return { kind: listed ? "submodule" : "nested repository", root: treeToplevel, superproject };
+}
+
+/**
+ * Refuse a path inside a submodule (or nested repository) whose superproject is
+ * indexed while the submodule is not (live P2-8). The submodule is a separate
+ * repository, so the superproject's index cannot answer for it, and the
+ * path-hash fallback would name a collection nobody created.
+ */
+function rejectUnindexedSubmodule(registry: CollectionRegistry, path: string, treeToplevel: string): void {
+  const nested = findEnclosingNestedRepository(treeToplevel);
+  if (nested === undefined) return;
+  const superCommonDir = resolveGitCommonDir(nested.superproject);
+  const superIndexed = (registry?.list?.() ?? []).some(
+    (entry) => entry.path && commonDirOf(entry.path) === superCommonDir,
+  );
+  if (superIndexed) throw new SubmoduleNotIndexedError(path, nested);
+}
+
+/**
+ * Toplevel and `resolveGitCommonDir` per registered root, memoised for the
+ * process: entry roots are few and stable, and every path-addressed request
+ * scans them all. A root may sit BELOW its toplevel (a project registered at a
+ * subdirectory), so the common dir is resolved from the toplevel — the
+ * subdirectory has no `.git` to read (live P2-2). The unreadable fallback (the
+ * root itself) is not memoised: a root that is not a repository yet may become
+ * one.
  */
 const commonDirByEntryRoot = new Map<string, string>();
+const toplevelByEntryRoot = new Map<string, string>();
+
+function toplevelOf(entryRoot: string): string | undefined {
+  const memoised = toplevelByEntryRoot.get(entryRoot);
+  if (memoised !== undefined) return memoised;
+  const toplevel = findGitToplevel(entryRoot);
+  if (toplevel !== undefined) toplevelByEntryRoot.set(entryRoot, toplevel);
+  return toplevel;
+}
 
 function commonDirOf(entryRoot: string): string {
   const memoised = commonDirByEntryRoot.get(entryRoot);
   if (memoised !== undefined) return memoised;
-  const commonDir = resolveGitCommonDir(entryRoot);
-  if (commonDir !== entryRoot) commonDirByEntryRoot.set(entryRoot, commonDir);
+  const toplevel = toplevelOf(entryRoot) ?? entryRoot;
+  const commonDir = resolveGitCommonDir(toplevel);
+  if (commonDir !== toplevel) commonDirByEntryRoot.set(entryRoot, commonDir);
   return commonDir;
 }
 

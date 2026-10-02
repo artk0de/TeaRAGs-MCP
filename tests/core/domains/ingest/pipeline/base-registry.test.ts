@@ -5,6 +5,7 @@
  * CollectionEntry in CollectionRegistry (T14 of the Project Registry epic).
  */
 
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -278,6 +279,55 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
       indexedBranch: "master",
       indexedCommit: "abc123def",
       indexedDirty: false,
+    });
+  });
+
+  it("records the git block of the enclosing repository when the codebase is a subdirectory of it (live P2-2)", async () => {
+    mkdirSync(join(codebaseDir, ".git", "refs", "heads"), { recursive: true });
+    writeFileSync(join(codebaseDir, ".git", "HEAD"), "ref: refs/heads/master\n");
+    writeFileSync(join(codebaseDir, ".git", "refs", "heads", "master"), "abc123def\n");
+    const sub = join(codebaseDir, "sub");
+    mkdirSync(sub);
+
+    await createTestFile(sub, "gitstate.ts", "export const x = 1;");
+    await ingest.indexCodebase(sub);
+    const status = await ingest.getIndexStatus(sub);
+
+    expect(registry.get(status.collectionName!)?.git).toEqual({
+      indexedBranch: "master",
+      indexedCommit: "abc123def",
+      indexedDirty: false,
+    });
+  });
+
+  it("records the indexed files that differ from the indexed commit (live P1-1)", async () => {
+    const git = (...args: string[]): string =>
+      execFileSync("git", args, {
+        cwd: codebaseDir,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: "t",
+          GIT_AUTHOR_EMAIL: "t@x",
+          GIT_COMMITTER_NAME: "t",
+          GIT_COMMITTER_EMAIL: "t@x",
+        },
+      });
+    git("init", "-q", "-b", "main");
+    await createTestFile(codebaseDir, "a.ts", "export const a = 1;");
+    await createTestFile(codebaseDir, "b.ts", "export const b = 1;");
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+    await createTestFile(codebaseDir, "a.ts", "export const a = 2;");
+    await createTestFile(codebaseDir, "notes.bin", "not an indexed file");
+
+    await ingest.indexCodebase(codebaseDir);
+    const status = await ingest.getIndexStatus(codebaseDir);
+
+    expect(registry.get(status.collectionName!)?.git).toMatchObject({
+      indexedBranch: "main",
+      indexedDirty: true,
+      indexedDirtyPaths: ["a.ts"],
     });
   });
 

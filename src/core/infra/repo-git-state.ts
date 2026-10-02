@@ -22,7 +22,7 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { resolveGitExecutable } from "./git-executable.js";
 
@@ -131,6 +131,70 @@ export function readWorkingTreeDirty(repoPath: string, execFileImpl: typeof exec
   } catch {
     return false;
   }
+}
+
+/**
+ * Nearest ancestor of `absolutePath` (inclusive) holding `.git` — the git
+ * toplevel of the tree the path lies in. Filesystem only, no realpath: callers
+ * hand over the spelling they compare against. A linked worktree and a
+ * submodule hold a `.git` FILE, so `existsSync` covers every layout.
+ *
+ * Why it exists: a project may be registered at a SUBDIRECTORY of its
+ * repository, and every reader that expects `.git` at the project root
+ * (`readRepoGitState`) then sees no repository at all (live P2-2, bd
+ * tea-rags-mcp-xi2r9).
+ */
+export function findGitToplevel(absolutePath: string): string | undefined {
+  let dir = absolutePath;
+  for (;;) {
+    if (existsSync(join(dir, ".git"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+/**
+ * The files under `rootPath` whose content differs from HEAD — modified,
+ * staged, deleted and untracked non-ignored — relative to `rootPath` (not to
+ * the git toplevel, which git reports from). Undefined when git cannot answer.
+ *
+ * Why: an index run reads the tree, not the commit, so a file dirty at index
+ * time is indexed with content its `indexedCommit` does not hold. A later diff
+ * against that commit cannot see it once the file is restored (or deleted, for
+ * an untracked one), so the run stamps this list and the working-tree overlay
+ * re-reads those files (live P1-1, bd tea-rags-mcp-xi2r9). Spawns
+ * `git status` — pipeline-finalize use only. `--no-renames` lists both sides of
+ * a move, which is what "differs from HEAD" means per path.
+ */
+export function readWorkingTreeDirtyPaths(
+  rootPath: string,
+  execFileImpl: typeof execFileSync = execFileSync,
+): string[] | undefined {
+  const toplevel = findGitToplevel(rootPath);
+  if (toplevel === undefined) return undefined;
+  let out: string;
+  try {
+    out = String(
+      execFileImpl(
+        resolveGitExecutable(),
+        ["-C", toplevel, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"],
+        { timeout: 15_000, encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 },
+      ),
+    );
+  } catch {
+    return undefined;
+  }
+  const prefix = relative(toplevel, rootPath).split(sep).join("/");
+  const paths: string[] = [];
+  for (const field of out.split("\0")) {
+    if (field.length < 4) continue;
+    // "XY path" — porcelain paths are always toplevel-relative, "/"-separated.
+    const path = field.slice(3);
+    if (prefix === "") paths.push(path);
+    else if (path.startsWith(`${prefix}/`)) paths.push(path.slice(prefix.length + 1));
+  }
+  return paths;
 }
 
 /**

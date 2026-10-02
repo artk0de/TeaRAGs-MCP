@@ -20,6 +20,7 @@ export type InputErrorCode =
   | "INPUT_PROJECT_ALIAS_STALE"
   | "INPUT_PROJECT_ENV_KEY_UNKNOWN"
   | "INPUT_PATH_NOT_EXISTS"
+  | "INPUT_PATH_IN_UNINDEXED_SUBMODULE"
   | "INPUT_INVALID_DOCUMENT_METADATA_SCHEMA"
   | "INPUT_DOCUMENT_METADATA_SCHEMA_VIOLATION"
   | "INPUT_UNKNOWN_ARCHITECTURE_COMPONENT";
@@ -72,6 +73,29 @@ export class InvalidParameterError extends InputValidationError {
       code: "INPUT_INVALID_PARAMETER",
       message: `Invalid parameter "${parameter}": ${detail}`,
       hint: "Check the parameter value and try again",
+    });
+  }
+}
+
+/**
+ * Thrown when a read's `path` lies inside a submodule (or another nested
+ * repository) of an indexed superproject, and nothing indexes the submodule
+ * itself (bd tea-rags-mcp-xi2r9, live P2-8). The submodule is a separate
+ * repository, so the superproject's index cannot answer for its tree; without
+ * this the path fell through to the path hash and surfaced as a bare
+ * "collection not found" naming a collection nobody created.
+ */
+export class SubmoduleNotIndexedError extends InputValidationError {
+  constructor(path: string, nested: { kind: "submodule" | "nested repository"; root: string; superproject: string }) {
+    const relativeRoot = nested.root.slice(nested.superproject.length + 1);
+    super({
+      code: "INPUT_PATH_IN_UNINDEXED_SUBMODULE",
+      message:
+        `'${path}' is inside ${nested.kind} '${relativeRoot}' of ${nested.superproject} — ` +
+        "a separate repository that is not indexed",
+      hint:
+        `Index it (\`tea-rags index-codebase ${nested.root} --name <alias>\`), ` +
+        `or address the superproject (path=${nested.superproject}).`,
     });
   }
 }

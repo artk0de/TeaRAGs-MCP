@@ -134,6 +134,19 @@ describe("WorkingTreeDeltaReader", () => {
     expect(measured(read)).toEqual({ changed: ["src/b-only.ts"], deleted: [] });
   });
 
+  it("should rebase the delta onto a subdirectory root and leave out files outside it", async () => {
+    // An index registered at a subdirectory (live P2-2): git names paths from
+    // the toplevel, the index names them from its own root.
+    write("src/keep.ts", "export const keep = 3;\n");
+    write("src/fresh.ts", "export const fresh = 1;\n");
+    write("outside.ts", "export const outside = 1;\n");
+    fixture.git(tree, "rm", "-q", "src/old-name.ts");
+
+    const read = await createWorkingTreeDeltaReader().read(join(tree, "src"), indexedCommit, accepts);
+
+    expect(measured(read)).toEqual({ changed: ["fresh.ts", "keep.ts"], deleted: ["old-name.ts"] });
+  });
+
   it("should degrade when the indexed commit is not in this repository", async () => {
     const unknown = "0123456789abcdef0123456789abcdef01234567";
 

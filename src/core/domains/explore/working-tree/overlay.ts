@@ -8,13 +8,25 @@
  * failure — still yields a marker, with `degraded` saying why and what fixes
  * it. A degraded view touches no path, so nothing is substituted or hidden.
  */
-import type { CollectionEntry } from "../../../contracts/types/registry.js";
-import type { WorkingTree, WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
-import { readRepoGitState } from "../../../infra/repo-git-state.js";
+import { promises as fs } from "node:fs";
+import { join } from "node:path";
+
+import type { CollectionEntry, RegistryGitState } from "../../../contracts/types/registry.js";
+import {
+  WORKING_TREE_DELTA_FILE_CAP,
+  type WorkingTree,
+  type WorkingTreeMarker,
+} from "../../../contracts/types/working-tree.js";
+import { findGitToplevel, readRepoGitState } from "../../../infra/repo-git-state.js";
 import type { ChunkerConfig } from "../../../types.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import type { WorkingTreeChunkLayer } from "./chunk-layer.js";
-import type { WorkingTreeDeltaReader } from "./delta.js";
+import {
+  WORKING_TREE_REINDEX_REMEDY,
+  WORKING_TREE_WORKTREE_INDEX_REMEDY,
+  type WorkingTreeDelta,
+  type WorkingTreeDeltaReader,
+} from "./delta.js";
 
 export interface WorkingTreeView {
   marker: WorkingTreeMarker;
@@ -84,11 +96,22 @@ export class WorkingTreeOverlay {
 
     if (tree.root === "") return degraded(NO_TREE_REASON, NO_TREE_REMEDY);
     try {
-      marker.treeCommit = readRepoGitState(tree.root)?.commit || null;
+      // The tree root may sit below its git toplevel (an index registered at a
+      // subdirectory), where `.git` is not; HEAD is the toplevel's.
+      marker.treeCommit = readRepoGitState(findGitToplevel(tree.root) ?? tree.root)?.commit || null;
       const accepts = await this.deps.createFileFilter(tree.root);
       const read = await this.deps.deltaReader.read(tree.root, indexedCommit, accepts);
       if (read.kind === "degraded") return degraded(read.reason, read.remedy);
-      const { changed, deleted } = read.delta;
+      const dirtyAtIndex = dirtyAtIndexTime(entry?.git);
+      if (dirtyAtIndex.kind === "unknown") return degraded(dirtyAtIndex.reason, WORKING_TREE_REINDEX_REMEDY);
+      const { changed, deleted } = await foldDirtyAtIndexTime(tree.root, read.delta, dirtyAtIndex.paths, accepts);
+      const total = changed.length + deleted.length;
+      if (total > WORKING_TREE_DELTA_FILE_CAP) {
+        return degraded(
+          `delta of ${total} files over the ${WORKING_TREE_DELTA_FILE_CAP}-file cap`,
+          WORKING_TREE_WORKTREE_INDEX_REMEDY,
+        );
+      }
       const view: WorkingTreeView = {
         marker: { ...marker, changedFiles: changed.length, deletedFiles: deleted.length },
         touchedPaths: new Set([...changed, ...deleted]),
@@ -105,6 +128,53 @@ export class WorkingTreeOverlay {
       return degraded(`cannot read the working tree delta: ${message.split("\n")[0]}`, UNREADABLE_REMEDY);
     }
   }
+}
+
+type DirtyAtIndexTime = { kind: "listed"; paths: readonly string[] } | { kind: "unknown"; reason: string };
+
+/**
+ * The files the index holds with content its `indexedCommit` does not — dirty
+ * when the run read the tree (live P1-1). A dirty stamp without the list is
+ * UNKNOWN, not clean: it was written before the list existed, or git could not
+ * answer, or the list overflowed; measuring past it would answer from content
+ * no commit holds while claiming the tree matches.
+ */
+function dirtyAtIndexTime(git: RegistryGitState | undefined): DirtyAtIndexTime {
+  if (git?.indexedDirtyPathsOverflowed) {
+    return { kind: "unknown", reason: `index built from a tree with over ${WORKING_TREE_DELTA_FILE_CAP} dirty files` };
+  }
+  if (git?.indexedDirtyPaths !== undefined) return { kind: "listed", paths: git.indexedDirtyPaths };
+  if (git?.indexedDirty) {
+    return { kind: "unknown", reason: "index built from a dirty tree; its dirty files are unknown" };
+  }
+  return { kind: "listed", paths: [] };
+}
+
+/**
+ * The delta plus every file dirty at index time: the index holds that file's
+ * index-time content, which a diff against `indexedCommit` cannot see once the
+ * tree matches the commit again. Present in the tree → changed (re-read, even
+ * when it still equals what was indexed); absent → deleted.
+ */
+async function foldDirtyAtIndexTime(
+  root: string,
+  delta: WorkingTreeDelta,
+  dirtyPaths: readonly string[],
+  accepts: (relativePath: string) => boolean,
+): Promise<{ changed: string[]; deleted: string[] }> {
+  const changed = new Set(delta.changed);
+  const deleted = new Set(delta.deleted);
+  const extra = dirtyPaths.filter((path) => !changed.has(path) && !deleted.has(path) && accepts(path));
+  const present = await Promise.all(
+    extra.map(async (path) =>
+      fs.access(join(root, path)).then(
+        () => true,
+        () => false,
+      ),
+    ),
+  );
+  extra.forEach((path, i) => (present[i] ? changed : deleted).add(path));
+  return { changed: [...changed].sort(), deleted: [...deleted].sort() };
 }
 
 /** The changed files' rows; names the files that yielded none in `marker.unparsed`. */

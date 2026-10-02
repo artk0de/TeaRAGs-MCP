@@ -19,6 +19,23 @@ export interface RegistryGitState {
   indexedCommit: string;
   /** Working tree had uncommitted changes at index time. */
   indexedDirty: boolean;
+  /**
+   * The indexed files whose content differed from `indexedCommit` at index
+   * time — modified, staged, deleted or untracked — relative to the project
+   * root, admitted by the ingest rules (bd tea-rags-mcp-xi2r9, live P1-1). The
+   * index holds THEIR content, not the commit's, so a diff against
+   * `indexedCommit` alone misses them once the tree is restored: the
+   * working-tree overlay re-reads every one. Empty = the run saw a clean tree.
+   * Absent on entries written before the field existed, when git could not
+   * answer, and when the list overflowed (see `indexedDirtyPathsOverflowed`) —
+   * an absent list on a dirty stamp is "unknown", never "none".
+   */
+  indexedDirtyPaths?: string[];
+  /**
+   * More than `WORKING_TREE_DELTA_FILE_CAP` files were dirty at index time; the
+   * list is not stored, because the overlay could not hold it anyway.
+   */
+  indexedDirtyPathsOverflowed?: boolean;
 }
 
 /** Outcome of one detached auto-update run (spec §4 step 5). */

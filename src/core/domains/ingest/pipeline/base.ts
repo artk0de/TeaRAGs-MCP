@@ -24,9 +24,15 @@ import {
   type PathCollectionResolver,
   type RegistryGitState,
 } from "../../../contracts/types/registry.js";
+import { WORKING_TREE_DELTA_FILE_CAP } from "../../../contracts/types/working-tree.js";
 import { hashCollectionForPath, validatePath } from "../../../infra/collection-name.js";
 import { TeaRagsError } from "../../../infra/errors.js";
-import { readRepoGitState, readWorkingTreeDirty } from "../../../infra/repo-git-state.js";
+import {
+  findGitToplevel,
+  readRepoGitState,
+  readWorkingTreeDirty,
+  readWorkingTreeDirtyPaths,
+} from "../../../infra/repo-git-state.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, IngestCodeConfig } from "../../../types.js";
 import type { IngestDependencies } from "../factory.js";
 import type { CodegraphDbLister, CodegraphDbRemover } from "../infra/alias-cleanup.js";
@@ -379,7 +385,7 @@ export abstract class BaseIndexingPipeline {
       // prime re-apply the map registry-first in a fresh shell with the one
       // general rule (outer env > registry env > code default).
       const { envSnapshot } = this;
-      const gitState = this.buildRegistryGitState(absolutePath);
+      const gitState = await this.buildRegistryGitState(absolutePath);
       // Settled embedding batch optima, keyed by endpoint + model; the registry
       // MERGES them into what earlier runs learnt (bd tea-rags-mcp-7ju66). An
       // endpoint without a URL (in-process provider) has no stable key.
@@ -423,18 +429,39 @@ export abstract class BaseIndexingPipeline {
   }
 
   /**
-   * Capture the repo git state for the registry entry. The dirty probe spawns
+   * Capture the repo git state for the registry entry. The dirty probes spawn
    * `git status` — acceptable at finalize (the run just scanned every file),
    * never on a query path.
+   *
+   * HEAD is read at the git TOPLEVEL: a project registered at a subdirectory of
+   * its repository has no `.git` of its own, and stamping nothing left its
+   * working-tree overlay degraded with a remedy that could not fix it (live
+   * P2-2, bd tea-rags-mcp-xi2r9).
+   *
+   * `indexedDirtyPaths` names the indexed files this run read with content
+   * `indexedCommit` does not hold (live P1-1): the overlay re-reads them, since
+   * a diff against the commit stops seeing them once they are restored. Only
+   * files the ingest rules admit are listed — anything else was never indexed —
+   * and past `WORKING_TREE_DELTA_FILE_CAP` nothing is stored, only the
+   * overflow, because the overlay could not hold the list anyway.
    */
-  private buildRegistryGitState(absolutePath: string): RegistryGitState | undefined {
-    const state = readRepoGitState(absolutePath);
+  private async buildRegistryGitState(absolutePath: string): Promise<RegistryGitState | undefined> {
+    const state = readRepoGitState(findGitToplevel(absolutePath) ?? absolutePath);
     if (state === null) return undefined;
-    return {
+    const gitState: RegistryGitState = {
       indexedBranch: state.branch,
       indexedCommit: state.commit,
       indexedDirty: readWorkingTreeDirty(absolutePath),
     };
+    const dirtyPaths = readWorkingTreeDirtyPaths(absolutePath);
+    if (dirtyPaths === undefined) return gitState;
+    const scanner = this.createScanner();
+    await scanner.loadIgnorePatterns(absolutePath);
+    const indexedDirtyPaths = dirtyPaths.filter((path) => scanner.accepts(path)).sort();
+    if (indexedDirtyPaths.length > WORKING_TREE_DELTA_FILE_CAP) {
+      return { ...gitState, indexedDirtyPathsOverflowed: true };
+    }
+    return { ...gitState, indexedDirtyPaths };
   }
 
   // ── Processing components (private) ────────────────────

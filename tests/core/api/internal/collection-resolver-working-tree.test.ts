@@ -6,12 +6,12 @@
  */
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createGitWorkingTreeFixture, type GitWorkingTreeFixture } from "../../__helpers__/git-working-tree-fixture.js";
-import { InvalidParameterError } from "../../../../src/core/api/errors.js";
+import { InvalidParameterError, SubmoduleNotIndexedError } from "../../../../src/core/api/errors.js";
 import { resolveCollection, resolveWorkingTree } from "../../../../src/core/api/internal/collection-resolver.js";
 import { CollectionRegistry } from "../../../../src/core/domains/maintenance/registry/index.js";
 
@@ -121,6 +121,104 @@ describe("resolveWorkingTree", { timeout: 60_000 }, () => {
     expect(resolveWorkingTree(registry, { project: "main" })).toEqual({
       root: fixture.mainRoot,
       baseIndex: { collectionName: "code_main", root: fixture.mainRoot },
+    });
+  });
+
+  describe("an index registered at a subdirectory of its repository (live P2-2)", () => {
+    let sub: string;
+
+    beforeEach(() => {
+      fixture.commit(fixture.mainRoot, { "sub/a.ts": "export const a = 1;\n" });
+      sub = join(fixture.mainRoot, "sub");
+      register("code_sub", sub, "subproj");
+    });
+
+    it("its own subdirectory reads against it, the tree rooted at the subdirectory", () => {
+      expect(resolveWorkingTree(registry, { path: sub })).toEqual({
+        root: sub,
+        baseIndex: { collectionName: "code_sub", root: sub },
+      });
+    });
+
+    it("the repository's toplevel reads against it at the subdirectory's counterpart", () => {
+      expect(resolveWorkingTree(registry, { path: fixture.mainRoot }).root).toBe(sub);
+    });
+
+    it("a linked worktree's counterpart subdirectory reads against it", () => {
+      const tree = fixture.addWorktree("a");
+
+      expect(resolveWorkingTree(registry, { path: join(tree, "sub") })).toEqual({
+        root: join(tree, "sub"),
+        baseIndex: { collectionName: "code_sub", root: sub },
+      });
+    });
+
+    it("its project with its own path is a checkout of it", () => {
+      expect(resolveWorkingTree(registry, { project: "subproj", path: sub }).root).toBe(sub);
+    });
+
+    it("its project with a linked worktree's path reads the worktree's counterpart", () => {
+      const tree = fixture.addWorktree("b");
+
+      expect(resolveWorkingTree(registry, { project: "subproj", path: tree }).root).toBe(join(tree, "sub"));
+    });
+
+    it("the deepest entry containing the path wins over the toplevel's entry", () => {
+      register("code_main", fixture.mainRoot, "main");
+
+      expect(resolveWorkingTree(registry, { path: join(sub, "a.ts") }).baseIndex.collectionName).toBe("code_sub");
+      expect(resolveWorkingTree(registry, { path: fixture.mainRoot }).baseIndex.collectionName).toBe("code_main");
+    });
+  });
+
+  describe("a submodule of an indexed superproject (live P2-8)", () => {
+    let submodule: string;
+
+    beforeEach(() => {
+      const upstream = join(fixture.mainRoot, "..", "upstream");
+      mkdirSync(upstream);
+      fixture.git(upstream, "init", "-q", "-b", "main");
+      fixture.commit(upstream, { "lib.ts": "export const lib = 1;\n" });
+      fixture.git(fixture.mainRoot, "-c", "protocol.file.allow=always", "submodule", "add", "-q", upstream, "subm");
+      fixture.git(fixture.mainRoot, "commit", "-q", "-m", "add submodule");
+      submodule = join(fixture.mainRoot, "subm");
+      register("code_main", fixture.mainRoot, "main");
+    });
+
+    it("a path inside it is refused as an unindexed submodule, naming the remedy", () => {
+      expect(() => resolveWorkingTree(registry, { path: submodule })).toThrow(SubmoduleNotIndexedError);
+      expect(() => resolveWorkingTree(registry, { path: join(submodule, "lib.ts") })).toThrow(
+        /submodule 'subm'.*separate repository/,
+      );
+    });
+
+    it("the superproject's project with a path inside it names the submodule", () => {
+      expect(() => resolveWorkingTree(registry, { project: "main", path: submodule })).toThrow(InvalidParameterError);
+      expect(() => resolveWorkingTree(registry, { project: "main", path: submodule })).toThrow(/submodule 'subm'/);
+    });
+
+    it("an indexed submodule reads against its own index", () => {
+      register("code_subm", submodule, "subm");
+
+      expect(resolveWorkingTree(registry, { path: submodule }).baseIndex.collectionName).toBe("code_subm");
+    });
+  });
+
+  describe("path quirks (live P2-9)", () => {
+    it("refuses a path that does not exist, naming it", () => {
+      register("code_main", fixture.mainRoot, "main");
+      const missing = join(fixture.mainRoot, "no-such-dir");
+
+      expect(() => resolveWorkingTree(registry, { path: missing })).toThrow(InvalidParameterError);
+      expect(() => resolveWorkingTree(registry, { path: missing })).toThrow(/no-such-dir/);
+      expect(() => resolveWorkingTree(registry, { project: "main", path: missing })).toThrow(/no-such-dir/);
+    });
+
+    it("resolves a relative path against the process's working directory", () => {
+      register("code_main", fixture.mainRoot, "main");
+      const tree = fixture.addWorktree("rel");
+
+      expect(resolveWorkingTree(registry, { path: relative(process.cwd(), tree) }).root).toBe(tree);
     });
   });
 

@@ -8,6 +8,7 @@ import {
   createGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
 } from "../../../__helpers__/git-working-tree-fixture.js";
+import type { RegistryGitState } from "../../../../../src/core/contracts/types/registry.js";
 import type { WorkingTree } from "../../../../../src/core/contracts/types/working-tree.js";
 import {
   createWorkingTreeChunkLayer,
@@ -32,10 +33,10 @@ describe("WorkingTreeOverlay", { timeout: 60_000 }, () => {
 
   const COLLECTION = "code_overlay";
 
-  const record = (git: { indexedCommit: string; indexedDirty: boolean } | undefined): void => {
+  const record = (git: Omit<RegistryGitState, "indexedBranch"> | undefined, path = fixture.mainRoot): void => {
     registry.record({
       collectionName: COLLECTION,
-      path: fixture.mainRoot,
+      path,
       embeddingModel: "m",
       embeddingDimensions: 1,
       qdrantUrl: "u",
@@ -93,7 +94,7 @@ describe("WorkingTreeOverlay", { timeout: 60_000 }, () => {
   });
 
   it("should count changed and deleted files and expose them as touched paths", async () => {
-    record({ indexedCommit, indexedDirty: true });
+    record({ indexedCommit, indexedDirty: true, indexedDirtyPaths: [] });
     writeFileSync(join(tree, "src/keep.ts"), "export const keep = 2;\n");
     writeFileSync(join(tree, "src/new.ts"), "export const fresh = 1;\n");
     fixture.git(tree, "rm", "-q", "src/index.ts");
@@ -104,6 +105,76 @@ describe("WorkingTreeOverlay", { timeout: 60_000 }, () => {
     expect(view.marker.degraded).toBeUndefined();
     expect([...view.touchedPaths].sort()).toEqual(["src/index.ts", "src/keep.ts", "src/new.ts"]);
     expect([...view.deletedPaths]).toEqual(["src/index.ts"]);
+  });
+
+  describe("an index built from a dirty tree (live P1-1)", () => {
+    it("should touch a file that was dirty at index time though the tree matches the indexed commit again", async () => {
+      record({ indexedCommit, indexedDirty: true, indexedDirtyPaths: ["src/keep.ts"] });
+
+      const view = await overlayWith().view(workingTree(), "proj");
+
+      expect(view.marker).toMatchObject({ changedFiles: 1, deletedFiles: 0, indexedDirty: true });
+      expect(view.marker.degraded).toBeUndefined();
+      expect([...view.touchedPaths]).toEqual(["src/keep.ts"]);
+      expect(view.deletedPaths.size).toBe(0);
+    });
+
+    it("should read a file that was dirty at index time and is gone from the tree as deleted", async () => {
+      record({ indexedCommit, indexedDirty: true, indexedDirtyPaths: ["src/scratch.ts"] });
+
+      const view = await overlayWith().view(workingTree(), "proj");
+
+      expect(view.marker).toMatchObject({ changedFiles: 0, deletedFiles: 1 });
+      expect([...view.deletedPaths]).toEqual(["src/scratch.ts"]);
+      expect([...view.touchedPaths]).toEqual(["src/scratch.ts"]);
+    });
+
+    it("should count a file both dirty at index time and changed in the tree once", async () => {
+      record({ indexedCommit, indexedDirty: true, indexedDirtyPaths: ["src/keep.ts"] });
+      writeFileSync(join(tree, "src/keep.ts"), "export const keep = 9;\n");
+
+      const view = await overlayWith().view(workingTree(), "proj");
+
+      expect(view.marker).toMatchObject({ changedFiles: 1, deletedFiles: 0 });
+      expect([...view.touchedPaths]).toEqual(["src/keep.ts"]);
+    });
+
+    it("should degrade when the index was stamped dirty before its dirty files were recorded", async () => {
+      record({ indexedCommit, indexedDirty: true });
+
+      const view = await overlayWith().view(workingTree(), "proj");
+
+      expect(view.marker.degraded).toEqual({
+        reason: "index built from a dirty tree; its dirty files are unknown",
+        remedy: "tea-rags index-codebase --project proj",
+      });
+      expect(view.touchedPaths.size).toBe(0);
+    });
+
+    it("should degrade when the index was built from more dirty files than the overlay holds", async () => {
+      record({ indexedCommit, indexedDirty: true, indexedDirtyPathsOverflowed: true });
+
+      const view = await overlayWith().view(workingTree(), "proj");
+
+      expect(view.marker.degraded?.reason).toBe("index built from a tree with over 200 dirty files");
+      expect(view.marker.degraded?.remedy).toBe("tea-rags index-codebase --project proj");
+      expect(view.touchedPaths.size).toBe(0);
+    });
+  });
+
+  it("should measure a tree whose index is registered at a subdirectory (live P2-2)", async () => {
+    record({ indexedCommit, indexedDirty: false }, join(fixture.mainRoot, "src"));
+    writeFileSync(join(tree, "src/keep.ts"), "export const keep = 2;\n");
+    writeFileSync(join(tree, "outside.ts"), "export const outside = 1;\n");
+
+    const view = await overlayWith().view(
+      { root: join(tree, "src"), baseIndex: { collectionName: COLLECTION, root: join(fixture.mainRoot, "src") } },
+      "proj",
+    );
+
+    expect(view.marker).toMatchObject({ treeCommit: indexedCommit, changedFiles: 1, deletedFiles: 0 });
+    expect(view.marker.degraded).toBeUndefined();
+    expect([...view.touchedPaths]).toEqual(["keep.ts"]);
   });
 
   it("should degrade with the alias filled in when the index has no commit stamp", async () => {

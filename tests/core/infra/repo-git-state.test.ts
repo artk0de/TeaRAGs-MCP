@@ -4,7 +4,14 @@ import { dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { detectDefaultBranch, readRepoGitState, readWorkingTreeDirty } from "../../../src/core/infra/repo-git-state.js";
+import { createGitWorkingTreeFixture } from "../__helpers__/git-working-tree-fixture.js";
+import {
+  detectDefaultBranch,
+  findGitToplevel,
+  readRepoGitState,
+  readWorkingTreeDirty,
+  readWorkingTreeDirtyPaths,
+} from "../../../src/core/infra/repo-git-state.js";
 
 const created: string[] = [];
 
@@ -180,5 +187,66 @@ describe("detectDefaultBranch", () => {
         throw new Error("no origin");
       }),
     ).toBe("main");
+  });
+});
+
+describe("findGitToplevel", () => {
+  it("walks up from a subdirectory to the directory holding .git", () => {
+    const repo = writeRepo({ ".git/HEAD": "ref: refs/heads/main\n", "sub/deep/a.ts": "" });
+    expect(findGitToplevel(join(repo, "sub", "deep"))).toBe(repo);
+    expect(findGitToplevel(repo)).toBe(repo);
+  });
+
+  it("is undefined outside any repository", () => {
+    expect(findGitToplevel(emptyDir())).toBeUndefined();
+  });
+});
+
+/**
+ * The files an index run read differently from its commit (bd tea-rags-mcp-xi2r9,
+ * live P1-1). Real git: the probe is git's own status.
+ */
+describe("readWorkingTreeDirtyPaths", { timeout: 30_000 }, () => {
+  it("lists modified, staged, deleted and untracked files, never ignored ones", () => {
+    const fixture = createGitWorkingTreeFixture();
+    try {
+      const root = fixture.mainRoot;
+      fixture.commit(root, { ".gitignore": "*.log\n", "a.ts": "a\n", "b.ts": "b\n", "c.ts": "c\n" });
+      writeFileSync(join(root, "a.ts"), "a2\n");
+      writeFileSync(join(root, "b.ts"), "b2\n");
+      fixture.git(root, "add", "b.ts");
+      rmSync(join(root, "c.ts"));
+      writeFileSync(join(root, "new.ts"), "n\n");
+      writeFileSync(join(root, "skip.log"), "");
+
+      expect(readWorkingTreeDirtyPaths(root)?.sort()).toEqual(["a.ts", "b.ts", "c.ts", "new.ts"]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("rebases onto a subdirectory root and leaves out files outside it", () => {
+    const fixture = createGitWorkingTreeFixture();
+    try {
+      const root = fixture.mainRoot;
+      fixture.commit(root, { "sub/a.ts": "a\n", "top.ts": "t\n" });
+      writeFileSync(join(root, "sub/a.ts"), "a2\n");
+      writeFileSync(join(root, "top.ts"), "t2\n");
+      writeFileSync(join(root, "sub/new.ts"), "n\n");
+
+      expect(readWorkingTreeDirtyPaths(join(root, "sub"))?.sort()).toEqual(["a.ts", "new.ts"]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("is empty for a clean tree and undefined when git cannot answer", () => {
+    const fixture = createGitWorkingTreeFixture();
+    try {
+      expect(readWorkingTreeDirtyPaths(fixture.mainRoot)).toEqual([]);
+    } finally {
+      fixture.cleanup();
+    }
+    expect(readWorkingTreeDirtyPaths(emptyDir())).toBeUndefined();
   });
 });
