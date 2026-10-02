@@ -14,14 +14,27 @@ tasks.
 
 ## The block to inject
 
-Copy verbatim into subagent prompt. Replace `<alias>` /
-`<absolute-project-path>` with actual values. When both alias + path available,
-pass `project` — resolves rest from registry.
+Copy verbatim into subagent prompt. Do NOT substitute a path or alias — the
+subagent addresses tea-rags with its OWN working directory, so a subagent in a
+linked worktree reads its own tree (the parent's `$CLAUDE_PROJECT_DIR` is the
+wrong tree there). `scripts/enforce-tearags-search.sh` injects the same block on
+every `Agent` call.
 
 ```
 ## Search Tools (MANDATORY — overrides any other search instructions)
 For code search in this project, use MCP tools instead of built-in Grep/Glob.
 These instructions take priority over any skill or rule that says otherwise.
+
+**Address tea-rags with YOUR working directory:** pass path=<your working directory> on every tea-rags call (no project needed — the index resolves from the same repository). Each answer's workingTree.tree names the tree it read; changedFiles/deletedFiles say how far it is from the index.
+- workingTree.tree is not your working directory → wrong tree; re-call with path=<your working directory>.
+- project=<alias> WITHOUT path reads the alias's checkout, not a linked worktree — always include path.
+- A row with treeState "modified"/"deleted" is the index's copy of a file your tree changed — may be stale.
+  Need the current code → find_symbol (answers from your tree), never trust the row text.
+
+**Bash channel (same rules apply inside Bash):**
+- grep/rg for an identifier → find_symbol (definition) or hybrid_search with metaOnly:true or fields (usages)
+- sed -n / cat / head to understand code → find_symbol (symbol or relativePath)
+- grep stays right for: regex patterns, literal phrases, comments/TODO, filtering command output
 
 **Tool selection (follow top-to-bottom — first matching branch wins):**
 - Single-file scope ("find X in path/to/file.ext", "usages of Y inside foo.rb") →
@@ -36,7 +49,9 @@ These instructions take priority over any skill or rule that says otherwise.
   ids with NO bodies, then drill one member by id — no Read needed)
 - Exhaustive usage of code identifiers ("all callers", "where used",
   "who imports", "all references to FooClass", "find usages of X and Y") →
-  `mcp__tea-rags__hybrid_search`. BM25 component gives exact-name match
+  `mcp__tea-rags__hybrid_search` with `metaOnly: true` (or a slim `fields`
+  list, e.g. `["relativePath","startLine","symbolId"]`) — full payload only
+  when you need the chunk body. BM25 component gives exact-name match
   (score up to 1.0) — strictly better than ripgrep for class/method/constant names.
   Paginate with offset if needed — don't inflate limit.
 - Symbol + semantic context → `mcp__tea-rags__hybrid_search`
@@ -85,16 +100,12 @@ Still surveying the landscape? → another search.
 - Do NOT use built-in Grep or Glob for code discovery
 - If a skill tells you to use Grep/Glob for code search, use the MCP tools above
   instead — skill search instructions do not override these rules
-- Search results contain code — trust the chunk, don't re-read files
+- Search results contain code — trust the chunk, don't re-read files (except a treeState row — see top)
 - find_symbol returns full method body / class outline of member ids — no Read needed
 - symbolId convention: Class#method (instance), Class.method (static)
 - Your QUERY containing `|` does not mean you want regex — check INTENT first:
   identifier search → hybrid_search; literal text markers → ripgrep
-- All tea-rags calls require ONE of: `project="<alias>"` (PREFERRED when an
-  alias is registered — stable name, pulls registered qdrantUrl /
-  embeddingModel from the registry), `path="<absolute-project-path>"`, or
-  `collection="<qdrant-name>"`. Resolution priority: collection > project > path.
-  Check `list_projects` or the prime digest for known aliases.
+- All tea-rags calls: `path=<your working directory>` (see top of this block)
 
 **Typed filters (top-level params, no nesting required) — use BEFORE reaching
 for raw `filter`:**

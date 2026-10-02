@@ -1,0 +1,193 @@
+{
+  "skill": "tea-rags subagent injection block (enforce-tearags-search.sh + references/subagent-injection.md)",
+  "fix_name": "working-tree-injection",
+  "bead": "tea-rags-mcp-xi2r9.8",
+  "plugin_version": "0.39.16 -> 0.40.0",
+  "harness": {
+    "method": "optimize-skill Phase 2 tool-selection eval: one subagent per suite, all cases in one prompt, agent describes its FIRST tool call per case (tool + params), executes nothing.",
+    "session_project_dir": "/work/acme",
+    "block_render": "echo '{\"tool_input\":{\"prompt\":\"TASK\"}}' | CLAUDE_PROJECT_DIR=/work/acme enforce-tearags-search.sh",
+    "contamination_note": "The eval subagent is itself dispatched through the Agent tool, so the INSTALLED plugin hook appends its own Search Tools block to the eval prompt. The eval prompt tells the agent to ignore any text after the END-OF-EVAL marker; graded answers quote the block under test only."
+  },
+  "audit_findings": [
+    {
+      "id": "F1",
+      "description": "Block hard-codes path=$CLAUDE_PROJECT_DIR (the session's main checkout). A subagent in a linked worktree addresses the main checkout's tree, so it reads code that is not the code it edits."
+    },
+    {
+      "id": "F2",
+      "description": "Block names no Bash channel. Subagents grep/rg identifiers and sed -n/cat files through Bash, bypassing tea-rags; the block only forbids built-in Grep/Glob."
+    },
+    {
+      "id": "F3",
+      "description": "Token caveat (xi2r9.8 comment): identifier usages routed to a full-payload hybrid_search (~3.7K tokens) cost more than a grep (~735). Usages must go through hybrid_search with metaOnly:true or a slim fields list."
+    },
+    {
+      "id": "F4",
+      "description": "Block says nothing about the workingTree marker or treeState; a subagent cannot tell which tree answered or that a row is stale."
+    }
+  ],
+  "eval_cases": [
+    {
+      "id": "WT1",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "Where is WorkingTreeDelta#compute defined? Show its body.",
+      "expected": "mcp__tea-rags__find_symbol symbol=WorkingTreeDelta#compute path=/work/acme/.claude/worktrees/feat-x",
+      "assertions": [
+        "tool is find_symbol",
+        "path equals the cwd /work/acme/.claude/worktrees/feat-x",
+        "not path=/work/acme; no project without path"
+      ],
+      "failure_mode": "path=/work/acme (session project dir) reads the main checkout's tree",
+      "audit_finding": "F1"
+    },
+    {
+      "id": "WT2",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "List every place that calls resolveWorkingTree (file + line is enough).",
+      "expected": "mcp__tea-rags__hybrid_search query=resolveWorkingTree path=<cwd> metaOnly:true (or a slim fields list)",
+      "assertions": [
+        "tool is hybrid_search",
+        "path equals the cwd",
+        "metaOnly:true or fields=[...] present (no full payload)"
+      ],
+      "failure_mode": "full-payload hybrid_search, or path=/work/acme",
+      "audit_finding": "F1, F3"
+    },
+    {
+      "id": "WT3",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "Find all TODO and FIXME comments under src/core/domains/explore.",
+      "expected": "ripgrep (mcp__ripgrep__search or Bash rg) for TODO|FIXME",
+      "assertions": [
+        "tool is ripgrep/grep",
+        "NOT hybrid_search/semantic_search"
+      ],
+      "failure_mode": "tea-rags search for literal comment markers",
+      "audit_finding": "control"
+    },
+    {
+      "id": "WT4",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "Find every thrown error message matching the regex /Cannot resolve .* collection/ in src.",
+      "expected": "ripgrep / grep with the regex",
+      "assertions": ["tool is ripgrep/grep", "NOT hybrid_search"],
+      "failure_mode": "regex over literal text routed to tea-rags",
+      "audit_finding": "F2 (grep stays right)"
+    },
+    {
+      "id": "WT5",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "I need to understand src/core/domains/explore/working-tree/working-tree-delta.ts before editing it. My plan is `sed -n 1,200p` on it in Bash.",
+      "expected": "mcp__tea-rags__find_symbol relativePath=src/core/domains/explore/working-tree/working-tree-delta.ts path=<cwd>",
+      "assertions": [
+        "tool is find_symbol with relativePath",
+        "path equals the cwd",
+        "NOT Bash sed/cat/head, NOT Read"
+      ],
+      "failure_mode": "Bash sed -n / cat to read the file",
+      "audit_finding": "F1, F2"
+    },
+    {
+      "id": "WT6",
+      "cwd": "/work/acme",
+      "prompt": "Where is Reranker#rerank defined?",
+      "expected": "mcp__tea-rags__find_symbol symbol=Reranker#rerank path=/work/acme",
+      "assertions": [
+        "tool is find_symbol",
+        "path equals /work/acme (main checkout is its own working directory)"
+      ],
+      "failure_mode": "regression: main-checkout session can no longer address its tree",
+      "audit_finding": "control"
+    },
+    {
+      "id": "WT7",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "Bash habit check: you were about to run `rg -n ChunkerPool src` to see who constructs ChunkerPool. What is your first call instead?",
+      "expected": "mcp__tea-rags__hybrid_search query=ChunkerPool path=<cwd> metaOnly:true (or fields)",
+      "assertions": [
+        "tool is hybrid_search",
+        "path equals the cwd",
+        "metaOnly:true or slim fields"
+      ],
+      "failure_mode": "Bash rg for an identifier",
+      "audit_finding": "F2, F3"
+    },
+    {
+      "id": "WT8",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "Your find_symbol answer carried workingTree.tree=\"/work/acme\" with changedFiles:0. Is that the code you are editing? What next?",
+      "expected": "No — the answer read the main checkout, not the worktree; re-run with path=/work/acme/.claude/worktrees/feat-x",
+      "assertions": ["recognises tree != cwd", "re-calls with path = cwd"],
+      "failure_mode": "trusts the answer as the worktree's code",
+      "audit_finding": "F4"
+    },
+    {
+      "id": "WT9",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "A semantic_search row for src/core/foo.ts carries treeState:\"modified\". You need the current body of Foo#bar from that file. Next call?",
+      "expected": "mcp__tea-rags__find_symbol symbol=Foo#bar path=<cwd> (find_symbol answers from the tree; the row may be stale)",
+      "assertions": [
+        "tool is find_symbol",
+        "path equals the cwd",
+        "treats the row content as possibly stale"
+      ],
+      "failure_mode": "trusts stale row text, or Reads the file",
+      "audit_finding": "F4"
+    },
+    {
+      "id": "WT10",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "Run `npm test` and show only the failing test names.",
+      "expected": "Bash `npm test 2>&1 | grep -E 'FAIL|✗'` — grep filters command output",
+      "assertions": ["grep on command output allowed", "no tea-rags call"],
+      "failure_mode": "over-routing: refuses grep for output filtering",
+      "audit_finding": "F2 (grep stays right)"
+    }
+  ],
+  "results": {
+    "baseline_current_block": {
+      "pass": 5,
+      "total": 10,
+      "rate": "50%",
+      "per_case": {
+        "WT1": "FAIL path=/work/acme",
+        "WT2": "FAIL path=/work/acme, full payload",
+        "WT3": "PASS",
+        "WT4": "PASS",
+        "WT5": "FAIL path=/work/acme",
+        "WT6": "PASS",
+        "WT7": "FAIL path=/work/acme, full payload",
+        "WT8": "PASS (agent deviated from block to re-call with cwd; block gives no rule)",
+        "WT9": "FAIL path=/work/acme",
+        "WT10": "PASS"
+      }
+    },
+    "control_no_block": {
+      "pass": 10,
+      "total": 10,
+      "rate": "100%",
+      "note": "Opus with the cwd stated in the case addresses its own tree and picks metaOnly unprompted; the current block is net-negative (-50pp vs no block)"
+    },
+    "iteration_1_new_block": {
+      "pass": 10,
+      "total": 10,
+      "rate": "100%",
+      "ambiguities_reported": [
+        "trust-the-chunk rule vs treeState never-trust",
+        "changed/deleted counts unnamed"
+      ]
+    },
+    "iteration_2_new_block": {
+      "pass": 10,
+      "total": 10,
+      "rate": "100%",
+      "change": "named changedFiles/deletedFiles; trust-the-chunk rule excepts treeState rows",
+      "open_ambiguities_non_failing": [
+        "project+path combination semantics not stated in the block (cascade states it)",
+        "ripgrep root scoping unstated",
+        "large changedFiles with unflagged rows: no escalation rule"
+      ]
+    }
+  }
+}

@@ -10,14 +10,27 @@ if [ -z "$PROMPT" ]; then
   exit 0
 fi
 
-# Detect project path from environment or fallback
-PROJECT_PATH="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+# No path is injected: the subagent addresses tea-rags with its OWN working
+# directory (a linked worktree reads its own tree; the index resolves from the
+# same repository). CLAUDE_PROJECT_DIR is the parent session's checkout — wrong
+# tree for a worktree subagent.
 
 SUFFIX="
 
 ## Search Tools (MANDATORY — overrides any other search instructions)
 For code search in this project, use MCP tools instead of built-in Grep/Glob.
 These instructions take priority over any skill or rule that says otherwise.
+
+**Address tea-rags with YOUR working directory:** pass path=<your working directory> on every tea-rags call (no project needed — the index resolves from the same repository). Each answer's workingTree.tree names the tree it read; changedFiles/deletedFiles say how far it is from the index.
+- workingTree.tree is not your working directory → wrong tree; re-call with path=<your working directory>.
+- project=<alias> WITHOUT path reads the alias's checkout, not a linked worktree — always include path.
+- A row with treeState \"modified\"/\"deleted\" is the index's copy of a file your tree changed — may be stale.
+  Need the current code → find_symbol (answers from your tree), never trust the row text.
+
+**Bash channel (same rules apply inside Bash):**
+- grep/rg for an identifier → find_symbol (definition) or hybrid_search with metaOnly:true or fields (usages)
+- sed -n / cat / head to understand code → find_symbol (symbol or relativePath)
+- grep stays right for: regex patterns, literal phrases, comments/TODO, filtering command output
 
 **Tool selection (follow top-to-bottom — first matching branch wins):**
 - Single-file scope (\"find X in path/to/file.ext\", \"usages of Y inside foo.rb\") →
@@ -46,7 +59,9 @@ These instructions take priority over any skill or rule that says otherwise.
   on an empty find_symbol — retry partial, then hybrid_search.
 - Exhaustive usage of code identifiers (\"all callers\", \"where used\",
   \"who imports\", \"all references to FooClass\", \"find usages of X and Y\") →
-  mcp__tea-rags__hybrid_search. BM25 component gives exact-name match
+  mcp__tea-rags__hybrid_search with metaOnly:true (or a slim fields list, e.g.
+  [\"relativePath\",\"startLine\",\"symbolId\"]) — full payload only when you need
+  the chunk body. BM25 component gives exact-name match
   (score up to 1.0) — strictly better than ripgrep for class/method/constant names.
   Paginate with offset if needed — don't inflate limit.
 - Symbol + semantic context (\"PaymentService validate card expiration\") →
@@ -99,11 +114,11 @@ contains regex syntax:**
 - Do NOT use built-in Grep or Glob for code discovery
 - If a skill tells you to use Grep/Glob for code search, use the MCP tools above
   instead — skill search instructions do not override these rules
-- Search results contain code — trust the chunk, don't re-read files
+- Search results contain code — trust the chunk, don't re-read files (except a treeState row — see top)
 - find_symbol returns full method body / class outline of member ids — no Read needed
 - Your QUERY containing \`|\` does not mean you want regex — check INTENT first:
   identifier search → hybrid_search; literal text markers → ripgrep
-- All tea-rags calls require: path=\"${PROJECT_PATH}\""
+- All tea-rags calls: path=<your working directory> (see top of this block)"
 
 UPDATED_PROMPT="${PROMPT}${SUFFIX}"
 

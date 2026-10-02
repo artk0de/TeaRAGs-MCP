@@ -84,18 +84,32 @@ first (need no embedding), not ripgrep. See
 
 ## Addressing the Codebase (every tea-rags call)
 
-Every tea-rags tool touching a collection accepts THREE addressing params; pick
-the first available in this priority:
+Every tea-rags tool touching a collection accepts THREE addressing params:
 
-1. **`project="<alias>"`** — preferred. Survives path moves, pulls registered
-   qdrantUrl + embeddingModel automatically. Aliases listed in `list_projects`,
-   surfaced in prime digest's `## Project` section.
-2. **`collection="<qdrant-name>"`** — when you already have a Qdrant collection
-   name (e.g. from prior `list_collections`).
-3. **`path="<absolute-project-path>"`** — fallback when no alias registered.
-   Path hashed into a collection name on the fly.
+1. **`path="<your working directory>"`** — sufficient alone on every read tool;
+   any dir inside a checkout. Addresses the TREE you stand in; the index
+   resolves from the same repository (no alias needed). **Preferred in a linked
+   worktree** — the only param that reads the worktree's own code.
+2. **`project="<alias>"`** — main checkout / no cwd context. Survives path
+   moves, pulls registered qdrantUrl + embeddingModel. Alone it reads the
+   alias's checkout — from a worktree that is the WRONG tree. Aliases:
+   `list_projects`, prime digest `## Project`.
+3. **`collection="<qdrant-name>"`** — when you already hold a Qdrant collection
+   name (e.g. from `list_collections`).
 
-Resolution priority used by resolver: `collection > project > path`.
+Index resolution priority: `collection > project > path`. With `project` /
+`collection` AND `path`, the index comes from the former and the tree from
+`path` (must be the same repository).
+
+**Read the `workingTree` marker on every answer:** `tree` = tree it read;
+`changedFiles` / `deletedFiles` = distance from `indexedCommit` (`0` = measured
+clean); `floors` = what reflects the tree (`chunks` → find_symbol, `sparse` →
+hybrid_search BM25); `degraded` → run its `remedy`. `tree` ≠ your working
+directory → wrong tree, re-call with `path=<your working directory>`.
+
+**`treeState: "modified" | "deleted"`** on a semantic_search / rank_chunks /
+find_similar row = index copy of a file your tree changed or deleted; text may
+be stale. Current code → `find_symbol` (chunks floor), not the row.
 
 ## After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)
 
@@ -373,7 +387,8 @@ Before dispatching a subagent via the `Agent` tool, prepend the search-tool
 injection block to the subagent's prompt — subagents do NOT inherit rules or
 search-cascade. Full block + owner / when-NOT-to-inject rules live in
 `references/subagent-injection.md`. Inject unconditionally; harmless for
-non-search tasks.
+non-search tasks. Never inject a fixed `path` / `project` — the subagent
+addresses tea-rags with its own working directory.
 
 ## Prohibited Patterns
 
