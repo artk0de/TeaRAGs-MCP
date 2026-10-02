@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createGitWorkingTreeFixture,
@@ -10,6 +10,7 @@ import {
 } from "../../../__helpers__/git-working-tree-fixture.js";
 import type { WorkingTree } from "../../../../../src/core/contracts/types/working-tree.js";
 import {
+  createWorkingTreeChunkLayer,
   createWorkingTreeDeltaReader,
   WorkingTreeOverlay,
   type WorkingTreeDeltaReader,
@@ -152,5 +153,80 @@ describe("WorkingTreeOverlay", { timeout: 60_000 }, () => {
 
     expect(view.marker.tree).toBe("");
     expect(view.marker.degraded).toBeDefined();
+  });
+
+  describe("delta chunks (xi2r9.3)", () => {
+    const CHUNKER_CONFIG = { chunkSize: 2500, chunkOverlap: 300, maxChunkSize: 2500 };
+
+    /** A layer whose chunker returns one row per file and fails on BROKEN content. */
+    const deltaChunks = () => {
+      const chunkFile = vi.fn(async (_pool: unknown, file: { relativePath: string; code: string }) => {
+        if (file.code.includes("BROKEN")) throw new Error("parse failed");
+        return [{ id: `id:${file.relativePath}`, payload: { relativePath: file.relativePath } }];
+      });
+      const layer = createWorkingTreeChunkLayer({ createPool: () => ({ shutdown: async () => undefined }), chunkFile });
+      const resolveChunkerConfig = vi.fn(async () => CHUNKER_CONFIG);
+      return { layer, chunkFile, resolveChunkerConfig };
+    };
+
+    it("should read rows for the changed files only, with the tree's chunker config", async () => {
+      record({ indexedCommit, indexedDirty: false });
+      writeFileSync(join(tree, "src/keep.ts"), "export const keep = 2;\n");
+      fixture.git(tree, "rm", "-q", "src/index.ts");
+      const { layer, chunkFile, resolveChunkerConfig } = deltaChunks();
+      const overlay = new WorkingTreeOverlay({
+        registry,
+        deltaReader: createWorkingTreeDeltaReader(),
+        createFileFilter,
+        deltaChunks: { layer, resolveChunkerConfig },
+      });
+
+      const view = await overlay.view(workingTree(), "proj");
+      const rows = await view.readDeltaChunks?.();
+
+      expect(rows?.map((row) => row.payload.relativePath)).toEqual(["src/keep.ts"]);
+      expect(resolveChunkerConfig).toHaveBeenCalledWith(workingTree());
+      expect(chunkFile).toHaveBeenCalledTimes(1);
+      expect(view.marker.unparsed).toBeUndefined();
+      await layer.dispose();
+    });
+
+    it("should list a file that fails to parse in marker.unparsed without degrading the answer", async () => {
+      record({ indexedCommit, indexedDirty: false });
+      writeFileSync(join(tree, "src/keep.ts"), "export const keep = 2;\n");
+      writeFileSync(join(tree, "src/bad.ts"), "BROKEN {{{\n");
+      const { layer, resolveChunkerConfig } = deltaChunks();
+      const overlay = new WorkingTreeOverlay({
+        registry,
+        deltaReader: createWorkingTreeDeltaReader(),
+        createFileFilter,
+        deltaChunks: { layer, resolveChunkerConfig },
+      });
+
+      const view = await overlay.view(workingTree(), "proj");
+      const rows = await view.readDeltaChunks?.();
+
+      expect(rows?.map((row) => row.payload.relativePath)).toEqual(["src/keep.ts"]);
+      expect(view.marker.unparsed).toEqual(["src/bad.ts"]);
+      expect(view.marker.degraded).toBeUndefined();
+      expect(view.marker.changedFiles).toBe(2);
+      await layer.dispose();
+    });
+
+    it("should offer no delta chunks on a degraded view", async () => {
+      record(undefined);
+      const { layer, resolveChunkerConfig } = deltaChunks();
+      const overlay = new WorkingTreeOverlay({
+        registry,
+        deltaReader: createWorkingTreeDeltaReader(),
+        createFileFilter,
+        deltaChunks: { layer, resolveChunkerConfig },
+      });
+
+      const view = await overlay.view(workingTree(), "proj");
+
+      expect(view.marker.degraded).toBeDefined();
+      expect(view.readDeltaChunks).toBeUndefined();
+    });
   });
 });

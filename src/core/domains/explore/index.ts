@@ -40,8 +40,19 @@ export type {
   ExploreStrategy,
   SimilarSearchInput,
 } from "./strategies/index.js";
-export { createWorkingTreeDeltaReader, WORKING_TREE_DELTA_FILE_CAP, WorkingTreeOverlay } from "./working-tree/index.js";
+export {
+  createWorkingTreeChunkLayer,
+  createWorkingTreeDeltaReader,
+  WORKING_TREE_DELTA_FILE_CAP,
+  WorkingTreeOverlay,
+} from "./working-tree/index.js";
 export type {
+  WorkingTreeChunkerPool,
+  WorkingTreeChunkLayer,
+  WorkingTreeChunkLayerDeps,
+  WorkingTreeChunkLayerRead,
+  WorkingTreeDeltaChunkSource,
+  WorkingTreeSourceFile,
   WorkingTreeDelta,
   WorkingTreeDeltaRead,
   WorkingTreeDeltaReader,

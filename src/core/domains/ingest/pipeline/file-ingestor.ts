@@ -14,8 +14,6 @@
 
 import { promises as fs } from "node:fs";
 
-import { isCompiledJsContent, isJsFamilyPath } from "../../../infra/file-classification/index.js";
-import { isTestPath } from "../../../infra/scope-detection.js";
 import type { CodeChunk } from "../../../types.js";
 import { classifyQuarantinable } from "../sync/index.js";
 import type { ChunkPipeline } from "./chunk-pipeline.js";
@@ -26,7 +24,7 @@ import { assignSymbolMass } from "./chunker/symbol-mass.js";
 import { generateChunkId } from "./chunker/utils/chunk-id.js";
 import { extractImportsExports } from "./chunker/utils/import-extractor.js";
 import { detectLanguage } from "./chunker/utils/language-detector.js";
-import { containsSecrets } from "./chunker/utils/secrets-detector.js";
+import { sourceContentSkipReason } from "./file-chunk-points.js";
 import type { FileProcessCallbacks, FileProcessorOptions, FileProcessResult } from "./file-processor.js";
 import { pipelineLog, type FileIngestRecord } from "./infra/debug-logger.js";
 
@@ -148,6 +146,9 @@ export class SourceFileIngestor {
    *    (~51s for a 268KB d3.js) and pollutes a code RAG. JS-family only — gated
    *    on extension so .mjs/.cjs (which detectLanguage reports as "unknown")
    *    are still covered.
+   *
+   * 2 and 3 are `sourceContentSkipReason`, shared with every reader that must
+   * see a file the way ingest stores it.
    */
   private preParseSkipReason(
     filePath: string,
@@ -157,9 +158,7 @@ export class SourceFileIngestor {
   ): PreParseSkipReason | undefined {
     const { coordinator } = this.deps.options;
     if (coordinator && !coordinator.canUpsertForFile(relativePath)) return "delete-failed";
-    if (!isTestPath(relativePath, language) && containsSecrets(code)) return "secrets";
-    if (isJsFamilyPath(filePath) && isCompiledJsContent(code)) return "compiled";
-    return undefined;
+    return sourceContentSkipReason(filePath, relativePath, code, language);
   }
 
   /**

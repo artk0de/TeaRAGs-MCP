@@ -11,6 +11,9 @@
 import type { CollectionEntry } from "../../../contracts/types/registry.js";
 import type { WorkingTree, WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 import { readRepoGitState } from "../../../infra/repo-git-state.js";
+import type { ChunkerConfig } from "../../../types.js";
+import type { ScrollChunk } from "../chunk-grouping/types.js";
+import type { WorkingTreeChunkLayer } from "./chunk-layer.js";
 import type { WorkingTreeDeltaReader } from "./delta.js";
 
 export interface WorkingTreeView {
@@ -18,6 +21,20 @@ export interface WorkingTreeView {
   /** changed ∪ deleted; empty when degraded (nothing substituted, nothing hidden) */
   touchedPaths: ReadonlySet<string>;
   deletedPaths: ReadonlySet<string>;
+  /**
+   * Rows of the changed files as ingest would store them (deleted files have
+   * none). Absent on a degraded view and when no chunk layer is wired. Chunked
+   * once per view; files that fail to read or parse land in `marker.unparsed`
+   * when the returned promise resolves.
+   */
+  readDeltaChunks?: () => Promise<readonly ScrollChunk[]>;
+}
+
+/** How the overlay turns delta files into rows: the layer, and the config to chunk with. */
+export interface WorkingTreeDeltaChunkSource {
+  layer: WorkingTreeChunkLayer;
+  /** The chunker config an index run on the tree's base index would chunk with. */
+  resolveChunkerConfig: (tree: WorkingTree) => Promise<ChunkerConfig>;
 }
 
 /** The registry surface the overlay reads: an index's git stamp and alias. */
@@ -30,6 +47,8 @@ export interface WorkingTreeOverlayDeps {
   deltaReader: WorkingTreeDeltaReader;
   /** The ingest admission rule for files under `root` (`FileScanner#accepts`). */
   createFileFilter: (root: string) => Promise<(relativePath: string) => boolean>;
+  /** Absent → views carry no `readDeltaChunks`. */
+  deltaChunks?: WorkingTreeDeltaChunkSource;
 }
 
 const NO_TREE_REASON = "no working tree resolved for this index";
@@ -70,14 +89,34 @@ export class WorkingTreeOverlay {
       const read = await this.deps.deltaReader.read(tree.root, indexedCommit, accepts);
       if (read.kind === "degraded") return degraded(read.reason, read.remedy);
       const { changed, deleted } = read.delta;
-      return {
+      const view: WorkingTreeView = {
         marker: { ...marker, changedFiles: changed.length, deletedFiles: deleted.length },
         touchedPaths: new Set([...changed, ...deleted]),
         deletedPaths: new Set(deleted),
       };
+      const source = this.deps.deltaChunks;
+      if (source) {
+        let rows: Promise<readonly ScrollChunk[]> | undefined;
+        view.readDeltaChunks = async () => (rows ??= readDeltaChunks(source, tree, changed, view.marker));
+      }
+      return view;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return degraded(`cannot read the working tree delta: ${message.split("\n")[0]}`, UNREADABLE_REMEDY);
     }
   }
+}
+
+/** The changed files' rows; names the files that yielded none in `marker.unparsed`. */
+async function readDeltaChunks(
+  source: WorkingTreeDeltaChunkSource,
+  tree: WorkingTree,
+  changed: readonly string[],
+  marker: WorkingTreeMarker,
+): Promise<readonly ScrollChunk[]> {
+  if (changed.length === 0) return [];
+  const config = await source.resolveChunkerConfig(tree);
+  const read = await source.layer.chunk(tree.root, changed, config);
+  if (read.unparsed.length > 0) marker.unparsed = [...read.unparsed];
+  return read.chunks;
 }

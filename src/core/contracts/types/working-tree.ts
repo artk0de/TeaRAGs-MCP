@@ -31,6 +31,12 @@ export interface WorkingTreeMarker {
   deletedFiles: number;
   floors: WorkingTreeFloor[];
   degraded?: { reason: string; remedy: string };
+  /**
+   * Changed files the chunker could not read or parse: they contribute no delta
+   * rows. Set once the delta chunks were read; one bad file never degrades the
+   * whole answer.
+   */
+  unparsed?: string[];
 }
 
 /** How a base row of a delta file differs from the tree, where no floor replaced it. */

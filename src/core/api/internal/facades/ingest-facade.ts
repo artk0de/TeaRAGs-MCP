@@ -43,6 +43,7 @@ import { StaticPayloadBuilder } from "../../../domains/trajectory/static/provide
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import type {
   ChangeStats,
+  ChunkerConfig,
   EnrichmentProgressCallback,
   IndexOptions,
   IndexStats,
@@ -270,6 +271,11 @@ export class IngestFacade {
 
   resolveEffectiveChunkSize(modelInfo: ModelInfo | undefined): number {
     return this.indexingOps.resolveEffectiveChunkSize(modelInfo);
+  }
+
+  /** The chunker config the next sync of `collectionName` would use; read-only. */
+  async resolveChunkerConfig(collectionName: string): Promise<ChunkerConfig> {
+    return this.indexingOps.resolveChunkerConfig(collectionName);
   }
 
   async getIndexStatus(path: string): Promise<IndexStatus> {

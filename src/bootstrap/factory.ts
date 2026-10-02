@@ -51,9 +51,15 @@ import type { PhysicalCollectionName } from "../core/contracts/types/collection-
 import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-executor.js";
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
 import type { PayloadKeyOwner } from "../core/contracts/types/trajectory.js";
-import { createWorkingTreeDeltaReader, WorkingTreeOverlay } from "../core/domains/explore/index.js";
+import {
+  createWorkingTreeChunkLayer,
+  createWorkingTreeDeltaReader,
+  WorkingTreeOverlay,
+} from "../core/domains/explore/index.js";
 import { CollectionIndexingLock } from "../core/domains/ingest/infra/index.js";
+import { ChunkerPool } from "../core/domains/ingest/pipeline/chunker/infra/pool.js";
 import { WorkerPoolEnrichmentExecutor } from "../core/domains/ingest/pipeline/enrichment/executor/index.js";
+import { buildFileChunkPoints } from "../core/domains/ingest/pipeline/file-chunk-points.js";
 import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
 import { FileScanner } from "../core/domains/ingest/pipeline/scanner.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
@@ -81,6 +87,7 @@ import {
 } from "../core/domains/trajectory/codegraph/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { InMemoryTemporalSymbolCommitBuffer } from "../core/domains/trajectory/codegraph/temporal/index.js";
+import { StaticPayloadBuilder } from "../core/domains/trajectory/static/provider.js";
 import { setDebug } from "../core/infra/runtime.js";
 import { StatsCache } from "../core/infra/stats-cache.js";
 import type { HealthProbes } from "../mcp/middleware/error-handler.js";
@@ -1122,12 +1129,33 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   });
   const resolveActiveCollection = async (name: string): Promise<PhysicalCollectionName> =>
     infra.qdrant.aliases.resolveActive(name);
+  // Delta files chunked the way ingest stores them (bd tea-rags-mcp-xi2r9.3):
+  // the production `ChunkerPool` (its worker and the language module path it
+  // injects are the ones `BaseIndexingPipeline#createChunkerPool` forks), one
+  // worker because a delta is capped at 200 files, released after 60 s idle
+  // and on dispose. The payload is shaped by the builder ingest's pipeline uses.
+  const workingTreePayloadBuilder = new StaticPayloadBuilder();
+  const workingTreeChunkLayer = createWorkingTreeChunkLayer({
+    createPool: (chunkerConfig) => new ChunkerPool(1, chunkerConfig),
+    chunkFile: async (pool, file) => buildFileChunkPoints(pool, file, workingTreePayloadBuilder),
+    idleShutdownMs: 60_000,
+  });
   // One overlay per process (bd tea-rags-mcp-xi2r9): its delta reader caches per
   // tree, and every read surface — explore, graph, trace_path — shares it.
   const workingTreeOverlay = new WorkingTreeOverlay({
     registry: collectionRegistry,
     deltaReader: createWorkingTreeDeltaReader(),
     createFileFilter: createWorkingTreeFileFilter(config.ingestCode),
+    deltaChunks: {
+      layer: workingTreeChunkLayer,
+      // The base index's chunker config: its project's registry env replayed
+      // over the server's (`ProjectIngestFactory#forPath`, built below and only
+      // read at request time), with the size its embedding model derives.
+      resolveChunkerConfig: async (tree) =>
+        projectIngestFactory
+          .forPath(tree.baseIndex.root ?? tree.root)
+          .resolveChunkerConfig(tree.baseIndex.collectionName),
+    },
   });
   const codegraphContext = wireCodegraph(
     config,
@@ -1450,6 +1478,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     if (cleanedUp) return;
     cleanedUp = true;
     registryWatchStop();
+    void workingTreeChunkLayer.dispose().catch(() => undefined);
     // In-process enrichment (MCP index_codebase, inline git trajectory) spawns
     // git as a direct child of THIS process; no parent-death guard reaches it,
     // so an interrupted run's git children are killed here (bd tea-rags-mcp-w26dc).

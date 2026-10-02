@@ -62,6 +62,7 @@ import { computeScoreBackground } from "../../../infra/score-background.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import type {
   ChangeStats,
+  ChunkerConfig,
   EnrichmentProgressCallback,
   IndexOptions,
   IndexStats,
@@ -1493,6 +1494,20 @@ export class IndexingOps {
   ): Promise<{ chunkSize: number; modelInfo: ModelInfo | undefined }> {
     const modelInfo = await this.resolveOrBackfillModelInfo(collectionName);
     return { chunkSize: this.resolveEffectiveChunkSize(modelInfo), modelInfo };
+  }
+
+  /**
+   * The chunker config the next sync of `collectionName` would chunk a changed
+   * file with — the size {@link syncChunkingOverrides} derives — for a reader
+   * that chunks like ingest without indexing (the working-tree chunk layer,
+   * bd tea-rags-mcp-xi2r9.3). Read-only: a marker without `modelInfo` is
+   * resolved live and NOT backfilled, because that reader must never write to
+   * the shared index.
+   */
+  async resolveChunkerConfig(collectionName: string): Promise<ChunkerConfig> {
+    const modelInfo = (await this.readMarkerModelInfo(collectionName)) ?? (await this.resolveModelInfo());
+    const chunkSize = this.resolveEffectiveChunkSize(modelInfo);
+    return { chunkSize, chunkOverlap: this.config.chunkOverlap, maxChunkSize: chunkSize };
   }
 
   /**
