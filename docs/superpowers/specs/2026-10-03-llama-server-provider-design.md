@@ -33,8 +33,9 @@ becomes the recommended provider for large projects (3M+ indexed lines).
    pipeline does not change.
 4. The throughput tuner probes concurrency instead of hard-coding loopback = 1.
 5. Model provisioning: Ollama auto-pull; GGUF fetch for llama-server.
-6. `tea-rags llama-server serve` on the GPU host: detect devices, run one tuned
-   instance per GPU, optionally install an autostart service.
+6. `tea-rags llama-server command`: prints the tuned launch command per GPU and
+   the OS autostart command for one llama-server build. tea-rags never launches
+   or supervises the server.
 7. Docs: provider page, multi-GPU deployment guide, 3M+ LOC recommendation,
    comparison of embedding models and the providers that serve them.
 8. `tea-rags-setup` plugin: the setup flow can choose llama-server and tune its
@@ -45,8 +46,10 @@ Out of scope:
 - Migrating `OllamaEmbeddings` onto the new endpoint pool. `ollama.ts` is the
   hotspot of the area (bugFixRate 56%, 45 commits), so the migration gets its
   own bead.
-- Quantized-model quality and other-model retrieval benchmarks, tracked in
-  h6tmp.
+- Quantized-model quality and the mxbai-embed-large vs jina speed/quality
+  benchmark, tracked in h6tmp.
+- Launching, supervising or installing llama-server. tea-rags only prints the
+  commands (§6).
 
 ## 1. Provider: `LlamaServerEmbeddings`
 
@@ -161,28 +164,28 @@ llama-server with `-np 4` converges higher.
   a matching digest is a no-op. Any model in the Ollama library works, not only
   jina.
 
-## 6. `tea-rags llama-server serve` (GPU host)
+## 6. `tea-rags llama-server command` (commands only)
 
-Runs where the GPUs are (requires Node + `npm i -g tea-rags`).
+Different GPUs need different llama-server builds (ROCm for AMD, Vulkan for an
+Intel iGPU, CUDA for NVIDIA, Metal on macOS), so one supervisor that runs a
+single binary across every device is the wrong model. tea-rags prints commands;
+the operator runs them, once per build.
 
-- Locates `llama-server` from `--bin`, `LLAMA_SERVER_BIN`, or PATH. It does not
-  download binaries, because platform and backend choice (Vulkan / ROCm / CUDA /
-  Metal) belong to the operator.
-- `--list-devices` parsing gives one instance per discrete or integrated GPU
-  (`--device <id>`). `--devices` selects a subset.
-- Flags per instance:
-  `--embedding -ngl 999 -fa on -np <slots> -c <slots*8192> -b 8192 -ub 8192 --host <bind> --port <base+i>`.
-  The default `slots` is 4, from the measured optimum on RX 7800M and M3 Pro.
-  Override with `--slots`.
-- Supervises the children and restarts them on exit with backoff. It prints the
-  `EMBEDDING_BASE_URL` value to use, the comma-joined endpoint list.
-- `--install-service` writes and enables an autostart unit that runs `serve`:
-  Windows Task Scheduler (at startup, highest privileges, restart on failure),
-  Linux systemd user unit, or macOS launchd agent. `--uninstall-service` removes
-  it.
-- `--bench` runs a short throughput sweep (`-np` 1/2/4/8) per device and writes
-  the best slots to the service config. This is the "tea-rags picks optimal
-  settings" requirement.
+- `tea-rags llama-server command --bin <path> [--device <id>...] [--port <n>] [--slots <n>] [--host <addr>] [--model <gguf>]`.
+  It runs `<bin> --list-devices` (the only process it starts) and prints, for
+  each selected device of THAT build, a launch line:
+  `<bin> -m <gguf> --embedding -ngl 999 -fa on -np <slots> -c <slots*8192> -b 8192 -ub 8192 --device <id> --host <host> --port <port+i>`.
+  `--slots` defaults to 4, the measured optimum on RX 7800M and M3 Pro.
+  `--model` defaults to the GGUF from `fetch-model`.
+- With `--autostart`, it also prints the command that registers that line to
+  start at boot: `schtasks /Create … /SC ONSTART /RL HIGHEST` on Windows, a
+  systemd user unit plus `systemctl --user enable --now` on Linux, or a launchd
+  plist plus `launchctl bootstrap` on macOS. It prints and does not execute.
+- It ends with the `EMBEDDING_BASE_URL` value for the client: the comma-joined
+  endpoint list across everything printed.
+- Run it once per build, for example the ROCm build for the RX 7800M and the
+  Vulkan build for the Arc iGPU. Then join the two endpoint lists by hand. The
+  docs show this exact case.
 
 ## 7. Documentation (website/docs)
 
@@ -194,8 +197,9 @@ Runs where the GPUs are (requires Node + `npm i -g tea-rags`).
   comparison**: model, providers that serve it, dimensions, context window,
   code-specialised or general, and notes. Data comes from the model cards plus
   our own retrieval numbers where measured.
-- Multi-GPU deployment guide: one instance per device, `serve`,
-  `--install-service`, client config, and how fan-out weights uneven GPUs.
+- Multi-GPU deployment guide: one instance per device, possibly from different
+  builds; `llama-server command --autostart` per build; client config; and how
+  fan-out weights uneven GPUs.
 - 3M+ LOC recommendation: in the provider index, performance tuning, and the
   large-project sections. Ollama remains the default everywhere.
 - Performance tuning: concurrency is now measured, not derived from locality.
@@ -203,10 +207,11 @@ Runs where the GPUs are (requires Node + `npm i -g tea-rags`).
 ## 8. tea-rags-setup plugin
 
 - `install` skill: provider choice adds llama-server, recommended when the
-  project is ≥3M lines. It runs `fetch-model` and prints the `serve` command for
-  the GPU host.
-- `tune` skill: for llama-server, runs `tea-rags llama-server serve --bench` on
-  the host, or locally, and records the endpoint list.
+  project is ≥3M lines. It runs `fetch-model` and `llama-server command` for the
+  GPU host and hands the operator the printed commands.
+- `tune` skill: for llama-server, benchmarks `-np` 1/2/4/8 on the running
+  instances and re-prints the commands with the best `--slots`. Client-side
+  concurrency is left to the tuner (§4).
 
 ## Testing
 
@@ -222,7 +227,7 @@ Runs where the GPUs are (requires Node + `npm i -g tea-rags`).
 - Tuner tests: concurrency climb converges to the fake server's optimum, seeds
   from the stored optimum, static pin.
 - CLI tests for `fetch-model` (mock registry, digest mismatch rejected) and for
-  `serve` (device parsing, flag building, service file rendering per OS),
-  without spawning real binaries.
+  `command` (`--list-devices` parsing, flag building, autostart command
+  rendering per OS). No real binaries are spawned.
 - Live (user-gated): taxdome `--force` with llama-server on nucbox, compared
   with the 7600 s localhost run and with an Ollama run on the same host.
