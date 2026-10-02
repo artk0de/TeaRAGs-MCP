@@ -176,6 +176,82 @@ describe("ExploreOps workingTree marker", () => {
   });
 });
 
+describe("ExploreOps working-tree floors (bd tea-rags-mcp-xi2r9.3)", () => {
+  let registryDir: string;
+  let collectionRegistry: CollectionRegistry;
+
+  beforeEach(() => {
+    registryDir = mkdtempSync(join(tmpdir(), "explore-wt-floors-"));
+    collectionRegistry = new CollectionRegistry(registryDir);
+  });
+
+  afterEach(() => {
+    rmSync(registryDir, { recursive: true, force: true });
+  });
+
+  /** A view whose chunk layer reports one unparsed file once its rows are read. */
+  const chunkedView = (rows: unknown[]): WorkingTreeView => {
+    const view: WorkingTreeView = {
+      marker: { ...MARKER, changedFiles: 2, deletedFiles: 0 },
+      touchedPaths: new Set(["src/a.ts", "src/broken.ts"]),
+      deletedPaths: new Set(),
+    };
+    view.readDeltaChunks = async () => {
+      view.marker.unparsed = ["src/broken.ts"];
+      return rows as never;
+    };
+    return view;
+  };
+
+  const makeFacade = (results: unknown[], view: WorkingTreeView) =>
+    new ExploreFacade({
+      qdrant: makeQdrant(results),
+      embeddings: { embed: vi.fn().mockResolvedValue({ embedding: [0.1] }) } as any,
+      reranker: makeReranker(),
+      registry: makeTrajectoryRegistry(),
+      collectionRegistry,
+      driftReporter: makeDriftReporter(),
+      payloadSignals: [],
+      essentialKeys: [],
+      workingTreeOverlay: { view: vi.fn().mockResolvedValue(view) },
+    });
+
+  const TREE_ROW = {
+    id: "t",
+    payload: { relativePath: "src/a.ts", symbolId: "tree", content: "tree body", language: "typescript" },
+  };
+
+  it("should declare the chunks floor on find_symbol and carry what the chunk layer could not parse", async () => {
+    const response = await makeFacade([HIT], chunkedView([TREE_ROW])).findSymbol({
+      collection: "code_x",
+      relativePath: "src/a.ts",
+    });
+
+    expect(response.workingTree?.floors).toEqual(["chunks"]);
+    expect(response.workingTree?.unparsed).toEqual(["src/broken.ts"]);
+    expect(String(response.results[0].payload?.content)).toContain("tree");
+  });
+
+  it("should declare no floor on semantic_search and carry treeState on its stale rows", async () => {
+    const response = await makeFacade([HIT], chunkedView([TREE_ROW])).semanticSearch({
+      collection: "code_x",
+      query: "q",
+    });
+
+    expect(response.workingTree?.floors).toEqual([]);
+    expect(response.results[0].treeState).toBe("modified");
+  });
+
+  it("should declare no floor on find_symbol when no chunk layer is wired", async () => {
+    const view: WorkingTreeView = { marker: MARKER, touchedPaths: new Set(["src/a.ts"]), deletedPaths: new Set() };
+
+    const response = await makeFacade([HIT], view).findSymbol({ collection: "code_x", relativePath: "src/a.ts" });
+
+    expect(response.workingTree?.floors).toEqual([]);
+    expect(response.results[0].treeState).toBe("modified");
+  });
+});
+
 describe("ExploreOps drift check reads the INDEX root, never the tree", { timeout: 60_000 }, () => {
   let fixture: GitWorkingTreeFixture;
   let registryDir: string;

@@ -33,3 +33,4 @@ export {
   type WorkingTreeOverlayDeps,
   type WorkingTreeView,
 } from "./overlay.js";
+export { relativePathOf, substituteWorkingTreeRows, workingTreeStateOf } from "./substitute.js";

@@ -28,7 +28,7 @@ import type {
   PayloadSignalDescriptor,
   SignalFloors,
 } from "../../../contracts/types/trajectory.js";
-import type { WorkingTree } from "../../../contracts/types/working-tree.js";
+import type { WorkingTree, WorkingTreeFloor, WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 import {
   CollectionNotFoundError as DomainCollectionNotFoundError,
   EmptyFilterPresetError,
@@ -158,6 +158,12 @@ interface ExploreFinalizeOptions {
   fields?: readonly string[];
   /** Never rejects (`WorkingTreeOverlay#view` degrades instead); its marker rides on the answer. */
   workingTreeView?: Promise<WorkingTreeView>;
+  /**
+   * Read paths on which this operation's strategy answers from the tree
+   * (bd tea-rags-mcp-xi2r9.3). Declared on the marker only when the view can
+   * read delta rows — a view without a chunk layer substitutes nothing.
+   */
+  workingTreeFloors?: readonly WorkingTreeFloor[];
 }
 
 export class ExploreOps {
@@ -317,6 +323,7 @@ export class ExploreOps {
     const response = await this.executeExplore(strategy, buildFindSymbolContext(request, collectionName), path, {
       fields: request.fields,
       workingTreeView,
+      workingTreeFloors: ["chunks"],
     });
     // Finalize: the per-request symbol strategy records a skipped OPTIONAL
     // codegraph hop (codegraph unavailable from this process) — attach it so the
@@ -388,9 +395,9 @@ export class ExploreOps {
     finalize: ExploreFinalizeOptions = {},
   ): Promise<ExploreResponse> {
     await this.ensureStats(ctx.collectionName);
-    const results = await strategy.execute(ctx);
-    const driftWarning = await this.checkDrift(path, ctx.collectionName);
     const workingTreeView = await finalize.workingTreeView;
+    const results = await strategy.execute(workingTreeView ? { ...ctx, workingTreeView } : ctx);
+    const driftWarning = await this.checkDrift(path, ctx.collectionName);
     const confidence = finalize.attachConfidence
       ? computeSearchConfidence(toConfidenceInput(results), this.reranker.getCollectionStats()?.scoreBackground)
       : undefined;
@@ -400,6 +407,7 @@ export class ExploreOps {
         score: r.score,
         payload: r.payload ? stripInternalFields(r.payload) : r.payload,
         rankingOverlay: r.rankingOverlay,
+        ...(r.treeState ? { treeState: r.treeState } : {}),
       })),
       finalize.fields,
     );
@@ -410,7 +418,11 @@ export class ExploreOps {
       ...(confidence ? { confidence } : {}),
       ...(finalize.presetFilterNotice ? { presetFilterNotice: finalize.presetFilterNotice } : {}),
       ...(projection.fieldsWarning ? { fieldsWarning: projection.fieldsWarning } : {}),
-      ...(workingTreeView ? { workingTree: workingTreeView.marker } : {}),
+      // Read AFTER the strategy ran: reading the delta rows is what records
+      // `unparsed` on the marker.
+      ...(workingTreeView
+        ? { workingTree: finalizeWorkingTreeMarker(workingTreeView, finalize.workingTreeFloors) }
+        : {}),
     };
   }
 
@@ -919,4 +931,17 @@ function buildFindSymbolContext(request: FindSymbolRequest, collectionName: stri
     rerank: request.rerank,
     metaOnly: request.metaOnly,
   };
+}
+
+/**
+ * The marker an answer carries: the view's, with the floors the operation's
+ * strategy applies — none when the view cannot read delta rows (degraded, or no
+ * chunk layer wired), because then nothing was substituted.
+ */
+function finalizeWorkingTreeMarker(
+  view: WorkingTreeView,
+  floors: readonly WorkingTreeFloor[] | undefined,
+): WorkingTreeMarker {
+  if (!view.readDeltaChunks || !floors || floors.length === 0) return view.marker;
+  return { ...view.marker, floors: [...floors] };
 }

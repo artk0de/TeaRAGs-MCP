@@ -14,6 +14,7 @@ import { exactMatchOnTextIndexed } from "../../../adapters/qdrant/filters/text-i
 import type { SymbolVisibilityResolver } from "../../../contracts/types/codegraph.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import { CodeChunkGrouper, DocChunkGrouper } from "../chunk-grouping/index.js";
+import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { renderWithDeclaredVisibility } from "../outline-visibility.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import { BaseExploreStrategy } from "./base.js";
@@ -28,6 +29,9 @@ export interface FileOutlineInput {
 
 export class FileOutlineStrategy extends BaseExploreStrategy {
   readonly type = "outline" as unknown as "vector" | "hybrid" | "scroll-rank" | "similar";
+
+  /** The outline is the working tree's: delta rows replace the base rows of a delta file. */
+  protected override readonly hasChunkFloor = true;
 
   constructor(
     qdrant: QdrantManager,
@@ -64,7 +68,13 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
       must.push({ key: "language", match: { value: this.input.language } });
     }
 
-    const scrolled = await this.qdrant.scrollFiltered(ctx.collectionName, { must }, SCROLL_LIMIT);
+    // Chunk floor (bd tea-rags-mcp-xi2r9.3): a changed file is outlined from the
+    // tree, a deleted one comes back empty — never the index's stale version.
+    const scrolled = await this.substituteFromWorkingTree(
+      await this.qdrant.scrollFiltered(ctx.collectionName, { must }, SCROLL_LIMIT),
+      ctx,
+      (row) => this.matchesOutlineScroll(row),
+    );
 
     // Second gate on the same invariant: `CodeChunkGrouper.groupFile` labels the
     // merged outline with the FIRST chunk's path, so a single foreign chunk
@@ -85,6 +95,12 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
         ctx.collectionName,
       ),
     ];
+  }
+
+  /** The scroll filter above as a predicate over a row Qdrant never stored: exact path, same language. */
+  private matchesOutlineScroll(row: ScrollChunk): boolean {
+    if (row.payload.relativePath !== this.input.relativePath) return false;
+    return !this.input.language || row.payload.language === this.input.language;
   }
 
   /**

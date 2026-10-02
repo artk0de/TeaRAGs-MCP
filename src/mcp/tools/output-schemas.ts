@@ -41,6 +41,10 @@ const SearchResultItemSchema = z.object({
   score: z.number().describe("Relevance score"),
   payload: SearchResultPayloadSchema.optional(),
   rankingOverlay: RankingOverlaySchema.optional().describe("Explains scoring signals"),
+  treeState: z
+    .enum(["modified", "deleted"])
+    .optional()
+    .describe("Index row of a file your working tree changed or deleted; content may be stale"),
 });
 
 const SearchConfidenceSchema = z.object({
@@ -95,10 +99,12 @@ export const SearchResultOutputSchema = {
       deletedFiles: z.number(),
       floors: z.array(z.enum(["chunks", "sparse"])),
       degraded: z.object({ reason: z.string(), remedy: z.string() }).optional(),
+      unparsed: z.array(z.string()).optional(),
     })
     .optional()
     .describe(
-      "Tree read vs index commit. changedFiles 0 = measured clean; floors = rows reflect tree; degraded = run remedy.",
+      "Tree read vs index commit. changedFiles 0 = measured clean; floors = rows reflect tree; degraded = run remedy; " +
+        "unparsed = changed files the tree's rows lack.",
     ),
   codegraphWarning: z
     .string()

@@ -26,6 +26,7 @@ describe("SearchResultOutputSchema", () => {
       "payload",
       "rankingOverlay",
       "score",
+      "treeState",
     ]);
   });
 

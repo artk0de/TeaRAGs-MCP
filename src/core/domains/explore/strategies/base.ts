@@ -10,9 +10,11 @@
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import { fileScopeOf, reduceToFileScope, type FileScope } from "../chunk-grouping/file-scope.js";
+import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { filterMetaOnly } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import { TestSetupHydrator } from "../test-setup-hydration.js";
+import { relativePathOf, substituteWorkingTreeRows, workingTreeStateOf } from "../working-tree/substitute.js";
 import type { ExploreContext, ExploreResult, ExploreStrategy } from "./types.js";
 
 /** Page size when the caller gives no (or a non-positive) limit. */
@@ -47,11 +49,76 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
     this.testSetupHydrator = new TestSetupHydrator(qdrant);
   }
 
-  /** Main entry point: apply defaults → execute search → post-process. */
+  /**
+   * Whether this strategy has the working-tree CHUNK floor: it substitutes the
+   * tree's rows for base rows of delta files (`substituteFromWorkingTree`)
+   * instead of flagging them with `treeState`.
+   */
+  protected readonly hasChunkFloor: boolean = false;
+
+  /**
+   * Main entry point: apply defaults → execute search → post-process → flag
+   * base rows of delta files the strategy did not substitute.
+   */
   async execute(ctx: ExploreContext): Promise<ExploreResult[]> {
     const prepared = this.applyDefaults(ctx);
     const rawResults = await this.executeExplore(prepared);
-    return await this.postProcess(rawResults, ctx);
+    const processed = await this.postProcess(rawResults, ctx);
+    return this.markWorkingTreeState(processed, rawResults, ctx);
+  }
+
+  /**
+   * Base rows of a file the working tree changed or deleted stay in an answer
+   * that has no floor, and say so: `treeState` on the RESULT, never inside the
+   * payload, so `fields` projection and metaOnly shaping cannot drop it
+   * (bd tea-rags-mcp-xi2r9.3). One stamping seam for every strategy — a
+   * floor strategy whose view can read delta rows answered from the tree, so
+   * there is nothing stale to flag. The file is read off the RAW hit by id:
+   * metaOnly and `level: "file"` shaping may have dropped `relativePath` from
+   * the page's payload.
+   */
+  private markWorkingTreeState(
+    results: ExploreResult[],
+    rawResults: readonly ExploreResult[],
+    ctx: ExploreContext,
+  ): ExploreResult[] {
+    const view = ctx.workingTreeView;
+    if (!view || view.touchedPaths.size === 0) return results;
+    if (this.hasChunkFloor && view.readDeltaChunks) return results;
+    const rawPathById = new Map(rawResults.map((raw) => [raw.id, relativePathOf(raw.payload)]));
+    return results.map((result) => {
+      const path = relativePathOf(result.payload) || rawPathById.get(result.id);
+      const treeState = workingTreeStateOf(view, path);
+      return treeState ? { ...result, treeState } : result;
+    });
+  }
+
+  /**
+   * The chunk floor (bd tea-rags-mcp-xi2r9.3): `scrolled` with the base rows of
+   * delta files replaced by the tree's rows that pass `keep` — the predicate
+   * the caller's Qdrant scroll applied. Untouched when the request reads no
+   * tree, the tree touched nothing, or no chunk layer can read its rows (the
+   * base rows then stay and `execute` flags them instead).
+   */
+  protected async substituteFromWorkingTree(
+    scrolled: readonly ScrollChunk[],
+    ctx: ExploreContext,
+    keep: (row: ScrollChunk) => boolean,
+  ): Promise<ScrollChunk[]> {
+    const view = ctx.workingTreeView;
+    if (!view?.readDeltaChunks || view.touchedPaths.size === 0) return [...scrolled];
+    const deltaRows = await view.readDeltaChunks();
+    return substituteWorkingTreeRows(scrolled, view, deltaRows, keep);
+  }
+
+  /** Drop rows of files the tree touched — for a base-only fallback leg of a floor strategy. */
+  protected dropWorkingTreeTouched<C extends { payload?: Record<string, unknown> }>(
+    rows: C[],
+    ctx: ExploreContext,
+  ): C[] {
+    const view = ctx.workingTreeView;
+    if (!this.hasChunkFloor || !view?.readDeltaChunks || view.touchedPaths.size === 0) return rows;
+    return rows.filter((row) => !view.touchedPaths.has(relativePathOf(row.payload)));
   }
 
   /** Concrete strategy implements the actual search call. */
@@ -120,7 +187,11 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
    * carries no content and never calls it.
    */
   protected async hydrateTestSetup(results: ExploreResult[], ctx: ExploreContext): Promise<ExploreResult[]> {
-    return this.testSetupHydrator.hydrate(results, ctx.collectionName);
+    // A floor strategy's examples of touched files are the tree's rows, so
+    // their setup is too (bd tea-rags-mcp-xi2r9.3). Without a floor they are
+    // the index's rows, flagged by `treeState`, and the index's setup matches them.
+    const view = this.hasChunkFloor ? ctx.workingTreeView : undefined;
+    return this.testSetupHydrator.hydrate(results, ctx.collectionName, view);
   }
 
   /**

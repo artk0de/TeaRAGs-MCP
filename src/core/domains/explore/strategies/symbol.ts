@@ -52,6 +52,7 @@
 import { isCodegraphUnavailableError, type CodegraphUnavailableError } from "../../../adapters/duckdb/errors.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import {
+  matchesTextIndexed,
   SYMBOL_SEPARATORS,
   symbolIdLastSegment,
   symbolIdTextToken,
@@ -65,6 +66,7 @@ import type {
 import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
 import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
 import { isTestExampleChunk } from "../chunk-grouping/code.js";
+import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { renderWithDeclaredVisibility } from "../outline-visibility.js";
 import { applyEssentialSignals } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
@@ -89,6 +91,9 @@ export interface SymbolSearchInput {
 
 export class SymbolSearchStrategy extends BaseExploreStrategy {
   readonly type = "symbol" as unknown as "vector" | "hybrid" | "scroll-rank" | "similar";
+
+  /** find_symbol answers for the working tree: delta rows replace base rows of delta files. */
+  protected override readonly hasChunkFloor = true;
 
   constructor(
     qdrant: QdrantManager,
@@ -121,7 +126,14 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     // Exact pathPattern (bd tea-rags-mcp-xf01b): the scroll filters carry only the
     // text pre-filter, a directory-token SUPERSET of what the glob names.
     const pathMatcher = compilePathPatternMatcher(this.input.pathPattern);
-    const scrolled = [...symbolChunks, ...memberChunks.filter((c) => !seen.has(c.id))];
+    // Chunk floor (bd tea-rags-mcp-xi2r9.3): the working tree's rows replace
+    // the indexed rows of the files it changed, BEFORE the pathPattern and
+    // exact-symbol filters — so a tree row is answered as its indexed twin was.
+    const scrolled = await this.substituteFromWorkingTree(
+      [...symbolChunks, ...memberChunks.filter((c) => !seen.has(c.id))],
+      ctx,
+      (row) => this.matchesSymbolScrolls(row),
+    );
     const allChunks = pathMatcher ? keepPathPatternMatches(scrolled, pathMatcher) : scrolled;
 
     // Post-filter the scroll superset against the query:
@@ -142,7 +154,9 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     // examples' parentSymbolId, which outlines them but is not its setup).
     const grouped =
       isFullyQualified(this.input.symbol) && !answersOwnId(exact, this.input.symbol)
-        ? await this.scrollPackMembers(ctx.collectionName)
+        ? await this.substituteFromWorkingTree(await this.scrollPackMembers(ctx.collectionName), ctx, (row) =>
+            this.matchesPackMemberScroll(row),
+          )
         : [];
     const matched = pathMatcher ? [...exact, ...keepPathPatternMatches(grouped, pathMatcher)] : [...exact, ...grouped];
     // An example pack answers one of its members with that member alone (bd
@@ -166,7 +180,9 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     // 0rskm — Qdrant scroll found no chunk for this symbolId. If codegraph is
     // wired, the symbol may be collapsed into a covering class chunk that has a
     // different symbolId. Two-hop: symbol_id → chunk_id → getPoint → result.
-    const covering = await this.resolveViaCodegraph(ctx);
+    // The codegraph hop reads the index only: a covering chunk of a file the
+    // tree changed would answer with the index's version of it.
+    const covering = this.dropWorkingTreeTouched(await this.resolveViaCodegraph(ctx), ctx);
     return pathMatcher ? keepPathPatternMatches(covering, pathMatcher) : covering;
   }
 
@@ -186,6 +202,12 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     ];
     if (this.input.language) must.push({ key: "language", match: { value: this.input.language } });
     return this.qdrant.scrollFiltered(collectionName, { must }, SCROLL_LIMIT);
+  }
+
+  /** {@link scrollPackMembers}' filter as a predicate over a row Qdrant never stored. */
+  private matchesPackMemberScroll(row: ScrollChunk): boolean {
+    const { memberSymbolIds } = row.payload;
+    return Array.isArray(memberSymbolIds) && memberSymbolIds.includes(this.input.symbol) && this.matchesLanguage(row);
   }
 
   /**
@@ -276,6 +298,23 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     // An example id answers with the example runnable in the head (msv3l):
     // its scope setup is stored once per scope and put back here (5xpq4).
     return this.hydrateTestSetup(processed, originalCtx);
+  }
+
+  /**
+   * The two scrolls' filters ({@link buildSymbolFilter}) as one predicate over a
+   * row Qdrant never stored — the working tree's delta rows. Same text token,
+   * same language condition; the pathPattern half is the text pre-filter the
+   * exact matcher in `executeExplore` re-applies to every row anyway.
+   */
+  private matchesSymbolScrolls(row: ScrollChunk): boolean {
+    const textQuery = symbolIdTextToken(this.input.symbol);
+    const { symbolId, parentSymbolId } = row.payload;
+    const textMatch = matchesTextIndexed(symbolId, textQuery) || matchesTextIndexed(parentSymbolId, textQuery);
+    return textMatch && this.matchesLanguage(row);
+  }
+
+  private matchesLanguage(row: ScrollChunk): boolean {
+    return !this.input.language || row.payload.language === this.input.language;
   }
 
   private buildSymbolFilter(key: "symbolId" | "parentSymbolId"): Record<string, unknown> {

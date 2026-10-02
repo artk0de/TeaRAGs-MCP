@@ -6,6 +6,8 @@
  */
 
 import type { RankingOverlay } from "../../../contracts/types/reranker.js";
+import type { WorkingTreeState } from "../../../contracts/types/working-tree.js";
+import type { WorkingTreeView } from "../working-tree/overlay.js";
 
 export interface ExploreContext {
   collectionName: string;
@@ -21,6 +23,11 @@ export interface ExploreContext {
   pathPattern?: string;
   rerank?: unknown; // RerankMode<string> — unknown to avoid circular deps
   metaOnly?: boolean;
+  /**
+   * The tree this request reads (bd tea-rags-mcp-xi2r9). Floor strategies
+   * substitute its rows; the rest stamp `treeState` on base rows of its files.
+   */
+  workingTreeView?: WorkingTreeView;
 }
 
 export interface ExploreResult<P = Record<string, unknown>> {
@@ -28,6 +35,8 @@ export interface ExploreResult<P = Record<string, unknown>> {
   score: number;
   payload?: P;
   rankingOverlay?: RankingOverlay;
+  /** Set on a base row of a file the working tree changed or deleted, where no floor replaced it. */
+  treeState?: WorkingTreeState;
 }
 
 export interface ExploreStrategy {

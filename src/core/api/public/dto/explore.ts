@@ -4,7 +4,7 @@
 
 import type { RankingOverlay, SignalLevel } from "../../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
-import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
+import type { WorkingTreeMarker, WorkingTreeState } from "../../../contracts/types/working-tree.js";
 import type { SearchConfidence } from "../../../domains/explore/index.js";
 import type { CollectionIdentifier } from "./common.js";
 
@@ -196,6 +196,12 @@ export interface SearchResult {
   score: number;
   payload?: Record<string, unknown>;
   rankingOverlay?: RankingOverlay;
+  /**
+   * The working tree changed (`modified`) or deleted (`deleted`) this row's
+   * file and the tool has no floor to answer from the tree (bd
+   * tea-rags-mcp-xi2r9.3). Absent on rows the tree did not touch.
+   */
+  treeState?: WorkingTreeState;
 }
 
 /**

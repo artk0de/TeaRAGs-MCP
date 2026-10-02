@@ -76,3 +76,28 @@ export function symbolIdLastSegment(symbol: string): string {
 export function symbolIdTextToken(symbol: string): string {
   return symbolIdLastSegment(symbol).replace(METHOD_NAME_SUFFIX, "");
 }
+
+/** The tokens the `word` tokenizer stores for a value: alphanumeric runs, lowercased, Unicode-aware. */
+function wordTokens(value: string): string[] {
+  return value
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((token) => token.length > 0);
+}
+
+/**
+ * Would `match: { text: query }` on a text-indexed key hold `stored`? Every
+ * query token must be among the stored value's tokens, and a query with no
+ * storable token matches nothing — as in Qdrant.
+ *
+ * For rows Qdrant never stored: the working-tree delta rows find_symbol takes
+ * in place of a changed file's indexed rows (bd tea-rags-mcp-xi2r9.3) pass the
+ * same text condition their indexed twins would have.
+ */
+export function matchesTextIndexed(stored: unknown, query: string): boolean {
+  if (typeof stored !== "string") return false;
+  const wanted = wordTokens(query);
+  if (wanted.length === 0) return false;
+  const have = new Set(wordTokens(stored));
+  return wanted.every((token) => have.has(token));
+}
