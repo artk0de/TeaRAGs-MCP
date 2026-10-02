@@ -21,6 +21,8 @@
 
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
+import type { WorkingTree } from "../../../contracts/types/working-tree.js";
+import type { WorkingTreeOverlay } from "../../../domains/explore/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import { InvalidParameterError } from "../../errors.js";
@@ -62,6 +64,11 @@ export interface ReviewChangesOpsDeps {
   reviewEdgeExtraction?: ReviewEdgeExtractionDeps;
   /** The temporal walk's history window (the git trajectory's `chunkMaxAgeMonths`). */
   windowMonths: number;
+  /**
+   * Measures the tree the review reads against its index (bd tea-rags-mcp-xi2r9).
+   * Present → every answer carries `workingTree`; absent (unit wiring) → none.
+   */
+  workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
 }
 
 export class ReviewChangesOps {
@@ -94,6 +101,18 @@ export class ReviewChangesOps {
     // One addressing rule (bd tea-rags-mcp-xi2r9): index reads address the base index, git
     // reads the tree the caller stands in — `path` alone at a linked worktree reaches both.
     const workingTree = resolveWorkingTree(this.deps.collectionRegistry, req);
+    // Every read answer carries the marker (bd tea-rags-mcp-xi2r9, live probe P2-4).
+    // `indexLag` inside the review block stays until the marker supersedes it.
+    const view = this.deps.workingTreeOverlay?.view(workingTree, req.project);
+    const result = await this.reviewWorkingTree(req, providers, workingTree);
+    return view ? { ...result, workingTree: (await view).marker } : result;
+  }
+
+  private async reviewWorkingTree(
+    req: ReviewChangesRequest,
+    providers: readonly (typeof REVIEW_SECTION_PROVIDERS)[number][],
+    workingTree: WorkingTree,
+  ): Promise<ReviewChangesResult> {
     const { collectionName } = workingTree.baseIndex;
     const addressing = { project: req.project, collection: req.collection, path: req.path };
     const workTree = workingTree.root || undefined;

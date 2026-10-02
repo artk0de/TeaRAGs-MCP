@@ -79,6 +79,13 @@ export { createNamingReviewExtractor } from "./internal/ops/naming-review-extrac
 export { createPathCollectionResolver } from "./internal/collection-resolver.js";
 export { readPayloadFileCommitCounts } from "./internal/infra/payload-file-commit-count-reader.js";
 export { readPayloadImportSpecifiers } from "./internal/infra/payload-import-specifier-reader.js";
+export {
+  scheduleWorkingTreeGraphSweep,
+  WORKING_TREE_GRAPH_BUILD_TIMEOUT_MS,
+  WorkingTreeGraphCache,
+  type WorkingTreeGraphCodegraphRuntime,
+} from "./internal/infra/working-tree-graph-cache.js";
+export { createWorkingTreeDeltaSignalSource } from "./internal/infra/working-tree-delta-signals.js";
 export { InputValidationError, CollectionNotProvidedError } from "./errors.js";
 
 // Project registry types re-exported from infra (public surface)

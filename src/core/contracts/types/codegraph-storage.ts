@@ -54,6 +54,7 @@ import type {
   TemporalSymbolCommitFileSnapshot,
 } from "./codegraph-temporal.js";
 import type { CaseSplitPathPatterns } from "./file-classification.js";
+import type { WorkingTreeGraphReader } from "./working-tree.js";
 
 /**
  * Which `cg_pass1_aggregates` rows `GraphDbClient.listPass1Aggregates` returns.
@@ -731,19 +732,30 @@ export interface PersistedSymbolLineRanges {
  * contracts so domains/explore can depend on it without importing api/internal
  * or adapters. Implemented by GraphFacade (adapted to a bare collectionName in
  * bootstrap). Undefined injection = codegraph disabled = fallback no-op.
+ * `readTreeGraph` — the request's working-tree graph (WTO-7): when it answers
+ * `built`, the lookup reads the tree's graph instead of the index's.
  */
 export interface SymbolChunkResolver {
-  resolveSymbolChunk: (collectionName: string, symbolId: SymbolId) => Promise<SymbolChunkLocation | null>;
+  resolveSymbolChunk: (
+    collectionName: string,
+    symbolId: SymbolId,
+    readTreeGraph?: WorkingTreeGraphReader,
+  ) => Promise<SymbolChunkLocation | null>;
 }
 
 /**
  * The read seam the find_symbol outline uses to show each member's DECLARED
  * visibility (bd tea-rags-mcp-sqqkz) — one batched read per outline response.
  * May throw when the graph exists but cannot be read; the outline degrades to
- * its undecorated form. Absent when codegraph is disabled.
+ * its undecorated form. Absent when codegraph is disabled. `readTreeGraph` as
+ * for {@link SymbolChunkResolver}.
  */
 export interface SymbolVisibilityResolver {
-  resolveSymbolVisibilities: (collectionName: string, symbolIds: readonly SymbolId[]) => Promise<SymbolVisibilityRow[]>;
+  resolveSymbolVisibilities: (
+    collectionName: string,
+    symbolIds: readonly SymbolId[],
+    readTreeGraph?: WorkingTreeGraphReader,
+  ) => Promise<SymbolVisibilityRow[]>;
 }
 
 /**

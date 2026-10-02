@@ -14,6 +14,12 @@ import {
   QdrantStartingError,
   QdrantUnavailableError,
 } from "../../../../src/core/adapters/qdrant/errors.js";
+// Every ranked query (search / query / queryGroups / hybridSearch) excludes the
+// service points (bd tea-rags-mcp-xi2r9): the filter Qdrant receives is the
+// caller's filter narrowed by this function.
+// String point ids are mapped as a write maps them before a recommend query.
+import { toQdrantPointId } from "../../../../src/core/adapters/qdrant/point-id.js";
+import { withServicePointExclusions } from "../../../../src/core/adapters/qdrant/service-points.js";
 
 // TurboQuant rescore params injected into every dense search path so quantized
 // candidates are re-scored on the stored float vectors (keeps baseline recall).
@@ -1141,7 +1147,7 @@ describe("QdrantManager", () => {
       expect(mockClient.search).toHaveBeenCalledWith("test-collection", {
         vector: [0.1, 0.2, 0.3],
         limit: 5,
-        filter: undefined,
+        filter: withServicePointExclusions(undefined),
         with_payload: true,
         params: RESCORE_PARAMS,
       });
@@ -1155,7 +1161,7 @@ describe("QdrantManager", () => {
       expect(mockClient.search).toHaveBeenCalledWith("test-collection", {
         vector: [0.1, 0.2, 0.3],
         limit: 10,
-        filter: undefined,
+        filter: withServicePointExclusions(undefined),
         with_payload: true,
         params: RESCORE_PARAMS,
       });
@@ -1170,7 +1176,7 @@ describe("QdrantManager", () => {
       expect(mockClient.search).toHaveBeenCalledWith("test-collection", {
         vector: [0.1, 0.2, 0.3],
         limit: 5,
-        filter,
+        filter: withServicePointExclusions(filter),
         with_payload: true,
         params: RESCORE_PARAMS,
       });
@@ -1185,12 +1191,12 @@ describe("QdrantManager", () => {
       expect(mockClient.search).toHaveBeenCalledWith("test-collection", {
         vector: [0.1, 0.2, 0.3],
         limit: 5,
-        filter: {
+        filter: withServicePointExclusions({
           must: [
             { key: "category", match: { value: "database" } },
             { key: "type", match: { value: "document" } },
           ],
-        },
+        }),
         with_payload: true,
         params: RESCORE_PARAMS,
       });
@@ -1204,7 +1210,7 @@ describe("QdrantManager", () => {
       expect(mockClient.search).toHaveBeenCalledWith("test-collection", {
         vector: [0.1, 0.2, 0.3],
         limit: 5,
-        filter: undefined,
+        filter: withServicePointExclusions(undefined),
         with_payload: true,
         params: RESCORE_PARAMS,
       });
@@ -1221,7 +1227,7 @@ describe("QdrantManager", () => {
       expect(mockClient.search).toHaveBeenCalledWith("test-collection", {
         vector: [0.1, 0.2, 0.3],
         limit: 5,
-        filter,
+        filter: withServicePointExclusions(filter),
         with_payload: true,
         params: RESCORE_PARAMS,
       });
@@ -1238,7 +1244,7 @@ describe("QdrantManager", () => {
       expect(mockClient.search).toHaveBeenCalledWith("test-collection", {
         vector: [0.1, 0.2, 0.3],
         limit: 5,
-        filter,
+        filter: withServicePointExclusions(filter),
         with_payload: true,
         params: RESCORE_PARAMS,
       });
@@ -1282,7 +1288,7 @@ describe("QdrantManager", () => {
       expect(mockClient.search).toHaveBeenCalledWith("hybrid-collection", {
         vector: { name: "dense", vector: [0.1, 0.2, 0.3] },
         limit: 5,
-        filter: undefined,
+        filter: withServicePointExclusions(undefined),
         with_payload: true,
         params: RESCORE_PARAMS,
       });
@@ -1311,7 +1317,7 @@ describe("QdrantManager", () => {
       expect(mockClient.search).toHaveBeenCalledWith("standard-collection", {
         vector: [0.1, 0.2, 0.3],
         limit: 5,
-        filter: undefined,
+        filter: withServicePointExclusions(undefined),
         with_payload: true,
         params: RESCORE_PARAMS,
       });
@@ -1330,9 +1336,9 @@ describe("QdrantManager", () => {
       expect(mockClient.search).toHaveBeenCalledWith("test-collection", {
         vector: [0.1, 0.2, 0.3],
         limit: 10,
-        filter: {
+        filter: withServicePointExclusions({
           must: [{ key: "category", match: { value: "test" } }],
-        },
+        }),
         with_payload: true,
         params: RESCORE_PARAMS,
       });
@@ -1461,7 +1467,7 @@ describe("QdrantManager", () => {
       expect(mockClient.query).toHaveBeenCalledWith(
         "test-col",
         expect.objectContaining({
-          query: { recommend: { positive: ["seed-id"] } },
+          query: { recommend: { positive: [toQdrantPointId("seed-id")] } },
           limit: 5,
         }),
       );
@@ -1486,10 +1492,16 @@ describe("QdrantManager", () => {
       expect(mockClient.query).toHaveBeenCalledWith(
         "test-col",
         expect.objectContaining({
-          query: { recommend: { positive: ["seed-id"], negative: ["neg-id"], strategy: "best_score" } },
+          query: {
+            recommend: {
+              positive: [toQdrantPointId("seed-id")],
+              negative: [toQdrantPointId("neg-id")],
+              strategy: "best_score",
+            },
+          },
           limit: 10,
           offset: 5,
-          filter: { must: [{ key: "language", match: { value: "typescript" } }] },
+          filter: withServicePointExclusions({ must: [{ key: "language", match: { value: "typescript" } }] }),
         }),
       );
     });
@@ -1571,9 +1583,9 @@ describe("QdrantManager", () => {
       await manager.hybridSearch("test-collection", denseVector, sparseVector, 20, filter);
 
       const [, payload] = mockClient.query.mock.calls[0];
-      expect(payload.filter).toEqual(filter);
-      expect(payload.prefetch[0].filter).toEqual(filter);
-      expect(payload.prefetch[1].filter).toEqual(filter);
+      expect(payload.filter).toEqual(withServicePointExclusions(filter));
+      expect(payload.prefetch[0].filter).toEqual(withServicePointExclusions(filter));
+      expect(payload.prefetch[1].filter).toEqual(withServicePointExclusions(filter));
     });
 
     it("normalizes a plain key-value filter into Qdrant must-form before forwarding", async () => {
@@ -1582,9 +1594,11 @@ describe("QdrantManager", () => {
       await manager.hybridSearch("test-collection", denseVector, sparseVector, 20, { language: "typescript" });
 
       const [, payload] = mockClient.query.mock.calls[0];
-      expect(payload.filter).toEqual({
-        must: [{ key: "language", match: { value: "typescript" } }],
-      });
+      expect(payload.filter).toEqual(
+        withServicePointExclusions({
+          must: [{ key: "language", match: { value: "typescript" } }],
+        }),
+      );
     });
 
     // tea-rags-mcp-2fefq: the identity leg. The explore strategy decides whether
@@ -1611,17 +1625,18 @@ describe("QdrantManager", () => {
       it("sends exactly two prefetches and nothing else when no identity prefetch filter is given", async () => {
         mockClient.query.mockResolvedValue({ points: [] });
         const filter = { must: [{ key: "language", match: { value: "ruby" } }] };
+        const sent = withServicePointExclusions(filter);
 
         await manager.hybridSearch("test-collection", denseVector, sparseVector, 20, filter);
 
         expect(mockClient.query.mock.calls[0][1]).toEqual({
           prefetch: [
-            { query: denseVector, using: "dense", limit: 20, filter, params: quantization },
-            { query: sparseVector, using: "text", limit: 20, filter },
+            { query: denseVector, using: "dense", limit: 20, filter: sent, params: quantization },
+            { query: sparseVector, using: "text", limit: 20, filter: sent },
           ],
           query: { fusion: "rrf" },
           limit: 20,
-          filter,
+          filter: sent,
           with_payload: true,
         });
       });
@@ -1649,18 +1664,18 @@ describe("QdrantManager", () => {
           query: denseVector,
           using: "dense",
           limit: 20,
-          filter: { must: [filter, identityPrefetchFilter] },
+          filter: { must: [withServicePointExclusions(filter), identityPrefetchFilter] },
           params: quantization,
         });
         // Boost only: the fused result set keeps the request filter alone.
-        expect(payload.filter).toEqual(filter);
-        expect(payload.prefetch[0].filter).toEqual(filter);
-        expect(payload.prefetch[1].filter).toEqual(filter);
+        expect(payload.filter).toEqual(withServicePointExclusions(filter));
+        expect(payload.prefetch[0].filter).toEqual(withServicePointExclusions(filter));
+        expect(payload.prefetch[1].filter).toEqual(withServicePointExclusions(filter));
         expect(payload.query).toEqual({ fusion: "rrf" });
         expect(payload.limit).toBe(20);
       });
 
-      it("narrows the identity prefetch by the identity filter alone when the request has no filter", async () => {
+      it("narrows the identity prefetch by the identity filter and the service-point exclusion when the request has no filter", async () => {
         mockClient.query.mockResolvedValue({ points: [] });
 
         await manager.hybridSearch(
@@ -1674,8 +1689,10 @@ describe("QdrantManager", () => {
         );
 
         const [, payload] = mockClient.query.mock.calls[0];
-        expect(payload.prefetch[2].filter).toEqual(identityPrefetchFilter);
-        expect(payload.filter).toBeUndefined();
+        expect(payload.prefetch[2].filter).toEqual({
+          must: [withServicePointExclusions(undefined), identityPrefetchFilter],
+        });
+        expect(payload.filter).toEqual(withServicePointExclusions(undefined));
       });
 
       it("gives the identity prefetch the dense weight in weighted RRF", async () => {
@@ -2870,7 +2887,12 @@ describe("QdrantManager", () => {
 
       expect(mockClient.queryGroups).toHaveBeenCalledWith(
         "test",
-        expect.objectContaining({ filter, group_by: "relativePath", group_size: 1, limit: 5 }),
+        expect.objectContaining({
+          filter: withServicePointExclusions(filter),
+          group_by: "relativePath",
+          group_size: 1,
+          limit: 5,
+        }),
       );
     });
 

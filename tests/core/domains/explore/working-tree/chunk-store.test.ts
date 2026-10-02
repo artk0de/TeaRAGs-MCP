@@ -193,6 +193,69 @@ describe("WorkingTreeChunkStore", { timeout: 60_000 }, () => {
     expect(swept.bytes).toBeGreaterThan(0);
   });
 
+  describe("content the tree no longer holds", () => {
+    it("should evict an uncommitted superseded content of a path once it is unread 96 h, and keep it before", async () => {
+      const store = storeAt();
+      write("src/a.ts", "export const a = 1; // draft 1\n");
+      const draft = entryFor("src/a.ts", "export const a = 1; // draft 1\n");
+      await store.put(COLLECTION, draft);
+      write("src/a.ts", "export const a = 2; // draft 2\n");
+      const current = entryFor("src/a.ts", "export const a = 2; // draft 2\n");
+      await store.put(COLLECTION, current);
+
+      expect(await store.sweep(clock + 95 * HOUR)).toMatchObject({ evicted: 0, kept: 2 });
+      expect(await store.sweep(clock + 96 * HOUR)).toMatchObject({ evicted: 1, kept: 1 });
+      expect(await store.get(COLLECTION, keyOf(draft))).toBeUndefined();
+      expect(await store.get(COLLECTION, keyOf(current))).toBeDefined();
+    });
+
+    it("should evict the content of a path the tree deleted once it is unread 96 h", async () => {
+      const store = storeAt();
+      write("src/gone.ts", "export const gone = 1;\n");
+      const entry = entryFor("src/gone.ts", "export const gone = 1;\n");
+      await store.put(COLLECTION, entry);
+      rmSync(join(tree, "src/gone.ts"));
+
+      expect(await store.sweep(clock + 95 * HOUR)).toMatchObject({ evicted: 0, kept: 1 });
+      expect(await store.sweep(clock + 97 * HOUR)).toMatchObject({ evicted: 1, kept: 0 });
+    });
+
+    it("should measure a superseded entry's 96 h from its last read", async () => {
+      const store = storeAt();
+      write("src/a.ts", "export const a = 1;\n");
+      const entry = entryFor("src/a.ts", "export const a = 1;\n");
+      await store.put(COLLECTION, entry);
+      write("src/a.ts", "export const a = 2;\n");
+      clock += 50 * HOUR;
+      await store.get(COLLECTION, keyOf(entry));
+
+      expect(await store.sweep(clock + 95 * HOUR)).toMatchObject({ evicted: 0, kept: 1 });
+      expect(await store.sweep(clock + 96 * HOUR)).toMatchObject({ evicted: 1, kept: 0 });
+    });
+
+    it("should evict current content stored by a superseded chunker once a newer build's entry has been read 96 h since", async () => {
+      const store = storeAt();
+      write("src/a.ts", "export const a = 1;\n");
+      const old = { ...entryFor("src/a.ts", "export const a = 1;\n"), chunkerFingerprint: "chunker-old" };
+      await store.put(COLLECTION, old);
+      clock += 10 * HOUR;
+      const fresh = { ...entryFor("src/a.ts", "export const a = 1;\n"), chunkerFingerprint: "chunker-new" };
+      await store.put(COLLECTION, fresh);
+
+      expect(await store.sweep(clock + 85 * HOUR)).toMatchObject({ evicted: 0, kept: 2 });
+      expect(await store.sweep(clock + 87 * HOUR)).toMatchObject({ evicted: 1, kept: 1 });
+      expect(await store.get(COLLECTION, keyOf(fresh))).toBeDefined();
+    });
+
+    it("should keep current uncommitted content however long it sits unread", async () => {
+      const store = storeAt();
+      write("src/a.ts", "export const a = 1; // current, never committed\n");
+      await store.put(COLLECTION, entryFor("src/a.ts", "export const a = 1; // current, never committed\n"));
+
+      expect(await store.sweep(clock + 10_000 * HOUR)).toMatchObject({ evicted: 0, kept: 1 });
+    });
+  });
+
   it("should evict the least recently read entries until the store fits its cap", async () => {
     const entries = ["a", "b", "c"].map((name) => entryFor(`src/${name}.ts`, `export const ${name} = 1;\n`));
     const probe = storeAt();
@@ -257,6 +320,34 @@ describe("WorkingTreeChunkStore", { timeout: 60_000 }, () => {
     stop();
     await vi.advanceTimersByTimeAsync(12 * HOUR);
     expect(sweep).toHaveBeenCalledTimes(2);
+  });
+
+  it("should not serve rows a layer of an earlier row format stored (pre-stored-id `chunk_` rows)", async () => {
+    write("src/a.ts", "export const a = 1;\n");
+    const store = storeAt();
+    // The fingerprint every layer wrote before row ids became stored point ids.
+    const legacyFingerprint = createHash("sha256")
+      .update(`\0${JSON.stringify(CONFIG)}`)
+      .digest("hex");
+    await store.put(COLLECTION, {
+      ...entryFor("src/a.ts", "export const a = 1;\n"),
+      chunkerFingerprint: legacyFingerprint,
+      rows: [{ id: "chunk_e61bd876bd62659c", payload: { relativePath: "src/a.ts" } }],
+    });
+    const chunkFile = vi.fn(
+      async (): Promise<ScrollChunk[]> => [{ id: "20054299-0bf6-2a2a-065d-fde15c6f8718", payload: {} }],
+    );
+    const layer = createWorkingTreeChunkLayer({
+      createPool: () => ({ shutdown: async () => undefined }),
+      chunkFile,
+      store,
+    });
+
+    const read = await layer.chunk(tree, ["src/a.ts"], CONFIG, COLLECTION);
+
+    expect(chunkFile).toHaveBeenCalledTimes(1);
+    expect(read.chunks.map((row) => row.id)).toEqual(["20054299-0bf6-2a2a-065d-fde15c6f8718"]);
+    await layer.dispose();
   });
 
   it("should serve a fresh layer from the store without re-chunking unchanged content", async () => {

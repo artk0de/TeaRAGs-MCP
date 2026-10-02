@@ -56,6 +56,14 @@ export interface WorkingTreeMarker {
    * whole answer.
    */
   unparsed?: string[];
+  /**
+   * Why graph data in this answer came from the INDEX's graph although the
+   * tree changed files (WTO-7): the tree graph was still building past the
+   * caller's wait, its build failed, or codegraph is off. Set only while
+   * `floors` lacks `"codegraph"`: the graph edges and codegraph signals then
+   * describe the indexed commit, not the tree.
+   */
+  treeGraphUnavailable?: string;
 }
 
 /** How a base row of a delta file differs from the tree, where no floor replaced it. */
@@ -99,4 +107,49 @@ export type WorkingTreeGraphState =
  */
 export interface WorkingTreeGraphSource {
   graphFor: (request: WorkingTreeGraphRequest, waitMs: number) => Promise<WorkingTreeGraphState>;
+}
+
+/**
+ * A view's access to its tree graph: wait at most `waitMs` for the graph of the
+ * view's delta. Present only on a view whose measured delta is non-empty — a
+ * clean or degraded view has no tree graph to read. Never rejects.
+ */
+export type WorkingTreeGraphReader = (waitMs: number) => Promise<WorkingTreeGraphState>;
+
+/** One row the tree holds and the index does not — a delta chunk as the overlay yields it. */
+export interface WorkingTreeDeltaRow {
+  id: string | number;
+  payload: Record<string, unknown>;
+}
+
+/** Everything the signal source needs to enrich one view's delta rows. */
+export interface WorkingTreeDeltaSignalRequest {
+  tree: WorkingTree;
+  /** Delta rows of changed files; returned enriched, in the same order. */
+  rows: readonly WorkingTreeDeltaRow[];
+  /** The view's tree graph; absent when no graph source is wired. */
+  readTreeGraph?: WorkingTreeGraphReader;
+}
+
+/**
+ * Enriched delta rows, and the tree-graph state their codegraph block was
+ * decided by: `built` — computed from the tree graph; `unavailable` — inherited
+ * from the base points. Absent when no tree graph could be asked.
+ */
+export interface WorkingTreeDeltaSignalResult {
+  rows: WorkingTreeDeltaRow[];
+  treeGraph?: WorkingTreeGraphState;
+}
+
+/**
+ * Port that gives delta rows the trajectory payload ingest would have given
+ * them (WTO-6/7). The chunk layer yields structure only, so without it every
+ * delta row ranks as a file with no history and no graph — the live probe had a
+ * modified `hybrid.ts` at #24 under `hotspots`, scored as zero-git. Implemented
+ * in `api/internal` (it reads Qdrant and the codegraph), injected into the
+ * overlay so every consumer of delta rows gets them enriched. A missing base
+ * point or graph is not an error — the row carries less. Never rejects.
+ */
+export interface WorkingTreeDeltaSignalSource {
+  enrich: (request: WorkingTreeDeltaSignalRequest) => Promise<WorkingTreeDeltaSignalResult>;
 }

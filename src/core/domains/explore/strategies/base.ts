@@ -14,7 +14,12 @@ import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { filterMetaOnly } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import { TestSetupHydrator } from "../test-setup-hydration.js";
-import { relativePathOf, substituteWorkingTreeRows, workingTreeStateOf } from "../working-tree/substitute.js";
+import {
+  relativePathOf,
+  retargetWorkingTreeRows,
+  substituteWorkingTreeRows,
+  workingTreeStateOf,
+} from "../working-tree/substitute.js";
 import type { ExploreContext, ExploreResult, ExploreStrategy } from "./types.js";
 
 /** Page size when the caller gives no (or a non-positive) limit. */
@@ -111,14 +116,21 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
     return substituteWorkingTreeRows(scrolled, view, deltaRows, keep);
   }
 
-  /** Drop rows of files the tree touched — for a base-only fallback leg of a floor strategy. */
-  protected dropWorkingTreeTouched<C extends { payload?: Record<string, unknown> }>(
-    rows: C[],
+  /**
+   * Retarget the rows of a base-only leg of a floor strategy at the tree (live
+   * P2-1): a row of a file the tree touched becomes the tree's rows of the same
+   * symbol, or nothing — `retargetWorkingTreeRows`. Untouched when the strategy
+   * has no floor or the view cannot read delta rows.
+   */
+  protected async retargetToWorkingTree(
+    rows: ExploreResult[],
     ctx: ExploreContext,
-  ): C[] {
+    toResult: (row: ScrollChunk) => ExploreResult,
+  ): Promise<ExploreResult[]> {
     const view = ctx.workingTreeView;
     if (!this.hasChunkFloor || !view?.readDeltaChunks || view.touchedPaths.size === 0) return rows;
-    return rows.filter((row) => !view.touchedPaths.has(relativePathOf(row.payload)));
+    if (!rows.some((row) => view.touchedPaths.has(relativePathOf(row.payload)))) return rows;
+    return retargetWorkingTreeRows(rows, view, await view.readDeltaChunks(), toResult);
   }
 
   /** Concrete strategy implements the actual search call. */

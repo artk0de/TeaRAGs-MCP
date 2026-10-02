@@ -44,6 +44,7 @@ export {
   createWorkingTreeChunkLayer,
   createWorkingTreeChunkStore,
   createWorkingTreeDeltaReader,
+  recordTreeGraphState,
   scheduleWorkingTreeChunkSweep,
   WORKING_TREE_DELTA_FILE_CAP,
   WorkingTreeOverlay,

@@ -352,9 +352,19 @@ export class ExploreOps {
     // caller that pre-canonicalizes turns that miss into a hash, and the same
     // project then answers with one collection through a search and another
     // through this call.
-    const { collectionName } = resolveWorkingTree(this.collectionRegistry, { collection, path }).baseIndex;
+    const workingTree = resolveWorkingTree(this.collectionRegistry, { collection, path });
+    const { collectionName } = workingTree.baseIndex;
+    // Every read answer carries the marker (bd tea-rags-mcp-xi2r9, live probe
+    // P2-4): the metrics describe the INDEX, and the marker says how far the
+    // caller's tree is from it. Measured beside the metrics read, never after.
+    const workingTreeView = this.workingTreeOverlay?.view(workingTree, undefined);
     await this.ensureStats(collectionName);
-    return this.indexMetricsQuery.run(collectionName, path, this.enrichmentHealthFrameForPath?.(path) ?? []);
+    const metrics = await this.indexMetricsQuery.run(
+      collectionName,
+      path,
+      this.enrichmentHealthFrameForPath?.(path) ?? [],
+    );
+    return workingTreeView ? { ...metrics, workingTree: (await workingTreeView).marker } : metrics;
   }
 
   /** Factory for the per-request findSimilar strategy. Exposed so facade can construct without reaching into ops internals. */
@@ -939,12 +949,14 @@ function buildFindSymbolContext(request: FindSymbolRequest, collectionName: stri
 /**
  * The marker an answer carries: the view's, with the floors the operation's
  * strategy applies — none when the view cannot read delta rows (degraded, or no
- * chunk layer wired), because then nothing was substituted.
+ * chunk layer wired), because then nothing was substituted. Joined with the
+ * floors the request's reads recorded on the view's marker: `"codegraph"` when
+ * delta rows or a codegraph lookup read the tree graph (WTO-7).
  */
 function finalizeWorkingTreeMarker(
   view: WorkingTreeView,
   floors: readonly WorkingTreeFloor[] | undefined,
 ): WorkingTreeMarker {
   if (!view.readDeltaChunks || !floors || floors.length === 0) return view.marker;
-  return { ...view.marker, floors: [...floors] };
+  return { ...view.marker, floors: [...new Set([...floors, ...view.marker.floors])] };
 }

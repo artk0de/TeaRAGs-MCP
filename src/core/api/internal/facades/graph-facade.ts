@@ -36,8 +36,8 @@ import type {
   SymbolVisibilityRow,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
-import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
-import type { WorkingTreeOverlay } from "../../../domains/explore/index.js";
+import type { WorkingTreeGraphReader, WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
+import { recordTreeGraphState, type WorkingTreeOverlay } from "../../../domains/explore/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import {
   resolveInheritedMemberDefiner,
@@ -56,6 +56,7 @@ import type {
   GetCallersResponse,
 } from "../../public/dto/graph.js";
 import { resolveCollection, resolveWorkingTree } from "../collection-resolver.js";
+import { readWorkingTreeGraph } from "../infra/working-tree-graph-read.js";
 import { ArchitectureReportOps } from "../ops/architecture-report-ops.js";
 import { CochangeOps } from "../ops/cochange-ops.js";
 import { decorateCallees, decorateCallers } from "../ops/declared-visibility-lookup.js";
@@ -95,7 +96,10 @@ export interface GraphFacadeDeps {
   readFileCommitCounts?: (collectionName: string) => Promise<ReadonlyMap<RelPath, number>>;
   /**
    * The `workingTree` marker source (bd tea-rags-mcp-xi2r9) for get_callers,
-   * get_callees and find_cycles. Optional: absent (unit wiring), no marker.
+   * get_callees, find_cycles and get_architecture_report — and, through the
+   * view's `readTreeGraph`, the tree graph they read instead of the index's
+   * when the tree changed files (WTO-7). Optional: absent (unit wiring), no
+   * marker and always the index graph.
    */
   workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
 }
@@ -195,16 +199,20 @@ export class GraphFacade {
     addr: GraphAddressing,
     fn: (handle: CollectionGraphHandle) => Promise<T>,
     fallback: T,
+    readTreeGraph?: WorkingTreeGraphReader,
   ): Promise<T> {
     const { collectionName } = resolveWorkingTree(this.deps.collectionRegistry, addr).baseIndex;
-    return this.readGraph(collectionName, fn, fallback);
+    const tree = await readWorkingTreeGraph(readTreeGraph, this.deps.pool, fn);
+    return tree.kind === "tree" ? tree.value : this.readGraph(collectionName, fn, fallback);
   }
 
   /**
    * {@link withReadHandle} for the answers that carry the `workingTree` marker
-   * (bd tea-rags-mcp-xi2r9): the tree is measured beside the graph read, and
-   * the marker rides on whatever the read returns — the no-graph fallback
-   * included. The overlay never rejects; a read failure still throws.
+   * (bd tea-rags-mcp-xi2r9): the tree is measured first, a non-empty delta is
+   * read from the tree's graph when it is built (WTO-7), and the marker — with
+   * the tree-graph state that decided the read — rides on whatever the read
+   * returns, the no-graph fallback included. The overlay never rejects; a read
+   * failure still throws.
    */
   private async withMarkedReadHandle<T extends object>(
     addr: GraphAddressing,
@@ -212,9 +220,13 @@ export class GraphFacade {
     fallback: T,
   ): Promise<T & { workingTree?: WorkingTreeMarker }> {
     const workingTree = resolveWorkingTree(this.deps.collectionRegistry, addr);
-    const view = this.deps.workingTreeOverlay?.view(workingTree, addr.project);
-    const result = await this.readGraph(workingTree.baseIndex.collectionName, fn, fallback);
-    return view ? { ...result, workingTree: (await view).marker } : result;
+    const view = await this.deps.workingTreeOverlay?.view(workingTree, addr.project);
+    const tree = await readWorkingTreeGraph(view?.readTreeGraph, this.deps.pool, fn);
+    const result =
+      tree.kind === "tree" ? tree.value : await this.readGraph(workingTree.baseIndex.collectionName, fn, fallback);
+    if (!view) return result;
+    if (tree.state) recordTreeGraphState(view.marker, tree.state);
+    return { ...result, workingTree: view.marker };
   }
 
   private async readGraph<T>(
@@ -323,18 +335,37 @@ export class GraphFacade {
     );
   }
 
-  async resolveSymbolChunk(addr: GraphAddressing, symbolId: SymbolId): Promise<SymbolChunkLocation | null> {
-    return this.withReadHandle(addr, async (handle) => handle.graphDb.findSymbolChunk(symbolId), null);
+  /**
+   * The chunk covering `symbolId`, for find_symbol's codegraph hop. Handed the
+   * request's tree-graph reader, a working tree with a built graph is answered
+   * from it (WTO-7); the caller records the state it was handed on its marker.
+   */
+  async resolveSymbolChunk(
+    addr: GraphAddressing,
+    symbolId: SymbolId,
+    readTreeGraph?: WorkingTreeGraphReader,
+  ): Promise<SymbolChunkLocation | null> {
+    return this.withReadHandle(addr, async (handle) => handle.graphDb.findSymbolChunk(symbolId), null, readTreeGraph);
   }
 
   /**
    * Raw declared-visibility rows for the find_symbol outline (bd
    * tea-rags-mcp-sqqkz). Keeps `withReadHandle`'s contract — throws when a graph
    * exists but cannot be read, `[]` when there is none — and leaves degrading to
-   * the caller, which owns whether a missing decoration is acceptable.
+   * the caller, which owns whether a missing decoration is acceptable. Read from
+   * the tree graph like {@link resolveSymbolChunk}.
    */
-  async getSymbolVisibilities(addr: GraphAddressing, symbolIds: readonly SymbolId[]): Promise<SymbolVisibilityRow[]> {
-    return this.withReadHandle(addr, async (handle) => handle.graphDb.getSymbolVisibilities(symbolIds), []);
+  async getSymbolVisibilities(
+    addr: GraphAddressing,
+    symbolIds: readonly SymbolId[],
+    readTreeGraph?: WorkingTreeGraphReader,
+  ): Promise<SymbolVisibilityRow[]> {
+    return this.withReadHandle(
+      addr,
+      async (handle) => handle.graphDb.getSymbolVisibilities(symbolIds),
+      [],
+      readTreeGraph,
+    );
   }
 
   async getArchitectureReport(req: GetArchitectureReportRequest): Promise<GetArchitectureReportResponse> {
@@ -344,7 +375,7 @@ export class GraphFacade {
       ? async (relPaths: readonly RelPath[]) => readImportSpecifiers(addressedCollection(), relPaths)
       : undefined;
     const fileCommitCounts = readFileCommitCounts ? async () => readFileCommitCounts(addressedCollection()) : undefined;
-    return this.withReadHandle(
+    return this.withMarkedReadHandle(
       req,
       async (handle) => this.architectureReport.build(handle.graphDb, req, importSpecifiers, fileCommitCounts),
       ArchitectureReportOps.empty(req),

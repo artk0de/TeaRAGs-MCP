@@ -40,7 +40,7 @@ import {
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { RankingOverlay } from "../../../contracts/types/reranker.js";
-import type { WorkingTreeOverlay } from "../../../domains/explore/index.js";
+import { recordTreeGraphState, type WorkingTreeOverlay } from "../../../domains/explore/index.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolveInheritedMemberDefiner } from "../../../domains/trajectory/codegraph/inherited-member-definer.js";
@@ -49,6 +49,7 @@ import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import type { DeclaredVisibilityIndex } from "../../../infra/declared-visibility-index.js";
 import type { PathStep, PathTraceResult, TracedPath, TracePathRequest } from "../../public/dto/graph.js";
 import { resolveWorkingTree } from "../collection-resolver.js";
+import { selectWorkingTreeGraphHandle } from "../infra/working-tree-graph-read.js";
 import { lookupDeclaredVisibility } from "./declared-visibility-lookup.js";
 
 const DEFAULT_MAX_DEPTH = 8;
@@ -96,17 +97,31 @@ export class TracePathOps {
 
   /**
    * The trace, carrying the `workingTree` marker on every return path (bd
-   * tea-rags-mcp-xi2r9). The tree is measured beside the graph walk; edges stay
-   * the INDEX's, so `floors` is `[]`.
+   * tea-rags-mcp-xi2r9). A tree with a non-empty delta is walked over its own
+   * graph when that is built (WTO-7, marker `floors: ["codegraph"]`), over the
+   * index's otherwise with `treeGraphUnavailable` saying why. Step hydration
+   * stays the index's payload either way.
    */
   async tracePath(req: TracePathRequest): Promise<PathTraceResult> {
     const workingTree = resolveWorkingTree(this.deps.collectionRegistry, req);
-    const view = this.deps.workingTreeOverlay?.view(workingTree, req.project);
-    const result = await this.traceInCollection(req, workingTree.baseIndex.collectionName);
-    return view ? { ...result, workingTree: (await view).marker } : result;
+    const view = await this.deps.workingTreeOverlay?.view(workingTree, req.project);
+    const selection = await selectWorkingTreeGraphHandle(view?.readTreeGraph, this.deps.pool);
+    const result = await this.traceInCollection(
+      req,
+      workingTree.baseIndex.collectionName,
+      selection.kind === "tree" ? selection.handle : undefined,
+    );
+    if (!view) return result;
+    if (selection.state) recordTreeGraphState(view.marker, selection.state);
+    return { ...result, workingTree: view.marker };
   }
 
-  private async traceInCollection(req: TracePathRequest, collectionName: string): Promise<PathTraceResult> {
+  /** `treeHandle`, when given, is the graph walked instead of the index's; it is closed here like any other. */
+  private async traceInCollection(
+    req: TracePathRequest,
+    collectionName: string,
+    treeHandle?: CollectionGraphHandle,
+  ): Promise<PathTraceResult> {
     const maxDepth = req.maxDepth ?? DEFAULT_MAX_DEPTH;
     const maxPaths = req.maxPaths ?? DEFAULT_MAX_PATHS;
     const preset = req.rerank; // no default — danger overlay is opt-in (tea-rags-mcp-prqsj)
@@ -118,9 +133,9 @@ export class TracePathOps {
           .catch(() => resolvePhysicalCollection(collectionName, []))
       : resolvePhysicalCollection(collectionName, []);
 
-    let handle: CollectionGraphHandle | undefined;
+    let handle: CollectionGraphHandle | undefined = treeHandle;
     try {
-      handle = await this.deps.pool.acquireReader(activePhysicalCollectionName);
+      handle ??= await this.deps.pool.acquireReader(activePhysicalCollectionName);
     } catch (err) {
       // GraphFacade#withReadHandle's contract (bd tea-rags-mcp-kn2cb): "no
       // path" asserts something about the code, so it is only answered when

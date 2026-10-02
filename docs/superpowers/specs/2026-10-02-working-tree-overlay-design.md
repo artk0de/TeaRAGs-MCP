@@ -153,12 +153,14 @@ WTO-5 dense vectors will join the same entry.
 
 Retention (sweep at server start, then every 6 h on an unref'd timer):
 
-| Entry state                                                      | Action    |
-| ---------------------------------------------------------------- | --------- |
-| tree root no longer exists (worktree removed)                    | evict now |
-| content committed and `now − max(commitTime, lastReadAt) ≥ 96 h` | evict     |
-| content uncommitted, tree alive                                  | keep      |
-| store above its size cap (default 512 MB)                        | evict LRU |
+| Entry state                                                                                                      | Action    |
+| ---------------------------------------------------------------------------------------------------------------- | --------- |
+| tree root no longer exists (worktree removed)                                                                    | evict now |
+| content is not the tree's current content of that path (path gone or bytes differ) and `now − lastReadAt ≥ 96 h` | evict     |
+| same content stored by another chunker build/config and read since, this entry `now − lastReadAt ≥ 96 h`         | evict     |
+| content committed and `now − max(commitTime, lastReadAt) ≥ 96 h`                                                 | evict     |
+| content uncommitted and current, tree alive                                                                      | keep      |
+| store above its size cap (default 512 MB)                                                                        | evict LRU |
 
 "Committed" means the blob id appears in the tree's history for that path:
 `git log -1 --format=%ct --find-object=<blobId> HEAD -- <relativePath>`; its
@@ -189,6 +191,59 @@ in the base is not.
 - `search-cascade.md` and `references/subagent-injection.md` updated; plugin
   minor version bump.
 
+### Tree graph (WTO-7) — codegraph for the working tree
+
+The graph tools and every codegraph signal answer for the tree, not for the
+indexed commit. No resolution code is written for this: the tree graph is the
+PRODUCTION incremental codegraph run, pointed at a private copy of the base
+graph.
+
+1. **Base snapshot.** `GraphDbClient#exportSnapshot(targetPath)` copies the live
+   graph with `COPY FROM DATABASE` inside the session that owns it (the daemon
+   in production), in one write-queue slot — the same verified copy storage
+   compaction uses (`writeCompactedCopy`), without the swap. One snapshot per
+   physical collection and base version; the version is the `(size, mtime)` of
+   the base `.duckdb` and `.wal`, which reads never move.
+2. **Tree build, in a child process.** A forked entry
+   (`domains/trajectory/codegraph/working-tree/`) clones the snapshot
+   (`COPYFILE_FICLONE` — copy-on-write on APFS), builds a direct-mode provider
+   with `createCodegraphEnrichmentProvider({ rootDir: <staging> })`, runs
+   `handleDeletedPaths(deleted)` and then
+   `buildFileSignals(treeRoot, { paths: changed })`. That is the walker, the
+   full resolver chain (ts.Program strategies included), hierarchy-dependent
+   re-resolution, PageRank and cycles — the same code an incremental reindex
+   runs. The child has its own heap ceiling and a time budget; it is killed on
+   either, and the answer degrades to the base graph with `degraded` naming why.
+   Measured on this repository: 5 changed TypeScript files, 2.0 s.
+3. **Cache.** `<appData>/working-tree/<collection>/graph/<key>/` with
+   `key = sha256(treeRoot, delta fingerprint, base version)`, published by
+   rename from a staging dir so concurrent servers never read a half-built
+   graph. Single-flight per key in-process. Retention joins the chunk store's
+   sweep: a dead tree's graphs go at once; per tree only the newest graph is
+   kept once a newer one is published; snapshots of a superseded base version go
+   at the next sweep.
+4. **Warm-up.** `WorkingTreeOverlay#view` starts the build for a non-empty delta
+   (fire and forget), so a graph call usually finds it ready.
+
+Consumers:
+
+| Read path                                                                            | Behaviour with a non-empty delta                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `get_callers`, `get_callees`, `find_cycles`, `trace_path`, `get_architecture_report` | wait for the tree graph (budget 120 s), read it, marker `floors: ["codegraph"]`                                                                                                                                                                                          |
+| find_symbol visibility, symbol-chunk lookup                                          | same graph, same wait                                                                                                                                                                                                                                                    |
+| delta rows of every search tool                                                      | `codegraph.symbols.{file,chunk}` from the tree graph when ready within 3 s; otherwise inherited from the base point of the same `(relativePath, symbolId)` and no `codegraph` floor                                                                                      |
+| delta rows, git                                                                      | `git.file` inherited from the base points of the same file (uncommitted edits have no history); `git.chunk` from the base chunk of the same symbolId; a new symbol has none and the reranker's L3 blend falls back to the file value; an untracked file has no git block |
+
+`floors` gains `"codegraph"` whenever the answer's graph data came from the tree
+graph. The reranker is not changed: an absent chunk signal already blends to the
+file value, and a file with no history scoring zero on churn is correct.
+
+Tests: rename, delete and move each assert which edges disappear and which
+appear (a fixture repository, the real provider, a direct pool); a caller in an
+unchanged file of a deleted method loses the edge; a symbol only the tree
+declares gains its callers; the child killed on its budget leaves the base
+answer with `degraded`; two builds of one key publish one graph.
+
 ## Testing
 
 Real git, no git mocks. A fixture helper creates a repository, commits, and
@@ -218,5 +273,4 @@ the marker is present.
 
 ## Out of scope
 
-Dense floor, delta signals, codegraph delta edges, replacing `indexLag`. Live
-validation and the WTO-9 transcript audit are user-gated.
+Dense floor and replacing `indexLag`. The WTO-9 transcript audit is user-gated.

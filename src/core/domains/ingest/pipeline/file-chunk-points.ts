@@ -1,16 +1,26 @@
 /**
  * The chunker-owned point rows ingest stores for one source file (bd
- * tea-rags-mcp-xi2r9.3): ids from `generateChunkId`, payload from
+ * tea-rags-mcp-xi2r9.3): ids from `generateChunkId` mapped to the id the point
+ * is STORED under (`toQdrantPointId`, the mapping `QdrantPointStore` applies
+ * on every write), payload from
  * `buildChunkPointPayload`, chunks from the production `ChunkerPool` with the
  * same post-passes `SourceFileIngestor#ingest` runs. A reader that must see a
  * file exactly as ingest would store it — without embedding or upserting it —
  * calls this; the working-tree overlay is that reader.
  *
  * Rows carry no git or codegraph payload: enrichment writes those later.
+ *
+ * Why the stored id and not `chunk_<hex>` (bd tea-rags-mcp-xi2r9, live probe):
+ * a reader hands these ids out beside base rows, and a caller passes them back
+ * — `find_similar positiveIds`. A `chunk_` id addressed no point and drew a 400
+ * Bad Request; the stored id is the one an indexed twin of the row carries, so
+ * an unchanged chunk of a changed file (same root, same lines, same content)
+ * answers with its base point's id.
  */
 
 import { join } from "node:path";
 
+import { toQdrantPointId } from "../../../adapters/qdrant/point-id.js";
 import type { PayloadBuilder } from "../../../contracts/types/provider.js";
 import { isCompiledJsContent, isJsFamilyPath } from "../../../infra/file-classification/index.js";
 import { isTestPath } from "../../../infra/scope-detection.js";
@@ -75,7 +85,7 @@ export async function buildFileChunkPoints(
   assignNavigationAndDocSymbolId(chunks, root);
   assignSymbolMass(chunks, code);
   return chunks.map((chunk) => ({
-    id: generateChunkId(chunk),
+    id: String(toQdrantPointId(generateChunkId(chunk))),
     payload: buildChunkPointPayload(chunk, { codebasePath: root, imports, payloadBuilder }),
   }));
 }

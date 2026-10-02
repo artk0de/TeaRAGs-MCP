@@ -94,6 +94,8 @@ import type {
   IdentifierNamingConvention,
   IdentifierRole,
 } from "../../../contracts/types/language.js";
+import type { WorkingTree } from "../../../contracts/types/working-tree.js";
+import type { WorkingTreeOverlay } from "../../../domains/explore/index.js";
 import {
   detectIdentifierCasing,
   extractConceptTerms,
@@ -268,6 +270,11 @@ export interface NamingLexiconOpsDeps {
    * Absent → type drafts are judged without head alignment by meaning.
    */
   embeddings?: NamingLexiconEmbeddings;
+  /**
+   * Measures the tree the request reads against its index (bd tea-rags-mcp-xi2r9).
+   * Present → every answer carries `workingTree`; absent (unit wiring) → none.
+   */
+  workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
 }
 
 /** Diff mode: one changed file's added lines, its working-tree text and its declarations. */
@@ -447,6 +454,18 @@ export class NamingLexiconOps {
     // One addressing rule (bd tea-rags-mcp-xi2r9): index reads address the base index, git
     // reads the tree the caller stands in.
     const workingTree = resolveWorkingTree(this.deps.collectionRegistry, req);
+    // Every read answer carries the marker (bd tea-rags-mcp-xi2r9, live probe P2-4), on
+    // every return path — so it is attached here, around the whole answer. Measured beside it.
+    const view = this.deps.workingTreeOverlay?.view(workingTree, req.project);
+    const answer = await this.answerNamingLexicon(req, scope, workingTree);
+    return view ? { ...answer, workingTree: (await view).marker } : answer;
+  }
+
+  private async answerNamingLexicon(
+    req: NamingLexiconRequest,
+    scope: NamingLexiconEvidenceScope,
+    workingTree: WorkingTree,
+  ): Promise<NamingLexiconResult> {
     const { collectionName } = workingTree.baseIndex;
     const workTree = workingTree.root || undefined;
     // Every sub-read — concept search, metrics — addresses the index resolved HERE, never

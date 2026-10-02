@@ -8,6 +8,7 @@
  * failure — still yields a marker, with `degraded` saying why and what fixes
  * it. A degraded view touches no path, so nothing is substituted or hidden.
  */
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
@@ -15,6 +16,11 @@ import type { CollectionEntry, RegistryGitState } from "../../../contracts/types
 import {
   WORKING_TREE_DELTA_FILE_CAP,
   type WorkingTree,
+  type WorkingTreeDeltaSignalSource,
+  type WorkingTreeGraphReader,
+  type WorkingTreeGraphRequest,
+  type WorkingTreeGraphSource,
+  type WorkingTreeGraphState,
   type WorkingTreeMarker,
 } from "../../../contracts/types/working-tree.js";
 import { findGitToplevel, readRepoGitState } from "../../../infra/repo-git-state.js";
@@ -27,6 +33,7 @@ import {
   type WorkingTreeDelta,
   type WorkingTreeDeltaReader,
 } from "./delta.js";
+import { recordTreeGraphState } from "./tree-graph-marker.js";
 
 export interface WorkingTreeView {
   marker: WorkingTreeMarker;
@@ -40,6 +47,14 @@ export interface WorkingTreeView {
    * when the returned promise resolves.
    */
   readDeltaChunks?: () => Promise<readonly ScrollChunk[]>;
+  /**
+   * The tree's codegraph for this delta (WTO-7), waiting at most `waitMs`.
+   * Present only for a measured non-empty delta with a graph source wired; the
+   * build was already started when the view was made. Reading does not stamp
+   * the marker — the reader that USES the graph does
+   * (`recordTreeGraphState`), so an answer never claims a graph it did not read.
+   */
+  readTreeGraph?: WorkingTreeGraphReader;
 }
 
 /** How the overlay turns delta files into rows: the layer, and the config to chunk with. */
@@ -61,6 +76,14 @@ export interface WorkingTreeOverlayDeps {
   createFileFilter: (root: string) => Promise<(relativePath: string) => boolean>;
   /** Absent → views carry no `readDeltaChunks`. */
   deltaChunks?: WorkingTreeDeltaChunkSource;
+  /** The tree-graph cache (WTO-7). Absent → views carry no `readTreeGraph` and nothing is warmed. */
+  treeGraph?: WorkingTreeGraphSource;
+  /**
+   * Gives delta rows the git / codegraph payload ingest would have (WTO-6/7),
+   * applied once inside `readDeltaChunks` so every consumer ranks enriched
+   * rows. Absent → delta rows carry the chunk layer's structural payload only.
+   */
+  deltaSignals?: WorkingTreeDeltaSignalSource;
 }
 
 const NO_TREE_REASON = "no working tree resolved for this index";
@@ -117,10 +140,23 @@ export class WorkingTreeOverlay {
         touchedPaths: new Set([...changed, ...deleted]),
         deletedPaths: new Set(deleted),
       };
+      if (total > 0 && this.deps.treeGraph) {
+        const request: WorkingTreeGraphRequest = {
+          tree,
+          changed,
+          deleted,
+          fingerprint: treeGraphFingerprint(read.delta.fingerprint, changed, deleted),
+        };
+        view.readTreeGraph = treeGraphReader(this.deps.treeGraph, request);
+      }
       const source = this.deps.deltaChunks;
       if (source) {
+        const { deltaSignals } = this.deps;
         let rows: Promise<readonly ScrollChunk[]> | undefined;
-        view.readDeltaChunks = async () => (rows ??= readDeltaChunks(source, tree, changed, view.marker));
+        view.readDeltaChunks = async () =>
+          (rows ??= readDeltaChunks(source, tree, changed, view.marker).then(async (chunks) =>
+            deltaSignals ? enrichDeltaRows(deltaSignals, tree, chunks, view) : chunks,
+          ));
       }
       return view;
     } catch (error) {
@@ -175,6 +211,65 @@ async function foldDirtyAtIndexTime(
   );
   extra.forEach((path, i) => (present[i] ? changed : deleted).add(path));
   return { changed: [...changed].sort(), deleted: [...deleted].sort() };
+}
+
+/**
+ * The delta's tree-graph key. The delta reader's fingerprint covers what git
+ * status lists; the files folded in from the index-time dirty stamp are not
+ * listed there, and they are part of what the graph is built over.
+ */
+function treeGraphFingerprint(
+  deltaFingerprint: string,
+  changed: readonly string[],
+  deleted: readonly string[],
+): string {
+  return createHash("sha1")
+    .update(deltaFingerprint)
+    .update("\0")
+    .update(changed.join("\n"))
+    .update("\0")
+    .update(deleted.join("\n"))
+    .digest("hex");
+}
+
+/**
+ * Start the tree graph's build now (warm-up: `graphFor(request, 0)`, result
+ * ignored — the cache single-flights, the next read joins it) and return the
+ * view's reader. A `built` answer is kept for the view's lifetime: the
+ * published graph of one fingerprint never changes, so a second wait would
+ * only re-ask the cache for the same file.
+ */
+function treeGraphReader(source: WorkingTreeGraphSource, request: WorkingTreeGraphRequest): WorkingTreeGraphReader {
+  const ask = async (waitMs: number): Promise<WorkingTreeGraphState> =>
+    source.graphFor(request, waitMs).catch((error: unknown) => ({
+      kind: "unavailable" as const,
+      reason: `tree graph source failed: ${error instanceof Error ? error.message : String(error)}`,
+    }));
+  void ask(0);
+  let built: WorkingTreeGraphState | undefined;
+  return async (waitMs) => {
+    if (built) return built;
+    const state = await ask(waitMs);
+    if (state.kind === "built") built = state;
+    return state;
+  };
+}
+
+/** Delta rows with their trajectory payload; the marker records which graph the codegraph block came from. */
+async function enrichDeltaRows(
+  source: WorkingTreeDeltaSignalSource,
+  tree: WorkingTree,
+  rows: readonly ScrollChunk[],
+  view: WorkingTreeView,
+): Promise<readonly ScrollChunk[]> {
+  if (rows.length === 0) return rows;
+  const enriched = await source.enrich({
+    tree,
+    rows,
+    ...(view.readTreeGraph ? { readTreeGraph: view.readTreeGraph } : {}),
+  });
+  if (enriched.treeGraph) recordTreeGraphState(view.marker, enriched.treeGraph);
+  return enriched.rows;
 }
 
 /** The changed files' rows; names the files that yielded none in `marker.unparsed`. */

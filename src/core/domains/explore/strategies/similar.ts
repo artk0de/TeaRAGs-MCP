@@ -3,11 +3,21 @@
  *
  * Unlike other strategies (cached in ExploreFacade constructor), this is
  * created per-request because it needs positive/negative inputs per call.
+ *
+ * On a working tree (bd tea-rags-mcp-xi2r9, live probe P1-2) an id may name a
+ * row of the TREE — hybrid_search and find_symbol hand those out beside base
+ * rows. Such a row is not in Qdrant, or is with the vector of the pre-edit
+ * content, so its content is embedded and used as a code example instead: the
+ * vector it would carry once indexed. An id is matched in its stored form
+ * (`toQdrantPointId`), so a `chunk_<hex>` id from an older answer resolves too.
+ * Every other id goes to Qdrant, and one Qdrant does not hold surfaces as
+ * `ChunkNotFoundError`.
  */
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { QdrantPointNotFoundError } from "../../../adapters/qdrant/errors.js";
+import { toQdrantPointId } from "../../../adapters/qdrant/point-id.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
@@ -41,9 +51,18 @@ export class SimilarSearchStrategy extends BaseExploreStrategy {
   }
 
   protected async executeExplore(ctx: ExploreContext): Promise<ExploreResult[]> {
+    // 0. Ids naming rows of the working tree become code examples (their content).
+    const treeContent = await this.readWorkingTreeContent(ctx);
+    const positiveExamples = splitWorkingTreeIds(this.input.positiveIds, treeContent);
+    const negativeExamples = splitWorkingTreeIds(this.input.negativeIds, treeContent);
+
     // 1. Collect code blocks to embed (filter empty strings)
-    const positiveCodeBlocks = (this.input.positiveCode ?? []).filter((c) => c.trim().length > 0);
-    const negativeCodeBlocks = (this.input.negativeCode ?? []).filter((c) => c.trim().length > 0);
+    const positiveCodeBlocks = [...(this.input.positiveCode ?? []), ...positiveExamples.treeCode].filter(
+      (c) => c.trim().length > 0,
+    );
+    const negativeCodeBlocks = [...(this.input.negativeCode ?? []), ...negativeExamples.treeCode].filter(
+      (c) => c.trim().length > 0,
+    );
     const allCodeBlocks = [...positiveCodeBlocks, ...negativeCodeBlocks];
 
     // 2. Embed all code blocks in one batch
@@ -58,8 +77,8 @@ export class SimilarSearchStrategy extends BaseExploreStrategy {
     const negativeVectors = embeddedVectors.slice(positiveCodeBlocks.length);
 
     // 4. Build positive/negative arrays (IDs + vectors)
-    const positive: (string | number[])[] = [...(this.input.positiveIds ?? []), ...positiveVectors];
-    const negative: (string | number[])[] = [...(this.input.negativeIds ?? []), ...negativeVectors];
+    const positive: (string | number[])[] = [...positiveExamples.ids, ...positiveVectors];
+    const negative: (string | number[])[] = [...negativeExamples.ids, ...negativeVectors];
 
     // 5. Build filter (merge user filter + fileExtensions)
     const filter = this.buildFilter(ctx.filter, this.input.fileExtensions);
@@ -96,6 +115,19 @@ export class SimilarSearchStrategy extends BaseExploreStrategy {
       return FileLevelGrouper.group(results, ctx.limit);
     }
     return results;
+  }
+
+  /**
+   * Content of the tree's rows by stored id; empty when the request reads no
+   * tree, the tree touched nothing, or no chunk layer can read its rows.
+   */
+  private async readWorkingTreeContent(ctx: ExploreContext): Promise<ReadonlyMap<string, string>> {
+    const view = ctx.workingTreeView;
+    if (!view?.readDeltaChunks || view.touchedPaths.size === 0) return new Map();
+    const rows = await view.readDeltaChunks();
+    return new Map(
+      rows.map((row) => [String(row.id), typeof row.payload.content === "string" ? row.payload.content : ""]),
+    );
   }
 
   private buildFilter(
@@ -136,4 +168,18 @@ export class SimilarSearchStrategy extends BaseExploreStrategy {
     if (userFilter?.must_not) result.must_not = userFilter.must_not;
     return result;
   }
+}
+
+/** `ids` split into the ones Qdrant answers and the tree rows' content that stands in for the rest. */
+function splitWorkingTreeIds(
+  ids: readonly string[] | undefined,
+  treeContent: ReadonlyMap<string, string>,
+): { ids: string[]; treeCode: string[] } {
+  const split: { ids: string[]; treeCode: string[] } = { ids: [], treeCode: [] };
+  for (const id of ids ?? []) {
+    const content = treeContent.get(String(toQdrantPointId(id)));
+    if (content === undefined) split.ids.push(id);
+    else split.treeCode.push(content);
+  }
+  return split;
 }

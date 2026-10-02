@@ -34,3 +34,4 @@ export {
   type WorkingTreeView,
 } from "./overlay.js";
 export { relativePathOf, substituteWorkingTreeRows, workingTreeStateOf } from "./substitute.js";
+export { recordingTreeGraphReader, recordTreeGraphState } from "./tree-graph-marker.js";

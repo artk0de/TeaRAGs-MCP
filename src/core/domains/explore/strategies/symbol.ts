@@ -64,6 +64,7 @@ import type {
   SymbolVisibilityResolver,
 } from "../../../contracts/types/codegraph.js";
 import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
+import type { WorkingTreeGraphReader } from "../../../contracts/types/working-tree.js";
 import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
 import { isTestExampleChunk } from "../chunk-grouping/code.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
@@ -73,6 +74,7 @@ import type { Reranker, RerankMode } from "../reranker.js";
 import { memberOwnerOf, splitFragmentBase } from "../split-fragment.js";
 import { resolveSymbols } from "../symbol-resolve.js";
 import { examplePackMember } from "../test-pack.js";
+import { recordingTreeGraphReader } from "../working-tree/tree-graph-marker.js";
 import { BaseExploreStrategy } from "./base.js";
 import { keepPathPatternMatches } from "./path-pattern-fill.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
@@ -174,15 +176,22 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
       (visibilityOf) => resolveSymbols(filtered, this.input.symbol, ctx.metaOnly, visibilityOf),
       ctx.metaOnly ? undefined : this.visibilityResolver,
       ctx.collectionName,
+      recordingTreeGraphReader(ctx.workingTreeView),
     )) as ExploreResult[];
     if (resolved.length > 0) return resolved;
 
     // 0rskm — Qdrant scroll found no chunk for this symbolId. If codegraph is
     // wired, the symbol may be collapsed into a covering class chunk that has a
     // different symbolId. Two-hop: symbol_id → chunk_id → getPoint → result.
-    // The codegraph hop reads the index only: a covering chunk of a file the
-    // tree changed would answer with the index's version of it.
-    const covering = this.dropWorkingTreeTouched(await this.resolveViaCodegraph(ctx), ctx);
+    // The hop names a STORED chunk by id: on a working tree whose delta touched
+    // that chunk's file, it is answered with the tree's rows of the same symbol
+    // (live P2-1) — never the index's version, and nothing when the tree no
+    // longer has it.
+    const covering = await this.retargetToWorkingTree(await this.resolveViaCodegraph(ctx), ctx, (row) => ({
+      id: row.id,
+      score: 1,
+      payload: ctx.metaOnly ? withoutContent(row.payload) : { ...row.payload },
+    }));
     return pathMatcher ? keepPathPatternMatches(covering, pathMatcher) : covering;
   }
 
@@ -223,17 +232,20 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
 
   private async resolveViaCodegraph(ctx: ExploreContext): Promise<ExploreResult[]> {
     if (!this.chunkResolver) return [];
-    const location = await this.resolveCoveringChunk(this.chunkResolver, ctx.collectionName);
+    const location = await this.resolveCoveringChunk(
+      this.chunkResolver,
+      ctx.collectionName,
+      recordingTreeGraphReader(ctx.workingTreeView),
+    );
     if (!location) return [];
     const point = await this.qdrant.getPoint(ctx.collectionName, location.chunkId);
     if (!point) return [];
     const payload = point.payload ? { ...point.payload } : {};
-    if (ctx.metaOnly) delete (payload as { content?: unknown }).content;
     return [
       {
         id: point.id,
         score: 1,
-        payload,
+        payload: ctx.metaOnly ? withoutContent(payload) : payload,
       },
     ];
   }
@@ -250,9 +262,13 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
   private async resolveCoveringChunk(
     resolver: SymbolChunkResolver,
     collectionName: string,
+    readTreeGraph: WorkingTreeGraphReader | undefined,
   ): Promise<SymbolChunkLocation | null> {
     try {
-      return await resolver.resolveSymbolChunk(collectionName, this.input.symbol);
+      // A clean tree's lookup is the index-only call it always was.
+      return readTreeGraph
+        ? await resolver.resolveSymbolChunk(collectionName, this.input.symbol, readTreeGraph)
+        : await resolver.resolveSymbolChunk(collectionName, this.input.symbol);
     } catch (err) {
       if (!isCodegraphUnavailableError(err)) throw err;
       this.codegraphSkipNotice = formatCodegraphFallbackSkipped(err);
@@ -445,4 +461,10 @@ function filterByLastSegment(
     const owner = splitPartOwner(c.payload);
     return owner !== undefined && symbolIdLastSegment(owner) === target;
   });
+}
+
+/** A payload copy without its `content` — the metaOnly shape of a codegraph-hop answer. */
+function withoutContent(payload: Record<string, unknown>): Record<string, unknown> {
+  const { content: _content, ...rest } = payload;
+  return rest;
 }

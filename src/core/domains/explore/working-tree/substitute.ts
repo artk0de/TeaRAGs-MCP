@@ -24,6 +24,39 @@ export function substituteWorkingTreeRows(
   return [...untouched, ...deltaRows.filter(keep)];
 }
 
+const SPLIT_PART_SUFFIX = /#part\d+$/;
+
+/** A symbolId with its `#partN` split suffix removed; undefined for a row without one. */
+function symbolFamilyOf(payload: Record<string, unknown> | undefined): string | undefined {
+  const symbolId = payload?.symbolId;
+  return typeof symbolId === "string" && symbolId !== "" ? symbolId.replace(SPLIT_PART_SUFFIX, "") : undefined;
+}
+
+/**
+ * Base rows a lookup reached through the INDEX (a codegraph hop names a stored
+ * chunk by id) retargeted at the tree (live P2-1): a row of a file the tree did
+ * not touch stays; a row of a touched file is replaced by the tree's rows of
+ * the same file and the same symbol — `#partN` parts of either side count as
+ * that symbol — and by nothing when the tree no longer has it (or deleted the
+ * file). The index's version of a touched file never survives. Pure.
+ */
+export function retargetWorkingTreeRows<R extends { payload?: Record<string, unknown> }>(
+  rows: readonly R[],
+  view: WorkingTreeView,
+  deltaRows: readonly ScrollChunk[],
+  toResult: (row: ScrollChunk) => R,
+): R[] {
+  return rows.flatMap((row) => {
+    const path = relativePathOf(row.payload);
+    if (!view.touchedPaths.has(path)) return [row];
+    const family = symbolFamilyOf(row.payload);
+    if (family === undefined) return [];
+    return deltaRows
+      .filter((delta) => relativePathOf(delta.payload) === path && symbolFamilyOf(delta.payload) === family)
+      .map(toResult);
+  });
+}
+
 /** How a base row of `relativePath` differs from the tree; undefined when the tree did not touch it. */
 export function workingTreeStateOf(
   view: WorkingTreeView,

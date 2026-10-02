@@ -76,6 +76,16 @@ export interface WorkingTreeChunkLayerDeps<P extends WorkingTreeChunkerPool> {
 
 const DEFAULT_IDLE_SHUTDOWN_MS = 60_000;
 /**
+ * Version of the row shape the injected `chunkFile` produces, folded into the
+ * store's chunker fingerprint so a stored row of an older shape is a miss, not
+ * a hit. The package version alone does not move between dev builds of one
+ * release, and a stored row outlives the process that wrote it.
+ *
+ * 2 — row ids are stored point ids (`toQdrantPointId`), no longer
+ *     `chunk_<hex>` (bd tea-rags-mcp-xi2r9, live probe P1-2).
+ */
+const WORKING_TREE_ROW_FORMAT = 2;
+/**
  * Files kept in the in-memory content cache, oldest evicted first. A delta is
  * capped at 200 files (`WORKING_TREE_DELTA_FILE_CAP`), so this holds the
  * edit history of several trees without growing with the server's uptime.
@@ -129,7 +139,7 @@ export function createWorkingTreeChunkLayer<P extends WorkingTreeChunkerPool>(
       try {
         const configKey = JSON.stringify(config);
         const chunkerFingerprint = createHash("sha256")
-          .update(`${deps.chunkerBuildId ?? ""}\0${configKey}`)
+          .update(`${deps.chunkerBuildId ?? ""}\0${configKey}\0rows-v${String(WORKING_TREE_ROW_FORMAT)}`)
           .digest("hex");
         const chunks: ScrollChunk[] = [];
         const unparsed: string[] = [];

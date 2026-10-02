@@ -76,10 +76,12 @@ export type GetCallersResponse = (SymbolCallersResponse | FileImportersResponse)
 export type GetCalleesResponse = (SymbolCalleesResponse | FileImportsResponse) & WorkingTreeMarkerField;
 
 /**
- * Which working tree a graph answer was read for (bd tea-rags-mcp-xi2r9). The
- * codegraph has no working-tree floor, so `floors` is always `[]`: edges are
- * the INDEX's, and `changedFiles` says how far the tree has moved from them.
- * Present whenever the server wires the overlay, on every return path.
+ * Which working tree a graph answer was read for (bd tea-rags-mcp-xi2r9). With
+ * a non-empty delta the answer is read from the tree's graph (WTO-7) and
+ * `floors` holds `"codegraph"`; when that graph could not be had in time,
+ * edges are the INDEX's and `treeGraphUnavailable` says why. A clean tree
+ * reads the index graph, which is the tree's. Present whenever the server
+ * wires the overlay, on every return path.
  */
 export interface WorkingTreeMarkerField {
   workingTree?: WorkingTreeMarker;

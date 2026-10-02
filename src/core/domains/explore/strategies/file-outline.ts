@@ -17,6 +17,7 @@ import { CodeChunkGrouper, DocChunkGrouper } from "../chunk-grouping/index.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { renderWithDeclaredVisibility } from "../outline-visibility.js";
 import type { Reranker, RerankMode } from "../reranker.js";
+import { recordingTreeGraphReader } from "../working-tree/tree-graph-marker.js";
 import { BaseExploreStrategy } from "./base.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
 
@@ -93,6 +94,7 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
         (visibilityOf) => CodeChunkGrouper.groupFile(chunks, visibilityOf),
         ctx.metaOnly ? undefined : this.visibilityResolver,
         ctx.collectionName,
+        recordingTreeGraphReader(ctx.workingTreeView),
       ),
     ];
   }

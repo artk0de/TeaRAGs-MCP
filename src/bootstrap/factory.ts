@@ -1,6 +1,7 @@
 // src/bootstrap/factory.ts
 import { spawn, type ChildProcess } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { totalmem } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -29,6 +30,7 @@ import {
   createComposition,
   createNamingReviewExtractor,
   createPathCollectionResolver,
+  createWorkingTreeDeltaSignalSource,
   ExploreFacade,
   GraphFacade,
   IngestFacade,
@@ -40,11 +42,15 @@ import {
   readPayloadImportSpecifiers,
   ReviewChangesOps,
   ReviewFacade,
+  scheduleWorkingTreeGraphSweep,
   SchemaBuilder,
   TracePathOps,
+  WORKING_TREE_GRAPH_BUILD_TIMEOUT_MS,
+  WorkingTreeGraphCache,
   WorktreeOps,
   type App,
   type GraphFacadeDeps,
+  type WorkingTreeGraphCodegraphRuntime,
 } from "../core/api/index.js";
 import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../core/contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../core/contracts/types/collection-identity.js";
@@ -63,6 +69,7 @@ import { ChunkerPool } from "../core/domains/ingest/pipeline/chunker/infra/pool.
 import { WorkerPoolEnrichmentExecutor } from "../core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { buildFileChunkPoints } from "../core/domains/ingest/pipeline/file-chunk-points.js";
 import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
+import { defaultEnrichmentWorkerMemoryLimitMb } from "../core/domains/ingest/pipeline/infra/pool-defaults.js";
 import { FileScanner } from "../core/domains/ingest/pipeline/scanner.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import { QuarantineStore } from "../core/domains/ingest/sync/index.js";
@@ -83,6 +90,7 @@ import { CollectionRegistry, type AmbientEnvRole } from "../core/domains/mainten
 import { WorktreeProvisioner } from "../core/domains/maintenance/worktree/index.js";
 import {
   CODEGRAPH_LANGUAGE_BY_EXTENSION,
+  WorkingTreeGraphProcessBuilder,
   type CodegraphDeps,
   type CodegraphWorkerConfig,
   type TemporalCochangeConfig,
@@ -398,6 +406,12 @@ interface CodegraphContext {
   pool: GraphDbClientPool;
   /** Keep-alive guard handed to the EnrichmentCoordinator (daemon stays up across the run). */
   indexRunDaemonGuard: IndexRunDaemonGuard;
+  /**
+   * What the working-tree graph cache builds against (bd tea-rags-mcp-xi2r9,
+   * WTO-7): this pool for the base snapshot, and the provider config the
+   * enrichment worker gets — the tree build runs the same provider.
+   */
+  workingTreeGraphRuntime: WorkingTreeGraphCodegraphRuntime;
 }
 
 const codegraphDaemonLock = new DaemonLock();
@@ -861,6 +875,14 @@ export function wireCodegraph(
     if (pool.hasDatabase(physicalCollectionName)) ensure();
     return originalAcquireReader(physicalCollectionName);
   };
+  // The working-tree graph's base snapshot is taken by the daemon too (its own
+  // connection sees the WAL), so the first export of a session must find one
+  // running. Same no-database guard as the reader: the pool refuses that itself.
+  const originalExportSnapshot = pool.exportSnapshot.bind(pool);
+  pool.exportSnapshot = async (physicalCollectionName: PhysicalCollectionName, targetPath: string) => {
+    if (pool.hasDatabase(physicalCollectionName)) ensure();
+    return originalExportSnapshot(physicalCollectionName, targetPath);
+  };
 
   // Codegraph worker-pool descriptor (tea-rags-mcp-dz7f). `collection-affinity`
   // dispatch — streamFileBatch → finalizeSignals → deferred buildChunkSignals
@@ -958,7 +980,21 @@ export function wireCodegraph(
     verifyDaemonBuild: async (physicalCollectionName) => pool.acquireWrite(physicalCollectionName),
   });
 
-  return { deps, graphFacade, pool, indexRunDaemonGuard };
+  // The tree build reuses the worker's provider config verbatim, minus what
+  // its private clone must not carry (daemon socket, rootDir, temporal).
+  const workingTreeGraphRuntime: WorkingTreeGraphCodegraphRuntime = {
+    pool,
+    providerConfig: {
+      languageModulePath: codegraphWorkerConfig.languageModulePath,
+      migrationsModulePath: codegraphWorkerConfig.migrationsModulePath,
+      customExcludePatterns: codegraphWorkerConfig.customExcludePatterns,
+      ambiguousResolveMode: codegraphWorkerConfig.ambiguousResolveMode,
+      dbMemoryLimit: codegraphWorkerConfig.dbMemoryLimit,
+      dbThreads: codegraphWorkerConfig.dbThreads,
+    },
+  };
+
+  return { deps, graphFacade, pool, indexRunDaemonGuard, workingTreeGraphRuntime };
 }
 
 /**
@@ -1150,6 +1186,28 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     store: workingTreeChunkStore,
     chunkerBuildId: pkg.version,
   });
+  // The working tree's codegraph (bd tea-rags-mcp-xi2r9, WTO-7): built per
+  // delta in a child process over a snapshot of the base graph, published
+  // under `<appData>/working-tree/<collection>/graph/`. Constructed before the
+  // overlay (its warm-up consumer), so the codegraph runtime is late-bound:
+  // `wireCodegraph` builds the pool below, and its GraphFacade takes the
+  // overlay. Like `projectIngestFactory` in the overlay, `codegraphContext` is
+  // only read at request (or sweep) time, never during construction;
+  // `undefined` = codegraph off. The child's heap ceiling is the enrichment
+  // worker's: the tree build runs the same provider over a subset of the same
+  // corpus. An explicit `0` (ceiling removed) maps to physical memory, since
+  // the builder needs a positive one.
+  const enrichmentWorkerHeapMb = defaultEnrichmentWorkerMemoryLimitMb();
+  const workingTreeGraphCache = new WorkingTreeGraphCache({
+    rootDir: join(config.paths.appData, "working-tree"),
+    codegraph: (): WorkingTreeGraphCodegraphRuntime | undefined => codegraphContext?.workingTreeGraphRuntime,
+    resolveActiveCollection,
+    builder: new WorkingTreeGraphProcessBuilder(),
+    budget: {
+      timeoutMs: WORKING_TREE_GRAPH_BUILD_TIMEOUT_MS,
+      heapLimitMb: enrichmentWorkerHeapMb > 0 ? enrichmentWorkerHeapMb : Math.floor(totalmem() / 1024 / 1024),
+    },
+  });
   // One overlay per process (bd tea-rags-mcp-xi2r9): its delta reader caches per
   // tree, and every read surface — explore, graph, trace_path — shares it.
   const workingTreeOverlay = new WorkingTreeOverlay({
@@ -1166,6 +1224,15 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
           .forPath(tree.baseIndex.root ?? tree.root)
           .resolveChunkerConfig(tree.baseIndex.collectionName),
     },
+    // WTO-7: a non-empty delta warms the tree graph at view time; graph tools
+    // and the delta rows' codegraph signals read it through the view.
+    treeGraph: workingTreeGraphCache,
+    // WTO-6/7: delta rows inherit git from the base points and take codegraph
+    // from the tree graph. The pool is late-bound like the cache's runtime.
+    deltaSignals: createWorkingTreeDeltaSignalSource({
+      qdrant: infra.qdrant,
+      graphFiles: () => codegraphContext?.pool,
+    }),
   });
   const codegraphContext = wireCodegraph(
     config,
@@ -1176,6 +1243,10 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     async (collectionName) => readPayloadFileCommitCounts(infra.qdrant, collectionName),
     workingTreeOverlay,
   );
+  // Swept with the chunk store's cadence (now + every 6 h, unref'd) — here,
+  // after `codegraphContext` exists: snapshot retention compares against the
+  // live base graph.
+  const stopWorkingTreeGraphSweep = scheduleWorkingTreeGraphSweep(workingTreeGraphCache);
   const composition = wireComposition(zodConfig, config.trajectoryIngest, codegraphContext?.deps);
 
   // TracePathOps bridges the codegraph adjacency (DuckDB pool) and the explore
@@ -1415,6 +1486,8 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
         extractDeclarations: createNamingReviewExtractor(composition.languageFactory),
         // Type drafts (bd tea-rags-mcp-433d2): head words embedded to align a synonym head.
         embeddings: infra.embeddings,
+        // Every read answer carries the `workingTree` marker (bd tea-rags-mcp-xi2r9).
+        workingTreeOverlay,
       })
     : undefined;
   // The diff-scoped review (bd tea-rags-mcp-89k7k.1.4): built beside the
@@ -1444,6 +1517,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
               composer: new DefaultSymbolIdComposer(),
             },
             windowMonths: zodConfig.trajectoryGit.chunkMaxAgeMonths,
+            workingTreeOverlay,
           }),
         })
       : undefined;
@@ -1489,6 +1563,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     cleanedUp = true;
     registryWatchStop();
     stopWorkingTreeChunkSweep();
+    stopWorkingTreeGraphSweep();
     void workingTreeChunkLayer.dispose().catch(() => undefined);
     // In-process enrichment (MCP index_codebase, inline git trajectory) spawns
     // git as a direct child of THIS process; no parent-death guard reaches it,
@@ -1603,8 +1678,11 @@ export function createWorkingTreeFileFilter(
 export function createSymbolChunkResolver(graphFacade?: GraphFacade): SymbolChunkResolver | undefined {
   if (!graphFacade) return undefined;
   return {
-    resolveSymbolChunk: async (collectionName, symbolId) =>
-      graphFacade.resolveSymbolChunk({ collection: collectionName }, symbolId),
+    // The tree-graph reader rides along only for a working tree with a delta.
+    resolveSymbolChunk: async (collectionName, symbolId, readTreeGraph) =>
+      readTreeGraph
+        ? graphFacade.resolveSymbolChunk({ collection: collectionName }, symbolId, readTreeGraph)
+        : graphFacade.resolveSymbolChunk({ collection: collectionName }, symbolId),
   };
 }
 
@@ -1616,7 +1694,9 @@ export function createSymbolChunkResolver(graphFacade?: GraphFacade): SymbolChun
 export function createSymbolVisibilityResolver(graphFacade?: GraphFacade): SymbolVisibilityResolver | undefined {
   if (!graphFacade) return undefined;
   return {
-    resolveSymbolVisibilities: async (collectionName, symbolIds) =>
-      graphFacade.getSymbolVisibilities({ collection: collectionName }, symbolIds),
+    resolveSymbolVisibilities: async (collectionName, symbolIds, readTreeGraph) =>
+      readTreeGraph
+        ? graphFacade.getSymbolVisibilities({ collection: collectionName }, symbolIds, readTreeGraph)
+        : graphFacade.getSymbolVisibilities({ collection: collectionName }, symbolIds),
   };
 }

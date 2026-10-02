@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { toQdrantPointId } from "../../../../../src/core/adapters/qdrant/point-id.js";
 import type { ScrollChunk } from "../../../../../src/core/domains/explore/chunk-grouping/types.js";
 import { createWorkingTreeChunkLayer } from "../../../../../src/core/domains/explore/working-tree/index.js";
 import type { ChunkerPoolPort } from "../../../../../src/core/domains/ingest/pipeline/chunker/infra/pool.js";
@@ -84,7 +85,11 @@ describe("WorkingTreeChunkLayer", () => {
     return { layer, pools, createPool, chunkFile };
   };
 
-  it("should produce the ids and payload ingest assigns for the same files", async () => {
+  // Invariant changed (bd tea-rags-mcp-xi2r9, live probe P1-2): the parity is
+  // with the id ingest STORES — `generateChunkId` mapped by `toQdrantPointId`,
+  // as `QdrantPointStore` writes it — not with the pre-write `chunk_<hex>`.
+  // A `chunk_` id addressed no point, so find_similar answered it with a 400.
+  it("should produce the point ids and payload ingest stores for the same files", async () => {
     write("src/greeter.ts", GREETER);
     write("docs/README.md", README);
     const payloadBuilder = new StaticPayloadBuilder();
@@ -98,7 +103,7 @@ describe("WorkingTreeChunkLayer", () => {
     const stored: ScrollChunk[] = [];
     const chunkPipeline = {
       addChunk: (chunk: ChunkItem["chunk"], id: string, codebasePath: string) => {
-        stored.push({ id, payload: payloadBuilder.buildPayload(chunk, codebasePath) });
+        stored.push({ id: String(toQdrantPointId(id)), payload: payloadBuilder.buildPayload(chunk, codebasePath) });
         return true;
       },
       isBackpressured: () => false,

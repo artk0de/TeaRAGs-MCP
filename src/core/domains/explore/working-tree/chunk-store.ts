@@ -11,10 +11,30 @@
  * Every write is a temp file renamed into place.
  *
  * Retention (`sweep`): a tree root that no longer exists → evict now; content
+ * the tree no longer holds at that path (the path is gone, or holds other
+ * bytes) and unread `WORKING_TREE_CHUNK_RETENTION_MS` → evict; rows of a
+ * content another chunker build (or config) stored and read since, this entry
+ * unread `WORKING_TREE_CHUNK_RETENTION_MS` → evict; content
  * committed (its blob appears in the tree's history for that path) and idle
  * `WORKING_TREE_CHUNK_RETENTION_MS` since max(commit time, last read) → evict;
- * uncommitted content of a live tree → keep; then least-recently-read entries
- * go until the store fits its byte cap. Nothing outside `rootDir` is touched.
+ * current uncommitted content of a live tree → keep; then least-recently-read
+ * entries go until the store fits its byte cap. Nothing outside `rootDir` is
+ * touched.
+ *
+ * Why the superseded rule exists (bd tea-rags-mcp-xi2r9, live probe): every
+ * save of a file under edit writes a new entry, and a draft that was never
+ * committed — or a deleted path — never shows up in `git log --find-object`,
+ * so the commit rule alone kept such entries for the life of the tree (47
+ * entries for 4 live files on one probe tree). The overlay only ever asks for
+ * a path's CURRENT content, so an entry that is not current can serve a read
+ * again only if the file returns to those exact bytes; the 96 h of read-idle
+ * grace covers an undo or a branch switch-and-back without keeping drafts
+ * forever. It is checked first: one file hash per path spares the git spawn
+ * for every superseded draft. The same holds across chunker builds: a new
+ * build (or a row-format bump) writes its own entry for unchanged content and
+ * never reads the old one again, so the old one is dead once it sits unread
+ * the retention window while a sibling was read after it — two builds serving
+ * at once both stay read, and both stay.
  */
 
 import { createHash, randomBytes } from "node:crypto";
@@ -99,6 +119,10 @@ export function scheduleWorkingTreeChunkSweep(
 }
 
 type StoredMeta = Omit<WorkingTreeChunkStoreEntry, "rows">;
+
+/** One content of one tree path — what entries of different chunkers share. */
+const contentKeyOf = (meta: StoredMeta): string =>
+  JSON.stringify([meta.treeRoot, meta.relativePath, meta.contentSha256]);
 
 export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): WorkingTreeChunkStore {
   const { rootDir } = deps;
@@ -205,6 +229,20 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
       let evicted = 0;
       const kept: { dir: string; name: string; bytes: number; lastReadAt: number }[] = [];
       const commitTimes = new Map<string, Promise<number | null>>();
+      const currentContents = new Map<string, Promise<string | null>>();
+      /** sha256 of what the tree holds at the entry's path now; null when the path is gone. */
+      const currentSha256Of = async (meta: StoredMeta): Promise<string | null> => {
+        const path = join(meta.treeRoot, meta.relativePath);
+        let sha = currentContents.get(path);
+        if (!sha) {
+          sha = fs.readFile(path).then(
+            (content) => createHash("sha256").update(content).digest("hex"),
+            () => null,
+          );
+          currentContents.set(path, sha);
+        }
+        return sha;
+      };
       const commitTimeOf = async (meta: StoredMeta): Promise<number | null> => {
         const cacheKey = `${meta.treeRoot}\0${meta.relativePath}\0${meta.blobId}`;
         let time = commitTimes.get(cacheKey);
@@ -234,14 +272,29 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
           if (stat && at - stat.mtimeMs >= ABANDONED_WRITE_GRACE_MS) await fs.rm(path, { force: true });
         }
 
-        for (const name of metaNames) {
-          const meta = await readMeta(join(dir, `${name}${META_SUFFIX}`));
+        const entries: { name: string; meta: StoredMeta | undefined }[] = [];
+        for (const name of metaNames) entries.push({ name, meta: await readMeta(join(dir, `${name}${META_SUFFIX}`)) });
+        // The latest read of each content, over every chunker that stored it.
+        const latestReadOfContent = new Map<string, number>();
+        for (const { meta } of entries) {
+          if (!meta) continue;
+          const content = contentKeyOf(meta);
+          latestReadOfContent.set(content, Math.max(latestReadOfContent.get(content) ?? 0, meta.lastReadAt));
+        }
+
+        for (const { name, meta } of entries) {
           const rowsBytes = await sizeOf(join(dir, `${name}${ROWS_SUFFIX}`));
           const metaBytes = await sizeOf(join(dir, `${name}${META_SUFFIX}`));
           let expired = !meta || rowsBytes === undefined || metaBytes === undefined;
           if (meta && !expired) {
+            const idle = at - meta.lastReadAt >= WORKING_TREE_CHUNK_RETENTION_MS;
             if (!(await treeExists(meta.treeRoot))) expired = true;
-            else {
+            else if (idle && (latestReadOfContent.get(contentKeyOf(meta)) ?? 0) > meta.lastReadAt) {
+              // Another chunker's rows of this very content were read since: this build's are dead.
+              expired = true;
+            } else if ((await currentSha256Of(meta)) !== meta.contentSha256) {
+              expired = idle;
+            } else {
               const committedAt = await commitTimeOf(meta);
               expired =
                 committedAt !== null && at - Math.max(committedAt, meta.lastReadAt) >= WORKING_TREE_CHUNK_RETENTION_MS;

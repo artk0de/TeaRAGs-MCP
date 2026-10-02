@@ -32,16 +32,34 @@ const BASE: Row[] = [
   { id: "b3", score: 0.5, payload: { relativePath: "src/c.ts", language: "typescript", content: "c" } },
 ];
 
-/** A Qdrant that honours the request filter, as the server does. */
+/** The point ids a filter's `must_not` excludes with `has_id`, and the filter without them. */
+function splitHasId(filter: QdrantFilter | undefined): { excludedIds: Set<string>; rest: QdrantFilter | undefined } {
+  if (!filter || !Array.isArray(filter.must_not)) return { excludedIds: new Set(), rest: filter };
+  const excludedIds = new Set<string>();
+  const mustNot = (filter.must_not as Record<string, unknown>[]).filter((condition) => {
+    if (!Array.isArray(condition.has_id)) return true;
+    for (const id of condition.has_id as string[]) excludedIds.add(id);
+    return false;
+  });
+  return { excludedIds, rest: { ...filter, must_not: mustNot } };
+}
+
+/** A Qdrant that honours the request filter (payload conditions and `has_id`), as the server does. */
 function qdrantHolding(rows: Row[]) {
   const hybridSearch = vi.fn(async (...args: unknown[]) => {
     const [, , , limit, filter] = args as [string, number[], unknown, number, QdrantFilter | undefined];
-    return rows.filter((row) => !filter || payloadMatchesFilter(row.payload, filter)).slice(0, limit);
+    const { excludedIds, rest } = splitHasId(filter);
+    return rows
+      .filter((row) => !excludedIds.has(row.id) && (!rest || payloadMatchesFilter(row.payload, rest)))
+      .slice(0, limit);
   });
+  const scrollFiltered = vi.fn(async (_collection: string, filter: QdrantFilter) =>
+    rows.filter((row) => payloadMatchesFilter(row.payload, filter)),
+  );
   const qdrant = {
-    getCollectionInfo: vi.fn().mockResolvedValue({ hybridEnabled: true }),
+    getCollectionInfo: vi.fn().mockResolvedValue({ hybridEnabled: true, pointsCount: rows.length }),
     hybridSearch,
-    scrollFiltered: vi.fn().mockResolvedValue([]),
+    scrollFiltered,
   } as unknown as QdrantManager;
   return { qdrant, hybridSearch };
 }
@@ -104,15 +122,33 @@ describe("HybridSearchStrategy working-tree sparse floor", () => {
     expect(results.filter((r) => r.id !== "t1").map((r) => r.id)).toEqual(["b1", "b2", "b3"]);
   });
 
-  it("excludes touched files from the Qdrant request through the request filter", async () => {
+  // Invariant kept, mechanism changed (bd tea-rags-mcp-xi2r9, live probe P2-6):
+  // touched files leave the request as ONE `has_id` over their base point ids,
+  // not as a per-path exclusion on the text-indexed `relativePath`, which was
+  // evaluated per candidate: 131-280 ms a query on the live self-index.
+  it("excludes touched files from the Qdrant request by their base point ids, in one condition", async () => {
     const languageFilter = { must: [{ key: "language", match: { value: "typescript" } }] };
     const { hybridSearch } = await run(treeView(), { filter: languageFilter });
 
     const sentFilter = hybridSearch.mock.calls[0][4] as QdrantFilter;
     expect(sentFilter.must).toEqual(languageFilter.must);
-    expect(payloadMatchesFilter({ relativePath: TOUCHED, language: "typescript" }, sentFilter)).toBe(false);
-    expect(payloadMatchesFilter({ relativePath: GONE, language: "typescript" }, sentFilter)).toBe(false);
-    expect(payloadMatchesFilter({ relativePath: "src/a.ts", language: "typescript" }, sentFilter)).toBe(true);
+    expect(sentFilter.must_not).toEqual([{ has_id: ["bg", "bt"] }]);
+  });
+
+  it("drops a base row of a touched file the request still returned", async () => {
+    const { qdrant } = qdrantHolding(BASE);
+    // An id set resolved before the index moved: the request excludes nothing.
+    vi.mocked(qdrant.scrollFiltered).mockResolvedValue([]);
+    const results = await new HybridSearchStrategy(qdrant, reranker, [], []).execute({
+      collectionName: "c",
+      embedding: [0.1, 0.2],
+      query: "freshHelper",
+      limit: 10,
+      workingTreeView: treeView(),
+    });
+
+    expect(results.map((r) => r.id)).not.toContain("bt");
+    expect(results.map((r) => r.id)).not.toContain("bg");
   });
 
   it("holds tree rows to the request filter the base rows were held to", async () => {

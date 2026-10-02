@@ -262,6 +262,19 @@ describe("ExploreOps working-tree floors (bd tea-rags-mcp-xi2r9.3)", () => {
     expect(response.workingTree?.floors).toEqual([]);
     expect(response.results[0].treeState).toBe("modified");
   });
+
+  it("should keep the codegraph floor the delta rows recorded beside the strategy's floors (WTO-7)", async () => {
+    const view = chunkedView([TREE_ROW]);
+    const read = view.readDeltaChunks;
+    view.readDeltaChunks = async () => {
+      view.marker.floors = [...view.marker.floors, "codegraph"];
+      return read ? read() : [];
+    };
+
+    const response = await makeFacade([HIT], view).hybridSearch({ collection: "code_x", query: "tree" });
+
+    expect(response.workingTree?.floors).toEqual(["chunks", "sparse", "codegraph"]);
+  });
 });
 
 describe("ExploreOps drift check reads the INDEX root, never the tree", { timeout: 60_000 }, () => {

@@ -893,7 +893,18 @@ export class GraphDbClientPool {
    * degrade on that class, not on driver message text (bd tea-rags-mcp-a43tr).
    */
   async acquireRead(physicalCollectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
-    const dbPath = this.pathFor(physicalCollectionName);
+    return this.acquireFileReader(this.pathFor(physicalCollectionName));
+  }
+
+  /**
+   * In-process READ_ONLY handle on a graph file this pool does not own — the
+   * working tree's published graph (bd tea-rags-mcp-xi2r9, WTO-7), a
+   * self-contained file no daemon holds, so even daemon mode attaches it
+   * directly. NON-cached: the caller MUST close it.
+   *
+   * @throws DuckDbOpenFailedError when the file cannot be opened.
+   */
+  async acquireFileReader(dbPath: string): Promise<CollectionGraphHandle> {
     const graphDb = new DuckDbGraphClient({ path: dbPath, accessMode: "READ_ONLY" });
     try {
       await graphDb.init();

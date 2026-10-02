@@ -12,7 +12,13 @@ import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { InvalidQueryError } from "../errors.js";
-import { excludeWorkingTreeTouched, fuseWorkingTreeRows, scoreWorkingTreeRows } from "../working-tree/sparse-floor.js";
+import { relativePathOf } from "../working-tree/index.js";
+import {
+  excludeWorkingTreeBaseIds,
+  fuseWorkingTreeRows,
+  scoreWorkingTreeRows,
+  WorkingTreeTouchedBaseIds,
+} from "../working-tree/sparse-floor.js";
 import { BaseExploreStrategy } from "./base.js";
 import { fetchPathPatternMatches } from "./path-pattern-fill.js";
 import { buildSymbolIdentityFilter, isSymbolIdentifierQuery } from "./symbol-identity-leg.js";
@@ -35,6 +41,9 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
   /** The sparse floor substitutes the tree's rows for touched files, so they carry no `treeState`. */
   protected override readonly hasChunkFloor = true;
 
+  /** Base point ids of touched files, resolved once per touched set (the strategy lives as long as its facade). */
+  private readonly touchedBaseIds = new WorkingTreeTouchedBaseIds(this.qdrant);
+
   protected async executeExplore(ctx: ExploreContext): Promise<ExploreResult[]> {
     const { embedding } = ctx;
     if (!embedding) {
@@ -55,24 +64,39 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
     // Sparse floor (bd tea-rags-mcp-xi2r9.4): the tree's rows of the files it
     // touched replace their base rows. Absent → today's request, byte for byte.
     const treeRows = await this.readWorkingTreeRows(ctx);
-    const view = ctx.workingTreeView;
-    const filter = treeRows && view ? excludeWorkingTreeTouched(ctx.filter, view.touchedPaths) : ctx.filter;
+    const view = treeRows ? ctx.workingTreeView : undefined;
+    // The index revision the id set is valid for: the point count moves with
+    // an index run, the indexed commit with a commit-stamped one.
+    const revision = `${String(collectionInfo.pointsCount)}\0${view?.marker.indexedCommit ?? ""}`;
+    const filter = view
+      ? excludeWorkingTreeBaseIds(
+          ctx.filter,
+          await this.touchedBaseIds.idsOf(ctx.collectionName, view.touchedPaths, revision),
+        )
+      : ctx.filter;
+    // A base row of a touched file the request still returned (an id set that
+    // predates an index run of the same point count) is dropped, never shown.
+    const untouched = (rows: ExploreResult[]): ExploreResult[] =>
+      view ? rows.filter((row) => !view.touchedPaths.has(relativePathOf(row.payload))) : rows;
     const baseResults = await fetchPathPatternMatches(
       ctx.pathPattern,
       { fetchLimit, fetchUnit: "chunk", target: ctx.limit, targetUnit: ctx.level === "file" ? "file" : "chunk" },
       async (limit) =>
-        (identityFilter
-          ? this.qdrant.hybridSearch(
-              ctx.collectionName,
-              embedding,
-              sparseVector,
-              limit,
-              filter,
-              undefined,
-              identityFilter,
-            )
-          : this.qdrant.hybridSearch(ctx.collectionName, embedding, sparseVector, limit, filter)
-        ).catch(rethrowAsInvalidQuery),
+        untouched(
+          await (
+            identityFilter
+              ? this.qdrant.hybridSearch(
+                  ctx.collectionName,
+                  embedding,
+                  sparseVector,
+                  limit,
+                  filter,
+                  undefined,
+                  identityFilter,
+                )
+              : this.qdrant.hybridSearch(ctx.collectionName, embedding, sparseVector, limit, filter)
+          ).catch(rethrowAsInvalidQuery),
+        ),
     );
     const results = treeRows
       ? fuseWorkingTreeRows(
