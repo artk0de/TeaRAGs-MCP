@@ -705,6 +705,56 @@ export async function listChangedFiles(
   return [...new Set([...splitNulTerminated(tracked), ...untracked])].sort();
 }
 
+/** The working tree against a commit, repo-relative: what reads differently and what is gone. */
+export interface WorkingTreeNameStatus {
+  changed: string[];
+  deleted: string[];
+}
+
+/**
+ * The working tree against `commit` (staged, unstaged and committed-since alike):
+ * `git diff --name-status --no-renames <commit>` — a `D` entry is deleted, every
+ * other status changed, so a move reads as its source deleted and its target
+ * changed — plus every untracked, non-ignored file as changed. Both lists sorted.
+ * An unknown commit or a path outside a repository rejects.
+ */
+export async function readWorkingTreeChanges(
+  repoRoot: string,
+  commit: string,
+  timeoutMs = TREE_LISTING_STALL_MS,
+): Promise<WorkingTreeNameStatus> {
+  const [nameStatus, untracked] = await Promise.all([
+    execWithStallGuard(
+      resolveGitExecutable(),
+      ["diff", "--no-ext-diff", "--no-renames", "--name-status", "-z", commit, "--"],
+      { cwd: repoRoot, stallTimeoutMs: timeoutMs },
+    ),
+    listUntrackedFiles(repoRoot, [], timeoutMs),
+  ]);
+  const changed = new Set(untracked);
+  const deleted: string[] = [];
+  const fields = splitNulTerminated(nameStatus);
+  for (let i = 0; i + 1 < fields.length; i += 2) {
+    if (fields[i] === "D") deleted.push(fields[i + 1]);
+    else changed.add(fields[i + 1]);
+  }
+  return { changed: [...changed].sort(), deleted: deleted.sort() };
+}
+
+/**
+ * `git status --porcelain=v2 -z --branch --untracked-files=all`, verbatim: one
+ * spawn that carries HEAD (the `# branch.oid <sha>` header, `(initial)` before
+ * the first commit) and every staged, unstaged and untracked path. The text does
+ * not move when an already-modified file is edited again.
+ */
+export async function readStatusPorcelain(repoRoot: string, timeoutMs = TREE_LISTING_STALL_MS): Promise<string> {
+  return execWithStallGuard(
+    resolveGitExecutable(),
+    ["status", "--porcelain=v2", "-z", "--branch", "--untracked-files=all"],
+    { cwd: repoRoot, stallTimeoutMs: timeoutMs },
+  );
+}
+
 /**
  * The line ranges `relPath` gained against `base`, read from the hunk headers of
  * `git diff -U0` (`@@ -a,b +c,d @@` → `c..c+d-1`; `d` omitted means 1, `d = 0`
