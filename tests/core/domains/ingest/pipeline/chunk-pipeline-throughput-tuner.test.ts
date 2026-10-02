@@ -69,7 +69,7 @@ function makePipeline(
   });
 }
 
-function tunerFor(seed?: number) {
+function tunerFor(seed?: number, seedConcurrency?: number) {
   return new EmbeddingThroughputTuner({
     ceiling: 8,
     floor: 1,
@@ -78,6 +78,7 @@ function tunerFor(seed?: number) {
     // Never finish measuring a size: these tests pin batch FORMATION, not the climb.
     samplesPerSize: 1000,
     ...(seed !== undefined ? { seed: () => seed } : {}),
+    ...(seedConcurrency !== undefined ? { seedConcurrency: () => seedConcurrency } : {}),
   });
 }
 
@@ -186,14 +187,14 @@ describe("ChunkPipeline — embedding throughput tuner", () => {
     expect(sentSizes(embeddings)).toEqual([4, 4]);
   });
 
-  it("runs a loopback endpoint at concurrency 1 and a remote one at the configured concurrency", async () => {
-    for (const [url, expected] of [
-      [LOCAL, 1],
-      [REMOTE, 2],
+  it("runs the worker pool at the tuner's concurrency, a loopback endpoint included", async () => {
+    for (const [seedConcurrency, expected] of [
+      [undefined, 2],
+      [1, 1],
     ] as const) {
-      const { embeddings } = makeEmbeddings(url);
+      const { embeddings } = makeEmbeddings(LOCAL);
       embeddings.embedBatch.mockImplementation(async () => new Promise(() => {})); // never resolves
-      const p = makePipeline(embeddings, tunerFor(2));
+      const p = makePipeline(embeddings, tunerFor(2, seedConcurrency));
       p.start();
       for (let i = 0; i < 6; i++) p.addChunk(chunk(i), `c${i}`, "/base");
       await vi.advanceTimersByTimeAsync(10);
@@ -205,7 +206,7 @@ describe("ChunkPipeline — embedding throughput tuner", () => {
   it("logs each adaptation to the pipeline debug log", async () => {
     const step = vi.spyOn(pipelineLog, "step");
     const { embeddings } = makeEmbeddings(LOCAL);
-    pipeline = makePipeline(embeddings, tunerFor(4));
+    pipeline = makePipeline(embeddings, tunerFor(4, 1));
     pipeline.start();
 
     expect(step).toHaveBeenCalledWith(
@@ -216,7 +217,7 @@ describe("ChunkPipeline — embedding throughput tuner", () => {
     expect(step).toHaveBeenCalledWith(
       expect.anything(),
       "EMBED_TUNE_ADAPTED",
-      expect.objectContaining({ kind: "concurrency", from: 2, to: 1, reason: "endpoint-local" }),
+      expect.objectContaining({ kind: "concurrency", from: 2, to: 1, reason: "seed" }),
     );
     step.mockRestore();
   });

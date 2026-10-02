@@ -83,6 +83,18 @@ describe("BaseIndexingPipeline — embedding throughput tuner", () => {
     expect(new TunerProbePipeline(tuning(), registry).tuner()?.begin({ url: URL, model: "nomic" }).batchSize).toBe(256);
   });
 
+  it("seeds concurrency from the registry's optimum, clamped to the configured concurrency", () => {
+    const at = (concurrency: number): CollectionRegistryPort => ({
+      record: vi.fn(),
+      readEmbeddingThroughputOptimum: () => ({ ...optimum(64), concurrency }),
+    });
+    expect(new TunerProbePipeline(tuning(), at(1)).tuner()?.begin({ url: URL, model: "jina" })).toEqual({
+      batchSize: 64,
+      concurrency: 1,
+    });
+    expect(new TunerProbePipeline(tuning(), at(12)).tuner()?.begin({ url: URL, model: "jina" }).concurrency).toBe(3);
+  });
+
   it("clamps a stored optimum to the configured bounds", () => {
     const registry: CollectionRegistryPort = {
       record: vi.fn(),
