@@ -5,8 +5,9 @@
  * The working-tree axis of `IndexDriftMonitor`. `BaseIndexingPipeline`
  * stamps the branch / commit / dirty triple at finalize
  * (`buildRegistryGitState` → `CollectionEntry.git`); this is the reader. HEAD
- * comes from `readRepoGitState`, which parses `.git` files directly — no `git`
- * spawn, so the check stays cheap enough for a query path.
+ * comes from `readEnclosingRepoGitState`, which parses `.git` files directly —
+ * no `git` spawn, so the check stays cheap enough for a query path — at the
+ * git toplevel, since a project may be registered below it.
  *
  * Complements the other axes rather than overlapping them: payload keys and
  * language versions ask whether the BUILD moved, this one asks whether the
@@ -15,7 +16,7 @@
  * the one place that policy lives.
  */
 
-import { readRepoGitState, type RepoGitState } from "../../../infra/repo-git-state.js";
+import { readEnclosingRepoGitState, type RepoGitState } from "../../../infra/repo-git-state.js";
 import type { CollectionRegistry } from "../registry/collection-registry.js";
 import type { IndexDriftFinding, IndexDriftMonitor } from "./monitor.js";
 
@@ -27,7 +28,7 @@ export class CommitDriftMonitor implements IndexDriftMonitor {
 
   constructor(
     private readonly registry: Pick<CollectionRegistry, "get">,
-    private readonly readGitState: (path: string) => RepoGitState | null = readRepoGitState,
+    private readonly readGitState: (path: string) => RepoGitState | null = readEnclosingRepoGitState,
   ) {}
 
   check(collectionName: string): IndexDriftFinding[] {

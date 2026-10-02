@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { join } from "node:path";
 
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import {
+  createGitWorkingTreeFixture,
+  type GitWorkingTreeFixture,
+} from "../../../__helpers__/git-working-tree-fixture.js";
 import type { CollectionEntry, RegistryAutoUpdateConfig } from "../../../../../src/core/contracts/types/registry.js";
 import {
   AUTO_UPDATE_FAILURE_BACKOFF_MS,
@@ -118,5 +124,36 @@ describe("IndexFreshnessCheck", () => {
   it("malformed lastRun.at never throws — treated as no debounce", () => {
     const lastRun = { at: "not-a-date", outcome: "ok" as const, durationMs: 1, filesChanged: 1 };
     expect(check(entry({ autoUpdate: auto({ lastRun }) }), onMaster).kind).toBe("eligible");
+  });
+});
+
+// Live P2-2 (bd tea-rags-mcp-xi2r9): a project registered at a SUBDIRECTORY of
+// its repository has no `.git` at its root; the production git-state read must
+// find the repository above it, or auto-update answers `not-a-repo` forever.
+describe("IndexFreshnessCheck — a project registered at a repository subdirectory", { timeout: 60_000 }, () => {
+  let fixture: GitWorkingTreeFixture;
+
+  beforeEach(() => {
+    fixture = createGitWorkingTreeFixture();
+    fixture.commit(fixture.mainRoot, { "sub/a.ts": "export const a = 1;\n" });
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  it("reads the branch at the git toplevel and is eligible on the target branch", () => {
+    const e = entry({ path: join(fixture.mainRoot, "sub"), autoUpdate: auto({ targetBranch: "main" }) });
+    expect(new IndexFreshnessCheck({ clock: () => NOW }).check(e)).toEqual({ kind: "eligible", entry: e });
+  });
+
+  it("reports a branch mismatch read at the git toplevel", () => {
+    fixture.git(fixture.mainRoot, "checkout", "-q", "-b", "feature");
+    const e = entry({ path: join(fixture.mainRoot, "sub"), autoUpdate: auto({ targetBranch: "main" }) });
+    expect(new IndexFreshnessCheck({ clock: () => NOW }).check(e)).toEqual({
+      kind: "branch-mismatch",
+      head: "feature",
+      targetBranch: "main",
+    });
   });
 });

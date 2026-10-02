@@ -155,6 +155,42 @@ export function findGitToplevel(absolutePath: string): string | undefined {
 }
 
 /**
+ * `readRepoGitState` of the repository `path` lies in — read at its git
+ * toplevel, so a project registered at a repository SUBDIRECTORY (no `.git` at
+ * its root) still reads HEAD (live P2-2, bd tea-rags-mcp-xi2r9). Same
+ * never-throws, no-spawn contract.
+ */
+export function readEnclosingRepoGitState(path: string): RepoGitState | null {
+  return readRepoGitState(findGitToplevel(path) ?? path);
+}
+
+/**
+ * Where `rootPath` sits below its git toplevel, "/"-separated as git spells
+ * paths; "" when the root IS the toplevel. The prefix the two re-base helpers
+ * below take.
+ */
+export function gitPathPrefix(toplevel: string, rootPath: string): string {
+  return relative(toplevel, rootPath).split(sep).join("/");
+}
+
+/**
+ * Toplevel-relative git paths → the ones under `prefix`, relative to the root.
+ * Git reports every path from the toplevel; a project registered below it
+ * names its files from its own root, and a sibling directory's path is not the
+ * project's at all, so it is dropped.
+ */
+export function rebaseGitPathsOntoRoot(paths: readonly string[], prefix: string): string[] {
+  if (prefix === "") return [...paths];
+  const head = `${prefix}/`;
+  return paths.filter((path) => path.startsWith(head)).map((path) => path.slice(head.length));
+}
+
+/** A root-relative path → the toplevel-relative spelling git expects. Inverse of {@link rebaseGitPathsOntoRoot}. */
+export function gitPathFromRoot(rootRelativePath: string, prefix: string): string {
+  return prefix === "" ? rootRelativePath : `${prefix}/${rootRelativePath}`;
+}
+
+/**
  * The files under `rootPath` whose content differs from HEAD — modified,
  * staged, deleted and untracked non-ignored — relative to `rootPath` (not to
  * the git toplevel, which git reports from). Undefined when git cannot answer.
@@ -185,16 +221,12 @@ export function readWorkingTreeDirtyPaths(
   } catch {
     return undefined;
   }
-  const prefix = relative(toplevel, rootPath).split(sep).join("/");
-  const paths: string[] = [];
-  for (const field of out.split("\0")) {
-    if (field.length < 4) continue;
-    // "XY path" — porcelain paths are always toplevel-relative, "/"-separated.
-    const path = field.slice(3);
-    if (prefix === "") paths.push(path);
-    else if (path.startsWith(`${prefix}/`)) paths.push(path.slice(prefix.length + 1));
-  }
-  return paths;
+  // "XY path" — porcelain paths are always toplevel-relative, "/"-separated.
+  const toplevelPaths = out
+    .split("\0")
+    .filter((field) => field.length >= 4)
+    .map((field) => field.slice(3));
+  return rebaseGitPathsOntoRoot(toplevelPaths, gitPathPrefix(toplevel, rootPath));
 }
 
 /**

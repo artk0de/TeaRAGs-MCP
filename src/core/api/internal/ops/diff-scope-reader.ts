@@ -20,7 +20,13 @@ import {
   type AddedLineRange,
 } from "../../../adapters/vcs/git/git-cli/client.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
-import { readRepoGitState } from "../../../infra/repo-git-state.js";
+import {
+  findGitToplevel,
+  gitPathFromRoot,
+  gitPathPrefix,
+  readEnclosingRepoGitState,
+  rebaseGitPathsOntoRoot,
+} from "../../../infra/repo-git-state.js";
 import { InvalidParameterError } from "../../errors.js";
 import { ontologyNonProductionPathFilter } from "./ontology-report-ops.js";
 
@@ -85,16 +91,34 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
     throw new InvalidParameterError("path", "changes / files review the working tree: pass project or path");
   }
   const base = req.base ?? DIFF_DEFAULT_BASE;
-  const mergeBase = await resolveReviewMergeBase(workTree, base);
-  const changed = await gitRead(base, async () => listChangedFiles(workTree, mergeBase));
+  // Git is asked at the toplevel and answers in toplevel-relative paths; the
+  // review names files relative to `workTree`, which may be a repository
+  // SUBDIRECTORY (live P2-2, bd tea-rags-mcp-xi2r9) — a sibling directory's
+  // change is not this project's.
+  const toplevel = findGitToplevel(workTree) ?? workTree;
+  const prefix = gitPathPrefix(toplevel, workTree);
+  const mergeBase = await resolveReviewMergeBase(toplevel, base);
+  const changed = rebaseGitPathsOntoRoot(
+    await gitRead(base, async () => listChangedFiles(toplevel, mergeBase)),
+    prefix,
+  );
   const listed = req.files ? unique(req.files) : undefined;
   const all = listed ?? changed;
   const files = all.slice(0, DIFF_FILE_CAP);
-  const ranges = await gitRead(base, async () => readAddedLineRangesOfFiles(workTree, mergeBase, files));
+  const ranges = await gitRead(base, async () =>
+    readAddedLineRangesOfFiles(
+      toplevel,
+      mergeBase,
+      files.map((relPath) => gitPathFromRoot(relPath, prefix)),
+    ),
+  );
   const changedSet = new Set(changed);
   const whole = new Set(listed ? files.filter((relPath) => !changedSet.has(relPath)) : []);
   const addedRanges = new Map<string, readonly AddedLineRange[]>(
-    files.map((relPath) => [relPath, whole.has(relPath) ? WHOLE_FILE : (ranges.get(relPath) ?? [])]),
+    files.map((relPath) => [
+      relPath,
+      whole.has(relPath) ? WHOLE_FILE : (ranges.get(gitPathFromRoot(relPath, prefix)) ?? []),
+    ]),
   );
 
   const nonProductionFilter = ontologyNonProductionPathFilter();
@@ -126,7 +150,7 @@ export function readTreeLag(
 ): DiffTreeLag | undefined {
   const indexedCommit = collectionRegistry.get?.(collectionName)?.git?.indexedCommit;
   if (!indexedCommit) return undefined;
-  const treeCommit = readRepoGitState(workTree)?.commit;
+  const treeCommit = readEnclosingRepoGitState(workTree)?.commit;
   if (!treeCommit || treeCommit === indexedCommit) return undefined;
   return { indexedCommit, treeCommit };
 }

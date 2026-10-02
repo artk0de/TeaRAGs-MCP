@@ -22,11 +22,11 @@
  */
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { join } from "node:path";
 
 import { readStatusPorcelain, readWorkingTreeChanges } from "../../../adapters/vcs/git/git-cli/client.js";
 import { WORKING_TREE_DELTA_FILE_CAP } from "../../../contracts/types/working-tree.js";
-import { findGitToplevel } from "../../../infra/repo-git-state.js";
+import { findGitToplevel, gitPathPrefix, rebaseGitPathsOntoRoot } from "../../../infra/repo-git-state.js";
 
 export interface WorkingTreeDelta {
   /** root-relative, includes untracked files and rename targets */
@@ -124,16 +124,6 @@ function isUnknownRevision(error: unknown): boolean {
   return error instanceof Error && error.message.includes("(exit 128)");
 }
 
-/**
- * Toplevel-relative git paths → the ones under `prefix` (the root's path below
- * the toplevel, "/"-separated; "" when the root IS the toplevel), relative to it.
- */
-function rebaseOntoRoot(paths: readonly string[], prefix: string): string[] {
-  if (prefix === "") return [...paths];
-  const head = `${prefix}/`;
-  return paths.filter((path) => path.startsWith(head)).map((path) => path.slice(head.length));
-}
-
 async function measureDelta(
   gitToplevel: string,
   prefix: string,
@@ -152,8 +142,8 @@ async function measureDelta(
       remedy: WORKING_TREE_REINDEX_REMEDY,
     };
   }
-  const changed = rebaseOntoRoot(changes.changed, prefix).filter(accepts);
-  const deleted = rebaseOntoRoot(changes.deleted, prefix).filter(accepts);
+  const changed = rebaseGitPathsOntoRoot(changes.changed, prefix).filter(accepts);
+  const deleted = rebaseGitPathsOntoRoot(changes.deleted, prefix).filter(accepts);
   const total = changed.length + deleted.length;
   if (total > WORKING_TREE_DELTA_FILE_CAP) {
     return {
@@ -175,7 +165,7 @@ export function createWorkingTreeDeltaReader(): WorkingTreeDeltaReader {
         return { kind: "degraded", reason: "index has no indexedCommit stamp", remedy: WORKING_TREE_REINDEX_REMEDY };
       }
       const gitToplevel = findGitToplevel(root) ?? root;
-      const prefix = relative(gitToplevel, root).split(sep).join("/");
+      const prefix = gitPathPrefix(gitToplevel, root);
       const status = await readStatusPorcelain(gitToplevel);
       const snapshot = parseStatusPorcelain(status);
       const fingerprint = await fingerprintOf(gitToplevel, indexedCommit, status, snapshot);
