@@ -157,8 +157,8 @@ import type {
   NamingReviewNotJudgedEntry,
   NamingReviewResult,
 } from "../../public/dto/naming-lexicon.js";
-import { resolveCollection } from "../collection-resolver.js";
-import { DIFF_FILE_CAP, readDiffScope, readTreeLag, resolveWorkTree } from "./diff-scope-reader.js";
+import { resolveWorkingTree } from "../collection-resolver.js";
+import { DIFF_FILE_CAP, readDiffScope, readTreeLag } from "./diff-scope-reader.js";
 import { readUntypedMethodEvidence, type MethodHeadWordMemo } from "./naming-lexicon-method-evidence.js";
 import type {
   NamingReviewExtractor,
@@ -444,11 +444,14 @@ export class NamingLexiconOps {
     scope: NamingLexiconEvidenceScope = {},
   ): Promise<NamingLexiconResult> {
     validateRequest(req);
-    const { collectionName, path: repoRoot } = resolveCollection(this.deps.collectionRegistry, req);
+    // One addressing rule (bd tea-rags-mcp-xi2r9): index reads address the base index, git
+    // reads the tree the caller stands in.
+    const workingTree = resolveWorkingTree(this.deps.collectionRegistry, req);
+    const { collectionName } = workingTree.baseIndex;
+    const workTree = workingTree.root || undefined;
     // Every sub-read — concept search, metrics — addresses the index resolved HERE, never
     // re-resolves the path: a worktree path hashes to a collection that does not exist (bd tea-rags-mcp-2kplu).
-    const addressed = addressedRequest(req, collectionName, repoRoot);
-    const workTree = resolveWorkTree({ project: req.project, collection: req.collection, path: req.path }, repoRoot);
+    const addressed = addressedRequest(req, collectionName, workTree);
     const indexLag =
       workTree === undefined ? undefined : readTreeLag(this.deps.collectionRegistry, collectionName, workTree);
     // Diff mode reads the change first: its files are the evidence every read excludes.
@@ -498,7 +501,7 @@ export class NamingLexiconOps {
    */
   private async readDiff(req: NamingLexiconRequest, repoRoot: string | undefined): Promise<DiffRead> {
     const read = await readDiffScope(repoRoot, { base: req.changes?.base, files: req.files });
-    // `repoRoot` is the tree the change is read from (`resolveWorkTree`).
+    // `repoRoot` is the tree the change is read from (`resolveWorkingTree`).
     const extract = this.deps.extractDeclarations?.forWorkingTree(read.workTree);
     const judged: DiffFile[] = [];
     const notJudged: NamingReviewNotJudgedEntry[] = [];
@@ -1259,9 +1262,9 @@ function validateRequest(req: NamingLexiconRequest): void {
 }
 
 /**
- * The request addressed by the index `resolveCollection` resolved once for it
- * (bd tea-rags-mcp-2kplu): its collection explicit, its path the project's
- * root, no project alias left to resolve again. A sub-read handed this ref
+ * The request addressed by the index `resolveWorkingTree` resolved once for it
+ * (bd tea-rags-mcp-2kplu): its collection explicit, its path the tree the
+ * caller stands in, no project alias left to resolve again. A sub-read handed this ref
  * reads that index — never the one the path would hash to.
  */
 function addressedRequest(

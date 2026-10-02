@@ -2,8 +2,7 @@
  * The shared diff-scope reader (bd tea-rags-mcp-89k7k.1.1): one read of a
  * working-tree change — the files under the cap, their added line ranges, the
  * merge-base the change is read against, and the bookkeeping (notices, counts,
- * the non-production files) every diff-scoped report consumes — plus the
- * worktree resolution the read starts from. The review sections of
+ * the non-production files) every diff-scoped report consumes. The review sections of
  * `get_naming_lexicon` are its first consumer; the naming-specific half
  * (per-file declaration extraction) stayed behind in `naming-lexicon-ops.ts`.
  *
@@ -11,10 +10,9 @@
  * next diff-scoped report calls it without a deps interface.
  */
 
-import { existsSync, realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { realpathSync } from "node:fs";
 
-import { listRepoWorkTrees, resolveGitCommonDir } from "../../../adapters/vcs/git/common-dir.js";
+import { listRepoWorkTrees } from "../../../adapters/vcs/git/common-dir.js";
 import {
   listChangedFiles,
   readAddedLineRangesOfFiles,
@@ -76,7 +74,7 @@ export interface DiffTreeLag {
  * no diff is read whole: on a clean tree `files` names committed code to
  * review, and an empty answer would read as "all conforms".
  *
- * Callers resolve the tree with this module's {@link resolveWorkTree} — the
+ * Callers resolve the tree with `resolveWorkingTree` (`collection-resolver.ts`) — the
  * reader owns the whole diff-read contract: addressing splits in two layers,
  * git reads from the tree while index reads address the resolved collection
  * (bd tea-rags-mcp-2kplu), and the change is a three-dot diff against the
@@ -113,38 +111,6 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
     nonProduction,
     skipped: all.length - files.length,
   };
-}
-
-/**
- * The working tree an answer is about (lexicon friction F1). The addressing
- * params already split index from tree — `collection` + `path` reads the
- * collection's index and the tree at `path` — and `project` + `path` now does
- * the same: the alias addresses the index (registered at the main checkout),
- * `path` a checkout of the SAME repository, a linked git worktree. `project`
- * alone reads the main checkout.
- */
-export function resolveWorkTree(
-  addressing: { project?: string; collection?: string; path?: string },
-  repoRoot: string | undefined,
-): string | undefined {
-  if (
-    addressing.project === undefined ||
-    addressing.collection !== undefined ||
-    addressing.path === undefined ||
-    !repoRoot
-  ) {
-    return repoRoot;
-  }
-  const absolute = resolve(addressing.path);
-  if (!existsSync(absolute)) throw new InvalidParameterError("path", `'${addressing.path}' does not exist`);
-  const tree = realpathSync(absolute);
-  if (resolveGitCommonDir(tree) !== resolveGitCommonDir(repoRoot)) {
-    throw new InvalidParameterError(
-      "path",
-      `'${addressing.path}' is not a checkout of project '${addressing.project}' (${repoRoot}): its change is no diff of this project`,
-    );
-  }
-  return tree;
 }
 
 /**

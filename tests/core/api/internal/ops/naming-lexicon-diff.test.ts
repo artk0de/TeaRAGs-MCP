@@ -157,7 +157,7 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
   }
 
   beforeEach(async () => {
-    dir = mkdtempSync(join(tmpdir(), "naming-lexicon-diff-"));
+    dir = realpathSync(mkdtempSync(join(tmpdir(), "naming-lexicon-diff-")));
     repo = join(dir, "repo");
     mkdirSync(join(repo, "src/git"), { recursive: true });
     git(repo, "init", "-q", "-b", "main");

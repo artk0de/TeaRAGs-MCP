@@ -30,8 +30,8 @@ import type {
   ReviewSectionId,
   ReviewSectionResult,
 } from "../../public/dto/review.js";
-import { resolveCollection } from "../collection-resolver.js";
-import { DIFF_FILE_CAP, readDiffScope, readTreeLag, resolveWorkTree } from "./diff-scope-reader.js";
+import { resolveWorkingTree } from "../collection-resolver.js";
+import { DIFF_FILE_CAP, readDiffScope, readTreeLag } from "./diff-scope-reader.js";
 import type { ReviewEdgeExtractionDeps } from "./review-edge-overlay.js";
 import {
   REVIEW_SECTION_PROVIDERS,
@@ -91,9 +91,12 @@ export class ReviewChangesOps {
 
   async reviewChanges(req: ReviewChangesRequest): Promise<ReviewChangesResult> {
     const providers = this.requestedProviders(req.sections);
-    const { collectionName, path: repoRoot } = resolveCollection(this.deps.collectionRegistry, req);
+    // One addressing rule (bd tea-rags-mcp-xi2r9): index reads address the base index, git
+    // reads the tree the caller stands in — `path` alone at a linked worktree reaches both.
+    const workingTree = resolveWorkingTree(this.deps.collectionRegistry, req);
+    const { collectionName } = workingTree.baseIndex;
     const addressing = { project: req.project, collection: req.collection, path: req.path };
-    const workTree = resolveWorkTree(addressing, repoRoot);
+    const workTree = workingTree.root || undefined;
     const scope = await readDiffScope(workTree, { base: req.changes?.base, files: req.files });
     const indexLag =
       workTree === undefined ? undefined : readTreeLag(this.deps.collectionRegistry, collectionName, workTree);

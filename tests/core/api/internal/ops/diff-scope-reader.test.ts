@@ -18,11 +18,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { InvalidParameterError } from "../../../../../src/core/api/errors.js";
-import {
-  readDiffScope,
-  readTreeLag,
-  resolveWorkTree,
-} from "../../../../../src/core/api/internal/ops/diff-scope-reader.js";
+import { resolveWorkingTree } from "../../../../../src/core/api/internal/collection-resolver.js";
+import { readDiffScope, readTreeLag } from "../../../../../src/core/api/internal/ops/diff-scope-reader.js";
 import type { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/index.js";
 
 const CHANGED = "src/git/file-reader.ts";
@@ -198,7 +195,7 @@ describe("readDiffScope", { timeout: 60_000 }, () => {
   });
 });
 
-describe("resolveWorkTree", () => {
+describe("resolveWorkingTree — the tree a review reads", () => {
   let dir: string;
   let repo: string;
 
@@ -227,21 +224,31 @@ describe("resolveWorkTree", () => {
     return realpathSync(tree);
   }
 
+  /** Project `p` and collection `c` both name the index registered at `repo`, the main checkout. */
+  const registryOfRepo = (): CollectionRegistry =>
+    ({
+      findByName: (name: string) => (name === "p" ? { name: "p", collectionName: "c", path: repo } : null),
+      get: (collectionName: string) => (collectionName === "c" ? { name: "p", collectionName: "c", path: repo } : null),
+      list: () => [{ name: "p", collectionName: "c", path: repo }],
+    }) as unknown as CollectionRegistry;
+
   it("an alias with a path reviews that linked worktree against the project's evidence", () => {
     const tree = addWorkTree();
-    expect(resolveWorkTree({ project: "p", path: tree }, repo)).toBe(tree);
+    expect(resolveWorkingTree(registryOfRepo(), { project: "p", path: tree }).root).toBe(tree);
   });
 
   it("refuses a tree of another repository: its change is no diff of this project", () => {
     const other = join(dir, "other");
     mkdirSync(other);
     git(other, "init", "-q", "-b", "main");
-    expect(() => resolveWorkTree({ project: "p", path: other }, repo)).toThrow(InvalidParameterError);
+    expect(() => resolveWorkingTree(registryOfRepo(), { project: "p", path: other }).root).toThrow(
+      InvalidParameterError,
+    );
   });
 
-  it("a collection wins over the path: the tree stays the resolved root", () => {
+  it("a collection with a path reviews the path's tree: the collection addresses only the index", () => {
     const tree = addWorkTree();
-    expect(resolveWorkTree({ collection: "c", path: tree }, repo)).toBe(repo);
+    expect(resolveWorkingTree(registryOfRepo(), { collection: "c", path: tree }).root).toBe(tree);
   });
 });
 

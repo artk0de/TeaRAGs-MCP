@@ -8,12 +8,13 @@
  * absence-vs-not-built, and the envelope.
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createGitWorkingTreeFixture } from "../../../__helpers__/git-working-tree-fixture.js";
 import { InvalidParameterError } from "../../../../../src/core/api/errors.js";
 import { ReviewChangesOps } from "../../../../../src/core/api/internal/ops/review-changes-ops.js";
 import type { ReviewChangesRequest } from "../../../../../src/core/api/public/dto/review.js";
@@ -157,7 +158,7 @@ describe("ReviewChangesOps", () => {
   let repo: string;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "review-changes-ops-"));
+    dir = realpathSync(mkdtempSync(join(tmpdir(), "review-changes-ops-")));
     repo = join(dir, "repo");
     mkdirSync(join(repo, "src/git"), { recursive: true });
     git(repo, "init", "-q", "-b", "main");
@@ -334,5 +335,40 @@ describe("ReviewChangesOps", () => {
     const result = await makeOps(graphDbStub()).reviewChanges(request());
     expect(result.review.skipped).toBe(3);
     expect(result.review.truncated).toEqual({ cap: 200, skipped: 3 });
+  });
+
+  // bd tea-rags-mcp-xi2r9: a subagent knows only its working directory. `path` alone at a
+  // linked worktree reviews that tree against its repository's registered index — never the
+  // unregistered collection the worktree path would hash to.
+  it("a path alone at a linked worktree of a registered project reviews that worktree", async () => {
+    const fixture = createGitWorkingTreeFixture();
+    try {
+      const tree = fixture.addWorktree("feature");
+      writeFileSync(join(tree, "src/index.ts"), "export const base = 2;\n");
+      const main = { name: "main", collectionName: "code_main", path: fixture.mainRoot };
+      const resolveActiveCollection = vi.fn(async (name: string) => name as never);
+      const ops = new ReviewChangesOps({
+        pool: {
+          acquireReader: vi.fn(async () => ({ graphDb: graphDbStub(), symbolTable: {} })),
+          hasDatabase: vi.fn(() => true),
+        },
+        collectionRegistry: {
+          get: () => undefined,
+          findByPath: (path: string) => (path === main.path ? main : null),
+          list: () => [main],
+        } as unknown as CollectionRegistry,
+        resolveActiveCollection,
+        lexiconOps: lexiconOpsStub(),
+        windowMonths: 6,
+      });
+
+      const result = await ops.reviewChanges({ path: tree });
+
+      expect(result.review.workTree).toBe(tree);
+      expect(result.review.changedFiles).toBe(1);
+      expect(resolveActiveCollection).toHaveBeenCalledWith("code_main");
+    } finally {
+      fixture.cleanup();
+    }
   });
 });
