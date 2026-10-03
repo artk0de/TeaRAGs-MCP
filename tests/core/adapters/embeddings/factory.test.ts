@@ -224,12 +224,15 @@ describe("EmbeddingProviderFactory", () => {
         expect(provider).toBeInstanceOf(OllamaEmbeddings);
       });
 
-      it("passes autoPull through, so a configured provider probes the model at startup", async () => {
+      it("passes autoPull through, so the first embed probes the model before embedding", async () => {
         const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
         try {
-          EmbeddingProviderFactory.create(
+          const provider = EmbeddingProviderFactory.create(
             makeConfig({ provider: "ollama", baseUrl: "http://box:11434", autoPull: true }),
           );
+          // No network before first need (xi2r9): construction alone must not probe.
+          expect(fetchSpy).not.toHaveBeenCalledWith("http://box:11434/api/show", expect.anything());
+          void provider.embed("x").catch(() => undefined);
           await vi.waitFor(() => {
             expect(fetchSpy).toHaveBeenCalledWith("http://box:11434/api/show", expect.anything());
           });

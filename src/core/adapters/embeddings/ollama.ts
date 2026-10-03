@@ -194,8 +194,9 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private endpointResolution?: Promise<void>;
   private endpointResolved = false;
   private readonly endpointResolvedHooks: (() => void)[] = [];
-  /** Resolves once the quantized model copy (if any) is provisioned and live. */
-  private readonly modelReady?: Promise<void>;
+  /** Resolves once the model is pulled (EMBEDDING_AUTO_PULL) and the quantized copy (if any) is live. */
+  private modelReady?: Promise<void>;
+  private readonly autoPull: boolean = false;
   private readonly quantizationLevel: OllamaQuantizationLevel = "off";
   /** Largest native batch the server has handled since it last failed on one; unset until a failure. */
   private maxServerBatchSize?: number;
@@ -259,17 +260,19 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     // waits out an unreachable primary (bd tea-rags-mcp-xi2r9, B3).
 
     this.quantizationLevel = resolveOllamaQuantizationLevel(rateLimitConfig?.ollamaQuantization);
-    if (rateLimitConfig?.ollamaAutoPull || this.quantizationLevel !== "off") {
-      this.modelReady = this.provisionModel(rateLimitConfig?.ollamaAutoPull === true);
-      // A failed pull belongs to the first embed that awaits it, not to Node's unhandled-rejection hook.
+    this.autoPull = rateLimitConfig?.ollamaAutoPull === true;
+    // With auto-pull the provisioning needs the decided endpoint, so it is armed
+    // lazily in `startupReady` — arming it here would re-introduce the eager probe.
+    if (!this.autoPull && this.quantizationLevel !== "off") {
+      this.modelReady = this.provisionModel();
+      // A failed provisioning belongs to the first embed that awaits it, not to Node's unhandled-rejection hook.
       void this.modelReady.catch(() => undefined);
     }
   }
 
   /** Pull the model when the server lacks it (EMBEDDING_AUTO_PULL), then provision the quantized copy. */
-  private async provisionModel(autoPull: boolean): Promise<void> {
-    if (autoPull) {
-      await this.healthReady;
+  private async provisionModel(): Promise<void> {
+    if (this.autoPull) {
       await ensureOllamaModelPresent(this.resolveActiveUrl(), this.model, {
         fetch,
         log: (line) => {
@@ -288,6 +291,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    */
   private async startupReady(): Promise<void> {
     await this.resolveEndpoint();
+    if (this.autoPull) this.modelReady ??= this.provisionModel();
     await this.modelReady;
   }
 
