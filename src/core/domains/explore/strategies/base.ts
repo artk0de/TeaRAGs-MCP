@@ -103,8 +103,10 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
 
   /**
    * `filter` with the base points of every file `view` touched excluded by ONE
-   * `has_id` (bd tea-rags-mcp-xi2r9) — the ids from the view's shared read, or
-   * this strategy's own reader (same cache rules) when the view has none wired.
+   * `has_id` (bd tea-rags-mcp-xi2r9). Ids are all it needs, of every touched
+   * file: the LIGHT tier of all of them — from the view's reader, or this
+   * strategy's own (in memory, keyed by the indexed commit) when the view has
+   * none wired.
    */
   protected async excludeWorkingTreeBase(
     ctx: ExploreContext,
@@ -112,12 +114,13 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
     filter: Record<string, unknown> | undefined,
   ): Promise<Record<string, unknown> | undefined> {
     const read =
-      view.readTouchedBasePoints?.() ??
-      (this.ownTouchedBasePoints ??= new WorkingTreeTouchedBasePoints(this.qdrant)).pointsOf(
-        ctx.collectionName,
-        view.touchedPaths,
-        view.marker.indexedCommit,
-      );
+      view.readTouchedBasePoints?.({ tier: "light" }) ??
+      (this.ownTouchedBasePoints ??= new WorkingTreeTouchedBasePoints(this.qdrant)).pointsOf({
+        collectionName: ctx.collectionName,
+        indexStamp: view.marker.indexedCommit,
+        paths: view.touchedPaths,
+        tier: "light",
+      });
     return excludeWorkingTreeBaseIds(filter, touchedBasePointIds(await read));
   }
 

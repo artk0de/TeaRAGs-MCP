@@ -8,6 +8,15 @@ export {
   type WorkingTreeSourceFile,
 } from "./chunk-layer.js";
 export {
+  createWorkingTreeBasePointStore,
+  scheduleWorkingTreeBasePointSweep,
+  WORKING_TREE_BASE_POINT_RETENTION_MS,
+  WORKING_TREE_BASE_POINT_STORE_CAP_BYTES,
+  type WorkingTreeBasePointStore,
+  type WorkingTreeBasePointStoreDeps,
+  type WorkingTreeBasePointStoreSweep,
+} from "./base-point-store.js";
+export {
   computeGitBlobId,
   createWorkingTreeChunkStore,
   scheduleWorkingTreeChunkSweep,
@@ -48,6 +57,7 @@ export {
 export {
   filterReadsWorkingTreeSignals,
   WORKING_TREE_SIGNAL_PAYLOAD_KEYS,
+  WORKING_TREE_VIEWED_TREES_KEPT,
   WorkingTreeOverlay,
   type WorkingTreeSignalledRow,
   type WorkingTreeDeltaChunkSource,
@@ -69,7 +79,13 @@ export {
   recordingTreeGraphReader,
   recordTreeGraphState,
 } from "./tree-graph-marker.js";
-export { touchedBasePointIds, WorkingTreeTouchedBasePoints } from "./touched-base-points.js";
+export {
+  touchedBasePointIds,
+  WORKING_TREE_HEAVY_BASE_POINT_TTL_MS,
+  WorkingTreeTouchedBasePoints,
+  type WorkingTreeTouchedBasePointsDeps,
+  type WorkingTreeTouchedBasePointsRequest,
+} from "./touched-base-points.js";
 export {
   WORKING_TREE_WATCH_DEBOUNCE_MS,
   WORKING_TREE_WATCH_IDLE_MS,

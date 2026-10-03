@@ -42,6 +42,7 @@ export type {
 } from "./strategies/index.js";
 export {
   claimWorkingTreeFloors,
+  createWorkingTreeBasePointStore,
   createWorkingTreeChunkLayer,
   createWorkingTreeChunkStore,
   createWorkingTreeDeltaReader,
@@ -49,6 +50,7 @@ export {
   mergedWorkingTreeSymbolRow,
   recordTreeGraphState,
   relativePathOf,
+  scheduleWorkingTreeBasePointSweep,
   scheduleWorkingTreeChunkSweep,
   WorkingTreeDeltaWarmer,
   WorkingTreeDenseVectorSource,

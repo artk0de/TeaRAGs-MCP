@@ -9,8 +9,9 @@
  *   1. the base point of the same file whose stored `content` is byte-identical
  *      (an unchanged chunk of a modified file — ingest embeds exactly
  *      `content`, so the stored vector is exact). Candidates are the touched
- *      file's base points spanning as many lines as the row, read once per
- *      view (`WorkingTreeView#readTouchedBasePoints`), then fetched by id with
+ *      file's base points spanning as many lines as the row — the light points
+ *      (ids and spans) of the files the missing rows sit in, through the view
+ *      (`WorkingTreeView#readTouchedBasePoints`) — then fetched by id with
  *      their content and vector;
  *   2. the working-tree chunk store, beside the file's rows (same entry, same
  *      retention), keyed by the chunk content's sha256 and the model;
@@ -64,7 +65,7 @@ export interface WorkingTreeDenseVectorRequest {
   rows: readonly ScrollChunk[];
   /** The chunk-store entry of each file's rows — where their vectors are kept. */
   storeKeys?: ReadonlyMap<string, WorkingTreeChunkStoreKey>;
-  /** The view's one read of the touched files' base points. */
+  /** The view's reader of the touched files' base points; asked the light points of the missing rows' files. */
   readTouchedBasePoints?: WorkingTreeTouchedBasePointsReader;
 }
 
@@ -238,7 +239,10 @@ export class WorkingTreeDenseVectorSource {
     const { qdrant } = this.deps;
     if (!qdrant || !request.readTouchedBasePoints) return found;
     try {
-      const byPath = await request.readTouchedBasePoints();
+      const byPath = await request.readTouchedBasePoints({
+        tier: "light",
+        paths: new Set(rows.filter((row) => row.span !== undefined).map((row) => row.relativePath)),
+      });
       const ids = new Set<string | number>();
       for (const row of rows) {
         const points: readonly WorkingTreeBasePoint[] = byPath.get(row.relativePath) ?? [];

@@ -64,10 +64,12 @@ import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-exe
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
 import type { PayloadKeyOwner } from "../core/contracts/types/trajectory.js";
 import {
+  createWorkingTreeBasePointStore,
   createWorkingTreeChunkLayer,
   createWorkingTreeChunkStore,
   createWorkingTreeDeltaReader,
   createWorkingTreeFileWriter,
+  scheduleWorkingTreeBasePointSweep,
   scheduleWorkingTreeChunkSweep,
   WorkingTreeDeltaWarmer,
   WorkingTreeDenseVectorSource,
@@ -1259,6 +1261,13 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     writer: workingTreeWriter,
   });
   const stopWorkingTreeGitSignalSweep = scheduleWorkingTreeGitSignalSweep(workingTreeGitSignalStore);
+  // The touched files' light base points (ids, spans) per index revision, so a
+  // one-shot `tea-rags call` does not re-scroll every touched path.
+  const workingTreeBasePointStore = createWorkingTreeBasePointStore({
+    rootDir: join(config.paths.appData, "working-tree"),
+    writer: workingTreeWriter,
+  });
+  const stopWorkingTreeBasePointSweep = scheduleWorkingTreeBasePointSweep(workingTreeBasePointStore);
   // The delta has no file cap (WTO unbounded delta), so the layer's pool is
   // ingest's chunker pool size, and a call chunks that many files at once.
   const workingTreeChunkerPoolSize = Math.max(1, zodConfig.ingest.tune.chunkerPoolSize);
@@ -1371,7 +1380,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     // The touched files' base points, read per path and cached per index
     // revision and touched set; each view reads them once and shares the read
     // between hybrid's exclusion and the delta signals (bd tea-rags-mcp-xi2r9).
-    touchedBasePoints: new WorkingTreeTouchedBasePoints(infra.qdrant),
+    touchedBasePoints: new WorkingTreeTouchedBasePoints(infra.qdrant, { store: workingTreeBasePointStore }),
     // WTO-5: delta rows ranked by their own vectors. A view that changed files
     // warms them at view time — a base point's stored vector for byte-identical
     // content, then the chunk store (vectors beside the rows, same retention),
@@ -1755,6 +1764,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     registryWatchStop();
     stopWorkingTreeChunkSweep();
     stopWorkingTreeGitSignalSweep();
+    stopWorkingTreeBasePointSweep();
     stopWorkingTreeGraphSweep();
     // Shutdown abandons in-flight tree-graph builds: kill the children, drop
     // this process's staging dirs (bd tea-rags-mcp-xi2r9, D6). The cache also

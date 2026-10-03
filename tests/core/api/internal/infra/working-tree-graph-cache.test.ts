@@ -33,6 +33,7 @@ import {
   WORKING_TREE_GRAPH_BUILD_TIMEOUT_MS,
   WORKING_TREE_GRAPH_BUILDING_REASON,
   WORKING_TREE_GRAPH_CAP_BYTES,
+  WORKING_TREE_GRAPH_CONTENT_READ_CONCURRENCY,
   WORKING_TREE_GRAPH_IDLE_RETENTION_MS,
   WORKING_TREE_GRAPH_SWEEP_DELAY_MS,
   WORKING_TREE_GRAPH_SWEEP_INTERVAL_MS,
@@ -761,6 +762,37 @@ describe("WorkingTreeGraphCache — content-hash memo bounded in bytes (WTO unbo
     );
 
     expect(reads).toBe(0);
+  });
+
+  // The delta has no file cap: one read per changed file all at once ran out
+  // of descriptors (EMFILE) at tens of thousands of files.
+  it("reads at most the content-read cap of a delta's files at once", async () => {
+    const { cache } = harness();
+    const root = treeDir("t1");
+    const changed = Array.from({ length: 300 }, (_, i) => `src/f${String(i)}.ts`);
+    const original = fsPromises.readFile.bind(fsPromises);
+    let inFlight = 0;
+    let peak = 0;
+    const readFile = vi
+      .spyOn(fsPromises, "readFile")
+      .mockImplementation(async (...args: Parameters<typeof original>) => {
+        const under = typeof args[0] === "string" && args[0].startsWith(root);
+        if (under) peak = Math.max(peak, ++inFlight);
+        try {
+          if (under) await new Promise((resolve) => setTimeout(resolve, 1));
+          return await original(...args);
+        } finally {
+          if (under) inFlight--;
+        }
+      });
+    try {
+      expectBuilt(await cache.graphFor(request(root, "fp-1", changed), 60_000));
+    } finally {
+      readFile.mockRestore();
+    }
+
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(WORKING_TREE_GRAPH_CONTENT_READ_CONCURRENCY);
   });
 
   it("does not keep a hash larger than `contentHashMemoBytes`: every request re-reads the file", async () => {

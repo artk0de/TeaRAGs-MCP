@@ -135,6 +135,22 @@ describe("HybridSearchStrategy working-tree sparse floor", () => {
     expect(sentFilter.must_not).toEqual([{ has_id: ["bg", "bt"] }]);
   });
 
+  // The exclusion needs ids only, of every touched file: it asks the light
+  // tier and never the git / codegraph payload (live probe: ~30k points of
+  // heavy JSON per request on a 3,198-file delta).
+  it("asks the view for the light base points of every touched file, and only that", async () => {
+    const view = treeView();
+    const read = vi.fn<NonNullable<WorkingTreeView["readTouchedBasePoints"]>>(
+      async () => new Map([[TOUCHED, [{ id: "bt", payload: { relativePath: TOUCHED } }]]]),
+    );
+    view.readTouchedBasePoints = read;
+
+    await run(view);
+
+    expect(read).toHaveBeenCalled();
+    for (const [query] of read.mock.calls) expect(query).toEqual({ tier: "light" });
+  });
+
   // bd tea-rags-mcp-xi2r9: the exclusion ids come from the view's shared base
   // point read — the one the delta signals already made — not a second scroll.
   it("takes the excluded ids from the view's touched base points without scrolling", async () => {

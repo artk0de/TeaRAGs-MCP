@@ -82,14 +82,17 @@ function deltaRow(id: string, relativePath: string, symbolId: string, lines = [1
 
 /**
  * The view's touched-base-point read (`WorkingTreeView#readTouchedBasePoints`):
- * the base points of every touched file, grouped by path. The source reads base
- * payload through it and only through it — it holds no Qdrant of its own.
+ * the base points of the touched files a query names (every one when it names
+ * none), grouped by path. The source reads base payload through it and only
+ * through it — it holds no Qdrant of its own.
  */
 function basePointsHolding(points: ReturnType<typeof basePoint>[]) {
-  return vi.fn<WorkingTreeTouchedBasePointsReader>(async () => {
+  return vi.fn<WorkingTreeTouchedBasePointsReader>(async (query) => {
+    const asked = query.paths ? new Set(query.paths) : undefined;
     const byPath = new Map<string, WorkingTreeBasePoint[]>();
     for (const point of points) {
       const path = point.payload.relativePath;
+      if (asked && !asked.has(path)) continue;
       byPath.set(path, [...(byPath.get(path) ?? []), point]);
     }
     return byPath;
@@ -527,6 +530,29 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
       undefined,
       TREE.baseIndex.root,
     );
+  });
+
+  // The heavy payload is read for the files whose rows are being signalled —
+  // at their history paths — never for the rest of the delta (live probe: a
+  // 3,198-file delta re-read ~30k points of git / codegraph per request).
+  it("asks the full base points of only the signalled rows' history paths", async () => {
+    const source = createWorkingTreeDeltaSignalSource({ graphFiles: unopenable });
+    const read = basePointsHolding([
+      basePoint("b1", OLD, "Foo#kept", 4),
+      basePoint("b2", FOO, "Foo#kept", 4),
+      basePoint("b3", SMALL, "c", 3),
+    ]);
+
+    await source.enrich({
+      tree: TREE,
+      rows: [deltaRow("d1", NEW, "Foo#kept"), deltaRow("d2", FOO, "Foo#kept")],
+      readTouchedBasePoints: read,
+      renamedFrom: new Map([[NEW, OLD]]),
+    });
+
+    const full = read.mock.calls.filter(([query]) => query.tier === "full");
+    expect(full.flatMap(([query]) => [...(query.paths ?? [])]).sort()).toEqual([FOO, OLD].sort());
+    expect(read.mock.calls.every(([query]) => query.tier === "light" || query.paths !== undefined)).toBe(true);
   });
 
   it("keeps no git block for a file with no history at all", async () => {
