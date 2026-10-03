@@ -149,6 +149,12 @@ const COLLECTION_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const CONTENT_HASH_MEMO_BYTES = 64 * 1024 * 1024;
 /** The digest a changed path that is not a readable regular file contributes. */
 const ABSENT_CONTENT = "absent";
+/**
+ * Delta files hashed at once. The delta has no file cap: one read per changed
+ * file all at once opens one descriptor each and fails with EMFILE at tens of
+ * thousands of files; 64 keeps the disk busy within any default fd limit.
+ */
+export const WORKING_TREE_GRAPH_CONTENT_READ_CONCURRENCY = 64;
 
 /** The slice of `GraphDbClientPool` the cache reads the base graph through. */
 export interface WorkingTreeGraphBasePool {
@@ -520,12 +526,21 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
   /**
    * The delta's bytes as one digest: sorted `(relativePath, content sha256)` of
    * the changed files and the sorted deleted paths. Only the changed files are
-   * read (the delta has no file cap), each through {@link contentHashOf}.
+   * read (the delta has no file cap), each through {@link contentHashOf}, at
+   * most {@link WORKING_TREE_GRAPH_CONTENT_READ_CONCURRENCY} at once.
    */
   private async deltaContentDigest(request: WorkingTreeGraphRequest): Promise<string> {
     const changed = [...new Set(request.changed)].sort();
-    const files = await Promise.all(
-      changed.map(async (relPath) => [relPath, await this.contentHashOf(join(request.tree.root, relPath))]),
+    const files = new Array<[string, string]>(changed.length);
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (next < changed.length) {
+        const index = next++;
+        files[index] = [changed[index], await this.contentHashOf(join(request.tree.root, changed[index]))];
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(WORKING_TREE_GRAPH_CONTENT_READ_CONCURRENCY, changed.length) }, worker),
     );
     const deleted = [...new Set(request.deleted)].sort();
     return createHash("sha256")
