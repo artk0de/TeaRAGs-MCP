@@ -31,7 +31,22 @@ export function isWorkingTreeGraphEntryRequest(value: unknown): value is Working
     isStringArray(input.deletedRelPaths) &&
     isRecord(input.providerConfig) &&
     typeof input.providerConfig.languageModulePath === "string" &&
-    typeof input.providerConfig.migrationsModulePath === "string"
+    typeof input.providerConfig.migrationsModulePath === "string" &&
+    (input.seed === undefined || isSeed(input.seed))
+  );
+}
+
+/** The optional `seed` of a request: the previous graph's path and every path list `applySeedDelta` reads. */
+function isSeed(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.dbPath === "string" &&
+    isStringArray(value.changedRelPaths) &&
+    isStringArray(value.deletedRelPaths) &&
+    isStringArray(value.heldRelPaths) &&
+    isStringArray(value.restoredRelPaths) &&
+    isStringArray(value.seedChangedRelPaths) &&
+    isStringArray(value.seedDeletedRelPaths)
   );
 }
 

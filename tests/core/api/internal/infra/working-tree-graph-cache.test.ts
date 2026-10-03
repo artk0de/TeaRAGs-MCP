@@ -1235,3 +1235,145 @@ describe("WorkingTreeGraphCache — degraded lookups", () => {
     expect(builder.inputs).toHaveLength(2);
   });
 });
+
+describe("WorkingTreeGraphCache — seeded from the tree's previous graph", () => {
+  /** A request over files the test wrote itself; `deleted` as given. */
+  function requestOf(root: string, changed: string[], deleted: string[] = []): WorkingTreeGraphRequest {
+    return { ...request(root, "fp", changed, false), deleted };
+  }
+
+  function write(root: string, relPath: string, content: string): void {
+    mkdirSync(dirname(join(root, relPath)), { recursive: true });
+    writeFileSync(join(root, relPath), content);
+  }
+
+  it("builds the next state of a tree from its published graph, walking only what changed since", async () => {
+    const { cache, builder, clock } = harness();
+    const root = treeDir("t1");
+    write(root, "src/a.ts", "a1");
+    write(root, "src/b.ts", "b1");
+    const first = expectBuilt(await cache.graphFor(requestOf(root, ["src/a.ts", "src/b.ts"], ["src/gone.ts"]), 10_000));
+
+    clock.now += 1_000;
+    write(root, "src/b.ts", "b2");
+    write(root, "src/c.ts", "c1");
+    expectBuilt(await cache.graphFor(requestOf(root, ["src/a.ts", "src/b.ts", "src/c.ts"], ["src/gone.ts"]), 10_000));
+
+    expect(builder.inputs).toHaveLength(2);
+    expect(builder.inputs[0].seed).toBeUndefined();
+    const second = builder.inputs[1];
+    // The whole delta still travels — the build falls back to it when the seed is rejected.
+    expect(second.changedRelPaths).toEqual(["src/a.ts", "src/b.ts", "src/c.ts"]);
+    expect(dirname(second.snapshotPath)).toBe(join(graphRoot(), "snapshots"));
+    expect(second.seed).toEqual({
+      dbPath: first,
+      changedRelPaths: ["src/b.ts", "src/c.ts"],
+      deletedRelPaths: [],
+      heldRelPaths: ["src/a.ts"],
+      restoredRelPaths: [],
+      seedChangedRelPaths: ["src/a.ts", "src/b.ts"],
+      seedDeletedRelPaths: ["src/gone.ts"],
+    });
+  });
+
+  it("states a revert and a vanished added file against the seed", async () => {
+    const { cache, builder, clock } = harness();
+    const root = treeDir("t1");
+    write(root, "src/a.ts", "a1");
+    write(root, "src/new.ts", "n1");
+    expectBuilt(await cache.graphFor(requestOf(root, ["src/a.ts", "src/new.ts"]), 10_000));
+
+    clock.now += 1_000;
+    // a.ts is back at base content (out of the delta, still on disk); new.ts is gone.
+    rmSync(join(root, "src/new.ts"));
+    write(root, "src/z.ts", "z1");
+    expectBuilt(await cache.graphFor(requestOf(root, ["src/z.ts"]), 10_000));
+
+    expect(builder.inputs[1].seed).toMatchObject({
+      changedRelPaths: ["src/a.ts", "src/z.ts"],
+      deletedRelPaths: ["src/new.ts"],
+      heldRelPaths: [],
+      restoredRelPaths: ["src/a.ts"],
+    });
+  });
+
+  it("does not seed from a graph of another base version, nor from another tree's graph", async () => {
+    const { cache, builder, clock } = harness();
+    const other = treeDir("other");
+    const root = treeDir("t1");
+    write(other, "src/a.ts", "a1");
+    expectBuilt(await cache.graphFor(requestOf(other, ["src/a.ts"]), 10_000));
+    write(root, "src/a.ts", "a1");
+    expectBuilt(await cache.graphFor(requestOf(root, ["src/a.ts"]), 10_000));
+    expect(builder.inputs[1].seed).toBeUndefined();
+
+    clock.now += 1_000;
+    writeBaseGraph("base-v2-moved");
+    write(root, "src/a.ts", "a2");
+    expectBuilt(await cache.graphFor(requestOf(root, ["src/a.ts"]), 10_000));
+    expect(builder.inputs[2].seed).toBeUndefined();
+  });
+
+  it("does not seed from a published graph that recorded no delta", async () => {
+    const { cache, builder, clock } = harness();
+    const root = treeDir("t1");
+    write(root, "src/a.ts", "a1");
+    const first = expectBuilt(await cache.graphFor(requestOf(root, ["src/a.ts"]), 10_000));
+    const metaPath = join(dirname(dirname(first)), "tree-graph.meta.json");
+    const { delta: _delta, ...legacy } = JSON.parse(readFileSync(metaPath, "utf8")) as Record<string, unknown>;
+    writeFileSync(metaPath, JSON.stringify(legacy));
+
+    clock.now += 1_000;
+    write(root, "src/a.ts", "a2");
+    expectBuilt(await cache.graphFor(requestOf(root, ["src/a.ts"]), 10_000));
+
+    expect(builder.inputs[1].seed).toBeUndefined();
+  });
+
+  it("publishes the seed's graph under the new key, without a build, when nothing differs from it", async () => {
+    const { cache, builder, clock } = harness();
+    const root = treeDir("t1");
+    write(root, "src/a.ts", "a1");
+    const first = expectBuilt(await cache.graphFor(requestOf(root, ["src/a.ts"], ["src/gone.ts"]), 10_000));
+
+    // gone.ts leaves the delta but is not on disk: the tree is the seed's tree.
+    clock.now += 1_000;
+    const second = expectBuilt(await cache.graphFor(requestOf(root, ["src/a.ts"]), 10_000));
+
+    expect(second).not.toBe(first);
+    expect(builder.inputs).toHaveLength(1);
+    expect(readFileSync(second, "utf8")).toBe(readFileSync(first, "utf8"));
+    // The republished graph seeds the next build with its own delta.
+    clock.now += 1_000;
+    write(root, "src/a.ts", "a2");
+    expectBuilt(await cache.graphFor(requestOf(root, ["src/a.ts"]), 10_000));
+    expect(builder.inputs[1].seed).toMatchObject({ dbPath: second, seedDeletedRelPaths: [] });
+  });
+
+  it("holds the seed against the sweep while its build runs", async () => {
+    const { cache, builder, clock } = harness();
+    const root = treeDir("t1");
+    write(root, "src/a.ts", "a1");
+    const seedDb = expectBuilt(await cache.graphFor(requestOf(root, ["src/a.ts"]), 10_000));
+
+    clock.now += 1_000;
+    builder.gate = gate();
+    const started = gate();
+    builder.during = () => {
+      started.open();
+    };
+    write(root, "src/a.ts", "a2");
+    const pending = cache.graphFor(requestOf(root, ["src/a.ts"]), 10_000);
+    await started.promise;
+    expect(builder.inputs[1].seed?.dbPath).toBe(seedDb);
+
+    // Idle past the retention: without the hold, the seed is evicted mid-build.
+    await cache.sweep(clock.now + 2 * WORKING_TREE_GRAPH_IDLE_RETENTION_MS);
+    expect(existsSync(seedDb)).toBe(true);
+
+    builder.gate.open();
+    expectBuilt(await pending);
+    await cache.sweep(clock.now + 2 * WORKING_TREE_GRAPH_IDLE_RETENTION_MS);
+    expect(existsSync(seedDb)).toBe(false);
+  });
+});

@@ -13,14 +13,14 @@
  * long-lived server gives the memory back.
  */
 import { constants, existsSync, statSync } from "node:fs";
-import { copyFile, mkdir } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { copyFile, mkdir, rm } from "node:fs/promises";
+import { dirname } from "node:path";
 
-import type { GraphDbClient } from "../../../../contracts/types/codegraph-storage.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import { WorkingTreeGraphIncompleteError } from "../../errors.js";
 import { createCodegraphProviderRuntime, type CodegraphWorkerConfig } from "../factory.js";
-import type { CodegraphEnrichmentProvider } from "../symbols/provider.js";
+import { applySeedDelta, type TreeGraphSeedRejection, type WorkingTreeGraphSeed } from "./tree-graph-seed-apply.js";
+import { deleteThenWalk, finishTreeGraph, type TreeDeltaWalk, type TreeGraphClone } from "./tree-graph-walk.js";
 
 /**
  * The plain-data slice of `CodegraphWorkerConfig` a tree build reuses. No
@@ -58,6 +58,14 @@ export interface WorkingTreeGraphBuildInput {
   /** Files the base holds and the tree does not (a rename's old path included). */
   deletedRelPaths: readonly string[];
   providerConfig: WorkingTreeGraphProviderConfig;
+  /**
+   * The tree's previously published graph and the diff from it to this tree.
+   * Present, the build applies the diff to a clone of it
+   * ({@link applySeedDelta}); a seeded application that cannot equal the base
+   * build is rejected and the build runs from `snapshotPath` over the whole
+   * delta, as without a seed.
+   */
+  seed?: WorkingTreeGraphSeed;
 }
 
 /** A finished tree build: where its graph is and what it took to make. */
@@ -70,6 +78,10 @@ export interface WorkingTreeGraphBuilt {
   deletedFileCount: number;
   /** UNCHANGED files re-walked because a deleted file held a type their call cones read. */
   hierarchyDependentCount: number;
+  /** The graph was built from the input's seed (absent: no seed was given). */
+  seeded?: boolean;
+  /** Why the seed was not used, when one was given and the build ran from the base. */
+  seedRejection?: string;
 }
 
 /**
@@ -100,6 +112,12 @@ export interface WorkingTreeGraphBuilt {
  *    in `DuckDbGraphSession#close`), so without the explicit one the build's
  *    writes would sit in a WAL the publisher does not carry.
  *
+ * With a `seed`, steps 1–5 run first over a clone of the tree's previous graph
+ * with the seed's diff ({@link applySeedDelta} owns what it adds to the diff and
+ * what it rejects). A rejected or failed seeded attempt is discarded and the
+ * build runs from the base snapshot over the whole delta; `seeded` /
+ * `seedRejection` say which happened.
+ *
  * @throws Error (programming error) for an empty delta — the caller never builds
  *   one — or a snapshot with a non-empty WAL beside it.
  * @throws WorkingTreeGraphIncompleteError when the output still has stale derived
@@ -109,10 +127,68 @@ export async function buildWorkingTreeGraph(input: WorkingTreeGraphBuildInput): 
   if (input.changedRelPaths.length === 0 && input.deletedRelPaths.length === 0) {
     throw new Error("buildWorkingTreeGraph: empty delta — a clean working tree reads the base graph");
   }
-  if (hasNonEmptyWal(input.snapshotPath)) {
-    throw new Error(`buildWorkingTreeGraph: snapshot ${input.snapshotPath} is not self-contained (WAL beside it)`);
+  for (const snapshotPath of [input.snapshotPath, ...(input.seed ? [input.seed.dbPath] : [])]) {
+    if (hasNonEmptyWal(snapshotPath)) {
+      throw new Error(`buildWorkingTreeGraph: snapshot ${snapshotPath} is not self-contained (WAL beside it)`);
+    }
   }
   const startedAtMs = Date.now();
+  const built = (dbPath: string, walked: TreeDeltaWalk, deletedFileCount: number): WorkingTreeGraphBuilt => ({
+    dbPath,
+    durationMs: Date.now() - startedAtMs,
+    walkedFileCount: walked.walkedFileCount,
+    deletedFileCount,
+    hierarchyDependentCount: walked.hierarchyDependentCount,
+  });
+
+  let seedRejection: string | undefined;
+  if (input.seed) {
+    const { seed } = input;
+    try {
+      const attempt = await buildOnClone(
+        input,
+        seed.dbPath,
+        async (clone) => applySeedDelta(clone, seed, input.snapshotPath),
+        (result) => !isRejection(result),
+      );
+      if (!isRejection(attempt.result)) {
+        return { ...built(attempt.dbPath, attempt.result, seed.deletedRelPaths.length), seeded: true };
+      }
+      seedRejection = attempt.result.rejected;
+    } catch (err) {
+      // A seed that cannot be applied (it vanished, its clone failed, its
+      // derived tables stayed stale) is no reason to fail the build: the base
+      // path below does not depend on it, and `buildOnClone` removed the clone.
+      seedRejection = `seeded build failed: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  }
+  const attempt = await buildOnClone(input, input.snapshotPath, async (clone) => {
+    const { walked, hierarchyDependentCount } = await deleteThenWalk(
+      clone,
+      input.changedRelPaths,
+      input.deletedRelPaths,
+    );
+    await finishTreeGraph(clone);
+    return { walkedFileCount: walked.length, hierarchyDependentCount };
+  });
+  return {
+    ...built(attempt.dbPath, attempt.result, input.deletedRelPaths.length),
+    ...(input.seed ? { seeded: false, seedRejection } : {}),
+  };
+}
+
+/**
+ * Clone `snapshotPath` into the build's output and run `apply` over it with a
+ * fresh direct-mode provider (step 1, then the caller's steps 2–5); every
+ * client is closed afterwards, and a WAL left behind is refused. A result
+ * `keep` declines is discarded with its clone, WAL and all.
+ */
+async function buildOnClone<T>(
+  input: WorkingTreeGraphBuildInput,
+  snapshotPath: string,
+  apply: (clone: TreeGraphClone) => Promise<T>,
+  keep: (result: T) => boolean = () => true,
+): Promise<{ dbPath: string; result: T }> {
   const physical = input.physicalCollectionName;
   const { provider, pool } = await createCodegraphProviderRuntime({
     ...input.providerConfig,
@@ -120,61 +196,37 @@ export async function buildWorkingTreeGraph(input: WorkingTreeGraphBuildInput): 
     collectionName: physical,
   });
   const dbPath = pool.pathFor(physical);
-  let walked: TreeDeltaWalk;
+  let result: T;
   try {
-    await mkdir(dirname(dbPath), { recursive: true });
-    await copyFile(input.snapshotPath, dbPath, constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE);
-    walked = await applyTreeDelta(input, provider, (await pool.acquire(physical)).graphDb, dbPath);
-  } finally {
-    await pool.closeAll();
+    try {
+      await mkdir(dirname(dbPath), { recursive: true });
+      await copyFile(snapshotPath, dbPath, constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE);
+      const { graphDb } = await pool.acquire(physical);
+      result = await apply({ treeRoot: input.treeRoot, physical, provider, graphDb, dbPath });
+    } finally {
+      await pool.closeAll();
+    }
+    if (!keep(result)) {
+      await removeGraphFile(dbPath);
+      return { dbPath, result };
+    }
+    if (hasNonEmptyWal(dbPath)) throw new WorkingTreeGraphIncompleteError(dbPath, "walLeftBehind");
+  } catch (err) {
+    // The output path takes exactly one clone (COPYFILE_EXCL): a failed attempt
+    // leaves it free for the next.
+    await removeGraphFile(dbPath);
+    throw err;
   }
-  if (hasNonEmptyWal(dbPath)) throw new WorkingTreeGraphIncompleteError(dbPath, "walLeftBehind");
-  return {
-    dbPath,
-    durationMs: Date.now() - startedAtMs,
-    walkedFileCount: walked.walkedFileCount,
-    deletedFileCount: input.deletedRelPaths.length,
-    hierarchyDependentCount: walked.hierarchyDependentCount,
-  };
+  return { dbPath, result };
 }
 
-interface TreeDeltaWalk {
-  walkedFileCount: number;
-  hierarchyDependentCount: number;
+async function removeGraphFile(dbPath: string): Promise<void> {
+  await rm(dbPath, { force: true });
+  await rm(`${dbPath}.wal`, { force: true });
 }
 
-/** Steps 2–5 of {@link buildWorkingTreeGraph} over the opened clone; the caller closes the pool. */
-async function applyTreeDelta(
-  input: WorkingTreeGraphBuildInput,
-  provider: CodegraphEnrichmentProvider,
-  graphDb: GraphDbClient,
-  dbPath: string,
-): Promise<TreeDeltaWalk> {
-  const physical = input.physicalCollectionName;
-  const nulledBefore = await pathsWithoutContentHash(graphDb);
-  await provider.handleDeletedPaths([...input.deletedRelPaths], { collectionName: physical });
-  const delta = new Set([...input.changedRelPaths, ...input.deletedRelPaths]);
-  const dependents = [...(await pathsWithoutContentHash(graphDb))].filter(
-    (relPath) => !nulledBefore.has(relPath) && !delta.has(relPath) && existsSync(join(input.treeRoot, relPath)),
-  );
-
-  const walk = [...input.changedRelPaths, ...dependents];
-  if (walk.length > 0) {
-    await provider.buildFileSignals(input.treeRoot, { paths: walk, collectionName: physical });
-  } else {
-    await provider.finalizeSignals(input.treeRoot, { collectionName: physical });
-  }
-  if (await graphDb.hasStaleDerivedTables()) {
-    throw new WorkingTreeGraphIncompleteError(dbPath, "staleDerivedTables");
-  }
-  await graphDb.checkpoint();
-  return { walkedFileCount: walk.length, hierarchyDependentCount: dependents.length };
-}
-
-/** Files the graph knows whose content hash is NULL — the drift marker the repair pass re-walks. */
-async function pathsWithoutContentHash(graphDb: GraphDbClient): Promise<Set<string>> {
-  const rows = await graphDb.listFileContentHashes();
-  return new Set(rows.filter((row) => row.contentHash === null).map((row) => row.relPath));
+function isRejection(result: TreeDeltaWalk | TreeGraphSeedRejection): result is TreeGraphSeedRejection {
+  return "rejected" in result;
 }
 
 function hasNonEmptyWal(dbPath: string): boolean {
