@@ -49,6 +49,6 @@ def main() -> None:
         rows = report.build_rows(ts, resolved, config.USAGE_SOURCE)
         out = config.RESULTS_DIR / f"{a.tasks}-{dt.date.today()}.md"
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(report.render(rows))
+        out.write_text(report.render(rows, report.load_index_records(config.RUNS / "index.jsonl")))
         report.write_csv(rows, out.with_suffix(".csv"))
         print(out)

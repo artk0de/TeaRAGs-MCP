@@ -1,4 +1,5 @@
 import csv
+import json
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from statistics import median
@@ -6,7 +7,7 @@ from statistics import median
 from .stats import bootstrap_ci, mcnemar, wilcoxon_p
 
 PAIRED_FIELDS = ("input_tokens", "cache_write_tokens", "cache_read_tokens", "output_tokens", "cost_usd",
-                 "turns", "tool_calls_total", "search_read_calls")
+                 "turns", "tool_calls_total", "search_read_calls", "wall_seconds", "api_seconds")
 
 
 @dataclass
@@ -27,6 +28,8 @@ class Row:
     search_read_calls: int
     gold_touched: bool
     turns_to_gold: int | None
+    wall_seconds: float
+    api_seconds: float
 
 
 def _pairs(rows: list[Row]) -> list[tuple[Row, Row]]:
@@ -59,7 +62,15 @@ def _section(title: str, pairs: list[tuple[Row, Row]]) -> list[str]:
     return out
 
 
-def render(rows: list[Row]) -> str:
+def index_time_line(index_records: list[dict]) -> str | None:
+    seconds = [r["seconds"] for r in index_records]
+    if not seconds:
+        return None
+    return (f"Arm 1 index time per task: median {median(seconds):.1f} s, total {sum(seconds):.1f} s "
+            "(not included in agent wall time)")
+
+
+def render(rows: list[Row], index_records: list[dict] | None = None) -> str:
     pairs = _pairs(rows)
     if not pairs:
         return "# SWE-bench Lite A/B\n\nNo paired results.\n"
@@ -67,6 +78,9 @@ def render(rows: list[Row]) -> str:
     sr = sum(p[1].search_read_calls for p in pairs)
     lines = ["# SWE-bench Lite A/B — Claude Code with vs without TeaRAGs", "",
              f"TeaRAGs share of search/read calls: {100 * tr / sr:.1f}%" if sr else "TeaRAGs share: n/a", ""]
+    index_line = index_time_line(index_records or [])
+    if index_line:
+        lines += [index_line, ""]
     lines += _section("All tasks", pairs)
     lines += _section("Gold file named in issue", [p for p in pairs if p[0].mentioned])
     lines += _section("Gold file not named", [p for p in pairs if not p[0].mentioned])
@@ -94,8 +108,17 @@ def build_rows(tasks, resolved_by_arm: dict[str, set[str]], usage_source: str) -
             if not path.exists():
                 continue
             m = parse(path.read_text().splitlines(), gold_files(t.patch), usage_source)
+            status_path = path.parent / "status.json"
+            status = json.loads(status_path.read_text()) if status_path.exists() else {}
             rows.append(Row(arm, t.instance_id, t.repo, mentions_gold_file(t), t.instance_id in resolved_by_arm[arm],
                             m.input_tokens, m.cache_write_tokens, m.cache_read_tokens, m.output_tokens, m.cost_usd,
                             m.turns, sum(m.tool_calls.values()), m.tea_rags_calls, m.search_read_calls,
-                            m.gold_touched, m.turns_to_gold))
+                            m.gold_touched, m.turns_to_gold, status.get("wall_seconds") or 0,
+                            m.duration_api_ms / 1000))
     return rows
+
+
+def load_index_records(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]

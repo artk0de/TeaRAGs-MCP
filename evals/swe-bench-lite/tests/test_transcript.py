@@ -15,6 +15,11 @@ def test_result_mode_reads_the_final_event():
     assert m.input_tokens == 125 and m.output_tokens == 52 and m.cost_usd == 0.12
 
 
+def test_durations_come_from_the_result_event():
+    m = parse(LINES, ["requests/sessions.py"], "sum")
+    assert m.duration_ms == 42000 and m.duration_api_ms == 30000
+
+
 def test_tool_accounting_and_tea_rags_share():
     m = parse(LINES, ["requests/sessions.py"], "sum")
     assert m.tool_calls == {"Bash": 1, "mcp__tea-rags__hybrid_search": 1, "Edit": 1}

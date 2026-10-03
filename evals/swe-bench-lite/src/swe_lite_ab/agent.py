@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 
 from . import config
@@ -68,6 +69,7 @@ def run_task(arm: ArmConfig, task: Task) -> Path:
     reset_repo(repo_dir)
     run_dir = config.RUNS / arm.name / task.instance_id
     argv, env = build_command(arm, task, repo_dir, run_dir)
+    started = time.monotonic()
     with (run_dir / "transcript.jsonl").open("w") as out:
         try:
             proc = subprocess.run(argv, cwd=repo_dir, env=env, stdout=out, stderr=subprocess.PIPE,
@@ -75,5 +77,6 @@ def run_task(arm: ArmConfig, task: Task) -> Path:
             status = {"returncode": proc.returncode, "timeout": False, "stderr": proc.stderr[-4000:]}
         except subprocess.TimeoutExpired:
             status = {"returncode": None, "timeout": True, "stderr": ""}
+    status["wall_seconds"] = round(time.monotonic() - started, 1)
     (run_dir / "status.json").write_text(json.dumps(status, indent=2))
     return run_dir

@@ -15,6 +15,8 @@ class RunMetrics:
     output_tokens: int = 0
     cost_usd: float = 0.0
     turns: int = 0
+    duration_ms: int = 0
+    duration_api_ms: int = 0
     tool_calls: dict[str, int] = field(default_factory=dict)
     tea_rags_calls: int = 0
     search_read_calls: int = 0
@@ -62,6 +64,8 @@ def parse(lines: Iterable[str], gold: list[str], usage_source: str) -> RunMetric
             m.is_error = bool(event.get("is_error"))
             m.turns = event.get("num_turns", main_turn)
             m.cost_usd = event.get("total_cost_usd", 0.0)
+            m.duration_ms = event.get("duration_ms", 0)
+            m.duration_api_ms = event.get("duration_api_ms", 0)
             if usage_source == "result":
                 u = event.get("usage") or {}
                 m.input_tokens = u.get("input_tokens", 0)

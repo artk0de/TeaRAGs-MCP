@@ -1,3 +1,5 @@
+import os
+import sys
 from pathlib import Path
 
 from swe_lite_ab.agent import build_command, render_prompt
@@ -29,6 +31,26 @@ def test_arm1_adds_tea_rags_mcp_and_plugin_only(tmp_path):
     assert '"tea-rags"' in (tmp_path / "a1" / "mcp.json").read_text()
     assert set(extra) <= {"--plugin-dir", str(Path(a1[a1.index("--plugin-dir") + 1])),
                           str(tmp_path / "a1" / "mcp.json")}
+
+
+def test_run_task_records_wall_clock_seconds(tmp_path, monkeypatch):
+    import json
+
+    from swe_lite_ab import agent, config
+
+    monkeypatch.setattr(config, "RUNS", tmp_path / "runs")
+    monkeypatch.setattr(agent, "task_dir", lambda _id: tmp_path)
+    monkeypatch.setattr(agent, "reset_repo", lambda _dir: None)
+
+    def fake_build(arm, task, repo_dir, run_dir):
+        run_dir.mkdir(parents=True, exist_ok=True)
+        return [sys.executable, "-c", "import time; time.sleep(0.2)"], dict(os.environ)
+
+    monkeypatch.setattr(agent, "build_command", fake_build)
+    run_dir = agent.run_task(ARMS["arm0"], TASK)
+    status = json.loads((run_dir / "status.json").read_text())
+    assert status["returncode"] == 0
+    assert 0.2 <= status["wall_seconds"] < 30
 
 
 def test_both_arms_share_model_and_limits(tmp_path):
