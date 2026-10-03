@@ -17,7 +17,7 @@
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createGitWorkingTreeFixture } from "../../../__helpers__/git-working-tree-fixture.js";
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
@@ -643,6 +643,109 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
 
     expect(rows[0].payload).not.toHaveProperty("git");
     expect(rows[1].payload.git).toEqual({ file: GIT_FILE, chunk: gitChunk(4) });
+  });
+
+  /**
+   * Live (1420-file delta): a freshly edited file's on-demand git — a serial
+   * chain of git processes on a cache miss — held a hybrid_search for 7.3 s
+   * against the 3 s answer budget. The wait for it is clamped to what is left
+   * of the view's answer budget; past it the rows answer as on a failure and
+   * the result counts them, while the computation runs on and persists, so the
+   * next request answers from its cache.
+   */
+  describe("the on-demand wait, bounded by the answer deadline", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    /**
+     * A port whose first computation completes only when `finish` is called;
+     * once it has, every later ask answers from its cache at once — the
+     * real source's persisted records.
+     */
+    const lateThenCached = () => {
+      let cached: Map<string, WorkingTreeGitSignals> | undefined;
+      let finish = (): void => undefined;
+      const computed = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const answer = () =>
+        new Map<string, WorkingTreeGitSignals>([
+          [SMALL, { file: ON_DEMAND_FILE, chunks: new Map([["d1", onDemandChunk(2)]]) }],
+        ]);
+      const port = {
+        pathsCommittedSince: vi.fn<WorkingTreeGitSignalSource["pathsCommittedSince"]>(async () => undefined),
+        signalsOf: vi.fn<WorkingTreeGitSignalSource["signalsOf"]>(async () => {
+          if (cached) return cached;
+          await computed;
+          cached = answer();
+          return cached;
+        }),
+      };
+      return { port, finish };
+    };
+
+    const rowsWantingGit = () => [deltaRow("d1", SMALL, "c", [1, 3]), deltaRow("d2", FOO, "Foo#kept")];
+
+    it("answers within the remaining budget, the rows that wanted git counted as pending", async () => {
+      vi.useFakeTimers();
+      const { port } = lateThenCached();
+      const source = sourceWith([basePoint("b1", FOO, "Foo#kept", 4)], port);
+
+      let settled = false;
+      const answer = source.enrich({ tree: TREE, rows: rowsWantingGit(), remainingWaitMs: () => 500 }).finally(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(499);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(settled).toBe(true);
+
+      const result = await answer;
+      // As on a failure: the row keeps what it inherits, no fabricated git block.
+      expect(result.rows[0].payload).not.toHaveProperty("git");
+      expect(result.rows[1].payload.git).toEqual({ file: GIT_FILE, chunk: gitChunk(4) });
+      // Only d1 wanted on-demand git; d2 inherited from its base point.
+      expect(result.gitPendingRows).toBe(1);
+    });
+
+    it("lets the late computation finish, so the next request answers from its cache", async () => {
+      vi.useFakeTimers();
+      const { port, finish } = lateThenCached();
+      const source = sourceWith([basePoint("b1", FOO, "Foo#kept", 4)], port);
+
+      const first = source.enrich({ tree: TREE, rows: rowsWantingGit(), remainingWaitMs: () => 500 });
+      await vi.advanceTimersByTimeAsync(500);
+      expect((await first).gitPendingRows).toBe(1);
+
+      finish();
+      await vi.advanceTimersByTimeAsync(0);
+      // Not cancelled: the one computation ran to its end.
+      await expect(port.signalsOf.mock.results[0].value).resolves.toBeInstanceOf(Map);
+
+      // A spent budget still answers what is already there.
+      const second = await source.enrich({ tree: TREE, rows: rowsWantingGit(), remainingWaitMs: () => 0 });
+      expect(second.rows[0].payload.git).toEqual({ file: ON_DEMAND_FILE, chunk: onDemandChunk(2) });
+      expect(second.gitPendingRows).toBeUndefined();
+    });
+
+    it("waits for the computation in full when the request carries no deadline", async () => {
+      vi.useFakeTimers();
+      const { port, finish } = lateThenCached();
+      const source = sourceWith([basePoint("b1", FOO, "Foo#kept", 4)], port);
+
+      let settled = false;
+      const answer = source.enrich({ tree: TREE, rows: rowsWantingGit() }).finally(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(settled).toBe(false);
+      finish();
+
+      const result = await answer;
+      expect(result.rows[0].payload.git).toEqual({ file: ON_DEMAND_FILE, chunk: onDemandChunk(2) });
+      expect(result.gitPendingRows).toBeUndefined();
+    });
   });
 
   /**

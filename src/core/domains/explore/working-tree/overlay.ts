@@ -116,6 +116,14 @@ export interface WorkingTreeView {
    */
   deltaRowsTreeGraph?: WorkingTreeGraphState;
   /**
+   * How many delta rows `signalDeltaRows` enriched without the on-demand git
+   * they wanted — still computing past the answer deadline
+   * (`WorkingTreeDeltaSignalResult#gitPendingRows`), summed over the view's
+   * batches. Recorded on the marker (`gitUnavailable`) beside
+   * `deltaRowsTreeGraph`, by whoever puts the rows into an answer.
+   */
+  deltaRowsGitPending?: number;
+  /**
    * The delta rows' dense vectors (WTO-5), waiting at most `waitMs` clamped to
    * `remainingWaitMs` (a search-only read, so the view clamps it). Present
    * only for a measured delta that changed files, with a chunk layer and a
@@ -685,7 +693,10 @@ function deltaRowSignaller(
   };
 }
 
-/** Delta rows with their trajectory payload; the view keeps which graph the codegraph block came from. */
+/**
+ * Delta rows with their trajectory payload; the view keeps which graph the
+ * codegraph block came from, and how many rows' git was still pending.
+ */
 async function enrichDeltaRows(
   source: WorkingTreeDeltaSignalSource,
   tree: WorkingTree,
@@ -705,6 +716,7 @@ async function enrichDeltaRows(
     ...(view.readTouchedBasePoints ? { readTouchedBasePoints: view.readTouchedBasePoints } : {}),
   });
   if (enriched.treeGraph) view.deltaRowsTreeGraph = enriched.treeGraph;
+  if (enriched.gitPendingRows) view.deltaRowsGitPending = (view.deltaRowsGitPending ?? 0) + enriched.gitPendingRows;
   return enriched.rows;
 }
 

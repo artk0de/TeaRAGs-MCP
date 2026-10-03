@@ -104,6 +104,7 @@ export const SearchResultOutputSchema = {
       unparsed: z.array(z.string()).optional(),
       treeGraphUnavailable: z.string().optional(),
       denseUnavailable: z.object({ reason: z.string() }).optional(),
+      gitUnavailable: z.object({ reason: z.string() }).optional(),
     })
     .optional()
     .describe(
@@ -113,7 +114,8 @@ export const SearchResultOutputSchema = {
         "pendingFiles = changed code files still warming, answered from the index this call (treeState); " +
         "unparsed = changed files the tree's rows lack; " +
         "treeGraphUnavailable = why graph signals are the index's; " +
-        "denseUnavailable = why some tree rows ranked without vectors (absent from dense ranking).",
+        "denseUnavailable = why some tree rows ranked without vectors (absent from dense ranking); " +
+        "gitUnavailable = how many changed-file rows still lack git signals (computing; re-call later).",
     ),
   denseUnavailable: z
     .object({ reason: z.string() })

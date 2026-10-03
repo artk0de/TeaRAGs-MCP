@@ -85,6 +85,15 @@ export interface WorkingTreeMarker {
    * is simply absent from the dense leg.
    */
   denseUnavailable?: { reason: string };
+  /**
+   * Why some of the tree's rows in this answer lack the git signals they would
+   * carry: their on-demand git (the `git.file` / `git.chunk` no base point
+   * answers) was still being computed past the answer deadline
+   * ({@link WORKING_TREE_ANSWER_BUDGET_MS}). Those rows keep only what they
+   * inherit; the computation runs on and persists, so a later call carries
+   * it. Absent when no row's git was pending.
+   */
+  gitUnavailable?: { reason: string };
 }
 
 /**
@@ -225,8 +234,9 @@ export interface WorkingTreeDeltaSignalRequest {
   readTreeGraph?: WorkingTreeGraphReader;
   /**
    * What is left of the view's answer budget ({@link WORKING_TREE_ANSWER_BUDGET_MS}),
-   * never negative: the tree-graph wait is clamped to it. Absent → only the
-   * source's own wait bounds it.
+   * never negative: the tree-graph wait is clamped to it, and the wait for
+   * on-demand git is bounded by it. Absent → only the source's own wait bounds
+   * the graph, and on-demand git is waited for in full.
    */
   remainingWaitMs?: () => number;
   /**
@@ -257,6 +267,12 @@ export interface WorkingTreeDeltaSignalRequest {
 export interface WorkingTreeDeltaSignalResult {
   rows: WorkingTreeDeltaRow[];
   treeGraph?: WorkingTreeGraphState;
+  /**
+   * How many of `rows` wanted on-demand git that had not arrived by the
+   * answer deadline (`remainingWaitMs`): they carry what they inherit, as on a
+   * failure. Absent when none.
+   */
+  gitPendingRows?: number;
 }
 
 /**

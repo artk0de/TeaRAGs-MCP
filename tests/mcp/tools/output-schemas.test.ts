@@ -228,6 +228,25 @@ describe("SearchResultOutputSchema — workingTree dense floor (WTO-5)", () => {
   });
 });
 
+describe("SearchResultOutputSchema — workingTree git signals pending", () => {
+  const schema = z.object(SearchResultOutputSchema).strict();
+
+  it("keeps gitUnavailable on the marker", () => {
+    const marker = {
+      tree: "/repo/wt",
+      indexedCommit: "a".repeat(40),
+      treeCommit: "b".repeat(40),
+      indexedDirty: false,
+      changedFiles: 2,
+      deletedFiles: 0,
+      floors: ["chunks", "sparse"],
+      gitUnavailable: { reason: "1 row pending" },
+    };
+
+    expect(schema.parse({ results: [], workingTree: marker }).workingTree).toEqual(marker);
+  });
+});
+
 describe("SearchResultOutputSchema — workingTree index-only files", () => {
   const schema = z.object(SearchResultOutputSchema).strict();
 

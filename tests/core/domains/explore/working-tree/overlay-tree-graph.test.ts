@@ -220,6 +220,41 @@ describe("WorkingTreeOverlay tree graph (WTO-7)", () => {
       await chunkLayer.dispose();
     });
 
+    // Live (1420-file delta): on-demand git past the answer deadline leaves
+    // rows without their git block; the answer that admits them says how many.
+    it("should name how many claimed rows' git signals are still being computed", async () => {
+      const chunkLayer = layer();
+      const deltaSignals = signalSource(BUILT);
+      deltaSignals.enrich.mockImplementation(async (request) => ({ rows: [...request.rows], gitPendingRows: 2 }));
+      const view = await overlayWith(deltaReader(["src/a.ts"]), {
+        treeGraph: graphSource(),
+        deltaSignals,
+        deltaChunks: { layer: chunkLayer, resolveChunkerConfig: async () => CHUNKER_CONFIG },
+      }).view(workingTree(), "proj");
+
+      await signalAll(view);
+      expect(view.marker.gitUnavailable).toBeUndefined();
+      claimWorkingTreeFloors(view, ["chunks"], 1);
+
+      expect(view.marker.gitUnavailable).toEqual({ reason: "2 rows pending" });
+      await chunkLayer.dispose();
+    });
+
+    it("should leave gitUnavailable absent when no row's git was pending", async () => {
+      const chunkLayer = layer();
+      const view = await overlayWith(deltaReader(["src/a.ts"]), {
+        treeGraph: graphSource(),
+        deltaSignals: signalSource(BUILT),
+        deltaChunks: { layer: chunkLayer, resolveChunkerConfig: async () => CHUNKER_CONFIG },
+      }).view(workingTree(), "proj");
+
+      await signalAll(view);
+      claimWorkingTreeFloors(view, ["chunks"], 1);
+
+      expect(view.marker).not.toHaveProperty("gitUnavailable");
+      await chunkLayer.dispose();
+    });
+
     // bd tea-rags-mcp-xi2r9: every consumer of the touched files' base points
     // reads them through the view — the signal source through the request the
     // view hands it — and the view reads them at the index revision the
