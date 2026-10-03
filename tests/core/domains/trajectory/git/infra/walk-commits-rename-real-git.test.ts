@@ -19,12 +19,13 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { importGitHistory, type GitHistoryCommit } from "../../../../__helpers__/git-history-import.js";
 import { copyGitRepoTemplate } from "../../../../__helpers__/git-repo-template.js";
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import { buildChunkChurnMapUncached } from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
@@ -83,43 +84,40 @@ const CHUNKS = (prefix: string) => [
  * it is built once per process and copied per test (bd tea-rags-mcp-2z4sa).
  */
 function buildRenameRepo(repo: string): void {
-  const g = (args: string[], iso: string): string => gitIn(repo, args, iso);
-  const commit = (iso: string, message: string): void => {
-    g(["add", "-A"], iso);
-    g(["commit", "-q", "-m", message], iso);
-  };
-  const write = (path: string, v: number): void => {
-    writeFileSync(join(repo, path), source(v));
-  };
+  if (!resolve(repo).startsWith(TMP_BASE + sep)) {
+    throw new Error(`walk-commits-rename-real-git.test: refusing import in non-temp cwd: ${repo}`);
+  }
+  // ONE fast-import instead of ~30 add/commit spawns (bd tea-rags-mcp-1r3e5);
+  // author and committer are the configured user, as the commit chain made them.
+  const test = { name: "Test", email: "t@example.com" };
+  const commit = (iso: string, message: string, change: Partial<GitHistoryCommit>): GitHistoryCommit => ({
+    message,
+    author: test,
+    authorDate: iso,
+    ...change,
+  });
+  const write = (path: string, v: number): Partial<GitHistoryCommit> => ({ writes: { [path]: source(v) } });
 
-  g(["init", "-q", "-b", "main"], at(10, 0));
-  g(["config", "user.email", "t@example.com"], at(10, 0));
-  g(["config", "user.name", "Test"], at(10, 0));
-  g(["config", "commit.gpgsign", "false"], at(10, 0));
-  mkdirSync(join(repo, "src"));
-
-  // Renamed file: 3 content commits at the old path (sessions >= 2h apart).
-  write("src/old-name.ts", 1);
-  commit(at(10, 8), "feat: add computeTotal");
-  write("src/old-name.ts", 2);
-  commit(at(10, 11), "fix: factor 2");
-  write("src/old-name.ts", 3);
-  commit(at(10, 14), "fix: factor 3");
-  // Pure rename (R100) — changes no line, so `git log -L` does not list it.
-  g(["mv", "src/old-name.ts", "src/new-name.ts"], at(9, 9));
-  commit(at(9, 9), "refactor: rename old-name to new-name");
-  write("src/new-name.ts", 4);
-  commit(at(9, 13), "fix: factor 4");
-
-  // Control: the same 4 content commits, never renamed.
-  write("src/control.ts", 1);
-  commit(at(8, 8), "feat: add control");
-  write("src/control.ts", 2);
-  commit(at(8, 11), "fix: control 2");
-  write("src/control.ts", 3);
-  commit(at(8, 14), "fix: control 3");
-  write("src/control.ts", 4);
-  commit(at(8, 18), "fix: control 4");
+  importGitHistory(
+    repo,
+    [
+      // Renamed file: 3 content commits at the old path (sessions >= 2h apart).
+      commit(at(10, 8), "feat: add computeTotal", write("src/old-name.ts", 1)),
+      commit(at(10, 11), "fix: factor 2", write("src/old-name.ts", 2)),
+      commit(at(10, 14), "fix: factor 3", write("src/old-name.ts", 3)),
+      // Pure rename (R100) — changes no line, so `git log -L` does not list it.
+      commit(at(9, 9), "refactor: rename old-name to new-name", {
+        renames: [["src/old-name.ts", "src/new-name.ts"]],
+      }),
+      commit(at(9, 13), "fix: factor 4", write("src/new-name.ts", 4)),
+      // Control: the same 4 content commits, never renamed.
+      commit(at(8, 8), "feat: add control", write("src/control.ts", 1)),
+      commit(at(8, 11), "fix: control 2", write("src/control.ts", 2)),
+      commit(at(8, 14), "fix: control 3", write("src/control.ts", 3)),
+      commit(at(8, 18), "fix: control 4", write("src/control.ts", 4)),
+    ],
+    { config: { "user.email": "t@example.com", "user.name": "Test", "commit.gpgsign": "false" } },
+  );
 }
 
 describe("chunk walk follows a rename like `git log -L` (bd tea-rags-mcp-z8w16, real git)", () => {

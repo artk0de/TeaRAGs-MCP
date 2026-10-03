@@ -16,12 +16,13 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { importGitHistory } from "../../../../__helpers__/git-history-import.js";
 import { copyGitRepoTemplate } from "../../../../__helpers__/git-repo-template.js";
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import { buildChunkChurnMapUncached } from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
@@ -96,16 +97,33 @@ describe("chunk walk visits commits in history order", () => {
     return overlays.get(FILE);
   };
 
-  /** An empty repository with `src/` laid out at `root`. */
-  const initRepo = (root: string): void => {
-    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: root });
-    mkdirSync(join(root, "src"));
+  /**
+   * A repository at `root` holding `history` ({@link FILE} contents, oldest
+   * first), written by ONE fast-import instead of an add/commit pair per commit
+   * (bd tea-rags-mcp-1r3e5) — the identity and dates the commit chain used.
+   */
+  const importFileHistory = (
+    root: string,
+    history: { content: string; message: string; dates: { author: string; committer: string } }[],
+  ): void => {
+    if (!resolve(root).startsWith(TMP_BASE + sep)) throw new Error(`refusing git outside the temp root: ${root}`);
+    const t = { name: "t", email: "t@x" };
+    importGitHistory(
+      root,
+      history.map(({ content, message, dates }) => ({
+        message,
+        author: t,
+        authorDate: dates.author,
+        committerDate: dates.committer,
+        writes: { [FILE]: content },
+      })),
+    );
   };
 
-  /** A fresh empty repository of this test's own. */
-  const freshRepo = (): void => {
+  /** A fresh repository of this test's own holding `history`. */
+  const freshRepo = (history: Parameters<typeof importFileHistory>[1]): void => {
     repo = realpathSync(mkdtempSync(join(tmpdir(), "walk-log-order-")));
-    initRepo(repo);
+    importFileHistory(repo, history);
   };
 
   // Five rows, then a function appended at rows 7-10 — the r4t `user.ts` shape.
@@ -122,11 +140,11 @@ describe("chunk walk visits commits in history order", () => {
     const copy = copyGitRepoTemplate(
       "walk-log-order-recent-base-edited",
       (root) => {
-        repo = root;
-        initRepo(root);
         const recent = { author: isoDaysAgo(1), committer: isoDaysAgo(1) };
-        commitFile(BASE, "init", recent);
-        commitFile(EDITED, "edit a", recent);
+        importFileHistory(root, [
+          { content: BASE, message: "init", dates: recent },
+          { content: EDITED, message: "edit a", dates: recent },
+        ]);
       },
       { prefix: "walk-log-order-" },
     );
@@ -162,15 +180,20 @@ describe("chunk walk visits commits in history order", () => {
 
   it("keeps commits made within one second in history order", async () => {
     // One timestamp for every commit: only history order separates them.
-    freshRepo();
     const same = { author: isoDaysAgo(2), committer: isoDaysAgo(2) };
-    commitFile(BASE, "init", same);
-    for (let i = 2; i <= 6; i++) commitFile(BASE.replace("x + 1", `x + ${i}`), `edit a ${i}`, same);
     const inserted = BASE.replace("x + 1", "x + 6").replace(
       "export function a",
       "export function zebra(): number {\n  // inserted above a\n  return 42;\n}\n\nexport function a",
     );
-    commitFile(inserted, "insert zebra", same);
+    freshRepo([
+      { content: BASE, message: "init", dates: same },
+      ...[2, 3, 4, 5, 6].map((i) => ({
+        content: BASE.replace("x + 1", `x + ${i}`),
+        message: `edit a ${i}`,
+        dates: same,
+      })),
+      { content: inserted, message: "insert zebra", dates: same },
+    ]);
 
     const overlays = await walk({ zebra: [3, 6], a: [8, 10] });
 
