@@ -56,6 +56,27 @@ describe("formatWorkingTreeMarker — dense floor", () => {
   });
 });
 
+/** On-demand git of changed-file rows past the answer deadline: the marker says how many rows lack it. */
+describe("formatWorkingTreeMarker — git signals pending", () => {
+  it("should say how many tree rows answered without their git signals", () => {
+    const text = formatWorkingTreeMarker({
+      tree: "/repo/wt",
+      indexedCommit: "0123456789abcdef0123456789abcdef01234567",
+      treeCommit: "fedcba9876543210fedcba9876543210fedcba98",
+      indexedDirty: false,
+      changedFiles: 2,
+      deletedFiles: 0,
+      floors: ["chunks", "sparse"],
+      gitUnavailable: { reason: "3 rows pending" },
+    });
+
+    expect(text).toBe(
+      "workingTree: /repo/wt · index @0123456 · tree @fedcba9 · changed 2 · deleted 0 · floors chunks,sparse" +
+        " · git unavailable: 3 rows pending",
+    );
+  });
+});
+
 /** Delta admission: changed files served from the index are counted beside `changed`. */
 describe("formatWorkingTreeMarker — index-only files", () => {
   it("should name how many changed files answer from the index", () => {

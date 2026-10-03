@@ -33,7 +33,7 @@ const FLOOR_ORDER: readonly WorkingTreeFloor[] = ["chunks", "sparse", "dense", "
  * (live round-3 D1: hybrid_search `language: "ruby"` on a TypeScript delta
  * answered `[]` claiming three floors). The rows carry the tree graph's
  * codegraph block when it was built, so their graph provenance is recorded
- * here too. Call after `readDeltaChunks` resolved.
+ * here too (`recordDeltaRowsSignalState`). Call after `readDeltaChunks` resolved.
  */
 export function claimWorkingTreeFloors(
   view: WorkingTreeView,
@@ -43,7 +43,24 @@ export function claimWorkingTreeFloors(
   if (admittedRows <= 0) return;
   const claimed = new Set([...view.marker.floors, ...floors]);
   view.marker.floors = FLOOR_ORDER.filter((floor) => claimed.has(floor));
+  recordDeltaRowsSignalState(view);
+}
+
+/**
+ * Record what `signalDeltaRows` gave the delta rows an answer holds (D8): the
+ * graph their codegraph block came from (`recordTreeGraphState`), and — when
+ * some rows' on-demand git was still computing past the answer deadline —
+ * `gitUnavailable` naming how many. Called by whoever puts signalled rows
+ * into an answer, never by the signalling itself.
+ */
+export function recordDeltaRowsSignalState(view: WorkingTreeView): void {
   if (view.deltaRowsTreeGraph) recordTreeGraphState(view.marker, view.deltaRowsTreeGraph);
+  if (view.deltaRowsGitPending) view.marker.gitUnavailable = { reason: pendingRowsReason(view.deltaRowsGitPending) };
+}
+
+/** `"N rows pending"` / `"1 row pending"` — how a marker names rows a layer has not answered yet. */
+function pendingRowsReason(pending: number): string {
+  return `${String(pending)} ${pending === 1 ? "row" : "rows"} pending`;
 }
 
 /**
@@ -144,7 +161,6 @@ export function recordWorkingTreeDenseState(
 ): void {
   claimWorkingTreeFloors(view, ["chunks", "dense"], scoredRows);
   if (dense.pending > 0) {
-    const pending = `${String(dense.pending)} ${dense.pending === 1 ? "row" : "rows"} pending`;
-    view.marker.denseUnavailable = { reason: dense.failure ?? pending };
+    view.marker.denseUnavailable = { reason: dense.failure ?? pendingRowsReason(dense.pending) };
   }
 }

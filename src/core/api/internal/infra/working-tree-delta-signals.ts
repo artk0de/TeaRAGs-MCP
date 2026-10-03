@@ -29,7 +29,11 @@
  *   it gets the chunk walk's zero block, as ingest writes it (live G4). An
  *   untracked file never committed has no history: no `git.file`, and each row
  *   the chunk walk's zero block — what ingest writes for it in the alias's own
- *   checkout (live round-3 D4).
+ *   checkout (live round-3 D4). The on-demand answer is waited for at most
+ *   what is left of the view's answer budget (`remainingWaitMs`): past it the
+ *   rows that asked keep what they inherit, the result counts them
+ *   (`gitPendingRows`), and the computation runs on to persist for the next
+ *   request.
  * - A file a COMMIT on either side of `indexedCommit...HEAD` touched (asked
  *   once per request) has a history at HEAD its base points do not describe —
  *   commits since the index (live G1 — a just-committed file ranked 196 days
@@ -220,16 +224,22 @@ export function createWorkingTreeDeltaSignalSource(
         readCommittedSince(deps.gitSignals, request),
       ]);
       const historyOf = (path: string): GitHistory => gitHistoryOf(path, inheritedPathOf(path), committedSince);
+      const onDemand = readOnDemandGit(deps.gitSignals, request, base, historyOf);
       const [{ treeGraph, tree }, onDemandGit] = await Promise.all([
         treeRead,
-        readOnDemandGit(deps.gitSignals, request, base, historyOf),
+        settleWithin(onDemand.signals, request.remainingWaitMs?.()),
       ]);
+      const gitPendingRows = onDemandGit ? 0 : onDemand.wantedRows;
 
       const lineCounts = treeLineCounts(request.rows);
       const rows = request.rows.map((row) =>
-        enrichRow(row, base.byFile, tree, historyOf(pathOf(row.payload)), onDemandGit, lineCounts),
+        enrichRow(row, base.byFile, tree, historyOf(pathOf(row.payload)), onDemandGit ?? new Map(), lineCounts),
       );
-      return treeGraph ? { rows, treeGraph } : { rows };
+      return {
+        rows,
+        ...(treeGraph ? { treeGraph } : {}),
+        ...(gitPendingRows > 0 ? { gitPendingRows } : {}),
+      };
     },
   };
 }
@@ -343,15 +353,17 @@ async function readCommittedSince(
  * stays wherever one does. A file whose history moved since the index (live G1)
  * is answered by no base point: its file and every row are computed. Asked
  * once per request, in the rows' TREE lines; an index without git asks
- * nothing. A failure answers nothing.
+ * nothing. A failure answers nothing. `wantedRows` counts the rows that asked
+ * — those a late answer leaves without what they wanted.
  */
-async function readOnDemandGit(
+function readOnDemandGit(
   source: WorkingTreeGitSignalSource | undefined,
   request: WorkingTreeDeltaSignalRequest,
   base: BasePayload,
   historyOf: (path: string) => GitHistory,
-): Promise<ReadonlyMap<string, WorkingTreeGitSignals>> {
-  if (!source || !base.carriesGit) return new Map();
+): OnDemandGitRead {
+  if (!source || !base.carriesGit) return NO_ON_DEMAND_GIT;
+  let wantedRows = 0;
   const targets = new Map<
     string,
     WorkingTreeGitSignalTarget & { chunks: WorkingTreeGitSignalTarget["chunks"][number][] }
@@ -368,6 +380,7 @@ async function readOnDemandGit(
     const hasLines = typeof startLine === "number" && typeof endLine === "number";
     const wantChunk = hasLines && !(historyFile && basePointOf(historyFile, payload.symbolId));
     if (!wantFile && !wantChunk) continue;
+    wantedRows += 1;
     let target = targets.get(historyPath);
     if (!target) {
       const lines = fileLines.get(path);
@@ -386,17 +399,52 @@ async function readOnDemandGit(
       if (wantChunk) target.chunks.push({ key: String(id), startLine, endLine });
     }
   }
-  if (targets.size === 0) return new Map();
+  if (targets.size === 0) return NO_ON_DEMAND_GIT;
   // The stamp lets the source key each file by its own history (live C2); the
   // index's checkout, compute with the config that index was written with.
-  return source
+  const signals = source
     .signalsOf(
       request.tree.root,
       [...targets.values()],
       request.indexedCommit,
       request.tree.baseIndex.root ?? request.tree.root,
     )
-    .catch(() => new Map());
+    .catch(() => new Map<string, WorkingTreeGitSignals>());
+  return { wantedRows, signals };
+}
+
+/** The on-demand git a request asked for, and how many of its rows asked. Never rejects. */
+interface OnDemandGitRead {
+  wantedRows: number;
+  signals: Promise<ReadonlyMap<string, WorkingTreeGitSignals>>;
+}
+
+const NO_ON_DEMAND_GIT: OnDemandGitRead = { wantedRows: 0, signals: Promise.resolve(new Map()) };
+
+/**
+ * `answer` once it settles within `waitMs`, else `undefined` — the wait ends,
+ * the work does not: the git source keeps computing and persists its records,
+ * so a later request answers from them (live: a freshly edited file's serial
+ * git chain held a hybrid_search 7.3 s against the 3 s answer budget). An
+ * `answer` already settled wins over a spent budget, as every clamped wait
+ * still answers its layer's current state. `undefined` `waitMs` → no deadline.
+ */
+async function settleWithin<T>(answer: Promise<T>, waitMs: number | undefined): Promise<T | undefined> {
+  if (waitMs === undefined) return answer;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<undefined>((resolve) => {
+    timer = setTimeout(
+      () => {
+        resolve(undefined);
+      },
+      Math.max(0, waitMs),
+    );
+  });
+  try {
+    return await Promise.race([answer, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Folds one base point into its file: the first file blocks seen, the first point per symbolId. */

@@ -53,6 +53,7 @@ export function formatWorkingTreeMarker(marker: WorkingTreeMarker): string {
   const floors = marker.floors.length > 0 ? marker.floors.join(",") : "none";
   const treeGraph = marker.treeGraphUnavailable ? ` · tree graph unavailable: ${marker.treeGraphUnavailable}` : "";
   const dense = marker.denseUnavailable ? ` · dense unavailable: ${marker.denseUnavailable.reason}` : "";
+  const git = marker.gitUnavailable ? ` · git unavailable: ${marker.gitUnavailable.reason}` : "";
   const fromIndex = [
     ...(marker.indexOnlyFiles ? [`${marker.indexOnlyFiles} index-only`] : []),
     ...(marker.pendingFiles ? [`${marker.pendingFiles} pending`] : []),
@@ -60,7 +61,7 @@ export function formatWorkingTreeMarker(marker: WorkingTreeMarker): string {
   const changedFromIndex = fromIndex.length > 0 ? ` (${fromIndex.join(", ")})` : "";
   const line =
     `workingTree: ${marker.tree} · index @${sha(marker.indexedCommit)} · tree @${sha(marker.treeCommit)}` +
-    ` · changed ${marker.changedFiles}${changedFromIndex} · deleted ${marker.deletedFiles} · floors ${floors}${treeGraph}${dense}`;
+    ` · changed ${marker.changedFiles}${changedFromIndex} · deleted ${marker.deletedFiles} · floors ${floors}${treeGraph}${dense}${git}`;
   return marker.degraded ? `${line} · degraded: ${marker.degraded.reason} → ${marker.degraded.remedy}` : line;
 }
 

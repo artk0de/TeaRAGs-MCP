@@ -28,7 +28,7 @@ import { touchedBasePointIds, WorkingTreeTouchedBasePoints } from "../working-tr
 import {
   claimTreeGraphLookup,
   claimWorkingTreeFloors,
-  recordTreeGraphState,
+  recordDeltaRowsSignalState,
 } from "../working-tree/tree-graph-marker.js";
 import type { ExploreContext, ExploreResult, ExploreStrategy } from "./types.js";
 
@@ -191,15 +191,16 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
    * the files it returns, never for the whole delta. Rows a strategy ranked or
    * admitted by signals inside `executeExplore` were signalled there already
    * (`substituteFromWorkingTree`, `readWorkingTreeRowsAdmittedBy`) and pass
-   * through unchanged. The graph their codegraph block came from is recorded
-   * here, where the rows reach the answer (D8).
+   * through unchanged. The graph their codegraph block came from, and any rows
+   * whose git was still pending, are recorded here, where the rows reach the
+   * answer (D8).
    */
   private async signalWorkingTreeCandidates(rows: ExploreResult[], ctx: ExploreContext): Promise<ExploreResult[]> {
     const view = ctx.workingTreeView;
     if (!view?.signalDeltaRows || view.touchedPaths.size === 0 || !this.hasWorkingTreeFloor(view)) return rows;
     if (!rows.some((row) => view.touchedPaths.has(relativePathOf(row.payload)))) return rows;
     const signalled = await view.signalDeltaRows(rows);
-    if (view.deltaRowsTreeGraph) recordTreeGraphState(view.marker, view.deltaRowsTreeGraph);
+    recordDeltaRowsSignalState(view);
     return signalled;
   }
 
