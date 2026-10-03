@@ -11,8 +11,10 @@ import { toPhysicalPayloadKey } from "../../../contracts/signal-utils.js";
 import type { RankingOverlay, RerankableResult } from "../../../contracts/types/reranker.js";
 import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
+import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { InvalidQueryError } from "../errors.js";
 import { RankModule, type RankOptions } from "../rank-module.js";
+import { workingTreeRowAdmitted } from "../working-tree/sparse-floor.js";
 import { BaseExploreStrategy } from "./base.js";
 import { fetchUntilPathPatternFilled, keepPathPatternMatches, type PathPatternPage } from "./path-pattern-fill.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
@@ -24,6 +26,13 @@ const FILE_OVERFETCH_MAX_ROUNDS = 3;
 
 export class ScrollRankStrategy extends BaseExploreStrategy {
   readonly type = "scroll-rank" as const;
+
+  /**
+   * rank_chunks substitutes the tree's rows for the base rows of touched files
+   * in its candidate pool (bd tea-rags-mcp-xi2r9, WTO-5), so signal-only
+   * rankings read the tree too.
+   */
+  protected override readonly hasChunkFloor = true;
   private readonly rankModule: RankModule;
   /**
    * Stored payload path → index schema, for every payload signal this strategy
@@ -113,6 +122,9 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
       await this.qdrant.ensurePayloadIndex(col, fieldName, schema);
     };
 
+    // Working tree: the pool's base rows of touched files give way to the
+    // tree's rows that pass the scroll's own filter and the exact pathPattern.
+    const admission = { requestFilter: ctx.filter, pathMatcher: matcher };
     const baseOpts = {
       weights,
       level: ctx.level ?? "chunk",
@@ -123,6 +135,8 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
       // The rerank collapses on the preset's groupBy, so the pool is sized in
       // those groups — not in points (bd tea-rags-mcp-s9vgb).
       groupBy: ctx.presetName ? this.reranker.getFullPreset(ctx.presetName, "rank_chunks")?.groupBy : undefined,
+      substituteCandidates: async (candidates: ScrollChunk[]) =>
+        this.substituteFromWorkingTree(candidates, ctx, (row) => workingTreeRowAdmitted(row, admission)),
     };
 
     const fetchWindow = async (limit: number): Promise<PathPatternPage> => {

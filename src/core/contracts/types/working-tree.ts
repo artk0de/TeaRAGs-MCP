@@ -31,10 +31,11 @@ export interface WorkingTree {
 
 /**
  * A read path on which the tree's own data replaced the base's: delta chunks
- * for the base chunks of delta files (`chunks`, `sparse`), or the tree graph
- * for the base graph (`codegraph`, WTO-7).
+ * for the base chunks of delta files (`chunks`, `sparse`), delta rows ranked by
+ * their own dense vectors (`dense`, WTO-5), or the tree graph for the base
+ * graph (`codegraph`, WTO-7).
  */
-export type WorkingTreeFloor = "chunks" | "sparse" | "codegraph";
+export type WorkingTreeFloor = "chunks" | "sparse" | "dense" | "codegraph";
 
 /**
  * Which tree an answer read and how far it is from the index. Attached to every
@@ -64,6 +65,14 @@ export interface WorkingTreeMarker {
    * describe the indexed commit, not the tree.
    */
   treeGraphUnavailable?: string;
+  /**
+   * Why some of the tree's rows were left out of this answer's dense ranking
+   * (WTO-5): their vectors were still being made past the wait, or the
+   * embedding provider failed. Set only by an answer that ranked by vectors;
+   * the touched files' base rows are excluded either way, so a row named here
+   * is simply absent from the dense leg.
+   */
+  denseUnavailable?: { reason: string };
 }
 
 /** How a base row of a delta file differs from the tree, where no floor replaced it. */

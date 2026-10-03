@@ -97,16 +97,19 @@ export const SearchResultOutputSchema = {
       indexedDirty: z.boolean(),
       changedFiles: z.number(),
       deletedFiles: z.number(),
-      floors: z.array(z.enum(["chunks", "sparse", "codegraph"])),
+      floors: z.array(z.enum(["chunks", "sparse", "dense", "codegraph"])),
       degraded: z.object({ reason: z.string(), remedy: z.string() }).optional(),
       unparsed: z.array(z.string()).optional(),
       treeGraphUnavailable: z.string().optional(),
+      denseUnavailable: z.object({ reason: z.string() }).optional(),
     })
     .optional()
     .describe(
       "Tree read vs index commit. changedFiles 0 = measured clean; floors = rows reflect tree " +
-        "(codegraph = graph signals from the tree's graph); degraded = run remedy; " +
-        "unparsed = changed files the tree's rows lack; treeGraphUnavailable = why graph signals are the index's.",
+        "(dense = tree rows ranked by own vectors; codegraph = graph signals from the tree's graph); " +
+        "degraded = run remedy; unparsed = changed files the tree's rows lack; " +
+        "treeGraphUnavailable = why graph signals are the index's; " +
+        "denseUnavailable = why some tree rows ranked without vectors (absent from dense ranking).",
     ),
   codegraphWarning: z
     .string()

@@ -222,8 +222,8 @@ worktree, round-2 probe D3.
 - **Warm-up.** `view()` starts embedding the delta rows that lack a vector (fire
   and forget, single-flight per content); a ranked query waits for them at most
   2 s. A row still without a vector stays out of the dense leg only, and the
-  marker says so (`denseUnavailable: "<n> rows pending"` or the provider's
-  failure).
+  marker says so (`denseUnavailable: { reason: "<n> rows pending" }` or the
+  provider's failure).
 - **Ranking.** `semantic_search`, `find_similar` and the dense leg of
   `hybrid_search` exclude the base rows of touched files (`has_id`, the shared
   touched-base-points read) and score the delta rows locally — exact cosine

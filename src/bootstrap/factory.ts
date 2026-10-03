@@ -63,6 +63,7 @@ import {
   createWorkingTreeChunkStore,
   createWorkingTreeDeltaReader,
   scheduleWorkingTreeChunkSweep,
+  WorkingTreeDenseVectorSource,
   WorkingTreeOverlay,
   WorkingTreeTouchedBasePoints,
 } from "../core/domains/explore/index.js";
@@ -1264,6 +1265,16 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     // revision and touched set; each view reads them once and shares the read
     // between hybrid's exclusion and the delta signals (bd tea-rags-mcp-xi2r9).
     touchedBasePoints: new WorkingTreeTouchedBasePoints(infra.qdrant),
+    // WTO-5: delta rows ranked by their own vectors. A view that changed files
+    // warms them at view time — a base point's stored vector for byte-identical
+    // content, then the chunk store (vectors beside the rows, same retention),
+    // then the provider the queries embed with, which the model guard holds to
+    // the base index's model.
+    denseVectors: new WorkingTreeDenseVectorSource({
+      embeddings: infra.embeddings,
+      qdrant: infra.qdrant,
+      store: workingTreeChunkStore,
+    }),
   });
   const codegraphContext = wireCodegraph(
     config,

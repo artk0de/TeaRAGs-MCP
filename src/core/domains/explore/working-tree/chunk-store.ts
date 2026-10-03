@@ -8,7 +8,8 @@
  * `codebasePath` carry it), the path, the content hash and the chunker
  * fingerprint. The meta file is small and is the entry's commit point: rows are
  * written first, meta last, so a sweep reads meta only and stats the rows.
- * Every write is a temp file renamed into place.
+ * Every write is a temp file renamed into place. `<key>.vectors.json` holds the
+ * dense vectors of the entry's rows (WTO-5) and lives and dies with the entry.
  *
  * Retention (`sweep`): a tree root that no longer exists → evict now; content
  * the tree no longer holds at that path (the path is gone, or holds other
@@ -67,10 +68,33 @@ export interface WorkingTreeChunkStoreSweep {
   bytes: number;
 }
 
+/** Dense vectors of an entry's rows, keyed by the sha256 of each row's `content`. */
+export type WorkingTreeChunkVectors = ReadonlyMap<string, number[]>;
+
 export interface WorkingTreeChunkStore {
   /** The entry, with `lastReadAt` bumped to now (durably); undefined on a miss. */
   get: (collectionName: string, key: WorkingTreeChunkStoreKey) => Promise<WorkingTreeChunkStoreEntry | undefined>;
   put: (collectionName: string, entry: Omit<WorkingTreeChunkStoreEntry, "lastReadAt">) => Promise<void>;
+  /**
+   * The dense vectors stored beside an entry's rows by `model` (WTO-5);
+   * undefined when the entry holds none of that model, or no entry exists.
+   */
+  getVectors: (
+    collectionName: string,
+    key: WorkingTreeChunkStoreKey,
+    model: string,
+  ) => Promise<WorkingTreeChunkVectors | undefined>;
+  /**
+   * Merge `vectors` into the entry's vectors of `model`; another model's are
+   * replaced, never mixed. A no-op for an entry the store does not hold, so a
+   * vector never outlives the rows it belongs to.
+   */
+  putVectors: (
+    collectionName: string,
+    key: WorkingTreeChunkStoreKey,
+    model: string,
+    vectors: WorkingTreeChunkVectors,
+  ) => Promise<void>;
   sweep: (now?: number) => Promise<WorkingTreeChunkStoreSweep>;
 }
 
@@ -90,6 +114,8 @@ export const WORKING_TREE_CHUNK_SWEEP_INTERVAL_MS = 6 * 3_600_000;
 const ABANDONED_WRITE_GRACE_MS = 3_600_000;
 const META_SUFFIX = ".meta.json";
 const ROWS_SUFFIX = ".rows.json";
+/** Dense vectors beside the rows (WTO-5): same entry, same retention. */
+const VECTORS_SUFFIX = ".vectors.json";
 const TMP_SUFFIX = ".tmp";
 /** A collection name is one path segment; anything else would address outside the root. */
 const COLLECTION_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -167,6 +193,29 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
   const evict = async (dir: string, name: string): Promise<void> => {
     await fs.rm(join(dir, `${name}${META_SUFFIX}`), { force: true });
     await fs.rm(join(dir, `${name}${ROWS_SUFFIX}`), { force: true });
+    await fs.rm(join(dir, `${name}${VECTORS_SUFFIX}`), { force: true });
+  };
+
+  /** The entry's stored vectors file, when its meta names this very key. */
+  const vectorsPathOf = async (collectionName: string, key: WorkingTreeChunkStoreKey): Promise<string | undefined> => {
+    const dir = collectionDir(collectionName);
+    if (!dir) return undefined;
+    const name = entryKey(key);
+    const meta = await readMeta(join(dir, `${name}${META_SUFFIX}`));
+    return meta && sameKey(meta, key) ? join(dir, `${name}${VECTORS_SUFFIX}`) : undefined;
+  };
+
+  const readVectors = async (
+    path: string,
+  ): Promise<{ model: string; vectors: Record<string, number[]> } | undefined> => {
+    try {
+      const stored = JSON.parse(await fs.readFile(path, "utf8")) as { model?: unknown; vectors?: unknown };
+      return typeof stored.model === "string" && stored.vectors && typeof stored.vectors === "object"
+        ? { model: stored.model, vectors: stored.vectors as Record<string, number[]> }
+        : undefined;
+    } catch {
+      return undefined;
+    }
   };
 
   const sizeOf = async (path: string): Promise<number | undefined> => {
@@ -225,6 +274,22 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
       await writeAtomic(join(dir, `${name}${META_SUFFIX}`), JSON.stringify(meta));
     },
 
+    async getVectors(collectionName, key, model) {
+      const path = await vectorsPathOf(collectionName, key);
+      const stored = path ? await readVectors(path) : undefined;
+      if (stored?.model !== model) return undefined;
+      return new Map(Object.entries(stored.vectors));
+    },
+
+    async putVectors(collectionName, key, model, vectors) {
+      if (vectors.size === 0) return;
+      const path = await vectorsPathOf(collectionName, key);
+      if (!path) return;
+      const stored = await readVectors(path);
+      const merged = { ...(stored?.model === model ? stored.vectors : {}), ...Object.fromEntries(vectors) };
+      await writeAtomic(path, JSON.stringify({ model, vectors: merged }));
+    },
+
     async sweep(at = now()) {
       let evicted = 0;
       const kept: { dir: string; name: string; bytes: number; lastReadAt: number }[] = [];
@@ -265,7 +330,9 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
         for (const file of files) {
           const abandoned =
             file.name.endsWith(TMP_SUFFIX) ||
-            (file.name.endsWith(ROWS_SUFFIX) && !metaNames.has(file.name.slice(0, -ROWS_SUFFIX.length)));
+            [ROWS_SUFFIX, VECTORS_SUFFIX].some(
+              (suffix) => file.name.endsWith(suffix) && !metaNames.has(file.name.slice(0, -suffix.length)),
+            );
           if (!abandoned) continue;
           const path = join(dir, file.name);
           const stat = await fs.stat(path).catch(() => undefined);
@@ -285,6 +352,7 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
         for (const { name, meta } of entries) {
           const rowsBytes = await sizeOf(join(dir, `${name}${ROWS_SUFFIX}`));
           const metaBytes = await sizeOf(join(dir, `${name}${META_SUFFIX}`));
+          const vectorsBytes = (await sizeOf(join(dir, `${name}${VECTORS_SUFFIX}`))) ?? 0;
           let expired = !meta || rowsBytes === undefined || metaBytes === undefined;
           if (meta && !expired) {
             const idle = at - meta.lastReadAt >= WORKING_TREE_CHUNK_RETENTION_MS;
@@ -305,7 +373,12 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
             evicted++;
             continue;
           }
-          kept.push({ dir, name, bytes: (rowsBytes ?? 0) + (metaBytes ?? 0), lastReadAt: meta.lastReadAt });
+          kept.push({
+            dir,
+            name,
+            bytes: (rowsBytes ?? 0) + (metaBytes ?? 0) + vectorsBytes,
+            lastReadAt: meta.lastReadAt,
+          });
         }
 
         if ((await listDir(dir)).length === 0) await fs.rmdir(dir).catch(() => undefined);

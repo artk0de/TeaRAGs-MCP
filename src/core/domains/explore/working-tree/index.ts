@@ -18,7 +18,19 @@ export {
   type WorkingTreeChunkStoreEntry,
   type WorkingTreeChunkStoreKey,
   type WorkingTreeChunkStoreSweep,
+  type WorkingTreeChunkVectors,
 } from "./chunk-store.js";
+export {
+  recommendWorkingTreeScore,
+  scoreWorkingTreeRowsByVector,
+  WORKING_TREE_DENSE_WAIT_MS,
+  WorkingTreeDenseVectorSource,
+  type WorkingTreeDenseVectorReader,
+  type WorkingTreeDenseVectorRequest,
+  type WorkingTreeDenseVectors,
+  type WorkingTreeDenseVectorSourceDeps,
+  type WorkingTreeRecommendStrategy,
+} from "./dense-floor.js";
 export {
   createWorkingTreeDeltaReader,
   WORKING_TREE_DELTA_FILE_CAP,

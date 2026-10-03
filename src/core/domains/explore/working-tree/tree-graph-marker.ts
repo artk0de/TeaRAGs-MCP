@@ -14,10 +14,11 @@ import type {
   WorkingTreeGraphState,
   WorkingTreeMarker,
 } from "../../../contracts/types/working-tree.js";
+import type { WorkingTreeDenseVectors } from "./dense-floor.js";
 import type { WorkingTreeView } from "./overlay.js";
 
 /** The order `floors` is listed in, whatever order the reads of one answer claimed them. */
-const FLOOR_ORDER: readonly WorkingTreeFloor[] = ["chunks", "sparse", "codegraph"];
+const FLOOR_ORDER: readonly WorkingTreeFloor[] = ["chunks", "sparse", "dense", "codegraph"];
 
 /**
  * Claim the floors of an answer whose rows the tree's delta rows supplied (live
@@ -67,4 +68,24 @@ export function recordingTreeGraphReader(view: WorkingTreeView | undefined): Wor
     recordTreeGraphState(view.marker, state);
     return state;
   };
+}
+
+/**
+ * Record what the dense floor gave THIS answer (WTO-5): `scoredRows` delta rows
+ * ranked by their own vectors claim the `chunks` and `dense` floors — none
+ * claims nothing, as no tree row reached the candidates. Rows still without a
+ * vector were left out of the ranking, so the marker names why
+ * (`denseUnavailable`: the provider's failure, else how many are pending),
+ * beside the claim when some rows did score.
+ */
+export function recordWorkingTreeDenseState(
+  view: WorkingTreeView,
+  dense: WorkingTreeDenseVectors,
+  scoredRows: number,
+): void {
+  if (scoredRows > 0) claimWorkingTreeFloors(view, ["chunks", "dense"]);
+  if (dense.pending > 0) {
+    const pending = `${String(dense.pending)} ${dense.pending === 1 ? "row" : "rows"} pending`;
+    view.marker.denseUnavailable = { reason: dense.failure ?? pending };
+  }
 }

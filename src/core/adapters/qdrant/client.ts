@@ -276,6 +276,15 @@ export class QdrantManager {
     return this.points.getPointOrThrow(collectionName, id);
   }
 
+  /** Points by id with the named payload keys and their dense vector — see `QdrantPointStore#retrieveDenseVectors`. */
+  async retrieveDenseVectors(
+    collectionName: string,
+    ids: readonly (string | number)[],
+    payloadInclude: string[],
+  ): Promise<{ id: string | number; payload?: Record<string, unknown>; vector?: number[] }[]> {
+    return this.points.retrieveDenseVectors(collectionName, ids, payloadInclude);
+  }
+
   async addPoints(
     collectionName: string,
     points: {

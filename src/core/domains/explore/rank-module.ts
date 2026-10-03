@@ -37,6 +37,14 @@ export interface RankOptions {
    * `groupBy`). The pool is then sized in distinct groups, not points.
    */
   groupBy?: string;
+  /**
+   * Rewrites the gathered candidate pool before the rerank — the working
+   * tree's substitution (bd tea-rags-mcp-xi2r9, WTO-5): base rows of touched
+   * files out, the tree's rows of them in. Absent → the pool as scrolled.
+   */
+  substituteCandidates?: (
+    candidates: { id: string | number; payload: Record<string, unknown> }[],
+  ) => Promise<{ id: string | number; payload: Record<string, unknown> }[]>;
 }
 
 const OVERFETCH_FACTOR = 3;
@@ -163,7 +171,8 @@ export class RankModule {
    * Rank chunks: scatter-gather → merge → rerank → top-N.
    */
   async rankChunks(collectionName: string, options: RankOptions): Promise<RerankableResult[]> {
-    const { weights, level, limit, scrollFn, ensureIndexFn, filter, presetName, groupBy } = options;
+    const { weights, level, limit, scrollFn, ensureIndexFn, filter, presetName, groupBy, substituteCandidates } =
+      options;
 
     // Remove similarity and re-normalize
     const cleanWeights = this.removeAndNormalize(weights);
@@ -185,8 +194,9 @@ export class RankModule {
       ),
     );
 
-    // Merge + deduplicate (gather)
-    const merged = this.mergeAndDeduplicate(scrollResults);
+    // Merge + deduplicate (gather), then the caller's substitution
+    const gathered = this.mergeAndDeduplicate(scrollResults);
+    const merged = substituteCandidates ? await substituteCandidates(gathered) : gathered;
     if (merged.length === 0) return [];
 
     // Convert to RerankableResult (score=0, no similarity)

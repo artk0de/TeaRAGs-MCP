@@ -221,6 +221,20 @@ describe("ExploreOps working-tree floors (bd tea-rags-mcp-xi2r9.3)", () => {
     payload: { relativePath: "src/a.ts", symbolId: "tree", content: "tree body", language: "typescript" },
   };
 
+  // WTO-5: semantic_search ranks the tree's rows by their own vectors; the
+  // answer's marker names the dense floor and why some rows were left out.
+  it("should carry the dense floor and the rows it ranked without onto the semantic_search answer", async () => {
+    const view = chunkedView([TREE_ROW]);
+    view.readTouchedBasePoints = async () => new Map([["src/a.ts", [{ id: "1", payload: {} }]]]);
+    view.readDeltaVectors = async () => ({ vectors: new Map([["t", [0.1]]]), pending: 2 });
+
+    const response = await makeFacade([HIT], view).semanticSearch({ collection: "code_x", query: "tree" });
+
+    expect(response.results.map((r) => r.id)).toEqual(["t"]);
+    expect(response.workingTree?.floors).toEqual(["chunks", "dense"]);
+    expect(response.workingTree?.denseUnavailable).toEqual({ reason: "2 rows pending" });
+  });
+
   it("should declare the chunks floor on find_symbol and carry what the chunk layer could not parse", async () => {
     const response = await makeFacade([HIT], chunkedView([TREE_ROW])).findSymbol({
       collection: "code_x",

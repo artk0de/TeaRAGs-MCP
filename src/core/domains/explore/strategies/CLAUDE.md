@@ -9,9 +9,11 @@
   the RERANKED order. `SimilarSearchStrategy` forwards `offset: ctx.offset` to
   `qdrant.query` (`SimilarSearchStrategy#executeExplore`) AND inherits the base
   slice, so find_similar applies it twice — that is the standing
-  counter-example, not the pattern to copy. Why: server-side paging would page
-  Qdrant's pre-rerank order, making page 2 of a reranked search meaningless.
-  Pushing `offset` down is the instinct a new strategy must resist.
+  counter-example, not the pattern to copy. Under the working-tree dense floor
+  it sends no `offset` (the page merges with the tree's rows before the base
+  slice). Why: server-side paging would page Qdrant's pre-rerank order, making
+  page 2 of a reranked search meaningless. Pushing `offset` down is the instinct
+  a new strategy must resist.
 - **`postProcess` receives the ORIGINAL context, not what `applyDefaults`
   returned.** `BaseExploreStrategy#execute` does
   `applyDefaults(ctx) → executeExplore(prepared) → postProcess(rawResults, ctx)`.

@@ -24,6 +24,7 @@
 
 import { InfraError } from "../errors.js";
 import type { QdrantConnection } from "./connection.js";
+import { denseVectorOf } from "./dense-vector.js";
 import {
   isVectorDimensionRejection,
   QdrantOperationError,
@@ -125,6 +126,38 @@ export class QdrantPointStore {
       id: points[0].id,
       payload: points[0].payload || undefined,
     };
+  }
+
+  /**
+   * Points by id with the named payload keys and their DENSE vector (bd
+   * tea-rags-mcp-xi2r9, WTO-5): the working tree's dense floor reuses the stored
+   * vector of a base point whose content a delta row repeats. A point without a
+   * dense vector comes back without `vector`; an id Qdrant does not hold is
+   * absent. Every failed read throws an `InfraError`.
+   */
+  async retrieveDenseVectors(
+    collectionName: string,
+    ids: readonly (string | number)[],
+    payloadInclude: string[],
+  ): Promise<{ id: string | number; payload?: Record<string, unknown>; vector?: number[] }[]> {
+    if (ids.length === 0) return [];
+    const points = await this.connection
+      .call(async () =>
+        this.connection.client.retrieve(collectionName, {
+          ids: ids.map((id) => this.normalizeId(id)),
+          with_payload: { include: payloadInclude },
+          with_vector: true,
+        }),
+      )
+      .catch((error: unknown) => failPointRead("retrieveDenseVectors", collectionName, error));
+    return points.map((point) => {
+      const vector = denseVectorOf(point.vector);
+      return {
+        id: point.id,
+        ...(point.payload ? { payload: point.payload } : {}),
+        ...(vector ? { vector } : {}),
+      };
+    });
   }
 
   async addPoints(

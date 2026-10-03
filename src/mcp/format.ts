@@ -52,9 +52,10 @@ export function formatWorkingTreeMarker(marker: WorkingTreeMarker): string {
   const sha = (commit: string | null): string => (commit ? commit.slice(0, 7) : "none");
   const floors = marker.floors.length > 0 ? marker.floors.join(",") : "none";
   const treeGraph = marker.treeGraphUnavailable ? ` · tree graph unavailable: ${marker.treeGraphUnavailable}` : "";
+  const dense = marker.denseUnavailable ? ` · dense unavailable: ${marker.denseUnavailable.reason}` : "";
   const line =
     `workingTree: ${marker.tree} · index @${sha(marker.indexedCommit)} · tree @${sha(marker.treeCommit)}` +
-    ` · changed ${marker.changedFiles} · deleted ${marker.deletedFiles} · floors ${floors}${treeGraph}`;
+    ` · changed ${marker.changedFiles} · deleted ${marker.deletedFiles} · floors ${floors}${treeGraph}${dense}`;
   return marker.degraded ? `${line} · degraded: ${marker.degraded.reason} → ${marker.degraded.remedy}` : line;
 }
 

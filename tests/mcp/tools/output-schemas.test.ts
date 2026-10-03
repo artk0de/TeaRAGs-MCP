@@ -208,3 +208,22 @@ describe("SearchResultOutputSchema — workingTree (xi2r9.1)", () => {
     expect(schema.parse({ results: [], workingTree: degraded }).workingTree).toEqual(degraded);
   });
 });
+
+describe("SearchResultOutputSchema — workingTree dense floor (WTO-5)", () => {
+  const schema = z.object(SearchResultOutputSchema).strict();
+
+  it("validates the dense floor and the reason some rows were ranked without it", () => {
+    const marker = {
+      tree: "/repo/wt",
+      indexedCommit: "a".repeat(40),
+      treeCommit: "b".repeat(40),
+      indexedDirty: false,
+      changedFiles: 2,
+      deletedFiles: 0,
+      floors: ["chunks", "sparse", "dense"],
+      denseUnavailable: { reason: "3 rows pending" },
+    };
+
+    expect(schema.parse({ results: [], workingTree: marker }).workingTree).toEqual(marker);
+  });
+});

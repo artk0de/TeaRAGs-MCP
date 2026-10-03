@@ -26,7 +26,7 @@ import { join } from "node:path";
 
 import type { ChunkerConfig } from "../../../types.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
-import { computeGitBlobId, type WorkingTreeChunkStore } from "./chunk-store.js";
+import { computeGitBlobId, type WorkingTreeChunkStore, type WorkingTreeChunkStoreKey } from "./chunk-store.js";
 
 /** What one `chunk` call read from the tree. */
 export interface WorkingTreeChunkLayerRead {
@@ -34,6 +34,12 @@ export interface WorkingTreeChunkLayerRead {
   chunks: readonly ScrollChunk[];
   /** Requested files that could not be read or parsed — they have no rows. */
   unparsed: readonly string[];
+  /**
+   * The persistent-store entry each chunked file's rows live under, by path —
+   * where the dense floor keeps their vectors (WTO-5). Present when the call
+   * named its collection; a memory hit names the same entry a chunk did.
+   */
+  storeKeys?: ReadonlyMap<string, WorkingTreeChunkStoreKey>;
 }
 
 export interface WorkingTreeChunkLayer {
@@ -143,14 +149,15 @@ export function createWorkingTreeChunkLayer<P extends WorkingTreeChunkerPool>(
           .digest("hex");
         const chunks: ScrollChunk[] = [];
         const unparsed: string[] = [];
+        const storeKeys = new Map<string, WorkingTreeChunkStoreKey>();
         for (const relativePath of relativePaths) {
           try {
             const content = await readFile(join(tree, relativePath));
             const contentSha256 = createHash("sha256").update(content).digest("hex");
             const key = `${configKey}\0${tree}\0${relativePath}\0${contentSha256}`;
+            const storeKey = { treeRoot: tree, relativePath, contentSha256, chunkerFingerprint };
             let rows = cache.get(key);
             if (!rows) {
-              const storeKey = { treeRoot: tree, relativePath, contentSha256, chunkerFingerprint };
               const { store } = deps;
               const stored =
                 store && collectionName !== undefined
@@ -169,11 +176,12 @@ export function createWorkingTreeChunkLayer<P extends WorkingTreeChunkerPool>(
               remember(key, rows);
             }
             chunks.push(...rows);
+            if (collectionName !== undefined) storeKeys.set(relativePath, storeKey);
           } catch {
             unparsed.push(relativePath);
           }
         }
-        return { chunks, unparsed };
+        return collectionName === undefined ? { chunks, unparsed } : { chunks, unparsed, storeKeys };
       } finally {
         inFlight--;
         armIdleShutdown();

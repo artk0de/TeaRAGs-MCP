@@ -12,9 +12,10 @@ import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { InvalidQueryError } from "../errors.js";
+import { scoreWorkingTreeRowsByVector, WORKING_TREE_DENSE_WAIT_MS } from "../working-tree/dense-floor.js";
 import { claimWorkingTreeFloors, relativePathOf } from "../working-tree/index.js";
-import { excludeWorkingTreeBaseIds, fuseWorkingTreeRows, scoreWorkingTreeRows } from "../working-tree/sparse-floor.js";
-import { touchedBasePointIds, WorkingTreeTouchedBasePoints } from "../working-tree/touched-base-points.js";
+import { fuseWorkingTreeRows, scoreWorkingTreeRows, workingTreeRowAdmitted } from "../working-tree/sparse-floor.js";
+import { recordWorkingTreeDenseState } from "../working-tree/tree-graph-marker.js";
 import { BaseExploreStrategy } from "./base.js";
 import { fetchPathPatternMatches } from "./path-pattern-fill.js";
 import { buildSymbolIdentityFilter, isSymbolIdentifierQuery } from "./symbol-identity-leg.js";
@@ -36,9 +37,6 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
 
   /** The sparse floor substitutes the tree's rows for touched files, so they carry no `treeState`. */
   protected override readonly hasChunkFloor = true;
-
-  /** Touched-file base points for a view without a reader wired (the strategy lives as long as its facade). */
-  private readonly touchedBasePoints = new WorkingTreeTouchedBasePoints(this.qdrant);
 
   protected async executeExplore(ctx: ExploreContext): Promise<ExploreResult[]> {
     const { embedding } = ctx;
@@ -63,17 +61,12 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
     const view = treeRows ? ctx.workingTreeView : undefined;
     // The touched files' base points come from the view's ONE read, the one
     // the delta signals already made for this request; a view without a
-    // reader wired falls back to this strategy's own (same reader, same cache
+    // reader wired falls back to the strategy's own (same reader, same cache
     // rules).
-    const filter = view
-      ? excludeWorkingTreeBaseIds(
-          ctx.filter,
-          touchedBasePointIds(
-            await (view.readTouchedBasePoints?.() ??
-              this.touchedBasePoints.pointsOf(ctx.collectionName, view.touchedPaths, view.marker.indexedCommit)),
-          ),
-        )
-      : ctx.filter;
+    const filter = view ? await this.excludeWorkingTreeBase(ctx, view, ctx.filter) : ctx.filter;
+    // Dense floor (WTO-5): the tree's rows rank on the dense leg by their own
+    // vectors, read beside the Qdrant request.
+    const denseRanking = treeRows ? this.readWorkingTreeDenseRanking(ctx, treeRows, embedding) : undefined;
     // A base row of a touched file the request still returned (an id set that
     // predates an index run of the same point count) is dropped, never shown.
     const untouched = (rows: ExploreResult[]): ExploreResult[] =>
@@ -98,6 +91,7 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
           ).catch(rethrowAsInvalidQuery),
         ),
     );
+    const ranking = await denseRanking;
     const results = treeRows
       ? fuseWorkingTreeRows(
           baseResults,
@@ -107,6 +101,7 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
             identityFilter,
             pathMatcher: compilePathPatternMatcher(ctx.pathPattern),
             legLimit: fetchLimit,
+            ...(ranking ? { denseRanking: ranking } : {}),
           }),
           Math.max(fetchLimit, baseResults.length),
         )
@@ -118,6 +113,27 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
     }
 
     return results;
+  }
+
+  /**
+   * The dense leg's order: ids of the tree's admitted rows that have a vector,
+   * best cosine first. Undefined when the view has no dense source. Records
+   * what the floor gave this answer.
+   */
+  private async readWorkingTreeDenseRanking(
+    ctx: ExploreContext,
+    rows: readonly ScrollChunk[],
+    embedding: readonly number[],
+  ): Promise<(string | number)[] | undefined> {
+    const view = ctx.workingTreeView;
+    if (!view?.readDeltaVectors) return undefined;
+    const dense = await view.readDeltaVectors(WORKING_TREE_DENSE_WAIT_MS);
+    const admission = { requestFilter: ctx.filter, pathMatcher: compilePathPatternMatcher(ctx.pathPattern) };
+    const ranked = scoreWorkingTreeRowsByVector(rows, dense.vectors, embedding, (row) =>
+      workingTreeRowAdmitted(row, admission),
+    );
+    recordWorkingTreeDenseState(view, dense, ranked.length);
+    return ranked.flatMap((row) => (row.id === undefined ? [] : [row.id]));
   }
 
   /** The tree's rows when this request reads a tree that touched files and can chunk them. */

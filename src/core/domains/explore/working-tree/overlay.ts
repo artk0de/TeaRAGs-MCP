@@ -28,13 +28,14 @@ import {
 import { findGitToplevel, readRepoGitState } from "../../../infra/repo-git-state.js";
 import type { ChunkerConfig } from "../../../types.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
-import type { WorkingTreeChunkLayer } from "./chunk-layer.js";
+import type { WorkingTreeChunkLayer, WorkingTreeChunkLayerRead } from "./chunk-layer.js";
 import {
   WORKING_TREE_REINDEX_REMEDY,
   WORKING_TREE_WORKTREE_INDEX_REMEDY,
   type WorkingTreeDelta,
   type WorkingTreeDeltaReader,
 } from "./delta.js";
+import type { WorkingTreeDenseVectorReader, WorkingTreeDenseVectorSource } from "./dense-floor.js";
 
 export interface WorkingTreeView {
   marker: WorkingTreeMarker;
@@ -69,6 +70,14 @@ export interface WorkingTreeView {
    * with it: `claimWorkingTreeFloors` does, when the rows reach an answer (D8).
    */
   deltaRowsTreeGraph?: WorkingTreeGraphState;
+  /**
+   * The delta rows' dense vectors (WTO-5), waiting at most `waitMs`. Present
+   * only for a measured delta that changed files, with a chunk layer and a
+   * dense source wired; the warm-up started when the view was made. Reading
+   * does not stamp the marker — the strategy that SCORES rows by these vectors
+   * does (`recordWorkingTreeDenseState`).
+   */
+  readDeltaVectors?: WorkingTreeDenseVectorReader;
 }
 
 /** The overlay's port to the touched-file base points (`WorkingTreeTouchedBasePoints`). */
@@ -109,6 +118,12 @@ export interface WorkingTreeOverlayDeps {
   deltaSignals?: WorkingTreeDeltaSignalSource;
   /** Absent → views carry no `readTouchedBasePoints`. */
   touchedBasePoints?: WorkingTreeTouchedBasePointSource;
+  /**
+   * The dense floor's vector source (WTO-5). Present with `deltaChunks` → a
+   * view that changed files warms its rows' vectors at view time and carries
+   * `readDeltaVectors`.
+   */
+  denseVectors?: Pick<WorkingTreeDenseVectorSource, "warm">;
 }
 
 const NO_TREE_REASON = "no working tree resolved for this index";
@@ -189,12 +204,18 @@ export class WorkingTreeOverlay {
       }
       const source = this.deps.deltaChunks;
       if (source) {
-        const { deltaSignals } = this.deps;
+        const { deltaSignals, denseVectors } = this.deps;
+        let chunked: Promise<WorkingTreeChunkLayerRead> | undefined;
+        const readChunked = async (): Promise<WorkingTreeChunkLayerRead> =>
+          (chunked ??= readDeltaChunks(source, tree, changed, view.marker));
         let rows: Promise<readonly ScrollChunk[]> | undefined;
         view.readDeltaChunks = async () =>
-          (rows ??= readDeltaChunks(source, tree, changed, view.marker).then(async (chunks) =>
+          (rows ??= readChunked().then(async ({ chunks }) =>
             deltaSignals ? enrichDeltaRows(deltaSignals, tree, chunks, view, read.delta.renamedFrom) : chunks,
           ));
+        if (denseVectors && changed.length > 0) {
+          view.readDeltaVectors = warmDeltaVectors(denseVectors, collectionName, view, readChunked);
+        }
       }
       return view;
     } catch (error) {
@@ -319,10 +340,38 @@ async function readDeltaChunks(
   tree: WorkingTree,
   changed: readonly string[],
   marker: WorkingTreeMarker,
-): Promise<readonly ScrollChunk[]> {
-  if (changed.length === 0) return [];
+): Promise<WorkingTreeChunkLayerRead> {
+  if (changed.length === 0) return { chunks: [], unparsed: [] };
   const config = await source.resolveChunkerConfig(tree);
   const read = await source.layer.chunk(tree.root, changed, config, tree.baseIndex.collectionName);
   if (read.unparsed.length > 0) marker.unparsed = [...read.unparsed];
-  return read.chunks;
+  return read;
+}
+
+/**
+ * Start the delta rows' vectors now (WTO-5 warm-up: the rows are chunked, then
+ * every vector is resolved in the background) and return the view's reader. A
+ * chunk read that fails answers no vectors with its reason — the reader never
+ * rejects, so the answer is made without the dense leg.
+ */
+function warmDeltaVectors(
+  source: Pick<WorkingTreeDenseVectorSource, "warm">,
+  collectionName: string,
+  view: WorkingTreeView,
+  readChunked: () => Promise<WorkingTreeChunkLayerRead>,
+): WorkingTreeDenseVectorReader {
+  const warmed: Promise<WorkingTreeDenseVectorReader> = readChunked().then(
+    (read) =>
+      source.warm({
+        collectionName,
+        rows: read.chunks,
+        ...(read.storeKeys ? { storeKeys: read.storeKeys } : {}),
+        ...(view.readTouchedBasePoints ? { readTouchedBasePoints: view.readTouchedBasePoints } : {}),
+      }),
+    (error: unknown) => {
+      const failure = error instanceof Error ? error.message : String(error);
+      return async () => ({ vectors: new Map(), pending: 0, failure });
+    },
+  );
+  return async (waitMs) => (await warmed)(waitMs);
 }

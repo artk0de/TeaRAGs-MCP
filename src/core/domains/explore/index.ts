@@ -50,6 +50,7 @@ export {
   relativePathOf,
   scheduleWorkingTreeChunkSweep,
   WORKING_TREE_DELTA_FILE_CAP,
+  WorkingTreeDenseVectorSource,
   WorkingTreeOverlay,
   WorkingTreeTouchedBasePoints,
 } from "./working-tree/index.js";

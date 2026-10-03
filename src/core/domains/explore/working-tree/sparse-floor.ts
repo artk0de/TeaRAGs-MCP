@@ -10,13 +10,17 @@
  *     `ChunkPipeline`). Qdrant's `modifier: "idf"` has no collection statistics
  *     here, so the local leg ranks by TF overlap alone — it only ORDERS rows
  *     within this leg, and RRF reads nothing but the order.
+ *   - dense leg (WTO-5): rows with a vector, ordered by exact cosine against
+ *     the query vector (`denseRanking`, computed by the dense floor). Absent
+ *     when the view has no dense source; a row still without a vector is not
+ *     on it;
  *   - identity leg: rows the identity filter admits — the very filter
- *     `buildSymbolIdentityFilter` hands Qdrant — ordered by the sparse score,
- *     since the dense ordering that leg uses server-side is not available
- *     until the dense floor.
+ *     `buildSymbolIdentityFilter` hands Qdrant — ordered by the dense score as
+ *     the server's identity prefetch is, rows without a vector after them by
+ *     the sparse score.
  *
- * Rows ranking on neither leg are not candidates, as a point no prefetch
- * returned is not one for Qdrant. The dense leg is skipped (WTO-5).
+ * Rows ranking on no leg are not candidates, as a point no prefetch returned
+ * is not one for Qdrant.
  *
  * Per-query cost must not grow with the delta (bd tea-rags-mcp-xi2r9, live
  * probe P2-6 — 159 touched files: hybrid 365 ms against semantic 40 ms):
@@ -92,17 +96,30 @@ export interface WorkingTreeSparseScoring {
   pathMatcher?: (relativePath: string) => boolean;
   /** Each prefetch's limit: a row past it on a leg contributes nothing there. */
   legLimit: number;
+  /**
+   * The dense leg (WTO-5): ids of the admitted rows that have a vector, best
+   * cosine first. Absent → no dense leg (no dense source wired).
+   */
+  denseRanking?: readonly (string | number)[];
 }
 
 /** The tree's rows the request admits, each scored by RRF over the legs it ranks in; best first. */
 export function scoreWorkingTreeRows(rows: readonly ScrollChunk[], scoring: WorkingTreeSparseScoring): ExploreResult[] {
-  const admitted = rows.filter((row) => admits(row, scoring));
+  const admitted = rows.filter((row) => workingTreeRowAdmitted(row, scoring));
   const sparseScore = new Map(admitted.map((row) => [row, sparseDot(scoring.querySparse, row)]));
   const bySparse = [...admitted].sort((a, b) => (sparseScore.get(b) ?? 0) - (sparseScore.get(a) ?? 0));
 
   const legs: ScrollChunk[][] = [bySparse.filter((row) => (sparseScore.get(row) ?? 0) > 0)];
+  const denseRank = new Map((scoring.denseRanking ?? []).map((id, position) => [String(id), position]));
+  const byDense = [...admitted]
+    .filter((row) => denseRank.has(String(row.id)))
+    .sort((a, b) => (denseRank.get(String(a.id)) ?? 0) - (denseRank.get(String(b.id)) ?? 0));
+  if (scoring.denseRanking) legs.push(byDense);
   const { identityFilter } = scoring;
-  if (identityFilter) legs.push(bySparse.filter((row) => payloadMatchesFilter(row.payload, identityFilter)));
+  if (identityFilter) {
+    const identityOrder = [...byDense, ...bySparse.filter((row) => !denseRank.has(String(row.id)))];
+    legs.push(identityOrder.filter((row) => payloadMatchesFilter(row.payload, identityFilter)));
+  }
 
   const fused = new Map<ScrollChunk, number>();
   for (const leg of legs) {
@@ -125,7 +142,15 @@ export function fuseWorkingTreeRows(
   return [...base, ...tree].sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
-function admits(row: ScrollChunk, { requestFilter, pathMatcher }: WorkingTreeSparseScoring): boolean {
+/**
+ * Whether the request admits a tree row: the filter the base rows were held to
+ * and the exact pathPattern — so a tree row reaches the candidates exactly when
+ * its indexed twin could have. Shared by the sparse and dense floors.
+ */
+export function workingTreeRowAdmitted(
+  row: ScrollChunk,
+  { requestFilter, pathMatcher }: Pick<WorkingTreeSparseScoring, "requestFilter" | "pathMatcher">,
+): boolean {
   if (requestFilter && Object.keys(requestFilter).length > 0 && !payloadMatchesFilter(row.payload, requestFilter)) {
     return false;
   }

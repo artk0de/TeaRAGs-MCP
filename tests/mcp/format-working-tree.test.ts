@@ -34,3 +34,24 @@ describe("formatWorkingTreeMarker", () => {
     );
   });
 });
+
+/** The dense floor's line parts (bd tea-rags-mcp-xi2r9, WTO-5). */
+describe("formatWorkingTreeMarker — dense floor", () => {
+  it("should list the dense floor and say why some rows were ranked without a vector", () => {
+    const text = formatWorkingTreeMarker({
+      tree: "/repo/wt",
+      indexedCommit: "0123456789abcdef0123456789abcdef01234567",
+      treeCommit: "fedcba9876543210fedcba9876543210fedcba98",
+      indexedDirty: false,
+      changedFiles: 2,
+      deletedFiles: 0,
+      floors: ["chunks", "dense"],
+      denseUnavailable: { reason: "connect ECONNREFUSED 127.0.0.1:1" },
+    });
+
+    expect(text).toBe(
+      "workingTree: /repo/wt · index @0123456 · tree @fedcba9 · changed 2 · deleted 0 · floors chunks,dense" +
+        " · dense unavailable: connect ECONNREFUSED 127.0.0.1:1",
+    );
+  });
+});

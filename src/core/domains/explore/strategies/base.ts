@@ -14,14 +14,30 @@ import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { filterMetaOnly } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import { TestSetupHydrator } from "../test-setup-hydration.js";
+import { WORKING_TREE_DENSE_WAIT_MS, type WorkingTreeDenseVectors } from "../working-tree/dense-floor.js";
+import type { WorkingTreeView } from "../working-tree/overlay.js";
+import { excludeWorkingTreeBaseIds } from "../working-tree/sparse-floor.js";
 import {
   relativePathOf,
   retargetWorkingTreeRows,
   substituteWorkingTreeRows,
   workingTreeStateOf,
 } from "../working-tree/substitute.js";
+import { touchedBasePointIds, WorkingTreeTouchedBasePoints } from "../working-tree/touched-base-points.js";
 import { claimWorkingTreeFloors } from "../working-tree/tree-graph-marker.js";
 import type { ExploreContext, ExploreResult, ExploreStrategy } from "./types.js";
+
+/** What a dense-floor strategy reads from its view: the tree's rows and their vectors (WTO-5). */
+export interface WorkingTreeDenseFloorRead {
+  view: WorkingTreeView;
+  rows: readonly ScrollChunk[];
+  /**
+   * The rows' vectors, waiting at most {@link WORKING_TREE_DENSE_WAIT_MS} —
+   * a promise, so the Qdrant request runs while the vectors are awaited.
+   * Never rejects.
+   */
+  dense: Promise<WorkingTreeDenseVectors>;
+}
 
 /** Page size when the caller gives no (or a non-positive) limit. */
 const FALLBACK_PAGE_SIZE = 5;
@@ -62,6 +78,52 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
    */
   protected readonly hasChunkFloor: boolean = false;
 
+  /** Touched-file base points for a view without a reader wired; built on first use. */
+  private ownTouchedBasePoints?: WorkingTreeTouchedBasePoints;
+
+  /**
+   * Whether this strategy answers `view`'s touched files from the tree (it has
+   * a floor and the view can supply what that floor reads) rather than
+   * flagging their base rows with `treeState`. The chunk-floor strategies need
+   * the delta rows; the dense-floor ones override to need their vectors too.
+   */
+  protected hasWorkingTreeFloor(view: WorkingTreeView): boolean {
+    return this.hasChunkFloor && view.readDeltaChunks !== undefined;
+  }
+
+  /**
+   * `filter` with the base points of every file `view` touched excluded by ONE
+   * `has_id` (bd tea-rags-mcp-xi2r9) — the ids from the view's shared read, or
+   * this strategy's own reader (same cache rules) when the view has none wired.
+   */
+  protected async excludeWorkingTreeBase(
+    ctx: ExploreContext,
+    view: WorkingTreeView,
+    filter: Record<string, unknown> | undefined,
+  ): Promise<Record<string, unknown> | undefined> {
+    const read =
+      view.readTouchedBasePoints?.() ??
+      (this.ownTouchedBasePoints ??= new WorkingTreeTouchedBasePoints(this.qdrant)).pointsOf(
+        ctx.collectionName,
+        view.touchedPaths,
+        view.marker.indexedCommit,
+      );
+    return excludeWorkingTreeBaseIds(filter, touchedBasePointIds(await read));
+  }
+
+  /**
+   * The dense floor's read (WTO-5): the tree's rows, and their vectors waiting
+   * at most {@link WORKING_TREE_DENSE_WAIT_MS}. Undefined when the request
+   * reads no tree, the tree touched nothing, or the view cannot supply rows and
+   * vectors — the strategy then answers as before the floor.
+   */
+  protected async readWorkingTreeDenseFloor(ctx: ExploreContext): Promise<WorkingTreeDenseFloorRead | undefined> {
+    const view = ctx.workingTreeView;
+    if (!view?.readDeltaChunks || !view.readDeltaVectors || view.touchedPaths.size === 0) return undefined;
+    const dense = view.readDeltaVectors(WORKING_TREE_DENSE_WAIT_MS);
+    return { view, rows: await view.readDeltaChunks(), dense };
+  }
+
   /**
    * Main entry point: apply defaults → execute search → post-process → flag
    * base rows of delta files the strategy did not substitute.
@@ -90,7 +152,7 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
   ): ExploreResult[] {
     const view = ctx.workingTreeView;
     if (!view || view.touchedPaths.size === 0) return results;
-    if (this.hasChunkFloor && view.readDeltaChunks) return results;
+    if (this.hasWorkingTreeFloor(view)) return results;
     const rawPathById = new Map(rawResults.map((raw) => [raw.id, relativePathOf(raw.payload)]));
     return results.map((result) => {
       const path = relativePathOf(result.payload) || rawPathById.get(result.id);
@@ -130,7 +192,7 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
     toResult: (row: ScrollChunk) => ExploreResult,
   ): Promise<ExploreResult[]> {
     const view = ctx.workingTreeView;
-    if (!this.hasChunkFloor || !view?.readDeltaChunks || view.touchedPaths.size === 0) return rows;
+    if (!view?.readDeltaChunks || !this.hasWorkingTreeFloor(view) || view.touchedPaths.size === 0) return rows;
     if (!rows.some((row) => view.touchedPaths.has(relativePathOf(row.payload)))) return rows;
     const deltaRows = await view.readDeltaChunks();
     claimWorkingTreeFloors(view, ["chunks"]);
@@ -206,7 +268,7 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
     // A floor strategy's examples of touched files are the tree's rows, so
     // their setup is too (bd tea-rags-mcp-xi2r9.3). Without a floor they are
     // the index's rows, flagged by `treeState`, and the index's setup matches them.
-    const view = this.hasChunkFloor ? ctx.workingTreeView : undefined;
+    const view = ctx.workingTreeView && this.hasWorkingTreeFloor(ctx.workingTreeView) ? ctx.workingTreeView : undefined;
     return this.testSetupHydrator.hydrate(results, ctx.collectionName, view);
   }
 
