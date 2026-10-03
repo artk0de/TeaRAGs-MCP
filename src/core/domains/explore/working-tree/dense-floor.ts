@@ -21,7 +21,12 @@
  * process however many views ask (single-flight, then a bounded memory cache).
  * Vectors reach the store as they resolve — once after the store and base-point
  * stage, then after each provider batch for the files it advanced, embedded
- * file by file — so a process that exits mid-warm keeps what it got.
+ * file by file — so a process that exits mid-warm keeps what it got. A vector
+ * the store entry is known to hold (read from it, or written to it by this
+ * process) is never written to it again, so a warm delta asked on every request
+ * writes nothing. Each `warm` is one pass of the memory cache
+ * ({@link WorkingTreePassCache}), so a delta whose vectors exceed the bound
+ * still serves a stable share from memory.
  * `warm` starts all of it at once and returns a reader that waits at most the
  * time it is given: a row still without a vector is reported as pending (or
  * with the provider's failure), never thrown — the answer is made without it.
@@ -35,12 +40,12 @@ import type {
   WorkingTreeBasePoint,
   WorkingTreeTouchedBasePointsReader,
 } from "../../../contracts/types/working-tree.js";
-import { ByteBoundedLru } from "../../../infra/byte-bounded-lru.js";
 import { cosine } from "../../../infra/vector-math.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { WorkingTreeEmbeddingMalformedError } from "../errors.js";
 import type { ExploreResult } from "../strategies/types.js";
 import type { WorkingTreeChunkStore, WorkingTreeChunkStoreKey } from "./chunk-store.js";
+import { WorkingTreePassCache } from "./pass-cache.js";
 
 /** How long a ranked query waits for the delta rows' vectors before it answers without the missing ones. */
 export const WORKING_TREE_DENSE_WAIT_MS = 2_000;
@@ -92,6 +97,12 @@ export interface WorkingTreeDenseVectorSourceDeps {
  * (~16,000 rows) 2.7 times over. A 3,072-d provider still keeps ~10,900.
  */
 const DEFAULT_MEMORY_BYTES = 256 * 1024 * 1024;
+/**
+ * Bytes of the record of which vectors which store entry holds: one key per
+ * (entry, content sha256), ~250 bytes, so 16 MB covers ~67,000 rows. A key it
+ * forgot costs one redundant write, never a lost vector.
+ */
+const STORED_RECORD_BYTES = 16 * 1024 * 1024;
 /** What a vector costs the memory bound: V8 holds a `number[]` of doubles. */
 const vectorBytes = (vector: readonly number[]): number => vector.length * 8;
 const DEFAULT_BATCH_SIZE = 64;
@@ -117,6 +128,12 @@ interface WantedRow {
   span: number | undefined;
 }
 
+/** One warm-up's pass of each pass-protected cache. */
+interface DenseWarmPass {
+  memory: number;
+  stored: number;
+}
+
 /** The mutable progress of one warm-up: what its reader snapshots. */
 interface DenseWarmState {
   vectors: Map<string, readonly number[]>;
@@ -125,7 +142,9 @@ interface DenseWarmState {
 
 export class WorkingTreeDenseVectorSource {
   /** Vector by `model \0 content sha256`, bounded by {@link vectorBytes}. */
-  private readonly memory: ByteBoundedLru<readonly number[]>;
+  private readonly memory: WorkingTreePassCache<readonly number[]>;
+  /** `entry \0 content sha256` of every vector a store entry is known to hold — never written to it again. */
+  private readonly stored = new WorkingTreePassCache<true>(STORED_RECORD_BYTES);
   /** Embeds in flight by the same key: a second asker joins, never re-embeds. */
   private readonly inflight = new Map<string, Promise<readonly number[]>>();
   /** The last store write of each entry: the next write of that entry waits for it. */
@@ -133,7 +152,7 @@ export class WorkingTreeDenseVectorSource {
   private readonly batchSize: number;
 
   constructor(private readonly deps: WorkingTreeDenseVectorSourceDeps) {
-    this.memory = new ByteBoundedLru(deps.memoryBytes ?? DEFAULT_MEMORY_BYTES);
+    this.memory = new WorkingTreePassCache(deps.memoryBytes ?? DEFAULT_MEMORY_BYTES);
     this.batchSize = deps.batchSize ?? DEFAULT_BATCH_SIZE;
   }
 
@@ -142,9 +161,15 @@ export class WorkingTreeDenseVectorSource {
     const model = this.deps.embeddings.getModel();
     const wanted = wantedRows(request.rows);
     const state: DenseWarmState = { vectors: new Map() };
-    const done = this.fill(request, model, wanted, state).catch((error: unknown) => {
-      state.failure ??= messageOf(error);
-    });
+    const pass: DenseWarmPass = { memory: this.memory.beginPass(), stored: this.stored.beginPass() };
+    const done = this.fill(request, model, wanted, state, pass)
+      .catch((error: unknown) => {
+        state.failure ??= messageOf(error);
+      })
+      .finally(() => {
+        this.memory.endPass(pass.memory);
+        this.stored.endPass(pass.stored);
+      });
     const snapshot = (): WorkingTreeDenseVectors => ({
       vectors: new Map(state.vectors),
       pending: wanted.filter((row) => !state.vectors.has(row.id)).length,
@@ -161,19 +186,20 @@ export class WorkingTreeDenseVectorSource {
     model: string,
     wanted: readonly WantedRow[],
     state: DenseWarmState,
+    pass: DenseWarmPass,
   ): Promise<void> {
     const memoryKey = (row: WantedRow): string => `${model}\0${row.contentSha256}`;
     const settle = (row: WantedRow, vector: readonly number[]): void => {
       state.vectors.set(row.id, vector);
-      this.remember(memoryKey(row), vector);
+      this.remember(memoryKey(row), vector, pass);
     };
     const missing = (): WantedRow[] => wanted.filter((row) => !state.vectors.has(row.id));
 
     for (const row of wanted) {
-      const hit = this.memory.get(memoryKey(row));
+      const hit = this.memory.get(memoryKey(row), pass.memory);
       if (hit) state.vectors.set(row.id, hit);
     }
-    const fromStore = await this.readStored(request, model, missing());
+    const fromStore = await this.readStored(request, model, missing(), pass);
     for (const row of missing()) {
       const vector = fromStore.get(row.contentSha256);
       if (vector) settle(row, vector);
@@ -186,15 +212,19 @@ export class WorkingTreeDenseVectorSource {
       }
     }
     // What memory and the base points gave is stored now: a process that exits
-    // before the provider answers still leaves it for the next one.
+    // before the provider answers still leaves it for the next one. A vector the
+    // file's entry holds already is not — a warm delta writes nothing.
     const gainedOutsideStore = new Set<string>();
     for (const row of wanted) {
-      if (state.vectors.has(row.id) && !fromStore.has(row.contentSha256)) gainedOutsideStore.add(row.relativePath);
+      if (!state.vectors.has(row.id) || fromStore.has(row.contentSha256)) continue;
+      const entry = this.entryOf(request, model, row.relativePath);
+      if (entry !== undefined && this.stored.get(`${entry}\0${row.contentSha256}`, pass.stored)) continue;
+      gainedOutsideStore.add(row.relativePath);
     }
-    this.persist(request, model, wanted, state, gainedOutsideStore);
+    this.persist(request, model, wanted, state, gainedOutsideStore, pass);
     const toEmbed = groupedByFile(missing());
     if (toEmbed.length === 0) return;
-    await this.embed(model, toEmbed, (embedded) => {
+    await this.embed(model, toEmbed, pass, (embedded) => {
       const gained = new Set<string>();
       for (const row of toEmbed) {
         const vector = state.vectors.has(row.id) ? undefined : embedded.get(row.contentSha256);
@@ -202,8 +232,24 @@ export class WorkingTreeDenseVectorSource {
         settle(row, vector);
         gained.add(row.relativePath);
       }
-      this.persist(request, model, wanted, state, gained);
+      this.persist(request, model, wanted, state, gained, pass);
     });
+  }
+
+  /**
+   * The chunk-store entry id of `path`'s rows for `model` — what the record of
+   * stored vectors and the write chain are keyed by; undefined without a key.
+   */
+  private entryOf(request: WorkingTreeDenseVectorRequest, model: string, path: string): string | undefined {
+    const key = request.storeKeys?.get(path);
+    if (!key) return undefined;
+    return [request.collectionName, model, key.treeRoot, path, key.contentSha256, key.chunkerFingerprint].join("\0");
+  }
+
+  /** Records that the entry holds the vector of `contentSha256`; the bytes are the key's. */
+  private recordStored(entry: string, contentSha256: string, pass: DenseWarmPass): void {
+    const key = `${entry}\0${contentSha256}`;
+    this.stored.set(key, true, Buffer.byteLength(key), pass.stored);
   }
 
   /** Stored vectors of every file a missing row belongs to, by content sha256. */
@@ -211,6 +257,7 @@ export class WorkingTreeDenseVectorSource {
     request: WorkingTreeDenseVectorRequest,
     model: string,
     rows: readonly WantedRow[],
+    pass: DenseWarmPass,
   ): Promise<ReadonlyMap<string, readonly number[]>> {
     const { store } = this.deps;
     const found = new Map<string, readonly number[]>();
@@ -221,7 +268,11 @@ export class WorkingTreeDenseVectorSource {
         const key = request.storeKeys?.get(path);
         if (!key) return;
         const stored = await store.getVectors(request.collectionName, key, model).catch(() => undefined);
-        for (const [sha, vector] of stored ?? []) found.set(sha, vector);
+        const entry = this.entryOf(request, model, path);
+        for (const [sha, vector] of stored ?? []) {
+          found.set(sha, vector);
+          if (entry !== undefined) this.recordStored(entry, sha, pass);
+        }
       }),
     );
     return found;
@@ -272,6 +323,7 @@ export class WorkingTreeDenseVectorSource {
   private async embed(
     model: string,
     rows: readonly WantedRow[],
+    pass: DenseWarmPass,
     onEmbedded: (vectors: ReadonlyMap<string, readonly number[]>) => void,
   ): Promise<void> {
     const bySha = new Map<string, string>();
@@ -317,7 +369,7 @@ export class WorkingTreeDenseVectorSource {
         waits.set(sha, one);
         void one.then(
           (vector) => {
-            this.remember(key, vector);
+            this.remember(key, vector, pass);
             if (this.inflight.get(key) === one) this.inflight.delete(key);
           },
           () => {
@@ -342,7 +394,9 @@ export class WorkingTreeDenseVectorSource {
    * Write every vector `state` holds for each of `paths` beside that file's
    * rows. Fire and forget. The store merges a write into the entry's vectors by
    * reading then writing, so writes of one entry are chained — two overlapping
-   * writes would each drop what the other added.
+   * writes would each drop what the other added. What a write carries is
+   * recorded as held when it is queued (a later warm must not queue it again
+   * behind it), and forgotten if the write fails.
    */
   private persist(
     request: WorkingTreeDenseVectorRequest,
@@ -350,6 +404,7 @@ export class WorkingTreeDenseVectorSource {
     wanted: readonly WantedRow[],
     state: DenseWarmState,
     paths: ReadonlySet<string>,
+    pass: DenseWarmPass,
   ): void {
     const { store } = this.deps;
     if (!store || !request.storeKeys || paths.size === 0) return;
@@ -363,13 +418,14 @@ export class WorkingTreeDenseVectorSource {
     }
     for (const [path, vectors] of byPath) {
       const key = request.storeKeys.get(path);
-      if (!key) continue;
-      const entry = [request.collectionName, model, key.treeRoot, path, key.contentSha256, key.chunkerFingerprint].join(
-        "\0",
-      );
+      const entry = this.entryOf(request, model, path);
+      if (!key || entry === undefined) continue;
+      for (const sha of vectors.keys()) this.recordStored(entry, sha, pass);
       const write = (this.writes.get(entry) ?? Promise.resolve())
         .then(async () => store.putVectors(request.collectionName, key, model, vectors))
-        .catch(() => undefined);
+        .catch(() => {
+          for (const sha of vectors.keys()) this.stored.delete(`${entry}\0${sha}`);
+        });
       this.writes.set(entry, write);
       void write.then(() => {
         if (this.writes.get(entry) === write) this.writes.delete(entry);
@@ -377,8 +433,8 @@ export class WorkingTreeDenseVectorSource {
     }
   }
 
-  private remember(key: string, vector: readonly number[]): void {
-    this.memory.set(key, vector, vectorBytes(vector));
+  private remember(key: string, vector: readonly number[], pass: DenseWarmPass): void {
+    this.memory.set(key, vector, vectorBytes(vector), pass.memory);
   }
 }
 
