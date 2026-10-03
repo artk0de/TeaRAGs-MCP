@@ -37,6 +37,7 @@ import type {
 } from "../../../contracts/types/provider.js";
 import type { RerankPreset } from "../../../contracts/types/reranker.js";
 import { isDebug } from "../../../infra/runtime.js";
+import { GIT_TRAJECTORY_ALGORITHM_VERSION } from "./algorithm-version.js";
 import { gitFilters } from "./filters.js";
 import { GitBlameStore } from "./infra/blame-store.js";
 import { relativizeChunkMap } from "./infra/build-accumulators.js";
@@ -60,6 +61,7 @@ import { buildBugFixShaSet } from "./infra/merge-branch-resolver.js";
 import type { SquashOptions } from "./infra/metrics.js";
 import { assembleFileSignals } from "./infra/metrics/file-assembler.js";
 import { sliceCommitsFollowingRenames } from "./infra/rename-following.js";
+import { carryDirtyChunkMapOntoHead, zeroOverlaysOfUncommittedRows } from "./infra/working-rows.js";
 import { gitPayloadSignalDescriptors } from "./payload-signals.js";
 import { gitDerivedSignals } from "./rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "./rerank/presets/index.js";
@@ -116,8 +118,25 @@ interface ChunkPhaseHandoffSlice {
   readonly churnByPath: Map<string, FileChurnData>;
 }
 
+/**
+ * The git enrichment policy, as `GitEnrichmentProvider#shouldEnrich` answers
+ * it under `chunkMaxFileLines` — exported so a reader computing git blocks
+ * outside a run (the working tree's on-demand signals) declines exactly what an
+ * index run declines.
+ */
+export function gitEnrichmentScope(
+  file: { classification: FileClassification; fileLines?: number },
+  chunkMaxFileLines: number,
+): EnrichmentScope {
+  if (file.classification.isGenerated) return "none";
+  if (file.classification.isDocumentation) return "file-only";
+  if (file.fileLines !== undefined && file.fileLines > chunkMaxFileLines) return "file-only";
+  return "full";
+}
+
 export class GitEnrichmentProvider implements EnrichmentProvider {
   readonly key = "git";
+  readonly algorithmVersion = GIT_TRAJECTORY_ALGORITHM_VERSION;
 
   // ── Query-side contract ──
   readonly signals = gitPayloadSignalDescriptors;
@@ -286,10 +305,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    * tests) enriches fully.
    */
   shouldEnrich(file: { relPath: string; classification: FileClassification; fileLines?: number }): EnrichmentScope {
-    if (file.classification.isGenerated) return "none";
-    if (file.classification.isDocumentation) return "file-only";
-    if (file.fileLines !== undefined && file.fileLines > this.config.chunkMaxFileLines) return "file-only";
-    return "full";
+    return gitEnrichmentScope(file, this.config.chunkMaxFileLines);
   }
 
   readonly fileSignalTransform: FileSignalTransform;
@@ -742,11 +758,29 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     const handoff = this.sliceChunkHandoff(relPaths);
     let rawResult: Map<string, Map<string, ChunkChurnOverlay>>;
     let symbolCommits: Map<string, Map<string, Set<string>>> | undefined;
+    let uncommittedOverlays: Map<string, Map<string, ChunkChurnOverlay>>;
     try {
+      // The walk addresses HEAD rows; the chunker read the WORKING tree. A dirty
+      // file's rows are carried onto HEAD first, and rows made only of
+      // uncommitted lines get the walk's zero overlay (bd tea-rags-mcp-xi2r9).
+      const adapter = await this.adapterFor(root);
+      // The duck-typed contract shape is structurally BlobBatchReader (kc93).
+      const carried = await carryDirtyChunkMapOntoHead(
+        adapter,
+        chunkMap,
+        this.config.chunkTimeoutMs,
+        options?.blobReader,
+      );
+      const walkMap = carried.chunkMap;
+      uncommittedOverlays = zeroOverlaysOfUncommittedRows(adapter.repoRoot, carried.uncommittedRows, {
+        fileChurnDataMap: handoff.churnByPath,
+        maxFileLines: this.config.chunkMaxFileLines,
+        ...(this.squashOpts ? { squashOpts: this.squashOpts } : {}),
+      });
       if (walkThread && options?.commitDiscovery && options.skipCache) {
         const outcome = await this.walkChunkChurnOffThread(
           root,
-          chunkMap,
+          walkMap,
           walkThread,
           options.commitDiscovery,
           handoff,
@@ -756,8 +790,8 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       } else {
         const collected = new Map<string, Map<string, Set<string>>>();
         rawResult = await buildChunkChurnMap(
-          await this.adapterFor(root),
-          chunkMap,
+          adapter,
+          walkMap,
           this.enrichmentCache,
           this.isoGitCache,
           this.config.chunkConcurrency,
@@ -796,12 +830,14 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     }
 
     const result = new Map<string, Map<string, ChunkSignalOverlay>>();
-    for (const [filePath, overlayMap] of rawResult) {
-      const chunkEntries = new Map<string, ChunkSignalOverlay>();
-      for (const [chunkId, overlay] of overlayMap) {
-        chunkEntries.set(chunkId, overlay);
+    for (const overlays of [rawResult, uncommittedOverlays]) {
+      for (const [filePath, overlayMap] of overlays) {
+        const chunkEntries = result.get(filePath) ?? new Map<string, ChunkSignalOverlay>();
+        for (const [chunkId, overlay] of overlayMap) {
+          chunkEntries.set(chunkId, overlay);
+        }
+        result.set(filePath, chunkEntries);
       }
-      result.set(filePath, chunkEntries);
     }
     return result;
   }

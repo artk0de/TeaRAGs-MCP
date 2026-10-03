@@ -1,0 +1,305 @@
+/**
+ * `WorkingTreeOverlay` and the tree graph (bd tea-rags-mcp-xi2r9, WTO-7): a
+ * view with a measured non-empty delta starts the tree-graph build at once
+ * (warm-up, `graphFor(request, 0)`) and offers `readTreeGraph`; a clean or
+ * degraded view does neither. Delta rows come out of `signalDeltaRows`
+ * enriched by the injected signal source, file by file as answers ask, and the
+ * marker records which graph their codegraph block came from.
+ */
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type {
+  WorkingTree,
+  WorkingTreeDeltaSignalSource,
+  WorkingTreeGraphSource,
+  WorkingTreeGraphState,
+} from "../../../../../src/core/contracts/types/working-tree.js";
+import {
+  claimWorkingTreeFloors,
+  createWorkingTreeChunkLayer,
+  WorkingTreeOverlay,
+  type WorkingTreeDeltaReader,
+  type WorkingTreeView,
+} from "../../../../../src/core/domains/explore/working-tree/index.js";
+
+const COLLECTION = "code_tree_graph";
+const BUILT: WorkingTreeGraphState = {
+  kind: "built",
+  dbPath: "/graphs/tree.duckdb",
+  physicalCollectionName: "code_tree_graph_v1" as never,
+};
+
+describe("WorkingTreeOverlay tree graph (WTO-7)", () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "wto-tree-graph-"));
+    mkdirSync(join(root, "src"));
+    writeFileSync(join(root, "src/a.ts"), "export const a = 1;\n");
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const workingTree = (): WorkingTree => ({ root, baseIndex: { collectionName: COLLECTION, root } });
+
+  const registry = { get: () => ({ git: { indexedCommit: "a".repeat(40), indexedDirty: false } }) } as never;
+
+  const deltaReader = (changed: string[], deleted: string[] = []): WorkingTreeDeltaReader => ({
+    read: vi.fn(async () => ({ kind: "measured" as const, delta: { changed, deleted, fingerprint: "fp-1" } })),
+  });
+
+  const graphSource = (state: WorkingTreeGraphState = BUILT) => ({
+    graphFor: vi.fn<WorkingTreeGraphSource["graphFor"]>(async () => state),
+  });
+
+  const overlayWith = (
+    reader: WorkingTreeDeltaReader,
+    extra: Partial<ConstructorParameters<typeof WorkingTreeOverlay>[0]> = {},
+  ): WorkingTreeOverlay =>
+    new WorkingTreeOverlay({ registry, deltaReader: reader, createFileFilter: async () => () => true, ...extra });
+
+  it("should start the tree graph build once, without waiting, for a non-empty delta", async () => {
+    const treeGraph = graphSource();
+
+    await overlayWith(deltaReader(["src/a.ts"], ["src/gone.ts"]), { treeGraph }).view(workingTree(), "proj");
+
+    expect(treeGraph.graphFor).toHaveBeenCalledTimes(1);
+    const [request, waitMs] = treeGraph.graphFor.mock.calls[0];
+    expect(waitMs).toBe(0);
+    expect(request.tree).toEqual(workingTree());
+    expect(request.changed).toEqual(["src/a.ts"]);
+    expect(request.deleted).toEqual(["src/gone.ts"]);
+    expect(request.fingerprint).toEqual(expect.any(String));
+  });
+
+  it("should neither warm up nor offer a tree graph for a clean tree", async () => {
+    const treeGraph = graphSource();
+
+    const view = await overlayWith(deltaReader([]), { treeGraph }).view(workingTree(), "proj");
+
+    expect(treeGraph.graphFor).not.toHaveBeenCalled();
+    expect(view.readTreeGraph).toBeUndefined();
+  });
+
+  it("should neither warm up nor offer a tree graph for a degraded view", async () => {
+    const treeGraph = graphSource();
+    const degraded: WorkingTreeDeltaReader = {
+      read: async () => ({ kind: "degraded", reason: "no stamp", remedy: "reindex" }),
+    };
+
+    const view = await overlayWith(degraded, { treeGraph }).view(workingTree(), "proj");
+
+    expect(treeGraph.graphFor).not.toHaveBeenCalled();
+    expect(view.readTreeGraph).toBeUndefined();
+  });
+
+  it("should hand readTreeGraph's wait to the graph source with the warm-up's request", async () => {
+    const treeGraph = graphSource();
+    const view = await overlayWith(deltaReader(["src/a.ts"]), { treeGraph }).view(workingTree(), "proj");
+
+    const state = await view.readTreeGraph?.(3000);
+
+    expect(state).toEqual(BUILT);
+    expect(treeGraph.graphFor).toHaveBeenLastCalledWith(treeGraph.graphFor.mock.calls[0][0], 3000);
+    // Reading the graph is not using it: the marker is stamped by whoever reads from it.
+    expect(view.marker.floors).toEqual([]);
+  });
+
+  it("should not ask again once the graph answered built", async () => {
+    const treeGraph = graphSource();
+    const view = await overlayWith(deltaReader(["src/a.ts"]), { treeGraph }).view(workingTree(), "proj");
+
+    await view.readTreeGraph?.(3000);
+    await view.readTreeGraph?.(120_000);
+
+    expect(treeGraph.graphFor).toHaveBeenCalledTimes(2); // warm-up + first read
+  });
+
+  describe("delta row signals", () => {
+    const CHUNKER_CONFIG = { chunkSize: 2500, chunkOverlap: 300, maxChunkSize: 2500 };
+    const layer = () =>
+      createWorkingTreeChunkLayer({
+        createPool: () => ({ shutdown: async () => undefined }),
+        chunkFile: async (_pool: unknown, file: { relativePath: string }) => [
+          { id: `id:${file.relativePath}`, payload: { relativePath: file.relativePath } },
+        ],
+      });
+
+    // Invariant changed (live C1, bd tea-rags-mcp-xi2r9): `readDeltaChunks`
+    // yields the chunk layer's structure; the trajectory payload comes from
+    // `signalDeltaRows`, asked for the rows an answer admits. These tests ask
+    // it for every row, which is what the eager read used to give.
+    const signalAll = async (view: WorkingTreeView) => view.signalDeltaRows?.((await view.readDeltaChunks?.()) ?? []);
+
+    const signalSource = (treeGraph: WorkingTreeGraphState | undefined) => ({
+      enrich: vi.fn<WorkingTreeDeltaSignalSource["enrich"]>(async (request) => ({
+        rows: request.rows.map((row) => ({ ...row, payload: { ...row.payload, git: { file: { commitCount: 7 } } } })),
+        ...(treeGraph ? { treeGraph } : {}),
+      })),
+    });
+
+    it("should enrich the delta rows once, handing the source the view's tree graph", async () => {
+      const chunkLayer = layer();
+      const deltaSignals = signalSource(BUILT);
+      const treeGraph = graphSource();
+      const view = await overlayWith(deltaReader(["src/a.ts"]), {
+        treeGraph,
+        deltaSignals,
+        deltaChunks: { layer: chunkLayer, resolveChunkerConfig: async () => CHUNKER_CONFIG },
+      }).view(workingTree(), "proj");
+
+      const rows = await signalAll(view);
+      await signalAll(view);
+
+      expect(rows?.[0].payload).toMatchObject({ relativePath: "src/a.ts", git: { file: { commitCount: 7 } } });
+      expect(deltaSignals.enrich).toHaveBeenCalledTimes(1);
+      const [request] = deltaSignals.enrich.mock.calls[0];
+      expect(request.tree).toEqual(workingTree());
+      expect(request.readTreeGraph).toBe(view.readTreeGraph);
+      await chunkLayer.dispose();
+    });
+
+    // Live G1: the source recomputes git of files a commit touched since the
+    // index, so it needs the index's stamp.
+    it("should hand the source the base index's indexedCommit", async () => {
+      const chunkLayer = layer();
+      const deltaSignals = signalSource(BUILT);
+      const view = await overlayWith(deltaReader(["src/a.ts"]), {
+        treeGraph: graphSource(),
+        deltaSignals,
+        deltaChunks: { layer: chunkLayer, resolveChunkerConfig: async () => CHUNKER_CONFIG },
+      }).view(workingTree(), "proj");
+
+      await signalAll(view);
+
+      expect(deltaSignals.enrich.mock.calls[0][0].indexedCommit).toBe("a".repeat(40));
+      await chunkLayer.dispose();
+    });
+
+    // Invariant changed (live D8): READING the rows claims nothing — find_similar
+    // reads them only for a tree positive's content and answers with base rows.
+    // The strategy that puts the rows into its answer claims the floors, and
+    // only then does the rows' graph provenance reach the marker.
+    it("should add the codegraph floor when rows claimed into an answer carry the tree graph's data", async () => {
+      const chunkLayer = layer();
+      const view = await overlayWith(deltaReader(["src/a.ts"]), {
+        treeGraph: graphSource(),
+        deltaSignals: signalSource(BUILT),
+        deltaChunks: { layer: chunkLayer, resolveChunkerConfig: async () => CHUNKER_CONFIG },
+      }).view(workingTree(), "proj");
+
+      await signalAll(view);
+      expect(view.marker.floors).toEqual([]);
+      claimWorkingTreeFloors(view, ["chunks"], 1);
+
+      expect(view.marker.floors).toEqual(["chunks", "codegraph"]);
+      expect(view.marker.treeGraphUnavailable).toBeUndefined();
+      await chunkLayer.dispose();
+    });
+
+    it("should name why claimed rows inherited the index's graph data", async () => {
+      const chunkLayer = layer();
+      const view = await overlayWith(deltaReader(["src/a.ts"]), {
+        treeGraph: graphSource(),
+        deltaSignals: signalSource({ kind: "unavailable", reason: "building" }),
+        deltaChunks: { layer: chunkLayer, resolveChunkerConfig: async () => CHUNKER_CONFIG },
+      }).view(workingTree(), "proj");
+
+      await signalAll(view);
+      expect(view.marker.treeGraphUnavailable).toBeUndefined();
+      claimWorkingTreeFloors(view, ["chunks", "sparse"], 1);
+
+      expect(view.marker.floors).toEqual(["chunks", "sparse"]);
+      expect(view.marker.treeGraphUnavailable).toBe("building");
+      await chunkLayer.dispose();
+    });
+
+    // bd tea-rags-mcp-xi2r9: the touched files' base points are read ONCE per
+    // request and shared — hybrid's exclusion and the delta signals both ask
+    // the view, and the view asks the reader once.
+    it("should read the touched files' base points once per view and hand that read to the signal source", async () => {
+      const chunkLayer = layer();
+      const deltaSignals = signalSource(BUILT);
+      const points = new Map([["src/a.ts", [{ id: "b1", payload: { relativePath: "src/a.ts" } }]]]);
+      const touchedBasePoints = { pointsOf: vi.fn(async () => points) };
+      const view = await overlayWith(deltaReader(["src/a.ts"], ["src/gone.ts"]), {
+        deltaSignals,
+        touchedBasePoints,
+        deltaChunks: { layer: chunkLayer, resolveChunkerConfig: async () => CHUNKER_CONFIG },
+      }).view(workingTree(), "proj");
+
+      await signalAll(view);
+      const [request] = deltaSignals.enrich.mock.calls[0];
+      const fromRequest = await request.readTouchedBasePoints?.();
+      const fromView = await view.readTouchedBasePoints?.();
+
+      expect(fromRequest).toBe(points);
+      expect(fromView).toBe(points);
+      expect(touchedBasePoints.pointsOf).toHaveBeenCalledTimes(1);
+      expect(touchedBasePoints.pointsOf).toHaveBeenCalledWith(
+        COLLECTION,
+        new Set(["src/a.ts", "src/gone.ts"]),
+        "a".repeat(40),
+      );
+      await chunkLayer.dispose();
+    });
+
+    // Live C1: a 159-file delta blamed every file on the first cold find_symbol
+    // after a commit, although the answer held one file.
+    it("should signal only the files of the rows it is handed, each file once per view", async () => {
+      writeFileSync(join(root, "src/b.ts"), "export const b = 1;\n");
+      writeFileSync(join(root, "src/c.ts"), "export const c = 1;\n");
+      const chunkLayer = layer();
+      const deltaSignals = signalSource(BUILT);
+      const view = await overlayWith(deltaReader(["src/a.ts", "src/b.ts", "src/c.ts"]), {
+        treeGraph: graphSource(),
+        deltaSignals,
+        deltaChunks: { layer: chunkLayer, resolveChunkerConfig: async () => CHUNKER_CONFIG },
+      }).view(workingTree(), "proj");
+      const rows = (await view.readDeltaChunks?.()) ?? [];
+      const rowOf = (path: string) => rows.filter((row) => row.payload.relativePath === path);
+
+      expect(rows).toHaveLength(3);
+      expect(rows.every((row) => row.payload.git === undefined)).toBe(true);
+      expect(deltaSignals.enrich).not.toHaveBeenCalled();
+
+      const [a] = (await view.signalDeltaRows?.(rowOf("src/a.ts"))) ?? [];
+      expect(a.payload).toMatchObject({ relativePath: "src/a.ts", git: { file: { commitCount: 7 } } });
+      expect(deltaSignals.enrich.mock.calls.map(([request]) => request.rows.map((row) => row.id))).toEqual([
+        ["id:src/a.ts"],
+      ]);
+
+      // A row the view does not hold passes through untouched.
+      const foreign = { id: "base", payload: { relativePath: "src/other.ts" } };
+      const again = (await view.signalDeltaRows?.([...rowOf("src/a.ts"), ...rowOf("src/b.ts"), foreign])) ?? [];
+      expect(again.map((row) => (row.payload as Record<string, unknown>).git)).toEqual([
+        { file: { commitCount: 7 } },
+        { file: { commitCount: 7 } },
+        undefined,
+      ]);
+      expect(deltaSignals.enrich.mock.calls.map(([request]) => request.rows.map((row) => row.id))).toEqual([
+        ["id:src/a.ts"],
+        ["id:src/b.ts"],
+      ]);
+      await chunkLayer.dispose();
+    });
+
+    it("should return the layer's rows untouched when no signal source is wired", async () => {
+      const chunkLayer = layer();
+      const view = await overlayWith(deltaReader(["src/a.ts"]), {
+        deltaChunks: { layer: chunkLayer, resolveChunkerConfig: async () => CHUNKER_CONFIG },
+      }).view(workingTree(), "proj");
+
+      const rows = await view.readDeltaChunks?.();
+
+      expect(rows).toEqual([{ id: "id:src/a.ts", payload: { relativePath: "src/a.ts" } }]);
+      await chunkLayer.dispose();
+    });
+  });
+});

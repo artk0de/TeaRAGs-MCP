@@ -102,6 +102,15 @@ async function fetchWithTimeout(
   }
 }
 
+/** A hook's failure is its own: it must not fail the decision every embed waits on. */
+function runEndpointResolvedHook(hook: () => void): void {
+  try {
+    hook();
+  } catch (error) {
+    console.error("[Ollama] endpoint-resolved hook failed:", error);
+  }
+}
+
 /** Detect "input length exceeds context" error from Ollama response body. */
 function isContextOverflow(body: string): boolean {
   const lower = body.toLowerCase();
@@ -181,7 +190,10 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private cachedModelInfo?: OllamaModelInfo;
   /** The `/api/show` probe currently on the wire, so concurrent callers share one round trip. */
   private modelInfoInFlight?: Promise<OllamaModelInfo | undefined>;
-  private readonly healthReady?: Promise<void>;
+  /** The endpoint decision once something asked for it — see `resolveEndpoint`. */
+  private endpointResolution?: Promise<void>;
+  private endpointResolved = false;
+  private readonly endpointResolvedHooks: (() => void)[] = [];
   /** Resolves once the quantized model copy (if any) is provisioned and live. */
   private readonly modelReady?: Promise<void>;
   private readonly quantizationLevel: OllamaQuantizationLevel = "off";
@@ -242,9 +254,9 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       minTime: Math.floor((60 * 1000) / maxRequestsPerMinute),
     });
 
-    if (fallbackBaseUrl) {
-      this.healthReady = this.checkInitialHealth();
-    }
+    // No endpoint probe here: `resolveEndpoint` runs it on first need, so a
+    // process that never embeds (a cold `tea-rags call get_callers`) never
+    // waits out an unreachable primary (bd tea-rags-mcp-xi2r9, B3).
 
     this.quantizationLevel = resolveOllamaQuantizationLevel(rateLimitConfig?.ollamaQuantization);
     if (rateLimitConfig?.ollamaAutoPull || this.quantizationLevel !== "off") {
@@ -270,12 +282,34 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
   /**
    * Gate every embed path waits on: the endpoint failover decision AND the
-   * quantized-model provisioning. Both are constructor-armed; awaiting them
-   * here is what keeps a first embed from racing the startup work.
+   * quantized-model provisioning. The decision is made here, on first need;
+   * the provisioning is constructor-armed. Awaiting both is what keeps a first
+   * embed from racing either.
    */
   private async startupReady(): Promise<void> {
-    await this.healthReady;
+    await this.resolveEndpoint();
     await this.modelReady;
+  }
+
+  /**
+   * Decide, once, which endpoint the embeds go to: with a fallback configured
+   * the primary is probed (`checkInitialHealth`), without one there is nothing
+   * to decide. Every caller shares the one decision; the endpoint-resolved
+   * hooks run right after it, before any caller proceeds.
+   */
+  async resolveEndpoint(): Promise<void> {
+    this.endpointResolution ??= (async () => {
+      if (this.fallbackBaseUrl) await this.checkInitialHealth();
+      this.endpointResolved = true;
+      for (const hook of this.endpointResolvedHooks.splice(0)) runEndpointResolvedHook(hook);
+    })();
+    return this.endpointResolution;
+  }
+
+  /** Run `hook` once the endpoint is decided — now, if it already is. Never starts the decision. */
+  whenEndpointResolved(hook: () => void): void {
+    if (this.endpointResolved) runEndpointResolvedHook(hook);
+    else this.endpointResolvedHooks.push(hook);
   }
 
   /**
@@ -913,7 +947,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
   private async fetchModelInfo(): Promise<OllamaModelInfo | undefined> {
     // Same ordering as embed()/checkHealth(): the active URL is only decided
-    // once the constructor's failover check has settled.
+    // once the failover check (`resolveEndpoint`) has settled.
     await this.startupReady();
     const url = this.resolveActiveUrl();
     try {
@@ -954,8 +988,8 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   }
 
   async checkHealth(): Promise<boolean> {
-    // Probe the endpoint the next embed will use, which the constructor's
-    // failover check decides — read before it settles, the primary gets
+    // Probe the endpoint the next embed will use, which the failover check
+    // (`resolveEndpoint`) decides — read before it settles, the primary gets
     // probed even when failover is about to flip to the fallback (jyka).
     await this.startupReady();
     if (this.lastHealthResult !== undefined && Date.now() - this.lastHealthAt < HEALTH_CACHE_TTL_MS) {

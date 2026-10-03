@@ -49,6 +49,31 @@ export function servicePointExclusions(): QdrantMatchCondition[] {
   return SERVICE_POINT_TYPES.map((type) => ({ key: "_type", match: { value: type } }));
 }
 
+/**
+ * `filter` narrowed to chunk points: the caller's filter unchanged otherwise.
+ * Every RANKED query goes through it in `QdrantSearchExecutor`. Both service
+ * points carry vectors (the marker holds the embedding canary), so a ranked
+ * query that does not exclude them ranks them like chunks — in a small
+ * collection they placed 3rd and 5th in semantic_search, hybrid_search and
+ * find_similar (bd tea-rags-mcp-xi2r9, live probe). `_type` is keyword-indexed,
+ * so the exclusion is an index lookup per candidate, not a payload read.
+ *
+ * Accepts the executor's two filter shapes — a Qdrant filter, or the flat
+ * `{ key: value }` form it expands to `must` — and never mutates the input.
+ */
+export function withServicePointExclusions(filter: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!filter || Object.keys(filter).length === 0) return { must_not: servicePointExclusions() };
+  if (filter.must || filter.should || filter.must_not) {
+    const own = filter.must_not;
+    const mustNot: unknown[] = Array.isArray(own) ? (own as unknown[]) : own ? [own] : [];
+    return { ...filter, must_not: [...mustNot, ...servicePointExclusions()] };
+  }
+  return {
+    must: Object.entries(filter).map(([key, value]) => ({ key, match: { value } })),
+    must_not: servicePointExclusions(),
+  };
+}
+
 /** Filter selecting chunk points only — hand it to `countPoints` for a chunk count. */
 export function chunkPointsFilter(): { must_not: QdrantMatchCondition[] } {
   return { must_not: servicePointExclusions() };

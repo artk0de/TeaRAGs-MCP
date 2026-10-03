@@ -16,6 +16,20 @@
  * table carries no PRIMARY KEY. A review writes once and drops whole; nothing
  * diffs it, so a key on a table this short-lived is wasted generations.
  *
+ * It is a TEMP table (DuckDB's `temp` catalog: in memory, scoped to the
+ * connection), never a table of the database file (bd tea-rags-mcp-xi2r9, D4).
+ * A review is a READ of the graph; a persistent CREATE/DROP wrote the `.wal`,
+ * which moved the base graph's version (`(size, mtimeMs)` of `.duckdb` and
+ * `.wal`) and made every working-tree graph and snapshot of the collection
+ * stale. A temp table leaves both files byte- and mtime-identical, and works
+ * over a READ_ONLY session too. The connection is the scope: in daemon mode
+ * every client shares the daemon's one connection, so concurrent reviews
+ * coexist in one temp catalog under their unique ids; a review holds one
+ * handle from sweep to drop, so direct mode sees its own table throughout. A
+ * connection that closes mid-review (idle eviction, compaction's reopen) takes
+ * the table with it, which reads as "no edges" — the same answer as a dropped
+ * table.
+ *
  * Cleanup contract — guaranteed, not best-effort. Three layers:
  *
  * 1. The review flow's finally-drop: the orchestration (arriving with F2)
@@ -65,9 +79,14 @@ function reviewTableName(reviewId: string): string {
   return `${REVIEW_EDGE_TABLE_PREFIX}${reviewId}`;
 }
 
-/** Double-quote a table name for interpolation into DDL. */
+/** Double-quote an identifier for interpolation into DDL. */
 function quoteIdentifier(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
+}
+
+/** The review table in DuckDB's connection-scoped `temp` catalog — never the database file. */
+function tempTable(name: string): string {
+  return `temp.main.${quoteIdentifier(name)}`;
 }
 
 interface EdgeRow {
@@ -75,13 +94,20 @@ interface EdgeRow {
   target_rel_path: string;
 }
 
+/** A review table the catalog lists — a temp one, or a persistent leftover of an older build. */
+interface ReviewTableRow {
+  database_name: string;
+  table_name: string;
+  temporary: boolean;
+}
+
 export class DuckDbReviewEdgeStore {
   constructor(private readonly session: DuckDbGraphSession) {}
 
-  /** Create the review's table when absent. Runtime DDL — never a migration. */
+  /** Create the review's TEMP table when absent. Runtime DDL — never a migration, never the file. */
   async createReviewTable(reviewId: string): Promise<void> {
     await this.session.exec(
-      `CREATE TABLE IF NOT EXISTS ${quoteIdentifier(reviewTableName(reviewId))} ` +
+      `CREATE TEMP TABLE IF NOT EXISTS ${quoteIdentifier(reviewTableName(reviewId))} ` +
         "(source_rel_path VARCHAR NOT NULL, target_rel_path VARCHAR NOT NULL)",
     );
   }
@@ -91,7 +117,7 @@ export class DuckDbReviewEdgeStore {
     await this.session.transaction(async () => {
       await this.createReviewTable(reviewId);
       await this.session.insertBatched(
-        quoteIdentifier(reviewTableName(reviewId)),
+        tempTable(reviewTableName(reviewId)),
         [...COLUMNS],
         edges.map((e) => [e.sourceRelPath, e.targetRelPath]),
       );
@@ -100,7 +126,7 @@ export class DuckDbReviewEdgeStore {
 
   /** Drop the review's table. `IF EXISTS`: the finally-drop is idempotent. */
   async dropReviewTable(reviewId: string): Promise<void> {
-    await this.session.exec(`DROP TABLE IF EXISTS ${quoteIdentifier(reviewTableName(reviewId))}`);
+    await this.session.exec(`DROP TABLE IF EXISTS ${tempTable(reviewTableName(reviewId))}`);
   }
 
   /**
@@ -109,19 +135,30 @@ export class DuckDbReviewEdgeStore {
    * Names are taken from the catalog and re-quoted with doubling, so even a
    * hostile name in our own database cannot leave the identifier. Returns the
    * dropped names.
+   *
+   * Temp tables are what this build writes. A PERSISTENT one is a leftover of
+   * a build that still created them in the database file; dropping it is a
+   * write, so it happens only when one exists — and on a READ_ONLY session,
+   * which cannot drop it, it is left for a writer's sweep.
    */
   async sweepExpiredReviewTables(nowEpochSeconds: number, maxAgeSeconds: number): Promise<string[]> {
-    const rows = await this.session.queryAll<{ table_name: string }>(
-      "SELECT table_name FROM information_schema.tables " +
-        "WHERE table_schema = 'main' AND table_type = 'BASE TABLE' ORDER BY table_name",
+    const rows = await this.session.queryAll<ReviewTableRow>(
+      "SELECT database_name, table_name, temporary FROM duckdb_tables() " +
+        "WHERE schema_name = 'main' AND (temporary OR database_name = current_database()) " +
+        "AND starts_with(table_name, ?) ORDER BY table_name",
+      [REVIEW_EDGE_TABLE_PREFIX],
     );
     const dropped: string[] = [];
-    for (const { table_name: name } of rows) {
-      if (!name.startsWith(REVIEW_EDGE_TABLE_PREFIX)) continue;
+    for (const { database_name: database, table_name: name, temporary } of rows) {
       const epoch = /^\d+/.exec(name.slice(REVIEW_EDGE_TABLE_PREFIX.length))?.[0];
       const expired = epoch === undefined || nowEpochSeconds - Number(epoch) >= maxAgeSeconds;
       if (!expired) continue;
-      await this.session.exec(`DROP TABLE IF EXISTS ${quoteIdentifier(name)}`);
+      if (temporary) {
+        await this.session.exec(`DROP TABLE IF EXISTS ${tempTable(name)}`);
+      } else {
+        if (this.session.accessMode === "READ_ONLY") continue;
+        await this.session.exec(`DROP TABLE IF EXISTS ${quoteIdentifier(database)}.main.${quoteIdentifier(name)}`);
+      }
       dropped.push(name);
     }
     return dropped;
@@ -131,7 +168,7 @@ export class DuckDbReviewEdgeStore {
   async readReviewFileEdges(reviewId: string): Promise<ReviewFileEdge[]> {
     const name = reviewTableName(reviewId);
     const found = await this.session.queryAll<{ n: number }>(
-      "SELECT count(*) AS n FROM information_schema.tables WHERE table_schema = 'main' AND table_name = ?",
+      "SELECT count(*) AS n FROM duckdb_tables() WHERE temporary AND schema_name = 'main' AND table_name = ?",
       [name],
     );
     // The driver hands BIGINT back as a STRING in JSON mode — "0" === 0 is
@@ -139,7 +176,7 @@ export class DuckDbReviewEdgeStore {
     // missing name instead of reading as no edges.
     if (Number(found[0]?.n ?? 0) === 0) return [];
     const rows = await this.session.queryAll<EdgeRow>(
-      `SELECT source_rel_path, target_rel_path FROM ${quoteIdentifier(name)} ORDER BY source_rel_path, target_rel_path`,
+      `SELECT source_rel_path, target_rel_path FROM ${tempTable(name)} ORDER BY source_rel_path, target_rel_path`,
     );
     return rows.map((r) => ({ sourceRelPath: r.source_rel_path, targetRelPath: r.target_rel_path }));
   }

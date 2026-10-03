@@ -109,6 +109,11 @@ export const DAEMON_OPS = [
   // ── reads (the daemon owns the sole DuckDB connection, so all reads route
   //    through its own RW connection instead of a conflicting cross-process
   //    READ_ONLY attach) ──
+  // A consistent copy of the collection's graph at a caller-chosen path (bd
+  // tea-rags-mcp-xi2r9): only the daemon can read the rows its WAL holds. A READ
+  // of the collection — the live file is untouched. Tolerated legacy op: an
+  // older daemon's "unknown op" becomes a typed refusal, not a drain.
+  "exportSnapshot",
   "getFanIn",
   "getFanInP95",
   "getFanOut",
@@ -235,6 +240,7 @@ export interface DaemonRequest {
     | { collection: string; relPaths: RelPath[]; maxDepth?: number } // getFileMetricsBulk | getSymbolLineRangesBulk (no maxDepth)
     | { collection: string; oldVersion: string; newVersion: string } // finalizeReindex
     | { collection: string; target: string } // removeCollectionDatabase
+    | { collection: string; targetPath: string } // exportSnapshot
     | { collection: string; source: string; target: string } // cloneCollectionDatabase
     | { collection: string; symbolId: SymbolId } // getCallers | getCallees | getCalledByCount | getCallSiteCount
     | { collection: string; symbolId: SymbolId; relPath?: RelPath } // getPageRank

@@ -96,6 +96,50 @@ function makeMockCollectionRegistry() {
 // Tests
 // ---------------------------------------------------------------------------
 
+/**
+ * bd tea-rags-mcp-xi2r9, B3: a tool that compares no freshly embedded vector
+ * against the index asks the model guard for the NAME only — the canary is an
+ * embed, and embedding it made every cold `rank_chunks` / `find_symbol` wait out
+ * the provider's endpoint failover. A tool that embeds its query keeps the full
+ * check, outage throw included.
+ */
+describe("ExploreOps model-guard mode per tool", () => {
+  const guardCallsOf = async (act: (ops: ExploreOps) => Promise<unknown>) => {
+    const modelGuard = { ensureMatch: vi.fn().mockResolvedValue(undefined) };
+    const ops = new ExploreOps({
+      qdrant: makeMockQdrant(),
+      embeddings: makeMockEmbeddings(),
+      reranker: makeMockReranker(),
+      registry: makeMockRegistry(),
+      collectionRegistry: makeMockCollectionRegistry(),
+      payloadSignals: [],
+      essentialKeys: [],
+      modelGuard: modelGuard as any,
+    });
+    await act(ops).catch(() => undefined);
+    return modelGuard.ensureMatch.mock.calls;
+  };
+
+  it("rank_chunks checks the name only", async () => {
+    const calls = await guardCallsOf(async (ops) =>
+      ops.rankChunks({ collection: "code_test_col", rerank: "codeReview" }),
+    );
+    expect(calls).toEqual([["code_test_col", { nameOnly: true }]]);
+  });
+
+  it("find_symbol checks the name only", async () => {
+    const calls = await guardCallsOf(async (ops) => ops.findSymbol({ symbol: "Foo#bar", collection: "code_test_col" }));
+    expect(calls).toEqual([["code_test_col", { nameOnly: true }]]);
+  });
+
+  it("semantic_search keeps the full check", async () => {
+    const calls = await guardCallsOf(async (ops) =>
+      ops.semanticSearch({ query: "retry", collection: "code_test_col" }),
+    );
+    expect(calls).toEqual([["code_test_col", { failOnProviderOutage: true }]]);
+  });
+});
+
 describe("ExploreOps.findSymbol", () => {
   beforeEach(() => {
     vi.clearAllMocks();

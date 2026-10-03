@@ -6,6 +6,7 @@
  */
 
 import type { TemporalCochangeBuildMeta } from "../../../contracts/types/codegraph.js";
+import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 import type {
   FileCochangeRanking,
   RankedCochangePartner,
@@ -43,4 +44,6 @@ export interface FindCoChangedResult {
   built: boolean;
   provenance?: CoChangeBuildProvenance;
   files: CoChangedFileResult[];
+  /** Which tree the answer was read beside (bd tea-rags-mcp-xi2r9) — co-change is the index's history. */
+  workingTree?: WorkingTreeMarker;
 }

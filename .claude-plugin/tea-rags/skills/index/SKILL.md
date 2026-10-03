@@ -19,7 +19,12 @@ Smart indexing — check registration first, then index:
 ## Instructions
 
 1. Extract `path` from user message or argument. If absent, use current working
-   directory.
+   directory. Path is a linked git worktree (`git rev-parse --git-common-dir` ≠
+   `<path>/.git`) of a registered repository → do NOT register or index it: read
+   tools already answer for that tree (index-freshness, linked worktree). Tell
+   the user so. A `--project <alias>` reindex refreshes the main checkout's own
+   staleness only — never the worktree's edits. Index the worktree as its own
+   project only when the user insists (seeds a separate project).
 
 2. Check if path already registered: call `mcp__tea-rags__list_projects`, find
    entry whose `path` matches target AND whose `name` non-empty (recovery

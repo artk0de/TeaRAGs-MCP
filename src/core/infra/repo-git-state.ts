@@ -22,7 +22,7 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { resolveGitExecutable } from "./git-executable.js";
 
@@ -131,6 +131,102 @@ export function readWorkingTreeDirty(repoPath: string, execFileImpl: typeof exec
   } catch {
     return false;
   }
+}
+
+/**
+ * Nearest ancestor of `absolutePath` (inclusive) holding `.git` — the git
+ * toplevel of the tree the path lies in. Filesystem only, no realpath: callers
+ * hand over the spelling they compare against. A linked worktree and a
+ * submodule hold a `.git` FILE, so `existsSync` covers every layout.
+ *
+ * Why it exists: a project may be registered at a SUBDIRECTORY of its
+ * repository, and every reader that expects `.git` at the project root
+ * (`readRepoGitState`) then sees no repository at all (live P2-2, bd
+ * tea-rags-mcp-xi2r9).
+ */
+export function findGitToplevel(absolutePath: string): string | undefined {
+  let dir = absolutePath;
+  for (;;) {
+    if (existsSync(join(dir, ".git"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+/**
+ * `readRepoGitState` of the repository `path` lies in — read at its git
+ * toplevel, so a project registered at a repository SUBDIRECTORY (no `.git` at
+ * its root) still reads HEAD (live P2-2, bd tea-rags-mcp-xi2r9). Same
+ * never-throws, no-spawn contract.
+ */
+export function readEnclosingRepoGitState(path: string): RepoGitState | null {
+  return readRepoGitState(findGitToplevel(path) ?? path);
+}
+
+/**
+ * Where `rootPath` sits below its git toplevel, "/"-separated as git spells
+ * paths; "" when the root IS the toplevel. The prefix the two re-base helpers
+ * below take.
+ */
+export function gitPathPrefix(toplevel: string, rootPath: string): string {
+  return relative(toplevel, rootPath).split(sep).join("/");
+}
+
+/**
+ * Toplevel-relative git paths → the ones under `prefix`, relative to the root.
+ * Git reports every path from the toplevel; a project registered below it
+ * names its files from its own root, and a sibling directory's path is not the
+ * project's at all, so it is dropped.
+ */
+export function rebaseGitPathsOntoRoot(paths: readonly string[], prefix: string): string[] {
+  if (prefix === "") return [...paths];
+  const head = `${prefix}/`;
+  return paths.filter((path) => path.startsWith(head)).map((path) => path.slice(head.length));
+}
+
+/** A root-relative path → the toplevel-relative spelling git expects. Inverse of {@link rebaseGitPathsOntoRoot}. */
+export function gitPathFromRoot(rootRelativePath: string, prefix: string): string {
+  return prefix === "" ? rootRelativePath : `${prefix}/${rootRelativePath}`;
+}
+
+/**
+ * The files under `rootPath` whose content differs from HEAD — modified,
+ * staged, deleted and untracked non-ignored — relative to `rootPath` (not to
+ * the git toplevel, which git reports from). Undefined when git cannot answer.
+ *
+ * Why: an index run reads the tree, not the commit, so a file dirty at index
+ * time is indexed with content its `indexedCommit` does not hold. A later diff
+ * against that commit cannot see it once the file is restored (or deleted, for
+ * an untracked one), so the run stamps this list and the working-tree overlay
+ * re-reads those files (live P1-1, bd tea-rags-mcp-xi2r9). Spawns
+ * `git status` — pipeline-finalize use only. `--no-renames` lists both sides of
+ * a move, which is what "differs from HEAD" means per path.
+ */
+export function readWorkingTreeDirtyPaths(
+  rootPath: string,
+  execFileImpl: typeof execFileSync = execFileSync,
+): string[] | undefined {
+  const toplevel = findGitToplevel(rootPath);
+  if (toplevel === undefined) return undefined;
+  let out: string;
+  try {
+    out = String(
+      execFileImpl(
+        resolveGitExecutable(),
+        ["-C", toplevel, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"],
+        { timeout: 15_000, encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 },
+      ),
+    );
+  } catch {
+    return undefined;
+  }
+  // "XY path" — porcelain paths are always toplevel-relative, "/"-separated.
+  const toplevelPaths = out
+    .split("\0")
+    .filter((field) => field.length >= 4)
+    .map((field) => field.slice(3));
+  return rebaseGitPathsOntoRoot(toplevelPaths, gitPathPrefix(toplevel, rootPath));
 }
 
 /**

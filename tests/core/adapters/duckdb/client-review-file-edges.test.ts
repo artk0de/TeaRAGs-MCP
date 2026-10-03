@@ -15,12 +15,14 @@
  *   - sweep drops exactly the expired tables plus every malformed-named one,
  *     and returns the dropped names.
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../__helpers__/collection-identity.js";
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
 import { DAEMON_OP_COMMANDS } from "../../../../src/core/adapters/duckdb/daemon/op-commands.js";
 import { CodegraphDaemonServer } from "../../../../src/core/adapters/duckdb/daemon/server.js";
@@ -98,6 +100,138 @@ describe("DuckDbGraphClient — per-review file-edge store (bd tea-rags-mcp-89k7
     expect(await catalogRows(db, TABLE)).toBe(0);
     expect(await catalogRows(db, `cg_review_file_edges_garbage`)).toBe(0);
     expect(await catalogRows(db, `cg_review_file_edges_${freshId}`)).toBe(1);
+  });
+});
+
+/** `(size, mtimeMs, sha256)` of a file, or "none" — what the tree graph's base version reads, plus the bytes. */
+function fileState(path: string): string {
+  if (!existsSync(path)) return "none";
+  const stat = statSync(path);
+  return `${String(stat.size)}@${String(stat.mtimeMs)}#${createHash("sha256").update(readFileSync(path)).digest("hex")}`;
+}
+
+function databaseState(dbPath: string): string[] {
+  return [fileState(dbPath), fileState(`${dbPath}.wal`)];
+}
+
+/** One full review lifecycle: sweep-on-create, put, read, finally-drop. */
+async function runReview(
+  db: Pick<
+    DuckDbGraphClient,
+    "sweepExpiredReviewFileEdges" | "putReviewFileEdges" | "readReviewFileEdges" | "dropReviewFileEdges"
+  >,
+  reviewId: string,
+): Promise<ReviewFileEdge[]> {
+  await db.sweepExpiredReviewFileEdges(Number(reviewId.slice(0, 10)), 3600);
+  await db.putReviewFileEdges(reviewId, [edge("src/a.ts", "src/b.ts")]);
+  const read = await db.readReviewFileEdges(reviewId);
+  await db.dropReviewFileEdges(reviewId);
+  return read;
+}
+
+describe("review scratch tables never touch the database file (bd tea-rags-mcp-xi2r9 D4)", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "cg-review-scratch-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("a review over a read-write session leaves the .duckdb and its .wal byte- and mtime-identical", async () => {
+    const path = join(dir, "g.duckdb");
+    const db = new DuckDbGraphClient({ path });
+    await db.init();
+    try {
+      await runMigrations(db, DATABASE_MIGRATIONS);
+      await db.checkpoint();
+      const before = databaseState(path);
+      // mtime resolution: a write inside the same millisecond would hide.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(await runReview(db, REVIEW_ID)).toEqual([edge("src/a.ts", "src/b.ts")]);
+
+      expect(databaseState(path)).toEqual(before);
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("a review works over a READ_ONLY session — the scratch table lives outside the database", async () => {
+    const path = join(dir, "g.duckdb");
+    const writer = new DuckDbGraphClient({ path });
+    await writer.init();
+    await runMigrations(writer, DATABASE_MIGRATIONS);
+    await writer.checkpoint();
+    await writer.close();
+    const before = databaseState(path);
+
+    const reader = new DuckDbGraphClient({ path, accessMode: "READ_ONLY" });
+    await reader.init();
+    try {
+      expect(await runReview(reader, REVIEW_ID)).toEqual([edge("src/a.ts", "src/b.ts")]);
+    } finally {
+      await reader.close();
+    }
+    expect(databaseState(path)).toEqual(before);
+  });
+
+  it("the sweep still drops a legacy persistent review table left by an older build", async () => {
+    const path = join(dir, "g.duckdb");
+    const db = new DuckDbGraphClient({ path });
+    await db.init();
+    try {
+      await runMigrations(db, DATABASE_MIGRATIONS);
+      await db.run(`CREATE TABLE "${TABLE}" (source_rel_path VARCHAR, target_rel_path VARCHAR)`);
+
+      expect(await db.sweepExpiredReviewFileEdges(1700000000 + 3600, 3600)).toEqual([TABLE]);
+      expect(await catalogRows(db, TABLE)).toBe(0);
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("concurrent reviews through the daemon's shared connection stay isolated and leave the file untouched", async () => {
+    const pool = new GraphDbClientPool({
+      rootDir: dir,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
+    });
+    const server = new CodegraphDaemonServer(pool);
+    const c = "code_review_scratch_v1";
+    const ids = ["1700000000-4242-aaaaaa", "1700000000-4243-bbbbbb", "1700000000-4244-cccccc"];
+    try {
+      // Open + migrate the collection, then settle it on disk.
+      await server.handle({ id: 0, op: "checkpoint", params: { collection: c } });
+      const path = pool.pathFor(fixturePhysicalCollectionName(c));
+      const before = databaseState(path);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      let nextId = 1;
+      const call = async (op: string, params: Record<string, unknown>): Promise<unknown> => {
+        const response = await server.handle({
+          id: nextId++,
+          op: op as never,
+          params: { collection: c, ...params },
+        });
+        expect(response.ok).toBe(true);
+        return (response as { result?: unknown }).result;
+      };
+      const reads = await Promise.all(
+        ids.map(async (reviewId, i) => {
+          await call("sweepExpiredReviewFileEdges", { nowEpochSeconds: 1700000000, maxAgeSeconds: 3600 });
+          await call("putReviewFileEdges", { reviewId, edges: [edge(`src/${String(i)}.ts`, "src/t.ts")] });
+          const read = await call("readReviewFileEdges", { reviewId });
+          await call("dropReviewFileEdges", { reviewId });
+          return read;
+        }),
+      );
+
+      expect(reads).toEqual(ids.map((_, i) => [edge(`src/${String(i)}.ts`, "src/t.ts")]));
+      expect(databaseState(path)).toEqual(before);
+    } finally {
+      await pool.closeAll();
+    }
   });
 });
 

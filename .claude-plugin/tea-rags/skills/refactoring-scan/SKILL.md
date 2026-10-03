@@ -24,7 +24,7 @@ antipattern/refactoring intent broad-scope (no specific entity).
    diminishing-returns / cross-preset rules. Do NOT use absolute score
    thresholds.
 4. **No built-in Search/Grep for code discovery** — only TeaRAGs tools + ripgrep
-   MCP fallback.
+   MCP fallback for literal text (identifiers never — `hybrid_search`).
 
 ## Flow
 
@@ -97,10 +97,10 @@ For **Tier 1 candidates only** (skip Tier 2/3 enrichment):
 
 **Naming** is decided by the lexicon, not by taste (codegraph on):
 `get_naming_lexicon(names=<Tier 1 identifiers>, language, pathPattern=<scope>)`
-(one call per language — evidence never crosses languages) → `MISFIT`
-= Naming candidate, Action `rename to <suggestion>`; `CONFORMS` = not a
-candidate. Codegraph off → classify Naming only with a cited in-scope precedent.
-Rename candidates can also seed from
+(one call per language — evidence never crosses languages) → `MISFIT` = Naming
+candidate, Action `rename to <suggestion>`; `CONFORMS` = not a candidate.
+Codegraph off → classify Naming only with a cited in-scope precedent. Rename
+candidates can also seed from
 `get_ontology_report(pathPattern=<scope>, sections=["outliers","synonyms"])` —
 each outlier / synonym deviant is a Naming candidate, Action
 `rename to <dominant.name>`.

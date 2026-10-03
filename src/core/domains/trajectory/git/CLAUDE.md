@@ -85,6 +85,28 @@ their own navigators.
   of 1 (bd tea-rags-mcp-z3cnd). Anything new that reads the walk's hunks must
   use that predicate, not the hunk's raw `newStart`/`newLines` span.
 
+- **The walk addresses HEAD rows; a chunker hands it WORKING rows.** Before the
+  walk, `GitEnrichmentProvider#buildChunkSignals` carries every file with
+  uncommitted edits onto HEAD (`carryDirtyChunkMapOntoHead`,
+  `infra/working-rows.ts`), and a row made only of uncommitted lines gets the
+  walk's zero block instead of a walk. The working-tree overlay's on-demand rows
+  (`buildOnDemandGitSignals`) go through the same module, so a delta row and a
+  reindex of a dirty tree agree. Why: walked as HEAD rows, four lines added
+  above a symbol credited it with its neighbour's commits (parity harness
+  `working-tree-git-parity.test.ts`, bd tea-rags-mcp-xi2r9). The chunk map
+  reaches the provider keyed REPO-RELATIVE from ingest (`ChunkPhase`, the
+  recompute scroll) and absolute from other callers; code that selects files by
+  key must accept both, as `relativizeChunkMap` does — the first cut matched
+  absolute keys only, so ingest never carried a dirty file while the unit tests,
+  keyed absolute, stayed green.
+
+- **An index carries the git algorithm revision that computed it.**
+  `GIT_TRAJECTORY_ALGORITHM_VERSION` (`algorithm-version.ts`) is the provider's
+  `algorithmVersion`; a run that rebuilt git for every point stamps it on the
+  registry entry and `TrajectoryVersionDriftMonitor` reports a stale one with
+  `--force-enrichments git`. Bump it once per release whenever the same history
+  writes different `git.*` values — no payload-key drift can see that change.
+
 ## Gotchas
 
 - **The file→chunk blame handoff is held per path, never per batch, and survives

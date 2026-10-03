@@ -36,7 +36,7 @@ export type {
 
 // Internal exports for bootstrap/MCP (not part of App contract)
 export { SchemaBuilder } from "./internal/infra/schema-builder.js";
-export { createComposition } from "./internal/composition.js";
+export { createComposition, enrichmentAlgorithmVersions } from "./internal/composition.js";
 export type { CompositionResult } from "./internal/composition.js";
 
 // App-layer ops composition (bd tea-rags-mcp-0qaht.12): construction of the
@@ -79,6 +79,21 @@ export { createNamingReviewExtractor } from "./internal/ops/naming-review-extrac
 export { createPathCollectionResolver } from "./internal/collection-resolver.js";
 export { readPayloadFileCommitCounts } from "./internal/infra/payload-file-commit-count-reader.js";
 export { readPayloadImportSpecifiers } from "./internal/infra/payload-import-specifier-reader.js";
+export {
+  scheduleWorkingTreeGraphSweep,
+  WORKING_TREE_GRAPH_BUILD_TIMEOUT_MS,
+  WorkingTreeGraphCache,
+  type WorkingTreeGraphCodegraphRuntime,
+} from "./internal/infra/working-tree-graph-cache.js";
+export { createWorkingTreeDeltaSignalSource } from "./internal/infra/working-tree-delta-signals.js";
+export {
+  createWorkingTreeGitSignalSource,
+  type WorkingTreeGitSignalConfig,
+} from "./internal/infra/working-tree-git-signals.js";
+export {
+  createWorkingTreeGitSignalStore,
+  scheduleWorkingTreeGitSignalSweep,
+} from "./internal/infra/working-tree-git-signal-store.js";
 export { InputValidationError, CollectionNotProvidedError } from "./errors.js";
 
 // Project registry types re-exported from infra (public surface)

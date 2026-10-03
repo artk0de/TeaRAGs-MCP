@@ -18,6 +18,7 @@ import {
   InvalidQueryError,
 } from "../../../domains/explore/errors.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
+import type { WorkingTreeOverlay } from "../../../domains/explore/working-tree/index.js";
 import type { IndexDriftReporter } from "../../../domains/maintenance/drift/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
@@ -33,6 +34,7 @@ import type {
   RankChunksRequest,
   SemanticSearchRequest,
 } from "../../public/dto/index.js";
+import type { WorkingTreeIndexTarget } from "../../public/dto/working-tree.js";
 import { ExploreOps } from "../ops/explore-ops.js";
 
 export interface ExploreFacadeDeps {
@@ -58,6 +60,8 @@ export interface ExploreFacadeDeps {
    * per project (bd tea-rags-mcp-uebug).
    */
   enrichmentHealthFrameForPath?: (path: string) => readonly string[];
+  /** The `workingTree` marker source (bd tea-rags-mcp-xi2r9), threaded through to ExploreOps. */
+  workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
 }
 
 export class ExploreFacade {
@@ -79,6 +83,7 @@ export class ExploreFacade {
       visibilityResolver: deps.visibilityResolver,
       signalFloors: deps.signalFloors,
       enrichmentHealthFrameForPath: deps.enrichmentHealthFrameForPath,
+      workingTreeOverlay: deps.workingTreeOverlay,
     });
   }
 
@@ -111,6 +116,11 @@ export class ExploreFacade {
   /** `collection`, when given, is the index read — the resolver's priority (collection > path). */
   async getIndexMetrics(path: string, collection?: string): Promise<IndexMetrics> {
     return this.exploreOps.getIndexMetrics(path, collection);
+  }
+
+  /** The base index a working-tree `path` is read against; undefined for an index's own checkout (D10). */
+  async workingTreeIndexOf(path: string): Promise<WorkingTreeIndexTarget | undefined> {
+    return this.exploreOps.workingTreeIndexOf(path);
   }
 }
 

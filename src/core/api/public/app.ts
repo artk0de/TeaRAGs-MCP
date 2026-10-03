@@ -84,6 +84,7 @@ import type {
   ReviewChangesResult,
   SemanticSearchRequest,
   TracePathRequest,
+  WorkingTreeIndexTarget,
 } from "./dto/index.js";
 
 // ---------------------------------------------------------------------------
@@ -214,6 +215,14 @@ export interface AppDeps {
    * cannot clobber each other (tea-rags-mcp-pmfm4).
    */
   ingestForPath?: (path: string) => IngestFacade;
+  /**
+   * The base index a working-tree path is read against (live D10, bd
+   * tea-rags-mcp-xi2r9): `getIndexStatus` of a linked worktree answers with
+   * that index's status and the tree's marker, never "not indexed". Wired by
+   * bootstrap to `ExploreFacade#workingTreeIndexOf`. Omitted → the path is
+   * always its own index.
+   */
+  workingTreeIndexOf?: (path: string) => Promise<WorkingTreeIndexTarget | undefined>;
   explore: ExploreFacade;
   reranker: Reranker;
   driftReporter: IndexDriftReporter;
@@ -341,7 +350,7 @@ export function createApp(deps: AppDeps): App {
     indexCodebase: async (path, options, progress, enrichmentProgress) =>
       (deps.ingestForPath?.(path) ?? facades.ingest).indexCodebase(path, options, progress, enrichmentProgress),
     whenEnrichmentComplete: async () => facades.ingest.whenEnrichmentComplete(),
-    getIndexStatus: async (path) => (deps.ingestForPath?.(path) ?? facades.ingest).getIndexStatus(path),
+    getIndexStatus: async (path) => readIndexStatus(path, deps, facades.ingest),
     clearIndex: async (path) => facades.ingest.clearIndex(path),
 
     // -- Collections — delegate to CollectionOps --
@@ -418,6 +427,19 @@ export function createApp(deps: AppDeps): App {
     // `TrajectoryRegistry.getRegisteredKeys()`.
     hasProvider: (key) => (deps.registeredProviderKeys ?? EMPTY_PROVIDER_SET).has(key),
   };
+}
+
+/**
+ * `getIndexStatus` for the index `path` is read against (live D10): a working
+ * tree answers with its base index's status, `indexPath` and the tree's
+ * marker; any other path is its own index, read through its project's facade.
+ */
+async function readIndexStatus(path: string, deps: AppDeps, ingest: IngestFacade): Promise<IndexStatus> {
+  const target = await deps.workingTreeIndexOf?.(path);
+  const indexPath = target?.indexPath ?? path;
+  const status = await (deps.ingestForPath?.(indexPath) ?? ingest).getIndexStatus(indexPath);
+  if (!target) return status;
+  return { ...status, indexPath, ...(target.workingTree ? { workingTree: target.workingTree } : {}) };
 }
 
 /** Shared empty set so the default-fallback branch on every hasProvider call doesn't allocate. */

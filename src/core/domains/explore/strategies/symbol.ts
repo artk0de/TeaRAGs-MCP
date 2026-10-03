@@ -52,25 +52,32 @@
 import { isCodegraphUnavailableError, type CodegraphUnavailableError } from "../../../adapters/duckdb/errors.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import {
+  matchesTextIndexed,
   SYMBOL_SEPARATORS,
   symbolIdLastSegment,
   symbolIdTextToken,
 } from "../../../adapters/qdrant/filters/symbolid-text-token.js";
 import { exactMatchOnTextIndexed } from "../../../adapters/qdrant/filters/text-indexed-exact.js";
 import type {
+  PersistedSymbolLineRanges,
   SymbolChunkLocation,
   SymbolChunkResolver,
+  SymbolLineRange,
   SymbolVisibilityResolver,
 } from "../../../contracts/types/codegraph.js";
 import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
+import type { WorkingTreeGraphReader } from "../../../contracts/types/working-tree.js";
 import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
 import { isTestExampleChunk } from "../chunk-grouping/code.js";
+import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { renderWithDeclaredVisibility } from "../outline-visibility.js";
 import { applyEssentialSignals } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import { memberOwnerOf, splitFragmentBase } from "../split-fragment.js";
 import { resolveSymbols } from "../symbol-resolve.js";
 import { examplePackMember } from "../test-pack.js";
+import { relativePathOf } from "../working-tree/substitute.js";
+import { claimWorkingTreeFloors, recordingTreeGraphReader } from "../working-tree/tree-graph-marker.js";
 import { BaseExploreStrategy } from "./base.js";
 import { keepPathPatternMatches } from "./path-pattern-fill.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
@@ -89,6 +96,9 @@ export interface SymbolSearchInput {
 
 export class SymbolSearchStrategy extends BaseExploreStrategy {
   readonly type = "symbol" as unknown as "vector" | "hybrid" | "scroll-rank" | "similar";
+
+  /** find_symbol answers for the working tree: delta rows replace base rows of delta files. */
+  protected override readonly hasChunkFloor = true;
 
   constructor(
     qdrant: QdrantManager,
@@ -121,7 +131,14 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     // Exact pathPattern (bd tea-rags-mcp-xf01b): the scroll filters carry only the
     // text pre-filter, a directory-token SUPERSET of what the glob names.
     const pathMatcher = compilePathPatternMatcher(this.input.pathPattern);
-    const scrolled = [...symbolChunks, ...memberChunks.filter((c) => !seen.has(c.id))];
+    // Chunk floor (bd tea-rags-mcp-xi2r9.3): the working tree's rows replace
+    // the indexed rows of the files it changed, BEFORE the pathPattern and
+    // exact-symbol filters — so a tree row is answered as its indexed twin was.
+    const scrolled = await this.substituteFromWorkingTree(
+      [...symbolChunks, ...memberChunks.filter((c) => !seen.has(c.id))],
+      ctx,
+      (row) => this.matchesSymbolScrolls(row),
+    );
     const allChunks = pathMatcher ? keepPathPatternMatches(scrolled, pathMatcher) : scrolled;
 
     // Post-filter the scroll superset against the query:
@@ -142,7 +159,9 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     // examples' parentSymbolId, which outlines them but is not its setup).
     const grouped =
       isFullyQualified(this.input.symbol) && !answersOwnId(exact, this.input.symbol)
-        ? await this.scrollPackMembers(ctx.collectionName)
+        ? await this.substituteFromWorkingTree(await this.scrollPackMembers(ctx.collectionName), ctx, (row) =>
+            this.matchesPackMemberScroll(row),
+          )
         : [];
     const matched = pathMatcher ? [...exact, ...keepPathPatternMatches(grouped, pathMatcher)] : [...exact, ...grouped];
     // An example pack answers one of its members with that member alone (bd
@@ -160,14 +179,97 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
       (visibilityOf) => resolveSymbols(filtered, this.input.symbol, ctx.metaOnly, visibilityOf),
       ctx.metaOnly ? undefined : this.visibilityResolver,
       ctx.collectionName,
+      recordingTreeGraphReader(ctx.workingTreeView),
     )) as ExploreResult[];
     if (resolved.length > 0) return resolved;
 
     // 0rskm — Qdrant scroll found no chunk for this symbolId. If codegraph is
     // wired, the symbol may be collapsed into a covering class chunk that has a
     // different symbolId. Two-hop: symbol_id → chunk_id → getPoint → result.
-    const covering = await this.resolveViaCodegraph(ctx);
+    //
+    // On a working tree the tree's OWN definitions answer first (live D1): a
+    // symbol the tree defines in a file it changed has no chunk id in any graph
+    // (chunk ids are the index's), so the hop's last-segment tier would answer
+    // `Cat#speak` with the base `Animal` chunk. It is placed on the tree's rows
+    // by line instead. Only when the tree defines no match in a changed file
+    // does the stored-chunk hop run — and the chunk it names is a delta row
+    // when the tree has one by that id, else the index's chunk retargeted at
+    // the tree (live P2-1): never the index's version of a touched file, and
+    // nothing when the tree no longer has the symbol.
+    const toResult = (row: ScrollChunk): ExploreResult => ({
+      id: row.id,
+      score: 1,
+      payload: ctx.metaOnly ? withoutContent(row.payload) : { ...row.payload },
+    });
+    const treeDefined = await this.resolveViaTreeDefinitions(ctx, toResult);
+    const covering =
+      treeDefined.length > 0
+        ? treeDefined
+        : await this.retargetToWorkingTree(await this.resolveViaCodegraph(ctx, toResult), ctx, toResult);
     return pathMatcher ? keepPathPatternMatches(covering, pathMatcher) : covering;
+  }
+
+  /**
+   * The rows of the files the tree CHANGED that hold a definition of the
+   * queried symbol, as the tree graph places it (live D1): per definition, the
+   * narrowest delta row whose lines cover it, else every delta row overlapping
+   * it (a definition split across `#partN` rows). A qualified query matches a
+   * definition id exactly; a bare one by last name segment — the hop's own
+   * match rule. Empty when the request reads no tree with a built graph, the
+   * resolver cannot read tree ranges, or the tree defines no match in a
+   * changed file.
+   */
+  private async resolveViaTreeDefinitions(
+    ctx: ExploreContext,
+    toResult: (row: ScrollChunk) => ExploreResult,
+  ): Promise<ExploreResult[]> {
+    const view = ctx.workingTreeView;
+    const readRanges = this.chunkResolver?.readTreeSymbolLineRanges;
+    const readTreeGraph = recordingTreeGraphReader(view);
+    if (!view?.readDeltaChunks || !readRanges || !readTreeGraph) return [];
+    const changed = [...view.touchedPaths].filter((path) => !view.deletedPaths.has(path));
+    if (changed.length === 0) return [];
+    const ranges = await this.readTreeRanges(readRanges, ctx.collectionName, changed, readTreeGraph);
+    if (!ranges) return [];
+    const definitions = [...ranges].flatMap(([relPath, file]) =>
+      file.ranges.filter((range) => this.namesQueriedSymbol(range.symbolId)).map((range) => ({ relPath, range })),
+    );
+    if (definitions.length === 0) return [];
+    const deltaRows = (await view.readDeltaChunks()).filter((row) => this.matchesLanguage(row));
+    const seen = new Set<string | number>();
+    const answered = definitions
+      .flatMap(({ relPath, range }) =>
+        rowsHoldingDefinition(
+          deltaRows.filter((row) => relativePathOf(row.payload) === relPath),
+          range,
+        ),
+      )
+      .filter((row) => !seen.has(row.id) && seen.add(row.id))
+      .map(toResult);
+    claimWorkingTreeFloors(view, ["chunks"], answered.length);
+    return answered;
+  }
+
+  /** The tree-range read, optional like the chunk hop: codegraph unavailable skips it with the same notice. */
+  private async readTreeRanges(
+    readRanges: NonNullable<SymbolChunkResolver["readTreeSymbolLineRanges"]>,
+    collectionName: string,
+    changed: readonly string[],
+    readTreeGraph: WorkingTreeGraphReader,
+  ): Promise<ReadonlyMap<string, PersistedSymbolLineRanges> | null> {
+    try {
+      return await readRanges(collectionName, changed, readTreeGraph);
+    } catch (err) {
+      if (!isCodegraphUnavailableError(err)) throw err;
+      this.codegraphSkipNotice = formatCodegraphFallbackSkipped(err);
+      return null;
+    }
+  }
+
+  /** Does a graph definition id answer the query — exactly when qualified, by last segment when bare? */
+  private namesQueriedSymbol(symbolId: string): boolean {
+    const query = this.input.symbol;
+    return isFullyQualified(query) ? symbolId === query : symbolIdLastSegment(symbolId) === symbolIdLastSegment(query);
   }
 
   /**
@@ -188,6 +290,12 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     return this.qdrant.scrollFiltered(collectionName, { must }, SCROLL_LIMIT);
   }
 
+  /** {@link scrollPackMembers}' filter as a predicate over a row Qdrant never stored. */
+  private matchesPackMemberScroll(row: ScrollChunk): boolean {
+    const { memberSymbolIds } = row.payload;
+    return Array.isArray(memberSymbolIds) && memberSymbolIds.includes(this.input.symbol) && this.matchesLanguage(row);
+  }
+
   /**
    * Set when this request's collapsed-symbol codegraph fallback was skipped
    * because codegraph is unavailable from this process. Read after `execute()`
@@ -199,21 +307,40 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
 
   private codegraphSkipNotice?: string;
 
-  private async resolveViaCodegraph(ctx: ExploreContext): Promise<ExploreResult[]> {
+  private async resolveViaCodegraph(
+    ctx: ExploreContext,
+    toResult: (row: ScrollChunk) => ExploreResult,
+  ): Promise<ExploreResult[]> {
     if (!this.chunkResolver) return [];
-    const location = await this.resolveCoveringChunk(this.chunkResolver, ctx.collectionName);
+    const location = await this.resolveCoveringChunk(
+      this.chunkResolver,
+      ctx.collectionName,
+      recordingTreeGraphReader(ctx.workingTreeView),
+    );
     if (!location) return [];
+    // A chunk id the tree's rows carry is answered from them: Qdrant never
+    // stored a delta row, so `getPoint` would miss it.
+    const deltaRow = await this.deltaRowById(ctx, location.chunkId);
+    if (deltaRow) return [toResult(deltaRow)];
     const point = await this.qdrant.getPoint(ctx.collectionName, location.chunkId);
     if (!point) return [];
     const payload = point.payload ? { ...point.payload } : {};
-    if (ctx.metaOnly) delete (payload as { content?: unknown }).content;
     return [
       {
         id: point.id,
         score: 1,
-        payload,
+        payload: ctx.metaOnly ? withoutContent(payload) : payload,
       },
     ];
+  }
+
+  /** The view's delta row stored under `chunkId`, claiming the chunk floor; undefined without one. */
+  private async deltaRowById(ctx: ExploreContext, chunkId: string): Promise<ScrollChunk | undefined> {
+    const view = ctx.workingTreeView;
+    if (!view?.readDeltaChunks || view.touchedPaths.size === 0) return undefined;
+    const row = (await view.readDeltaChunks()).find((delta) => String(delta.id) === chunkId);
+    claimWorkingTreeFloors(view, ["chunks"], row ? 1 : 0);
+    return row;
   }
 
   /**
@@ -228,9 +355,13 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
   private async resolveCoveringChunk(
     resolver: SymbolChunkResolver,
     collectionName: string,
+    readTreeGraph: WorkingTreeGraphReader | undefined,
   ): Promise<SymbolChunkLocation | null> {
     try {
-      return await resolver.resolveSymbolChunk(collectionName, this.input.symbol);
+      // A clean tree's lookup is the index-only call it always was.
+      return readTreeGraph
+        ? await resolver.resolveSymbolChunk(collectionName, this.input.symbol, readTreeGraph)
+        : await resolver.resolveSymbolChunk(collectionName, this.input.symbol);
     } catch (err) {
       if (!isCodegraphUnavailableError(err)) throw err;
       this.codegraphSkipNotice = formatCodegraphFallbackSkipped(err);
@@ -276,6 +407,23 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     // An example id answers with the example runnable in the head (msv3l):
     // its scope setup is stored once per scope and put back here (5xpq4).
     return this.hydrateTestSetup(processed, originalCtx);
+  }
+
+  /**
+   * The two scrolls' filters ({@link buildSymbolFilter}) as one predicate over a
+   * row Qdrant never stored — the working tree's delta rows. Same text token,
+   * same language condition; the pathPattern half is the text pre-filter the
+   * exact matcher in `executeExplore` re-applies to every row anyway.
+   */
+  private matchesSymbolScrolls(row: ScrollChunk): boolean {
+    const textQuery = symbolIdTextToken(this.input.symbol);
+    const { symbolId, parentSymbolId } = row.payload;
+    const textMatch = matchesTextIndexed(symbolId, textQuery) || matchesTextIndexed(parentSymbolId, textQuery);
+    return textMatch && this.matchesLanguage(row);
+  }
+
+  private matchesLanguage(row: ScrollChunk): boolean {
+    return !this.input.language || row.payload.language === this.input.language;
   }
 
   private buildSymbolFilter(key: "symbolId" | "parentSymbolId"): Record<string, unknown> {
@@ -406,4 +554,39 @@ function filterByLastSegment(
     const owner = splitPartOwner(c.payload);
     return owner !== undefined && symbolIdLastSegment(owner) === target;
   });
+}
+
+/**
+ * The rows of one file that hold a definition spanning `range`: the narrowest
+ * row covering it whole, else every row overlapping it (a definition split
+ * across `#partN` rows), else none.
+ */
+function rowsHoldingDefinition(rows: readonly ScrollChunk[], range: SymbolLineRange): ScrollChunk[] {
+  const lines = (row: ScrollChunk): { start: number; end: number } | undefined => {
+    const { startLine, endLine } = row.payload;
+    return typeof startLine === "number" && typeof endLine === "number"
+      ? { start: startLine, end: endLine }
+      : undefined;
+  };
+  const covering = rows
+    .filter((row) => {
+      const span = lines(row);
+      return span !== undefined && span.start <= range.startLine && span.end >= range.endLine;
+    })
+    .sort((a, b) => spanOf(lines(a)) - spanOf(lines(b)));
+  if (covering.length > 0) return [covering[0]];
+  return rows.filter((row) => {
+    const span = lines(row);
+    return span !== undefined && span.start <= range.endLine && span.end >= range.startLine;
+  });
+}
+
+function spanOf(lines: { start: number; end: number } | undefined): number {
+  return lines ? lines.end - lines.start : Number.POSITIVE_INFINITY;
+}
+
+/** A payload copy without its `content` — the metaOnly shape of a codegraph-hop answer. */
+function withoutContent(payload: Record<string, unknown>): Record<string, unknown> {
+  const { content: _content, ...rest } = payload;
+  return rest;
 }

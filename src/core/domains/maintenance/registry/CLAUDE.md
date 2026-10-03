@@ -2,29 +2,30 @@
 
 ## Invariants
 
-- **Only `name`, `autoUpdate`, `languageVersions` and the worktree provenance
-  pair survive a pipeline `record()` — everything else is overwritten.**
-  `CollectionRegistry#record` replaces the entry with whatever the caller passed
-  and re-attaches exactly those from the existing one. Every other CLI-managed
-  field must be supplied by the caller or it is erased. `languageVersions` is
-  sticky for a sharper reason than the others: it CLAIMS a language layer was
-  rebuilt corpus-wide, so only the run that rebuilt it may advance it
-  (`#stampLanguageVersions`, called from `IndexingOps` because that is the only
-  layer that knows the run mode). Every run calls `record()`, incremental ones
-  included — carrying the stamp there would have auto-update silently clearing
-  the reindex hint it exists to raise. `worktreeOf` / `worktreeName` are kept
-  only when the caller omits `worktreeOf` and the existing entry has it — the
-  only writer is `CollectionRegistry#setWorktreeProvenance`, once at clone time,
-  and `BaseIndexingPipeline#recordRegistryEntry`
-  (`domains/ingest/pipeline/base.ts`) never passes them. Why: the prescribed
-  lifecycle indexes a clone right after `worktree create`; before the pair was
-  sticky that first run wiped it, `CollectionRegistry#findWorktree` missed the
-  clone, `tea-rags worktree remove <name>` threw `WorktreeNotFoundError`, and
-  the plugin cleanup hook's sweep never saw it — silently (bd
-  tea-rags-mcp-ghk1f). Any new field set outside the pipeline must be added to
-  the sticky preserve list here. `embeddingThroughputOptima` is the one field
-  that MERGES instead: the run's keys (endpoint URL + model) overwrite theirs,
-  every other key survives (`mergeEmbeddingThroughputOptima`), and
+- **Only `name`, `autoUpdate`, `languageVersions`, `trajectoryVersions` and the
+  worktree provenance pair survive a pipeline `record()` — everything else is
+  overwritten.** `CollectionRegistry#record` replaces the entry with whatever
+  the caller passed and re-attaches exactly those from the existing one. Every
+  other CLI-managed field must be supplied by the caller or it is erased.
+  `languageVersions` is sticky for a sharper reason than the others: it CLAIMS a
+  language layer was rebuilt corpus-wide, so only the run that rebuilt it may
+  advance it (`#stampLanguageVersions`, called from `IndexingOps` because that
+  is the only layer that knows the run mode). Every run calls `record()`,
+  incremental ones included — carrying the stamp there would have auto-update
+  silently clearing the reindex hint it exists to raise. `worktreeOf` /
+  `worktreeName` are kept only when the caller omits `worktreeOf` and the
+  existing entry has it — the only writer is
+  `CollectionRegistry#setWorktreeProvenance`, once at clone time, and
+  `BaseIndexingPipeline#recordRegistryEntry` (`domains/ingest/pipeline/base.ts`)
+  never passes them. Why: the prescribed lifecycle indexes a clone right after
+  `worktree create`; before the pair was sticky that first run wiped it,
+  `CollectionRegistry#findWorktree` missed the clone,
+  `tea-rags worktree remove <name>` threw `WorktreeNotFoundError`, and the
+  plugin cleanup hook's sweep never saw it — silently (bd tea-rags-mcp-ghk1f).
+  Any new field set outside the pipeline must be added to the sticky preserve
+  list here. `embeddingThroughputOptima` is the one field that MERGES instead:
+  the run's keys (endpoint URL + model) overwrite theirs, every other key
+  survives (`mergeEmbeddingThroughputOptima`), and
   `CollectionRegistry#readEmbeddingThroughputOptimum` answers across ALL entries
   with the freshest `settledAt`. Why: a run that lived only on the primary must
   not erase what an earlier run learnt about the fallback, and how fast a server

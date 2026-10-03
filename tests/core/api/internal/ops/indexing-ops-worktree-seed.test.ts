@@ -200,6 +200,42 @@ describe("IndexingOps — first index seeded from a sibling worktree", () => {
     expect(deps.enrichment.recomputeEnrichments).toHaveBeenCalledWith("code_wt_v1", TARGET, ["git"]);
   });
 
+  it("stamps the git algorithm version once the git rebuild of the seeded collection completed (xi2r9)", async () => {
+    const trajectoryVersionStamper = { stampTrajectoryVersions: vi.fn() };
+    const { deps } = harness(seedsSibling, {
+      trajectoryVersionStamper,
+      trajectoryAlgorithmVersions: new Map([["git", 2]]),
+    });
+    const ops = new IndexingOps(deps);
+    await ops.run(TARGET);
+    await ops.whenEnrichmentComplete();
+
+    expect(trajectoryVersionStamper.stampTrajectoryVersions).toHaveBeenCalledWith("code_wt", { git: 2 });
+  });
+
+  it("leaves the git algorithm stamp off a seeded collection whose git rebuild failed (xi2r9)", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const trajectoryVersionStamper = { stampTrajectoryVersions: vi.fn() };
+    const { deps } = harness(seedsSibling, {
+      trajectoryVersionStamper,
+      trajectoryAlgorithmVersions: new Map([["git", 2]]),
+      enrichment: {
+        providerKeys: ["git"],
+        setEnrichmentProgress: vi.fn(),
+        whenComplete: vi.fn().mockResolvedValue(undefined),
+        whenCompletionsSettled: vi.fn().mockResolvedValue(undefined),
+        runRecovery: vi.fn().mockResolvedValue(undefined),
+        recomputeEnrichments: vi.fn().mockRejectedValue(new Error("blame pool died")),
+      } as never,
+    });
+    const ops = new IndexingOps(deps);
+    await ops.run(TARGET);
+    await ops.whenEnrichmentComplete();
+
+    expect(trajectoryVersionStamper.stampTrajectoryVersions).not.toHaveBeenCalled();
+    errors.mockRestore();
+  });
+
   it("skips the git rebuild when the git trajectory is off", async () => {
     const { deps } = harness(seedsSibling, {
       enrichment: {

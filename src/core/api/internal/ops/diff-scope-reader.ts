@@ -2,8 +2,7 @@
  * The shared diff-scope reader (bd tea-rags-mcp-89k7k.1.1): one read of a
  * working-tree change — the files under the cap, their added line ranges, the
  * merge-base the change is read against, and the bookkeeping (notices, counts,
- * the non-production files) every diff-scoped report consumes — plus the
- * worktree resolution the read starts from. The review sections of
+ * the non-production files) every diff-scoped report consumes. The review sections of
  * `get_naming_lexicon` are its first consumer; the naming-specific half
  * (per-file declaration extraction) stayed behind in `naming-lexicon-ops.ts`.
  *
@@ -11,10 +10,9 @@
  * next diff-scoped report calls it without a deps interface.
  */
 
-import { existsSync, realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { realpathSync } from "node:fs";
 
-import { listRepoWorkTrees, resolveGitCommonDir } from "../../../adapters/vcs/git/common-dir.js";
+import { listRepoWorkTrees } from "../../../adapters/vcs/git/common-dir.js";
 import {
   listChangedFiles,
   readAddedLineRangesOfFiles,
@@ -22,7 +20,13 @@ import {
   type AddedLineRange,
 } from "../../../adapters/vcs/git/git-cli/client.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
-import { readRepoGitState } from "../../../infra/repo-git-state.js";
+import {
+  findGitToplevel,
+  gitPathFromRoot,
+  gitPathPrefix,
+  readEnclosingRepoGitState,
+  rebaseGitPathsOntoRoot,
+} from "../../../infra/repo-git-state.js";
 import { InvalidParameterError } from "../../errors.js";
 import { ontologyNonProductionPathFilter } from "./ontology-report-ops.js";
 
@@ -76,7 +80,7 @@ export interface DiffTreeLag {
  * no diff is read whole: on a clean tree `files` names committed code to
  * review, and an empty answer would read as "all conforms".
  *
- * Callers resolve the tree with this module's {@link resolveWorkTree} — the
+ * Callers resolve the tree with `resolveWorkingTree` (`collection-resolver.ts`) — the
  * reader owns the whole diff-read contract: addressing splits in two layers,
  * git reads from the tree while index reads address the resolved collection
  * (bd tea-rags-mcp-2kplu), and the change is a three-dot diff against the
@@ -87,16 +91,34 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
     throw new InvalidParameterError("path", "changes / files review the working tree: pass project or path");
   }
   const base = req.base ?? DIFF_DEFAULT_BASE;
-  const mergeBase = await resolveReviewMergeBase(workTree, base);
-  const changed = await gitRead(base, async () => listChangedFiles(workTree, mergeBase));
+  // Git is asked at the toplevel and answers in toplevel-relative paths; the
+  // review names files relative to `workTree`, which may be a repository
+  // SUBDIRECTORY (live P2-2, bd tea-rags-mcp-xi2r9) — a sibling directory's
+  // change is not this project's.
+  const toplevel = findGitToplevel(workTree) ?? workTree;
+  const prefix = gitPathPrefix(toplevel, workTree);
+  const mergeBase = await resolveReviewMergeBase(toplevel, base);
+  const changed = rebaseGitPathsOntoRoot(
+    await gitRead(base, async () => listChangedFiles(toplevel, mergeBase)),
+    prefix,
+  );
   const listed = req.files ? unique(req.files) : undefined;
   const all = listed ?? changed;
   const files = all.slice(0, DIFF_FILE_CAP);
-  const ranges = await gitRead(base, async () => readAddedLineRangesOfFiles(workTree, mergeBase, files));
+  const ranges = await gitRead(base, async () =>
+    readAddedLineRangesOfFiles(
+      toplevel,
+      mergeBase,
+      files.map((relPath) => gitPathFromRoot(relPath, prefix)),
+    ),
+  );
   const changedSet = new Set(changed);
   const whole = new Set(listed ? files.filter((relPath) => !changedSet.has(relPath)) : []);
   const addedRanges = new Map<string, readonly AddedLineRange[]>(
-    files.map((relPath) => [relPath, whole.has(relPath) ? WHOLE_FILE : (ranges.get(relPath) ?? [])]),
+    files.map((relPath) => [
+      relPath,
+      whole.has(relPath) ? WHOLE_FILE : (ranges.get(gitPathFromRoot(relPath, prefix)) ?? []),
+    ]),
   );
 
   const nonProductionFilter = ontologyNonProductionPathFilter();
@@ -116,38 +138,6 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
 }
 
 /**
- * The working tree an answer is about (lexicon friction F1). The addressing
- * params already split index from tree — `collection` + `path` reads the
- * collection's index and the tree at `path` — and `project` + `path` now does
- * the same: the alias addresses the index (registered at the main checkout),
- * `path` a checkout of the SAME repository, a linked git worktree. `project`
- * alone reads the main checkout.
- */
-export function resolveWorkTree(
-  addressing: { project?: string; collection?: string; path?: string },
-  repoRoot: string | undefined,
-): string | undefined {
-  if (
-    addressing.project === undefined ||
-    addressing.collection !== undefined ||
-    addressing.path === undefined ||
-    !repoRoot
-  ) {
-    return repoRoot;
-  }
-  const absolute = resolve(addressing.path);
-  if (!existsSync(absolute)) throw new InvalidParameterError("path", `'${addressing.path}' does not exist`);
-  const tree = realpathSync(absolute);
-  if (resolveGitCommonDir(tree) !== resolveGitCommonDir(repoRoot)) {
-    throw new InvalidParameterError(
-      "path",
-      `'${addressing.path}' is not a checkout of project '${addressing.project}' (${repoRoot}): its change is no diff of this project`,
-    );
-  }
-  return tree;
-}
-
-/**
  * The evidence corpus's lag behind the tree the answer is about (lexicon
  * friction F2): the registry's `indexedCommit` (stamped at finalize, read by
  * `CommitDriftMonitor` too) against the tree's HEAD. Undefined when either is
@@ -160,7 +150,7 @@ export function readTreeLag(
 ): DiffTreeLag | undefined {
   const indexedCommit = collectionRegistry.get?.(collectionName)?.git?.indexedCommit;
   if (!indexedCommit) return undefined;
-  const treeCommit = readRepoGitState(workTree)?.commit;
+  const treeCommit = readEnclosingRepoGitState(workTree)?.commit;
   if (!treeCommit || treeCommit === indexedCommit) return undefined;
   return { indexedCommit, treeCommit };
 }

@@ -43,6 +43,24 @@ vi.mock("../../src/core/domains/trajectory/git.js", async (importOriginal) => {
   };
 });
 
+// The working-tree stores' writer (bd tea-rags-mcp-xi2r9, B1). The real writer
+// runs — each one the factory builds is recorded, so a test can see what
+// cleanup does with it.
+const capturedWriters = vi.hoisted(() => ({ writers: [] as { close: () => Promise<void> }[] }));
+
+vi.mock("../../src/core/domains/explore/working-tree/file-writer.js", async (importOriginal) => {
+  const mod = await (importOriginal as () => Promise<Record<string, unknown>>)();
+  const create = mod.createWorkingTreeFileWriter as () => { close: () => Promise<void> };
+  return {
+    ...mod,
+    createWorkingTreeFileWriter: () => {
+      const writer = create();
+      capturedWriters.writers.push(writer);
+      return writer;
+    },
+  };
+});
+
 // The two consumers of the ambient env role (tea-rags-mcp-o0qsw). The real
 // classes still run — only what composition hands each one is recorded, so a
 // test can prove both were wired from the ONE role createAppContext received.
@@ -238,7 +256,7 @@ describe("createAppContext", () => {
       const ctx = await createAppContext(makeConfig());
       expect(startWatching).toHaveBeenCalledTimes(1);
       expect(stop).not.toHaveBeenCalled();
-      ctx.cleanup?.();
+      await ctx.cleanup?.();
       expect(stop).toHaveBeenCalledTimes(1);
     } finally {
       startWatching.mockRestore();
@@ -252,12 +270,35 @@ describe("createAppContext", () => {
     const startWatching = vi.spyOn(CollectionRegistry.prototype, "startWatching").mockReturnValue(stop);
     try {
       const ctx = await createAppContext(makeConfig());
-      ctx.cleanup?.();
-      ctx.cleanup?.();
+      await ctx.cleanup?.();
+      await ctx.cleanup?.();
       expect(stop).toHaveBeenCalledTimes(1);
     } finally {
       startWatching.mockRestore();
     }
+  });
+
+  // bd tea-rags-mcp-xi2r9, B1: `tea-rags call` exits right after cleanup, and a
+  // working-tree store write still in flight (a `lastReadAt` bump of background
+  // warm-up work) was cut between its temp and its rename. Cleanup is the
+  // defined flush point: it resolves only once the stores' writer has closed —
+  // every write in flight landed, every later one refused.
+  it("cleanup resolves only once the working-tree stores' writer has closed (bd tea-rags-mcp-xi2r9 B1)", async () => {
+    capturedWriters.writers.length = 0;
+    const ctx = await createAppContext(makeConfig());
+    expect(capturedWriters.writers).toHaveLength(1);
+    const [writer] = capturedWriters.writers;
+    let closed = false;
+    const close = writer.close.bind(writer);
+    writer.close = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await close();
+      closed = true;
+    };
+
+    await ctx.cleanup?.();
+
+    expect(closed).toBe(true);
   });
 
   it("cleanup kills the git children an in-process enrichment left running (bd tea-rags-mcp-w26dc)", async () => {
@@ -271,7 +312,7 @@ describe("createAppContext", () => {
     try {
       trackGitChildProcess(child);
       const ctx = await createAppContext(makeConfig());
-      ctx.cleanup?.();
+      await ctx.cleanup?.();
       const [, signal] = (await exited) as [number | null, NodeJS.Signals | null];
       expect(signal).toBe("SIGKILL");
     } finally {

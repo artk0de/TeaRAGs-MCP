@@ -21,6 +21,8 @@
 
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
+import type { WorkingTree } from "../../../contracts/types/working-tree.js";
+import type { WorkingTreeOverlay } from "../../../domains/explore/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import { InvalidParameterError } from "../../errors.js";
@@ -30,8 +32,8 @@ import type {
   ReviewSectionId,
   ReviewSectionResult,
 } from "../../public/dto/review.js";
-import { resolveCollection } from "../collection-resolver.js";
-import { DIFF_FILE_CAP, readDiffScope, readTreeLag, resolveWorkTree } from "./diff-scope-reader.js";
+import { resolveIndexedWorkingTree, type IndexExistenceCheck } from "../collection-resolver.js";
+import { DIFF_FILE_CAP, readDiffScope, readTreeLag } from "./diff-scope-reader.js";
 import type { ReviewEdgeExtractionDeps } from "./review-edge-overlay.js";
 import {
   REVIEW_SECTION_PROVIDERS,
@@ -62,6 +64,17 @@ export interface ReviewChangesOpsDeps {
   reviewEdgeExtraction?: ReviewEdgeExtractionDeps;
   /** The temporal walk's history window (the git trajectory's `chunkMaxAgeMonths`). */
   windowMonths: number;
+  /**
+   * Measures the tree the review reads against its index (bd tea-rags-mcp-xi2r9).
+   * Present → every answer carries `workingTree`; absent (unit wiring) → none.
+   */
+  workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
+  /**
+   * Whether the resolved index exists — a read of one that does not is refused
+   * with the typed not-found error (live round-3 D3, `resolveIndexedWorkingTree`).
+   * Absent (unit wiring): not checked.
+   */
+  indexExists?: IndexExistenceCheck;
 }
 
 export class ReviewChangesOps {
@@ -91,9 +104,24 @@ export class ReviewChangesOps {
 
   async reviewChanges(req: ReviewChangesRequest): Promise<ReviewChangesResult> {
     const providers = this.requestedProviders(req.sections);
-    const { collectionName, path: repoRoot } = resolveCollection(this.deps.collectionRegistry, req);
+    // One addressing rule (bd tea-rags-mcp-xi2r9): index reads address the base index, git
+    // reads the tree the caller stands in — `path` alone at a linked worktree reaches both.
+    const workingTree = await resolveIndexedWorkingTree(this.deps.collectionRegistry, req, this.deps.indexExists);
+    // Every read answer carries the marker (bd tea-rags-mcp-xi2r9, live probe P2-4).
+    // `indexLag` inside the review block stays until the marker supersedes it.
+    const view = this.deps.workingTreeOverlay?.view(workingTree, req.project);
+    const result = await this.reviewWorkingTree(req, providers, workingTree);
+    return view ? { ...result, workingTree: (await view).marker } : result;
+  }
+
+  private async reviewWorkingTree(
+    req: ReviewChangesRequest,
+    providers: readonly (typeof REVIEW_SECTION_PROVIDERS)[number][],
+    workingTree: WorkingTree,
+  ): Promise<ReviewChangesResult> {
+    const { collectionName } = workingTree.baseIndex;
     const addressing = { project: req.project, collection: req.collection, path: req.path };
-    const workTree = resolveWorkTree(addressing, repoRoot);
+    const workTree = workingTree.root || undefined;
     const scope = await readDiffScope(workTree, { base: req.changes?.base, files: req.files });
     const indexLag =
       workTree === undefined ? undefined : readTreeLag(this.deps.collectionRegistry, collectionName, workTree);

@@ -17,6 +17,7 @@ import type { TemporalCohesionReport } from "../../../domains/trajectory/codegra
 import type { DiffDetectorFinding, DiffDetectorStatus } from "../../internal/ops/diff-detector-run.js";
 import type { CollectionRef } from "./explore.js";
 import type { NamingReviewResult } from "./naming-lexicon.js";
+import type { WorkingTreeMarker } from "./working-tree.js";
 
 /**
  * Section ids the review knows. The MCP enum is NOT this union — it is derived
@@ -154,4 +155,6 @@ export interface ReviewChangesReviewBlock {
 
 export interface ReviewChangesResult {
   review: ReviewChangesReviewBlock;
+  /** How far the caller's tree is from the index this answer read (bd tea-rags-mcp-xi2r9); absent only when no overlay is wired. */
+  workingTree?: WorkingTreeMarker;
 }

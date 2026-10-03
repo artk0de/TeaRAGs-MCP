@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import { ExploreFacade } from "../../../src/core/api/internal/facades/explore-facade.js";
 
 describe("getIndexMetrics", () => {
-  function makeExploreFacade(extraDeps: { enrichmentHealthFrameForPath?: (path: string) => readonly string[] } = {}) {
+  function makeExploreFacade(
+    extraDeps: {
+      enrichmentHealthFrameForPath?: (path: string) => readonly string[];
+      workingTreeOverlay?: { view: ReturnType<typeof vi.fn> };
+    } = {},
+  ) {
     const qdrant = {
       collectionExists: vi.fn().mockResolvedValue(true),
       countPoints: vi.fn().mockResolvedValue(100),
@@ -388,6 +393,39 @@ describe("getIndexMetrics", () => {
       const result = await facade.getIndexMetrics("/project");
 
       expect(result.enrichment).toBeUndefined();
+    });
+  });
+
+  /**
+   * bd tea-rags-mcp-xi2r9 (live probe P2-4): every read answer carries the
+   * `workingTree` marker — get_index_metrics called with a path did not.
+   */
+  describe("workingTree marker", () => {
+    const marker = {
+      tree: "/project",
+      indexedCommit: "a".repeat(40),
+      treeCommit: "a".repeat(40),
+      indexedDirty: false,
+      changedFiles: 3,
+      deletedFiles: 1,
+      floors: [],
+    };
+
+    it("attaches the overlay's marker, measured for the addressed tree", async () => {
+      const view = vi.fn().mockResolvedValue({ marker, touchedPaths: new Set(), deletedPaths: new Set() });
+      const { facade } = makeExploreFacade({ workingTreeOverlay: { view } });
+
+      const result = await facade.getIndexMetrics("/project");
+
+      expect(result.workingTree).toEqual(marker);
+      expect(view).toHaveBeenCalledTimes(1);
+      expect(view.mock.calls[0][0].baseIndex.collectionName).toBe(result.collection);
+    });
+
+    it("carries no marker when no overlay is wired", async () => {
+      const { facade } = makeExploreFacade();
+
+      expect((await facade.getIndexMetrics("/project")).workingTree).toBeUndefined();
     });
   });
 });

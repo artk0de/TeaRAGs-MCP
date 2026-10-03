@@ -1,4 +1,5 @@
 import type { QdrantManager } from "./client.js";
+import { denseVectorOf } from "./dense-vector.js";
 
 const PAGE_SIZE = 1000;
 
@@ -78,17 +79,6 @@ export async function sampleVectors(
   } while (offset !== null && vectors.length < maxVectors);
 
   return vectors;
-}
-
-/** Points carry a bare array, or `{ dense, sparse }` once hybrid is enabled. */
-function denseVectorOf(vector: unknown): number[] | undefined {
-  if (Array.isArray(vector) && typeof vector[0] === "number") return vector as number[];
-  if (vector && typeof vector === "object") {
-    for (const value of Object.values(vector as Record<string, unknown>)) {
-      if (Array.isArray(value) && typeof value[0] === "number") return value as number[];
-    }
-  }
-  return undefined;
 }
 
 /** Scroll points ordered by a payload field. Delegates to QdrantManager.scrollOrdered. */

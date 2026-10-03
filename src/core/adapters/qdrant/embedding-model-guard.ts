@@ -66,6 +66,15 @@ export interface EmbeddingModelGuardCallOptions {
    * it off: an outage does not concern them.
    */
   failOnProviderOutage?: boolean;
+  /**
+   * The caller compares no freshly embedded vector against the index
+   * (`rank_chunks`, `find_symbol`): weight drift cannot corrupt its answer, so
+   * only the model NAME is checked — from a cached verdict, else from the
+   * marker. Nothing is embedded, created or cached; the canary waits for the
+   * first caller that embeds. Embedding it here made every cold call of such a
+   * tool wait out the provider's endpoint failover (bd tea-rags-mcp-xi2r9, B3).
+   */
+  nameOnly?: boolean;
 }
 
 /**
@@ -145,9 +154,20 @@ export class EmbeddingModelGuard {
    * embed found the provider down.
    */
   async ensureMatch(collectionName: string, options?: EmbeddingModelGuardCallOptions): Promise<void> {
+    // The provider decides its endpoint lazily, and a failover it decides
+    // invalidates every check in flight. Deciding before a check registers
+    // keeps the first check from being discarded by the decision its own
+    // canary embed would trigger. A name-only caller embeds nothing and must
+    // not force the decision.
+    if (!options?.nameOnly) await this.embeddings?.resolveEndpoint?.();
+
     const cached = this.cache.get(collectionName);
     if (cached) {
       this.assertVerdict(cached);
+      return;
+    }
+    if (options?.nameOnly) {
+      await this.assertMarkerName(collectionName);
       return;
     }
 
@@ -217,6 +237,22 @@ export class EmbeddingModelGuard {
 
     const { canaryMismatch, providerOutage } = await this.compareCanary(collectionName, marker.canary);
     return { verdict: { model: marker.model, canaryMismatch }, cacheable: true, providerOutage };
+  }
+
+  /**
+   * `nameOnly`: the marker's model name against the current one. Nothing is
+   * embedded, created or cached — a missing or unreadable marker asserts
+   * nothing here, exactly as the full check's marker-catch would, and the full
+   * check of the first caller that embeds still runs.
+   */
+  private async assertMarkerName(collectionName: string): Promise<void> {
+    let model: unknown;
+    try {
+      model = (await this.qdrant.getPoint(collectionName, INDEXING_METADATA_ID))?.payload?.embeddingModel;
+    } catch {
+      return;
+    }
+    this.assertVerdict({ model: typeof model === "string" ? model : null, canaryMismatch: null });
   }
 
   /** Re-derive the throw from a cached verdict, so a mismatch stays sticky. */

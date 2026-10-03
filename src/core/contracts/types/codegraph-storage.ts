@@ -54,6 +54,7 @@ import type {
   TemporalSymbolCommitFileSnapshot,
 } from "./codegraph-temporal.js";
 import type { CaseSplitPathPatterns } from "./file-classification.js";
+import type { WorkingTreeGraphReader } from "./working-tree.js";
 
 /**
  * Which `cg_pass1_aggregates` rows `GraphDbClient.listPass1Aggregates` returns.
@@ -731,19 +732,44 @@ export interface PersistedSymbolLineRanges {
  * contracts so domains/explore can depend on it without importing api/internal
  * or adapters. Implemented by GraphFacade (adapted to a bare collectionName in
  * bootstrap). Undefined injection = codegraph disabled = fallback no-op.
+ * `readTreeGraph` — the request's working-tree graph (WTO-7): when it answers
+ * `built`, the lookup reads the tree's graph instead of the index's.
  */
 export interface SymbolChunkResolver {
-  resolveSymbolChunk: (collectionName: string, symbolId: SymbolId) => Promise<SymbolChunkLocation | null>;
+  resolveSymbolChunk: (
+    collectionName: string,
+    symbolId: SymbolId,
+    readTreeGraph?: WorkingTreeGraphReader,
+  ) => Promise<SymbolChunkLocation | null>;
+  /**
+   * The symbol line ranges the WORKING TREE's graph holds for `relPaths` (live
+   * D1, bd tea-rags-mcp-xi2r9) — where the tree defines its symbols. A tree
+   * graph carries no chunk id for a delta file's symbol (chunk ids are the
+   * index's), so find_symbol places a collapsed symbol of a changed file on the
+   * tree's own rows by line instead. `null` when the tree graph is not built:
+   * the index graph's ranges describe another commit and are never answered
+   * for a changed file. Optional: absent, the hop reads chunk ids only.
+   */
+  readTreeSymbolLineRanges?: (
+    collectionName: string,
+    relPaths: readonly RelPath[],
+    readTreeGraph: WorkingTreeGraphReader,
+  ) => Promise<ReadonlyMap<RelPath, PersistedSymbolLineRanges> | null>;
 }
 
 /**
  * The read seam the find_symbol outline uses to show each member's DECLARED
  * visibility (bd tea-rags-mcp-sqqkz) — one batched read per outline response.
  * May throw when the graph exists but cannot be read; the outline degrades to
- * its undecorated form. Absent when codegraph is disabled.
+ * its undecorated form. Absent when codegraph is disabled. `readTreeGraph` as
+ * for {@link SymbolChunkResolver}.
  */
 export interface SymbolVisibilityResolver {
-  resolveSymbolVisibilities: (collectionName: string, symbolIds: readonly SymbolId[]) => Promise<SymbolVisibilityRow[]>;
+  resolveSymbolVisibilities: (
+    collectionName: string,
+    symbolIds: readonly SymbolId[],
+    readTreeGraph?: WorkingTreeGraphReader,
+  ) => Promise<SymbolVisibilityRow[]>;
 }
 
 /**
@@ -1403,7 +1429,9 @@ export interface GraphDbClient {
   // One throwaway `cg_review_file_edges_<reviewId>` table per review — the
   // review id embeds its epoch, so the age sweep reads it off the NAME.
   // Deliberately outside the migration catalog: the DDL is issued at runtime
-  // and the table is dropped the moment the review ends.
+  // and the table is dropped the moment the review ends. The table is a
+  // connection-scoped TEMP table: a review never writes the database file, so
+  // it never moves the base graph's version (bd tea-rags-mcp-xi2r9, D4).
 
   /**
    * Create this review's table when absent and APPEND the edges to it, in one
@@ -1482,6 +1510,20 @@ export interface GraphDbClient {
    * and is reported as a typed error; nothing is lost by retrying on a later run.
    */
   compactStorage: () => Promise<CodegraphStorageCompactionOutcome>;
+
+  /**
+   * Write a consistent copy of the whole store to `targetPath`, a standalone
+   * database file a separate client can open read-write (bd
+   * tea-rags-mcp-xi2r9) — the base a working-tree graph is built on. The copy
+   * holds every committed row, including those not yet checkpointed, and lands
+   * at the target atomically: a reader of `targetPath` sees the previous file
+   * or the complete new one, never a partial copy. The live store is left
+   * exactly as it was.
+   *
+   * A failure — including a store host that cannot export — rejects with a
+   * typed error; nothing is left at `targetPath` that was not there before.
+   */
+  exportSnapshot: (targetPath: string) => Promise<void>;
 
   /**
    * Atomically replace the cycles table for `scope` with the supplied

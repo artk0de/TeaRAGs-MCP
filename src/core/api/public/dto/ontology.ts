@@ -35,6 +35,7 @@ import type {
   IdentifierTypeSource,
   OntologyCollisionRule,
 } from "../../../contracts/types/codegraph.js";
+import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 
 export type { OntologyCollisionRule } from "../../../contracts/types/codegraph.js";
 
@@ -179,4 +180,10 @@ export interface GetOntologyReportResponse {
   notices?: string[];
   /** Set when the index predates `cg_identifiers` (migration 033) — reindex, the report is not "clean". */
   driftWarning?: string;
+  /**
+   * Which tree the report read (bd tea-rags-mcp-xi2r9): the tree graph's
+   * identifiers when `floors` holds `"codegraph"`, the index's otherwise
+   * (`treeGraphUnavailable` says why).
+   */
+  workingTree?: WorkingTreeMarker;
 }

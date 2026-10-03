@@ -1,6 +1,7 @@
 // src/bootstrap/factory.ts
 import { spawn, type ChildProcess } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { totalmem } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -30,6 +31,10 @@ import {
   createComposition,
   createNamingReviewExtractor,
   createPathCollectionResolver,
+  createWorkingTreeDeltaSignalSource,
+  createWorkingTreeGitSignalSource,
+  createWorkingTreeGitSignalStore,
+  enrichmentAlgorithmVersions,
   ExploreFacade,
   GraphFacade,
   IngestFacade,
@@ -41,20 +46,40 @@ import {
   readPayloadImportSpecifiers,
   ReviewChangesOps,
   ReviewFacade,
+  scheduleWorkingTreeGitSignalSweep,
+  scheduleWorkingTreeGraphSweep,
   SchemaBuilder,
   TracePathOps,
+  WORKING_TREE_GRAPH_BUILD_TIMEOUT_MS,
+  WorkingTreeGraphCache,
   WorktreeOps,
   type App,
   type GraphFacadeDeps,
+  type WorkingTreeGitSignalConfig,
+  type WorkingTreeGraphCodegraphRuntime,
 } from "../core/api/index.js";
 import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../core/contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../core/contracts/types/collection-identity.js";
 import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-executor.js";
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
 import type { PayloadKeyOwner } from "../core/contracts/types/trajectory.js";
+import {
+  createWorkingTreeChunkLayer,
+  createWorkingTreeChunkStore,
+  createWorkingTreeDeltaReader,
+  createWorkingTreeFileWriter,
+  scheduleWorkingTreeChunkSweep,
+  WorkingTreeDenseVectorSource,
+  WorkingTreeOverlay,
+  WorkingTreeTouchedBasePoints,
+} from "../core/domains/explore/index.js";
 import { CollectionIndexingLock } from "../core/domains/ingest/infra/index.js";
+import { ChunkerPool } from "../core/domains/ingest/pipeline/chunker/infra/pool.js";
 import { WorkerPoolEnrichmentExecutor } from "../core/domains/ingest/pipeline/enrichment/executor/index.js";
+import { buildFileChunkPoints } from "../core/domains/ingest/pipeline/file-chunk-points.js";
 import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
+import { defaultEnrichmentWorkerMemoryLimitMb } from "../core/domains/ingest/pipeline/infra/pool-defaults.js";
+import { FileScanner } from "../core/domains/ingest/pipeline/scanner.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import { QuarantineStore } from "../core/domains/ingest/sync/index.js";
 import { ShardedSnapshotManager } from "../core/domains/ingest/sync/snapshot/index.js";
@@ -65,6 +90,7 @@ import { IndexDriftReporter } from "../core/domains/maintenance/drift/index.js";
 import { LanguageVersionDriftMonitor } from "../core/domains/maintenance/drift/language-version-drift-monitor.js";
 import { SchemaDriftMonitor } from "../core/domains/maintenance/drift/schema-drift-monitor.js";
 import { StatsContractDriftMonitor } from "../core/domains/maintenance/drift/stats-contract-drift-monitor.js";
+import { TrajectoryVersionDriftMonitor } from "../core/domains/maintenance/drift/trajectory-version-drift-monitor.js";
 import { CollectionFootprintFactory } from "../core/domains/maintenance/footprint/index.js";
 import {
   createDatabaseMigrationApplier,
@@ -74,12 +100,14 @@ import { CollectionRegistry, type AmbientEnvRole } from "../core/domains/mainten
 import { WorktreeProvisioner } from "../core/domains/maintenance/worktree/index.js";
 import {
   CODEGRAPH_LANGUAGE_BY_EXTENSION,
+  WorkingTreeGraphProcessBuilder,
   type CodegraphDeps,
   type CodegraphWorkerConfig,
   type TemporalCochangeConfig,
 } from "../core/domains/trajectory/codegraph/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { InMemoryTemporalSymbolCommitBuffer } from "../core/domains/trajectory/codegraph/temporal/index.js";
+import { StaticPayloadBuilder } from "../core/domains/trajectory/static/provider.js";
 import { setDebug } from "../core/infra/runtime.js";
 import { StatsCache } from "../core/infra/stats-cache.js";
 import type { HealthProbes } from "../mcp/middleware/error-handler.js";
@@ -103,7 +131,7 @@ import {
   reportTurboMigration,
   type TurboMigrationListener,
 } from "./config/turbo-reconcile.js";
-import { resolveEmbeddingModelParameters } from "./embedding-parameters.js";
+import { armEmbeddingModelParameters } from "./embedding-parameters.js";
 import { ProjectIngestFactory } from "./project-ingest-factory.js";
 
 /**
@@ -150,8 +178,12 @@ export interface AppContext {
   schemaBuilder: SchemaBuilder;
   healthProbes?: HealthProbes;
   embeddedRelease?: () => void;
-  /** Graceful shutdown: terminate embedding provider + release embedded Qdrant. */
-  cleanup?: () => void;
+  /**
+   * Graceful shutdown: terminate embedding provider + release embedded Qdrant,
+   * synchronously on the first call. The promise settles once the working-tree
+   * stores' pending writes have landed — await it before exiting.
+   */
+  cleanup?: () => Promise<void>;
 }
 
 interface InfraContext {
@@ -218,7 +250,8 @@ async function resolveInfrastructure(
   });
 
   // Filled once the guard below exists. The fallback hook can fire before that
-  // — resolveEmbeddingModelParameters already talks to the provider — so the
+  // — any provider call that decides the endpoint (an eager ONNX-style init,
+  // model info for a fixed endpoint) may run first — so the
   // handler reaches the guard through a slot instead of closing over a binding
   // that is still in its temporal dead zone.
   const modelGuardSlot: { current?: EmbeddingModelGuard } = {};
@@ -252,8 +285,9 @@ async function resolveInfrastructure(
 
   // Ask the model what it actually is before anything consumes getDimensions().
   // The constructor could only read a static table; the model's own config is
-  // the authority, and the guard built below is the first thing to depend on it.
-  await resolveEmbeddingModelParameters(embeddings, zodConfig.embedding.dimensions);
+  // the authority. A provider that picks its endpoint lazily is asked once it
+  // has picked it — asking here would force the pick at start (B3).
+  await armEmbeddingModelParameters(embeddings, zodConfig.embedding.dimensions);
 
   // If user didn't explicitly set batch size, use GPU-calibrated recommendation
   if (
@@ -316,6 +350,37 @@ async function resolveInfrastructure(
   return { qdrant, embeddings, modelGuard, embeddedRelease };
 }
 
+/** Squash-aware session grouping for git `commitCount`, shared by ingest and the working tree's on-demand reads. */
+function gitSquashOptionsOf(
+  trajectoryConfig: Pick<AppConfig["trajectoryIngest"], "squashAwareSessions" | "sessionGapMinutes">,
+): { squashAwareSessions: boolean; sessionGapMinutes: number } | undefined {
+  return trajectoryConfig.squashAwareSessions
+    ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }
+    : undefined;
+}
+
+/**
+ * The git config the working tree's on-demand git signals compute with — the
+ * knobs ingest's git trajectory reads from the same parsed config, so a block
+ * computed under it is the one an index run under it writes.
+ */
+function workingTreeGitSignalConfigOf(zodConfig: ReturnType<typeof getZodConfig>): WorkingTreeGitSignalConfig {
+  const { trajectoryGit } = zodConfig;
+  const squashOpts = gitSquashOptionsOf(trajectoryGit);
+  return {
+    vcsAdapter: zodConfig.vcs.adapter,
+    timeoutMs: trajectoryGit.logTimeoutMs,
+    ...(squashOpts ? { squashOpts } : {}),
+    file: { maxAgeMonths: trajectoryGit.logMaxAgeMonths },
+    chunk: {
+      maxAgeMonths: trajectoryGit.chunkMaxAgeMonths,
+      timeoutMs: trajectoryGit.chunkTimeoutMs,
+      maxFileLines: trajectoryGit.chunkMaxFileLines,
+      concurrency: trajectoryGit.chunkConcurrency,
+    },
+  };
+}
+
 function wireComposition(
   zodConfig: ReturnType<typeof getZodConfig>,
   trajectoryConfig: AppConfig["trajectoryIngest"],
@@ -325,9 +390,7 @@ function wireComposition(
   // fully-configured GitEnrichmentProvider via getAllEnrichmentProviders().
   // IngestFacade no longer constructs git inline — single source of truth is
   // the registry.
-  const squashOpts = trajectoryConfig.squashAwareSessions
-    ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }
-    : undefined;
+  const squashOpts = gitSquashOptionsOf(trajectoryConfig);
   // Git enrichment DISPATCH runs INLINE (no workerDescriptor) — WorkerPoolEnrichmentExecutor
   // detects the missing descriptor and falls through to InlineEnrichmentExecutor,
   // which calls provider.buildFileSignals/buildChunkSignals directly in-process on
@@ -390,6 +453,12 @@ interface CodegraphContext {
   pool: GraphDbClientPool;
   /** Keep-alive guard handed to the EnrichmentCoordinator (daemon stays up across the run). */
   indexRunDaemonGuard: IndexRunDaemonGuard;
+  /**
+   * What the working-tree graph cache builds against (bd tea-rags-mcp-xi2r9,
+   * WTO-7): this pool for the base snapshot, and the provider config the
+   * enrichment worker gets — the tree build runs the same provider.
+   */
+  workingTreeGraphRuntime: WorkingTreeGraphCodegraphRuntime;
 }
 
 const codegraphDaemonLock = new DaemonLock();
@@ -684,6 +753,19 @@ export function wireCodegraph(
    * app's Qdrant by `createAppContext`; optional for the same reason as above.
    */
   readFileCommitCounts?: GraphFacadeDeps["readFileCommitCounts"],
+  /**
+   * The `workingTree` marker source for the graph tools (bd
+   * tea-rags-mcp-xi2r9). Built by `createAppContext`; optional for the same
+   * reason as above.
+   */
+  workingTreeOverlay?: GraphFacadeDeps["workingTreeOverlay"],
+  /**
+   * Whether an addressed index exists — the graph tools refuse a missing one
+   * with the typed not-found error (live round-3 D3). Wired to
+   * `qdrant.collectionExists` by `createAppContext`; optional for the same
+   * reason as above.
+   */
+  indexExists?: GraphFacadeDeps["indexExists"],
 ): CodegraphContext | undefined {
   // Defensive: legacy/mocked configs may omit the codegraph section
   // entirely. Treat that as "disabled" so the `codegraph.enabled` config
@@ -847,6 +929,14 @@ export function wireCodegraph(
     if (pool.hasDatabase(physicalCollectionName)) ensure();
     return originalAcquireReader(physicalCollectionName);
   };
+  // The working-tree graph's base snapshot is taken by the daemon too (its own
+  // connection sees the WAL), so the first export of a session must find one
+  // running. Same no-database guard as the reader: the pool refuses that itself.
+  const originalExportSnapshot = pool.exportSnapshot.bind(pool);
+  pool.exportSnapshot = async (physicalCollectionName: PhysicalCollectionName, targetPath: string) => {
+    if (pool.hasDatabase(physicalCollectionName)) ensure();
+    return originalExportSnapshot(physicalCollectionName, targetPath);
+  };
 
   // Codegraph worker-pool descriptor (tea-rags-mcp-dz7f). `collection-affinity`
   // dispatch — streamFileBatch → finalizeSignals → deferred buildChunkSignals
@@ -931,6 +1021,8 @@ export function wireCodegraph(
     resolveActiveCollection,
     ...(readImportSpecifiers ? { readImportSpecifiers } : {}),
     ...(readFileCommitCounts ? { readFileCommitCounts } : {}),
+    ...(workingTreeOverlay ? { workingTreeOverlay } : {}),
+    ...(indexExists ? { indexExists } : {}),
   });
 
   // Keep-alive guard for the index run — see `createIndexRunDaemonGuard`. The
@@ -943,7 +1035,21 @@ export function wireCodegraph(
     verifyDaemonBuild: async (physicalCollectionName) => pool.acquireWrite(physicalCollectionName),
   });
 
-  return { deps, graphFacade, pool, indexRunDaemonGuard };
+  // The tree build reuses the worker's provider config verbatim, minus what
+  // its private clone must not carry (daemon socket, rootDir, temporal).
+  const workingTreeGraphRuntime: WorkingTreeGraphCodegraphRuntime = {
+    pool,
+    providerConfig: {
+      languageModulePath: codegraphWorkerConfig.languageModulePath,
+      migrationsModulePath: codegraphWorkerConfig.migrationsModulePath,
+      customExcludePatterns: codegraphWorkerConfig.customExcludePatterns,
+      ambiguousResolveMode: codegraphWorkerConfig.ambiguousResolveMode,
+      dbMemoryLimit: codegraphWorkerConfig.dbMemoryLimit,
+      dbThreads: codegraphWorkerConfig.dbThreads,
+    },
+  };
+
+  return { deps, graphFacade, pool, indexRunDaemonGuard, workingTreeGraphRuntime };
 }
 
 /**
@@ -1117,6 +1223,133 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   });
   const resolveActiveCollection = async (name: string): Promise<PhysicalCollectionName> =>
     infra.qdrant.aliases.resolveActive(name);
+  // Delta files chunked the way ingest stores them (bd tea-rags-mcp-xi2r9.3):
+  // the production `ChunkerPool` (its worker and the language module path it
+  // injects are the ones `BaseIndexingPipeline#createChunkerPool` forks), one
+  // worker because a delta is capped at 200 files, released after 60 s idle
+  // and on dispose. The payload is shaped by the builder ingest's pipeline uses.
+  // Behind its memory cache, a persistent store under `<appData>/working-tree`
+  // keeps chunked files across restarts; it is swept (if no process swept it
+  // within 6 h) after a start-up delay and every 6 h on unref'd timers — never
+  // on a request — stopped, and an in-flight sweep aborted, by cleanup. Rows are keyed by this package version
+  // too, so an upgraded chunker never serves an older build's ids.
+  const workingTreePayloadBuilder = new StaticPayloadBuilder();
+  // Every working-tree store writes through ONE writer, and cleanup closes it:
+  // a `tea-rags call` exits right after cleanup, and a write of background
+  // warm-up work still in flight was cut between its temp and its rename
+  // (bd tea-rags-mcp-xi2r9, B1).
+  const workingTreeWriter = createWorkingTreeFileWriter();
+  const workingTreeChunkStore = createWorkingTreeChunkStore({
+    rootDir: join(config.paths.appData, "working-tree"),
+    writer: workingTreeWriter,
+  });
+  const stopWorkingTreeChunkSweep = scheduleWorkingTreeChunkSweep(workingTreeChunkStore);
+  const workingTreeGitSignalStore = createWorkingTreeGitSignalStore({
+    rootDir: join(config.paths.appData, "working-tree"),
+    writer: workingTreeWriter,
+  });
+  const stopWorkingTreeGitSignalSweep = scheduleWorkingTreeGitSignalSweep(workingTreeGitSignalStore);
+  const workingTreeChunkLayer = createWorkingTreeChunkLayer({
+    createPool: (chunkerConfig) => new ChunkerPool(1, chunkerConfig),
+    chunkFile: async (pool, file) => buildFileChunkPoints(pool, file, workingTreePayloadBuilder),
+    idleShutdownMs: 60_000,
+    store: workingTreeChunkStore,
+    chunkerBuildId: pkg.version,
+  });
+  // The working tree's codegraph (bd tea-rags-mcp-xi2r9, WTO-7): built per
+  // delta in a child process over a snapshot of the base graph, published
+  // under `<appData>/working-tree/<collection>/graph/`. Constructed before the
+  // overlay (its warm-up consumer), so the codegraph runtime is late-bound:
+  // `wireCodegraph` builds the pool below, and its GraphFacade takes the
+  // overlay. Like `projectIngestFactory` in the overlay, `codegraphContext` is
+  // only read at request (or sweep) time, never during construction;
+  // `undefined` = codegraph off. The child's heap ceiling is the enrichment
+  // worker's: the tree build runs the same provider over a subset of the same
+  // corpus. An explicit `0` (ceiling removed) maps to physical memory, since
+  // the builder needs a positive one.
+  const enrichmentWorkerHeapMb = defaultEnrichmentWorkerMemoryLimitMb();
+  const workingTreeGraphCache = new WorkingTreeGraphCache({
+    rootDir: join(config.paths.appData, "working-tree"),
+    writer: workingTreeWriter,
+    codegraph: (): WorkingTreeGraphCodegraphRuntime | undefined => codegraphContext?.workingTreeGraphRuntime,
+    resolveActiveCollection,
+    builder: new WorkingTreeGraphProcessBuilder(),
+    budget: {
+      timeoutMs: WORKING_TREE_GRAPH_BUILD_TIMEOUT_MS,
+      heapLimitMb: enrichmentWorkerHeapMb > 0 ? enrichmentWorkerHeapMb : Math.floor(totalmem() / 1024 / 1024),
+    },
+  });
+  // Parsed once per distinct resolved env, like `ProjectIngestFactory`'s facades.
+  const gitSignalConfigByEnv = new Map<string, WorkingTreeGitSignalConfig>();
+  const workingTreeGitSignalConfigFor = (env: Record<string, string>): WorkingTreeGitSignalConfig => {
+    const key = JSON.stringify(Object.entries(env).sort(([a], [b]) => (a < b ? -1 : 1)));
+    let resolved = gitSignalConfigByEnv.get(key);
+    if (!resolved) {
+      resolved = workingTreeGitSignalConfigOf(parseAppConfigZod(env));
+      gitSignalConfigByEnv.set(key, resolved);
+    }
+    return resolved;
+  };
+  // One overlay per process (bd tea-rags-mcp-xi2r9): its delta reader caches per
+  // tree, and every read surface — explore, graph, trace_path — shares it.
+  const workingTreeOverlay = new WorkingTreeOverlay({
+    registry: collectionRegistry,
+    deltaReader: createWorkingTreeDeltaReader(),
+    createFileFilter: createWorkingTreeFileFilter(config.ingestCode),
+    deltaChunks: {
+      layer: workingTreeChunkLayer,
+      // The base index's chunker config: its project's registry env replayed
+      // over the server's (`ProjectIngestFactory#forPath`, built below and only
+      // read at request time), with the size its embedding model derives.
+      resolveChunkerConfig: async (tree) =>
+        projectIngestFactory
+          .forPath(tree.baseIndex.root ?? tree.root)
+          .resolveChunkerConfig(tree.baseIndex.collectionName),
+    },
+    // WTO-7: a non-empty delta warms the tree graph at view time; graph tools
+    // and the delta rows' codegraph signals read it through the view.
+    treeGraph: workingTreeGraphCache,
+    // WTO-6/7: delta rows inherit git from the base points and take codegraph
+    // from the tree graph. The pool is late-bound like the cache's runtime.
+    deltaSignals: createWorkingTreeDeltaSignalSource({
+      graphFiles: () => codegraphContext?.pool,
+      // D12: what no base point answers — `git.file` of a file the base never
+      // chunked, `git.chunk` of a symbol it never held — comes from the git
+      // trajectory's own computation, configured as ingest's; absent when git
+      // enrichment is off.
+      ...(config.trajectoryIngest.enableGitMetadata
+        ? {
+            gitSignals: createWorkingTreeGitSignalSource({
+              // Live G2: computed blocks outlive the process, keyed by HEAD,
+              // content, this build and the signal config; swept with the chunk store.
+              store: workingTreeGitSignalStore,
+              builderVersion: pkg.version,
+              ...workingTreeGitSignalConfigOf(zodConfig),
+              // Round-4 P1: each index's own config — its project's registry env
+              // replayed over the server's, as an index run of it resolves
+              // (`ProjectIngestFactory#envForPath`, built below, read at request time).
+              configFor: (indexRoot) => workingTreeGitSignalConfigFor(projectIngestFactory.envForPath(indexRoot)),
+            }),
+          }
+        : {}),
+    }),
+    // The touched files' base points, read per path and cached per index
+    // revision and touched set; each view reads them once and shares the read
+    // between hybrid's exclusion and the delta signals (bd tea-rags-mcp-xi2r9).
+    touchedBasePoints: new WorkingTreeTouchedBasePoints(infra.qdrant),
+    // WTO-5: delta rows ranked by their own vectors. A view that changed files
+    // warms them at view time — a base point's stored vector for byte-identical
+    // content, then the chunk store (vectors beside the rows, same retention),
+    // then the provider the queries embed with, which the model guard holds to
+    // the base index's model.
+    denseVectors: new WorkingTreeDenseVectorSource({
+      embeddings: infra.embeddings,
+      qdrant: infra.qdrant,
+      store: workingTreeChunkStore,
+    }),
+  });
+  // One existence check for every read tool that resolves a tree (live round-3 D3).
+  const indexExists = async (collectionName: string): Promise<boolean> => infra.qdrant.collectionExists(collectionName);
   const codegraphContext = wireCodegraph(
     config,
     zodConfig,
@@ -1124,7 +1357,14 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     resolveActiveCollection,
     async (collectionName, relPaths) => readPayloadImportSpecifiers(infra.qdrant, collectionName, relPaths),
     async (collectionName) => readPayloadFileCommitCounts(infra.qdrant, collectionName),
+    workingTreeOverlay,
+    indexExists,
   );
+  // Swept with the chunk store's schedule (first after 2 min, then every 6 h,
+  // unref'd, throttled across processes by a stamp) — here,
+  // after `codegraphContext` exists: snapshot retention compares against the
+  // live base graph.
+  const stopWorkingTreeGraphSweep = scheduleWorkingTreeGraphSweep(workingTreeGraphCache);
   const composition = wireComposition(zodConfig, config.trajectoryIngest, codegraphContext?.deps);
 
   // TracePathOps bridges the codegraph adjacency (DuckDB pool) and the explore
@@ -1141,6 +1381,8 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
         reranker: composition.reranker,
         collectionRegistry,
         resolveActiveCollection,
+        workingTreeOverlay,
+        indexExists,
       })
     : undefined;
 
@@ -1153,6 +1395,9 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
         collectionRegistry,
         resolveActiveCollection,
         languages: ontologyLanguageProfiles(),
+        // Reads the tree graph's identifiers and carries the marker (bd tea-rags-mcp-xi2r9, D9).
+        workingTreeOverlay,
+        indexExists,
       })
     : undefined;
 
@@ -1189,6 +1434,14 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     composition.languageCodeVersions,
     composition.languageChunkSetBumpScopes,
   );
+  // The same blindness one level over: a provider whose ALGORITHM changed
+  // writes different values under the same keys (bd tea-rags-mcp-xi2r9). The
+  // current side is the provider list the ingest slice enriches with, so a
+  // process with the git trajectory off makes no git claim.
+  const trajectoryVersionDriftMonitor = new TrajectoryVersionDriftMonitor(
+    collectionRegistry,
+    enrichmentAlgorithmVersions(activeEnrichmentProviders(composition.registry, config.trajectoryIngest)),
+  );
   // Third axis: the indexing env. The resolver it takes builds what the NEXT
   // run on that collection would use, the way `ProjectIngestFactory#forPath`
   // builds it for a real run — so a finding means the outer env explicitly
@@ -1221,7 +1474,14 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   // domain module and may not reach the api layer for it, and deriving the hash
   // itself sent a relocated project's report to a collection nobody queries.
   const driftReporter = new IndexDriftReporter(
-    [schemaDriftMonitor, statsContractDriftMonitor, languageVersionDriftMonitor, envDriftMonitor, commitDriftMonitor],
+    [
+      schemaDriftMonitor,
+      statsContractDriftMonitor,
+      languageVersionDriftMonitor,
+      trajectoryVersionDriftMonitor,
+      envDriftMonitor,
+      commitDriftMonitor,
+    ],
     (collectionName) => collectionRegistry.get(collectionName)?.name ?? undefined,
     createPathCollectionResolver(collectionRegistry),
   );
@@ -1344,6 +1604,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     // slice `App.getIndexStatus` reads. A project whose registry env disables
     // git then has no git row on either surface (bd tea-rags-mcp-uebug).
     enrichmentHealthFrameForPath: (path) => projectIngestFactory.forPath(path).enrichmentProviderKeys,
+    workingTreeOverlay,
   });
   // NamingLexiconOps (bd tea-rags-mcp-4p3sb.12) reads cg_identifiers through the
   // same pool as TracePathOps, under the same codegraphContext guard, and runs
@@ -1362,6 +1623,9 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
         extractDeclarations: createNamingReviewExtractor(composition.languageFactory),
         // Type drafts (bd tea-rags-mcp-433d2): head words embedded to align a synonym head.
         embeddings: infra.embeddings,
+        // Every read answer carries the `workingTree` marker (bd tea-rags-mcp-xi2r9).
+        workingTreeOverlay,
+        indexExists,
       })
     : undefined;
   // The diff-scoped review (bd tea-rags-mcp-89k7k.1.4): built beside the
@@ -1391,6 +1655,8 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
               composer: new DefaultSymbolIdComposer(),
             },
             windowMonths: zodConfig.trajectoryGit.chunkMaxAgeMonths,
+            workingTreeOverlay,
+            indexExists,
           }),
         })
       : undefined;
@@ -1410,6 +1676,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     embeddings: infra.embeddings,
     ingest,
     ingestForPath: (path) => projectIngestFactory.forPath(path),
+    workingTreeIndexOf: async (path) => explore.workingTreeIndexOf(path),
     explore,
     reranker: composition.reranker,
     driftReporter,
@@ -1429,12 +1696,36 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   });
 
   // Idempotent: under stdio both the signal listeners and the stdin-close
-  // shutdown reach it (bd tea-rags-mcp-e6cpu); resources release once.
-  let cleanedUp = false;
-  const cleanup = () => {
-    if (cleanedUp) return;
-    cleanedUp = true;
+  // shutdown reach it (bd tea-rags-mcp-e6cpu); resources release once, and
+  // every caller gets the one release. The releases run synchronously on the
+  // first call; the returned promise settles once the working-tree stores'
+  // writes in flight have landed (bd tea-rags-mcp-xi2r9, B1) — the flush point
+  // a caller that exits next (`tea-rags call`, stdio shutdown) awaits.
+  let released: Promise<void> | undefined;
+  const cleanup = async (): Promise<void> => {
+    if (released) return released;
+    // First: from here on the stores write nothing new, and the promise
+    // settles once the writes in flight have landed. Never rejects.
+    released = workingTreeWriter.close();
+    try {
+      releaseResources();
+    } catch (error) {
+      // Best-effort, and it never rejects: callers fire it from signal
+      // listeners and exit paths that have nobody to hand a rejection to.
+      console.error("[tea-rags] cleanup failed:", error);
+    }
+    return released;
+  };
+  const releaseResources = (): void => {
     registryWatchStop();
+    stopWorkingTreeChunkSweep();
+    stopWorkingTreeGitSignalSweep();
+    stopWorkingTreeGraphSweep();
+    // Shutdown abandons in-flight tree-graph builds: kill the children, drop
+    // this process's staging dirs (bd tea-rags-mcp-xi2r9, D6). The cache also
+    // holds an exit hook while a build runs, for processes that never call this.
+    workingTreeGraphCache.abandonInFlightBuilds();
+    void workingTreeChunkLayer.dispose().catch(() => undefined);
     // In-process enrichment (MCP index_codebase, inline git trajectory) spawns
     // git as a direct child of THIS process; no parent-death guard reaches it,
     // so an interrupted run's git children are killed here (bd tea-rags-mcp-w26dc).
@@ -1525,11 +1816,36 @@ export function createConfiguredServer(
 // today's behaviour end-to-end.
 // ---------------------------------------------------------------------------
 
+/**
+ * The ingest admission rule for one working tree (bd tea-rags-mcp-xi2r9): the
+ * same `FileScanner` ingest builds — extensions, built-in and project ignore
+ * files, configured patterns — loaded at the tree's root, so the working-tree
+ * delta never names a file an index run would not have indexed.
+ */
+export function createWorkingTreeFileFilter(
+  ingestCode: AppConfig["ingestCode"],
+): (root: string) => Promise<(relativePath: string) => boolean> {
+  return async (root) => {
+    const scanner = new FileScanner({
+      supportedExtensions: ingestCode.supportedExtensions,
+      ignorePatterns: ingestCode.ignorePatterns,
+      customIgnorePatterns: ingestCode.customIgnorePatterns,
+    });
+    await scanner.loadIgnorePatterns(root);
+    return (relativePath) => scanner.accepts(relativePath);
+  };
+}
+
 export function createSymbolChunkResolver(graphFacade?: GraphFacade): SymbolChunkResolver | undefined {
   if (!graphFacade) return undefined;
   return {
-    resolveSymbolChunk: async (collectionName, symbolId) =>
-      graphFacade.resolveSymbolChunk({ collection: collectionName }, symbolId),
+    // The tree-graph reader rides along only for a working tree with a delta.
+    resolveSymbolChunk: async (collectionName, symbolId, readTreeGraph) =>
+      readTreeGraph
+        ? graphFacade.resolveSymbolChunk({ collection: collectionName }, symbolId, readTreeGraph)
+        : graphFacade.resolveSymbolChunk({ collection: collectionName }, symbolId),
+    readTreeSymbolLineRanges: async (collectionName, relPaths, readTreeGraph) =>
+      graphFacade.readTreeSymbolLineRanges({ collection: collectionName }, relPaths, readTreeGraph),
   };
 }
 
@@ -1541,7 +1857,9 @@ export function createSymbolChunkResolver(graphFacade?: GraphFacade): SymbolChun
 export function createSymbolVisibilityResolver(graphFacade?: GraphFacade): SymbolVisibilityResolver | undefined {
   if (!graphFacade) return undefined;
   return {
-    resolveSymbolVisibilities: async (collectionName, symbolIds) =>
-      graphFacade.getSymbolVisibilities({ collection: collectionName }, symbolIds),
+    resolveSymbolVisibilities: async (collectionName, symbolIds, readTreeGraph) =>
+      readTreeGraph
+        ? graphFacade.getSymbolVisibilities({ collection: collectionName }, symbolIds, readTreeGraph)
+        : graphFacade.getSymbolVisibilities({ collection: collectionName }, symbolIds),
   };
 }

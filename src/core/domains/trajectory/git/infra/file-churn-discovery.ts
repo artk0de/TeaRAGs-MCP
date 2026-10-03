@@ -66,6 +66,57 @@ export interface FileChurnDiscoveryOptions {
  */
 const SINCE_DRIFT_TOLERANCE_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * The file walk's window, frozen at call time: its `--since` date and the
+ * lower bound (epoch SECONDS, as git timestamps are) a commit's committer date
+ * must reach to count. `maxAgeMonths` ≤ 0 → ten years.
+ */
+export function fileChurnWindowOf(maxAgeMonths: number): { sinceDate: Date; lowerBoundSec: number } {
+  const effectiveMonths = maxAgeMonths > 0 ? maxAgeMonths : 120;
+  const sinceDate = new Date(Date.now() - effectiveMonths * 30 * 86400 * 1000);
+  return { sinceDate, lowerBoundSec: Math.floor(sinceDate.getTime() / 1000) };
+}
+
+/**
+ * Per-file churn of the commits in a window, in LOG order as read (a full read,
+ * or a `[...fresh, ...prior]` top-up), folded the one canonical way — shared by
+ * the discovery and by any reader that must equal it over a path subset.
+ *
+ * EVICT, then CANONICALIZE: sort by (committerTimestamp desc, sha asc) BEFORE
+ * aggregating. Window membership AND order key off the COMMITTER date (`%ct`),
+ * NOT the author date (`commit.timestamp` = `%at`), because `git log --since`
+ * (the legacy `readNumstatLog` full recompute) filters on committer date: on
+ * rebased / cherry-picked / squash-merged history (author date ≪ committer
+ * date) an author-date evict would drop a commit the legacy path KEEPS,
+ * diverging commitCount / lines / sha-set. Sorting by committer date also
+ * matches git-log's own reverse-chronological order, so the union
+ * `[...fresh, ...prior]` — the correct SET but not git-log's order under MERGES
+ * (a top-up range `prior.head..head` can surface a side-branch commit dated
+ * among the prior window) — folds into the SAME canonical order on both the
+ * warm and cold path → `commits[]` is byte-identical (windowed-equality holds
+ * split-independently) and the tie-break-sensitive derived signals
+ * (recentDominantAuthor / lastCommitHash / taskId order) are stable. `filter`
+ * yields a fresh array, so the `.sort` never mutates the caller's array (which
+ * the discovery has already persisted via `store.save`).
+ *
+ * AGGREGATE in canonical order — each file's `commits[]` is deterministic —
+ * keyed on HEAD paths (bd tea-rags-mcp-aikfk). Renames resolve over the
+ * in-window entries in log order: a full read is git's own order and a top-up
+ * is `[...fresh, ...prior]`, where no prior commit descends from a fresh one.
+ * The snapshot stores raw per-commit rows, so a pre-rename commit persisted
+ * under its old path is re-resolved on every build.
+ */
+export function aggregateFileChurnWindow(
+  entries: readonly CommitFileNumstat[],
+  lowerBoundSec: number,
+): Map<string, FileChurnData> {
+  const inWindow = entries.filter((entry) => entry.committerTimestamp >= lowerBoundSec);
+  const ordered = [...inWindow].sort(
+    (a, b) => b.committerTimestamp - a.committerTimestamp || a.commit.sha.localeCompare(b.commit.sha),
+  );
+  return aggregateFileChurnFollowingRenames(inWindow, ordered);
+}
+
 export class FileChurnDiscovery {
   /** Resolved lazily in resolveEntries — mirrors GitCommitDiscovery so the
    *  provider's async adapter factory hands over a Promise while tests stay
@@ -110,44 +161,10 @@ export class FileChurnDiscovery {
 
   private async computeFileChurn(): Promise<Map<string, FileChurnData>> {
     // Frozen ONCE with the EXACT legacy per-batch formula (walk-commits.ts).
-    const effectiveMonths = this.opts.maxAgeMonths > 0 ? this.opts.maxAgeMonths : 120;
-    const sinceDate = new Date(Date.now() - effectiveMonths * 30 * 86400 * 1000);
+    const { sinceDate, lowerBoundSec } = fileChurnWindowOf(this.opts.maxAgeMonths);
 
     const entries = await this.resolveEntries(sinceDate);
-
-    // EVICT: git timestamps are epoch SECONDS. A topped-up / drift-tolerated
-    // window can carry commits below the current lower bound; those contribute
-    // ZERO. Compare in seconds against the same frozen `sinceDate`.
-    const lowerBoundSec = Math.floor(sinceDate.getTime() / 1000);
-
-    // CANONICALIZE: evict aged-out commits, then sort by (committerTimestamp
-    // desc, sha asc) BEFORE aggregating. Window membership AND order key off the
-    // COMMITTER date (`%ct`), NOT the author date (`commit.timestamp` = `%at`),
-    // because `git log --since` (the legacy `readNumstatLog` full recompute)
-    // filters on committer date: on rebased / cherry-picked / squash-merged
-    // history (author date ≪ committer date) an author-date evict would drop a
-    // commit the legacy path KEEPS, diverging commitCount / lines / sha-set.
-    // Sorting by committer date also matches git-log's own reverse-chronological
-    // order, so the union `[...fresh, ...prior]` — the correct SET but not
-    // git-log's order under MERGES (a top-up range `prior.head..head` can
-    // surface a side-branch commit dated among the prior window) — folds into
-    // the SAME canonical order on both the warm and cold path → `commits[]` is
-    // byte-identical (windowed-equality holds split-independently) and the
-    // tie-break-sensitive derived signals (recentDominantAuthor / lastCommitHash
-    // / taskId order) are stable. `filter` yields a fresh array, so the `.sort`
-    // never mutates the array `resolveEntries` already persisted via `store.save`.
-    const inWindow = entries.filter((entry) => entry.committerTimestamp >= lowerBoundSec);
-    const ordered = [...inWindow].sort(
-      (a, b) => b.committerTimestamp - a.committerTimestamp || a.commit.sha.localeCompare(b.commit.sha),
-    );
-
-    // AGGREGATE in canonical order — each file's `commits[]` is deterministic —
-    // keyed on HEAD paths (bd tea-rags-mcp-aikfk). Renames resolve over
-    // `inWindow`, which keeps log order: a full read is git's own order and a
-    // top-up is `[...fresh, ...prior]`, where no prior commit descends from a
-    // fresh one. The snapshot stores raw per-commit rows, so a pre-rename
-    // commit persisted under its old path is re-resolved on every build.
-    return aggregateFileChurnFollowingRenames(inWindow, ordered);
+    return aggregateFileChurnWindow(entries, lowerBoundSec);
   }
 
   private async resolveEntries(sinceDate: Date): Promise<CommitFileNumstat[]> {

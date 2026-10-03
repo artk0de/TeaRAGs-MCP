@@ -66,6 +66,7 @@ import type {
   TypeNameRow,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
+import { CodegraphSnapshotExportFailedError } from "../errors.js";
 import {
   DaemonConnectionLifecycle,
   type DaemonClientOptions,
@@ -118,7 +119,11 @@ export class UnsupportedDaemonReadError extends Error {
 export class DaemonGraphDbClient implements GraphDbClient {
   private readonly lifecycle: DaemonConnectionLifecycle;
 
-  constructor(socketPath: string, physicalCollectionName: PhysicalCollectionName, opts?: DaemonClientOptions) {
+  constructor(
+    socketPath: string,
+    private readonly physicalCollectionName: PhysicalCollectionName,
+    opts?: DaemonClientOptions,
+  ) {
     this.lifecycle = new DaemonConnectionLifecycle(socketPath, physicalCollectionName, opts);
   }
 
@@ -402,6 +407,23 @@ export class DaemonGraphDbClient implements GraphDbClient {
       {},
       (result) => result as CodegraphStorageCompactionOutcome,
       () => ({ kind: "skipped", reason: "unsupported" }),
+    );
+  }
+
+  /**
+   * Have the daemon — the holder of the collection's file and its WAL — write
+   * the snapshot (bd tea-rags-mcp-xi2r9). A tolerated legacy op, but with no
+   * stand-in answer: no other process can read what that daemon's WAL holds,
+   * so an older daemon is refused with a typed error the caller degrades on.
+   */
+  async exportSnapshot(targetPath: string): Promise<void> {
+    await this.callTolerated(
+      "exportSnapshot",
+      { targetPath },
+      () => undefined,
+      () => {
+        throw new CodegraphSnapshotExportFailedError(this.physicalCollectionName, targetPath, "unsupported");
+      },
     );
   }
 

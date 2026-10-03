@@ -35,6 +35,7 @@ import {
 } from "../../core/api/public/index.js";
 import { formatMcpText, type McpToolResult } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
+import { WORKING_TREE_PATH_HINT } from "./schemas.js";
 
 /**
  * Shared `{ collection, project, path }` triad for codegraph tools.
@@ -55,10 +56,7 @@ export function collectionPathFields() {
         "[RECOMMENDED] Registered project alias; survives path moves. Resolution priority: collection > project > path.",
       ),
     collection: z.string().optional().describe("Raw Qdrant collection name — lowest-level handle; prefer 'project'."),
-    path: z
-      .string()
-      .optional()
-      .describe("Indexed codebase path; auto-resolves to its collection. Prefer 'project' when aliased."),
+    path: z.string().optional().describe(WORKING_TREE_PATH_HINT),
   };
 }
 

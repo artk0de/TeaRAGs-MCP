@@ -37,6 +37,20 @@ export interface RankOptions {
    * `groupBy`). The pool is then sized in distinct groups, not points.
    */
   groupBy?: string;
+  /**
+   * Rewrites the gathered candidate pool before the rerank — the working
+   * tree's substitution (bd tea-rags-mcp-xi2r9, WTO-5): base rows of touched
+   * files out, the tree's rows of them in. Absent → the pool as scrolled.
+   *
+   * `legFilters` are the filters the scroll legs actually applied, one per leg —
+   * the request filter, plus the age-stamp floor on a stamp leg. A row pooled
+   * from elsewhere joins only when one of them admits it, as its indexed twin
+   * reached the pool only through a leg that admitted it (live G3).
+   */
+  substituteCandidates?: (
+    candidates: { id: string | number; payload: Record<string, unknown> }[],
+    legFilters: readonly (Record<string, unknown> | undefined)[],
+  ) => Promise<{ id: string | number; payload: Record<string, unknown> }[]>;
 }
 
 const OVERFETCH_FACTOR = 3;
@@ -90,7 +104,23 @@ export class OrderByFieldResolver {
    * Resolve order_by fields from preset weights + descriptor sources + inverted flag.
    */
   resolve(weights: Record<string, number>, level: "chunk" | "file"): OrderByField[] {
-    const fields: OrderByField[] = [];
+    return this.resolveScrolls(weights, level).map(({ orderBy }) => orderBy);
+  }
+
+  /**
+   * One ordered scroll per weighted derived signal that orders anything — its
+   * order_by field, and whether the field is an age stamp whose no-commit
+   * sentinel the scroll must skip.
+   *
+   * Direction is the descriptor's `inverted` flag read against the value the
+   * descriptor normalizes. For an age-derived descriptor (`ageDerivation`) that
+   * value is age = now − stamp, which FALLS as its stored `lastModifiedAt` source
+   * rises, so the direction flips: `recency` (inverted over age) scrolls the
+   * newest stamps first, `age` the oldest. Without the flip `recency` pooled the
+   * oldest chunks in the collection.
+   */
+  resolveScrolls(weights: Record<string, number>, level: "chunk" | "file"): OrderByScroll[] {
+    const scrolls: OrderByScroll[] = [];
 
     for (const [key, weight] of Object.entries(weights)) {
       if (key === "similarity" || !weight) continue;
@@ -98,27 +128,30 @@ export class OrderByFieldResolver {
       const desc = this.descriptorMap.get(key);
       if (!desc) continue;
 
-      const payloadField = this.resolvePayloadField(desc.sources, level);
-      if (!payloadField) continue;
+      const source = this.resolveOrderSource(desc.sources, level);
+      if (!source) continue;
 
-      fields.push({
-        key: payloadField,
-        direction: desc.inverted ? "asc" : "desc",
+      const ageStamp = isAgeStampSource(desc, source.logicalKey);
+      const ascending = desc.inverted === true ? !ageStamp : ageStamp;
+      scrolls.push({
+        orderBy: { key: toPhysicalPayloadKey(source.logicalKey), direction: ascending ? "asc" : "desc" },
+        ageStamp,
       });
     }
 
-    return fields;
+    return scrolls;
   }
 
   /**
-   * The STORED payload path a scroll orders by for one derived signal.
+   * The declared payload source a scroll orders by for one derived signal.
    *
    * Candidate order: the source at the requested level, then a dotless source, then
    * the first source. A candidate a payload descriptor declares resolves to that
-   * descriptor's logical key mapped to its physical path (`codegraph.chunk.pageRank`
-   * → `codegraph.symbols.chunk.pageRank`); a non-numeric one (`isHub`) orders
-   * nothing, since Qdrant `order_by` needs a numeric range index — the signal still
-   * scores the pooled candidates in the rerank.
+   * descriptor's logical key, later mapped to its physical path
+   * (`codegraph.chunk.pageRank` → `codegraph.symbols.chunk.pageRank`). Only a
+   * numeric scalar orders — a `number`, or a `timestamp` (unix seconds) — since
+   * Qdrant `order_by` needs a range index; a boolean (`isHub`) orders nothing and
+   * still scores the pooled candidates in the rerank.
    *
    * A candidate no descriptor declares orders nothing either, exactly like an
    * unknown weight key. There is no naming convention to fall back on: a `git.`
@@ -126,18 +159,46 @@ export class OrderByFieldResolver {
    * point carries, and rank_chunks indexed every such guess before scrolling (bd
    * tea-rags-mcp-q34ic).
    */
-  private resolvePayloadField(sources: string[], level: "chunk" | "file"): string | undefined {
+  private resolveOrderSource(sources: string[], level: "chunk" | "file"): { logicalKey: string } | undefined {
     const levelSource = sources.find((s) => s.startsWith(`${level}.`));
     const unprefixed = sources.find((s) => !s.includes("."));
 
     for (const source of [levelSource, unprefixed, sources[0]]) {
       const logicalKey = source === undefined ? undefined : this.payloadKeyMap.get(source);
       if (logicalKey === undefined) continue;
-      return this.payloadSignalTypes.get(logicalKey) === "number" ? toPhysicalPayloadKey(logicalKey) : undefined;
+      const type = this.payloadSignalTypes.get(logicalKey);
+      return type === "number" || type === "timestamp" ? { logicalKey } : undefined;
     }
 
     return undefined;
   }
+}
+
+/** One ordered scroll {@link OrderByFieldResolver#resolveScrolls} plans. */
+export interface OrderByScroll {
+  orderBy: OrderByField;
+  /**
+   * The field is the last-commit stamp an age-derived descriptor reads. A
+   * stamp ≤ 0 (the chunk no-commit sentinel) carries no age, so the scroll
+   * admits only stamps above it — otherwise the oldest-first `age` scroll
+   * would pool every never-committed chunk ahead of the oldest real one.
+   */
+  ageStamp: boolean;
+}
+
+/** Whether `logicalKey` is the timestamp an age-derived descriptor derives its age from. */
+function isAgeStampSource(desc: DerivedSignalDescriptor, logicalKey: string): boolean {
+  const field = desc.ageDerivation?.timestampField;
+  return field !== undefined && logicalKey.endsWith(`.${field}`);
+}
+
+/** The scroll's filter plus `key > 0` — the age-stamp floor of {@link OrderByScroll.ageStamp}. */
+function withAgeStampFloor(filter: Record<string, unknown> | undefined, key: string): Record<string, unknown> {
+  const floor = { key, range: { gt: 0 } };
+  if (!filter) return { must: [floor] };
+  const { must } = filter;
+  const existing: unknown[] = Array.isArray(must) ? must : must === undefined ? [] : [must];
+  return { ...filter, must: [...existing, floor] };
 }
 
 export class RankModule {
@@ -163,30 +224,37 @@ export class RankModule {
    * Rank chunks: scatter-gather → merge → rerank → top-N.
    */
   async rankChunks(collectionName: string, options: RankOptions): Promise<RerankableResult[]> {
-    const { weights, level, limit, scrollFn, ensureIndexFn, filter, presetName, groupBy } = options;
+    const { weights, level, limit, scrollFn, ensureIndexFn, filter, presetName, groupBy, substituteCandidates } =
+      options;
 
     // Remove similarity and re-normalize
     const cleanWeights = this.removeAndNormalize(weights);
 
-    // Resolve order_by fields
-    const orderByFields = this.resolveOrderByFields(cleanWeights, level);
-    if (orderByFields.length === 0) return [];
+    // Resolve order_by scrolls
+    const scrolls = this.orderBy.resolveScrolls(cleanWeights, level);
+    if (scrolls.length === 0) return [];
 
     // Ensure payload indexes exist for order_by fields (Qdrant requires range index)
     if (ensureIndexFn) {
-      await Promise.all(orderByFields.map(async (field) => ensureIndexFn(collectionName, field.key)));
+      await Promise.all(scrolls.map(async ({ orderBy }) => ensureIndexFn(collectionName, orderBy.key)));
     }
 
     // Parallel scroll (scatter), each window sized in distinct groups
     const targetGroups = limit * OVERFETCH_FACTOR;
+    const legFilters = scrolls.map(({ orderBy, ageStamp }) =>
+      ageStamp ? withAgeStampFloor(filter, orderBy.key) : filter,
+    );
     const scrollResults = await Promise.all(
-      orderByFields.map(async (field) =>
-        this.scrollDistinctGroups(targetGroups, groupBy, async (n) => scrollFn(collectionName, field, n, filter)),
+      scrolls.map(async ({ orderBy }, leg) =>
+        this.scrollDistinctGroups(targetGroups, groupBy, async (n) =>
+          scrollFn(collectionName, orderBy, n, legFilters[leg]),
+        ),
       ),
     );
 
-    // Merge + deduplicate (gather)
-    const merged = this.mergeAndDeduplicate(scrollResults);
+    // Merge + deduplicate (gather), then the caller's substitution, held to the legs' filters
+    const gathered = this.mergeAndDeduplicate(scrollResults);
+    const merged = substituteCandidates ? await substituteCandidates(gathered, legFilters) : gathered;
     if (merged.length === 0) return [];
 
     // Convert to RerankableResult (score=0, no similarity)

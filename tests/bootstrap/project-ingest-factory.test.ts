@@ -326,6 +326,28 @@ describe("ProjectIngestFactory in an MCP server process (tea-rags-mcp-o0qsw)", (
     expect(seen).toHaveLength(0);
   });
 
+  // Round-4 P1: a READER of a project's index (the working tree's on-demand git
+  // signals) must compute with the config that index was written with, by the
+  // same resolution an index run of the project takes.
+  it("hands a reader of a project's index the env its index runs resolve to", () => {
+    const { factory } = serverFactoryFor(
+      [
+        entry({
+          path: "/repo/self",
+          env: { TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS: "true", TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS: "3" },
+        }),
+      ],
+      { EMBEDDING_MODEL: "jina-v2", TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS: "false" },
+    );
+
+    const own = parseAppConfigZod(factory.envForPath("/repo/self"));
+    const unregistered = parseAppConfigZod(factory.envForPath("/repo/unknown"));
+
+    expect(own.trajectoryGit.squashAwareSessions).toBe(true);
+    expect(own.trajectoryGit.chunkMaxAgeMonths).toBe(3);
+    expect(unregistered.trajectoryGit.squashAwareSessions).toBe(false);
+  });
+
   it("lets the server env win over a BORROWED seed — only a project's own stamp outranks it", () => {
     const { factory, seen } = serverFactoryFor([entry({ path: "/repo/taxdome", env: { INGEST_CHUNK_SIZE: "4500" } })]);
 

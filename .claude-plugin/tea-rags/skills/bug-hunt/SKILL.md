@@ -21,13 +21,15 @@ uncommitted edits with no git signal yet.
 2. **No `git log`, `git diff`, `git blame`** — overlay has git signals.
    `git status --porcelain -uall` allowed: working-tree state (file NAMES), not
    code history or content — feeds Uncommitted probe only.
-3. **No built-in Search/Grep for code discovery** — TeaRAGs + ripgrep MCP only.
+3. **No built-in Search/Grep for code discovery** — TeaRAGs + ripgrep MCP only
+   (ripgrep for literal text, identifiers never — `hybrid_search`).
 4. **Search results contain code.** `metaOnly=false` (default) returns chunk
    content + startLine/endLine. Evaluate checkpoint from results BEFORE any Read
    or navigation.
-5. **Partial reads only.**
-   `Read(path, offset=startLine, limit=endLine-startLine)` using coordinates
-   from results. Never read full files.
+5. **Depth → `find_symbol`, never Read** (search-cascade After-Search
+   Navigation): full body `symbol=<symbolId>`, file outline `relativePath`,
+   neighbour `navigation.prev/nextSymbolId`. Partial `Read` only for non-symbol
+   text (config, data). Never read full files.
 6. **Labels are triage, not verdict.** Three suspect classes (Signal triage).
    `bugFixRate` `healthy` alone never drops a chunk. Filled checkpoint →
    PRESENT, whatever the labels.
@@ -36,10 +38,12 @@ uncommitted edits with no git signal yet.
 
 ```
 0. `git status --porcelain -uall` → uncommitted paths (see Uncommitted probe).
-   Paths listed → reindex BEFORE step 1 (index-freshness, uncommitted-edits row).
+   Paths listed → index-freshness uncommitted-edits rows (linked worktree: no
+   reindex). Every call: path=<your working directory>.
 
-1. Search — ONE message, parallel calls. Same tool (search-cascade),
-   same query, rerank="bugHunt", limit=10:
+1. Search — ONE message, parallel calls. Same tool (search-cascade;
+   linked worktree → hybrid_search for all three), same query,
+   rerank="bugHunt", limit=10:
    a. Historical — scope pathPattern, no time filter.
    b. Fresh probe — scope pathPattern + modifiedAfter=<window start>
       (see Fresh probe).
@@ -97,14 +101,18 @@ pre-edit history. "Broke after my change" = edit not yet committed.
 - **pathPattern:** each path brace-joined as exact relativePath (pathPattern
   rules). Rename `old -> new` → `new`; deleted (`D`) → drop. Git root ≠ indexed
   root → strip prefix. Search scope set → keep paths inside it.
-- Same tool + query + rerank + limit as a/b, same message.
+- Same tool + query + rerank + limit as a/b, same message (linked worktree:
+  `hybrid_search` — its `sparse` floor scores the edited file from the tree).
 - Hit matching symptom = **uncommitted suspect** — labels describe committed
   version; symptom fit decides.
-- Probe reads INDEXED content → step 0 listed paths → reindex BEFORE the search
-  message, always. Action and consent: `index-freshness` uncommitted-edits row.
-  Never wait for prime stale — blind to working-tree edits → probe returns
-  pre-edit chunks at stale line ranges, Rule 4 judges old code. Reindex failed →
-  say so; zero hits ≠ clean.
+- Hit with `treeState` = index's pre-edit copy: text and line range stale, still
+  the uncommitted suspect. Judge the edit from
+  `find_symbol path=<your working directory>` (current tree), never from the row
+  or a `Read` of its line range.
+- Main checkout: probe reads INDEXED content → step 0 listed paths → reindex
+  BEFORE the search message (`index-freshness` uncommitted-edits row). Never
+  wait for prime stale — blind to working-tree edits. Reindex failed → say so;
+  zero hits ≠ clean. Linked worktree: no reindex — `treeState` rule above.
 
 ## PRESENT
 
@@ -122,8 +130,8 @@ cause.
   — both suspects already found.
 - **SKIP on `healthy` alone.** Young code label-capped at `healthy` (Signal
   triage) — fresh class decides.
-- **Curiosity search.** "How does the other path work?" → Read or LSP, not
-  search. You already know WHERE the code is.
+- **Curiosity search.** "How does the other path work?" → `find_symbol` on the
+  known id, not another search. You already know WHERE the code is.
 - **Confirmatory search.** Checkpoint has a candidate — present it. Don't search
   for "proof." Confirmatory searches almost never change the answer.
 - **Full file reads.** Chunk coordinates exist. Use them.
@@ -178,6 +186,9 @@ Signal triage gives a **flat** list — WHAT is suspect. Call path gives the
 riskiest. Step with `ageDays` `recent` on that route = fresh suspect even at
 `bugFixRate` `healthy` (Signal triage): new code on the failing path, never
 fixed yet.
+
+Edges: no `codegraph` floor while `changedFiles` > 0 → edges touching changed
+files are the index's (search-cascade "Addressing the Codebase").
 
 **Requires codegraph** (prime `## Enrichment` lists `codegraph.symbols`).
 Codegraph off → graph tools not registered — use Codegraph off below; never read

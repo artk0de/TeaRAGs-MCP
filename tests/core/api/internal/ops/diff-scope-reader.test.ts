@@ -17,12 +17,13 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { InvalidParameterError } from "../../../../../src/core/api/errors.js";
 import {
-  readDiffScope,
-  readTreeLag,
-  resolveWorkTree,
-} from "../../../../../src/core/api/internal/ops/diff-scope-reader.js";
+  createGitWorkingTreeFixture,
+  type GitWorkingTreeFixture,
+} from "../../../__helpers__/git-working-tree-fixture.js";
+import { InvalidParameterError } from "../../../../../src/core/api/errors.js";
+import { resolveWorkingTree } from "../../../../../src/core/api/internal/collection-resolver.js";
+import { readDiffScope, readTreeLag } from "../../../../../src/core/api/internal/ops/diff-scope-reader.js";
 import type { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/index.js";
 
 const CHANGED = "src/git/file-reader.ts";
@@ -198,7 +199,7 @@ describe("readDiffScope", { timeout: 60_000 }, () => {
   });
 });
 
-describe("resolveWorkTree", () => {
+describe("resolveWorkingTree — the tree a review reads", () => {
   let dir: string;
   let repo: string;
 
@@ -227,21 +228,31 @@ describe("resolveWorkTree", () => {
     return realpathSync(tree);
   }
 
+  /** Project `p` and collection `c` both name the index registered at `repo`, the main checkout. */
+  const registryOfRepo = (): CollectionRegistry =>
+    ({
+      findByName: (name: string) => (name === "p" ? { name: "p", collectionName: "c", path: repo } : null),
+      get: (collectionName: string) => (collectionName === "c" ? { name: "p", collectionName: "c", path: repo } : null),
+      list: () => [{ name: "p", collectionName: "c", path: repo }],
+    }) as unknown as CollectionRegistry;
+
   it("an alias with a path reviews that linked worktree against the project's evidence", () => {
     const tree = addWorkTree();
-    expect(resolveWorkTree({ project: "p", path: tree }, repo)).toBe(tree);
+    expect(resolveWorkingTree(registryOfRepo(), { project: "p", path: tree }).root).toBe(tree);
   });
 
   it("refuses a tree of another repository: its change is no diff of this project", () => {
     const other = join(dir, "other");
     mkdirSync(other);
     git(other, "init", "-q", "-b", "main");
-    expect(() => resolveWorkTree({ project: "p", path: other }, repo)).toThrow(InvalidParameterError);
+    expect(() => resolveWorkingTree(registryOfRepo(), { project: "p", path: other }).root).toThrow(
+      InvalidParameterError,
+    );
   });
 
-  it("a collection wins over the path: the tree stays the resolved root", () => {
+  it("a collection with a path reviews the path's tree: the collection addresses only the index", () => {
     const tree = addWorkTree();
-    expect(resolveWorkTree({ collection: "c", path: tree }, repo)).toBe(repo);
+    expect(resolveWorkingTree(registryOfRepo(), { collection: "c", path: tree }).root).toBe(tree);
   });
 });
 
@@ -278,6 +289,58 @@ describe("readTreeLag", () => {
     expect(readTreeLag(registryAt({ git: { indexedCommit: "0".repeat(40) } }), "c", repo)).toEqual({
       indexedCommit: "0".repeat(40),
       treeCommit: headCommit(),
+    });
+  });
+});
+
+// Live P2-2 (bd tea-rags-mcp-xi2r9): a project registered at a SUBDIRECTORY of
+// its repository. Git answers from the toplevel in toplevel-relative paths; the
+// review names files relative to the project root, as the index does, and a
+// sibling directory's change is not part of this project's change.
+describe("readDiffScope / readTreeLag — a project registered at a repository subdirectory", { timeout: 60_000 }, () => {
+  let fixture: GitWorkingTreeFixture;
+  let sub: string;
+
+  beforeEach(() => {
+    fixture = createGitWorkingTreeFixture();
+    fixture.commit(fixture.mainRoot, {
+      "sub/a.ts": "export const a = 1;\n",
+      "sub/c.ts": "export const c = 1;\n",
+      "sibling/b.ts": "export const b = 1;\n",
+    });
+    sub = join(fixture.mainRoot, "sub");
+    writeFileSync(join(sub, "a.ts"), "export const a = 1;\nexport const a2 = 2;\n");
+    writeFileSync(join(sub, "new.ts"), "export const n = 1;\nexport const m = 2;\n");
+    writeFileSync(join(fixture.mainRoot, "sibling/b.ts"), "export const b = 2;\n");
+    writeFileSync(join(fixture.mainRoot, "sibling/new.ts"), "export const s = 1;\n");
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  it("reviews the project's changed files, root-relative, and excludes a sibling directory's change", async () => {
+    const read = await readDiffScope(sub, {});
+    expect(read.files).toEqual(["a.ts", "new.ts"]);
+    expect(read.changedFiles).toBe(2);
+    expect(read.notices).toEqual([]);
+    expect(read.addedRanges.get("a.ts")).toEqual([{ start: 2, end: 2 }]);
+    expect(read.addedRanges.get("new.ts")).toEqual([{ start: 1, end: 2 }]);
+  });
+
+  it("listed root-relative files read their added lines, and an unchanged one is read whole", async () => {
+    const read = await readDiffScope(sub, { files: ["a.ts", "c.ts"] });
+    expect(read.changedFiles).toBe(1);
+    expect(read.wholeFiles).toBe(1);
+    expect(read.addedRanges.get("a.ts")).toEqual([{ start: 2, end: 2 }]);
+    expect(read.addedRanges.get("c.ts")).toEqual([{ start: 1, end: Number.MAX_SAFE_INTEGER }]);
+  });
+
+  it("reads the tree's HEAD at the git toplevel for the lag", () => {
+    const registry = { get: () => ({ git: { indexedCommit: "0".repeat(40) } }) } as unknown as CollectionRegistry;
+    expect(readTreeLag(registry, "c", sub)).toEqual({
+      indexedCommit: "0".repeat(40),
+      treeCommit: fixture.git(fixture.mainRoot, "rev-parse", "HEAD").trim(),
     });
   });
 });

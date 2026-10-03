@@ -11,6 +11,8 @@
  * BEFORE delegation to ExploreOps.
  */
 
+import { resolve } from "node:path";
+
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type {
@@ -28,12 +30,14 @@ import type {
   PayloadSignalDescriptor,
   SignalFloors,
 } from "../../../contracts/types/trajectory.js";
+import type { WorkingTree, WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
+import { EmptyFilterPresetError, UnknownFilterPresetError } from "../../../domains/explore/errors.js";
 import {
-  CollectionNotFoundError as DomainCollectionNotFoundError,
-  EmptyFilterPresetError,
-  UnknownFilterPresetError,
-} from "../../../domains/explore/errors.js";
-import { computeSearchConfidence, type SearchConfidenceInput } from "../../../domains/explore/index.js";
+  computeSearchConfidence,
+  type SearchConfidenceInput,
+  type WorkingTreeOverlay,
+  type WorkingTreeView,
+} from "../../../domains/explore/index.js";
 import { IndexMetricsQuery } from "../../../domains/explore/queries/index-metrics.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import {
@@ -66,7 +70,8 @@ import {
   type RankChunksRequest,
   type SemanticSearchRequest,
 } from "../../public/dto/index.js";
-import { resolveCollection } from "../collection-resolver.js";
+import type { WorkingTreeIndexTarget } from "../../public/dto/working-tree.js";
+import { resolveIndexedWorkingTree, resolveWorkingTree } from "../collection-resolver.js";
 
 export interface ExploreOpsDeps {
   qdrant: QdrantManager;
@@ -101,6 +106,23 @@ export interface ExploreOpsDeps {
    * Omitted → no frame, and a run-pointer marker reports no providers.
    */
   enrichmentHealthFrameForPath?: (path: string) => readonly string[];
+  /**
+   * Measures the tree a request reads against its index (bd tea-rags-mcp-xi2r9).
+   * Present → every answer carries `workingTree`; absent (unit wiring) → none.
+   */
+  workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
+}
+
+/**
+ * The index a request reads, the root its drift is checked at, and the view of
+ * the tree it reads — started at resolve time so the git status runs beside
+ * the search instead of after it.
+ */
+interface ResolvedExploreTarget {
+  collectionName: string;
+  /** INDEX root for the drift check; undefined → check by collection name */
+  path?: string;
+  workingTreeView?: Promise<WorkingTreeView>;
 }
 
 /**
@@ -133,6 +155,11 @@ interface ExploreFinalizeOptions {
    * (bd tea-rags-mcp-l2lix).
    */
   fields?: readonly string[];
+  /**
+   * Never rejects (`WorkingTreeOverlay#view` degrades instead); its marker rides
+   * on the answer, with the floors the strategy's reads claimed on it (D8).
+   */
+  workingTreeView?: Promise<WorkingTreeView>;
 }
 
 export class ExploreOps {
@@ -154,6 +181,7 @@ export class ExploreOps {
   private readonly chunkResolver?: SymbolChunkResolver;
   private readonly visibilityResolver?: SymbolVisibilityResolver;
   private readonly enrichmentHealthFrameForPath?: (path: string) => readonly string[];
+  private readonly workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
 
   constructor(deps: ExploreOpsDeps) {
     this.qdrant = deps.qdrant;
@@ -169,6 +197,7 @@ export class ExploreOps {
     this.chunkResolver = deps.chunkResolver;
     this.visibilityResolver = deps.visibilityResolver;
     this.enrichmentHealthFrameForPath = deps.enrichmentHealthFrameForPath;
+    this.workingTreeOverlay = deps.workingTreeOverlay;
     this.vectorStrategy = createExploreStrategy(
       "vector",
       deps.qdrant,
@@ -211,11 +240,19 @@ export class ExploreOps {
 
   async hybridSearch(request: HybridSearchRequest): Promise<ExploreResponse> {
     // No confidence: RRF fusion scores are a function of rank, not similarity.
+    // Sparse floor (bd tea-rags-mcp-xi2r9.4): touched files answer from the
+    // tree's chunks, scored on the BM25 leg.
     return this.embedAndDispatch(request, this.hybridStrategy, false);
   }
 
   async rankChunks(request: RankChunksRequest): Promise<ExploreResponse> {
-    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path, request.project);
+    // Scroll + rerank: no query vector, so the guard checks the model name only.
+    const { collectionName, path, workingTreeView } = await this.resolveAndGuard(
+      request.collection,
+      request.path,
+      request.project,
+      { nameOnly: true },
+    );
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "rank_chunks");
     // Load collection stats BEFORE buildFilter so filter-preset adaptive
     // percentiles resolve from real Stats on the first (cold) query, not
@@ -226,17 +263,17 @@ export class ExploreOps {
       this.scrollRankStrategy,
       buildRankChunksContext(request, collectionName, filter, level),
       path,
-      { presetFilterNotice, fields: request.fields },
+      { presetFilterNotice, fields: request.fields, workingTreeView },
     );
   }
 
   async searchCode(request: ExploreCodeRequest): Promise<ExploreResponse> {
-    const { collectionName, path } = resolveCollection(this.collectionRegistry, {
-      collection: request.collection,
-      project: request.project,
-      path: request.path,
-    });
-    await this.modelGuard?.ensureMatch(collectionName, { failOnProviderOutage: true });
+    const { collectionName, path, workingTreeView } = await this.resolveAndGuard(
+      request.collection,
+      request.path,
+      request.project,
+      { failOnProviderOutage: true },
+    );
     const { embedding } = await this.embeddings.embed(request.query);
     const level = resolveEffectiveLevel(undefined, request.rerank, this.reranker, "search_code");
     // Load collection stats BEFORE buildFilter so filter-preset adaptive
@@ -248,12 +285,16 @@ export class ExploreOps {
       this.vectorStrategy,
       buildSearchCodeContext(request, collectionName, embedding, filter),
       path,
-      { presetFilterNotice },
+      { presetFilterNotice, workingTreeView },
     );
   }
 
   async findSimilar(request: FindSimilarRequest, strategy: SimilarSearchStrategy): Promise<ExploreResponse> {
-    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path, request.project);
+    const { collectionName, path, workingTreeView } = await this.resolveAndGuard(
+      request.collection,
+      request.path,
+      request.project,
+    );
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
     // Load collection stats BEFORE buildFilter so filter-preset adaptive
     // percentiles resolve from real Stats on the first (cold) query, not
@@ -268,14 +309,22 @@ export class ExploreOps {
     return this.executeExplore(strategy, buildFindSimilarContext(request, collectionName, filter, level), path, {
       presetFilterNotice,
       fields: request.fields,
+      workingTreeView,
     });
   }
 
   async findSymbol(request: FindSymbolRequest): Promise<ExploreResponse> {
-    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path, request.project);
+    // Lookup by symbol: no query vector, so the guard checks the model name only.
+    const { collectionName, path, workingTreeView } = await this.resolveAndGuard(
+      request.collection,
+      request.path,
+      request.project,
+      { nameOnly: true },
+    );
     const strategy = this.buildFindSymbolStrategy(request);
     const response = await this.executeExplore(strategy, buildFindSymbolContext(request, collectionName), path, {
       fields: request.fields,
+      workingTreeView,
     });
     // Finalize: the per-request symbol strategy records a skipped OPTIONAL
     // codegraph hop (codegraph unavailable from this process) — attach it so the
@@ -302,9 +351,40 @@ export class ExploreOps {
     // caller that pre-canonicalizes turns that miss into a hash, and the same
     // project then answers with one collection through a search and another
     // through this call.
-    const { collectionName } = resolveCollection(this.collectionRegistry, { collection, path });
+    const workingTree = resolveWorkingTree(this.collectionRegistry, { collection, path });
+    const { collectionName } = workingTree.baseIndex;
+    // Every read answer carries the marker (bd tea-rags-mcp-xi2r9, live probe
+    // P2-4): the metrics describe the INDEX, and the marker says how far the
+    // caller's tree is from it. Measured beside the metrics read, never after.
+    const workingTreeView = this.workingTreeOverlay?.view(workingTree, undefined);
     await this.ensureStats(collectionName);
-    return this.indexMetricsQuery.run(collectionName, path, this.enrichmentHealthFrameForPath?.(path) ?? []);
+    const metrics = await this.indexMetricsQuery.run(
+      collectionName,
+      path,
+      this.enrichmentHealthFrameForPath?.(path) ?? [],
+    );
+    return workingTreeView ? { ...metrics, workingTree: (await workingTreeView).marker } : metrics;
+  }
+
+  /**
+   * The base index `path` is read against when it is a working tree of a
+   * registered index other than its own checkout (live D10) — a linked
+   * worktree, or a subdirectory project of one — with the tree's marker.
+   * Undefined for an index's own checkout, for a path no registered index
+   * covers, and for one the resolver refuses: those keep their own answer.
+   */
+  async workingTreeIndexOf(path: string): Promise<WorkingTreeIndexTarget | undefined> {
+    let workingTree: WorkingTree;
+    try {
+      workingTree = resolveWorkingTree(this.collectionRegistry, { path });
+    } catch {
+      return undefined;
+    }
+    const { root: indexPath, collectionName } = workingTree.baseIndex;
+    if (!indexPath || !workingTree.root || resolve(workingTree.root) === resolve(indexPath)) return undefined;
+    if (!this.collectionRegistry.get(collectionName)) return undefined;
+    const view = await this.workingTreeOverlay?.view(workingTree, undefined);
+    return view ? { indexPath, workingTree: view.marker } : { indexPath };
   }
 
   /** Factory for the per-request findSimilar strategy. Exposed so facade can construct without reaching into ops internals. */
@@ -347,7 +427,8 @@ export class ExploreOps {
     finalize: ExploreFinalizeOptions = {},
   ): Promise<ExploreResponse> {
     await this.ensureStats(ctx.collectionName);
-    const results = await strategy.execute(ctx);
+    const workingTreeView = await finalize.workingTreeView;
+    const results = await strategy.execute(workingTreeView ? { ...ctx, workingTreeView } : ctx);
     const driftWarning = await this.checkDrift(path, ctx.collectionName);
     const confidence = finalize.attachConfidence
       ? computeSearchConfidence(toConfidenceInput(results), this.reranker.getCollectionStats()?.scoreBackground)
@@ -358,6 +439,7 @@ export class ExploreOps {
         score: r.score,
         payload: r.payload ? stripInternalFields(r.payload) : r.payload,
         rankingOverlay: r.rankingOverlay,
+        ...(r.treeState ? { treeState: r.treeState } : {}),
       })),
       finalize.fields,
     );
@@ -368,6 +450,9 @@ export class ExploreOps {
       ...(confidence ? { confidence } : {}),
       ...(finalize.presetFilterNotice ? { presetFilterNotice: finalize.presetFilterNotice } : {}),
       ...(projection.fieldsWarning ? { fieldsWarning: projection.fieldsWarning } : {}),
+      // Read AFTER the strategy ran: reading the delta rows is what records
+      // `unparsed` on the marker.
+      ...(workingTreeView ? { workingTree: finalizeWorkingTreeMarker(workingTreeView) } : {}),
     };
   }
 
@@ -381,9 +466,12 @@ export class ExploreOps {
     strategy: BaseExploreStrategy,
     attachConfidence: boolean,
   ): Promise<ExploreResponse> {
-    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path, request.project, {
-      failOnProviderOutage: true,
-    });
+    const { collectionName, path, workingTreeView } = await this.resolveAndGuard(
+      request.collection,
+      request.path,
+      request.project,
+      { failOnProviderOutage: true },
+    );
     const { embedding } = await this.embeddings.embed(request.query);
     const rerank = resolveDocRerank(request.rerank, request.documentation, request.language);
     const level = resolveEffectiveLevel(request.level, rerank, this.reranker, "semantic_search");
@@ -396,7 +484,7 @@ export class ExploreOps {
       strategy,
       buildVectorSearchContext(request, collectionName, embedding, filter, rerank, level),
       path,
-      { attachConfidence, presetFilterNotice, fields: request.fields },
+      { attachConfidence, presetFilterNotice, fields: request.fields, workingTreeView },
     );
   }
 
@@ -481,12 +569,34 @@ export class ExploreOps {
     path?: string,
     project?: string,
     guardOptions?: EmbeddingModelGuardCallOptions,
-  ): Promise<{ collectionName: string; path?: string }> {
-    const resolved = resolveCollection(this.collectionRegistry, { collection, project, path });
-    const exists = await this.qdrant.collectionExists(resolved.collectionName);
-    if (!exists) throw new DomainCollectionNotFoundError(resolved.collectionName);
+  ): Promise<ResolvedExploreTarget> {
+    // The one existence seam every read tool resolves through (live round-3 D3):
+    // a missing index is refused before the overlay measures the tree.
+    const workingTree = await resolveIndexedWorkingTree(
+      this.collectionRegistry,
+      { collection, project, path },
+      async (name) => this.qdrant.collectionExists(name),
+    );
+    const resolved = this.targetOf(workingTree, path, project);
     await this.modelGuard?.ensureMatch(resolved.collectionName, guardOptions);
     return resolved;
+  }
+
+  /**
+   * One addressing rule (bd tea-rags-mcp-xi2r9): the request names a tree and
+   * the index it reads that tree against. Drift is a property of the INDEX, so
+   * it is checked at the index root — never at the tree, which the reporter
+   * would hash to a collection nobody indexed. A request that named only its
+   * collection keeps the by-name check.
+   */
+  private targetOf(workingTree: WorkingTree, path?: string, project?: string): ResolvedExploreTarget {
+    const { collectionName, root } = workingTree.baseIndex;
+    const addressedByLocation = path !== undefined || project !== undefined;
+    return {
+      collectionName,
+      path: addressedByLocation ? root : undefined,
+      workingTreeView: this.workingTreeOverlay?.view(workingTree, project),
+    };
   }
 
   private async ensureStats(collectionName: string): Promise<void> {
@@ -855,4 +965,17 @@ function buildFindSymbolContext(request: FindSymbolRequest, collectionName: stri
     rerank: request.rerank,
     metaOnly: request.metaOnly,
   };
+}
+
+/**
+ * The marker an answer carries: the view's, with exactly the floors this
+ * request's reads claimed on it (live D8) — `"chunks"` / `"sparse"` when the
+ * strategy put delta rows into its candidates (`claimWorkingTreeFloors`),
+ * `"codegraph"` when those rows or a codegraph lookup read the tree graph
+ * (WTO-7). A clean tree, a degraded view, a view without a chunk layer, and a
+ * strategy that only read delta content claim nothing. A copy: the answer must
+ * not alias the per-request marker.
+ */
+function finalizeWorkingTreeMarker(view: WorkingTreeView): WorkingTreeMarker {
+  return { ...view.marker, floors: [...view.marker.floors] };
 }

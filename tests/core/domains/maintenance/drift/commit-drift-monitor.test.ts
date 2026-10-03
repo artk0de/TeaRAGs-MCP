@@ -8,8 +8,14 @@
  * clear while a developer works (spec decision 7).
  */
 
-import { describe, expect, it } from "vitest";
+import { join } from "node:path";
 
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import {
+  createGitWorkingTreeFixture,
+  type GitWorkingTreeFixture,
+} from "../../../__helpers__/git-working-tree-fixture.js";
 import { CommitDriftMonitor } from "../../../../../src/core/domains/maintenance/drift/commit-drift-monitor.js";
 
 const entry = {
@@ -188,5 +194,40 @@ describe("CommitDriftMonitor", () => {
 
   it("is silent when the collection is not registered at all", () => {
     expect(new CommitDriftMonitor({ get: () => null }, () => null).check("c")).toEqual([]);
+  });
+});
+
+// Live P2-2 (bd tea-rags-mcp-xi2r9): a project registered at a SUBDIRECTORY of
+// its repository has no `.git` at its root, so reading git state at the raw
+// project path saw no repository and the monitor never reported a moved HEAD.
+describe("CommitDriftMonitor — a project registered at a repository subdirectory", { timeout: 60_000 }, () => {
+  let fixture: GitWorkingTreeFixture;
+
+  beforeEach(() => {
+    fixture = createGitWorkingTreeFixture();
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  it("reads HEAD at the git toplevel and reports that it moved", () => {
+    const indexedCommit = fixture.commit(fixture.mainRoot, { "sub/a.ts": "export const a = 1;\n" });
+    const head = fixture.commit(fixture.mainRoot, { "sub/a.ts": "export const a = 2;\n" });
+    const subEntry = {
+      path: join(fixture.mainRoot, "sub"),
+      git: { indexedBranch: "main", indexedCommit, indexedDirty: false },
+    };
+
+    expect(new CommitDriftMonitor({ get: () => subEntry } as never).check("c")).toEqual([
+      {
+        axis: "commit",
+        subject: "main",
+        indexed: indexedCommit.slice(0, 7),
+        current: head.slice(0, 7),
+        remedy: { kind: "incremental" },
+        note: "HEAD moved since the last index run",
+      },
+    ]);
   });
 });

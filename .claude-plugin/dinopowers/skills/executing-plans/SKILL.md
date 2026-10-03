@@ -35,10 +35,9 @@ call.
 
 ## Mandatory Step Order (DO NOT SKIP)
 
-1. **Step 2.0** — clone freshness precondition, EVERY Task, right before the
-   Step 2 guard (worktree multi-task plans only): clone exists (lazy CREATE) +
-   incremental reindex. Skip for single-task plans, explore-only, main-checkout
-   work.
+1. **Step 2.0** — addressing, EVERY Task: every tea-rags read call passes
+   `path=<your working directory>`. Clone precondition ONLY after an answer's
+   `workingTree.degraded` reported a delta over the overlay cap (200 files).
 2. Step 2 — git-signal SAFE/CAUTION/UNSAFE verdict per Task before any edit
 3. Step 4 — verdict-gating: STOP and ask user if any UNSAFE
 4. **MUST** Step 5 — Code-Gen Cascade for generation AND behavior-modification
@@ -46,17 +45,17 @@ call.
 5. Step 6 — chain into `superpowers:executing-plans`
 
 ⚠️ Skipping Step 5 → ungrounded code. Skipping Step 6 → parent workflow never
-runs. Skipping Step 2.0 → guard reads stale clone (or `main`) → verdict computed
-on code this branch already changed.
+runs. Skipping Step 2.0 → guard reads `main`'s tree → verdict computed on code
+this branch already changed.
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
 
-**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and worktree-clone
-lifecycle in `tea-rags/rules/index-freshness.md`. **NO background reindex
-hook**: freshness = READ-side precondition (Step 2.0) run before each Task's
-first tea-rags call — not post-commit chore remembered after moving on. Run
-`mcp__tea-rags__index_codebase` manually to search uncommitted WIP.
+**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
+`tea-rags/rules/index-freshness.md`. **NO background reindex hook.** Linked
+worktree: overlay serves the tree's uncommitted edits — never reindex for them.
+Main checkout: incremental `mcp__tea-rags__index_codebase` before searching
+uncommitted WIP.
 
 Plus cross-plugin chain for code generation:
 
@@ -71,19 +70,19 @@ Plus cross-plugin chain for code generation:
 Plan/spec/brief = doc-chunk source. Per-Task re-consult →
 `find_symbol(relativePath: "<plan>.md")` heading TOC → drill active Task section
 via `doc:<hash>`. NEVER wholesale re-Read plan mid-execution. Edited plan file →
-section hashes moved → incremental reindex (`mcp__tea-rags__index_codebase`)
-BEFORE next TOC read — files-edited-this-session staleness rule, stated for
-plans.
+section hashes moved → main checkout: incremental reindex
+(`mcp__tea-rags__index_codebase`) BEFORE next TOC read; linked worktree: none —
+`find_symbol` reads the TOC from the tree.
 
 ## Step 1 — Extract Task's file list
 
 From current plan Task identify:
 
-| Source                      | Example                                                                            |
-| --------------------------- | ---------------------------------------------------------------------------------- |
-| Task explicitly names files | "Task 3: update `a.ts`, `b.ts`"                                                    |
-| Task refers to symbols      | "refactor `Class.method()`" → resolve via `mcp__tea-rags__find_symbol` to get file |
-| Task refers to a small dir  | "update all files in `language/ruby/chunking/`" → `Glob`                           |
+| Source                      | Example                                                                                                                                             |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Task explicitly names files | "Task 3: update `a.ts`, `b.ts`"                                                                                                                     |
+| Task refers to symbols      | "refactor `Class.method()`" → resolve via `mcp__tea-rags__find_symbol` to get file                                                                  |
+| Task refers to a small dir  | "update all files in `language/ruby/chunking/`" → `semantic_search` `pathPattern: "<dir>/**"`, `level: "file"`, `metaOnly: true` (one row per file) |
 
 Output:
 
@@ -93,53 +92,33 @@ Output:
 If `taskFileList` empty (pure new-file creation): skip to Step 4 with verdict
 `SAFE (new files only)`.
 
-## Step 2.0 — Clone freshness precondition (worktree multi-task plans, EVERY Task)
+## Step 2.0 — Addressing + clone precondition (EVERY Task)
 
-Runs immediately BEFORE the Step 2 guard of EVERY Task — read moment is where
-staleness bites. Replaces "create at plan start" + "reindex after each commit"
-(both got dropped under momentum). Run **explicitly — user sees each command**;
-never a hook.
-
-1. **Exists?** From worktree root:
+1. **Address the tree.** Step 2 guard + every tea-rags read call of this Task
+   (and every skill it invokes) pass `path=<your working directory>` — never an
+   alias alone (tea-rags search-cascade "Addressing the Codebase"). Linked
+   worktree → reads its own tree against the repository's index; no clone, no
+   reindex for the tree's own edits (index-freshness).
+2. **Clone ONLY on overlay degrade.** An answer's `workingTree.degraded` reports
+   a delta over the overlay cap (200 files) → before each later Task's first
+   tea-rags call run explicitly (user sees each command; never a hook):
 
    ```bash
-   tea-rags worktree info --json
+   tea-rags worktree info --json                      # isWorktree: true → clone alias
+   tea-rags worktree create <name> --from <src-alias> --path "$(git rev-parse --show-toplevel)" --no-git   # absent → lazy
    ```
 
-   - `isWorktree: true` → clone exists; target = its `alias`
-     (`<src-alias>-worktree-<name>`).
-   - `isWorktree: false` → lazy CREATE (fires on first Task that needs it):
+   then incremental `tea-rags index-codebase --project <clone alias>`, and every
+   call passes `project: "<clone alias>"` + `path=<your working directory>`.
+   CREATE refuses `Target collection already exists` → earlier `index_codebase`
+   on this path SEEDED an ordinary project (not a clone); do not delete it —
+   reindex + read it by path, tell user. Source index very large → state size,
+   confirm before cloning.
 
-     ```bash
-     tea-rags worktree create <name> --from <src-alias> --path "$PWD" --no-git
-     ```
-
-     `<name>` = short worktree label; `--from` = source alias worktree branched
-     from; `--no-git` attaches to existing dir. Source index very large → state
-     size, confirm before cloning.
-
-   - CREATE refuses `Target collection already exists` → an earlier
-     `index_codebase` on this path already SEEDED an ordinary project from a
-     sibling working tree (not a clone: `worktree info` answers `false`,
-     `worktree remove` refuses it). Do not delete it. Target = `path: "$PWD"`;
-     tell user.
-
-2. **Fresh?** Incremental reindex of target — picks up every prior Task's
-   commit; no-op when clean:
-
-   ```
-   mcp__tea-rags__index_codebase  project: "<src-alias>-worktree-<name>"   (seeded case: path: "$PWD")
-   ```
-
-3. **Read it.** Step 2 guard + every tea-rags call of this Task address SAME
-   target — clone alias, never main alias.
-
-- **Gate:** only multi-task plan in worktree. Single-task plans, explore-only
-  sessions, main-checkout work → main collection directly: no clone, no Step
-  2.0.
-- **Subagent-driven:** PARENT runs Step 2.0 before dispatching each Task;
-  subagent does not reindex, inherits clone via worktree path.
-- Teardown: `dinopowers:finishing-a-development-branch`.
+- **Subagent-driven:** PARENT runs the clone step when it applies and names the
+  clone alias in the subagent prompt; subagent never reindexes, passes
+  `path=<its working directory>` (+ `project=<clone alias>` when named).
+- Teardown of a clone that exists: `dinopowers:finishing-a-development-branch`.
 
 ## Step 2 — Pre-touch guard call
 
@@ -147,9 +126,7 @@ Issue ONE `mcp__tea-rags__semantic_search` call — SAME idiom as
 `dinopowers:writing-plans` Step 2:
 
 ```
-project:     <alias from list_projects — RECOMMENDED, omit path when set;
-              worktree plan → Step 2.0 target (clone alias)>
-path:        <current project path — fallback when no alias is registered>
+path:        <your working directory>   ← tea-rags search-cascade "Addressing the Codebase"; never project alone
 query:       <taskIntent from Step 1>
 pathPattern: "{taskFile1,taskFile2,...}"   ← brace expansion
 rerank:      "blastRadius"               ← codegraph on; OFF fallback below
@@ -167,7 +144,7 @@ Do NOT substitute:
 | Wrong tool                                                      | Why wrong                                                                                                               |
 | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `mcp__tree-sitter__modification_guard`                          | Structural (AST) guard, misses git-signal blast radius (imports count, bugFixRate, ownership)                           |
-| `mcp__tea-rags__hybrid_search`                                  | Custom rerank is tied to `semantic_search`                                                                              |
+| `mcp__tea-rags__hybrid_search`                                  | Same rerank, but its BM25 leg re-ranks by query-token overlap — signal scan wants semantic + signals                    |
 | Named preset `"hotspots"` / `"codeReview"` / `"impactAnalysis"` | `impactAnalysis` does not exist; these miss the blast-radius dimension. `"blastRadius"` IS correct when codegraph is on |
 | One call per file, sequential                                   | Brace expansion covers all in one                                                                                       |
 | `mcp__tea-rags__find_similar` without a prior guard call        | Finds analogs, doesn't return blast-radius signals                                                                      |
@@ -196,17 +173,18 @@ For each unique `relativePath` in results, read labels from
   overlay only under metaOnly (non-essential)
 - `blameDominantAuthorPct` (with adaptive label `shared` / `concentrated` /
   `silo` / `deep-silo`) — live-line silo indicator
-- `imports` score (from ranking overlay) — blast radius proxy
+- blast radius — `codegraph.file.fanIn` (blastRadius overlay, codegraph on) or
+  `imports` score (custom fallback, codegraph off)
 
 Compute per-file verdict via this ladder. Use **adaptive labels**, not magic
 percentages — labels come from per-codebase percentile distributions in payload
 signal `stats.labels`, surfaced through `get_index_metrics`.
 
-| Verdict   | Any of these triggers                                                                                                                                                       |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `UNSAFE`  | `imports` score top 5% of result set AND `bugFixRate.label ∈ {"concerning", "critical"}`; OR `blameDominantAuthorPct.label === "deep-silo"` (one author owns the live code) |
-| `CAUTION` | `imports` top 15%; OR `bugFixRate.label === "concerning"`; OR `blameDominantAuthorPct.label === "silo"`                                                                     |
-| `SAFE`    | none of the above                                                                                                                                                           |
+| Verdict   | Any of these triggers                                                                                                                                                                      |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `UNSAFE`  | blast radius (fanIn / imports) top 5% of result set AND `bugFixRate.label ∈ {"concerning", "critical"}`; OR `blameDominantAuthorPct.label === "deep-silo"` (one author owns the live code) |
+| `CAUTION` | blast radius (fanIn / imports) top 15%; OR `bugFixRate.label === "concerning"`; OR `blameDominantAuthorPct.label === "silo"`                                                               |
+| `SAFE`    | none of the above                                                                                                                                                                          |
 
 Task verdict = worst of per-file verdicts (UNSAFE dominates CAUTION dominates
 SAFE).
@@ -231,7 +209,7 @@ Task:
 
 | Verdict   | Action                                                                                                                                                                                                                        |
 | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SAFE`    | Proceed — invoke `superpowers:executing-plans` for this Task without interruption                                                                                                                                             |
+| `SAFE`    | Proceed without interruption — Step 4.5 / Step 5 (code-gen, modify Tasks), then `superpowers:executing-plans`                                                                                                                 |
 | `CAUTION` | Surface the guard block to the user. Ask "Proceed with Task N?". Wait for explicit confirmation before invoking `superpowers:executing-plans`.                                                                                |
 | `UNSAFE`  | Pause — surface block + recommend one of: (a) split Task into smaller Tasks, (b) add owner as co-author/reviewer, (c) require tests-before-edit. Do NOT invoke `superpowers:executing-plans` until user explicitly overrides. |
 
@@ -289,8 +267,8 @@ decides WHETHER to invoke.
 the Edit (`language` = the edited file's; evidence never crosses languages) —
 `MISFIT` → use `suggestion`; `NEW_TERM` → a `topTerms` word if it means the
 same; `NO_CONVENTION` → `prefer.exact` or a name like `prefer.analogous`. A
-plan-fixed name is checked too. Reading:
-`tea-rags:data-driven-generation` Step 5 "Naming (lexicon)".
+plan-fixed name is checked too. Reading: `tea-rags:data-driven-generation` Step
+5 "Naming (lexicon)".
 
 Why MANDATORY for modification — DDG MODIFY mode owns what in-context edit
 misses:
@@ -314,9 +292,8 @@ generates code disconnected from project conventions. Misses:
   alone won't trigger this — only data-driven skill encodes the
   label-to-strategy ladder.
 - **Template via "proven" rerank** — battle-tested code (long-lived, low-churn,
-  low-bug, multi-author) found via custom weights
-  `{similarity 0.2, stability 0.3, age 0.3, bugFix -0.15, ownership -0.05}`.
-  Manual `Read` of one sibling file picks arbitrary example, not proven one.
+  low-bug, multi-author) found via the named `proven` preset. Manual `Read` of
+  one sibling file picks arbitrary example, not proven one.
 - **Silo-author style copy** — when
   `blameDominantAuthorPct.label === "deep-silo"` data-driven skill instructs
   exact pattern match AND flags live-line owner for review. Manual style copy
@@ -338,9 +315,9 @@ After Step 5 returns (strategy + template + style decided), THEN invoke
 `Skill(superpowers:executing-plans)` (or its TDD onward chain via
 `Skill(dinopowers:test-driven-development)`) to write the code.
 
-**Order matters:** freshness (Step 2.0) → guard (Step 2) → verdict gate (Step 4)
-→ data-driven cascade (Step 5) → executing-plans chain. Skipping Step 5 for
-generation or modification Task = same severity as skipping guard for
+**Order matters:** addressing (Step 2.0) → guard (Step 2) → verdict gate
+(Step 4) → data-driven cascade (Step 5) → executing-plans chain. Skipping Step 5
+for generation or modification Task = same severity as skipping guard for
 existing-file Task.
 
 ## Red Flags — STOP and restart from Step 2
@@ -350,8 +327,9 @@ existing-file Task.
 - Substituted `mcp__tree-sitter__modification_guard` → tree-sitter gives
   structural safety, not git-signal blast radius; both useful but this wrapper
   git-first. Run Step 2.
-- Named preset instead of custom weights → redo with
-  `{imports: 0.5, churn: 0.3, ownership: 0.2}`
+- Wrong rerank for codegraph state → redo: `"blastRadius"` when prime
+  `## Enrichment` lists `codegraph.symbols`, else
+  `{imports: 0.5, churn: 0.3, ownership: 0.2}` (tea-rags analytics-rerank)
 - Ran guard AFTER first Edit → wrong order; revert uncommitted changes if
   possible, restart from Step 2 before next Edit
 - Silent downgrade of verdict → surface true verdict; let user downgrade if they
@@ -373,10 +351,10 @@ existing-file Task.
 - Bug fix / condition tweak in existing method edited in-context, "no new
   pattern, DDG not needed" → wrong: Modification row. Pause before Edit, invoke
   DDG (MODIFY: tests-at-risk + `get_callers`).
-- Worktree plan, Task N guard issued without Step 2.0 this Task ("clone made at
-  start", "reindexed last commit", "nothing changed") → run Step 2.0 now; it is
-  per Task, before the guard, unconditional.
-- Guard addressed main alias inside worktree plan → redo against clone alias.
+- Guard addressed an alias without `path` inside a worktree → wrong tree; redo
+  with `path=<your working directory>`.
+- Reindexed (or cloned) for the worktree's own uncommitted edits without a
+  `degraded` over-cap answer → unneeded; overlay already reads the tree.
 
 ## Common Mistakes
 
@@ -391,4 +369,4 @@ existing-file Task.
 | For new-file Task: `Read sibling.ts` then `Write new.ts` directly     | Skips Step 5. Sibling-by-Read picks arbitrary example, ignores `bugFixRate`/`blameDominantAuthor` signals. Use `Skill(tea-rags:data-driven-generation)`. |
 | Generation Task → guard SAFE (new file) → straight to executing-plans | SAFE (new file) only resolves blast-radius gate. Step 5 is a SEPARATE gate — strategy + template + style still needed. Both gates must clear.            |
 | Modification Task → guard SAFE → edit in-context                      | SAFE says file is safe to touch, not that callers survive new behavior. DDG MODIFY runs tests-at-risk + `get_callers` — Step 5 still applies.            |
-| Reindex clone "after commit" as cleanup of finished Task              | Write-side chore → dropped under momentum. Freshness is Step 2.0 of NEXT Task, run right before its guard.                                               |
+| Reindex "after commit" in a worktree as cleanup of finished Task      | Overlay already reads the tree. Clone + reindex only after a `degraded` over-cap answer (Step 2.0).                                                      |

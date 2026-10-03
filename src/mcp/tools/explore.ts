@@ -34,6 +34,7 @@ function formatStructuredResult(response: ExploreResponse): McpToolResult {
       ...(response.codegraphWarning && { codegraphWarning: response.codegraphWarning }),
       ...(response.presetFilterNotice && { presetFilterNotice: response.presetFilterNotice }),
       ...(response.fieldsWarning && { fieldsWarning: response.fieldsWarning }),
+      ...(response.workingTree && { workingTree: response.workingTree }),
     },
     content: [],
   };

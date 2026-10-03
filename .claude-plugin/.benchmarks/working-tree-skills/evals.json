@@ -1,0 +1,602 @@
+{
+  "skill": "tea-rags:* + dinopowers:* (cross-cutting: tea-rags addressing in skill recipes under WorkingTreeOverlay)",
+  "fix_name": "working-tree-skills",
+  "epic": "tea-rags-mcp-xi2r9",
+  "status": "patches P1-P6 applied (owner decisions 1-5); Phase 4 re-run: A 16/16, B 16/16 with 0 conflicts",
+  "harness": {
+    "method": "optimize-skill Phase 2 tool-selection eval. One opus subagent per arm, all 16 cases in one prompt, agent states its FIRST tea-rags call (tool + addressing params) and, where a result is shown, its reading + next call. No tools executed.",
+    "cases_file": "workspace/cases.md (expectation-free)",
+    "skill_snapshot": "workspace/skill-snapshot/before/ (tea-rags-skills/, dinopowers-skills/, index-freshness.md, FRESHNESS.md) — copied from worktree-working-tree-overlay @ c1fd5c81f",
+    "injection_render": "echo '{\"tool_input\":{\"prompt\":\"TASK\"}}' | CLAUDE_PROJECT_DIR=/work/acme tea-rags/scripts/enforce-tearags-search.sh → workspace/injection-block.md (7233 bytes)",
+    "environment": "repo acme, main checkout /work/acme, linked worktrees /work/acme/.claude/worktrees/<name>; list_projects → [{alias: acme, path: /work/acme}]; no per-worktree clone registered",
+    "arms": {
+      "A_skill_only": "skill text (+ files it delegates the recipe to) is the only guidance — measures the skill instruction itself; also the condition of a MAIN session started in a linked worktree whose cascade was not consulted",
+      "B_skill_plus_injection": "skill text + rendered subagent injection block — realistic dispatched subagent",
+      "C_no_skill": "case file only — without-rule baseline"
+    },
+    "contamination_note": "Eval subagents are dispatched through Agent, so the INSTALLED plugin appends its own injection block; prompts tell the agent to ignore text after an END-OF-EVAL marker. Arm A answers quote only skill lines, so the guard held.",
+    "skill_snapshot_after": "workspace/skill-snapshot/after/ (same layout + search-cascade-addressing.md, the section every recipe now points to)",
+    "injection_render_after": "workspace/injection-block-after.md (7786 bytes; hook now reads the block from rules/references/subagent-injection.md)"
+  },
+  "audit_findings": [
+    {
+      "id": "F1",
+      "description": "dinopowers recipes prescribe `project: <alias from list_projects — RECOMMENDED, omit path when set>` / `path: <current project path — fallback>`; in a linked worktree this reads the main checkout's tree.",
+      "locations": [
+        "dinopowers/skills/brainstorming/SKILL.md (Step 2 recipe)",
+        "dinopowers/skills/writing-plans/SKILL.md (Step 2 recipe)",
+        "dinopowers/skills/executing-plans/SKILL.md (Step 2 recipe; clone-alias variant)",
+        "dinopowers/skills/verification-before-completion/SKILL.md (Step 2 recipe)",
+        "dinopowers/skills/requesting-code-review/SKILL.md (Step 2 recipe)",
+        "dinopowers/skills/receiving-code-review/SKILL.md (Step 2 recipe)",
+        "dinopowers/skills/writing-skills/SKILL.md (Step 2 recipe)",
+        "dinopowers/skills/test-driven-development/SKILL.md (Step 2a fallback `project: <alias — RECOMMENDED>`, Step 2b `project: <alias>`)"
+      ],
+      "misrouting_lines": 9
+    },
+    {
+      "id": "F2",
+      "description": "tea-rags:tests-as-context recipes address by `project: <alias>` / `<alias from prime digest>` only (6 recipes) — project without path = main checkout.",
+      "locations": [
+        "tea-rags/skills/tests-as-context/SKILL.md (probe, fixture-lookup, and 4 further recipes)"
+      ],
+      "misrouting_lines": 6
+    },
+    {
+      "id": "F3",
+      "description": "tea-rags:mr-review resolves an alias from cwd (`list_projects → match registered alias: local mode → cwd`, else STOP) and addresses every MAP / dimension call with `project=<alias>`; a worktree cwd either STOPs (no registered path) or reads the main checkout.",
+      "locations": [
+        "tea-rags/skills/mr-review/SKILL.md (Phase 0 Project, Phase 2 MAP find_symbol)",
+        "tea-rags/skills/mr-review/references/dimension-playbook.md (7 calls: get_callers, hybrid_search x2, semantic_search proven, find_cycles, get_naming_lexicon x2)"
+      ],
+      "misrouting_lines": 9
+    },
+    {
+      "id": "F4",
+      "description": "Ambiguous `path: <project>` placeholder — resolves to the project root (main checkout), not the cwd.",
+      "locations": [
+        "tea-rags/skills/risk-assessment/SKILL.md (Phase 1 rank_chunks, Phase 3 find_similar)",
+        "tea-rags/skills/explore/references/pre-gen-pattern.md (PG-2 find_symbol)"
+      ],
+      "misrouting_lines": 3
+    },
+    {
+      "id": "F5",
+      "description": "Freshness policy predates the overlay: uncommitted edits → reindex BEFORE searching. In a linked worktree `index_codebase project=<alias>` reindexes the main checkout (edits still invisible) and `path=<worktree>` seeds a separate project; the overlay already reports the delta (`workingTree`) and flags stale rows (`treeState`).",
+      "locations": [
+        "tea-rags/skills/bug-hunt/SKILL.md (Loop step 0; Uncommitted probe last bullet)",
+        "tea-rags/rules/index-freshness.md (uncommitted-edits row; 'Detecting files edited' paragraph)",
+        "dinopowers/FRESHNESS.md ('Searching uncommitted WIP' bullet)"
+      ],
+      "misrouting_lines": 4
+    },
+    {
+      "id": "F6",
+      "description": "No skill that reads results says what `workingTree` / `treeState` mean; without the cascade or injection an agent reads a `treeState: modified` row as the CURRENT edit (it is the index's pre-edit copy).",
+      "locations": [
+        "tea-rags/skills/bug-hunt/SKILL.md (Uncommitted probe / Signal triage)",
+        "dinopowers/skills/verification-before-completion/SKILL.md (Step 3 reading)",
+        "dinopowers/skills/writing-plans/SKILL.md, executing-plans/SKILL.md (Step 3 reading)"
+      ]
+    }
+  ],
+  "not_misrouting": [
+    "tea-rags/rules/search-cascade.md 'Addressing the Codebase' — already correct (owner of the policy)",
+    "tea-rags/rules/references/subagent-injection.md + scripts/enforce-tearags-search.sh — already correct (c1fd5c81f)",
+    "dinopowers/skills/requesting-code-review/SKILL.md review_changes note ('Worktree branch → pass project + path=<worktree>') — correct",
+    "get_index_metrics / get_index_status `project: \"<alias>\"` in analytics-rerank, runtime-introspection.md, use-cases.md — index-level reads, tree-independent",
+    "tea-rags:index, force-reindex, dinopowers:finishing-a-development-branch alias usage — write path / main-alias reindex by design",
+    "dinopowers/skills/executing-plans Step 2.0 clone lifecycle — clone registered at $PWD reads the right tree; redundant under the overlay (owner decision, out of scope)",
+    "tea-rags/commands/prime.md `$CLAUDE_PROJECT_DIR` — session's own dir; prime is state, not a read tool",
+    "explore/SKILL.md, data-driven-generation, extract-project-patterns, filter-building, pattern-search, refactoring-scan, architecture-diagnostics — no addressing stated (defer to cascade); arm A defaulted to the alias there"
+  ],
+  "assertions_legend": {
+    "A1": "first tea-rags call carries path = the case's working directory; no project-only call; no index_codebase before the search in a linked worktree",
+    "A2": "result reading: workingTree.tree ≠ cwd → re-call with path=cwd; treeState row = index's pre-edit copy (text/lines stale), current code via find_symbol path=cwd"
+  },
+  "eval_cases": [
+    {
+      "id": "S1",
+      "skill": "tea-rags:explore",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "How does WorkingTreeDelta decide which files count as changed? Explain the flow.",
+      "expected": "find_symbol/hybrid_search/semantic_search with path=/work/acme/.claude/worktrees/feat-x",
+      "assertions": ["A1"],
+      "audit_finding": "F6-adjacent (no addressing in skill)",
+      "results": {
+        "A": {
+          "grade": "FAIL",
+          "call": "find_symbol(project:\"acme\", symbol:\"WorkingTreeDelta\")"
+        },
+        "B": {
+          "grade": "PASS"
+        },
+        "C": {
+          "grade": "PASS"
+        }
+      },
+      "results_after": {
+        "A": "PASS",
+        "B": "PASS",
+        "B_conflict": false
+      }
+    },
+    {
+      "id": "S2",
+      "skill": "tea-rags:explore (pre-gen)",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "Before I modify ChunkCache#evict, what should I know about it and its neighbours?",
+      "expected": "hybrid_search / find_symbol path=<cwd>",
+      "assertions": ["A1"],
+      "audit_finding": "F4",
+      "results": {
+        "A": {
+          "grade": "FAIL",
+          "call": "hybrid_search(path:\"/work/acme\", ...) — from PG-2 `path: <project>`"
+        },
+        "B": {
+          "grade": "PASS",
+          "conflict": true
+        },
+        "C": {
+          "grade": "PASS"
+        }
+      },
+      "results_after": {
+        "A": "PASS",
+        "B": "PASS",
+        "B_conflict": false
+      }
+    },
+    {
+      "id": "S3",
+      "skill": "tea-rags:bug-hunt",
+      "cwd": "/work/acme/.claude/worktrees/fix-rerank",
+      "prompt": "tests/reranker.test.ts fails with 'expected 0.42 to be 0.5' since my last edit. git status: ' M src/core/domains/explore/rerank/reranker.ts'",
+      "expected": "parallel historical/fresh/uncommitted searches with path=<cwd>, rerank=bugHunt; NO index_codebase first",
+      "assertions": ["A1"],
+      "audit_finding": "F5",
+      "results": {
+        "A": {
+          "grade": "FAIL",
+          "call": "index_codebase(project:\"acme\") then hybrid_search(project:\"acme\", ...)"
+        },
+        "B": {
+          "grade": "PASS",
+          "conflict": true,
+          "note": "skipped step-0 reindex against the skill"
+        },
+        "C": {
+          "grade": "PASS"
+        }
+      },
+      "results_after": {
+        "A": "PASS",
+        "B": "PASS",
+        "B_conflict": false
+      }
+    },
+    {
+      "id": "S4",
+      "skill": "tea-rags:bug-hunt (result)",
+      "cwd": "/work/acme/.claude/worktrees/fix-rerank",
+      "prompt": "Search answer workingTree{tree=cwd, changedFiles:1, floors{chunks,sparse}}; top row reranker.ts Reranker#score 40-88 treeState:modified, bugFixRate healthy.",
+      "expected": "row = pre-edit index copy (text/lines stale), still the uncommitted suspect; next find_symbol(path=<cwd>, symbol=Reranker#score)",
+      "assertions": ["A2"],
+      "audit_finding": "F6",
+      "results": {
+        "A": {
+          "grade": "FAIL",
+          "call": "reads the row as the uncommitted edit; next Read(offset:40, limit:48) on stale line range"
+        },
+        "B": {
+          "grade": "PASS"
+        },
+        "C": {
+          "grade": "FAIL",
+          "call": "says floors mean the row was built from the edit (wrong); next find_symbol path=cwd (right action, wrong reading)"
+        }
+      },
+      "results_after": {
+        "A": "PASS",
+        "B": "PASS",
+        "B_conflict": false
+      }
+    },
+    {
+      "id": "S5",
+      "skill": "tea-rags:data-driven-generation",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "Add a method isExpired(now) to class ChunkCache in .../chunk-cache.ts.",
+      "expected": "find_symbol(path=<cwd>, symbol=ChunkCache#isExpired, metaOnly) or explore pre-gen with path=<cwd>",
+      "assertions": ["A1"],
+      "audit_finding": "F6-adjacent (no addressing in skill)",
+      "results": {
+        "A": {
+          "grade": "FAIL",
+          "call": "hybrid_search(project:\"acme\", ...)"
+        },
+        "B": {
+          "grade": "PASS"
+        },
+        "C": {
+          "grade": "PASS"
+        }
+      },
+      "results_after": {
+        "A": "PASS",
+        "B": "PASS",
+        "B_conflict": false
+      }
+    },
+    {
+      "id": "S6",
+      "skill": "tea-rags:risk-assessment",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "Assess risk zones in src/core/domains/explore before I start this branch's refactor.",
+      "expected": "rank_chunks x N with path=<cwd>",
+      "assertions": ["A1"],
+      "audit_finding": "F4",
+      "results": {
+        "A": {
+          "grade": "FAIL",
+          "call": "rank_chunks(path:\"/work/acme\", ...) — `path: <project>`"
+        },
+        "B": {
+          "grade": "PASS",
+          "conflict": true
+        },
+        "C": {
+          "grade": "PASS"
+        }
+      },
+      "results_after": {
+        "A": "PASS",
+        "B": "PASS",
+        "B_conflict": false
+      }
+    },
+    {
+      "id": "S7",
+      "skill": "tea-rags:extract-project-patterns",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "[invoked by dinopowers:executing-plans Task 2] behaviorQuery='persistent cache with time-based retention', target src/core/domains/explore/working-tree/.",
+      "expected": "semantic_search path=<cwd>, rerank=proven, L1 pathPattern",
+      "assertions": ["A1"],
+      "audit_finding": "F1 (inherited from executing-plans clone-alias rule)",
+      "results": {
+        "A": {
+          "grade": "FAIL",
+          "call": "semantic_search(project:\"acme-worktree-feat-x\", ...) — alias that is not registered"
+        },
+        "B": {
+          "grade": "PASS"
+        },
+        "C": {
+          "grade": "PASS"
+        }
+      },
+      "results_after": {
+        "A": "PASS",
+        "B": "PASS",
+        "B_conflict": false
+      }
+    },
+    {
+      "id": "S8",
+      "skill": "dinopowers:brainstorming",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "Let's brainstorm how to make the working-tree chunk cache survive process restarts.",
+      "expected": "parallel semantic_search block with path=<cwd>, no project",
+      "assertions": ["A1"],
+      "audit_finding": "F1",
+      "results": {
+        "A": {
+          "grade": "FAIL",
+          "call": "semantic_search(project:\"acme\", ...)"
+        },
+        "B": {
+          "grade": "PASS",
+          "conflict": true
+        },
+        "C": {
+          "grade": "PASS"
+        }
+      },
+      "results_after": {
+        "A": "PASS",
+        "B": "PASS",
+        "B_conflict": false
+      }
+    },
+    {
+      "id": "S9",
+      "skill": "dinopowers:writing-plans",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "Write the implementation plan. Affected files: chunk-cache.ts, working-tree-delta.ts.",
+      "expected": "semantic_search blastRadius path=<cwd>",
+      "assertions": ["A1"],
+      "audit_finding": "F1",
+      "results": {
+        "A": {
+          "grade": "FAIL",
+          "call": "semantic_search(project:\"acme\", rerank:\"blastRadius\", ...)"
+        },
+        "B": {
+          "grade": "PASS",
+          "conflict": true
+        },
+        "C": {
+          "grade": "PASS"
+        }
+      },
+      "results_after": {
+        "A": "PASS",
+        "B": "PASS",
+        "B_conflict": false
+      }
+    },
+    {
+      "id": "S10",
+      "skill": "dinopowers:executing-plans",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "Execute the plan (ONE task, edits chunk-cache.ts). Start the task.",
+      "expected": "Step 2 guard semantic_search path=<cwd>",
+      "assertions": ["A1"],
+      "audit_finding": "F1",
+      "results": {
+        "A": {
+          "grade": "FAIL",
+          "call": "semantic_search(project:\"acme\", ...) — single-task → 'main collection directly'"
+        },
+        "B": {
+          "grade": "PASS",
+          "conflict": true
+        },
+        "C": {
+          "grade": "PASS"
+        }
+      },
+      "results_after": {
+        "A": "PASS",
+        "B": "PASS",
+        "B_conflict": false
+      }
+    },
+    {
+      "id": "S11",
+      "skill": "dinopowers:test-driven-development",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "Write the failing test first for ChunkCache#isExpired.",
+      "expected": "tests-as-context fixture-lookup semantic_search path=<cwd>",
+      "assertions": ["A1"],
+      "audit_finding": "F1, F2",
+      "results": {
+        "A": {
+          "grade": "FAIL",
+          "call": "semantic_search(project:\"acme\", chunkType:\"test_setup\", ...)"
+        },
+        "B": {
+          "grade": "PASS",
+          "conflict": true
+        },
+        "C": {
+          "grade": "PASS"
+        }
+      },
+      "results_after": {
+        "A": "PASS",
+        "B": "PASS",
+        "B_conflict": false
+      }
+    },
+    {
+      "id": "S12",
+      "skill": "dinopowers:verification-before-completion (result)",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "Edited chunk-cache.ts + working-tree-delta.ts (uncommitted). All done. Scan answer: workingTree{tree=cwd, changedFiles:2}; both edited-file rows treeState:modified.",
+      "expected": "scan with path=<cwd>, no index_codebase first; rows = pre-edit index copies — fanIn/churn of dependents valid, text/lines stale, not evidence the edit is correct",
+      "assertions": ["A1", "A2"],
+      "audit_finding": "F1, F5, F6",
+      "results": {
+        "A": {
+          "grade": "FAIL",
+          "call": "index_codebase(project:\"acme\") then semantic_search(project:\"acme\"); reads rows as the uncommitted state"
+        },
+        "B": {
+          "grade": "PASS"
+        },
+        "C": {
+          "grade": "FAIL",
+          "call": "path=cwd right, but 'treeState rows carry my current content' (wrong)"
+        }
+      },
+      "results_after": {
+        "A": "PASS",
+        "B": "PASS",
+        "B_conflict": false
+      }
+    },
+    {
+      "id": "S13",
+      "skill": "tea-rags:mr-review (local)",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "Review my branch.",
+      "expected": "no STOP on unmatched alias; MAP find_symbol(path=<cwd>, relativePath=...)",
+      "assertions": ["A1"],
+      "audit_finding": "F3",
+      "results": {
+        "A": {
+          "grade": "FAIL",
+          "call": "list_projects → matched 'acme' by prefix (STOP was the other reading) → find_symbol(project:\"acme\", ...)"
+        },
+        "B": {
+          "grade": "PASS",
+          "conflict": true
+        },
+        "C": {
+          "grade": "PASS",
+          "call": "review_changes(path=cwd)"
+        }
+      },
+      "results_after": {
+        "A": "PASS",
+        "B": "PASS",
+        "B_conflict": false
+      }
+    },
+    {
+      "id": "S14",
+      "skill": "dinopowers:writing-plans (result)",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "Step 2 answer carried workingTree{tree:'/work/acme', changedFiles:0}. Usable for Affected Files? Next call?",
+      "expected": "wrong tree → rows unusable; re-call with path=<cwd>, no project",
+      "assertions": ["A2"],
+      "audit_finding": "F1, F6",
+      "results": {
+        "A": {
+          "grade": "PASS",
+          "note": "own default, skill silent"
+        },
+        "B": {
+          "grade": "PASS"
+        },
+        "C": {
+          "grade": "PASS"
+        }
+      },
+      "results_after": {
+        "A": "PASS",
+        "B": "PASS",
+        "B_conflict": false
+      }
+    },
+    {
+      "id": "S15",
+      "skill": "dinopowers:brainstorming (control)",
+      "cwd": "/work/acme",
+      "prompt": "Let's brainstorm how to make the reranker's adaptive bounds cheaper.",
+      "expected": "path=/work/acme or project=acme (equivalent in the main checkout)",
+      "assertions": ["A1 (relaxed: project=acme allowed)"],
+      "audit_finding": "control",
+      "results": {
+        "A": {
+          "grade": "PASS"
+        },
+        "B": {
+          "grade": "PASS"
+        },
+        "C": {
+          "grade": "PASS"
+        }
+      },
+      "results_after": {
+        "A": "PASS",
+        "B": "PASS",
+        "B_conflict": false
+      }
+    },
+    {
+      "id": "S16",
+      "skill": "tea-rags:risk-assessment (control)",
+      "cwd": "/work/acme",
+      "prompt": "Assess code health of src/core/domains/ingest.",
+      "expected": "rank_chunks path=/work/acme",
+      "assertions": ["A1"],
+      "audit_finding": "control",
+      "results": {
+        "A": {
+          "grade": "PASS"
+        },
+        "B": {
+          "grade": "PASS"
+        },
+        "C": {
+          "grade": "PASS"
+        }
+      },
+      "results_after": {
+        "A": "PASS",
+        "B": "PASS",
+        "B_conflict": false
+      }
+    }
+  ],
+  "baseline": {
+    "A_skill_only": {
+      "pass": 3,
+      "total": 16,
+      "rate": "19%",
+      "worktree_cases": "1/14"
+    },
+    "B_skill_plus_injection": {
+      "pass": 16,
+      "total": 16,
+      "rate": "100%",
+      "skill_vs_injection_conflicts": 9
+    },
+    "C_no_skill": {
+      "pass": 14,
+      "total": 16,
+      "rate": "88%",
+      "fails": ["S4", "S12"]
+    },
+    "delta_A_vs_C": "-69pp (current skills are net harmful on addressing)"
+  },
+  "iterations": [
+    {
+      "iteration": 0,
+      "label": "baseline, current skills",
+      "A": "3/16",
+      "B": "16/16 (9 conflicts)",
+      "C": "14/16"
+    },
+    {
+      "iteration": 1,
+      "label": "P1-P6 + explore/DDG pointers, injection block lists graph tools + floors",
+      "A": "16/16",
+      "B": "16/16 (0 decision conflicts; 4 latent: plan-edit reindex, DDG find_co_changed(project), explore Read on treeState row, extract-project-patterns silent)"
+    },
+    {
+      "iteration": 2,
+      "label": "latent fixes: plan-edit reindex split by checkout, DDG find_co_changed path, explore Read excepts treeState, extract-project-patterns pointer; injection graph-routing branch",
+      "A": "16/16",
+      "B": "16/16 (0 conflicts on addressing / reindex / treeState)"
+    },
+    {
+      "iteration": 3,
+      "label": "owner round 2: six reported issues (red flags vs blastRadius, PG-2 symbol param, D1 #/. convention, treeState pointers, drift row split, graph answer without codegraph floor)",
+      "A": "16/16",
+      "B": "16/16 (soft: hybrid_search-vs-presets claim)"
+    },
+    {
+      "iteration": 4,
+      "label": "false 'rerank tied to semantic_search' rows corrected; partial Read -> find_symbol; Glob -> tea-rags listing; DDG Step 0 tree wording; architecture report by path",
+      "A": "16/16",
+      "B": "16/16"
+    },
+    {
+      "iteration": 5,
+      "label": "injection graph branch scoped (WT2 regression fixed), bug-hunt one-tool rule, PG-1 known symbol -> find_symbol, proven level chunk, proven described as named preset, degraded remedy consent, clone --path = toplevel",
+      "A": "16/16",
+      "B": "16/16"
+    },
+    {
+      "iteration": 6,
+      "label": "linked-worktree test = cwd vs alias path; project = no-cwd option; get_index_metrics by path; blast = fanIn|imports; injection override scoped to Grep/Glob/Read; verification base; brainstorming call count",
+      "A": "16/16, 0 defects",
+      "B": "16/16, 0 case conflicts"
+    },
+    {
+      "iteration": 7,
+      "label": "clone-mode addressing in cascade + subagent alias hand-off; index skill refuses to seed a linked worktree; finishing teardown when a clone exists",
+      "A": "16/16",
+      "B": "16/16, 0 case conflicts"
+    }
+  ],
+  "final": {
+    "A_skill_only": "16/16 (was 3/16)",
+    "B_skill_plus_injection": "16/16, 0 case conflicts (was 16/16 with 9 overrides)",
+    "C_no_skill": "not re-run (reference, 14/16)"
+  }
+}

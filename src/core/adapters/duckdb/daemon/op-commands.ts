@@ -284,6 +284,10 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
 
   // ── full-proxy reads (the daemon owns the sole DuckDB connection, so
   //    every read routes through its own RW connection) ──
+  // bd tea-rags-mcp-xi2r9 — a READ of the collection: the snapshot is copied
+  // through the pooled client's session, which leaves the live file as it was,
+  // so a client that may only read (1wr7p) may still ask for it.
+  exportSnapshot: read(async (graphDb, p) => graphDb.exportSnapshot(p.targetPath as string)),
   getFanIn: read(async (graphDb, p) => graphDb.getFanIn(p.relPath as RelPath)),
   getFanInP95: read(async (graphDb) => graphDb.getFanInP95()),
   getFanOut: read(async (graphDb, p) => graphDb.getFanOut(p.relPath as RelPath)),

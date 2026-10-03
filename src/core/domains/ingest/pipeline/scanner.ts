@@ -6,7 +6,7 @@
  */
 
 import { promises as fs } from "node:fs";
-import { extname, join, relative, resolve } from "node:path";
+import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import ignore, { type Ignore } from "ignore";
 
@@ -92,6 +92,20 @@ export class FileScanner {
   }
 
   /**
+   * The one ingest admission rule for a repo-relative file path: a supported
+   * extension and not ignored. `scanDirectory` admits exactly the files this
+   * accepts, and the working-tree overlay asks it about single paths. The
+   * `ignore` matcher tests every ancestor as a trailing-slash directory probe
+   * (`dir/`) before the file itself, so a pruned directory rejects its files
+   * here exactly as `walkDirectory` prunes it. Call after `loadIgnorePatterns`.
+   */
+  accepts(relativePath: string): boolean {
+    const posixPath = relativePath.split(sep).join("/");
+    if (posixPath.length === 0 || isAbsolute(posixPath) || posixPath.split("/").includes("..")) return false;
+    return this.supportedExts.has(extname(posixPath)) && !this.ig.ignores(posixPath);
+  }
+
+  /**
    * Get the configured ignore filter instance.
    * Used by enrichment module to filter git log results.
    */
@@ -137,11 +151,8 @@ export class FileScanner {
 
         if (isDirectory) {
           await this.walkDirectory(fullPath, rootPath, files);
-        } else if (entry.isFile()) {
-          const ext = extname(entry.name);
-          if (this.supportedExts.has(ext)) {
-            files.push(fullPath);
-          }
+        } else if (entry.isFile() && this.accepts(relativePath)) {
+          files.push(fullPath);
         }
       }
     } catch (_error) {

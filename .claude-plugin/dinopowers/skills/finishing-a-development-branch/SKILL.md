@@ -32,15 +32,16 @@ scope — no risk scan needed".
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
 
-**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and worktree-clone
-lifecycle in `tea-rags/rules/index-freshness.md`. No background reindex hook —
-after merge to `main` reindex `main` EXPLICITLY (Step 5); run
-`mcp__tea-rags__index_codebase` manually to search uncommitted WIP.
+**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
+`tea-rags/rules/index-freshness.md`. No background reindex hook — after merge to
+`main` reindex `main` EXPLICITLY (Step 5). Linked worktree: overlay serves
+uncommitted edits — never reindex for them.
 
 **Second Iron Rule — branch-finish index lifecycle (MANDATORY).** On EVERY
-branch finish — local merge to `main` OR abandon/delete — you MUST tear down the
-per-worktree index clone with **`tea-rags worktree remove <name>`** (NOT
-`delete_collection`, which drops only the Qdrant collection and leaks the DuckDB
+branch finish that has a clone — local merge to `main` OR abandon/delete — you
+MUST tear down the per-worktree index clone with
+**`tea-rags worktree remove <name>`** (NOT `delete_collection`, which drops only
+the Qdrant collection and leaks the DuckDB
 
 - snapshot + registry footprint). Additionally, on the MERGE path you MUST
   reindex `main` EXPLICITLY with `mcp__tea-rags__index_codebase` — no commit
@@ -162,7 +163,7 @@ index lifecycle:
   `main` reflects the merged change. (`index_codebase` is the only incremental
   entrypoint; never the deprecated `reindex_changes`.) Abandon/delete paths skip
   this — nothing merged into `main`.
-- **Drop the per-worktree index clone (MANDATORY on EVERY finish).** Branch
+- **Drop the per-worktree index clone (MANDATORY when one exists).** Branch
   developed in a worktree with its own tea-rags index clone (collection
   `<project>-worktree-<name>`, created by `tea-rags worktree create`): remove
   now: `tea-rags worktree remove <name>` — on merge AND on abandon/delete. Clone
@@ -171,8 +172,9 @@ index lifecycle:
   separately, outlives the directory. A cleanup-only `PostToolUse` hook is the
   backstop if you bypass this with a raw `git worktree remove` /
   `git branch -D`, but do it explicitly here anyway.
-- **No clone → no cleanup.** Branch developed on the main checkout (no
-  `tea-rags worktree` clone): nothing to remove.
+- **No clone → no cleanup.** Main checkout, or a worktree read through the
+  overlay (`tea-rags worktree info --json` → `isWorktree: false`): nothing to
+  remove.
 
 Skip this step only on a PR-only completion path (no local merge): clone stays
 until the PR merges — note it for later cleanup.

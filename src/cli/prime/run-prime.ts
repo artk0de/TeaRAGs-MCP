@@ -274,6 +274,6 @@ export async function runPrime(input: {
     // handler: it terminates the process so the OS releases the DuckDB file
     // lock and undici keep-alive sockets that previously kept prime alive and
     // hung the SessionStart hook until timeout.
-    ctx.cleanup?.();
+    void ctx.cleanup?.();
   }
 }

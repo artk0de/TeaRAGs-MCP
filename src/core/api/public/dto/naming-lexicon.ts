@@ -18,6 +18,7 @@ import type {
   TypeNameHeadCarriers,
 } from "../../../domains/explore/naming-lexicon/index.js";
 import type { CollectionRef } from "./explore.js";
+import type { WorkingTreeMarker } from "./working-tree.js";
 
 /**
  * A name the caller is about to write, with whatever it knows about it. A value
@@ -354,4 +355,6 @@ export interface NamingLexiconResult {
   driftWarning?: string;
   /** Diff mode's answer, when the request carried `changes` or `files`. */
   review?: NamingReviewResult;
+  /** How far the caller's tree is from the index this answer read (bd tea-rags-mcp-xi2r9); absent only when no overlay is wired. */
+  workingTree?: WorkingTreeMarker;
 }

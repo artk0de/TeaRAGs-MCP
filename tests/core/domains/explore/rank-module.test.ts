@@ -4,6 +4,8 @@ import type { DerivedSignalDescriptor } from "../../../../src/core/contracts/typ
 import type { PayloadSignalDescriptor } from "../../../../src/core/contracts/types/trajectory.js";
 import { RankModule } from "../../../../src/core/domains/explore/rank-module.js";
 import type { Reranker } from "../../../../src/core/domains/explore/reranker.js";
+import { gitPayloadSignalDescriptors } from "../../../../src/core/domains/trajectory/git/payload-signals.js";
+import { AgeSignal, RecencySignal } from "../../../../src/core/domains/trajectory/git/rerank/derived-signals/index.js";
 
 // Minimal descriptors for testing
 const chunkSizeDesc: DerivedSignalDescriptor = {
@@ -464,6 +466,92 @@ describe("RankModule", () => {
       });
 
       expect(results.map((r) => r.id)).toEqual(["a", "b"]);
+    });
+  });
+
+  /**
+   * `age` / `recency` read the last-commit TIMESTAMP and derive age at query
+   * time (bd tea-rags-mcp-9ot33). The stamp runs against the age the signals
+   * normalize — a newer commit is a larger stamp and a smaller age — so a
+   * scroll by it orders opposite to the descriptor's own inversion. Until the
+   * resolver ordered timestamps at all, both legs ordered nothing and
+   * `custom: { recency: 1 }` answered [] (bd tea-rags-mcp-xi2r9).
+   */
+  describe("age-derived signals ordered by their last-commit timestamp", () => {
+    const signals = [new RecencySignal(), new AgeSignal()];
+
+    it("orders recency by the newest stamp first, at either level", () => {
+      const module = new RankModule(createMockReranker(), signals, gitPayloadSignalDescriptors);
+
+      expect(module.resolveOrderByFields({ recency: 1 }, "chunk")).toEqual([
+        { key: "git.chunk.lastModifiedAt", direction: "desc" },
+      ]);
+      expect(module.resolveOrderByFields({ recency: 1 }, "file")).toEqual([
+        { key: "git.file.lastModifiedAt", direction: "desc" },
+      ]);
+    });
+
+    it("orders age by the oldest stamp first, at either level", () => {
+      const module = new RankModule(createMockReranker(), signals, gitPayloadSignalDescriptors);
+
+      expect(module.resolveOrderByFields({ age: 1 }, "chunk")).toEqual([
+        { key: "git.chunk.lastModifiedAt", direction: "asc" },
+      ]);
+      expect(module.resolveOrderByFields({ age: 1 }, "file")).toEqual([
+        { key: "git.file.lastModifiedAt", direction: "asc" },
+      ]);
+    });
+
+    it("pools recency candidates by the stamp instead of answering empty", async () => {
+      const scrollData = new Map([
+        [
+          "git.chunk.lastModifiedAt",
+          [
+            { id: "new", payload: { git: { chunk: { lastModifiedAt: 1_790_000_000 } } } },
+            { id: "old", payload: { git: { chunk: { lastModifiedAt: 1_700_000_000 } } } },
+          ],
+        ],
+      ]);
+      const mockScroll = createMockScrollFn(scrollData);
+      const module = new RankModule(createMockReranker(), signals, gitPayloadSignalDescriptors);
+
+      const results = await module.rankChunks("test-col", {
+        weights: { recency: 1 },
+        level: "chunk",
+        limit: 10,
+        scrollFn: mockScroll,
+      });
+
+      expect(results.map((r) => r.id)).toEqual(["new", "old"]);
+      expect(mockScroll).toHaveBeenCalledWith(
+        "test-col",
+        { key: "git.chunk.lastModifiedAt", direction: "desc" },
+        30,
+        expect.anything(),
+      );
+    });
+
+    // A chunk no commit touched carries the `lastModifiedAt: 0` sentinel — no
+    // age at all — so it must not head the oldest-first scroll.
+    it("keeps the no-commit sentinel out of a stamp scroll, beside the caller's filter", async () => {
+      const mockScroll = createMockScrollFn(new Map());
+      const module = new RankModule(createMockReranker(), signals, gitPayloadSignalDescriptors);
+      const filter = { must: [{ key: "language", match: { value: "typescript" } }] };
+
+      await module.rankChunks("test-col", {
+        weights: { age: 1 },
+        level: "chunk",
+        limit: 10,
+        scrollFn: mockScroll,
+        filter,
+      });
+
+      expect(mockScroll).toHaveBeenCalledWith("test-col", { key: "git.chunk.lastModifiedAt", direction: "asc" }, 30, {
+        must: [
+          { key: "language", match: { value: "typescript" } },
+          { key: "git.chunk.lastModifiedAt", range: { gt: 0 } },
+        ],
+      });
     });
   });
 });

@@ -19,6 +19,23 @@ export interface RegistryGitState {
   indexedCommit: string;
   /** Working tree had uncommitted changes at index time. */
   indexedDirty: boolean;
+  /**
+   * The indexed files whose content differed from `indexedCommit` at index
+   * time — modified, staged, deleted or untracked — relative to the project
+   * root, admitted by the ingest rules (bd tea-rags-mcp-xi2r9, live P1-1). The
+   * index holds THEIR content, not the commit's, so a diff against
+   * `indexedCommit` alone misses them once the tree is restored: the
+   * working-tree overlay re-reads every one. Empty = the run saw a clean tree.
+   * Absent on entries written before the field existed, when git could not
+   * answer, and when the list overflowed (see `indexedDirtyPathsOverflowed`) —
+   * an absent list on a dirty stamp is "unknown", never "none".
+   */
+  indexedDirtyPaths?: string[];
+  /**
+   * More than `WORKING_TREE_DELTA_FILE_CAP` files were dirty at index time; the
+   * list is not stored, because the overlay could not hold it anyway.
+   */
+  indexedDirtyPathsOverflowed?: boolean;
 }
 
 /** Outcome of one detached auto-update run (spec §4 step 5). */
@@ -154,6 +171,19 @@ export interface CollectionEntry {
    * none, and an enrichment recompute advances only the two it rebuilt.
    */
   languageVersions?: Record<string, Partial<LanguageCodeVersions>>;
+  /**
+   * Algorithm version per enrichment provider key the indexed payload was
+   * computed by (`EnrichmentProvider.algorithmVersion`, bd tea-rags-mcp-xi2r9).
+   * `TrajectoryVersionDriftMonitor` compares it against the running build: a
+   * provider whose computation changed writes different values under the same
+   * keys, which no other axis can see.
+   *
+   * STICKY for the same reason as `languageVersions`: the stamp claims the
+   * provider's layer was rebuilt for every point, so only such a run may advance
+   * it (`CollectionRegistry#stampTrajectoryVersions`). Absent ⇒ every provider
+   * reads as version 1.
+   */
+  trajectoryVersions?: Record<string, number>;
   /**
    * Settled embedding batch optima, keyed by `embeddingThroughputOptimumKey`
    * (bd tea-rags-mcp-7ju66). MERGED on `record()`: a run overwrites only the

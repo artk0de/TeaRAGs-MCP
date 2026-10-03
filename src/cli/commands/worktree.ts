@@ -76,12 +76,12 @@ async function runWorktreeCreate(argv: {
           `Next: index the live diff with  ${nextStep}\n`,
       );
     }
-    ctx.cleanup?.();
+    void ctx.cleanup?.();
     process.exit(0);
   } catch (err) {
     process.stderr.write(`worktree create failed: ${(err as Error).message}\n`);
     try {
-      ctx.cleanup?.();
+      void ctx.cleanup?.();
     } catch {
       /* best-effort */
     }
@@ -109,12 +109,12 @@ async function runWorktreeRemove(argv: {
     } else {
       process.stdout.write(res.removed ? `Removed worktree '${argv.name}'.\n` : `'${argv.name}' was not found.\n`);
     }
-    ctx.cleanup?.();
+    void ctx.cleanup?.();
     process.exit(0);
   } catch (err) {
     process.stderr.write(`worktree remove failed: ${(err as Error).message}\n`);
     try {
-      ctx.cleanup?.();
+      void ctx.cleanup?.();
     } catch {
       /* best-effort */
     }

@@ -15,6 +15,7 @@
  */
 
 import type { RelPath } from "../../../contracts/types/codegraph.js";
+import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 
 export interface GetArchitectureReportRequest {
   /** Project alias from the collection registry — RECOMMENDED. */
@@ -1207,6 +1208,11 @@ export interface ArchitectureNormsReport {
 }
 
 export interface GetArchitectureReportResponse {
+  /**
+   * Which working tree the report was judged for (bd tea-rags-mcp-xi2r9,
+   * WTO-7) — the same marker the other graph tools carry.
+   */
+  workingTree?: WorkingTreeMarker;
   /** The scope the report was judged under, echoed; absent = whole graph. */
   pathPattern?: string;
   summary: ArchitectureReportSummary;

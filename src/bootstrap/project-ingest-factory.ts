@@ -74,12 +74,7 @@ export class ProjectIngestFactory {
   /** The IngestFacade an index run of `path` must use. */
   forPath(path: string): IngestFacade {
     const ambient = this.deps.ambientEnv ?? process.env;
-    const target = normalizePath(path);
-    // Only the project's OWN stamp outranks a server env. A borrowed seed (a new
-    // project, a worktree of a known repo) records some other index's shape.
-    const own = this.deps.registry.findByPath(target);
-    const entry = own ?? pickRegistryEnvSeed(this.deps.registry, { path: target });
-    const overlay = resolveRegistryEnv(entry, ambient, own ? (this.deps.ambientEnvRole ?? "invocation") : "invocation");
+    const overlay = this.overlayFor(path, ambient);
     // Replay dropped every key the ambient env may override, so an empty
     // overlay means this project's recorded config IS the process config.
     if (Object.keys(overlay).length === 0) return this.deps.processIngest;
@@ -90,6 +85,27 @@ export class ProjectIngestFactory {
     const built = this.deps.buildIngest(overlayOnto(ambient, overlay));
     this.byEnv.set(key, built);
     return built;
+  }
+
+  /**
+   * The env an index run of `path` resolves to — the same resolution
+   * `forPath` builds its facade from. For a READER of the project's index that
+   * must compute what an index run would (the working tree's on-demand git
+   * signals, round-4 P1), without building a facade.
+   */
+  envForPath(path: string): Record<string, string> {
+    const ambient = this.deps.ambientEnv ?? process.env;
+    return overlayOnto(ambient, this.overlayFor(path, ambient));
+  }
+
+  /** The registry overlay of `path` over `ambient`: see the class docblock. */
+  private overlayFor(path: string, ambient: NodeJS.ProcessEnv): Record<string, string> {
+    const target = normalizePath(path);
+    // Only the project's OWN stamp outranks a server env. A borrowed seed (a new
+    // project, a worktree of a known repo) records some other index's shape.
+    const own = this.deps.registry.findByPath(target);
+    const entry = own ?? pickRegistryEnvSeed(this.deps.registry, { path: target });
+    return resolveRegistryEnv(entry, ambient, own ? (this.deps.ambientEnvRole ?? "invocation") : "invocation");
   }
 }
 

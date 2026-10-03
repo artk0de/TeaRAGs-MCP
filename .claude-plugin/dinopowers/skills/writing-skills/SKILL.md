@@ -46,8 +46,7 @@ Compose single-sentence intent. Becomes `query` in Step 2.
 Call `mcp__tea-rags__semantic_search` with these exact parameters:
 
 ```
-project:     <alias from list_projects — RECOMMENDED, omit path when set>
-path:        <current project path — fallback when no alias is registered>
+path:        <your working directory>   ← tea-rags search-cascade "Addressing the Codebase"; never project alone
 query:       <intent sentence from Step 1>
 pathPattern: "**/SKILL.md"
 limit:       8

@@ -1216,6 +1216,8 @@ describe("OllamaEmbeddings", () => {
         mockFetch.mockRejectedValueOnce(new Error("connection refused"));
       }
       const provider = new OllamaEmbeddings(model, undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      // The endpoint decision is lazy (B3): start it where the constructor used to.
+      void provider.resolveEndpoint();
       await flush();
       return provider;
     };
@@ -1307,6 +1309,7 @@ describe("OllamaEmbeddings", () => {
       // Constructor health check returns non-ok (e.g. 500) instead of throwing
       mockFetch.mockResolvedValueOnce({ ok: false, status: 500 });
       const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
       await flush();
 
       // Embed should use fallback URL since primary health was non-ok
@@ -1343,6 +1346,7 @@ describe("OllamaEmbeddings", () => {
         mockFetch.mockRejectedValueOnce(new Error("primary down")); // probe attempt 1
         mockFetch.mockRejectedValueOnce(new Error("primary down")); // probe retry
         const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+        void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
         await vi.advanceTimersByTimeAsync(300); // flush constructor probe incl. retry delay
 
         // Embed on fallback
@@ -1372,6 +1376,7 @@ describe("OllamaEmbeddings", () => {
         mockFetch.mockRejectedValueOnce(new Error("primary down")); // probe attempt 1
         mockFetch.mockRejectedValueOnce(new Error("primary down")); // probe retry
         const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+        void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
         await vi.advanceTimersByTimeAsync(300);
 
         mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
@@ -1458,6 +1463,7 @@ describe("OllamaEmbeddings", () => {
       // Constructor health check succeeds
       mockFetch.mockResolvedValueOnce({ ok: true });
       const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
       await flush();
 
       // First embed fails on primary — no fallback switch
@@ -1598,6 +1604,7 @@ describe("OllamaEmbeddings", () => {
       // the probe must still target the CONFIGURED fallback, not the active URL.
       mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
       const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
       await flush();
 
       mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
@@ -1611,6 +1618,7 @@ describe("OllamaEmbeddings", () => {
     it("should return false when the fallback URL throws", async () => {
       mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
       const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
       await flush();
 
       mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
@@ -1620,6 +1628,7 @@ describe("OllamaEmbeddings", () => {
     it("should return false when the fallback URL returns non-ok", async () => {
       mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
       const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
       await flush();
 
       mockFetch.mockResolvedValueOnce({ ok: false, status: 500 });
@@ -1659,6 +1668,7 @@ describe("OllamaEmbeddings", () => {
       // checkPrimaryHealth must still target the configured primary, NOT the active fallback.
       mockFetch.mockRejectedValueOnce(new Error("primary down at startup"));
       const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
       await flush();
 
       mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
@@ -1696,6 +1706,7 @@ describe("OllamaEmbeddings", () => {
       mockFetch.mockRejectedValueOnce(new Error("connection refused")); // probe attempt 1
       mockFetch.mockRejectedValueOnce(new Error("connection refused")); // probe retry
       const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
       await new Promise((resolve) => setTimeout(resolve, 400));
 
       // Sanity: live endpoint moved to fallback...
@@ -1715,6 +1726,7 @@ describe("OllamaEmbeddings", () => {
       mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED")); // probe retry
       const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
       provider.onFallbackSwitch = onSwitch;
+      void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
       await new Promise((resolve) => setTimeout(resolve, 400));
 
       expect(onSwitch).toHaveBeenCalledOnce();
@@ -1735,6 +1747,7 @@ describe("OllamaEmbeddings", () => {
         mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED")); // probe retry
         const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
         provider.onFallbackSwitch = onSwitch;
+        void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
         await vi.advanceTimersByTimeAsync(300);
         onSwitch.mockClear();
 
@@ -1762,6 +1775,7 @@ describe("OllamaEmbeddings", () => {
       mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED")); // probe retry
       const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
       provider.onFallbackSwitch = onSwitch;
+      void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
       await new Promise((resolve) => setTimeout(resolve, 400));
 
       expect(onSwitch.mock.calls[0][0]).toHaveProperty("reason");
@@ -1798,6 +1812,7 @@ describe("OllamaEmbeddings", () => {
       const flush = async () => new Promise<void>((r) => setTimeout(r, 0));
       mockFetch.mockResolvedValueOnce({ ok: true }); // constructor health check
       const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
       await flush();
 
       // Primary embed fails — error propagated, no fallback
@@ -1819,6 +1834,7 @@ describe("OllamaEmbeddings", () => {
         mockFetch.mockRejectedValueOnce(new Error("primary down")); // probe attempt 1
         mockFetch.mockRejectedValueOnce(new Error("primary down")); // probe retry
         const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+        void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
         await vi.advanceTimersByTimeAsync(300);
 
         // Embed on fallback
@@ -1854,6 +1870,7 @@ describe("OllamaEmbeddings", () => {
         // Constructor: primary up
         mockFetch.mockResolvedValueOnce({ ok: true });
         const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+        void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
         await vi.advanceTimersByTimeAsync(0);
 
         // Background probe fires at 30s — primary is now dead (both attempts,
@@ -1880,6 +1897,7 @@ describe("OllamaEmbeddings", () => {
         mockFetch.mockResolvedValueOnce({ ok: true }); // constructor health check
         const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
         provider.onFallbackSwitch = onSwitch;
+        void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
         await vi.advanceTimersByTimeAsync(0);
         onSwitch.mockClear();
 
@@ -1905,6 +1923,7 @@ describe("OllamaEmbeddings", () => {
       try {
         mockFetch.mockResolvedValueOnce({ ok: true }); // constructor health check
         const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+        void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
         await vi.advanceTimersByTimeAsync(0);
 
         // Background probe at 30s — primary still ok
@@ -1951,6 +1970,7 @@ describe("OllamaEmbeddings", () => {
       // Constructor: primary up
       mockFetch.mockResolvedValueOnce({ ok: true }); // constructor health check
       const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
       await flush();
 
       // Embed succeeds on primary
@@ -1965,6 +1985,7 @@ describe("OllamaEmbeddings", () => {
     it("should stay on primary after embed failure (no mid-operation fallback)", async () => {
       mockFetch.mockResolvedValueOnce({ ok: true }); // constructor health check
       const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
       await flush();
 
       // Primary embed fails — error propagated, no fallback switch
@@ -1982,6 +2003,7 @@ describe("OllamaEmbeddings", () => {
     it("should include both URLs in error when fallback fails", async () => {
       mockFetch.mockRejectedValueOnce(new Error("primary down")); // constructor health check
       const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
       await flush();
 
       // Fallback also fails
@@ -2009,6 +2031,7 @@ describe("OllamaEmbeddings", () => {
       // Constructor: primary up
       mockFetch.mockResolvedValueOnce({ ok: true }); // constructor health check
       const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
       await flush();
 
       // Primary embed fails — connection error
@@ -2351,6 +2374,7 @@ describe("OllamaEmbeddings", () => {
     it("defaults to 3 consecutive failures when the knob is unset", async () => {
       mockFetch.mockResolvedValueOnce({ ok: true }); // constructor health check
       const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
       await flush();
 
       for (let i = 0; i < 2; i++) {
@@ -2620,6 +2644,7 @@ describe("OllamaEmbeddings", () => {
         999,
         FALLBACK,
       );
+      void provider.resolveEndpoint(); // lazy since B3: start it where the constructor used to
       await new Promise((resolve) => setTimeout(resolve, 400));
       const onSwitch = vi.fn();
       provider.onFallbackSwitch = onSwitch;
@@ -3028,5 +3053,90 @@ describe("OllamaEmbeddings", () => {
 
       expect(urls()).toEqual([`${PRIMARY}/api/embed`]);
     });
+  });
+});
+
+/**
+ * Lazy endpoint resolution (bd tea-rags-mcp-xi2r9, B3). A cold `tea-rags call`
+ * of a tool that embeds nothing — `rank_chunks`, `get_callers`, `find_symbol` —
+ * waited ~6.4 s on the failover probe of an unreachable primary that the
+ * constructor started. The probe now runs when something first needs the
+ * endpoint (an embed, model info, a health check), and the fallback semantics
+ * are unchanged once it does.
+ */
+describe("OllamaEmbeddings lazy endpoint resolution", () => {
+  const PRIMARY = "http://primary:11434";
+  const FALLBACK = "http://fallback:11434";
+  const mockEmbedding = [0.1, 0.2, 0.3];
+  let mockFetch: any;
+  const urls = (): string[] => mockFetch.mock.calls.map((call: unknown[]) => call[0] as string);
+
+  beforeEach(() => {
+    mockFetch = global.fetch as any;
+    mockFetch.mockReset();
+  });
+
+  it("probes no endpoint at construction; the first embed resolves it and fails over", async () => {
+    const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(provider.getBaseUrl()).toBe(PRIMARY);
+
+    mockFetch.mockRejectedValueOnce(new Error("unreachable")); // probe attempt 1
+    mockFetch.mockRejectedValueOnce(new Error("unreachable")); // probe retry
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+    const result = await provider.embed("query");
+
+    expect(result.embedding).toEqual(mockEmbedding);
+    expect(urls()).toEqual([`${PRIMARY}/`, `${PRIMARY}/`, `${FALLBACK}/api/embeddings`]);
+    expect(provider.getBaseUrl()).toBe(FALLBACK);
+  });
+
+  it("resolves the endpoint once, however many calls need it", async () => {
+    const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+    mockFetch.mockImplementation(async (url: string) =>
+      url === `${PRIMARY}/` ? { ok: true } : { ok: true, json: async () => ({ embedding: mockEmbedding }) },
+    );
+
+    await Promise.all([provider.embed("a"), provider.embed("b")]);
+    await provider.embed("c");
+
+    expect(urls().filter((url) => url === `${PRIMARY}/`)).toHaveLength(1);
+  });
+
+  it("runs an endpoint-resolved hook once, after the decision and before the first embed request", async () => {
+    const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+    const seen: { baseUrl: string; requests: string[] }[] = [];
+    provider.whenEndpointResolved(() => seen.push({ baseUrl: provider.getBaseUrl(), requests: urls() }));
+    expect(seen).toEqual([]);
+
+    mockFetch.mockRejectedValueOnce(new Error("unreachable"));
+    mockFetch.mockRejectedValueOnce(new Error("unreachable"));
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+    await provider.embed("first");
+    await provider.embed("second");
+
+    expect(seen).toEqual([{ baseUrl: FALLBACK, requests: [`${PRIMARY}/`, `${PRIMARY}/`] }]);
+  });
+
+  it("runs a hook registered after the decision at once", async () => {
+    const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999);
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+    await provider.embed("x");
+
+    const hook = vi.fn();
+    provider.whenEndpointResolved(hook);
+
+    expect(hook).toHaveBeenCalledOnce();
+  });
+
+  it("resolveEndpoint decides without embedding", async () => {
+    const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 500 });
+
+    await provider.resolveEndpoint();
+
+    expect(urls()).toEqual([`${PRIMARY}/`]);
+    expect(provider.getBaseUrl()).toBe(FALLBACK);
   });
 });

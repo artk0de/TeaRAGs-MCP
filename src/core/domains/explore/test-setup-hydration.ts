@@ -35,12 +35,19 @@
  * Nothing changes for a page without test examples (no fetch), nor for an
  * index chunked before setup chunks carried a scope span (the fetch finds
  * none and every example is returned as it came).
+ *
+ * Working tree (bd tea-rags-mcp-xi2r9.3): handed the view of a floor strategy,
+ * a file the tree touched takes its setup from the tree's rows of that file —
+ * the version its examples came from — and never from the index, whose setup
+ * belongs to the version the tree replaced. A deleted file has no tree rows,
+ * so no setup. Untouched files keep the index scroll.
  */
 
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import { exactMatchOnTextIndexed } from "../../adapters/qdrant/filters/text-indexed-exact.js";
 import { TEST_SCOPE_PARENT_TYPE } from "../../contracts/types/chunker.js";
 import { isLineRange, slicePack } from "./test-pack.js";
+import type { WorkingTreeView } from "./working-tree/overlay.js";
 
 /** Ceiling on chunks the setup scroll reads per page: setup windows plus the examples the `test` arm brings. */
 const SETUP_SCROLL_LIMIT = 4096;
@@ -77,21 +84,34 @@ export class TestSetupHydrator {
    * its own content. Results are copied, never mutated; an example with no
    * enclosing setup in the index is returned as it came. The `#partN` windows
    * of one oversized example are hydrated once, on the earliest part the page
-   * holds.
+   * holds. With `workingTreeView`, files it touched read their setup from the
+   * tree's rows (see the module doc).
    */
-  async hydrate<R extends HydratableResult>(results: R[], collectionName: string): Promise<R[]> {
+  async hydrate<R extends HydratableResult>(
+    results: R[],
+    collectionName: string,
+    workingTreeView?: WorkingTreeView,
+  ): Promise<R[]> {
     const examples = results.map(exampleOf);
     const files = new Set(examples.flatMap((e) => (e ? [e.relativePath] : [])));
     if (files.size === 0) return results;
 
-    const points = await this.qdrant.scrollFiltered(
-      collectionName,
-      setupFilter([...files]),
-      SETUP_SCROLL_LIMIT,
-      undefined,
-      SETUP_PAYLOAD_KEYS,
-    );
-    const membersByFile = setupMembers(points);
+    const fromTree = workingTreeView?.readDeltaChunks ? workingTreeView : undefined;
+    const indexFiles = [...files].filter((file) => !fromTree?.touchedPaths.has(file));
+    const treeFiles = [...files].filter((file) => fromTree?.touchedPaths.has(file));
+    const [indexPoints, treePoints] = await Promise.all([
+      indexFiles.length > 0
+        ? this.qdrant.scrollFiltered(
+            collectionName,
+            setupFilter(indexFiles),
+            SETUP_SCROLL_LIMIT,
+            undefined,
+            SETUP_PAYLOAD_KEYS,
+          )
+        : [],
+      treeFiles.length > 0 && fromTree?.readDeltaChunks ? treeSetupPoints(fromTree, new Set(treeFiles)) : [],
+    ]);
+    const membersByFile = setupMembers([...indexPoints, ...treePoints]);
     const hydratedOn = firstPartOnPage(examples);
 
     return results.map((result, i) => {
@@ -144,6 +164,20 @@ function firstPartOnPage(examples: (TestExampleView | undefined)[]): Map<string,
     }
   });
   return chosen;
+}
+
+/** The tree's setup rows (both chunk types) of the given touched files — what the index scroll is for the rest. */
+async function treeSetupPoints(
+  view: WorkingTreeView,
+  files: ReadonlySet<string>,
+): Promise<{ payload: Record<string, unknown> }[]> {
+  const rows = (await view.readDeltaChunks?.()) ?? [];
+  return rows.filter(
+    ({ payload }) =>
+      typeof payload.relativePath === "string" &&
+      files.has(payload.relativePath) &&
+      SETUP_CHUNK_TYPES.includes(payload.chunkType as string),
+  );
 }
 
 /** Every setup chunk (both chunk types) of the given files — index-served conditions only. */
