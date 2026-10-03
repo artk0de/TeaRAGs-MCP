@@ -9,7 +9,7 @@
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
-import { fileScopeOf, reduceToFileScope, type FileScope } from "../chunk-grouping/file-scope.js";
+import { fileScopeOf, reduceToFileScope, type FileScope } from "../chunk-grouping/index.js";
 import { filterMetaOnly } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import type { ExploreContext, ExploreResult, ExploreStrategy } from "./types.js";
