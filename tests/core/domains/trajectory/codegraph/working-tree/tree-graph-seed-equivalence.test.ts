@@ -23,6 +23,7 @@ import {
   buildWorkingTreeGraph,
   type WorkingTreeGraphBuilt,
 } from "../../../../../../src/core/domains/trajectory/codegraph/working-tree/tree-graph-build.js";
+import { WorkingTreeGraphProcessBuilder } from "../../../../../../src/core/domains/trajectory/codegraph/working-tree/tree-graph-process-builder.js";
 import type { WorkingTreeGraphSeed } from "../../../../../../src/core/domains/trajectory/codegraph/working-tree/tree-graph-seed-apply.js";
 import {
   treeGraphSeedOf,
@@ -307,6 +308,25 @@ const STEPS: {
   },
 ];
 
+/**
+ * S0: a delta that touches every edit class's ground — modified, deleted,
+ * added, renamed, and a file that a later step reverts.
+ */
+function applyFirstTreeState(fixture: TreeGraphFixture): void {
+  fixture.writeTree("src/m.ts", mFile("k() + 1"));
+  fixture.writeTree("src/v.ts", fn("v", "m() + 1", `import { m } from "./m";\n\n`));
+  fixture.removeTree("src/d.ts");
+  fixture.removeTree("src/lonely.ts");
+  fixture.writeTree("src/ghost.ts", fn("ghost", "5"));
+  fixture.writeTree("src/u.ts", fn("u", "v()", `import { v } from "./v";\n\n`));
+  fixture.writeTree("src/n.ts", fn("n", "m()", `import { m } from "./m";\n\n`));
+  // Calls a function no file declares yet; a later step adds it.
+  fixture.writeTree("src/early.ts", fn("early", "k2()", `import { k2 } from "./k";\n\n`));
+  fixture.removeTree("src/r-old.ts");
+  fixture.writeTree("src/r-new.ts", fn("renamed", "4"));
+  fixture.writeTree("src/rc.ts", fn("callRenamed", "renamed()", `import { renamed } from "./r-new";\n\n`));
+}
+
 describe("seeded tree build ≡ build from the base", () => {
   let fixture: TreeGraphFixture;
   const results: {
@@ -320,20 +340,7 @@ describe("seeded tree build ≡ build from the base", () => {
 
   beforeAll(async () => {
     fixture = await buildTreeGraphFixture(BASE_FILES);
-    // S0: a delta that touches every edit class's ground — modified, deleted,
-    // added, renamed, and a file that a later step reverts.
-    fixture.writeTree("src/m.ts", mFile("k() + 1"));
-    fixture.writeTree("src/v.ts", fn("v", "m() + 1", `import { m } from "./m";\n\n`));
-    fixture.removeTree("src/d.ts");
-    fixture.removeTree("src/lonely.ts");
-    fixture.writeTree("src/ghost.ts", fn("ghost", "5"));
-    fixture.writeTree("src/u.ts", fn("u", "v()", `import { v } from "./v";\n\n`));
-    fixture.writeTree("src/n.ts", fn("n", "m()", `import { m } from "./m";\n\n`));
-    // Calls a function no file declares yet; a later step adds it.
-    fixture.writeTree("src/early.ts", fn("early", "k2()", `import { k2 } from "./k";\n\n`));
-    fixture.removeTree("src/r-old.ts");
-    fixture.writeTree("src/r-new.ts", fn("renamed", "4"));
-    fixture.writeTree("src/rc.ts", fn("callRenamed", "renamed()", `import { renamed } from "./r-new";\n\n`));
+    applyFirstTreeState(fixture);
     let seedDelta = deltaOf(fixture);
     let seed = await build(fixture, fixture.snapshotPath, Object.keys(seedDelta.changed).sort(), [
       ...seedDelta.deleted,
@@ -389,5 +396,94 @@ describe("seeded tree build ≡ build from the base", () => {
     const modifyOnce = results.find((entry) => entry.name === "modify a file already changed in the seed");
     // m.ts, plus v.ts and n.ts: delta files whose imports and calls point into it.
     expect(modifyOnce?.walked).toBe(3);
+  });
+});
+
+/**
+ * The WARM child (one process serving build after build, its TypeScript parses
+ * carried from one build to the next) must build exactly what a cold build
+ * does. The same chain of tree states, each built twice: through ONE warm
+ * `WorkingTreeGraphProcessBuilder`, seeded from its own previous graph as
+ * production seeds it, and cold in this process from the base. Several steps
+ * edit a file an earlier build's Program held (`k.ts`, `a.ts`, `api.ts`), so a
+ * parse reused past its file's edit would show up as a moved row.
+ */
+describe("builds through one warm child ≡ cold builds from the base", () => {
+  let fixture: TreeGraphFixture;
+  const builder = new WorkingTreeGraphProcessBuilder();
+  const results: { name: string; warm: SemanticGraph; cold: SemanticGraph; parseCacheState: string | undefined }[] = [];
+  let firstBuildParsed = 0;
+
+  async function warmBuild(
+    changedRelPaths: string[],
+    deletedRelPaths: string[],
+    seed?: WorkingTreeGraphSeed,
+  ): Promise<WorkingTreeGraphBuilt> {
+    const outputRoot = mkdtempSync(join(tmpdir(), "wtg-warm-out-"));
+    outputDirs.push(outputRoot);
+    const outcome = await builder.build(
+      {
+        snapshotPath: fixture.snapshotPath,
+        outputRoot,
+        physicalCollectionName: PHYSICAL,
+        treeRoot: fixture.treeRoot,
+        changedRelPaths,
+        deletedRelPaths,
+        providerConfig: { languageModulePath: LANGUAGE_MODULE_PATH, migrationsModulePath: MIGRATIONS_MODULE_PATH },
+        ...(seed ? { seed } : {}),
+      },
+      { timeoutMs: 120_000, heapLimitMb: 2048 },
+    );
+    if (outcome.kind !== "built") throw new Error(`warm build did not build: ${JSON.stringify(outcome)}`);
+    return outcome.graph;
+  }
+
+  beforeAll(async () => {
+    fixture = await buildTreeGraphFixture(BASE_FILES);
+    applyFirstTreeState(fixture);
+    // `api.ts` in the first delta: its interface-typed `c.close()` makes the
+    // first build construct a ts.Program, so the child holds parses from the start.
+    fixture.writeTree("src/api.ts", `${BASE_FILES["src/api.ts"]}\nexport const touched = 1;\n`);
+    let seedDelta = deltaOf(fixture);
+    let seed = await warmBuild(Object.keys(seedDelta.changed).sort(), [...seedDelta.deleted]);
+    firstBuildParsed = seed.parseCache?.parsed ?? 0;
+
+    for (const step of STEPS) {
+      step.edit(fixture);
+      const current = deltaOf(fixture);
+      const changed = Object.keys(current.changed).sort();
+      const cold = await build(fixture, fixture.snapshotPath, changed, [...current.deleted]);
+      const seedInput = await treeGraphSeedOf(seed.dbPath, seedDelta, current, async (relPath) => {
+        try {
+          return statSync(join(fixture.treeRoot, relPath)).isFile();
+        } catch {
+          return false;
+        }
+      });
+      const warm = await warmBuild(changed, [...current.deleted], seedInput);
+      results.push({
+        name: step.name,
+        warm: await semanticGraph(warm.dbPath),
+        cold: await semanticGraph(cold.dbPath),
+        parseCacheState: warm.parseCache?.state,
+      });
+      seed = warm;
+      seedDelta = current;
+    }
+  }, 300_000);
+
+  afterAll(async () => {
+    await builder.close();
+  });
+
+  it.each(STEPS.map((step) => [step.name] as const))("%s", (name) => {
+    const result = results.find((entry) => entry.name === name);
+    if (!result) throw new Error(`step ${name} did not run`);
+    expectEquivalent(result.warm, result.cold);
+  });
+
+  it("the first build fills the child's parse cache and every later build starts warm", () => {
+    expect(firstBuildParsed).toBeGreaterThan(0);
+    expect(results.map((result) => result.parseCacheState)).toEqual(STEPS.map(() => "warm"));
   });
 });

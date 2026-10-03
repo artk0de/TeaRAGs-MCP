@@ -156,6 +156,7 @@ import {
   TS_PROGRAM_HEAP_USABLE_PCT_DEFAULT,
   type TSProgramHeapBudget,
 } from "./ts-program-heap-admission.js";
+import type { TSSourceFileStore } from "./ts-source-file-store.js";
 
 /** Parse `CODEGRAPH_TS_CONE_MAX`; fall back to the TS default on absent/invalid. */
 function resolveConeMax(raw: string | undefined): number {
@@ -338,6 +339,12 @@ function typeCheckerFallbackEnabled(raw: string | undefined): boolean {
   return raw !== "0" && raw !== "false";
 }
 
+/** Collaborators a long-lived caller may hand a {@link TSCallResolver}; every one is optional. */
+export interface TSCallResolverOptions {
+  /** Parses carried across runs into the resolver's `TSProgramCache` (`TSProgramCacheOptions.sourceFileStore`). */
+  sourceFileStore?: TSSourceFileStore;
+}
+
 export class TSCallResolver implements CallResolver {
   readonly language = "typescript";
   private readonly strategies: SymbolResolutionStrategy[];
@@ -387,11 +394,13 @@ export class TSCallResolver implements CallResolver {
    *   `loadTsConfig(process.cwd())` the composition root already passes for
    *   `tsOptions`. A root that does not match the indexed project simply finds
    *   no files, and the fallback declines every call — it never guesses.
+   * @param options See {@link TSCallResolverOptions}.
    */
   constructor(
     private readonly tsOptions: TsCompilerOptions,
     private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE,
     repoRoot: string = process.cwd(),
+    options: TSCallResolverOptions = {},
   ) {
     this.fileExists = createProjectFileProbe(repoRoot);
     const cfg: ResolverConfig = {
@@ -415,6 +424,7 @@ export class TSCallResolver implements CallResolver {
           ...resolveProgramBatchBudgets(process.env),
           ...resolveProgramCacheStrategy(process.env),
           heapBudget: resolveProgramHeapBudget(process.env),
+          ...(options.sourceFileStore ? { sourceFileStore: options.sourceFileStore } : {}),
         })
       : null;
     this.unionReceiver = this.programCache

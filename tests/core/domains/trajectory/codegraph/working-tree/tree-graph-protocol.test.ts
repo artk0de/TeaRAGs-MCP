@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   isWorkingTreeGraphEntryReply,
   isWorkingTreeGraphEntryRequest,
+  isWorkingTreeGraphEntryShutdown,
 } from "../../../../../../src/core/domains/trajectory/codegraph/working-tree/tree-graph-protocol.js";
 
 function validRequest(): Record<string, unknown> {
@@ -80,6 +81,11 @@ describe("isWorkingTreeGraphEntryRequest", () => {
     expect(isWorkingTreeGraphEntryRequest(withSeed(seed))).toBe(true);
   });
 
+  it("accepts a request carrying its build id, and refuses an id that is not a number", () => {
+    expect(isWorkingTreeGraphEntryRequest({ ...validRequest(), id: 7 })).toBe(true);
+    expect(isWorkingTreeGraphEntryRequest({ ...validRequest(), id: "7" })).toBe(false);
+  });
+
   it.each<[string, unknown]>([
     ["a non-object seed", "seed"],
     ["a seed without its db path", { ...seed, dbPath: undefined }],
@@ -96,6 +102,12 @@ describe("isWorkingTreeGraphEntryReply", () => {
     expect(isWorkingTreeGraphEntryReply({ kind: "failed", reason: "parse error" })).toBe(true);
   });
 
+  it("accepts a reply carrying its build id and the child's heap, and refuses either when not a number", () => {
+    expect(isWorkingTreeGraphEntryReply({ kind: "failed", reason: "x", id: 3, heapUsedBytes: 1024 })).toBe(true);
+    expect(isWorkingTreeGraphEntryReply({ kind: "failed", reason: "x", id: "3" })).toBe(false);
+    expect(isWorkingTreeGraphEntryReply({ kind: "failed", reason: "x", heapUsedBytes: "1 KB" })).toBe(false);
+  });
+
   it.each<[string, unknown]>([
     ["a non-object", "built"],
     ["a failed reply without a reason", { kind: "failed" }],
@@ -104,5 +116,14 @@ describe("isWorkingTreeGraphEntryReply", () => {
     ["an unknown kind", { kind: "timedOut", outcome: { dbPath: "/tmp/tree.duckdb" } }],
   ])("refuses %s", (_label, reply) => {
     expect(isWorkingTreeGraphEntryReply(reply)).toBe(false);
+  });
+});
+
+describe("isWorkingTreeGraphEntryShutdown", () => {
+  it("accepts the spawner's shutdown and refuses a build request or a reply", () => {
+    expect(isWorkingTreeGraphEntryShutdown({ kind: "shutdown" })).toBe(true);
+    expect(isWorkingTreeGraphEntryShutdown(validRequest())).toBe(false);
+    expect(isWorkingTreeGraphEntryShutdown({ kind: "failed", reason: "x" })).toBe(false);
+    expect(isWorkingTreeGraphEntryShutdown(null)).toBe(false);
   });
 });

@@ -727,10 +727,13 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
         const { graph } = outcome;
         const origin = graph.seeded ? "from the tree's previous graph" : "from the base";
         const rejection = graph.seedRejection ? ` seedRejected="${graph.seedRejection}"` : "";
+        const parses = graph.parseCache
+          ? ` programCache=${graph.parseCache.state} parsesReused=${String(graph.parseCache.reused)} parsed=${String(graph.parseCache.parsed)}`
+          : "";
         logTreeGraph(
           job,
           `built ${origin}: walked=${String(graph.walkedFileCount)} deleted=${String(graph.deletedFileCount)} ` +
-            `dependents=${String(graph.hierarchyDependentCount)} durationMs=${String(graph.durationMs)}${rejection}`,
+            `dependents=${String(graph.hierarchyDependentCount)} durationMs=${String(graph.durationMs)}${parses}${rejection}`,
         );
         ({ dbPath } = graph);
       }

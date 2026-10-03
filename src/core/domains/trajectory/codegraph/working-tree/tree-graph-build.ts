@@ -10,13 +10,16 @@
  * Runs in a child process (`tree-graph-entry.ts`, spawned by
  * `WorkingTreeGraphProcessBuilder`): a whole-project ts.Program and DuckDB's
  * native allocations are bounded by killing the process, not by hoping a
- * long-lived server gives the memory back.
+ * long-lived server gives the memory back. The child is warm across builds,
+ * and the one thing a build takes from an earlier one is the parse cache in
+ * {@link WorkingTreeGraphBuildDeps}; the provider runtime is built per attempt.
  */
 import { constants, existsSync, statSync } from "node:fs";
 import { copyFile, mkdir, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
+import type { LanguageCrossRunParseCache, LanguageCrossRunParseUsage } from "../../../../contracts/types/language.js";
 import { WorkingTreeGraphIncompleteError } from "../../errors.js";
 import { createCodegraphProviderRuntime, type CodegraphWorkerConfig } from "../factory.js";
 import { applySeedDelta, type TreeGraphSeedRejection, type WorkingTreeGraphSeed } from "./tree-graph-seed-apply.js";
@@ -82,6 +85,26 @@ export interface WorkingTreeGraphBuilt {
   seeded?: boolean;
   /** Why the seed was not used, when one was given and the build ran from the base. */
   seedRejection?: string;
+  /** How the build used the cross-run parse cache it was handed (absent: none was). */
+  parseCache?: WorkingTreeGraphParseCacheUse;
+}
+
+/**
+ * What one build took from the cross-run parse cache. `warm` means the build
+ * started with parses an earlier build left; `reused` / `parsed` count this
+ * build's reads alone.
+ */
+export interface WorkingTreeGraphParseCacheUse {
+  state: "warm" | "cold";
+  reused: number;
+  parsed: number;
+  retainedFiles: number;
+}
+
+/** Process-local collaborators of a build — what the warm child carries from one build to the next. */
+export interface WorkingTreeGraphBuildDeps {
+  /** Parses earlier builds of this tree left; the build's providers parse through it. */
+  crossRunParseCache?: LanguageCrossRunParseCache;
 }
 
 /**
@@ -123,7 +146,10 @@ export interface WorkingTreeGraphBuilt {
  * @throws WorkingTreeGraphIncompleteError when the output still has stale derived
  *   tables or a non-empty WAL.
  */
-export async function buildWorkingTreeGraph(input: WorkingTreeGraphBuildInput): Promise<WorkingTreeGraphBuilt> {
+export async function buildWorkingTreeGraph(
+  input: WorkingTreeGraphBuildInput,
+  deps: WorkingTreeGraphBuildDeps = {},
+): Promise<WorkingTreeGraphBuilt> {
   if (input.changedRelPaths.length === 0 && input.deletedRelPaths.length === 0) {
     throw new Error("buildWorkingTreeGraph: empty delta — a clean working tree reads the base graph");
   }
@@ -133,12 +159,15 @@ export async function buildWorkingTreeGraph(input: WorkingTreeGraphBuildInput): 
     }
   }
   const startedAtMs = Date.now();
+  const parseCache = deps.crossRunParseCache;
+  const parsesBefore = parseCache?.usage();
   const built = (dbPath: string, walked: TreeDeltaWalk, deletedFileCount: number): WorkingTreeGraphBuilt => ({
     dbPath,
     durationMs: Date.now() - startedAtMs,
     walkedFileCount: walked.walkedFileCount,
     deletedFileCount,
     hierarchyDependentCount: walked.hierarchyDependentCount,
+    ...(parseCache && parsesBefore ? { parseCache: parseCacheUse(parsesBefore, parseCache.usage()) } : {}),
   });
 
   let seedRejection: string | undefined;
@@ -147,6 +176,7 @@ export async function buildWorkingTreeGraph(input: WorkingTreeGraphBuildInput): 
     try {
       const attempt = await buildOnClone(
         input,
+        deps,
         seed.dbPath,
         async (clone) => applySeedDelta(clone, seed, input.snapshotPath),
         (result) => !isRejection(result),
@@ -162,7 +192,7 @@ export async function buildWorkingTreeGraph(input: WorkingTreeGraphBuildInput): 
       seedRejection = `seeded build failed: ${err instanceof Error ? err.message : String(err)}`;
     }
   }
-  const attempt = await buildOnClone(input, input.snapshotPath, async (clone) => {
+  const attempt = await buildOnClone(input, deps, input.snapshotPath, async (clone) => {
     const { walked, hierarchyDependentCount } = await deleteThenWalk(
       clone,
       input.changedRelPaths,
@@ -185,16 +215,19 @@ export async function buildWorkingTreeGraph(input: WorkingTreeGraphBuildInput): 
  */
 async function buildOnClone<T>(
   input: WorkingTreeGraphBuildInput,
+  deps: WorkingTreeGraphBuildDeps,
   snapshotPath: string,
   apply: (clone: TreeGraphClone) => Promise<T>,
   keep: (result: T) => boolean = () => true,
 ): Promise<{ dbPath: string; result: T }> {
   const physical = input.physicalCollectionName;
-  const { provider, pool } = await createCodegraphProviderRuntime({
-    ...input.providerConfig,
-    rootDir: input.outputRoot,
-    collectionName: physical,
-  });
+  // A fresh runtime per attempt: the provider, its resolvers and the pool are
+  // the run's. Only the parse cache in `deps` outlives it.
+  const { provider, pool } = await createCodegraphProviderRuntime(
+    { ...input.providerConfig, rootDir: input.outputRoot, collectionName: physical },
+    undefined,
+    deps.crossRunParseCache ? { crossRunParseCache: deps.crossRunParseCache } : {},
+  );
   const dbPath = pool.pathFor(physical);
   let result: T;
   try {
@@ -223,6 +256,18 @@ async function buildOnClone<T>(
 async function removeGraphFile(dbPath: string): Promise<void> {
   await rm(dbPath, { force: true });
   await rm(`${dbPath}.wal`, { force: true });
+}
+
+function parseCacheUse(
+  before: LanguageCrossRunParseUsage,
+  after: LanguageCrossRunParseUsage,
+): WorkingTreeGraphParseCacheUse {
+  return {
+    state: before.retainedFiles > 0 ? "warm" : "cold",
+    reused: after.reused - before.reused,
+    parsed: after.parsed - before.parsed,
+    retainedFiles: after.retainedFiles,
+  };
 }
 
 function isRejection(result: TreeDeltaWalk | TreeGraphSeedRejection): result is TreeGraphSeedRejection {
