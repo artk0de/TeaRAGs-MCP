@@ -87,7 +87,7 @@ prime `## Enrichment` lists `codegraph.symbols`? No → tool not registered. Say
 ## Phase 1 — REPORT
 
 ```text
-get_architecture_report(project: "<alias>", pathPattern?: "<glob>", limit?: 50, norms?: true,
+get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>", limit?: 50, norms?: true,
                         layerMap?: { scopePathPattern?, granularity?: "directory"|"file", directoryDepth? })
 ```
 

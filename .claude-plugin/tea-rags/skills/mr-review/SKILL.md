@@ -7,27 +7,28 @@ description:
   concrete fix. Triggers on "review this MR <url>", "review MR/PR", "проведи
   ревью MR", "сделай ревью ветки", "review my branch". External URL → inline
   comments posted via session's MR-platform mechanism after ONE draft-gate
-  confirm, signed agent, [minor] prefix on style nits. NOT for own-branch
-  pre-merge flow (use dinopowers:requesting-code-review), NOT for health scan
-  without a diff (use risk-assessment), NOT for debugging a concrete failure
-  (use bug-hunt).
+  confirm, signed agent, [minor] prefix on style nits. NOT for building reviewer
+  context before requesting review (use dinopowers:requesting-code-review), NOT
+  for health scan without a diff (use risk-assessment), NOT for debugging a
+  concrete failure (use bug-hunt).
 argument-hint: "[MR/PR URL — omit for local review]"
 ---
 
 # MR Review
 
-Signal-driven diff review: 8-dimension scan (blast radius, co-change twins,
-fragile zones, silo style, tests, doc invariants, cycles, naming) → comments a
-reviewer can act on. Signals decide WHAT to flag; the comment states the fact in
-plain words and names a fix. Local mode = chat report. External mode = inline MR
-comments behind ONE draft-gate, agent-signed, `[minor]` prefix on style nits.
+Signal-driven diff review: 9-dimension scan (blast radius, co-change twins,
+fragile zones, silo style, tests, doc invariants, cycles, naming, diff-review) →
+comments a reviewer can act on. Signals decide WHAT to flag; the comment states
+the fact in plain words and names a fix. Local mode = chat report. External mode
+= inline MR comments behind ONE draft-gate, agent-signed, `[minor]` prefix on
+style nits.
 
 ## Phase Order (MANDATORY — do not skip any phase)
 
 1. Phase 0 — RESOLVE mode + project + freshness
 2. Phase 1 — ACQUIRE diff + intent
 3. Phase 2 — MAP diff → symbols + overlay working set
-4. Phase 3 — SCAN 8 dimensions (parallel blocks)
+4. Phase 3 — SCAN 9 dimensions (parallel blocks)
 5. Phase 4 — CLASSIFY severity + evidence filter
 6. Phase 5 — DELIVER (chat report | draft-gate → post)
 
@@ -51,17 +52,18 @@ comments behind ONE draft-gate, agent-signed, `[minor]` prefix on style nits.
 7. **Cite only reader-openable paths** — files tracked in the MR's repo. Agent
    session context (CLAUDE.md, `.claude/rules/**` incl. gitignored `.local/**`,
    memory, prime, skills) is NEVER evidence in a comment.
-8. **Partial reads only** — chunk coordinates from results.
+8. **Depth → `find_symbol`, never Read** — `symbol=<symbolId>` for a body,
+   `relativePath` for an outline (search-cascade After-Search Navigation).
 9. **External posting ALWAYS behind one whole-batch draft-gate confirm.**
 10. **Never fake skipped dimension** — name it "not assessed" in summary.
 
 ## Flow
 
 ```text
-0. RESOLVE   → mode (URL? external : local) + registry alias + freshness
+0. RESOLVE   → mode (URL? external : local) + checkout path + freshness
 1. ACQUIRE   → unified diff + MR title/description/author
 2. MAP       → hunks → {file, changedSymbols[], chunkUUIDs[], overlay}
-3. SCAN      → 8 dimensions — references/dimension-playbook.md
+3. SCAN      → 9 dimensions — references/dimension-playbook.md
 4. CLASSIFY  → severity + evidence filter + dedup
 5. DELIVER   → local: chat report | external: draft-gate → post
               (references/delivery-contract.md)
@@ -71,14 +73,14 @@ comments behind ONE draft-gate, agent-signed, `[minor]` prefix on style nits.
 
 **Mode:** `$ARGUMENTS` contains URL → external. Else local.
 
-**Project:** `list_projects` → match registered alias: local mode → cwd;
-external mode → local checkout of MR's repo (index lives on a path — checkout
-REQUIRED). No match → STOP, print register + index instruction. Never scan
-unindexed repo.
+**Checkout:** local mode → cwd; external mode → local checkout of MR's repo
+(checkout REQUIRED). Every call passes `path=<checkout>` (search-cascade
+"Addressing the Codebase"). Answer reports no index for that repository → STOP,
+print register + index instruction. Never scan unindexed repo.
 
 **Freshness:** external → `git fetch` target branch; index behind target →
-incremental `index_codebase project=<alias>`. Local → incremental reindex when
-prime staleness banner fires and MAP needs current symbols.
+incremental `index_codebase project=<alias>`. Local → `index-freshness` rows
+(linked worktree: no reindex — overlay reads the tree).
 
 ## Phase 1: ACQUIRE
 
@@ -97,7 +99,7 @@ MR description = review intent — feeds D6 invariants.
 
 1. Parse hunks → touched files + changed line ranges (new side).
 2. Per touched source file — cap 15, above → ask user to narrow scope:
-   `find_symbol relativePath=<file> rerank="hotspots" project=<alias>` →
+   `find_symbol relativePath=<file> rerank="hotspots" path=<checkout>` →
    outline. Intersect changed ranges with symbol spans → changed symbols + chunk
    UUIDs.
 3. Output per file: `{file, changedSymbols[], chunkUUIDs[], overlay}` — working
@@ -106,14 +108,17 @@ MR description = review intent — feeds D6 invariants.
    `codegraph.symbols.*` (payload never carries labels).
 
 Non-indexed touched files (new in MR, generated, docs) → `overlay: none`, still
-eligible for D6.
+eligible for D6. Local mode: Row with `treeState` = pre-edit index copy, lines
+stale → `find_symbol` for current code (search-cascade "Addressing the
+Codebase").
 
 ## Phase 3: SCAN
 
-Eight dimensions over working set, parallel blocks. Full per-dimension
+Nine dimensions over working set, parallel blocks. Full per-dimension
 parameters + severity mapping:
 [references/dimension-playbook.md](./references/dimension-playbook.md) — execute
-its parameter blocks byte-exact.
+its parameter blocks byte-exact (diff-review has no block: its call is the table
+row).
 
 | Dimension     | Catches                                                | Mechanism                                                          |
 | ------------- | ------------------------------------------------------ | ------------------------------------------------------------------ |
@@ -133,8 +138,8 @@ Gating: prime lists `codegraph.symbols` → D1 + D7 + D8 run on the graph. Absen
 callers were found by name, not by call graph — a lower bound, never "these are
 all the callers". tests follows tests-as-context preflight.
 
-Call budget: ≤30 tea-rags calls typical MR (≤15 files). Exceeded → narrow scope
-with user, never silently truncate coverage.
+Call budget: ≤30 tea-rags calls typical MR, ≤49 at every cap (playbook).
+Exceeded → narrow scope with user, never silently truncate coverage.
 
 ## Phase 4: CLASSIFY
 
@@ -190,8 +195,9 @@ mechanism → print contract in chat, mark "delivered locally".
   of nits gets dismissed whole.
 - **One batched hybrid_search for all clusters' test coverage** → BM25 crowding
   fabricates "untested". Stratify per domain cluster (playbook D5).
-- **Reviewing MR-branch state instead of diff-vs-indexed-base** → skill reviews
-  the diff like a human reviewer; no MR-branch checkout, no per-MR reindex.
+- **External mode: reviewing MR-branch state instead of diff-vs-indexed-base** →
+  skill reviews the diff like a human reviewer; no MR-branch checkout, no per-MR
+  reindex. (Local mode reads your tree via `path` — that is the diff.)
 - **Hardcoding platform commands (glab/gh) into flow or comments** → delivery =
   agent's session mechanism; skill emits contract only.
 - **Claiming "no cycles" / "no hubs" / "no other callers" with codegraph off** →

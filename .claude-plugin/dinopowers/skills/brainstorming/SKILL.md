@@ -30,10 +30,10 @@ do not fabricate an area.
 redirects superpowers:X. NEVER bypass wrapper.
 
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
-`tea-rags/rules/index-freshness.md`. No background reindex hook — worktree-plan
-freshness explicit (clone + per-task reindex in `dinopowers:executing-plans`);
-run `mcp__tea-rags__index_codebase` manually to search code edited but not yet
-committed, BEFORE first tea-rags call.
+`tea-rags/rules/index-freshness.md`. No background reindex hook. Linked
+worktree: overlay serves uncommitted edits — never reindex for them. Main
+checkout: incremental `mcp__tea-rags__index_codebase` BEFORE first tea-rags call
+over code edited but not committed.
 
 ## Step 1 — Extract target area
 
@@ -79,8 +79,7 @@ structural backbone not assessed (do NOT substitute a similarity-ranked list as
 Exact parameters per call:
 
 ```
-project:     <alias from list_projects — RECOMMENDED, omit path when set>
-path:        <current project path — fallback when no alias is registered>
+path:        <your working directory>   ← tea-rags search-cascade "Addressing the Codebase"; never project alone
 query:       <intent sentence from Step 1>
 pathPattern: <pathPattern from Step 1>
 rerank:      "hotspots" | "ownership" | "techDebt" | "architecturalHub"
@@ -92,12 +91,12 @@ metaOnly:    true
 
 Do NOT substitute:
 
-| Wrong tool                           | Why wrong                                                                          |
-| ------------------------------------ | ---------------------------------------------------------------------------------- |
-| `mcp__tea-rags__hybrid_search`       | Preset-based reranking is tied to `semantic_search`; `hybrid` ignores risk presets |
-| `mcp__tea-rags__find_similar`        | Requires an existing symbolId; brainstorm targets an area, not a known symbol      |
-| `mcp__tea-rags__find_symbol`         | Returns one symbol; brainstorming needs area-wide risk distribution                |
-| Running the three calls sequentially | Wastes time; they are independent — issue them in one parallel block               |
+| Wrong tool                     | Why wrong                                                                                            |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `mcp__tea-rags__hybrid_search` | Same rerank, but its BM25 leg re-ranks by query-token overlap — signal scan wants semantic + signals |
+| `mcp__tea-rags__find_similar`  | Requires an existing symbolId; brainstorm targets an area, not a known symbol                        |
+| `mcp__tea-rags__find_symbol`   | Returns one symbol; brainstorming needs area-wide risk distribution                                  |
+| Running the calls sequentially | Wastes time; they are independent — issue them in one parallel block                                 |
 
 Do NOT pass:
 
@@ -107,8 +106,8 @@ Do NOT pass:
 - `filter` on `git.ageDays` / `git.commitCount` — presets already encode these
   signals; adding filters shrinks result set, hides debt
 
-If all three calls return 0 results (area new, untouched by git): report "no
-git-enriched results for pathPattern `<X>` — area is new or excluded from
+If all three risk calls return 0 results (area new, untouched by git): report
+"no git-enriched results for pathPattern `<X>` — area is new or excluded from
 indexing" and skip to Step 4 without enrichment block. Do NOT fabricate signals.
 
 ## Step 3 — Build enrichment block
@@ -169,7 +168,7 @@ not replace it, only grounds it.
   lenses; one call loses two
 - Substituted `hybrid_search` / `find_similar` / `find_symbol` → redo with
   `semantic_search` + preset
-- Ran the three calls sequentially → reissue as parallel (same tool block)
+- Ran the calls sequentially → reissue as parallel (same tool block)
 - Invoked `superpowers:brainstorming` first, tea-rags after as "validation" →
   wrong order, restart
 - Set `metaOnly: false` to "see content" → unnecessary; restart with

@@ -20,6 +20,9 @@ hardcoded thresholds — strategies adapt per codebase.
 
 ## Prerequisites
 
+**Addressing:** every tea-rags call passes `path=<your working directory>` —
+search-cascade "Addressing the Codebase"; never project alone.
+
 **Area context required:** files, pathPattern, per-symbol overlay labels must be
 in conversation. Labels come from `find_symbol(rerank=<preset>, metaOnly=false)`
 on target symbols — explore PRE-GEN step PG-2 (SIGNAL LOOKUP). No full
@@ -42,13 +45,15 @@ For label definitions: `tea-rags://schema/signal-labels`. For thresholds:
 
 ## Step 0: MODE
 
+Runs after Prerequisites (area context present).
+
 `find_symbol(metaOnly=true)` on named target. Zero guessing:
 
-| Probe result                                     | Mode   |
-| ------------------------------------------------ | ------ |
-| Target symbol exists in index                    | MODIFY |
-| Container exists, symbol new ("add method to Y") | EXTEND |
-| Neither exists                                   | CREATE |
+| Probe result                                       | Mode   |
+| -------------------------------------------------- | ------ |
+| Target symbol exists (find_symbol reads your tree) | MODIFY |
+| Container exists, symbol new ("add method to Y")   | EXTEND |
+| Neither exists                                     | CREATE |
 
 Probe ambiguous → ask user which mode. One question, genuine ambiguity only.
 
@@ -290,8 +295,9 @@ Output: the vocabulary for Step 6.
 Apply strategy + style + reuse manifest — call manifest helpers, NEVER
 reimplement them. MODIFY: minimal diff per strategy.
 
-MODIFY, before the first edit: `find_co_changed(project, files: [target])` on
-the target file (registered when codegraph is on). Silent partners —
+MODIFY, before the first edit:
+`find_co_changed(path=<your working directory>, files: [target])` on the target
+file (registered when codegraph is on). Silent partners —
 `structurallyLinked: false` — with `strength >= 0.5`, top 5: check whether the
 change belongs in them too. Context, not a requirement — never expand the diff
 on co-change alone.
@@ -332,21 +338,25 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
    SKIP verdict → note behavior unpinned, proceed.
 4. **Naming review before commit** (codegraph on): GENERATE writes names Step 5
    never judged (helpers, locals, constants, types). ONE
-   `review_changes(changes: {}, sections: ["naming", "incompleteChange"])` — the
-   naming section judges every name the added lines declare vs HEAD (same
-   findings shape the old `get_naming_lexicon changes` returned: `MISFIT` →
-   rename to `suggestion` before commit; `COLLISION` → rename; `NEW_TERM` → take
-   an `alternatives` word, else keep + justify (soft); `genericName` → rename;
-   `novel` = no action). incompleteChange = co-change partners the change
-   ignores (`support`/`confidence` attached) — a forgotten sibling edit is
-   caught here, not in review. Skip naming when every added declaration was a
-   Step 5 draft. Tests not judged (`notJudged`). Never hand-list written names
-   into `names[]`.
+   `review_changes(changes: {}, sections: ["naming", "incompleteChange"])` (`{}`
+   = the uncommitted edit just generated; branch-wide review →
+   `changes: {base}`) — the naming section judges every name the added lines
+   declare vs HEAD (same findings shape the old `get_naming_lexicon changes`
+   returned: `MISFIT` → rename to `suggestion` before commit; `COLLISION` →
+   rename; `NEW_TERM` → take an `alternatives` word, else keep + justify (soft);
+   `genericName` → rename; `novel` = no action). incompleteChange = co-change
+   partners the change ignores (`support`/`confidence` attached) — a forgotten
+   sibling edit is caught here, not in review. Skip naming when every added
+   declaration was a Step 5 draft. Tests not judged (`notJudged`). Never
+   hand-list written names into `names[]`.
 
 Step 7 is the extension point for post-generation structural checks — add them
 here, not as a second verification step.
 
 ### Step 8: IMPACT
+
+Edges: no `codegraph` floor while `changedFiles` > 0 → edges touching changed
+files are the index's (search-cascade "Addressing the Codebase").
 
 Assess blast radius of change you just generated.
 

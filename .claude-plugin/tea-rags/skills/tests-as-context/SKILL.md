@@ -31,8 +31,9 @@ skills.
    package managers in output. Generic phrasing only: "run the tests for these
    files", "the project's standard test command", "execute the affected
    scenarios".
-3. **Single-shot** — each recipe = one `semantic_search` call. No retry loops,
-   no expansion. Caller composes recipes if needs multiple.
+3. **Single-shot** — each recipe = one `semantic_search` call. No retry loops
+   (Rule 5's old-server `filter: {}` re-issue excepted), no expansion. Caller
+   composes recipes if needs multiple.
 4. **Filter is `chunkType`, not `testFile`** — `chunkType: "test"` and
    `chunkType: "test_setup"` are chunk-level DSL filters. `testFile: "only"` =
    file-level fallback, only when DSL chunks absent.
@@ -61,12 +62,15 @@ numeric thresholds, e.g.
 Test corpus **absent** if every `git.chunk.*` line shows `test: —` or no `test:`
 row at all.
 
+**Addressing (every recipe below):** `path: <your working directory>` —
+search-cascade "Addressing the Codebase"; never project alone.
+
 **Prime digest not in context (fresh subagent / cold session):** issue ONE cheap
 probe call to determine DSL availability without scanning digest:
 
 ```
 mcp__tea-rags__semantic_search:
-  project:  <alias>
+  path:     <your working directory>
   query:    "test"
   filter:   { must: [{ key: "chunkType", match: { value: "test" } }] }
   limit:    1
@@ -115,7 +119,7 @@ symbol's file), surface leaf-scope test chunks exercising affected scenarios.
 
 ```
 mcp__tea-rags__semantic_search:
-  project:     <alias from prime digest>
+  path:        <your working directory>
   query:       <intent>
   chunkType:   "test"
   filter:      { must_not: [{ key: "relativePath", match: { any: <affectedFiles> } }] }
@@ -161,7 +165,7 @@ chunks with similar shape.
 
 ```
 mcp__tea-rags__semantic_search:
-  project:     <alias>
+  path:        <your working directory>
   query:       <intent>
   chunkType:   "test_setup"
   rerank:      "proven"               ← stable + old + low-bugFix + multi-author
@@ -200,7 +204,7 @@ introduced.
 
 ```
 mcp__tea-rags__semantic_search:
-  project:     <alias>
+  path:        <your working directory>
   query:       <intent>
   chunkType:   "test"
   pathPattern: <subjectPath if provided, else omit>
@@ -237,7 +241,7 @@ or unstable fixture infra (flaky setup).
 
 ```
 mcp__tea-rags__semantic_search:
-  project:     <alias>
+  path:        <your working directory>
   query:       <intent>
   chunkType:   "test" if target=="scenarios" else "test_setup"
   pathPattern: <subjectPath if provided, else omit>
@@ -276,7 +280,7 @@ getting rewritten".
 
 ```
 mcp__tea-rags__semantic_search:
-  project:     <alias>
+  path:        <your working directory>
   query:       <intent if provided, else generic theme like "scenarios">
   pathPattern: <modulePath>
   chunkType:   "test"
@@ -335,7 +339,8 @@ scripts, `Makefile`, CI config, README) — not from this skill.
 - Recipe named a runner ("run with vitest", "pytest tests/...") → strip, restart
   output formatting.
 - Two `semantic_search` calls for one recipe → recipes single-shot; multi-call
-  belongs to caller.
+  belongs to caller. Sole exception: the old-server `filter: {}` re-issue (Rule
+  5).
 - Used `metaOnly: true` for `fixture-lookup` or `tests-at-risk` → wrong; these
   recipes need content for caller to extract conventions / describe-it path.
 - Preflight skipped → all five recipes require it. Even if "obviously" project

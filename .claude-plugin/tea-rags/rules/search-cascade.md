@@ -86,16 +86,23 @@ first (need no embedding), not ripgrep. See
 
 Every tea-rags tool touching a collection accepts THREE addressing params:
 
-1. **`path="<your working directory>"`** — sufficient alone on every read tool;
-   any dir inside a checkout. Addresses the TREE you stand in; the index
-   resolves from the same repository (no alias needed). **Preferred in a linked
-   worktree** — the only param that reads the worktree's own code.
-2. **`project="<alias>"`** — main checkout / no cwd context. Survives path
-   moves, pulls registered qdrantUrl + embeddingModel. Alone it reads the
-   alias's checkout — from a worktree that is the WRONG tree. Aliases:
-   `list_projects`, prime digest `## Project`.
+1. **`path="<your working directory>"`** — sufficient alone on EVERY read tool:
+   search (`semantic_search` / `hybrid_search` / `rank_chunks` /
+   `find_similar`), `find_symbol`, graph tools (`get_callers` / `get_callees` /
+   `trace_path` / `find_cycles` / `get_architecture_report`), `review_changes`,
+   `get_naming_lexicon`, analytics presets. Any dir inside a checkout. Addresses
+   the TREE you stand in; the index resolves from the same repository (no alias
+   needed). **Preferred in a linked worktree** — the only param that reads the
+   worktree's own code. Subagent in a worktree → same `path`, full toolset.
+2. **`project="<alias>"`** — no cwd context (scripts, CLI); in any checkout
+   `path` is the default. Survives path moves, pulls registered qdrantUrl +
+   embeddingModel. Alone it reads the alias's checkout — from a worktree that is
+   the WRONG tree. Aliases: `list_projects`, prime digest `## Project`.
 3. **`collection="<qdrant-name>"`** — when you already hold a Qdrant collection
    name (e.g. from `list_collections`).
+
+Clone mode (index-freshness: `degraded` over the overlay cap, clone created):
+`project="<clone alias>"` + `path` on every read.
 
 Index resolution priority: `collection > project > path`. With `project` /
 `collection` AND `path`, the index comes from the former and the tree from
@@ -103,13 +110,19 @@ Index resolution priority: `collection > project > path`. With `project` /
 
 **Read the `workingTree` marker on every answer:** `tree` = tree it read;
 `changedFiles` / `deletedFiles` = distance from `indexedCommit` (`0` = measured
-clean); `floors` = what reflects the tree (`chunks` → find_symbol, `sparse` →
-hybrid_search BM25); `degraded` → run its `remedy`. `tree` ≠ your working
-directory → wrong tree, re-call with `path=<your working directory>`.
+clean); `floors` = layers read from the tree — `chunks` (find_symbol / outline),
+`sparse` (hybrid_search BM25), `codegraph` (graph tools' edges). A row or edge
+no floor covers reflects the index. Graph answer with `changedFiles` > 0 and no
+`codegraph` floor → edges touching changed files are the index's (`degraded`
+says why): trust edges between untouched files, re-check changed ones via
+`find_symbol` / `hybrid_search`. `degraded` → its `remedy` under index-freshness
+consent (subagent: report it to the parent, never reindex). `tree` ≠ the tree
+you addressed (your working directory, or the checkout a skill names) → wrong
+tree, re-call with that `path`.
 
-**`treeState: "modified" | "deleted"`** on a semantic_search / rank_chunks /
-find_similar row = index copy of a file your tree changed or deleted; text may
-be stale. Current code → `find_symbol` (chunks floor), not the row.
+**`treeState: "modified" | "deleted"`** on a row = index copy of a file your
+tree changed or deleted; text and lines may be stale. Current code →
+`find_symbol` (chunks floor), not the row.
 
 ## After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)
 

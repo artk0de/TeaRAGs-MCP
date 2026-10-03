@@ -34,10 +34,10 @@ not fabricate symptom to justify `bug-hunt`.
 redirects superpowers:X. NEVER bypass wrapper.
 
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
-`tea-rags/rules/index-freshness.md`. No background reindex hook — worktree-plan
-freshness explicit (clone + per-task reindex in `dinopowers:executing-plans`);
-run `mcp__tea-rags__index_codebase` manually to search code edited but not
-committed, BEFORE first tea-rags call.
+`tea-rags/rules/index-freshness.md`. No background reindex hook. Linked
+worktree: overlay serves uncommitted edits — never reindex for them. Main
+checkout: incremental `mcp__tea-rags__index_codebase` BEFORE first tea-rags call
+over code edited but not committed.
 
 ## Step 1 — Frame the symptom
 
@@ -65,7 +65,8 @@ present) as input. Skill internally runs `semantic_search` with
 
 - `bugFixRate "critical"` → prime suspect
 - `bugFixRate "concerning"` + high churn → secondary suspect
-- `bugFixRate "healthy"` → SKIP
+- `bugFixRate "healthy"` → SKIP, unless fresh / uncommitted class (bug-hunt
+  Signal triage: `healthy` alone never drops a chunk)
 
 Wait for its `PRESENT` output — ranked suspect list with `file:line` + signal
 labels + one-sentence observation per suspect.
@@ -96,7 +97,7 @@ Take `bug-hunt` PRESENT output, reshape as hypothesis block:
 - <file>:<startLine>-<endLine> — <observation>
   signals: bugFixRate <X%>, relativeChurn <Y>
 
-**Skipped (healthy):** <N> files with bugFixRate=healthy — likely not the root cause.
+**Skipped (healthy):** <N> files with bugFixRate=healthy, no fresh / uncommitted class — likely not the root cause.
 ```
 
 If `bug-hunt` returned 0 suspects (all healthy): state "no bug-prone zones for
@@ -131,10 +132,13 @@ Read the result like this:
 - **`dangerOverlay`** per step — carries `bugFixRate` / churn for that hop, so
   quiet-looking intermediate function with critical history surfaces instead of
   hiding between entry and suspect.
-- **Empty result** — NO static call path from `from` to `to`. Hypothesis "the
-  entry flow reaches this suspect" is **structurally false**. Useful negative
-  signal: either repro point wrong, bug reached via dynamic/async edge static
-  graph doesn't see, or suspect unrelated. Drop it, trace to next suspect.
+- **Empty result** — check `namesakes` first (wrong `fromPath`/`toPath` pin →
+  fix the pin), and the floor rule (no `codegraph` floor + `changedFiles` > 0 →
+  edges in changed files are the index's — re-check). Only then: NO static call
+  path from `from` to `to`; hypothesis "the entry flow reaches this suspect" is
+  **structurally false**. Useful negative signal: either repro point wrong, bug
+  reached via dynamic/async edge static graph doesn't see, or suspect unrelated.
+  Drop it, trace to next suspect.
 
 Preset selection for trace:
 
@@ -264,16 +268,16 @@ Rules:
 
 ## Common Mistakes
 
-| Mistake                                                                       | Reality                                                                                                                                                                                                                                                                                                                                                          |
-| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Start `superpowers:systematic-debugging` with the error message as hypothesis | Flat search. Bug-hunt narrows to bug-prone zones first.                                                                                                                                                                                                                                                                                                          |
-| Use `tea-rags:bug-hunt` AFTER hypotheses formed ("to validate")               | Wrong order. Bug-hunt seeds the hypothesis space, not validates it post-hoc.                                                                                                                                                                                                                                                                                     |
-| Ignore the "healthy" skip signal                                              | Healthy zones are calibrated-out by bug-hunt. If you still want to look there, you're overriding a trusted prior.                                                                                                                                                                                                                                                |
-| Re-run bug-hunt on each new hypothesis                                        | One bug-hunt call per symptom. Hypothesis iteration is `superpowers:systematic-debugging`'s job.                                                                                                                                                                                                                                                                 |
-| Invoke on speculative "maybe there's a race" questions                        | That's brainstorming (use `dinopowers:brainstorming`), not debugging a symptom.                                                                                                                                                                                                                                                                                  |
-| Pass the full stack trace as `symptom`                                        | Stack traces contain noise (framework frames). Extract the user-code frame or error message only.                                                                                                                                                                                                                                                                |
-| Hand-walk `get_callers` / `get_callees` from entry to suspect                 | `trace_path(from, to, rerank="bugHunt")` returns the whole chain in one call and danger-ranks the hops.                                                                                                                                                                                                                                                          |
-| Treat an empty `trace_path` result as "tool failed"                           | **When codegraph is on** (prime shows `codegraph.symbols`): empty = no static call path, so the hypothesis that the entry reaches that suspect is structurally false — drop it. **When codegraph is off** `trace_path` is not registered (absent, not empty) — that is NOT evidence; keep the hypothesis and verify via bug-hunt suspects / manual call reading. |
-| Use `rerank="recent"` for an old, always-flaky symptom                        | `recent` ranks the newest-changed hop first — that's for fresh regressions. For long-standing bugs keep `bugHunt`.                                                                                                                                                                                                                                               |
-| Prevention = "be careful here" / "add more tests"                             | Not actionable. Name the invariant, the test file and what it asserts, or the structural change (interface, validation point, review pairing) — each tied to the overlay signal that demanded it.                                                                                                                                                                |
-| Re-rank suspects with custom weights to fill the Cause `signals:` line        | Signals already in conversation from bug-hunt / trace_path. Missing symbol → one `find_symbol(rerank: "bugHunt", metaOnly: true)`. Weighting stays owned by `tea-rags:bug-hunt`.                                                                                                                                                                                 |
+| Mistake                                                                       | Reality                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Start `superpowers:systematic-debugging` with the error message as hypothesis | Flat search. Bug-hunt narrows to bug-prone zones first.                                                                                                                                                                                                                                                                                                                                                   |
+| Use `tea-rags:bug-hunt` AFTER hypotheses formed ("to validate")               | Wrong order. Bug-hunt seeds the hypothesis space, not validates it post-hoc.                                                                                                                                                                                                                                                                                                                              |
+| Ignore the "healthy" skip signal                                              | Healthy zones (no fresh / uncommitted class) are calibrated-out by bug-hunt. If you still want to look there, you're overriding a trusted prior.                                                                                                                                                                                                                                                          |
+| Re-run bug-hunt on each new hypothesis                                        | One bug-hunt call per symptom. Hypothesis iteration is `superpowers:systematic-debugging`'s job.                                                                                                                                                                                                                                                                                                          |
+| Invoke on speculative "maybe there's a race" questions                        | That's brainstorming (use `dinopowers:brainstorming`), not debugging a symptom.                                                                                                                                                                                                                                                                                                                           |
+| Pass the full stack trace as `symptom`                                        | Stack traces contain noise (framework frames). Extract the user-code frame or error message only.                                                                                                                                                                                                                                                                                                         |
+| Hand-walk `get_callers` / `get_callees` from entry to suspect                 | `trace_path(from, to, rerank="bugHunt")` returns the whole chain in one call and danger-ranks the hops.                                                                                                                                                                                                                                                                                                   |
+| Treat an empty `trace_path` result as "tool failed"                           | **When codegraph is on** (prime shows `codegraph.symbols`): empty, after the `namesakes` and floor checks, = no static call path, so the hypothesis that the entry reaches that suspect is structurally false — drop it. **When codegraph is off** `trace_path` is not registered (absent, not empty) — that is NOT evidence; keep the hypothesis and verify via bug-hunt suspects / manual call reading. |
+| Use `rerank="recent"` for an old, always-flaky symptom                        | `recent` ranks the newest-changed hop first — that's for fresh regressions. For long-standing bugs keep `bugHunt`.                                                                                                                                                                                                                                                                                        |
+| Prevention = "be careful here" / "add more tests"                             | Not actionable. Name the invariant, the test file and what it asserts, or the structural change (interface, validation point, review pairing) — each tied to the overlay signal that demanded it.                                                                                                                                                                                                         |
+| Re-rank suspects with custom weights to fill the Cause `signals:` line        | Signals already in conversation from bug-hunt / trace_path. Missing symbol → one `find_symbol(rerank: "bugHunt", metaOnly: true)`. Weighting stays owned by `tea-rags:bug-hunt`.                                                                                                                                                                                                                          |

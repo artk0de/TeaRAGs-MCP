@@ -143,6 +143,58 @@
       "assertions": ["grep on command output allowed", "no tea-rags call"],
       "failure_mode": "over-routing: refuses grep for output filtering",
       "audit_finding": "F2 (grep stays right)"
+    },
+    {
+      "id": "WT11",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "Who calls ChunkCache#evict? I need the call sites to judge the impact of changing its signature (this branch already edited chunk-cache.ts and two callers).",
+      "expected": "mcp__tea-rags__get_callers symbolId=ChunkCache#evict path=<cwd> (graph tool reads the tree's codegraph; no project)",
+      "assertions": [
+        "tool is get_callers",
+        "path equals the cwd",
+        "no project without path; no reindex first"
+      ],
+      "failure_mode": "graph tool addressed by project=acme / path=/work/acme (main checkout's edges), or hybrid_search instead of the graph tool",
+      "audit_finding": "F5 (graph tools in a worktree)"
+    },
+    {
+      "id": "WT12",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "How does control reach WorkingTreeDelta#compute from the hybrid_search handler? Show the call chain. Answer carries workingTree {tree: cwd, changedFiles: 3, floors: [chunks, sparse, codegraph]} — how far do you trust the edges?",
+      "expected": "mcp__tea-rags__trace_path from=<handler> to=WorkingTreeDelta#compute path=<cwd>; codegraph floor → edges reflect the worktree's tree",
+      "assertions": [
+        "tool is trace_path",
+        "path equals the cwd",
+        "reads the codegraph floor as edges-from-the-tree"
+      ],
+      "failure_mode": "trace_path without path / with project only; treats edges as index-only (or vice versa without a floor)",
+      "audit_finding": "F5, F6 (floors)"
+    },
+    {
+      "id": "WT13",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "Before I hand this branch to a reviewer, run the naming + architecture review of what this branch changed against main.",
+      "expected": "mcp__tea-rags__review_changes path=<cwd> changes={base: main} sections=[naming, architecture]",
+      "assertions": [
+        "tool is review_changes",
+        "path equals the cwd",
+        "changes.base = main"
+      ],
+      "failure_mode": "review_changes with project=acme alone (reviews the main checkout's tree) or path=/work/acme",
+      "audit_finding": "F5 (review_changes in a worktree)"
+    },
+    {
+      "id": "WT14",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "get_callers answer: 4 callers (2 in changed files, 2 untouched); workingTree changedFiles:5, floors [chunks,sparse], degraded set. Which callers to trust, next call?",
+      "expected": "no codegraph floor -> edges touching changed files are the index pre-edit copy: trust the 2 untouched callers, re-check the changed files via find_symbol / hybrid_search path=<cwd> (metaOnly); degraded.reason explains why the tree graph is missing",
+      "assertions": [
+        "distinguishes touched vs untouched edges",
+        "re-checks changed files with find_symbol or hybrid_search, path = cwd",
+        "no reindex of the alias"
+      ],
+      "failure_mode": "trusts all 4 edges as current, or distrusts all, or reindexes",
+      "audit_finding": "owner item 6 (graph answer without codegraph floor)"
     }
   ],
   "results": {
@@ -188,6 +240,63 @@
         "ripgrep root scoping unstated",
         "large changedFiles with unflagged rows: no escalation rule"
       ]
+    },
+    "iteration_3_xi2r9_overlay_wave": {
+      "pass": 12,
+      "total": 13,
+      "rate": "92%",
+      "change": "block moved to single source (hook reads rules/references/subagent-injection.md); addressing paragraph lists graph tools / review_changes / get_naming_lexicon and names floors chunks/sparse/codegraph; WT11-WT13 added",
+      "per_case": {
+        "WT1-WT10": "PASS",
+        "WT11": "FAIL first call hybrid_search (get_callers only as follow-up)",
+        "WT12": "PASS",
+        "WT13": "PASS"
+      }
+    },
+    "iteration_4_xi2r9_overlay_wave": {
+      "pass": 13,
+      "total": 13,
+      "rate": "100%",
+      "change": "Tool selection: 'Impact of changing a symbol / call graph' branch (get_callers / get_callees / trace_path from+to / review_changes changes={base})",
+      "per_case": {
+        "WT1-WT13": "PASS"
+      },
+      "open_ambiguities_non_failing": [
+        "'all callers' still sits in the hybrid_search usage branch; impact vs usage-listing decides",
+        "no fallback stated when codegraph floor is absent on a graph answer (edges reflect the index)",
+        "ripgrep root scoping still unstated"
+      ]
+    },
+    "iteration_5_xi2r9_overlay_wave": {
+      "pass": 14,
+      "total": 14,
+      "rate": "100%",
+      "change": "WT14 added; graph-answer-without-codegraph-floor line; redundant closing addressing rule dropped"
+    },
+    "iteration_6_xi2r9_overlay_wave": {
+      "pass": 13,
+      "total": 14,
+      "rate": "93%",
+      "per_case": {
+        "WT2": "FAIL get_callers (graph branch above usage branch, 'every place that calls' matched first)"
+      }
+    },
+    "iteration_7_xi2r9_overlay_wave": {
+      "pass": 14,
+      "total": 14,
+      "rate": "100%",
+      "change": "graph branch scoped to impact + 'plain usage listing -> next branch'; usage branch drops 'all callers'; regex over text routed to ripgrep in the selection list"
+    },
+    "iteration_8_xi2r9_overlay_wave": {
+      "pass": 14,
+      "total": 14,
+      "rate": "100%",
+      "change": "override scoped to Grep/Glob/Read routing (a skill's tea-rags choice stands); 'read call' wording; treeState exception -> find_symbol; re-check via find_symbol first",
+      "contradictions_hard": 0
     }
+  },
+  "block_bytes": {
+    "before_wave": 7233,
+    "after_wave": 8127
   }
 }

@@ -23,10 +23,10 @@ performative "yes" without verification.
 **tea-rags impact analysis MUST run on the review-comment's target BEFORE
 agreeing to implement** — whenever comment names concrete symbol or file.
 
-Correct tool (`semantic_search`) + correct custom impact rerank
-(`imports: 0.5, churn: 0.3, ownership: 0.2`) + correct parameters (pathPattern
-scoping to target, `metaOnly: true`) + ordering (analysis BEFORE agreement) =
-core value.
+Correct tool (`semantic_search`) + correct impact rerank (`blastRadius` / custom
+fallback) (`imports: 0.5, churn: 0.3, ownership: 0.2`) + correct parameters
+(pathPattern scoping to target, `metaOnly: true`) + ordering (analysis BEFORE
+agreement) = core value.
 
 Comment stylistic-only (typo, spacing): skip wrapper, pass through to
 `superpowers:receiving-code-review`. Don't fabricate target. A naming comment
@@ -36,10 +36,10 @@ Comment stylistic-only (typo, spacing): skip wrapper, pass through to
 redirects superpowers:X. NEVER bypass wrapper.
 
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
-`tea-rags/rules/index-freshness.md`. No background reindex hook — worktree-plan
-freshness explicit (clone + per-task reindex in `dinopowers:executing-plans`);
-run `mcp__tea-rags__index_codebase` manually to search code edited but not yet
-committed, BEFORE first tea-rags call.
+`tea-rags/rules/index-freshness.md`. No background reindex hook. Linked
+worktree: overlay serves uncommitted edits — never reindex for them. Main
+checkout: incremental `mcp__tea-rags__index_codebase` BEFORE first tea-rags call
+over code edited but not committed.
 
 ## Step 1 — Extract review target
 
@@ -67,24 +67,23 @@ Issue ONE `mcp__tea-rags__semantic_search` — SAME idiom as
 `verification-before-completion`:
 
 ```
-project:     <alias from list_projects — RECOMMENDED, omit path when set>
-path:        <current project path — fallback when no alias is registered>
+path:        <your working directory>   ← tea-rags search-cascade "Addressing the Codebase"; never project alone
 query:       <intent from Step 1>
 pathPattern: <targetPathPattern>
-rerank:      { custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }
+rerank:      "blastRadius"               ← codegraph on; else { custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }
 limit:       10
 metaOnly:    true
 ```
 
 Do NOT substitute:
 
-| Wrong tool                                   | Why wrong                                                        |
-| -------------------------------------------- | ---------------------------------------------------------------- |
-| `mcp__tea-rags__hybrid_search`               | Custom impact rerank tied to `semantic_search`                   |
-| Named preset (`"hotspots"` / `"codeReview"`) | Named presets miss `imports` weight                              |
-| `mcp__tea-rags__find_similar` on target      | Finds structural analogs, not importers                          |
-| `grep -rn "ChunkGrouper"` for usages         | Misses the ranked `imports` overlay; noisy with comments/strings |
-| `mcp__tree-sitter__trace_impact` as primary  | Structural complement; this wrapper is git-first                 |
+| Wrong tool                                         | Why wrong                                                                                            |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `mcp__tea-rags__hybrid_search`                     | Same rerank, but its BM25 leg re-ranks by query-token overlap — signal scan wants semantic + signals |
+| Other named preset (`"hotspots"` / `"codeReview"`) | Named presets miss `imports` weight                                                                  |
+| `mcp__tea-rags__find_similar` on target            | Finds structural analogs, not importers                                                              |
+| `grep -rn "ChunkGrouper"` for usages               | Misses the ranked `imports` overlay; noisy with comments/strings                                     |
+| `mcp__tree-sitter__trace_impact` as primary        | Structural complement; this wrapper is git-first                                                     |
 
 Do NOT pass:
 
@@ -154,10 +153,12 @@ Read the result like this:
 - **`dangerOverlay`** per step — carries `imports` / churn for that hop, so a
   quiet intermediate everything routes through surfaces instead of hiding
   between the two named endpoints.
-- **Empty result** — NO static call path from `from` to `to`. Review comment's
-  premise ("X reaches Y") may be **structurally false** — useful pushback input:
-  change targets a route that doesn't exist as reviewer imagines. Confirm before
-  agreeing.
+- **Empty result** — check `namesakes` first (wrong `fromPath`/`toPath` pin →
+  fix the pin), and the floor rule (no `codegraph` floor + `changedFiles` > 0 →
+  edges in changed files are the index's — re-check). Only then: NO static call
+  path from `from` to `to`; review comment's premise ("X reaches Y") may be
+  **structurally false** — useful pushback input: change targets a route that
+  doesn't exist as reviewer imagines. Confirm before agreeing.
 
 Preset selection for the trace:
 
@@ -267,8 +268,10 @@ Wrapper informs whether agreement safe and at what scope.
 
 - "Comment is clear, I'll just do it" → if names symbol/file, run Step 2 anyway
 - "It's just a rename" → renames propagate through imports; always analyze
-- Substituted grep/git log → redo with semantic_search + custom rerank
-- Named preset instead of custom weights → redo
+- Substituted grep/git log → redo with semantic_search + Step 2 rerank
+- Wrong rerank for codegraph state → redo: `"blastRadius"` when prime
+  `## Enrichment` lists `codegraph.symbols`, else
+  `{imports: 0.5, churn: 0.3, ownership: 0.2}` (tea-rags analytics-rerank)
 - Agreed before Step 2 (performative yes) → revert, restart
 - Pushed back before Step 2 (defensive no) → revert, restart
 - Let `superpowers:receiving-code-review` chain into a raw

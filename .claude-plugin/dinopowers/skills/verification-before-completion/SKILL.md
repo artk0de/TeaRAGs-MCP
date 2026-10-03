@@ -25,7 +25,7 @@ session edited ≥1 existing file.
 
 Correct tool (`semantic_search`), correct impact rerank (`"blastRadius"` when
 codegraph on, `{imports 0.5, churn 0.3, ownership 0.2}` fallback when off),
-correct params (brace-expanded `pathPattern` over `git diff --name-only`,
+correct params (brace-expanded `pathPattern` over `git diff --name-only HEAD`,
 `metaOnly: true`), correct verdict (surface high-`fanIn`/`imports` files with
 explicit "verify dependents" rec) = core value.
 
@@ -34,11 +34,12 @@ Only new files created (no edits to existing): skip scan, verdict
 
 **Diff review, same gate** (codegraph on): one
 `review_changes(changes:{base}) sections ["incompleteChange","architecture"]`
-BEFORE "done" when the session edited existing files. incompleteChange =
-co-change partners the diff ignores (forgotten sibling edits). architecture =
-what the diff ADDS judged against the indexed graph (unstable targets, facade
-bypasses, new cycles). Findings are gate input, like the blast ladder — address
-or state why not.
+(`base` = branch base, e.g. `main`; uncommitted-only work on `main` →
+`changes:{}`) BEFORE "done" when the session edited existing files.
+incompleteChange = co-change partners the diff ignores (forgotten sibling
+edits). architecture = what the diff ADDS judged against the indexed graph
+(unstable targets, facade bypasses, new cycles). Findings are gate input, like
+the blast ladder — address or state why not.
 
 ## Verdict Ladder (PRESCRIPTIVE — apply before claiming done)
 
@@ -51,7 +52,7 @@ Read blast signal from `fanIn` when codegraph on (real dependents), else
 | -------------- | --------------------------------------------------------------------- |
 | `HIGH-BLAST`   | `fanIn`/`imports` top 10% of result set (or absolute: >20 dependents) |
 | `MEDIUM-BLAST` | `fanIn`/`imports` top 30% (or 5-20 dependents)                        |
-| `LOW-BLAST`    | `fanIn`/`imports` ≤ 5 dependents                                      |
+| `LOW-BLAST`    | `fanIn`/`imports` < 5 dependents                                      |
 
 Block is prescriptive, not informational — DO NOT skip ladder evaluation.
 
@@ -59,10 +60,10 @@ Block is prescriptive, not informational — DO NOT skip ladder evaluation.
 redirects superpowers:X. NEVER bypass the wrapper.
 
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
-`tea-rags/rules/index-freshness.md`. No background reindex hook — worktree-plan
-freshness explicit (clone + per-task reindex in `dinopowers:executing-plans`);
-run `mcp__tea-rags__index_codebase` manually to search code edited but not
-committed, BEFORE first tea-rags call.
+`tea-rags/rules/index-freshness.md`. No background reindex hook. Linked
+worktree: overlay serves uncommitted edits — never reindex for them. Main
+checkout: incremental `mcp__tea-rags__index_codebase` BEFORE first tea-rags call
+over code edited but not committed.
 
 ## Step 1 — Collect edited file set
 
@@ -71,13 +72,13 @@ From `git status --short` or `git diff --name-only`, collect:
 | Source                                 | Example                                  |
 | -------------------------------------- | ---------------------------------------- |
 | Modified files (`M`) in working tree   | `src/core/domains/explore/reranker.ts`   |
-| Staged files (`A`/`M` in index)        | `tests/explore/reranker.test.ts`         |
+| Staged files (`M`/`R` in index)        | `tests/explore/reranker.test.ts`         |
 | Files changed in session (uncommitted) | any file touched by Edit/Write/MultiEdit |
 
 Output:
 
-- `editedFiles`: relative paths with actual content changes (exclude pure
-  renames, new-only files)
+- `editedFiles`: relative paths with content changes, plus renames under their
+  OLD path (its dependents break); new-only files excluded
 - `intent`: one sentence — what session changed
 
 `editedFiles` empty (pure new-file session): skip to Step 4, verdict
@@ -89,8 +90,7 @@ Issue ONE `mcp__tea-rags__semantic_search` call — SAME idiom as
 `dinopowers:writing-plans` and `dinopowers:executing-plans`:
 
 ```
-project:     <alias from list_projects — RECOMMENDED, omit path when set>
-path:        <current project path — fallback when no alias is registered>
+path:        <your working directory>   ← tea-rags search-cascade "Addressing the Codebase"; never project alone
 query:       <intent from Step 1>
 pathPattern: "{editedFile1,editedFile2,...}"   ← brace expansion
 rerank:      "blastRadius"               ← codegraph on; OFF fallback below
@@ -106,7 +106,7 @@ Do NOT substitute:
 
 | Wrong tool                                                      | Why wrong                                                                                                               |
 | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `mcp__tea-rags__hybrid_search`                                  | Custom impact rerank tied to `semantic_search`                                                                          |
+| `mcp__tea-rags__hybrid_search`                                  | Same rerank, but its BM25 leg re-ranks by query-token overlap — signal scan wants semantic + signals                    |
 | Named preset `"hotspots"` / `"codeReview"` / `"impactAnalysis"` | `impactAnalysis` does not exist; these miss the blast-radius dimension. `"blastRadius"` IS correct when codegraph is on |
 | `mcp__tree-sitter__trace_impact`                                | Structural trace is complementary (call graph), not blast-radius on git signals; use tea-rags first                     |
 | One call per file                                               | Brace expansion covers all                                                                                              |
@@ -130,10 +130,17 @@ For each unique `relativePath` in results, extract raw values from
 `payload.git.file.*` + labels from `rankingOverlay.file.*` (kept under metaOnly;
 payload never labelled):
 
-- `imports` score — how many modules import this file (blast radius)
+- blast radius — `codegraph.file.fanIn` (blastRadius overlay, codegraph on) or
+  `imports` score (custom fallback, codegraph off)
 - `commitCount` — churn indicator
 - `blameDominantAuthorPct` (with adaptive label) — live-line silo risk (use
   label, not magic percentage — `silo` / `deep-silo` are codebase-relative)
+
+Rows with `treeState` = pre-edit index copies of your edited files: payload
+fanIn (who imports the file) and churn stand unless those dependents were edited
+too (graph-tool edges follow the cascade floor rule); text and lines do not —
+not evidence the edit is correct; current code via
+`find_symbol path=<your working directory>`.
 
 Verdict ladder per edited file: See Verdict Ladder near top.
 
@@ -213,9 +220,11 @@ scope of verification.
   has `imports > 0`, run Step 2
 - "git diff is small (2 lines), skip the scan" → 2-line change in high-blast
   file = catastrophe. Run Step 2.
-- Substituted `grep -r` / `git log` → redo with `semantic_search` + custom
+- Substituted `grep -r` / `git log` → redo with `semantic_search` + Step 2
   rerank
-- Named preset instead of custom weights → redo
+- Wrong rerank for codegraph state → redo: `"blastRadius"` when prime
+  `## Enrichment` lists `codegraph.symbols`, else
+  `{imports: 0.5, churn: 0.3, ownership: 0.2}` (tea-rags analytics-rerank)
 - Skipped verification after surfacing HIGH-BLAST → wrapper informs scope, never
   substitutes for verification
 - `metaOnly: false` → restart
@@ -229,7 +238,7 @@ scope of verification.
 | Mistake                                           | Reality                                                                          |
 | ------------------------------------------------- | -------------------------------------------------------------------------------- |
 | Claim "done" after tests in edited files pass     | Dependents may still break. `imports > 5` = verify their tests too.              |
-| Use `rerank: "hotspots"` instead of custom impact | `hotspots` returns BUG-prone zones (history), not BLAST-radius (structural)      |
+| Use `rerank: "hotspots"` instead of impact rerank | `hotspots` returns BUG-prone zones (history), not BLAST-radius (structural)      |
 | Silent downgrade of HIGH-BLAST to "probably fine" | Verdict informs scope; downgrading without evidence hides risk                   |
 | Run full test suite regardless of verdict         | LOW-BLAST files don't need full suite; the scan's point is targeted verification |
 | Skip scan for "trivial" renames                   | Renames break imports; ALL dependents may need updates                           |

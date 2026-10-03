@@ -37,6 +37,11 @@ present. Else return
 
 ## Recipe — three-level locality cascade
 
+**Addressing:** every call passes `path=<your working directory>` —
+search-cascade "Addressing the Codebase"; never project alone. Row with
+`treeState` = pre-edit copy → never a template; take its current body via
+`find_symbol`.
+
 ```
 L1 pathPattern = pathPatternL1                         (deepest subdomain)
 L2 pathPattern = infra prefix + first semantic segment (broader domain)
@@ -67,7 +72,8 @@ Skip-vocabulary (infra/layer prefixes): `app`, `src`, `lib`, `core`, `packages`,
 
 1. Call `find_similar` (or `semantic_search` / `hybrid_search` if only
    `behaviorQuery` available) with:
-   - `rerank: "proven"`
+   - `rerank: "proven"` + `level: "chunk"` (proven is file-level; keep chunk
+     results)
    - `filter: { presets: "battleTested" }` — narrows to genuinely battle-tested
      code; composes (AND) with any `pathPattern` / locality scoping
    - `pathPattern: <level>` (omit for L3)

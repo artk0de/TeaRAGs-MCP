@@ -148,14 +148,14 @@ finding was raised.
 
 ## Degradation matrix
 
-| Condition                        | Behavior                                                          |
-| -------------------------------- | ----------------------------------------------------------------- |
-| Repo not in tea-rags registry    | Stop; print register + index instructions                         |
-| Index stale vs target branch     | Incremental `index_codebase`, then proceed                        |
-| Codegraph off                    | Blast radius → callers matched by name\*; cycles → "not assessed" |
-| No DSL test chunks               | tests dimension falls back to `testFile: "only"` file-level       |
-| No delivery mechanism in session | Print delivery contract in chat for manual posting                |
-| Empty diff                       | Stop with explicit message                                        |
+| Condition                        | Behavior                                                            |
+| -------------------------------- | ------------------------------------------------------------------- |
+| Repo not in tea-rags registry    | Stop; print register + index instructions                           |
+| Index stale vs target branch     | External: incremental `index_codebase`; local: index-freshness rows |
+| Codegraph off                    | Blast radius → callers matched by name\*; cycles → "not assessed"   |
+| No DSL test chunks               | tests dimension falls back to `testFile: "only"` file-level         |
+| No delivery mechanism in session | Print delivery contract in chat for manual posting                  |
+| Empty diff                       | Stop with explicit message                                          |
 
 \* Callers found by symbol name (`hybrid_search` + `find_symbol`), not by call
 graph. Every comment built that way says so and never claims the caller list is
