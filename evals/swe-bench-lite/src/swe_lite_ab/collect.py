@@ -26,6 +26,9 @@ def write_predictions(arm: str, tasks: list[Task]) -> Path:
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w") as f:
         for t in tasks:
+            # run-paired captures each arm's patch before the other arm resets the shared repo.
+            captured = config.RUNS / arm / "patches" / f"{t.instance_id}.diff"
+            patch = captured.read_text() if captured.exists() else diff_for(task_dir(t.instance_id), t.base_commit)
             f.write(json.dumps({"instance_id": t.instance_id, "model_name_or_path": arm,
-                                "model_patch": diff_for(task_dir(t.instance_id), t.base_commit)}) + "\n")
+                                "model_patch": patch}) + "\n")
     return out

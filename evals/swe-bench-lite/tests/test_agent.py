@@ -93,6 +93,46 @@ def test_run_task_kills_the_agent_at_the_timeout(tmp_path, monkeypatch):
     assert (run_dir / "transcript.jsonl").read_text() == "{}\n"
 
 
+def test_arm_order_is_deterministic_and_roughly_balanced():
+    from swe_lite_ab.agent import arm_order
+
+    ids = [f"repo__x-{i}" for i in range(50)]
+    orders = [arm_order(i, 20261003) for i in ids]
+    assert orders == [arm_order(i, 20261003) for i in ids]
+    assert set(map(tuple, orders)) == {("arm0", "arm1"), ("arm1", "arm0")}
+    assert 15 <= sum(o[0] == "arm0" for o in orders) <= 35
+
+
+def test_run_pair_captures_each_arms_patch_before_the_next_arm_runs(tmp_path, monkeypatch):
+    from swe_lite_ab import agent, collect, config
+
+    monkeypatch.setattr(config, "RUNS", tmp_path / "runs")
+    monkeypatch.setattr(agent, "task_dir", lambda _id: tmp_path / "repo")
+    events = []
+    current = {}
+
+    def fake_run_task(arm, task):
+        events.append(("run", arm.name))
+        current["arm"] = arm.name
+        return config.RUNS / arm.name / task.instance_id
+
+    def fake_diff(repo_dir, base_commit):
+        events.append(("diff", current["arm"]))
+        return f"patch from {current['arm']} at {base_commit}\n"
+
+    monkeypatch.setattr(agent, "run_task", fake_run_task)
+    monkeypatch.setattr(collect, "diff_for", fake_diff)
+
+    order = agent.arm_order(TASK.instance_id, 7)
+    run_dirs = agent.run_pair(TASK, 7)
+
+    assert events == [("run", order[0]), ("diff", order[0]), ("run", order[1]), ("diff", order[1])]
+    assert run_dirs == [config.RUNS / arm / TASK.instance_id for arm in order]
+    for arm in order:
+        patch = config.RUNS / arm / "patches" / f"{TASK.instance_id}.diff"
+        assert patch.read_text() == f"patch from {arm} at abc\n"
+
+
 def test_both_arms_share_model_and_limits(tmp_path):
     a0, _ = build_command(ARMS["arm0"], TASK, Path("/r"), tmp_path / "a0")
     a1, _ = build_command(ARMS["arm1"], TASK, Path("/r"), tmp_path / "a1")

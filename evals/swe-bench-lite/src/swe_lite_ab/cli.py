@@ -14,13 +14,15 @@ def main() -> None:
     p = argparse.ArgumentParser(prog="swe-lite-ab")
     sub = p.add_subparsers(dest="stage", required=True)
     sub.add_parser("select")
-    for stage in ("prepare", "index", "run", "collect", "evaluate", "report"):
+    for stage in ("prepare", "index", "run", "run-paired", "collect", "evaluate", "report"):
         s = sub.add_parser(stage)
         s.add_argument("--tasks", default="pilot-50")
         if stage in ("run", "collect", "evaluate"):
             s.add_argument("--arm", choices=sorted(config.ARMS), required=True)
-        if stage == "run":
+        if stage in ("run", "run-paired"):
             s.add_argument("--parallel", type=int, default=2)
+        if stage == "run-paired":
+            s.add_argument("--seed", type=int, default=20261003)
     a = p.parse_args()
 
     if a.stage == "select":
@@ -40,6 +42,10 @@ def main() -> None:
         arm = config.ARMS[a.arm]
         with ThreadPoolExecutor(a.parallel) as pool:
             list(pool.map(lambda t: agent.run_task(arm, t), ts))
+    elif a.stage == "run-paired":
+        # Both arms of a task run sequentially inside one worker, so both see the same parallelism.
+        with ThreadPoolExecutor(a.parallel) as pool:
+            list(pool.map(lambda t: agent.run_pair(t, a.seed), ts))
     elif a.stage == "collect":
         collect.write_predictions(a.arm, ts)
     elif a.stage == "evaluate":

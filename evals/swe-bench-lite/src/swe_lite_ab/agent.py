@@ -1,12 +1,13 @@
 import json
 import os
+import random
 import signal
 import subprocess
 import threading
 import time
 from pathlib import Path
 
-from . import config
+from . import collect, config
 from .config import ArmConfig
 from .repos import task_dir
 from .tasks import Task
@@ -102,3 +103,24 @@ def run_task(arm: ArmConfig, task: Task) -> Path:
               "stderr": "".join(stderr_chunks)[-4000:], "wall_seconds": round(wall, 3)}
     (run_dir / "status.json").write_text(json.dumps(status, indent=2))
     return run_dir
+
+
+def arm_order(instance_id: str, seed: int) -> list[str]:
+    """Per-task arm order, deterministic per (seed, instance_id), so neither arm runs systematically first."""
+    return ["arm0", "arm1"] if random.Random(f"{seed}:{instance_id}").random() < 0.5 else ["arm1", "arm0"]
+
+
+def patch_path(arm: str, instance_id: str) -> Path:
+    return config.RUNS / arm / "patches" / f"{instance_id}.diff"
+
+
+def run_pair(task: Task, seed: int) -> list[Path]:
+    """Both arms back to back on one task (interleaved, so API/embedder drift hits both alike); each
+    arm's patch is captured before the next arm resets the shared task repository."""
+    run_dirs = []
+    for arm in arm_order(task.instance_id, seed):
+        run_dirs.append(run_task(config.ARMS[arm], task))
+        patch = patch_path(arm, task.instance_id)
+        patch.parent.mkdir(parents=True, exist_ok=True)
+        patch.write_text(collect.diff_for(task_dir(task.instance_id), task.base_commit))
+    return run_dirs

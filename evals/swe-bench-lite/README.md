@@ -31,19 +31,25 @@ Every stage is `uv run swe-lite-ab <stage>`. `--tasks` picks the task list
 uv run swe-lite-ab select                     # writes tasks/dev-5.json + tasks/pilot-50.json
 uv run swe-lite-ab prepare                    # mirrors + per-task repos (ancestors of base_commit only)
 uv run swe-lite-ab index                      # arm 1 index chain, forward-seeded per repo
-uv run swe-lite-ab run      --arm arm0
+uv run swe-lite-ab run-paired --parallel 2 --seed 20261003   # both arms per task, interleaved
 uv run swe-lite-ab collect  --arm arm0
-uv run swe-lite-ab run      --arm arm1
 uv run swe-lite-ab collect  --arm arm1
 uv run swe-lite-ab evaluate --arm arm0
 uv run swe-lite-ab evaluate --arm arm1
 uv run swe-lite-ab report                     # results/<tasks>-<date>.md + .csv
 ```
 
-The order matters. Both arms of a task share `runs/repos/<instance_id>`, and
-`run` resets that tree to the pristine `swe-base` branch before each agent run.
-So `collect` for an arm must follow that arm's `run` immediately, before the
-other arm's `run` wipes the working tree.
+`run-paired` runs both arms of a task back to back in a per-task random order
+(seeded), so API latency and embedder load drift over hours hit both arms
+alike instead of confounding the solve-time delta. Both arms of a task share
+`runs/repos/<instance_id>` and each agent run resets it to the pristine
+`swe-base` branch, so `run-paired` saves each arm's patch to
+`runs/<arm>/patches/<instance_id>.diff` before the other arm runs; `collect`
+prefers those saved patches.
+
+The single-arm `run --arm <arm>` stage remains for dev tuning (arm 1 only on
+`dev-5`). With it, `collect` for an arm must follow that arm's `run`
+immediately, before another `run` wipes the working tree.
 
 ## Layout
 

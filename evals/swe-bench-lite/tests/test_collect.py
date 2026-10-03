@@ -4,6 +4,25 @@ from swe_lite_ab.collect import diff_for
 from swe_lite_ab.evaluate import harness_command, image_name, pull_command
 
 
+def test_write_predictions_prefers_captured_patch_over_live_repo(tmp_path, monkeypatch):
+    import json
+
+    from swe_lite_ab import collect, config
+    from swe_lite_ab.tasks import Task
+
+    monkeypatch.setattr(config, "RUNS", tmp_path)
+    monkeypatch.setattr(collect, "diff_for", lambda repo_dir, base: f"live diff at {base}\n")
+    captured, live = Task("a__a-1", "a/a", "s1", "", "", ""), Task("b__b-2", "b/b", "s2", "", "", "")
+    (tmp_path / "arm1" / "patches").mkdir(parents=True)
+    (tmp_path / "arm1" / "patches" / "a__a-1.diff").write_text("captured diff\n")
+
+    out = collect.write_predictions("arm1", [captured, live])
+    preds = {p["instance_id"]: p for p in map(json.loads, out.read_text().splitlines())}
+    assert preds["a__a-1"]["model_patch"] == "captured diff\n"
+    assert preds["b__b-2"]["model_patch"] == "live diff at s2\n"
+    assert {p["model_name_or_path"] for p in preds.values()} == {"arm1"}
+
+
 def test_image_name_follows_the_swebench_eval_image_scheme():
     assert image_name("psf__requests-2317") == "swebench/sweb.eval.x86_64.psf_1776_requests-2317:latest"
     assert image_name("django__django-11099") == "swebench/sweb.eval.x86_64.django_1776_django-11099:latest"
