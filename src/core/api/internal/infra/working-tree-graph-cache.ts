@@ -81,6 +81,7 @@ import type {
   WorkingTreeGraphBuildOutcome,
   WorkingTreeGraphProviderConfig,
 } from "../../../domains/trajectory/codegraph/working-tree/index.js";
+import { ByteBoundedLru } from "../../../infra/byte-bounded-lru.js";
 import { physicalCollectionNamesListedByStorage, resolvePhysicalCollection } from "../../../infra/collection-name.js";
 
 /** The reason a caller gets when its wait lapsed and the build is still running. */
@@ -140,10 +141,12 @@ const SNAPSHOT_FILE = /^(.+)-([0-9a-f]{16})\.duckdb$/;
 /** Same rule as the chunk store: a collection name is one path segment, never an escape from the root. */
 const COLLECTION_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 /**
- * Content-hash memo entries kept before the oldest is dropped. The delta has no
- * file cap: a delta past this bound evicts its own earliest entries and re-hashes them.
+ * Bytes of content-hash memo kept, least recently used dropped first. The delta
+ * has no file cap, so the bound is bytes, counted as the path's UTF-8 bytes plus
+ * the stamp (~45) and the hex digest (64): ~210 bytes for a 100-byte path, so
+ * 64 MB holds ~300,000 files, and still ~59,000 at 1 KB paths.
  */
-const CONTENT_HASH_MEMO_LIMIT = 4096;
+const CONTENT_HASH_MEMO_BYTES = 64 * 1024 * 1024;
 /** The digest a changed path that is not a readable regular file contributes. */
 const ABSENT_CONTENT = "absent";
 
@@ -236,6 +239,8 @@ export interface WorkingTreeGraphCacheDeps {
   exitHooks?: WorkingTreeGraphExitHooks;
   /** Per-collection byte cap of the tree graphs; defaults to {@link WORKING_TREE_GRAPH_CAP_BYTES}. */
   capBytes?: number;
+  /** Bytes of the content-hash memo (path + stamp + digest per file); defaults to {@link CONTENT_HASH_MEMO_BYTES}. */
+  contentHashMemoBytes?: number;
   /**
    * The meta and stamp writes go through it — shared with the other
    * working-tree stores and closed at cleanup (bd tea-rags-mcp-xi2r9, B1).
@@ -328,7 +333,7 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
   /** Staging dirs THIS process is building into — never swept under it, removed at exit. */
   private readonly stagingInUse = new Set<string>();
   /** `(path, size, mtime, ctime, inode)` → content sha256 of a changed file; see {@link contentHashOf}. */
-  private readonly contentHashes = new Map<string, { stamp: string; sha: string }>();
+  private readonly contentHashes: ByteBoundedLru<{ stamp: string; sha: string }>;
   /**
    * Tree root → the key of the graph this process last served or published for
    * it, and the activity time its meta records as far as this process knows;
@@ -348,6 +353,7 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
     this.failureBackoffMs = deps.failureBackoffMs ?? WORKING_TREE_GRAPH_FAILURE_BACKOFF_MS;
     this.exitHooks = deps.exitHooks ?? processExitHooks;
     this.capBytes = deps.capBytes ?? WORKING_TREE_GRAPH_CAP_BYTES;
+    this.contentHashes = new ByteBoundedLru(deps.contentHashMemoBytes ?? CONTENT_HASH_MEMO_BYTES);
   }
 
   async graphFor(request: WorkingTreeGraphRequest, waitMs: number): Promise<WorkingTreeGraphState> {
@@ -514,7 +520,7 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
   /**
    * The delta's bytes as one digest: sorted `(relativePath, content sha256)` of
    * the changed files and the sorted deleted paths. Only the changed files are
-   * read (the overlay caps them at 200), each through {@link contentHashOf}.
+   * read (the delta has no file cap), each through {@link contentHashOf}.
    */
   private async deltaContentDigest(request: WorkingTreeGraphRequest): Promise<string> {
     const changed = [...new Set(request.changed)].sort();
@@ -541,12 +547,7 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
     const content = await fs.readFile(path).catch(() => undefined);
     if (!content) return ABSENT_CONTENT;
     const sha = createHash("sha256").update(content).digest("hex");
-    this.contentHashes.delete(path);
-    this.contentHashes.set(path, { stamp, sha });
-    if (this.contentHashes.size > CONTENT_HASH_MEMO_LIMIT) {
-      const oldest = this.contentHashes.keys().next().value;
-      if (oldest !== undefined) this.contentHashes.delete(oldest);
-    }
+    this.contentHashes.set(path, { stamp, sha }, Buffer.byteLength(path) + stamp.length + sha.length);
     return sha;
   }
 
