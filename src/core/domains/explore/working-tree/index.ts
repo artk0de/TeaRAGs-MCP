@@ -1,5 +1,6 @@
 export {
   createWorkingTreeChunkLayer,
+  WORKING_TREE_CHUNK_CONCURRENCY,
   type WorkingTreeChunkerPool,
   type WorkingTreeChunkLayer,
   type WorkingTreeChunkLayerDeps,
@@ -79,3 +80,13 @@ export {
   type WorkingTreeWatchTimerHandle,
   type WorkingTreeWatchTimers,
 } from "./watcher.js";
+export { WORKING_TREE_ROW_CACHE_MAX_BYTES, WorkingTreeRowCache, workingTreeRowBytes } from "./row-cache.js";
+export {
+  WORKING_TREE_WARM_BATCH_SIZE,
+  WORKING_TREE_WARM_RACY_WINDOW_MS,
+  WorkingTreeDeltaWarmer,
+  type WorkingTreeDeltaWarmerDeps,
+  type WorkingTreeDeltaWarmLane,
+  type WorkingTreeDeltaWarmRequest,
+  type WorkingTreeDeltaWarmState,
+} from "./warmer.js";

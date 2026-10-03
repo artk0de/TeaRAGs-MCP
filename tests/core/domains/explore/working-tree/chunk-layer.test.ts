@@ -199,3 +199,172 @@ describe("WorkingTreeChunkLayer", () => {
     await layer.dispose();
   });
 });
+
+/**
+ * WTO unbounded delta, Task 5: the layer chunks a call's files concurrently,
+ * up to `concurrency`, and keeps the result in request order; its memory cache
+ * is bounded by the bytes of the rows it holds, not by a file count.
+ */
+describe("WorkingTreeChunkLayer — concurrency and the byte-bounded cache", () => {
+  let tempDir: string;
+  let tree: string;
+
+  const write = (relativePath: string, content: string): void => {
+    const target = join(tree, relativePath);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, content);
+  };
+
+  beforeEach(async () => {
+    ({ tempDir, codebaseDir: tree } = await createTempTestDir());
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    await cleanupTempDir(tempDir);
+  });
+
+  /** A chunker whose calls finish only when the test releases them. */
+  const gatedChunker = () => {
+    const gates: { path: string; release: () => void }[] = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const chunkFile = vi.fn(
+      async (_pool: unknown, file: { relativePath: string; code: string }): Promise<ScrollChunk[]> => {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise<void>((resolve) => gates.push({ path: file.relativePath, release: resolve }));
+        inFlight--;
+        return [{ id: `id:${file.relativePath}`, payload: { relativePath: file.relativePath, content: file.code } }];
+      },
+    );
+    const settle = async () => new Promise((resolve) => setImmediate(resolve));
+    /**
+     * Releases all `total` chunker calls, newest first, then awaits `done` —
+     * each release only once `parallel` calls (or every call left) wait, so
+     * the layer had every chance to exceed its bound.
+     */
+    const drain = async <T>(done: Promise<T>, parallel: number, total: number): Promise<T> => {
+      let released = 0;
+      while (released < total) {
+        await settle();
+        if (gates.length < Math.min(parallel, total - released)) continue;
+        gates.pop()?.release();
+        released++;
+      }
+      return done;
+    };
+    return { chunkFile, gates, drain, maxInFlight: () => maxInFlight, settle };
+  };
+
+  const pool = () => ({ shutdown: vi.fn(async () => undefined) });
+
+  it("should never have more than `concurrency` chunkFile calls in flight and should keep request order", async () => {
+    const paths = Array.from({ length: 10 }, (_, i) => `f${String(i)}.ts`);
+    for (const path of paths) write(path, `export const v = "${path}";\n`);
+    const chunker = gatedChunker();
+    const layer = createWorkingTreeChunkLayer({ createPool: pool, chunkFile: chunker.chunkFile, concurrency: 3 });
+
+    const read = await chunker.drain(layer.chunk(tree, paths, CONFIG), 3, paths.length);
+
+    expect(chunker.chunkFile).toHaveBeenCalledTimes(10);
+    expect(chunker.maxInFlight()).toBe(3);
+    // released newest-first, so files finished out of order — the rows are still in request order
+    expect(read.chunks.map((row) => row.payload.relativePath)).toEqual(paths);
+    expect([...(read.rowsByPath?.keys() ?? [])]).toEqual(paths);
+    expect(read.rowsByPath?.get("f4.ts")?.map((row) => row.id)).toEqual(["id:f4.ts"]);
+    await layer.dispose();
+  });
+
+  it("should keep unparsed files in request order when chunking concurrently", async () => {
+    write("a.ts", "export const a = 1;\n");
+    write("c.ts", "export const c = 1;\n");
+    const chunkFile = vi.fn(async (_pool: unknown, file: { relativePath: string }): Promise<ScrollChunk[]> => {
+      if (file.relativePath === "a.ts") await new Promise((resolve) => setTimeout(resolve, 20));
+      if (file.relativePath === "c.ts") throw new Error("parse failed");
+      return [{ id: file.relativePath, payload: { relativePath: file.relativePath } }];
+    });
+    const layer = createWorkingTreeChunkLayer({ createPool: pool, chunkFile, concurrency: 4 });
+
+    const read = await layer.chunk(tree, ["missing.ts", "a.ts", "c.ts"], CONFIG);
+
+    expect(read.unparsed).toEqual(["missing.ts", "c.ts"]);
+    expect(read.chunks.map((row) => row.id)).toEqual(["a.ts"]);
+    await layer.dispose();
+  });
+
+  it("should evict the oldest rows once the cache holds more bytes than its bound", async () => {
+    write("a.ts", "a".repeat(60));
+    write("b.ts", "b".repeat(60));
+    const chunkFile = vi.fn(
+      async (_pool: unknown, file: { relativePath: string; code: string }): Promise<ScrollChunk[]> => [
+        { id: file.relativePath, payload: { relativePath: file.relativePath, content: file.code } },
+      ],
+    );
+    const layer = createWorkingTreeChunkLayer({ createPool: pool, chunkFile, maxCacheBytes: 100 });
+
+    await layer.chunk(tree, ["a.ts"], CONFIG);
+    await layer.chunk(tree, ["b.ts"], CONFIG); // 120 bytes > 100 — a.ts goes
+    expect(chunkFile).toHaveBeenCalledTimes(2);
+
+    await layer.chunk(tree, ["b.ts"], CONFIG);
+    expect(chunkFile).toHaveBeenCalledTimes(2); // b.ts is still held
+
+    await layer.chunk(tree, ["a.ts"], CONFIG);
+    expect(chunkFile).toHaveBeenCalledTimes(3); // a.ts was evicted
+    await layer.dispose();
+  });
+
+  it("should not cache a file whose rows alone exceed the bound", async () => {
+    write("big.ts", "x".repeat(60));
+    write("small.ts", "y".repeat(10));
+    const chunkFile = vi.fn(
+      async (_pool: unknown, file: { relativePath: string; code: string }): Promise<ScrollChunk[]> => [
+        { id: file.relativePath, payload: { relativePath: file.relativePath, content: file.code } },
+      ],
+    );
+    const layer = createWorkingTreeChunkLayer({ createPool: pool, chunkFile, maxCacheBytes: 50 });
+
+    await layer.chunk(tree, ["small.ts", "big.ts"], CONFIG);
+    await layer.chunk(tree, ["small.ts", "big.ts"], CONFIG);
+
+    expect(chunkFile.mock.calls.map(([, file]) => file.relativePath).sort()).toEqual(["big.ts", "big.ts", "small.ts"]);
+    await layer.dispose();
+  });
+
+  it("should arm the idle shutdown only once every concurrent call has finished", async () => {
+    write("a.ts", "export const a = 1;\n");
+    write("b.ts", "export const b = 1;\n");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const pools: ReturnType<typeof pool>[] = [];
+    const chunker = gatedChunker();
+    const layer = createWorkingTreeChunkLayer({
+      createPool: () => {
+        const created = pool();
+        pools.push(created);
+        return created;
+      },
+      chunkFile: chunker.chunkFile,
+      concurrency: 2,
+      idleShutdownMs: 1_000,
+    });
+
+    const slow = layer.chunk(tree, ["a.ts"], CONFIG);
+    const fast = layer.chunk(tree, ["b.ts"], CONFIG);
+    while (chunker.gates.length < 2) await chunker.settle();
+    chunker.gates.find((gate) => gate.path === "b.ts")?.release();
+    await fast;
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(pools[0].shutdown).not.toHaveBeenCalled(); // a.ts is still being chunked
+
+    chunker.gates.find((gate) => gate.path === "a.ts")?.release();
+    await slow;
+    await vi.advanceTimersByTimeAsync(999);
+    expect(pools[0].shutdown).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(pools[0].shutdown).toHaveBeenCalledTimes(1);
+    expect(pools).toHaveLength(1);
+    await layer.dispose();
+  });
+});
