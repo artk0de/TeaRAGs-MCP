@@ -30,12 +30,14 @@
  *   untracked file never committed has no history: no `git.file`, and each row
  *   the chunk walk's zero block — what ingest writes for it in the alias's own
  *   checkout (live round-3 D4).
- * - A file a COMMIT touched since the index (`indexedCommit..HEAD`, asked once
- *   per request) has history its base points never saw: nothing is inherited,
- *   its `git.file` and every row's `git.chunk` are computed from the tree's
- *   history (live G1 — a just-committed file ranked 196 days old). A committed
- *   move is computed at its new path, whose history follows the rename. A file
- *   changed only by uncommitted edits keeps inheriting.
+ * - A file a COMMIT on either side of `indexedCommit...HEAD` touched (asked
+ *   once per request) has a history at HEAD its base points do not describe —
+ *   commits since the index (live G1 — a just-committed file ranked 196 days
+ *   old), or index commits a tree branched from an older main lacks: nothing
+ *   is inherited, its `git.file` and every row's `git.chunk` are computed from
+ *   the tree's history. A committed move is computed at its new path, whose
+ *   history follows the rename. A file changed only by uncommitted edits keeps
+ *   inheriting.
  * - **codegraph** — the tree graph, when `readTreeGraph` answers `built` within
  *   {@link WORKING_TREE_SEARCH_GRAPH_WAIT_MS}: file signals by
  *   `buildCodegraphFileSignals` over the tree's file metrics and fan-in p95,
@@ -281,7 +283,7 @@ function gitHistoryOf(
 }
 
 /**
- * The paths a commit in `indexedCommit..HEAD` touched — asked once per request
+ * The paths a commit on either side of `indexedCommit...HEAD` touched — asked once per request
  * (a view enriches its rows once). No stamp, no git port, or a failure → none.
  */
 async function readCommittedSince(

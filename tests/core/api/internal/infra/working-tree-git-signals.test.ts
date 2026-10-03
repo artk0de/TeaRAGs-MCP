@@ -226,6 +226,18 @@ describe("createWorkingTreeGitSignalSource", () => {
       );
     });
 
+    // Live G1 on a diverged HEAD: the tree branched before the stamp, so the
+    // stamp's side holds commits the tree's history lacks — their paths moved too.
+    it("lists the paths either side touched when HEAD does not descend from the stamp", async () => {
+      const worktree = fixture.addWorktree("old");
+      fixture.commit(worktree, { "src/branch.ts": "export const b = 1;\n" }, "branch work");
+      const stamp = fixture.commit(tree, { "src/cyc/c.ts": C_V1 }, "main moves c");
+
+      expect(await createWorkingTreeGitSignalSource(DEPS).pathsCommittedSince(worktree, stamp)).toEqual(
+        new Set(["src/branch.ts", "src/cyc/c.ts"]),
+      );
+    });
+
     it("answers undefined for a commit the repository does not have", async () => {
       expect(await createWorkingTreeGitSignalSource(DEPS).pathsCommittedSince(tree, "f".repeat(40))).toBeUndefined();
     });

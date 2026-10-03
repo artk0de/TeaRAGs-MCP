@@ -642,6 +642,44 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
       );
     });
 
+    // Live G1 on a diverged HEAD: a linked worktree branched from an OLDER main
+    // while the index sits at a NEWER main tip. A file only the stamp's side
+    // touched is in the delta, and its base history holds commits the tree
+    // does not have — inheriting it would date the tree's code by main's.
+    it("recomputes a file only commits the tree lacks touched, from the tree's own history", async () => {
+      const fixture = createGitWorkingTreeFixture();
+      try {
+        const v1 = "export function kept(): number {\n  return 1;\n}\n";
+        fixture.commit(fixture.mainRoot, { [FOO]: v1 }, "add foo");
+        fixture.commit(fixture.mainRoot, { [FOO]: v1.replace("1;", "2;") }, "fix: foo");
+        const tree = fixture.addWorktree("old");
+        fixture.commit(tree, { "src/other.ts": "export const o = 1;\n" }, "branch work");
+        const stamp = fixture.commit(fixture.mainRoot, { [FOO]: v1.replace("1;", "3;") }, "main moves foo");
+        const source = sourceWith(
+          [{ ...basePoint("b1", FOO, "Foo#kept", 4), payload: { ...basePoint("b1", FOO, "Foo#kept", 4).payload } }],
+          createWorkingTreeGitSignalSource({
+            vcsAdapter: "git",
+            timeoutMs: 30_000,
+            chunk: { maxAgeMonths: 6, timeoutMs: 30_000, maxFileLines: 5000, concurrency: 4 },
+          }),
+        );
+
+        const { rows } = await source.enrich({
+          tree: { ...TREE, root: tree },
+          indexedCommit: stamp,
+          rows: [deltaRow("d1", FOO, "Foo#kept", [1, 3])],
+        });
+
+        // The branch holds "init", "add foo", "fix: foo" for foo — two commits, never main's third.
+        const git = rows[0].payload.git as { file: Record<string, unknown>; chunk: Record<string, unknown> };
+        expect(git.file).toMatchObject({ commitCount: 2 });
+        expect(git.file).not.toEqual(GIT_FILE);
+        expect(git.chunk).toMatchObject({ commitCount: 2 });
+      } finally {
+        fixture.cleanup();
+      }
+    });
+
     it("keeps inheriting when git cannot say what was committed, or the index has no stamp", async () => {
       const unknown = answering({ [FOO]: { file: fresh } }, undefined);
       const stampless = answering({ [FOO]: { file: fresh } }, [FOO]);

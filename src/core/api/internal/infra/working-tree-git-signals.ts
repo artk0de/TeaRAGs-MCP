@@ -284,7 +284,11 @@ export function createWorkingTreeGitSignalSource(deps: WorkingTreeGitSignalSourc
       if (!toplevel || !head) return undefined;
       const history = await historySince(toplevel, sinceCommit, head);
       if (!history) return undefined;
-      return new Set(rebaseGitPathsOntoRoot([...history.headSide.keys()].sort(), gitPathPrefix(toplevel, root)));
+      // Either side moved the path's history: what HEAD adds, and what HEAD
+      // lacks when it does not descend from the stamp (a worktree branched
+      // from an older main than the index's tip).
+      const moved = new Set([...history.headSide.keys(), ...history.stampSide.keys()]);
+      return new Set(rebaseGitPathsOntoRoot([...moved].sort(), gitPathPrefix(toplevel, root)));
     },
   };
 }

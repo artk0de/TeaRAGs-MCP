@@ -307,7 +307,10 @@ History that moved since the index (live G1): a file a commit in
 both sides of a committed move — inherits nothing from its base points. Its
 `git.file` and every row's `git.chunk` are computed on demand from the tree's
 history, at the new path for a committed move (the file walk follows the
-rename). A file changed only by uncommitted edits keeps inheriting.
+rename). A file changed only by uncommitted edits keeps inheriting. A HEAD that
+does not descend from the stamp — a linked worktree branched from an older main
+than the index's tip — lacks the stamp-side commits of `indexedCommit...HEAD`; a
+file one of them touched inherits nothing either, its history is the tree's.
 
 Persistence (live G2): computed blocks are kept under
 `<appData>/working-tree/.git-signals/`, one record per (repository toplevel,

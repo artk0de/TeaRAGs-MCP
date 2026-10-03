@@ -173,8 +173,9 @@ export interface WorkingTreeDeltaSignalRequest {
    */
   renamedFrom?: ReadonlyMap<string, string>;
   /**
-   * The commit the base index was stamped at. A file a commit in
-   * `indexedCommit..HEAD` touched has history the base points never saw, so its
+   * The commit the base index was stamped at. A file a commit on either side
+   * of `indexedCommit...HEAD` touched has a history at HEAD its base points do
+   * not describe — commits they never saw, or commits the tree lacks — so its
    * git is recomputed, not inherited (live G1). Absent → every file inherits.
    */
   indexedCommit?: string;
@@ -265,10 +266,13 @@ export interface WorkingTreeGitSignalSource {
     sinceCommit?: string,
   ) => Promise<ReadonlyMap<string, WorkingTreeGitSignals>>;
   /**
-   * The paths, relative to `root`, a commit in `sinceCommit..HEAD` touched —
-   * both sides of a committed move; paths outside `root` are dropped. One git
-   * call per (repository, range). Undefined when git cannot answer (an unknown
-   * commit, no repository). Never rejects.
+   * The paths, relative to `root`, whose history at HEAD differs from their
+   * history at `sinceCommit`: touched by a commit on EITHER side of
+   * `sinceCommit...HEAD` — one HEAD adds, or one HEAD lacks because it does not
+   * descend from the stamp (a worktree branched from an older main than the
+   * index's tip). Both sides of a committed move; paths outside `root` are
+   * dropped. One git call per (repository, stamp, HEAD). Undefined when git
+   * cannot answer (an unknown commit, no repository). Never rejects.
    */
   pathsCommittedSince: (root: string, sinceCommit: string) => Promise<ReadonlySet<string> | undefined>;
 }
