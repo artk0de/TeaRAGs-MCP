@@ -84,14 +84,19 @@ export function recordTreeGraphState(marker: WorkingTreeMarker, state: WorkingTr
  * build budget): an unbounded delta's tree-graph build can take tens of seconds
  * (live: a 1419-file delta held a find_symbol outline for 44.8 s), and a lookup
  * is a decoration/placement hop with an index fallback, not the answer. The
- * build keeps running past the cap, so a later call finds it built. Graph tools
- * do not come through here and keep the build-length wait.
+ * build keeps running past the cap, so a later call finds it built. The cap is
+ * further clamped to what is left of the view's answer budget
+ * (`WorkingTreeView#remainingWaitMs`): two lookups of one request — delta-row
+ * signals and an outline's visibility, say — share one deadline instead of
+ * waiting the cap each. Graph tools do not come through here and keep the
+ * build-length wait.
  */
 export function recordingTreeGraphReader(view: WorkingTreeView | undefined): WorkingTreeGraphReader | undefined {
   const read = view?.readTreeGraph;
   if (!view || !read) return undefined;
   return async (waitMs) => {
-    const state = await read(Math.min(waitMs, WORKING_TREE_SEARCH_GRAPH_WAIT_MS));
+    const cap = Math.min(waitMs, WORKING_TREE_SEARCH_GRAPH_WAIT_MS);
+    const state = await read(Math.min(cap, view.remainingWaitMs?.() ?? cap));
     if (state.kind === "built") {
       view.treeGraphLookup = state;
       delete view.marker.treeGraphUnavailable;

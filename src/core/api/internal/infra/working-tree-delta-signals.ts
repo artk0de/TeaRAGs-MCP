@@ -39,7 +39,9 @@
  *   history follows the rename. A file changed only by uncommitted edits keeps
  *   inheriting.
  * - **codegraph** — the tree graph, when `readTreeGraph` answers `built` within
- *   {@link WORKING_TREE_SEARCH_GRAPH_WAIT_MS}: file signals by
+ *   {@link WORKING_TREE_SEARCH_GRAPH_WAIT_MS}, clamped to what is left of the
+ *   view's answer budget (`remainingWaitMs`), the wait started together with
+ *   the touched-base read: file signals by
  *   `buildCodegraphFileSignals` over the tree's file metrics and fan-in p95,
  *   chunk signals by the ONE settlement every producer runs
  *   (`settleCodegraphChunkSignals`, `persisted` ranges from the tree's
@@ -143,10 +145,15 @@ export function createWorkingTreeDeltaSignalSource(
    */
   const viewGraphStates = new WeakMap<WorkingTreeGraphReader, Promise<WorkingTreeGraphState>>();
 
-  const graphStateOf = async (readTreeGraph: WorkingTreeGraphReader): Promise<WorkingTreeGraphState> => {
+  const graphStateOf = async (
+    readTreeGraph: WorkingTreeGraphReader,
+    remainingWaitMs: (() => number) | undefined,
+  ): Promise<WorkingTreeGraphState> => {
     let state = viewGraphStates.get(readTreeGraph);
     if (!state) {
-      state = readTreeGraph(WORKING_TREE_SEARCH_GRAPH_WAIT_MS);
+      // The search wait, clamped to what is left of the view's answer budget.
+      const cap = WORKING_TREE_SEARCH_GRAPH_WAIT_MS;
+      state = readTreeGraph(Math.min(cap, remainingWaitMs?.() ?? cap));
       viewGraphStates.set(readTreeGraph, state);
     }
     return state;
@@ -191,26 +198,30 @@ export function createWorkingTreeDeltaSignalSource(
       const paths = [...new Set(request.rows.map((row) => pathOf(row.payload)).filter((p) => p !== ""))].sort();
       if (paths.length === 0) return { rows: [...request.rows] };
       const inheritedPathOf = (path: string): string => request.renamedFrom?.get(path) ?? path;
-      const [base, committedSince] = await Promise.all([
-        groupBasePayload(request, [...new Set(paths.map(inheritedPathOf))]),
-        readCommittedSince(deps.gitSignals, request),
-      ]);
-      const historyOf = (path: string): GitHistory => gitHistoryOf(path, inheritedPathOf(path), committedSince);
 
+      // Never rejects: every failure past the graph wait becomes an inherited answer.
       const readTree = async (): Promise<{ treeGraph?: WorkingTreeGraphState; tree?: TreeGraphSignals }> => {
         if (!request.readTreeGraph) return {};
-        const treeGraph = await graphStateOf(request.readTreeGraph);
-        const opener = deps.graphFiles();
+        const treeGraph = await graphStateOf(request.readTreeGraph, request.remainingWaitMs);
         if (treeGraph.kind !== "built") return { treeGraph };
-        if (!opener) return { treeGraph: { kind: "unavailable", reason: "codegraph is disabled" } };
         try {
+          const opener = deps.graphFiles();
+          if (!opener) return { treeGraph: { kind: "unavailable", reason: "codegraph is disabled" } };
           return { treeGraph, tree: await readTreeSignals(opener, treeGraph.dbPath, paths) };
         } catch (error) {
           return { treeGraph: { kind: "unavailable", reason: `tree graph unreadable: ${messageOf(error)}` } };
         }
       };
+      // The tree-graph wait starts with the touched-base read, not after it:
+      // the graph does not depend on the base payload.
+      const treeRead = readTree();
+      const [base, committedSince] = await Promise.all([
+        groupBasePayload(request, [...new Set(paths.map(inheritedPathOf))]),
+        readCommittedSince(deps.gitSignals, request),
+      ]);
+      const historyOf = (path: string): GitHistory => gitHistoryOf(path, inheritedPathOf(path), committedSince);
       const [{ treeGraph, tree }, onDemandGit] = await Promise.all([
-        readTree(),
+        treeRead,
         readOnDemandGit(deps.gitSignals, request, base, historyOf),
       ]);
 

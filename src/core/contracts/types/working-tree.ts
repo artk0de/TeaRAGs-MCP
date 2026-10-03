@@ -103,6 +103,18 @@ export const WORKING_TREE_WARM_WAIT_MS = 2_000;
  */
 export const WORKING_TREE_SEARCH_GRAPH_WAIT_MS = 3_000;
 
+/**
+ * The total time one search answer may spend WAITING on the tree's layers —
+ * the warm wait, the tree-graph lookups, the dense vectors — counted from the
+ * view's creation (`WorkingTreeView#remainingWaitMs`). Each search-side wait is
+ * its own budget clamped to what is left of this one, so the waits of one
+ * request never add up past it (live: a cold find_symbol outline on a
+ * 1419-file delta waited 2.3 s warming, then 3 s for the graph twice in
+ * series). A wait clamped to 0 still answers the layer's current state. Graph
+ * tools are not clamped: their answer IS the tree graph.
+ */
+export const WORKING_TREE_ANSWER_BUDGET_MS = WORKING_TREE_SEARCH_GRAPH_WAIT_MS;
+
 /** How a base row of a delta file differs from the tree, where no floor replaced it. */
 export type WorkingTreeState = "modified" | "deleted";
 
@@ -211,6 +223,12 @@ export interface WorkingTreeDeltaSignalRequest {
   rows: readonly WorkingTreeDeltaRow[];
   /** The view's tree graph; absent when no graph source is wired. */
   readTreeGraph?: WorkingTreeGraphReader;
+  /**
+   * What is left of the view's answer budget ({@link WORKING_TREE_ANSWER_BUDGET_MS}),
+   * never negative: the tree-graph wait is clamped to it. Absent → only the
+   * source's own wait bounds it.
+   */
+  remainingWaitMs?: () => number;
   /**
    * The view's touched-file base points, the source of inherited git /
    * codegraph payload. Absent → no base reader wired: rows inherit nothing.
