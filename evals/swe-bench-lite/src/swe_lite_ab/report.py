@@ -32,6 +32,7 @@ class Row:
     wall_seconds_raw: float
     index_in_run_seconds: float
     api_seconds: float
+    gold_before_search: bool
 
 
 def _pairs(rows: list[Row]) -> list[tuple[Row, Row]]:
@@ -72,6 +73,26 @@ def index_time_line(index_records: list[dict]) -> str | None:
             "(not included in agent wall time)")
 
 
+def _total_input(r: Row) -> int:
+    return r.input_tokens + r.cache_write_tokens + r.cache_read_tokens
+
+
+def _repo_strata(pairs: list[tuple[Row, Row]]) -> list[str]:
+    out = ["## By repository × stratum", "",
+           "| Repo | Gold file | n | resolved arm0 | resolved arm1 | median total input arm0 | arm1 "
+           "| median wall_seconds arm0 | arm1 |", "|---|---|---|---|---|---|---|---|---|"]
+    groups: dict[tuple[str, bool], list[tuple[Row, Row]]] = {}
+    for p in pairs:
+        groups.setdefault((p[0].repo, p[0].mentioned), []).append(p)
+    for (repo, mentioned), ps in sorted(groups.items(), key=lambda kv: (kv[0][0], not kv[0][1])):
+        t0, t1 = median(_total_input(p[0]) for p in ps), median(_total_input(p[1]) for p in ps)
+        w0, w1 = median(p[0].wall_seconds for p in ps), median(p[1].wall_seconds for p in ps)
+        out.append(f"| {repo} | {'named' if mentioned else 'not named'} | {len(ps)} | "
+                   f"{sum(p[0].resolved for p in ps)} | {sum(p[1].resolved for p in ps)} | "
+                   f"{t0:.0f} | {t1:.0f} | {w0:.4g} | {w1:.4g} |")
+    return out + [""]
+
+
 def render(rows: list[Row], index_records: list[dict] | None = None) -> str:
     pairs = _pairs(rows)
     if not pairs:
@@ -84,8 +105,14 @@ def render(rows: list[Row], index_records: list[dict] | None = None) -> str:
     if index_line:
         lines += [index_line, ""]
     lines += _section("All tasks", pairs)
+    n = len(pairs)
+    for i, arm in enumerate(("arm0", "arm1")):
+        lines.append(f"Gold file opened before any search ({arm}): {_pct(sum(p[i].gold_before_search for p in pairs), n)}")
+    lines.append("")
     lines += _section("Gold file named in issue", [p for p in pairs if p[0].mentioned])
     lines += _section("Gold file not named", [p for p in pairs if not p[0].mentioned])
+    lines += _repo_strata(pairs)
+    lines += _section("Exploratory: not searched-for in arm 0", [p for p in pairs if not p[0].gold_before_search])
     return "\n".join(lines) + "\n"
 
 
@@ -119,7 +146,7 @@ def build_rows(tasks, resolved_by_arm: dict[str, set[str]], usage_source: str) -
                             m.input_tokens, m.cache_write_tokens, m.cache_read_tokens, m.output_tokens, m.cost_usd,
                             m.turns, sum(m.tool_calls.values()), m.tea_rags_calls, m.search_read_calls,
                             m.gold_touched, m.turns_to_gold, max(0.0, wall_raw - m.index_in_run_seconds),
-                            wall_raw, m.index_in_run_seconds, m.duration_api_ms / 1000))
+                            wall_raw, m.index_in_run_seconds, m.duration_api_ms / 1000, m.gold_before_search))
     return rows
 
 

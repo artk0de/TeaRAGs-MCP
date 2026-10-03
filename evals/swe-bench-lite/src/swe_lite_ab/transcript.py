@@ -1,4 +1,5 @@
 import json
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Iterable
@@ -7,6 +8,9 @@ SEARCH_READ_TOOLS = {"Bash", "Read", "Grep", "Glob"}
 TEA_RAGS_PREFIX = "mcp__tea-rags__"
 INDEX_TOOL = "mcp__tea-rags__index_codebase"
 INDEX_BASH_MARKERS = ("tea-rags index-codebase", "index_codebase")
+SEARCH_TOOLS = {"Grep", "Glob"}
+SEARCH_BASH = re.compile(r"\b(grep|rg|find|ag|ack)\b|\bls\s+-[A-Za-z]*R")
+OPEN_TOOLS = {"Read", "Edit", "Write", "MultiEdit"}
 
 
 @dataclass
@@ -24,6 +28,7 @@ class RunMetrics:
     search_read_calls: int = 0
     gold_touched: bool = False
     turns_to_gold: int | None = None
+    gold_before_search: bool = False
     is_error: bool = True
     tool_seconds: dict[str, float] = field(default_factory=dict)
     index_in_run_seconds: float = 0.0
@@ -39,11 +44,18 @@ def _is_index_call(name: str, tool_input: dict) -> bool:
     return name == "Bash" and any(k in str(tool_input.get("command", "")) for k in INDEX_BASH_MARKERS)
 
 
+def _is_search_call(name: str, tool_input: dict) -> bool:
+    if name.startswith(TEA_RAGS_PREFIX) or name in SEARCH_TOOLS:
+        return True
+    return name == "Bash" and bool(SEARCH_BASH.search(str(tool_input.get("command", ""))))
+
+
 def parse(lines: Iterable[str], gold: list[str], usage_source: str,
           arrivals: list[float] | None = None) -> RunMetrics:
     """`arrivals[i]` is the offset (s) at which `lines[i]` arrived; with it, each tool_use is timed
     from its assistant event to the user event carrying its tool_result."""
     m = RunMetrics()
+    searched = False
     started: dict[str, tuple[str, bool, float]] = {}
     tool_seconds: Counter[str] = Counter()
     seen: set[str] = set()
@@ -75,6 +87,9 @@ def parse(lines: Iterable[str], gold: list[str], usage_source: str,
                     started[block["id"]] = (block["name"], _is_index_call(block["name"], block.get("input", {})), at)
                 if not m.gold_touched and _mentions(json.dumps(block.get("input", {})), gold):
                     m.gold_touched, m.turns_to_gold = True, main_turn
+                    # Gold opened straight away: the agent knew where to look without searching.
+                    m.gold_before_search = block["name"] in OPEN_TOOLS and not searched
+                searched = searched or _is_search_call(block["name"], block.get("input", {}))
         elif kind == "user":
             content = event.get("message", {}).get("content", [])
             for block in content if isinstance(content, list) and at is not None else []:

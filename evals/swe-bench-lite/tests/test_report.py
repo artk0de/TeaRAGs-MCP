@@ -4,13 +4,14 @@ from pathlib import Path
 from swe_lite_ab.report import Row, index_time_line, render
 
 
-def row(arm, i, resolved, tokens, mentioned):
-    return Row(arm=arm, instance_id=f"t{i}", repo="psf/requests", mentioned=mentioned, resolved=resolved,
+def row(arm, i, resolved, tokens, mentioned, repo="psf/requests", gold_before_search=False):
+    return Row(arm=arm, instance_id=f"t{i}", repo=repo, mentioned=mentioned, resolved=resolved,
                input_tokens=tokens, cache_write_tokens=0, cache_read_tokens=tokens * 10, output_tokens=tokens // 10,
                cost_usd=tokens / 1e5, turns=10, tool_calls_total=20 if arm == "arm0" else 12,
                tea_rags_calls=3 if arm == "arm1" else 0, search_read_calls=6, gold_touched=True, turns_to_gold=2,
                wall_seconds=60.0 if arm == "arm0" else 40.0, wall_seconds_raw=60.0 if arm == "arm0" else 45.0,
-               index_in_run_seconds=0.0 if arm == "arm0" else 5.0, api_seconds=30.0 if arm == "arm0" else 20.0)
+               index_in_run_seconds=0.0 if arm == "arm0" else 5.0, api_seconds=30.0 if arm == "arm0" else 20.0,
+               gold_before_search=gold_before_search)
 
 
 def test_render_has_headline_strata_and_tea_rags_share():
@@ -109,3 +110,29 @@ def test_build_rows_subtracts_in_run_index_time_from_wall_clock(tmp_path, monkey
     rows = {r.arm: r for r in build_rows([task], {"arm0": set(), "arm1": set()}, "sum")}
     assert (rows["arm1"].wall_seconds_raw, rows["arm1"].index_in_run_seconds, rows["arm1"].wall_seconds) == (50.0, 15.5, 34.5)
     assert rows["arm0"].wall_seconds == 0  # floored: 3.0 raw - 8.0 index
+
+
+def test_render_breaks_results_down_by_repository_and_stratum():
+    rows = [row("arm0", i, i == 0, 1000, False, repo="django/django") for i in range(3)] + \
+           [row("arm1", i, i < 2, 800, False, repo="django/django") for i in range(3)] + \
+           [row("arm0", 3, True, 1000, True), row("arm1", 3, True, 800, True)]
+    md = render(rows)
+    assert "## By repository × stratum" in md
+    # repo | gold file | n | resolved arm0 | resolved arm1 | median total input arm0 | arm1 | median wall arm0 | arm1
+    assert "| django/django | not named | 3 | 1 | 2 | 11000 | 8800 | 60 | 40 |" in md
+    assert "| psf/requests | named | 1 | 1 | 1 |" in md
+    assert "| django/django | named |" not in md
+
+
+def test_render_reports_gold_opened_before_search_per_arm():
+    rows = [row("arm0", i, False, 1000, True, gold_before_search=i == 0) for i in range(4)] + \
+           [row("arm1", i, False, 800, True, gold_before_search=i < 3) for i in range(4)]
+    md = render(rows)
+    assert "Gold file opened before any search (arm0): 1/4 (25.0%)" in md
+    assert "Gold file opened before any search (arm1): 3/4 (75.0%)" in md
+
+
+def test_exploratory_section_keeps_pairs_arm0_did_not_open_before_search():
+    rows = [row("arm0", i, False, 1000, True, gold_before_search=i == 0) for i in range(4)] + \
+           [row("arm1", i, False, 800, True, gold_before_search=True) for i in range(4)]
+    assert "## Exploratory: not searched-for in arm 0 (n=3)" in render(rows)

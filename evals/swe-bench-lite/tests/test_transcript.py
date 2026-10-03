@@ -51,6 +51,35 @@ def test_without_arrivals_tool_timing_stays_empty():
     assert m.tool_seconds == {} and m.index_in_run_seconds == 0
 
 
+GOLD = ["django/db/models/query.py"]
+
+
+def test_gold_read_as_first_tool_is_before_search():
+    lines = [_tool_use("a1", "r1", "Read", {"file_path": "/r/django/db/models/query.py"})]
+    assert parse(lines, GOLD, "sum").gold_before_search
+
+
+def test_gold_read_after_a_bash_search_is_not_before_search():
+    lines = [_tool_use("a1", "b1", "Bash", {"command": "rg QuerySet django/"}), _tool_result("b1"),
+             _tool_use("a2", "r1", "Read", {"file_path": "/r/django/db/models/query.py"})]
+    assert not parse(lines, GOLD, "sum").gold_before_search
+
+
+def test_gold_read_after_a_non_search_bash_is_before_search():
+    lines = [_tool_use("a1", "b1", "Bash", {"command": "cat setup.py"}), _tool_result("b1"),
+             _tool_use("a2", "r1", "Read", {"file_path": "/r/django/db/models/query.py"})]
+    assert parse(lines, GOLD, "sum").gold_before_search
+
+
+def test_gold_never_touched_is_not_before_search():
+    lines = [_tool_use("a1", "r1", "Read", {"file_path": "/r/setup.py"})]
+    assert not parse(lines, GOLD, "sum").gold_before_search
+
+
+def test_gold_first_seen_in_a_search_result_is_not_before_search():
+    assert not parse(LINES, ["requests/sessions.py"], "sum").gold_before_search
+
+
 def test_durations_come_from_the_result_event():
     m = parse(LINES, ["requests/sessions.py"], "sum")
     assert m.duration_ms == 42000 and m.duration_api_ms == 30000
