@@ -19,12 +19,13 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
+import { copyGitRepoTemplate } from "../../../../__helpers__/git-repo-template.js";
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import type { CommitFileNumstat, FileChurnData } from "../../../../../../src/core/adapters/vcs/types.js";
 import {
@@ -80,59 +81,103 @@ describe("file-level git churn follows renames (bd tea-rags-mcp-aikfk)", () => {
   let adapter: GitCliAdapter;
   const sha: Record<string, string> = {};
 
-  const commit = (label: string, message: string, days: number, author: string, minutes = 0): void => {
+  const commitIn = (
+    repo: string,
+    shas: Record<string, string>,
+    label: string,
+    message: string,
+    days: number,
+    author: string,
+    minutes = 0,
+  ): void => {
     const date = daysAgoIso(days, minutes);
-    gitIn(tmp, ["add", "-A"], date, author);
-    gitIn(tmp, ["commit", "-q", "-m", message], date, author);
-    sha[label] = gitIn(tmp, ["rev-parse", "HEAD"], date, author);
+    gitIn(repo, ["add", "-A"], date, author);
+    gitIn(repo, ["commit", "-q", "-m", message], date, author);
+    shas[label] = gitIn(repo, ["rev-parse", "HEAD"], date, author);
   };
 
-  /** c1-c3 under Old/, the directory rename, then M=2 commits under New/ and a
-   *  re-creation of Old/f.txt between them. */
-  const buildPreRename = (): void => {
-    const g = (args: string[]): string => gitIn(tmp, args, daysAgoIso(60));
+  /** c1-c3 under Old/ — the template recipe; returns the shas it committed. */
+  const buildPreRenameIn = (repo: string): Record<string, string> => {
+    const shas: Record<string, string> = {};
+    const commit = (label: string, message: string, days: number, author: string, minutes = 0): void => {
+      commitIn(repo, shas, label, message, days, author, minutes);
+    };
+    const g = (args: string[]): string => gitIn(repo, args, daysAgoIso(60));
     g(["init", "-q", "-b", "main"]);
     g(["config", "user.email", "t@example.com"]);
     g(["config", "user.name", "Test"]);
     g(["config", "commit.gpgsign", "false"]);
     g(["config", "diff.algorithm", "myers"]);
 
-    mkdirSync(join(tmp, "Old"));
-    writeFileSync(join(tmp, "Old/f.txt"), "a\nb\nc\n");
+    mkdirSync(join(repo, "Old"));
+    writeFileSync(join(repo, "Old/f.txt"), "a\nb\nc\n");
     commit("c1", "feat: add f", 60, "Alice");
-    writeFileSync(join(tmp, "Old/f.txt"), "a\nB\nc\n");
+    writeFileSync(join(repo, "Old/f.txt"), "a\nB\nc\n");
     commit("c2", "fix: correct b", 50, "Alice");
     // Five minutes after c2, same author — one squash-aware session with c2.
-    writeFileSync(join(tmp, "Old/f.txt"), "a\nB\nc\nd\n");
+    writeFileSync(join(repo, "Old/f.txt"), "a\nB\nc\nd\n");
     commit("c3", "feat: add d", 50, "Alice", 5);
+    return shas;
   };
 
-  const buildRenameAndAfter = (): void => {
-    gitIn(tmp, ["mv", "Old", "New"], daysAgoIso(30), "Bob");
+  /** The directory rename, then M=2 commits under New/ and a re-creation of
+   *  Old/f.txt between them. */
+  const buildRenameAndAfterIn = (repo: string, shas: Record<string, string>): void => {
+    const commit = (label: string, message: string, days: number, author: string): void => {
+      commitIn(repo, shas, label, message, days, author);
+    };
+    gitIn(repo, ["mv", "Old", "New"], daysAgoIso(30), "Bob");
     commit("mv", "refactor: rename Old to New", 30, "Bob");
-    writeFileSync(join(tmp, "New/f.txt"), "a\nB\nc\nd\ne\n");
+    writeFileSync(join(repo, "New/f.txt"), "a\nB\nc\nd\ne\n");
     commit("c5", "feat: add e", 20, "Carol");
-    mkdirSync(join(tmp, "Old"));
-    writeFileSync(join(tmp, "Old/f.txt"), "fresh\n");
+    mkdirSync(join(repo, "Old"));
+    writeFileSync(join(repo, "Old/f.txt"), "fresh\n");
     commit("c6", "feat: unrelated file reusing the old name", 10, "Carol");
-    writeFileSync(join(tmp, "New/f.txt"), "a\nB\nc\nd\ne\nf\n");
+    writeFileSync(join(repo, "New/f.txt"), "a\nB\nc\nd\ne\nf\n");
     commit("c7", "feat: add f line", 5, "Carol");
   };
 
-  const expectedNewShas = (): string[] => [sha.c7, sha.c5, sha.mv, sha.c3, sha.c2, sha.c1];
-
-  beforeEach(() => {
-    tmp = mkdtempSync(join(TMP_BASE, "git-filechurn-rename-"));
+  /**
+   * Points `tmp`, `adapter` and `sha` at a fresh copy of a template repository
+   * (bd tea-rags-mcp-2z4sa): every test reads the same history, so it is built
+   * once per process instead of once per test.
+   */
+  const useTemplate = (key: string, build: (repo: string) => Record<string, string>): void => {
+    const copy = copyGitRepoTemplate(key, build, { prefix: "git-filechurn-rename-" });
+    // `gitIn` guards the symlink-free `TMP_BASE`; the copy root is named under `tmpdir()`.
+    tmp = realpathSync(copy.root);
     adapter = new GitCliAdapter(tmp);
-  });
+    for (const label of Object.keys(sha)) delete sha[label];
+    Object.assign(sha, copy.meta);
+  };
+
+  /** The repository at c3, before the rename. */
+  const buildPreRename = (): void => {
+    useTemplate("aikfk-pre-rename", buildPreRenameIn);
+  };
+
+  /** Continues the current copy past the rename. */
+  const buildRenameAndAfter = (): void => {
+    buildRenameAndAfterIn(tmp, sha);
+  };
+
+  /** The full history: c1-c3, the rename, c5-c7. */
+  const buildRenamedHistory = (): void => {
+    useTemplate("aikfk-full", (repo) => {
+      const shas = buildPreRenameIn(repo);
+      buildRenameAndAfterIn(repo, shas);
+      return shas;
+    });
+  };
+
+  const expectedNewShas = (): string[] => [sha.c7, sha.c5, sha.mv, sha.c3, sha.c2, sha.c1];
 
   afterEach(() => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
   it("discovery credits every pre-rename commit to the HEAD path and keeps a re-created old path apart", async () => {
-    buildPreRename();
-    buildRenameAndAfter();
+    buildRenamedHistory();
 
     const churn = await new FileChurnDiscovery(adapter, {
       maxAgeMonths: WINDOW_MONTHS,
@@ -150,8 +195,7 @@ describe("file-level git churn follows renames (bd tea-rags-mcp-aikfk)", () => {
   });
 
   it("file signals span the whole history, including the squash-aware session count", async () => {
-    buildPreRename();
-    buildRenameAndAfter();
+    buildRenamedHistory();
 
     const churn = await new FileChurnDiscovery(adapter, {
       maxAgeMonths: WINDOW_MONTHS,
@@ -199,8 +243,7 @@ describe("file-level git churn follows renames (bd tea-rags-mcp-aikfk)", () => {
   });
 
   it("the per-path backfill widens to the predecessor path and matches the discovery", async () => {
-    buildPreRename();
-    buildRenameAndAfter();
+    buildRenamedHistory();
 
     const discovery = await new FileChurnDiscovery(adapter, {
       maxAgeMonths: WINDOW_MONTHS,
