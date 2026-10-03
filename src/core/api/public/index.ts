@@ -198,7 +198,11 @@ export { validatePath } from "../../infra/collection-name.js";
 // barrel because `bootstrap` and `cli` must resolve a request the way a SEARCH
 // does — registry entry first, path hash only for a path nothing claims — and
 // may not reach api/internal directly (bd tea-rags-mcp-dxa9w).
-export { createPathCollectionResolver, resolveCollection } from "../internal/collection-resolver.js";
+export {
+  createPathCollectionResolver,
+  resolveBaseIndexEntry,
+  resolveCollection,
+} from "../internal/collection-resolver.js";
 export type { PathCollectionResolver, ResolveInput } from "../internal/collection-resolver.js";
 
 // ── Build lease — `projects orphans` / `doctor` skip a collection a live run

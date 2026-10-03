@@ -16,6 +16,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { applyCallProjectEnv, resolveCallProjectEntry } from "../../../src/cli/call/project-env.js";
 import { CollectionRegistry } from "../../../src/core/api/public/index.js";
+import {
+  createGitWorkingTreeFixture,
+  type GitWorkingTreeFixture,
+} from "../../core/__helpers__/git-working-tree-fixture.js";
 
 describe("resolveCallProjectEntry", () => {
   let dataDir: string;
@@ -77,6 +81,48 @@ describe("resolveCallProjectEntry", () => {
     expect(
       await resolveCallProjectEntry(registry, { path: join(tmpdir(), "does-not-exist-xyz") }, alphaDir),
     ).toBeNull();
+  });
+});
+
+describe("resolveCallProjectEntry — a linked worktree addressed by path", { timeout: 60_000 }, () => {
+  let fixture: GitWorkingTreeFixture;
+  let dataDir: string;
+  let registry: CollectionRegistry;
+
+  beforeEach(() => {
+    fixture = createGitWorkingTreeFixture();
+    dataDir = mkdtempSync(join(tmpdir(), "call-env-wt-data-"));
+    registry = new CollectionRegistry(dataDir);
+    registry.record({
+      collectionName: "code_main",
+      path: fixture.mainRoot,
+      embeddingModel: "m",
+      embeddingDimensions: 384,
+      qdrantUrl: "http://q:6333",
+      indexedAt: "2026-09-01T00:00:00.000Z",
+      teaRagsVersion: "1.0.0",
+      chunksCount: 1,
+    });
+    registry.setName("code_main", "main");
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it("replays the env of the entry whose index the server reads for the worktree `path`", async () => {
+    const tree = fixture.addWorktree("a");
+
+    const entry = await resolveCallProjectEntry(registry, { path: tree }, tmpdir());
+    expect(entry?.collectionName).toBe("code_main");
+  });
+
+  it("resolves a cwd standing in a linked worktree to the same entry", async () => {
+    const tree = fixture.addWorktree("a");
+
+    const entry = await resolveCallProjectEntry(registry, { symbol: "Foo#bar" }, tree);
+    expect(entry?.collectionName).toBe("code_main");
   });
 });
 
