@@ -75,6 +75,7 @@ import {
 } from "../core/domains/explore/index.js";
 import { CollectionIndexingLock } from "../core/domains/ingest/infra/index.js";
 import { ChunkerPool } from "../core/domains/ingest/pipeline/chunker/infra/pool.js";
+import { detectLanguage } from "../core/domains/ingest/pipeline/chunker/utils/language-detector.js";
 import { WorkerPoolEnrichmentExecutor } from "../core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { buildFileChunkPoints } from "../core/domains/ingest/pipeline/file-chunk-points.js";
 import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
@@ -83,6 +84,7 @@ import { FileScanner } from "../core/domains/ingest/pipeline/scanner.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import { QuarantineStore } from "../core/domains/ingest/sync/index.js";
 import { ShardedSnapshotManager } from "../core/domains/ingest/sync/snapshot/index.js";
+import { nativeLanguageCapabilities } from "../core/domains/language/capability/native.js";
 import { collectSymbols, DefaultSymbolIdComposer } from "../core/domains/language/index.js";
 import { CommitDriftMonitor } from "../core/domains/maintenance/drift/commit-drift-monitor.js";
 import { EnvDriftMonitor } from "../core/domains/maintenance/drift/env-drift-monitor.js";
@@ -1296,6 +1298,8 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     registry: collectionRegistry,
     deltaReader: createWorkingTreeDeltaReader(),
     createFileFilter: createWorkingTreeFileFilter(config.ingestCode),
+    // Only AST-chunked changed files are re-read; the rest answer from the index.
+    admitsToDelta: createWorkingTreeDeltaAdmission(),
     deltaChunks: {
       layer: workingTreeChunkLayer,
       // The base index's chunker config: its project's registry env replayed
@@ -1834,6 +1838,23 @@ export function createWorkingTreeFileFilter(
     await scanner.loadIgnorePatterns(root);
     return (relativePath) => scanner.accepts(relativePath);
   };
+}
+
+/**
+ * Working-tree delta admission: whether a changed file is re-read from the tree.
+ * True exactly when ingest would chunk it with an AST-tier `full` chunker — the
+ * language ingest detects for the path (`detectLanguage`) has a native
+ * capability whose `ast.tier` is `"full"` (tree-sitter languages, Markdown).
+ * Any other file (CharacterChunker: config, data, unknown extensions) is served
+ * from the index. The capability map is read once, here.
+ */
+export function createWorkingTreeDeltaAdmission(): (relativePath: string) => boolean {
+  const astFullLanguages = new Set(
+    [...nativeLanguageCapabilities()]
+      .filter(([, capability]) => capability.ast.tier === "full")
+      .map(([language]) => language),
+  );
+  return (relativePath) => astFullLanguages.has(detectLanguage(relativePath));
 }
 
 export function createSymbolChunkResolver(graphFacade?: GraphFacade): SymbolChunkResolver | undefined {

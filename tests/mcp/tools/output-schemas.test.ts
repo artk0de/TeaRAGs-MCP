@@ -227,3 +227,22 @@ describe("SearchResultOutputSchema — workingTree dense floor (WTO-5)", () => {
     expect(schema.parse({ results: [], workingTree: marker }).workingTree).toEqual(marker);
   });
 });
+
+describe("SearchResultOutputSchema — workingTree index-only files", () => {
+  const schema = z.object(SearchResultOutputSchema).strict();
+
+  it("keeps indexOnlyFiles on the marker", () => {
+    const marker = {
+      tree: "/repo/wt",
+      indexedCommit: "a".repeat(40),
+      treeCommit: "b".repeat(40),
+      indexedDirty: false,
+      changedFiles: 4,
+      deletedFiles: 0,
+      floors: ["chunks"],
+      indexOnlyFiles: 3,
+    };
+
+    expect(schema.parse({ results: [], workingTree: marker }).workingTree).toEqual(marker);
+  });
+});

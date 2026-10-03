@@ -34,9 +34,20 @@ import { relativePathOf } from "./substitute.js";
 
 export interface WorkingTreeView {
   marker: WorkingTreeMarker;
-  /** changed ∪ deleted; empty when degraded (nothing substituted, nothing hidden) */
+  /**
+   * re-read changed ∪ deleted: the files whose base rows are replaced or
+   * hidden. Empty when degraded (nothing substituted, nothing hidden).
+   */
   touchedPaths: ReadonlySet<string>;
   deletedPaths: ReadonlySet<string>;
+  /**
+   * Changed files the tree changed but this view does not re-read (delta
+   * admission declined them): their base rows stay in the answer, marked
+   * `treeState: "modified"` (`workingTreeStateOf`). Disjoint from
+   * `touchedPaths`. The overlay always sets it (empty when degraded); absent
+   * on a hand-built view, where it reads as empty.
+   */
+  indexServedPaths?: ReadonlySet<string>;
   /**
    * Rows of the changed files as the chunker yields them — structure only, no
    * trajectory payload (deleted files have none). Absent on a degraded view and
@@ -153,6 +164,13 @@ export interface WorkingTreeOverlayDeps {
   deltaReader: WorkingTreeDeltaReader;
   /** The ingest admission rule for files under `root` (`FileScanner#accepts`). */
   createFileFilter: (root: string) => Promise<(relativePath: string) => boolean>;
+  /**
+   * Delta admission: whether a CHANGED file is re-read from the tree (chunked,
+   * vectorized, graphed). A declined file is served from the index and named in
+   * `indexServedPaths`; deletions never ask. Absent → every changed file is
+   * re-read.
+   */
+  admitsToDelta?: (relativePath: string) => boolean;
   /** Absent → views carry no `readDeltaChunks`. */
   deltaChunks?: WorkingTreeDeltaChunkSource;
   /** The tree-graph cache (WTO-7). Absent → views carry no `readTreeGraph` and nothing is warmed. */
@@ -202,6 +220,7 @@ export class WorkingTreeOverlay {
       marker: { ...marker, degraded: { reason, remedy: fill(remedy) } },
       touchedPaths: EMPTY_PATHS,
       deletedPaths: EMPTY_PATHS,
+      indexServedPaths: EMPTY_PATHS,
     });
 
     if (tree.root === "") return degraded(NO_TREE_REASON, NO_TREE_REMEDY);
@@ -215,24 +234,35 @@ export class WorkingTreeOverlay {
       const dirtyAtIndex = dirtyAtIndexTime(entry?.git);
       if (dirtyAtIndex.kind === "unknown") return degraded(dirtyAtIndex.reason, WORKING_TREE_REINDEX_REMEDY);
       const { changed, deleted } = await foldDirtyAtIndexTime(tree.root, read.delta, dirtyAtIndex.paths, accepts);
-      const total = changed.length + deleted.length;
+      // Delta admission: only `reread` is chunked, vectorized and graphed from
+      // the tree; `indexOnly` keeps its base rows, marked "modified".
+      const { admitsToDelta } = this.deps;
+      const reread = admitsToDelta ? changed.filter((path) => admitsToDelta(path)) : changed;
+      const indexOnly = admitsToDelta ? changed.filter((path) => !admitsToDelta(path)) : [];
+      const touched = reread.length + deleted.length;
       const view: WorkingTreeView = {
-        marker: { ...marker, changedFiles: changed.length, deletedFiles: deleted.length },
-        touchedPaths: new Set([...changed, ...deleted]),
+        marker: {
+          ...marker,
+          changedFiles: changed.length,
+          deletedFiles: deleted.length,
+          ...(indexOnly.length > 0 ? { indexOnlyFiles: indexOnly.length } : {}),
+        },
+        touchedPaths: new Set([...reread, ...deleted]),
         deletedPaths: new Set(deleted),
+        indexServedPaths: new Set(indexOnly),
         ...(read.delta.renamedFrom && read.delta.renamedFrom.size > 0 ? { renamedFrom: read.delta.renamedFrom } : {}),
       };
-      if (total > 0 && this.deps.treeGraph) {
+      if (touched > 0 && this.deps.treeGraph) {
         const request: WorkingTreeGraphRequest = {
           tree,
-          changed,
+          changed: reread,
           deleted,
-          fingerprint: treeGraphFingerprint(read.delta.fingerprint, changed, deleted),
+          fingerprint: treeGraphFingerprint(read.delta.fingerprint, reread, deleted),
         };
         view.readTreeGraph = treeGraphReader(this.deps.treeGraph, request);
       }
       const { touchedBasePoints } = this.deps;
-      if (total > 0 && touchedBasePoints) {
+      if (touched > 0 && touchedBasePoints) {
         let points: Promise<WorkingTreeTouchedBasePointsByPath> | undefined;
         view.readTouchedBasePoints = async () =>
           (points ??= touchedBasePoints.pointsOf(collectionName, view.touchedPaths, indexedCommit));
@@ -242,12 +272,12 @@ export class WorkingTreeOverlay {
         const { deltaSignals, denseVectors } = this.deps;
         let chunked: Promise<WorkingTreeChunkLayerRead> | undefined;
         const readChunked = async (): Promise<WorkingTreeChunkLayerRead> =>
-          (chunked ??= readDeltaChunks(source, tree, changed, view.marker));
+          (chunked ??= readDeltaChunks(source, tree, reread, view.marker));
         view.readDeltaChunks = async () => (await readChunked()).chunks;
         if (deltaSignals) {
           view.signalDeltaRows = deltaRowSignaller(deltaSignals, tree, view, read.delta.renamedFrom);
         }
-        if (denseVectors && changed.length > 0) {
+        if (denseVectors && reread.length > 0) {
           view.readDeltaVectors = warmDeltaVectors(denseVectors, collectionName, view, readChunked);
         }
       }

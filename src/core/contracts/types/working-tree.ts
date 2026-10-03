@@ -51,6 +51,12 @@ export interface WorkingTreeMarker {
   floors: WorkingTreeFloor[];
   degraded?: { reason: string; remedy: string };
   /**
+   * Changed files the overlay does not re-read — ingest chunks them without an
+   * AST (config, data, unknown extensions). Counted in `changedFiles`; their
+   * rows are the INDEX's, marked `treeState: "modified"`. Absent when zero.
+   */
+  indexOnlyFiles?: number;
+  /**
    * Changed files the chunker could not read or parse: they contribute no delta
    * rows. Set once the delta chunks were read; one bad file never degrades the
    * whole answer.

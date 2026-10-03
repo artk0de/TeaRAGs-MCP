@@ -119,12 +119,18 @@ function lineOf(value: unknown): number {
   return typeof value === "number" ? value : Number.POSITIVE_INFINITY;
 }
 
-/** How a base row of `relativePath` differs from the tree; undefined when the tree did not touch it. */
+/**
+ * How a base row of `relativePath` differs from the tree; undefined when the
+ * tree did not change it. A file the view serves from the index
+ * (`indexServedPaths`) is "modified": the tree changed it, the row is the index's.
+ */
 export function workingTreeStateOf(
   view: WorkingTreeView,
   relativePath: string | undefined,
 ): WorkingTreeState | undefined {
-  if (relativePath === undefined || !view.touchedPaths.has(relativePath)) return undefined;
+  if (relativePath === undefined) return undefined;
+  if (view.indexServedPaths?.has(relativePath)) return "modified";
+  if (!view.touchedPaths.has(relativePath)) return undefined;
   return view.deletedPaths.has(relativePath) ? "deleted" : "modified";
 }
 
