@@ -127,7 +127,9 @@ checkout a skill names) → wrong tree, re-call with that `path`.
 **`treeState: "modified" | "deleted"`** on a row = index copy of a file your
 tree changed or deleted, served only when no tree floor covered it (e.g.
 `denseUnavailable`, `pendingFiles`, `indexOnlyFiles`); text and lines may be
-stale. Current code → `find_symbol` (chunks floor), not the row.
+stale. Current code → `find_symbol` (chunks floor), not the row; `pendingFiles`
+row → re-call later; `indexOnlyFiles` file → `Read` it (no tree floor ever
+covers it).
 
 ## After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)
 
