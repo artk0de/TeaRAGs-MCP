@@ -14,6 +14,7 @@ import { join, resolve } from "node:path";
 
 import type { CollectionEntry, RegistryGitState } from "../../../contracts/types/registry.js";
 import {
+  WORKING_TREE_ANSWER_BUDGET_MS,
   WORKING_TREE_WARM_WAIT_MS,
   type WorkingTree,
   type WorkingTreeBasePointTier,
@@ -38,6 +39,16 @@ import type { WorkingTreeWatcher } from "./watcher.js";
 
 export interface WorkingTreeView {
   marker: WorkingTreeMarker;
+  /**
+   * What is left of this request's answer budget
+   * ({@link WORKING_TREE_ANSWER_BUDGET_MS}, counted from the view's creation),
+   * never negative. Every SEARCH-side wait on a tree layer is clamped to it, so
+   * one request's waits share one deadline instead of adding up; graph tools
+   * do not ask it. The overlay sets it on every measured view; absent on a
+   * degraded or hand-built view, where nothing beyond a wait's own budget
+   * bounds it.
+   */
+  remainingWaitMs?: () => number;
   /**
    * re-read changed ∪ deleted: the files whose base rows are replaced or
    * hidden. Empty when degraded (nothing substituted, nothing hidden).
@@ -105,7 +116,8 @@ export interface WorkingTreeView {
    */
   deltaRowsTreeGraph?: WorkingTreeGraphState;
   /**
-   * The delta rows' dense vectors (WTO-5), waiting at most `waitMs`. Present
+   * The delta rows' dense vectors (WTO-5), waiting at most `waitMs` clamped to
+   * `remainingWaitMs` (a search-only read, so the view clamps it). Present
    * only for a measured delta that changed files, with a chunk layer and a
    * dense source wired; the warm-up started when the view was made. Reading
    * does not stamp the marker — the strategy that SCORES rows by these vectors
@@ -216,6 +228,10 @@ export interface WorkingTreeOverlayDeps {
   watcher?: Pick<WorkingTreeWatcher, "watch">;
   /** How many viewed roots `prewarm` remembers; default {@link WORKING_TREE_VIEWED_TREES_KEPT}. */
   viewedTreesKept?: number;
+  /** A view's answer budget; default {@link WORKING_TREE_ANSWER_BUDGET_MS}. */
+  answerBudgetMs?: number;
+  /** The clock the answer deadline and the warm budget are counted by; default `Date.now`. */
+  now?: () => number;
 }
 
 const NO_TREE_REASON = "no working tree resolved for this index";
@@ -260,7 +276,11 @@ export class WorkingTreeOverlay {
   /** The last tree, and the alias it was named by, a view of each root saw — what `prewarm` re-measures. */
   private readonly viewed = new Map<string, { tree: WorkingTree; alias: string | undefined }>();
 
-  constructor(private readonly deps: WorkingTreeOverlayDeps) {}
+  private readonly now: () => number;
+
+  constructor(private readonly deps: WorkingTreeOverlayDeps) {
+    this.now = deps.now ?? Date.now;
+  }
 
   /** Never throws for git trouble: a failure becomes `marker.degraded`. */
   async view(tree: WorkingTree, alias: string | undefined): Promise<WorkingTreeView> {
@@ -270,11 +290,24 @@ export class WorkingTreeOverlay {
     const { collectionName } = tree.baseIndex;
     const { marker, delta, deleted, reread, indexOnly } = measured;
     const touched = reread.length + deleted.length;
+    // The request's answer deadline: every search-side wait from here on draws
+    // from it. Counted from the measured delta — measuring is work, not a wait.
+    const deadline = this.now() + Math.max(0, this.deps.answerBudgetMs ?? WORKING_TREE_ANSWER_BUDGET_MS);
+    const remainingWaitMs = (): number => Math.max(0, deadline - this.now());
+    // The tree-graph build does not depend on warmed rows: start it before the
+    // warm wait so the two run together.
+    const readTreeGraph =
+      touched > 0 && this.deps.treeGraph
+        ? treeGraphReader(this.deps.treeGraph, treeGraphRequestOf(tree, measured))
+        : undefined;
     const source = this.deps.deltaChunks;
     const { warmer } = this.deps;
     // With a warmer, the rows are what it made ready within the budget; the
     // rest of the re-read files answer from the index this time.
-    const warm = warmer && source && reread.length > 0 ? await this.warmLive(warmer, source, tree, reread) : undefined;
+    const warm =
+      warmer && source && reread.length > 0
+        ? await this.warmLive(warmer, source, tree, reread, remainingWaitMs())
+        : undefined;
     const pending = warm?.pending ?? [];
     const view: WorkingTreeView = {
       marker: {
@@ -287,10 +320,9 @@ export class WorkingTreeOverlay {
       deletedPaths: new Set(deleted),
       indexServedPaths: new Set([...indexOnly, ...pending]),
       ...(delta.renamedFrom && delta.renamedFrom.size > 0 ? { renamedFrom: delta.renamedFrom } : {}),
+      remainingWaitMs,
     };
-    if (touched > 0 && this.deps.treeGraph) {
-      view.readTreeGraph = treeGraphReader(this.deps.treeGraph, treeGraphRequestOf(tree, measured));
-    }
+    if (readTreeGraph) view.readTreeGraph = readTreeGraph;
     const { touchedBasePoints } = this.deps;
     if (touched > 0 && touchedBasePoints) {
       const { indexStamp } = measured;
@@ -426,7 +458,8 @@ export class WorkingTreeOverlay {
   }
 
   /**
-   * The re-read files warmed on the live lane within the warm budget, counted
+   * The re-read files warmed on the live lane within the warm budget — its own
+   * cap clamped to `remainingMs`, what is left of the answer budget — counted
    * from the start (resolving the chunker config spends it too). A warmer that
    * fails, or has not answered by the budget plus a grace, leaves every file
    * pending — the view then answers them from the index. Never rejects.
@@ -436,6 +469,7 @@ export class WorkingTreeOverlay {
     source: WorkingTreeDeltaChunkSource,
     tree: WorkingTree,
     reread: readonly string[],
+    remainingMs: number,
   ): Promise<WorkingTreeDeltaWarmState> {
     const allPending: WorkingTreeDeltaWarmState = {
       rows: [],
@@ -444,12 +478,12 @@ export class WorkingTreeOverlay {
       pending: reread,
       storeKeys: new Map(),
     };
-    const budgetMs = Math.max(0, this.deps.warmWaitMs ?? WORKING_TREE_WARM_WAIT_MS);
-    const deadline = Date.now() + budgetMs;
+    const budgetMs = Math.max(0, Math.min(this.deps.warmWaitMs ?? WORKING_TREE_WARM_WAIT_MS, remainingMs));
+    const deadline = this.now() + budgetMs;
     const warmed = (async () => {
       const config = await source.resolveChunkerConfig(tree);
       const request = { treeRoot: tree.root, collectionName: tree.baseIndex.collectionName, config, paths: reread };
-      return warmer.warm(request, Math.max(0, deadline - Date.now()), "live");
+      return warmer.warm(request, Math.max(0, deadline - this.now()), "live");
     })().catch(() => allPending);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const lapsed = new Promise<WorkingTreeDeltaWarmState>((resolveLapse) => {
@@ -556,11 +590,13 @@ function treeGraphFingerprint(
 }
 
 /**
- * Start the tree graph's build now (warm-up: `graphFor(request, 0)`, result
- * ignored — the cache single-flights, the next read joins it) and return the
- * view's reader. A `built` answer is kept for the view's lifetime: the
- * published graph of one fingerprint never changes, so a second wait would
- * only re-ask the cache for the same file.
+ * Start the tree graph's build now (warm-up: `graphFor(request, 0)`, the call
+ * `prewarm` makes — the cache single-flights, the next read joins it) and
+ * return the view's reader. A `built` answer is kept for the view's lifetime:
+ * the published graph of one fingerprint never changes, so a second wait would
+ * only re-ask the cache for the same file. A read that is not told `built`
+ * (a wait clamped to 0 lapses before the cache has even looked the graph up)
+ * answers the warm-up's `built` when the warm-up found the graph published.
  */
 function treeGraphReader(source: WorkingTreeGraphSource, request: WorkingTreeGraphRequest): WorkingTreeGraphReader {
   const ask = async (waitMs: number): Promise<WorkingTreeGraphState> =>
@@ -568,13 +604,17 @@ function treeGraphReader(source: WorkingTreeGraphSource, request: WorkingTreeGra
       kind: "unavailable" as const,
       reason: `tree graph source failed: ${error instanceof Error ? error.message : String(error)}`,
     }));
-  void ask(0);
+  let warmedUp: WorkingTreeGraphState | undefined;
+  void ask(0).then((state) => {
+    if (state.kind === "built") warmedUp = state;
+  });
   let built: WorkingTreeGraphState | undefined;
   return async (waitMs) => {
     if (built) return built;
     const state = await ask(waitMs);
-    if (state.kind === "built") built = state;
-    return state;
+    const answer = state.kind === "built" ? state : (warmedUp ?? state);
+    if (answer.kind === "built") built = answer;
+    return answer;
   };
 }
 
@@ -661,6 +701,7 @@ async function enrichDeltaRows(
     ...(indexedCommit ? { indexedCommit } : {}),
     ...(renamedFrom && renamedFrom.size > 0 ? { renamedFrom } : {}),
     ...(view.readTreeGraph ? { readTreeGraph: view.readTreeGraph } : {}),
+    ...(view.remainingWaitMs ? { remainingWaitMs: view.remainingWaitMs } : {}),
     ...(view.readTouchedBasePoints ? { readTouchedBasePoints: view.readTouchedBasePoints } : {}),
   });
   if (enriched.treeGraph) view.deltaRowsTreeGraph = enriched.treeGraph;
@@ -683,7 +724,8 @@ async function readDeltaChunks(
 
 /**
  * Start the delta rows' vectors now (WTO-5 warm-up: the rows are chunked, then
- * every vector is resolved in the background) and return the view's reader. A
+ * every vector is resolved in the background) and return the view's reader,
+ * whose wait is clamped to what is left of the view's answer budget. A
  * chunk read that fails answers no vectors with its reason — the reader never
  * rejects, so the answer is made without the dense leg.
  */
@@ -706,5 +748,8 @@ function warmDeltaVectors(
       return async () => ({ vectors: new Map(), pending: 0, failure });
     },
   );
-  return async (waitMs) => (await warmed)(waitMs);
+  return async (waitMs) => {
+    const read = await warmed;
+    return read(Math.min(waitMs, view.remainingWaitMs?.() ?? waitMs));
+  };
 }

@@ -210,6 +210,45 @@ describe("createWorkingTreeDeltaSignalSource", () => {
       expect(result.rows[0].payload.codegraph).toEqual({ symbols: { file: CG_FILE, chunk: cgChunk(4) } });
       expect(result.treeGraph?.kind).toBe("unavailable");
     });
+
+    it("waits for the tree graph no longer than what is left of the view's answer budget", async () => {
+      const source = sourceReading(readTouchedBasePoints, unopenable);
+      const readTreeGraph = vi.fn<WorkingTreeGraphReader>(async () => ({ kind: "unavailable", reason: "building" }));
+
+      const result = await source.enrich({
+        tree: TREE,
+        rows: [deltaRow("d1", FOO, "Foo#kept")],
+        readTreeGraph,
+        remainingWaitMs: () => 700,
+      });
+
+      expect(readTreeGraph).toHaveBeenCalledWith(700);
+      expect(result.treeGraph).toEqual({ kind: "unavailable", reason: "building" });
+    });
+
+    it("starts the tree-graph wait together with the touched-base read", async () => {
+      let releaseBase: () => void = () => undefined;
+      const baseHeld = new Promise<void>((resolve) => {
+        releaseBase = resolve;
+      });
+      const held = basePointsHolding([basePoint("b1", FOO, "Foo#kept", 4)]);
+      const readTouchedBasePoints = vi.fn<WorkingTreeTouchedBasePointsReader>(async (query) => {
+        await baseHeld;
+        return held(query);
+      });
+      const readTreeGraph = vi.fn<WorkingTreeGraphReader>(async () => ({ kind: "unavailable", reason: "building" }));
+      const source = sourceReading(readTouchedBasePoints, unopenable);
+
+      const enriched = source.enrich({ tree: TREE, rows: [deltaRow("d1", FOO, "Foo#kept")], readTreeGraph });
+      await vi.waitFor(() => {
+        expect(readTouchedBasePoints).toHaveBeenCalled();
+      });
+
+      expect(readTreeGraph).toHaveBeenCalledTimes(1);
+      releaseBase();
+      const result = await enriched;
+      expect(result.rows[0].payload.codegraph).toEqual({ symbols: { file: CG_FILE, chunk: cgChunk(4) } });
+    });
   });
 
   describe("codegraph from the tree graph", { timeout: 120_000 }, () => {
