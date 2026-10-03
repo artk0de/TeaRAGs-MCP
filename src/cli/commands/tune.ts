@@ -7,7 +7,12 @@ import { fileURLToPath } from "node:url";
 import type { CommandModule } from "yargs";
 
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
-import { CollectionRegistry, InputValidationError, replayRegistryEnv } from "../../core/api/public/index.js";
+import {
+  CollectionRegistry,
+  InputValidationError,
+  replayableRegistryEnv,
+  replayRegistryEnv,
+} from "../../core/api/public/index.js";
 import { createColorizer } from "../infra/color.js";
 import { resolveTuneQdrantUrl } from "../qdrant-url-resolver.js";
 import { applyProjectDefaults } from "../registry-resolver.js";
@@ -143,7 +148,9 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
       const entry = new CollectionRegistry(resolveDataDir(), {
         envCodeDefaults: resolveRegistryEnvCodeDefaults,
       }).findByName(resolved.project);
-      replayRegistryEnv(entry?.env ?? entry?.tuning, process.env);
+      // An unpinned throughput-tuned stamp stays out, as in every replay: it was
+      // measured against whatever backend served an earlier run (y1ynz).
+      replayRegistryEnv(replayableRegistryEnv(entry), process.env);
     }
     const resolution = await resolveTuneQdrantUrl(resolved["qdrant-url"]);
     if (resolution.url) {

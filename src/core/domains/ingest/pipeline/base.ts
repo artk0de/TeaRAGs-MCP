@@ -20,6 +20,7 @@ import type { EnrichmentRunHandle } from "../../../contracts/types/enrichment-ex
 import {
   embeddingThroughputOptimumKey,
   type CollectionRegistryPort,
+  type EmbeddingProducerStarvation,
   type EmbeddingThroughputOptimum,
   type PathCollectionResolver,
   type RegistryGitState,
@@ -85,6 +86,8 @@ export interface IndexingRunSealSpec {
   persist: () => Promise<void>;
   /** What the run's embedding throughput tuner settled on, per endpoint (bd tea-rags-mcp-7ju66). */
   embeddingThroughputOptima?: EmbeddingEndpointThroughputOptimum[];
+  /** Whether the run's embed stage waited on the chunk producer (bd tea-rags-mcp-y1ynz). */
+  embeddingProducerStarvation?: EmbeddingProducerStarvation;
 }
 
 export interface PipelineTuning {
@@ -308,7 +311,12 @@ export abstract class BaseIndexingPipeline {
     await spec.promote?.();
     await storeIndexingMarker(this.qdrant, this.embeddings, spec.targetCollection, true, spec.modelInfo);
     await spec.persist();
-    await this.recordRegistryEntry(spec.collectionAlias, spec.absolutePath, spec.embeddingThroughputOptima);
+    await this.recordRegistryEntry(
+      spec.collectionAlias,
+      spec.absolutePath,
+      spec.embeddingThroughputOptima,
+      spec.embeddingProducerStarvation,
+    );
   }
 
   /**
@@ -325,9 +333,14 @@ export abstract class BaseIndexingPipeline {
   ): Promise<EnrichmentStatusResult> {
     const getEnrichmentStatus = await this.finalizeProcessing(ctx, chunkMap);
     onFlushed?.();
-    // The drained chunk pipeline knows what its throughput tuner settled on;
-    // the registry entry this seal records carries it to the next run.
-    await this.sealRun({ ...seal, embeddingThroughputOptima: ctx.chunkPipeline?.settledThroughputOptima() });
+    // The drained chunk pipeline knows what its throughput tuner settled on and
+    // whether its embed stage starved; the registry entry this seal records
+    // carries both — the optimum to the next run, the verdict to the run's status.
+    await this.sealRun({
+      ...seal,
+      embeddingThroughputOptima: ctx.chunkPipeline?.settledThroughputOptima(),
+      embeddingProducerStarvation: ctx.chunkPipeline?.embeddingProducerStarvation(),
+    });
     return getEnrichmentStatus();
   }
 
@@ -357,6 +370,7 @@ export abstract class BaseIndexingPipeline {
     collectionName: string,
     absolutePath: string,
     throughputOptima: readonly EmbeddingEndpointThroughputOptimum[] = [],
+    producerStarvation?: EmbeddingProducerStarvation,
   ): Promise<void> {
     if (!this.registry) return;
     try {
@@ -392,7 +406,8 @@ export abstract class BaseIndexingPipeline {
       const embeddingThroughputOptima: Record<string, EmbeddingThroughputOptimum> = {};
       for (const { endpoint, optimum } of throughputOptima) {
         if (endpoint.url === undefined) continue;
-        embeddingThroughputOptima[embeddingThroughputOptimumKey(endpoint.url, endpoint.model)] = optimum;
+        embeddingThroughputOptima[embeddingThroughputOptimumKey(endpoint.url, endpoint.model, endpoint.provider)] =
+          optimum;
       }
       this.registry.record({
         collectionName,
@@ -419,6 +434,10 @@ export abstract class BaseIndexingPipeline {
         // the codebase is not a git repository.
         ...(gitState !== undefined ? { git: gitState } : {}),
         ...(Object.keys(embeddingThroughputOptima).length > 0 ? { embeddingThroughputOptima } : {}),
+        // The last run's verdict only: a run that formed no batch says nothing.
+        ...(producerStarvation !== undefined && producerStarvation.formedBatches > 0
+          ? { embeddingProducerStarvation: producerStarvation }
+          : {}),
         indexedAt: new Date().toISOString(),
         teaRagsVersion: this.teaRagsVersion,
         chunksCount,
@@ -540,11 +559,11 @@ export abstract class BaseIndexingPipeline {
       seed: (endpoint) =>
         endpoint.url === undefined
           ? undefined
-          : registry?.readEmbeddingThroughputOptimum?.(endpoint.url, endpoint.model)?.batchSize,
+          : registry?.readEmbeddingThroughputOptimum?.(endpoint.url, endpoint.model, endpoint.provider)?.batchSize,
       seedConcurrency: (endpoint) =>
         endpoint.url === undefined
           ? undefined
-          : registry?.readEmbeddingThroughputOptimum?.(endpoint.url, endpoint.model)?.concurrency,
+          : registry?.readEmbeddingThroughputOptimum?.(endpoint.url, endpoint.model, endpoint.provider)?.concurrency,
     });
   }
 

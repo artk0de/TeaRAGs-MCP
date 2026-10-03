@@ -5,6 +5,7 @@ import {
   embeddingThroughputOptimumKey,
   type AutoUpdateRunRecord,
   type CollectionEntry,
+  type EmbeddingProducerStarvation,
   type EmbeddingThroughputOptimum,
   type RecordEntryInput,
   type RegistryAutoUpdateConfig,
@@ -150,6 +151,12 @@ export class CollectionRegistry {
       // Same claim, per enrichment provider: only a run that rebuilt the
       // provider for every point may advance it (stampTrajectoryVersions).
       ...(existing?.trajectoryVersions !== undefined ? { trajectoryVersions: existing.trajectoryVersions } : {}),
+      // Operator pins are written only by an env edit (set-env / unset-env),
+      // which passes the whole list; a pipeline run never does, and must not
+      // erase the record that lets a pinned tuned key replay (bd tea-rags-mcp-y1ynz).
+      ...(entry.operatorPinnedEnvKeys === undefined && existing?.operatorPinnedEnvKeys !== undefined
+        ? { operatorPinnedEnvKeys: existing.operatorPinnedEnvKeys }
+        : {}),
       // embeddingThroughputOptima MERGES rather than sticks: a run overwrites the
       // endpoints its throughput tuner settled on and keeps every other one, so a
       // run that lived on the primary does not erase what an earlier run learnt
@@ -177,19 +184,29 @@ export class CollectionRegistry {
 
   /**
    * The freshest settled embedding throughput optimum any entry holds for this
-   * endpoint + model (bd tea-rags-mcp-7ju66). How fast a server embeds at a
+   * embedding identity — endpoint + model + provider (bd tea-rags-mcp-7ju66,
+   * y1ynz). How fast a server embeds at a
    * given batch size is a fact about the server, not about the project that
    * measured it, so every entry is consulted. A runtime hint only — the caller
    * clamps it to its configured bounds and keeps re-probing.
    */
-  readEmbeddingThroughputOptimum(endpointUrl: string, model: string): EmbeddingThroughputOptimum | undefined {
-    const key = embeddingThroughputOptimumKey(endpointUrl, model);
+  readEmbeddingThroughputOptimum(
+    endpointUrl: string,
+    model: string,
+    provider?: string,
+  ): EmbeddingThroughputOptimum | undefined {
+    const key = embeddingThroughputOptimumKey(endpointUrl, model, provider);
     let freshest: EmbeddingThroughputOptimum | undefined;
     for (const entry of this.ensureLoaded().values()) {
       const candidate = entry.embeddingThroughputOptima?.[key];
       if (candidate && (!freshest || candidate.settledAt > freshest.settledAt)) freshest = candidate;
     }
     return freshest;
+  }
+
+  /** The last run's producer-starvation verdict for `collectionName` (bd tea-rags-mcp-y1ynz). */
+  readEmbeddingProducerStarvation(collectionName: string): EmbeddingProducerStarvation | undefined {
+    return this.get(collectionName)?.embeddingProducerStarvation;
   }
 
   findByName(name: string): CollectionEntry | null {

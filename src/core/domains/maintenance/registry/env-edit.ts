@@ -127,6 +127,29 @@ export function applyRegistryEnvEdit(entry: CollectionEntry, edit: RegistryEnvEd
   return next;
 }
 
+/**
+ * Record an operator's env edit as PINS (`CollectionEntry.operatorPinnedEnvKeys`,
+ * bd tea-rags-mcp-y1ynz): the canonical key of every general key set joins the
+ * list, every family unset leaves it. Dedicated identity fields are not env
+ * pins — they have their own fields. Unsets run first, as in
+ * {@link editRegistryEnv}. Returns a new entry; the input is untouched.
+ *
+ * Kept apart from {@link applyRegistryEnvEdit}, which writes VALUES: the pin
+ * list is what tells replay a value is a decision rather than a stamp.
+ */
+export function applyOperatorEnvPinEdit(entry: CollectionEntry, edit: RegistryEnvEdit): CollectionEntry {
+  const pins = new Set(entry.operatorPinnedEnvKeys);
+  for (const key of edit.unset ?? []) {
+    for (const canonical of canonicalRegistryEnvKeys(key)) pins.delete(canonical);
+  }
+  for (const key of Object.keys(edit.set ?? {})) {
+    for (const canonical of canonicalRegistryEnvKeys(key)) {
+      if (!isDedicatedKey(canonical) && !INDEX_RECORDED_ENV_KEYS.has(canonical)) pins.add(canonical);
+    }
+  }
+  return { ...entry, operatorPinnedEnvKeys: [...pins].sort() };
+}
+
 function assertEditable(key: string): void {
   if (isIndexRecordedEnvKey(key)) {
     throw new Error(`${key} is recorded by the index run and cannot be edited`);

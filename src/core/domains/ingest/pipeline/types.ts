@@ -85,6 +85,14 @@ export interface DeleteItem extends WorkItem {
 }
 
 /**
+ * What made a `BatchAccumulator` let a batch go: it reached its size, the
+ * formation timeout fired on a partial one, or a drain forced the tail out. A
+ * `timeout` batch formed while an embed slot sat idle is the producer-starvation
+ * signal (bd tea-rags-mcp-y1ynz).
+ */
+export type BatchFlushTrigger = "size" | "timeout" | "drain";
+
+/**
  * Batch of work items ready for processing
  */
 export interface Batch<T extends WorkItem = WorkItem> {
@@ -92,6 +100,8 @@ export interface Batch<T extends WorkItem = WorkItem> {
   type: OperationType;
   items: T[];
   createdAt: number;
+  /** Absent on a batch built outside the accumulator. */
+  flushTrigger?: BatchFlushTrigger;
 }
 
 /**

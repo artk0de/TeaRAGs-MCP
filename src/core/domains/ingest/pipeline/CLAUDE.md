@@ -37,6 +37,24 @@
   adapter's own ceiling. Why: two independent "sticky" sizes on one batch never
   recover together — the adapter's run-long cap silently undid every upward
   probe of the tuner.
+- **The tuner keys on embedding IDENTITY and holds its concurrency climb while
+  the producer starves.** `ChunkPipeline#currentEmbeddingEndpoint` builds the
+  key from `getProviderName`, the endpoint a fan-out provider reports through
+  `EmbeddingProvider.getThroughputTuneEndpointUrl` (the whole endpoint set, so a
+  failure on one member stays on the set's state), and the model; the stored
+  optimum uses the same key (`embeddingThroughputOptimumKey`), so a changed
+  provider, model or endpoint set starts fresh.
+  `ChunkPipeline#judgeProducerStarvation` marks a batch the formation timeout
+  flushed below target (`Batch.flushTrigger`) while the worker pool had a free
+  slot and nothing queued; once `PRODUCER_STARVED_BATCH_SHARE` of the tuner's
+  window is starved, `EmbeddingThroughputTuner` holds the concurrency climb (no
+  probe, no settle, logged once as `producer-starved`). The run's verdict
+  (`ChunkPipeline#embeddingProducerStarvation`, debug step
+  `EMBED_PRODUCER_STARVATION`) lands in the registry entry and surfaces as
+  `infraHealth.embedding.producerStarvation`. Why: a starved window's aggregate
+  chars/s measures the producer's gaps, not the server — judged on it the climb
+  wanders or settles low and the stored optimum carries that to the next run (bd
+  tea-rags-mcp-y1ynz).
 
 ## Gotchas
 

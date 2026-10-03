@@ -389,8 +389,8 @@ describe("IngestFacade", () => {
         teaRagsVersion: "0.0.0",
         chunksCount: 1,
         embeddingThroughputOptima: {
-          [embeddingThroughputOptimumKey("http://127.0.0.1:11434", "jina")]: settled,
-          [embeddingThroughputOptimumKey("http://gpu-server:11434", "jina")]: { ...settled, batchSize: 256 },
+          [embeddingThroughputOptimumKey("http://127.0.0.1:11434", "jina", "ollama")]: settled,
+          [embeddingThroughputOptimumKey("http://gpu-server:11434", "jina", "ollama")]: { ...settled, batchSize: 256 },
         },
       });
       const qdrant = {
@@ -420,6 +420,52 @@ describe("IngestFacade", () => {
       const status = await facade.getIndexStatus("/tmp/test-project");
 
       expect(status.infraHealth?.embedding.throughputTune).toEqual(settled);
+    } finally {
+      rmSync(registryDir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports whether the project's last run was producer-starved (bd tea-rags-mcp-y1ynz)", async () => {
+    const registryDir = mkdtempSync(join(tmpdir(), "tea-rags-y1ynz-"));
+    try {
+      const registry = new CollectionRegistry(registryDir);
+      const starvation = { formedBatches: 40, starvedBatches: 31, producerStarved: true };
+      registry.record({
+        collectionName: "code_y1ynz",
+        path: "/tmp/test-project-y1ynz",
+        embeddingModel: "jina",
+        embeddingDimensions: 768,
+        qdrantUrl: "http://localhost:6333",
+        indexedAt: "2026-10-03T00:00:00.000Z",
+        teaRagsVersion: "0.0.0",
+        chunksCount: 1,
+        embeddingProducerStarvation: starvation,
+      });
+      const facade = new IngestFacade({
+        qdrant: {
+          collectionExists: vi.fn().mockResolvedValue(false),
+          checkHealth: vi.fn().mockResolvedValue(true),
+          getCollectionInfo: vi.fn(),
+          aliases: { listAliases: vi.fn().mockResolvedValue([]) },
+          url: "http://localhost:6333",
+          getServerVersion: vi.fn().mockResolvedValue(undefined),
+          getCollectionDiskBytes: vi.fn().mockResolvedValue(undefined),
+        } as any,
+        embeddings: {
+          embed: vi.fn().mockResolvedValue({ embedding: [0.1], dimensions: 1 }),
+          checkHealth: vi.fn().mockResolvedValue(true),
+          getProviderName: vi.fn().mockReturnValue("llama-server"),
+          getModel: vi.fn().mockReturnValue("jina"),
+          getBaseUrl: vi.fn().mockReturnValue("http://gpu-a:8080"),
+        } as any,
+        config: {} as any,
+        trajectoryConfig: { enableGitMetadata: false },
+        collectionRegistry: registry,
+      });
+
+      const status = await facade.getIndexStatus("/tmp/test-project-y1ynz");
+
+      expect(status.infraHealth?.embedding.producerStarvation).toEqual(starvation);
     } finally {
       rmSync(registryDir, { recursive: true, force: true });
     }

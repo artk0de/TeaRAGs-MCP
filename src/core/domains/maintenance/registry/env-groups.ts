@@ -297,3 +297,35 @@ export const ADAPTIVE_DEFAULT_ENV_KEYS: ReadonlySet<string> = new Set([
   "QDRANT_TUNE_DELETE_BATCH_SIZE",
   "QDRANT_TUNE_DELETE_CONCURRENCY",
 ]);
+
+/**
+ * Canonical keys that bound the embedding throughput tuner
+ * (`EmbeddingThroughputTuner`): the pipeline concurrency is the ceiling of its
+ * concurrency climb, the batch size the ceiling of its size climb, and the
+ * minimum size and formation timeout shape every batch it measures.
+ *
+ * A value of one of these is a fact about ONE embedding backend, so a registry
+ * stamp of it replays only when the operator pinned it
+ * (`CollectionEntry.operatorPinnedEnvKeys`, `replayableRegistryEnv`). A value a
+ * run or `tea-rags tune` stamped was measured against whatever served that run;
+ * replayed, it became an explicit setting of every later run and froze the
+ * climb at a single-slot Ollama ceiling on a 16-slot llama-server cluster
+ * (bd tea-rags-mcp-y1ynz). The tuner's own measured optimum, keyed by
+ * embedding identity, is what carries a learnt shape from run to run.
+ */
+export const THROUGHPUT_TUNED_ENV_KEYS: ReadonlySet<string> = new Set([
+  "INGEST_PIPELINE_CONCURRENCY",
+  "EMBEDDING_TUNE_BATCH_SIZE",
+  "EMBEDDING_TUNE_MIN_BATCH_SIZE",
+  "EMBEDDING_TUNE_BATCH_TIMEOUT_MS",
+]);
+
+/**
+ * Whether any spelling of `key` resolves to a {@link THROUGHPUT_TUNED_ENV_KEYS}
+ * family. A spelling shared with another family (`CODE_BATCH_SIZE` also feeds
+ * the Qdrant upsert batch) counts as tuned: replaying it would set the tuner's
+ * ceiling all the same.
+ */
+export function isThroughputTunedEnvKey(key: string): boolean {
+  return canonicalRegistryEnvKeys(key).some((canonical) => THROUGHPUT_TUNED_ENV_KEYS.has(canonical));
+}

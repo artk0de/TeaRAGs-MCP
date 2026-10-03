@@ -79,13 +79,41 @@ export interface EmbeddingThroughputOptimum {
 }
 
 /**
- * Key of `CollectionEntry.embeddingThroughputOptima`: endpoint URL + model, so
- * a primary and a fallback endpoint each keep their own optimum and a model
- * swap never inherits another model's batch shape. A trailing slash on the URL
- * is not part of the identity.
+ * Whether a run's embedding was bound by the chunk PRODUCER rather than by the
+ * embedding server (bd tea-rags-mcp-y1ynz). A batch is starved when the
+ * formation timeout flushed it below its target size while the embed worker
+ * pool had a free slot and nothing queued — the server was waiting for input.
+ * A starved run's chars/s says nothing about the server's ceiling, so more
+ * concurrency would buy nothing; the throughput tuner holds its concurrency
+ * climb while starved.
  */
-export function embeddingThroughputOptimumKey(endpointUrl: string, model: string): string {
-  return `${endpointUrl.replace(/\/+$/, "")}|${model}`;
+export interface EmbeddingProducerStarvation {
+  /** Embed batches the run formed by size or by formation timeout (the drain tail is not counted). */
+  formedBatches: number;
+  /** Of those, the timeout-flushed partial batches formed while an embed slot sat idle. */
+  starvedBatches: number;
+  /** `starvedBatches / formedBatches` reached `PRODUCER_STARVED_BATCH_SHARE`. */
+  producerStarved: boolean;
+}
+
+/**
+ * Key of `CollectionEntry.embeddingThroughputOptima`: the EMBEDDING IDENTITY —
+ * provider + endpoint + model — so a primary and a fallback endpoint each keep
+ * their own optimum, a model swap never inherits another model's batch shape,
+ * and neither does another provider on the same URL (bd tea-rags-mcp-y1ynz). A
+ * provider that fans one batch over several endpoints passes the whole SET as
+ * `endpointUrl` (`EmbeddingProvider.getThroughputTuneEndpointUrl`), so a grown
+ * or shrunk cluster starts fresh. A trailing slash on the URL is not part of
+ * the identity.
+ *
+ * Without `provider` the key has the legacy `url|model` shape every entry
+ * written before y1ynz carries; production always passes one, so those legacy
+ * optima are never applied again — the tuner re-measures once instead of
+ * trusting a shape of unknown provenance.
+ */
+export function embeddingThroughputOptimumKey(endpointUrl: string, model: string, provider?: string): string {
+  const legacy = `${endpointUrl.replace(/\/+$/, "")}|${model}`;
+  return provider === undefined ? legacy : `${provider}|${legacy}`;
 }
 
 export interface CollectionEntry {
@@ -145,6 +173,17 @@ export interface CollectionEntry {
    * written anymore.
    */
   tuning?: Record<string, string>;
+  /**
+   * Canonical env keys the OPERATOR pinned for this project — set through
+   * `tea-rags projects set-env` / `projects register --env`, dropped by
+   * `projects unset-env` (bd tea-rags-mcp-y1ynz). Distinguishes a decision from
+   * a value an index run (or `tea-rags tune`) stamped into `env`: a
+   * throughput-tuned key (`THROUGHPUT_TUNED_ENV_KEYS`) replays only when it is
+   * listed here. Absent on every entry written before the field existed, so
+   * their stamped tuned values stop replaying. STICKY across `record()` — a
+   * pipeline run never passes it.
+   */
+  operatorPinnedEnvKeys?: string[];
   /** Source collection logical name when this entry is a worktree clone. */
   worktreeOf?: string;
   /** Worktree name (the `<name>` in `<project>-worktree-<name>`). */
@@ -191,6 +230,12 @@ export interface CollectionEntry {
    * the primary must not erase what an earlier run learnt about the fallback.
    */
   embeddingThroughputOptima?: Record<string, EmbeddingThroughputOptimum>;
+  /**
+   * The LAST run's producer-starvation verdict (bd tea-rags-mcp-y1ynz) —
+   * overwritten by every run that embedded something, absent after one that
+   * formed no batch. Read back for `infraHealth.embedding.producerStarvation`.
+   */
+  embeddingProducerStarvation?: EmbeddingProducerStarvation;
   indexedAt: string;
   teaRagsVersion: string;
   chunksCount: number;
@@ -237,12 +282,18 @@ export type ProjectInfo = CollectionEntry;
 export interface CollectionRegistryPort {
   record: (entry: RecordEntryInput) => void;
   /**
-   * The freshest settled throughput optimum any entry holds for this endpoint +
-   * model — a machine-wide fact about the embedding server, not about one
-   * project. Optional: a registry that cannot answer leaves every run starting
-   * at the configured ceiling.
+   * The freshest settled throughput optimum any entry holds for this embedding
+   * identity (`embeddingThroughputOptimumKey`) — a machine-wide fact about the
+   * embedding server, not about one project. Optional: a registry that cannot
+   * answer leaves every run starting at the configured ceiling.
    */
-  readEmbeddingThroughputOptimum?: (endpointUrl: string, model: string) => EmbeddingThroughputOptimum | undefined;
+  readEmbeddingThroughputOptimum?: (
+    endpointUrl: string,
+    model: string,
+    provider?: string,
+  ) => EmbeddingThroughputOptimum | undefined;
+  /** The last run's producer-starvation verdict for this collection, if it recorded one. */
+  readEmbeddingProducerStarvation?: (collectionName: string) => EmbeddingProducerStarvation | undefined;
 }
 
 /**

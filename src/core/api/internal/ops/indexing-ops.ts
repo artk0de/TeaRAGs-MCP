@@ -144,6 +144,12 @@ export interface IndexingOpsDeps {
    * Omitted → the field is never reported.
    */
   embeddingThroughputOptima?: Pick<CollectionRegistryPort, "readEmbeddingThroughputOptimum">;
+  /**
+   * Where the last run's producer-starvation verdict is read back for
+   * `infraHealth.embedding.producerStarvation` (bd tea-rags-mcp-y1ynz).
+   * Omitted → the field is never reported.
+   */
+  embeddingProducerStarvation?: Pick<CollectionRegistryPort, "readEmbeddingProducerStarvation">;
   /** Per-language code versions of this build, from the composition root. */
   languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
   /**
@@ -272,6 +278,7 @@ export class IndexingOps {
   private readonly languageVersionStamper?: LanguageVersionStamper;
   private readonly codegraphEnabledStamper?: CodegraphEnabledStamper;
   private readonly embeddingThroughputOptima?: Pick<CollectionRegistryPort, "readEmbeddingThroughputOptimum">;
+  private readonly embeddingProducerStarvation?: Pick<CollectionRegistryPort, "readEmbeddingProducerStarvation">;
   private readonly languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
   private readonly trajectoryVersionStamper?: TrajectoryVersionStamper;
   private readonly trajectoryAlgorithmVersions: ReadonlyMap<string, number>;
@@ -344,6 +351,7 @@ export class IndexingOps {
     this.languageVersionStamper = deps.languageVersionStamper;
     this.codegraphEnabledStamper = deps.codegraphEnabledStamper;
     this.embeddingThroughputOptima = deps.embeddingThroughputOptima;
+    this.embeddingProducerStarvation = deps.embeddingProducerStarvation;
     this.languageCodeVersions = deps.languageCodeVersions;
     this.trajectoryVersionStamper = deps.trajectoryVersionStamper;
     this.trajectoryAlgorithmVersions = deps.trajectoryAlgorithmVersions ?? new Map();
@@ -715,12 +723,21 @@ export class IndexingOps {
     // Best-effort probe of the RUNNING daemon's reported version. getServerVersion
     // swallows all errors → undefined, so this never blocks or fails get_index_status.
     const qdrantVersion = await this.qdrant.getServerVersion();
-    // What the throughput tuner last settled on for the endpoint + model in use
-    // right now — the run that just finished recorded it before this read.
+    // What the throughput tuner last settled on for the embedding identity in
+    // use right now — the run that just finished recorded it before this read.
+    // Keyed exactly as the tuner keys it: provider + endpoint SET + model (y1ynz).
+    const tuneEndpointUrl = this.embeddings.getThroughputTuneEndpointUrl?.() ?? activeUrl;
     const throughputTune =
-      activeUrl !== undefined
-        ? this.embeddingThroughputOptima?.readEmbeddingThroughputOptimum?.(activeUrl, this.embeddings.getModel())
+      tuneEndpointUrl !== undefined
+        ? this.embeddingThroughputOptima?.readEmbeddingThroughputOptimum?.(
+            tuneEndpointUrl,
+            this.embeddings.getModel(),
+            this.embeddings.getProviderName(),
+          )
         : undefined;
+    // Whether this project's last run starved its embed stage — read from the
+    // entry that run recorded (bd tea-rags-mcp-y1ynz).
+    const producerStarvation = this.embeddingProducerStarvation?.readEmbeddingProducerStarvation?.(aliasCollectionName);
     const infraHealth: IndexStatus["infraHealth"] = {
       qdrant: {
         available: true,
@@ -736,6 +753,7 @@ export class IndexingOps {
         ...(fallbackUrl !== undefined ? { fallbackUrl } : {}),
         ...(fallbackAvailable !== undefined ? { fallbackAvailable } : {}),
         ...(throughputTune !== undefined ? { throughputTune } : {}),
+        ...(producerStarvation !== undefined ? { producerStarvation } : {}),
       },
     };
 

@@ -200,6 +200,11 @@ export function formatIndexStatusJson(status: IndexStatus, extra: FormatIndexSta
         ...(status.infraHealth.embedding.throughputTune !== undefined
           ? { throughputTune: status.infraHealth.embedding.throughputTune }
           : {}),
+        // Whether that speed was the server's or the chunk producer's
+        // (bd tea-rags-mcp-y1ynz): a starved run's chars/s is no ceiling.
+        ...(status.infraHealth.embedding.producerStarvation !== undefined
+          ? { producerStarvation: status.infraHealth.embedding.producerStarvation }
+          : {}),
       },
     };
   }

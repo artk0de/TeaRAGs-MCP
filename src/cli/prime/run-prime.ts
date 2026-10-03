@@ -14,6 +14,7 @@ import {
   IndexFreshnessCheck,
   isQdrantColdError,
   RegistryQdrantBackendUnresolvedError,
+  replayableRegistryEnv,
   replayRegistryEnv,
   resolveLanguageCapabilities,
   resolveRegistryQdrantBackend,
@@ -188,7 +189,9 @@ export async function runPrime(input: {
   // value — only unset alias groups are seeded (outer env > registry env >
   // code default). Empty-string env values count as unset, matching
   // envWithFallback. Legacy entries fall back to the deprecated `tuning` map.
-  replayRegistryEnv(registryEntry?.env ?? registryEntry?.tuning, process.env);
+  // An unpinned throughput-tuned stamp is left out: in process.env it would read
+  // as an explicit setting to everything prime spawns (bd tea-rags-mcp-y1ynz).
+  replayRegistryEnv(replayableRegistryEnv(registryEntry), process.env);
   const config = parseAppConfig();
   const qdrantUrl = registryExternalQdrantUrl(registryEntry) ?? discoverQdrantUrl(config);
   const reachable = await pingQdrant(qdrantUrl);

@@ -44,9 +44,30 @@ import type { EmbeddingThroughputOptimum } from "../../../contracts/types/regist
  */
 export const IMPLICIT_EMBEDDING_CONCURRENCY_CEILING = 8;
 
-/** Which server and model a batch went to — the tuner's state key. */
+/**
+ * Share of recent batches that must be producer-starved for the tuner to treat
+ * the embed stage as PRODUCER-bound (bd tea-rags-mcp-y1ynz) — also the share at
+ * which a run's summary reports `producerStarved`.
+ */
+export const PRODUCER_STARVED_BATCH_SHARE = 0.5;
+
+/** Batches the starvation share is measured over, per endpoint. */
+export const PRODUCER_STARVATION_WINDOW = 16;
+
+/**
+ * Which embedding identity a batch went to — the tuner's state key and the key
+ * of the optimum it stores (bd tea-rags-mcp-y1ynz): provider, the endpoint (or
+ * endpoint SET, for a provider that fans one batch over several), and model.
+ * Change any of them and the stored optimum does not apply.
+ */
 export interface EmbeddingEndpointIdentity {
-  /** Active endpoint URL; undefined for a provider without one (in-process ONNX). */
+  /** Provider kind (`EmbeddingProvider.getProviderName`). Absent only in callers that predate it. */
+  provider?: string;
+  /**
+   * Endpoint the batch went to — the whole endpoint set for a fan-out provider
+   * (`EmbeddingProvider.getThroughputTuneEndpointUrl`); undefined for a
+   * provider without one (in-process ONNX).
+   */
   url?: string;
   model: string;
 }
@@ -66,6 +87,12 @@ export interface EmbeddingBatchObservation {
   /** False only for a failure the server attributes to the batch SIZE. */
   ok: boolean;
   endpoint: EmbeddingEndpointIdentity;
+  /**
+   * The formation timeout flushed this batch below its target size while an
+   * embed slot sat idle — the server was waiting for the chunk producer (bd
+   * tea-rags-mcp-y1ynz). Absent when the caller cannot tell.
+   */
+  producerStarved?: boolean;
 }
 
 /** What the pipeline should use for the next batches. */
@@ -82,7 +109,9 @@ export type EmbeddingThroughputAdaptationReason =
   | "reprobe"
   | "settle"
   | "concurrency-probe"
-  | "concurrency-settle";
+  | "concurrency-settle"
+  /** The concurrency climb is held: most recent batches were producer-starved. */
+  | "producer-starved";
 
 /** One change of the decision, for the pipeline debug log. */
 export interface EmbeddingThroughputAdaptation {
@@ -173,11 +202,15 @@ interface EndpointTuneState {
   concurrencySamples: Map<number, ConcurrencySample>;
   /** Clock at which the current concurrency probe opened; earlier-started batches don't count. */
   concurrencyProbeStartedAt: number;
+  /** Producer-starved flags of the latest batches, oldest first, at most PRODUCER_STARVATION_WINDOW. */
+  starvationWindow: boolean[];
+  /** The concurrency climb is held because the producer cannot keep the slots busy. */
+  concurrencyHeldForStarvation: boolean;
   optimum?: EmbeddingThroughputOptimum;
 }
 
 function endpointKey(endpoint: EmbeddingEndpointIdentity): string {
-  return `${endpoint.url ?? ""}|${endpoint.model}`;
+  return `${endpoint.provider ?? ""}|${endpoint.url ?? ""}|${endpoint.model}`;
 }
 
 export class EmbeddingThroughputTuner {
@@ -223,6 +256,7 @@ export class EmbeddingThroughputTuner {
       return this.decision();
     }
 
+    this.recordStarvation(state, observation);
     state.successStreak++;
     if (state.cap < this.ceiling && state.successStreak >= this.recoveryStreak) {
       state.cap = Math.min(this.ceiling, state.cap * 2);
@@ -236,7 +270,12 @@ export class EmbeddingThroughputTuner {
         state.samples.clear();
         this.continueClimb(state, "reprobe");
       } else if (state.concurrencyPhase === "climbing") {
-        this.sampleConcurrency(state, observation);
+        if (this.isProducerStarved(state)) {
+          this.holdConcurrencyClimbForStarvation(state);
+        } else {
+          this.releaseStarvationHold(state);
+          this.sampleConcurrency(state, observation);
+        }
       }
       return this.decision();
     }
@@ -327,6 +366,8 @@ export class EmbeddingThroughputTuner {
         concurrencyPhase: "idle",
         concurrencySamples: new Map(),
         concurrencyProbeStartedAt: 0,
+        starvationWindow: [],
+        concurrencyHeldForStarvation: false,
       };
       this.states.set(key, state);
     }
@@ -430,10 +471,56 @@ export class EmbeddingThroughputTuner {
   private abandonConcurrencyClimb(state: EndpointTuneState, reason: EmbeddingThroughputAdaptationReason): void {
     state.concurrencyPhase = "idle";
     state.concurrencySamples.clear();
+    state.concurrencyHeldForStarvation = false;
     if (state.concurrency === state.concurrencyWorking) return;
     const from = state.concurrency;
     state.concurrency = state.concurrencyWorking;
     this.emit(state, { kind: "concurrency", from, to: state.concurrency, reason });
+  }
+
+  /** Remember whether this batch was producer-starved; a batch the caller could not judge is not counted. */
+  private recordStarvation(state: EndpointTuneState, observation: EmbeddingBatchObservation): void {
+    if (observation.producerStarved === undefined) return;
+    state.starvationWindow.push(observation.producerStarved);
+    if (state.starvationWindow.length > PRODUCER_STARVATION_WINDOW) state.starvationWindow.shift();
+  }
+
+  /**
+   * Whether the embed stage is waiting on the chunk producer: at least
+   * `samplesPerSize` judged batches, and `PRODUCER_STARVED_BATCH_SHARE` of the
+   * window starved.
+   */
+  private isProducerStarved(state: EndpointTuneState): boolean {
+    const window = state.starvationWindow;
+    if (window.length < this.samplesPerSize) return false;
+    const starved = window.filter(Boolean).length;
+    return starved / window.length >= PRODUCER_STARVED_BATCH_SHARE;
+  }
+
+  /**
+   * Hold the concurrency climb while the producer cannot keep the slots busy
+   * (bd tea-rags-mcp-y1ynz). More concurrency would buy nothing, and the
+   * aggregate chars/s of a starved window measures the producer's gaps, not the
+   * server: judged on it, the climb would wander or settle LOW and the stored
+   * optimum would carry that down. So a probe in flight returns to the working
+   * value, its samples are dropped, and nothing settles until the producer
+   * catches up. Logged once per hold.
+   */
+  private holdConcurrencyClimbForStarvation(state: EndpointTuneState): void {
+    if (state.concurrencyHeldForStarvation) return;
+    state.concurrencyHeldForStarvation = true;
+    state.concurrencySamples.clear();
+    const from = state.concurrency;
+    state.concurrency = state.concurrencyWorking;
+    this.emit(state, { kind: "concurrency", from, to: state.concurrency, reason: "producer-starved" });
+  }
+
+  /** The producer caught up: reopen the climb with a fresh window, batches from the hold excluded. */
+  private releaseStarvationHold(state: EndpointTuneState): void {
+    if (!state.concurrencyHeldForStarvation) return;
+    state.concurrencyHeldForStarvation = false;
+    state.concurrencySamples.clear();
+    state.concurrencyProbeStartedAt = this.now();
   }
 
   /**

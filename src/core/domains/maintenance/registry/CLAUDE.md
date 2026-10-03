@@ -2,19 +2,21 @@
 
 ## Invariants
 
-- **Only `name`, `autoUpdate`, `languageVersions`, `trajectoryVersions` and the
-  worktree provenance pair survive a pipeline `record()` — everything else is
-  overwritten.** `CollectionRegistry#record` replaces the entry with whatever
-  the caller passed and re-attaches exactly those from the existing one. Every
-  other CLI-managed field must be supplied by the caller or it is erased.
-  `languageVersions` is sticky for a sharper reason than the others: it CLAIMS a
-  language layer was rebuilt corpus-wide, so only the run that rebuilt it may
-  advance it (`#stampLanguageVersions`, called from `IndexingOps` because that
-  is the only layer that knows the run mode). Every run calls `record()`,
-  incremental ones included — carrying the stamp there would have auto-update
-  silently clearing the reindex hint it exists to raise. `worktreeOf` /
-  `worktreeName` are kept only when the caller omits `worktreeOf` and the
-  existing entry has it — the only writer is
+- **Only `name`, `autoUpdate`, `languageVersions`, `trajectoryVersions`,
+  `operatorPinnedEnvKeys` and the worktree provenance pair survive a pipeline
+  `record()` — everything else is overwritten.** `operatorPinnedEnvKeys` is kept
+  only when the caller omits it: the env edit (`ProjectRegistryOps#editEnv`)
+  passes the whole list, a pipeline run never does. `CollectionRegistry#record`
+  replaces the entry with whatever the caller passed and re-attaches exactly
+  those from the existing one. Every other CLI-managed field must be supplied by
+  the caller or it is erased. `languageVersions` is sticky for a sharper reason
+  than the others: it CLAIMS a language layer was rebuilt corpus-wide, so only
+  the run that rebuilt it may advance it (`#stampLanguageVersions`, called from
+  `IndexingOps` because that is the only layer that knows the run mode). Every
+  run calls `record()`, incremental ones included — carrying the stamp there
+  would have auto-update silently clearing the reindex hint it exists to raise.
+  `worktreeOf` / `worktreeName` are kept only when the caller omits `worktreeOf`
+  and the existing entry has it — the only writer is
   `CollectionRegistry#setWorktreeProvenance`, once at clone time, and
   `BaseIndexingPipeline#recordRegistryEntry` (`domains/ingest/pipeline/base.ts`)
   never passes them. Why: the prescribed lifecycle indexes a clone right after
@@ -51,6 +53,23 @@
   `REGISTRY_ENV_PIN_MIGRATION_REVISION`, and never runs again — a default-equal
   pin an operator sets afterwards is a decision and stays. Nothing else rewrites
   a pin.
+
+- **A throughput-tuned key replays only when the operator pinned it.**
+  `THROUGHPUT_TUNED_ENV_KEYS` (`env-groups.ts`) bound the embedding throughput
+  tuner, and the config parser cannot tell a replayed value from an exported one
+  — anything in the env is explicit, and explicit is the tuner's hard ceiling.
+  So every replay reads the stamp through `replayableRegistryEnv`
+  (`env-resolution.ts`), which drops such a key unless its canonical name is in
+  `operatorPinnedEnvKeys` — written by `applyOperatorEnvPinEdit` (`env-edit.ts`)
+  on `projects set-env` / `register --env`, removed on `unset-env`. A run's own
+  stamp, a `tea-rags tune` write, and every entry written before the field
+  existed stay on disk but are inert for these keys. A new replay site that
+  reads `entry.env` directly brings the ratchet back. Why: taxdome's Ollama-era
+  `INGEST_PIPELINE_CONCURRENCY=2` and 100 ms batch timeout were replayed into
+  every later run and held a 16-slot llama-server cluster at ~10% of its
+  capacity (bd tea-rags-mcp-y1ynz). What a run learnt about a backend travels as
+  `embeddingThroughputOptima`, keyed by embedding identity
+  (`embeddingThroughputOptimumKey`: provider + endpoint set + model).
 
 - **Data migrations advance `RegistryFileV1.revision`, never `version`.**
   `loadRegistryFile` in every release so far backs up and discards a file whose

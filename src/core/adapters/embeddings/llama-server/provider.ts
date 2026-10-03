@@ -245,6 +245,15 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
     return this.pool.configuredFallbacksLabel();
   }
 
+  /**
+   * The configured TIER a batch fans out over — every peer, or every fallback
+   * once the peers are down — never one member: the batch shape the tuner
+   * measures belongs to the set (bd tea-rags-mcp-y1ynz).
+   */
+  getThroughputTuneEndpointUrl(endpointUrl?: string): string {
+    return this.pool.configuredTierLabel(endpointUrl);
+  }
+
   async checkHealth(): Promise<boolean> {
     const peersUp = await this.pool.checkPeersHealth();
     const healthy = peersUp || (await this.pool.checkFallbacksHealth()) === true;
