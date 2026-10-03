@@ -8,8 +8,8 @@ import MermaidTeaRAGs from '@site/src/components/MermaidTeaRAGs';
 # llama-server on several GPUs
 
 A host with several GPUs runs several llama-server instances, each on its own
-port, and TeaRAGs treats all of them as peers: every embedding batch is split
-between them by measured speed. One instance per GPU is not enough — a single
+port, and TeaRAGs treats all of them as peers: every embedding batch is shared
+between them by work stealing. One instance per GPU is not enough — a single
 llama-server process leaves a discrete GPU 25–28% idle — so a fast GPU gets
 two or three instances of its own.
 
@@ -121,20 +121,22 @@ every 30 seconds and returns to them as soon as one answers.
 
 ## How uneven GPUs share a batch
 
-TeaRAGs does not need to know how fast each instance is. Each endpoint carries a
-moving average of its measured characters per second, and each batch is split
-by **character** share in proportion to it, so the Arc instance gets a smaller
-slice than each RX instance. Until an endpoint has been measured it gets the
-mean weight of the measured ones; the first few batches settle the split. Each
-endpoint's slice is then cut into one request per slot (`-np`), read from the
-server's `/props`.
+TeaRAGs does not need to know how fast each instance is. Each batch is cut into
+micro-batches of about equal **character** size, four per slot, on one shared
+queue. Every instance runs one worker per slot (`-np`, read from the server's
+`/props`), and each worker pulls the next micro-batch as soon as it finishes
+the last one. The Arc instance therefore takes fewer micro-batches than each RX
+instance, and the end of a batch waits for at most one micro-batch on the Arc.
 
-In a real index of 41,626 chunks the split came out at 28–29% per RX instance
-and 14% for the Arc (its capacity share is about 12%), and the run reached 193
-chunks/s end to end.
+Before work stealing, each batch was split up front by a moving average of
+every instance's characters per second. In a real index of 41,626 chunks that
+split came out at 28–29% per RX instance and 14% for the Arc (its capacity
+share is about 12%), so the RX instances idled at the end of each batch; the
+run reached 193 chunks/s end to end.
 
-When one instance fails mid-batch, its texts move to the others in the same
-call; the failed instance rejoins after its `/health` probe succeeds.
+When one instance fails mid-batch, its micro-batch goes back to the front of
+the queue for the others in the same call; the failed instance rejoins after
+its `/health` probe succeeds.
 
 ## Verify
 

@@ -2,16 +2,19 @@
  * LlamaServerEmbeddings — `EMBEDDING_PROVIDER=llama-server`.
  *
  * Built for a REMOTE GPU host running one llama-server per GPU. Each pipeline
- * batch is fanned out across the healthy endpoints of the active tier (peers,
- * or the local fallback llama-server once every peer has failed), weighted by
- * measured throughput, and each endpoint's share is cut into its `/props`
- * `total_slots` parallel requests — so every `-np` slot stays busy without the
- * pipeline raising its own concurrency.
+ * batch is cut into char-balanced micro-batches on one shared queue, and every
+ * healthy endpoint of the active tier (peers, or the local fallback
+ * llama-server once every peer has failed) runs one worker per `/props`
+ * `total_slots` slot that pulls the next micro-batch until the queue is empty
+ * — work stealing, so a fast GPU takes more micro-batches, a slow one fewer,
+ * and every `-np` slot stays busy without the pipeline raising its own
+ * concurrency.
  *
  * Failure classes, decided per request:
  * - ENDPOINT failure (refused, timeout, 5xx unrelated to size, malformed body):
- *   recorded on the pool, and the request's texts are re-split across the
- *   endpoints still standing, in the same call. The caller sees an error only
+ *   recorded on the pool, the micro-batch goes back to the FRONT of the queue,
+ *   and that endpoint stops pulling; the endpoints still standing drain it, in
+ *   the same call. The caller sees an error only
  *   when no endpoint is left and the recovery wait
  *   (`unavailableRetryMaxWaitMs`) has run out.
  * - SIZE failure (an HTTP 400/500 whose body says the input is too large, or a
@@ -22,7 +25,7 @@
  */
 
 import type { EmbeddingProvider, EmbeddingResult, EmbeddingServerBatchFailure, RateLimitConfig } from "../base.js";
-import { splitEmbeddingBatchAcrossEndpoints } from "../batch-fanout.js";
+import { planEmbeddingMicroBatches } from "../batch-fanout.js";
 import { EmbeddingEndpointPool, parseEmbeddingEndpointList } from "../endpoint-pool.js";
 import { getModelDimensions, resolveStartingDimensions } from "../utils/model-dimensions.js";
 import { LlamaServerContextOverflowError, LlamaServerResponseError, LlamaServerUnavailableError } from "./errors.js";
@@ -272,9 +275,11 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
   // ---------------------------------------------------------------------------
 
   /**
-   * Embed `indices` of `texts` into `vectors`, re-splitting the texts of every
-   * request whose endpoint failed across the endpoints still standing. An
-   * endpoint that failed in this call is not asked again until the call has
+   * Embed `indices` of `texts` into `vectors` by work stealing: the texts are
+   * planned once into micro-batches on a shared FIFO queue, and every active
+   * endpoint drains it with one worker per slot. A micro-batch whose endpoint
+   * failed returns to the front of the queue for the endpoints still standing.
+   * An endpoint that failed in this call is not asked again until the call has
    * waited, so a failure below the failover threshold cannot spin.
    */
   private async embedAcrossEndpoints(
@@ -284,9 +289,9 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
   ): Promise<void> {
     const wait: RecoveryWaitState = { start: this.now(), attempt: 0 };
     const excluded = new Set<string>();
-    let pending = indices;
+    let queue: number[][] | undefined;
 
-    while (pending.length > 0) {
+    while (queue === undefined || queue.length > 0) {
       const active = this.pool.activeEndpoints().filter((e) => !excluded.has(e.url));
       if (active.length === 0) {
         await this.waitForEndpoint(wait);
@@ -297,40 +302,68 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
       const endpoints = await Promise.all(
         active.map(async (e) => ({
           url: e.url,
-          charsPerSecond: e.charsPerSecond,
-          slots: (await this.propsFor(e.url))?.totalSlots ?? 1,
+          slots: Math.max(1, Math.floor((await this.propsFor(e.url))?.totalSlots ?? 1)),
         })),
       );
-      const subset = pending.map((i) => texts[i]);
-      const requests = splitEmbeddingBatchAcrossEndpoints(subset, endpoints).map((request) => ({
-        url: request.url,
-        indices: request.indices.map((i) => pending[i]),
-      }));
+      queue ??= planEmbeddingMicroBatches(
+        indices.map((i) => texts[i]),
+        endpoints.reduce((sum, e) => sum + e.slots, 0),
+      ).map((microBatch) => microBatch.map((k) => indices[k]));
 
-      const outcomes = await Promise.allSettled(
-        requests.map(async (request) => this.embedOnEndpoint(request.url, texts, request.indices, vectors)),
-      );
-
-      const failed: number[] = [];
-      let callerError: Error | undefined;
-      outcomes.forEach((outcome, r) => {
-        if (outcome.status === "fulfilled") return;
-        const error: unknown = outcome.reason;
-        if (error instanceof EndpointRequestFailure) {
-          this.noteEndpointFailure(error);
-          excluded.add(error.url);
-          wait.lastError = error;
-          failed.push(...requests[r].indices);
-        } else {
-          callerError ??= error instanceof Error ? error : new Error(describe(error));
-        }
-      });
-      if (callerError !== undefined) throw callerError;
-      if (failed.length === 0 && wait.attempt > 0) {
+      const round = await this.drainMicroBatchQueue(queue, endpoints, texts, vectors);
+      for (const failure of round.endpointFailures) {
+        this.noteEndpointFailure(failure);
+        excluded.add(failure.url);
+        wait.lastError = failure;
+      }
+      if (round.callerError !== undefined) throw round.callerError;
+      if (round.endpointFailures.length === 0 && wait.attempt > 0) {
         this.onRecoveryWait?.({ state: "recovered", url: this.getBaseUrl(), elapsedMs: this.now() - wait.start });
       }
-      pending = failed.sort((a, b) => a - b);
     }
+  }
+
+  /**
+   * One drain round: `slots` workers per endpoint pull micro-batches off the
+   * front of `queue` until it is empty. An endpoint failure puts its
+   * micro-batch back at the front and stops that endpoint's workers (their
+   * in-flight micro-batches finish or fail on their own); a caller failure
+   * stops every worker from pulling more. Resolves once all in-flight work has
+   * settled; never rejects.
+   */
+  private async drainMicroBatchQueue(
+    queue: number[][],
+    endpoints: readonly { url: string; slots: number }[],
+    texts: readonly string[],
+    vectors: (number[] | undefined)[],
+  ): Promise<{ endpointFailures: EndpointRequestFailure[]; callerError?: Error }> {
+    const endpointFailures: EndpointRequestFailure[] = [];
+    const stopped = new Set<string>();
+    let callerError: Error | undefined;
+
+    const worker = async (url: string): Promise<void> => {
+      while (!stopped.has(url) && callerError === undefined) {
+        const microBatch = queue.shift();
+        if (microBatch === undefined) return;
+        try {
+          await this.embedOnEndpoint(url, texts, microBatch, vectors);
+        } catch (error) {
+          if (error instanceof EndpointRequestFailure) {
+            queue.unshift(microBatch);
+            endpointFailures.push(error);
+            stopped.add(url);
+          } else {
+            callerError ??= error instanceof Error ? error : new Error(describe(error));
+          }
+          return;
+        }
+      }
+    };
+
+    await Promise.all(
+      endpoints.flatMap((endpoint) => Array.from({ length: endpoint.slots }, async () => worker(endpoint.url))),
+    );
+    return { endpointFailures, callerError };
   }
 
   /** Embed `indices` on one endpoint, halving on size failures. */

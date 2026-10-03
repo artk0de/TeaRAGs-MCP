@@ -1,73 +1,33 @@
 /**
- * Pure split of one embedding batch across endpoints, then across each
- * endpoint's parallel slots.
+ * Pure planning of one embedding batch into MICRO-BATCHES for work stealing.
  *
- * Endpoints are weighted by measured throughput (chars/s); an unmeasured
- * endpoint gets the mean of the measured ones, or 1 when none is measured.
- * Texts are assigned contiguously by cumulative CHARACTER share so every
- * endpoint's sub-batch finishes at about the same time. Each endpoint's run is
- * then cut into `min(slots, run.length)` contiguous sub-requests of near-equal
- * char size. The caller reassembles results by the returned original indices.
+ * The batch is cut into contiguous runs of near-equal CHARACTER size, about
+ * `EMBEDDING_MICRO_BATCHES_PER_SLOT` per parallel slot across the serving
+ * endpoints. Every slot then pulls the next micro-batch from one shared queue,
+ * so a fast endpoint naturally takes more of them and the batch's tail is one
+ * micro-batch on the slowest endpoint — not that endpoint's whole pre-computed
+ * share, which a throughput estimate never gets exactly right. The caller
+ * reassembles results by the returned original indices.
  */
 
-export interface EmbeddingFanoutEndpoint {
-  url: string;
-  /** EWMA throughput; undefined when not measured yet. */
-  charsPerSecond?: number;
-  /** Parallel request slots the endpoint serves (llama-server `total_slots`). */
-  slots: number;
-}
-
-export interface EmbeddingFanoutRequest {
-  url: string;
-  /** Indices into the input texts, ascending. */
-  indices: number[];
-}
-
-export function splitEmbeddingBatchAcrossEndpoints(
-  texts: readonly string[],
-  endpoints: readonly EmbeddingFanoutEndpoint[],
-): EmbeddingFanoutRequest[] {
-  if (texts.length === 0) return [];
-  if (endpoints.length === 0) {
-    throw new Error(`Cannot split ${texts.length} embedding texts: no endpoint is available`);
-  }
-
-  const weights = resolveFanoutWeights(endpoints);
-  const serving = endpoints.filter((_, i) => weights[i] > 0);
-  const servingWeights = weights.filter((w) => w > 0);
-  const chars = texts.map((t) => t.length);
-  const indices = texts.map((_, i) => i);
-
-  const requests: EmbeddingFanoutRequest[] = [];
-  const runs = partitionContiguousByChars(indices, chars, servingWeights);
-  runs.forEach((run, e) => {
-    if (run.length === 0) return;
-    const slotCount = Math.min(Math.max(1, Math.floor(serving[e].slots)), run.length);
-    const runChars = run.map((i) => chars[i]);
-    for (const slotRun of partitionContiguousByChars(run, runChars, new Array<number>(slotCount).fill(1))) {
-      if (slotRun.length > 0) requests.push({ url: serving[e].url, indices: slotRun });
-    }
-  });
-  return requests;
-}
+/** Micro-batches planned per parallel slot: enough granularity to steal, few enough to keep requests large. */
+export const EMBEDDING_MICRO_BATCHES_PER_SLOT = 4;
 
 /**
- * Throughput weight per endpoint. Unmeasured endpoints take the mean of the
- * measured ones (1 when none is measured). When every weight is zero the
- * endpoints are weighted equally, so a batch is never left unassigned.
+ * Cut `texts` into contiguous micro-batches of near-equal char size, returned
+ * as ascending original indices in input order. Count is
+ * `EMBEDDING_MICRO_BATCHES_PER_SLOT × max(1, floor(totalSlots))`, capped at the
+ * number of texts, so no micro-batch is empty.
  */
-function resolveFanoutWeights(endpoints: readonly EmbeddingFanoutEndpoint[]): number[] {
-  const measured = endpoints
-    .map((e) => e.charsPerSecond)
-    .filter((rate): rate is number => rate !== undefined && Number.isFinite(rate));
-  const fallbackWeight = measured.length > 0 ? measured.reduce((sum, r) => sum + r, 0) / measured.length : 1;
-  const weights = endpoints.map((e) =>
-    e.charsPerSecond !== undefined && Number.isFinite(e.charsPerSecond)
-      ? Math.max(0, e.charsPerSecond)
-      : fallbackWeight,
+export function planEmbeddingMicroBatches(texts: readonly string[], totalSlots: number): number[][] {
+  if (texts.length === 0) return [];
+  const slots = Math.max(1, Math.floor(Number.isFinite(totalSlots) ? totalSlots : 1));
+  const count = Math.min(texts.length, EMBEDDING_MICRO_BATCHES_PER_SLOT * slots);
+  return partitionContiguousByChars(
+    texts.map((_, i) => i),
+    texts.map((t) => t.length),
+    new Array<number>(count).fill(1),
   );
-  return weights.some((w) => w > 0) ? weights : weights.map(() => 1);
 }
 
 /**

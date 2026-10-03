@@ -26,6 +26,8 @@ interface FakeLlamaServer {
   props?: Record<string, unknown>;
   /** Override the `/v1/embeddings` answer; undefined → embed every text. */
   embed?: (texts: string[]) => EmbedOutcome | undefined;
+  /** Real-time delay of every `/v1/embeddings` answer, per text in the request. */
+  delayMsPerText?: number;
 }
 
 interface RecordedRequest {
@@ -56,6 +58,8 @@ function socketReset(): Error {
 
 function fakeCluster(servers: Record<string, FakeLlamaServer>) {
   const requests: RecordedRequest[] = [];
+  const inFlight = new Map<string, number>();
+  const peakInFlight = new Map<string, number>();
   const fetchFn = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const target = new URL(input instanceof Request ? input.url : input);
     const base = `${target.protocol}//${target.host}`;
@@ -75,6 +79,13 @@ function fakeCluster(servers: Record<string, FakeLlamaServer>) {
     }
     if (target.pathname === "/v1/embeddings") {
       const texts = body.input ?? [];
+      if (server.delayMsPerText !== undefined) {
+        const current = (inFlight.get(base) ?? 0) + 1;
+        inFlight.set(base, current);
+        peakInFlight.set(base, Math.max(peakInFlight.get(base) ?? 0, current));
+        await new Promise((resolve) => setTimeout(resolve, (server.delayMsPerText ?? 0) * texts.length));
+        inFlight.set(base, (inFlight.get(base) ?? 1) - 1);
+      }
       const outcome = server.embed?.(texts);
       if (outcome === "refused") throw refused();
       if (outcome === "reset") throw socketReset();
@@ -88,7 +99,15 @@ function fakeCluster(servers: Record<string, FakeLlamaServer>) {
   };
   const embedCalls = (url?: string) =>
     requests.filter((r) => r.path === "/v1/embeddings" && (url === undefined || r.url === url));
-  return { fetch: fetchFn, requests, embedCalls };
+  /** Texts one endpoint embedded (or was asked to embed). */
+  const embeddedTexts = (url: string) => embedCalls(url).flatMap((r) => r.input ?? []);
+  return {
+    fetch: fetchFn,
+    requests,
+    embedCalls,
+    embeddedTexts,
+    peakInFlight: (url: string) => peakInFlight.get(url) ?? 0,
+  };
 }
 
 function texts(n: number): string[] {
@@ -176,25 +195,31 @@ describe("LlamaServerEmbeddings", () => {
       expect(cluster.embedCalls(PEER_B).length).toBeGreaterThan(0);
     });
 
-    it("cuts each endpoint's share into its /props total_slots parallel requests", async () => {
-      const cluster = fakeCluster({ [PEER_A]: healthy({ total_slots: 2 }), [PEER_B]: healthy({ total_slots: 2 }) });
+    it("keeps each endpoint's /props total_slots requests in flight, and no more", async () => {
+      const cluster = fakeCluster({
+        [PEER_A]: { ...healthy({ total_slots: 2 }), delayMsPerText: 2 },
+        [PEER_B]: { ...healthy({ total_slots: 2 }), delayMsPerText: 2 },
+      });
       const provider = makeProvider(cluster);
 
-      await provider.embedBatch(texts(8));
+      await provider.embedBatch(texts(32));
 
-      expect(cluster.embedCalls(PEER_A)).toHaveLength(2);
-      expect(cluster.embedCalls(PEER_B)).toHaveLength(2);
+      expect(cluster.peakInFlight(PEER_A)).toBe(2);
+      expect(cluster.peakInFlight(PEER_B)).toBe(2);
     });
 
     it("treats a /props 404 as one slot and still embeds", async () => {
-      const cluster = fakeCluster({ [PEER_A]: healthy(), [PEER_B]: healthy() });
+      const cluster = fakeCluster({
+        [PEER_A]: { ...healthy(), delayMsPerText: 2 },
+        [PEER_B]: { ...healthy(), delayMsPerText: 2 },
+      });
       const provider = makeProvider(cluster);
 
       const results = await provider.embedBatch(texts(6));
 
-      expect(results).toHaveLength(6);
-      expect(cluster.embedCalls(PEER_A)).toHaveLength(1);
-      expect(cluster.embedCalls(PEER_B)).toHaveLength(1);
+      expect(results.map((r) => r.embedding[0])).toEqual([0, 1, 2, 3, 4, 5]);
+      expect(cluster.peakInFlight(PEER_A)).toBe(1);
+      expect(cluster.peakInFlight(PEER_B)).toBe(1);
     });
 
     it("sends the configured model with the input", async () => {
@@ -220,6 +245,100 @@ describe("LlamaServerEmbeddings", () => {
       const provider = makeProvider(cluster, { peers: PEER_A });
 
       expect((await provider.embed("t42")).embedding).toEqual([42, 0.5]);
+    });
+  });
+
+  describe("work stealing", () => {
+    it("lets a fast endpoint drain the queue while a slow one serves a single micro-batch", async () => {
+      // 40 texts, 2 slots -> 8 micro-batches of 5. A pre-split by (unmeasured,
+      // equal) throughput would hand the slow endpoint 20 texts = 400ms.
+      const cluster = fakeCluster({
+        [PEER_A]: { ...healthy(), delayMsPerText: 1 },
+        [PEER_B]: { ...healthy(), delayMsPerText: 20 },
+      });
+      const provider = makeProvider(cluster);
+
+      const started = Date.now();
+      const results = await provider.embedBatch(texts(40));
+      const elapsedMs = Date.now() - started;
+
+      expect(results.map((r) => r.embedding[0])).toEqual(Array.from({ length: 40 }, (_, i) => i));
+      expect(cluster.embeddedTexts(PEER_B).length).toBeLessThanOrEqual(5);
+      expect(cluster.embeddedTexts(PEER_A).length).toBeGreaterThanOrEqual(35);
+      // The tail is one slow micro-batch (~100ms), not a proportional share (~400ms).
+      expect(elapsedMs).toBeLessThan(300);
+    });
+
+    it("re-queues a micro-batch whose endpoint failed mid-batch onto the other endpoint, order intact", async () => {
+      let callsOnA = 0;
+      let lostOnA: string[] = [];
+      const cluster = fakeCluster({
+        [PEER_A]: {
+          health: true,
+          delayMsPerText: 1,
+          embed: (input) => {
+            callsOnA += 1;
+            if (callsOnA < 2) return undefined;
+            lostOnA = input;
+            return "refused";
+          },
+        },
+        [PEER_B]: { ...healthy(), delayMsPerText: 1 },
+      });
+      const provider = makeProvider(cluster);
+
+      const results = await provider.embedBatch(texts(24));
+
+      expect(results.map((r) => r.embedding[0])).toEqual(Array.from({ length: 24 }, (_, i) => i));
+      expect(lostOnA.length).toBeGreaterThan(0);
+      const servedByB = new Set(cluster.embeddedTexts(PEER_B));
+      for (const text of lostOnA) expect(servedByB.has(text)).toBe(true);
+      expect(provider.getBaseUrl()).toBe(PEER_B);
+    });
+
+    it("waits when every endpoint fails mid-batch, then finishes the remaining micro-batches and reports recovery", async () => {
+      const down = { value: true };
+      const failing = (): FakeLlamaServer => {
+        const server: FakeLlamaServer = {
+          health: true,
+          embed: () => {
+            if (!down.value) return undefined;
+            server.health = false;
+            return "refused";
+          },
+        };
+        return server;
+      };
+      const serverA = failing();
+      const serverB = failing();
+      const cluster = fakeCluster({ [PEER_A]: serverA, [PEER_B]: serverB });
+      const time = fakeTime();
+      const provider = new LlamaServerEmbeddings(
+        MODEL,
+        undefined,
+        { unavailableRetryMaxWaitMs: 60_000, unavailableRetryBaseDelayMs: 1_000 },
+        `${PEER_A},${PEER_B}`,
+        undefined,
+        undefined,
+        {
+          fetch: cluster.fetch,
+          ...time.deps,
+          sleep: async (ms) => {
+            await time.deps.sleep(ms);
+            down.value = false;
+            serverA.health = true;
+            serverB.health = true;
+          },
+          log: () => {},
+        },
+      );
+      const events: string[] = [];
+      provider.onRecoveryWait = (event) => events.push(event.state);
+
+      const results = await provider.embedBatch(texts(12));
+
+      expect(results.map((r) => r.embedding[0])).toEqual(Array.from({ length: 12 }, (_, i) => i));
+      expect(events).toEqual(["waiting", "recovered"]);
     });
   });
 
@@ -387,15 +506,19 @@ describe("LlamaServerEmbeddings", () => {
       const events: unknown[] = [];
       const detach = provider.observeServerBatchFailures((event) => events.push(event));
 
-      const results = await provider.embedBatch(texts(4));
+      // One slot -> four micro-batches of 4 equal-length texts, each failing once on size.
+      const input = Array.from({ length: 16 }, (_, i) => `t${String(i).padStart(2, "0")}`);
+      const results = await provider.embedBatch(input);
 
-      expect(results.map((r) => r.embedding[0])).toEqual([0, 1, 2, 3]);
-      expect(events).toEqual([{ failedSize: 4, retrySize: 2, endpointUrl: PEER_A }]);
+      expect(results.map((r) => r.embedding[0])).toEqual(Array.from({ length: 16 }, (_, i) => i));
+      expect(events.length).toBeGreaterThan(0);
+      for (const event of events) expect(event).toEqual({ failedSize: 4, retrySize: 2, endpointUrl: PEER_A });
       expect(provider.getBaseUrl()).toBe(PEER_A);
 
+      const observed = events.length;
       detach();
-      await provider.embedBatch(texts(4));
-      expect(events).toHaveLength(1);
+      await provider.embedBatch(input);
+      expect(events).toHaveLength(observed);
     });
 
     it("treats a socket reset on a multi-text request as a size failure", async () => {
@@ -406,10 +529,12 @@ describe("LlamaServerEmbeddings", () => {
       const events: unknown[] = [];
       provider.observeServerBatchFailures((event) => events.push(event));
 
-      const results = await provider.embedBatch(texts(2));
+      // One slot -> four micro-batches of 2 texts, each reset once.
+      const results = await provider.embedBatch(texts(8));
 
-      expect(results.map((r) => r.embedding[0])).toEqual([0, 1]);
-      expect(events).toEqual([{ failedSize: 2, retrySize: 1, endpointUrl: PEER_A }]);
+      expect(results.map((r) => r.embedding[0])).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+      expect(events.length).toBeGreaterThan(0);
+      for (const event of events) expect(event).toEqual({ failedSize: 2, retrySize: 1, endpointUrl: PEER_A });
     });
 
     it("reports a single text the server rejects on size as a context overflow", async () => {

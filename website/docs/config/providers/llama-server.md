@@ -191,29 +191,37 @@ are left. When no endpoint at all is reachable, the run waits up to
 `EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS` for one to return instead of
 aborting a long index.
 
-**Fan-out.** One pipeline batch is split across the healthy endpoints of the
-active tier:
+**Fan-out.** One pipeline batch is shared by the healthy endpoints of the
+active tier through work stealing:
 
-1. Each endpoint is weighted by its measured throughput in characters per
-   second (an exponential moving average, α = 0.3, updated by every request).
-   An endpoint not measured yet gets the mean of the measured ones.
-2. Texts are assigned contiguously by **character** share, so a fast GPU gets
-   proportionally more input and every endpoint finishes at about the same
-   time. Uneven GPUs — an RX 7800M next to an Arc iGPU — are balanced this way
-   without configuration.
-3. Each endpoint's share is cut again into as many parallel requests as the
-   server has slots (`total_slots` from its `/props`, `-np`). This keeps every
-   slot busy without raising the pipeline's own concurrency.
-4. If an endpoint fails mid-batch, its texts are re-split across the endpoints
-   still standing in the same call. Results are reassembled in input order.
+1. The batch is cut into contiguous **micro-batches** of about equal
+   **character** size, four per parallel slot across the active endpoints
+   (never more micro-batches than texts). They go onto one shared queue.
+2. Every endpoint runs as many workers as the server has slots
+   (`total_slots` from its `/props`, `-np`). Each worker takes the next
+   micro-batch off the queue, embeds it, and comes back for another until the
+   queue is empty. This keeps every slot busy without raising the pipeline's
+   own concurrency.
+3. A fast GPU therefore takes more micro-batches and a slow one fewer, with no
+   speed estimate involved. Uneven GPUs — an RX 7800M next to an Arc iGPU — are
+   balanced without configuration, and the end of a batch waits for at most
+   one micro-batch on the slowest endpoint rather than its whole share.
+4. If an endpoint fails mid-batch, its micro-batch goes back to the front of
+   the queue and that endpoint stops taking work; the endpoints still standing
+   finish the batch in the same call. Results are reassembled in input order.
 
-A batch of 256 across two GPUs at `-np 4` becomes 8 parallel requests of about
-32 texts.
+A batch of 256 across two GPUs at `-np 4` becomes 32 micro-batches of 8 texts,
+eight in flight at a time.
 
-The split is only as good as the speed estimates. In a measured run the Arc
-iGPU received 14% of the tokens against a capacity share of about 12%, so the
-faster instances idled briefly at the end of each batch; end-to-end throughput
-was about 80% of the synthetic benchmark.
+Each endpoint's measured throughput in characters per second (an exponential
+moving average, α = 0.3) is still recorded per request; it feeds the metrics
+and the batch-size tuner, not the split.
+
+The earlier split assigned each endpoint a share proportional to that estimate
+up front. It was only as good as the estimate: in a measured run the Arc iGPU
+received 14% of the tokens against a capacity share of about 12%, the faster
+instances idled at the end of each batch, and end-to-end throughput was about
+80% of the synthetic benchmark. Work stealing replaces it.
 
 **Context window.** The context length TeaRAGs works with is the per-slot
 `n_ctx` the server reports in `/props`, and it determines the derived chunk
