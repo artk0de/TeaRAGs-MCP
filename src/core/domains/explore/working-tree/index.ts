@@ -39,7 +39,10 @@ export {
   type WorkingTreeDeltaReader,
 } from "./delta.js";
 export {
+  filterReadsWorkingTreeSignals,
+  WORKING_TREE_SIGNAL_PAYLOAD_KEYS,
   WorkingTreeOverlay,
+  type WorkingTreeSignalledRow,
   type WorkingTreeDeltaChunkSource,
   type WorkingTreeIndexLookup,
   type WorkingTreeOverlayDeps,

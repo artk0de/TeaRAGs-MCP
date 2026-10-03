@@ -15,7 +15,7 @@ import { filterMetaOnly } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import { TestSetupHydrator } from "../test-setup-hydration.js";
 import { WORKING_TREE_DENSE_WAIT_MS, type WorkingTreeDenseVectors } from "../working-tree/dense-floor.js";
-import type { WorkingTreeView } from "../working-tree/overlay.js";
+import { filterReadsWorkingTreeSignals, type WorkingTreeView } from "../working-tree/overlay.js";
 import { excludeWorkingTreeBaseIds } from "../working-tree/sparse-floor.js";
 import {
   relativePathOf,
@@ -24,7 +24,7 @@ import {
   workingTreeStateOf,
 } from "../working-tree/substitute.js";
 import { touchedBasePointIds, WorkingTreeTouchedBasePoints } from "../working-tree/touched-base-points.js";
-import { claimWorkingTreeFloors } from "../working-tree/tree-graph-marker.js";
+import { claimWorkingTreeFloors, recordTreeGraphState } from "../working-tree/tree-graph-marker.js";
 import type { ExploreContext, ExploreResult, ExploreStrategy } from "./types.js";
 
 /** What a dense-floor strategy reads from its view: the tree's rows and their vectors (WTO-5). */
@@ -37,6 +37,11 @@ export interface WorkingTreeDenseFloorRead {
    * Never rejects.
    */
   dense: Promise<WorkingTreeDenseVectors>;
+}
+
+/** `rows` signalled by the view, or as they are when it has no signal source. */
+async function signalDeltaRows(view: WorkingTreeView, rows: readonly ScrollChunk[]): Promise<readonly ScrollChunk[]> {
+  return view.signalDeltaRows ? view.signalDeltaRows(rows) : rows;
 }
 
 /** Page size when the caller gives no (or a non-positive) limit. */
@@ -121,18 +126,52 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
     const view = ctx.workingTreeView;
     if (!view?.readDeltaChunks || !view.readDeltaVectors || view.touchedPaths.size === 0) return undefined;
     const dense = view.readDeltaVectors(WORKING_TREE_DENSE_WAIT_MS);
-    return { view, rows: await view.readDeltaChunks(), dense };
+    return { view, rows: await this.readWorkingTreeRowsAdmittedBy(view, ctx.filter), dense };
   }
 
   /**
-   * Main entry point: apply defaults → execute search → post-process → flag
-   * base rows of delta files the strategy did not substitute.
+   * The view's delta rows for a floor that admits them by `requestFilter`:
+   * structure only, unless the filter names a trajectory key — then every row
+   * is signalled first, or the filter would refuse rows whose indexed twins it
+   * admits. The rows that reach the answer are signalled by `execute` either way.
+   */
+  protected async readWorkingTreeRowsAdmittedBy(
+    view: WorkingTreeView,
+    requestFilter: Record<string, unknown> | undefined,
+  ): Promise<readonly ScrollChunk[]> {
+    const rows = (await view.readDeltaChunks?.()) ?? [];
+    return filterReadsWorkingTreeSignals(requestFilter) ? signalDeltaRows(view, rows) : rows;
+  }
+
+  /**
+   * Main entry point: apply defaults → execute search → signal the tree's rows
+   * among the candidates → post-process → flag base rows of delta files the
+   * strategy did not substitute.
    */
   async execute(ctx: ExploreContext): Promise<ExploreResult[]> {
     const prepared = this.applyDefaults(ctx);
-    const rawResults = await this.executeExplore(prepared);
+    const rawResults = await this.signalWorkingTreeCandidates(await this.executeExplore(prepared), ctx);
     const processed = await this.postProcess(rawResults, ctx);
     return this.markWorkingTreeState(processed, rawResults, ctx);
+  }
+
+  /**
+   * The ONE seam where the tree's rows get their trajectory payload (live C1,
+   * bd tea-rags-mcp-xi2r9): the candidates `executeExplore` hands to rerank and
+   * the page — and only their files — are signalled, so an answer pays git for
+   * the files it returns, never for the whole delta. Rows a strategy ranked or
+   * admitted by signals inside `executeExplore` were signalled there already
+   * (`substituteFromWorkingTree`, `readWorkingTreeRowsAdmittedBy`) and pass
+   * through unchanged. The graph their codegraph block came from is recorded
+   * here, where the rows reach the answer (D8).
+   */
+  private async signalWorkingTreeCandidates(rows: ExploreResult[], ctx: ExploreContext): Promise<ExploreResult[]> {
+    const view = ctx.workingTreeView;
+    if (!view?.signalDeltaRows || view.touchedPaths.size === 0 || !this.hasWorkingTreeFloor(view)) return rows;
+    if (!rows.some((row) => view.touchedPaths.has(relativePathOf(row.payload)))) return rows;
+    const signalled = await view.signalDeltaRows(rows);
+    if (view.deltaRowsTreeGraph) recordTreeGraphState(view.marker, view.deltaRowsTreeGraph);
+    return signalled;
   }
 
   /**
@@ -167,15 +206,24 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
    * the caller's Qdrant scroll applied. Untouched when the request reads no
    * tree, the tree touched nothing, or no chunk layer can read its rows (the
    * base rows then stay and `execute` flags them instead).
+   *
+   * The admitted rows come back signalled: the callers group or rank them
+   * before `execute` sees a candidate (rank_chunks ranks the pool inside, an
+   * outline folds rows into one hit). `keepReadsSignals` — `keep` reads a
+   * trajectory key (rank_chunks' leg filters), so every row is signalled
+   * before it is judged.
    */
   protected async substituteFromWorkingTree(
     scrolled: readonly ScrollChunk[],
     ctx: ExploreContext,
     keep: (row: ScrollChunk) => boolean,
+    keepReadsSignals = false,
   ): Promise<ScrollChunk[]> {
     const view = ctx.workingTreeView;
     if (!view?.readDeltaChunks || view.touchedPaths.size === 0) return [...scrolled];
-    const admitted = (await view.readDeltaChunks()).filter(keep);
+    const rows = await view.readDeltaChunks();
+    const pool = keepReadsSignals ? await signalDeltaRows(view, rows) : rows;
+    const admitted = await signalDeltaRows(view, pool.filter(keep));
     claimWorkingTreeFloors(view, ["chunks"], admitted.length);
     return substituteWorkingTreeRows(scrolled, view, admitted, () => true);
   }

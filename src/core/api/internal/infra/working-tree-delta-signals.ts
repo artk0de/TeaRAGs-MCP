@@ -1,10 +1,13 @@
 /**
  * Trajectory payload for working-tree delta rows (bd tea-rags-mcp-xi2r9,
- * WTO-6/7) — the `WorkingTreeDeltaSignalSource` the overlay applies once, inside
- * `readDeltaChunks`, so every search tool ranks the tree's rows with the signals
- * their indexed twins carry. The chunk layer yields structure only; without
- * this a modified file's rows rank as code with no history and no graph (live
- * probe: `hybrid.ts` at #24, 0.132, under `hotspots`).
+ * WTO-6/7) — the `WorkingTreeDeltaSignalSource` the overlay applies through
+ * `signalDeltaRows`, file by file as answers admit rows (live C1), so every
+ * search tool ranks the tree's rows with the signals their indexed twins carry.
+ * The chunk layer yields structure only; without this a modified file's rows
+ * rank as code with no history and no graph (live probe: `hybrid.ts` at #24,
+ * 0.132, under `hotspots`). A row's blocks do not depend on which other rows
+ * share its batch: the graph-wide reads are kept per graph file, and a view's
+ * tree-graph wait is made once for all its batches.
  *
  * Lives in `api/internal` because it bridges what explore may not see: the
  * tree graph (`adapters/duckdb`) and the codegraph signal arithmetic
@@ -62,6 +65,7 @@ import type {
   WorkingTreeGitSignals,
   WorkingTreeGitSignalSource,
   WorkingTreeGitSignalTarget,
+  WorkingTreeGraphReader,
   WorkingTreeGraphState,
 } from "../../../contracts/types/working-tree.js";
 import {
@@ -126,6 +130,38 @@ export function createWorkingTreeDeltaSignalSource(
   deps: WorkingTreeDeltaSignalSourceDeps,
 ): WorkingTreeDeltaSignalSource {
   const treeSignalCache = new Map<string, Promise<TreeGraphSignals>>();
+  const graphWideCache = new Map<string, Promise<GraphWideSignals>>();
+  /**
+   * The tree-graph state each view's rows were enriched with, by the view's
+   * reader: the first batch waits for the graph, every later batch of the same
+   * view reuses that answer — one wait per request, and one graph provenance
+   * for all of a view's rows however many batches the answer admits.
+   */
+  const viewGraphStates = new WeakMap<WorkingTreeGraphReader, Promise<WorkingTreeGraphState>>();
+
+  const graphStateOf = async (readTreeGraph: WorkingTreeGraphReader): Promise<WorkingTreeGraphState> => {
+    let state = viewGraphStates.get(readTreeGraph);
+    if (!state) {
+      state = readTreeGraph(WORKING_TREE_SEARCH_GRAPH_WAIT_MS);
+      viewGraphStates.set(readTreeGraph, state);
+    }
+    return state;
+  };
+
+  const graphWideOf =
+    (dbPath: string) =>
+    async (graphDb: TreeGraphDb): Promise<GraphWideSignals> => {
+      let read = graphWideCache.get(dbPath);
+      if (!read) {
+        read = readGraphWideSignals(graphDb);
+        graphWideCache.set(dbPath, read);
+        read.catch(() => graphWideCache.delete(dbPath));
+        while (graphWideCache.size > TREE_SIGNAL_CACHE_SIZE) {
+          graphWideCache.delete(graphWideCache.keys().next().value as string);
+        }
+      }
+      return read;
+    };
 
   /** Rejects when the graph cannot be read; `enrich` turns that into an inherited answer. */
   const readTreeSignals = async (
@@ -136,7 +172,7 @@ export function createWorkingTreeDeltaSignalSource(
     const key = `${dbPath}\0${paths.join("\0")}`;
     let read = treeSignalCache.get(key);
     if (!read) {
-      read = loadTreeSignals(opener, dbPath, paths);
+      read = loadTreeSignals(opener, dbPath, paths, graphWideOf(dbPath));
       treeSignalCache.set(key, read);
       read.catch(() => treeSignalCache.delete(key));
       while (treeSignalCache.size > TREE_SIGNAL_CACHE_SIZE) {
@@ -159,7 +195,7 @@ export function createWorkingTreeDeltaSignalSource(
 
       const readTree = async (): Promise<{ treeGraph?: WorkingTreeGraphState; tree?: TreeGraphSignals }> => {
         if (!request.readTreeGraph) return {};
-        const treeGraph = await request.readTreeGraph(WORKING_TREE_SEARCH_GRAPH_WAIT_MS);
+        const treeGraph = await graphStateOf(request.readTreeGraph);
         const opener = deps.graphFiles();
         if (treeGraph.kind !== "built") return { treeGraph };
         if (!opener) return { treeGraph: { kind: "unavailable", reason: "codegraph is disabled" } };
@@ -299,7 +335,11 @@ async function readOnDemandGit(
     }
   }
   if (targets.size === 0) return new Map();
-  return source.signalsOf(request.tree.root, [...targets.values()]).catch(() => new Map());
+  // The stamp lets the source key each file by its own history (live C2).
+  const asked = request.indexedCommit
+    ? source.signalsOf(request.tree.root, [...targets.values()], request.indexedCommit)
+    : source.signalsOf(request.tree.root, [...targets.values()]);
+  return asked.catch(() => new Map());
 }
 
 /** Folds one base point into its file: the first file blocks seen, the first point per symbolId. */
@@ -312,23 +352,39 @@ function addBasePoint(file: BaseFilePayload, payload: Record<string, unknown>): 
   }
 }
 
+/** What a tree graph answers for every file alike: read once per graph file, whatever rows ask. */
+interface GraphWideSignals {
+  fanInP95: number;
+  chunkSignals: Map<FileScopedSymbolId, ChunkGraphSignals>;
+}
+
+type TreeGraphDb = Awaited<ReturnType<WorkingTreeGraphFileOpener["acquireFileReader"]>>["graphDb"];
+
+async function readGraphWideSignals(graphDb: TreeGraphDb): Promise<GraphWideSignals> {
+  const fanInP95 = await graphDb.getFanInP95();
+  return { fanInP95, chunkSignals: await graphDb.getChunkSignalsBulk() };
+}
+
 /**
  * The tree graph's signals for the delta's files: file metrics and fan-in p95
  * (over the FULL file universe, as every producer reads it), the whole graph's
  * chunk signals (there is no per-symbol bulk form), and the files' persisted
- * symbol ranges for the settlement.
+ * symbol ranges for the settlement. The graph-wide half comes from
+ * `graphWideOf`, read once per graph file: the view enriches its rows file by
+ * file as answers admit them (live C1), and each batch must not re-read the
+ * whole graph.
  */
 async function loadTreeSignals(
   opener: WorkingTreeGraphFileOpener,
   dbPath: string,
   paths: readonly string[],
+  graphWideOf: (graphDb: TreeGraphDb) => Promise<GraphWideSignals>,
 ): Promise<TreeGraphSignals> {
   const { graphDb } = await opener.acquireFileReader(dbPath);
   try {
-    const fanInP95 = await graphDb.getFanInP95();
+    const { fanInP95, chunkSignals } = await graphWideOf(graphDb);
     const metrics = await graphDb.getFileMetricsBulk(paths);
     const ranges = await graphDb.getSymbolLineRangesBulk(paths);
-    const chunkSignals = await graphDb.getChunkSignalsBulk();
     const fileSignals = new Map<string, PayloadBlock>();
     for (const path of paths) {
       // A file the graph holds neither edges nor symbols for is one it never

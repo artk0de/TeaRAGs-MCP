@@ -252,9 +252,17 @@ export interface WorkingTreeGitSignals {
  * composition root, so explore never imports trajectory. Never rejects.
  */
 export interface WorkingTreeGitSignalSource {
+  /**
+   * `sinceCommit` — the base index's stamp. A path's blocks depend only on the
+   * commits that touched it, so with the stamp a path no commit since touched
+   * reads the answer computed at any HEAD past the stamp, and a commit touching
+   * one file leaves every other file's answer valid (bd tea-rags-mcp-xi2r9).
+   * Absent → answers are valid for one HEAD.
+   */
   signalsOf: (
     root: string,
     targets: readonly WorkingTreeGitSignalTarget[],
+    sinceCommit?: string,
   ) => Promise<ReadonlyMap<string, WorkingTreeGitSignals>>;
   /**
    * The paths, relative to `root`, a commit in `sinceCommit..HEAD` touched —

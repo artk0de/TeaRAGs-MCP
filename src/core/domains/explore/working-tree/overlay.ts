@@ -36,6 +36,7 @@ import {
   type WorkingTreeDeltaReader,
 } from "./delta.js";
 import type { WorkingTreeDenseVectorReader, WorkingTreeDenseVectorSource } from "./dense-floor.js";
+import { relativePathOf } from "./substitute.js";
 
 export interface WorkingTreeView {
   marker: WorkingTreeMarker;
@@ -43,12 +44,23 @@ export interface WorkingTreeView {
   touchedPaths: ReadonlySet<string>;
   deletedPaths: ReadonlySet<string>;
   /**
-   * Rows of the changed files as ingest would store them (deleted files have
-   * none). Absent on a degraded view and when no chunk layer is wired. Chunked
-   * once per view; files that fail to read or parse land in `marker.unparsed`
-   * when the returned promise resolves.
+   * Rows of the changed files as the chunker yields them — structure only, no
+   * trajectory payload (deleted files have none). Absent on a degraded view and
+   * when no chunk layer is wired. Chunked once per view; files that fail to
+   * read or parse land in `marker.unparsed` when the returned promise resolves.
    */
   readDeltaChunks?: () => Promise<readonly ScrollChunk[]>;
+  /**
+   * `rows` with the trajectory payload ingest would have given them
+   * (`WORKING_TREE_SIGNAL_PAYLOAD_KEYS`, WTO-6/7): every row that is one of
+   * this view's delta rows (by id) gets its git / codegraph blocks merged over
+   * its own payload; any other row comes back as it is. Rows are signalled per
+   * FILE, each file at most once per view — so an answer pays git for the
+   * files whose rows reach its candidates, never for the whole delta (live C1,
+   * bd tea-rags-mcp-xi2r9: a 159-file delta blamed every file on a find_symbol
+   * that answered one). Present when a signal source and a chunk layer are wired.
+   */
+  signalDeltaRows?: <R extends WorkingTreeSignalledRow>(rows: readonly R[]) => Promise<R[]>;
   /**
    * The tree's codegraph for this delta (WTO-7), waiting at most `waitMs`.
    * Present only for a measured non-empty delta with a graph source wired; the
@@ -66,8 +78,9 @@ export interface WorkingTreeView {
   readTouchedBasePoints?: WorkingTreeTouchedBasePointsReader;
   /**
    * Which graph the delta rows' codegraph block came from, set once
-   * `readDeltaChunks` enriched them. Reading the rows does not stamp the marker
-   * with it: `claimWorkingTreeFloors` does, when the rows reach an answer (D8).
+   * `signalDeltaRows` enriched rows. Signalling rows does not stamp the marker
+   * with it: whoever puts the rows into an answer does (`claimWorkingTreeFloors`,
+   * the strategies' signal seam), D8.
    */
   deltaRowsTreeGraph?: WorkingTreeGraphState;
   /**
@@ -85,6 +98,30 @@ export interface WorkingTreeView {
    * the new one (`workingTreeCounterpartIds`).
    */
   renamedFrom?: ReadonlyMap<string, string>;
+}
+
+/** A row `signalDeltaRows` can be handed: a delta row, or an answer's hit carrying one's id. Without an id it is neither. */
+export interface WorkingTreeSignalledRow {
+  id?: string | number;
+  payload?: Record<string, unknown>;
+}
+
+/**
+ * The payload blocks `signalDeltaRows` adds to a delta row — the trajectories
+ * whose payload the chunker never writes. A request filter naming a key under
+ * one of them needs the rows signalled before it can admit them.
+ */
+export const WORKING_TREE_SIGNAL_PAYLOAD_KEYS = ["git", "codegraph"] as const;
+
+/** Whether `filter` names a key only a signalled delta row carries. */
+export function filterReadsWorkingTreeSignals(filter: unknown): boolean {
+  if (Array.isArray(filter)) return filter.some(filterReadsWorkingTreeSignals);
+  if (typeof filter !== "object" || filter === null) return false;
+  return Object.entries(filter).some(([name, value]) =>
+    name === "key" && typeof value === "string"
+      ? WORKING_TREE_SIGNAL_PAYLOAD_KEYS.some((root) => value === root || value.startsWith(`${root}.`))
+      : filterReadsWorkingTreeSignals(value),
+  );
 }
 
 /** The overlay's port to the touched-file base points (`WorkingTreeTouchedBasePoints`). */
@@ -216,11 +253,10 @@ export class WorkingTreeOverlay {
         let chunked: Promise<WorkingTreeChunkLayerRead> | undefined;
         const readChunked = async (): Promise<WorkingTreeChunkLayerRead> =>
           (chunked ??= readDeltaChunks(source, tree, changed, view.marker));
-        let rows: Promise<readonly ScrollChunk[]> | undefined;
-        view.readDeltaChunks = async () =>
-          (rows ??= readChunked().then(async ({ chunks }) =>
-            deltaSignals ? enrichDeltaRows(deltaSignals, tree, chunks, view, read.delta.renamedFrom) : chunks,
-          ));
+        view.readDeltaChunks = async () => (await readChunked()).chunks;
+        if (deltaSignals) {
+          view.signalDeltaRows = deltaRowSignaller(deltaSignals, tree, view, read.delta.renamedFrom);
+        }
         if (denseVectors && changed.length > 0) {
           view.readDeltaVectors = warmDeltaVectors(denseVectors, collectionName, view, readChunked);
         }
@@ -319,6 +355,73 @@ function treeGraphReader(source: WorkingTreeGraphSource, request: WorkingTreeGra
     const state = await ask(waitMs);
     if (state.kind === "built") built = state;
     return state;
+  };
+}
+
+/**
+ * The view's `signalDeltaRows`: each FILE of the delta is enriched at most once
+ * per view, in one batch per call over the files that call newly names, so
+ * concurrent calls naming the same file share its batch. A row is matched to a
+ * delta row by id and path; the trajectory blocks of the enriched copy are
+ * merged over the caller's payload, which may have been reshaped (an answered
+ * pack member, a metaOnly hit) since it left the view. The delta row itself
+ * comes back as the enriched row, one object per id for the view's lifetime.
+ */
+function deltaRowSignaller(
+  source: WorkingTreeDeltaSignalSource,
+  tree: WorkingTree,
+  view: WorkingTreeView,
+  renamedFrom: ReadonlyMap<string, string> | undefined,
+): NonNullable<WorkingTreeView["signalDeltaRows"]> {
+  const byFile = new Map<string, Promise<ReadonlyMap<string, ScrollChunk>>>();
+  let deltaById: ReadonlyMap<string, ScrollChunk> | undefined;
+
+  return async <R extends WorkingTreeSignalledRow>(rows: readonly R[]): Promise<R[]> => {
+    if (rows.length === 0 || !view.readDeltaChunks) return [...rows];
+    const deltaRows = await view.readDeltaChunks();
+    const byId = (deltaById ??= new Map(deltaRows.map((row) => [String(row.id), row])));
+    const deltaRowOf = (row: R): ScrollChunk | undefined => {
+      if (row.id === undefined) return undefined;
+      const delta = byId.get(String(row.id));
+      const path = row.payload?.relativePath;
+      return delta && (path === undefined || path === delta.payload.relativePath) ? delta : undefined;
+    };
+
+    const paths = new Set<string>();
+    for (const row of rows) {
+      const delta = deltaRowOf(row);
+      if (delta) paths.add(relativePathOf(delta.payload));
+    }
+    if (paths.size === 0) return [...rows];
+    const missing = [...paths].filter((path) => !byFile.has(path));
+    if (missing.length > 0) {
+      const wanted = new Set(missing);
+      const batch = enrichDeltaRows(
+        source,
+        tree,
+        deltaRows.filter((row) => wanted.has(relativePathOf(row.payload))),
+        view,
+        renamedFrom,
+      ).then((enriched) => new Map(enriched.map((row) => [String(row.id), row])));
+      for (const path of missing) byFile.set(path, batch);
+    }
+    const enrichedById = new Map<string, ScrollChunk>();
+    for (const batch of await Promise.all([...paths].map(async (path) => byFile.get(path)))) {
+      for (const [id, row] of batch ?? []) enrichedById.set(id, row);
+    }
+
+    return rows.map((row) => {
+      const delta = deltaRowOf(row);
+      const enriched = delta ? enrichedById.get(String(row.id)) : undefined;
+      if (!enriched || !row.payload || row.payload === enriched.payload) return row;
+      const payload = row.payload === delta?.payload ? enriched.payload : { ...row.payload };
+      if (payload !== enriched.payload) {
+        for (const key of WORKING_TREE_SIGNAL_PAYLOAD_KEYS) {
+          if (enriched.payload[key] !== undefined) payload[key] = enriched.payload[key];
+        }
+      }
+      return { ...row, payload };
+    });
   };
 }
 

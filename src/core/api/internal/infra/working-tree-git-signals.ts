@@ -14,17 +14,26 @@
  *   toplevel; git is asked at the toplevel, the answer named back.
  * - A row's lines are the tree file's (`treePath`); its history is the history
  *   path's (a move's old path), read at HEAD.
- * - Cached per (toplevel, HEAD, path, signal fingerprint, UTC day) and within
- *   it per line extent for `git.file` and per (tree-file content sha, range)
- *   for `git.chunk`: history moves only with HEAD, a row's attribution also with
- *   the working content it is read against, and the blocks' time-relative
- *   values with the day. "No history" is cached too. The cache is a process
- *   map in front of an optional persistent store (`WorkingTreeGitSignalStore`,
- *   live G2), so a second process computes nothing for unchanged inputs.
+ * - Cached per (toplevel, path HISTORY, path, signal fingerprint, UTC day) and
+ *   within it per line extent for `git.file` and per (tree-file content sha,
+ *   range) for `git.chunk`: a path's blocks move only with the commits that
+ *   touched it, a row's attribution also with the working content it is read
+ *   against, and the blocks' time-relative values with the day. "No history"
+ *   is cached too. The cache is a process map in front of an optional
+ *   persistent store (`WorkingTreeGitSignalStore`, live G2), so a second
+ *   process computes nothing for unchanged inputs.
+ * - A path's HISTORY key, given the index stamp: the stamp, plus the commits
+ *   HEAD's history adds or lacks against it that touched the path (one
+ *   symmetric `git log` per (toplevel, stamp, HEAD), shared with
+ *   `pathsCommittedSince`). A commit pins every commit behind it, so a
+ *   committed move's history is pinned by the move's own commit, which touches
+ *   the new path. A commit touching one file leaves every other file's record
+ *   valid (live C2: keyed by HEAD, the first cold call after any commit re-blamed
+ *   all 159 delta files). Without a stamp, or when git cannot list the range,
+ *   the key is HEAD.
  * - Misses are computed one batch at a time per source: a request that waited
  *   re-reads the cache first, so concurrent requests over one delta spawn its
  *   git work once, and the spawns stay within the trajectory's own budgets.
- * - `pathsCommittedSince` is one `git log` per (toplevel, stamp, HEAD).
  * - Never rejects: a failed read answers nothing, the next request retries.
  */
 
@@ -33,7 +42,7 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
 import { VcsAdapterFactory } from "../../../adapters/vcs/factory.js";
-import { listPathsCommittedSince } from "../../../adapters/vcs/git/git-cli/client.js";
+import { readPathCommitsSince, type PathCommitsSince } from "../../../adapters/vcs/git/git-cli/client.js";
 import type { GitAdapterKind } from "../../../adapters/vcs/types.js";
 import type {
   WorkingTreeGitSignals,
@@ -61,8 +70,8 @@ import type {
 
 /** Records kept per process; a miss costs a `git log`, a `git blame` and a chunk walk. */
 const RECORD_CACHE_SIZE = 2_000;
-/** Committed-since answers kept per process — one per recent (tree, stamp, HEAD). */
-const COMMITTED_CACHE_SIZE = 16;
+/** Path histories since a stamp kept per process — one per recent (toplevel, stamp, HEAD). */
+const HISTORY_CACHE_SIZE = 16;
 const DAY_MS = 86_400_000;
 
 export interface WorkingTreeGitSignalSourceDeps {
@@ -97,8 +106,44 @@ export function createWorkingTreeGitSignalSource(deps: WorkingTreeGitSignalSourc
   const now = deps.now ?? Date.now;
   const fingerprint = signalFingerprintOf(deps);
   const records = new Map<string, WorkingTreeGitSignalRecord>();
-  const committed = new Map<string, Promise<string[] | undefined>>();
+  const histories = new Map<string, Promise<PathCommitsSince | undefined>>();
   let computing: Promise<unknown> = Promise.resolve();
+
+  /** Which commits on either side of the stamp touched which paths — one `git log` per (toplevel, stamp, HEAD). */
+  const historySince = async (
+    toplevel: string,
+    sinceCommit: string,
+    head: string,
+  ): Promise<PathCommitsSince | undefined> => {
+    const key = `${toplevel}\0${sinceCommit}\0${head}`;
+    let history = histories.get(key);
+    if (!history) {
+      history = readPathCommitsSince(toplevel, sinceCommit, head).catch(() => undefined);
+      histories.set(key, history);
+      void history.then((answer) => {
+        if (answer === undefined) histories.delete(key);
+      });
+      while (histories.size > HISTORY_CACHE_SIZE) histories.delete(histories.keys().next().value as string);
+    }
+    return history;
+  };
+
+  /** The history key of each git path: see the module comment. */
+  const historyKeyOf = async (
+    toplevel: string,
+    head: string,
+    sinceCommit: string | undefined,
+  ): Promise<(gitPath: string) => string> => {
+    const history = sinceCommit ? await historySince(toplevel, sinceCommit, head) : undefined;
+    if (!sinceCommit || !history) return () => `head:${head}`;
+    return (gitPath) => {
+      const added = history.headSide.get(gitPath) ?? [];
+      const lacked = history.stampSide.get(gitPath) ?? [];
+      if (added.length === 0 && lacked.length === 0) return `since:${sinceCommit}`;
+      const commits = JSON.stringify([[...added].sort(), [...lacked].sort()]);
+      return `since:${sinceCommit}:${createHash("sha1").update(commits).digest("hex")}`;
+    };
+  };
 
   const remember = (key: string, record: WorkingTreeGitSignalRecord): void => {
     records.delete(key);
@@ -120,7 +165,7 @@ export function createWorkingTreeGitSignalSource(deps: WorkingTreeGitSignalSourc
   const lookup = async (
     root: string,
     toplevel: string,
-    head: string,
+    historyKey: (gitPath: string) => string,
     targets: readonly WorkingTreeGitSignalTarget[],
     answered: Map<string, WorkingTreeGitSignals & { chunks: Map<string, Record<string, unknown>> }>,
   ): Promise<PendingTarget[]> => {
@@ -137,7 +182,7 @@ export function createWorkingTreeGitSignalSource(deps: WorkingTreeGitSignalSourc
     const pending: PendingTarget[] = [];
     for (const target of targets) {
       const gitPath = gitPathFromRoot(target.relativePath, prefix);
-      const recordKey = JSON.stringify([toplevel, head, gitPath, fingerprint, day]);
+      const recordKey = JSON.stringify([toplevel, historyKey(gitPath), gitPath, fingerprint, day]);
       const record = await recordOf(recordKey);
       const entry: PendingTarget = { target, gitPath, recordKey, record, chunkSlots: new Map() };
       if (target.fileSignals) {
@@ -208,7 +253,7 @@ export function createWorkingTreeGitSignalSource(deps: WorkingTreeGitSignalSourc
   };
 
   return {
-    signalsOf: async (root, targets) => {
+    signalsOf: async (root, targets, sinceCommit) => {
       const answered = new Map<string, WorkingTreeGitSignals & { chunks: Map<string, Record<string, unknown>> }>();
       if (targets.length === 0) return answered;
       const toplevel = findGitToplevel(root);
@@ -216,12 +261,13 @@ export function createWorkingTreeGitSignalSource(deps: WorkingTreeGitSignalSourc
       if (!toplevel || !head) return answered;
 
       try {
-        if ((await lookup(root, toplevel, head, targets, answered)).length === 0) return answered;
+        const historyKey = await historyKeyOf(toplevel, head, sinceCommit);
+        if ((await lookup(root, toplevel, historyKey, targets, answered)).length === 0) return answered;
         // One batch of misses at a time: a request that waited finds what the
         // one before it computed, and computes only what is still missing.
         const turn = computing.then(async () => {
           answered.clear();
-          const pending = await lookup(root, toplevel, head, targets, answered);
+          const pending = await lookup(root, toplevel, historyKey, targets, answered);
           if (pending.length > 0) await compute(toplevel, pending, answered);
         });
         computing = turn.catch(() => undefined);
@@ -236,18 +282,9 @@ export function createWorkingTreeGitSignalSource(deps: WorkingTreeGitSignalSourc
       const toplevel = findGitToplevel(root);
       const head = toplevel ? readRepoGitState(toplevel)?.commit : undefined;
       if (!toplevel || !head) return undefined;
-      const key = `${toplevel}\0${sinceCommit}\0${head}`;
-      let paths = committed.get(key);
-      if (!paths) {
-        paths = listPathsCommittedSince(toplevel, sinceCommit, head).catch(() => undefined);
-        committed.set(key, paths);
-        void paths.then((answer) => {
-          if (answer === undefined) committed.delete(key);
-        });
-        while (committed.size > COMMITTED_CACHE_SIZE) committed.delete(committed.keys().next().value as string);
-      }
-      const answer = await paths;
-      return answer ? new Set(rebaseGitPathsOntoRoot(answer, gitPathPrefix(toplevel, root))) : undefined;
+      const history = await historySince(toplevel, sinceCommit, head);
+      if (!history) return undefined;
+      return new Set(rebaseGitPathsOntoRoot([...history.headSide.keys()].sort(), gitPathPrefix(toplevel, root)));
     },
   };
 }

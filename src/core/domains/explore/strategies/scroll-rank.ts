@@ -14,6 +14,7 @@ import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { InvalidQueryError } from "../errors.js";
 import { RankModule, type RankOptions } from "../rank-module.js";
+import { filterReadsWorkingTreeSignals } from "../working-tree/overlay.js";
 import { workingTreeRowAdmitted } from "../working-tree/sparse-floor.js";
 import { BaseExploreStrategy } from "./base.js";
 import { fetchUntilPathPatternFilled, keepPathPatternMatches, type PathPatternPage } from "./path-pattern-fill.js";
@@ -142,7 +143,13 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
       substituteCandidates: async (
         candidates: ScrollChunk[],
         legFilters: readonly (Record<string, unknown> | undefined)[],
-      ) => this.substituteFromWorkingTree(candidates, ctx, admittedByAnyLeg(legFilters)),
+      ) =>
+        this.substituteFromWorkingTree(
+          candidates,
+          ctx,
+          admittedByAnyLeg(legFilters),
+          legFilters.some(filterReadsWorkingTreeSignals),
+        ),
     };
 
     const fetchWindow = async (limit: number): Promise<PathPatternPage> => {

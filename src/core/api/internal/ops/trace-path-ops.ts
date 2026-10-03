@@ -251,10 +251,12 @@ export class TracePathOps {
       .filter(({ relPath }) => view.touchedPaths.has(relPath) && !view.deletedPaths.has(relPath));
     if (treeNodes.length === 0 || !view.readDeltaChunks) return untouched;
     const deltaRows = await view.readDeltaChunks();
-    const treeRows = treeNodes.flatMap(({ relPath, symbolId }) => {
+    const merged = treeNodes.flatMap(({ relPath, symbolId }) => {
       const row = mergedWorkingTreeSymbolRow(deltaRows, relPath, symbolId);
       return row ? [row] : [];
     });
+    // Only the steps' rows carry the payload their danger is ranked on (live C1).
+    const treeRows = view.signalDeltaRows ? await view.signalDeltaRows(merged) : merged;
     claimWorkingTreeFloors(view, ["chunks"], treeRows.length);
     return [...untouched, ...treeRows];
   }

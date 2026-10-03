@@ -142,6 +142,6 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
   private async readWorkingTreeRows(ctx: ExploreContext): Promise<readonly ScrollChunk[] | undefined> {
     const view = ctx.workingTreeView;
     if (!view?.readDeltaChunks || view.touchedPaths.size === 0) return undefined;
-    return view.readDeltaChunks();
+    return this.readWorkingTreeRowsAdmittedBy(view, ctx.filter);
   }
 }

@@ -283,6 +283,21 @@ export function run(): number {
       expect(yRow.payload).not.toHaveProperty(["codegraph", "file"]);
       expect(result.treeGraph).toEqual(built);
     });
+
+    // Live C1: the view enriches the rows an answer admits, file by file — a
+    // row must carry the same blocks whichever batch it was enriched in.
+    it("gives a row the payload it gets beside the whole delta when enriched alone", async () => {
+      const source = sourceReading(basePointsHolding([basePoint("bx", "src/x.ts", "x", 0)]), graphFiles);
+      const built: WorkingTreeGraphState = { kind: "built", dbPath: treeDbPath, physicalCollectionName: PHYSICAL };
+      const all = [deltaRow("dy", "src/x.ts", "y", [5, 7]), deltaRow("da", "src/a.ts", "run", [3, 5])];
+
+      const whole = await source.enrich({ tree: TREE, rows: all, readTreeGraph: async () => built });
+      const alone = await Promise.all(
+        all.map(async (row) => source.enrich({ tree: TREE, rows: [row], readTreeGraph: async () => built })),
+      );
+
+      expect(alone.map((result) => result.rows[0])).toEqual(whole.rows);
+    });
   });
 
   describe("ranking (live probe regression)", () => {
@@ -559,18 +574,45 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
       expect(rows[2].payload.git).toEqual({ file: GIT_FILE, chunk: gitChunk(3) });
       expect(gitSignals.pathsCommittedSince).toHaveBeenCalledTimes(1);
       expect(gitSignals.pathsCommittedSince).toHaveBeenCalledWith(TREE.root, INDEXED);
-      expect(gitSignals.signalsOf).toHaveBeenCalledWith(TREE.root, [
-        {
-          relativePath: FOO,
-          treePath: FOO,
-          maxEndLine: 6,
-          fileSignals: true,
-          chunks: [
-            { key: "d1", startLine: 1, endLine: 3 },
-            { key: "d2", startLine: 5, endLine: 6 },
-          ],
-        },
+      expect(gitSignals.signalsOf).toHaveBeenCalledWith(
+        TREE.root,
+        [
+          {
+            relativePath: FOO,
+            treePath: FOO,
+            maxEndLine: 6,
+            fileSignals: true,
+            chunks: [
+              { key: "d1", startLine: 1, endLine: 3 },
+              { key: "d2", startLine: 5, endLine: 6 },
+            ],
+          },
+        ],
+        INDEXED,
+      );
+    });
+
+    // Live C1: a row carries the same git blocks whichever batch enriched it.
+    it("gives each file's rows the git blocks enriching the whole delta gives them", async () => {
+      const gitSignals = answering(
+        { [FOO]: { file: fresh, chunks: { d1: onDemandChunk(12) } }, [SMALL]: { chunks: { d3: onDemandChunk(2) } } },
+        [FOO],
+      );
+      const source = sourceWith([basePoint("b2", SMALL, "c", 3)], gitSignals);
+      const rows = [deltaRow("d1", FOO, "Foo#kept", [1, 3]), deltaRow("d3", SMALL, "fresh", [5, 6])];
+
+      const whole = await source.enrich({ tree: TREE, indexedCommit: INDEXED, rows });
+      const alone = await Promise.all(
+        rows.map(async (row) => source.enrich({ tree: TREE, indexedCommit: INDEXED, rows: [row] })),
+      );
+
+      expect(alone.map((result) => result.rows[0])).toEqual(whole.rows);
+      expect(whole.rows.map((row) => row.payload.git)).toEqual([
+        { file: fresh, chunk: onDemandChunk(12) },
+        { file: GIT_FILE, chunk: onDemandChunk(2) },
       ]);
+      // The stamp reaches the git source, which keys a file's record by its own history.
+      expect(gitSignals.signalsOf.mock.calls.every((call) => call[2] === INDEXED)).toBe(true);
     });
 
     it("recomputes a file moved by a commit at its new path, whose history follows the move", async () => {
@@ -585,15 +627,19 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
       });
 
       expect(rows[0].payload.git).toEqual({ file: fresh, chunk: onDemandChunk(8) });
-      expect(gitSignals.signalsOf).toHaveBeenCalledWith(TREE.root, [
-        {
-          relativePath: NEW,
-          treePath: NEW,
-          maxEndLine: 3,
-          fileSignals: true,
-          chunks: [{ key: "d1", startLine: 1, endLine: 3 }],
-        },
-      ]);
+      expect(gitSignals.signalsOf).toHaveBeenCalledWith(
+        TREE.root,
+        [
+          {
+            relativePath: NEW,
+            treePath: NEW,
+            maxEndLine: 3,
+            fileSignals: true,
+            chunks: [{ key: "d1", startLine: 1, endLine: 3 }],
+          },
+        ],
+        INDEXED,
+      );
     });
 
     it("keeps inheriting when git cannot say what was committed, or the index has no stamp", async () => {

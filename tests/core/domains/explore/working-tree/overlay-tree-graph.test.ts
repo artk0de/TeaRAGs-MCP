@@ -2,9 +2,9 @@
  * `WorkingTreeOverlay` and the tree graph (bd tea-rags-mcp-xi2r9, WTO-7): a
  * view with a measured non-empty delta starts the tree-graph build at once
  * (warm-up, `graphFor(request, 0)`) and offers `readTreeGraph`; a clean or
- * degraded view does neither. Delta rows come out of `readDeltaChunks`
- * enriched by the injected signal source, and the marker records which graph
- * their codegraph block came from.
+ * degraded view does neither. Delta rows come out of `signalDeltaRows`
+ * enriched by the injected signal source, file by file as answers ask, and the
+ * marker records which graph their codegraph block came from.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -23,6 +23,7 @@ import {
   createWorkingTreeChunkLayer,
   WorkingTreeOverlay,
   type WorkingTreeDeltaReader,
+  type WorkingTreeView,
 } from "../../../../../src/core/domains/explore/working-tree/index.js";
 
 const COLLECTION = "code_tree_graph";
@@ -130,6 +131,12 @@ describe("WorkingTreeOverlay tree graph (WTO-7)", () => {
         ],
       });
 
+    // Invariant changed (live C1, bd tea-rags-mcp-xi2r9): `readDeltaChunks`
+    // yields the chunk layer's structure; the trajectory payload comes from
+    // `signalDeltaRows`, asked for the rows an answer admits. These tests ask
+    // it for every row, which is what the eager read used to give.
+    const signalAll = async (view: WorkingTreeView) => view.signalDeltaRows?.((await view.readDeltaChunks?.()) ?? []);
+
     const signalSource = (treeGraph: WorkingTreeGraphState | undefined) => ({
       enrich: vi.fn<WorkingTreeDeltaSignalSource["enrich"]>(async (request) => ({
         rows: request.rows.map((row) => ({ ...row, payload: { ...row.payload, git: { file: { commitCount: 7 } } } })),
@@ -147,8 +154,8 @@ describe("WorkingTreeOverlay tree graph (WTO-7)", () => {
         deltaChunks: { layer: chunkLayer, resolveChunkerConfig: async () => CHUNKER_CONFIG },
       }).view(workingTree(), "proj");
 
-      const rows = await view.readDeltaChunks?.();
-      await view.readDeltaChunks?.();
+      const rows = await signalAll(view);
+      await signalAll(view);
 
       expect(rows?.[0].payload).toMatchObject({ relativePath: "src/a.ts", git: { file: { commitCount: 7 } } });
       expect(deltaSignals.enrich).toHaveBeenCalledTimes(1);
@@ -169,7 +176,7 @@ describe("WorkingTreeOverlay tree graph (WTO-7)", () => {
         deltaChunks: { layer: chunkLayer, resolveChunkerConfig: async () => CHUNKER_CONFIG },
       }).view(workingTree(), "proj");
 
-      await view.readDeltaChunks?.();
+      await signalAll(view);
 
       expect(deltaSignals.enrich.mock.calls[0][0].indexedCommit).toBe("a".repeat(40));
       await chunkLayer.dispose();
@@ -187,7 +194,7 @@ describe("WorkingTreeOverlay tree graph (WTO-7)", () => {
         deltaChunks: { layer: chunkLayer, resolveChunkerConfig: async () => CHUNKER_CONFIG },
       }).view(workingTree(), "proj");
 
-      await view.readDeltaChunks?.();
+      await signalAll(view);
       expect(view.marker.floors).toEqual([]);
       claimWorkingTreeFloors(view, ["chunks"], 1);
 
@@ -204,7 +211,7 @@ describe("WorkingTreeOverlay tree graph (WTO-7)", () => {
         deltaChunks: { layer: chunkLayer, resolveChunkerConfig: async () => CHUNKER_CONFIG },
       }).view(workingTree(), "proj");
 
-      await view.readDeltaChunks?.();
+      await signalAll(view);
       expect(view.marker.treeGraphUnavailable).toBeUndefined();
       claimWorkingTreeFloors(view, ["chunks", "sparse"], 1);
 
@@ -227,7 +234,7 @@ describe("WorkingTreeOverlay tree graph (WTO-7)", () => {
         deltaChunks: { layer: chunkLayer, resolveChunkerConfig: async () => CHUNKER_CONFIG },
       }).view(workingTree(), "proj");
 
-      await view.readDeltaChunks?.();
+      await signalAll(view);
       const [request] = deltaSignals.enrich.mock.calls[0];
       const fromRequest = await request.readTouchedBasePoints?.();
       const fromView = await view.readTouchedBasePoints?.();
@@ -240,6 +247,46 @@ describe("WorkingTreeOverlay tree graph (WTO-7)", () => {
         new Set(["src/a.ts", "src/gone.ts"]),
         "a".repeat(40),
       );
+      await chunkLayer.dispose();
+    });
+
+    // Live C1: a 159-file delta blamed every file on the first cold find_symbol
+    // after a commit, although the answer held one file.
+    it("should signal only the files of the rows it is handed, each file once per view", async () => {
+      writeFileSync(join(root, "src/b.ts"), "export const b = 1;\n");
+      writeFileSync(join(root, "src/c.ts"), "export const c = 1;\n");
+      const chunkLayer = layer();
+      const deltaSignals = signalSource(BUILT);
+      const view = await overlayWith(deltaReader(["src/a.ts", "src/b.ts", "src/c.ts"]), {
+        treeGraph: graphSource(),
+        deltaSignals,
+        deltaChunks: { layer: chunkLayer, resolveChunkerConfig: async () => CHUNKER_CONFIG },
+      }).view(workingTree(), "proj");
+      const rows = (await view.readDeltaChunks?.()) ?? [];
+      const rowOf = (path: string) => rows.filter((row) => row.payload.relativePath === path);
+
+      expect(rows).toHaveLength(3);
+      expect(rows.every((row) => row.payload.git === undefined)).toBe(true);
+      expect(deltaSignals.enrich).not.toHaveBeenCalled();
+
+      const [a] = (await view.signalDeltaRows?.(rowOf("src/a.ts"))) ?? [];
+      expect(a.payload).toMatchObject({ relativePath: "src/a.ts", git: { file: { commitCount: 7 } } });
+      expect(deltaSignals.enrich.mock.calls.map(([request]) => request.rows.map((row) => row.id))).toEqual([
+        ["id:src/a.ts"],
+      ]);
+
+      // A row the view does not hold passes through untouched.
+      const foreign = { id: "base", payload: { relativePath: "src/other.ts" } };
+      const again = (await view.signalDeltaRows?.([...rowOf("src/a.ts"), ...rowOf("src/b.ts"), foreign])) ?? [];
+      expect(again.map((row) => (row.payload as Record<string, unknown>).git)).toEqual([
+        { file: { commitCount: 7 } },
+        { file: { commitCount: 7 } },
+        undefined,
+      ]);
+      expect(deltaSignals.enrich.mock.calls.map(([request]) => request.rows.map((row) => row.id))).toEqual([
+        ["id:src/a.ts"],
+        ["id:src/b.ts"],
+      ]);
       await chunkLayer.dispose();
     });
 

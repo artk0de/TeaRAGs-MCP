@@ -697,24 +697,68 @@ export async function readBlobCommitTime(
 }
 
 /**
- * Every path a commit in `sinceCommit..headCommit` touched, repo-relative and
- * sorted (`git log --name-only --no-renames`: a committed move lists both its
- * sides). One spawn for the whole range — the working-tree overlay's answer to
- * "whose history moved since the index" (live G1, bd tea-rags-mcp-xi2r9). An
- * unknown commit or a path outside a repository rejects.
+ * The commits on either side of `sinceCommit...headCommit` that touched each
+ * path, repo-relative, newest first (`--no-renames`: a committed move lists
+ * both its sides under its commit).
  */
-export async function listPathsCommittedSince(
+export interface PathCommitsSince {
+  /** Commits reachable from HEAD and not from the stamp (`since..head`) — what HEAD's history adds. */
+  headSide: ReadonlyMap<string, readonly string[]>;
+  /**
+   * Commits reachable from the stamp and not from HEAD — what HEAD's history
+   * lacks. Empty when HEAD descends from the stamp.
+   */
+  stampSide: ReadonlyMap<string, readonly string[]>;
+}
+
+const COMMIT_HEADER_MARK = "\u0001";
+
+/**
+ * Which commits on either side of the stamp touched which paths — one spawn for
+ * the whole symmetric range (`git log --left-right since...head`). The
+ * working-tree overlay's answer to "whose history moved since the index" (live
+ * G1) and to "which commits does a path's history at HEAD hold that the stamp's
+ * does not" (live C2: a path's on-demand git signals are keyed by exactly
+ * that, so a commit touching one file leaves every other file's record valid).
+ * bd tea-rags-mcp-xi2r9. An unknown commit or a path outside a repository rejects.
+ */
+export async function readPathCommitsSince(
   repoRoot: string,
   sinceCommit: string,
   headCommit: string,
   timeoutMs = TREE_LISTING_STALL_MS,
-): Promise<string[]> {
+): Promise<PathCommitsSince> {
   const out = await execWithStallGuard(
     resolveGitExecutable(),
-    ["log", "-z", "--format=", "--name-only", "--no-renames", `${sinceCommit}..${headCommit}`, "--"],
+    [
+      "log",
+      "-z",
+      `--format=${COMMIT_HEADER_MARK}%m%H`,
+      "--name-only",
+      "--no-renames",
+      "--left-right",
+      `${sinceCommit}...${headCommit}`,
+      "--",
+    ],
     { cwd: repoRoot, stallTimeoutMs: timeoutMs },
   );
-  return [...new Set(splitNulTerminated(out).map((path) => path.replace(/^\n+/, "")))].filter(Boolean).sort();
+  const headSide = new Map<string, string[]>();
+  const stampSide = new Map<string, string[]>();
+  let commit: { sha: string; side: Map<string, string[]> } | undefined;
+  for (const token of splitNulTerminated(out)) {
+    const entry = token.replace(/^\n+/, "");
+    if (entry === "") continue;
+    if (entry.startsWith(COMMIT_HEADER_MARK)) {
+      const side = entry.charAt(1) === "<" ? stampSide : headSide;
+      commit = { sha: entry.slice(2), side };
+      continue;
+    }
+    if (!commit) continue;
+    const shas = commit.side.get(entry);
+    if (shas) shas.push(commit.sha);
+    else commit.side.set(entry, [commit.sha]);
+  }
+  return { headSide, stampSide };
 }
 
 function splitNulTerminated(out: string): string[] {
