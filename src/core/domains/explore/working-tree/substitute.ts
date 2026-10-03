@@ -129,9 +129,22 @@ export function workingTreeStateOf(
   relativePath: string | undefined,
 ): WorkingTreeState | undefined {
   if (relativePath === undefined) return undefined;
-  if (view.indexServedPaths?.has(relativePath)) return "modified";
+  const indexServed = indexServedStateOf(view, relativePath);
+  if (indexServed) return indexServed;
   if (!view.touchedPaths.has(relativePath)) return undefined;
   return view.deletedPaths.has(relativePath) ? "deleted" : "modified";
+}
+
+/**
+ * "modified" when the view serves `relativePath` from the index
+ * (`indexServedPaths`), else undefined. The half of `workingTreeStateOf` that
+ * holds in every strategy: a floor replaces only touched files, never these.
+ */
+export function indexServedStateOf(
+  view: WorkingTreeView,
+  relativePath: string | undefined,
+): WorkingTreeState | undefined {
+  return relativePath !== undefined && view.indexServedPaths?.has(relativePath) ? "modified" : undefined;
 }
 
 /** The row's file, or "" — a row without a path is never a delta row. */
