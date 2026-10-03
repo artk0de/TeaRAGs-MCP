@@ -79,6 +79,8 @@ import {
   reapAbandonedWorkingTreeTemps,
   WORKING_TREE_CHUNK_RETENTION_MS,
   WORKING_TREE_CHUNK_SWEEP_INTERVAL_MS,
+  WORKING_TREE_CONTENT_HASH_MEMO_BYTES,
+  WorkingTreeContentHashes,
   type WorkingTreeFileWriter,
 } from "../../../domains/explore/working-tree/index.js";
 import {
@@ -90,9 +92,7 @@ import {
   type WorkingTreeGraphProviderConfig,
   type WorkingTreeGraphSeed,
 } from "../../../domains/trajectory/codegraph/working-tree/index.js";
-import { ByteBoundedLru } from "../../../infra/byte-bounded-lru.js";
 import { physicalCollectionNamesListedByStorage, resolvePhysicalCollection } from "../../../infra/collection-name.js";
-import { fileContentHash } from "../../../infra/file-content-hash.js";
 import { isDebug } from "../../../infra/runtime.js";
 
 /** The reason a caller gets when its wait lapsed and the build is still running. */
@@ -151,13 +151,6 @@ const SNAPSHOT_TEMP_MARKER = ".snapshot-tmp";
 const SNAPSHOT_FILE = /^(.+)-([0-9a-f]{16})\.duckdb$/;
 /** Same rule as the chunk store: a collection name is one path segment, never an escape from the root. */
 const COLLECTION_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-/**
- * Bytes of content-hash memo kept, least recently used dropped first. The delta
- * has no file cap, so the bound is bytes, counted as the path's UTF-8 bytes plus
- * the stamp (~45) and the hex digest (64): ~210 bytes for a 100-byte path, so
- * 64 MB holds ~300,000 files, and still ~59,000 at 1 KB paths.
- */
-const CONTENT_HASH_MEMO_BYTES = 64 * 1024 * 1024;
 /** The digest a changed path that is not a readable regular file contributes. */
 const ABSENT_CONTENT = "absent";
 /**
@@ -256,7 +249,7 @@ export interface WorkingTreeGraphCacheDeps {
   exitHooks?: WorkingTreeGraphExitHooks;
   /** Per-collection byte cap of the tree graphs; defaults to {@link WORKING_TREE_GRAPH_CAP_BYTES}. */
   capBytes?: number;
-  /** Bytes of the content-hash memo (path + stamp + digest per file); defaults to {@link CONTENT_HASH_MEMO_BYTES}. */
+  /** Bytes of the content-hash memo (path + stamp + digest per file); defaults to {@link WORKING_TREE_CONTENT_HASH_MEMO_BYTES}. */
   contentHashMemoBytes?: number;
   /**
    * The meta and stamp writes go through it — shared with the other
@@ -372,8 +365,14 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
   private readonly stagingInUse = new Set<string>();
   /** Published graphs a build of THIS process seeds from — never removed under it. */
   private readonly seedsInUse = new Map<string, number>();
-  /** `(path, size, mtime, ctime, inode)` → content sha256 of a changed file; see {@link contentHashOf}. */
-  private readonly contentHashes: ByteBoundedLru<{ stamp: string; sha: string }>;
+  /** Content hash of a changed file, memoized by its stat stamp; see {@link contentHashOf}. */
+  private readonly contentHashes: WorkingTreeContentHashes;
+  /**
+   * The digest of a delta being computed, by the delta's identity: an ask that
+   * overlaps it — a view's warm-up and its read — joins instead of hashing the
+   * delta again. Dropped once settled, so a later ask sees later edits.
+   */
+  private readonly deltaContentInflight = new Map<string, Promise<{ digest: string; delta: WorkingTreeDeltaRecord }>>();
   /**
    * Tree root → the key of the graph this process last served or published for
    * it, and the activity time its meta records as far as this process knows;
@@ -393,7 +392,9 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
     this.failureBackoffMs = deps.failureBackoffMs ?? WORKING_TREE_GRAPH_FAILURE_BACKOFF_MS;
     this.exitHooks = deps.exitHooks ?? processExitHooks;
     this.capBytes = deps.capBytes ?? WORKING_TREE_GRAPH_CAP_BYTES;
-    this.contentHashes = new ByteBoundedLru(deps.contentHashMemoBytes ?? CONTENT_HASH_MEMO_BYTES);
+    this.contentHashes = new WorkingTreeContentHashes({
+      maxBytes: deps.contentHashMemoBytes ?? WORKING_TREE_CONTENT_HASH_MEMO_BYTES,
+    });
   }
 
   async graphFor(request: WorkingTreeGraphRequest, waitMs: number): Promise<WorkingTreeGraphState> {
@@ -570,44 +571,53 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
     request: WorkingTreeGraphRequest,
   ): Promise<{ digest: string; delta: WorkingTreeDeltaRecord }> {
     const changed = [...new Set(request.changed)].sort();
+    const deleted = [...new Set(request.deleted)].sort();
+    const identity = createHash("sha256")
+      .update(JSON.stringify([request.tree.root, changed, deleted]))
+      .digest("hex");
+    const joined = this.deltaContentInflight.get(identity);
+    if (joined) return joined;
+    const computed = this.digestDelta(request.tree.root, changed, deleted).finally(() => {
+      if (this.deltaContentInflight.get(identity) === computed) this.deltaContentInflight.delete(identity);
+    });
+    this.deltaContentInflight.set(identity, computed);
+    return computed;
+  }
+
+  /** {@link deltaContent} of sorted, distinct `changed` and `deleted` paths, computed. */
+  private async digestDelta(
+    root: string,
+    changed: readonly string[],
+    deleted: readonly string[],
+  ): Promise<{ digest: string; delta: WorkingTreeDeltaRecord }> {
     const files = new Array<[string, string]>(changed.length);
     let next = 0;
     const worker = async (): Promise<void> => {
       while (next < changed.length) {
         const index = next++;
-        files[index] = [changed[index], await this.contentHashOf(join(request.tree.root, changed[index]))];
+        files[index] = [changed[index], await this.contentHashOf(join(root, changed[index]))];
       }
     };
     await Promise.all(
       Array.from({ length: Math.min(WORKING_TREE_GRAPH_CONTENT_READ_CONCURRENCY, changed.length) }, worker),
     );
-    const deleted = [...new Set(request.deleted)].sort();
     return {
       digest: createHash("sha256")
         .update(JSON.stringify([files, deleted]))
         .digest("hex"),
-      delta: { changed: Object.fromEntries(files), deleted },
+      delta: { changed: Object.fromEntries(files), deleted: [...deleted] },
     };
   }
 
   /**
    * One file's content hash (`fileContentHash` — the definition the ingest
-   * pipeline and the tree build stamp graph rows with), memoized by `(size,
-   * mtime, ctime, inode)` so a delta re-asked on every graph call re-reads only
-   * the files that moved. A path that is not a readable regular file
-   * contributes {@link ABSENT_CONTENT}.
+   * pipeline and the tree build stamp graph rows with), through the shared
+   * {@link WorkingTreeContentHashes} memo, so a delta re-asked on every graph
+   * call re-reads only the files that moved. A path that is not a readable
+   * regular file contributes {@link ABSENT_CONTENT}.
    */
   private async contentHashOf(path: string): Promise<string> {
-    const stat = await fs.stat(path).catch(() => undefined);
-    if (!stat?.isFile()) return ABSENT_CONTENT;
-    const stamp = `${String(stat.size)}:${String(stat.mtimeMs)}:${String(stat.ctimeMs)}:${String(stat.ino)}`;
-    const memo = this.contentHashes.get(path);
-    if (memo?.stamp === stamp) return memo.sha;
-    const content = await fs.readFile(path, "utf-8").catch(() => undefined);
-    if (content === undefined) return ABSENT_CONTENT;
-    const sha = fileContentHash(content);
-    this.contentHashes.set(path, { stamp, sha }, Buffer.byteLength(path) + stamp.length + sha.length);
-    return sha;
+    return (await this.contentHashes.sha256Of(path)) ?? ABSENT_CONTENT;
   }
 
   /**
