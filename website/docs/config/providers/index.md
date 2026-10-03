@@ -94,6 +94,12 @@ the default chunk size from that reported value, which may be smaller.
 | `qwen3-embedding` | Ollama, llama-server¹ | 1024 | 32k | General | Multilingual. 1024 is the 0.6B size; larger sizes are wider, and Ollama reports the real width at startup |
 | `bge-m3` | Ollama, llama-server¹ | 1024 | 8192 | General | Multilingual |
 | `embeddinggemma` | Ollama, llama-server¹ | 768 | 2048 | General | Matryoshka: 512/256/128 also supported |
+| `nomic-ai/CodeRankEmbed` | llama-server³ | 768 | — | Code | |
+| `brokkai/Muninn-small` | llama-server³ | 384 | — | Code | |
+| `jinaai/jina-code-embeddings-0.5b` | llama-server³ | 896 | — | Code | |
+| `BAAI/bge-code-v1` | llama-server³ | 1536 | — | Code | |
+| `Qodo/Qodo-Embed-1-1.5B` | llama-server³ | 1536 | — | Code | |
+| `nomic-ai/nomic-embed-code` | llama-server³ | 3584 | — | Code | |
 | `Xenova/all-MiniLM-L6-v2` | ONNX | 384 | 256 | General | Lightweight |
 | `Xenova/bge-base-en-v1.5` | ONNX | 768 | 512 | General | English |
 | `BAAI/bge-small-en-v1.5` | ONNX | 384 | 512 | General | English, small |
@@ -125,3 +131,7 @@ measured with TeaRAGs.
 ² TeaRAGs' built-in table assumes 512 for the two Voyage lite models, while
 Voyage documents 1024 as their default output width. Set
 `EMBEDDING_DIMENSIONS=1024` when you use them.
+
+³ A HuggingFace GGUF served by llama-server, named by its HuggingFace id. The
+width is the length of the vectors a live llama-server returned for it
+(measured 2026-10-03).

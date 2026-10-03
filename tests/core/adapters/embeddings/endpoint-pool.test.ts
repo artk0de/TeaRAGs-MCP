@@ -250,4 +250,47 @@ describe("EmbeddingEndpointPool", () => {
     first.healthy = false;
     expect(urls(pool)).toEqual([PEER_A, PEER_B]);
   });
+
+  describe("retire", () => {
+    it("takes a retired endpoint out of the active tier for good", () => {
+      const pool = makePool();
+      pool.retire(PEER_A);
+      expect(urls(pool)).toEqual([PEER_B]);
+      expect(pool.primaryUrl()).toBe(PEER_B);
+    });
+
+    it("serves from the fallbacks once every peer is retired", () => {
+      const pool = makePool();
+      pool.retire(PEER_A);
+      pool.retire(PEER_B);
+      expect(pool.activeTier()).toBe("fallback");
+      expect(urls(pool)).toEqual([FALLBACK]);
+    });
+
+    it("is not re-admitted, probed, or counted as up by a health check", async () => {
+      const probe = vi.fn(async () => true);
+      const pool = makePool({ probe });
+      pool.retire(PEER_A);
+      pool.retire(PEER_B);
+
+      expect(await pool.checkPeersHealth()).toBe(false);
+      await pool.probeFailed();
+
+      expect(probe).not.toHaveBeenCalledWith(PEER_A);
+      expect(probe).not.toHaveBeenCalledWith(PEER_B);
+      expect(urls(pool)).toEqual([FALLBACK]);
+    });
+
+    it("ignores failures recorded against a retired endpoint", async () => {
+      const probe = vi.fn(async () => false);
+      const pool = makePool({ probe });
+      pool.retire(PEER_A);
+      pool.recordEndpointFailure(PEER_A, "refused");
+
+      await pool.probeFailed();
+
+      expect(probe).not.toHaveBeenCalled();
+      expect(pool.snapshot().every((e) => e.healthy)).toBe(true);
+    });
+  });
 });

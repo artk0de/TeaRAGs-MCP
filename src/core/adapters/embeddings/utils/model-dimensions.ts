@@ -48,6 +48,17 @@ const MODEL_DIMENSIONS: Record<string, number> = {
   "bge-m3": 1024,
   embeddinggemma: 768,
 
+  // ── llama-server (GGUF, HuggingFace ids) ──
+  // Widths below were measured from live llama-server `/v1/embeddings` output
+  // on 2026-10-03 — the length of a returned vector, never a model card. Same
+  // rule as the Ollama block: only add an entry you have measured.
+  "nomic-ai/CodeRankEmbed": 768,
+  "brokkai/Muninn-small": 384,
+  "jinaai/jina-code-embeddings-0.5b": 896,
+  "BAAI/bge-code-v1": 1536,
+  "Qodo/Qodo-Embed-1-1.5B": 1536,
+  "nomic-ai/nomic-embed-code": 3584,
+
   // ── HuggingFace / ONNX ──
   "jinaai/jina-embeddings-v2-base-code": 768,
   "nomic-ai/nomic-embed-text-v1.5": 768,

@@ -11,6 +11,10 @@
  *
  * Each endpoint also carries an EWMA throughput in chars/s, which the batch
  * fan-out uses as its split weight.
+ *
+ * An endpoint the provider finds unfit to serve at all (e.g. it loaded another
+ * model) is RETIRED: out of the active tier for the pool's lifetime, never
+ * probed, never re-admitted, never counted as up by a health check.
  */
 
 export type EmbeddingEndpointTier = "peer" | "fallback";
@@ -43,6 +47,8 @@ const DEFAULT_EWMA_ALPHA = 0.3;
 interface TrackedEmbeddingEndpoint extends EmbeddingEndpointState {
   /** Timestamp of the last probe while failed; cleared when the endpoint fails anew. */
   lastProbeAt?: number;
+  /** Set by `retire`; a retired endpoint never serves again. */
+  retired?: boolean;
 }
 
 const BARE_PORT = /^:?(\d+)$/;
@@ -102,14 +108,20 @@ export class EmbeddingEndpointPool {
   activeEndpoints(): EmbeddingEndpointState[] {
     const tier = this.activeTier();
     if (!tier) return [];
-    return this.endpoints.filter((e) => e.tier === tier && e.healthy).map(toState);
+    return this.endpoints.filter((e) => e.tier === tier && isServing(e)).map(toState);
   }
 
   /** Tier currently serving; undefined when no endpoint is healthy. */
   activeTier(): EmbeddingEndpointTier | undefined {
-    if (this.endpoints.some((e) => e.tier === "peer" && e.healthy)) return "peer";
-    if (this.endpoints.some((e) => e.tier === "fallback" && e.healthy)) return "fallback";
+    if (this.endpoints.some((e) => e.tier === "peer" && isServing(e))) return "peer";
+    if (this.endpoints.some((e) => e.tier === "fallback" && isServing(e))) return "fallback";
     return undefined;
+  }
+
+  /** Take an endpoint out of service for the pool's lifetime. */
+  retire(url: string): void {
+    const endpoint = this.find(url);
+    if (endpoint) endpoint.retired = true;
   }
 
   /** First healthy active endpoint, else the first configured peer. */
@@ -141,7 +153,7 @@ export class EmbeddingEndpointPool {
   /** "refused" fails the endpoint immediately; "transient" counts toward the threshold. */
   recordEndpointFailure(url: string, kind: "refused" | "transient"): void {
     const endpoint = this.find(url);
-    if (!endpoint) return;
+    if (!endpoint || endpoint.retired) return;
     endpoint.consecutiveFailures += 1;
     const thresholdReached =
       this.failoverConsecutiveFailures > 0 && endpoint.consecutiveFailures >= this.failoverConsecutiveFailures;
@@ -156,7 +168,7 @@ export class EmbeddingEndpointPool {
   async probeFailed(): Promise<void> {
     const now = this.now();
     const due = this.endpoints.filter(
-      (e) => !e.healthy && (e.lastProbeAt === undefined || now - e.lastProbeAt >= this.probeIntervalMs),
+      (e) => !e.healthy && !e.retired && (e.lastProbeAt === undefined || now - e.lastProbeAt >= this.probeIntervalMs),
     );
     await Promise.all(
       due.map(async (endpoint) => {
@@ -182,7 +194,7 @@ export class EmbeddingEndpointPool {
   }
 
   private async checkTierHealth(tier: EmbeddingEndpointTier): Promise<boolean> {
-    const members = this.endpoints.filter((e) => e.tier === tier);
+    const members = this.endpoints.filter((e) => e.tier === tier && !e.retired);
     const results = await Promise.all(
       members.map(async (endpoint) => {
         const ok = await this.safeProbe(endpoint.url);
@@ -216,6 +228,10 @@ export class EmbeddingEndpointPool {
   private find(url: string): TrackedEmbeddingEndpoint | undefined {
     return this.endpoints.find((e) => e.url === url);
   }
+}
+
+function isServing(endpoint: TrackedEmbeddingEndpoint): boolean {
+  return endpoint.healthy && endpoint.retired !== true;
 }
 
 function newEndpoint(url: string, tier: EmbeddingEndpointTier): TrackedEmbeddingEndpoint {

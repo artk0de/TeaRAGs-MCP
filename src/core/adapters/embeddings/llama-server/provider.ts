@@ -22,13 +22,25 @@
  *   endpoint, reported to `observeServerBatchFailures` observers. Never marks
  *   the endpoint failed. A single text that fails on size is a context overflow.
  * - CALLER failure (any other 4xx — bad request, wrong API key): propagates.
+ *
+ * Every endpoint's `/props` `model_path` is checked against EMBEDDING_MODEL the
+ * first time it is read. An endpoint serving another model is retired from the
+ * pool and never receives an embedding request; when no endpoint serving the
+ * model is left, the call fails with `LlamaServerModelMismatchError` without a
+ * recovery wait.
  */
 
 import type { EmbeddingProvider, EmbeddingResult, EmbeddingServerBatchFailure, RateLimitConfig } from "../base.js";
 import { planEmbeddingMicroBatches } from "../batch-fanout.js";
 import { EmbeddingEndpointPool, parseEmbeddingEndpointList } from "../endpoint-pool.js";
 import { getModelDimensions, resolveStartingDimensions } from "../utils/model-dimensions.js";
-import { LlamaServerContextOverflowError, LlamaServerResponseError, LlamaServerUnavailableError } from "./errors.js";
+import {
+  LlamaServerContextOverflowError,
+  LlamaServerModelMismatchError,
+  LlamaServerResponseError,
+  LlamaServerUnavailableError,
+  type LlamaServerServedModel,
+} from "./errors.js";
 import { fetchLlamaServerProps, type LlamaServerProps } from "./props.js";
 
 /** llama-server's default port. */
@@ -131,7 +143,10 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
   private probeTimer?: ReturnType<typeof setInterval>;
   /** `/props` per endpoint; dropped when the endpoint fails (it may come back with another `-np`). */
   private readonly propsCache = new Map<string, Promise<LlamaServerProps | undefined>>();
-  private modelChecked = false;
+  /** Endpoints found serving another model, by URL → the GGUF they loaded. Never cleared. */
+  private readonly servedModelMismatches = new Map<string, string>();
+  /** Endpoints whose `/props` `model_path` has been judged already. */
+  private readonly servedModelChecked = new Set<string>();
   private cachedModelInfo?: { model: string; contextLength: number; dimensions: number };
   private modelInfoInFlight?: Promise<{ model: string; contextLength: number; dimensions: number } | undefined>;
   private readonly serverBatchFailureObservers = new Set<(event: EmbeddingServerBatchFailure) => void>();
@@ -401,6 +416,10 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
 
   /** One `POST /v1/embeddings`; classifies every failure into the three classes. */
   private async postEmbeddings(url: string, batch: string[]): Promise<number[][]> {
+    // Retired as it was judged, possibly after this request's split was made.
+    if (this.servedModelMismatches.has(url)) {
+      throw new EndpointRequestFailure(url, "transient", `serves ${this.servedModelMismatches.get(url)}`);
+    }
     let response: Response;
     try {
       response = await this.fetchFn(`${url}/v1/embeddings`, {
@@ -467,6 +486,7 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
    * already blocked), then back off until the budget is spent.
    */
   private async waitForEndpoint(wait: RecoveryWaitState): Promise<void> {
+    this.failWhenNoEndpointServesModel();
     if (await this.reprobeAll()) return;
     const remainingMs = wait.start + this.unavailableRetryMaxWaitMs - this.now();
     if (remainingMs <= 0) {
@@ -542,24 +562,41 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
       this.propsCache.set(url, pending);
     }
     const props = await pending;
-    this.checkServedModel(props);
+    this.checkServedModel(url, props);
     return props;
   }
 
   /**
-   * Warn ONCE when the GGUF the server loaded does not look like the configured
-   * model. Never refuses: a renamed GGUF of the same model is legitimate, and a
-   * real width mismatch is caught by the embedding model guard.
+   * Judge each endpoint once, the first time its `/props` names a GGUF. One
+   * that does not look like the configured model is retired: a peer serving
+   * another model of the same width would return vectors the embedding model
+   * guard cannot tell apart. `servedModelMatches` keeps a renamed or
+   * content-addressed GGUF of the same model legitimate; an endpoint whose
+   * `/props` names no file is not judged.
    */
-  private checkServedModel(props: LlamaServerProps | undefined): void {
-    if (this.modelChecked || !props?.modelPath) return;
-    this.modelChecked = true;
+  private checkServedModel(url: string, props: LlamaServerProps | undefined): void {
+    if (!props?.modelPath || this.servedModelChecked.has(url)) return;
+    this.servedModelChecked.add(url);
     if (servedModelMatches(this.model, props.modelPath)) return;
+    this.servedModelMismatches.set(url, props.modelPath);
+    this.pool.retire(url);
     this.log(
-      `[llama-server] the server loaded ${props.modelPath}, which does not look like EMBEDDING_MODEL=${this.model}. ` +
+      `[llama-server] ${url} loaded ${props.modelPath}, which does not look like EMBEDDING_MODEL=${this.model}; ` +
+        `no embedding requests go to it. ` +
         `Fetch the matching GGUF with: tea-rags llama-server fetch-model ${this.model} ` +
         `and print its launch line with: tea-rags llama-server command`,
     );
+  }
+
+  /** Every configured endpoint serves another model: a configuration error, not worth a recovery wait. */
+  private failWhenNoEndpointServesModel(): void {
+    const endpoints = this.pool.snapshot();
+    const served: LlamaServerServedModel[] = endpoints.flatMap(({ url }) => {
+      const modelPath = this.servedModelMismatches.get(url);
+      return modelPath === undefined ? [] : [{ url, modelPath }];
+    });
+    if (served.length < endpoints.length) return;
+    throw new LlamaServerModelMismatchError(this.model, served);
   }
 
   private async fetchModelInfo(): Promise<{ model: string; contextLength: number; dimensions: number } | undefined> {
