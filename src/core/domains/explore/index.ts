@@ -50,9 +50,11 @@ export {
   recordTreeGraphState,
   relativePathOf,
   scheduleWorkingTreeChunkSweep,
+  WorkingTreeDeltaWarmer,
   WorkingTreeDenseVectorSource,
   WorkingTreeOverlay,
   WorkingTreeTouchedBasePoints,
+  WorkingTreeWatcher,
 } from "./working-tree/index.js";
 export type {
   WorkingTreeChunkerPool,

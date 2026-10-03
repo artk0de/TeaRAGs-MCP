@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import * as nodeFs from "node:fs";
 
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AppConfig, getZodConfig } from "../../src/bootstrap/config/index.js";
 import { createAppContext, createConfiguredServer, loadPrompts, wireCodegraph } from "../../src/bootstrap/factory.js";
@@ -57,6 +57,54 @@ vi.mock("../../src/core/domains/explore/working-tree/file-writer.js", async (imp
       const writer = create();
       capturedWriters.writers.push(writer);
       return writer;
+    },
+  };
+});
+
+// The working-tree delta warmer and watcher (WTO unbounded delta). The real
+// classes run — each instance the factory builds is recorded with what its
+// teardown was asked, so a test can see which entry point builds a watcher and
+// that cleanup stops both.
+const capturedWarm = vi.hoisted(() => ({
+  watchers: [] as { deps: unknown; closed: number }[],
+  warmers: [] as { disposed: number }[],
+}));
+
+vi.mock("../../src/core/domains/explore/working-tree/watcher.js", async (importOriginal) => {
+  const mod = await (importOriginal as () => Promise<Record<string, unknown>>)();
+  const Orig = mod.WorkingTreeWatcher as new (deps: unknown) => { close: () => void };
+  return {
+    ...mod,
+    WorkingTreeWatcher: class extends Orig {
+      private readonly record = { deps: undefined as unknown, closed: 0 };
+      constructor(deps: unknown) {
+        super(deps);
+        this.record.deps = deps;
+        capturedWarm.watchers.push(this.record);
+      }
+      override close(): void {
+        this.record.closed++;
+        super.close();
+      }
+    },
+  };
+});
+
+vi.mock("../../src/core/domains/explore/working-tree/warmer.js", async (importOriginal) => {
+  const mod = await (importOriginal as () => Promise<Record<string, unknown>>)();
+  const Orig = mod.WorkingTreeDeltaWarmer as new (deps: unknown) => { dispose: () => void };
+  return {
+    ...mod,
+    WorkingTreeDeltaWarmer: class extends Orig {
+      private readonly record = { disposed: 0 };
+      constructor(deps: unknown) {
+        super(deps);
+        capturedWarm.warmers.push(this.record);
+      }
+      override dispose(): void {
+        this.record.disposed++;
+        super.dispose();
+      }
     },
   };
 });
@@ -337,6 +385,41 @@ describe("createAppContext", () => {
     captured.gitWorkerDescriptor = undefined;
     await createAppContext(makeConfig());
     expect(captured.gitWorkerDescriptor).toBeUndefined();
+  });
+
+  describe("working-tree warm-up (WTO unbounded delta)", () => {
+    beforeEach(() => {
+      capturedWarm.watchers.length = 0;
+      capturedWarm.warmers.length = 0;
+    });
+
+    it("builds one delta warmer for every process and disposes it on cleanup", async () => {
+      const ctx = await createAppContext(makeConfig());
+
+      expect(capturedWarm.warmers).toHaveLength(1);
+      await ctx.cleanup?.();
+      expect(capturedWarm.warmers[0].disposed).toBe(1);
+    });
+
+    it("builds a working-tree watcher for a long-lived server and closes it on cleanup", async () => {
+      const ctx = await createAppContext(makeConfig(), { ambientEnvRole: "server", watchWorkingTrees: true });
+
+      expect(capturedWarm.watchers).toHaveLength(1);
+      expect(capturedWarm.watchers[0].deps).toMatchObject({
+        onSettled: expect.any(Function),
+        accepts: expect.any(Function),
+        log: expect.any(Function),
+      });
+      await ctx.cleanup?.();
+      expect(capturedWarm.watchers[0].closed).toBe(1);
+    });
+
+    it("builds no watcher unless the entry point asks for one (tea-rags call, CLI commands)", async () => {
+      await createAppContext(makeConfig(), { ambientEnvRole: "server", watchWorkingTrees: false });
+      await createAppContext(makeConfig());
+
+      expect(capturedWarm.watchers).toHaveLength(0);
+    });
   });
 
   describe("the ambient env role (tea-rags-mcp-o0qsw)", () => {

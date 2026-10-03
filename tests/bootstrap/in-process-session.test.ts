@@ -53,12 +53,16 @@ describe("openInProcessMcpSession", () => {
     vi.mocked(createConfiguredServer).mockImplementation(() => echoServer());
   });
 
-  it("prepares the runtime the way `server` does (server env role) and disables auto-update", async () => {
+  it("prepares the runtime the way `server` does (server env role) and disables auto-update and tree watching", async () => {
     const session = await openInProcessMcpSession();
     await session.close();
 
     expect(migrateHomeDir).toHaveBeenCalledOnce();
-    expect(createAppContext).toHaveBeenCalledWith(expect.anything(), { ambientEnvRole: "server" });
+    // A one-shot call exits after one answer: a watcher would only hold fs handles until cleanup.
+    expect(createAppContext).toHaveBeenCalledWith(expect.anything(), {
+      ambientEnvRole: "server",
+      watchWorkingTrees: false,
+    });
     expect(createConfiguredServer).toHaveBeenCalledWith(expect.anything(), null, { autoUpdate: false });
   });
 

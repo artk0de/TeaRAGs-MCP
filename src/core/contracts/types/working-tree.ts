@@ -57,6 +57,13 @@ export interface WorkingTreeMarker {
    */
   indexOnlyFiles?: number;
   /**
+   * Re-read files not yet warm (chunked) when the answer was made — the view
+   * waits at most {@link WORKING_TREE_WARM_WAIT_MS} for them. Counted in
+   * `changedFiles`; their rows are the INDEX's, marked `treeState:
+   * "modified"`, and they keep warming for the next call. Absent when zero.
+   */
+  pendingFiles?: number;
+  /**
    * Changed files the chunker could not read or parse: they contribute no delta
    * rows. Set once the delta chunks were read; one bad file never degrades the
    * whole answer.
@@ -79,6 +86,13 @@ export interface WorkingTreeMarker {
    */
   denseUnavailable?: { reason: string };
 }
+
+/**
+ * How long a view waits for its re-read files to warm (be chunked) before it
+ * answers: files still warming are served from the index and counted in
+ * `WorkingTreeMarker#pendingFiles`.
+ */
+export const WORKING_TREE_WARM_WAIT_MS = 2_000;
 
 /** How a base row of a delta file differs from the tree, where no floor replaced it. */
 export type WorkingTreeState = "modified" | "deleted";
