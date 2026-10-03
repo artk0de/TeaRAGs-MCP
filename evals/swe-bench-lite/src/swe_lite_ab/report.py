@@ -7,7 +7,7 @@ from statistics import median
 from .stats import bootstrap_ci, mcnemar, wilcoxon_p
 
 PAIRED_FIELDS = ("input_tokens", "cache_write_tokens", "cache_read_tokens", "output_tokens", "cost_usd",
-                 "turns", "tool_calls_total", "search_read_calls", "wall_seconds", "api_seconds")
+                 "turns", "tool_calls_total", "search_read_calls", "wall_seconds", "wall_seconds_raw", "index_in_run_seconds", "api_seconds")
 
 
 @dataclass
@@ -28,7 +28,9 @@ class Row:
     search_read_calls: int
     gold_touched: bool
     turns_to_gold: int | None
-    wall_seconds: float
+    wall_seconds: float          # agent wall clock minus in-run reindexing
+    wall_seconds_raw: float
+    index_in_run_seconds: float
     api_seconds: float
 
 
@@ -107,14 +109,17 @@ def build_rows(tasks, resolved_by_arm: dict[str, set[str]], usage_source: str) -
             path = config.RUNS / arm / t.instance_id / "transcript.jsonl"
             if not path.exists():
                 continue
-            m = parse(path.read_text().splitlines(), gold_files(t.patch), usage_source)
+            arrivals_path = path.parent / "arrivals.txt"
+            arrivals = [float(x) for x in arrivals_path.read_text().split()] if arrivals_path.exists() else None
+            m = parse(path.read_text().split("\n"), gold_files(t.patch), usage_source, arrivals)
             status_path = path.parent / "status.json"
             status = json.loads(status_path.read_text()) if status_path.exists() else {}
+            wall_raw = status.get("wall_seconds") or 0
             rows.append(Row(arm, t.instance_id, t.repo, mentions_gold_file(t), t.instance_id in resolved_by_arm[arm],
                             m.input_tokens, m.cache_write_tokens, m.cache_read_tokens, m.output_tokens, m.cost_usd,
                             m.turns, sum(m.tool_calls.values()), m.tea_rags_calls, m.search_read_calls,
-                            m.gold_touched, m.turns_to_gold, status.get("wall_seconds") or 0,
-                            m.duration_api_ms / 1000))
+                            m.gold_touched, m.turns_to_gold, max(0.0, wall_raw - m.index_in_run_seconds),
+                            wall_raw, m.index_in_run_seconds, m.duration_api_ms / 1000))
     return rows
 
 

@@ -5,6 +5,8 @@ from typing import Iterable
 
 SEARCH_READ_TOOLS = {"Bash", "Read", "Grep", "Glob"}
 TEA_RAGS_PREFIX = "mcp__tea-rags__"
+INDEX_TOOL = "mcp__tea-rags__index_codebase"
+INDEX_BASH_MARKERS = ("tea-rags index-codebase", "index_codebase")
 
 
 @dataclass
@@ -23,21 +25,35 @@ class RunMetrics:
     gold_touched: bool = False
     turns_to_gold: int | None = None
     is_error: bool = True
+    tool_seconds: dict[str, float] = field(default_factory=dict)
+    index_in_run_seconds: float = 0.0
 
 
 def _mentions(text: str, gold: list[str]) -> bool:
     return any(g in text for g in gold)
 
 
-def parse(lines: Iterable[str], gold: list[str], usage_source: str) -> RunMetrics:
+def _is_index_call(name: str, tool_input: dict) -> bool:
+    if name == INDEX_TOOL:
+        return True
+    return name == "Bash" and any(k in str(tool_input.get("command", "")) for k in INDEX_BASH_MARKERS)
+
+
+def parse(lines: Iterable[str], gold: list[str], usage_source: str,
+          arrivals: list[float] | None = None) -> RunMetrics:
+    """`arrivals[i]` is the offset (s) at which `lines[i]` arrived; with it, each tool_use is timed
+    from its assistant event to the user event carrying its tool_result."""
     m = RunMetrics()
+    started: dict[str, tuple[str, bool, float]] = {}
+    tool_seconds: Counter[str] = Counter()
     seen: set[str] = set()
     tools: Counter[str] = Counter()
     main_turn = 0
-    for line in lines:
+    for i, line in enumerate(lines):
         if not line.strip():
             continue
         event = json.loads(line)
+        at = arrivals[i] if arrivals is not None and i < len(arrivals) else None
         kind = event.get("type")
         if kind == "assistant":
             msg = event["message"]
@@ -55,10 +71,19 @@ def parse(lines: Iterable[str], gold: list[str], usage_source: str) -> RunMetric
                 if block.get("type") != "tool_use":
                     continue
                 tools[block["name"]] += 1
+                if at is not None:
+                    started[block["id"]] = (block["name"], _is_index_call(block["name"], block.get("input", {})), at)
                 if not m.gold_touched and _mentions(json.dumps(block.get("input", {})), gold):
                     m.gold_touched, m.turns_to_gold = True, main_turn
-        elif kind == "user" and not m.gold_touched:
-            if _mentions(json.dumps(event.get("message", {})), gold):
+        elif kind == "user":
+            content = event.get("message", {}).get("content", [])
+            for block in content if isinstance(content, list) and at is not None else []:
+                if isinstance(block, dict) and block.get("type") == "tool_result" and block.get("tool_use_id") in started:
+                    name, is_index, t0 = started.pop(block["tool_use_id"])
+                    tool_seconds[name] += at - t0
+                    if is_index:
+                        m.index_in_run_seconds += at - t0
+            if not m.gold_touched and _mentions(json.dumps(event.get("message", {})), gold):
                 m.gold_touched, m.turns_to_gold = True, main_turn
         elif kind == "result":
             m.is_error = bool(event.get("is_error"))
@@ -73,6 +98,8 @@ def parse(lines: Iterable[str], gold: list[str], usage_source: str) -> RunMetric
                 m.cache_read_tokens = u.get("cache_read_input_tokens", 0)
                 m.output_tokens = u.get("output_tokens", 0)
     m.tool_calls = dict(tools)
+    m.tool_seconds = {name: round(sec, 3) for name, sec in tool_seconds.items()}
+    m.index_in_run_seconds = round(m.index_in_run_seconds, 3)
     m.tea_rags_calls = sum(n for name, n in tools.items() if name.startswith(TEA_RAGS_PREFIX))
     m.search_read_calls = m.tea_rags_calls + sum(n for name, n in tools.items() if name in SEARCH_READ_TOOLS)
     return m

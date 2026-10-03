@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from swe_lite_ab.transcript import parse
@@ -13,6 +14,41 @@ def test_sum_mode_counts_subagent_usage_once_per_message():
 def test_result_mode_reads_the_final_event():
     m = parse(LINES, ["requests/sessions.py"], "result")
     assert m.input_tokens == 125 and m.output_tokens == 52 and m.cost_usd == 0.12
+
+
+def _tool_use(msg_id, tool_id, name, tool_input):
+    return json.dumps({"type": "assistant", "parent_tool_use_id": None, "message": {
+        "id": msg_id, "usage": {}, "content": [{"type": "tool_use", "id": tool_id, "name": name, "input": tool_input}]}})
+
+
+def _tool_result(tool_id):
+    return json.dumps({"type": "user", "parent_tool_use_id": None, "message": {
+        "content": [{"type": "tool_result", "tool_use_id": tool_id, "content": "ok"}]}})
+
+
+TIMED = [
+    _tool_use("a1", "i1", "mcp__tea-rags__index_codebase", {"project": "x"}),
+    _tool_result("i1"),
+    _tool_use("a2", "b1", "Bash", {"command": "grep -rn foo ."}),
+    _tool_result("b1"),
+]
+
+
+def test_tool_seconds_and_in_run_index_time_from_arrivals():
+    m = parse(TIMED, [], "sum", arrivals=[10.0, 25.5, 30.0, 31.0])
+    assert m.tool_seconds == {"mcp__tea-rags__index_codebase": 15.5, "Bash": 1.0}
+    assert m.index_in_run_seconds == 15.5
+
+
+def test_bash_tea_rags_index_codebase_counts_as_in_run_index():
+    lines = [_tool_use("a1", "b1", "Bash", {"command": "tea-rags index-codebase --project x"}), _tool_result("b1")]
+    m = parse(lines, [], "sum", arrivals=[2.0, 9.25])
+    assert m.tool_seconds == {"Bash": 7.25} and m.index_in_run_seconds == 7.25
+
+
+def test_without_arrivals_tool_timing_stays_empty():
+    m = parse(TIMED, [], "sum")
+    assert m.tool_seconds == {} and m.index_in_run_seconds == 0
 
 
 def test_durations_come_from_the_result_event():

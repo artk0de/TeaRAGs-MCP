@@ -9,7 +9,8 @@ def row(arm, i, resolved, tokens, mentioned):
                input_tokens=tokens, cache_write_tokens=0, cache_read_tokens=tokens * 10, output_tokens=tokens // 10,
                cost_usd=tokens / 1e5, turns=10, tool_calls_total=20 if arm == "arm0" else 12,
                tea_rags_calls=3 if arm == "arm1" else 0, search_read_calls=6, gold_touched=True, turns_to_gold=2,
-               wall_seconds=60.0 if arm == "arm0" else 40.0, api_seconds=30.0 if arm == "arm0" else 20.0)
+               wall_seconds=60.0 if arm == "arm0" else 40.0, wall_seconds_raw=60.0 if arm == "arm0" else 45.0,
+               index_in_run_seconds=0.0 if arm == "arm0" else 5.0, api_seconds=30.0 if arm == "arm0" else 20.0)
 
 
 def test_render_has_headline_strata_and_tea_rags_share():
@@ -75,3 +76,36 @@ def test_build_rows_reads_wall_time_from_status_and_api_time_from_transcript(tmp
     rows = {r.arm: r for r in build_rows([task], {"arm0": set(), "arm1": set()}, "sum")}
     assert rows["arm0"].wall_seconds == 61.5 and rows["arm0"].api_seconds == 30.0
     assert rows["arm1"].wall_seconds == 0
+
+
+def test_render_reports_raw_wall_and_in_run_index_time():
+    rows = [row("arm0", i, False, 1000, True) for i in range(4)] + \
+           [row("arm1", i, False, 800, True) for i in range(4)]
+    md = render(rows)
+    assert "| median wall_seconds_raw | 60 | 45 |" in md
+    assert "| median index_in_run_seconds | 0 | 5 |" in md
+
+
+def test_build_rows_subtracts_in_run_index_time_from_wall_clock(tmp_path, monkeypatch):
+    from swe_lite_ab import config
+    from swe_lite_ab.report import build_rows
+    from swe_lite_ab.tasks import Task
+
+    monkeypatch.setattr(config, "RUNS", tmp_path)
+    task = Task("psf__requests-1", "psf/requests", "abc", "", "", "2020")
+    lines = [
+        json.dumps({"type": "assistant", "parent_tool_use_id": None, "message": {"id": "a1", "usage": {}, "content": [
+            {"type": "tool_use", "id": "i1", "name": "mcp__tea-rags__index_codebase", "input": {}}]}}),
+        json.dumps({"type": "user", "parent_tool_use_id": None, "message": {"content": [
+            {"type": "tool_result", "tool_use_id": "i1", "content": "ok"}]}}),
+    ]
+    for arm, wall in (("arm0", 3.0), ("arm1", 50.0)):
+        d = tmp_path / arm / task.instance_id
+        d.mkdir(parents=True)
+        (d / "transcript.jsonl").write_text("\n".join(lines) + "\n")
+        (d / "status.json").write_text(json.dumps({"wall_seconds": wall}))
+    (tmp_path / "arm0" / task.instance_id / "arrivals.txt").write_text("1.000\n9.000\n")
+    (tmp_path / "arm1" / task.instance_id / "arrivals.txt").write_text("10.000\n25.500\n")
+    rows = {r.arm: r for r in build_rows([task], {"arm0": set(), "arm1": set()}, "sum")}
+    assert (rows["arm1"].wall_seconds_raw, rows["arm1"].index_in_run_seconds, rows["arm1"].wall_seconds) == (50.0, 15.5, 34.5)
+    assert rows["arm0"].wall_seconds == 0  # floored: 3.0 raw - 8.0 index

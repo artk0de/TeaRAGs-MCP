@@ -1,6 +1,8 @@
 import json
 import os
+import signal
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -65,18 +67,38 @@ def reset_repo(repo_dir: Path) -> None:
 
 
 def run_task(arm: ArmConfig, task: Task) -> Path:
+    """Runs the agent, writing each stream-json line unchanged to transcript.jsonl and its arrival
+    offset (seconds since process start) to arrivals.txt, so tool durations can be timed afterwards."""
     repo_dir = task_dir(task.instance_id)
     reset_repo(repo_dir)
     run_dir = config.RUNS / arm.name / task.instance_id
     argv, env = build_command(arm, task, repo_dir, run_dir)
     started = time.monotonic()
-    with (run_dir / "transcript.jsonl").open("w") as out:
+    # Own process group: the agent spawns MCP servers that inherit stdout; a timeout kills them all.
+    proc = subprocess.Popen(argv, cwd=repo_dir, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, start_new_session=True)
+    stderr_chunks: list[str] = []
+    with (run_dir / "transcript.jsonl").open("w") as out, (run_dir / "arrivals.txt").open("w") as arrivals:
+        def pump_stdout() -> None:
+            for line in proc.stdout:
+                arrivals.write(f"{time.monotonic() - started:.3f}\n")
+                out.write(line)
+
+        readers = [threading.Thread(target=pump_stdout, daemon=True),
+                   threading.Thread(target=lambda: stderr_chunks.append(proc.stderr.read()), daemon=True)]
+        for r in readers:
+            r.start()
         try:
-            proc = subprocess.run(argv, cwd=repo_dir, env=env, stdout=out, stderr=subprocess.PIPE,
-                                  text=True, timeout=config.AGENT_TIMEOUT_S)
-            status = {"returncode": proc.returncode, "timeout": False, "stderr": proc.stderr[-4000:]}
+            proc.wait(timeout=config.AGENT_TIMEOUT_S)
+            timed_out = False
         except subprocess.TimeoutExpired:
-            status = {"returncode": None, "timeout": True, "stderr": ""}
-    status["wall_seconds"] = round(time.monotonic() - started, 1)
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+            timed_out = True
+        wall = time.monotonic() - started
+        for r in readers:
+            r.join(timeout=30)
+    status = {"returncode": None if timed_out else proc.returncode, "timeout": timed_out,
+              "stderr": "".join(stderr_chunks)[-4000:], "wall_seconds": round(wall, 3)}
     (run_dir / "status.json").write_text(json.dumps(status, indent=2))
     return run_dir
