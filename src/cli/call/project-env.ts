@@ -21,7 +21,7 @@ import { join } from "node:path";
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
 import {
   CollectionRegistry,
-  createPathCollectionResolver,
+  resolveBaseIndexEntry,
   resolveRegistryEnv,
   type CollectionEntry,
 } from "../../core/api/public/index.js";
@@ -34,8 +34,12 @@ function stringParam(params: Record<string, unknown>, key: string): string | und
 
 /**
  * The registered project a call targets: the `project` alias, else the
- * `collection`, else the entry claiming the `path` param, else the cwd's.
- * Null when the target is not registered.
+ * `collection`, else the entry whose index the server reads for the `path`
+ * param, else for the cwd. A path or cwd resolves the way the server resolves a
+ * request path (`resolveWorkingTree`): a linked worktree nobody registered
+ * reads its repository's index, so its env is that entry's — the MCP contract
+ * lets `path` alone address a worktree. Null when the target is not registered
+ * or the path does not validate (the tool reports the bad path itself).
  */
 export async function resolveCallProjectEntry(
   registry: CollectionRegistry,
@@ -47,7 +51,7 @@ export async function resolveCallProjectEntry(
   const collection = stringParam(params, "collection");
   if (collection) return registry.get(collection);
   try {
-    return registry.get(await createPathCollectionResolver(registry)(stringParam(params, "path") ?? cwd));
+    return resolveBaseIndexEntry(registry, stringParam(params, "path") ?? cwd);
   } catch {
     // A path that does not validate addresses no entry; the tool itself
     // reports the bad path with its typed error.

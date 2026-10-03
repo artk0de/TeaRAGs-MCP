@@ -237,6 +237,20 @@ export function resolveWorkingTree(registry: CollectionRegistry, input: ResolveI
 }
 
 /**
+ * The registry entry whose index a read addressed by `path` alone is served
+ * from — {@link resolveWorkingTree}'s `baseIndex`, as an entry. A linked
+ * worktree nobody registered resolves to its repository's entry, so a
+ * collaborator that replays a project's registry env (the `call` CLI) seeds
+ * the env of the index the server will actually read. Null when that index is
+ * the hash of a path no entry claims.
+ *
+ * @throws the {@link resolveWorkingTree} validation errors for a bad path.
+ */
+export function resolveBaseIndexEntry(registry: CollectionRegistry, path: string): CollectionEntry | null {
+  return registry.get(resolveWorkingTree(registry, { path }).baseIndex.collectionName);
+}
+
+/**
  * The tree `path` addresses — the counterpart of the index root in the tree's
  * toplevel — provided it is a checkout of the repository the named index was
  * built from. An index with no recorded root (an unregistered collection, a
