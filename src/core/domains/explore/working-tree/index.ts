@@ -20,6 +20,7 @@ export {
   computeGitBlobId,
   createWorkingTreeChunkStore,
   scheduleWorkingTreeChunkSweep,
+  WORKING_TREE_CHUNK_READ_REFRESH_MS,
   WORKING_TREE_CHUNK_RETENTION_MS,
   WORKING_TREE_CHUNK_STORE_CAP_BYTES,
   WORKING_TREE_CHUNK_SWEEP_INTERVAL_MS,
