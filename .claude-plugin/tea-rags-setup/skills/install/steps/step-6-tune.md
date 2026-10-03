@@ -4,6 +4,11 @@
 
 - If embeddingProvider is "ollama" → verify `ollama --version` succeeds and
   `ollama list` shows the model. If not → remind user to start Ollama.
+- If embeddingProvider is "llama-server" → verify every URL in
+  `embeddingBaseUrl` (and `embeddingFallbackUrl`) answers
+  `curl -sf <url>/health`. `tea-rags tune` CLI rejects llama-server — tune skill
+  runs its `-np` sweep instead and uses "Tune Defaults" minus embedding keys for
+  the rest.
 - If qdrantMode is "docker" or "native" → verify
   `curl -sf http://localhost:6333/healthz`. If not → remind user to start
   Qdrant.
