@@ -44,14 +44,16 @@ overrides the registry for every setting — together with the `--force` or
 
 | Variable                 | Description                                              | Default                        |
 | ------------------------ | -------------------------------------------------------- | ------------------------------ |
-| `EMBEDDING_PROVIDER`     | Provider: `onnx`, `ollama`, `openai`, `cohere`, `voyage` | `ollama`                       |
+| `EMBEDDING_PROVIDER`     | Provider: `onnx`, `ollama`, `llama-server`, `openai`, `cohere`, `voyage` | `ollama`       |
 | `EMBEDDING_MODEL`        | Model name                                               | `jina-embeddings-v2-base-code` |
-| `EMBEDDING_BASE_URL`     | Custom API URL                                           | Provider-specific              |
-| `EMBEDDING_FALLBACK_URL` | Fallback Ollama URL when primary is unreachable          | -                              |
+| `EMBEDDING_BASE_URL`     | Custom API URL. llama-server accepts a comma-separated list: every URL is a peer that shares the load (one llama-server per GPU) | Provider-specific (llama-server: `http://localhost:8080`) |
+| `EMBEDDING_FALLBACK_URL` | Fallback endpoint(s) used while the primary is unreachable. Ollama: a fallback Ollama. llama-server: comma-separated llama-server URLs, typically a local one serving the same GGUF — never Ollama | -        |
 | `EMBEDDING_DIMENSIONS`   | Vector width. Ollama and ONNX report it at startup; other providers fall back to a built-in model table. Set it to pin the value. | Resolved |
 | `OPENAI_API_KEY`         | OpenAI API key                                           | -                              |
 | `COHERE_API_KEY`         | Cohere API key                                           | -                              |
 | `VOYAGE_API_KEY`         | Voyage AI API key                                        | -                              |
+| `EMBEDDING_API_KEY`      | llama-server only: sent as `Authorization: Bearer <key>` to every peer and fallback; must match llama-server `--api-key`. Never written to the project registry | -  |
+| `EMBEDDING_AUTO_PULL`    | Ollama only: pull the configured model over `/api/pull` at startup when the server reports it missing. `false` restores the manual `ollama pull` | `true` |
 | `OLLAMA_LEGACY_API`      | Use legacy single-request Ollama API                     | `false`                        |
 | `OLLAMA_NUM_GPU`         | Ollama GPU count (`0` = CPU only)                        | `999`                          |
 
@@ -176,15 +178,17 @@ bounds are used and where the settled values are reported.
 
 | Variable                                 | Description                            | Default           |
 | ---------------------------------------- | -------------------------------------- | ----------------- |
-| `INGEST_PIPELINE_CONCURRENCY`            | Pipeline worker concurrency. With adaptive embedding a loopback endpoint (`localhost`, `127.x`, `::1`) runs at 1 and a remote one at this value | `1`               |
-| `EMBEDDING_TUNE_BATCH_SIZE`              | Chunks per embedding batch. With adaptive embedding this is the ceiling the throughput tuner works below | `1024`            |
+| `INGEST_PIPELINE_CONCURRENCY`            | Pipeline worker concurrency. With adaptive embedding this is the ceiling of the measured concurrency climb, inside [1, this value] | `1`               |
+| `EMBEDDING_TUNE_BATCH_SIZE`              | Chunks per embedding batch. With adaptive embedding this is the ceiling the throughput tuner works below | Provider-specific (Ollama `1024`, llama-server `256`) |
 | `EMBEDDING_TUNE_MIN_BATCH_SIZE`          | Min chunks before timeout flush, and the floor of the adaptive batch size. When unset, the timeout flush uses `batchSize × 0.5` and the adaptive floor `batchSize / 16` | unset |
-| `EMBEDDING_TUNE_STATIC`                  | `true` pins the configured batch size and concurrency for the whole run. Default (`false`): the batch size drops for every later batch after one the server fails on size, recovers after a streak of successes, hill-climbs toward the fastest size by measured chars/s, and starts each run from the optimum the registry stored for the active endpoint + model | `false` |
+| `EMBEDDING_TUNE_STATIC`                  | `true` pins the configured batch size and concurrency for the whole run. Default (`false`): the batch size drops for every later batch after one the server fails on size, recovers after a streak of successes, hill-climbs toward the fastest size by measured chars/s, then climbs concurrency by measured aggregate chars/s, and starts each run from the optimum the registry stored for the active endpoint + model | `false` |
 | `EMBEDDING_TUNE_BATCH_TIMEOUT_MS`        | Flush partial batch after timeout (ms) | `2000`            |
 | `EMBEDDING_TUNE_MAX_REQUESTS_PER_MINUTE` | Rate limit for embedding API           | Provider-specific |
 | `EMBEDDING_TUNE_RETRY_ATTEMPTS`          | Retry count for failed embedding calls | `3`               |
 | `EMBEDDING_TUNE_RETRY_DELAY_MS`          | Initial retry delay (ms)               | `1000`            |
-| `EMBEDDING_TUNE_FAILOVER_CONSECUTIVE_FAILURES` | Ollama only, needs `EMBEDDING_FALLBACK_URL`: consecutive failed embed calls on the primary (transport error, timeout, 5xx, malformed response; never a 4xx input error) before switching to the fallback while the primary still answers its health check. The 60s recovery cooldown and background probe decide the way back. `0` disables | `3` |
+| `EMBEDDING_TUNE_FAILOVER_CONSECUTIVE_FAILURES` | Ollama (needs `EMBEDDING_FALLBACK_URL`): consecutive failed embed calls on the primary (transport error, timeout, 5xx, malformed response; never a 4xx input error) before switching to the fallback while the primary still answers its health check. The 60s recovery cooldown and background probe decide the way back. `0` disables. llama-server: consecutive failures after which one endpoint is taken out (a refused connection takes it out at once); a 30s `/health` probe re-admits it | `3` |
+| `EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS` | Ollama and llama-server: how long to keep retrying, with backoff, while no endpoint is reachable before the index aborts. `0` aborts on the first connection failure | `240000` |
+| `EMBEDDING_TUNE_UNAVAILABLE_RETRY_BASE_DELAY_MS` | First backoff step of that wait (ms); exponential, capped at 30s | `2000` |
 
 ### Ingest Tune
 

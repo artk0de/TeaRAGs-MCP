@@ -146,7 +146,7 @@ Configure embedding provider and batching.
 | `EMBEDDING_BASE_URL` | string | `http://localhost:11434` | Ollama server URL |
 | `EMBEDDING_MODEL` | string | `unclemusclez/jina-embeddings-v2-base-code:latest` | Embedding model name |
 | `EMBEDDING_TUNE_BATCH_SIZE` | number | Auto-tuned | Ceiling for the embedding batch size the run picks ([Adaptive Embedding](/config/performance-tuning#adaptive-embedding)) |
-| `INGEST_PIPELINE_CONCURRENCY` | number | Auto-tuned | Embedding concurrency for a remote endpoint; a loopback endpoint runs at 1 |
+| `INGEST_PIPELINE_CONCURRENCY` | number | `1` | Ceiling for the embedding concurrency; the run climbs toward it only while measured throughput rises |
 | `EMBEDDING_TUNE_STATIC` | boolean | `false` | `true` uses the two values above unchanged for the whole run |
 
 **Example:**

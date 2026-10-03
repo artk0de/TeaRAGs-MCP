@@ -17,9 +17,7 @@ are bounds, not fixed values:
 | ------------------------------- | ------------------------------------------------------ |
 | `EMBEDDING_TUNE_BATCH_SIZE`     | **Ceiling** for the batch size                         |
 | `EMBEDDING_TUNE_MIN_BATCH_SIZE` | **Floor** for the batch size; unset: ceiling / 16      |
-| `INGEST_PIPELINE_CONCURRENCY`   | Concurrency for a **remote** endpoint (loopback: 1)    |
-
-A loopback endpoint is an Ollama URL on `localhost`, `127.x` or `::1`.
+| `INGEST_PIPELINE_CONCURRENCY`   | **Ceiling** for the embedding concurrency              |
 
 What happens during a run:
 
@@ -32,22 +30,32 @@ What happens during a run:
   inside the bounds, are probed, and the run moves to one only when it is more
   than 5% faster. A settled size is re-probed every 200 batches, so a server
   whose speed drifts is followed.
-- **Concurrency by locality.** A local embedding server processes requests one
-  at a time, so parallel batches only queue on it and blur the measurements; a
-  loopback endpoint therefore runs at concurrency 1. A LAN or cloud endpoint
-  runs at `INGEST_PIPELINE_CONCURRENCY`. The decision is made again when the
-  run fails over between `EMBEDDING_BASE_URL` and `EMBEDDING_FALLBACK_URL`.
-- **Remembered optima.** The settled batch size is stored per endpoint URL and
+- **Concurrency hill-climb.** Once the batch size settles, concurrency is
+  climbed the same way: half and double the current value, inside
+  [1, `INGEST_PIPELINE_CONCURRENCY`], each measured as **aggregate** chars/s —
+  the input of every batch in flight over the wall-clock span they covered — and
+  kept only at a gain of more than 5%. Whether a server handles parallel
+  requests is measured, never inferred from its address: an Ollama on
+  `localhost` converges to 1 because it serialises requests, a server with
+  spare capacity climbs. A size re-probe, failure or recovery drops back to the
+  last good concurrency and climbs again once the size settles. A failover
+  between peer and fallback endpoints starts from the stored optimum of the
+  endpoint now serving.
+- **Remembered optima.** The settled batch size and concurrency are stored per endpoint URL and
   model in the indexed project's [registry](/usage/advanced/project-registry)
   entry. The next run against the same endpoint and model — in any project,
   since the value describes the server — starts from the freshest stored
   optimum, clamped to the current bounds, instead of starting at the ceiling.
   A primary and a fallback endpoint each keep their own value.
 
-The batch-size downshift and hill-climb run for every provider. Concurrency by
-locality and remembered optima need the endpoint URL, which only the Ollama
-provider reports; ONNX, OpenAI, Cohere and Voyage keep
-`INGEST_PIPELINE_CONCURRENCY` and start every run at the ceiling.
+The batch-size and concurrency climbs run for every provider. Remembered optima
+need the endpoint URL, which only the Ollama and llama-server providers report;
+ONNX, OpenAI, Cohere and Voyage start every run at the ceiling.
+
+`INGEST_PIPELINE_CONCURRENCY` defaults to `1`, so the concurrency climb has
+nowhere to go until you raise the ceiling (for example to `4`) for a server
+with headroom. llama-server does not depend on it: the provider already splits
+each batch across every endpoint and every `-np` slot.
 
 **Where to see the settled values:**
 
@@ -58,7 +66,7 @@ provider reports; ONNX, OpenAI, Cohere and Voyage keep
 - With `DEBUG=1`, every change is logged in `~/.tea-rags/logs/pipeline-*.log`
   as an `EMBED_TUNE_ADAPTED` line with the old and new value, the reason
   (`seed`, `failure`, `recovery`, `probe`, `reprobe`, `settle`,
-  `endpoint-local`, `endpoint-remote`) and the measured chars/s.
+  `concurrency-probe`, `concurrency-settle`) and the measured chars/s.
 
 **Pinning static behaviour.** Set `EMBEDDING_TUNE_STATIC=true` to use
 `EMBEDDING_TUNE_BATCH_SIZE` and `INGEST_PIPELINE_CONCURRENCY` unchanged for the
@@ -312,8 +320,9 @@ Network latency crushes remote Qdrant storage: 6966 ch/s → 1810 ch/s (3.8x dro
 
 These values are the bounds [adaptive embedding](#adaptive-embedding) works
 inside: the run lowers the batch size below `EMBEDDING_TUNE_BATCH_SIZE` when a
-smaller one is faster or the server fails on size, and a loopback endpoint runs
-at concurrency 1 whatever `INGEST_PIPELINE_CONCURRENCY` says. Set
+smaller one is faster or the server fails on size, and it climbs concurrency
+from 1 up to `INGEST_PIPELINE_CONCURRENCY` only as far as the measured
+throughput rises. Set
 `EMBEDDING_TUNE_STATIC=true` to apply them exactly as written.
 
 **Rule of thumb:**
@@ -332,7 +341,7 @@ export INGEST_PIPELINE_CONCURRENCY=4
 
 ### Concurrency
 
-**Critical insight:** Concurrency is **only beneficial for remote GPU**. Local GPU sees no improvement — it adds overhead without benefit. Adaptive embedding applies this rule itself: a loopback endpoint runs at 1, a remote one at `INGEST_PIPELINE_CONCURRENCY`.
+**Critical insight:** Concurrency is **only beneficial for remote GPU**. Local GPU sees no improvement — it adds overhead without benefit. Adaptive embedding does not assume this from the address; it measures it. With the ceiling raised, a local Ollama converges to 1 and a remote endpoint climbs as far as it pays off.
 
 | Setup | Concurrency | Why |
 |-------|-------------|-----|
@@ -374,6 +383,15 @@ Even at 156 ch/s (remote GPU), embedding is **40x slower** than storage. Invest 
 - ✅ Increase `MAX_IO_CONCURRENCY=100` for SSD
 - ✅ Increase Qdrant memory limits (docker-compose.yml for external Qdrant)
 - ✅ Use `.contextignore` to exclude node_modules, build artifacts
+
+### For Very Large Codebases (3M+ LOC)
+
+Embedding dominates a full index at this size. Ollama stays the default, but
+with a GPU host available, switch to the
+[llama-server provider](/config/providers/llama-server): one llama-server per
+GPU with `-np 4` measured 1.92–2.20× Ollama's throughput on the same RX 7800M.
+Several GPUs, even unequal ones, are used together — see the
+[multi-GPU guide](/config/providers/llama-server-multi-gpu).
 
 ### For Slow Search
 

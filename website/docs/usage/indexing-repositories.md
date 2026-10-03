@@ -417,7 +417,8 @@ Enable it when you plan to use rerank presets like `techDebt`, `hotspots`,
 3. **Exclude large or binary files** that produce low-value chunks (lock files,
    minified bundles, vendored code)
 4. **Increase pipeline concurrency** for cloud providers with spare rate-limit
-   headroom (a `localhost` endpoint ignores it and runs at 1):
+   headroom (it is a ceiling; the run climbs toward it only while throughput
+   rises):
    ```bash
    export INGEST_PIPELINE_CONCURRENCY=4
    ```
