@@ -19,12 +19,13 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { appendFileSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
+import { importGitHistory } from "../../../../__helpers__/git-history-import.js";
 import { copyGitRepoTemplate } from "../../../../__helpers__/git-repo-template.js";
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import type { CommitFileNumstat, FileChurnData } from "../../../../../../src/core/adapters/vcs/types.js";
@@ -150,47 +151,31 @@ describe("file-level git churn follows renames (bd tea-rags-mcp-aikfk)", () => {
   ];
 
   /**
-   * Builds `commits` on `main` with ONE `git fast-import` (bd tea-rags-mcp-2z4sa):
-   * three spawns per repository instead of three per commit. Under a loaded
-   * coverage run a spawn costs about a second, so the add/commit sequence alone
-   * outlived the 30 s hook. Authors, dates, messages, contents and the rename
-   * are what that sequence wrote; the committer is the configured user, as
-   * before. Returns the shas by label.
+   * Builds `commits` on `main` with one fast-import (bd tea-rags-mcp-2z4sa):
+   * the authors, dates, messages, contents and rename the add/commit sequence
+   * wrote, committed by the configured user. Returns the shas by label.
    */
-  const importHistoryIn = (repo: string, commits: readonly ImportedCommit[]): Record<string, string> => {
-    gitIn(repo, ["init", "-q", "-b", "main"], daysAgoIso(60));
-    appendFileSync(
-      join(repo, ".git/config"),
-      "[user]\n\temail = t@example.com\n\tname = Test\n[commit]\n\tgpgsign = false\n[diff]\n\talgorithm = myers\n",
+  const importHistoryIn = (repo: string, commits: readonly ImportedCommit[]): Record<string, string> =>
+    importGitHistory(
+      repo,
+      commits.map((commit) => ({
+        label: commit.label,
+        message: commit.message,
+        author: { name: commit.author, email: `${commit.author.toLowerCase()}@example.com` },
+        authorDate: daysAgoIso(commit.days, commit.minutes ?? 0),
+        writes: Object.fromEntries(commit.writes ?? []),
+        renames: commit.rename ? [commit.rename] : [],
+      })),
+      {
+        committer: { name: "Test", email: "t@example.com" },
+        config: {
+          "user.email": "t@example.com",
+          "user.name": "Test",
+          "commit.gpgsign": "false",
+          "diff.algorithm": "myers",
+        },
+      },
     );
-    const data = (text: string): string => `data ${Buffer.byteLength(text)}\n${text}\n`;
-    const stream = commits
-      .map((commit, i) => {
-        const when = `${Math.floor(Date.parse(daysAgoIso(commit.days, commit.minutes ?? 0)) / 1000)} +0000`;
-        return [
-          "commit refs/heads/main\n",
-          `mark :${i + 1}\n`,
-          `author ${commit.author} <${commit.author.toLowerCase()}@example.com> ${when}\n`,
-          `committer Test <t@example.com> ${when}\n`,
-          data(commit.message),
-          ...(commit.writes ?? []).map(([path, content]) => `M 100644 inline ${path}\n${data(content)}`),
-          ...(commit.rename ? [`R ${commit.rename[0]} ${commit.rename[1]}\n`] : []),
-          "\n",
-        ].join("");
-      })
-      .join("");
-    const marks = join(repo, ".git/fast-import-marks");
-    execFileSync("git", ["fast-import", "--quiet", `--export-marks=${marks}`], { cwd: repo, input: stream });
-    gitIn(repo, ["reset", "-q", "--hard"], daysAgoIso(0));
-    const byMark = new Map(
-      readFileSync(marks, "utf8")
-        .trim()
-        .split("\n")
-        .map((line) => line.split(" ") as [string, string]),
-    );
-    rmSync(marks);
-    return Object.fromEntries(commits.map((commit, i) => [commit.label, byMark.get(`:${i + 1}`) as string]));
-  };
 
   /** c1-c3 under Old/ — the template recipe; returns the shas it committed. */
   const buildPreRenameIn = (repo: string): Record<string, string> => importHistoryIn(repo, PRE_RENAME);
