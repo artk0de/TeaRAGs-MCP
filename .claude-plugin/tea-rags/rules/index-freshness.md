@@ -9,7 +9,7 @@ conditions below (signals from **prime** digest layer); reindex when one fires.
 | Prime banner `⚠ Index is stale (last updated Nd ago)`                                                                                    | `index_codebase` (incremental)                                                                                                                                                                                                                     | no — reindex silently      |
 | Files created/modified this session (`Write`/`Edit`, incl. by a subagent — parent reindexes), not yet indexed — **alias's own checkout** | `index_codebase` (incremental)                                                                                                                                                                                                                     | no — reindex silently      |
 | Uncommitted edits the index has not seen (`git status` lists paths), before searching them — **alias's own checkout**                    | `index_codebase` (incremental)                                                                                                                                                                                                                     | no — reindex silently      |
-| Same two rows in a **linked worktree** (your working directory is not the alias's checkout path — `list_projects` / prime `## Project`)  | **none** — read tools overlay the tree (`path=<your working directory>`); never reindex for the tree's own edits (clone mode below excepted)                                                                                                       | —                          |
+| Same two rows in a **linked worktree** (your working directory is not the alias's checkout path — `list_projects` / prime `## Project`)  | **none** — read tools overlay the tree (`path=<your working directory>`); never reindex for the tree's own edits                                                                                                                                   | —                          |
 | Prime `## Drift` whose `Run:` line is the plain incremental (no flag)                                                                    | `tea-rags index-codebase --project <alias>` — exactly that line                                                                                                                                                                                    | no — reindex silently      |
 | Prime `## Drift` whose `Run:` line carries `--force-enrichments` or `--force`                                                            | the `Run:` command the section names                                                                                                                                                                                                               | **YES — explicit consent** |
 | Prime `## Drift` seen from a **linked worktree**                                                                                         | Drift compares the shared INDEX with the alias's own checkout and the running build — never your tree (your delta = `workingTree.changedFiles`). Run the `Run:` line exactly as printed (`--project <alias>`), never re-aimed at `path=<worktree>` | per the two rows above     |
@@ -20,37 +20,21 @@ Read tools answer for the tree at `path=<your working directory>` against the
 repository's index — floors and `treeState` reading: search-cascade "Addressing
 the Codebase". Main-checkout reindex cannot see worktree edits;
 `index_codebase path=<worktree>` seeds a separate project. Both wrong → never
-reindex for the tree's own edits. Main checkout keeps the reindex rows above:
-dense vectors of changed files lag otherwise.
+reindex for the tree's own edits — `pendingFiles` (not yet warm, a later call
+reads more) and `indexOnlyFiles` (no AST chunking, served from the index)
+included. `degraded` → its `remedy` under the consent rows above. Main checkout
+keeps the reindex rows above: dense vectors of changed files lag otherwise.
 
-## Worktree clone — only when the overlay degrades
+## Worktree clone — teardown only
 
-Per-worktree index clone is **NOT default**. Warranted ONLY when an answer's
-`workingTree.degraded` reports delta over the overlay cap (200 changed files).
-Then:
-
-| Phase            | When                                                                   | Explicit action — run it visibly                                                                                                                                                                               | Target                                                                                     |
-| ---------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| **PRECONDITION** | `degraded` over cap seen; BEFORE each later task's first tea-rags call | `tea-rags worktree info --json` → absent: `tea-rags worktree create <name> --from <src-alias> --path <abs-worktree> --no-git` (lazy) → `tea-rags index-codebase --project <src>-worktree-<name>` (incremental) | clone exists + fresh; reads pass `project=<clone alias>` + `path=<your working directory>` |
-| **TEARDOWN**     | branch finished (merge OR delete), clone exists                        | `tea-rags worktree remove <name>` (always) + on merge `tea-rags index-codebase --project <main>`                                                                                                               | clone footprint dropped; main fresh                                                        |
-| Drift            | prime / status `## Drift` is not `none`                                | the ONE `Run:` line that report ends with                                                                                                                                                                      | — (consent per the table above)                                                            |
-
-- **Run each phase explicitly — agent and user SEE it.** No background hook.
-  Very large source index → note size, confirm before cloning.
-- **Seeded path:** CREATE refuses `Target collection already exists` → earlier
-  first `index-codebase` on worktree path SEEDED an ordinary project from a
-  sibling working tree (not a clone; `worktree remove` refuses it). Its checkout
-  IS your worktree, so the alias's-own-checkout rows apply: reindex + search it
-  by path; do not delete it.
-- **Subagent-driven:** PARENT owns clone lifecycle and names the clone alias in
-  the subagent prompt; subagent never creates or reindexes a clone, passes
-  `project=<clone alias>` + `path=<its working directory>`.
-- **Teardown guaranteed for clones that exist.**
-  `dinopowers:finishing-a-development-branch` runs `worktree remove` explicitly;
-  cleanup-only `PostToolUse:Bash` hook
-  (`tea-rags/scripts/cleanup-worktree-clone.sh`) is backstop — on any
-  `git worktree remove` / `git branch -D` drops clones whose worktree path gone,
-  even when skill bypassed. Footprint cleanup only; never reindexes.
+No overlay answer calls for a per-worktree index clone: the overlay reads a
+delta of any size. A clone that exists (`tea-rags worktree create`, run by hand)
+is torn down when its branch finishes —
+`dinopowers:finishing-a-development-branch` runs
+`tea-rags worktree remove <name>`; cleanup-only `PostToolUse:Bash` hook
+(`tea-rags/scripts/cleanup-worktree-clone.sh`) is backstop on any
+`git worktree remove` / `git branch -D`. Footprint cleanup only; never
+reindexes.
 
 ## Why these three actions
 

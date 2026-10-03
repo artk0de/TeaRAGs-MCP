@@ -33,6 +33,7 @@ a skill's own choice among tea-rags tools stands.
 - project=<alias> WITHOUT path reads the alias's checkout, not a linked worktree — always include path on reads.
 - A row with treeState "modified"/"deleted" is the index's copy of a file your tree changed — may be stale.
   Need the current code → find_symbol (answers from your tree), never trust the row text.
+- pendingFiles = files not yet read from your tree (re-call later for them); indexOnlyFiles = changed non-code files (json/yaml/…) served from the index (current text → Read the file). Both rows carry treeState "modified"; neither is a reason to reindex.
 
 **Bash channel (same rules apply inside Bash):**
 - grep/rg for an identifier → find_symbol (definition) or hybrid_search with metaOnly:true or fields (usages)

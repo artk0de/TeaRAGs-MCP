@@ -157,9 +157,9 @@ alone does not change when an already-modified file is edited again; the
 status spawn. Target under 20 ms added on tea-rags; the measured number goes in
 the commit message.
 
-Cap: more than 200 changed files →
-`degraded { reason: "delta of N files over the 200-file cap", remedy: "tea-rags worktree create <name> --from <alias> --path <tree>" }`,
-no delta applied.
+Cap: superseded — the 200-file cap and its clone-mode `degraded` are removed by
+`docs/superpowers/specs/2026-10-03-working-tree-overlay-unbounded-delta-design.md`
+(unbounded delta, `pendingFiles` / `indexOnlyFiles`).
 
 ### `WorkingTreeChunkLayer` (WTO-3) — `domains/explore/working-tree/chunk-layer.ts`
 

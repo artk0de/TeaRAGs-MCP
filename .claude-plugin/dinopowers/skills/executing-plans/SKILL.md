@@ -36,8 +36,8 @@ call.
 ## Mandatory Step Order (DO NOT SKIP)
 
 1. **Step 2.0** — addressing, EVERY Task: every tea-rags read call passes
-   `path=<your working directory>`. Clone precondition ONLY after an answer's
-   `workingTree.degraded` reported a delta over the overlay cap (200 files).
+   `path=<your working directory>`. No clone, no reindex for the tree's own
+   edits.
 2. Step 2 — git-signal SAFE/CAUTION/UNSAFE verdict per Task before any edit
 3. Step 4 — verdict-gating: STOP and ask user if any UNSAFE
 4. **MUST** Step 5 — Code-Gen Cascade for generation AND behavior-modification
@@ -92,32 +92,20 @@ Output:
 If `taskFileList` empty (pure new-file creation): skip to Step 4 with verdict
 `SAFE (new files only)`.
 
-## Step 2.0 — Addressing + clone precondition (EVERY Task)
+## Step 2.0 — Addressing (EVERY Task)
 
 1. **Address the tree.** Step 2 guard + every tea-rags read call of this Task
    (and every skill it invokes) pass `path=<your working directory>` — never an
    alias alone (tea-rags search-cascade "Addressing the Codebase"). Linked
-   worktree → reads its own tree against the repository's index; no clone, no
-   reindex for the tree's own edits (index-freshness).
-2. **Clone ONLY on overlay degrade.** An answer's `workingTree.degraded` reports
-   a delta over the overlay cap (200 files) → before each later Task's first
-   tea-rags call run explicitly (user sees each command; never a hook):
+   worktree → reads its own tree against the repository's index, any delta size;
+   no clone, no reindex for the tree's own edits (index-freshness).
+2. **Read the `workingTree` marker.** `pendingFiles` → those files' rows are the
+   index's; re-call for current code. `indexOnlyFiles` → non-code rows are the
+   index's. Neither triggers a reindex. `degraded` → its `remedy` under
+   index-freshness consent.
 
-   ```bash
-   tea-rags worktree info --json                      # isWorktree: true → clone alias
-   tea-rags worktree create <name> --from <src-alias> --path "$(git rev-parse --show-toplevel)" --no-git   # absent → lazy
-   ```
-
-   then incremental `tea-rags index-codebase --project <clone alias>`, and every
-   call passes `project: "<clone alias>"` + `path=<your working directory>`.
-   CREATE refuses `Target collection already exists` → earlier `index_codebase`
-   on this path SEEDED an ordinary project (not a clone); do not delete it —
-   reindex + read it by path, tell user. Source index very large → state size,
-   confirm before cloning.
-
-- **Subagent-driven:** PARENT runs the clone step when it applies and names the
-  clone alias in the subagent prompt; subagent never reindexes, passes
-  `path=<its working directory>` (+ `project=<clone alias>` when named).
+- **Subagent-driven:** subagent never reindexes, passes
+  `path=<its working directory>`.
 - Teardown of a clone that exists: `dinopowers:finishing-a-development-branch`.
 
 ## Step 2 — Pre-touch guard call
@@ -353,8 +341,8 @@ existing-file Task.
   DDG (MODIFY: tests-at-risk + `get_callers`).
 - Guard addressed an alias without `path` inside a worktree → wrong tree; redo
   with `path=<your working directory>`.
-- Reindexed (or cloned) for the worktree's own uncommitted edits without a
-  `degraded` over-cap answer → unneeded; overlay already reads the tree.
+- Reindexed (or cloned) for the worktree's own uncommitted edits, or for
+  `pendingFiles` → unneeded; overlay already reads the tree.
 
 ## Common Mistakes
 
@@ -369,4 +357,4 @@ existing-file Task.
 | For new-file Task: `Read sibling.ts` then `Write new.ts` directly     | Skips Step 5. Sibling-by-Read picks arbitrary example, ignores `bugFixRate`/`blameDominantAuthor` signals. Use `Skill(tea-rags:data-driven-generation)`. |
 | Generation Task → guard SAFE (new file) → straight to executing-plans | SAFE (new file) only resolves blast-radius gate. Step 5 is a SEPARATE gate — strategy + template + style still needed. Both gates must clear.            |
 | Modification Task → guard SAFE → edit in-context                      | SAFE says file is safe to touch, not that callers survive new behavior. DDG MODIFY runs tests-at-risk + `get_callers` — Step 5 still applies.            |
-| Reindex "after commit" in a worktree as cleanup of finished Task      | Overlay already reads the tree. Clone + reindex only after a `degraded` over-cap answer (Step 2.0).                                                      |
+| Reindex "after commit" in a worktree as cleanup of finished Task      | Overlay already reads the tree, any delta size (Step 2.0).                                                                                               |
