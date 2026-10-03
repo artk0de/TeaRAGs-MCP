@@ -1,4 +1,7 @@
-from swe_lite_ab.indexing import alias_for, chain_order, index_commands
+import hashlib
+
+from swe_lite_ab.indexing import alias_for, chain_order, index_commands, index_stats
+from swe_lite_ab.repos import task_dir
 from swe_lite_ab.tasks import Task
 
 
@@ -24,10 +27,20 @@ def test_first_task_indexes_from_scratch():
 
 def test_next_task_seeds_from_the_earlier_one():
     cmds = index_commands(t("b", "x/r", "2021"), "swe-a", "worktree-create")
-    assert cmds[0][:4] == ["tea-rags", "worktree", "create", "swe-b"]
-    assert cmds[0][4:6] == ["--from", "swe-a"]
-    assert "--no-git" in cmds[0]
-    assert cmds[1][:2] == ["tea-rags", "index-codebase"]
+    path = str(task_dir("b"))
+    clone = "w" + hashlib.sha1(b"b").hexdigest()[:8]
+    assert cmds == [
+        ["tea-rags", "worktree", "create", clone, "--from", "swe-a", "--path", path, "--no-git", "--json"],
+        ["tea-rags", "projects", "unregister", "--name", f"swe-a-worktree-{clone}"],
+        ["tea-rags", "projects", "register", "--path", path, "--name", "swe-b"],
+        ["tea-rags", "index-codebase", "--project", "swe-b", "--wait-enrichments", "--json"],
+    ]
+
+
+def test_index_stats_reads_the_final_json_object():
+    out = 'noise\n{"overallMs": 1234, "filesCount": 10, "chunksCount": 99, "outcome": {"measured": true}}\n'
+    assert index_stats(out) == {"overallMs": 1234, "filesCount": 10, "chunksCount": 99}
+    assert index_stats("not json") == {}
 
 
 def test_full_mode_never_seeds():
