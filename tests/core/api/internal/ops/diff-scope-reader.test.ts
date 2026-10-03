@@ -16,6 +16,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { importGitHistory } from "../../../__helpers__/git-history-import.js";
 import { copyGitRepoTemplate } from "../../../__helpers__/git-repo-template.js";
 import {
   createGitWorkingTreeFixture,
@@ -155,23 +156,33 @@ describe("readDiffScope", { timeout: 60_000 }, () => {
       const copy = copyGitRepoTemplate(
         "diff-scope-reader:moved-base",
         (root) => {
-          const built = buildChangedRepo(root);
+          const built = join(root, "repo");
+          mkdirSync(built);
           // The fork point carries `shared.ts`; the branch commits its change; main then rewrites `shared.ts`.
-          writeFileSync(join(built, CHANGED), ORIGINAL);
-          writeFileSync(join(built, SHARED), "export class Commit {}\n");
-          git(built, "add", "-A");
-          git(built, "commit", "-q", "-m", "shared");
-          const fork = git(built, "rev-parse", "HEAD").trim();
-          git(built, "checkout", "-q", "-b", "feat");
-          writeFileSync(join(built, CHANGED), CHANGED_TEXT);
-          git(built, "add", "-A");
-          git(built, "commit", "-q", "-m", "feat");
-          git(built, "checkout", "-q", "main");
-          writeFileSync(join(built, SHARED), "export class Kommit {}\n");
-          git(built, "add", "-A");
-          git(built, "commit", "-q", "-m", "main moves on");
-          git(built, "checkout", "-q", "feat");
-          return fork;
+          // ONE fast-import instead of ~17 init/add/commit/checkout spawns (bd tea-rags-mcp-1r3e5).
+          const t = { name: "t", email: "t@x" };
+          const now = new Date();
+          return importGitHistory(
+            built,
+            [
+              { message: "init", author: t, authorDate: now, writes: { [CHANGED]: ORIGINAL } },
+              {
+                label: "fork",
+                message: "shared",
+                author: t,
+                authorDate: now,
+                writes: { [SHARED]: "export class Commit {}\n" },
+              },
+              { branch: "feat", message: "feat", author: t, authorDate: now, writes: { [CHANGED]: CHANGED_TEXT } },
+              {
+                message: "main moves on",
+                author: t,
+                authorDate: now,
+                writes: { [SHARED]: "export class Kommit {}\n" },
+              },
+            ],
+            { checkout: "feat" },
+          ).fork;
         },
         { prefix: "diff-scope-reader-" },
       );
