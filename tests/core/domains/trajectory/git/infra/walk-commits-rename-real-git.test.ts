@@ -19,12 +19,13 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { copyGitRepoTemplate } from "../../../../__helpers__/git-repo-template.js";
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import { buildChunkChurnMapUncached } from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import { GitCommitDiscovery } from "../../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
@@ -77,48 +78,57 @@ const CHUNKS = (prefix: string) => [
   { chunkId: `${prefix}-other`, startLine: 16, endLine: 18 },
 ];
 
+/**
+ * The fixture history, laid out under `repo`. Every test reads the same one, so
+ * it is built once per process and copied per test (bd tea-rags-mcp-2z4sa).
+ */
+function buildRenameRepo(repo: string): void {
+  const g = (args: string[], iso: string): string => gitIn(repo, args, iso);
+  const commit = (iso: string, message: string): void => {
+    g(["add", "-A"], iso);
+    g(["commit", "-q", "-m", message], iso);
+  };
+  const write = (path: string, v: number): void => {
+    writeFileSync(join(repo, path), source(v));
+  };
+
+  g(["init", "-q", "-b", "main"], at(10, 0));
+  g(["config", "user.email", "t@example.com"], at(10, 0));
+  g(["config", "user.name", "Test"], at(10, 0));
+  g(["config", "commit.gpgsign", "false"], at(10, 0));
+  mkdirSync(join(repo, "src"));
+
+  // Renamed file: 3 content commits at the old path (sessions >= 2h apart).
+  write("src/old-name.ts", 1);
+  commit(at(10, 8), "feat: add computeTotal");
+  write("src/old-name.ts", 2);
+  commit(at(10, 11), "fix: factor 2");
+  write("src/old-name.ts", 3);
+  commit(at(10, 14), "fix: factor 3");
+  // Pure rename (R100) — changes no line, so `git log -L` does not list it.
+  g(["mv", "src/old-name.ts", "src/new-name.ts"], at(9, 9));
+  commit(at(9, 9), "refactor: rename old-name to new-name");
+  write("src/new-name.ts", 4);
+  commit(at(9, 13), "fix: factor 4");
+
+  // Control: the same 4 content commits, never renamed.
+  write("src/control.ts", 1);
+  commit(at(8, 8), "feat: add control");
+  write("src/control.ts", 2);
+  commit(at(8, 11), "fix: control 2");
+  write("src/control.ts", 3);
+  commit(at(8, 14), "fix: control 3");
+  write("src/control.ts", 4);
+  commit(at(8, 18), "fix: control 4");
+}
+
 describe("chunk walk follows a rename like `git log -L` (bd tea-rags-mcp-z8w16, real git)", () => {
   let repo: string;
 
   beforeEach(() => {
-    repo = mkdtempSync(join(TMP_BASE, "z8w16-"));
-    const g = (args: string[], iso: string): string => gitIn(repo, args, iso);
-    const commit = (iso: string, message: string): void => {
-      g(["add", "-A"], iso);
-      g(["commit", "-q", "-m", message], iso);
-    };
-    const write = (path: string, v: number): void => {
-      writeFileSync(join(repo, path), source(v));
-    };
-
-    g(["init", "-q", "-b", "main"], at(10, 0));
-    g(["config", "user.email", "t@example.com"], at(10, 0));
-    g(["config", "user.name", "Test"], at(10, 0));
-    g(["config", "commit.gpgsign", "false"], at(10, 0));
-    mkdirSync(join(repo, "src"));
-
-    // Renamed file: 3 content commits at the old path (sessions >= 2h apart).
-    write("src/old-name.ts", 1);
-    commit(at(10, 8), "feat: add computeTotal");
-    write("src/old-name.ts", 2);
-    commit(at(10, 11), "fix: factor 2");
-    write("src/old-name.ts", 3);
-    commit(at(10, 14), "fix: factor 3");
-    // Pure rename (R100) — changes no line, so `git log -L` does not list it.
-    g(["mv", "src/old-name.ts", "src/new-name.ts"], at(9, 9));
-    commit(at(9, 9), "refactor: rename old-name to new-name");
-    write("src/new-name.ts", 4);
-    commit(at(9, 13), "fix: factor 4");
-
-    // Control: the same 4 content commits, never renamed.
-    write("src/control.ts", 1);
-    commit(at(8, 8), "feat: add control");
-    write("src/control.ts", 2);
-    commit(at(8, 11), "fix: control 2");
-    write("src/control.ts", 3);
-    commit(at(8, 14), "fix: control 3");
-    write("src/control.ts", 4);
-    commit(at(8, 18), "fix: control 4");
+    // Resolved: the copy root sits under `tmpdir()` as named, `gitIn` guards the
+    // symlink-free `TMP_BASE`.
+    repo = realpathSync(copyGitRepoTemplate("z8w16-rename", buildRenameRepo, { prefix: "z8w16-" }).root);
   });
 
   afterEach(() => {

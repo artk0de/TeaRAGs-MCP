@@ -20,8 +20,9 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { copyGitRepoTemplate } from "../../../../__helpers__/git-repo-template.js";
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import { buildChunkChurnMapUncached } from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import { GitCommitDiscovery } from "../../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
@@ -52,10 +53,14 @@ describe("chunk walk visits commits in history order", () => {
       },
     }).trim();
   };
-  const commit = (content: string, message: string, dates: { author: string; committer: string }): string => {
+  /** Commits `content` as {@link FILE}; the sha is read only by callers that need it. */
+  const commitFile = (content: string, message: string, dates: { author: string; committer: string }): void => {
     writeFileSync(join(repo, FILE), content);
     git(["add", "-A"], dates);
     git(["commit", "-q", "-m", message], dates);
+  };
+  const commit = (content: string, message: string, dates: { author: string; committer: string }): string => {
+    commitFile(content, message, dates);
     return git(["rev-parse", "HEAD"], dates);
   };
   const oracle = (start: number, end: number): string[] =>
@@ -91,25 +96,49 @@ describe("chunk walk visits commits in history order", () => {
     return overlays.get(FILE);
   };
 
-  beforeEach(() => {
-    repo = realpathSync(mkdtempSync(join(tmpdir(), "walk-log-order-")));
-    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repo });
-    mkdirSync(join(repo, "src"));
-  });
+  /** An empty repository with `src/` laid out at `root`. */
+  const initRepo = (root: string): void => {
+    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: root });
+    mkdirSync(join(root, "src"));
+  };
 
-  afterEach(() => {
-    rmSync(repo, { recursive: true, force: true });
-  });
+  /** A fresh empty repository of this test's own. */
+  const freshRepo = (): void => {
+    repo = realpathSync(mkdtempSync(join(tmpdir(), "walk-log-order-")));
+    initRepo(repo);
+  };
 
   // Five rows, then a function appended at rows 7-10 — the r4t `user.ts` shape.
   const BASE = 'import { x } from "./x";\n\nexport function a(): number {\n  return x + 1;\n}\n';
   const EDITED = BASE.replace("x + 1", "x + 10");
   const APPENDED = `${EDITED}\nexport function appended(): number {\n  // appended last\n  return 2;\n}\n`;
 
+  /**
+   * `init` (BASE) then `edit a` (EDITED), both dated a day ago — the history the
+   * backdated and the rebased cases append to. Built once per process and copied
+   * per test (bd tea-rags-mcp-2z4sa).
+   */
+  const recentBaseThenEdited = (): void => {
+    const copy = copyGitRepoTemplate(
+      "walk-log-order-recent-base-edited",
+      (root) => {
+        repo = root;
+        initRepo(root);
+        const recent = { author: isoDaysAgo(1), committer: isoDaysAgo(1) };
+        commitFile(BASE, "init", recent);
+        commitFile(EDITED, "edit a", recent);
+      },
+      { prefix: "walk-log-order-" },
+    );
+    repo = realpathSync(copy.root);
+  };
+
+  afterEach(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
+
   it("credits a function to the backdated commit on top of HEAD that appended it", async () => {
-    const recent = { author: isoDaysAgo(1), committer: isoDaysAgo(1) };
-    commit(BASE, "init", recent);
-    commit(EDITED, "edit a", recent);
+    recentBaseThenEdited();
     // Committed last, dated before everything below it.
     const backdated = commit(APPENDED, "append", { author: isoDaysAgo(9), committer: isoDaysAgo(9) });
 
@@ -121,9 +150,7 @@ describe("chunk walk visits commits in history order", () => {
   });
 
   it("credits a rebased commit (old author date, new committer date) the way git log -L does", async () => {
-    const recent = { author: isoDaysAgo(1), committer: isoDaysAgo(1) };
-    commit(BASE, "init", recent);
-    commit(EDITED, "edit a", recent);
+    recentBaseThenEdited();
     const rebased = commit(APPENDED, "append", { author: isoDaysAgo(9), committer: isoDaysAgo(0) });
 
     const overlays = await walk({ a: [3, 5], appended: [7, 10] });
@@ -135,14 +162,15 @@ describe("chunk walk visits commits in history order", () => {
 
   it("keeps commits made within one second in history order", async () => {
     // One timestamp for every commit: only history order separates them.
+    freshRepo();
     const same = { author: isoDaysAgo(2), committer: isoDaysAgo(2) };
-    commit(BASE, "init", same);
-    for (let i = 2; i <= 6; i++) commit(BASE.replace("x + 1", `x + ${i}`), `edit a ${i}`, same);
+    commitFile(BASE, "init", same);
+    for (let i = 2; i <= 6; i++) commitFile(BASE.replace("x + 1", `x + ${i}`), `edit a ${i}`, same);
     const inserted = BASE.replace("x + 1", "x + 6").replace(
       "export function a",
       "export function zebra(): number {\n  // inserted above a\n  return 42;\n}\n\nexport function a",
     );
-    commit(inserted, "insert zebra", same);
+    commitFile(inserted, "insert zebra", same);
 
     const overlays = await walk({ zebra: [3, 6], a: [8, 10] });
 

@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { copyGitRepoTemplate } from "../../core/__helpers__/git-repo-template.js";
+
 // The derived pins file must never stop a merge: the `version-pins` merge driver
 // keeps ours, and `repin-on-merge.sh` recomputes the pins inside the merge commit.
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -57,13 +59,39 @@ function writePins(dir: string, content: string): void {
 
 const dirs: string[] = [];
 
-function tempRepo(): string {
-  const dir = mkdtempSync(join(TMP_BASE, "version-pins-merge-"));
-  dirs.push(dir);
+function initRepo(dir: string): void {
   gitIn(dir, ["init", "-q", "-b", "main"]);
   gitIn(dir, ["config", "user.name", "Test"]);
   gitIn(dir, ["config", "user.email", "t@example.com"]);
   gitIn(dir, ["config", "commit.gpgsign", "false"]);
+}
+
+function tempRepo(): string {
+  const dir = mkdtempSync(join(TMP_BASE, "version-pins-merge-"));
+  dirs.push(dir);
+  initRepo(dir);
+  return dir;
+}
+
+/**
+ * A repository holding one `seed` commit of an empty pins file. Most tests
+ * start from it, so it is built once per process and copied per test (bd
+ * tea-rags-mcp-2z4sa). The copy root is resolved because `assertTemp` guards
+ * the symlink-free `TMP_BASE`.
+ */
+function seeded(): string {
+  const copy = copyGitRepoTemplate(
+    "version-pins-seeded",
+    (dir) => {
+      initRepo(dir);
+      writePins(dir, "{}\n");
+      gitIn(dir, ["add", "-A"]);
+      gitIn(dir, ["commit", "-q", "-m", "seed"]);
+    },
+    { prefix: "version-pins-merge-", env: hermeticEnv() },
+  );
+  const dir = realpathSync(copy.root);
+  dirs.push(dir);
   return dir;
 }
 
@@ -120,14 +148,6 @@ describe("repin-on-merge.sh", () => {
       encoding: "utf8",
       env: hermeticEnv({ REPIN_CMD: repinCmd }),
     });
-  }
-
-  function seeded(): string {
-    const dir = tempRepo();
-    writePins(dir, "{}\n");
-    gitIn(dir, ["add", "-A"]);
-    gitIn(dir, ["commit", "-q", "-m", "seed"]);
-    return dir;
   }
 
   // The stub stands in for `npm run pin:lang-versions`: it rewrites the pins
@@ -190,14 +210,6 @@ describe("merge hooks end to end", () => {
   function gitWithStub(dir: string, args: string[]): ReturnType<typeof spawnSync> {
     assertTemp(dir);
     return spawnSync("git", args, { cwd: dir, encoding: "utf8", env: hermeticEnv({ REPIN_CMD: STUB }) });
-  }
-
-  function seeded(): string {
-    const dir = tempRepo();
-    writePins(dir, "{}\n");
-    gitIn(dir, ["add", "-A"]);
-    gitIn(dir, ["commit", "-q", "-m", "seed"]);
-    return dir;
   }
 
   it("a clean `git merge` commits the re-pinned file in the merge commit itself", () => {
