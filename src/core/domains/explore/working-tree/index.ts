@@ -70,3 +70,13 @@ export {
   recordTreeGraphState,
 } from "./tree-graph-marker.js";
 export { touchedBasePointIds, WorkingTreeTouchedBasePoints } from "./touched-base-points.js";
+export {
+  WORKING_TREE_WATCH_DEBOUNCE_MS,
+  WORKING_TREE_WATCH_IDLE_MS,
+  WorkingTreeWatcher,
+  type WorkingTreeFsWatch,
+  type WorkingTreeFsWatchHandle,
+  type WorkingTreeWatcherDeps,
+  type WorkingTreeWatchTimerHandle,
+  type WorkingTreeWatchTimers,
+} from "./watcher.js";
