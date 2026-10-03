@@ -11,7 +11,11 @@
  *   It is now a `has_id` exclusion of the touched files' base point ids
  *   (5–8 ms), the ids read by `WorkingTreeTouchedBasePoints` (its own spec).
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as sparse from "../../../../../src/core/adapters/qdrant/sparse.js";
 import type { ScrollChunk } from "../../../../../src/core/domains/explore/chunk-grouping/types.js";
@@ -59,6 +63,116 @@ describe("scoreWorkingTreeRows — one BM25 vector per row", () => {
     });
 
     expect(scored.map((r) => r.id)).toEqual(["t1"]);
+  });
+});
+
+/**
+ * A one-shot CLI process (WTO unbounded delta): every call is a new process,
+ * so the per-row cache above never reaches the next call — 674 delta files
+ * cost ~190 ms of BM25 vectorizing per hybrid_search. The vectors are stored
+ * beside the rows they belong to, so a process that reads a stored entry
+ * vectorizes nothing. A "new process" here is a fresh module graph
+ * (`vi.resetModules`): none of the previous one's module state survives.
+ */
+describe("BM25 vectors of stored rows", () => {
+  const COLLECTION = "code_sparse";
+  const CONFIG = { chunkSize: 2500, chunkOverlap: 300, maxChunkSize: 2500 };
+  const FILES: Record<string, string> = {
+    "src/a.ts": "export function storedSparseHelper(): number { return 1; }\n",
+    "src/b.ts": "let otherThing = 2;\n",
+  };
+  let scratch: string;
+  let tree: string;
+  let rootDir: string;
+
+  beforeEach(() => {
+    scratch = mkdtempSync(join(tmpdir(), "wt-sparse-floor-"));
+    tree = join(scratch, "tree");
+    rootDir = join(scratch, "working-tree");
+    for (const [relativePath, content] of Object.entries(FILES)) {
+      mkdirSync(dirname(join(tree, relativePath)), { recursive: true });
+      writeFileSync(join(tree, relativePath), content);
+    }
+  });
+
+  afterEach(() => {
+    rmSync(scratch, { recursive: true, force: true });
+  });
+
+  /** A fresh module graph: what a new process would load. */
+  const newProcess = async () => {
+    vi.resetModules();
+    const bm25 = await import("../../../../../src/core/adapters/qdrant/sparse.js");
+    const floor = await import("../../../../../src/core/domains/explore/working-tree/sparse-floor.js");
+    const workingTree = await import("../../../../../src/core/domains/explore/working-tree/index.js");
+    return { bm25, floor, workingTree };
+  };
+
+  /** One row per file, its content the file's code — as ingest's chunk payload carries it. */
+  const chunkFile = async (_pool: unknown, file: { relativePath: string; code: string }): Promise<ScrollChunk[]> => [
+    { id: `id:${file.relativePath}`, payload: { relativePath: file.relativePath, content: file.code } },
+  ];
+
+  /** Chunk the delta through a layer over the shared store dir and score it; counts row vectorizations. */
+  const scoreInNewProcess = async () => {
+    const { bm25, floor, workingTree } = await newProcess();
+    const querySparse = bm25.generateSparseVector("storedSparseHelper");
+    const vectorize = vi.mocked(bm25.generateSparseVector);
+    vectorize.mockClear();
+    const layer = workingTree.createWorkingTreeChunkLayer({
+      createPool: () => ({ shutdown: async () => undefined }),
+      chunkFile,
+      store: workingTree.createWorkingTreeChunkStore({ rootDir }),
+    });
+    const read = await layer.chunk(tree, Object.keys(FILES), CONFIG, COLLECTION);
+    const scored = floor.scoreWorkingTreeRows(read.chunks, { querySparse, legLimit: 10 });
+    await layer.dispose();
+    return { ids: scored.map((r) => r.id), rowVectorizations: vectorize.mock.calls.length, read };
+  };
+
+  it("should vectorize no row in a new process that reads the rows from the store", async () => {
+    const first = await scoreInNewProcess();
+    const second = await scoreInNewProcess();
+
+    expect(first.ids).toEqual(["id:src/a.ts"]);
+    expect(first.rowVectorizations).toBeGreaterThan(0);
+    expect(second.ids).toEqual(first.ids);
+    expect(second.rowVectorizations).toBe(0);
+  });
+
+  it("should score an entry stored without vectors, and store them for the next process", async () => {
+    const { read } = await scoreInNewProcess();
+    // Rewrite each entry as an earlier build stored it: rows, no BM25 vectors.
+    const { workingTree } = await newProcess();
+    const store = workingTree.createWorkingTreeChunkStore({ rootDir });
+    for (const key of read.storeKeys?.values() ?? []) {
+      const entry = await store.get(COLLECTION, key);
+      if (!entry) throw new Error(`no stored entry for ${key.relativePath}`);
+      const { lastReadAt: _lastReadAt, sparseVectors: _sparseVectors, ...legacy } = entry;
+      await store.put(COLLECTION, legacy);
+      expect((await store.get(COLLECTION, key))?.sparseVectors).toBeUndefined();
+    }
+
+    const legacyRead = await scoreInNewProcess();
+    const afterBackfill = await scoreInNewProcess();
+
+    expect(legacyRead.ids).toEqual(["id:src/a.ts"]);
+    expect(afterBackfill.ids).toEqual(["id:src/a.ts"]);
+    expect(afterBackfill.rowVectorizations).toBe(0);
+  });
+
+  it("should vectorize one content once per process, whichever row object carries it", async () => {
+    const { bm25, floor } = await newProcess();
+    const querySparse = bm25.generateSparseVector("memoSharedContent");
+    const vectorize = vi.mocked(bm25.generateSparseVector);
+    vectorize.mockClear();
+    const content = "export function memoSharedContent(): void {}\n";
+
+    floor.scoreWorkingTreeRows([row("t1", content)], { querySparse, legLimit: 10 });
+    const scored = floor.scoreWorkingTreeRows([row("t2", content, "src/copy.ts")], { querySparse, legLimit: 10 });
+
+    expect(scored.map((r) => r.id)).toEqual(["t2"]);
+    expect(vectorize).toHaveBeenCalledTimes(1);
   });
 });
 

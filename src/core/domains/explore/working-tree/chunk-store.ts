@@ -11,7 +11,9 @@
  * Every write goes through a {@link WorkingTreeFileWriter} (a pid-named temp
  * renamed into place; a temp whose writer is gone is swept at once — see
  * `file-writer.ts`). `<key>.vectors.json` holds the
- * dense vectors of the entry's rows (WTO-5) and lives and dies with the entry.
+ * dense vectors of the entry's rows (WTO-5) and lives and dies with the entry;
+ * `<key>.sparse.json`, optional, their BM25 vectors, written by `put` before
+ * the meta, so a one-shot process that reads the rows vectorizes none of them.
  *
  * Retention (`sweep`): a tree root that no longer exists → evict now; content
  * the tree no longer holds at that path (the path is gone, or holds other
@@ -57,6 +59,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
+import type { SparseVector } from "../../../adapters/qdrant/types.js";
 import { readBlobCommitTime as gitReadBlobCommitTime } from "../../../adapters/vcs/git/git-cli/client.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import {
@@ -78,6 +81,12 @@ export interface WorkingTreeChunkStoreEntry extends WorkingTreeChunkStoreKey {
   /** git hash-object id of the content — how `sweep` asks git whether it is committed. */
   blobId: string;
   rows: readonly ScrollChunk[];
+  /**
+   * The rows' BM25 vectors (the sparse floor's), written with the entry so a
+   * new process vectorizes nothing it reads from here. Optional: an entry
+   * stored without them — or whose file is unreadable — still serves its rows.
+   */
+  sparseVectors?: WorkingTreeChunkSparseVectors;
   lastReadAt: number;
 }
 
@@ -90,6 +99,9 @@ export interface WorkingTreeChunkStoreSweep {
 
 /** Dense vectors of an entry's rows, keyed by the sha256 of each row's `content`. */
 export type WorkingTreeChunkVectors = ReadonlyMap<string, number[]>;
+
+/** BM25 vectors of an entry's rows, keyed by the sha256 of each row's `content`. */
+export type WorkingTreeChunkSparseVectors = ReadonlyMap<string, SparseVector>;
 
 export interface WorkingTreeChunkStore {
   /** The entry, with `lastReadAt` bumped to now (durably); undefined on a miss. */
@@ -169,6 +181,10 @@ const META_SUFFIX = ".meta.json";
 const ROWS_SUFFIX = ".rows.json";
 /** Dense vectors beside the rows (WTO-5): same entry, same retention. */
 const VECTORS_SUFFIX = ".vectors.json";
+/** BM25 vectors of the rows: written by `put` with the rows, before the meta commits the entry. */
+const SPARSE_SUFFIX = ".sparse.json";
+/** Every file of an entry besides its meta: what an entry with no meta leaves behind. */
+const ENTRY_BODY_SUFFIXES = [ROWS_SUFFIX, VECTORS_SUFFIX, SPARSE_SUFFIX];
 /** A collection name is one path segment; anything else would address outside the root. */
 const COLLECTION_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -277,6 +293,25 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
     await fs.rm(join(dir, `${name}${META_SUFFIX}`), { force: true });
     await fs.rm(join(dir, `${name}${ROWS_SUFFIX}`), { force: true });
     await fs.rm(join(dir, `${name}${VECTORS_SUFFIX}`), { force: true });
+    await fs.rm(join(dir, `${name}${SPARSE_SUFFIX}`), { force: true });
+  };
+
+  /** The stored BM25 vectors; undefined when absent or unreadable — the rows still serve. */
+  const readSparseVectors = async (path: string): Promise<WorkingTreeChunkSparseVectors | undefined> => {
+    try {
+      const stored = JSON.parse(await fs.readFile(path, "utf8")) as { vectors?: unknown };
+      if (!stored.vectors || typeof stored.vectors !== "object") return undefined;
+      const vectors = Object.entries(stored.vectors as Record<string, Partial<SparseVector>>);
+      const wellFormed = vectors.every(
+        ([, vector]) =>
+          Array.isArray(vector.indices) &&
+          Array.isArray(vector.values) &&
+          vector.indices.length === vector.values.length,
+      );
+      return wellFormed ? new Map(vectors as [string, SparseVector][]) : undefined;
+    } catch {
+      return undefined;
+    }
   };
 
   /** The entry's stored vectors file, when its meta names this very key. */
@@ -374,19 +409,25 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
       } catch {
         return undefined;
       }
+      const sparseVectors = await readSparseVectors(join(dir, `${name}${SPARSE_SUFFIX}`));
       const bumped: StoredMeta = { ...meta, lastReadAt: now() };
       await writeAtomic(join(dir, `${name}${META_SUFFIX}`), JSON.stringify(bumped));
       const { treeRoot, relativePath, contentSha256, chunkerFingerprint, blobId, lastReadAt } = bumped;
-      return { treeRoot, relativePath, contentSha256, chunkerFingerprint, blobId, lastReadAt, rows };
+      const entry = { treeRoot, relativePath, contentSha256, chunkerFingerprint, blobId, lastReadAt, rows };
+      return sparseVectors ? { ...entry, sparseVectors } : entry;
     },
 
     async put(collectionName, entry) {
       const dir = collectionDir(collectionName);
       if (!dir) return;
-      const { rows, ...key } = entry;
+      const { rows, sparseVectors, ...key } = entry;
       const name = entryKey(key);
       await fs.mkdir(dir, { recursive: true });
       await writeAtomic(join(dir, `${name}${ROWS_SUFFIX}`), JSON.stringify(rows));
+      // The entry is what this put says: no vectors given → none left from an earlier put.
+      const sparsePath = join(dir, `${name}${SPARSE_SUFFIX}`);
+      if (sparseVectors) await writeAtomic(sparsePath, JSON.stringify({ vectors: Object.fromEntries(sparseVectors) }));
+      else await fs.rm(sparsePath, { force: true });
       const meta: StoredMeta = { ...key, lastReadAt: now() };
       await writeAtomic(join(dir, `${name}${META_SUFFIX}`), JSON.stringify(meta));
     },
@@ -468,7 +509,7 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
         // A temp goes once its writer is gone (named by pid), else after the grace.
         await reapAbandonedWorkingTreeTemps(dir, { at, graceMs: ABANDONED_WRITE_GRACE_MS });
         for (const file of files) {
-          const abandoned = [ROWS_SUFFIX, VECTORS_SUFFIX].some(
+          const abandoned = ENTRY_BODY_SUFFIXES.some(
             (suffix) => file.name.endsWith(suffix) && !metaNames.has(file.name.slice(0, -suffix.length)),
           );
           if (!abandoned) continue;
@@ -492,11 +533,12 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
           const rowsBytes = await sizeOf(join(dir, `${name}${ROWS_SUFFIX}`));
           const metaBytes = await sizeOf(join(dir, `${name}${META_SUFFIX}`));
           const vectorsBytes = (await sizeOf(join(dir, `${name}${VECTORS_SUFFIX}`))) ?? 0;
+          const sparseBytes = (await sizeOf(join(dir, `${name}${SPARSE_SUFFIX}`))) ?? 0;
           const verdict =
             !meta || rowsBytes === undefined || metaBytes === undefined
               ? "evict"
               : await verdictOf(meta, latestReadOfContent);
-          const bytes = (rowsBytes ?? 0) + (metaBytes ?? 0) + vectorsBytes;
+          const bytes = (rowsBytes ?? 0) + (metaBytes ?? 0) + vectorsBytes + sparseBytes;
           if (verdict === "evict" || !meta) {
             await evict(dir, name);
             evicted++;

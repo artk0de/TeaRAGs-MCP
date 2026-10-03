@@ -25,8 +25,9 @@
  * Per-query cost must not grow with the delta (bd tea-rags-mcp-xi2r9, live
  * probe P2-6 — 159 touched files: hybrid 365 ms against semantic 40 ms):
  *
- *   - a row's BM25 vector is computed once per row, not once per query
- *     (`rowSparseVectors`);
+ *   - a row's BM25 vector is computed once per content, not once per query,
+ *     and stored with the rows, so a new process reads it (`rowSparseVectors`,
+ *     `contentSparseVectors`);
  *   - the base rows of touched files leave the Qdrant request as ONE `has_id`
  *     condition over their point ids (`WorkingTreeTouchedBasePoints`,
  *     {@link excludeWorkingTreeBaseIds}). An exclusion by path is checked per
@@ -39,11 +40,14 @@
  *     set and index revision — the read the delta signals share.
  */
 
+import { createHash } from "node:crypto";
+
 import { payloadMatchesFilter } from "../../../adapters/qdrant/filters/payload-match.js";
 import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
 import type { SparseVector } from "../../../adapters/qdrant/types.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import type { ExploreResult } from "../strategies/types.js";
+import type { WorkingTreeChunkSparseVectors } from "./chunk-store.js";
 
 /**
  * The `k` of Qdrant's Reciprocal Rank Fusion. `QdrantSearchExecutor#hybridSearch`
@@ -159,23 +163,76 @@ export function workingTreeRowAdmitted(
 }
 
 /**
- * Each delta row's BM25 vector, keyed by the row OBJECT. The chunk layer hands
- * every query the same row objects out of its content cache, so identity is a
- * free key — no hashing of content per query, which would cost about what the
- * vectorizing did — and an entry is collected with its row when the layer's
- * cache evicts it, so the map is bounded by the rows alive anyway. The stored
- * content is compared on read: a row whose payload changed is re-vectorized.
- * Persisting the vectors beside the rows in the chunk store was the other
- * option; it changes the store's entry format to save a cost this map already
- * removes for every query after a tree's first.
+ * Each delta row's BM25 vector, in two tiers.
+ *
+ * By row OBJECT (`rowSparseVectors`): the chunk layer hands every query the
+ * same row objects out of its content cache, so identity is a free key — no
+ * hashing of content per query — and an entry is collected with its row when
+ * the layer's cache evicts it. The stored content is compared on read: a row
+ * whose payload changed is looked up again.
+ *
+ * By content sha256 (`contentSparseVectors`), process-wide: a row object the
+ * first tier has not seen — a re-chunk after an edit keeps most of a file's
+ * chunk contents, a store read hands out new objects — costs one hash, not a
+ * vectorizing. The chunk layer seeds it with the vectors the chunk store keeps
+ * beside the rows ({@link rememberWorkingTreeSparseVectors}) and stores the
+ * ones a fresh chunk needs ({@link computeWorkingTreeSparseVectors}), so a
+ * one-shot process that reads its delta from the store vectorizes nothing.
+ * Bounded by {@link WORKING_TREE_SPARSE_MEMO_MAX_CONTENTS}, oldest out first.
  */
 const rowSparseVectors = new WeakMap<ScrollChunk, { content: string; weights: Map<number, number> }>();
 
+/**
+ * Contents whose BM25 vector the process keeps. Measured over this repo's
+ * `src/core/domains` cut into 1.5 KB rows: ~80 distinct tokens per row, ~2 KB
+ * of JSON, so the memo stays near 40 MB at the cap — the rows of several
+ * thousand delta files. Vectorizing a row cost ~53 µs there, its sha256 ~2.4 µs.
+ */
+export const WORKING_TREE_SPARSE_MEMO_MAX_CONTENTS = 20_000;
+const contentSparseVectors = new Map<string, SparseVector>();
+
+const contentSha256Of = (content: string): string => createHash("sha256").update(content).digest("hex");
+
+function memoizeSparseVector(contentSha256: string, vector: SparseVector): void {
+  if (contentSparseVectors.has(contentSha256)) contentSparseVectors.delete(contentSha256);
+  else if (contentSparseVectors.size >= WORKING_TREE_SPARSE_MEMO_MAX_CONTENTS) {
+    const oldest = contentSparseVectors.keys().next().value;
+    if (oldest !== undefined) contentSparseVectors.delete(oldest);
+  }
+  contentSparseVectors.set(contentSha256, vector);
+}
+
+function sparseVectorOfContent(content: string, contentSha256: string): SparseVector {
+  const memoized = contentSparseVectors.get(contentSha256);
+  if (memoized) return memoized;
+  const vector = generateSparseVector(content);
+  memoizeSparseVector(contentSha256, vector);
+  return vector;
+}
+
+const contentOf = (row: ScrollChunk): string => (typeof row.payload.content === "string" ? row.payload.content : "");
+
+/** Make vectors a chunk store kept beside its rows known to this process's scoring. */
+export function rememberWorkingTreeSparseVectors(vectors: WorkingTreeChunkSparseVectors): void {
+  for (const [contentSha256, vector] of vectors) memoizeSparseVector(contentSha256, vector);
+}
+
+/** The BM25 vector of every row's content, by content sha256 — what the chunk store keeps beside the rows. */
+export function computeWorkingTreeSparseVectors(rows: readonly ScrollChunk[]): WorkingTreeChunkSparseVectors {
+  const vectors = new Map<string, SparseVector>();
+  for (const row of rows) {
+    const content = contentOf(row);
+    const contentSha256 = contentSha256Of(content);
+    vectors.set(contentSha256, sparseVectorOfContent(content, contentSha256));
+  }
+  return vectors;
+}
+
 function sparseWeightsOf(row: ScrollChunk): Map<number, number> {
-  const content = typeof row.payload.content === "string" ? row.payload.content : "";
+  const content = contentOf(row);
   const cached = rowSparseVectors.get(row);
   if (cached?.content === content) return cached.weights;
-  const doc = generateSparseVector(content);
+  const doc = sparseVectorOfContent(content, contentSha256Of(content));
   const weights = new Map(doc.indices.map((index, i) => [index, doc.values[i]]));
   rowSparseVectors.set(row, { content, weights });
   return weights;
