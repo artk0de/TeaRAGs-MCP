@@ -1,7 +1,19 @@
 import subprocess
 
 from swe_lite_ab.collect import diff_for
-from swe_lite_ab.evaluate import harness_command
+from swe_lite_ab.evaluate import harness_command, image_name, pull_command
+
+
+def test_image_name_follows_the_swebench_eval_image_scheme():
+    assert image_name("psf__requests-2317") == "swebench/sweb.eval.x86_64.psf_1776_requests-2317:latest"
+    assert image_name("django__django-11099") == "swebench/sweb.eval.x86_64.django_1776_django-11099:latest"
+
+
+def test_pull_command_forces_amd64_images():
+    assert pull_command("psf__requests-2317") == [
+        "docker", "pull", "-q", "--platform", "linux/amd64",
+        "swebench/sweb.eval.x86_64.psf_1776_requests-2317:latest",
+    ]
 
 
 def test_diff_includes_new_and_modified_files_but_not_untracked_junk(tmp_path):
