@@ -189,4 +189,75 @@ describe("WorkingTreeChunkStore dense vectors", { timeout: 60_000 }, () => {
     expect(await store.getVectors(COLLECTION, key, MODEL)).toEqual(new Map([["h1", [1, 0]]]));
     await layer.dispose();
   });
+
+  /**
+   * BM25 vectors beside the rows (WTO unbounded delta): written with the entry,
+   * keyed like the dense ones by the chunk content's sha256. Optional — an
+   * entry stored without them (or with an unreadable file) serves its rows.
+   */
+  describe("sparse vectors", () => {
+    const SPARSE = new Map([["h1", { indices: [3, 7], values: [1, 0.5] }]]);
+
+    it("round-trips them with the entry", async () => {
+      const entry = entryFor("src/a.ts", "export const a = 1;\n");
+      await storeAt().put(COLLECTION, { ...entry, sparseVectors: SPARSE });
+
+      const read = await storeAt().get(COLLECTION, keyOf(entry));
+
+      expect(read?.rows).toEqual(entry.rows);
+      expect(read?.sparseVectors).toEqual(SPARSE);
+    });
+
+    it("serves the rows of an entry stored without them, or with an unreadable file", async () => {
+      const entry = entryFor("src/a.ts", "export const a = 1;\n");
+      const store = storeAt();
+      await store.put(COLLECTION, { ...entry, sparseVectors: SPARSE });
+      await store.put(COLLECTION, entry);
+
+      const withoutRead = await store.get(COLLECTION, keyOf(entry));
+      expect(withoutRead?.rows).toEqual(entry.rows);
+      expect(withoutRead).not.toHaveProperty("sparseVectors");
+
+      await store.put(COLLECTION, { ...entry, sparseVectors: SPARSE });
+      const dir = join(rootDir, COLLECTION);
+      const sparseFile = readdirSync(dir).find((f) => f.endsWith(".sparse.json"));
+      expect(sparseFile).toBeDefined();
+      writeFileSync(join(dir, String(sparseFile)), "{not json");
+
+      const corruptRead = await store.get(COLLECTION, keyOf(entry));
+      expect(corruptRead?.rows).toEqual(entry.rows);
+      expect(corruptRead).not.toHaveProperty("sparseVectors");
+    });
+
+    it("evicts them with their entry and counts them in its bytes", async () => {
+      write("src/a.ts", "export const a = 1;\n");
+      const store = storeAt();
+      const entry = entryFor("src/a.ts", "export const a = 1;\n");
+      await store.put(COLLECTION, entry);
+      const without = (await store.sweep(clock)).bytes;
+      const wide = new Map([
+        ["h1", { indices: Array.from({ length: 64 }, (_, i) => i), values: Array.from({ length: 64 }, () => 1) }],
+      ]);
+      await store.put(COLLECTION, { ...entry, sparseVectors: wide });
+
+      expect((await store.sweep(clock)).bytes).toBeGreaterThan(without + 64);
+
+      fixture.git(fixture.mainRoot, "worktree", "remove", "--force", tree);
+      expect(await store.sweep(clock)).toMatchObject({ evicted: 1, kept: 0, bytes: 0 });
+      expect(readdirSync(rootDir, { recursive: true }).filter((f) => String(f).endsWith(".json"))).toEqual([]);
+    });
+
+    it("removes a sparse file whose entry is gone once it is an hour old", async () => {
+      const dir = join(rootDir, COLLECTION);
+      mkdirSync(dir, { recursive: true });
+      const orphan = join(dir, "deadbeef.sparse.json");
+      writeFileSync(orphan, JSON.stringify({ vectors: {} }));
+      const old = (clock - 2 * HOUR) / 1000;
+      utimesSync(orphan, old, old);
+
+      await storeAt().sweep(clock);
+
+      expect(existsSync(orphan)).toBe(false);
+    });
+  });
 });

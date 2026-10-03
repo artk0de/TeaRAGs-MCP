@@ -27,6 +27,7 @@ import { join } from "node:path";
 import type { ChunkerConfig } from "../../../types.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { computeGitBlobId, type WorkingTreeChunkStore, type WorkingTreeChunkStoreKey } from "./chunk-store.js";
+import { computeWorkingTreeSparseVectors, rememberWorkingTreeSparseVectors } from "./sparse-floor.js";
 
 /** What one `chunk` call read from the tree. */
 export interface WorkingTreeChunkLayerRead {
@@ -164,14 +165,17 @@ export function createWorkingTreeChunkLayer<P extends WorkingTreeChunkerPool>(
                   ? await store.get(collectionName, storeKey).catch(() => undefined)
                   : undefined;
               rows = stored?.rows;
+              if (stored?.sparseVectors) rememberWorkingTreeSparseVectors(stored.sparseVectors);
               if (!rows) {
                 const code = content.toString("utf8");
                 rows = await deps.chunkFile(await poolFor(config, configKey), { root: tree, relativePath, code });
-                if (store && collectionName !== undefined) {
-                  await store
-                    .put(collectionName, { ...storeKey, blobId: computeGitBlobId(content), rows })
-                    .catch(() => undefined);
-                }
+              }
+              // A fresh chunk, or an entry an earlier build stored without BM25 vectors.
+              if (store && collectionName !== undefined && !stored?.sparseVectors) {
+                const sparseVectors = computeWorkingTreeSparseVectors(rows);
+                await store
+                  .put(collectionName, { ...storeKey, blobId: computeGitBlobId(content), rows, sparseVectors })
+                  .catch(() => undefined);
               }
               remember(key, rows);
             }
