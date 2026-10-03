@@ -64,7 +64,7 @@ drops after a batch the server fails on size. See
 [Adaptive Embedding](/config/performance-tuning#adaptive-embedding).
 
 :::note Pipeline Concurrency
-`INGEST_PIPELINE_CONCURRENCY` (default `1`) is the ceiling for embedding concurrency. With adaptive embedding the run measures it: once the batch size settles, concurrency is probed at half and double the current value inside [1, `INGEST_PIPELINE_CONCURRENCY`] and kept only when aggregate throughput improves by 5% or more. The address of the endpoint plays no part. Raise the ceiling to let a server with headroom climb; llama-server already keeps its slots busy within one batch. `EMBEDDING_TUNE_STATIC=true` applies the value as written. See [Adaptive Embedding](/config/performance-tuning#adaptive-embedding).
+With adaptive embedding the run measures embedding concurrency: once the batch size settles, concurrency is probed at half and double the current value inside [1, ceiling] and kept only when aggregate throughput improves by 5% or more. The address of the endpoint plays no part. Unset, `INGEST_PIPELINE_CONCURRENCY` leaves the climb an implicit ceiling of 8, starting from 1 or the stored optimum; set it (even to `1`) and your value becomes the hard ceiling. llama-server already keeps its slots busy within one batch. `EMBEDDING_TUNE_STATIC=true` applies the value as written (1 when unset). See [Adaptive Embedding](/config/performance-tuning#adaptive-embedding).
 :::
 
 See individual provider pages for provider-specific variables and setup instructions.

@@ -283,7 +283,7 @@ Git enrichment runs concurrently with embedding and does not increase indexing t
 | Variable | Default | When to change |
 |----------|---------|----------------|
 | `EMBEDDING_TUNE_BATCH_SIZE` | `1024` | Ceiling for the batch size the run picks itself; lower it only if even small runs crash the server |
-| `INGEST_PIPELINE_CONCURRENCY` | `1` | Ceiling for the measured concurrency climb; raise it (2–4 typical) for a remote GPU |
+| `INGEST_PIPELINE_CONCURRENCY` | unset (climb ceiling `8`) | Hard ceiling for the measured concurrency climb; set it only to cap the climb, or to allow more than 8 |
 | `QDRANT_TUNE_UPSERT_BATCH_SIZE` | `100` | Tune via `npm run tune` |
 
 Embedding batch size and concurrency are adjusted automatically during each run,

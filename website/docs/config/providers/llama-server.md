@@ -162,6 +162,8 @@ already present with the right digest is not downloaded again.
 
 The batch size and the client-side embedding concurrency are then tuned during
 the run — see [Adaptive Embedding](/config/performance-tuning#adaptive-embedding).
+Leave `INGEST_PIPELINE_CONCURRENCY` unset: the climb then has an implicit
+ceiling of 8, and an explicit value would become its hard cap.
 
 ## How it works
 

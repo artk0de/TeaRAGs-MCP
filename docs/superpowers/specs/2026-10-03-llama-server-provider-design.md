@@ -144,8 +144,16 @@ batch of 256 across two GPUs with `-np 4` becomes 8 parallel requests of about
 
 `EmbeddingThroughputTuner` stops deciding concurrency from locality:
 
-- Start: seed from the stored optimum for the endpoint, else
-  `INGEST_PIPELINE_CONCURRENCY`, clamped to `[1, INGEST_PIPELINE_CONCURRENCY]`.
+- Bounds: the climb runs inside `[1, ceiling]`. An explicit
+  `INGEST_PIPELINE_CONCURRENCY` (either spelling, even `1`) is the hard ceiling.
+  Unset, the ceiling is `IMPLICIT_EMBEDDING_CONCURRENCY_CEILING` (8), while
+  every other consumer of the value — the worker pool's initial size, the upsert
+  queue bound, sync concurrency, `EMBEDDING_TUNE_STATIC` — stays at 1. Config
+  parsing marks the explicit case with `flags.userSetPipelineConcurrency`; a
+  registry pin replays as explicit, and an unset run pins nothing.
+- Start: seed from the stored optimum for the endpoint, clamped to
+  `[1, ceiling]`, else the explicit `INGEST_PIPELINE_CONCURRENCY`, or 1 when it
+  is unset.
 - After the batch size settles, probe concurrency ×½ and ×2 within the bounds
   over `samplesPerSize` FULL-batch windows. Measure aggregate chars/s, which is
   total input chars over wall time across in-flight batches, and not per-call
@@ -154,7 +162,7 @@ batch of 256 across two GPUs with `-np 4` becomes 8 parallel requests of about
 - Persist `{ batchSize, concurrency }` per endpoint and model in
   `CollectionEntry.embeddingThroughputOptima`. The field is additive, and older
   entries without `concurrency` seed from config.
-- `EMBEDDING_TUNE_STATIC` still pins both values.
+- `EMBEDDING_TUNE_STATIC` still pins both values (concurrency 1 when unset).
 - Adaptation reasons: replace `endpoint-local` / `endpoint-remote` with
   `concurrency-probe` / `concurrency-settle` / `seed`.
 

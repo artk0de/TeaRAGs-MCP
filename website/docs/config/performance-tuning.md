@@ -17,7 +17,7 @@ are bounds, not fixed values:
 | ------------------------------- | ------------------------------------------------------ |
 | `EMBEDDING_TUNE_BATCH_SIZE`     | **Ceiling** for the batch size                         |
 | `EMBEDDING_TUNE_MIN_BATCH_SIZE` | **Floor** for the batch size; unset: ceiling / 16      |
-| `INGEST_PIPELINE_CONCURRENCY`   | **Ceiling** for the embedding concurrency              |
+| `INGEST_PIPELINE_CONCURRENCY`   | **Hard ceiling** for the embedding concurrency; unset: 8 |
 
 What happens during a run:
 
@@ -32,7 +32,8 @@ What happens during a run:
   whose speed drifts is followed.
 - **Concurrency hill-climb.** Once the batch size settles, concurrency is
   climbed the same way: half and double the current value, inside
-  [1, `INGEST_PIPELINE_CONCURRENCY`], each measured as **aggregate** chars/s —
+  [1, ceiling] — `INGEST_PIPELINE_CONCURRENCY` when set, 8 when unset — each
+  measured as **aggregate** chars/s —
   the input of every batch in flight over the wall-clock span they covered — and
   kept only at a gain of more than 5%. Whether a server handles parallel
   requests is measured, never inferred from its address: an Ollama on
@@ -52,10 +53,14 @@ The batch-size and concurrency climbs run for every provider. Remembered optima
 need the endpoint URL, which only the Ollama and llama-server providers report;
 ONNX, OpenAI, Cohere and Voyage start every run at the ceiling.
 
-`INGEST_PIPELINE_CONCURRENCY` defaults to `1`, so the concurrency climb has
-nowhere to go until you raise the ceiling (for example to `4`) for a server
-with headroom. llama-server does not depend on it: the provider already splits
-each batch across every endpoint and every `-np` slot.
+With `INGEST_PIPELINE_CONCURRENCY` unset, the concurrency climb starts at 1
+(or at the stored optimum) and may reach an **implicit ceiling of 8**; every
+other use of the value — and `EMBEDDING_TUNE_STATIC=true` — stays at 1. Setting
+it, under either spelling and even to `1`, makes your value the hard ceiling
+and the starting point of a run without a stored optimum. Set it only to cap
+the climb (for example `1` for a shared server you must not saturate), or to
+allow more than 8. llama-server does not depend on it: the provider already
+splits each batch across every endpoint and every `-np` slot.
 
 **Where to see the settled values:**
 
@@ -69,8 +74,8 @@ each batch across every endpoint and every `-np` slot.
   `concurrency-probe`, `concurrency-settle`) and the measured chars/s.
 
 **Pinning static behaviour.** Set `EMBEDDING_TUNE_STATIC=true` to use
-`EMBEDDING_TUNE_BATCH_SIZE` and `INGEST_PIPELINE_CONCURRENCY` unchanged for the
-whole run and ignore any stored optimum. Use it when you benchmark one fixed
+`EMBEDDING_TUNE_BATCH_SIZE` and `INGEST_PIPELINE_CONCURRENCY` (1 when unset)
+unchanged for the whole run and ignore any stored optimum. Use it when you benchmark one fixed
 configuration, or when a provider bills or rate-limits per request and you want
 a known request shape.
 
@@ -321,8 +326,8 @@ Network latency crushes remote Qdrant storage: 6966 ch/s → 1810 ch/s (3.8x dro
 These values are the bounds [adaptive embedding](#adaptive-embedding) works
 inside: the run lowers the batch size below `EMBEDDING_TUNE_BATCH_SIZE` when a
 smaller one is faster or the server fails on size, and it climbs concurrency
-from 1 up to `INGEST_PIPELINE_CONCURRENCY` only as far as the measured
-throughput rises. Set
+from 1 up to `INGEST_PIPELINE_CONCURRENCY` (8 when unset) only as far as the
+measured throughput rises. Set
 `EMBEDDING_TUNE_STATIC=true` to apply them exactly as written.
 
 **Rule of thumb:**
@@ -339,9 +344,14 @@ export EMBEDDING_TUNE_BATCH_SIZE=256
 export INGEST_PIPELINE_CONCURRENCY=4
 ```
 
+Under adaptive embedding neither concurrency line is required: left unset,
+the run measures its way from 1 up to the implicit ceiling of 8. An explicit
+value is a hard cap — with `EMBEDDING_TUNE_STATIC=true` it is the exact
+concurrency.
+
 ### Concurrency
 
-**Critical insight:** Concurrency is **only beneficial for remote GPU**. Local GPU sees no improvement — it adds overhead without benefit. Adaptive embedding does not assume this from the address; it measures it. With the ceiling raised, a local Ollama converges to 1 and a remote endpoint climbs as far as it pays off.
+**Critical insight:** Concurrency is **only beneficial for remote GPU**. Local GPU sees no improvement — it adds overhead without benefit. Adaptive embedding does not assume this from the address; it measures it. Under the default implicit ceiling of 8, a local Ollama converges to 1 and a remote endpoint climbs as far as it pays off.
 
 | Setup | Concurrency | Why |
 |-------|-------------|-----|

@@ -178,7 +178,7 @@ bounds are used and where the settled values are reported.
 
 | Variable                                 | Description                            | Default           |
 | ---------------------------------------- | -------------------------------------- | ----------------- |
-| `INGEST_PIPELINE_CONCURRENCY`            | Pipeline worker concurrency. With adaptive embedding this is the ceiling of the measured concurrency climb, inside [1, this value] | `1`               |
+| `INGEST_PIPELINE_CONCURRENCY`            | Pipeline worker concurrency. With adaptive embedding an explicit value (either spelling, even `1`) is the hard ceiling of the measured concurrency climb; unset, the climb starts at 1 and may reach an implicit ceiling of 8 while everything else stays at 1 | `1` (climb ceiling `8`) |
 | `EMBEDDING_TUNE_BATCH_SIZE`              | Chunks per embedding batch. With adaptive embedding this is the ceiling the throughput tuner works below | Provider-specific (Ollama `1024`, llama-server `256`) |
 | `EMBEDDING_TUNE_MIN_BATCH_SIZE`          | Min chunks before timeout flush, and the floor of the adaptive batch size. When unset, the timeout flush uses `batchSize × 0.5` and the adaptive floor `batchSize / 16` | unset |
 | `EMBEDDING_TUNE_STATIC`                  | `true` pins the configured batch size and concurrency for the whole run. Default (`false`): the batch size drops for every later batch after one the server fails on size, recovers after a streak of successes, hill-climbs toward the fastest size by measured chars/s, then climbs concurrency by measured aggregate chars/s, and starts each run from the optimum the registry stored for the active endpoint + model | `false` |

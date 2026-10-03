@@ -416,11 +416,12 @@ Enable it when you plan to use rerank presets like `techDebt`, `hotspots`,
    ```
 3. **Exclude large or binary files** that produce low-value chunks (lock files,
    minified bundles, vendored code)
-4. **Increase pipeline concurrency** for cloud providers with spare rate-limit
-   headroom (it is a ceiling; the run climbs toward it only while throughput
-   rises):
+4. **Let pipeline concurrency climb.** Left unset, the run climbs embedding
+   concurrency from 1 up to an implicit ceiling of 8 while throughput rises. An
+   explicit value is a hard cap — set one above 8 only for a cloud provider
+   with spare rate-limit headroom:
    ```bash
-   export INGEST_PIPELINE_CONCURRENCY=4
+   export INGEST_PIPELINE_CONCURRENCY=16
    ```
 
 ### Memory Issues

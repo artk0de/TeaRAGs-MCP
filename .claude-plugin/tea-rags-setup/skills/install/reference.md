@@ -108,7 +108,6 @@ Note: `n` only if node exists (`npm install -g n`) or direct
 ```json
 {
   "EMBEDDING_BATCH_SIZE": "64",
-  "EMBEDDING_CONCURRENCY": "2",
   "QDRANT_UPSERT_BATCH_SIZE": "128",
   "QDRANT_BATCH_ORDERING": "weak",
   "QDRANT_FLUSH_INTERVAL_MS": "1000",
@@ -119,6 +118,10 @@ Note: `n` only if node exists (`npm install -g n`) or direct
   "TRAJECTORY_GIT_CHUNK_CONCURRENCY": "4"
 }
 ```
+
+No `EMBEDDING_CONCURRENCY` fallback: unset, the runtime tuner climbs embedding
+concurrency from 1 up to an implicit ceiling of 8. Any written value — even `1`
+— becomes the climb's hard ceiling.
 
 ## All Env Vars for MCP Configuration
 
@@ -149,8 +152,8 @@ Note: `n` only if node exists (`npm install -g n`) or direct
 
 llama-server: omit `EMBEDDING_BATCH_SIZE`, `EMBEDDING_CONCURRENCY`,
 `EMBEDDING_TUNE_MIN_BATCH_SIZE` — runtime tuner owns them;
-`EMBEDDING_CONCURRENCY` caps its concurrency climb, a low pin starves the GPU
-slots.
+`EMBEDDING_CONCURRENCY` is a hard cap on its concurrency climb (unset = implicit
+ceiling 8), a low pin starves the GPU slots.
 
 Omit any key that is null or missing — except `GIT_ADAPTER`, which is always
 written explicitly (the adapter choice is pinned per-project; ambient env must
