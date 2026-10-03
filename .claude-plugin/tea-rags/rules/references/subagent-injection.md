@@ -79,6 +79,9 @@ a skill's own choice among tea-rags tools stands.
   mcp__tea-rags__hybrid_search
 - Behavior/intent without specific symbol ("retry logic after failure") →
   mcp__tea-rags__semantic_search
+- Code like a chunk you already hold (its id from a result, or a snippet) →
+  mcp__tea-rags__find_similar with positiveIds=[<id>] (or positiveCode) —
+  pass the id, never paste the code
 - Literal text markers (TODO, FIXME, HACK, NOTE), regex over text (error
   messages, phrases), or literal import path strings ("from './foo.js'") →
   mcp__ripgrep__search

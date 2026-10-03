@@ -159,3 +159,18 @@ Block size: **8236 → 8404 bytes (+168, +2.0%)**.
 | Iteration 11 | 17/17 | 100% | WT1–WT14 unchanged PASS; WT15–WT17 PASS first run |
 
 Answers: `workspace/iteration-11-answers.md`.
+
+## Floors wording + find_similar branch (2026-10-03, epic xi2r9, tea-rags 0.40.2 → 0.40.4)
+
+| File                                     | Change                                                                                                                                                                  |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rules/references/subagent-injection.md` | `codegraph` floor also names a changed-file row's graph data (0.40.3); new Tool-selection branch: code like a chunk you hold → `find_similar positiveIds=[id]` (0.40.4) |
+
+Block size: 8404 → 8440 (0.40.3) → 8630 bytes (0.40.4).
+
+| Run          | Pass  | Rate | Notes                                                                                   |
+| ------------ | ----- | ---- | --------------------------------------------------------------------------------------- |
+| Iteration 12 | 17/17 | 100% | WT17 reached find_similar only through the floors list — no selection branch named it   |
+| Iteration 13 | 17/17 | 100% | WT17 decided by the new branch; remaining notes are pre-existing ambiguities, none fail |
+
+Answers: `workspace/iteration-{12,13}-answers.md`.
