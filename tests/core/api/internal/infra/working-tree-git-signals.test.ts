@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
+  type GitWorkingTreeSeedStep,
 } from "../../../__helpers__/git-working-tree-fixture.js";
 import * as gitCli from "../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 import { createWorkingTreeGitSignalStore } from "../../../../../src/core/api/internal/infra/working-tree-git-signal-store.js";
@@ -30,6 +31,11 @@ vi.mock("../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (imp
 
 const C_V1 = "export function cFn(n: number): number {\n  return n;\n}\n";
 const C_V2 = "export function cFn(n: number): number {\n  return n + 1;\n}\n";
+/** `src/cyc/c.ts` committed, then fixed: two commits of its history. */
+const C_HISTORY: GitWorkingTreeSeedStep[] = [
+  { commit: { "src/cyc/c.ts": C_V1 }, message: "add c" },
+  { commit: { "src/cyc/c.ts": C_V2 }, message: "fix: c" },
+];
 const FRESH = "\nexport function fresh(): number {\n  return 0;\n}\n";
 
 const DEPS = {
@@ -58,9 +64,7 @@ describe("createWorkingTreeGitSignalSource", () => {
   });
 
   beforeEach(() => {
-    fixture = createGitWorkingTreeFixture();
-    fixture.commit(fixture.mainRoot, { "src/cyc/c.ts": C_V1 }, "add c");
-    fixture.commit(fixture.mainRoot, { "src/cyc/c.ts": C_V2 }, "fix: c");
+    fixture = createGitWorkingTreeFixture(C_HISTORY);
     tree = fixture.mainRoot;
   });
 
@@ -324,8 +328,14 @@ describe("createWorkingTreeGitSignalSource", () => {
     let indexed: string;
     beforeEach(() => {
       storeRoot = mkdtempSync(join(tmpdir(), "wt-git-history-"));
-      fixture.commit(tree, { "src/d.ts": "export const d = 1;\n" }, "add d");
-      indexed = fixture.git(tree, "rev-parse", "HEAD").trim();
+      // The outer repository plus "add d", built once and copied.
+      fixture.cleanup();
+      fixture = createGitWorkingTreeFixture([
+        ...C_HISTORY,
+        { commit: { "src/d.ts": "export const d = 1;\n" }, message: "add d" },
+      ]);
+      tree = fixture.mainRoot;
+      [, , indexed] = fixture.seeded.commits;
     });
     afterEach(() => {
       rmSync(storeRoot, { recursive: true, force: true });
