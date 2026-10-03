@@ -11,6 +11,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { READ_PATH_EMBEDDING_RECOVERY_WAIT_MS } from "../../../../../src/core/adapters/embeddings/base.js";
 import type { CollectionEmbeddingsResolver } from "../../../../../src/core/api/internal/collection-embeddings.js";
 import { ExploreFacade } from "../../../../../src/core/api/internal/facades/explore-facade.js";
 import { ExploreOps } from "../../../../../src/core/api/internal/ops/explore-ops.js";
@@ -30,6 +31,9 @@ vi.mock("../../../../../src/core/adapters/qdrant/sparse.js", () => ({
   generateSparseVector: vi.fn(() => ({ indices: [1], values: [0.5] })),
   BM25SparseVectorGenerator: { generateSimple: vi.fn(() => ({ indices: [1], values: [0.5] })) },
 }));
+
+/** Every read-path embed and guard check is held to the read recovery budget. */
+const READ_PATH_EMBED = { maxRecoveryWaitMs: READ_PATH_EMBEDDING_RECOVERY_WAIT_MS };
 
 const HITS = [{ id: "1", score: 0.7, payload: { relativePath: "src/a.ts" } }];
 
@@ -133,8 +137,11 @@ describe("ExploreOps — collection embedding binding (b91f5)", () => {
     await ops.hybridSearch({ collection: COLLECTION, query: "endpoint pool" });
 
     expect(resolver.forCollection).toHaveBeenCalledWith(COLLECTION, { embeds: true });
-    expect(bound.embeddings.embed).toHaveBeenCalledWith("endpoint pool");
-    expect(bound.modelGuard.ensureMatch).toHaveBeenCalledWith(COLLECTION, { failOnProviderOutage: true });
+    expect(bound.embeddings.embed).toHaveBeenCalledWith("endpoint pool", READ_PATH_EMBED);
+    expect(bound.modelGuard.ensureMatch).toHaveBeenCalledWith(COLLECTION, {
+      failOnProviderOutage: true,
+      ...READ_PATH_EMBED,
+    });
     expect(ambient.embeddings.embed).not.toHaveBeenCalled();
     expect(ambient.modelGuard.ensureMatch).not.toHaveBeenCalled();
     expect(JSON.stringify(vectorsSentTo(qdrant))).toContain(JSON.stringify(COLLECTION_VECTOR));
@@ -145,7 +152,7 @@ describe("ExploreOps — collection embedding binding (b91f5)", () => {
 
     await ops.semanticSearch({ collection: COLLECTION, query: "endpoint pool" });
 
-    expect(bound.embeddings.embed).toHaveBeenCalledWith("endpoint pool");
+    expect(bound.embeddings.embed).toHaveBeenCalledWith("endpoint pool", READ_PATH_EMBED);
     expect(ambient.embeddings.embed).not.toHaveBeenCalled();
   });
 
@@ -154,7 +161,7 @@ describe("ExploreOps — collection embedding binding (b91f5)", () => {
 
     await ops.searchCode({ collection: COLLECTION, query: "endpoint pool" });
 
-    expect(bound.embeddings.embed).toHaveBeenCalledWith("endpoint pool");
+    expect(bound.embeddings.embed).toHaveBeenCalledWith("endpoint pool", READ_PATH_EMBED);
     expect(bound.modelGuard.ensureMatch).toHaveBeenCalled();
     expect(ambient.embeddings.embed).not.toHaveBeenCalled();
   });
@@ -164,7 +171,7 @@ describe("ExploreOps — collection embedding binding (b91f5)", () => {
 
     await facade.findSimilar({ collection: COLLECTION, positiveCode: ["const pool = new EndpointPool();"] });
 
-    expect(bound.embeddings.embedBatch).toHaveBeenCalledWith(["const pool = new EndpointPool();"]);
+    expect(bound.embeddings.embedBatch).toHaveBeenCalledWith(["const pool = new EndpointPool();"], READ_PATH_EMBED);
     expect(ambient.embeddings.embedBatch).not.toHaveBeenCalled();
   });
 
@@ -194,7 +201,7 @@ describe("ExploreOps — collection embedding binding (b91f5)", () => {
 
     await ops.hybridSearch({ collection: COLLECTION, query: "endpoint pool" });
 
-    expect(ambient.embeddings.embed).toHaveBeenCalledWith("endpoint pool");
+    expect(ambient.embeddings.embed).toHaveBeenCalledWith("endpoint pool", READ_PATH_EMBED);
     expect(ambient.modelGuard.ensureMatch).toHaveBeenCalled();
   });
 });
