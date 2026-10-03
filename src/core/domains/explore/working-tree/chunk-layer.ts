@@ -15,6 +15,11 @@
  * chunking, and a fresh chunk is written to it, so a restarted process does not
  * re-chunk a tree it has seen. The store is a cache — its failures are misses.
  *
+ * A call chunks its files concurrently, at most `concurrency` at a time, and
+ * answers in request order. The memory cache is bounded by the bytes of the
+ * rows it holds ({@link WorkingTreeRowCache}), not by a file count — a delta
+ * has no file cap.
+ *
  * Pool lifecycle: built on the first call that has a file to chunk (a cache
  * hit chunks nothing), replaced when the chunker config changes, shut down
  * once no call has been in flight for `idleShutdownMs`, and by `dispose`.
@@ -27,6 +32,7 @@ import { join } from "node:path";
 import type { ChunkerConfig } from "../../../types.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { computeGitBlobId, type WorkingTreeChunkStore, type WorkingTreeChunkStoreKey } from "./chunk-store.js";
+import { WORKING_TREE_ROW_CACHE_MAX_BYTES, workingTreeRowBytes, WorkingTreeRowCache } from "./row-cache.js";
 import { computeWorkingTreeSparseVectors, rememberWorkingTreeSparseVectors } from "./sparse-floor.js";
 
 /** What one `chunk` call read from the tree. */
@@ -41,6 +47,11 @@ export interface WorkingTreeChunkLayerRead {
    * named its collection; a memory hit names the same entry a chunk did.
    */
   storeKeys?: ReadonlyMap<string, WorkingTreeChunkStoreKey>;
+  /**
+   * `chunks` split per file: the rows of each chunked file, by path, in request
+   * order. An unparsed file has no entry. Absent only on an empty request.
+   */
+  rowsByPath?: ReadonlyMap<string, readonly ScrollChunk[]>;
 }
 
 export interface WorkingTreeChunkLayer {
@@ -79,8 +90,17 @@ export interface WorkingTreeChunkLayerDeps<P extends WorkingTreeChunkerPool> {
   store?: WorkingTreeChunkStore;
   /** Identifies the chunker build (package version): a new build must not read an old build's rows. */
   chunkerBuildId?: string;
+  /**
+   * Files of one call chunked at a time — the composition root passes the
+   * chunker pool's size. Default {@link WORKING_TREE_CHUNK_CONCURRENCY}.
+   */
+  concurrency?: number;
+  /** Bound of the memory cache, in bytes of row content. Default {@link WORKING_TREE_ROW_CACHE_MAX_BYTES}. */
+  maxCacheBytes?: number;
 }
 
+/** Files one `chunk` call chunks at a time when the composition root names no pool size. */
+export const WORKING_TREE_CHUNK_CONCURRENCY = 4;
 const DEFAULT_IDLE_SHUTDOWN_MS = 60_000;
 /**
  * Version of the row shape the injected `chunkFile` produces, folded into the
@@ -92,18 +112,19 @@ const DEFAULT_IDLE_SHUTDOWN_MS = 60_000;
  *     `chunk_<hex>` (bd tea-rags-mcp-xi2r9, live probe P1-2).
  */
 const WORKING_TREE_ROW_FORMAT = 2;
-/**
- * Files kept in the in-memory content cache, oldest evicted first. A delta is
- * capped at 200 files (`WORKING_TREE_DELTA_FILE_CAP`), so this holds the
- * edit history of several trees without growing with the server's uptime.
- */
-const CONTENT_CACHE_MAX_FILES = 2_000;
+
+/** One chunked file of a call. */
+interface WorkingTreeChunkedFile {
+  rows: readonly ScrollChunk[];
+  storeKey: WorkingTreeChunkStoreKey;
+}
 
 export function createWorkingTreeChunkLayer<P extends WorkingTreeChunkerPool>(
   deps: WorkingTreeChunkLayerDeps<P>,
 ): WorkingTreeChunkLayer {
   const idleShutdownMs = deps.idleShutdownMs ?? DEFAULT_IDLE_SHUTDOWN_MS;
-  const cache = new Map<string, readonly ScrollChunk[]>();
+  const concurrency = Math.max(1, deps.concurrency ?? WORKING_TREE_CHUNK_CONCURRENCY);
+  const cache = new WorkingTreeRowCache<readonly ScrollChunk[]>(deps.maxCacheBytes ?? WORKING_TREE_ROW_CACHE_MAX_BYTES);
   let live: { pool: P; configKey: string } | undefined;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   let inFlight = 0;
@@ -120,14 +141,6 @@ export function createWorkingTreeChunkLayer<P extends WorkingTreeChunkerPool>(
     return live.pool;
   };
 
-  const remember = (key: string, rows: readonly ScrollChunk[]): void => {
-    if (cache.size >= CONTENT_CACHE_MAX_FILES) {
-      const oldest = cache.keys().next().value;
-      if (oldest !== undefined) cache.delete(oldest);
-    }
-    cache.set(key, rows);
-  };
-
   const armIdleShutdown = (): void => {
     if (inFlight > 0 || !live) return;
     idleTimer = setTimeout(() => {
@@ -135,6 +148,43 @@ export function createWorkingTreeChunkLayer<P extends WorkingTreeChunkerPool>(
       void release();
     }, idleShutdownMs);
     idleTimer.unref?.();
+  };
+
+  /** One file's rows: memory → store → chunker. Rejects when the file cannot be read or parsed. */
+  const chunkOne = async (
+    tree: string,
+    relativePath: string,
+    config: ChunkerConfig,
+    configKey: string,
+    chunkerFingerprint: string,
+    collectionName: string | undefined,
+  ): Promise<WorkingTreeChunkedFile> => {
+    const content = await readFile(join(tree, relativePath));
+    const contentSha256 = createHash("sha256").update(content).digest("hex");
+    const key = `${configKey}\0${tree}\0${relativePath}\0${contentSha256}`;
+    const storeKey = { treeRoot: tree, relativePath, contentSha256, chunkerFingerprint };
+    const cached = cache.get(key);
+    if (cached) return { rows: cached, storeKey };
+    const { store } = deps;
+    const stored =
+      store && collectionName !== undefined
+        ? await store.get(collectionName, storeKey).catch(() => undefined)
+        : undefined;
+    let rows = stored?.rows;
+    if (stored?.sparseVectors) rememberWorkingTreeSparseVectors(stored.sparseVectors);
+    if (!rows) {
+      const code = content.toString("utf8");
+      rows = await deps.chunkFile(await poolFor(config, configKey), { root: tree, relativePath, code });
+    }
+    // A fresh chunk, or an entry an earlier build stored without BM25 vectors.
+    if (store && collectionName !== undefined && !stored?.sparseVectors) {
+      const sparseVectors = computeWorkingTreeSparseVectors(rows);
+      await store
+        .put(collectionName, { ...storeKey, blobId: computeGitBlobId(content), rows, sparseVectors })
+        .catch(() => undefined);
+    }
+    cache.set(key, rows, workingTreeRowBytes(rows));
+    return { rows, storeKey };
   };
 
   return {
@@ -148,44 +198,41 @@ export function createWorkingTreeChunkLayer<P extends WorkingTreeChunkerPool>(
         const chunkerFingerprint = createHash("sha256")
           .update(`${deps.chunkerBuildId ?? ""}\0${configKey}\0rows-v${String(WORKING_TREE_ROW_FORMAT)}`)
           .digest("hex");
+        // Settled per request index, so the answer keeps request order however the files finish.
+        const settled: (WorkingTreeChunkedFile | undefined)[] = [];
+        let next = 0;
+        const worker = async (): Promise<void> => {
+          while (next < relativePaths.length) {
+            const index = next++;
+            settled[index] = await chunkOne(
+              tree,
+              relativePaths[index],
+              config,
+              configKey,
+              chunkerFingerprint,
+              collectionName,
+            ).catch(() => undefined);
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(concurrency, relativePaths.length) }, worker));
+
         const chunks: ScrollChunk[] = [];
         const unparsed: string[] = [];
         const storeKeys = new Map<string, WorkingTreeChunkStoreKey>();
-        for (const relativePath of relativePaths) {
-          try {
-            const content = await readFile(join(tree, relativePath));
-            const contentSha256 = createHash("sha256").update(content).digest("hex");
-            const key = `${configKey}\0${tree}\0${relativePath}\0${contentSha256}`;
-            const storeKey = { treeRoot: tree, relativePath, contentSha256, chunkerFingerprint };
-            let rows = cache.get(key);
-            if (!rows) {
-              const { store } = deps;
-              const stored =
-                store && collectionName !== undefined
-                  ? await store.get(collectionName, storeKey).catch(() => undefined)
-                  : undefined;
-              rows = stored?.rows;
-              if (stored?.sparseVectors) rememberWorkingTreeSparseVectors(stored.sparseVectors);
-              if (!rows) {
-                const code = content.toString("utf8");
-                rows = await deps.chunkFile(await poolFor(config, configKey), { root: tree, relativePath, code });
-              }
-              // A fresh chunk, or an entry an earlier build stored without BM25 vectors.
-              if (store && collectionName !== undefined && !stored?.sparseVectors) {
-                const sparseVectors = computeWorkingTreeSparseVectors(rows);
-                await store
-                  .put(collectionName, { ...storeKey, blobId: computeGitBlobId(content), rows, sparseVectors })
-                  .catch(() => undefined);
-              }
-              remember(key, rows);
-            }
-            chunks.push(...rows);
-            if (collectionName !== undefined) storeKeys.set(relativePath, storeKey);
-          } catch {
+        const rowsByPath = new Map<string, readonly ScrollChunk[]>();
+        relativePaths.forEach((relativePath, index) => {
+          const file = settled[index];
+          if (!file) {
             unparsed.push(relativePath);
+            return;
           }
-        }
-        return collectionName === undefined ? { chunks, unparsed } : { chunks, unparsed, storeKeys };
+          chunks.push(...file.rows);
+          rowsByPath.set(relativePath, file.rows);
+          if (collectionName !== undefined) storeKeys.set(relativePath, file.storeKey);
+        });
+        return collectionName === undefined
+          ? { chunks, unparsed, rowsByPath }
+          : { chunks, unparsed, storeKeys, rowsByPath };
       } finally {
         inFlight--;
         armIdleShutdown();
