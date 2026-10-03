@@ -22,6 +22,19 @@
  * entries go until the store fits its byte cap. Nothing outside `rootDir` is
  * touched.
  *
+ * What retention costs (bd tea-rags-mcp-xi2r9, live: a cold CLI call on a tree
+ * with a delta spent ~11 s in 580 sequential `git log --find-object` spawns, one
+ * per stored entry of every tree): every rule measures from `lastReadAt`, so an
+ * entry read within the window is kept without a look at the disk or at git;
+ * a removed tree and content the tree no longer holds are decided from the
+ * filesystem; only an idle, current entry of a live tree asks git, at most
+ * `commitLookupsPerSweep` per sweep, never-asked first, and a found commit
+ * time is persisted in the meta so it is asked once. The schedule never sweeps
+ * at start — the first sweep waits `WORKING_TREE_CHUNK_SWEEP_DELAY_MS` on an
+ * unref'd timer, longer than a one-shot process lives — and `sweepIfDue`
+ * skips when any process sweeping this root started one within the interval
+ * (`.sweep-stamp.json` under the root). Reads and writes never sweep.
+ *
  * Why the superseded rule exists (bd tea-rags-mcp-xi2r9, live probe): every
  * save of a file under edit writes a new entry, and a draft that was never
  * committed — or a deleted path — never shows up in `git log --find-object`,
@@ -95,7 +108,20 @@ export interface WorkingTreeChunkStore {
     model: string,
     vectors: WorkingTreeChunkVectors,
   ) => Promise<void>;
-  sweep: (now?: number) => Promise<WorkingTreeChunkStoreSweep>;
+  /** Apply retention now, unthrottled. An aborted `signal` stops it between entries, evicting nothing more. */
+  sweep: (now?: number, options?: WorkingTreeChunkSweepOptions) => Promise<WorkingTreeChunkStoreSweep>;
+  /**
+   * `sweep`, unless a sweep of this root — by any process — started less than
+   * `intervalMs` ago (a stamp under the root records it); undefined when skipped.
+   */
+  sweepIfDue: (
+    now?: number,
+    options?: WorkingTreeChunkSweepOptions & { intervalMs?: number },
+  ) => Promise<WorkingTreeChunkStoreSweep | undefined>;
+}
+
+export interface WorkingTreeChunkSweepOptions {
+  signal?: AbortSignal;
 }
 
 export interface WorkingTreeChunkStoreDeps {
@@ -104,11 +130,25 @@ export interface WorkingTreeChunkStoreDeps {
   readBlobCommitTime?: (root: string, relativePath: string, blobId: string) => Promise<number | null>;
   now?: () => number;
   capBytes?: number;
+  /** The most git commit lookups one sweep makes; the rest wait for a later sweep. */
+  commitLookupsPerSweep?: number;
+}
+
+export interface WorkingTreeChunkSweepSchedule {
+  /** Delay before the first sweep — longer than a one-shot process lives. */
+  initialDelayMs?: number;
+  intervalMs?: number;
 }
 
 export const WORKING_TREE_CHUNK_RETENTION_MS = 96 * 3_600_000;
 export const WORKING_TREE_CHUNK_STORE_CAP_BYTES = 512 * 1024 * 1024;
 export const WORKING_TREE_CHUNK_SWEEP_INTERVAL_MS = 6 * 3_600_000;
+export const WORKING_TREE_CHUNK_SWEEP_DELAY_MS = 2 * 60_000;
+export const WORKING_TREE_CHUNK_COMMIT_LOOKUPS_PER_SWEEP = 32;
+/** Commit lookups one sweep runs at once. */
+const COMMIT_LOOKUP_CONCURRENCY = 4;
+/** The throttle stamp: a dot-file in the root, never a collection directory. */
+const SWEEP_STAMP_FILE = ".sweep-stamp.json";
 
 /** A rows file with no meta, or a temp file, older than this is a dead write. */
 const ABANDONED_WRITE_GRACE_MS = 3_600_000;
@@ -128,23 +168,55 @@ export function computeGitBlobId(content: Buffer): string {
     .digest("hex");
 }
 
-/** Sweeps now and every `intervalMs` on a timer that does not hold the process open; returns the stop. */
+/**
+ * Sweeps (if due) once `initialDelayMs` has passed and every `intervalMs` after,
+ * on timers that do not hold the process open — a one-shot process exits before
+ * the first, so a request never waits on retention. Returns the stop, which also
+ * aborts a sweep in flight.
+ */
 export function scheduleWorkingTreeChunkSweep(
-  store: Pick<WorkingTreeChunkStore, "sweep">,
-  intervalMs: number = WORKING_TREE_CHUNK_SWEEP_INTERVAL_MS,
+  store: Pick<WorkingTreeChunkStore, "sweepIfDue">,
+  schedule: WorkingTreeChunkSweepSchedule = {},
 ): () => void {
+  const intervalMs = schedule.intervalMs ?? WORKING_TREE_CHUNK_SWEEP_INTERVAL_MS;
+  const controller = new AbortController();
   const sweep = (): void => {
-    void store.sweep().catch(() => undefined);
+    if (controller.signal.aborted) return;
+    void store.sweepIfDue(undefined, { signal: controller.signal, intervalMs }).catch(() => undefined);
   };
-  sweep();
-  const timer = setInterval(sweep, intervalMs);
-  timer.unref?.();
+  let interval: ReturnType<typeof setInterval> | undefined;
+  const first = setTimeout(() => {
+    sweep();
+    interval = setInterval(sweep, intervalMs);
+    interval.unref?.();
+  }, schedule.initialDelayMs ?? WORKING_TREE_CHUNK_SWEEP_DELAY_MS);
+  first.unref?.();
   return () => {
-    clearInterval(timer);
+    controller.abort();
+    clearTimeout(first);
+    clearInterval(interval);
   };
 }
 
-type StoredMeta = Omit<WorkingTreeChunkStoreEntry, "rows">;
+type StoredMeta = Omit<WorkingTreeChunkStoreEntry, "rows"> & {
+  /** When git last answered the commit lookup; absent = never asked. */
+  commitCheckedAt?: number;
+  /** The content's commit time once git found it — persisted, never asked again. */
+  committedAt?: number;
+};
+
+/** Runs `task` over `items`, at most `limit` at a time. */
+async function forEachWithConcurrency<T>(
+  items: readonly T[],
+  limit: number,
+  task: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) await task(items[next++]);
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
 
 /** One content of one tree path — what entries of different chunkers share. */
 const contentKeyOf = (meta: StoredMeta): string =>
@@ -155,6 +227,8 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
   const now = deps.now ?? Date.now;
   const capBytes = deps.capBytes ?? WORKING_TREE_CHUNK_STORE_CAP_BYTES;
   const readBlobCommitTime = deps.readBlobCommitTime ?? gitReadBlobCommitTime;
+  const commitLookupsPerSweep = deps.commitLookupsPerSweep ?? WORKING_TREE_CHUNK_COMMIT_LOOKUPS_PER_SWEEP;
+  const stampPath = join(rootDir, SWEEP_STAMP_FILE);
 
   const collectionDir = (collectionName: string): string | undefined =>
     COLLECTION_NAME.test(collectionName) ? join(rootDir, collectionName) : undefined;
@@ -245,7 +319,40 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
     }
   };
 
-  return {
+  /** When a sweep of this root last started, by any process; undefined when never (or unreadable). */
+  const readSweepStamp = async (): Promise<number | undefined> => {
+    try {
+      const stamp = JSON.parse(await fs.readFile(stampPath, "utf8")) as { sweptAt?: unknown };
+      return typeof stamp.sweptAt === "number" ? stamp.sweptAt : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  /**
+   * Persist what a commit lookup answered onto the entry's CURRENT meta (a read
+   * may have bumped it meanwhile): a found commit time is never asked again, an
+   * uncommitted answer only moves the entry to the back of the next sweep's queue.
+   */
+  const recordCommitLookup = async (
+    dir: string,
+    name: string,
+    looked: StoredMeta,
+    committedAt: number | null,
+    at: number,
+  ): Promise<void> => {
+    const path = join(dir, `${name}${META_SUFFIX}`);
+    const current = await readMeta(path);
+    if (!current || !sameKey(current, looked)) return;
+    const recorded: StoredMeta = {
+      ...current,
+      commitCheckedAt: at,
+      ...(committedAt === null ? {} : { committedAt }),
+    };
+    await writeAtomic(path, JSON.stringify(recorded)).catch(() => undefined);
+  };
+
+  const store: WorkingTreeChunkStore = {
     async get(collectionName, key) {
       const dir = collectionDir(collectionName);
       if (!dir) return undefined;
@@ -260,7 +367,8 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
       }
       const bumped: StoredMeta = { ...meta, lastReadAt: now() };
       await writeAtomic(join(dir, `${name}${META_SUFFIX}`), JSON.stringify(bumped));
-      return { ...bumped, rows };
+      const { treeRoot, relativePath, contentSha256, chunkerFingerprint, blobId, lastReadAt } = bumped;
+      return { treeRoot, relativePath, contentSha256, chunkerFingerprint, blobId, lastReadAt, rows };
     },
 
     async put(collectionName, entry) {
@@ -290,10 +398,14 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
       await writeAtomic(path, JSON.stringify({ model, vectors: merged }));
     },
 
-    async sweep(at = now()) {
+    async sweep(at = now(), options = {}) {
+      const { signal } = options;
+      const aborted = (): boolean => signal?.aborted === true;
       let evicted = 0;
       const kept: { dir: string; name: string; bytes: number; lastReadAt: number }[] = [];
-      const commitTimes = new Map<string, Promise<number | null>>();
+      /** Entries whose verdict needs git: idle, current, tree alive, commit time unknown. */
+      const lookups: { dir: string; name: string; bytes: number; meta: StoredMeta }[] = [];
+      const collectionDirs: string[] = [];
       const currentContents = new Map<string, Promise<string | null>>();
       /** sha256 of what the tree holds at the entry's path now; null when the path is gone. */
       const currentSha256Of = async (meta: StoredMeta): Promise<string | null> => {
@@ -308,20 +420,31 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
         }
         return sha;
       };
-      const commitTimeOf = async (meta: StoredMeta): Promise<number | null> => {
-        const cacheKey = `${meta.treeRoot}\0${meta.relativePath}\0${meta.blobId}`;
-        let time = commitTimes.get(cacheKey);
-        if (!time) {
-          // A tree git cannot read is treated as uncommitted; the byte cap still bounds it.
-          time = readBlobCommitTime(meta.treeRoot, meta.relativePath, meta.blobId).catch(() => null);
-          commitTimes.set(cacheKey, time);
-        }
-        return time;
+      const committedExpired = (meta: StoredMeta, committedAt: number): boolean =>
+        at - Math.max(committedAt, meta.lastReadAt) >= WORKING_TREE_CHUNK_RETENTION_MS;
+      /**
+       * Every rule that needs no git. A non-idle entry is kept outright: each rule
+       * measures from `lastReadAt` (the commit rule from max(commit, lastReadAt)),
+       * so none can fire before the entry sits unread the retention window.
+       */
+      const verdictOf = async (
+        meta: StoredMeta,
+        latestReadOfContent: ReadonlyMap<string, number>,
+      ): Promise<"evict" | "keep" | "lookup"> => {
+        if (!(await treeExists(meta.treeRoot))) return "evict";
+        if (at - meta.lastReadAt < WORKING_TREE_CHUNK_RETENTION_MS) return "keep";
+        // Another chunker's rows of this very content were read since: this build's are dead.
+        if ((latestReadOfContent.get(contentKeyOf(meta)) ?? 0) > meta.lastReadAt) return "evict";
+        if ((await currentSha256Of(meta)) !== meta.contentSha256) return "evict";
+        if (meta.committedAt !== undefined) return committedExpired(meta, meta.committedAt) ? "evict" : "keep";
+        return "lookup";
       };
 
       for (const collection of await listDir(rootDir)) {
+        if (aborted()) break;
         if (!collection.isDirectory || !COLLECTION_NAME.test(collection.name)) continue;
         const dir = join(rootDir, collection.name);
+        collectionDirs.push(dir);
         const files = await listDir(dir);
         const metaNames = new Set(
           files.filter((f) => f.name.endsWith(META_SUFFIX)).map((f) => f.name.slice(0, -META_SUFFIX.length)),
@@ -350,37 +473,61 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
         }
 
         for (const { name, meta } of entries) {
+          if (aborted()) break;
           const rowsBytes = await sizeOf(join(dir, `${name}${ROWS_SUFFIX}`));
           const metaBytes = await sizeOf(join(dir, `${name}${META_SUFFIX}`));
           const vectorsBytes = (await sizeOf(join(dir, `${name}${VECTORS_SUFFIX}`))) ?? 0;
-          let expired = !meta || rowsBytes === undefined || metaBytes === undefined;
-          if (meta && !expired) {
-            const idle = at - meta.lastReadAt >= WORKING_TREE_CHUNK_RETENTION_MS;
-            if (!(await treeExists(meta.treeRoot))) expired = true;
-            else if (idle && (latestReadOfContent.get(contentKeyOf(meta)) ?? 0) > meta.lastReadAt) {
-              // Another chunker's rows of this very content were read since: this build's are dead.
-              expired = true;
-            } else if ((await currentSha256Of(meta)) !== meta.contentSha256) {
-              expired = idle;
-            } else {
-              const committedAt = await commitTimeOf(meta);
-              expired =
-                committedAt !== null && at - Math.max(committedAt, meta.lastReadAt) >= WORKING_TREE_CHUNK_RETENTION_MS;
-            }
-          }
-          if (expired || !meta) {
+          const verdict =
+            !meta || rowsBytes === undefined || metaBytes === undefined
+              ? "evict"
+              : await verdictOf(meta, latestReadOfContent);
+          const bytes = (rowsBytes ?? 0) + (metaBytes ?? 0) + vectorsBytes;
+          if (verdict === "evict" || !meta) {
             await evict(dir, name);
             evicted++;
-            continue;
+          } else if (verdict === "lookup") {
+            lookups.push({ dir, name, bytes, meta });
+          } else {
+            kept.push({ dir, name, bytes, lastReadAt: meta.lastReadAt });
           }
-          kept.push({
-            dir,
-            name,
-            bytes: (rowsBytes ?? 0) + (metaBytes ?? 0) + vectorsBytes,
-            lastReadAt: meta.lastReadAt,
-          });
         }
+      }
 
+      // Git lookups, bounded: never-asked entries first, then the longest since
+      // asked, so repeated sweeps rotate through what is still uncommitted. One
+      // beyond the cap — or any once aborted — is kept for a later sweep.
+      lookups.sort(
+        (a, b) =>
+          (a.meta.commitCheckedAt ?? 0) - (b.meta.commitCheckedAt ?? 0) || a.meta.lastReadAt - b.meta.lastReadAt,
+      );
+      for (const { dir, name, bytes, meta } of lookups.slice(commitLookupsPerSweep)) {
+        kept.push({ dir, name, bytes, lastReadAt: meta.lastReadAt });
+      }
+      await forEachWithConcurrency(
+        lookups.slice(0, commitLookupsPerSweep),
+        COMMIT_LOOKUP_CONCURRENCY,
+        async (entry) => {
+          const { dir, name, bytes, meta } = entry;
+          if (!aborted()) {
+            // A tree git cannot read is treated as uncommitted; the byte cap still bounds it.
+            const committedAt = await readBlobCommitTime(meta.treeRoot, meta.relativePath, meta.blobId).catch(
+              () => null,
+            );
+            if (committedAt !== null && committedExpired(meta, committedAt)) {
+              await evict(dir, name);
+              evicted++;
+              return;
+            }
+            await recordCommitLookup(dir, name, meta, committedAt, at);
+          }
+          kept.push({ dir, name, bytes, lastReadAt: meta.lastReadAt });
+        },
+      );
+
+      if (aborted()) {
+        return { evicted, kept: kept.length, bytes: kept.reduce((sum, entry) => sum + entry.bytes, 0) };
+      }
+      for (const dir of collectionDirs) {
         if ((await listDir(dir)).length === 0) await fs.rmdir(dir).catch(() => undefined);
       }
 
@@ -396,5 +543,17 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
       }
       return { evicted, kept: survivors, bytes };
     },
+
+    async sweepIfDue(at = now(), options = {}) {
+      const intervalMs = options.intervalMs ?? WORKING_TREE_CHUNK_SWEEP_INTERVAL_MS;
+      // No root, nothing stored: nothing to sweep, and no root is created for a stamp.
+      if (!(await treeExists(rootDir))) return undefined;
+      const sweptAt = await readSweepStamp();
+      if (sweptAt !== undefined && sweptAt <= at && at - sweptAt < intervalMs) return undefined;
+      // Stamped at the START, so a concurrent process skips instead of sweeping alongside.
+      await writeAtomic(stampPath, JSON.stringify({ sweptAt: at }));
+      return store.sweep(at, options);
+    },
   };
+  return store;
 }

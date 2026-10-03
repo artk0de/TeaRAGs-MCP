@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { setTimeout as realDelay } from "node:timers/promises";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -25,6 +26,7 @@ import {
   scheduleWorkingTreeChunkSweep,
   WORKING_TREE_CHUNK_RETENTION_MS,
   WORKING_TREE_CHUNK_STORE_CAP_BYTES,
+  WORKING_TREE_CHUNK_SWEEP_INTERVAL_MS,
   type WorkingTreeChunkStore,
   type WorkingTreeChunkStoreEntry,
 } from "../../../../../src/core/domains/explore/working-tree/index.js";
@@ -308,18 +310,147 @@ describe("WorkingTreeChunkStore", { timeout: 60_000 }, () => {
     expect(await store.get("../escape", keyOf(entry))).toBeUndefined();
   });
 
-  it("should sweep at start and on every interval until stopped, without holding the process open", async () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-    const sweep = vi.fn(async () => ({ evicted: 0, kept: 0, bytes: 0 }));
+  // Invariant change (bd tea-rags-mcp-xi2r9, live: 580 sequential `git log --find-object`
+  // on a cold CLI call): the schedule no longer sweeps at start. Its first sweep
+  // waits `initialDelayMs`, so a one-shot process never pays it, every run goes
+  // through the cross-process throttle stamp, and stopping aborts a sweep in flight.
+  it("should first sweep after its initial delay, then on every interval until stopped, without holding the process open", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    const signals: AbortSignal[] = [];
+    const sweepIfDue = vi.fn(async (_at?: number, options?: { signal?: AbortSignal }) => {
+      if (options?.signal) signals.push(options.signal);
+      return undefined;
+    });
 
-    const stop = scheduleWorkingTreeChunkSweep({ sweep }, 6 * HOUR);
-    expect(sweep).toHaveBeenCalledTimes(1);
+    const stop = scheduleWorkingTreeChunkSweep({ sweepIfDue }, { initialDelayMs: 2 * 60_000, intervalMs: 6 * HOUR });
+    expect(sweepIfDue).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2 * 60_000);
+    expect(sweepIfDue).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(6 * HOUR);
-    expect(sweep).toHaveBeenCalledTimes(2);
+    expect(sweepIfDue).toHaveBeenCalledTimes(2);
 
     stop();
+    expect(signals).toHaveLength(2);
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
     await vi.advanceTimersByTimeAsync(12 * HOUR);
-    expect(sweep).toHaveBeenCalledTimes(2);
+    expect(sweepIfDue).toHaveBeenCalledTimes(2);
+  });
+
+  describe("retention cost", () => {
+    const realLookup = () => vi.fn(readBlobCommitTime);
+    const storeWith = (lookup: ReturnType<typeof realLookup>, extra: { commitLookupsPerSweep?: number } = {}) =>
+      createWorkingTreeChunkStore({ rootDir, now: () => clock, readBlobCommitTime: lookup, ...extra });
+
+    it("should answer reads of a store holding many entries with no retention lookup, before the scheduled sweep runs", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+      const lookup = realLookup();
+      const store = storeWith(lookup);
+      const entries = Array.from({ length: 12 }, (_, i) => {
+        const content = `export const v${String(i)} = ${String(i)};\n`;
+        write(`src/v${String(i)}.ts`, content);
+        return entryFor(`src/v${String(i)}.ts`, content);
+      });
+      for (const entry of entries) await store.put(COLLECTION, entry);
+      clock += 200 * HOUR; // every entry idle: a sweep would ask git about each
+
+      const stop = scheduleWorkingTreeChunkSweep(store, { initialDelayMs: 2 * 60_000 });
+      const reads = await Promise.all(entries.map(async (entry) => store.get(COLLECTION, keyOf(entry))));
+
+      expect(reads.every((read) => read !== undefined)).toBe(true);
+      // Real time passes (the process keeps serving) and nothing has asked git yet.
+      await realDelay(300);
+      expect(lookup).not.toHaveBeenCalled();
+
+      clock += 200 * HOUR;
+      await vi.advanceTimersByTimeAsync(2 * 60_000);
+      await vi.waitFor(() => {
+        expect(lookup).toHaveBeenCalled();
+      });
+      stop();
+    });
+
+    it("should not ask git about an entry read within the retention window", async () => {
+      const lookup = realLookup();
+      const store = storeWith(lookup);
+      write("src/a.ts", "export const a = 1;\n");
+      await store.put(COLLECTION, entryFor("src/a.ts", "export const a = 1;\n"));
+
+      expect(await store.sweep(clock + 95 * HOUR)).toMatchObject({ evicted: 0, kept: 1 });
+      expect(lookup).not.toHaveBeenCalled();
+    });
+
+    it("should persist a resolved commit time with the entry and never ask git for it again", async () => {
+      const content = "export const a = 1;\n";
+      const committedAt = commitInTree("src/a.ts", content);
+      clock = committedAt - 200 * HOUR; // stored long before the commit: idle at every sweep below
+      const lookup = realLookup();
+      await storeWith(lookup).put(COLLECTION, entryFor("src/a.ts", content));
+
+      expect(await storeWith(lookup).sweep(committedAt + 10 * HOUR)).toMatchObject({ evicted: 0, kept: 1 });
+      expect(lookup).toHaveBeenCalledTimes(1);
+      // A later process (a fresh store over the same dir) reads the persisted time.
+      expect(await storeWith(lookup).sweep(committedAt + 20 * HOUR)).toMatchObject({ evicted: 0, kept: 1 });
+      expect(await storeWith(lookup).sweep(committedAt + 97 * HOUR)).toMatchObject({ evicted: 1, kept: 0 });
+      expect(lookup).toHaveBeenCalledTimes(1);
+    });
+
+    it("should bound commit lookups per sweep and rotate through unresolved entries across sweeps", async () => {
+      const lookup = realLookup();
+      const store = storeWith(lookup, { commitLookupsPerSweep: 2 });
+      for (const name of ["a", "b", "c", "d", "e"]) {
+        write(`src/${name}.ts`, `export const ${name} = 1;\n`);
+        await store.put(COLLECTION, entryFor(`src/${name}.ts`, `export const ${name} = 1;\n`));
+      }
+      const asked = (): string[] => lookup.mock.calls.map((call) => call[1]);
+
+      await store.sweep(clock + 100 * HOUR);
+      expect(lookup).toHaveBeenCalledTimes(2);
+      await store.sweep(clock + 101 * HOUR);
+      expect(lookup).toHaveBeenCalledTimes(4);
+      await store.sweep(clock + 102 * HOUR);
+      expect(lookup).toHaveBeenCalledTimes(6);
+
+      expect(new Set(asked().slice(0, 4)).size).toBe(4);
+      expect(new Set(asked())).toEqual(new Set(["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts", "src/e.ts"]));
+    });
+
+    it("should decide entries of a removed tree or a deleted path without git", async () => {
+      const lookup = realLookup();
+      const store = storeWith(lookup);
+      write("src/gone.ts", "export const gone = 1;\n");
+      await store.put(COLLECTION, entryFor("src/gone.ts", "export const gone = 1;\n"));
+      rmSync(join(tree, "src/gone.ts"));
+      await store.put(COLLECTION, entryFor("src/x.ts", "export const x = 1;\n", join(scratch, "no-such-tree")));
+
+      expect(await store.sweep(clock + 97 * HOUR)).toMatchObject({ evicted: 2, kept: 0 });
+      expect(lookup).not.toHaveBeenCalled();
+    });
+
+    it("should sweep at most once per interval across store instances sharing a directory", async () => {
+      const lookup = realLookup();
+      write("src/a.ts", "export const a = 1;\n");
+      await storeWith(lookup).put(COLLECTION, entryFor("src/a.ts", "export const a = 1;\n"));
+      const at = clock + 100 * HOUR;
+
+      expect(await storeWith(lookup).sweepIfDue(at)).toMatchObject({ kept: 1 });
+      expect(lookup).toHaveBeenCalledTimes(1);
+      expect(await storeWith(lookup).sweepIfDue(at + HOUR)).toBeUndefined();
+      expect(lookup).toHaveBeenCalledTimes(1);
+      expect(await storeWith(lookup).sweepIfDue(at + WORKING_TREE_CHUNK_SWEEP_INTERVAL_MS)).toMatchObject({
+        kept: 1,
+      });
+      expect(lookup).toHaveBeenCalledTimes(2);
+    });
+
+    it("should stop a sweep whose signal is aborted without evicting anything", async () => {
+      const store = storeWith(realLookup());
+      await store.put(COLLECTION, entryFor("src/x.ts", "export const x = 1;\n", join(scratch, "no-such-tree")));
+      const controller = new AbortController();
+      controller.abort();
+
+      expect(await store.sweep(clock, { signal: controller.signal })).toMatchObject({ evicted: 0 });
+      expect(await store.sweep(clock)).toMatchObject({ evicted: 1 });
+    });
   });
 
   it("should not serve rows a layer of an earlier row format stored (pre-stored-id `chunk_` rows)", async () => {
