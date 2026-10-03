@@ -24,6 +24,7 @@
  */
 
 import { readFile } from "node:fs/promises";
+import { isAbsolute } from "node:path";
 
 import { structuredPatch } from "diff";
 
@@ -45,7 +46,12 @@ export interface WorkingRowsOfFile {
   chunks: readonly ChunkLookupEntry[];
 }
 
-/** Both maps keyed by absolute path (`<repoRoot>/<relPath>`), as the walk's chunk map is. */
+/**
+ * `carryWorkingRowsOntoHead` keys both maps by absolute path
+ * (`<repoRoot>/<relPath>`); `carryDirtyChunkMapOntoHead` keeps `chunkMap` under
+ * the caller's own keys (repo-relative or absolute). Consumers relativize them
+ * as `relativizeChunkMap` does.
+ */
 export interface WorkingRowsAtHead {
   /** Rows holding at least one committed line, in HEAD lines — what the walk is handed. */
   chunkMap: Map<string, ChunkLookupEntry[]>;
@@ -117,9 +123,17 @@ export async function carryDirtyChunkMapOntoHead(
   blobReader?: BlobBatchReader,
 ): Promise<WorkingRowsAtHead> {
   const prefix = `${adapter.repoRoot}/`;
-  const relPaths = [...chunkMap.keys()]
-    .filter((key) => key.startsWith(prefix) && (chunkMap.get(key)?.length ?? 0) > 0)
-    .map((key) => key.slice(prefix.length));
+  // The walk's chunk map comes keyed either way — repo-relative from ingest
+  // (`ChunkPhase`, the recompute scroll), absolute from other callers — so each
+  // key is resolved to its repo-relative path the way `relativizeChunkMap`
+  // does, and the carried rows are written back under the caller's key.
+  const keyOfRelPath = new Map<string, string>();
+  for (const [key, chunks] of chunkMap) {
+    if (chunks.length === 0) continue;
+    if (key.startsWith(prefix)) keyOfRelPath.set(key.slice(prefix.length), key);
+    else if (!isAbsolute(key)) keyOfRelPath.set(key, key);
+  }
+  const relPaths = [...keyOfRelPath.keys()];
   const unchanged: WorkingRowsAtHead = { chunkMap, uncommittedRows: new Map() };
   if (relPaths.length === 0) return unchanged;
 
@@ -139,7 +153,8 @@ export async function carryDirtyChunkMapOntoHead(
 
   const files: WorkingRowsOfFile[] = [];
   for (const relPath of modified) {
-    const chunks = chunkMap.get(`${prefix}${relPath}`);
+    const key = keyOfRelPath.get(relPath);
+    const chunks = key === undefined ? undefined : chunkMap.get(key);
     if (!chunks) continue;
     const workingContent = await readFile(`${prefix}${relPath}`, "utf8").catch(() => undefined);
     if (workingContent !== undefined) files.push({ relPath, workingContent, chunks });
@@ -149,13 +164,14 @@ export async function carryDirtyChunkMapOntoHead(
   const carried = await carryWorkingRowsOntoHead(adapter, files, blobReader);
   const walkMap = new Map(chunkMap);
   for (const { relPath } of files) {
-    const key = `${prefix}${relPath}`;
+    const carriedKey = `${prefix}${relPath}`;
     // Absent from both maps: HEAD reads empty for it, so there are no HEAD rows
     // to carry onto — left as read.
-    if (!carried.chunkMap.has(key) && !carried.uncommittedRows.has(key)) continue;
-    const atHead = carried.chunkMap.get(key);
-    if (atHead) walkMap.set(key, atHead);
-    else walkMap.delete(key);
+    if (!carried.chunkMap.has(carriedKey) && !carried.uncommittedRows.has(carriedKey)) continue;
+    const callerKey = keyOfRelPath.get(relPath) ?? carriedKey;
+    const atHead = carried.chunkMap.get(carriedKey);
+    if (atHead) walkMap.set(callerKey, atHead);
+    else walkMap.delete(callerKey);
   }
   return { chunkMap: walkMap, uncommittedRows: carried.uncommittedRows };
 }

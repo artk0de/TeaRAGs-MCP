@@ -93,7 +93,12 @@ their own navigators.
   (`buildOnDemandGitSignals`) go through the same module, so a delta row and a
   reindex of a dirty tree agree. Why: walked as HEAD rows, four lines added
   above a symbol credited it with its neighbour's commits (parity harness
-  `working-tree-git-parity.test.ts`, bd tea-rags-mcp-xi2r9).
+  `working-tree-git-parity.test.ts`, bd tea-rags-mcp-xi2r9). The chunk map
+  reaches the provider keyed REPO-RELATIVE from ingest (`ChunkPhase`, the
+  recompute scroll) and absolute from other callers; code that selects files by
+  key must accept both, as `relativizeChunkMap` does — the first cut matched
+  absolute keys only, so ingest never carried a dirty file while the unit tests,
+  keyed absolute, stayed green.
 
 - **An index carries the git algorithm revision that computed it.**
   `GIT_TRAJECTORY_ALGORITHM_VERSION` (`algorithm-version.ts`) is the provider's

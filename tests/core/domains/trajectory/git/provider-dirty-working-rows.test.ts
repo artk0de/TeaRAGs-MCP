@@ -20,6 +20,7 @@ import { dirname, join, resolve, sep } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { ChunkSignalOverlay } from "../../../../../src/core/contracts/types/provider.js";
 import { GitEnrichmentProvider } from "../../../../../src/core/domains/trajectory/git/provider.js";
 import type { ChunkLookupEntry } from "../../../../../src/core/types.js";
 
@@ -148,6 +149,105 @@ describe("GitEnrichmentProvider#buildChunkSignals over a file with uncommitted e
     expect(overlays?.get("Engine")).toMatchObject({ commitCount: 2 });
     // Only uncommitted lines: the walk's zero contribution, never a neighbour's commits.
     expect(overlays?.get("brandNew")).toMatchObject({ commitCount: 0 });
+  });
+
+  describe.each([
+    { walk: "inline walk", offThread: false, keys: "repo-relative keys", relativeKeys: true },
+    { walk: "off-thread walk", offThread: true, keys: "repo-relative keys", relativeKeys: true },
+    { walk: "inline walk", offThread: false, keys: "absolute keys", relativeKeys: false },
+    { walk: "off-thread walk", offThread: true, keys: "absolute keys", relativeKeys: false },
+  ])("an uncommitted-only row BETWEEN committed rows ($walk, $keys)", ({ offThread, relativeKeys }) => {
+    // The chunker's rows for the dirty file: a class row and its method row
+    // overlap, and a brand-new function sits between helperA and the class.
+    // Ingest hands the chunk map keyed REPO-RELATIVE (`ChunkPhase` and the
+    // `--force-enrichments` recompute scroll both do); absolute keys are the
+    // other shape the provider accepts. Live repro (probe2-g, round 7): with
+    // relative keys no dirty file was carried onto HEAD, so working rows were
+    // walked as HEAD rows (brandNew ← Engine's 6 commits, Engine ← 1, start ← 0).
+    const DIRTY = [
+      "// dirty header line 1",
+      "// dirty header line 2",
+      "export function helperB(): number {",
+      "  return 2; // b3",
+      "}",
+      "",
+      "export function helperA(): number {",
+      "  const s2 = 0; // dirty inside helperA",
+      "  return helperB() + 1 + s2;",
+      "}",
+      "",
+      "export function brandNew(): number {",
+      "  // brand-new uncommitted symbol",
+      "  return 42;",
+      "}",
+      "",
+      "export class Engine {",
+      "  start(): number {",
+      "    // dirty inside start",
+      "    return helperA() + this.step();",
+      "  }",
+      "",
+      "  step(): number {",
+      "    return 1; // v5",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const ROWS: ChunkLookupEntry[] = [
+      { chunkId: "helperB", startLine: 1, endLine: 5 },
+      { chunkId: "helperA", startLine: 7, endLine: 10 },
+      { chunkId: "brandNew", startLine: 12, endLine: 15 },
+      { chunkId: "Engine", startLine: 17, endLine: 26 },
+      { chunkId: "Engine#start", startLine: 18, endLine: 21 },
+    ];
+
+    it("credits every row with its own HEAD commits, the uncommitted row with none", async () => {
+      commit(ENGINE_V1.replace("return 2; // b0", "return 2;"), "init", "probe", at(60));
+      let content = ENGINE_V1.replace("return 2; // b0", "return 2;");
+      for (let v = 1; v <= 5; v++) {
+        const prev = v === 1 ? "return 1;" : `return 1; // v${v - 1}`;
+        content = content.replace(prev, `return 1; // v${v}`);
+        commit(content, `fix: engine step ${v}`, "alice", at(50 - v));
+      }
+      for (let b = 1; b <= 3; b++) {
+        const prev = b === 1 ? "return 2;" : `return 2; // b${b - 1}`;
+        content = content.replace(prev, `return 2; // b${b}`);
+        commit(content, `feat: helperB ${b}`, "bob", at(40 - b));
+      }
+      write(DIRTY);
+
+      const provider = new GitEnrichmentProvider({
+        vcsAdapter: "git",
+        logMaxAgeMonths: 12,
+        logTimeoutMs: 30_000,
+        chunkConcurrency: 4,
+        blamePoolSize: 1,
+        chunkMaxAgeMonths: 6,
+        chunkTimeoutMs: 30_000,
+        chunkMaxFileLines: 5000,
+      });
+      const walkThread = offThread ? provider.createChunkChurnWalkThread() : undefined;
+      let overlays: Map<string, ChunkSignalOverlay> | undefined;
+      try {
+        const key = relativeKeys ? FILE : join(repo, FILE);
+        const result = await provider.buildChunkSignals(repo, new Map([[key, ROWS]]), {
+          skipCache: true,
+          commitDiscovery: provider.createCommitDiscovery(repo),
+          ...(walkThread ? { churnWalkThread: walkThread } : {}),
+        });
+        overlays = result.get(FILE);
+      } finally {
+        await walkThread?.close();
+        await provider.finalizeSignals();
+      }
+
+      expect(overlays?.get("helperB")).toMatchObject({ commitCount: 4 });
+      expect(overlays?.get("helperA")).toMatchObject({ commitCount: 1 });
+      expect(overlays?.get("brandNew")).toMatchObject({ commitCount: 0, lastModifiedAt: 0 });
+      expect(overlays?.get("Engine")).toMatchObject({ commitCount: 6 });
+      expect(overlays?.get("Engine#start")).toMatchObject({ commitCount: 1 });
+      expect(overlays?.get("Engine#start")?.lastModifiedAt).toBeGreaterThan(0);
+    });
   });
 
   it("walks a clean file's rows as they are", async () => {

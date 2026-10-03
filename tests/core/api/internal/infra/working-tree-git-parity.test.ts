@@ -197,11 +197,12 @@ async function ingestReference(
     for (const [path, data] of streamed) {
       file.set(path, { ...provider.fileSignalTransform?.(data, maxEndLine(path)), enrichedAt });
     }
-    const walked = await provider.buildChunkSignals(
-      root,
-      new Map(chunkPaths.map((path) => [join(root, path), lookupOf(path)])),
-      { skipCache: true, commitDiscovery: provider.createCommitDiscovery(root) },
-    );
+    // Keyed repo-relative, as `ChunkPhase#extractBatchChunkMap` and the
+    // recompute scroll hand the chunk map to the provider.
+    const walked = await provider.buildChunkSignals(root, new Map(chunkPaths.map((path) => [path, lookupOf(path)])), {
+      skipCache: true,
+      commitDiscovery: provider.createCommitDiscovery(root),
+    });
     for (const overlays of walked.values()) {
       for (const [chunkId, overlay] of overlays) chunk.set(chunkId, { ...overlay, enrichedAt });
     }
@@ -534,6 +535,49 @@ describe.each([
     const chunkOf = (symbol: string) => unstamped(reference.chunk.get(`src/engine.ts::${symbol}`), symbol);
     expect(chunkOf("helperB")).toMatchObject({ commitCount: 1 });
     expect(chunkOf("helperA")).toMatchObject({ commitCount: 2 });
+  });
+
+  it("matches a reindex of a tree with an uncommitted-only symbol between committed ones", async () => {
+    const repo = join(scratch, "main");
+    mkdirSync(repo);
+    repoGit(repo, ["init", "-q", "-b", "main"]);
+    commit(repo, { "src/engine.ts": ENGINE_V1 }, "init", "alice", at(40));
+    let content = ENGINE_V1;
+    for (let v = 1; v <= 3; v++) {
+      content = content.replace(v === 1 ? "return 1;" : `return 1; // v${v - 1}`, `return 1; // v${v}`);
+      commit(repo, { "src/engine.ts": content }, `fix: engine step ${v}`, "bob", at(30 - v));
+    }
+    const stamp = commit(
+      repo,
+      { "src/engine.ts": content.replace("// b0", "// b1") },
+      "feat: helperB",
+      "carol",
+      at(20),
+    );
+    const basePoints = await indexAt(repo, ["src/engine.ts"], squashOpts);
+
+    // Uncommitted: header lines above every symbol, a line inside helperA, and
+    // a brand-new symbol BETWEEN helperA and Engine — rows after it sit on
+    // other symbols' HEAD rows unless carried onto HEAD.
+    const dirty = readFileSync(join(repo, "src/engine.ts"), "utf8")
+      .replace("export function helperB", "// header one\n// header two\nexport function helperB")
+      .replace("  return helperB() + 1;", "  const s2 = 0;\n  return helperB() + 1 + s2;")
+      .replace(
+        "export class Engine",
+        "export function brandNewBetween(): number {\n  // never committed\n  return 42;\n}\n\nexport class Engine",
+      );
+    write(repo, "src/engine.ts", dirty);
+
+    const delta = ["src/engine.ts"];
+    const reference = await ingestReference(repo, delta, squashOpts);
+    const rows = await overlayRows(repo, delta, basePoints, stamp, squashOpts);
+
+    expectParity(rows, reference);
+    const chunkOf = (symbol: string) => unstamped(reference.chunk.get(`src/engine.ts::${symbol}`), symbol);
+    expect(chunkOf("helperB")).toMatchObject({ commitCount: 2 });
+    expect(chunkOf("helperA")).toMatchObject({ commitCount: 1 });
+    expect(chunkOf("brandNewBetween")).toMatchObject({ commitCount: 0, lastModifiedAt: 0 });
+    expect(chunkOf("Engine")).toMatchObject({ commitCount: 4 });
   });
 
   it("stamps a file past the chunk walk's line limit as ingest's policy does", async () => {
