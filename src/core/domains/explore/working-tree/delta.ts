@@ -32,7 +32,6 @@ import {
   readWorkingTreeChanges,
   readWorkingTreeRenames,
 } from "../../../adapters/vcs/git/git-cli/client.js";
-import { WORKING_TREE_DELTA_FILE_CAP } from "../../../contracts/types/working-tree.js";
 import { findGitToplevel, gitPathPrefix, rebaseGitPathsOntoRoot } from "../../../infra/repo-git-state.js";
 
 export interface WorkingTreeDelta {
@@ -54,11 +53,8 @@ export type WorkingTreeDeltaRead =
   | { kind: "measured"; delta: WorkingTreeDelta }
   | { kind: "degraded"; reason: string; remedy: string };
 
-export { WORKING_TREE_DELTA_FILE_CAP };
-
 /** Remedies carry `{alias}` / `{tree}` tokens the overlay fills in. */
 export const WORKING_TREE_REINDEX_REMEDY = "tea-rags index-codebase --project {alias}";
-export const WORKING_TREE_WORKTREE_INDEX_REMEDY = "tea-rags worktree create <name> --from {alias} --path {tree}";
 
 export interface WorkingTreeDeltaReader {
   read: (
@@ -158,13 +154,7 @@ async function measureDelta(
   }
   const changed = rebaseGitPathsOntoRoot(changes.changed, prefix).filter(accepts);
   const deleted = rebaseGitPathsOntoRoot(changes.deleted, prefix).filter(accepts);
-  // The cap is the overlay's (it folds the index-time dirty files in first and
-  // reports the measured counts beside `degraded`); a delta already over it
-  // skips the rename diff, whose pairs nothing past the cap would read.
-  const renamedFrom =
-    changed.length + deleted.length > WORKING_TREE_DELTA_FILE_CAP
-      ? new Map<string, string>()
-      : await readRenamePairs(gitToplevel, prefix, indexedCommit, changes.untracked, changed, deleted);
+  const renamedFrom = await readRenamePairs(gitToplevel, prefix, indexedCommit, changes.untracked, changed, deleted);
   return { kind: "measured", delta: { changed, deleted, renamedFrom, fingerprint } };
 }
 

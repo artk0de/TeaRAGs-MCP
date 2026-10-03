@@ -99,6 +99,7 @@ export const SearchResultOutputSchema = {
       deletedFiles: z.number(),
       floors: z.array(z.enum(["chunks", "sparse", "dense", "codegraph"])),
       degraded: z.object({ reason: z.string(), remedy: z.string() }).optional(),
+      indexOnlyFiles: z.number().optional(),
       unparsed: z.array(z.string()).optional(),
       treeGraphUnavailable: z.string().optional(),
       denseUnavailable: z.object({ reason: z.string() }).optional(),
@@ -107,7 +108,8 @@ export const SearchResultOutputSchema = {
     .describe(
       "Tree read vs index commit. changedFiles 0 = measured clean; floors = rows reflect tree " +
         "(dense = tree rows ranked by own vectors; codegraph = graph-tool answer, or a returned changed-file row, from the tree's graph); " +
-        "degraded = run remedy; unparsed = changed files the tree's rows lack; " +
+        "degraded = run remedy; indexOnlyFiles = changed non-code files whose rows are the index's (treeState); " +
+        "unparsed = changed files the tree's rows lack; " +
         "treeGraphUnavailable = why graph signals are the index's; " +
         "denseUnavailable = why some tree rows ranked without vectors (absent from dense ranking).",
     ),

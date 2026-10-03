@@ -55,3 +55,23 @@ describe("formatWorkingTreeMarker — dense floor", () => {
     );
   });
 });
+
+/** Delta admission: changed files served from the index are counted beside `changed`. */
+describe("formatWorkingTreeMarker — index-only files", () => {
+  it("should name how many changed files answer from the index", () => {
+    const text = formatWorkingTreeMarker({
+      tree: "/repo/wt",
+      indexedCommit: "0123456789abcdef0123456789abcdef01234567",
+      treeCommit: "fedcba9876543210fedcba9876543210fedcba98",
+      indexedDirty: false,
+      changedFiles: 5,
+      deletedFiles: 0,
+      floors: ["chunks"],
+      indexOnlyFiles: 2,
+    });
+
+    expect(text).toBe(
+      "workingTree: /repo/wt · index @0123456 · tree @fedcba9 · changed 5 (2 index-only) · deleted 0 · floors chunks",
+    );
+  });
+});

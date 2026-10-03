@@ -24,7 +24,6 @@ import {
   type PathCollectionResolver,
   type RegistryGitState,
 } from "../../../contracts/types/registry.js";
-import { WORKING_TREE_DELTA_FILE_CAP } from "../../../contracts/types/working-tree.js";
 import { hashCollectionForPath, validatePath } from "../../../infra/collection-name.js";
 import { TeaRagsError } from "../../../infra/errors.js";
 import {
@@ -441,9 +440,9 @@ export abstract class BaseIndexingPipeline {
    * `indexedDirtyPaths` names the indexed files this run read with content
    * `indexedCommit` does not hold (live P1-1): the overlay re-reads them, since
    * a diff against the commit stops seeing them once they are restored. Only
-   * files the ingest rules admit are listed — anything else was never indexed —
-   * and past `WORKING_TREE_DELTA_FILE_CAP` nothing is stored, only the
-   * overflow, because the overlay could not hold the list anyway.
+   * files the ingest rules admit are listed — anything else was never indexed.
+   * The list is stored in full, however long; the legacy
+   * `indexedDirtyPathsOverflowed` flag is never written.
    */
   private async buildRegistryGitState(absolutePath: string): Promise<RegistryGitState | undefined> {
     const state = readRepoGitState(findGitToplevel(absolutePath) ?? absolutePath);
@@ -458,9 +457,6 @@ export abstract class BaseIndexingPipeline {
     const scanner = this.createScanner();
     await scanner.loadIgnorePatterns(absolutePath);
     const indexedDirtyPaths = dirtyPaths.filter((path) => scanner.accepts(path)).sort();
-    if (indexedDirtyPaths.length > WORKING_TREE_DELTA_FILE_CAP) {
-      return { ...gitState, indexedDirtyPathsOverflowed: true };
-    }
     return { ...gitState, indexedDirtyPaths };
   }
 

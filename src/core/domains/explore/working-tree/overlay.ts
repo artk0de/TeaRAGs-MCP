@@ -4,8 +4,8 @@
  * base index was built at, and the {@link WorkingTreeMarker} the answer carries.
  *
  * The marker is never omitted and `view` never throws: a tree that cannot be
- * measured — no commit stamp, an unknown commit, a delta over the cap, a git
- * failure — still yields a marker, with `degraded` saying why and what fixes
+ * measured — no commit stamp, an unknown commit, an index whose dirty files
+ * are unknown, a git failure — still yields a marker, with `degraded` saying why and what fixes
  * it. A degraded view touches no path, so nothing is substituted or hidden.
  */
 import { createHash } from "node:crypto";
@@ -13,36 +13,41 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
 import type { CollectionEntry, RegistryGitState } from "../../../contracts/types/registry.js";
-import {
-  WORKING_TREE_DELTA_FILE_CAP,
-  type WorkingTree,
-  type WorkingTreeDeltaSignalSource,
-  type WorkingTreeGraphReader,
-  type WorkingTreeGraphRequest,
-  type WorkingTreeGraphSource,
-  type WorkingTreeGraphState,
-  type WorkingTreeMarker,
-  type WorkingTreeTouchedBasePointsByPath,
-  type WorkingTreeTouchedBasePointsReader,
+import type {
+  WorkingTree,
+  WorkingTreeDeltaSignalSource,
+  WorkingTreeGraphReader,
+  WorkingTreeGraphRequest,
+  WorkingTreeGraphSource,
+  WorkingTreeGraphState,
+  WorkingTreeMarker,
+  WorkingTreeTouchedBasePointsByPath,
+  WorkingTreeTouchedBasePointsReader,
 } from "../../../contracts/types/working-tree.js";
 import { findGitToplevel, readRepoGitState } from "../../../infra/repo-git-state.js";
 import type { ChunkerConfig } from "../../../types.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import type { WorkingTreeChunkLayer, WorkingTreeChunkLayerRead } from "./chunk-layer.js";
-import {
-  WORKING_TREE_REINDEX_REMEDY,
-  WORKING_TREE_WORKTREE_INDEX_REMEDY,
-  type WorkingTreeDelta,
-  type WorkingTreeDeltaReader,
-} from "./delta.js";
+import { WORKING_TREE_REINDEX_REMEDY, type WorkingTreeDelta, type WorkingTreeDeltaReader } from "./delta.js";
 import type { WorkingTreeDenseVectorReader, WorkingTreeDenseVectorSource } from "./dense-floor.js";
 import { relativePathOf } from "./substitute.js";
 
 export interface WorkingTreeView {
   marker: WorkingTreeMarker;
-  /** changed ∪ deleted; empty when degraded (nothing substituted, nothing hidden) */
+  /**
+   * re-read changed ∪ deleted: the files whose base rows are replaced or
+   * hidden. Empty when degraded (nothing substituted, nothing hidden).
+   */
   touchedPaths: ReadonlySet<string>;
   deletedPaths: ReadonlySet<string>;
+  /**
+   * Changed files the tree changed but this view does not re-read (delta
+   * admission declined them): their base rows stay in the answer, marked
+   * `treeState: "modified"` (`workingTreeStateOf`). Disjoint from
+   * `touchedPaths`. The overlay always sets it (empty when degraded); absent
+   * on a hand-built view, where it reads as empty.
+   */
+  indexServedPaths?: ReadonlySet<string>;
   /**
    * Rows of the changed files as the chunker yields them — structure only, no
    * trajectory payload (deleted files have none). Absent on a degraded view and
@@ -159,6 +164,13 @@ export interface WorkingTreeOverlayDeps {
   deltaReader: WorkingTreeDeltaReader;
   /** The ingest admission rule for files under `root` (`FileScanner#accepts`). */
   createFileFilter: (root: string) => Promise<(relativePath: string) => boolean>;
+  /**
+   * Delta admission: whether a CHANGED file is re-read from the tree (chunked,
+   * vectorized, graphed). A declined file is served from the index and named in
+   * `indexServedPaths`; deletions never ask. Absent → every changed file is
+   * re-read.
+   */
+  admitsToDelta?: (relativePath: string) => boolean;
   /** Absent → views carry no `readDeltaChunks`. */
   deltaChunks?: WorkingTreeDeltaChunkSource;
   /** The tree-graph cache (WTO-7). Absent → views carry no `readTreeGraph` and nothing is warmed. */
@@ -204,16 +216,11 @@ export class WorkingTreeOverlay {
     };
     const fill = (template: string): string =>
       template.replaceAll("{alias}", alias ?? entry?.name ?? collectionName).replaceAll("{tree}", tree.root);
-    // `measured` → the delta WAS measured and only refused (the cap): its counts
-    // are reported (live D11a), since `0` must mean measured-and-empty.
-    const degraded = (
-      reason: string,
-      remedy: string,
-      measured?: { changedFiles: number; deletedFiles: number },
-    ): WorkingTreeView => ({
-      marker: { ...marker, ...measured, degraded: { reason, remedy: fill(remedy) } },
+    const degraded = (reason: string, remedy: string): WorkingTreeView => ({
+      marker: { ...marker, degraded: { reason, remedy: fill(remedy) } },
       touchedPaths: EMPTY_PATHS,
       deletedPaths: EMPTY_PATHS,
+      indexServedPaths: EMPTY_PATHS,
     });
 
     if (tree.root === "") return degraded(NO_TREE_REASON, NO_TREE_REMEDY);
@@ -227,31 +234,35 @@ export class WorkingTreeOverlay {
       const dirtyAtIndex = dirtyAtIndexTime(entry?.git);
       if (dirtyAtIndex.kind === "unknown") return degraded(dirtyAtIndex.reason, WORKING_TREE_REINDEX_REMEDY);
       const { changed, deleted } = await foldDirtyAtIndexTime(tree.root, read.delta, dirtyAtIndex.paths, accepts);
-      const total = changed.length + deleted.length;
-      if (total > WORKING_TREE_DELTA_FILE_CAP) {
-        return degraded(
-          `delta of ${total} files over the ${WORKING_TREE_DELTA_FILE_CAP}-file cap`,
-          WORKING_TREE_WORKTREE_INDEX_REMEDY,
-          { changedFiles: changed.length, deletedFiles: deleted.length },
-        );
-      }
+      // Delta admission: only `reread` is chunked, vectorized and graphed from
+      // the tree; `indexOnly` keeps its base rows, marked "modified".
+      const { admitsToDelta } = this.deps;
+      const reread = admitsToDelta ? changed.filter((path) => admitsToDelta(path)) : changed;
+      const indexOnly = admitsToDelta ? changed.filter((path) => !admitsToDelta(path)) : [];
+      const touched = reread.length + deleted.length;
       const view: WorkingTreeView = {
-        marker: { ...marker, changedFiles: changed.length, deletedFiles: deleted.length },
-        touchedPaths: new Set([...changed, ...deleted]),
+        marker: {
+          ...marker,
+          changedFiles: changed.length,
+          deletedFiles: deleted.length,
+          ...(indexOnly.length > 0 ? { indexOnlyFiles: indexOnly.length } : {}),
+        },
+        touchedPaths: new Set([...reread, ...deleted]),
         deletedPaths: new Set(deleted),
+        indexServedPaths: new Set(indexOnly),
         ...(read.delta.renamedFrom && read.delta.renamedFrom.size > 0 ? { renamedFrom: read.delta.renamedFrom } : {}),
       };
-      if (total > 0 && this.deps.treeGraph) {
+      if (touched > 0 && this.deps.treeGraph) {
         const request: WorkingTreeGraphRequest = {
           tree,
-          changed,
+          changed: reread,
           deleted,
-          fingerprint: treeGraphFingerprint(read.delta.fingerprint, changed, deleted),
+          fingerprint: treeGraphFingerprint(read.delta.fingerprint, reread, deleted),
         };
         view.readTreeGraph = treeGraphReader(this.deps.treeGraph, request);
       }
       const { touchedBasePoints } = this.deps;
-      if (total > 0 && touchedBasePoints) {
+      if (touched > 0 && touchedBasePoints) {
         let points: Promise<WorkingTreeTouchedBasePointsByPath> | undefined;
         view.readTouchedBasePoints = async () =>
           (points ??= touchedBasePoints.pointsOf(collectionName, view.touchedPaths, indexedCommit));
@@ -261,12 +272,12 @@ export class WorkingTreeOverlay {
         const { deltaSignals, denseVectors } = this.deps;
         let chunked: Promise<WorkingTreeChunkLayerRead> | undefined;
         const readChunked = async (): Promise<WorkingTreeChunkLayerRead> =>
-          (chunked ??= readDeltaChunks(source, tree, changed, view.marker));
+          (chunked ??= readDeltaChunks(source, tree, reread, view.marker));
         view.readDeltaChunks = async () => (await readChunked()).chunks;
         if (deltaSignals) {
           view.signalDeltaRows = deltaRowSignaller(deltaSignals, tree, view, read.delta.renamedFrom);
         }
-        if (denseVectors && changed.length > 0) {
+        if (denseVectors && reread.length > 0) {
           view.readDeltaVectors = warmDeltaVectors(denseVectors, collectionName, view, readChunked);
         }
       }
@@ -284,12 +295,13 @@ type DirtyAtIndexTime = { kind: "listed"; paths: readonly string[] } | { kind: "
  * The files the index holds with content its `indexedCommit` does not — dirty
  * when the run read the tree (live P1-1). A dirty stamp without the list is
  * UNKNOWN, not clean: it was written before the list existed, or git could not
- * answer, or the list overflowed; measuring past it would answer from content
- * no commit holds while claiming the tree matches.
+ * answer, or a legacy run capped the list (`indexedDirtyPathsOverflowed`);
+ * measuring past it would answer from content no commit holds while claiming
+ * the tree matches.
  */
 function dirtyAtIndexTime(git: RegistryGitState | undefined): DirtyAtIndexTime {
   if (git?.indexedDirtyPathsOverflowed) {
-    return { kind: "unknown", reason: `index built from a tree with over ${WORKING_TREE_DELTA_FILE_CAP} dirty files` };
+    return { kind: "unknown", reason: "index built from a dirty tree whose dirty files were not listed" };
   }
   if (git?.indexedDirtyPaths !== undefined) return { kind: "listed", paths: git.indexedDirtyPaths };
   if (git?.indexedDirty) {

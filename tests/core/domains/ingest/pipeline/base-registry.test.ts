@@ -331,6 +331,38 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
     });
   });
 
+  // No count cap: every dirty indexed file is listed, and the legacy overflow
+  // flag is never written.
+  it("records every dirty indexed file of a tree with 250 of them, sorted, with no overflow flag", async () => {
+    const git = (...args: string[]): string =>
+      execFileSync("git", args, {
+        cwd: codebaseDir,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: "t",
+          GIT_AUTHOR_EMAIL: "t@x",
+          GIT_COMMITTER_NAME: "t",
+          GIT_COMMITTER_EMAIL: "t@x",
+        },
+      });
+    git("init", "-q", "-b", "main");
+    const removed = Array.from({ length: 250 }, (_, i) => `gone${i}.ts`);
+    for (const name of removed) writeFileSync(join(codebaseDir, name), `export const v = 1;\n`);
+    await createTestFile(codebaseDir, "kept.ts", "export const kept = 1;");
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+    for (const name of removed) rmSync(join(codebaseDir, name));
+
+    await ingest.indexCodebase(codebaseDir);
+    const status = await ingest.getIndexStatus(codebaseDir);
+
+    const gitState = registry.get(status.collectionName!)?.git;
+    expect(gitState?.indexedDirty).toBe(true);
+    expect(gitState?.indexedDirtyPaths).toEqual([...removed].sort());
+    expect(gitState).not.toHaveProperty("indexedDirtyPathsOverflowed");
+  });
+
   it("omits entry.git when the codebase is not a git repository (hpg2)", async () => {
     await createTestFile(codebaseDir, "nogit.ts", "export const x = 1;");
     await ingest.indexCodebase(codebaseDir);

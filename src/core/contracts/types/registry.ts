@@ -26,14 +26,16 @@ export interface RegistryGitState {
    * index holds THEIR content, not the commit's, so a diff against
    * `indexedCommit` alone misses them once the tree is restored: the
    * working-tree overlay re-reads every one. Empty = the run saw a clean tree.
-   * Absent on entries written before the field existed, when git could not
-   * answer, and when the list overflowed (see `indexedDirtyPathsOverflowed`) —
-   * an absent list on a dirty stamp is "unknown", never "none".
+   * Stored in full, however long. Absent on entries written before the field
+   * existed, on legacy overflowed entries (see `indexedDirtyPathsOverflowed`),
+   * and when git could not answer — an absent list on a dirty stamp is
+   * "unknown", never "none".
    */
   indexedDirtyPaths?: string[];
   /**
-   * More than `WORKING_TREE_DELTA_FILE_CAP` files were dirty at index time; the
-   * list is not stored, because the overlay could not hold it anyway.
+   * LEGACY, read-only: set by index runs that capped the list at 200 files and
+   * stored no list past it. Nothing writes it any more; the overlay still reads
+   * it, so such an entry answers "dirty files unknown" until it is reindexed.
    */
   indexedDirtyPathsOverflowed?: boolean;
 }

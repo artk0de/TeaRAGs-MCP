@@ -14,6 +14,7 @@ import {
   createWorkingTreeChunkLayer,
   createWorkingTreeDeltaReader,
   WorkingTreeOverlay,
+  workingTreeStateOf,
   type WorkingTreeDeltaReader,
 } from "../../../../../src/core/domains/explore/working-tree/index.js";
 import { FileScanner } from "../../../../../src/core/domains/ingest/pipeline/scanner.js";
@@ -151,19 +152,21 @@ describe("WorkingTreeOverlay", { timeout: 60_000 }, () => {
       expect(view.touchedPaths.size).toBe(0);
     });
 
-    it("should degrade when the index was built from more dirty files than the overlay holds", async () => {
+    // Legacy read: an entry written while ingest capped the list carries the
+    // overflow flag and no list — its dirty files stay unknown.
+    it("should degrade when a legacy index entry recorded its dirty files as overflowed", async () => {
       record({ indexedCommit, indexedDirty: true, indexedDirtyPathsOverflowed: true });
 
       const view = await overlayWith().view(workingTree(), "proj");
 
-      expect(view.marker.degraded?.reason).toBe("index built from a tree with over 200 dirty files");
+      expect(view.marker.degraded?.reason).toBe("index built from a dirty tree whose dirty files were not listed");
       expect(view.marker.degraded?.remedy).toBe("tea-rags index-codebase --project proj");
       expect(view.touchedPaths.size).toBe(0);
     });
 
-    // Live D11a: over the cap the delta WAS measured — `0` beside `degraded`
-    // read as "measured and empty". The counts are reported; nothing is touched.
-    it("should report the measured counts of a delta the index-time dirty files push over the cap", async () => {
+    // No count cap: the index-time dirty files fold into the delta however
+    // large it grows, and the view measures and touches every file.
+    it("should measure a delta the index-time dirty files grow past 200 files", async () => {
       const changed = Array.from({ length: 150 }, (_, i) => `src/c${i}.ts`);
       const dirtyGone = Array.from({ length: 60 }, (_, i) => `src/gone${i}.ts`);
       record({ indexedCommit, indexedDirty: true, indexedDirtyPaths: dirtyGone });
@@ -174,9 +177,24 @@ describe("WorkingTreeOverlay", { timeout: 60_000 }, () => {
       const view = await overlayWith(reader).view(workingTree(), "proj");
 
       expect(view.marker).toMatchObject({ changedFiles: 150, deletedFiles: 60 });
-      expect(view.marker.degraded?.reason).toBe("delta of 210 files over the 200-file cap");
-      expect(view.touchedPaths.size).toBe(0);
+      expect(view.marker.degraded).toBeUndefined();
+      expect(view.touchedPaths.size).toBe(210);
+      expect(view.deletedPaths.size).toBe(60);
     });
+  });
+
+  it("should measure a 250-file delta rather than degrading it", async () => {
+    record({ indexedCommit, indexedDirty: false });
+    const changed = Array.from({ length: 250 }, (_, i) => `src/bulk${String(i).padStart(3, "0")}.ts`);
+    const reader: WorkingTreeDeltaReader = {
+      read: async () => ({ kind: "measured", delta: { changed, deleted: [], fingerprint: "fp" } }),
+    };
+
+    const view = await overlayWith(reader).view(workingTree(), "proj");
+
+    expect(view.marker).toMatchObject({ changedFiles: 250, deletedFiles: 0 });
+    expect(view.marker.degraded).toBeUndefined();
+    expect(view.touchedPaths.size).toBe(250);
   });
 
   it("should measure a tree whose index is registered at a subdirectory (live P2-2)", async () => {
@@ -327,6 +345,197 @@ describe("WorkingTreeOverlay", { timeout: 60_000 }, () => {
 
       expect(view.marker.degraded).toBeDefined();
       expect(view.readDeltaChunks).toBeUndefined();
+    });
+  });
+
+  /**
+   * Delta admission: only a changed file the AST chunker reads is re-read; any
+   * other changed file is served from the index, marked `treeState:
+   * "modified"`. Deletions apply to every admitted file. The marker keeps the
+   * true distance and counts the index-only files.
+   */
+  describe("delta admission", () => {
+    const admitsTs = (relativePath: string): boolean => relativePath.endsWith(".ts");
+    const acceptAll = async (): Promise<(relativePath: string) => boolean> => () => true;
+
+    const readerOf = (
+      changed: string[],
+      deleted: string[],
+      renamedFrom?: ReadonlyMap<string, string>,
+    ): WorkingTreeDeltaReader => ({
+      read: async () => ({
+        kind: "measured",
+        delta: { changed, deleted, fingerprint: "fp", ...(renamedFrom ? { renamedFrom } : {}) },
+      }),
+    });
+
+    /** Every per-view consumer of the re-read set, each spied. */
+    const consumers = () => {
+      const chunkFile = vi.fn(async (_pool: unknown, file: { relativePath: string }) => [
+        { id: `id:${file.relativePath}`, payload: { relativePath: file.relativePath } },
+      ]);
+      const layer = createWorkingTreeChunkLayer({ createPool: () => ({ shutdown: async () => undefined }), chunkFile });
+      const graphFor = vi.fn(async () => ({ kind: "unavailable" as const, reason: "test" }));
+      const warm = vi.fn(() => async () => ({ vectors: new Map<string, number[]>(), pending: 0 }));
+      return {
+        chunkFile,
+        layer,
+        graphFor,
+        warm,
+        deps: {
+          deltaChunks: { layer, resolveChunkerConfig: async () => ({ chunkSize: 2500, chunkOverlap: 300 }) },
+          treeGraph: { graphFor },
+          denseVectors: { warm },
+        },
+      };
+    };
+
+    it("should re-read admitted files and serve the rest from the index, counting them", async () => {
+      record({ indexedCommit, indexedDirty: false });
+      const overlay = new WorkingTreeOverlay({
+        registry,
+        deltaReader: readerOf(["config.json", "src/a.ts"], ["old.yaml"]),
+        createFileFilter: acceptAll,
+        admitsToDelta: admitsTs,
+      });
+
+      const view = await overlay.view(workingTree(), "proj");
+
+      expect(view.marker).toMatchObject({ changedFiles: 2, deletedFiles: 1, indexOnlyFiles: 1 });
+      expect(view.marker.degraded).toBeUndefined();
+      expect([...view.touchedPaths].sort()).toEqual(["old.yaml", "src/a.ts"]);
+      expect([...view.indexServedPaths]).toEqual(["config.json"]);
+      expect([...view.deletedPaths]).toEqual(["old.yaml"]);
+    });
+
+    it("should mark an index-only file's rows modified and keep a deleted non-AST file deleted", async () => {
+      record({ indexedCommit, indexedDirty: false });
+      const overlay = new WorkingTreeOverlay({
+        registry,
+        deltaReader: readerOf(["config.json", "src/a.ts"], ["old.yaml"]),
+        createFileFilter: acceptAll,
+        admitsToDelta: admitsTs,
+      });
+
+      const view = await overlay.view(workingTree(), "proj");
+
+      expect(workingTreeStateOf(view, "config.json")).toBe("modified");
+      expect(workingTreeStateOf(view, "old.yaml")).toBe("deleted");
+      expect(workingTreeStateOf(view, "src/a.ts")).toBe("modified");
+      expect(workingTreeStateOf(view, "src/untouched.ts")).toBeUndefined();
+    });
+
+    it("should leave indexOnlyFiles off the marker when every changed file is admitted", async () => {
+      record({ indexedCommit, indexedDirty: false });
+      const overlay = new WorkingTreeOverlay({
+        registry,
+        deltaReader: readerOf(["src/a.ts"], []),
+        createFileFilter: acceptAll,
+        admitsToDelta: admitsTs,
+      });
+
+      const view = await overlay.view(workingTree(), "proj");
+
+      expect(view.marker).not.toHaveProperty("indexOnlyFiles");
+      expect(view.indexServedPaths.size).toBe(0);
+    });
+
+    it("should admit every changed file when no admission rule is wired", async () => {
+      record({ indexedCommit, indexedDirty: false });
+      const overlay = new WorkingTreeOverlay({
+        registry,
+        deltaReader: readerOf(["config.json", "src/a.ts"], []),
+        createFileFilter: acceptAll,
+      });
+
+      const view = await overlay.view(workingTree(), "proj");
+
+      expect([...view.touchedPaths].sort()).toEqual(["config.json", "src/a.ts"]);
+      expect(view.indexServedPaths.size).toBe(0);
+      expect(view.marker).not.toHaveProperty("indexOnlyFiles");
+    });
+
+    it("should hide a renamed non-AST file's old path and serve its new path from the index", async () => {
+      record({ indexedCommit, indexedDirty: false });
+      const overlay = new WorkingTreeOverlay({
+        registry,
+        deltaReader: readerOf(["conf/new.json"], ["conf/old.json"], new Map([["conf/new.json", "conf/old.json"]])),
+        createFileFilter: acceptAll,
+        admitsToDelta: admitsTs,
+      });
+
+      const view = await overlay.view(workingTree(), "proj");
+
+      expect([...view.deletedPaths]).toEqual(["conf/old.json"]);
+      expect([...view.touchedPaths]).toEqual(["conf/old.json"]);
+      expect([...view.indexServedPaths]).toEqual(["conf/new.json"]);
+      expect(workingTreeStateOf(view, "conf/old.json")).toBe("deleted");
+      expect(view.marker).toMatchObject({ changedFiles: 1, deletedFiles: 1, indexOnlyFiles: 1 });
+    });
+
+    it("should keep a non-AST file dirty at index time index-only", async () => {
+      record({ indexedCommit, indexedDirty: true, indexedDirtyPaths: ["settings.json"] });
+      writeFileSync(join(tree, "settings.json"), "{}\n");
+      const overlay = new WorkingTreeOverlay({
+        registry,
+        deltaReader: readerOf([], []),
+        createFileFilter: acceptAll,
+        admitsToDelta: admitsTs,
+      });
+
+      const view = await overlay.view(workingTree(), "proj");
+
+      expect(view.marker).toMatchObject({ changedFiles: 1, deletedFiles: 0, indexOnlyFiles: 1 });
+      expect(view.touchedPaths.size).toBe(0);
+      expect([...view.indexServedPaths]).toEqual(["settings.json"]);
+    });
+
+    it("should read no chunks, warm no vectors and ask no tree graph when every changed file is index-only", async () => {
+      record({ indexedCommit, indexedDirty: false });
+      const { chunkFile, layer, graphFor, warm, deps } = consumers();
+      const overlay = new WorkingTreeOverlay({
+        registry,
+        deltaReader: readerOf(["config.json"], []),
+        createFileFilter: acceptAll,
+        admitsToDelta: admitsTs,
+        ...deps,
+      });
+
+      const view = await overlay.view(workingTree(), "proj");
+      const rows = (await view.readDeltaChunks?.()) ?? [];
+
+      expect(rows).toEqual([]);
+      expect(chunkFile).not.toHaveBeenCalled();
+      expect(view.readTreeGraph).toBeUndefined();
+      expect(graphFor).not.toHaveBeenCalled();
+      expect(view.readDeltaVectors).toBeUndefined();
+      expect(warm).not.toHaveBeenCalled();
+      await layer.dispose();
+    });
+
+    it("should hand the chunk read, the tree graph and the dense warm-up the re-read files only", async () => {
+      record({ indexedCommit, indexedDirty: false });
+      writeFileSync(join(tree, "src/a.ts"), "export const a = 1;\n");
+      writeFileSync(join(tree, "config.json"), "{}\n");
+      const { chunkFile, layer, graphFor, warm, deps } = consumers();
+      const overlay = new WorkingTreeOverlay({
+        registry,
+        deltaReader: readerOf(["config.json", "src/a.ts"], []),
+        createFileFilter: acceptAll,
+        admitsToDelta: admitsTs,
+        ...deps,
+      });
+
+      const view = await overlay.view(workingTree(), "proj");
+      const rows = (await view.readDeltaChunks?.()) ?? [];
+      await view.readDeltaVectors?.(0);
+
+      expect(rows.map((row) => row.payload.relativePath)).toEqual(["src/a.ts"]);
+      expect(chunkFile).toHaveBeenCalledTimes(1);
+      expect(graphFor).toHaveBeenCalled();
+      expect(graphFor.mock.calls[0][0]).toMatchObject({ changed: ["src/a.ts"], deleted: [] });
+      expect(warm).toHaveBeenCalledTimes(1);
+      await layer.dispose();
     });
   });
 });

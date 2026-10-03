@@ -50,7 +50,6 @@ export {
   recordTreeGraphState,
   relativePathOf,
   scheduleWorkingTreeChunkSweep,
-  WORKING_TREE_DELTA_FILE_CAP,
   WorkingTreeDenseVectorSource,
   WorkingTreeOverlay,
   WorkingTreeTouchedBasePoints,
