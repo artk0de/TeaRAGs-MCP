@@ -80,8 +80,16 @@ export abstract class VcsGitAdapter implements VcsAdapter {
    * path is therefore re-read WITHOUT the pathspec, and its rows touching a
    * named path — on either side of a rename — carry `previousPath` exactly as
    * a repo-wide log reports them.
+   *
+   * `since` present bounds it to that window and walks it with full history —
+   * the pathspec-limited form of the repo-wide `--since` log an index run's
+   * discoveries read, so a slice of either holds the same commits.
    */
-  abstract readCommitFileNumstatForPaths(paths: string[], timeoutMs?: number): Promise<CommitFileNumstat[]>;
+  abstract readCommitFileNumstatForPaths(
+    paths: string[],
+    timeoutMs?: number,
+    since?: Date,
+  ): Promise<CommitFileNumstat[]>;
   /** Persistent batch blob reader — caller owns the lifecycle (`close()` at walk end). */
   abstract createBlobBatchReader(): BlobBatchReader;
   /** Persistent batch `<rev>` → OID resolver — caller owns the lifecycle. */

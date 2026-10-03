@@ -34,6 +34,13 @@ export interface WorkingTree {
  * for the base chunks of delta files (`chunks`, `sparse`), delta rows ranked by
  * their own dense vectors (`dense`, WTO-5), or the tree graph for the base
  * graph (`codegraph`, WTO-7).
+ *
+ * `codegraph` (live round-4 B1): a graph tool claims it for any answer the tree
+ * graph computed, empty included; a search/symbol tool claims it only when a
+ * returned row is a changed file's row carrying tree-graph data (its codegraph
+ * signals, a definition the tree placed, visibility the tree declares). An
+ * empty answer or untouched-file rows claim nothing: the tree graph holds the
+ * index's data for every untouched file.
  */
 export type WorkingTreeFloor = "chunks" | "sparse" | "dense" | "codegraph";
 
@@ -223,6 +230,12 @@ export interface WorkingTreeGitSignalTarget {
   treePath: string;
   /** Last line the file's rows reach — the line count ingest computes file signals over. */
   maxEndLine: number;
+  /**
+   * The tree file's line count as ingest's enrichment policy reads it — the
+   * largest `moduleLines` / `endLine` over ALL its rows (`fileLinesOf`). Absent
+   * → unknown, and no size-driven decline is made.
+   */
+  fileLines?: number;
   /** Whether `git.file` is wanted (no base point of the history path carries one). */
   fileSignals: boolean;
   /** Rows no base point of the same symbol answers. */
@@ -231,11 +244,16 @@ export interface WorkingTreeGitSignalTarget {
 
 /** What the git trajectory computed for one history path. */
 export interface WorkingTreeGitSignals {
-  /** `git.file`, when asked for and the path has commit history. */
+  /**
+   * `git.file`, when asked for and the path has commit history — or the
+   * `{ skippedAs }` stamp when ingest's enrichment policy declines the file.
+   */
   file?: Record<string, unknown>;
   /**
    * `git.chunk` by row key; a row whose lines hold no committed history holds
-   * the chunk walk's zero block, as ingest writes it (live G4).
+   * the chunk walk's zero block, as ingest writes it (live G4), and a row of a
+   * file the policy declines at chunk level (`"oversized"`, a doc) its
+   * `{ skippedAs }` stamp.
    */
   chunks: ReadonlyMap<string, Record<string, unknown>>;
 }
@@ -259,11 +277,18 @@ export interface WorkingTreeGitSignalSource {
    * reads the answer computed at any HEAD past the stamp, and a commit touching
    * one file leaves every other file's answer valid (bd tea-rags-mcp-xi2r9).
    * Absent → answers are valid for one HEAD.
+   *
+   * `indexRoot` — the base index's checkout (`WorkingTree#baseIndex.root`). The
+   * blocks are computed with the git config THAT index was written with (its
+   * project's registry env), so they share the base rows' units — a squash
+   * session count beside session counts, never a raw commit count. Absent →
+   * the source's own config.
    */
   signalsOf: (
     root: string,
     targets: readonly WorkingTreeGitSignalTarget[],
     sinceCommit?: string,
+    indexRoot?: string,
   ) => Promise<ReadonlyMap<string, WorkingTreeGitSignals>>;
   /**
    * The paths, relative to `root`, whose history at HEAD differs from their

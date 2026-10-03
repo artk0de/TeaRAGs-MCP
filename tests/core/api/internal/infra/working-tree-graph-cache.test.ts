@@ -28,8 +28,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import {
+  scheduleWorkingTreeGraphSweep,
   WORKING_TREE_GRAPH_BUILD_TIMEOUT_MS,
   WORKING_TREE_GRAPH_BUILDING_REASON,
+  WORKING_TREE_GRAPH_CAP_BYTES,
+  WORKING_TREE_GRAPH_IDLE_RETENTION_MS,
+  WORKING_TREE_GRAPH_SWEEP_DELAY_MS,
+  WORKING_TREE_GRAPH_SWEEP_INTERVAL_MS,
   WorkingTreeGraphCache,
   type WorkingTreeGraphBasePool,
   type WorkingTreeGraphCacheDeps,
@@ -569,9 +574,11 @@ describe("WorkingTreeGraphCache#sweep", () => {
     const live = treeDir("live");
     const dead = treeDir("dead");
 
-    clock.now = 1_000;
+    // Published just before the sweep: a graph unserved for 96 h goes too (B2),
+    // so the newest must be recent on the sweep's own (wall) clock.
+    clock.now = Date.now() - 2 * HOUR;
     const older = expectBuilt(await cache.graphFor(request(live, "fp-old"), 10_000));
-    clock.now = 2_000;
+    clock.now = Date.now() - HOUR;
     const newer = expectBuilt(await cache.graphFor(request(live, "fp-new"), 10_000));
     const deadGraph = expectBuilt(await cache.graphFor(request(dead, "fp"), 10_000));
     rmSync(dead, { recursive: true });
@@ -947,5 +954,149 @@ describe("WorkingTreeGraphCache — the reader's wait (D11b)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/**
+ * Retention across trees (live round-4 B2): per-tree retention kept the store
+ * bounded per tree, but the graphs of an idle tree — one no server has served
+ * for days — stayed forever, so the store grew with every tree ever read (16
+ * graphs of 14.6–18.7 MB for 14 tree roots on one collection). A graph unserved
+ * for {@link WORKING_TREE_GRAPH_IDLE_RETENTION_MS} goes; a collection's graphs
+ * fit a byte cap, least-recently-active first; neither ever deletes a graph a
+ * reader of this process holds open. A snapshot unused for as long goes too.
+ * The sweep runs off the request path: first after two minutes, then every six
+ * hours, throttled across processes by a stamp.
+ */
+describe("WorkingTreeGraphCache — retention across trees (B2)", () => {
+  it("evicts a live tree's graph unserved for the idle retention, and keeps one served within it", async () => {
+    const { cache, clock } = harness();
+    clock.now = 10 * HOUR;
+    const idle = expectBuilt(await cache.graphFor(request(treeDir("idle"), "fp"), 10_000));
+    clock.now = 12 * HOUR;
+    const recent = expectBuilt(await cache.graphFor(request(treeDir("recent"), "fp"), 10_000));
+
+    const result = await cache.sweep(10 * HOUR + WORKING_TREE_GRAPH_IDLE_RETENTION_MS + 60_000);
+
+    expect(existsSync(idle)).toBe(false);
+    expect(existsSync(recent)).toBe(true);
+    expect(result).toMatchObject({ evictedGraphs: 1, keptGraphs: 1 });
+  });
+
+  it("a graph served again later counts as active from then, not from its publish", async () => {
+    const { cache, clock } = harness();
+    const root = treeDir("t1");
+    clock.now = 10 * HOUR;
+    const graph = expectBuilt(await cache.graphFor(request(root, "fp"), 10_000));
+    clock.now = 50 * HOUR;
+    expect(expectBuilt(await cache.graphFor(request(root, "fp"), 10_000))).toBe(graph);
+
+    await cache.sweep(10 * HOUR + WORKING_TREE_GRAPH_IDLE_RETENTION_MS + 60_000);
+
+    expect(existsSync(graph)).toBe(true);
+  });
+
+  it("never evicts an idle graph a reader of this process holds open", async () => {
+    const { cache, pool, clock } = harness();
+    clock.now = 10 * HOUR;
+    const held = expectBuilt(await cache.graphFor(request(treeDir("t1"), "fp"), 10_000));
+    pool.openReaders.add(held);
+
+    await cache.sweep(10 * HOUR + 2 * WORKING_TREE_GRAPH_IDLE_RETENTION_MS);
+
+    expect(existsSync(held)).toBe(true);
+  });
+
+  it("fits a collection's graphs into the byte cap, least-recently-active first, skipping an open one", async () => {
+    const { cache, pool, builder, clock } = harness({ capBytes: 2_700 });
+    builder.outcome = (input) => defaultBuilt(input, "x".repeat(1_000));
+    const built: string[] = [];
+    for (const name of ["a", "b", "c", "d"]) {
+      clock.now += 60_000;
+      built.push(expectBuilt(await cache.graphFor(request(treeDir(name), "fp"), 10_000)));
+    }
+    pool.openReaders.add(built[0]);
+
+    await cache.sweep(clock.now);
+
+    // ~1.25 KB each: the open oldest stays, then the oldest go until the rest fits.
+    expect(built.map((dbPath) => existsSync(dbPath))).toEqual([true, false, false, true]);
+  });
+
+  it("evicts the live snapshot once no build used it for the idle retention", async () => {
+    const { cache } = harness();
+    await cache.graphFor(request(treeDir("t1")), 10_000);
+    const [snapshot] = snapshotEntries();
+    const path = join(graphRoot(), "snapshots", snapshot);
+    const at = Date.now();
+    const unused = new Date(at - WORKING_TREE_GRAPH_IDLE_RETENTION_MS - 60_000);
+    utimesSync(path, unused, unused);
+
+    expect((await cache.sweep(at)).evictedSnapshots).toBe(1);
+    expect(snapshotEntries()).toEqual([]);
+  });
+
+  it("a build that reuses the live snapshot marks it used, so the idle rule keeps it", async () => {
+    const { cache } = harness();
+    await cache.graphFor(request(treeDir("t1")), 10_000);
+    const [snapshot] = snapshotEntries();
+    const path = join(graphRoot(), "snapshots", snapshot);
+    const at = Date.now();
+    const unused = new Date(at - WORKING_TREE_GRAPH_IDLE_RETENTION_MS - 60_000);
+    utimesSync(path, unused, unused);
+
+    await cache.graphFor(request(treeDir("t2")), 10_000);
+
+    expect((await cache.sweep(at)).evictedSnapshots).toBe(0);
+    expect(snapshotEntries()).toEqual([snapshot]);
+  });
+
+  it("sweepIfDue is throttled across processes by a stamp in the root", async () => {
+    const { cache, clock } = harness();
+    clock.now = 10 * HOUR;
+    await cache.graphFor(request(treeDir("t1")), 10_000);
+    const other = harness({}, { clock }).cache;
+    const sweep = vi.spyOn(other, "sweep");
+
+    expect(await cache.sweepIfDue(20 * HOUR, { intervalMs: 6 * HOUR })).toBeDefined();
+    expect(await other.sweepIfDue(21 * HOUR, { intervalMs: 6 * HOUR })).toBeUndefined();
+    expect(sweep).not.toHaveBeenCalled();
+    expect(await other.sweepIfDue(27 * HOUR, { intervalMs: 6 * HOUR })).toBeDefined();
+  });
+
+  it("sweepIfDue on a root that does not exist creates nothing", async () => {
+    const { cache } = harness();
+
+    expect(await cache.sweepIfDue(Date.now())).toBeUndefined();
+    expect(existsSync(appRoot)).toBe(false);
+  });
+
+  it("the schedule never sweeps at start: first after the delay, then every interval", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    try {
+      const sweepIfDue = vi.fn(async () => undefined);
+      const stop = scheduleWorkingTreeGraphSweep({ sweepIfDue }, { initialDelayMs: 2 * 60_000, intervalMs: 6 * HOUR });
+
+      expect(sweepIfDue).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(2 * 60_000 - 1);
+      expect(sweepIfDue).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(sweepIfDue).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(6 * HOUR);
+      expect(sweepIfDue).toHaveBeenCalledTimes(2);
+
+      stop();
+      vi.advanceTimersByTime(12 * HOUR);
+      expect(sweepIfDue).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("defaults: the first sweep waits two minutes, the interval is six hours, idle is 96 h, the cap 2 GiB", () => {
+    expect(WORKING_TREE_GRAPH_SWEEP_DELAY_MS).toBe(2 * 60_000);
+    expect(WORKING_TREE_GRAPH_SWEEP_INTERVAL_MS).toBe(6 * HOUR);
+    expect(WORKING_TREE_GRAPH_IDLE_RETENTION_MS).toBe(96 * HOUR);
+    expect(WORKING_TREE_GRAPH_CAP_BYTES).toBe(2 * 1024 ** 3);
   });
 });

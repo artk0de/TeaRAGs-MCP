@@ -24,7 +24,11 @@ import {
   workingTreeStateOf,
 } from "../working-tree/substitute.js";
 import { touchedBasePointIds, WorkingTreeTouchedBasePoints } from "../working-tree/touched-base-points.js";
-import { claimWorkingTreeFloors, recordTreeGraphState } from "../working-tree/tree-graph-marker.js";
+import {
+  claimTreeGraphLookup,
+  claimWorkingTreeFloors,
+  recordTreeGraphState,
+} from "../working-tree/tree-graph-marker.js";
 import type { ExploreContext, ExploreResult, ExploreStrategy } from "./types.js";
 
 /** What a dense-floor strategy reads from its view: the tree's rows and their vectors (WTO-5). */
@@ -152,7 +156,28 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
     const prepared = this.applyDefaults(ctx);
     const rawResults = await this.signalWorkingTreeCandidates(await this.executeExplore(prepared), ctx);
     const processed = await this.postProcess(rawResults, ctx);
+    this.claimWorkingTreeGraphLookup(processed, rawResults, ctx);
     return this.markWorkingTreeState(processed, rawResults, ctx);
+  }
+
+  /**
+   * The ONE seam where a search/symbol answer claims the tree graph its
+   * lookups read (D8, live round-4 B1): only when the page returns a row of a
+   * file the tree changed — `claimTreeGraphLookup`. The file is read off the
+   * RAW hit by id when page shaping dropped `relativePath`.
+   */
+  private claimWorkingTreeGraphLookup(
+    results: readonly ExploreResult[],
+    rawResults: readonly ExploreResult[],
+    ctx: ExploreContext,
+  ): void {
+    const view = ctx.workingTreeView;
+    if (!view?.treeGraphLookup) return;
+    const rawPathById = new Map(rawResults.map((raw) => [raw.id, relativePathOf(raw.payload)]));
+    claimTreeGraphLookup(
+      view,
+      results.map((result) => relativePathOf(result.payload) || rawPathById.get(result.id) || ""),
+    );
   }
 
   /**

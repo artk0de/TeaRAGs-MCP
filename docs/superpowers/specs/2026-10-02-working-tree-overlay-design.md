@@ -100,6 +100,28 @@ for a tree positive's content), and never by a clean tree. A clean tree reports
 whose request filter, pathPattern or scroll predicate refused every delta row
 answered from the index alone and claims nothing (live round-3 D1).
 
+`codegraph` follows two rules, split by what the tool answers with (live round-4
+B1):
+
+- **Graph tools** (`get_callers`, `get_callees`, `find_cycles`, `trace_path`,
+  the architecture report) claim `codegraph` whenever the answer was computed
+  from the tree graph, an empty answer included: "no callers in your tree" is a
+  statement about the tree.
+- **Search and symbol tools** (`find_symbol`, `semantic_search`,
+  `hybrid_search`, `find_similar`, `rank_chunks`) claim `codegraph` only when a
+  row the answer returns carries data the tree graph derived: codegraph signals
+  on a delta row, a definition the tree graph placed, member visibility read
+  from the tree graph. Only a row of a file the tree changed carries such data,
+  because the tree graph holds the index's data for every file the tree did not
+  touch. An empty answer, or one made only of untouched-file rows, claims
+  nothing even when a lookup read the built tree graph. The lookup parks the
+  graph state on the view (`treeGraphLookup`), and `BaseExploreStrategy#execute`
+  claims it against the returned page (`claimTreeGraphLookup`). Delta rows'
+  codegraph blocks are claimed when those rows enter the candidates
+  (`claimWorkingTreeFloors`), the same moment the `chunks` floor is claimed.
+  `treeGraphUnavailable` is still recorded whenever a lookup fell back to the
+  index, since the fallback can change the answer whatever rows it returns.
+
 A read of a path whose resolved index does not exist is refused with
 `EXPLORE_COLLECTION_NOT_FOUND` by every read tool, before the overlay measures
 anything (`resolveIndexedWorkingTree`, live round-3 D3): no marker is made for
@@ -311,6 +333,35 @@ rename). A file changed only by uncommitted edits keeps inheriting. A HEAD that
 does not descend from the stamp — a linked worktree branched from an older main
 than the index's tip — lacks the stamp-side commits of `indexedCommit...HEAD`; a
 file one of them touched inherits nothing either, its history is the tree's.
+
+Enrichment policy (round 5): a computed level the git enrichment policy declines
+carries ingest's skip stamp and nothing else. The decision is ingest's own —
+`enrichmentSkipReason` over `gitEnrichmentScope` under the index's
+`chunkMaxFileLines`, the file level asked without a line count and the chunk
+level with the tree file's (`moduleLines`, else the last row). A file past the
+chunk walk's line limit keeps a computed `git.file` and every row gets
+`git.chunk: { skippedAs: "oversized" }`; a generated file gets
+`{ skippedAs: "generated" }` at both levels; a doc's rows get
+`{ skippedAs: "documentation" }`. No `enrichedAt` beside a stamp, as the applier
+writes none.
+
+The one deliberate departure from reindex parity: an UNCOMMITTED move
+(`renamedFrom` from a staged or unstaged rename) inherits the old path's
+history. A reindex of that tree would find no commit for the new path and write
+a bare `enrichedAt` stamp, calling a file with months of history brand new. The
+file's real history is the old path's, the move is one `git commit` from making
+the reindex agree, and ranking it as new code would put a renamed core module at
+the top of every recency preset. A COMMITTED move follows the rename like the
+file walk does, so it carries no departure.
+
+Not a departure, an ingest defect the overlay does not copy: a symbol with
+uncommitted edits inside or above it keeps the index's `git.chunk` (its HEAD
+attribution). Ingest's chunk walk reads a dirty file's WORKING rows as HEAD
+rows, so a reindex of such a tree credits each shifted symbol with another
+symbol's commits (measured in the parity harness: four header lines added above
+`helperB` gave `helperB` `helperA`'s two commits and `helperA` one). The
+overlay's on-demand path carries rows onto HEAD through the HEAD → working hunks
+and does not have the defect.
 
 Persistence (live G2): computed blocks are kept under
 `<appData>/working-tree/.git-signals/`, one record per (repository toplevel,

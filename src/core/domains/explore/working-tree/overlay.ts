@@ -70,6 +70,15 @@ export interface WorkingTreeView {
    */
   readTreeGraph?: WorkingTreeGraphReader;
   /**
+   * The built tree graph a search/symbol LOOKUP of this answer read
+   * (find_symbol's tree definitions and chunk hop, an outline's visibility —
+   * `recordingTreeGraphReader`). Reading it does not claim the `codegraph`
+   * floor: the strategy seam claims it once the answer returns a row of a file
+   * the tree changed (`claimTreeGraphLookup`, D8) — a lookup that answered
+   * nothing, or a row whose graph data is the index's, claims nothing.
+   */
+  treeGraphLookup?: WorkingTreeGraphState;
+  /**
    * The base-index points of the touched files (bd tea-rags-mcp-xi2r9): read
    * once per view and shared by every consumer — hybrid's `has_id` exclusion
    * and the delta signals' inheritance. Present only on a measured non-empty

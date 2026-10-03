@@ -1,5 +1,5 @@
 export { TrajectoryGitError, GitBlameFailedError, GitLogTimeoutError, GitNotAvailableError } from "./errors.js";
-export { GitEnrichmentProvider, type GitProviderConfig } from "./provider.js";
+export { GitEnrichmentProvider, gitEnrichmentScope, type GitProviderConfig } from "./provider.js";
 export { createGitEnrichmentProvider, type GitWorkerConfig } from "./factory.js";
 export { gitFilters } from "./filters.js";
 export { GIT_FILTER_PRESETS } from "./filter-presets/index.js";
@@ -25,6 +25,7 @@ export type { GitFileSignals, ChunkChurnOverlay } from "./types.js";
 // answers (bd tea-rags-mcp-xi2r9, D12) — ingest's own computation, no run state.
 export {
   buildOnDemandGitSignals,
+  gitFileSignalsAtLineCount,
   type OnDemandGitChunkTarget,
   type OnDemandGitSignalOptions,
   type OnDemandGitSignals,

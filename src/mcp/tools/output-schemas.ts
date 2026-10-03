@@ -106,7 +106,7 @@ export const SearchResultOutputSchema = {
     .optional()
     .describe(
       "Tree read vs index commit. changedFiles 0 = measured clean; floors = rows reflect tree " +
-        "(dense = tree rows ranked by own vectors; codegraph = graph signals from the tree's graph); " +
+        "(dense = tree rows ranked by own vectors; codegraph = graph-tool answer, or a returned changed-file row, from the tree's graph); " +
         "degraded = run remedy; unparsed = changed files the tree's rows lack; " +
         "treeGraphUnavailable = why graph signals are the index's; " +
         "denseUnavailable = why some tree rows ranked without vectors (absent from dense ranking).",

@@ -19,6 +19,13 @@ export interface AdjustedRange {
   chunkId: string;
   start: number;
   end: number;
+  /**
+   * Every row of the chunk was inserted by a newer commit: it has no rows in
+   * the older commits, and none of them credits it — `git log -L` stops at the
+   * commit that added the range (bd tea-rags-mcp-xi2r9). Absent while any row
+   * still has an ancestor.
+   */
+  retired?: true;
 }
 
 interface Hunk {
@@ -46,7 +53,11 @@ export interface ChunkChangedRows {
  * removed rows sat between two of the range's rows. A deletion on the seam
  * between two chunks credits neither — `git log -L` does the same.
  */
-export function changedRowsInRange(hunk: Hunk, range: { start: number; end: number }): ChunkChangedRows | null {
+export function changedRowsInRange(
+  hunk: Hunk,
+  range: { start: number; end: number; retired?: true },
+): ChunkChangedRows | null {
+  if (range.retired) return null;
   if (hunk.newLines === 0) {
     return range.start < hunk.newStart && hunk.newStart <= range.end ? { added: 0, deleted: hunk.oldLines } : null;
   }
@@ -110,6 +121,12 @@ export function applyOffsets(ranges: AdjustedRange[], hunks: Hunk[]): AdjustedRa
   for (const hunk of sorted) {
     if (hunk.newLines === hunk.oldLines) continue;
     for (const r of result) {
+      if (r.retired) continue;
+      if (hunk.oldLines === 0 && hunk.newStart <= r.start && r.end < hunk.newStart + hunk.newLines) {
+        // Wholly inside a pure insertion: no row of it existed before.
+        r.retired = true;
+        continue;
+      }
       r.start = rowBeforeHunk(r.start, hunk, "start");
       r.end = rowBeforeHunk(r.end, hunk, "end");
     }

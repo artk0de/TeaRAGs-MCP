@@ -400,15 +400,23 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
     expect(rows[1].payload.git).toEqual({ file: GIT_FILE, chunk: gitChunk(4) });
     // Only what no base point answers is asked for, in the TREE file's lines.
     expect(gitSignals.signalsOf).toHaveBeenCalledTimes(1);
-    expect(gitSignals.signalsOf).toHaveBeenCalledWith(TREE.root, [
-      {
-        relativePath: SMALL,
-        treePath: SMALL,
-        maxEndLine: 3,
-        fileSignals: true,
-        chunks: [{ key: "d1", startLine: 1, endLine: 3 }],
-      },
-    ]);
+    // Round-4 P1: computed with the config of the index the tree is read against.
+    expect(gitSignals.signalsOf).toHaveBeenCalledWith(
+      TREE.root,
+      [
+        {
+          relativePath: SMALL,
+          treePath: SMALL,
+          maxEndLine: 3,
+          // Round 5: the tree file's line count the enrichment policy reads.
+          fileLines: 3,
+          fileSignals: true,
+          chunks: [{ key: "d1", startLine: 1, endLine: 3 }],
+        },
+      ],
+      undefined,
+      TREE.baseIndex.root,
+    );
   });
 
   it("asks only for git.chunk of a symbol the base never held in a file it holds", async () => {
@@ -423,15 +431,42 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
     // Inheritance stays where the base holds the symbol; the file block is the base's.
     expect(rows[0].payload.git).toEqual({ file: GIT_FILE, chunk: gitChunk(4) });
     expect(rows[1].payload.git).toEqual({ file: GIT_FILE, chunk: onDemandChunk(5) });
-    expect(gitSignals.signalsOf).toHaveBeenCalledWith(TREE.root, [
-      {
-        relativePath: FOO,
-        treePath: FOO,
-        maxEndLine: 9,
-        fileSignals: false,
-        chunks: [{ key: "d2", startLine: 5, endLine: 9 }],
-      },
+    expect(gitSignals.signalsOf).toHaveBeenCalledWith(
+      TREE.root,
+      [
+        {
+          relativePath: FOO,
+          treePath: FOO,
+          maxEndLine: 9,
+          fileLines: 9,
+          fileSignals: false,
+          chunks: [{ key: "d2", startLine: 5, endLine: 9 }],
+        },
+      ],
+      undefined,
+      TREE.baseIndex.root,
+    );
+  });
+
+  // Round-4 P3 (parity harness): `git.file.relativeChurn` is churn over the
+  // file's line count — ingest's `maxEndLine` over the file's chunks — and a
+  // reindex of the tree recomputes it over the TREE file's rows. An inherited
+  // block keeps the base's history and takes the tree's line count.
+  it("rescales an inherited git.file's relativeChurn to the tree file's rows, as a reindex recomputes it", async () => {
+    const churned = { ...GIT_FILE, linesAdded: 30, linesDeleted: 10, relativeChurn: 4 };
+    const point = basePoint("b1", FOO, "Foo#kept", 4);
+    const source = sourceWith([
+      { ...point, payload: { ...point.payload, git: { file: churned, chunk: gitChunk(4) } } },
     ]);
+
+    const { rows } = await source.enrich({
+      tree: TREE,
+      rows: [deltaRow("d1", FOO, "Foo#kept", [1, 3]), deltaRow("d2", FOO, "Foo#more", [5, 20])],
+    });
+
+    // 40 changed rows over 20 → 2; every other key is the base's.
+    expect(rows[0].payload.git).toEqual({ file: { ...churned, relativeChurn: 2 }, chunk: gitChunk(4) });
+    expect(rows[1].payload.git).toEqual({ file: { ...churned, relativeChurn: 2 } });
   });
 
   // Invariant changed (live G4): a brand-new symbol in a tracked, modified file
@@ -477,15 +512,21 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
     });
 
     expect(rows[0].payload.git).toEqual({ file: ON_DEMAND_FILE, chunk: onDemandChunk(1) });
-    expect(gitSignals.signalsOf).toHaveBeenCalledWith(TREE.root, [
-      {
-        relativePath: OLD,
-        treePath: NEW,
-        maxEndLine: 9,
-        fileSignals: true,
-        chunks: [{ key: "d1", startLine: 1, endLine: 9 }],
-      },
-    ]);
+    expect(gitSignals.signalsOf).toHaveBeenCalledWith(
+      TREE.root,
+      [
+        {
+          relativePath: OLD,
+          treePath: NEW,
+          maxEndLine: 9,
+          fileLines: 9,
+          fileSignals: true,
+          chunks: [{ key: "d1", startLine: 1, endLine: 9 }],
+        },
+      ],
+      undefined,
+      TREE.baseIndex.root,
+    );
   });
 
   it("keeps no git block for a file with no history at all", async () => {
@@ -581,6 +622,7 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
             relativePath: FOO,
             treePath: FOO,
             maxEndLine: 6,
+            fileLines: 6,
             fileSignals: true,
             chunks: [
               { key: "d1", startLine: 1, endLine: 3 },
@@ -589,6 +631,7 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
           },
         ],
         INDEXED,
+        TREE.baseIndex.root,
       );
     });
 
@@ -634,11 +677,13 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
             relativePath: NEW,
             treePath: NEW,
             maxEndLine: 3,
+            fileLines: 3,
             fileSignals: true,
             chunks: [{ key: "d1", startLine: 1, endLine: 3 }],
           },
         ],
         INDEXED,
+        TREE.baseIndex.root,
       );
     });
 

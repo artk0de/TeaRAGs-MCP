@@ -70,11 +70,13 @@ import type {
   WorkingTreeGraphReader,
   WorkingTreeGraphState,
 } from "../../../contracts/types/working-tree.js";
+import { fileLinesOf } from "../../../domains/ingest/index.js";
 import {
   settleCodegraphChunkSignals,
   type CodegraphStoredChunk,
 } from "../../../domains/trajectory/codegraph/symbols/chunk-signal-settlement.js";
 import { buildCodegraphFileSignals } from "../../../domains/trajectory/codegraph/symbols/payload-signals.js";
+import { gitFileSignalsAtLineCount } from "../../../domains/trajectory/git/index.js";
 import type { WorkingTreeGraphFileOpener } from "./working-tree-graph-read.js";
 
 /** How long a search waits for the tree graph before delta rows inherit the base's codegraph (spec: 3 s). */
@@ -212,8 +214,9 @@ export function createWorkingTreeDeltaSignalSource(
         readOnDemandGit(deps.gitSignals, request, base, historyOf),
       ]);
 
+      const lineCounts = treeLineCounts(request.rows);
       const rows = request.rows.map((row) =>
-        enrichRow(row, base.byFile, tree, historyOf(pathOf(row.payload)), onDemandGit),
+        enrichRow(row, base.byFile, tree, historyOf(pathOf(row.payload)), onDemandGit, lineCounts),
       );
       return treeGraph ? { rows, treeGraph } : { rows };
     },
@@ -315,6 +318,7 @@ async function readOnDemandGit(
     string,
     WorkingTreeGitSignalTarget & { chunks: WorkingTreeGitSignalTarget["chunks"][number][] }
   >();
+  const fileLines = treeFileLines(request.rows);
   for (const { id, payload } of request.rows) {
     const path = pathOf(payload);
     if (path === "") continue;
@@ -328,7 +332,15 @@ async function readOnDemandGit(
     if (!wantFile && !wantChunk) continue;
     let target = targets.get(historyPath);
     if (!target) {
-      target = { relativePath: historyPath, treePath: path, maxEndLine: 0, fileSignals: wantFile, chunks: [] };
+      const lines = fileLines.get(path);
+      target = {
+        relativePath: historyPath,
+        treePath: path,
+        maxEndLine: 0,
+        ...(lines !== undefined ? { fileLines: lines } : {}),
+        fileSignals: wantFile,
+        chunks: [],
+      };
       targets.set(historyPath, target);
     }
     if (hasLines) {
@@ -337,11 +349,16 @@ async function readOnDemandGit(
     }
   }
   if (targets.size === 0) return new Map();
-  // The stamp lets the source key each file by its own history (live C2).
-  const asked = request.indexedCommit
-    ? source.signalsOf(request.tree.root, [...targets.values()], request.indexedCommit)
-    : source.signalsOf(request.tree.root, [...targets.values()]);
-  return asked.catch(() => new Map());
+  // The stamp lets the source key each file by its own history (live C2); the
+  // index's checkout, compute with the config that index was written with.
+  return source
+    .signalsOf(
+      request.tree.root,
+      [...targets.values()],
+      request.indexedCommit,
+      request.tree.baseIndex.root ?? request.tree.root,
+    )
+    .catch(() => new Map());
 }
 
 /** Folds one base point into its file: the first file blocks seen, the first point per symbolId. */
@@ -400,12 +417,51 @@ async function loadTreeSignals(
   }
 }
 
+/**
+ * Each tree file's line count as ingest computes file signals over it: the last
+ * line its rows reach. The overlay hands a file's rows to one request whole.
+ */
+function treeLineCounts(rows: readonly WorkingTreeDeltaRow[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const { payload } of rows) {
+    const path = pathOf(payload);
+    const { endLine } = payload;
+    if (path === "" || typeof endLine !== "number") continue;
+    counts.set(path, Math.max(counts.get(path) ?? 0, endLine));
+  }
+  return counts;
+}
+
+/**
+ * Each tree file's line count as ingest's enrichment policy reads it
+ * (`fileLinesOf` over every chunk of the file: `moduleLines`, else the last
+ * row) — what decides a size-driven decline (`skippedAs: "oversized"`).
+ */
+function treeFileLines(rows: readonly WorkingTreeDeltaRow[]): Map<string, number> {
+  const spans = new Map<string, { endLine: number; moduleLines?: number }[]>();
+  for (const { payload } of rows) {
+    const path = pathOf(payload);
+    const { endLine, moduleLines } = payload;
+    if (path === "" || typeof endLine !== "number") continue;
+    const span = spans.get(path) ?? [];
+    span.push(typeof moduleLines === "number" ? { endLine, moduleLines } : { endLine });
+    spans.set(path, span);
+  }
+  const lines = new Map<string, number>();
+  for (const [path, span] of spans) {
+    const count = fileLinesOf(span);
+    if (count !== undefined) lines.set(path, count);
+  }
+  return lines;
+}
+
 function enrichRow(
   row: WorkingTreeDeltaRow,
   base: ReadonlyMap<string, BaseFilePayload>,
   tree: TreeGraphSignals | undefined,
   history: GitHistory,
   onDemandGit: ReadonlyMap<string, WorkingTreeGitSignals>,
+  lineCounts: ReadonlyMap<string, number>,
 ): WorkingTreeDeltaRow {
   const path = pathOf(row.payload);
   const file = base.get(path);
@@ -418,8 +474,15 @@ function enrichRow(
   const historyFile = history.moved ? undefined : base.get(history.path);
   const onDemand = onDemandGit.get(history.path);
   // A path no commit touched has no file block, only the walk's zero chunk
-  // blocks — what ingest writes for an untracked file (live round-3 D4).
-  const gitFile = historyFile?.gitFile ?? onDemand?.file;
+  // blocks — what ingest writes for an untracked file (live round-3 D4). An
+  // inherited block keeps the base's history and takes the tree file's line
+  // count, which a reindex of the tree computes `relativeChurn` over.
+  const lineCount = lineCounts.get(path);
+  const inheritedFile =
+    historyFile?.gitFile && lineCount !== undefined
+      ? gitFileSignalsAtLineCount(historyFile.gitFile, lineCount)
+      : historyFile?.gitFile;
+  const gitFile = inheritedFile ?? onDemand?.file;
   const historyPoint = historyFile?.gitFile ? basePointOf(historyFile, row.payload.symbolId) : undefined;
   const gitChunk = historyPoint ? blockAt(historyPoint, ["git", "chunk"]) : onDemand?.chunks.get(String(row.id));
   if (gitFile || gitChunk) {

@@ -53,6 +53,7 @@ import {
   WorktreeOps,
   type App,
   type GraphFacadeDeps,
+  type WorkingTreeGitSignalConfig,
   type WorkingTreeGraphCodegraphRuntime,
 } from "../core/api/index.js";
 import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../core/contracts/types/codegraph.js";
@@ -339,11 +340,33 @@ async function resolveInfrastructure(
 
 /** Squash-aware session grouping for git `commitCount`, shared by ingest and the working tree's on-demand reads. */
 function gitSquashOptionsOf(
-  trajectoryConfig: AppConfig["trajectoryIngest"],
+  trajectoryConfig: Pick<AppConfig["trajectoryIngest"], "squashAwareSessions" | "sessionGapMinutes">,
 ): { squashAwareSessions: boolean; sessionGapMinutes: number } | undefined {
   return trajectoryConfig.squashAwareSessions
     ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }
     : undefined;
+}
+
+/**
+ * The git config the working tree's on-demand git signals compute with — the
+ * knobs ingest's git trajectory reads from the same parsed config, so a block
+ * computed under it is the one an index run under it writes.
+ */
+function workingTreeGitSignalConfigOf(zodConfig: ReturnType<typeof getZodConfig>): WorkingTreeGitSignalConfig {
+  const { trajectoryGit } = zodConfig;
+  const squashOpts = gitSquashOptionsOf(trajectoryGit);
+  return {
+    vcsAdapter: zodConfig.vcs.adapter,
+    timeoutMs: trajectoryGit.logTimeoutMs,
+    ...(squashOpts ? { squashOpts } : {}),
+    file: { maxAgeMonths: trajectoryGit.logMaxAgeMonths },
+    chunk: {
+      maxAgeMonths: trajectoryGit.chunkMaxAgeMonths,
+      timeoutMs: trajectoryGit.chunkTimeoutMs,
+      maxFileLines: trajectoryGit.chunkMaxFileLines,
+      concurrency: trajectoryGit.chunkConcurrency,
+    },
+  };
 }
 
 function wireComposition(
@@ -1233,6 +1256,17 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
       heapLimitMb: enrichmentWorkerHeapMb > 0 ? enrichmentWorkerHeapMb : Math.floor(totalmem() / 1024 / 1024),
     },
   });
+  // Parsed once per distinct resolved env, like `ProjectIngestFactory`'s facades.
+  const gitSignalConfigByEnv = new Map<string, WorkingTreeGitSignalConfig>();
+  const workingTreeGitSignalConfigFor = (env: Record<string, string>): WorkingTreeGitSignalConfig => {
+    const key = JSON.stringify(Object.entries(env).sort(([a], [b]) => (a < b ? -1 : 1)));
+    let resolved = gitSignalConfigByEnv.get(key);
+    if (!resolved) {
+      resolved = workingTreeGitSignalConfigOf(parseAppConfigZod(env));
+      gitSignalConfigByEnv.set(key, resolved);
+    }
+    return resolved;
+  };
   // One overlay per process (bd tea-rags-mcp-xi2r9): its delta reader caches per
   // tree, and every read surface — explore, graph, trace_path — shares it.
   const workingTreeOverlay = new WorkingTreeOverlay({
@@ -1267,15 +1301,11 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
               // content, this build and the signal config; swept with the chunk store.
               store: workingTreeGitSignalStore,
               builderVersion: pkg.version,
-              vcsAdapter: zodConfig.vcs.adapter,
-              timeoutMs: zodConfig.trajectoryGit.logTimeoutMs,
-              squashOpts: gitSquashOptionsOf(config.trajectoryIngest),
-              chunk: {
-                maxAgeMonths: zodConfig.trajectoryGit.chunkMaxAgeMonths,
-                timeoutMs: zodConfig.trajectoryGit.chunkTimeoutMs,
-                maxFileLines: zodConfig.trajectoryGit.chunkMaxFileLines,
-                concurrency: zodConfig.trajectoryGit.chunkConcurrency,
-              },
+              ...workingTreeGitSignalConfigOf(zodConfig),
+              // Round-4 P1: each index's own config — its project's registry env
+              // replayed over the server's, as an index run of it resolves
+              // (`ProjectIngestFactory#envForPath`, built below, read at request time).
+              configFor: (indexRoot) => workingTreeGitSignalConfigFor(projectIngestFactory.envForPath(indexRoot)),
             }),
           }
         : {}),
@@ -1307,7 +1337,8 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     workingTreeOverlay,
     indexExists,
   );
-  // Swept with the chunk store's cadence (now + every 6 h, unref'd) — here,
+  // Swept with the chunk store's schedule (first after 2 min, then every 6 h,
+  // unref'd, throttled across processes by a stamp) — here,
   // after `codegraphContext` exists: snapshot retention compares against the
   // live base graph.
   const stopWorkingTreeGraphSweep = scheduleWorkingTreeGraphSweep(workingTreeGraphCache);

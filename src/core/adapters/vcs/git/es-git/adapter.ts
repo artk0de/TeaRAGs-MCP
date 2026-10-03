@@ -159,8 +159,8 @@ export class EsGitAdapter extends VcsGitAdapter {
     return this.cliHistory.readNumstatLogForPaths(paths, timeoutMs);
   }
 
-  async readCommitFileNumstatForPaths(paths: string[], timeoutMs?: number): Promise<CommitFileNumstat[]> {
-    return this.cliHistory.readCommitFileNumstatForPaths(paths, timeoutMs);
+  async readCommitFileNumstatForPaths(paths: string[], timeoutMs?: number, since?: Date): Promise<CommitFileNumstat[]> {
+    return this.cliHistory.readCommitFileNumstatForPaths(paths, timeoutMs, since);
   }
 
   createBlobBatchReader(): BlobBatchReader {

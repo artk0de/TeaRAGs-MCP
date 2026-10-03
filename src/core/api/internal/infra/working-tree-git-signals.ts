@@ -14,6 +14,13 @@
  *   toplevel; git is asked at the toplevel, the answer named back.
  * - A row's lines are the tree file's (`treePath`); its history is the history
  *   path's (a move's old path), read at HEAD.
+ * - Computed with the config of the INDEX the tree is read against
+ *   (`configFor(indexRoot)` — its project's registry env), never merely the
+ *   serving process's: the blocks are the ones a reindex of the tree would
+ *   write, and they sit beside base rows that index wrote (round-4 P1).
+ *   Every computed block carries `enrichedAt`, as ingest's applier stamps it;
+ *   a level ingest's enrichment policy declines carries its `skippedAs` stamp
+ *   instead, and is never computed (`partitionByEnrichmentPolicy`).
  * - Cached per (toplevel, path HISTORY, path, signal fingerprint, UTC day) and
  *   within it per line extent for `git.file` and per (tree-file content sha,
  *   range) for `git.chunk`: a path's blocks move only with the commits that
@@ -44,13 +51,16 @@ import { join } from "node:path";
 import { VcsAdapterFactory } from "../../../adapters/vcs/factory.js";
 import { readPathCommitsSince, type PathCommitsSince } from "../../../adapters/vcs/git/git-cli/client.js";
 import type { GitAdapterKind } from "../../../adapters/vcs/types.js";
+import type { FileClassification } from "../../../contracts/types/file-classification.js";
 import type {
   WorkingTreeGitSignals,
   WorkingTreeGitSignalSource,
   WorkingTreeGitSignalTarget,
 } from "../../../contracts/types/working-tree.js";
+import { enrichmentSkipReason } from "../../../domains/ingest/index.js";
 import {
   buildOnDemandGitSignals,
+  gitEnrichmentScope,
   type OnDemandGitSignalOptions,
   type OnDemandGitSignalTarget,
   type SquashOptions,
@@ -74,15 +84,28 @@ const RECORD_CACHE_SIZE = 2_000;
 const HISTORY_CACHE_SIZE = 16;
 const DAY_MS = 86_400_000;
 
-export interface WorkingTreeGitSignalSourceDeps {
+/** The git configuration blocks are computed with — the one an index was written with. */
+export interface WorkingTreeGitSignalConfig {
   /** The git adapter kind ingest runs (`GIT_ADAPTER`). */
   vcsAdapter: GitAdapterKind;
   /** Per git-call stall budget of the file walk (`TRAJECTORY_GIT_LOG_TIMEOUT_MS`). */
   timeoutMs: number;
   /** Squash-aware session grouping, as ingest computes `commitCount`. */
   squashOpts?: SquashOptions;
+  /** The file walk's window (`TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS`); absent → whole histories. */
+  file?: OnDemandGitSignalOptions["file"];
   /** The chunk walk's window and budgets (`TRAJECTORY_GIT_CHUNK_*`). */
   chunk: OnDemandGitSignalOptions["chunk"];
+}
+
+export interface WorkingTreeGitSignalSourceDeps extends WorkingTreeGitSignalConfig {
+  /**
+   * The config the index whose checkout is `indexRoot` was written with — its
+   * project's registry env over the serving process's (round-4 P1: a server
+   * started without the self-index's squash flag mixed session and commit
+   * counts in one answer). Undefined, or no such hook → this source's own.
+   */
+  configFor?: (indexRoot: string) => WorkingTreeGitSignalConfig | undefined;
   /** Keeps computed blocks across processes. Absent → the process map only. */
   store?: WorkingTreeGitSignalStore;
   /** The build that computes the blocks — a new build never reads an older one's records. */
@@ -104,7 +127,8 @@ interface PendingTarget {
 
 export function createWorkingTreeGitSignalSource(deps: WorkingTreeGitSignalSourceDeps): WorkingTreeGitSignalSource {
   const now = deps.now ?? Date.now;
-  const fingerprint = signalFingerprintOf(deps);
+  const configOf = (indexRoot: string | undefined): WorkingTreeGitSignalConfig =>
+    (indexRoot === undefined ? undefined : deps.configFor?.(indexRoot)) ?? deps;
   const records = new Map<string, WorkingTreeGitSignalRecord>();
   const histories = new Map<string, Promise<PathCommitsSince | undefined>>();
   let computing: Promise<unknown> = Promise.resolve();
@@ -166,6 +190,7 @@ export function createWorkingTreeGitSignalSource(deps: WorkingTreeGitSignalSourc
     root: string,
     toplevel: string,
     historyKey: (gitPath: string) => string,
+    fingerprint: string,
     targets: readonly WorkingTreeGitSignalTarget[],
     answered: Map<string, WorkingTreeGitSignals & { chunks: Map<string, Record<string, unknown>> }>,
   ): Promise<PendingTarget[]> => {
@@ -209,13 +234,21 @@ export function createWorkingTreeGitSignalSource(deps: WorkingTreeGitSignalSourc
     return pending;
   };
 
-  /** Computes the misses, stores them, and reads them into `answered`. */
+  /**
+   * Computes the misses, stores them, and reads them into `answered`. Every
+   * block carries `enrichedAt` — the computation time, as ingest's applier
+   * stamps its run's — and a file block asked for with no history to give is
+   * that bare stamp, what the applier writes for a file it found none for
+   * (round-4 P4).
+   */
   const compute = async (
+    config: WorkingTreeGitSignalConfig,
     toplevel: string,
     pending: readonly PendingTarget[],
     answered: Map<string, WorkingTreeGitSignals & { chunks: Map<string, Record<string, unknown>> }>,
   ): Promise<void> => {
-    const computed = await computeSignals(deps, toplevel, pending);
+    const computed = await computeSignals(config, toplevel, pending);
+    const enrichedAt = new Date(now()).toISOString();
     const touched = new Map<string, WorkingTreeGitSignalRecord>();
     pending.forEach((entry, index) => {
       const signals = computed.get(entry.gitPath);
@@ -233,13 +266,13 @@ export function createWorkingTreeGitSignalSource(deps: WorkingTreeGitSignalSourc
         return answer;
       };
       if (entry.fileSlot !== undefined) {
-        const file: WorkingTreeGitSignalBlock = signals?.file ? { ...signals.file } : null;
+        const file = { ...signals?.file, enrichedAt };
         record.file[entry.fileSlot] = file;
-        if (file) answerOf().file = file;
+        answerOf().file = file;
       }
       for (const [rowKey, slot] of entry.chunkSlots) {
         const overlay = signals?.chunks.get(chunkIdOf(index, rowKey));
-        const block: WorkingTreeGitSignalBlock = overlay ? { ...overlay } : null;
+        const block: WorkingTreeGitSignalBlock = overlay ? { ...overlay, enrichedAt } : null;
         record.chunks[slot] = block;
         if (block) answerOf().chunks.set(rowKey, block);
       }
@@ -253,27 +286,39 @@ export function createWorkingTreeGitSignalSource(deps: WorkingTreeGitSignalSourc
   };
 
   return {
-    signalsOf: async (root, targets, sinceCommit) => {
+    signalsOf: async (root, targets, sinceCommit, indexRoot) => {
       const answered = new Map<string, WorkingTreeGitSignals & { chunks: Map<string, Record<string, unknown>> }>();
       if (targets.length === 0) return answered;
       const toplevel = findGitToplevel(root);
       const head = toplevel ? readRepoGitState(toplevel)?.commit : undefined;
       if (!toplevel || !head) return answered;
 
+      const config = configOf(indexRoot);
+      const { owed, declined } = partitionByEnrichmentPolicy(targets, config.chunk.maxFileLines);
       try {
+        const fingerprint = signalFingerprintOf(deps.builderVersion, config);
         const historyKey = await historyKeyOf(toplevel, head, sinceCommit);
-        if ((await lookup(root, toplevel, historyKey, targets, answered)).length === 0) return answered;
-        // One batch of misses at a time: a request that waited finds what the
-        // one before it computed, and computes only what is still missing.
-        const turn = computing.then(async () => {
-          answered.clear();
-          const pending = await lookup(root, toplevel, historyKey, targets, answered);
-          if (pending.length > 0) await compute(toplevel, pending, answered);
-        });
-        computing = turn.catch(() => undefined);
-        await turn;
+        if ((await lookup(root, toplevel, historyKey, fingerprint, owed, answered)).length > 0) {
+          // One batch of misses at a time: a request that waited finds what the
+          // one before it computed, and computes only what is still missing.
+          const turn = computing.then(async () => {
+            answered.clear();
+            const pending = await lookup(root, toplevel, historyKey, fingerprint, owed, answered);
+            if (pending.length > 0) await compute(config, toplevel, pending, answered);
+          });
+          computing = turn.catch(() => undefined);
+          await turn;
+        }
       } catch {
         // Best-effort: the rows keep what they had, and the next request retries.
+      }
+      for (const [path, stamps] of declined) {
+        const answer: WorkingTreeGitSignals & { chunks: Map<string, Record<string, unknown>> } = answered.get(path) ?? {
+          chunks: new Map<string, Record<string, unknown>>(),
+        };
+        if (stamps.file) answer.file = stamps.file;
+        for (const [rowKey, block] of stamps.chunks) answer.chunks.set(rowKey, block);
+        answered.set(path, answer);
       }
       return answered;
     },
@@ -294,20 +339,79 @@ export function createWorkingTreeGitSignalSource(deps: WorkingTreeGitSignalSourc
 }
 
 /**
- * What the blocks depend on besides the record's own key: the computing build
- * and the configuration that shapes the values — squash sessions, the chunk
- * walk's window and line limit. Stall budgets are left out: they decide
- * whether a value is computed, never what it is.
+ * Splits the targets by the enrichment policy an index run applies
+ * (`gitEnrichmentScope` under the index's `chunkMaxFileLines`, read through
+ * ingest's own `enrichmentSkipReason`): a level the policy declines gets the
+ * skip stamp ingest writes — `{ skippedAs }` and nothing else, no
+ * `enrichedAt` — and is not computed; what it owes stays a target. The file
+ * level is asked without a line count, the chunk level with the tree file's,
+ * as the file and chunk phases ask (a file past the chunk walk's line limit:
+ * `git.file` computed, every row `skippedAs: "oversized"`). Classified by the
+ * TREE path — the path a reindex of the tree would classify.
  */
-function signalFingerprintOf(deps: WorkingTreeGitSignalSourceDeps): string {
+function partitionByEnrichmentPolicy(
+  targets: readonly WorkingTreeGitSignalTarget[],
+  chunkMaxFileLines: number,
+): {
+  owed: WorkingTreeGitSignalTarget[];
+  declined: Map<string, { file?: Record<string, unknown>; chunks: Map<string, Record<string, unknown>> }>;
+} {
+  const policy = {
+    shouldEnrich: (file: { classification: FileClassification; fileLines?: number }) =>
+      gitEnrichmentScope(file, chunkMaxFileLines),
+  };
+  const owed: WorkingTreeGitSignalTarget[] = [];
+  const declined = new Map<string, { file?: Record<string, unknown>; chunks: Map<string, Record<string, unknown>> }>();
+  for (const target of targets) {
+    const fileReason = target.fileSignals ? enrichmentSkipReason(policy, target.treePath, "file") : null;
+    const chunkReason =
+      target.chunks.length > 0
+        ? enrichmentSkipReason(
+            policy,
+            target.treePath,
+            "chunk",
+            target.fileLines !== undefined ? { fileLines: target.fileLines } : {},
+          )
+        : null;
+    if (fileReason === null && chunkReason === null) {
+      owed.push(target);
+      continue;
+    }
+    const stamps: { file?: Record<string, unknown>; chunks: Map<string, Record<string, unknown>> } = {
+      chunks: new Map(),
+    };
+    if (fileReason !== null) stamps.file = { skippedAs: fileReason };
+    if (chunkReason !== null) {
+      for (const chunk of target.chunks) stamps.chunks.set(chunk.key, { skippedAs: chunkReason });
+    }
+    declined.set(target.relativePath, stamps);
+    const rest: WorkingTreeGitSignalTarget = {
+      ...target,
+      fileSignals: target.fileSignals && fileReason === null,
+      chunks: chunkReason === null ? target.chunks : [],
+    };
+    if (rest.fileSignals || rest.chunks.length > 0) owed.push(rest);
+  }
+  return { owed, declined };
+}
+
+/**
+ * What the blocks depend on besides the record's own key: the computing build
+ * and the configuration that shapes the values — squash sessions, the file and
+ * chunk walks' windows, the chunk walk's line limit. Stall budgets and
+ * concurrency are left out: they decide whether a value is computed, never what
+ * it is. Two indexes written with different configs never share a record.
+ */
+function signalFingerprintOf(builderVersion: string | undefined, config: WorkingTreeGitSignalConfig): string {
   return createHash("sha1")
     .update(
       JSON.stringify([
-        deps.builderVersion ?? "",
-        deps.vcsAdapter,
-        deps.squashOpts ?? null,
-        deps.chunk.maxAgeMonths,
-        deps.chunk.maxFileLines,
+        builderVersion ?? "",
+        config.vcsAdapter,
+        config.squashOpts ?? null,
+        config.file?.maxAgeMonths ?? null,
+        config.chunk.maxAgeMonths,
+        config.chunk.maxFileLines,
       ]),
     )
     .digest("hex");
@@ -319,11 +423,11 @@ function chunkIdOf(targetIndex: number, rowKey: string): string {
 }
 
 async function computeSignals(
-  deps: WorkingTreeGitSignalSourceDeps,
+  config: WorkingTreeGitSignalConfig,
   toplevel: string,
   pending: readonly PendingTarget[],
 ): ReturnType<typeof buildOnDemandGitSignals> {
-  const adapter = await VcsAdapterFactory.create(deps.vcsAdapter, toplevel);
+  const adapter = await VcsAdapterFactory.create(config.vcsAdapter, toplevel);
   const targets: OnDemandGitSignalTarget[] = pending.map((entry, index) => {
     const ranges = new Map(entry.target.chunks.map((chunk) => [chunk.key, chunk]));
     return {
@@ -338,8 +442,9 @@ async function computeSignals(
     };
   });
   return buildOnDemandGitSignals(adapter, targets, {
-    timeoutMs: deps.timeoutMs,
-    chunk: deps.chunk,
-    ...(deps.squashOpts ? { squashOpts: deps.squashOpts } : {}),
+    timeoutMs: config.timeoutMs,
+    chunk: config.chunk,
+    ...(config.file ? { file: config.file } : {}),
+    ...(config.squashOpts ? { squashOpts: config.squashOpts } : {}),
   });
 }

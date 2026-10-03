@@ -56,5 +56,10 @@ export {
   workingTreeCounterpartIds,
   workingTreeStateOf,
 } from "./substitute.js";
-export { claimWorkingTreeFloors, recordingTreeGraphReader, recordTreeGraphState } from "./tree-graph-marker.js";
+export {
+  claimTreeGraphLookup,
+  claimWorkingTreeFloors,
+  recordingTreeGraphReader,
+  recordTreeGraphState,
+} from "./tree-graph-marker.js";
 export { touchedBasePointIds, WorkingTreeTouchedBasePoints } from "./touched-base-points.js";

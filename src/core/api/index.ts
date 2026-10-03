@@ -86,7 +86,10 @@ export {
   type WorkingTreeGraphCodegraphRuntime,
 } from "./internal/infra/working-tree-graph-cache.js";
 export { createWorkingTreeDeltaSignalSource } from "./internal/infra/working-tree-delta-signals.js";
-export { createWorkingTreeGitSignalSource } from "./internal/infra/working-tree-git-signals.js";
+export {
+  createWorkingTreeGitSignalSource,
+  type WorkingTreeGitSignalConfig,
+} from "./internal/infra/working-tree-git-signals.js";
 export {
   createWorkingTreeGitSignalStore,
   scheduleWorkingTreeGitSignalSweep,

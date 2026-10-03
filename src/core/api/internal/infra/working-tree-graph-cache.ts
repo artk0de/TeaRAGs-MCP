@@ -43,6 +43,14 @@
  * Retention runs after every publish (for that tree's graphs and that
  * collection's snapshots) and on the chunk store's cadence (for everything):
  * see {@link retiredTreeGraphs} and {@link WorkingTreeGraphCache#retireSnapshotsOf}.
+ * Across trees (live round-4 B2): a graph no process served for
+ * {@link WORKING_TREE_GRAPH_IDLE_RETENTION_MS} goes, as does a snapshot no
+ * build used for as long, and each collection's graphs fit
+ * {@link WORKING_TREE_GRAPH_CAP_BYTES}, least-recently-active first. The
+ * periodic sweep never runs at start: the first waits
+ * {@link WORKING_TREE_GRAPH_SWEEP_DELAY_MS} on an unref'd timer, longer than a
+ * one-shot process lives, and `sweepIfDue` skips when any process started one
+ * within the interval (`.graph-sweep-stamp.json` under the root).
  * A process that exits mid-build kills its build children and removes its
  * staging dirs synchronously; a staging dir whose owner pid is dead is swept at
  * once.
@@ -58,7 +66,10 @@ import type {
   WorkingTreeGraphSource,
   WorkingTreeGraphState,
 } from "../../../contracts/types/working-tree.js";
-import { WORKING_TREE_CHUNK_SWEEP_INTERVAL_MS } from "../../../domains/explore/working-tree/index.js";
+import {
+  WORKING_TREE_CHUNK_RETENTION_MS,
+  WORKING_TREE_CHUNK_SWEEP_INTERVAL_MS,
+} from "../../../domains/explore/working-tree/index.js";
 import type {
   WorkingTreeGraphBuildBudget,
   WorkingTreeGraphBuildInput,
@@ -94,6 +105,26 @@ export const WORKING_TREE_GRAPH_SUPERSEDED_GRACE_MS = 10 * 60_000;
  * up one graph per edit for the whole grace.
  */
 export const WORKING_TREE_GRAPH_KEPT_PER_TREE = 2;
+/**
+ * A graph no process served for this long goes, whatever its tree (live
+ * round-4 B2) — the chunk store's read-idle retention. A snapshot no build used
+ * for as long goes too; the next build re-exports it.
+ */
+export const WORKING_TREE_GRAPH_IDLE_RETENTION_MS = WORKING_TREE_CHUNK_RETENTION_MS;
+/** The bytes one collection's tree graphs may hold; the least recently active go first beyond it. */
+export const WORKING_TREE_GRAPH_CAP_BYTES = 2 * 1024 ** 3;
+/** The periodic sweep's first run waits this long — the chunk store's delay. */
+export const WORKING_TREE_GRAPH_SWEEP_DELAY_MS = 2 * 60_000;
+/** …and then runs this often, across every process sharing the root (the stamp). */
+export const WORKING_TREE_GRAPH_SWEEP_INTERVAL_MS = WORKING_TREE_CHUNK_SWEEP_INTERVAL_MS;
+/**
+ * A graph served this long after its last recorded activity has its `servedAt`
+ * written again, so the idle rule measures from the last serve without a meta
+ * write per request.
+ */
+const SERVED_REFRESH_MS = 3_600_000;
+/** The cross-process throttle: a dot-file in the root, never a collection directory. */
+const SWEEP_STAMP_FILE = ".graph-sweep-stamp.json";
 const META_FILE = "tree-graph.meta.json";
 const STAGING_MARKER = ".staging-";
 /** `<key>.staging-<pid>-<rand>`: the owner pid is in the name. */
@@ -195,6 +226,19 @@ export interface WorkingTreeGraphCacheDeps {
   now?: () => number;
   /** Defaults to {@link processExitHooks}. */
   exitHooks?: WorkingTreeGraphExitHooks;
+  /** Per-collection byte cap of the tree graphs; defaults to {@link WORKING_TREE_GRAPH_CAP_BYTES}. */
+  capBytes?: number;
+}
+
+export interface WorkingTreeGraphSweepOptions {
+  /** How long after any process's sweep started `sweepIfDue` skips. */
+  intervalMs?: number;
+}
+
+export interface WorkingTreeGraphSweepSchedule {
+  /** Delay before the first sweep — longer than a one-shot process lives. */
+  initialDelayMs?: number;
+  intervalMs?: number;
 }
 
 export interface WorkingTreeGraphCacheSweep {
@@ -210,9 +254,11 @@ interface WorkingTreeGraphMeta {
   publishedAt: number;
   /**
    * When a process last served this graph as the tree's CURRENT one after a
-   * different graph — a revert to bytes already built. Retention orders a
-   * tree's graphs by `max(publishedAt, servedAt)`: a graph re-served is the
-   * tree's newest again, not its oldest. Absent until first re-served.
+   * different graph — a revert to bytes already built — or served it at least
+   * {@link SERVED_REFRESH_MS} after its last recorded activity. Retention
+   * orders a tree's graphs by `max(publishedAt, servedAt)`: a graph re-served
+   * is the tree's newest again, not its oldest; and the idle rule measures
+   * from it. Absent until first re-served.
    */
   servedAt?: number;
   physicalCollectionName: string;
@@ -248,7 +294,7 @@ type WorkingTreeGraphAttempt =
 interface PublishedTreeGraph {
   dir: string;
   dbPath: string;
-  /** When the graph last became its tree's current one — {@link activeAtOf}. */
+  /** When the graph last became its tree's current one, or was last served — {@link activeAtOf}. */
   activeAt: number;
 }
 
@@ -269,17 +315,23 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
   private readonly stagingInUse = new Set<string>();
   /** `(path, size, mtime, ctime, inode)` → content sha256 of a changed file; see {@link contentHashOf}. */
   private readonly contentHashes = new Map<string, { stamp: string; sha: string }>();
-  /** Tree root → the key of the graph this process last served or published for it; see {@link markServed}. */
-  private readonly servedKeyByTree = new Map<string, string>();
+  /**
+   * Tree root → the key of the graph this process last served or published for
+   * it, and the activity time its meta records as far as this process knows;
+   * see {@link markServed}.
+   */
+  private readonly servedKeyByTree = new Map<string, { key: string; recordedAt: number }>();
   private unregisterExitHook: (() => void) | undefined;
   private readonly now: () => number;
   private readonly failureBackoffMs: number;
   private readonly exitHooks: WorkingTreeGraphExitHooks;
+  private readonly capBytes: number;
 
   constructor(private readonly deps: WorkingTreeGraphCacheDeps) {
     this.now = deps.now ?? Date.now;
     this.failureBackoffMs = deps.failureBackoffMs ?? WORKING_TREE_GRAPH_FAILURE_BACKOFF_MS;
     this.exitHooks = deps.exitHooks ?? processExitHooks;
+    this.capBytes = deps.capBytes ?? WORKING_TREE_GRAPH_CAP_BYTES;
   }
 
   async graphFor(request: WorkingTreeGraphRequest, waitMs: number): Promise<WorkingTreeGraphState> {
@@ -312,11 +364,15 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
 
   /**
    * Retention, run with the chunk store's cadence: a dead tree's graphs go at
-   * once; per tree the superseded graphs go per {@link retiredTreeGraphs}; a
-   * snapshot whose base version is no longer the live one goes per
-   * {@link retireSnapshotsOf}; staging dirs whose owner process is dead go at
-   * once, others and snapshot temp files once older than an hour. Nothing
-   * outside `<rootDir>/<collection>/graph/` is touched.
+   * once; per tree the superseded and the idle graphs go per
+   * {@link retiredTreeGraphs}; then each collection's graphs fit the byte cap,
+   * least-recently-active first; a snapshot whose base version is no longer the
+   * live one goes per {@link retireSnapshotsOf}, the live one once unused for
+   * the idle retention; staging dirs whose owner process is dead go at once,
+   * others and snapshot temp files once older than an hour. A graph a reader
+   * of this process holds open and a snapshot a build of this process reads
+   * are never removed. Nothing outside `<rootDir>/<collection>/graph/` is
+   * touched.
    */
   async sweep(at: number = this.now()): Promise<WorkingTreeGraphCacheSweep> {
     const result: WorkingTreeGraphCacheSweep = {
@@ -335,6 +391,27 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
       await removeIfEmpty(graphDir);
     }
     return result;
+  }
+
+  /**
+   * {@link sweep}, unless a process sharing this root started one within
+   * `intervalMs` (the stamp is written at the START, so a concurrent process
+   * skips instead of sweeping alongside). Undefined when skipped, and when the
+   * root does not exist — no root is created for a stamp.
+   */
+  async sweepIfDue(
+    at: number = this.now(),
+    options: WorkingTreeGraphSweepOptions = {},
+  ): Promise<WorkingTreeGraphCacheSweep | undefined> {
+    const intervalMs = options.intervalMs ?? WORKING_TREE_GRAPH_SWEEP_INTERVAL_MS;
+    if (!(await isDirectory(this.deps.rootDir))) return undefined;
+    const stampPath = join(this.deps.rootDir, SWEEP_STAMP_FILE);
+    const sweptAt = await readSweepStamp(stampPath);
+    if (sweptAt !== undefined && sweptAt <= at && at - sweptAt < intervalMs) return undefined;
+    const temp = `${stampPath}.${String(process.pid)}-${randomBytes(4).toString("hex")}`;
+    await fs.writeFile(temp, JSON.stringify({ sweptAt: at }));
+    await fs.rename(temp, stampPath);
+    return this.sweep(at);
   }
 
   /**
@@ -549,7 +626,7 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
       }
       const state = await readPublished(keyDir, job.physical);
       if (!state) return failed(unavailable(`tree graph ${keyDir} was published without a readable graph`));
-      this.servedKeyByTree.set(job.request.tree.root, job.key);
+      this.servedKeyByTree.set(job.request.tree.root, { key: job.key, recordedAt: meta.publishedAt });
       await this.retireAfterPublish(job).catch(() => undefined);
       return { kind: "published", state };
     } catch (err) {
@@ -565,18 +642,22 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
    * A published graph is served for its tree. When it is not the graph this
    * process last served for that tree — the tree went back to bytes already
    * built — its meta records `servedAt`, so retention treats it as the tree's
-   * newest graph again. The meta is replaced by rename, never rewritten in
-   * place: a concurrent reader sees the old record or the new one. Serving the
-   * same graph again writes nothing.
+   * newest graph again. Serving the same graph again writes nothing until
+   * {@link SERVED_REFRESH_MS} after the activity its meta records, then
+   * `servedAt` moves, so the idle rule never evicts a graph still in use
+   * (live round-4 B2). The meta is replaced by rename, never rewritten in
+   * place: a concurrent reader sees the old record or the new one.
    */
   private async markServed(keyDir: string, job: WorkingTreeGraphJob): Promise<void> {
     const treeRoot = job.request.tree.root;
-    if (this.servedKeyByTree.get(treeRoot) === job.key) return;
-    this.servedKeyByTree.set(treeRoot, job.key);
+    const now = this.now();
+    const served = this.servedKeyByTree.get(treeRoot);
+    if (served?.key === job.key && now - served.recordedAt < SERVED_REFRESH_MS) return;
     const meta = await readMeta(keyDir);
     if (!meta) return;
+    this.servedKeyByTree.set(treeRoot, { key: job.key, recordedAt: now });
     const temp = join(keyDir, `${META_FILE}.${String(process.pid)}-${randomBytes(4).toString("hex")}`);
-    await fs.writeFile(temp, JSON.stringify({ ...meta, servedAt: this.now() } satisfies WorkingTreeGraphMeta));
+    await fs.writeFile(temp, JSON.stringify({ ...meta, servedAt: now } satisfies WorkingTreeGraphMeta));
     await fs.rename(temp, join(keyDir, META_FILE)).catch(async (err: unknown) => {
       await fs.rm(temp, { force: true });
       throw err;
@@ -636,7 +717,12 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
   private async ensureSnapshot(job: WorkingTreeGraphJob): Promise<string> {
     const snapshotsDir = join(job.graphDir, "snapshots");
     const snapshotPath = join(snapshotsDir, `${job.physical}-${job.baseVersion}.duckdb`);
-    if (existsSync(snapshotPath)) return snapshotPath;
+    if (existsSync(snapshotPath)) {
+      // Used: the idle rule measures a snapshot from its mtime (wall clock, like every file age here).
+      const usedAt = new Date();
+      await fs.utimes(snapshotPath, usedAt, usedAt).catch(() => undefined);
+      return snapshotPath;
+    }
     let exporting = this.snapshotExports.get(snapshotPath);
     if (!exporting) {
       exporting = (async () => {
@@ -698,6 +784,7 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
   }
 
   private async sweepTrees(treesDir: string, at: number, result: WorkingTreeGraphCacheSweep): Promise<void> {
+    const kept: PublishedTreeGraph[] = [];
     const graphsPerTree = new Map<string, PublishedTreeGraph[]>();
     for (const entry of await listDir(treesDir)) {
       const dir = join(treesDir, entry.name);
@@ -733,13 +820,37 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
       const retired = new Set(retiredTreeGraphs(graphs, at, (dbPath) => this.isGraphInUse(dbPath)));
       for (const graph of graphs) {
         if (!retired.has(graph)) {
-          result.keptGraphs++;
+          kept.push(graph);
           continue;
         }
         await fs.rm(graph.dir, { recursive: true, force: true });
         result.evictedGraphs++;
       }
     }
+    for (const graph of await this.overCapGraphs(kept)) {
+      await fs.rm(graph.dir, { recursive: true, force: true });
+      result.evictedGraphs++;
+      kept.splice(kept.indexOf(graph), 1);
+    }
+    result.keptGraphs += kept.length;
+  }
+
+  /**
+   * The graphs that go so one collection's graphs fit the byte cap: least
+   * recently active first, never one a reader of this process holds open (it
+   * still counts toward the total).
+   */
+  private async overCapGraphs(graphs: readonly PublishedTreeGraph[]): Promise<PublishedTreeGraph[]> {
+    const sized = await Promise.all(graphs.map(async (graph) => ({ graph, bytes: await bytesUnder(graph.dir) })));
+    let total = sized.reduce((sum, entry) => sum + entry.bytes, 0);
+    const over: PublishedTreeGraph[] = [];
+    for (const { graph, bytes } of sized.sort((a, b) => a.graph.activeAt - b.graph.activeAt)) {
+      if (total <= this.capBytes) break;
+      if (this.isGraphInUse(graph.dbPath)) continue;
+      over.push(graph);
+      total -= bytes;
+    }
+    return over;
   }
 
   private async sweepSnapshots(snapshotsDir: string, at: number, result: WorkingTreeGraphCacheSweep): Promise<void> {
@@ -762,6 +873,15 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
         ? await baseGraphVersion(runtime.pool.pathFor(physical))
         : undefined;
       result.evictedSnapshots += await this.retireSnapshotsOf(snapshotsDir, physical, live, at);
+      if (live === undefined) continue;
+      // The live version's snapshot, once no build used it for the idle retention.
+      const livePath = join(snapshotsDir, `${physical}-${live}.duckdb`);
+      if (
+        (await isOlderThan(livePath, at, WORKING_TREE_GRAPH_IDLE_RETENTION_MS)) &&
+        (await this.removeSnapshot(livePath))
+      ) {
+        result.evictedSnapshots++;
+      }
     }
   }
 }
@@ -775,8 +895,10 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
  * fresh. It goes once
  * superseded for {@link WORKING_TREE_GRAPH_SUPERSEDED_GRACE_MS} (a reader in
  * another server may hold it until then), or at once past the
- * {@link WORKING_TREE_GRAPH_KEPT_PER_TREE} newest — never while a reader of
- * this process holds it open.
+ * {@link WORKING_TREE_GRAPH_KEPT_PER_TREE} newest. Any graph, the newest
+ * included, goes once no process served it for
+ * {@link WORKING_TREE_GRAPH_IDLE_RETENTION_MS} (live round-4 B2). Never while a
+ * reader of this process holds it open.
  */
 function retiredTreeGraphs(
   graphs: readonly PublishedTreeGraph[],
@@ -785,32 +907,42 @@ function retiredTreeGraphs(
 ): PublishedTreeGraph[] {
   const newestFirst = [...graphs].sort((a, b) => b.activeAt - a.activeAt);
   const retired: PublishedTreeGraph[] = [];
-  for (let rank = 1; rank < newestFirst.length; rank++) {
-    const graph = newestFirst[rank];
-    const supersededAt = newestFirst[rank - 1].activeAt;
+  for (const [rank, graph] of newestFirst.entries()) {
+    const idle = at - graph.activeAt >= WORKING_TREE_GRAPH_IDLE_RETENTION_MS;
     const overCap = rank >= WORKING_TREE_GRAPH_KEPT_PER_TREE;
-    const pastGrace = at - supersededAt >= WORKING_TREE_GRAPH_SUPERSEDED_GRACE_MS;
-    if ((overCap || pastGrace) && !isInUse(graph.dbPath)) retired.push(graph);
+    const pastGrace = rank > 0 && at - newestFirst[rank - 1].activeAt >= WORKING_TREE_GRAPH_SUPERSEDED_GRACE_MS;
+    if ((idle || overCap || pastGrace) && !isInUse(graph.dbPath)) retired.push(graph);
   }
   return retired;
 }
 
 /**
- * Sweep now and every `intervalMs` (the chunk store's cadence) on a timer that
- * does not hold the process open; returns the stop.
+ * Sweeps (if due) once `initialDelayMs` has passed and every `intervalMs`
+ * after — the chunk store's schedule — on timers that do not hold the process
+ * open: a one-shot process exits before the first, so a request never waits on
+ * retention. Returns the stop.
  */
 export function scheduleWorkingTreeGraphSweep(
-  cache: Pick<WorkingTreeGraphCache, "sweep">,
-  intervalMs: number = WORKING_TREE_CHUNK_SWEEP_INTERVAL_MS,
+  cache: Pick<WorkingTreeGraphCache, "sweepIfDue">,
+  schedule: WorkingTreeGraphSweepSchedule = {},
 ): () => void {
+  const intervalMs = schedule.intervalMs ?? WORKING_TREE_GRAPH_SWEEP_INTERVAL_MS;
+  let stopped = false;
   const sweep = (): void => {
-    void cache.sweep().catch(() => undefined);
+    if (stopped) return;
+    void cache.sweepIfDue(undefined, { intervalMs }).catch(() => undefined);
   };
-  sweep();
-  const timer = setInterval(sweep, intervalMs);
-  timer.unref?.();
+  let interval: ReturnType<typeof setInterval> | undefined;
+  const first = setTimeout(() => {
+    sweep();
+    interval = setInterval(sweep, intervalMs);
+    interval.unref?.();
+  }, schedule.initialDelayMs ?? WORKING_TREE_GRAPH_SWEEP_DELAY_MS);
+  first.unref?.();
   return () => {
-    clearInterval(timer);
+    stopped = true;
+    clearTimeout(first);
+    clearInterval(interval);
   };
 }
 
@@ -934,6 +1066,30 @@ function treeGraphKey(
   return createHash("sha256")
     .update(JSON.stringify([treeRoot, physical, baseVersion, deltaDigest]))
     .digest("hex");
+}
+
+/** When a sweep of this root last started, by any process; undefined when never (or unreadable). */
+async function readSweepStamp(stampPath: string): Promise<number | undefined> {
+  try {
+    const stamp = JSON.parse(await fs.readFile(stampPath, "utf8")) as { sweptAt?: unknown };
+    return typeof stamp.sweptAt === "number" ? stamp.sweptAt : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The bytes of every regular file under `dir` (logical sizes); 0 when unreadable. */
+async function bytesUnder(dir: string): Promise<number> {
+  let total = 0;
+  for (const entry of await listDir(dir)) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory) {
+      total += await bytesUnder(path);
+      continue;
+    }
+    total += (await fs.stat(path).catch(() => undefined))?.size ?? 0;
+  }
+  return total;
 }
 
 async function removeIfEmpty(dir: string): Promise<void> {

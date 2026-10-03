@@ -558,25 +558,33 @@ export async function readCommitFileNumstat(
  * without the pathspec (`--no-walk`, one spawn) and their rows touching a named
  * path on either side replace the pathspec-limited ones. Commits that only
  * modified a named path keep their pathspec rows. Log order is preserved.
+ *
+ * `since` present bounds both logs with `--since` and walks them with
+ * `--full-history`: the pathspec-limited form of a repo-wide `git log --since
+ * --numstat` (the run-scoped discovery an index run reads), whose commits a
+ * pathspec log would otherwise simplify away wherever a merge is TREESAME to
+ * one parent for the path (bd tea-rags-mcp-xi2r9).
  */
 export async function readCommitFileNumstatForPaths(
   repoRoot: string,
   paths: string[],
   timeoutMs?: number,
+  since?: Date,
 ): Promise<CommitFileNumstat[]> {
   if (paths.length === 0) return [];
   const effectiveTimeoutMs = timeoutMs ?? 30000;
+  const window = since ? [`--since=${since.toISOString()}`, "--full-history"] : [];
   const entries = parseCommitFileNumstat(
     await execFileForPathspec(
       repoRoot,
-      ["log", "HEAD", "--numstat", NUMSTAT_LOG_FORMAT_WITH_COMMITTER, "--", ...paths],
+      ["log", "HEAD", ...window, "--numstat", NUMSTAT_LOG_FORMAT_WITH_COMMITTER, "--", ...paths],
       effectiveTimeoutMs,
     ),
   );
   const addOrDelete = (
     await execFileForPathspec(
       repoRoot,
-      ["log", "HEAD", "--diff-filter=AD", "--format=%H", "--", ...paths],
+      ["log", "HEAD", ...window, "--diff-filter=AD", "--format=%H", "--", ...paths],
       effectiveTimeoutMs,
     )
   )

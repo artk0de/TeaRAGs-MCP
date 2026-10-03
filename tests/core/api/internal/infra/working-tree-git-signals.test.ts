@@ -94,7 +94,9 @@ describe("createWorkingTreeGitSignalSource", () => {
     // run's `enrichedAt` stamp) but WALKS its chunks and writes the walk's zero
     // overlay — `assembleOverlays` over an accumulator no commit touched. The
     // tree's rows of such a file get the same chunk block, by the same walk.
-    it("answers an untracked file's rows with the chunk walk's zero block and no git.file", async () => {
+    // Invariant changed (round-4 P4): its `git.file` is that bare run stamp —
+    // what ingest's applier writes — not nothing.
+    it("answers an untracked file's rows with the chunk walk's zero block and a bare-stamp git.file", async () => {
       write("src/fresh.ts", "export const fresh = 1;\n");
 
       const signals = await createWorkingTreeGitSignalSource(DEPS).signalsOf(tree, [
@@ -106,7 +108,7 @@ describe("createWorkingTreeGitSignalSource", () => {
         }),
       ]);
 
-      expect(signals.get("src/fresh.ts")?.file).toBeUndefined();
+      expect(signals.get("src/fresh.ts")?.file).toEqual({ enrichedAt: expect.any(String) });
       expect(signals.get("src/fresh.ts")?.chunks.get("r")).toMatchObject({
         commitCount: 0,
         churnRatio: 0,
@@ -387,7 +389,8 @@ describe("createWorkingTreeGitSignalSource", () => {
       fixture.commit(tree, { "src/e.ts": "export const e = 1;\n" });
       const after = await persistent().signalsOf(tree, both(), indexed);
 
-      expect(after.get("src/d.ts")?.file).toBeUndefined();
+      // No history on this HEAD: the bare stamp (round-4 P4), never the stamp's record.
+      expect(after.get("src/d.ts")?.file).toEqual({ enrichedAt: expect.any(String) });
       expect(after.get("src/cyc/c.ts")?.file).toMatchObject({ commitCount: 2 });
     });
 
@@ -410,6 +413,111 @@ describe("createWorkingTreeGitSignalSource", () => {
 
       expect(spy).toHaveBeenCalledTimes(2);
       expect(after.get("src/cyc/moved.ts")?.file).toMatchObject({ commitCount: 5 });
+    });
+  });
+
+  // Round-4 P1: the blocks are the ones a reindex of the tree would write WITH
+  // THE INDEX'S OWN CONFIG — its project's registry env, not whatever env the
+  // serving process was started with. A server without the self-index's
+  // `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS=true` recomputed `symbol.ts` at 20
+  // commits beside base rows counting 19 sessions: one answer, two units.
+  describe("the configuration of the index the tree is read against", () => {
+    const SQUASHED = { ...DEPS, squashOpts: { squashAwareSessions: true, sessionGapMinutes: 30 } };
+
+    it("computes a path with the git config of the index it serves, each index its own", async () => {
+      // c.ts: two commits by one author seconds apart — one session, two commits.
+      const source = createWorkingTreeGitSignalSource({
+        ...DEPS,
+        configFor: (indexRoot) => (indexRoot === "/index/squashed" ? SQUASHED : undefined),
+      });
+
+      const squashed = await source.signalsOf(tree, [target()], undefined, "/index/squashed");
+      const plain = await source.signalsOf(tree, [target()], undefined, "/index/plain");
+
+      expect(squashed.get("src/cyc/c.ts")?.file).toMatchObject({ commitCount: 1 });
+      expect(plain.get("src/cyc/c.ts")?.file).toMatchObject({ commitCount: 2 });
+    });
+
+    it("keeps a stored record of one config from answering another", async () => {
+      const storeRoot = mkdtempSync(join(tmpdir(), "wt-git-config-"));
+      try {
+        const persistent = () =>
+          createWorkingTreeGitSignalSource({
+            ...DEPS,
+            store: createWorkingTreeGitSignalStore({ rootDir: storeRoot }),
+            builderVersion: "1.0.0",
+            configFor: (indexRoot) => (indexRoot === "/index/squashed" ? SQUASHED : undefined),
+          });
+
+        await persistent().signalsOf(tree, [target()], undefined, "/index/plain");
+        const squashed = await persistent().signalsOf(tree, [target()], undefined, "/index/squashed");
+
+        expect(squashed.get("src/cyc/c.ts")?.file).toMatchObject({ commitCount: 1 });
+      } finally {
+        rmSync(storeRoot, { recursive: true, force: true });
+      }
+    });
+
+    // Ingest's file walk is the windowed repo-wide discovery
+    // (`TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS`); a path it finds nothing for is
+    // backfilled from its whole history.
+    it("reads git.file over the file walk's window, and a path with nothing in it over its whole history", async () => {
+      const dated = (iso: string, files: Record<string, string>): void => {
+        vi.stubEnv("GIT_AUTHOR_DATE", iso);
+        vi.stubEnv("GIT_COMMITTER_DATE", iso);
+        try {
+          fixture.commit(tree, files);
+        } finally {
+          vi.unstubAllEnvs();
+        }
+      };
+      const longAgo = new Date(Date.now() - 400 * 86_400_000).toISOString();
+      dated(longAgo, { "src/mixed.ts": "export const m = 1;\n", "src/old.ts": "export const o = 1;\n" });
+      dated(longAgo, { "src/old.ts": "export const o = 2;\n" });
+      fixture.commit(tree, { "src/mixed.ts": "export const m = 2;\n" });
+      const windowed = createWorkingTreeGitSignalSource({ ...DEPS, file: { maxAgeMonths: 12 } });
+
+      const signals = await windowed.signalsOf(tree, [
+        target({ relativePath: "src/mixed.ts", treePath: "src/mixed.ts", maxEndLine: 1 }),
+        target({ relativePath: "src/old.ts", treePath: "src/old.ts", maxEndLine: 1 }),
+      ]);
+
+      expect(signals.get("src/mixed.ts")?.file).toMatchObject({ commitCount: 1 });
+      expect(signals.get("src/old.ts")?.file).toMatchObject({ commitCount: 2 });
+    });
+  });
+
+  // Round-4 P4: ingest's applier stamps every block it writes with the run's
+  // `enrichedAt`, and a file it found no history for with the bare stamp.
+  describe("enrichedAt", () => {
+    it("stamps every computed block with the computation time, and a path with no history with the bare stamp", async () => {
+      const at = Date.UTC(2026, 9, 3, 12);
+      const stamp = new Date(at).toISOString();
+      appendFileSync(join(tree, "src/cyc/c.ts"), FRESH);
+      write("src/untracked.ts", "export const u = 1;\n");
+
+      const signals = await createWorkingTreeGitSignalSource({ ...DEPS, now: () => at }).signalsOf(tree, [
+        target({
+          maxEndLine: 7,
+          chunks: [
+            { key: "cFn", startLine: 1, endLine: 3 },
+            { key: "fresh", startLine: 5, endLine: 7 },
+          ],
+        }),
+        target({
+          relativePath: "src/untracked.ts",
+          treePath: "src/untracked.ts",
+          maxEndLine: 1,
+          chunks: [{ key: "u", startLine: 1, endLine: 1 }],
+        }),
+      ]);
+
+      const committed = signals.get("src/cyc/c.ts");
+      expect(committed?.file).toMatchObject({ commitCount: 2, enrichedAt: stamp });
+      expect(committed?.chunks.get("cFn")).toMatchObject({ commitCount: 2, enrichedAt: stamp });
+      expect(committed?.chunks.get("fresh")).toMatchObject({ commitCount: 0, enrichedAt: stamp });
+      expect(signals.get("src/untracked.ts")?.file).toEqual({ enrichedAt: stamp });
+      expect(signals.get("src/untracked.ts")?.chunks.get("u")).toMatchObject({ commitCount: 0, enrichedAt: stamp });
     });
   });
 

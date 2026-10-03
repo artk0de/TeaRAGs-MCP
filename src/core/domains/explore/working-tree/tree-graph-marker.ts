@@ -63,20 +63,55 @@ export function recordTreeGraphState(marker: WorkingTreeMarker, state: WorkingTr
 }
 
 /**
- * The view's tree-graph reader, recording what it answers on the view's marker
- * — for a lookup handed to a seam that reports only its data (find_symbol's
- * codegraph hop and visibility decoration go through `SymbolChunkResolver` /
+ * The view's tree-graph reader for a search/symbol LOOKUP handed to a seam that
+ * reports only its data (find_symbol's tree definitions, codegraph hop and
+ * visibility decoration go through `SymbolChunkResolver` /
  * `SymbolVisibilityResolver`, which read the graph `built` names). Undefined
  * when the view has no tree graph.
+ *
+ * Unlike a graph tool's read, a lookup's `built` does not claim `codegraph`
+ * (live round-4 B1): it is parked on `view.treeGraphLookup` and clears any
+ * earlier unavailability — the lookup did read the tree — and
+ * {@link claimTreeGraphLookup} claims it only for an answer that returned a
+ * row of a file the tree changed. `unavailable` is recorded at once: the
+ * lookup fell back to the index whatever the answer holds, and the marker
+ * says why.
  */
 export function recordingTreeGraphReader(view: WorkingTreeView | undefined): WorkingTreeGraphReader | undefined {
   const read = view?.readTreeGraph;
   if (!view || !read) return undefined;
   return async (waitMs) => {
     const state = await read(waitMs);
-    recordTreeGraphState(view.marker, state);
+    if (state.kind === "built") {
+      view.treeGraphLookup = state;
+      delete view.marker.treeGraphUnavailable;
+    } else if (!view.treeGraphLookup) {
+      recordTreeGraphState(view.marker, state);
+    }
     return state;
   };
+}
+
+/**
+ * Claim the tree graph a lookup of this search/symbol answer read (D8, live
+ * round-4 B1): `codegraph` names a layer that supplied tree data to a RETURNED
+ * row, and only a row of a file the tree changed carries graph data the tree
+ * graph derived — its definitions placed by the tree, its member visibility as
+ * the tree declares it. A row of an untouched file holds the index's graph
+ * data (the tree graph copies the base for it), and an empty answer holds
+ * none, so neither claims. `answeredPaths` are the files of the rows the
+ * answer returns. Graph tools never come here: their answer IS the tree
+ * graph's, empty or not (`recordTreeGraphState`).
+ */
+export function claimTreeGraphLookup(view: WorkingTreeView, answeredPaths: Iterable<string>): void {
+  const lookup = view.treeGraphLookup;
+  if (!lookup) return;
+  for (const path of answeredPaths) {
+    if (view.touchedPaths.has(path) && !view.deletedPaths.has(path)) {
+      recordTreeGraphState(view.marker, lookup);
+      return;
+    }
+  }
 }
 
 /**

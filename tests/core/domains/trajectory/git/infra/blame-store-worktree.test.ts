@@ -13,11 +13,11 @@
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { BlameLine } from "../../../../../../src/core/adapters/vcs/types.js";
 import { GitBlameStore } from "../../../../../../src/core/domains/trajectory/git/infra/blame-store.js";
@@ -69,8 +69,16 @@ describe("GitBlameStore across linked worktrees", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  const storeDirs: string[] = [];
+
   beforeEach(() => {
     baseDir = mkdtempSync(join(tmpdir(), "blame-store-wt-"));
+    storeDirs.push(baseDir);
+  });
+
+  // Runs for a failed case too — a store directory never outlives its case.
+  afterEach(() => {
+    rmSync(baseDir, { recursive: true, force: true });
   });
 
   it("a blame map saved from the main checkout loads from its linked worktree", () => {
@@ -107,5 +115,15 @@ describe("GitBlameStore across linked worktrees", () => {
     store.save(mainCheckout, fixtureFiles());
 
     expect(store.load(otherRepo)).toBeNull();
+  });
+
+  // Round-4 P5: every run of this suite left three `blame-store-wt-*` store
+  // directories in $TMPDIR (45 found in one day). Runs in declaration order, so
+  // the cases above have all finished.
+  it("leaves no store directory of an earlier case behind", () => {
+    const earlier = storeDirs.filter((dir) => dir !== baseDir);
+
+    expect(earlier.length).toBeGreaterThan(0);
+    expect(earlier.filter((dir) => existsSync(dir))).toEqual([]);
   });
 });

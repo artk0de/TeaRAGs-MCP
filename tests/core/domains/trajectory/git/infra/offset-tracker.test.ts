@@ -177,6 +177,22 @@ describe("zero-context hunks (changed rows only)", () => {
     ]);
   });
 
+  // bd tea-rags-mcp-xi2r9 (round-4 P3, r3t `zebraQuantumFlux`): a chunk whose
+  // every row one commit inserted has no rows before that commit — `git log -L`
+  // stops there. Collapsing it onto the row that followed the insertion handed
+  // that row's older commits to it.
+  it("retires a chunk every row of which an insertion added, so no older commit credits it", () => {
+    // New rows 7-9 (all of B) inserted; nothing removed.
+    const insertion: Hunk[] = [{ oldStart: 6, oldLines: 0, newStart: 7, newLines: 3 }];
+    const older = applyOffsets(ranges, insertion);
+
+    expect(older.find((r) => r.chunkId === "A")).toEqual({ chunkId: "A", start: 1, end: 6 });
+    // An older commit rewriting the rows around the old seam reaches A only.
+    const olderEdit: Hunk[] = [{ oldStart: 6, oldLines: 2, newStart: 6, newLines: 2 }];
+    expect([...mapHunksToChunks(olderEdit, older)]).toEqual(["A"]);
+    expect([...mapHunksToChunks(olderEdit, applyOffsets(older, olderEdit))]).toEqual(["A"]);
+  });
+
   it("maps a chunk partly covered by an insertion block onto the pre-insertion rows", () => {
     // New rows 5-8 inserted (A's tail and B's head); nothing removed.
     const hunks: Hunk[] = [{ oldStart: 5, oldLines: 0, newStart: 5, newLines: 4 }];

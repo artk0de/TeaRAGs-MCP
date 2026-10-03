@@ -107,7 +107,7 @@ function declinesAt(scope: EnrichmentScope, level: "file" | "chunk"): boolean {
  * which keeps `shouldEnrich` a scope-only contract.
  */
 export function enrichmentSkipReason(
-  provider: EnrichmentProvider,
+  provider: Pick<EnrichmentProvider, "shouldEnrich">,
   relPath: string,
   level: "file" | "chunk",
   facts: EnrichmentFileFacts = {},

@@ -116,6 +116,22 @@ interface ChunkPhaseHandoffSlice {
   readonly churnByPath: Map<string, FileChurnData>;
 }
 
+/**
+ * The git enrichment policy, as `GitEnrichmentProvider#shouldEnrich` answers
+ * it under `chunkMaxFileLines` — exported so a reader computing git blocks
+ * outside a run (the working tree's on-demand signals) declines exactly what an
+ * index run declines.
+ */
+export function gitEnrichmentScope(
+  file: { classification: FileClassification; fileLines?: number },
+  chunkMaxFileLines: number,
+): EnrichmentScope {
+  if (file.classification.isGenerated) return "none";
+  if (file.classification.isDocumentation) return "file-only";
+  if (file.fileLines !== undefined && file.fileLines > chunkMaxFileLines) return "file-only";
+  return "full";
+}
+
 export class GitEnrichmentProvider implements EnrichmentProvider {
   readonly key = "git";
 
@@ -286,10 +302,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    * tests) enriches fully.
    */
   shouldEnrich(file: { relPath: string; classification: FileClassification; fileLines?: number }): EnrichmentScope {
-    if (file.classification.isGenerated) return "none";
-    if (file.classification.isDocumentation) return "file-only";
-    if (file.fileLines !== undefined && file.fileLines > this.config.chunkMaxFileLines) return "file-only";
-    return "full";
+    return gitEnrichmentScope(file, this.config.chunkMaxFileLines);
   }
 
   readonly fileSignalTransform: FileSignalTransform;
