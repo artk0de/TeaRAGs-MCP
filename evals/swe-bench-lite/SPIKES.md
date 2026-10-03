@@ -12,7 +12,20 @@ OrbStack Docker 29.4, Claude Code 2.1.287, tea-rags 1.45.1, swebench 5.0.2.
   `"Not logged in · Please run /login"` — nothing from `~/.claude` leaks in.
 - Subscription auth for the isolated dir: `claude setup-token` →
   `CLAUDE_CODE_OAUTH_TOKEN`, stored in `~/.config/swe-lite-ab/oauth-token`.
-  Pending: the token run and the "no CLAUDE.md instructions" probe.
+- Token run (2026-10-04): auth works with the empty config dir. The
+  instruction probe found a leak. With cwd under `/Users/artk0re`, the agent
+  quoted `~/.claude/CLAUDE.md`, loaded `~/.claude/rules/*` and used the
+  operator's form of address, with an empty `CLAUDE_CONFIG_DIR`, with
+  `--setting-sources project,local`, and with `HOME` pointed at an empty
+  directory alike. The same probe from `/Users/Shared/swe-lite-probe` answered
+  "NONE". Cause: Claude Code walks up from its working directory and loads
+  every ancestor's `CLAUDE.md` / `.claude/`; `/Users/artk0re/.claude/` is such
+  an ancestor, and task repositories under `evals/swe-bench-lite/runs/` would
+  also inherit tea-rags' own `.claude/CLAUDE.md` and rules. The config dir does
+  isolate user-scope settings, MCP servers, plugins and skills.
+- Decision: task repositories live in `/Users/Shared/swe-lite-ab/repos/`
+  (`config.REPOS_ROOT`), and `run_task` refuses a repository with an
+  instruction file in any ancestor (`repos.instruction_leaks`).
 - The final `result` event carries `modelUsage` and `subagent_stats`.
 
 ## S2 — subagent usage in `result.usage`

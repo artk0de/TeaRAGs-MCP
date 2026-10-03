@@ -57,6 +57,17 @@ def select_focus(tasks: list[Task], repo: str, n_not_named: int, seed: int,
 
 
 def load_lite() -> list[Task]:
+    """Lite from a local snapshot, written on first use: later stages run offline, and the task
+    content stays fixed for the whole experiment even if the Hub publishes a new revision."""
+    if config.LITE_SNAPSHOT.exists():
+        return [Task(**json.loads(line)) for line in config.LITE_SNAPSHOT.read_text().splitlines() if line]
+    rows = _fetch_lite()
+    config.LITE_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
+    config.LITE_SNAPSHOT.write_text("".join(json.dumps(asdict(t)) + "\n" for t in rows))
+    return rows
+
+
+def _fetch_lite() -> list[Task]:
     from datasets import load_dataset
 
     rows = load_dataset(config.DATASET, split="test")

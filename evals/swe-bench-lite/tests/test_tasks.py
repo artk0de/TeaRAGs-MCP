@@ -83,3 +83,19 @@ def test_select_focus_raises_when_too_few_not_named_tasks():
 
     with pytest.raises(ValueError):
         select_focus(_focus_pool(), "django/django", n_not_named=17, seed=3)
+
+
+def test_load_lite_snapshots_the_dataset_once_and_then_reads_offline(tmp_path, monkeypatch):
+    from swe_lite_ab import config, tasks
+
+    monkeypatch.setattr(config, "LITE_SNAPSHOT", tmp_path / "lite.jsonl")
+    rows = [Task("o__r-1", "o/r", "abc", "issue", PATCH, "2020-01-01")]
+    calls = []
+    monkeypatch.setattr(tasks, "_fetch_lite", lambda: calls.append(1) or rows)
+
+    first = tasks.load_lite()
+    second = tasks.load_lite()
+
+    assert first == second == rows
+    assert calls == [1]
+    assert (tmp_path / "lite.jsonl").exists()

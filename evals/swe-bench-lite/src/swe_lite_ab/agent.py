@@ -9,7 +9,7 @@ from pathlib import Path
 
 from . import collect, config
 from .config import ArmConfig
-from .repos import task_dir
+from .repos import instruction_leaks, task_dir
 from .tasks import Task
 
 TASK_PROMPT = """You are working in the git repository at {repo_dir}.
@@ -71,6 +71,10 @@ def run_task(arm: ArmConfig, task: Task) -> Path:
     """Runs the agent, writing each stream-json line unchanged to transcript.jsonl and its arrival
     offset (seconds since process start) to arrivals.txt, so tool durations can be timed afterwards."""
     repo_dir = task_dir(task.instance_id)
+    leaks = instruction_leaks(repo_dir)
+    if leaks:
+        raise RuntimeError(f"{repo_dir} inherits Claude Code instructions (CLAUDE.md / .claude): "
+                           f"{', '.join(map(str, leaks))}. Set SWE_LITE_AB_REPOS outside them.")
     reset_repo(repo_dir)
     run_dir = config.RUNS / arm.name / task.instance_id
     argv, env = build_command(arm, task, repo_dir, run_dir)

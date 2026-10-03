@@ -1,0 +1,5 @@
+# Installed as .contextignore into every requests task repository by `prepare`.
+# Checked against the gold patches of every requests task in SWE-bench Lite.
+
+# Vendored urllib3, chardet, chardet2 and oauthlib (present in the 2013-2014 snapshots).
+/requests/packages/

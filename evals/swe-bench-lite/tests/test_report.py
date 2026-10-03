@@ -56,6 +56,28 @@ def test_index_time_line_is_descriptive_and_separate_from_agent_time():
     assert index_time_line([]) is None
 
 
+def test_index_quality_section_lists_each_index_and_flags_empty_git_signals():
+    from swe_lite_ab.report import index_quality_section
+
+    good = {"instance_id": "a", "language": "python", "outcome": {"measured": True, "failed": [], "degraded": []},
+            "codegraphResolve": {"primaryLanguage": "python", "resolve": 0.6, "kinds": {}},
+            "signalCounts": {"git.file.commitCount": 10, "git.chunk.commitCount": 50, "codegraph.chunk.fanIn": 7}}
+    empty_git = {**good, "instance_id": "b",
+                 "signalCounts": {**good["signalCounts"], "git.chunk.commitCount": 0}}
+    failed = {**good, "instance_id": "c", "outcome": {"measured": True, "failed": ["git"], "degraded": []}}
+
+    md = "\n".join(index_quality_section([good, empty_git, failed]))
+
+    assert "| a | python | 0.6 | 10 | 50 | 7 | ok |" in md
+    assert "| b | python | 0.6 | 10 | 0 | 7 | ok |" in md
+    assert "| c | python | 0.6 | 10 | 50 | 7 | failed: git |" in md
+    assert "WARNING: 2 of 3 arm-1 indexes are defective" in md
+    assert index_quality_section([{"instance_id": "x", "seconds": 1.0}]) == []
+
+    unmeasured = {**good, "instance_id": "d", "codegraphResolve": None}
+    assert "| d | python | n/a | 10 | 50 | 7 | ok |" in "\n".join(index_quality_section([unmeasured]))
+
+
 def test_render_includes_index_time_only_when_records_given():
     rows = [row("arm0", 0, False, 1000, True), row("arm1", 0, False, 800, True)]
     assert "Arm 1 index time" not in render(rows)

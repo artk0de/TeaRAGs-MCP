@@ -47,6 +47,11 @@ is the control: there retrieval has little to add.
   descriptive for resolve rate and quantitative for the continuous metrics.
 - The arm 1 TeaRAGs share (tea-rags calls / all search+read calls) is reported
   next to every arm 1 number. A low share means arm 1 did not exercise TeaRAGs.
+- The arm 1 index quality is reported per task: realized codegraph resolve, the
+  number of observed git file / git chunk / codegraph chunk signals, and the
+  enrichment outcome. A task whose index has a failed or degraded enrichment or
+  empty chunk signals is flagged; it stays in the analysis (exclusion rule), and
+  the flagged count is stated next to the arm 1 results.
 - Power: with 30 pairs only a resolve delta of roughly 20–25 pp is detectable.
   The continuous metrics are the primary quantitative read-out.
 

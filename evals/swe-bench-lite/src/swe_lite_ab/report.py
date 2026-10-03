@@ -73,6 +73,42 @@ def index_time_line(index_records: list[dict]) -> str | None:
             "(not included in agent wall time)")
 
 
+def _outcome_label(record: dict) -> str | None:
+    outcome = record.get("outcome") or {}
+    bad = [f"{kind}: {', '.join(outcome[kind])}" for kind in ("failed", "degraded") if outcome.get(kind)]
+    return "; ".join(bad) or None
+
+
+def _index_defect(record: dict) -> str | None:
+    if label := _outcome_label(record):
+        return label
+    counts = record["signalCounts"]
+    empty = [key for key in ("git.chunk.commitCount", "codegraph.chunk.fanIn") if counts.get(key, 0) == 0]
+    return f"empty: {', '.join(empty)}" if empty else None
+
+
+def index_quality_section(index_records: list[dict]) -> list[str]:
+    """What arm 1 searched over, per task. An arm-1 result on a defective index is not evidence about
+    TeaRAGs, so defects are counted up front rather than left for the reader to spot."""
+    records = [r for r in index_records if "signalCounts" in r]
+    if not records:
+        return []
+    out = ["## Arm 1 index quality", "",
+           "| Task | Language | Codegraph resolve | git.file signals | git.chunk signals | codegraph.chunk signals | Enrichment |",
+           "|---|---|---|---|---|---|---|"]
+    for r in records:
+        cg, counts = r["codegraphResolve"], r["signalCounts"]
+        resolve = cg.get("resolve") if cg else None
+        out.append(f"| {r['instance_id']} | {r.get('language')} | {'n/a' if resolve is None else resolve} | "
+                   f"{counts['git.file.commitCount']} | {counts['git.chunk.commitCount']} | "
+                   f"{counts['codegraph.chunk.fanIn']} | {_outcome_label(r) or 'ok'} |")
+    defective = [r["instance_id"] for r in records if _index_defect(r)]
+    if defective:
+        out += ["", f"WARNING: {len(defective)} of {len(records)} arm-1 indexes are defective "
+                    f"(failed / degraded enrichment or empty chunk signals): {', '.join(defective)}"]
+    return out + [""]
+
+
 def _total_input(r: Row) -> int:
     return r.input_tokens + r.cache_write_tokens + r.cache_read_tokens
 
@@ -104,6 +140,7 @@ def render(rows: list[Row], index_records: list[dict] | None = None) -> str:
     index_line = index_time_line(index_records or [])
     if index_line:
         lines += [index_line, ""]
+    lines += index_quality_section(index_records or [])
     lines += _section("All tasks", pairs)
     n = len(pairs)
     for i, arm in enumerate(("arm0", "arm1")):

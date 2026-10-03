@@ -138,3 +138,30 @@ def test_both_arms_share_model_and_limits(tmp_path):
     a1, _ = build_command(ARMS["arm1"], TASK, Path("/r"), tmp_path / "a1")
     for flag in ("--model", "--max-budget-usd", "--output-format"):
         assert a0[a0.index(flag) + 1] == a1[a1.index(flag) + 1]
+
+
+def test_run_task_refuses_a_repo_that_inherits_claude_instructions(tmp_path, monkeypatch):
+    import pytest
+
+    from swe_lite_ab import agent, config
+
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "CLAUDE.md").write_text("always use tea-rags")
+    repo = tmp_path / "repo"; repo.mkdir()
+    monkeypatch.setattr(config, "RUNS", tmp_path / "runs")
+    monkeypatch.setattr(agent, "task_dir", lambda _id: repo)
+    monkeypatch.setattr(agent, "reset_repo", lambda _dir: None)
+    monkeypatch.setattr(agent, "build_command", lambda *a: pytest.fail("agent must not start"))
+
+    with pytest.raises(RuntimeError, match="CLAUDE.md"):
+        agent.run_task(config.ARMS["arm0"], Task("t-1", "o/r", "c", "", "", ""))
+
+
+def test_arm1_tea_rags_anchors_git_windows_on_the_snapshot_head():
+    # Task repositories are historical snapshots: windows and ages anchored on today would be empty
+    # or years off. The server derives ages at query time, so the MCP env needs it, not only the index.
+    from swe_lite_ab import config
+    from swe_lite_ab.agent import mcp_config
+
+    assert config.EMBEDDING_ENV["TRAJECTORY_GIT_ANCHOR"] == "head"
+    assert mcp_config(ARMS["arm1"])["mcpServers"]["tea-rags"]["env"]["TRAJECTORY_GIT_ANCHOR"] == "head"
