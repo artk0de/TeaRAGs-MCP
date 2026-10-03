@@ -70,6 +70,38 @@ const BASE = qdrantStoring({
   "b-old": { content: "old body", vector: [7, 7] },
 });
 
+/**
+ * An in-memory store with the real store's contract — `putVectors` MERGES into
+ * what the entry holds — and its read-modify-write shape: the read and the
+ * write are separate turns, so two overlapping writes of one entry can race.
+ */
+function memoryStore() {
+  const entries = new Map<string, Map<string, number[]>>();
+  const getVectors = vi.fn(async (_c: string, key: { relativePath: string }, _model: string) => {
+    const held = entries.get(key.relativePath);
+    return held ? new Map(held) : undefined;
+  });
+  const putVectors = vi.fn(
+    async (_c: string, key: { relativePath: string }, _model: string, vectors: ReadonlyMap<string, number[]>) => {
+      const held = new Map(entries.get(key.relativePath) ?? []);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      for (const [sha, vector] of vectors) held.set(sha, vector);
+      entries.set(key.relativePath, held);
+    },
+  );
+  return { entries, store: { getVectors, putVectors } };
+}
+
+const storeKey = (relativePath: string) => ({
+  treeRoot: "/tree",
+  relativePath,
+  contentSha256: `f-${relativePath}`,
+  chunkerFingerprint: "c",
+});
+
+/** A promise that never settles: a provider call that hangs. */
+const never = async <T>(): Promise<T> => new Promise<T>(() => undefined);
+
 describe("WorkingTreeDenseVectorSource", () => {
   it("reuses the stored vector of a base point with byte-identical content and embeds only the rest", async () => {
     const { embeddings, asked } = provider();
@@ -197,6 +229,129 @@ describe("WorkingTreeDenseVectorSource", () => {
 
     expect(read.vectors.get("t-same")).toEqual(["same body".length, 1]);
     expect(asked).toEqual([["same body"]]);
+  });
+
+  it("stores the vectors reused from base points even when the embed call never settles", async () => {
+    const { embeddings } = provider(async () => never());
+    const { entries, store } = memoryStore();
+    const source = new WorkingTreeDenseVectorSource({ embeddings, qdrant: BASE, store });
+
+    const read = await source.warm({
+      collectionName: "c",
+      rows: [unchanged, edited],
+      storeKeys: new Map([[PATH, storeKey(PATH)]]),
+      readTouchedBasePoints: async () => basePoints,
+    })(20);
+
+    expect(read.vectors.get("t-same")).toEqual([9, 9]);
+    await vi.waitFor(() => {
+      expect(entries.get(PATH)?.get(sha256("same body"))).toEqual([9, 9]);
+    });
+  });
+
+  it("embeds file by file and stores a file as soon as its rows are embedded, while a later batch hangs", async () => {
+    let calls = 0;
+    const { embeddings, asked } = provider(async (texts) => {
+      calls += 1;
+      if (calls > 1) return never();
+      return texts.map((text) => ({ embedding: [text.length, 1], dimensions: 2 }));
+    });
+    const { entries, store } = memoryStore();
+    const a1 = codeRow("a1", { relativePath: "a.ts", content: "a one" });
+    const a2 = codeRow("a2", { relativePath: "a.ts", content: "a two two" });
+    const b1 = codeRow("b1", { relativePath: "b.ts", content: "b one" });
+    const c1 = codeRow("c1", { relativePath: "c.ts", content: "c one" });
+    const source = new WorkingTreeDenseVectorSource({ embeddings, store, batchSize: 2 });
+
+    const read = await source.warm({
+      collectionName: "c",
+      rows: [a1, c1, a2, b1],
+      storeKeys: new Map(["a.ts", "b.ts", "c.ts"].map((path) => [path, storeKey(path)])),
+    })(20);
+
+    expect(asked[0]).toEqual(["a one", "a two two"]);
+    expect(read.pending).toBe(2);
+    await vi.waitFor(() => {
+      expect(entries.get("a.ts")).toEqual(
+        new Map([
+          [sha256("a one"), ["a one".length, 1]],
+          [sha256("a two two"), ["a two two".length, 1]],
+        ]),
+      );
+    });
+    expect(entries.has("b.ts")).toBe(false);
+    expect(entries.has("c.ts")).toBe(false);
+  });
+
+  it("serves a fresh source from the store alone: no base read, no embedding for stored rows", async () => {
+    const { entries, store } = memoryStore();
+    const request = {
+      collectionName: "c",
+      rows: [unchanged, edited],
+      storeKeys: new Map([[PATH, storeKey(PATH)]]),
+      readTouchedBasePoints: async () => basePoints,
+    };
+    const qdrant = qdrantStoring({ "b-same": { content: "same body", vector: [9, 9] } });
+    const hanging = provider(async () => never());
+    await new WorkingTreeDenseVectorSource({ embeddings: hanging.embeddings, qdrant, store }).warm(request)(20);
+    await vi.waitFor(() => {
+      expect(entries.get(PATH)?.size).toBe(1);
+    });
+    qdrant.retrieveDenseVectors.mockClear();
+    const working = provider();
+    await new WorkingTreeDenseVectorSource({ embeddings: working.embeddings, qdrant, store }).warm(request)(2_000);
+    // Only the still-unstored edited row looks for a base twin; the stored one is not re-read.
+    expect(qdrant.retrieveDenseVectors.mock.calls.flatMap(([, ids]) => ids)).not.toContain("b-same");
+    await vi.waitFor(() => {
+      expect(entries.get(PATH)?.size).toBe(2);
+    });
+    qdrant.retrieveDenseVectors.mockClear();
+
+    const fresh = provider();
+    const read = await new WorkingTreeDenseVectorSource({ embeddings: fresh.embeddings, qdrant, store }).warm(request)(
+      2_000,
+    );
+
+    expect(working.asked).toEqual([["brand new body"]]);
+    expect(read.vectors.get("t-same")).toEqual([9, 9]);
+    expect(read.vectors.get("t-new")).toEqual(["brand new body".length, 1]);
+    expect(read.pending).toBe(0);
+    expect(qdrant.retrieveDenseVectors).not.toHaveBeenCalled();
+    expect(fresh.asked).toEqual([]);
+  });
+
+  it("keeps every vector of a file written in parts: a later write never drops an earlier one", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    const { embeddings } = provider(async (texts) => {
+      calls += 1;
+      if (calls > 1) await gate;
+      return texts.map((text) => ({ embedding: [text.length, 1], dimensions: 2 }));
+    });
+    const { entries, store } = memoryStore();
+    const rows = ["x", "yy", "zzz"].map((content, i) => codeRow(`p${i}`, { relativePath: PATH, content }));
+    const source = new WorkingTreeDenseVectorSource({ embeddings, store, batchSize: 1 });
+    const reader = source.warm({ collectionName: "c", rows, storeKeys: new Map([[PATH, storeKey(PATH)]]) });
+
+    await reader(20);
+    await vi.waitFor(() => {
+      expect(entries.get(PATH)).toEqual(new Map([[sha256("x"), [1, 1]]]));
+    });
+    release();
+    expect((await reader(2_000)).pending).toBe(0);
+
+    await vi.waitFor(() => {
+      expect(entries.get(PATH)).toEqual(
+        new Map([
+          [sha256("x"), [1, 1]],
+          [sha256("yy"), [2, 1]],
+          [sha256("zzz"), [3, 1]],
+        ]),
+      );
+    });
   });
 
   it("does not count a row without content as pending: it has nothing to embed", async () => {
