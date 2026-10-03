@@ -19,6 +19,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 
+import { importGitHistory, type GitHistoryCommit } from "./git-history-import.js";
 import { copyGitRepoTemplate } from "./git-repo-template.js";
 
 /**
@@ -51,6 +52,9 @@ const IDENTITY = {
   GIT_COMMITTER_NAME: "t",
   GIT_COMMITTER_EMAIL: "t@x",
 };
+
+const IDENTITY_PERSON = { name: IDENTITY.GIT_AUTHOR_NAME, email: IDENTITY.GIT_AUTHOR_EMAIL };
+const BASE = "export const base = 1;\n";
 
 const MAIN = "main";
 const worktreeDir = (name: string): string => `wt-${name}`;
@@ -124,20 +128,49 @@ export function createGitWorkingTreeFixture(seed: readonly GitWorkingTreeSeedSte
       const ops = gitOps(templateRoot);
       const templateMain = join(templateRoot, MAIN);
       mkdirSync(templateMain);
-      ops.git(templateMain, "init", "-q", "-b", "main");
-      ops.commit(templateMain, { "src/index.ts": "export const base = 1;\n" }, "init");
-      const commits: string[] = [];
-      const worktrees: string[] = [];
-      for (const step of seed) {
+      // Every seed commit goes in through ONE fast-import (bd
+      // tea-rags-mcp-1r3e5): a commit made in a linked worktree lands on its
+      // `wt-<name>` branch, forked from the main tip the worktree was added at.
+      // Only the worktrees themselves are added live, after the import.
+      const now = new Date();
+      const history: GitHistoryCommit[] = [
+        { label: "init", message: "init", author: IDENTITY_PERSON, authorDate: now, writes: { "src/index.ts": BASE } },
+      ];
+      const commitLabels: string[] = [];
+      const forkedAt = new Map<string, string>();
+      const branchesWithCommits = new Set<string>();
+      let mainTip = "init";
+      seed.forEach((step, i) => {
         if ("addWorktree" in step) {
-          ops.addWorktree(step.addWorktree);
-          worktrees.push(step.addWorktree);
-        } else {
-          const root = step.in === undefined ? templateMain : join(templateRoot, worktreeDir(step.in));
-          commits.push(ops.commit(root, step.commit, step.message));
+          forkedAt.set(step.addWorktree, mainTip);
+          return;
         }
+        const label = `seed-${i}`;
+        const onWorktree = step.in;
+        const fork = onWorktree !== undefined && !branchesWithCommits.has(onWorktree);
+        history.push({
+          label,
+          ...(onWorktree === undefined ? {} : { branch: worktreeDir(onWorktree) }),
+          ...(fork ? { from: forkedAt.get(onWorktree) } : {}),
+          message: step.message ?? "change",
+          author: IDENTITY_PERSON,
+          authorDate: now,
+          writes: step.commit,
+        });
+        if (onWorktree === undefined) mainTip = label;
+        else branchesWithCommits.add(onWorktree);
+        commitLabels.push(label);
+      });
+      const shas = importGitHistory(templateMain, history);
+
+      const worktrees: string[] = [];
+      for (const [name, base] of forkedAt) {
+        const tree = join(templateRoot, worktreeDir(name));
+        if (branchesWithCommits.has(name)) ops.git(templateMain, "worktree", "add", "-q", tree, worktreeDir(name));
+        else ops.git(templateMain, "worktree", "add", "-q", "-b", worktreeDir(name), tree, shas[base]);
+        worktrees.push(name);
       }
-      return { commits, worktrees };
+      return { commits: commitLabels.map((label) => shas[label]), worktrees };
     },
     { prefix: "git-working-tree-", env: { ...process.env, ...IDENTITY } },
   );
