@@ -13,6 +13,16 @@ export interface McpServerRuntime {
   deprecations: readonly { oldName: string; newName: string }[];
 }
 
+/** What an MCP server entry point declares about its own lifetime. */
+export interface McpServerRuntimeOptions {
+  /**
+   * Watch the working trees requests address, keeping their delta warm between
+   * requests (`AppContextOptions.watchWorkingTrees`). Default `true` — a
+   * long-lived server. The one-shot `tea-rags call` turns it off.
+   */
+  watchWorkingTrees?: boolean;
+}
+
 /**
  * The one runtime preparation every MCP server entry point runs — the stdio /
  * HTTP `server` command and the in-process `tea-rags call` session (bd
@@ -23,12 +33,15 @@ export interface McpServerRuntime {
  * served project's default, not an override of any one project's stamped
  * index shape (tea-rags-mcp-o0qsw).
  */
-export async function prepareMcpServerRuntime(): Promise<McpServerRuntime> {
+export async function prepareMcpServerRuntime(options: McpServerRuntimeOptions = {}): Promise<McpServerRuntime> {
   migrateHomeDir();
 
   const config = parseAppConfig();
   const { deprecations } = getZodConfig();
-  const ctx = await createAppContext(config, { ambientEnvRole: "server" });
+  const ctx = await createAppContext(config, {
+    ambientEnvRole: "server",
+    watchWorkingTrees: options.watchWorkingTrees ?? true,
+  });
   const promptsConfig = loadPrompts(config);
 
   if (deprecations.length > 0) {

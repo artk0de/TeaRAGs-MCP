@@ -10,19 +10,20 @@
  */
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import type { CollectionEntry, RegistryGitState } from "../../../contracts/types/registry.js";
-import type {
-  WorkingTree,
-  WorkingTreeDeltaSignalSource,
-  WorkingTreeGraphReader,
-  WorkingTreeGraphRequest,
-  WorkingTreeGraphSource,
-  WorkingTreeGraphState,
-  WorkingTreeMarker,
-  WorkingTreeTouchedBasePointsByPath,
-  WorkingTreeTouchedBasePointsReader,
+import {
+  WORKING_TREE_WARM_WAIT_MS,
+  type WorkingTree,
+  type WorkingTreeDeltaSignalSource,
+  type WorkingTreeGraphReader,
+  type WorkingTreeGraphRequest,
+  type WorkingTreeGraphSource,
+  type WorkingTreeGraphState,
+  type WorkingTreeMarker,
+  type WorkingTreeTouchedBasePointsByPath,
+  type WorkingTreeTouchedBasePointsReader,
 } from "../../../contracts/types/working-tree.js";
 import { findGitToplevel, readRepoGitState } from "../../../infra/repo-git-state.js";
 import type { ChunkerConfig } from "../../../types.js";
@@ -31,6 +32,8 @@ import type { WorkingTreeChunkLayer, WorkingTreeChunkLayerRead } from "./chunk-l
 import { WORKING_TREE_REINDEX_REMEDY, type WorkingTreeDelta, type WorkingTreeDeltaReader } from "./delta.js";
 import type { WorkingTreeDenseVectorReader, WorkingTreeDenseVectorSource } from "./dense-floor.js";
 import { relativePathOf } from "./substitute.js";
+import type { WorkingTreeDeltaWarmer, WorkingTreeDeltaWarmState } from "./warmer.js";
+import type { WorkingTreeWatcher } from "./watcher.js";
 
 export interface WorkingTreeView {
   marker: WorkingTreeMarker;
@@ -189,6 +192,22 @@ export interface WorkingTreeOverlayDeps {
    * `readDeltaVectors`.
    */
   denseVectors?: Pick<WorkingTreeDenseVectorSource, "warm">;
+  /**
+   * The per-process delta warm queue (WTO unbounded delta). Present with
+   * `deltaChunks` → a view chunks its re-read files through it, waits at most
+   * `warmWaitMs`, and serves the files not yet warm from the index
+   * (`marker.pendingFiles`). Absent → the view chunks every re-read file
+   * itself, on first read, with no bound on the wait.
+   */
+  warmer?: Pick<WorkingTreeDeltaWarmer, "warm">;
+  /** Default {@link WORKING_TREE_WARM_WAIT_MS}. */
+  warmWaitMs?: number;
+  /**
+   * Keeps a viewed linked tree warm between requests (the long-lived server
+   * only): a view whose delta re-reads files hands it the tree's root. The base
+   * index's own checkout is never watched.
+   */
+  watcher?: Pick<WorkingTreeWatcher, "watch">;
 }
 
 const NO_TREE_REASON = "no working tree resolved for this index";
@@ -197,11 +216,125 @@ const UNREADABLE_REMEDY = "check that {tree} is a readable git checkout";
 
 const EMPTY_PATHS: ReadonlySet<string> = new Set();
 
+/**
+ * How far past its warm budget a view may wait for the warmer's own answer
+ * before it stops waiting: the warmer answers at the budget, and its answer
+ * reaches the view a few ticks later.
+ */
+const WORKING_TREE_WARM_GRACE_MS = 50;
+
+/** A tree's measured delta, before any of it is read. */
+interface WorkingTreeMeasuredDelta {
+  kind: "measured";
+  /** The marker with the delta's counts; floors empty. */
+  marker: WorkingTreeMarker;
+  delta: WorkingTreeDelta;
+  deleted: readonly string[];
+  /** Changed files re-read from the tree (delta admission). */
+  reread: readonly string[];
+  /** Changed files served from the index. */
+  indexOnly: readonly string[];
+}
+
+type WorkingTreeMeasurement = WorkingTreeMeasuredDelta | { kind: "degraded"; view: WorkingTreeView };
+
 export class WorkingTreeOverlay {
+  /** The last tree, and the alias it was named by, a view of each root saw — what `prewarm` re-measures. */
+  private readonly viewed = new Map<string, { tree: WorkingTree; alias: string | undefined }>();
+
   constructor(private readonly deps: WorkingTreeOverlayDeps) {}
 
   /** Never throws for git trouble: a failure becomes `marker.degraded`. */
   async view(tree: WorkingTree, alias: string | undefined): Promise<WorkingTreeView> {
+    if (tree.root !== "") this.viewed.set(tree.root, { tree, alias });
+    const measured = await this.measure(tree, alias);
+    if (measured.kind === "degraded") return measured.view;
+    const { collectionName } = tree.baseIndex;
+    const { marker, delta, deleted, reread, indexOnly } = measured;
+    const touched = reread.length + deleted.length;
+    const source = this.deps.deltaChunks;
+    const { warmer } = this.deps;
+    // With a warmer, the rows are what it made ready within the budget; the
+    // rest of the re-read files answer from the index this time.
+    const warm = warmer && source && reread.length > 0 ? await this.warmLive(warmer, source, tree, reread) : undefined;
+    const pending = warm?.pending ?? [];
+    const view: WorkingTreeView = {
+      marker: {
+        ...marker,
+        ...(indexOnly.length > 0 ? { indexOnlyFiles: indexOnly.length } : {}),
+        ...(pending.length > 0 ? { pendingFiles: pending.length } : {}),
+        ...(warm && warm.unparsed.length > 0 ? { unparsed: [...warm.unparsed] } : {}),
+      },
+      touchedPaths: new Set([...(warm ? reread.filter((path) => warm.warmPaths.has(path)) : reread), ...deleted]),
+      deletedPaths: new Set(deleted),
+      indexServedPaths: new Set([...indexOnly, ...pending]),
+      ...(delta.renamedFrom && delta.renamedFrom.size > 0 ? { renamedFrom: delta.renamedFrom } : {}),
+    };
+    if (touched > 0 && this.deps.treeGraph) {
+      view.readTreeGraph = treeGraphReader(this.deps.treeGraph, treeGraphRequestOf(tree, measured));
+    }
+    const { touchedBasePoints } = this.deps;
+    if (touched > 0 && touchedBasePoints) {
+      let points: Promise<WorkingTreeTouchedBasePointsByPath> | undefined;
+      view.readTouchedBasePoints = async () =>
+        (points ??= touchedBasePoints.pointsOf(collectionName, view.touchedPaths, marker.indexedCommit));
+    }
+    if (source) {
+      const { deltaSignals, denseVectors } = this.deps;
+      let chunked: Promise<WorkingTreeChunkLayerRead> | undefined;
+      const readChunked = async (): Promise<WorkingTreeChunkLayerRead> =>
+        (chunked ??= warm
+          ? Promise.resolve({ chunks: warm.rows, unparsed: warm.unparsed, storeKeys: warm.storeKeys })
+          : readDeltaChunks(source, tree, reread, view.marker));
+      view.readDeltaChunks = async () => (await readChunked()).chunks;
+      if (deltaSignals) {
+        view.signalDeltaRows = deltaRowSignaller(deltaSignals, tree, view, delta.renamedFrom);
+      }
+      if (denseVectors && reread.length > 0) {
+        view.readDeltaVectors = warmDeltaVectors(denseVectors, collectionName, view, readChunked);
+      }
+    }
+    if (reread.length > 0 && this.deps.watcher && !(await isBaseCheckout(tree))) {
+      this.deps.watcher.watch(tree.root);
+    }
+    return view;
+  }
+
+  /**
+   * Re-measures the tree a view of `root` last saw and queues its re-read files
+   * on the warmer's background lane, without waiting for them; starts the tree
+   * graph's build for the delta it measured. A root no view has seen is a
+   * no-op. Writes only the chunk store and the tree-graph cache, never the
+   * index. Never throws.
+   */
+  async prewarm(root: string): Promise<void> {
+    const seen = this.viewed.get(root);
+    if (!seen) return;
+    const { tree } = seen;
+    const measured = await this.measure(tree, seen.alias);
+    if (measured.kind === "degraded") return;
+    const { reread, deleted } = measured;
+    if (reread.length + deleted.length > 0 && this.deps.treeGraph) {
+      // `graphFor` never rejects (port contract); the catch keeps a broken one from surfacing as unhandled.
+      this.deps.treeGraph.graphFor(treeGraphRequestOf(tree, measured), 0).catch(() => undefined);
+    }
+    const { warmer, deltaChunks } = this.deps;
+    if (!warmer || !deltaChunks || reread.length === 0) return;
+    try {
+      const config = await deltaChunks.resolveChunkerConfig(tree);
+      const request = { treeRoot: tree.root, collectionName: tree.baseIndex.collectionName, config, paths: reread };
+      warmer.warm(request, 0, "background").catch(() => undefined);
+    } catch {
+      // No chunker config now: the tree's next view warms it on demand.
+    }
+  }
+
+  /**
+   * The tree's delta against its base index, admitted into re-read and
+   * index-only files, with the marker's counts. Never throws: anything that
+   * cannot be measured is a degraded view.
+   */
+  private async measure(tree: WorkingTree, alias: string | undefined): Promise<WorkingTreeMeasurement> {
     const { collectionName } = tree.baseIndex;
     const entry = this.deps.registry.get(collectionName) ?? undefined;
     const indexedCommit = entry?.git?.indexedCommit ? entry.git.indexedCommit : null;
@@ -216,11 +349,14 @@ export class WorkingTreeOverlay {
     };
     const fill = (template: string): string =>
       template.replaceAll("{alias}", alias ?? entry?.name ?? collectionName).replaceAll("{tree}", tree.root);
-    const degraded = (reason: string, remedy: string): WorkingTreeView => ({
-      marker: { ...marker, degraded: { reason, remedy: fill(remedy) } },
-      touchedPaths: EMPTY_PATHS,
-      deletedPaths: EMPTY_PATHS,
-      indexServedPaths: EMPTY_PATHS,
+    const degraded = (reason: string, remedy: string): WorkingTreeMeasurement => ({
+      kind: "degraded",
+      view: {
+        marker: { ...marker, degraded: { reason, remedy: fill(remedy) } },
+        touchedPaths: EMPTY_PATHS,
+        deletedPaths: EMPTY_PATHS,
+        indexServedPaths: EMPTY_PATHS,
+      },
     });
 
     if (tree.root === "") return degraded(NO_TREE_REASON, NO_TREE_REMEDY);
@@ -239,54 +375,81 @@ export class WorkingTreeOverlay {
       const { admitsToDelta } = this.deps;
       const reread = admitsToDelta ? changed.filter((path) => admitsToDelta(path)) : changed;
       const indexOnly = admitsToDelta ? changed.filter((path) => !admitsToDelta(path)) : [];
-      const touched = reread.length + deleted.length;
-      const view: WorkingTreeView = {
-        marker: {
-          ...marker,
-          changedFiles: changed.length,
-          deletedFiles: deleted.length,
-          ...(indexOnly.length > 0 ? { indexOnlyFiles: indexOnly.length } : {}),
-        },
-        touchedPaths: new Set([...reread, ...deleted]),
-        deletedPaths: new Set(deleted),
-        indexServedPaths: new Set(indexOnly),
-        ...(read.delta.renamedFrom && read.delta.renamedFrom.size > 0 ? { renamedFrom: read.delta.renamedFrom } : {}),
+      return {
+        kind: "measured",
+        marker: { ...marker, changedFiles: changed.length, deletedFiles: deleted.length },
+        delta: read.delta,
+        deleted,
+        reread,
+        indexOnly,
       };
-      if (touched > 0 && this.deps.treeGraph) {
-        const request: WorkingTreeGraphRequest = {
-          tree,
-          changed: reread,
-          deleted,
-          fingerprint: treeGraphFingerprint(read.delta.fingerprint, reread, deleted),
-        };
-        view.readTreeGraph = treeGraphReader(this.deps.treeGraph, request);
-      }
-      const { touchedBasePoints } = this.deps;
-      if (touched > 0 && touchedBasePoints) {
-        let points: Promise<WorkingTreeTouchedBasePointsByPath> | undefined;
-        view.readTouchedBasePoints = async () =>
-          (points ??= touchedBasePoints.pointsOf(collectionName, view.touchedPaths, indexedCommit));
-      }
-      const source = this.deps.deltaChunks;
-      if (source) {
-        const { deltaSignals, denseVectors } = this.deps;
-        let chunked: Promise<WorkingTreeChunkLayerRead> | undefined;
-        const readChunked = async (): Promise<WorkingTreeChunkLayerRead> =>
-          (chunked ??= readDeltaChunks(source, tree, reread, view.marker));
-        view.readDeltaChunks = async () => (await readChunked()).chunks;
-        if (deltaSignals) {
-          view.signalDeltaRows = deltaRowSignaller(deltaSignals, tree, view, read.delta.renamedFrom);
-        }
-        if (denseVectors && reread.length > 0) {
-          view.readDeltaVectors = warmDeltaVectors(denseVectors, collectionName, view, readChunked);
-        }
-      }
-      return view;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return degraded(`cannot read the working tree delta: ${message.split("\n")[0]}`, UNREADABLE_REMEDY);
     }
   }
+
+  /**
+   * The re-read files warmed on the live lane within the warm budget, counted
+   * from the start (resolving the chunker config spends it too). A warmer that
+   * fails, or has not answered by the budget plus a grace, leaves every file
+   * pending — the view then answers them from the index. Never rejects.
+   */
+  private async warmLive(
+    warmer: Pick<WorkingTreeDeltaWarmer, "warm">,
+    source: WorkingTreeDeltaChunkSource,
+    tree: WorkingTree,
+    reread: readonly string[],
+  ): Promise<WorkingTreeDeltaWarmState> {
+    const allPending: WorkingTreeDeltaWarmState = {
+      rows: [],
+      warmPaths: EMPTY_PATHS,
+      unparsed: [],
+      pending: reread,
+      storeKeys: new Map(),
+    };
+    const budgetMs = Math.max(0, this.deps.warmWaitMs ?? WORKING_TREE_WARM_WAIT_MS);
+    const deadline = Date.now() + budgetMs;
+    const warmed = (async () => {
+      const config = await source.resolveChunkerConfig(tree);
+      const request = { treeRoot: tree.root, collectionName: tree.baseIndex.collectionName, config, paths: reread };
+      return warmer.warm(request, Math.max(0, deadline - Date.now()), "live");
+    })().catch(() => allPending);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const lapsed = new Promise<WorkingTreeDeltaWarmState>((resolveLapse) => {
+      timer = setTimeout(() => {
+        resolveLapse(allPending);
+      }, budgetMs + WORKING_TREE_WARM_GRACE_MS);
+      timer.unref?.();
+    });
+    try {
+      return await Promise.race([warmed, lapsed]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
+/**
+ * Whether `tree` is the base index's own checkout — kept fresh by reindexing,
+ * never watched. An index with no recorded root cannot be told apart from it.
+ */
+async function isBaseCheckout(tree: WorkingTree): Promise<boolean> {
+  const baseRoot = tree.baseIndex.root;
+  if (baseRoot === undefined) return true;
+  const real = async (path: string): Promise<string> => fs.realpath(path).catch(() => resolve(path));
+  const [treeReal, baseReal] = await Promise.all([real(tree.root), real(baseRoot)]);
+  return treeReal === baseReal;
+}
+
+/** The tree-graph request for a measured delta: every re-read and deleted file, warm or not. */
+function treeGraphRequestOf(tree: WorkingTree, measured: WorkingTreeMeasuredDelta): WorkingTreeGraphRequest {
+  return {
+    tree,
+    changed: measured.reread,
+    deleted: measured.deleted,
+    fingerprint: treeGraphFingerprint(measured.delta.fingerprint, measured.reread, measured.deleted),
+  };
 }
 
 type DirtyAtIndexTime = { kind: "listed"; paths: readonly string[] } | { kind: "unknown"; reason: string };

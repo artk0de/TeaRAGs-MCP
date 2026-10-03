@@ -75,3 +75,28 @@ describe("formatWorkingTreeMarker — index-only files", () => {
     );
   });
 });
+
+/** Progressive warm: re-read files not yet warm answer from the index, counted beside `changed`. */
+describe("formatWorkingTreeMarker — pending files", () => {
+  const base = {
+    tree: "/repo/wt",
+    indexedCommit: "0123456789abcdef0123456789abcdef01234567",
+    treeCommit: "fedcba9876543210fedcba9876543210fedcba98",
+    indexedDirty: false,
+    changedFiles: 5,
+    deletedFiles: 0,
+    floors: ["chunks" as const],
+  };
+
+  it("should name how many changed files are still warming", () => {
+    expect(formatWorkingTreeMarker({ ...base, pendingFiles: 3 })).toBe(
+      "workingTree: /repo/wt · index @0123456 · tree @fedcba9 · changed 5 (3 pending) · deleted 0 · floors chunks",
+    );
+  });
+
+  it("should name index-only and pending files together", () => {
+    expect(formatWorkingTreeMarker({ ...base, indexOnlyFiles: 2, pendingFiles: 3 })).toBe(
+      "workingTree: /repo/wt · index @0123456 · tree @fedcba9 · changed 5 (2 index-only, 3 pending) · deleted 0 · floors chunks",
+    );
+  });
+});

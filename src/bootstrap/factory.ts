@@ -69,9 +69,11 @@ import {
   createWorkingTreeDeltaReader,
   createWorkingTreeFileWriter,
   scheduleWorkingTreeChunkSweep,
+  WorkingTreeDeltaWarmer,
   WorkingTreeDenseVectorSource,
   WorkingTreeOverlay,
   WorkingTreeTouchedBasePoints,
+  WorkingTreeWatcher,
 } from "../core/domains/explore/index.js";
 import { CollectionIndexingLock } from "../core/domains/ingest/infra/index.js";
 import { ChunkerPool } from "../core/domains/ingest/pipeline/chunker/infra/pool.js";
@@ -1203,6 +1205,13 @@ export interface AppContextOptions {
    * Everything else is an `invocation` whose shell env overrides the stamp.
    */
   ambientEnvRole?: AmbientEnvRole;
+  /**
+   * Watch every linked working tree a read addressed and re-warm its delta
+   * after edits settle (WTO unbounded delta). Only the long-lived MCP server
+   * declares it; a one-shot process (`tea-rags call`, CLI commands) would hold
+   * fs handles it never benefits from. Default `false`.
+   */
+  watchWorkingTrees?: boolean;
 }
 
 export async function createAppContext(config: AppConfig, options?: AppContextOptions): Promise<AppContext> {
@@ -1227,9 +1236,8 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     infra.qdrant.aliases.resolveActive(name);
   // Delta files chunked the way ingest stores them (bd tea-rags-mcp-xi2r9.3):
   // the production `ChunkerPool` (its worker and the language module path it
-  // injects are the ones `BaseIndexingPipeline#createChunkerPool` forks), one
-  // worker (a request-path pool, never ingest's fan-out), released after 60 s idle
-  // and on dispose. The payload is shaped by the builder ingest's pipeline uses.
+  // injects are the ones `BaseIndexingPipeline#createChunkerPool` forks), sized
+  // like ingest's (see below), released after 60 s idle and on dispose. The payload is shaped by the builder ingest's pipeline uses.
   // Behind its memory cache, a persistent store under `<appData>/working-tree`
   // keeps chunked files across restarts; it is swept (if no process swept it
   // within 6 h) after a start-up delay and every 6 h on unref'd timers — never
@@ -1251,13 +1259,34 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     writer: workingTreeWriter,
   });
   const stopWorkingTreeGitSignalSweep = scheduleWorkingTreeGitSignalSweep(workingTreeGitSignalStore);
+  // The delta has no file cap (WTO unbounded delta), so the layer's pool is
+  // ingest's chunker pool size, and a call chunks that many files at once.
+  const workingTreeChunkerPoolSize = Math.max(1, zodConfig.ingest.tune.chunkerPoolSize);
   const workingTreeChunkLayer = createWorkingTreeChunkLayer({
-    createPool: (chunkerConfig) => new ChunkerPool(1, chunkerConfig),
+    createPool: (chunkerConfig) => new ChunkerPool(workingTreeChunkerPoolSize, chunkerConfig),
     chunkFile: async (pool, file) => buildFileChunkPoints(pool, file, workingTreePayloadBuilder),
     idleShutdownMs: 60_000,
     store: workingTreeChunkStore,
     chunkerBuildId: pkg.version,
+    concurrency: workingTreeChunkerPoolSize,
   });
+  // One delta warm queue per process over the layer: every view chunks through
+  // it (one batch in flight, live before background), waits at most
+  // WORKING_TREE_WARM_WAIT_MS, and answers the files not yet warm from the index.
+  const workingTreeDeltaWarmer = new WorkingTreeDeltaWarmer({ layer: workingTreeChunkLayer });
+  const workingTreeFileFilter = createWorkingTreeFileFilter(config.ingestCode);
+  // Only the long-lived server watches the linked trees its reads address: a
+  // settled burst of edits re-measures the tree and re-warms it in the
+  // background (`WorkingTreeOverlay#prewarm`, bound to the overlay built below).
+  const workingTreeWatcher: WorkingTreeWatcher | undefined = options?.watchWorkingTrees
+    ? new WorkingTreeWatcher({
+        onSettled: async (root): Promise<void> => workingTreeOverlay.prewarm(root),
+        accepts: workingTreeFileFilter,
+        log: (message) => {
+          pipelineLog.step({ component: "WorkingTreeWatcher" }, message);
+        },
+      })
+    : undefined;
   // The working tree's codegraph (bd tea-rags-mcp-xi2r9, WTO-7): built per
   // delta in a child process over a snapshot of the base graph, published
   // under `<appData>/working-tree/<collection>/graph/`. Constructed before the
@@ -1297,9 +1326,11 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   const workingTreeOverlay = new WorkingTreeOverlay({
     registry: collectionRegistry,
     deltaReader: createWorkingTreeDeltaReader(),
-    createFileFilter: createWorkingTreeFileFilter(config.ingestCode),
+    createFileFilter: workingTreeFileFilter,
     // Only AST-chunked changed files are re-read; the rest answer from the index.
     admitsToDelta: createWorkingTreeDeltaAdmission(),
+    warmer: workingTreeDeltaWarmer,
+    ...(workingTreeWatcher ? { watcher: workingTreeWatcher } : {}),
     deltaChunks: {
       layer: workingTreeChunkLayer,
       // The base index's chunker config: its project's registry env replayed
@@ -1729,6 +1760,9 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     // this process's staging dirs (bd tea-rags-mcp-xi2r9, D6). The cache also
     // holds an exit hook while a build runs, for processes that never call this.
     workingTreeGraphCache.abandonInFlightBuilds();
+    // Watcher first (no more prewarms), then the queue (no more batches), then the layer under it.
+    workingTreeWatcher?.close();
+    workingTreeDeltaWarmer.dispose();
     void workingTreeChunkLayer.dispose().catch(() => undefined);
     // In-process enrichment (MCP index_codebase, inline git trajectory) spawns
     // git as a direct child of THIS process; no parent-death guard reaches it,

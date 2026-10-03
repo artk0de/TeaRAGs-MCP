@@ -246,3 +246,22 @@ describe("SearchResultOutputSchema — workingTree index-only files", () => {
     expect(schema.parse({ results: [], workingTree: marker }).workingTree).toEqual(marker);
   });
 });
+
+describe("SearchResultOutputSchema — workingTree pending files", () => {
+  const schema = z.object(SearchResultOutputSchema).strict();
+
+  it("keeps pendingFiles on the marker", () => {
+    const marker = {
+      tree: "/repo/wt",
+      indexedCommit: "a".repeat(40),
+      treeCommit: "b".repeat(40),
+      indexedDirty: false,
+      changedFiles: 4,
+      deletedFiles: 0,
+      floors: ["chunks"],
+      pendingFiles: 2,
+    };
+
+    expect(schema.parse({ results: [], workingTree: marker }).workingTree).toEqual(marker);
+  });
+});
