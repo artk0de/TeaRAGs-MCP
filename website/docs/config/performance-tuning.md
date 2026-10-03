@@ -398,10 +398,11 @@ Even at 156 ch/s (remote GPU), embedding is **40x slower** than storage. Invest 
 
 Embedding dominates a full index at this size. Ollama stays the default, but
 with a GPU host available, switch to the
-[llama-server provider](/config/providers/llama-server): one llama-server per
-GPU with `-np 4` measured 1.92–2.20× Ollama's throughput on the same RX 7800M.
-Several GPUs, even unequal ones, are used together — see the
-[multi-GPU guide](/config/providers/llama-server-multi-gpu).
+[llama-server provider](/config/providers/llama-server): three llama-server
+instances on an RX 7800M plus one on its host's Arc iGPU measured 3.4× Ollama's
+throughput on the same machine. Several GPUs, even unequal ones, are used
+together — see the [multi-GPU guide](/config/providers/llama-server-multi-gpu)
+and [measured configurations](/config/providers/llama-server-benchmarks).
 
 ### For Slow Search
 

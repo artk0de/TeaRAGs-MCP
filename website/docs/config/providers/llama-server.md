@@ -7,10 +7,10 @@ sidebar_position: 3
 
 Embedding provider for a standalone
 [llama.cpp `llama-server`](https://github.com/ggml-org/llama.cpp/tree/master/tools/server),
-usually one instance per GPU on a dedicated GPU host in your network. TeaRAGs
-spreads every embedding batch across all instances and all of their parallel
-slots, and falls back to a llama-server on your own machine when the GPU host
-is gone.
+usually several instances per GPU on a dedicated GPU host in your network.
+TeaRAGs spreads every embedding batch across all instances and all of their
+parallel slots, and falls back to a llama-server on your own machine when the
+GPU host is gone.
 
 |                   |                                                           |
 | ----------------- | --------------------------------------------------------- |
@@ -32,24 +32,24 @@ it is fast enough for most projects. Switch to llama-server when **both** hold:
 
 Ollama runs embedding models through its own bundled llama-server with one
 slot (`-np 1`), one batch per GPU pass. A standalone llama-server with several
-slots, driven by a client that keeps every slot busy, is roughly twice as fast
-on the same hardware. Measured on a mini-PC host (1024 chunks of a production
-codebase, `jina-embeddings-v2-base-code`, `/v1/embeddings`):
+slots — and several instances per GPU — keeps the GPU busy. Measured on a
+mini-PC host (1024 chunks of a production codebase,
+`jina-embeddings-v2-base-code`, `/v1/embeddings`):
 
-| Server                                      | texts/s | vs Ollama |
-| ------------------------------------------- | ------- | --------- |
-| Ollama 0.35 (batch 64, concurrency 2)       | 99      | 1.00×     |
-| llama-server ROCm, RX 7800M, `-np 4`        | 191     | 1.92×     |
-| llama-server ROCm, RX 7800M, `-np 8`        | 152–171 | 1.5–1.7×  |
-| llama-server Vulkan, RX 7800M, `-np 4 -fa on` | 218   | 2.20×     |
-| llama-server Vulkan, Arc 140T iGPU, `-np 4` | 48      | 0.48×     |
+| Server | texts/s | vs Ollama |
+| --- | --- | --- |
+| Ollama 0.35 | 99 | 1.00× |
+| llama-server Vulkan ×1, RX 7800M | 214 | 2.16× |
+| llama-server Vulkan ×3, RX 7800M | 307 | 3.10× |
+| llama-server Vulkan ×3 RX 7800M + ×1 Arc 140T | 334 | 3.37× |
+| Same, GPU power boost on | 387 | 3.91× |
+| Mac fallback: Ollama → llama-server ×2 (M3 Pro) | 55 → 93.5 | 1.69× |
 
-`-np 4` is the measured optimum; `-np 8` is slower. On an Apple M3 Pro,
-llama-server with `-np 2..4` gave 14–17% over `-np 1`. Its embeddings are
-identical to Ollama's for the same GGUF (cosine similarity 1.00000).
-
-A combined run over two GPUs of one host has not been measured yet; see the
-[multi-GPU guide](./llama-server-multi-gpu) for how such a setup is wired.
+`×N` is the number of llama-server processes on one GPU. **One process
+leaves a discrete GPU 25–28% idle**; two or three fill it. The embeddings are
+identical to Ollama's for the same GGUF (cosine similarity 1.00000). Every
+configuration we measured, with GPU utilization and the traps we hit, is on
+[llama-server vs Ollama: measured configurations](./llama-server-benchmarks).
 
 ## Setup
 
@@ -108,6 +108,13 @@ The output is a numbered sheet, copy-paste ready for the target OS:
    firewall, keep-awake and autostart steps in an **elevated PowerShell**.
 6. **Client configuration** — the `EMBEDDING_*` lines for the TeaRAGs machine.
 
+**Several instances per GPU.** `command` prints one instance per `--device`.
+To run three instances on one GPU, run it three times with the same `--device`
+and `--port 8081`, `8082`, `8083`, and start them **one after another** (wait
+for each `/health`): two Vulkan instances starting at the same moment can fail
+with `invalid device`. Keep `--slots 4`; `-np 3` and `-np 6` crashed the
+Vulkan build we tested.
+
 The printed `-c` is `slots × 8192`, which gives every slot an 8192-token window
 — the same window TeaRAGs uses with Ollama for jina, so chunk sizes match. The
 printed `-b`/`-ub 8192` let one slot take a full 8192-token input; see
@@ -117,10 +124,16 @@ printed `-b`/`-ub 8192` let one slot take a full 8192-token input; see
 
 ```bash
 export EMBEDDING_PROVIDER=llama-server
-export EMBEDDING_BASE_URL=http://192.168.1.71:8081
-export EMBEDDING_API_KEY=<secret>                    # only if the server has --api-key
-export EMBEDDING_FALLBACK_URL=http://127.0.0.1:8080   # optional, see below
+export EMBEDDING_BASE_URL=http://192.168.1.71:8081,8082,8083,8084
+export EMBEDDING_API_KEY=<secret>        # only if the server has --api-key
+export EMBEDDING_FALLBACK_URL=8080,8081  # optional: local llama-server, see below
 ```
+
+Endpoint lists accept a shorthand for several servers on one host: a bare port
+(`8082` or `:8082`) reuses the scheme and host of the URL before it, and a bare
+port with no URL before it means `http://localhost`. So
+`http://192.168.1.71:8081,8082` is two endpoints on that host, and `8080,8081`
+is two on this machine. Full URLs still work.
 
 ### 3. Optional: a local fallback llama-server
 
@@ -197,6 +210,11 @@ active tier:
 A batch of 256 across two GPUs at `-np 4` becomes 8 parallel requests of about
 32 texts.
 
+The split is only as good as the speed estimates. In a measured run the Arc
+iGPU received 14% of the tokens against a capacity share of about 12%, so the
+faster instances idled briefly at the end of each batch; end-to-end throughput
+was about 80% of the synthetic benchmark.
+
 **Context window.** The context length TeaRAGs works with is the per-slot
 `n_ctx` the server reports in `/props`, and it determines the derived chunk
 size. The printed `-c <slots × 8192>` yields 8192 per slot, so jina chunks are
@@ -245,8 +263,8 @@ Some ROCm builds of llama-server for Windows ship without the HIP BLAS
 runtime. If Ollama is installed on the same host, its ROCm runtime completes
 the build: from Ollama's `lib/ollama/rocm` directory, copy `libhipblas.dll` as
 `hipblas.dll`, plus `rocblas.dll` and the `rocblas/` kernels folder, next to
-`llama-server.exe`. A Vulkan build needs none of this and was faster on the
-RX 7800M in our measurement.
+`llama-server.exe`. A Vulkan build needs none of this and was 15–25% faster on
+the RX 7800M in our measurement.
 
 ### The run stops after the host went idle
 
@@ -254,6 +272,20 @@ A GPU host that sleeps drops every request. Run the printed keep-awake step
 (`powercfg /change standby-timeout-ac 0`, `systemd-inhibit`, `caffeinate -s`).
 The recovery wait covers a short outage; a host asleep for longer than
 `EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS` fails the run.
+
+### Throughput collapses when llama-server runs as a service
+
+A llama-server writes an INFO line per slot per request. Redirected to a file
+by a service wrapper, that logging throttled each instance about 6× in our
+setup (54 instead of 379 texts/s) and kept the SSD at 100%. Add
+`--log-disable` to service launch lines, or do not redirect the output to a
+file. Add `--metrics` if you want per-server counters at `/metrics`.
+
+### Throughput collapses after many test runs
+
+On Windows, closing an SSH session does not stop a llama-server started through
+it. Orphaned instances hold VRAM, and new ones spill into system memory. Check
+`Get-Process llama-server` and stop leftovers before measuring.
 
 ### Connection refused or timeout from the client
 

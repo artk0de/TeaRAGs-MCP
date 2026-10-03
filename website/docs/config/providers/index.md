@@ -26,7 +26,7 @@ TeaRAGs supports six embedding providers — from zero-config local inference to
 
 **Have a GPU?** Use [Ollama](./ollama) — free, private, and handles millions of lines of code. The default choice for serious local development.
 
-**Large project and a GPU host?** For 3M+ indexed lines, run [llama-server](./llama-server) on the GPU host — one instance per GPU, with a local llama-server as the fallback. It embeds about twice as fast as Ollama on the same card (measured 1.92–2.20× on an RX 7800M), at the cost of setting up llama.cpp builds yourself. See the [multi-GPU guide](./llama-server-multi-gpu).
+**Large project and a GPU host?** For 3M+ indexed lines, run [llama-server](./llama-server) on the GPU host — two or three instances per discrete GPU, with a local llama-server as the fallback. It embeds about three times as fast as Ollama on the same host (measured 3.4× on an RX 7800M plus Arc iGPU), at the cost of setting up llama.cpp builds yourself. See the [multi-GPU guide](./llama-server-multi-gpu) and [measured configurations](./llama-server-benchmarks).
 
 **Need cloud scale or quality?** Pick [OpenAI](./openai) for the best embedding quality and familiar API. Consider [Voyage](./voyage) if your codebase is code-heavy — their models are trained specifically on source code. Choose [Cohere](./cohere) if you need multilingual embeddings.
 
