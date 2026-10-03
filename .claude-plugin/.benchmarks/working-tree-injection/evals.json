@@ -195,6 +195,45 @@
       ],
       "failure_mode": "trusts all 4 edges as current, or distrusts all, or reindexes",
       "audit_finding": "owner item 6 (graph answer without codegraph floor)"
+    },
+    {
+      "id": "WT15",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "semantic_search row from a branch-added file, no treeState, floors [chunks,dense]. Current? next call for the whole class?",
+      "expected": "dense floor -> the row was ranked from the tree's own chunk: its code is current; whole class -> find_symbol symbol=<class> path=<cwd> (outline), no Read, no reindex",
+      "assertions": [
+        "treats the row as current (dense floor covers it)",
+        "next call find_symbol with path = cwd",
+        "no reindex, no Read"
+      ],
+      "failure_mode": "distrusts the row as an index copy, or Reads the file, or reindexes",
+      "audit_finding": "WTO-5 dense floor"
+    },
+    {
+      "id": "WT16",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "semantic_search row treeState modified, floors [], denseUnavailable set. Trust? next?",
+      "expected": "denseUnavailable -> vector ranking fell back to the index; the treeState row is the index's pre-edit copy and may be stale: current code via find_symbol path=<cwd>; no reindex",
+      "assertions": [
+        "does not trust the row text",
+        "next call find_symbol with path = cwd",
+        "names denseUnavailable as the reason, no reindex"
+      ],
+      "failure_mode": "trusts the stale row, or reindexes, or ignores denseUnavailable",
+      "audit_finding": "WTO-5 denseUnavailable"
+    },
+    {
+      "id": "WT17",
+      "cwd": "/work/acme/.claude/worktrees/feat-x",
+      "prompt": "find code similar to a chunk of a branch-changed file, chunk id given",
+      "expected": "find_similar with the chunk id and path=<cwd>; the dense floor ranks the tree's rows by their own vectors",
+      "assertions": [
+        "first call find_similar",
+        "passes path = cwd",
+        "uses the given id, does not paste code or Read"
+      ],
+      "failure_mode": "semantic_search with pasted text, or omits path",
+      "audit_finding": "WTO-5 find_similar over the tree"
     }
   ],
   "results": {

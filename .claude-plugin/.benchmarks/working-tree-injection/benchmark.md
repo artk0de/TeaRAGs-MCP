@@ -132,3 +132,30 @@ floor; ripgrep root scoping unstated.
 
 Answers: `workspace/iteration-{5..10}-answers.md`. The hook output equals the
 reference block byte-for-byte after every revision.
+
+## Dense floor wave (2026-10-03, epic xi2r9 WTO-5, tea-rags 0.40.1 → 0.40.2)
+
+### Changes
+
+| File                                     | Change                                                                                                                                                                                     |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `rules/references/subagent-injection.md` | `floors` gains `dense` (semantic_search / find_similar / hybrid vector ranking) and `chunks` names rank_chunks rows; `denseUnavailable` / `treeGraphUnavailable` say why a layer fell back |
+| `rules/search-cascade.md`                | same floor vocabulary; a `treeState` row is served only when no tree floor covered it (e.g. `denseUnavailable`)                                                                            |
+
+Block size: **8236 → 8404 bytes (+168, +2.0%)**.
+
+### Cases added
+
+| ID   | Case                                                                | Expected                                                 |
+| ---- | ------------------------------------------------------------------- | -------------------------------------------------------- |
+| WT15 | semantic_search row of a branch-added file, floors `[chunks,dense]` | row is current; whole class → `find_symbol` path=`<cwd>` |
+| WT16 | `treeState: modified` row, floors `[]`, `denseUnavailable`          | row stale; `find_symbol` path=`<cwd>`; no reindex        |
+| WT17 | find code similar to a chunk of a branch-changed file (id given)    | `find_similar positiveIds=[id] path=<cwd>`               |
+
+### Iterations
+
+| Run          | Pass  | Rate | Notes                                             |
+| ------------ | ----- | ---- | ------------------------------------------------- |
+| Iteration 11 | 17/17 | 100% | WT1–WT14 unchanged PASS; WT15–WT17 PASS first run |
+
+Answers: `workspace/iteration-11-answers.md`.

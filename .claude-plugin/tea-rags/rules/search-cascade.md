@@ -110,19 +110,23 @@ Index resolution priority: `collection > project > path`. With `project` /
 
 **Read the `workingTree` marker on every answer:** `tree` = tree it read;
 `changedFiles` / `deletedFiles` = distance from `indexedCommit` (`0` = measured
-clean); `floors` = layers read from the tree — `chunks` (find_symbol / outline),
-`sparse` (hybrid_search BM25), `codegraph` (graph tools' edges). A row or edge
-no floor covers reflects the index. Graph answer with `changedFiles` > 0 and no
-`codegraph` floor → edges touching changed files are the index's (`degraded`
-says why): trust edges between untouched files, re-check changed ones via
-`find_symbol` / `hybrid_search`. `degraded` → its `remedy` under index-freshness
-consent (subagent: report it to the parent, never reindex). `tree` ≠ the tree
-you addressed (your working directory, or the checkout a skill names) → wrong
-tree, re-call with that `path`.
+clean); `floors` = layers read from the tree — `chunks` (find_symbol / outline,
+rank_chunks rows), `sparse` (hybrid_search BM25), `dense` (semantic_search /
+find_similar / hybrid vector ranking of changed files), `codegraph` (graph
+tools' edges). A row or edge no floor covers reflects the index;
+`denseUnavailable` / `treeGraphUnavailable` name why a layer fell back to it.
+Graph answer with `changedFiles` > 0 and no `codegraph` floor → edges touching
+changed files are the index's (`degraded` says why): trust edges between
+untouched files, re-check changed ones via `find_symbol` / `hybrid_search`.
+`degraded` → its `remedy` under index-freshness consent (subagent: report it to
+the parent, never reindex). `tree` ≠ the tree you addressed (your working
+directory, or the checkout a skill names) → wrong tree, re-call with that
+`path`.
 
 **`treeState: "modified" | "deleted"`** on a row = index copy of a file your
-tree changed or deleted; text and lines may be stale. Current code →
-`find_symbol` (chunks floor), not the row.
+tree changed or deleted, served only when no tree floor covered it (e.g.
+`denseUnavailable`); text and lines may be stale. Current code → `find_symbol`
+(chunks floor), not the row.
 
 ## After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)
 
