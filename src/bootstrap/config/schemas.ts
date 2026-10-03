@@ -79,7 +79,7 @@ export const embeddingTuneSchema = z.object({
 });
 
 export const embeddingSchema = z.object({
-  provider: z.enum(["ollama", "openai", "cohere", "voyage", "onnx"]).default("ollama"),
+  provider: z.enum(["ollama", "openai", "cohere", "voyage", "onnx", "llama-server"]).default("ollama"),
   model: z.string().optional(),
   dimensions: optionalPositiveInt,
   device: z.string().optional().default("auto"),
@@ -107,6 +107,12 @@ export const embeddingSchema = z.object({
   openaiApiKey: z.string().optional(),
   cohereApiKey: z.string().optional(),
   voyageApiKey: z.string().optional(),
+  /**
+   * EMBEDDING_API_KEY: bearer token for a llama-server started with
+   * `--api-key`, sent to every peer and fallback endpoint. Optional — a
+   * server bound to the LAN should set one. A secret: never persisted.
+   */
+  apiKey: z.string().optional(),
   tune: embeddingTuneSchema,
 });
 

@@ -16,7 +16,7 @@
  * (`outerEnvForRegistryStamp` in `env-replay.ts`, tea-rags-mcp-o0qsw).
  *
  * The ONLY env kinds outside this mechanism:
- * - secrets (OPENAI/COHERE/VOYAGE/QDRANT API keys) — never persisted;
+ * - secrets (OPENAI/COHERE/VOYAGE/QDRANT API keys, EMBEDDING_API_KEY) — never persisted;
  * - server/process knobs (DEBUG, SERVER_TRANSPORT, ports, timeouts) —
  *   properties of the process, not of a project.
  *

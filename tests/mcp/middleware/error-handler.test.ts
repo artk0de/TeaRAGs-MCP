@@ -4,6 +4,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 
+import { LlamaServerUnavailableError } from "../../../src/core/adapters/embeddings/llama-server/errors.js";
 import { TeaRagsError, UnknownError } from "../../../src/core/infra/errors.js";
 import type { McpToolResult } from "../../../src/mcp/format.js";
 import {
@@ -227,6 +228,21 @@ describe("health-aware error enrichment", () => {
 
     const text = result.content[0].type === "text" ? result.content[0].text : "";
     expect(text).toContain("Qdrant: recovering");
+
+    stderrSpy.mockRestore();
+  });
+
+  it("appends Qdrant health context to a llama-server unavailable error", async () => {
+    const probes = makeProbes({ embeddingProvider: "llama-server" });
+    const handler = vi.fn().mockRejectedValue(new LlamaServerUnavailableError("http://gpu:8081", undefined));
+    const stderrSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const wrapped = errorHandlerMiddleware(handler, probes);
+    const result = await wrapped({}, {} as never);
+
+    const text = result.content[0].type === "text" ? result.content[0].text : "";
+    expect(text).toContain("Qdrant: available");
+    expect(text).toContain("Embedding (llama-server): unavailable");
 
     stderrSpy.mockRestore();
   });

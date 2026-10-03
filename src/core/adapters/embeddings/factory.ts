@@ -8,12 +8,13 @@ import type { EmbeddingConfig } from "../../contracts/types/config.js";
 import { ConfigValueInvalidError, ConfigValueMissingError } from "../../infra/errors.js";
 import type { EmbeddingProvider } from "./base.js";
 import { CohereEmbeddings } from "./cohere.js";
+import { LLAMA_SERVER_DEFAULT_URL, LlamaServerEmbeddings } from "./llama-server/provider.js";
 import { OllamaEmbeddings } from "./ollama.js";
 import { DEFAULT_ONNX_MODEL, OnnxEmbeddings } from "./onnx.js";
 import { OpenAIEmbeddings } from "./openai.js";
 import { VoyageEmbeddings } from "./voyage.js";
 
-export type EmbeddingProviderType = "openai" | "cohere" | "voyage" | "ollama" | "onnx";
+export type EmbeddingProviderType = "openai" | "cohere" | "voyage" | "ollama" | "onnx" | "llama-server";
 
 export interface EmbeddingPaths {
   models: string;
@@ -88,6 +89,16 @@ export class EmbeddingProviderFactory {
           config.fallbackBaseUrl,
         );
 
+      case "llama-server":
+        return new LlamaServerEmbeddings(
+          model || "unclemusclez/jina-embeddings-v2-base-code:latest",
+          dimensions,
+          rateLimitConfig,
+          baseUrl || LLAMA_SERVER_DEFAULT_URL,
+          config.fallbackBaseUrl,
+          config.apiKey,
+        );
+
       case "onnx": {
         const resolved = paths ?? fallbackPaths();
         return new OnnxEmbeddings(
@@ -104,7 +115,7 @@ export class EmbeddingProviderFactory {
         throw new ConfigValueInvalidError(
           "embeddingProvider",
           String(provider),
-          "ollama | onnx | openai | cohere | voyage",
+          "ollama | llama-server | onnx | openai | cohere | voyage",
         );
     }
   }

@@ -32,7 +32,7 @@ export interface EmbeddingTuneConfig {
 }
 
 export interface EmbeddingConfig {
-  provider: "ollama" | "openai" | "cohere" | "voyage" | "onnx";
+  provider: "ollama" | "openai" | "cohere" | "voyage" | "onnx" | "llama-server";
   model?: string;
   dimensions?: number;
   device: string;
@@ -47,6 +47,8 @@ export interface EmbeddingConfig {
   openaiApiKey?: string;
   cohereApiKey?: string;
   voyageApiKey?: string;
+  /** EMBEDDING_API_KEY: sent as `Authorization: Bearer <key>` to every endpoint. llama-server-only (`--api-key`). */
+  apiKey?: string;
   tune: EmbeddingTuneConfig;
 }
 
