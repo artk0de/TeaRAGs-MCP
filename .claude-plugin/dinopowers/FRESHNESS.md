@@ -14,9 +14,9 @@ follow them, never restate them.
   checkout → incremental `index_codebase` first; linked worktree → none (the
   overlay serves the tree; a `treeState` row = index's pre-edit copy → current
   code via `find_symbol`).
-- **Worktree clone** — only when an answer's `workingTree.degraded` reports a
-  delta over the overlay cap (200 files): `dinopowers:executing-plans` Step 2.0
-  runs the index-freshness clone PRECONDITION.
+- **No worktree clone** — the overlay reads a delta of any size; `pendingFiles`
+  / `indexOnlyFiles` on an answer are not reindex triggers (search-cascade "Read
+  the `workingTree` marker").
 - **Branch finish** — `dinopowers:finishing-a-development-branch` reindexes
   `main` after a merge and tears down any clone that exists
   (`tea-rags worktree remove`). A cleanup-only `PostToolUse:Bash` hook is the

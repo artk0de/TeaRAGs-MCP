@@ -101,9 +101,6 @@ Every tea-rags tool touching a collection accepts THREE addressing params:
 3. **`collection="<qdrant-name>"`** — when you already hold a Qdrant collection
    name (e.g. from `list_collections`).
 
-Clone mode (index-freshness: `degraded` over the overlay cap, clone created):
-`project="<clone alias>"` + `path` on every read.
-
 Index resolution priority: `collection > project > path`. With `project` /
 `collection` AND `path`, the index comes from the former and the tree from
 `path` (must be the same repository).
@@ -115,18 +112,22 @@ rank_chunks rows), `sparse` (hybrid_search BM25), `dense` (semantic_search /
 find_similar / hybrid vector ranking of changed files), `codegraph` (graph
 tools' edges). A row or edge no floor covers reflects the index;
 `denseUnavailable` / `treeGraphUnavailable` name why a layer fell back to it.
-Graph answer with `changedFiles` > 0 and no `codegraph` floor → edges touching
-changed files are the index's (`degraded` says why): trust edges between
-untouched files, re-check changed ones via `find_symbol` / `hybrid_search`.
-`degraded` → its `remedy` under index-freshness consent (subagent: report it to
-the parent, never reindex). `tree` ≠ the tree you addressed (your working
-directory, or the checkout a skill names) → wrong tree, re-call with that
-`path`.
+`pendingFiles` = re-read files not yet warm: their rows are the index's
+(`treeState: "modified"`), a later call reads more of the tree — re-call for
+current code, never reindex. `indexOnlyFiles` = changed files with no AST
+chunking (json / yaml / sql / toml …): never re-read, rows are the index's
+(`treeState: "modified"`); current text → `Read` the file. Graph answer with
+`changedFiles` > 0 and no `codegraph` floor → edges touching changed files are
+the index's (`degraded` says why): trust edges between untouched files, re-check
+changed ones via `find_symbol` / `hybrid_search`. `degraded` → its `remedy`
+under index-freshness consent (subagent: report it to the parent, never
+reindex). `tree` ≠ the tree you addressed (your working directory, or the
+checkout a skill names) → wrong tree, re-call with that `path`.
 
 **`treeState: "modified" | "deleted"`** on a row = index copy of a file your
 tree changed or deleted, served only when no tree floor covered it (e.g.
-`denseUnavailable`); text and lines may be stale. Current code → `find_symbol`
-(chunks floor), not the row.
+`denseUnavailable`, `pendingFiles`, `indexOnlyFiles`); text and lines may be
+stale. Current code → `find_symbol` (chunks floor), not the row.
 
 ## After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)
 
