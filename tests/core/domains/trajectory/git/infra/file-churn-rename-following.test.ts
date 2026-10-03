@@ -23,7 +23,7 @@ import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { copyGitRepoTemplate } from "../../../../__helpers__/git-repo-template.js";
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
@@ -171,6 +171,16 @@ describe("file-level git churn follows renames (bd tea-rags-mcp-aikfk)", () => {
   };
 
   const expectedNewShas = (): string[] => [sha.c7, sha.c5, sha.mv, sha.c3, sha.c2, sha.c1];
+
+  // Both templates are built here, not inside the first test that asks for
+  // one: building a template is ~50 git spawns, and under a loaded full suite
+  // it alone could spend most of that test's wall-clock budget.
+  beforeAll(() => {
+    buildPreRename();
+    rmSync(tmp, { recursive: true, force: true });
+    buildRenamedHistory();
+    rmSync(tmp, { recursive: true, force: true });
+  });
 
   afterEach(() => {
     rmSync(tmp, { recursive: true, force: true });
