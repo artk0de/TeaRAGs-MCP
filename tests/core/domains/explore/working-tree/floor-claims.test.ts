@@ -14,7 +14,10 @@ import { describe, expect, it, vi } from "vitest";
 import { codeRow, fakeWorkingTreeView } from "../__fixtures__/working-tree-view.js";
 import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import type { PayloadSignalDescriptor } from "../../../../../src/core/contracts/types/trajectory.js";
-import type { WorkingTreeGraphReader } from "../../../../../src/core/contracts/types/working-tree.js";
+import {
+  WORKING_TREE_SEARCH_GRAPH_WAIT_MS,
+  type WorkingTreeGraphReader,
+} from "../../../../../src/core/contracts/types/working-tree.js";
 import type { ScrollChunk } from "../../../../../src/core/domains/explore/chunk-grouping/types.js";
 import type { Reranker } from "../../../../../src/core/domains/explore/reranker.js";
 import { FileOutlineStrategy } from "../../../../../src/core/domains/explore/strategies/file-outline.js";
@@ -23,6 +26,7 @@ import { ScrollRankStrategy } from "../../../../../src/core/domains/explore/stra
 import { SymbolSearchStrategy } from "../../../../../src/core/domains/explore/strategies/symbol.js";
 import {
   claimWorkingTreeFloors,
+  recordingTreeGraphReader,
   type WorkingTreeView,
 } from "../../../../../src/core/domains/explore/working-tree/index.js";
 
@@ -308,5 +312,31 @@ describe("search/symbol answers claim codegraph only for returned tree rows", ()
 
     expect(results).toHaveLength(1);
     expect(view.marker.floors).toEqual(["chunks", "codegraph"]);
+  });
+});
+
+describe("a search/symbol lookup waits for the tree graph at most the search budget", () => {
+  /** A tree whose graph reader records the wait each read forwarded. */
+  const viewRecordingWaits = () => {
+    const view = treeView();
+    const read = vi.fn(async (_waitMs: number) => BUILT_GRAPH as never);
+    view.readTreeGraph = read;
+    return { view, read };
+  };
+
+  it("caps a graph-tool-length wait to the search budget (an unbounded delta's build takes tens of seconds)", async () => {
+    const { view, read } = viewRecordingWaits();
+
+    await recordingTreeGraphReader(view)?.(130_000);
+
+    expect(read).toHaveBeenCalledWith(WORKING_TREE_SEARCH_GRAPH_WAIT_MS);
+  });
+
+  it.each([0, 1_000])("forwards a wait already within the search budget unchanged (%i ms)", async (waitMs) => {
+    const { view, read } = viewRecordingWaits();
+
+    await recordingTreeGraphReader(view)?.(waitMs);
+
+    expect(read).toHaveBeenCalledWith(waitMs);
   });
 });

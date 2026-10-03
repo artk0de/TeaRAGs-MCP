@@ -8,11 +8,12 @@
  * got `built` and then answered from the base anyway would otherwise leave a
  * `codegraph` floor on an answer the tree graph never touched.
  */
-import type {
-  WorkingTreeFloor,
-  WorkingTreeGraphReader,
-  WorkingTreeGraphState,
-  WorkingTreeMarker,
+import {
+  WORKING_TREE_SEARCH_GRAPH_WAIT_MS,
+  type WorkingTreeFloor,
+  type WorkingTreeGraphReader,
+  type WorkingTreeGraphState,
+  type WorkingTreeMarker,
 } from "../../../contracts/types/working-tree.js";
 import type { WorkingTreeDenseVectors } from "./dense-floor.js";
 import type { WorkingTreeView } from "./overlay.js";
@@ -47,8 +48,9 @@ export function claimWorkingTreeFloors(
 
 /**
  * `built` → `floors` gains `"codegraph"` and any earlier unavailability is
- * cleared (one request may wait twice: 3 s for its rows, 120 s for a graph
- * lookup). `unavailable` → `treeGraphUnavailable` names why, unless another
+ * cleared (one request may read twice — for its rows and for a lookup — each
+ * waiting at most {@link WORKING_TREE_SEARCH_GRAPH_WAIT_MS}, so an earlier
+ * read's `unavailable` can be followed by a later read's `built`). `unavailable` → `treeGraphUnavailable` names why, unless another
  * read of the same answer did use the tree graph. Mutates `marker`: the view's
  * marker is per request, and its other late fields (`unparsed`) are set the same way.
  */
@@ -76,12 +78,20 @@ export function recordTreeGraphState(marker: WorkingTreeMarker, state: WorkingTr
  * row of a file the tree changed. `unavailable` is recorded at once: the
  * lookup fell back to the index whatever the answer holds, and the marker
  * says why.
+ *
+ * The wait it forwards is capped at {@link WORKING_TREE_SEARCH_GRAPH_WAIT_MS},
+ * whatever the seam asked for (a seam shared with graph tools asks for the
+ * build budget): an unbounded delta's tree-graph build can take tens of seconds
+ * (live: a 1419-file delta held a find_symbol outline for 44.8 s), and a lookup
+ * is a decoration/placement hop with an index fallback, not the answer. The
+ * build keeps running past the cap, so a later call finds it built. Graph tools
+ * do not come through here and keep the build-length wait.
  */
 export function recordingTreeGraphReader(view: WorkingTreeView | undefined): WorkingTreeGraphReader | undefined {
   const read = view?.readTreeGraph;
   if (!view || !read) return undefined;
   return async (waitMs) => {
-    const state = await read(waitMs);
+    const state = await read(Math.min(waitMs, WORKING_TREE_SEARCH_GRAPH_WAIT_MS));
     if (state.kind === "built") {
       view.treeGraphLookup = state;
       delete view.marker.treeGraphUnavailable;

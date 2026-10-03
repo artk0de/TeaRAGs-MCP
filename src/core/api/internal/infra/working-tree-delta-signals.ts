@@ -59,16 +59,17 @@ import type {
   PersistedSymbolLineRanges,
 } from "../../../contracts/types/codegraph.js";
 import type { ChunkSignalOverlay } from "../../../contracts/types/provider.js";
-import type {
-  WorkingTreeDeltaRow,
-  WorkingTreeDeltaSignalRequest,
-  WorkingTreeDeltaSignalResult,
-  WorkingTreeDeltaSignalSource,
-  WorkingTreeGitSignals,
-  WorkingTreeGitSignalSource,
-  WorkingTreeGitSignalTarget,
-  WorkingTreeGraphReader,
-  WorkingTreeGraphState,
+import {
+  WORKING_TREE_SEARCH_GRAPH_WAIT_MS,
+  type WorkingTreeDeltaRow,
+  type WorkingTreeDeltaSignalRequest,
+  type WorkingTreeDeltaSignalResult,
+  type WorkingTreeDeltaSignalSource,
+  type WorkingTreeGitSignals,
+  type WorkingTreeGitSignalSource,
+  type WorkingTreeGitSignalTarget,
+  type WorkingTreeGraphReader,
+  type WorkingTreeGraphState,
 } from "../../../contracts/types/working-tree.js";
 import { fileLinesOf } from "../../../domains/ingest/index.js";
 import {
@@ -78,9 +79,6 @@ import {
 import { buildCodegraphFileSignals } from "../../../domains/trajectory/codegraph/symbols/payload-signals.js";
 import { gitFileSignalsAtLineCount } from "../../../domains/trajectory/git/index.js";
 import type { WorkingTreeGraphFileOpener } from "./working-tree-graph-read.js";
-
-/** How long a search waits for the tree graph before delta rows inherit the base's codegraph (spec: 3 s). */
-export const WORKING_TREE_SEARCH_GRAPH_WAIT_MS = 3_000;
 
 /** Tree-graph signal reads kept per process — one per recent (graph, file set). */
 const TREE_SIGNAL_CACHE_SIZE = 4;
