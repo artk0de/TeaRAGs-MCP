@@ -5,12 +5,15 @@ import {
   embeddingThroughputOptimumKey,
   type AutoUpdateRunRecord,
   type CollectionEntry,
+  type EmbeddingProducerStarvation,
   type EmbeddingThroughputOptimum,
+  type EmbeddingThroughputOptimumWrite,
   type RecordEntryInput,
   type RegistryAutoUpdateConfig,
   type RegistryFileV1,
 } from "../../../contracts/types/registry.js";
 import { PROJECT_NAME_RE } from "./constants.js";
+import { liftEmbeddingThroughputOptima, type EmbeddingThroughputOptimaSection } from "./embedding-throughput-optima.js";
 import {
   formatRegistryEnvPinDrops,
   isRegistryEnvPinMigrationDue,
@@ -19,14 +22,6 @@ import {
 } from "./env-pin-migration.js";
 import { RegistryConcurrencyError, RegistryNameConflictError, RegistryWriteError } from "./errors.js";
 import { flushWithCAS, loadRegistryFile, migrateRegistryFileWithCAS } from "./registry-file.js";
-
-function mergeEmbeddingThroughputOptima(
-  existing: CollectionEntry["embeddingThroughputOptima"],
-  incoming: CollectionEntry["embeddingThroughputOptima"],
-): Pick<CollectionEntry, "embeddingThroughputOptima"> {
-  if (existing === undefined && incoming === undefined) return {};
-  return { embeddingThroughputOptima: { ...existing, ...incoming } };
-}
 
 function snapshotEntries(map: ReadonlyMap<string, CollectionEntry>): Map<string, CollectionEntry> {
   const snapshot = new Map<string, CollectionEntry>();
@@ -55,6 +50,12 @@ export class CollectionRegistry {
    * another process wrote in the meantime alone. Null whenever `cache` is.
    */
   private loadedSnapshot: Map<string, CollectionEntry> | null = null;
+  /**
+   * The registry-level embedding throughput optima section as last synced
+   * with disk, legacy per-entry records already lifted into it (bd
+   * tea-rags-mcp-auoxk). Null whenever `cache` is.
+   */
+  private throughputOptima: EmbeddingThroughputOptimaSection | null = null;
   private readonly tombstones = new Set<string>();
   private watcher: FSWatcher | null = null;
   private stopHandle: (() => void) | null = null;
@@ -74,11 +75,13 @@ export class CollectionRegistry {
       }
       this.cache = map;
       this.loadedSnapshot = snapshotEntries(map);
+      this.throughputOptima = liftEmbeddingThroughputOptima(file?.embeddingThroughputOptima, file?.collections ?? {});
       return map;
     } catch (err) {
       process.stderr.write(`[tea-rags] registry corrupt, starting empty: ${(err as Error).message}\n`);
       this.cache = new Map();
       this.loadedSnapshot = new Map();
+      this.throughputOptima = {};
       return this.cache;
     }
   }
@@ -105,9 +108,10 @@ export class CollectionRegistry {
     }
   }
 
-  private flush(): void {
+  private flush(optimumWrites: readonly EmbeddingThroughputOptimumWrite[] = []): void {
     const map = this.ensureLoaded();
-    const written = flushWithCAS(this.dataDir, map, this.tombstones, this.loadedSnapshot ?? undefined);
+    const written = flushWithCAS(this.dataDir, map, this.tombstones, this.loadedSnapshot ?? undefined, optimumWrites);
+    this.throughputOptima = { ...written.embeddingThroughputOptima };
     // Adopt what actually landed for the entries we hold: fields disk won stay
     // won, so the NEXT flush does not re-report them as our local change. The
     // adopted entries are collected first and applied after the iteration ends,
@@ -134,8 +138,14 @@ export class CollectionRegistry {
     }
     const map = this.ensureLoaded();
     const existing = map.get(entry.collectionName);
+    // The legacy per-entry optima are neither carried nor accepted: optima live
+    // in the registry-level section (bd tea-rags-mcp-auoxk), and this flush
+    // lifts the dropped field into it before the rewritten entry lands
+    // (`mergeRegistryDelta`), so the drop loses nothing.
+    const { embeddingThroughputOptima: _legacyOptima, ...input } = entry as RecordEntryInput &
+      Pick<CollectionEntry, "embeddingThroughputOptima">;
     map.set(entry.collectionName, {
-      ...entry,
+      ...input,
       name: existing?.name ?? null,
       // autoUpdate is sticky like name — pipeline reruns must not wipe
       // CLI-set policy (managed via setAutoUpdate / recordAutoUpdateRun).
@@ -150,11 +160,12 @@ export class CollectionRegistry {
       // Same claim, per enrichment provider: only a run that rebuilt the
       // provider for every point may advance it (stampTrajectoryVersions).
       ...(existing?.trajectoryVersions !== undefined ? { trajectoryVersions: existing.trajectoryVersions } : {}),
-      // embeddingThroughputOptima MERGES rather than sticks: a run overwrites the
-      // endpoints its throughput tuner settled on and keeps every other one, so a
-      // run that lived on the primary does not erase what an earlier run learnt
-      // about the fallback (bd tea-rags-mcp-7ju66).
-      ...mergeEmbeddingThroughputOptima(existing?.embeddingThroughputOptima, entry.embeddingThroughputOptima),
+      // Operator pins are written only by an env edit (set-env / unset-env),
+      // which passes the whole list; a pipeline run never does, and must not
+      // erase the record that lets a pinned tuned key replay (bd tea-rags-mcp-y1ynz).
+      ...(entry.operatorPinnedEnvKeys === undefined && existing?.operatorPinnedEnvKeys !== undefined
+        ? { operatorPinnedEnvKeys: existing.operatorPinnedEnvKeys }
+        : {}),
       // Worktree provenance is written once, at clone time
       // (setWorktreeProvenance), and the pipeline never passes it — yet the
       // prescribed lifecycle indexes the clone right after `worktree create`.
@@ -176,20 +187,39 @@ export class CollectionRegistry {
   }
 
   /**
-   * The freshest settled embedding throughput optimum any entry holds for this
-   * endpoint + model (bd tea-rags-mcp-7ju66). How fast a server embeds at a
-   * given batch size is a fact about the server, not about the project that
-   * measured it, so every entry is consulted. A runtime hint only — the caller
-   * clamps it to its configured bounds and keeps re-probing.
+   * The stored embedding throughput optimum for this embedding identity —
+   * endpoint + model + provider (bd tea-rags-mcp-7ju66, y1ynz) — from the ONE
+   * registry-level section every project shares (bd tea-rags-mcp-auoxk): how
+   * fast a configuration embeds at a given batch shape is a fact about the
+   * configuration, not about the project that measured it. A runtime hint only
+   * — the caller clamps it to its configured bounds and keeps re-probing.
    */
-  readEmbeddingThroughputOptimum(endpointUrl: string, model: string): EmbeddingThroughputOptimum | undefined {
-    const key = embeddingThroughputOptimumKey(endpointUrl, model);
-    let freshest: EmbeddingThroughputOptimum | undefined;
-    for (const entry of this.ensureLoaded().values()) {
-      const candidate = entry.embeddingThroughputOptima?.[key];
-      if (candidate && (!freshest || candidate.settledAt > freshest.settledAt)) freshest = candidate;
-    }
-    return freshest;
+  readEmbeddingThroughputOptimum(
+    endpointUrl: string,
+    model: string,
+    provider?: string,
+  ): EmbeddingThroughputOptimum | undefined {
+    this.ensureLoaded();
+    return this.throughputOptima?.[embeddingThroughputOptimumKey(endpointUrl, model, provider)];
+  }
+
+  /**
+   * Persist a run's settled optima into the registry-level section (bd
+   * tea-rags-mcp-auoxk). Per key, under the cross-process CAS: each write is
+   * reconciled against the record on disk at commit time
+   * (`applyEmbeddingThroughputOptimumWrites`), so two processes writing at once
+   * — two projects indexing in parallel, MCP and CLI — lose nothing, and a
+   * worse run never overwrites a better point another process landed meanwhile.
+   */
+  recordEmbeddingThroughputOptima(writes: readonly EmbeddingThroughputOptimumWrite[]): void {
+    if (writes.length === 0) return;
+    this.ensureLoaded();
+    this.flush(writes);
+  }
+
+  /** The last run's producer-starvation verdict for `collectionName` (bd tea-rags-mcp-y1ynz). */
+  readEmbeddingProducerStarvation(collectionName: string): EmbeddingProducerStarvation | undefined {
+    return this.get(collectionName)?.embeddingProducerStarvation;
   }
 
   findByName(name: string): CollectionEntry | null {
@@ -415,6 +445,7 @@ export class CollectionRegistry {
         if (filename === "registry.json" || filename === null) {
           this.cache = null;
           this.loadedSnapshot = null;
+          this.throughputOptima = null;
         }
       });
     } catch {

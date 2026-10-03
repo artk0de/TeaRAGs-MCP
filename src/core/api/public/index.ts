@@ -156,6 +156,7 @@ export {
   outerEnvForRegistryEntry,
   pickRegistryEntry,
   pickRegistryEnvSeed,
+  replayableRegistryEnv,
   replayRegistryEnv,
   resolveRegistryEnv,
 } from "../../domains/maintenance/registry/index.js";

@@ -217,6 +217,7 @@ export class IngestFacade {
       languageVersionStamper: deps.collectionRegistry,
       codegraphEnabledStamper: deps.collectionRegistry,
       embeddingThroughputOptima: deps.collectionRegistry,
+      embeddingProducerStarvation: deps.collectionRegistry,
       languageCodeVersions: deps.languageCodeVersions,
       ...(deps.languageChunkSetBumpScopes ? { languageChunkSetBumpScopes: deps.languageChunkSetBumpScopes } : {}),
       // The algorithm revision of each provider this slice enriches with

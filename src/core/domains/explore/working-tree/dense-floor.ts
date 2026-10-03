@@ -74,9 +74,18 @@ export interface WorkingTreeDenseVectorRequest {
   readTouchedBasePoints?: WorkingTreeTouchedBasePointsReader;
 }
 
+/** What the dense floor needs of a provider: one batch call and the model its vectors belong to. */
+export type WorkingTreeDenseEmbeddings = Pick<EmbeddingProvider, "embedBatch" | "getModel">;
+
 export interface WorkingTreeDenseVectorSourceDeps {
-  /** The provider the base index was embedded with — the query side's provider. */
-  embeddings: Pick<EmbeddingProvider, "embedBatch" | "getModel">;
+  /** The process provider — used for every base index when `embeddingsForCollection` is absent. */
+  embeddings: WorkingTreeDenseEmbeddings;
+  /**
+   * The provider a base index was embedded with — its registry model, which
+   * may differ from the process default (bd tea-rags-mcp-b91f5). A rejection is
+   * the reader's `failure`, like a failed embed.
+   */
+  embeddingsForCollection?: (collectionName: string) => Promise<WorkingTreeDenseEmbeddings>;
   /** Absent → no base-vector reuse. */
   qdrant?: Pick<QdrantManager, "retrieveDenseVectors">;
   /** Absent → vectors are not persisted across processes. */
@@ -158,11 +167,10 @@ export class WorkingTreeDenseVectorSource {
 
   /** Start resolving every row's vector now; the reader waits for them at most its `waitMs`. */
   warm(request: WorkingTreeDenseVectorRequest): WorkingTreeDenseVectorReader {
-    const model = this.deps.embeddings.getModel();
     const wanted = wantedRows(request.rows);
     const state: DenseWarmState = { vectors: new Map() };
     const pass: DenseWarmPass = { memory: this.memory.beginPass(), stored: this.stored.beginPass() };
-    const done = this.fill(request, model, wanted, state, pass)
+    const done = this.fill(request, wanted, state, pass)
       .catch((error: unknown) => {
         state.failure ??= messageOf(error);
       })
@@ -183,11 +191,12 @@ export class WorkingTreeDenseVectorSource {
 
   private async fill(
     request: WorkingTreeDenseVectorRequest,
-    model: string,
     wanted: readonly WantedRow[],
     state: DenseWarmState,
     pass: DenseWarmPass,
   ): Promise<void> {
+    const embeddings = (await this.deps.embeddingsForCollection?.(request.collectionName)) ?? this.deps.embeddings;
+    const model = embeddings.getModel();
     const memoryKey = (row: WantedRow): string => `${model}\0${row.contentSha256}`;
     const settle = (row: WantedRow, vector: readonly number[]): void => {
       state.vectors.set(row.id, vector);
@@ -224,7 +233,7 @@ export class WorkingTreeDenseVectorSource {
     this.persist(request, model, wanted, state, gainedOutsideStore, pass);
     const toEmbed = groupedByFile(missing());
     if (toEmbed.length === 0) return;
-    await this.embed(model, toEmbed, pass, (embedded) => {
+    await this.embed(embeddings, model, toEmbed, pass, (embedded) => {
       const gained = new Set<string>();
       for (const row of toEmbed) {
         const vector = state.vectors.has(row.id) ? undefined : embedded.get(row.contentSha256);
@@ -321,6 +330,7 @@ export class WorkingTreeDenseVectorSource {
    * did embed reaches the next asker through the memory cache either way.
    */
   private async embed(
+    embeddings: WorkingTreeDenseEmbeddings,
     model: string,
     rows: readonly WantedRow[],
     pass: DenseWarmPass,
@@ -346,7 +356,7 @@ export class WorkingTreeDenseVectorSource {
     }
     for (let start = 0; start < fresh.length; start += this.batchSize) {
       const batch = fresh.slice(start, start + this.batchSize);
-      const call = this.deps.embeddings.embedBatch(batch.map(([, content]) => content));
+      const call = embeddings.embedBatch(batch.map(([, content]) => content));
       void call.then(
         (results) => {
           const landed = new Map<string, readonly number[]>();

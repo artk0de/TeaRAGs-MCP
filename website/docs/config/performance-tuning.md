@@ -42,12 +42,16 @@ What happens during a run:
   last good concurrency and climbs again once the size settles. A failover
   between peer and fallback endpoints starts from the stored optimum of the
   endpoint now serving.
-- **Remembered optima.** The settled batch size and concurrency are stored per endpoint URL and
-  model in the indexed project's [registry](/usage/advanced/project-registry)
-  entry. The next run against the same endpoint and model — in any project,
-  since the value describes the server — starts from the freshest stored
-  optimum, clamped to the current bounds, instead of starting at the ceiling.
-  A primary and a fallback endpoint each keep their own value.
+- **Remembered optima.** The best measured batch size and concurrency are
+  stored once per embedding configuration — provider, endpoint (or peer set)
+  and model — in a section of the [registry](/usage/advanced/project-registry)
+  that every project shares, since the value describes the server, not the
+  project. The next run against the same configuration, in any project, starts
+  from it, clamped to the current bounds, instead of starting at the ceiling;
+  a small project inherits what a large one measured. A primary and a fallback
+  endpoint each keep their own value. Two projects indexing at once both land
+  their measurements: a slower result never replaces a faster one another run
+  recorded meanwhile.
 
 The batch-size and concurrency climbs run for every provider. Remembered optima
 need the endpoint URL, which only the Ollama and llama-server providers report;

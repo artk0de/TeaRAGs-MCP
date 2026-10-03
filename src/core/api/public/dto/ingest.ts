@@ -9,7 +9,7 @@ import {
   type RechunkFileSelector,
   type RechunkTestFileScope,
 } from "../../../contracts/types/rechunk.js";
-import type { EmbeddingThroughputOptimum } from "../../../contracts/types/registry.js";
+import type { EmbeddingProducerStarvation, EmbeddingThroughputOptimum } from "../../../contracts/types/registry.js";
 import type { WorktreeSeedReport } from "../../../contracts/types/worktree.js";
 import type { EnrichmentHealthMap } from "../../../domains/ingest/pipeline/enrichment/types.js";
 import type {
@@ -337,6 +337,12 @@ export interface IndexStatus {
        * registry the run recorded into. Omitted when nothing has settled yet.
        */
       throughputTune?: EmbeddingThroughputOptimum;
+      /**
+       * Whether the project's last run was bound by the chunk producer rather
+       * than the embedding server (bd tea-rags-mcp-y1ynz) — a starved run's
+       * throughput is not the server's ceiling. Omitted when no run recorded one.
+       */
+      producerStarvation?: EmbeddingProducerStarvation;
     };
   };
 }

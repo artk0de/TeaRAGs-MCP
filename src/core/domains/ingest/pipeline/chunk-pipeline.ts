@@ -16,15 +16,17 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
 import type { PayloadBuilder } from "../../../contracts/types/provider.js";
+import type { EmbeddingProducerStarvation } from "../../../contracts/types/registry.js";
 import { isDebug } from "../../../infra/runtime.js";
 import { PipelineNotStartedError } from "../errors.js";
 import { classifyEmbeddingQuarantinable, type QuarantineStore } from "../sync/index.js";
 import { AdaptiveBatchSizer } from "./adaptive-batch-sizer.js";
-import type {
-  EmbeddingEndpointIdentity,
-  EmbeddingEndpointThroughputOptimum,
-  EmbeddingThroughputDecision,
-  EmbeddingThroughputTuner,
+import {
+  PRODUCER_STARVED_BATCH_SHARE,
+  type EmbeddingEndpointIdentity,
+  type EmbeddingEndpointThroughputOptimum,
+  type EmbeddingThroughputDecision,
+  type EmbeddingThroughputTuner,
 } from "./embedding-throughput-tuner.js";
 import { BatchAccumulator } from "./infra/batch-accumulator.js";
 import { pipelineLog } from "./infra/debug-logger.js";
@@ -97,6 +99,8 @@ export class ChunkPipeline {
     errors: 0,
     startTime: 0,
   };
+  /** Embed batches formed by size or timeout, and the producer-starved ones among them (bd tea-rags-mcp-y1ynz). */
+  private readonly batchFormation = { formed: 0, starved: 0 };
 
   constructor(
     qdrant: QdrantManager,
@@ -301,6 +305,8 @@ export class ChunkPipeline {
     this.isRunning = false;
     this.detachFromProvider();
 
+    pipelineLog.step(LOG_CTX, "EMBED_PRODUCER_STARVATION", { ...this.embeddingProducerStarvation() });
+
     const stats = this.getStats();
     pipelineLog.summary(LOG_CTX, {
       chunksProcessed: stats.itemsProcessed,
@@ -341,12 +347,59 @@ export class ChunkPipeline {
     return this.throughputTuner?.settledOptima() ?? [];
   }
 
+  /**
+   * Whether this run's embed stage waited on the chunk producer rather than on
+   * the embedding server (bd tea-rags-mcp-y1ynz): the batches formed by size or
+   * by the formation timeout, and how many of them the timeout flushed below
+   * target while an embed slot sat idle. The drain tail is not counted — every
+   * run ends on one partial batch.
+   */
+  embeddingProducerStarvation(): EmbeddingProducerStarvation {
+    const { formed, starved } = this.batchFormation;
+    return {
+      formedBatches: formed,
+      starvedBatches: starved,
+      producerStarved: formed > 0 && starved / formed >= PRODUCER_STARVED_BATCH_SHARE,
+    };
+  }
+
+  /**
+   * Judge a batch the accumulator just formed, BEFORE it is submitted: a
+   * timeout flush below target while the worker pool has a free slot and
+   * nothing queued means the server is waiting for input. A timeout flush into
+   * a saturated pool is server-bound — its items waited on the embed stage.
+   * Undefined for a drain or a batch built outside the accumulator.
+   */
+  private judgeProducerStarvation(batch: Batch<ChunkItem>): boolean | undefined {
+    if (batch.flushTrigger !== "size" && batch.flushTrigger !== "timeout") return undefined;
+    const starved =
+      batch.flushTrigger === "timeout" &&
+      !this.workerPool.isAtCapacity() &&
+      this.workerPool.getStats().queueDepth === 0;
+    this.batchFormation.formed++;
+    if (starved) this.batchFormation.starved++;
+    return starved;
+  }
+
   /** Feed one embed call to the tuner (no-op without one) and apply what it decides. */
-  private observeEmbedBatch(size: number, inputChars: number, durationMs: number, ok: boolean): void {
+  private observeEmbedBatch(
+    size: number,
+    inputChars: number,
+    durationMs: number,
+    ok: boolean,
+    producerStarved?: boolean,
+  ): void {
     const tuner = this.throughputTuner;
     if (!tuner) return;
     this.applyThroughputDecision(
-      tuner.observe({ size, inputChars, durationMs, ok, endpoint: this.currentEmbeddingEndpoint() }),
+      tuner.observe({
+        size,
+        inputChars,
+        durationMs,
+        ok,
+        endpoint: this.currentEmbeddingEndpoint(),
+        ...(producerStarved !== undefined ? { producerStarved } : {}),
+      }),
     );
   }
 
@@ -355,10 +408,19 @@ export class ChunkPipeline {
     this.detachServerBatchFailures = undefined;
   }
 
-  /** The endpoint + model the next embed goes to, as the tuner keys it. */
+  /**
+   * The embedding identity the next embed goes to, as the tuner keys it:
+   * provider + endpoint (the whole set, for a fan-out provider) + model (bd
+   * tea-rags-mcp-y1ynz). `url` is one endpoint a failure event names.
+   */
   private currentEmbeddingEndpoint(url?: string): EmbeddingEndpointIdentity {
-    const endpointUrl = url ?? this.embeddings.getBaseUrl?.();
-    return { ...(endpointUrl !== undefined ? { url: endpointUrl } : {}), model: this.embeddings.getModel() };
+    const endpointUrl = this.embeddings.getThroughputTuneEndpointUrl?.(url) ?? url ?? this.embeddings.getBaseUrl?.();
+    const provider = this.embeddings.getProviderName?.();
+    return {
+      ...(provider !== undefined ? { provider } : {}),
+      ...(endpointUrl !== undefined ? { url: endpointUrl } : {}),
+      model: this.embeddings.getModel(),
+    };
   }
 
   /**
@@ -401,7 +463,7 @@ export class ChunkPipeline {
   }
 
   private submitBatch(batch: Batch<ChunkItem>): void {
-    const handler = this.createBatchHandler();
+    const handler = this.createBatchHandler(this.judgeProducerStarvation(batch));
     const promise = this.workerPool.submit(batch, handler);
     // Prevent unhandled rejection — errors are collected in flush() via allSettled
     promise.catch(() => {});
@@ -414,9 +476,11 @@ export class ChunkPipeline {
   }
 
   /**
-   * Create a batch handler that embeds chunks and stores to Qdrant
+   * Create a batch handler that embeds chunks and stores to Qdrant.
+   * `producerStarved` is the formation verdict of the batch it will run
+   * (`judgeProducerStarvation`), handed to the tuner with the measurement.
    */
-  private createBatchHandler(): (batch: Batch<ChunkItem>) => Promise<void> {
+  private createBatchHandler(producerStarved?: boolean): (batch: Batch<ChunkItem>) => Promise<void> {
     return async (batch: Batch<ChunkItem>) => {
       const ctx = { ...LOG_CTX, batchId: batch.id };
 
@@ -453,7 +517,7 @@ export class ChunkPipeline {
       const embedDuration = Date.now() - embedStart;
       if (!isolated) {
         const inputChars = texts.reduce((sum, text) => sum + text.length, 0);
-        this.observeEmbedBatch(texts.length, inputChars, embedDuration, true);
+        this.observeEmbedBatch(texts.length, inputChars, embedDuration, true, producerStarved);
       }
       pipelineLog.embedCall(ctx, texts.length, embedDuration);
       pipelineLog.addStageTime("embed", embedDuration);

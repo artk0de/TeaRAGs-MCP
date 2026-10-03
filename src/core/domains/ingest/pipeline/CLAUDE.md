@@ -37,6 +37,46 @@
   adapter's own ceiling. Why: two independent "sticky" sizes on one batch never
   recover together — the adapter's run-long cap silently undid every upward
   probe of the tuner.
+- **The tuner keys on embedding IDENTITY and holds its concurrency climb while
+  the producer starves.** `ChunkPipeline#currentEmbeddingEndpoint` builds the
+  key from `getProviderName`, the endpoint a fan-out provider reports through
+  `EmbeddingProvider.getThroughputTuneEndpointUrl` (the whole endpoint set, so a
+  failure on one member stays on the set's state), and the model; the stored
+  optimum uses the same key (`embeddingThroughputOptimumKey`), so a changed
+  provider, model or endpoint set starts fresh.
+  `ChunkPipeline#judgeProducerStarvation` marks a batch the formation timeout
+  flushed below target (`Batch.flushTrigger`) while the worker pool had a free
+  slot and nothing queued; once `PRODUCER_STARVED_BATCH_SHARE` of the tuner's
+  window is starved, `EmbeddingThroughputTuner` holds the concurrency climb (no
+  probe, no settle, logged once as `producer-starved`). The run's verdict
+  (`ChunkPipeline#embeddingProducerStarvation`, debug step
+  `EMBED_PRODUCER_STARVATION`) lands in the registry entry and surfaces as
+  `infraHealth.embedding.producerStarvation`. Why: a starved window's aggregate
+  chars/s measures the producer's gaps, not the server — judged on it the climb
+  wanders or settles low and the stored optimum carries that to the next run (bd
+  tea-rags-mcp-y1ynz).
+- **The persisted optimum is the run's best AGGREGATE window, and a stored
+  aggregate optimum is trusted outright.** `EmbeddingThroughputTuner` records
+  every complete concurrency window not tainted by a starved batch or a server
+  failure as a measured point; `EmbeddingThroughputTuner#settledOptima` returns
+  the fastest one, reconciled with the stored record by
+  `EmbeddingThroughputTuner#optimumToPersist` — and returns NOTHING for an
+  endpoint the run measured nothing new on, so `BaseIndexingPipeline` writes no
+  key and the record (and its `settledAt`) stays. The record is NOT the
+  project's: `BaseIndexingPipeline#recordThroughputOptima` writes it, with the
+  seed record the tuner judged it against, into the registry-level section every
+  project shares, apart from the entry `record()` writes; the registry re-checks
+  it against what another process may have landed meanwhile
+  (`../../maintenance/registry/CLAUDE.md`, bd tea-rags-mcp-auoxk). A stored
+  record with `measurement: "aggregate"` starts the run settled, with no probes;
+  drift is handled only by the slowdown guard
+  (`SETTLED_THROUGHPUT_SLOWDOWN_SHARE`) and the upward-only periodic re-probe.
+  The rules are owned by the tuner's docblock. Why: persisting the first settle
+  point stored concurrency 1 while the run had measured 4 at 160.8k chars/s, and
+  every later run re-climbed from 1 (bd tea-rags-mcp-cyw2r); and the size
+  climb's per-batch rate is not comparable with an aggregate one, so mixing them
+  in the merge would let a per-call reading at concurrency 1 block an aggregate
+  measurement.
 
 ## Gotchas
 

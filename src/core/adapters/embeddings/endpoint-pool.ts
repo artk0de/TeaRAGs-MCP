@@ -137,6 +137,17 @@ export class EmbeddingEndpointPool {
     return this.fallbacks.length > 0 ? this.fallbacks.join(",") : undefined;
   }
 
+  /**
+   * The configured tier `url` belongs to, as a label — or, without `url`, the
+   * tier serving now (peers when nothing is healthy). An unknown URL is its own
+   * label.
+   */
+  configuredTierLabel(url?: string): string {
+    const tier = url === undefined ? (this.activeTier() ?? "peer") : this.find(url)?.tier;
+    if (tier === undefined) return url ?? this.configuredPeersLabel();
+    return tier === "peer" ? this.configuredPeersLabel() : this.fallbacks.join(",");
+  }
+
   /** A success resets the failure counter and feeds the throughput EWMA. */
   recordSuccess(url: string, chars: number, durationMs: number): void {
     const endpoint = this.find(url);

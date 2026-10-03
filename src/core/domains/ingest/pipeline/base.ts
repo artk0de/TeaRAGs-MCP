@@ -20,7 +20,8 @@ import type { EnrichmentRunHandle } from "../../../contracts/types/enrichment-ex
 import {
   embeddingThroughputOptimumKey,
   type CollectionRegistryPort,
-  type EmbeddingThroughputOptimum,
+  type EmbeddingProducerStarvation,
+  type EmbeddingThroughputOptimumWrite,
   type PathCollectionResolver,
   type RegistryGitState,
 } from "../../../contracts/types/registry.js";
@@ -84,6 +85,8 @@ export interface IndexingRunSealSpec {
   persist: () => Promise<void>;
   /** What the run's embedding throughput tuner settled on, per endpoint (bd tea-rags-mcp-7ju66). */
   embeddingThroughputOptima?: EmbeddingEndpointThroughputOptimum[];
+  /** Whether the run's embed stage waited on the chunk producer (bd tea-rags-mcp-y1ynz). */
+  embeddingProducerStarvation?: EmbeddingProducerStarvation;
 }
 
 export interface PipelineTuning {
@@ -307,7 +310,12 @@ export abstract class BaseIndexingPipeline {
     await spec.promote?.();
     await storeIndexingMarker(this.qdrant, this.embeddings, spec.targetCollection, true, spec.modelInfo);
     await spec.persist();
-    await this.recordRegistryEntry(spec.collectionAlias, spec.absolutePath, spec.embeddingThroughputOptima);
+    await this.recordRegistryEntry(
+      spec.collectionAlias,
+      spec.absolutePath,
+      spec.embeddingThroughputOptima,
+      spec.embeddingProducerStarvation,
+    );
   }
 
   /**
@@ -324,9 +332,14 @@ export abstract class BaseIndexingPipeline {
   ): Promise<EnrichmentStatusResult> {
     const getEnrichmentStatus = await this.finalizeProcessing(ctx, chunkMap);
     onFlushed?.();
-    // The drained chunk pipeline knows what its throughput tuner settled on;
-    // the registry entry this seal records carries it to the next run.
-    await this.sealRun({ ...seal, embeddingThroughputOptima: ctx.chunkPipeline?.settledThroughputOptima() });
+    // The drained chunk pipeline knows what its throughput tuner settled on and
+    // whether its embed stage starved; the registry entry this seal records
+    // carries both — the optimum to the next run, the verdict to the run's status.
+    await this.sealRun({
+      ...seal,
+      embeddingThroughputOptima: ctx.chunkPipeline?.settledThroughputOptima(),
+      embeddingProducerStarvation: ctx.chunkPipeline?.embeddingProducerStarvation(),
+    });
     return getEnrichmentStatus();
   }
 
@@ -356,8 +369,10 @@ export abstract class BaseIndexingPipeline {
     collectionName: string,
     absolutePath: string,
     throughputOptima: readonly EmbeddingEndpointThroughputOptimum[] = [],
+    producerStarvation?: EmbeddingProducerStarvation,
   ): Promise<void> {
     if (!this.registry) return;
+    this.recordThroughputOptima(throughputOptima);
     try {
       // Chunks only — the indexing marker and schema metadata point are not
       // chunks, and status/metrics leave them out too (bd tea-rags-mcp-39xca.12).
@@ -385,14 +400,6 @@ export abstract class BaseIndexingPipeline {
       // general rule (outer env > registry env > code default).
       const { envSnapshot } = this;
       const gitState = await this.buildRegistryGitState(absolutePath);
-      // Settled embedding batch optima, keyed by endpoint + model; the registry
-      // MERGES them into what earlier runs learnt (bd tea-rags-mcp-7ju66). An
-      // endpoint without a URL (in-process provider) has no stable key.
-      const embeddingThroughputOptima: Record<string, EmbeddingThroughputOptimum> = {};
-      for (const { endpoint, optimum } of throughputOptima) {
-        if (endpoint.url === undefined) continue;
-        embeddingThroughputOptima[embeddingThroughputOptimumKey(endpoint.url, endpoint.model)] = optimum;
-      }
       this.registry.record({
         collectionName,
         path: absolutePath,
@@ -417,13 +424,44 @@ export abstract class BaseIndexingPipeline {
         // freshness checks compare live HEAD against this block. Absent when
         // the codebase is not a git repository.
         ...(gitState !== undefined ? { git: gitState } : {}),
-        ...(Object.keys(embeddingThroughputOptima).length > 0 ? { embeddingThroughputOptima } : {}),
+        // The last run's verdict only: a run that formed no batch says nothing.
+        ...(producerStarvation !== undefined && producerStarvation.formedBatches > 0
+          ? { embeddingProducerStarvation: producerStarvation }
+          : {}),
         indexedAt: new Date().toISOString(),
         teaRagsVersion: this.teaRagsVersion,
         chunksCount,
       });
     } catch (err) {
       process.stderr.write(`[tea-rags] registry record failed: ${(err as Error).message}\n`);
+    }
+  }
+
+  /**
+   * Persist the run's best measured embedding optima — already reconciled with
+   * the stored ones by the tuner (bd tea-rags-mcp-cyw2r) — into the registry's
+   * shared section, keyed by embedding identity: every project seeds from and
+   * writes to the same records (bd tea-rags-mcp-auoxk). Each write carries the
+   * stored optimum the tuner judged it against, so the registry can tell a
+   * record another process landed meanwhile. An endpoint without a URL
+   * (in-process provider) has no stable key. Failure is logged, never thrown —
+   * like the entry itself, the optima are an out-of-band hint.
+   */
+  private recordThroughputOptima(throughputOptima: readonly EmbeddingEndpointThroughputOptimum[]): void {
+    const writes: EmbeddingThroughputOptimumWrite[] = [];
+    for (const { endpoint, optimum, storedOptimum } of throughputOptima) {
+      if (endpoint.url === undefined) continue;
+      writes.push({
+        key: embeddingThroughputOptimumKey(endpoint.url, endpoint.model, endpoint.provider),
+        optimum,
+        ...(storedOptimum !== undefined ? { storedOptimum } : {}),
+      });
+    }
+    if (writes.length === 0) return;
+    try {
+      this.registry?.recordEmbeddingThroughputOptima?.(writes);
+    } catch (err) {
+      process.stderr.write(`[tea-rags] registry throughput optima record failed: ${(err as Error).message}\n`);
     }
   }
 
@@ -517,11 +555,12 @@ export abstract class BaseIndexingPipeline {
    * the configured batch size is the ceiling, EMBEDDING_TUNE_MIN_BATCH_SIZE the
    * floor (ceiling/16 when unset), `embedConcurrencyCeiling` the ceiling of the
    * concurrency climb — an explicit INGEST_PIPELINE_CONCURRENCY, or
-   * IMPLICIT_EMBEDDING_CONCURRENCY_CEILING when unset. It starts both values
-   * from the registry's stored optimum for the active endpoint + model — hints
-   * the bounds clamp; an older entry without `concurrency` starts at the worker
-   * pool's concurrency (the explicit value, or 1). Undefined when
-   * EMBEDDING_TUNE_STATIC pins the static behaviour.
+   * IMPLICIT_EMBEDDING_CONCURRENCY_CEILING when unset. It is handed the
+   * registry's stored optimum for the active embedding identity: both values
+   * start there (hints the bounds clamp), an aggregate record starts the run
+   * settled, and the run's best point is reconciled against it before it is
+   * persisted (bd tea-rags-mcp-cyw2r). Undefined when EMBEDDING_TUNE_STATIC
+   * pins the static behaviour.
    */
   protected createThroughputTuner(): EmbeddingThroughputTuner | undefined {
     const { pipelineConfig } = this.tuning;
@@ -533,14 +572,10 @@ export abstract class BaseIndexingPipeline {
       floor: pipelineConfig.upsertAccumulator.minBatchSize ?? Math.max(1, Math.floor(ceiling / 16)),
       configuredConcurrency: pipelineConfig.embedConcurrencyCeiling ?? pipelineConfig.workerPool.concurrency,
       initialConcurrency: pipelineConfig.workerPool.concurrency,
-      seed: (endpoint) =>
+      storedOptimum: (endpoint) =>
         endpoint.url === undefined
           ? undefined
-          : registry?.readEmbeddingThroughputOptimum?.(endpoint.url, endpoint.model)?.batchSize,
-      seedConcurrency: (endpoint) =>
-        endpoint.url === undefined
-          ? undefined
-          : registry?.readEmbeddingThroughputOptimum?.(endpoint.url, endpoint.model)?.concurrency,
+          : registry?.readEmbeddingThroughputOptimum?.(endpoint.url, endpoint.model, endpoint.provider),
     });
   }
 

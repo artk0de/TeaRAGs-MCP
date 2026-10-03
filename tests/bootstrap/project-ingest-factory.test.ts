@@ -150,7 +150,12 @@ describe("ProjectIngestFactory", () => {
     const seen: Record<string, string>[] = [];
     const factory = new ProjectIngestFactory({
       registry: registryOf([
-        entry({ path: "/repo/alpha", env: { INGEST_CHUNK_OVERLAP: "450", INGEST_PIPELINE_CONCURRENCY: "6" } }),
+        entry({
+          path: "/repo/alpha",
+          env: { INGEST_CHUNK_OVERLAP: "450", INGEST_PIPELINE_CONCURRENCY: "6" },
+          // A throughput-tuned key replays only as an operator pin (bd tea-rags-mcp-y1ynz).
+          operatorPinnedEnvKeys: ["INGEST_PIPELINE_CONCURRENCY"],
+        }),
       ]),
       processIngest: facade("process") as never,
       buildIngest: (env) => {

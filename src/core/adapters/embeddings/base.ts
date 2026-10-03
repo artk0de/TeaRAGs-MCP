@@ -108,6 +108,17 @@ export interface EmbeddingProvider {
    */
   getFallbackBaseUrl?: () => string | undefined;
   /**
+   * The endpoint identity the embedding throughput tuner keys a batch's
+   * measurement and its stored optimum on (bd tea-rags-mcp-y1ynz). For a
+   * provider that fans ONE batch out over a set of endpoints it is that whole
+   * set — the batch shape is a property of the set, and a grown or shrunk set
+   * must re-measure. `endpointUrl` names one member (a failure event's
+   * endpoint) and resolves to the set it belongs to; omitted, the set serving
+   * now. Absent on a provider that sends a batch to one endpoint, where the
+   * caller keys on `getBaseUrl()` / the event's URL as is.
+   */
+  getThroughputTuneEndpointUrl?: (endpointUrl?: string) => string;
+  /**
    * Live reachability probe of the configured fallback endpoint, independent of
    * runtime failover state. Returns undefined when no fallback is configured (or
    * the provider has no fallback concept). Surfaced via

@@ -2,9 +2,13 @@
  * BaseIndexingPipeline × embedding throughput tuning (bd tea-rags-mcp-7ju66):
  * the tuner exists only when adaptive embedding is on, takes its bounds from
  * the configured tuning, seeds from the registry's stored optimum for the
- * matching endpoint + model, and the run's settled optima land in the registry
- * entry the run records.
+ * matching endpoint + model, and the run's settled optima land in the registry's
+ * shared section — not in the entry the run records (bd tea-rags-mcp-auoxk).
  */
+
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -12,6 +16,7 @@ import {
   embeddingThroughputOptimumKey,
   type CollectionRegistryPort,
   type EmbeddingThroughputOptimum,
+  type EmbeddingThroughputOptimumWrite,
   type RecordEntryInput,
 } from "../../../../../src/core/contracts/types/registry.js";
 import { BaseIndexingPipeline, type PipelineTuning } from "../../../../../src/core/domains/ingest/pipeline/base.js";
@@ -20,6 +25,7 @@ import {
   type EmbeddingEndpointThroughputOptimum,
 } from "../../../../../src/core/domains/ingest/pipeline/embedding-throughput-tuner.js";
 import { buildPipelineConfig } from "../../../../../src/core/domains/ingest/pipeline/types.js";
+import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
 
 const URL = "http://192.168.1.71:11434";
 
@@ -48,7 +54,12 @@ const embeddings = {
 };
 
 class TunerProbePipeline extends BaseIndexingPipeline {
-  constructor(t: PipelineTuning, registry?: CollectionRegistryPort, qdrant: unknown = {}) {
+  constructor(
+    t: PipelineTuning,
+    registry?: CollectionRegistryPort,
+    qdrant: unknown = {},
+    private readonly collection = "code_abc",
+  ) {
     super(qdrant as never, embeddings as never, {} as never, {} as never, { snapshotDir: "/tmp" } as never, t, {
       ...(registry ? { registry } : {}),
     });
@@ -59,7 +70,7 @@ class TunerProbePipeline extends BaseIndexingPipeline {
   }
 
   async record(optima: EmbeddingEndpointThroughputOptimum[]): Promise<void> {
-    await this.recordRegistryEntry("code_abc", "/nonexistent-repo-7ju66", optima);
+    await this.recordRegistryEntry(this.collection, `/nonexistent-repo-7ju66/${this.collection}`, optima);
   }
 }
 
@@ -115,9 +126,13 @@ describe("BaseIndexingPipeline — embedding throughput tuner", () => {
     ).toMatchObject({ batchSize: 32 });
   });
 
-  it("writes the run's settled optima into the registry entry, keyed by endpoint + model", async () => {
+  it("writes the run's settled optima into the registry's shared section, keyed by embedding identity (auoxk)", async () => {
     const recorded: RecordEntryInput[] = [];
-    const registry: CollectionRegistryPort = { record: (entry) => recorded.push(entry) };
+    const shared: EmbeddingThroughputOptimumWrite[][] = [];
+    const registry: CollectionRegistryPort = {
+      record: (entry) => recorded.push(entry),
+      recordEmbeddingThroughputOptima: (writes) => shared.push([...writes]),
+    };
     const qdrant = {
       countPoints: async () => 0,
       getCollectionInfo: async () => ({ vectorSize: 768 }),
@@ -125,18 +140,23 @@ describe("BaseIndexingPipeline — embedding throughput tuner", () => {
       url: "http://localhost:6333",
     };
     await new TunerProbePipeline(tuning(), registry, qdrant).record([
-      { endpoint: { url: URL, model: "jina" }, optimum: optimum(64) },
+      { endpoint: { url: URL, model: "jina" }, optimum: optimum(64), storedOptimum: optimum(32) },
       { endpoint: { model: "onnx-in-process" }, optimum: optimum(32) },
     ]);
 
-    expect(recorded[0].embeddingThroughputOptima).toEqual({
-      [embeddingThroughputOptimumKey(URL, "jina")]: optimum(64),
-    });
+    expect(shared).toEqual([
+      [{ key: embeddingThroughputOptimumKey(URL, "jina"), optimum: optimum(64), storedOptimum: optimum(32) }],
+    ]);
+    expect(recorded[0]).not.toHaveProperty("embeddingThroughputOptima");
   });
 
-  it("writes no optima field when nothing settled", async () => {
+  it("writes no optima when nothing settled", async () => {
     const recorded: RecordEntryInput[] = [];
-    const registry: CollectionRegistryPort = { record: (entry) => recorded.push(entry) };
+    const shared = vi.fn();
+    const registry: CollectionRegistryPort = {
+      record: (entry) => recorded.push(entry),
+      recordEmbeddingThroughputOptima: shared,
+    };
     const qdrant = {
       countPoints: async () => 0,
       getCollectionInfo: async () => ({ vectorSize: 768 }),
@@ -145,7 +165,33 @@ describe("BaseIndexingPipeline — embedding throughput tuner", () => {
     };
     await new TunerProbePipeline(tuning(), registry, qdrant).record([]);
 
+    expect(shared).not.toHaveBeenCalled();
     expect(recorded[0]).not.toHaveProperty("embeddingThroughputOptima");
+  });
+
+  it("seeds project B's tuner from the optimum project A's run persisted on the same identity (auoxk)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "base-auoxk-"));
+    try {
+      const qdrant = {
+        countPoints: async () => 0,
+        getCollectionInfo: async () => ({ vectorSize: 768 }),
+        isEmbedded: false,
+        url: "http://localhost:6333",
+      };
+      const settled = { ...optimum(64), concurrency: 2, measurement: "aggregate" as const };
+      await new TunerProbePipeline(tuning(), new CollectionRegistry(dir), qdrant, "code_a").record([
+        { endpoint: { url: URL, model: "jina" }, optimum: settled },
+      ]);
+
+      const projectB = new TunerProbePipeline(tuning(), new CollectionRegistry(dir), qdrant, "code_b");
+      expect(projectB.tuner()?.begin({ url: URL, model: "jina" })).toEqual({ batchSize: 64, concurrency: 2 });
+      expect(projectB.tuner()?.begin({ url: "http://localhost:11434", model: "jina" })).toEqual({
+        batchSize: 256,
+        concurrency: 3,
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

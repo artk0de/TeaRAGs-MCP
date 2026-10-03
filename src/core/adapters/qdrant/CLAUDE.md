@@ -19,8 +19,8 @@
   belongs outside the try.
 
 - **`invalidateAll()` reaches the guard through a slot in the composition root,
-  and the slot is not incidental.** `resolveInfrastructure`
-  (`bootstrap/factory.ts`) declares `modelGuardSlot`, then arms
+  and the slot is not incidental.** `buildEmbeddingBinding`
+  (`bootstrap/embedding-binding.ts`) declares `modelGuardSlot`, then arms
   `OllamaEmbeddings.onFallbackSwitch` to call
   `modelGuardSlot.current?.invalidateAll()`; only after that is the guard
   constructed (`new EmbeddingModelGuard(…)`) and dropped into the slot
@@ -32,6 +32,17 @@
   check), so today it lands after the guard exists; the slot keeps that an
   ordering nobody has to preserve by hand. An edit must keep the handler reading
   `modelGuardSlot.current` at fire time and never capture the guard.
+
+- **There is one guard per embedding IDENTITY, not one per process.** A
+  collection is checked by the guard built beside the provider that embeds for
+  it — the one `RegistryCollectionEmbeddingsResolver#forCollection`
+  (`bootstrap/`) resolves from its registry entry, the process guard only for a
+  collection the registry does not know. So `currentModel` is the REGISTRY
+  model, and a server env naming another model is not a mismatch (bd
+  tea-rags-mcp-b91f5). Why: comparing a marker against the process model made
+  every project indexed with a second model unsearchable from a server
+  configured for the first; a new caller of `ensureMatch` must take its guard
+  from the collection's binding, never from the process slot.
 
 - **`recordModel` writes the cache; the marker point is created by the indexing
   lease.** `CollectionOps#create` calls `recordModel` immediately after

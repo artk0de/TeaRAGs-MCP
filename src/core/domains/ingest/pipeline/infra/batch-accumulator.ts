@@ -10,8 +10,15 @@
 
 import { randomUUID } from "node:crypto";
 
-import type { BackpressureCallback, Batch, BatchAccumulatorConfig, OperationType, WorkItem } from "../types.js";
 import { isDebug } from "../../../../infra/runtime.js";
+import type {
+  BackpressureCallback,
+  Batch,
+  BatchAccumulatorConfig,
+  BatchFlushTrigger,
+  OperationType,
+  WorkItem,
+} from "../types.js";
 
 export class BatchAccumulator<T extends WorkItem> {
   private readonly config: BatchAccumulatorConfig;
@@ -52,7 +59,7 @@ export class BatchAccumulator<T extends WorkItem> {
 
     // Check if batch is full
     if (this.pendingItems.length >= this.config.batchSize) {
-      this.flush();
+      this.flush("size");
     }
 
     return true;
@@ -77,9 +84,10 @@ export class BatchAccumulator<T extends WorkItem> {
   }
 
   /**
-   * Force flush any pending items
+   * Force flush any pending items. `trigger` records what let the batch go —
+   * an outside caller forcing it is a `drain`.
    */
-  flush(): void {
+  flush(trigger: BatchFlushTrigger = "drain"): void {
     this.clearFlushTimer();
 
     if (this.pendingItems.length === 0) {
@@ -91,6 +99,7 @@ export class BatchAccumulator<T extends WorkItem> {
       type: this.operationType,
       items: this.pendingItems,
       createdAt: Date.now(),
+      flushTrigger: trigger,
     };
 
     this.pendingItems = [];
@@ -150,7 +159,7 @@ export class BatchAccumulator<T extends WorkItem> {
    * Drain all pending items and stop timers
    */
   drain(): void {
-    this.flush();
+    this.flush("drain");
     this.clearFlushTimer();
   }
 
@@ -202,7 +211,7 @@ export class BatchAccumulator<T extends WorkItem> {
         this.deferCount++;
         this.scheduleFlush(this.config.flushTimeoutMs / 2);
       } else {
-        this.flush();
+        this.flush("timeout");
       }
     }, delayMs);
   }

@@ -31,6 +31,7 @@ import {
   registryEnvGroupMembers,
   resolveRegistryEnv,
   type AmbientEnvRole,
+  type CollectionEntry,
   type RegistryLookup,
 } from "../core/api/public/index.js";
 
@@ -96,6 +97,17 @@ export class ProjectIngestFactory {
   envForPath(path: string): Record<string, string> {
     const ambient = this.deps.ambientEnv ?? process.env;
     return overlayOnto(ambient, this.overlayFor(path, ambient));
+  }
+
+  /**
+   * The env an index run of `entry`'s project resolves to, for a caller that
+   * already holds the project's OWN entry — the query side, which addresses a
+   * collection rather than a path (bd tea-rags-mcp-b91f5). Same rule as
+   * `forPath`: the stamp under the ambient env's declared role.
+   */
+  envForEntry(entry: CollectionEntry): Record<string, string> {
+    const ambient = this.deps.ambientEnv ?? process.env;
+    return overlayOnto(ambient, resolveRegistryEnv(entry, ambient, this.deps.ambientEnvRole ?? "invocation"));
   }
 
   /** The registry overlay of `path` over `ambient`: see the class docblock. */

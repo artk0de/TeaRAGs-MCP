@@ -209,11 +209,12 @@ only TypeScript and Ruby.
   another model out of the run; when none serving the configured model is left,
   indexing fails with `INFRA_LLAMA_SERVER_MODEL_MISMATCH` instead of writing
   vectors of the wrong model.
-- **Current limitation: one model per MCP server configuration.** Search embeds
-  queries with the MCP server's `EMBEDDING_MODEL`, not with the model a project
-  was indexed with. A project indexed with a different model than the server's
-  environment fails with `INFRA_EMBEDDING_MODEL_MISMATCH`. Index all projects
-  served by one MCP server configuration with the same model.
+- **Projects on different models share one MCP server.** Each project is
+  searched with the model and endpoints it was indexed with, as recorded in the
+  registry; the server's `EMBEDDING_MODEL` and `EMBEDDING_BASE_URL` are only
+  defaults for unregistered collections. TeaRAGs indexes itself with
+  Muninn-small while the server default is CodeRankEmbed. See
+  [which model a project uses](/operations/drift-detection#which-model-a-project-uses).
 
 ## Models we measured and do not recommend
 
