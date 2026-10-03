@@ -41,7 +41,7 @@ the corpus.
 - **Metrics:** MRR and Recall@1, @5, @10.
 - **dense** is cosine similarity only; **hybrid** is dense fused with BM25 by
   reciprocal rank fusion (k = 60).
-- **Set B** (private Rails app only): 145 queries, each the source of a
+- **Set B** (monolith sample only): 145 queries, each the source of a
   production Ruby method; the targets are the spec chunks that mention it.
   Metric: recall@10.
 
@@ -49,12 +49,17 @@ the corpus.
 
 | Corpus | Language | Chunks | Files | Query |
 | --- | --- | ---: | ---: | --- |
-| Private Rails app | Ruby, RSpec tests | 1652 | 60 spec files | Paraphrased test scenario (set A); method source (set B) |
-| mastodon | Ruby, production `app/` | 2543 | 414 | Behaviour description |
-| TeaRAGs | TypeScript, production `src/`, tests excluded | 3130 | 353 | Behaviour description |
+| Sample of a 3.5M LoC production monolith | Ruby, RSpec tests | 1652 | 60 of its spec files | Paraphrased test scenario (set A); method source (set B) |
+| mastodon | Ruby, production `app/` | 2543 | 414 (every third file) | Behaviour description |
+| TeaRAGs | TypeScript, production `src/`, tests excluded | 3130 | 353 (every fourth file) | Behaviour description |
 
 ### Noise floor and caveats
 
+- The corpora are samples of 1.6k–3.1k chunks; the full TeaRAGs index holds
+  about 42k chunks and the monolith's about 180k. A full index has far more
+  near-miss chunks, so absolute R@k there is lower than in these tables. The
+  comparison between models holds: every model searched the same chunks with the
+  same queries.
 - With 200 queries, one query is 0.5 percentage points. Differences below about
   3 pp of R@1 or 0.02 MRR are noise.
 - For a few very long chunks the LLM read only the first 1.2–1.8k characters
@@ -84,15 +89,18 @@ Layout 3 RX + 1 Arc unless noted.
 
 ### A real index
 
-A full `--force` reindex of the TeaRAGs repository (41,990 chunks) from the GPU
-host over the LAN:
+A full `--force` reindex of the TeaRAGs repository from the GPU host over the
+LAN. The two runs are a few hours apart, so the repository grew in between:
 
-| Model | Total | Embedding | Enrichment | chunks/s (embedding) |
-| --- | ---: | ---: | ---: | ---: |
-| jina v2 code | 230 s | 215 s | 14 s | 193 |
-| Muninn-small f16 | 115 s | 101 s | 12 s | 417 |
+| Model | Files / chunks | Total | Embedding | Enrichment | chunks/s (embedding) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| jina v2 code | 3741 / 41,626 | 230 s | 215 s | 14 s | 193 |
+| Muninn-small f16 | 3765 / 41,990 | 115 s | 101 s | 12 s | 417 |
 
 The synthetic 2.37× shows up as 2.2× on embedding throughput in a real run.
+Both runs predate work stealing: the client still split each batch across
+servers by measured speed, which leaves fast servers idle at the end of a
+batch.
 
 ## Quality
 
@@ -121,7 +129,7 @@ Dense retrieval. MRR is 0–1; R@k is in percent.
 | BGE-Code-v1 Q8_0 | 0.896 | 83.5 | 98.0 | 98.0 |
 | BGE-Code-v1 Q8_0 + instruction | 0.943 | 90.5 | 99.0 | 100 |
 
-### Private Rails app (Ruby, RSpec tests)
+### Sample of a 3.5M LoC production monolith (Ruby, RSpec tests)
 
 Set A: natural-language scenario → the test. Set B: method source → its tests
 (recall@10).
@@ -196,9 +204,9 @@ the evidence says they buy little:
   it rewrites a query, retries with other words, or navigates from a hit with
   `find_symbol`, callers or similar-code search.
 - **The cost is 15–110× in throughput.** 22, 23 and 3.3 texts/s against
-  356–385. A full reindex of a 180k-chunk project would take about 2.3 h with
-  BGE-Code-v1 and about 15 h with Nomic Embed Code 7B, against minutes with
-  CodeRankEmbed. Their vectors are also 2–4.7× wider (1536–3584 dimensions
+  356–385. At these synthetic rates, embedding a 180k-chunk project takes
+  about 2.3 h with BGE-Code-v1 and about 15 h with Nomic Embed Code 7B, against
+  about 8 minutes with CodeRankEmbed. Their vectors are also 2–4.7× wider (1536–3584 dimensions
   against 768), which costs index size and search latency.
 
 **What we did not measure.** The agent loop itself: how often an agent rewrites

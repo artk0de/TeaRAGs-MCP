@@ -43,7 +43,7 @@ corpora we measured.
 | --- | ---: | ---: |
 | TypeScript, TeaRAGs `src/` | 0.918 | 0.850 |
 | Ruby, mastodon `app/` | 0.890 | 0.832 |
-| Ruby, private Rails app, RSpec tests | 0.870 | 0.683 |
+| Ruby, RSpec sample of a 3.5M LoC production monolith | 0.870 | 0.683 |
 | Ruby, method source → its specs (recall@10) | 86.5 | 82.4 |
 
 TypeScript works although it is not in the training list. The query prefix
@@ -125,9 +125,9 @@ own repository with it.
 
 **When to pick it.** TypeScript- or Python-heavy projects without Ruby, a small
 GPU host, or when full reindex time matters more than the last points of
-ranking quality. A full `--force` reindex of the TeaRAGs repository (41,990
-chunks) took 115 s with Muninn-small against 230 s with jina; embedding alone
-101 s against 215 s.
+ranking quality. A full `--force` reindex of the TeaRAGs repository (about
+42,000 chunks) took 115 s with Muninn-small against 230 s with jina; embedding
+alone 101 s against 215 s.
 
 **Trained languages** (model card): C, C++, C#, Go, Java, JavaScript,
 TypeScript, PHP, Python, Rust, Scala. **No Ruby.**
@@ -138,7 +138,7 @@ TypeScript, PHP, Python, Rust, Scala. **No Ruby.**
 | --- | ---: | ---: |
 | TypeScript, TeaRAGs `src/` | 0.889 | 0.850 |
 | Ruby, mastodon `app/` | 0.786 | 0.832 |
-| Ruby, private Rails app, RSpec tests | 0.765 | 0.683 |
+| Ruby, RSpec sample of a 3.5M LoC production monolith | 0.765 | 0.683 |
 | Ruby, method source → its specs (recall@10) | 82.1 | 82.4 |
 
 Ruby is mixed — better than jina on one corpus, worse on another — so do not

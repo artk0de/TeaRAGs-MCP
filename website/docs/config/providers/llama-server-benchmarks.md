@@ -144,7 +144,9 @@ counters (`--metrics`) showed the batch split by measured speed: 28–29% to
 each RX instance and 14% to the Arc, against an Arc capacity share of about
 12%. The Arc's slice is slightly too large while the speed estimates settle,
 so the RX instances idle briefly at the end of each batch; end-to-end
-throughput is about 80% of the synthetic figure.
+throughput is about 80% of the synthetic figure. This run predates work
+stealing, which replaced the split by measured speed with a shared queue of
+small micro-batches; it has not been re-measured since.
 
 ## Recommended layouts
 
