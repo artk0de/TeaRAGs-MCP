@@ -32,7 +32,7 @@ import type {
   ReviewSectionId,
   ReviewSectionResult,
 } from "../../public/dto/review.js";
-import { resolveWorkingTree } from "../collection-resolver.js";
+import { resolveIndexedWorkingTree, type IndexExistenceCheck } from "../collection-resolver.js";
 import { DIFF_FILE_CAP, readDiffScope, readTreeLag } from "./diff-scope-reader.js";
 import type { ReviewEdgeExtractionDeps } from "./review-edge-overlay.js";
 import {
@@ -69,6 +69,12 @@ export interface ReviewChangesOpsDeps {
    * Present → every answer carries `workingTree`; absent (unit wiring) → none.
    */
   workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
+  /**
+   * Whether the resolved index exists — a read of one that does not is refused
+   * with the typed not-found error (live round-3 D3, `resolveIndexedWorkingTree`).
+   * Absent (unit wiring): not checked.
+   */
+  indexExists?: IndexExistenceCheck;
 }
 
 export class ReviewChangesOps {
@@ -100,7 +106,7 @@ export class ReviewChangesOps {
     const providers = this.requestedProviders(req.sections);
     // One addressing rule (bd tea-rags-mcp-xi2r9): index reads address the base index, git
     // reads the tree the caller stands in — `path` alone at a linked worktree reaches both.
-    const workingTree = resolveWorkingTree(this.deps.collectionRegistry, req);
+    const workingTree = await resolveIndexedWorkingTree(this.deps.collectionRegistry, req, this.deps.indexExists);
     // Every read answer carries the marker (bd tea-rags-mcp-xi2r9, live probe P2-4).
     // `indexLag` inside the review block stays until the marker supersedes it.
     const view = this.deps.workingTreeOverlay?.view(workingTree, req.project);

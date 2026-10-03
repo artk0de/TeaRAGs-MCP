@@ -85,19 +85,52 @@ describe("createWorkingTreeGitSignalSource", () => {
       expect(signals.get("src/cyc/moved.ts")?.file).toMatchObject({ commitCount: 3 });
     });
 
-    it("answers nothing for an untracked file that was never committed", async () => {
+    // Invariant changed (live round-3 D4): ingest, indexing an untracked file in
+    // the alias's own checkout, finds no file history (`git.file` gets only the
+    // run's `enrichedAt` stamp) but WALKS its chunks and writes the walk's zero
+    // overlay — `assembleOverlays` over an accumulator no commit touched. The
+    // tree's rows of such a file get the same chunk block, by the same walk.
+    it("answers an untracked file's rows with the chunk walk's zero block and no git.file", async () => {
       write("src/fresh.ts", "export const fresh = 1;\n");
 
       const signals = await createWorkingTreeGitSignalSource(DEPS).signalsOf(tree, [
         target({
           relativePath: "src/fresh.ts",
           treePath: "src/fresh.ts",
+          maxEndLine: 1,
           chunks: [{ key: "r", startLine: 1, endLine: 1 }],
         }),
       ]);
 
       expect(signals.get("src/fresh.ts")?.file).toBeUndefined();
-      expect(signals.get("src/fresh.ts")?.chunks.size ?? 0).toBe(0);
+      expect(signals.get("src/fresh.ts")?.chunks.get("r")).toMatchObject({
+        commitCount: 0,
+        churnRatio: 0,
+        bugFixRate: 0,
+        lastModifiedAt: 0,
+        blameDominantAuthor: "unknown",
+        blameDominantAuthorPct: 0,
+        blameAuthors: [],
+        blameContributorCount: 0,
+      });
+    });
+
+    it("answers nothing for an untracked file past the chunk walk's line limit, as ingest walks none of it", async () => {
+      write("src/huge.ts", "export const huge = 1;\n".repeat(20));
+
+      const signals = await createWorkingTreeGitSignalSource({
+        ...DEPS,
+        chunk: { ...DEPS.chunk, maxFileLines: 10 },
+      }).signalsOf(tree, [
+        target({
+          relativePath: "src/huge.ts",
+          treePath: "src/huge.ts",
+          maxEndLine: 20,
+          chunks: [{ key: "r", startLine: 1, endLine: 20 }],
+        }),
+      ]);
+
+      expect(signals.get("src/huge.ts")?.chunks.size ?? 0).toBe(0);
     });
 
     it("names paths relative to a tree root below the git toplevel", async () => {

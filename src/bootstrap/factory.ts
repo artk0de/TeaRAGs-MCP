@@ -722,6 +722,13 @@ export function wireCodegraph(
    * reason as above.
    */
   workingTreeOverlay?: GraphFacadeDeps["workingTreeOverlay"],
+  /**
+   * Whether an addressed index exists — the graph tools refuse a missing one
+   * with the typed not-found error (live round-3 D3). Wired to
+   * `qdrant.collectionExists` by `createAppContext`; optional for the same
+   * reason as above.
+   */
+  indexExists?: GraphFacadeDeps["indexExists"],
 ): CodegraphContext | undefined {
   // Defensive: legacy/mocked configs may omit the codegraph section
   // entirely. Treat that as "disabled" so the `codegraph.enabled` config
@@ -978,6 +985,7 @@ export function wireCodegraph(
     ...(readImportSpecifiers ? { readImportSpecifiers } : {}),
     ...(readFileCommitCounts ? { readFileCommitCounts } : {}),
     ...(workingTreeOverlay ? { workingTreeOverlay } : {}),
+    ...(indexExists ? { indexExists } : {}),
   });
 
   // Keep-alive guard for the index run — see `createIndexRunDaemonGuard`. The
@@ -1276,6 +1284,8 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
       store: workingTreeChunkStore,
     }),
   });
+  // One existence check for every read tool that resolves a tree (live round-3 D3).
+  const indexExists = async (collectionName: string): Promise<boolean> => infra.qdrant.collectionExists(collectionName);
   const codegraphContext = wireCodegraph(
     config,
     zodConfig,
@@ -1284,6 +1294,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     async (collectionName, relPaths) => readPayloadImportSpecifiers(infra.qdrant, collectionName, relPaths),
     async (collectionName) => readPayloadFileCommitCounts(infra.qdrant, collectionName),
     workingTreeOverlay,
+    indexExists,
   );
   // Swept with the chunk store's cadence (now + every 6 h, unref'd) — here,
   // after `codegraphContext` exists: snapshot retention compares against the
@@ -1306,6 +1317,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
         collectionRegistry,
         resolveActiveCollection,
         workingTreeOverlay,
+        indexExists,
       })
     : undefined;
 
@@ -1320,6 +1332,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
         languages: ontologyLanguageProfiles(),
         // Reads the tree graph's identifiers and carries the marker (bd tea-rags-mcp-xi2r9, D9).
         workingTreeOverlay,
+        indexExists,
       })
     : undefined;
 
@@ -1532,6 +1545,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
         embeddings: infra.embeddings,
         // Every read answer carries the `workingTree` marker (bd tea-rags-mcp-xi2r9).
         workingTreeOverlay,
+        indexExists,
       })
     : undefined;
   // The diff-scoped review (bd tea-rags-mcp-89k7k.1.4): built beside the
@@ -1562,6 +1576,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
             },
             windowMonths: zodConfig.trajectoryGit.chunkMaxAgeMonths,
             workingTreeOverlay,
+            indexExists,
           }),
         })
       : undefined;

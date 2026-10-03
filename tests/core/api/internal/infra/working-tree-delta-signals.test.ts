@@ -448,6 +448,19 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
     expect(rows[0].payload).not.toHaveProperty("git");
   });
 
+  // Live round-3 D4: ingest gives an untracked file's chunks the walk's zero
+  // overlay (and `git.file` only its run stamp, no signal), so the tree's rows
+  // carry the chunk block the on-demand walk answers — never nothing.
+  it("gives an untracked file's rows the chunk block the on-demand walk answers, without a git.file", async () => {
+    const zero = { commitCount: 0, churnRatio: 0, blameDominantAuthor: "unknown" };
+    const gitSignals = answering({ "src/untracked.ts": { chunks: { d1: zero } } });
+    const source = sourceWith([basePoint("b1", FOO, "Foo#kept", 4)], gitSignals);
+
+    const { rows } = await source.enrich({ tree: TREE, rows: [deltaRow("d1", "src/untracked.ts", "fresh")] });
+
+    expect(rows[0].payload.git).toEqual({ chunk: zero });
+  });
+
   it("asks nothing when the base index carries no git at all", async () => {
     const gitSignals = answering({ [SMALL]: { file: ON_DEMAND_FILE } });
     const noGit = basePoint("b1", FOO, "Foo#kept", 4);

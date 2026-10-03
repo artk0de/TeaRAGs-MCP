@@ -96,7 +96,7 @@ import type {
   OntologyValueKind,
   OntologyVerbGroup,
 } from "../../public/dto/ontology.js";
-import { resolveWorkingTree } from "../collection-resolver.js";
+import { resolveIndexedWorkingTree, type IndexExistenceCheck } from "../collection-resolver.js";
 import { selectWorkingTreeGraphHandle } from "../infra/working-tree-graph-read.js";
 
 /** Default `GetOntologyReportRequest.limit`. */
@@ -257,6 +257,12 @@ export interface OntologyReportOpsDeps {
    * always the index graph.
    */
   workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
+  /**
+   * Whether the resolved index exists — a read of one that does not is refused
+   * with the typed not-found error (live round-3 D3, `resolveIndexedWorkingTree`).
+   * Absent (unit wiring): not checked.
+   */
+  indexExists?: IndexExistenceCheck;
 }
 
 function requestedSections(req: Pick<GetOntologyReportRequest, "sections">): OntologyReportSection[] {
@@ -347,7 +353,7 @@ export class OntologyReportOps {
    * with the tree-graph state that decided the read.
    */
   async report(req: GetOntologyReportRequest): Promise<GetOntologyReportResponse> {
-    const workingTree = resolveWorkingTree(this.deps.collectionRegistry, req);
+    const workingTree = await resolveIndexedWorkingTree(this.deps.collectionRegistry, req, this.deps.indexExists);
     const view = await this.deps.workingTreeOverlay?.view(workingTree, req.project);
     const selection = await selectWorkingTreeGraphHandle(view?.readTreeGraph, this.deps.pool);
     const response = await this.reportFrom(

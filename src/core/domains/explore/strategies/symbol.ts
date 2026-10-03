@@ -236,9 +236,8 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     );
     if (definitions.length === 0) return [];
     const deltaRows = (await view.readDeltaChunks()).filter((row) => this.matchesLanguage(row));
-    claimWorkingTreeFloors(view, ["chunks"]);
     const seen = new Set<string | number>();
-    return definitions
+    const answered = definitions
       .flatMap(({ relPath, range }) =>
         rowsHoldingDefinition(
           deltaRows.filter((row) => relativePathOf(row.payload) === relPath),
@@ -247,6 +246,8 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
       )
       .filter((row) => !seen.has(row.id) && seen.add(row.id))
       .map(toResult);
+    claimWorkingTreeFloors(view, ["chunks"], answered.length);
+    return answered;
   }
 
   /** The tree-range read, optional like the chunk hop: codegraph unavailable skips it with the same notice. */
@@ -338,7 +339,7 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     const view = ctx.workingTreeView;
     if (!view?.readDeltaChunks || view.touchedPaths.size === 0) return undefined;
     const row = (await view.readDeltaChunks()).find((delta) => String(delta.id) === chunkId);
-    if (row) claimWorkingTreeFloors(view, ["chunks"]);
+    claimWorkingTreeFloors(view, ["chunks"], row ? 1 : 0);
     return row;
   }
 

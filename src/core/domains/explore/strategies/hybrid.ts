@@ -92,19 +92,21 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
         ),
     );
     const ranking = await denseRanking;
-    const results = treeRows
-      ? fuseWorkingTreeRows(
-          baseResults,
-          scoreWorkingTreeRows(treeRows, {
+    const scoredTreeRows =
+      view && treeRows
+        ? scoreWorkingTreeRows(treeRows, {
             querySparse: sparseVector,
             requestFilter: ctx.filter,
             identityFilter,
             pathMatcher: compilePathPatternMatcher(ctx.pathPattern),
             legLimit: fetchLimit,
             ...(ranking ? { denseRanking: ranking } : {}),
-          }),
-          Math.max(fetchLimit, baseResults.length),
-        )
+          })
+        : undefined;
+    // The floors are the tree rows' only once one of them is a candidate (D8).
+    if (view && scoredTreeRows) claimWorkingTreeFloors(view, ["chunks", "sparse"], scoredTreeRows.length);
+    const results = scoredTreeRows
+      ? fuseWorkingTreeRows(baseResults, scoredTreeRows, Math.max(fetchLimit, baseResults.length))
       : baseResults;
 
     // queryGroups has no fusion=rrf option; fetch limit*3 above and group client-side.
@@ -140,8 +142,6 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
   private async readWorkingTreeRows(ctx: ExploreContext): Promise<readonly ScrollChunk[] | undefined> {
     const view = ctx.workingTreeView;
     if (!view?.readDeltaChunks || view.touchedPaths.size === 0) return undefined;
-    const rows = await view.readDeltaChunks();
-    claimWorkingTreeFloors(view, ["chunks", "sparse"]);
-    return rows;
+    return view.readDeltaChunks();
   }
 }

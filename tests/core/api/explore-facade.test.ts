@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ExploreFacade } from "../../../src/core/api/internal/facades/explore-facade.js";
+import { CollectionNotFoundError, ExploreFacade } from "../../../src/core/api/internal/facades/explore-facade.js";
 
 function makeExploreFacade(
   opts: {
@@ -134,5 +134,18 @@ describe("ExploreFacade", () => {
 
     const result = await facade.searchCode({ path: "/tmp/test-project", query: "query" });
     expect(result.results).toHaveLength(1);
+  });
+
+  // Live round-3 D3: search_code answered a missing index with Qdrant's raw
+  // "Not Found" (UNKNOWN_ERROR) while every other read tool answers the typed
+  // not-found error — checked before the query is embedded.
+  it("refuses a missing index with the typed not-found error, before embedding the query", async () => {
+    const { facade, qdrant } = makeExploreFacade();
+    qdrant.collectionExists.mockResolvedValue(false);
+
+    await expect(facade.searchCode({ path: "/tmp/test-project", query: "query" })).rejects.toBeInstanceOf(
+      CollectionNotFoundError,
+    );
+    expect(qdrant.search).not.toHaveBeenCalled();
   });
 });

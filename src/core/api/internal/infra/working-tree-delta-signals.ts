@@ -25,7 +25,8 @@
  *   working file added hold no history. A brand-new symbol is all such lines:
  *   it gets no chunk block, and the reranker's alpha blend falls back to the
  *   file value (by design, not a gap). An untracked file never committed has
- *   no history and gets no git block.
+ *   no history: no `git.file`, and each row the chunk walk's zero block — what
+ *   ingest writes for it in the alias's own checkout (live round-3 D4).
  * - **codegraph** — the tree graph, when `readTreeGraph` answers `built` within
  *   {@link WORKING_TREE_SEARCH_GRAPH_WAIT_MS}: file signals by
  *   `buildCodegraphFileSignals` over the tree's file metrics and fan-in p95,
@@ -306,11 +307,13 @@ function enrichRow(
   // A base point answers first; what none answers was computed on demand.
   const historyFile = base.get(historyPath);
   const onDemand = onDemandGit.get(historyPath);
+  // A path no commit touched has no file block, only the walk's zero chunk
+  // blocks — what ingest writes for an untracked file (live round-3 D4).
   const gitFile = historyFile?.gitFile ?? onDemand?.file;
-  if (gitFile) {
-    const historyPoint = historyFile?.gitFile ? basePointOf(historyFile, row.payload.symbolId) : undefined;
-    const gitChunk = historyPoint ? blockAt(historyPoint, ["git", "chunk"]) : onDemand?.chunks.get(String(row.id));
-    payload.git = { file: gitFile, ...(gitChunk ? { chunk: gitChunk } : {}) };
+  const historyPoint = historyFile?.gitFile ? basePointOf(historyFile, row.payload.symbolId) : undefined;
+  const gitChunk = historyPoint ? blockAt(historyPoint, ["git", "chunk"]) : onDemand?.chunks.get(String(row.id));
+  if (gitFile || gitChunk) {
+    payload.git = { ...(gitFile ? { file: gitFile } : {}), ...(gitChunk ? { chunk: gitChunk } : {}) };
   }
 
   const treeFile = tree?.fileSignals.get(path);

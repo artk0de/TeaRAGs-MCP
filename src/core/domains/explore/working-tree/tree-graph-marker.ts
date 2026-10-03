@@ -26,11 +26,20 @@ const FLOOR_ORDER: readonly WorkingTreeFloor[] = ["chunks", "sparse", "dense", "
  * THIS answer, so it is claimed by the code that put delta rows into the
  * answer's candidates — never by reading them (find_similar reads them for a
  * tree positive's content and answers with base rows only), and never by a
- * clean tree, which has no rows to supply. The rows carry the tree graph's
+ * clean tree, which has no rows to supply. `admittedRows` is how many delta
+ * rows the caller put into its candidates: none — the request filter, the
+ * pathPattern or the scroll predicate refused every one — claims nothing
+ * (live round-3 D1: hybrid_search `language: "ruby"` on a TypeScript delta
+ * answered `[]` claiming three floors). The rows carry the tree graph's
  * codegraph block when it was built, so their graph provenance is recorded
  * here too. Call after `readDeltaChunks` resolved.
  */
-export function claimWorkingTreeFloors(view: WorkingTreeView, floors: readonly WorkingTreeFloor[]): void {
+export function claimWorkingTreeFloors(
+  view: WorkingTreeView,
+  floors: readonly WorkingTreeFloor[],
+  admittedRows: number,
+): void {
+  if (admittedRows <= 0) return;
   const claimed = new Set([...view.marker.floors, ...floors]);
   view.marker.floors = FLOOR_ORDER.filter((floor) => claimed.has(floor));
   if (view.deltaRowsTreeGraph) recordTreeGraphState(view.marker, view.deltaRowsTreeGraph);
@@ -83,7 +92,7 @@ export function recordWorkingTreeDenseState(
   dense: WorkingTreeDenseVectors,
   scoredRows: number,
 ): void {
-  if (scoredRows > 0) claimWorkingTreeFloors(view, ["chunks", "dense"]);
+  claimWorkingTreeFloors(view, ["chunks", "dense"], scoredRows);
   if (dense.pending > 0) {
     const pending = `${String(dense.pending)} ${dense.pending === 1 ? "row" : "rows"} pending`;
     view.marker.denseUnavailable = { reason: dense.failure ?? pending };

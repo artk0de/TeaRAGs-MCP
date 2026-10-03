@@ -194,6 +194,18 @@ describe("WorkingTreeOverlay", { timeout: 60_000 }, () => {
     expect([...view.touchedPaths]).toEqual(["keep.ts"]);
   });
 
+  // Live round-3 D2: a base row of a moved file has its tree counterpart at the
+  // NEW path, so the view names the delta's moves for the readers that pair them.
+  it("should name the delta's moves on the view", async () => {
+    record({ indexedCommit, indexedDirty: false });
+    rmSync(join(tree, "src/keep.ts"));
+    writeFileSync(join(tree, "src/moved.ts"), "export const keep = 1;\n");
+
+    const view = await overlayWith().view(workingTree(), "proj");
+
+    expect(view.renamedFrom).toEqual(new Map([["src/moved.ts", "src/keep.ts"]]));
+  });
+
   it("should degrade with the alias filled in when the index has no commit stamp", async () => {
     record(undefined);
 

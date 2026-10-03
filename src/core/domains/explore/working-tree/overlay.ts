@@ -78,6 +78,13 @@ export interface WorkingTreeView {
    * does (`recordWorkingTreeDenseState`).
    */
   readDeltaVectors?: WorkingTreeDenseVectorReader;
+  /**
+   * The delta's moves: a changed path → the deleted path git pairs it with
+   * (`WorkingTreeDelta#renamedFrom`). Present only on a measured delta that
+   * moved a file — the tree counterpart of a base row of the old path lives at
+   * the new one (`workingTreeCounterpartIds`).
+   */
+  renamedFrom?: ReadonlyMap<string, string>;
 }
 
 /** The overlay's port to the touched-file base points (`WorkingTreeTouchedBasePoints`). */
@@ -186,6 +193,7 @@ export class WorkingTreeOverlay {
         marker: { ...marker, changedFiles: changed.length, deletedFiles: deleted.length },
         touchedPaths: new Set([...changed, ...deleted]),
         deletedPaths: new Set(deleted),
+        ...(read.delta.renamedFrom && read.delta.renamedFrom.size > 0 ? { renamedFrom: read.delta.renamedFrom } : {}),
       };
       if (total > 0 && this.deps.treeGraph) {
         const request: WorkingTreeGraphRequest = {

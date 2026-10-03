@@ -34,7 +34,7 @@ import type { Reranker } from "../reranker.js";
 import { recommendWorkingTreeScore, type WorkingTreeDenseVectors } from "../working-tree/dense-floor.js";
 import type { WorkingTreeView } from "../working-tree/overlay.js";
 import { fuseWorkingTreeRows, workingTreeRowAdmitted } from "../working-tree/sparse-floor.js";
-import { relativePathOf } from "../working-tree/substitute.js";
+import { relativePathOf, workingTreeCounterpartIds } from "../working-tree/substitute.js";
 import { recordWorkingTreeDenseState } from "../working-tree/tree-graph-marker.js";
 import { BaseExploreStrategy } from "./base.js";
 import { fetchPathPatternMatches } from "./path-pattern-fill.js";
@@ -187,7 +187,9 @@ export class SimilarSearchStrategy extends BaseExploreStrategy {
     // Without the examples' vectors the tree's rows cannot be scored: the
     // answer is the base page, and the marker says why the tree is absent.
     const stored = await (
-      baseIds.length > 0 ? this.qdrant.retrieveDenseVectors(ctx.collectionName, baseIds, []) : Promise.resolve([])
+      baseIds.length > 0
+        ? this.qdrant.retrieveDenseVectors(ctx.collectionName, baseIds, ["relativePath", "symbolId"])
+        : Promise.resolve([])
     ).catch((error: unknown) => ({ failed: error instanceof Error ? error.message : String(error) }));
     if (!Array.isArray(stored)) {
       const reason = `cannot read the examples' stored vectors: ${stored.failed}`;
@@ -202,12 +204,20 @@ export class SimilarSearchStrategy extends BaseExploreStrategy {
       });
     const positive = [...vectorsOf(examples.positiveIds), ...examples.positive];
     const negative = [...vectorsOf(examples.negativeIds), ...examples.negative];
-    const exampleIds = new Set(
-      [...(this.input.positiveIds ?? []), ...(this.input.negativeIds ?? [])].flatMap((id) => [
+    // An example is never its own result: by id, and — a base id of a touched
+    // file — by its tree counterpart, the current copy of that symbol (live
+    // round-3 D2).
+    const exampleIds = new Set([
+      ...[...(this.input.positiveIds ?? []), ...(this.input.negativeIds ?? [])].flatMap((id) => [
         id,
         String(toQdrantPointId(id)),
       ]),
-    );
+      ...workingTreeCounterpartIds(
+        view,
+        rows,
+        stored.map((point) => point.payload),
+      ),
+    ]);
     const admission = { requestFilter, pathMatcher: compilePathPatternMatcher(ctx.pathPattern) };
     const scored: ExploreResult[] = [];
     if (positive.length > 0) {

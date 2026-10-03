@@ -50,6 +50,7 @@ export {
   mergedWorkingTreeSymbolRow,
   relativePathOf,
   substituteWorkingTreeRows,
+  workingTreeCounterpartIds,
   workingTreeStateOf,
 } from "./substitute.js";
 export { claimWorkingTreeFloors, recordingTreeGraphReader, recordTreeGraphState } from "./tree-graph-marker.js";

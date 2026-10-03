@@ -172,7 +172,7 @@ describe("WorkingTreeOverlay tree graph (WTO-7)", () => {
 
       await view.readDeltaChunks?.();
       expect(view.marker.floors).toEqual([]);
-      claimWorkingTreeFloors(view, ["chunks"]);
+      claimWorkingTreeFloors(view, ["chunks"], 1);
 
       expect(view.marker.floors).toEqual(["chunks", "codegraph"]);
       expect(view.marker.treeGraphUnavailable).toBeUndefined();
@@ -189,7 +189,7 @@ describe("WorkingTreeOverlay tree graph (WTO-7)", () => {
 
       await view.readDeltaChunks?.();
       expect(view.marker.treeGraphUnavailable).toBeUndefined();
-      claimWorkingTreeFloors(view, ["chunks", "sparse"]);
+      claimWorkingTreeFloors(view, ["chunks", "sparse"], 1);
 
       expect(view.marker.floors).toEqual(["chunks", "sparse"]);
       expect(view.marker.treeGraphUnavailable).toBe("building");

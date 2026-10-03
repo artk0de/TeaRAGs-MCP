@@ -159,7 +159,7 @@ import type {
   NamingReviewNotJudgedEntry,
   NamingReviewResult,
 } from "../../public/dto/naming-lexicon.js";
-import { resolveWorkingTree } from "../collection-resolver.js";
+import { resolveIndexedWorkingTree, type IndexExistenceCheck } from "../collection-resolver.js";
 import { DIFF_FILE_CAP, readDiffScope, readTreeLag } from "./diff-scope-reader.js";
 import { readUntypedMethodEvidence, type MethodHeadWordMemo } from "./naming-lexicon-method-evidence.js";
 import type {
@@ -275,6 +275,12 @@ export interface NamingLexiconOpsDeps {
    * Present → every answer carries `workingTree`; absent (unit wiring) → none.
    */
   workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
+  /**
+   * Whether the resolved index exists — a read of one that does not is refused
+   * with the typed not-found error (live round-3 D3, `resolveIndexedWorkingTree`).
+   * Absent (unit wiring): not checked.
+   */
+  indexExists?: IndexExistenceCheck;
 }
 
 /** Diff mode: one changed file's added lines, its working-tree text and its declarations. */
@@ -453,7 +459,7 @@ export class NamingLexiconOps {
     validateRequest(req);
     // One addressing rule (bd tea-rags-mcp-xi2r9): index reads address the base index, git
     // reads the tree the caller stands in.
-    const workingTree = resolveWorkingTree(this.deps.collectionRegistry, req);
+    const workingTree = await resolveIndexedWorkingTree(this.deps.collectionRegistry, req, this.deps.indexExists);
     // Every read answer carries the marker (bd tea-rags-mcp-xi2r9, live probe P2-4), on
     // every return path — so it is attached here, around the whole answer. Measured beside it.
     const view = this.deps.workingTreeOverlay?.view(workingTree, req.project);

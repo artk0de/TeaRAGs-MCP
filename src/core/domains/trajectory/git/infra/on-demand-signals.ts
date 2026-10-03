@@ -14,7 +14,9 @@
  * The walk addresses HEAD rows, a delta row the WORKING file's. The row is
  * carried onto HEAD by the HEAD → working hunks (`headRowSpanOfWorkingRows`):
  * rows the working file added were never committed and hold no history, and a
- * row made only of them gets no chunk block.
+ * row made only of them gets no chunk block. A path no commit ever touched (an
+ * untracked file) is walked as ingest walks it: every row gets the walk's zero
+ * overlay, and there is no file block.
  *
  * What it deliberately does NOT share is the provider's run state — chunk-phase
  * blame holds, the run-scoped bug-fix set and discovery matrix, the blame pool
@@ -63,14 +65,20 @@ export interface OnDemandGitSignalOptions {
 
 export interface OnDemandGitSignals {
   file?: GitFileSignals;
-  /** By `chunkId`; a row with no committed history is absent. */
+  /**
+   * By `chunkId`. A row of a committed file made only of uncommitted lines is
+   * absent; a row of a never-committed file holds the walk's zero overlay.
+   */
   chunks: Map<string, ChunkChurnOverlay>;
 }
 
 /** Concurrent `git blame` spawns per call. */
 const BLAME_CONCURRENCY = 4;
 
-/** Signals per target with commit history; a path no commit touched is absent. */
+/**
+ * Signals per target: file and chunk blocks for a path with commit history,
+ * chunk blocks only (the walk's zero overlays) for one no commit touched.
+ */
 export async function buildOnDemandGitSignals(
   adapter: VcsGitAdapter,
   targets: readonly OnDemandGitSignalTarget[],
@@ -84,6 +92,8 @@ export async function buildOnDemandGitSignals(
     options.timeoutMs,
   );
   const withHistory = targets.filter((target) => (churn.get(target.relPath)?.commits.length ?? 0) > 0);
+  const neverCommitted = targets.filter((target) => (churn.get(target.relPath)?.commits.length ?? 0) === 0);
+  await walkNeverCommitted(adapter, neverCommitted, options, result);
   if (withHistory.length === 0) return result;
 
   const blameByPath = await blameAtHead(adapter, withHistory, churn, options.timeoutMs);
@@ -126,6 +136,45 @@ export async function buildOnDemandGitSignals(
     for (const [chunkId, overlay] of byChunk) answer.chunks.set(chunkId, overlay);
   }
   return result;
+}
+
+/**
+ * Chunk blocks of paths no commit touched (an untracked file, live round-3
+ * D4): ingest finds no file history for such a path — its `git.file` gets the
+ * run's stamp and no signal — but still WALKS its chunks, and the walk answers
+ * every row of a file within the line limit with the zero overlay of an
+ * accumulator no commit touched (`assembleOverlays`, unknown ownership: there
+ * is no blame). The same walk runs here over the working rows as they are —
+ * nothing was committed, so there is nothing to carry onto HEAD. No `file`
+ * block: there is no signal to give.
+ */
+async function walkNeverCommitted(
+  adapter: VcsGitAdapter,
+  targets: readonly OnDemandGitSignalTarget[],
+  options: OnDemandGitSignalOptions,
+  result: Map<string, OnDemandGitSignals>,
+): Promise<void> {
+  const chunkMap = new Map<string, ChunkLookupEntry[]>();
+  for (const target of targets) {
+    if (target.workingContent === undefined || target.chunks.length === 0) continue;
+    chunkMap.set(
+      `${adapter.repoRoot}/${target.relPath}`,
+      target.chunks.map(({ chunkId, startLine, endLine }) => ({ chunkId, startLine, endLine })),
+    );
+  }
+  if (chunkMap.size === 0) return;
+  const overlays = await buildChunkChurnMapUncached(
+    adapter,
+    chunkMap,
+    {},
+    options.chunk.concurrency,
+    options.chunk.maxAgeMonths,
+    undefined,
+    options.squashOpts,
+    options.chunk.timeoutMs,
+    options.chunk.maxFileLines,
+  );
+  for (const [relPath, byChunk] of overlays) result.set(relPath, { chunks: new Map(byChunk) });
 }
 
 /** `git blame HEAD` per path, a few at a time; a failed blame is left out (unknown ownership, as in ingest). */

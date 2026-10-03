@@ -56,7 +56,12 @@ import type {
   GetCallersRequest,
   GetCallersResponse,
 } from "../../public/dto/graph.js";
-import { resolveCollection, resolveWorkingTree } from "../collection-resolver.js";
+import {
+  resolveCollection,
+  resolveIndexedWorkingTree,
+  resolveWorkingTree,
+  type IndexExistenceCheck,
+} from "../collection-resolver.js";
 import { readWorkingTreeGraph } from "../infra/working-tree-graph-read.js";
 import { ArchitectureReportOps } from "../ops/architecture-report-ops.js";
 import { CochangeOps } from "../ops/cochange-ops.js";
@@ -103,6 +108,12 @@ export interface GraphFacadeDeps {
    * marker and always the index graph.
    */
   workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
+  /**
+   * Whether the resolved index exists — a read of one that does not is refused
+   * with the typed not-found error (live round-3 D3, `resolveIndexedWorkingTree`).
+   * Absent (unit wiring): not checked.
+   */
+  indexExists?: IndexExistenceCheck;
 }
 
 const DEFAULT_LIMIT = 50;
@@ -221,7 +232,7 @@ export class GraphFacade {
     fallback: T,
     graph: "tree" | "index" = "tree",
   ): Promise<T & { workingTree?: WorkingTreeMarker }> {
-    const workingTree = resolveWorkingTree(this.deps.collectionRegistry, addr);
+    const workingTree = await resolveIndexedWorkingTree(this.deps.collectionRegistry, addr, this.deps.indexExists);
     const view = await this.deps.workingTreeOverlay?.view(workingTree, addr.project);
     // `index`: the answer is a property of the INDEX's history, which a working
     // tree adds nothing to — the tree graph is never asked, and the marker

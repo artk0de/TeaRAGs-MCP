@@ -55,7 +55,7 @@ import { enumeratePaths } from "../../../domains/trajectory/codegraph/symbols/in
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import type { DeclaredVisibilityIndex } from "../../../infra/declared-visibility-index.js";
 import type { PathStep, PathTraceResult, TracedPath, TracePathRequest } from "../../public/dto/graph.js";
-import { resolveWorkingTree } from "../collection-resolver.js";
+import { resolveIndexedWorkingTree, type IndexExistenceCheck } from "../collection-resolver.js";
 import { selectWorkingTreeGraphHandle } from "../infra/working-tree-graph-read.js";
 import { lookupDeclaredVisibility } from "./declared-visibility-lookup.js";
 
@@ -81,6 +81,12 @@ export interface TracePathOpsDeps {
   resolveActiveCollection?: (collectionName: string) => Promise<PhysicalCollectionName>;
   /** The `workingTree` marker source (bd tea-rags-mcp-xi2r9). Optional: absent (unit wiring), no marker. */
   workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
+  /**
+   * Whether the resolved index exists — a read of one that does not is refused
+   * with the typed not-found error (live round-3 D3, `resolveIndexedWorkingTree`).
+   * Absent (unit wiring): not checked.
+   */
+  indexExists?: IndexExistenceCheck;
 }
 
 const EMPTY: PathTraceResult = { paths: [], truncated: false };
@@ -111,7 +117,7 @@ export class TracePathOps {
    * (live D2, `hydrateForWorkingTree`).
    */
   async tracePath(req: TracePathRequest): Promise<PathTraceResult> {
-    const workingTree = resolveWorkingTree(this.deps.collectionRegistry, req);
+    const workingTree = await resolveIndexedWorkingTree(this.deps.collectionRegistry, req, this.deps.indexExists);
     const view = await this.deps.workingTreeOverlay?.view(workingTree, req.project);
     const selection = await selectWorkingTreeGraphHandle(view?.readTreeGraph, this.deps.pool);
     const result = await this.traceInCollection(
@@ -249,7 +255,7 @@ export class TracePathOps {
       const row = mergedWorkingTreeSymbolRow(deltaRows, relPath, symbolId);
       return row ? [row] : [];
     });
-    if (treeRows.length > 0) claimWorkingTreeFloors(view, ["chunks"]);
+    claimWorkingTreeFloors(view, ["chunks"], treeRows.length);
     return [...untouched, ...treeRows];
   }
 

@@ -14,6 +14,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { resolveGitCommonDir } from "../../adapters/vcs/git/common-dir.js";
 import type { CollectionEntry, PathCollectionResolver } from "../../contracts/types/registry.js";
 import type { WorkingTree } from "../../contracts/types/working-tree.js";
+import { CollectionNotFoundError } from "../../domains/explore/index.js";
 import type { CollectionRegistry } from "../../domains/maintenance/registry/collection-registry.js";
 import {
   collectionAliasOfRegistryEntry,
@@ -169,6 +170,30 @@ export function findWorkingTreeRoot(path: string): string | undefined {
  * relative `path` resolves against the process's working directory, which the
  * CLI relies on.
  */
+/** Whether the index a request resolved to exists (Qdrant, by its addressed name). */
+export type IndexExistenceCheck = (collectionName: string) => Promise<boolean>;
+
+/**
+ * {@link resolveWorkingTree} for a READ: the index the tree resolved to must
+ * exist, or the read is refused with the typed not-found error every search
+ * tool answers (live round-3 D3, bd tea-rags-mcp-xi2r9). Checked before the
+ * overlay measures anything, so no marker is ever made for an index nobody
+ * created — the graph tools used to answer `[]` with a degraded marker naming
+ * a reindex of that phantom collection. An index that exists but carries no
+ * commit stamp passes, and the overlay degrades its marker as before. No
+ * check wired (unit wiring) → the tree as resolved.
+ */
+export async function resolveIndexedWorkingTree(
+  registry: CollectionRegistry,
+  input: ResolveInput,
+  indexExists: IndexExistenceCheck | undefined,
+): Promise<WorkingTree> {
+  const workingTree = resolveWorkingTree(registry, input);
+  const { collectionName } = workingTree.baseIndex;
+  if (indexExists && !(await indexExists(collectionName))) throw new CollectionNotFoundError(collectionName);
+  return workingTree;
+}
+
 export function resolveWorkingTree(registry: CollectionRegistry, input: ResolveInput): WorkingTree {
   if (input.path !== undefined) {
     const absolutePath = resolve(input.path);

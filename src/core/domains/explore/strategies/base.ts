@@ -175,9 +175,9 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
   ): Promise<ScrollChunk[]> {
     const view = ctx.workingTreeView;
     if (!view?.readDeltaChunks || view.touchedPaths.size === 0) return [...scrolled];
-    const deltaRows = await view.readDeltaChunks();
-    claimWorkingTreeFloors(view, ["chunks"]);
-    return substituteWorkingTreeRows(scrolled, view, deltaRows, keep);
+    const admitted = (await view.readDeltaChunks()).filter(keep);
+    claimWorkingTreeFloors(view, ["chunks"], admitted.length);
+    return substituteWorkingTreeRows(scrolled, view, admitted, () => true);
   }
 
   /**
@@ -194,9 +194,10 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
     const view = ctx.workingTreeView;
     if (!view?.readDeltaChunks || !this.hasWorkingTreeFloor(view) || view.touchedPaths.size === 0) return rows;
     if (!rows.some((row) => view.touchedPaths.has(relativePathOf(row.payload)))) return rows;
-    const deltaRows = await view.readDeltaChunks();
-    claimWorkingTreeFloors(view, ["chunks"]);
-    return retargetWorkingTreeRows(rows, view, deltaRows, toResult);
+    const retargeted = retargetWorkingTreeRows(rows, view, await view.readDeltaChunks(), toResult);
+    const admitted = retargeted.filter((row) => view.touchedPaths.has(relativePathOf(row.payload)));
+    claimWorkingTreeFloors(view, ["chunks"], admitted.length);
+    return retargeted;
   }
 
   /** Concrete strategy implements the actual search call. */

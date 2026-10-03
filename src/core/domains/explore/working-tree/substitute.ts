@@ -58,6 +58,38 @@ export function retargetWorkingTreeRows<R extends { payload?: Record<string, unk
 }
 
 /**
+ * Ids of the tree's rows that are the counterparts of the given base points
+ * (live round-3 D2): the delta rows of the same symbol — `#partN` windows of
+ * either side count as that symbol — in the base point's file, or in the file
+ * the delta moved it to (`view.renamedFrom`). A base point of a file the tree
+ * did not touch has none. Pure.
+ */
+export function workingTreeCounterpartIds(
+  view: WorkingTreeView,
+  deltaRows: readonly ScrollChunk[],
+  basePayloads: readonly (Record<string, unknown> | undefined)[],
+): Set<string> {
+  const familiesByPath = new Map<string, Set<string>>();
+  for (const payload of basePayloads) {
+    const path = relativePathOf(payload);
+    const family = symbolFamilyOf(payload);
+    if (family === undefined || !view.touchedPaths.has(path)) continue;
+    familiesByPath.set(path, (familiesByPath.get(path) ?? new Set()).add(family));
+  }
+  const ids = new Set<string>();
+  if (familiesByPath.size === 0) return ids;
+  const holds = (path: string | undefined, family: string): boolean =>
+    path !== undefined && (familiesByPath.get(path)?.has(family) ?? false);
+  for (const row of deltaRows) {
+    const path = relativePathOf(row.payload);
+    const family = symbolFamilyOf(row.payload);
+    if (family === undefined) continue;
+    if (holds(path, family) || holds(view.renamedFrom?.get(path), family)) ids.add(String(row.id));
+  }
+  return ids;
+}
+
+/**
  * The tree's row of one symbol in one file (live D2): its delta row, or its
  * `#partN` windows merged into one — the first window's payload, the symbol's
  * own id, and the lines from the first window's start to the last one's end.

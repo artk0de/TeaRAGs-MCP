@@ -31,11 +31,7 @@ import type {
   SignalFloors,
 } from "../../../contracts/types/trajectory.js";
 import type { WorkingTree, WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
-import {
-  CollectionNotFoundError as DomainCollectionNotFoundError,
-  EmptyFilterPresetError,
-  UnknownFilterPresetError,
-} from "../../../domains/explore/errors.js";
+import { EmptyFilterPresetError, UnknownFilterPresetError } from "../../../domains/explore/errors.js";
 import {
   computeSearchConfidence,
   type SearchConfidenceInput,
@@ -75,7 +71,7 @@ import {
   type SemanticSearchRequest,
 } from "../../public/dto/index.js";
 import type { WorkingTreeIndexTarget } from "../../public/dto/working-tree.js";
-import { resolveWorkingTree } from "../collection-resolver.js";
+import { resolveIndexedWorkingTree, resolveWorkingTree } from "../collection-resolver.js";
 
 export interface ExploreOpsDeps {
   qdrant: QdrantManager;
@@ -270,12 +266,12 @@ export class ExploreOps {
   }
 
   async searchCode(request: ExploreCodeRequest): Promise<ExploreResponse> {
-    const { collectionName, path, workingTreeView } = this.resolveTarget(
+    const { collectionName, path, workingTreeView } = await this.resolveAndGuard(
       request.collection,
       request.path,
       request.project,
+      { failOnProviderOutage: true },
     );
-    await this.modelGuard?.ensureMatch(collectionName, { failOnProviderOutage: true });
     const { embedding } = await this.embeddings.embed(request.query);
     const level = resolveEffectiveLevel(undefined, request.rerank, this.reranker, "search_code");
     // Load collection stats BEFORE buildFilter so filter-preset adaptive
@@ -570,9 +566,14 @@ export class ExploreOps {
     project?: string,
     guardOptions?: EmbeddingModelGuardCallOptions,
   ): Promise<ResolvedExploreTarget> {
-    const resolved = this.resolveTarget(collection, path, project);
-    const exists = await this.qdrant.collectionExists(resolved.collectionName);
-    if (!exists) throw new DomainCollectionNotFoundError(resolved.collectionName);
+    // The one existence seam every read tool resolves through (live round-3 D3):
+    // a missing index is refused before the overlay measures the tree.
+    const workingTree = await resolveIndexedWorkingTree(
+      this.collectionRegistry,
+      { collection, project, path },
+      async (name) => this.qdrant.collectionExists(name),
+    );
+    const resolved = this.targetOf(workingTree, path, project);
     await this.modelGuard?.ensureMatch(resolved.collectionName, guardOptions);
     return resolved;
   }
@@ -584,8 +585,7 @@ export class ExploreOps {
    * would hash to a collection nobody indexed. A request that named only its
    * collection keeps the by-name check.
    */
-  private resolveTarget(collection?: string, path?: string, project?: string): ResolvedExploreTarget {
-    const workingTree: WorkingTree = resolveWorkingTree(this.collectionRegistry, { collection, project, path });
+  private targetOf(workingTree: WorkingTree, path?: string, project?: string): ResolvedExploreTarget {
     const { collectionName, root } = workingTree.baseIndex;
     const addressedByLocation = path !== undefined || project !== undefined;
     return {

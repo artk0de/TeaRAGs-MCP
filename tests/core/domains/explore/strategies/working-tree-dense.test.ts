@@ -276,4 +276,98 @@ describe("find_similar dense floor", () => {
     expect(view.marker.floors).toEqual([]);
     expect(view.marker.denseUnavailable?.reason).toContain("qdrant timeout");
   });
+
+  // Live round-3 D2 (bd tea-rags-mcp-xi2r9): an example named by the BASE id of
+  // a touched file has a tree counterpart — the delta row of the same symbol at
+  // the same path, or at the path a move took it to. That row is the example
+  // itself, current copy; Qdrant leaves an example out of its own answer by id,
+  // and the tree's copy must leave too. Live: `renamer.ts` renamed to
+  // `renamedNew.ts` answered find_similar on its base id with
+  // `renamedNew.ts:renamedTarget` at rank 1.
+  describe("an example's tree counterpart is never its own result (D2)", () => {
+    const OLD = "src/core/renamer.ts";
+    const NEW = "src/core/renamedNew.ts";
+    const moved = codeRow("t-moved", { relativePath: NEW, symbolId: "renamedTarget", content: "moved" });
+    const movedSibling = codeRow("t-sibling", { relativePath: NEW, symbolId: "siblingHelper", content: "sib" });
+
+    async function similarWithStored(
+      view: WorkingTreeView,
+      input: ConstructorParameters<typeof SimilarSearchStrategy>[5],
+      stored: Record<string, Record<string, unknown>>,
+    ) {
+      const { qdrant } = qdrantHolding();
+      vi.mocked(qdrant.retrieveDenseVectors).mockImplementation(async (_c, ids) =>
+        ids.map((id) => ({ id, vector: withCosine(0.95), payload: stored[String(id)] })),
+      );
+      return new SimilarSearchStrategy(qdrant, reranker, [], [], embeddings, input).execute({
+        collectionName: "c",
+        limit: 10,
+        workingTreeView: view,
+      });
+    }
+
+    it("leaves out the tree's row of a positive's symbol in the file the tree modified", async () => {
+      const results = await similarWithStored(
+        treeView(),
+        { positiveIds: ["bt"] },
+        {
+          bt: { relativePath: TOUCHED, symbolId: "freshHelper" },
+        },
+      );
+
+      expect(results.map((r) => r.id)).not.toContain("t-fresh");
+      expect(results.map((r) => r.id)).toContain("t-weak");
+    });
+
+    it("leaves out the tree's row of a positive's symbol at the path the tree moved its file to", async () => {
+      const view = fakeWorkingTreeView({
+        changed: [NEW],
+        deleted: [OLD],
+        rows: [moved, movedSibling],
+        basePoints: new Map([[OLD, [{ id: "br", payload: { relativePath: OLD } }]]]),
+        dense: {
+          vectors: new Map([
+            ["t-moved", QUERY],
+            ["t-sibling", withCosine(0.3)],
+          ]),
+          pending: 0,
+        },
+      });
+      view.renamedFrom = new Map([[NEW, OLD]]);
+
+      const results = await similarWithStored(
+        view,
+        { positiveIds: ["br"] },
+        {
+          br: { relativePath: OLD, symbolId: "renamedTarget" },
+        },
+      );
+
+      expect(results.map((r) => r.id)).not.toContain("t-moved");
+      expect(results.map((r) => r.id)).toContain("t-sibling");
+    });
+
+    it("leaves out a negative example's tree counterpart as well", async () => {
+      const results = await similarWithStored(
+        treeView(),
+        { positiveCode: ["fresh"], negativeIds: ["bt"] },
+        { bt: { relativePath: TOUCHED, symbolId: "weakHelper" } },
+      );
+
+      expect(results.map((r) => r.id)).not.toContain("t-weak");
+      expect(results.map((r) => r.id)).toContain("t-fresh");
+    });
+
+    it("keeps a same-named symbol of another file", async () => {
+      const results = await similarWithStored(
+        treeView(),
+        { positiveIds: ["b1"] },
+        {
+          b1: { relativePath: "src/a.ts", symbolId: "freshHelper" },
+        },
+      );
+
+      expect(results.map((r) => r.id)).toContain("t-fresh");
+    });
+  });
 });
