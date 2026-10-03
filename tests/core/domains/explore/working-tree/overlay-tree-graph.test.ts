@@ -158,6 +158,23 @@ describe("WorkingTreeOverlay tree graph (WTO-7)", () => {
       await chunkLayer.dispose();
     });
 
+    // Live G1: the source recomputes git of files a commit touched since the
+    // index, so it needs the index's stamp.
+    it("should hand the source the base index's indexedCommit", async () => {
+      const chunkLayer = layer();
+      const deltaSignals = signalSource(BUILT);
+      const view = await overlayWith(deltaReader(["src/a.ts"]), {
+        treeGraph: graphSource(),
+        deltaSignals,
+        deltaChunks: { layer: chunkLayer, resolveChunkerConfig: async () => CHUNKER_CONFIG },
+      }).view(workingTree(), "proj");
+
+      await view.readDeltaChunks?.();
+
+      expect(deltaSignals.enrich.mock.calls[0][0].indexedCommit).toBe("a".repeat(40));
+      await chunkLayer.dispose();
+    });
+
     // Invariant changed (live D8): READING the rows claims nothing — find_similar
     // reads them only for a tree positive's content and answers with base rows.
     // The strategy that puts the rows into its answer claims the floors, and

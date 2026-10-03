@@ -14,11 +14,16 @@
  * Live probe this pins: a modified `hybrid.ts` delta row under `hotspots` with
  * `filter: {}` ranked #24 at 0.132 — scored as a file with no history.
  */
+import { appendFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { createGitWorkingTreeFixture } from "../../../__helpers__/git-working-tree-fixture.js";
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
 import { createComposition } from "../../../../../src/core/api/internal/composition.js";
 import { createWorkingTreeDeltaSignalSource } from "../../../../../src/core/api/internal/infra/working-tree-delta-signals.js";
+import { createWorkingTreeGitSignalSource } from "../../../../../src/core/api/internal/infra/working-tree-git-signals.js";
 import type {
   WorkingTree,
   WorkingTreeBasePoint,
@@ -325,10 +330,17 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
     };
   }
 
-  /** A port answering per history path: a file block, and chunk blocks by row key. */
+  /**
+   * A port answering per history path: a file block, and chunk blocks by row
+   * key; `committedSince` — the paths a commit since the index touched.
+   */
   const answering = (
     signals: Record<string, { file?: Record<string, unknown>; chunks?: Record<string, Record<string, unknown>> }>,
+    committedSince?: readonly string[],
   ) => ({
+    pathsCommittedSince: vi.fn<WorkingTreeGitSignalSource["pathsCommittedSince"]>(async () =>
+      committedSince ? new Set(committedSince) : undefined,
+    ),
     signalsOf: vi.fn<WorkingTreeGitSignalSource["signalsOf"]>(async (_root, targets) => {
       const answer = new Map<string, WorkingTreeGitSignals>();
       for (const target of targets) {
@@ -407,14 +419,36 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
     ]);
   });
 
-  it("keeps a brand-new symbol without a chunk block when its lines have no history", async () => {
-    const gitSignals = answering({ [FOO]: { chunks: {} } });
-    const source = sourceWith([basePoint("b1", FOO, "Foo#kept", 4)], gitSignals);
+  // Invariant changed (live G4): a brand-new symbol in a tracked, modified file
+  // gets the chunk walk's zero block — what ingest writes for a chunk no commit
+  // touched — not "no block". Real git: the port's answer is the invariant.
+  it("gives a brand-new symbol in a tracked file the chunk walk's zero block", async () => {
+    const fixture = createGitWorkingTreeFixture();
+    try {
+      fixture.commit(fixture.mainRoot, { [FOO]: "export function kept(): number {\n  return 1;\n}\n" }, "add foo");
+      appendFileSync(join(fixture.mainRoot, FOO), "\nexport function brandNew(): number {\n  return 2;\n}\n");
+      const source = sourceWith(
+        [basePoint("b1", FOO, "Foo#kept", 4)],
+        createWorkingTreeGitSignalSource({
+          vcsAdapter: "git",
+          timeoutMs: 30_000,
+          chunk: { maxAgeMonths: 6, timeoutMs: 30_000, maxFileLines: 5000, concurrency: 4 },
+        }),
+      );
 
-    const { rows } = await source.enrich({ tree: TREE, rows: [deltaRow("d1", FOO, "Foo#brandNew")] });
+      const { rows } = await source.enrich({
+        tree: { ...TREE, root: fixture.mainRoot },
+        rows: [deltaRow("d1", FOO, "Foo#kept", [1, 3]), deltaRow("d2", FOO, "Foo#brandNew", [5, 7])],
+      });
 
-    // The reranker's L3 blend falls back to the file signals (by design).
-    expect(rows[0].payload.git).toEqual({ file: GIT_FILE });
+      expect(rows[0].payload.git).toEqual({ file: GIT_FILE, chunk: gitChunk(4) });
+      expect(rows[1].payload.git).toEqual({
+        file: GIT_FILE,
+        chunk: expect.objectContaining({ commitCount: 0, lastModifiedAt: 0, blameDominantAuthor: "unknown" }),
+      });
+    } finally {
+      fixture.cleanup();
+    }
   });
 
   it("asks for the old path, reading lines from the new one, when a renamed file's old path has no base point", async () => {
@@ -478,6 +512,7 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
       signalsOf: async () => {
         throw new Error("git exploded");
       },
+      pathsCommittedSince: async () => undefined,
     });
 
     const { rows } = await source.enrich({
@@ -487,5 +522,99 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
 
     expect(rows[0].payload).not.toHaveProperty("git");
     expect(rows[1].payload.git).toEqual({ file: GIT_FILE, chunk: gitChunk(4) });
+  });
+
+  /**
+   * Live G1: a file a COMMIT touched after the index has history its base
+   * points never saw — inheriting them ranked a just-committed test file as 196
+   * days old. Its git is recomputed from the tree's real history, every row of
+   * it; a file changed only by uncommitted edits keeps inheriting (an
+   * uncommitted edit is not a commit). The committed set is asked once per
+   * request.
+   */
+  describe("a file whose history moved since the index", () => {
+    const INDEXED = "a".repeat(40);
+    const fresh = { commitCount: 41, lastModifiedAt: 1_790_000_000, ageDays: 0 };
+
+    it("recomputes git.file and every row's git.chunk instead of inheriting them", async () => {
+      const gitSignals = answering(
+        { [FOO]: { file: fresh, chunks: { d1: onDemandChunk(12), d2: onDemandChunk(1) } } },
+        [FOO, "src/elsewhere.ts"],
+      );
+      const source = sourceWith([basePoint("b1", FOO, "Foo#kept", 4), basePoint("b2", SMALL, "c", 3)], gitSignals);
+
+      const { rows } = await source.enrich({
+        tree: TREE,
+        indexedCommit: INDEXED,
+        rows: [
+          deltaRow("d1", FOO, "Foo#kept", [1, 3]),
+          deltaRow("d2", FOO, "Foo#other", [5, 6]),
+          deltaRow("d3", SMALL, "c", [1, 3]),
+        ],
+      });
+
+      expect(rows[0].payload.git).toEqual({ file: fresh, chunk: onDemandChunk(12) });
+      expect(rows[1].payload.git).toEqual({ file: fresh, chunk: onDemandChunk(1) });
+      // Changed only by uncommitted edits: the base's history still holds.
+      expect(rows[2].payload.git).toEqual({ file: GIT_FILE, chunk: gitChunk(3) });
+      expect(gitSignals.pathsCommittedSince).toHaveBeenCalledTimes(1);
+      expect(gitSignals.pathsCommittedSince).toHaveBeenCalledWith(TREE.root, INDEXED);
+      expect(gitSignals.signalsOf).toHaveBeenCalledWith(TREE.root, [
+        {
+          relativePath: FOO,
+          treePath: FOO,
+          maxEndLine: 6,
+          fileSignals: true,
+          chunks: [
+            { key: "d1", startLine: 1, endLine: 3 },
+            { key: "d2", startLine: 5, endLine: 6 },
+          ],
+        },
+      ]);
+    });
+
+    it("recomputes a file moved by a commit at its new path, whose history follows the move", async () => {
+      const gitSignals = answering({ [NEW]: { file: fresh, chunks: { d1: onDemandChunk(8) } } }, [OLD, NEW]);
+      const source = sourceWith([basePoint("b1", OLD, "Foo#kept", 7)], gitSignals);
+
+      const { rows } = await source.enrich({
+        tree: TREE,
+        indexedCommit: INDEXED,
+        rows: [deltaRow("d1", NEW, "Foo#kept", [1, 3])],
+        renamedFrom: new Map([[NEW, OLD]]),
+      });
+
+      expect(rows[0].payload.git).toEqual({ file: fresh, chunk: onDemandChunk(8) });
+      expect(gitSignals.signalsOf).toHaveBeenCalledWith(TREE.root, [
+        {
+          relativePath: NEW,
+          treePath: NEW,
+          maxEndLine: 3,
+          fileSignals: true,
+          chunks: [{ key: "d1", startLine: 1, endLine: 3 }],
+        },
+      ]);
+    });
+
+    it("keeps inheriting when git cannot say what was committed, or the index has no stamp", async () => {
+      const unknown = answering({ [FOO]: { file: fresh } }, undefined);
+      const stampless = answering({ [FOO]: { file: fresh } }, [FOO]);
+
+      const [a, b] = await Promise.all([
+        sourceWith([basePoint("b1", FOO, "Foo#kept", 4)], unknown).enrich({
+          tree: TREE,
+          indexedCommit: INDEXED,
+          rows: [deltaRow("d1", FOO, "Foo#kept")],
+        }),
+        sourceWith([basePoint("b1", FOO, "Foo#kept", 4)], stampless).enrich({
+          tree: TREE,
+          rows: [deltaRow("d1", FOO, "Foo#kept")],
+        }),
+      ]);
+
+      expect(a.rows[0].payload.git).toEqual({ file: GIT_FILE, chunk: gitChunk(4) });
+      expect(b.rows[0].payload.git).toEqual({ file: GIT_FILE, chunk: gitChunk(4) });
+      expect(stampless.pathsCommittedSince).not.toHaveBeenCalled();
+    });
   });
 });

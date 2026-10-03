@@ -15,6 +15,8 @@ import type { Reranker } from "../../../../../src/core/domains/explore/reranker.
 import { ScrollRankStrategy } from "../../../../../src/core/domains/explore/strategies/scroll-rank.js";
 import type { ExploreContext } from "../../../../../src/core/domains/explore/strategies/types.js";
 import type { WorkingTreeView } from "../../../../../src/core/domains/explore/working-tree/index.js";
+import { gitPayloadSignalDescriptors } from "../../../../../src/core/domains/trajectory/git/payload-signals.js";
+import { AgeSignal } from "../../../../../src/core/domains/trajectory/git/rerank/derived-signals/index.js";
 
 const TOUCHED = "src/modified.ts";
 const GONE = "src/deleted.ts";
@@ -99,5 +101,59 @@ describe("rank_chunks working-tree substitution", () => {
     });
 
     expect(results.map((r) => r.id)).toEqual(["t-big"]);
+  });
+});
+
+/**
+ * Live G3 (bd tea-rags-mcp-xi2r9): each `age` / `recency` scroll leg pools only
+ * stamps above the no-commit sentinel (`OrderByFieldResolver#resolveScrolls`,
+ * `range: { gt: 0 }`), so a tree row joins the pool only when it passes the
+ * admission of a leg that could have pooled its indexed twin — not merely the
+ * request filter.
+ */
+describe("rank_chunks working-tree substitution — per-leg admission", () => {
+  const ageReranker = {
+    rerank: vi.fn((r: { id: string }[]) => r.map((x, i) => ({ ...x, score: 1 - i * 0.1 }))),
+    getDescriptors: vi.fn().mockReturnValue([new AgeSignal()]),
+    getPreset: vi.fn().mockReturnValue(undefined),
+    getFullPreset: vi.fn().mockReturnValue(undefined),
+  } as unknown as Reranker;
+
+  async function rankByAge(view: WorkingTreeView, ctx: Partial<ExploreContext> = {}) {
+    const qdrant = {
+      scrollOrdered: vi.fn().mockResolvedValue([]),
+      ensurePayloadIndex: vi.fn().mockResolvedValue(true),
+    } as unknown as QdrantManager;
+    return new ScrollRankStrategy(qdrant, ageReranker, gitPayloadSignalDescriptors, []).execute({
+      collectionName: "c",
+      limit: 10,
+      weights: { age: 1 },
+      workingTreeView: view,
+      ...ctx,
+    });
+  }
+
+  it("keeps a tree row under the no-commit stamp sentinel out of an age scroll's pool", async () => {
+    const stamped = codeRow("t-stamped", { relativePath: TOUCHED, git: { chunk: { lastModifiedAt: 1_700_000_000 } } });
+    const sentinel = codeRow("t-sentinel", { relativePath: TOUCHED, git: { chunk: { lastModifiedAt: 0 } } });
+    const unstamped = codeRow("t-unstamped", { relativePath: TOUCHED });
+
+    const results = await rankByAge(fakeWorkingTreeView({ changed: [TOUCHED], rows: [stamped, sentinel, unstamped] }));
+
+    expect(results.map((r) => r.id)).toEqual(["t-stamped"]);
+  });
+
+  it("still holds the admitted rows to the request filter", async () => {
+    const python = codeRow("t-py", {
+      relativePath: TOUCHED,
+      language: "python",
+      git: { chunk: { lastModifiedAt: 1_700_000_000 } },
+    });
+
+    const results = await rankByAge(fakeWorkingTreeView({ changed: [TOUCHED], rows: [python] }), {
+      filter: { must: [{ key: "language", match: { value: "typescript" } }] },
+    });
+
+    expect(results).toEqual([]);
   });
 });

@@ -696,6 +696,27 @@ export async function readBlobCommitTime(
   return out.trim() === "" || !Number.isFinite(seconds) ? null : seconds * 1000;
 }
 
+/**
+ * Every path a commit in `sinceCommit..headCommit` touched, repo-relative and
+ * sorted (`git log --name-only --no-renames`: a committed move lists both its
+ * sides). One spawn for the whole range — the working-tree overlay's answer to
+ * "whose history moved since the index" (live G1, bd tea-rags-mcp-xi2r9). An
+ * unknown commit or a path outside a repository rejects.
+ */
+export async function listPathsCommittedSince(
+  repoRoot: string,
+  sinceCommit: string,
+  headCommit: string,
+  timeoutMs = TREE_LISTING_STALL_MS,
+): Promise<string[]> {
+  const out = await execWithStallGuard(
+    resolveGitExecutable(),
+    ["log", "-z", "--format=", "--name-only", "--no-renames", `${sinceCommit}..${headCommit}`, "--"],
+    { cwd: repoRoot, stallTimeoutMs: timeoutMs },
+  );
+  return [...new Set(splitNulTerminated(out).map((path) => path.replace(/^\n+/, "")))].filter(Boolean).sort();
+}
+
 function splitNulTerminated(out: string): string[] {
   return out.split("\0").filter((p) => p.length > 0);
 }

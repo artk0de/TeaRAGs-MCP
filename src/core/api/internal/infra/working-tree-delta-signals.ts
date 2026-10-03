@@ -23,10 +23,16 @@
  *   floor, committed after the index), `git.chunk` of a row whose symbol the
  *   base never held — attributed over the row's TREE lines, where lines the
  *   working file added hold no history. A brand-new symbol is all such lines:
- *   it gets no chunk block, and the reranker's alpha blend falls back to the
- *   file value (by design, not a gap). An untracked file never committed has
- *   no history: no `git.file`, and each row the chunk walk's zero block — what
- *   ingest writes for it in the alias's own checkout (live round-3 D4).
+ *   it gets the chunk walk's zero block, as ingest writes it (live G4). An
+ *   untracked file never committed has no history: no `git.file`, and each row
+ *   the chunk walk's zero block — what ingest writes for it in the alias's own
+ *   checkout (live round-3 D4).
+ * - A file a COMMIT touched since the index (`indexedCommit..HEAD`, asked once
+ *   per request) has history its base points never saw: nothing is inherited,
+ *   its `git.file` and every row's `git.chunk` are computed from the tree's
+ *   history (live G1 — a just-committed file ranked 196 days old). A committed
+ *   move is computed at its new path, whose history follows the rename. A file
+ *   changed only by uncommitted edits keeps inheriting.
  * - **codegraph** — the tree graph, when `readTreeGraph` answers `built` within
  *   {@link WORKING_TREE_SEARCH_GRAPH_WAIT_MS}: file signals by
  *   `buildCodegraphFileSignals` over the tree's file metrics and fan-in p95,
@@ -144,8 +150,12 @@ export function createWorkingTreeDeltaSignalSource(
     enrich: async (request: WorkingTreeDeltaSignalRequest): Promise<WorkingTreeDeltaSignalResult> => {
       const paths = [...new Set(request.rows.map((row) => pathOf(row.payload)).filter((p) => p !== ""))].sort();
       if (paths.length === 0) return { rows: [...request.rows] };
-      const historyPathOf = (path: string): string => request.renamedFrom?.get(path) ?? path;
-      const base = await groupBasePayload(request, [...new Set(paths.map(historyPathOf))]);
+      const inheritedPathOf = (path: string): string => request.renamedFrom?.get(path) ?? path;
+      const [base, committedSince] = await Promise.all([
+        groupBasePayload(request, [...new Set(paths.map(inheritedPathOf))]),
+        readCommittedSince(deps.gitSignals, request),
+      ]);
+      const historyOf = (path: string): GitHistory => gitHistoryOf(path, inheritedPathOf(path), committedSince);
 
       const readTree = async (): Promise<{ treeGraph?: WorkingTreeGraphState; tree?: TreeGraphSignals }> => {
         if (!request.readTreeGraph) return {};
@@ -161,11 +171,11 @@ export function createWorkingTreeDeltaSignalSource(
       };
       const [{ treeGraph, tree }, onDemandGit] = await Promise.all([
         readTree(),
-        readOnDemandGit(deps.gitSignals, request, base, historyPathOf),
+        readOnDemandGit(deps.gitSignals, request, base, historyOf),
       ]);
 
       const rows = request.rows.map((row) =>
-        enrichRow(row, base.byFile, tree, historyPathOf(pathOf(row.payload)), onDemandGit),
+        enrichRow(row, base.byFile, tree, historyOf(pathOf(row.payload)), onDemandGit),
       );
       return treeGraph ? { rows, treeGraph } : { rows };
     },
@@ -209,18 +219,58 @@ async function groupBasePayload(
 }
 
 /**
+ * Where a delta file's git comes from. `path` is the history path — the file's
+ * own, or for a move the old path its history sits at (D12). `moved` → a commit
+ * since the index touched it: the base points predate that history, so the
+ * file's git is recomputed and nothing is inherited (live G1).
+ */
+interface GitHistory {
+  path: string;
+  moved: boolean;
+}
+
+/**
+ * A committed move's history follows it to the new path (the file signals walk
+ * renames onto the HEAD path), so a tree path a commit touched is its own
+ * history; otherwise the inherited path is, moved when a commit touched it.
+ * Without the committed set nothing is known to have moved.
+ */
+function gitHistoryOf(
+  treePath: string,
+  inheritedPath: string,
+  committedSince: ReadonlySet<string> | undefined,
+): GitHistory {
+  if (committedSince?.has(treePath)) return { path: treePath, moved: true };
+  return { path: inheritedPath, moved: committedSince?.has(inheritedPath) ?? false };
+}
+
+/**
+ * The paths a commit in `indexedCommit..HEAD` touched — asked once per request
+ * (a view enriches its rows once). No stamp, no git port, or a failure → none.
+ */
+async function readCommittedSince(
+  source: WorkingTreeGitSignalSource | undefined,
+  request: WorkingTreeDeltaSignalRequest,
+): Promise<ReadonlySet<string> | undefined> {
+  if (!source || !request.indexedCommit) return undefined;
+  return source.pathsCommittedSince(request.tree.root, request.indexedCommit).catch(() => undefined);
+}
+
+/**
  * Git signals computed on demand for what no base point answers (D12):
  * `git.file` of a history path the base never chunked (below the chunk floor,
  * committed after the index, a move whose old path it never chunked), and
  * `git.chunk` of a row no base point of the same symbol answers — inheritance
- * stays wherever one does. Asked once per request, in the rows' TREE lines;
- * an index without git asks nothing. A failure answers nothing.
+ * stays wherever one does. A file whose history moved since the index (live G1)
+ * is answered by no base point: its file and every row are computed. Asked
+ * once per request, in the rows' TREE lines; an index without git asks
+ * nothing. A failure answers nothing.
  */
 async function readOnDemandGit(
   source: WorkingTreeGitSignalSource | undefined,
   request: WorkingTreeDeltaSignalRequest,
   base: BasePayload,
-  historyPathOf: (path: string) => string,
+  historyOf: (path: string) => GitHistory,
 ): Promise<ReadonlyMap<string, WorkingTreeGitSignals>> {
   if (!source || !base.carriesGit) return new Map();
   const targets = new Map<
@@ -230,8 +280,9 @@ async function readOnDemandGit(
   for (const { id, payload } of request.rows) {
     const path = pathOf(payload);
     if (path === "") continue;
-    const historyPath = historyPathOf(path);
-    const historyFile = base.byFile.get(historyPath);
+    const history = historyOf(path);
+    const historyPath = history.path;
+    const historyFile = history.moved ? undefined : base.byFile.get(historyPath);
     const wantFile = !historyFile?.gitFile;
     const { startLine, endLine } = payload;
     const hasLines = typeof startLine === "number" && typeof endLine === "number";
@@ -295,7 +346,7 @@ function enrichRow(
   row: WorkingTreeDeltaRow,
   base: ReadonlyMap<string, BaseFilePayload>,
   tree: TreeGraphSignals | undefined,
-  historyPath: string,
+  history: GitHistory,
   onDemandGit: ReadonlyMap<string, WorkingTreeGitSignals>,
 ): WorkingTreeDeltaRow {
   const path = pathOf(row.payload);
@@ -304,9 +355,10 @@ function enrichRow(
   const payload: Record<string, unknown> = { ...row.payload };
 
   // git follows the file's HISTORY path — its own, or the old path of a move.
-  // A base point answers first; what none answers was computed on demand.
-  const historyFile = base.get(historyPath);
-  const onDemand = onDemandGit.get(historyPath);
+  // A base point answers first, unless a commit since the index moved that
+  // history; what none answers was computed on demand.
+  const historyFile = history.moved ? undefined : base.get(history.path);
+  const onDemand = onDemandGit.get(history.path);
   // A path no commit touched has no file block, only the walk's zero chunk
   // blocks — what ingest writes for an untracked file (live round-3 D4).
   const gitFile = historyFile?.gitFile ?? onDemand?.file;

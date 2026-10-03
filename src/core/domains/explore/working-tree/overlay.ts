@@ -331,9 +331,11 @@ async function enrichDeltaRows(
   renamedFrom: ReadonlyMap<string, string> | undefined,
 ): Promise<readonly ScrollChunk[]> {
   if (rows.length === 0) return rows;
+  const { indexedCommit } = view.marker;
   const enriched = await source.enrich({
     tree,
     rows,
+    ...(indexedCommit ? { indexedCommit } : {}),
     ...(renamedFrom && renamedFrom.size > 0 ? { renamedFrom } : {}),
     ...(view.readTreeGraph ? { readTreeGraph: view.readTreeGraph } : {}),
     ...(view.readTouchedBasePoints ? { readTouchedBasePoints: view.readTouchedBasePoints } : {}),

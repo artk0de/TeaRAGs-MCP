@@ -172,7 +172,12 @@ helper the other `~/.tea-rags/*` stores use), one JSON entry per
 produced the entry, the content's git blob id, and `lastReadAt` are stored.
 WTO-5 dense vectors will join the same entry.
 
-Retention (sweep at server start, then every 6 h on an unref'd timer):
+Retention (first sweep 2 min after process start, then every 6 h, on unref'd
+timers; throttled across processes by `<root>/.sweep-stamp.json` to one sweep
+per 6 h per store, so a one-shot CLI call never pays it; aborted on exit). The
+request path never asks git: an entry read within 96 h is kept unread, a
+resolved commit time is persisted in the entry's meta and never re-asked, and at
+most 32 lookups (4 concurrent) run per sweep, never-asked entries first:
 
 | Entry state                                                                                                      | Action    |
 | ---------------------------------------------------------------------------------------------------------------- | --------- |
@@ -287,12 +292,32 @@ Consumers:
 graph. The reranker is not changed: an absent chunk signal already blends to the
 file value, and a file with no history scoring zero on churn is correct.
 
-By design, not a defect (D12): a brand-new symbol in a hot file has no
-`git.chunk` — every one of its lines is uncommitted, so the on-demand chunk walk
-finds no history for it — and the reranker's L3 alpha blend falls back to the
-file's signals. The row ranks with its file's churn, not with zero. A symbol the
-base never held whose lines ARE committed (a renamed method, a re-split chunk)
-gets its chunk history on demand.
+D12, revised (live G4): a delta row carries exactly the payload a reindex of
+that tree would write. A brand-new symbol in a tracked file gets the chunk
+walk's zero `git.chunk` block — ingest walks every chunk of the file, and one no
+commit reached is assembled from an empty accumulator against the file's churn,
+with unknown ownership since no blame line attributes an uncommitted line. (The
+first P0 cut gave it no block and let the L3 blend fall back to the file
+signals; that diverged from what ingest writes.) A symbol the base never held
+whose lines ARE committed (a renamed method, a re-split chunk) gets its chunk
+history on demand.
+
+History that moved since the index (live G1): a file a commit in
+`indexedCommit..HEAD` touched — one `git log --name-only --no-renames` per view,
+both sides of a committed move — inherits nothing from its base points. Its
+`git.file` and every row's `git.chunk` are computed on demand from the tree's
+history, at the new path for a committed move (the file walk follows the
+rename). A file changed only by uncommitted edits keeps inheriting.
+
+Persistence (live G2): computed blocks are kept under
+`<appData>/working-tree/.git-signals/`, one record per (repository toplevel,
+HEAD, history path, signal fingerprint = build version + squash and chunk-walk
+config, UTC day), holding `git.file` by line extent and `git.chunk` by (tree
+content sha, row range). The day term bounds the drift of the time-relative
+values (`ageDays`, `recencyWeightedFreq`). A read bumps the record's mtime; a
+record unread 96 h is evicted, then least-recently-read past a 64 MB cap, by a
+sweep that runs only in a long-lived server. Misses are computed one batch at a
+time per process.
 
 Tests: rename, delete and move each assert which edges disappear and which
 appear (a fixture repository, the real provider, a direct pool); a caller in an

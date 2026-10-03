@@ -32,6 +32,7 @@ import {
   createPathCollectionResolver,
   createWorkingTreeDeltaSignalSource,
   createWorkingTreeGitSignalSource,
+  createWorkingTreeGitSignalStore,
   ExploreFacade,
   GraphFacade,
   IngestFacade,
@@ -43,6 +44,7 @@ import {
   readPayloadImportSpecifiers,
   ReviewChangesOps,
   ReviewFacade,
+  scheduleWorkingTreeGitSignalSweep,
   scheduleWorkingTreeGraphSweep,
   SchemaBuilder,
   TracePathOps,
@@ -1191,12 +1193,17 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   // worker because a delta is capped at 200 files, released after 60 s idle
   // and on dispose. The payload is shaped by the builder ingest's pipeline uses.
   // Behind its memory cache, a persistent store under `<appData>/working-tree`
-  // keeps chunked files across restarts; it is swept now and every 6 h on an
-  // unref'd timer, stopped by cleanup. Rows are keyed by this package version
+  // keeps chunked files across restarts; it is swept (if no process swept it
+  // within 6 h) after a start-up delay and every 6 h on unref'd timers — never
+  // on a request — stopped, and an in-flight sweep aborted, by cleanup. Rows are keyed by this package version
   // too, so an upgraded chunker never serves an older build's ids.
   const workingTreePayloadBuilder = new StaticPayloadBuilder();
   const workingTreeChunkStore = createWorkingTreeChunkStore({ rootDir: join(config.paths.appData, "working-tree") });
   const stopWorkingTreeChunkSweep = scheduleWorkingTreeChunkSweep(workingTreeChunkStore);
+  const workingTreeGitSignalStore = createWorkingTreeGitSignalStore({
+    rootDir: join(config.paths.appData, "working-tree"),
+  });
+  const stopWorkingTreeGitSignalSweep = scheduleWorkingTreeGitSignalSweep(workingTreeGitSignalStore);
   const workingTreeChunkLayer = createWorkingTreeChunkLayer({
     createPool: (chunkerConfig) => new ChunkerPool(1, chunkerConfig),
     chunkFile: async (pool, file) => buildFileChunkPoints(pool, file, workingTreePayloadBuilder),
@@ -1256,6 +1263,10 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
       ...(config.trajectoryIngest.enableGitMetadata
         ? {
             gitSignals: createWorkingTreeGitSignalSource({
+              // Live G2: computed blocks outlive the process, keyed by HEAD,
+              // content, this build and the signal config; swept with the chunk store.
+              store: workingTreeGitSignalStore,
+              builderVersion: pkg.version,
               vcsAdapter: zodConfig.vcs.adapter,
               timeoutMs: zodConfig.trajectoryGit.logTimeoutMs,
               squashOpts: gitSquashOptionsOf(config.trajectoryIngest),
@@ -1623,6 +1634,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     cleanedUp = true;
     registryWatchStop();
     stopWorkingTreeChunkSweep();
+    stopWorkingTreeGitSignalSweep();
     stopWorkingTreeGraphSweep();
     // Shutdown abandons in-flight tree-graph builds: kill the children, drop
     // this process's staging dirs (bd tea-rags-mcp-xi2r9, D6). The cache also

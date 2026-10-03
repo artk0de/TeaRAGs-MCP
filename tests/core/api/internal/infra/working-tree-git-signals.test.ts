@@ -7,7 +7,8 @@
  * added hold no history. Cached per (toplevel, HEAD, path, line extent) for the
  * file and per (toplevel, HEAD, path, content sha, range) for a chunk.
  */
-import { appendFileSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,6 +17,8 @@ import {
   createGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
 } from "../../../__helpers__/git-working-tree-fixture.js";
+import * as gitCli from "../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import { createWorkingTreeGitSignalStore } from "../../../../../src/core/api/internal/infra/working-tree-git-signal-store.js";
 import { createWorkingTreeGitSignalSource } from "../../../../../src/core/api/internal/infra/working-tree-git-signals.js";
 import type { WorkingTreeGitSignalTarget } from "../../../../../src/core/contracts/types/working-tree.js";
 import * as onDemand from "../../../../../src/core/domains/trajectory/git/infra/on-demand-signals.js";
@@ -23,6 +26,7 @@ import * as onDemand from "../../../../../src/core/domains/trajectory/git/infra/
 vi.mock("../../../../../src/core/domains/trajectory/git/infra/on-demand-signals.js", async (importOriginal) =>
   importOriginal(),
 );
+vi.mock("../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (importOriginal) => importOriginal());
 
 const C_V1 = "export function cFn(n: number): number {\n  return n;\n}\n";
 const C_V2 = "export function cFn(n: number): number {\n  return n + 1;\n}\n";
@@ -161,7 +165,12 @@ describe("createWorkingTreeGitSignalSource", () => {
       });
     });
 
-    it("gives rows made only of uncommitted lines no chunk block", async () => {
+    // Invariant changed (live G4, bd tea-rags-mcp-xi2r9): ingest walks every
+    // chunk of a tracked file, and a chunk no commit touched — a brand-new
+    // symbol — gets the walk's zero overlay (`assembleOverlays` over an
+    // accumulator no commit reached), not nothing. Its lines were never
+    // committed, so no blame line attributes them: ownership is unknown.
+    it("gives rows made only of uncommitted lines the chunk walk's zero block", async () => {
       appendFileSync(join(tree, "src/cyc/c.ts"), FRESH);
 
       const signals = await createWorkingTreeGitSignalSource(DEPS).signalsOf(tree, [
@@ -176,7 +185,14 @@ describe("createWorkingTreeGitSignalSource", () => {
 
       const chunks = signals.get("src/cyc/c.ts")?.chunks;
       expect(chunks?.get("cFn")).toMatchObject({ commitCount: 2 });
-      expect(chunks?.has("fresh")).toBe(false);
+      expect(chunks?.get("fresh")).toMatchObject({
+        commitCount: 0,
+        churnRatio: 0,
+        bugFixRate: 0,
+        lastModifiedAt: 0,
+        blameDominantAuthor: "unknown",
+        blameDominantAuthorPct: 0,
+      });
     });
 
     it("reads a renamed file's history at its old path and its lines at the new one", async () => {
@@ -187,6 +203,102 @@ describe("createWorkingTreeGitSignalSource", () => {
       ]);
 
       expect(signals.get("src/cyc/c.ts")?.chunks.get("cFn")).toMatchObject({ commitCount: 2 });
+    });
+  });
+
+  // Live G1: whose history moved since the index — one git call per range.
+  describe("pathsCommittedSince", () => {
+    it("lists every path a commit since the stamp touched, both sides of a committed move, no uncommitted edit", async () => {
+      const indexed = fixture.git(tree, "rev-parse", "HEAD").trim();
+      fixture.commit(tree, { "src/new.ts": "export const n = 1;\n", "README.md": "# r\n" }, "add new");
+      fixture.git(tree, "mv", "src/cyc/c.ts", "src/cyc/moved.ts");
+      fixture.git(tree, "commit", "-q", "-m", "move c");
+      write("src/index.ts", "export const base = 2;\n");
+
+      const source = createWorkingTreeGitSignalSource(DEPS);
+
+      expect(await source.pathsCommittedSince(tree, indexed)).toEqual(
+        new Set(["README.md", "src/new.ts", "src/cyc/c.ts", "src/cyc/moved.ts"]),
+      );
+      // Relative to a root below the toplevel; a sibling directory's path is not the root's.
+      expect(await source.pathsCommittedSince(join(tree, "src"), indexed)).toEqual(
+        new Set(["new.ts", "cyc/c.ts", "cyc/moved.ts"]),
+      );
+    });
+
+    it("answers undefined for a commit the repository does not have", async () => {
+      expect(await createWorkingTreeGitSignalSource(DEPS).pathsCommittedSince(tree, "f".repeat(40))).toBeUndefined();
+    });
+
+    it("asks git once per range, and again once HEAD moves", async () => {
+      const spy = vi.spyOn(gitCli, "listPathsCommittedSince");
+      const indexed = fixture.git(tree, "rev-parse", "HEAD").trim();
+      fixture.commit(tree, { "src/new.ts": "export const n = 1;\n" });
+      const source = createWorkingTreeGitSignalSource(DEPS);
+
+      await source.pathsCommittedSince(tree, indexed);
+      await source.pathsCommittedSince(tree, indexed);
+      expect(spy).toHaveBeenCalledTimes(1);
+
+      fixture.commit(tree, { "src/later.ts": "export const l = 1;\n" });
+      expect(await source.pathsCommittedSince(tree, indexed)).toEqual(new Set(["src/new.ts", "src/later.ts"]));
+      expect(spy).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // Live G2: every `tea-rags call` is a fresh process, and a cold find_symbol
+  // on a 159-file delta spawned 136 blames + 137 cat-files each time.
+  describe("persistent store", () => {
+    let storeRoot: string;
+    beforeEach(() => {
+      storeRoot = mkdtempSync(join(tmpdir(), "wt-git-signals-"));
+    });
+    afterEach(() => {
+      rmSync(storeRoot, { recursive: true, force: true });
+    });
+
+    const persistent = (overrides: { builderVersion?: string; now?: () => number } = {}) =>
+      createWorkingTreeGitSignalSource({
+        ...DEPS,
+        store: createWorkingTreeGitSignalStore({ rootDir: storeRoot }),
+        builderVersion: "1.0.0",
+        ...overrides,
+      });
+    const ask = () => [
+      target({
+        maxEndLine: 7,
+        chunks: [
+          { key: "cFn", startLine: 1, endLine: 3 },
+          { key: "fresh", startLine: 5, endLine: 7 },
+        ],
+      }),
+    ];
+
+    it("answers a second process from the store, computing nothing for unchanged inputs", async () => {
+      appendFileSync(join(tree, "src/cyc/c.ts"), FRESH);
+      const spy = vi.spyOn(onDemand, "buildOnDemandGitSignals");
+
+      const first = await persistent().signalsOf(tree, ask());
+      const second = await persistent().signalsOf(tree, ask());
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(second.get("src/cyc/c.ts")?.file).toEqual(first.get("src/cyc/c.ts")?.file);
+      expect([...(second.get("src/cyc/c.ts")?.chunks ?? [])]).toEqual([...(first.get("src/cyc/c.ts")?.chunks ?? [])]);
+      expect(second.get("src/cyc/c.ts")?.chunks.get("fresh")).toMatchObject({ commitCount: 0 });
+    });
+
+    it("recomputes when the tree content, the signal builder, or the day differs", async () => {
+      const spy = vi.spyOn(onDemand, "buildOnDemandGitSignals");
+      const day = 86_400_000;
+      const t0 = Date.now();
+
+      await persistent({ now: () => t0 }).signalsOf(tree, ask());
+      await persistent({ now: () => t0, builderVersion: "1.0.1" }).signalsOf(tree, ask());
+      await persistent({ now: () => t0 + day }).signalsOf(tree, ask());
+      appendFileSync(join(tree, "src/cyc/c.ts"), FRESH);
+      await persistent({ now: () => t0 }).signalsOf(tree, ask());
+
+      expect(spy).toHaveBeenCalledTimes(4);
     });
   });
 

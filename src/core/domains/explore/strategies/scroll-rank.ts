@@ -123,8 +123,12 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
     };
 
     // Working tree: the pool's base rows of touched files give way to the
-    // tree's rows that pass the scroll's own filter and the exact pathPattern.
-    const admission = { requestFilter: ctx.filter, pathMatcher: matcher };
+    // tree's rows that one scroll leg's own filter admits (the request filter,
+    // plus the age-stamp floor on a stamp leg — live G3) and the exact pathPattern.
+    const admittedByAnyLeg =
+      (legFilters: readonly (Record<string, unknown> | undefined)[]) =>
+      (row: ScrollChunk): boolean =>
+        legFilters.some((requestFilter) => workingTreeRowAdmitted(row, { requestFilter, pathMatcher: matcher }));
     const baseOpts = {
       weights,
       level: ctx.level ?? "chunk",
@@ -135,8 +139,10 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
       // The rerank collapses on the preset's groupBy, so the pool is sized in
       // those groups — not in points (bd tea-rags-mcp-s9vgb).
       groupBy: ctx.presetName ? this.reranker.getFullPreset(ctx.presetName, "rank_chunks")?.groupBy : undefined,
-      substituteCandidates: async (candidates: ScrollChunk[]) =>
-        this.substituteFromWorkingTree(candidates, ctx, (row) => workingTreeRowAdmitted(row, admission)),
+      substituteCandidates: async (
+        candidates: ScrollChunk[],
+        legFilters: readonly (Record<string, unknown> | undefined)[],
+      ) => this.substituteFromWorkingTree(candidates, ctx, admittedByAnyLeg(legFilters)),
     };
 
     const fetchWindow = async (limit: number): Promise<PathPatternPage> => {

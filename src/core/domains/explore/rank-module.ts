@@ -41,9 +41,15 @@ export interface RankOptions {
    * Rewrites the gathered candidate pool before the rerank — the working
    * tree's substitution (bd tea-rags-mcp-xi2r9, WTO-5): base rows of touched
    * files out, the tree's rows of them in. Absent → the pool as scrolled.
+   *
+   * `legFilters` are the filters the scroll legs actually applied, one per leg —
+   * the request filter, plus the age-stamp floor on a stamp leg. A row pooled
+   * from elsewhere joins only when one of them admits it, as its indexed twin
+   * reached the pool only through a leg that admitted it (live G3).
    */
   substituteCandidates?: (
     candidates: { id: string | number; payload: Record<string, unknown> }[],
+    legFilters: readonly (Record<string, unknown> | undefined)[],
   ) => Promise<{ id: string | number; payload: Record<string, unknown> }[]>;
 }
 
@@ -235,18 +241,20 @@ export class RankModule {
 
     // Parallel scroll (scatter), each window sized in distinct groups
     const targetGroups = limit * OVERFETCH_FACTOR;
+    const legFilters = scrolls.map(({ orderBy, ageStamp }) =>
+      ageStamp ? withAgeStampFloor(filter, orderBy.key) : filter,
+    );
     const scrollResults = await Promise.all(
-      scrolls.map(async ({ orderBy, ageStamp }) => {
-        const scrollFilter = ageStamp ? withAgeStampFloor(filter, orderBy.key) : filter;
-        return this.scrollDistinctGroups(targetGroups, groupBy, async (n) =>
-          scrollFn(collectionName, orderBy, n, scrollFilter),
-        );
-      }),
+      scrolls.map(async ({ orderBy }, leg) =>
+        this.scrollDistinctGroups(targetGroups, groupBy, async (n) =>
+          scrollFn(collectionName, orderBy, n, legFilters[leg]),
+        ),
+      ),
     );
 
-    // Merge + deduplicate (gather), then the caller's substitution
+    // Merge + deduplicate (gather), then the caller's substitution, held to the legs' filters
     const gathered = this.mergeAndDeduplicate(scrollResults);
-    const merged = substituteCandidates ? await substituteCandidates(gathered) : gathered;
+    const merged = substituteCandidates ? await substituteCandidates(gathered, legFilters) : gathered;
     if (merged.length === 0) return [];
 
     // Convert to RerankableResult (score=0, no similarity)

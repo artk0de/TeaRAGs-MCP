@@ -172,6 +172,12 @@ export interface WorkingTreeDeltaSignalRequest {
    * so its rows inherit git from the old path's base points. Absent → no moves.
    */
   renamedFrom?: ReadonlyMap<string, string>;
+  /**
+   * The commit the base index was stamped at. A file a commit in
+   * `indexedCommit..HEAD` touched has history the base points never saw, so its
+   * git is recomputed, not inherited (live G1). Absent → every file inherits.
+   */
+  indexedCommit?: string;
 }
 
 /**
@@ -226,7 +232,10 @@ export interface WorkingTreeGitSignalTarget {
 export interface WorkingTreeGitSignals {
   /** `git.file`, when asked for and the path has commit history. */
   file?: Record<string, unknown>;
-  /** `git.chunk` by row key; a row whose lines hold no committed history is absent. */
+  /**
+   * `git.chunk` by row key; a row whose lines hold no committed history holds
+   * the chunk walk's zero block, as ingest writes it (live G4).
+   */
   chunks: ReadonlyMap<string, Record<string, unknown>>;
 }
 
@@ -238,13 +247,20 @@ export interface WorkingTreeGitSignals {
  * written — the file backfill's history and blame, the chunk walk's
  * hunk→range attribution — keyed by `relativePath`. A row's lines are the
  * tree file's; lines the working file added hold no history, so a row made only
- * of them, and a path never committed, get nothing. Implemented in
- * `api/internal` over the git trajectory and wired at the composition root, so
- * explore never imports trajectory. Never rejects.
+ * of them gets the walk's zero block, and a path never committed no `git.file`.
+ * Implemented in `api/internal` over the git trajectory and wired at the
+ * composition root, so explore never imports trajectory. Never rejects.
  */
 export interface WorkingTreeGitSignalSource {
   signalsOf: (
     root: string,
     targets: readonly WorkingTreeGitSignalTarget[],
   ) => Promise<ReadonlyMap<string, WorkingTreeGitSignals>>;
+  /**
+   * The paths, relative to `root`, a commit in `sinceCommit..HEAD` touched —
+   * both sides of a committed move; paths outside `root` are dropped. One git
+   * call per (repository, range). Undefined when git cannot answer (an unknown
+   * commit, no repository). Never rejects.
+   */
+  pathsCommittedSince: (root: string, sinceCommit: string) => Promise<ReadonlySet<string> | undefined>;
 }
