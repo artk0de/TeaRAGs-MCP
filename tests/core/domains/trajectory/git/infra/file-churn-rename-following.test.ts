@@ -19,7 +19,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
@@ -96,29 +96,104 @@ describe("file-level git churn follows renames (bd tea-rags-mcp-aikfk)", () => {
     shas[label] = gitIn(repo, ["rev-parse", "HEAD"], date, author);
   };
 
-  /** c1-c3 under Old/ — the template recipe; returns the shas it committed. */
-  const buildPreRenameIn = (repo: string): Record<string, string> => {
-    const shas: Record<string, string> = {};
-    const commit = (label: string, message: string, days: number, author: string, minutes = 0): void => {
-      commitIn(repo, shas, label, message, days, author, minutes);
-    };
-    const g = (args: string[]): string => gitIn(repo, args, daysAgoIso(60));
-    g(["init", "-q", "-b", "main"]);
-    g(["config", "user.email", "t@example.com"]);
-    g(["config", "user.name", "Test"]);
-    g(["config", "commit.gpgsign", "false"]);
-    g(["config", "diff.algorithm", "myers"]);
+  /** One commit of a fast-imported history. */
+  interface ImportedCommit {
+    label: string;
+    message: string;
+    days: number;
+    minutes?: number;
+    author: string;
+    /** `[path, content]` writes */
+    writes?: [string, string][];
+    /** `[from, to]` path move */
+    rename?: [string, string];
+  }
 
-    mkdirSync(join(repo, "Old"));
-    writeFileSync(join(repo, "Old/f.txt"), "a\nb\nc\n");
-    commit("c1", "feat: add f", 60, "Alice");
-    writeFileSync(join(repo, "Old/f.txt"), "a\nB\nc\n");
-    commit("c2", "fix: correct b", 50, "Alice");
-    // Five minutes after c2, same author — one squash-aware session with c2.
-    writeFileSync(join(repo, "Old/f.txt"), "a\nB\nc\nd\n");
-    commit("c3", "feat: add d", 50, "Alice", 5);
-    return shas;
+  /** c1-c3 under Old/; c3 is five minutes after c2, same author — one squash-aware session with c2. */
+  const PRE_RENAME: ImportedCommit[] = [
+    { label: "c1", message: "feat: add f", days: 60, author: "Alice", writes: [["Old/f.txt", "a\nb\nc\n"]] },
+    { label: "c2", message: "fix: correct b", days: 50, author: "Alice", writes: [["Old/f.txt", "a\nB\nc\n"]] },
+    {
+      label: "c3",
+      message: "feat: add d",
+      days: 50,
+      minutes: 5,
+      author: "Alice",
+      writes: [["Old/f.txt", "a\nB\nc\nd\n"]],
+    },
+  ];
+
+  /** The history `buildRenameAndAfterIn` commits on top of {@link PRE_RENAME}. */
+  const RENAME_AND_AFTER: ImportedCommit[] = [
+    {
+      label: "mv",
+      message: "refactor: rename Old to New",
+      days: 30,
+      author: "Bob",
+      rename: ["Old/f.txt", "New/f.txt"],
+    },
+    { label: "c5", message: "feat: add e", days: 20, author: "Carol", writes: [["New/f.txt", "a\nB\nc\nd\ne\n"]] },
+    {
+      label: "c6",
+      message: "feat: unrelated file reusing the old name",
+      days: 10,
+      author: "Carol",
+      writes: [["Old/f.txt", "fresh\n"]],
+    },
+    {
+      label: "c7",
+      message: "feat: add f line",
+      days: 5,
+      author: "Carol",
+      writes: [["New/f.txt", "a\nB\nc\nd\ne\nf\n"]],
+    },
+  ];
+
+  /**
+   * Builds `commits` on `main` with ONE `git fast-import` (bd tea-rags-mcp-2z4sa):
+   * three spawns per repository instead of three per commit. Under a loaded
+   * coverage run a spawn costs about a second, so the add/commit sequence alone
+   * outlived the 30 s hook. Authors, dates, messages, contents and the rename
+   * are what that sequence wrote; the committer is the configured user, as
+   * before. Returns the shas by label.
+   */
+  const importHistoryIn = (repo: string, commits: readonly ImportedCommit[]): Record<string, string> => {
+    gitIn(repo, ["init", "-q", "-b", "main"], daysAgoIso(60));
+    appendFileSync(
+      join(repo, ".git/config"),
+      "[user]\n\temail = t@example.com\n\tname = Test\n[commit]\n\tgpgsign = false\n[diff]\n\talgorithm = myers\n",
+    );
+    const data = (text: string): string => `data ${Buffer.byteLength(text)}\n${text}\n`;
+    const stream = commits
+      .map((commit, i) => {
+        const when = `${Math.floor(Date.parse(daysAgoIso(commit.days, commit.minutes ?? 0)) / 1000)} +0000`;
+        return [
+          "commit refs/heads/main\n",
+          `mark :${i + 1}\n`,
+          `author ${commit.author} <${commit.author.toLowerCase()}@example.com> ${when}\n`,
+          `committer Test <t@example.com> ${when}\n`,
+          data(commit.message),
+          ...(commit.writes ?? []).map(([path, content]) => `M 100644 inline ${path}\n${data(content)}`),
+          ...(commit.rename ? [`R ${commit.rename[0]} ${commit.rename[1]}\n`] : []),
+          "\n",
+        ].join("");
+      })
+      .join("");
+    const marks = join(repo, ".git/fast-import-marks");
+    execFileSync("git", ["fast-import", "--quiet", `--export-marks=${marks}`], { cwd: repo, input: stream });
+    gitIn(repo, ["reset", "-q", "--hard"], daysAgoIso(0));
+    const byMark = new Map(
+      readFileSync(marks, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => line.split(" ") as [string, string]),
+    );
+    rmSync(marks);
+    return Object.fromEntries(commits.map((commit, i) => [commit.label, byMark.get(`:${i + 1}`) as string]));
   };
+
+  /** c1-c3 under Old/ — the template recipe; returns the shas it committed. */
+  const buildPreRenameIn = (repo: string): Record<string, string> => importHistoryIn(repo, PRE_RENAME);
 
   /** The directory rename, then M=2 commits under New/ and a re-creation of
    *  Old/f.txt between them. */
@@ -163,18 +238,13 @@ describe("file-level git churn follows renames (bd tea-rags-mcp-aikfk)", () => {
 
   /** The full history: c1-c3, the rename, c5-c7. */
   const buildRenamedHistory = (): void => {
-    useTemplate("aikfk-full", (repo) => {
-      const shas = buildPreRenameIn(repo);
-      buildRenameAndAfterIn(repo, shas);
-      return shas;
-    });
+    useTemplate("aikfk-full", (repo) => importHistoryIn(repo, [...PRE_RENAME, ...RENAME_AND_AFTER]));
   };
 
   const expectedNewShas = (): string[] => [sha.c7, sha.c5, sha.mv, sha.c3, sha.c2, sha.c1];
 
   // Both templates are built here, not inside the first test that asks for
-  // one: building a template is ~50 git spawns, and under a loaded full suite
-  // it alone could spend most of that test's wall-clock budget.
+  // one, so no test's own budget pays for a build.
   beforeAll(() => {
     buildPreRename();
     rmSync(tmp, { recursive: true, force: true });
