@@ -21,9 +21,12 @@ import { createComposition } from "../../../../../src/core/api/internal/composit
 import { createWorkingTreeDeltaSignalSource } from "../../../../../src/core/api/internal/infra/working-tree-delta-signals.js";
 import type {
   WorkingTree,
+  WorkingTreeBasePoint,
   WorkingTreeDeltaRow,
+  WorkingTreeDeltaSignalRequest,
   WorkingTreeGraphReader,
   WorkingTreeGraphState,
+  WorkingTreeTouchedBasePointsReader,
 } from "../../../../../src/core/contracts/types/working-tree.js";
 import { buildWorkingTreeGraph } from "../../../../../src/core/domains/trajectory/codegraph/working-tree/tree-graph-build.js";
 import {
@@ -70,13 +73,30 @@ function deltaRow(id: string, relativePath: string, symbolId: string, lines = [1
   };
 }
 
-/** A Qdrant fake answering a scroll with the base points of the files the filter names. */
-function qdrantHolding(points: ReturnType<typeof basePoint>[]) {
+/**
+ * The view's touched-base-point read (`WorkingTreeView#readTouchedBasePoints`):
+ * the base points of every touched file, grouped by path. The source reads base
+ * payload through it and only through it — it holds no Qdrant of its own.
+ */
+function basePointsHolding(points: ReturnType<typeof basePoint>[]) {
+  return vi.fn<WorkingTreeTouchedBasePointsReader>(async () => {
+    const byPath = new Map<string, WorkingTreeBasePoint[]>();
+    for (const point of points) {
+      const path = point.payload.relativePath;
+      byPath.set(path, [...(byPath.get(path) ?? []), point]);
+    }
+    return byPath;
+  });
+}
+
+/** The source as the overlay drives it: every request carries the view's base-point read. */
+function sourceReading(
+  readTouchedBasePoints: WorkingTreeTouchedBasePointsReader,
+  graphFiles: Parameters<typeof createWorkingTreeDeltaSignalSource>[0]["graphFiles"],
+) {
+  const source = createWorkingTreeDeltaSignalSource({ graphFiles });
   return {
-    scrollFiltered: vi.fn(async (_collection: string, filter: Record<string, unknown>) => {
-      const named = JSON.stringify(filter);
-      return points.filter((p) => named.includes(`"${p.payload.relativePath}"`));
-    }),
+    enrich: async (request: WorkingTreeDeltaSignalRequest) => source.enrich({ ...request, readTouchedBasePoints }),
   };
 }
 
@@ -88,25 +108,22 @@ const unopenable = () => ({
 
 describe("createWorkingTreeDeltaSignalSource", () => {
   describe("git", () => {
-    const qdrant = qdrantHolding([
+    const readTouchedBasePoints = basePointsHolding([
       basePoint("b1", FOO, "Foo#small#part1", 5),
       basePoint("b2", FOO, "Foo#small#part2", 6),
       basePoint("b3", FOO, "Foo#big", 9),
       basePoint("b4", FOO, "Foo#kept", 11),
     ]);
-    const source = createWorkingTreeDeltaSignalSource({ qdrant, graphFiles: unopenable });
+    const source = sourceReading(readTouchedBasePoints, unopenable);
 
     it("inherits git.file per file and git.chunk from the base point of the same symbol", async () => {
       const { rows } = await source.enrich({ tree: TREE, rows: [deltaRow("d1", FOO, "Foo#kept")] });
 
       expect(rows[0].payload.git).toEqual({ file: GIT_FILE, chunk: gitChunk(11) });
-      expect(qdrant.scrollFiltered).toHaveBeenCalledWith(
-        "code_base",
-        expect.anything(),
-        expect.any(Number),
-        undefined,
-        expect.arrayContaining(["relativePath", "symbolId", "git", "codegraph"]),
-      );
+      // Base payload comes from the view's shared touched-base-point read, never
+      // a scroll of the source's own (bd tea-rags-mcp-xi2r9: its multi-path
+      // `relativePath` scroll cost 4.5 s on every request at 137 delta files).
+      expect(readTouchedBasePoints).toHaveBeenCalled();
     });
 
     it("matches #partN on either side: the exact id first, else the symbol's first part", async () => {
@@ -148,10 +165,10 @@ describe("createWorkingTreeDeltaSignalSource", () => {
   });
 
   describe("codegraph inherited from the base", () => {
-    const qdrant = qdrantHolding([basePoint("b1", FOO, "Foo#kept", 4)]);
+    const readTouchedBasePoints = basePointsHolding([basePoint("b1", FOO, "Foo#kept", 4)]);
 
     it("inherits the base block and says why when the tree graph is unavailable", async () => {
-      const source = createWorkingTreeDeltaSignalSource({ qdrant, graphFiles: unopenable });
+      const source = sourceReading(readTouchedBasePoints, unopenable);
       const readTreeGraph = vi.fn<WorkingTreeGraphReader>(async () => ({ kind: "unavailable", reason: "building" }));
 
       const result = await source.enrich({ tree: TREE, rows: [deltaRow("d1", FOO, "Foo#kept")], readTreeGraph });
@@ -162,7 +179,7 @@ describe("createWorkingTreeDeltaSignalSource", () => {
     });
 
     it("inherits without asking when no tree graph reader is given", async () => {
-      const source = createWorkingTreeDeltaSignalSource({ qdrant, graphFiles: unopenable });
+      const source = sourceReading(readTouchedBasePoints, unopenable);
 
       const result = await source.enrich({ tree: TREE, rows: [deltaRow("d1", FOO, "Foo#kept")] });
 
@@ -171,7 +188,7 @@ describe("createWorkingTreeDeltaSignalSource", () => {
     });
 
     it("inherits and names the failure when a built tree graph cannot be opened", async () => {
-      const source = createWorkingTreeDeltaSignalSource({ qdrant, graphFiles: unopenable });
+      const source = sourceReading(readTouchedBasePoints, unopenable);
       const built: WorkingTreeGraphState = { kind: "built", dbPath: "/nope.duckdb", physicalCollectionName: PHYSICAL };
 
       const result = await source.enrich({
@@ -237,10 +254,10 @@ export function run(): number {
 
     it("computes file and chunk signals from the tree graph under the physical keys", async () => {
       // The base says y has no caller and x one; the tree moved run()'s call to y.
-      const qdrant = qdrantHolding([
+      const readTouchedBasePoints = basePointsHolding([
         { ...basePoint("bx", "src/x.ts", "x", 0), payload: { ...basePoint("bx", "src/x.ts", "x", 0).payload } },
       ]);
-      const source = createWorkingTreeDeltaSignalSource({ qdrant, graphFiles });
+      const source = sourceReading(readTouchedBasePoints, graphFiles);
       const built: WorkingTreeGraphState = { kind: "built", dbPath: treeDbPath, physicalCollectionName: PHYSICAL };
 
       const result = await source.enrich({
@@ -264,8 +281,8 @@ export function run(): number {
   describe("ranking (live probe regression)", () => {
     it("ranks an enriched delta row of a modified file with its git history under hotspots", async () => {
       const { reranker } = createComposition();
-      const qdrant = qdrantHolding([basePoint("b1", FOO, "Foo#kept", 30)]);
-      const source = createWorkingTreeDeltaSignalSource({ qdrant, graphFiles: unopenable });
+      const readTouchedBasePoints = basePointsHolding([basePoint("b1", FOO, "Foo#kept", 30)]);
+      const source = sourceReading(readTouchedBasePoints, unopenable);
       const raw = deltaRow("delta", FOO, "Foo#kept", [1, 40]);
       const { rows } = await source.enrich({ tree: TREE, rows: [raw] });
 

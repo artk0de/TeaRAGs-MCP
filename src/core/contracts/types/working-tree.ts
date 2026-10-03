@@ -122,6 +122,29 @@ export interface WorkingTreeDeltaRow {
   payload: Record<string, unknown>;
 }
 
+/**
+ * One base-index point of a file the tree touched, with the payload subset its
+ * readers use: `relativePath`, `symbolId`, `startLine`, `endLine`, `git`,
+ * `codegraph`.
+ */
+export interface WorkingTreeBasePoint {
+  id: string | number;
+  payload: Record<string, unknown>;
+}
+
+/**
+ * The base points of a view's touched files (changed ∪ deleted), by path, in
+ * path order; a path the base index never held has no entry.
+ */
+export type WorkingTreeTouchedBasePointsByPath = ReadonlyMap<string, readonly WorkingTreeBasePoint[]>;
+
+/**
+ * A view's read of its touched files' base points — one read per request,
+ * shared by every consumer of the view (hybrid's `has_id` exclusion, the delta
+ * signals' inheritance).
+ */
+export type WorkingTreeTouchedBasePointsReader = () => Promise<WorkingTreeTouchedBasePointsByPath>;
+
 /** Everything the signal source needs to enrich one view's delta rows. */
 export interface WorkingTreeDeltaSignalRequest {
   tree: WorkingTree;
@@ -129,6 +152,11 @@ export interface WorkingTreeDeltaSignalRequest {
   rows: readonly WorkingTreeDeltaRow[];
   /** The view's tree graph; absent when no graph source is wired. */
   readTreeGraph?: WorkingTreeGraphReader;
+  /**
+   * The view's touched-file base points, the source of inherited git /
+   * codegraph payload. Absent → no base reader wired: rows inherit nothing.
+   */
+  readTouchedBasePoints?: WorkingTreeTouchedBasePointsReader;
 }
 
 /**

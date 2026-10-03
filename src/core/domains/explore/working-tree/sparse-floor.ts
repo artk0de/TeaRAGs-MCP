@@ -24,7 +24,7 @@
  *   - a row's BM25 vector is computed once per row, not once per query
  *     (`rowSparseVectors`);
  *   - the base rows of touched files leave the Qdrant request as ONE `has_id`
- *     condition over their point ids ({@link WorkingTreeTouchedBaseIds},
+ *     condition over their point ids (`WorkingTreeTouchedBasePoints`,
  *     {@link excludeWorkingTreeBaseIds}). An exclusion by path is checked per
  *     candidate against `relativePath`, whose index is `text`: measured on the
  *     live self-index, the `should` of text+value pairs cost 131 ms at 60
@@ -32,12 +32,10 @@
  *     is banned on that key, `text-indexed-exact.ts`). `has_id` is answered by
  *     Qdrant's id tracker: 5 / 8 ms. The ids come from POSITIVE per-path
  *     scrolls, which the text index does serve (12 / 160 ms), once per touched
- *     set and index revision.
+ *     set and index revision — the read the delta signals share.
  */
 
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { payloadMatchesFilter } from "../../../adapters/qdrant/filters/payload-match.js";
-import { exactMatchOnTextIndexed } from "../../../adapters/qdrant/filters/text-indexed-exact.js";
 import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
 import type { SparseVector } from "../../../adapters/qdrant/types.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
@@ -81,82 +79,6 @@ export function excludeWorkingTreeBaseIds(
     must: Object.entries(filter).map(([key, value]) => ({ key, match: { value } })),
     must_not: [exclusion],
   };
-}
-
-/** Touched sets kept per process; a tree under edit reuses one set across many queries. */
-const TOUCHED_BASE_IDS_CACHE_ENTRIES = 32;
-/**
- * How long a resolved id set is trusted. The revision key catches an index run
- * that changes the point count; this bounds the one that does not. A stale set
- * costs only RRF positions — the strategy also drops any base row of a touched
- * file the request still returned — so a minute is enough.
- */
-const TOUCHED_BASE_IDS_TTL_MS = 60_000;
-/** Per-path scrolls in flight at once. */
-const TOUCHED_BASE_IDS_SCROLL_CONCURRENCY = 16;
-/** No single file holds more points than this; a scroll cap, not a page size. */
-const MAX_POINTS_PER_PATH = 100_000;
-
-/**
- * The base point ids of a touched-file set, resolved once per (collection,
- * index revision, touched set) and reused while the tree sits in that state.
- * One scroll per path, each served by the `relativePath` text index (a
- * `should` over many paths makes the planner scan instead: 1.5 s at 159 paths
- * against 160 ms for the per-path scrolls, measured live). A failed resolution
- * is not kept, so the next query retries.
- */
-export class WorkingTreeTouchedBaseIds {
-  private readonly resolved = new Map<string, { at: number; ids: Promise<readonly (string | number)[]> }>();
-
-  constructor(
-    private readonly qdrant: Pick<QdrantManager, "scrollFiltered">,
-    private readonly now: () => number = Date.now,
-  ) {}
-
-  async idsOf(
-    collectionName: string,
-    touchedPaths: ReadonlySet<string>,
-    revision: string,
-  ): Promise<readonly (string | number)[]> {
-    if (touchedPaths.size === 0) return [];
-    const paths = [...touchedPaths].sort();
-    const key = JSON.stringify([collectionName, revision, paths]);
-    const at = this.now();
-    const hit = this.resolved.get(key);
-    if (hit && at - hit.at < TOUCHED_BASE_IDS_TTL_MS) return hit.ids;
-
-    const ids = this.scrollIds(collectionName, paths);
-    this.resolved.delete(key);
-    if (this.resolved.size >= TOUCHED_BASE_IDS_CACHE_ENTRIES) {
-      const oldest = this.resolved.keys().next().value;
-      if (oldest !== undefined) this.resolved.delete(oldest);
-    }
-    this.resolved.set(key, { at, ids });
-    ids.catch(() => {
-      if (this.resolved.get(key)?.ids === ids) this.resolved.delete(key);
-    });
-    return ids;
-  }
-
-  private async scrollIds(collectionName: string, paths: readonly string[]): Promise<(string | number)[]> {
-    const ids: (string | number)[] = [];
-    for (let start = 0; start < paths.length; start += TOUCHED_BASE_IDS_SCROLL_CONCURRENCY) {
-      const batch = paths.slice(start, start + TOUCHED_BASE_IDS_SCROLL_CONCURRENCY);
-      const pages = await Promise.all(
-        batch.map(async (path) =>
-          this.qdrant.scrollFiltered(
-            collectionName,
-            { must: exactMatchOnTextIndexed("relativePath", path) },
-            MAX_POINTS_PER_PATH,
-            1_000,
-            ["relativePath"],
-          ),
-        ),
-      );
-      for (const page of pages) for (const point of page) ids.push(point.id);
-    }
-    return ids;
-  }
 }
 
 export interface WorkingTreeSparseScoring {

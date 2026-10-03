@@ -48,6 +48,7 @@ export {
   scheduleWorkingTreeChunkSweep,
   WORKING_TREE_DELTA_FILE_CAP,
   WorkingTreeOverlay,
+  WorkingTreeTouchedBasePoints,
 } from "./working-tree/index.js";
 export type {
   WorkingTreeChunkerPool,

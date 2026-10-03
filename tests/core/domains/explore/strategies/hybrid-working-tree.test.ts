@@ -135,6 +135,29 @@ describe("HybridSearchStrategy working-tree sparse floor", () => {
     expect(sentFilter.must_not).toEqual([{ has_id: ["bg", "bt"] }]);
   });
 
+  // bd tea-rags-mcp-xi2r9: the exclusion ids come from the view's shared base
+  // point read — the one the delta signals already made — not a second scroll.
+  it("takes the excluded ids from the view's touched base points without scrolling", async () => {
+    const view = treeView();
+    view.readTouchedBasePoints = async () =>
+      new Map([
+        [GONE, [{ id: "bg", payload: { relativePath: GONE } }]],
+        [TOUCHED, [{ id: "bt", payload: { relativePath: TOUCHED } }]],
+      ]);
+    const { qdrant, hybridSearch } = qdrantHolding(BASE);
+    await new HybridSearchStrategy(qdrant, reranker, [], []).execute({
+      collectionName: "c",
+      embedding: [0.1, 0.2],
+      query: "freshHelper",
+      limit: 3,
+      workingTreeView: view,
+    });
+
+    const sentFilter = hybridSearch.mock.calls[0][4] as QdrantFilter;
+    expect(sentFilter.must_not).toEqual([{ has_id: ["bg", "bt"] }]);
+    expect(qdrant.scrollFiltered).not.toHaveBeenCalled();
+  });
+
   it("drops a base row of a touched file the request still returned", async () => {
     const { qdrant } = qdrantHolding(BASE);
     // An id set resolved before the index moved: the request excludes nothing.

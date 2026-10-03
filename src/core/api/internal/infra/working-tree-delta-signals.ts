@@ -7,8 +7,10 @@
  * probe: `hybrid.ts` at #24, 0.132, under `hotspots`).
  *
  * Lives in `api/internal` because it bridges what explore may not see: the
- * base collection's payload (Qdrant), the tree graph (`adapters/duckdb`), and
- * the codegraph signal arithmetic (`domains/trajectory/codegraph`).
+ * tree graph (`adapters/duckdb`) and the codegraph signal arithmetic
+ * (`domains/trajectory/codegraph`). The base collection's payload it does NOT
+ * read itself: the request carries the view's touched-base-point read
+ * (`readTouchedBasePoints`), the one read hybrid's exclusion shares.
  *
  * - **git** — `git.file` is inherited from the base points of the same file:
  *   an uncommitted edit has no history of its own, the file's history is the
@@ -31,7 +33,6 @@
  *   resolves (`domains/trajectory/codegraph/CLAUDE.md`).
  */
 
-import { anyOfOnTextIndexed } from "../../../adapters/qdrant/filters/text-indexed-exact.js";
 import type {
   ChunkGraphSignals,
   FileGraphMetrics,
@@ -56,9 +57,6 @@ import type { WorkingTreeGraphFileOpener } from "./working-tree-graph-read.js";
 /** How long a search waits for the tree graph before delta rows inherit the base's codegraph (spec: 3 s). */
 export const WORKING_TREE_SEARCH_GRAPH_WAIT_MS = 3_000;
 
-/** Base points read per delta: 200 files at most, so this bounds a pathological file, not a normal delta. */
-const BASE_POINT_SCROLL_LIMIT = 50_000;
-const BASE_POINT_PAYLOAD = ["relativePath", "symbolId", "git", "codegraph"];
 /** Tree-graph signal reads kept per process — one per recent (graph, file set). */
 const TREE_SIGNAL_CACHE_SIZE = 4;
 
@@ -68,15 +66,6 @@ const ZERO_FILE_METRICS: FileGraphMetrics = { fanIn: 0, fanOut: 0, transitiveImp
 type PayloadBlock = Record<string, unknown>;
 
 export interface WorkingTreeDeltaSignalSourceDeps {
-  qdrant: {
-    scrollFiltered: (
-      collectionName: string,
-      filter: Record<string, unknown>,
-      limit: number,
-      pageSize?: number,
-      payloadInclude?: string[],
-    ) => Promise<{ id: string | number; payload: Record<string, unknown> }[]>;
-  };
   /**
    * Opens the tree graph's file. Late-bound: the overlay that owns this source
    * is composed before the codegraph pool exists. `undefined` → codegraph off,
@@ -127,7 +116,7 @@ export function createWorkingTreeDeltaSignalSource(
     enrich: async (request: WorkingTreeDeltaSignalRequest): Promise<WorkingTreeDeltaSignalResult> => {
       const paths = [...new Set(request.rows.map((row) => pathOf(row.payload)).filter((p) => p !== ""))].sort();
       if (paths.length === 0) return { rows: [...request.rows] };
-      const base = await readBasePayload(deps, request.tree.baseIndex.collectionName, paths);
+      const base = await groupBasePayload(request, paths);
 
       let treeGraph: WorkingTreeGraphState | undefined;
       let tree: TreeGraphSignals | undefined;
@@ -150,37 +139,41 @@ export function createWorkingTreeDeltaSignalSource(
   };
 }
 
-/** One scroll for the base points of every delta file, grouped by file. */
-async function readBasePayload(
-  deps: WorkingTreeDeltaSignalSourceDeps,
-  collectionName: string,
+/**
+ * The delta files' base payload, from the view's touched-base-point read — the
+ * one hybrid's exclusion shares, read per path and cached per index revision
+ * (bd tea-rags-mcp-xi2r9: a multi-path `relativePath` scroll here cost 4.5 s on
+ * every request at 137 delta files). No reader → nothing to inherit.
+ */
+async function groupBasePayload(
+  request: WorkingTreeDeltaSignalRequest,
   paths: readonly string[],
 ): Promise<Map<string, BaseFilePayload>> {
-  const points = await deps.qdrant.scrollFiltered(
-    collectionName,
-    { must: [anyOfOnTextIndexed("relativePath", paths)] },
-    BASE_POINT_SCROLL_LIMIT,
-    undefined,
-    BASE_POINT_PAYLOAD,
-  );
-  const wanted = new Set(paths);
   const byFile = new Map<string, BaseFilePayload>();
-  for (const { payload } of points) {
-    const path = pathOf(payload);
-    if (!wanted.has(path)) continue;
-    let file = byFile.get(path);
-    if (!file) {
-      file = { bySymbol: new Map() };
-      byFile.set(path, file);
-    }
-    file.gitFile ??= blockAt(payload, ["git", "file"]);
-    file.codegraphFile ??= blockAt(payload, ["codegraph", "symbols", "file"]);
-    const { symbolId } = payload;
-    if (typeof symbolId === "string" && symbolId !== "" && !file.bySymbol.has(symbolId)) {
-      file.bySymbol.set(symbolId, payload);
+  if (!request.readTouchedBasePoints) return byFile;
+  const touched = await request.readTouchedBasePoints();
+  for (const path of paths) {
+    for (const { payload } of touched.get(path) ?? []) {
+      if (pathOf(payload) !== path) continue;
+      let file = byFile.get(path);
+      if (!file) {
+        file = { bySymbol: new Map() };
+        byFile.set(path, file);
+      }
+      addBasePoint(file, payload);
     }
   }
   return byFile;
+}
+
+/** Folds one base point into its file: the first file blocks seen, the first point per symbolId. */
+function addBasePoint(file: BaseFilePayload, payload: Record<string, unknown>): void {
+  file.gitFile ??= blockAt(payload, ["git", "file"]);
+  file.codegraphFile ??= blockAt(payload, ["codegraph", "symbols", "file"]);
+  const { symbolId } = payload;
+  if (typeof symbolId === "string" && symbolId !== "" && !file.bySymbol.has(symbolId)) {
+    file.bySymbol.set(symbolId, payload);
+  }
 }
 
 /**

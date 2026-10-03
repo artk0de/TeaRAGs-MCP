@@ -9,17 +9,15 @@
  *   pairs evaluated per candidate (131–280 ms on the live self-index; a bare
  *   `match.any` is no better on the text-indexed `relativePath`, 207–311 ms).
  *   It is now a `has_id` exclusion of the touched files' base point ids
- *   (5–8 ms), the ids resolved once per touched set and index revision.
+ *   (5–8 ms), the ids read by `WorkingTreeTouchedBasePoints` (its own spec).
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { payloadMatchesFilter } from "../../../../../src/core/adapters/qdrant/filters/payload-match.js";
 import * as sparse from "../../../../../src/core/adapters/qdrant/sparse.js";
 import type { ScrollChunk } from "../../../../../src/core/domains/explore/chunk-grouping/types.js";
 import {
   excludeWorkingTreeBaseIds,
   scoreWorkingTreeRows,
-  WorkingTreeTouchedBaseIds,
 } from "../../../../../src/core/domains/explore/working-tree/sparse-floor.js";
 
 vi.mock("../../../../../src/core/adapters/qdrant/sparse.js", async (importOriginal) => {
@@ -88,75 +86,5 @@ describe("excludeWorkingTreeBaseIds", () => {
 
     expect(excludeWorkingTreeBaseIds(filter, [])).toBe(filter);
     expect(excludeWorkingTreeBaseIds(undefined, [])).toBeUndefined();
-  });
-});
-
-describe("WorkingTreeTouchedBaseIds", () => {
-  const BASE = [
-    { id: "a1", payload: { relativePath: "src/a.ts" } },
-    { id: "a2", payload: { relativePath: "src/a.ts" } },
-    { id: "b1", payload: { relativePath: "src/b.ts" } },
-    { id: "c1", payload: { relativePath: "src/c.ts" } },
-  ];
-  /** A Qdrant that answers each scroll with the rows its filter admits, as the server does. */
-  const qdrantHolding = () => ({
-    scrollFiltered: vi.fn(async (_collection: string, filter: Record<string, unknown>) =>
-      BASE.filter((point) => payloadMatchesFilter(point.payload, filter)),
-    ),
-  });
-
-  it("should resolve the base point ids of exactly the touched paths", async () => {
-    const qdrant = qdrantHolding();
-    const ids = new WorkingTreeTouchedBaseIds(qdrant);
-
-    const resolved = await ids.idsOf("c", new Set(["src/a.ts", "src/b.ts", "src/new.ts"]), "rev-1");
-
-    expect([...resolved].sort()).toEqual(["a1", "a2", "b1"]);
-  });
-
-  it("should not query again for the same collection, touched set and revision", async () => {
-    const qdrant = qdrantHolding();
-    const ids = new WorkingTreeTouchedBaseIds(qdrant);
-
-    await ids.idsOf("c", new Set(["src/a.ts", "src/b.ts"]), "rev-1");
-    const calls = qdrant.scrollFiltered.mock.calls.length;
-    await ids.idsOf("c", new Set(["src/b.ts", "src/a.ts"]), "rev-1");
-
-    expect(qdrant.scrollFiltered.mock.calls.length).toBe(calls);
-  });
-
-  it("should resolve again when the index revision or the touched set moves, or the entry ages out", async () => {
-    const qdrant = qdrantHolding();
-    let clock = 0;
-    const ids = new WorkingTreeTouchedBaseIds(qdrant, () => clock);
-
-    await ids.idsOf("c", new Set(["src/a.ts"]), "rev-1");
-    const afterFirst = qdrant.scrollFiltered.mock.calls.length;
-    await ids.idsOf("c", new Set(["src/a.ts"]), "rev-2");
-    const afterRevision = qdrant.scrollFiltered.mock.calls.length;
-    await ids.idsOf("c", new Set(["src/a.ts", "src/c.ts"]), "rev-2");
-    const afterSet = qdrant.scrollFiltered.mock.calls.length;
-    clock += 10 * 60_000;
-    await ids.idsOf("c", new Set(["src/a.ts", "src/c.ts"]), "rev-2");
-
-    expect(afterRevision).toBeGreaterThan(afterFirst);
-    expect(afterSet).toBeGreaterThan(afterRevision);
-    expect(qdrant.scrollFiltered.mock.calls.length).toBeGreaterThan(afterSet);
-  });
-
-  it("should answer an empty touched set without a query", async () => {
-    const qdrant = qdrantHolding();
-
-    expect(await new WorkingTreeTouchedBaseIds(qdrant).idsOf("c", new Set(), "rev-1")).toEqual([]);
-    expect(qdrant.scrollFiltered).not.toHaveBeenCalled();
-  });
-
-  it("should not keep a failed resolution, so the next query retries", async () => {
-    const qdrant = qdrantHolding();
-    qdrant.scrollFiltered.mockRejectedValueOnce(new Error("qdrant down"));
-    const ids = new WorkingTreeTouchedBaseIds(qdrant);
-
-    await expect(ids.idsOf("c", new Set(["src/a.ts"]), "rev-1")).rejects.toThrow("qdrant down");
-    expect([...(await ids.idsOf("c", new Set(["src/a.ts"]), "rev-1"))].sort()).toEqual(["a1", "a2"]);
   });
 });

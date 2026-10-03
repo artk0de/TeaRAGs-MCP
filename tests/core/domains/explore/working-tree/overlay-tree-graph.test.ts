@@ -187,6 +187,36 @@ describe("WorkingTreeOverlay tree graph (WTO-7)", () => {
       await chunkLayer.dispose();
     });
 
+    // bd tea-rags-mcp-xi2r9: the touched files' base points are read ONCE per
+    // request and shared — hybrid's exclusion and the delta signals both ask
+    // the view, and the view asks the reader once.
+    it("should read the touched files' base points once per view and hand that read to the signal source", async () => {
+      const chunkLayer = layer();
+      const deltaSignals = signalSource(BUILT);
+      const points = new Map([["src/a.ts", [{ id: "b1", payload: { relativePath: "src/a.ts" } }]]]);
+      const touchedBasePoints = { pointsOf: vi.fn(async () => points) };
+      const view = await overlayWith(deltaReader(["src/a.ts"], ["src/gone.ts"]), {
+        deltaSignals,
+        touchedBasePoints,
+        deltaChunks: { layer: chunkLayer, resolveChunkerConfig: async () => CHUNKER_CONFIG },
+      }).view(workingTree(), "proj");
+
+      await view.readDeltaChunks?.();
+      const [request] = deltaSignals.enrich.mock.calls[0];
+      const fromRequest = await request.readTouchedBasePoints?.();
+      const fromView = await view.readTouchedBasePoints?.();
+
+      expect(fromRequest).toBe(points);
+      expect(fromView).toBe(points);
+      expect(touchedBasePoints.pointsOf).toHaveBeenCalledTimes(1);
+      expect(touchedBasePoints.pointsOf).toHaveBeenCalledWith(
+        COLLECTION,
+        new Set(["src/a.ts", "src/gone.ts"]),
+        "a".repeat(40),
+      );
+      await chunkLayer.dispose();
+    });
+
     it("should return the layer's rows untouched when no signal source is wired", async () => {
       const chunkLayer = layer();
       const view = await overlayWith(deltaReader(["src/a.ts"]), {

@@ -13,12 +13,8 @@ import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { InvalidQueryError } from "../errors.js";
 import { relativePathOf } from "../working-tree/index.js";
-import {
-  excludeWorkingTreeBaseIds,
-  fuseWorkingTreeRows,
-  scoreWorkingTreeRows,
-  WorkingTreeTouchedBaseIds,
-} from "../working-tree/sparse-floor.js";
+import { excludeWorkingTreeBaseIds, fuseWorkingTreeRows, scoreWorkingTreeRows } from "../working-tree/sparse-floor.js";
+import { touchedBasePointIds, WorkingTreeTouchedBasePoints } from "../working-tree/touched-base-points.js";
 import { BaseExploreStrategy } from "./base.js";
 import { fetchPathPatternMatches } from "./path-pattern-fill.js";
 import { buildSymbolIdentityFilter, isSymbolIdentifierQuery } from "./symbol-identity-leg.js";
@@ -41,8 +37,8 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
   /** The sparse floor substitutes the tree's rows for touched files, so they carry no `treeState`. */
   protected override readonly hasChunkFloor = true;
 
-  /** Base point ids of touched files, resolved once per touched set (the strategy lives as long as its facade). */
-  private readonly touchedBaseIds = new WorkingTreeTouchedBaseIds(this.qdrant);
+  /** Touched-file base points for a view without a reader wired (the strategy lives as long as its facade). */
+  private readonly touchedBasePoints = new WorkingTreeTouchedBasePoints(this.qdrant);
 
   protected async executeExplore(ctx: ExploreContext): Promise<ExploreResult[]> {
     const { embedding } = ctx;
@@ -65,13 +61,17 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
     // touched replace their base rows. Absent → today's request, byte for byte.
     const treeRows = await this.readWorkingTreeRows(ctx);
     const view = treeRows ? ctx.workingTreeView : undefined;
-    // The index revision the id set is valid for: the point count moves with
-    // an index run, the indexed commit with a commit-stamped one.
-    const revision = `${String(collectionInfo.pointsCount)}\0${view?.marker.indexedCommit ?? ""}`;
+    // The touched files' base points come from the view's ONE read, the one
+    // the delta signals already made for this request; a view without a
+    // reader wired falls back to this strategy's own (same reader, same cache
+    // rules).
     const filter = view
       ? excludeWorkingTreeBaseIds(
           ctx.filter,
-          await this.touchedBaseIds.idsOf(ctx.collectionName, view.touchedPaths, revision),
+          touchedBasePointIds(
+            await (view.readTouchedBasePoints?.() ??
+              this.touchedBasePoints.pointsOf(ctx.collectionName, view.touchedPaths, view.marker.indexedCommit)),
+          ),
         )
       : ctx.filter;
     // A base row of a touched file the request still returned (an id set that

@@ -63,6 +63,7 @@ import {
   createWorkingTreeDeltaReader,
   scheduleWorkingTreeChunkSweep,
   WorkingTreeOverlay,
+  WorkingTreeTouchedBasePoints,
 } from "../core/domains/explore/index.js";
 import { CollectionIndexingLock } from "../core/domains/ingest/infra/index.js";
 import { ChunkerPool } from "../core/domains/ingest/pipeline/chunker/infra/pool.js";
@@ -1230,9 +1231,12 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     // WTO-6/7: delta rows inherit git from the base points and take codegraph
     // from the tree graph. The pool is late-bound like the cache's runtime.
     deltaSignals: createWorkingTreeDeltaSignalSource({
-      qdrant: infra.qdrant,
       graphFiles: () => codegraphContext?.pool,
     }),
+    // The touched files' base points, read per path and cached per index
+    // revision and touched set; each view reads them once and shares the read
+    // between hybrid's exclusion and the delta signals (bd tea-rags-mcp-xi2r9).
+    touchedBasePoints: new WorkingTreeTouchedBasePoints(infra.qdrant),
   });
   const codegraphContext = wireCodegraph(
     config,

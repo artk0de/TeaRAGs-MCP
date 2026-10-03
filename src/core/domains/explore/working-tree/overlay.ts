@@ -22,6 +22,8 @@ import {
   type WorkingTreeGraphSource,
   type WorkingTreeGraphState,
   type WorkingTreeMarker,
+  type WorkingTreeTouchedBasePointsByPath,
+  type WorkingTreeTouchedBasePointsReader,
 } from "../../../contracts/types/working-tree.js";
 import { findGitToplevel, readRepoGitState } from "../../../infra/repo-git-state.js";
 import type { ChunkerConfig } from "../../../types.js";
@@ -55,6 +57,22 @@ export interface WorkingTreeView {
    * (`recordTreeGraphState`), so an answer never claims a graph it did not read.
    */
   readTreeGraph?: WorkingTreeGraphReader;
+  /**
+   * The base-index points of the touched files (bd tea-rags-mcp-xi2r9): read
+   * once per view and shared by every consumer — hybrid's `has_id` exclusion
+   * and the delta signals' inheritance. Present only on a measured non-empty
+   * delta with a base-point reader wired.
+   */
+  readTouchedBasePoints?: WorkingTreeTouchedBasePointsReader;
+}
+
+/** The overlay's port to the touched-file base points (`WorkingTreeTouchedBasePoints`). */
+export interface WorkingTreeTouchedBasePointSource {
+  pointsOf: (
+    collectionName: string,
+    touchedPaths: ReadonlySet<string>,
+    indexedCommit: string | null,
+  ) => Promise<WorkingTreeTouchedBasePointsByPath>;
 }
 
 /** How the overlay turns delta files into rows: the layer, and the config to chunk with. */
@@ -84,6 +102,8 @@ export interface WorkingTreeOverlayDeps {
    * rows. Absent → delta rows carry the chunk layer's structural payload only.
    */
   deltaSignals?: WorkingTreeDeltaSignalSource;
+  /** Absent → views carry no `readTouchedBasePoints`. */
+  touchedBasePoints?: WorkingTreeTouchedBasePointSource;
 }
 
 const NO_TREE_REASON = "no working tree resolved for this index";
@@ -148,6 +168,12 @@ export class WorkingTreeOverlay {
           fingerprint: treeGraphFingerprint(read.delta.fingerprint, changed, deleted),
         };
         view.readTreeGraph = treeGraphReader(this.deps.treeGraph, request);
+      }
+      const { touchedBasePoints } = this.deps;
+      if (total > 0 && touchedBasePoints) {
+        let points: Promise<WorkingTreeTouchedBasePointsByPath> | undefined;
+        view.readTouchedBasePoints = async () =>
+          (points ??= touchedBasePoints.pointsOf(collectionName, view.touchedPaths, indexedCommit));
       }
       const source = this.deps.deltaChunks;
       if (source) {
@@ -267,6 +293,7 @@ async function enrichDeltaRows(
     tree,
     rows,
     ...(view.readTreeGraph ? { readTreeGraph: view.readTreeGraph } : {}),
+    ...(view.readTouchedBasePoints ? { readTouchedBasePoints: view.readTouchedBasePoints } : {}),
   });
   if (enriched.treeGraph) recordTreeGraphState(view.marker, enriched.treeGraph);
   return enriched.rows;
