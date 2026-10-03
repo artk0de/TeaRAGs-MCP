@@ -4,7 +4,9 @@
  * Only the failures that reach the caller have a class here. An endpoint that
  * refuses, times out or answers a 5xx is handled inside the provider (its texts
  * move to another endpoint); the caller sees `LlamaServerUnavailableError` only
- * once no endpoint is left and the recovery wait has run out.
+ * once no endpoint is left and the recovery wait has run out — or
+ * `LlamaServerModelMismatchError` at once when every endpoint serves another
+ * model.
  */
 
 import { EmbeddingError, type ProviderRecoveryWaitReporting } from "../errors.js";
@@ -30,6 +32,31 @@ export class LlamaServerUnavailableError extends EmbeddingError implements Provi
       cause,
     });
     this.recoveryWaitMs = recoveryWaitMs;
+  }
+}
+
+/** One endpoint and the GGUF its `/props` says it loaded. */
+export interface LlamaServerServedModel {
+  url: string;
+  modelPath: string;
+}
+
+/**
+ * Every configured endpoint serves a model other than EMBEDDING_MODEL. A
+ * configuration error, not an outage: waiting for an endpoint to come back
+ * cannot fix it, so the embed call fails at once.
+ */
+export class LlamaServerModelMismatchError extends EmbeddingError {
+  constructor(model: string, served: readonly LlamaServerServedModel[]) {
+    const where = served.map((s) => `${s.url} serves ${s.modelPath}`).join("; ");
+    super({
+      code: "INFRA_LLAMA_SERVER_MODEL_MISMATCH",
+      message: `No llama-server endpoint serves EMBEDDING_MODEL=${model}: ${where}`,
+      hint:
+        `Fetch the matching GGUF with: tea-rags llama-server fetch-model ${model} ` +
+        `and print its launch line with: tea-rags llama-server command`,
+      httpStatus: 409,
+    });
   }
 }
 

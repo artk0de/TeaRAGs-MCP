@@ -4,6 +4,7 @@ import type { RateLimitConfig } from "../../../../../src/core/adapters/embedding
 import { isProviderRecoveryWaitSpent } from "../../../../../src/core/adapters/embeddings/errors.js";
 import {
   LlamaServerContextOverflowError,
+  LlamaServerModelMismatchError,
   LlamaServerResponseError,
   LlamaServerUnavailableError,
 } from "../../../../../src/core/adapters/embeddings/llama-server/errors.js";
@@ -430,18 +431,106 @@ describe("LlamaServerEmbeddings", () => {
   });
 
   describe("model check", () => {
-    it("warns exactly once, naming fetch-model, when /props serves a different model", async () => {
-      const props = { total_slots: 1, model_path: "/models/nomic-embed-text@latest-0123456789ab.gguf" };
-      const cluster = fakeCluster({ [PEER_A]: healthy(props), [PEER_B]: healthy(props) });
+    const OTHER_MODEL = { total_slots: 1, model_path: "/models/nomic-embed-text@latest-0123456789ab.gguf" };
+    const SAME_MODEL = { total_slots: 1, model_path: "/models/jina-embeddings-v2-base-code@latest-33a8a1b6a1cb.gguf" };
+
+    it("sends every text to the peer serving the configured model when the other serves another", async () => {
+      const cluster = fakeCluster({ [PEER_A]: healthy(OTHER_MODEL), [PEER_B]: healthy(SAME_MODEL) });
       const log: string[] = [];
       const provider = makeProvider(cluster, { log });
 
-      await provider.embedBatch(texts(4));
-      await provider.embedBatch(texts(4));
+      const first = await provider.embedBatch(texts(6));
+      const second = await provider.embedBatch(texts(6));
 
+      expect(first.map((r) => r.embedding[0])).toEqual([0, 1, 2, 3, 4, 5]);
+      expect(second.map((r) => r.embedding[0])).toEqual([0, 1, 2, 3, 4, 5]);
+      expect(cluster.embedCalls(PEER_A)).toHaveLength(0);
+      expect(cluster.embedCalls(PEER_B).length).toBeGreaterThan(0);
       const warnings = log.filter((line) => line.includes("fetch-model"));
       expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain(PEER_A);
+      expect(warnings[0]).toContain(OTHER_MODEL.model_path);
+      expect(warnings[0]).toContain(`EMBEDDING_MODEL=${MODEL}`);
       expect(warnings[0]).toContain("tea-rags llama-server command");
+    });
+
+    it("checks every endpoint, not only the one whose /props was read first", async () => {
+      const cluster = fakeCluster({ [PEER_A]: healthy(SAME_MODEL), [PEER_B]: healthy(OTHER_MODEL) });
+      const log: string[] = [];
+      const provider = makeProvider(cluster, { log });
+
+      await provider.embedBatch(texts(6));
+
+      expect(cluster.embedCalls(PEER_B)).toHaveLength(0);
+      expect(cluster.embedCalls(PEER_A).length).toBeGreaterThan(0);
+      const warnings = log.filter((line) => line.includes("fetch-model"));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain(PEER_B);
+    });
+
+    it("serves from the fallback when every peer serves another model", async () => {
+      const cluster = fakeCluster({
+        [PEER_A]: healthy(OTHER_MODEL),
+        [PEER_B]: healthy(OTHER_MODEL),
+        [FALLBACK]: healthy(SAME_MODEL),
+      });
+      const provider = makeProvider(cluster, { fallbacks: FALLBACK });
+
+      const results = await provider.embedBatch(texts(4));
+
+      expect(results.map((r) => r.embedding[0])).toEqual([0, 1, 2, 3]);
+      expect(cluster.embedCalls(PEER_A)).toHaveLength(0);
+      expect(cluster.embedCalls(PEER_B)).toHaveLength(0);
+      expect(cluster.embedCalls(FALLBACK).length).toBeGreaterThan(0);
+    });
+
+    it("fails with a typed error naming each endpoint's model, without a recovery wait, when none serves it", async () => {
+      const cluster = fakeCluster({ [PEER_A]: healthy(OTHER_MODEL), [PEER_B]: healthy(OTHER_MODEL) });
+      const log: string[] = [];
+      const time = fakeTime();
+      const provider = makeProvider(cluster, { log, time, rateLimit: { unavailableRetryMaxWaitMs: 60_000 } });
+      const waits: unknown[] = [];
+      provider.onRecoveryWait = (event) => waits.push(event);
+      const started = time.deps.now();
+
+      const error = await provider.embedBatch(texts(4)).catch((e: unknown) => e);
+      const again = await provider.embedBatch(texts(4)).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(LlamaServerModelMismatchError);
+      expect(again).toBeInstanceOf(LlamaServerModelMismatchError);
+      const mismatch = error as LlamaServerModelMismatchError;
+      expect(mismatch.code).toBe("INFRA_LLAMA_SERVER_MODEL_MISMATCH");
+      expect(mismatch.message).toContain(`${PEER_A} serves ${OTHER_MODEL.model_path}`);
+      expect(mismatch.message).toContain(`${PEER_B} serves ${OTHER_MODEL.model_path}`);
+      expect(mismatch.message).toContain(MODEL);
+      expect(cluster.embedCalls()).toHaveLength(0);
+      expect(waits).toEqual([]);
+      expect(time.deps.now()).toBe(started);
+      expect(log.filter((line) => line.includes("fetch-model"))).toHaveLength(2);
+    });
+
+    it("waits for a down endpoint as an outage when the only other one serves another model", async () => {
+      const cluster = fakeCluster({ [PEER_A]: healthy(OTHER_MODEL), [PEER_B]: { health: false } });
+      const provider = makeProvider(cluster);
+
+      const error = await provider.embedBatch(texts(2)).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(LlamaServerUnavailableError);
+      expect(cluster.embedCalls(PEER_A)).toHaveLength(0);
+    });
+
+    it("keeps sending to an endpoint whose model is a content-addressed blob", async () => {
+      const blob = {
+        model_path:
+          "/Users/x/.ollama/models/blobs/sha256-33a8a1b6a1cbba662f292d32bb55f8d109c0e6cb02de2d243a1b70705ea20986",
+      };
+      const cluster = fakeCluster({ [PEER_A]: healthy(blob), [PEER_B]: healthy(SAME_MODEL) });
+      const provider = makeProvider(cluster);
+
+      await provider.embedBatch(texts(8));
+
+      expect(cluster.embedCalls(PEER_A).length).toBeGreaterThan(0);
+      expect(cluster.embedCalls(PEER_B).length).toBeGreaterThan(0);
     });
 
     it("accepts a GGUF whose file name carries the model name", async () => {

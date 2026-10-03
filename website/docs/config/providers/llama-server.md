@@ -222,12 +222,18 @@ the same as with Ollama. Another `-c` or `-np` changes the per-slot window,
 therefore the chunk size and the chunk set: a project indexed under one shape
 needs a `--force` reindex after switching to another.
 
-**Served-model check.** At first contact TeaRAGs compares the GGUF file name in
-`/props` with `EMBEDDING_MODEL` and logs a warning when they do not look alike,
-naming `tea-rags llama-server fetch-model` and `tea-rags llama-server command`
-as the fix. It only warns: a renamed GGUF of the same model is legitimate, and a
-real vector-width mismatch is caught by the embedding model guard of the
-collection.
+**Served-model check.** At first contact with each endpoint, peers and fallback
+alike, TeaRAGs compares the GGUF file name in its `/props` with
+`EMBEDDING_MODEL`. An endpoint whose file does not look like the configured
+model gets no embedding requests for the rest of the run, and TeaRAGs logs once
+which file it serves, naming `tea-rags llama-server fetch-model` and
+`tea-rags llama-server command` as the fix. This matters because a peer serving
+another model of the same width returns vectors the collection's embedding model
+guard cannot tell apart. When no endpoint serving the configured model is left,
+indexing fails at once with `INFRA_LLAMA_SERVER_MODEL_MISMATCH`, listing each
+endpoint and the file it serves; it does not wait for an endpoint to come back.
+A GGUF renamed to carry the model name or its digest, a content-addressed
+`sha256-…` blob, and a server whose `/props` names no file are all accepted.
 
 ## Troubleshooting
 
