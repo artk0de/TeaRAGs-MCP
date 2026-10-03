@@ -54,6 +54,11 @@ export type { AppOpsComposition, AppOpsDeps } from "./internal/composition.js";
 // Internal exports needed by bootstrap/factory.ts for DI wiring
 export { ExploreFacade } from "./internal/facades/explore-facade.js";
 export type { ExploreFacadeDeps } from "./internal/facades/explore-facade.js";
+export type {
+  CollectionEmbeddingBinding,
+  CollectionEmbeddingsRequest,
+  CollectionEmbeddingsResolver,
+} from "./internal/collection-embeddings.js";
 export { IngestFacade } from "./internal/facades/ingest-facade.js";
 export type { IngestFacadeDeps } from "./internal/facades/ingest-facade.js";
 export { GraphFacade } from "./internal/facades/graph-facade.js";

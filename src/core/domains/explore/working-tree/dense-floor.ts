@@ -64,9 +64,18 @@ export interface WorkingTreeDenseVectorRequest {
   readTouchedBasePoints?: WorkingTreeTouchedBasePointsReader;
 }
 
+/** What the dense floor needs of a provider: one batch call and the model its vectors belong to. */
+export type WorkingTreeDenseEmbeddings = Pick<EmbeddingProvider, "embedBatch" | "getModel">;
+
 export interface WorkingTreeDenseVectorSourceDeps {
-  /** The provider the base index was embedded with — the query side's provider. */
-  embeddings: Pick<EmbeddingProvider, "embedBatch" | "getModel">;
+  /** The process provider — used for every base index when `embeddingsForCollection` is absent. */
+  embeddings: WorkingTreeDenseEmbeddings;
+  /**
+   * The provider a base index was embedded with — its registry model, which
+   * may differ from the process default (bd tea-rags-mcp-b91f5). A rejection is
+   * the reader's `failure`, like a failed embed.
+   */
+  embeddingsForCollection?: (collectionName: string) => Promise<WorkingTreeDenseEmbeddings>;
   /** Absent → no base-vector reuse. */
   qdrant?: Pick<QdrantManager, "retrieveDenseVectors">;
   /** Absent → vectors are not persisted across processes. */
@@ -123,10 +132,9 @@ export class WorkingTreeDenseVectorSource {
 
   /** Start resolving every row's vector now; the reader waits for them at most its `waitMs`. */
   warm(request: WorkingTreeDenseVectorRequest): WorkingTreeDenseVectorReader {
-    const model = this.deps.embeddings.getModel();
     const wanted = wantedRows(request.rows);
     const state: DenseWarmState = { vectors: new Map() };
-    const done = this.fill(request, model, wanted, state).catch((error: unknown) => {
+    const done = this.fill(request, wanted, state).catch((error: unknown) => {
       state.failure ??= messageOf(error);
     });
     const snapshot = (): WorkingTreeDenseVectors => ({
@@ -142,10 +150,11 @@ export class WorkingTreeDenseVectorSource {
 
   private async fill(
     request: WorkingTreeDenseVectorRequest,
-    model: string,
     wanted: readonly WantedRow[],
     state: DenseWarmState,
   ): Promise<void> {
+    const embeddings = (await this.deps.embeddingsForCollection?.(request.collectionName)) ?? this.deps.embeddings;
+    const model = embeddings.getModel();
     const memoryKey = (row: WantedRow): string => `${model}\0${row.contentSha256}`;
     const settle = (row: WantedRow, vector: readonly number[]): void => {
       state.vectors.set(row.id, vector);
@@ -171,7 +180,7 @@ export class WorkingTreeDenseVectorSource {
     }
     try {
       if (missing().length > 0) {
-        const embedded = await this.embed(model, missing());
+        const embedded = await this.embed(embeddings, model, missing());
         for (const row of missing()) {
           const vector = embedded.get(row.contentSha256);
           if (vector) settle(row, vector);
@@ -241,7 +250,11 @@ export class WorkingTreeDenseVectorSource {
    * failure after every batch settled; what did embed is returned through the
    * memory cache to the next asker either way.
    */
-  private async embed(model: string, rows: readonly WantedRow[]): Promise<ReadonlyMap<string, readonly number[]>> {
+  private async embed(
+    embeddings: WorkingTreeDenseEmbeddings,
+    model: string,
+    rows: readonly WantedRow[],
+  ): Promise<ReadonlyMap<string, readonly number[]>> {
     const bySha = new Map<string, string>();
     for (const row of rows) bySha.set(row.contentSha256, row.content);
     const waits = new Map<string, Promise<readonly number[]>>();
@@ -253,7 +266,7 @@ export class WorkingTreeDenseVectorSource {
     }
     for (let start = 0; start < fresh.length; start += this.batchSize) {
       const batch = fresh.slice(start, start + this.batchSize);
-      const call = this.deps.embeddings.embedBatch(batch.map(([, content]) => content));
+      const call = embeddings.embedBatch(batch.map(([, content]) => content));
       batch.forEach(([sha], i) => {
         const key = `${model}\0${sha}`;
         const one = call.then((results) => {

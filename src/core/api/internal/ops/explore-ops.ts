@@ -71,6 +71,7 @@ import {
   type SemanticSearchRequest,
 } from "../../public/dto/index.js";
 import type { WorkingTreeIndexTarget } from "../../public/dto/working-tree.js";
+import type { CollectionEmbeddingBinding, CollectionEmbeddingsResolver } from "../collection-embeddings.js";
 import { resolveIndexedWorkingTree, resolveWorkingTree } from "../collection-resolver.js";
 
 export interface ExploreOpsDeps {
@@ -84,6 +85,12 @@ export interface ExploreOpsDeps {
   payloadSignals: PayloadSignalDescriptor[];
   essentialKeys: string[];
   modelGuard?: EmbeddingModelGuard;
+  /**
+   * The provider and guard that embed on behalf of a collection — its REGISTRY
+   * entry's model, not this process's (bd tea-rags-mcp-b91f5). Absent (unit
+   * wiring) → `embeddings` + `modelGuard` serve every collection.
+   */
+  collectionEmbeddings?: CollectionEmbeddingsResolver;
   /** Optional — present when codegraph is wired (bootstrap adapts GraphFacade). */
   chunkResolver?: SymbolChunkResolver;
   /**
@@ -120,6 +127,8 @@ export interface ExploreOpsDeps {
  */
 interface ResolvedExploreTarget {
   collectionName: string;
+  /** The provider this collection's texts are embedded with — the one its guard just checked. */
+  embeddings: EmbeddingProvider;
   /** INDEX root for the drift check; undefined → check by collection name */
   path?: string;
   workingTreeView?: Promise<WorkingTreeView>;
@@ -173,6 +182,7 @@ export class ExploreOps {
   private readonly payloadSignals: PayloadSignalDescriptor[];
   private readonly essentialKeys: string[];
   private readonly modelGuard?: EmbeddingModelGuard;
+  private readonly collectionEmbeddings?: CollectionEmbeddingsResolver;
   private readonly vectorStrategy: BaseExploreStrategy;
   private readonly hybridStrategy: BaseExploreStrategy;
   private readonly scrollRankStrategy: BaseExploreStrategy;
@@ -194,6 +204,7 @@ export class ExploreOps {
     this.payloadSignals = deps.payloadSignals;
     this.essentialKeys = deps.essentialKeys;
     this.modelGuard = deps.modelGuard;
+    this.collectionEmbeddings = deps.collectionEmbeddings;
     this.chunkResolver = deps.chunkResolver;
     this.visibilityResolver = deps.visibilityResolver;
     this.enrichmentHealthFrameForPath = deps.enrichmentHealthFrameForPath;
@@ -268,13 +279,13 @@ export class ExploreOps {
   }
 
   async searchCode(request: ExploreCodeRequest): Promise<ExploreResponse> {
-    const { collectionName, path, workingTreeView } = await this.resolveAndGuard(
+    const { collectionName, path, workingTreeView, embeddings } = await this.resolveAndGuard(
       request.collection,
       request.path,
       request.project,
       { failOnProviderOutage: true },
     );
-    const { embedding } = await this.embeddings.embed(request.query);
+    const { embedding } = await embeddings.embed(request.query);
     const level = resolveEffectiveLevel(undefined, request.rerank, this.reranker, "search_code");
     // Load collection stats BEFORE buildFilter so filter-preset adaptive
     // percentiles resolve from real Stats on the first (cold) query, not
@@ -289,12 +300,14 @@ export class ExploreOps {
     );
   }
 
-  async findSimilar(request: FindSimilarRequest, strategy: SimilarSearchStrategy): Promise<ExploreResponse> {
-    const { collectionName, path, workingTreeView } = await this.resolveAndGuard(
-      request.collection,
-      request.path,
-      request.project,
-    );
+  /**
+   * `strategy` omitted → built here, after the collection is resolved, so its
+   * code examples are embedded with that collection's provider.
+   */
+  async findSimilar(request: FindSimilarRequest, strategy?: SimilarSearchStrategy): Promise<ExploreResponse> {
+    const target = await this.resolveAndGuard(request.collection, request.path, request.project);
+    const { collectionName, path, workingTreeView } = target;
+    const similar = strategy ?? this.buildSimilarStrategy(request, target.embeddings);
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
     // Load collection stats BEFORE buildFilter so filter-preset adaptive
     // percentiles resolve from real Stats on the first (cold) query, not
@@ -306,7 +319,7 @@ export class ExploreOps {
     // which sits far closer to a code corpus than prose does. The cut-points
     // are calibrated on prose queries, so applying them here labels every
     // find_similar response "high". Needs its own calibration corpus first.
-    return this.executeExplore(strategy, buildFindSimilarContext(request, collectionName, filter, level), path, {
+    return this.executeExplore(similar, buildFindSimilarContext(request, collectionName, filter, level), path, {
       presetFilterNotice,
       fields: request.fields,
       workingTreeView,
@@ -387,23 +400,22 @@ export class ExploreOps {
     return view ? { indexPath, workingTree: view.marker } : { indexPath };
   }
 
-  /** Factory for the per-request findSimilar strategy. Exposed so facade can construct without reaching into ops internals. */
-  buildSimilarStrategy(request: FindSimilarRequest): SimilarSearchStrategy {
-    return new SimilarSearchStrategy(
-      this.qdrant,
-      this.reranker,
-      this.payloadSignals,
-      this.essentialKeys,
-      this.embeddings,
-      {
-        positiveIds: request.positiveIds,
-        positiveCode: request.positiveCode,
-        negativeIds: request.negativeIds,
-        negativeCode: request.negativeCode,
-        strategy: request.strategy ?? "best_score",
-        fileExtensions: request.fileExtensions,
-      },
-    );
+  /**
+   * Factory for the per-request findSimilar strategy. `embeddings` defaults to
+   * the process provider; `findSimilar` passes the resolved collection's.
+   */
+  buildSimilarStrategy(
+    request: FindSimilarRequest,
+    embeddings: EmbeddingProvider = this.embeddings,
+  ): SimilarSearchStrategy {
+    return new SimilarSearchStrategy(this.qdrant, this.reranker, this.payloadSignals, this.essentialKeys, embeddings, {
+      positiveIds: request.positiveIds,
+      positiveCode: request.positiveCode,
+      negativeIds: request.negativeIds,
+      negativeCode: request.negativeCode,
+      strategy: request.strategy ?? "best_score",
+      fileExtensions: request.fileExtensions,
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -466,13 +478,13 @@ export class ExploreOps {
     strategy: BaseExploreStrategy,
     attachConfidence: boolean,
   ): Promise<ExploreResponse> {
-    const { collectionName, path, workingTreeView } = await this.resolveAndGuard(
+    const { collectionName, path, workingTreeView, embeddings } = await this.resolveAndGuard(
       request.collection,
       request.path,
       request.project,
       { failOnProviderOutage: true },
     );
-    const { embedding } = await this.embeddings.embed(request.query);
+    const { embedding } = await embeddings.embed(request.query);
     const rerank = resolveDocRerank(request.rerank, request.documentation, request.language);
     const level = resolveEffectiveLevel(request.level, rerank, this.reranker, "semantic_search");
     // Load collection stats BEFORE buildFilter so filter-preset adaptive
@@ -578,8 +590,21 @@ export class ExploreOps {
       async (name) => this.qdrant.collectionExists(name),
     );
     const resolved = this.targetOf(workingTree, path, project);
-    await this.modelGuard?.ensureMatch(resolved.collectionName, guardOptions);
-    return resolved;
+    // The collection's own provider and guard (bd tea-rags-mcp-b91f5): the
+    // marker is held to the model that will embed for it, never to this
+    // process's default model.
+    const binding = await this.embeddingBindingOf(resolved.collectionName, !guardOptions?.nameOnly);
+    await binding.modelGuard?.ensureMatch(resolved.collectionName, guardOptions);
+    return { ...resolved, embeddings: binding.embeddings };
+  }
+
+  /** The collection's embedding binding; the process provider and guard without a resolver. */
+  private async embeddingBindingOf(
+    collectionName: string,
+    embeds: boolean,
+  ): Promise<Pick<CollectionEmbeddingBinding, "embeddings"> & { modelGuard?: EmbeddingModelGuard }> {
+    if (this.collectionEmbeddings) return this.collectionEmbeddings.forCollection(collectionName, { embeds });
+    return { embeddings: this.embeddings, modelGuard: this.modelGuard };
   }
 
   /**
@@ -589,7 +614,11 @@ export class ExploreOps {
    * would hash to a collection nobody indexed. A request that named only its
    * collection keeps the by-name check.
    */
-  private targetOf(workingTree: WorkingTree, path?: string, project?: string): ResolvedExploreTarget {
+  private targetOf(
+    workingTree: WorkingTree,
+    path?: string,
+    project?: string,
+  ): Omit<ResolvedExploreTarget, "embeddings"> {
     const { collectionName, root } = workingTree.baseIndex;
     const addressedByLocation = path !== undefined || project !== undefined;
     return {

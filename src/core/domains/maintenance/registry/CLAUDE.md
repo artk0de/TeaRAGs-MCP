@@ -153,15 +153,19 @@
   only `createAppContext(config, { ambientEnvRole: "server" })` — called by
   `runServer` (`cli/commands/server.ts`) and `main` (`src/index.ts`) — narrows a
   server's spawn env to the `runtime` groups through `outerEnvForRegistryStamp`
-  (`env-replay.ts`). A process the server DETACHES replays as an invocation, so
-  it must be handed the already-narrowed env: `buildMcpAutoUpdateTrigger`
-  (`bootstrap/auto-update/mcp-hint.ts`) spawns the updater with
-  `outerEnvForRegistryEntry(entry, process.env, "server")`. Why: a new MCP entry
-  point that omits the option, or a new server-side spawn that lets the child
-  inherit `process.env`, compiles, passes every test, and brings back
-  tea-rags-mcp-o0qsw — a server spawned with one project's `CODE_CHUNK_SIZE`
-  re-chunks every other registered project on its next index run, and the env
-  drift axis reports a finding its own `--force` remedy can never clear.
+  (`env-replay.ts`) — minus the embedding ENDPOINT groups whenever the stamp
+  names another embedding provider or model than the server env (bd
+  tea-rags-mcp-b91f5): an endpoint serves one model, so the server's would send
+  the project's texts to the wrong one. A process the server DETACHES replays as
+  an invocation, so it must be handed the already-narrowed env:
+  `buildMcpAutoUpdateTrigger` (`bootstrap/auto-update/mcp-hint.ts`) spawns the
+  updater with `outerEnvForRegistryEntry(entry, process.env, "server")`. Why: a
+  new MCP entry point that omits the option, or a new server-side spawn that
+  lets the child inherit `process.env`, compiles, passes every test, and brings
+  back tea-rags-mcp-o0qsw — a server spawned with one project's
+  `CODE_CHUNK_SIZE` re-chunks every other registered project on its next index
+  run, and the env drift axis reports a finding its own `--force` remedy can
+  never clear.
 - **`ADAPTIVE_DEFAULT_ENV_KEYS` (`env-groups.ts`) is a fourth coupling.** Those
   four keys are materialized into the snapshot only when the config layer's
   `userSet*` flags say the user set them explicitly. Why: pinning a

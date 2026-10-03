@@ -35,6 +35,7 @@ import type {
   SemanticSearchRequest,
 } from "../../public/dto/index.js";
 import type { WorkingTreeIndexTarget } from "../../public/dto/working-tree.js";
+import type { CollectionEmbeddingsResolver } from "../collection-embeddings.js";
 import { ExploreOps } from "../ops/explore-ops.js";
 
 export interface ExploreFacadeDeps {
@@ -48,6 +49,8 @@ export interface ExploreFacadeDeps {
   payloadSignals?: PayloadSignalDescriptor[];
   essentialKeys?: string[];
   modelGuard?: EmbeddingModelGuard;
+  /** Per-collection provider + guard from the registry (bd tea-rags-mcp-b91f5), threaded through to ExploreOps. */
+  collectionEmbeddings?: CollectionEmbeddingsResolver;
   chunkResolver?: SymbolChunkResolver;
   /** Declared visibility for find_symbol outline lines (bd tea-rags-mcp-sqqkz). */
   visibilityResolver?: SymbolVisibilityResolver;
@@ -79,6 +82,7 @@ export class ExploreFacade {
       payloadSignals: deps.payloadSignals ?? [],
       essentialKeys: deps.essentialKeys ?? [],
       modelGuard: deps.modelGuard,
+      collectionEmbeddings: deps.collectionEmbeddings,
       chunkResolver: deps.chunkResolver,
       visibilityResolver: deps.visibilityResolver,
       signalFloors: deps.signalFloors,
@@ -105,7 +109,7 @@ export class ExploreFacade {
 
   async findSimilar(request: FindSimilarRequest): Promise<ExploreResponse> {
     validateFindSimilarRequest(request);
-    return this.exploreOps.findSimilar(request, this.exploreOps.buildSimilarStrategy(request));
+    return this.exploreOps.findSimilar(request);
   }
 
   async findSymbol(request: FindSymbolRequest): Promise<ExploreResponse> {

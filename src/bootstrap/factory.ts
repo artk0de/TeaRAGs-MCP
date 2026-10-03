@@ -16,13 +16,11 @@ import {
 } from "../core/adapters/duckdb/daemon/index.js";
 import { GraphDbClientPool } from "../core/adapters/duckdb/index.js";
 import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
-import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
-import { LlamaServerEmbeddings } from "../core/adapters/embeddings/llama-server/provider.js";
-import { OllamaEmbeddings, type OllamaRecoveryWaitEvent } from "../core/adapters/embeddings/ollama.js";
+import type { OllamaRecoveryWaitEvent } from "../core/adapters/embeddings/ollama.js";
 import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { DaemonLock } from "../core/adapters/qdrant/embedded/daemon-lock.js";
 import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
-import { EmbeddingModelGuard } from "../core/adapters/qdrant/embedding-model-guard.js";
+import type { EmbeddingModelGuard } from "../core/adapters/qdrant/embedding-model-guard.js";
 import { VcsAdapterFactory } from "../core/adapters/vcs/factory.js";
 import { reapGitChildProcesses } from "../core/adapters/vcs/git/git-cli/git-child-process-registry.js";
 import {
@@ -60,6 +58,7 @@ import {
 } from "../core/api/index.js";
 import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../core/contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../core/contracts/types/collection-identity.js";
+import type { EmbeddingConfig } from "../core/contracts/types/config.js";
 import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-executor.js";
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
 import type { PayloadKeyOwner } from "../core/contracts/types/trajectory.js";
@@ -77,7 +76,7 @@ import { CollectionIndexingLock } from "../core/domains/ingest/infra/index.js";
 import { ChunkerPool } from "../core/domains/ingest/pipeline/chunker/infra/pool.js";
 import { WorkerPoolEnrichmentExecutor } from "../core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { buildFileChunkPoints } from "../core/domains/ingest/pipeline/file-chunk-points.js";
-import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
+import { initDebugLogger } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
 import { defaultEnrichmentWorkerMemoryLimitMb } from "../core/domains/ingest/pipeline/infra/pool-defaults.js";
 import { FileScanner } from "../core/domains/ingest/pipeline/scanner.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
@@ -131,8 +130,12 @@ import {
   reportTurboMigration,
   type TurboMigrationListener,
 } from "./config/turbo-reconcile.js";
-import { armEmbeddingModelParameters } from "./embedding-parameters.js";
+import { buildEmbeddingBinding } from "./embedding-binding.js";
 import { ProjectIngestFactory } from "./project-ingest-factory.js";
+import {
+  RegistryCollectionEmbeddingsResolver,
+  type PreparedCollectionEmbeddingBinding,
+} from "./registry-collection-embeddings-resolver.js";
 
 /**
  * TurboQuant migration progress poll cap. Bounded so a long background optimizer
@@ -190,6 +193,14 @@ interface InfraContext {
   qdrant: QdrantManager;
   embeddings: EmbeddingProvider;
   modelGuard: EmbeddingModelGuard;
+  /**
+   * The embedding config the process provider was built from, captured before
+   * the adaptive batch-size adjustment wrote into it — the identity a project
+   * whose registry env resolves to the same config shares the provider under.
+   */
+  embeddingConfig: EmbeddingConfig;
+  /** Builds another provider + guard the way the process one was built. */
+  buildEmbeddingBinding: (config: EmbeddingConfig) => PreparedCollectionEmbeddingBinding;
   embeddedRelease?: () => void;
 }
 
@@ -243,51 +254,22 @@ async function resolveInfrastructure(
     }),
   });
 
-  const embeddings = EmbeddingProviderFactory.create(zodConfig.embedding, {
-    models: config.paths.models,
-    daemonSocket: config.paths.daemonSocket,
-    daemonPid: config.paths.daemonPid,
-  });
-
-  // Filled once the guard below exists. The fallback hook can fire before that
-  // — any provider call that decides the endpoint (an eager ONNX-style init,
-  // model info for a fixed endpoint) may run first — so the
-  // handler reaches the guard through a slot instead of closing over a binding
-  // that is still in its temporal dead zone.
-  const modelGuardSlot: { current?: EmbeddingModelGuard } = {};
-
-  // Wire Ollama fallback observability into pipeline debug log
-  if (embeddings instanceof OllamaEmbeddings) {
-    embeddings.onFallbackSwitch = (event) => {
-      const level = event.direction === "to-fallback" ? 1 : 0;
-      pipelineLog.fallback(
-        { component: "Ollama" },
-        level,
-        `${event.direction}: ${event.primaryUrl} → ${event.fallbackUrl} (${event.reason})`,
-      );
-      // The canary verdict is measured against whichever endpoint answered.
-      // Keeping it across a switch would 409 every search for the rest of the
-      // process, even once the provider is back on an endpoint that agrees
-      // with the index. Drop it and let the next check re-measure.
-      modelGuardSlot.current?.invalidateAll();
-    };
-    // Armed before the first request below, so a provider that is already
-    // down at startup is reported as a wait from its first pause on.
-    if (onEmbeddingRecoveryWait) embeddings.onRecoveryWait = onEmbeddingRecoveryWait;
-  } else if (embeddings instanceof LlamaServerEmbeddings && onEmbeddingRecoveryWait) {
-    embeddings.onRecoveryWait = onEmbeddingRecoveryWait;
-  }
-
-  // Eagerly init ONNX to get calibrated batch size before pipeline config
-  if ("initialize" in embeddings && typeof embeddings.initialize === "function") {
-    await (embeddings as { initialize: () => Promise<void> }).initialize();
-  }
-
-  // Ask the model what it actually is before anything consumes getDimensions().
-  // The constructor could only read a static table; the model's own config is
-  // the authority. A provider that picks its endpoint lazily is asked once it
-  // has picked it — asking here would force the pick at start (B3).
-  await armEmbeddingModelParameters(embeddings, zodConfig.embedding.dimensions);
+  const embeddingConfig = structuredClone(zodConfig.embedding);
+  const buildBinding = (embedding: EmbeddingConfig): PreparedCollectionEmbeddingBinding =>
+    buildEmbeddingBinding(embedding, {
+      qdrant,
+      paths: {
+        models: config.paths.models,
+        daemonSocket: config.paths.daemonSocket,
+        daemonPid: config.paths.daemonPid,
+      },
+      onRecoveryWait: onEmbeddingRecoveryWait,
+    });
+  const {
+    binding: { embeddings, modelGuard },
+    ready,
+  } = buildBinding(zodConfig.embedding);
+  await ready;
 
   // If user didn't explicitly set batch size, use GPU-calibrated recommendation
   if (
@@ -305,11 +287,6 @@ async function resolveInfrastructure(
       deleteConcurrency: zodConfig.flags.userSetDeleteConcurrency,
     }),
   );
-
-  // The provider is what lets the guard catch a model that kept its name and
-  // changed its weights: it re-embeds the canary stored in the marker.
-  const modelGuard = new EmbeddingModelGuard(qdrant, embeddings.getModel(), embeddings.getDimensions(), embeddings);
-  modelGuardSlot.current = modelGuard;
 
   // Reconcile existing collections to TurboQuant (idempotent, no reindex). A
   // reconcile failure must never crash startup — log and continue. When the
@@ -347,7 +324,7 @@ async function resolveInfrastructure(
     }
   }
 
-  return { qdrant, embeddings, modelGuard, embeddedRelease };
+  return { qdrant, embeddings, modelGuard, embeddingConfig, buildEmbeddingBinding: buildBinding, embeddedRelease };
 }
 
 /** Squash-aware session grouping for git `commitCount`, shared by ingest and the working tree's on-demand reads. */
@@ -1056,12 +1033,13 @@ export function wireCodegraph(
  * Everything an ingest slice reuses across projects: live infrastructure
  * handles and the descriptor sets that do not vary with a project's env.
  *
- * Qdrant, the embedding provider and the codegraph pool are process-owned by
- * necessity — a per-project client would mean a second backend connection, a
- * second ONNX session and a second DuckDB writer. Their identity env
- * (QDRANT_URL, EMBEDDING_MODEL / *_BASE_URL) therefore stays the server's;
- * a project whose recorded model disagrees is rejected by EmbeddingModelGuard
- * rather than silently indexed, so nothing here is applied wrongly in silence.
+ * Qdrant and the codegraph pool are process-owned by necessity — a per-project
+ * client would mean a second backend connection and a second DuckDB writer, so
+ * QDRANT_URL stays the server's. The embedding provider and its guard are
+ * per embedding IDENTITY instead (bd tea-rags-mcp-b91f5): a project slice built
+ * from a registry env naming another model gets that model's provider from
+ * `RegistryCollectionEmbeddingsResolver`, shared with every query of that
+ * project; a slice whose config matches the server's shares the server's.
  */
 interface IngestSliceDeps {
   qdrant: QdrantManager;
@@ -1223,6 +1201,21 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   });
   const resolveActiveCollection = async (name: string): Promise<PhysicalCollectionName> =>
     infra.qdrant.aliases.resolveActive(name);
+  // The registry, not this process's env, decides how a collection is embedded
+  // (bd tea-rags-mcp-b91f5): every query-time embed, the working tree's dense
+  // floor and each project's ingest slice take their provider + guard from
+  // here. The project's env is resolved by `ProjectIngestFactory#envForEntry`
+  // (built below, read at request time) — the same rule an index run uses.
+  const collectionEmbeddings = new RegistryCollectionEmbeddingsResolver({
+    registry: collectionRegistry,
+    envForEntry: (entry): Record<string, string> => projectIngestFactory.envForEntry(entry),
+    parseEmbeddingConfig: (env) => parseAppConfigZod(env).embedding,
+    buildBinding: infra.buildEmbeddingBinding,
+    ambient: {
+      config: infra.embeddingConfig,
+      binding: { embeddings: infra.embeddings, modelGuard: infra.modelGuard },
+    },
+  });
   // Delta files chunked the way ingest stores them (bd tea-rags-mcp-xi2r9.3):
   // the production `ChunkerPool` (its worker and the language module path it
   // injects are the ones `BaseIndexingPipeline#createChunkerPool` forks), one
@@ -1340,10 +1333,12 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     // WTO-5: delta rows ranked by their own vectors. A view that changed files
     // warms them at view time — a base point's stored vector for byte-identical
     // content, then the chunk store (vectors beside the rows, same retention),
-    // then the provider the queries embed with, which the model guard holds to
-    // the base index's model.
+    // then the provider the queries embed with — the base index's registry
+    // model (bd tea-rags-mcp-b91f5), which its model guard holds it to.
     denseVectors: new WorkingTreeDenseVectorSource({
       embeddings: infra.embeddings,
+      embeddingsForCollection: async (collectionName) =>
+        (await collectionEmbeddings.forCollection(collectionName)).embeddings,
       qdrant: infra.qdrant,
       store: workingTreeChunkStore,
     }),
@@ -1563,9 +1558,13 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     registry: collectionRegistry,
     ambientEnvRole,
     processIngest: ingest,
-    buildIngest: (env) => {
+    buildIngest: (env): IngestFacade => {
       const projectZodConfig = parseAppConfigZod(env);
-      return createIngestFacade(projectZodConfig, buildAppConfig(projectZodConfig), ingestSlice);
+      // The project's own embedding identity too (bd tea-rags-mcp-b91f5): a
+      // project whose stamp names another model than this server's indexes
+      // with that model, guarded against it, instead of being refused.
+      const embedding = collectionEmbeddings.forEmbeddingConfig(projectZodConfig.embedding);
+      return createIngestFacade(projectZodConfig, buildAppConfig(projectZodConfig), { ...ingestSlice, ...embedding });
     },
   });
   const projectRegistryOps = new ProjectRegistryOps({
@@ -1592,6 +1591,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     payloadSignals: composition.allPayloadSignalDescriptors,
     essentialKeys: essentialTrajectoryFields,
     modelGuard: infra.modelGuard,
+    collectionEmbeddings,
     chunkResolver: createSymbolChunkResolver(codegraphContext?.graphFacade),
     visibilityResolver: createSymbolVisibilityResolver(codegraphContext?.graphFacade),
     signalFloors: composition.signalFloors,
