@@ -11,11 +11,11 @@
  * - Backward compatible with old snapshots
  */
 
-import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 
+import { fileContentHash } from "../../../infra/file-content-hash.js";
 import { isDebug } from "../../../infra/runtime.js";
 import type { FileChanges } from "../../../types.js";
 import { MerkleTree } from "./infra/merkle.js";
@@ -106,7 +106,7 @@ export class FileSynchronizer {
     try {
       const absolutePath = filePath.startsWith(this.codebasePath) ? filePath : join(this.codebasePath, filePath);
       const content = await fs.readFile(absolutePath, "utf-8");
-      return createHash("sha256").update(content).digest("hex");
+      return fileContentHash(content);
     } catch (_error) {
       return "";
     }

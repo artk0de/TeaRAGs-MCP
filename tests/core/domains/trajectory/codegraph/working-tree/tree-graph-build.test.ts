@@ -16,6 +16,7 @@ import {
   type WorkingTreeGraphBuildInput,
   type WorkingTreeGraphBuilt,
 } from "../../../../../../src/core/domains/trajectory/codegraph/working-tree/tree-graph-build.js";
+import { fileContentHash } from "../../../../../../src/core/infra/file-content-hash.js";
 import {
   buildTreeGraphFixture,
   cleanupTreeGraphFixtures,
@@ -290,6 +291,15 @@ describe("buildWorkingTreeGraph — edge matrix over one tree build", () => {
     });
   });
 
+  it("stamps every walked file with the content hash the ingest pipeline stamps, so the graph can seed a later build", async () => {
+    const hashes = await withReadOnlyGraph(built.dbPath, async (client) => client.listFileContentHashes());
+    const byPath = new Map(hashes.map((row) => [row.relPath, row.contentHash]));
+    expect(byPath.get("src/x.ts")).toBe(fileContentHash(X_TREE));
+    expect(byPath.get("src/a.ts")).toBe(fileContentHash(A_TREE));
+    expect(byPath.get("src/r-new.ts")).toBe(fileContentHash(R_SRC));
+    expect(byPath.get("src/k.ts")).toBe(fileContentHash(K_SRC));
+  });
+
   it("the output database is self-contained: no non-empty WAL beside it", () => {
     const wal = `${built.dbPath}.wal`;
     expect(!existsSync(wal) || statSync(wal).size === 0).toBe(true);
@@ -344,6 +354,8 @@ describe("buildWorkingTreeGraph — what an incremental reindex re-derives beyon
       "src/api.ts#drain -> src/b.ts#B#close",
     ]);
     expect(built.hierarchyDependentCount).toBe(1);
+    const hashes = await withReadOnlyGraph(built.dbPath, async (client) => client.listFileContentHashes());
+    expect(hashes.find((row) => row.relPath === "src/api.ts")?.contentHash).toBe(fileContentHash(API_SRC));
     expect(built.walkedFileCount).toBe(1);
     expect(built.deletedFileCount).toBe(1);
   }, 120_000);

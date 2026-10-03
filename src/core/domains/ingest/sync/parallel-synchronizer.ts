@@ -10,10 +10,10 @@
  * - OPTIMIZED: Hash reuse between detectChanges and updateSnapshot
  */
 
-import { createHash } from "node:crypto";
 import { existsSync, promises as fs } from "node:fs";
 import { join, relative } from "node:path";
 
+import { fileContentHash } from "../../../infra/file-content-hash.js";
 import { isDebug } from "../../../infra/runtime.js";
 import type { FileChanges } from "../../../types.js";
 import { parallelLimit } from "../pipeline/infra/parallel.js";
@@ -725,7 +725,7 @@ export class ParallelFileSynchronizer {
       const absolutePath = filePath.startsWith(this.codebasePath) ? filePath : join(this.codebasePath, filePath);
 
       const content = await fs.readFile(absolutePath, "utf-8");
-      return createHash("sha256").update(content).digest("hex");
+      return fileContentHash(content);
     } catch {
       return "";
     }

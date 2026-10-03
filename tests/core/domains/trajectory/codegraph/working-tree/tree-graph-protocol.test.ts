@@ -61,6 +61,33 @@ describe("isWorkingTreeGraphEntryRequest", () => {
   ])("refuses %s", (_label, mutate) => {
     expect(isWorkingTreeGraphEntryRequest(mutate(validRequest()))).toBe(false);
   });
+
+  const seed = {
+    dbPath: "/tmp/trees/k1/codegraph/code_abc_v2.duckdb",
+    changedRelPaths: ["src/a.ts"],
+    deletedRelPaths: [],
+    heldRelPaths: ["src/b.ts"],
+    restoredRelPaths: [],
+    seedChangedRelPaths: ["src/a.ts", "src/b.ts"],
+    seedDeletedRelPaths: [],
+  };
+  const withSeed = (value: unknown): Record<string, unknown> => {
+    const req = validRequest();
+    return { ...req, input: { ...(req.input as object), seed: value } };
+  };
+
+  it("accepts a request seeded from the tree's previous graph", () => {
+    expect(isWorkingTreeGraphEntryRequest(withSeed(seed))).toBe(true);
+  });
+
+  it.each<[string, unknown]>([
+    ["a non-object seed", "seed"],
+    ["a seed without its db path", { ...seed, dbPath: undefined }],
+    ["a seed whose held paths are not strings", { ...seed, heldRelPaths: [1] }],
+    ["a seed without its own delta", { ...seed, seedDeletedRelPaths: undefined }],
+  ])("refuses %s", (_label, value) => {
+    expect(isWorkingTreeGraphEntryRequest(withSeed(value))).toBe(false);
+  });
 });
 
 describe("isWorkingTreeGraphEntryReply", () => {

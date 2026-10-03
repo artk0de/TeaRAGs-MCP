@@ -26,7 +26,13 @@
  *   reverted to identical bytes therefore lands on the graph already published
  *   for those bytes; the delta reader's fingerprint (which carries mtimes) does
  *   not enter the key. Holds `codegraph/<physical>.duckdb` and
- *   `tree-graph.meta.json` (tree root, publish time, db path). Built into
+ *   `tree-graph.meta.json` (tree root, publish time, db path, base version,
+ *   and the delta it holds — each changed path's content hash and the deleted
+ *   paths). The next build of the same tree over the same base version is
+ *   SEEDED from such a graph: it applies only what changed since
+ *   (`treeGraphSeedOf`), so a build's cost follows the edit, not the size of
+ *   the tree's delta; the child falls back to the base snapshot when the seeded
+ *   graph could not equal a build from the base. Built into
  *   `<key>.staging-<pid>-<rand>` and renamed into place, so no reader — in this
  *   or a concurrent server — ever opens a half-built graph; a key dir that
  *   already exists when the build ends belongs to a process that won the race,
@@ -58,8 +64,8 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, promises as fs, rmSync } from "node:fs";
-import { join, relative } from "node:path";
+import { constants, existsSync, promises as fs, rmSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type {
@@ -75,14 +81,19 @@ import {
   WORKING_TREE_CHUNK_SWEEP_INTERVAL_MS,
   type WorkingTreeFileWriter,
 } from "../../../domains/explore/working-tree/index.js";
-import type {
-  WorkingTreeGraphBuildBudget,
-  WorkingTreeGraphBuildInput,
-  WorkingTreeGraphBuildOutcome,
-  WorkingTreeGraphProviderConfig,
+import {
+  treeGraphSeedOf,
+  type WorkingTreeDeltaRecord,
+  type WorkingTreeGraphBuildBudget,
+  type WorkingTreeGraphBuildInput,
+  type WorkingTreeGraphBuildOutcome,
+  type WorkingTreeGraphProviderConfig,
+  type WorkingTreeGraphSeed,
 } from "../../../domains/trajectory/codegraph/working-tree/index.js";
 import { ByteBoundedLru } from "../../../infra/byte-bounded-lru.js";
 import { physicalCollectionNamesListedByStorage, resolvePhysicalCollection } from "../../../infra/collection-name.js";
+import { fileContentHash } from "../../../infra/file-content-hash.js";
+import { isDebug } from "../../../infra/runtime.js";
 
 /** The reason a caller gets when its wait lapsed and the build is still running. */
 export const WORKING_TREE_GRAPH_BUILDING_REASON = "building";
@@ -289,6 +300,14 @@ interface WorkingTreeGraphMeta {
   physicalCollectionName: string;
   /** The graph file, relative to the key dir. */
   dbRelPath: string;
+  /** The base graph version the graph was built over ({@link baseGraphVersion}). Absent: an older publisher. */
+  baseVersion?: string;
+  /**
+   * The tree's delta the graph holds — each changed path with the content hash
+   * the key was digested from, and the deleted paths. Absent (an older
+   * publisher), the graph cannot seed: what it holds is unknown.
+   */
+  delta?: WorkingTreeDeltaRecord;
 }
 
 /** One resolved request: everything the key and the build depend on. */
@@ -299,6 +318,8 @@ interface WorkingTreeGraphJob {
   baseVersion: string;
   /** Digest of the delta's bytes — see {@link treeGraphKey}. */
   deltaDigest: string;
+  /** The delta's paths with their content hashes, as a published graph records it. */
+  delta: WorkingTreeDeltaRecord;
   key: string;
   graphDir: string;
 }
@@ -323,6 +344,17 @@ interface PublishedTreeGraph {
   activeAt: number;
 }
 
+/** A published graph that can seed a build: its file, and its meta with the delta recorded. */
+interface PublishedSeed {
+  dbPath: string;
+  meta: WorkingTreeGraphMeta & { delta: WorkingTreeDeltaRecord };
+}
+
+/** One debug line per tree-graph publish: which tree, which key, how it was made. */
+function logTreeGraph(job: WorkingTreeGraphJob, message: string): void {
+  if (isDebug()) console.error(`[WorkingTreeGraph] ${job.request.tree.root} ${job.key.slice(0, 12)}: ${message}`);
+}
+
 /** `max(publishedAt, servedAt)`: a graph re-served after another is the tree's newest again. */
 function activeAtOf(meta: WorkingTreeGraphMeta): number {
   return Math.max(meta.publishedAt, meta.servedAt ?? 0);
@@ -338,6 +370,8 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
   private readonly snapshotsInUse = new Map<string, number>();
   /** Staging dirs THIS process is building into — never swept under it, removed at exit. */
   private readonly stagingInUse = new Set<string>();
+  /** Published graphs a build of THIS process seeds from — never removed under it. */
+  private readonly seedsInUse = new Map<string, number>();
   /** `(path, size, mtime, ctime, inode)` → content sha256 of a changed file; see {@link contentHashOf}. */
   private readonly contentHashes: ByteBoundedLru<{ stamp: string; sha: string }>;
   /**
@@ -485,7 +519,7 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
     const baseVersion = await baseGraphVersion(runtime.pool.pathFor(physical));
     if (!baseVersion) return unavailable(`base codegraph for ${physical} vanished`);
 
-    const deltaDigest = await this.deltaContentDigest(request);
+    const { digest: deltaDigest, delta } = await this.deltaContent(request);
     const key = treeGraphKey(request.tree.root, physical, baseVersion, deltaDigest);
     const failure = this.failures.get(key);
     if (failure) {
@@ -500,6 +534,7 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
         physical,
         baseVersion,
         deltaDigest,
+        delta,
         key,
         graphDir: join(this.deps.rootDir, collectionName, "graph"),
       };
@@ -524,12 +559,16 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
   }
 
   /**
-   * The delta's bytes as one digest: sorted `(relativePath, content sha256)` of
-   * the changed files and the sorted deleted paths. Only the changed files are
-   * read (the delta has no file cap), each through {@link contentHashOf}, at
-   * most {@link WORKING_TREE_GRAPH_CONTENT_READ_CONCURRENCY} at once.
+   * The delta's bytes as one digest: sorted `(relativePath, content hash)` of
+   * the changed files and the sorted deleted paths — and the same as a record,
+   * which a published graph keeps so it can seed the tree's next build. Only
+   * the changed files are read (the delta has no file cap), each through
+   * {@link contentHashOf}, at most {@link WORKING_TREE_GRAPH_CONTENT_READ_CONCURRENCY}
+   * at once.
    */
-  private async deltaContentDigest(request: WorkingTreeGraphRequest): Promise<string> {
+  private async deltaContent(
+    request: WorkingTreeGraphRequest,
+  ): Promise<{ digest: string; delta: WorkingTreeDeltaRecord }> {
     const changed = [...new Set(request.changed)].sort();
     const files = new Array<[string, string]>(changed.length);
     let next = 0;
@@ -543,15 +582,20 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
       Array.from({ length: Math.min(WORKING_TREE_GRAPH_CONTENT_READ_CONCURRENCY, changed.length) }, worker),
     );
     const deleted = [...new Set(request.deleted)].sort();
-    return createHash("sha256")
-      .update(JSON.stringify([files, deleted]))
-      .digest("hex");
+    return {
+      digest: createHash("sha256")
+        .update(JSON.stringify([files, deleted]))
+        .digest("hex"),
+      delta: { changed: Object.fromEntries(files), deleted },
+    };
   }
 
   /**
-   * One file's content sha256, memoized by `(size, mtime, ctime, inode)` so a
-   * delta re-asked on every graph call re-reads only the files that moved. A
-   * path that is not a readable regular file contributes {@link ABSENT_CONTENT}.
+   * One file's content hash (`fileContentHash` — the definition the ingest
+   * pipeline and the tree build stamp graph rows with), memoized by `(size,
+   * mtime, ctime, inode)` so a delta re-asked on every graph call re-reads only
+   * the files that moved. A path that is not a readable regular file
+   * contributes {@link ABSENT_CONTENT}.
    */
   private async contentHashOf(path: string): Promise<string> {
     const stat = await fs.stat(path).catch(() => undefined);
@@ -559,9 +603,9 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
     const stamp = `${String(stat.size)}:${String(stat.mtimeMs)}:${String(stat.ctimeMs)}:${String(stat.ino)}`;
     const memo = this.contentHashes.get(path);
     if (memo?.stamp === stamp) return memo.sha;
-    const content = await fs.readFile(path).catch(() => undefined);
-    if (!content) return ABSENT_CONTENT;
-    const sha = createHash("sha256").update(content).digest("hex");
+    const content = await fs.readFile(path, "utf-8").catch(() => undefined);
+    if (content === undefined) return ABSENT_CONTENT;
+    const sha = fileContentHash(content);
     this.contentHashes.set(path, { stamp, sha }, Buffer.byteLength(path) + stamp.length + sha.length);
     return sha;
   }
@@ -597,7 +641,15 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
     return this.remember(job.key, second.state);
   }
 
-  /** One build attempt: publish the graph, or say how it failed and whether its snapshot vanished under it. */
+  /**
+   * One build attempt: publish the graph, or say how it failed and whether its
+   * snapshot vanished under it. When this cache holds a published graph of the
+   * same tree over the same base ({@link selectSeed}), the build is SEEDED from
+   * it — the child applies only what changed since and falls back to the
+   * snapshot itself when the seeded graph cannot equal a build from the base —
+   * and when nothing changed since, that graph is published under the new key
+   * without a build. The seed is held against retention until the attempt ends.
+   */
   private async buildAndPublish(
     job: WorkingTreeGraphJob,
     entry: WorkingTreeGraphInflightBuild,
@@ -615,6 +667,7 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
       `${job.key}${STAGING_MARKER}${String(process.pid)}-${randomBytes(4).toString("hex")}`,
     );
     let snapshotPath: string | undefined;
+    let seedDbPath: string | undefined;
     const failed = (state: WorkingTreeGraphState): WorkingTreeGraphAttempt => ({
       kind: "failed",
       state,
@@ -623,33 +676,62 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
     entry.outcomeArrived = false;
     this.trackStaging(staging);
     try {
-      snapshotPath = await this.ensureSnapshot(job);
-      this.retainSnapshot(snapshotPath, 1);
-      await fs.mkdir(staging, { recursive: true });
-      let outcome: WorkingTreeGraphBuildOutcome;
-      try {
-        outcome = await this.deps.builder.build(
-          {
-            snapshotPath,
-            outputRoot: staging,
-            physicalCollectionName: job.physical,
-            treeRoot: job.request.tree.root,
-            changedRelPaths: job.request.changed,
-            deletedRelPaths: job.request.deleted,
-            providerConfig: job.runtime.providerConfig,
-          },
-          this.deps.budget,
-        );
-      } finally {
-        entry.outcomeArrived = true;
+      const seed = await this.selectSeed(job);
+      if (seed) {
+        seedDbPath = seed.dbPath;
+        this.retainSeed(seedDbPath, 1);
       }
-      if (outcome.kind !== "built") return failed(unavailable(buildFailureReason(outcome)));
+      const seedInput = seed ? await this.seedInputFor(job, seed) : undefined;
+      await fs.mkdir(staging, { recursive: true });
+      let dbPath: string;
+      if (seed && seedInput?.changedRelPaths.length === 0 && seedInput.deletedRelPaths.length === 0) {
+        // The tree is the seed's tree under another key (e.g. a deletion that left
+        // the delta without moving a file): its graph IS this key's graph.
+        dbPath = join(staging, seed.meta.dbRelPath);
+        await fs.mkdir(dirname(dbPath), { recursive: true });
+        await fs.copyFile(seed.dbPath, dbPath, constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE);
+        entry.outcomeArrived = true;
+        logTreeGraph(job, "republished the seed's graph: nothing changed since it");
+      } else {
+        snapshotPath = await this.ensureSnapshot(job);
+        this.retainSnapshot(snapshotPath, 1);
+        let outcome: WorkingTreeGraphBuildOutcome;
+        try {
+          outcome = await this.deps.builder.build(
+            {
+              snapshotPath,
+              outputRoot: staging,
+              physicalCollectionName: job.physical,
+              treeRoot: job.request.tree.root,
+              changedRelPaths: job.request.changed,
+              deletedRelPaths: job.request.deleted,
+              providerConfig: job.runtime.providerConfig,
+              ...(seedInput ? { seed: seedInput } : {}),
+            },
+            this.deps.budget,
+          );
+        } finally {
+          entry.outcomeArrived = true;
+        }
+        if (outcome.kind !== "built") return failed(unavailable(buildFailureReason(outcome)));
+        const { graph } = outcome;
+        const origin = graph.seeded ? "from the tree's previous graph" : "from the base";
+        const rejection = graph.seedRejection ? ` seedRejected="${graph.seedRejection}"` : "";
+        logTreeGraph(
+          job,
+          `built ${origin}: walked=${String(graph.walkedFileCount)} deleted=${String(graph.deletedFileCount)} ` +
+            `dependents=${String(graph.hierarchyDependentCount)} durationMs=${String(graph.durationMs)}${rejection}`,
+        );
+        ({ dbPath } = graph);
+      }
 
       const meta: WorkingTreeGraphMeta = {
         treeRoot: job.request.tree.root,
         publishedAt: this.now(),
         physicalCollectionName: job.physical,
-        dbRelPath: relative(staging, outcome.graph.dbPath),
+        dbRelPath: relative(staging, dbPath),
+        baseVersion: job.baseVersion,
+        delta: job.delta,
       };
       await fs.writeFile(join(staging, META_FILE), JSON.stringify(meta));
       if (!existsSync(keyDir)) {
@@ -669,9 +751,63 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
       return failed(unavailable(`tree graph build failed: ${errorMessage(err)}`));
     } finally {
       if (snapshotPath) this.retainSnapshot(snapshotPath, -1);
+      if (seedDbPath) this.retainSeed(seedDbPath, -1);
       this.untrackStaging(staging);
       await fs.rm(staging, { recursive: true, force: true }).catch(() => undefined);
     }
+  }
+
+  /**
+   * The published graph to seed the job's build from: one of the same tree,
+   * physical collection and base version that recorded its delta — the graph
+   * this process last served or published for the tree when it qualifies,
+   * otherwise the most recently active one. Undefined when none qualifies.
+   */
+  private async selectSeed(job: WorkingTreeGraphJob): Promise<PublishedSeed | undefined> {
+    const treesDir = join(job.graphDir, "trees");
+    const treeRoot = job.request.tree.root;
+    const servedKey = this.servedKeyByTree.get(treeRoot)?.key;
+    let best: (PublishedSeed & { activeAt: number; served: boolean }) | undefined;
+    for (const entry of await listDir(treesDir)) {
+      if (!entry.isDirectory || entry.name.includes(STAGING_MARKER) || entry.name === job.key) continue;
+      const dir = join(treesDir, entry.name);
+      const meta = await readMeta(dir);
+      if (
+        meta?.treeRoot !== treeRoot ||
+        meta.physicalCollectionName !== job.physical ||
+        meta.baseVersion !== job.baseVersion ||
+        !meta.delta
+      ) {
+        continue;
+      }
+      const dbPath = join(dir, meta.dbRelPath);
+      if (!existsSync(dbPath)) continue;
+      const candidate = {
+        dbPath,
+        meta: { ...meta, delta: meta.delta },
+        activeAt: activeAtOf(meta),
+        served: entry.name === servedKey,
+      };
+      if (
+        !best ||
+        (candidate.served && !best.served) ||
+        (candidate.served === best.served && candidate.activeAt > best.activeAt)
+      ) {
+        best = candidate;
+      }
+    }
+    return best ? { dbPath: best.dbPath, meta: best.meta } : undefined;
+  }
+
+  /** The build's `seed`: the diff from the seed's recorded delta to the job's ({@link treeGraphSeedOf}). */
+  private async seedInputFor(job: WorkingTreeGraphJob, seed: PublishedSeed): Promise<WorkingTreeGraphSeed> {
+    const { root } = job.request.tree;
+    return treeGraphSeedOf(
+      seed.dbPath,
+      seed.meta.delta,
+      job.delta,
+      async (relPath) => (await fs.stat(join(root, relPath)).catch(() => undefined))?.isFile() ?? false,
+    );
   }
 
   /**
@@ -735,7 +871,13 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
   }
 
   private isGraphInUse(dbPath: string): boolean {
-    return this.deps.codegraph()?.pool.isFileReaderOpen?.(dbPath) ?? false;
+    return this.seedsInUse.has(dbPath) || (this.deps.codegraph()?.pool.isFileReaderOpen?.(dbPath) ?? false);
+  }
+
+  private retainSeed(dbPath: string, delta: 1 | -1): void {
+    const count = (this.seedsInUse.get(dbPath) ?? 0) + delta;
+    if (count > 0) this.seedsInUse.set(dbPath, count);
+    else this.seedsInUse.delete(dbPath);
   }
 
   private remember(key: string, state: WorkingTreeGraphState): WorkingTreeGraphState {
@@ -1029,11 +1171,27 @@ async function readMeta(keyDir: string): Promise<WorkingTreeGraphMeta | undefine
       (meta.servedAt === undefined || typeof meta.servedAt === "number") &&
       typeof meta.physicalCollectionName === "string" &&
       typeof meta.dbRelPath === "string"
-      ? (meta as WorkingTreeGraphMeta)
+      ? withoutMalformedSeedRecord(meta as WorkingTreeGraphMeta)
       : undefined;
   } catch {
     return undefined;
   }
+}
+
+/** A meta whose base version or delta is malformed keeps neither: the graph serves, it does not seed. */
+function withoutMalformedSeedRecord(meta: WorkingTreeGraphMeta): WorkingTreeGraphMeta {
+  const { delta, baseVersion } = meta as { delta?: unknown; baseVersion?: unknown };
+  const deltaOk =
+    typeof delta === "object" &&
+    delta !== null &&
+    Array.isArray((delta as { deleted?: unknown }).deleted) &&
+    (delta as { deleted: unknown[] }).deleted.every((path) => typeof path === "string") &&
+    typeof (delta as { changed?: unknown }).changed === "object" &&
+    (delta as { changed?: unknown }).changed !== null &&
+    Object.values((delta as { changed: object }).changed).every((hash) => typeof hash === "string");
+  if (deltaOk && typeof baseVersion === "string") return meta;
+  const { delta: _delta, baseVersion: _baseVersion, ...served } = meta;
+  return served;
 }
 
 async function readPublished(

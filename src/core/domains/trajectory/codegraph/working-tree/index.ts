@@ -15,3 +15,10 @@ export {
   type WorkingTreeGraphBuildBudget,
   type WorkingTreeGraphBuildOutcome,
 } from "./tree-graph-process-builder.js";
+export { type WorkingTreeGraphSeed } from "./tree-graph-seed-apply.js";
+export {
+  treeDeltaAgainstSeed,
+  treeGraphSeedOf,
+  type WorkingTreeDeltaRecord,
+  type WorkingTreeSeedDelta,
+} from "./tree-graph-seed.js";
