@@ -12,7 +12,7 @@
     "dev": "tsx src/index.ts",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest --coverage",
+    "test:coverage": "vitest --coverage --maxWorkers=50%",
     "test:providers": "node scripts/verify-providers.js",
     "type-check": "tsc --noEmit",
     "type-check:scripts": "tsc -p tsconfig.scripts.json",
