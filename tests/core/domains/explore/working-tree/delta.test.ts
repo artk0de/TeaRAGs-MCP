@@ -38,18 +38,20 @@ describe("WorkingTreeDeltaReader", () => {
   };
 
   beforeEach(async () => {
-    fixture = createGitWorkingTreeFixture();
-    indexedCommit = fixture.commit(
-      fixture.mainRoot,
+    fixture = createGitWorkingTreeFixture([
       {
-        ".gitignore": "ignored.ts\n",
-        ".contextignore": "generated/\n",
-        "src/keep.ts": "export const keep = 1;\n",
-        "src/old-name.ts": "export const moved = 1;\n",
+        commit: {
+          ".gitignore": "ignored.ts\n",
+          ".contextignore": "generated/\n",
+          "src/keep.ts": "export const keep = 1;\n",
+          "src/old-name.ts": "export const moved = 1;\n",
+        },
+        message: "A",
       },
-      "A",
-    );
-    tree = fixture.addWorktree("feature");
+      { addWorktree: "feature" },
+    ]);
+    [indexedCommit] = fixture.seeded.commits;
+    tree = fixture.seeded.worktrees.feature;
     const scanner = new FileScanner({ supportedExtensions: [".ts"], ignorePatterns: [] });
     await scanner.loadIgnorePatterns(tree);
     accepts = (relativePath) => scanner.accepts(relativePath);
@@ -229,13 +231,15 @@ describe("WorkingTreeDeltaReader rename pairs", () => {
   };
 
   beforeEach(() => {
-    fixture = createGitWorkingTreeFixture();
-    indexedCommit = fixture.commit(
-      fixture.mainRoot,
-      { "src/a.ts": body("a"), "src/b.ts": body("b"), "src/c.ts": body("c"), "src/d.ts": body("d") },
-      "A",
-    );
-    tree = fixture.addWorktree("moves");
+    fixture = createGitWorkingTreeFixture([
+      {
+        commit: { "src/a.ts": body("a"), "src/b.ts": body("b"), "src/c.ts": body("c"), "src/d.ts": body("d") },
+        message: "A",
+      },
+      { addWorktree: "moves" },
+    ]);
+    [indexedCommit] = fixture.seeded.commits;
+    tree = fixture.seeded.worktrees.moves;
   });
 
   afterEach(() => {

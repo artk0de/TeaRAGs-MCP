@@ -86,8 +86,8 @@ describe("WorkingTreeChunkStore", { timeout: 60_000 }, () => {
   };
 
   beforeEach(() => {
-    fixture = createGitWorkingTreeFixture();
-    tree = fixture.addWorktree("feature");
+    fixture = createGitWorkingTreeFixture([{ addWorktree: "feature" }]);
+    tree = fixture.seeded.worktrees.feature;
     scratch = mkdtempSync(join(tmpdir(), "wt-chunk-store-"));
     rootDir = join(scratch, "working-tree");
     clock = Date.UTC(2026, 9, 2);

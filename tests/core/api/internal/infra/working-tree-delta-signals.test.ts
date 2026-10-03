@@ -515,9 +515,10 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
   // gets the chunk walk's zero block — what ingest writes for a chunk no commit
   // touched — not "no block". Real git: the port's answer is the invariant.
   it("gives a brand-new symbol in a tracked file the chunk walk's zero block", async () => {
-    const fixture = createGitWorkingTreeFixture();
+    const fixture = createGitWorkingTreeFixture([
+      { commit: { [FOO]: "export function kept(): number {\n  return 1;\n}\n" }, message: "add foo" },
+    ]);
     try {
-      fixture.commit(fixture.mainRoot, { [FOO]: "export function kept(): number {\n  return 1;\n}\n" }, "add foo");
       appendFileSync(join(fixture.mainRoot, FOO), "\nexport function brandNew(): number {\n  return 2;\n}\n");
       const source = sourceWith(
         [basePoint("b1", FOO, "Foo#kept", 4)],
@@ -860,14 +861,17 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
     // touched is in the delta, and its base history holds commits the tree
     // does not have — inheriting it would date the tree's code by main's.
     it("recomputes a file only commits the tree lacks touched, from the tree's own history", async () => {
-      const fixture = createGitWorkingTreeFixture();
+      const v1 = "export function kept(): number {\n  return 1;\n}\n";
+      const fixture = createGitWorkingTreeFixture([
+        { commit: { [FOO]: v1 }, message: "add foo" },
+        { commit: { [FOO]: v1.replace("1;", "2;") }, message: "fix: foo" },
+        { addWorktree: "old" },
+        { commit: { "src/other.ts": "export const o = 1;\n" }, message: "branch work", in: "old" },
+        { commit: { [FOO]: v1.replace("1;", "3;") }, message: "main moves foo" },
+      ]);
       try {
-        const v1 = "export function kept(): number {\n  return 1;\n}\n";
-        fixture.commit(fixture.mainRoot, { [FOO]: v1 }, "add foo");
-        fixture.commit(fixture.mainRoot, { [FOO]: v1.replace("1;", "2;") }, "fix: foo");
-        const tree = fixture.addWorktree("old");
-        fixture.commit(tree, { "src/other.ts": "export const o = 1;\n" }, "branch work");
-        const stamp = fixture.commit(fixture.mainRoot, { [FOO]: v1.replace("1;", "3;") }, "main moves foo");
+        const tree = fixture.seeded.worktrees.old;
+        const [, , , stamp] = fixture.seeded.commits;
         const source = sourceWith(
           [{ ...basePoint("b1", FOO, "Foo#kept", 4), payload: { ...basePoint("b1", FOO, "Foo#kept", 4).payload } }],
           createWorkingTreeGitSignalSource({

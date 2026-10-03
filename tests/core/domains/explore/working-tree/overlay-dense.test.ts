@@ -65,9 +65,12 @@ describe("WorkingTreeOverlay dense warm-up", { timeout: 60_000 }, () => {
     o.view({ root: tree, baseIndex: { collectionName: COLLECTION, root: fixture.mainRoot } }, "proj");
 
   beforeEach(() => {
-    fixture = createGitWorkingTreeFixture();
-    const indexedCommit = fixture.commit(fixture.mainRoot, { "src/keep.ts": "export const keep = 1;\n" }, "A");
-    tree = fixture.addWorktree("feature");
+    fixture = createGitWorkingTreeFixture([
+      { commit: { "src/keep.ts": "export const keep = 1;\n" }, message: "A" },
+      { addWorktree: "feature" },
+    ]);
+    const [indexedCommit] = fixture.seeded.commits;
+    tree = fixture.seeded.worktrees.feature;
     registryDir = mkdtempSync(join(tmpdir(), "wto-dense-registry-"));
     registry = new CollectionRegistry(registryDir);
     registry.record({

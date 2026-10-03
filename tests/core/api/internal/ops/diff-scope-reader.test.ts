@@ -11,12 +11,12 @@
  * with, is unit-tested here too.
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { copyGitRepoTemplate } from "../../../__helpers__/git-repo-template.js";
 import {
   createGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
@@ -63,19 +63,41 @@ function git(root: string, ...args: string[]): string {
   });
 }
 
+/** `<root>/repo`: `CHANGED` committed as `ORIGINAL`, then edited to `CHANGED_TEXT` and left uncommitted. */
+function buildChangedRepo(root: string): string {
+  const repo = join(root, "repo");
+  mkdirSync(join(repo, "src/git"), { recursive: true });
+  git(repo, "init", "-q", "-b", "main");
+  writeFileSync(join(repo, CHANGED), ORIGINAL);
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "init");
+  writeFileSync(join(repo, CHANGED), CHANGED_TEXT);
+  return repo;
+}
+
+/** `<root>/repo`: one commit holding `file` with `content`. */
+function buildOneCommitRepo(root: string, dirs: string, file: string, content: string): void {
+  const repo = join(root, "repo");
+  mkdirSync(join(repo, dirs), { recursive: true });
+  git(repo, "init", "-q", "-b", "main");
+  writeFileSync(join(repo, file), content);
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "init");
+}
+
 describe("readDiffScope", { timeout: 60_000 }, () => {
   let dir: string;
   let repo: string;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "diff-scope-reader-"));
+    dir = copyGitRepoTemplate(
+      "diff-scope-reader:changed",
+      (root) => {
+        buildChangedRepo(root);
+      },
+      { prefix: "diff-scope-reader-" },
+    ).root;
     repo = join(dir, "repo");
-    mkdirSync(join(repo, "src/git"), { recursive: true });
-    git(repo, "init", "-q", "-b", "main");
-    writeFileSync(join(repo, CHANGED), ORIGINAL);
-    git(repo, "add", "-A");
-    git(repo, "commit", "-q", "-m", "init");
-    writeFileSync(join(repo, CHANGED), CHANGED_TEXT);
   });
 
   afterEach(() => {
@@ -128,21 +150,34 @@ describe("readDiffScope", { timeout: 60_000 }, () => {
     let forkPoint: string;
 
     beforeEach(() => {
-      // The fork point carries `shared.ts`; the branch commits its change; main then rewrites `shared.ts`.
-      writeFileSync(join(repo, CHANGED), ORIGINAL);
-      writeFileSync(join(repo, SHARED), "export class Commit {}\n");
-      git(repo, "add", "-A");
-      git(repo, "commit", "-q", "-m", "shared");
-      forkPoint = git(repo, "rev-parse", "HEAD").trim();
-      git(repo, "checkout", "-q", "-b", "feat");
-      writeFileSync(join(repo, CHANGED), CHANGED_TEXT);
-      git(repo, "add", "-A");
-      git(repo, "commit", "-q", "-m", "feat");
-      git(repo, "checkout", "-q", "main");
-      writeFileSync(join(repo, SHARED), "export class Kommit {}\n");
-      git(repo, "add", "-A");
-      git(repo, "commit", "-q", "-m", "main moves on");
-      git(repo, "checkout", "-q", "feat");
+      // The outer repository taken further, built once and copied in its place.
+      rmSync(dir, { recursive: true, force: true });
+      const copy = copyGitRepoTemplate(
+        "diff-scope-reader:moved-base",
+        (root) => {
+          const built = buildChangedRepo(root);
+          // The fork point carries `shared.ts`; the branch commits its change; main then rewrites `shared.ts`.
+          writeFileSync(join(built, CHANGED), ORIGINAL);
+          writeFileSync(join(built, SHARED), "export class Commit {}\n");
+          git(built, "add", "-A");
+          git(built, "commit", "-q", "-m", "shared");
+          const fork = git(built, "rev-parse", "HEAD").trim();
+          git(built, "checkout", "-q", "-b", "feat");
+          writeFileSync(join(built, CHANGED), CHANGED_TEXT);
+          git(built, "add", "-A");
+          git(built, "commit", "-q", "-m", "feat");
+          git(built, "checkout", "-q", "main");
+          writeFileSync(join(built, SHARED), "export class Kommit {}\n");
+          git(built, "add", "-A");
+          git(built, "commit", "-q", "-m", "main moves on");
+          git(built, "checkout", "-q", "feat");
+          return fork;
+        },
+        { prefix: "diff-scope-reader-" },
+      );
+      dir = copy.root;
+      repo = join(dir, "repo");
+      forkPoint = copy.meta;
     });
 
     it("reviews what the branch changed since its merge-base with the base, and reports that commit", async () => {
@@ -204,13 +239,14 @@ describe("resolveWorkingTree — the tree a review reads", () => {
   let repo: string;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "diff-scope-reader-tree-"));
+    dir = copyGitRepoTemplate(
+      "diff-scope-reader:tree",
+      (root) => {
+        buildOneCommitRepo(root, "src/git", "src/git/base.ts", "export const base = 1;\n");
+      },
+      { prefix: "diff-scope-reader-tree-" },
+    ).root;
     repo = join(dir, "repo");
-    mkdirSync(join(repo, "src/git"), { recursive: true });
-    git(repo, "init", "-q", "-b", "main");
-    writeFileSync(join(repo, "src/git/base.ts"), "export const base = 1;\n");
-    git(repo, "add", "-A");
-    git(repo, "commit", "-q", "-m", "init");
   });
 
   afterEach(() => {
@@ -261,13 +297,14 @@ describe("readTreeLag", () => {
   let repo: string;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "diff-scope-reader-lag-"));
+    dir = copyGitRepoTemplate(
+      "diff-scope-reader:lag",
+      (root) => {
+        buildOneCommitRepo(root, ".", "x.ts", "export const x = 1;\n");
+      },
+      { prefix: "diff-scope-reader-lag-" },
+    ).root;
     repo = join(dir, "repo");
-    mkdirSync(repo, { recursive: true });
-    git(repo, "init", "-q", "-b", "main");
-    writeFileSync(join(repo, "x.ts"), "export const x = 1;\n");
-    git(repo, "add", "-A");
-    git(repo, "commit", "-q", "-m", "init");
   });
 
   afterEach(() => {
@@ -302,12 +339,15 @@ describe("readDiffScope / readTreeLag — a project registered at a repository s
   let sub: string;
 
   beforeEach(() => {
-    fixture = createGitWorkingTreeFixture();
-    fixture.commit(fixture.mainRoot, {
-      "sub/a.ts": "export const a = 1;\n",
-      "sub/c.ts": "export const c = 1;\n",
-      "sibling/b.ts": "export const b = 1;\n",
-    });
+    fixture = createGitWorkingTreeFixture([
+      {
+        commit: {
+          "sub/a.ts": "export const a = 1;\n",
+          "sub/c.ts": "export const c = 1;\n",
+          "sibling/b.ts": "export const b = 1;\n",
+        },
+      },
+    ]);
     sub = join(fixture.mainRoot, "sub");
     writeFileSync(join(sub, "a.ts"), "export const a = 1;\nexport const a2 = 2;\n");
     writeFileSync(join(sub, "new.ts"), "export const n = 1;\nexport const m = 2;\n");

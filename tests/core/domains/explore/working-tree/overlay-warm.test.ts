@@ -119,9 +119,12 @@ describe("WorkingTreeOverlay with a delta warmer", { timeout: 60_000 }, () => {
   };
 
   beforeEach(() => {
-    fixture = createGitWorkingTreeFixture();
-    indexedCommit = fixture.commit(fixture.mainRoot, { "src/keep.ts": "export const keep = 1;\n" }, "A");
-    tree = fixture.addWorktree("feature");
+    fixture = createGitWorkingTreeFixture([
+      { commit: { "src/keep.ts": "export const keep = 1;\n" }, message: "A" },
+      { addWorktree: "feature" },
+    ]);
+    [indexedCommit] = fixture.seeded.commits;
+    tree = fixture.seeded.worktrees.feature;
     registryDir = mkdtempSync(join(tmpdir(), "wto-warm-registry-"));
     registry = new CollectionRegistry(registryDir);
     record({ indexedCommit, indexedDirty: false });
