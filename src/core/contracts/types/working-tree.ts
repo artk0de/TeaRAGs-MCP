@@ -94,6 +94,15 @@ export interface WorkingTreeMarker {
  */
 export const WORKING_TREE_WARM_WAIT_MS = 2_000;
 
+/**
+ * How long a search or symbol lookup waits for the tree graph before falling
+ * back to the index (spec: 3 s): delta rows' codegraph signals inherit the
+ * base's, and a find_symbol lookup reads the base graph with
+ * `treeGraphUnavailable` naming why. Graph tools wait for the build instead —
+ * their answer IS the graph.
+ */
+export const WORKING_TREE_SEARCH_GRAPH_WAIT_MS = 3_000;
+
 /** How a base row of a delta file differs from the tree, where no floor replaced it. */
 export type WorkingTreeState = "modified" | "deleted";
 
