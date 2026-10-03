@@ -118,6 +118,7 @@ describe("REGISTRY_ENV_GROUPS", () => {
       "OPENAI_API_KEY",
       "COHERE_API_KEY",
       "VOYAGE_API_KEY",
+      "EMBEDDING_API_KEY",
       "DEBUG",
       "SERVER_TRANSPORT",
       "SERVER_HTTP_PORT",

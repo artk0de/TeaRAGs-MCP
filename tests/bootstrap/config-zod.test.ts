@@ -38,6 +38,8 @@ describe("parseAppConfigZod", () => {
       "OPENAI_API_KEY",
       "COHERE_API_KEY",
       "VOYAGE_API_KEY",
+      "EMBEDDING_API_KEY",
+      "EMBEDDING_FALLBACK_URL",
       "EMBEDDING_TUNE_BATCH_SIZE",
       "EMBEDDING_BATCH_SIZE",
       "CODE_BATCH_SIZE",
@@ -550,6 +552,41 @@ describe("parseAppConfigZod", () => {
   });
 
   describe("embedding provider values", () => {
+    it("parses the llama-server provider with EMBEDDING_API_KEY and endpoint lists", async () => {
+      process.env.EMBEDDING_PROVIDER = "llama-server";
+      process.env.EMBEDDING_API_KEY = "lan-key";
+      process.env.EMBEDDING_BASE_URL = "http://gpu:8081,http://gpu:8082";
+      process.env.EMBEDDING_FALLBACK_URL = "http://127.0.0.1:8080";
+
+      const { parseAppConfigZod } = await freshImport();
+      const { embedding } = parseAppConfigZod();
+
+      expect(embedding.provider).toBe("llama-server");
+      expect(embedding.apiKey).toBe("lan-key");
+      expect(embedding.baseUrl).toBe("http://gpu:8081,http://gpu:8082");
+      expect(embedding.fallbackBaseUrl).toBe("http://127.0.0.1:8080");
+    });
+
+    it("does not require an API key for llama-server", async () => {
+      process.env.EMBEDDING_PROVIDER = "llama-server";
+
+      const { parseAppConfigZod } = await freshImport();
+      const { embedding } = parseAppConfigZod();
+
+      expect(embedding.apiKey).toBeUndefined();
+      expect(embedding.tune.batchSize).toBe(256);
+    });
+
+    it("keeps a single ollama EMBEDDING_BASE_URL unchanged", async () => {
+      process.env.EMBEDDING_BASE_URL = "http://box:11434";
+
+      const { parseAppConfigZod } = await freshImport();
+      const { embedding } = parseAppConfigZod();
+
+      expect(embedding.provider).toBe("ollama");
+      expect(embedding.baseUrl).toBe("http://box:11434");
+    });
+
     it("parses custom env vars for embedding", async () => {
       process.env.EMBEDDING_PROVIDER = "openai";
       process.env.EMBEDDING_MODEL = "text-embedding-3-small";

@@ -4,6 +4,7 @@ import type { EmbeddingConfig } from "../../../../src/bootstrap/config/index.js"
 import { ConfigValueInvalidError, ConfigValueMissingError } from "../../../../src/bootstrap/errors.js";
 import { CohereEmbeddings } from "../../../../src/core/adapters/embeddings/cohere.js";
 import { EmbeddingProviderFactory } from "../../../../src/core/adapters/embeddings/factory.js";
+import { LlamaServerEmbeddings } from "../../../../src/core/adapters/embeddings/llama-server/provider.js";
 import { OllamaEmbeddings } from "../../../../src/core/adapters/embeddings/ollama.js";
 import { DEFAULT_ONNX_MODEL, OnnxEmbeddings } from "../../../../src/core/adapters/embeddings/onnx.js";
 import { OpenAIEmbeddings } from "../../../../src/core/adapters/embeddings/openai.js";
@@ -45,6 +46,17 @@ describe("EmbeddingProviderFactory", () => {
 
       it("should include provider value in error message", () => {
         expect(() => EmbeddingProviderFactory.create(makeConfig({ provider: "invalid" as any }))).toThrow(/invalid/);
+      });
+
+      it("lists llama-server among the valid providers", () => {
+        const error = (() => {
+          try {
+            EmbeddingProviderFactory.create(makeConfig({ provider: "invalid" as any }));
+          } catch (e) {
+            return e as ConfigValueInvalidError;
+          }
+        })();
+        expect(error?.hint).toContain("llama-server");
       });
     });
 
@@ -221,6 +233,48 @@ describe("EmbeddingProviderFactory", () => {
           await vi.waitFor(() => {
             expect(fetchSpy).toHaveBeenCalledWith("http://box:11434/api/show", expect.anything());
           });
+        } finally {
+          fetchSpy.mockRestore();
+        }
+      });
+    });
+
+    describe("llama-server provider", () => {
+      it("returns LlamaServerEmbeddings without requiring an API key", () => {
+        const provider = EmbeddingProviderFactory.create(makeConfig({ provider: "llama-server" }));
+
+        expect(provider).toBeInstanceOf(LlamaServerEmbeddings);
+        expect(provider.getProviderName()).toBe("llama-server");
+        expect(provider.getModel()).toBe("unclemusclez/jina-embeddings-v2-base-code:latest");
+        expect(provider.getBaseUrl?.()).toBe("http://localhost:8080");
+      });
+
+      it("passes the peer list, the fallback list and the model through", () => {
+        const provider = EmbeddingProviderFactory.create(
+          makeConfig({
+            provider: "llama-server",
+            model: "nomic-embed-text",
+            baseUrl: "http://gpu:8081,http://gpu:8082",
+            fallbackBaseUrl: "http://127.0.0.1:8080",
+          }),
+        );
+
+        expect(provider.getModel()).toBe("nomic-embed-text");
+        expect(provider.getPrimaryBaseUrl?.()).toBe("http://gpu:8081,http://gpu:8082");
+        expect(provider.getFallbackBaseUrl?.()).toBe("http://127.0.0.1:8080");
+      });
+
+      it("sends EMBEDDING_API_KEY as a Bearer token", async () => {
+        const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ status: "ok" }));
+        try {
+          const provider = EmbeddingProviderFactory.create(
+            makeConfig({ provider: "llama-server", baseUrl: "http://gpu:8081", apiKey: "k1" }),
+          );
+          await provider.checkHealth();
+          expect(fetchSpy).toHaveBeenCalledWith(
+            "http://gpu:8081/health",
+            expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer k1" }) }),
+          );
         } finally {
           fetchSpy.mockRestore();
         }

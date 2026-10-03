@@ -16,6 +16,7 @@ import {
 import { GraphDbClientPool } from "../core/adapters/duckdb/index.js";
 import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
+import { LlamaServerEmbeddings } from "../core/adapters/embeddings/llama-server/provider.js";
 import { OllamaEmbeddings, type OllamaRecoveryWaitEvent } from "../core/adapters/embeddings/ollama.js";
 import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { DaemonLock } from "../core/adapters/qdrant/embedded/daemon-lock.js";
@@ -240,6 +241,8 @@ async function resolveInfrastructure(
     // Armed before the first request below, so a provider that is already
     // down at startup is reported as a wait from its first pause on.
     if (onEmbeddingRecoveryWait) embeddings.onRecoveryWait = onEmbeddingRecoveryWait;
+  } else if (embeddings instanceof LlamaServerEmbeddings && onEmbeddingRecoveryWait) {
+    embeddings.onRecoveryWait = onEmbeddingRecoveryWait;
   }
 
   // Eagerly init ONNX to get calibrated batch size before pipeline config

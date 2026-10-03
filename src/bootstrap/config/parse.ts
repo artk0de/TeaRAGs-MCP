@@ -35,7 +35,8 @@ function validateSchema<T>(
 }
 
 function validateApiKey(embedding: EmbeddingConfig): void {
-  if (embedding.provider === "ollama" || embedding.provider === "onnx") return;
+  // EMBEDDING_API_KEY is optional for llama-server: a loopback server needs none.
+  if (embedding.provider === "ollama" || embedding.provider === "onnx" || embedding.provider === "llama-server") return;
 
   const keyMap: Record<string, keyof EmbeddingConfig> = {
     openai: "openaiApiKey",
@@ -59,6 +60,10 @@ const PROVIDER_BATCH_DEFAULTS: Record<string, number> = {
   openai: 2048,
   cohere: 96,
   voyage: 128,
+  // One batch fans out across every GPU endpoint and its -np slots: 256 over
+  // two GPUs at -np 4 is 8 parallel requests of ~32 texts. The throughput
+  // tuner moves it from there.
+  "llama-server": 256,
 };
 
 function buildEnvInputs(env: EnvReader) {
@@ -112,6 +117,7 @@ function buildEnvInputs(env: EnvReader) {
     openaiApiKey: env("OPENAI_API_KEY"),
     cohereApiKey: env("COHERE_API_KEY"),
     voyageApiKey: env("VOYAGE_API_KEY"),
+    apiKey: env("EMBEDDING_API_KEY"),
     tune: embeddingTune,
   };
 

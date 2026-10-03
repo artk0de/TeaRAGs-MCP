@@ -9,7 +9,7 @@ import {
 } from "../errors.js";
 
 /** Error codes that mean the chunk exceeded the embedding model's context window. */
-const CONTEXT_OVERFLOW_CODES = new Set(["INFRA_OLLAMA_CONTEXT_OVERFLOW"]);
+const CONTEXT_OVERFLOW_CODES = new Set(["INFRA_OLLAMA_CONTEXT_OVERFLOW", "INFRA_LLAMA_SERVER_CONTEXT_OVERFLOW"]);
 
 /** HTTP statuses from an embedding provider that mean "this input is bad" (not transient). */
 const EMBEDDING_BAD_INPUT_STATUSES = new Set([400, 413, 422]);
