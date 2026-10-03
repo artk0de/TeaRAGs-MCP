@@ -45,7 +45,7 @@ import { composeExtractionWalker, deriveStructuralConformance } from "../kernel/
 import { isEcmascriptSourcePath } from "../shared/ecmascript-symbol-lookup.js";
 import { readEcmascriptImportSpecifiers, typescriptChunkClassifier, typescriptHooks } from "./chunking/index.js";
 import { typescriptKernel } from "./kernel.js";
-import { loadTsConfig, TSCallResolver } from "./resolver/index.js";
+import { loadTsConfig, TSCallResolver, type TSSourceFileStore } from "./resolver/index.js";
 import { tsNameOf } from "./walker/name-of.js";
 import { TYPESCRIPT_EXTRACTION_PASSES } from "./walker/passes.js";
 import { extractFromTypescriptFile, type ExtractInput } from "./walker/walker.js";
@@ -145,10 +145,14 @@ export class TypeScriptLanguage implements LanguageProvider {
    *   project is bound, and never a repository. Construction is simply too
    *   early to know which project the calls belong to, so the root now comes
    *   from the run.
+   * @param sourceFileStore Parses a long-lived process carries from one run to
+   *   the next (`TSSourceFileStore`); every resolver this provider binds parses
+   *   through it. Absent: each resolver parses cold.
    */
   constructor(
     private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE,
     private readonly repoRoot: string = process.cwd(),
+    private readonly sourceFileStore?: TSSourceFileStore,
   ) {
     this.resolver = {
       resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null =>
@@ -200,7 +204,15 @@ export class TypeScriptLanguage implements LanguageProvider {
   /** {@link resolverFor} keyed by the root directly, for callers with no call site. */
   private resolverForRoot(root: string): TSCallResolver {
     if (this.bound?.root !== root) {
-      this.bound = { root, resolver: new TSCallResolver(loadTsConfig(root), this.mode, root) };
+      this.bound = {
+        root,
+        resolver: new TSCallResolver(
+          loadTsConfig(root),
+          this.mode,
+          root,
+          this.sourceFileStore ? { sourceFileStore: this.sourceFileStore } : {},
+        ),
+      };
     }
     return this.bound.resolver;
   }

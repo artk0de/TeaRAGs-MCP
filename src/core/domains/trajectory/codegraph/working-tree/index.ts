@@ -6,14 +6,19 @@
  */
 export {
   buildWorkingTreeGraph,
+  type WorkingTreeGraphBuildDeps,
   type WorkingTreeGraphBuildInput,
   type WorkingTreeGraphBuilt,
+  type WorkingTreeGraphParseCacheUse,
   type WorkingTreeGraphProviderConfig,
 } from "./tree-graph-build.js";
 export {
+  WORKING_TREE_GRAPH_CHILD_IDLE_MS,
+  WORKING_TREE_GRAPH_CHILD_RECYCLE_HEAP_FRACTION,
   WorkingTreeGraphProcessBuilder,
   type WorkingTreeGraphBuildBudget,
   type WorkingTreeGraphBuildOutcome,
+  type WorkingTreeGraphProcessBuilderOptions,
 } from "./tree-graph-process-builder.js";
 export { type WorkingTreeGraphSeed } from "./tree-graph-seed-apply.js";
 export {

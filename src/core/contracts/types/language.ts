@@ -928,6 +928,28 @@ export interface SchemaColumnAccessorSource {
   readonly modelBaseClasses: readonly string[];
 }
 
+/** What a {@link LanguageCrossRunParseCache} has done since it was built, and what it holds now. */
+export interface LanguageCrossRunParseUsage {
+  /** Parses handed back from an earlier run instead of parsing again. */
+  reused: number;
+  /** Parses made (none stored, stale, or under other options). */
+  parsed: number;
+  retainedFiles: number;
+  retainedTextBytes: number;
+}
+
+/**
+ * Parse state a long-lived process carries from one codegraph run to the next
+ * — only what every read re-validates against the file it came from, so a run
+ * over it builds what a cold run builds. Opaque to its holder: built by the
+ * language module (`CrossRunParseCache`) and handed back to the module's
+ * `LanguageFactory`, which threads it to the providers that parse. Everything
+ * else a resolver holds stays scoped to the factory, i.e. to one run.
+ */
+export interface LanguageCrossRunParseCache {
+  usage: () => LanguageCrossRunParseUsage;
+}
+
 /**
  * Keyed family resolver for `LanguageProvider`s. `create(lang)` is
  * **expensive** (loads the grammar, builds a Parser) — callers MUST cache the

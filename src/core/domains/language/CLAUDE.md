@@ -217,6 +217,17 @@
 - **`TSProgramCache` lives on `TSCallResolver`, refreshed by an mtime re-stat
   per `acquire`; `reset()` has NO caller in `src`.** Why: auditing for a
   run-boundary discard finds nothing and invites a spurious `reset()`.
+- **Only PARSES cross a run boundary, through an injected `TSSourceFileStore` —
+  never a Program.** A long-lived process (the warm working-tree graph child)
+  hands `LanguageFactory` a `CrossRunParseCache`; each run builds a fresh
+  factory, resolver and `TSProgramCache` over it, and the store re-stats every
+  file (mtime + size + parse options) before handing a parse back. Do not
+  "finish the job" by retaining Programs or the host probe memos across runs.
+  Why: a Program embeds module-resolution and existence answers that a file
+  added or deleted between runs moves without touching any file it holds, and
+  dependency edits under an unchanged entry are untracked — a warm run would
+  then differ from a cold one, which the warm-vs-cold equivalence suite
+  (`tree-graph-seed-equivalence.test.ts`) forbids.
 - **A bulk pass is covered by CLOSURE-BATCH Programs, one alive at a time — not
   one whole-project Program and not one per entry file** (bd vtuu4).
   `CODEGRAPH_TS_PROGRAM_STRATEGY` = `coverage` | `whole` | `auto` (default);
