@@ -45,13 +45,33 @@ interface TrackedEmbeddingEndpoint extends EmbeddingEndpointState {
   lastProbeAt?: number;
 }
 
-/** Split a comma-separated endpoint list: trim, drop empties, strip trailing "/". */
+const BARE_PORT = /^:?(\d+)$/;
+const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+/**
+ * Split a comma-separated endpoint list: trim, drop empties, strip trailing "/".
+ * Shorthand for several servers on one host: a bare port (`8082` or `:8082`)
+ * reuses the scheme and host of the nearest preceding URL
+ * (`http://box:8081,8082` → two endpoints); with no preceding URL it means
+ * `http://localhost`. A `host:port` entry without a scheme gets `http://`.
+ */
 export function parseEmbeddingEndpointList(value: string | undefined): string[] {
   if (!value) return [];
-  return value
-    .split(",")
-    .map((entry) => entry.trim().replace(/\/+$/, ""))
-    .filter((entry) => entry.length > 0);
+  const endpoints: string[] = [];
+  let base = "http://localhost";
+  for (const raw of value.split(",")) {
+    const entry = raw.trim().replace(/\/+$/, "");
+    if (entry.length === 0) continue;
+    const port = BARE_PORT.exec(entry);
+    if (port) {
+      endpoints.push(`${base}:${port[1]}`);
+      continue;
+    }
+    const url = HAS_SCHEME.test(entry) ? entry : `http://${entry}`;
+    endpoints.push(url);
+    base = url.replace(/:\d+$/, "");
+  }
+  return endpoints;
 }
 
 export class EmbeddingEndpointPool {

@@ -41,6 +41,36 @@ describe("parseEmbeddingEndpointList", () => {
   it("drops empty entries", () => {
     expect(parseEmbeddingEndpointList(" ,http://a:1,, ")).toEqual(["http://a:1"]);
   });
+
+  it("expands bare ports onto the scheme and host of the preceding URL", () => {
+    expect(parseEmbeddingEndpointList("http://192.168.1.71:8081,8082, 8083")).toEqual([
+      "http://192.168.1.71:8081",
+      "http://192.168.1.71:8082",
+      "http://192.168.1.71:8083",
+    ]);
+  });
+
+  it("a later full URL becomes the base for the bare ports after it", () => {
+    expect(parseEmbeddingEndpointList("http://a:1,2,https://b:3,4")).toEqual([
+      "http://a:1",
+      "http://a:2",
+      "https://b:3",
+      "https://b:4",
+    ]);
+  });
+
+  it("a bare port with no preceding URL means http://localhost", () => {
+    expect(parseEmbeddingEndpointList("8080")).toEqual(["http://localhost:8080"]);
+    expect(parseEmbeddingEndpointList("8080,8081")).toEqual(["http://localhost:8080", "http://localhost:8081"]);
+  });
+
+  it("a :port entry is treated like a bare port", () => {
+    expect(parseEmbeddingEndpointList("http://box:8081,:8082")).toEqual(["http://box:8081", "http://box:8082"]);
+  });
+
+  it("host:port without a scheme gets http://", () => {
+    expect(parseEmbeddingEndpointList("box:8081,8082")).toEqual(["http://box:8081", "http://box:8082"]);
+  });
 });
 
 describe("EmbeddingEndpointPool", () => {
