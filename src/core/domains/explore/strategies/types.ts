@@ -25,7 +25,9 @@ export interface ExploreContext {
   metaOnly?: boolean;
   /**
    * The tree this request reads (bd tea-rags-mcp-xi2r9). Floor strategies
-   * substitute its rows; the rest stamp `treeState` on base rows of its files.
+   * substitute its re-read rows; the rest stamp `treeState` on base rows of
+   * its files. Every strategy stamps rows of files it serves from the index
+   * (`indexServedPaths`).
    */
   workingTreeView?: WorkingTreeView;
 }
@@ -35,7 +37,10 @@ export interface ExploreResult<P = Record<string, unknown>> {
   score: number;
   payload?: P;
   rankingOverlay?: RankingOverlay;
-  /** Set on a base row of a file the working tree changed or deleted, where no floor replaced it. */
+  /**
+   * Set on a base row of a file the working tree changed or deleted, where no
+   * floor replaced it — always on a row of an index-served file.
+   */
   treeState?: WorkingTreeState;
 }
 

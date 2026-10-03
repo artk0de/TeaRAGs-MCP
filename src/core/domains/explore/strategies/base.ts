@@ -18,6 +18,7 @@ import { WORKING_TREE_DENSE_WAIT_MS, type WorkingTreeDenseVectors } from "../wor
 import { filterReadsWorkingTreeSignals, type WorkingTreeView } from "../working-tree/overlay.js";
 import { excludeWorkingTreeBaseIds } from "../working-tree/sparse-floor.js";
 import {
+  indexServedStateOf,
   relativePathOf,
   retargetWorkingTreeRows,
   substituteWorkingTreeRows,
@@ -200,14 +201,24 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
   }
 
   /**
-   * Base rows of a file the working tree changed or deleted stay in an answer
-   * that has no floor, and say so: `treeState` on the RESULT, never inside the
-   * payload, so `fields` projection and metaOnly shaping cannot drop it
-   * (bd tea-rags-mcp-xi2r9.3). One stamping seam for every strategy — a
-   * floor strategy whose view can read delta rows answered from the tree, so
-   * there is nothing stale to flag. The file is read off the RAW hit by id:
-   * metaOnly and `level: "file"` shaping may have dropped `relativePath` from
-   * the page's payload.
+   * Base rows of a file the working tree changed or deleted that reach the
+   * answer say so: `treeState` on the RESULT, never inside the payload, so
+   * `fields` projection and metaOnly shaping cannot drop it
+   * (bd tea-rags-mcp-xi2r9.3). The ONE stamping seam for every strategy — no
+   * strategy overrides `execute`, so none stamps elsewhere.
+   *
+   * Two populations, two rules:
+   * - Index-served files (`indexServedPaths`: changed, but the view does not
+   *   re-read them — no full-AST chunker, or not warmed yet) are the index's
+   *   rows in EVERY strategy: a floor replaces only touched files, so these
+   *   are stamped "modified" floor or not, even when `touchedPaths` is empty
+   *   (a delta made only of index-only files).
+   * - Touched files are stamped only by a strategy without a floor; a floor
+   *   strategy whose view can read delta rows answered them from the tree, so
+   *   there is nothing stale to flag.
+   *
+   * The file is read off the RAW hit by id: metaOnly and `level: "file"`
+   * shaping may have dropped `relativePath` from the page's payload.
    */
   private markWorkingTreeState(
     results: ExploreResult[],
@@ -215,12 +226,14 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
     ctx: ExploreContext,
   ): ExploreResult[] {
     const view = ctx.workingTreeView;
-    if (!view || view.touchedPaths.size === 0) return results;
-    if (this.hasWorkingTreeFloor(view)) return results;
+    if (!view) return results;
+    const stampsTouched = view.touchedPaths.size > 0 && !this.hasWorkingTreeFloor(view);
+    if (!stampsTouched && (view.indexServedPaths?.size ?? 0) === 0) return results;
+    const stateOf = stampsTouched ? workingTreeStateOf : indexServedStateOf;
     const rawPathById = new Map(rawResults.map((raw) => [raw.id, relativePathOf(raw.payload)]));
     return results.map((result) => {
       const path = relativePathOf(result.payload) || rawPathById.get(result.id);
-      const treeState = workingTreeStateOf(view, path);
+      const treeState = stateOf(view, path);
       return treeState ? { ...result, treeState } : result;
     });
   }

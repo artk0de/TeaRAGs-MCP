@@ -8,7 +8,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { fakeWorkingTreeView } from "../__fixtures__/working-tree-view.js";
+import { codeRow, fakeWorkingTreeView } from "../__fixtures__/working-tree-view.js";
 import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import type { PayloadSignalDescriptor } from "../../../../../src/core/contracts/types/trajectory.js";
 import type { Reranker } from "../../../../../src/core/domains/explore/reranker.js";
@@ -84,10 +84,74 @@ describe("treeState on strategies without a floor", () => {
     expect(results.every((r) => !("treeState" in (r.payload ?? {})))).toBe(true);
   });
 
+  it("stamps rows of index-served files when the view re-reads no file", async () => {
+    const view = fakeWorkingTreeView({ indexServed: ["src/untouched.ts"] });
+    const results = await vectorRun({ workingTreeView: view });
+
+    expect(stateById(results)).toEqual({ m: undefined, d: undefined, u: "modified" });
+  });
+
   it("changes nothing when the view touches no path", async () => {
     const without = await vectorRun({});
     const withView = await vectorRun({ workingTreeView: fakeWorkingTreeView({}) });
 
     expect(JSON.stringify(withView)).toBe(JSON.stringify(without));
+  });
+});
+
+/**
+ * Index-served files (`indexServedPaths`: changed files the overlay does not
+ * re-read — no full-AST chunker, or not warmed yet) are the index's rows in
+ * EVERY strategy: a floor replaces only the touched files' rows, so these stay
+ * stale and are stamped even where the floor answers the touched ones.
+ */
+describe("treeState on index-served files", () => {
+  const SQL = "migrations/002-cg-symbols-table.sql";
+  const SQL_ROW = { id: "s", score: 0.6, payload: { relativePath: SQL, methodLines: 5 } };
+
+  async function floorRankRun(view: ReturnType<typeof fakeWorkingTreeView>) {
+    const qdrant = {
+      scrollOrdered: vi.fn().mockResolvedValue([...ROWS, SQL_ROW].map(({ id, payload }) => ({ id, payload }))),
+      ensurePayloadIndex: vi.fn().mockResolvedValue(true),
+    } as unknown as QdrantManager;
+    const reranker = {
+      rerank: vi.fn((r: { id: string }[]) => r.map((x, i) => ({ ...x, score: 1 - i * 0.1 }))),
+      getDescriptors: vi
+        .fn()
+        .mockReturnValue([
+          { name: "chunkSize", description: "s", sources: ["methodLines"], defaultBound: 1, extract: () => 1 },
+        ]),
+      getPreset: vi.fn().mockReturnValue({ chunkSize: 1 }),
+      getFullPreset: vi.fn().mockReturnValue(undefined),
+    } as unknown as Reranker;
+    return new ScrollRankStrategy(qdrant, reranker, [METHOD_LINES], []).execute({
+      collectionName: "c",
+      limit: 10,
+      weights: { chunkSize: 1 },
+      workingTreeView: view,
+    });
+  }
+
+  const treeRow = codeRow("t", { relativePath: "src/modified.ts", methodLines: 11 });
+
+  it("stamps an index-served row in a floor strategy and leaves the tree's rows unstamped", async () => {
+    const view = fakeWorkingTreeView({
+      changed: ["src/modified.ts"],
+      deleted: ["src/deleted.ts"],
+      indexServed: [SQL],
+      rows: [treeRow],
+    });
+    const results = await floorRankRun(view);
+
+    expect(view.marker.floors).toEqual(["chunks"]);
+    expect(stateById(results)).toEqual({ t: undefined, u: undefined, s: "modified" });
+  });
+
+  it("stamps an index-served row in a floor strategy when the view re-reads no file", async () => {
+    const view = fakeWorkingTreeView({ indexServed: [SQL], rows: [] });
+    const results = await floorRankRun(view);
+
+    expect(results.find((r) => r.id === "s")?.treeState).toBe("modified");
+    expect(results.filter((r) => r.id !== "s").every((r) => r.treeState === undefined)).toBe(true);
   });
 });
