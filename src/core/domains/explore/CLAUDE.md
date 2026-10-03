@@ -132,12 +132,22 @@
   guard here, and tightening to bare-segment globs (as `domains/language` does)
   is a failing change today.
 - **rank_chunks `order_by` keys come from the payload signal descriptors, and
-  only numeric ones order.** `RankModule#resolvePayloadField` maps a source
-  through `buildSignalKeyMap` to its logical key, then `toPhysicalPayloadKey`
-  (`codegraph.chunk.pageRank` → `codegraph.symbols.chunk.pageRank`); a
-  non-`number` descriptor (`isHub`, `isLeaf`) orders nothing and scores only the
+  only numeric scalars order.** `OrderByFieldResolver#resolveOrderSource` maps a
+  source through `buildSignalKeyMap` to its logical key, then
+  `toPhysicalPayloadKey` (`codegraph.chunk.pageRank` →
+  `codegraph.symbols.chunk.pageRank`); a `number` or `timestamp` descriptor
+  orders, any other (`isHub`, `isLeaf`) orders nothing and scores only the
   candidates the numeric legs pooled; a source no descriptor declares orders
-  nothing. `ScrollRankStrategy` must hand `RankModule` the strategy's
+  nothing. Direction is `inverted` read against the value the descriptor
+  normalizes: over an `ageDerivation` stamp source that value is
+  `now − lastModifiedAt`, so `OrderByFieldResolver#resolveScrolls` flips it
+  (`recency` newest stamp first, `age` oldest) and the scroll admits only stamps
+  `> 0`. Why: once age moved to the stamp (bd tea-rags-mcp-9ot33), a
+  `number`-only rule silently dropped both legs — `custom: { recency: 1 }`
+  answered `[]`, and every preset's age/recency leg pooled nothing — while
+  ordering it without the flip pools the OLDEST chunks for `recency`, and an
+  ascending stamp scroll without the floor pools every no-commit `0` sentinel
+  first. `ScrollRankStrategy` must hand `RankModule` the strategy's
   `payloadSignals`, and its `ensureIndexFn` creates an order_by index only for a
   field those descriptors declare, with the schema `payloadFieldIndexSchema`
   (`adapters/qdrant/schema-manager.ts`) derives from the declaration. Why: a
