@@ -183,6 +183,7 @@ function buildEnvInputs(env: EnvReader) {
   const userSetChunkSize = ingest.chunkSize;
   const userSetDeleteBatchSize = qdrantTune.deleteBatchSize;
   const userSetDeleteConcurrency = qdrantTune.deleteConcurrency;
+  const userSetPipelineConcurrency = ingestTune.pipelineConcurrency;
 
   return {
     core,
@@ -196,6 +197,7 @@ function buildEnvInputs(env: EnvReader) {
     userSetChunkSize,
     userSetDeleteBatchSize,
     userSetDeleteConcurrency,
+    userSetPipelineConcurrency,
   };
 }
 
@@ -218,6 +220,13 @@ export function parseAppConfigZod(source: EnvSource = process.env): {
     userSetChunkSize: boolean;
     userSetDeleteBatchSize: boolean;
     userSetDeleteConcurrency: boolean;
+    /**
+     * INGEST_PIPELINE_CONCURRENCY set under any spelling — even to 1. Unset,
+     * the value stays 1 for every consumer except the embedding throughput
+     * tuner's concurrency climb, whose ceiling becomes
+     * IMPLICIT_EMBEDDING_CONCURRENCY_CEILING.
+     */
+    userSetPipelineConcurrency: boolean;
     /**
      * Canonical names of the env families `source` set explicitly, under any
      * spelling — what an index run may pin into its registry entry
@@ -263,6 +272,7 @@ export function parseAppConfigZod(source: EnvSource = process.env): {
       userSetChunkSize: !!inputs.userSetChunkSize,
       userSetDeleteBatchSize: !!inputs.userSetDeleteBatchSize,
       userSetDeleteConcurrency: !!inputs.userSetDeleteConcurrency,
+      userSetPipelineConcurrency: !!inputs.userSetPipelineConcurrency,
       explicitEnvKeys: [...explicitEnvKeys],
     },
   };

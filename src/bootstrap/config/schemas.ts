@@ -71,8 +71,11 @@ export const embeddingTuneSchema = z.object({
    * ingest pipeline's throughput tuner moves the embed batch size inside
    * [EMBEDDING_TUNE_MIN_BATCH_SIZE, EMBEDDING_TUNE_BATCH_SIZE] — down after a
    * batch the server fails on size, toward the measured fastest size otherwise —
-   * and runs a loopback endpoint at concurrency 1. `true` pins the configured
-   * batch size and INGEST_PIPELINE_CONCURRENCY for the whole run, ignoring any
+   * and then climbs the embed concurrency on measured aggregate chars/s, never
+   * inferring it from the endpoint's address. The climb's ceiling is an explicit
+   * INGEST_PIPELINE_CONCURRENCY, or IMPLICIT_EMBEDDING_CONCURRENCY_CEILING (8)
+   * when it is unset. `true` pins the configured batch size and
+   * INGEST_PIPELINE_CONCURRENCY (1 when unset) for the whole run, ignoring any
    * stored optimum.
    */
   static: booleanFromEnv,
@@ -117,6 +120,13 @@ export const embeddingSchema = z.object({
 });
 
 export const ingestTuneSchema = z.object({
+  /**
+   * Embed/upsert worker concurrency and the sync concurrency. Default 1. Unset
+   * (`flags.userSetPipelineConcurrency` false), the adaptive embedding tuner
+   * may still climb the embed concurrency up to
+   * IMPLICIT_EMBEDDING_CONCURRENCY_CEILING; an explicit value — even 1 — is the
+   * climb's hard ceiling.
+   */
   pipelineConcurrency: intWithDefault(1),
   /**
    * Parse worker count. Workers now run as child processes (ProcessTransport),

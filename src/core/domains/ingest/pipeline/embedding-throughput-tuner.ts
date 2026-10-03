@@ -36,6 +36,14 @@
 
 import type { EmbeddingThroughputOptimum } from "../../../contracts/types/registry.js";
 
+/**
+ * Ceiling of the concurrency climb when INGEST_PIPELINE_CONCURRENCY is unset.
+ * An unset value keeps every other consumer of pipeline concurrency at 1 — the
+ * embed concurrency alone may climb, from 1 (or the stored optimum) up to this.
+ * An explicit value, even 1, replaces it as the hard ceiling.
+ */
+export const IMPLICIT_EMBEDDING_CONCURRENCY_CEILING = 8;
+
 /** Which server and model a batch went to — the tuner's state key. */
 export interface EmbeddingEndpointIdentity {
   /** Active endpoint URL; undefined for a provider without one (in-process ONNX). */
@@ -92,8 +100,16 @@ export interface EmbeddingThroughputTunerConfig {
   ceiling: number;
   /** Smallest size the tuner may choose. */
   floor: number;
-  /** Configured INGEST_PIPELINE_CONCURRENCY — the start without a seed, and the climb's ceiling. */
+  /**
+   * Ceiling of the concurrency climb: an explicit INGEST_PIPELINE_CONCURRENCY,
+   * or IMPLICIT_EMBEDDING_CONCURRENCY_CEILING when it is unset.
+   */
   configuredConcurrency: number;
+  /**
+   * Concurrency an endpoint without a stored optimum starts at, clamped to
+   * [1, configuredConcurrency]. Default configuredConcurrency.
+   */
+  initialConcurrency?: number;
   /** Full batches measured per size before it is judged. Default 3. */
   samplesPerSize?: number;
   /** Consecutive successes before a failure cap is doubled back. Default 16. */
@@ -192,10 +208,10 @@ export class EmbeddingThroughputTuner {
     return this.decision();
   }
 
-  /** The decision in force — the ceiling at the configured concurrency before `begin`. */
+  /** The decision in force — the ceiling at the initial concurrency before `begin`. */
   decision(): EmbeddingThroughputDecision {
     const state = this.active;
-    if (!state) return { batchSize: this.ceiling, concurrency: this.config.configuredConcurrency };
+    if (!state) return { batchSize: this.ceiling, concurrency: this.initialConcurrency };
     return { batchSize: state.target, concurrency: state.concurrency };
   }
 
@@ -270,9 +286,14 @@ export class EmbeddingThroughputTuner {
     return Math.max(1, this.config.configuredConcurrency);
   }
 
+  private get initialConcurrency(): number {
+    const initial = this.config.initialConcurrency ?? this.config.configuredConcurrency;
+    return Math.min(this.maxConcurrency, Math.max(1, Math.round(initial)));
+  }
+
   private startConcurrency(endpoint: EmbeddingEndpointIdentity): number {
     const seeded = this.config.seedConcurrency?.(endpoint);
-    if (seeded === undefined || !(seeded > 0)) return this.maxConcurrency;
+    if (seeded === undefined || !(seeded > 0)) return this.initialConcurrency;
     return Math.min(this.maxConcurrency, Math.max(1, Math.round(seeded)));
   }
 
@@ -312,7 +333,7 @@ export class EmbeddingThroughputTuner {
     this.active = state;
 
     const fromSize = previous ? previous.target : this.ceiling;
-    const fromConcurrency = previous ? previous.concurrency : this.config.configuredConcurrency;
+    const fromConcurrency = previous ? previous.concurrency : this.initialConcurrency;
     if (state.target !== fromSize) {
       this.emit(state, { kind: "batchSize", from: fromSize, to: state.target, reason: "seed" });
     }

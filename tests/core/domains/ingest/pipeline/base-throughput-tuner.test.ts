@@ -15,7 +15,10 @@ import {
   type RecordEntryInput,
 } from "../../../../../src/core/contracts/types/registry.js";
 import { BaseIndexingPipeline, type PipelineTuning } from "../../../../../src/core/domains/ingest/pipeline/base.js";
-import type { EmbeddingEndpointThroughputOptimum } from "../../../../../src/core/domains/ingest/pipeline/embedding-throughput-tuner.js";
+import {
+  IMPLICIT_EMBEDDING_CONCURRENCY_CEILING,
+  type EmbeddingEndpointThroughputOptimum,
+} from "../../../../../src/core/domains/ingest/pipeline/embedding-throughput-tuner.js";
 import { buildPipelineConfig } from "../../../../../src/core/domains/ingest/pipeline/types.js";
 
 const URL = "http://192.168.1.71:11434";
@@ -143,5 +146,91 @@ describe("BaseIndexingPipeline — embedding throughput tuner", () => {
     await new TunerProbePipeline(tuning(), registry, qdrant).record([]);
 
     expect(recorded[0]).not.toHaveProperty("embeddingThroughputOptima");
+  });
+});
+
+/**
+ * Implicit concurrency ceiling: INGEST_PIPELINE_CONCURRENCY unset leaves every
+ * other consumer at 1 but lets the embed concurrency climb up to
+ * IMPLICIT_EMBEDDING_CONCURRENCY_CEILING; an explicit value — even 1 — stays
+ * the hard ceiling and the unseeded start.
+ */
+describe("BaseIndexingPipeline — implicit embed concurrency ceiling", () => {
+  function tuningFor(pipelineConcurrency: number, userSet: boolean, opts: { static?: boolean } = {}): PipelineTuning {
+    return {
+      pipelineConfig: buildPipelineConfig(
+        pipelineConcurrency,
+        { batchSize: 256, batchTimeoutMs: 2000, static: opts.static ?? false },
+        { deleteConcurrency: 8, deleteBatchSize: 500, deleteFlushTimeoutMs: 1000 },
+        { pipelineConcurrencyUserSet: userSet },
+      ),
+      chunkerPoolSize: 1,
+      fileConcurrency: 1,
+    };
+  }
+
+  const ENDPOINT = { url: URL, model: "jina" };
+  const seededAt = (concurrency: number): CollectionRegistryPort => ({
+    record: vi.fn(),
+    readEmbeddingThroughputOptimum: () => ({ ...optimum(256), concurrency }),
+  });
+
+  /** Drive waves against a server whose per-call rate is constant, so aggregate chars/s grows with concurrency. */
+  function climb(tuner: NonNullable<ReturnType<TunerProbePipeline["tuner"]>>, waves: number): number[] {
+    // The pipeline's tuner reads the real clock when it opens a probe; batches
+    // stamped ahead of it always count toward the probe in force.
+    let clock = Date.now() + 60_000;
+    const seen: number[] = [];
+    for (let w = 0; w < waves; w++) {
+      const { batchSize, concurrency } = tuner.decision();
+      seen.push(concurrency);
+      const inputChars = batchSize * 1000;
+      const durationMs = 1000;
+      for (let i = 0; i < concurrency; i++) {
+        tuner.observe({ size: batchSize, inputChars, durationMs, startedAt: clock, ok: true, endpoint: ENDPOINT });
+      }
+      clock += durationMs;
+    }
+    return seen;
+  }
+
+  it("keeps every other consumer at 1 when unset", () => {
+    const { pipelineConfig } = tuningFor(1, false);
+    expect(pipelineConfig.workerPool.concurrency).toBe(1);
+    expect(pipelineConfig.upsertAccumulator.maxQueueSize).toBe(2);
+    expect(pipelineConfig.embedConcurrencyCeiling).toBe(IMPLICIT_EMBEDDING_CONCURRENCY_CEILING);
+    expect(IMPLICIT_EMBEDDING_CONCURRENCY_CEILING).toBe(8);
+  });
+
+  it("unset: starts at 1 without a stored optimum and climbs above 1, up to the implicit ceiling", () => {
+    const tuner = new TunerProbePipeline(tuningFor(1, false)).tuner()!;
+    expect(tuner.begin(ENDPOINT).concurrency).toBe(1);
+    const seen = climb(tuner, 120);
+    expect(Math.max(...seen)).toBe(IMPLICIT_EMBEDDING_CONCURRENCY_CEILING);
+    expect(tuner.decision().concurrency).toBe(IMPLICIT_EMBEDDING_CONCURRENCY_CEILING);
+  });
+
+  it("unset: starts at the stored optimum, clamped to [1, implicit ceiling]", () => {
+    expect(new TunerProbePipeline(tuningFor(1, false), seededAt(4)).tuner()?.begin(ENDPOINT).concurrency).toBe(4);
+    expect(new TunerProbePipeline(tuningFor(1, false), seededAt(12)).tuner()?.begin(ENDPOINT).concurrency).toBe(8);
+  });
+
+  it("explicit 2: the configured value is the hard ceiling and the unseeded start", () => {
+    const tuner = new TunerProbePipeline(tuningFor(2, true)).tuner()!;
+    expect(tuner.begin(ENDPOINT).concurrency).toBe(2);
+    expect(Math.max(...climb(tuner, 120))).toBe(2);
+    expect(new TunerProbePipeline(tuningFor(2, true), seededAt(12)).tuner()?.begin(ENDPOINT).concurrency).toBe(2);
+  });
+
+  it("explicit 1: the climb never leaves 1", () => {
+    const tuner = new TunerProbePipeline(tuningFor(1, true), seededAt(6)).tuner()!;
+    expect(tuner.begin(ENDPOINT).concurrency).toBe(1);
+    expect(Math.max(...climb(tuner, 120))).toBe(1);
+  });
+
+  it("static mode unset: no tuner, the pool stays at 1", () => {
+    const t = tuningFor(1, false, { static: true });
+    expect(new TunerProbePipeline(t).tuner()).toBeUndefined();
+    expect(t.pipelineConfig.workerPool.concurrency).toBe(1);
   });
 });

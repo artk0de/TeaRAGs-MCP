@@ -1024,6 +1024,7 @@ function createIngestFacade(
       zodConfig.ingest.tune.pipelineConcurrency,
       zodConfig.embedding.tune,
       zodConfig.qdrantTune,
+      { pipelineConcurrencyUserSet: zodConfig.flags.userSetPipelineConcurrency },
     ),
     chunkerPoolSize: zodConfig.ingest.tune.chunkerPoolSize,
     fileConcurrency: zodConfig.ingest.tune.fileConcurrency,

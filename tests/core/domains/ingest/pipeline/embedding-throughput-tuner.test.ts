@@ -388,6 +388,26 @@ describe("EmbeddingThroughputTuner", () => {
       expect(tuner.decision().concurrency).toBe(4);
     });
 
+    it("starts at initialConcurrency without a seed and climbs up to the configured ceiling", () => {
+      const { tuner, waves, adaptations } = makeClockedTuner({ configuredConcurrency: 8, initialConcurrency: 1 });
+      expect(tuner.decision().concurrency).toBe(1);
+      expect(tuner.begin(REMOTE).concurrency).toBe(1);
+      expect(adaptations().some((a) => a.kind === "concurrency" && a.reason === "seed")).toBe(false);
+      const sent = waves((c) => 1000 * c, 80);
+      expect(Math.max(...sent)).toBe(8);
+      expect(tuner.decision().concurrency).toBe(8);
+    });
+
+    it("clamps a stored concurrency to the configured ceiling, not to initialConcurrency", () => {
+      const at = (seed: number) =>
+        makeClockedTuner({ configuredConcurrency: 8, initialConcurrency: 1, seedConcurrency: () => seed }).tuner.begin(
+          REMOTE,
+        ).concurrency;
+      expect(at(6)).toBe(6);
+      expect(at(12)).toBe(8);
+      expect(at(0)).toBe(1);
+    });
+
     it("probes concurrency only after the batch size settles", () => {
       const { tuner, waves, adaptations } = makeClockedTuner();
       tuner.begin(REMOTE);

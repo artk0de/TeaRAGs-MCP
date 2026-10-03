@@ -447,6 +447,30 @@ describe("parseAppConfigZod", () => {
     });
   });
 
+  describe("pipeline-concurrency userSet flag", () => {
+    it("flags.userSetPipelineConcurrency is false when no spelling is set, the value still 1", async () => {
+      const { parseAppConfigZod } = await freshImport();
+      const { flags, ingest } = parseAppConfigZod();
+
+      expect(flags.userSetPipelineConcurrency).toBe(false);
+      expect(ingest.tune.pipelineConcurrency).toBe(1);
+    });
+
+    it("flags.userSetPipelineConcurrency is true for an explicit 1 — explicit is not the same as non-default", async () => {
+      process.env.INGEST_PIPELINE_CONCURRENCY = "1";
+      const { parseAppConfigZod } = await freshImport();
+
+      expect(parseAppConfigZod().flags.userSetPipelineConcurrency).toBe(true);
+    });
+
+    it("flags.userSetPipelineConcurrency is true when the legacy EMBEDDING_CONCURRENCY alias is set", async () => {
+      process.env.EMBEDDING_CONCURRENCY = "2";
+      const { parseAppConfigZod } = await freshImport();
+
+      expect(parseAppConfigZod().flags.userSetPipelineConcurrency).toBe(true);
+    });
+  });
+
   describe("validation errors", () => {
     it("throws readable error for invalid transport mode", async () => {
       process.env.SERVER_TRANSPORT = "grpc";

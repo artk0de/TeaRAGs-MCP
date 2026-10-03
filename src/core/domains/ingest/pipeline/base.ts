@@ -492,10 +492,12 @@ export abstract class BaseIndexingPipeline {
   /**
    * One tuner per run (bd tea-rags-mcp-7ju66), bounded by the configured tuning:
    * the configured batch size is the ceiling, EMBEDDING_TUNE_MIN_BATCH_SIZE the
-   * floor (ceiling/16 when unset), the configured concurrency the ceiling of
-   * the concurrency climb. It starts both values from the registry's stored
-   * optimum for the active endpoint + model — hints the bounds clamp; an older
-   * entry without `concurrency` starts at the configured one. Undefined when
+   * floor (ceiling/16 when unset), `embedConcurrencyCeiling` the ceiling of the
+   * concurrency climb — an explicit INGEST_PIPELINE_CONCURRENCY, or
+   * IMPLICIT_EMBEDDING_CONCURRENCY_CEILING when unset. It starts both values
+   * from the registry's stored optimum for the active endpoint + model — hints
+   * the bounds clamp; an older entry without `concurrency` starts at the worker
+   * pool's concurrency (the explicit value, or 1). Undefined when
    * EMBEDDING_TUNE_STATIC pins the static behaviour.
    */
   protected createThroughputTuner(): EmbeddingThroughputTuner | undefined {
@@ -506,7 +508,8 @@ export abstract class BaseIndexingPipeline {
     return new EmbeddingThroughputTuner({
       ceiling,
       floor: pipelineConfig.upsertAccumulator.minBatchSize ?? Math.max(1, Math.floor(ceiling / 16)),
-      configuredConcurrency: pipelineConfig.workerPool.concurrency,
+      configuredConcurrency: pipelineConfig.embedConcurrencyCeiling ?? pipelineConfig.workerPool.concurrency,
+      initialConcurrency: pipelineConfig.workerPool.concurrency,
       seed: (endpoint) =>
         endpoint.url === undefined
           ? undefined
