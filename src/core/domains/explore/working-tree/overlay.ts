@@ -4,8 +4,8 @@
  * base index was built at, and the {@link WorkingTreeMarker} the answer carries.
  *
  * The marker is never omitted and `view` never throws: a tree that cannot be
- * measured — no commit stamp, an unknown commit, a delta over the cap, a git
- * failure — still yields a marker, with `degraded` saying why and what fixes
+ * measured — no commit stamp, an unknown commit, an index whose dirty files
+ * are unknown, a git failure — still yields a marker, with `degraded` saying why and what fixes
  * it. A degraded view touches no path, so nothing is substituted or hidden.
  */
 import { createHash } from "node:crypto";
@@ -13,28 +13,22 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
 import type { CollectionEntry, RegistryGitState } from "../../../contracts/types/registry.js";
-import {
-  WORKING_TREE_DELTA_FILE_CAP,
-  type WorkingTree,
-  type WorkingTreeDeltaSignalSource,
-  type WorkingTreeGraphReader,
-  type WorkingTreeGraphRequest,
-  type WorkingTreeGraphSource,
-  type WorkingTreeGraphState,
-  type WorkingTreeMarker,
-  type WorkingTreeTouchedBasePointsByPath,
-  type WorkingTreeTouchedBasePointsReader,
+import type {
+  WorkingTree,
+  WorkingTreeDeltaSignalSource,
+  WorkingTreeGraphReader,
+  WorkingTreeGraphRequest,
+  WorkingTreeGraphSource,
+  WorkingTreeGraphState,
+  WorkingTreeMarker,
+  WorkingTreeTouchedBasePointsByPath,
+  WorkingTreeTouchedBasePointsReader,
 } from "../../../contracts/types/working-tree.js";
 import { findGitToplevel, readRepoGitState } from "../../../infra/repo-git-state.js";
 import type { ChunkerConfig } from "../../../types.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import type { WorkingTreeChunkLayer, WorkingTreeChunkLayerRead } from "./chunk-layer.js";
-import {
-  WORKING_TREE_REINDEX_REMEDY,
-  WORKING_TREE_WORKTREE_INDEX_REMEDY,
-  type WorkingTreeDelta,
-  type WorkingTreeDeltaReader,
-} from "./delta.js";
+import { WORKING_TREE_REINDEX_REMEDY, type WorkingTreeDelta, type WorkingTreeDeltaReader } from "./delta.js";
 import type { WorkingTreeDenseVectorReader, WorkingTreeDenseVectorSource } from "./dense-floor.js";
 import { relativePathOf } from "./substitute.js";
 
@@ -204,14 +198,8 @@ export class WorkingTreeOverlay {
     };
     const fill = (template: string): string =>
       template.replaceAll("{alias}", alias ?? entry?.name ?? collectionName).replaceAll("{tree}", tree.root);
-    // `measured` → the delta WAS measured and only refused (the cap): its counts
-    // are reported (live D11a), since `0` must mean measured-and-empty.
-    const degraded = (
-      reason: string,
-      remedy: string,
-      measured?: { changedFiles: number; deletedFiles: number },
-    ): WorkingTreeView => ({
-      marker: { ...marker, ...measured, degraded: { reason, remedy: fill(remedy) } },
+    const degraded = (reason: string, remedy: string): WorkingTreeView => ({
+      marker: { ...marker, degraded: { reason, remedy: fill(remedy) } },
       touchedPaths: EMPTY_PATHS,
       deletedPaths: EMPTY_PATHS,
     });
@@ -228,13 +216,6 @@ export class WorkingTreeOverlay {
       if (dirtyAtIndex.kind === "unknown") return degraded(dirtyAtIndex.reason, WORKING_TREE_REINDEX_REMEDY);
       const { changed, deleted } = await foldDirtyAtIndexTime(tree.root, read.delta, dirtyAtIndex.paths, accepts);
       const total = changed.length + deleted.length;
-      if (total > WORKING_TREE_DELTA_FILE_CAP) {
-        return degraded(
-          `delta of ${total} files over the ${WORKING_TREE_DELTA_FILE_CAP}-file cap`,
-          WORKING_TREE_WORKTREE_INDEX_REMEDY,
-          { changedFiles: changed.length, deletedFiles: deleted.length },
-        );
-      }
       const view: WorkingTreeView = {
         marker: { ...marker, changedFiles: changed.length, deletedFiles: deleted.length },
         touchedPaths: new Set([...changed, ...deleted]),
@@ -284,12 +265,13 @@ type DirtyAtIndexTime = { kind: "listed"; paths: readonly string[] } | { kind: "
  * The files the index holds with content its `indexedCommit` does not — dirty
  * when the run read the tree (live P1-1). A dirty stamp without the list is
  * UNKNOWN, not clean: it was written before the list existed, or git could not
- * answer, or the list overflowed; measuring past it would answer from content
- * no commit holds while claiming the tree matches.
+ * answer, or a legacy run capped the list (`indexedDirtyPathsOverflowed`);
+ * measuring past it would answer from content no commit holds while claiming
+ * the tree matches.
  */
 function dirtyAtIndexTime(git: RegistryGitState | undefined): DirtyAtIndexTime {
   if (git?.indexedDirtyPathsOverflowed) {
-    return { kind: "unknown", reason: `index built from a tree with over ${WORKING_TREE_DELTA_FILE_CAP} dirty files` };
+    return { kind: "unknown", reason: "index built from a dirty tree whose dirty files were not listed" };
   }
   if (git?.indexedDirtyPaths !== undefined) return { kind: "listed", paths: git.indexedDirtyPaths };
   if (git?.indexedDirty) {

@@ -139,7 +139,10 @@ const SNAPSHOT_TEMP_MARKER = ".snapshot-tmp";
 const SNAPSHOT_FILE = /^(.+)-([0-9a-f]{16})\.duckdb$/;
 /** Same rule as the chunk store: a collection name is one path segment, never an escape from the root. */
 const COLLECTION_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-/** Content-hash memo entries kept before the oldest is dropped (the delta itself is capped at 200 files). */
+/**
+ * Content-hash memo entries kept before the oldest is dropped. The delta has no
+ * file cap: a delta past this bound evicts its own earliest entries and re-hashes them.
+ */
 const CONTENT_HASH_MEMO_LIMIT = 4096;
 /** The digest a changed path that is not a readable regular file contributes. */
 const ABSENT_CONTENT = "absent";

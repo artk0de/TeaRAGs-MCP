@@ -1226,7 +1226,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   // Delta files chunked the way ingest stores them (bd tea-rags-mcp-xi2r9.3):
   // the production `ChunkerPool` (its worker and the language module path it
   // injects are the ones `BaseIndexingPipeline#createChunkerPool` forks), one
-  // worker because a delta is capped at 200 files, released after 60 s idle
+  // worker (a request-path pool, never ingest's fan-out), released after 60 s idle
   // and on dispose. The payload is shaped by the builder ingest's pipeline uses.
   // Behind its memory cache, a persistent store under `<appData>/working-tree`
   // keeps chunked files across restarts; it is swept (if no process swept it

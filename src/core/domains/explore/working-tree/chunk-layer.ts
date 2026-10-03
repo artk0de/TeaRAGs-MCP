@@ -92,9 +92,10 @@ const DEFAULT_IDLE_SHUTDOWN_MS = 60_000;
  */
 const WORKING_TREE_ROW_FORMAT = 2;
 /**
- * Files kept in the in-memory content cache, oldest evicted first. A delta is
- * capped at 200 files (`WORKING_TREE_DELTA_FILE_CAP`), so this holds the
- * edit history of several trees without growing with the server's uptime.
+ * Files kept in the in-memory content cache, oldest evicted first, so the
+ * cache never grows with the server's uptime. A delta has no file cap: one
+ * past this bound evicts its own earliest files, which are re-read (and served
+ * from the chunk store) on the next request.
  */
 const CONTENT_CACHE_MAX_FILES = 2_000;
 

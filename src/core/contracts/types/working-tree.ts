@@ -8,14 +8,6 @@
 
 import type { PhysicalCollectionName } from "./collection-identity.js";
 
-/**
- * Most files a working-tree delta may name before the overlay stops measuring
- * it. Shared with the ingest stamp writer, which records the files dirty at
- * index time only up to this cap (`RegistryGitState#indexedDirtyPaths`): the
- * overlay folds them into the delta, so a longer list could never be used.
- */
-export const WORKING_TREE_DELTA_FILE_CAP = 200;
-
 /** The tree a request reads, and the index it reads that tree against. */
 export interface WorkingTree {
   /**

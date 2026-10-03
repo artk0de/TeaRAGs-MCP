@@ -10,7 +10,6 @@ import {
 import * as gitClient from "../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 import {
   createWorkingTreeDeltaReader,
-  WORKING_TREE_DELTA_FILE_CAP,
   type WorkingTreeDeltaRead,
 } from "../../../../../src/core/domains/explore/working-tree/index.js";
 import { FileScanner } from "../../../../../src/core/domains/ingest/pipeline/scanner.js";
@@ -169,16 +168,14 @@ describe("WorkingTreeDeltaReader", () => {
     });
   });
 
-  // Invariant moved (live D11a): the reader measures every delta, however
-  // large; the cap is the overlay's, applied after the index-time dirty files
-  // fold in, so a degraded marker reports the counts it was measured at.
-  it("should measure a delta over the file cap rather than degrading it", async () => {
-    for (let i = 0; i <= WORKING_TREE_DELTA_FILE_CAP; i++) write(`src/bulk/f${i}.ts`, `export const f${i} = ${i};\n`);
+  // No count cap: the reader measures every delta, however large.
+  it("should measure a 250-file delta rather than degrading it", async () => {
+    for (let i = 0; i < 250; i++) write(`src/bulk/f${i}.ts`, `export const f${i} = ${i};\n`);
 
     const read = await createWorkingTreeDeltaReader().read(tree, indexedCommit, accepts);
 
     expect(read.kind).toBe("measured");
-    expect(read.kind === "measured" && read.delta.changed.length).toBe(WORKING_TREE_DELTA_FILE_CAP + 1);
+    expect(read.kind === "measured" && read.delta.changed.length).toBe(250);
   });
 
   it("should not re-read the changes when nothing changed between two reads", async () => {
@@ -243,6 +240,17 @@ describe("WorkingTreeDeltaReader rename pairs", () => {
 
   afterEach(() => {
     fixture.cleanup();
+  });
+
+  // No count cap: a delta past 250 files still reads its moves.
+  it("should pair a move inside a delta of more than 250 files", async () => {
+    for (let i = 0; i < 250; i++) writeFileSync(join(tree, `src/bulk${i}.ts`), `export const bulk${i} = ${i};\n`);
+    fixture.git(tree, "mv", "src/a.ts", "src/a2.ts");
+
+    const read = await createWorkingTreeDeltaReader().read(tree, indexedCommit, accepts);
+
+    expect(read.kind === "measured" && read.delta.changed.length).toBe(251);
+    expect(renamedFrom(read)).toEqual({ "src/a2.ts": "src/a.ts" });
   });
 
   it("should pair a staged git mv", async () => {
