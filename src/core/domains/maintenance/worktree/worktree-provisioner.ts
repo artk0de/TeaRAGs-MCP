@@ -10,8 +10,11 @@ import {
   versionedPhysicalCollectionName,
 } from "../../../infra/collection-name.js";
 import { WorktreeCollectionExistsError, WorktreeNotFoundError, WorktreeSourceNotFoundError } from "../errors.js";
-import { cloneCollectionFootprint } from "../footprint/clone-saga.js";
-import type { CollectionFootprintFactory, ResolvedCollection } from "../footprint/index.js";
+import {
+  cloneCollectionFootprint,
+  type CollectionFootprintFactory,
+  type ResolvedCollection,
+} from "../footprint/index.js";
 import type { CollectionRegistry } from "../registry/index.js";
 import {
   ensureGitWorktree as defaultEnsureGitWorktree,
