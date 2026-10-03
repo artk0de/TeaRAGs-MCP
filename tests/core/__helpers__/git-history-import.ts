@@ -36,10 +36,11 @@ export interface GitHistoryCommit {
   /** branch the commit lands on (default: the import's `branch`) */
   branch?: string;
   /**
-   * Label of the first parent. Default: the branch's previous commit; for the
-   * first commit of a branch other than the import's `branch`, the current tip
-   * of the import's `branch` (what `git checkout -b` from it does). `null`
-   * makes a root commit.
+   * Label (or full sha of a commit the repository already holds) of the
+   * first parent. Default: the branch's previous commit — with `init: false`,
+   * the tip the repository holds for its first one; for the first commit of a
+   * branch other than the import's `branch`, the current tip of the import's
+   * `branch` (what `git checkout -b` from it does). `null` makes a root commit.
    */
   from?: string | null;
   /** labels of further parents — a merge commit; its tree is `from`'s plus this commit's own changes */
@@ -129,7 +130,8 @@ export function importGitHistory(
 ): Record<string, string> {
   const branch = options.branch ?? "main";
   const env = options.env ?? process.env;
-  if (options.init ?? true) {
+  const init = options.init ?? true;
+  if (init) {
     execFileSync("git", ["init", "-q", "-b", branch], { cwd: repo, env, stdio: "ignore" });
     if (options.config !== undefined) appendFileSync(join(repo, ".git/config"), configText(options.config));
   }
@@ -148,9 +150,14 @@ export function importGitHistory(
     const message = `${commit.message.replace(/\s+$/, "")}\n`;
     const markRef = (label: string): string => {
       const target = markOf.get(label);
-      if (target === undefined) throw new Error(`importGitHistory: unknown label "${label}"`);
-      return `:${target}`;
+      if (target !== undefined) return `:${target}`;
+      // A commit the repository already holds (an `init: false` import on top of earlier history).
+      if (/^[0-9a-f]{40}$/.test(label)) return label;
+      throw new Error(`importGitHistory: unknown label "${label}"`);
     };
+    // Into an existing repository, a branch's first commit continues the tip
+    // the repository holds; a new branch forks from the import branch's tip.
+    const existingTip = (name: string): string | undefined => (init ? undefined : `refs/heads/${name}^0`);
     const lines: string[] = [
       `commit refs/heads/${ref}\n`,
       `mark :${mark}\n`,
@@ -163,9 +170,13 @@ export function importGitHistory(
         ? undefined
         : commit.from !== undefined
           ? markRef(commit.from)
-          : !tips.has(ref) && tips.has(branch)
-            ? `:${tips.get(branch)}`
-            : undefined;
+          : tips.has(ref)
+            ? undefined
+            : ref === branch
+              ? existingTip(branch)
+              : tips.has(branch)
+                ? `:${tips.get(branch)}`
+                : existingTip(branch);
     if (parent !== undefined) chunks.push(Buffer.from(`from ${parent}\n`));
     for (const merged of commit.merge ?? []) chunks.push(Buffer.from(`merge ${markRef(merged)}\n`));
     for (const [source, target] of commit.renames ?? []) {

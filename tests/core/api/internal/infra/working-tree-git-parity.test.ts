@@ -31,6 +31,7 @@ import { dirname, join, resolve, sep } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { importGitHistory } from "../../../__helpers__/git-history-import.js";
 import { GitCliAdapter } from "../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import type { BlameLine } from "../../../../../src/core/adapters/vcs/types.js";
 import { createWorkingTreeDeltaSignalSource } from "../../../../../src/core/api/internal/infra/working-tree-delta-signals.js";
@@ -125,18 +126,42 @@ function write(root: string, relPath: string, content: string): void {
   writeFileSync(target, content);
 }
 
-function commit(
-  root: string,
-  files: Record<string, string>,
-  message: string,
-  who: string,
-  when: string,
-  committedAt = when,
-): string {
-  for (const [relPath, content] of Object.entries(files)) write(root, relPath, content);
-  repoGit(root, ["add", "-A"], who, when, committedAt);
-  repoGit(root, ["commit", "-q", "-m", message], who, when, committedAt);
-  return repoGit(root, ["rev-parse", "HEAD"]);
+interface ParityCommit {
+  /** key of the sha in {@link commitAll}'s result */
+  label?: string;
+  files?: Record<string, string>;
+  rename?: [string, string];
+  message: string;
+  /** author AND committer, `<who>@x` */
+  who: string;
+  when: string;
+  committedAt?: string;
+  branch?: string;
+  from?: string;
+}
+
+/**
+ * Commits `commits` in order onto `root`'s `main` (a fresh repository when
+ * `init`) with ONE fast-import (bd tea-rags-mcp-1r3e5) — the identities and
+ * dates the add/commit chain gave them — and returns the labelled shas.
+ */
+function commitAll(root: string, commits: readonly ParityCommit[], init = true): Record<string, string> {
+  if (!resolve(root).startsWith(TMP_BASE + sep)) throw new Error(`refusing git outside the temp root: ${root}`);
+  return importGitHistory(
+    root,
+    commits.map((c) => ({
+      label: c.label,
+      branch: c.branch,
+      from: c.from,
+      message: c.message,
+      author: { name: c.who, email: `${c.who}@x` },
+      authorDate: c.when,
+      committerDate: c.committedAt ?? c.when,
+      writes: c.files,
+      renames: c.rename === undefined ? undefined : [c.rename],
+    })),
+    { init },
+  );
 }
 
 /** What ingest writes for every file of `paths` in the tree at `root`: file blocks by path, chunk blocks by `path::symbol`. */
@@ -372,62 +397,68 @@ describe.each([
   it("matches a reindex of a tree with commits since the index and uncommitted edits", async () => {
     const repo = join(scratch, "main");
     mkdirSync(repo);
-    repoGit(repo, ["init", "-q", "-b", "main"]);
-    commit(
-      repo,
+    const { stamp } = commitAll(repo, [
       {
-        "src/engine.ts": ENGINE_V1,
-        "src/user.ts": 'import { x } from "./x";\n\nexport function unchangedUser(): number {\n  return x + 1;\n}\n',
-        "src/renamer.ts": "export function renamedTarget(): number {\n  return 3;\n}\n",
-        "src/main.ts": "export function mainEntry(): number {\n  return 4;\n}\n",
-        "src/zoo/animal.ts": "export class Animal {\n  name = 'a';\n}\n",
+        files: {
+          "src/engine.ts": ENGINE_V1,
+          "src/user.ts": 'import { x } from "./x";\n\nexport function unchangedUser(): number {\n  return x + 1;\n}\n',
+          "src/renamer.ts": "export function renamedTarget(): number {\n  return 3;\n}\n",
+          "src/main.ts": "export function mainEntry(): number {\n  return 4;\n}\n",
+          "src/zoo/animal.ts": "export class Animal {\n  name = 'a';\n}\n",
+        },
+        message: "init",
+        who: "alice",
+        when: at(40),
       },
-      "init",
-      "alice",
-      at(40),
-    );
-    // Three quick helperB edits by one author — one squash session.
-    for (let i = 1; i <= 3; i++) {
-      commit(
-        repo,
-        { "src/engine.ts": ENGINE_V1.replace("// b0", `// b${i}`) },
-        `feat: helperB ${i}`,
-        "bob",
-        at(35, i * 5),
-      );
-    }
-    const stamp = commit(
-      repo,
-      { "src/engine.ts": ENGINE_V1.replace("// b0", "// b3").replace("return 1;", "return 1; // v2") },
-      "fix: engine step",
-      "alice",
-      at(20),
-    );
+      // Three quick helperB edits by one author — one squash session.
+      ...[1, 2, 3].map((i) => ({
+        files: { "src/engine.ts": ENGINE_V1.replace("// b0", `// b${i}`) },
+        message: `feat: helperB ${i}`,
+        who: "bob",
+        when: at(35, i * 5),
+      })),
+      {
+        label: "stamp",
+        files: { "src/engine.ts": ENGINE_V1.replace("// b0", "// b3").replace("return 1;", "return 1; // v2") },
+        message: "fix: engine step",
+        who: "alice",
+        when: at(20),
+      },
+    ]);
     const indexed = ["src/engine.ts", "src/user.ts", "src/renamer.ts", "src/main.ts", "src/zoo/animal.ts"];
     const basePoints = await indexAt(repo, indexed, squashOpts);
 
-    // Since the index: a BACKDATED commit (dated before everything below it)...
     const userNow = `${readFileSync(join(repo, "src/user.ts"), "utf8")}\nexport function carolCommitted(): number {\n  return 77;\n}\n`;
-    commit(repo, { "src/user.ts": userNow }, "feat: carol user", "carol", at(45));
-    // ...a committed rename...
-    repoGit(repo, ["mv", "src/renamer.ts", "src/renamerCommitted.ts"], "dave", at(5));
-    repoGit(repo, ["commit", "-q", "-m", "refactor: rename renamer"], "dave", at(5));
-    // ...a REBASED commit (old author date, new committer date) editing one function...
-    const engine = readFileSync(join(repo, "src/engine.ts"), "utf8");
-    commit(
-      repo,
-      { "src/engine.ts": engine.replace("helperB() + 1", "helperB() + 2") },
-      "fix: helperA",
-      "erin",
-      at(50),
-      at(1),
-    );
-    // ...and an insertion above a symbol.
-    const withZebra = readFileSync(join(repo, "src/engine.ts"), "utf8").replace(
+    const engineHelperA = readFileSync(join(repo, "src/engine.ts"), "utf8").replace("helperB() + 1", "helperB() + 2");
+    const withZebra = engineHelperA.replace(
       "export class Engine",
       "export function zebraQuantumFlux(): number {\n  return helperB() * 42;\n}\n\nexport class Engine",
     );
-    commit(repo, { "src/engine.ts": withZebra }, "feat: zebra", "frank", at(1, 1));
+    commitAll(
+      repo,
+      [
+        // Since the index: a BACKDATED commit (dated before everything below it)...
+        { files: { "src/user.ts": userNow }, message: "feat: carol user", who: "carol", when: at(45) },
+        // ...a committed rename...
+        {
+          rename: ["src/renamer.ts", "src/renamerCommitted.ts"],
+          message: "refactor: rename renamer",
+          who: "dave",
+          when: at(5),
+        },
+        // ...a REBASED commit (old author date, new committer date) editing one function...
+        {
+          files: { "src/engine.ts": engineHelperA },
+          message: "fix: helperA",
+          who: "erin",
+          when: at(50),
+          committedAt: at(1),
+        },
+        // ...and an insertion above a symbol.
+        { files: { "src/engine.ts": withZebra }, message: "feat: zebra", who: "frank", when: at(1, 1) },
+      ],
+      false,
+    );
     // Uncommitted: an edit outside every symbol, a new symbol in a tracked file, a never-committed file.
     appendFileSync(join(repo, "src/main.ts"), "// trailing note\n");
     appendFileSync(
@@ -460,31 +491,40 @@ describe.each([
   it("matches a reindex of a tree that branched before the stamp", async () => {
     const repo = join(scratch, "main");
     mkdirSync(repo);
-    repoGit(repo, ["init", "-q", "-b", "main"]);
-    const branchPoint = commit(
-      repo,
-      { "src/engine.ts": ENGINE_V1, "src/cyc/b.ts": "export function bFn(): number {\n  return 1;\n}\n" },
-      "init",
-      "alice",
-      at(30),
-    );
-    const stamp = commit(
-      repo,
-      { "src/engine.ts": ENGINE_V1.replace("return 1;", "return 1; // main") },
-      "fix: main moves engine",
-      "bob",
-      at(20),
-    );
+    const { branchPoint, stamp } = commitAll(repo, [
+      {
+        label: "branchPoint",
+        files: { "src/engine.ts": ENGINE_V1, "src/cyc/b.ts": "export function bFn(): number {\n  return 1;\n}\n" },
+        message: "init",
+        who: "alice",
+        when: at(30),
+      },
+      {
+        label: "stamp",
+        files: { "src/engine.ts": ENGINE_V1.replace("return 1;", "return 1; // main") },
+        message: "fix: main moves engine",
+        who: "bob",
+        when: at(20),
+      },
+    ]);
     const basePoints = await indexAt(repo, ["src/engine.ts", "src/cyc/b.ts"], squashOpts);
     const tree = join(scratch, "div");
-    repoGit(repo, ["worktree", "add", "-q", "-b", "div", tree, branchPoint]);
-    commit(
-      tree,
-      { "src/core/branch-work.ts": "export function branchWork(): number {\n  return 5;\n}\n" },
-      "feat: branch",
-      "carol",
-      at(10),
+    // The branch commit goes in by import; checking `div` out in its linked worktree stays live.
+    commitAll(
+      repo,
+      [
+        {
+          branch: "div",
+          from: branchPoint,
+          files: { "src/core/branch-work.ts": "export function branchWork(): number {\n  return 5;\n}\n" },
+          message: "feat: branch",
+          who: "carol",
+          when: at(10),
+        },
+      ],
+      false,
     );
+    repoGit(repo, ["worktree", "add", "-q", tree, "div"]);
 
     const delta = ["src/engine.ts", "src/core/branch-work.ts"];
     const reference = await ingestReference(tree, delta, squashOpts);
@@ -496,24 +536,24 @@ describe.each([
   it("matches a reindex of a tree with uncommitted edits inside and above symbols", async () => {
     const repo = join(scratch, "main");
     mkdirSync(repo);
-    repoGit(repo, ["init", "-q", "-b", "main"]);
-    commit(repo, { "src/engine.ts": ENGINE_V1 }, "init", "alice", at(40));
-    commit(
-      repo,
-      { "src/engine.ts": ENGINE_V1.replace("helperB() + 1", "helperB() + 3") },
-      "fix: helperA",
-      "bob",
-      at(30),
-    );
-    const stamp = commit(
-      repo,
+    const { stamp } = commitAll(repo, [
+      { files: { "src/engine.ts": ENGINE_V1 }, message: "init", who: "alice", when: at(40) },
       {
-        "src/engine.ts": ENGINE_V1.replace("helperB() + 1", "helperB() + 3").replace("return 1;", "return 1; // v2"),
+        files: { "src/engine.ts": ENGINE_V1.replace("helperB() + 1", "helperB() + 3") },
+        message: "fix: helperA",
+        who: "bob",
+        when: at(30),
       },
-      "feat: engine step",
-      "carol",
-      at(20),
-    );
+      {
+        label: "stamp",
+        files: {
+          "src/engine.ts": ENGINE_V1.replace("helperB() + 1", "helperB() + 3").replace("return 1;", "return 1; // v2"),
+        },
+        message: "feat: engine step",
+        who: "carol",
+        when: at(20),
+      },
+    ]);
     const basePoints = await indexAt(repo, ["src/engine.ts"], squashOpts);
 
     // Uncommitted: lines added ABOVE every symbol (shifting all of them), and
@@ -540,20 +580,29 @@ describe.each([
   it("matches a reindex of a tree with an uncommitted-only symbol between committed ones", async () => {
     const repo = join(scratch, "main");
     mkdirSync(repo);
-    repoGit(repo, ["init", "-q", "-b", "main"]);
-    commit(repo, { "src/engine.ts": ENGINE_V1 }, "init", "alice", at(40));
+    const history: ParityCommit[] = [
+      { files: { "src/engine.ts": ENGINE_V1 }, message: "init", who: "alice", when: at(40) },
+    ];
     let content = ENGINE_V1;
     for (let v = 1; v <= 3; v++) {
       content = content.replace(v === 1 ? "return 1;" : `return 1; // v${v - 1}`, `return 1; // v${v}`);
-      commit(repo, { "src/engine.ts": content }, `fix: engine step ${v}`, "bob", at(30 - v));
+      history.push({
+        files: { "src/engine.ts": content },
+        message: `fix: engine step ${v}`,
+        who: "bob",
+        when: at(30 - v),
+      });
     }
-    const stamp = commit(
-      repo,
-      { "src/engine.ts": content.replace("// b0", "// b1") },
-      "feat: helperB",
-      "carol",
-      at(20),
-    );
+    const { stamp } = commitAll(repo, [
+      ...history,
+      {
+        label: "stamp",
+        files: { "src/engine.ts": content.replace("// b0", "// b1") },
+        message: "feat: helperB",
+        who: "carol",
+        when: at(20),
+      },
+    ]);
     const basePoints = await indexAt(repo, ["src/engine.ts"], squashOpts);
 
     // Uncommitted: header lines above every symbol, a line inside helperA, and
@@ -585,19 +634,29 @@ describe.each([
       `export function ${name}(): number {\n  let n = 0;\n${"  n += 1;\n".repeat(WINDOWS.maxFileLines + 5)}  return n;\n}\n`;
     const repo = join(scratch, "main");
     mkdirSync(repo);
-    repoGit(repo, ["init", "-q", "-b", "main"]);
-    commit(repo, { "src/engine.ts": ENGINE_V1, "src/big.ts": oversized("bigFunction") }, "init", "alice", at(40));
-    const stamp = commit(
-      repo,
-      { "src/engine.ts": ENGINE_V1.replace("return 1;", "return 1; // v2") },
-      "feat: engine step",
-      "bob",
-      at(20),
-    );
+    const { stamp } = commitAll(repo, [
+      {
+        files: { "src/engine.ts": ENGINE_V1, "src/big.ts": oversized("bigFunction") },
+        message: "init",
+        who: "alice",
+        when: at(40),
+      },
+      {
+        label: "stamp",
+        files: { "src/engine.ts": ENGINE_V1.replace("return 1;", "return 1; // v2") },
+        message: "feat: engine step",
+        who: "bob",
+        when: at(20),
+      },
+    ]);
     const basePoints = await indexAt(repo, ["src/engine.ts", "src/big.ts"], squashOpts);
 
     // Since the index: an oversized file committed; uncommitted: a new symbol in the indexed oversized file.
-    commit(repo, { "src/big2.ts": oversized("otherBigFunction") }, "feat: big2", "carol", at(5));
+    commitAll(
+      repo,
+      [{ files: { "src/big2.ts": oversized("otherBigFunction") }, message: "feat: big2", who: "carol", when: at(5) }],
+      false,
+    );
     appendFileSync(join(repo, "src/big.ts"), "\nexport function tailSymbol(): number {\n  return 9;\n}\n");
 
     const delta = ["src/big.ts", "src/big2.ts"];

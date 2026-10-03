@@ -25,6 +25,7 @@ import { join, resolve, sep } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { importGitHistory } from "../../../../__helpers__/git-history-import.js";
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import { blameFile } from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 import type { ChunkSignalOverlay } from "../../../../../../src/core/contracts/types/provider.js";
@@ -65,26 +66,23 @@ const F2_V2 = F2_V1.replace("f2 line 8", "f2 EDIT 8");
 
 beforeAll(() => {
   repo = mkdtempSync(join(TMP_BASE, "blame-cache-"));
-  g(["init", "-q"]);
-  g(["config", "user.email", "t@example.com"]);
-  g(["config", "user.name", "Test"]);
-
-  writeFileSync(join(repo, "f1.ts"), F1_V1);
-  g(["add", "-A"]);
-  g(["commit", "-q", "-m", "feat: add f1"]);
-
-  writeFileSync(join(repo, "f1.ts"), F1_V2);
-  g(["add", "-A"]);
-  g(["commit", "-q", "-m", "feat: extend"]);
-
-  writeFileSync(join(repo, "f2.ts"), F2_V1);
-  g(["add", "-A"]);
-  g(["commit", "-q", "-m", "fix: broken thing"]);
-
-  writeFileSync(join(repo, "f1.ts"), F1_V3);
-  writeFileSync(join(repo, "f2.ts"), F2_V2);
-  g(["add", "-A"]);
-  g(["commit", "-q", "-m", "TD-123 update both"]);
+  if (!resolve(repo).startsWith(TMP_BASE + sep)) {
+    throw new Error(`blame-cache.test: refusing git in non-temp cwd: ${repo}`);
+  }
+  // ONE fast-import instead of ~15 add/commit spawns (bd tea-rags-mcp-1r3e5);
+  // the INVALIDATION commit below stays live — it is the scenario.
+  const test = { name: "Test", email: "t@example.com" };
+  const now = new Date();
+  importGitHistory(
+    repo,
+    [
+      { message: "feat: add f1", author: test, authorDate: now, writes: { "f1.ts": F1_V1 } },
+      { message: "feat: extend", author: test, authorDate: now, writes: { "f1.ts": F1_V2 } },
+      { message: "fix: broken thing", author: test, authorDate: now, writes: { "f2.ts": F2_V1 } },
+      { message: "TD-123 update both", author: test, authorDate: now, writes: { "f1.ts": F1_V3, "f2.ts": F2_V2 } },
+    ],
+    { config: { "user.email": "t@example.com", "user.name": "Test" } },
+  );
 });
 
 afterAll(() => {

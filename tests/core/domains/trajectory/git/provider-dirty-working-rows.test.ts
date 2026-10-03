@@ -13,13 +13,13 @@
  * run-scoped commit discovery, real cat-file.
  */
 
-import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { importGitHistory } from "../../../__helpers__/git-history-import.js";
 import type { ChunkSignalOverlay } from "../../../../../src/core/contracts/types/provider.js";
 import { GitEnrichmentProvider } from "../../../../../src/core/domains/trajectory/git/provider.js";
 import type { ChunkLookupEntry } from "../../../../../src/core/types.js";
@@ -68,35 +68,32 @@ function chunksOf(content: string): ChunkLookupEntry[] {
 describe("GitEnrichmentProvider#buildChunkSignals over a file with uncommitted edits", () => {
   let repo: string;
 
-  const git = (args: string[], who = "alice", when = at(0)): string => {
-    if (!resolve(repo).startsWith(TMP_BASE + sep)) throw new Error(`refusing git outside the temp root: ${repo}`);
-    return execFileSync("git", args, {
-      cwd: repo,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        GIT_AUTHOR_NAME: who,
-        GIT_AUTHOR_EMAIL: `${who}@x`,
-        GIT_COMMITTER_NAME: who,
-        GIT_COMMITTER_EMAIL: `${who}@x`,
-        GIT_AUTHOR_DATE: when,
-        GIT_COMMITTER_DATE: when,
-      },
-    }).trim();
-  };
   const write = (content: string): void => {
     mkdirSync(dirname(join(repo, FILE)), { recursive: true });
     writeFileSync(join(repo, FILE), content);
   };
-  const commit = (content: string, message: string, who: string, when: string): void => {
-    write(content);
-    git(["add", "-A"], who, when);
-    git(["commit", "-q", "-m", message], who, when);
+  /** One commit of {@link FILE}: `[content, message, who, when]`, `who` = author AND committer. */
+  type FileCommit = [content: string, message: string, who: string, when: string];
+  /**
+   * Initializes `repo` holding `history` with ONE fast-import (bd
+   * tea-rags-mcp-1r3e5) instead of an add/commit pair per commit — the
+   * identities and dates the commit chain gave them.
+   */
+  const commitHistory = (history: readonly FileCommit[]): void => {
+    if (!resolve(repo).startsWith(TMP_BASE + sep)) throw new Error(`refusing git outside the temp root: ${repo}`);
+    importGitHistory(
+      repo,
+      history.map(([content, message, who, when]) => ({
+        message,
+        author: { name: who, email: `${who}@x` },
+        authorDate: when,
+        writes: { [FILE]: content },
+      })),
+    );
   };
 
   beforeEach(() => {
     repo = realpathSync(mkdtempSync(join(tmpdir(), "dirty-working-rows-")));
-    git(["init", "-q", "-b", "main"]);
   });
 
   afterEach(() => {
@@ -126,11 +123,13 @@ describe("GitEnrichmentProvider#buildChunkSignals over a file with uncommitted e
   };
 
   it("credits each symbol with its own HEAD commits when lines were added above and inside it", async () => {
-    commit(ENGINE_V1, "init", "alice", at(40));
     const fixed = ENGINE_V1.replace("helperB() + 1", "helperB() + 3");
-    commit(fixed, "fix: helperA", "bob", at(30));
     const head = fixed.replace("return 1;", "return 1; // v2");
-    commit(head, "feat: engine step", "carol", at(20));
+    commitHistory([
+      [ENGINE_V1, "init", "alice", at(40)],
+      [fixed, "fix: helperA", "bob", at(30)],
+      [head, "feat: engine step", "carol", at(20)],
+    ]);
 
     // Uncommitted: lines ABOVE every symbol (shifting all of them), lines INSIDE
     // helperA (growing it), and a symbol no commit ever held.
@@ -202,18 +201,19 @@ describe("GitEnrichmentProvider#buildChunkSignals over a file with uncommitted e
     ];
 
     it("credits every row with its own HEAD commits, the uncommitted row with none", async () => {
-      commit(ENGINE_V1.replace("return 2; // b0", "return 2;"), "init", "probe", at(60));
       let content = ENGINE_V1.replace("return 2; // b0", "return 2;");
+      const history: FileCommit[] = [[content, "init", "probe", at(60)]];
       for (let v = 1; v <= 5; v++) {
         const prev = v === 1 ? "return 1;" : `return 1; // v${v - 1}`;
         content = content.replace(prev, `return 1; // v${v}`);
-        commit(content, `fix: engine step ${v}`, "alice", at(50 - v));
+        history.push([content, `fix: engine step ${v}`, "alice", at(50 - v)]);
       }
       for (let b = 1; b <= 3; b++) {
         const prev = b === 1 ? "return 2;" : `return 2; // b${b - 1}`;
         content = content.replace(prev, `return 2; // b${b}`);
-        commit(content, `feat: helperB ${b}`, "bob", at(40 - b));
+        history.push([content, `feat: helperB ${b}`, "bob", at(40 - b)]);
       }
+      commitHistory(history);
       write(DIRTY);
 
       const provider = new GitEnrichmentProvider({
@@ -251,9 +251,11 @@ describe("GitEnrichmentProvider#buildChunkSignals over a file with uncommitted e
   });
 
   it("walks a clean file's rows as they are", async () => {
-    commit(ENGINE_V1, "init", "alice", at(40));
     const fixed = ENGINE_V1.replace("helperB() + 1", "helperB() + 3");
-    commit(fixed, "fix: helperA", "bob", at(30));
+    commitHistory([
+      [ENGINE_V1, "init", "alice", at(40)],
+      [fixed, "fix: helperA", "bob", at(30)],
+    ]);
 
     const overlays = await walk(fixed);
 
