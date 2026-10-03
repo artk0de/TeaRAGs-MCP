@@ -109,7 +109,7 @@ export interface EmbeddingProducerStarvation {
 }
 
 /**
- * Key of `CollectionEntry.embeddingThroughputOptima`: the EMBEDDING IDENTITY —
+ * Key of `RegistryFileV1.embeddingThroughputOptima`: the EMBEDDING IDENTITY —
  * provider + endpoint + model — so a primary and a fallback endpoint each keep
  * their own optimum, a model swap never inherits another model's batch shape,
  * and neither does another provider on the same URL (bd tea-rags-mcp-y1ynz). A
@@ -126,6 +126,20 @@ export interface EmbeddingProducerStarvation {
 export function embeddingThroughputOptimumKey(endpointUrl: string, model: string, provider?: string): string {
   const legacy = `${endpointUrl.replace(/\/+$/, "")}|${model}`;
   return provider === undefined ? legacy : `${provider}|${legacy}`;
+}
+
+/**
+ * One run's write into the registry-level optima section (bd tea-rags-mcp-auoxk):
+ * the identity key, the optimum the run's tuner chose to persist, and the
+ * stored optimum it reconciled that choice against — the record the run was
+ * seeded with, absent when nothing was stored. The registry applies the write
+ * against the record CURRENTLY on disk; `storedOptimum` tells it whether that
+ * record is the one the tuner judged, or a newer one another process wrote.
+ */
+export interface EmbeddingThroughputOptimumWrite {
+  key: string;
+  optimum: EmbeddingThroughputOptimum;
+  storedOptimum?: EmbeddingThroughputOptimum;
 }
 
 export interface CollectionEntry {
@@ -236,11 +250,11 @@ export interface CollectionEntry {
    */
   trajectoryVersions?: Record<string, number>;
   /**
-   * Best measured embedding throughput optima, keyed by
-   * `embeddingThroughputOptimumKey` (bd tea-rags-mcp-7ju66, cyw2r). MERGED on
-   * `record()`: a run overwrites only the
-   * endpoints it settled on, every other key survives — a run that lived on
-   * the primary must not erase what an earlier run learnt about the fallback.
+   * DEPRECATED legacy field: the per-project embedding throughput optima
+   * builds before bd tea-rags-mcp-auoxk wrote (bd tea-rags-mcp-7ju66, cyw2r).
+   * Optima now live in the registry-level `RegistryFileV1.embeddingThroughputOptima`;
+   * this field is only read to LIFT an identity that section lacks, never
+   * written, and dropped the next time `record()` rewrites the entry.
    */
   embeddingThroughputOptima?: Record<string, EmbeddingThroughputOptimum>;
   /**
@@ -259,7 +273,7 @@ export interface CollectionEntry {
  * `name` and `autoUpdate` are sticky and managed exclusively via setName() /
  * setAutoUpdate().
  */
-export type RecordEntryInput = Omit<CollectionEntry, "name" | "autoUpdate">;
+export type RecordEntryInput = Omit<CollectionEntry, "name" | "autoUpdate" | "embeddingThroughputOptima">;
 
 export interface RegistryFileV1 {
   /**
@@ -278,6 +292,18 @@ export interface RegistryFileV1 {
    * tea-rags-mcp-h4l6k (`migrateRegistryEnvPins`).
    */
   revision?: number;
+  /**
+   * Best measured embedding throughput optima, keyed by
+   * `embeddingThroughputOptimumKey` — ONE section shared by every project
+   * (bd tea-rags-mcp-auoxk): throughput is a property of the embedding
+   * configuration, not of the project that measured it. Written per key under
+   * the cross-process CAS, each write reconciled against the record on disk
+   * (`applyEmbeddingThroughputOptimumWrites`); identities it lacks are lifted
+   * from legacy per-entry records on read (`liftEmbeddingThroughputOptima`).
+   * An older build reads the file fine but drops this key on its next write;
+   * the per-entry records an older build keeps writing are then lifted back.
+   */
+  embeddingThroughputOptima?: Record<string, EmbeddingThroughputOptimum>;
   collections: Record<string, CollectionEntry>;
 }
 
@@ -295,16 +321,22 @@ export type ProjectInfo = CollectionEntry;
 export interface CollectionRegistryPort {
   record: (entry: RecordEntryInput) => void;
   /**
-   * The freshest settled throughput optimum any entry holds for this embedding
-   * identity (`embeddingThroughputOptimumKey`) — a machine-wide fact about the
-   * embedding server, not about one project. Optional: a registry that cannot
-   * answer leaves every run starting at the configured ceiling.
+   * The stored throughput optimum for this embedding identity
+   * (`embeddingThroughputOptimumKey`) from the registry-level section — a
+   * machine-wide fact about the embedding configuration, not about one
+   * project. Optional: a registry that cannot answer leaves every run starting
+   * at the configured ceiling.
    */
   readEmbeddingThroughputOptimum?: (
     endpointUrl: string,
     model: string,
     provider?: string,
   ) => EmbeddingThroughputOptimum | undefined;
+  /**
+   * Persist a run's settled optima into the registry-level section (bd
+   * tea-rags-mcp-auoxk), each reconciled against the record currently on disk.
+   */
+  recordEmbeddingThroughputOptima?: (writes: readonly EmbeddingThroughputOptimumWrite[]) => void;
   /** The last run's producer-starvation verdict for this collection, if it recorded one. */
   readEmbeddingProducerStarvation?: (collectionName: string) => EmbeddingProducerStarvation | undefined;
 }

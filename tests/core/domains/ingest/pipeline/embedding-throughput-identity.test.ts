@@ -17,7 +17,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LlamaServerEmbeddings } from "../../../../../src/core/adapters/embeddings/llama-server/provider.js";
 import {
   embeddingThroughputOptimumKey,
-  type CollectionEntry,
   type EmbeddingThroughputOptimum,
 } from "../../../../../src/core/contracts/types/registry.js";
 import { ChunkPipeline } from "../../../../../src/core/domains/ingest/pipeline/chunk-pipeline.js";
@@ -59,34 +58,22 @@ describe("CollectionRegistry#readEmbeddingThroughputOptimum — embedding identi
     rmSync(dir, { recursive: true, force: true });
   });
 
-  function entryWith(optima: CollectionEntry["embeddingThroughputOptima"]): Omit<CollectionEntry, "name"> {
-    return {
-      collectionName: "code_27622aef",
-      path: "/repo/taxdome",
-      embeddingModel: MODEL,
-      embeddingDimensions: 768,
-      qdrantUrl: "http://localhost:6333",
-      indexedAt: "2026-10-02T00:00:00.000Z",
-      teaRagsVersion: "1.44.0",
-      chunksCount: 1,
-      embeddingThroughputOptima: optima,
-    };
+  function storeOptima(r: CollectionRegistry, optima: Record<string, EmbeddingThroughputOptimum>): void {
+    r.recordEmbeddingThroughputOptima(Object.entries(optima).map(([key, optimum]) => ({ key, optimum })));
   }
 
   it("does not hand another provider's optimum, nor a provider-less legacy one, to a llama-server run", () => {
     const r = new CollectionRegistry(dir);
-    r.record(
-      entryWith({
-        [embeddingThroughputOptimumKey(GPU_A, MODEL, "ollama")]: optimum(256, 2),
-        [embeddingThroughputOptimumKey(GPU_A, MODEL)]: optimum(256, 2),
-      }),
-    );
+    storeOptima(r, {
+      [embeddingThroughputOptimumKey(GPU_A, MODEL, "ollama")]: optimum(256, 2),
+      [embeddingThroughputOptimumKey(GPU_A, MODEL)]: optimum(256, 2),
+    });
     expect(r.readEmbeddingThroughputOptimum(GPU_A, MODEL, "llama-server")).toBeUndefined();
   });
 
   it("hands the matching identity's optimum back", () => {
     const r = new CollectionRegistry(dir);
-    r.record(entryWith({ [embeddingThroughputOptimumKey(GPU_A, MODEL, "llama-server")]: optimum(128, 8) }));
+    storeOptima(r, { [embeddingThroughputOptimumKey(GPU_A, MODEL, "llama-server")]: optimum(128, 8) });
     expect(r.readEmbeddingThroughputOptimum(GPU_A, MODEL, "llama-server")).toEqual(optimum(128, 8));
   });
 });

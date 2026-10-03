@@ -202,6 +202,13 @@ export interface EmbeddingThroughputTunerConfig {
 export interface EmbeddingEndpointThroughputOptimum {
   endpoint: EmbeddingEndpointIdentity;
   optimum: EmbeddingThroughputOptimum;
+  /**
+   * The stored optimum `optimum` was reconciled against — the record the run
+   * was seeded with; absent when nothing was stored. The registry applies the
+   * write against the record on disk at commit time, and this tells it whether
+   * that record is still the one judged here (bd tea-rags-mcp-auoxk).
+   */
+  storedOptimum?: EmbeddingThroughputOptimum;
 }
 
 interface SizeSample {
@@ -414,7 +421,13 @@ export class EmbeddingThroughputTuner {
     const out: EmbeddingEndpointThroughputOptimum[] = [];
     for (const state of this.states.values()) {
       const optimum = this.optimumToPersist(state);
-      if (optimum) out.push({ endpoint: { ...state.endpoint }, optimum });
+      if (!optimum) continue;
+      const { storedOptimum } = state;
+      out.push({
+        endpoint: { ...state.endpoint },
+        optimum,
+        ...(storedOptimum ? { storedOptimum: { ...storedOptimum } } : {}),
+      });
     }
     return out;
   }

@@ -21,7 +21,7 @@ import {
   embeddingThroughputOptimumKey,
   type CollectionRegistryPort,
   type EmbeddingProducerStarvation,
-  type EmbeddingThroughputOptimum,
+  type EmbeddingThroughputOptimumWrite,
   type PathCollectionResolver,
   type RegistryGitState,
 } from "../../../contracts/types/registry.js";
@@ -373,6 +373,7 @@ export abstract class BaseIndexingPipeline {
     producerStarvation?: EmbeddingProducerStarvation,
   ): Promise<void> {
     if (!this.registry) return;
+    this.recordThroughputOptima(throughputOptima);
     try {
       // Chunks only — the indexing marker and schema metadata point are not
       // chunks, and status/metrics leave them out too (bd tea-rags-mcp-39xca.12).
@@ -400,17 +401,6 @@ export abstract class BaseIndexingPipeline {
       // general rule (outer env > registry env > code default).
       const { envSnapshot } = this;
       const gitState = await this.buildRegistryGitState(absolutePath);
-      // The run's best measured embedding optima — already reconciled with the
-      // stored ones by the tuner (bd tea-rags-mcp-cyw2r) — keyed by embedding
-      // identity; the registry MERGES them into what earlier runs learnt (bd
-      // tea-rags-mcp-7ju66). An endpoint without a URL (in-process provider)
-      // has no stable key.
-      const embeddingThroughputOptima: Record<string, EmbeddingThroughputOptimum> = {};
-      for (const { endpoint, optimum } of throughputOptima) {
-        if (endpoint.url === undefined) continue;
-        embeddingThroughputOptima[embeddingThroughputOptimumKey(endpoint.url, endpoint.model, endpoint.provider)] =
-          optimum;
-      }
       this.registry.record({
         collectionName,
         path: absolutePath,
@@ -435,7 +425,6 @@ export abstract class BaseIndexingPipeline {
         // freshness checks compare live HEAD against this block. Absent when
         // the codebase is not a git repository.
         ...(gitState !== undefined ? { git: gitState } : {}),
-        ...(Object.keys(embeddingThroughputOptima).length > 0 ? { embeddingThroughputOptima } : {}),
         // The last run's verdict only: a run that formed no batch says nothing.
         ...(producerStarvation !== undefined && producerStarvation.formedBatches > 0
           ? { embeddingProducerStarvation: producerStarvation }
@@ -446,6 +435,34 @@ export abstract class BaseIndexingPipeline {
       });
     } catch (err) {
       process.stderr.write(`[tea-rags] registry record failed: ${(err as Error).message}\n`);
+    }
+  }
+
+  /**
+   * Persist the run's best measured embedding optima — already reconciled with
+   * the stored ones by the tuner (bd tea-rags-mcp-cyw2r) — into the registry's
+   * shared section, keyed by embedding identity: every project seeds from and
+   * writes to the same records (bd tea-rags-mcp-auoxk). Each write carries the
+   * stored optimum the tuner judged it against, so the registry can tell a
+   * record another process landed meanwhile. An endpoint without a URL
+   * (in-process provider) has no stable key. Failure is logged, never thrown —
+   * like the entry itself, the optima are an out-of-band hint.
+   */
+  private recordThroughputOptima(throughputOptima: readonly EmbeddingEndpointThroughputOptimum[]): void {
+    const writes: EmbeddingThroughputOptimumWrite[] = [];
+    for (const { endpoint, optimum, storedOptimum } of throughputOptima) {
+      if (endpoint.url === undefined) continue;
+      writes.push({
+        key: embeddingThroughputOptimumKey(endpoint.url, endpoint.model, endpoint.provider),
+        optimum,
+        ...(storedOptimum !== undefined ? { storedOptimum } : {}),
+      });
+    }
+    if (writes.length === 0) return;
+    try {
+      this.registry?.recordEmbeddingThroughputOptima?.(writes);
+    } catch (err) {
+      process.stderr.write(`[tea-rags] registry throughput optima record failed: ${(err as Error).message}\n`);
     }
   }
 

@@ -388,11 +388,14 @@ describe("IngestFacade", () => {
         indexedAt: "2026-10-02T00:00:00.000Z",
         teaRagsVersion: "0.0.0",
         chunksCount: 1,
-        embeddingThroughputOptima: {
-          [embeddingThroughputOptimumKey("http://127.0.0.1:11434", "jina", "ollama")]: settled,
-          [embeddingThroughputOptimumKey("http://gpu-server:11434", "jina", "ollama")]: { ...settled, batchSize: 256 },
-        },
       });
+      registry.recordEmbeddingThroughputOptima([
+        { key: embeddingThroughputOptimumKey("http://127.0.0.1:11434", "jina", "ollama"), optimum: settled },
+        {
+          key: embeddingThroughputOptimumKey("http://gpu-server:11434", "jina", "ollama"),
+          optimum: { ...settled, batchSize: 256 },
+        },
+      ]);
       const qdrant = {
         collectionExists: vi.fn().mockResolvedValue(false),
         checkHealth: vi.fn().mockResolvedValue(true),

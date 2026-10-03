@@ -62,15 +62,21 @@
   the fastest one, reconciled with the stored record by
   `EmbeddingThroughputTuner#optimumToPersist` — and returns NOTHING for an
   endpoint the run measured nothing new on, so `BaseIndexingPipeline` writes no
-  key and the record (and its `settledAt`) stays. A stored record with
-  `measurement: "aggregate"` starts the run settled, with no probes; drift is
-  handled only by the slowdown guard (`SETTLED_THROUGHPUT_SLOWDOWN_SHARE`) and
-  the upward-only periodic re-probe. The rules are owned by the tuner's
-  docblock. Why: persisting the first settle point stored concurrency 1 while
-  the run had measured 4 at 160.8k chars/s, and every later run re-climbed from
-  1 (bd tea-rags-mcp-cyw2r); and the size climb's per-batch rate is not
-  comparable with an aggregate one, so mixing them in the merge would let a
-  per-call reading at concurrency 1 block an aggregate measurement.
+  key and the record (and its `settledAt`) stays. The record is NOT the
+  project's: `BaseIndexingPipeline#recordThroughputOptima` writes it, with the
+  seed record the tuner judged it against, into the registry-level section every
+  project shares, apart from the entry `record()` writes; the registry re-checks
+  it against what another process may have landed meanwhile
+  (`../../maintenance/registry/CLAUDE.md`, bd tea-rags-mcp-auoxk). A stored
+  record with `measurement: "aggregate"` starts the run settled, with no probes;
+  drift is handled only by the slowdown guard
+  (`SETTLED_THROUGHPUT_SLOWDOWN_SHARE`) and the upward-only periodic re-probe.
+  The rules are owned by the tuner's docblock. Why: persisting the first settle
+  point stored concurrency 1 while the run had measured 4 at 160.8k chars/s, and
+  every later run re-climbed from 1 (bd tea-rags-mcp-cyw2r); and the size
+  climb's per-batch rate is not comparable with an aggregate one, so mixing them
+  in the merge would let a per-call reading at concurrency 1 block an aggregate
+  measurement.
 
 ## Gotchas
 

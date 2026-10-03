@@ -25,17 +25,31 @@
   `tea-rags worktree remove <name>` threw `WorktreeNotFoundError`, and the
   plugin cleanup hook's sweep never saw it — silently (bd tea-rags-mcp-ghk1f).
   Any new field set outside the pipeline must be added to the sticky preserve
-  list here. `embeddingThroughputOptima` is the one field that MERGES instead:
-  the run's keys (embedding identity) overwrite theirs, every other key survives
-  (`mergeEmbeddingThroughputOptima`) except legacy `url|model` keys, which a
-  provider-keyed write sheds (bd tea-rags-mcp-cyw2r). Whether a run's optimum
-  may replace the stored one is decided BEFORE `record()`, by the tuner
-  (`EmbeddingThroughputTuner#optimumToPersist`), not here. And
-  `CollectionRegistry#readEmbeddingThroughputOptimum` answers across ALL entries
-  with the freshest `settledAt`. Why: a run that lived only on the primary must
-  not erase what an earlier run learnt about the fallback, and how fast a server
-  embeds is a fact about the server, not the project that measured it (bd
-  tea-rags-mcp-7ju66).
+  list here. The entry's legacy `embeddingThroughputOptima` is the one field
+  `record()` actively DROPS, below.
+
+- **Embedding throughput optima are ONE registry-level section, not an entry
+  field.** `RegistryFileV1.embeddingThroughputOptima`, keyed by embedding
+  identity, is read by `CollectionRegistry#readEmbeddingThroughputOptimum` and
+  written only by `CollectionRegistry#recordEmbeddingThroughputOptima` — per
+  key, inside `flushWithCAS`, so `applyEmbeddingThroughputOptimumWrites`
+  (`embedding-throughput-optima.ts`) reconciles each write against the record on
+  disk AT COMMIT, not the instance's cache. The tuner already judged its write
+  against the record it was seeded with
+  (`EmbeddingThroughputTuner#optimumToPersist`) and hands that record along as
+  `storedOptimum`: still on disk → its verdict stands (a slower re-measured seed
+  lowers it); replaced meanwhile → only a comparable aggregate at least as fast
+  wins. `mergeRegistryDelta` lifts every identity the section lacks from the
+  disk entries' per-entry records (`liftEmbeddingThroughputOptima`: aggregate >
+  per-batch, then chars/s, then `settledAt`; legacy `url|model` keys never)
+  BEFORE the delta lands, and `record()` strips the per-entry field — so the
+  entry it rewrites loses nothing and the field dies one entry at a time. Why:
+  throughput is a property of the configuration; a small project never closes
+  the concurrency window a large one measures on the same endpoints, and
+  per-project records made each relearn it (bd tea-rags-mcp-auoxk). An older
+  build reads the file but rebuilds the top level on flush and DROPS the
+  section; the per-entry records it keeps writing are lifted back on the next
+  read — degraded, never corrupt.
 
 - **A registry `env` stamp records operator DECISIONS, and only its own project
   replays it whole.** A run pins the env families its env set explicitly —
@@ -70,9 +84,9 @@
   reads `entry.env` directly brings the ratchet back. Why: taxdome's Ollama-era
   `INGEST_PIPELINE_CONCURRENCY=2` and 100 ms batch timeout were replayed into
   every later run and held a 16-slot llama-server cluster at ~10% of its
-  capacity (bd tea-rags-mcp-y1ynz). What a run learnt about a backend travels as
-  `embeddingThroughputOptima`, keyed by embedding identity
-  (`embeddingThroughputOptimumKey`: provider + endpoint set + model).
+  capacity (bd tea-rags-mcp-y1ynz). What a run learnt about a backend travels in
+  the registry-level `embeddingThroughputOptima` section, keyed by embedding
+  identity (`embeddingThroughputOptimumKey`: provider + endpoint set + model).
 
 - **Data migrations advance `RegistryFileV1.revision`, never `version`.**
   `loadRegistryFile` in every release so far backs up and discards a file whose

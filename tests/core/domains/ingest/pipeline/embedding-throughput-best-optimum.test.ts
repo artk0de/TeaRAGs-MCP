@@ -213,6 +213,16 @@ describe("EmbeddingThroughputTuner — best measured optimum (cyw2r)", () => {
       expect(run.persisted()).toMatchObject({ batchSize: 256, concurrency: 8, measurement: "aggregate" });
     });
 
+    it("hands the stored optimum it reconciled against along with the one to persist (auoxk)", () => {
+      const run = clockedRun({
+        reprobeAfterBatches: 40,
+        storedOptimum: () => stored({ concurrency: 2, charsPerSecond: 140_000 }),
+      });
+      run.wavesUntilReason(sizedServer(LIVE_AGGREGATE), "concurrency-settle");
+      expect(run.tuner.settledOptima()[0]?.storedOptimum).toEqual(stored({ concurrency: 2, charsPerSecond: 140_000 }));
+      expect(clockedRun().tuner.settledOptima()[0]?.storedOptimum).toBeUndefined();
+    });
+
     it("lowers the stored point when the run re-measured it and found the server slower", () => {
       const run = clockedRun({ storedOptimum: () => stored() });
       run.wavesUntilReason(sizedServer({ 2: 95_000, 4: 100_000, 8: 90_000 }), "concurrency-settle");
