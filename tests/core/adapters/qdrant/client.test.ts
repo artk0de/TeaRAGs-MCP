@@ -1382,6 +1382,35 @@ describe("QdrantManager", () => {
     });
   });
 
+  // The working tree's dense floor reads base points WITH their dense vector
+  // through the manager (bd tea-rags-mcp-xi2r9); the manager must reach Qdrant
+  // with the narrowed payload and hand back the dense vector of a hybrid point.
+  describe("retrieveDenseVectors", () => {
+    it("reads the points with the named payload and answers each point's dense vector", async () => {
+      mockClient.retrieve.mockResolvedValue([
+        { id: 1, payload: { content: "a" }, vector: [0.1, 0.2] },
+        { id: 2, payload: { content: "b" }, vector: { dense: [0.3, 0.4], sparse: { indices: [1], values: [1] } } },
+      ]);
+
+      const points = await manager.retrieveDenseVectors("test-collection", [1, 2], ["content"]);
+
+      expect(mockClient.retrieve).toHaveBeenCalledWith("test-collection", {
+        ids: [1, 2],
+        with_payload: { include: ["content"] },
+        with_vector: true,
+      });
+      expect(points).toEqual([
+        { id: 1, payload: { content: "a" }, vector: [0.1, 0.2] },
+        { id: 2, payload: { content: "b" }, vector: [0.3, 0.4] },
+      ]);
+    });
+
+    it("asks Qdrant nothing for an empty id list", async () => {
+      await expect(manager.retrieveDenseVectors("test-collection", [], ["content"])).resolves.toEqual([]);
+      expect(mockClient.retrieve).not.toHaveBeenCalled();
+    });
+  });
+
   describe("deletePoints", () => {
     it("should delete points by ids", async () => {
       await manager.deletePoints("test-collection", [1, 2, 3]);

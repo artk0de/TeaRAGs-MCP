@@ -1119,3 +1119,48 @@ describe("WorkingTreeGraphCache — retention across trees (B2)", () => {
     expect(WORKING_TREE_GRAPH_CAP_BYTES).toBe(2 * 1024 ** 3);
   });
 });
+
+describe("WorkingTreeGraphCache — degraded lookups", () => {
+  it("an alias lookup that fails falls back to the collection name as the physical one", async () => {
+    const { cache, pool, builder } = harness({
+      resolveActiveCollection: async () => Promise.reject(new Error("qdrant down")),
+    });
+    const hasDatabase = vi.spyOn(pool, "hasDatabase");
+
+    const state = await cache.graphFor(request(treeDir("t1")), 10_000);
+
+    expect(hasDatabase).toHaveBeenCalledWith(COLLECTION);
+    expect(state).toEqual({ kind: "unavailable", reason: `no base codegraph for ${COLLECTION}` });
+    expect(builder.inputs).toHaveLength(0);
+  });
+
+  it("a codegraph runtime that throws is an unavailable answer naming the error, never a rejection", async () => {
+    const { cache, builder } = harness({
+      codegraph: () => {
+        throw new Error("pool closed");
+      },
+    });
+
+    const state = await cache.graphFor(request(treeDir("t1")), 10_000);
+
+    expect(state).toEqual({ kind: "unavailable", reason: "tree graph cache error: pool closed" });
+    expect(builder.inputs).toHaveLength(0);
+  });
+
+  it("a changed path that is missing or a directory digests as absent content; its later file is a new key", async () => {
+    const { cache, builder } = harness();
+    const root = treeDir("t1");
+    mkdirSync(join(root, "src", "dir"), { recursive: true });
+    const req = request(root, "fp", ["src/gone.ts", "src/dir"], false);
+
+    const first = expectBuilt(await cache.graphFor(req, 10_000));
+    expect(expectBuilt(await cache.graphFor(req, 10_000))).toBe(first);
+    expect(builder.inputs).toHaveLength(1);
+
+    writeFileSync(join(root, "src", "gone.ts"), "now it exists");
+    const second = expectBuilt(await cache.graphFor(req, 10_000));
+
+    expect(second).not.toBe(first);
+    expect(builder.inputs).toHaveLength(2);
+  });
+});

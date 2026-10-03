@@ -13,7 +13,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   INIT_KEY,
@@ -196,5 +196,44 @@ describe("ProcessWorkerRuntime — parent channel gone (in-process)", () => {
 
     expect(() => process.emit("error" as "message", unrelated, null)).toThrow(unrelated);
     expect(calls.gone).toEqual([]);
+  });
+
+  it("answers over the channel while the parent is there, and sends nothing once it left", async () => {
+    const original = Object.getOwnPropertyDescriptor(process, "send");
+    const send = vi.fn(() => true);
+    Object.defineProperty(process, "send", { value: send, configurable: true, writable: true });
+    try {
+      const rt = new ProcessWorkerRuntime<unknown, unknown>(() => undefined);
+      const ready = rt.init();
+      process.emit("message", { [INIT_KEY]: {} }, null);
+      await ready;
+
+      rt.respond({ n: 1 });
+      process.emit("disconnect");
+      rt.respond({ n: 2 });
+
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(send).toHaveBeenCalledWith({ n: 1 });
+    } finally {
+      if (original) Object.defineProperty(process, "send", original);
+      else Reflect.deleteProperty(process, "send");
+    }
+  });
+
+  it("by default leaves with exit code 0 when the parent is gone", async () => {
+    const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+    try {
+      const rt = new ProcessWorkerRuntime<unknown, unknown>();
+      const ready = rt.init();
+      process.emit("message", { [INIT_KEY]: {} }, null);
+      await ready;
+
+      process.emit("disconnect");
+
+      expect(exit).toHaveBeenCalledTimes(1);
+      expect(exit).toHaveBeenCalledWith(0);
+    } finally {
+      exit.mockRestore();
+    }
   });
 });
