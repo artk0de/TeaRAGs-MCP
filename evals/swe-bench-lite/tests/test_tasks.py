@@ -43,3 +43,43 @@ def test_select_stratified_honours_exclude():
     dev = select_stratified(pool, n=5, seed=1)
     pilot = select_stratified(pool, n=20, seed=1, exclude=frozenset(t.instance_id for t in dev))
     assert not {t.instance_id for t in dev} & {t.instance_id for t in pilot}
+
+
+def _focus_pool():
+    named = [task(i, "django/django", text="see models.py") for i in range(4)]
+    not_named = [task(i, "django/django", text="queryset bug") for i in range(4, 20)]
+    other = [task(i, "psf/requests", text=t) for i, t in ((20, "models.py"), (21, "nothing"))]
+    return named + not_named + other
+
+
+def test_select_focus_samples_not_named_and_keeps_every_named_task():
+    from swe_lite_ab.tasks import select_focus
+
+    pool = _focus_pool()
+    not_named, named = select_focus(pool, "django/django", n_not_named=5, seed=3)
+    assert (not_named, named) == select_focus(list(reversed(pool)), "django/django", n_not_named=5, seed=3)
+    assert [t.instance_id for t in named] == sorted(f"django-{i}" for i in range(4))
+    assert len(not_named) == 5 and not any(mentions_gold_file(t) for t in not_named)
+    assert {t.repo for t in not_named + named} == {"django/django"}
+    assert [t.instance_id for t in not_named] == sorted(t.instance_id for t in not_named)
+
+
+def test_select_focus_honours_exclude_and_stays_disjoint():
+    from swe_lite_ab.tasks import select_focus
+
+    pool = _focus_pool()
+    dev, _ = select_focus(pool, "django/django", n_not_named=5, seed=3)
+    scored, named = select_focus(pool, "django/django", n_not_named=11, seed=3,
+                                 exclude=frozenset(t.instance_id for t in dev))
+    dev_ids = {t.instance_id for t in dev}
+    assert not dev_ids & {t.instance_id for t in scored + named}
+    assert len(scored) == 11
+
+
+def test_select_focus_raises_when_too_few_not_named_tasks():
+    import pytest
+
+    from swe_lite_ab.tasks import select_focus
+
+    with pytest.raises(ValueError):
+        select_focus(_focus_pool(), "django/django", n_not_named=17, seed=3)

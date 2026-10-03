@@ -43,6 +43,19 @@ def select_stratified(tasks: list[Task], n: int, seed: int, exclude: frozenset[s
     return sorted(chosen, key=lambda t: t.instance_id)
 
 
+def select_focus(tasks: list[Task], repo: str, n_not_named: int, seed: int,
+                 exclude: frozenset[str] = frozenset()) -> tuple[list[Task], list[Task]]:
+    """One repo: a seeded sample of tasks whose issue does not name the gold file, plus every task
+    whose issue does (the named control). Both id-sorted; `exclude` removes ids from both pools."""
+    pool = sorted((t for t in tasks if t.repo == repo and t.instance_id not in exclude), key=lambda t: t.instance_id)
+    named = [t for t in pool if mentions_gold_file(t)]
+    not_named_pool = [t for t in pool if not mentions_gold_file(t)]
+    if len(not_named_pool) < n_not_named:
+        raise ValueError(f"{repo}: {len(not_named_pool)} not-named tasks, {n_not_named} requested")
+    sample = random.Random(seed).sample(not_named_pool, n_not_named)
+    return sorted(sample, key=lambda t: t.instance_id), named
+
+
 def load_lite() -> list[Task]:
     from datasets import load_dataset
 

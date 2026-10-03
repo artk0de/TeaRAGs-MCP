@@ -25,19 +25,28 @@ indexes, transcripts, harness reports) go to the gitignored `runs/`.
 ## Stage order
 
 Every stage is `uv run swe-lite-ab <stage>`. `--tasks` picks the task list
-(`pilot-50` by default, or `dev-5`).
+(`pilot-50` by default).
+
+The first scored run is `--tasks django-focus-50`: django only, 30 sampled
+tasks whose issue does not name the gold file plus all 20 that do (the named
+control). Plugin tuning uses `dev-django-5` (5 other not-named django tasks).
+The mixed-repo `pilot-50` (with `dev-5`) is the second run.
 
 ```bash
-uv run swe-lite-ab select                     # writes tasks/dev-5.json + tasks/pilot-50.json
-uv run swe-lite-ab prepare                    # mirrors + per-task repos (ancestors of base_commit only)
-uv run swe-lite-ab index                      # arm 1 index chain, forward-seeded per repo
-uv run swe-lite-ab run-paired --parallel 2 --seed 20261003   # both arms per task, interleaved
-uv run swe-lite-ab collect  --arm arm0
-uv run swe-lite-ab collect  --arm arm1
-uv run swe-lite-ab evaluate --arm arm0
-uv run swe-lite-ab evaluate --arm arm1
-uv run swe-lite-ab report                     # results/<tasks>-<date>.md + .csv
+uv run swe-lite-ab select --profile django-focus   # tasks/dev-django-5.json + tasks/django-focus-50.json
+uv run swe-lite-ab prepare  --tasks django-focus-50  # mirrors + per-task repos (ancestors of base_commit only)
+uv run swe-lite-ab index    --tasks django-focus-50  # arm 1 index chain, forward-seeded per repo
+uv run swe-lite-ab run-paired --tasks django-focus-50 --parallel 2 --seed 20261003   # both arms, interleaved
+uv run swe-lite-ab collect  --tasks django-focus-50 --arm arm0
+uv run swe-lite-ab collect  --tasks django-focus-50 --arm arm1
+uv run swe-lite-ab evaluate --tasks django-focus-50 --arm arm0
+uv run swe-lite-ab evaluate --tasks django-focus-50 --arm arm1
+uv run swe-lite-ab report   --tasks django-focus-50  # results/<tasks>-<date>.md + .csv
 ```
+
+For the second run, `uv run swe-lite-ab select` (profile `pilot`) writes
+`tasks/dev-5.json` + `tasks/pilot-50.json`; repeat the stages with
+`--tasks pilot-50`.
 
 `run-paired` runs both arms of a task back to back in a per-task random order
 (seeded), so API latency and embedder load drift over hours hit both arms
@@ -48,7 +57,7 @@ alike instead of confounding the solve-time delta. Both arms of a task share
 prefers those saved patches.
 
 The single-arm `run --arm <arm>` stage remains for dev tuning (arm 1 only on
-`dev-5`). With it, `collect` for an arm must follow that arm's `run`
+`dev-django-5`, or `dev-5` for the second run). With it, `collect` for an arm must follow that arm's `run`
 immediately, before another `run` wipes the working tree.
 
 ## Layout

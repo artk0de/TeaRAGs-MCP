@@ -13,7 +13,8 @@ def _tasks(name: str) -> list[tasks.Task]:
 def main() -> None:
     p = argparse.ArgumentParser(prog="swe-lite-ab")
     sub = p.add_subparsers(dest="stage", required=True)
-    sub.add_parser("select")
+    sel = sub.add_parser("select")
+    sel.add_argument("--profile", choices=["pilot", "django-focus"], default="pilot")
     for stage in ("prepare", "index", "run", "run-paired", "collect", "evaluate", "report"):
         s = sub.add_parser(stage)
         s.add_argument("--tasks", default="pilot-50")
@@ -25,6 +26,15 @@ def main() -> None:
             s.add_argument("--seed", type=int, default=20261003)
     a = p.parse_args()
 
+    if a.stage == "select" and a.profile == "django-focus":
+        # Scored: 30 sampled not-named django tasks + every named one (control); dev: 5 other not-named.
+        lite = tasks.load_lite()
+        dev, _ = tasks.select_focus(lite, "django/django", n_not_named=5, seed=20261003)
+        not_named, named = tasks.select_focus(lite, "django/django", n_not_named=30, seed=20261003,
+                                              exclude=frozenset(t.instance_id for t in dev))
+        tasks.save_ids(dev, config.TASKS_DIR / "dev-django-5.json")
+        tasks.save_ids(sorted(not_named + named, key=lambda t: t.instance_id), config.TASKS_DIR / "django-focus-50.json")
+        return
     if a.stage == "select":
         lite = tasks.load_lite()
         dev = tasks.select_stratified(lite, n=5, seed=20261003)
