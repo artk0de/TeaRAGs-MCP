@@ -55,6 +55,22 @@
   chars/s measures the producer's gaps, not the server — judged on it the climb
   wanders or settles low and the stored optimum carries that to the next run (bd
   tea-rags-mcp-y1ynz).
+- **The persisted optimum is the run's best AGGREGATE window, and a stored
+  aggregate optimum is trusted outright.** `EmbeddingThroughputTuner` records
+  every complete concurrency window not tainted by a starved batch or a server
+  failure as a measured point; `EmbeddingThroughputTuner#settledOptima` returns
+  the fastest one, reconciled with the stored record by
+  `EmbeddingThroughputTuner#optimumToPersist` — and returns NOTHING for an
+  endpoint the run measured nothing new on, so `BaseIndexingPipeline` writes no
+  key and the record (and its `settledAt`) stays. A stored record with
+  `measurement: "aggregate"` starts the run settled, with no probes; drift is
+  handled only by the slowdown guard (`SETTLED_THROUGHPUT_SLOWDOWN_SHARE`) and
+  the upward-only periodic re-probe. The rules are owned by the tuner's
+  docblock. Why: persisting the first settle point stored concurrency 1 while
+  the run had measured 4 at 160.8k chars/s, and every later run re-climbed from
+  1 (bd tea-rags-mcp-cyw2r); and the size climb's per-batch rate is not
+  comparable with an aggregate one, so mixing them in the merge would let a
+  per-call reading at concurrency 1 block an aggregate measurement.
 
 ## Gotchas
 

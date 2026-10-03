@@ -74,8 +74,20 @@ export interface EmbeddingThroughputOptimum {
   concurrency: number;
   /** Measured throughput at `batchSize`, normalised by input size. */
   charsPerSecond: number;
-  /** ISO timestamp of the settle. Freshest wins when several entries know the endpoint. */
+  /**
+   * ISO timestamp of the measurement (the settle, for a `per-batch` record).
+   * Freshest wins when several entries know the endpoint.
+   */
   settledAt: string;
+  /**
+   * What `charsPerSecond` measures (bd tea-rags-mcp-cyw2r). `aggregate`: the
+   * total input of a full concurrency window over its wall-clock span — the
+   * run's best measured (batchSize, concurrency) point, comparable across
+   * points. `per-batch` (or absent, on every record written before cyw2r): the
+   * size climb's per-call rate at the settle, which is not comparable with an
+   * aggregate rate, so an aggregate measurement always replaces it.
+   */
+  measurement?: "aggregate" | "per-batch";
 }
 
 /**
@@ -224,8 +236,9 @@ export interface CollectionEntry {
    */
   trajectoryVersions?: Record<string, number>;
   /**
-   * Settled embedding batch optima, keyed by `embeddingThroughputOptimumKey`
-   * (bd tea-rags-mcp-7ju66). MERGED on `record()`: a run overwrites only the
+   * Best measured embedding throughput optima, keyed by
+   * `embeddingThroughputOptimumKey` (bd tea-rags-mcp-7ju66, cyw2r). MERGED on
+   * `record()`: a run overwrites only the
    * endpoints it settled on, every other key survives — a run that lived on
    * the primary must not erase what an earlier run learnt about the fallback.
    */

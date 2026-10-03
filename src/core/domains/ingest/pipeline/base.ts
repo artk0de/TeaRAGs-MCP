@@ -400,9 +400,11 @@ export abstract class BaseIndexingPipeline {
       // general rule (outer env > registry env > code default).
       const { envSnapshot } = this;
       const gitState = await this.buildRegistryGitState(absolutePath);
-      // Settled embedding batch optima, keyed by endpoint + model; the registry
-      // MERGES them into what earlier runs learnt (bd tea-rags-mcp-7ju66). An
-      // endpoint without a URL (in-process provider) has no stable key.
+      // The run's best measured embedding optima — already reconciled with the
+      // stored ones by the tuner (bd tea-rags-mcp-cyw2r) — keyed by embedding
+      // identity; the registry MERGES them into what earlier runs learnt (bd
+      // tea-rags-mcp-7ju66). An endpoint without a URL (in-process provider)
+      // has no stable key.
       const embeddingThroughputOptima: Record<string, EmbeddingThroughputOptimum> = {};
       for (const { endpoint, optimum } of throughputOptima) {
         if (endpoint.url === undefined) continue;
@@ -540,11 +542,12 @@ export abstract class BaseIndexingPipeline {
    * the configured batch size is the ceiling, EMBEDDING_TUNE_MIN_BATCH_SIZE the
    * floor (ceiling/16 when unset), `embedConcurrencyCeiling` the ceiling of the
    * concurrency climb — an explicit INGEST_PIPELINE_CONCURRENCY, or
-   * IMPLICIT_EMBEDDING_CONCURRENCY_CEILING when unset. It starts both values
-   * from the registry's stored optimum for the active endpoint + model — hints
-   * the bounds clamp; an older entry without `concurrency` starts at the worker
-   * pool's concurrency (the explicit value, or 1). Undefined when
-   * EMBEDDING_TUNE_STATIC pins the static behaviour.
+   * IMPLICIT_EMBEDDING_CONCURRENCY_CEILING when unset. It is handed the
+   * registry's stored optimum for the active embedding identity: both values
+   * start there (hints the bounds clamp), an aggregate record starts the run
+   * settled, and the run's best point is reconciled against it before it is
+   * persisted (bd tea-rags-mcp-cyw2r). Undefined when EMBEDDING_TUNE_STATIC
+   * pins the static behaviour.
    */
   protected createThroughputTuner(): EmbeddingThroughputTuner | undefined {
     const { pipelineConfig } = this.tuning;
@@ -556,14 +559,10 @@ export abstract class BaseIndexingPipeline {
       floor: pipelineConfig.upsertAccumulator.minBatchSize ?? Math.max(1, Math.floor(ceiling / 16)),
       configuredConcurrency: pipelineConfig.embedConcurrencyCeiling ?? pipelineConfig.workerPool.concurrency,
       initialConcurrency: pipelineConfig.workerPool.concurrency,
-      seed: (endpoint) =>
+      storedOptimum: (endpoint) =>
         endpoint.url === undefined
           ? undefined
-          : registry?.readEmbeddingThroughputOptimum?.(endpoint.url, endpoint.model, endpoint.provider)?.batchSize,
-      seedConcurrency: (endpoint) =>
-        endpoint.url === undefined
-          ? undefined
-          : registry?.readEmbeddingThroughputOptimum?.(endpoint.url, endpoint.model, endpoint.provider)?.concurrency,
+          : registry?.readEmbeddingThroughputOptimum?.(endpoint.url, endpoint.model, endpoint.provider),
     });
   }
 

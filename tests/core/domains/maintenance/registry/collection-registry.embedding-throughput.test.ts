@@ -118,4 +118,31 @@ describe("CollectionRegistry — embedding throughput optima", () => {
 
     expect(r.readEmbeddingThroughputOptimum(PRIMARY, "jina")?.batchSize).toBe(64);
   });
+  it("drops legacy url|model keys (no provider prefix) on an optimum write — nothing reads them since y1ynz (cyw2r)", () => {
+    const r = new CollectionRegistry(dir);
+    const legacyPrimary = embeddingThroughputOptimumKey(PRIMARY, "jina");
+    const legacyFallback = embeddingThroughputOptimumKey(FALLBACK, "brokkai/Muninn-small");
+    const otherProvider = embeddingThroughputOptimumKey(FALLBACK, "jina", "ollama");
+    r.record(
+      makeEntry({
+        embeddingThroughputOptima: {
+          [legacyPrimary]: optimum(256, "2026-10-01T00:00:00.000Z"),
+          [legacyFallback]: optimum(64, "2026-10-01T00:00:00.000Z"),
+          [otherProvider]: optimum(32, "2026-10-01T00:00:00.000Z"),
+        },
+      }),
+    );
+
+    // A run that writes no optimum leaves the map alone.
+    r.record(makeEntry({ chunksCount: 99 }));
+    expect(Object.keys(r.get("code_abc")?.embeddingThroughputOptima ?? {})).toHaveLength(3);
+
+    const current = embeddingThroughputOptimumKey(PRIMARY, "jina", "llama-server");
+    r.record(makeEntry({ embeddingThroughputOptima: { [current]: optimum(128, "2026-10-03T00:00:00.000Z") } }));
+
+    expect(r.get("code_abc")?.embeddingThroughputOptima).toEqual({
+      [otherProvider]: optimum(32, "2026-10-01T00:00:00.000Z"),
+      [current]: optimum(128, "2026-10-03T00:00:00.000Z"),
+    });
+  });
 });

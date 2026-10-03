@@ -21,12 +21,26 @@ import {
 import { RegistryConcurrencyError, RegistryNameConflictError, RegistryWriteError } from "./errors.js";
 import { flushWithCAS, loadRegistryFile, migrateRegistryFileWithCAS } from "./registry-file.js";
 
+/**
+ * A key of the pre-y1ynz `url|model` form: it starts with the endpoint URL
+ * itself, where every current key starts with the provider name — and a
+ * provider name never contains `://`.
+ */
+const LEGACY_EMBEDDING_THROUGHPUT_OPTIMUM_KEY = /^[a-z][a-z0-9+.-]*:\/\//i;
+
 function mergeEmbeddingThroughputOptima(
   existing: CollectionEntry["embeddingThroughputOptima"],
   incoming: CollectionEntry["embeddingThroughputOptima"],
 ): Pick<CollectionEntry, "embeddingThroughputOptima"> {
   if (existing === undefined && incoming === undefined) return {};
-  return { embeddingThroughputOptima: { ...existing, ...incoming } };
+  const incomingKeys = Object.keys(incoming ?? {});
+  const providerKeyedWrite =
+    incomingKeys.length > 0 && incomingKeys.every((key) => !LEGACY_EMBEDDING_THROUGHPUT_OPTIMUM_KEY.test(key));
+  if (!providerKeyedWrite) return { embeddingThroughputOptima: { ...existing, ...incoming } };
+  // A provider-keyed optimum write also sheds the legacy `url|model` keys:
+  // nothing has read them since y1ynz keyed optima by provider (bd tea-rags-mcp-cyw2r).
+  const kept = Object.entries(existing ?? {}).filter(([key]) => !LEGACY_EMBEDDING_THROUGHPUT_OPTIMUM_KEY.test(key));
+  return { embeddingThroughputOptima: { ...Object.fromEntries(kept), ...incoming } };
 }
 
 function snapshotEntries(map: ReadonlyMap<string, CollectionEntry>): Map<string, CollectionEntry> {

@@ -26,8 +26,11 @@
   plugin cleanup hook's sweep never saw it — silently (bd tea-rags-mcp-ghk1f).
   Any new field set outside the pipeline must be added to the sticky preserve
   list here. `embeddingThroughputOptima` is the one field that MERGES instead:
-  the run's keys (endpoint URL + model) overwrite theirs, every other key
-  survives (`mergeEmbeddingThroughputOptima`), and
+  the run's keys (embedding identity) overwrite theirs, every other key survives
+  (`mergeEmbeddingThroughputOptima`) except legacy `url|model` keys, which a
+  provider-keyed write sheds (bd tea-rags-mcp-cyw2r). Whether a run's optimum
+  may replace the stored one is decided BEFORE `record()`, by the tuner
+  (`EmbeddingThroughputTuner#optimumToPersist`), not here. And
   `CollectionRegistry#readEmbeddingThroughputOptimum` answers across ALL entries
   with the freshest `settledAt`. Why: a run that lived only on the primary must
   not erase what an earlier run learnt about the fallback, and how fast a server
