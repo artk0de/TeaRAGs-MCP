@@ -621,6 +621,24 @@ EMBEDDING_FALLBACK_URL=http://localhost:11434  # fallback: the laptop itself
 Details:
 [Ollama provider](https://artk0de.github.io/TeaRAGs-MCP/config/providers/ollama).
 
+### Embedding model comparison
+
+Measured on one GPU host and three code corpora (TypeScript, two Ruby); quality
+is dense MRR on 200 identifier-free natural-language queries per corpus.
+
+| Model                    | Role                         | Speed vs jina | Quality vs jina v2 code                            |
+| ------------------------ | ---------------------------- | ------------- | -------------------------------------------------- |
+| **CodeRankEmbed** (137M) | Recommended for llama-server | 0.93×         | +0.06 to +0.19 MRR on all three corpora            |
+| **jina v2 code** (161M)  | Ollama default, baseline     | 1.00×         | 0.850 TypeScript · 0.832 / 0.683 Ruby              |
+| **Muninn-small** (47M)   | Fast option, no Ruby         | 2.37×         | +0.04 on TypeScript; mixed on Ruby (+0.08 / −0.05) |
+
+Models of 1.5B–7B parameters gain mostly at R@1 and run 15–110× slower: every
+model finds the target in the top 10 on 99–100% of the TypeScript queries, and
+an agent reads the whole top-10 page. Which model to pick:
+[Embedding model choice](https://artk0de.github.io/TeaRAGs-MCP/config/embedding-model-choice);
+the method and all tables:
+[Embedding model comparison](https://artk0de.github.io/TeaRAGs-MCP/knowledge-base/embedding-model-comparison).
+
 ## ⌨️ CLI
 
 | Command                   | What it does                                                        |

@@ -30,6 +30,9 @@ TeaRAGs supports six embedding providers — from zero-config local inference to
 
 **Need cloud scale or quality?** Pick [OpenAI](./openai) for the best embedding quality and familiar API. Consider [Voyage](./voyage) if your codebase is code-heavy — their models are trained specifically on source code. Choose [Cohere](./cohere) if you need multilingual embeddings.
 
+**Which model?** The provider decides which models you can run; which of them
+to pick for a project is on [Embedding model choice](/config/embedding-model-choice).
+
 **Privacy matters?** ONNX, Ollama and llama-server keep everything local or on your own network. No data leaves your machine.
 
 ## Common Configuration
@@ -84,7 +87,7 @@ the default chunk size from that reported value, which may be smaller.
 
 | Model | Served by | Dimensions | Context (tokens) | Kind | Notes |
 | ----- | --------- | ---------- | ---------------- | ---- | ----- |
-| `unclemusclez/jina-embeddings-v2-base-code:latest` | Ollama, llama-server | 768 | 8192 | Code | **Default** for Ollama and llama-server. The llama-server numbers on this site are measured with it |
+| `unclemusclez/jina-embeddings-v2-base-code:latest` | Ollama, llama-server | 768 | 8192 | Code | **Default** for Ollama and llama-server. The llama-server throughput numbers on the provider pages are measured with it |
 | `jina-embeddings-v2-base-code` | Ollama, llama-server¹ | 768 | 8192 | Code | Same model under its plain name |
 | `jinaai/jina-embeddings-v2-base-code` | ONNX | 768 | 8192 | Code | ONNX default as `jinaai/jina-embeddings-v2-base-code-fp16` |
 | `nomic-embed-text` | Ollama, llama-server¹ | 768 | 8192 | General | |
@@ -94,12 +97,12 @@ the default chunk size from that reported value, which may be smaller.
 | `qwen3-embedding` | Ollama, llama-server¹ | 1024 | 32k | General | Multilingual. 1024 is the 0.6B size; larger sizes are wider, and Ollama reports the real width at startup |
 | `bge-m3` | Ollama, llama-server¹ | 1024 | 8192 | General | Multilingual |
 | `embeddinggemma` | Ollama, llama-server¹ | 768 | 2048 | General | Matryoshka: 512/256/128 also supported |
-| `nomic-ai/CodeRankEmbed` | llama-server³ | 768 | — | Code | |
-| `brokkai/Muninn-small` | llama-server³ | 384 | — | Code | |
-| `jinaai/jina-code-embeddings-0.5b` | llama-server³ | 896 | — | Code | |
-| `BAAI/bge-code-v1` | llama-server³ | 1536 | — | Code | |
-| `Qodo/Qodo-Embed-1-1.5B` | llama-server³ | 1536 | — | Code | |
-| `nomic-ai/nomic-embed-code` | llama-server³ | 3584 | — | Code | |
+| `nomic-ai/CodeRankEmbed` | llama-server³ | 768 | 2048 | Code | **Recommended for llama-server**: 0.93× jina's speed, +0.06 to +0.19 MRR over it. Context from the GGUF metadata. See [Embedding model choice](/config/embedding-model-choice) |
+| `brokkai/Muninn-small` | llama-server³ | 384 | 8192 | Code | Fast option: 2.37× jina's speed; no Ruby in its training data. See [Embedding model choice](/config/embedding-model-choice) |
+| `jinaai/jina-code-embeddings-0.5b` | llama-server³ | 896 | — | Code | Measured, not recommended: 0.12× jina's speed, CC-BY-NC. See the [comparison](/knowledge-base/embedding-model-comparison) |
+| `BAAI/bge-code-v1` | llama-server³ | 1536 | — | Code | Measured, not recommended: 0.06× jina's speed. See the [comparison](/knowledge-base/embedding-model-comparison) |
+| `Qodo/Qodo-Embed-1-1.5B` | llama-server³ | 1536 | — | Code | Measured, not recommended: 0.06× jina's speed. See the [comparison](/knowledge-base/embedding-model-comparison) |
+| `nomic-ai/nomic-embed-code` | llama-server³ | 3584 | — | Code | Measured, not recommended: 7B, 0.009× jina's speed. See the [comparison](/knowledge-base/embedding-model-comparison) |
 | `Xenova/all-MiniLM-L6-v2` | ONNX | 384 | 256 | General | Lightweight |
 | `Xenova/bge-base-en-v1.5` | ONNX | 768 | 512 | General | English |
 | `BAAI/bge-small-en-v1.5` | ONNX | 384 | 512 | General | English, small |
@@ -125,8 +128,8 @@ the default chunk size from that reported value, which may be smaller.
 ¹ llama-server serves any model from the Ollama library: `tea-rags llama-server
 fetch-model <model>` downloads its GGUF, and `tea-rags llama-server command
 --model <model>` prints the download for the GPU host. It loads only when
-llama.cpp supports the model's architecture, and only the jina default has been
-measured with TeaRAGs.
+llama.cpp supports the model's architecture. Of the models marked ¹, only the
+jina default and `mxbai-embed-large` have been measured with TeaRAGs.
 
 ² TeaRAGs' built-in table assumes 512 for the two Voyage lite models, while
 Voyage documents 1024 as their default output width. Set
@@ -134,4 +137,9 @@ Voyage documents 1024 as their default output width. Set
 
 ³ A HuggingFace GGUF served by llama-server, named by its HuggingFace id. The
 width is the length of the vectors a live llama-server returned for it
-(measured 2026-10-03).
+(measured 2026-10-03). None of these models is in the Ollama library, so
+`fetch-model` and the download step of `command`, which take Ollama references,
+do not cover them yet: download a community GGUF or convert the HuggingFace
+model with llama.cpp's `convert_hf_to_gguf.py`, and pass its path to
+`command --model`. Speed and quality of each are in
+[Embedding model comparison](/knowledge-base/embedding-model-comparison).
