@@ -5,8 +5,11 @@
  * 159-file delta spawned 136 `git blame` + 137 `git cat-file` (~3 s) each time;
  * the blocks those spawns produce depend only on what the record key holds.
  *
- * One JSON record per (repository toplevel, HEAD, history path, signal
- * fingerprint, UTC day): its `git.file` blocks by line extent and its
+ * One JSON record per (repository toplevel, path history key, history path,
+ * signal fingerprint, UTC day) — the history key is the index stamp plus the
+ * commits that touched the path on either side of it (HEAD only when the index
+ * carries no stamp), so a commit moves only the records of the paths it
+ * touched: its `git.file` blocks by line extent and its
  * `git.chunk` blocks by (tree-file content sha, row range) — the keys
  * `createWorkingTreeGitSignalSource` caches by in memory. A
  * computed "no history" is a `null` block, so it is a hit too.
@@ -23,7 +26,8 @@
  * - A read bumps the file's mtime — the record's last read. `sweep` evicts a
  *   record unread {@link WORKING_TREE_GIT_SIGNAL_RETENTION_MS} (96 h, the chunk
  *   store's window), then the least recently read until the store fits its cap.
- *   A record of a superseded HEAD or day is never read again and ages out.
+ *   A record of a superseded history key or day is never read again and ages
+ *   out.
  *   `scheduleWorkingTreeGitSignalSweep` runs it in a long-lived server only.
  *
  * The directory sits under the working-tree store root, named so neither the
