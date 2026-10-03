@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { buildTestCodegraphDeps } from "../../__helpers__/language-factory.js";
+import { importGitHistory, type GitHistoryCommit } from "../../../../../__helpers__/git-history-import.js";
 import { DuckDbGraphClient } from "../../../../../../../src/core/adapters/duckdb/client.js";
 import { EnrichmentCoordinator } from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { collectSymbols } from "../../../../../../../src/core/domains/language/kernel/collect-symbols.js";
@@ -43,10 +44,11 @@ function git(root: string, ...args: string[]): string {
   });
 }
 
-function commitTouching(root: string, files: string[], message: string): void {
-  for (const file of files) writeFileSync(join(root, file), `// ${file} ${message}\n`);
-  git(root, "add", "-A");
-  git(root, "commit", "-q", "-m", message);
+/** A commit touching `files`, each rewritten to `// <file> <message>`. */
+function commitTouching(files: string[], message: string, extra: Record<string, string> = {}): GitHistoryCommit {
+  const t = { name: "t", email: "t@x" };
+  const writes = Object.fromEntries(files.map((file) => [file, `// ${file} ${message}\n`]));
+  return { message, author: t, authorDate: new Date(), writes: { ...extra, ...writes } };
 }
 
 describe(
@@ -69,10 +71,15 @@ describe(
       // The discovery store persists under the app data dir; keep it out of ~/.tea-rags.
       vi.stubEnv("TEA_RAGS_DATA_DIR", dataDir);
 
-      git(root, "init", "-q", "-b", "main");
-      writeFileSync(join(root, ".gitignore"), "build/\n");
-      for (let i = 0; i < 3; i++) commitTouching(root, ["a.ts", "b.ts"], `ab-${i}`);
-      for (let i = 0; i < 3; i++) commitTouching(root, ["a.ts", "c.ts"], `ac-${i}`);
+      // Six commits in ONE fast-import, not twelve add/commit spawns (bd
+      // tea-rags-mcp-1r3e5); the `.gitignore` written before the first commit
+      // lands in it, as `add -A` committed it.
+      importGitHistory(root, [
+        ...[0, 1, 2].map((i) =>
+          commitTouching(["a.ts", "b.ts"], `ab-${i}`, i === 0 ? { ".gitignore": "build/\n" } : {}),
+        ),
+        ...[0, 1, 2].map((i) => commitTouching(["a.ts", "c.ts"], `ac-${i}`)),
+      ]);
 
       db = new DuckDbGraphClient({ path: join(dbDir, "g.duckdb") });
       await db.init();
