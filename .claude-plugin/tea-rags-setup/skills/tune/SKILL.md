@@ -5,10 +5,11 @@ description:
   (embedding throughput, Qdrant storage, pipeline concurrency, git
   trajectory) into ~/.tea-rags/setup-progress.json. Triggers on "indexing
   is slow", "tune performance", "benchmark my hardware", "find optimal
-  batch sizes", "поднастрой производительность". NOT for first-time
+  batch sizes", "tune llama-server slots", "поднастрой производительность".
+  llama-server: sweeps -np 1/2/4/8 on running instances. NOT for first-time
   install — use install for that. Can run standalone or as part of
   /tea-rags-setup:install.
-argument-hint: [--provider ollama|onnx] [--full]
+argument-hint: [--provider ollama|onnx|llama-server] [--full]
 ---
 
 # TeaRAGs Performance Tuning
@@ -29,7 +30,8 @@ setup progress file for MCP config.
 Check args provided. If not, check progress file for saved values.
 
 **Provider**: from arg `--provider`, or progress file `embeddingProvider`, or
-detect from current MCP config. Default: `ollama`.
+detect from current MCP config. Default: `ollama`. Provider `llama-server` →
+skip sections 1a–6, follow "llama-server" section.
 
 **Full mode**: from arg `--full`. Default: quick mode (~2-3 min).
 
@@ -166,6 +168,56 @@ Use /tea-rags-setup:install to apply these values to your MCP config.
 Delete `tuned_environment_variables.env` after parsing — values now in progress
 file.
 
+## llama-server
+
+`tea-rags tune` CLI accepts only `ollama|onnx` — NEVER pass `llama-server`.
+Instead: sweep server-side `-np` (`--slots`) on RUNNING instances. tea-rags
+spawns nothing; operator restarts each instance.
+
+Client batch size + concurrency = runtime tuner's job (hill-climb, persisted per
+endpoint). Do NOT tune them, do NOT write `EMBEDDING_BATCH_SIZE` /
+`EMBEDDING_CONCURRENCY` / `EMBEDDING_TUNE_MIN_BATCH_SIZE` — a pin caps the
+climb.
+
+### L1. Inputs
+
+From progress: `llamaServer` (`os`, `advertise`, `builds[]` of
+`{bin, devices}`), `embeddingBaseUrl`, `embeddingApiKey`. Missing → run install
+step 4L first. Every peer must answer `curl -sf <url>/health`.
+
+### L2. Sweep `-np` 1 → 2 → 4 → 8
+
+Per value N:
+
+1. Print restart lines: `tea-rags llama-server command` with saved
+   `--os --bin --device --advertise [--api-key] [--port]` plus `--slots N`. Hand
+   LAUNCH lines only (skip download/firewall/autostart) → user stops current
+   instances, starts new ones, confirms via AskUserQuestion.
+2. Wait `/health` 200 on every peer.
+3. Benchmark all peers concurrently, ≥N in-flight requests per peer so every
+   slot stays busy: POST `<url>/v1/embeddings`
+   `{"input":[...64 code-sized texts...]}` (header `Authorization: Bearer <key>`
+   if key), ~30 s per peer. Record texts/s per peer and summed.
+4. Gain <5% vs previous N, or OOM / launch failure → stop, keep previous N.
+
+Reference: RX 7800M + M3 Pro optimum = 4 (the `--slots` default).
+
+### L3. Re-print with best `--slots`
+
+Run `command` again with `--slots <best>` and `--autostart` → hand FULL sheet
+(autostart entry must carry new `-np`). Save
+`$SCRIPTS/progress.sh set llamaServer.slots <best>` and mark `steps.tune`
+completed. Non-embedding keys: run nothing, use `reference.md` "Tune Defaults"
+minus the three embedding keys above.
+
+### L4. Context invariant
+
+`command` prints `-c = slots*8192` — 8192 per slot is jina's context. Never
+hand-edit `-c` / `-b` / `-ub`: per-slot context ≠ 8192 changes chunk size →
+`--force` reindex needed. Change `--slots` only via `command`.
+
+Summary shows: texts/s per N, best N, per-peer split.
+
 ## ONNX (beta)
 
 ONNX tune not yet fully supported. When provider is `onnx`:
@@ -195,3 +247,5 @@ ONNX tune not yet fully supported. When provider is `onnx`:
 - Skip saving results to progress file
 - Leave tuned_environment_variables.env on disk after parsing
 - Assume default values without running tune (always try to run first)
+- Pass `--provider llama-server` to `tea-rags tune` CLI — unsupported
+- Restart llama-server yourself on GPU host — print lines, user runs them

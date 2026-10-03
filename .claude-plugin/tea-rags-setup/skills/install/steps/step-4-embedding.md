@@ -28,6 +28,11 @@ to progress as `projectLocEstimate`.
 Use GPU info from progress and locEstimate. Look up the recommendation in
 `reference.md` "Embedding Provider Recommendation" table.
 
+llama-server gate: `projectLocEstimate` ≥ 3M lines → AskUserQuestion "Is there a
+GPU host (this machine or a LAN box) to serve embeddings?". Yes → recommend
+llama-server (~2× Ollama texts/s, one server per GPU). Otherwise recommend per
+table — Ollama stays default.
+
 ## 4d: Ask user
 
 Build option descriptions dynamically from `reference.md` ONNX/Ollama
@@ -37,9 +42,13 @@ description tables based on platform/GPU.
 question: "Choose embedding provider. {recommendation_reason}"
 options: [
   { label: "Ollama", description: "{ollama_description}" },
-  { label: "ONNX", description: "{onnx_description}" }
+  { label: "ONNX", description: "{onnx_description}" },
+  { label: "llama-server", description: "{llama_server_description}" }
 ]
 ```
+
+Offer the llama-server option only when the ≥3M + GPU host gate passed, or when
+the user asks for it.
 
 If project > 100k LOC and user picks ONNX on CPU-only config → warn: "Project is
 ~{N}k LOC. ONNX on CPU recommended up to ~100k LOC, indexing may be slow.
@@ -73,6 +82,8 @@ large projects).
   - After user confirms → verify: run `ollama --version`. If fails → remind to
     restart terminal and retry.
   - After Ollama verified → re-run install-ollama.sh to pull model.
+- If llama-server chosen → follow `steps/step-4-llama-server.md`, then return
+  here to mark step completed.
 - If ONNX chosen → nothing to install. Save `embeddingProvider: "onnx"` to
   progress.
 

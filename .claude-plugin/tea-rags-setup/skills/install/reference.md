@@ -19,6 +19,15 @@
 | windows  | amd (pre-RDNA2) | any   | ONNX (DirectML)                        |
 | windows  | intel           | any   | ONNX (DirectML)                        |
 | windows  | none            | any   | ONNX (CPU)                             |
+| any      | GPU host exists | ≥3M   | llama-server (one server per GPU)      |
+
+The `≥3M` row overrides the rows above when the user confirms a GPU host (this
+machine or LAN). No GPU host → table rows above; Ollama stays default.
+
+## llama-server Description
+
+- Any → "Separate llama-server per GPU, run by you on the GPU host (tea-rags
+  prints the commands). ~2× Ollama throughput. Local llama-server as fallback."
 
 ## ONNX Description by Platform + GPU
 
@@ -116,6 +125,9 @@ Note: `n` only if node exists (`npm install -g n`) or direct
 | Variable                               | Source                    |
 | -------------------------------------- | ------------------------- |
 | `EMBEDDING_PROVIDER`                   | step 4                    |
+| `EMBEDDING_BASE_URL`                   | step 4L (llama-server)    |
+| `EMBEDDING_FALLBACK_URL`               | step 4L (if local tier)   |
+| `EMBEDDING_API_KEY`                    | step 4L (if `--api-key`)  |
 | `QDRANT_URL`                           | step 5 (omit if embedded) |
 | `EMBEDDING_BATCH_SIZE`                 | tuneValues                |
 | `EMBEDDING_CONCURRENCY`                | tuneValues                |
@@ -134,6 +146,11 @@ Note: `n` only if node exists (`npm install -g n`) or direct
 | `TRAJECTORY_GIT_ENABLED`               | step 7                    |
 | `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` | step 7 (if applicable)    |
 | `GIT_ADAPTER`                          | step 7 (always, explicit) |
+
+llama-server: omit `EMBEDDING_BATCH_SIZE`, `EMBEDDING_CONCURRENCY`,
+`EMBEDDING_TUNE_MIN_BATCH_SIZE` — runtime tuner owns them;
+`EMBEDDING_CONCURRENCY` caps its concurrency climb, a low pin starves the GPU
+slots.
 
 Omit any key that is null or missing — except `GIT_ADAPTER`, which is always
 written explicitly (the adapter choice is pinned per-project; ambient env must
