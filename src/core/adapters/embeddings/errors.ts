@@ -11,6 +11,19 @@ import { InfraError } from "../errors.js";
 export abstract class EmbeddingError extends InfraError {}
 
 /**
+ * The provider could not be reached at all — no endpoint answered within the
+ * call's recovery budget. Every provider's "unreachable" error extends this, so
+ * a caller can tell an OUTAGE (a search may degrade around it) from a request
+ * the provider rejected, without knowing which provider is configured.
+ */
+export abstract class EmbeddingProviderUnavailableError extends EmbeddingError {}
+
+/** True when `error` says the embedding provider is unreachable (see {@link EmbeddingProviderUnavailableError}). */
+export function isEmbeddingProviderUnavailable(error: unknown): error is EmbeddingProviderUnavailableError {
+  return error instanceof EmbeddingProviderUnavailableError;
+}
+
+/**
  * Collection was indexed with a different embedding model than currently configured.
  * Vectors from different models are incompatible — search results will be incorrect.
  *

@@ -30,7 +30,14 @@
  * recovery wait.
  */
 
-import type { EmbeddingProvider, EmbeddingResult, EmbeddingServerBatchFailure, RateLimitConfig } from "../base.js";
+import {
+  effectiveRecoveryWaitMs,
+  type EmbeddingCallOptions,
+  type EmbeddingProvider,
+  type EmbeddingResult,
+  type EmbeddingServerBatchFailure,
+  type RateLimitConfig,
+} from "../base.js";
 import { planEmbeddingMicroBatches } from "../batch-fanout.js";
 import { EmbeddingEndpointPool, parseEmbeddingEndpointList } from "../endpoint-pool.js";
 import { getModelDimensions, resolveStartingDimensions } from "../utils/model-dimensions.js";
@@ -120,6 +127,8 @@ function errorCode(error: unknown): string | undefined {
 /** Recovery-wait bookkeeping for one embed call. */
 interface RecoveryWaitState {
   start: number;
+  /** This call's budget: the configured one, narrowed by `EmbeddingCallOptions#maxRecoveryWaitMs`. */
+  budgetMs: number;
   attempt: number;
   lastError?: Error;
 }
@@ -200,18 +209,19 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
   // EmbeddingProvider
   // ---------------------------------------------------------------------------
 
-  async embed(text: string): Promise<EmbeddingResult> {
-    const [result] = await this.embedBatch([text]);
+  async embed(text: string, options?: EmbeddingCallOptions): Promise<EmbeddingResult> {
+    const [result] = await this.embedBatch([text], options);
     return result;
   }
 
-  async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
+  async embedBatch(texts: string[], options?: EmbeddingCallOptions): Promise<EmbeddingResult[]> {
     if (texts.length === 0) return [];
     const vectors = new Array<number[] | undefined>(texts.length);
     await this.embedAcrossEndpoints(
       texts,
       texts.map((_, i) => i),
       vectors,
+      effectiveRecoveryWaitMs(this.unavailableRetryMaxWaitMs, options),
     );
     return vectors.map((embedding) => {
       const vector = embedding ?? [];
@@ -301,8 +311,9 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
     texts: readonly string[],
     indices: number[],
     vectors: (number[] | undefined)[],
+    recoveryBudgetMs: number,
   ): Promise<void> {
-    const wait: RecoveryWaitState = { start: this.now(), attempt: 0 };
+    const wait: RecoveryWaitState = { start: this.now(), budgetMs: recoveryBudgetMs, attempt: 0 };
     const excluded = new Set<string>();
     let queue: number[][] | undefined;
 
@@ -483,12 +494,13 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
   /**
    * No endpoint is usable. Probe every endpoint directly (the pool's own
    * interval gate is for the background timer, not for a caller that is
-   * already blocked), then back off until the budget is spent.
+   * already blocked), then back off until the call's budget is spent. A zero
+   * budget still makes that one direct probe: an endpoint that is back answers.
    */
   private async waitForEndpoint(wait: RecoveryWaitState): Promise<void> {
     this.failWhenNoEndpointServesModel();
     if (await this.reprobeAll()) return;
-    const remainingMs = wait.start + this.unavailableRetryMaxWaitMs - this.now();
+    const remainingMs = wait.start + wait.budgetMs - this.now();
     if (remainingMs <= 0) {
       const recoveryWaitMs = wait.attempt > 0 ? this.now() - wait.start : 0;
       throw new LlamaServerUnavailableError(
@@ -508,7 +520,7 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
       state: "waiting",
       url: this.getBaseUrl(),
       elapsedMs: this.now() - wait.start,
-      budgetMs: this.unavailableRetryMaxWaitMs,
+      budgetMs: wait.budgetMs,
     });
     await this.sleep(delayMs);
     await this.reprobeAll();

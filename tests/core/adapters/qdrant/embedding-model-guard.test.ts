@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { READ_PATH_EMBEDDING_RECOVERY_WAIT_MS } from "../../../../src/core/adapters/embeddings/base.js";
 import { EmbeddingModelMismatchError } from "../../../../src/core/adapters/embeddings/errors.js";
 import { OllamaUnavailableError } from "../../../../src/core/adapters/embeddings/ollama/errors.js";
 import { EmbeddingModelGuard } from "../../../../src/core/adapters/qdrant/embedding-model-guard.js";
@@ -590,6 +591,80 @@ describe("EmbeddingModelGuard canary", () => {
       await expect(reader).resolves.toBeUndefined();
       await expect(embedder).rejects.toBe(outage);
       expect(embed).toHaveBeenCalledTimes(1);
+      consoleError.mockRestore();
+    });
+  });
+
+  describe("a read caller that allows no recovery wait", () => {
+    const downAtOnce = () => new OllamaUnavailableError("http://127.0.0.1:59999");
+
+    it("hands the canary embed the caller's recovery budget", async () => {
+      const qdrant = fakeQdrantWithMarker({
+        embeddingModel: "m",
+        canary: { text: EMBEDDING_CANARY_TEXT, vector: V },
+      });
+      const embed = vi.fn(async () => ({ embedding: V }));
+      const guard = new EmbeddingModelGuard(qdrant, "m", 4, { embed } as never);
+
+      await guard.ensureMatch("c", {
+        failOnProviderOutage: true,
+        maxRecoveryWaitMs: READ_PATH_EMBEDDING_RECOVERY_WAIT_MS,
+      });
+
+      expect(embed).toHaveBeenCalledWith(EMBEDDING_CANARY_TEXT, { maxRecoveryWaitMs: 0 });
+    });
+
+    it("gets the outage at once, though the provider spent no wait", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const qdrant = fakeQdrantWithMarker({
+        embeddingModel: "m",
+        canary: { text: EMBEDDING_CANARY_TEXT, vector: V },
+      });
+      const outage = downAtOnce();
+      const guard = new EmbeddingModelGuard(qdrant, "m", 4, { embed: vi.fn().mockRejectedValue(outage) } as never);
+
+      await expect(
+        guard.ensureMatch("c", { failOnProviderOutage: true, maxRecoveryWaitMs: READ_PATH_EMBEDDING_RECOVERY_WAIT_MS }),
+      ).rejects.toBe(outage);
+      consoleError.mockRestore();
+    });
+
+    it("caches neither a pass nor a mismatch for a canary that could not run", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const qdrant = fakeQdrantWithMarker({
+        embeddingModel: "m",
+        canary: { text: EMBEDDING_CANARY_TEXT, vector: V },
+      });
+      const embed = vi.fn().mockRejectedValueOnce(downAtOnce()).mockResolvedValue({ embedding: ORTHOGONAL });
+      const guard = new EmbeddingModelGuard(qdrant, "m", 4, { embed } as never);
+      const read = { maxRecoveryWaitMs: READ_PATH_EMBEDDING_RECOVERY_WAIT_MS };
+
+      await expect(guard.ensureMatch("c", read)).resolves.toBeUndefined();
+      // The provider is back: the canary runs now and finds the drift.
+      await expect(guard.ensureMatch("c", read)).rejects.toThrow(EmbeddingModelMismatchError);
+      expect(embed).toHaveBeenCalledTimes(2);
+      consoleError.mockRestore();
+    });
+
+    it("keeps a zero-wait outage from a caller that would wait longer", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const qdrant = fakeQdrantWithMarker({
+        embeddingModel: "m",
+        canary: { text: EMBEDDING_CANARY_TEXT, vector: V },
+      });
+      const guard = new EmbeddingModelGuard(qdrant, "m", 4, {
+        embed: vi.fn().mockRejectedValue(downAtOnce()),
+      } as never);
+
+      const reader = guard.ensureMatch("c", {
+        failOnProviderOutage: true,
+        maxRecoveryWaitMs: READ_PATH_EMBEDDING_RECOVERY_WAIT_MS,
+      });
+      // Indexing joins the same in-flight check with the configured budget.
+      const indexer = guard.ensureMatch("c", { failOnProviderOutage: true });
+
+      await expect(reader).rejects.toBeInstanceOf(OllamaUnavailableError);
+      await expect(indexer).resolves.toBeUndefined();
       consoleError.mockRestore();
     });
   });

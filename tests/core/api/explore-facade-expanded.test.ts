@@ -168,7 +168,7 @@ describe("ExploreFacade — expanded methods", () => {
         limit: 10,
       });
 
-      expect(embeddings.embed).toHaveBeenCalledWith("find me");
+      expect(embeddings.embed).toHaveBeenCalledWith("find me", { maxRecoveryWaitMs: 0 });
       expect(qdrant.search).toHaveBeenCalledWith("test_col", [0.1, 0.2, 0.3], expect.any(Number), undefined);
       expect(result.results).toHaveLength(2);
       expect(result.driftWarning).toBeNull();
@@ -348,7 +348,7 @@ describe("ExploreFacade — expanded methods", () => {
         limit: 5,
       });
 
-      expect(embeddings.embed).toHaveBeenCalledWith("find me");
+      expect(embeddings.embed).toHaveBeenCalledWith("find me", { maxRecoveryWaitMs: 0 });
       expect(qdrant.getCollectionInfo).toHaveBeenCalledWith("test_col");
       expect(qdrant.hybridSearch).toHaveBeenCalledWith(
         "test_col",
@@ -546,7 +546,7 @@ describe("ExploreFacade — expanded methods", () => {
         query: "test query",
       });
 
-      expect(embeddings.embed).toHaveBeenCalledWith("test query");
+      expect(embeddings.embed).toHaveBeenCalledWith("test query", { maxRecoveryWaitMs: 0 });
       expect(qdrant.search).toHaveBeenCalled();
       expect(result.results).toHaveLength(2);
       expect(result.results[0]).toHaveProperty("score");

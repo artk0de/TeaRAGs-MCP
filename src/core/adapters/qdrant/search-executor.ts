@@ -229,10 +229,15 @@ export class QdrantSearchExecutor {
    *                       decides when it exists (explore's identity leg,
    *                       bd tea-rags-mcp-2fefq); without it the request is the
    *                       plain two-prefetch one, byte for byte.
+   * @param denseVector    Undefined when the query could not be embedded (the
+   *                       embedding provider is down): the request then fuses
+   *                       the sparse prefetch alone — still RRF, so scores keep
+   *                       the rank scale callers fuse against — and the
+   *                       dense-only parts (identity prefetch, weights) drop out.
    */
   async hybridSearch(
     collectionName: string,
-    denseVector: number[],
+    denseVector: number[] | undefined,
     sparseVector: SparseVector,
     fetchLimit: number,
     filter?: Record<string, unknown>,
@@ -246,6 +251,16 @@ export class QdrantSearchExecutor {
     }
 
     const qdrantFilter = withServicePointExclusions(filter);
+
+    if (denseVector === undefined) {
+      return this.runHybridQuery(collectionName, {
+        prefetch: [{ query: sparseVector, using: "text", limit: fetchLimit, filter: qdrantFilter }],
+        query: { fusion: "rrf" },
+        limit: fetchLimit,
+        filter: qdrantFilter,
+        with_payload: true,
+      });
+    }
 
     const prefetch: Record<string, unknown>[] = [
       {
@@ -281,16 +296,22 @@ export class QdrantSearchExecutor {
             },
           };
 
+    return this.runHybridQuery(collectionName, {
+      prefetch,
+      query: fusionQuery,
+      limit: fetchLimit,
+      filter: qdrantFilter,
+      with_payload: true,
+    });
+  }
+
+  /** One fused Query API request; failures surface as the hybrid search's. */
+  private async runHybridQuery(
+    collectionName: string,
+    request: Parameters<QdrantClient["query"]>[1],
+  ): Promise<SearchResult[]> {
     try {
-      const response = await this.connection.call(async () =>
-        this.connection.client.query(collectionName, {
-          prefetch,
-          query: fusionQuery,
-          limit: fetchLimit,
-          filter: qdrantFilter,
-          with_payload: true,
-        }),
-      );
+      const response = await this.connection.call(async () => this.connection.client.query(collectionName, request));
 
       return (response.points ?? []).map((point) => ({
         id: point.id,

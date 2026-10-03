@@ -65,6 +65,14 @@ export function formatWorkingTreeMarker(marker: WorkingTreeMarker): string {
 }
 
 /**
+ * One-line text render of an answer's top-level `denseUnavailable`: hybrid_search
+ * ranked by BM25 alone because the embedding provider could not embed the query.
+ */
+export function formatDenseUnavailable(denseUnavailable: { reason: string }): string {
+  return `dense leg unavailable: ${denseUnavailable.reason} — ranked by BM25 only`;
+}
+
+/**
  * The text tag of a result whose file the tree changed or deleted (bd
  * tea-rags-mcp-xi2r9, live probe P2-5). A text tool has no `treeState` key for
  * the reader to notice, so the result line itself says the content shown is

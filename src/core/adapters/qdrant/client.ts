@@ -463,11 +463,12 @@ export class QdrantManager {
   /**
    * Dense + sparse retrieval fused server-side by RRF, optionally weighted, with
    * an optional third dense prefetch narrowed by `identityPrefetchFilter`
-   * (see `QdrantSearchExecutor#hybridSearch`).
+   * (see `QdrantSearchExecutor#hybridSearch`). No dense vector → the sparse
+   * prefetch alone (the embedding provider could not embed the query).
    */
   async hybridSearch(
     collectionName: string,
-    denseVector: number[],
+    denseVector: number[] | undefined,
     sparseVector: SparseVector,
     fetchLimit: number,
     filter?: Record<string, unknown>,

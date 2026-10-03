@@ -109,7 +109,7 @@ describe("ExploreFacade.findSimilar()", () => {
       positiveCode: ["function foo() {}"],
     });
 
-    expect(deps.embeddings.embedBatch).toHaveBeenCalledWith(["function foo() {}"]);
+    expect(deps.embeddings.embedBatch).toHaveBeenCalledWith(["function foo() {}"], { maxRecoveryWaitMs: 0 });
   });
 
   it("passes pathPattern through buildMergedFilter to Qdrant pre-filter", async () => {

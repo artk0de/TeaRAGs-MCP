@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { RateLimitConfig } from "../../../../../src/core/adapters/embeddings/base.js";
-import { isProviderRecoveryWaitSpent } from "../../../../../src/core/adapters/embeddings/errors.js";
+import {
+  isEmbeddingProviderUnavailable,
+  isProviderRecoveryWaitSpent,
+} from "../../../../../src/core/adapters/embeddings/errors.js";
 import {
   LlamaServerContextOverflowError,
   LlamaServerModelMismatchError,
@@ -474,6 +477,70 @@ describe("LlamaServerEmbeddings", () => {
 
       expect(results).toHaveLength(2);
       expect(sleeps).toBeGreaterThan(0);
+    });
+
+    describe("per-call recovery budget", () => {
+      it("throws after one direct reprobe and no sleep when the call allows no recovery wait", async () => {
+        const cluster = fakeCluster({ [PEER_A]: { health: false }, [PEER_B]: { health: false } });
+        const time = fakeTime();
+        let sleeps = 0;
+        const provider = makeProvider(cluster, {
+          time: {
+            ...time,
+            deps: {
+              ...time.deps,
+              sleep: async (ms) => {
+                sleeps += 1;
+                await time.deps.sleep(ms);
+              },
+            },
+          },
+          rateLimit: { unavailableRetryMaxWaitMs: 240_000, unavailableRetryBaseDelayMs: 1_000 },
+        });
+
+        const error = await provider.embedBatch(texts(2), { maxRecoveryWaitMs: 0 }).catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(LlamaServerUnavailableError);
+        expect(isEmbeddingProviderUnavailable(error)).toBe(true);
+        expect((error as LlamaServerUnavailableError).recoveryWaitMs).toBe(0);
+        expect(sleeps).toBe(0);
+        const healthProbes = cluster.requests.filter((r) => r.path === "/health");
+        expect(healthProbes.map((r) => r.url).sort()).toEqual([PEER_A, PEER_B]);
+      });
+
+      it("embeds when an endpoint answers that one reprobe", async () => {
+        const serverA: FakeLlamaServer = { health: true, embed: () => "refused" };
+        const cluster = fakeCluster({ [PEER_A]: serverA });
+        const time = fakeTime();
+        const provider = makeProvider(cluster, {
+          peers: PEER_A,
+          time,
+          rateLimit: { unavailableRetryMaxWaitMs: 240_000, failoverConsecutiveFailures: 1 },
+        });
+        // The first embed fails and marks the peer failed; the reprobe finds it back.
+        let attempts = 0;
+        serverA.embed = () => (attempts++ === 0 ? "refused" : undefined);
+
+        const results = await provider.embed("t7", { maxRecoveryWaitMs: 0 });
+
+        expect(results.embedding[0]).toBe(7);
+      });
+
+      it("waits no longer than the call allows when that is below the configured budget", async () => {
+        const cluster = fakeCluster({ [PEER_A]: { health: false } });
+        const time = fakeTime();
+        const provider = makeProvider(cluster, {
+          peers: PEER_A,
+          time,
+          rateLimit: { unavailableRetryMaxWaitMs: 240_000, unavailableRetryBaseDelayMs: 1_000 },
+        });
+
+        const error = await provider.embedBatch(texts(1), { maxRecoveryWaitMs: 5_000 }).catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(LlamaServerUnavailableError);
+        expect((error as LlamaServerUnavailableError).recoveryWaitMs).toBeGreaterThanOrEqual(5_000);
+        expect((error as LlamaServerUnavailableError).recoveryWaitMs).toBeLessThan(10_000);
+      });
     });
 
     it("counts a 5xx unrelated to size as a transient endpoint failure and moves the texts", async () => {
