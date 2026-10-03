@@ -125,8 +125,14 @@ describe("server command", () => {
 
     await runServer({ http: false });
 
-    expect(onSpy).toHaveBeenCalledWith("SIGTERM", cleanup);
-    expect(onSpy).toHaveBeenCalledWith("SIGINT", cleanup);
+    // The listener wraps cleanup (it returns a promise since bd tea-rags-mcp-xi2r9
+    // B1, which a signal listener must not hand back): firing it runs cleanup.
+    const listenerFor = (signal: string) =>
+      onSpy.mock.calls.find(([name]) => name === signal)?.[1] as (() => void) | undefined;
+    listenerFor("SIGTERM")?.();
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    listenerFor("SIGINT")?.();
+    expect(cleanup).toHaveBeenCalledTimes(2);
 
     onSpy.mockRestore();
   });

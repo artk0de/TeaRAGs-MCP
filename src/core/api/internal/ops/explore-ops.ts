@@ -246,10 +246,12 @@ export class ExploreOps {
   }
 
   async rankChunks(request: RankChunksRequest): Promise<ExploreResponse> {
+    // Scroll + rerank: no query vector, so the guard checks the model name only.
     const { collectionName, path, workingTreeView } = await this.resolveAndGuard(
       request.collection,
       request.path,
       request.project,
+      { nameOnly: true },
     );
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "rank_chunks");
     // Load collection stats BEFORE buildFilter so filter-preset adaptive
@@ -312,10 +314,12 @@ export class ExploreOps {
   }
 
   async findSymbol(request: FindSymbolRequest): Promise<ExploreResponse> {
+    // Lookup by symbol: no query vector, so the guard checks the model name only.
     const { collectionName, path, workingTreeView } = await this.resolveAndGuard(
       request.collection,
       request.path,
       request.project,
+      { nameOnly: true },
     );
     const strategy = this.buildFindSymbolStrategy(request);
     const response = await this.executeExplore(strategy, buildFindSymbolContext(request, collectionName), path, {

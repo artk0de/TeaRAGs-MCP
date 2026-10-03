@@ -16,9 +16,10 @@
  *   one day, as a value computed that day would.
  * - The file name hashes the key; the record repeats it, so a hash collision
  *   reads as a miss, never as another file's signals.
- * - Writes go to a temp name renamed into place, so a reader sees a whole
- *   record or none; two processes writing one record lose at most the other's
- *   additions, which the next miss recomputes.
+ * - Writes go through a `WorkingTreeFileWriter` — a pid-named temp renamed into
+ *   place, so a reader sees a whole record or none, and a temp whose writer is
+ *   gone is swept at once; two processes writing one record lose at most the
+ *   other's additions, which the next miss recomputes.
  * - A read bumps the file's mtime — the record's last read. `sweep` evicts a
  *   record unread {@link WORKING_TREE_GIT_SIGNAL_RETENTION_MS} (96 h, the chunk
  *   store's window), then the least recently read until the store fits its cap.
@@ -32,9 +33,15 @@
  * dropped.
  */
 
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
+
+import {
+  createWorkingTreeFileWriter,
+  reapAbandonedWorkingTreeTemps,
+  type WorkingTreeFileWriter,
+} from "../../../domains/explore/working-tree/index.js";
 
 /** A stored block; `null` = computed, and there was nothing to give. */
 export type WorkingTreeGitSignalBlock = Record<string, unknown> | null;
@@ -66,6 +73,8 @@ export interface WorkingTreeGitSignalStoreDeps {
   rootDir: string;
   now?: () => number;
   capBytes?: number;
+  /** Shared with the other working-tree stores and closed at cleanup (bd tea-rags-mcp-xi2r9, B1); defaults to a private one. */
+  writer?: WorkingTreeFileWriter;
 }
 
 export const WORKING_TREE_GIT_SIGNAL_RETENTION_MS = 96 * 3_600_000;
@@ -74,7 +83,10 @@ export const WORKING_TREE_GIT_SIGNAL_STORE_CAP_BYTES = 64 * 1024 * 1024;
 /** A leading dot keeps the directory out of the collection-named walks beside it. */
 const STORE_DIR = ".git-signals";
 const RECORD_SUFFIX = ".json";
-const PART_MARKER = ".part-";
+/** The pid-less temp naming of earlier builds (`<record>.part-<hex>`), reaped by age only. */
+const LEGACY_PART_MARKER = ".part-";
+/** The writer's temps: `<record>.<pid>.<hex>.tmp`. */
+const TEMP_SUFFIX = ".tmp";
 /** A temp file older than this is a dead write. */
 const ABANDONED_WRITE_GRACE_MS = 3_600_000;
 const RECORD_FORMAT = 1;
@@ -86,6 +98,7 @@ interface StoredRecord extends WorkingTreeGitSignalRecord {
 
 export function createWorkingTreeGitSignalStore(deps: WorkingTreeGitSignalStoreDeps): WorkingTreeGitSignalStore {
   const dir = join(deps.rootDir, STORE_DIR);
+  const writer = deps.writer ?? createWorkingTreeFileWriter();
   const now = deps.now ?? Date.now;
   const capBytes = deps.capBytes ?? WORKING_TREE_GIT_SIGNAL_STORE_CAP_BYTES;
   const pathOf = (key: string): string =>
@@ -114,15 +127,13 @@ export function createWorkingTreeGitSignalStore(deps: WorkingTreeGitSignalStoreD
     },
 
     async write(key, record) {
-      const path = pathOf(key);
-      const temp = `${path}${PART_MARKER}${randomBytes(6).toString("hex")}`;
       const stored: StoredRecord = { format: RECORD_FORMAT, key, file: record.file, chunks: record.chunks };
       try {
         await fs.mkdir(dir, { recursive: true });
-        await fs.writeFile(temp, JSON.stringify(stored));
-        await fs.rename(temp, path);
+        // The writer removes its own temp when the write fails.
+        await writer.write(pathOf(key), JSON.stringify(stored));
       } catch {
-        await fs.rm(temp, { force: true }).catch(() => undefined);
+        // A dropped write: the next miss recomputes the record.
       }
     },
 
@@ -135,11 +146,15 @@ export function createWorkingTreeGitSignalStore(deps: WorkingTreeGitSignalStoreD
       }
       let evicted = 0;
       const kept: { path: string; bytes: number; readAt: number }[] = [];
+      // The writer's pid-named temps: a dead writer's go at once, others after the grace.
+      await reapAbandonedWorkingTreeTemps(dir, { at, graceMs: ABANDONED_WRITE_GRACE_MS });
       for (const name of names) {
+        if (name.endsWith(TEMP_SUFFIX)) continue;
         const path = join(dir, name);
         const stat = await fs.stat(path).catch(() => undefined);
         if (!stat?.isFile()) continue;
-        if (name.includes(PART_MARKER)) {
+        // A temp of the pid-less naming earlier builds wrote: by age only.
+        if (name.includes(LEGACY_PART_MARKER)) {
           if (at - stat.mtimeMs >= ABANDONED_WRITE_GRACE_MS) await fs.rm(path, { force: true });
           continue;
         }

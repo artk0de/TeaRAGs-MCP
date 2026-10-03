@@ -73,6 +73,22 @@ describe("openInProcessMcpSession", () => {
     expect(result.content).toEqual([{ type: "text", text: "echo:hi" }]);
   });
 
+  // bd tea-rags-mcp-xi2r9, B1: `tea-rags call` calls process.exit right after
+  // close(); a cleanup that flushes pending store writes must be awaited, or the
+  // exit cuts them between temp and rename.
+  it("close() resolves only after an asynchronous cleanup has settled", async () => {
+    let flushed = false;
+    cleanup.mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      flushed = true;
+    });
+    const session = await openInProcessMcpSession();
+
+    await session.close();
+
+    expect(flushed).toBe(true);
+  });
+
   it("close() releases the AppContext exactly once", async () => {
     const session = await openInProcessMcpSession();
 

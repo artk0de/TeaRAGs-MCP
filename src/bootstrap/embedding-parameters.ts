@@ -48,6 +48,29 @@ export async function resolveEmbeddingModelParameters(
 }
 
 /**
+ * The composition root's entry: {@link resolveEmbeddingModelParameters} now for
+ * a provider whose endpoint is fixed; for one that decides its endpoint lazily
+ * (`whenEndpointResolved` — Ollama with failover), attached to that decision
+ * instead of forcing it. Asking for model info picks the endpoint, and on an
+ * unreachable primary that cost every cold CLI call the failover probe —
+ * ~6.4 s for a `get_callers` that embeds nothing (bd tea-rags-mcp-xi2r9, B3).
+ * The hook issues the request synchronously, so the first embed — which waits
+ * for a model-info request in flight — still carries the model's window.
+ */
+export async function armEmbeddingModelParameters(
+  embeddings: EmbeddingProvider,
+  configuredDimensions: number | undefined,
+): Promise<void> {
+  if (embeddings.whenEndpointResolved) {
+    embeddings.whenEndpointResolved(() => {
+      void resolveEmbeddingModelParameters(embeddings, configuredDimensions);
+    });
+    return;
+  }
+  await resolveEmbeddingModelParameters(embeddings, configuredDimensions);
+}
+
+/**
  * How long the composition root is willing to wait for a provider to describe
  * its model.
  *

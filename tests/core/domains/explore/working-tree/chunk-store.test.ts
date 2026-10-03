@@ -5,6 +5,7 @@
  * content of a live tree stays, and the store is held under its byte cap by
  * evicting the least recently read. Commit detection drives real git.
  */
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -298,6 +299,32 @@ describe("WorkingTreeChunkStore", { timeout: 60_000 }, () => {
       [...before[0], "working-tree"].sort(),
       before[1],
     ]);
+  });
+
+  // bd tea-rags-mcp-xi2r9, B1: a one-shot process that exits mid-write strands
+  // its temp. The temp names its writer's pid, so the next sweep removes it at
+  // once instead of after the hour's grace.
+  it("should remove a temp whose writer exited mid-write, beside the entries and beside the stamp", async () => {
+    const store = storeAt();
+    const entry = entryFor("src/a.ts", "export const a = 1;\n");
+    await store.put(COLLECTION, entry);
+    const collectionDir = join(rootDir, COLLECTION);
+    const [meta] = readdirSync(collectionDir).filter((name) => name.endsWith(".meta.json"));
+    const strand = (path: string): void => {
+      const child = spawnSync(process.execPath, [
+        "-e",
+        `require("node:fs").writeFileSync(${JSON.stringify(path)} + "." + process.pid + ".0badf00d.tmp", ""); process.exit(0);`,
+      ]);
+      expect(child.status).toBe(0);
+    };
+    strand(join(collectionDir, meta));
+    strand(join(rootDir, ".sweep-stamp.json"));
+
+    await store.sweep(clock);
+
+    expect(readdirSync(collectionDir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+    expect(readdirSync(rootDir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+    expect(await store.get(COLLECTION, keyOf(entry))).toBeDefined();
   });
 
   it("should refuse a collection name that would leave the root", async () => {

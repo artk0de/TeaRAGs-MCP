@@ -924,6 +924,25 @@ describe("WorkingTreeGraphCache — process exit (D6)", () => {
     expect(existsSync(liveOwner)).toBe(true);
     expect(result.evictedStaging).toBe(1);
   });
+
+  // bd tea-rags-mcp-xi2r9, B1: a `servedAt` or sweep-stamp write cut by process
+  // exit strands its temp; the temp names the writer's pid, so the next sweep
+  // removes a dead writer's at once — inside a published key dir too.
+  it("the sweep removes the meta and stamp temps a dead writer stranded, and keeps the graph", async () => {
+    const { cache } = harness();
+    const dbPath = expectBuilt(await cache.graphFor(request(treeDir("t1")), 10_000));
+    const [keyName] = treeEntries();
+    const keyDir = join(graphRoot(), "trees", keyName);
+    const dead = String(deadPid());
+    writeFileSync(join(keyDir, `tree-graph.meta.json.${dead}.0badf00d.tmp`), "");
+    writeFileSync(join(appRoot, `.graph-sweep-stamp.json.${dead}.0badf00d.tmp`), "");
+
+    await cache.sweep(1_000_000);
+
+    expect(readdirSync(keyDir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+    expect(readdirSync(appRoot).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+    expect(existsSync(dbPath)).toBe(true);
+  });
 });
 
 describe("WorkingTreeGraphCache — the reader's wait (D11b)", () => {

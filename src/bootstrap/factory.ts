@@ -66,6 +66,7 @@ import {
   createWorkingTreeChunkLayer,
   createWorkingTreeChunkStore,
   createWorkingTreeDeltaReader,
+  createWorkingTreeFileWriter,
   scheduleWorkingTreeChunkSweep,
   WorkingTreeDenseVectorSource,
   WorkingTreeOverlay,
@@ -129,7 +130,7 @@ import {
   reportTurboMigration,
   type TurboMigrationListener,
 } from "./config/turbo-reconcile.js";
-import { resolveEmbeddingModelParameters } from "./embedding-parameters.js";
+import { armEmbeddingModelParameters } from "./embedding-parameters.js";
 import { ProjectIngestFactory } from "./project-ingest-factory.js";
 
 /**
@@ -176,8 +177,12 @@ export interface AppContext {
   schemaBuilder: SchemaBuilder;
   healthProbes?: HealthProbes;
   embeddedRelease?: () => void;
-  /** Graceful shutdown: terminate embedding provider + release embedded Qdrant. */
-  cleanup?: () => void;
+  /**
+   * Graceful shutdown: terminate embedding provider + release embedded Qdrant,
+   * synchronously on the first call. The promise settles once the working-tree
+   * stores' pending writes have landed — await it before exiting.
+   */
+  cleanup?: () => Promise<void>;
 }
 
 interface InfraContext {
@@ -244,7 +249,8 @@ async function resolveInfrastructure(
   });
 
   // Filled once the guard below exists. The fallback hook can fire before that
-  // — resolveEmbeddingModelParameters already talks to the provider — so the
+  // — any provider call that decides the endpoint (an eager ONNX-style init,
+  // model info for a fixed endpoint) may run first — so the
   // handler reaches the guard through a slot instead of closing over a binding
   // that is still in its temporal dead zone.
   const modelGuardSlot: { current?: EmbeddingModelGuard } = {};
@@ -276,8 +282,9 @@ async function resolveInfrastructure(
 
   // Ask the model what it actually is before anything consumes getDimensions().
   // The constructor could only read a static table; the model's own config is
-  // the authority, and the guard built below is the first thing to depend on it.
-  await resolveEmbeddingModelParameters(embeddings, zodConfig.embedding.dimensions);
+  // the authority. A provider that picks its endpoint lazily is asked once it
+  // has picked it — asking here would force the pick at start (B3).
+  await armEmbeddingModelParameters(embeddings, zodConfig.embedding.dimensions);
 
   // If user didn't explicitly set batch size, use GPU-calibrated recommendation
   if (
@@ -1223,10 +1230,19 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   // on a request — stopped, and an in-flight sweep aborted, by cleanup. Rows are keyed by this package version
   // too, so an upgraded chunker never serves an older build's ids.
   const workingTreePayloadBuilder = new StaticPayloadBuilder();
-  const workingTreeChunkStore = createWorkingTreeChunkStore({ rootDir: join(config.paths.appData, "working-tree") });
+  // Every working-tree store writes through ONE writer, and cleanup closes it:
+  // a `tea-rags call` exits right after cleanup, and a write of background
+  // warm-up work still in flight was cut between its temp and its rename
+  // (bd tea-rags-mcp-xi2r9, B1).
+  const workingTreeWriter = createWorkingTreeFileWriter();
+  const workingTreeChunkStore = createWorkingTreeChunkStore({
+    rootDir: join(config.paths.appData, "working-tree"),
+    writer: workingTreeWriter,
+  });
   const stopWorkingTreeChunkSweep = scheduleWorkingTreeChunkSweep(workingTreeChunkStore);
   const workingTreeGitSignalStore = createWorkingTreeGitSignalStore({
     rootDir: join(config.paths.appData, "working-tree"),
+    writer: workingTreeWriter,
   });
   const stopWorkingTreeGitSignalSweep = scheduleWorkingTreeGitSignalSweep(workingTreeGitSignalStore);
   const workingTreeChunkLayer = createWorkingTreeChunkLayer({
@@ -1250,6 +1266,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   const enrichmentWorkerHeapMb = defaultEnrichmentWorkerMemoryLimitMb();
   const workingTreeGraphCache = new WorkingTreeGraphCache({
     rootDir: join(config.paths.appData, "working-tree"),
+    writer: workingTreeWriter,
     codegraph: (): WorkingTreeGraphCodegraphRuntime | undefined => codegraphContext?.workingTreeGraphRuntime,
     resolveActiveCollection,
     builder: new WorkingTreeGraphProcessBuilder(),
@@ -1675,11 +1692,27 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   });
 
   // Idempotent: under stdio both the signal listeners and the stdin-close
-  // shutdown reach it (bd tea-rags-mcp-e6cpu); resources release once.
-  let cleanedUp = false;
-  const cleanup = () => {
-    if (cleanedUp) return;
-    cleanedUp = true;
+  // shutdown reach it (bd tea-rags-mcp-e6cpu); resources release once, and
+  // every caller gets the one release. The releases run synchronously on the
+  // first call; the returned promise settles once the working-tree stores'
+  // writes in flight have landed (bd tea-rags-mcp-xi2r9, B1) — the flush point
+  // a caller that exits next (`tea-rags call`, stdio shutdown) awaits.
+  let released: Promise<void> | undefined;
+  const cleanup = async (): Promise<void> => {
+    if (released) return released;
+    // First: from here on the stores write nothing new, and the promise
+    // settles once the writes in flight have landed. Never rejects.
+    released = workingTreeWriter.close();
+    try {
+      releaseResources();
+    } catch (error) {
+      // Best-effort, and it never rejects: callers fire it from signal
+      // listeners and exit paths that have nobody to hand a rejection to.
+      console.error("[tea-rags] cleanup failed:", error);
+    }
+    return released;
+  };
+  const releaseResources = (): void => {
     registryWatchStop();
     stopWorkingTreeChunkSweep();
     stopWorkingTreeGitSignalSweep();

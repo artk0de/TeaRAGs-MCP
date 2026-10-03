@@ -16,7 +16,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
 import { GitCommitDiscoveryStore } from "../../../../../../src/core/domains/trajectory/git/infra/commit-discovery-store.js";
@@ -93,8 +93,16 @@ describe.each(DRIVERS)("$name across linked worktrees", (driver) => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  const storeDirs: string[] = [];
+
   beforeEach(() => {
     baseDir = mkdtempSync(join(tmpdir(), "discovery-store-wt-"));
+    storeDirs.push(baseDir);
+  });
+
+  // Runs for a failed case too — a store directory never outlives its case.
+  afterEach(() => {
+    rmSync(baseDir, { recursive: true, force: true });
   });
 
   it("a matrix saved from the main checkout is visible to its linked worktree", () => {
@@ -123,6 +131,16 @@ describe.each(DRIVERS)("$name across linked worktrees", (driver) => {
 
     const survivors = shas.filter((sha) => existsSync(join(repoDirOf(baseDir), `${sha}.json`)));
     expect(survivors).toEqual(shas.slice(1));
+  });
+
+  // bd tea-rags-mcp-xi2r9, B2: every run of this suite left six
+  // `discovery-store-wt-*` store directories in $TMPDIR (156 found). Runs in
+  // declaration order, so the cases above have all finished.
+  it("leaves no store directory of an earlier case behind", () => {
+    const earlier = storeDirs.filter((dir) => dir !== baseDir);
+
+    expect(earlier.length).toBeGreaterThan(0);
+    expect(earlier.filter((dir) => existsSync(dir))).toEqual([]);
   });
 
   /** Resolve the on-disk namespace dir — one per repo, whichever tree wrote it. */

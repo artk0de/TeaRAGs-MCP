@@ -5,6 +5,7 @@
  * store's 96 h window and a byte cap — touching nothing outside its own
  * directory.
  */
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -106,6 +107,31 @@ describe("createWorkingTreeGitSignalStore", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // bd tea-rags-mcp-xi2r9, B1: a temp is named for its writer's pid, so the
+  // next sweep removes one a dead process stranded at once, not after an hour.
+  it("removes a temp whose writer exited mid-write, and writes through a writer it was given", async () => {
+    const writes: string[] = [];
+    const writer = {
+      write: vi.fn(async (target: string, data: string) => {
+        writes.push(target);
+        writeFileSync(target, data);
+      }),
+      close: vi.fn(async () => undefined),
+    };
+    await createWorkingTreeGitSignalStore({ rootDir, now: () => clock, writer }).write("k1", RECORD);
+    expect(writes).toHaveLength(1);
+    const child = spawnSync(process.execPath, [
+      "-e",
+      `require("node:fs").writeFileSync(${JSON.stringify(writes[0])} + "." + process.pid + ".0badf00d.tmp", ""); process.exit(0);`,
+    ]);
+    expect(child.status).toBe(0);
+
+    await store().sweep();
+
+    expect(readdirSync(storeDir()).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+    expect(await store().read("k1")).toEqual(RECORD);
   });
 
   it("keeps out of the collection directories beside it", async () => {

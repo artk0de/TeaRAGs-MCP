@@ -53,7 +53,8 @@
  * within the interval (`.graph-sweep-stamp.json` under the root).
  * A process that exits mid-build kills its build children and removes its
  * staging dirs synchronously; a staging dir whose owner pid is dead is swept at
- * once.
+ * once, as is a meta or stamp temp whose writer is gone (the meta and stamp
+ * writes go through the shared `WorkingTreeFileWriter`, which cleanup closes).
  */
 
 import { createHash, randomBytes } from "node:crypto";
@@ -67,8 +68,12 @@ import type {
   WorkingTreeGraphState,
 } from "../../../contracts/types/working-tree.js";
 import {
+  createWorkingTreeFileWriter,
+  isWriterGone,
+  reapAbandonedWorkingTreeTemps,
   WORKING_TREE_CHUNK_RETENTION_MS,
   WORKING_TREE_CHUNK_SWEEP_INTERVAL_MS,
+  type WorkingTreeFileWriter,
 } from "../../../domains/explore/working-tree/index.js";
 import type {
   WorkingTreeGraphBuildBudget,
@@ -228,6 +233,12 @@ export interface WorkingTreeGraphCacheDeps {
   exitHooks?: WorkingTreeGraphExitHooks;
   /** Per-collection byte cap of the tree graphs; defaults to {@link WORKING_TREE_GRAPH_CAP_BYTES}. */
   capBytes?: number;
+  /**
+   * The meta and stamp writes go through it — shared with the other
+   * working-tree stores and closed at cleanup (bd tea-rags-mcp-xi2r9, B1).
+   * Defaults to a private one.
+   */
+  writer?: WorkingTreeFileWriter;
 }
 
 export interface WorkingTreeGraphSweepOptions {
@@ -326,9 +337,11 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
   private readonly failureBackoffMs: number;
   private readonly exitHooks: WorkingTreeGraphExitHooks;
   private readonly capBytes: number;
+  private readonly writer: WorkingTreeFileWriter;
 
   constructor(private readonly deps: WorkingTreeGraphCacheDeps) {
     this.now = deps.now ?? Date.now;
+    this.writer = deps.writer ?? createWorkingTreeFileWriter();
     this.failureBackoffMs = deps.failureBackoffMs ?? WORKING_TREE_GRAPH_FAILURE_BACKOFF_MS;
     this.exitHooks = deps.exitHooks ?? processExitHooks;
     this.capBytes = deps.capBytes ?? WORKING_TREE_GRAPH_CAP_BYTES;
@@ -381,6 +394,12 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
       evictedStaging: 0,
       keptGraphs: 0,
     };
+    // The throttle stamp's temps: the root is shared, so only this cache's stamp.
+    result.evictedStaging += await reapAbandonedWorkingTreeTemps(this.deps.rootDir, {
+      at,
+      graceMs: ABANDONED_WRITE_GRACE_MS,
+      prefix: SWEEP_STAMP_FILE,
+    });
     for (const collection of await listDir(this.deps.rootDir)) {
       if (!collection.isDirectory || !COLLECTION_SEGMENT.test(collection.name)) continue;
       const graphDir = join(this.deps.rootDir, collection.name, "graph");
@@ -408,9 +427,7 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
     const stampPath = join(this.deps.rootDir, SWEEP_STAMP_FILE);
     const sweptAt = await readSweepStamp(stampPath);
     if (sweptAt !== undefined && sweptAt <= at && at - sweptAt < intervalMs) return undefined;
-    const temp = `${stampPath}.${String(process.pid)}-${randomBytes(4).toString("hex")}`;
-    await fs.writeFile(temp, JSON.stringify({ sweptAt: at }));
-    await fs.rename(temp, stampPath);
+    await this.writer.write(stampPath, JSON.stringify({ sweptAt: at }));
     return this.sweep(at);
   }
 
@@ -656,12 +673,10 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
     const meta = await readMeta(keyDir);
     if (!meta) return;
     this.servedKeyByTree.set(treeRoot, { key: job.key, recordedAt: now });
-    const temp = join(keyDir, `${META_FILE}.${String(process.pid)}-${randomBytes(4).toString("hex")}`);
-    await fs.writeFile(temp, JSON.stringify({ ...meta, servedAt: now } satisfies WorkingTreeGraphMeta));
-    await fs.rename(temp, join(keyDir, META_FILE)).catch(async (err: unknown) => {
-      await fs.rm(temp, { force: true });
-      throw err;
-    });
+    await this.writer.write(
+      join(keyDir, META_FILE),
+      JSON.stringify({ ...meta, servedAt: now } satisfies WorkingTreeGraphMeta),
+    );
   }
 
   /** A staging dir this process builds into; the exit hook is held while there is one. */
@@ -812,6 +827,8 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
         result.evictedGraphs++;
         continue;
       }
+      // A `servedAt` rewrite cut by its process's exit leaves its temp in the key dir.
+      result.evictedStaging += await reapAbandonedWorkingTreeTemps(dir, { at, graceMs: ABANDONED_WRITE_GRACE_MS });
       const graphs = graphsPerTree.get(meta.treeRoot) ?? [];
       graphs.push({ dir, dbPath: join(dir, meta.dbRelPath), activeAt: activeAtOf(meta) });
       graphsPerTree.set(meta.treeRoot, graphs);
@@ -1041,14 +1058,7 @@ async function isOlderThan(path: string, at: number, ageMs: number): Promise<boo
  * hour's grace still backs this up.
  */
 function isOwnerDead(stagingName: string): boolean {
-  const pid = Number(STAGING_OWNER.exec(stagingName)?.[1]);
-  if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid) return false;
-  try {
-    process.kill(pid, 0);
-    return false;
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === "ESRCH";
-  }
+  return isWriterGone(Number(STAGING_OWNER.exec(stagingName)?.[1]));
 }
 
 /**

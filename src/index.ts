@@ -8,10 +8,14 @@ async function main() {
   const { config, ctx, promptsConfig, deprecations } = await prepareMcpServerRuntime();
 
   // Graceful shutdown: disconnect embedding provider (daemon refcount--)
-  if (ctx.cleanup) {
-    process.on("SIGTERM", ctx.cleanup);
-    process.on("SIGINT", ctx.cleanup);
-    process.on("beforeExit", ctx.cleanup);
+  const { cleanup } = ctx;
+  if (cleanup) {
+    const release = (): void => {
+      void cleanup();
+    };
+    process.on("SIGTERM", release);
+    process.on("SIGINT", release);
+    process.on("beforeExit", release);
   }
 
   if (config.transportMode === "http") {

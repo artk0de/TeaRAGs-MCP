@@ -45,6 +45,7 @@ export {
   createWorkingTreeChunkLayer,
   createWorkingTreeChunkStore,
   createWorkingTreeDeltaReader,
+  createWorkingTreeFileWriter,
   mergedWorkingTreeSymbolRow,
   recordTreeGraphState,
   relativePathOf,

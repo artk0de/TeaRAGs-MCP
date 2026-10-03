@@ -177,7 +177,7 @@ function defaultDeps(): AutoUpdateCliDeps {
           out: (line) => process.stdout.write(`${line}\n`),
         });
       } finally {
-        ctx.cleanup?.();
+        void ctx.cleanup?.();
       }
     },
     out: (line) => process.stdout.write(`${line}\n`),

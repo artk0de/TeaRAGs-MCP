@@ -8,7 +8,9 @@
  * `codebasePath` carry it), the path, the content hash and the chunker
  * fingerprint. The meta file is small and is the entry's commit point: rows are
  * written first, meta last, so a sweep reads meta only and stats the rows.
- * Every write is a temp file renamed into place. `<key>.vectors.json` holds the
+ * Every write goes through a {@link WorkingTreeFileWriter} (a pid-named temp
+ * renamed into place; a temp whose writer is gone is swept at once — see
+ * `file-writer.ts`). `<key>.vectors.json` holds the
  * dense vectors of the entry's rows (WTO-5) and lives and dies with the entry.
  *
  * Retention (`sweep`): a tree root that no longer exists → evict now; content
@@ -51,12 +53,17 @@
  * at once both stay read, and both stay.
  */
 
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
 import { readBlobCommitTime as gitReadBlobCommitTime } from "../../../adapters/vcs/git/git-cli/client.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
+import {
+  createWorkingTreeFileWriter,
+  reapAbandonedWorkingTreeTemps,
+  type WorkingTreeFileWriter,
+} from "./file-writer.js";
 
 /** What identifies one cached file: rows differ whenever any of these differ. */
 export interface WorkingTreeChunkStoreKey {
@@ -132,6 +139,12 @@ export interface WorkingTreeChunkStoreDeps {
   capBytes?: number;
   /** The most git commit lookups one sweep makes; the rest wait for a later sweep. */
   commitLookupsPerSweep?: number;
+  /**
+   * Every file write goes through it; the composition root shares one across
+   * the working-tree stores and closes it at cleanup, so an exit never cuts a
+   * write between temp and rename. Defaults to a private one.
+   */
+  writer?: WorkingTreeFileWriter;
 }
 
 export interface WorkingTreeChunkSweepSchedule {
@@ -156,7 +169,6 @@ const META_SUFFIX = ".meta.json";
 const ROWS_SUFFIX = ".rows.json";
 /** Dense vectors beside the rows (WTO-5): same entry, same retention. */
 const VECTORS_SUFFIX = ".vectors.json";
-const TMP_SUFFIX = ".tmp";
 /** A collection name is one path segment; anything else would address outside the root. */
 const COLLECTION_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -238,11 +250,8 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
       .update(JSON.stringify([key.treeRoot, key.relativePath, key.contentSha256, key.chunkerFingerprint]))
       .digest("hex");
 
-  const writeAtomic = async (target: string, data: string): Promise<void> => {
-    const tmp = `${target}.${String(process.pid)}.${randomBytes(4).toString("hex")}${TMP_SUFFIX}`;
-    await fs.writeFile(tmp, data);
-    await fs.rename(tmp, target);
-  };
+  const writer = deps.writer ?? createWorkingTreeFileWriter();
+  const writeAtomic = async (target: string, data: string): Promise<void> => writer.write(target, data);
 
   const readMeta = async (path: string): Promise<StoredMeta | undefined> => {
     try {
@@ -440,6 +449,12 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
         return "lookup";
       };
 
+      // The throttle stamp's own temps: the root is shared, so only this store's stamp.
+      await reapAbandonedWorkingTreeTemps(rootDir, {
+        at,
+        graceMs: ABANDONED_WRITE_GRACE_MS,
+        prefix: SWEEP_STAMP_FILE,
+      });
       for (const collection of await listDir(rootDir)) {
         if (aborted()) break;
         if (!collection.isDirectory || !COLLECTION_NAME.test(collection.name)) continue;
@@ -450,12 +465,12 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
           files.filter((f) => f.name.endsWith(META_SUFFIX)).map((f) => f.name.slice(0, -META_SUFFIX.length)),
         );
 
+        // A temp goes once its writer is gone (named by pid), else after the grace.
+        await reapAbandonedWorkingTreeTemps(dir, { at, graceMs: ABANDONED_WRITE_GRACE_MS });
         for (const file of files) {
-          const abandoned =
-            file.name.endsWith(TMP_SUFFIX) ||
-            [ROWS_SUFFIX, VECTORS_SUFFIX].some(
-              (suffix) => file.name.endsWith(suffix) && !metaNames.has(file.name.slice(0, -suffix.length)),
-            );
+          const abandoned = [ROWS_SUFFIX, VECTORS_SUFFIX].some(
+            (suffix) => file.name.endsWith(suffix) && !metaNames.has(file.name.slice(0, -suffix.length)),
+          );
           if (!abandoned) continue;
           const path = join(dir, file.name);
           const stat = await fs.stat(path).catch(() => undefined);

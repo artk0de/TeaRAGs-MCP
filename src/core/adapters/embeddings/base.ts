@@ -93,6 +93,20 @@ export interface EmbeddingProvider {
   /** Resolve model capabilities (context length, dimensions) from provider API. */
   resolveModelInfo?: () => Promise<{ model: string; contextLength: number; dimensions: number } | undefined>;
   /**
+   * Decide, once, which endpoint the embeds go to — a provider with failover
+   * probes its primary here. Lazy: nothing decides at construction, so a
+   * process that never embeds never pays the probe; the first embed, model-info
+   * request or health check decides it. Idempotent. Absent on providers whose
+   * endpoint is fixed.
+   */
+  resolveEndpoint?: () => Promise<void>;
+  /**
+   * Run `hook` once the endpoint is decided (at once if it already is). Lets the
+   * composition root attach work that must follow the decision — model info —
+   * without forcing it. Absent on providers whose endpoint is fixed.
+   */
+  whenEndpointResolved?: (hook: () => void) => void;
+  /**
    * Watch the batches the SERVER fails on their size and the provider retries
    * in halves internally — invisible to the caller otherwise, because the call
    * still succeeds. While an observer is attached the provider keeps no

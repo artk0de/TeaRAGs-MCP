@@ -39,6 +39,13 @@ export {
   type WorkingTreeDeltaReader,
 } from "./delta.js";
 export {
+  createWorkingTreeFileWriter,
+  isWriterGone,
+  reapAbandonedWorkingTreeTemps,
+  type WorkingTreeFileWriter,
+  type WorkingTreeTempReapOptions,
+} from "./file-writer.js";
+export {
   filterReadsWorkingTreeSignals,
   WORKING_TREE_SIGNAL_PAYLOAD_KEYS,
   WorkingTreeOverlay,
