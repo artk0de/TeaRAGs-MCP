@@ -327,3 +327,36 @@ describe("registerSearchTools — workingTree", () => {
     }
   });
 });
+
+// hybrid_search answered from BM25 alone because the embedding provider is down.
+describe("registerSearchTools — denseUnavailable", () => {
+  const reason = "No llama-server endpoint is reachable at http://127.0.0.1:9";
+
+  it("hybrid_search carries denseUnavailable in structuredContent and says so in one text line", async () => {
+    const { captured } = makeHarness({
+      hybridSearch: vi.fn().mockResolvedValue({ results: [], driftWarning: null, denseUnavailable: { reason } }),
+    });
+    const tool = captured.find((t) => t.name === "hybrid_search");
+
+    const result = (await tool!.handler({ path: "/x", query: "q" }, {})) as {
+      structuredContent: { denseUnavailable?: { reason: string } };
+      content: { type: string; text: string }[];
+    };
+
+    expect(result.structuredContent.denseUnavailable).toEqual({ reason });
+    expect(result.content).toEqual([{ type: "text", text: `dense leg unavailable: ${reason} — ranked by BM25 only` }]);
+  });
+
+  it("omits both when the dense leg ran", async () => {
+    const { captured } = makeHarness();
+    const tool = captured.find((t) => t.name === "hybrid_search");
+
+    const result = (await tool!.handler({ path: "/x", query: "q" }, {})) as {
+      structuredContent: Record<string, unknown>;
+      content: unknown[];
+    };
+
+    expect("denseUnavailable" in result.structuredContent).toBe(false);
+    expect(result.content).toEqual([]);
+  });
+});

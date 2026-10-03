@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatWorkingTreeMarker } from "../../src/mcp/format.js";
+import { formatDenseUnavailable, formatWorkingTreeMarker } from "../../src/mcp/format.js";
 
 /** The one-line text render of the `workingTree` marker (bd tea-rags-mcp-xi2r9.1). */
 describe("formatWorkingTreeMarker", () => {
@@ -97,6 +97,15 @@ describe("formatWorkingTreeMarker — pending files", () => {
   it("should name index-only and pending files together", () => {
     expect(formatWorkingTreeMarker({ ...base, indexOnlyFiles: 2, pendingFiles: 3 })).toBe(
       "workingTree: /repo/wt · index @0123456 · tree @fedcba9 · changed 5 (2 index-only, 3 pending) · deleted 0 · floors chunks",
+    );
+  });
+});
+
+/** hybrid_search ranked by BM25 alone: the embedding provider could not embed the query. */
+describe("formatDenseUnavailable", () => {
+  it("should name the reason and the ranking the answer fell back to", () => {
+    expect(formatDenseUnavailable({ reason: "No llama-server endpoint is reachable at http://127.0.0.1:9" })).toBe(
+      "dense leg unavailable: No llama-server endpoint is reachable at http://127.0.0.1:9 — ranked by BM25 only",
     );
   });
 });

@@ -47,9 +47,39 @@ export interface RateLimitConfig {
   ollamaAutoPull?: boolean;
 }
 
+/**
+ * Per-call limits on one embed. The configured recovery wait
+ * (`RateLimitConfig#unavailableRetryMaxWaitMs`) is sized for a long index run,
+ * where a GPU host restarting must not kill the run; a caller that answers an
+ * agent cannot sit that out, so it narrows the wait for its own call.
+ */
+export interface EmbeddingCallOptions {
+  /**
+   * Upper bound (ms) on this call's wait for an unreachable provider to come
+   * back; the effective wait is the smaller of this and the configured budget.
+   * 0 = one direct attempt (an endpoint that is actually back still answers),
+   * then the provider's typed unavailable error. Absent = the configured budget.
+   * Providers without a recovery wait ignore it.
+   */
+  maxRecoveryWaitMs?: number;
+}
+
+/**
+ * Recovery wait of an embed on the READ path (search queries, the model guard's
+ * canary on a search): none. A read answers an agent now or fails fast; a
+ * search that can do without the dense leg (hybrid_search's BM25) still answers.
+ */
+export const READ_PATH_EMBEDDING_RECOVERY_WAIT_MS = 0;
+
+/** The call's recovery budget: the smaller of the configured one and the call's own bound. */
+export function effectiveRecoveryWaitMs(configuredMs: number, options?: EmbeddingCallOptions): number {
+  const bound = options?.maxRecoveryWaitMs;
+  return bound === undefined ? configuredMs : Math.max(0, Math.min(configuredMs, bound));
+}
+
 export interface EmbeddingProvider {
-  embed: (text: string) => Promise<EmbeddingResult>;
-  embedBatch: (texts: string[]) => Promise<EmbeddingResult[]>;
+  embed: (text: string, options?: EmbeddingCallOptions) => Promise<EmbeddingResult>;
+  embedBatch: (texts: string[], options?: EmbeddingCallOptions) => Promise<EmbeddingResult[]>;
   getDimensions: () => number;
   getModel: () => string;
   /** Lightweight health check — returns true if provider is reachable. */

@@ -1596,6 +1596,23 @@ describe("QdrantManager", () => {
       expect(mockClient.query.mock.calls[0][1].query).toEqual({ rrf: { weights: [1, 0] } });
     });
 
+    it("fuses the sparse prefetch alone when there is no dense vector (embedding provider down)", async () => {
+      mockClient.query.mockResolvedValue({ points: [{ id: "a", score: 0.5, payload: { path: "a.ts" } }] });
+      const filter = { must: [{ key: "language", match: { value: "typescript" } }] };
+
+      const results = await manager.hybridSearch("test-collection", undefined, sparseVector, 20, filter, 0.7, {
+        must: [{ key: "symbolId", match: { value: "Foo" } }],
+      });
+
+      const [, payload] = mockClient.query.mock.calls[0];
+      expect(payload.prefetch).toEqual([
+        { query: sparseVector, using: "text", limit: 20, filter: withServicePointExclusions(filter) },
+      ]);
+      expect(payload.query).toEqual({ fusion: "rrf" });
+      expect(payload.filter).toEqual(withServicePointExclusions(filter));
+      expect(results.map((r) => r.id)).toEqual(["a"]);
+    });
+
     it("rejects invalid semanticWeight with QdrantInvalidQueryParameterError", async () => {
       for (const invalid of [Number.NaN, Infinity, -0.1, 1.1, -Infinity]) {
         await expect(

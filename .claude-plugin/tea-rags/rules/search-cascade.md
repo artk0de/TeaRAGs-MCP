@@ -66,10 +66,13 @@ a LIVE `get_index_status` — its `Infrastructure:` footer reports current
 snapshot.
 
 **Even with embedding genuinely down, code-identifier search still works.**
-`find_symbol` uses Qdrant text match (zero embedding); `hybrid_search`'s BM25
-gives exact-name match (score up to 1.0) without dense vector. Down embedding
-degrades behavioral/semantic recall (`semantic_search` intent queries) — does
-NOT justify ripgrep for class/method/constant lookups.
+`find_symbol` uses Qdrant text match (zero embedding); `hybrid_search` answers
+from its BM25 leg alone — exact-name match (score up to 1.0) — and says so with
+a top-level `denseUnavailable: { reason }` (rows ranked lexically, no semantic
+ranking). `semantic_search` / `search_code` / `find_similar` with code have no
+other leg: they fail FAST with the provider's outage error (no recovery wait).
+Down embedding degrades behavioral/semantic recall — does NOT justify ripgrep
+for class/method/constant lookups.
 
 If a LIVE `get_index_status` reports embedding error, or any tea-rags semantic
 call fails with embedding/connection error — STOP, ask the user (via

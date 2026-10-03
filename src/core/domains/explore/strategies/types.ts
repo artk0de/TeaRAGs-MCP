@@ -28,6 +28,12 @@ export interface ExploreContext {
    * substitute its rows; the rest stamp `treeState` on base rows of its files.
    */
   workingTreeView?: WorkingTreeView;
+  /**
+   * The query could not be embedded: the embedding provider is unreachable.
+   * Set → a strategy that has a lexical leg (hybrid's BM25) ranks by it alone,
+   * and `embedding` is absent. `reason` is the provider's error message.
+   */
+  denseUnavailable?: { reason: string };
 }
 
 export interface ExploreResult<P = Record<string, unknown>> {

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { isEmbeddingProviderUnavailable } from "../../../../src/core/adapters/embeddings/errors.js";
 import { OllamaEmbeddings } from "../../../../src/core/adapters/embeddings/ollama.js";
 import {
   OllamaContextOverflowError,
@@ -713,6 +714,43 @@ describe("OllamaEmbeddings", () => {
       await expect(promise).rejects.toThrow(OllamaUnavailableError);
       // Multiple attempts within the budget, not a single immediate abort.
       expect(mockFetch.mock.calls.length).toBeGreaterThan(1);
+    });
+
+    it("should abort after one attempt when the call allows no recovery wait, whatever the configured budget", async () => {
+      const provider = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        { unavailableRetryMaxWaitMs: 240_000, unavailableRetryBaseDelayMs: 100 },
+        undefined,
+        true,
+      );
+      mockFetch.mockRejectedValue(new Error("ECONNREFUSED"));
+
+      const error = await provider.embed("test text", { maxRecoveryWaitMs: 0 }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(OllamaUnavailableError);
+      expect(isEmbeddingProviderUnavailable(error)).toBe(true);
+      expect((error as OllamaUnavailableError).recoveryWaitMs).toBe(0);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("should cap the recovery wait at the call's budget on a native batch", async () => {
+      const provider = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        { unavailableRetryMaxWaitMs: 240_000, unavailableRetryBaseDelayMs: 100 },
+        undefined,
+        false,
+      );
+      mockFetch.mockRejectedValue(new Error("ECONNREFUSED"));
+
+      const promise = provider.embedBatch(["a", "b"], { maxRecoveryWaitMs: 500 });
+      promise.catch(() => {});
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      const error = await promise.catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(OllamaUnavailableError);
+      expect((error as OllamaUnavailableError).recoveryWaitMs).toBe(500);
     });
 
     it("should abort immediately when recovery wait is disabled (default)", async () => {

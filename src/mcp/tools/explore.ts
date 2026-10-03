@@ -6,7 +6,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { ExploreResponse, HybridSearchRequest, SemanticSearchRequest } from "../../core/api/public/dto/explore.js";
 import type { App, SchemaBuilder } from "../../core/api/public/index.js";
-import { appendAutoUpdateHint, sanitizeRerank, type McpToolResult } from "../format.js";
+import { appendAutoUpdateHint, formatDenseUnavailable, sanitizeRerank, type McpToolResult } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 import { SearchResultOutputSchema } from "./output-schemas.js";
 import { createSearchSchemas } from "./schemas.js";
@@ -35,8 +35,13 @@ function formatStructuredResult(response: ExploreResponse): McpToolResult {
       ...(response.presetFilterNotice && { presetFilterNotice: response.presetFilterNotice }),
       ...(response.fieldsWarning && { fieldsWarning: response.fieldsWarning }),
       ...(response.workingTree && { workingTree: response.workingTree }),
+      ...(response.denseUnavailable && { denseUnavailable: response.denseUnavailable }),
     },
-    content: [],
+    // A degraded ranking is said in text too: a reader of the text channel
+    // would otherwise take a BM25-only answer for a hybrid one.
+    content: response.denseUnavailable
+      ? [{ type: "text", text: formatDenseUnavailable(response.denseUnavailable) }]
+      : [],
   };
 }
 

@@ -4,6 +4,11 @@
  * Validates that the collection has hybrid search enabled,
  * generates sparse vector from query, and executes hybrid search.
  * Extracted from MCP search.ts hybrid_search handler.
+ *
+ * With `ExploreContext#denseUnavailable` (the embedding provider is down) the
+ * same request runs on its BM25 leg alone: no dense prefetch, no identity leg
+ * (a dense ordering), no dense floor for the tree's rows — same filter,
+ * pathPattern, level and sparse floor.
  */
 
 import { QdrantInvalidQueryParameterError } from "../../../adapters/qdrant/errors.js";
@@ -40,7 +45,7 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
 
   protected async executeExplore(ctx: ExploreContext): Promise<ExploreResult[]> {
     const { embedding } = ctx;
-    if (!embedding) {
+    if (!embedding && !ctx.denseUnavailable) {
       throw new InvalidQueryError("HybridSearchStrategy requires an embedding in the context");
     }
 
@@ -54,7 +59,8 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
 
     // One identifier → add the identity leg (see ./symbol-identity-leg.ts);
     // any other query sends exactly the two-prefetch request it always did.
-    const identityFilter = isSymbolIdentifierQuery(ctx.query) ? buildSymbolIdentityFilter(ctx.query) : undefined;
+    const identityFilter =
+      embedding && isSymbolIdentifierQuery(ctx.query) ? buildSymbolIdentityFilter(ctx.query) : undefined;
     // Sparse floor (bd tea-rags-mcp-xi2r9.4): the tree's rows of the files it
     // touched replace their base rows. Absent → today's request, byte for byte.
     const treeRows = await this.readWorkingTreeRows(ctx);
@@ -66,7 +72,7 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
     const filter = view ? await this.excludeWorkingTreeBase(ctx, view, ctx.filter) : ctx.filter;
     // Dense floor (WTO-5): the tree's rows rank on the dense leg by their own
     // vectors, read beside the Qdrant request.
-    const denseRanking = treeRows ? this.readWorkingTreeDenseRanking(ctx, treeRows, embedding) : undefined;
+    const denseRanking = treeRows && embedding ? this.readWorkingTreeDenseRanking(ctx, treeRows, embedding) : undefined;
     // A base row of a touched file the request still returned (an id set that
     // predates an index run of the same point count) is dropped, never shown.
     const untouched = (rows: ExploreResult[]): ExploreResult[] =>

@@ -136,7 +136,7 @@ describe("ExploreOps model-guard mode per tool", () => {
     const calls = await guardCallsOf(async (ops) =>
       ops.semanticSearch({ query: "retry", collection: "code_test_col" }),
     );
-    expect(calls).toEqual([["code_test_col", { failOnProviderOutage: true }]]);
+    expect(calls).toEqual([["code_test_col", { failOnProviderOutage: true, maxRecoveryWaitMs: 0 }]]);
   });
 });
 

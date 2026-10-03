@@ -5,7 +5,7 @@
  * Linux/Windows suggest CLI commands.
  */
 
-import { EmbeddingError, type ProviderRecoveryWaitReporting } from "../errors.js";
+import { EmbeddingError, EmbeddingProviderUnavailableError, type ProviderRecoveryWaitReporting } from "../errors.js";
 
 interface OllamaCommands {
   start: string;
@@ -22,7 +22,7 @@ function getOllamaCommands(): OllamaCommands {
   return { start: "ollama serve", stop: "pkill ollama" };
 }
 
-export class OllamaUnavailableError extends EmbeddingError implements ProviderRecoveryWaitReporting {
+export class OllamaUnavailableError extends EmbeddingProviderUnavailableError implements ProviderRecoveryWaitReporting {
   /** HTTP response status from Ollama API (e.g. 429 for rate limit). Undefined for network errors. */
   readonly responseStatus?: number;
   /**

@@ -21,7 +21,7 @@
  * merged with the page by score. An example is never its own result.
  */
 
-import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
+import { READ_PATH_EMBEDDING_RECOVERY_WAIT_MS, type EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { QdrantPointNotFoundError } from "../../../adapters/qdrant/errors.js";
 import { toQdrantPointId } from "../../../adapters/qdrant/point-id.js";
@@ -87,10 +87,13 @@ export class SimilarSearchStrategy extends BaseExploreStrategy {
     );
     const allCodeBlocks = [...positiveCodeBlocks, ...negativeCodeBlocks];
 
-    // 2. Embed all code blocks in one batch
+    // 2. Embed all code blocks in one batch — a read: a down provider fails it
+    //    at once rather than after the indexing-sized recovery wait.
     let embeddedVectors: number[][] = [];
     if (allCodeBlocks.length > 0) {
-      const results = await this.embeddings.embedBatch(allCodeBlocks);
+      const results = await this.embeddings.embedBatch(allCodeBlocks, {
+        maxRecoveryWaitMs: READ_PATH_EMBEDDING_RECOVERY_WAIT_MS,
+      });
       embeddedVectors = results.map((r) => r.embedding);
     }
 

@@ -9,10 +9,13 @@
  * model.
  */
 
-import { EmbeddingError, type ProviderRecoveryWaitReporting } from "../errors.js";
+import { EmbeddingError, EmbeddingProviderUnavailableError, type ProviderRecoveryWaitReporting } from "../errors.js";
 
 /** Every configured endpoint, peers and fallbacks, stayed unreachable. */
-export class LlamaServerUnavailableError extends EmbeddingError implements ProviderRecoveryWaitReporting {
+export class LlamaServerUnavailableError
+  extends EmbeddingProviderUnavailableError
+  implements ProviderRecoveryWaitReporting
+{
   readonly recoveryWaitMs: number;
 
   constructor(peers: string, fallbacks: string | undefined, cause?: Error, recoveryWaitMs = 0) {

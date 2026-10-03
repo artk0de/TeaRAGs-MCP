@@ -277,6 +277,14 @@ export interface ExploreResponse {
    * what could not be measured.
    */
   workingTree?: WorkingTreeMarker;
+  /**
+   * Present only on a hybrid_search answer ranked by its BM25 leg alone: the
+   * embedding provider could not embed the query. `reason` is the provider's
+   * error. Same name and shape as `WorkingTreeMarker#denseUnavailable`, which
+   * says the same of the tree's rows. semantic_search has no other leg and
+   * fails with the provider's error instead.
+   */
+  denseUnavailable?: { reason: string };
 }
 
 // ---------------------------------------------------------------------------

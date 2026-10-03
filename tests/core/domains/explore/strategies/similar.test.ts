@@ -102,7 +102,7 @@ describe("SimilarSearchStrategy", () => {
 
     await strategy.execute({ collectionName: "col", limit: 10 });
 
-    expect(embeddings.embedBatch).toHaveBeenCalledWith(["function foo() {}"]);
+    expect(embeddings.embedBatch).toHaveBeenCalledWith(["function foo() {}"], { maxRecoveryWaitMs: 0 });
     expect(qdrant.query).toHaveBeenCalledWith(
       "col",
       expect.objectContaining({
@@ -143,7 +143,7 @@ describe("SimilarSearchStrategy", () => {
 
     await strategy.execute({ collectionName: "col", limit: 10 });
 
-    expect(embeddings.embedBatch).toHaveBeenCalledWith(["valid code"]);
+    expect(embeddings.embedBatch).toHaveBeenCalledWith(["valid code"], { maxRecoveryWaitMs: 0 });
   });
 
   it("passes strategy to qdrant.query", async () => {
@@ -416,7 +416,7 @@ describe("SimilarSearchStrategy on a working tree", () => {
 
     await strategy.execute({ collectionName: "col", limit: 10, workingTreeView: view() });
 
-    expect(embeddings.embedBatch).toHaveBeenCalledWith(["export function fresh() {}"]);
+    expect(embeddings.embedBatch).toHaveBeenCalledWith(["export function fresh() {}"], { maxRecoveryWaitMs: 0 });
     expect(qdrant.query).toHaveBeenCalledWith(
       "col",
       expect.objectContaining({ positive: ["uuid-base", [0.4, 0.5, 0.6]] }),
@@ -446,11 +446,10 @@ describe("SimilarSearchStrategy on a working tree", () => {
 
     await strategy.execute({ collectionName: "col", limit: 10, workingTreeView: view() });
 
-    expect(embeddings.embedBatch).toHaveBeenCalledWith([
-      "export function fresh() {}",
-      "caller negative",
-      "export function stale() {}",
-    ]);
+    expect(embeddings.embedBatch).toHaveBeenCalledWith(
+      ["export function fresh() {}", "caller negative", "export function stale() {}"],
+      { maxRecoveryWaitMs: 0 },
+    );
     expect(qdrant.query).toHaveBeenCalledWith(
       "col",
       expect.objectContaining({

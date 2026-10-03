@@ -63,6 +63,35 @@ describe("HybridSearchStrategy", () => {
     expect(results[0].score).toBe(0.85);
   });
 
+  it("runs the BM25 leg alone, without the identity leg, when the dense leg is unavailable", async () => {
+    const qdrant = createMockQdrant(true, [{ id: "1", score: 0.5, payload: { relativePath: "src/a.ts" } }]);
+    const sparseVector = { indices: [0], values: [1.0] };
+
+    const results = await createStrategy(qdrant).execute({
+      collectionName: "test_col",
+      sparseVector,
+      // One identifier: with a query vector this would add the identity leg.
+      query: "Reranker",
+      limit: 5,
+      denseUnavailable: { reason: "provider down" },
+    });
+
+    expect(qdrant.hybridSearch).toHaveBeenCalledWith(
+      "test_col",
+      undefined,
+      sparseVector,
+      expect.any(Number),
+      undefined,
+    );
+    expect(results.map((r) => r.id)).toEqual(["1"]);
+  });
+
+  it("still refuses a missing embedding when nothing says the dense leg is unavailable", async () => {
+    await expect(createStrategy().execute({ collectionName: "test_col", query: "q", limit: 5 })).rejects.toThrow(
+      InvalidQueryError,
+    );
+  });
+
   it("honours a requested limit below 5 (tea-rags-mcp-9mwny)", async () => {
     const many = Array.from({ length: 30 }, (_, i) => ({
       id: String(i),

@@ -15,7 +15,14 @@
 import Bottleneck from "bottleneck";
 
 import { isDebug } from "../../infra/runtime.js";
-import type { EmbeddingProvider, EmbeddingResult, EmbeddingServerBatchFailure, RateLimitConfig } from "./base.js";
+import {
+  effectiveRecoveryWaitMs,
+  type EmbeddingCallOptions,
+  type EmbeddingProvider,
+  type EmbeddingResult,
+  type EmbeddingServerBatchFailure,
+  type RateLimitConfig,
+} from "./base.js";
 import {
   isOllamaRunnerCrashBody,
   OllamaContextOverflowError,
@@ -153,6 +160,16 @@ export interface FallbackSwitchEvent {
 export type OllamaRecoveryWaitEvent =
   | { state: "waiting"; url: string; elapsedMs: number; budgetMs: number }
   | { state: "recovered"; url: string; elapsedMs: number };
+
+/** Limits one native-batch call carries through its size-failure halvings. */
+interface NativeBatchBound {
+  /** Largest batch sent in one request; undefined = no ceiling. */
+  ceiling: number | undefined;
+  /** An observer owns the working size across calls (`observeServerBatchFailures`). */
+  observed: boolean;
+  /** This call's connection-recovery budget (`EmbeddingCallOptions#maxRecoveryWaitMs`). */
+  recoveryBudgetMs: number;
+}
 
 export class OllamaEmbeddings implements EmbeddingProvider {
   /** The model embed calls carry — the quantized tag once provisioning switched to it. */
@@ -561,7 +578,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   }
 
   /** One native request for exactly `texts`. */
-  private async embedNativeOnce(texts: string[]): Promise<EmbeddingResult[]> {
+  private async embedNativeOnce(texts: string[], recoveryBudgetMs: number): Promise<EmbeddingResult[]> {
     const batchEmbed = async (url: string): Promise<EmbeddingResult[]> => {
       const timeout = this.batchTimeout(texts.length);
       if (isDebug()) {
@@ -576,7 +593,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         dimensions: this.dimensions,
       }));
     };
-    return this.limiter.schedule(async () => this.retryWithBackoff(async (url) => batchEmbed(url)));
+    return this.limiter.schedule(async () => this.retryWithBackoff(async (url) => batchEmbed(url), recoveryBudgetMs));
   }
 
   /**
@@ -586,15 +603,12 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    * call — and, when nobody observes, for the rest of the run: each failure
    * costs a runner restart plus a model reload on the server.
    */
-  private async embedNativeBounded(
-    texts: string[],
-    bound: { ceiling: number | undefined; observed: boolean },
-  ): Promise<EmbeddingResult[]> {
+  private async embedNativeBounded(texts: string[], bound: NativeBatchBound): Promise<EmbeddingResult[]> {
     if (bound.ceiling !== undefined && texts.length > bound.ceiling) {
       return this.embedNativeSlices(texts, bound.ceiling, bound);
     }
     try {
-      return await this.embedNativeOnce(texts);
+      return await this.embedNativeOnce(texts, bound.recoveryBudgetMs);
     } catch (error) {
       if (texts.length <= 1 || !this.isServerBatchFailure(error)) throw error;
       const half = Math.ceil(texts.length / 2);
@@ -620,7 +634,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private async embedNativeSlices(
     texts: string[],
     sliceSize: number,
-    bound: { ceiling: number | undefined; observed: boolean },
+    bound: NativeBatchBound,
   ): Promise<EmbeddingResult[]> {
     const results: EmbeddingResult[] = [];
     for (let start = 0; start < texts.length; start += sliceSize) {
@@ -629,9 +643,9 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     return results;
   }
 
-  private async retryWithBackoff<T>(fn: (url: string) => Promise<T>): Promise<T> {
+  private async retryWithBackoff<T>(fn: (url: string) => Promise<T>, recoveryBudgetMs: number): Promise<T> {
     const recoveryStart = Date.now();
-    const recoveryDeadline = recoveryStart + this.unavailableRetryMaxWaitMs;
+    const recoveryDeadline = recoveryStart + recoveryBudgetMs;
     let recoveryAttempt = 0;
 
     for (;;) {
@@ -706,7 +720,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
             state: "waiting",
             url,
             elapsedMs: Date.now() - recoveryStart,
-            budgetMs: this.unavailableRetryMaxWaitMs,
+            budgetMs: recoveryBudgetMs,
           });
           await new Promise((resolve) => setTimeout(resolve, delayMs));
           continue;
@@ -869,10 +883,13 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     return { embedding: response.embedding, dimensions: this.dimensions };
   }
 
-  async embed(text: string): Promise<EmbeddingResult> {
+  async embed(text: string, options?: EmbeddingCallOptions): Promise<EmbeddingResult> {
     await this.startupReady();
     await this.awaitPendingModelInfo();
-    return this.limiter.schedule(async () => this.retryWithBackoff(async (url) => this.embedSingle(text, url)));
+    const recoveryBudgetMs = effectiveRecoveryWaitMs(this.unavailableRetryMaxWaitMs, options);
+    return this.limiter.schedule(async () =>
+      this.retryWithBackoff(async (url) => this.embedSingle(text, url), recoveryBudgetMs),
+    );
   }
 
   /**
@@ -892,7 +909,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    *
    * Note: GPU must have num_gpu: 999 enabled (see callBatchApi)
    */
-  async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
+  async embedBatch(texts: string[], options?: EmbeddingCallOptions): Promise<EmbeddingResult[]> {
     await this.startupReady();
     await this.awaitPendingModelInfo();
     if (texts.length === 0) {
@@ -909,7 +926,11 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       // call-local bound still keeps the failing call's remaining slices at the
       // size that worked.
       const observed = this.serverBatchFailureObservers.size > 0;
-      return this.embedNativeBounded(texts, { ceiling: observed ? undefined : this.maxServerBatchSize, observed });
+      return this.embedNativeBounded(texts, {
+        ceiling: observed ? undefined : this.maxServerBatchSize,
+        observed,
+        recoveryBudgetMs: effectiveRecoveryWaitMs(this.unavailableRetryMaxWaitMs, options),
+      });
     }
 
     // Fallback: Legacy parallel individual requests (old Ollama without /api/embed)
@@ -919,7 +940,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     const results: EmbeddingResult[] = [];
 
     for (const text of texts) {
-      results.push(await this.embed(text));
+      results.push(await this.embed(text, options));
     }
 
     return results;

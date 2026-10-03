@@ -115,6 +115,13 @@ export const SearchResultOutputSchema = {
         "treeGraphUnavailable = why graph signals are the index's; " +
         "denseUnavailable = why some tree rows ranked without vectors (absent from dense ranking).",
     ),
+  denseUnavailable: z
+    .object({ reason: z.string() })
+    .optional()
+    .describe(
+      "hybrid_search only: embedding provider down, so results are ranked by BM25 alone (exact names still match; " +
+        "no semantic ranking). reason = the provider's error.",
+    ),
   codegraphWarning: z
     .string()
     .optional()

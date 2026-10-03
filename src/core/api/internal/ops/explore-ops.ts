@@ -13,7 +13,12 @@
 
 import { resolve } from "node:path";
 
-import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
+import {
+  READ_PATH_EMBEDDING_RECOVERY_WAIT_MS,
+  type EmbeddingCallOptions,
+  type EmbeddingProvider,
+} from "../../../adapters/embeddings/base.js";
+import { isEmbeddingProviderUnavailable } from "../../../adapters/embeddings/errors.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type {
   EmbeddingModelGuard,
@@ -126,6 +131,24 @@ interface ResolvedExploreTarget {
 }
 
 /**
+ * A search query's embedding on the read path, or why there is none. Only a
+ * caller whose strategy can rank without it (hybrid's BM25 leg) ever gets
+ * `denseUnavailable`; every other caller gets the provider's error.
+ */
+interface ExploreQueryEmbedding {
+  target: ResolvedExploreTarget;
+  embedding?: number[];
+  denseUnavailable?: { reason: string };
+}
+
+/**
+ * Every query embed of a search, and the model guard's canary on it, waits
+ * for no provider recovery: the configured wait is sized for indexing, and a
+ * read that sat it out blocked an agent for minutes per call.
+ */
+const READ_PATH_EMBED: EmbeddingCallOptions = { maxRecoveryWaitMs: READ_PATH_EMBEDDING_RECOVERY_WAIT_MS };
+
+/**
  * What `ExploreOps#buildFilter` resolved: the merged Qdrant filter handed to
  * the strategy, plus the notice owed to the caller when a rerank preset's
  * DEFAULT filter is what narrowed the set.
@@ -235,14 +258,15 @@ export class ExploreOps {
   // ---------------------------------------------------------------------------
 
   async semanticSearch(request: SemanticSearchRequest): Promise<ExploreResponse> {
-    return this.embedAndDispatch(request, this.vectorStrategy, true);
+    return this.embedAndDispatch(request, this.vectorStrategy, { attachConfidence: true, denseLegOptional: false });
   }
 
   async hybridSearch(request: HybridSearchRequest): Promise<ExploreResponse> {
     // No confidence: RRF fusion scores are a function of rank, not similarity.
     // Sparse floor (bd tea-rags-mcp-xi2r9.4): touched files answer from the
-    // tree's chunks, scored on the BM25 leg.
-    return this.embedAndDispatch(request, this.hybridStrategy, false);
+    // tree's chunks, scored on the BM25 leg. The dense leg is optional: with the
+    // embedding provider down the BM25 leg answers alone.
+    return this.embedAndDispatch(request, this.hybridStrategy, { attachConfidence: false, denseLegOptional: true });
   }
 
   async rankChunks(request: RankChunksRequest): Promise<ExploreResponse> {
@@ -272,9 +296,9 @@ export class ExploreOps {
       request.collection,
       request.path,
       request.project,
-      { failOnProviderOutage: true },
+      { failOnProviderOutage: true, ...READ_PATH_EMBED },
     );
-    const { embedding } = await this.embeddings.embed(request.query);
+    const { embedding } = await this.embeddings.embed(request.query, READ_PATH_EMBED);
     const level = resolveEffectiveLevel(undefined, request.rerank, this.reranker, "search_code");
     // Load collection stats BEFORE buildFilter so filter-preset adaptive
     // percentiles resolve from real Stats on the first (cold) query, not
@@ -290,10 +314,14 @@ export class ExploreOps {
   }
 
   async findSimilar(request: FindSimilarRequest, strategy: SimilarSearchStrategy): Promise<ExploreResponse> {
+    // Not failOnProviderOutage: a request by chunk ids embeds nothing and
+    // answers with the provider down; one that embeds code fails fast on its
+    // own embed (the strategy holds it to the same read budget).
     const { collectionName, path, workingTreeView } = await this.resolveAndGuard(
       request.collection,
       request.path,
       request.project,
+      READ_PATH_EMBED,
     );
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
     // Load collection stats BEFORE buildFilter so filter-preset adaptive
@@ -460,19 +488,16 @@ export class ExploreOps {
    * Shared flow for semantic + hybrid: embed → resolveDocRerank → level →
    * filter → execute. `attachConfidence` differs between the two: the dense
    * score is a similarity, the RRF-fused hybrid score is a rank.
+   * `denseLegOptional`: the strategy ranks without the query vector when the
+   * provider is down, and the answer carries `denseUnavailable`.
    */
   private async embedAndDispatch(
     request: SemanticSearchRequest | HybridSearchRequest,
     strategy: BaseExploreStrategy,
-    attachConfidence: boolean,
+    { attachConfidence, denseLegOptional }: { attachConfidence: boolean; denseLegOptional: boolean },
   ): Promise<ExploreResponse> {
-    const { collectionName, path, workingTreeView } = await this.resolveAndGuard(
-      request.collection,
-      request.path,
-      request.project,
-      { failOnProviderOutage: true },
-    );
-    const { embedding } = await this.embeddings.embed(request.query);
+    const { target, embedding, denseUnavailable } = await this.embedQuery(request, denseLegOptional);
+    const { collectionName, path, workingTreeView } = target;
     const rerank = resolveDocRerank(request.rerank, request.documentation, request.language);
     const level = resolveEffectiveLevel(request.level, rerank, this.reranker, "semantic_search");
     // Load collection stats BEFORE buildFilter so filter-preset adaptive
@@ -480,12 +505,40 @@ export class ExploreOps {
     // fallbacks. Guarded + idempotent — the call in executeExplore is a no-op.
     await this.ensureStats(collectionName);
     const { filter, presetFilterNotice } = this.buildFilter(request, level);
-    return this.executeExplore(
-      strategy,
-      buildVectorSearchContext(request, collectionName, embedding, filter, rerank, level),
-      path,
-      { attachConfidence, presetFilterNotice, fields: request.fields, workingTreeView },
-    );
+    const ctx = buildVectorSearchContext(request, collectionName, embedding, filter, rerank, level);
+    const response = await this.executeExplore(strategy, denseUnavailable ? { ...ctx, denseUnavailable } : ctx, path, {
+      attachConfidence,
+      presetFilterNotice,
+      fields: request.fields,
+      workingTreeView,
+    });
+    return denseUnavailable ? { ...response, denseUnavailable } : response;
+  }
+
+  /**
+   * Resolve the target, guard the model and embed the query — the canary and
+   * the query embed both held to the read-path recovery budget, so a down
+   * provider fails the call at once instead of after its indexing-sized wait.
+   *
+   * An OUTAGE (`isEmbeddingProviderUnavailable`, from the canary or the query
+   * embed) is answered, not thrown, when `denseLegOptional`: no vector of this
+   * request reaches Qdrant then, so only the model NAME can make the answer
+   * wrong, and it is checked by name alone. Any other error propagates.
+   */
+  private async embedQuery(
+    request: SemanticSearchRequest | HybridSearchRequest,
+    denseLegOptional: boolean,
+  ): Promise<ExploreQueryEmbedding> {
+    const target = await this.resolveTarget(request.collection, request.path, request.project);
+    try {
+      await this.modelGuard?.ensureMatch(target.collectionName, { failOnProviderOutage: true, ...READ_PATH_EMBED });
+      const { embedding } = await this.embeddings.embed(request.query, READ_PATH_EMBED);
+      return { target, embedding };
+    } catch (error) {
+      if (!denseLegOptional || !isEmbeddingProviderUnavailable(error)) throw error;
+      await this.modelGuard?.ensureMatch(target.collectionName, { nameOnly: true });
+      return { target, denseUnavailable: { reason: error.message } };
+    }
   }
 
   /**
@@ -570,6 +623,13 @@ export class ExploreOps {
     project?: string,
     guardOptions?: EmbeddingModelGuardCallOptions,
   ): Promise<ResolvedExploreTarget> {
+    const resolved = await this.resolveTarget(collection, path, project);
+    await this.modelGuard?.ensureMatch(resolved.collectionName, guardOptions);
+    return resolved;
+  }
+
+  /** The index and tree a request reads, without the model guard. */
+  private async resolveTarget(collection?: string, path?: string, project?: string): Promise<ResolvedExploreTarget> {
     // The one existence seam every read tool resolves through (live round-3 D3):
     // a missing index is refused before the overlay measures the tree.
     const workingTree = await resolveIndexedWorkingTree(
@@ -577,9 +637,7 @@ export class ExploreOps {
       { collection, project, path },
       async (name) => this.qdrant.collectionExists(name),
     );
-    const resolved = this.targetOf(workingTree, path, project);
-    await this.modelGuard?.ensureMatch(resolved.collectionName, guardOptions);
-    return resolved;
+    return this.targetOf(workingTree, path, project);
   }
 
   /**
@@ -884,7 +942,7 @@ function resolveEffectiveLevel(
 function buildVectorSearchContext(
   request: SemanticSearchRequest | HybridSearchRequest,
   collectionName: string,
-  embedding: number[],
+  embedding: number[] | undefined,
   filter: Record<string, unknown> | undefined,
   rerank: SemanticSearchRequest["rerank"],
   level: SignalLevel | undefined,

@@ -265,3 +265,13 @@ describe("SearchResultOutputSchema — workingTree pending files", () => {
     expect(schema.parse({ results: [], workingTree: marker }).workingTree).toEqual(marker);
   });
 });
+
+describe("SearchResultOutputSchema — dense leg unavailable", () => {
+  const schema = z.object(SearchResultOutputSchema).strict();
+
+  it("validates the top-level denseUnavailable a BM25-only hybrid answer carries", () => {
+    const denseUnavailable = { reason: "No llama-server endpoint is reachable at http://127.0.0.1:9" };
+
+    expect(schema.parse({ results: [], denseUnavailable }).denseUnavailable).toEqual(denseUnavailable);
+  });
+});
