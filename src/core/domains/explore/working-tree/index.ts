@@ -34,6 +34,11 @@ export {
   type WorkingTreeTouchedBasePointSource,
   type WorkingTreeView,
 } from "./overlay.js";
-export { relativePathOf, substituteWorkingTreeRows, workingTreeStateOf } from "./substitute.js";
-export { recordingTreeGraphReader, recordTreeGraphState } from "./tree-graph-marker.js";
+export {
+  mergedWorkingTreeSymbolRow,
+  relativePathOf,
+  substituteWorkingTreeRows,
+  workingTreeStateOf,
+} from "./substitute.js";
+export { claimWorkingTreeFloors, recordingTreeGraphReader, recordTreeGraphState } from "./tree-graph-marker.js";
 export { touchedBasePointIds, WorkingTreeTouchedBasePoints } from "./touched-base-points.js";

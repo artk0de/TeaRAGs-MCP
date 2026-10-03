@@ -53,7 +53,7 @@ export type {
 
 export type { IndexMetrics, SignalMetrics } from "./metrics.js";
 
-export type { WorkingTreeFloor, WorkingTreeMarker, WorkingTreeState } from "./working-tree.js";
+export type { WorkingTreeFloor, WorkingTreeIndexTarget, WorkingTreeMarker, WorkingTreeState } from "./working-tree.js";
 
 export type {
   // Registry

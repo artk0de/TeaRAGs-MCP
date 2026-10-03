@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
 import { GraphFacade } from "../../../../../src/core/api/internal/facades/graph-facade.js";
+import { WORKING_TREE_GRAPH_WAIT_MS } from "../../../../../src/core/api/internal/infra/working-tree-graph-read.js";
 import { TracePathOps } from "../../../../../src/core/api/internal/ops/trace-path-ops.js";
 import type {
   WorkingTreeGraphReader,
@@ -160,7 +161,9 @@ describe("graph tools over the tree graph (WTO-7)", { timeout: 120_000 }, () => 
       expect(response.callers.map((c) => `${c.sourceRelPath}#${c.sourceSymbolId}`)).toContain("src/a.ts#run");
       expect(response.workingTree?.floors).toEqual(["codegraph"]);
       expect(response.workingTree?.treeGraphUnavailable).toBeUndefined();
-      expect(readTreeGraph).toHaveBeenCalledWith(120_000);
+      // D11b: a graph tool waits the build budget plus a margin, so its first
+      // caller hears the build's own outcome rather than "building".
+      expect(readTreeGraph).toHaveBeenCalledWith(WORKING_TREE_GRAPH_WAIT_MS);
     });
 
     it("get_callees answers the tree's callees", async () => {
@@ -229,6 +232,17 @@ describe("graph tools over the tree graph (WTO-7)", { timeout: 120_000 }, () => 
       expect(graphPool.acquireFileReader).toHaveBeenCalledTimes(2);
       expect(graphPool.acquireReader).not.toHaveBeenCalled();
     });
+
+    // Live D1: find_symbol places a collapsed symbol of a changed file on the
+    // tree's rows by the tree graph's definition lines.
+    it("readTreeSymbolLineRanges answers the tree graph's symbol ranges of the named files", async () => {
+      const { facade, graphPool } = facadeWith(built());
+
+      const ranges = await facade.readTreeSymbolLineRanges({ collection: "code_x" }, ["src/a.ts"], async () => built());
+
+      expect(ranges?.get("src/a.ts")?.ranges.map((r) => r.symbolId)).toContain("run");
+      expect(graphPool.acquireReader).not.toHaveBeenCalled();
+    });
   });
 
   describe("an unavailable tree graph", () => {
@@ -241,6 +255,18 @@ describe("graph tools over the tree graph (WTO-7)", { timeout: 120_000 }, () => 
       expect(response.workingTree?.floors).toEqual([]);
       expect(response.workingTree?.treeGraphUnavailable).toBe("building");
       expect(graphPool.acquireFileReader).not.toHaveBeenCalled();
+    });
+
+    it("readTreeSymbolLineRanges answers null, never the base graph's ranges of a changed file", async () => {
+      const { facade, graphPool } = facadeWith({ kind: "unavailable", reason: "building" });
+
+      const ranges = await facade.readTreeSymbolLineRanges({ collection: "code_x" }, ["src/a.ts"], async () => ({
+        kind: "unavailable",
+        reason: "building",
+      }));
+
+      expect(ranges).toBeNull();
+      expect(graphPool.acquireReader).not.toHaveBeenCalled();
     });
 
     it("trace_path answers from the base graph and names why", async () => {

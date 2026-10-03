@@ -33,7 +33,7 @@
  *   - confidence `min(1, (n/20)^2)`, the lexicon's quadratic dampening.
  */
 
-import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
+import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type {
   MethodNameScopeQuery,
   MethodTailVerbRow,
@@ -50,6 +50,7 @@ import type {
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { CaseSplitPathPatterns } from "../../../contracts/types/file-classification.js";
 import type { IdentifierCasing, IdentifierNamingConvention } from "../../../contracts/types/language.js";
+import { recordTreeGraphState, type WorkingTreeOverlay } from "../../../domains/explore/index.js";
 import {
   buildMethodVerbGroups,
   classifyNamingShape,
@@ -96,6 +97,7 @@ import type {
   OntologyVerbGroup,
 } from "../../public/dto/ontology.js";
 import { resolveWorkingTree } from "../collection-resolver.js";
+import { selectWorkingTreeGraphHandle } from "../infra/working-tree-graph-read.js";
 
 /** Default `GetOntologyReportRequest.limit`. */
 export const DEFAULT_ONTOLOGY_REPORT_LIMIT = 20;
@@ -242,11 +244,19 @@ export function ontologyReportQuery(
 }
 
 export interface OntologyReportOpsDeps {
-  pool: Pick<GraphDbClientPool, "acquireReader">;
+  /** `acquireFileReader` opens the working tree's graph (WTO-7). */
+  pool: Pick<GraphDbClientPool, "acquireReader" | "acquireFileReader">;
   collectionRegistry: CollectionRegistry;
   /** Alias → active versioned collection (see `GraphFacadeDeps.resolveActiveCollection`). */
   resolveActiveCollection?: (collectionName: string) => Promise<PhysicalCollectionName>;
   languages: readonly OntologyLanguageProfile[];
+  /**
+   * The `workingTree` marker source (bd tea-rags-mcp-xi2r9, live D9), and
+   * through the view's `readTreeGraph` the tree graph whose identifiers the
+   * report reads when the tree changed files. Absent (unit wiring): no marker,
+   * always the index graph.
+   */
+  workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
 }
 
 function requestedSections(req: Pick<GetOntologyReportRequest, "sections">): OntologyReportSection[] {
@@ -330,20 +340,38 @@ export class OntologyReportOps {
     this.verbNamespaces = methodVerbNamespaces(deps.languages);
   }
 
+  /**
+   * The report for the tree the request addresses (live D9): read from the
+   * tree graph when the tree changed files and its graph is built, from the
+   * index graph otherwise — every return path carries the `workingTree` marker
+   * with the tree-graph state that decided the read.
+   */
   async report(req: GetOntologyReportRequest): Promise<GetOntologyReportResponse> {
+    const workingTree = resolveWorkingTree(this.deps.collectionRegistry, req);
+    const view = await this.deps.workingTreeOverlay?.view(workingTree, req.project);
+    const selection = await selectWorkingTreeGraphHandle(view?.readTreeGraph, this.deps.pool);
+    const response = await this.reportFrom(
+      req,
+      workingTree.baseIndex.collectionName,
+      selection.kind === "tree" ? selection.handle : undefined,
+    );
+    if (!view) return response;
+    if (selection.state) recordTreeGraphState(view.marker, selection.state);
+    return { ...response, workingTree: view.marker };
+  }
+
+  /** The report read from `treeHandle` when given (closed here like any other), else from the index graph. */
+  private async reportFrom(
+    req: GetOntologyReportRequest,
+    collectionName: string,
+    treeHandle: CollectionGraphHandle | undefined,
+  ): Promise<GetOntologyReportResponse> {
     const language = req.language ? this.languageProfile(req.language) : undefined;
     const query = this.buildQuery(req, language);
 
-    const { collectionName } = resolveWorkingTree(this.deps.collectionRegistry, req).baseIndex;
-    const activePhysicalCollectionName = this.deps.resolveActiveCollection
-      ? await this.deps
-          .resolveActiveCollection(collectionName)
-          .catch(() => resolvePhysicalCollection(collectionName, []))
-      : resolvePhysicalCollection(collectionName, []);
-
-    let handle: Awaited<ReturnType<GraphDbClientPool["acquireReader"]>>;
+    let handle: CollectionGraphHandle;
     try {
-      handle = await this.deps.pool.acquireReader(activePhysicalCollectionName);
+      handle = treeHandle ?? (await this.deps.pool.acquireReader(await this.activePhysical(collectionName)));
     } catch (error) {
       // An unreadable graph must not pass for a clean project.
       const message = error instanceof Error ? error.message : String(error);
@@ -384,6 +412,13 @@ export class OntologyReportOps {
     const response = this.shape(req, rows, genericNames);
     if (tailVerbs && lexicons) response.verbs = this.verbs(tailVerbs, lexicons, reportLimit(req));
     return response;
+  }
+
+  /** Alias → the active versioned collection; the addressed name resolved against no aliases on failure. */
+  private async activePhysical(collectionName: string): Promise<PhysicalCollectionName> {
+    return this.deps.resolveActiveCollection
+      ? this.deps.resolveActiveCollection(collectionName).catch(() => resolvePhysicalCollection(collectionName, []))
+      : resolvePhysicalCollection(collectionName, []);
   }
 
   /** The report for a collection with no readable codegraph: nothing read, requested sections empty. */

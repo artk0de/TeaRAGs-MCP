@@ -10,6 +10,8 @@
 
 import { execFile, execFileSync, spawn, type ExecFileOptions } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { copyFile, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { resolveGitExecutable } from "../../../../infra/git-executable.js";
@@ -731,6 +733,8 @@ export async function listChangedFiles(
 export interface WorkingTreeNameStatus {
   changed: string[];
   deleted: string[];
+  /** The untracked, non-ignored files among `changed`. */
+  untracked: string[];
 }
 
 /**
@@ -760,7 +764,86 @@ export async function readWorkingTreeChanges(
     if (fields[i] === "D") deleted.push(fields[i + 1]);
     else changed.add(fields[i + 1]);
   }
-  return { changed: [...changed].sort(), deleted: deleted.sort() };
+  return { changed: [...changed].sort(), deleted: deleted.sort(), untracked: [...untracked].sort() };
+}
+
+/** One move git detected between a commit and the working tree, repo-relative. */
+export interface WorkingTreeRenamePair {
+  from: string;
+  to: string;
+}
+
+/**
+ * The moves of the working tree against `commit`, as git's own rename
+ * detection pairs them (`git diff -M --name-status <commit>`): staged, unstaged
+ * and committed-since alike, edits within the similarity threshold included.
+ *
+ * `git diff` sees only paths the index tracks, so an unstaged move — the old
+ * path deleted, the new one untracked — would read as an unrelated delete and
+ * add. The `untracked` files are therefore marked intent-to-add (`add -N`) in a
+ * THROWAWAY copy of the index (`GIT_INDEX_FILE`), which makes them diffable
+ * candidates; the repository's own index is never written.
+ */
+export async function readWorkingTreeRenames(
+  repoRoot: string,
+  commit: string,
+  untracked: readonly string[],
+  timeoutMs = TREE_LISTING_STALL_MS,
+): Promise<WorkingTreeRenamePair[]> {
+  const git = resolveGitExecutable();
+  const diffArgs = ["diff", "--no-ext-diff", "-M", "--name-status", "-z", commit, "--"];
+  if (untracked.length === 0) {
+    return parseRenamePairs(await execWithStallGuard(git, diffArgs, { cwd: repoRoot, stallTimeoutMs: timeoutMs }));
+  }
+  const indexPath = (
+    await execWithStallGuard(git, ["rev-parse", "--path-format=absolute", "--git-path", "index"], {
+      cwd: repoRoot,
+      stallTimeoutMs: timeoutMs,
+    })
+  ).trim();
+  const scratch = await mkdtemp(join(tmpdir(), "tea-rags-renames-"));
+  const scratchIndex = join(scratch, "index");
+  try {
+    // A repository with no index yet (nothing ever staged) has no file to copy:
+    // the scratch index then starts empty, which is what git would read.
+    await copyFile(indexPath, scratchIndex).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    });
+    const env = { ...process.env, GIT_INDEX_FILE: scratchIndex };
+    for (let i = 0; i < untracked.length; i += UNTRACKED_INTENT_BATCH) {
+      await execWithStallGuard(
+        git,
+        ["--literal-pathspecs", "add", "-N", "--", ...untracked.slice(i, i + UNTRACKED_INTENT_BATCH)],
+        {
+          cwd: repoRoot,
+          stallTimeoutMs: timeoutMs,
+          env,
+        },
+      );
+    }
+    return parseRenamePairs(await execWithStallGuard(git, diffArgs, { cwd: repoRoot, stallTimeoutMs: timeoutMs, env }));
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+}
+
+/** Paths per `add -N` — keeps the argv within OS ARG_MAX limits. */
+const UNTRACKED_INTENT_BATCH = 500;
+
+/** The `R<score> old new` entries of a `--name-status -z` diff; every other status names one path. */
+function parseRenamePairs(nameStatus: string): WorkingTreeRenamePair[] {
+  const fields = splitNulTerminated(nameStatus);
+  const pairs: WorkingTreeRenamePair[] = [];
+  for (let i = 0; i < fields.length; ) {
+    const status = fields[i];
+    if (status.startsWith("R") || status.startsWith("C")) {
+      if (status.startsWith("R") && i + 2 < fields.length) pairs.push({ from: fields[i + 1], to: fields[i + 2] });
+      i += 3;
+    } else {
+      i += 2;
+    }
+  }
+  return pairs;
 }
 
 /**

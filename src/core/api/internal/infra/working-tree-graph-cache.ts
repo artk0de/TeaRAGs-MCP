@@ -15,13 +15,18 @@
  *
  * - `snapshots/<physical>-<version>.duckdb` — one self-contained copy of the
  *   base graph per base version, taken through the session that owns the live
- *   file (`exportSnapshot`). The version hashes `(size, mtimeMs)` of the base
- *   `.duckdb` and its `.wal`, which reads never move, so every tree over one
- *   base state shares one snapshot. The graph file itself is named by the
- *   PHYSICAL collection (`<name>_vN`) — the alias would address a shadow file.
- * - `trees/<key>/` — one published tree graph, `key = sha256(tree root, delta
- *   fingerprint, physical, base version)`. Holds `codegraph/<physical>.duckdb`
- *   and `tree-graph.meta.json` (tree root, publish time, db path). Built into
+ *   file (`exportSnapshot`). The version is {@link baseGraphVersion}; every
+ *   tree over one base state shares one snapshot. The graph file itself is
+ *   named by the PHYSICAL collection (`<name>_vN`) — the alias would address a
+ *   shadow file.
+ * - `trees/<key>/` — one published tree graph. The key is CONTENT-based
+ *   ({@link treeGraphKey}): the tree root, the physical collection, the base
+ *   version, and a digest of the delta's bytes — sorted `(relativePath, sha256
+ *   of content)` of the changed files plus the sorted deleted paths. A file
+ *   reverted to identical bytes therefore lands on the graph already published
+ *   for those bytes; the delta reader's fingerprint (which carries mtimes) does
+ *   not enter the key. Holds `codegraph/<physical>.duckdb` and
+ *   `tree-graph.meta.json` (tree root, publish time, db path). Built into
  *   `<key>.staging-<pid>-<rand>` and renamed into place, so no reader — in this
  *   or a concurrent server — ever opens a half-built graph; a key dir that
  *   already exists when the build ends belongs to a process that won the race,
@@ -29,14 +34,22 @@
  *
  * Scheduling: single-flight per key in-process; a caller waits at most its
  * `waitMs` and is told `building` past it while the build continues (the next
- * call joins the same promise); a finished failure is remembered per key for
- * `failureBackoffMs`, so a tree the build cannot handle does not fork a child
- * per request. Every outcome but `built` is a product answer — the reader
- * degrades to the base graph — so `graphFor` never rejects.
+ * call joins the same promise) — unless the build's outcome arrived in the very
+ * turn the wait lapsed, which is then the answer; a finished failure is
+ * remembered per key for `failureBackoffMs`, so a tree the build cannot handle
+ * does not fork a child per request. Every outcome but `built` is a product
+ * answer — the reader degrades to the base graph — so `graphFor` never rejects.
+ *
+ * Retention runs after every publish (for that tree's graphs and that
+ * collection's snapshots) and on the chunk store's cadence (for everything):
+ * see {@link retiredTreeGraphs} and {@link WorkingTreeGraphCache#retireSnapshotsOf}.
+ * A process that exits mid-build kills its build children and removes its
+ * staging dirs synchronously; a staging dir whose owner pid is dead is swept at
+ * once.
  */
 
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, promises as fs } from "node:fs";
+import { existsSync, promises as fs, rmSync } from "node:fs";
 import { join, relative } from "node:path";
 
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
@@ -74,19 +87,34 @@ const ABANDONED_WRITE_GRACE_MS = 3_600_000;
  * its snapshot is retried once (`WorkingTreeGraphCache#publishOnce`).
  */
 export const WORKING_TREE_GRAPH_SUPERSEDED_GRACE_MS = 10 * 60_000;
+/**
+ * At most this many graphs per tree (and snapshots per collection — the live
+ * one and one superseded) outlive a publish, whatever their age, unless a
+ * reader or build of THIS process holds one. A burst of edits otherwise piles
+ * up one graph per edit for the whole grace.
+ */
+export const WORKING_TREE_GRAPH_KEPT_PER_TREE = 2;
 const META_FILE = "tree-graph.meta.json";
 const STAGING_MARKER = ".staging-";
+/** `<key>.staging-<pid>-<rand>`: the owner pid is in the name. */
+const STAGING_OWNER = /\.staging-(\d+)-[0-9a-f]+$/;
 /** `GraphDbClient#exportSnapshot` writes `<target>.snapshot-tmp` before its rename. */
 const SNAPSHOT_TEMP_MARKER = ".snapshot-tmp";
 const SNAPSHOT_FILE = /^(.+)-([0-9a-f]{16})\.duckdb$/;
 /** Same rule as the chunk store: a collection name is one path segment, never an escape from the root. */
 const COLLECTION_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+/** Content-hash memo entries kept before the oldest is dropped (the delta itself is capped at 200 files). */
+const CONTENT_HASH_MEMO_LIMIT = 4096;
+/** The digest a changed path that is not a readable regular file contributes. */
+const ABSENT_CONTENT = "absent";
 
 /** The slice of `GraphDbClientPool` the cache reads the base graph through. */
 export interface WorkingTreeGraphBasePool {
   hasDatabase: (physicalCollectionName: PhysicalCollectionName) => boolean;
   pathFor: (physicalCollectionName: PhysicalCollectionName) => string;
   exportSnapshot: (physicalCollectionName: PhysicalCollectionName, targetPath: string) => Promise<void>;
+  /** Whether a reader of this process holds the graph file open (`GraphDbClientPool#isFileReaderOpen`). */
+  isFileReaderOpen?: (dbPath: string) => boolean;
 }
 
 /** What a tree build needs from the running codegraph: the base pool and the provider config the enrichment worker gets. */
@@ -101,7 +129,54 @@ export interface WorkingTreeGraphBuilder {
     input: WorkingTreeGraphBuildInput,
     budget: WorkingTreeGraphBuildBudget,
   ) => Promise<WorkingTreeGraphBuildOutcome>;
+  /** Kill every build child still running, synchronously — the process is exiting. */
+  killInFlight?: () => void;
 }
+
+/**
+ * Where the cache hooks the process's end. `register` runs `onExit`
+ * synchronously when the process exits or is signalled and returns the
+ * unregister; the cache holds a registration only while a build runs.
+ */
+export interface WorkingTreeGraphExitHooks {
+  register: (onExit: () => void) => () => void;
+}
+
+const EXIT_SIGNALS: readonly NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
+
+/**
+ * `exit`, `beforeExit`, `SIGINT`, `SIGTERM`. A signal listener alone would
+ * swallow the signal's default (terminate), so when it is the only listener it
+ * steps aside and re-raises the signal; beside the server's own shutdown
+ * listeners it only cleans up and leaves the exit to them.
+ */
+export const processExitHooks: WorkingTreeGraphExitHooks = {
+  register: (onExit) => {
+    const runOnce = (): void => {
+      try {
+        onExit();
+      } catch {
+        // The process is going away; nothing to report to.
+      }
+    };
+    const onSignal = (signal: NodeJS.Signals): void => {
+      runOnce();
+      if (process.listenerCount(signal) === 1) {
+        unregister();
+        process.kill(process.pid, signal);
+      }
+    };
+    const unregister = (): void => {
+      process.removeListener("exit", runOnce);
+      process.removeListener("beforeExit", runOnce);
+      for (const signal of EXIT_SIGNALS) process.removeListener(signal, onSignal);
+    };
+    process.once("exit", runOnce);
+    process.once("beforeExit", runOnce);
+    for (const signal of EXIT_SIGNALS) process.on(signal, onSignal);
+    return unregister;
+  },
+};
 
 export interface WorkingTreeGraphCacheDeps {
   /** `<appData>/working-tree` — shared with the chunk store; the cache only writes under `<collection>/graph/`. */
@@ -118,6 +193,8 @@ export interface WorkingTreeGraphCacheDeps {
   budget: WorkingTreeGraphBuildBudget;
   failureBackoffMs?: number;
   now?: () => number;
+  /** Defaults to {@link processExitHooks}. */
+  exitHooks?: WorkingTreeGraphExitHooks;
 }
 
 export interface WorkingTreeGraphCacheSweep {
@@ -131,6 +208,13 @@ export interface WorkingTreeGraphCacheSweep {
 interface WorkingTreeGraphMeta {
   treeRoot: string;
   publishedAt: number;
+  /**
+   * When a process last served this graph as the tree's CURRENT one after a
+   * different graph — a revert to bytes already built. Retention orders a
+   * tree's graphs by `max(publishedAt, servedAt)`: a graph re-served is the
+   * tree's newest again, not its oldest. Absent until first re-served.
+   */
+  servedAt?: number;
   physicalCollectionName: string;
   /** The graph file, relative to the key dir. */
   dbRelPath: string;
@@ -142,8 +226,17 @@ interface WorkingTreeGraphJob {
   runtime: WorkingTreeGraphCodegraphRuntime;
   physical: PhysicalCollectionName;
   baseVersion: string;
+  /** Digest of the delta's bytes — see {@link treeGraphKey}. */
+  deltaDigest: string;
   key: string;
   graphDir: string;
+}
+
+/** A build in flight for one key, and whether its builder has answered yet. */
+interface WorkingTreeGraphInflightBuild {
+  promise: Promise<WorkingTreeGraphState>;
+  /** The builder returned (or threw); what is left is publishing or cleanup. */
+  outcomeArrived: boolean;
 }
 
 /** One build attempt's end: published, or failed — and whether its snapshot vanished under it. */
@@ -151,33 +244,60 @@ type WorkingTreeGraphAttempt =
   | { kind: "published"; state: WorkingTreeGraphState }
   | { kind: "failed"; state: WorkingTreeGraphState; snapshotVanished: boolean };
 
+/** One published tree graph, as retention sees it. */
+interface PublishedTreeGraph {
+  dir: string;
+  dbPath: string;
+  /** When the graph last became its tree's current one — {@link activeAtOf}. */
+  activeAt: number;
+}
+
+/** `max(publishedAt, servedAt)`: a graph re-served after another is the tree's newest again. */
+function activeAtOf(meta: WorkingTreeGraphMeta): number {
+  return Math.max(meta.publishedAt, meta.servedAt ?? 0);
+}
+
 const unavailable = (reason: string): WorkingTreeGraphState => ({ kind: "unavailable", reason });
 
 export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
-  private readonly inflight = new Map<string, Promise<WorkingTreeGraphState>>();
+  private readonly inflight = new Map<string, WorkingTreeGraphInflightBuild>();
   private readonly failures = new Map<string, { state: WorkingTreeGraphState; until: number }>();
   private readonly snapshotExports = new Map<string, Promise<void>>();
   /** Snapshots a running build of THIS process reads — never removed under it. */
   private readonly snapshotsInUse = new Map<string, number>();
-  /** Staging dirs THIS process is building into — never swept under it. */
+  /** Staging dirs THIS process is building into — never swept under it, removed at exit. */
   private readonly stagingInUse = new Set<string>();
+  /** `(path, size, mtime, ctime, inode)` → content sha256 of a changed file; see {@link contentHashOf}. */
+  private readonly contentHashes = new Map<string, { stamp: string; sha: string }>();
+  /** Tree root → the key of the graph this process last served or published for it; see {@link markServed}. */
+  private readonly servedKeyByTree = new Map<string, string>();
+  private unregisterExitHook: (() => void) | undefined;
   private readonly now: () => number;
   private readonly failureBackoffMs: number;
+  private readonly exitHooks: WorkingTreeGraphExitHooks;
 
   constructor(private readonly deps: WorkingTreeGraphCacheDeps) {
     this.now = deps.now ?? Date.now;
     this.failureBackoffMs = deps.failureBackoffMs ?? WORKING_TREE_GRAPH_FAILURE_BACKOFF_MS;
+    this.exitHooks = deps.exitHooks ?? processExitHooks;
   }
 
   async graphFor(request: WorkingTreeGraphRequest, waitMs: number): Promise<WorkingTreeGraphState> {
-    const work = this.resolve(request).catch((err: unknown) =>
+    const tracker: { build?: WorkingTreeGraphInflightBuild } = {};
+    const work = this.resolve(request, tracker).catch((err: unknown) =>
       unavailable(`tree graph cache error: ${errorMessage(err)}`),
     );
     let timer: NodeJS.Timeout | undefined;
     const lapse = new Promise<WorkingTreeGraphState>((resolve) => {
       timer = setTimeout(
         () => {
-          resolve(unavailable(WORKING_TREE_GRAPH_BUILDING_REASON));
+          // Let whatever else is due in this turn run first: a build whose
+          // outcome arrived alongside the lapse is only publishing or cleaning
+          // up, and its answer — a timeout's reason, say — beats `building`.
+          setImmediate(() => {
+            const { build } = tracker;
+            resolve(build?.outcomeArrived ? build.promise : unavailable(WORKING_TREE_GRAPH_BUILDING_REASON));
+          }).unref?.();
         },
         Math.max(0, waitMs),
       );
@@ -192,10 +312,11 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
 
   /**
    * Retention, run with the chunk store's cadence: a dead tree's graphs go at
-   * once; per tree only the newest published graph stays; a snapshot whose
-   * base version is no longer the live one goes; staging dirs and snapshot
-   * temp files older than an hour are dead writes. Nothing outside
-   * `<rootDir>/<collection>/graph/` is touched.
+   * once; per tree the superseded graphs go per {@link retiredTreeGraphs}; a
+   * snapshot whose base version is no longer the live one goes per
+   * {@link retireSnapshotsOf}; staging dirs whose owner process is dead go at
+   * once, others and snapshot temp files once older than an hour. Nothing
+   * outside `<rootDir>/<collection>/graph/` is touched.
    */
   async sweep(at: number = this.now()): Promise<WorkingTreeGraphCacheSweep> {
     const result: WorkingTreeGraphCacheSweep = {
@@ -216,7 +337,31 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
     return result;
   }
 
-  private async resolve(request: WorkingTreeGraphRequest): Promise<WorkingTreeGraphState> {
+  /**
+   * The process is exiting: kill the build children still running and remove
+   * this process's staging dirs, synchronously — an `exit` listener cannot
+   * await. A build promise still pending sees its child die and settles as a
+   * failure if the process lives on.
+   */
+  abandonInFlightBuilds(): void {
+    try {
+      this.deps.builder.killInFlight?.();
+    } catch {
+      // A child that cannot be signalled is gone already.
+    }
+    for (const staging of this.stagingInUse) {
+      try {
+        rmSync(staging, { recursive: true, force: true });
+      } catch {
+        // The sweep of the next process collects it: its owner pid is dead.
+      }
+    }
+  }
+
+  private async resolve(
+    request: WorkingTreeGraphRequest,
+    tracker: { build?: WorkingTreeGraphInflightBuild },
+  ): Promise<WorkingTreeGraphState> {
     if (request.changed.length === 0 && request.deleted.length === 0) {
       return unavailable("clean working tree — the base graph is the tree's graph");
     }
@@ -231,7 +376,8 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
     const baseVersion = await baseGraphVersion(runtime.pool.pathFor(physical));
     if (!baseVersion) return unavailable(`base codegraph for ${physical} vanished`);
 
-    const key = treeGraphKey(request, physical, baseVersion);
+    const deltaDigest = await this.deltaContentDigest(request);
+    const key = treeGraphKey(request.tree.root, physical, baseVersion, deltaDigest);
     const failure = this.failures.get(key);
     if (failure) {
       if (failure.until > this.now()) return failure.state;
@@ -244,21 +390,67 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
         runtime,
         physical,
         baseVersion,
+        deltaDigest,
         key,
         graphDir: join(this.deps.rootDir, collectionName, "graph"),
       };
-      build = this.publishOnce(job).finally(() => {
+      const entry: WorkingTreeGraphInflightBuild = {
+        promise: Promise.resolve(unavailable(WORKING_TREE_GRAPH_BUILDING_REASON)),
+        outcomeArrived: false,
+      };
+      entry.promise = this.publishOnce(job, entry).finally(() => {
         this.inflight.delete(key);
       });
-      this.inflight.set(key, build);
+      this.inflight.set(key, entry);
+      build = entry;
     }
-    return build;
+    tracker.build = build;
+    return build.promise;
   }
 
   private async resolvePhysical(collectionName: string): Promise<PhysicalCollectionName> {
     const fallback = (): PhysicalCollectionName => resolvePhysicalCollection(collectionName, []);
     if (!this.deps.resolveActiveCollection) return fallback();
     return this.deps.resolveActiveCollection(collectionName).catch(fallback);
+  }
+
+  /**
+   * The delta's bytes as one digest: sorted `(relativePath, content sha256)` of
+   * the changed files and the sorted deleted paths. Only the changed files are
+   * read (the overlay caps them at 200), each through {@link contentHashOf}.
+   */
+  private async deltaContentDigest(request: WorkingTreeGraphRequest): Promise<string> {
+    const changed = [...new Set(request.changed)].sort();
+    const files = await Promise.all(
+      changed.map(async (relPath) => [relPath, await this.contentHashOf(join(request.tree.root, relPath))]),
+    );
+    const deleted = [...new Set(request.deleted)].sort();
+    return createHash("sha256")
+      .update(JSON.stringify([files, deleted]))
+      .digest("hex");
+  }
+
+  /**
+   * One file's content sha256, memoized by `(size, mtime, ctime, inode)` so a
+   * delta re-asked on every graph call re-reads only the files that moved. A
+   * path that is not a readable regular file contributes {@link ABSENT_CONTENT}.
+   */
+  private async contentHashOf(path: string): Promise<string> {
+    const stat = await fs.stat(path).catch(() => undefined);
+    if (!stat?.isFile()) return ABSENT_CONTENT;
+    const stamp = `${String(stat.size)}:${String(stat.mtimeMs)}:${String(stat.ctimeMs)}:${String(stat.ino)}`;
+    const memo = this.contentHashes.get(path);
+    if (memo?.stamp === stamp) return memo.sha;
+    const content = await fs.readFile(path).catch(() => undefined);
+    if (!content) return ABSENT_CONTENT;
+    const sha = createHash("sha256").update(content).digest("hex");
+    this.contentHashes.delete(path);
+    this.contentHashes.set(path, { stamp, sha });
+    if (this.contentHashes.size > CONTENT_HASH_MEMO_LIMIT) {
+      const oldest = this.contentHashes.keys().next().value;
+      if (oldest !== undefined) this.contentHashes.delete(oldest);
+    }
+    return sha;
   }
 
   /**
@@ -269,8 +461,11 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
    * build retried ONCE before the failure is remembered. Detection is the
    * snapshot path's absence, never the child's message text.
    */
-  private async publishOnce(job: WorkingTreeGraphJob): Promise<WorkingTreeGraphState> {
-    const first = await this.buildAndPublish(job);
+  private async publishOnce(
+    job: WorkingTreeGraphJob,
+    entry: WorkingTreeGraphInflightBuild,
+  ): Promise<WorkingTreeGraphState> {
+    const first = await this.buildAndPublish(job, entry);
     if (first.kind === "published") return first.state;
     if (!first.snapshotVanished) return this.remember(job.key, first.state);
 
@@ -279,22 +474,28 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
     const retry: WorkingTreeGraphJob = {
       ...job,
       baseVersion,
-      key: treeGraphKey(job.request, job.physical, baseVersion),
+      key: treeGraphKey(job.request.tree.root, job.physical, baseVersion, job.deltaDigest),
     };
     const joined = retry.key === job.key ? undefined : this.inflight.get(retry.key);
-    if (joined) return joined;
-    const second = await this.buildAndPublish(retry);
+    if (joined) return joined.promise;
+    const second = await this.buildAndPublish(retry, entry);
     if (second.kind === "published") return second.state;
     if (retry.key !== job.key) this.remember(retry.key, second.state);
     return this.remember(job.key, second.state);
   }
 
   /** One build attempt: publish the graph, or say how it failed and whether its snapshot vanished under it. */
-  private async buildAndPublish(job: WorkingTreeGraphJob): Promise<WorkingTreeGraphAttempt> {
+  private async buildAndPublish(
+    job: WorkingTreeGraphJob,
+    entry: WorkingTreeGraphInflightBuild,
+  ): Promise<WorkingTreeGraphAttempt> {
     const treesDir = join(job.graphDir, "trees");
     const keyDir = join(treesDir, job.key);
     const published = await readPublished(keyDir, job.physical);
-    if (published) return { kind: "published", state: published };
+    if (published) {
+      await this.markServed(keyDir, job).catch(() => undefined);
+      return { kind: "published", state: published };
+    }
 
     const staging = join(
       treesDir,
@@ -306,23 +507,29 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
       state,
       snapshotVanished: snapshotPath !== undefined && !existsSync(snapshotPath),
     });
-    this.stagingInUse.add(staging);
+    entry.outcomeArrived = false;
+    this.trackStaging(staging);
     try {
       snapshotPath = await this.ensureSnapshot(job);
       this.retainSnapshot(snapshotPath, 1);
       await fs.mkdir(staging, { recursive: true });
-      const outcome = await this.deps.builder.build(
-        {
-          snapshotPath,
-          outputRoot: staging,
-          physicalCollectionName: job.physical,
-          treeRoot: job.request.tree.root,
-          changedRelPaths: job.request.changed,
-          deletedRelPaths: job.request.deleted,
-          providerConfig: job.runtime.providerConfig,
-        },
-        this.deps.budget,
-      );
+      let outcome: WorkingTreeGraphBuildOutcome;
+      try {
+        outcome = await this.deps.builder.build(
+          {
+            snapshotPath,
+            outputRoot: staging,
+            physicalCollectionName: job.physical,
+            treeRoot: job.request.tree.root,
+            changedRelPaths: job.request.changed,
+            deletedRelPaths: job.request.deleted,
+            providerConfig: job.runtime.providerConfig,
+          },
+          this.deps.budget,
+        );
+      } finally {
+        entry.outcomeArrived = true;
+      }
       if (outcome.kind !== "built") return failed(unavailable(buildFailureReason(outcome)));
 
       const meta: WorkingTreeGraphMeta = {
@@ -341,16 +548,79 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
         }
       }
       const state = await readPublished(keyDir, job.physical);
-      return state
-        ? { kind: "published", state }
-        : failed(unavailable(`tree graph ${keyDir} was published without a readable graph`));
+      if (!state) return failed(unavailable(`tree graph ${keyDir} was published without a readable graph`));
+      this.servedKeyByTree.set(job.request.tree.root, job.key);
+      await this.retireAfterPublish(job).catch(() => undefined);
+      return { kind: "published", state };
     } catch (err) {
       return failed(unavailable(`tree graph build failed: ${errorMessage(err)}`));
     } finally {
       if (snapshotPath) this.retainSnapshot(snapshotPath, -1);
-      this.stagingInUse.delete(staging);
+      this.untrackStaging(staging);
       await fs.rm(staging, { recursive: true, force: true }).catch(() => undefined);
     }
+  }
+
+  /**
+   * A published graph is served for its tree. When it is not the graph this
+   * process last served for that tree — the tree went back to bytes already
+   * built — its meta records `servedAt`, so retention treats it as the tree's
+   * newest graph again. The meta is replaced by rename, never rewritten in
+   * place: a concurrent reader sees the old record or the new one. Serving the
+   * same graph again writes nothing.
+   */
+  private async markServed(keyDir: string, job: WorkingTreeGraphJob): Promise<void> {
+    const treeRoot = job.request.tree.root;
+    if (this.servedKeyByTree.get(treeRoot) === job.key) return;
+    this.servedKeyByTree.set(treeRoot, job.key);
+    const meta = await readMeta(keyDir);
+    if (!meta) return;
+    const temp = join(keyDir, `${META_FILE}.${String(process.pid)}-${randomBytes(4).toString("hex")}`);
+    await fs.writeFile(temp, JSON.stringify({ ...meta, servedAt: this.now() } satisfies WorkingTreeGraphMeta));
+    await fs.rename(temp, join(keyDir, META_FILE)).catch(async (err: unknown) => {
+      await fs.rm(temp, { force: true });
+      throw err;
+    });
+  }
+
+  /** A staging dir this process builds into; the exit hook is held while there is one. */
+  private trackStaging(staging: string): void {
+    this.stagingInUse.add(staging);
+    this.unregisterExitHook ??= this.exitHooks.register(() => {
+      this.abandonInFlightBuilds();
+    });
+  }
+
+  private untrackStaging(staging: string): void {
+    this.stagingInUse.delete(staging);
+    if (this.stagingInUse.size > 0) return;
+    this.unregisterExitHook?.();
+    this.unregisterExitHook = undefined;
+  }
+
+  /**
+   * After a publish: the published tree's superseded graphs and the
+   * collection's superseded snapshots go per the retention rules, now — a burst
+   * of edits would otherwise pile up until the periodic sweep.
+   */
+  private async retireAfterPublish(job: WorkingTreeGraphJob): Promise<void> {
+    const treesDir = join(job.graphDir, "trees");
+    const graphs: PublishedTreeGraph[] = [];
+    for (const entry of await listDir(treesDir)) {
+      if (!entry.isDirectory || entry.name.includes(STAGING_MARKER)) continue;
+      const dir = join(treesDir, entry.name);
+      const meta = await readMeta(dir);
+      if (meta?.treeRoot !== job.request.tree.root) continue;
+      graphs.push({ dir, dbPath: join(dir, meta.dbRelPath), activeAt: activeAtOf(meta) });
+    }
+    for (const graph of retiredTreeGraphs(graphs, this.now(), (dbPath) => this.isGraphInUse(dbPath))) {
+      await fs.rm(graph.dir, { recursive: true, force: true });
+    }
+    await this.retireSnapshotsOf(join(job.graphDir, "snapshots"), job.physical, job.baseVersion, Date.now());
+  }
+
+  private isGraphInUse(dbPath: string): boolean {
+    return this.deps.codegraph()?.pool.isFileReaderOpen?.(dbPath) ?? false;
   }
 
   private remember(key: string, state: WorkingTreeGraphState): WorkingTreeGraphState {
@@ -360,9 +630,8 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
 
   /**
    * The snapshot of the job's base version, exported once (single-flight per
-   * path). After a fresh export, older versions of the same physical graph are
-   * removed once past the superseded grace — never one a running build of this
-   * process still clones, nor one a build elsewhere may have just picked.
+   * path). After a fresh export, the superseded versions of the same physical
+   * graph are retired ({@link retireSnapshotsOf}).
    */
   private async ensureSnapshot(job: WorkingTreeGraphJob): Promise<string> {
     const snapshotsDir = join(job.graphDir, "snapshots");
@@ -373,14 +642,7 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
       exporting = (async () => {
         await fs.mkdir(snapshotsDir, { recursive: true });
         await job.runtime.pool.exportSnapshot(job.physical, snapshotPath);
-        for (const entry of await listDir(snapshotsDir)) {
-          const parsed = SNAPSHOT_FILE.exec(entry.name);
-          if (parsed?.[1] !== job.physical || parsed[2] === job.baseVersion) continue;
-          const path = join(snapshotsDir, entry.name);
-          if (await isOlderThan(path, Date.now(), WORKING_TREE_GRAPH_SUPERSEDED_GRACE_MS)) {
-            await this.removeSnapshot(path);
-          }
-        }
+        await this.retireSnapshotsOf(snapshotsDir, job.physical, job.baseVersion, Date.now());
       })().finally(() => {
         this.snapshotExports.delete(snapshotPath);
       });
@@ -388,6 +650,37 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
     }
     await exporting;
     return snapshotPath;
+  }
+
+  /**
+   * Retire the superseded snapshots of one physical graph: the live version's
+   * snapshot always stays; of the others, newest first, the first stays until
+   * it is older than the superseded grace (a build in another server may have
+   * just picked it) and every further one goes at once — unless a build of THIS
+   * process reads it. Returns how many were removed.
+   */
+  private async retireSnapshotsOf(
+    snapshotsDir: string,
+    physical: PhysicalCollectionName,
+    liveVersion: string | undefined,
+    at: number,
+  ): Promise<number> {
+    const superseded: { path: string; mtimeMs: number }[] = [];
+    for (const entry of await listDir(snapshotsDir)) {
+      const parsed = SNAPSHOT_FILE.exec(entry.name);
+      if (parsed?.[1] !== physical || parsed[2] === liveVersion) continue;
+      const path = join(snapshotsDir, entry.name);
+      const stat = await fs.stat(path).catch(() => undefined);
+      if (stat) superseded.push({ path, mtimeMs: stat.mtimeMs });
+    }
+    superseded.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    let removed = 0;
+    for (const [rank, snapshot] of superseded.entries()) {
+      const pastGrace = at - snapshot.mtimeMs >= WORKING_TREE_GRAPH_SUPERSEDED_GRACE_MS;
+      if (rank < WORKING_TREE_GRAPH_KEPT_PER_TREE - 1 && !pastGrace) continue;
+      if (await this.removeSnapshot(snapshot.path)) removed++;
+    }
+    return removed;
   }
 
   private retainSnapshot(path: string, delta: 1 | -1): void {
@@ -405,11 +698,12 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
   }
 
   private async sweepTrees(treesDir: string, at: number, result: WorkingTreeGraphCacheSweep): Promise<void> {
-    const graphsPerTree = new Map<string, { dir: string; publishedAt: number }[]>();
+    const graphsPerTree = new Map<string, PublishedTreeGraph[]>();
     for (const entry of await listDir(treesDir)) {
       const dir = join(treesDir, entry.name);
       if (entry.name.includes(STAGING_MARKER)) {
-        if (!this.stagingInUse.has(dir) && (await isOlderThanGrace(dir, at))) {
+        if (this.stagingInUse.has(dir)) continue;
+        if (isOwnerDead(entry.name) || (await isOlderThanGrace(dir, at))) {
           await fs.rm(dir, { recursive: true, force: true });
           result.evictedStaging++;
         }
@@ -432,19 +726,13 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
         continue;
       }
       const graphs = graphsPerTree.get(meta.treeRoot) ?? [];
-      graphs.push({ dir, publishedAt: meta.publishedAt });
+      graphs.push({ dir, dbPath: join(dir, meta.dbRelPath), activeAt: activeAtOf(meta) });
       graphsPerTree.set(meta.treeRoot, graphs);
     }
-    // Per tree the newest graph stays; the others go once the newest has been
-    // published for the superseded grace — a reader in another server may
-    // still hold an older one open until then.
     for (const graphs of graphsPerTree.values()) {
-      graphs.sort((a, b) => b.publishedAt - a.publishedAt);
-      const [newest, ...older] = graphs;
-      const supersededLongEnough = at - newest.publishedAt >= WORKING_TREE_GRAPH_SUPERSEDED_GRACE_MS;
-      result.keptGraphs++;
-      for (const graph of older) {
-        if (!supersededLongEnough) {
+      const retired = new Set(retiredTreeGraphs(graphs, at, (dbPath) => this.isGraphInUse(dbPath)));
+      for (const graph of graphs) {
+        if (!retired.has(graph)) {
           result.keptGraphs++;
           continue;
         }
@@ -456,16 +744,7 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
 
   private async sweepSnapshots(snapshotsDir: string, at: number, result: WorkingTreeGraphCacheSweep): Promise<void> {
     const runtime = this.deps.codegraph();
-    const liveVersions = new Map<string, string | undefined>();
-    const liveVersionOf = async (physical: PhysicalCollectionName): Promise<string | undefined> => {
-      if (!liveVersions.has(physical)) {
-        const live = runtime?.pool.hasDatabase(physical)
-          ? await baseGraphVersion(runtime.pool.pathFor(physical))
-          : undefined;
-        liveVersions.set(physical, live);
-      }
-      return liveVersions.get(physical);
-    };
+    const physicals = new Set<PhysicalCollectionName>();
     for (const entry of await listDir(snapshotsDir)) {
       const path = join(snapshotsDir, entry.name);
       if (entry.name.includes(SNAPSHOT_TEMP_MARKER)) {
@@ -476,13 +755,44 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
         continue;
       }
       const parsed = SNAPSHOT_FILE.exec(entry.name);
-      if (!parsed) continue;
-      const [physical] = physicalCollectionNamesListedByStorage([parsed[1]]);
-      if ((await liveVersionOf(physical)) === parsed[2]) continue;
-      if (!(await isOlderThan(path, at, WORKING_TREE_GRAPH_SUPERSEDED_GRACE_MS))) continue;
-      if (await this.removeSnapshot(path)) result.evictedSnapshots++;
+      if (parsed) physicals.add(physicalCollectionNamesListedByStorage([parsed[1]])[0]);
+    }
+    for (const physical of physicals) {
+      const live = runtime?.pool.hasDatabase(physical)
+        ? await baseGraphVersion(runtime.pool.pathFor(physical))
+        : undefined;
+      result.evictedSnapshots += await this.retireSnapshotsOf(snapshotsDir, physical, live, at);
     }
   }
+}
+
+/**
+ * Which of one tree's published graphs retire at `at`. Ordered by when each
+ * last became the tree's current graph ({@link activeAtOf} — published, or
+ * re-served by a revert), the newest always stays. Each older graph was
+ * SUPERSEDED when the next newer one became current, and its age is counted
+ * from then — not from the newest's, which a burst of edits keeps forever
+ * fresh. It goes once
+ * superseded for {@link WORKING_TREE_GRAPH_SUPERSEDED_GRACE_MS} (a reader in
+ * another server may hold it until then), or at once past the
+ * {@link WORKING_TREE_GRAPH_KEPT_PER_TREE} newest — never while a reader of
+ * this process holds it open.
+ */
+function retiredTreeGraphs(
+  graphs: readonly PublishedTreeGraph[],
+  at: number,
+  isInUse: (dbPath: string) => boolean,
+): PublishedTreeGraph[] {
+  const newestFirst = [...graphs].sort((a, b) => b.activeAt - a.activeAt);
+  const retired: PublishedTreeGraph[] = [];
+  for (let rank = 1; rank < newestFirst.length; rank++) {
+    const graph = newestFirst[rank];
+    const supersededAt = newestFirst[rank - 1].activeAt;
+    const overCap = rank >= WORKING_TREE_GRAPH_KEPT_PER_TREE;
+    const pastGrace = at - supersededAt >= WORKING_TREE_GRAPH_SUPERSEDED_GRACE_MS;
+    if ((overCap || pastGrace) && !isInUse(graph.dbPath)) retired.push(graph);
+  }
+  return retired;
 }
 
 /**
@@ -517,8 +827,21 @@ function buildFailureReason(outcome: Exclude<WorkingTreeGraphBuildOutcome, { kin
 
 /**
  * The base graph's version: a hash of `(size, mtimeMs)` of the `.duckdb` and
- * its `.wal`. Every write moves one of them; a read moves neither. `undefined`
- * when the database file is gone.
+ * its `.wal`. `undefined` when the database file is gone.
+ *
+ * Why stat and not content: hashing a multi-hundred-MB graph per graph call is
+ * the cost this key exists to avoid, and DuckDB moves at least one of the four
+ * numbers on every committed write — a commit appends to the `.wal`, a
+ * checkpoint rewrites the `.duckdb` and truncates or deletes the `.wal`, a
+ * compaction renames a new file in.
+ *
+ * The contract this rests on: a READ never writes either file. Every read path
+ * of the base graph honours it — the graph tools, the reports, `exportSnapshot`
+ * (a `COPY FROM DATABASE` out of the live connection, no checkpoint) and
+ * `review_changes`, whose per-review scratch tables are connection-scoped TEMP
+ * tables (`DuckDbReviewEdgeStore`, bd tea-rags-mcp-xi2r9 D4). A read path that
+ * wrote — a persistent scratch table, a CHECKPOINT on a read — would move the
+ * version and orphan every tree graph and snapshot of the collection.
  */
 async function baseGraphVersion(dbPath: string): Promise<string | undefined> {
   const db = await fs.stat(dbPath).catch(() => undefined);
@@ -535,6 +858,7 @@ async function readMeta(keyDir: string): Promise<WorkingTreeGraphMeta | undefine
     const meta = JSON.parse(await fs.readFile(join(keyDir, META_FILE), "utf8")) as Partial<WorkingTreeGraphMeta>;
     return typeof meta.treeRoot === "string" &&
       typeof meta.publishedAt === "number" &&
+      (meta.servedAt === undefined || typeof meta.servedAt === "number") &&
       typeof meta.physicalCollectionName === "string" &&
       typeof meta.dbRelPath === "string"
       ? (meta as WorkingTreeGraphMeta)
@@ -578,9 +902,37 @@ async function isOlderThan(path: string, at: number, ageMs: number): Promise<boo
   return stat !== undefined && at - stat.mtimeMs >= ageMs;
 }
 
-function treeGraphKey(request: WorkingTreeGraphRequest, physical: PhysicalCollectionName, baseVersion: string): string {
+/**
+ * Whether the process a staging dir names as its owner is gone. This process
+ * is never dead (its own stray staging waits out the grace); a pid that may
+ * not be signalled (`EPERM`) is alive. A recycled pid reads as alive, so the
+ * hour's grace still backs this up.
+ */
+function isOwnerDead(stagingName: string): boolean {
+  const pid = Number(STAGING_OWNER.exec(stagingName)?.[1]);
+  if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid) return false;
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "ESRCH";
+  }
+}
+
+/**
+ * The tree graph's key: the tree root, the physical collection, the base
+ * version and the delta's content digest. The tree root stays in the key so
+ * two trees with byte-identical deltas keep separate graphs — retention is per
+ * tree, and a dead tree's graphs go with it.
+ */
+function treeGraphKey(
+  treeRoot: string,
+  physical: PhysicalCollectionName,
+  baseVersion: string,
+  deltaDigest: string,
+): string {
   return createHash("sha256")
-    .update(JSON.stringify([request.tree.root, request.fingerprint, physical, baseVersion]))
+    .update(JSON.stringify([treeRoot, physical, baseVersion, deltaDigest]))
     .digest("hex");
 }
 

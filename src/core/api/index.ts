@@ -86,6 +86,7 @@ export {
   type WorkingTreeGraphCodegraphRuntime,
 } from "./internal/infra/working-tree-graph-cache.js";
 export { createWorkingTreeDeltaSignalSource } from "./internal/infra/working-tree-delta-signals.js";
+export { createWorkingTreeGitSignalSource } from "./internal/infra/working-tree-git-signals.js";
 export { InputValidationError, CollectionNotProvidedError } from "./errors.js";
 
 // Project registry types re-exported from infra (public surface)

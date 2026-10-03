@@ -21,6 +21,16 @@ export {
   stampToTimestampKey,
 } from "./age-derivation.js";
 export type { GitFileSignals, ChunkChurnOverlay } from "./types.js";
+// Query-time `git.file` / `git.chunk` for working-tree delta rows no base point
+// answers (bd tea-rags-mcp-xi2r9, D12) — ingest's own computation, no run state.
+export {
+  buildOnDemandGitSignals,
+  type OnDemandGitChunkTarget,
+  type OnDemandGitSignalOptions,
+  type OnDemandGitSignals,
+  type OnDemandGitSignalTarget,
+} from "./infra/on-demand-signals.js";
+export type { SquashOptions } from "./infra/metrics.js";
 // Repo-wide history reads shared with the codegraph temporal sub-graph
 // (bd tea-rags-mcp-x4rpp): the run-scoped discovery matrix and its store, the
 // rename-following and merge rules, and the ONE author-session grouping rule.

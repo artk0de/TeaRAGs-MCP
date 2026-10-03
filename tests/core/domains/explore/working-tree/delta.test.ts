@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -169,16 +169,16 @@ describe("WorkingTreeDeltaReader", () => {
     });
   });
 
-  it("should degrade when the delta exceeds the file cap", async () => {
+  // Invariant moved (live D11a): the reader measures every delta, however
+  // large; the cap is the overlay's, applied after the index-time dirty files
+  // fold in, so a degraded marker reports the counts it was measured at.
+  it("should measure a delta over the file cap rather than degrading it", async () => {
     for (let i = 0; i <= WORKING_TREE_DELTA_FILE_CAP; i++) write(`src/bulk/f${i}.ts`, `export const f${i} = ${i};\n`);
 
     const read = await createWorkingTreeDeltaReader().read(tree, indexedCommit, accepts);
 
-    expect(read).toEqual({
-      kind: "degraded",
-      reason: "delta of 201 files over the 200-file cap",
-      remedy: "tea-rags worktree create <name> --from {alias} --path {tree}",
-    });
+    expect(read.kind).toBe("measured");
+    expect(read.kind === "measured" && read.delta.changed.length).toBe(WORKING_TREE_DELTA_FILE_CAP + 1);
   });
 
   it("should not re-read the changes when nothing changed between two reads", async () => {
@@ -206,5 +206,97 @@ describe("WorkingTreeDeltaReader", () => {
     expect(measured(second)).toEqual({ changed: ["src/keep.ts"], deleted: [] });
     if (first.kind !== "measured" || second.kind !== "measured") throw new Error("expected measured reads");
     expect(second.delta.fingerprint).not.toBe(first.delta.fingerprint);
+  });
+});
+
+/**
+ * Rename pairs (bd tea-rags-mcp-xi2r9, D12): the touched set stays exact
+ * (`--no-renames` — a move is its source deleted and its target changed), and
+ * the delta ALSO names which changed path git pairs with which deleted one, so
+ * a moved file's delta rows can inherit the history its old path carries. Git
+ * decides the pairing; every shape a move takes in a tree is driven for real.
+ */
+describe("WorkingTreeDeltaReader rename pairs", () => {
+  let fixture: GitWorkingTreeFixture;
+  let indexedCommit: string;
+  let tree: string;
+  const accepts = (relativePath: string): boolean => relativePath.endsWith(".ts");
+
+  /** 40 distinct lines: enough content for git's similarity to pair an edited move. */
+  const body = (name: string): string =>
+    `${Array.from({ length: 40 }, (_, i) => `export const ${name}${i} = ${i};`).join("\n")}\n`;
+
+  const renamedFrom = (read: WorkingTreeDeltaRead): Record<string, string> => {
+    if (read.kind !== "measured") throw new Error(`expected measured, got degraded: ${read.reason}`);
+    return Object.fromEntries(read.delta.renamedFrom ?? []);
+  };
+
+  beforeEach(() => {
+    fixture = createGitWorkingTreeFixture();
+    indexedCommit = fixture.commit(
+      fixture.mainRoot,
+      { "src/a.ts": body("a"), "src/b.ts": body("b"), "src/c.ts": body("c"), "src/d.ts": body("d") },
+      "A",
+    );
+    tree = fixture.addWorktree("moves");
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  it("should pair a staged git mv", async () => {
+    fixture.git(tree, "mv", "src/a.ts", "src/a2.ts");
+
+    const read = await createWorkingTreeDeltaReader().read(tree, indexedCommit, accepts);
+
+    expect(renamedFrom(read)).toEqual({ "src/a2.ts": "src/a.ts" });
+  });
+
+  it("should pair an unstaged delete with an untracked add of the same content", async () => {
+    renameSync(join(tree, "src/b.ts"), join(tree, "src/b2.ts"));
+
+    const read = await createWorkingTreeDeltaReader().read(tree, indexedCommit, accepts);
+
+    expect(renamedFrom(read)).toEqual({ "src/b2.ts": "src/b.ts" });
+    if (read.kind !== "measured") throw new Error("expected measured");
+    expect([...read.delta.changed]).toEqual(["src/b2.ts"]);
+    expect([...read.delta.deleted]).toEqual(["src/b.ts"]);
+  });
+
+  it("should pair an unstaged move with edits", async () => {
+    renameSync(join(tree, "src/c.ts"), join(tree, "src/c2.ts"));
+    appendFileSync(join(tree, "src/c2.ts"), "export const edited = 1;\nexport const more = 2;\n");
+
+    const read = await createWorkingTreeDeltaReader().read(tree, indexedCommit, accepts);
+
+    expect(renamedFrom(read)).toEqual({ "src/c2.ts": "src/c.ts" });
+  });
+
+  it("should pair a move committed on the branch since the indexed commit", async () => {
+    fixture.git(tree, "mv", "src/d.ts", "src/d2.ts");
+    fixture.git(tree, "commit", "-q", "-m", "move d");
+
+    const read = await createWorkingTreeDeltaReader().read(tree, indexedCommit, accepts);
+
+    expect(renamedFrom(read)).toEqual({ "src/d2.ts": "src/d.ts" });
+  });
+
+  it("should not pair a delete with an unrelated add", async () => {
+    rmSync(join(tree, "src/a.ts"));
+    writeFileSync(join(tree, "src/fresh.ts"), body("fresh"));
+
+    const read = await createWorkingTreeDeltaReader().read(tree, indexedCommit, accepts);
+
+    expect(renamedFrom(read)).toEqual({});
+  });
+
+  it("should leave the repository's own index untouched", async () => {
+    renameSync(join(tree, "src/b.ts"), join(tree, "src/b2.ts"));
+    const before = fixture.git(tree, "status", "--porcelain=v2", "--untracked-files=all");
+
+    await createWorkingTreeDeltaReader().read(tree, indexedCommit, accepts);
+
+    expect(fixture.git(tree, "status", "--porcelain=v2", "--untracked-files=all")).toBe(before);
   });
 });

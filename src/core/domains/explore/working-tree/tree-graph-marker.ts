@@ -9,11 +9,31 @@
  * `codegraph` floor on an answer the tree graph never touched.
  */
 import type {
+  WorkingTreeFloor,
   WorkingTreeGraphReader,
   WorkingTreeGraphState,
   WorkingTreeMarker,
 } from "../../../contracts/types/working-tree.js";
 import type { WorkingTreeView } from "./overlay.js";
+
+/** The order `floors` is listed in, whatever order the reads of one answer claimed them. */
+const FLOOR_ORDER: readonly WorkingTreeFloor[] = ["chunks", "sparse", "codegraph"];
+
+/**
+ * Claim the floors of an answer whose rows the tree's delta rows supplied (live
+ * D8, bd tea-rags-mcp-xi2r9): a floor names a layer that supplied tree data to
+ * THIS answer, so it is claimed by the code that put delta rows into the
+ * answer's candidates — never by reading them (find_similar reads them for a
+ * tree positive's content and answers with base rows only), and never by a
+ * clean tree, which has no rows to supply. The rows carry the tree graph's
+ * codegraph block when it was built, so their graph provenance is recorded
+ * here too. Call after `readDeltaChunks` resolved.
+ */
+export function claimWorkingTreeFloors(view: WorkingTreeView, floors: readonly WorkingTreeFloor[]): void {
+  const claimed = new Set([...view.marker.floors, ...floors]);
+  view.marker.floors = FLOOR_ORDER.filter((floor) => claimed.has(floor));
+  if (view.deltaRowsTreeGraph) recordTreeGraphState(view.marker, view.deltaRowsTreeGraph);
+}
 
 /**
  * `built` → `floors` gains `"codegraph"` and any earlier unavailability is

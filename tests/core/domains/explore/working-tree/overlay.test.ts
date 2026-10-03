@@ -160,6 +160,23 @@ describe("WorkingTreeOverlay", { timeout: 60_000 }, () => {
       expect(view.marker.degraded?.remedy).toBe("tea-rags index-codebase --project proj");
       expect(view.touchedPaths.size).toBe(0);
     });
+
+    // Live D11a: over the cap the delta WAS measured — `0` beside `degraded`
+    // read as "measured and empty". The counts are reported; nothing is touched.
+    it("should report the measured counts of a delta the index-time dirty files push over the cap", async () => {
+      const changed = Array.from({ length: 150 }, (_, i) => `src/c${i}.ts`);
+      const dirtyGone = Array.from({ length: 60 }, (_, i) => `src/gone${i}.ts`);
+      record({ indexedCommit, indexedDirty: true, indexedDirtyPaths: dirtyGone });
+      const reader: WorkingTreeDeltaReader = {
+        read: async () => ({ kind: "measured", delta: { changed, deleted: [], fingerprint: "fp" } }),
+      };
+
+      const view = await overlayWith(reader).view(workingTree(), "proj");
+
+      expect(view.marker).toMatchObject({ changedFiles: 150, deletedFiles: 60 });
+      expect(view.marker.degraded?.reason).toBe("delta of 210 files over the 200-file cap");
+      expect(view.touchedPaths.size).toBe(0);
+    });
   });
 
   it("should measure a tree whose index is registered at a subdirectory (live P2-2)", async () => {

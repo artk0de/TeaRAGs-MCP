@@ -55,8 +55,23 @@ const HEAP_EXHAUSTED_PATTERN = /heap out of memory|Reached heap limit/i;
 const SIGABRT_EXIT_CODE = 134;
 
 export class WorkingTreeGraphProcessBuilder {
+  /** Children forked and not yet closed — what {@link killInFlight} reaps. */
+  private readonly running = new Set<ChildProcess>();
+
   /** @param entryPath The compiled child entry; tests may point it elsewhere. */
   constructor(private readonly entryPath: string = TREE_GRAPH_ENTRY_PATH) {}
+
+  /**
+   * SIGKILL every child still running, synchronously — for a process that is
+   * exiting (bd tea-rags-mcp-xi2r9, D6): an abandoned build would otherwise
+   * finish into a staging dir nobody publishes. Each killed build settles as
+   * `failed` on its child's `close`, like any death without a reply.
+   */
+  killInFlight(): void {
+    for (const child of this.running) {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    }
+  }
 
   /**
    * Fork one tree build and wait for the child to exit. The promise settles on
@@ -87,6 +102,7 @@ export class WorkingTreeGraphProcessBuilder {
         resolve({ kind: "failed", reason: `tree-graph fork failed: ${(err as Error).message}` });
         return;
       }
+      this.running.add(child);
 
       let reply: WorkingTreeGraphEntryReply | undefined;
       let timedOut = false;
@@ -110,6 +126,7 @@ export class WorkingTreeGraphProcessBuilder {
       }, budget.timeoutMs);
       child.once("close", (code: number | null, signal: NodeJS.Signals | null) => {
         clearTimeout(timer);
+        this.running.delete(child);
         resolve(classifyExit({ budget, reply, timedOut, processError, stderrTail, code, signal }));
       });
       child.send(request, (err) => {

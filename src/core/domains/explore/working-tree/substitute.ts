@@ -57,6 +57,36 @@ export function retargetWorkingTreeRows<R extends { payload?: Record<string, unk
   });
 }
 
+/**
+ * The tree's row of one symbol in one file (live D2): its delta row, or its
+ * `#partN` windows merged into one — the first window's payload, the symbol's
+ * own id, and the lines from the first window's start to the last one's end.
+ * Undefined when the tree has no row of that symbol there. Pure.
+ */
+export function mergedWorkingTreeSymbolRow(
+  deltaRows: readonly ScrollChunk[],
+  relativePath: string,
+  symbolId: string,
+): ScrollChunk | undefined {
+  const parts = deltaRows
+    .filter((row) => relativePathOf(row.payload) === relativePath && symbolFamilyOf(row.payload) === symbolId)
+    .sort((a, b) => lineOf(a.payload.startLine) - lineOf(b.payload.startLine));
+  if (parts.length <= 1) return parts[0];
+  const ends = parts.map((part) => part.payload.endLine).filter((end): end is number => typeof end === "number");
+  return {
+    id: parts[0].id,
+    payload: {
+      ...parts[0].payload,
+      symbolId,
+      ...(ends.length > 0 ? { endLine: Math.max(...ends) } : {}),
+    },
+  };
+}
+
+function lineOf(value: unknown): number {
+  return typeof value === "number" ? value : Number.POSITIVE_INFINITY;
+}
+
 /** How a base row of `relativePath` differs from the tree; undefined when the tree did not touch it. */
 export function workingTreeStateOf(
   view: WorkingTreeView,

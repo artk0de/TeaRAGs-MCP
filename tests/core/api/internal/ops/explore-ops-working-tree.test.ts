@@ -275,6 +275,68 @@ describe("ExploreOps working-tree floors (bd tea-rags-mcp-xi2r9.3)", () => {
 
     expect(response.workingTree?.floors).toEqual(["chunks", "sparse", "codegraph"]);
   });
+
+  // Live D8 (bd tea-rags-mcp-xi2r9): a floor names a layer that supplied tree
+  // data to THIS answer. Invariant changed: the operation no longer declares
+  // its floors up front — a clean tree supplied nothing, so it claims nothing.
+  describe("floors claimed only by tree data that reached the answer (D8)", () => {
+    const BUILT_GRAPH = { kind: "built", dbPath: "/g.duckdb", physicalCollectionName: "code_x_v1" } as const;
+
+    /** A measured, EMPTY delta with a chunk layer wired: nothing to substitute. */
+    const cleanView = (): WorkingTreeView => {
+      const view: WorkingTreeView = {
+        marker: { ...MARKER, changedFiles: 0, deletedFiles: 0 },
+        touchedPaths: new Set(),
+        deletedPaths: new Set(),
+      };
+      view.readDeltaChunks = async () => [];
+      return view;
+    };
+
+    /** Delta rows whose codegraph block came from the built tree graph. */
+    const treeGraphView = (): WorkingTreeView => {
+      const view = chunkedView([TREE_ROW]);
+      const read = view.readDeltaChunks;
+      view.readDeltaChunks = async () => {
+        view.deltaRowsTreeGraph = BUILT_GRAPH as never;
+        return read ? read() : [];
+      };
+      return view;
+    };
+
+    const calls = {
+      find_symbol: async (f: ExploreFacade) => f.findSymbol({ collection: "code_x", symbol: "tree" }),
+      find_symbol_outline: async (f: ExploreFacade) => f.findSymbol({ collection: "code_x", relativePath: "src/a.ts" }),
+      hybrid_search: async (f: ExploreFacade) => f.hybridSearch({ collection: "code_x", query: "tree" }),
+      semantic_search: async (f: ExploreFacade) => f.semanticSearch({ collection: "code_x", query: "tree" }),
+      rank_chunks: async (f: ExploreFacade) => f.rankChunks({ collection: "code_x", rerank: "techDebt" }),
+      find_similar: async (f: ExploreFacade) => f.findSimilar({ collection: "code_x", positiveIds: ["1"] }),
+    } as const;
+
+    for (const [tool, call] of Object.entries(calls)) {
+      it(`should report no floor on a clean tree's ${tool} answer`, async () => {
+        const response = await call(makeFacade([HIT], cleanView()));
+
+        expect(response.workingTree?.floors).toEqual([]);
+      });
+    }
+
+    it("should not claim codegraph on find_similar, which reads delta rows only for a tree positive's content", async () => {
+      const response = await makeFacade([HIT], treeGraphView()).findSimilar({
+        collection: "code_x",
+        positiveIds: ["t"],
+      });
+
+      expect(response.workingTree?.floors).toEqual([]);
+      expect(response.workingTree?.treeGraphUnavailable).toBeUndefined();
+    });
+
+    it("should claim codegraph beside the chunk floors when the enriched delta rows were candidates", async () => {
+      const response = await makeFacade([HIT], treeGraphView()).hybridSearch({ collection: "code_x", query: "tree" });
+
+      expect(response.workingTree?.floors).toEqual(["chunks", "sparse", "codegraph"]);
+    });
+  });
 });
 
 describe("ExploreOps drift check reads the INDEX root, never the tree", { timeout: 60_000 }, () => {
@@ -337,5 +399,28 @@ describe("ExploreOps drift check reads the INDEX root, never the tree", { timeou
 
     expect(driftReporter.checkAndConsume).toHaveBeenCalledWith(fixture.mainRoot);
     expect(driftReporter.checkAndConsume).not.toHaveBeenCalledWith(tree);
+  });
+
+  // Live D10: a read tool handed a worktree path answers for its base index.
+  describe("workingTreeIndexOf (D10)", () => {
+    it("should name the base index a linked worktree is read against, with the tree's marker", async () => {
+      const target = await makeFacade(makeDriftReporter()).workingTreeIndexOf(tree);
+
+      expect(target?.indexPath).toBe(fixture.mainRoot);
+      expect(target?.workingTree).toEqual(MARKER);
+    });
+
+    it("should name nothing for the index's own checkout", async () => {
+      expect(await makeFacade(makeDriftReporter()).workingTreeIndexOf(fixture.mainRoot)).toBeUndefined();
+    });
+
+    it("should name nothing for a path no registered index covers", async () => {
+      const elsewhere = mkdtempSync(join(tmpdir(), "explore-wt-unindexed-"));
+      try {
+        expect(await makeFacade(makeDriftReporter()).workingTreeIndexOf(elsewhere)).toBeUndefined();
+      } finally {
+        rmSync(elsewhere, { recursive: true, force: true });
+      }
+    });
   });
 });

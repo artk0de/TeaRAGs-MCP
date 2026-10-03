@@ -12,13 +12,20 @@
  * read itself: the request carries the view's touched-base-point read
  * (`readTouchedBasePoints`), the one read hybrid's exclusion shares.
  *
- * - **git** — `git.file` is inherited from the base points of the same file:
- *   an uncommitted edit has no history of its own, the file's history is the
- *   base's. `git.chunk` comes from the base point of the same symbol — the
- *   exact id first, else the symbol's family (`#partN` stripped) or its first
- *   part — and is absent for a symbol the base never had, where the reranker's
- *   alpha blend falls back to the file value. A file the base never had (new,
- *   untracked) has no base point and gets no git block.
+ * - **git** — `git.file` is inherited from the base points of the file's
+ *   HISTORY path: an uncommitted edit has no history of its own, the file's
+ *   history is the base's. The history path is the file's own, or for a file
+ *   moved in the tree (`renamedFrom`) its OLD path (D12). `git.chunk` comes
+ *   from the base point of the same symbol — the exact id first, else the
+ *   symbol's family (`#partN` stripped) or its first part. What no base point
+ *   answers the git trajectory computes on demand (`gitSignals`, D12):
+ *   `git.file` of a history path the base never chunked (below the chunk
+ *   floor, committed after the index), `git.chunk` of a row whose symbol the
+ *   base never held — attributed over the row's TREE lines, where lines the
+ *   working file added hold no history. A brand-new symbol is all such lines:
+ *   it gets no chunk block, and the reranker's alpha blend falls back to the
+ *   file value (by design, not a gap). An untracked file never committed has
+ *   no history and gets no git block.
  * - **codegraph** — the tree graph, when `readTreeGraph` answers `built` within
  *   {@link WORKING_TREE_SEARCH_GRAPH_WAIT_MS}: file signals by
  *   `buildCodegraphFileSignals` over the tree's file metrics and fan-in p95,
@@ -45,6 +52,9 @@ import type {
   WorkingTreeDeltaSignalRequest,
   WorkingTreeDeltaSignalResult,
   WorkingTreeDeltaSignalSource,
+  WorkingTreeGitSignals,
+  WorkingTreeGitSignalSource,
+  WorkingTreeGitSignalTarget,
   WorkingTreeGraphState,
 } from "../../../contracts/types/working-tree.js";
 import {
@@ -72,6 +82,23 @@ export interface WorkingTreeDeltaSignalSourceDeps {
    * and a `built` state (which then cannot happen) inherits.
    */
   graphFiles: () => WorkingTreeGraphFileOpener | undefined;
+  /**
+   * The git trajectory's on-demand `git.file` / `git.chunk`, for what no base
+   * point (of the history path) answers. Absent → such rows keep only what
+   * they inherit.
+   */
+  gitSignals?: WorkingTreeGitSignalSource;
+}
+
+/** The touched files' base payload by path, and whether the base index carries git at all. */
+interface BasePayload {
+  byFile: Map<string, BaseFilePayload>;
+  /**
+   * `false` only on evidence: base points were read and none carries
+   * `git.file` — an index built with git off, whose delta rows must not grow a
+   * git block the rest of the collection lacks.
+   */
+  carriesGit: boolean;
 }
 
 /** The base payload of one file: its file blocks and its points by symbolId. */
@@ -116,24 +143,29 @@ export function createWorkingTreeDeltaSignalSource(
     enrich: async (request: WorkingTreeDeltaSignalRequest): Promise<WorkingTreeDeltaSignalResult> => {
       const paths = [...new Set(request.rows.map((row) => pathOf(row.payload)).filter((p) => p !== ""))].sort();
       if (paths.length === 0) return { rows: [...request.rows] };
-      const base = await groupBasePayload(request, paths);
+      const historyPathOf = (path: string): string => request.renamedFrom?.get(path) ?? path;
+      const base = await groupBasePayload(request, [...new Set(paths.map(historyPathOf))]);
 
-      let treeGraph: WorkingTreeGraphState | undefined;
-      let tree: TreeGraphSignals | undefined;
-      if (request.readTreeGraph) {
-        treeGraph = await request.readTreeGraph(WORKING_TREE_SEARCH_GRAPH_WAIT_MS);
+      const readTree = async (): Promise<{ treeGraph?: WorkingTreeGraphState; tree?: TreeGraphSignals }> => {
+        if (!request.readTreeGraph) return {};
+        const treeGraph = await request.readTreeGraph(WORKING_TREE_SEARCH_GRAPH_WAIT_MS);
         const opener = deps.graphFiles();
-        if (treeGraph.kind === "built" && !opener) treeGraph = { kind: "unavailable", reason: "codegraph is disabled" };
-        if (treeGraph.kind === "built" && opener) {
-          try {
-            tree = await readTreeSignals(opener, treeGraph.dbPath, paths);
-          } catch (error) {
-            treeGraph = { kind: "unavailable", reason: `tree graph unreadable: ${messageOf(error)}` };
-          }
+        if (treeGraph.kind !== "built") return { treeGraph };
+        if (!opener) return { treeGraph: { kind: "unavailable", reason: "codegraph is disabled" } };
+        try {
+          return { treeGraph, tree: await readTreeSignals(opener, treeGraph.dbPath, paths) };
+        } catch (error) {
+          return { treeGraph: { kind: "unavailable", reason: `tree graph unreadable: ${messageOf(error)}` } };
         }
-      }
+      };
+      const [{ treeGraph, tree }, onDemandGit] = await Promise.all([
+        readTree(),
+        readOnDemandGit(deps.gitSignals, request, base, historyPathOf),
+      ]);
 
-      const rows = request.rows.map((row) => enrichRow(row, base, tree));
+      const rows = request.rows.map((row) =>
+        enrichRow(row, base.byFile, tree, historyPathOf(pathOf(row.payload)), onDemandGit),
+      );
       return treeGraph ? { rows, treeGraph } : { rows };
     },
   };
@@ -143,14 +175,16 @@ export function createWorkingTreeDeltaSignalSource(
  * The delta files' base payload, from the view's touched-base-point read — the
  * one hybrid's exclusion shares, read per path and cached per index revision
  * (bd tea-rags-mcp-xi2r9: a multi-path `relativePath` scroll here cost 4.5 s on
- * every request at 137 delta files). No reader → nothing to inherit.
+ * every request at 137 delta files). `paths` are HISTORY paths: a renamed
+ * file's old path, which the touched set holds as deleted. No reader → nothing
+ * to inherit.
  */
 async function groupBasePayload(
   request: WorkingTreeDeltaSignalRequest,
   paths: readonly string[],
-): Promise<Map<string, BaseFilePayload>> {
+): Promise<BasePayload> {
   const byFile = new Map<string, BaseFilePayload>();
-  if (!request.readTouchedBasePoints) return byFile;
+  if (!request.readTouchedBasePoints) return { byFile, carriesGit: true };
   const touched = await request.readTouchedBasePoints();
   for (const path of paths) {
     for (const { payload } of touched.get(path) ?? []) {
@@ -163,7 +197,57 @@ async function groupBasePayload(
       addBasePoint(file, payload);
     }
   }
-  return byFile;
+  let sawPoint = false;
+  for (const points of touched.values()) {
+    for (const { payload } of points) {
+      if (blockAt(payload, ["git", "file"])) return { byFile, carriesGit: true };
+      sawPoint = true;
+    }
+  }
+  return { byFile, carriesGit: !sawPoint };
+}
+
+/**
+ * Git signals computed on demand for what no base point answers (D12):
+ * `git.file` of a history path the base never chunked (below the chunk floor,
+ * committed after the index, a move whose old path it never chunked), and
+ * `git.chunk` of a row no base point of the same symbol answers — inheritance
+ * stays wherever one does. Asked once per request, in the rows' TREE lines;
+ * an index without git asks nothing. A failure answers nothing.
+ */
+async function readOnDemandGit(
+  source: WorkingTreeGitSignalSource | undefined,
+  request: WorkingTreeDeltaSignalRequest,
+  base: BasePayload,
+  historyPathOf: (path: string) => string,
+): Promise<ReadonlyMap<string, WorkingTreeGitSignals>> {
+  if (!source || !base.carriesGit) return new Map();
+  const targets = new Map<
+    string,
+    WorkingTreeGitSignalTarget & { chunks: WorkingTreeGitSignalTarget["chunks"][number][] }
+  >();
+  for (const { id, payload } of request.rows) {
+    const path = pathOf(payload);
+    if (path === "") continue;
+    const historyPath = historyPathOf(path);
+    const historyFile = base.byFile.get(historyPath);
+    const wantFile = !historyFile?.gitFile;
+    const { startLine, endLine } = payload;
+    const hasLines = typeof startLine === "number" && typeof endLine === "number";
+    const wantChunk = hasLines && !(historyFile && basePointOf(historyFile, payload.symbolId));
+    if (!wantFile && !wantChunk) continue;
+    let target = targets.get(historyPath);
+    if (!target) {
+      target = { relativePath: historyPath, treePath: path, maxEndLine: 0, fileSignals: wantFile, chunks: [] };
+      targets.set(historyPath, target);
+    }
+    if (hasLines) {
+      target.maxEndLine = Math.max(target.maxEndLine, endLine);
+      if (wantChunk) target.chunks.push({ key: String(id), startLine, endLine });
+    }
+  }
+  if (targets.size === 0) return new Map();
+  return source.signalsOf(request.tree.root, [...targets.values()]).catch(() => new Map());
 }
 
 /** Folds one base point into its file: the first file blocks seen, the first point per symbolId. */
@@ -210,15 +294,23 @@ function enrichRow(
   row: WorkingTreeDeltaRow,
   base: ReadonlyMap<string, BaseFilePayload>,
   tree: TreeGraphSignals | undefined,
+  historyPath: string,
+  onDemandGit: ReadonlyMap<string, WorkingTreeGitSignals>,
 ): WorkingTreeDeltaRow {
   const path = pathOf(row.payload);
   const file = base.get(path);
   const basePoint = file ? basePointOf(file, row.payload.symbolId) : undefined;
   const payload: Record<string, unknown> = { ...row.payload };
 
-  if (file?.gitFile) {
-    const gitChunk = basePoint ? blockAt(basePoint, ["git", "chunk"]) : undefined;
-    payload.git = { file: file.gitFile, ...(gitChunk ? { chunk: gitChunk } : {}) };
+  // git follows the file's HISTORY path — its own, or the old path of a move.
+  // A base point answers first; what none answers was computed on demand.
+  const historyFile = base.get(historyPath);
+  const onDemand = onDemandGit.get(historyPath);
+  const gitFile = historyFile?.gitFile ?? onDemand?.file;
+  if (gitFile) {
+    const historyPoint = historyFile?.gitFile ? basePointOf(historyFile, row.payload.symbolId) : undefined;
+    const gitChunk = historyPoint ? blockAt(historyPoint, ["git", "chunk"]) : onDemand?.chunks.get(String(row.id));
+    payload.git = { file: gitFile, ...(gitChunk ? { chunk: gitChunk } : {}) };
   }
 
   const treeFile = tree?.fileSignals.get(path);

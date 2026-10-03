@@ -30,6 +30,7 @@ import { join } from "node:path";
 import { splitMethodSymbol } from "../../../adapters/duckdb/client.js";
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type {
+  PersistedSymbolLineRanges,
   RelPath,
   SymbolChunkLocation,
   SymbolId,
@@ -218,14 +219,21 @@ export class GraphFacade {
     addr: GraphAddressing,
     fn: (handle: CollectionGraphHandle) => Promise<T>,
     fallback: T,
+    graph: "tree" | "index" = "tree",
   ): Promise<T & { workingTree?: WorkingTreeMarker }> {
     const workingTree = resolveWorkingTree(this.deps.collectionRegistry, addr);
     const view = await this.deps.workingTreeOverlay?.view(workingTree, addr.project);
-    const tree = await readWorkingTreeGraph(view?.readTreeGraph, this.deps.pool, fn);
+    // `index`: the answer is a property of the INDEX's history, which a working
+    // tree adds nothing to — the tree graph is never asked, and the marker
+    // claims no floor and names no unavailability (live D9).
+    const tree =
+      graph === "tree"
+        ? await readWorkingTreeGraph(view?.readTreeGraph, this.deps.pool, fn)
+        : ({ kind: "base" } as const);
     const result =
       tree.kind === "tree" ? tree.value : await this.readGraph(workingTree.baseIndex.collectionName, fn, fallback);
     if (!view) return result;
-    if (tree.state) recordTreeGraphState(view.marker, tree.state);
+    if ("state" in tree && tree.state) recordTreeGraphState(view.marker, tree.state);
     return { ...result, workingTree: view.marker };
   }
 
@@ -349,6 +357,23 @@ export class GraphFacade {
   }
 
   /**
+   * The tree graph's symbol line ranges of `relPaths`, for find_symbol to place
+   * a collapsed symbol of a changed file on the tree's rows (live D1). Read
+   * from the TREE graph only: `null` when it is not built — the index graph's
+   * ranges of a changed file describe another commit.
+   */
+  async readTreeSymbolLineRanges(
+    addr: GraphAddressing,
+    relPaths: readonly RelPath[],
+    readTreeGraph: WorkingTreeGraphReader,
+  ): Promise<ReadonlyMap<RelPath, PersistedSymbolLineRanges> | null> {
+    const tree = await readWorkingTreeGraph(readTreeGraph, this.deps.pool, async (handle) =>
+      handle.graphDb.getSymbolLineRangesBulk(relPaths),
+    );
+    return tree.kind === "tree" ? tree.value : null;
+  }
+
+  /**
    * Raw declared-visibility rows for the find_symbol outline (bd
    * tea-rags-mcp-sqqkz). Keeps `withReadHandle`'s contract — throws when a graph
    * exists but cannot be read, `[]` when there is none — and leaves degrading to
@@ -387,16 +412,19 @@ export class GraphFacade {
    * temporal sub-graph. The addressed project's root becomes the liveness
    * predicate: a partner deleted from the working tree after the last build
    * never surfaces. The guard applies to partners only — a queried file's own
-   * history stays answerable even when the file itself is gone.
+   * history stays answerable even when the file itself is gone. Co-change is
+   * commit history, so it reads the index's graph whatever the tree holds, and
+   * carries the `workingTree` marker naming the tree it answered beside (D9).
    */
   async findCoChanged(req: FindCoChangedRequest): Promise<FindCoChangedResult> {
     if (req.files.length === 0) throw new MissingArgumentError(["files"]);
     const { path } = resolveCollection(this.deps.collectionRegistry, req);
     const pathExists = path ? (relPath: RelPath) => existsSync(join(path, relPath)) : undefined;
-    return this.withReadHandle(
+    return this.withMarkedReadHandle(
       req,
       async (handle) => this.cochange.find(handle.graphDb, req, pathExists),
       CochangeOps.empty(req.files.map(normalizeRelativePath)),
+      "index",
     );
   }
 

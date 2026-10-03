@@ -12,7 +12,7 @@ import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { InvalidQueryError } from "../errors.js";
-import { relativePathOf } from "../working-tree/index.js";
+import { claimWorkingTreeFloors, relativePathOf } from "../working-tree/index.js";
 import { excludeWorkingTreeBaseIds, fuseWorkingTreeRows, scoreWorkingTreeRows } from "../working-tree/sparse-floor.js";
 import { touchedBasePointIds, WorkingTreeTouchedBasePoints } from "../working-tree/touched-base-points.js";
 import { BaseExploreStrategy } from "./base.js";
@@ -124,6 +124,8 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
   private async readWorkingTreeRows(ctx: ExploreContext): Promise<readonly ScrollChunk[] | undefined> {
     const view = ctx.workingTreeView;
     if (!view?.readDeltaChunks || view.touchedPaths.size === 0) return undefined;
-    return view.readDeltaChunks();
+    const rows = await view.readDeltaChunks();
+    claimWorkingTreeFloors(view, ["chunks", "sparse"]);
+    return rows;
   }
 }

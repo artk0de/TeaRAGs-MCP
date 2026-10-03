@@ -19,6 +19,7 @@ import type {
   WorkingTreeGraphState,
 } from "../../../../../src/core/contracts/types/working-tree.js";
 import {
+  claimWorkingTreeFloors,
   createWorkingTreeChunkLayer,
   WorkingTreeOverlay,
   type WorkingTreeDeltaReader,
@@ -157,7 +158,11 @@ describe("WorkingTreeOverlay tree graph (WTO-7)", () => {
       await chunkLayer.dispose();
     });
 
-    it("should add the codegraph floor when the rows' graph data came from the tree graph", async () => {
+    // Invariant changed (live D8): READING the rows claims nothing — find_similar
+    // reads them only for a tree positive's content and answers with base rows.
+    // The strategy that puts the rows into its answer claims the floors, and
+    // only then does the rows' graph provenance reach the marker.
+    it("should add the codegraph floor when rows claimed into an answer carry the tree graph's data", async () => {
       const chunkLayer = layer();
       const view = await overlayWith(deltaReader(["src/a.ts"]), {
         treeGraph: graphSource(),
@@ -166,13 +171,15 @@ describe("WorkingTreeOverlay tree graph (WTO-7)", () => {
       }).view(workingTree(), "proj");
 
       await view.readDeltaChunks?.();
+      expect(view.marker.floors).toEqual([]);
+      claimWorkingTreeFloors(view, ["chunks"]);
 
-      expect(view.marker.floors).toEqual(["codegraph"]);
+      expect(view.marker.floors).toEqual(["chunks", "codegraph"]);
       expect(view.marker.treeGraphUnavailable).toBeUndefined();
       await chunkLayer.dispose();
     });
 
-    it("should name why the rows inherited the index's graph data", async () => {
+    it("should name why claimed rows inherited the index's graph data", async () => {
       const chunkLayer = layer();
       const view = await overlayWith(deltaReader(["src/a.ts"]), {
         treeGraph: graphSource(),
@@ -181,8 +188,10 @@ describe("WorkingTreeOverlay tree graph (WTO-7)", () => {
       }).view(workingTree(), "proj");
 
       await view.readDeltaChunks?.();
+      expect(view.marker.treeGraphUnavailable).toBeUndefined();
+      claimWorkingTreeFloors(view, ["chunks", "sparse"]);
 
-      expect(view.marker.floors).toEqual([]);
+      expect(view.marker.floors).toEqual(["chunks", "sparse"]);
       expect(view.marker.treeGraphUnavailable).toBe("building");
       await chunkLayer.dispose();
     });

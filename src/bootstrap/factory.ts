@@ -31,6 +31,7 @@ import {
   createNamingReviewExtractor,
   createPathCollectionResolver,
   createWorkingTreeDeltaSignalSource,
+  createWorkingTreeGitSignalSource,
   ExploreFacade,
   GraphFacade,
   IngestFacade,
@@ -333,6 +334,15 @@ async function resolveInfrastructure(
   return { qdrant, embeddings, modelGuard, embeddedRelease };
 }
 
+/** Squash-aware session grouping for git `commitCount`, shared by ingest and the working tree's on-demand reads. */
+function gitSquashOptionsOf(
+  trajectoryConfig: AppConfig["trajectoryIngest"],
+): { squashAwareSessions: boolean; sessionGapMinutes: number } | undefined {
+  return trajectoryConfig.squashAwareSessions
+    ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }
+    : undefined;
+}
+
 function wireComposition(
   zodConfig: ReturnType<typeof getZodConfig>,
   trajectoryConfig: AppConfig["trajectoryIngest"],
@@ -342,9 +352,7 @@ function wireComposition(
   // fully-configured GitEnrichmentProvider via getAllEnrichmentProviders().
   // IngestFacade no longer constructs git inline — single source of truth is
   // the registry.
-  const squashOpts = trajectoryConfig.squashAwareSessions
-    ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }
-    : undefined;
+  const squashOpts = gitSquashOptionsOf(trajectoryConfig);
   // Git enrichment DISPATCH runs INLINE (no workerDescriptor) — WorkerPoolEnrichmentExecutor
   // detects the missing descriptor and falls through to InlineEnrichmentExecutor,
   // which calls provider.buildFileSignals/buildChunkSignals directly in-process on
@@ -1232,6 +1240,25 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     // from the tree graph. The pool is late-bound like the cache's runtime.
     deltaSignals: createWorkingTreeDeltaSignalSource({
       graphFiles: () => codegraphContext?.pool,
+      // D12: what no base point answers — `git.file` of a file the base never
+      // chunked, `git.chunk` of a symbol it never held — comes from the git
+      // trajectory's own computation, configured as ingest's; absent when git
+      // enrichment is off.
+      ...(config.trajectoryIngest.enableGitMetadata
+        ? {
+            gitSignals: createWorkingTreeGitSignalSource({
+              vcsAdapter: zodConfig.vcs.adapter,
+              timeoutMs: zodConfig.trajectoryGit.logTimeoutMs,
+              squashOpts: gitSquashOptionsOf(config.trajectoryIngest),
+              chunk: {
+                maxAgeMonths: zodConfig.trajectoryGit.chunkMaxAgeMonths,
+                timeoutMs: zodConfig.trajectoryGit.chunkTimeoutMs,
+                maxFileLines: zodConfig.trajectoryGit.chunkMaxFileLines,
+                concurrency: zodConfig.trajectoryGit.chunkConcurrency,
+              },
+            }),
+          }
+        : {}),
     }),
     // The touched files' base points, read per path and cached per index
     // revision and touched set; each view reads them once and shares the read
@@ -1280,6 +1307,8 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
         collectionRegistry,
         resolveActiveCollection,
         languages: ontologyLanguageProfiles(),
+        // Reads the tree graph's identifiers and carries the marker (bd tea-rags-mcp-xi2r9, D9).
+        workingTreeOverlay,
       })
     : undefined;
 
@@ -1541,6 +1570,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     embeddings: infra.embeddings,
     ingest,
     ingestForPath: (path) => projectIngestFactory.forPath(path),
+    workingTreeIndexOf: async (path) => explore.workingTreeIndexOf(path),
     explore,
     reranker: composition.reranker,
     driftReporter,
@@ -1568,6 +1598,10 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     registryWatchStop();
     stopWorkingTreeChunkSweep();
     stopWorkingTreeGraphSweep();
+    // Shutdown abandons in-flight tree-graph builds: kill the children, drop
+    // this process's staging dirs (bd tea-rags-mcp-xi2r9, D6). The cache also
+    // holds an exit hook while a build runs, for processes that never call this.
+    workingTreeGraphCache.abandonInFlightBuilds();
     void workingTreeChunkLayer.dispose().catch(() => undefined);
     // In-process enrichment (MCP index_codebase, inline git trajectory) spawns
     // git as a direct child of THIS process; no parent-death guard reaches it,
@@ -1687,6 +1721,8 @@ export function createSymbolChunkResolver(graphFacade?: GraphFacade): SymbolChun
       readTreeGraph
         ? graphFacade.resolveSymbolChunk({ collection: collectionName }, symbolId, readTreeGraph)
         : graphFacade.resolveSymbolChunk({ collection: collectionName }, symbolId),
+    readTreeSymbolLineRanges: async (collectionName, relPaths, readTreeGraph) =>
+      graphFacade.readTreeSymbolLineRanges({ collection: collectionName }, relPaths, readTreeGraph),
   };
 }
 

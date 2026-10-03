@@ -24,6 +24,8 @@ import type {
   WorkingTreeBasePoint,
   WorkingTreeDeltaRow,
   WorkingTreeDeltaSignalRequest,
+  WorkingTreeGitSignals,
+  WorkingTreeGitSignalSource,
   WorkingTreeGraphReader,
   WorkingTreeGraphState,
   WorkingTreeTouchedBasePointsReader,
@@ -294,5 +296,183 @@ export function run(): number {
       expect(bare.rankingOverlay?.file ?? {}).not.toHaveProperty("bugFixRate");
       expect(enriched.score).toBeGreaterThan(bare.score);
     });
+  });
+});
+
+/**
+ * D12 (bd tea-rags-mcp-xi2r9): delta rows the same-path inheritance left
+ * without git — a file renamed in the tree, whose history is its OLD path's;
+ * a tracked file the base held no point for (a 3-line file below the chunk
+ * floor); a row whose symbol the base never held. Their `git.file` /
+ * `git.chunk` come from the git trajectory on demand, asked only for what no
+ * base point answers. A file with no history at all keeps no git block.
+ */
+describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () => {
+  const OLD = "src/old-name.ts";
+  const NEW = "src/new-name.ts";
+  const SMALL = "src/cyc/c.ts";
+  const ON_DEMAND_FILE = { commitCount: 3, bugFixRate: 0, lastModifiedAt: 1_700_000_000 };
+  const onDemandChunk = (commitCount: number) => ({ commitCount, churnRatio: 1, bugFixRate: 0 });
+
+  function sourceWith(points: ReturnType<typeof basePoint>[], gitSignals?: WorkingTreeGitSignalSource) {
+    const source = createWorkingTreeDeltaSignalSource({
+      graphFiles: unopenable,
+      ...(gitSignals ? { gitSignals } : {}),
+    });
+    const readTouchedBasePoints = basePointsHolding(points);
+    return {
+      enrich: async (request: WorkingTreeDeltaSignalRequest) => source.enrich({ ...request, readTouchedBasePoints }),
+    };
+  }
+
+  /** A port answering per history path: a file block, and chunk blocks by row key. */
+  const answering = (
+    signals: Record<string, { file?: Record<string, unknown>; chunks?: Record<string, Record<string, unknown>> }>,
+  ) => ({
+    signalsOf: vi.fn<WorkingTreeGitSignalSource["signalsOf"]>(async (_root, targets) => {
+      const answer = new Map<string, WorkingTreeGitSignals>();
+      for (const target of targets) {
+        const known = signals[target.relativePath];
+        if (!known) continue;
+        answer.set(target.relativePath, {
+          ...(target.fileSignals && known.file ? { file: known.file } : {}),
+          chunks: new Map(
+            target.chunks.filter((c) => known.chunks?.[c.key]).map((c) => [c.key, known.chunks?.[c.key] ?? {}]),
+          ),
+        });
+      }
+      return answer;
+    }),
+  });
+
+  it("inherits git.file and git.chunk by symbol from the old path of a renamed file", async () => {
+    const source = sourceWith([basePoint("b1", OLD, "Foo#kept", 7), basePoint("b2", OLD, "Foo#other", 2)]);
+
+    const { rows } = await source.enrich({
+      tree: TREE,
+      rows: [deltaRow("d1", NEW, "Foo#kept"), deltaRow("d2", NEW, "Foo#brandNew")],
+      renamedFrom: new Map([[NEW, OLD]]),
+    });
+
+    expect(rows[0].payload.git).toEqual({ file: GIT_FILE, chunk: gitChunk(7) });
+    // No git port wired: a symbol the base never held keeps the file's history only.
+    expect(rows[1].payload.git).toEqual({ file: GIT_FILE });
+    expect(rows[0].payload.relativePath).toBe(NEW);
+  });
+
+  it("computes git.file and git.chunk on demand for a tracked file the base holds no point for", async () => {
+    const gitSignals = answering({ [SMALL]: { file: ON_DEMAND_FILE, chunks: { d1: onDemandChunk(2) } } });
+    const source = sourceWith([basePoint("b1", FOO, "Foo#kept", 4)], gitSignals);
+
+    const { rows } = await source.enrich({
+      tree: TREE,
+      rows: [deltaRow("d1", SMALL, "c", [1, 3]), deltaRow("d2", FOO, "Foo#kept")],
+    });
+
+    expect(rows[0].payload.git).toEqual({ file: ON_DEMAND_FILE, chunk: onDemandChunk(2) });
+    expect(rows[1].payload.git).toEqual({ file: GIT_FILE, chunk: gitChunk(4) });
+    // Only what no base point answers is asked for, in the TREE file's lines.
+    expect(gitSignals.signalsOf).toHaveBeenCalledTimes(1);
+    expect(gitSignals.signalsOf).toHaveBeenCalledWith(TREE.root, [
+      {
+        relativePath: SMALL,
+        treePath: SMALL,
+        maxEndLine: 3,
+        fileSignals: true,
+        chunks: [{ key: "d1", startLine: 1, endLine: 3 }],
+      },
+    ]);
+  });
+
+  it("asks only for git.chunk of a symbol the base never held in a file it holds", async () => {
+    const gitSignals = answering({ [FOO]: { file: ON_DEMAND_FILE, chunks: { d2: onDemandChunk(5) } } });
+    const source = sourceWith([basePoint("b1", FOO, "Foo#kept", 4)], gitSignals);
+
+    const { rows } = await source.enrich({
+      tree: TREE,
+      rows: [deltaRow("d1", FOO, "Foo#kept", [1, 3]), deltaRow("d2", FOO, "Foo#renamedMethod", [5, 9])],
+    });
+
+    // Inheritance stays where the base holds the symbol; the file block is the base's.
+    expect(rows[0].payload.git).toEqual({ file: GIT_FILE, chunk: gitChunk(4) });
+    expect(rows[1].payload.git).toEqual({ file: GIT_FILE, chunk: onDemandChunk(5) });
+    expect(gitSignals.signalsOf).toHaveBeenCalledWith(TREE.root, [
+      {
+        relativePath: FOO,
+        treePath: FOO,
+        maxEndLine: 9,
+        fileSignals: false,
+        chunks: [{ key: "d2", startLine: 5, endLine: 9 }],
+      },
+    ]);
+  });
+
+  it("keeps a brand-new symbol without a chunk block when its lines have no history", async () => {
+    const gitSignals = answering({ [FOO]: { chunks: {} } });
+    const source = sourceWith([basePoint("b1", FOO, "Foo#kept", 4)], gitSignals);
+
+    const { rows } = await source.enrich({ tree: TREE, rows: [deltaRow("d1", FOO, "Foo#brandNew")] });
+
+    // The reranker's L3 blend falls back to the file signals (by design).
+    expect(rows[0].payload.git).toEqual({ file: GIT_FILE });
+  });
+
+  it("asks for the old path, reading lines from the new one, when a renamed file's old path has no base point", async () => {
+    const gitSignals = answering({ [OLD]: { file: ON_DEMAND_FILE, chunks: { d1: onDemandChunk(1) } } });
+    const source = sourceWith([basePoint("b1", FOO, "Foo#kept", 4)], gitSignals);
+
+    const { rows } = await source.enrich({
+      tree: TREE,
+      rows: [deltaRow("d1", NEW, "x", [1, 9])],
+      renamedFrom: new Map([[NEW, OLD]]),
+    });
+
+    expect(rows[0].payload.git).toEqual({ file: ON_DEMAND_FILE, chunk: onDemandChunk(1) });
+    expect(gitSignals.signalsOf).toHaveBeenCalledWith(TREE.root, [
+      {
+        relativePath: OLD,
+        treePath: NEW,
+        maxEndLine: 9,
+        fileSignals: true,
+        chunks: [{ key: "d1", startLine: 1, endLine: 9 }],
+      },
+    ]);
+  });
+
+  it("keeps no git block for a file with no history at all", async () => {
+    const gitSignals = answering({});
+    const source = sourceWith([basePoint("b1", FOO, "Foo#kept", 4)], gitSignals);
+
+    const { rows } = await source.enrich({ tree: TREE, rows: [deltaRow("d1", "src/untracked.ts", "fresh")] });
+
+    expect(rows[0].payload).not.toHaveProperty("git");
+  });
+
+  it("asks nothing when the base index carries no git at all", async () => {
+    const gitSignals = answering({ [SMALL]: { file: ON_DEMAND_FILE } });
+    const noGit = basePoint("b1", FOO, "Foo#kept", 4);
+    delete (noGit.payload as Record<string, unknown>).git;
+    const source = sourceWith([noGit], gitSignals);
+
+    const { rows } = await source.enrich({ tree: TREE, rows: [deltaRow("d1", SMALL, "c", [1, 3])] });
+
+    expect(rows[0].payload).not.toHaveProperty("git");
+    expect(gitSignals.signalsOf).not.toHaveBeenCalled();
+  });
+
+  it("keeps the rows when the on-demand source fails", async () => {
+    const source = sourceWith([basePoint("b1", FOO, "Foo#kept", 4)], {
+      signalsOf: async () => {
+        throw new Error("git exploded");
+      },
+    });
+
+    const { rows } = await source.enrich({
+      tree: TREE,
+      rows: [deltaRow("d1", SMALL, "c", [1, 3]), deltaRow("d2", FOO, "Foo#kept")],
+    });
+
+    expect(rows[0].payload).not.toHaveProperty("git");
+    expect(rows[1].payload.git).toEqual({ file: GIT_FILE, chunk: gitChunk(4) });
   });
 });

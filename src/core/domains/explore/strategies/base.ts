@@ -20,6 +20,7 @@ import {
   substituteWorkingTreeRows,
   workingTreeStateOf,
 } from "../working-tree/substitute.js";
+import { claimWorkingTreeFloors } from "../working-tree/tree-graph-marker.js";
 import type { ExploreContext, ExploreResult, ExploreStrategy } from "./types.js";
 
 /** Page size when the caller gives no (or a non-positive) limit. */
@@ -113,6 +114,7 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
     const view = ctx.workingTreeView;
     if (!view?.readDeltaChunks || view.touchedPaths.size === 0) return [...scrolled];
     const deltaRows = await view.readDeltaChunks();
+    claimWorkingTreeFloors(view, ["chunks"]);
     return substituteWorkingTreeRows(scrolled, view, deltaRows, keep);
   }
 
@@ -130,7 +132,9 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
     const view = ctx.workingTreeView;
     if (!this.hasChunkFloor || !view?.readDeltaChunks || view.touchedPaths.size === 0) return rows;
     if (!rows.some((row) => view.touchedPaths.has(relativePathOf(row.payload)))) return rows;
-    return retargetWorkingTreeRows(rows, view, await view.readDeltaChunks(), toResult);
+    const deltaRows = await view.readDeltaChunks();
+    claimWorkingTreeFloors(view, ["chunks"]);
+    return retargetWorkingTreeRows(rows, view, deltaRows, toResult);
   }
 
   /** Concrete strategy implements the actual search call. */

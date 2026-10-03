@@ -27,6 +27,7 @@ function graphDb() {
     getFileImporters: vi.fn().mockResolvedValue({ edges: [], fileKnown: true }),
     getFileImports: vi.fn().mockResolvedValue({ edges: [], fileKnown: true }),
     getSymbolVisibilities: vi.fn().mockResolvedValue([]),
+    readTemporalCochangeGraph: vi.fn().mockResolvedValue({ meta: null, edges: [] }),
     close: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -88,7 +89,49 @@ describe("GraphFacade workingTree marker", () => {
 
       expect(response.workingTree).toEqual(MARKER);
     });
+
+    // Live D9: co-change is git history — it reads the index's temporal graph
+    // whatever the tree holds, and says which tree it answered beside.
+    it(`should attach the marker to find_co_changed on ${branch}`, async () => {
+      const { facade } = makeFacade({ graph });
+
+      const response = await facade.findCoChanged({ collection: "code_x", files: ["src/a.ts"] });
+
+      expect(response.workingTree).toEqual(MARKER);
+    });
   }
+
+  it("should answer find_co_changed from the index's history without asking for the tree graph", async () => {
+    const readTreeGraph = vi.fn(async () => ({
+      kind: "built" as const,
+      dbPath: "/t.duckdb",
+      physicalCollectionName: "c",
+    }));
+    const view = {
+      marker: { ...MARKER, changedFiles: 1, floors: [] },
+      touchedPaths: new Set(["src/a.ts"]),
+      deletedPaths: new Set(),
+      readTreeGraph,
+    };
+    const pool = {
+      acquireReader: vi.fn().mockResolvedValue({ graphDb: graphDb() }),
+      acquireFileReader: vi.fn(),
+      hasDatabase: vi.fn().mockReturnValue(true),
+    };
+    const facade = new GraphFacade({
+      pool: pool as never,
+      collectionRegistry: {} as never,
+      resolveActiveCollection: async (c: string) => c as never,
+      workingTreeOverlay: { view: vi.fn().mockResolvedValue(view) },
+    });
+
+    const response = await facade.findCoChanged({ collection: "code_x", files: ["src/a.ts"] });
+
+    expect(readTreeGraph).not.toHaveBeenCalled();
+    expect(pool.acquireFileReader).not.toHaveBeenCalled();
+    expect(response.workingTree?.floors).toEqual([]);
+    expect(response.workingTree?.treeGraphUnavailable).toBeUndefined();
+  });
 
   it("should hand the overlay the resolved tree and the caller's alias", async () => {
     const { facade, overlay } = makeFacade({ graph: true });

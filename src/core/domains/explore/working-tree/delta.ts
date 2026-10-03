@@ -6,7 +6,10 @@
  * deleted, plus untracked non-ignored files; deleted = the `D` entries, so a
  * move is its source deleted plus its target changed. Both pass the ingest
  * admission rule (`FileScanner#accepts`) the caller hands in, so the delta
- * never names a file ingest would not have indexed.
+ * never names a file ingest would not have indexed. Which changed path git
+ * pairs with which deleted one rides beside them in `renamedFrom` (bd
+ * tea-rags-mcp-xi2r9, D12), read only when something was deleted: a moved
+ * file's history is its old path's.
  *
  * Reads are cached per tree under a fingerprint of the status text (which
  * carries HEAD) plus `mtime:size` of every path status lists: status alone does
@@ -24,7 +27,11 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
-import { readStatusPorcelain, readWorkingTreeChanges } from "../../../adapters/vcs/git/git-cli/client.js";
+import {
+  readStatusPorcelain,
+  readWorkingTreeChanges,
+  readWorkingTreeRenames,
+} from "../../../adapters/vcs/git/git-cli/client.js";
 import { WORKING_TREE_DELTA_FILE_CAP } from "../../../contracts/types/working-tree.js";
 import { findGitToplevel, gitPathPrefix, rebaseGitPathsOntoRoot } from "../../../infra/repo-git-state.js";
 
@@ -33,6 +40,13 @@ export interface WorkingTreeDelta {
   changed: readonly string[];
   /** root-relative, includes rename sources */
   deleted: readonly string[];
+  /**
+   * Moves git pairs: a `changed` path → the `deleted` path it was moved from
+   * (staged, unstaged or committed since the indexed commit, edits within git's
+   * similarity threshold included). The touched sets above stay exact; this only
+   * says whose history a moved file carries. Empty or absent → no moves.
+   */
+  renamedFrom?: ReadonlyMap<string, string>;
   fingerprint: string;
 }
 
@@ -144,15 +158,46 @@ async function measureDelta(
   }
   const changed = rebaseGitPathsOntoRoot(changes.changed, prefix).filter(accepts);
   const deleted = rebaseGitPathsOntoRoot(changes.deleted, prefix).filter(accepts);
-  const total = changed.length + deleted.length;
-  if (total > WORKING_TREE_DELTA_FILE_CAP) {
-    return {
-      kind: "degraded",
-      reason: `delta of ${total} files over the ${WORKING_TREE_DELTA_FILE_CAP}-file cap`,
-      remedy: WORKING_TREE_WORKTREE_INDEX_REMEDY,
-    };
+  // The cap is the overlay's (it folds the index-time dirty files in first and
+  // reports the measured counts beside `degraded`); a delta already over it
+  // skips the rename diff, whose pairs nothing past the cap would read.
+  const renamedFrom =
+    changed.length + deleted.length > WORKING_TREE_DELTA_FILE_CAP
+      ? new Map<string, string>()
+      : await readRenamePairs(gitToplevel, prefix, indexedCommit, changes.untracked, changed, deleted);
+  return { kind: "measured", delta: { changed, deleted, renamedFrom, fingerprint } };
+}
+
+/**
+ * The delta's moves, root-relative: a second, rename-detecting diff run only
+ * when the delta deleted something — no deletion, no move. Only the delta's
+ * own untracked files are offered to git as move targets, and a pair is kept
+ * only when both sides are in the delta (under the root, admitted by ingest).
+ */
+async function readRenamePairs(
+  gitToplevel: string,
+  prefix: string,
+  indexedCommit: string,
+  untracked: readonly string[],
+  changed: readonly string[],
+  deleted: readonly string[],
+): Promise<ReadonlyMap<string, string>> {
+  const renamedFrom = new Map<string, string>();
+  if (deleted.length === 0 || changed.length === 0) return renamedFrom;
+  const changedSet = new Set(changed);
+  const deletedSet = new Set(deleted);
+  const candidates = untracked.filter((path) => {
+    const [rootRelative] = rebaseGitPathsOntoRoot([path], prefix);
+    return rootRelative !== undefined && changedSet.has(rootRelative);
+  });
+  for (const { from, to } of await readWorkingTreeRenames(gitToplevel, indexedCommit, candidates)) {
+    const [oldPath] = rebaseGitPathsOntoRoot([from], prefix);
+    const [newPath] = rebaseGitPathsOntoRoot([to], prefix);
+    if (oldPath !== undefined && newPath !== undefined && deletedSet.has(oldPath) && changedSet.has(newPath)) {
+      renamedFrom.set(newPath, oldPath);
+    }
   }
-  return { kind: "measured", delta: { changed, deleted, fingerprint } };
+  return renamedFrom;
 }
 
 /** A reader with its own per-tree cache; one per process is the intended use. */
@@ -175,7 +220,7 @@ export function createWorkingTreeDeltaReader(): WorkingTreeDeltaReader {
 
       const read: WorkingTreeDeltaRead =
         snapshot.paths.length === 0 && snapshot.head === indexedCommit
-          ? { kind: "measured", delta: { changed: [], deleted: [], fingerprint } }
+          ? { kind: "measured", delta: { changed: [], deleted: [], renamedFrom: new Map(), fingerprint } }
           : await measureDelta(gitToplevel, prefix, indexedCommit, accepts, fingerprint);
       cache.set(root, { fingerprint, read });
       return read;

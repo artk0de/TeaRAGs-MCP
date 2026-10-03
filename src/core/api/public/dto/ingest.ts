@@ -21,6 +21,7 @@ import type {
   ProgressUpdate,
 } from "../../../types.js";
 import type { CollectionIdentifier } from "./common.js";
+import type { WorkingTreeMarker } from "./working-tree.js";
 
 // Re-export the enrichment progress contract on the public surface so cli/mcp
 // consumers import it without crossing into core/types.ts directly.
@@ -236,6 +237,13 @@ export interface ChangeStats {
 export interface IndexStatus {
   /** @deprecated Use `status` instead. True only when status is 'indexed'. */
   isIndexed: boolean;
+  /**
+   * Set when the path asked about is a working tree read against another
+   * index (live D10): the status is THAT index's, and this is its root.
+   */
+  indexPath?: string;
+  /** The working tree's marker beside `indexPath` (bd tea-rags-mcp-xi2r9). */
+  workingTree?: WorkingTreeMarker;
   /** Current indexing status */
   status: IndexingStatus;
   collectionName?: string;

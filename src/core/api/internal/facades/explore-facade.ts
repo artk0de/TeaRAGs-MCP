@@ -34,6 +34,7 @@ import type {
   RankChunksRequest,
   SemanticSearchRequest,
 } from "../../public/dto/index.js";
+import type { WorkingTreeIndexTarget } from "../../public/dto/working-tree.js";
 import { ExploreOps } from "../ops/explore-ops.js";
 
 export interface ExploreFacadeDeps {
@@ -115,6 +116,11 @@ export class ExploreFacade {
   /** `collection`, when given, is the index read — the resolver's priority (collection > path). */
   async getIndexMetrics(path: string, collection?: string): Promise<IndexMetrics> {
     return this.exploreOps.getIndexMetrics(path, collection);
+  }
+
+  /** The base index a working-tree `path` is read against; undefined for an index's own checkout (D10). */
+  async workingTreeIndexOf(path: string): Promise<WorkingTreeIndexTarget | undefined> {
+    return this.exploreOps.workingTreeIndexOf(path);
   }
 }
 

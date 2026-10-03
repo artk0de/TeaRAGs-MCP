@@ -35,7 +35,6 @@ import {
   type WorkingTreeDelta,
   type WorkingTreeDeltaReader,
 } from "./delta.js";
-import { recordTreeGraphState } from "./tree-graph-marker.js";
 
 export interface WorkingTreeView {
   marker: WorkingTreeMarker;
@@ -64,6 +63,12 @@ export interface WorkingTreeView {
    * delta with a base-point reader wired.
    */
   readTouchedBasePoints?: WorkingTreeTouchedBasePointsReader;
+  /**
+   * Which graph the delta rows' codegraph block came from, set once
+   * `readDeltaChunks` enriched them. Reading the rows does not stamp the marker
+   * with it: `claimWorkingTreeFloors` does, when the rows reach an answer (D8).
+   */
+  deltaRowsTreeGraph?: WorkingTreeGraphState;
 }
 
 /** The overlay's port to the touched-file base points (`WorkingTreeTouchedBasePoints`). */
@@ -131,8 +136,14 @@ export class WorkingTreeOverlay {
     };
     const fill = (template: string): string =>
       template.replaceAll("{alias}", alias ?? entry?.name ?? collectionName).replaceAll("{tree}", tree.root);
-    const degraded = (reason: string, remedy: string): WorkingTreeView => ({
-      marker: { ...marker, degraded: { reason, remedy: fill(remedy) } },
+    // `measured` → the delta WAS measured and only refused (the cap): its counts
+    // are reported (live D11a), since `0` must mean measured-and-empty.
+    const degraded = (
+      reason: string,
+      remedy: string,
+      measured?: { changedFiles: number; deletedFiles: number },
+    ): WorkingTreeView => ({
+      marker: { ...marker, ...measured, degraded: { reason, remedy: fill(remedy) } },
       touchedPaths: EMPTY_PATHS,
       deletedPaths: EMPTY_PATHS,
     });
@@ -153,6 +164,7 @@ export class WorkingTreeOverlay {
         return degraded(
           `delta of ${total} files over the ${WORKING_TREE_DELTA_FILE_CAP}-file cap`,
           WORKING_TREE_WORKTREE_INDEX_REMEDY,
+          { changedFiles: changed.length, deletedFiles: deleted.length },
         );
       }
       const view: WorkingTreeView = {
@@ -181,7 +193,7 @@ export class WorkingTreeOverlay {
         let rows: Promise<readonly ScrollChunk[]> | undefined;
         view.readDeltaChunks = async () =>
           (rows ??= readDeltaChunks(source, tree, changed, view.marker).then(async (chunks) =>
-            deltaSignals ? enrichDeltaRows(deltaSignals, tree, chunks, view) : chunks,
+            deltaSignals ? enrichDeltaRows(deltaSignals, tree, chunks, view, read.delta.renamedFrom) : chunks,
           ));
       }
       return view;
@@ -281,21 +293,23 @@ function treeGraphReader(source: WorkingTreeGraphSource, request: WorkingTreeGra
   };
 }
 
-/** Delta rows with their trajectory payload; the marker records which graph the codegraph block came from. */
+/** Delta rows with their trajectory payload; the view keeps which graph the codegraph block came from. */
 async function enrichDeltaRows(
   source: WorkingTreeDeltaSignalSource,
   tree: WorkingTree,
   rows: readonly ScrollChunk[],
   view: WorkingTreeView,
+  renamedFrom: ReadonlyMap<string, string> | undefined,
 ): Promise<readonly ScrollChunk[]> {
   if (rows.length === 0) return rows;
   const enriched = await source.enrich({
     tree,
     rows,
+    ...(renamedFrom && renamedFrom.size > 0 ? { renamedFrom } : {}),
     ...(view.readTreeGraph ? { readTreeGraph: view.readTreeGraph } : {}),
     ...(view.readTouchedBasePoints ? { readTouchedBasePoints: view.readTouchedBasePoints } : {}),
   });
-  if (enriched.treeGraph) recordTreeGraphState(view.marker, enriched.treeGraph);
+  if (enriched.treeGraph) view.deltaRowsTreeGraph = enriched.treeGraph;
   return enriched.rows;
 }
 

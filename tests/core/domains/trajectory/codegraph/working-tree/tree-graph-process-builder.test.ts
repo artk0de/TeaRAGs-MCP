@@ -101,6 +101,22 @@ describe("WorkingTreeGraphProcessBuilder", () => {
     expect(treeGraphChildren()).toEqual([]);
   }, 120_000);
 
+  it("killInFlight kills a running child at once (process exit): the build settles failed, no child left", async () => {
+    const fixture = await buildTreeGraphFixture(BASE);
+    fixture.writeTree("src/a.ts", A_TREE);
+    const builder = new WorkingTreeGraphProcessBuilder();
+
+    const pending = builder.build(inputFor(fixture), BUDGET);
+    while (treeGraphChildren().length === 0) await new Promise((resolve) => setTimeout(resolve, 10));
+    builder.killInFlight();
+    const outcome = await pending;
+
+    expect(outcome.kind).toBe("failed");
+    if (outcome.kind !== "failed") return;
+    expect(outcome.reason).toMatch(/SIGKILL/);
+    expect(treeGraphChildren()).toEqual([]);
+  }, 120_000);
+
   it("a bad input returns failed with the child's reason, never throws", async () => {
     const fixture = await buildTreeGraphFixture(BASE);
 

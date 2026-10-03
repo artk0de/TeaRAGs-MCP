@@ -11,6 +11,8 @@
  * BEFORE delegation to ExploreOps.
  */
 
+import { resolve } from "node:path";
+
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type {
@@ -28,7 +30,7 @@ import type {
   PayloadSignalDescriptor,
   SignalFloors,
 } from "../../../contracts/types/trajectory.js";
-import type { WorkingTree, WorkingTreeFloor, WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
+import type { WorkingTree, WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 import {
   CollectionNotFoundError as DomainCollectionNotFoundError,
   EmptyFilterPresetError,
@@ -72,6 +74,7 @@ import {
   type RankChunksRequest,
   type SemanticSearchRequest,
 } from "../../public/dto/index.js";
+import type { WorkingTreeIndexTarget } from "../../public/dto/working-tree.js";
 import { resolveWorkingTree } from "../collection-resolver.js";
 
 export interface ExploreOpsDeps {
@@ -156,14 +159,11 @@ interface ExploreFinalizeOptions {
    * (bd tea-rags-mcp-l2lix).
    */
   fields?: readonly string[];
-  /** Never rejects (`WorkingTreeOverlay#view` degrades instead); its marker rides on the answer. */
-  workingTreeView?: Promise<WorkingTreeView>;
   /**
-   * Read paths on which this operation's strategy answers from the tree
-   * (bd tea-rags-mcp-xi2r9.3). Declared on the marker only when the view can
-   * read delta rows — a view without a chunk layer substitutes nothing.
+   * Never rejects (`WorkingTreeOverlay#view` degrades instead); its marker rides
+   * on the answer, with the floors the strategy's reads claimed on it (D8).
    */
-  workingTreeFloors?: readonly WorkingTreeFloor[];
+  workingTreeView?: Promise<WorkingTreeView>;
 }
 
 export class ExploreOps {
@@ -239,14 +239,14 @@ export class ExploreOps {
   // ---------------------------------------------------------------------------
 
   async semanticSearch(request: SemanticSearchRequest): Promise<ExploreResponse> {
-    return this.embedAndDispatch(request, this.vectorStrategy, true, []);
+    return this.embedAndDispatch(request, this.vectorStrategy, true);
   }
 
   async hybridSearch(request: HybridSearchRequest): Promise<ExploreResponse> {
     // No confidence: RRF fusion scores are a function of rank, not similarity.
     // Sparse floor (bd tea-rags-mcp-xi2r9.4): touched files answer from the
     // tree's chunks, scored on the BM25 leg.
-    return this.embedAndDispatch(request, this.hybridStrategy, false, ["chunks", "sparse"]);
+    return this.embedAndDispatch(request, this.hybridStrategy, false);
   }
 
   async rankChunks(request: RankChunksRequest): Promise<ExploreResponse> {
@@ -325,7 +325,6 @@ export class ExploreOps {
     const response = await this.executeExplore(strategy, buildFindSymbolContext(request, collectionName), path, {
       fields: request.fields,
       workingTreeView,
-      workingTreeFloors: ["chunks"],
     });
     // Finalize: the per-request symbol strategy records a skipped OPTIONAL
     // codegraph hop (codegraph unavailable from this process) — attach it so the
@@ -365,6 +364,27 @@ export class ExploreOps {
       this.enrichmentHealthFrameForPath?.(path) ?? [],
     );
     return workingTreeView ? { ...metrics, workingTree: (await workingTreeView).marker } : metrics;
+  }
+
+  /**
+   * The base index `path` is read against when it is a working tree of a
+   * registered index other than its own checkout (live D10) — a linked
+   * worktree, or a subdirectory project of one — with the tree's marker.
+   * Undefined for an index's own checkout, for a path no registered index
+   * covers, and for one the resolver refuses: those keep their own answer.
+   */
+  async workingTreeIndexOf(path: string): Promise<WorkingTreeIndexTarget | undefined> {
+    let workingTree: WorkingTree;
+    try {
+      workingTree = resolveWorkingTree(this.collectionRegistry, { path });
+    } catch {
+      return undefined;
+    }
+    const { root: indexPath, collectionName } = workingTree.baseIndex;
+    if (!indexPath || !workingTree.root || resolve(workingTree.root) === resolve(indexPath)) return undefined;
+    if (!this.collectionRegistry.get(collectionName)) return undefined;
+    const view = await this.workingTreeOverlay?.view(workingTree, undefined);
+    return view ? { indexPath, workingTree: view.marker } : { indexPath };
   }
 
   /** Factory for the per-request findSimilar strategy. Exposed so facade can construct without reaching into ops internals. */
@@ -432,9 +452,7 @@ export class ExploreOps {
       ...(projection.fieldsWarning ? { fieldsWarning: projection.fieldsWarning } : {}),
       // Read AFTER the strategy ran: reading the delta rows is what records
       // `unparsed` on the marker.
-      ...(workingTreeView
-        ? { workingTree: finalizeWorkingTreeMarker(workingTreeView, finalize.workingTreeFloors) }
-        : {}),
+      ...(workingTreeView ? { workingTree: finalizeWorkingTreeMarker(workingTreeView) } : {}),
     };
   }
 
@@ -447,7 +465,6 @@ export class ExploreOps {
     request: SemanticSearchRequest | HybridSearchRequest,
     strategy: BaseExploreStrategy,
     attachConfidence: boolean,
-    workingTreeFloors: readonly WorkingTreeFloor[],
   ): Promise<ExploreResponse> {
     const { collectionName, path, workingTreeView } = await this.resolveAndGuard(
       request.collection,
@@ -467,7 +484,7 @@ export class ExploreOps {
       strategy,
       buildVectorSearchContext(request, collectionName, embedding, filter, rerank, level),
       path,
-      { attachConfidence, presetFilterNotice, fields: request.fields, workingTreeView, workingTreeFloors },
+      { attachConfidence, presetFilterNotice, fields: request.fields, workingTreeView },
     );
   }
 
@@ -947,16 +964,14 @@ function buildFindSymbolContext(request: FindSymbolRequest, collectionName: stri
 }
 
 /**
- * The marker an answer carries: the view's, with the floors the operation's
- * strategy applies — none when the view cannot read delta rows (degraded, or no
- * chunk layer wired), because then nothing was substituted. Joined with the
- * floors the request's reads recorded on the view's marker: `"codegraph"` when
- * delta rows or a codegraph lookup read the tree graph (WTO-7).
+ * The marker an answer carries: the view's, with exactly the floors this
+ * request's reads claimed on it (live D8) — `"chunks"` / `"sparse"` when the
+ * strategy put delta rows into its candidates (`claimWorkingTreeFloors`),
+ * `"codegraph"` when those rows or a codegraph lookup read the tree graph
+ * (WTO-7). A clean tree, a degraded view, a view without a chunk layer, and a
+ * strategy that only read delta content claim nothing. A copy: the answer must
+ * not alias the per-request marker.
  */
-function finalizeWorkingTreeMarker(
-  view: WorkingTreeView,
-  floors: readonly WorkingTreeFloor[] | undefined,
-): WorkingTreeMarker {
-  if (!view.readDeltaChunks || !floors || floors.length === 0) return view.marker;
-  return { ...view.marker, floors: [...new Set([...floors, ...view.marker.floors])] };
+function finalizeWorkingTreeMarker(view: WorkingTreeView): WorkingTreeMarker {
+  return { ...view.marker, floors: [...view.marker.floors] };
 }

@@ -4,8 +4,13 @@
  * base pool in a temp appData. What is pinned: one build per key in-process,
  * the caller's wait budget, the failure backoff, publish-by-rename (no reader
  * ever sees a half-built key dir), the cross-process race, the snapshot's
- * per-base-version reuse, and the sweep's retention matrix.
+ * per-base-version reuse, and the sweep's retention matrix. Live-found
+ * defects pinned after it: the content-based key (D7), retention after every
+ * publish with the per-tree cap and the in-use guard (D5), exit cleanup and the
+ * dead-owner staging sweep (D6), and the reader's wait outlasting the budget
+ * (D11b).
  */
+import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -19,15 +24,18 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import {
+  WORKING_TREE_GRAPH_BUILD_TIMEOUT_MS,
   WORKING_TREE_GRAPH_BUILDING_REASON,
   WorkingTreeGraphCache,
   type WorkingTreeGraphBasePool,
   type WorkingTreeGraphCacheDeps,
+  type WorkingTreeGraphExitHooks,
 } from "../../../../../src/core/api/internal/infra/working-tree-graph-cache.js";
+import { WORKING_TREE_GRAPH_WAIT_MS } from "../../../../../src/core/api/internal/infra/working-tree-graph-read.js";
 import type { PhysicalCollectionName } from "../../../../../src/core/contracts/types/collection-identity.js";
 import type {
   WorkingTreeGraphRequest,
@@ -77,6 +85,11 @@ function treeDir(name: string): string {
 
 class FakeBasePool implements WorkingTreeGraphBasePool {
   exports: string[] = [];
+  /** Tree graph files a reader of "this process" holds open. */
+  openReaders = new Set<string>();
+  isFileReaderOpen(dbPath: string): boolean {
+    return this.openReaders.has(dbPath);
+  }
   hasDatabase(physical: PhysicalCollectionName): boolean {
     return physical === PHYSICAL && existsSync(basePath());
   }
@@ -110,6 +123,11 @@ class FakeBuilder {
   /** Runs inside the build, after the input is recorded and before it finishes. */
   during: ((input: WorkingTreeGraphBuildInput) => void) | undefined;
   outcome: ((input: WorkingTreeGraphBuildInput) => WorkingTreeGraphBuildOutcome) | undefined;
+  killed = 0;
+
+  killInFlight(): void {
+    this.killed++;
+  }
 
   async build(
     input: WorkingTreeGraphBuildInput,
@@ -130,17 +148,35 @@ class FakeBuilder {
   }
 }
 
+/** Process-exit hooks under test control: what is registered, and a way to fire it. */
+class FakeExitHooks implements WorkingTreeGraphExitHooks {
+  readonly active = new Set<() => void>();
+  registrations = 0;
+  register(onExit: () => void): () => void {
+    this.registrations++;
+    this.active.add(onExit);
+    return () => {
+      this.active.delete(onExit);
+    };
+  }
+  fire(): void {
+    for (const onExit of [...this.active]) onExit();
+  }
+}
+
 interface Harness {
   cache: WorkingTreeGraphCache;
   pool: FakeBasePool;
   builder: FakeBuilder;
   clock: { now: number };
+  exitHooks: FakeExitHooks;
 }
 
 function harness(overrides: Partial<WorkingTreeGraphCacheDeps> = {}, shared?: Partial<Harness>): Harness {
   const pool = shared?.pool ?? new FakeBasePool();
   const builder = shared?.builder ?? new FakeBuilder();
   const clock = shared?.clock ?? { now: 1_000_000 };
+  const exitHooks = shared?.exitHooks ?? new FakeExitHooks();
   const cache = new WorkingTreeGraphCache({
     rootDir: appRoot,
     codegraph: () => ({ pool, providerConfig: PROVIDER_CONFIG }),
@@ -148,12 +184,30 @@ function harness(overrides: Partial<WorkingTreeGraphCacheDeps> = {}, shared?: Pa
     builder,
     budget: BUDGET,
     now: () => clock.now,
+    exitHooks,
     ...overrides,
   });
-  return { cache, pool, builder, clock };
+  return { cache, pool, builder, clock, exitHooks };
 }
 
-function request(root: string, fingerprint = "fp-1", changed: string[] = ["src/a.ts"]): WorkingTreeGraphRequest {
+/**
+ * A request over `root`. The key is content-based (D7), so each changed file is
+ * written holding the fingerprint: a new fingerprint is new content, the same
+ * fingerprint the same bytes. Tests that pin the content rule write files
+ * themselves and pass `writeContent: false`.
+ */
+function request(
+  root: string,
+  fingerprint = "fp-1",
+  changed: string[] = ["src/a.ts"],
+  writeContent = true,
+): WorkingTreeGraphRequest {
+  if (writeContent && existsSync(root)) {
+    for (const relPath of changed) {
+      mkdirSync(dirname(join(root, relPath)), { recursive: true });
+      writeFileSync(join(root, relPath), `content of ${relPath} at ${fingerprint}`);
+    }
+  }
   return {
     tree: { root, baseIndex: { collectionName: COLLECTION, root: join(scratch, "base-src") } },
     changed,
@@ -273,7 +327,7 @@ describe("WorkingTreeGraphCache#graphFor", () => {
     expect(second.builder.inputs).toHaveLength(0);
   });
 
-  it("a different fingerprint is a different key and a new build", async () => {
+  it("different content (the helper writes each fingerprint into the file) is a different key and a new build", async () => {
     const { cache, builder } = harness();
     const root = treeDir("t1");
 
@@ -532,7 +586,9 @@ describe("WorkingTreeGraphCache#sweep", () => {
 
     const trees = join(graphRoot(), "trees");
     const oldStaging = join(trees, `${"a".repeat(64)}.staging-1-ab`);
-    const freshStaging = join(trees, `${"b".repeat(64)}.staging-2-cd`);
+    // Owned by a live process (this one): only age can retire it. A dead
+    // owner's staging goes at once (D6), whatever its age.
+    const freshStaging = join(trees, `${"b".repeat(64)}.staging-${String(process.pid)}-cd`);
     mkdirSync(oldStaging);
     mkdirSync(freshStaging);
     const sweepAt = Date.now();
@@ -606,5 +662,290 @@ describe("WorkingTreeGraphCache#sweep", () => {
       evictedStaging: 0,
       keptGraphs: 0,
     });
+  });
+});
+
+/** The published key dirs (no staging) whose meta names `root`. */
+function graphsOf(root: string): string[] {
+  return treeEntries().filter((name) => {
+    if (name.includes(".staging-")) return false;
+    const meta = join(graphRoot(), "trees", name, "tree-graph.meta.json");
+    return existsSync(meta) && (JSON.parse(readFileSync(meta, "utf8")) as { treeRoot: string }).treeRoot === root;
+  });
+}
+
+/** A pid that certainly belongs to no running process: a child that has already exited. */
+function deadPid(): number {
+  const { pid } = spawnSync(process.execPath, ["-e", ""]);
+  if (pid === undefined) throw new Error("spawnSync gave no pid");
+  return pid;
+}
+
+describe("WorkingTreeGraphCache — content-based key (D7)", () => {
+  it("reverting a file to identical bytes reuses the published graph instead of rebuilding", async () => {
+    const { cache, builder, clock } = harness();
+    const root = treeDir("t1");
+    const file = join(root, "src", "a.ts");
+    mkdirSync(dirname(file), { recursive: true });
+
+    writeFileSync(file, "export const a = 1;\n");
+    const original = expectBuilt(await cache.graphFor(request(root, "fp-original", ["src/a.ts"], false), 10_000));
+    clock.now += 1_000;
+    writeFileSync(file, "export const a = 2;\n");
+    const edited = expectBuilt(await cache.graphFor(request(root, "fp-edited", ["src/a.ts"], false), 10_000));
+    clock.now += 1_000;
+    // Same bytes, a fresh mtime and a new delta fingerprint — what a revert looks like.
+    writeFileSync(file, "export const a = 1;\n");
+    const later = new Date(Date.now() + 5_000);
+    utimesSync(file, later, later);
+    const reverted = expectBuilt(await cache.graphFor(request(root, "fp-reverted", ["src/a.ts"], false), 10_000));
+
+    expect(edited).not.toBe(original);
+    expect(reverted).toBe(original);
+    expect(builder.inputs).toHaveLength(2);
+  });
+
+  it("the delete set is part of the key", async () => {
+    const { cache, builder } = harness();
+    const root = treeDir("t1");
+    const req = request(root, "fp");
+
+    const withoutDelete = expectBuilt(await cache.graphFor(req, 10_000));
+    const withDelete = expectBuilt(await cache.graphFor({ ...req, deleted: ["src/gone.ts"] }, 10_000));
+
+    expect(withDelete).not.toBe(withoutDelete);
+    expect(builder.inputs).toHaveLength(2);
+  });
+
+  it("the order the delta lists its files in does not move the key", async () => {
+    const { cache, builder } = harness();
+    const root = treeDir("t1");
+    request(root, "fp", ["src/a.ts", "src/b.ts"]);
+
+    const ab = expectBuilt(await cache.graphFor(request(root, "fp-x", ["src/a.ts", "src/b.ts"], false), 10_000));
+    const ba = expectBuilt(await cache.graphFor(request(root, "fp-y", ["src/b.ts", "src/a.ts"], false), 10_000));
+
+    expect(ba).toBe(ab);
+    expect(builder.inputs).toHaveLength(1);
+  });
+});
+
+describe("WorkingTreeGraphCache — retention after each publish (D5)", () => {
+  it("a burst of edits keeps at most two graphs per tree, without waiting for the periodic sweep", async () => {
+    const { cache, clock } = harness();
+    const root = treeDir("t1");
+
+    for (let edit = 0; edit < 10; edit++) {
+      clock.now += 1_000;
+      expectBuilt(await cache.graphFor(request(root, `fp-${String(edit)}`), 10_000));
+      expect(graphsOf(root).length).toBeLessThanOrEqual(2);
+    }
+    expect(graphsOf(root)).toHaveLength(2);
+  });
+
+  it("a graph served again (a revert) is the tree's newest for retention, so the next edit keeps it", async () => {
+    const { cache, builder, clock } = harness();
+    const root = treeDir("t1");
+    const file = join(root, "src", "a.ts");
+    mkdirSync(dirname(file), { recursive: true });
+    const ask = async (content: string, fingerprint: string): Promise<string> => {
+      clock.now += 1_000;
+      writeFileSync(file, content);
+      return expectBuilt(await cache.graphFor(request(root, fingerprint, ["src/a.ts"], false), 10_000));
+    };
+
+    const original = await ask("original", "fp-1");
+    const edited = await ask("edited", "fp-2");
+    expect(await ask("original", "fp-3")).toBe(original);
+    await ask("same-size edit", "fp-4");
+
+    expect(existsSync(original)).toBe(true);
+    expect(existsSync(edited)).toBe(false);
+    expect(await ask("original", "fp-5")).toBe(original);
+    expect(builder.inputs).toHaveLength(3);
+  });
+
+  it("ages an older graph from the publish of the graph that superseded it", async () => {
+    const { cache, clock } = harness();
+    const root = treeDir("t1");
+    clock.now = 10 * HOUR;
+    const first = expectBuilt(await cache.graphFor(request(root, "fp-1"), 10_000));
+    clock.now = 10 * HOUR + 60_000;
+    const second = expectBuilt(await cache.graphFor(request(root, "fp-2"), 10_000));
+    expect(existsSync(first)).toBe(true);
+
+    // 11 min after the second superseded it, the first is past the grace.
+    expect(await cache.sweep(10 * HOUR + 12 * 60_000)).toMatchObject({ evictedGraphs: 1 });
+
+    expect(existsSync(first)).toBe(false);
+    expect(existsSync(second)).toBe(true);
+  });
+
+  it("never deletes a graph a reader of this process holds open", async () => {
+    const { cache, pool, clock } = harness();
+    const root = treeDir("t1");
+    clock.now += 1_000;
+    const held = expectBuilt(await cache.graphFor(request(root, "fp-1"), 10_000));
+    pool.openReaders.add(held);
+
+    for (let edit = 2; edit <= 4; edit++) {
+      clock.now += 1_000;
+      expectBuilt(await cache.graphFor(request(root, `fp-${String(edit)}`), 10_000));
+    }
+    expect(existsSync(held)).toBe(true);
+    expect(graphsOf(root)).toHaveLength(3);
+
+    pool.openReaders.delete(held);
+    clock.now += 1_000;
+    expectBuilt(await cache.graphFor(request(root, "fp-5"), 10_000));
+    expect(existsSync(held)).toBe(false);
+    expect(graphsOf(root)).toHaveLength(2);
+  });
+
+  it("the periodic sweep honours the same cap and in-use rule", async () => {
+    const { cache, pool, clock } = harness();
+    const root = treeDir("t1");
+    const built: string[] = [];
+    for (let edit = 0; edit < 2; edit++) {
+      clock.now += 1_000;
+      built.push(expectBuilt(await cache.graphFor(request(root, `fp-${String(edit)}`), 10_000)));
+    }
+    // Two graphs published by another server land beside them — one old, one
+    // older — and a reader of this process holds the oldest open.
+    const foreignGraph = (name: string, publishedAt: number): string => {
+      const dir = join(graphRoot(), "trees", name.repeat(64));
+      mkdirSync(join(dir, "codegraph"), { recursive: true });
+      writeFileSync(join(dir, "codegraph", `${PHYSICAL}.duckdb`), "foreign");
+      writeFileSync(
+        join(dir, "tree-graph.meta.json"),
+        JSON.stringify({
+          treeRoot: root,
+          publishedAt,
+          physicalCollectionName: PHYSICAL,
+          dbRelPath: join("codegraph", `${PHYSICAL}.duckdb`),
+        }),
+      );
+      return dir;
+    };
+    const old = foreignGraph("e", 2);
+    const held = foreignGraph("f", 1);
+    pool.openReaders.add(join(held, "codegraph", `${PHYSICAL}.duckdb`));
+
+    await cache.sweep(clock.now);
+
+    expect(existsSync(built[1])).toBe(true);
+    expect(existsSync(built[0])).toBe(true);
+    expect(existsSync(old)).toBe(false);
+    expect(existsSync(held)).toBe(true);
+  });
+
+  it("leaves other trees' graphs alone", async () => {
+    const { cache, clock } = harness();
+    const other = treeDir("other");
+    const root = treeDir("t1");
+    const otherGraph = expectBuilt(await cache.graphFor(request(other, "fp"), 10_000));
+
+    for (let edit = 0; edit < 4; edit++) {
+      clock.now += 1_000;
+      expectBuilt(await cache.graphFor(request(root, `fp-${String(edit)}`), 10_000));
+    }
+
+    expect(existsSync(otherGraph)).toBe(true);
+  });
+
+  it("keeps at most the live snapshot and one superseded one after a publish", async () => {
+    const { cache, pool } = harness();
+    const root = treeDir("t1");
+
+    for (const [i, base] of ["base-a", "base-bb", "base-ccc", "base-dddd"].entries()) {
+      writeBaseGraph(base);
+      expectBuilt(await cache.graphFor(request(root, `fp-${String(i)}`), 10_000));
+      expect(snapshotEntries().length).toBeLessThanOrEqual(2);
+    }
+    expect(pool.exports).toHaveLength(4);
+    expect(snapshotEntries()).toContain(pool.exports[3].split("/").pop());
+  });
+});
+
+describe("WorkingTreeGraphCache — process exit (D6)", () => {
+  it("holds an exit hook only while a build runs", async () => {
+    const { cache, builder, exitHooks } = harness();
+    builder.gate = gate();
+
+    const pending = cache.graphFor(request(treeDir("t1")), 10_000);
+    await settle();
+    expect(exitHooks.active.size).toBe(1);
+
+    builder.gate.open();
+    expectBuilt(await pending);
+    expect(exitHooks.active.size).toBe(0);
+  });
+
+  it("at exit, kills the build child and removes this process's staging dir synchronously", async () => {
+    const { cache, builder, exitHooks } = harness();
+    builder.gate = gate();
+    let staging = "";
+    builder.during = (input) => {
+      staging = input.outputRoot;
+    };
+
+    const pending = cache.graphFor(request(treeDir("t1")), 10_000);
+    while (builder.inputs.length === 0) await settle();
+    expect(existsSync(staging)).toBe(true);
+
+    exitHooks.fire();
+
+    expect(builder.killed).toBe(1);
+    expect(existsSync(staging)).toBe(false);
+    builder.outcome = () => ({ kind: "failed", reason: "killed at exit" });
+    builder.gate.open();
+    expect(await pending).toMatchObject({ kind: "unavailable" });
+  });
+
+  it("the sweep removes a staging dir whose owner process is dead at once, and keeps a live owner's", async () => {
+    const { cache } = harness();
+    const trees = join(graphRoot(), "trees");
+    mkdirSync(trees, { recursive: true });
+    const orphan = join(trees, `${"a".repeat(64)}.staging-${String(deadPid())}-ab12`);
+    const liveOwner = join(trees, `${"b".repeat(64)}.staging-${String(process.ppid)}-cd34`);
+    mkdirSync(orphan);
+    mkdirSync(liveOwner);
+
+    const result = await cache.sweep(Date.now());
+
+    expect(existsSync(orphan)).toBe(false);
+    expect(existsSync(liveOwner)).toBe(true);
+    expect(result.evictedStaging).toBe(1);
+  });
+});
+
+describe("WorkingTreeGraphCache — the reader's wait (D11b)", () => {
+  it("a graph tool waits longer than the build budget, so a build that runs out reports why", () => {
+    expect(WORKING_TREE_GRAPH_WAIT_MS).toBeGreaterThan(WORKING_TREE_GRAPH_BUILD_TIMEOUT_MS);
+  });
+
+  it("a wait that lapses in the same turn the build ends reports the build's outcome, not `building`", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const progress = { started: false };
+      const { cache } = harness({
+        builder: {
+          build: async (_input, budget) => {
+            progress.started = true;
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            return { kind: "timedOut", timeoutMs: budget.timeoutMs };
+          },
+        },
+      });
+
+      const pending = cache.graphFor(request(treeDir("t1")), 100);
+      while (!progress.started) await new Promise((resolve) => setImmediate(resolve));
+      vi.advanceTimersByTime(100);
+      const state = await pending;
+
+      expect(state.kind === "unavailable" && state.reason).toMatch(/timed out after 120000 ms/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

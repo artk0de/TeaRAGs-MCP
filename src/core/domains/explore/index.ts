@@ -41,10 +41,13 @@ export type {
   SimilarSearchInput,
 } from "./strategies/index.js";
 export {
+  claimWorkingTreeFloors,
   createWorkingTreeChunkLayer,
   createWorkingTreeChunkStore,
   createWorkingTreeDeltaReader,
+  mergedWorkingTreeSymbolRow,
   recordTreeGraphState,
+  relativePathOf,
   scheduleWorkingTreeChunkSweep,
   WORKING_TREE_DELTA_FILE_CAP,
   WorkingTreeOverlay,

@@ -87,7 +87,16 @@ beside `driftWarning`, and on the graph tools' DTOs (`floors: []` until WTO-7).
 `changedFiles: 0` means the delta was measured and is empty. Every path that
 cannot measure — no `indexedCommit` stamp, the commit object missing from the
 tree's repository, the delta over the cap — still returns the marker with
-`degraded` set. The marker is never omitted.
+`degraded` set. The marker is never omitted. A delta refused for the cap WAS
+measured: it reports its counts beside `degraded` (live D11a), so `0` means
+measured-and-empty only.
+
+`floors` lists exactly the layers that supplied tree data to THIS answer (live
+D8). A floor is claimed by the code that put delta rows into the answer's
+candidates (`claimWorkingTreeFloors`) or read the tree graph for it — never by
+an operation up front, never by reading delta rows (find_similar reads them only
+for a tree positive's content), and never by a clean tree. A clean tree reports
+`floors: []` on every tool.
 
 `indexLag` on `review_changes` and `get_naming_lexicon` stays as is; the marker
 supersedes it in a later cleanup, not in this slice.
@@ -101,6 +110,11 @@ repo-relative paths.
 - changed = `git diff --name-status --no-renames <indexedCommit>` entries that
   are not deletions, plus `git ls-files --others --exclude-standard`;
 - deleted = the `D` entries; a rename is a delete plus an add;
+- renamedFrom = the moves git pairs (`git diff -M --name-status <indexedCommit>`
+  over a throwaway copy of the index where the delta's untracked files are
+  marked intent-to-add, so an unstaged move pairs too), read only when something
+  was deleted. The touched sets stay exact; the pairs only say whose history a
+  moved file carries (D12);
 - both filtered by the ingest rules. `FileScanner` gains a public
   `accepts(relativePath)` that applies the supported-extension test and the
   ignore filter, including the trailing-slash probe of ancestor directories,
@@ -191,6 +205,34 @@ in the base is not.
 - `search-cascade.md` and `references/subagent-injection.md` updated; plugin
   minor version bump.
 
+### Dense floor (WTO-5) — delta rows ranked by their own vectors
+
+Without it, every ranked query on a dirty tree loses the touched files: their
+base rows are excluded and the delta rows enter with a sparse rank only, so a
+non-lexical `hybrid_search` drops all of them (live: 9 touched files of 9 gone)
+and `semantic_search` can only offer the stale base copy. Measured on a linked
+worktree, round-2 probe D3.
+
+- **Vectors.** A delta row's dense vector comes from, in order: the base point
+  of the same `relativePath` whose stored `content` is byte-identical (an
+  unchanged chunk of a modified file — its stored vector is exact, no
+  embedding), then the working-tree chunk store (persisted beside the rows,
+  keyed by content sha256 and the base index's embedding model id), then the
+  base index's embedding provider. Only changed chunk content is ever embedded.
+- **Warm-up.** `view()` starts embedding the delta rows that lack a vector (fire
+  and forget, single-flight per content); a ranked query waits for them at most
+  2 s. A row still without a vector stays out of the dense leg only, and the
+  marker says so (`denseUnavailable: "<n> rows pending"` or the provider's
+  failure).
+- **Ranking.** `semantic_search`, `find_similar` and the dense leg of
+  `hybrid_search` exclude the base rows of touched files (`has_id`, the shared
+  touched-base-points read) and score the delta rows locally — exact cosine
+  against the query vector — merged with the Qdrant results by score (cosine on
+  both sides); hybrid fuses the dense and sparse delta ranks with RRF k=2 like
+  the server-side fusion. `rank_chunks` substitutes delta rows for the base rows
+  of touched files (`chunks` floor) so signal-only rankings read the tree too.
+  Floors: `"dense"` whenever a delta row was scored by its own vector.
+
 ### Tree graph (WTO-7) — codegraph for the working tree
 
 The graph tools and every codegraph signal answer for the tree, not for the
@@ -227,16 +269,23 @@ graph.
 
 Consumers:
 
-| Read path                                                                            | Behaviour with a non-empty delta                                                                                                                                                                                                                                         |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `get_callers`, `get_callees`, `find_cycles`, `trace_path`, `get_architecture_report` | wait for the tree graph (budget 120 s), read it, marker `floors: ["codegraph"]`                                                                                                                                                                                          |
-| find_symbol visibility, symbol-chunk lookup                                          | same graph, same wait                                                                                                                                                                                                                                                    |
-| delta rows of every search tool                                                      | `codegraph.symbols.{file,chunk}` from the tree graph when ready within 3 s; otherwise inherited from the base point of the same `(relativePath, symbolId)` and no `codegraph` floor                                                                                      |
-| delta rows, git                                                                      | `git.file` inherited from the base points of the same file (uncommitted edits have no history); `git.chunk` from the base chunk of the same symbolId; a new symbol has none and the reranker's L3 blend falls back to the file value; an untracked file has no git block |
+| Read path                                                                            | Behaviour with a non-empty delta                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `get_callers`, `get_callees`, `find_cycles`, `trace_path`, `get_architecture_report` | wait for the tree graph (budget 120 s), read it, marker `floors: ["codegraph"]`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| find_symbol visibility, symbol-chunk lookup                                          | same graph, same wait                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| delta rows of every search tool                                                      | `codegraph.symbols.{file,chunk}` from the tree graph when ready within 3 s; otherwise inherited from the base point of the same `(relativePath, symbolId)` and no `codegraph` floor                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| delta rows, git                                                                      | `git.file` inherited from the base points of the file's history path — its own, or for a moved file (`renamedFrom`) the old path (uncommitted edits have no history); `git.chunk` from the base chunk of the same symbolId on that path. What no base point answers the git trajectory computes on demand with ingest's own computation: `git.file` of a history path the base never chunked (below the chunk floor, committed after the index), cached per (repository, HEAD, path, line extent); `git.chunk` of a row whose symbol the base never held, by the chunk walk over the row's TREE lines carried onto HEAD through the HEAD → working hunks (lines the working file added hold no history), cached per (repository, HEAD, path, tree-file content sha, range). An untracked never-committed file has no git block |
 
 `floors` gains `"codegraph"` whenever the answer's graph data came from the tree
 graph. The reranker is not changed: an absent chunk signal already blends to the
 file value, and a file with no history scoring zero on churn is correct.
+
+By design, not a defect (D12): a brand-new symbol in a hot file has no
+`git.chunk` — every one of its lines is uncommitted, so the on-demand chunk walk
+finds no history for it — and the reranker's L3 alpha blend falls back to the
+file's signals. The row ranks with its file's churn, not with zero. A symbol the
+base never held whose lines ARE committed (a renamed method, a re-split chunk)
+gets its chunk history on demand.
 
 Tests: rename, delete and move each assert which edges disappear and which
 appear (a fixture repository, the real provider, a direct pool); a caller in an
@@ -273,4 +322,4 @@ the marker is present.
 
 ## Out of scope
 
-Dense floor and replacing `indexLag`. The WTO-9 transcript audit is user-gated.
+Replacing `indexLag`. The WTO-9 transcript audit is user-gated.

@@ -336,6 +336,8 @@ export class GraphDbClientPool {
    * tea-rags-mcp-hw27k). Cleared by the collection's next successful open.
    */
   private readonly foreignHeldCollections = new Map<PhysicalCollectionName, number>();
+  /** Open {@link acquireFileReader} handles per file path — see {@link isFileReaderOpen}. */
+  private readonly openFileReaders = new Map<string, number>();
 
   constructor(private readonly options: GraphDbClientPoolOptions) {
     this.dbFiles = new CodegraphDbFiles(options.rootDir);
@@ -905,14 +907,34 @@ export class GraphDbClientPool {
    * @throws DuckDbOpenFailedError when the file cannot be opened.
    */
   async acquireFileReader(dbPath: string): Promise<CollectionGraphHandle> {
-    const graphDb = new DuckDbGraphClient({ path: dbPath, accessMode: "READ_ONLY" });
+    const graphDb = new TrackedFileReaderClient(dbPath, () => {
+      this.releaseFileReader(dbPath);
+    });
     try {
       await graphDb.init();
     } catch (err) {
       await graphDb.close().catch(() => undefined);
       throw new DuckDbOpenFailedError(dbPath, err instanceof Error ? err : undefined);
     }
+    this.openFileReaders.set(dbPath, (this.openFileReaders.get(dbPath) ?? 0) + 1);
+    graphDb.markCounted();
     return { graphDb, symbolTable: this.options.symbolTableFactory() };
+  }
+
+  /**
+   * Whether a handle from {@link acquireFileReader} on `dbPath` is open in this
+   * process — what the working-tree graph cache asks before it deletes a
+   * superseded tree graph (bd tea-rags-mcp-xi2r9, D5). Process-local by nature:
+   * a reader in another server is covered by the cache's grace, not by this.
+   */
+  isFileReaderOpen(dbPath: string): boolean {
+    return (this.openFileReaders.get(dbPath) ?? 0) > 0;
+  }
+
+  private releaseFileReader(dbPath: string): void {
+    const count = (this.openFileReaders.get(dbPath) ?? 0) - 1;
+    if (count > 0) this.openFileReaders.set(dbPath, count);
+    else this.openFileReaders.delete(dbPath);
   }
 
   /**
@@ -1388,6 +1410,38 @@ function wrapNoopClose(client: DaemonGraphDbClient): GraphDbClient {
       return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
     },
   });
+}
+
+/**
+ * The READ_ONLY client {@link GraphDbClientPool#acquireFileReader} hands out:
+ * its first `close()` after the pool counted it reports the release, so the
+ * pool's open-reader count drops exactly once per handle.
+ */
+class TrackedFileReaderClient extends DuckDbGraphClient {
+  private counted = false;
+
+  constructor(
+    dbPath: string,
+    private readonly onRelease: () => void,
+  ) {
+    super({ path: dbPath, accessMode: "READ_ONLY" });
+  }
+
+  /** Called by the pool once the open succeeded and the handle is counted. */
+  markCounted(): void {
+    this.counted = true;
+  }
+
+  override async close(): Promise<void> {
+    try {
+      await super.close();
+    } finally {
+      if (this.counted) {
+        this.counted = false;
+        this.onRelease();
+      }
+    }
+  }
 }
 
 /**

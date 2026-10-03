@@ -170,6 +170,11 @@ export class DuckDbGraphSession {
 
   constructor(private readonly options: DuckDbGraphSessionOptions) {}
 
+  /** The mode the database is opened in; a session opened without one is read-write. */
+  get accessMode(): "READ_WRITE" | "READ_ONLY" {
+    return this.options.accessMode ?? "READ_WRITE";
+  }
+
   async open(): Promise<void> {
     this.closing = undefined;
     this.refusingCalls = false;

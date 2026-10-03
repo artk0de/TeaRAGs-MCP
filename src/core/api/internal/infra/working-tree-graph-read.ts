@@ -15,9 +15,23 @@
  */
 import type { CollectionGraphHandle } from "../../../adapters/duckdb/pool.js";
 import type { WorkingTreeGraphReader, WorkingTreeGraphState } from "../../../contracts/types/working-tree.js";
+import { WORKING_TREE_GRAPH_BUILD_TIMEOUT_MS } from "./working-tree-graph-cache.js";
 
-/** How long a graph tool waits for the tree graph before answering from the base (spec: 120 s). */
-export const WORKING_TREE_GRAPH_WAIT_MS = 120_000;
+/**
+ * How far a graph tool's wait outlasts the build budget. The budget is counted
+ * from the child's fork, after the base snapshot is exported, and its kill
+ * still has to be reaped and reported; a wait equal to the budget lapsed just
+ * before that and answered `building` for a build that had in fact run out.
+ */
+export const WORKING_TREE_GRAPH_WAIT_MARGIN_MS = 10_000;
+
+/**
+ * How long a graph tool waits for the tree graph before answering from the
+ * base: the build budget (spec: 120 s) plus {@link WORKING_TREE_GRAPH_WAIT_MARGIN_MS},
+ * so a build that runs out of budget is reported with its reason, not as
+ * still building.
+ */
+export const WORKING_TREE_GRAPH_WAIT_MS = WORKING_TREE_GRAPH_BUILD_TIMEOUT_MS + WORKING_TREE_GRAPH_WAIT_MARGIN_MS;
 
 /** The pool surface the tree graph is opened through. */
 export interface WorkingTreeGraphFileOpener {

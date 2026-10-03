@@ -157,6 +157,12 @@ export interface WorkingTreeDeltaSignalRequest {
    * codegraph payload. Absent → no base reader wired: rows inherit nothing.
    */
   readTouchedBasePoints?: WorkingTreeTouchedBasePointsReader;
+  /**
+   * The delta's moves: a changed path → the deleted path git pairs it with
+   * (`WorkingTreeDelta#renamedFrom`). A moved file's history is its OLD path's,
+   * so its rows inherit git from the old path's base points. Absent → no moves.
+   */
+  renamedFrom?: ReadonlyMap<string, string>;
 }
 
 /**
@@ -180,4 +186,56 @@ export interface WorkingTreeDeltaSignalResult {
  */
 export interface WorkingTreeDeltaSignalSource {
   enrich: (request: WorkingTreeDeltaSignalRequest) => Promise<WorkingTreeDeltaSignalResult>;
+}
+
+/** One delta row whose `git.chunk` is computed on demand, in the TREE file's lines. */
+export interface WorkingTreeGitChunkTarget {
+  /** The caller's key for the row; the answer is keyed by it. */
+  key: string;
+  startLine: number;
+  endLine: number;
+}
+
+/**
+ * One delta file the git trajectory is asked about: its history, and what of it
+ * no base point answers.
+ */
+export interface WorkingTreeGitSignalTarget {
+  /** The HISTORY path, relative to the tree root: the file's own, or a move's old path. */
+  relativePath: string;
+  /** The tree file the rows were chunked from (relative to the tree root) — where their lines are read. */
+  treePath: string;
+  /** Last line the file's rows reach — the line count ingest computes file signals over. */
+  maxEndLine: number;
+  /** Whether `git.file` is wanted (no base point of the history path carries one). */
+  fileSignals: boolean;
+  /** Rows no base point of the same symbol answers. */
+  chunks: readonly WorkingTreeGitChunkTarget[];
+}
+
+/** What the git trajectory computed for one history path. */
+export interface WorkingTreeGitSignals {
+  /** `git.file`, when asked for and the path has commit history. */
+  file?: Record<string, unknown>;
+  /** `git.chunk` by row key; a row whose lines hold no committed history is absent. */
+  chunks: ReadonlyMap<string, Record<string, unknown>>;
+}
+
+/**
+ * Port to the git trajectory's own signal computation (bd tea-rags-mcp-xi2r9,
+ * D12), for what no base point answers: `git.file` of a file the base never
+ * chunked (below the chunk floor, committed after the index), `git.chunk` of a
+ * row whose symbol the base never held. Answers the blocks ingest would have
+ * written — the file backfill's history and blame, the chunk walk's
+ * hunk→range attribution — keyed by `relativePath`. A row's lines are the
+ * tree file's; lines the working file added hold no history, so a row made only
+ * of them, and a path never committed, get nothing. Implemented in
+ * `api/internal` over the git trajectory and wired at the composition root, so
+ * explore never imports trajectory. Never rejects.
+ */
+export interface WorkingTreeGitSignalSource {
+  signalsOf: (
+    root: string,
+    targets: readonly WorkingTreeGitSignalTarget[],
+  ) => Promise<ReadonlyMap<string, WorkingTreeGitSignals>>;
 }

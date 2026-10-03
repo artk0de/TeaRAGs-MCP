@@ -11,7 +11,7 @@ import {
   type IndexStatus,
   type OptimizerRecoveryTarget,
 } from "../../../core/api/public/index.js";
-import { formatMcpText } from "../../format.js";
+import { formatMcpText, formatWorkingTreeMarker } from "../../format.js";
 import type { RegisterToolFn } from "../../middleware/error-handler.js";
 import * as schemas from "../schemas.js";
 import { resolvePathFromProject } from "./shared.js";
@@ -88,6 +88,14 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
 
       if (infraHealth) text += `\n\n${formatInfraHealth(infraHealth, recoveryTarget)}`;
 
+      // A working tree has no index of its own (live D10): the status above is
+      // the base index's, and the reader is told which tree reads against it.
+      if (status.indexPath !== undefined) {
+        const tree = status.workingTree?.tree ?? path;
+        text += `\n\nWorking tree ${tree} is read against the index of ${status.indexPath}.`;
+        if (status.workingTree) text += `\n${formatWorkingTreeMarker(status.workingTree)}`;
+      }
+
       // One report over every axis the build can see, under one heading
       // (bd tea-rags-mcp-p0phi). Appended only when something moved, so the
       // clean-index output is byte-for-byte what it always was.
@@ -95,7 +103,8 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
       // NON-consuming: status is an inspection a reader runs on purpose, so it
       // must answer the same way every time — and the once-per-session warning
       // belongs to the next SEARCH, which would otherwise find it already spent.
-      const drift = await app.checkIndexDrift({ path, consume: false });
+      // Drift is a property of the INDEX — a working tree is checked at its base.
+      const drift = await app.checkIndexDrift({ path: status.indexPath ?? path, consume: false });
       if (drift) text += `\n\n## Drift\n${drift}`;
       return formatMcpText(text);
     },

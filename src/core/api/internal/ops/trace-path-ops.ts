@@ -40,7 +40,14 @@ import {
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { RankingOverlay } from "../../../contracts/types/reranker.js";
-import { recordTreeGraphState, type WorkingTreeOverlay } from "../../../domains/explore/index.js";
+import {
+  claimWorkingTreeFloors,
+  mergedWorkingTreeSymbolRow,
+  recordTreeGraphState,
+  relativePathOf,
+  type WorkingTreeOverlay,
+  type WorkingTreeView,
+} from "../../../domains/explore/index.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolveInheritedMemberDefiner } from "../../../domains/trajectory/codegraph/inherited-member-definer.js";
@@ -99,8 +106,9 @@ export class TracePathOps {
    * The trace, carrying the `workingTree` marker on every return path (bd
    * tea-rags-mcp-xi2r9). A tree with a non-empty delta is walked over its own
    * graph when that is built (WTO-7, marker `floors: ["codegraph"]`), over the
-   * index's otherwise with `treeGraphUnavailable` saying why. Step hydration
-   * stays the index's payload either way.
+   * index's otherwise with `treeGraphUnavailable` saying why. A step in a file
+   * the tree touched is hydrated from the tree, never from the index's payload
+   * (live D2, `hydrateForWorkingTree`).
    */
   async tracePath(req: TracePathRequest): Promise<PathTraceResult> {
     const workingTree = resolveWorkingTree(this.deps.collectionRegistry, req);
@@ -110,6 +118,7 @@ export class TracePathOps {
       req,
       workingTree.baseIndex.collectionName,
       selection.kind === "tree" ? selection.handle : undefined,
+      view,
     );
     if (!view) return result;
     if (selection.state) recordTreeGraphState(view.marker, selection.state);
@@ -121,6 +130,7 @@ export class TracePathOps {
     req: TracePathRequest,
     collectionName: string,
     treeHandle?: CollectionGraphHandle,
+    view?: WorkingTreeView,
   ): Promise<PathTraceResult> {
     const maxDepth = req.maxDepth ?? DEFAULT_MAX_DEPTH;
     const maxPaths = req.maxPaths ?? DEFAULT_MAX_PATHS;
@@ -182,10 +192,14 @@ export class TracePathOps {
     // 3. Hydrate every step symbol from Qdrant (one scroll for the whole union).
     const nodes = [...new Set(paths.flat())];
     const symbolIds = [...new Set(nodes.map((key) => parseFileScopedSymbolKey(key).symbolId))];
-    const chunks = await this.deps.qdrant.scrollBySymbolIds(
-      activePhysicalCollectionName,
-      symbolIds,
-      nodes.length * HYDRATION_SCROLL_HEADROOM,
+    const chunks = await this.hydrateForWorkingTree(
+      await this.deps.qdrant.scrollBySymbolIds(
+        activePhysicalCollectionName,
+        symbolIds,
+        nodes.length * HYDRATION_SCROLL_HEADROOM,
+      ),
+      nodes,
+      view,
     );
     // Index hydrated chunks by the SCOPED key, so a namesake in another file
     // can never answer for this node. A symbol spanning multiple chunks within
@@ -207,6 +221,36 @@ export class TracePathOps {
     const traced: TracedPath[] = paths.map((p) => this.assemble(p, byNode, graphRanges, visibility, dangerByNode));
     if (dangerByNode) traced.sort((a, b) => (b.aggregateDanger ?? 0) - (a.aggregateDanger ?? 0));
     return this.withEndpointFacts({ paths: traced, truncated }, from, to);
+  }
+
+  /**
+   * The hydration rows for a working tree (live D2): the index's chunks of the
+   * files the tree did not touch, plus — per path node in a file the tree
+   * CHANGED — the tree's row of that symbol (`#partN` windows merged, as
+   * find_symbol merges them), which also carries the payload its danger is
+   * ranked on. A node in a deleted file, or in a changed file the tree's rows
+   * do not hold, gets no row: its step falls to the graph's range and carries
+   * no overlay. The index's payload of a touched file describes another commit
+   * and never reaches a step.
+   */
+  private async hydrateForWorkingTree(
+    chunks: HydratedChunk[],
+    nodes: readonly FileScopedSymbolId[],
+    view: WorkingTreeView | undefined,
+  ): Promise<HydratedChunk[]> {
+    if (!view || view.touchedPaths.size === 0) return chunks;
+    const untouched = chunks.filter((chunk) => !view.touchedPaths.has(relativePathOf(chunk.payload)));
+    const treeNodes = nodes
+      .map(parseFileScopedSymbolKey)
+      .filter(({ relPath }) => view.touchedPaths.has(relPath) && !view.deletedPaths.has(relPath));
+    if (treeNodes.length === 0 || !view.readDeltaChunks) return untouched;
+    const deltaRows = await view.readDeltaChunks();
+    const treeRows = treeNodes.flatMap(({ relPath, symbolId }) => {
+      const row = mergedWorkingTreeSymbolRow(deltaRows, relPath, symbolId);
+      return row ? [row] : [];
+    });
+    if (treeRows.length > 0) claimWorkingTreeFloors(view, ["chunks"]);
+    return [...untouched, ...treeRows];
   }
 
   /**
