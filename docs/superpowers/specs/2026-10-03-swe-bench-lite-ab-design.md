@@ -103,7 +103,8 @@ Per arm, per stratum (gold file named / not named), per repo:
 | ------------------------------------------------------------------------------------- | ---------------------------- | -------------------------------------- |
 | Resolved %                                                                            | harness report               | McNemar on paired outcomes             |
 | Input, cache write, cache read, output tokens; `total_cost_usd`                       | `stream-json` result `usage` | Wilcoxon signed-rank, bootstrap 95% CI |
-| Turns; tool calls by tool                                                             | transcript                   | Wilcoxon                               |
+| Turns; tool calls total, search/read calls, per tool (CSV)                            | transcript                   | Wilcoxon, bootstrap 95% CI             |
+| Solve time: agent wall clock, model API time (`duration_api_ms`)                      | `status.json`, `result`      | Wilcoxon, bootstrap 95% CI             |
 | File recall: gold file opened (y/n), turns until first touch, patch touches gold file | transcript + gold patch      | McNemar / Wilcoxon                     |
 | TeaRAGs share (arm 1): tea-rags calls / all search+read calls                         | transcript                   | descriptive                            |
 | Index wall time (arm 1)                                                               | `index.jsonl`                | descriptive, not added to agent cost   |
