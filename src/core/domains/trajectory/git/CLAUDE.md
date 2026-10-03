@@ -12,7 +12,8 @@ their own navigators.
   chunk churn walk — so `git.file.commitCount` and `git.chunk.commitCount` count
   over different histories and no commit-derived signal (commitCount,
   bugFixRate, ageDays, churnVolatility) is a lifetime figure. `payloadAlpha`
-  (`rerank/derived-signals/helpers.ts`) delegates to `computeAlpha`
+  (git-side `infra/payload-accessors.ts`, re-exported to the rerank layer by
+  `rerank/derived-signals/helpers.ts`) delegates to `computeAlpha`
   (`contracts/signal-utils.ts`); its formula is
   `.claude/rules/derived-signals.md` → "Alpha-Blending (L3)". Why: the maturity
   damper — not the cross-window coverage ratio — is what suppresses alpha for
