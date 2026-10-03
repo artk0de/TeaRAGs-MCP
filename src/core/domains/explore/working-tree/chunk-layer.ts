@@ -17,8 +17,13 @@
  *
  * A call chunks its files concurrently, at most `concurrency` at a time, and
  * answers in request order. The memory cache is bounded by the bytes of the
- * rows it holds ({@link WorkingTreeRowCache}), not by a file count — a delta
- * has no file cap.
+ * rows it holds, not by a file count — a delta has no file cap — and each call
+ * is one pass of a {@link WorkingTreePassRowCache}, so a delta whose rows exceed
+ * the bound still serves a stable share from memory on every request.
+ *
+ * A warm delta is asked on every request, so an unchanged file costs one
+ * `stat`: its content hash comes from {@link WorkingTreeContentHashes}, and its
+ * bytes are read only when it must be chunked or stored.
  *
  * Pool lifecycle: built on the first call that has a file to chunk (a cache
  * hit chunks nothing), replaced when the chunker config changes, shut down
@@ -26,13 +31,13 @@
  */
 
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { ChunkerConfig } from "../../../types.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { computeGitBlobId, type WorkingTreeChunkStore, type WorkingTreeChunkStoreKey } from "./chunk-store.js";
-import { WORKING_TREE_ROW_CACHE_MAX_BYTES, workingTreeRowBytes, WorkingTreeRowCache } from "./row-cache.js";
+import { WorkingTreeContentHashes, type WorkingTreeFileContent } from "./content-hashes.js";
+import { WORKING_TREE_ROW_CACHE_MAX_BYTES, WorkingTreePassRowCache, workingTreeRowBytes } from "./row-cache.js";
 import { computeWorkingTreeSparseVectors, rememberWorkingTreeSparseVectors } from "./sparse-floor.js";
 
 /** What one `chunk` call read from the tree. */
@@ -97,6 +102,8 @@ export interface WorkingTreeChunkLayerDeps<P extends WorkingTreeChunkerPool> {
   concurrency?: number;
   /** Bound of the memory cache, in bytes of row content. Default {@link WORKING_TREE_ROW_CACHE_MAX_BYTES}. */
   maxCacheBytes?: number;
+  /** Where tree files are read and hashed. Default: a private {@link WorkingTreeContentHashes}. */
+  contentHashes?: WorkingTreeContentHashes;
 }
 
 /** Files one `chunk` call chunks at a time when the composition root names no pool size. */
@@ -124,7 +131,10 @@ export function createWorkingTreeChunkLayer<P extends WorkingTreeChunkerPool>(
 ): WorkingTreeChunkLayer {
   const idleShutdownMs = deps.idleShutdownMs ?? DEFAULT_IDLE_SHUTDOWN_MS;
   const concurrency = Math.max(1, deps.concurrency ?? WORKING_TREE_CHUNK_CONCURRENCY);
-  const cache = new WorkingTreeRowCache<readonly ScrollChunk[]>(deps.maxCacheBytes ?? WORKING_TREE_ROW_CACHE_MAX_BYTES);
+  const cache = new WorkingTreePassRowCache<readonly ScrollChunk[]>(
+    deps.maxCacheBytes ?? WORKING_TREE_ROW_CACHE_MAX_BYTES,
+  );
+  const contentHashes = deps.contentHashes ?? new WorkingTreeContentHashes();
   let live: { pool: P; configKey: string } | undefined;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   let inFlight = 0;
@@ -150,7 +160,11 @@ export function createWorkingTreeChunkLayer<P extends WorkingTreeChunkerPool>(
     idleTimer.unref?.();
   };
 
-  /** One file's rows: memory → store → chunker. Rejects when the file cannot be read or parsed. */
+  /**
+   * One file's rows: memory → store → chunker. The content hash comes from the
+   * stamp memo; the bytes are read only to chunk or store them. Rejects when the
+   * file cannot be read or parsed.
+   */
   const chunkOne = async (
     tree: string,
     relativePath: string,
@@ -158,33 +172,64 @@ export function createWorkingTreeChunkLayer<P extends WorkingTreeChunkerPool>(
     configKey: string,
     chunkerFingerprint: string,
     collectionName: string | undefined,
+    pass: number,
   ): Promise<WorkingTreeChunkedFile> => {
-    const content = await readFile(join(tree, relativePath));
-    const contentSha256 = createHash("sha256").update(content).digest("hex");
-    const key = `${configKey}\0${tree}\0${relativePath}\0${contentSha256}`;
-    const storeKey = { treeRoot: tree, relativePath, contentSha256, chunkerFingerprint };
-    const cached = cache.get(key);
-    if (cached) return { rows: cached, storeKey };
+    const path = join(tree, relativePath);
+    const readContent = async (): Promise<WorkingTreeFileContent> => {
+      const read = await contentHashes.readContent(path);
+      if (!read) throw new Error(`unreadable tree file: ${relativePath}`);
+      return read;
+    };
+    // An unchanged file is answered from the stamp memo; a moved one is read here, once.
+    let content: WorkingTreeFileContent | undefined;
+    let known = await contentHashes.memoizedSha256Of(path);
+    if (known === undefined) {
+      content = await readContent();
+      known = content.sha256;
+    }
+    const memoized = known;
+    const keyOf = (contentSha256: string): string => `${configKey}\0${tree}\0${relativePath}\0${contentSha256}`;
+    const storeKeyOf = (contentSha256: string): WorkingTreeChunkStoreKey => ({
+      treeRoot: tree,
+      relativePath,
+      contentSha256,
+      chunkerFingerprint,
+    });
+    const cached = cache.get(keyOf(memoized), pass);
+    if (cached) return { rows: cached, storeKey: storeKeyOf(memoized) };
     const { store } = deps;
     const stored =
       store && collectionName !== undefined
-        ? await store.get(collectionName, storeKey).catch(() => undefined)
+        ? await store.get(collectionName, storeKeyOf(memoized)).catch(() => undefined)
         : undefined;
-    let rows = stored?.rows;
     if (stored?.sparseVectors) rememberWorkingTreeSparseVectors(stored.sparseVectors);
+    // The rows and the content hash they belong to: a chunk follows the bytes it
+    // read, which may be newer than the memoized stamp.
+    let rows = stored?.rows;
+    let rowsSha256 = memoized;
     if (!rows) {
-      const code = content.toString("utf8");
-      rows = await deps.chunkFile(await poolFor(config, configKey), { root: tree, relativePath, code });
+      content ??= await readContent();
+      rowsSha256 = content.sha256;
+      rows = await deps.chunkFile(await poolFor(config, configKey), {
+        root: tree,
+        relativePath,
+        code: content.content.toString("utf8"),
+      });
     }
     // A fresh chunk, or an entry an earlier build stored without BM25 vectors.
     if (store && collectionName !== undefined && !stored?.sparseVectors) {
-      const sparseVectors = computeWorkingTreeSparseVectors(rows);
-      await store
-        .put(collectionName, { ...storeKey, blobId: computeGitBlobId(content), rows, sparseVectors })
-        .catch(() => undefined);
+      content ??= await readContent();
+      // Stored rows are re-filed only under the bytes they were chunked from.
+      if (content.sha256 === rowsSha256) {
+        const blobId = computeGitBlobId(content.content);
+        const sparseVectors = computeWorkingTreeSparseVectors(rows);
+        await store
+          .put(collectionName, { ...storeKeyOf(rowsSha256), blobId, rows, sparseVectors })
+          .catch(() => undefined);
+      }
     }
-    cache.set(key, rows, workingTreeRowBytes(rows));
-    return { rows, storeKey };
+    cache.set(keyOf(rowsSha256), rows, workingTreeRowBytes(rows), pass);
+    return { rows, storeKey: storeKeyOf(rowsSha256) };
   };
 
   return {
@@ -193,6 +238,7 @@ export function createWorkingTreeChunkLayer<P extends WorkingTreeChunkerPool>(
       clearTimeout(idleTimer);
       idleTimer = undefined;
       inFlight++;
+      const pass = cache.beginPass();
       try {
         const configKey = JSON.stringify(config);
         const chunkerFingerprint = createHash("sha256")
@@ -211,6 +257,7 @@ export function createWorkingTreeChunkLayer<P extends WorkingTreeChunkerPool>(
               configKey,
               chunkerFingerprint,
               collectionName,
+              pass,
             ).catch(() => undefined);
           }
         };
@@ -234,6 +281,7 @@ export function createWorkingTreeChunkLayer<P extends WorkingTreeChunkerPool>(
           ? { chunks, unparsed, rowsByPath }
           : { chunks, unparsed, storeKeys, rowsByPath };
       } finally {
+        cache.endPass(pass);
         inFlight--;
         armIdleShutdown();
       }

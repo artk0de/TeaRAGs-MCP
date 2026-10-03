@@ -5,14 +5,20 @@
  * built lazily and released when idle.
  */
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { promises as fs, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { toQdrantPointId } from "../../../../../src/core/adapters/qdrant/point-id.js";
 import type { ScrollChunk } from "../../../../../src/core/domains/explore/chunk-grouping/types.js";
-import { createWorkingTreeChunkLayer } from "../../../../../src/core/domains/explore/working-tree/index.js";
+import {
+  createWorkingTreeChunkLayer,
+  WorkingTreeContentHashes,
+  type WorkingTreeChunkStore,
+  type WorkingTreeChunkStoreEntry,
+  type WorkingTreeChunkStoreKey,
+} from "../../../../../src/core/domains/explore/working-tree/index.js";
 import type { ChunkerPoolPort } from "../../../../../src/core/domains/ingest/pipeline/chunker/infra/pool.js";
 import { buildFileChunkPoints } from "../../../../../src/core/domains/ingest/pipeline/file-chunk-points.js";
 import { processFiles } from "../../../../../src/core/domains/ingest/pipeline/file-processor.js";
@@ -365,6 +371,141 @@ describe("WorkingTreeChunkLayer — concurrency and the byte-bounded cache", () 
     await vi.advanceTimersByTimeAsync(1);
     expect(pools[0].shutdown).toHaveBeenCalledTimes(1);
     expect(pools).toHaveLength(1);
+    await layer.dispose();
+  });
+});
+
+describe("WorkingTreeChunkLayer — a warm delta asked on every request", () => {
+  let tempDir: string;
+  let tree: string;
+
+  const write = (relativePath: string, content: string): void => {
+    const target = join(tree, relativePath);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, content);
+  };
+
+  beforeEach(async () => {
+    ({ tempDir, codebaseDir: tree } = await createTempTestDir());
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(tempDir);
+  });
+
+  const pool = () => ({ shutdown: vi.fn(async () => undefined) });
+
+  /** A chunker returning one row whose content is the file's code (so a row's bytes are its file's). */
+  const echoChunker = () =>
+    vi.fn(
+      async (_pool: unknown, file: { relativePath: string; code: string }): Promise<ScrollChunk[]> => [
+        {
+          id: `id:${file.relativePath}:${file.code}`,
+          payload: { relativePath: file.relativePath, content: file.code },
+        },
+      ],
+    );
+
+  /** Content hashes over the real filesystem, with every tree `readFile` counted. */
+  const countedHashes = () => {
+    const readFile = vi.fn(async (path: string) => fs.readFile(path));
+    const contentHashes = new WorkingTreeContentHashes({ fs: { stat: async (path) => fs.stat(path), readFile } });
+    return { contentHashes, readFile };
+  };
+
+  /** An in-memory chunk store, by key. */
+  const memoryStore = (): WorkingTreeChunkStore => {
+    const entries = new Map<string, WorkingTreeChunkStoreEntry>();
+    const keyOf = (key: WorkingTreeChunkStoreKey): string =>
+      JSON.stringify([key.treeRoot, key.relativePath, key.contentSha256, key.chunkerFingerprint]);
+    return {
+      get: vi.fn(async (_collection: string, key: WorkingTreeChunkStoreKey) => entries.get(keyOf(key))),
+      put: vi.fn(async (_collection: string, entry: Omit<WorkingTreeChunkStoreEntry, "lastReadAt">) => {
+        entries.set(keyOf(entry), { ...entry, lastReadAt: 0 });
+      }),
+      getVectors: async () => undefined,
+      putVectors: async () => undefined,
+      sweep: async () => ({ evicted: 0, kept: entries.size, bytes: 0 }),
+      sweepIfDue: async () => undefined,
+    };
+  };
+
+  it("should not re-read an unchanged tree file served from memory, and should re-read an edited one", async () => {
+    write("a.ts", "export const a = 1;\n");
+    write("b.ts", "export const b = 1;\n");
+    const { contentHashes, readFile } = countedHashes();
+    const layer = createWorkingTreeChunkLayer({ createPool: pool, chunkFile: echoChunker(), contentHashes });
+
+    await layer.chunk(tree, ["a.ts", "b.ts"], CONFIG);
+    expect(readFile).toHaveBeenCalledTimes(2);
+    const warm = await layer.chunk(tree, ["a.ts", "b.ts"], CONFIG);
+    expect(readFile).toHaveBeenCalledTimes(2);
+    expect(warm.chunks.map((row) => row.payload.content)).toEqual(["export const a = 1;\n", "export const b = 1;\n"]);
+
+    write("a.ts", "export const a = 22; // edited\n");
+    const edited = await layer.chunk(tree, ["a.ts", "b.ts"], CONFIG);
+    expect(readFile).toHaveBeenCalledTimes(3);
+    expect(edited.chunks[0].payload.content).toBe("export const a = 22; // edited\n");
+    await layer.dispose();
+  });
+
+  it("should not read the tree file of an unchanged entry the store serves", async () => {
+    write("a.ts", "export const a = 1;\n");
+    write("b.ts", "export const b = 1;\n");
+    const store = memoryStore();
+    const chunkFile = echoChunker();
+    const { contentHashes, readFile } = countedHashes();
+    // A one-byte memory cache holds nothing: every warm read goes to the store.
+    const layer = createWorkingTreeChunkLayer({ createPool: pool, chunkFile, store, contentHashes, maxCacheBytes: 1 });
+
+    await layer.chunk(tree, ["a.ts", "b.ts"], CONFIG, "code_x");
+    expect(readFile).toHaveBeenCalledTimes(2);
+    expect(store.put).toHaveBeenCalledTimes(2);
+
+    const warm = await layer.chunk(tree, ["a.ts", "b.ts"], CONFIG, "code_x");
+    expect(readFile).toHaveBeenCalledTimes(2);
+    expect(store.put).toHaveBeenCalledTimes(2);
+    expect(chunkFile).toHaveBeenCalledTimes(2);
+    expect(warm.chunks.map((row) => row.payload.content)).toEqual(["export const a = 1;\n", "export const b = 1;\n"]);
+    await layer.dispose();
+  });
+
+  it("should serve a stable share of a delta whose rows exceed the memory bound on every repeated pass", async () => {
+    const paths = Array.from({ length: 10 }, (_, i) => `f${String(i)}.ts`);
+    for (const path of paths) write(path, `${path}:`.padEnd(100, "x"));
+    const chunkFile = echoChunker();
+    // 10 files x 100 bytes = 2.5x the bound.
+    const layer = createWorkingTreeChunkLayer({ createPool: pool, chunkFile, maxCacheBytes: 400 });
+
+    const chunkedPerPass: number[] = [];
+    for (let pass = 0; pass < 3; pass++) {
+      const before = chunkFile.mock.calls.length;
+      const read = await layer.chunk(tree, paths, CONFIG);
+      expect(read.unparsed).toEqual([]);
+      chunkedPerPass.push(chunkFile.mock.calls.length - before);
+    }
+
+    expect(chunkedPerPass[0]).toBe(10);
+    // passes 2 and 3 each serve at least 30% of the files from memory
+    expect(chunkedPerPass[1]).toBeLessThanOrEqual(7);
+    expect(chunkedPerPass[2]).toBeLessThanOrEqual(7);
+    await layer.dispose();
+  });
+
+  it("should let an edited file's new rows displace its stale ones in a full cache", async () => {
+    const paths = ["a.ts", "b.ts", "c.ts", "d.ts"];
+    for (const path of paths) write(path, `${path}:v1:`.padEnd(100, "x"));
+    const chunkFile = echoChunker();
+    const layer = createWorkingTreeChunkLayer({ createPool: pool, chunkFile, maxCacheBytes: 400, concurrency: 1 });
+    await layer.chunk(tree, paths, CONFIG);
+    expect(chunkFile).toHaveBeenCalledTimes(4);
+
+    write("a.ts", "a.ts:v2:".padEnd(100, "y"));
+    await layer.chunk(tree, paths, CONFIG);
+    expect(chunkFile).toHaveBeenCalledTimes(5);
+
+    await layer.chunk(tree, paths, CONFIG);
+    expect(chunkFile).toHaveBeenCalledTimes(5); // all four current versions are held
     await layer.dispose();
   });
 });
