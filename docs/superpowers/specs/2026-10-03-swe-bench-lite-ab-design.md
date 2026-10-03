@@ -116,6 +116,30 @@ paired continuous data has enough power. Full run: 300 tasks × 3 runs per arm.
 A low TeaRAGs share in arm 1 means arm 1 did not test TeaRAGs. The report states
 the share next to every arm-1 number.
 
+### Solve time
+
+From the launch of `claude -p` to its exit. It includes model latency and every
+tool the agent runs, TeaRAGs searches among them. It excludes the pre-run index
+stage, the Docker evaluation (emulated under Rosetta, after the run), and
+reindexing the agent triggers during the run: each stream-json line is stamped
+on arrival, a tool call lasts from its `tool_use` event to its `tool_result`
+event, and `index_codebase` calls (MCP or the CLI through Bash) are subtracted.
+Raw wall clock and the subtracted time are reported beside it. Overlay work
+inside search calls (delta chunking and embedding) is not yet separable; it
+needs the server to report it (`tea-rags-mcp-d6jx1.12`).
+
+Arms run interleaved per task (`run-paired`): both arms of one task back to
+back, arm order randomised per task with a fixed seed, same parallelism. Running
+all of arm 0 and then all of arm 1 would let hours of API-latency or embedder
+load drift land in the time delta.
+
+### Why arm 0 is measured, not taken from public data
+
+Public SWE-bench results are mostly resolve rates; published trajectories come
+from other scaffolds, model versions and prompts, and they run tests, which
+neither arm here can. A delta against an external baseline would measure those
+differences, and it would lose the per-task pairing every test above relies on.
+
 ## Spikes that gate the plan
 
 1. `tea-rags worktree create --from` against a standalone (non-linked)
