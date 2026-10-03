@@ -6,6 +6,7 @@
  * the whole bound is not held at all.
  */
 
+import { ByteBoundedLru } from "../../../infra/byte-bounded-lru.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 
 /** Default bound of one row cache: 64 MB of row content. */
@@ -21,42 +22,9 @@ export function workingTreeRowBytes(rows: readonly ScrollChunk[]): number {
   return bytes;
 }
 
-export class WorkingTreeRowCache<V> {
-  private readonly entries = new Map<string, { value: V; bytes: number }>();
-  private heldBytes = 0;
-
-  constructor(private readonly maxBytes: number = WORKING_TREE_ROW_CACHE_MAX_BYTES) {}
-
-  get(key: string): V | undefined {
-    const entry = this.entries.get(key);
-    if (!entry) return undefined;
-    // Re-insert: Map iteration order is the eviction order.
-    this.entries.delete(key);
-    this.entries.set(key, entry);
-    return entry.value;
-  }
-
-  set(key: string, value: V, bytes: number): void {
-    this.delete(key);
-    if (bytes > this.maxBytes) return;
-    for (const [oldest, entry] of this.entries) {
-      if (this.heldBytes + bytes <= this.maxBytes) break;
-      this.entries.delete(oldest);
-      this.heldBytes -= entry.bytes;
-    }
-    this.entries.set(key, { value, bytes });
-    this.heldBytes += bytes;
-  }
-
-  delete(key: string): void {
-    const entry = this.entries.get(key);
-    if (!entry) return;
-    this.entries.delete(key);
-    this.heldBytes -= entry.bytes;
-  }
-
-  clear(): void {
-    this.entries.clear();
-    this.heldBytes = 0;
+/** A {@link ByteBoundedLru} whose bound defaults to {@link WORKING_TREE_ROW_CACHE_MAX_BYTES}. */
+export class WorkingTreeRowCache<V> extends ByteBoundedLru<V> {
+  constructor(maxBytes: number = WORKING_TREE_ROW_CACHE_MAX_BYTES) {
+    super(maxBytes);
   }
 }

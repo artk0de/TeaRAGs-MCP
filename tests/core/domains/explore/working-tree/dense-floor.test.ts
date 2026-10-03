@@ -366,6 +366,61 @@ describe("WorkingTreeDenseVectorSource", () => {
   });
 });
 
+describe("WorkingTreeDenseVectorSource — memory bound in bytes (WTO unbounded delta)", () => {
+  /** Rows of distinct content, one per file — a delta of `count` rows. */
+  const deltaRows = (count: number) =>
+    Array.from({ length: count }, (_, i) =>
+      codeRow(`t-${String(i)}`, { relativePath: `src/f${String(i)}.ts`, content: `body ${String(i)}` }),
+    );
+  const warmOnce = async (source: WorkingTreeDenseVectorSource, rows: ReturnType<typeof deltaRows>) =>
+    source.warm({ collectionName: "c", rows })(10_000);
+
+  it("keeps 5,000 full-size (768-d) vectors under the default bound: a re-asked delta embeds nothing", async () => {
+    const { embeddings, asked } = provider(async (texts) =>
+      texts.map(() => ({ embedding: new Array<number>(768).fill(0.5), dimensions: 768 })),
+    );
+    const source = new WorkingTreeDenseVectorSource({ embeddings });
+    const rows = deltaRows(5_000);
+
+    const first = await warmOnce(source, rows);
+    const embeddedFirst = asked.flat().length;
+    const again = await warmOnce(source, rows);
+
+    expect(first.pending).toBe(0);
+    expect(embeddedFirst).toBe(5_000);
+    expect(asked.flat()).toHaveLength(5_000);
+    expect(again.vectors.size).toBe(5_000);
+  });
+
+  it("evicts the least recently used vector once `memoryBytes` is exceeded (8 bytes per number)", async () => {
+    const { embeddings, asked } = provider();
+    // The provider's vectors are 2-d: 16 bytes each, so 32 bytes hold two.
+    const source = new WorkingTreeDenseVectorSource({ embeddings, memoryBytes: 32 });
+    const [a, b, c] = deltaRows(3);
+
+    await warmOnce(source, [a]);
+    await warmOnce(source, [b]);
+    await warmOnce(source, [a]); // a hit: a is now the most recently used
+    await warmOnce(source, [c]); // over the bound: b, the least recently used, goes
+    asked.length = 0;
+    await warmOnce(source, [a]);
+    await warmOnce(source, [b]);
+
+    expect(asked.flat()).toEqual([b.payload.content]);
+  });
+
+  it("does not keep a vector larger than the whole bound", async () => {
+    const { embeddings, asked } = provider();
+    const source = new WorkingTreeDenseVectorSource({ embeddings, memoryBytes: 8 });
+    const [a] = deltaRows(1);
+
+    await warmOnce(source, [a]);
+    await warmOnce(source, [a]);
+
+    expect(asked.flat()).toEqual([a.payload.content, a.payload.content]);
+  });
+});
+
 describe("scoreWorkingTreeRowsByVector", () => {
   it("scores each admitted row with a vector by exact cosine against the query, best first", () => {
     const rows = [

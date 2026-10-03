@@ -34,6 +34,7 @@ import type {
   WorkingTreeBasePoint,
   WorkingTreeTouchedBasePointsReader,
 } from "../../../contracts/types/working-tree.js";
+import { ByteBoundedLru } from "../../../infra/byte-bounded-lru.js";
 import { cosine } from "../../../infra/vector-math.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { WorkingTreeEmbeddingMalformedError } from "../errors.js";
@@ -74,14 +75,24 @@ export interface WorkingTreeDenseVectorSourceDeps {
   qdrant?: Pick<QdrantManager, "retrieveDenseVectors">;
   /** Absent → vectors are not persisted across processes. */
   store?: Pick<WorkingTreeChunkStore, "getVectors" | "putVectors">;
-  /** Contents whose vector is kept in memory; oldest evicted first. */
-  memoryEntries?: number;
+  /**
+   * Bytes of vectors kept in memory, 8 per number (a vector is a `number[]`,
+   * whose elements V8 stores as doubles); least recently used evicted first.
+   */
+  memoryBytes?: number;
   /** Texts per provider call. */
   batchSize?: number;
 }
 
-/** ~6 KB per 768-d vector: a delta of 200 files' chunks several times over. */
-const DEFAULT_MEMORY_ENTRIES = 4_096;
+/**
+ * 256 MB of vectors. The delta has no file cap, so the bound is bytes: a 768-d
+ * vector is 6,144 bytes, so this holds ~43,700 of them — a 674-file delta was
+ * ~3,600 rows (~5.3 per file), so ~8,000 changed files, or a 3,000-file delta
+ * (~16,000 rows) 2.7 times over. A 3,072-d provider still keeps ~10,900.
+ */
+const DEFAULT_MEMORY_BYTES = 256 * 1024 * 1024;
+/** What a vector costs the memory bound: V8 holds a `number[]` of doubles. */
+const vectorBytes = (vector: readonly number[]): number => vector.length * 8;
 const DEFAULT_BATCH_SIZE = 64;
 
 const contentOf = (row: ScrollChunk): string => (typeof row.payload.content === "string" ? row.payload.content : "");
@@ -112,17 +123,16 @@ interface DenseWarmState {
 }
 
 export class WorkingTreeDenseVectorSource {
-  /** Vector by `model \0 content sha256`, oldest first. */
-  private readonly memory = new Map<string, readonly number[]>();
+  /** Vector by `model \0 content sha256`, bounded by {@link vectorBytes}. */
+  private readonly memory: ByteBoundedLru<readonly number[]>;
   /** Embeds in flight by the same key: a second asker joins, never re-embeds. */
   private readonly inflight = new Map<string, Promise<readonly number[]>>();
   /** The last store write of each entry: the next write of that entry waits for it. */
   private readonly writes = new Map<string, Promise<void>>();
-  private readonly memoryEntries: number;
   private readonly batchSize: number;
 
   constructor(private readonly deps: WorkingTreeDenseVectorSourceDeps) {
-    this.memoryEntries = deps.memoryEntries ?? DEFAULT_MEMORY_ENTRIES;
+    this.memory = new ByteBoundedLru(deps.memoryBytes ?? DEFAULT_MEMORY_BYTES);
     this.batchSize = deps.batchSize ?? DEFAULT_BATCH_SIZE;
   }
 
@@ -364,13 +374,7 @@ export class WorkingTreeDenseVectorSource {
   }
 
   private remember(key: string, vector: readonly number[]): void {
-    this.memory.delete(key);
-    while (this.memory.size >= this.memoryEntries) {
-      const oldest = this.memory.keys().next().value;
-      if (oldest === undefined) break;
-      this.memory.delete(oldest);
-    }
-    this.memory.set(key, vector);
+    this.memory.set(key, vector, vectorBytes(vector));
   }
 }
 

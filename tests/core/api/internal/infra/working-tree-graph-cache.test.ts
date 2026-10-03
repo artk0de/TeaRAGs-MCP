@@ -13,6 +13,7 @@
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
+  promises as fsPromises,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -734,6 +735,44 @@ describe("WorkingTreeGraphCache — content-based key (D7)", () => {
 
     expect(ba).toBe(ab);
     expect(builder.inputs).toHaveLength(1);
+  });
+});
+
+describe("WorkingTreeGraphCache — content-hash memo bounded in bytes (WTO unbounded delta)", () => {
+  /** Content reads of files under `root` while `run` runs: the memo's misses. */
+  async function contentReadsUnder(root: string, run: () => Promise<unknown>): Promise<number> {
+    const readFile = vi.spyOn(fsPromises, "readFile");
+    try {
+      await run();
+      return readFile.mock.calls.filter(([path]) => typeof path === "string" && path.startsWith(root)).length;
+    } finally {
+      readFile.mockRestore();
+    }
+  }
+
+  it("keeps the hashes of a 5,000-file delta under the default bound: re-asking it reads no file", async () => {
+    const { cache } = harness();
+    const root = treeDir("t1");
+    const changed = Array.from({ length: 5_000 }, (_, i) => `src/f${String(i)}.ts`);
+    expectBuilt(await cache.graphFor(request(root, "fp-1", changed), 60_000));
+
+    const reads = await contentReadsUnder(root, async () =>
+      cache.graphFor(request(root, "fp-2", changed, false), 60_000),
+    );
+
+    expect(reads).toBe(0);
+  });
+
+  it("does not keep a hash larger than `contentHashMemoBytes`: every request re-reads the file", async () => {
+    const { cache } = harness({ contentHashMemoBytes: 1 });
+    const root = treeDir("t1");
+    expectBuilt(await cache.graphFor(request(root, "fp-1"), 10_000));
+
+    const reads = await contentReadsUnder(root, async () =>
+      cache.graphFor(request(root, "fp-2", ["src/a.ts"], false), 10_000),
+    );
+
+    expect(reads).toBe(1);
   });
 });
 
