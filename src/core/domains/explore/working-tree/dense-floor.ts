@@ -18,6 +18,9 @@
  *
  * Only changed chunk content is ever embedded, and one content once per
  * process however many views ask (single-flight, then a bounded memory cache).
+ * Vectors reach the store as they resolve — once after the store and base-point
+ * stage, then after each provider batch for the files it advanced, embedded
+ * file by file — so a process that exits mid-warm keeps what it got.
  * `warm` starts all of it at once and returns a reader that waits at most the
  * time it is given: a row still without a vector is reported as pending (or
  * with the provider's failure), never thrown — the answer is made without it.
@@ -113,6 +116,8 @@ export class WorkingTreeDenseVectorSource {
   private readonly memory = new Map<string, readonly number[]>();
   /** Embeds in flight by the same key: a second asker joins, never re-embeds. */
   private readonly inflight = new Map<string, Promise<readonly number[]>>();
+  /** The last store write of each entry: the next write of that entry waits for it. */
+  private readonly writes = new Map<string, Promise<void>>();
   private readonly memoryEntries: number;
   private readonly batchSize: number;
 
@@ -169,17 +174,25 @@ export class WorkingTreeDenseVectorSource {
         if (vector) settle(row, vector);
       }
     }
-    try {
-      if (missing().length > 0) {
-        const embedded = await this.embed(model, missing());
-        for (const row of missing()) {
-          const vector = embedded.get(row.contentSha256);
-          if (vector) settle(row, vector);
-        }
-      }
-    } finally {
-      this.persist(request, model, wanted, state, fromStore);
+    // What memory and the base points gave is stored now: a process that exits
+    // before the provider answers still leaves it for the next one.
+    const gainedOutsideStore = new Set<string>();
+    for (const row of wanted) {
+      if (state.vectors.has(row.id) && !fromStore.has(row.contentSha256)) gainedOutsideStore.add(row.relativePath);
     }
+    this.persist(request, model, wanted, state, gainedOutsideStore);
+    const toEmbed = groupedByFile(missing());
+    if (toEmbed.length === 0) return;
+    await this.embed(model, toEmbed, (embedded) => {
+      const gained = new Set<string>();
+      for (const row of toEmbed) {
+        const vector = state.vectors.has(row.id) ? undefined : embedded.get(row.contentSha256);
+        if (!vector) continue;
+        settle(row, vector);
+        gained.add(row.relativePath);
+      }
+      this.persist(request, model, wanted, state, gained);
+    });
   }
 
   /** Stored vectors of every file a missing row belongs to, by content sha256. */
@@ -237,23 +250,48 @@ export class WorkingTreeDenseVectorSource {
 
   /**
    * Each missing content embedded once: a content already in flight is joined,
-   * the rest goes to the provider in batches. Rejects with the provider's
-   * failure after every batch settled; what did embed is returned through the
-   * memory cache to the next asker either way.
+   * the rest goes to the provider in batches, in the order given. Every batch
+   * (and every joined content) that answers is handed to `onEmbedded` as it
+   * lands. Rejects with the provider's failure after every batch settled; what
+   * did embed reaches the next asker through the memory cache either way.
    */
-  private async embed(model: string, rows: readonly WantedRow[]): Promise<ReadonlyMap<string, readonly number[]>> {
+  private async embed(
+    model: string,
+    rows: readonly WantedRow[],
+    onEmbedded: (vectors: ReadonlyMap<string, readonly number[]>) => void,
+  ): Promise<void> {
     const bySha = new Map<string, string>();
     for (const row of rows) bySha.set(row.contentSha256, row.content);
     const waits = new Map<string, Promise<readonly number[]>>();
     const fresh: [string, string][] = [];
     for (const [sha, content] of bySha) {
       const joined = this.inflight.get(`${model}\0${sha}`);
-      if (joined) waits.set(sha, joined);
-      else fresh.push([sha, content]);
+      if (!joined) {
+        fresh.push([sha, content]);
+        continue;
+      }
+      waits.set(sha, joined);
+      void joined.then(
+        (vector) => {
+          onEmbedded(new Map([[sha, vector]]));
+        },
+        () => undefined,
+      );
     }
     for (let start = 0; start < fresh.length; start += this.batchSize) {
       const batch = fresh.slice(start, start + this.batchSize);
       const call = this.deps.embeddings.embedBatch(batch.map(([, content]) => content));
+      void call.then(
+        (results) => {
+          const landed = new Map<string, readonly number[]>();
+          batch.forEach(([sha], i) => {
+            const embedding = results[i]?.embedding;
+            if (embedding) landed.set(sha, embedding);
+          });
+          onEmbedded(landed);
+        },
+        () => undefined,
+      );
       batch.forEach(([sha], i) => {
         const key = `${model}\0${sha}`;
         const one = call.then((results) => {
@@ -274,43 +312,54 @@ export class WorkingTreeDenseVectorSource {
         );
       });
     }
-    const settled = await Promise.allSettled([...waits].map(async ([sha, wait]) => [sha, await wait] as const));
-    const vectors = new Map<string, readonly number[]>();
+    const settled = await Promise.allSettled([...waits.values()]);
+    let embedded = 0;
     let failure: unknown;
     for (const outcome of settled) {
-      if (outcome.status === "fulfilled") vectors.set(outcome.value[0], outcome.value[1]);
+      if (outcome.status === "fulfilled") embedded += 1;
       else failure ??= outcome.reason;
     }
-    if (failure !== undefined && vectors.size < waits.size) {
-      throw failure instanceof Error ? failure : new WorkingTreeEmbeddingMalformedError(waits.size, vectors.size);
+    if (failure !== undefined && embedded < waits.size) {
+      throw failure instanceof Error ? failure : new WorkingTreeEmbeddingMalformedError(waits.size, embedded);
     }
-    return vectors;
   }
 
-  /** Write each file's vectors beside its rows when any came from somewhere other than the store. Fire and forget. */
+  /**
+   * Write every vector `state` holds for each of `paths` beside that file's
+   * rows. Fire and forget. The store merges a write into the entry's vectors by
+   * reading then writing, so writes of one entry are chained — two overlapping
+   * writes would each drop what the other added.
+   */
   private persist(
     request: WorkingTreeDenseVectorRequest,
     model: string,
     wanted: readonly WantedRow[],
     state: DenseWarmState,
-    fromStore: ReadonlyMap<string, readonly number[]>,
+    paths: ReadonlySet<string>,
   ): void {
     const { store } = this.deps;
-    if (!store || !request.storeKeys) return;
+    if (!store || !request.storeKeys || paths.size === 0) return;
     const byPath = new Map<string, Map<string, number[]>>();
-    const added = new Set<string>();
     for (const row of wanted) {
       const vector = state.vectors.get(row.id);
-      if (!vector) continue;
+      if (!vector || !paths.has(row.relativePath)) continue;
       const file = byPath.get(row.relativePath) ?? new Map<string, number[]>();
       file.set(row.contentSha256, [...vector]);
       byPath.set(row.relativePath, file);
-      if (!fromStore.has(row.contentSha256)) added.add(row.relativePath);
     }
-    for (const path of added) {
+    for (const [path, vectors] of byPath) {
       const key = request.storeKeys.get(path);
-      const vectors = byPath.get(path);
-      if (key && vectors) void store.putVectors(request.collectionName, key, model, vectors).catch(() => undefined);
+      if (!key) continue;
+      const entry = [request.collectionName, model, key.treeRoot, path, key.contentSha256, key.chunkerFingerprint].join(
+        "\0",
+      );
+      const write = (this.writes.get(entry) ?? Promise.resolve())
+        .then(async () => store.putVectors(request.collectionName, key, model, vectors))
+        .catch(() => undefined);
+      this.writes.set(entry, write);
+      void write.then(() => {
+        if (this.writes.get(entry) === write) this.writes.delete(entry);
+      });
     }
   }
 
@@ -336,6 +385,17 @@ function wantedRows(rows: readonly ScrollChunk[]): WantedRow[] {
     byId.set(id, { id, relativePath, content, contentSha256: sha256(content), span: spanOf(row.payload) });
   }
   return [...byId.values()];
+}
+
+/** `rows` with each file's rows together, files in order of first appearance — so files finish embedding one by one. */
+function groupedByFile(rows: readonly WantedRow[]): WantedRow[] {
+  const byPath = new Map<string, WantedRow[]>();
+  for (const row of rows) {
+    const file = byPath.get(row.relativePath);
+    if (file) file.push(row);
+    else byPath.set(row.relativePath, [row]);
+  }
+  return [...byPath.values()].flat();
 }
 
 /** Resolves when `work` settles or `waitMs` lapses, whichever is first; the timer never holds the process. */
