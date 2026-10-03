@@ -151,9 +151,8 @@ export interface WorkingTreeDeltaRow {
 }
 
 /**
- * One base-index point of a file the tree touched, with the payload subset its
- * readers use: `relativePath`, `symbolId`, `startLine`, `endLine`, `git`,
- * `codegraph`.
+ * One base-index point of a file the tree touched, with the payload subset of
+ * the read's tier ({@link WorkingTreeBasePointTier}).
  */
 export interface WorkingTreeBasePoint {
   id: string | number;
@@ -167,11 +166,34 @@ export interface WorkingTreeBasePoint {
 export type WorkingTreeTouchedBasePointsByPath = ReadonlyMap<string, readonly WorkingTreeBasePoint[]>;
 
 /**
- * A view's read of its touched files' base points — one read per request,
- * shared by every consumer of the view (hybrid's `has_id` exclusion, the delta
- * signals' inheritance).
+ * How much payload a touched-base-point read carries:
+ * - `light` — `relativePath`, `symbolId`, `startLine`, `endLine`: ids and spans
+ *   (hybrid's `has_id` exclusion, the dense floor's span match). Cheap, and
+ *   kept across processes.
+ * - `full` — light plus `git` and `codegraph`: what delta rows inherit. Heavy;
+ *   asked only for the paths whose rows are being signalled.
  */
-export type WorkingTreeTouchedBasePointsReader = () => Promise<WorkingTreeTouchedBasePointsByPath>;
+export type WorkingTreeBasePointTier = "light" | "full";
+
+/** What a consumer asks a view's touched-base-point reader for. */
+export interface WorkingTreeTouchedBasePointsQuery {
+  tier: WorkingTreeBasePointTier;
+  /**
+   * The touched paths to read. Absent → every touched path of the view. A path
+   * the view did not touch reads nothing.
+   */
+  paths?: Iterable<string>;
+}
+
+/**
+ * A view's read of its touched files' base points, by tier and path. Each
+ * consumer asks for the minimum it reads; the reader behind it caches per
+ * (index revision, path), so a path is scrolled once per revision whichever
+ * consumer asked first.
+ */
+export type WorkingTreeTouchedBasePointsReader = (
+  query: WorkingTreeTouchedBasePointsQuery,
+) => Promise<WorkingTreeTouchedBasePointsByPath>;
 
 /** Everything the signal source needs to enrich one view's delta rows. */
 export interface WorkingTreeDeltaSignalRequest {

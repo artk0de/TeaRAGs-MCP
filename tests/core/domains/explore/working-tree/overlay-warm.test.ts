@@ -436,6 +436,28 @@ describe("WorkingTreeOverlay with a delta warmer", { timeout: 60_000 }, () => {
       expect(calls.filter((name) => /upsert|delete|set|create|update|overwrite|clear|batch/i.test(name))).toEqual([]);
     });
 
+    // A long-lived server views many trees; what it remembers to prewarm stays
+    // bounded, the least recently viewed root forgotten first.
+    it("should forget the least recently viewed root past the remembered bound", async () => {
+      const warmer = fakeWarmer(async () => stateOf(["src/a.ts"], []));
+      const kept = 3;
+      const { overlay } = overlayWith({ deltaReader: readerOf(["src/a.ts"], []), warmer, viewedTreesKept: kept });
+      const roots = Array.from({ length: kept + 1 }, (_, i) => `${tree}-gone-${i}`);
+      await overlay.view(workingTree(roots[0]), "proj");
+      for (const root of roots.slice(2)) await overlay.view(workingTree(root), "proj");
+      await overlay.view(workingTree(roots[0]), "proj");
+      await overlay.view(workingTree(roots[1]), "proj");
+      const background = () => warmer.warm.mock.calls.filter(([, , lane]) => lane === "background").length;
+
+      await overlay.prewarm(roots[2]);
+      const afterEvicted = background();
+      await overlay.prewarm(roots[0]);
+      await overlay.prewarm(roots[1]);
+
+      expect(afterEvicted).toBe(0);
+      expect(background()).toBe(2);
+    });
+
     it("should never reject when measuring or warming fails", async () => {
       let fail = false;
       const deltaReader: WorkingTreeDeltaReader = {

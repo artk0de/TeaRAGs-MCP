@@ -220,15 +220,23 @@ describe("WorkingTreeOverlay tree graph (WTO-7)", () => {
       await chunkLayer.dispose();
     });
 
-    // bd tea-rags-mcp-xi2r9: the touched files' base points are read ONCE per
-    // request and shared — hybrid's exclusion and the delta signals both ask
-    // the view, and the view asks the reader once.
-    it("should read the touched files' base points once per view and hand that read to the signal source", async () => {
+    // bd tea-rags-mcp-xi2r9: every consumer of the touched files' base points
+    // reads them through the view — the signal source through the request the
+    // view hands it — and the view reads them at the index revision the
+    // registry stamped, for the tier asked and only for paths it touched.
+    it("should read the touched files' base points at the index run's stamp, only for touched paths", async () => {
       const chunkLayer = layer();
       const deltaSignals = signalSource(BUILT);
       const points = new Map([["src/a.ts", [{ id: "b1", payload: { relativePath: "src/a.ts" } }]]]);
       const touchedBasePoints = { pointsOf: vi.fn(async () => points) };
+      const stamped = {
+        get: () => ({
+          indexedAt: "2026-10-03T10:00:00.000Z",
+          git: { indexedCommit: "a".repeat(40), indexedDirty: false },
+        }),
+      } as never;
       const view = await overlayWith(deltaReader(["src/a.ts"], ["src/gone.ts"]), {
+        registry: stamped,
         deltaSignals,
         touchedBasePoints,
         deltaChunks: { layer: chunkLayer, resolveChunkerConfig: async () => CHUNKER_CONFIG },
@@ -236,17 +244,17 @@ describe("WorkingTreeOverlay tree graph (WTO-7)", () => {
 
       await signalAll(view);
       const [request] = deltaSignals.enrich.mock.calls[0];
-      const fromRequest = await request.readTouchedBasePoints?.();
-      const fromView = await view.readTouchedBasePoints?.();
+      const every = await request.readTouchedBasePoints?.({ tier: "light" });
+      await view.readTouchedBasePoints?.({ tier: "full", paths: ["src/gone.ts", "src/untouched.ts"] });
 
-      expect(fromRequest).toBe(points);
-      expect(fromView).toBe(points);
-      expect(touchedBasePoints.pointsOf).toHaveBeenCalledTimes(1);
-      expect(touchedBasePoints.pointsOf).toHaveBeenCalledWith(
-        COLLECTION,
-        new Set(["src/a.ts", "src/gone.ts"]),
-        "a".repeat(40),
-      );
+      expect(every).toBe(points);
+      const asked = touchedBasePoints.pointsOf.mock.calls.map(([query]) => ({
+        ...(query as { collectionName: string; indexStamp: string | null; tier: string }),
+        paths: [...(query as { paths: Iterable<string> }).paths].sort(),
+      }));
+      const stamp = { collectionName: COLLECTION, indexStamp: "2026-10-03T10:00:00.000Z" };
+      expect(asked).toContainEqual({ ...stamp, tier: "light", paths: ["src/a.ts", "src/gone.ts"] });
+      expect(asked).toContainEqual({ ...stamp, tier: "full", paths: ["src/gone.ts"] });
       await chunkLayer.dispose();
     });
 

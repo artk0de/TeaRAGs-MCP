@@ -12,8 +12,8 @@
  * Lives in `api/internal` because it bridges what explore may not see: the
  * tree graph (`adapters/duckdb`) and the codegraph signal arithmetic
  * (`domains/trajectory/codegraph`). The base collection's payload it does NOT
- * read itself: the request carries the view's touched-base-point read
- * (`readTouchedBasePoints`), the one read hybrid's exclusion shares.
+ * read itself: the request carries the view's touched-base-point reader
+ * (`readTouchedBasePoints`), asked the full points of the signalled files only.
  *
  * - **git** — `git.file` is inherited from the base points of the file's
  *   HISTORY path: an uncommitted edit has no history of its own, the file's
@@ -69,6 +69,8 @@ import type {
   WorkingTreeGitSignalTarget,
   WorkingTreeGraphReader,
   WorkingTreeGraphState,
+  WorkingTreeTouchedBasePointsByPath,
+  WorkingTreeTouchedBasePointsReader,
 } from "../../../contracts/types/working-tree.js";
 import { fileLinesOf } from "../../../domains/ingest/index.js";
 import {
@@ -224,20 +226,22 @@ export function createWorkingTreeDeltaSignalSource(
 }
 
 /**
- * The delta files' base payload, from the view's touched-base-point read — the
- * one hybrid's exclusion shares, read per path and cached per index revision
- * (bd tea-rags-mcp-xi2r9: a multi-path `relativePath` scroll here cost 4.5 s on
- * every request at 137 delta files). `paths` are HISTORY paths: a renamed
- * file's old path, which the touched set holds as deleted. No reader → nothing
- * to inherit.
+ * The delta files' base payload, from the view's touched-base-point reader —
+ * the FULL points (git, codegraph) of exactly `paths`, read per path and cached
+ * per index revision (bd tea-rags-mcp-xi2r9: a multi-path `relativePath` scroll
+ * here cost 4.5 s on every request at 137 delta files; reading every touched
+ * file's heavy payload cost ~5 s at 3,198). `paths` are the signalled rows'
+ * HISTORY paths: a renamed file's old path, which the touched set holds as
+ * deleted. No reader → nothing to inherit.
  */
 async function groupBasePayload(
   request: WorkingTreeDeltaSignalRequest,
   paths: readonly string[],
 ): Promise<BasePayload> {
   const byFile = new Map<string, BaseFilePayload>();
-  if (!request.readTouchedBasePoints) return { byFile, carriesGit: true };
-  const touched = await request.readTouchedBasePoints();
+  const read = request.readTouchedBasePoints;
+  if (!read) return { byFile, carriesGit: true };
+  const touched = await read({ tier: "full", paths });
   for (const path of paths) {
     for (const { payload } of touched.get(path) ?? []) {
       if (pathOf(payload) !== path) continue;
@@ -249,14 +253,39 @@ async function groupBasePayload(
       addBasePoint(file, payload);
     }
   }
+  return { byFile, carriesGit: await baseCarriesGit(read, touched) };
+}
+
+/**
+ * Whether the base index carries git: `false` only on evidence — base points
+ * read without a `git.file`. The signalled files' own points decide when one
+ * carries it; otherwise (none carries it, or they have no points — a brand-new
+ * file) ONE other touched file with base points is read full and decides, so
+ * the answer never costs the whole delta's heavy payload. Which file: the
+ * first, in path order, the light points show holding any.
+ */
+async function baseCarriesGit(
+  read: WorkingTreeTouchedBasePointsReader,
+  signalled: WorkingTreeTouchedBasePointsByPath,
+): Promise<boolean> {
+  const evidence = gitEvidenceOf(signalled);
+  if (evidence === "carries") return true;
+  const light = await read({ tier: "light" });
+  const probe = [...light.keys()].find((path) => !signalled.has(path) && (light.get(path)?.length ?? 0) > 0);
+  if (probe === undefined) return evidence === "unknown";
+  return gitEvidenceOf(await read({ tier: "full", paths: [probe] })) !== "lacks";
+}
+
+/** What `points` say about git: one carries `git.file`, all lack it, or there are none. */
+function gitEvidenceOf(points: WorkingTreeTouchedBasePointsByPath): "carries" | "lacks" | "unknown" {
   let sawPoint = false;
-  for (const points of touched.values()) {
-    for (const { payload } of points) {
-      if (blockAt(payload, ["git", "file"])) return { byFile, carriesGit: true };
+  for (const pathPoints of points.values()) {
+    for (const { payload } of pathPoints) {
+      if (blockAt(payload, ["git", "file"])) return "carries";
       sawPoint = true;
     }
   }
-  return { byFile, carriesGit: !sawPoint };
+  return sawPoint ? "lacks" : "unknown";
 }
 
 /**

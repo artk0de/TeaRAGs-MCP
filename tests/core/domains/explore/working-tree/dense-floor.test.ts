@@ -11,7 +11,10 @@ import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import { codeRow } from "../__fixtures__/working-tree-view.js";
-import type { WorkingTreeTouchedBasePointsByPath } from "../../../../../src/core/contracts/types/working-tree.js";
+import type {
+  WorkingTreeTouchedBasePointsByPath,
+  WorkingTreeTouchedBasePointsReader,
+} from "../../../../../src/core/contracts/types/working-tree.js";
 import {
   recommendWorkingTreeScore,
   scoreWorkingTreeRowsByVector,
@@ -118,6 +121,31 @@ describe("WorkingTreeDenseVectorSource", () => {
     expect(asked).toEqual([["brand new body"]]);
     expect(read.pending).toBe(0);
     expect(read.failure).toBeUndefined();
+  });
+
+  // The span match needs ids and lines of the files its missing rows sit in —
+  // never the heavy payload, never the rest of the delta.
+  it("asks the view for the light base points of only the paths its missing rows sit in", async () => {
+    const { embeddings } = provider();
+    const source = new WorkingTreeDenseVectorSource({ embeddings, qdrant: BASE });
+    const elsewhere = codeRow("t-else", {
+      relativePath: "src/else.ts",
+      content: "else body",
+      startLine: 1,
+      endLine: 3,
+    });
+    await source.warm({ collectionName: "c", rows: [edited] })(2_000);
+    const read = vi.fn<WorkingTreeTouchedBasePointsReader>(async () => basePoints);
+
+    await source.warm({ collectionName: "c", rows: [edited, elsewhere], readTouchedBasePoints: read })(2_000);
+
+    expect(read).toHaveBeenCalled();
+    for (const [query] of read.mock.calls) {
+      expect({ tier: query.tier, paths: [...(query.paths ?? [])].sort() }).toEqual({
+        tier: "light",
+        paths: ["src/else.ts"],
+      });
+    }
   });
 
   it("embeds one content once per process, however many requests and rows ask for it", async () => {

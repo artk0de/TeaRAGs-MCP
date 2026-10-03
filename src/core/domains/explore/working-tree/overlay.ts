@@ -16,6 +16,7 @@ import type { CollectionEntry, RegistryGitState } from "../../../contracts/types
 import {
   WORKING_TREE_WARM_WAIT_MS,
   type WorkingTree,
+  type WorkingTreeBasePointTier,
   type WorkingTreeDeltaSignalSource,
   type WorkingTreeGraphReader,
   type WorkingTreeGraphRequest,
@@ -87,10 +88,13 @@ export interface WorkingTreeView {
    */
   treeGraphLookup?: WorkingTreeGraphState;
   /**
-   * The base-index points of the touched files (bd tea-rags-mcp-xi2r9): read
-   * once per view and shared by every consumer — hybrid's `has_id` exclusion
-   * and the delta signals' inheritance. Present only on a measured non-empty
-   * delta with a base-point reader wired.
+   * The base-index points of the touched files (bd tea-rags-mcp-xi2r9), by
+   * tier and path, at the base index's revision: each consumer asks the minimum
+   * it reads (hybrid's `has_id` exclusion light points of every touched path,
+   * the dense floor light points of its missing rows' paths, the delta signals
+   * full points of the signalled rows' paths); a path the view did not touch
+   * reads nothing. Present only on a measured non-empty delta with a
+   * base-point reader wired.
    */
   readTouchedBasePoints?: WorkingTreeTouchedBasePointsReader;
   /**
@@ -143,11 +147,13 @@ export function filterReadsWorkingTreeSignals(filter: unknown): boolean {
 
 /** The overlay's port to the touched-file base points (`WorkingTreeTouchedBasePoints`). */
 export interface WorkingTreeTouchedBasePointSource {
-  pointsOf: (
-    collectionName: string,
-    touchedPaths: ReadonlySet<string>,
-    indexedCommit: string | null,
-  ) => Promise<WorkingTreeTouchedBasePointsByPath>;
+  pointsOf: (request: {
+    collectionName: string;
+    /** The registry's `indexedAt` of the base index; null when the index has no entry. */
+    indexStamp: string | null;
+    paths: Iterable<string>;
+    tier: WorkingTreeBasePointTier;
+  }) => Promise<WorkingTreeTouchedBasePointsByPath>;
 }
 
 /** How the overlay turns delta files into rows: the layer, and the config to chunk with. */
@@ -208,6 +214,8 @@ export interface WorkingTreeOverlayDeps {
    * index's own checkout is never watched.
    */
   watcher?: Pick<WorkingTreeWatcher, "watch">;
+  /** How many viewed roots `prewarm` remembers; default {@link WORKING_TREE_VIEWED_TREES_KEPT}. */
+  viewedTreesKept?: number;
 }
 
 const NO_TREE_REASON = "no working tree resolved for this index";
@@ -215,6 +223,14 @@ const NO_TREE_REMEDY = "pass path=<your working directory>";
 const UNREADABLE_REMEDY = "check that {tree} is a readable git checkout";
 
 const EMPTY_PATHS: ReadonlySet<string> = new Set();
+
+/**
+ * Roots `prewarm` remembers, the least recently viewed forgotten first. The
+ * watcher stops a tree after 30 minutes without a view; this bounds a server
+ * viewing many trees, where a forgotten root costs only its next view warming
+ * on demand.
+ */
+export const WORKING_TREE_VIEWED_TREES_KEPT = 256;
 
 /**
  * How far past its warm budget a view may wait for the warmer's own answer
@@ -234,6 +250,8 @@ interface WorkingTreeMeasuredDelta {
   reread: readonly string[];
   /** Changed files served from the index. */
   indexOnly: readonly string[];
+  /** The registry's `indexedAt` of the base index — the revision its touched base points are read at. */
+  indexStamp: string | null;
 }
 
 type WorkingTreeMeasurement = WorkingTreeMeasuredDelta | { kind: "degraded"; view: WorkingTreeView };
@@ -246,7 +264,7 @@ export class WorkingTreeOverlay {
 
   /** Never throws for git trouble: a failure becomes `marker.degraded`. */
   async view(tree: WorkingTree, alias: string | undefined): Promise<WorkingTreeView> {
-    if (tree.root !== "") this.viewed.set(tree.root, { tree, alias });
+    if (tree.root !== "") this.remember(tree, alias);
     const measured = await this.measure(tree, alias);
     if (measured.kind === "degraded") return measured.view;
     const { collectionName } = tree.baseIndex;
@@ -275,9 +293,14 @@ export class WorkingTreeOverlay {
     }
     const { touchedBasePoints } = this.deps;
     if (touched > 0 && touchedBasePoints) {
-      let points: Promise<WorkingTreeTouchedBasePointsByPath> | undefined;
-      view.readTouchedBasePoints = async () =>
-        (points ??= touchedBasePoints.pointsOf(collectionName, view.touchedPaths, marker.indexedCommit));
+      const { indexStamp } = measured;
+      view.readTouchedBasePoints = async ({ tier, paths }) =>
+        touchedBasePoints.pointsOf({
+          collectionName,
+          indexStamp,
+          tier,
+          paths: paths ? [...paths].filter((path) => view.touchedPaths.has(path)) : view.touchedPaths,
+        });
     }
     if (source) {
       const { deltaSignals, denseVectors } = this.deps;
@@ -298,6 +321,18 @@ export class WorkingTreeOverlay {
       this.deps.watcher.watch(tree.root);
     }
     return view;
+  }
+
+  /** Records the tree `prewarm` re-measures for its root, as the most recently viewed. */
+  private remember(tree: WorkingTree, alias: string | undefined): void {
+    this.viewed.delete(tree.root);
+    this.viewed.set(tree.root, { tree, alias });
+    const kept = this.deps.viewedTreesKept ?? WORKING_TREE_VIEWED_TREES_KEPT;
+    while (this.viewed.size > kept) {
+      const oldest = this.viewed.keys().next().value;
+      if (oldest === undefined) break;
+      this.viewed.delete(oldest);
+    }
   }
 
   /**
@@ -382,6 +417,7 @@ export class WorkingTreeOverlay {
         deleted,
         reread,
         indexOnly,
+        indexStamp: entry?.indexedAt ? entry.indexedAt : null,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
