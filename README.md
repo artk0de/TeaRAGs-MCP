@@ -589,13 +589,14 @@ decides how much of the tooling on top of the MCP server you get.
 
 Set `EMBEDDING_PROVIDER`; `EMBEDDING_MODEL` overrides the default model.
 
-| Provider             | `EMBEDDING_PROVIDER` | Where it runs           | Default model                                      | Needs            |
-| -------------------- | -------------------- | ----------------------- | -------------------------------------------------- | ---------------- |
-| **Ollama** (default) | `ollama`             | Local                   | `unclemusclez/jina-embeddings-v2-base-code:latest` | A running Ollama |
-| **ONNX** (beta)      | `onnx`               | Local, built-in runtime | `jinaai/jina-embeddings-v2-base-code-fp16`         | Nothing          |
-| **OpenAI**           | `openai`             | Cloud                   | `text-embedding-3-small`                           | `OPENAI_API_KEY` |
-| **Cohere**           | `cohere`             | Cloud                   | `embed-english-v3.0`                               | `COHERE_API_KEY` |
-| **Voyage**           | `voyage`             | Cloud                   | `voyage-2`                                         | `VOYAGE_API_KEY` |
+| Provider             | `EMBEDDING_PROVIDER` | Where it runs           | Default model                                      | Needs                                                     |
+| -------------------- | -------------------- | ----------------------- | -------------------------------------------------- | --------------------------------------------------------- |
+| **Ollama** (default) | `ollama`             | Local                   | `unclemusclez/jina-embeddings-v2-base-code:latest` | A running Ollama                                          |
+| **llama-server**     | `llama-server`       | Local / LAN GPU host    | `unclemusclez/jina-embeddings-v2-base-code:latest` | A running llama-server per GPU; recommended for 3M+ lines |
+| **ONNX** (beta)      | `onnx`               | Local, built-in runtime | `jinaai/jina-embeddings-v2-base-code-fp16`         | Nothing                                                   |
+| **OpenAI**           | `openai`             | Cloud                   | `text-embedding-3-small`                           | `OPENAI_API_KEY`                                          |
+| **Cohere**           | `cohere`             | Cloud                   | `embed-english-v3.0`                               | `COHERE_API_KEY`                                          |
+| **Voyage**           | `voyage`             | Cloud                   | `voyage-2`                                         | `VOYAGE_API_KEY`                                          |
 
 Throughput per provider and how to choose:
 [Embedding Providers](https://artk0de.github.io/TeaRAGs-MCP/config/providers/).

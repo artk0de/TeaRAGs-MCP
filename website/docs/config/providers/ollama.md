@@ -115,6 +115,7 @@ Optional variables:
 | `EMBEDDING_TUNE_BATCH_SIZE` | Ceiling on texts per embedding batch            | `1024`                                             |
 | `OLLAMA_NUM_GPU`            | GPU layers to offload (`0` = CPU only)          | `999` (all)                                        |
 | `OLLAMA_LEGACY_API`         | Use `/api/embeddings` instead of `/api/embed`   | `false`                                            |
+| `EMBEDDING_AUTO_PULL`       | Pull the model at startup when Ollama reports it missing (`/api/show` 404); `false` keeps the manual `ollama pull` | `true` |
 
 :::tip
 
@@ -141,7 +142,10 @@ URL. If both fail, the error message includes both URLs and suggests
 | `mxbai-embed-large`                                | 1024       | Higher dimensions, better quality          |
 | `all-minilm`                                       | 384        | Lightweight, fast                          |
 
-Pull any model with `ollama pull <model>` and set `EMBEDDING_MODEL` accordingly.
+Set `EMBEDDING_MODEL` to any Ollama embedding model. A model the server does not
+have yet is pulled at startup (`EMBEDDING_AUTO_PULL`, on by default); with it
+off, run `ollama pull <model>` first. For a project of 3M+ lines with a GPU
+host, the same models can be served faster by [llama-server](./llama-server).
 
 ## Performance Tuning
 
@@ -154,7 +158,8 @@ Pull any model with `ollama pull <model>` and set `EMBEDDING_MODEL` accordingly.
 Within that ceiling the batch size is chosen during the run: when Ollama fails
 a batch on size (a runner crash, an HTTP 400) the size is halved for every later
 batch and recovers after a streak of successes, and otherwise moves toward the
-fastest measured size. A `localhost` Ollama runs at concurrency 1. See
+fastest measured size. Concurrency is measured too; a `localhost` Ollama
+converges to 1. See
 [Adaptive Embedding](/config/performance-tuning#adaptive-embedding); the
 settled size is reported in `get_index_status` as
 `infraHealth.embedding.throughputTune`.
