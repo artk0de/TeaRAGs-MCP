@@ -54,6 +54,7 @@ import type {
 } from "../../../types.js";
 import { InvalidParameterError } from "../../errors.js";
 import { createPathCollectionResolver, type PathCollectionResolver } from "../collection-resolver.js";
+import { enrichmentAlgorithmVersions } from "../composition.js";
 import { createCodegraphPayloadHealRunner } from "../infra/codegraph-payload-heal-runner.js";
 import { createIngestDependencies } from "../ingest-dependencies.js";
 import { IndexingOps, type IndexDriftConsumptionResetter } from "../ops/indexing-ops.js";
@@ -218,6 +219,10 @@ export class IngestFacade {
       embeddingThroughputOptima: deps.collectionRegistry,
       languageCodeVersions: deps.languageCodeVersions,
       ...(deps.languageChunkSetBumpScopes ? { languageChunkSetBumpScopes: deps.languageChunkSetBumpScopes } : {}),
+      // The algorithm revision of each provider this slice enriches with
+      // (bd tea-rags-mcp-xi2r9), stamped by the runs that rebuild it for every point.
+      trajectoryVersionStamper: deps.collectionRegistry,
+      trajectoryAlgorithmVersions: enrichmentAlgorithmVersions(deps.enrichmentProviders ?? []),
       driftReporter: deps.driftReporter,
       ...(resolveCollectionForPath ? { resolveCollectionForPath } : {}),
       // Beside the collection's other per-collection files, so every process

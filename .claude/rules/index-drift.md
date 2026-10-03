@@ -11,9 +11,9 @@ the current build or environment would produce now. Everything here is a pure
 comparison. The line that decides what belongs:
 
 - **Compare → here.** Reads a stamp (stats cache `payloadFieldKeys` and
-  `samplingContract`, registry `languageVersions` / `env` / `indexedCommit`),
-  reads the current value, returns `IndexDriftFinding[]`. No I/O beyond those
-  reads.
+  `samplingContract`, registry `languageVersions` / `trajectoryVersions` / `env`
+  / `indexedCommit`), reads the current value, returns `IndexDriftFinding[]`. No
+  I/O beyond those reads.
 - **Side effect → elsewhere.** Throws on mismatch (`EmbeddingModelGuard`,
   `adapters/qdrant/`), decides to spawn (`maintenance/freshness/`), upgrades a
   store (`maintenance/migration/`), rewrites payload
@@ -78,8 +78,9 @@ and unset it prints nothing, because the default is true.
    seeded run itself repairs the axis: a seed continues as an ordinary
    incremental, so an axis a MIGRATION fixes is already fixed by the time the
    run ends, and gating on it would reject a good sibling and re-embed the whole
-   repository. `statsContract` is the one such axis today, recorded as a
-   deliberate departure in `drift/CLAUDE.md`.
+   repository. `statsContract` (repaired by a migration) and
+   `trajectoryVersions` (the seed rebuilds the git layer) are the two such axes
+   today, each recorded as a deliberate departure in `drift/CLAUDE.md`.
 
 ## Why not `teaRagsVersion`
 

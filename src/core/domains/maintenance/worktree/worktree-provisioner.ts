@@ -168,6 +168,11 @@ export class WorktreeProvisioner {
     if (sourceEntry.languageVersions) {
       registry.stampLanguageVersions(targetAliasCollectionName, sourceEntry.languageVersions);
     }
+    // Same for the per-provider algorithm stamp (bd tea-rags-mcp-xi2r9): the
+    // clone's enrichment payload was computed by the source's algorithms.
+    if (sourceEntry.trajectoryVersions) {
+      registry.stampTrajectoryVersions(targetAliasCollectionName, sourceEntry.trajectoryVersions);
+    }
 
     return {
       collectionName: targetAliasCollectionName,

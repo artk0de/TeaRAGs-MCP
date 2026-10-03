@@ -36,7 +36,7 @@ export type {
 
 // Internal exports for bootstrap/MCP (not part of App contract)
 export { SchemaBuilder } from "./internal/infra/schema-builder.js";
-export { createComposition } from "./internal/composition.js";
+export { createComposition, enrichmentAlgorithmVersions } from "./internal/composition.js";
 export type { CompositionResult } from "./internal/composition.js";
 
 // App-layer ops composition (bd tea-rags-mcp-0qaht.12): construction of the

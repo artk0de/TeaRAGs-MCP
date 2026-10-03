@@ -172,6 +172,19 @@ export interface CollectionEntry {
    */
   languageVersions?: Record<string, Partial<LanguageCodeVersions>>;
   /**
+   * Algorithm version per enrichment provider key the indexed payload was
+   * computed by (`EnrichmentProvider.algorithmVersion`, bd tea-rags-mcp-xi2r9).
+   * `TrajectoryVersionDriftMonitor` compares it against the running build: a
+   * provider whose computation changed writes different values under the same
+   * keys, which no other axis can see.
+   *
+   * STICKY for the same reason as `languageVersions`: the stamp claims the
+   * provider's layer was rebuilt for every point, so only such a run may advance
+   * it (`CollectionRegistry#stampTrajectoryVersions`). Absent ⇒ every provider
+   * reads as version 1.
+   */
+  trajectoryVersions?: Record<string, number>;
+  /**
    * Settled embedding batch optima, keyed by `embeddingThroughputOptimumKey`
    * (bd tea-rags-mcp-7ju66). MERGED on `record()`: a run overwrites only the
    * endpoints it settled on, every other key survives — a run that lived on

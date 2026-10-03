@@ -53,6 +53,12 @@ export abstract class VcsGitAdapter implements VcsAdapter {
    * listed. With `listTreePaths(HEAD)` it defines the LIVE tracked set.
    */
   abstract listWorktreeDeletions(timeoutMs?: number): Promise<string[]>;
+  /**
+   * Paths among `paths` whose working-tree content differs from HEAD — edited,
+   * staged or not. Added, deleted and untracked paths are not listed: only a
+   * path HEAD holds has HEAD rows a working row can be carried onto.
+   */
+  abstract listWorktreeModifications(paths: readonly string[], timeoutMs?: number): Promise<string[]>;
 
   /** One-time pre-enrichment warmup — write the commit-graph (+ changed-path
    *  Bloom filters) to accelerate every `git log` / `git blame` this run.

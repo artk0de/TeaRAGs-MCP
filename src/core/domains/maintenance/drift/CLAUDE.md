@@ -10,9 +10,11 @@
   (`../worktree/CLAUDE.md`), and after a scoped force the chunk-set axes it
   covered by `IndexingOps#stampRechunkedChunkSet` (coverage judged by
   `advanceChunkSetStamp`, `chunk-set-scope.ts` — the same module the monitor
-  renders the scoped `Run:` line from); `payloadFieldKeys` by
-  `infra/stats-cache.ts`. A monitor that needs a value none of them writes has
-  found a missing stamp, not a place to compute one.
+  renders the scoped `Run:` line from); `trajectoryVersions` by
+  `IndexingOps#stampTrajectoryVersions` (only after a run that rebuilt the
+  provider for every point) and, for a worktree clone, by `WorktreeProvisioner`;
+  `payloadFieldKeys` by `infra/stats-cache.ts`. A monitor that needs a value
+  none of them writes has found a missing stamp, not a place to compute one.
 - **`IndexDriftReporter` owns consumption.** The two consuming checks —
   `checkAndConsume` (by path) and `checkAndConsumeByCollectionName`, both of
   them search — show a collection once per REPORT SIGNATURE per process, so a
@@ -71,6 +73,12 @@
   that same run. Gating the seed on it would reject an otherwise perfect sibling
   — re-embedding the whole repository, ~92% of a first index's wall clock — to
   avoid a file the run repairs for free.
+- **`trajectoryVersions` is not a worktree-seed axis either, for the same
+  reason.** The only versioned provider is git, and a seeded collection's git
+  layer is rebuilt for every point by the seed itself
+  (`IndexingOps#refreshSeededGitLayer`), which stamps the version once the
+  rebuild completes. Until then the seeded collection reports the git drift it
+  really has.
 
 ## See also
 

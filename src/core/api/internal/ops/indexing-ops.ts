@@ -147,6 +147,15 @@ export interface IndexingOpsDeps {
   /** Per-language code versions of this build, from the composition root. */
   languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
   /**
+   * Registry surface for the per-provider algorithm-version stamp
+   * (bd tea-rags-mcp-xi2r9) — written here for the reason the language stamp
+   * is: only this layer knows which providers a run rebuilt for every point.
+   * Omitted → nothing is stamped.
+   */
+  trajectoryVersionStamper?: TrajectoryVersionStamper;
+  /** `EnrichmentProvider.algorithmVersion` per provider key of this build. */
+  trajectoryAlgorithmVersions?: ReadonlyMap<string, number>;
+  /**
    * Declared scope of each chunk-set bump (bd tea-rags-mcp-j4oww): what a
    * scoped force must have re-chunked before it may advance a chunk-set stamp.
    * Omitted → every bump reads as unscoped.
@@ -223,6 +232,11 @@ export interface LanguageVersionStamper {
   get?: (collectionName: string) => { languageVersions?: Record<string, Partial<LanguageCodeVersions>> } | null;
 }
 
+/** The per-provider algorithm-version mutation this ops layer performs (bd tea-rags-mcp-xi2r9). */
+export interface TrajectoryVersionStamper {
+  stampTrajectoryVersions: (collectionName: string, stamp: Record<string, number>) => void;
+}
+
 /** The one drift-report mutation this ops layer performs. */
 export interface IndexDriftConsumptionResetter {
   reset: (collectionName: string) => void;
@@ -259,6 +273,8 @@ export class IndexingOps {
   private readonly codegraphEnabledStamper?: CodegraphEnabledStamper;
   private readonly embeddingThroughputOptima?: Pick<CollectionRegistryPort, "readEmbeddingThroughputOptimum">;
   private readonly languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
+  private readonly trajectoryVersionStamper?: TrajectoryVersionStamper;
+  private readonly trajectoryAlgorithmVersions: ReadonlyMap<string, number>;
   private readonly languageChunkSetBumpScopes: ReadonlyMap<string, ChunkSetBumpScopes>;
   private readonly driftReporter?: IndexDriftConsumptionResetter;
   private readonly resolveCollectionForPath: PathCollectionResolver;
@@ -329,6 +345,8 @@ export class IndexingOps {
     this.codegraphEnabledStamper = deps.codegraphEnabledStamper;
     this.embeddingThroughputOptima = deps.embeddingThroughputOptima;
     this.languageCodeVersions = deps.languageCodeVersions;
+    this.trajectoryVersionStamper = deps.trajectoryVersionStamper;
+    this.trajectoryAlgorithmVersions = deps.trajectoryAlgorithmVersions ?? new Map();
     this.languageChunkSetBumpScopes = deps.languageChunkSetBumpScopes ?? new Map();
     this.driftReporter = deps.driftReporter;
     this.indexingLock = deps.indexingLock;
@@ -1218,6 +1236,8 @@ export class IndexingOps {
       const physicalCollectionName = resolvePhysicalCollection(collectionName, await this.qdrant.aliases.listAliases());
       await this.enrichment.recomputeEnrichments(physicalCollectionName, absolutePath, ["git"]);
       await this.refreshStats(path);
+      // Every point's git layer is now this build's, not the sibling's.
+      this.stampTrajectoryVersions(collectionName, ["git"]);
       this.driftReporter?.reset(collectionName);
     } catch (error) {
       console.error(`[IndexingOps] git rebuild of the seeded collection ${collectionName} failed:`, error);
@@ -1340,6 +1360,9 @@ export class IndexingOps {
       this.codegraphEnabledStamper?.stampCodegraphEnabled(aliasCollectionName);
       this.stampLanguageVersions(aliasCollectionName, languages, "codegraph");
     }
+    // A provider's algorithm stamp claims EVERY point: a run narrowed by
+    // language left the others on the values an older algorithm wrote.
+    if (!languages || languages.length === 0) this.stampTrajectoryVersions(aliasCollectionName, selectors);
     // A git rebuild of every point is the rest of what the seed owed, so the
     // next incremental must not redo it. Anything narrower leaves it pending.
     if (pendingSeed && this.dischargesSeedGitDebt(selectors, languages)) {
@@ -1385,8 +1408,24 @@ export class IndexingOps {
     // the run actually rewrote (bd tea-rags-mcp-dxa9w).
     const aliasCollectionName = await this.resolveCollectionForPath(path);
     this.stampLanguageVersions(aliasCollectionName, options?.languages, "all");
+    this.stampTrajectoryVersions(aliasCollectionName, ["all"]);
     this.driftReporter?.reset(aliasCollectionName);
     return result;
+  }
+
+  /**
+   * Record the algorithm version of every provider `selectors` names
+   * (bd tea-rags-mcp-xi2r9). Called only by a run that rebuilt those providers
+   * for EVERY point — a first index or force, an un-narrowed recompute, a
+   * seeded collection's git rebuild — so the stamp's claim holds.
+   */
+  private stampTrajectoryVersions(collectionName: string, selectors: readonly string[]): void {
+    if (!this.trajectoryVersionStamper) return;
+    const rebuilt = selectProviderKeys([...this.trajectoryAlgorithmVersions.keys()], selectors).matched;
+    if (rebuilt.length === 0) return;
+    const stamp: Record<string, number> = {};
+    for (const key of rebuilt) stamp[key] = this.trajectoryAlgorithmVersions.get(key) as number;
+    this.trajectoryVersionStamper.stampTrajectoryVersions(collectionName, stamp);
   }
 
   /**

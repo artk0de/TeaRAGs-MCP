@@ -683,6 +683,27 @@ export async function listWorktreeDeletions(repoRoot: string, timeoutMs = TREE_L
 }
 
 /**
+ * Paths among `paths` whose working-tree content differs from HEAD — edited,
+ * staged or not — repo-relative (bd tea-rags-mcp-xi2r9). Added, deleted and
+ * untracked paths are not listed: only a path HEAD holds has HEAD rows to
+ * carry a working row onto. `--no-renames`, so a moved file's new side reads
+ * as an add and is left out.
+ */
+export async function listWorktreeModifications(
+  repoRoot: string,
+  paths: readonly string[],
+  timeoutMs = TREE_LISTING_STALL_MS,
+): Promise<string[]> {
+  if (paths.length === 0) return [];
+  const out = await execFileForPathspec(
+    repoRoot,
+    ["diff", "--no-ext-diff", "--no-renames", "--name-only", "-z", "--diff-filter=M", "HEAD", "--", ...paths],
+    timeoutMs,
+  );
+  return splitNulTerminated(out);
+}
+
+/**
  * When content was committed (bd tea-rags-mcp-xi2r9.3): the commit time, in
  * epoch ms, of the newest commit on HEAD's history whose diff of
  * `relativePath` adds or drops the blob `blobId`

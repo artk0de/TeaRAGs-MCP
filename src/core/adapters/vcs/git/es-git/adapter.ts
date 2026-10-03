@@ -147,6 +147,10 @@ export class EsGitAdapter extends VcsGitAdapter {
     return this.cliHistory.listWorktreeDeletions(timeoutMs);
   }
 
+  async listWorktreeModifications(paths: readonly string[], timeoutMs?: number): Promise<string[]> {
+    return this.cliHistory.listWorktreeModifications(paths, timeoutMs);
+  }
+
   async getCommitsByPathspec(
     sinceDate: Date,
     filePaths: string[],

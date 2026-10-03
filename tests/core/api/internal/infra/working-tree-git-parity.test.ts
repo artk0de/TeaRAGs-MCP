@@ -14,14 +14,10 @@
  *
  * Cases: an uncommitted-only edit, a commit since the index, a backdated
  * commit, a rebased commit, a never-committed file, a new symbol in a tracked
- * file, a committed rename, a committed insertion above a symbol, a tree
- * that branched before the stamp (only the stamp's side touched a file), and a
- * file past the chunk walk's line limit (the policy's `skippedAs` stamps).
- *
- * One measured departure, pinned on its own: a symbol with UNCOMMITTED edits
- * inside or above it keeps the index's (HEAD) chunk attribution, where a
- * reindex of the dirty tree would read the working rows as HEAD rows and
- * credit the wrong symbol.
+ * file, a committed rename, a committed insertion above a symbol, uncommitted
+ * edits inside and above symbols (both sides carry working rows onto HEAD), a
+ * tree that branched before the stamp (only the stamp's side touched a file),
+ * and a file past the chunk walk's line limit (the policy's `skippedAs` stamps).
  *
  * Time-derived fields are compared at a pinned clock (`Date` faked); the
  * `enrichedAt` stamp is a run time on both sides and is asserted present, not
@@ -496,7 +492,7 @@ describe.each([
     expectParity(rows, reference);
   });
 
-  it("keeps the index's chunk attribution for symbols with uncommitted edits inside and above them", async () => {
+  it("matches a reindex of a tree with uncommitted edits inside and above symbols", async () => {
     const repo = join(scratch, "main");
     mkdirSync(repo);
     repoGit(repo, ["init", "-q", "-b", "main"]);
@@ -530,24 +526,14 @@ describe.each([
     const reference = await ingestReference(repo, delta, squashOpts);
     const rows = await overlayRows(repo, delta, basePoints, stamp, squashOpts);
 
-    // git.file: the reindex's block. git.chunk: the index's block of the same
-    // symbol — the HEAD attribution. A reindex of this dirty tree does NOT
-    // match it: the chunk walk reads the WORKING rows as HEAD rows, so helperB
-    // (working 5-7) is credited with helperA's HEAD commits and helperA with
-    // Engine's (measured: helperB cc 1 → 2, helperA cc 2 → 1). That
-    // misattribution is ingest's, not the tree's history; the overlay keeps the
-    // index's attribution until the edit is committed.
-    for (const row of rows) {
-      const where = String(row.id);
-      const git = row.payload.git as { file?: Block; chunk?: Block };
-      expect(unstamped(git.file, `${where} file`), `${where} git.file`).toEqual(
-        unstamped(reference.file.get("src/engine.ts"), `${where} reference file`),
-      );
-      const basePoint = basePoints
-        .get("src/engine.ts")
-        ?.find((point) => point.payload.symbolId === row.payload.symbolId);
-      expect(git.chunk, `${where} git.chunk`).toEqual((basePoint?.payload.git as { chunk?: Block }).chunk);
-    }
+    // Ingest carries a dirty file's working rows onto HEAD before the chunk
+    // walk, as the overlay does: each symbol keeps its own HEAD commits
+    // (helperB 1, helperA 2), never the commits of the symbol whose HEAD rows
+    // its working rows landed on.
+    expectParity(rows, reference);
+    const chunkOf = (symbol: string) => unstamped(reference.chunk.get(`src/engine.ts::${symbol}`), symbol);
+    expect(chunkOf("helperB")).toMatchObject({ commitCount: 1 });
+    expect(chunkOf("helperA")).toMatchObject({ commitCount: 2 });
   });
 
   it("stamps a file past the chunk walk's line limit as ingest's policy does", async () => {

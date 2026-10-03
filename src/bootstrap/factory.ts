@@ -33,6 +33,7 @@ import {
   createWorkingTreeDeltaSignalSource,
   createWorkingTreeGitSignalSource,
   createWorkingTreeGitSignalStore,
+  enrichmentAlgorithmVersions,
   ExploreFacade,
   GraphFacade,
   IngestFacade,
@@ -87,6 +88,7 @@ import { IndexDriftReporter } from "../core/domains/maintenance/drift/index.js";
 import { LanguageVersionDriftMonitor } from "../core/domains/maintenance/drift/language-version-drift-monitor.js";
 import { SchemaDriftMonitor } from "../core/domains/maintenance/drift/schema-drift-monitor.js";
 import { StatsContractDriftMonitor } from "../core/domains/maintenance/drift/stats-contract-drift-monitor.js";
+import { TrajectoryVersionDriftMonitor } from "../core/domains/maintenance/drift/trajectory-version-drift-monitor.js";
 import { CollectionFootprintFactory } from "../core/domains/maintenance/footprint/index.js";
 import {
   createDatabaseMigrationApplier,
@@ -1411,6 +1413,14 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     composition.languageCodeVersions,
     composition.languageChunkSetBumpScopes,
   );
+  // The same blindness one level over: a provider whose ALGORITHM changed
+  // writes different values under the same keys (bd tea-rags-mcp-xi2r9). The
+  // current side is the provider list the ingest slice enriches with, so a
+  // process with the git trajectory off makes no git claim.
+  const trajectoryVersionDriftMonitor = new TrajectoryVersionDriftMonitor(
+    collectionRegistry,
+    enrichmentAlgorithmVersions(activeEnrichmentProviders(composition.registry, config.trajectoryIngest)),
+  );
   // Third axis: the indexing env. The resolver it takes builds what the NEXT
   // run on that collection would use, the way `ProjectIngestFactory#forPath`
   // builds it for a real run — so a finding means the outer env explicitly
@@ -1443,7 +1453,14 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   // domain module and may not reach the api layer for it, and deriving the hash
   // itself sent a relocated project's report to a collection nobody queries.
   const driftReporter = new IndexDriftReporter(
-    [schemaDriftMonitor, statsContractDriftMonitor, languageVersionDriftMonitor, envDriftMonitor, commitDriftMonitor],
+    [
+      schemaDriftMonitor,
+      statsContractDriftMonitor,
+      languageVersionDriftMonitor,
+      trajectoryVersionDriftMonitor,
+      envDriftMonitor,
+      commitDriftMonitor,
+    ],
     (collectionName) => collectionRegistry.get(collectionName)?.name ?? undefined,
     createPathCollectionResolver(collectionRegistry),
   );

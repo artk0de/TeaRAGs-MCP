@@ -24,7 +24,11 @@ import type {
   LanguageCodeVersions,
   LanguageFactoryDescriptor,
 } from "../../contracts/types/language.js";
-import type { FilterDescriptor, WorkerEnrichmentDescriptor } from "../../contracts/types/provider.js";
+import type {
+  EnrichmentProvider,
+  FilterDescriptor,
+  WorkerEnrichmentDescriptor,
+} from "../../contracts/types/provider.js";
 import type { ChunkSetBumpScopes } from "../../contracts/types/rechunk.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../contracts/types/reranker.js";
 import type { StatsAccumulatorDescriptor } from "../../contracts/types/stats-accumulator.js";
@@ -384,6 +388,20 @@ export function createComposition(options: CompositionOptions = {}): Composition
       ),
     ),
   };
+}
+
+/**
+ * `EnrichmentProvider.algorithmVersion` per provider key, for the providers a
+ * slice actually enriches with (bd tea-rags-mcp-xi2r9). One derivation for both
+ * consumers: the ingest slice stamps it, the trajectory-version drift monitor
+ * compares against it — two derivations could disagree on which providers count.
+ */
+export function enrichmentAlgorithmVersions(providers: readonly EnrichmentProvider[]): Map<string, number> {
+  const versions = new Map<string, number>();
+  for (const provider of providers) {
+    if (provider.algorithmVersion !== undefined) versions.set(provider.key, provider.algorithmVersion);
+  }
+  return versions;
 }
 
 // ---------------------------------------------------------------------------

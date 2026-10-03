@@ -147,6 +147,9 @@ export class CollectionRegistry {
       // stamp would have auto-update silently clearing the reindex hint
       // (bd tea-rags-mcp-frwka).
       ...(existing?.languageVersions !== undefined ? { languageVersions: existing.languageVersions } : {}),
+      // Same claim, per enrichment provider: only a run that rebuilt the
+      // provider for every point may advance it (stampTrajectoryVersions).
+      ...(existing?.trajectoryVersions !== undefined ? { trajectoryVersions: existing.trajectoryVersions } : {}),
       // embeddingThroughputOptima MERGES rather than sticks: a run overwrites the
       // endpoints its throughput tuner settled on and keeps every other one, so a
       // run that lived on the primary does not erase what an earlier run learnt
@@ -336,6 +339,20 @@ export class CollectionRegistry {
       merged[language] = { ...merged[language], ...versions };
     }
     map.set(collectionName, { ...entry, languageVersions: merged });
+    this.flush();
+  }
+
+  /**
+   * Record the algorithm version of each enrichment provider a finished run
+   * rebuilt for every point (bd tea-rags-mcp-xi2r9). Merges per provider: a git
+   * recompute leaves another provider's stamp where it was. Silently no-ops for
+   * an unregistered collection, as `stampLanguageVersions` does.
+   */
+  stampTrajectoryVersions(collectionName: string, stamp: Record<string, number>): void {
+    const map = this.ensureLoaded();
+    const entry = map.get(collectionName);
+    if (!entry) return;
+    map.set(collectionName, { ...entry, trajectoryVersions: { ...entry.trajectoryVersions, ...stamp } });
     this.flush();
   }
 

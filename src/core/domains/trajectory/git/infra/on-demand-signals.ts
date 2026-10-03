@@ -17,10 +17,10 @@
  *   file's churn and HEAD blame).
  *
  * The walk addresses HEAD rows, a delta row the WORKING file's. The row is
- * carried onto HEAD by the HEAD → working hunks (`headRowSpanOfWorkingRows`):
- * rows the working file added were never committed and hold no history, and a
- * row made only of them gets the walk's zero overlay — what ingest writes for a
- * chunk no commit reached (live G4). A path no commit ever touched (an
+ * carried onto HEAD exactly as ingest's chunk phase carries a dirty file's
+ * rows (`infra/working-rows.ts`): rows the working file added were never
+ * committed and hold no history, and a row made only of them gets the walk's
+ * zero overlay (live G4). A path no commit ever touched (an
  * untracked file) is walked as ingest walks it: every row gets the walk's zero
  * overlay, and there is no file block.
  *
@@ -30,21 +30,17 @@
  * Bug-fix commits are therefore resolved over the file's own commits.
  */
 
-import { structuredPatch } from "diff";
-
 import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
 import type { BlameLine, CommitWithChangedFiles, FileChurnData } from "../../../../adapters/vcs/types.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import type { ChunkChurnOverlay, GitFileSignals } from "../types.js";
-import { assembleOverlays } from "./assemble-overlays.js";
-import { buildAccumulators } from "./build-accumulators.js";
 import { buildChunkChurnMapUncached, type WalkCommitDiscovery } from "./chunk-reader.js";
 import { buildFileSignalsForPaths, buildWindowedFileSignalsForPaths } from "./file-reader.js";
 import { buildBugFixShaSet } from "./merge-branch-resolver.js";
 import type { SquashOptions } from "./metrics.js";
 import { computeRelativeChurn } from "./metrics/extractors.js";
 import { assembleFileSignals } from "./metrics/file-assembler.js";
-import { headRowSpanOfWorkingRows } from "./offset-tracker.js";
+import { carryWorkingRowsOntoHead, zeroOverlaysOfUncommittedRows } from "./working-rows.js";
 
 /** One row to attribute, in the working file's lines; `chunkId` unique across the call. */
 export interface OnDemandGitChunkTarget {
@@ -130,14 +126,27 @@ export async function buildOnDemandGitSignals(
     });
   }
 
-  const { chunkMap, uncommittedRows } = await headChunkMap(adapter, withHistory);
-  assignUncommittedRows(adapter.repoRoot, uncommittedRows, churn, options, result);
-  if (chunkMap.size === 0) return result;
-  const overlays = await walkChunks(adapter, chunkMap, options, churn, blameByPath);
-  for (const [relPath, byChunk] of overlays) {
-    const answer = result.get(relPath);
-    if (!answer) continue;
-    for (const [chunkId, overlay] of byChunk) answer.chunks.set(chunkId, overlay);
+  const { chunkMap, uncommittedRows } = await carryWorkingRowsOntoHead(
+    adapter,
+    withHistory.flatMap(({ relPath, workingContent, chunks }) =>
+      workingContent === undefined ? [] : [{ relPath, workingContent, chunks }],
+    ),
+  );
+  const zero = zeroOverlaysOfUncommittedRows(adapter.repoRoot, uncommittedRows, {
+    fileChurnDataMap: churn,
+    maxFileLines: options.chunk.maxFileLines,
+    ...(options.squashOpts ? { squashOpts: options.squashOpts } : {}),
+  });
+  const walked =
+    chunkMap.size === 0
+      ? new Map<string, Map<string, ChunkChurnOverlay>>()
+      : await walkChunks(adapter, chunkMap, options, churn, blameByPath);
+  for (const overlays of [zero, walked]) {
+    for (const [relPath, byChunk] of overlays) {
+      const answer = result.get(relPath);
+      if (!answer) continue;
+      for (const [chunkId, overlay] of byChunk) answer.chunks.set(chunkId, overlay);
+    }
   }
   return result;
 }
@@ -276,87 +285,4 @@ async function blameAtHead(
     );
   }
   return blameByPath;
-}
-
-/**
- * Chunk blocks of rows made only of lines the working file added (live G4): the
- * chunk walk reaches them with no commit, so ingest writes the walk's zero
- * overlay for them — `assembleOverlays` over an accumulator no commit touched,
- * with the file's churn as denominator. No HEAD blame line attributes an
- * uncommitted line, so their ownership is unknown, as for an untracked file.
- * Rows of a file past the walk's line limit get nothing, as ingest walks none.
- */
-function assignUncommittedRows(
-  repoRoot: string,
-  uncommittedRows: ReadonlyMap<string, ChunkLookupEntry[]>,
-  churn: Map<string, FileChurnData>,
-  options: OnDemandGitSignalOptions,
-  result: Map<string, OnDemandGitSignals>,
-): void {
-  if (uncommittedRows.size === 0) return;
-  const { relativeChunkMap, accumulators } = buildAccumulators(
-    repoRoot,
-    new Map(uncommittedRows),
-    options.chunk.maxFileLines,
-  );
-  const overlays = assembleOverlays({
-    relativeChunkMap,
-    accumulators,
-    fileChurnDataMap: churn,
-    ...(options.squashOpts ? { squashOpts: options.squashOpts } : {}),
-  });
-  for (const [relPath, byChunk] of overlays) {
-    const answer = result.get(relPath);
-    if (!answer) continue;
-    for (const [chunkId, overlay] of byChunk) answer.chunks.set(chunkId, overlay);
-  }
-}
-
-/** Concurrent HEAD blob reads per call. */
-const HEAD_READ_CONCURRENCY = 4;
-
-/**
- * The walk's chunk map: each row carried onto the HEAD rows it still holds,
- * keyed by absolute path as ingest keys it — and, apart, the rows made only of
- * uncommitted lines, in their working lines (the walk would reach them with no
- * commit). A path absent at HEAD contributes nothing.
- */
-async function headChunkMap(
-  adapter: VcsGitAdapter,
-  targets: readonly OnDemandGitSignalTarget[],
-): Promise<{ chunkMap: Map<string, ChunkLookupEntry[]>; uncommittedRows: Map<string, ChunkLookupEntry[]> }> {
-  const chunkMap = new Map<string, ChunkLookupEntry[]>();
-  const uncommittedRows = new Map<string, ChunkLookupEntry[]>();
-  const wanted = targets.filter((target) => target.workingContent !== undefined && target.chunks.length > 0);
-  if (wanted.length === 0) return { chunkMap, uncommittedRows };
-  const head = await adapter.getHead();
-  const carry = async (target: OnDemandGitSignalTarget): Promise<void> => {
-    const headContent = await adapter.readBlobAsString(head, target.relPath);
-    if (headContent === "") return;
-    const { hunks } = structuredPatch(
-      target.relPath,
-      target.relPath,
-      headContent,
-      target.workingContent ?? "",
-      "",
-      "",
-      {
-        context: 0,
-      },
-    );
-    const entries: ChunkLookupEntry[] = [];
-    const uncommitted: ChunkLookupEntry[] = [];
-    for (const chunk of target.chunks) {
-      const span = headRowSpanOfWorkingRows(hunks, chunk.startLine, chunk.endLine);
-      if (span) entries.push({ chunkId: chunk.chunkId, startLine: span.start, endLine: span.end });
-      else uncommitted.push({ chunkId: chunk.chunkId, startLine: chunk.startLine, endLine: chunk.endLine });
-    }
-    const absolutePath = `${adapter.repoRoot}/${target.relPath}`;
-    if (entries.length > 0) chunkMap.set(absolutePath, entries);
-    if (uncommitted.length > 0) uncommittedRows.set(absolutePath, uncommitted);
-  };
-  for (let i = 0; i < wanted.length; i += HEAD_READ_CONCURRENCY) {
-    await Promise.all(wanted.slice(i, i + HEAD_READ_CONCURRENCY).map(carry));
-  }
-  return { chunkMap, uncommittedRows };
 }

@@ -180,6 +180,25 @@ describe("WorktreeProvisioner.create saga", () => {
     expect(deps.registry.stampLanguageVersions).not.toHaveBeenCalled();
   });
 
+  it("carries the source entry's trajectory-version stamp onto the worktree clone (xi2r9)", async () => {
+    // Same reason as the language stamp: the clone's git payload IS the
+    // source's, so it was computed by the same algorithm revision.
+    const { deps, recorded, sourceEntry } = makeDeps();
+    Object.assign(sourceEntry, { trajectoryVersions: { git: 2 } });
+    const stampTrajectoryVersions = vi.fn();
+    Object.assign(deps.registry as object, { stampTrajectoryVersions });
+    await new WorktreeProvisioner(deps).create({ name: "x", createGit: false });
+    expect(stampTrajectoryVersions).toHaveBeenCalledWith(recorded[0].collectionName, { git: 2 });
+  });
+
+  it("does not stamp trajectory versions when the source entry has none (xi2r9)", async () => {
+    const { deps } = makeDeps();
+    const stampTrajectoryVersions = vi.fn();
+    Object.assign(deps.registry as object, { stampTrajectoryVersions });
+    await new WorktreeProvisioner(deps).create({ name: "x", createGit: false });
+    expect(stampTrajectoryVersions).not.toHaveBeenCalled();
+  });
+
   it("rolls back ALL artifacts including the failing one in reverse on failure", async () => {
     // C2: the failing artifact (snapshot) must participate in rollback
     const { deps, calls, recorded } = makeDeps({}, [], "snapshot");

@@ -354,14 +354,11 @@ the reindex agree, and ranking it as new code would put a renamed core module at
 the top of every recency preset. A COMMITTED move follows the rename like the
 file walk does, so it carries no departure.
 
-Not a departure, an ingest defect the overlay does not copy: a symbol with
-uncommitted edits inside or above it keeps the index's `git.chunk` (its HEAD
-attribution). Ingest's chunk walk reads a dirty file's WORKING rows as HEAD
-rows, so a reindex of such a tree credits each shifted symbol with another
-symbol's commits (measured in the parity harness: four header lines added above
-`helperB` gave `helperB` `helperA`'s two commits and `helperA` one). The
-overlay's on-demand path carries rows onto HEAD through the HEAD → working hunks
-and does not have the defect.
+A symbol with uncommitted edits inside or above it is at parity too: ingest's
+chunk phase carries a dirty file's working rows onto HEAD through the HEAD →
+working hunks before the walk, with the same code the on-demand path uses
+(`trajectory/git/infra/working-rows.ts`), so each symbol keeps its own HEAD
+commits and a row of only uncommitted lines gets the walk's zero block.
 
 Persistence (live G2): computed blocks are kept under
 `<appData>/working-tree/.git-signals/`, one record per (repository toplevel,
