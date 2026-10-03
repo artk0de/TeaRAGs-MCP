@@ -13,6 +13,14 @@ Headline hypothesis (pre-registered before the first scored run): arm 1 resolves
 more tasks than arm 0 and spends fewer tokens per task. Secondary: the gain
 concentrates in tasks whose gold file is not named in the issue text.
 
+First scored run is django-only (`tasks/django-focus-50.json`): 30 of the 94
+django tasks whose gold file is not named in the issue, plus all 20 where it is
+named, as a control. Django is the largest Lite repository and has enough layers
+that locating the code is a real search problem; the model also knows its layout
+from training, which the `gold_before_search` metric measures. The exact
+hypotheses live in `evals/swe-bench-lite/PREREGISTRATION.md`. The mixed
+`pilot-50` below is the second run.
+
 External reference: JetBrains reported Context on 205 SWE-bench tasks as −68%
 agent steps, −59% latency, −48% cost (best case, no breakdown). Our token and
 turn columns are directly comparable to that framing; we publish the full
