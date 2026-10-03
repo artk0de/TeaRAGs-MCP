@@ -61,6 +61,7 @@ import { join } from "node:path";
 
 import type { SparseVector } from "../../../adapters/qdrant/types.js";
 import { readBlobCommitTime as gitReadBlobCommitTime } from "../../../adapters/vcs/git/git-cli/client.js";
+import { fileContentHash } from "../../../infra/file-content-hash.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import {
   createWorkingTreeFileWriter,
@@ -478,10 +479,8 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
         const path = join(meta.treeRoot, meta.relativePath);
         let sha = currentContents.get(path);
         if (!sha) {
-          sha = fs.readFile(path).then(
-            (content) => createHash("sha256").update(content).digest("hex"),
-            () => null,
-          );
+          // The chunk layer's definition (`WorkingTreeContentHashes`): the text's hash.
+          sha = fs.readFile(path, "utf8").then(fileContentHash, () => null);
           currentContents.set(path, sha);
         }
         return sha;

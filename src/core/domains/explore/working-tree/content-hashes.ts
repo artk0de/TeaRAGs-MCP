@@ -2,9 +2,15 @@
  * WorkingTreeContentHashes — the content sha256 of a working-tree file,
  * memoized by the file's stat stamp `(size, mtimeMs, ctimeMs, inode)`, so a
  * delta asked on every request re-reads and re-hashes only the files whose
- * stamp moved; an unchanged file costs one `stat`.
+ * stamp moved; an unchanged file costs one `stat`. The chunk layer keys rows by
+ * it and the tree-graph cache digests a delta with it.
  *
- * Trade-off (shared with `WorkingTreeGraphCache#contentHashOf`, the precedent):
+ * The hash is `fileContentHash` — sha256 of the file's TEXT (read as UTF-8),
+ * the one definition the ingest synchronizers and the tree graph stamp rows
+ * with. For valid UTF-8 it equals the sha256 of the bytes; bytes that are not
+ * valid UTF-8 hash as their decoded text (what the chunker reads, too).
+ *
+ * Trade-off (the stamp rule):
  * an edit that keeps the size and lands within the filesystem's mtime AND ctime
  * granularity of the previous write, on the same inode, keeps the stamp and is
  * served the old hash until the next write moves it. Editors write whole files
@@ -16,10 +22,10 @@
  * bound memory.
  */
 
-import { createHash } from "node:crypto";
 import { promises as nodeFs } from "node:fs";
 
 import { ByteBoundedLru } from "../../../infra/byte-bounded-lru.js";
+import { fileContentHash } from "../../../infra/file-content-hash.js";
 
 /**
  * Default bound of the memo: ~210 bytes per file for a 100-byte path, so
@@ -108,7 +114,7 @@ export class WorkingTreeContentHashes {
   private async readStamped(path: string, stamp: string): Promise<WorkingTreeFileContent | undefined> {
     const content = await this.fs.readFile(path).catch(() => undefined);
     if (!content) return undefined;
-    const sha256 = createHash("sha256").update(content).digest("hex");
+    const sha256 = fileContentHash(content.toString("utf8"));
     this.memo.set(path, { stamp, sha256 }, Buffer.byteLength(path) + stamp.length + sha256.length);
     return { content, sha256 };
   }

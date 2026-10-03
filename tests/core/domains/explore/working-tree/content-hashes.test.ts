@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WorkingTreeContentHashes } from "../../../../../src/core/domains/explore/working-tree/index.js";
+import { fileContentHash } from "../../../../../src/core/infra/file-content-hash.js";
 
 const sha256 = (content: string): string => createHash("sha256").update(content).digest("hex");
 
@@ -55,6 +56,19 @@ describe("WorkingTreeContentHashes", () => {
 
     expect(await hashes.sha256Of(path)).toBe(sha256("export const a = 22; // edited\n"));
     expect(readFile).toHaveBeenCalledTimes(2);
+  });
+
+  // One definition with the ingest synchronizers and the tree graph's stamps:
+  // the hash of the file's TEXT. Equal to the bytes' sha256 for valid UTF-8.
+  it("should hash the file's text as `fileContentHash` does, also for bytes that are not valid UTF-8", async () => {
+    const path = join(dir, "latin1.ts");
+    const bytes = Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]); // "café\n" in Latin-1
+    writeFileSync(path, bytes);
+    const { hashes } = counted();
+
+    expect(await hashes.sha256Of(path)).toBe(fileContentHash(bytes.toString("utf8")));
+    expect((await hashes.readContent(path))?.sha256).toBe(fileContentHash(bytes.toString("utf8")));
+    expect((await hashes.readContent(path))?.content).toEqual(bytes);
   });
 
   it("should answer undefined for a path that is not a readable regular file", async () => {

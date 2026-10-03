@@ -97,6 +97,7 @@ export {
   type WorkingTreeWatchTimerHandle,
   type WorkingTreeWatchTimers,
 } from "./watcher.js";
+export { WorkingTreePassCache } from "./pass-cache.js";
 export {
   WORKING_TREE_ROW_CACHE_MAX_BYTES,
   WorkingTreePassRowCache,

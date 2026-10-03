@@ -795,6 +795,31 @@ describe("WorkingTreeGraphCache — content-hash memo bounded in bytes (WTO unbo
     expect(peak).toBeLessThanOrEqual(WORKING_TREE_GRAPH_CONTENT_READ_CONCURRENCY);
   });
 
+  // A view asks twice per request — the warm-up `graphFor(request, 0)` and the
+  // read — and a 3,435-file delta digest cost 1.7-1.9 s live: overlapping asks
+  // of one delta share one digest.
+  it("digests a delta once for overlapping asks of the same delta", async () => {
+    const { cache, builder } = harness();
+    const root = treeDir("t1");
+    const changed = Array.from({ length: 20 }, (_, i) => `src/f${String(i)}.ts`);
+    const ask = request(root, "fp-1", changed);
+    const stat = vi.spyOn(fsPromises, "stat");
+    try {
+      const [warmUp, read] = await Promise.all([
+        cache.graphFor(ask, 60_000),
+        cache.graphFor(request(root, "fp-1", [...changed].reverse(), false), 60_000),
+      ]);
+      expect(expectBuilt(read)).toBe(expectBuilt(warmUp));
+      const treeStats = stat.mock.calls.filter(
+        ([path]) => typeof path === "string" && path.startsWith(join(root, "src")),
+      );
+      expect(treeStats).toHaveLength(changed.length);
+    } finally {
+      stat.mockRestore();
+    }
+    expect(builder.inputs).toHaveLength(1);
+  });
+
   it("does not keep a hash larger than `contentHashMemoBytes`: every request re-reads the file", async () => {
     const { cache } = harness({ contentHashMemoBytes: 1 });
     const root = treeDir("t1");

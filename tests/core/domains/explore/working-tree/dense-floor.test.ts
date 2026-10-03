@@ -449,6 +449,109 @@ describe("WorkingTreeDenseVectorSource — memory bound in bytes (WTO unbounded 
   });
 });
 
+describe("WorkingTreeDenseVectorSource — a warm delta asked on every request", () => {
+  /** Rows of distinct content, one per file. */
+  const deltaRows = (count: number) =>
+    Array.from({ length: count }, (_, i) =>
+      codeRow(`t-${String(i)}`, { relativePath: `src/f${String(i)}.ts`, content: `body ${String(i)}` }),
+    );
+  const pathOf = (row: ReturnType<typeof deltaRows>[number]): string => String(row.payload.relativePath);
+  const contentOf = (row: ReturnType<typeof deltaRows>[number]): string => String(row.payload.content);
+  const keysOf = (rows: ReturnType<typeof deltaRows>) =>
+    new Map(rows.map((row) => [pathOf(row), storeKey(pathOf(row))]));
+  /** A store already holding every row's vector beside its file. */
+  const storeHolding = (rows: ReturnType<typeof deltaRows>) => {
+    const held = memoryStore();
+    for (const row of rows) {
+      held.entries.set(pathOf(row), new Map([[sha256(contentOf(row)), [contentOf(row).length, 1]]]));
+    }
+    return held;
+  };
+  const writesSettled = async (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 20));
+
+  it("never re-stores a vector it served from memory: a repeated warm writes nothing", async () => {
+    const { embeddings } = provider();
+    const { store } = memoryStore();
+    const source = new WorkingTreeDenseVectorSource({ embeddings, store });
+    const rows = deltaRows(3);
+    const request = { collectionName: "c", rows, storeKeys: keysOf(rows) };
+
+    expect((await source.warm(request)(2_000)).pending).toBe(0);
+    await vi.waitFor(() => {
+      expect(store.putVectors).toHaveBeenCalledTimes(3);
+    });
+    store.putVectors.mockClear();
+    store.getVectors.mockClear();
+
+    expect((await source.warm(request)(2_000)).pending).toBe(0);
+    expect((await source.warm(request)(2_000)).pending).toBe(0);
+    await writesSettled();
+
+    expect(store.putVectors).not.toHaveBeenCalled();
+    expect(store.getVectors).not.toHaveBeenCalled();
+  });
+
+  it("never re-stores a vector it read from the store", async () => {
+    const { embeddings, asked } = provider();
+    const rows = deltaRows(3);
+    const { store } = storeHolding(rows);
+    const source = new WorkingTreeDenseVectorSource({ embeddings, store });
+    const request = { collectionName: "c", rows, storeKeys: keysOf(rows) };
+
+    expect((await source.warm(request)(2_000)).pending).toBe(0);
+    expect((await source.warm(request)(2_000)).pending).toBe(0);
+    await writesSettled();
+
+    expect(asked).toEqual([]);
+    expect(store.putVectors).not.toHaveBeenCalled();
+  });
+
+  // An edited file is a new store entry: its unchanged chunks hit memory, yet
+  // that entry does not hold them — they are stored there, once.
+  it("stores a memory-served vector once under a store entry that does not hold it yet", async () => {
+    const { embeddings } = provider();
+    const { store } = memoryStore();
+    const source = new WorkingTreeDenseVectorSource({ embeddings, store });
+    const rows = deltaRows(1);
+    const path = pathOf(rows[0]);
+    await source.warm({ collectionName: "c", rows, storeKeys: keysOf(rows) })(2_000);
+    await vi.waitFor(() => {
+      expect(store.putVectors).toHaveBeenCalledTimes(1);
+    });
+    const edited = new Map([[path, { ...storeKey(path), contentSha256: "f-edited" }]]);
+
+    await source.warm({ collectionName: "c", rows, storeKeys: edited })(2_000);
+    await source.warm({ collectionName: "c", rows, storeKeys: edited })(2_000);
+    await writesSettled();
+
+    expect(store.putVectors).toHaveBeenCalledTimes(2);
+    expect(store.putVectors.mock.calls[1][1]).toMatchObject({ contentSha256: "f-edited" });
+  });
+
+  it("serves a stable share from memory when the delta's vectors exceed the bound, on every repeated warm", async () => {
+    const { embeddings, asked } = provider();
+    const rows = deltaRows(10);
+    const { store } = storeHolding(rows);
+    // 2-d vectors are 16 bytes: the bound holds 4 of the 10 (the delta is 2.5x the bound).
+    const source = new WorkingTreeDenseVectorSource({ embeddings, store, memoryBytes: 64 });
+    const request = { collectionName: "c", rows, storeKeys: keysOf(rows) };
+
+    const storeReadsPerWarm: number[] = [];
+    for (let warm = 0; warm < 3; warm++) {
+      const before = store.getVectors.mock.calls.length;
+      expect((await source.warm(request)(2_000)).pending).toBe(0);
+      storeReadsPerWarm.push(store.getVectors.mock.calls.length - before);
+    }
+
+    expect(storeReadsPerWarm[0]).toBe(10);
+    // warms 2 and 3 each serve at least 30% of the rows from memory
+    expect(storeReadsPerWarm[1]).toBeLessThanOrEqual(7);
+    expect(storeReadsPerWarm[2]).toBeLessThanOrEqual(7);
+    expect(asked).toEqual([]);
+    expect(store.putVectors).not.toHaveBeenCalled();
+  });
+});
+
 describe("scoreWorkingTreeRowsByVector", () => {
   it("scores each admitted row with a vector by exact cosine against the query, best first", () => {
     const rows = [
