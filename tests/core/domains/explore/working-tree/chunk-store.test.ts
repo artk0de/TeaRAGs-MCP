@@ -24,12 +24,15 @@ import {
   computeGitBlobId,
   createWorkingTreeChunkLayer,
   createWorkingTreeChunkStore,
+  createWorkingTreeFileWriter,
   scheduleWorkingTreeChunkSweep,
+  WORKING_TREE_CHUNK_READ_REFRESH_MS,
   WORKING_TREE_CHUNK_RETENTION_MS,
   WORKING_TREE_CHUNK_STORE_CAP_BYTES,
   WORKING_TREE_CHUNK_SWEEP_INTERVAL_MS,
   type WorkingTreeChunkStore,
   type WorkingTreeChunkStoreEntry,
+  type WorkingTreeFileWriter,
 } from "../../../../../src/core/domains/explore/working-tree/index.js";
 import type { ChunkerConfig } from "../../../../../src/core/types.js";
 
@@ -143,6 +146,61 @@ describe("WorkingTreeChunkStore", { timeout: 60_000 }, () => {
     const meta = files.find((file) => file.endsWith(".meta.json"));
     expect(meta).toBeDefined();
     expect(JSON.parse(readFileSync(join(rootDir, COLLECTION, meta ?? ""), "utf8")).lastReadAt).toBe(readAt);
+  });
+
+  describe("read refresh", () => {
+    /** A store whose writes are counted per target suffix, delegating to a real writer. */
+    const countingStore = (): { store: WorkingTreeChunkStore; metaWrites: () => number } => {
+      const real = createWorkingTreeFileWriter();
+      let metaWrites = 0;
+      const writer: WorkingTreeFileWriter = {
+        write: async (target, data) => {
+          if (target.endsWith(".meta.json")) metaWrites++;
+          await real.write(target, data);
+        },
+        close: async () => real.close(),
+      };
+      return {
+        store: createWorkingTreeChunkStore({ rootDir, now: () => clock, writer }),
+        metaWrites: () => metaWrites,
+      };
+    };
+
+    it("should not rewrite the meta of an entry read again within the refresh interval", async () => {
+      const { store, metaWrites } = countingStore();
+      const entry = entryFor("src/a.ts", "export const a = 1;\n");
+      await store.put(COLLECTION, entry);
+      const afterPut = metaWrites();
+
+      clock += WORKING_TREE_CHUNK_READ_REFRESH_MS / 4;
+      expect(await store.get(COLLECTION, keyOf(entry))).toBeDefined();
+      clock += WORKING_TREE_CHUNK_READ_REFRESH_MS / 4;
+      expect(await store.get(COLLECTION, keyOf(entry))).toBeDefined();
+
+      expect(metaWrites() - afterPut).toBe(0);
+    });
+
+    it("should rewrite the meta with the read time once the stored read is a refresh interval old", async () => {
+      const { store, metaWrites } = countingStore();
+      const entry = entryFor("src/a.ts", "export const a = 1;\n");
+      await store.put(COLLECTION, entry);
+      const afterPut = metaWrites();
+
+      clock += WORKING_TREE_CHUNK_READ_REFRESH_MS;
+      expect((await store.get(COLLECTION, keyOf(entry)))?.lastReadAt).toBe(clock);
+      const readAt = clock;
+      clock += WORKING_TREE_CHUNK_READ_REFRESH_MS / 2;
+      expect((await store.get(COLLECTION, keyOf(entry)))?.lastReadAt).toBe(readAt);
+
+      expect(metaWrites() - afterPut).toBe(1);
+      const meta = readdirSync(join(rootDir, COLLECTION)).find((file) => file.endsWith(".meta.json"));
+      expect(JSON.parse(readFileSync(join(rootDir, COLLECTION, meta ?? ""), "utf8")).lastReadAt).toBe(readAt);
+    });
+
+    it("should refresh well inside the retention window", () => {
+      expect(WORKING_TREE_CHUNK_READ_REFRESH_MS).toBe(HOUR);
+      expect(WORKING_TREE_CHUNK_READ_REFRESH_MS).toBeLessThan(WORKING_TREE_CHUNK_RETENTION_MS / 24);
+    });
   });
 
   it("should evict an entry whose tree was removed, regardless of age", async () => {

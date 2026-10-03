@@ -20,6 +20,7 @@ export {
   computeGitBlobId,
   createWorkingTreeChunkStore,
   scheduleWorkingTreeChunkSweep,
+  WORKING_TREE_CHUNK_READ_REFRESH_MS,
   WORKING_TREE_CHUNK_RETENTION_MS,
   WORKING_TREE_CHUNK_STORE_CAP_BYTES,
   WORKING_TREE_CHUNK_SWEEP_INTERVAL_MS,
@@ -96,7 +97,19 @@ export {
   type WorkingTreeWatchTimerHandle,
   type WorkingTreeWatchTimers,
 } from "./watcher.js";
-export { WORKING_TREE_ROW_CACHE_MAX_BYTES, WorkingTreeRowCache, workingTreeRowBytes } from "./row-cache.js";
+export {
+  WORKING_TREE_ROW_CACHE_MAX_BYTES,
+  WorkingTreePassRowCache,
+  WorkingTreeRowCache,
+  workingTreeRowBytes,
+} from "./row-cache.js";
+export {
+  WORKING_TREE_CONTENT_HASH_MEMO_BYTES,
+  WorkingTreeContentHashes,
+  type WorkingTreeContentHashesDeps,
+  type WorkingTreeContentHashesFs,
+  type WorkingTreeFileContent,
+} from "./content-hashes.js";
 export {
   WORKING_TREE_WARM_BATCH_SIZE,
   WORKING_TREE_WARM_RACY_WINDOW_MS,

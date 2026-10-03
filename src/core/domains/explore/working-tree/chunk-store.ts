@@ -104,7 +104,11 @@ export type WorkingTreeChunkVectors = ReadonlyMap<string, number[]>;
 export type WorkingTreeChunkSparseVectors = ReadonlyMap<string, SparseVector>;
 
 export interface WorkingTreeChunkStore {
-  /** The entry, with `lastReadAt` bumped to now (durably); undefined on a miss. */
+  /**
+   * The entry, with `lastReadAt` bumped to now (durably) when the stored read is
+   * at least {@link WORKING_TREE_CHUNK_READ_REFRESH_MS} old, else as stored;
+   * undefined on a miss.
+   */
   get: (collectionName: string, key: WorkingTreeChunkStoreKey) => Promise<WorkingTreeChunkStoreEntry | undefined>;
   put: (collectionName: string, entry: Omit<WorkingTreeChunkStoreEntry, "lastReadAt">) => Promise<void>;
   /**
@@ -166,6 +170,15 @@ export interface WorkingTreeChunkSweepSchedule {
 }
 
 export const WORKING_TREE_CHUNK_RETENTION_MS = 96 * 3_600_000;
+/**
+ * How old a stored `lastReadAt` must be before `get` rewrites it. A warm delta
+ * is read on every request, and a meta rewrite per read was a writeFile + rename
+ * per delta file per request. Retention compares `at - lastReadAt` against
+ * {@link WORKING_TREE_CHUNK_RETENTION_MS} (96 h), so a stamp at most this stale
+ * moves an eviction at most an hour earlier — never one of an entry read within
+ * the last 95 h — and the cap's least-recently-read order is coarsened to an hour.
+ */
+export const WORKING_TREE_CHUNK_READ_REFRESH_MS = 3_600_000;
 export const WORKING_TREE_CHUNK_STORE_CAP_BYTES = 512 * 1024 * 1024;
 export const WORKING_TREE_CHUNK_SWEEP_INTERVAL_MS = 6 * 3_600_000;
 export const WORKING_TREE_CHUNK_SWEEP_DELAY_MS = 2 * 60_000;
@@ -410,8 +423,11 @@ export function createWorkingTreeChunkStore(deps: WorkingTreeChunkStoreDeps): Wo
         return undefined;
       }
       const sparseVectors = await readSparseVectors(join(dir, `${name}${SPARSE_SUFFIX}`));
-      const bumped: StoredMeta = { ...meta, lastReadAt: now() };
-      await writeAtomic(join(dir, `${name}${META_SUFFIX}`), JSON.stringify(bumped));
+      const at = now();
+      // Refreshed only once the stored read is stale: a steady-state read writes nothing.
+      const bumped: StoredMeta =
+        at - meta.lastReadAt >= WORKING_TREE_CHUNK_READ_REFRESH_MS ? { ...meta, lastReadAt: at } : meta;
+      if (bumped !== meta) await writeAtomic(join(dir, `${name}${META_SUFFIX}`), JSON.stringify(bumped));
       const { treeRoot, relativePath, contentSha256, chunkerFingerprint, blobId, lastReadAt } = bumped;
       const entry = { treeRoot, relativePath, contentSha256, chunkerFingerprint, blobId, lastReadAt, rows };
       return sparseVectors ? { ...entry, sparseVectors } : entry;
