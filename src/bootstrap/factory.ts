@@ -8,9 +8,9 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import {
-  getDaemonPaths,
   getStorageDir,
   openDaemonLogFd,
+  resolveDaemonClientTarget,
   sweepOrphanedDaemonKeyDirs,
   type CodegraphDaemonPaths,
 } from "../core/adapters/duckdb/daemon/index.js";
@@ -776,7 +776,17 @@ export function wireCodegraph(
   // itself is spawned lazily on the first write (see lazy wrap below) so this
   // wire step stays side-effect-free — merely wiring (no write) never spawns,
   // which is what keeps the unit suite from launching a real daemon.
-  const daemonPaths = getDaemonPaths(getStorageDir(rootDir));
+  //
+  // WHICH daemon (bd tea-rags-mcp-llrja): the spawner and the pool both ask
+  // `resolveDaemonClientTarget` at every spawn check and connect, never a
+  // wire-time path — after a rebuild under this long-lived process, the daemon
+  // spawned from disk keys itself by the NEW build. `daemonPaths` is the
+  // wire-time answer, kept for the consumers that only run while this process
+  // still matches the build on disk (index runs refuse otherwise, bd
+  // tea-rags-mcp-r4z09): worker-thread pools and the run keep-alive.
+  const daemonStorageDir = getStorageDir(rootDir);
+  const resolveDaemonTarget = () => resolveDaemonClientTarget(daemonStorageDir);
+  const daemonPaths = resolveDaemonTarget().paths;
 
   const ambiguousMode = codegraph.ambiguousResolveMode;
   // Single cross-language symbolId mapper injected into every codegraph
@@ -801,9 +811,13 @@ export function wireCodegraph(
   // `memoryLimitMax`, and a replaced daemon's governor ran on the default
   // ceiling).
   const spawnCodegraphDaemon = (): void => {
-    ensureCodegraphDaemon(daemonPaths, {
+    const target = resolveDaemonTarget();
+    // A tree that is gone has no `entry.js` to launch; the pool names the
+    // failure itself (CodegraphClientBuildTreeGoneError).
+    if (target.addressing === "build-tree-gone") return;
+    ensureCodegraphDaemon(target.paths, {
       rootDir,
-      storageDir: daemonPaths.storageDir,
+      storageDir: daemonStorageDir,
       resources: {
         memoryLimit: codegraph.dbMemoryLimit,
         // Governor ceiling rides the spawn env to the daemon; the in-process
@@ -839,10 +853,13 @@ export function wireCodegraph(
     // the lazy wrap below); only the direct-mode `acquireRead` attaches
     // READ_ONLY in-process.
     daemonSocketPath: daemonPaths.socketPath,
+    // Re-resolved at every connect, through the same rule as the spawner above
+    // (bd tea-rags-mcp-llrja).
+    daemonClientTarget: resolveDaemonTarget,
     // Base lifecycle dir (bd tea-rags-mcp-42hno): the pool's one-time legacy
     // migration looks for a pre-keying daemon layout here before its first
     // keyed connect.
-    daemonStorageDir: daemonPaths.storageDir,
+    daemonStorageDir,
     // Build-version handshake restart (bd tea-rags-mcp-ji56r): when the pool's
     // handshake finds a daemon from a DIFFERENT build (stale after `npm run
     // build && npm link`), it drains that daemon gracefully and cold-spawns a

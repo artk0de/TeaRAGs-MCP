@@ -50,8 +50,10 @@ import {
   readDaemonPid,
   unlinkDaemonFiles,
   waitForDaemonExit,
+  type CodegraphDaemonClientTarget,
 } from "./daemon/lifecycle.js";
 import {
+  CodegraphClientBuildTreeGoneError,
   CodegraphClientStaleBuildError,
   CodegraphDaemonBuildSkewError,
   CodegraphDaemonBuildUnavailableError,
@@ -166,6 +168,21 @@ export interface GraphDbClientPoolOptions {
    * (direct/test mode): in-process handles.
    */
   daemonSocketPath?: string;
+  /**
+   * Which daemon this client process addresses, re-decided at EVERY connect
+   * (bd tea-rags-mcp-llrja). Wins over `daemonSocketPath`'s fixed address and
+   * turns daemon mode on by itself. The bootstrap factory wires it to
+   * `resolveDaemonClientTarget` — the rule its spawner resolves through too —
+   * because the build on disk moves under a long-lived process: after a
+   * rebuild the daemon this tree spawns keys itself by the NEW build, so a
+   * wire-time socket of the loaded build names a dir nothing listens in. The
+   * build handshake then settles what a stale process may do there. A target
+   * whose build tree is gone, with no daemon of the loaded build listening,
+   * fails at once with `CodegraphClientBuildTreeGoneError`. Worker-thread
+   * pools omit it: runs are admitted only while loaded == on disk (bd
+   * tea-rags-mcp-r4z09), where the rule yields the wire-time socket.
+   */
+  daemonClientTarget?: () => CodegraphDaemonClientTarget;
   /**
    * Base daemon lifecycle storage dir (bd tea-rags-mcp-42hno). When set, the
    * pool checks — once per connect, a couple of `existsSync` in steady state —
@@ -535,13 +552,17 @@ export class GraphDbClientPool {
     this.options.onCollectionClientClosed?.(physicalCollectionName);
   }
 
+  /** Daemon mode: a fixed daemon socket, or a client target re-resolved per connect. */
+  private isDaemonMode(): boolean {
+    return Boolean(this.options.daemonSocketPath) || this.options.daemonClientTarget !== undefined;
+  }
+
   /**
    * Acquire a WRITE handle: through the daemon (the single RW connection across
-   * processes) when `daemonSocketPath` is configured, else the in-process RW
-   * handle (`acquire`).
+   * processes) in daemon mode, else the in-process RW handle (`acquire`).
    */
   async acquireWrite(physicalCollectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
-    if (this.options.daemonSocketPath) {
+    if (this.isDaemonMode()) {
       return this.acquireDaemonHandle(physicalCollectionName);
     }
     return this.acquire(physicalCollectionName);
@@ -575,9 +596,16 @@ export class GraphDbClientPool {
     const inflight = this.daemonInflight.get(physicalCollectionName);
     if (inflight) return inflight;
 
-    const socketPath = this.options.daemonSocketPath;
-    /* v8 ignore next -- acquireDaemonClient is only reached when daemonSocketPath is set */
-    if (!socketPath) throw new Error("acquireDaemonClient called without daemonSocketPath");
+    const target = this.options.daemonClientTarget?.();
+    const socketPath = target?.paths.socketPath ?? this.options.daemonSocketPath;
+    /* v8 ignore next -- acquireDaemonClient is only reached in daemon mode */
+    if (!socketPath) throw new Error("acquireDaemonClient called without a daemon address");
+    // Nothing can be spawned from a tree that is gone, and nothing else names
+    // the build that replaced it: waiting out the connect window on a socket no
+    // one will create only delays the same answer (bd tea-rags-mcp-llrja).
+    if (target?.addressing === "build-tree-gone" && !existsSync(socketPath)) {
+      throw new CodegraphClientBuildTreeGoneError({ socketPath, loadedFingerprint: target.loadedFingerprint });
+    }
 
     const promise = (async (): Promise<DaemonClientEntry> => {
       // One-time legacy migration (bd tea-rags-mcp-42hno): a keyed client
@@ -956,7 +984,7 @@ export class GraphDbClientPool {
     if (!this.hasDatabase(physicalCollectionName)) {
       throw new CodegraphDatabaseMissingError(this.pathFor(physicalCollectionName));
     }
-    if (this.options.daemonSocketPath) {
+    if (this.isDaemonMode()) {
       return this.acquireDaemonHandle(physicalCollectionName);
     }
     return this.acquireRead(physicalCollectionName);
@@ -983,7 +1011,7 @@ export class GraphDbClientPool {
     if (!this.hasDatabase(physicalCollectionName)) {
       throw new CodegraphDatabaseMissingError(this.pathFor(physicalCollectionName));
     }
-    if (this.options.daemonSocketPath) {
+    if (this.isDaemonMode()) {
       const { graphDb } = await this.acquireDaemonHandle(physicalCollectionName);
       await graphDb.exportSnapshot(targetPath);
       return;
@@ -1322,7 +1350,7 @@ export class GraphDbClientPool {
   private async replaceInDaemon(
     replace: (daemon: DaemonDatabaseFileReplacer) => Promise<DaemonDatabaseReplacement>,
   ): Promise<DaemonDatabaseReplacement | undefined> {
-    const socketPath = this.options.daemonSocketPath;
+    const socketPath = this.options.daemonClientTarget?.().paths.socketPath ?? this.options.daemonSocketPath;
     if (!socketPath) return undefined;
     // Dynamic so direct/test mode never loads the node:net socket code.
     const { DaemonDatabaseFileReplacer } = await import("./daemon/database-file-replacer.js");
