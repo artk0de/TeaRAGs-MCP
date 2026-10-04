@@ -11,7 +11,7 @@ import type {
   IdentifierDeclarationKind,
   IdentifierTypeMultiplicity,
 } from "../../../contracts/types/codegraph-extraction.js";
-import type { SymbolDefinitionKind } from "../../../contracts/types/codegraph-symbols.js";
+import type { CallableSymbolKind, SymbolDefinitionKind } from "../../../contracts/types/codegraph-symbols.js";
 import type { IdentifierCasing } from "../../../contracts/types/language.js";
 import {
   detectIdentifierCasing,
@@ -163,6 +163,8 @@ export interface NamingByTypeRow {
   sameTypeSiblingN?: number;
   /** The distinct owners behind `n` ({@link NamingShapeRow}); absent = unknown. */
   holders?: number;
+  /** A `return` row's owner kind — a free function or a method (bd tea-rags-mcp-nfm4h); absent = unknown. */
+  ownerKind?: CallableSymbolKind;
 }
 
 /** One `byCallee` aggregate row: a name bound to a call of `receiver.member` `n` times. */
@@ -235,6 +237,12 @@ export interface DraftNameJudgementInput {
    * supertype's — CONFORMS, whatever the rows say.
    */
   overrides?: string;
+  /**
+   * A `return` draft: whether it is a free function or a method (bd
+   * tea-rags-mcp-nfm4h). Its type's return rows of the OTHER owner kind demand
+   * nothing of it ({@link judgeByType}). Absent = unknown: every row counts.
+   */
+  ownerKind?: CallableSymbolKind;
   /**
    * An untyped `return` draft (no type, no callee): the project's method
    * vocabulary it is judged by ({@link judgeUntypedMethodName}). Absent → the
@@ -312,7 +320,11 @@ function nameSupport(rows: readonly NamingShapeRow[], name: string): number {
  * method's name (`secondary_default_sorting`) is no method convention. A row
  * whose first word is a connector (`for_delivery`) is a complement and never the
  * suggestion; with no other row there is nothing to demand — NEW_TERM with no
- * terms, or CONFORMS for a value named after its type.
+ * terms, or CONFORMS for a value named after its type. A `return` draft's rows
+ * are its owner kind's (bd tea-rags-mcp-nfm4h, {@link judgeByType}): a
+ * framework override METHOD's name (`create`) is no convention for a
+ * module-level FUNCTION, so only rows of the draft's kind — or of an unknown
+ * kind — ever reach the demand.
  */
 function rowDemand(
   kind: IdentifierDeclarationKind,
@@ -358,7 +370,9 @@ function namesItsType(shape: NamingShape): boolean {
 
 /**
  * CONFORMS when the draft's shape holds ≥ 20% of the rows, else the rows'
- * demand ({@link rowDemand}) — for a `return`, a MISFIT naming the most frequent row.
+ * demand ({@link rowDemand}) — for a `return`, a MISFIT naming the most frequent
+ * row of the draft's own owner kind (bd tea-rags-mcp-nfm4h): the caller passes a
+ * `return` draft only the rows whose owner is of its kind or of an unknown one.
  */
 function judgeAgainstRows(
   input: DraftNameJudgementInput,
@@ -553,7 +567,7 @@ function judgeByType(
   typeName: string,
 ): NamingStageOutcome {
   const typeRows = input.byTypeRows ?? [];
-  const kindRows = typeRows.filter((row) => row.kind === kind);
+  const kindRows = typeRows.filter((row) => row.kind === kind && ownedLikeDraft(row, input.ownerKind));
   const freeNameMustBeKnown = kind !== "return";
   // The type's rows of every kind, one row per name: whether the project spells the type for its values. A
   // method returning the type counts (spec §5a rule 4, bd tea-rags-mcp-bjfa0): `def tax_preparation` spells it.
@@ -586,6 +600,17 @@ function judgeByType(
   const typeWords = typeNameWords(typeName);
   if (words[0] === verb && matchesTypeWords(words.slice(1), typeWords)) return { verdict: "CONFORMS" };
   return { verdict: "MISFIT", suggestion: joinIdentifierWords([verb, ...typeWords], input.casing) };
+}
+
+/**
+ * The owner-kind gate (bd tea-rags-mcp-nfm4h): a row counts for a draft unless
+ * both owner kinds are known and differ — a module-level function is judged
+ * against functions, a method against methods. Only `return` rows carry an
+ * owner kind, so a value row always counts; an unknown kind on either side is
+ * today's reading, every row.
+ */
+function ownedLikeDraft(row: NamingByTypeRow, ownerKind: CallableSymbolKind | undefined): boolean {
+  return ownerKind === undefined || row.ownerKind === undefined || row.ownerKind === ownerKind;
 }
 
 function judgeByCallee(

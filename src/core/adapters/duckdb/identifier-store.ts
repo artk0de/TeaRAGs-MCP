@@ -23,6 +23,7 @@
 
 import type {
   AnchorIdentifierTypeRow,
+  CallableSymbolKind,
   IdentifierCalleeAggregateRow,
   IdentifierCalleeScopeQuery,
   IdentifierDeclarationKind,
@@ -225,6 +226,30 @@ function fileLanguageGrouping(source: string, grouped: boolean | undefined): Fil
               LEFT JOIN cg_symbols_files f ON f.rel_path = g.rel_path)`,
     column: ", file_language",
     order: ", file_language NULLS LAST",
+  };
+}
+
+/** {@link ownerKindGrouping}'s pieces: the same shape as a language split. */
+type OwnerKindGrouping = FileLanguageGrouping;
+
+/**
+ * The SQL pieces behind `groupByOwnerKind` (bd tea-rags-mcp-nfm4h): `from` marks
+ * each row with `owner_kind` — its owner's `cg_symbols.symbol_kind` when the row
+ * is a `return` and the owner is a `function` / `method`, NULL otherwise — and
+ * `column` groups by it. One symbol row per (rel_path, symbol_id), so the join
+ * never multiplies a row. Not grouping → `source` as-is and empty pieces, so the
+ * plain read is byte-identical.
+ */
+function ownerKindGrouping(source: string, grouped: boolean | undefined): OwnerKindGrouping {
+  if (grouped !== true) return { from: source, column: "", order: "" };
+  return {
+    from: `(SELECT o.*,
+                   CASE WHEN o.kind = 'return' AND s.symbol_kind IN ('function', 'method')
+                        THEN s.symbol_kind END AS owner_kind
+              FROM ${source} o
+              LEFT JOIN cg_symbols s ON s.rel_path = o.rel_path AND s.symbol_id = o.owner_symbol_id)`,
+    column: ", owner_kind",
+    order: ", owner_kind NULLS LAST",
   };
 }
 
@@ -464,7 +489,8 @@ export class DuckDbIdentifierStore {
     if (q.types.length === 0) return [];
     const cte = resolvedIdentifiersCte(evidenceScopePredicate(q.pathPrefixes, q.excludePaths, q.languages));
     const siblings = sameTypeSiblingPieces(q.countSameTypeSiblings, q.types);
-    const lang = fileLanguageGrouping(siblings.from, q.groupByLanguage);
+    const ownerKind = ownerKindGrouping(siblings.from, q.groupByOwnerKind);
+    const lang = fileLanguageGrouping(ownerKind.from, q.groupByLanguage);
     const multiplicity = q.groupByMultiplicity ? ", type_multiplicity" : "";
     const rows = await this.session.queryAll<{
       type_name: string;
@@ -477,14 +503,15 @@ export class DuckDbIdentifierStore {
       file_language?: string | null;
       same_type_sibling_n?: number | string | bigint | null;
       holders?: number | string | bigint;
+      owner_kind?: CallableSymbolKind | null;
     }>(
       `${cte.sql}
        SELECT type_name, kind, name, type_source${multiplicity}, count(*) AS n,
-              min(owner_symbol_id) AS example_owner${siblings.column}${holdersColumn(q.countHolders)}${lang.column}
+              min(owner_symbol_id) AS example_owner${siblings.column}${holdersColumn(q.countHolders)}${ownerKind.column}${lang.column}
          FROM ${lang.from}
         WHERE type_name IN (${placeholders(q.types)})
-        GROUP BY type_name, kind, name, type_source${multiplicity}${lang.column}
-        ORDER BY n DESC, type_name, kind, name, type_source${multiplicity}${lang.order}`,
+        GROUP BY type_name, kind, name, type_source${multiplicity}${ownerKind.column}${lang.column}
+        ORDER BY n DESC, type_name, kind, name, type_source${multiplicity}${ownerKind.order}${lang.order}`,
       [...cte.params, ...siblings.params, ...q.types],
     );
     return rows.map((r) => ({
@@ -499,6 +526,7 @@ export class DuckDbIdentifierStore {
         ? { sameTypeSiblingN: Number(r.same_type_sibling_n) }
         : {}),
       ...holdersField(q.countHolders, r),
+      ...(q.groupByOwnerKind === true && r.kind === "return" ? { ownerKind: r.owner_kind ?? null } : {}),
       ...languageField(q.groupByLanguage, r),
     }));
   }

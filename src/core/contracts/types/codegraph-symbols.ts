@@ -379,6 +379,13 @@ export type SymbolDefinitionKind =
   | "function"
   | "method";
 
+/**
+ * The declaration kind of a callable — a free `function` or a `method` of a
+ * type. A `return` row's name is its callable's, so the naming verdict reads it
+ * to judge a draft only against callables of its own kind (bd tea-rags-mcp-nfm4h).
+ */
+export type CallableSymbolKind = Extract<SymbolDefinitionKind, "function" | "method">;
+
 export interface SymbolDefinition {
   symbolId: SymbolId;
   fqName: string;

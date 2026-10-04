@@ -273,6 +273,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
       groupByMultiplicity: q.groupByMultiplicity,
       countSameTypeSiblings: q.countSameTypeSiblings,
       countHolders: q.countHolders,
+      groupByOwnerKind: q.groupByOwnerKind,
     })) as IdentifierTypeAggregateRow[];
   }
 

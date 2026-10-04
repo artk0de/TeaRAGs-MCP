@@ -39,6 +39,7 @@ import type {
 import type { HierarchySnapshot, InheritanceEdge } from "./codegraph-hierarchy.js";
 import type { CodegraphPass1FileAggregates } from "./codegraph-pass1.js";
 import type {
+  CallableSymbolKind,
   FileScopedSymbolId,
   FileScopedSymbolRef,
   RelPath,
@@ -231,6 +232,14 @@ export interface IdentifierTypeAggregateQuery extends IdentifierTypeScopeQuery, 
    * the flag no row carries it.
    */
   countHolders?: boolean;
+  /**
+   * Split every `return` group by its owner's declaration kind
+   * (`cg_symbols.symbol_kind` of the owner symbol) and report it per `return`
+   * row as `ownerKind` — a framework override METHOD's name is no convention
+   * for a module-level FUNCTION (bd tea-rags-mcp-nfm4h). A value row is never
+   * split and carries no key. Without the flag no row carries it.
+   */
+  groupByOwnerKind?: boolean;
 }
 
 /**
@@ -276,6 +285,12 @@ export interface IdentifierTypeAggregateRow extends IdentifierLanguageGroupedRow
   sameTypeSiblingN?: number;
   /** The group's distinct owner symbols — a `countHolders` read only. */
   holders?: number;
+  /**
+   * A `return` row's owner kind — a `groupByOwnerKind` read only; null when the
+   * owner has no `function` / `method` kind on record (indexed before the kind
+   * was persisted, or no symbol row).
+   */
+  ownerKind?: CallableSymbolKind | null;
 }
 
 /**

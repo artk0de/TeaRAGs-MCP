@@ -545,6 +545,51 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     expect(after.review?.findings.map((f) => f.name)).not.toContain("sameFirm");
   });
 
+  // bd tea-rags-mcp-nfm4h: ugnest's module-level `listing_not_editable_response` was told to be `create`,
+  // the name DRF ViewSet overrides returning Response share. A free function is judged against functions.
+  it("a module-level function is no MISFIT toward the name the methods of its return type share", async () => {
+    const owners = ["CityController", "RegionController", "AreaController"];
+    await write(
+      owners.map((owner, i) => ({
+        relPath: `src/geo/controller-${i}.ts`,
+        rows: [
+          { ...local(`${owner}#create`, "create", { typeName: "Response", typeSource: "annotation" }), kind: "return" },
+        ],
+      })),
+    );
+    for (const [i, owner] of owners.entries()) {
+      const relPath = `src/geo/controller-${i}.ts`;
+      const symbolId = `${owner}#create`;
+      await db.upsertSymbols(relPath, [
+        { symbolId, fqName: symbolId, shortName: "create", relPath, scope: [], symbolKind: "method" },
+      ]);
+    }
+    mkdirSync(join(repo, "src/listing"), { recursive: true });
+    const helpers = "src/listing/responses.ts";
+    writeFileSync(
+      join(repo, helpers),
+      [
+        "export function listingNotEditableResponse(): Response {",
+        "  return build();",
+        "}",
+        "",
+        "export class ListingController {",
+        "  listingResponse(): Response {",
+        "    return build();",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const result = await ops.getNamingLexicon({ collection: "c", path: repo, files: [helpers] });
+    const findings = result.review?.findings ?? [];
+    expect(findings.find((f) => f.name === "listingNotEditableResponse")).not.toMatchObject({ verdict: "MISFIT" });
+    // A method is still held to the name the methods share.
+    expect(findings).toContainEqual(
+      expect.objectContaining({ name: "listingResponse", kind: "return", verdict: "MISFIT", suggestion: "create" }),
+    );
+  });
+
   // Lexicon friction F1: a project alias resolves to the MAIN checkout, so a change made in a
   // linked worktree was reviewed as `changedFiles: 0` — success-shaped and blind.
   describe("the working tree the review reads", () => {

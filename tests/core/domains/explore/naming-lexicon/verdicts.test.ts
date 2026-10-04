@@ -1998,3 +1998,107 @@ describe("judgeDraftName — an untyped method judged by the method vocabulary",
     });
   });
 });
+
+// bd tea-rags-mcp-nfm4h: a return draft's verbatim name demand counts only the rows whose owner is of
+// the draft's own kind — a module-level function is never told to take a framework override's name.
+describe("judgeDraftName — the owner-kind gate on a return draft's rows", () => {
+  const overrideRows = [
+    {
+      kind: "return" as const,
+      name: "create",
+      n: 4,
+      holders: 4,
+      exampleOwner: "CityViewSet#create",
+      ownerKind: "method" as const,
+    },
+    {
+      kind: "return" as const,
+      name: "list",
+      n: 3,
+      holders: 3,
+      exampleOwner: "CityViewSet#list",
+      ownerKind: "method" as const,
+    },
+    {
+      kind: "return" as const,
+      name: "retrieve",
+      n: 2,
+      holders: 2,
+      exampleOwner: "CityViewSet#retrieve",
+      ownerKind: "method" as const,
+    },
+  ];
+  const helper = {
+    name: "listing_not_editable_response",
+    kind: "return" as const,
+    typeName: "Response",
+    casing: "snake" as const,
+  };
+
+  it("a module-level function is not a MISFIT toward a method's name", () => {
+    const verdict = judgeDraftName({ ...helper, ownerKind: "function", byTypeRows: overrideRows });
+    expect(verdict.verdict).not.toBe("MISFIT");
+  });
+
+  it("a module-level function conforms to the functions that spell the type", () => {
+    const functionRow = {
+      kind: "return" as const,
+      name: "geo_error_response",
+      n: 1,
+      holders: 1,
+      exampleOwner: "geo_error_response",
+      ownerKind: "function" as const,
+    };
+    expect(judgeDraftName({ ...helper, ownerKind: "function", byTypeRows: [...overrideRows, functionRow] })).toEqual({
+      verdict: "CONFORMS",
+    });
+  });
+
+  it("a row whose owner kind is unknown still counts", () => {
+    const unknownOwner = overrideRows.map(({ ownerKind: _ownerKind, ...row }) => row);
+    expect(judgeDraftName({ ...helper, ownerKind: "function", byTypeRows: unknownOwner })).toEqual({
+      verdict: "MISFIT",
+      suggestion: "create",
+      holder: "CityViewSet#create",
+    });
+  });
+
+  it("a draft whose owner kind is unknown is judged against every row, as before", () => {
+    expect(judgeDraftName({ ...helper, byTypeRows: overrideRows })).toEqual({
+      verdict: "MISFIT",
+      suggestion: "create",
+      holder: "CityViewSet#create",
+    });
+  });
+
+  it("a method in a service class is still a MISFIT toward the services' `call`", () => {
+    const callRows = [
+      {
+        kind: "return" as const,
+        name: "call",
+        n: 5,
+        holders: 5,
+        exampleOwner: "Billing::Charge#call",
+        ownerKind: "method" as const,
+      },
+      {
+        kind: "return" as const,
+        name: "tax_preparation_result",
+        n: 1,
+        holders: 1,
+        exampleOwner: "tax_preparation_result",
+        ownerKind: "function" as const,
+      },
+    ];
+    expect(
+      judgeDraftName({
+        name: "charge_result",
+        kind: "return",
+        typeName: "Result",
+        casing: "snake",
+        ownerKind: "method",
+        byTypeRows: callRows,
+      }),
+    ).toEqual({ verdict: "MISFIT", suggestion: "call", holder: "Billing::Charge#call" });
+  });
+});

@@ -77,6 +77,7 @@ import { join } from "node:path";
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { AddedLineRange } from "../../../adapters/vcs/git/git-cli/client.js";
 import type {
+  CallableSymbolKind,
   GraphDbClient,
   IdentifierBoundCallee,
   IdentifierCalleeAggregateRow,
@@ -389,9 +390,15 @@ type IdentifierReader = Pick<
  * A value draft: `kind` absent or a declaration kind. `owner` is internal (bd
  * tea-rags-mcp-bjfa0): the type a `return` draft is declared in — diff mode's
  * enclosing class, names mode's class at `path` — whose ancestry may already
- * declare the method it names.
+ * declare the method it names. `ownerKind` is internal too (bd
+ * tea-rags-mcp-nfm4h): whether a `return` draft is a free function or a method,
+ * as the walker declared it — diff mode only; absent = unknown.
  */
-type NamingLexiconValueDraft = NamingLexiconDraftName & { kind?: IdentifierDeclarationKind; owner?: string };
+type NamingLexiconValueDraft = NamingLexiconDraftName & {
+  kind?: IdentifierDeclarationKind;
+  owner?: string;
+  ownerKind?: CallableSymbolKind;
+};
 
 function isTypeDraft(draft: NamingLexiconDraftName): boolean {
   return draft.kind === "type";
@@ -420,6 +427,8 @@ interface LexiconTypeRow {
   sameTypeSiblingN?: number;
   /** The distinct owners behind `n` (a store row; a `name-inferred` row has none). */
   holders?: number;
+  /** A `return` store row's owner kind (null: unknown); a value or `name-inferred` row has none. */
+  ownerKind?: CallableSymbolKind | null;
 }
 
 /** One byCallee row with the casing it is classified in. */
@@ -1439,6 +1448,7 @@ async function readTypeRows(
       groupByMultiplicity: true,
       countSameTypeSiblings: true,
       countHolders: true,
+      groupByOwnerKind: true,
     })
   ).map((row: IdentifierTypeAggregateRow) => ({ ...row }));
   if (stored.length === 0) return stored;
@@ -1665,8 +1675,11 @@ async function judgeDrafts(
       nonConceptTypes: ctx.nonConceptTypes,
       callee: draft.callee,
       typeMultiplicity: draft.typeMultiplicity,
+      ...(draft.ownerKind !== undefined ? { ownerKind: draft.ownerKind } : {}),
       byTypeRows:
-        draft.type === undefined ? undefined : byTypeRowsFor(draft.type, draft.typeMultiplicity ?? "one", ctx.typeRows),
+        draft.type === undefined
+          ? undefined
+          : byTypeRowsFor(draft.type, draft.typeMultiplicity ?? "one", ctx.typeRows, draft.ownerKind),
       byCalleeRows: draft.callee ? byCalleeRowsFor(draft.callee, ctx.calleeRows) : undefined,
       conceptTerms: ctx.conceptTerms,
       projectShapePrior: prior.shapes,
@@ -1762,16 +1775,21 @@ async function typeFamilyRows(
  * merged per (kind, name, casing) across type sources and the file languages of
  * the answer's language namespace — the only rows it read (bd tea-rags-mcp-0qaht).
  * A row written before migration 034 reads `one`, the honest reading of old data.
+ * A draft whose owner kind is known (bd tea-rags-mcp-nfm4h) keeps the `return`
+ * rows apart per owner kind, so the verdict's gate can drop the other kind's; a
+ * draft of unknown owner kind merges them, as before.
  */
 function byTypeRowsFor(
   typeName: string,
   multiplicity: IdentifierTypeMultiplicity,
   rows: readonly LexiconTypeRow[],
+  draftOwnerKind: CallableSymbolKind | undefined,
 ): NamingByTypeRow[] {
   const merged = new Map<string, NamingByTypeRow>();
   for (const row of rows) {
     if (row.typeName !== typeName || (row.typeMultiplicity ?? "one") !== multiplicity) continue;
-    const key = `${row.kind}\u0000${row.name}\u0000${row.casing ?? ""}`;
+    const ownerKind = draftOwnerKind === undefined ? undefined : (row.ownerKind ?? undefined);
+    const key = `${row.kind}\u0000${row.name}\u0000${row.casing ?? ""}\u0000${ownerKind ?? ""}`;
     const prev = merged.get(key);
     const siblings = prev ? mergedSameTypeSiblingN(prev, row) : row.sameTypeSiblingN;
     const holders = prev ? mergedHolders(prev, row) : row.holders;
@@ -1783,6 +1801,7 @@ function byTypeRowsFor(
       ...(row.casing !== undefined ? { casing: row.casing } : {}),
       ...(siblings !== undefined ? { sameTypeSiblingN: siblings } : {}),
       ...(holders !== undefined ? { holders } : {}),
+      ...(ownerKind !== undefined ? { ownerKind } : {}),
     });
   }
   return [...merged.values()];
@@ -2076,9 +2095,14 @@ function reviewDrafts(file: DiffFile): ReviewDraft[] {
   const { relPath, ranges, declarations } = file;
   const { language } = declarations;
   const drafts: ReviewDraft[] = [];
+  // The walker's own kind for each callable it declared: a `return` draft's owner kind (bd tea-rags-mcp-nfm4h).
+  const callableKinds = new Map(
+    declarations.callables.flatMap((callable) => callable.symbolIds.map((id) => [id, callable.kind] as const)),
+  );
   for (const row of declarations.values) {
     if (!inRanges(row.line, ranges)) continue;
     const owner = row.kind === "return" ? memberOwner(row.ownerSymbolId) : undefined;
+    const ownerKind = row.kind === "return" ? callableKinds.get(row.ownerSymbolId) : undefined;
     drafts.push({
       relPath,
       line: row.line,
@@ -2091,6 +2115,7 @@ function reviewDrafts(file: DiffFile): ReviewDraft[] {
         ...(row.typeName !== undefined ? { type: row.typeName } : {}),
         ...(row.typeMultiplicity !== undefined ? { typeMultiplicity: row.typeMultiplicity } : {}),
         ...(owner !== undefined ? { owner } : {}),
+        ...(ownerKind !== undefined ? { ownerKind } : {}),
         ...(row.boundMember !== undefined
           ? {
               callee: {
