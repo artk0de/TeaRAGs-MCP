@@ -17,18 +17,26 @@
  *
  * The co-change snapshot arrives PRE-READ in the build context (the
  * orchestration reads it once when either consuming section was requested);
- * a snapshot that is absent, never built, or unreadable degrades the coupling
- * port to no partners — the run's silence contract — while the
- * `incompleteChange` section reports the unreadable case when it was asked
- * for. An empty diff is a VALID review: built, no findings.
+ * a snapshot that is absent, never built, or unreadable degrades the
+ * silent-coupling facts to the empty verdict and `wireSplitMerge` to its
+ * absent reason — the run's silence contract — while the `incompleteChange`
+ * section reports the unreadable case when it was asked for. An empty diff is
+ * a VALID review: built, no findings.
  */
 
 import { randomInt } from "node:crypto";
 
 import { REVIEW_EDGE_MAX_AGE_SECONDS } from "../../../../adapters/duckdb/review-edge-store.js";
-import type { FileDependencyEdge, TemporalCochangeGraph } from "../../../../contracts/types/codegraph.js";
+import type {
+  FileDependencyEdge,
+  FileDependencyGraphFile,
+  TemporalCochangeGraph,
+} from "../../../../contracts/types/codegraph.js";
 import type { ComponentGraph } from "../../../../domains/trajectory/codegraph/symbols/index.js";
-import { computeSplitMergeVerdicts } from "../../../../domains/trajectory/codegraph/temporal/index.js";
+import {
+  computeSplitMergeVerdicts,
+  detectSilentCoupling,
+} from "../../../../domains/trajectory/codegraph/temporal/index.js";
 import type { ReviewSectionNotJudgedEntry } from "../../../public/dto/review.js";
 import {
   ArchitectureFactsCatalog,
@@ -36,13 +44,14 @@ import {
   distanceFromMainSequenceByComponent,
   readProductionArchitectureGraph,
 } from "../architecture-facts.js";
+import { isDocumentationPath } from "../architecture-report-ops.js";
 import {
   DiffDetectorRun,
   type DiffDetectorContractReader,
-  type DiffDetectorCouplingReader,
   type DiffDetectorFinding,
   type DiffDetectorGraphReader,
   type DiffDetectorRunDeps,
+  type DiffDetectorSilentCouplingFacts,
 } from "../diff-detector-run.js";
 import {
   readReviewFileEdges,
@@ -102,46 +111,40 @@ export class WiredGraphReader implements DiffDetectorGraphReader {
 const EMPTY_EDGES: readonly IndexedGraphEdge[] = [];
 
 /**
- * `DiffDetectorCouplingReader` over the pre-read co-change snapshot: the pair
- * table is undirected (stored once, `relPathA < relPathB`), so a file's
- * partners are its rows on EITHER side, each carrying the snapshot's own
- * `structurallyLinked` verdict — the production store's union, which counts a
- * type-only import as a link (bd tea-rags-mcp-89k7k.4); dropping it reported
- * pairs the whole-repo detector explains. `null`/`undefined` — no build, or
- * not read for this review — answers no partners: absence is the run's
- * silence, never a zero verdict.
+ * The production silent-coupling verdict for the diff-scoped family (bd
+ * tea-rags-mcp-89k7k.1.10): run the whole-repo detector ONCE over the SAME
+ * pre-read snapshot, the SAME production graph (walked census + file
+ * dependency edges for the shared-neighbour index) and the SAME documentation
+ * predicate the report uses — then hand the run its violation list and
+ * exclusion counters verbatim. Re-judging raw partner rows in the diff path
+ * (the pre-fix behaviour) skipped the strength cut and the shared-neighbour
+ * explanation and let 19–98 historical src~test / CLAUDE.md~code pairs per
+ * diff drown the findings; consuming the verdict makes drift structurally
+ * impossible. No build / unreadable snapshot degrades to an empty graph
+ * (built:false summary, no violations) — silence, never a zero verdict. The
+ * report's second `linkImportedCochangePairs` pass (asset-import specifiers)
+ * is not replicated: it needs working-tree specifier reads the review does
+ * not do; the snapshot's own linkage union covers every resolved import.
  */
-export class WiredCouplingReader implements DiffDetectorCouplingReader {
-  private readonly partnersByFile: ReadonlyMap<
-    string,
-    readonly { partner: string; support: number; structurallyLinked: boolean }[]
-  >;
-
-  constructor(snapshot: TemporalCochangeGraph | null | undefined) {
-    const partners = new Map<string, { partner: string; support: number; structurallyLinked: boolean }[]>();
-    if (snapshot) {
-      for (const edge of snapshot.edges) {
-        pushTo(partners, edge.relPathA, {
-          partner: edge.relPathB,
-          support: edge.support,
-          structurallyLinked: edge.structurallyLinked,
-        });
-        pushTo(partners, edge.relPathB, {
-          partner: edge.relPathA,
-          support: edge.support,
-          structurallyLinked: edge.structurallyLinked,
-        });
-      }
-    }
-    this.partnersByFile = partners;
-  }
-
-  partnersOf(relPath: string): readonly { partner: string; support: number; structurallyLinked: boolean }[] {
-    return this.partnersByFile.get(relPath) ?? EMPTY_PARTNERS;
-  }
+export function buildSilentCouplingFacts(
+  snapshot: TemporalCochangeGraph | null | undefined,
+  productionFiles: readonly FileDependencyGraphFile[],
+  productionEdges: readonly FileDependencyEdge[],
+): DiffDetectorSilentCouplingFacts {
+  const report = detectSilentCoupling(snapshot ?? { meta: null, edges: [] }, productionFiles, {
+    isDocumentation: isDocumentationPath,
+    fileDependencyEdges: productionEdges,
+  });
+  return {
+    violations: report.violations.map((v) => ({
+      relPathA: v.relPathA,
+      relPathB: v.relPathB,
+      support: v.support,
+      strength: v.strength,
+    })),
+    excluded: report.summary.excluded,
+  };
 }
-
-const EMPTY_PARTNERS: readonly { partner: string; support: number; structurallyLinked: boolean }[] = [];
 
 /**
  * `DiffDetectorContractReader` over the report's component partition and the
@@ -283,9 +286,16 @@ export const architectureSectionProvider: ReviewSectionProvider = {
         distanceFromMainSequenceByComponent(facts.components, production.graph.files),
       );
       const graph = new WiredGraphReader(production.graph.edges);
-      const coupling = new WiredCouplingReader(context.temporalCochange);
       const contract = new WiredContractReader(facts.components, production.graph.edges);
       const splitMerge = wireSplitMerge(context.temporalCochange, context.temporalCochangeError, facts.components);
+      // The production silent-coupling verdict over the SAME snapshot (bd
+      // tea-rags-mcp-89k7k.1.10) — the run consumes it, never re-judges raw
+      // pairs.
+      const silentCouplingFacts = buildSilentCouplingFacts(
+        context.temporalCochange,
+        production.graph.files,
+        production.graph.edges,
+      );
 
       // The working-tree side: every scope file the extraction can walk, one
       // shared run-level context; a file that cannot be read or resolved lands
@@ -303,7 +313,7 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       // The SAME reads feed the overlay — the table is persistence, the
       // overlay is the judgement's view; neither re-reads the other.
       const overlay = new ReviewEdgeOverlay(reads);
-      const result = new DiffDetectorRun({ graph, catalog, coupling, contract, ...splitMerge }).run(
+      const result = new DiffDetectorRun({ graph, catalog, silentCouplingFacts, contract, ...splitMerge }).run(
         {
           changedFiles: scope.files,
           // A truncated scope marks every built family partial (bd

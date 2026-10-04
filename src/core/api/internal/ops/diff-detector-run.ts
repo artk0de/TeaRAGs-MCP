@@ -44,7 +44,11 @@
  */
 
 import { DEFAULT_SDP_MIN_CONNECTION_COUNT } from "../../../domains/trajectory/codegraph/symbols/index.js";
-import type { SplitMergeVerdicts } from "../../../domains/trajectory/codegraph/temporal/index.js";
+import type {
+  SilentCouplingExclusionCounts,
+  SilentCouplingViolation,
+  SplitMergeVerdicts,
+} from "../../../domains/trajectory/codegraph/temporal/index.js";
 import type { ReviewEdgeOverlay } from "./review-edge-overlay.js";
 
 /**
@@ -76,21 +80,20 @@ export interface DiffDetectorCatalog {
   isMarkedlyLessStable: (leanOn: number, leanedOn: number) => boolean;
 }
 
-/** Co-change pairs involving changed files, from the indexed temporal graph (cg_temporal). */
-export interface DiffDetectorCouplingReader {
-  /**
-   * Pairs (changedFile, partner) with their support and the snapshot's own
-   * linkage verdict, one call per changed file. `structurallyLinked` is what
-   * the production store's `readGraph` union computed (bd
-   * tea-rags-mcp-r8hme.12): a regular file edge, a TYPE-ONLY import, a
-   * resolved method edge, or a re-export chain joins the endpoints in either
-   * direction — the same semantics the whole-repo detector judges by, so a
-   * pair the flag explains must never read as "no structural edge" here
-   * either (bd tea-rags-mcp-89k7k.4). The graph port cannot answer this: it
-   * reads `cg_symbols_edges_file` only, which keeps type-only imports out by
-   * design.
-   */
-  partnersOf: (relPath: string) => readonly { partner: string; support: number; structurallyLinked: boolean }[];
+/**
+ * The production silent-coupling verdict (bd tea-rags-mcp-89k7k.1.10): the
+ * whole-repo detector's OUTPUT over the SAME co-change snapshot the report
+ * judges — violations already past every gate (endpoint-class exclusions,
+ * Wilson-strength cut, shared-neighbour explanation, linkage union), plus the
+ * detector's own exclusion counters. The diff-scoped family CONSUMES this
+ * verdict and intersects it with the diff; it never re-judges raw co-change
+ * pairs, so the two paths cannot drift (one fact, one place).
+ */
+export interface DiffDetectorSilentCouplingFacts {
+  /** Strong, unlinked, unexplained pairs — the production violation list. */
+  violations: readonly Pick<SilentCouplingViolation, "relPathA" | "relPathB" | "support" | "strength">[];
+  /** Pairs read but not judged, by the production taxonomy — verbatim. */
+  excluded: SilentCouplingExclusionCounts;
 }
 
 /**
@@ -134,7 +137,14 @@ export interface DiffDetectorSplitMergeReader {
 export interface DiffDetectorRunDeps {
   graph: DiffDetectorGraphReader;
   catalog: DiffDetectorCatalog;
-  coupling: DiffDetectorCouplingReader;
+  /**
+   * The production silent-coupling verdict (see
+   * {@link DiffDetectorSilentCouplingFacts}). Absent = the family answers
+   * silence (no findings, no excluded block) — never a zero-over-nothing
+   * verdict; the wiring computes the facts whenever a co-change snapshot
+   * exists, and from an empty graph otherwise (built:false summary).
+   */
+  silentCouplingFacts?: DiffDetectorSilentCouplingFacts;
   /** The facade-contract facts; absent = the family is unbuilt for this run. */
   contract?: DiffDetectorContractReader;
   /**
@@ -148,6 +158,19 @@ export interface DiffDetectorRunDeps {
    * own `noSplitMergeReader`.
    */
   splitMergeAbsentReason?: string;
+  /**
+   * The endpoint-class facts the silent-coupling family needs to apply the
+   * production exclusion taxonomy (bd tea-rags-mcp-89k7k.1.10): the codegraph's
+   * walked-file census and the documentation-path predicate — the same inputs
+   * `detectSilentCoupling` receives. Excluded pairs are counted, never
+   * reported, and surface on the silentCoupling status row's `excluded` block
+   * (the production summary's vocabulary). Absent = every stored partner is
+   * judged; the wiring passes the port whenever a co-change snapshot exists.
+   */
+  couplingExclusions?: {
+    walkedFiles: ReadonlyMap<string, number>;
+    isDocumentation?: (relPath: string) => boolean;
+  };
   /** BFS hop cap for cycle traces (default 8 — the report's own trace depth). */
   maxTraceHops?: number;
   /**
@@ -233,6 +256,14 @@ export interface DiffDetectorStatus {
    * `summary.mainSequence.excluded.lowConnectionCount`.
    */
   excludedLowConnectionCount?: number;
+  /**
+   * Co-change pairs read but not judged, by the production exclusion
+   * taxonomy's classes (bd tea-rags-mcp-89k7k.1.10) — the
+   * `summary.silentCoupling.excluded` vocabulary. Stamped on the
+   * silentCoupling row only, and only when the wiring passed
+   * `silentCouplingFacts`.
+   */
+  excluded?: SilentCouplingExclusionCounts;
 }
 
 export interface DiffDetectorFindings {
@@ -284,7 +315,7 @@ const FOUNDATION_CONTRACTS_PATH_SEGMENT = "contracts";
 export class DiffDetectorRun {
   private readonly graph: DiffDetectorGraphReader;
   private readonly catalog: DiffDetectorCatalog;
-  private readonly coupling: DiffDetectorCouplingReader;
+  private readonly silentCouplingFacts: DiffDetectorSilentCouplingFacts | undefined;
   private readonly contract: DiffDetectorContractReader | undefined;
   private readonly splitMerge: DiffDetectorSplitMergeReader | undefined;
   private readonly splitMergeAbsentReason: string;
@@ -294,7 +325,7 @@ export class DiffDetectorRun {
   constructor(deps: DiffDetectorRunDeps) {
     this.graph = deps.graph;
     this.catalog = deps.catalog;
-    this.coupling = deps.coupling;
+    this.silentCouplingFacts = deps.silentCouplingFacts;
     this.contract = deps.contract;
     this.splitMerge = deps.splitMerge;
     this.splitMergeAbsentReason = deps.splitMergeAbsentReason ?? NO_SPLIT_MERGE_READER_REASON;
@@ -331,7 +362,7 @@ export class DiffDetectorRun {
         ...leakingAbstraction,
         ...cycles,
         ...mainSequence.findings,
-        ...silentCoupling,
+        ...silentCoupling.findings,
         ...facadeContract,
         ...splitCandidates,
       ]),
@@ -347,7 +378,15 @@ export class DiffDetectorRun {
               })
             : detectorStatus("mainSequence", mainSequence.findings.length),
         ),
-        partial(detectorStatus("silentCoupling", silentCoupling.length)),
+        partial(
+          Object.freeze({
+            ...detectorStatus("silentCoupling", silentCoupling.findings.length),
+            // The taxonomy's counters ride the silentCoupling row (bd
+            // tea-rags-mcp-89k7k.1.10); absent facts stamp nothing — a zero
+            // block over an unwired port would claim pairs were judged.
+            ...(silentCoupling.excluded !== undefined ? { excluded: silentCoupling.excluded } : {}),
+          }),
+        ),
         ...(this.contract === undefined
           ? [
               Object.freeze({
@@ -564,49 +603,56 @@ export class DiffDetectorRun {
   }
 
   /**
-   * Silent coupling pairs involving a changed file: a strong co-change pair
-   * the diff does not explain. A pair is explained when the overlay adds its
-   * structural edge in either direction, when the snapshot's own linkage
-   * verdict already joins it (the production store's union — a type-only
-   * import links too, bd tea-rags-mcp-89k7k.4, the false-positive class
-   * tea-rags-mcp-r8hme.12 removed from the whole-repo detector), or when a
-   * pre-existing edge stands in the indexed graph's reverse direction (a
-   * partner -> file edge — without that check the "no structural edge"
-   * sentence below could be false). Both sides in the diff is the review's
-   * own business, not a finding (bd tea-rags-mcp-3kykc owns the
-   * partner-missing question).
+   * Silent coupling pairs involving a changed file — CONSUMED from the
+   * production verdict (bd tea-rags-mcp-89k7k.1.10): the whole-repo detector
+   * already applied the endpoint-class exclusions (test/generated/
+   * documentation/unwalked/lift), the Wilson-strength cut and the
+   * shared-neighbour explanation over the same snapshot; this family only
+   * intersects the violation list with the diff. Re-judging raw partner rows
+   * here is what let 19–98 historical src~test and CLAUDE.md~code pairs per
+   * diff bury the diff-relevant findings.
+   *
+   * A violation is skipped when the diff itself answers it: the overlay adds
+   * the pair's structural edge in either direction, or a pre-existing edge
+   * stands in the indexed graph's reverse direction (a partner -> file edge —
+   * without that check the "no structural edge" sentence below could be
+   * false). Both sides in the diff is the review's own business, not a
+   * finding (bd tea-rags-mcp-3kykc owns the partner-missing question).
    */
   private judgeSilentCoupling(
     changedFiles: readonly string[],
     overlay: ReviewEdgeOverlay,
     changed: ReadonlySet<string>,
-  ): DiffDetectorFinding[] {
+  ): { findings: DiffDetectorFinding[]; excluded: SilentCouplingExclusionCounts | undefined } {
+    const facts = this.silentCouplingFacts;
+    if (facts === undefined) return { findings: [], excluded: undefined };
     const findings: DiffDetectorFinding[] = [];
     const reported = new Set<string>();
     for (const relPath of changedFiles) {
-      for (const pair of this.coupling.partnersOf(relPath)) {
-        if (changed.has(pair.partner)) continue;
-        const subject = `${relPath} ~ ${pair.partner}`;
+      for (const violation of facts.violations) {
+        if (violation.relPathA !== relPath && violation.relPathB !== relPath) continue;
+        const partner = violation.relPathA === relPath ? violation.relPathB : violation.relPathA;
+        if (changed.has(partner)) continue;
+        const subject = `${relPath} ~ ${partner}`;
         if (reported.has(subject)) continue;
-        const explainedByOverlay =
-          overlay.edgesFrom(relPath).some((edge) => edge.targetRelPath === pair.partner) ||
-          overlay.edgesFrom(pair.partner).some((edge) => edge.targetRelPath === relPath);
-        if (explainedByOverlay) continue;
-        if (pair.structurallyLinked) continue;
-        const structurallyVisible = this.graph.edgesTo(relPath).some((indexed) => indexed.source === pair.partner);
-        if (structurallyVisible) continue;
         reported.add(subject);
+        const explainedByOverlay =
+          overlay.edgesFrom(relPath).some((edge) => edge.targetRelPath === partner) ||
+          overlay.edgesFrom(partner).some((edge) => edge.targetRelPath === relPath);
+        if (explainedByOverlay) continue;
+        const structurallyVisible = this.graph.edgesTo(relPath).some((indexed) => indexed.source === partner);
+        if (structurallyVisible) continue;
         findings.push({
           detector: "silentCoupling",
           subject,
-          evidence: [`co-change support ${format3(pair.support)}`],
+          evidence: [`co-change support ${format3(violation.support)}`, `strength ${format3(violation.strength)}`],
           detail:
             `strong co-change with no structural edge and the diff does not add one: ${subject} ` +
-            `(support ${format3(pair.support)})`,
+            `(support ${format3(violation.support)}, strength ${format3(violation.strength)})`,
         });
       }
     }
-    return findings;
+    return { findings, excluded: facts.excluded };
   }
 
   /**

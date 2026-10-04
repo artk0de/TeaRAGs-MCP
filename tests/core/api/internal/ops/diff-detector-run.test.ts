@@ -12,10 +12,10 @@ import {
   DiffDetectorRun,
   type DiffDetectorCatalog,
   type DiffDetectorContractReader,
-  type DiffDetectorCouplingReader,
   type DiffDetectorFinding,
   type DiffDetectorFindings,
   type DiffDetectorGraphReader,
+  type DiffDetectorSilentCouplingFacts,
   type DiffDetectorSplitMergeReader,
 } from "../../../../../src/core/api/internal/ops/diff-detector-run.js";
 import { ReviewEdgeOverlay } from "../../../../../src/core/api/internal/ops/review-edge-overlay.js";
@@ -82,11 +82,32 @@ function catalogOf(
   };
 }
 
-/** Co-change pairs per changed file, from plain tuples — the snapshot's linkage flag included. */
-function couplingOf(
-  pairs: ReadonlyMap<string, readonly { partner: string; support: number; structurallyLinked: boolean }[]>,
-): DiffDetectorCouplingReader {
-  return { partnersOf: (relPath) => pairs.get(relPath) ?? [] };
+/**
+ * The production silent-coupling verdict as a hand-built port: violations are
+ * the detector's OUTPUT (precomputed by the wiring), so tests construct them
+ * directly — every entry is already strong, unlinked and unexplained per the
+ * production gates.
+ */
+function factsOf(
+  violations: readonly { relPathA: string; relPathB: string; support: number; strength: number }[],
+  excluded: Partial<
+    Record<
+      "testEndpoints" | "generatedEndpoints" | "documentationEndpoints" | "unwalkedEndpoints" | "nonPositiveLift",
+      number
+    >
+  > = {},
+): DiffDetectorSilentCouplingFacts {
+  return {
+    violations,
+    excluded: {
+      testEndpoints: 0,
+      generatedEndpoints: 0,
+      documentationEndpoints: 0,
+      unwalkedEndpoints: 0,
+      nonPositiveLift: 0,
+      ...excluded,
+    },
+  };
 }
 
 /** Facade-contract facts the way the port serves them: facades by component, consumers by facade. */
@@ -148,7 +169,7 @@ function runWith(
   deps: {
     graph?: DiffDetectorGraphReader;
     catalog?: DiffDetectorCatalog;
-    coupling?: DiffDetectorCouplingReader;
+    silentCouplingFacts?: DiffDetectorSilentCouplingFacts;
     splitMerge?: DiffDetectorSplitMergeReader;
     splitMergeAbsentReason?: string;
     maxTraceHops?: number;
@@ -159,7 +180,7 @@ function runWith(
   const run = new DiffDetectorRun({
     graph: deps.graph ?? graphOf([]),
     catalog: deps.catalog ?? catalogOf(new Map()),
-    coupling: deps.coupling ?? couplingOf(new Map()),
+    ...(deps.silentCouplingFacts !== undefined ? { silentCouplingFacts: deps.silentCouplingFacts } : {}),
     ...(deps.splitMerge !== undefined ? { splitMerge: deps.splitMerge } : {}),
     ...(deps.splitMergeAbsentReason !== undefined ? { splitMergeAbsentReason: deps.splitMergeAbsentReason } : {}),
     ...(deps.maxTraceHops !== undefined ? { maxTraceHops: deps.maxTraceHops } : {}),
@@ -200,7 +221,6 @@ function runWithContract(
   const run = new DiffDetectorRun({
     graph: graphOf([]),
     catalog: catalogOf(new Map()),
-    coupling: couplingOf(new Map()),
     ...(contract !== undefined ? { contract } : {}),
   });
   return run.run({ changedFiles }, namedOverlayOf(overlayEdges, changedFiles));
@@ -471,21 +491,34 @@ describe("mainSequence", () => {
 });
 
 describe("silentCoupling", () => {
-  const COUPLING = new Map([["src/a.ts", [{ partner: "src/p.ts", support: 0.82, structurallyLinked: false }]]]);
+  // The run CONSUMES the production verdict (bd tea-rags-mcp-89k7k.1.10):
+  // violations arrive already filtered by the detector's exclusion taxonomy,
+  // strength cut and shared-neighbour explanation — the judge only intersects
+  // them with the diff.
+  const VIOLATION = { relPathA: "src/a.ts", relPathB: "src/p.ts", support: 9, strength: 0.57 };
 
-  it("reports an unexplained strong pair", () => {
-    const result = runWith({ coupling: couplingOf(COUPLING) }, ["src/a.ts"], [["src/a.ts", "src/q.ts"]]);
+  it("reports a production violation involving a changed file, with support and strength evidence", () => {
+    const result = runWith({ silentCouplingFacts: factsOf([VIOLATION]) }, ["src/a.ts"], [["src/a.ts", "src/q.ts"]]);
     expect(subjectsOf(result, "silentCoupling")).toEqual(["src/a.ts ~ src/p.ts"]);
-    expect(result.findings[0]?.evidence[0]).toContain("0.820");
+    expect(result.findings[0]?.evidence).toEqual(["co-change support 9.000", "strength 0.570"]);
+  });
+
+  it("reports a violation whose changed file is the relPathB side", () => {
+    const result = runWith({ silentCouplingFacts: factsOf([VIOLATION]) }, ["src/p.ts"], [["src/p.ts", "src/q.ts"]]);
+    expect(subjectsOf(result, "silentCoupling")).toEqual(["src/p.ts ~ src/a.ts"]);
   });
 
   it("treats a pair the overlay adds a structural edge for as explained", () => {
-    const result = runWith({ coupling: couplingOf(COUPLING) }, ["src/a.ts"], [["src/a.ts", "src/p.ts"]]);
+    const result = runWith({ silentCouplingFacts: factsOf([VIOLATION]) }, ["src/a.ts"], [["src/a.ts", "src/p.ts"]]);
     expect(result.findings).toEqual([]);
   });
 
   it("skips pairs whose partner is also in the diff", () => {
-    const result = runWith({ coupling: couplingOf(COUPLING) }, ["src/a.ts", "src/p.ts"], [["src/a.ts", "src/q.ts"]]);
+    const result = runWith(
+      { silentCouplingFacts: factsOf([VIOLATION]) },
+      ["src/a.ts", "src/p.ts"],
+      [["src/a.ts", "src/q.ts"]],
+    );
     expect(result.findings).toEqual([]);
   });
 
@@ -493,7 +526,7 @@ describe("silentCoupling", () => {
     const result = runWith(
       {
         graph: graphOf([["src/p.ts", "src/a.ts"]]),
-        coupling: couplingOf(COUPLING),
+        silentCouplingFacts: factsOf([VIOLATION]),
       },
       ["src/a.ts"],
       [["src/a.ts", "src/q.ts"]],
@@ -501,20 +534,57 @@ describe("silentCoupling", () => {
     expect(result.findings).toEqual([]);
   });
 
-  // The review-side twin of the production pin (silent-coupling.test.ts:188,
-  // bd tea-rags-mcp-r8hme.12): a pair linked ONLY by an `import type` edge must
-  // not be reported as silently coupled. The graph port reads
-  // cg_symbols_edges_file only (type-only imports are deliberately kept out of
-  // it), so the pair arrives explained by the snapshot's own linkage flag — the
-  // production store's union, which counts a type-only import as a link. The
-  // false-positive class r8hme.12 removed from the production detector survived
-  // here while the judgement ignored the flag (bd tea-rags-mcp-89k7k.4).
-  it("stays silent when the pair is linked only by a type-only import — the snapshot's linkage flag explains it", () => {
-    const linkedOnlyByTypeImport = new Map([
-      ["src/a.ts", [{ partner: "src/types.ts", support: 0.82, structurallyLinked: true }]],
-    ]);
-    const result = runWith({ coupling: couplingOf(linkedOnlyByTypeImport) }, ["src/a.ts"], [["src/a.ts", "src/q.ts"]]);
-    expect(result.findings).toEqual([]);
+  it("only judges the production violation list — a pair the snapshot's linkage union linked never reaches the judge", () => {
+    // The type-only-import class (bd tea-rags-mcp-r8hme.12, tea-rags-mcp-89k7k.4):
+    // the production detector links such pairs before they become violations, so
+    // the facts the wiring hands over cannot contain them; a linked pair missing
+    // from the list is silence here by construction.
+    const result = runWith(
+      { silentCouplingFacts: factsOf([{ relPathA: "src/a.ts", relPathB: "src/q.ts", support: 9, strength: 0.57 }]) },
+      ["src/a.ts", "src/types.ts"],
+      [],
+    );
+    expect(subjectsOf(result, "silentCoupling")).toEqual(["src/a.ts ~ src/q.ts"]);
+  });
+
+  it("reports each violation once when the scope lists its changed file twice", () => {
+    const result = runWith(
+      { silentCouplingFacts: factsOf([VIOLATION]) },
+      ["src/a.ts", "src/a.ts"],
+      [["src/a.ts", "src/q.ts"]],
+    );
+    expect(subjectsOf(result, "silentCoupling")).toEqual(["src/a.ts ~ src/p.ts"]);
+  });
+
+  it("carries the production excluded counters on the status row verbatim", () => {
+    const result = runWith(
+      {
+        silentCouplingFacts: factsOf([VIOLATION], {
+          testEndpoints: 112,
+          documentationEndpoints: 24,
+          unwalkedEndpoints: 4,
+        }),
+      },
+      ["src/a.ts"],
+      [["src/a.ts", "src/q.ts"]],
+    );
+    const silentCoupling = result.detectors.find((detector) => detector.detector === "silentCoupling");
+    expect(silentCoupling?.excluded).toEqual({
+      testEndpoints: 112,
+      generatedEndpoints: 0,
+      documentationEndpoints: 24,
+      unwalkedEndpoints: 4,
+      nonPositiveLift: 0,
+    });
+  });
+
+  it("is silent without the facts port — absence is silence, no excluded block, never a zero verdict", () => {
+    const result = runWith({}, ["src/a.ts"], [["src/a.ts", "src/q.ts"]]);
+    expect(subjectsOf(result, "silentCoupling")).toEqual([]);
+    const silentCoupling = result.detectors.find((detector) => detector.detector === "silentCoupling");
+    expect(silentCoupling?.built).toBe(true);
+    expect(silentCoupling?.findingCount).toBe(0);
+    expect(silentCoupling?.excluded).toBeUndefined();
   });
 });
 
@@ -666,7 +736,6 @@ describe("facadeContract", () => {
     const run = new DiffDetectorRun({
       graph: graphOf([]),
       catalog: catalogOf(new Map()),
-      coupling: couplingOf(new Map()),
       contract: contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["b"] }]]])),
     });
     const first = run.run({ changedFiles: [FACADE] }, overlay);
@@ -822,7 +891,6 @@ describe("splitCandidates", () => {
     const run = new DiffDetectorRun({
       graph: graphOf([]),
       catalog: catalogOf(new Map()),
-      coupling: couplingOf(new Map()),
       splitMerge: splitMergeOf(splitVerdicts, WIDE),
     });
     const first = run.run({ changedFiles: ["src/wide/x1.ts", "src/wide/y1.ts"] }, overlay);
@@ -848,7 +916,6 @@ describe("detectors", () => {
           ]),
           new Map([["lib", "src/lib/index.ts"]]),
         ),
-        coupling: couplingOf(new Map([["src/a.ts", [{ partner: "src/p.ts", support: 0.9 }]]])),
       },
       ["src/a.ts", "src/app/a.ts"],
       [
@@ -891,11 +958,7 @@ describe("detectors", () => {
 
 describe("absence of data", () => {
   it("is never a violation: every fact absent over real edges stays silent", () => {
-    const result = runWith(
-      { coupling: couplingOf(new Map([["src/a.ts", []]])) },
-      ["src/a.ts"],
-      [["src/a.ts", "src/b.ts"]],
-    );
+    const result = runWith({}, ["src/a.ts"], [["src/a.ts", "src/b.ts"]]);
     expect(result.findings).toEqual([]);
     for (const entry of result.detectors) {
       expect(entry.findingCount).toBe(0);
@@ -918,7 +981,6 @@ describe("detector statuses over a truncated diff scope", () => {
     return new DiffDetectorRun({
       graph: graphOf([]),
       catalog: catalogOf(new Map()),
-      coupling: couplingOf(new Map()),
     }).run(scope, overlayOf([], scope.changedFiles));
   }
 
