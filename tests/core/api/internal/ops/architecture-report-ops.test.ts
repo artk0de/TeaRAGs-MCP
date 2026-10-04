@@ -402,14 +402,14 @@ describe("ArchitectureReportOps#build — leakingAbstraction (bd tea-rags-mcp-je
         kind: "internal-reach",
         sourceRelPath: "ext/d.ts",
         targetRelPath: "mod/inner.ts",
-        evidence: { ...evidence, callWeight: 1 },
+        evidence: { ...evidence, callWeight: 1, kindBasis: "file-rule" },
       },
       {
         detector: "leakingAbstraction",
         kind: "bypass",
         sourceRelPath: "ext/e.ts",
         targetRelPath: "mod/shown.ts",
-        evidence: { ...evidence, callWeight: 0 },
+        evidence: { ...evidence, callWeight: 0, kindBasis: "file-rule" },
       },
     ]);
     expect(report.rootCauses.filter((r) => r.detector === "leakingAbstraction")).toEqual([
@@ -525,6 +525,26 @@ describe("ArchitectureReportOps#build — leakingAbstraction (bd tea-rags-mcp-je
     );
     expect(unnamed?.evidence).not.toHaveProperty("importedNames");
     expect(unnamed?.evidence).not.toHaveProperty("nonExportedNames");
+  });
+
+  it("carries kindBasis in the evidence: names for a names-certified bypass, file-rule when the file rule decided (bd tea-rags-mcp-0qaht.45)", async () => {
+    // Names-certified bypass: the deep import takes only what the facade re-exports.
+    const named = facadeGraph();
+    named.edges = named.edges.map((e) => {
+      if (e.sourceRelPath === "mod/index.ts") return { ...e, reexportedExportNames: ["Shown"] };
+      if (e.sourceRelPath === "ext/e.ts") return { ...e, importedExportNames: ["Shown"] };
+      return e;
+    });
+    const namedReport = await new ArchitectureReportOps().build(graphDb(named), {});
+    expect(
+      namedReport.violations.find((v) => v.detector === "leakingAbstraction" && v.sourceRelPath === "ext/e.ts"),
+    ).toMatchObject({ kind: "bypass", evidence: { kindBasis: "names" } });
+
+    // File rule: no names recorded on either side — the file-level rule decided.
+    const plainReport = await new ArchitectureReportOps().build(graphDb(facadeGraph()), {});
+    expect(
+      plainReport.violations.find((v) => v.detector === "leakingAbstraction" && v.sourceRelPath === "ext/e.ts"),
+    ).toMatchObject({ kind: "bypass", evidence: { kindBasis: "file-rule" } });
   });
 });
 
