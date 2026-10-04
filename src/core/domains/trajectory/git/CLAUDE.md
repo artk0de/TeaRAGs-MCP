@@ -38,6 +38,23 @@ their own navigators.
   tea-rags-mcp-i6tkc). `firstCreatedAt` of a file WITH window commits is still
   the oldest commit inside the window.
 
+- **Every index-time clock read goes through the run's HISTORY ANCHOR, never a
+  bare `Date.now()`.** `TRAJECTORY_GIT_ANCHOR` (`trajectoryGitSchema`, default
+  `now`) picks it: `GitEnrichmentProvider#getRunHistoryAnchor` resolves `head`
+  ONCE per (root, HEAD) and run to the HEAD commit's committer time
+  (`VcsGitAdapter#readHeadCommitTime`, `infra/history-anchor.ts`), and `now`
+  resolves `undefined`, which every reader maps back to the wall clock. It
+  reaches the discoveries' `--since` and evict bound (`historyAnchorSec`
+  option), the file assembler (`WindowedFileChurn.historyAnchorSec`, stamped by
+  `anchorFileChurn`), the chunk walk and assembler (trailing `historyAnchorSec`,
+  the off-thread job included) and `buildOnDemandGitSignals` (`anchor`). Why: a
+  window or age computed from a second clock disagrees with the rest of the
+  payload the moment the anchor is `head`, and nothing fails — a benchmark
+  snapshot just reads dormant. A `now` run passes nothing, so its calls and
+  payload stay what they were before the anchor existed. Query-time age reads
+  (reranker, `filters.ts`, `age-derivation.ts`, filter-preset compiler) are NOT
+  anchored yet.
+
 - **The chunk walk follows renames, and the ORDER of the slice is what makes
   that correct.** A commit older than a rename names the file by its old path,
   so `sliceCommitsFollowingRenames` (`infra/rename-following.ts`) re-queries

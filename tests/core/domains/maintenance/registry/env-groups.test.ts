@@ -204,6 +204,8 @@ describe("RegistryEnvGroup.consequence", () => {
       "enrichment:codegraph CODEGRAPH_AMBIGUOUS_RESOLVE_MODE",
       "enrichment:codegraph CODEGRAPH_CUSTOM_EXCLUDE",
       "enrichment:codegraph CODEGRAPH_ENABLED",
+      // Moves every window and age the git trajectory stamps (bd tea-rags-mcp-i6tkc).
+      "enrichment:git TRAJECTORY_GIT_ANCHOR",
       "enrichment:git TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS",
       "enrichment:git TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES",
       "enrichment:git TRAJECTORY_GIT_ENABLED",

@@ -64,6 +64,12 @@ export interface TrajectoryGitConfig {
   blamePoolSize: number;
   squashAwareSessions: boolean;
   sessionGapMinutes: number;
+  /**
+   * The instant every git window and age is measured from: "now" = the wall
+   * clock, "head" = the HEAD commit's committer time, resolved once per run
+   * (TRAJECTORY_GIT_ANCHOR, bd tea-rags-mcp-i6tkc).
+   */
+  anchor: "now" | "head";
 }
 
 /**

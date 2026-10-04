@@ -65,6 +65,8 @@ export async function buildChunkChurnMap(
    * overlays only, and the pipeline always runs uncached.
    */
   symbolCommitsOut?: Map<string, Map<string, Set<string>>>,
+  /** The run's history anchor (unix seconds) — see `history-anchor.ts`; absent ⇒ the wall clock. */
+  historyAnchorSec?: number,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   if (!skipCache) {
     const cached = await enrichmentCache.getChunkChurn(adapter);
@@ -88,6 +90,7 @@ export async function buildChunkChurnMap(
     commitDiscovery,
     onWalkStats,
     symbolCommitsOut,
+    historyAnchorSec,
   );
 
   if (!skipCache) {
@@ -115,6 +118,8 @@ export async function buildChunkChurnMapUncached(
   onWalkStats?: (stats: ChunkChurnWalkStats) => void,
   /** bd tea-rags-mcp-3gz4f — the walk's per-symbol commit sets, see the caller's docblock. */
   symbolCommitsOut?: Map<string, Map<string, Set<string>>>,
+  /** The run's history anchor (unix seconds) — see `history-anchor.ts`; absent ⇒ the wall clock. */
+  historyAnchorSec?: number,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   // Phase 1: initialize per-chunk accumulator state
   // Files past maxFileLines are dropped here — no accumulator, so no overlay.
@@ -150,6 +155,7 @@ export async function buildChunkChurnMapUncached(
     blobReader,
     diffMemo,
     commitDiscovery,
+    historyAnchorSec,
   });
 
   // Phase 3: assemble per-file overlay maps
@@ -159,6 +165,7 @@ export async function buildChunkChurnMapUncached(
     fileChurnDataMap,
     squashOpts,
     blameByPath,
+    historyAnchorSec,
   });
 
   if (symbolCommitsOut) {

@@ -53,11 +53,13 @@ import { FileChurnDiscoveryStore } from "./infra/file-churn-discovery-store.js";
 import { FileChurnDiscovery } from "./infra/file-churn-discovery.js";
 import {
   addDormantFileChurn,
+  anchorFileChurn,
   readFileLifetimeStamps,
   type FileLifetimeStamps,
   type WindowedFileChurn,
 } from "./infra/file-lifetime.js";
 import { buildFileSignalDiscovery, buildFileSignalMap, sliceFileSignalsByPaths } from "./infra/file-reader.js";
+import { resolveHistoryAnchorSec } from "./infra/history-anchor.js";
 import { buildBugFixShaSet } from "./infra/merge-branch-resolver.js";
 import type { SquashOptions } from "./infra/metrics.js";
 import { assembleFileSignals } from "./infra/metrics/file-assembler.js";
@@ -79,6 +81,7 @@ export type GitProviderConfig = Pick<
   | "chunkMaxAgeMonths"
   | "chunkTimeoutMs"
   | "chunkMaxFileLines"
+  | "anchor"
 > & {
   /** GIT_ADAPTER kind for VcsAdapterFactory — structured-clone-safe literal. */
   vcsAdapter: GitAdapterKind;
@@ -92,6 +95,7 @@ const DEFAULT_PROVIDER_CONFIG: GitProviderConfig = {
   chunkMaxAgeMonths: 6,
   chunkTimeoutMs: 120000,
   chunkMaxFileLines: 5000,
+  anchor: "now",
   vcsAdapter: "git",
 };
 
@@ -289,6 +293,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
         maxAgeMonths: this.config.logMaxAgeMonths,
         timeoutMs: this.config.logTimeoutMs,
         store: new FileChurnDiscoveryStore(),
+        ...this.historyAnchorOption(root),
       });
       this.fileChurnDiscoveries.set(root, discovery);
     }
@@ -322,6 +327,12 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     readonly headSha: string;
     readonly data: Promise<Map<string, FileLifetimeStamps>>;
   } | null = null;
+  /** Run-scoped history anchor — see getRunHistoryAnchor. Reset by finalizeSignals. */
+  private historyAnchor: {
+    readonly root: string;
+    readonly headSha: string;
+    readonly data: Promise<number | undefined>;
+  } | null = null;
 
   async buildFileSignals(root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> {
     // Fast check: skip if not a git repo
@@ -346,7 +357,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       this.config.logTimeoutMs,
       this.fileChurnDiscoveryFor(root),
     );
-    return this.buildSignalsFromRawData(root, rawData, options);
+    return this.buildSignalsFromRawData(root, anchorFileChurn(rawData, await this.getRunHistoryAnchor(root)), options);
   }
 
   /** Per-batch streaming: same computation as buildFileSignals, scoped to the
@@ -381,8 +392,31 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       ...paths,
     ]);
     const dormant = paths.filter((path) => !windowed.has(path));
-    if (dormant.length === 0) return windowed;
-    return addDormantFileChurn(windowed, dormant, await this.getRunLifetime(root));
+    if (dormant.length > 0) addDormantFileChurn(windowed, dormant, await this.getRunLifetime(root));
+    return anchorFileChurn(windowed, await this.getRunHistoryAnchor(root));
+  }
+
+  /**
+   * The run's history anchor (`TRAJECTORY_GIT_ANCHOR`, see
+   * `infra/history-anchor.ts`) in unix seconds, or `undefined` for the wall
+   * clock. `now` answers without touching git. `head` reads the HEAD commit's
+   * committer time ONCE per (root, HEAD) and run, memoized as a promise like
+   * the discovery — every window and age of the run is measured from it. Reset
+   * by finalizeSignals.
+   */
+  private async getRunHistoryAnchor(root: string): Promise<number | undefined> {
+    if (this.config.anchor !== "head") return undefined;
+    const adapter = await this.adapterFor(root);
+    const headSha = await adapter.getHead().catch(() => "");
+    if (this.historyAnchor?.root === root && this.historyAnchor.headSha === headSha) return this.historyAnchor.data;
+    const data = resolveHistoryAnchorSec(adapter, "head", this.config.logTimeoutMs);
+    this.historyAnchor = { root, headSha, data };
+    return data;
+  }
+
+  /** The discoveries' window anchor — present only when the run is anchored at HEAD. */
+  private historyAnchorOption(root: string): { historyAnchorSec?: () => Promise<number | undefined> } {
+    return this.config.anchor === "head" ? { historyAnchorSec: async () => this.getRunHistoryAnchor(root) } : {};
   }
 
   /**
@@ -424,6 +458,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   finalizeSignals = async (): Promise<Map<string, FileSignalOverlay>> => {
     this.fileDiscovery = null;
     this.fileLifetime = null;
+    this.historyAnchor = null;
     // Drop the run-scoped file-churn discovery instances with the run — the next
     // run rebuilds each from its persisted store snapshot (topping up the window
     // for the new HEAD). Its own latch pins one HEAD's aggregate, so it must not
@@ -540,6 +575,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       maxAgeMonths: this.config.chunkMaxAgeMonths,
       timeoutMs: this.config.chunkTimeoutMs,
       store: new GitCommitDiscoveryStore(),
+      ...this.historyAnchorOption(repoRoot),
     });
 
   /** bd tea-rags-mcp-iqpuu: factory for the run-scoped off-thread churn-walk
@@ -820,6 +856,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
         options?.blobReader,
       );
       const walkMap = carried.chunkMap;
+      const historyAnchorSec = await this.getRunHistoryAnchor(root);
       uncommittedOverlays = zeroOverlaysOfUncommittedRows(adapter.repoRoot, carried.uncommittedRows, {
         fileChurnDataMap: handoff.churnByPath,
         maxFileLines: this.config.chunkMaxFileLines,
@@ -832,6 +869,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
           walkThread,
           options.commitDiscovery,
           handoff,
+          historyAnchorSec,
           options,
         );
         ({ overlays: rawResult, symbolCommits } = outcome);
@@ -863,6 +901,9 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
           // iqpuu: per-walk instrumentation for the [ChunkChurn] pipeline line.
           options?.onWalkStats,
           collected,
+          // Only an anchored run passes the history anchor: the wall-clock walk
+          // keeps the exact call it had before the anchor existed.
+          ...(historyAnchorSec !== undefined ? ([historyAnchorSec] as const) : ([] as const)),
         );
         symbolCommits = collected;
       }
@@ -905,6 +946,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     walkThread: ChunkChurnWalkPool,
     discovery: NonNullable<ChunkSignalOptions["commitDiscovery"]>,
     handoff: ChunkPhaseHandoffSlice,
+    historyAnchorSec: number | undefined,
     options?: ChunkSignalOptions,
   ): Promise<ChunkChurnWalkOutcome> {
     const relativeChunkMap = relativizeChunkMap(root, chunkMap);
@@ -954,6 +996,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       maxAgeMonths: this.config.chunkMaxAgeMonths,
       chunkTimeoutMs: this.config.chunkTimeoutMs,
       maxFileLines: this.config.chunkMaxFileLines,
+      ...(historyAnchorSec !== undefined ? { historyAnchorSec } : {}),
       useSharedLimiter: options?.concurrencySemaphore !== undefined,
     });
     options?.onWalkStats?.(outcome.stats);

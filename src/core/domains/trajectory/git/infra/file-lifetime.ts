@@ -34,9 +34,30 @@ export interface FileLifetimeStamps {
 /**
  * The file walk's churn for one path. `lifetime` is present exactly when the
  * window holds no commit for the path: the counters are then the zero
- * observation and the age stamps come from `lifetime`.
+ * observation and the age stamps come from `lifetime`. `historyAnchorSec` is the
+ * instant ages and recency are measured from when the run is anchored
+ * (`history-anchor.ts`); absent ⇒ the wall clock at assembly.
  */
-export type WindowedFileChurn = FileChurnData & { readonly lifetime?: FileLifetimeStamps };
+export type WindowedFileChurn = FileChurnData & {
+  readonly lifetime?: FileLifetimeStamps;
+  readonly historyAnchorSec?: number;
+};
+
+/**
+ * Stamp the run's history anchor onto every entry — a COPY per entry, so the
+ * run-scoped discovery's shared objects stay unanchored. Unanchored
+ * (`anchorSec` undefined) returns `churn` itself: the wall-clock path keeps its
+ * entries, identity included.
+ */
+export function anchorFileChurn(
+  churn: Map<string, WindowedFileChurn>,
+  anchorSec: number | undefined,
+): Map<string, WindowedFileChurn> {
+  if (anchorSec === undefined) return churn;
+  const anchored = new Map<string, WindowedFileChurn>();
+  for (const [path, entry] of churn) anchored.set(path, { ...entry, historyAnchorSec: anchorSec });
+  return anchored;
+}
 
 /**
  * Fold a newest → oldest path log into per-HEAD-path age stamps. A file that

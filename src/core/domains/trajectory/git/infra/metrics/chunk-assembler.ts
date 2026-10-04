@@ -8,6 +8,7 @@
 import type { ChunkChurnOverlay } from "../../types.js";
 import type { BlameOwnership } from "../blame-ownership.js";
 import type { ChunkAccumulator, SquashOptions } from "../metrics.js";
+import { historyNowSec } from "./extractors.js";
 import { groupTimestampsIntoFixSessions } from "./sessions.js";
 
 export function assembleChunkSignals(
@@ -17,8 +18,10 @@ export function assembleChunkSignals(
   chunkLineCount?: number,
   squashOpts?: SquashOptions,
   ownership?: BlameOwnership,
+  /** The run's history anchor (unix seconds) — see `history-anchor.ts`; absent ⇒ the wall clock. */
+  historyAnchorSec?: number,
 ): ChunkChurnOverlay {
-  const nowSec = Date.now() / 1000;
+  const nowSec = historyNowSec(historyAnchorSec);
   const totalChurn = acc.linesAdded + acc.linesDeleted;
   const lineCount = Math.max(chunkLineCount ?? 1, 1);
 

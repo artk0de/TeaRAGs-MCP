@@ -554,6 +554,17 @@ export async function readCommitFileNumstat(
   return parseCommitFileNumstat(stdout);
 }
 
+/** The HEAD commit's committer time, unix seconds. Rejects on a repository with no commit. */
+export async function readHeadCommitTime(repoRoot: string, timeoutMs = TREE_LISTING_STALL_MS): Promise<number> {
+  const out = await execWithStallGuard(resolveGitExecutable(), ["log", "-1", "--format=%ct", "HEAD"], {
+    cwd: repoRoot,
+    stallTimeoutMs: timeoutMs,
+  });
+  const seconds = Number(out.trim());
+  if (out.trim() === "" || !Number.isFinite(seconds)) throw new Error(`no HEAD commit time in ${repoRoot}`);
+  return seconds;
+}
+
 /**
  * `git log HEAD -M --name-status` over the WHOLE history — every commit's
  * changed paths with no line counts (bd tea-rags-mcp-i6tkc). Skipping the

@@ -56,6 +56,12 @@ describe("readCommitPathChanges (real git)", () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
+  it("readHeadCommitTime reads the HEAD commit's committer time (the history anchor)", async () => {
+    await expect(new GitCliAdapter(tmp).readHeadCommitTime()).resolves.toBe(
+      Math.floor(Date.parse("2024-04-01T00:00:00Z") / 1000),
+    );
+  });
+
   it("lists every commit newest → oldest with its changed paths, renames paired, at the author date", async () => {
     const entries = await new GitCliAdapter(tmp).readCommitPathChanges();
 

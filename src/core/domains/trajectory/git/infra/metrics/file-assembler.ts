@@ -31,7 +31,7 @@ export function assembleFileSignals(
   blameLines?: BlameLine[],
 ): GitFileSignals {
   const ownership = blameLines && blameLines.length > 0 ? computeBlameOwnership(blameLines).file : null;
-  const { commits, lifetime } = churnData;
+  const { commits, lifetime, historyAnchorSec } = churnData;
 
   if (commits.length === 0) {
     // No commit in the window: every counter is the zero observation (bd
@@ -50,7 +50,7 @@ export function assembleFileSignals(
             lastModifiedAt: lifetime.lastModifiedAt,
             firstCreatedAt: lifetime.firstCreatedAt,
             lastCommitHash: lifetime.lastCommitHash,
-            ageDays: ageDaysAt(lifetime.lastModifiedAt),
+            ageDays: ageDaysAt(lifetime.lastModifiedAt, historyAnchorSec),
           }
         : { firstCreatedAt: 0, lastCommitHash: "" }),
       commitCount: 0,
@@ -71,7 +71,7 @@ export function assembleFileSignals(
   }
 
   const authorship = computeDominantAuthor(commits);
-  const temporal = computeTemporalMetrics(commits);
+  const temporal = computeTemporalMetrics(commits, historyAnchorSec);
 
   // Squash-aware: use session count for churn-dependent metrics
   const useSquash = squashOpts?.squashAwareSessions === true;
@@ -103,7 +103,7 @@ export function assembleFileSignals(
     linesDeleted: churnData.linesDeleted,
     fileChurnCount: churnData.linesAdded + churnData.linesDeleted,
     relativeChurn: computeRelativeChurn(churnData.linesAdded, churnData.linesDeleted, currentLineCount),
-    recencyWeightedFreq: computeRecencyWeightedFreq(countSource ?? commits),
+    recencyWeightedFreq: computeRecencyWeightedFreq(countSource ?? commits, historyAnchorSec),
     changeDensity: computeChangeDensity(countSource ?? commits),
     churnVolatility: computeChurnVolatility(countSource ?? commits),
     bugFixRate: computeBugFixRate(countSource ?? commits, bugFixShas),

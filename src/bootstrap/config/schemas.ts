@@ -196,6 +196,11 @@ export const trajectoryGitSchema = z.object({
   chunkMaxFileLines: intWithDefault(5000),
   squashAwareSessions: booleanFromEnv,
   sessionGapMinutes: intWithDefault(30),
+  // The instant every git window and age is measured from (bd
+  // tea-rags-mcp-i6tkc): "now" = the wall clock; "head" = the HEAD commit's
+  // committer time, for benchmarks over historical snapshots whose windows
+  // would otherwise be empty. Env: TRAJECTORY_GIT_ANCHOR.
+  anchor: z.enum(["now", "head"]).default("now"),
 });
 
 export const vcsSchema = z.object({

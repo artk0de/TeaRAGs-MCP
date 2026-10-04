@@ -35,6 +35,7 @@
  * | getCommitsByPathspec   | DELEGATED → GitCliAdapter (`git log --since --numstat -- <paths>`)         |
  * | readCommitFileNumstat  | DELEGATED → GitCliAdapter (`git log [--since] [from..to] --numstat`, per-file +/- kept) |
  * | readCommitFileNumstatForPaths | DELEGATED → GitCliAdapter (pathspec numstat + unrestricted re-read of add/delete commits) |
+ * | readHeadCommitTime     | DELEGATED → GitCliAdapter (`git log -1 --format=%ct HEAD`) |
  * | readCommitPathChanges  | DELEGATED → GitCliAdapter (`git log HEAD -M --name-status`, whole history) |
  *
  * `timeoutMs` is forwarded on the DELEGATED ops (blame + history) — each bounds
@@ -76,6 +77,10 @@ export class EsGitAdapter extends VcsGitAdapter {
 
   async getHead(): Promise<string> {
     return this.repo.revparseSingle("HEAD");
+  }
+
+  async readHeadCommitTime(timeoutMs?: number): Promise<number> {
+    return this.cliHistory.readHeadCommitTime(timeoutMs);
   }
 
   async isAncestor(ancestor: string, descendant: string): Promise<boolean> {

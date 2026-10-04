@@ -150,6 +150,7 @@ function buildEnvInputs(env: EnvReader) {
     chunkMaxFileLines: env("TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES", "GIT_CHUNK_MAX_FILE_LINES"),
     squashAwareSessions: env("TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS"),
     sessionGapMinutes: env("TRAJECTORY_GIT_SESSION_GAP_MINUTES"),
+    anchor: env("TRAJECTORY_GIT_ANCHOR"),
   };
 
   const vcs = {

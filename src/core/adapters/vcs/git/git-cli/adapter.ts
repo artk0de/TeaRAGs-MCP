@@ -33,12 +33,17 @@ import {
   readCommitFileNumstat,
   readCommitFileNumstatForPaths,
   readCommitPathChanges,
+  readHeadCommitTime,
   writeCommitGraph,
 } from "./client.js";
 
 export class GitCliAdapter extends VcsGitAdapter {
   async getHead(): Promise<string> {
     return getHead(this.repoRoot);
+  }
+
+  async readHeadCommitTime(timeoutMs?: number): Promise<number> {
+    return readHeadCommitTime(this.repoRoot, timeoutMs);
   }
 
   async isAncestor(ancestor: string, descendant: string): Promise<boolean> {

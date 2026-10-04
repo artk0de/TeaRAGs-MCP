@@ -129,8 +129,10 @@ export async function buildWindowedFileSignalsForPaths(
   paths: string[],
   maxAgeMonths: number,
   timeoutMs = 30000,
+  /** The run's history anchor (unix seconds) — see `history-anchor.ts`; absent ⇒ the wall clock. */
+  anchorSec?: number,
 ): Promise<Map<string, FileChurnData>> {
-  const { sinceDate, lowerBoundSec } = fileChurnWindowOf(maxAgeMonths);
+  const { sinceDate, lowerBoundSec } = fileChurnWindowOf(maxAgeMonths, anchorSec);
   const result = new Map<string, FileChurnData>();
   for (let i = 0; i < paths.length; i += BACKFILL_BATCH) {
     const batch = paths.slice(i, i + BACKFILL_BATCH);

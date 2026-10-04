@@ -24,6 +24,8 @@ export abstract class VcsGitAdapter implements VcsAdapter {
   constructor(readonly repoRoot: string) {}
 
   abstract getHead(): Promise<string>;
+  /** The HEAD commit's COMMITTER time, unix seconds (`git log -1 --format=%ct HEAD`). */
+  abstract readHeadCommitTime(timeoutMs?: number): Promise<number>;
   abstract isAncestor(ancestor: string, descendant: string): Promise<boolean>;
   abstract readNumstatLog(sinceDate?: Date, timeoutMs?: number): Promise<Map<string, FileChurnData>>;
   abstract getCommitsSince(sinceDate: Date, timeoutMs?: number): Promise<CommitWithChangedFiles[]>;

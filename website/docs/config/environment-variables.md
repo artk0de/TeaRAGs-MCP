@@ -102,6 +102,16 @@ and `tea-rags index-codebase` / `tea-rags tune` replay it automatically with
 | `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES`  | Skip chunk churn for files > N lines                 | `5000`   |
 | `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` | Group commits into sessions (squash noise reduction) | `false`  |
 | `TRAJECTORY_GIT_SESSION_GAP_MINUTES`   | Gap between commits to split sessions                | `30`     |
+| `TRAJECTORY_GIT_ANCHOR`                | Clock git windows and ages are measured from: `now` (wall clock) or `head` (the HEAD commit's committer time) | `now`    |
+
+`TRAJECTORY_GIT_ANCHOR=head` is for indexing a historical snapshot (a pinned
+benchmark checkout, an archived repository): with `now`, a tree whose last
+commit is older than the windows has every file and chunk counter at zero.
+Under `head`, every window, `ageDays` and `recencyWeightedFreq` written at index
+time is measured from HEAD's committer time. Query-time age filters
+(`minAgeDays` / `maxAgeDays`, filter presets) and the reranker's recency still
+read the wall clock. Changing the value is reported as env drift and needs
+`--force-enrichments git`.
 
 ## Trajectory: Codegraph
 

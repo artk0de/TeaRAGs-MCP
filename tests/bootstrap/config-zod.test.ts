@@ -90,6 +90,7 @@ describe("parseAppConfigZod", () => {
       "GIT_CHUNK_MAX_FILE_LINES",
       "TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS",
       "TRAJECTORY_GIT_SESSION_GAP_MINUTES",
+      "TRAJECTORY_GIT_ANCHOR",
       // qdrantTune
       "QDRANT_TUNE_UPSERT_BATCH_SIZE",
       "QDRANT_UPSERT_BATCH_SIZE",
@@ -775,6 +776,18 @@ describe("parseAppConfigZod — trajectoryGit", () => {
     expect(trajectoryGit.sessionGapMinutes).toBe(30);
     expect(trajectoryGit.blamePoolSize).toBeGreaterThanOrEqual(1);
     expect(trajectoryGit.blamePoolSize).toBeLessThanOrEqual(10);
+  });
+
+  it("TRAJECTORY_GIT_ANCHOR defaults to now, accepts head, and rejects anything else (bd tea-rags-mcp-i6tkc)", async () => {
+    const { parseAppConfigZod } = await freshImport();
+    expect(parseAppConfigZod().trajectoryGit.anchor).toBe("now");
+
+    process.env.TRAJECTORY_GIT_ANCHOR = "head";
+    expect((await freshImport()).parseAppConfigZod().trajectoryGit.anchor).toBe("head");
+
+    process.env.TRAJECTORY_GIT_ANCHOR = "yesterday";
+    const { parseAppConfigZod: parseInvalid } = await freshImport();
+    expect(() => parseInvalid()).toThrow(/trajectoryGit/);
   });
 
   it("TRAJECTORY_GIT_BLAME_POOL_SIZE overrides the blame worker-pool size", async () => {

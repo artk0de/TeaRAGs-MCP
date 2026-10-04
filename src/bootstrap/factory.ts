@@ -361,6 +361,9 @@ function workingTreeGitSignalConfigOf(zodConfig: ReturnType<typeof getZodConfig>
       maxFileLines: trajectoryGit.chunkMaxFileLines,
       concurrency: trajectoryGit.chunkConcurrency,
     },
+    // Only the non-default anchor is carried: a `now` config stays the shape
+    // (and the record fingerprint) it had before the anchor existed.
+    ...(trajectoryGit.anchor === "head" ? { anchor: "head" as const } : {}),
   };
 }
 

@@ -96,6 +96,8 @@ export interface WorkingTreeGitSignalConfig {
   file?: OnDemandGitSignalOptions["file"];
   /** The chunk walk's window and budgets (`TRAJECTORY_GIT_CHUNK_*`). */
   chunk: OnDemandGitSignalOptions["chunk"];
+  /** The history clock (`TRAJECTORY_GIT_ANCHOR`); absent → `now`. */
+  anchor?: OnDemandGitSignalOptions["anchor"];
 }
 
 export interface WorkingTreeGitSignalSourceDeps extends WorkingTreeGitSignalConfig {
@@ -412,6 +414,9 @@ function signalFingerprintOf(builderVersion: string | undefined, config: Working
         config.file?.maxAgeMonths ?? null,
         config.chunk.maxAgeMonths,
         config.chunk.maxFileLines,
+        // The history clock moves every age and window. Written only when
+        // anchored at HEAD, so a `now` fingerprint keeps its pre-anchor value.
+        ...(config.anchor === "head" ? ["anchor:head"] : []),
       ]),
     )
     .digest("hex");
@@ -446,5 +451,6 @@ async function computeSignals(
     chunk: config.chunk,
     ...(config.file ? { file: config.file } : {}),
     ...(config.squashOpts ? { squashOpts: config.squashOpts } : {}),
+    ...(config.anchor ? { anchor: config.anchor } : {}),
   });
 }
