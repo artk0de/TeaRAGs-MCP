@@ -128,7 +128,16 @@ function evidenceFileEdges(dependency: ComponentDependency): ComponentStableDepe
         compareCodePoints(a.targetRelPath, b.targetRelPath),
     )
     .slice(0, COMPONENT_EVIDENCE_FILE_EDGE_LIMIT)
-    .map((e) => ({ sourceRelPath: e.sourceRelPath, targetRelPath: e.targetRelPath, callWeight: e.callWeight }));
+    .map((e) => ({
+      sourceRelPath: e.sourceRelPath,
+      targetRelPath: e.targetRelPath,
+      callWeight: e.callWeight,
+      // The names are how an evidence reader tells the four callWeight-0
+      // causes apart (bd tea-rags-mcp-89k7k.2); absent stays absent, never an
+      // undefined-valued key.
+      ...(e.importedExportNames ? { importedExportNames: e.importedExportNames } : {}),
+      ...(e.reexportedExportNames ? { reexportedExportNames: e.reexportedExportNames } : {}),
+    }));
 }
 
 function groupRootCauses(

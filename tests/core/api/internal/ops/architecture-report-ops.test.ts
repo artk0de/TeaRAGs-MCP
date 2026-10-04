@@ -189,6 +189,32 @@ describe("ArchitectureReportOps#build", () => {
     ]);
   });
 
+  // The response shape must carry what the detector's evidence rows carry: the
+  // names an edge's imports bind are how a reader tells the four callWeight-0
+  // causes apart (bd tea-rags-mcp-89k7k.2). The names here are the live shape
+  // that started the bead — app.ts's runtime + type import of drift.
+  it("carries the file edges' export names through to the SDP evidence (tea-rags-mcp-89k7k.2)", async () => {
+    const g = graph();
+    g.edges[2] = {
+      sourceRelPath: "base/a.ts",
+      targetRelPath: "lib/f4.ts",
+      callWeight: 3,
+      importedExportNames: ["formatIndexDriftReport", "IndexDriftReporter"],
+    };
+
+    const report = await new ArchitectureReportOps().build(graphDb(g), {});
+    const base = report.violations.find((v) => v.detector === "stableDependencies" && v.sourceComponent === "base");
+
+    expect(base && "evidence" in base ? base.evidence.fileEdges : []).toEqual([
+      {
+        sourceRelPath: "base/a.ts",
+        targetRelPath: "lib/f4.ts",
+        callWeight: 3,
+        importedExportNames: ["formatIndexDriftReport", "IndexDriftReporter"],
+      },
+    ]);
+  });
+
   it("summarises the component graph, what was judged and excluded, naming each exclusion reason", async () => {
     const g = graph();
     const report = await new ArchitectureReportOps().build(graphDb(g), {});
