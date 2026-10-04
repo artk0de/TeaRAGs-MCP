@@ -1,28 +1,35 @@
+// The storage surface (`GraphDbClient` and its call shapes) is imported from
+// its OWNER, not the codegraph barrel — the barrel's own contract: "import a
+// sibling directly when you want the narrow surface". Declares the coupling
+// the daemon's dispatch table has with codegraph-storage.ts
+// (bd tea-rags-mcp-89k7k.25).
 import type {
   BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
-  CycleScope,
-  FileResolveStatsWrite,
-  FileScopedSymbolRef,
   GraphDbClient,
-  GraphEdges,
-  GraphFileNode,
-  IdentifierBoundCallee,
   IdentifierReplaceEntry,
   MethodHeadWordQuery,
   MethodNamePatternQuery,
   MethodTailVerbQuery,
   OntologyReportQuery,
   Pass1AggregateReadScope,
+  ReviewFileEdge,
+  TypeDeclarationReplaceEntry,
+  TypeNameQuery,
+} from "../../../contracts/types/codegraph-storage.js";
+import type {
+  CycleScope,
+  FileResolveStatsWrite,
+  FileScopedSymbolRef,
+  GraphEdges,
+  GraphFileNode,
+  IdentifierBoundCallee,
   RelPath,
   ResolveRunStatsRow,
-  ReviewFileEdge,
   SymbolDefinition,
   SymbolId,
   TemporalCochangeSnapshot,
   TemporalSymbolCommitFileSnapshot,
-  TypeDeclarationReplaceEntry,
-  TypeNameQuery,
 } from "../../../contracts/types/codegraph.js";
 import { physicalCollectionNameFromDaemonRequest } from "../../../infra/collection-name.js";
 import type { GraphDbClientPool } from "../pool.js";

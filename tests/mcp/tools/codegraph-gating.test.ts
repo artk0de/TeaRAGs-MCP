@@ -9,6 +9,9 @@
  * When true, all of them register.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -265,6 +268,40 @@ describe("get_architecture_report", () => {
       limit: 10,
     });
     expect(JSON.parse(result.content[0].text)).toEqual(report);
+  });
+
+  // bd tea-rags-mcp-89k7k.25 — the wire shape and GetArchitectureReportRequest
+  // are ONE contract, declared in the tool file (compile-time alignment pin),
+  // not co-changed in heads. These two tests pin the declaration from both
+  // sides: the runtime wire keys, and the source-level alignment type that
+  // turns a one-sided field addition into a tsc error.
+  it("wire shape carries exactly the request DTO fields (bd tea-rags-mcp-89k7k.25)", () => {
+    const { call } = registered();
+    const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny> };
+
+    expect(Object.keys(config.inputSchema).sort()).toEqual(
+      [
+        "collection",
+        "domain",
+        "knotOf",
+        "layerMap",
+        "limit",
+        "norms",
+        "offset",
+        "path",
+        "pathPattern",
+        "project",
+      ].sort(),
+    );
+  });
+
+  it("declares the shape↔DTO alignment pin over GetArchitectureReportInputShape (bd tea-rags-mcp-89k7k.25)", () => {
+    const text = readFileSync(join(import.meta.dirname, "../../../src/mcp/tools/codegraph.ts"), "utf-8");
+    const pin = text.match(
+      /type\s+(\w*Shape\w*Alignment\w*|GetArchitectureReport\w*Alignment\w*)[\s\S]{0,600}?GetArchitectureReportRequest/,
+    );
+    expect(pin, "the compile-time shape↔DTO alignment pin must be declared").not.toBeNull();
+    expect(text).toMatch(/GetArchitectureReportInputShape/);
   });
 });
 
