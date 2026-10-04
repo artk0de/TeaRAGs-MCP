@@ -98,6 +98,17 @@ export interface StableDependencyArchitectureViolation {
  */
 export type FacadeLeakKind = "bypass" | "internal-reach";
 
+/**
+ * How a facade-leak violation's `kind` was decided (bd tea-rags-mcp-r8hme.43):
+ * `names` = the edge and the facade both recorded export names and the kind
+ * came from comparing them, `file-rule` = names were unavailable (absent on
+ * either side, or the facade has no edge to the target at all) and the
+ * file-level rule — `bypass` iff the facade has an edge to the target —
+ * decided. A `file-rule` bypass is NOT certification that the facade already
+ * exposes the imported names.
+ */
+export type FacadeLeakKindBasis = "names" | "file-rule";
+
 /** Why an edge into a module is a leaking-abstraction violation. */
 export interface FacadeLeakViolationEvidence {
   /** The innermost module with an active boundary the edge leaks past. */
@@ -119,6 +130,12 @@ export interface FacadeLeakViolationEvidence {
   importedNames?: string[];
   /** `internal-reach` decided by names: the imported names the facade does not expose. */
   nonExportedNames?: string[];
+  /**
+   * How `kind` was decided (bd tea-rags-mcp-r8hme.43) — see
+   * {@link FacadeLeakKindBasis}. Absent only where the detector ran before the
+   * field existed.
+   */
+  kindBasis?: FacadeLeakKindBasis;
 }
 
 /** A file outside a module importing one of its non-entry files while its peers use the facade. */

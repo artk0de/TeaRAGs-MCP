@@ -3,6 +3,7 @@ import type {
   ArchitectureFileEdge,
   ConventionPrivacyRule,
   FacadeLeakKind,
+  FacadeLeakKindBasis,
   FacadeModuleExclusionReason,
   LayeringFeedbackEdge,
   LayeringKeepCost,
@@ -166,6 +167,14 @@ export interface StableDependenciesReport {
 export type { FacadeLeakKind };
 
 /**
+ * How a violation's `kind` was decided (bd tea-rags-mcp-r8hme.43) — defined
+ * once in the finding contract (bd tea-rags-mcp-0e4vf): `names` = both edges
+ * carried export names and the comparison decided, `file-rule` = names were
+ * unavailable and the file-level rule decided.
+ */
+export type { FacadeLeakKindBasis };
+
+/**
  * Why a module's boundary is not judged — defined once in the finding contract
  * (bd tea-rags-mcp-0e4vf): `facade-not-adopted` (admission threshold),
  * `too-few-importers`, `language-enforced` (a Go package: the compiler already
@@ -199,6 +208,8 @@ export interface FacadeModuleAssessment extends FacadeAdoption {
 /** One edge from outside an active module into one of its non-entry files. */
 export interface FacadeLeakViolation extends FacadeAdoption {
   kind: FacadeLeakKind;
+  /** How `kind` was decided (bd tea-rags-mcp-r8hme.43). */
+  kindBasis: FacadeLeakKindBasis;
   sourceRelPath: RelPath;
   targetRelPath: RelPath;
   /** The innermost active module the edge leaks past. */
