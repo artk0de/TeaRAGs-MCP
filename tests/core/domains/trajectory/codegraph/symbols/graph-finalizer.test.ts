@@ -561,7 +561,7 @@ describe("GraphBuildFinalizer.recomputeMetrics", () => {
     const finalizer = makeFinalizer(graphDb);
 
     await expect(finalizer.recomputeMetrics()).rejects.toMatchObject({
-      message: expect.stringContaining("tarjan") as unknown as string,
+      message: expect.stringContaining("tarjan"),
     });
   });
 });
