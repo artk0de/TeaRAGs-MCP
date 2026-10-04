@@ -667,7 +667,7 @@ function memberLevelsAfterCut(
  * edge per check cost O(V²·E) and never finished on a knot of hundreds of
  * components.
  */
-function eadesLinSmyth(internal: readonly ComponentDependency[]): LayeringFeedbackEdge[] {
+export function eadesLinSmyth(internal: readonly ComponentDependency[]): LayeringFeedbackEdge[] {
   const nodes = [...new Set(internal.flatMap((d) => [d.sourceComponent, d.targetComponent]))].sort(compareCodePoints);
   const indexOf = new Map(nodes.map((node, index) => [node, index]));
   const outgoing: { target: number; weight: number }[][] = nodes.map(() => []);
@@ -702,10 +702,14 @@ function eadesLinSmyth(internal: readonly ComponentDependency[]): LayeringFeedba
     }
   };
 
-  // Sources collect in `front` in peel order — reversed, that is exactly the
-  // order repeated unshifts would leave. Sinks and max-delta picks append to
-  // `back`. `nodes` is already in code-point order, so each pass walks the
-  // remaining vertices in that order and reads live state as it changes.
+  // Sources collect in `front` in peel order and stay that way — the left
+  // block of the canonical sequence. Sinks and max-delta picks append to
+  // `back` in removal order; prepending them to the canonical right block is
+  // the same list read backwards, so `back` reverses once at the end (bd
+  // tea-rags-mcp-r8hme.42: the two reversals used to be swapped, which cut
+  // every edge of a pure source-chain DAG). `nodes` is already in code-point
+  // order, so each pass walks the remaining vertices in that order and reads
+  // live state as it changes.
   const front: string[] = [];
   const back: string[] = [];
   while (remainingCount > 0) {
@@ -739,7 +743,7 @@ function eadesLinSmyth(internal: readonly ComponentDependency[]): LayeringFeedba
     back.push(nodes[best] ?? "");
   }
   const position = new Map<string, number>();
-  [...front.reverse(), ...back].forEach((node, index) => position.set(node, index));
+  [...front, ...back.reverse()].forEach((node, index) => position.set(node, index));
 
   return internal
     .filter((d) => (position.get(d.sourceComponent) ?? 0) > (position.get(d.targetComponent) ?? 0))

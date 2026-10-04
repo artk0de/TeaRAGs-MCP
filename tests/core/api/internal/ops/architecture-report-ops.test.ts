@@ -115,8 +115,9 @@ describe("ArchitectureReportOps#build", () => {
         },
       },
       // The same core⇄lib cycle the SDP detector reads as root cause, as the
-      // layering detector (bd tea-rags-mcp-r8hme.22) reports it: a knot and
-      // its minority-weight back-edge.
+      // layering detector (bd tea-rags-mcp-r8hme.22) reports it: a knot whose
+      // canonical cut takes the core → lib flow (bd tea-rags-mcp-r8hme.42),
+      // beside its minority-weight back-edge.
       {
         detector: "layering",
         kind: "knot",
@@ -124,10 +125,13 @@ describe("ArchitectureReportOps#build", () => {
         evidence: {
           feedbackArcSet: [
             {
-              sourceComponent: "lib",
-              targetComponent: "core",
-              callWeight: 1,
-              fileEdges: [{ sourceRelPath: "lib/f5.ts", targetRelPath: "core/a.ts", callWeight: 1 }],
+              sourceComponent: "core",
+              targetComponent: "lib",
+              callWeight: 3,
+              fileEdges: [
+                { sourceRelPath: "core/a.ts", targetRelPath: "lib/f1.ts", callWeight: 2 },
+                { sourceRelPath: "core/b.ts", targetRelPath: "lib/f2.ts", callWeight: 1 },
+              ],
             },
           ],
           cutEdgeCount: 1,
@@ -253,10 +257,11 @@ describe("ArchitectureReportOps#build", () => {
     const whole = await new ArchitectureReportOps().build(graphDb(), {});
 
     const knot = scoped.violations.find((v) => v.detector === "layering" && v.kind === "knot");
-    // core owns no lib/** file; the cut edge lib → core is carried by lib/f5.ts.
+    // core owns no lib/** file; the cut edge core → lib is carried by
+    // core/a.ts and core/b.ts, so it rides out of scope.
     expect(knot).toMatchObject({
       components: ["lib"],
-      evidence: { outOfScopeMemberCount: 1, outOfScopeFeedbackEdgeCount: 0 },
+      evidence: { outOfScopeMemberCount: 1, outOfScopeFeedbackEdgeCount: 1 },
     });
     const wholeKnot = whole.violations.find((v) => v.detector === "layering" && v.kind === "knot");
     expect(wholeKnot).toBeDefined();
@@ -1514,12 +1519,12 @@ describe("ArchitectureReportOps#build — knotOf view and drillDown (bd tea-rags
 
 /**
  * Keep cost per cut edge on the knotOf page (bd tea-rags-mcp-r8hme.40). On the
- * bidirectional ring every weight is equal, so the greedy sequence is
- * c00, c01, …, c29 and the cut is the 29 edges c_{i+1}→c_i plus c29→c00; what
- * remains is the chain c00→c01→…→c29 and c00→c29. Keeping c_{i+1}→c_i
- * re-collapses exactly c_i⇄c_{i+1} (c_i reaches c_{i+1} only directly), 30
- * members on 29 levels. Keeping c29→c00 closes the whole chain: all 30
- * members, one level.
+ * bidirectional ring every weight is equal, so the canonical greedy sequence
+ * (bd tea-rags-mcp-r8hme.42) is c29, c28, …, c00 and the cut is the 29 ring
+ * edges c_i→c_{i+1} plus the wrap c00→c29; what remains is the chain
+ * c29→c28→…→c00 and c01→c00. Keeping c_i→c_{i+1} re-collapses exactly
+ * c_i⇄c_{i+1} (c_i reaches c_{i+1} only directly), 30 members on 29 levels.
+ * Keeping c00→c29 closes the whole chain: all 30 members, one level.
  */
 describe("ArchitectureReportOps#build — knotOf keep cost per cut edge (bd tea-rags-mcp-r8hme.40)", () => {
   const pairs = (edges: readonly { sourceComponent: string; targetComponent: string }[] | undefined) =>
@@ -1529,23 +1534,37 @@ describe("ArchitectureReportOps#build — knotOf keep cost per cut edge (bd tea-
     const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), { knotOf: "c07", limit: 10 });
 
     const page = report.knot?.knot?.feedbackArcSet ?? [];
-    expect(pairs(page)).toEqual(
-      Array.from({ length: 10 }, (_, i) => `c${String(i + 1).padStart(2, "0")}->c${String(i).padStart(2, "0")}`),
-    );
+    // Canonical ELS (bd tea-rags-mcp-r8hme.42): the cut takes the ring
+    // direction c_i -> c_{i+1} plus the wrap c00 -> c29, one edge per
+    // adjacent pair, sorted by source.
+    expect(pairs(page)).toEqual([
+      "c00->c01",
+      "c00->c29",
+      "c01->c02",
+      "c02->c03",
+      "c03->c04",
+      "c04->c05",
+      "c05->c06",
+      "c06->c07",
+      "c07->c08",
+      "c08->c09",
+    ]);
     for (const edge of page) {
-      expect(edge.keepCost).toEqual({ recollapsedMemberCount: 2, levelsAfterKeep: 29 });
+      // The wrap edge re-collapses the whole ring; every ring step only its own pair.
+      const expected =
+        edge.sourceComponent === "c00" && edge.targetComponent === "c29"
+          ? { recollapsedMemberCount: 30, levelsAfterKeep: 1 }
+          : { recollapsedMemberCount: 2, levelsAfterKeep: 29 };
+      expect(edge.keepCost).toEqual(expected);
     }
   });
 
   it("prices the edge that closes the whole ring as re-collapsing every member", async () => {
-    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), {
-      knotOf: "c07",
-      limit: 10,
-      offset: 20,
-    });
+    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), { knotOf: "c07", limit: 10 });
 
+    // The wrap edge sorts by source right beside c00 -> c01.
     const closing = report.knot?.knot?.feedbackArcSet.find(
-      (edge) => edge.sourceComponent === "c29" && edge.targetComponent === "c00",
+      (edge) => edge.sourceComponent === "c00" && edge.targetComponent === "c29",
     );
     expect(closing?.keepCost).toEqual({ recollapsedMemberCount: 30, levelsAfterKeep: 1 });
   });
@@ -1558,11 +1577,16 @@ describe("ArchitectureReportOps#build — knotOf keep cost per cut edge (bd tea-
     });
 
     const page = report.knot?.knot?.feedbackArcSet ?? [];
-    expect(pairs(page)).toEqual(["c01->c00", "c02->c01"]);
+    // c00, c01 and c02 own the files carrying four cut edges: the two ring
+    // steps out of c00 and c01, and the wrap c00 -> c29.
+    expect(pairs(page)).toEqual(["c00->c01", "c00->c29", "c01->c02", "c02->c03"]);
+    const costOf = (pair: string) =>
+      page.find((edge) => `${edge.sourceComponent}->${edge.targetComponent}` === pair)?.keepCost;
     // 29 levels is a 30-member reading — the 3 in-scope members alone could span at most 3.
-    for (const edge of page) {
-      expect(edge.keepCost).toEqual({ recollapsedMemberCount: 2, levelsAfterKeep: 29 });
-    }
+    expect(costOf("c00->c01")).toEqual({ recollapsedMemberCount: 2, levelsAfterKeep: 29 });
+    expect(costOf("c00->c29")).toEqual({ recollapsedMemberCount: 30, levelsAfterKeep: 1 });
+    expect(costOf("c01->c02")).toEqual({ recollapsedMemberCount: 2, levelsAfterKeep: 29 });
+    expect(costOf("c02->c03")).toEqual({ recollapsedMemberCount: 2, levelsAfterKeep: 29 });
   });
 
   it("leaves the report's knot findings without a keep cost", async () => {

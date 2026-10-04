@@ -1,8 +1,13 @@
 /**
  * The weighted Eades–Lin–Smyth feedback arc set inside every layering knot is
- * pinned against the pre-optimisation algorithm, kept here verbatim as a test
- * oracle: the incremental-degree rewrite must yield the identical cut —
- * same edges, same order, same tie-breaks — on every input. The scale case
+ * pinned against the naive algorithm, kept here as a test oracle: the
+ * incremental-degree rewrite must yield the identical cut — same edges, same
+ * order, same tie-breaks — on every input. The oracle states the CANONICAL
+ * sequence order (bd tea-rags-mcp-r8hme.42): sources append to the left block
+ * in peel order, sinks and max-delta picks prepend to the right block. The
+ * pre-optimisation body both oracles copied inverted the two blocks, which
+ * reported every edge of a pure source-chain DAG as feedback; the canonical
+ * form is what the optimized rewrite has pinned since the fix. The scale case
  * guards the complexity: a 400-component knot used to cost O(V²·E) and never
  * finished on a large project's `get_architecture_report`.
  */
@@ -32,14 +37,17 @@ function compareCodePoints(a: string, b: string): number {
 }
 
 /**
- * Test oracle: the pre-optimisation `eadesLinSmyth` body, copied verbatim
- * (minus evidence file edges, which the comparison does not read). O(V²·E) —
- * only ever run on the small random graphs below.
+ * Test oracle: the naive canonical `eadesLinSmyth` body (minus evidence file
+ * edges, which the comparison does not read). Sources append to `front` in
+ * peel order; sinks and max-delta picks append to `back` in removal order and
+ * the right block reads reversed. O(V²·E) — only ever run on the small random
+ * graphs below.
  */
 function referenceEadesLinSmyth(internal: readonly ComponentDependency[]): OracleFeedbackEdge[] {
   const position = new Map<string, number>();
   const remaining = new Set(internal.flatMap((d) => [d.sourceComponent, d.targetComponent]));
-  const sequence: string[] = [];
+  const front: string[] = [];
+  const back: string[] = [];
   const liveOut = (node: string) =>
     internal.some((d) => d.sourceComponent === node && remaining.has(d.targetComponent));
   const liveIn = (node: string) => internal.some((d) => d.targetComponent === node && remaining.has(d.sourceComponent));
@@ -60,8 +68,7 @@ function referenceEadesLinSmyth(internal: readonly ComponentDependency[]): Oracl
       moved = false;
       for (const node of [...remaining].sort(compareCodePoints)) {
         if (liveOut(node) && liveIn(node)) continue;
-        if (!liveOut(node)) sequence.push(node);
-        else sequence.unshift(node);
+        (liveOut(node) ? front : back).push(node);
         remaining.delete(node);
         moved = true;
       }
@@ -78,9 +85,9 @@ function referenceEadesLinSmyth(internal: readonly ComponentDependency[]): Oracl
     }
     if (best === undefined) break;
     remaining.delete(best);
-    sequence.push(best);
+    back.push(best);
   }
-  sequence.forEach((node, index) => position.set(node, index));
+  [...front, ...back.reverse()].forEach((node, index) => position.set(node, index));
 
   return internal
     .filter((d) => (position.get(d.sourceComponent) ?? 0) > (position.get(d.targetComponent) ?? 0))

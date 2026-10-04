@@ -2,8 +2,10 @@
  * Keep cost per cut edge (bd tea-rags-mcp-r8hme.40): for one feedback-arc-set
  * edge e of a knot, cut every OTHER edge of the set and keep e — how many
  * members fall back into a cycle, and how many levels the members span with
- * those cycles condensed. 0 re-collapsed members names an edge the greedy
- * cut took needlessly.
+ * those cycles condensed. Under the canonical Eades–Lin–Smyth order
+ * (bd tea-rags-mcp-r8hme.42) the greedy takes one edge per 2-cycle and no
+ * longer manufactures redundant cuts on these shapes — the "0 re-collapsed
+ * members" reading names an edge whose every cycle another cut already broke.
  */
 import { describe, expect, it } from "vitest";
 
@@ -44,7 +46,9 @@ function keepCostsOf(graph: FileDependencyGraph) {
 
 describe("layeringKnotKeepCosts", () => {
   it("re-collapses both members of a 2-cycle when its one cut edge stays", () => {
-    // Eades–Lin–Smyth takes a (weighted delta +2) first; b->a is the one backward edge.
+    // Canonical ELS (bd tea-rags-mcp-r8hme.42): the weighted delta (+2) takes
+    // a into the right block first, b follows as the sink, and the sequence
+    // [b, a] reads a->b backwards — the heavy edge is the one cut.
     const { cut, costOf } = keepCostsOf(
       graphOf(
         ["a", "b"],
@@ -55,15 +59,16 @@ describe("layeringKnotKeepCosts", () => {
       ),
     );
 
-    expect(cut).toEqual(["b->a"]);
-    expect(costOf("b->a")).toEqual({ recollapsedMemberCount: 2, levelsAfterKeep: 1 });
+    expect(cut).toEqual(["a->b"]);
+    expect(costOf("a->b")).toEqual({ recollapsedMemberCount: 2, levelsAfterKeep: 1 });
   });
 
-  it("prices 0 re-collapsed members for an edge the greedy cut took needlessly", () => {
-    // A 3-cycle a->b->c->a needs ONE cut edge. The greedy sequence is b, a, c
-    // (a has the largest weighted delta, then b peels as a source and c as a
-    // sink), which leaves a->b AND c->a backward: two edges, and either one
-    // alone keeps the rest acyclic.
+  it("cuts one edge of a 3-cycle and prices keeping it as a full re-collapse", () => {
+    // Canonical sequence [b, c, a]: the delta tie takes a into the right
+    // block, b peels as a source, c as the sink — a->b is the only backward
+    // edge, and one cut dissolves the cycle. Keeping it re-collapses all
+    // three members onto one level. (The inverted pre-r8hme.42 order cut two
+    // edges here and priced each as taking nothing needlessly.)
     const { cut, costOf } = keepCostsOf(
       graphOf(
         ["a", "b", "c"],
@@ -75,34 +80,37 @@ describe("layeringKnotKeepCosts", () => {
       ),
     );
 
-    expect(cut).toEqual(["a->b", "c->a"]);
-    // Keep a->b: b->c, a->b remain — c, b, a on three levels.
-    expect(costOf("a->b")).toEqual({ recollapsedMemberCount: 0, levelsAfterKeep: 3 });
-    // Keep c->a: b->c, c->a remain — a, c, b on three levels.
-    expect(costOf("c->a")).toEqual({ recollapsedMemberCount: 0, levelsAfterKeep: 3 });
+    expect(cut).toEqual(["a->b"]);
+    expect(costOf("a->b")).toEqual({ recollapsedMemberCount: 3, levelsAfterKeep: 1 });
   });
 
-  it("condenses the re-collapsed members and levels them over the external successors' base levels", () => {
-    // Knot {a, b, c}; c depends on z, z on y outside it (base levels 1 and 0).
-    // Greedy sequence b, a, c: the cut is a->b and c->a.
+  it("prices each cut of a four-pair ring by its own re-collapsed pair and the chain above it", () => {
+    // Four adjacent pairs a⇄b, b⇄c, c⇄d, d⇄a — the weight-9 ring one way,
+    // weight-1 back. Canonical sequence [d, c, b, a]: every ring direction
+    // reads backwards, so the cut takes a->b, b->c, c->d and the wrap a->d —
+    // one edge per pair. Keeping a ring edge re-collapses exactly its own
+    // pair (2 members) and leaves the rest a chain on three levels; keeping
+    // the wrap a->d revives every pair: all 4 members on one level.
     const { cut, costOf } = keepCostsOf(
       graphOf(
-        ["a", "b", "c", "y", "z"],
+        ["a", "b", "c", "d"],
         [
-          ["a", "b", 5],
+          ["a", "b", 9],
           ["b", "a", 1],
-          ["b", "c", 5],
-          ["c", "a", 1],
-          ["c", "z", 1],
-          ["z", "y", 1],
+          ["b", "c", 9],
+          ["c", "b", 1],
+          ["c", "d", 9],
+          ["d", "c", 1],
+          ["d", "a", 9],
+          ["a", "d", 1],
         ],
       ),
     );
 
-    expect(cut).toEqual(["a->b", "c->a"]);
-    // Keep a->b: a⇄b re-collapse; c sits at 1 + level(z) = 2, {a, b} above it — two levels.
-    expect(costOf("a->b")).toEqual({ recollapsedMemberCount: 2, levelsAfterKeep: 2 });
-    // Keep c->a: acyclic — a at 0, c at max(1 + 0, 1 + 1) = 2, b at 3.
-    expect(costOf("c->a")).toEqual({ recollapsedMemberCount: 0, levelsAfterKeep: 3 });
+    expect(cut).toEqual(["a->b", "b->c", "c->d", "a->d"]);
+    expect(costOf("a->b")).toEqual({ recollapsedMemberCount: 2, levelsAfterKeep: 3 });
+    expect(costOf("b->c")).toEqual({ recollapsedMemberCount: 2, levelsAfterKeep: 3 });
+    expect(costOf("c->d")).toEqual({ recollapsedMemberCount: 2, levelsAfterKeep: 3 });
+    expect(costOf("a->d")).toEqual({ recollapsedMemberCount: 4, levelsAfterKeep: 1 });
   });
 });
