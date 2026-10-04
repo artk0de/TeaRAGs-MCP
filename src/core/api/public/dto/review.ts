@@ -123,11 +123,28 @@ export type CohesionSectionResult = ReviewSectionEnvelope & CohesionSectionPaylo
  * honestly unbuilt until A5/c3v6o lands.
  */
 export interface ArchitectureSectionPayload {
-  /** Detector findings over the diff's overlay edges, capped at 100. */
+  /**
+   * Detector findings over the diff's overlay edges, listed under the
+   * family-aware cap of 100 (bd tea-rags-mcp-35v4v): every family keeps at
+   * least one slot, and each family's cut is counted on its own detector row —
+   * never silently dropped. `foundationTerminal` rides these rows (see
+   * {@link DiffDetectorFinding}).
+   */
   findings: readonly DiffDetectorFinding[];
-  /** Per-detector verdict row — the `splitCandidates` family is `built: false` until its substrate ships. */
+  /**
+   * Per-detector verdict row — the `splitCandidates` family is `built: false`
+   * until its substrate ships. Rows carry the family's own `truncated` count,
+   * the `scopeSkippedFiles` partial marker, and the family's exclusion
+   * counters; the per-field semantics live on {@link DiffDetectorStatus} —
+   * this envelope does not restate them.
+   */
   detectors: readonly DiffDetectorStatus[];
-  /** Findings past the cap of 100 — counted, not listed. */
+  /**
+   * SECTION-level total past the cap of 100 — counted, not listed. The
+   * per-family cuts live on the detector rows' `truncated` (bd
+   * tea-rags-mcp-35v4v); `findingCount` on a row stays the family's FULL
+   * total, so row and section reconcile independently.
+   */
   truncated?: number;
 }
 
