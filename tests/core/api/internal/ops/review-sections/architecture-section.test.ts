@@ -105,7 +105,12 @@ function graphDbStub(graph: FileDependencyGraph, cochangeEdges: TemporalCochange
   };
 }
 
-function cochangePair(a: RelPath, b: RelPath, support: number): TemporalCochangeGraph["edges"][number] {
+function cochangePair(
+  a: RelPath,
+  b: RelPath,
+  support: number,
+  structurallyLinked = false,
+): TemporalCochangeGraph["edges"][number] {
   return {
     relPathA: a,
     relPathB: b,
@@ -115,6 +120,7 @@ function cochangePair(a: RelPath, b: RelPath, support: number): TemporalCochange
     lift: 3,
     lastCoChangeAt: 1_700_000_000,
     sampleCommits: ["a1b2c3"],
+    structurallyLinked,
   };
 }
 
@@ -247,6 +253,38 @@ describe("architectureSectionProvider.run", () => {
       findingCount: 0,
     });
     expect(payload.truncated).toBeUndefined();
+  });
+
+  // The wiring-level twin of the production pin (silent-coupling.test.ts:188,
+  // bd tea-rags-mcp-r8hme.12), live-measured as bead tea-rags-mcp-89k7k.4: a
+  // dto/ops pair (support 24) reported as "strong co-change with NO structural
+  // edge" while ops imports 18 DTO names via `import type`. That edge lives in
+  // cg_symbols_edges_file_type_only — readFileDependencyGraph never returns it
+  // — but the co-change snapshot's structurallyLinked flag is computed from the
+  // production union that counts a type-only import as a link, so the pair must
+  // arrive at the judgement already explained.
+  it("does not report a pair linked only by a type-only import — the snapshot's linkage flag explains it", async () => {
+    writeFile("src/dto.ts", "export type A = { x: number };\n");
+    const graph = graphDbStub(
+      {
+        files: [graphFile("src/dto.ts"), graphFile("src/ops.ts")],
+        edges: [],
+      },
+      [cochangePair("src/dto.ts", "src/ops.ts", 24, true)],
+    );
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({
+        graphDb: graph,
+        scope: scopeOf(["src/dto.ts"]),
+        temporalCochange: { meta: { head: "h" }, edges: [cochangePair("src/dto.ts", "src/ops.ts", 24, true)] },
+      }),
+    )) as Record<string, unknown>;
+
+    const findings = payload.findings as { detector: string; subject: string }[];
+    expect(findings.filter((f) => f.detector === "silentCoupling")).toEqual([]);
+    const detectors = payload.detectors as { detector: string; built: boolean; findingCount: number }[];
+    expect(detectors.find((d) => d.detector === "silentCoupling")).toMatchObject({ built: true, findingCount: 0 });
   });
 
   it("caps findings at 100 and counts the rest in truncated", async () => {
@@ -678,16 +716,17 @@ describe("WiredGraphReader", () => {
 });
 
 describe("WiredCouplingReader", () => {
-  it("adapts the co-change snapshot both ways: the file as relPathA or relPathB", () => {
+  it("adapts the co-change snapshot both ways: the file as relPathA or relPathB, linkage flag carried", () => {
     const reader = new WiredCouplingReader({
       meta: { head: "h" },
-      edges: [cochangePair("src/a.ts", "src/b.ts", 4), cochangePair("src/a.ts", "src/z.ts", 2)],
+      edges: [cochangePair("src/a.ts", "src/b.ts", 4), cochangePair("src/a.ts", "src/z.ts", 2, true)],
     });
     expect(reader.partnersOf("src/a.ts")).toEqual([
-      { partner: "src/b.ts", support: 4 },
-      { partner: "src/z.ts", support: 2 },
+      { partner: "src/b.ts", support: 4, structurallyLinked: false },
+      { partner: "src/z.ts", support: 2, structurallyLinked: true },
     ]);
-    expect(reader.partnersOf("src/b.ts")).toEqual([{ partner: "src/a.ts", support: 4 }]);
+    expect(reader.partnersOf("src/b.ts")).toEqual([{ partner: "src/a.ts", support: 4, structurallyLinked: false }]);
+    expect(reader.partnersOf("src/z.ts")).toEqual([{ partner: "src/a.ts", support: 2, structurallyLinked: true }]);
     expect(reader.partnersOf("src/none.ts")).toEqual([]);
   });
 
