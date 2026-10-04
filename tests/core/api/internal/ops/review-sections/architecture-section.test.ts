@@ -22,8 +22,8 @@ import type { DiffScopeRead } from "../../../../../../src/core/api/internal/ops/
 import type { ReviewEdgeExtractionDeps } from "../../../../../../src/core/api/internal/ops/review-edge-overlay.js";
 import {
   architectureSectionProvider,
+  buildSilentCouplingFacts,
   mintReviewId,
-  WiredCouplingReader,
   WiredGraphReader,
 } from "../../../../../../src/core/api/internal/ops/review-sections/architecture-section.js";
 import type { ReviewSectionContext } from "../../../../../../src/core/api/internal/ops/review-sections/review-section-provider.js";
@@ -124,6 +124,24 @@ function cochangePair(
   };
 }
 
+/**
+ * A pair the production strength cut admits: wilson(9, 10) ≈ 0.596 clears the
+ * 0.5 majority floor — `cochangePair`'s 0.75/0.6 confidences give ≈ 0.47 and
+ * are (correctly) not strong under the machinery the wiring now consumes.
+ */
+function strongPair(
+  a: RelPath,
+  b: RelPath,
+  support = 9,
+  structurallyLinked = false,
+): TemporalCochangeGraph["edges"][number] {
+  return {
+    ...cochangePair(a, b, support, structurallyLinked),
+    confidenceAB: 0.9,
+    confidenceBA: 0.9,
+  };
+}
+
 function scopeOf(files: readonly string[], skipped = 0): DiffScopeRead {
   return {
     workTree: workTree!,
@@ -180,14 +198,14 @@ describe("architectureSectionProvider.run", () => {
         // The stale indexed edge the diff replaces: pre-diff, b imported a.
         edges: [graphEdge("src/lib/b.ts", "src/app/a.ts")],
       },
-      [cochangePair("src/app/a.ts", "src/other/c.ts", 5)],
+      [strongPair("src/app/a.ts", "src/other/c.ts")],
     );
 
     const payload = (await architectureSectionProvider.run(
       runContext({
         graphDb: graph,
         scope: scopeOf(["src/app/a.ts", "docs/notes.md", "src/gone.ts"]),
-        temporalCochange: { meta: { head: "h" }, edges: [cochangePair("src/app/a.ts", "src/other/c.ts", 5)] },
+        temporalCochange: { meta: { head: "h" }, edges: [strongPair("src/app/a.ts", "src/other/c.ts")] },
       }),
     )) as Record<string, unknown>;
 
@@ -285,6 +303,63 @@ describe("architectureSectionProvider.run", () => {
     expect(findings.filter((f) => f.detector === "silentCoupling")).toEqual([]);
     const detectors = payload.detectors as { detector: string; built: boolean; findingCount: number }[];
     expect(detectors.find((d) => d.detector === "silentCoupling")).toMatchObject({ built: true, findingCount: 0 });
+  });
+
+  // End-to-end exclusion wiring (bd tea-rags-mcp-89k7k.1.10): the diff-scoped
+  // family must consume the production detector's verdict over the SAME
+  // snapshot — historical src~test and CLAUDE.md~code pairs and unwalked pairs
+  // are counted into the silentCoupling row's `excluded` block (the production
+  // summary's vocabulary) and never reported; weak pairs below the strength
+  // floor are not findings either. On the recorded agent diffs the review used
+  // to answer 19–98 such pairs, burying the diff-relevant ones.
+  it("reports only the production verdict's strong unlinked pairs on this diff, with production's excluded counters", async () => {
+    writeFile("src/app/a.ts", "export const A = 1;\n");
+    const pairEdges = [
+      // (a) historical src~test pair
+      cochangePair("src/app/a.ts", "tests/app/a.test.ts", 9),
+      // (b) CLAUDE.md ~ code pair
+      cochangePair("CLAUDE.md", "src/app/a.ts", 8),
+      // (c) pair with no walked endpoint
+      {
+        ...cochangePair("config/settings.json", "config/settings.schema.json", 6),
+        confidenceAB: 0.6,
+        confidenceBA: 0.6,
+      },
+      // (d) the genuine strong src~src pair — wilson(9,10) ≈ 0.596 > 0.5 floor
+      strongPair("src/app/a.ts", "src/other/c.ts"),
+      // (e) src~src pair below the strength floor — wilson(4,8) ≈ 0.22
+      { ...cochangePair("src/app/a.ts", "src/weak/e.ts", 4), confidenceAB: 0.5, confidenceBA: 0.5 },
+    ];
+    const graph = graphDbStub(
+      {
+        // The codegraph's walked files: tests, CLAUDE.md and the config pair
+        // are not walked.
+        files: [graphFile("src/app/a.ts"), graphFile("src/other/c.ts"), graphFile("src/weak/e.ts")],
+        edges: [],
+      },
+      pairEdges,
+    );
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({
+        graphDb: graph,
+        scope: scopeOf(["src/app/a.ts", "config/settings.json"]),
+        temporalCochange: { meta: { head: "h" }, edges: pairEdges },
+      }),
+    )) as Record<string, unknown>;
+
+    const findings = payload.findings as { detector: string; subject: string }[];
+    expect(findings.filter((f) => f.detector === "silentCoupling").map((f) => f.subject)).toEqual([
+      "src/app/a.ts ~ src/other/c.ts",
+    ]);
+    const detectors = payload.detectors as { detector: string; excluded?: Record<string, number> }[];
+    expect(detectors.find((d) => d.detector === "silentCoupling")?.excluded).toEqual({
+      testEndpoints: 1,
+      generatedEndpoints: 0,
+      documentationEndpoints: 1,
+      unwalkedEndpoints: 1,
+      nonPositiveLift: 0,
+    });
   });
 
   it("caps findings at 100 and counts the rest in truncated", async () => {
@@ -402,14 +477,14 @@ describe("architectureSectionProvider.run", () => {
           namedGraphEdge("src/app/c3.ts", "src/lib/index.ts", ["a", "b"]),
         ],
       },
-      partners.map((partner) => cochangePair("src/lib/index.ts", partner, 5)),
+      partners.map((partner) => strongPair("src/lib/index.ts", partner)),
     );
 
     const payload = (await architectureSectionProvider.run(
       runContext({
         graphDb: graph,
         scope: scopeOf(["src/lib/index.ts"]),
-        temporalCochange: { meta: { head: "h" }, edges: partners.map((p) => cochangePair("src/lib/index.ts", p, 5)) },
+        temporalCochange: { meta: { head: "h" }, edges: partners.map((p) => strongPair("src/lib/index.ts", p)) },
       }),
     )) as Record<string, unknown>;
 
@@ -715,23 +790,31 @@ describe("WiredGraphReader", () => {
   });
 });
 
-describe("WiredCouplingReader", () => {
-  it("adapts the co-change snapshot both ways: the file as relPathA or relPathB, linkage flag carried", () => {
-    const reader = new WiredCouplingReader({
+describe("buildSilentCouplingFacts", () => {
+  it("hands the run the production verdict: violations mapped to the port shape, excluded counters verbatim", () => {
+    const snapshot = {
       meta: { head: "h" },
-      edges: [cochangePair("src/a.ts", "src/b.ts", 4), cochangePair("src/a.ts", "src/z.ts", 2, true)],
-    });
-    expect(reader.partnersOf("src/a.ts")).toEqual([
-      { partner: "src/b.ts", support: 4, structurallyLinked: false },
-      { partner: "src/z.ts", support: 2, structurallyLinked: true },
+      edges: [strongPair("src/a.ts", "src/b.ts"), cochangePair("CLAUDE.md", "src/c.ts", 8)],
+    };
+    const files = [graphFile("src/a.ts"), graphFile("src/b.ts"), graphFile("src/c.ts")];
+    const facts = buildSilentCouplingFacts(snapshot, files, []);
+    // CLAUDE.md ~ src/c.ts is a documentation-endpoint pair — excluded by the
+    // production taxonomy, never a violation; the strong src~src pair passes.
+    expect(facts.violations).toEqual([
+      { relPathA: "src/a.ts", relPathB: "src/b.ts", support: 9, strength: 0.5958436145024278 },
     ]);
-    expect(reader.partnersOf("src/b.ts")).toEqual([{ partner: "src/a.ts", support: 4, structurallyLinked: false }]);
-    expect(reader.partnersOf("src/z.ts")).toEqual([{ partner: "src/a.ts", support: 2, structurallyLinked: true }]);
-    expect(reader.partnersOf("src/none.ts")).toEqual([]);
+    expect(facts.excluded).toMatchObject({ documentationEndpoints: 1 });
   });
 
-  it("an absent or never-built snapshot answers no partners — absence is silence, not a zero verdict", () => {
-    expect(new WiredCouplingReader(undefined).partnersOf("src/a.ts")).toEqual([]);
-    expect(new WiredCouplingReader(null).partnersOf("src/a.ts")).toEqual([]);
+  it("an absent or never-built snapshot degrades to the empty verdict — silence, not a zero", () => {
+    const absent = buildSilentCouplingFacts(undefined, [], []);
+    expect(absent.violations).toEqual([]);
+    expect(absent.excluded).toEqual({
+      testEndpoints: 0,
+      generatedEndpoints: 0,
+      documentationEndpoints: 0,
+      unwalkedEndpoints: 0,
+      nonPositiveLift: 0,
+    });
   });
 });

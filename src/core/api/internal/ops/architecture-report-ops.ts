@@ -712,8 +712,11 @@ function leakViolations(
  * Documentation by the same language table that sets `isDocumentation` on a
  * chunk — ingest owns it, and this layer is the one allowed to bridge ingest
  * and trajectory, so the detector receives the answer instead of the table.
+ * Exported for the review sections' wiring, which feeds the same predicate to
+ * the diff-scoped silent-coupling exclusions (bd tea-rags-mcp-89k7k.1.10) so
+ * both paths answer documentation identically.
  */
-function isDocumentationPath(relPath: RelPath): boolean {
+export function isDocumentationPath(relPath: RelPath): boolean {
   const language = LANGUAGE_MAP[extname(relPath).toLowerCase()];
   return language !== undefined && DOCUMENTATION_LANGUAGES.has(language);
 }

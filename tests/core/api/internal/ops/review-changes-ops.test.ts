@@ -96,9 +96,13 @@ function graphDbStub(overrides: Partial<GraphStub> = {}): GraphStub {
       {
         relPathA: CHANGED,
         relPathB: PARTNER,
-        support: 6,
-        confidenceAB: 0.75,
-        confidenceBA: 0.6,
+        // Confidence 0.9/0.9 → wilson(9, 10) ≈ 0.596: the pair must clear
+        // the production strength floor (> 0.5) to become a violation — the
+        // review consumes the detector's verdict, weaker pairs are not
+        // findings (bd tea-rags-mcp-89k7k.1.10).
+        support: 9,
+        confidenceAB: 0.9,
+        confidenceBA: 0.9,
         lift: 3,
         lastCoChangeAt: 1_700_000_000,
         sampleCommits: ["a1b2c3"],
@@ -119,10 +123,17 @@ function graphDbStub(overrides: Partial<GraphStub> = {}): GraphStub {
     readTemporalSymbolCommits: vi.fn(
       async (relPath: string) => stub.symbolCommits[relPath] ?? { relPath, symbols: [] },
     ),
-    // The architecture section's indexed side: an empty graph is a valid
-    // substrate (no components, no edges — no findings), and the temp-table
-    // lifecycle runs as spies.
-    readFileDependencyGraph: vi.fn(async () => ({ files: [], edges: [] })),
+    // The architecture section's indexed side: the walked census names the
+    // co-change endpoints (otherwise the production taxonomy excludes the
+    // pair as unwalked), and no components/edges — no other findings. The
+    // temp-table lifecycle runs as spies.
+    readFileDependencyGraph: vi.fn(async () => ({
+      files: [
+        { relPath: CHANGED, language: "typescript", symbolCount: 1 },
+        { relPath: PARTNER, language: "typescript", symbolCount: 1 },
+      ],
+      edges: [],
+    })),
     putReviewFileEdges: vi.fn(async () => undefined),
     dropReviewFileEdges: vi.fn(async () => undefined),
     sweepExpiredReviewFileEdges: vi.fn(async () => []),
@@ -202,7 +213,7 @@ describe("ReviewChangesOps", () => {
     expect(result.review.sections.naming).toMatchObject({ checked: 2, conforming: 2 });
     // incompleteChange found the partner outside the diff
     expect(result.review.sections.incompleteChange).toMatchObject({
-      partners: [{ file: CHANGED, missingPartner: PARTNER, support: 6, confidence: 0.75 }],
+      partners: [{ file: CHANGED, missingPartner: PARTNER, support: 9, confidence: 0.9 }],
     });
     // cohesion analyzed the changed file
     expect(result.review.sections.cohesion).toMatchObject({ analyzedFiles: 1, nullReports: 0 });
