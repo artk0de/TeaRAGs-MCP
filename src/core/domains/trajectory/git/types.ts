@@ -59,8 +59,11 @@ export interface GitFileSignals extends FileSignalOverlay {
   churnVolatility: number;
 
   // Derived:
-  /** Percentage of commits with fix/bug/hotfix/patch keywords (0-100) */
-  bugFixRate: number;
+  /**
+   * Percentage of commits with fix/bug/hotfix/patch keywords (0-100).
+   * Undefined when the window holds no commit: 0 of 0 is not a rate.
+   */
+  bugFixRate?: number;
   /** Number of unique contributors (= recentAuthors.length, explicit for filtering) */
   recentContributorCount: number;
 
@@ -120,10 +123,15 @@ export interface ChunkChurnOverlay extends ChunkSignalOverlay {
   blameContributorCount: number;
 }
 
-/** `GitFileSignals` keys a file without history leaves out (`assembleFileSignals`). */
+/**
+ * `GitFileSignals` keys `assembleFileSignals` leaves out: the age stamps of a
+ * file without history, and the bug-fix rate of a file without commits in the
+ * window.
+ */
 const FILE_OPTIONAL_OVERLAY_KEYS: Record<OptionalOverlayKey<GitFileSignals>, true> = {
   lastModifiedAt: true,
   ageDays: true,
+  bugFixRate: true,
 };
 
 /** `ChunkChurnOverlay` keys a chunk no commit touched leaves out (`assembleChunkSignals`). */

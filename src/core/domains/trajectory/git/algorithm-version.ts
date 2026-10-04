@@ -12,5 +12,9 @@
  * - 2 — the chunk walk visits commits in log order and retires ranges a newer
  *   commit inserted wholesale; a dirty file's working rows are carried onto
  *   HEAD before the walk, and rows of only uncommitted lines get the zero block.
+ * - 3 — every `git.file` counter is a window figure (bd tea-rags-mcp-i6tkc): a
+ *   file with no commit in the file window is stamped by the live file phase
+ *   with zero counters, no bugFixRate and exact whole-history age stamps, where
+ *   the backfill used to give it lifetime counters.
  */
-export const GIT_TRAJECTORY_ALGORITHM_VERSION = 2;
+export const GIT_TRAJECTORY_ALGORITHM_VERSION = 3;

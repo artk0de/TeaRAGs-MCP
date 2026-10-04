@@ -9,6 +9,7 @@ import type {
   BlameLine,
   BlobBatchReader,
   CommitFileNumstat,
+  CommitPathChanges,
   CommitWithChangedFiles,
   FileChurnData,
   OidBatchResolver,
@@ -31,6 +32,7 @@ import {
   readBlobAsString,
   readCommitFileNumstat,
   readCommitFileNumstatForPaths,
+  readCommitPathChanges,
   writeCommitGraph,
 } from "./client.js";
 
@@ -66,6 +68,10 @@ export class GitCliAdapter extends VcsGitAdapter {
     timeoutMs?: number,
   ): Promise<CommitFileNumstat[]> {
     return readCommitFileNumstat(this.repoRoot, sinceDate, range, timeoutMs);
+  }
+
+  async readCommitPathChanges(timeoutMs?: number): Promise<CommitPathChanges[]> {
+    return readCommitPathChanges(this.repoRoot, timeoutMs);
   }
 
   async readBlobAsString(commitOid: string, filepath: string): Promise<string> {

@@ -13,6 +13,7 @@ import type {
   BlameLine,
   BlobBatchReader,
   CommitFileNumstat,
+  CommitPathChanges,
   CommitWithChangedFiles,
   FileChurnData,
   OidBatchResolver,
@@ -43,6 +44,12 @@ export abstract class VcsGitAdapter implements VcsAdapter {
     range?: { fromSha: string; toSha: string },
     timeoutMs?: number,
   ): Promise<CommitFileNumstat[]>;
+  /**
+   * Every commit on HEAD's whole history, newest → oldest in log order, with
+   * the paths it changed (`git log -M --name-status`): renames paired as
+   * `{ path, previousPath }`, merges contributing no rows, no line counts.
+   */
+  abstract readCommitPathChanges(timeoutMs?: number): Promise<CommitPathChanges[]>;
   abstract readBlobAsString(commitOid: string, filepath: string): Promise<string>;
   abstract blameFile(filePath: string, timeoutMs?: number, historyDepthHint?: number): Promise<BlameLine[]>;
   /** Every path `commitOid`'s tree tracks, repo-relative. Untracked and ignored files are not in it. */

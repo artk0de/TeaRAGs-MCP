@@ -7,9 +7,10 @@
  * - file — the file walk's window (`TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS`) read
  *   as the run-scoped `FileChurnDiscovery` slices it
  *   (`buildWindowedFileSignalsForPaths`), and for a path the window holds
- *   nothing for the backfill's whole rename-following history
- *   (`buildFileSignalsForPaths`) — ingest's own fallback; then `git blame
- *   HEAD`, the merge-branch bug-fix rule, assembled by `assembleFileSignals`;
+ *   nothing for the zero observation with whole-history age stamps
+ *   (`readFileLifetimeStamps`) — the live file phase's dormant entry; then
+ *   `git blame HEAD`, the merge-branch bug-fix rule, assembled by
+ *   `assembleFileSignals`;
  * - chunk — the chunk walk itself (`buildChunkChurnMapUncached`: the chunk
  *   window's commits as the run-scoped commit matrix slices them — a
  *   full-history pathspec log, `pathspecCommitDiscovery` — zero-context hunks
@@ -35,6 +36,7 @@ import type { BlameLine, CommitWithChangedFiles, FileChurnData } from "../../../
 import type { ChunkLookupEntry } from "../../../../types.js";
 import type { ChunkChurnOverlay, GitFileSignals } from "../types.js";
 import { buildChunkChurnMapUncached, type WalkCommitDiscovery } from "./chunk-reader.js";
+import { addDormantFileChurn, readFileLifetimeStamps, type WindowedFileChurn } from "./file-lifetime.js";
 import { buildFileSignalsForPaths, buildWindowedFileSignalsForPaths } from "./file-reader.js";
 import { buildBugFixShaSet } from "./merge-branch-resolver.js";
 import type { SquashOptions } from "./metrics.js";
@@ -102,14 +104,15 @@ export async function buildOnDemandGitSignals(
     targets.map((target) => target.relPath),
     options,
   );
-  const withHistory = targets.filter((target) => (churn.get(target.relPath)?.commits.length ?? 0) > 0);
-  const neverCommitted = targets.filter((target) => (churn.get(target.relPath)?.commits.length ?? 0) === 0);
+  // A dormant file (no commit in the window, history before it) has history.
+  const withHistory = targets.filter((target) => churn.has(target.relPath));
+  const neverCommitted = targets.filter((target) => !churn.has(target.relPath));
   await walkNeverCommitted(adapter, neverCommitted, options, result);
   if (withHistory.length === 0) return result;
 
   const blameByPath = await blameAtHead(adapter, withHistory, churn, options.timeoutMs);
   for (const target of withHistory) {
-    const data = churn.get(target.relPath) as FileChurnData;
+    const data = churn.get(target.relPath) as WindowedFileChurn;
     result.set(target.relPath, {
       ...(target.fileSignals
         ? {
@@ -168,22 +171,25 @@ export function gitFileSignalsAtLineCount(file: Record<string, unknown>, lineCou
 /**
  * Per-path file churn as an index run reads it: the file walk's window
  * (`FileChurnDiscovery`'s slice), and for a path the window holds nothing for
- * its whole history (the backfill). No window configured → the whole history.
+ * the zero observation with its whole-history age stamps — the live file
+ * phase's dormant entry (bd tea-rags-mcp-i6tkc). No window configured → the
+ * whole history.
  */
 async function fileChurnOf(
   adapter: VcsGitAdapter,
   paths: string[],
   options: OnDemandGitSignalOptions,
-): Promise<Map<string, FileChurnData>> {
-  const windowed = options.file
-    ? await buildWindowedFileSignalsForPaths(adapter, paths, options.file.maxAgeMonths, options.timeoutMs)
-    : new Map<string, FileChurnData>();
-  const missing = paths.filter((path) => !windowed.has(path));
-  if (missing.length === 0) return windowed;
-  for (const [path, data] of await buildFileSignalsForPaths(adapter, missing, options.timeoutMs)) {
-    windowed.set(path, data);
-  }
-  return windowed;
+): Promise<Map<string, WindowedFileChurn>> {
+  if (!options.file) return buildFileSignalsForPaths(adapter, paths, options.timeoutMs);
+  const windowed: Map<string, WindowedFileChurn> = await buildWindowedFileSignalsForPaths(
+    adapter,
+    paths,
+    options.file.maxAgeMonths,
+    options.timeoutMs,
+  );
+  const dormant = paths.filter((path) => !windowed.has(path));
+  if (dormant.length === 0) return windowed;
+  return addDormantFileChurn(windowed, dormant, await readFileLifetimeStamps(adapter, options.timeoutMs));
 }
 
 /**

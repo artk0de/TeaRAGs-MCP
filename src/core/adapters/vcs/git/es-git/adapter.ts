@@ -35,6 +35,7 @@
  * | getCommitsByPathspec   | DELEGATED → GitCliAdapter (`git log --since --numstat -- <paths>`)         |
  * | readCommitFileNumstat  | DELEGATED → GitCliAdapter (`git log [--since] [from..to] --numstat`, per-file +/- kept) |
  * | readCommitFileNumstatForPaths | DELEGATED → GitCliAdapter (pathspec numstat + unrestricted re-read of add/delete commits) |
+ * | readCommitPathChanges  | DELEGATED → GitCliAdapter (`git log HEAD -M --name-status`, whole history) |
  *
  * `timeoutMs` is forwarded on the DELEGATED ops (blame + history) — each bounds
  * a real child process. The pure in-process lookups (getHead, isAncestor,
@@ -47,6 +48,7 @@ import type {
   BlameLine,
   BlobBatchReader,
   CommitFileNumstat,
+  CommitPathChanges,
   CommitWithChangedFiles,
   FileChurnData,
   OidBatchResolver,
@@ -111,6 +113,10 @@ export class EsGitAdapter extends VcsGitAdapter {
     timeoutMs?: number,
   ): Promise<CommitFileNumstat[]> {
     return this.cliHistory.readCommitFileNumstat(sinceDate, range, timeoutMs);
+  }
+
+  async readCommitPathChanges(timeoutMs?: number): Promise<CommitPathChanges[]> {
+    return this.cliHistory.readCommitPathChanges(timeoutMs);
   }
 
   async readBlobAsString(commitOid: string, filepath: string): Promise<string> {

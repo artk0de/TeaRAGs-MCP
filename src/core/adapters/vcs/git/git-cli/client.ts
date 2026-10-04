@@ -21,11 +21,19 @@ import type {
   CommitChangedPath,
   CommitFileNumstat,
   CommitInfo,
+  CommitPathChanges,
   CommitWithChangedFiles,
   FileChurnData,
 } from "../../types.js";
 import { trackGitChildProcess } from "./git-child-process-registry.js";
-import { parseBlameOutput, parseCommitFileNumstat, parseNumstatOutput, parsePathspecOutput } from "./parsers.js";
+import {
+  COMMIT_PATH_CHANGES_HEADER,
+  parseBlameOutput,
+  parseCommitFileNumstat,
+  parseCommitPathChanges,
+  parseNumstatOutput,
+  parsePathspecOutput,
+} from "./parsers.js";
 import { execWithStallGuard } from "./stall-guard-exec.js";
 
 /** `execFile` as a promise, with the child registered for shutdown reaping (bd tea-rags-mcp-w26dc). */
@@ -544,6 +552,19 @@ export async function readCommitFileNumstat(
   args.push(NUMSTAT_LOG_FORMAT_WITH_COMMITTER, "--numstat");
   const stdout = await execFileForPathspec(repoRoot, args, effectiveTimeoutMs);
   return parseCommitFileNumstat(stdout);
+}
+
+/**
+ * `git log HEAD -M --name-status` over the WHOLE history — every commit's
+ * changed paths with no line counts (bd tea-rags-mcp-i6tkc). Skipping the
+ * per-blob diff a numstat computes is what makes it cheap: on the tea-rags
+ * repository (5.1k commits) it reads in ~0.3 s against ~1.9 s for the same
+ * walk with `--numstat`. `-M` pins rename detection whatever `diff.renames`
+ * says, so a rename always arrives paired.
+ */
+export async function readCommitPathChanges(repoRoot: string, timeoutMs?: number): Promise<CommitPathChanges[]> {
+  const args = ["log", "HEAD", "-z", "-M", "--name-status", `--format=${COMMIT_PATH_CHANGES_HEADER}%H %at`];
+  return parseCommitPathChanges(await execFileForPathspec(repoRoot, args, timeoutMs ?? 30000));
 }
 
 /**

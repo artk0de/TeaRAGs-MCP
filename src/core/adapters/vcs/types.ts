@@ -72,6 +72,19 @@ export interface CommitChangedPath {
   previousPath?: string;
 }
 
+/**
+ * A commit's sha, AUTHOR date and the paths it changed — no line counts, no
+ * message, no identity. The line-count-free sibling of
+ * `CommitWithChangedFiles`: `git log --name-status` skips the blob diffs a
+ * numstat computes, so a whole history reads in a fraction of the time.
+ */
+export interface CommitPathChanges {
+  sha: string;
+  /** Author epoch seconds (`%at`) — the clock every git signal value reads. */
+  timestamp: number;
+  changedFiles: CommitChangedPath[];
+}
+
 /** A commit paired with the files it changed (numstat/pathspec log entry). */
 export interface CommitWithChangedFiles {
   commit: CommitInfo;

@@ -256,7 +256,7 @@
   `EnrichmentCoordinator#beginRun` → `filePhase.init` / `chunkPhase.init`, held
   as `runStartedAt`, so every point one run touches shares an identical value.
   `EnrichmentRecovery#recoverAll` is the exception (one timestamp per pass). It
-  IS stamped bare on a genuine no-result (file outside the git window,
+  IS stamped bare on a genuine no-result (a file no commit ever touched,
   `EnrichmentApplier#unmatchedFileEntries`; chunk ids with no commits,
   `EnrichmentApplier#applyChunkSignals`) so those points leave the recovery set;
   it is NOT stamped on a policy decline. Why: absence of `enrichedAt` alone no

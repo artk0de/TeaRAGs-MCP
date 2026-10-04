@@ -75,13 +75,18 @@ export function computeTemporalMetrics(commits: CommitInfo[]): TemporalResult {
   const sorted = [...commits].sort((a, b) => a.timestamp - b.timestamp);
   const last = sorted[sorted.length - 1];
   const first = sorted[0];
-  const nowSec = Date.now() / 1000;
   return {
     lastModifiedAt: last.timestamp,
     firstCreatedAt: first.timestamp,
     lastCommitHash: last.sha,
-    ageDays: Math.max(0, Math.floor((nowSec - last.timestamp) / 86400)),
+    ageDays: ageDaysAt(last.timestamp),
   };
+}
+
+/** Whole days from a commit timestamp (unix seconds) to now; a future stamp reads 0. */
+export function ageDaysAt(timestamp: number): number {
+  const nowSec = Date.now() / 1000;
+  return Math.max(0, Math.floor((nowSec - timestamp) / 86400));
 }
 
 /**

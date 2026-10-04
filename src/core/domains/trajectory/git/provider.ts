@@ -52,11 +52,12 @@ import { GitCommitDiscovery } from "./infra/commit-discovery.js";
 import { FileChurnDiscoveryStore } from "./infra/file-churn-discovery-store.js";
 import { FileChurnDiscovery } from "./infra/file-churn-discovery.js";
 import {
-  buildFileSignalDiscovery,
-  buildFileSignalMap,
-  buildFileSignalsForPaths,
-  sliceFileSignalsByPaths,
-} from "./infra/file-reader.js";
+  addDormantFileChurn,
+  readFileLifetimeStamps,
+  type FileLifetimeStamps,
+  type WindowedFileChurn,
+} from "./infra/file-lifetime.js";
+import { buildFileSignalDiscovery, buildFileSignalMap, sliceFileSignalsByPaths } from "./infra/file-reader.js";
 import { buildBugFixShaSet } from "./infra/merge-branch-resolver.js";
 import type { SquashOptions } from "./infra/metrics.js";
 import { assembleFileSignals } from "./infra/metrics/file-assembler.js";
@@ -315,6 +316,12 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   /** Run-scoped discovery — see RunFileDiscovery. Lazy on the first streaming
    *  batch, reset by finalizeSignals (and re-keyed automatically when HEAD moves). */
   private fileDiscovery: RunFileDiscovery | null = null;
+  /** Run-scoped whole-history age stamps — see getRunLifetime. Reset by finalizeSignals. */
+  private fileLifetime: {
+    readonly root: string;
+    readonly headSha: string;
+    readonly data: Promise<Map<string, FileLifetimeStamps>>;
+  } | null = null;
 
   async buildFileSignals(root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> {
     // Fast check: skip if not a git repo
@@ -323,23 +330,22 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     }
 
     const adapter = await this.adapterFor(root);
-    let rawData: Map<string, FileChurnData>;
-
+    // Backfill / recovery: the same window semantics as the streaming batch —
+    // the run-scoped discovery sliced to the paths, dormant files stamped from
+    // the whole-history age log (bd tea-rags-mcp-i6tkc). It used to walk each
+    // path's WHOLE numstat history instead, so a file the window missed carried
+    // lifetime counters beside everyone else's window counters.
     if (options?.paths) {
-      // Whole-set path (backfill / recovery): a fresh per-path history walk.
-      // Kept separate from streamFileBatch so backfill/recovery semantics are
-      // unchanged — they do not share the run-scoped streaming discovery.
-      rawData = await buildFileSignalsForPaths(adapter, options.paths, this.config.logTimeoutMs);
-    } else {
-      rawData = await buildFileSignalMap(
-        adapter,
-        this.enrichmentCache,
-        this.config.logMaxAgeMonths,
-        this.config.logTimeoutMs,
-        this.fileChurnDiscoveryFor(root),
-      );
+      return this.buildSignalsFromRawData(root, await this.windowedFileChurn(root, options.paths), options);
     }
 
+    const rawData = await buildFileSignalMap(
+      adapter,
+      this.enrichmentCache,
+      this.config.logMaxAgeMonths,
+      this.config.logTimeoutMs,
+      this.fileChurnDiscoveryFor(root),
+    );
     return this.buildSignalsFromRawData(root, rawData, options);
   }
 
@@ -359,9 +365,50 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     if (!existsSync(join(root, ".git"))) {
       return new Map();
     }
-    const rawData = sliceFileSignalsByPaths(await this.getRunDiscovery(root), batchPaths);
-    return this.buildSignalsFromRawData(root, rawData, options);
+    return this.buildSignalsFromRawData(root, await this.windowedFileChurn(root, batchPaths), options);
   };
+
+  /**
+   * The file walk's churn for `paths`: the run-scoped window discovery sliced
+   * to them, plus a zero-observation entry with exact age stamps for every path
+   * the window holds no commit for but the history does (a DORMANT file — bd
+   * tea-rags-mcp-i6tkc). The live phase stamps such a file itself instead of
+   * leaving it to backfill. A path no commit ever touched stays absent.
+   */
+  private async windowedFileChurn(root: string, paths: readonly string[]): Promise<Map<string, WindowedFileChurn>> {
+    if (paths.length === 0) return new Map();
+    const windowed: Map<string, WindowedFileChurn> = sliceFileSignalsByPaths(await this.getRunDiscovery(root), [
+      ...paths,
+    ]);
+    const dormant = paths.filter((path) => !windowed.has(path));
+    if (dormant.length === 0) return windowed;
+    return addDormantFileChurn(windowed, dormant, await this.getRunLifetime(root));
+  }
+
+  /**
+   * Run-scoped whole-history age stamps, keyed (root, HEAD) and memoized as a
+   * PROMISE like the discovery — concurrent batches share one
+   * `git log --name-status`. Read lazily: a run whose every file has a commit
+   * in the window never pays for it. A failed read yields no stamps (those
+   * files fall to the backfill, which retries) and is not memoized.
+   */
+  private async getRunLifetime(root: string): Promise<Map<string, FileLifetimeStamps>> {
+    const adapter = await this.adapterFor(root);
+    const headSha = await adapter.getHead().catch(() => "");
+    if (this.fileLifetime?.root === root && this.fileLifetime.headSha === headSha) return this.fileLifetime.data;
+    const data: Promise<Map<string, FileLifetimeStamps>> = readFileLifetimeStamps(
+      adapter,
+      this.config.logTimeoutMs,
+    ).catch((error: unknown) => {
+      if (this.fileLifetime?.data === data) this.fileLifetime = null;
+      if (isDebug()) {
+        console.error(`[GitEnrich] file lifetime read failed:`, error instanceof Error ? error.message : error);
+      }
+      return new Map<string, FileLifetimeStamps>();
+    });
+    this.fileLifetime = { root, headSha, data };
+    return data;
+  }
 
   /** git streams file+chunk signals per batch — nothing is deferred, so the
    *  file finalize is an empty no-op (and defersChunkEnrichment stays unset).
@@ -376,6 +423,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  (best-effort — the process is idle either way). */
   finalizeSignals = async (): Promise<Map<string, FileSignalOverlay>> => {
     this.fileDiscovery = null;
+    this.fileLifetime = null;
     // Drop the run-scoped file-churn discovery instances with the run — the next
     // run rebuilds each from its persisted store snapshot (topping up the window
     // for the new HEAD). Its own latch pins one HEAD's aggregate, so it must not
