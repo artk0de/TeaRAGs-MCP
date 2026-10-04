@@ -28,6 +28,7 @@ import type { UpdateCheckService } from "../../../../src/cli/update-check/check-
 import { unavailable } from "../../../../src/cli/update-check/types.js";
 import { IngestFacade } from "../../../../src/core/api/index.js";
 import { resolveCollection } from "../../../../src/core/api/internal/collection-resolver.js";
+import { resolveLanguageCapabilities } from "../../../../src/core/domains/language/capability/resolve.js";
 import { CollectionRegistry } from "../../../../src/core/domains/maintenance/registry/collection-registry.js";
 import { resolveCollectionName, validatePath } from "../../../../src/core/infra/collection-name.js";
 import type { IngestCodeConfig } from "../../../../src/core/types.js";
@@ -218,6 +219,7 @@ describe("prime at a relocated project's path", () => {
     pingMock.mockResolvedValue(true);
     createAppContextMock.mockResolvedValue({
       app: {
+        resolveLanguageCapabilities,
         getIndexStatus: vi.fn().mockResolvedValue({
           isIndexed: true,
           status: "indexed",

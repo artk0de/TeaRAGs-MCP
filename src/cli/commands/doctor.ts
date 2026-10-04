@@ -86,6 +86,10 @@ async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
 export async function runDoctor(args: DoctorArgs, deps?: DoctorDeps): Promise<void> {
   const { qdrant, embeddings } = deps ?? (await defaultDeps());
   const registry = new CollectionRegistry(resolveDataDir(), { envCodeDefaults: resolveRegistryEnvCodeDefaults });
+  // The lease predicate's api surface (bd tea-rags-mcp-89k7k.9): the ops class
+  // owns the domain edge, so doctor keeps its bare read-only client and still
+  // reaches the predicate without the retired barrel re-export.
+  const ops = new ProjectRegistryOps({ registry });
 
   const qdrantOk = await safe(async () => qdrant.checkHealth(), false);
   const embeddingsOk = await safe(async () => embeddings.checkHealth(), false);
@@ -103,7 +107,12 @@ export async function runDoctor(args: DoctorArgs, deps?: DoctorDeps): Promise<vo
   // A collection a live run is building is not an orphan either — the same
   // helper `projects orphans` lists with (bd tea-rags-mcp-9ovlp).
   const orphanCount = (
-    await listOrphanPhysicalCollections(qdrant, collections, (c) => registeredBefore.has(c) || aliasedTargets.has(c))
+    await listOrphanPhysicalCollections(
+      ops.isCollectionBuildInFlight.bind(ops),
+      qdrant,
+      collections,
+      (c) => registeredBefore.has(c) || aliasedTargets.has(c),
+    )
   ).length;
   const embeddingUrl = typeof embeddings.getBaseUrl === "function" ? embeddings.getBaseUrl() : undefined;
 

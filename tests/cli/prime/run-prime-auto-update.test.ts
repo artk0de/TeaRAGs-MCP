@@ -9,6 +9,7 @@ import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { unavailable } from "../../../src/cli/update-check/types.js";
 import { CollectionRegistry } from "../../../src/core/api/public/index.js";
+import { resolveLanguageCapabilities } from "../../../src/core/domains/language/capability/resolve.js";
 import { resolveCollectionName } from "../../../src/core/infra/collection-name.js";
 
 const { pingMock, createAppContextMock } = vi.hoisted(() => ({
@@ -82,6 +83,7 @@ describe("runPrime — auto-update trigger wiring", () => {
     pingMock.mockResolvedValue(true);
     createAppContextMock.mockResolvedValue({
       app: {
+        resolveLanguageCapabilities,
         getIndexStatus: vi.fn().mockResolvedValue({
           isIndexed: true,
           status: "indexed",

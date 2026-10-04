@@ -211,11 +211,6 @@ export {
 } from "../internal/collection-resolver.js";
 export type { PathCollectionResolver, ResolveInput } from "../internal/collection-resolver.js";
 
-// ── Build lease — `projects orphans` / `doctor` skip a collection a live run
-// is building, by the same predicate cleanupOrphanedVersions uses (bd
-// tea-rags-mcp-9ovlp) ───
-export { isCollectionBuildInFlight } from "../../domains/ingest/infra/collection-build-lease.js";
-
 // ── Poison-pill quarantine — read surface for `doctor --quarantine` ───
 export { QuarantineStore } from "../../domains/ingest/sync/index.js";
 export type { QuarantineEntry } from "../../domains/ingest/sync/index.js";
@@ -260,7 +255,8 @@ export { resolveGitCommonDir } from "../../adapters/vcs/git/common-dir.js";
 // ── Language capability ceilings (cli/prime per-index tier lines) ─────
 // Static per-language descriptors, never measured numbers — prime pairs them
 // with the realized resolve rate it already reads (bd tea-rags-mcp-xip6g).
-export { resolveLanguageCapabilities } from "../../domains/language/capability/resolve.js";
+// The resolver itself is an App method now (bd tea-rags-mcp-89k7k.9); only
+// the type stays on this barrel.
 export type { LanguageCapability } from "../../contracts/types/language.js";
 
 // ── Payload signal descriptor (used by mcp schema-emitting code) ──────

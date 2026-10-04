@@ -18,6 +18,7 @@ import type { GraphDbClientPool } from "../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../adapters/qdrant/embedding-model-guard.js";
+import type { LanguageCapability } from "../../contracts/types/language.js";
 import type { Reranker } from "../../domains/explore/reranker.js";
 import { formatIndexDriftReport, type IndexDriftReporter } from "../../domains/maintenance/drift/index.js";
 import type { ProjectInfo } from "../../domains/maintenance/registry/index.js";
@@ -43,6 +44,7 @@ import {
   emptyCochangeResult,
   emptyOntologyReport,
   emptyReviewChangesResult,
+  resolveLanguageCapabilities as resolveDomainLanguageCapabilities,
 } from "../internal/composition.js";
 import type {
   AddDocumentsRequest,
@@ -187,6 +189,30 @@ export interface App {
    * incompleteChange, cohesion; architecture when its provider ships).
    */
   reviewChanges: (request: ReviewChangesRequest) => Promise<ReviewChangesResult>;
+
+  // -- Domain runtime queries (Uniform Access, bd tea-rags-mcp-89k7k.9) --
+  // The barrel no longer VALUE-re-exports these from their domains: the App
+  // interface is the consumer surface, the implementations stay in their
+  // domains, and the unstable edges live in the composition root / ops where
+  // they belong on the main sequence.
+  /**
+   * Per-language capability descriptors — the native descriptor where
+   * `domains/language` ships one, the unsupported-fallback descriptor
+   * otherwise. Static ceilings, never measured numbers: `prime` pairs them
+   * with the realized resolve rate it already reads (bd tea-rags-mcp-xip6g).
+   */
+  resolveLanguageCapabilities: (languages: readonly string[]) => Map<string, LanguageCapability>;
+  /**
+   * Whether a collection's build lease is live — the same predicate the orphan
+   * report, the version cleanup and registry recovery honour (bd
+   * tea-rags-mcp-9ovlp). The marker reader is caller-supplied: read-only CLI
+   * paths hold their own Qdrant client rather than the App's.
+   */
+  isCollectionBuildInFlight: (
+    qdrant: Pick<QdrantManager, "getPoint">,
+    collection: string,
+    options?: { deadWriterEvidenceUpTo?: number },
+  ) => Promise<boolean>;
 
   // -- Provider availability — sync query used by MCP tool registrars to
   // skip registration when a required trajectory provider is not loaded.
@@ -421,6 +447,14 @@ export function createApp(deps: AppDeps): App {
     findCoChanged: async (req) => (deps.graphFacade ? deps.graphFacade.findCoChanged(req) : emptyCochangeResult(req)),
     reviewChanges: async (req) =>
       deps.reviewFacade ? deps.reviewFacade.reviewChanges(req) : emptyReviewChangesResult(req),
+
+    // -- Domain runtime queries — the capability resolver delegates to the
+    // composition-surfaced domain implementation; the lease predicate to
+    // ProjectRegistryOps, the registry's collection-claimed oracle, which owns
+    // that domain edge (bd tea-rags-mcp-89k7k.9).
+    resolveLanguageCapabilities: (languages) => resolveDomainLanguageCapabilities(languages),
+    isCollectionBuildInFlight: async (qdrant, collection, options) =>
+      ops.projectRegistry.isCollectionBuildInFlight(qdrant, collection, options),
 
     // -- Provider availability — backs MCP tool-registrar gating. Source
     // of truth is `registeredProviderKeys` populated by composition from
