@@ -142,3 +142,63 @@ describe("git child env guard (bd tea-rags-mcp-s5kpv)", () => {
     expect(spawns.every(passesGitChildEnv)).toBe(true);
   });
 });
+
+/**
+ * Porcelain `git diff` against the working tree ignores `GIT_OPTIONAL_LOCKS=0`
+ * and writes refreshed stat info into the index, so every worktree diff runs on
+ * a scratch copy of the index through ONE helper (bd tea-rags-mcp-s5kpv).
+ *
+ * Criterion: a `diff` invocation is an array literal holding the string
+ * element `"diff"` — the git subcommand in an argv. Every such array must be an
+ * argument of the scratch-index helper itself, so neither a new call site nor a
+ * diffArgs constant hoisted out of the call can bypass it. A diff between two
+ * COMMITS never reads the index; one would be listed in
+ * COMMIT_ONLY_DIFF_ARGV_SITES with its location and why it is commit-only.
+ * There is none today.
+ */
+const WORKTREE_DIFF_HELPER = "execWorktreeDiffOnScratchIndex";
+const WORKTREE_DIFF_HELPER_FILE = "src/core/adapters/vcs/git/git-cli/client.ts";
+const COMMIT_ONLY_DIFF_ARGV_SITES: ReadonlySet<string> = new Set<string>();
+
+function findDiffArgvSites(sourceFile: ts.SourceFile): { location: string; ok: boolean }[] {
+  const sites: { location: string; ok: boolean }[] = [];
+  walk(sourceFile, (node) => {
+    if (!ts.isArrayLiteralExpression(node)) return;
+    if (!node.elements.some((element) => ts.isStringLiteral(element) && element.text === "diff")) return;
+    const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart());
+    const location = `${relative(ROOT, sourceFile.fileName)}:${String(line + 1)}`;
+    const { parent } = node;
+    const passedToHelper =
+      ts.isCallExpression(parent) &&
+      calleeName(parent) === WORKTREE_DIFF_HELPER &&
+      parent.arguments.some((arg) => arg === node);
+    sites.push({ location, ok: passedToHelper || COMMIT_ONLY_DIFF_ARGV_SITES.has(location) });
+  });
+  return sites;
+}
+
+describe("worktree diff scratch-index guard (bd tea-rags-mcp-s5kpv)", () => {
+  const sites = listSourceFiles(SRC).flatMap((path) => findDiffArgvSites(parse(path)));
+
+  it("finds the diff invocations (the scan is not vacuous)", () => {
+    expect(sites.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it(`every git diff argv goes straight into ${WORKTREE_DIFF_HELPER}`, () => {
+    expect(sites.filter((site) => !site.ok).map((site) => site.location)).toEqual([]);
+  });
+
+  it(`${WORKTREE_DIFF_HELPER} points git at a scratch index (GIT_INDEX_FILE)`, () => {
+    let declaration: ts.FunctionDeclaration | undefined;
+    walk(parse(join(ROOT, WORKTREE_DIFF_HELPER_FILE)), (node) => {
+      if (ts.isFunctionDeclaration(node) && node.name?.text === WORKTREE_DIFF_HELPER) declaration = node;
+    });
+    expect(declaration, `${WORKTREE_DIFF_HELPER} is declared in ${WORKTREE_DIFF_HELPER_FILE}`).toBeDefined();
+
+    let setsScratchIndex = false;
+    walk(declaration as ts.Node, (node) => {
+      if (ts.isPropertyAssignment(node) && node.name.getText() === "GIT_INDEX_FILE") setsScratchIndex = true;
+    });
+    expect(setsScratchIndex).toBe(true);
+  });
+});

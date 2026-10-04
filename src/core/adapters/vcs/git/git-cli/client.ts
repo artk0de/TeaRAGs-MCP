@@ -10,7 +10,7 @@
 
 import { execFile, execFileSync, spawn, type ExecFileOptions } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { copyFile, mkdtemp, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, rm, stat, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -727,10 +727,10 @@ export async function listTreePaths(
  * uncommitted rename reads as a deletion). Edited files are not listed.
  */
 export async function listWorktreeDeletions(repoRoot: string, timeoutMs = TREE_LISTING_STALL_MS): Promise<string[]> {
-  const out = await execWithStallGuard(
-    resolveGitExecutable(),
+  const out = await execWorktreeDiffOnScratchIndex(
+    repoRoot,
     ["diff", "--no-ext-diff", "--no-renames", "--name-only", "-z", "--diff-filter=D", "HEAD", "--"],
-    { cwd: repoRoot, stallTimeoutMs: timeoutMs },
+    { stallTimeoutMs: timeoutMs },
   );
   return splitNulTerminated(out);
 }
@@ -748,10 +748,12 @@ export async function listWorktreeModifications(
   timeoutMs = TREE_LISTING_STALL_MS,
 ): Promise<string[]> {
   if (paths.length === 0) return [];
-  const out = await execFileForPathspec(
+  // Same floored stall window `execFileForPathspec` gave this pathspec diff before
+  // it moved onto the scratch index (bd tea-rags-mcp-s5kpv).
+  const out = await execWorktreeDiffOnScratchIndex(
     repoRoot,
     ["diff", "--no-ext-diff", "--no-renames", "--name-only", "-z", "--diff-filter=M", "HEAD", "--", ...paths],
-    timeoutMs,
+    { stallTimeoutMs: Math.max(timeoutMs, BULK_LOG_STALL_FLOOR_MS) },
   );
   return splitNulTerminated(out);
 }
@@ -866,10 +868,10 @@ export async function listChangedFiles(
   timeoutMs = TREE_LISTING_STALL_MS,
 ): Promise<string[]> {
   const [tracked, untracked] = await Promise.all([
-    execWithStallGuard(
-      resolveGitExecutable(),
+    execWorktreeDiffOnScratchIndex(
+      repoRoot,
       ["diff", "--no-ext-diff", "--no-renames", "--name-only", "-z", "--diff-filter=d", base, "--"],
-      { cwd: repoRoot, stallTimeoutMs: timeoutMs },
+      { stallTimeoutMs: timeoutMs },
     ),
     listUntrackedFiles(repoRoot, [], timeoutMs),
   ]);
@@ -897,10 +899,10 @@ export async function readWorkingTreeChanges(
   timeoutMs = TREE_LISTING_STALL_MS,
 ): Promise<WorkingTreeNameStatus> {
   const [nameStatus, untracked] = await Promise.all([
-    execWithStallGuard(
-      resolveGitExecutable(),
+    execWorktreeDiffOnScratchIndex(
+      repoRoot,
       ["diff", "--no-ext-diff", "--no-renames", "--name-status", "-z", commit, "--"],
-      { cwd: repoRoot, stallTimeoutMs: timeoutMs },
+      { stallTimeoutMs: timeoutMs },
     ),
     listUntrackedFiles(repoRoot, [], timeoutMs),
   ]);
@@ -938,40 +940,99 @@ export async function readWorkingTreeRenames(
   timeoutMs = TREE_LISTING_STALL_MS,
 ): Promise<WorkingTreeRenamePair[]> {
   const git = resolveGitExecutable();
-  const diffArgs = ["diff", "--no-ext-diff", "-M", "--name-status", "-z", commit, "--"];
-  if (untracked.length === 0) {
-    return parseRenamePairs(await execWithStallGuard(git, diffArgs, { cwd: repoRoot, stallTimeoutMs: timeoutMs }));
-  }
-  const indexPath = (
-    await execWithStallGuard(git, ["rev-parse", "--path-format=absolute", "--git-path", "index"], {
-      cwd: repoRoot,
-      stallTimeoutMs: timeoutMs,
-    })
-  ).trim();
-  const scratch = await mkdtemp(join(tmpdir(), "tea-rags-renames-"));
-  const scratchIndex = join(scratch, "index");
-  try {
-    // A repository with no index yet (nothing ever staged) has no file to copy:
-    // the scratch index then starts empty, which is what git would read.
-    await copyFile(indexPath, scratchIndex).catch((error: unknown) => {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    });
-    const env = { ...process.env, GIT_INDEX_FILE: scratchIndex };
+  const markUntrackedIntentToAdd = async (env: NodeJS.ProcessEnv): Promise<void> => {
     for (let i = 0; i < untracked.length; i += UNTRACKED_INTENT_BATCH) {
       await execWithStallGuard(
         git,
         ["--literal-pathspecs", "add", "-N", "--", ...untracked.slice(i, i + UNTRACKED_INTENT_BATCH)],
-        {
-          cwd: repoRoot,
-          stallTimeoutMs: timeoutMs,
-          env,
-        },
+        { cwd: repoRoot, stallTimeoutMs: timeoutMs, env },
       );
     }
-    return parseRenamePairs(await execWithStallGuard(git, diffArgs, { cwd: repoRoot, stallTimeoutMs: timeoutMs, env }));
+  };
+  return parseRenamePairs(
+    await execWorktreeDiffOnScratchIndex(
+      repoRoot,
+      ["diff", "--no-ext-diff", "-M", "--name-status", "-z", commit, "--"],
+      {
+        stallTimeoutMs: timeoutMs,
+        prepareScratchIndex: untracked.length > 0 ? markUntrackedIntentToAdd : undefined,
+      },
+    ),
+  );
+}
+
+/** How {@link execWorktreeDiffOnScratchIndex} runs its diff. */
+interface WorktreeDiffOnScratchIndexOptions {
+  /** Output-inactivity window of every git child the helper spawns (ms). */
+  stallTimeoutMs: number;
+  /** Runs against the scratch index before the diff (e.g. `add -N`); `env` points git at it. */
+  prepareScratchIndex?: (env: NodeJS.ProcessEnv) => Promise<void>;
+}
+
+/**
+ * Runs a `git diff` that compares a commit with the WORKING TREE against a
+ * throwaway copy of the index (`GIT_INDEX_FILE`), never the user's own (bd
+ * tea-rags-mcp-s5kpv).
+ *
+ * Porcelain `git diff` refreshes stat info while comparing and writes it back
+ * to the index under `index.lock` — and, unlike `git status`, it does so even
+ * under `GIT_OPTIONAL_LOCKS=0` (measured on git 2.50.1). A diff reaped by the
+ * stall guard then leaves a stale lock in the user's repository, and a live one
+ * races the user's own `git commit`. On the copy the refresh is harmless: it
+ * lands in a temp dir that is removed afterwards — on success, failure and a
+ * stall kill alike, since all three settle the awaited diff before `finally`.
+ * Plumbing `git diff-index` would avoid the write, but it does not refresh, so
+ * a file whose stat moved with its content unchanged would read as changed.
+ *
+ * A repository with no index yet (nothing ever staged) has no file to copy: the
+ * scratch index then starts absent, which git reads exactly as it reads the
+ * missing original. Cost: one index copy per call (taxdome: 8.4 MB).
+ */
+async function execWorktreeDiffOnScratchIndex(
+  repoRoot: string,
+  diffArgs: string[],
+  options: WorktreeDiffOnScratchIndexOptions,
+): Promise<string> {
+  const { stallTimeoutMs, prepareScratchIndex } = options;
+  const git = resolveGitExecutable();
+  const indexPath = (
+    await execWithStallGuard(git, ["rev-parse", "--path-format=absolute", "--git-path", "index"], {
+      cwd: repoRoot,
+      stallTimeoutMs,
+    })
+  ).trim();
+  const scratch = await mkdtemp(join(tmpdir(), "tea-rags-scratch-index-"));
+  const scratchIndex = join(scratch, "index");
+  try {
+    await copyIndexKeepingMtime(indexPath, scratchIndex);
+    const env = { ...buildGitChildProcessEnv(), GIT_INDEX_FILE: scratchIndex };
+    if (prepareScratchIndex) await prepareScratchIndex(env);
+    return await execWithStallGuard(git, diffArgs, { cwd: repoRoot, stallTimeoutMs, env });
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
+}
+
+/**
+ * Copies the index to `scratchIndex` with the ORIGINAL's mtime. Git's racy-git
+ * rule content-checks every entry whose file is not older than the index file;
+ * a copy stamped "now" would turn those entries into trusted ones, and a
+ * same-size edit made within the index's own timestamp would vanish from the
+ * diff. The mtime is read BEFORE the copy: an index replaced in between yields
+ * newer content under an older mtime, which only widens the racy set (more
+ * content checks, never fewer). A missing index (nothing ever staged) leaves
+ * no copy — git reads the absent file exactly as it reads the absent original.
+ */
+async function copyIndexKeepingMtime(indexPath: string, scratchIndex: string): Promise<void> {
+  let original: Awaited<ReturnType<typeof stat>>;
+  try {
+    original = await stat(indexPath);
+    await copyFile(indexPath, scratchIndex);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  await utimes(scratchIndex, original.atime, original.mtime);
 }
 
 /** Paths per `add -N` — keeps the argv within OS ARG_MAX limits. */
@@ -1023,10 +1084,10 @@ export async function readAddedLineRanges(
     const lineCount = countLines(readFileSync(join(repoRoot, relPath), "utf8"));
     return lineCount > 0 ? [{ start: 1, end: lineCount }] : [];
   }
-  const diff = await execWithStallGuard(
-    resolveGitExecutable(),
+  const diff = await execWorktreeDiffOnScratchIndex(
+    repoRoot,
     ["diff", "--no-ext-diff", "--no-color", "--no-renames", "-U0", base, "--", relPath],
-    { cwd: repoRoot, stallTimeoutMs: timeoutMs },
+    { stallTimeoutMs: timeoutMs },
   );
   return parseAddedHunkRanges(diff);
 }
@@ -1061,8 +1122,8 @@ export async function readAddedLineRangesOfFiles(
   }
   const tracked = relPaths.filter((relPath) => !untracked.has(relPath));
   if (tracked.length === 0) return ranges;
-  const diff = await execWithStallGuard(
-    resolveGitExecutable(),
+  const diff = await execWorktreeDiffOnScratchIndex(
+    repoRoot,
     [
       "-c",
       "core.quotePath=false",
@@ -1076,7 +1137,7 @@ export async function readAddedLineRangesOfFiles(
       "--",
       ...tracked,
     ],
-    { cwd: repoRoot, stallTimeoutMs: timeoutMs },
+    { stallTimeoutMs: timeoutMs },
   );
   for (const [relPath, added] of parseAddedHunkRangesPerFile(diff)) {
     if (ranges.has(relPath)) ranges.set(relPath, added);
