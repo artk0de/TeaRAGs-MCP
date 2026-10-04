@@ -13,6 +13,11 @@ import {
   createTemporalCochangeHooks,
   TemporalCochangeBuilder as FacadeTemporalCochangeBuilder,
 } from "../../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
+import * as TemporalFacade from "../../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
+import {
+  DEFAULT_COCHANGE_PARTNERS_LIMIT,
+  rankCochangePartners,
+} from "../../../../../../src/core/domains/trajectory/codegraph/temporal/partners/index.js";
 
 const TEMPORAL_FACADE = "../../../../../../src/core/domains/trajectory/codegraph/temporal/index.ts";
 
@@ -39,5 +44,19 @@ describe("temporal facade contract (bd tea-rags-mcp-0e4vf)", () => {
     });
     expect(hooks).toHaveLength(1);
     expect(hooks[0]).toBeInstanceOf(TemporalCochangeBuilder);
+  });
+});
+
+describe("temporal facade surface (bd tea-rags-mcp-89k7k.24)", () => {
+  it("exports the co-change ranking names the read ops reached past the facade for", () => {
+    expect(TemporalFacade.DEFAULT_COCHANGE_PARTNERS_LIMIT).toBe(DEFAULT_COCHANGE_PARTNERS_LIMIT);
+    expect(TemporalFacade.rankCochangePartners).toBe(rankCochangePartners);
+  });
+
+  it("re-exports them through the partners barrel, not the file behind it", () => {
+    const source = readFileSync(new URL(TEMPORAL_FACADE, import.meta.url), "utf8");
+    expect(source).toMatch(/export\s+\{[^}]*DEFAULT_COCHANGE_PARTNERS_LIMIT[^}]*\}\s*from\s*"\.\/partners\/index\.js"/);
+    expect(source).toMatch(/export\s+\{[^}]*rankCochangePartners[^}]*\}\s*from\s*"\.\/partners\/index\.js"/);
+    expect(source).not.toContain('from "./partners/partners.js"');
   });
 });

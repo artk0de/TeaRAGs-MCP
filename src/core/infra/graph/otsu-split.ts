@@ -1,14 +1,17 @@
 /**
- * Otsu's 1-D split: the cut that best separates a sample into two classes.
+ * Otsu's 1-D split: the cut that best separates a sample into two classes,
+ * with the majority-floored policy that turns the cut into a threshold.
  *
- * Pure arithmetic with two consumers, both boundary detectors of the codegraph
- * trajectory: the leaking-abstraction detector's adaptive adoption threshold
- * (bd tea-rags-mcp-jetrd) and the temporal silent-coupling detector's
- * strength threshold (bd tea-rags-mcp-b4dcz), which reaches it through this
- * directory's barrel. It stays in the codegraph domain rather than
- * `core/infra/`, whose criterion is "needed by at least two layers"
- * (`.claude/rules/domain-boundaries.md`); it has no import of its own, so
- * moving it there when a second layer needs it is a file move.
+ * Pure arithmetic, foundation home (`core/infra/graph/`, beside Tarjan SCC,
+ * PageRank and the weight-threshold clustering). Its consumers sit in sibling
+ * subdomains that may not import each other — the boundary detectors of the
+ * codegraph symbols domain (leaking-abstraction, bd tea-rags-mcp-jetrd;
+ * main-sequence), temporal's own silent-coupling detector (bd
+ * tea-rags-mcp-b4dcz), the split/merge verdicts (bd tea-rags-mcp-c3v6o) and
+ * the dependency-norms lexicon — so the foundation is the only legal shared
+ * home (`.claude/rules/domain-boundaries.md`). Moved out of the codegraph
+ * domain in bd tea-rags-mcp-89k7k.24 when the temporal verdict became a
+ * second-layer consumer; the module has no import of its own.
  */
 
 /** The best two-class cut of a sample. */

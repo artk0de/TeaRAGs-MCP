@@ -69,3 +69,10 @@ export * from "./boundary-diagnostics/index.js";
 export * from "./cochange/index.js";
 export * from "./cohesion/index.js";
 export * from "./verdicts/index.js";
+
+/**
+ * The co-change read surface (`find_co_changed` ranks partners through the
+ * facade — bd tea-rags-mcp-89k7k.24), so importers reach it without passing
+ * this barrel.
+ */
+export { DEFAULT_COCHANGE_PARTNERS_LIMIT, rankCochangePartners } from "./partners/index.js";

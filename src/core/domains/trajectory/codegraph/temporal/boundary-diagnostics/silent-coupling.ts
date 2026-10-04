@@ -21,11 +21,9 @@ import type {
   TemporalCochangeGraph,
 } from "../../../../../contracts/types/codegraph.js";
 import { classify } from "../../../../../infra/file-classification/index.js";
+import { resolveMajorityFlooredOtsuThreshold } from "../../../../../infra/graph/index.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
-import {
-  classifyDirectoryRelation,
-  resolveMajorityFlooredOtsuThreshold,
-} from "../../symbols/boundary-diagnostics/index.js";
+import { classifyDirectoryRelation } from "../../symbols/boundary-diagnostics/index.js";
 import type {
   SilentCouplingExclusionCounts,
   SilentCouplingOptions,

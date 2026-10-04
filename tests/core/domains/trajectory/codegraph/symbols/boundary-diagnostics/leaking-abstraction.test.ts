@@ -23,7 +23,9 @@ import {
   FACADE_ADOPTION_MAJORITY,
   FACADE_MIN_EXTERNAL_IMPORTERS,
   FACADE_MODULE_EXCLUSION_REASONS,
+  FACADE_OTSU_MIN_POPULATION,
   MODULE_ENTRY_FILE_NAMES,
+  resolveFacadeAdoptionThreshold,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
 
 function walked(relPath: string, language = "typescript"): FileDependencyGraphFile {
@@ -713,5 +715,53 @@ describe("detectLeakingAbstractions — reExportUnsafe (bd tea-rags-mcp-89k7k.3)
       reExportUnsafe: true,
       reExportCyclePath: ["m/index.ts", "m/factory.ts", "m/base.ts", "app/u4.ts"],
     });
+  });
+});
+
+/**
+ * The detector's adaptive adoption threshold over the majority-floored Otsu
+ * policy (bd tea-rags-mcp-jetrd). The policy itself is a foundation primitive
+ * (`core/infra/graph/otsu-split.ts`) and is tested there — these pin how THIS
+ * detector parameterises it. Moved here from `otsu-split.test.ts` when the
+ * primitive left the domain (bd tea-rags-mcp-89k7k.24); examples unchanged.
+ */
+describe("resolveFacadeAdoptionThreshold", () => {
+  it("falls back to the strict majority below the minimum population", () => {
+    expect(FACADE_OTSU_MIN_POPULATION).toBe(8);
+    expect(FACADE_ADOPTION_MAJORITY).toBe(0.5);
+    const policy = resolveFacadeAdoptionThreshold([0, 0, 0.1, 0.9, 1, 1, 1]);
+
+    expect(policy.method).toBe("majority");
+    expect(policy.threshold).toBe(0.5);
+    expect(policy.separability).toBeUndefined();
+    expect(policy.admits(0.5)).toBe(false);
+    expect(policy.admits(0.51)).toBe(true);
+  });
+
+  it("falls back to the majority when the population has one distinct value", () => {
+    const policy = resolveFacadeAdoptionThreshold(Array.from({ length: 9 }, () => 1));
+
+    expect(policy.method).toBe("majority");
+    expect(policy.admits(1)).toBe(true);
+  });
+
+  it("uses the Otsu cut at or above it, never admitting a value at or below the majority", () => {
+    const policy = resolveFacadeAdoptionThreshold([0.1, 0.2, 0.3, 0.55, 0.9, 0.95, 1, 1, 1, 1]);
+
+    expect(policy.method).toBe("otsu");
+    expect(policy.threshold).toBeCloseTo(0.725, 12);
+    expect(policy.separability).toBeGreaterThan(0.9);
+    expect(policy.admits(policy.threshold)).toBe(true);
+    expect(policy.admits(0.9)).toBe(true);
+    expect(policy.admits(0.55)).toBe(false);
+  });
+
+  it("keeps the strict majority floor when the Otsu cut falls below it", () => {
+    const policy = resolveFacadeAdoptionThreshold([0, 0, 0, 0, 0.5, 0.5, 0.6, 0.7]);
+
+    expect(policy.method).toBe("otsu");
+    expect(policy.threshold).toBeCloseTo(0.25, 12);
+    expect(policy.admits(0.5)).toBe(false);
+    expect(policy.admits(0.6)).toBe(true);
   });
 });

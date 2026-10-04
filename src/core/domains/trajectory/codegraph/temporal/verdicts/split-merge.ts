@@ -36,8 +36,11 @@
  */
 
 import type { RelPath, TemporalCochangeEdge } from "../../../../../contracts/types/codegraph.js";
-import { weightThresholdComponents, type WeightedNodeEdge } from "../../../../../infra/graph/index.js";
-import { resolveMajorityFlooredOtsuThreshold } from "../../symbols/boundary-diagnostics/index.js";
+import {
+  resolveMajorityFlooredOtsuThreshold,
+  weightThresholdComponents,
+  type WeightedNodeEdge,
+} from "../../../../../infra/graph/index.js";
 import {
   cochangeStrength,
   SILENT_COUPLING_OTSU_MIN_POPULATION,

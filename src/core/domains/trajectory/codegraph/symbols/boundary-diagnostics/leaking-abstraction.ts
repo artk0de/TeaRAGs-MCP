@@ -1,6 +1,9 @@
 import type { FileDependencyEdge, FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
+import {
+  resolveMajorityFlooredOtsuThreshold,
+  type MajorityFlooredOtsuThreshold,
+} from "../../../../../infra/graph/index.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
-import { resolveMajorityFlooredOtsuThreshold, type MajorityFlooredOtsuThreshold } from "./otsu-split.js";
 import type {
   FacadeLeakKind,
   FacadeLeakRootCause,
