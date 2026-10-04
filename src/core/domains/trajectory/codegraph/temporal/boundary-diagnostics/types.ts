@@ -1,3 +1,7 @@
+import type {
+  SilentCouplingBuildSummary,
+  SilentCouplingStructuralVisibility,
+} from "../../../../../contracts/types/architecture-report.js";
 import type { FileDependencyEdge, RelPath } from "../../../../../contracts/types/codegraph.js";
 import type { DependencyDirectoryRelation } from "../../symbols/boundary-diagnostics/index.js";
 
@@ -32,9 +36,10 @@ export interface SilentCouplingSharedNeighbour {
  * How much of the pair the structural graph can see: `both-walked` = both files
  * were walked, so a missing edge is evidence; `one-walked` = the other endpoint
  * is not code the codegraph walks (a config, data or build file), so no edge
- * could ever join them and the pair's coupling is visible only in history.
+ * could ever join them and the pair's coupling is visible only in history —
+ * defined once in the finding contract (bd tea-rags-mcp-0e4vf).
  */
-export type SilentCouplingStructuralVisibility = "both-walked" | "one-walked";
+export type { SilentCouplingStructuralVisibility };
 
 /** A pair that co-changes strongly with no structural link between its files. */
 export interface SilentCouplingViolation {
@@ -95,18 +100,8 @@ export interface SilentCouplingExclusionCounts {
   nonPositiveLift: number;
 }
 
-/** Provenance of the co-change build the report judged. */
-export interface SilentCouplingBuildSummary {
-  head: string;
-  builtAt: number;
-  windowSince: number;
-  commitCount: number;
-  admittedBundleCount: number;
-  maxFilesPerBundle: number;
-  minSupport: number;
-  maxPartnersPerFile: number;
-  sessionGapMinutes: number | null;
-}
+/** Provenance of the co-change build the report judged — from the finding contract (bd tea-rags-mcp-0e4vf). */
+export type { SilentCouplingBuildSummary };
 
 export interface SilentCouplingSummary {
   /** `false` when no co-change build exists yet — every count below is then 0. */

@@ -1,6 +1,6 @@
 import type { RelPath } from "../../../../../contracts/types/codegraph.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
-import { resolveMajorityFlooredOtsuThreshold } from "../boundary-diagnostics/otsu-split.js";
+import { resolveMajorityFlooredOtsuThreshold } from "../boundary-diagnostics/index.js";
 import type {
   DependencyNormFinding,
   DependencyNormsInput,
