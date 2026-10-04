@@ -7,6 +7,7 @@
  * missing file, `noCheck`, a wrong root) would pass the boundary fixture too.
  */
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import type { PhysicalCollectionName } from "../../../../../src/core/contracts/types/collection-identity.js";
 
-export const leakedAlias: PhysicalCollectionName = "code_8b243ffe";
+export const leakedAlias: PhysicalCollectionName = fixturePhysicalCollectionName("code_8b243ffe");

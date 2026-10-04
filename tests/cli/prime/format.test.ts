@@ -19,7 +19,13 @@ function metricsFixture(): IndexMetrics {
     totalChunks: 4218,
     totalFiles: 327,
     distributions: {
+      totalFiles: 327,
       language: { typescript: 3104, javascript: 612, markdown: 502 },
+      chunkType: {},
+      documentation: { docs: 502, code: 3716 },
+      topAuthors: [],
+      topBlameAuthors: [],
+      othersCount: 0,
     },
     signals: {
       typescript: {
@@ -38,7 +44,15 @@ function metricsFixture(): IndexMetrics {
 
 function monolingualMetricsFixture(): IndexMetrics {
   const m = metricsFixture();
-  m.distributions = { language: { typescript: 4218 } };
+  m.distributions = {
+    totalFiles: 4218,
+    language: { typescript: 4218 },
+    chunkType: {},
+    documentation: { docs: 0, code: 4218 },
+    topAuthors: [],
+    topBlameAuthors: [],
+    othersCount: 0,
+  };
   return m;
 }
 
@@ -61,6 +75,7 @@ describe("formatPrime", () => {
       const out = formatPrime({
         kind: "status-failed",
         path: "/some/project",
+        projectName: null,
         message: "Collection code_x is locked",
         code: "INFRA_ALIAS_OPERATION",
         hint: "Retry after the running index finishes",
@@ -81,6 +96,7 @@ describe("formatPrime", () => {
     it("emits 'not indexed' message with /tea-rags:index hint", () => {
       const out = formatPrime({
         path: "/p",
+        projectName: null,
         status: statusFixture({ status: "not_indexed" }),
         metrics: null,
         drift: null,
@@ -93,6 +109,7 @@ describe("formatPrime", () => {
     it("emits 'stale indexing marker' message", () => {
       const out = formatPrime({
         path: "/p",
+        projectName: null,
         status: statusFixture({ status: "stale_indexing" }),
         metrics: null,
         drift: null,
@@ -105,6 +122,7 @@ describe("formatPrime", () => {
     it("emits 'indexing in progress' with chunks count and skips metrics block", () => {
       const out = formatPrime({
         path: "/p",
+        projectName: null,
         status: statusFixture({ status: "indexing", chunksCount: 412 }),
         metrics: null,
         drift: null,
@@ -118,6 +136,7 @@ describe("formatPrime", () => {
     it("emits indexed status line with chunks count and collection name", () => {
       const out = formatPrime({
         path: "/p",
+        projectName: null,
         status: statusFixture({
           isIndexed: true,
           status: "indexed",
@@ -137,6 +156,7 @@ describe("formatPrime — polyglot + thresholds", () => {
   it("emits Polyglot section with primary language (highest count) and others, sorted desc", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: statusFixture({
         isIndexed: true,
         status: "indexed",
@@ -156,6 +176,7 @@ describe("formatPrime — polyglot + thresholds", () => {
   it("emits Language section (not Polyglot) when distributions has only one language", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: statusFixture({
         isIndexed: true,
         status: "indexed",
@@ -174,6 +195,7 @@ describe("formatPrime — polyglot + thresholds", () => {
   it("emits Signal thresholds section with table for primary language", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: statusFixture({
         isIndexed: true,
         status: "indexed",
@@ -198,7 +220,15 @@ describe("formatPrime — polyglot + thresholds", () => {
     // Per-language signal buckets exist only for code languages holding
     // >= MIN_LANGUAGE_SHARE of the chunks — a Rails + TS monolith qualifies both.
     const metrics = metricsFixture();
-    metrics.distributions = { language: { ruby: 8200, typescript: 5000, markdown: 700, javascript: 40 } };
+    metrics.distributions = {
+      totalFiles: 13940,
+      language: { ruby: 8200, typescript: 5000, markdown: 700, javascript: 40 },
+      chunkType: {},
+      documentation: { docs: 700, code: 13240 },
+      topAuthors: [],
+      topBlameAuthors: [],
+      othersCount: 0,
+    };
     metrics.signals["ruby"] = {
       "git.file.commitCount": {
         source: { min: 1, max: 30, count: 400, labelMap: { low: 1, normal: 2, high: 7, extreme: 7 } },
@@ -209,6 +239,7 @@ describe("formatPrime — polyglot + thresholds", () => {
     };
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: statusFixture({ isIndexed: true, status: "indexed", collectionName: "c", chunksCount: 13940 }),
       metrics,
       drift: null,
@@ -228,6 +259,7 @@ describe("formatPrime — polyglot + thresholds", () => {
   it("collapses test bands to '=src' when test labelMap is identical to source (lossless)", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: statusFixture({
         isIndexed: true,
         status: "indexed",
@@ -257,6 +289,7 @@ describe("formatPrime — polyglot + thresholds", () => {
     };
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: statusFixture({ isIndexed: true, status: "indexed", collectionName: "c", chunksCount: 4218 }),
       metrics,
       drift: null,
@@ -283,6 +316,7 @@ describe("formatPrime — polyglot + thresholds", () => {
     };
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: statusFixture({ isIndexed: true, status: "indexed", collectionName: "c", chunksCount: 4218 }),
       metrics,
       drift: null,
@@ -316,6 +350,7 @@ describe("formatPrime — polyglot + thresholds", () => {
     };
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: statusFixture({ isIndexed: true, status: "indexed", collectionName: "c", chunksCount: 4218 }),
       metrics,
       drift: null,
@@ -336,6 +371,7 @@ describe("formatPrime — polyglot + thresholds", () => {
     };
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: statusFixture({ isIndexed: true, status: "indexed", collectionName: "c", chunksCount: 4218 }),
       metrics,
       drift: null,
@@ -348,6 +384,7 @@ describe("formatPrime — polyglot + thresholds", () => {
   it("omits Polyglot/Language and Signal thresholds when metrics is null (e.g. no enrichment yet)", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: statusFixture({
         isIndexed: true,
         status: "indexed",
@@ -368,6 +405,7 @@ describe("formatPrime — drift", () => {
 
   const baseData = {
     path: "/p",
+    projectName: null,
     status: statusFixture({
       isIndexed: true,
       status: "indexed",
@@ -433,7 +471,7 @@ describe("formatPrime — staleness (lastUpdated)", () => {
   it("renders 'last indexed: 2h ago' when lastUpdated is 2h before now", () => {
     const lastUpdated = new Date(NOW.getTime() - 2 * 60 * 60 * 1000);
     const out = formatPrime(
-      { path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null, update: null },
+      { path: "/p", projectName: null, status: indexedFixture(lastUpdated), metrics: null, drift: null, update: null },
       NOW,
     );
     expect(out).toContain("last indexed: 2h ago");
@@ -442,7 +480,7 @@ describe("formatPrime — staleness (lastUpdated)", () => {
   it("renders 'last indexed: 5d ago' when lastUpdated is 5d before now", () => {
     const lastUpdated = new Date(NOW.getTime() - 5 * 24 * 60 * 60 * 1000);
     const out = formatPrime(
-      { path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null, update: null },
+      { path: "/p", projectName: null, status: indexedFixture(lastUpdated), metrics: null, drift: null, update: null },
       NOW,
     );
     expect(out).toContain("last indexed: 5d ago");
@@ -451,7 +489,7 @@ describe("formatPrime — staleness (lastUpdated)", () => {
   it("renders 'last indexed: 30m ago' when lastUpdated is 30 minutes before now", () => {
     const lastUpdated = new Date(NOW.getTime() - 30 * 60 * 1000);
     const out = formatPrime(
-      { path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null, update: null },
+      { path: "/p", projectName: null, status: indexedFixture(lastUpdated), metrics: null, drift: null, update: null },
       NOW,
     );
     expect(out).toContain("last indexed: 30m ago");
@@ -460,7 +498,7 @@ describe("formatPrime — staleness (lastUpdated)", () => {
   it("does NOT emit stale warning when lastUpdated is ≤24h before now", () => {
     const lastUpdated = new Date(NOW.getTime() - 23 * 60 * 60 * 1000);
     const out = formatPrime(
-      { path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null, update: null },
+      { path: "/p", projectName: null, status: indexedFixture(lastUpdated), metrics: null, drift: null, update: null },
       NOW,
     );
     expect(out).not.toContain("Index is stale");
@@ -470,7 +508,7 @@ describe("formatPrime — staleness (lastUpdated)", () => {
   it("emits stale warning recommending index_codebase when lastUpdated > 24h before now", () => {
     const lastUpdated = new Date(NOW.getTime() - 3 * 24 * 60 * 60 * 1000);
     const out = formatPrime(
-      { path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null, update: null },
+      { path: "/p", projectName: null, status: indexedFixture(lastUpdated), metrics: null, drift: null, update: null },
       NOW,
     );
     expect(out).toContain("⚠ Index is stale (last updated 3d ago)");
@@ -480,7 +518,7 @@ describe("formatPrime — staleness (lastUpdated)", () => {
   it("places stale warning AFTER Status block and BEFORE Drift", () => {
     const lastUpdated = new Date(NOW.getTime() - 2 * 24 * 60 * 60 * 1000);
     const out = formatPrime(
-      { path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null, update: null },
+      { path: "/p", projectName: null, status: indexedFixture(lastUpdated), metrics: null, drift: null, update: null },
       NOW,
     );
     const statusIdx = out.indexOf("## Status");
@@ -493,7 +531,7 @@ describe("formatPrime — staleness (lastUpdated)", () => {
 
   it("omits 'last indexed' line entirely when lastUpdated is undefined", () => {
     const out = formatPrime(
-      { path: "/p", status: indexedFixture(undefined), metrics: null, drift: null, update: null },
+      { path: "/p", projectName: null, status: indexedFixture(undefined), metrics: null, drift: null, update: null },
       NOW,
     );
     expect(out).not.toContain("last indexed");
@@ -513,13 +551,21 @@ describe("formatPrime — infra-health and enrichment", () => {
   }
 
   it("omits ## Infra section when infraHealth is undefined", () => {
-    const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: null, drift: null, update: null });
+    const out = formatPrime({
+      path: "/p",
+      projectName: null,
+      status: indexedStatus(),
+      metrics: null,
+      drift: null,
+      update: null,
+    });
     expect(out).not.toContain("## Infra");
   });
 
   it("emits ## Infra with qdrant + embedding lines when infraHealth is present", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: indexedStatus({
         infraHealth: {
           qdrant: { available: true, url: "http://127.0.0.1:63995", status: "green", optimizerStatus: "ok" },
@@ -538,6 +584,7 @@ describe("formatPrime — infra-health and enrichment", () => {
   it("appends 'background optimization in progress' suffix when qdrant status is yellow", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: indexedStatus({
         infraHealth: {
           qdrant: { available: true, url: "http://127.0.0.1:63995", status: "yellow", optimizerStatus: "ok" },
@@ -556,6 +603,7 @@ describe("formatPrime — infra-health and enrichment", () => {
   it("appends 'UNAVAILABLE, search will fail' suffix when qdrant status is red", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: indexedStatus({
         infraHealth: {
           qdrant: { available: false, url: "http://127.0.0.1:63995", status: "red" },
@@ -573,6 +621,7 @@ describe("formatPrime — infra-health and enrichment", () => {
   it("renders embedding as 'unavailable' when infraHealth.embedding.available is false", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: indexedStatus({
         infraHealth: {
           qdrant: { available: true, url: "x", status: "green", optimizerStatus: "ok" },
@@ -589,6 +638,7 @@ describe("formatPrime — infra-health and enrichment", () => {
   it("omits embedding url when undefined", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: indexedStatus({
         infraHealth: {
           qdrant: { available: true, url: "x", status: "green", optimizerStatus: "ok" },
@@ -604,13 +654,21 @@ describe("formatPrime — infra-health and enrichment", () => {
   });
 
   it("omits ## Enrichment section when enrichment is undefined", () => {
-    const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: null, drift: null, update: null });
+    const out = formatPrime({
+      path: "/p",
+      projectName: null,
+      status: indexedStatus(),
+      metrics: null,
+      drift: null,
+      update: null,
+    });
     expect(out).not.toContain("## Enrichment");
   });
 
   it("emits ## Enrichment with per-provider file/chunk status", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: indexedStatus({
         enrichment: {
           git: {
@@ -630,6 +688,7 @@ describe("formatPrime — infra-health and enrichment", () => {
   it("appends '(in progress)' suffix when any sub-status is 'in_progress'", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: indexedStatus({
         enrichment: {
           git: {
@@ -648,6 +707,7 @@ describe("formatPrime — infra-health and enrichment", () => {
   it("places ## Infra and ## Enrichment AFTER Drift, BEFORE Polyglot", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: indexedStatus({
         infraHealth: {
           qdrant: { available: true, url: "x", status: "green", optimizerStatus: "ok" },
@@ -686,6 +746,7 @@ describe("formatPrime — filesCount and embeddingModel", () => {
   it("renders filesCount alongside chunks when filesCount is present", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: indexedStatus({ filesCount: 327, chunksCount: 4218 }),
       metrics: null,
       drift: null,
@@ -697,6 +758,7 @@ describe("formatPrime — filesCount and embeddingModel", () => {
   it("falls back to chunks-only when filesCount is undefined", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: indexedStatus({ filesCount: undefined, chunksCount: 4218 }),
       metrics: null,
       drift: null,
@@ -709,6 +771,7 @@ describe("formatPrime — filesCount and embeddingModel", () => {
   it("emits 'embedding: <model>' line below status when embeddingModel is set", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: indexedStatus({ embeddingModel: "nomic-embed-text" }),
       metrics: null,
       drift: null,
@@ -720,6 +783,7 @@ describe("formatPrime — filesCount and embeddingModel", () => {
   it("appends '· sparse v<N>' when sparseVersion is set", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: indexedStatus({ embeddingModel: "nomic-embed-text", sparseVersion: 3 }),
       metrics: null,
       drift: null,
@@ -731,6 +795,7 @@ describe("formatPrime — filesCount and embeddingModel", () => {
   it("omits the 'sparse v<N>' suffix when sparseVersion is undefined", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: indexedStatus({ embeddingModel: "nomic-embed-text" }),
       metrics: null,
       drift: null,
@@ -743,6 +808,7 @@ describe("formatPrime — filesCount and embeddingModel", () => {
   it("omits the embedding line entirely when embeddingModel is undefined", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: indexedStatus({ embeddingModel: undefined, sparseVersion: 3 }),
       metrics: null,
       drift: null,
@@ -768,6 +834,7 @@ describe("formatPrime — polyglot whitelist + threshold rounding", () => {
       totalChunks: 1000,
       totalFiles: 100,
       distributions: {
+        totalFiles: 10,
         language: {
           typescript: 800,
           python: 100,
@@ -780,10 +847,22 @@ describe("formatPrime — polyglot whitelist + threshold rounding", () => {
           yaml: 1,
           json: 1,
         },
+        chunkType: {},
+        documentation: { docs: 0, code: 10 },
+        topAuthors: [],
+        topBlameAuthors: [],
+        othersCount: 0,
       },
       signals: {},
     };
-    const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: dirtyMetrics, drift: null, update: null });
+    const out = formatPrime({
+      path: "/p",
+      projectName: null,
+      status: indexedStatus(),
+      metrics: dirtyMetrics,
+      drift: null,
+      update: null,
+    });
     expect(out).toContain("primary: typescript");
     expect(out).toContain("also: python");
     for (const artifact of ["code", "bash", "text", "gitignore", "powershell", "yaml", "json"]) {
@@ -800,7 +879,15 @@ describe("formatPrime — polyglot whitelist + threshold rounding", () => {
       collection: "c",
       totalChunks: 100,
       totalFiles: 10,
-      distributions: { language: { typescript: 100 } },
+      distributions: {
+        totalFiles: 100,
+        language: { typescript: 100 },
+        chunkType: {},
+        documentation: { docs: 0, code: 100 },
+        topAuthors: [],
+        topBlameAuthors: [],
+        othersCount: 0,
+      },
       signals: {
         typescript: {
           "git.file.bugFixRate": {
@@ -825,7 +912,14 @@ describe("formatPrime — polyglot whitelist + threshold rounding", () => {
         },
       },
     };
-    const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: noisyMetrics, drift: null, update: null });
+    const out = formatPrime({
+      path: "/p",
+      projectName: null,
+      status: indexedStatus(),
+      metrics: noisyMetrics,
+      drift: null,
+      update: null,
+    });
     expect(out).toContain("critical ≥53.25");
     expect(out).toContain("stable ≥7.88");
     expect(out).toContain("erratic ≥14.01");
@@ -844,7 +938,14 @@ describe("formatPrime — refresh footer", () => {
   }
 
   it("appends shell-command refresh hint at the end of an indexed digest", () => {
-    const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: null, drift: null, update: null });
+    const out = formatPrime({
+      path: "/p",
+      projectName: null,
+      status: indexedStatus(),
+      metrics: null,
+      drift: null,
+      update: null,
+    });
     expect(out).toContain('→ run `tea-rags prime "$CLAUDE_PROJECT_DIR"` to refresh this digest after re-indexing');
     const lastLine = out
       .trimEnd()
@@ -857,6 +958,7 @@ describe("formatPrime — refresh footer", () => {
   it("does NOT append refresh hint when status is not 'indexed'", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: statusFixture({ status: "not_indexed" }),
       metrics: null,
       drift: null,
@@ -875,6 +977,7 @@ describe("formatPrime — tea-rags package section", () => {
   it("includes the `## tea-rags package` section when update.kind === 'available'", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: statusFixture({ status: "indexed", chunksCount: 1, collectionName: "c" }),
       metrics: monolingualMetricsFixture(),
       drift: null,
@@ -889,6 +992,7 @@ describe("formatPrime — tea-rags package section", () => {
   it("omits the section when update.kind === 'up-to-date'", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: statusFixture({ status: "indexed", chunksCount: 1, collectionName: "c" }),
       metrics: monolingualMetricsFixture(),
       drift: null,
@@ -900,6 +1004,7 @@ describe("formatPrime — tea-rags package section", () => {
   it("omits the section when update.kind === 'unavailable'", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: statusFixture({ status: "indexed", chunksCount: 1, collectionName: "c" }),
       metrics: monolingualMetricsFixture(),
       drift: null,
@@ -911,6 +1016,7 @@ describe("formatPrime — tea-rags package section", () => {
   it("omits the section when update is null", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: statusFixture({ status: "indexed", chunksCount: 1, collectionName: "c" }),
       metrics: monolingualMetricsFixture(),
       drift: null,
@@ -934,21 +1040,49 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
     const out = formatPrime(
       {
         path: "/p",
+        projectName: null,
         status: indexed({
           codegraphResolve: {
             resolveSuccessRate: 0.8,
+            inProjectEdgeRecall: 185 / 230,
+            coveredRecall: 185 / 230,
+            callsUnresolvable: 0,
+            callsNoInProjectDef: 0,
+            callsCoreAmbiguous: 0,
+            ambiguousFanout: 0,
+            callsUnnarrowedTemplate: 0,
             callsAttempted: 230,
             callsResolved: 185,
             callsExternalSkipped: 0,
             byReceiverKind: [
               {
                 receiverKind: "selfMember",
+                inProjectEdgeRecall: 125 / 130,
+                coveredRecall: 125 / 130,
                 attempted: 130,
                 resolved: 125,
                 externalSkipped: 0,
+                unresolvable: 0,
+                callsNoInProjectDef: 0,
+                callsCoreAmbiguous: 0,
+                ambiguousFanout: 0,
+                callsUnnarrowedTemplate: 0,
                 resolveSuccessRate: 125 / 130,
               },
-              { receiverKind: "constant", attempted: 100, resolved: 60, externalSkipped: 0, resolveSuccessRate: 0.6 },
+              {
+                receiverKind: "constant",
+                inProjectEdgeRecall: 0.6,
+                coveredRecall: 0.6,
+                attempted: 100,
+                resolved: 60,
+                externalSkipped: 0,
+                unresolvable: 0,
+                callsNoInProjectDef: 0,
+                callsCoreAmbiguous: 0,
+                ambiguousFanout: 0,
+                callsUnnarrowedTemplate: 0,
+                resolveSuccessRate: 0.6,
+              },
             ],
           },
         }),
@@ -973,28 +1107,47 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
     const out = formatPrime(
       {
         path: "/p",
+        projectName: null,
         status: indexed({
           codegraphResolve: {
             resolveSuccessRate: 0.96,
+            inProjectEdgeRecall: 125 / 136,
+            coveredRecall: 125 / 136,
+            callsUnresolvable: 0,
+            callsNoInProjectDef: 6,
+            callsCoreAmbiguous: 0,
+            ambiguousFanout: 0,
+            callsUnnarrowedTemplate: 0,
             callsAttempted: 136,
             callsResolved: 125,
             callsExternalSkipped: 0,
             byReceiverKind: [
               {
                 receiverKind: "selfMember",
+                inProjectEdgeRecall: 125 / 130,
+                coveredRecall: 125 / 130,
                 attempted: 130,
                 resolved: 125,
                 externalSkipped: 0,
+                unresolvable: 0,
+                callsNoInProjectDef: 0,
+                callsCoreAmbiguous: 0,
+                ambiguousFanout: 0,
+                callsUnnarrowedTemplate: 0,
                 resolveSuccessRate: 125 / 130,
               },
               {
                 receiverKind: "index",
+                inProjectEdgeRecall: null,
+                coveredRecall: null,
                 attempted: 6,
                 resolved: 0,
                 externalSkipped: 0,
                 unresolvable: 0,
                 callsNoInProjectDef: 6,
                 callsCoreAmbiguous: 0,
+                ambiguousFanout: 0,
+                callsUnnarrowedTemplate: 0,
                 resolveSuccessRate: null,
               },
             ],
@@ -1020,27 +1173,46 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
     const out = formatPrime(
       {
         path: "/p",
+        projectName: null,
         status: indexed({
           codegraphResolve: {
             resolveSuccessRate: 0.7,
+            inProjectEdgeRecall: 140 / 200,
+            coveredRecall: 140 / 200,
+            callsUnresolvable: 0,
+            callsNoInProjectDef: 0,
+            callsCoreAmbiguous: 0,
+            ambiguousFanout: 0,
+            callsUnnarrowedTemplate: 30,
             callsAttempted: 200,
             callsResolved: 140,
             callsExternalSkipped: 0,
-            callsUnnarrowedTemplate: 30,
             byReceiverKind: [
               {
                 receiverKind: "constant",
+                inProjectEdgeRecall: 100 / 120,
+                coveredRecall: 100 / 120,
                 attempted: 120,
                 resolved: 100,
                 externalSkipped: 0,
+                unresolvable: 0,
+                callsNoInProjectDef: 0,
+                callsCoreAmbiguous: 0,
+                ambiguousFanout: 0,
                 resolveSuccessRate: 100 / 120,
                 callsUnnarrowedTemplate: 30,
               },
               {
                 receiverKind: "bareCall",
+                inProjectEdgeRecall: 0.5,
+                coveredRecall: 0.5,
                 attempted: 80,
                 resolved: 40,
                 externalSkipped: 0,
+                unresolvable: 0,
+                callsNoInProjectDef: 0,
+                callsCoreAmbiguous: 0,
+                ambiguousFanout: 0,
                 resolveSuccessRate: 0.5,
                 callsUnnarrowedTemplate: 0,
               },
@@ -1064,15 +1236,28 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
     const out = formatPrime(
       {
         path: "/p",
+        projectName: null,
         status: indexed({
           codegraphResolve: {
             resolveSuccessRate: 0.7,
+            inProjectEdgeRecall: 245 / 310,
+            coveredRecall: 245 / 310,
+            callsUnresolvable: 0,
+            callsNoInProjectDef: 0,
+            callsCoreAmbiguous: 0,
+            ambiguousFanout: 0,
+            callsUnnarrowedTemplate: 0,
             callsAttempted: 310,
             callsResolved: 245,
             callsExternalSkipped: 0,
             byLanguage: [
               {
                 language: "typescript",
+                inProjectEdgeRecall: 185 / 230,
+                callsUnresolvable: 0,
+                callsNoInProjectDef: 0,
+                callsCoreAmbiguous: 0,
+                callsUnnarrowedTemplate: 0,
                 resolveSuccessRate: 0.82,
                 callsAttempted: 230,
                 callsResolved: 185,
@@ -1080,15 +1265,27 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
                 byReceiverKind: [
                   {
                     receiverKind: "selfMember",
+                    inProjectEdgeRecall: 125 / 130,
+                    coveredRecall: 125 / 130,
                     attempted: 130,
                     resolved: 125,
                     externalSkipped: 0,
+                    unresolvable: 0,
+                    callsNoInProjectDef: 0,
+                    callsCoreAmbiguous: 0,
+                    ambiguousFanout: 0,
+                    callsUnnarrowedTemplate: 0,
                     resolveSuccessRate: 125 / 130,
                   },
                 ],
               },
               {
                 language: "ruby",
+                inProjectEdgeRecall: 0.75,
+                callsUnresolvable: 0,
+                callsNoInProjectDef: 0,
+                callsCoreAmbiguous: 0,
+                callsUnnarrowedTemplate: 0,
                 resolveSuccessRate: 0.75,
                 callsAttempted: 80,
                 callsResolved: 60,
@@ -1096,9 +1293,16 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
                 byReceiverKind: [
                   {
                     receiverKind: "constant",
+                    inProjectEdgeRecall: 0.75,
+                    coveredRecall: 0.75,
                     attempted: 80,
                     resolved: 60,
                     externalSkipped: 0,
+                    unresolvable: 0,
+                    callsNoInProjectDef: 0,
+                    callsCoreAmbiguous: 0,
+                    ambiguousFanout: 0,
+                    callsUnnarrowedTemplate: 0,
                     resolveSuccessRate: 0.75,
                   },
                 ],
@@ -1123,6 +1327,7 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
   it("omits the Codegraph resolve section when codegraphResolve is absent", () => {
     const out = formatPrime({
       path: "/p",
+      projectName: null,
       status: indexed(),
       metrics: monolingualMetricsFixture(),
       drift: null,
@@ -1183,6 +1388,7 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
     function render(codegraphResolve: ResolveSummary): string {
       return formatPrime({
         path: "/p",
+        projectName: null,
         status: indexed({ codegraphResolve }),
         metrics: metricsFixture(),
         drift: null,

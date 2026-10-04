@@ -25,10 +25,6 @@ import type {
   PresetDescriptors,
   ProgressCallback,
   RankChunksRequest,
-  SearchCodeRequest,
-  SearchCodeResponse,
-  SearchCodeResult,
-  SearchResponse,
   SearchResult,
   SemanticSearchRequest,
   SignalDescriptor,
@@ -162,35 +158,6 @@ describe("RankChunksRequest", () => {
   });
 });
 
-describe("SearchCodeRequest", () => {
-  it("requires path and query", () => {
-    const req: SearchCodeRequest = { path: "/project", query: "auth" };
-    expect(req.path).toBe("/project");
-    expect(req.query).toBe("auth");
-  });
-
-  it("accepts all optional fields", () => {
-    const req: SearchCodeRequest = {
-      path: "/project",
-      query: "authentication",
-      limit: 15,
-      fileTypes: [".ts", ".js"],
-      pathPattern: "src/**",
-      documentationOnly: false,
-      author: "John",
-      modifiedAfter: "2025-01-01",
-      modifiedBefore: new Date("2025-12-31"),
-      minAgeDays: 30,
-      maxAgeDays: 365,
-      minCommitCount: 5,
-      taskId: "TD-123",
-      rerank: "recent",
-    };
-    expect(req.author).toBe("John");
-    expect(req.minAgeDays).toBe(30);
-  });
-});
-
 // ---------------------------------------------------------------------------
 // Search result types
 // ---------------------------------------------------------------------------
@@ -214,7 +181,6 @@ describe("SearchResult", () => {
       payload: { relativePath: "src/index.ts", language: "typescript" },
       rankingOverlay: {
         preset: "techDebt",
-        derived: { recency: 0.3, churn: 0.8 },
         file: { ageDays: 142 },
       },
     };
@@ -222,86 +188,9 @@ describe("SearchResult", () => {
   });
 });
 
-describe("SearchCodeResult", () => {
-  it("has all required fields", () => {
-    const result: SearchCodeResult = {
-      content: "function auth() {}",
-      filePath: "/project/src/auth.ts",
-      startLine: 1,
-      endLine: 3,
-      language: "typescript",
-      score: 0.92,
-      fileExtension: ".ts",
-    };
-    expect(result.filePath).toBe("/project/src/auth.ts");
-  });
-
-  it("accepts optional metadata", () => {
-    const result: SearchCodeResult = {
-      content: "code",
-      filePath: "/a.ts",
-      startLine: 1,
-      endLine: 1,
-      language: "typescript",
-      score: 0.5,
-      fileExtension: ".ts",
-      metadata: { git: { file: { ageDays: 42 } } },
-    };
-    expect(result.metadata).toBeDefined();
-  });
-});
-
 // ---------------------------------------------------------------------------
 // Search response types
 // ---------------------------------------------------------------------------
-
-describe("SearchResponse", () => {
-  it("contains results array and driftWarning", () => {
-    const response: SearchResponse = {
-      results: [{ id: "1", score: 0.9 }],
-      driftWarning: null,
-    };
-    expect(response.results).toHaveLength(1);
-    expect(response.driftWarning).toBeNull();
-  });
-
-  it("accepts string drift warning", () => {
-    const response: SearchResponse = {
-      results: [],
-      driftWarning: "Schema drift detected: new fields [bugFixRate]",
-    };
-    expect(response.driftWarning).toBeTruthy();
-  });
-
-  it("accepts null drift warning", () => {
-    const response: SearchResponse = {
-      results: [],
-      driftWarning: null,
-    };
-    expect(response.driftWarning).toBeNull();
-  });
-});
-
-describe("SearchCodeResponse", () => {
-  it("contains results array and driftWarning", () => {
-    const response: SearchCodeResponse = {
-      results: [
-        {
-          content: "code",
-          filePath: "/a.ts",
-          startLine: 1,
-          endLine: 1,
-          language: "typescript",
-          score: 0.5,
-          fileExtension: ".ts",
-        },
-      ],
-      driftWarning: null,
-    };
-    expect(response.results).toHaveLength(1);
-    expect(response.driftWarning).toBeNull();
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Collection types
@@ -331,6 +220,8 @@ describe("CollectionInfo", () => {
       vectorSize: 384,
       pointsCount: 1500,
       distance: "Cosine",
+      status: "green",
+      optimizerStatus: "ok",
     };
     expect(info.vectorSize).toBe(384);
   });
@@ -342,6 +233,8 @@ describe("CollectionInfo", () => {
       pointsCount: 1500,
       distance: "Cosine",
       hybridEnabled: true,
+      status: "green",
+      optimizerStatus: "ok",
     };
     expect(info.hybridEnabled).toBe(true);
   });
@@ -400,10 +293,12 @@ describe("PresetDescriptors", () => {
         semantic_search: ["relevance", "techDebt"],
         search_code: ["relevance", "recent"],
       },
+      presetDetails: {},
       signalDescriptors: [
         { name: "recency", description: "Inverse of age" },
         { name: "churn", description: "Commit frequency" },
       ],
+      payloadSignals: [],
     };
     expect(descriptors.presetNames.semantic_search).toHaveLength(2);
     expect(descriptors.signalDescriptors).toHaveLength(2);
@@ -445,6 +340,9 @@ describe("Re-exported domain types", () => {
       filesAdded: 2,
       filesModified: 3,
       filesDeleted: 1,
+      filesNewlyIgnored: 0,
+      filesNewlyUnignored: 0,
+      filesRetried: 0,
       chunksAdded: 10,
       chunksDeleted: 5,
       durationMs: 500,
@@ -492,8 +390,22 @@ describe("App interface", () => {
       registerProject: true,
       listProjects: true,
       unregisterProject: true,
+      whenEnrichmentComplete: true,
+      getCollectionMemory: true,
+      getCallers: true,
+      getCallees: true,
+      findCycles: true,
+      getArchitectureReport: true,
+      tracePath: true,
+      getNamingLexicon: true,
+      getOntologyReport: true,
+      findCoChanged: true,
+      reviewChanges: true,
+      resolveLanguageCapabilities: true,
+      isCollectionBuildInFlight: true,
+      hasProvider: true,
     };
-    expect(Object.keys(_methods)).toHaveLength(21);
+    expect(Object.keys(_methods)).toHaveLength(35);
   });
 
   it("method return types are Promises (except getSchemaDescriptors)", () => {

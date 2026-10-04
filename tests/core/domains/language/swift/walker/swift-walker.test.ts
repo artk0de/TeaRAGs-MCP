@@ -1185,7 +1185,12 @@ describe("swift walker — typeDeclarations", () => {
       placed(
         [
           // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
-          { typeId: "Session", reopens: false, declarationKind: "class", conforms: ["NSObject", "Sendable"] },
+          {
+            typeId: "Session",
+            reopens: false,
+            declarationKind: "class",
+            conforms: ["NSObject", "Sendable"],
+          },
         ],
         [["class", 1]],
       ),
@@ -1216,7 +1221,11 @@ describe("swift walker — typeDeclarations", () => {
           { typeId: "Request", reopens: false, declarationKind: "struct" },
           { typeId: "Request.State", reopens: false, declarationKind: "enum" },
           { typeId: "Encoder", reopens: true },
-          { typeId: "Encoder.Container", reopens: false, declarationKind: "class" },
+          {
+            typeId: "Encoder.Container",
+            reopens: false,
+            declarationKind: "class",
+          },
         ],
         [
           ["class", 1],
@@ -1247,7 +1256,13 @@ describe("swift walker — typeDeclarations", () => {
           },
           // `genericParameters` since bd tea-rags-mcp-y99pg.13 — the type id itself still drops them.
           // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
-          { typeId: "Box", reopens: false, declarationKind: "class", conforms: ["Base"], genericParameters: ["T"] },
+          {
+            typeId: "Box",
+            reopens: false,
+            declarationKind: "class",
+            conforms: ["Base"],
+            genericParameters: ["T"],
+          },
         ],
         [
           ["class", 1],
@@ -1263,7 +1278,12 @@ describe("swift walker — typeDeclarations", () => {
       placed(
         [
           // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
-          { typeId: "Monitor", reopens: false, declarationKind: "protocol", conforms: ["AnyObject"] },
+          {
+            typeId: "Monitor",
+            reopens: false,
+            declarationKind: "protocol",
+            conforms: ["AnyObject"],
+          },
         ],
         [["interface", 1]],
       ),
@@ -2221,7 +2241,16 @@ describe("swift walker — a generic-argument extension's spelled id (bd tea-rag
   it("publishes the id its members compose under beside the bare type id", () => {
     const src = ["extension Collection<String> {", '  func qualityEncoded() -> String { "" }', "}", ""].join("\n");
     expect(extract(src).typeDeclarations).toEqual(
-      placed([{ typeId: "Collection", reopens: true, spelledAs: "Collection<String>" }], [["class", 1]]),
+      placed(
+        [
+          {
+            typeId: "Collection",
+            reopens: true,
+            spelledAs: "Collection<String>",
+          },
+        ],
+        [["class", 1]],
+      ),
     );
   });
 });
@@ -2441,8 +2470,16 @@ describe("swift walker — a protocol extension's `where Self` constraints (bd t
         ...(selfConstraints ? { selfConstraints } : {}),
       }));
       expect(selfFacts).toEqual([
-        { typeId: "Download", reopens: true, selfConstraints: { types: ["DataSerializer"], startLine: 1, endLine: 5 } },
-        { typeId: "Download", reopens: true, selfConstraints: { types: ["URLSerializer"], startLine: 6, endLine: 7 } },
+        {
+          typeId: "Download",
+          reopens: true,
+          selfConstraints: { types: ["DataSerializer"], startLine: 1, endLine: 5 },
+        },
+        {
+          typeId: "Download",
+          reopens: true,
+          selfConstraints: { types: ["URLSerializer"], startLine: 6, endLine: 7 },
+        },
         { typeId: "Protected", reopens: true },
       ]);
     }

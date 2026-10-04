@@ -25,6 +25,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../../__helpers__/collection-identity.js";
 import type {
   EnrichmentProvider,
   WorkerEnrichmentDescriptor,
@@ -157,7 +158,9 @@ describe("WorkerPoolEnrichmentExecutor", () => {
   it("dispatches a worker-descriptor provider through the pool (collection-affinity)", async () => {
     const exec = new WorkerPoolEnrichmentExecutor(2, WORKER_PATH);
     const provider = workerProvider(fixturePath, "collection-affinity");
-    const overlay = await exec.runFileBatch(provider, "/repo", ["a.ts", "b.ts"], { collectionName: "code_xxx" });
+    const overlay = await exec.runFileBatch(provider, "/repo", ["a.ts", "b.ts"], {
+      collectionName: fixturePhysicalCollectionName("code_xxx"),
+    });
     expect(overlay.get("a.ts")).toMatchObject({ source: "affinity-tag", via: "streamFileBatch" });
     expect(overlay.get("b.ts")).toMatchObject({ source: "affinity-tag", via: "streamFileBatch" });
     await exec.shutdown();
@@ -176,7 +179,9 @@ describe("WorkerPoolEnrichmentExecutor", () => {
     const exec = new WorkerPoolEnrichmentExecutor(1, WORKER_PATH);
     const provider = workerProvider(fixturePath, "collection-affinity");
     const chunkMap = new Map([["a.ts", [{ chunkId: "c1", startLine: 7, endLine: 9 }]]]);
-    const out = await exec.runChunkBatch(provider, "/repo", chunkMap, { collectionName: "c1" });
+    const out = await exec.runChunkBatch(provider, "/repo", chunkMap, {
+      collectionName: fixturePhysicalCollectionName("c1"),
+    });
     expect(out.get("a.ts")?.get("c1")).toMatchObject({ source: "affinity-tag", line: 7 });
     await exec.shutdown();
   });
@@ -184,7 +189,7 @@ describe("WorkerPoolEnrichmentExecutor", () => {
   it("dispatches runFinalize through pool", async () => {
     const exec = new WorkerPoolEnrichmentExecutor(1, WORKER_PATH);
     const provider = workerProvider(fixturePath, "collection-affinity");
-    const out = await exec.runFinalize(provider, "/repo", { collectionName: "c1" });
+    const out = await exec.runFinalize(provider, "/repo", { collectionName: fixturePhysicalCollectionName("c1") });
     expect(out.get("final.ts")).toMatchObject({ final: true });
     await exec.shutdown();
   });
@@ -193,10 +198,16 @@ describe("WorkerPoolEnrichmentExecutor", () => {
     const exec = new WorkerPoolEnrichmentExecutor(1, WORKER_PATH);
     const provider = workerProvider(fixturePath, "collection-affinity");
     // Warm the worker cache.
-    await exec.runFileBatch(provider, "/repo", ["a.ts"], { collectionName: "release-test" });
+    await exec.runFileBatch(provider, "/repo", ["a.ts"], {
+      collectionName: fixturePhysicalCollectionName("release-test"),
+    });
     // Release should complete cleanly.
     await expect(
-      exec.releaseRun([provider], { runId: "run-1", collection: "release-test", absolutePath: "/repo" }),
+      exec.releaseRun([provider], {
+        runId: "run-1",
+        collection: fixturePhysicalCollectionName("release-test"),
+        absolutePath: "/repo",
+      }),
     ).resolves.toBeUndefined();
     await exec.shutdown();
   });
@@ -206,7 +217,11 @@ describe("WorkerPoolEnrichmentExecutor", () => {
     const provider = fakeInlineProvider();
     // Should not throw even though we never dispatched on this provider.
     await expect(
-      exec.releaseRun([provider], { runId: "run-1", collection: "any", absolutePath: "/repo" }),
+      exec.releaseRun([provider], {
+        runId: "run-1",
+        collection: fixturePhysicalCollectionName("any"),
+        absolutePath: "/repo",
+      }),
     ).resolves.toBeUndefined();
     await exec.shutdown();
   });
@@ -222,8 +237,8 @@ describe("WorkerPoolEnrichmentExecutor", () => {
     const dispatch = vi.spyOn(pool, "dispatch").mockResolvedValue({});
     const releaseAffinity = vi.spyOn(pool, "releaseAffinity");
     const provider = workerProvider(fixturePath, "collection-affinity");
-    const older = { runId: "run-a", collection: "coll-shared", absolutePath: "/repo" };
-    const newer = { runId: "run-b", collection: "coll-shared", absolutePath: "/repo" };
+    const older = { runId: "run-a", collection: fixturePhysicalCollectionName("coll-shared"), absolutePath: "/repo" };
+    const newer = { runId: "run-b", collection: fixturePhysicalCollectionName("coll-shared"), absolutePath: "/repo" };
 
     exec.beginRun(older, 1);
     exec.beginRun(newer, 1);
@@ -251,8 +266,8 @@ describe("WorkerPoolEnrichmentExecutor", () => {
     const exec = new WorkerPoolEnrichmentExecutor(2, WORKER_PATH);
     const provider = workerProvider(fixturePath, "stateless");
     const [a, b] = await Promise.all([
-      exec.runFileBatch(provider, "/repo", ["a.ts"], { collectionName: "coll-A" }),
-      exec.runFileBatch(provider, "/repo", ["b.ts"], { collectionName: "coll-B" }),
+      exec.runFileBatch(provider, "/repo", ["a.ts"], { collectionName: fixturePhysicalCollectionName("coll-A") }),
+      exec.runFileBatch(provider, "/repo", ["b.ts"], { collectionName: fixturePhysicalCollectionName("coll-B") }),
     ]);
     expect(a.get("a.ts")).toMatchObject({ source: "stateless-tag" });
     expect(b.get("b.ts")).toMatchObject({ source: "stateless-tag" });
@@ -265,7 +280,7 @@ describe("WorkerPoolEnrichmentExecutor", () => {
     // runFileSignalsRecovery MUST call buildFileSignals (not streamFileBatch) — the
     // fixture tags via:"buildFileSignals" so we can see which path was taken.
     const overlay = await exec.runFileSignalsRecovery(provider, "/repo", ["a.ts", "b.ts"], {
-      collectionName: "code_xxx",
+      collectionName: fixturePhysicalCollectionName("code_xxx"),
     });
     expect(overlay.get("a.ts")).toMatchObject({ via: "buildFileSignals", source: "affinity-tag" });
     expect(overlay.get("b.ts")).toMatchObject({ via: "buildFileSignals", source: "affinity-tag" });
@@ -308,8 +323,12 @@ describe("WorkerPoolEnrichmentExecutor", () => {
     // → different threadIds → test FAILS (RED).
     const chunkMap = new Map([["a.ts", [{ chunkId: "c1", startLine: 1, endLine: 5 }]]]);
     const [fileOverlay, chunkOverlay] = await Promise.all([
-      exec.runFileBatch(provider, "/repo", ["a.ts"], { collectionName: "code_affinity_test" }),
-      exec.runChunkBatch(provider, "/repo", chunkMap, { collectionName: "code_affinity_test" }),
+      exec.runFileBatch(provider, "/repo", ["a.ts"], {
+        collectionName: fixturePhysicalCollectionName("code_affinity_test"),
+      }),
+      exec.runChunkBatch(provider, "/repo", chunkMap, {
+        collectionName: fixturePhysicalCollectionName("code_affinity_test"),
+      }),
     ]);
 
     const fileThreadId = (fileOverlay.get("a.ts") as unknown as { threadId: number })?.threadId;
@@ -342,7 +361,10 @@ describe("WorkerPoolEnrichmentExecutor", () => {
     const exec = new WorkerPoolEnrichmentExecutor(1, WORKER_PATH);
     const inlineProvider = fakeInlineProvider();
     // Spy on pool.dispatch to verify it is NOT called.
-    const poolDispatchSpy = vi.spyOn((exec as unknown as { pool: { dispatch: unknown } }).pool, "dispatch");
+    const poolDispatchSpy = vi.spyOn(
+      (exec as unknown as { pool: { dispatch: (...args: unknown[]) => unknown } }).pool,
+      "dispatch",
+    );
     const overlay = await exec.runFileBatch(inlineProvider, "/repo", ["x.ts"], {});
     expect(poolDispatchSpy).not.toHaveBeenCalled();
     expect(inlineProvider.buildFileSignals).toHaveBeenCalled();
@@ -427,7 +449,9 @@ describe("WorkerPoolEnrichmentExecutor", () => {
       workerDescriptor: descriptor,
     } as unknown as EnrichmentProvider;
     await expect(
-      exec.runFileSignalsRecovery(provider, "/repo", ["a.ts"], { collectionName: "code_xxx" }),
+      exec.runFileSignalsRecovery(provider, "/repo", ["a.ts"], {
+        collectionName: fixturePhysicalCollectionName("code_xxx"),
+      }),
     ).rejects.toThrow(/boom-from-worker/);
     await exec.shutdown();
   });

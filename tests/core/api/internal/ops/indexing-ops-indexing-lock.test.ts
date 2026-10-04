@@ -16,6 +16,7 @@ import { join, resolve } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { fixtureCollectionAlias, fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { IndexingOps, type IndexingOpsDeps } from "../../../../../src/core/api/internal/ops/indexing-ops.js";
 import type { IndexOptions } from "../../../../../src/core/api/public/dto/ingest.js";
 import { IndexingAlreadyInProgressError } from "../../../../../src/core/domains/ingest/errors.js";
@@ -231,7 +232,7 @@ describe("IndexingOps — claims the collection with an exclusive indexing lock"
       const deps = makeDeps(makeLock({ isProcessAlive: (pid) => pid !== FOREIGN_PID }), {
         [building]: freshMarker(),
       });
-      vi.mocked(deps.qdrant.listCollections).mockResolvedValue([building]);
+      vi.mocked(deps.qdrant.listCollections).mockResolvedValue([fixturePhysicalCollectionName(building)]);
 
       await expect(new IndexingOps(deps).run("/repo")).resolves.toMatchObject({ status: "completed" });
       expect(deps.reindex.reindexChanges).toHaveBeenCalledTimes(1);
@@ -255,8 +256,13 @@ describe("IndexingOps — claims the collection with an exclusive indexing lock"
         [served]: { indexingComplete: true, startedAt: new Date().toISOString() },
         [building]: freshMarker(),
       });
-      vi.mocked(deps.qdrant.listCollections).mockResolvedValue([served, building]);
-      vi.mocked(deps.qdrant.aliases.listAliases).mockResolvedValue([{ aliasName: ALIAS, collectionName: served }]);
+      vi.mocked(deps.qdrant.listCollections).mockResolvedValue([
+        fixturePhysicalCollectionName(served),
+        fixturePhysicalCollectionName(building),
+      ]);
+      vi.mocked(deps.qdrant.aliases.listAliases).mockResolvedValue([
+        { aliasName: fixtureCollectionAlias(ALIAS), collectionName: fixturePhysicalCollectionName(served) },
+      ]);
       const deleteCollection = vi.fn().mockResolvedValue(undefined);
       Object.assign(deps.qdrant, { deleteCollection });
 
@@ -269,8 +275,13 @@ describe("IndexingOps — claims the collection with an exclusive indexing lock"
       const served = `${ALIAS}_v6`;
       const building = `${ALIAS}_v7`;
       const deps = makeDeps(makeLock());
-      vi.mocked(deps.qdrant.listCollections).mockResolvedValue([served, building]);
-      vi.mocked(deps.qdrant.aliases.listAliases).mockResolvedValue([{ aliasName: ALIAS, collectionName: served }]);
+      vi.mocked(deps.qdrant.listCollections).mockResolvedValue([
+        fixturePhysicalCollectionName(served),
+        fixturePhysicalCollectionName(building),
+      ]);
+      vi.mocked(deps.qdrant.aliases.listAliases).mockResolvedValue([
+        { aliasName: fixtureCollectionAlias(ALIAS), collectionName: fixturePhysicalCollectionName(served) },
+      ]);
       const deleteCollection = vi.fn().mockResolvedValue(undefined);
       Object.assign(deps.qdrant, { deleteCollection });
 

@@ -1313,10 +1313,10 @@ describe("SwiftCallResolver — call-result and cast receiver heads (bd tea-rags
       symbolTable: nested,
       typeDeclarations: {
         "Sources/CodeUsage.swift": [
-          { typeId: "CodeUsage", reopens: false },
-          { typeId: "CodeUsage.Tile", reopens: false },
+          { typeId: "CodeUsage", symbolKind: "class" as const, line: 1, reopens: false },
+          { typeId: "CodeUsage.Tile", symbolKind: "class" as const, line: 1, reopens: false },
         ],
-        "Sources/Github.swift": [{ typeId: "Github", reopens: false }],
+        "Sources/Github.swift": [{ typeId: "Github", symbolKind: "class" as const, line: 1, reopens: false }],
       },
     });
     expect(new SwiftCallResolver().resolve(call("CodeUsage.Tile", "awtrix"), at)?.targetSymbolId).toBe(
@@ -1344,8 +1344,8 @@ describe("SwiftCallResolver — call-result and cast receiver heads (bd tea-rags
       callerScope: ["App"],
       symbolTable: withStore,
       typeDeclarations: {
-        "Sources/ClockStore.swift": [{ typeId: "ClockStore", reopens: false }],
-        "Sources/Tile.swift": [{ typeId: "Tile", reopens: false }],
+        "Sources/ClockStore.swift": [{ typeId: "ClockStore", symbolKind: "class" as const, line: 1, reopens: false }],
+        "Sources/Tile.swift": [{ typeId: "Tile", symbolKind: "class" as const, line: 1, reopens: false }],
       },
     });
     const resolver = new SwiftCallResolver();
@@ -1375,10 +1375,10 @@ describe("SwiftCallResolver — call-result and cast receiver heads (bd tea-rags
       symbolTable: withRanges,
       typeDeclarations: {
         "Sources/Range+Ext.swift": [
-          { typeId: "Range", reopens: true },
-          { typeId: "ClosedRange", reopens: true },
+          { typeId: "Range", symbolKind: "class" as const, line: 1, reopens: true },
+          { typeId: "ClosedRange", symbolKind: "class" as const, line: 1, reopens: true },
         ],
-        "Sources/Tile.swift": [{ typeId: "Tile", reopens: false }],
+        "Sources/Tile.swift": [{ typeId: "Tile", symbolKind: "class" as const, line: 1, reopens: false }],
       },
     });
     const resolver = new SwiftCallResolver();
@@ -1634,8 +1634,8 @@ describe("SwiftCallResolver — a type's declaration versus its re-openings", ()
     "Sources/Spec.swift": [{ symbolId: "Spec#run", scope: ["Spec"] }],
   });
   const reopenedFacts = {
-    "Sources/World.swift": [{ typeId: "World", reopens: false }],
-    "Sources/World+DSL.swift": [{ typeId: "World", reopens: true }],
+    "Sources/World.swift": [{ typeId: "World", symbolKind: "class" as const, line: 1, reopens: false }],
+    "Sources/World+DSL.swift": [{ typeId: "World", symbolKind: "class" as const, line: 1, reopens: true }],
   };
 
   it("lands a construction of a type re-opened in another file on the file that declares it", () => {
@@ -1664,7 +1664,9 @@ describe("SwiftCallResolver — a type's declaration versus its re-openings", ()
     "Sources/Request.swift": [{ symbolId: "Request#decode", scope: ["Request"] }],
   });
   const extendedOnlyFacts = {
-    "Sources/JSONDecoder+Alamofire.swift": [{ typeId: "JSONDecoder", reopens: true, conforms: ["DataDecoder"] }],
+    "Sources/JSONDecoder+Alamofire.swift": [
+      { typeId: "JSONDecoder", symbolKind: "class" as const, line: 1, reopens: true, conforms: ["DataDecoder"] },
+    ],
   };
 
   it("emits no edge for a construction of a type the project only extends", () => {
@@ -1695,7 +1697,11 @@ describe("SwiftCallResolver — a type's declaration versus its re-openings", ()
       callerFile: "Sources/Session.swift",
       callerScope: ["Session"],
       symbolTable: withInit,
-      typeDeclarations: { "Sources/URLRequest+Alamofire.swift": [{ typeId: "URLRequest", reopens: true }] },
+      typeDeclarations: {
+        "Sources/URLRequest+Alamofire.swift": [
+          { typeId: "URLRequest", symbolKind: "class" as const, line: 1, reopens: true },
+        ],
+      },
     });
     // Which initializer runs is an argument-label question; a call carrying
     // no label evidence keeps the edge into the extension that declares one
@@ -1728,13 +1734,13 @@ describe("SwiftCallResolver — members reached through protocol conformances", 
   });
   const afDeclarations = {
     "Sources/AlamofireExtended.swift": [
-      { typeId: "AlamofireExtension", reopens: false },
-      { typeId: "AlamofireExtended", reopens: false },
-      { typeId: "AlamofireExtended", reopens: true },
+      { typeId: "AlamofireExtension", symbolKind: "class" as const, line: 1, reopens: false },
+      { typeId: "AlamofireExtended", symbolKind: "class" as const, line: 1, reopens: false },
+      { typeId: "AlamofireExtended", symbolKind: "class" as const, line: 1, reopens: true },
     ],
     "Sources/ServerTrust.swift": [
-      { typeId: "SecTrust", reopens: true, conforms: ["AlamofireExtended"] },
-      { typeId: "AlamofireExtension", reopens: true },
+      { typeId: "SecTrust", symbolKind: "class" as const, line: 1, reopens: true, conforms: ["AlamofireExtended"] },
+      { typeId: "AlamofireExtension", symbolKind: "class" as const, line: 1, reopens: true },
     ],
   };
 
@@ -1768,12 +1774,12 @@ describe("SwiftCallResolver — members reached through protocol conformances", 
   });
   const monitorDeclarations = {
     "Sources/Monitor.swift": [
-      { typeId: "Monitor", reopens: false },
-      { typeId: "Monitor", reopens: true },
+      { typeId: "Monitor", symbolKind: "class" as const, line: 1, reopens: false },
+      { typeId: "Monitor", symbolKind: "class" as const, line: 1, reopens: true },
     ],
     "Sources/Clock.swift": [
-      { typeId: "Clock", reopens: false, conforms: ["Base", "Monitor"] },
-      { typeId: "Base", reopens: false },
+      { typeId: "Clock", symbolKind: "class" as const, line: 1, reopens: false, conforms: ["Base", "Monitor"] },
+      { typeId: "Base", symbolKind: "class" as const, line: 1, reopens: false },
     ],
   };
 
@@ -1918,10 +1924,12 @@ describe("SwiftCallResolver — a type's conventional singleton", () => {
     ],
   });
   const declarations = {
-    "Sources/Notifications.swift": [{ typeId: "NotificationCenter", reopens: true }],
+    "Sources/Notifications.swift": [
+      { typeId: "NotificationCenter", symbolKind: "class" as const, line: 1, reopens: true },
+    ],
     "Sources/Config.swift": [
-      { typeId: "Config", reopens: false },
-      { typeId: "Settings", reopens: false },
+      { typeId: "Config", symbolKind: "class" as const, line: 1, reopens: false },
+      { typeId: "Settings", symbolKind: "class" as const, line: 1, reopens: false },
     ],
   };
 
@@ -2058,8 +2066,8 @@ describe("SwiftCallResolver — argument-label overload selection", () => {
     ],
   });
   const declarations = {
-    "Sources/DataRequest.swift": [{ typeId: "DataRequest", reopens: false }],
-    "Sources/Validation.swift": [{ typeId: "DataRequest", reopens: true }],
+    "Sources/DataRequest.swift": [{ typeId: "DataRequest", symbolKind: "class" as const, line: 1, reopens: false }],
+    "Sources/Validation.swift": [{ typeId: "DataRequest", symbolKind: "class" as const, line: 1, reopens: true }],
   };
   const inValidation = {
     callerFile: "Sources/Validation.swift",
@@ -2114,7 +2122,11 @@ describe("SwiftCallResolver — argument-label overload selection", () => {
         callerFile: "Sources/Notifications.swift",
         callerScope: ["Notification", "init"],
         symbolTable: notes,
-        typeDeclarations: { "Sources/Notifications.swift": [{ typeId: "Notification", reopens: true }] },
+        typeDeclarations: {
+          "Sources/Notifications.swift": [
+            { typeId: "Notification", symbolKind: "class" as const, line: 1, reopens: true },
+          ],
+        },
       }),
     );
     expect(target).toBeNull();
@@ -2155,7 +2167,11 @@ describe("SwiftCallResolver — `self.init` never delegates to the calling initi
       callerScope: ["OperationQueue"],
       callerSymbolId,
       symbolTable,
-      typeDeclarations: { "Source/OperationQueue+Alamofire.swift": [{ typeId: "OperationQueue", reopens: true }] },
+      typeDeclarations: {
+        "Source/OperationQueue+Alamofire.swift": [
+          { typeId: "OperationQueue", symbolKind: "class" as const, line: 1, reopens: true },
+        ],
+      },
     });
 
   it("emits nothing when the calling initializer is the only project fit", () => {
@@ -2237,14 +2253,22 @@ describe("SwiftCallResolver — closure parameters typed by a generic callee in 
     "Sources/Protected.swift": [
       {
         typeId: "Protected",
+        symbolKind: "class" as const,
+        line: 1,
         reopens: false,
         genericParameters: ["Value"],
         memberClosureParameters: { write: ["Value"] },
       },
     ],
     "Sources/Request.swift": [
-      { typeId: "Request", reopens: false, fieldTypeArguments: { mutableState: ["MutableState"] } },
-      { typeId: "Request.MutableState", reopens: false },
+      {
+        typeId: "Request",
+        symbolKind: "class" as const,
+        line: 1,
+        reopens: false,
+        fieldTypeArguments: { mutableState: ["MutableState"] },
+      },
+      { typeId: "Request.MutableState", symbolKind: "class" as const, line: 1, reopens: false },
     ],
   };
   const base = {
@@ -2286,7 +2310,10 @@ describe("SwiftCallResolver — closure parameters typed by a generic callee in 
       call("mutableState", "updateCredential", 11),
       ctx({
         ...base,
-        typeDeclarations: { ...typeDeclarations, "Sources/Request.swift": [{ typeId: "Request", reopens: false }] },
+        typeDeclarations: {
+          ...typeDeclarations,
+          "Sources/Request.swift": [{ typeId: "Request", symbolKind: "class" as const, line: 1, reopens: false }],
+        },
         callResultBindings: {
           mutableState: [{ line: 10, callee: "mutableState.write", closureParameter: 0, scopeEndLine: 12 }],
         },
@@ -2317,14 +2344,22 @@ describe("SwiftCallResolver — a stored property seen as a binding still lends 
         "Sources/Protected.swift": [
           {
             typeId: "Protected",
+            symbolKind: "class" as const,
+            line: 1,
             reopens: false,
             genericParameters: ["Value"],
             memberClosureParameters: { write: ["Value"] },
           },
         ],
         "Sources/Retrier.swift": [
-          { typeId: "Retrier", reopens: false, fieldTypeArguments: { state: ["State"] } },
-          { typeId: "Retrier.State", reopens: false },
+          {
+            typeId: "Retrier",
+            symbolKind: "class" as const,
+            line: 1,
+            reopens: false,
+            fieldTypeArguments: { state: ["State"] },
+          },
+          { typeId: "Retrier.State", symbolKind: "class" as const, line: 1, reopens: false },
         ],
       },
       classFieldTypes: { Retrier: { state: "Protected" } },
@@ -2360,9 +2395,11 @@ describe("SwiftCallResolver — in-project definition of a typed receiver's memb
     "Sources/Session.swift": [{ symbolId: "Session", scope: [] }],
   });
   const declarations = {
-    "Sources/Request.swift": [{ typeId: "Request", reopens: false }],
-    "Sources/MultipartFormData.swift": [{ typeId: "MultipartFormData", reopens: false }],
-    "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
+    "Sources/Request.swift": [{ typeId: "Request", symbolKind: "class" as const, line: 1, reopens: false }],
+    "Sources/MultipartFormData.swift": [
+      { typeId: "MultipartFormData", symbolKind: "class" as const, line: 1, reopens: false },
+    ],
+    "Sources/Session.swift": [{ typeId: "Session", symbolKind: "class" as const, line: 1, reopens: false }],
   };
 
   it("answers false for an SDK-typed local whose member only a project namesake declares", () => {
@@ -2424,8 +2461,10 @@ describe("SwiftCallResolver — in-project definition of a typed receiver's memb
       callerScope: ["Session"],
       symbolTable: withProtocolExtension,
       typeDeclarations: {
-        "Sources/Collection+Alamofire.swift": [{ typeId: "Collection", reopens: true }],
-        "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
+        "Sources/Collection+Alamofire.swift": [
+          { typeId: "Collection", symbolKind: "class" as const, line: 1, reopens: true },
+        ],
+        "Sources/Session.swift": [{ typeId: "Session", symbolKind: "class" as const, line: 1, reopens: false }],
       },
       localBindings: { tasks: [{ line: 5, type: "Array" }] },
     });
@@ -2476,8 +2515,8 @@ describe("SwiftCallResolver — in-project definition of a typed receiver's memb
       callerScope: ["Session"],
       symbolTable: withInit,
       typeDeclarations: {
-        "Sources/Result+Alamofire.swift": [{ typeId: "Result", reopens: true }],
-        "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
+        "Sources/Result+Alamofire.swift": [{ typeId: "Result", symbolKind: "class" as const, line: 1, reopens: true }],
+        "Sources/Session.swift": [{ typeId: "Session", symbolKind: "class" as const, line: 1, reopens: false }],
       },
     });
     const resolver = new SwiftCallResolver();
@@ -2501,8 +2540,10 @@ describe("SwiftCallResolver — in-project definition of an SDK type receiver an
     ],
   });
   const typeDeclarations = {
-    "Sources/Request.swift": [{ typeId: "Request", reopens: false }],
-    "Sources/Spec.swift": [{ typeId: "Spec", reopens: false, conforms: ["XCTestCase"] }],
+    "Sources/Request.swift": [{ typeId: "Request", symbolKind: "class" as const, line: 1, reopens: false }],
+    "Sources/Spec.swift": [
+      { typeId: "Spec", symbolKind: "class" as const, line: 1, reopens: false, conforms: ["XCTestCase"] },
+    ],
   };
 
   it("answers false for a member read off an SDK type the vocabulary names", () => {
@@ -2546,9 +2587,9 @@ describe("SwiftCallResolver — an implicit initializer of a project type stays 
       symbolTable: t,
       typeDeclarations: {
         "Sources/World.swift": [
-          { typeId: "WrapperBase", reopens: false, conforms: ["NSObject"] },
-          { typeId: "Wrapper", reopens: false, conforms: ["WrapperBase"] },
-          { typeId: "Other", reopens: false },
+          { typeId: "WrapperBase", symbolKind: "class" as const, line: 1, reopens: false, conforms: ["NSObject"] },
+          { typeId: "Wrapper", symbolKind: "class" as const, line: 1, reopens: false, conforms: ["WrapperBase"] },
+          { typeId: "Other", symbolKind: "class" as const, line: 1, reopens: false },
         ],
       },
       classExtends: { Wrapper: "WrapperBase", WrapperBase: "NSObject" },
@@ -2572,8 +2613,8 @@ describe("SwiftCallResolver — an Array receiver reaches `extension [T]` (bd te
       symbolTable: t,
       typeDeclarations: {
         "Sources/HTTPHeaders.swift": [
-          { typeId: "HTTPHeaders", reopens: false },
-          { typeId: "[HTTPHeader]", reopens: true },
+          { typeId: "HTTPHeaders", symbolKind: "class" as const, line: 1, reopens: false },
+          { typeId: "[HTTPHeader]", symbolKind: "class" as const, line: 1, reopens: true },
         ],
       },
       localBindings: { headers: [{ line: 5, type: "Array" }] },
@@ -2610,8 +2651,10 @@ describe("SwiftCallResolver — a construction picks the extension whose initial
     return t;
   }
   const typeDeclarations = {
-    "Sources/URLConvertible.swift": [{ typeId: "URLRequest", reopens: true }],
-    "Sources/URLRequest+Alamofire.swift": [{ typeId: "URLRequest", reopens: true }],
+    "Sources/URLConvertible.swift": [{ typeId: "URLRequest", symbolKind: "class" as const, line: 1, reopens: true }],
+    "Sources/URLRequest+Alamofire.swift": [
+      { typeId: "URLRequest", symbolKind: "class" as const, line: 1, reopens: true },
+    ],
   };
 
   it("resolves into the file whose extension declares the fitting initializer", () => {
@@ -2672,9 +2715,9 @@ describe("SwiftCallResolver — a construction picks the extension initializer i
     return t;
   }
   const typeDeclarations = {
-    "Sources/PixelArt.swift": [{ typeId: "Color", reopens: true }],
-    "Sources/TileDetail.swift": [{ typeId: "Color", reopens: true }],
-    "Sources/Glyphs.swift": [{ typeId: "PanelGlyph", reopens: false }],
+    "Sources/PixelArt.swift": [{ typeId: "Color", symbolKind: "class" as const, line: 1, reopens: true }],
+    "Sources/TileDetail.swift": [{ typeId: "Color", symbolKind: "class" as const, line: 1, reopens: true }],
+    "Sources/Glyphs.swift": [{ typeId: "PanelGlyph", symbolKind: "class" as const, line: 1, reopens: false }],
   };
   function hexCall(argument: string): CallRef {
     return {
@@ -2744,10 +2787,10 @@ describe("SwiftCallResolver — a bare construction does not see another type's 
     ],
   });
   const typeDeclarations = {
-    "Sources/Result+Alamofire.swift": [{ typeId: "Result", reopens: true }],
+    "Sources/Result+Alamofire.swift": [{ typeId: "Result", symbolKind: "class" as const, line: 1, reopens: true }],
     "Sources/OfflineRetrier.swift": [
-      { typeId: "PathMonitor", reopens: false },
-      { typeId: "PathMonitor.Result", reopens: false },
+      { typeId: "PathMonitor", symbolKind: "class" as const, line: 1, reopens: false },
+      { typeId: "PathMonitor.Result", symbolKind: "class" as const, line: 1, reopens: false },
     ],
   };
 
@@ -2789,10 +2832,18 @@ describe("SwiftCallResolver — enum case payload bindings (bd tea-rags-mcp-y99p
   });
   const typeDeclarations = {
     "Sources/ExampleGroup.swift": [
-      { typeId: "ExampleGroup", reopens: false },
-      { typeId: "ExampleUnit", reopens: false, enumCasePayloads: { group: ["ExampleGroup"], example: ["Example"] } },
+      { typeId: "ExampleGroup", symbolKind: "class" as const, line: 1, reopens: false },
+      {
+        typeId: "ExampleUnit",
+        symbolKind: "class" as const,
+        line: 1,
+        reopens: false,
+        enumCasePayloads: { group: ["ExampleGroup"], example: ["Example"] },
+      },
     ],
-    "Sources/AsyncExampleGroup.swift": [{ typeId: "AsyncExampleGroup", reopens: false }],
+    "Sources/AsyncExampleGroup.swift": [
+      { typeId: "AsyncExampleGroup", symbolKind: "class" as const, line: 1, reopens: false },
+    ],
   };
   const base = {
     callerFile: "Sources/ExampleGroup.swift",
@@ -2847,12 +2898,24 @@ describe("SwiftCallResolver — file-private enum namesakes (bd tea-rags-mcp-y99
   });
   const typeDeclarations = {
     "Sources/ExampleGroup.swift": [
-      { typeId: "ExampleGroup", reopens: false },
-      { typeId: "ExampleUnit", reopens: false, enumCasePayloads: { group: ["ExampleGroup"] } },
+      { typeId: "ExampleGroup", symbolKind: "class" as const, line: 1, reopens: false },
+      {
+        typeId: "ExampleUnit",
+        symbolKind: "class" as const,
+        line: 1,
+        reopens: false,
+        enumCasePayloads: { group: ["ExampleGroup"] },
+      },
     ],
     "Sources/AsyncExampleGroup.swift": [
-      { typeId: "AsyncExampleGroup", reopens: false },
-      { typeId: "ExampleUnit", reopens: false, enumCasePayloads: { group: ["AsyncExampleGroup"] } },
+      { typeId: "AsyncExampleGroup", symbolKind: "class" as const, line: 1, reopens: false },
+      {
+        typeId: "ExampleUnit",
+        symbolKind: "class" as const,
+        line: 1,
+        reopens: false,
+        enumCasePayloads: { group: ["AsyncExampleGroup"] },
+      },
     ],
   };
   const site = (callerFile: string, callerScope: string[]) =>
@@ -2924,10 +2987,10 @@ describe("SwiftCallResolver — `-> Self` returns and implicit-self call heads (
     symbolTable: t,
     typeDeclarations: {
       "Sources/Request.swift": [
-        { typeId: "Request", reopens: false },
-        { typeId: "DataRequest", reopens: false, conforms: ["Request"] },
+        { typeId: "Request", symbolKind: "class" as const, line: 1, reopens: false },
+        { typeId: "DataRequest", symbolKind: "class" as const, line: 1, reopens: false, conforms: ["Request"] },
       ],
-      "Sources/Validation.swift": [{ typeId: "DataRequest", reopens: true }],
+      "Sources/Validation.swift": [{ typeId: "DataRequest", symbolKind: "class" as const, line: 1, reopens: true }],
     },
     classExtends: { DataRequest: "Request" },
     structuredReturnTypes: {
@@ -2983,9 +3046,9 @@ describe("SwiftCallResolver — standard-library conformances of SDK collections
       symbolTable: t,
       typeDeclarations: {
         "Sources/HTTPHeaders.swift": [
-          { typeId: "HTTPHeaders", reopens: false },
-          { typeId: "Collection", reopens: true },
-          { typeId: "Sequence", reopens: true },
+          { typeId: "HTTPHeaders", symbolKind: "class" as const, line: 1, reopens: false },
+          { typeId: "Collection", symbolKind: "class" as const, line: 1, reopens: true },
+          { typeId: "Sequence", symbolKind: "class" as const, line: 1, reopens: true },
         ],
       },
       localBindings: { encodings: [{ line: 3, type }] },
@@ -3023,8 +3086,14 @@ describe("SwiftCallResolver — a generic-argument extension's spelled id (bd te
       symbolTable: t,
       typeDeclarations: {
         "Sources/HTTPHeaders.swift": [
-          { typeId: "HTTPHeaders", reopens: false },
-          { typeId: "Collection", reopens: true, spelledAs: "Collection<String>" },
+          { typeId: "HTTPHeaders", symbolKind: "class" as const, line: 1, reopens: false },
+          {
+            typeId: "Collection",
+            symbolKind: "class" as const,
+            line: 1,
+            reopens: true,
+            spelledAs: "Collection<String>",
+          },
         ],
       },
       localBindings: { encodings: [{ line: 3, type: "Array" }] },
@@ -3126,10 +3195,18 @@ describe("SwiftCallResolver — a stored closure of a function typealias as a ch
         symbolTable: t,
         typeDeclarations: {
           "Sources/Combine.swift": [
-            { typeId: "DataResponsePublisher", reopens: false, functionAliasReturns: { Handler: "DataRequest" } },
-            { typeId: "DataResponsePublisher.Inner", reopens: false },
+            {
+              typeId: "DataResponsePublisher",
+              symbolKind: "class" as const,
+              line: 1,
+              reopens: false,
+              functionAliasReturns: { Handler: "DataRequest" },
+            },
+            { typeId: "DataResponsePublisher.Inner", symbolKind: "class" as const, line: 1, reopens: false },
           ],
-          "Sources/DataRequest.swift": [{ typeId: "DataRequest", reopens: false }],
+          "Sources/DataRequest.swift": [
+            { typeId: "DataRequest", symbolKind: "class" as const, line: 1, reopens: false },
+          ],
         },
         classFieldTypes: { Inner: { responseHandler: "Handler" } },
       }),
@@ -3154,9 +3231,11 @@ describe("SwiftCallResolver — the generated SDK substrate (bd tea-rags-mcp-y99
     ],
   });
   const typeDeclarations = {
-    "Sources/Stream+Alamofire.swift": [{ typeId: "Stream", reopens: true }],
-    "Sources/Publisher+Alamofire.swift": [{ typeId: "Publisher", reopens: true }],
-    "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
+    "Sources/Stream+Alamofire.swift": [{ typeId: "Stream", symbolKind: "class" as const, line: 1, reopens: true }],
+    "Sources/Publisher+Alamofire.swift": [
+      { typeId: "Publisher", symbolKind: "class" as const, line: 1, reopens: true },
+    ],
+    "Sources/Session.swift": [{ typeId: "Session", symbolKind: "class" as const, line: 1, reopens: false }],
   };
   const context = (bindings: CallContext["localBindings"]): CallContext =>
     ctx({
@@ -3202,8 +3281,8 @@ describe("SwiftCallResolver — the generated SDK substrate (bd tea-rags-mcp-y99
       callerScope: ["Session", "go"],
       symbolTable: sugared,
       typeDeclarations: {
-        "Sources/HTTPHeaders.swift": [{ typeId: "[HTTPHeader]", reopens: true }],
-        "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
+        "Sources/HTTPHeaders.swift": [{ typeId: "[HTTPHeader]", symbolKind: "class" as const, line: 1, reopens: true }],
+        "Sources/Session.swift": [{ typeId: "Session", symbolKind: "class" as const, line: 1, reopens: false }],
       },
       localBindings: { key: [{ line: 5, type: "String" }] },
     });
@@ -3241,16 +3320,16 @@ describe("SwiftCallResolver — SDK member types and SDK closure parameters (bd 
   });
   const typeDeclarations = {
     "Sources/AFError.swift": [
-      { typeId: "AFError", reopens: false },
-      { typeId: "Error", reopens: true },
+      { typeId: "AFError", symbolKind: "class" as const, line: 1, reopens: false },
+      { typeId: "Error", symbolKind: "class" as const, line: 1, reopens: true },
     ],
     "Sources/HTTPHeaders.swift": [
-      { typeId: "HTTPHeaders", reopens: false },
-      { typeId: "Collection", reopens: true, spelledAs: "Collection<String>" },
-      { typeId: "String", reopens: true },
+      { typeId: "HTTPHeaders", symbolKind: "class" as const, line: 1, reopens: false },
+      { typeId: "Collection", symbolKind: "class" as const, line: 1, reopens: true, spelledAs: "Collection<String>" },
+      { typeId: "String", symbolKind: "class" as const, line: 1, reopens: true },
     ],
-    "Sources/Request.swift": [{ typeId: "Request", reopens: false }],
-    "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
+    "Sources/Request.swift": [{ typeId: "Request", symbolKind: "class" as const, line: 1, reopens: false }],
+    "Sources/Session.swift": [{ typeId: "Session", symbolKind: "class" as const, line: 1, reopens: false }],
   };
   const context = (over: Partial<CallContext> = {}): CallContext =>
     ctx({
@@ -3319,7 +3398,13 @@ describe("SwiftCallResolver — SDK member types and SDK closure parameters (bd 
         typeDeclarations: {
           ...typeDeclarations,
           "Sources/Session.swift": [
-            { typeId: "Session", reopens: false, fieldTypeArguments: { requests: ["Request"] } },
+            {
+              typeId: "Session",
+              symbolKind: "class" as const,
+              line: 1,
+              reopens: false,
+              fieldTypeArguments: { requests: ["Request"] },
+            },
           ],
         },
         callResultBindings: { $0: [{ line: 7, callee: "requests.forEach", closureParameter: 0 }] },
@@ -3373,7 +3458,15 @@ describe("SwiftCallResolver — SDK member types and SDK closure parameters (bd 
       symbolTable: withSlot,
       typeDeclarations: {
         ...typeDeclarations,
-        "Sources/Slot.swift": [{ typeId: "IndicatorSlot", reopens: false, conforms: ["Int", "CaseIterable"] }],
+        "Sources/Slot.swift": [
+          {
+            typeId: "IndicatorSlot",
+            symbolKind: "class" as const,
+            line: 1,
+            reopens: false,
+            conforms: ["Int", "CaseIterable"],
+          },
+        ],
       },
     });
     const resolver = new SwiftCallResolver();
@@ -3426,6 +3519,8 @@ describe("SwiftCallResolver — SDK member types and SDK closure parameters (bd 
         "Sources/Session.swift": [
           {
             typeId: "Session",
+            symbolKind: "class" as const,
+            line: 1,
             reopens: false,
             fieldTypeArguments: { apps: ["String", "Set"], frames: ["Request"] },
           },
@@ -3451,7 +3546,15 @@ describe("SwiftCallResolver — SDK member types and SDK closure parameters (bd 
       classFieldTypes: { Session: { frames: "Array" } },
       typeDeclarations: {
         ...typeDeclarations,
-        "Sources/Session.swift": [{ typeId: "Session", reopens: false, fieldTypeArguments: { frames: ["Request"] } }],
+        "Sources/Session.swift": [
+          {
+            typeId: "Session",
+            symbolKind: "class" as const,
+            line: 1,
+            reopens: false,
+            fieldTypeArguments: { frames: ["Request"] },
+          },
+        ],
       },
     });
     const resolver = new SwiftCallResolver();
@@ -3493,8 +3596,10 @@ describe("SwiftCallResolver — SDK member types and SDK closure parameters (bd 
       callerScope: ["URLRequest", "init"],
       symbolTable: withInit,
       typeDeclarations: {
-        "Sources/URLRequest+Alamofire.swift": [{ typeId: "URLRequest", reopens: true }],
-        "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
+        "Sources/URLRequest+Alamofire.swift": [
+          { typeId: "URLRequest", symbolKind: "class" as const, line: 1, reopens: true },
+        ],
+        "Sources/Session.swift": [{ typeId: "Session", symbolKind: "class" as const, line: 1, reopens: false }],
       },
     });
     const resolver = new SwiftCallResolver();
@@ -3539,6 +3644,8 @@ describe("SwiftCallResolver — a construction-initialized field's generic argum
   });
   const protectedFact = {
     typeId: "Protected",
+    symbolKind: "class" as const,
+    line: 1,
     reopens: false,
     genericParameters: ["Value"],
     memberClosureParameters: { write: ["Value"] },
@@ -3554,12 +3661,14 @@ describe("SwiftCallResolver — a construction-initialized field's generic argum
         "Sources/DataRequest.swift": [
           {
             typeId: "DataRequest",
+            symbolKind: "class" as const,
+            line: 1,
             reopens: false,
             fieldConstructions: {
               dataMutableState: { type: "Protected", arguments: [{ label, type: "DataMutableState" }] },
             },
           },
-          { typeId: "DataRequest.DataMutableState", reopens: false },
+          { typeId: "DataRequest.DataMutableState", symbolKind: "class" as const, line: 1, reopens: false },
         ],
       },
       classFieldTypes: { DataRequest: { dataMutableState: "Protected" } },
@@ -3591,8 +3700,14 @@ describe("SwiftCallResolver — closures passed to a BARE callee (bd tea-rags-mc
   });
   const typeDeclarations = {
     "Sources/Request.swift": [
-      { typeId: "Request", reopens: false, memberClosureParameters: { withState: ["Request.State"] } },
-      { typeId: "Request.State", reopens: false },
+      {
+        typeId: "Request",
+        symbolKind: "class" as const,
+        line: 1,
+        reopens: false,
+        memberClosureParameters: { withState: ["Request.State"] },
+      },
+      { typeId: "Request.State", symbolKind: "class" as const, line: 1, reopens: false },
     ],
   };
   const context = (callee: string, name = "continuation", symbolTable = t): CallContext =>
@@ -3648,6 +3763,8 @@ describe("SwiftCallResolver — closures passed to a BARE callee (bd tea-rags-mc
         "Sources/StreamOf.swift": [
           {
             typeId: "StreamOf",
+            symbolKind: "class" as const,
+            line: 1,
             reopens: false,
             genericParameters: ["Element"],
             memberClosureParameters: { init: ["Continuation"] },
@@ -3686,8 +3803,10 @@ describe("SwiftCallResolver — closures passed to a BARE callee (bd tea-rags-mc
         callerScope,
         symbolTable: withPublisher,
         typeDeclarations: {
-          "Sources/Combine.swift": [{ typeId: "DataResponsePublisher", reopens: false, conforms }],
-          "Sources/Response.swift": [{ typeId: "DataResponse", reopens: false }],
+          "Sources/Combine.swift": [
+            { typeId: "DataResponsePublisher", symbolKind: "class" as const, line: 1, reopens: false, conforms },
+          ],
+          "Sources/Response.swift": [{ typeId: "DataResponse", symbolKind: "class" as const, line: 1, reopens: false }],
         },
       });
     const resolver = new SwiftCallResolver();
@@ -3733,14 +3852,18 @@ describe("SwiftCallResolver — a nested enum's payload bound through `self` (bd
     symbolTable: t,
     typeDeclarations: {
       "Sources/URLEncodedFormEncoder.swift": [
-        { typeId: "URLEncodedFormEncoder", reopens: false },
+        { typeId: "URLEncodedFormEncoder", symbolKind: "class" as const, line: 1, reopens: false },
         {
           typeId: "URLEncodedFormEncoder.DateEncoding",
+          symbolKind: "class" as const,
+          line: 1,
           reopens: false,
           enumCasePayloads: { formatted: ["DateFormatter"] },
         },
       ],
-      "Sources/ResponseSerialization.swift": [{ typeId: "StringResponseSerializer", reopens: false }],
+      "Sources/ResponseSerialization.swift": [
+        { typeId: "StringResponseSerializer", symbolKind: "class" as const, line: 1, reopens: false },
+      ],
     },
     callResultBindings: {
       formatter: [{ line: 5, callee: "self", enumPayload: { caseName: "formatted", index: 0 }, scopeEndLine: 6 }],
@@ -3781,11 +3904,11 @@ describe("SwiftCallResolver — module-level values (bd tea-rags-mcp-y99pg.30)",
     ],
   });
   const typeDeclarations = {
-    "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
-    "Sources/DataRequest.swift": [{ typeId: "DataRequest", reopens: false }],
+    "Sources/Session.swift": [{ typeId: "Session", symbolKind: "class" as const, line: 1, reopens: false }],
+    "Sources/DataRequest.swift": [{ typeId: "DataRequest", symbolKind: "class" as const, line: 1, reopens: false }],
     "Sources/Store.swift": [
-      { typeId: "Store", reopens: false },
-      { typeId: "Other", reopens: false },
+      { typeId: "Store", symbolKind: "class" as const, line: 1, reopens: false },
+      { typeId: "Other", symbolKind: "class" as const, line: 1, reopens: false },
     ],
   };
   const spelled = { "Sources/Alamofire.swift::": { AF: "Session.default" } };
@@ -3901,14 +4024,16 @@ describe("SwiftCallResolver — a protocol extension's `where Self` constraints 
     symbolTable: t,
     typeDeclarations: {
       "Sources/ResponseSerialization.swift": [
-        { typeId: "DataSerializer", reopens: false },
-        { typeId: "Download", reopens: false },
+        { typeId: "DataSerializer", symbolKind: "class" as const, line: 1, reopens: false },
+        { typeId: "Download", symbolKind: "class" as const, line: 1, reopens: false },
         {
           typeId: "Download",
+          symbolKind: "class" as const,
+          line: 1,
           reopens: true,
           selfConstraints: { types: ["DataSerializer"], startLine: 20, endLine: 30 },
         },
-        { typeId: "Download", reopens: true },
+        { typeId: "Download", symbolKind: "class" as const, line: 1, reopens: true },
       ],
     },
   });
@@ -3961,14 +4086,16 @@ describe("SwiftCallResolver — a property wrapper's projected value `$name` (bd
     ],
   });
   const typeDeclarations = {
-    "Sources/DataResponse.swift": [{ typeId: "DataResponse", reopens: false }],
+    "Sources/DataResponse.swift": [{ typeId: "DataResponse", symbolKind: "class" as const, line: 1, reopens: false }],
     "Sources/Guarded.swift": [
-      { typeId: "Guarded", reopens: false },
-      { typeId: "GuardedProjection", reopens: false },
+      { typeId: "Guarded", symbolKind: "class" as const, line: 1, reopens: false },
+      { typeId: "GuardedProjection", symbolKind: "class" as const, line: 1, reopens: false },
     ],
     "Example/Networking.swift": [
       {
         typeId: "Networking",
+        symbolKind: "class" as const,
+        line: 1,
         reopens: false,
         propertyAttributeTypes: { result: ["Published"], state: ["Guarded"], level: ["MainActor"] },
       },
@@ -4024,9 +4151,17 @@ describe("SwiftCallResolver — Optional values and unwrap sugar (bd tea-rags-mc
     "Sources/Completion.swift": [{ symbolId: "Completion", scope: [] }],
   });
   const typeDeclarations = {
-    "Sources/DataResponse.swift": [{ typeId: "DataResponse", reopens: false }],
-    "Sources/Box.swift": [{ typeId: "Box", reopens: false }],
-    "Sources/Completion.swift": [{ typeId: "Completion", reopens: false, optionalProperties: ["error", "box"] }],
+    "Sources/DataResponse.swift": [{ typeId: "DataResponse", symbolKind: "class" as const, line: 1, reopens: false }],
+    "Sources/Box.swift": [{ typeId: "Box", symbolKind: "class" as const, line: 1, reopens: false }],
+    "Sources/Completion.swift": [
+      {
+        typeId: "Completion",
+        symbolKind: "class" as const,
+        line: 1,
+        reopens: false,
+        optionalProperties: ["error", "box"],
+      },
+    ],
   };
   const optional = (name: string) => ({
     form: "instance" as const,
@@ -4086,7 +4221,9 @@ describe("SwiftCallResolver — Optional values and unwrap sugar (bd tea-rags-mc
       callerFile: "Sources/Face.swift",
       callerScope: ["Face", "displayName"],
       symbolTable: arrays,
-      typeDeclarations: { "Sources/ArrayText.swift": [{ typeId: "Array", reopens: true }] },
+      typeDeclarations: {
+        "Sources/ArrayText.swift": [{ typeId: "Array", symbolKind: "class" as const, line: 1, reopens: true }],
+      },
       localBindings: { shortName: [{ line: 5, type: "String", typeRef: optional("String") }] },
       callResultBindings: { name: [{ line: 6, callee: "shortName.flatMap" }] },
     });
@@ -4103,7 +4240,9 @@ describe("SwiftCallResolver — Optional values and unwrap sugar (bd tea-rags-mc
       callerFile: "Sources/Places.swift",
       callerScope: ["Places", "candidates"],
       symbolTable: arrays,
-      typeDeclarations: { "Sources/ArrayChunks.swift": [{ typeId: "Array", reopens: true }] },
+      typeDeclarations: {
+        "Sources/ArrayChunks.swift": [{ typeId: "Array", symbolKind: "class" as const, line: 1, reopens: true }],
+      },
       localBindings: {
         results: [{ line: 5, type: "Array", typeRef: optional("Array") }],
         others: [{ line: 5, type: "Array", typeRef: optional("Array") }],
@@ -4177,6 +4316,8 @@ describe("SwiftCallResolver — a conformer's member typealias binds `Self.X` (b
         "Sources/Combine.swift": [
           {
             typeId: "DataStreamPublisher",
+            symbolKind: "class" as const,
+            line: 1,
             reopens: false,
             conforms: ["Publisher"],
             genericParameters: ["Value"],
@@ -4184,10 +4325,16 @@ describe("SwiftCallResolver — a conformer's member typealias binds `Self.X` (b
           },
         ],
         "Sources/DataStreamRequest.swift": [
-          { typeId: "DataStreamRequest", reopens: false },
-          { typeId: "DataStreamRequest.Stream", reopens: false, genericParameters: ["Success", "Failure"] },
+          { typeId: "DataStreamRequest", symbolKind: "class" as const, line: 1, reopens: false },
+          {
+            typeId: "DataStreamRequest.Stream",
+            symbolKind: "class" as const,
+            line: 1,
+            reopens: false,
+            genericParameters: ["Success", "Failure"],
+          },
         ],
-        "Sources/Request.swift": [{ typeId: "Request", reopens: false }],
+        "Sources/Request.swift": [{ typeId: "Request", symbolKind: "class" as const, line: 1, reopens: false }],
       },
       callResultBindings: { stream: [{ line: 10, callee: "compactMap", closureParameter: 0, scopeEndLine: 12 }] },
     });
@@ -4227,10 +4374,18 @@ describe("SwiftCallResolver — a closure parameter declared with generic argume
   });
   const declarations = (adapt: string) => ({
     "Sources/RequestInterceptor.swift": [
-      { typeId: "RequestAdapter", reopens: false, memberClosureParameters: { adapt: [adapt] } },
+      {
+        typeId: "RequestAdapter",
+        symbolKind: "class" as const,
+        line: 1,
+        reopens: false,
+        memberClosureParameters: { adapt: [adapt] },
+      },
     ],
-    "Sources/URLRequest+Alamofire.swift": [{ typeId: "URLRequest", reopens: true }],
-    "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
+    "Sources/URLRequest+Alamofire.swift": [
+      { typeId: "URLRequest", symbolKind: "class" as const, line: 1, reopens: true },
+    ],
+    "Sources/Session.swift": [{ typeId: "Session", symbolKind: "class" as const, line: 1, reopens: false }],
   });
   const context = (adapt: string): CallContext =>
     ctx({
@@ -4283,23 +4438,34 @@ describe("SwiftCallResolver — a constrained extension binds the extended type'
   });
   const typeDeclarations = {
     "Sources/Protected.swift": [
-      { typeId: "Protected", reopens: false, genericParameters: ["Value"], genericFieldParameters: { value: "Value" } },
       {
         typeId: "Protected",
+        symbolKind: "class" as const,
+        line: 1,
+        reopens: false,
+        genericParameters: ["Value"],
+        genericFieldParameters: { value: "Value" },
+      },
+      {
+        typeId: "Protected",
+        symbolKind: "class" as const,
+        line: 1,
         reopens: true,
         whereClause: { startLine: 9, endLine: 15, sameType: { Value: "Request.MutableState" } },
       },
     ],
     "Sources/Request.swift": [
-      { typeId: "Request", reopens: false },
-      { typeId: "Request.MutableState", reopens: false },
-      { typeId: "Request.State", reopens: false },
+      { typeId: "Request", symbolKind: "class" as const, line: 1, reopens: false },
+      { typeId: "Request.MutableState", symbolKind: "class" as const, line: 1, reopens: false },
+      { typeId: "Request.State", symbolKind: "class" as const, line: 1, reopens: false },
     ],
-    "Sources/Other.swift": [{ typeId: "Other", reopens: false }],
-    "Sources/Response.swift": [{ typeId: "DataResponse", reopens: false }],
+    "Sources/Other.swift": [{ typeId: "Other", symbolKind: "class" as const, line: 1, reopens: false }],
+    "Sources/Response.swift": [{ typeId: "DataResponse", symbolKind: "class" as const, line: 1, reopens: false }],
     "Sources/AlamofireExtended.swift": [
       {
         typeId: "AlamofireExtension",
+        symbolKind: "class" as const,
+        line: 1,
         reopens: false,
         genericParameters: ["ExtendedType"],
         genericFieldParameters: { type: "ExtendedType" },
@@ -4308,6 +4474,8 @@ describe("SwiftCallResolver — a constrained extension binds the extended type'
     "Sources/Certificates.swift": [
       {
         typeId: "AlamofireExtension",
+        symbolKind: "class" as const,
+        line: 1,
         reopens: true,
         whereClause: { startLine: 1, endLine: 5, sameType: { ExtendedType: "[SecCertificate]" } },
       },
@@ -4360,7 +4528,13 @@ describe("SwiftCallResolver — a constrained extension binds the extended type'
       for (const [relPath, defs] of Object.entries(extra)) {
         declarations[relPath] = defs
           .filter((d) => d.scope.length === 0)
-          .map((d) => ({ typeId: d.symbolId, reopens: false, conforms: [bound] }));
+          .map((d) => ({
+            typeId: d.symbolId,
+            symbolKind: "class" as const,
+            line: 1,
+            reopens: false,
+            conforms: [bound],
+          }));
       }
       return ctx({
         callerFile: "Sources/Bundle.swift",
@@ -4372,6 +4546,8 @@ describe("SwiftCallResolver — a constrained extension binds the extended type'
           "Sources/Bundle.swift": [
             {
               typeId: "AlamofireExtension",
+              symbolKind: "class" as const,
+              line: 1,
               reopens: true,
               whereClause: { startLine: 1, endLine: 9, bounds: { ExtendedType: bound } },
             },
@@ -4425,6 +4601,8 @@ describe("SwiftCallResolver — a key-path argument binds a generic method's ret
   });
   const protectedFact = (closureResultMembers: string[] | null) => ({
     typeId: "Protected",
+    symbolKind: "class" as const,
+    line: 1,
     reopens: false,
     genericParameters: ["Value"],
     memberClosureParameters: { read: ["Value"] },
@@ -4438,9 +4616,17 @@ describe("SwiftCallResolver — a key-path argument binds a generic method's ret
       typeDeclarations: {
         "Sources/Protected.swift": [protectedFact(closureResultMembers)],
         "Sources/Session.swift": [
-          { typeId: "Session", reopens: false, fieldTypeArguments: { mutableState: ["MutableState"] } },
+          {
+            typeId: "Session",
+            symbolKind: "class" as const,
+            line: 1,
+            reopens: false,
+            fieldTypeArguments: { mutableState: ["MutableState"] },
+          },
           {
             typeId: "Session.MutableState",
+            symbolKind: "class" as const,
+            line: 1,
             reopens: false,
             fieldTypeArguments: { activeRequests: ["Request"] },
           },
@@ -4521,12 +4707,25 @@ describe("SwiftCallResolver — Objective-C dynamic lookup on AnyObject / AnyCla
   };
   const declarations = {
     "Sources/QuickTestObservation.swift": [
-      { typeId: "_QuickSpecInternal", reopens: false, declarationKind: "protocol" as const },
-      { typeId: "QuickTestObservation", reopens: false, declarationKind: "class" as const, conforms: ["NSObject"] },
+      {
+        typeId: "_QuickSpecInternal",
+        symbolKind: "class" as const,
+        line: 1,
+        reopens: false,
+        declarationKind: "protocol" as const,
+      },
+      {
+        typeId: "QuickTestObservation",
+        symbolKind: "class" as const,
+        line: 1,
+        reopens: false,
+        declarationKind: "class" as const,
+        conforms: ["NSObject"],
+      },
     ],
     "Sources/Values.swift": [
-      { typeId: "Point", reopens: false, declarationKind: "struct" as const },
-      { typeId: "Mode", reopens: false, declarationKind: "enum" as const },
+      { typeId: "Point", symbolKind: "class" as const, line: 1, reopens: false, declarationKind: "struct" as const },
+      { typeId: "Mode", symbolKind: "class" as const, line: 1, reopens: false, declarationKind: "enum" as const },
     ],
   };
   const at = (over: Partial<CallContext> = {}): CallContext =>
@@ -4562,7 +4761,9 @@ describe("SwiftCallResolver — Objective-C dynamic lookup on AnyObject / AnyCla
       symbolTable: withClass,
       typeDeclarations: {
         ...declarations,
-        "Sources/Spec.swift": [{ typeId: "Spec", reopens: false, declarationKind: "class" }],
+        "Sources/Spec.swift": [
+          { typeId: "Spec", symbolKind: "class" as const, line: 1, reopens: false, declarationKind: "class" },
+        ],
       },
     });
     const site = call("(specClass as AnyClass)", "buildExamplesIfNeeded", 33);
@@ -4583,7 +4784,7 @@ describe("SwiftCallResolver — Objective-C dynamic lookup on AnyObject / AnyCla
       symbolTable: withExtension,
       typeDeclarations: {
         ...declarations,
-        "Sources/NSObject+Reset.swift": [{ typeId: "NSObject", reopens: true }],
+        "Sources/NSObject+Reset.swift": [{ typeId: "NSObject", symbolKind: "class" as const, line: 1, reopens: true }],
       },
       localBindings: { target: [{ line: 5, type: "AnyObject" }] },
     });
@@ -4594,7 +4795,9 @@ describe("SwiftCallResolver — Objective-C dynamic lookup on AnyObject / AnyCla
     const context = at({
       typeDeclarations: {
         ...declarations,
-        "Sources/QuickTestObservation.swift": [{ typeId: "_QuickSpecInternal", reopens: false }],
+        "Sources/QuickTestObservation.swift": [
+          { typeId: "_QuickSpecInternal", symbolKind: "class" as const, line: 1, reopens: false },
+        ],
       },
     });
     const site = call("(specClass as AnyClass)", "buildExamplesIfNeeded", 33);
@@ -4605,7 +4808,9 @@ describe("SwiftCallResolver — Objective-C dynamic lookup on AnyObject / AnyCla
     const context = at({
       typeDeclarations: {
         ...declarations,
-        "Sources/Other/Point.swift": [{ typeId: "Point", reopens: false, declarationKind: "class" }],
+        "Sources/Other/Point.swift": [
+          { typeId: "Point", symbolKind: "class" as const, line: 1, reopens: false, declarationKind: "class" },
+        ],
       },
       localBindings: { target: [{ line: 5, type: "AnyObject" }] },
     });
@@ -4632,10 +4837,24 @@ describe("SwiftCallResolver — Objective-C dynamic lookup on AnyObject / AnyCla
     const specDeclarations = {
       ...declarations,
       "Sources/QuickSpec.swift": [
-        { typeId: "QuickSpec", reopens: false, declarationKind: "class" as const, conforms: ["QuickSpecBase"] },
+        {
+          typeId: "QuickSpec",
+          symbolKind: "class" as const,
+          line: 1,
+          reopens: false,
+          declarationKind: "class" as const,
+          conforms: ["QuickSpecBase"],
+        },
       ],
       "Sources/Async/AsyncSpec.swift": [
-        { typeId: "AsyncSpec", reopens: false, declarationKind: "class" as const, conforms: ["AsyncSpecBase"] },
+        {
+          typeId: "AsyncSpec",
+          symbolKind: "class" as const,
+          line: 1,
+          reopens: false,
+          declarationKind: "class" as const,
+          conforms: ["AsyncSpecBase"],
+        },
       ],
     };
     const site = call("(specClass as AnyClass)", "buildExamplesIfNeeded", 33);
@@ -4662,7 +4881,14 @@ describe("SwiftCallResolver — Objective-C dynamic lookup on AnyObject / AnyCla
         typeDeclarations: {
           ...specDeclarations,
           "Tests/FunctionalSpec.swift": [
-            { typeId: "FunctionalSpec", reopens: false, declarationKind: "class", conforms: ["QuickSpec"] },
+            {
+              typeId: "FunctionalSpec",
+              symbolKind: "class" as const,
+              line: 1,
+              reopens: false,
+              declarationKind: "class",
+              conforms: ["QuickSpec"],
+            },
           ],
         },
         localBindings: bound,
@@ -4676,7 +4902,14 @@ describe("SwiftCallResolver — Objective-C dynamic lookup on AnyObject / AnyCla
         typeDeclarations: {
           ...specDeclarations,
           "Sources/QuickSpec.swift": [
-            { typeId: "QuickSpec", reopens: false, declarationKind: "class", conforms: ["AsyncSpec"] },
+            {
+              typeId: "QuickSpec",
+              symbolKind: "class" as const,
+              line: 1,
+              reopens: false,
+              declarationKind: "class",
+              conforms: ["AsyncSpec"],
+            },
           ],
         },
         localBindings: bound,
@@ -4735,12 +4968,18 @@ describe("SwiftCallResolver — a bare name reaches only what lexical lookup rea
     ],
   });
   const declarations = {
-    "Scripts/MakeIcon.swift": [{ typeId: "MakeIcon", reopens: false }],
-    "Sources/AppIconArt.swift": [{ typeId: "AppIconArt", reopens: false }],
-    "Sources/Listener.swift": [{ typeId: "Listener", reopens: false }],
+    "Scripts/MakeIcon.swift": [{ typeId: "MakeIcon", symbolKind: "class" as const, line: 1, reopens: false }],
+    "Sources/AppIconArt.swift": [{ typeId: "AppIconArt", symbolKind: "class" as const, line: 1, reopens: false }],
+    "Sources/Listener.swift": [{ typeId: "Listener", symbolKind: "class" as const, line: 1, reopens: false }],
     "Sources/Stream.swift": [
-      { typeId: "ByteStream", reopens: false, declarationKind: "protocol" as const },
-      { typeId: "SocketStream", reopens: false, conforms: ["ByteStream"] },
+      {
+        typeId: "ByteStream",
+        symbolKind: "class" as const,
+        line: 1,
+        reopens: false,
+        declarationKind: "protocol" as const,
+      },
+      { typeId: "SocketStream", symbolKind: "class" as const, line: 1, reopens: false, conforms: ["ByteStream"] },
     ],
   };
   const at = (callerFile: string, callerScope: string[]) =>
@@ -4809,8 +5048,8 @@ describe("SwiftCallResolver — a bare name reaches only what lexical lookup rea
         callerSymbolId,
         symbolTable: locals,
         typeDeclarations: {
-          "Sources/Config.swift": [{ typeId: "Config", reopens: false }],
-          "Sources/Other.swift": [{ typeId: "Other", reopens: false }],
+          "Sources/Config.swift": [{ typeId: "Config", symbolKind: "class" as const, line: 1, reopens: false }],
+          "Sources/Other.swift": [{ typeId: "Other", symbolKind: "class" as const, line: 1, reopens: false }],
         },
       });
     const resolver = new SwiftCallResolver();
@@ -4843,9 +5082,9 @@ describe("SwiftCallResolver — a bare name reaches only what lexical lookup rea
       symbolTable: withLocal,
       localBindings: { tile: [{ line: 5, type: "Tile" }] },
       typeDeclarations: {
-        "Sources/Face.swift": [{ typeId: "Face", reopens: false }],
-        "Sources/Board.swift": [{ typeId: "Board", reopens: false }],
-        "Sources/Tile.swift": [{ typeId: "Tile", reopens: false }],
+        "Sources/Face.swift": [{ typeId: "Face", symbolKind: "class" as const, line: 1, reopens: false }],
+        "Sources/Board.swift": [{ typeId: "Board", symbolKind: "class" as const, line: 1, reopens: false }],
+        "Sources/Tile.swift": [{ typeId: "Tile", symbolKind: "class" as const, line: 1, reopens: false }],
       },
     });
     expect(new SwiftCallResolver().hasInProjectDefinition(call("tile", "frame"), context)).toBe(false);
