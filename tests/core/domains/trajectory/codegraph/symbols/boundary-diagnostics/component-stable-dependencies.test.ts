@@ -21,8 +21,13 @@ function file(relPath: string) {
   return { relPath, language: "typescript", symbolCount: 1 };
 }
 
-function edge(sourceRelPath: string, targetRelPath: string, callWeight = 1): FileDependencyEdge {
-  return { sourceRelPath, targetRelPath, callWeight };
+function edge(
+  sourceRelPath: string,
+  targetRelPath: string,
+  callWeight = 1,
+  exportNames?: { importedExportNames?: string[]; reexportedExportNames?: string[] },
+): FileDependencyEdge {
+  return { sourceRelPath, targetRelPath, callWeight, ...exportNames };
 }
 
 /** `count` files `${dir}/f{i}.ts`, each with an edge built by `link`. */
@@ -146,5 +151,60 @@ describe("detectComponentStableDependencyViolations", () => {
 
     expect(report.violations).toEqual([]);
     expect(report.summary.scope).toEqual({ sourcePathPattern: "other/**", outOfScopeEdgeCount: 3 });
+  });
+
+  /**
+   * callWeight 0 has four causes the weight alone cannot separate (a constant,
+   * a type used as a value, a JSX element, a re-export — the
+   * `FileDependencyEdge` docblock), so the evidence rows carry the export names
+   * the edge's imports bind (bd tea-rags-mcp-89k7k.2). The shape below is the
+   * live one that started the bead: api/public/app.ts imports the RUNTIME
+   * `formatIndexDriftReport` plus the TYPE `IndexDriftReporter` from
+   * maintenance/drift.
+   */
+  describe("evidence rows carry the file edge's export names", () => {
+    /** Same uphill shape as `stableCoreOnVolatileLib`, one edge per name shape. */
+    function graphWithNamedEdges(): FileDependencyGraph {
+      return merge(
+        {
+          files: [file("core/plain.ts"), file("core/re.ts"), file("core/type.ts")],
+          edges: [
+            edge("core/plain.ts", "lib/f1.ts"),
+            edge("core/re.ts", "lib/f2.ts", 0, { reexportedExportNames: ["formatIndexDriftReport"] }),
+            edge("core/type.ts", "lib/f3.ts", 0, { importedExportNames: ["IndexDriftReporter"] }),
+          ],
+        },
+        files("app", 6, (p) => edge(p, "core/plain.ts")),
+        files("lib", 5, (p) => edge(p, "vendor/v.ts")),
+        { files: [file("vendor/v.ts"), file("other/o.ts")], edges: [edge("other/o.ts", "lib/f4.ts")] },
+      );
+    }
+
+    it("passes reexportedExportNames and importedExportNames through to the evidence rows", () => {
+      const report = judge(graphWithNamedEdges());
+
+      expect(report.violations[0]?.fileEdges).toEqual([
+        { sourceRelPath: "core/plain.ts", targetRelPath: "lib/f1.ts", callWeight: 1 },
+        {
+          sourceRelPath: "core/re.ts",
+          targetRelPath: "lib/f2.ts",
+          callWeight: 0,
+          reexportedExportNames: ["formatIndexDriftReport"],
+        },
+        {
+          sourceRelPath: "core/type.ts",
+          targetRelPath: "lib/f3.ts",
+          callWeight: 0,
+          importedExportNames: ["IndexDriftReporter"],
+        },
+      ]);
+    });
+
+    it("leaves both fields absent on an edge carrying neither — not undefined-valued noise", () => {
+      const report = judge(graphWithNamedEdges());
+
+      const plain = report.violations[0]?.fileEdges[0];
+      expect(Object.keys(plain ?? {}).sort()).toEqual(["callWeight", "sourceRelPath", "targetRelPath"]);
+    });
   });
 });

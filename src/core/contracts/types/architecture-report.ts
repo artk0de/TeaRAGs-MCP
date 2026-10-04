@@ -48,8 +48,21 @@ export type ArchitectureDirectoryRelation = "same" | "descendant" | "ancestor" |
 export interface ArchitectureFileEdge {
   sourceRelPath: RelPath;
   targetRelPath: RelPath;
-  /** Confidence-weighted resolved calls across the edge; 0 for a call-free dependency. */
+  /**
+   * Confidence-weighted resolved calls across the edge; 0 for a call-free
+   * dependency — a constant, a type used as a value, a JSX element, or a
+   * re-export. The two name lists below are what tells those apart.
+   */
   callWeight: number;
+  /**
+   * Export names the source's imports of the target bind (unioned per edge, as
+   * `FileEdgeExportNames` carries them) — present when the walker recorded
+   * any. A list holding only types marks the edge type-as-value; a runtime
+   * name beside them means the dependency loads.
+   */
+  importedExportNames?: string[];
+  /** Export names the source re-exports from the target — a re-export edge is call-free by construction, not type-only. */
+  reexportedExportNames?: string[];
 }
 
 /**
