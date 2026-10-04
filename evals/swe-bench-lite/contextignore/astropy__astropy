@@ -1,0 +1,12 @@
+# Installed as .contextignore into every astropy task repository by `prepare`.
+# Checked against the gold patches of every astropy task in SWE-bench Lite.
+
+# Vendored C libraries (wcslib, cfitsio, expat, zlib): ~10 MB of third-party C.
+/cextern/
+# Vendored Python/JS (jQuery + DataTables, PLY, configobj, six, _strptime).
+/astropy/extern/
+# PLY-generated parser and lexer tables.
+*_parsetab.py
+*_lextab.py
+# Data, not code: VOTable / SAMP XML fixtures.
+*.xml

@@ -12,7 +12,10 @@ export { computeAndPersistCyclesAndSignals } from "./graph-analysis.js";
 export { DAEMON_OP_COMMANDS, type DaemonOpCommand, type DaemonOpContext } from "./op-commands.js";
 export { CodegraphDaemonServer } from "./server.js";
 export {
+  type CodegraphDaemonClientAddressing,
+  type CodegraphDaemonClientTarget,
   type CodegraphDaemonPaths,
+  type DaemonClientBuildSource,
   type DaemonKeyDirStatus,
   DAEMON_LOG_MAX_BYTES,
   IDLE_SHUTDOWN_MS,
@@ -21,6 +24,7 @@ export {
   getBuildKey,
   getDaemonLogPath,
   getDaemonPaths,
+  getDaemonPathsForBuild,
   getLegacyDaemonPaths,
   getStorageDir,
   incrementRefs,
@@ -28,6 +32,7 @@ export {
   listDaemonKeyDirs,
   openDaemonLogFd,
   readRefs,
+  resolveDaemonClientTarget,
   scheduleIdleWatcher,
   sweepOrphanedDaemonKeyDirs,
   unlinkDaemonFiles,

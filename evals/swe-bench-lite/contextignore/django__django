@@ -1,0 +1,17 @@
+# Installed as .contextignore into every django task repository by `prepare`.
+# Checked against the gold patches of all 114 django tasks in SWE-bench Lite:
+# every gold file is a .py outside these paths, so nothing here hides a fix.
+
+# Vendored third-party JS (jQuery, select2 + its i18n, XRegExp). The .min.js
+# copies are already ignored by tea-rags' builtin patterns; the full ones are not.
+/django/contrib/admin/static/admin/js/vendor/
+/js_tests/qunit/
+
+# Per-language locale modules: ~70 near-identical formats.py files that crowd
+# out results for any date / number format query. The package's own
+# __init__.py (LANG_INFO) is real code and stays.
+/django/conf/locale/*/
+
+# Data, not code: serializer fixtures and sitemap templates (tea-rags already
+# ignores .json / .yaml for the same reason).
+*.xml
