@@ -165,6 +165,25 @@ const GetArchitectureReportInputShape = {
 };
 
 /**
+ * The wire shape and `GetArchitectureReportRequest` are ONE contract,
+ * declared here rather than co-changed in heads (bd tea-rags-mcp-89k7k.25):
+ * the silent-coupling detector flagged this tool file as changing as a set
+ * with the report DTO and its detector engines, because a request field used
+ * to be added to one side with no declared link to the other. A field added
+ * to either side without the other now fails compilation right here.
+ */
+type GetArchitectureReportShapeAlignment = [
+  Exclude<keyof z.infer<z.ZodObject<typeof GetArchitectureReportInputShape>>, keyof GetArchitectureReportRequest>,
+] extends [never]
+  ? [
+      Exclude<keyof GetArchitectureReportRequest, keyof z.infer<z.ZodObject<typeof GetArchitectureReportInputShape>>>,
+    ] extends [never]
+    ? true
+    : never
+  : never;
+const _getArchitectureReportShapeAligned: GetArchitectureReportShapeAlignment = true;
+
+/**
  * `get_ontology_report` input (bd tea-rags-mcp-4p3sb.20). Call contract only —
  * when to call is the search cascade's job; the budget is pinned by
  * `ontology-report-tool.test.ts`.
