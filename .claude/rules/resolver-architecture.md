@@ -2,7 +2,7 @@
 paths:
   - "src/core/domains/language/resolver-chain.ts"
   - "src/core/domains/language/external-classifier.ts"
-  - "src/core/domains/language/cone-dispatch.ts"
+  - "src/core/domains/language/kernel/cone-dispatch.ts"
   - "src/core/domains/language/*/resolver/**"
   - "src/core/domains/language/*/dsl/**"
   - "src/core/domains/language/shared/**"
@@ -55,7 +55,7 @@ a cardinality gate. The fully-qualified `symbolTable.lookup(fq)` is no safer:
 Ruby spells `Report#render` exactly as TypeScript does. TypeScript and
 JavaScript are one FAMILY — they resolve into each other (`allowJs`, `.d.ts`) —
 and share `lookupEcmascriptSymbolsByShortName` / `lookupEcmascriptSymbols`
-(`shared/ecmascript-symbol-lookup.ts`) for both. A kernel engine that looks
+(`kernel/ecmascript-symbol-lookup.ts`) for both. A kernel engine that looks
 symbols up takes the caller's lookup as a port (`reexportOriginFile`), and a
 resolver answers the miss classifier's `noInProjectDef` question through
 `hasInProjectDefinition` in its own language.

@@ -14,7 +14,7 @@
   `ctx.localBindings?.[receiver]`.** `Record<string, LocalBinding[]>`, 1-based
   `line` per binding; read via
   `resolveLocalBindingType(bindings, receiver, call.startLine)`
-  (`cone-dispatch.ts` plus five per-language strategies) or
+  (`kernel/cone-dispatch.ts` plus five per-language strategies) or
   `resolveLocalBinding` when `valueKind` is needed (Ruby `localType`); greatest
   `line <= atLine` wins, skipping a binding whose optional `scopeEndLine` is
   already past (Go's function-literal parameters and block-scoped locals). Go

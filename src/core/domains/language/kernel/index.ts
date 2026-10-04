@@ -21,6 +21,14 @@ export { assignCallsToInnermostChunks, type ChunkRange } from "./assign-calls-to
 export { fileEdgesFromResolvedCalls } from "./call-derived-file-edges.js";
 export { SHARED_LANGUAGE, sharedChunkSetBumpScopes, sharedVersions } from "./capability.js";
 export { collectSymbols } from "./collect-symbols.js";
+export { ConeDispatchResolver } from "./cone-dispatch.js";
+export {
+  ECMASCRIPT_SOURCE_EXTENSIONS,
+  isEcmascriptSourcePath,
+  lookupEcmascriptSymbols,
+  lookupEcmascriptSymbolsByShortName,
+  withEcmascriptSymbolKindRoles,
+} from "./ecmascript-symbol-lookup.js";
 export {
   declaredVisibilityFacetPass,
   type DeclaredVisibility,

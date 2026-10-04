@@ -69,7 +69,6 @@ const SHARED_SOURCES: VersionAxisSources[] = [
     paths: [
       `${LANGUAGE_ROOT}/kernel`,
       `${LANGUAGE_ROOT}/resolver-chain.ts`,
-      `${LANGUAGE_ROOT}/cone-dispatch.ts`,
       // Shared resolution the verticals lean on: which file an import names,
       // whether a symbol is external, and the ECMAScript global vocabulary.
       `${LANGUAGE_ROOT}/import-file-edges.ts`,

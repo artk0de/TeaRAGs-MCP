@@ -5,7 +5,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { ConeTypeLocator } from "../../../../../contracts/types/language.js";
-import { lookupEcmascriptSymbolsByShortName } from "../../../shared/ecmascript-symbol-lookup.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
 import { mapImportToFile } from "../ts-path-mapper.js";
 import { collectImportedFiles, type ResolverConfig } from "./shared.js";
 

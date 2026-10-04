@@ -12,7 +12,7 @@ import {
   isEcmascriptSourcePath,
   lookupEcmascriptSymbols,
   lookupEcmascriptSymbolsByShortName,
-} from "../../../../../src/core/domains/language/shared/ecmascript-symbol-lookup.js";
+} from "../../../../../src/core/domains/language/kernel/ecmascript-symbol-lookup.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const sym = (

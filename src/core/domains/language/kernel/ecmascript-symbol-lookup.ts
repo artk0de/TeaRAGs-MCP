@@ -39,13 +39,13 @@
  * row and a JavaScript caller the JavaScript one, whichever family member the
  * candidates come from. The rows differ (JavaScript's is the constructible
  * subset), which is why the descriptor is injected rather than assumed: this
- * module may reach no vertical, only the kernel below it. A ctx no vertical
+ * module is a kernel leaf and may reach no vertical. A ctx no vertical
  * built (a harness driving one strategy directly) carries no row, and a role
  * narrows nothing there.
  */
 
 import type { CallContext, SymbolDefinition, SymbolKindRoles } from "../../../contracts/types/codegraph.js";
-import { symbolLookupOptionsFor, type CallRoleSymbolLookupOptions } from "../kernel/symbol-kind-roles.js";
+import { symbolLookupOptionsFor, type CallRoleSymbolLookupOptions } from "./symbol-kind-roles.js";
 
 export const ECMASCRIPT_SOURCE_EXTENSIONS: readonly string[] = [
   ".ts",

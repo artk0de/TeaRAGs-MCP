@@ -56,7 +56,7 @@ import {
   type SymbolId,
 } from "../../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
-import { lookupEcmascriptSymbolsByShortName } from "../../../shared/ecmascript-symbol-lookup.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import { CONE_MAX_DEFAULT, type ResolverConfig } from "./shared.js";
 import { declarationOwnerName, findReceiverExpression } from "./ts-type-checker-shared.js";

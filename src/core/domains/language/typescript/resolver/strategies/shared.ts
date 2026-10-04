@@ -8,8 +8,7 @@
  */
 
 import type { AmbiguousResolveMode, CallContext, SymbolLookupRole } from "../../../../../contracts/types/codegraph.js";
-import { reexportOriginFile as kernelReexportOriginFile } from "../../../kernel/index.js";
-import { lookupEcmascriptSymbols } from "../../../shared/ecmascript-symbol-lookup.js";
+import { reexportOriginFile as kernelReexportOriginFile, lookupEcmascriptSymbols } from "../../../kernel/index.js";
 import { mapImportToFile, type ProjectFileProbe, type TsCompilerOptions } from "../ts-path-mapper.js";
 
 export interface ResolverConfig {

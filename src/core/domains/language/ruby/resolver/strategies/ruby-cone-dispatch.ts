@@ -1,6 +1,6 @@
 import type { CallContext, CallRef, DispatchFanoutOutcome } from "../../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
-import { ConeDispatchResolver } from "../../../cone-dispatch.js";
+import { ConeDispatchResolver } from "../../../kernel/index.js";
 import { RubyConeTypeLocator } from "./ruby-cone-type-locator.js";
 import { CONE_MAX_DEFAULT, type ResolverConfig } from "./shared.js";
 

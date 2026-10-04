@@ -41,8 +41,7 @@ import type {
   LanguageWalker,
   StructuralConformanceDeriver,
 } from "../../../contracts/types/language.js";
-import { composeExtractionWalker, deriveStructuralConformance } from "../kernel/index.js";
-import { isEcmascriptSourcePath } from "../shared/ecmascript-symbol-lookup.js";
+import { composeExtractionWalker, deriveStructuralConformance, isEcmascriptSourcePath } from "../kernel/index.js";
 import { readEcmascriptImportSpecifiers, typescriptChunkClassifier, typescriptHooks } from "./chunking/index.js";
 import { typescriptKernel } from "./kernel.js";
 import { loadTsConfig, TSCallResolver, type TSSourceFileStore } from "./resolver/index.js";

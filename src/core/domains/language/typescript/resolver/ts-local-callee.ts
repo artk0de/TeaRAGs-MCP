@@ -40,7 +40,7 @@
 import type ts from "typescript";
 
 import type { CallContext, CallRef } from "../../../../contracts/types/codegraph.js";
-import { lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../kernel/index.js";
 import { findCallExpression } from "./strategies/ts-type-checker-fallback.js";
 import { loadTypeScriptCompiler } from "./ts-compiler-loader.js";
 import type { TSProgramCache } from "./ts-program-cache.js";

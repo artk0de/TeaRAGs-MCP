@@ -197,7 +197,7 @@ export interface DispatchFanoutPopulation {
 
 /**
  * The two language-specific primitives the generic CHA cone-dispatch engine
- * (`ConeDispatchResolver`, `domains/language/cone-dispatch.ts`) needs from each
+ * (`ConeDispatchResolver`, `domains/language/kernel/cone-dispatch.ts`) needs from each
  * language (bd tea-rags-mcp-f10y). The CHA fan-out algorithm itself —
  * descendants ∩ override, K-threshold, cone / poly-base policy, confidence —
  * is language-neutral; the ONLY language-specific operations are (a) resolve a
