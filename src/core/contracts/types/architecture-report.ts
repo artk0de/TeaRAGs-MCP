@@ -139,15 +139,17 @@ export interface FacadeLeakViolationEvidence {
   /**
    * Whether the re-export recipe — export the leaked names from the module's
    * facade and point the violating importer at it — would close an import
-   * cycle: the facade's own import graph already reaches the leaked target
-   * file (bd tea-rags-mcp-89k7k.3). Applied for real on the explore
-   * strategies, that re-export broke 9 suites at collection with
-   * "Class extends value undefined" (bd tea-rags-mcp-0qaht.31). Absent only
-   * where the detector ran before the field existed.
+   * cycle: the facade's own import graph already reaches the violating
+   * importer, so the recipe's rewrite (source → facade) closes
+   * source → facade →* source (bd tea-rags-mcp-89k7k.3, endpoint per bd
+   * tea-rags-mcp-89k7k.17). Applied for real on the explore strategies, that
+   * re-export broke 9 suites at collection with "Class extends value
+   * undefined" (bd tea-rags-mcp-0qaht.31). Absent only where the detector ran
+   * before the field existed.
    */
   reExportUnsafe?: boolean;
   /**
-   * The first found facade→…→target import path, facade first — file evidence
+   * The first found facade→…→source import path, facade first — file evidence
    * for {@link reExportUnsafe}; present only when it is true, capped at 8
    * files (reachability deeper than the cap counts as absent).
    */

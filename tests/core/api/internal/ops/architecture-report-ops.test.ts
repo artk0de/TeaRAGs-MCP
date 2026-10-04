@@ -387,7 +387,12 @@ function facadeGraph(): FileDependencyGraph {
 
 describe("ArchitectureReportOps#build — leakingAbstraction (bd tea-rags-mcp-jetrd)", () => {
   it("reports both leak kinds with per-line evidence after the SDP findings", async () => {
-    const report = await new ArchitectureReportOps().build(graphDb(facadeGraph()), {});
+    // mod/shown.ts imports the external bypasser ext/e.ts back — the module's
+    // graph threads out to the violating importer, the shape the re-export
+    // recipe turns into a cycle (bd tea-rags-mcp-89k7k.17).
+    const g = facadeGraph();
+    g.edges.push({ sourceRelPath: "mod/shown.ts", targetRelPath: "ext/e.ts", callWeight: 0 });
+    const report = await new ArchitectureReportOps().build(graphDb(g), {});
     const evidence = {
       moduleDir: "mod",
       facadeRelPath: "mod/index.ts",
@@ -414,7 +419,7 @@ describe("ArchitectureReportOps#build — leakingAbstraction (bd tea-rags-mcp-je
           callWeight: 0,
           kindBasis: "file-rule",
           reExportUnsafe: true,
-          reExportCyclePath: ["mod/index.ts", "mod/shown.ts"],
+          reExportCyclePath: ["mod/index.ts", "mod/shown.ts", "ext/e.ts"],
         },
       },
     ]);

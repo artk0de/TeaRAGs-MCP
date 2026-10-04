@@ -227,15 +227,17 @@ export interface FacadeLeakViolation extends FacadeAdoption {
   /**
    * Whether the re-export recipe — export the leaked names from the module's
    * facade and point the violating importer at it — would close an import
-   * cycle: the facade's own import graph already reaches the leaked target
-   * file (bd tea-rags-mcp-89k7k.3). Applied for real on the explore strategies
-   * it broke 9 suites at collection with "Class extends value undefined" (bd
+   * cycle: the facade's own import graph already reaches the violating
+   * importer, so the recipe's rewrite (source → facade) closes
+   * source → facade →* source (bd tea-rags-mcp-89k7k.3, endpoint per bd
+   * tea-rags-mcp-89k7k.17). Applied for real on the explore strategies it
+   * broke 9 suites at collection with "Class extends value undefined" (bd
    * tea-rags-mcp-0qaht.31). Computed for BOTH kinds: the recipe is the
    * suggested repair for either, and the risk does not depend on the kind.
    */
   reExportUnsafe: boolean;
   /**
-   * The first found facade→…→target import path, facade first — file evidence
+   * The first found facade→…→source import path, facade first — file evidence
    * for {@link reExportUnsafe}; present only when it is true, and capped at 8
    * files (`RE_EXPORT_CYCLE_PATH_CAP` in leaking-abstraction.ts; reachability
    * deeper than the cap counts as absent: a chain that long is not actionable

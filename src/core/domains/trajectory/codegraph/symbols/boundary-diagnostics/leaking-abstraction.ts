@@ -40,7 +40,7 @@ export const FACADE_OTSU_MIN_POPULATION = 8;
 /**
  * How many files the re-export-cycle evidence path may hold — the facade plus
  * at most 7 import hops (bd tea-rags-mcp-89k7k.3). The path IS the evidence: a
- * facade→…→target chain longer than this says nothing actionable, so
+ * facade→…→source chain longer than this says nothing actionable, so
  * reachability beyond the cap counts as absent and carries no flag. Not an env
  * knob.
  */
@@ -124,11 +124,13 @@ interface ModuleCandidate {
  *
  * Diagnosis, not prescription: a violation says the importer walked past a
  * surface its peers use, not how the module should be drawn. One repair caveat
- * IS measured (bd tea-rags-mcp-89k7k.3): the re-export recipe — export the
- * leaked names from the facade, point the importer at it — closes an import
- * cycle when the facade's own import graph already reaches the leaked target
- * file, so every violation carries `reExportUnsafe` and, when true, the first
- * found facade→…→target path capped at {@link RE_EXPORT_CYCLE_PATH_CAP} files.
+ * IS measured (bd tea-rags-mcp-89k7k.3, endpoint per bd tea-rags-mcp-89k7k.17):
+ * the re-export recipe — export the leaked names from the facade, point the
+ * importer at it — adds source → facade, which closes an import cycle exactly
+ * when the facade's own import graph already reaches the violating importer,
+ * so every violation carries `reExportUnsafe` and, when true, the first found
+ * facade→…→source path capped at {@link RE_EXPORT_CYCLE_PATH_CAP} files.
+ * Reachability of the leaked target alone proves nothing and does not flag.
  */
 export function detectLeakingAbstractions(
   graph: FileDependencyGraph,
@@ -177,7 +179,7 @@ export function detectLeakingAbstractions(
       judged = true;
       if (module.entries.has(edge.targetRelPath)) continue;
       const facadeRelPath = assessment.facadeRelPath as RelPath;
-      const cyclePath = firstImportPath(importsFrom, facadeRelPath, edge.targetRelPath);
+      const cyclePath = firstImportPath(importsFrom, facadeRelPath, edge.sourceRelPath);
       violations.push({
         ...classifyFacadeLeak(edge, module.entries, edgesByKey),
         sourceRelPath: edge.sourceRelPath,
