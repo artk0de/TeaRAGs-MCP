@@ -9,11 +9,13 @@ import type { TypeNameRow } from "../../../../../src/core/domains/explore/naming
 import {
   judgeDraftName,
   judgeTypeDraft,
+  reexportTwins,
   typeDraftMeaningPairs,
   typeDraftPopulation,
   typeFamilyMembers,
   typeNameEvidence,
   withFamilyAnalogues,
+  type ReexportTwins,
 } from "../../../../../src/core/domains/explore/naming-lexicon/verdicts.js";
 
 const TYPE = "TaxAutomationDocument";
@@ -792,12 +794,14 @@ describe("judgeTypeDraft", () => {
     rows: readonly TypeNameRow[],
     draft: { name: string; path: string; extends?: string; symbolKind?: TypeNameRow["symbolKind"] },
     conceptNames: readonly string[] = [],
+    twins?: ReexportTwins,
   ) =>
     judgeTypeDraft({
       ...draft,
       casing: "pascal",
       evidence: typeNameEvidence(rows, typeDraftPopulation(draft)),
       conceptNames,
+      ...(twins !== undefined ? { reexportTwins: twins } : {}),
     });
 
   // A project-wide popular suffix with no inheritance or directory anchor is a guess, not an expected role.
@@ -1014,6 +1018,59 @@ describe("judgeTypeDraft", () => {
         row("Result", "app/services/payments/result.rb"),
       ];
       expect(judge(rows, { name: "Result", path: "app/services/payments/result.rb" }).verdict).toBe("COLLISION");
+    });
+  });
+
+  // bd tea-rags-mcp-89k7k.15: a barrel that re-exports a module's surface (`export { X } from ...`)
+  // is not an independent namespace — its row of a forwarded name is the SAME declaration, so the
+  // pair is no collision. A declaration no edge forwards still collides.
+  describe("a re-export twin is no collision", () => {
+    const CONTRACT = "src/core/contracts/types/architecture-report.ts";
+    const BARREL = "src/core/api/public/dto/architecture.ts";
+    const edge = (sourceRelPath: string, targetRelPath: string, reexportedExportNames: string[]) => ({
+      sourceRelPath,
+      targetRelPath,
+      callWeight: 0,
+      reexportedExportNames,
+    });
+
+    it("a barrel re-exporting the draft's name out of its file → no COLLISION", () => {
+      const rows = [...filler(6), row("Widget", CONTRACT), row("Widget", BARREL)];
+      const twins = reexportTwins([edge(BARREL, CONTRACT, ["Widget"])]);
+      expect(judge(rows, { name: "Widget", path: CONTRACT }, [], twins).verdict).not.toBe("COLLISION");
+    });
+
+    it("the join is symmetric — the barrel's own draft is no collision either", () => {
+      const rows = [...filler(6), row("Widget", CONTRACT), row("Widget", BARREL)];
+      const twins = reexportTwins([edge(BARREL, CONTRACT, ["Widget"])]);
+      expect(judge(rows, { name: "Widget", path: BARREL }, [], twins).verdict).not.toBe("COLLISION");
+    });
+
+    it("an edge that re-exports another name suppresses nothing", () => {
+      const rows = [...filler(6), row("Widget", CONTRACT), row("Widget", BARREL)];
+      const twins = reexportTwins([edge(BARREL, CONTRACT, ["Other"])]);
+      expect(judge(rows, { name: "Widget", path: CONTRACT }, [], twins).verdict).toBe("COLLISION");
+    });
+
+    it("a twin row plus an independent declaration → COLLISION on the independent one only", () => {
+      const rows = [
+        ...filler(6),
+        row("Widget", CONTRACT),
+        row("Widget", BARREL),
+        row("Widget", "src/plugins/extra/widget.ts"),
+      ];
+      const twins = reexportTwins([edge(BARREL, CONTRACT, ["Widget"])]);
+      expect(judge(rows, { name: "Widget", path: CONTRACT }, [], twins)).toMatchObject({
+        verdict: "COLLISION",
+        existing: { relPath: "src/plugins/extra/widget.ts" },
+      });
+    });
+
+    it("two independent declarations in unrelated files, no re-exports → COLLISION", () => {
+      const rows = [...filler(6), row("Commit", "src/git/commit.ts"), row("Commit", "src/vcs/commit.ts")];
+      expect(judge(rows, { name: "Commit", path: "src/vcs/commit.ts" }, [], reexportTwins([])).verdict).toBe(
+        "COLLISION",
+      );
     });
   });
 
