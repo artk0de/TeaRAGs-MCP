@@ -6,8 +6,8 @@
  * `App` method has its composition-root shape like every other tool family.
  */
 
-import { InvalidParameterError } from "../../errors.js";
 import type { ReviewChangesRequest, ReviewChangesResult } from "../../public/dto/review.js";
+import { InvalidParameterError } from "../../public/errors.js";
 import type { ReviewChangesOps } from "../ops/review-changes-ops.js";
 
 export interface ReviewFacadeDeps {

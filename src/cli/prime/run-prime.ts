@@ -8,9 +8,9 @@ import { autoUpdateLogPath, closeAutoUpdateLog, openAutoUpdateLog } from "../../
 import { parseAppConfig } from "../../bootstrap/config/index.js";
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
 import { createAppContext } from "../../bootstrap/factory.js";
+import { createPathCollectionResolver } from "../../core/api/index.js";
 import {
   CollectionRegistry,
-  createPathCollectionResolver,
   IndexFreshnessCheck,
   isQdrantColdError,
   RegistryQdrantBackendUnresolvedError,

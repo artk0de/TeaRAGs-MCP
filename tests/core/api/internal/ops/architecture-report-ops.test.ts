@@ -5,11 +5,11 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { UnknownArchitectureComponentError } from "../../../../../src/core/api/errors.js";
 import {
   ArchitectureReportOps,
   buildArchitectureKnotMembership,
 } from "../../../../../src/core/api/internal/ops/architecture-report-ops.js";
+import { UnknownArchitectureComponentError } from "../../../../../src/core/api/public/errors.js";
 import type {
   FileDependencyGraph,
   NonPublicMemberEdge,

@@ -45,7 +45,6 @@ import {
   type InheritedMemberGraph,
 } from "../../../domains/trajectory/codegraph/inherited-member-definer.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
-import { InvalidParameterError, MissingArgumentError } from "../../errors.js";
 import type { GetArchitectureReportRequest, GetArchitectureReportResponse } from "../../public/dto/architecture.js";
 import type { FindCoChangedRequest, FindCoChangedResult } from "../../public/dto/cochange.js";
 import type {
@@ -56,6 +55,7 @@ import type {
   GetCallersRequest,
   GetCallersResponse,
 } from "../../public/dto/graph.js";
+import { InvalidParameterError, MissingArgumentError } from "../../public/errors.js";
 import {
   resolveCollection,
   resolveIndexedWorkingTree,

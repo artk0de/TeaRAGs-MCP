@@ -22,9 +22,9 @@ import {
   createGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
 } from "../../../__helpers__/git-working-tree-fixture.js";
-import { InvalidParameterError } from "../../../../../src/core/api/errors.js";
 import { resolveWorkingTree } from "../../../../../src/core/api/internal/collection-resolver.js";
 import { readDiffScope, readTreeLag } from "../../../../../src/core/api/internal/ops/diff-scope-reader.js";
+import { InvalidParameterError } from "../../../../../src/core/api/public/errors.js";
 import type { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/index.js";
 
 const CHANGED = "src/git/file-reader.ts";

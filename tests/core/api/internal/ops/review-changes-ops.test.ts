@@ -15,12 +15,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createGitWorkingTreeFixture } from "../../../__helpers__/git-working-tree-fixture.js";
-import { InvalidParameterError } from "../../../../../src/core/api/errors.js";
 import {
   ReviewChangesOps,
   type ReviewChangesOpsDeps,
 } from "../../../../../src/core/api/internal/ops/review-changes-ops.js";
 import type { ReviewChangesRequest } from "../../../../../src/core/api/public/dto/review.js";
+import { InvalidParameterError } from "../../../../../src/core/api/public/errors.js";
 import {
   collectSymbols,
   DefaultSymbolIdComposer,

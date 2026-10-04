@@ -1,3 +1,4 @@
+import { shellQuote } from "../../../contracts/shell-quote.js";
 import type { RechunkFileSelector } from "../../../contracts/types/rechunk.js";
 import type { PayloadKeyOwner } from "../../../contracts/types/trajectory.js";
 import { combineRechunkSelectors } from "./chunk-set-scope.js";
@@ -126,11 +127,6 @@ export function renderRechunkFlags(selector: RechunkFileSelector): string {
   if (selector.languages?.length) flags.push(`--languages ${[...selector.languages].sort().join(",")}`);
   if (selector.files?.length) flags.push(`--files ${shellQuote([...selector.files].join(","))}`);
   return flags.length > 0 ? ` ${flags.join(" ")}` : "";
-}
-
-/** Single-quote anything a shell would expand or split; plain words stay bare. */
-export function shellQuote(value: string): string {
-  return /^[\w./,:@-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 /**

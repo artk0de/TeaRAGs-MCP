@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.js";
-import { CollectionNotProvidedError, ProjectNotRegisteredError } from "../../../../../src/core/api/errors.js";
 import { GraphFacade } from "../../../../../src/core/api/internal/facades/graph-facade.js";
+import { CollectionNotProvidedError, ProjectNotRegisteredError } from "../../../../../src/core/api/public/errors.js";
 import type { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/index.js";
 
 /**

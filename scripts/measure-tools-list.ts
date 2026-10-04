@@ -23,6 +23,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 import type { GraphDbClientPool } from "../src/core/adapters/duckdb/pool.js";
 import { createComposition, SchemaBuilder, type App } from "../src/core/api/index.js";
+import { reviewSectionIds } from "../src/core/api/internal/ops/review-sections/index.js";
 import type { CodegraphDeps } from "../src/core/domains/trajectory/codegraph/index.js";
 import { registerAllTools } from "../src/mcp/tools/index.js";
 
@@ -55,7 +56,10 @@ export async function buildToolSurface(codegraph: boolean): Promise<ToolSurface>
   const codegraphDeps = { pool: {} as GraphDbClientPool } as unknown as CodegraphDeps;
   const { registry, reranker } = createComposition(codegraph ? { codegraph: codegraphDeps } : {});
   const schemaBuilder = new SchemaBuilder(reranker);
-  const app = { hasProvider: (key: string) => codegraph && key === "codegraph.symbols" } as unknown as App;
+  const app = {
+    hasProvider: (key: string) => codegraph && key === "codegraph.symbols",
+    reviewSectionIds: () => reviewSectionIds,
+  } as unknown as App;
 
   const server = new McpServer({ name: "measure", version: "0.0.0" });
   registerAllTools(server, { app, schemaBuilder });

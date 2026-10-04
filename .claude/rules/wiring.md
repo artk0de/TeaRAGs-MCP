@@ -2,6 +2,7 @@
 paths:
   - "src/bootstrap/**"
   - "src/core/api/internal/composition.ts"
+  - "src/core/api/internal/app-factory.ts"
   - "src/core/api/internal/facades/**"
   - "src/core/api/public/app.ts"
   - "src/mcp/tools/**"
@@ -27,7 +28,7 @@ createAppContext(config)          // src/bootstrap/factory.ts
   ├─ SchemaBuilder(reranker)      // generates MCP Zod schemas
   ├─ IngestFacade(qdrant, embeddings, config, ...)
   ├─ ExploreFacade(qdrant, embeddings, reranker, registry, ...)
-  └─ createApp(deps) → App        // src/core/api/public/app.ts
+  └─ createApp(deps) → App        // src/core/api/internal/app-factory.ts
       └─ registerAllTools(server, { app, schemaBuilder })  // src/mcp/tools/
 ```
 

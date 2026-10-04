@@ -15,9 +15,10 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createApp } from "../../../src/core/api/internal/app-factory.js";
 import { ExploreFacade } from "../../../src/core/api/internal/facades/explore-facade.js";
 import { IngestFacade } from "../../../src/core/api/internal/facades/ingest-facade.js";
-import { createApp, type App } from "../../../src/core/api/public/app.js";
+import type { App } from "../../../src/core/api/public/app.js";
 import { INDEXING_METADATA_ID } from "../../../src/core/contracts/constants.js";
 import { resolveCollectionName, validatePath } from "../../../src/core/infra/collection-name.js";
 import {

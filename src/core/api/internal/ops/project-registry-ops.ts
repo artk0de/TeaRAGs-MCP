@@ -21,6 +21,7 @@ import {
 } from "../../../domains/maintenance/registry/index.js";
 import { resolveCollectionName, validatePath, validatePathSync } from "../../../infra/collection-name.js";
 import { ConfigError } from "../../../infra/errors.js";
+import type { ProjectRegistryAddress, StaleProjectEntry, StaleProjectPruneReport } from "../../public/dto/registry.js";
 import {
   InvalidParameterError,
   MissingArgumentError,
@@ -30,8 +31,7 @@ import {
   ProjectNameNotUniqueError,
   ProjectNotRegisteredError,
   ProjectPathAlreadyRegisteredError,
-} from "../../errors.js";
-import type { ProjectRegistryAddress, StaleProjectEntry, StaleProjectPruneReport } from "../../public/dto/registry.js";
+} from "../../public/errors.js";
 
 export interface ProjectRegistryOpsDeps {
   registry: CollectionRegistry;

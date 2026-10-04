@@ -17,8 +17,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
-import { MissingArgumentError } from "../../../../../src/core/api/errors.js";
 import { CochangeOps } from "../../../../../src/core/api/internal/ops/cochange-ops.js";
+import { MissingArgumentError } from "../../../../../src/core/api/public/errors.js";
 import type {
   TemporalCochangeEdge,
   TemporalCochangeSnapshot,

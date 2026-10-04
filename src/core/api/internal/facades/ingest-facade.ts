@@ -52,7 +52,7 @@ import type {
   ProgressCallback,
   TrajectoryIngestConfig,
 } from "../../../types.js";
-import { InvalidParameterError } from "../../errors.js";
+import { InvalidParameterError } from "../../public/errors.js";
 import { createPathCollectionResolver, type PathCollectionResolver } from "../collection-resolver.js";
 import { enrichmentAlgorithmVersions } from "../composition.js";
 import { createCodegraphPayloadHealRunner } from "../infra/codegraph-payload-heal-runner.js";
