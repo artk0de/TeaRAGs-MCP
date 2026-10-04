@@ -323,6 +323,80 @@ describe("architectureSectionProvider.run", () => {
     )) as Record<string, unknown>;
     expect(payload.findings).toEqual([]);
   });
+
+  // bd tea-rags-mcp-35v4v (live 2026-10-01): a 5-file probe diff produced 134
+  // findings; the concatenated `slice(0, 100)` in family order let 117
+  // silentCoupling findings push facadeContract (1) and splitCandidates (2)
+  // ENTIRELY into `truncated` — the most diff-native families invisible while
+  // their detector rows still counted them.
+  it("over the findings cap every family with a finding keeps a slot — a silentCoupling flood never starves facadeContract", async () => {
+    // The facadeContract fixture (a facade dropping a re-export consumers
+    // import) beside a 110-partner silent-coupling flood: 111 findings > 100.
+    writeFile("src/lib/x.ts", "export const a = 1;\nexport const b = 2;\n");
+    writeFile("src/lib/y.ts", "export const z = 1;\n");
+    writeFile("src/lib/index.ts", 'export { a } from "./x";\nexport { z } from "./y";\n');
+    const partners = Array.from({ length: 110 }, (_, i) => `src/other/p${String(i).padStart(3, "0")}.ts`);
+    const graph = graphDbStub(
+      {
+        files: [
+          graphFile("src/lib/index.ts"),
+          graphFile("src/lib/x.ts"),
+          graphFile("src/lib/y.ts"),
+          graphFile("src/app/c1.ts"),
+          graphFile("src/app/c2.ts"),
+          graphFile("src/app/c3.ts"),
+        ],
+        edges: [
+          {
+            sourceRelPath: "src/lib/index.ts",
+            targetRelPath: "src/lib/x.ts",
+            callWeight: 1,
+            reexportedExportNames: ["a", "b"],
+          },
+          {
+            sourceRelPath: "src/lib/index.ts",
+            targetRelPath: "src/lib/y.ts",
+            callWeight: 1,
+            reexportedExportNames: ["z"],
+          },
+          namedGraphEdge("src/app/c1.ts", "src/lib/index.ts", ["a"]),
+          namedGraphEdge("src/app/c2.ts", "src/lib/index.ts", ["a"]),
+          namedGraphEdge("src/app/c3.ts", "src/lib/index.ts", ["a", "b"]),
+        ],
+      },
+      partners.map((partner) => cochangePair("src/lib/index.ts", partner, 5)),
+    );
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({
+        graphDb: graph,
+        scope: scopeOf(["src/lib/index.ts"]),
+        temporalCochange: { meta: { head: "h" }, edges: partners.map((p) => cochangePair("src/lib/index.ts", p, 5)) },
+      }),
+    )) as Record<string, unknown>;
+
+    // THE live bug: the plain slice kept the first 100 findings in family
+    // order and facadeContract landed wholly in `truncated`.
+    const findings = payload.findings as { detector: string }[];
+    expect(findings.some((finding) => finding.detector === "facadeContract")).toBe(true);
+
+    // The family-aware policy's invariants, whatever the fixture's family mix.
+    expect(findings).toHaveLength(100);
+    const detectors = payload.detectors as { detector: string; findingCount: number; truncated?: number }[];
+    const listedByDetector = new Map<string, number>();
+    for (const finding of findings) {
+      listedByDetector.set(finding.detector, (listedByDetector.get(finding.detector) ?? 0) + 1);
+    }
+    for (const status of detectors) {
+      if (status.findingCount === 0) continue;
+      expect(listedByDetector.get(status.detector) ?? 0, `${status.detector} starved under the cap`).toBeGreaterThan(0);
+      expect((status.truncated ?? 0) + (listedByDetector.get(status.detector) ?? 0)).toBe(status.findingCount);
+    }
+    const totalFindings = detectors.reduce((sum, status) => sum + status.findingCount, 0);
+    expect(payload.truncated).toBe(totalFindings - 100);
+    // The flooding family's cut is counted on its own row, not hidden in the total.
+    expect(detectors.find((status) => status.detector === "silentCoupling")?.truncated).toBeGreaterThan(0);
+  });
 });
 
 describe("architectureSectionProvider.run — facadeContract wiring", () => {

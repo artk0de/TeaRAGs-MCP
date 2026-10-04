@@ -40,6 +40,7 @@ import {
   DiffDetectorRun,
   type DiffDetectorContractReader,
   type DiffDetectorCouplingReader,
+  type DiffDetectorFinding,
   type DiffDetectorGraphReader,
   type DiffDetectorRunDeps,
 } from "../diff-detector-run.js";
@@ -292,16 +293,19 @@ export const architectureSectionProvider: ReviewSectionProvider = {
         { changedFiles: scope.files },
         overlay,
       );
-      const findings = result.findings.slice(0, ARCHITECTURE_FINDING_CAP);
+      const { kept, truncatedByDetector } = capFindingsByFamily(result.findings, ARCHITECTURE_FINDING_CAP);
       const notJudged: ReviewSectionNotJudgedEntry[] = overlay.unsupported().map((skip) => ({
         relPath: skip.relPath,
         reason: skip.reason,
         ...(skip.detail !== undefined ? { detail: skip.detail } : {}),
       }));
       return {
-        findings,
-        detectors: result.detectors,
-        ...(result.findings.length > findings.length ? { truncated: result.findings.length - findings.length } : {}),
+        findings: kept,
+        detectors: result.detectors.map((status) => {
+          const truncated = truncatedByDetector.get(status.detector);
+          return truncated === undefined ? status : { ...status, truncated };
+        }),
+        ...(result.findings.length > kept.length ? { truncated: result.findings.length - kept.length } : {}),
         ...(notJudged.length > 0 ? { notJudged } : {}),
       };
     } finally {
@@ -312,6 +316,86 @@ export const architectureSectionProvider: ReviewSectionProvider = {
     }
   },
 };
+
+/**
+ * The findings cap's family-aware policy (bd tea-rags-mcp-35v4v): the plain
+ * `slice(0, cap)` over the run's concatenated findings let one loud family —
+ * 117 silentCoupling pairs on a live 5-file probe diff — push every later
+ * family (facadeContract 1, splitCandidates 2, the most diff-native ones)
+ * entirely into `truncated`, while their detector rows still counted them.
+ *
+ * Allocation, stated once:
+ * 1. FLOOR — every family with ≥1 finding is guaranteed one slot; a family is
+ *    never fully starved, whatever the others' volume (families ≤ 7, cap 100,
+ *    so the floor always fits; were it ever exceeded, earlier family order
+ *    keeps its slots first).
+ * 2. PROPORTIONAL FILL — the remaining budget is split over each family's
+ *    UNMET findings (count − floor) by largest remainder. Sharing the deficit,
+ *    not the raw count, means no share can exceed what a family still lacks —
+ *    no clamping pass. Remainder ties break by the run's family order.
+ * 3. HONESTY — the total never exceeds `cap`; every cut is counted per family
+ *    on the detector row (`truncated`), so `findingCount` minus the family's
+ *    listed findings always reconciles. Kept findings stay in family order,
+ *    each family's own findings in the run's emission order.
+ */
+export function capFindingsByFamily(
+  findings: readonly DiffDetectorFinding[],
+  cap: number,
+): { kept: DiffDetectorFinding[]; truncatedByDetector: ReadonlyMap<string, number> } {
+  if (findings.length <= cap) return { kept: [...findings], truncatedByDetector: new Map() };
+  const order: string[] = [];
+  const byDetector = new Map<string, DiffDetectorFinding[]>();
+  for (const finding of findings) {
+    const family = byDetector.get(finding.detector);
+    if (family === undefined) {
+      byDetector.set(finding.detector, [finding]);
+      order.push(finding.detector);
+    } else family.push(finding);
+  }
+
+  const allocation = new Map<string, number>();
+  let budget = cap;
+  for (const detector of order) {
+    if (budget <= 0) break;
+    allocation.set(detector, 1); // the floor: never fully starved
+    budget--;
+  }
+  const deficitOf = (detector: string): number =>
+    (byDetector.get(detector)?.length ?? 0) - (allocation.get(detector) ?? 0);
+  const unmetTotal = order.reduce((sum, detector) => sum + deficitOf(detector), 0);
+  if (budget > 0 && unmetTotal > 0) {
+    const shares = order.map((detector, index) => ({
+      index,
+      detector,
+      deficit: deficitOf(detector),
+      ideal: (budget * deficitOf(detector)) / unmetTotal,
+    }));
+    for (const share of shares) {
+      allocation.set(share.detector, (allocation.get(share.detector) ?? 0) + Math.floor(share.ideal));
+    }
+    let leftover = budget - shares.reduce((sum, share) => sum + Math.floor(share.ideal), 0);
+    // Largest remainder first; ties keep the run's family order.
+    const byRemainder = shares
+      .map((share) => ({ index: share.index, remainder: share.ideal - Math.floor(share.ideal) }))
+      .sort((a, b) => b.remainder - a.remainder || a.index - b.index);
+    for (const { index } of byRemainder) {
+      if (leftover <= 0) break;
+      if (shares[index].deficit <= Math.floor(shares[index].ideal)) continue; // already served its whole deficit
+      allocation.set(shares[index].detector, (allocation.get(shares[index].detector) ?? 0) + 1);
+      leftover--;
+    }
+  }
+
+  const kept: DiffDetectorFinding[] = [];
+  const truncatedByDetector = new Map<string, number>();
+  for (const detector of order) {
+    const family = byDetector.get(detector) ?? [];
+    const slots = allocation.get(detector) ?? 0;
+    kept.push(...family.slice(0, slots));
+    if (family.length > slots) truncatedByDetector.set(detector, family.length - slots);
+  }
+  return { kept, truncatedByDetector };
+}
 
 function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const list = map.get(key);

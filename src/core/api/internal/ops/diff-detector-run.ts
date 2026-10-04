@@ -158,6 +158,13 @@ export interface DiffDetectorStatus {
   built: boolean;
   reason?: string;
   findingCount: number;
+  /**
+   * This family's findings past the slots the section's findings cap
+   * allocated it (bd tea-rags-mcp-35v4v) — counted, not listed;
+   * `findingCount` stays the family's FULL total. Stamped by the section's
+   * cap (`architecture-section.ts`), not by the run.
+   */
+  truncated?: number;
 }
 
 export interface DiffDetectorFindings {
