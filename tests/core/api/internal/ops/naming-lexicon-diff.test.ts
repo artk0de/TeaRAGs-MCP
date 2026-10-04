@@ -22,6 +22,7 @@ import {
 } from "../../../../../src/core/api/internal/ops/naming-lexicon-ops.js";
 import { createNamingReviewExtractor } from "../../../../../src/core/api/internal/ops/naming-review-extraction.js";
 import { ontologyLanguageProfiles } from "../../../../../src/core/api/internal/ops/ontology-report-ops.js";
+import { ReviewChangesOps } from "../../../../../src/core/api/internal/ops/review-changes-ops.js";
 import type { ExploreResponse, SemanticSearchRequest } from "../../../../../src/core/api/public/dto/index.js";
 import type {
   IdentifierReplaceEntry,
@@ -29,7 +30,11 @@ import type {
   TypeDeclarationRow,
 } from "../../../../../src/core/contracts/types/codegraph.js";
 import type { IdentifierNamingConvention } from "../../../../../src/core/contracts/types/language.js";
-import { LanguageFactory } from "../../../../../src/core/domains/language/index.js";
+import {
+  collectSymbols,
+  DefaultSymbolIdComposer,
+  LanguageFactory,
+} from "../../../../../src/core/domains/language/index.js";
 import { capability as typescriptCapability } from "../../../../../src/core/domains/language/typescript/capability.js";
 import { DATABASE_MIGRATIONS } from "../../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../../../../src/core/domains/maintenance/migration/database/runner.js";
@@ -136,16 +141,20 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     ]);
   }
 
-  function build(embeddings?: NamingLexiconEmbeddings, collectionRegistry: unknown = {}): NamingLexiconOps {
-    const graphDb = new Proxy(db, {
+  /** The db as a reader: `close` no-ops so a consumer releasing the handle keeps the fixture usable. */
+  function proxiedGraphDb(): DuckDbGraphClient {
+    return new Proxy(db, {
       get(target, prop, receiver) {
         if (prop === "close") return async () => undefined;
         const value: unknown = Reflect.get(target, prop, receiver);
         return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(target) : value;
       },
     });
+  }
+
+  function build(embeddings?: NamingLexiconEmbeddings, collectionRegistry: unknown = {}): NamingLexiconOps {
     return new NamingLexiconOps({
-      pool: { acquireReader: vi.fn(async () => ({ graphDb, symbolTable: {} })) } as never,
+      pool: { acquireReader: vi.fn(async () => ({ graphDb: proxiedGraphDb(), symbolTable: {} })) } as never,
       collectionRegistry: collectionRegistry as never,
       resolveActiveCollection: async (name: string) => name as never,
       explore: { semanticSearch },
@@ -635,6 +644,66 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
   });
 
   // Lexicon friction F2: evidence read from an index built at another commit is marked, not silent.
+  // bd tea-rags-mcp-89k7k.1.11: the naming section of `review_changes` over a rename-bearing diff.
+  // The 6-branch corpus (2026-10-04) was relocation-heavy and drew 0 findings, so the section's
+  // verdict paths were never exercised end to end; this fixture carries one of each verdict the
+  // section exists to raise, and asserts BOTH through ReviewChangesOps' `naming` section.
+  describe("review_changes naming section over a rename-bearing diff", () => {
+    /** ReviewChangesOps wired to the REAL lexicon ops and the fixture's own graph. */
+    function reviewOps(): ReviewChangesOps {
+      return new ReviewChangesOps({
+        pool: {
+          acquireReader: vi.fn(async () => ({ graphDb: proxiedGraphDb(), symbolTable: {} })),
+          hasDatabase: vi.fn(() => true),
+        },
+        collectionRegistry: { get: () => ({}) } as never,
+        lexiconOps: ops,
+        reviewEdgeExtraction: {
+          languageFactory: new LanguageFactory({}),
+          collectSymbols,
+          composer: new DefaultSymbolIdComposer(),
+        },
+        windowMonths: 6,
+      });
+    }
+
+    it("flags a generic-suffix MISFIT and an independent COLLISION", async () => {
+      // The directory's role is `Ops` (three sibling primaries); the draft carries
+      // a generic suffix and none of the role's. Sole declaration of its file: held.
+      await db.replaceTypeDeclarationsBulk(
+        ["indexing", "search", "collection"].map((stem) => ({
+          relPath: `src/ops/${stem}-ops.ts`,
+          rows: [decl(`${stem[0].toUpperCase()}${stem.slice(1)}Ops`, "class")],
+        })),
+      );
+      mkdirSync(join(repo, "src/ops"), { recursive: true });
+      writeFileSync(join(repo, "src/ops/resolution.ts"), "export class ResolutionOutcome {}\n");
+      // Independent twin: `Commit` declared by src/vcs/commit.ts (seeded), joined by no re-export
+      // edge — the 89k7k.15 twin suppression must not eat this one.
+      writeFileSync(join(repo, "src/git/commit.ts"), "export class Commit {}\n");
+
+      const result = await reviewOps().reviewChanges({
+        collection: "c",
+        path: repo,
+        sections: ["naming"],
+      });
+      const { naming } = result.review.sections;
+      expect(naming?.built, JSON.stringify(naming)).toBe(true);
+      const { findings } = naming as { findings: { name: string; verdict: string }[] };
+      expect(findings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ relPath: "src/ops/resolution.ts", name: "ResolutionOutcome", verdict: "MISFIT" }),
+          expect.objectContaining({
+            relPath: "src/git/commit.ts",
+            name: "Commit",
+            verdict: "COLLISION",
+            existing: { symbolId: "Commit", relPath: "src/vcs/commit.ts" },
+          }),
+        ]),
+      );
+    });
+  });
+
   describe("index lag", () => {
     const registryAt = (indexedCommit: string) => ({ get: () => ({ git: { indexedCommit } }) });
 
