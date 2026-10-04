@@ -32,6 +32,14 @@ export {
   type OnDemandGitSignalTarget,
 } from "./infra/on-demand-signals.js";
 export type { SquashOptions } from "./infra/metrics.js";
+// The query-time half of TRAJECTORY_GIT_ANCHOR (bd tea-rags-mcp-zwu7m): the
+// clock a read measures stored ages from, taken from the index's stamped mode.
+export {
+  HISTORY_ANCHOR_ENV_KEY,
+  resolveIndexHistoryAnchorSec,
+  stampedHistoryAnchorMode,
+  type GitHistoryAnchorMode,
+} from "./infra/history-anchor.js";
 // Repo-wide history reads shared with the codegraph temporal sub-graph
 // (bd tea-rags-mcp-x4rpp): the run-scoped discovery matrix and its store, the
 // rename-following and merge rules, and the ONE author-session grouping rule.

@@ -35,6 +35,7 @@ import {
   enrichmentAlgorithmVersions,
   ExploreFacade,
   GraphFacade,
+  IndexHistoryAnchorResolver,
   IngestFacade,
   NamingLexiconOps,
   ontologyLanguageProfiles,
@@ -1343,6 +1344,10 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     }
     return resolved;
   };
+  // The query clock of an index (bd tea-rags-mcp-zwu7m): its stamped
+  // TRAJECTORY_GIT_ANCHOR mode and indexed commit, one resolver per process so
+  // the commit time is read once per (collection, indexedCommit).
+  const historyAnchor = new IndexHistoryAnchorResolver({ collectionRegistry });
   // One overlay per process (bd tea-rags-mcp-xi2r9): its delta reader caches per
   // tree, and every read surface — explore, graph, trace_path — shares it.
   const workingTreeOverlay = new WorkingTreeOverlay({
@@ -1442,6 +1447,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
         resolveActiveCollection,
         workingTreeOverlay,
         indexExists,
+        historyAnchor,
       })
     : undefined;
 
@@ -1669,6 +1675,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     // git then has no git row on either surface (bd tea-rags-mcp-uebug).
     enrichmentHealthFrameForPath: (path) => projectIngestFactory.forPath(path).enrichmentProviderKeys,
     workingTreeOverlay,
+    historyAnchor,
   });
   // NamingLexiconOps (bd tea-rags-mcp-4p3sb.12) reads cg_identifiers through the
   // same pool as TracePathOps, under the same codegraphContext guard, and runs

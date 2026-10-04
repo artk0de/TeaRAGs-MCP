@@ -179,9 +179,12 @@ export class TrajectoryRegistry {
    *   codegraph minFanIn/minFanOut → file, age/commit filters → chunk). A
    *   registry-wide default here would silently override those per-descriptor
    *   defaults (tea-rags-mcp-9mwny).
+   * @param nowSec - The request's history clock, unix seconds (bd
+   *   tea-rags-mcp-zwu7m), handed to every descriptor: an age filter measures
+   *   from it. Omitted → each descriptor reads the wall clock, as before.
    * @returns `{ must: [...conditions] }` or `undefined` if no conditions generated
    */
-  buildFilter(params: Record<string, unknown>, level?: FilterLevel): QdrantFilter | undefined {
+  buildFilter(params: Record<string, unknown>, level?: FilterLevel, nowSec?: number): QdrantFilter | undefined {
     const allFilters = this.getAllFilters();
     const mustConditions: QdrantFilterCondition[] = [];
     const mustNotConditions: QdrantFilterCondition[] = [];
@@ -189,7 +192,7 @@ export class TrajectoryRegistry {
     for (const filter of allFilters) {
       const value = params[filter.param];
       if (value === undefined || value === null) continue;
-      const result = filter.toCondition(value, level);
+      const result = nowSec === undefined ? filter.toCondition(value, level) : filter.toCondition(value, level, nowSec);
       if (result.must) mustConditions.push(...result.must);
       if (result.must_not) mustNotConditions.push(...result.must_not);
     }
@@ -212,8 +215,9 @@ export class TrajectoryRegistry {
     typedParams: Record<string, unknown>,
     rawFilter?: Record<string, unknown>,
     level?: FilterLevel,
+    nowSec?: number,
   ): Record<string, unknown> | undefined {
-    const typed = this.buildFilter(typedParams, level);
+    const typed = this.buildFilter(typedParams, level, nowSec);
     return mergeQdrantFilters(typed, rawFilter) as Record<string, unknown> | undefined;
   }
 }

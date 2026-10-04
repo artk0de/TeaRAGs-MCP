@@ -108,10 +108,16 @@ and `tea-rags index-codebase` / `tea-rags tune` replay it automatically with
 benchmark checkout, an archived repository): with `now`, a tree whose last
 commit is older than the windows has every file and chunk counter at zero.
 Under `head`, every window, `ageDays` and `recencyWeightedFreq` written at index
-time is measured from HEAD's committer time. Query-time age filters
-(`minAgeDays` / `maxAgeDays`, filter presets) and the reranker's recency still
-read the wall clock. Changing the value is reported as env drift and needs
-`--force-enrichments git`.
+time is measured from HEAD's committer time. Searches against that index use
+the same clock: the `recency` / `age` rerank signals, the `minAgeDays` /
+`maxAgeDays` filters and the age thresholds of filter presets measure from the
+committer time of the commit the index was built at, so a file last changed at
+that commit reads as fresh rather than years old. The mode a search uses is the
+one recorded with the index, not the one in the searching shell; an index built
+with `now`, or before this setting existed, keeps the wall clock. If the indexed
+commit can no longer be read (garbage-collected, repository moved), searches
+fall back to the wall clock. Changing the value is reported as env drift and
+needs `--force-enrichments git`.
 
 ## Trajectory: Codegraph
 

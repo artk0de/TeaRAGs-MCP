@@ -51,9 +51,30 @@ their own navigators.
   window or age computed from a second clock disagrees with the rest of the
   payload the moment the anchor is `head`, and nothing fails — a benchmark
   snapshot just reads dormant. A `now` run passes nothing, so its calls and
-  payload stay what they were before the anchor existed. Query-time age reads
-  (reranker, `filters.ts`, `age-derivation.ts`, filter-preset compiler) are NOT
-  anchored yet.
+  payload stay what they were before the anchor existed.
+
+- **A read measures age from the INDEX's anchor, resolved once per request and
+  handed down — no age reader picks its own clock.** The mode is the one the
+  index was STAMPED with (`stampedHistoryAnchorMode` over the registry env
+  snapshot: only an explicit `head` is `head`), and the instant is the committer
+  time of its `indexedCommit`, not of the checkout's current HEAD
+  (`resolveIndexHistoryAnchorSec`, cached per (collection, indexedCommit) by
+  `IndexHistoryAnchorResolver` in `api/internal/infra/`). `ExploreOps` resolves
+  it in `resolveTarget` and carries it as `historyAnchorSec` to the typed age
+  filters (`FilterDescriptor.toCondition`'s `nowSec`, through
+  `TrajectoryRegistry#buildMergedFilter`), the filter-preset compiler
+  (`resolveFilterSpec` → `compileFilterPreset`'s `nowSec`) and every rerank
+  (`ExploreContext.historyAnchorSec` → `RerankOptions.now`, via
+  `historyClockRerankOption`); `TracePathOps#computeDanger` reads it the same
+  way. `undefined` means the wall clock, as at index time, and a wall-clock
+  request passes exactly the arguments it passed before the clock existed. An
+  unreadable commit time (commit gone, git error) is the wall clock with a debug
+  line, never a failed query. Why: a head-anchored payload compared with today
+  ages every chunk of a years-old snapshot by the snapshot's age, so `recency`
+  reads zero, `maxAgeDays` matches nothing and every age threshold of a filter
+  preset is off by the same span — while a `now` index, with nothing to compare
+  against, would never show it. The prime / `get_index_metrics` `ageDays` bands
+  need nothing here: they are percentiles of the stamps the anchored run wrote.
 
 - **The chunk walk follows renames, and the ORDER of the slice is what makes
   that correct.** A commit older than a rename names the file by its old path,

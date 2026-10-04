@@ -36,6 +36,7 @@ import type {
 } from "../../public/dto/index.js";
 import type { WorkingTreeIndexTarget } from "../../public/dto/working-tree.js";
 import type { CollectionEmbeddingsResolver } from "../collection-embeddings.js";
+import type { IndexHistoryAnchorResolver } from "../infra/index-history-anchor.js";
 import { ExploreOps } from "../ops/explore-ops.js";
 
 export interface ExploreFacadeDeps {
@@ -65,6 +66,8 @@ export interface ExploreFacadeDeps {
   enrichmentHealthFrameForPath?: (path: string) => readonly string[];
   /** The `workingTree` marker source (bd tea-rags-mcp-xi2r9), threaded through to ExploreOps. */
   workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
+  /** The query clock of an index (bd tea-rags-mcp-zwu7m), threaded through to ExploreOps. */
+  historyAnchor?: Pick<IndexHistoryAnchorResolver, "anchorSecOf">;
 }
 
 export class ExploreFacade {
@@ -88,6 +91,7 @@ export class ExploreFacade {
       signalFloors: deps.signalFloors,
       enrichmentHealthFrameForPath: deps.enrichmentHealthFrameForPath,
       workingTreeOverlay: deps.workingTreeOverlay,
+      historyAnchor: deps.historyAnchor,
     });
   }
 

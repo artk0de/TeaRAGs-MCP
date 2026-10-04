@@ -70,6 +70,7 @@ import type { WorkingTreeGraphReader } from "../../../contracts/types/working-tr
 import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
 import { isTestExampleChunk } from "../chunk-grouping/code.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
+import { historyClockRerankOption } from "../history-clock.js";
 import { renderWithDeclaredVisibility } from "../outline-visibility.js";
 import { applyEssentialSignals } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
@@ -391,7 +392,11 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
 
     const rerank = originalCtx.rerank as RerankMode<string> | undefined;
     if (rerank) {
-      processed = await this.reranker.rerank(processed, rerank, "semantic_search");
+      const clock = historyClockRerankOption(originalCtx);
+      processed =
+        clock.now === undefined
+          ? await this.reranker.rerank(processed, rerank, "semantic_search")
+          : await this.reranker.rerank(processed, rerank, "semantic_search", clock);
     }
 
     const offset = originalCtx.offset ?? 0;

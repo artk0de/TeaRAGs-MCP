@@ -9,8 +9,7 @@
  */
 
 import type { FilterConditionResult, FilterDescriptor, FilterLevel } from "../../../contracts/index.js";
-
-const DAY_SECONDS = 86_400;
+import { DAY_SECONDS, nowEpochSeconds } from "./age-derivation.js";
 
 /** Exact match on the blame-dominant (live-line) author at the given level. */
 function blameOwnerCondition(value: unknown, level: FilterLevel): FilterConditionResult {
@@ -37,8 +36,13 @@ function lastCommitAgeCondition(key: string, range: { gt: number; lte?: number }
   };
 }
 
-function nowEpochSeconds(): number {
-  return Math.floor(Date.now() / 1000);
+/**
+ * The clock an age filter measures from: the request's history clock when the
+ * read path hands one (a head-anchored index reads at its indexed commit's
+ * time, bd tea-rags-mcp-zwu7m), the wall clock otherwise.
+ */
+function requestNowSec(nowSec: number | undefined): number {
+  return nowSec ?? nowEpochSeconds();
 }
 
 export const gitFilters: FilterDescriptor[] = [
@@ -132,10 +136,10 @@ export const gitFilters: FilterDescriptor[] = [
     param: "minAgeDays",
     description: "Filter code whose last commit is at least N days old (query-time)",
     type: "number",
-    toCondition: (value: unknown, level: FilterLevel = "chunk") =>
+    toCondition: (value: unknown, level: FilterLevel = "chunk", nowSec?: number) =>
       lastCommitAgeCondition(`git.${level}.lastModifiedAt`, {
         gt: 0,
-        lte: nowEpochSeconds() - (value as number) * DAY_SECONDS,
+        lte: requestNowSec(nowSec) - (value as number) * DAY_SECONDS,
       }),
   },
   {
@@ -143,9 +147,9 @@ export const gitFilters: FilterDescriptor[] = [
     param: "maxAgeDays",
     description: "Filter code whose last commit is at most N days old (query-time; 0 = within a day)",
     type: "number",
-    toCondition: (value: unknown, level: FilterLevel = "chunk") =>
+    toCondition: (value: unknown, level: FilterLevel = "chunk", nowSec?: number) =>
       lastCommitAgeCondition(`git.${level}.lastModifiedAt`, {
-        gt: Math.max(0, nowEpochSeconds() - ((value as number) + 1) * DAY_SECONDS),
+        gt: Math.max(0, requestNowSec(nowSec) - ((value as number) + 1) * DAY_SECONDS),
       }),
   },
   {

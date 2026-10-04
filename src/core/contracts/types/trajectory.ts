@@ -19,6 +19,8 @@ export interface TrajectoryFilterBuilder {
     typedParams: Record<string, unknown>,
     rawFilter?: Record<string, unknown>,
     level?: FilterLevel,
+    /** The request's history clock, unix seconds — `FilterDescriptor.toCondition`'s `nowSec`. */
+    nowSec?: number,
   ) => Record<string, unknown> | undefined;
   /**
    * Filter-preset DATA accessors (read-only contract — ISP). The registry owns

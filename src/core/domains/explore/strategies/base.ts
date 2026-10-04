@@ -11,6 +11,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import { fileScopeOf, reduceToFileScope, type FileScope } from "../chunk-grouping/file-scope.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
+import { historyClockRerankOption } from "../history-clock.js";
 import { filterMetaOnly } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import { TestSetupHydrator } from "../test-setup-hydration.js";
@@ -325,6 +326,7 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
         ? await this.reranker.rerank(results, rerank, "semantic_search", {
             signalLevel: originalCtx.level,
             query: originalCtx.query,
+            ...historyClockRerankOption(originalCtx),
           })
         : results;
 

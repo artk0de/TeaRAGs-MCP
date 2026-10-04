@@ -556,12 +556,26 @@ export async function readCommitFileNumstat(
 
 /** The HEAD commit's committer time, unix seconds. Rejects on a repository with no commit. */
 export async function readHeadCommitTime(repoRoot: string, timeoutMs = TREE_LISTING_STALL_MS): Promise<number> {
-  const out = await execWithStallGuard(resolveGitExecutable(), ["log", "-1", "--format=%ct", "HEAD"], {
+  return readCommitTime(repoRoot, "HEAD", timeoutMs);
+}
+
+/**
+ * A commit's committer time, unix seconds — `git log -1 --format=%ct <rev>`.
+ * Rejects when the repository does not hold `rev` (bd tea-rags-mcp-zwu7m: the
+ * query clock of a head-anchored index is its INDEXED commit's time, and that
+ * commit may have been garbage-collected since).
+ */
+export async function readCommitTime(
+  repoRoot: string,
+  rev: string,
+  timeoutMs = TREE_LISTING_STALL_MS,
+): Promise<number> {
+  const out = await execWithStallGuard(resolveGitExecutable(), ["log", "-1", "--format=%ct", rev], {
     cwd: repoRoot,
     stallTimeoutMs: timeoutMs,
   });
   const seconds = Number(out.trim());
-  if (out.trim() === "" || !Number.isFinite(seconds)) throw new Error(`no HEAD commit time in ${repoRoot}`);
+  if (out.trim() === "" || !Number.isFinite(seconds)) throw new Error(`no commit time for ${rev} in ${repoRoot}`);
   return seconds;
 }
 

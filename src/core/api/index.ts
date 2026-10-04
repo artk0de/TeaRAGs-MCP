@@ -91,6 +91,7 @@ export {
   type WorkingTreeGraphCodegraphRuntime,
 } from "./internal/infra/working-tree-graph-cache.js";
 export { createWorkingTreeDeltaSignalSource } from "./internal/infra/working-tree-delta-signals.js";
+export { IndexHistoryAnchorResolver } from "./internal/infra/index-history-anchor.js";
 export {
   createWorkingTreeGitSignalSource,
   type WorkingTreeGitSignalConfig,

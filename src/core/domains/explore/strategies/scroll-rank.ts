@@ -137,6 +137,7 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
       ensureIndexFn,
       filter: ctx.filter,
       presetName: ctx.presetName,
+      ...(ctx.historyAnchorSec !== undefined ? { historyAnchorSec: ctx.historyAnchorSec } : {}),
       // The rerank collapses on the preset's groupBy, so the pool is sized in
       // those groups — not in points (bd tea-rags-mcp-s9vgb).
       groupBy: ctx.presetName ? this.reranker.getFullPreset(ctx.presetName, "rank_chunks")?.groupBy : undefined,

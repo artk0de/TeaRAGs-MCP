@@ -15,6 +15,7 @@ import type { SymbolVisibilityResolver } from "../../../contracts/types/codegrap
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import { CodeChunkGrouper, DocChunkGrouper } from "../chunk-grouping/index.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
+import { historyClockRerankOption } from "../history-clock.js";
 import { renderWithDeclaredVisibility } from "../outline-visibility.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import { recordingTreeGraphReader } from "../working-tree/tree-graph-marker.js";
@@ -127,7 +128,11 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
 
     const rerank = originalCtx.rerank as RerankMode<string> | undefined;
     if (rerank) {
-      processed = await this.reranker.rerank(processed, rerank, "semantic_search");
+      const clock = historyClockRerankOption(originalCtx);
+      processed =
+        clock.now === undefined
+          ? await this.reranker.rerank(processed, rerank, "semantic_search")
+          : await this.reranker.rerank(processed, rerank, "semantic_search", clock);
     }
 
     return processed;
