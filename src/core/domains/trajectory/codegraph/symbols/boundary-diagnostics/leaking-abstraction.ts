@@ -38,6 +38,15 @@ export const FACADE_MIN_EXTERNAL_IMPORTERS = 3;
 export const FACADE_OTSU_MIN_POPULATION = 8;
 
 /**
+ * How many files the re-export-cycle evidence path may hold — the facade plus
+ * at most 7 import hops (bd tea-rags-mcp-89k7k.3). The path IS the evidence: a
+ * facade→…→source chain longer than this says nothing actionable, so
+ * reachability beyond the cap counts as absent and carries no flag. Not an env
+ * knob.
+ */
+export const RE_EXPORT_CYCLE_PATH_CAP = 8;
+
+/**
  * The adoption threshold a codebase gets: ADAPTIVE, drawn from the adoption
  * values of the modules themselves rather than fixed, because how much of a
  * codebase goes through its facades is a property of that codebase.
@@ -114,7 +123,14 @@ interface ModuleCandidate {
  * do, by whether the entry file has an edge to `x` at all otherwise.
  *
  * Diagnosis, not prescription: a violation says the importer walked past a
- * surface its peers use, not how the module should be drawn.
+ * surface its peers use, not how the module should be drawn. One repair caveat
+ * IS measured (bd tea-rags-mcp-89k7k.3, endpoint per bd tea-rags-mcp-89k7k.17):
+ * the re-export recipe — export the leaked names from the facade, point the
+ * importer at it — adds source → facade, which closes an import cycle exactly
+ * when the facade's own import graph already reaches the violating importer,
+ * so every violation carries `reExportUnsafe` and, when true, the first found
+ * facade→…→source path capped at {@link RE_EXPORT_CYCLE_PATH_CAP} files.
+ * Reachability of the leaked target alone proves nothing and does not flag.
  */
 export function detectLeakingAbstractions(
   graph: FileDependencyGraph,
@@ -127,6 +143,7 @@ export function detectLeakingAbstractions(
       : undefined;
   const candidates = collectModuleCandidates(graph);
   const edgesByKey = new Map(graph.edges.map((e) => [edgeKey(e.sourceRelPath, e.targetRelPath), e]));
+  const importsFrom = importsAdjacency(graph);
 
   for (const edge of graph.edges) {
     if (edge.sourceRelPath === edge.targetRelPath) continue;
@@ -162,6 +179,7 @@ export function detectLeakingAbstractions(
       judged = true;
       if (module.entries.has(edge.targetRelPath)) continue;
       const facadeRelPath = assessment.facadeRelPath as RelPath;
+      const cyclePath = firstImportPath(importsFrom, facadeRelPath, edge.sourceRelPath);
       violations.push({
         ...classifyFacadeLeak(edge, module.entries, edgesByKey),
         sourceRelPath: edge.sourceRelPath,
@@ -172,6 +190,8 @@ export function detectLeakingAbstractions(
         facadeImporterCount: assessment.facadeImporterCount,
         deepImporterCount: assessment.deepImporterCount,
         callWeight: edge.callWeight,
+        reExportUnsafe: cyclePath !== undefined,
+        ...(cyclePath ? { reExportCyclePath: cyclePath } : {}),
       });
       break;
     }
@@ -276,8 +296,60 @@ function classifyFacadeLeak(
     : { kind: "internal-reach", kindBasis: "names", ...named, nonExportedNames };
 }
 
-/** Group `violations` by module — see {@link FacadeLeakRootCause}. */
-function groupRootCauses(violations: readonly FacadeLeakViolation[]): FacadeLeakRootCause[] {
+/**
+ * The file import graph as source → direct targets, in edge order so the
+ * reachability walk below is deterministic.
+ */
+function importsAdjacency(graph: FileDependencyGraph): Map<RelPath, RelPath[]> {
+  const adjacency = new Map<RelPath, RelPath[]>();
+  for (const e of graph.edges) {
+    if (e.sourceRelPath === e.targetRelPath) continue;
+    const targets = adjacency.get(e.sourceRelPath);
+    if (targets) targets.push(e.targetRelPath);
+    else adjacency.set(e.sourceRelPath, [e.targetRelPath]);
+  }
+  return adjacency;
+}
+
+/**
+ * First found import path `from → … → to` over the file graph, breadth-first,
+ * deterministic in edge order; `undefined` when `to` is not reachable within
+ * {@link RE_EXPORT_CYCLE_PATH_CAP} files. The parent map keeps the whole walk
+ * O(files + edges) per call.
+ */
+function firstImportPath(
+  importsFrom: ReadonlyMap<RelPath, readonly RelPath[]>,
+  from: RelPath,
+  to: RelPath,
+): RelPath[] | undefined {
+  const parents = new Map<RelPath, RelPath | null>([[from, null]]);
+  let frontier = [from];
+  for (let depth = 1; depth < RE_EXPORT_CYCLE_PATH_CAP && frontier.length > 0; depth++) {
+    const nextFrontier: RelPath[] = [];
+    for (const file of frontier) {
+      for (const next of importsFrom.get(file) ?? []) {
+        if (parents.has(next)) continue;
+        parents.set(next, file);
+        if (next === to) {
+          const path = [next];
+          let at: RelPath | null = file;
+          while (at !== null) {
+            path.unshift(at);
+            at = parents.get(at) ?? null;
+          }
+          return path;
+        }
+        nextFrontier.push(next);
+      }
+    }
+    frontier = nextFrontier;
+  }
+  return undefined;
+}
+
+/** Group `violations` by module — see {@link FacadeLeakRootCause}. */ function groupRootCauses(
+  violations: readonly FacadeLeakViolation[],
+): FacadeLeakRootCause[] {
   const byModule = new Map<string, FacadeLeakViolation[]>();
   for (const v of violations) {
     const group = byModule.get(v.moduleDir);
