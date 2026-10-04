@@ -61,12 +61,43 @@ describe("scopeCochangeHistory", () => {
   });
 
   it("drops merge commits", () => {
-    const scoped = scopeCochangeHistory(
-      [entry("m", [{ path: "a.ts" }, { path: "b.ts" }], "Merge branch 'x' into main"), entry("s", [{ path: "a.ts" }])],
-      { projectPrefix: "", fileExists: () => true },
-    );
+    const entries = [
+      {
+        commit: {
+          sha: "m",
+          author: "alice",
+          authorEmail: "a@x",
+          timestamp: 100,
+          body: "Merge branch 'x'",
+          parents: ["p1", "p2"],
+        },
+        changedFiles: [{ path: "a.ts" }, { path: "b.ts" }],
+      },
+      entry("s", [{ path: "a.ts" }]),
+    ];
+    const scoped = scopeCochangeHistory(entries, { projectPrefix: "", fileExists: () => true });
 
     expect(scoped.map((c) => c.commit.sha)).toEqual(["s"]);
+  });
+
+  it("keeps a grafted shallow clone's root commit whose subject says Merge (bd tea-rags-mcp-12x1y)", () => {
+    // A shallow clone's only commit is a grafted root: no parents, the WHOLE
+    // tree as its numstat — and quite possibly a "Merge branch ..." subject,
+    // which is history, not a restatement to drop.
+    const grafted = entry(
+      "graft",
+      Array.from({ length: 3 }, (_, i) => ({ path: `src/f${i}.ts` })),
+      "Merge branch 'master' of https://example.com/repo.git",
+    );
+    const scoped = scopeCochangeHistory([grafted, entry("s", [{ path: "src/f0.ts" }])], {
+      projectPrefix: "",
+      fileExists: () => true,
+    });
+
+    expect(scoped.map((c) => [c.commit.sha, c.files])).toEqual([
+      ["graft", ["src/f0.ts", "src/f1.ts", "src/f2.ts"]],
+      ["s", ["src/f0.ts"]],
+    ]);
   });
 
   it("lists each file once per commit", () => {

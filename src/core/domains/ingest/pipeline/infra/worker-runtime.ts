@@ -64,8 +64,36 @@ class ThreadWorkerRuntime<TInit, Req> implements WorkerRuntime<TInit, Req> {
   }
 }
 
-class ProcessWorkerRuntime<TInit, Req> implements WorkerRuntime<TInit, Req> {
+/**
+ * Error codes `process.send` reports when the parent's end of the IPC channel is
+ * gone: the pipe broke under a pending write (EPIPE / ECONNRESET), or the
+ * channel was already marked disconnected (ERR_IPC_CHANNEL_CLOSED).
+ */
+const PARENT_CHANNEL_GONE_CODES: ReadonlySet<string> = new Set(["EPIPE", "ECONNRESET", "ERR_IPC_CHANNEL_CLOSED"]);
+
+function isParentChannelGone(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" && PARENT_CHANNEL_GONE_CODES.has(code);
+}
+
+/**
+ * Forked-process runtime. A process worker has exactly one parent channel, and
+ * the parent can vanish mid-request (SIGINT to a stdio server while a read is
+ * chunking through the pool). `process.send` without a callback reports a
+ * closed/broken channel as an `'error'` event on `process`, which — unhandled —
+ * crashes the worker with a stack trace after the parent is already gone. So
+ * `init()` takes ownership of the channel's lifetime: the IPC `'disconnect'`
+ * and a channel-gone `'error'` both mean "nobody left to answer" and leave via
+ * `onParentGone` (exit 0) at once, abandoning in-flight work; any other
+ * `'error'` is rethrown, keeping its default crash semantics.
+ */
+export class ProcessWorkerRuntime<TInit, Req> implements WorkerRuntime<TInit, Req> {
+  private parentGone = false;
+
+  constructor(private readonly onParentGone: () => void = () => process.exit(0)) {}
+
   async init(): Promise<TInit> {
+    this.watchParentChannel();
     return new Promise<TInit>((resolve) => {
       const onInit = (m: unknown): void => {
         if (isInit(m)) {
@@ -83,12 +111,29 @@ class ProcessWorkerRuntime<TInit, Req> implements WorkerRuntime<TInit, Req> {
     });
   }
   respond(response: unknown): void {
+    if (this.parentGone) return;
     process.send?.(response);
   }
   onShutdown(cb: () => void): void {
     process.on("message", (m) => {
       if (isShutdown(m)) cb();
     });
+  }
+
+  private watchParentChannel(): void {
+    process.once("disconnect", () => {
+      this.leave();
+    });
+    process.on("error", (error) => {
+      if (!isParentChannelGone(error)) throw error;
+      this.leave();
+    });
+  }
+
+  private leave(): void {
+    if (this.parentGone) return;
+    this.parentGone = true;
+    this.onParentGone();
   }
 }
 

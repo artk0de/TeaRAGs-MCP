@@ -139,4 +139,40 @@ describe("Ruby walker — identifier declarations", () => {
       expect(onLine).toContainEqual(declaration.boundCallee);
     }
   });
+
+  // bd tea-rags-mcp-0qaht — class state and memoization reach the naming lexicon.
+  describe("class variables and memoization declare", () => {
+    it("a class variable is a field named with its sigil", () => {
+      const src = "class Cache\n  @@store = Store.new\nend\n";
+      const rows = declarationsOf(src, [{ symbolId: "Cache", startLine: 1, endLine: 3, scope: [] }]) ?? [];
+      expect(rows).toContainEqual(expect.objectContaining({ name: "@@store", kind: "field", typeName: "Store" }));
+    });
+
+    it("||= declares its left side: ivar, class variable, local", () => {
+      const src = [
+        "class Report",
+        "  def totals",
+        "    @totals ||= Totals.new",
+        "    @@registry ||= {}",
+        "    memo ||= compute",
+        "  end",
+        "end",
+      ].join("\n");
+      const rows =
+        declarationsOf(src, [
+          { symbolId: "Report", startLine: 1, endLine: 7, scope: [] },
+          { symbolId: "Report#totals", startLine: 2, endLine: 6, scope: ["Report"] },
+        ]) ?? [];
+      expect(rows).toContainEqual(expect.objectContaining({ name: "@totals", kind: "field", typeName: "Totals" }));
+      expect(rows).toContainEqual(expect.objectContaining({ name: "@@registry", kind: "field" }));
+      expect(rows).toContainEqual(expect.objectContaining({ name: "memo", kind: "local" }));
+    });
+
+    it("other compound assignments still declare nothing", () => {
+      const src = ["def bump", "  count += 1", "  @hits -= 1", "  @ok &&= check", "end"].join("\n");
+      const rows = declarationsOf(src, [{ symbolId: "bump", startLine: 1, endLine: 5, scope: [] }]) ?? [];
+      const names = rows.map((r) => r.name);
+      for (const name of ["count", "@hits", "@ok"]) expect(names).not.toContain(name);
+    });
+  });
 });

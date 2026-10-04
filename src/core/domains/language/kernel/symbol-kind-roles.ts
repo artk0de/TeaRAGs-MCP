@@ -27,12 +27,17 @@ export interface CallRoleSymbolLookupOptions {
   role?: SymbolLookupRole;
 }
 
-/** The table options for a lookup made in the language whose roles are `roles`. */
+/**
+ * The table options for a lookup made in the language whose roles are `roles`.
+ * `roles === undefined` — a context no vertical attached its descriptor to
+ * (0qaht.13) — narrows nothing: the `kinds` set is omitted and the table
+ * answers as a type lookup would.
+ */
 export function symbolLookupOptionsFor(
-  roles: SymbolKindRoles,
+  roles: SymbolKindRoles | undefined,
   options: CallRoleSymbolLookupOptions | undefined,
 ): SymbolLookupOptions | undefined {
   if (options === undefined) return undefined;
   const { role, ...rest } = options;
-  return role === undefined ? rest : { ...rest, kinds: roles[role] };
+  return role === undefined ? rest : { ...rest, kinds: roles?.[role] };
 }

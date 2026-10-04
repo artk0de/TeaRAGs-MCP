@@ -198,6 +198,8 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
       // Storage compaction (dvzdm): an older daemon's file simply stays as large as it was.
       "compactStorage",
       "diffSymbolSignals",
+      // Snapshot export (xi2r9): an older daemon answers with a typed refusal the working-tree graph degrades on.
+      "exportSnapshot",
       "getFileMetricsBulk",
       "getSymbolLineRangesBulk",
       // The liveness probe (f924y): an older daemon's "unknown op" answer is the proof of life it asks for.

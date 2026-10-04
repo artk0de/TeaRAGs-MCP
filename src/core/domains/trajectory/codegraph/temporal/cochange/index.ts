@@ -15,9 +15,10 @@ export {
   type CochangeCommit,
 } from "./commit-bundles.js";
 export { scopeCochangeHistory, type CochangeHistoryScope } from "./history-scope.js";
-export { computeMassChangeCut, MASS_CHANGE_CEILING } from "./mass-change-cut.js";
+export { computeMassChangeCut, tukeyCutOverLog2, MASS_CHANGE_CEILING } from "./mass-change-cut.js";
 export {
   extractCochangeGraph,
   type CochangeExtractionOptions,
   type CochangeGraphExtraction,
 } from "./pair-extractor.js";
+export { InMemoryTemporalSymbolCommitBuffer } from "./symbol-commit-buffer.js";

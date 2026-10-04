@@ -53,6 +53,12 @@ export abstract class VcsGitAdapter implements VcsAdapter {
    * listed. With `listTreePaths(HEAD)` it defines the LIVE tracked set.
    */
   abstract listWorktreeDeletions(timeoutMs?: number): Promise<string[]>;
+  /**
+   * Paths among `paths` whose working-tree content differs from HEAD — edited,
+   * staged or not. Added, deleted and untracked paths are not listed: only a
+   * path HEAD holds has HEAD rows a working row can be carried onto.
+   */
+  abstract listWorktreeModifications(paths: readonly string[], timeoutMs?: number): Promise<string[]>;
 
   /** One-time pre-enrichment warmup — write the commit-graph (+ changed-path
    *  Bloom filters) to accelerate every `git log` / `git blame` this run.
@@ -80,8 +86,16 @@ export abstract class VcsGitAdapter implements VcsAdapter {
    * path is therefore re-read WITHOUT the pathspec, and its rows touching a
    * named path — on either side of a rename — carry `previousPath` exactly as
    * a repo-wide log reports them.
+   *
+   * `since` present bounds it to that window and walks it with full history —
+   * the pathspec-limited form of the repo-wide `--since` log an index run's
+   * discoveries read, so a slice of either holds the same commits.
    */
-  abstract readCommitFileNumstatForPaths(paths: string[], timeoutMs?: number): Promise<CommitFileNumstat[]>;
+  abstract readCommitFileNumstatForPaths(
+    paths: string[],
+    timeoutMs?: number,
+    since?: Date,
+  ): Promise<CommitFileNumstat[]>;
   /** Persistent batch blob reader — caller owns the lifecycle (`close()` at walk end). */
   abstract createBlobBatchReader(): BlobBatchReader;
   /** Persistent batch `<rev>` → OID resolver — caller owns the lifecycle. */

@@ -536,6 +536,15 @@ QDRANT_TUNE_UPSERT_BATCH_SIZE=512
 QDRANT_TUNE_UPSERT_ORDERING=strong
 ```
 
+With adaptive embedding (the default), `EMBEDDING_TUNE_BATCH_SIZE` is the
+ceiling the run tunes below, and concurrency is climbed by measured aggregate
+throughput — never inferred from the address. `INGEST_PIPELINE_CONCURRENCY`
+set as above is the climb's hard ceiling; left unset, the climb may reach an
+implicit ceiling of 8. If you also set `EMBEDDING_FALLBACK_URL` to a local
+Ollama, a failover to it starts from that endpoint's own stored optimum, and a
+serialising local server converges to 1. See
+[Adaptive Embedding](/config/performance-tuning#adaptive-embedding).
+
 See **[Performance Tuning](/config/performance-tuning)** for detailed benchmarks and topology comparison.
 
 ## Troubleshooting

@@ -268,7 +268,15 @@ describe("applyRegistryEnvForUpdater", () => {
 
   it("still replays the general env snapshot, legacy `tuning` spelling included", () => {
     const env: NodeJS.ProcessEnv = {};
-    applyRegistryEnvForUpdater({ ...entry, tuning: { INGEST_PIPELINE_CONCURRENCY: "7" } }, env);
+    // A throughput-tuned key replays only as an operator pin (bd tea-rags-mcp-y1ynz).
+    applyRegistryEnvForUpdater(
+      {
+        ...entry,
+        tuning: { INGEST_PIPELINE_CONCURRENCY: "7" },
+        operatorPinnedEnvKeys: ["INGEST_PIPELINE_CONCURRENCY"],
+      },
+      env,
+    );
     expect(env.INGEST_PIPELINE_CONCURRENCY).toBe("7");
   });
 

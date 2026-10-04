@@ -35,9 +35,24 @@ import type { DispatchResolverComponent } from "../../../../contracts/types/lang
 import { resolveImportFileEdges } from "../../import-file-edges.js";
 import { resolveDispatchViaComponents } from "../../resolver-chain.js";
 import { ECMASCRIPT_GLOBALS } from "../../shared/ecmascript-globals.js";
-import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
+import {
+  lookupEcmascriptSymbols,
+  lookupEcmascriptSymbolsByShortName,
+  withEcmascriptSymbolKindRoles,
+} from "../../shared/ecmascript-symbol-lookup.js";
+import { capability } from "../capability.js";
 import { JavascriptImportFileMapper, javascriptImportPathCandidates } from "./javascript-import-file-mapper.js";
 import { JavascriptTableDispatchResolver } from "./javascript-table-dispatch.js";
+
+/**
+ * This vertical's kind roles onto every ctx an entry method hands down
+ * (0qaht.13): the family lookup answers a `callee` / `receiver` role with the
+ * CALLING language's row — JavaScript's constructible subset here — read off
+ * the ctx rather than off a capability import inside `shared/`. Idempotent, so
+ * a nested entry re-wrapping an already-wrapped ctx allocates nothing.
+ */
+const withJsSymbolKindRoles = (ctx: CallContext): CallContext =>
+  withEcmascriptSymbolKindRoles(ctx, capability.codegraph.symbolKindRoles);
 
 export class JavascriptCallResolver implements CallResolver {
   readonly language = "javascript";
@@ -64,10 +79,13 @@ export class JavascriptCallResolver implements CallResolver {
    * `resolve` separately for a join call's normal callee edge.
    */
   resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
-    return resolveDispatchViaComponents(this.dispatchComponents, call, ctx);
+    return resolveDispatchViaComponents(this.dispatchComponents, call, withJsSymbolKindRoles(ctx));
   }
 
-  resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
+  resolve(call: CallRef, resolveCtx: CallContext): SymbolResolutionTarget | null {
+    // This vertical's kind roles onto the ctx (0qaht.13): every role lookup
+    // below answers with the CALLING language's row.
+    const ctx = withJsSymbolKindRoles(resolveCtx);
     // `super(...)` / `super.X()` — walk to the PARENT class via
     // `classExtends`, then resolve `<Parent>#<member>`. Without
     // classExtends data we cannot know the parent and MUST return
@@ -265,7 +283,7 @@ export class JavascriptCallResolver implements CallResolver {
    * Python declares is no edge this resolver can produce.
    */
   hasInProjectDefinition(call: CallRef, ctx: CallContext): boolean {
-    return lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" }).length > 0;
+    return lookupEcmascriptSymbolsByShortName(withJsSymbolKindRoles(ctx), call.member, { role: "callee" }).length > 0;
   }
 }
 

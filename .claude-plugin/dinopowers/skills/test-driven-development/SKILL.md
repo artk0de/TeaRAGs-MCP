@@ -65,10 +65,10 @@ If first test in project (no existing tests): skip pattern search, invoke
 redirects superpowers:X. NEVER bypass the wrapper.
 
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
-`tea-rags/rules/index-freshness.md`. No background reindex hook — worktree-plan
-freshness explicit (clone + per-task reindex in `dinopowers:executing-plans`);
-run `mcp__tea-rags__index_codebase` manually to search code edited but not yet
-committed, BEFORE first tea-rags call.
+`tea-rags/rules/index-freshness.md`. No background reindex hook. Linked
+worktree: overlay serves uncommitted edits — never reindex for them. Main
+checkout: incremental `mcp__tea-rags__index_codebase` BEFORE first tea-rags call
+over code edited but not committed.
 
 ## Step 1 — Frame the test intent
 
@@ -108,8 +108,7 @@ If recipe returns SKIP (DSL test chunks absent), fall back to ONE
 `mcp__tea-rags__semantic_search` call:
 
 ```
-project:     <alias from list_projects — RECOMMENDED>
-path:        <current project path — fallback when no alias>
+path:        <your working directory>   ← tea-rags search-cascade "Addressing the Codebase"; never project alone
 query:       <intent from Step 1>
 pathPattern: <pathHint optional>
 testFile:    "only"                ← FILE-LEVEL fallback when no DSL chunks
@@ -126,7 +125,7 @@ State explicitly: "DSL test chunks unavailable — file-level fallback in use".
 Issue ONE direct `mcp__tea-rags__semantic_search`:
 
 ```
-project:     <alias>
+path:        <your working directory>
 query:       <intent from Step 1>
 pathPattern: <pathHint optional>
 chunkType:   "test"                ← DSL leaf scenarios
@@ -161,7 +160,7 @@ Do NOT substitute:
 | `pathPattern: "**/*.test.ts"` without `chunkType`                      | Works for TypeScript but misses `*.spec.ts`, `_test.go`, `_spec.rb` etc., AND still captures non-DSL noise. Use `chunkType: "test"`.   |
 | Named preset `"relevance"` / `"recent"` / `"hotspots"`                 | `proven` is calibrated for "conventions to follow"; `recent` returns unstable drafts; `hotspots` returns flaky tests to avoid          |
 | Custom rerank weights                                                  | `proven` preset already encodes the right weights; reinventing diverges from `tea-rags:data-driven-generation` Step 2                  |
-| `mcp__tea-rags__hybrid_search`                                         | Rerank presets are tied to `semantic_search`                                                                                           |
+| `mcp__tea-rags__hybrid_search`                                         | Same rerank, but its BM25 leg re-ranks by query-token overlap — signal scan wants semantic + signals                                   |
 | `mcp__tea-rags__find_similar` on implementation file alone             | Finds structurally similar code, not tests that exercise similar behavior                                                              |
 | Built-in Grep for setup or assertion patterns                          | Returns every occurrence; `proven` narrows to CONVENTIONAL uses                                                                        |
 | Skipping the `tests-as-context` preflight                              | Without preflight, fallback path is unknown; you may issue a `chunkType: "test"` query that returns 0 on a non-DSL language by mistake |

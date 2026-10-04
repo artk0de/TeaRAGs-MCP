@@ -23,15 +23,19 @@ import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/clien
 import type { FileExtraction } from "../../../../../src/core/contracts/types/codegraph.js";
 import { collectSymbols } from "../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../src/core/domains/language/kernel/symbol-id.js";
+import { runMigrations } from "../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { CodegraphEnrichmentProvider } from "../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { CallEdgeResolutionRunner } from "../../../../../src/core/domains/trajectory/codegraph/symbols/resolution-runner.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { buildTestCodegraphDeps } from "../../trajectory/codegraph/__helpers__/language-factory.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolve(__dirname, "../../../../../src/core/domains/maintenance/migration/database/migrations");
-const DIRECT_INPUT_SPILL = join(process.cwd(), ".tea-rags-codegraph-spill", "xpass-__direct__.ndjson");
+
+// Direct mode (no pool) places every spill under `process.cwd()/.tea-rags-codegraph-spill/`.
+// Each test redirects cwd to its own temp root (bd tea-rags-mcp-bbo1h.8): test
+// files run in parallel processes, and a spill under the shared repo-root cwd let
+// one file truncate or unlink the `xpass-__direct__.ndjson` another was draining.
 
 // A small multi-file project: several normal TS files with cross-file calls,
 // plus a markdown file (no graph) and a "broken"/marginal file. Each is a
@@ -102,15 +106,19 @@ async function newProvider(tmp: string): Promise<{ provider: CodegraphEnrichment
 
 describe("codegraph cross-pass drain determinism (yl9tv)", () => {
   let tmp: string;
+  let directInputSpill: string;
+  let origCwd: () => string;
 
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), "cg-determinism-"));
-    rmSync(DIRECT_INPUT_SPILL, { force: true });
+    origCwd = process.cwd;
+    Object.defineProperty(process, "cwd", { value: () => tmp, configurable: true });
+    directInputSpill = join(tmp, ".tea-rags-codegraph-spill", "xpass-__direct__.ndjson");
   });
 
   afterEach(() => {
+    Object.defineProperty(process, "cwd", { value: origCwd, configurable: true });
     rmSync(tmp, { recursive: true, force: true });
-    rmSync(DIRECT_INPUT_SPILL, { force: true });
   });
 
   it("drains the spill in a relPath-sorted order regardless of spill line order (R>=8)", async () => {
@@ -119,7 +127,7 @@ describe("codegraph cross-pass drain determinism (yl9tv)", () => {
     const successRates: number[] = [];
 
     for (let run = 0; run < 8; run++) {
-      rmSync(DIRECT_INPUT_SPILL, { force: true });
+      rmSync(directInputSpill, { force: true });
       // Deterministic per-run permutation of the spill line order — emulates
       // file-completion order varying with fileConcurrency.
       const shuffled = [...base];
@@ -144,10 +152,9 @@ describe("codegraph cross-pass drain determinism (yl9tv)", () => {
       });
 
       // Unique per-run collection ⇒ a private input-spill path
-      // (`xpass-<collectionName>.ndjson`), isolating this test from other
-      // direct-mode cross-pass tests that share the cwd spill dir. In direct
-      // mode (no pool) collectionName only routes the spill path; the single
-      // injected graphDb is used regardless.
+      // (`xpass-<collectionName>.ndjson`), so no run drains a predecessor's
+      // spill. In direct mode (no pool) collectionName only routes the spill
+      // path; the single injected graphDb is used regardless.
       const coll = `det_${run}_${Math.random().toString(36).slice(2)}`;
       // beginExtractionRun truncates the input spill, THEN acceptExtraction
       // appends each file in the (shuffled) completion order — mirrors the real

@@ -1,10 +1,10 @@
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { importGitHistory } from "../../../../../__helpers__/git-history-import.js";
 import { VcsAdapterFactory } from "../../../../../../../src/core/adapters/vcs/factory.js";
 import { BlameWorkerPool } from "../../../../../../../src/core/domains/trajectory/git/infra/churn-walk/blame-pool.js";
 import { GitEnrichmentProvider } from "../../../../../../../src/core/domains/trajectory/git/provider.js";
@@ -12,33 +12,21 @@ import { GitEnrichmentProvider } from "../../../../../../../src/core/domains/tra
 const TMP_BASE = realpathSync(tmpdir());
 let repo: string;
 
-function gitIn(cwd: string, args: string[]): void {
-  if (!cwd.startsWith(TMP_BASE)) throw new Error(`refusing git outside temp: ${cwd}`);
-  execFileSync("git", args, {
-    cwd,
-    env: {
-      ...process.env,
-      GIT_AUTHOR_NAME: "Test",
-      GIT_AUTHOR_EMAIL: "test@example.com",
-      GIT_COMMITTER_NAME: "Test",
-      GIT_COMMITTER_EMAIL: "test@example.com",
-    },
-  });
-}
-
 beforeAll(() => {
   repo = mkdtempSync(join(TMP_BASE, "blame-pool-"));
-  const g = (args: string[]): void => {
-    gitIn(repo, args);
-  };
-  g(["init", "-q"]);
-  writeFileSync(join(repo, "a.ts"), "const a = 1;\nconst b = 2;\n");
-  g(["add", "."]);
-  g(["commit", "-q", "-m", "c1"]);
-  writeFileSync(join(repo, "a.ts"), "const a = 1;\nconst b = 3;\nconst c = 4;\n");
-  writeFileSync(join(repo, "b.ts"), "export const x = 10;\n");
-  g(["add", "."]);
-  g(["commit", "-q", "-m", "c2"]);
+  if (!repo.startsWith(TMP_BASE)) throw new Error(`refusing git outside temp: ${repo}`);
+  // ONE fast-import instead of 5 init/add/commit spawns (bd tea-rags-mcp-1r3e5).
+  const test = { name: "Test", email: "test@example.com" };
+  const now = new Date();
+  importGitHistory(repo, [
+    { message: "c1", author: test, authorDate: now, writes: { "a.ts": "const a = 1;\nconst b = 2;\n" } },
+    {
+      message: "c2",
+      author: test,
+      authorDate: now,
+      writes: { "a.ts": "const a = 1;\nconst b = 3;\nconst c = 4;\n", "b.ts": "export const x = 10;\n" },
+    },
+  ]);
 }, 30000);
 
 afterAll(() => {

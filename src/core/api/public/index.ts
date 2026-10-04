@@ -29,6 +29,12 @@ export {
   resolveRateMiss,
 } from "../../contracts/resolve-rate.js";
 export type { ResolveRateCell, ResolveRateCounts } from "../../contracts/resolve-rate.js";
+
+// ── Codegraph payload vocabulary ─────────────────────────────────────
+// The provider key the codegraph tool surface gates its registration on.
+// Re-exported because mcp/ may not import contracts/ directly (dependency-
+// direction guard), and the literal must exist in exactly one place.
+export { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../contracts/codegraph-payload.js";
 export type {
   // Explore DTOs
   CollectionRef,
@@ -68,6 +74,12 @@ export type {
   ArchitectureViolation,
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
+  // Co-change partners DTOs (find_co_changed)
+  CoChangeBuildProvenance,
+  CoChangedFileResult,
+  CoChangedPartner,
+  FindCoChangedRequest,
+  FindCoChangedResult,
   // Naming lexicon DTOs
   NamingLexiconRequest,
   NamingLexiconResult,
@@ -75,7 +87,20 @@ export type {
   GetOntologyReportRequest,
   GetOntologyReportResponse,
   OntologyReportSectionName,
+  // Diff-scoped review DTOs (review_changes)
+  ReviewChangesRequest,
+  ReviewChangesResult,
+  ReviewSectionId,
+  ReviewSectionResult,
 } from "./dto/index.js";
+
+// ── Review sections — ids derived from the live provider registry ─────
+// `reviewSectionIds` is the MCP `sections` enum's single source (bd
+// tea-rags-mcp-89k7k.1.4): a new section appears in the schema with no
+// hand-edited union, and an id whose provider has not shipped is rejected at
+// the boundary. Re-exported here because mcp/ may not import api/internal
+// (dependency-direction guard).
+export { reviewSectionIds } from "../internal/ops/review-sections/index.js";
 
 // ── Error classes — input validation hierarchy (api/errors.ts) ────────
 export {
@@ -93,6 +118,7 @@ export {
   StaleProjectAliasError,
   InvalidDocumentMetadataSchemaError,
   DocumentMetadataSchemaViolationError,
+  UnknownArchitectureComponentError,
 } from "../errors.js";
 export type { InputErrorCode, DocumentMetadataViolation } from "../errors.js";
 
@@ -120,7 +146,8 @@ export { QdrantOptimizerErrorPersistsError } from "../../adapters/qdrant/errors.
 // every other status failure as it is (bd tea-rags-mcp-zqg1i).
 export { isQdrantColdError, QdrantUnavailableError } from "../../adapters/qdrant/errors.js";
 
-// ── Project registry — runtime + types (domains/maintenance/registry) ──
+// ── Project registry — runtime (domains/maintenance/registry facade),
+// types (contracts/types/registry.js) ──
 export { CollectionRegistry } from "../../domains/maintenance/registry/index.js";
 export { PROJECT_NAME_RE } from "../../domains/maintenance/registry/index.js";
 export { REGISTRY_ENV_ALLOWLIST, REGISTRY_ENV_GROUPS } from "../../domains/maintenance/registry/index.js";
@@ -130,6 +157,7 @@ export {
   outerEnvForRegistryEntry,
   pickRegistryEntry,
   pickRegistryEnvSeed,
+  replayableRegistryEnv,
   replayRegistryEnv,
   resolveRegistryEnv,
 } from "../../domains/maintenance/registry/index.js";
@@ -148,7 +176,11 @@ export type {
   RegistryLookup,
   RegistryQdrantBackend,
   RegistryQdrantBackendClaim,
-} from "../../domains/maintenance/registry/index.js";
+  // The registry vocabulary lives in contracts (bd tea-rags-mcp-0qaht.36):
+  // this barrel is a stable surface and no longer reaches into the volatile
+  // registry domain for types. Runtime symbols below stay on the domain
+  // facade — api is the composition root and may import domains.
+} from "../../contracts/types/registry.js";
 
 // ── Index freshness — auto-update watcher decision surface (hpg2) ─────
 export {
@@ -172,7 +204,11 @@ export { validatePath } from "../../infra/collection-name.js";
 // barrel because `bootstrap` and `cli` must resolve a request the way a SEARCH
 // does — registry entry first, path hash only for a path nothing claims — and
 // may not reach api/internal directly (bd tea-rags-mcp-dxa9w).
-export { createPathCollectionResolver, resolveCollection } from "../internal/collection-resolver.js";
+export {
+  createPathCollectionResolver,
+  resolveBaseIndexEntry,
+  resolveCollection,
+} from "../internal/collection-resolver.js";
 export type { PathCollectionResolver, ResolveInput } from "../internal/collection-resolver.js";
 
 // ── Build lease — `projects orphans` / `doctor` skip a collection a live run
@@ -205,6 +241,13 @@ export type {
 // Interfaces/classes stay in adapters; we re-export so cli reaches them via
 // the public facade rather than importing core/adapters directly.
 export type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
+// GGUF weights from the Ollama registry — `tea-rags llama-server fetch-model`.
+export {
+  downloadVerifiedGguf,
+  parseOllamaModelReference,
+  resolveOllamaRegistryGguf,
+  type OllamaRegistryGgufSource,
+} from "../../adapters/embeddings/ollama-registry/gguf-source.js";
 export { QdrantManager } from "../../adapters/qdrant/client.js";
 // The one definition of "chunk points only" — every CLI chunk count passes it
 // to countPoints so it agrees with get_index_status (bd tea-rags-mcp-39xca.16).
@@ -245,7 +288,9 @@ export {
 export type { OptimizerRecoveryOutcome, OptimizerRecoveryTarget } from "../internal/ops/optimizer-recovery-ops.js";
 // The one wording of a first index's worktree seed outcome — CLI status block
 // and MCP `index_codebase` response both render it (bd tea-rags-mcp-k8gac).
-export { formatWorktreeSeedReport } from "../../domains/maintenance/worktree/worktree-seed-report.js";
+// Through the worktree domain facade, not the deep module (bd
+// tea-rags-mcp-0qaht.36).
+export { formatWorktreeSeedReport } from "../../domains/maintenance/worktree/index.js";
 
 // ── SchemaBuilder (used by mcp tool registration) ─────────────────────
 // Concrete class lives in api/internal/infra; re-exporting through public

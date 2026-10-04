@@ -1,3 +1,4 @@
+import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../../../contracts/index.js";
 import type { ScoringWeights } from "../../../../contracts/types/provider.js";
 import type { CompositeRerankPreset, OverlayMask } from "../../../../contracts/types/reranker.js";
 
@@ -25,7 +26,7 @@ export class EntryPointPreset implements CompositeRerankPreset {
   readonly filter = { presets: "production" } as const;
   readonly description = "Composition roots — high outgoing imports per line, no incoming";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar", "trace_path"];
-  readonly requires = ["codegraph.symbols"] as const;
+  readonly requires = [CODEGRAPH_SYMBOLS_PROVIDER_KEY] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.3,
     fanOutPerLine: 0.3,

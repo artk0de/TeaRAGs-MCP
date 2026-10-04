@@ -4,13 +4,13 @@
  * into a JS ArrayBuffer (profiler: 3×1.4GB on taxdome → OOM); the CLI streams
  * objects from disk. No child_process mock here — these exercise real git.
  */
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { importGitHistory } from "../../../../__helpers__/git-history-import.js";
 import {
   buildViaCli,
   createCatFileBatch,
@@ -27,42 +27,57 @@ const TMP_BASE = realpathSync(tmpdir());
 // git there would mutate the real worktree repo. Refuse loudly instead — a
 // thrown error fails the test and surfaces the bad cwd, rather than silently
 // committing fixture commits onto the project's HEAD.
-function gitIn(cwd: string, args: string[]): string {
+interface Snapshot {
+  message: string;
+  files: Record<string, string>;
+}
+
+/**
+ * A repository at `cwd` holding `snapshots` as consecutive commits (each the
+ * files it writes), by `Test <t@example.com>` — the configured user the
+ * init/config/add/commit/rev-parse chain committed as — written with ONE
+ * fast-import (bd tea-rags-mcp-1r3e5). Returns the shas in order.
+ */
+function commitSnapshots(cwd: string, snapshots: readonly Snapshot[]): string[] {
   const r = cwd ? resolve(cwd) : "";
   if (!r?.startsWith(TMP_BASE + sep)) {
-    throw new Error(`client-catfile.test: refusing git "${args[0]}" in non-temp cwd: ${String(cwd)}`);
+    throw new Error(`client-catfile.test: refusing git import in non-temp cwd: ${String(cwd)}`);
   }
-  return execFileSync("git", args, { cwd, encoding: "utf8" });
+  const test = { name: "Test", email: "t@example.com" };
+  const now = new Date();
+  const sha = importGitHistory(
+    cwd,
+    snapshots.map(({ message, files }, i) => ({
+      label: String(i),
+      message,
+      author: test,
+      authorDate: now,
+      writes: files,
+    })),
+    { config: { "user.email": "t@example.com", "user.name": "Test" } },
+  );
+  return snapshots.map((_, i) => sha[String(i)]);
 }
 
 describe("readBlobAsString (cat-file, real git)", () => {
   let tmp: string;
-  const g = (args: string[]): string => gitIn(tmp, args);
+  const commits = (...snapshots: Snapshot[]): string[] => commitSnapshots(tmp, snapshots);
 
   beforeEach(() => {
     tmp = mkdtempSync(join(TMP_BASE, "git-cf-"));
-    g(["init", "-q"]);
-    g(["config", "user.email", "t@example.com"]);
-    g(["config", "user.name", "Test"]);
   });
   afterEach(() => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
   it("returns the blob content at a commit (no cache arg)", async () => {
-    writeFileSync(join(tmp, "f.ts"), "export const x = 1;\n");
-    g(["add", "-A"]);
-    g(["commit", "-q", "-m", "c"]);
-    const sha = g(["rev-parse", "HEAD"]).trim();
+    const [sha] = commits({ message: "c", files: { "f.ts": "export const x = 1;\n" } });
 
     expect(await readBlobAsString(tmp, sha, "f.ts")).toBe("export const x = 1;\n");
   });
 
   it("returns empty string for a path missing at that commit", async () => {
-    writeFileSync(join(tmp, "f.ts"), "x");
-    g(["add", "-A"]);
-    g(["commit", "-q", "-m", "c"]);
-    const sha = g(["rev-parse", "HEAD"]).trim();
+    const [sha] = commits({ message: "c", files: { "f.ts": "x" } });
 
     expect(await readBlobAsString(tmp, sha, "nope.ts")).toBe("");
   });
@@ -70,24 +85,17 @@ describe("readBlobAsString (cat-file, real git)", () => {
 
 describe("createCatFileBatch (persistent cat-file --batch, real git)", () => {
   let tmp: string;
-  const g = (args: string[]): string => gitIn(tmp, args);
+  const commits = (...snapshots: Snapshot[]): string[] => commitSnapshots(tmp, snapshots);
 
   beforeEach(() => {
     tmp = mkdtempSync(join(TMP_BASE, "git-cf-"));
-    g(["init", "-q"]);
-    g(["config", "user.email", "t@example.com"]);
-    g(["config", "user.name", "Test"]);
   });
   afterEach(() => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
   it("reads several blobs at a commit through ONE reader (reuses the process)", async () => {
-    writeFileSync(join(tmp, "a.ts"), "AAA\n");
-    writeFileSync(join(tmp, "b.ts"), "BBB\nsecond line\n");
-    g(["add", "-A"]);
-    g(["commit", "-q", "-m", "c"]);
-    const sha = g(["rev-parse", "HEAD"]).trim();
+    const [sha] = commits({ message: "c", files: { "a.ts": "AAA\n", "b.ts": "BBB\nsecond line\n" } });
 
     const reader = createCatFileBatch(tmp);
     expect(await reader.read(sha, "a.ts")).toBe("AAA\n");
@@ -96,10 +104,7 @@ describe("createCatFileBatch (persistent cat-file --batch, real git)", () => {
   });
 
   it("returns empty string for a path missing at that commit", async () => {
-    writeFileSync(join(tmp, "f.ts"), "x");
-    g(["add", "-A"]);
-    g(["commit", "-q", "-m", "c"]);
-    const sha = g(["rev-parse", "HEAD"]).trim();
+    const [sha] = commits({ message: "c", files: { "f.ts": "x" } });
 
     const reader = createCatFileBatch(tmp);
     expect(await reader.read(sha, "nope.ts")).toBe("");
@@ -107,14 +112,10 @@ describe("createCatFileBatch (persistent cat-file --batch, real git)", () => {
   });
 
   it("reads the correct per-commit content for the same path", async () => {
-    writeFileSync(join(tmp, "a.ts"), "one\n");
-    g(["add", "-A"]);
-    g(["commit", "-q", "-m", "A"]);
-    const a = g(["rev-parse", "HEAD"]).trim();
-    writeFileSync(join(tmp, "a.ts"), "two\nthree\n");
-    g(["add", "-A"]);
-    g(["commit", "-q", "-m", "B"]);
-    const b = g(["rev-parse", "HEAD"]).trim();
+    const [a, b] = commits(
+      { message: "A", files: { "a.ts": "one\n" } },
+      { message: "B", files: { "a.ts": "two\nthree\n" } },
+    );
 
     const reader = createCatFileBatch(tmp);
     expect(await reader.read(a, "a.ts")).toBe("one\n");
@@ -123,10 +124,7 @@ describe("createCatFileBatch (persistent cat-file --batch, real git)", () => {
   });
 
   it("rejects reads after close()", async () => {
-    writeFileSync(join(tmp, "a.ts"), "x\n");
-    g(["add", "-A"]);
-    g(["commit", "-q", "-m", "c"]);
-    const sha = g(["rev-parse", "HEAD"]).trim();
+    const [sha] = commits({ message: "c", files: { "a.ts": "x\n" } });
 
     const reader = createCatFileBatch(tmp);
     expect(await reader.read(sha, "a.ts")).toBe("x\n");
@@ -140,11 +138,7 @@ describe("createCatFileBatch (persistent cat-file --batch, real git)", () => {
     // Reading them back-to-back through ONE process exercises the onData loop
     // splitting several responses out of buffered stdout chunks.
     const big = `${"line of text\n".repeat(500)}tail-no-newline`;
-    writeFileSync(join(tmp, "tiny.ts"), "x");
-    writeFileSync(join(tmp, "big.ts"), big);
-    g(["add", "-A"]);
-    g(["commit", "-q", "-m", "c"]);
-    const sha = g(["rev-parse", "HEAD"]).trim();
+    const [sha] = commits({ message: "c", files: { "tiny.ts": "x", "big.ts": big } });
 
     const reader = createCatFileBatch(tmp);
     expect(await reader.read(sha, "tiny.ts")).toBe("x");
@@ -156,10 +150,7 @@ describe("createCatFileBatch (persistent cat-file --batch, real git)", () => {
   });
 
   it("close() is idempotent and tears the process down", async () => {
-    writeFileSync(join(tmp, "a.ts"), "x\n");
-    g(["add", "-A"]);
-    g(["commit", "-q", "-m", "c"]);
-    const sha = g(["rev-parse", "HEAD"]).trim();
+    const [sha] = commits({ message: "c", files: { "a.ts": "x\n" } });
 
     const reader = createCatFileBatch(tmp);
     expect(await reader.read(sha, "a.ts")).toBe("x\n");
@@ -210,25 +201,17 @@ describe("createCatFileBatch (persistent cat-file --batch, real git)", () => {
 
 describe("buildViaCli (git log --numstat, real git)", () => {
   let tmp: string;
-  const g = (args: string[]): string => gitIn(tmp, args);
+  const commits = (...snapshots: Snapshot[]): string[] => commitSnapshots(tmp, snapshots);
 
   beforeEach(() => {
     tmp = mkdtempSync(join(TMP_BASE, "git-cf-"));
-    g(["init", "-q"]);
-    g(["config", "user.email", "t@example.com"]);
-    g(["config", "user.name", "Test"]);
   });
   afterEach(() => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
   it("parses per-file churn from the real log --numstat output", async () => {
-    writeFileSync(join(tmp, "a.ts"), "one\n");
-    g(["add", "-A"]);
-    g(["commit", "-q", "-m", "A"]);
-    writeFileSync(join(tmp, "a.ts"), "one\ntwo\nthree\n");
-    g(["add", "-A"]);
-    g(["commit", "-q", "-m", "B"]);
+    commits({ message: "A", files: { "a.ts": "one\n" } }, { message: "B", files: { "a.ts": "one\ntwo\nthree\n" } });
 
     const churn = await buildViaCli(tmp);
     const a = churn.get("a.ts");
@@ -239,9 +222,7 @@ describe("buildViaCli (git log --numstat, real git)", () => {
   });
 
   it("filters commits by sinceDate (future date → empty churn map)", async () => {
-    writeFileSync(join(tmp, "a.ts"), "one\n");
-    g(["add", "-A"]);
-    g(["commit", "-q", "-m", "A"]);
+    commits({ message: "A", files: { "a.ts": "one\n" } });
 
     const future = new Date(Date.now() + 86_400_000);
     const churn = await buildViaCli(tmp, future);

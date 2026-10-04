@@ -66,8 +66,148 @@ export function compactionStagingPath(dbPath: string): string {
   return `${dbPath}${COMPACTION_TMP_SUFFIX}`;
 }
 
+/** Where a clone publishing onto the database at `dbPath` stages its copy. */
+export function cloneStagingPath(dbPath: string): string {
+  return `${dbPath}${CLONE_TMP_SUFFIX}`;
+}
+
 /** Extension of a generation's cross-pass input spill under `.xpass`. */
 const INPUT_SPILL_EXTENSION = ".ndjson";
+
+/**
+ * An operation of this class (or of one of its external collaborators) that
+ * can create or unlink a file the layout owns.
+ */
+export type CodegraphDbArtifactOperation =
+  /** `cloneDatabase` — staging copies, pre-publish unlinks, publish renames. */
+  | "clone-database"
+  /** `removeFiles` / `removeCollection` — the best-effort teardown unlinks. */
+  | "remove-files"
+  /** `discardOrphanedWal` — WAL reclaim when its database is gone. */
+  | "discard-orphaned-wal"
+  /** The DuckDB driver itself, opening a database read-write. */
+  | "duckdb-driver"
+  /** A storage compaction staging its copy via `compactionStagingPath`. */
+  | "storage-compaction"
+  /** The ingest pipeline appending/draining a generation's input spill. */
+  | "pipeline-spill";
+
+/** Which enumeration of `CodegraphDbFiles` can see an artifact class. */
+export type CodegraphDbArtifactListing = "db-names" | "generation-names";
+
+/** Identifies a row of {@link CODEGRAPH_DB_ARTIFACT_TAXONOMY}; stable for tests. */
+export type CodegraphDbArtifactId =
+  | "database"
+  | "wal-sidecar"
+  | "clone-staging-database"
+  | "clone-staging-wal"
+  | "compaction-staging-database"
+  | "compaction-staging-wal"
+  | "cross-pass-input-spill";
+
+/** One class of file the codegraph DB layout can produce on disk. */
+export interface CodegraphDbArtifactDescriptor {
+  readonly id: CodegraphDbArtifactId;
+  /** Directory under `codegraph/` the class lives in. */
+  readonly directory: "." | ".xpass";
+  /** Filename template; `<stem>` stands for the sanitised physical name. */
+  readonly filenamePattern: string;
+  /** Lifecycle: operations that create an artifact of this class. */
+  readonly createdBy: readonly CodegraphDbArtifactOperation[];
+  /** Lifecycle: operations that unlink an artifact of this class. */
+  readonly removedBy: readonly CodegraphDbArtifactOperation[];
+  /** Whether the artifact survives a clone published onto the same stem. */
+  readonly keptAcrossClone: boolean;
+  /**
+   * Listings that enumerate this class: `listCollectionDbNames` reads
+   * `db-names`, `listCollectionGenerationNames` adds `generation-names`.
+   * Staging classes list none — deliberately invisible to every sweep.
+   */
+  readonly visibleToListings: readonly CodegraphDbArtifactListing[];
+}
+
+/**
+ * Declarative taxonomy of every file class this layout can place on disk —
+ * the single place that answers "which files exist for a collection, who
+ * creates them, who removes them, which listing can see them".
+ *
+ * Derived row by row from the methods below; the filename templates reuse the
+ * same suffix constants the code builds paths with, so table and code cannot
+ * drift apart. The orphan property tests replay arbitrary op sequences and
+ * require the on-disk set to equal exactly what this table predicts — no
+ * orphans, no stragglers.
+ *
+ * Both staging pairs — an interrupted clone's and an interrupted compaction's
+ * — are reclaimed by `removeFiles` (bd tea-rags-mcp-0qaht.26): a purge of a
+ * stem leaves no staging behind. The next `cloneDatabase` onto the same stem
+ * clears its own staging first as well, so a leftover is reclaimed by
+ * whichever of the two comes next, never left invisible to every listing.
+ */
+export const CODEGRAPH_DB_ARTIFACT_TAXONOMY: readonly CodegraphDbArtifactDescriptor[] = [
+  {
+    id: "database",
+    directory: ".",
+    filenamePattern: "<stem>.duckdb",
+    createdBy: ["clone-database", "duckdb-driver"],
+    removedBy: ["clone-database", "remove-files"],
+    keptAcrossClone: false,
+    visibleToListings: ["db-names", "generation-names"],
+  },
+  {
+    id: "wal-sidecar",
+    directory: ".",
+    filenamePattern: "<stem>.duckdb.wal",
+    createdBy: ["clone-database", "duckdb-driver"],
+    removedBy: ["clone-database", "remove-files", "discard-orphaned-wal"],
+    keptAcrossClone: false,
+    visibleToListings: [],
+  },
+  {
+    id: "clone-staging-database",
+    directory: ".",
+    filenamePattern: `<stem>.duckdb${CLONE_TMP_SUFFIX}`,
+    createdBy: ["clone-database"],
+    removedBy: ["clone-database", "remove-files"],
+    keptAcrossClone: false,
+    visibleToListings: [],
+  },
+  {
+    id: "clone-staging-wal",
+    directory: ".",
+    filenamePattern: `<stem>.duckdb${CLONE_TMP_SUFFIX}.wal`,
+    createdBy: ["clone-database"],
+    removedBy: ["clone-database", "remove-files"],
+    keptAcrossClone: false,
+    visibleToListings: [],
+  },
+  {
+    id: "compaction-staging-database",
+    directory: ".",
+    filenamePattern: `<stem>.duckdb${COMPACTION_TMP_SUFFIX}`,
+    createdBy: ["storage-compaction"],
+    removedBy: ["storage-compaction", "remove-files"],
+    keptAcrossClone: true,
+    visibleToListings: [],
+  },
+  {
+    id: "compaction-staging-wal",
+    directory: ".",
+    filenamePattern: `<stem>.duckdb${COMPACTION_TMP_SUFFIX}.wal`,
+    createdBy: ["storage-compaction"],
+    removedBy: ["storage-compaction", "remove-files"],
+    keptAcrossClone: true,
+    visibleToListings: [],
+  },
+  {
+    id: "cross-pass-input-spill",
+    directory: ".xpass",
+    filenamePattern: `<stem>${INPUT_SPILL_EXTENSION}`,
+    createdBy: ["pipeline-spill"],
+    removedBy: ["pipeline-spill", "remove-files"],
+    keptAcrossClone: true,
+    visibleToListings: ["generation-names"],
+  },
+];
 
 /**
  * Stems of the entries in `dir` named `<base>` or `<base>_v<N>` plus
@@ -242,7 +382,7 @@ export class CodegraphDbFiles {
     if (!existsSync(from)) return;
     const to = this.writablePathFor(targetPhysicalCollectionName);
     mkdirSync(dirname(to), { recursive: true });
-    const staging = `${to}${CLONE_TMP_SUFFIX}`;
+    const staging = cloneStagingPath(to);
     const stagingWal = `${staging}.wal`;
     const sourceHasWal = existsSync(`${from}.wal`);
     // Clear staging leftovers of an interrupted earlier clone onto this target
@@ -265,8 +405,9 @@ export class CodegraphDbFiles {
   }
 
   /**
-   * Unlink the collection's DuckDB file, its WAL sidecar and its cross-pass
-   * input spill. Idempotent —
+   * Unlink the collection's DuckDB file, its WAL sidecar, the clone and
+   * compaction staging pairs an interrupted operation may have left, and its
+   * cross-pass input spill. Idempotent —
    * ENOENT means "already gone". Other unlink errors are swallowed too: a stale
    * file on disk is preferable to aborting a best-effort teardown, and the next
    * open simply overwrites it.
@@ -283,6 +424,12 @@ export class CodegraphDbFiles {
     const staging = compactionStagingPath(dbPath);
     await unlink(staging).catch(() => undefined);
     await unlink(`${staging}.wal`).catch(() => undefined);
+    // An interrupted clone's staging pair belongs to this database just the
+    // same — invisible to every listing, so a purge must take it (bd
+    // tea-rags-mcp-0qaht.26), not leave it for the next clone to clear.
+    const cloneStaging = cloneStagingPath(dbPath);
+    await unlink(cloneStaging).catch(() => undefined);
+    await unlink(`${cloneStaging}.wal`).catch(() => undefined);
     // The generation's cross-pass input spill, left behind by a run that never
     // reached the drain. Its lifetime is one run, but its NAME is the
     // generation, so no later run truncates it once the alias moves on.

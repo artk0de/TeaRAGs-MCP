@@ -175,8 +175,9 @@ monolith without tuning.
 
 ### 2. 🔤 _"Do the names in my diff speak the project's language?"_
 
-`get_naming_lexicon { changes: { base: "main" } }` — also step D8 of
-`/tea-rags:mr-review` and the last check of `/tea-rags:data-driven-generation`
+`review_changes { changes: { base: "main" }, sections: ["naming"] }` — also step
+D8 of `/tea-rags:mr-review` and the last check of
+`/tea-rags:data-driven-generation`
 
 The project's vocabulary is read from its call graph: how values of each type
 are named, which role word each directory gives its types, which word the
@@ -289,9 +290,13 @@ The right column shows what runs under the hood.
 - 🏛️ **Architecture report** — Stable Dependencies at component level, imports
   that leak past an adopted facade, files that change together with no edge
   between them, and distance from the main sequence (`get_architecture_report`)
+- 🔎 **Change review** — one call over a working-tree change or a branch: names
+  off the project vocabulary, co-change partners the change left untouched,
+  per-file cohesion, and new edges that break architecture boundaries
+  (`review_changes`)
 - 🔤 **Naming review** — the project's vocabulary inferred from the call graph:
   verdicts on value and type names, the project's own word for a synonym, a
-  review of every name a diff declares (`get_naming_lexicon`), and a whole-code
+  review of every name a diff declares (`review_changes`), and a whole-code
   audit of synonyms, homonyms and outliers (`get_ontology_report`)
 - 🧠 **Agent skills** — the plugin routes every question to the right tools and
   presets on its own; 15 ready-made workflows (`explore`, `bug-hunt`,
@@ -416,7 +421,7 @@ competitor cell links to that product's own documentation, checked on
 
 |                                                                                                                      | Ranks by git history                                                                                | Semantic search                                         | Call graph                                                                                                               | Serves context over MCP                                                                 | Runs locally                                                                               | Rerank presets |
 | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------- |
-| **TeaRAGs**                                                                                                          | ✅ churn, bug-fix rate, ownership and age, per file and per chunk                                   | ✅ dense + hybrid (BM25)                                | ✅ callers, callees, cycles, A→B paths                                                                                   | ✅ 26 tools                                                                             | ✅ embedded Qdrant and DuckDB, local embeddings                                            | ✅ 23          |
+| **TeaRAGs**                                                                                                          | ✅ churn, bug-fix rate, ownership and age, per file and per chunk                                   | ✅ dense + hybrid (BM25)                                | ✅ callers, callees, cycles, A→B paths                                                                                   | ✅ 28 tools                                                                             | ✅ embedded Qdrant and DuckDB, local embeddings                                            | ✅ 23          |
 | [Aider](https://github.com/Aider-AI/aider)                                                                           | —                                                                                                   | —                                                       | ⚠️ [internal only](https://aider.chat/docs/repomap.html): a file dependency graph ranks the repo map it sends to the LLM | ❌ [not built in — open feature request](https://github.com/Aider-AI/aider/issues/4506) | ✅ [terminal CLI, works with local models](https://github.com/Aider-AI/aider)              | —              |
 | [Repomix](https://github.com/yamadashy/repomix)                                                                      | ⚠️ [orders files by git change count](https://github.com/yamadashy/repomix) inside the packed file  | —                                                       | —                                                                                                                        | ✅ [`repomix --mcp`](https://github.com/yamadashy/repomix)                              | ✅ CLI                                                                                     | —              |
 | [Sourcegraph](https://sourcegraph.com/docs/api/mcp) (incl. [Cody Enterprise](https://sourcegraph.com/docs/cody/faq)) | ⚠️ [commit and diff search](https://sourcegraph.com/docs/api/mcp); no ranking by history documented | ✅ [`nls_search`](https://sourcegraph.com/docs/api/mcp) | ✅ [`go_to_definition`, `find_references`](https://sourcegraph.com/docs/api/mcp)                                         | ✅ [MCP server on Enterprise plans](https://sourcegraph.com/docs/api/mcp)               | ⚠️ [your Sourcegraph instance](https://sourcegraph.com/docs/api/mcp), self-hosted or cloud | —              |
@@ -441,7 +446,7 @@ flowchart LR
     Agent[🤖 Coding agent<br/>+ TeaRAGs skills]
 
     subgraph pkg["🍵 tea-rags"]
-        MCP[🔌 MCP server<br/>26 tools]
+        MCP[🔌 MCP server<br/>28 tools]
         CLI[⌨️ CLI<br/>index · prime · projects · auto-update]
         Core[⚙️ Core<br/>chunk · enrich · search · rerank]
         MCP --> Core
@@ -502,9 +507,11 @@ tree-sitter parser and git-blame worker pools, GPU batches of up to 512 chunks,
 and the call graph in its own DuckDB process under a hard 2 GB memory cap, with
 SCC and PageRank computed as streams. Embeddings dominate a full rebuild, so a
 change to git or call-graph signals is recomputed with `--force-enrichments`
-without re-embedding a single chunk — minutes instead of a full reindex.
-`tea-rags tune` measures your hardware and picks batch size and concurrency in
-about 90 seconds; details in
+without re-embedding a single chunk — minutes instead of a full reindex. Each
+run picks its embedding batch size and concurrency itself — backing off when the
+server fails on a batch, climbing toward the fastest measured size, remembering
+the result per endpoint — within bounds that `tea-rags tune` measures for your
+hardware in about 90 seconds; details in
 [Performance Tuning](https://artk0de.github.io/TeaRAGs-MCP/config/performance-tuning).
 
 ## 📏 Measured
@@ -582,13 +589,14 @@ decides how much of the tooling on top of the MCP server you get.
 
 Set `EMBEDDING_PROVIDER`; `EMBEDDING_MODEL` overrides the default model.
 
-| Provider             | `EMBEDDING_PROVIDER` | Where it runs           | Default model                                      | Needs            |
-| -------------------- | -------------------- | ----------------------- | -------------------------------------------------- | ---------------- |
-| **Ollama** (default) | `ollama`             | Local                   | `unclemusclez/jina-embeddings-v2-base-code:latest` | A running Ollama |
-| **ONNX** (beta)      | `onnx`               | Local, built-in runtime | `jinaai/jina-embeddings-v2-base-code-fp16`         | Nothing          |
-| **OpenAI**           | `openai`             | Cloud                   | `text-embedding-3-small`                           | `OPENAI_API_KEY` |
-| **Cohere**           | `cohere`             | Cloud                   | `embed-english-v3.0`                               | `COHERE_API_KEY` |
-| **Voyage**           | `voyage`             | Cloud                   | `voyage-2`                                         | `VOYAGE_API_KEY` |
+| Provider             | `EMBEDDING_PROVIDER` | Where it runs           | Default model                                      | Needs                                                     |
+| -------------------- | -------------------- | ----------------------- | -------------------------------------------------- | --------------------------------------------------------- |
+| **Ollama** (default) | `ollama`             | Local                   | `unclemusclez/jina-embeddings-v2-base-code:latest` | A running Ollama                                          |
+| **llama-server**     | `llama-server`       | Local / LAN GPU host    | `unclemusclez/jina-embeddings-v2-base-code:latest` | A running llama-server per GPU; recommended for 3M+ lines |
+| **ONNX** (beta)      | `onnx`               | Local, built-in runtime | `jinaai/jina-embeddings-v2-base-code-fp16`         | Nothing                                                   |
+| **OpenAI**           | `openai`             | Cloud                   | `text-embedding-3-small`                           | `OPENAI_API_KEY`                                          |
+| **Cohere**           | `cohere`             | Cloud                   | `embed-english-v3.0`                               | `COHERE_API_KEY`                                          |
+| **Voyage**           | `voyage`             | Cloud                   | `voyage-2`                                         | `VOYAGE_API_KEY`                                          |
 
 Throughput per provider and how to choose:
 [Embedding Providers](https://artk0de.github.io/TeaRAGs-MCP/config/providers/).
@@ -612,6 +620,24 @@ EMBEDDING_FALLBACK_URL=http://localhost:11434  # fallback: the laptop itself
 
 Details:
 [Ollama provider](https://artk0de.github.io/TeaRAGs-MCP/config/providers/ollama).
+
+### Embedding model comparison
+
+Measured on one GPU host and three code corpora (TypeScript, two Ruby); quality
+is dense MRR on 200 identifier-free natural-language queries per corpus.
+
+| Model                    | Role                         | Speed vs jina | Quality vs jina v2 code                            |
+| ------------------------ | ---------------------------- | ------------- | -------------------------------------------------- |
+| **CodeRankEmbed** (137M) | Recommended for llama-server | 0.93×         | +0.06 to +0.19 MRR on all three corpora            |
+| **jina v2 code** (161M)  | Ollama default, baseline     | 1.00×         | 0.850 TypeScript · 0.832 / 0.683 Ruby              |
+| **Muninn-small** (47M)   | Fast option, no Ruby         | 2.37×         | +0.04 on TypeScript; mixed on Ruby (+0.08 / −0.05) |
+
+Models of 1.5B–7B parameters gain mostly at R@1 and run 15–110× slower: every
+model finds the target in the top 10 on 99–100% of the TypeScript queries, and
+an agent reads the whole top-10 page. Which model to pick:
+[Embedding model choice](https://artk0de.github.io/TeaRAGs-MCP/config/embedding-model-choice);
+the method and all tables:
+[Embedding model comparison](https://artk0de.github.io/TeaRAGs-MCP/knowledge-base/embedding-model-comparison).
 
 ## ⌨️ CLI
 

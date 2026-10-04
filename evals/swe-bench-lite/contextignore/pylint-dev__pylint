@@ -1,0 +1,6 @@
+# Installed as .contextignore into every pylint task repository by `prepare`.
+# Checked against the gold patches of every pylint task in SWE-bench Lite.
+
+# ~660 tiny good.py / bad.py example snippets per message for the docs: near-duplicate
+# noise that crowds out the checkers for any message-related query.
+/doc/data/messages/

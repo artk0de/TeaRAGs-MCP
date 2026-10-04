@@ -9,13 +9,18 @@ import type {
   GraphFileNode,
   IdentifierBoundCallee,
   IdentifierReplaceEntry,
+  MethodHeadWordQuery,
+  MethodNamePatternQuery,
+  MethodTailVerbQuery,
   OntologyReportQuery,
   Pass1AggregateReadScope,
   RelPath,
   ResolveRunStatsRow,
+  ReviewFileEdge,
   SymbolDefinition,
   SymbolId,
   TemporalCochangeSnapshot,
+  TemporalSymbolCommitFileSnapshot,
   TypeDeclarationReplaceEntry,
   TypeNameQuery,
 } from "../../../contracts/types/codegraph.js";
@@ -232,6 +237,27 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   replaceTemporalCochange: write(async (graphDb, p) =>
     graphDb.replaceTemporalCochange(p.snapshot as TemporalCochangeSnapshot),
   ),
+  // Per-file symbol-commit rows (bd tea-rags-mcp-3gz4f); JSON-shaped on the wire.
+  replaceTemporalSymbolCommits: write(async (graphDb, p) =>
+    graphDb.replaceTemporalSymbolCommits(p.files as TemporalSymbolCommitFileSnapshot[]),
+  ),
+  deleteTemporalSymbolCommitFiles: write(async (graphDb, p) =>
+    graphDb.deleteTemporalSymbolCommitFiles([...(p.relPaths as string[])]),
+  ),
+  // Per-review working-tree file-edge temp tables (bd tea-rags-mcp-89k7k.1.2);
+  // JSON-shaped on the wire.
+  putReviewFileEdges: write(async (graphDb, p) =>
+    graphDb.putReviewFileEdges(p.reviewId as string, p.edges as ReviewFileEdge[]),
+  ),
+  dropReviewFileEdges: write(async (graphDb, p) => graphDb.dropReviewFileEdges(p.reviewId as string)),
+  // A write that answers with its OUTCOME — the dropped table names — instead
+  // of the `null` ack (same shape as compactStorage): the caller logs what the
+  // sweep collected, and the null ack would throw the contract away.
+  sweepExpiredReviewFileEdges: {
+    access: "write",
+    run: async (graphDb, p) =>
+      graphDb.sweepExpiredReviewFileEdges(p.nowEpochSeconds as number, p.maxAgeSeconds as number),
+  },
   checkpoint: write(async (graphDb) => graphDb.checkpoint()),
   rebuildEdgeFileTargetIndex: write(async (graphDb) => graphDb.rebuildEdgeFileTargetIndex()),
   recordRunStats: write(async (graphDb, p) => graphDb.recordRunStats(p.rows as ResolveRunStatsRow[])),
@@ -258,6 +284,10 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
 
   // ── full-proxy reads (the daemon owns the sole DuckDB connection, so
   //    every read routes through its own RW connection) ──
+  // bd tea-rags-mcp-xi2r9 — a READ of the collection: the snapshot is copied
+  // through the pooled client's session, which leaves the live file as it was,
+  // so a client that may only read (1wr7p) may still ask for it.
+  exportSnapshot: read(async (graphDb, p) => graphDb.exportSnapshot(p.targetPath as string)),
   getFanIn: read(async (graphDb, p) => graphDb.getFanIn(p.relPath as RelPath)),
   getFanInP95: read(async (graphDb) => graphDb.getFanInP95()),
   getFanOut: read(async (graphDb, p) => graphDb.getFanOut(p.relPath as RelPath)),
@@ -273,6 +303,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
       types: p.types as string[],
       pathPrefixes: p.pathPrefixes as string[] | undefined,
       excludePaths: p.excludePaths as string[] | undefined,
+      languages: p.languages as string[] | undefined,
       groupByLanguage: p.groupByLanguage as boolean | undefined,
       groupByMultiplicity: p.groupByMultiplicity as boolean | undefined,
       countSameTypeSiblings: p.countSameTypeSiblings as boolean | undefined,
@@ -284,22 +315,39 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
       callees: p.callees as IdentifierBoundCallee[],
       pathPrefixes: p.pathPrefixes as string[] | undefined,
       excludePaths: p.excludePaths as string[] | undefined,
+      languages: p.languages as string[] | undefined,
       groupByLanguage: p.groupByLanguage as boolean | undefined,
       countHolders: p.countHolders as boolean | undefined,
     }),
   ),
   anchorIdentifierTypes: read(async (graphDb, p) => graphDb.anchorIdentifierTypes(p.symbolIds as SymbolId[])),
+  // The language scope travels only when set: an unscoped call keeps its two-argument shape.
   identifierNameTypes: read(async (graphDb, p) =>
-    graphDb.identifierNameTypes(p.names as string[], p.excludePaths as string[] | undefined),
+    graphDb.identifierNameTypes(
+      p.names as string[],
+      p.excludePaths as string[] | undefined,
+      ...(p.languages === undefined ? [] : [p.languages as string[]]),
+    ),
   ),
   existingSymbolShortNames: read(async (graphDb, p) =>
-    graphDb.existingSymbolShortNames(p.names as string[], p.excludePaths as string[] | undefined),
+    graphDb.existingSymbolShortNames(
+      p.names as string[],
+      p.excludePaths as string[] | undefined,
+      ...(p.languages === undefined ? [] : [p.languages as string[]]),
+    ),
+  ),
+  // Method-name reads over cg_symbols: the query carries the non-production masks, so it travels whole.
+  readMethodHeadWords: read(async (graphDb, p) => graphDb.readMethodHeadWords(p.query as MethodHeadWordQuery)),
+  readMethodTailVerbs: read(async (graphDb, p) => graphDb.readMethodTailVerbs(p.query as MethodTailVerbQuery)),
+  readMethodNamesMatching: read(async (graphDb, p) =>
+    graphDb.readMethodNamesMatching(p.query as MethodNamePatternQuery),
   ),
   countIdentifiers: read(async (graphDb, p) =>
     graphDb.countIdentifiers({
       types: p.types as string[],
       pathPrefixes: p.pathPrefixes as string[] | undefined,
       excludePaths: p.excludePaths as string[] | undefined,
+      languages: p.languages as string[] | undefined,
     }),
   ),
   // Naming-lexicon scope reads (bd tea-rags-mcp-4p3sb.11).
@@ -308,6 +356,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
       names: p.names as string[],
       pathPrefixes: p.pathPrefixes as string[] | undefined,
       excludePaths: p.excludePaths as string[] | undefined,
+      languages: p.languages as string[] | undefined,
       groupByLanguage: p.groupByLanguage as boolean | undefined,
       countHolders: p.countHolders as boolean | undefined,
     }),
@@ -317,6 +366,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
       pathPrefixes: p.pathPrefixes as string[] | undefined,
       pathSuffixes: p.pathSuffixes as string[] | undefined,
       excludePaths: p.excludePaths as string[] | undefined,
+      languages: p.languages as string[] | undefined,
     }),
   ),
   sampleIdentifierShapes: read(async (graphDb, p) =>
@@ -324,6 +374,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
       limit: p.limit as number,
       pathPrefixes: p.pathPrefixes as string[] | undefined,
       excludePaths: p.excludePaths as string[] | undefined,
+      languages: p.languages as string[] | undefined,
       groupByLanguage: p.groupByLanguage as boolean | undefined,
     }),
   ),
@@ -382,7 +433,18 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   readFileDependencyGraph: read(async (graphDb) => graphDb.readFileDependencyGraph()),
   readNonPublicMemberEdges: read(async (graphDb, p) => graphDb.readNonPublicMemberEdges(p.languages as string[])),
   readTemporalCochangeMeta: read(async (graphDb) => graphDb.readTemporalCochangeMeta()),
-  readTemporalCochangeGraph: read(async (graphDb) => graphDb.readTemporalCochangeGraph()),
+  // The graph's bundle membership is a Map — entries on the wire, rebuilt by
+  // the client. Absent membership (an older daemon's build) travels absent.
+  readTemporalCochangeGraph: read(async (graphDb) => {
+    const graph = await graphDb.readTemporalCochangeGraph();
+    return { ...graph, ...(graph.bundles ? { bundles: [...graph.bundles.entries()] } : {}) };
+  }),
+  readTemporalBundleFiles: read(async (graphDb) => [...(await graphDb.readTemporalBundleFiles()).entries()]),
+  // Symbol-commit rows of the temporal sub-graph (bd tea-rags-mcp-3gz4f).
+  storedTemporalSymbolCommitFilePaths: read(async (graphDb) => graphDb.storedTemporalSymbolCommitFilePaths()),
+  readTemporalSymbolCommits: read(async (graphDb, p) => graphDb.readTemporalSymbolCommits(p.relPath as string)),
+  // One review's working-tree file edges (bd tea-rags-mcp-89k7k.1.2).
+  readReviewFileEdges: read(async (graphDb, p) => graphDb.readReviewFileEdges(p.reviewId as string)),
   // File-scope get_callers / get_callees (bd tea-rags-mcp-gfvr8). Plain data.
   getFileImporters: read(async (graphDb, p) => graphDb.getFileImporters(p.relPath as RelPath)),
   getFileImports: read(async (graphDb, p) => graphDb.getFileImports(p.relPath as RelPath)),

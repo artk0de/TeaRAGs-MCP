@@ -15,6 +15,8 @@ and labels never survive into it (`delivery-contract.md` → "Speak human").
 
 Every dimension block below ends with `fix:` — the shape its suggestion takes.
 
+Every call: `path=<checkout>` (SKILL Phase 0).
+
 Codegraph gating: prime `## Enrichment` lists `codegraph.symbols` → D1 + D7 + D8
 run on the graph. Absent → D7 and D8 skipped ("not assessed" in summary, no
 substitute); D1 runs in name-match mode (see its block). D5 follows
@@ -24,8 +26,12 @@ tests-as-context preflight.
 
 ```text
 per changed symbol (cap 10):
-  get_callers symbolId=<Class.method> project=<alias> limit=15
-  find_symbol symbol=<Class.method> rerank="blastRadius" metaOnly=true
+  get_callers symbolId=<id> limit=15
+  find_symbol symbol=<id> rerank="blastRadius" metaOnly=true
+  <id>: Class#method = instance method, Class.method = static — take it
+        from the Phase 2 outline line, never retype it
+edges: no codegraph floor + changedFiles > 0 → callers in changed files are
+       the index's (search-cascade "Addressing the Codebase")
 overlay read: rankingOverlay.file.fanIn / transitiveImpact / isHub,
               rankingOverlay.chunk.fanIn (labels); raw values at
               payload.codegraph.symbols.{file,chunk}.* (pageRank there)
@@ -41,7 +47,7 @@ Codegraph OFF — degrade, do not skip:
 
 ```text
 per changed symbol (cap 10):
-  hybrid_search query=<bare symbol name> project=<alias> limit=15
+  hybrid_search query=<bare symbol name> limit=15
                 testFile=exclude metaOnly=true
   then find_symbol on the promising hits to confirm a real call site
 severity: confirmed call sites in ≥3 other files → major; else observation
@@ -60,7 +66,7 @@ safe.
 
 ```text
 find_similar positiveIds=[<all changed chunk UUIDs, one batch>]
-             project=<alias> limit=10 testFile=exclude
+             limit=10 testFile=exclude
 co-change evidence = twin file shares git.taskIds with a touched file
 severity: similar + shared taskId + untouched in diff → major "usually changes
           together" (cite taskId + twin path); similarity alone → observation
@@ -94,7 +100,7 @@ trigger: rankingOverlay.file.blameDominantAuthorPct at silo/deep-silo label
          AND MR author (external) / git user (local) ≠ payload
          git.file.blameDominantAuthor
 then:    semantic_search query=<changed symbol behavior>
-           pathPattern=<same dir glob> rerank="proven" limit=5 project=<alias>
+           pathPattern=<same dir glob> rerank="proven" limit=5
 severity: minor — style/naming deviation from proven neighbors, cite the
           neighbor file:line pattern
 ```
@@ -146,7 +152,7 @@ and name the file to change.
 ## D7 cycles (codegraph-gated)
 
 ```text
-find_cycles scope=file pathPattern=<touched-dirs glob> project=<alias>
+find_cycles scope=file pathPattern=<touched-dirs glob>
 severity: cycle through a touched file whose diff adds the closing import →
           major; pre-existing cycle merely touched → observation
 ```
@@ -161,25 +167,25 @@ away.
 ## D8 naming (codegraph-gated)
 
 ```text
-local:    get_naming_lexicon changes={ base: <target branch, e.g. main> }
-                             project=<alias>
+local:    review_changes changes={ base: <target branch, e.g. main> },
+                             sections: ["naming"]
           (tool reads base at its merge-base with HEAD — no git merge-base)
           (on main, uncommitted only → changes={})
 external: get_naming_lexicon names=[<declarations on the diff's added lines:
                              {name, kind, type?}; a type: {name, kind: "type",
                              path, extends?}>]
                              pathPattern=<touched-dirs glob> language=<lang>
-                             project=<alias>
 severity: MISFIT → minor; COLLISION → minor; NEW_TERM → minor only when
           topTerms or alternatives hold a term for the same concept;
           CONFORMS → nothing
 ```
 
-Local: ONE `changes` call judges every name added hunks declare (values, types,
-constants) — no hand-listed drafts. Changed files excluded from evidence →
-already-indexed names cannot vouch for themselves. External: MR branch never
-checked out, working tree lacks its code → `names[]` from diff. `truncated`
-(>200 changed files) → state unreviewed file count, never "no naming issues".
+Local: ONE `review_changes(changes, sections: ["naming"])` call judges every
+name added hunks declare (values, types, constants) — no hand-listed drafts.
+Changed files excluded from evidence → already-indexed names cannot vouch for
+themselves. External: MR branch never checked out, working tree lacks its code →
+`names[]` from diff. `truncated` (>200 changed files) → state unreviewed file
+count, never "no naming issues".
 
 Answer = `review` {base, checked, conforming, novel, findings, notJudged,
 truncated?}; each finding flat `{relPath, line, name, kind, type?, verdict, …}`.
@@ -193,6 +199,12 @@ Reading a verdict: `../../data-driven-generation/SKILL.md` Step 5 "Naming
 MISFIT with `role.evidence: "directory"` is location-based: comment only when
 the type IS one of `role.examples`' family; a non-member (a copier among
 artifacts) = placement question → drop, or note the location, never a rename.
+
+Method-naming audit over the whole diff (not just added declarations) →
+`get_ontology_report sections=["verbs"]`: per noun tail, the project's verbs
+with holders — descriptive, contested tails only, complements the per-name
+`changes` review above. A tail's verbs are distinct operations, not synonyms:
+never ask to rename one verb to another on this evidence.
 
 fix: the suggested name citing the holder file (MISFIT); a distinct name, or a
 reason the homonym is intended, citing the existing file (COLLISION); the
@@ -216,8 +228,9 @@ alternative term, when it denotes the same concept (NEW_TERM).
 
 ## Call budget
 
-≤30 tea-rags calls typical MR (≤15 files): MAP ≤15 find_symbol + D1 ≤10
-get_callers + D2 1 find_similar + D4 ≤2 + D5 ≤3 + D6 ≤5 + D7 1 + D8 1. D1 in
-name-match mode costs the same ≤10 (hybrid_search) plus confirmation find_symbol
-calls — cap those at 10 too, dropping the least-promising hits rather than
-exceeding. Exceeded → narrow scope with user, never silently truncate coverage.
+≤30 tea-rags calls typical MR. Caps sum to ≤49: MAP ≤15 find_symbol + D1 ≤20
+(get_callers + find_symbol per symbol, cap 10) + D2 1 find_similar + D4 ≤2 + D5
+≤3 + D6 ≤5 + D7 1 + D8 1 + diff-review 1. D1 in name-match mode costs the same
+≤10 (hybrid_search) plus confirmation find_symbol calls — cap those at 10 too,
+dropping the least-promising hits rather than exceeding. Exceeded → narrow scope
+with user, never silently truncate coverage.

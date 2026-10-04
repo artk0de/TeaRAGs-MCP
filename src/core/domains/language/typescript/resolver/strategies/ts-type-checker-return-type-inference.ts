@@ -61,7 +61,7 @@
  * name. Same mechanics, different contract.
  */
 
-import ts from "typescript";
+import type ts from "typescript";
 
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import {
@@ -76,6 +76,7 @@ import {
   lookupEcmascriptSymbols,
   lookupEcmascriptSymbolsByShortName,
 } from "../../../shared/ecmascript-symbol-lookup.js";
+import { loadTypeScriptCompiler } from "../ts-compiler-loader.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import { declarationAccountsFor } from "../ts-receiver-member-evidence.js";
 import type { ResolverConfig } from "./shared.js";
@@ -195,6 +196,7 @@ function isUntypedLocalReceiver(call: CallRef, ctx: CallContext): boolean {
  * alone would type a neighbour's receiver and emit its target.
  */
 function findReceiverIdentifier(sourceFile: ts.SourceFile, call: CallRef): ts.Identifier | null {
+  const ts = loadTypeScriptCompiler();
   let found: ts.Identifier | null = null;
 
   const visit = (node: ts.Node): void => {
@@ -216,6 +218,7 @@ function findReceiverIdentifier(sourceFile: ts.SourceFile, call: CallRef): ts.Id
 
 /** `x` in `x.member(…)`, when `node` is that exact call. `null` for anything else. */
 function callReceiverIdentifier(node: ts.Node, call: CallRef): ts.Identifier | null {
+  const ts = loadTypeScriptCompiler();
   if (!ts.isCallExpression(node)) return null;
   const callee = node.expression;
   if (!ts.isPropertyAccessExpression(callee)) return null;
@@ -239,6 +242,7 @@ function callInitializedDeclarationOf(
   checker: ts.TypeChecker,
   receiver: ts.Identifier,
 ): CallInitializedVariable | null {
+  const ts = loadTypeScriptCompiler();
   const declaration = checker.getSymbolAtLocation(receiver)?.valueDeclaration;
   if (declaration === undefined || !ts.isVariableDeclaration(declaration)) return null;
   if (!ts.isIdentifier(declaration.name)) return null;
@@ -260,6 +264,7 @@ function callInitializedDeclarationOf(
  * than inventing an id.
  */
 function composeMemberSymbolId(declaration: ts.Declaration, member: string): string | null {
+  const ts = loadTypeScriptCompiler();
   const owner = declaration.parent;
   if (!ts.isClassLike(owner) && !ts.isInterfaceDeclaration(owner)) return null;
   const ownerName = owner.name?.text;

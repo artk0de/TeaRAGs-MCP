@@ -66,10 +66,13 @@ a LIVE `get_index_status` — its `Infrastructure:` footer reports current
 snapshot.
 
 **Even with embedding genuinely down, code-identifier search still works.**
-`find_symbol` uses Qdrant text match (zero embedding); `hybrid_search`'s BM25
-gives exact-name match (score up to 1.0) without dense vector. Down embedding
-degrades behavioral/semantic recall (`semantic_search` intent queries) — does
-NOT justify ripgrep for class/method/constant lookups.
+`find_symbol` uses Qdrant text match (zero embedding); `hybrid_search` answers
+from its BM25 leg alone — exact-name match (score up to 1.0) — and says so with
+a top-level `denseUnavailable: { reason }` (rows ranked lexically, no semantic
+ranking). `semantic_search` / `search_code` / `find_similar` with code have no
+other leg: they fail FAST with the provider's outage error (no recovery wait).
+Down embedding degrades behavioral/semantic recall — does NOT justify ripgrep
+for class/method/constant lookups.
 
 If a LIVE `get_index_status` reports embedding error, or any tea-rags semantic
 call fails with embedding/connection error — STOP, ask the user (via
@@ -84,18 +87,54 @@ first (need no embedding), not ripgrep. See
 
 ## Addressing the Codebase (every tea-rags call)
 
-Every tea-rags tool touching a collection accepts THREE addressing params; pick
-the first available in this priority:
+Every tea-rags tool touching a collection accepts THREE addressing params:
 
-1. **`project="<alias>"`** — preferred. Survives path moves, pulls registered
-   qdrantUrl + embeddingModel automatically. Aliases listed in `list_projects`,
-   surfaced in prime digest's `## Project` section.
-2. **`collection="<qdrant-name>"`** — when you already have a Qdrant collection
-   name (e.g. from prior `list_collections`).
-3. **`path="<absolute-project-path>"`** — fallback when no alias registered.
-   Path hashed into a collection name on the fly.
+1. **`path="<your working directory>"`** — sufficient alone on EVERY read tool:
+   search (`semantic_search` / `hybrid_search` / `rank_chunks` /
+   `find_similar`), `find_symbol`, graph tools (`get_callers` / `get_callees` /
+   `trace_path` / `find_cycles` / `get_architecture_report`), `review_changes`,
+   `get_naming_lexicon`, analytics presets. Any dir inside a checkout. Addresses
+   the TREE you stand in; the index resolves from the same repository (no alias
+   needed). **Preferred in a linked worktree** — the only param that reads the
+   worktree's own code. Subagent in a worktree → same `path`, full toolset.
+2. **`project="<alias>"`** — no cwd context (scripts, CLI); in any checkout
+   `path` is the default. Survives path moves, pulls registered qdrantUrl +
+   embeddingModel. Alone it reads the alias's checkout — from a worktree that is
+   the WRONG tree. Aliases: `list_projects`, prime digest `## Project`.
+3. **`collection="<qdrant-name>"`** — when you already hold a Qdrant collection
+   name (e.g. from `list_collections`).
 
-Resolution priority used by resolver: `collection > project > path`.
+Index resolution priority: `collection > project > path`. With `project` /
+`collection` AND `path`, the index comes from the former and the tree from
+`path` (must be the same repository).
+
+**Read the `workingTree` marker on every answer:** `tree` = tree it read;
+`changedFiles` / `deletedFiles` = distance from `indexedCommit` (`0` = measured
+clean); `floors` = layers read from the tree — `chunks` (find_symbol / outline,
+rank_chunks rows), `sparse` (hybrid_search BM25), `dense` (semantic_search /
+find_similar / hybrid vector ranking of changed files), `codegraph` (graph
+tools' edges). A row or edge no floor covers reflects the index;
+`denseUnavailable` / `treeGraphUnavailable` name why a layer fell back to it;
+`gitUnavailable` counts changed-file rows whose git signals are still computing
+— they rank without that history this call, re-call later. `pendingFiles` =
+re-read files not yet warm: their rows are the index's
+(`treeState: "modified"`), a later call reads more of the tree — re-call for
+current code, never reindex. `indexOnlyFiles` = changed files with no AST
+chunking (json / yaml / sql / toml …): never re-read, rows are the index's
+(`treeState: "modified"`); current text → `Read` the file. Graph answer with
+`changedFiles` > 0 and no `codegraph` floor → edges touching changed files are
+the index's (`degraded` says why): trust edges between untouched files, re-check
+changed ones via `find_symbol` / `hybrid_search`. `degraded` → its `remedy`
+under index-freshness consent (subagent: report it to the parent, never
+reindex). `tree` ≠ the tree you addressed (your working directory, or the
+checkout a skill names) → wrong tree, re-call with that `path`.
+
+**`treeState: "modified" | "deleted"`** on a row = index copy of a file your
+tree changed or deleted, served only when no tree floor covered it (e.g.
+`denseUnavailable`, `pendingFiles`, `indexOnlyFiles`); text and lines may be
+stale. Current code → `find_symbol` (chunks floor), not the row; `pendingFiles`
+row → re-call later; `indexOnlyFiles` file → `Read` it (no tree floor ever
+covers it).
 
 ## After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)
 
@@ -288,6 +327,9 @@ Intent matches a skill? (check FIRST — skills handle tool selection internally
 ├─ Code generation/modification → /tea-rags:data-driven-generation
 ├─ Risk/health assessment → /tea-rags:risk-assessment
 ├─ Layout / dependency direction / SDP → /tea-rags:architecture-diagnostics
+├─ Review a diff / MR ("what does my change break") → `review_changes(changes:{base})`
+│   sections: naming | incompleteChange | cohesion | architecture — default all;
+│   unknown = error; absent section = not asked; NOT a search tool, never discovery
 ├─ Filter shape beyond pathPattern → /tea-rags:filter-building
 ├─ Pick rerank preset / build custom weights → /tea-rags:analytics-rerank
 └─ No skill matches → direct tool selection below
@@ -316,7 +358,7 @@ Has query?
    │   named", "is this name right") → get_naming_lexicon (codegraph on);
    │     reading the answer: /tea-rags:data-driven-generation Step 5 Naming
    │     One name / rename → `names[]`; review names a diff introduces →
-   │     `changes` ({} = uncommitted, { base } = branch) → `review.findings`
+   │     review_changes ({} = uncommitted, { base } = branch) → `review.findings`
    │
    ├─ Audit naming consistency / find ontology collisions project-wide
    │   → get_ontology_report (codegraph on; synonyms, homonyms, outliers, collisions)
@@ -370,7 +412,8 @@ Before dispatching a subagent via the `Agent` tool, prepend the search-tool
 injection block to the subagent's prompt — subagents do NOT inherit rules or
 search-cascade. Full block + owner / when-NOT-to-inject rules live in
 `references/subagent-injection.md`. Inject unconditionally; harmless for
-non-search tasks.
+non-search tasks. Never inject a fixed `path` / `project` — the subagent
+addresses tea-rags with its own working directory.
 
 ## Prohibited Patterns
 
@@ -400,8 +443,8 @@ non-search tasks.
 - **Mixed-axis broad exploration** — one unfiltered query over src+tests+docs
   lets dominant class take all slots; split per `references/axis-splitting.md`
 - **Judging a name by grep or semantic_search on the draft name** — the draft
-  pulls in its own lexical neighbours; use get_naming_lexicon (`names[]`, a diff
-  → `changes`; never hand-list a diff's names)
+  pulls in its own lexical neighbours; use get_naming_lexicon (`names[]`); a
+  diff → review_changes `naming` (never hand-list a diff's names)
 - **hybrid_search for TODO/FIXME/HACK markers** — use ripgrep MCP
 - **git log/diff for code history** — overlay already has git signals
 - **10+ ripgrep calls instead of reading a file** — just read it
@@ -422,7 +465,7 @@ non-search tasks.
 | Call path A→B (codegraph on)  | trace_path                        | get_callees breadth-first (manual)                |
 | Call path A→B (codegraph off) | semantic_search / hybrid + manual | — (graph tools unavailable; see Graph navigation) |
 | Naming vocabulary / verdict   | get_naming_lexicon                | codegraph off: DDG Step 5 Naming concept recipe   |
-| Naming review of a diff       | get_naming_lexicon `changes`      | codegraph off: not assessed (no substitute)       |
+| Naming review of a diff       | review_changes `naming`           | codegraph off: not assessed (no substitute)       |
 
 ## pathPattern Rules
 

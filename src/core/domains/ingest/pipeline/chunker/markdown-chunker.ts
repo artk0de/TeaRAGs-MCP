@@ -32,8 +32,20 @@ const SECTION_HEADING_DEPTH = 3;
 /** Minimum chars for a code block to become its own chunk */
 const MIN_CODE_BLOCK_SIZE = 50;
 
-/** Minimum chars for a section or preamble chunk */
+/**
+ * A document, section or preamble under this many chars is TINY. A tiny
+ * document yields no chunk; a tiny section or preamble is never dropped — it
+ * joins a neighbour (bd tea-rags-mcp-8gbh3).
+ */
 const MIN_SECTION_SIZE = 50;
+
+/**
+ * Section content under this many chars is SMALL: a small h2 joins the chunk
+ * open before it under the same h1, as a small h3 joins its h2's, whatever that
+ * chunk's size, while the merge fits `maxChunkSize`. A larger h2 opens its own
+ * chunk (bd tea-rags-mcp-8gbh3).
+ */
+const SMALL_SECTION_SIZE = 300;
 
 export class MarkdownChunker {
   private readonly config: { maxChunkSize: number };
@@ -55,6 +67,18 @@ export class MarkdownChunker {
     const lines = code.split("\n");
 
     const tree = remark().use(remarkGfm).use(remarkFrontmatter, ["yaml"]).parse(code);
+    // A tiny document yields nothing. No section of it is dropped below this
+    // line, so the floor applies to the document as a whole.
+    const firstContentLine = this.findFirstContentLine(tree.children);
+    if (
+      firstContentLine <= 0 ||
+      lines
+        .slice(firstContentLine - 1)
+        .join("\n")
+        .trim().length < MIN_SECTION_SIZE
+    ) {
+      return chunks;
+    }
     const headings = this.collectHeadings(tree.children);
     const codeBlocks = this.collectCodeBlocks(tree.children);
     const sectionHeadings = headings.filter((h) => h.depth <= SECTION_HEADING_DEPTH);
@@ -72,8 +96,17 @@ export class MarkdownChunker {
       language,
     );
     await this.buildCodeBlockChunks(chunks, codeBlocks, sectionHeadings, headings, filePath, language);
-    this.buildPreambleChunk(chunks, tree.children, sectionHeadings, lines, codeBlockLineRanges, filePath, language);
-    this.buildWholeDocumentFallback(chunks, tree.children, lines, filePath, language);
+    this.buildPreambleChunk(
+      chunks,
+      tree.children,
+      sectionHeadings,
+      lines,
+      codeBlockLineRanges,
+      blockSpans,
+      filePath,
+      language,
+    );
+    this.buildWholeDocumentFallback(chunks, tree.children, lines, blockSpans, filePath, language);
 
     return chunks;
   }
@@ -137,13 +170,21 @@ export class MarkdownChunker {
     }
   }
 
-  /** Extract preamble content before first section heading, after frontmatter. */
+  /**
+   * Extract preamble content before first section heading, after frontmatter.
+   * A preamble over `maxChunkSize` is cut between its blocks like an oversized
+   * section, and its parts follow the section-window convention: `name` and
+   * `parentSymbolId` are "Preamble", no `symbolId`. A tiny preamble is joined
+   * to the first section's chunk when that chunk opens at the first heading
+   * and still fits; otherwise it stays its own Preamble chunk.
+   */
   private buildPreambleChunk(
     chunks: CodeChunk[],
     children: Content[],
     sectionHeadings: HeadingInfo[],
     lines: string[],
     codeBlockLineRanges: { startLine: number; endLine: number }[],
+    blockSpans: { startLine: number; endLine: number }[],
     filePath: string,
     language: string,
   ): void {
@@ -155,42 +196,84 @@ export class MarkdownChunker {
     if (firstContentLine <= 0 || firstContentLine > preambleEndLine) return;
 
     const preambleLines: string[] = [];
+    const preambleSourceLines: number[] = [];
     for (let line = firstContentLine - 1; line < preambleEndLine; line++) {
       const lineNum = line + 1;
       const inCodeBlock = codeBlockLineRanges.some((r) => lineNum >= r.startLine && lineNum <= r.endLine);
       if (!inCodeBlock) {
         preambleLines.push(lines[line]);
+        preambleSourceLines.push(lineNum);
       }
     }
     const preamble = preambleLines.join("\n").trim();
 
-    if (preamble.length < MIN_SECTION_SIZE) return;
+    if (preamble === "") return;
+    // A tiny preamble (a badge row, a one-line note) opens the first section's
+    // chunk rather than standing alone or vanishing (bd tea-rags-mcp-8gbh3).
+    // The section keeps its own name, id and headingPath; only its range and
+    // text start earlier.
+    if (preamble.length < MIN_SECTION_SIZE) {
+      const host = chunks[0] as CodeChunk | undefined;
+      if (
+        host?.metadata.symbolId !== undefined &&
+        host.startLine === sectionHeadings[0].startLine &&
+        preamble.length + 2 + host.content.length <= this.config.maxChunkSize
+      ) {
+        host.content = `${preamble}\n\n${host.content}`;
+        host.startLine = firstContentLine;
+        return;
+      }
+    }
 
-    chunks.unshift({
-      content: preamble,
-      startLine: firstContentLine,
-      endLine: preambleEndLine,
-      metadata: {
-        filePath,
-        language,
-        chunkIndex: 0,
-        chunkType: "block",
-        name: "Preamble",
-        symbolId: "Preamble",
-        isDocumentation: true,
-        headingPath: [],
-      },
-    });
-    for (let i = 1; i < chunks.length; i++) {
+    const preambleChunks: CodeChunk[] =
+      preamble.length > this.config.maxChunkSize
+        ? this.splitSection(preambleSourceLines, lines, blockSpans, "", []).map((window) => ({
+            ...window,
+            metadata: {
+              filePath,
+              language,
+              chunkIndex: 0,
+              chunkType: "block",
+              name: "Preamble",
+              parentSymbolId: "Preamble",
+              isDocumentation: true,
+              headingPath: [],
+            },
+          }))
+        : [
+            {
+              content: preamble,
+              startLine: firstContentLine,
+              endLine: preambleEndLine,
+              metadata: {
+                filePath,
+                language,
+                chunkIndex: 0,
+                chunkType: "block",
+                name: "Preamble",
+                symbolId: "Preamble",
+                isDocumentation: true,
+                headingPath: [],
+              },
+            },
+          ];
+
+    chunks.unshift(...preambleChunks);
+    for (let i = 0; i < chunks.length; i++) {
       chunks[i].metadata.chunkIndex = i;
     }
   }
 
-  /** Whole-document fallback when no chunks were produced. Strips frontmatter. */
+  /**
+   * Whole-document fallback when no chunks were produced. Strips frontmatter.
+   * A document over `maxChunkSize` is cut between its blocks like an oversized
+   * section; the parts carry no name, as the whole-document chunk does not.
+   */
   private buildWholeDocumentFallback(
     chunks: CodeChunk[],
     children: Content[],
     lines: string[],
+    blockSpans: { startLine: number; endLine: number }[],
     filePath: string,
     language: string,
   ): void {
@@ -204,6 +287,24 @@ export class MarkdownChunker {
       .trim();
 
     if (content.length < MIN_SECTION_SIZE) return;
+
+    if (content.length > this.config.maxChunkSize) {
+      const sourceLines = Array.from({ length: lines.length - startLine + 1 }, (_, i) => startLine + i);
+      for (const window of this.splitSection(sourceLines, lines, blockSpans, "", [])) {
+        chunks.push({
+          ...window,
+          metadata: {
+            filePath,
+            language,
+            chunkIndex: chunks.length,
+            chunkType: "block",
+            isDocumentation: true,
+            headingPath: [],
+          },
+        });
+      }
+      return;
+    }
 
     chunks.push({
       content,
@@ -312,11 +413,13 @@ export class MarkdownChunker {
       .map((s) => ({ startRow: toRow(s.startLine, false), endRow: toRow(s.endLine, true) }))
       .filter((s) => s.endRow > s.startRow);
 
-    const pathLine = headingPath.map((h) => `${"#".repeat(h.depth)} ${h.text}`).join(" > ");
+    // An empty heading path (preamble, heading-less document) frames no window.
+    const pathPrefix =
+      headingPath.length > 0 ? `${headingPath.map((h) => `${"#".repeat(h.depth)} ${h.text}`).join(" > ")}\n` : "";
     const splitter = new NestingLineSplitter({
       rows,
       spans,
-      capacityAt: (row) => this.config.maxChunkSize - (row === 0 ? breadcrumb.length : pathLine.length + 1),
+      capacityAt: (row) => this.config.maxChunkSize - (row === 0 ? breadcrumb.length : pathPrefix.length),
       openingRows: [0],
     });
 
@@ -332,7 +435,7 @@ export class MarkdownChunker {
         : rows.slice(startRow, endRow + 1).join("\n");
       if (body.trim() === "") continue;
       windows.push({
-        content: part.startRow === 0 ? breadcrumb + body : `${pathLine}\n${body}`,
+        content: part.startRow === 0 ? breadcrumb + body : pathPrefix + body,
         startLine: sourceLines[startRow],
         endLine: sourceLines[endRow],
       });
@@ -358,9 +461,22 @@ export class MarkdownChunker {
   }
 
   /**
-   * Build section chunks by grouping consecutive headings.
-   * Small h3 sections are accumulated into parent h2 block up to maxChunkSize.
-   * When accumulated content exceeds the limit, a new chunk starts at the h3 boundary.
+   * Build section chunks by grouping consecutive headings into an accumulator
+   * that is flushed as one chunk, never past `maxChunkSize` and never across an
+   * h1 (a different h1 is a different topic). A joining section is appended
+   * with its own breadcrumb and its heading is pushed onto the chunk's
+   * headingPath, so the path reads: the opener's ancestors, the opener, then
+   * every heading accumulated after it — `DocChunkGrouper.group` lists the
+   * chunk's id on each of those headings.
+   *
+   * Which section joins (`joinsAccumulator`):
+   *   - an h3 joins whenever it fits;
+   *   - an h2 joins a tiny accumulator, an accumulator that is still only a
+   *     small h1 intro (the h1 is not left a lone tiny chunk), or any
+   *     accumulator when the h2 itself is small (`SMALL_SECTION_SIZE`);
+   *   - a tiny h2 joins the previous section, unless subsections follow it:
+   *     then it opens the chunk they join (bd tea-rags-mcp-8gbh3).
+   * No section is dropped: one that can join nothing becomes its own chunk.
    */
   private async buildSectionChunks(
     chunks: CodeChunk[],
@@ -380,10 +496,12 @@ export class MarkdownChunker {
     let accumHeadingPath: { depth: number; text: string }[] = [];
     /** 1-based source lines of the section that opened the accumulator, code blocks excluded. */
     let accumSourceLines: number[] = [];
+    let accumOpenerDepth = 0;
+    let accumSectionCount = 0;
 
     const flushAccum = async (): Promise<void> => {
       const content = accumContent.trim();
-      if (content.length < MIN_SECTION_SIZE) return;
+      if (content === "") return;
 
       if (content.length > this.config.maxChunkSize) {
         // Oversized → cut between blocks (bd tea-rags-mcp-y5vx4). Only a
@@ -431,8 +549,7 @@ export class MarkdownChunker {
       }
     };
 
-    for (let i = 0; i < sectionHeadings.length; i++) {
-      const heading = sectionHeadings[i];
+    const sections = sectionHeadings.map((heading, i) => {
       const sectionEndLine = i + 1 < sectionHeadings.length ? sectionHeadings[i + 1].startLine - 1 : lines.length;
 
       // Extract section lines, excluding code block ranges
@@ -446,54 +563,48 @@ export class MarkdownChunker {
           sectionSourceLines.push(lineNum);
         }
       }
-      const sectionContent = sectionLines.join("\n").trim();
-      if (sectionContent.length < MIN_SECTION_SIZE) continue;
-
       const breadcrumb = this.buildBreadcrumb(allHeadings, heading);
-      const contentWithBreadcrumb = breadcrumb + sectionContent;
+      const content = sectionLines.join("\n").trim();
+      return { heading, sectionEndLine, sectionSourceLines, breadcrumb, content, withBreadcrumb: breadcrumb + content };
+    });
 
-      // h1/h2 always starts a new chunk
-      if (heading.depth <= 2) {
-        await flushAccum();
-        accumContent = contentWithBreadcrumb;
-        accumStartLine = heading.startLine;
+    const joinsAccumulator = (i: number): boolean => {
+      const { heading, content, withBreadcrumb } = sections[i];
+      if (!accumName || heading.depth === 1) return false;
+      if (accumContent.length + 2 + withBreadcrumb.length > this.config.maxChunkSize) return false;
+      if (heading.depth >= 3) return true;
+
+      const accumSize = accumContent.trim().length;
+      if (accumSize < MIN_SECTION_SIZE) return true;
+      if (accumOpenerDepth === 1 && accumSectionCount === 1 && accumSize < SMALL_SECTION_SIZE) return true;
+      if (content.length < MIN_SECTION_SIZE) {
+        const next = i + 1 < sections.length ? sections[i + 1] : undefined;
+        return !next || next.heading.depth <= heading.depth;
+      }
+      return content.length < SMALL_SECTION_SIZE;
+    };
+
+    for (let i = 0; i < sections.length; i++) {
+      const { heading, sectionEndLine, sectionSourceLines, breadcrumb, withBreadcrumb } = sections[i];
+
+      if (joinsAccumulator(i)) {
+        accumContent = `${accumContent}\n\n${withBreadcrumb}`;
         accumEndLine = sectionEndLine;
-        accumName = heading.text;
-        accumBreadcrumb = breadcrumb;
-        accumHeadingPath = this.buildHeadingPath(allHeadings, heading);
-        accumSourceLines = sectionSourceLines;
+        accumHeadingPath.push({ depth: heading.depth, text: heading.text });
+        accumSectionCount++;
         continue;
       }
 
-      // h3: try to append to current accumulator
-      const separator = accumContent ? "\n\n" : "";
-      const merged = accumContent + separator + contentWithBreadcrumb;
-
-      if (merged.length <= this.config.maxChunkSize) {
-        // Fits — accumulate
-        accumContent = merged;
-        accumEndLine = sectionEndLine;
-        if (!accumName) {
-          accumName = heading.text;
-          accumStartLine = heading.startLine;
-          accumBreadcrumb = breadcrumb;
-          accumHeadingPath = this.buildHeadingPath(allHeadings, heading);
-          accumSourceLines = sectionSourceLines;
-        } else {
-          // Add grouped h3 heading to path
-          accumHeadingPath.push({ depth: heading.depth, text: heading.text });
-        }
-      } else {
-        // Doesn't fit — flush current, start new with this h3
-        await flushAccum();
-        accumContent = contentWithBreadcrumb;
-        accumStartLine = heading.startLine;
-        accumEndLine = sectionEndLine;
-        accumName = heading.text;
-        accumBreadcrumb = breadcrumb;
-        accumHeadingPath = this.buildHeadingPath(allHeadings, heading);
-        accumSourceLines = sectionSourceLines;
-      }
+      await flushAccum();
+      accumContent = withBreadcrumb;
+      accumStartLine = heading.startLine;
+      accumEndLine = sectionEndLine;
+      accumName = heading.text;
+      accumBreadcrumb = breadcrumb;
+      accumHeadingPath = this.buildHeadingPath(allHeadings, heading);
+      accumSourceLines = sectionSourceLines;
+      accumOpenerDepth = heading.depth;
+      accumSectionCount = 1;
     }
 
     // Flush remaining

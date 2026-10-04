@@ -13,3 +13,4 @@ export { computeCollectionStats } from "./infra/collection-stats.js";
 export type { IngestDependencies, SynchronizerTuning } from "./factory.js";
 export { INDEXING_METADATA_ID } from "../../contracts/constants.js";
 export { cleanupOrphanedVersions } from "./infra/alias-cleanup.js";
+export { enrichmentSkipReason, fileLinesOf, type EnrichmentSkipReason } from "./pipeline/enrichment/policy.js";

@@ -13,7 +13,7 @@
  */
 
 import type { CollectionEntry } from "../../../contracts/types/registry.js";
-import { readRepoGitState } from "../../../infra/repo-git-state.js";
+import { readEnclosingRepoGitState, type RepoGitState } from "../../../infra/repo-git-state.js";
 
 /** Trigger-side debounce: skip when the last run finished under this ago. */
 export const AUTO_UPDATE_RUN_TTL_MS = 120_000;
@@ -34,8 +34,11 @@ export type IndexFreshnessVerdict =
   | { kind: "not-a-repo" };
 
 export interface IndexFreshnessCheckDeps {
-  /** Injectable for tests; production default reads `.git` files directly. */
-  readGitState: typeof readRepoGitState;
+  /**
+   * Injectable for tests; production default reads `.git` files directly, at
+   * the git toplevel — a project may be registered at a repository subdirectory.
+   */
+  readGitState: (path: string) => RepoGitState | null;
   clock: () => number;
 }
 
@@ -44,7 +47,7 @@ export class IndexFreshnessCheck {
 
   constructor(deps?: Partial<IndexFreshnessCheckDeps>) {
     this.deps = {
-      readGitState: deps?.readGitState ?? readRepoGitState,
+      readGitState: deps?.readGitState ?? readEnclosingRepoGitState,
       clock: deps?.clock ?? (() => Date.now()),
     };
   }

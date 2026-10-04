@@ -2,7 +2,12 @@ import fs, { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } fr
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
-import type { CollectionEntry, RegistryFileV1 } from "../../../contracts/types/registry.js";
+import type {
+  CollectionEntry,
+  EmbeddingThroughputOptimumWrite,
+  RegistryFileV1,
+} from "../../../contracts/types/registry.js";
+import { applyEmbeddingThroughputOptimumWrites, liftEmbeddingThroughputOptima } from "./embedding-throughput-optima.js";
 import { REGISTRY_ENV_PIN_MIGRATION_REVISION } from "./env-pin-migration.js";
 import { RegistryConcurrencyError, RegistryFileCorruptedError, RegistryWriteError } from "./errors.js";
 
@@ -65,11 +70,18 @@ export function loadRegistryFile(dataDir: string): RegistryFileV1 | null {
     backupCorruptFile(path);
     throw new RegistryFileCorruptedError(path, "root is not an object");
   }
-  const obj = parsed as { version?: unknown; collections?: unknown };
+  const obj = parsed as { version?: unknown; collections?: unknown; embeddingThroughputOptima?: unknown };
   if (obj.version === CURRENT_VERSION) {
     if (typeof obj.collections !== "object" || obj.collections === null) {
       backupCorruptFile(path);
       throw new RegistryFileCorruptedError(path, "collections is not an object");
+    }
+    // The optima section is a runtime hint, never worth the whole registry: a
+    // malformed one is dropped (and relearnt), not treated as corruption.
+    const optima = obj.embeddingThroughputOptima;
+    if (optima !== undefined && (typeof optima !== "object" || optima === null || Array.isArray(optima))) {
+      const { embeddingThroughputOptima: _malformed, ...rest } = obj;
+      return rest as RegistryFileV1;
     }
     return obj as RegistryFileV1;
   }
@@ -153,13 +165,23 @@ function mergeChangedFields(
  *
  * Optional `tombstones` carry intentional removes: any collection name in
  * the set is dropped from the merged result even if it is still on disk.
+ *
+ * The registry-level optima section (bd tea-rags-mcp-auoxk) is the DISK's,
+ * with the identities it lacks lifted from the disk entries' legacy per-entry
+ * records BEFORE the delta lands — so an entry this flush rewrites without its
+ * legacy field loses nothing — and `optimumWrites` applied against it.
  */
 export function mergeRegistryDelta(
   disk: RegistryFileV1 | null,
   delta: Map<string, CollectionEntry>,
   tombstones?: ReadonlySet<string>,
   loadedSnapshot?: ReadonlyMap<string, CollectionEntry>,
+  optimumWrites: readonly EmbeddingThroughputOptimumWrite[] = [],
 ): RegistryFileV1 {
+  const optima = applyEmbeddingThroughputOptimumWrites(
+    liftEmbeddingThroughputOptima(disk?.embeddingThroughputOptima, disk?.collections ?? {}),
+    optimumWrites,
+  );
   const out: Record<string, CollectionEntry> = {};
   if (disk) {
     for (const [k, v] of Object.entries(disk.collections)) out[k] = v;
@@ -182,7 +204,12 @@ export function mergeRegistryDelta(
   // latest revision here would let any flush from an instance that never ran a
   // due migration mark it done without running it.
   const revision = disk ? disk.revision : LATEST_REGISTRY_REVISION;
-  return { version: CURRENT_VERSION, ...(revision !== undefined ? { revision } : {}), collections: out };
+  return {
+    version: CURRENT_VERSION,
+    ...(revision !== undefined ? { revision } : {}),
+    ...(Object.keys(optima).length > 0 ? { embeddingThroughputOptima: optima } : {}),
+    collections: out,
+  };
 }
 
 function sleepSync(ms: number): void {
@@ -216,6 +243,9 @@ function statOrNull(path: string): { ino: number; mtimeMs: number } | null {
  *
  * Optional `loadedSnapshot` is the caller's copy of the entries at load time;
  * it turns the per-entry merge into a three-way one (see mergeRegistryDelta).
+ * Optional `optimumWrites` land in the registry-level optima section, each
+ * reconciled against the value on disk at the attempt that commits — a retry
+ * re-reads it, so a concurrent writer's record is never lost.
  * Returns the file that was written, so the caller can refresh that snapshot.
  *
  * @throws RegistryConcurrencyError when the retry budget is exhausted
@@ -227,12 +257,13 @@ export function flushWithCAS(
   delta: Map<string, CollectionEntry>,
   tombstones?: ReadonlySet<string>,
   loadedSnapshot?: ReadonlyMap<string, CollectionEntry>,
+  optimumWrites: readonly EmbeddingThroughputOptimumWrite[] = [],
 ): RegistryFileV1 {
   const path = filePath(dataDir);
   for (let attempt = 0; attempt < CAS_MAX_ATTEMPTS; attempt++) {
     const before = statOrNull(path);
     const disk = loadRegistryFile(dataDir);
-    const merged = mergeRegistryDelta(disk, delta, tombstones, loadedSnapshot);
+    const merged = mergeRegistryDelta(disk, delta, tombstones, loadedSnapshot, optimumWrites);
     const after = statOrNull(path);
     const stable =
       (before === null && after === null) ||

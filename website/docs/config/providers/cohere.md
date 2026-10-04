@@ -1,6 +1,6 @@
 ---
 title: Cohere
-sidebar_position: 4
+sidebar_position: 6
 ---
 
 # Cohere
@@ -67,7 +67,7 @@ Optional variables:
 |----------|-------------|---------|
 | `EMBEDDING_MODEL` | Cohere model name | `embed-english-v3.0` |
 | `EMBEDDING_DIMENSIONS` | Vector dimensions | `1024` (auto-detected) |
-| `EMBEDDING_TUNE_BATCH_SIZE` | Texts per embedding batch | `96` |
+| `EMBEDDING_TUNE_BATCH_SIZE` | Ceiling on texts per embedding batch ([adaptive](/config/performance-tuning#adaptive-embedding)) | `96` |
 | `EMBEDDING_TUNE_MAX_REQUESTS_PER_MINUTE` | RPM limit for rate limiter | `100` |
 
 ## Available Models

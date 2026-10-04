@@ -14,6 +14,7 @@ import type {
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
   buildComponentGraph,
+  buildDomainComponentGraph,
   COMPONENT_CONTAINMENT_REASON,
   type FacadeModuleAssessment,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
@@ -147,5 +148,53 @@ describe("buildComponentGraph", () => {
     expect(COMPONENT_CONTAINMENT_REASON).toBe(
       "containment: a component depending on a component nested inside its directory - composition, not a peer dependency",
     );
+  });
+});
+
+/**
+ * The DOMAIN partition (bd tea-rags-mcp-r8hme.30): every directory with a
+ * facade file is a component regardless of what the adoption measurement said.
+ * `small/` here holds a facade three importers would be needed to measure —
+ * the facade partition leaves its subtree to plain directories, the domain
+ * partition claims it for the facade the directory declares. `go/` is a
+ * language-enforced package with no facade file at all.
+ */
+describe("buildDomainComponentGraph", () => {
+  const domainGraph: FileDependencyGraph = {
+    files: [
+      file("lib/index.ts"),
+      file("lib/a.ts"),
+      file("small/index.ts"),
+      file("small/util/su.ts"),
+      file("go/pkg/p.go"),
+      file("app/main.ts"),
+    ],
+    edges: [edge("app/main.ts", "small/index.ts")],
+  };
+  const domainModules = [
+    module("lib", "active"),
+    module("small", "too-few-importers"),
+    { ...module("go", "language-enforced"), facadeRelPath: null },
+  ];
+
+  it("lets every facade directory own its subtree, adoption notwithstanding", () => {
+    const components = buildDomainComponentGraph(domainGraph, domainModules);
+
+    expect(components.componentOf.get("small/util/su.ts")).toBe("small");
+    expect(components.componentOf.get("go/pkg/p.go")).toBe("go");
+    expect(components.components.get("small")).toMatchObject({
+      kind: "module",
+      facadeRelPath: "small/index.ts",
+      fileCount: 2,
+    });
+    expect(components.components.get("go")).toMatchObject({ kind: "module", facadeRelPath: null });
+  });
+
+  it("keeps the facade-adoption partition as the default: an unmeasured facade owns nothing", () => {
+    const components = buildComponentGraph(domainGraph, domainModules);
+
+    expect(components.componentOf.get("small/util/su.ts")).toBe("small/util");
+    expect(components.components.get("small")).toMatchObject({ kind: "directory", facadeRelPath: null });
+    expect(components.components.has("go")).toBe(false);
   });
 });

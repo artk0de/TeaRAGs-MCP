@@ -14,6 +14,9 @@ dist/
 # Test coverage
 coverage/
 
+# Vitest 5 run artifacts (attachments; json/junit reporter output)
+.vitest/
+
 # Environment variables
 .env
 .env.local
@@ -89,3 +92,7 @@ docs/presentations/
 # byte-code from the jedi oracle's own pytest run (scripts/py-oracle/)
 __pycache__/
 .pytest_cache/
+
+# SWE-bench Lite A/B artefacts (repos, indexes, transcripts)
+evals/swe-bench-lite/runs/
+evals/swe-bench-lite/.venv/

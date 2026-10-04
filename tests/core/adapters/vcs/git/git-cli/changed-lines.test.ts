@@ -13,6 +13,7 @@ import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { importGitHistory } from "../../../../__helpers__/git-history-import.js";
 import {
   listChangedFiles,
   readAddedLineRanges,
@@ -200,20 +201,19 @@ describe("git CLI client — merge-base of a review base", { timeout: 30_000 }, 
 
   beforeAll(() => {
     root = mkdtempSync(join(tmpdir(), "merge-base-"));
-    git(root, "init", "-q", "-b", "main");
-    writeFileSync(join(root, "a.ts"), "a\n");
-    git(root, "add", "-A");
-    git(root, "commit", "-q", "-m", "init");
-    forkPoint = git(root, "rev-parse", "HEAD").trim();
-    git(root, "checkout", "-q", "-b", "feat");
-    writeFileSync(join(root, "b.ts"), "b\n");
-    git(root, "add", "-A");
-    git(root, "commit", "-q", "-m", "feat");
-    git(root, "checkout", "-q", "main");
-    writeFileSync(join(root, "c.ts"), "c\n");
-    git(root, "add", "-A");
-    git(root, "commit", "-q", "-m", "main moves on");
-    git(root, "checkout", "-q", "feat");
+    // ONE fast-import instead of 12 init/add/commit/checkout spawns (bd
+    // tea-rags-mcp-1r3e5): `feat` forks from init, main moves on, `feat` checked out.
+    const t = { name: "t", email: "t@x" };
+    const now = new Date();
+    forkPoint = importGitHistory(
+      root,
+      [
+        { label: "init", message: "init", author: t, authorDate: now, writes: { "a.ts": "a\n" } },
+        { branch: "feat", message: "feat", author: t, authorDate: now, writes: { "b.ts": "b\n" } },
+        { message: "main moves on", author: t, authorDate: now, writes: { "c.ts": "c\n" } },
+      ],
+      { checkout: "feat" },
+    ).init;
   });
 
   afterAll(() => {

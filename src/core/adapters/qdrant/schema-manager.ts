@@ -41,8 +41,12 @@ type IndexSchema = "keyword" | "integer" | "float" | "bool" | "datetime";
  * — the index path and the filter path must match exactly or Qdrant never uses
  * the index and the filter returns zero results (bd tea-rags-mcp-6yb8 +
  * tea-rags-mcp-k6xu). The adapter layer cannot import the domain descriptors
- * (domain-boundaries rule), so the list is mirrored here; keep both in lockstep
- * when adding a signal OR changing the inner-key shape.
+ * (domain-boundaries rule), so the list is mirrored here rather than imported;
+ * the mirror is pinned to the canonical `CODEGRAPH_SYMBOLS_FILTER_INDEXES`
+ * (src/core/contracts/codegraph-payload.ts) by the parity tests
+ * (`codegraph-filter-index-parity.test.ts` and
+ * `schema-manager-migrations-parity.test.ts`) — editing either side alone
+ * fails the suite instead of silently matching nothing.
  *
  * `schema-v15-codegraph-filter-indexes` applies the identical list to
  * collections that already exist — this loop only reaches collections created

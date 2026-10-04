@@ -442,6 +442,46 @@ describe("CodeChunkGrouper", () => {
       );
     });
 
+    it("lists every member of a grouped tiny-example chunk under its scope (5xpq4)", () => {
+      const group = testChunk("g-1", `${admin}.it`, admin, 10);
+      group.payload.memberSymbolIds = [`${admin}.it`, `${admin}.it~2`, `${admin}.it~3`];
+
+      const result = CodeChunkGrouper.groupFile([group, testChunk("e-1", `${admin}.it 'can invite'`, admin, 20)]);
+
+      expect(result.payload?.content).toBe(
+        [
+          specPath,
+          `  ${admin}`,
+          `    ${admin}.it`,
+          `    ${admin}.it~2`,
+          `    ${admin}.it~3`,
+          `    ${admin}.it 'can invite'`,
+        ].join("\n"),
+      );
+    });
+
+    it("folds a scope's setup chunk into the scope line its examples draw (5xpq4)", () => {
+      const setup = testChunk("s-1", admin, "User", 4, "test_setup");
+      setup.payload.parentType = "call";
+
+      const result = CodeChunkGrouper.groupFile([setup, testChunk("e-1", `${admin}.it 'can invite'`, admin, 10)]);
+
+      expect(result.payload?.content).toBe([specPath, `  ${admin}`, `    ${admin}.it 'can invite'`].join("\n"));
+    });
+
+    it("folds the drawn members of a packed setup chunk and lists only its undrawn ones (5xpq4)", () => {
+      const fixtures = "User.context 'shared fixtures'";
+      const pack = testChunk("s-1", admin, "User", 4, "test_setup");
+      pack.payload.parentType = "call";
+      pack.payload.memberSymbolIds = [admin, fixtures];
+
+      const result = CodeChunkGrouper.groupFile([pack, testChunk("e-1", `${admin}.it 'can invite'`, admin, 10)]);
+
+      expect(result.payload?.content).toBe(
+        [specPath, `  ${fixtures}`, `  ${admin}`, `    ${admin}.it 'can invite'`].join("\n"),
+      );
+    });
+
     it("draws a setup-only scope and a pre-example-era test chunk as plain lines, not as a scope", () => {
       const setupOnly = testChunk("s-1", "User.context 'shared fixtures'", "User", 3, "test_setup");
       const legacy = testChunk("l-1", "User.describe User", "User", 20);

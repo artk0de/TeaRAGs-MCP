@@ -105,7 +105,7 @@ describe("SchemaMigrator", () => {
     expect(migrator.getMigrations().find((m) => m.version === 16)?.name).toBe(
       "schema-v16-drop-undeclared-payload-indexes",
     );
-    expect(migrator.latestVersion).toBe(18);
+    expect(migrator.latestVersion).toBe(19);
   });
 
   it("does not register v16 from an empty declared key set", () => {
@@ -134,6 +134,16 @@ describe("SchemaMigrator", () => {
       declaredPayloadKeys: new Set(["git.chunk.ageDays"]),
     });
     expect(migrator.getMigrations().find((m) => m.version === 18)?.name).toBe("schema-v18-recent-authors-index");
+  });
+
+  // bd tea-rags-mcp-5xpq4 — v19 ensures the memberSymbolIds text index
+  // find_symbol resolves a packed test chunk's member id through.
+  it("registers v19 after v18 when the declared keys are supplied", () => {
+    const migrator = new SchemaMigrator(COLLECTION, createMockIndexStore(), {
+      enableHybrid: false,
+      declaredPayloadKeys: new Set(["git.chunk.ageDays"]),
+    });
+    expect(migrator.getMigrations().find((m) => m.version === 19)?.name).toBe("schema-v19-member-symbol-ids-text");
   });
 
   // Any migration above 16 stamps the collection past 16: registering v17

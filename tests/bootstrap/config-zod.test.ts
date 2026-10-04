@@ -30,6 +30,7 @@ describe("parseAppConfigZod", () => {
       "EMBEDDING_MODEL",
       "OLLAMA_QUANTIZATION",
       "EMBEDDING_OLLAMA_QUANTIZATION",
+      "EMBEDDING_AUTO_PULL",
       "EMBEDDING_DIMENSIONS",
       "EMBEDDING_BASE_URL",
       "OLLAMA_LEGACY_API",
@@ -37,6 +38,8 @@ describe("parseAppConfigZod", () => {
       "OPENAI_API_KEY",
       "COHERE_API_KEY",
       "VOYAGE_API_KEY",
+      "EMBEDDING_API_KEY",
+      "EMBEDDING_FALLBACK_URL",
       "EMBEDDING_TUNE_BATCH_SIZE",
       "EMBEDDING_BATCH_SIZE",
       "CODE_BATCH_SIZE",
@@ -251,6 +254,28 @@ describe("parseAppConfigZod", () => {
       delete process.env.EMBEDDING_TUNE_UNAVAILABLE_RETRY_BASE_DELAY_MS;
     });
 
+    it("auto-pulls a missing Ollama model unless EMBEDDING_AUTO_PULL=false", async () => {
+      const { parseAppConfigZod } = await freshImport();
+      expect(parseAppConfigZod().embedding.autoPull).toBe(true);
+
+      process.env.EMBEDDING_AUTO_PULL = "false";
+      const fresh = await freshImport();
+      expect(fresh.parseAppConfigZod().embedding.autoPull).toBe(false);
+
+      delete process.env.EMBEDDING_AUTO_PULL;
+    });
+
+    it("adapts embedding batch size and concurrency unless EMBEDDING_TUNE_STATIC pins them", async () => {
+      const { parseAppConfigZod } = await freshImport();
+      expect(parseAppConfigZod().embedding.tune.static).toBe(false);
+
+      process.env.EMBEDDING_TUNE_STATIC = "true";
+      const fresh = await freshImport();
+      expect(fresh.parseAppConfigZod().embedding.tune.static).toBe(true);
+
+      delete process.env.EMBEDDING_TUNE_STATIC;
+    });
+
     it("defaults embed-failure failover to 3 consecutive failures", async () => {
       const { parseAppConfigZod } = await freshImport();
       const { embedding } = parseAppConfigZod();
@@ -422,6 +447,30 @@ describe("parseAppConfigZod", () => {
     });
   });
 
+  describe("pipeline-concurrency userSet flag", () => {
+    it("flags.userSetPipelineConcurrency is false when no spelling is set, the value still 1", async () => {
+      const { parseAppConfigZod } = await freshImport();
+      const { flags, ingest } = parseAppConfigZod();
+
+      expect(flags.userSetPipelineConcurrency).toBe(false);
+      expect(ingest.tune.pipelineConcurrency).toBe(1);
+    });
+
+    it("flags.userSetPipelineConcurrency is true for an explicit 1 — explicit is not the same as non-default", async () => {
+      process.env.INGEST_PIPELINE_CONCURRENCY = "1";
+      const { parseAppConfigZod } = await freshImport();
+
+      expect(parseAppConfigZod().flags.userSetPipelineConcurrency).toBe(true);
+    });
+
+    it("flags.userSetPipelineConcurrency is true when the legacy EMBEDDING_CONCURRENCY alias is set", async () => {
+      process.env.EMBEDDING_CONCURRENCY = "2";
+      const { parseAppConfigZod } = await freshImport();
+
+      expect(parseAppConfigZod().flags.userSetPipelineConcurrency).toBe(true);
+    });
+  });
+
   describe("validation errors", () => {
     it("throws readable error for invalid transport mode", async () => {
       process.env.SERVER_TRANSPORT = "grpc";
@@ -527,6 +576,41 @@ describe("parseAppConfigZod", () => {
   });
 
   describe("embedding provider values", () => {
+    it("parses the llama-server provider with EMBEDDING_API_KEY and endpoint lists", async () => {
+      process.env.EMBEDDING_PROVIDER = "llama-server";
+      process.env.EMBEDDING_API_KEY = "lan-key";
+      process.env.EMBEDDING_BASE_URL = "http://gpu:8081,http://gpu:8082";
+      process.env.EMBEDDING_FALLBACK_URL = "http://127.0.0.1:8080";
+
+      const { parseAppConfigZod } = await freshImport();
+      const { embedding } = parseAppConfigZod();
+
+      expect(embedding.provider).toBe("llama-server");
+      expect(embedding.apiKey).toBe("lan-key");
+      expect(embedding.baseUrl).toBe("http://gpu:8081,http://gpu:8082");
+      expect(embedding.fallbackBaseUrl).toBe("http://127.0.0.1:8080");
+    });
+
+    it("does not require an API key for llama-server", async () => {
+      process.env.EMBEDDING_PROVIDER = "llama-server";
+
+      const { parseAppConfigZod } = await freshImport();
+      const { embedding } = parseAppConfigZod();
+
+      expect(embedding.apiKey).toBeUndefined();
+      expect(embedding.tune.batchSize).toBe(256);
+    });
+
+    it("keeps a single ollama EMBEDDING_BASE_URL unchanged", async () => {
+      process.env.EMBEDDING_BASE_URL = "http://box:11434";
+
+      const { parseAppConfigZod } = await freshImport();
+      const { embedding } = parseAppConfigZod();
+
+      expect(embedding.provider).toBe("ollama");
+      expect(embedding.baseUrl).toBe("http://box:11434");
+    });
+
     it("parses custom env vars for embedding", async () => {
       process.env.EMBEDDING_PROVIDER = "openai";
       process.env.EMBEDDING_MODEL = "text-embedding-3-small";

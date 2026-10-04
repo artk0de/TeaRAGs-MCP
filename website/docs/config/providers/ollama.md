@@ -112,9 +112,10 @@ Optional variables:
 | `EMBEDDING_MODEL`           | Ollama model name                               | `unclemusclez/jina-embeddings-v2-base-code:latest` |
 | `EMBEDDING_DIMENSIONS`      | Vector width. Resolved from Ollama at startup; set only to pin it | Resolved                     |
 | `EMBEDDING_FALLBACK_URL`    | Fallback Ollama URL when primary is unreachable | -                                                  |
-| `EMBEDDING_TUNE_BATCH_SIZE` | Texts per embedding batch                       | `1024`                                             |
+| `EMBEDDING_TUNE_BATCH_SIZE` | Ceiling on texts per embedding batch            | `1024`                                             |
 | `OLLAMA_NUM_GPU`            | GPU layers to offload (`0` = CPU only)          | `999` (all)                                        |
 | `OLLAMA_LEGACY_API`         | Use `/api/embeddings` instead of `/api/embed`   | `false`                                            |
+| `EMBEDDING_AUTO_PULL`       | Pull the model at startup when Ollama reports it missing (`/api/show` 404); `false` keeps the manual `ollama pull` | `true` |
 
 :::tip
 
@@ -141,15 +142,33 @@ URL. If both fail, the error message includes both URLs and suggests
 | `mxbai-embed-large`                                | 1024       | Higher dimensions, better quality          |
 | `all-minilm`                                       | 384        | Lightweight, fast                          |
 
-Pull any model with `ollama pull <model>` and set `EMBEDDING_MODEL` accordingly.
+Set `EMBEDDING_MODEL` to any Ollama embedding model. A model the server does not
+have yet is pulled at startup (`EMBEDDING_AUTO_PULL`, on by default); with it
+off, run `ollama pull <model>` first. For a project of 3M+ lines with a GPU
+host, the same models can be served faster by [llama-server](./llama-server).
 
 ## Performance Tuning
 
 | Variable                    | Description                                   | Default     | Tip                         |
 | --------------------------- | --------------------------------------------- | ----------- | --------------------------- |
 | `OLLAMA_NUM_GPU`            | GPU layers to offload                         | `999` (all) | Set `0` for CPU-only        |
-| `EMBEDDING_TUNE_BATCH_SIZE` | Texts per batch                               | `1024`      | Increase for high-VRAM GPUs |
+| `EMBEDDING_TUNE_BATCH_SIZE` | Ceiling on texts per batch                    | `1024`      | Increase for high-VRAM GPUs |
 | `OLLAMA_LEGACY_API`         | Use `/api/embeddings` instead of `/api/embed` | `false`     | Only for Ollama < 0.2.0     |
+
+Within that ceiling the batch size is chosen during the run: when Ollama fails
+a batch on size (a runner crash, an HTTP 400) the size is halved for every later
+batch and recovers after a streak of successes, and otherwise moves toward the
+fastest measured size. Concurrency is measured too; a `localhost` Ollama
+converges to 1. See
+[Adaptive Embedding](/config/performance-tuning#adaptive-embedding); the
+settled size is reported in `get_index_status` as
+`infraHealth.embedding.throughputTune`.
+
+**Context window.** Every embed request sets `num_ctx` and `num_batch` to the
+model's context length, capped at 8192 tokens. Ollama's default batch window of
+2048 tokens otherwise limits a single input to 2048 tokens: a chunk at the
+chunk-size cap in a token-dense script (Cyrillic or CJK text, for example) was
+either truncated silently or failed the whole batch with HTTP 400.
 
 ### Batch Size Guidelines
 

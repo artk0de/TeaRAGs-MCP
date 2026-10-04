@@ -24,10 +24,15 @@ export interface EmbeddingTuneConfig {
    * passes its health probe. 0 disables.
    */
   failoverConsecutiveFailures: number;
+  /**
+   * EMBEDDING_TUNE_STATIC: pin the configured batch size and concurrency for
+   * the whole run instead of letting the ingest throughput tuner adapt them.
+   */
+  static: boolean;
 }
 
 export interface EmbeddingConfig {
-  provider: "ollama" | "openai" | "cohere" | "voyage" | "onnx";
+  provider: "ollama" | "openai" | "cohere" | "voyage" | "onnx" | "llama-server";
   model?: string;
   dimensions?: number;
   device: string;
@@ -37,9 +42,13 @@ export interface EmbeddingConfig {
   ollamaNumGpu: number;
   /** Requested server-side model quantization: `turbo` | `q4_K_M` | `q5_K_M` | `q8_0` | `off`. Ollama-only. */
   ollamaQuantization: string;
+  /** EMBEDDING_AUTO_PULL: pull a model the Ollama server lacks at startup. Ollama-only. */
+  autoPull: boolean;
   openaiApiKey?: string;
   cohereApiKey?: string;
   voyageApiKey?: string;
+  /** EMBEDDING_API_KEY: sent as `Authorization: Bearer <key>` to every endpoint. llama-server-only (`--api-key`). */
+  apiKey?: string;
   tune: EmbeddingTuneConfig;
 }
 

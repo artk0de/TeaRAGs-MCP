@@ -512,12 +512,12 @@ export class FilePhase {
       arr.push({ endLine: item.chunk.endLine, moduleLines: item.chunk.metadata.moduleLines });
       spans.set(rel, arr);
     }
-    const out = new Map<string, number>();
+    const fileLines = new Map<string, number>();
     for (const [rel, arr] of spans) {
       const lines = fileLinesOf(arr);
-      if (lines !== undefined) out.set(rel, lines);
+      if (lines !== undefined) fileLines.set(rel, lines);
     }
-    return out;
+    return fileLines;
   }
 
   private uniqueRelPaths(items: ChunkItem[], root: string): string[] {

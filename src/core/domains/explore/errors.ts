@@ -14,7 +14,8 @@ export type ExploreErrorCode =
   | "EXPLORE_INVALID_STRATEGY"
   | "EXPLORE_CHUNK_NOT_FOUND"
   | "EXPLORE_UNKNOWN_FILTER_PRESET"
-  | "EXPLORE_EMPTY_FILTER_PRESET";
+  | "EXPLORE_EMPTY_FILTER_PRESET"
+  | "EXPLORE_WORKING_TREE_EMBEDDING_MALFORMED";
 
 /**
  * Abstract base for all explore domain errors.
@@ -107,6 +108,22 @@ export class EmptyFilterPresetError extends ExploreError {
       message: `No valid filter-preset names in "${input}"`,
       hint: "Provide a comma-separated list of at least one registered filter-preset name.",
       httpStatus: 400,
+    });
+  }
+}
+
+/**
+ * The embedding provider answered a batch of working-tree chunks with fewer
+ * vectors than texts (bd tea-rags-mcp-xi2r9, WTO-5). Never reaches a caller:
+ * the dense floor reports it as `denseUnavailable` and answers without them.
+ */
+export class WorkingTreeEmbeddingMalformedError extends ExploreError {
+  constructor(asked: number, answered: number) {
+    super({
+      code: "EXPLORE_WORKING_TREE_EMBEDDING_MALFORMED",
+      message: `Embedding provider answered ${String(answered)} vectors for ${String(asked)} working-tree chunks`,
+      hint: "Check the embedding provider's health; the answer ranks those chunks without a vector",
+      httpStatus: 502,
     });
   }
 }

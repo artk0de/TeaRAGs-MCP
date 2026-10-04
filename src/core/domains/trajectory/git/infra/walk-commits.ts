@@ -127,6 +127,13 @@ interface CommitHunkData {
   hunks: WalkCommitDiffHunk[];
   isBugFix: boolean;
   taskIds: string[];
+  /**
+   * The commit's position in the discovery's log order (0 = newest). Phase 2
+   * walks a file's commits by it — never by `commit.timestamp`, the AUTHOR date,
+   * which a rebased or backdated commit sets below the commits it sits on and
+   * which ties for commits made within one second (bd tea-rags-mcp-xi2r9).
+   */
+  logIndex: number;
 }
 
 /** Commits to walk plus the bug-fix SHA set their classification needs. */
@@ -290,6 +297,7 @@ async function collectHunksPerFile(
     parentOid: string | null,
     isBugFix: boolean,
     commitTaskIds: string[],
+    logIndex: number,
   ): Promise<void> => {
     const filePath = changed.path;
     // A file past maxFileLines never reaches here: `buildAccumulators` drops it
@@ -348,12 +356,13 @@ async function collectHunksPerFile(
       list = [];
       fileHunkMap.set(headPath, list);
     }
-    list.push({ commit, hunks, isBugFix, taskIds: commitTaskIds });
+    list.push({ commit, hunks, isBugFix, taskIds: commitTaskIds, logIndex });
   };
 
   const collectHunks = async (
     entry: CommitWithChangedFiles,
     attributedRows: HeadAttributedChangedPath[],
+    logIndex: number,
   ): Promise<void> => {
     const acquireStart = Date.now();
     const release = await acquire();
@@ -381,7 +390,7 @@ async function collectHunksPerFile(
       const parentOid = entry.commit.parents?.[0] ?? null;
 
       await Promise.all(
-        relevantFiles.map(async (row) => collectOneFile(row, commit, parentOid, isBugFix, commitTaskIds)),
+        relevantFiles.map(async (row) => collectOneFile(row, commit, parentOid, isBugFix, commitTaskIds, logIndex)),
       );
     } finally {
       release();
@@ -393,7 +402,7 @@ async function collectHunksPerFile(
     // alias map is rewritten at each rename commit, so a row's HEAD path
     // depends on every newer commit already having been seen.
     const attributed = resolveHeadPaths(discovery.commitEntries);
-    await Promise.all(discovery.commitEntries.map(async (entry, i) => collectHunks(entry, attributed[i])));
+    await Promise.all(discovery.commitEntries.map(async (entry, i) => collectHunks(entry, attributed[i], i)));
   } finally {
     // Tear the cat-file process down once all blob reads are done (Phase 2 maps
     // hunks → chunks in-memory, no further git reads) — but ONLY if we spawned
@@ -418,8 +427,10 @@ function applyFileHunksToAccumulators(
   const entries = relativeChunkMap.get(filePath);
   if (!entries) return;
 
-  // Sort commits newest→oldest for backward offset tracking
-  hunkDataList.sort((a, b) => b.commit.timestamp - a.commit.timestamp);
+  // Newest → oldest in HISTORY order for backward offset tracking: a commit's
+  // hunks are read against ranges carried back through every commit above it,
+  // which author dates do not order (see `CommitHunkData#logIndex`).
+  hunkDataList.sort((a, b) => a.logIndex - b.logIndex);
 
   // Init adjusted ranges from HEAD chunk positions
   let adjustedRanges: AdjustedRange[] = entries.map((e) => ({

@@ -16,6 +16,7 @@ import { registerDocumentTools } from "./document.js";
 import { registerSearchTools, type McpAutoUpdateTrigger } from "./explore.js";
 import { registerProjectTools } from "./list-projects.js";
 import { registerRegisterProjectTool } from "./register-project.js";
+import { registerReviewChangesTool } from "./review-changes.js";
 import { registerUnregisterProjectTool } from "./unregister-project.js";
 
 export interface ToolDependencies {
@@ -42,6 +43,7 @@ export function registerAllTools(server: McpServer, deps: ToolDependencies): voi
   });
   registerCodeTools(server, { app: deps.app, schemaBuilder: deps.schemaBuilder, register });
   registerCodegraphTools(server, { app: deps.app, schemaBuilder: deps.schemaBuilder, register });
+  registerReviewChangesTool(server, { app: deps.app, register });
   registerProjectTools(server, { app: deps.app, register });
   registerRegisterProjectTool(server, { app: deps.app, register });
   registerUnregisterProjectTool(server, { app: deps.app, register });

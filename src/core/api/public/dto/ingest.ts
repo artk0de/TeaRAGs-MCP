@@ -9,6 +9,7 @@ import {
   type RechunkFileSelector,
   type RechunkTestFileScope,
 } from "../../../contracts/types/rechunk.js";
+import type { EmbeddingProducerStarvation, EmbeddingThroughputOptimum } from "../../../contracts/types/registry.js";
 import type { WorktreeSeedReport } from "../../../contracts/types/worktree.js";
 import type { EnrichmentHealthMap } from "../../../domains/ingest/pipeline/enrichment/types.js";
 import type {
@@ -20,6 +21,7 @@ import type {
   ProgressUpdate,
 } from "../../../types.js";
 import type { CollectionIdentifier } from "./common.js";
+import type { WorkingTreeMarker } from "./working-tree.js";
 
 // Re-export the enrichment progress contract on the public surface so cli/mcp
 // consumers import it without crossing into core/types.ts directly.
@@ -235,6 +237,13 @@ export interface ChangeStats {
 export interface IndexStatus {
   /** @deprecated Use `status` instead. True only when status is 'indexed'. */
   isIndexed: boolean;
+  /**
+   * Set when the path asked about is a working tree read against another
+   * index (live D10): the status is THAT index's, and this is its root.
+   */
+  indexPath?: string;
+  /** The working tree's marker beside `indexPath` (bd tea-rags-mcp-xi2r9). */
+  workingTree?: WorkingTreeMarker;
   /** Current indexing status */
   status: IndexingStatus;
   collectionName?: string;
@@ -322,6 +331,18 @@ export interface IndexStatus {
       fallbackUrl?: string;
       /** Live reachability of the fallback endpoint. Omitted when no fallback configured. */
       fallbackAvailable?: boolean;
+      /**
+       * Embed batch size and concurrency the throughput tuner last settled on
+       * for the ACTIVE endpoint + model (bd tea-rags-mcp-7ju66), read from the
+       * registry the run recorded into. Omitted when nothing has settled yet.
+       */
+      throughputTune?: EmbeddingThroughputOptimum;
+      /**
+       * Whether the project's last run was bound by the chunk producer rather
+       * than the embedding server (bd tea-rags-mcp-y1ynz) — a starved run's
+       * throughput is not the server's ceiling. Omitted when no run recorded one.
+       */
+      producerStarvation?: EmbeddingProducerStarvation;
     };
   };
 }

@@ -6,6 +6,7 @@ import {
   EmbeddingRejectedError,
   FileParseError,
   FileReadError,
+  IndexingProcessBuildStaleError,
   IngestError,
   IngestInvariantError,
   NotIndexedError,
@@ -124,6 +125,18 @@ describe("IngestError hierarchy", () => {
       expect(err.message).toContain("code_wt_v1");
       expect(err.message).not.toContain("socket hang up");
       expect(err.cause).toBe(cause);
+      expect(err).toBeInstanceOf(IngestError);
+    });
+  });
+
+  describe("IndexingProcessBuildStaleError", () => {
+    it("is a 503 naming both builds, with the reconnect remedy in the hint", () => {
+      const err = new IndexingProcessBuildStaleError({ loaded: "b|1.0.0|100", onDisk: "b|1.0.0|200" });
+      expect(err.code).toBe("INGEST_PROCESS_BUILD_STALE");
+      expect(err.httpStatus).toBe(503);
+      expect(err.message).toContain("b|1.0.0|100");
+      expect(err.message).toContain("b|1.0.0|200");
+      expect(err.hint).toContain("/mcp reconnect");
       expect(err).toBeInstanceOf(IngestError);
     });
   });

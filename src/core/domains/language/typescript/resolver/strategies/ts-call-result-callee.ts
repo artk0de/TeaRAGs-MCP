@@ -73,7 +73,7 @@
  * hand back a file-only edge for the subset this pass declines.
  */
 
-import ts from "typescript";
+import type ts from "typescript";
 
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import {
@@ -87,6 +87,7 @@ import {
   lookupEcmascriptSymbols,
   lookupEcmascriptSymbolsByShortName,
 } from "../../../shared/ecmascript-symbol-lookup.js";
+import { loadTypeScriptCompiler } from "../ts-compiler-loader.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import type { ResolverConfig } from "./shared.js";
 import { composeSymbolId, findCallExpression } from "./ts-type-checker-fallback.js";
@@ -113,6 +114,7 @@ export class TSCallResultCalleeSymbolResolutionStrategy implements SymbolResolut
     const handle = this.programCache.acquire(ctx.callerFile);
     if (handle === null) return CONTINUE;
 
+    const ts = loadTypeScriptCompiler();
     const node = findCallExpression(handle.sourceFile, call.startLine, call.member);
     if (node === null || !ts.isIdentifier(node.expression)) return CONTINUE;
     if (!calleeBoundToCallResult(handle.checker, node.expression)) return CONTINUE;
@@ -189,6 +191,7 @@ function calleeBoundToCallResult(checker: ts.TypeChecker, callee: ts.Identifier)
  * instead, which is precisely the shape this pass must not claim.
  */
 function isCallResultBinding(declaration: ts.Declaration): boolean {
+  const ts = loadTypeScriptCompiler();
   if (ts.isVariableDeclaration(declaration)) return isCallInitializer(declaration.initializer);
   if (!ts.isBindingElement(declaration)) return false;
   const owner = declaringVariableOf(declaration);
@@ -198,12 +201,14 @@ function isCallResultBinding(declaration: ts.Declaration): boolean {
 /** `fn(…)`, including the `await fn(…)` a hook-shaped factory is often awaited through. */
 function isCallInitializer(initializer: ts.Expression | undefined): boolean {
   if (initializer === undefined) return false;
+  const ts = loadTypeScriptCompiler();
   const unwrapped = ts.isAwaitExpression(initializer) ? initializer.expression : initializer;
   return ts.isCallExpression(unwrapped);
 }
 
 /** The `VariableDeclaration` a binding element ultimately belongs to, or `null`. */
 function declaringVariableOf(element: ts.BindingElement): ts.VariableDeclaration | null {
+  const ts = loadTypeScriptCompiler();
   let cursor: ts.Node = element.parent;
   while (ts.isBindingElement(cursor) || ts.isObjectBindingPattern(cursor) || ts.isArrayBindingPattern(cursor)) {
     cursor = cursor.parent;

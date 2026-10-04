@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { codeRow, fakeWorkingTreeView } from "../__fixtures__/working-tree-view.js";
 import type { EmbeddingProvider } from "../../../../../src/core/adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import { QdrantPointNotFoundError } from "../../../../../src/core/adapters/qdrant/errors.js";
+import { toQdrantPointId } from "../../../../../src/core/adapters/qdrant/point-id.js";
 import { ChunkNotFoundError } from "../../../../../src/core/domains/explore/errors.js";
 import type { Reranker } from "../../../../../src/core/domains/explore/reranker.js";
 import { SimilarSearchStrategy } from "../../../../../src/core/domains/explore/strategies/similar.js";
@@ -100,7 +102,7 @@ describe("SimilarSearchStrategy", () => {
 
     await strategy.execute({ collectionName: "col", limit: 10 });
 
-    expect(embeddings.embedBatch).toHaveBeenCalledWith(["function foo() {}"]);
+    expect(embeddings.embedBatch).toHaveBeenCalledWith(["function foo() {}"], { maxRecoveryWaitMs: 0 });
     expect(qdrant.query).toHaveBeenCalledWith(
       "col",
       expect.objectContaining({
@@ -141,7 +143,7 @@ describe("SimilarSearchStrategy", () => {
 
     await strategy.execute({ collectionName: "col", limit: 10 });
 
-    expect(embeddings.embedBatch).toHaveBeenCalledWith(["valid code"]);
+    expect(embeddings.embedBatch).toHaveBeenCalledWith(["valid code"], { maxRecoveryWaitMs: 0 });
   });
 
   it("passes strategy to qdrant.query", async () => {
@@ -382,5 +384,96 @@ describe("SimilarSearchStrategy", () => {
 
     expect(results[0].rankingOverlay).toEqual(overlay);
     expect(results[0].payload).toEqual({ relativePath: "src/a.ts", git: { file: { commitCount: 37 } } });
+  });
+});
+
+/**
+ * find_similar on a working tree (bd tea-rags-mcp-xi2r9, live probe P1-2):
+ * hybrid_search and find_symbol hand out ids of the tree's rows, and a caller
+ * passes them back. Such a row is not in Qdrant (or is, with the vector of the
+ * pre-edit content), so its CONTENT is embedded and used as the example — the
+ * vector the row would have once indexed. Any other id goes to Qdrant as an id.
+ */
+describe("SimilarSearchStrategy on a working tree", () => {
+  const TREE_ROW_ID = String(toQdrantPointId("chunk_e61bd876bd62659c"));
+  const treeRow = codeRow(TREE_ROW_ID, { relativePath: "src/touched.ts", content: "export function fresh() {}" });
+  const negativeRow = codeRow(String(toQdrantPointId("chunk_0123456789abcdef")), {
+    relativePath: "src/touched.ts",
+    content: "export function stale() {}",
+  });
+  const view = () => fakeWorkingTreeView({ changed: ["src/touched.ts"], rows: [treeRow, negativeRow] });
+
+  const embeddingsReturning = (...vectors: number[][]) => {
+    const embeddings = createMockEmbeddings();
+    vi.mocked(embeddings.embedBatch).mockResolvedValue(vectors.map((embedding) => ({ embedding, dimensions: 3 })));
+    return embeddings;
+  };
+
+  it("should embed a tree row's content in place of its id, and send other ids as ids", async () => {
+    const embeddings = embeddingsReturning([0.4, 0.5, 0.6]);
+    const qdrant = createMockQdrant();
+    const strategy = createStrategy({ qdrant, embeddings, positiveIds: [TREE_ROW_ID, "uuid-base"] });
+
+    await strategy.execute({ collectionName: "col", limit: 10, workingTreeView: view() });
+
+    expect(embeddings.embedBatch).toHaveBeenCalledWith(["export function fresh() {}"], { maxRecoveryWaitMs: 0 });
+    expect(qdrant.query).toHaveBeenCalledWith(
+      "col",
+      expect.objectContaining({ positive: ["uuid-base", [0.4, 0.5, 0.6]] }),
+    );
+  });
+
+  it("should resolve a tree row by the chunk id it was addressed by before ids were stored ids", async () => {
+    const embeddings = embeddingsReturning([0.4, 0.5, 0.6]);
+    const qdrant = createMockQdrant();
+    const strategy = createStrategy({ qdrant, embeddings, positiveIds: ["chunk_e61bd876bd62659c"] });
+
+    await strategy.execute({ collectionName: "col", limit: 10, workingTreeView: view() });
+
+    expect(qdrant.query).toHaveBeenCalledWith("col", expect.objectContaining({ positive: [[0.4, 0.5, 0.6]] }));
+  });
+
+  it("should resolve tree rows given as negative examples after the caller's code examples", async () => {
+    const embeddings = embeddingsReturning([0.1, 0.1, 0.1], [0.2, 0.2, 0.2], [0.3, 0.3, 0.3]);
+    const qdrant = createMockQdrant();
+    const strategy = createStrategy({
+      qdrant,
+      embeddings,
+      positiveIds: [TREE_ROW_ID],
+      negativeIds: [String(negativeRow.id)],
+      negativeCode: ["caller negative"],
+    });
+
+    await strategy.execute({ collectionName: "col", limit: 10, workingTreeView: view() });
+
+    expect(embeddings.embedBatch).toHaveBeenCalledWith(
+      ["export function fresh() {}", "caller negative", "export function stale() {}"],
+      { maxRecoveryWaitMs: 0 },
+    );
+    expect(qdrant.query).toHaveBeenCalledWith(
+      "col",
+      expect.objectContaining({
+        positive: [[0.1, 0.1, 0.1]],
+        negative: [
+          [0.2, 0.2, 0.2],
+          [0.3, 0.3, 0.3],
+        ],
+      }),
+    );
+  });
+
+  it("should not read the tree's rows when the tree touched nothing", async () => {
+    const readDeltaChunks = vi.fn(async () => [treeRow]);
+    const untouched = { ...fakeWorkingTreeView({}), readDeltaChunks };
+    const qdrant = createMockQdrant();
+
+    await createStrategy({ qdrant, positiveIds: [TREE_ROW_ID] }).execute({
+      collectionName: "col",
+      limit: 10,
+      workingTreeView: untouched,
+    });
+
+    expect(readDeltaChunks).not.toHaveBeenCalled();
+    expect(qdrant.query).toHaveBeenCalledWith("col", expect.objectContaining({ positive: [TREE_ROW_ID] }));
   });
 });

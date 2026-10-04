@@ -38,8 +38,14 @@
  * TYPE, not by who currently queries it: leaving it off would mean the guard
  * test never sees the first `match.value` someone writes against it, which is
  * exactly how the other two keys went six schema versions unnoticed.
+ *
+ * `memberSymbolIds` (bd tea-rags-mcp-5xpq4) is the LIST of member ids on a
+ * packed test chunk (grouped tiny examples, or several scopes' setup); `find_symbol` resolves a member id through it
+ * exactly as it does a `symbolId`, so it takes the same index type and the same
+ * pair. Existing collections get the index from
+ * `schema-v19-member-symbol-ids-text`.
  */
-export const TEXT_INDEXED_KEYS = ["relativePath", "symbolId", "parentSymbolId"] as const;
+export const TEXT_INDEXED_KEYS = ["relativePath", "symbolId", "parentSymbolId", "memberSymbolIds"] as const;
 
 /** One of the payload keys indexed as `text`. */
 export type TextIndexedKey = (typeof TEXT_INDEXED_KEYS)[number];

@@ -18,12 +18,13 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { importGitHistory, type GitHistoryCommit } from "../../../../__helpers__/git-history-import.js";
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import { buildChunkChurnMapUncached } from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import { GitCommitDiscovery } from "../../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
@@ -100,26 +101,26 @@ describe("chunk walk credits only changed rows, like `git log -L` (bd tea-rags-m
 
   beforeEach(() => {
     repo = mkdtempSync(join(TMP_BASE, "z3cnd-"));
-    const g = (args: string[], iso: string): string => gitIn(repo, args, iso);
-    const commit = (v: Variant, iso: string, message: string): void => {
+    // ONE fast-import instead of ~15 add/commit spawns (bd tea-rags-mcp-1r3e5);
+    // author and committer are the configured user, as the commit chain made them.
+    const test = { name: "Test", email: "t@example.com" };
+    const commit = (v: Variant, iso: string, message: string): GitHistoryCommit => {
       head = source(v);
-      writeFileSync(join(repo, FILE), head);
-      g(["add", "-A"], iso);
-      g(["commit", "-q", "-m", message], iso);
+      return { message, author: test, authorDate: iso, writes: { [FILE]: head } };
     };
 
-    g(["init", "-q", "-b", "main"], at(10, 0));
-    g(["config", "user.email", "t@example.com"], at(10, 0));
-    g(["config", "user.name", "Test"], at(10, 0));
-    g(["config", "commit.gpgsign", "false"], at(10, 0));
-    execFileSync("mkdir", ["-p", join(repo, "src")]);
-
     const v: Variant = { alphaC: 3, gammaNote: true, seamBlank: true, deltaTail: 1 };
-    commit(v, at(10, -2), "feat: add calc");
-    commit({ ...v, alphaC: 4 }, at(9, 2), "feat: alpha c=4");
-    commit({ ...v, alphaC: 4, gammaNote: false }, at(8, 2), "chore: drop gamma note");
-    commit({ ...v, alphaC: 4, gammaNote: false, seamBlank: false }, at(7, 2), "style: drop seam blank");
-    commit({ ...v, alphaC: 4, gammaNote: false, seamBlank: false, deltaTail: 2 }, at(6, 2), "fix: delta tail");
+    importGitHistory(
+      repo,
+      [
+        commit(v, at(10, -2), "feat: add calc"),
+        commit({ ...v, alphaC: 4 }, at(9, 2), "feat: alpha c=4"),
+        commit({ ...v, alphaC: 4, gammaNote: false }, at(8, 2), "chore: drop gamma note"),
+        commit({ ...v, alphaC: 4, gammaNote: false, seamBlank: false }, at(7, 2), "style: drop seam blank"),
+        commit({ ...v, alphaC: 4, gammaNote: false, seamBlank: false, deltaTail: 2 }, at(6, 2), "fix: delta tail"),
+      ],
+      { config: { "user.email": "t@example.com", "user.name": "Test", "commit.gpgsign": "false" } },
+    );
   });
 
   afterEach(() => {

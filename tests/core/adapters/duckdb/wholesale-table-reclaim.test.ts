@@ -107,7 +107,7 @@ describe("wholesale codegraph table rewrites reclaim the previous generation", (
   });
 
   it("replaceTemporalCochange leaves no dead rows in any cg_temporal table and keeps their keys (bd tea-rags-mcp-x4rpp)", async () => {
-    const tables = ["cg_temporal_files", "cg_temporal_edges_cochange", "cg_temporal_meta"];
+    const tables = ["cg_temporal_files", "cg_temporal_edges_cochange", "cg_temporal_meta", "cg_temporal_bundle_files"];
     const before = await Promise.all(tables.map(constraintsOf));
 
     for (let run = 0; run < RUNS; run++) {
@@ -138,6 +138,8 @@ describe("wholesale codegraph table rewrites reclaim the previous generation", (
           lastCoChangeAt: run,
           sampleCommits: ["s1"],
         })),
+        // Ten admitted bundles of five files each — same generation's file set.
+        bundles: Array.from({ length: 10 }, (_, b) => files.slice(b * 5, b * 5 + 5)),
       });
       await db.checkpoint();
     }
@@ -145,10 +147,14 @@ describe("wholesale codegraph table rewrites reclaim the previous generation", (
     expect(await storedVsLive("cg_temporal_files")).toEqual({ stored: 50, live: 50 });
     expect(await storedVsLive("cg_temporal_edges_cochange")).toEqual({ stored: 49, live: 49 });
     expect(await storedVsLive("cg_temporal_meta")).toEqual({ stored: 1, live: 1 });
+    expect(await storedVsLive("cg_temporal_bundle_files")).toEqual({ stored: 50, live: 50 });
     expect(await Promise.all(tables.map(constraintsOf))).toEqual(before);
     const graph = await db.readTemporalCochangeGraph();
     expect(graph.meta?.head).toBe(`h${RUNS - 1}`);
     expect(graph.edges.every((e) => e.relPathA.startsWith(`src/g${RUNS - 1}/`))).toBe(true);
+    expect(
+      [...(graph.bundles ?? new Map()).values()].every((b) => b.every((p) => p.startsWith(`src/g${RUNS - 1}/`))),
+    ).toBe(true);
   });
 
   it("a replacement that fails leaves the previous generation in place", async () => {

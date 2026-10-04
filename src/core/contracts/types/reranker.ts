@@ -28,8 +28,10 @@ export interface DerivedSignalDescriptor {
   extract: (rawSignals: Record<string, unknown>, ctx?: ExtractContext) => number;
   /** Default upper bound for normalization */
   defaultBound?: number;
-  /** Whether this signal inverts the raw value (1 - normalize pattern).
-   *  Used by rank_chunks to determine scroll direction: inverted=true → asc. */
+  /** Whether this signal inverts the value it normalizes (1 - normalize pattern).
+   *  Used by rank_chunks to determine scroll direction: inverted=true → asc —
+   *  except over an `ageDerivation` timestamp source, where the normalized value
+   *  is age = now − stamp and the direction flips (recency → newest stamp first). */
   inverted?: boolean;
   /**
    * Query-time age capability (bd tea-rags-mcp-9ot33). Present ONLY on

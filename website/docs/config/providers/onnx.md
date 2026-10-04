@@ -124,7 +124,7 @@ Some HuggingFace models require authentication (gated models like Llama, or priv
 
 ## Tuning Notes
 
-**Batch size** is auto-calibrated on first startup. The daemon runs a GPU calibration probe that tests batch sizes [1, 4, 8, 16, 32, 64, 128] and picks the optimal one for your hardware. The result is cached in `~/.tea-rags/onnx-calibration.json` — subsequent startups use the cached value instantly. Override with `EMBEDDING_TUNE_BATCH_SIZE` if needed.
+**Batch size** is auto-calibrated on first startup. The daemon runs a GPU calibration probe that tests batch sizes [1, 4, 8, 16, 32, 64, 128] and picks the optimal one for your hardware. The result is cached in `~/.tea-rags/onnx-calibration.json` — subsequent startups use the cached value instantly. Override with `EMBEDDING_TUNE_BATCH_SIZE` if needed. Either value is the ceiling for [adaptive embedding](/config/performance-tuning#adaptive-embedding), which can still lower the batch size during a run; the ONNX provider reports no endpoint URL, so no optimum is stored between runs.
 
 **Concurrency** (`INGEST_PIPELINE_CONCURRENCY`) should stay at `1`. The ONNX daemon processes requests sequentially on a single model instance. Higher concurrency adds queue overhead without improving throughput.
 

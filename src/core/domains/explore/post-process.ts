@@ -13,9 +13,8 @@
 import { toPhysicalPayloadKey } from "../../contracts/signal-utils.js";
 import type { RankingOverlay } from "../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
-import { compilePathPatternMatcher } from "../../infra/path-pattern.js";
+import { compilePathPatternMatcher, type PathPatternMatcher } from "../../infra/path-pattern.js";
 import type { Reranker, RerankMode } from "./reranker.js";
-import { keepPathPatternMatches } from "./strategies/path-pattern-fill.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -83,6 +82,17 @@ export async function postProcess(results: SearchResult[], options: PostProcessO
   }
 
   return filtered.slice(0, options.limit);
+}
+
+/** Keep the results whose `payload.relativePath` the matcher selects. */
+export function keepPathPatternMatches<R extends { payload?: Record<string, unknown> }>(
+  results: R[],
+  matcher: PathPatternMatcher,
+): R[] {
+  return results.filter((result) => {
+    const relativePath = result.payload?.relativePath;
+    return typeof relativePath === "string" && matcher(relativePath);
+  });
 }
 
 // ---------------------------------------------------------------------------

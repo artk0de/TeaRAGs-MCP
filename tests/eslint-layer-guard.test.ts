@@ -6,16 +6,25 @@
  * inside `src/core` is relative (`../domains/ingest/...`) and so never contains
  * the `core/` segment. Nothing matched, nothing was ever reported.
  *
- * A config-only fix is unverifiable by inspection, so this test lints real
- * fixture files placed inside each zone and asserts the expected message. The
- * fixtures must exist on disk: `tsconfig.eslint.json` drives type-aware
- * parsing, and a virtual path would fail to parse instead of reaching the rule.
+ * A config-only fix is unverifiable by inspection, so this test lints fixture
+ * sources at virtual paths inside each zone and asserts the expected message.
+ *
+ * The fixtures never touch disk (bd tea-rags-mcp-bbo1h.7). Writing them into
+ * `src/` raced every parallel test that lists and then reads the source tree
+ * (ENOENT on a fixture listed and then deleted), exposed their deliberate
+ * violations to scanners, and left violating files behind on a crash.
+ *
+ * `lintText` with a virtual path cannot use the project's typed parsing: the
+ * path is in no tsconfig program, so the parser rejects it before any rule runs.
+ * The layer rule (`@typescript-eslint/no-restricted-imports`) does not need type
+ * information, so this instance parses without a project and runs that rule
+ * alone — the type-aware rules would refuse to run without one.
  */
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 import { ESLint } from "eslint";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 const ROOT = join(import.meta.dirname, "..");
 
@@ -51,55 +60,23 @@ const FIXTURES = {
   },
 } satisfies Record<string, Fixture>;
 
+/** The rule every zone is configured through — the only rule this test runs. */
+const LAYER_RULE_ID = "@typescript-eslint/no-restricted-imports";
+
 const messagesByFixture = new Map<string, string>();
 
-/**
- * Wall-clock budget for the one type-aware ESLint program (bd tea-rags-mcp-ehbno).
- *
- * This hook is the single most expensive setup in the suite: it builds ONE
- * type-aware program over `tsconfig.eslint.json` — the whole of `src/` — to lint
- * five one-line fixtures. Its standalone cost swings by more than an order of
- * magnitude with the machine's state — 6.0s on an idle box, 78.8s on a loaded one.
- *
- * The previous 120s left only ~1.5x headroom over that worst case, which does not
- * survive contention. Under the full run it competes with `pool: "forks"` workers
- * (one per core) plus the forked chunker/blame/walk processes those spawn — the
- * same oversubscription documented on `WALL_CLOCK_BUDGET_MS` in vitest.config.ts —
- * and it timed out repeatedly, including twice on independent `npm run test:coverage`
- * release-gate runs. Each timeout costs far more than the hook: vitest emits no
- * coverage report when any suite fails, so a single flake here voids the entire gate.
- *
- * The in-suite figure is what this budget governs, and it tracks the box: 6.0s
- * standalone became 24.2s inside a full `test:coverage` run on a quiet machine, and
- * blew past 120s on a machine also carrying several parallel agents. 300s is ~3.8x
- * headroom over the worst measurement of either kind. It is not a hang budget being
- * relaxed — a genuine hang is unbounded and still trips it.
- *
- * This value MUST live here rather than on the CLI: the per-hook argument wins over
- * `--hookTimeout`, so passing that flag silently does nothing for this file.
- */
-const ESLINT_PROGRAM_BUDGET_MS = 300_000;
-
 beforeAll(async () => {
+  const eslint = new ESLint({
+    cwd: ROOT,
+    // Virtual paths belong to no tsconfig program: parse without one.
+    overrideConfig: { languageOptions: { parserOptions: { project: null, projectService: false } } },
+    ruleFilter: ({ ruleId }) => ruleId === LAYER_RULE_ID,
+  });
+
   for (const fixture of Object.values(FIXTURES)) {
-    const absolute = join(ROOT, fixture.path);
-    mkdirSync(dirname(absolute), { recursive: true });
-    writeFileSync(absolute, fixture.source, "utf8");
-  }
-
-  // One ESLint instance for every fixture: the type-aware program is built once.
-  const eslint = new ESLint({ cwd: ROOT });
-  const results = await eslint.lintFiles(Object.values(FIXTURES).map((f) => join(ROOT, f.path)));
-
-  for (const result of results) {
-    const relative = result.filePath.slice(ROOT.length + 1);
-    messagesByFixture.set(relative, result.messages.map((m) => `${m.ruleId ?? "parse"}: ${m.message}`).join("\n"));
-  }
-}, ESLINT_PROGRAM_BUDGET_MS);
-
-afterAll(() => {
-  for (const fixture of Object.values(FIXTURES)) {
-    rmSync(join(ROOT, fixture.path), { force: true });
+    const [result] = await eslint.lintText(fixture.source, { filePath: join(ROOT, fixture.path) });
+    if (result === undefined) throw new Error(`no lint result for ${fixture.path}`);
+    messagesByFixture.set(fixture.path, result.messages.map((m) => `${m.ruleId ?? "parse"}: ${m.message}`).join("\n"));
   }
 });
 
@@ -110,6 +87,23 @@ function reportFor(fixture: Fixture): string {
 }
 
 describe("eslint layer guard — foundation zones", () => {
+  it("lints every fixture without a file at its path under src/", () => {
+    for (const fixture of Object.values(FIXTURES)) {
+      expect(existsSync(join(ROOT, fixture.path)), fixture.path).toBe(false);
+    }
+  });
+
+  // Without this, a parse failure or an ignored path would make every
+  // "allows" case pass vacuously: those reports carry a null ruleId.
+  it("reports only the layer rule — every fixture parsed and reached it", () => {
+    for (const fixture of Object.values(FIXTURES)) {
+      for (const line of reportFor(fixture).split("\n").filter(Boolean)) {
+        expect(line, fixture.path).toMatch(new RegExp(`^${LAYER_RULE_ID}: `));
+      }
+    }
+    expect(reportFor(FIXTURES.contractsToInfra)).toMatch(new RegExp(`^${LAYER_RULE_ID}: `));
+  });
+
   it("rejects a relative contracts -> infra import", () => {
     expect(reportFor(FIXTURES.contractsToInfra)).toContain("contracts is pure");
   });

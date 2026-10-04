@@ -167,16 +167,18 @@ function settleChunks(
   signalsByFileScopedSymbol: ReadonlyMap<FileScopedSymbolId, ChunkGraphSignals>,
 ): Map<string, CodegraphChunkSettlement> {
   const settled = new Map<string, CodegraphChunkSettlement>();
-  const signalsOf = (owner: SymbolId): ChunkGraphSignals | undefined =>
-    signalsByFileScopedSymbol.get(fileScopedSymbolKey({ relPath, symbolId: owner }));
+  const signalsOf = (ownerSymbolId: SymbolId): ChunkGraphSignals | undefined =>
+    signalsByFileScopedSymbol.get(fileScopedSymbolKey({ relPath, symbolId: ownerSymbolId }));
   for (const chunk of chunks) {
-    const owner = resolveChunkOwnerSymbol(
+    const ownerSymbolId = resolveChunkOwnerSymbol(
       { startLine: chunk.startLine, endLine: chunk.endLine, anchorSymbolId: chunk.symbolId },
       ranges,
     );
     settled.set(
       chunk.chunkId,
-      owner === undefined ? UNOWNED : { kind: "owned", owner, signals: buildCodegraphChunkSignals(signalsOf(owner)) },
+      ownerSymbolId === undefined
+        ? UNOWNED
+        : { kind: "owned", owner: ownerSymbolId, signals: buildCodegraphChunkSignals(signalsOf(ownerSymbolId)) },
     );
   }
   return settled;

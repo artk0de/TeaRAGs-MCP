@@ -15,7 +15,14 @@
 import Bottleneck from "bottleneck";
 
 import { isDebug } from "../../infra/runtime.js";
-import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
+import {
+  effectiveRecoveryWaitMs,
+  type EmbeddingCallOptions,
+  type EmbeddingProvider,
+  type EmbeddingResult,
+  type EmbeddingServerBatchFailure,
+  type RateLimitConfig,
+} from "./base.js";
 import {
   isOllamaRunnerCrashBody,
   OllamaContextOverflowError,
@@ -27,6 +34,7 @@ import {
   OllamaUnavailableError,
 } from "./ollama/errors.js";
 import { parseModelInfo, type OllamaModelInfo } from "./ollama/model-info.js";
+import { ensureOllamaModelPresent } from "./ollama/model-pull.js";
 import {
   provisionQuantizedOllamaModel,
   resolveOllamaQuantizationLevel,
@@ -78,6 +86,12 @@ const UNAVAILABLE_RETRY_DEFAULT_BASE_DELAY_MS = 2_000;
  * ~2s + 4s of backoff instead of the whole 240s budget.
  */
 const FAILOVER_CONSECUTIVE_FAILURES_DEFAULT = 3;
+/**
+ * Ceiling for the per-request embedding window (`num_ctx` = `num_batch`). A
+ * chunk is capped in characters, and even at one token per character the
+ * chunk-size cap stays well inside 8192 tokens.
+ */
+const EMBED_WINDOW_MAX_TOKENS = 8192;
 
 async function fetchWithTimeout(
   url: string,
@@ -92,6 +106,15 @@ async function fetchWithTimeout(
     return await fetch(url, { ...init, signal: controller.signal });
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+/** A hook's failure is its own: it must not fail the decision every embed waits on. */
+function runEndpointResolvedHook(hook: () => void): void {
+  try {
+    hook();
+  } catch (error) {
+    console.error("[Ollama] endpoint-resolved hook failed:", error);
   }
 }
 
@@ -138,6 +161,16 @@ export type OllamaRecoveryWaitEvent =
   | { state: "waiting"; url: string; elapsedMs: number; budgetMs: number }
   | { state: "recovered"; url: string; elapsedMs: number };
 
+/** Limits one native-batch call carries through its size-failure halvings. */
+interface NativeBatchBound {
+  /** Largest batch sent in one request; undefined = no ceiling. */
+  ceiling: number | undefined;
+  /** An observer owns the working size across calls (`observeServerBatchFailures`). */
+  observed: boolean;
+  /** This call's connection-recovery budget (`EmbeddingCallOptions#maxRecoveryWaitMs`). */
+  recoveryBudgetMs: number;
+}
+
 export class OllamaEmbeddings implements EmbeddingProvider {
   /** The model embed calls carry — the quantized tag once provisioning switched to it. */
   private model: string;
@@ -172,12 +205,20 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private primaryAliveAt = 0;
   private primaryFailedAt = 0;
   private cachedModelInfo?: OllamaModelInfo;
-  private readonly healthReady?: Promise<void>;
-  /** Resolves once the quantized model copy (if any) is provisioned and live. */
-  private readonly modelReady?: Promise<void>;
+  /** The `/api/show` probe currently on the wire, so concurrent callers share one round trip. */
+  private modelInfoInFlight?: Promise<OllamaModelInfo | undefined>;
+  /** The endpoint decision once something asked for it — see `resolveEndpoint`. */
+  private endpointResolution?: Promise<void>;
+  private endpointResolved = false;
+  private readonly endpointResolvedHooks: (() => void)[] = [];
+  /** Resolves once the model is pulled (EMBEDDING_AUTO_PULL) and the quantized copy (if any) is live. */
+  private modelReady?: Promise<void>;
+  private readonly autoPull: boolean = false;
   private readonly quantizationLevel: OllamaQuantizationLevel = "off";
   /** Largest native batch the server has handled since it last failed on one; unset until a failure. */
   private maxServerBatchSize?: number;
+  /** See `observeServerBatchFailures`. */
+  private readonly serverBatchFailureObservers = new Set<(event: EmbeddingServerBatchFailure) => void>();
   private lastHealthResult?: boolean;
   private lastHealthAt = 0;
 
@@ -231,24 +272,98 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       minTime: Math.floor((60 * 1000) / maxRequestsPerMinute),
     });
 
-    if (fallbackBaseUrl) {
-      this.healthReady = this.checkInitialHealth();
-    }
+    // No endpoint probe here: `resolveEndpoint` runs it on first need, so a
+    // process that never embeds (a cold `tea-rags call get_callers`) never
+    // waits out an unreachable primary (bd tea-rags-mcp-xi2r9, B3).
 
     this.quantizationLevel = resolveOllamaQuantizationLevel(rateLimitConfig?.ollamaQuantization);
-    if (this.quantizationLevel !== "off") {
-      this.modelReady = this.applyQuantizedModel();
+    this.autoPull = rateLimitConfig?.ollamaAutoPull === true;
+    // With auto-pull the provisioning needs the decided endpoint, so it is armed
+    // lazily in `startupReady` — arming it here would re-introduce the eager probe.
+    if (!this.autoPull && this.quantizationLevel !== "off") {
+      this.modelReady = this.provisionModel();
+      // A failed provisioning belongs to the first embed that awaits it, not to Node's unhandled-rejection hook.
+      void this.modelReady.catch(() => undefined);
     }
+  }
+
+  /** Pull the model when the server lacks it (EMBEDDING_AUTO_PULL), then provision the quantized copy. */
+  private async provisionModel(): Promise<void> {
+    if (this.autoPull) {
+      await ensureOllamaModelPresent(this.resolveActiveUrl(), this.model, {
+        fetch,
+        log: (line) => {
+          console.error(`[Ollama] ${line}`);
+        },
+      });
+    }
+    if (this.quantizationLevel !== "off") await this.applyQuantizedModel();
   }
 
   /**
    * Gate every embed path waits on: the endpoint failover decision AND the
-   * quantized-model provisioning. Both are constructor-armed; awaiting them
-   * here is what keeps a first embed from racing the startup work.
+   * quantized-model provisioning. The decision is made here, on first need;
+   * the provisioning is constructor-armed. Awaiting both is what keeps a first
+   * embed from racing either.
    */
   private async startupReady(): Promise<void> {
-    await this.healthReady;
+    await this.resolveEndpoint();
+    if (this.autoPull) this.modelReady ??= this.provisionModel();
     await this.modelReady;
+  }
+
+  /**
+   * Decide, once, which endpoint the embeds go to: with a fallback configured
+   * the primary is probed (`checkInitialHealth`), without one there is nothing
+   * to decide. Every caller shares the one decision; the endpoint-resolved
+   * hooks run right after it, before any caller proceeds.
+   */
+  async resolveEndpoint(): Promise<void> {
+    this.endpointResolution ??= (async () => {
+      if (this.fallbackBaseUrl) await this.checkInitialHealth();
+      this.endpointResolved = true;
+      for (const hook of this.endpointResolvedHooks.splice(0)) runEndpointResolvedHook(hook);
+    })();
+    return this.endpointResolution;
+  }
+
+  /** Run `hook` once the endpoint is decided — now, if it already is. Never starts the decision. */
+  whenEndpointResolved(hook: () => void): void {
+    if (this.endpointResolved) runEndpointResolvedHook(hook);
+    else this.endpointResolvedHooks.push(hook);
+  }
+
+  /**
+   * Hold an embed until a model-info probe already on the wire has answered, so
+   * the first request of a run carries the context window. Never STARTS a probe:
+   * the composition root and the index path resolve model info, and a failed
+   * probe must not turn into one `/api/show` per embed request.
+   */
+  private async awaitPendingModelInfo(): Promise<void> {
+    await this.modelInfoInFlight;
+  }
+
+  /**
+   * Runtime options for an embed request.
+   *
+   * `num_ctx` and `num_batch` are pinned to the model's context length because
+   * Ollama's defaults (`n_ctx` 4096, `n_batch` = `n_ubatch` 2048) cap a single
+   * embedding input at 2048 tokens: a non-causal input must fit one ubatch. An
+   * input past that is, nondeterministically, either silently truncated to 2048
+   * tokens or fails the WHOLE request with HTTP 400 "input length exceeds the
+   * context length" — dense prose (Cyrillic markdown) at the chunk-size cap
+   * crosses it. With both options at the model's context length the input
+   * embeds in full, and anything past the model's own limit truncates with 200.
+   * The window is capped at `EMBED_WINDOW_MAX_TOKENS`: the runner's compute
+   * buffers grow with `num_batch`, and a 32K–40K model (qwen3-embedding) would
+   * pay that VRAM for inputs the chunk cap never produces.
+   * Unknown context length → the options are omitted, leaving server defaults.
+   */
+  private embedRequestOptions(): Record<string, number> {
+    const contextLength = this.cachedModelInfo?.contextLength;
+    if (contextLength === undefined || contextLength <= 0) return { num_gpu: this.numGpu };
+    const window = Math.min(contextLength, EMBED_WINDOW_MAX_TOKENS);
+    return { num_gpu: this.numGpu, num_ctx: window, num_batch: window };
   }
 
   /** Provision (or reuse) the server-side quantized copy and switch to it. */
@@ -448,18 +563,89 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     return error instanceof OllamaResponseError && error.responseStatus >= 500;
   }
 
+  /**
+   * Watch the native batches the server fails on SIZE (bd tea-rags-mcp-7ju66).
+   * While at least one observer is attached the provider stops pinning a
+   * run-long batch ceiling of its own: the observer (the ingest pipeline's
+   * throughput tuner) owns the working size and may recover it upward. The
+   * failing call itself still bisects to completion. Returns the detach.
+   */
+  observeServerBatchFailures(observer: (event: EmbeddingServerBatchFailure) => void): () => void {
+    this.serverBatchFailureObservers.add(observer);
+    return () => {
+      this.serverBatchFailureObservers.delete(observer);
+    };
+  }
+
+  /** One native request for exactly `texts`. */
+  private async embedNativeOnce(texts: string[], recoveryBudgetMs: number): Promise<EmbeddingResult[]> {
+    const batchEmbed = async (url: string): Promise<EmbeddingResult[]> => {
+      const timeout = this.batchTimeout(texts.length);
+      if (isDebug()) {
+        console.error(`[Ollama] Native batch: ${texts.length} texts in 1 request to ${url} (timeout=${timeout}ms)`);
+      }
+      const response = await this.callBatchApi(texts, url, timeout);
+      if (response.embeddings?.length !== texts.length) {
+        throw new OllamaMalformedResponseError(url, texts.length, response.embeddings?.length ?? 0);
+      }
+      return response.embeddings.map((embedding: number[]) => ({
+        embedding,
+        dimensions: this.dimensions,
+      }));
+    };
+    return this.limiter.schedule(async () => this.retryWithBackoff(async (url) => batchEmbed(url), recoveryBudgetMs));
+  }
+
+  /**
+   * Embed `texts` natively, never sending more than `bound.ceiling` in one
+   * request. A batch the server fails on size is halved and its slices sent
+   * one after another; the halved size becomes the bound for the rest of THIS
+   * call — and, when nobody observes, for the rest of the run: each failure
+   * costs a runner restart plus a model reload on the server.
+   */
+  private async embedNativeBounded(texts: string[], bound: NativeBatchBound): Promise<EmbeddingResult[]> {
+    if (bound.ceiling !== undefined && texts.length > bound.ceiling) {
+      return this.embedNativeSlices(texts, bound.ceiling, bound);
+    }
+    try {
+      return await this.embedNativeOnce(texts, bound.recoveryBudgetMs);
+    } catch (error) {
+      if (texts.length <= 1 || !this.isServerBatchFailure(error)) throw error;
+      const half = Math.ceil(texts.length / 2);
+      bound.ceiling = Math.min(bound.ceiling ?? half, half);
+      if (!bound.observed) this.maxServerBatchSize = Math.min(this.maxServerBatchSize ?? half, half);
+      // Unconditional: a batch size the server cannot take is an operator-facing
+      // tuning fact (EMBEDDING_TUNE_BATCH_SIZE), not debug noise.
+      console.error(
+        `[Ollama] server failed a ${texts.length}-text batch (${error instanceof Error ? error.message : String(error)}); ` +
+          `retrying in batches of ${half}`,
+      );
+      const event: EmbeddingServerBatchFailure = {
+        failedSize: texts.length,
+        retrySize: half,
+        endpointUrl: this.getBaseUrl(),
+      };
+      for (const observer of this.serverBatchFailureObservers) observer(event);
+      return this.embedNativeSlices(texts, half, bound);
+    }
+  }
+
   /** Embed consecutive slices one after another, preserving input order. */
-  private async embedBatchInSlices(texts: string[], sliceSize: number): Promise<EmbeddingResult[]> {
+  private async embedNativeSlices(
+    texts: string[],
+    sliceSize: number,
+    bound: NativeBatchBound,
+  ): Promise<EmbeddingResult[]> {
     const results: EmbeddingResult[] = [];
     for (let start = 0; start < texts.length; start += sliceSize) {
-      results.push(...(await this.embedBatch(texts.slice(start, start + sliceSize))));
+      results.push(...(await this.embedNativeBounded(texts.slice(start, start + sliceSize), bound)));
     }
     return results;
   }
 
-  private async retryWithBackoff<T>(fn: (url: string) => Promise<T>): Promise<T> {
+  private async retryWithBackoff<T>(fn: (url: string) => Promise<T>, recoveryBudgetMs: number): Promise<T> {
     const recoveryStart = Date.now();
-    const recoveryDeadline = recoveryStart + this.unavailableRetryMaxWaitMs;
+    const recoveryDeadline = recoveryStart + recoveryBudgetMs;
     let recoveryAttempt = 0;
 
     for (;;) {
@@ -534,7 +720,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
             state: "waiting",
             url,
             elapsedMs: Date.now() - recoveryStart,
-            budgetMs: this.unavailableRetryMaxWaitMs,
+            budgetMs: recoveryBudgetMs,
           });
           await new Promise((resolve) => setTimeout(resolve, delayMs));
           continue;
@@ -576,7 +762,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         body: JSON.stringify({
           model: this.model,
           input: texts,
-          options: { num_gpu: this.numGpu },
+          options: this.embedRequestOptions(),
         }),
         signal: controller.signal,
       });
@@ -625,7 +811,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         body: JSON.stringify({
           model: this.model,
           prompt: text,
-          options: { num_gpu: this.numGpu },
+          options: this.embedRequestOptions(),
         }),
       });
 
@@ -697,9 +883,13 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     return { embedding: response.embedding, dimensions: this.dimensions };
   }
 
-  async embed(text: string): Promise<EmbeddingResult> {
+  async embed(text: string, options?: EmbeddingCallOptions): Promise<EmbeddingResult> {
     await this.startupReady();
-    return this.limiter.schedule(async () => this.retryWithBackoff(async (url) => this.embedSingle(text, url)));
+    await this.awaitPendingModelInfo();
+    const recoveryBudgetMs = effectiveRecoveryWaitMs(this.unavailableRetryMaxWaitMs, options);
+    return this.limiter.schedule(async () =>
+      this.retryWithBackoff(async (url) => this.embedSingle(text, url), recoveryBudgetMs),
+    );
   }
 
   /**
@@ -719,8 +909,9 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    *
    * Note: GPU must have num_gpu: 999 enabled (see callBatchApi)
    */
-  async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
+  async embedBatch(texts: string[], options?: EmbeddingCallOptions): Promise<EmbeddingResult[]> {
     await this.startupReady();
+    await this.awaitPendingModelInfo();
     if (texts.length === 0) {
       return [];
     }
@@ -730,40 +921,16 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
     // Use native batch API - ONE request for ALL texts
     if (this.useNativeBatch) {
-      const batchEmbed = async (url: string): Promise<EmbeddingResult[]> => {
-        const timeout = this.batchTimeout(texts.length);
-        if (isDebug()) {
-          console.error(`[Ollama] Native batch: ${texts.length} texts in 1 request to ${url} (timeout=${timeout}ms)`);
-        }
-        const response = await this.callBatchApi(texts, url, timeout);
-        if (response.embeddings?.length !== texts.length) {
-          throw new OllamaMalformedResponseError(url, texts.length, response.embeddings?.length ?? 0);
-        }
-        return response.embeddings.map((embedding: number[]) => ({
-          embedding,
-          dimensions: this.dimensions,
-        }));
-      };
-
-      // A size the server already failed on is never sent again this run: each
-      // failure costs a runner restart plus a model reload on the server.
-      if (this.maxServerBatchSize !== undefined && texts.length > this.maxServerBatchSize) {
-        return this.embedBatchInSlices(texts, this.maxServerBatchSize);
-      }
-      try {
-        return await this.limiter.schedule(async () => this.retryWithBackoff(async (url) => batchEmbed(url)));
-      } catch (error) {
-        if (texts.length <= 1 || !this.isServerBatchFailure(error)) throw error;
-        const half = Math.ceil(texts.length / 2);
-        this.maxServerBatchSize = Math.min(this.maxServerBatchSize ?? half, half);
-        // Unconditional: a batch size the server cannot take is an operator-facing
-        // tuning fact (EMBEDDING_TUNE_BATCH_SIZE), not debug noise.
-        console.error(
-          `[Ollama] server failed a ${texts.length}-text batch (${error instanceof Error ? error.message : String(error)}); ` +
-            `retrying in batches of ${half}`,
-        );
-        return this.embedBatchInSlices(texts, half);
-      }
+      // With an observer attached the observer owns the working size across
+      // calls, so the run-long ceiling is neither applied nor recorded; the
+      // call-local bound still keeps the failing call's remaining slices at the
+      // size that worked.
+      const observed = this.serverBatchFailureObservers.size > 0;
+      return this.embedNativeBounded(texts, {
+        ceiling: observed ? undefined : this.maxServerBatchSize,
+        observed,
+        recoveryBudgetMs: effectiveRecoveryWaitMs(this.unavailableRetryMaxWaitMs, options),
+      });
     }
 
     // Fallback: Legacy parallel individual requests (old Ollama without /api/embed)
@@ -773,7 +940,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     const results: EmbeddingResult[] = [];
 
     for (const text of texts) {
-      results.push(await this.embed(text));
+      results.push(await this.embed(text, options));
     }
 
     return results;
@@ -796,9 +963,16 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
   async resolveModelInfo(): Promise<OllamaModelInfo | undefined> {
     if (this.cachedModelInfo) return this.cachedModelInfo;
+    if (this.modelInfoInFlight) return this.modelInfoInFlight;
+    this.modelInfoInFlight = this.fetchModelInfo().finally(() => {
+      this.modelInfoInFlight = undefined;
+    });
+    return this.modelInfoInFlight;
+  }
 
+  private async fetchModelInfo(): Promise<OllamaModelInfo | undefined> {
     // Same ordering as embed()/checkHealth(): the active URL is only decided
-    // once the constructor's failover check has settled.
+    // once the failover check (`resolveEndpoint`) has settled.
     await this.startupReady();
     const url = this.resolveActiveUrl();
     try {
@@ -839,8 +1013,8 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   }
 
   async checkHealth(): Promise<boolean> {
-    // Probe the endpoint the next embed will use, which the constructor's
-    // failover check decides — read before it settles, the primary gets
+    // Probe the endpoint the next embed will use, which the failover check
+    // (`resolveEndpoint`) decides — read before it settles, the primary gets
     // probed even when failover is about to flip to the fallback (jyka).
     await this.startupReady();
     if (this.lastHealthResult !== undefined && Date.now() - this.lastHealthAt < HEALTH_CACHE_TTL_MS) {

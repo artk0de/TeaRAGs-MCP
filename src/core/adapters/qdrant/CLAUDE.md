@@ -19,17 +19,30 @@
   belongs outside the try.
 
 - **`invalidateAll()` reaches the guard through a slot in the composition root,
-  and the slot is not incidental.** `resolveInfrastructure`
-  (`bootstrap/factory.ts`) declares `modelGuardSlot`, then arms
+  and the slot is not incidental.** `buildEmbeddingBinding`
+  (`bootstrap/embedding-binding.ts`) declares `modelGuardSlot`, then arms
   `OllamaEmbeddings.onFallbackSwitch` to call
   `modelGuardSlot.current?.invalidateAll()`; only after that is the guard
   constructed (`new EmbeddingModelGuard(…)`) and dropped into the slot
   (`modelGuardSlot.current = modelGuard`). The handler must be armed first
-  because `resolveEmbeddingModelParameters` already talks to the provider and
-  can trigger a failover before the guard is constructed — a handler closing
-  over `modelGuard` directly would reference it inside its temporal dead zone.
-  An edit must keep the handler reading `modelGuardSlot.current` at fire time
-  and never capture the guard.
+  because any provider call made before the guard is constructed can trigger a
+  failover — a handler closing over `modelGuard` directly would reference it
+  inside its temporal dead zone. The endpoint decision is lazy
+  (`OllamaEmbeddings#resolveEndpoint`, on first embed / model info / health
+  check), so today it lands after the guard exists; the slot keeps that an
+  ordering nobody has to preserve by hand. An edit must keep the handler reading
+  `modelGuardSlot.current` at fire time and never capture the guard.
+
+- **There is one guard per embedding IDENTITY, not one per process.** A
+  collection is checked by the guard built beside the provider that embeds for
+  it — the one `RegistryCollectionEmbeddingsResolver#forCollection`
+  (`bootstrap/`) resolves from its registry entry, the process guard only for a
+  collection the registry does not know. So `currentModel` is the REGISTRY
+  model, and a server env naming another model is not a mismatch (bd
+  tea-rags-mcp-b91f5). Why: comparing a marker against the process model made
+  every project indexed with a second model unsearchable from a server
+  configured for the first; a new caller of `ensureMatch` must take its guard
+  from the collection's binding, never from the process slot.
 
 - **`recordModel` writes the cache; the marker point is created by the indexing
   lease.** `CollectionOps#create` calls `recordModel` immediately after
@@ -112,7 +125,10 @@
   `invalidate(collectionName)` — one caller, `IndexingOps#clear` (clear index).
   `invalidateAll()` — the failover hook only. Everything else is served from
   `this.cache`, so the steady-state cost is one Qdrant read plus one canary
-  embed per collection per process.
+  embed per collection per process. A `nameOnly` call (a tool that embeds
+  nothing) never embeds and never caches: it answers from a cached verdict, or
+  reads the marker's name — one Qdrant read per call until an embedding caller
+  has cached the full verdict.
 
 - **Exact matching on the `text`-indexed payload keys goes through
   `filters/text-indexed-exact.ts`** (lands in D1). `relativePath`, `symbolId`

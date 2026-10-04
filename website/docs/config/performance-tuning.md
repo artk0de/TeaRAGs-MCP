@@ -7,6 +7,82 @@ import MermaidTeaRAGs from '@site/src/components/MermaidTeaRAGs';
 
 # Performance Tuning
 
+## Adaptive Embedding
+
+The embedding batch size and the embedding concurrency are chosen during each
+index run; you no longer have to find them by hand. The settings you configure
+are bounds, not fixed values:
+
+| Variable                        | Role under adaptive embedding                          |
+| ------------------------------- | ------------------------------------------------------ |
+| `EMBEDDING_TUNE_BATCH_SIZE`     | **Ceiling** for the batch size                         |
+| `EMBEDDING_TUNE_MIN_BATCH_SIZE` | **Floor** for the batch size; unset: ceiling / 16      |
+| `INGEST_PIPELINE_CONCURRENCY`   | **Hard ceiling** for the embedding concurrency; unset: 8 |
+
+What happens during a run:
+
+- **Downshift on server failures.** When the embedding server fails a batch
+  because of its size (an Ollama runner crash, an HTTP 400 on an oversized
+  batch), the batch size is halved for every later batch, not just the failing
+  one. After a streak of successful batches it is doubled back one step.
+- **Throughput hill-climb.** Each size is measured over several full batches
+  in characters per second. The neighbours at half and double the size,
+  inside the bounds, are probed, and the run moves to one only when it is more
+  than 5% faster. A settled size is re-probed every 200 batches, so a server
+  whose speed drifts is followed.
+- **Concurrency hill-climb.** Once the batch size settles, concurrency is
+  climbed the same way: half and double the current value, inside
+  [1, ceiling] — `INGEST_PIPELINE_CONCURRENCY` when set, 8 when unset — each
+  measured as **aggregate** chars/s —
+  the input of every batch in flight over the wall-clock span they covered — and
+  kept only at a gain of more than 5%. Whether a server handles parallel
+  requests is measured, never inferred from its address: an Ollama on
+  `localhost` converges to 1 because it serialises requests, a server with
+  spare capacity climbs. A size re-probe, failure or recovery drops back to the
+  last good concurrency and climbs again once the size settles. A failover
+  between peer and fallback endpoints starts from the stored optimum of the
+  endpoint now serving.
+- **Remembered optima.** The best measured batch size and concurrency are
+  stored once per embedding configuration — provider, endpoint (or peer set)
+  and model — in a section of the [registry](/usage/advanced/project-registry)
+  that every project shares, since the value describes the server, not the
+  project. The next run against the same configuration, in any project, starts
+  from it, clamped to the current bounds, instead of starting at the ceiling;
+  a small project inherits what a large one measured. A primary and a fallback
+  endpoint each keep their own value. Two projects indexing at once both land
+  their measurements: a slower result never replaces a faster one another run
+  recorded meanwhile.
+
+The batch-size and concurrency climbs run for every provider. Remembered optima
+need the endpoint URL, which only the Ollama and llama-server providers report;
+ONNX, OpenAI, Cohere and Voyage start every run at the ceiling.
+
+With `INGEST_PIPELINE_CONCURRENCY` unset, the concurrency climb starts at 1
+(or at the stored optimum) and may reach an **implicit ceiling of 8**; every
+other use of the value — and `EMBEDDING_TUNE_STATIC=true` — stays at 1. Setting
+it, under either spelling and even to `1`, makes your value the hard ceiling
+and the starting point of a run without a stored optimum. Set it only to cap
+the climb (for example `1` for a shared server you must not saturate), or to
+allow more than 8. llama-server does not depend on it: the provider already
+splits each batch across every endpoint and every `-np` slot.
+
+**Where to see the settled values:**
+
+- `get_index_status` and `tea-rags index-codebase --json` report
+  `infraHealth.embedding.throughputTune` for the active endpoint and model:
+  `batchSize`, `concurrency`, `charsPerSecond` and `settledAt`. It is absent
+  until a run has settled, and for providers that report no endpoint URL.
+- With `DEBUG=1`, every change is logged in `~/.tea-rags/logs/pipeline-*.log`
+  as an `EMBED_TUNE_ADAPTED` line with the old and new value, the reason
+  (`seed`, `failure`, `recovery`, `probe`, `reprobe`, `settle`,
+  `concurrency-probe`, `concurrency-settle`) and the measured chars/s.
+
+**Pinning static behaviour.** Set `EMBEDDING_TUNE_STATIC=true` to use
+`EMBEDDING_TUNE_BATCH_SIZE` and `INGEST_PIPELINE_CONCURRENCY` (1 when unset)
+unchanged for the whole run and ignore any stored optimum. Use it when you benchmark one fixed
+configuration, or when a provider bills or rate-limits per request and you want
+a known request shape.
+
 ## Auto-Tuning Benchmark
 
 Don't guess — let the benchmark find optimal settings for your hardware:
@@ -39,7 +115,10 @@ Phase 2: Embedding Concurrency ... Optimal: 2
 Phase 3: Qdrant Batch Size ... Optimal: 384
 ```
 
-Then add tuned values to your MCP config:
+Then add tuned values to your MCP config. With
+[adaptive embedding](#adaptive-embedding) on (the default), the batch size and
+concurrency you set act as the ceiling and the remote-endpoint concurrency, not
+as fixed values:
 
 ```bash
 claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
@@ -248,6 +327,13 @@ Network latency crushes remote Qdrant storage: 6966 ch/s → 1810 ch/s (3.8x dro
 
 ### Batch Size
 
+These values are the bounds [adaptive embedding](#adaptive-embedding) works
+inside: the run lowers the batch size below `EMBEDDING_TUNE_BATCH_SIZE` when a
+smaller one is faster or the server fails on size, and it climbs concurrency
+from 1 up to `INGEST_PIPELINE_CONCURRENCY` (8 when unset) only as far as the
+measured throughput rises. Set
+`EMBEDDING_TUNE_STATIC=true` to apply them exactly as written.
+
 **Rule of thumb:**
 - **Local GPU**: Use large batches (512) + CONCURRENCY=1 to minimize per-batch overhead
 - **Remote GPU**: Use smaller batches (256) + CONCURRENCY=4-6 to hide network latency
@@ -262,9 +348,14 @@ export EMBEDDING_TUNE_BATCH_SIZE=256
 export INGEST_PIPELINE_CONCURRENCY=4
 ```
 
+Under adaptive embedding neither concurrency line is required: left unset,
+the run measures its way from 1 up to the implicit ceiling of 8. An explicit
+value is a hard cap — with `EMBEDDING_TUNE_STATIC=true` it is the exact
+concurrency.
+
 ### Concurrency
 
-**Critical insight:** Concurrency is **only beneficial for remote GPU**. Local GPU sees no improvement — it adds overhead without benefit.
+**Critical insight:** Concurrency is **only beneficial for remote GPU**. Local GPU sees no improvement — it adds overhead without benefit. Adaptive embedding does not assume this from the address; it measures it. Under the default implicit ceiling of 8, a local Ollama converges to 1 and a remote endpoint climbs as far as it pays off.
 
 | Setup | Concurrency | Why |
 |-------|-------------|-----|
@@ -306,6 +397,16 @@ Even at 156 ch/s (remote GPU), embedding is **40x slower** than storage. Invest 
 - ✅ Increase `MAX_IO_CONCURRENCY=100` for SSD
 - ✅ Increase Qdrant memory limits (docker-compose.yml for external Qdrant)
 - ✅ Use `.contextignore` to exclude node_modules, build artifacts
+
+### For Very Large Codebases (3M+ LOC)
+
+Embedding dominates a full index at this size. Ollama stays the default, but
+with a GPU host available, switch to the
+[llama-server provider](/config/providers/llama-server): three llama-server
+instances on an RX 7800M plus one on its host's Arc iGPU measured 3.4× Ollama's
+throughput on the same machine. Several GPUs, even unequal ones, are used
+together — see the [multi-GPU guide](/config/providers/llama-server-multi-gpu)
+and [measured configurations](/config/providers/llama-server-benchmarks).
 
 ### For Slow Search
 

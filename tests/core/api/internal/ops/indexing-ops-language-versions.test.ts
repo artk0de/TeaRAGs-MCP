@@ -71,21 +71,21 @@ const collection = resolveCollectionName(process.cwd());
 
 describe("IndexingOps — language version stamping", () => {
   it("stamps every axis after a full reindex", async () => {
-    const collectionRegistry = makeRegistry();
-    const ops = new IndexingOps(makeDeps({ collectionRegistry }));
+    const languageVersionStamper = makeRegistry();
+    const ops = new IndexingOps(makeDeps({ languageVersionStamper }));
 
     await ops.run(process.cwd(), { forceReindex: true });
 
-    expect(collectionRegistry.stampLanguageVersions).toHaveBeenCalledWith(collection, {
+    expect(languageVersionStamper.stampLanguageVersions).toHaveBeenCalledWith(collection, {
       typescript: { grammar: "0.23.2", chunking: 1, walker: 2, codegraphSchema: 1 },
       ruby: { grammar: "0.23.1", chunking: 1, walker: 1, codegraphSchema: 1 },
     });
   });
 
   it("stamps every axis on a first index", async () => {
-    const collectionRegistry = makeRegistry();
+    const languageVersionStamper = makeRegistry();
     const deps = makeDeps({
-      collectionRegistry,
+      languageVersionStamper,
       qdrant: {
         collectionExists: vi.fn().mockResolvedValue(false),
         aliases: { listAliases: vi.fn().mockResolvedValue([]) },
@@ -94,51 +94,51 @@ describe("IndexingOps — language version stamping", () => {
 
     await new IndexingOps(deps).run(process.cwd());
 
-    expect(collectionRegistry.stampLanguageVersions).toHaveBeenCalledTimes(1);
+    expect(languageVersionStamper.stampLanguageVersions).toHaveBeenCalledTimes(1);
   });
 
   it("stamps only the codegraph axes after a codegraph enrichment recompute", async () => {
-    const collectionRegistry = makeRegistry();
-    const ops = new IndexingOps(makeDeps({ collectionRegistry }));
+    const languageVersionStamper = makeRegistry();
+    const ops = new IndexingOps(makeDeps({ languageVersionStamper }));
 
     await ops.run(process.cwd(), { forceEnrichments: ["codegraph"] });
 
-    expect(collectionRegistry.stampLanguageVersions).toHaveBeenCalledWith(collection, {
+    expect(languageVersionStamper.stampLanguageVersions).toHaveBeenCalledWith(collection, {
       typescript: { walker: 2, codegraphSchema: 1 },
       ruby: { walker: 1, codegraphSchema: 1 },
     });
   });
 
   it("narrows the stamp to the requested languages", async () => {
-    const collectionRegistry = makeRegistry();
-    const ops = new IndexingOps(makeDeps({ collectionRegistry }));
+    const languageVersionStamper = makeRegistry();
+    const ops = new IndexingOps(makeDeps({ languageVersionStamper }));
 
     await ops.run(process.cwd(), { forceEnrichments: ["codegraph"], languages: ["typescript"] });
 
-    expect(collectionRegistry.stampLanguageVersions).toHaveBeenCalledWith(collection, {
+    expect(languageVersionStamper.stampLanguageVersions).toHaveBeenCalledWith(collection, {
       typescript: { walker: 2, codegraphSchema: 1 },
     });
   });
 
   it("leaves the stamp alone after a git-only recompute — no language layer was rebuilt", async () => {
-    const collectionRegistry = makeRegistry();
-    const ops = new IndexingOps(makeDeps({ collectionRegistry }));
+    const languageVersionStamper = makeRegistry();
+    const ops = new IndexingOps(makeDeps({ languageVersionStamper }));
 
     await ops.run(process.cwd(), { forceEnrichments: ["git"] });
 
-    expect(collectionRegistry.stampLanguageVersions).not.toHaveBeenCalled();
+    expect(languageVersionStamper.stampLanguageVersions).not.toHaveBeenCalled();
   });
 
   it("leaves the stamp alone on a plain incremental — nothing was rebuilt corpus-wide", async () => {
-    const collectionRegistry = makeRegistry();
+    const languageVersionStamper = makeRegistry();
     const deps = makeDeps({
-      collectionRegistry,
+      languageVersionStamper,
       reindex: { reindexChanges: vi.fn().mockResolvedValue(changeStats) } as never,
     });
 
     await new IndexingOps(deps).run(process.cwd());
 
-    expect(collectionRegistry.stampLanguageVersions).not.toHaveBeenCalled();
+    expect(languageVersionStamper.stampLanguageVersions).not.toHaveBeenCalled();
   });
 
   it("runs without a registry wired", async () => {

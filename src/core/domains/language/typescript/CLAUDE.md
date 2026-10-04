@@ -13,15 +13,16 @@ is `.claude/rules/test-spec-chunking.md` — read it before touching a hook.
   `produceScopeChunks` hands it with `extractTopLevelName` to
   `produceTestScopeChunks` (`kernel/test-scope-chunks.ts`). One chunk per `it` /
   `test` example, id `<top>.<scope>.<example>`, parented by the scope id with
-  `parentType: "test_scope"`; `~N`, the 50-char floor, setup inheritance and the
-  size budget are the kernel's. Why: building a `BodyChunkResult` here forks the
-  id shape the explore outline and `find_symbol` read (bd tea-rags-mcp-b55x2,
-  epic tea-rags-mcp-phftd).
+  `parentType: "test_scope"`; `~N`, tiny-example grouping, the per-scope setup
+  chunks and the size budget are the kernel's. Why: building a `BodyChunkResult`
+  here forks the id shape the explore outline and `find_symbol` read (bd
+  tea-rags-mcp-b55x2, epic tea-rags-mcp-phftd).
 - **`setupLines` are the scope's OWN hooks** — `beforeEach` / `beforeAll` /
   `afterEach` / `afterAll` / `before` / `after` / `setup` / `teardown`. The
-  kernel prepends the ancestors'; copying them in here doubles them in every
-  example. Non-DSL statements of the body (`const`, `vi.mock(...)`, a `for`
-  loop) are `otherLines` and reach only the examples of that same scope.
+  kernel stores each scope's own once and scopes it by line span; copying an
+  ancestor's in here stores it twice. Non-DSL statements of the body (`const`,
+  `vi.mock(...)`, a `for` loop) are `otherLines` and land in that same scope's
+  setup chunk.
 - **No TypeScript line sets `delegatesExamples`.** A parametrized
   `it.each(table)(name, fn)` / `test.for(cases)(name, fn)` is ONE example
   defined inline, not a statement running examples defined elsewhere; there is

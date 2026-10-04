@@ -96,6 +96,63 @@ the component to keep changing: its mean commits per file must clear a cut drawn
 from the codebase's own history, so a stable, concrete utility that nobody
 touches is counted as calm instead of reported.
 
+When no architecture declares itself, the skill can still answer "which layer
+is this in". The layering detector condenses the component graph into its
+strongly-connected sets and reads longest-path levels off the result: level 0
+is the foundation everything else builds on, and a component's depth counts how
+far the roots are from it. Two summary numbers say how much to trust the stack:
+coverage (the share of components outside multi-component knots) and coherence
+(the rank correlation of level against instability — high means the low layers
+really are the stable ones). Knots are reported with the lightest set of edges
+whose removal levels their members, so a cycle across directories comes with
+its own fix, and back-edges name the minority-weight direction inside a knot
+pair. An abstraction bypass flags a consumer reaching a measured-concrete
+component while a measured-abstract one sits beneath it. Composition cycles,
+islands and layer skips are informational: a parent cycling with its own nested
+directories, a component nothing depends on, a dependency jumping two or more
+levels down.
+
+For a closer look at one area, the report request carries an optional
+`layerMap` object, and the response gains a `layerMap` view — per-node levels
+inside a scope, at directory or file granularity, with deeper directories
+collapsible into their ancestors. Edges crossing the scope boundary are kept
+rather than dropped: each boundary edge names the external component it reaches
+(or comes from) together with that component's level in the whole-repository
+stack, so an inner file reaching a high-level domain shows up as a back-edge at
+the border. A node nothing inside depends on whose outward edges all point into
+one other domain is listed as a move candidate. The map's `scopePathPattern`
+picks map members and is independent of the report's `pathPattern`, which
+scopes the judged edges — you can judge one area and map another in the same
+call. Without the `layerMap` object the response carries no map at all, so a
+full node list never bloats an unqualified report.
+
+Where `layerMap` annotates a whole-system report with a scoped view, the
+`domain` parameter inverts the question: it judges one directory AS ITS OWN
+SYSTEM. The report runs every detector over the induced sub-graph — the files
+under the root and the edges with both endpoints inside — so components,
+instabilities and levels are recomputed from the domain's internal structure
+alone, the way they would read if the directory were a repository of its own.
+The response carries a `domain` block with the domain's own component and level
+counts plus its border: `boundaryOut` and `boundaryIn` edges aggregated per
+(inner, external) component pair, each naming the external component and that
+component's level in the whole-repository stack — a domain's place in the
+system is the one thing its internal view cannot recompute. This is distinct
+from `pathPattern`, which leaves every metric whole-graph and only filters
+which findings the response lists.
+
+The `norms: true` flag adds a different kind of answer again: not what the
+architecture should be, but what THIS repository actually does. Every file
+carries the role of its primary type (the naming lexicon's type-role layer),
+the report counts the project's own precedents per (source role, target role,
+locality) — same directory, same domain component, cross-domain — and every
+typed file edge below the adaptive cut gets a verdict. A `misfit` is a direct
+edge whose roles normally meet through a mid role: the finding names that
+transit as the expected path, so a controller reaching a repository reads
+"expected controller → service → repository". A `newPattern` is a pair two
+frequent roles have simply never shown each other. Edges touching an untyped
+or suffix-only-named file are never judged — a suffix suggests a role, it does
+not assert one, and a guessed role would misfit every edge it touches.
+
 ## Generation
 
 ### `/tea-rags:data-driven-generation`
@@ -113,7 +170,7 @@ exist in the conversation. If missing, `explore` is invoked first to gather it.
 ### `/tea-rags:mr-review [MR/PR URL]`
 
 **Signal-driven review of a merge request or a local branch.** The skill maps
-the diff onto indexed symbols, then scans it along 7 dimensions:
+the diff onto indexed symbols, then scans it along 9 dimensions:
 
 | Dimension     | What it catches                                            |
 | ------------- | ---------------------------------------------------------- |
@@ -124,6 +181,8 @@ the diff onto indexed symbols, then scans it along 7 dimensions:
 | tests         | Scenarios put at risk, changes with no covering tests      |
 | invariants    | The diff contradicting the project's docs or specs         |
 | cycles        | A new import or call cycle introduced by the diff          |
+| naming        | New names that do not match the project's vocabulary       |
+| diff-review   | Incomplete changes (co-change partners left untouched), cohesion, new edges that break architecture boundaries — one `review_changes` call |
 
 Signals decide _what_ to flag; each comment states the fact in plain words
 ("30+ modules import this") and names a concrete fix. A finding the skill cannot
@@ -139,8 +198,9 @@ at 8 comments, 5 of them major.
   batch**. Style nits carry a `[minor]` prefix. The repository must be checked
   out and indexed locally.
 
-Blast-radius and cycle checks use the call graph when `codegraph.symbols` is
-enabled. Without it, cycles are reported as "not assessed" and callers are
+Blast-radius, cycle, naming and diff-review checks use the call graph when
+`codegraph.symbols` is enabled. Without it, cycles, naming and diff-review are
+reported as "not assessed" and callers are
 found by name, which the comments call out as a lower bound.
 
 Not for your own pre-merge flow (use `dinopowers:requesting-code-review`), not

@@ -8,7 +8,7 @@ import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
 import type { FileChurnData } from "../../../../adapters/vcs/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type { GitEnrichmentCache } from "./cache.js";
-import type { FileChurnDiscovery } from "./file-churn-discovery.js";
+import { aggregateFileChurnWindow, fileChurnWindowOf, type FileChurnDiscovery } from "./file-churn-discovery.js";
 import { aggregateFileChurnFollowingRenames, sliceCommitsFollowingRenames } from "./rename-following.js";
 
 /**
@@ -113,6 +113,48 @@ export function sliceFileSignalsByPaths(
 
 /** Paths per pathspec log — keeps the argv within OS ARG_MAX limits. */
 const BACKFILL_BATCH = 500;
+
+/**
+ * Per-file churn of `paths` over the file walk's window — what the run-scoped
+ * `FileChurnDiscovery` slice holds for them (bd tea-rags-mcp-xi2r9): the same
+ * `--since` window and committer-date evict, the same canonical fold
+ * (`aggregateFileChurnWindow`), read through a full-history pathspec log
+ * instead of a repo-wide one. Renames are followed as `buildFileSignalsForPaths`
+ * follows them. A path the window holds no commit for is absent — ingest
+ * backfills such a path from its whole history.
+ */
+export async function buildWindowedFileSignalsForPaths(
+  adapter: VcsGitAdapter,
+  paths: string[],
+  maxAgeMonths: number,
+  timeoutMs = 30000,
+): Promise<Map<string, FileChurnData>> {
+  const { sinceDate, lowerBoundSec } = fileChurnWindowOf(maxAgeMonths);
+  const result = new Map<string, FileChurnData>();
+  for (let i = 0; i < paths.length; i += BACKFILL_BATCH) {
+    const batch = paths.slice(i, i + BACKFILL_BATCH);
+    try {
+      const entries = await sliceCommitsFollowingRenames(
+        async (queried) =>
+          (await adapter.readCommitFileNumstatForPaths(queried, timeoutMs, sinceDate)).map((entry) => ({
+            ...entry,
+            changedFiles: entry.files,
+          })),
+        batch,
+      );
+      const churn = aggregateFileChurnWindow(entries, lowerBoundSec);
+      for (const path of batch) {
+        const entry = churn.get(path);
+        if (entry) result.set(path, entry);
+      }
+    } catch (error) {
+      if (isDebug()) {
+        console.error(`[GitLogReader] Windowed batch failed:`, error instanceof Error ? error.message : error);
+      }
+    }
+  }
+  return result;
+}
 
 /**
  * Fetch file-level metadata for specific files (no --since filter).

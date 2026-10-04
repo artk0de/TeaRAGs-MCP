@@ -93,3 +93,142 @@ describe("ChunkPipeline — embed-phase quarantine isolation", () => {
     expect(lastCall?.[1]).toHaveLength(2);
   });
 });
+
+describe("ChunkPipeline — embed-phase quarantine isolation by bisection", () => {
+  const BATCH = 8;
+  let pipeline: ChunkPipeline;
+  const markFailed = vi.fn().mockResolvedValue(undefined);
+  const store = { markFailed } as unknown as QuarantineStore;
+
+  function overflow(): Error {
+    return new OllamaContextOverflowError("http://localhost:11434", 400, "context length exceeded");
+  }
+
+  function chunk(id: number, content: string): ChunkItem["chunk"] {
+    return {
+      content,
+      startLine: id,
+      endLine: id + 1,
+      metadata: { filePath: `/base/file${id}.ts`, language: "typescript", chunkIndex: id },
+    };
+  }
+
+  function startPipeline(): void {
+    pipeline = new ChunkPipeline(
+      mockQdrant as never,
+      mockEmbeddings as never,
+      "test_collection",
+      new StaticPayloadBuilder(),
+      {
+        workerPool: { concurrency: 1, maxRetries: 0, retryBaseDelayMs: 50, retryMaxDelayMs: 500 },
+        accumulator: { batchSize: BATCH, flushTimeoutMs: 100, maxQueueSize: 4 },
+        enableHybrid: false,
+      },
+    );
+    pipeline.setQuarantineStore(store);
+    pipeline.start();
+  }
+
+  /** Feed one full batch: chunk i carries `contents[i]`, chunkId `c<i>`. */
+  function feed(contents: string[]): void {
+    contents.forEach((content, i) => {
+      pipeline.addChunk(chunk(i, content), `c${i}`, "/base");
+    });
+  }
+
+  async function settle(): Promise<void> {
+    for (let i = 0; i < 5; i++) {
+      await vi.advanceTimersByTimeAsync(500);
+    }
+    await vi.runAllTimersAsync();
+  }
+
+  function upsertedIds(): string[] {
+    return mockQdrant.addPointsOptimized.mock.calls.flatMap((call) => (call[1] as { id: string }[]).map((p) => p.id));
+  }
+
+  function embedCallSizes(): number[] {
+    return mockEmbeddings.embedBatch.mock.calls.map((call) => (call[0] as string[]).length);
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    mockQdrant.addPointsOptimized.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    pipeline.forceShutdown();
+    vi.useRealTimers();
+  });
+
+  it("isolates one poison chunk among 8 in O(log n) embed calls, survivors in original order", async () => {
+    mockEmbeddings.embedBatch.mockImplementation(async (texts: string[]) => {
+      if (texts.some((t) => t.includes(POISON))) throw overflow();
+      return texts.map(() => ({ embedding: [1, 2, 3] }));
+    });
+    startPipeline();
+    feed(Array.from({ length: BATCH }, (_, i) => (i === 5 ? POISON : `healthy ${i}`)));
+
+    await settle();
+    await expect(pipeline.flush()).resolves.toBeUndefined();
+
+    expect(markFailed).toHaveBeenCalledTimes(1);
+    expect(markFailed.mock.calls[0][0]).toBe("file5.ts");
+    expect(upsertedIds()).toEqual(["c0", "c1", "c2", "c3", "c4", "c6", "c7"]);
+
+    const sizes = embedCallSizes();
+    expect(sizes[0]).toBe(BATCH);
+    expect(sizes.length).toBeLessThanOrEqual(1 + 2 * Math.ceil(Math.log2(BATCH)));
+    // Only the final split (the poison and its sibling) is sent alone; every
+    // other retry carries >1 item — no per-item sweep of the batch.
+    expect(sizes.slice(1).filter((n) => n === 1).length).toBeLessThanOrEqual(2);
+  });
+
+  it("re-embeds only the two halves when the batch-level failure does not reproduce", async () => {
+    mockEmbeddings.embedBatch.mockImplementation(async (texts: string[]) => {
+      if (texts.length === BATCH) throw overflow();
+      return texts.map(() => ({ embedding: [1, 2, 3] }));
+    });
+    startPipeline();
+    feed(Array.from({ length: BATCH }, (_, i) => `healthy ${i}`));
+
+    await settle();
+    await expect(pipeline.flush()).resolves.toBeUndefined();
+
+    expect(embedCallSizes()).toEqual([BATCH, BATCH / 2, BATCH / 2]);
+    expect(markFailed).not.toHaveBeenCalled();
+    expect(upsertedIds()).toEqual(["c0", "c1", "c2", "c3", "c4", "c5", "c6", "c7"]);
+  });
+
+  it("rethrows a non-quarantinable error raised while embedding a half", async () => {
+    const transient = new Error("ECONNRESET");
+    mockEmbeddings.embedBatch.mockImplementation(async (texts: string[]) => {
+      if (texts.length === BATCH) throw overflow();
+      throw transient;
+    });
+    startPipeline();
+    feed(Array.from({ length: BATCH }, (_, i) => `healthy ${i}`));
+
+    await settle();
+    await expect(pipeline.flush()).rejects.toBe(transient);
+
+    expect(markFailed).not.toHaveBeenCalled();
+    expect(mockQdrant.addPointsOptimized).not.toHaveBeenCalled();
+  });
+
+  it("quarantines two poison chunks sitting in different halves and keeps order", async () => {
+    mockEmbeddings.embedBatch.mockImplementation(async (texts: string[]) => {
+      if (texts.some((t) => t.includes(POISON))) throw overflow();
+      return texts.map(() => ({ embedding: [1, 2, 3] }));
+    });
+    startPipeline();
+    feed(Array.from({ length: BATCH }, (_, i) => (i === 1 || i === 6 ? POISON : `healthy ${i}`)));
+
+    await settle();
+    await expect(pipeline.flush()).resolves.toBeUndefined();
+
+    expect(markFailed.mock.calls.map((call) => call[0]).sort()).toEqual(["file1.ts", "file6.ts"]);
+    expect(upsertedIds()).toEqual(["c0", "c2", "c3", "c4", "c5", "c7"]);
+  });
+});

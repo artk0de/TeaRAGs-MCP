@@ -20,8 +20,10 @@ export type InputErrorCode =
   | "INPUT_PROJECT_ALIAS_STALE"
   | "INPUT_PROJECT_ENV_KEY_UNKNOWN"
   | "INPUT_PATH_NOT_EXISTS"
+  | "INPUT_PATH_IN_UNINDEXED_SUBMODULE"
   | "INPUT_INVALID_DOCUMENT_METADATA_SCHEMA"
-  | "INPUT_DOCUMENT_METADATA_SCHEMA_VIOLATION";
+  | "INPUT_DOCUMENT_METADATA_SCHEMA_VIOLATION"
+  | "INPUT_UNKNOWN_ARCHITECTURE_COMPONENT";
 
 /**
  * Abstract base for all input validation errors (httpStatus 400).
@@ -71,6 +73,29 @@ export class InvalidParameterError extends InputValidationError {
       code: "INPUT_INVALID_PARAMETER",
       message: `Invalid parameter "${parameter}": ${detail}`,
       hint: "Check the parameter value and try again",
+    });
+  }
+}
+
+/**
+ * Thrown when a read's `path` lies inside a submodule (or another nested
+ * repository) of an indexed superproject, and nothing indexes the submodule
+ * itself (bd tea-rags-mcp-xi2r9, live P2-8). The submodule is a separate
+ * repository, so the superproject's index cannot answer for its tree; without
+ * this the path fell through to the path hash and surfaced as a bare
+ * "collection not found" naming a collection nobody created.
+ */
+export class SubmoduleNotIndexedError extends InputValidationError {
+  constructor(path: string, nested: { kind: "submodule" | "nested repository"; root: string; superproject: string }) {
+    const relativeRoot = nested.root.slice(nested.superproject.length + 1);
+    super({
+      code: "INPUT_PATH_IN_UNINDEXED_SUBMODULE",
+      message:
+        `'${path}' is inside ${nested.kind} '${relativeRoot}' of ${nested.superproject} — ` +
+        "a separate repository that is not indexed",
+      hint:
+        `Index it (\`tea-rags index-codebase ${nested.root} --name <alias>\`), ` +
+        `or address the superproject (path=${nested.superproject}).`,
     });
   }
 }
@@ -256,6 +281,21 @@ export interface DocumentMetadataViolation {
   expected: string;
   /** The value found at `field`; `undefined` when the field is absent. */
   received: unknown;
+}
+
+/**
+ * Thrown by `get_architecture_report` when `knotOf` names a component the
+ * layering component graph does not hold (bd tea-rags-mcp-r8hme.38) — an
+ * empty knot view would read as "not in any knot".
+ */
+export class UnknownArchitectureComponentError extends InputValidationError {
+  constructor(component: string) {
+    super({
+      code: "INPUT_UNKNOWN_ARCHITECTURE_COMPONENT",
+      message: `Unknown architecture component "${component}": no component of the layering graph has this path.`,
+      hint: "Take the component from a knot finding's evidence.drillDown.knotOf, or from any finding's component names.",
+    });
+  }
 }
 
 const MAX_REPORTED_VIOLATIONS = 10;

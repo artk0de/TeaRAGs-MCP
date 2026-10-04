@@ -125,4 +125,16 @@ describe("extractCochangeGraph", () => {
       ["a.ts", "z.ts"],
     ]);
   });
+
+  it("returns the admitted bundles' file memberships in extraction order, mass-commit bundles absent", () => {
+    const wide = Array.from({ length: 11 }, (_, i) => `f${i}.ts`);
+    const graph = extractCochangeGraph(
+      [bundle("s1", 1, ["a.ts", "b.ts"]), bundle("mass", 2, [...wide, "a.ts"]), bundle("s3", 3, ["c.ts"])],
+      OPTIONS,
+    );
+
+    // Extraction order is newest admitted bundle first; single-file bundles
+    // count — a file changing alone is evidence against every rule on it.
+    expect(graph.admittedBundles).toEqual([["c.ts"], ["a.ts", "b.ts"]]);
+  });
 });

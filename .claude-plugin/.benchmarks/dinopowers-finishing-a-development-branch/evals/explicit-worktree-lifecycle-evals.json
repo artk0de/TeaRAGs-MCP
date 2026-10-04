@@ -46,7 +46,7 @@
       "id": "F3",
       "context": "abandon — teardown on every finish",
       "prompt": "Abandoning this branch WITHOUT merging — anything to clean up for tea-rags?",
-      "expected": "`tea-rags worktree remove <name>` (mandatory on abandon too); no main reindex (nothing merged).",
+      "expected": "`tea-rags worktree remove <name>` when a clone exists (`tea-rags worktree info`) — mandatory on abandon too; no clone → nothing to clean up; no main reindex (nothing merged).",
       "withRule": {
         "grade": "PASS",
         "note": "worktree remove only; skips main reindex on abandon."

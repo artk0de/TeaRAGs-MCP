@@ -31,13 +31,13 @@ const QDRANT_INFRA_ERROR_CODES = new Set([
   "INFRA_QDRANT_STARTING",
   "INFRA_QDRANT_RECOVERING",
 ]);
-const OLLAMA_INFRA_ERROR_CODES = new Set(["INFRA_OLLAMA_UNAVAILABLE"]);
+const EMBEDDING_INFRA_ERROR_CODES = new Set(["INFRA_OLLAMA_UNAVAILABLE", "INFRA_LLAMA_SERVER_UNAVAILABLE"]);
 
 async function enrichWithHealthContext(error: TeaRagsError, probes: HealthProbes): Promise<string> {
   const base = error.toUserMessage();
   const isQdrantError = QDRANT_INFRA_ERROR_CODES.has(error.code);
-  const isOllamaError = OLLAMA_INFRA_ERROR_CODES.has(error.code);
-  if (!isQdrantError && !isOllamaError) return base;
+  const isEmbeddingError = EMBEDDING_INFRA_ERROR_CODES.has(error.code);
+  if (!isQdrantError && !isEmbeddingError) return base;
 
   try {
     // Probe the OTHER service
@@ -55,7 +55,7 @@ async function enrichWithHealthContext(error: TeaRagsError, probes: HealthProbes
             : otherHealthy
               ? "available"
               : "unavailable";
-    const embeddingLabel = isOllamaError ? "unavailable" : otherHealthy ? "available" : "unavailable";
+    const embeddingLabel = isEmbeddingError ? "unavailable" : otherHealthy ? "available" : "unavailable";
     const embeddingUrl = probes.embeddingUrl ? ` (${probes.embeddingUrl})` : "";
 
     return (

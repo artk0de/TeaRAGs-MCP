@@ -1,6 +1,6 @@
 import type { TestFileConventions } from "../../../contracts/types/file-classification.js";
 import type { LanguageCapability } from "../../../contracts/types/language.js";
-import { installTestFileConventions } from "../../../infra/file-classification/test-file-conventions.js";
+import { installTestFileConventions } from "../../../infra/file-classification/index.js";
 import { capability as bashCapability } from "../bash/capability.js";
 import { capability as goCapability } from "../go/capability.js";
 import { capability as javaCapability } from "../java/capability.js";

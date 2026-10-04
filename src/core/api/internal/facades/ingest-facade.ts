@@ -29,6 +29,7 @@ import { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
 import type { PipelineRegistryDeps, PipelineTuning } from "../../../domains/ingest/pipeline/base.js";
 import { SELECTABLE_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/config.js";
+import type { ChunkerPoolFactory } from "../../../domains/ingest/pipeline/chunker/infra/pool.js";
 import { EnrichmentApplier } from "../../../domains/ingest/pipeline/enrichment/applier.js";
 import type { BlobReaderFactory } from "../../../domains/ingest/pipeline/enrichment/chunk-phase.js";
 import type { CodegraphStorageCompactionRunner } from "../../../domains/ingest/pipeline/enrichment/completion-runner.js";
@@ -42,6 +43,7 @@ import { StaticPayloadBuilder } from "../../../domains/trajectory/static/provide
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import type {
   ChangeStats,
+  ChunkerConfig,
   EnrichmentProgressCallback,
   IndexOptions,
   IndexStats,
@@ -52,6 +54,7 @@ import type {
 } from "../../../types.js";
 import { InvalidParameterError } from "../../errors.js";
 import { createPathCollectionResolver, type PathCollectionResolver } from "../collection-resolver.js";
+import { enrichmentAlgorithmVersions } from "../composition.js";
 import { createCodegraphPayloadHealRunner } from "../infra/codegraph-payload-heal-runner.js";
 import { createIngestDependencies } from "../ingest-dependencies.js";
 import { IndexingOps, type IndexDriftConsumptionResetter } from "../ops/indexing-ops.js";
@@ -153,6 +156,13 @@ export interface IngestFacadeDeps {
    * descriptors are all present; omitted → every first index is an ordinary one.
    */
   footprintFactory?: Pick<CollectionFootprintFactory, "build">;
+  /**
+   * Builds each run's chunker pool (bd tea-rags-mcp-bbo1h.1). Forwarded onto
+   * `IngestDependencies`; omitted → every run forks a fresh `ChunkerPool`, which
+   * is what the production composition does. Tests inject a factory that
+   * leases warm pools so a run does not pay the worker fork.
+   */
+  createChunkerPool?: ChunkerPoolFactory;
 }
 
 export class IngestFacade {
@@ -204,9 +214,16 @@ export class IngestFacade {
       codegraphPool: deps.codegraphPool,
       healthCheckRetryAttempts: deps.healthCheckRetryAttempts,
       healthCheckRetryDelayMs: deps.healthCheckRetryDelayMs,
-      collectionRegistry: deps.collectionRegistry,
+      languageVersionStamper: deps.collectionRegistry,
+      codegraphEnabledStamper: deps.collectionRegistry,
+      embeddingThroughputOptima: deps.collectionRegistry,
+      embeddingProducerStarvation: deps.collectionRegistry,
       languageCodeVersions: deps.languageCodeVersions,
       ...(deps.languageChunkSetBumpScopes ? { languageChunkSetBumpScopes: deps.languageChunkSetBumpScopes } : {}),
+      // The algorithm revision of each provider this slice enriches with
+      // (bd tea-rags-mcp-xi2r9), stamped by the runs that rebuild it for every point.
+      trajectoryVersionStamper: deps.collectionRegistry,
+      trajectoryAlgorithmVersions: enrichmentAlgorithmVersions(deps.enrichmentProviders ?? []),
       driftReporter: deps.driftReporter,
       ...(resolveCollectionForPath ? { resolveCollectionForPath } : {}),
       // Beside the collection's other per-collection files, so every process
@@ -262,6 +279,11 @@ export class IngestFacade {
     return this.indexingOps.resolveEffectiveChunkSize(modelInfo);
   }
 
+  /** The chunker config the next sync of `collectionName` would use; read-only. */
+  async resolveChunkerConfig(collectionName: string): Promise<ChunkerConfig> {
+    return this.indexingOps.resolveChunkerConfig(collectionName);
+  }
+
   async getIndexStatus(path: string): Promise<IndexStatus> {
     return this.indexingOps.getStatus(path);
   }
@@ -304,15 +326,18 @@ export class IngestFacade {
     // collection's stats outside any indexing run, and `configTimePeriodMonths`
     // is carried by the walk configuration rather than by the payload — omit it
     // and a migrated stats file loses the window its git signals were read over.
-    const ingestDeps = createIngestDependencies(
-      qdrant,
-      snapshotDir,
-      new StaticPayloadBuilder(),
-      syncTuning,
-      config.enableHybridSearch,
-      enrichmentProviderKey,
-      gitTimePeriods,
-    );
+    const ingestDeps = {
+      ...createIngestDependencies(
+        qdrant,
+        snapshotDir,
+        new StaticPayloadBuilder(),
+        syncTuning,
+        config.enableHybridSearch,
+        enrichmentProviderKey,
+        gitTimePeriods,
+      ),
+      createChunkerPool: deps.createChunkerPool,
+    };
 
     // Single shared executor — Coordinator and Recovery dispatch through the
     // same seam. Phase-2 of the worker-pool spec wires WorkerPoolEnrichment-

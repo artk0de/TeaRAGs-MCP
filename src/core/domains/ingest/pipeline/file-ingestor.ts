@@ -14,18 +14,17 @@
 
 import { promises as fs } from "node:fs";
 
-import { isCompiledJsContent, isJsFamilyPath } from "../../../infra/file-classification/index.js";
-import { isTestPath } from "../../../infra/scope-detection.js";
 import type { CodeChunk } from "../../../types.js";
 import { classifyQuarantinable } from "../sync/index.js";
 import type { ChunkPipeline } from "./chunk-pipeline.js";
+import { toChunkPointInput } from "./chunk-point-payload.js";
 import { assignNavigationAndDocSymbolId } from "./chunker/chunk-navigation.js";
-import type { ChunkerPool } from "./chunker/infra/pool.js";
+import type { ChunkerPoolPort } from "./chunker/infra/pool.js";
 import { assignSymbolMass } from "./chunker/symbol-mass.js";
 import { generateChunkId } from "./chunker/utils/chunk-id.js";
 import { extractImportsExports } from "./chunker/utils/import-extractor.js";
 import { detectLanguage } from "./chunker/utils/language-detector.js";
-import { containsSecrets } from "./chunker/utils/secrets-detector.js";
+import { sourceContentSkipReason } from "./file-chunk-points.js";
 import type { FileProcessCallbacks, FileProcessorOptions, FileProcessResult } from "./file-processor.js";
 import { pipelineLog, type FileIngestRecord } from "./infra/debug-logger.js";
 
@@ -41,7 +40,7 @@ interface FileChunkSubmissionOutcome {
 
 export interface SourceFileIngestorDeps {
   basePath: string;
-  chunkerPool: ChunkerPool;
+  chunkerPool: ChunkerPoolPort;
   chunkPipeline: ChunkPipeline;
   options: FileProcessorOptions;
   callbacks?: FileProcessCallbacks;
@@ -147,6 +146,9 @@ export class SourceFileIngestor {
    *    (~51s for a 268KB d3.js) and pollutes a code RAG. JS-family only — gated
    *    on extension so .mjs/.cjs (which detectLanguage reports as "unknown")
    *    are still covered.
+   *
+   * 2 and 3 are `sourceContentSkipReason`, shared with every reader that must
+   * see a file the way ingest stores it.
    */
   private preParseSkipReason(
     filePath: string,
@@ -156,9 +158,7 @@ export class SourceFileIngestor {
   ): PreParseSkipReason | undefined {
     const { coordinator } = this.deps.options;
     if (coordinator && !coordinator.canUpsertForFile(relativePath)) return "delete-failed";
-    if (!isTestPath(relativePath, language) && containsSecrets(code)) return "secrets";
-    if (isJsFamilyPath(filePath) && isCompiledJsContent(code)) return "compiled";
-    return undefined;
+    return sourceContentSkipReason(filePath, relativePath, code, language);
   }
 
   /**
@@ -180,29 +180,7 @@ export class SourceFileIngestor {
         return { chunksAdded, hitChunkLimit: true };
       }
 
-      const baseChunk = {
-        content: chunk.content,
-        startLine: chunk.startLine,
-        endLine: chunk.endLine,
-        metadata: {
-          filePath: chunk.metadata.filePath,
-          language: chunk.metadata.language,
-          chunkIndex: chunk.metadata.chunkIndex,
-          name: chunk.metadata.name,
-          chunkType: chunk.metadata.chunkType,
-          parentSymbolId: chunk.metadata.parentSymbolId,
-          parentType: chunk.metadata.parentType,
-          symbolId: chunk.metadata.symbolId,
-          isDocumentation: chunk.metadata.isDocumentation,
-          methodLines: chunk.metadata.methodLines,
-          memberCount: chunk.metadata.memberCount,
-          moduleLines: chunk.metadata.moduleLines,
-          moduleMethodCount: chunk.metadata.moduleMethodCount,
-          headingPath: chunk.metadata.headingPath,
-          navigation: chunk.metadata.navigation,
-          ...(imports.length > 0 && { imports }),
-        } as CodeChunk["metadata"],
-      };
+      const baseChunk = toChunkPointInput(chunk, imports);
 
       // Wait for backpressure if needed
       if (chunkPipeline.isBackpressured()) {

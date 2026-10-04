@@ -11,11 +11,11 @@
  * - Backward compatible with old snapshots
  */
 
-import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 
+import { fileContentHash } from "../../../infra/file-content-hash.js";
 import { isDebug } from "../../../infra/runtime.js";
 import type { FileChanges } from "../../../types.js";
 import { MerkleTree } from "./infra/merkle.js";
@@ -33,7 +33,7 @@ interface FileMetadata {
 /**
  * Checkpoint data for resumable indexing
  */
-interface Checkpoint {
+interface IncrementalCheckpoint {
   processedFiles: string[]; // Relative paths of files already indexed
   totalFiles: number; // Total files to process
   timestamp: number; // When checkpoint was created
@@ -106,7 +106,7 @@ export class FileSynchronizer {
     try {
       const absolutePath = filePath.startsWith(this.codebasePath) ? filePath : join(this.codebasePath, filePath);
       const content = await fs.readFile(absolutePath, "utf-8");
-      return createHash("sha256").update(content).digest("hex");
+      return fileContentHash(content);
     } catch (_error) {
       return "";
     }
@@ -273,7 +273,7 @@ export class FileSynchronizer {
     totalFiles: number,
     phase: "deleting" | "indexing" = "indexing",
   ): Promise<void> {
-    const checkpoint: Checkpoint = {
+    const checkpoint: IncrementalCheckpoint = {
       processedFiles,
       totalFiles,
       timestamp: Date.now(),
@@ -302,10 +302,10 @@ export class FileSynchronizer {
    * Load checkpoint if exists
    * Returns null if no checkpoint or checkpoint is stale
    */
-  async loadCheckpoint(): Promise<Checkpoint | null> {
+  async loadCheckpoint(): Promise<IncrementalCheckpoint | null> {
     try {
       const data = await fs.readFile(this.checkpointPath, "utf-8");
-      const checkpoint = JSON.parse(data) as Checkpoint;
+      const checkpoint = JSON.parse(data) as IncrementalCheckpoint;
 
       // Validate checkpoint
       if (!checkpoint.processedFiles || !checkpoint.totalFiles) {
@@ -356,7 +356,7 @@ export class FileSynchronizer {
   /**
    * Filter out already processed files based on checkpoint
    */
-  filterProcessedFiles(allFiles: string[], checkpoint: Checkpoint): string[] {
+  filterProcessedFiles(allFiles: string[], checkpoint: IncrementalCheckpoint): string[] {
     const processedSet = new Set(checkpoint.processedFiles);
     return allFiles.filter((f) => !processedSet.has(f));
   }

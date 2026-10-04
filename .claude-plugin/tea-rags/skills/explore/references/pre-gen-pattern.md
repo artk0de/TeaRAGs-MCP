@@ -9,8 +9,9 @@ Find target area files. Select tool directly:
 
 - **Behavior/intent query** → `semantic_search` (query=$ARGUMENTS,
   metaOnly=true, limit=10, documentation="exclude")
-- **Known symbol + context** → `hybrid_search` (query=$ARGUMENTS, metaOnly=true,
-  limit=10, documentation="exclude")
+- **Known symbol** → `find_symbol` (symbol=<id>) for its definition; its
+  surrounding area → `hybrid_search` (query=$ARGUMENTS, metaOnly=true, limit=10,
+  documentation="exclude")
 
 Add `pathPattern` if module is known. Add `language` if polyglot codebase.
 `documentation="exclude"` prevents RFC/docs from taking result slots.
@@ -28,8 +29,8 @@ embedding).
 
 ```
 find_symbol:
-  symbolId: <symbol name from PG-1>
-  path: <project>
+  symbol: <symbol name from PG-1>   ← Class#method (instance) / Class.method (static)
+  path: <your working directory>
   rerank: "techDebt"          ← its overlayMask labels the PG-2 fields; do not swap presets
   metaOnly: false             ← full raw payload: recent*, churnVolatility are non-essential
 ```

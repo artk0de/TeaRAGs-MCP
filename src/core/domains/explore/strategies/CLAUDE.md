@@ -9,9 +9,11 @@
   the RERANKED order. `SimilarSearchStrategy` forwards `offset: ctx.offset` to
   `qdrant.query` (`SimilarSearchStrategy#executeExplore`) AND inherits the base
   slice, so find_similar applies it twice — that is the standing
-  counter-example, not the pattern to copy. Why: server-side paging would page
-  Qdrant's pre-rerank order, making page 2 of a reranked search meaningless.
-  Pushing `offset` down is the instinct a new strategy must resist.
+  counter-example, not the pattern to copy. Under the working-tree dense floor
+  it sends no `offset` (the page merges with the tree's rows before the base
+  slice). Why: server-side paging would page Qdrant's pre-rerank order, making
+  page 2 of a reranked search meaningless. Pushing `offset` down is the instinct
+  a new strategy must resist.
 - **`postProcess` receives the ORIGINAL context, not what `applyDefaults`
   returned.** `BaseExploreStrategy#execute` does
   `applyDefaults(ctx) → executeExplore(prepared) → postProcess(rawResults, ctx)`.
@@ -33,11 +35,13 @@
   truncate silently.** Both override `applyDefaults` to identity (no overfetch)
   and scroll a hard-coded `SCROLL_LIMIT = 200`. find_symbol issues two such
   scrolls (symbolId + parentSymbolId, `SymbolSearchStrategy#executeExplore`) and
-  unions them → hard ceiling 400 chunks before post-filtering; a file outline
-  sees at most 200 chunks of that file. Neither `postProcess` emits a cursor or
-  truncation flag. Why: a class with ~200+ member chunks, or a large file,
-  yields a silently incomplete outline, and raising the request `limit` changes
-  nothing — it only trims an already-truncated set.
+  unions them → hard ceiling 400 chunks before post-filtering (a fully-qualified
+  id no chunk answers as its own adds one more, for a member of a packed test
+  chunk — `SymbolSearchStrategy#scrollPackMembers`); a file outline sees at most
+  200 chunks of that file. Neither `postProcess` emits a cursor or truncation
+  flag. Why: a class with ~200+ member chunks, or a large file, yields a
+  silently incomplete outline, and raising the request `limit` changes nothing —
+  it only trims an already-truncated set.
 
 ## See also
 

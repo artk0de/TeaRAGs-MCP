@@ -41,6 +41,10 @@ const SearchResultItemSchema = z.object({
   score: z.number().describe("Relevance score"),
   payload: SearchResultPayloadSchema.optional(),
   rankingOverlay: RankingOverlaySchema.optional().describe("Explains scoring signals"),
+  treeState: z
+    .enum(["modified", "deleted"])
+    .optional()
+    .describe("Index row of a file your working tree changed or deleted; content may be stale"),
 });
 
 const SearchConfidenceSchema = z.object({
@@ -84,6 +88,41 @@ export const SearchResultOutputSchema = {
         "Most presets default to production (no tests / docs / block chunks), so a thin or empty " +
         "answer may be the default, not the corpus. Re-run with the named clearWith param to see " +
         "the excluded population. Absent whenever you passed your own 'filter'.",
+    ),
+  workingTree: z
+    .object({
+      tree: z.string(),
+      indexedCommit: z.string().nullable(),
+      treeCommit: z.string().nullable(),
+      indexedDirty: z.boolean(),
+      changedFiles: z.number(),
+      deletedFiles: z.number(),
+      floors: z.array(z.enum(["chunks", "sparse", "dense", "codegraph"])),
+      degraded: z.object({ reason: z.string(), remedy: z.string() }).optional(),
+      indexOnlyFiles: z.number().optional(),
+      pendingFiles: z.number().optional(),
+      unparsed: z.array(z.string()).optional(),
+      treeGraphUnavailable: z.string().optional(),
+      denseUnavailable: z.object({ reason: z.string() }).optional(),
+      gitUnavailable: z.object({ reason: z.string() }).optional(),
+    })
+    .optional()
+    .describe(
+      "Tree read vs index commit. changedFiles 0 = measured clean; floors = rows reflect tree " +
+        "(dense = tree rows ranked by own vectors; codegraph = graph-tool answer, or a returned changed-file row, from the tree's graph); " +
+        "degraded = run remedy; indexOnlyFiles = changed non-code files whose rows are the index's (treeState); " +
+        "pendingFiles = changed code files still warming, answered from the index this call (treeState); " +
+        "unparsed = changed files the tree's rows lack; " +
+        "treeGraphUnavailable = why graph signals are the index's; " +
+        "denseUnavailable = why some tree rows ranked without vectors (absent from dense ranking); " +
+        "gitUnavailable = how many changed-file rows still lack git signals (computing; re-call later).",
+    ),
+  denseUnavailable: z
+    .object({ reason: z.string() })
+    .optional()
+    .describe(
+      "hybrid_search only: embedding provider down, so results are ranked by BM25 alone (exact names still match; " +
+        "no semantic ranking). reason = the provider's error.",
     ),
   codegraphWarning: z
     .string()

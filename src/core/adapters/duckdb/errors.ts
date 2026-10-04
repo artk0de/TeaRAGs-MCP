@@ -707,3 +707,42 @@ export class CodegraphStorageCompactionFailedError extends InfraError {
     this.stage = stage;
   }
 }
+
+/**
+ * A codegraph snapshot export (bd tea-rags-mcp-xi2r9, WTO-7) did not produce a
+ * database at the target path. An export never touches the live database, so
+ * whatever the stage, it is intact and still open.
+ *
+ * `stage` says how far it got:
+ * - `unsupported` — the codegraph daemon holding the database predates the op.
+ *   Only the holder can read what its WAL keeps, so nothing was copied.
+ * - `copy` — the staged copy could not be written or did not match the live
+ *   database (`detail` names what differed); the staging files were removed.
+ * - `publish` — the rename of the staged copy onto the target failed; the
+ *   staging files were removed and an existing target is unchanged.
+ */
+export class CodegraphSnapshotExportFailedError extends InfraError {
+  readonly stage: "unsupported" | "copy" | "publish";
+
+  constructor(
+    dbPath: string,
+    targetPath: string,
+    stage: "unsupported" | "copy" | "publish",
+    cause?: Error,
+    detail?: string,
+  ) {
+    super({
+      code: "INFRA_CODEGRAPH_SNAPSHOT_EXPORT_FAILED",
+      message: `Codegraph snapshot of ${dbPath} to ${targetPath} failed at the ${stage} stage${detail ? `: ${detail}` : ""}`,
+      hint:
+        stage === "unsupported"
+          ? "The running codegraph daemon is from an older build without snapshot export; it is replaced " +
+            "once its sessions end. The live database is untouched."
+          : "The live database is untouched and the export is safe to retry. Inspect cause for the driver " +
+            "or filesystem message.",
+      httpStatus: 500,
+      cause,
+    });
+    this.stage = stage;
+  }
+}

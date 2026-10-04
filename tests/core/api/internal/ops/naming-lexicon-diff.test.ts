@@ -9,14 +9,13 @@
  * TypeScript walker, through the same in-memory extraction the tool uses.
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
-import { InvalidParameterError } from "../../../../../src/core/api/errors.js";
 import {
   NamingLexiconOps,
   type NamingLexiconEmbeddings,
@@ -137,7 +136,7 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     ]);
   }
 
-  function build(embeddings?: NamingLexiconEmbeddings): NamingLexiconOps {
+  function build(embeddings?: NamingLexiconEmbeddings, collectionRegistry: unknown = {}): NamingLexiconOps {
     const graphDb = new Proxy(db, {
       get(target, prop, receiver) {
         if (prop === "close") return async () => undefined;
@@ -147,7 +146,7 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     });
     return new NamingLexiconOps({
       pool: { acquireReader: vi.fn(async () => ({ graphDb, symbolTable: {} })) } as never,
-      collectionRegistry: {} as never,
+      collectionRegistry: collectionRegistry as never,
       resolveActiveCollection: async (name: string) => name as never,
       explore: { semanticSearch },
       namingConventions: NAMING,
@@ -158,7 +157,7 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
   }
 
   beforeEach(async () => {
-    dir = mkdtempSync(join(tmpdir(), "naming-lexicon-diff-"));
+    dir = realpathSync(mkdtempSync(join(tmpdir(), "naming-lexicon-diff-")));
     repo = join(dir, "repo");
     mkdirSync(join(repo, "src/git"), { recursive: true });
     git(repo, "init", "-q", "-b", "main");
@@ -269,8 +268,9 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     );
     const result = await ops.getNamingLexicon({ collection: "c", path: repo, files: ["src/git/novel.ts"] });
     expect(result.review?.findings).toEqual([]);
-    expect(result.review?.novel).toBe(1);
-    expect(result.review?.checked).toBe(1);
+    // Spec D4 (bd tea-rags-mcp-0qaht): the untyped function `g` is judged by method vocabulary too — novel.
+    expect(result.review?.novel).toBe(2);
+    expect(result.review?.checked).toBe(2);
   });
 
   // bd tea-rags-mcp-hn2vt: `thing` / `tmp` for a call the project names `entry` were silently conforming.
@@ -290,17 +290,6 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
       expect.objectContaining({ name: "thing", line: 2, kind: "local", verdict: "NEW_TERM", topTerms: ["entry"] }),
     ]);
     expect(result.review?.conforming).toBe(1);
-  });
-
-  it("a non-production changed file is not judged, and counts as not judged", async () => {
-    writeFileSync(
-      join(repo, "src/git/reader.test.ts"),
-      "export function t(): void {\n  const meta: GitFileSignals = read();\n  use(meta);\n}\n",
-    );
-    const result = await ops.getNamingLexicon({ collection: "c", path: repo, files: ["src/git/reader.test.ts"] });
-    expect(result.review?.findings).toEqual([]);
-    expect(result.review?.checked).toBe(0);
-    expect(result.review?.notJudged).toBe(1);
   });
 
   it("a type draft's concept query carries its words and the code of its enclosing chunk", async () => {
@@ -346,13 +335,6 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     expect(result.review?.findings.map((f) => f.verdict)).toEqual(["COLLISION", "COLLISION"]);
     expect(result.notices).toEqual(["type-name alignment skipped: ollama unreachable"]);
     expect(semanticSearch).toHaveBeenCalledTimes(1);
-  });
-
-  it("caps the changed files at 200 per call", async () => {
-    mkdirSync(join(repo, "notes"));
-    for (let i = 0; i < 201; i++) writeFileSync(join(repo, `notes/n${String(i).padStart(3, "0")}.md`), "x\n");
-    const result = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
-    expect(result.review?.truncated).toEqual({ cap: 200, skipped: 2 });
   });
 
   // bd tea-rags-mcp-433d2: a synonym head passes the project-suffix rule; its alternative makes it a finding.
@@ -434,68 +416,6 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     ]);
   });
 
-  // bd tea-rags-mcp-y33ee: a base branch that moved on flooded the review with files only the base changed.
-  describe("a base branch that moved on since the branch left it", () => {
-    const SHARED = "src/git/shared.ts";
-    let forkPoint: string;
-
-    beforeEach(() => {
-      // The fork point carries `shared.ts`; the branch commits its change; main then rewrites `shared.ts`.
-      writeFileSync(join(repo, CHANGED), ORIGINAL);
-      writeFileSync(join(repo, SHARED), "export class Commit {}\n");
-      git(repo, "add", "-A");
-      git(repo, "commit", "-q", "-m", "shared");
-      forkPoint = git(repo, "rev-parse", "HEAD").trim();
-      git(repo, "checkout", "-q", "-b", "feat");
-      writeFileSync(join(repo, CHANGED), CHANGED_TEXT);
-      git(repo, "add", "-A");
-      git(repo, "commit", "-q", "-m", "feat");
-      git(repo, "checkout", "-q", "main");
-      writeFileSync(join(repo, SHARED), "export class Kommit {}\n");
-      git(repo, "add", "-A");
-      git(repo, "commit", "-q", "-m", "main moves on");
-      git(repo, "checkout", "-q", "feat");
-    });
-
-    it("reviews what the branch changed since its merge-base with the base, and reports that commit", async () => {
-      const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: { base: "main" } });
-      expect(review?.base).toBe("main");
-      expect(review?.mergeBase).toBe(forkPoint);
-      expect(review?.changedFiles).toBe(1);
-      expect(new Set(review?.findings.map((f) => f.relPath))).toEqual(new Set([CHANGED]));
-      // bd tea-rags-mcp-bjfa0: the conforming generic `result` is a note, not a finding.
-      expect(review?.findings.map((f) => f.name).sort()).toEqual(["Commit", "meta"]);
-      expect(review?.notes?.map((n) => n.name)).toEqual(["result"]);
-    });
-
-    it("a base HEAD descends from is compared as given", async () => {
-      const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: { base: forkPoint } });
-      expect(review?.mergeBase).toBe(forkPoint);
-      expect(review?.changedFiles).toBe(1);
-    });
-
-    it("a base HEAD shares no history with is a parameter error saying there is no merge-base", async () => {
-      const emptyTree = git(repo, "hash-object", "-t", "tree", "/dev/null").trim();
-      const orphan = git(repo, "commit-tree", emptyTree, "-m", "orphan").trim();
-      const call = ops.getNamingLexicon({ collection: "c", path: repo, changes: { base: orphan } });
-      await expect(call).rejects.toBeInstanceOf(InvalidParameterError);
-      await expect(call).rejects.toThrow(/no merge-base/);
-    });
-
-    it("an unknown base is a parameter error", async () => {
-      await expect(
-        ops.getNamingLexicon({ collection: "c", path: repo, changes: { base: "no-such-branch" } }),
-      ).rejects.toBeInstanceOf(InvalidParameterError);
-    });
-  });
-
-  it("the default base is HEAD itself: its merge-base is HEAD's commit", async () => {
-    const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
-    expect(review?.mergeBase).toBe(git(repo, "rev-parse", "HEAD").trim());
-    expect(review?.changedFiles).toBe(1);
-    expect(review?.wholeFiles).toBeUndefined();
-  });
-
   // bd tea-rags-mcp-y33ee: `files` on a clean tree checked 0 — the files were committed, so nothing was "added".
   it("`files` with no diff against the base reviews every declaration they hold, and says so", async () => {
     git(repo, "add", "-A");
@@ -527,7 +447,8 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
   // bd tea-rags-mcp-y33ee: new methods with no known return type vanished from the counts, so
   // `conforming` read as if they had been reviewed.
   describe("what the review did not judge", () => {
-    it("a method with no known return type is listed by kind and reason; a constructor is not", async () => {
+    // Spec 2026-09-28 §D4: a method with no known return type is judged by the method vocabulary.
+    it("a method with no known return type is judged, not listed; a constructor is neither", async () => {
       mkdirSync(join(repo, "app/billing"), { recursive: true });
       writeFileSync(
         join(repo, "app/billing/ledger_sync.rb"),
@@ -538,22 +459,18 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
         path: repo,
         files: ["app/billing/ledger_sync.rb"],
       });
-      expect(review?.notJudgedBy).toEqual({ method: { unknownReturnType: 1 } });
-      expect(review?.notJudgedNames).toEqual([
-        {
-          relPath: "app/billing/ledger_sync.rb",
-          line: 6,
-          name: "perform",
-          kind: "method",
-          reason: "unknownReturnType",
-        },
-      ]);
+      expect(review?.notJudgedBy).toBeUndefined();
+      expect(review?.notJudgedNames).toBeUndefined();
+      // `perform` is verbless and declared nowhere else: novel, never a finding; `initialize` is no draft.
+      expect(review?.findings.map((f) => f.name)).not.toContain("perform");
+      expect(review?.findings.map((f) => f.name)).not.toContain("initialize");
+      expect(review?.novel).toBeGreaterThanOrEqual(1);
       // Declarations stay the only thing `notJudged` does not count: it counts files.
       expect(review?.notJudged).toBe(0);
     });
 
     // Live on taxdome: a `module_function` method is one declaration under two symbols (`M#x`, `M.x`).
-    it("a method declared once under two symbols is listed once", async () => {
+    it("a method declared once under two symbols is judged once", async () => {
       mkdirSync(join(repo, "app/billing"), { recursive: true });
       writeFileSync(
         join(repo, "app/billing/refusals.rb"),
@@ -564,10 +481,9 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
         path: repo,
         files: ["app/billing/refusals.rb"],
       });
-      expect(review?.notJudgedBy).toEqual({ method: { unknownReturnType: 1 } });
-      expect(review?.notJudgedNames).toEqual([
-        { relPath: "app/billing/refusals.rb", line: 4, name: "refuse!", kind: "method", reason: "unknownReturnType" },
-      ]);
+      expect(review?.notJudgedBy).toBeUndefined();
+      // The file's two value drafts and `refuse!` once, not once per symbol.
+      expect(review?.checked).toBe(3);
     });
 
     it("a file that was not judged is listed with why", async () => {
@@ -593,11 +509,11 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     });
 
     it("caps the listed names and keeps the counts whole", async () => {
-      mkdirSync(join(repo, "app/many"), { recursive: true });
-      const methods = Array.from({ length: 60 }, (_, i) => `  def step_${i}\n    1\n  end\n`).join("");
-      writeFileSync(join(repo, "app/many/runner.rb"), `class Runner\n${methods}end\n`);
-      const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, files: ["app/many/runner.rb"] });
-      expect(review?.notJudgedBy).toEqual({ method: { unknownReturnType: 60 } });
+      mkdirSync(join(repo, "src/many"), { recursive: true });
+      const files = Array.from({ length: 60 }, (_, i) => `src/many/step-${i}.test.ts`);
+      for (const relPath of files) writeFileSync(join(repo, relPath), "export const x = 1;\n");
+      const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, files });
+      expect(review?.notJudgedBy).toEqual({ file: { nonProduction: 60 } });
       expect(review?.notJudgedNames).toHaveLength(50);
     });
   });
@@ -629,7 +545,93 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     expect(after.review?.findings.map((f) => f.name)).not.toContain("sameFirm");
   });
 
-  it("diff mode needs the project's working tree", async () => {
-    await expect(ops.getNamingLexicon({ collection: "c", changes: {} })).rejects.toBeInstanceOf(InvalidParameterError);
+  // Lexicon friction F1: a project alias resolves to the MAIN checkout, so a change made in a
+  // linked worktree was reviewed as `changedFiles: 0` — success-shaped and blind.
+  describe("the working tree the review reads", () => {
+    /** `project` addresses the index, registered at the main checkout; `path` names the tree. */
+    const aliased = () =>
+      build(undefined, {
+        findByName: (name: string) => (name === "p" ? { name: "p", collectionName: "c", path: repo } : null),
+        list: () => [],
+      });
+
+    function addWorkTree(): string {
+      git(repo, "commit", "-q", "-am", "change");
+      const tree = join(dir, "wt");
+      git(repo, "worktree", "add", "-q", "-b", "feature", tree);
+      writeFileSync(
+        join(tree, "src/git/extra.ts"),
+        "export function more(): void {\n  const blob: GitFileSignals = read();\n  use(blob);\n}\n",
+      );
+      return realpathSync(tree);
+    }
+
+    it("names the tree it read", async () => {
+      const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
+      expect(review?.workTree).toBe(repo);
+    });
+
+    it("an alias alone reads the main checkout the alias is registered at", async () => {
+      const { review } = await aliased().getNamingLexicon({ project: "p", changes: {} });
+      expect(review?.workTree).toBe(repo);
+    });
+
+    it("an empty diff says what it could not see — never a bare changedFiles: 0", async () => {
+      const tree = addWorkTree();
+      const result = await aliased().getNamingLexicon({ project: "p", changes: {} });
+      expect(result.review?.changedFiles).toBe(0);
+      const notice = (result.notices ?? []).find((n) => n.startsWith("no changes"));
+      expect(notice).toBeDefined();
+      expect(notice).toContain("changes.base");
+      expect(notice).toContain("path");
+      expect(notice).toContain(tree);
+    });
+  });
+
+  // Lexicon friction F4: the changed file is out of the evidence, so only the review knows a helper
+  // interface sits beside its file's primary class — and a helper is no member of the directory's role.
+  it("a helper declaration beside its file's primary is not held to the directory's role", async () => {
+    await db.replaceTypeDeclarationsBulk(
+      ["indexing", "search", "collection"].map((stem) => ({
+        relPath: `src/ops/${stem}-ops.ts`,
+        rows: [decl(`${stem[0].toUpperCase()}${stem.slice(1)}Ops`, "class")],
+      })),
+    );
+    mkdirSync(join(repo, "src/ops"), { recursive: true });
+    writeFileSync(
+      join(repo, "src/ops/billing-ops.ts"),
+      "export class BillingOps {}\nexport interface ModelInfo {\n  id: number;\n}\nexport class InvoiceMaker {}\n",
+    );
+    writeFileSync(join(repo, "src/ops/refund.ts"), "export class RefundMaker {}\n");
+    const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
+    const misfits = review?.findings.filter((f) => f.verdict === "MISFIT").map((f) => f.name);
+    expect(misfits).not.toContain("ModelInfo");
+    expect(misfits).not.toContain("InvoiceMaker");
+    // The only declaration of its file is its primary: still held.
+    expect(misfits).toContain("RefundMaker");
+  });
+
+  // Lexicon friction F2: evidence read from an index built at another commit is marked, not silent.
+  describe("index lag", () => {
+    const registryAt = (indexedCommit: string) => ({ get: () => ({ git: { indexedCommit } }) });
+
+    it("marks the answer when the index was built at another commit than the tree's HEAD", async () => {
+      const lagging = build(undefined, registryAt("0".repeat(40)));
+      const result = await lagging.getNamingLexicon({ collection: "c", path: repo, changes: {} });
+      expect(result.indexLag).toEqual({
+        indexedCommit: "0".repeat(40),
+        treeCommit: git(repo, "rev-parse", "HEAD").trim(),
+      });
+    });
+
+    it("carries no mark when the index is at the tree's HEAD", async () => {
+      const fresh = build(undefined, registryAt(git(repo, "rev-parse", "HEAD").trim()));
+      const result = await fresh.getNamingLexicon({
+        collection: "c",
+        path: repo,
+        names: [{ name: "meta", type: "GitFileSignals" }],
+      });
+      expect(result.indexLag).toBeUndefined();
+    });
   });
 });

@@ -14,6 +14,7 @@ export type IngestErrorCode =
   | "INGEST_VERSION_CLAIM_FAILED"
   | "INGEST_INDEXING_IN_PROGRESS"
   | "INGEST_INDEXING_LOCK_UNAVAILABLE"
+  | "INGEST_PROCESS_BUILD_STALE"
   | "INGEST_SNAPSHOT_MISSING"
   | "INGEST_SNAPSHOT_CORRUPTED"
   | "INGEST_MIGRATION_FAILED"
@@ -120,6 +121,31 @@ export class IndexingLockUnavailableError extends IngestError {
       hint: "Check that the tea-rags data directory ($TEA_RAGS_DATA_DIR, default ~/.tea-rags) is a writable directory.",
       httpStatus: 500,
       cause,
+    });
+  }
+}
+
+/**
+ * This process runs a build that is no longer the one on disk
+ * (bd tea-rags-mcp-r4z09). A long-lived server keeps executing the build it
+ * loaded, while its worker pools — rebuilt from a module path — load the build
+ * on disk NOW. One run then speaks two builds: on taxdome every codegraph
+ * prefetch failed against a daemon keyed by the other build, the run completed
+ * anyway and ~1900 files kept no codegraph payload. Refused before any work,
+ * because the only remedy is a fresh process.
+ */
+export class IndexingProcessBuildStaleError extends IngestError {
+  constructor(build: { loaded: string; onDisk: string }) {
+    super({
+      code: "INGEST_PROCESS_BUILD_STALE",
+      message:
+        `The tea-rags build on disk changed since this process started (loaded ${build.loaded}, ` +
+        `on disk ${build.onDisk}) — indexing was refused before any work, because this process's ` +
+        "worker threads would load the new build and disagree with it mid-run",
+      hint:
+        "Reconnect the MCP server (`/mcp reconnect`) or rerun the CLI command so the process loads the " +
+        "current build, then index again. Search and read tools keep working meanwhile.",
+      httpStatus: 503,
     });
   }
 }

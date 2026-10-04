@@ -40,6 +40,14 @@ import {
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { RankingOverlay } from "../../../contracts/types/reranker.js";
+import {
+  claimWorkingTreeFloors,
+  mergedWorkingTreeSymbolRow,
+  recordTreeGraphState,
+  relativePathOf,
+  type WorkingTreeOverlay,
+  type WorkingTreeView,
+} from "../../../domains/explore/index.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolveInheritedMemberDefiner } from "../../../domains/trajectory/codegraph/inherited-member-definer.js";
@@ -47,7 +55,8 @@ import { enumeratePaths } from "../../../domains/trajectory/codegraph/symbols/in
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import type { DeclaredVisibilityIndex } from "../../../infra/declared-visibility-index.js";
 import type { PathStep, PathTraceResult, TracedPath, TracePathRequest } from "../../public/dto/graph.js";
-import { resolveCollection } from "../collection-resolver.js";
+import { resolveIndexedWorkingTree, type IndexExistenceCheck } from "../collection-resolver.js";
+import { selectWorkingTreeGraphHandle } from "../infra/working-tree-graph-read.js";
 import { lookupDeclaredVisibility } from "./declared-visibility-lookup.js";
 
 const DEFAULT_MAX_DEPTH = 8;
@@ -70,6 +79,14 @@ export interface TracePathOpsDeps {
   reranker: Reranker;
   collectionRegistry: CollectionRegistry;
   resolveActiveCollection?: (collectionName: string) => Promise<PhysicalCollectionName>;
+  /** The `workingTree` marker source (bd tea-rags-mcp-xi2r9). Optional: absent (unit wiring), no marker. */
+  workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
+  /**
+   * Whether the resolved index exists — a read of one that does not is refused
+   * with the typed not-found error (live round-3 D3, `resolveIndexedWorkingTree`).
+   * Absent (unit wiring): not checked.
+   */
+  indexExists?: IndexExistenceCheck;
 }
 
 const EMPTY: PathTraceResult = { paths: [], truncated: false };
@@ -91,12 +108,40 @@ type StepDanger = { score: number; overlay?: RankingOverlay };
 export class TracePathOps {
   constructor(private readonly deps: TracePathOpsDeps) {}
 
+  /**
+   * The trace, carrying the `workingTree` marker on every return path (bd
+   * tea-rags-mcp-xi2r9). A tree with a non-empty delta is walked over its own
+   * graph when that is built (WTO-7, marker `floors: ["codegraph"]`), over the
+   * index's otherwise with `treeGraphUnavailable` saying why. A step in a file
+   * the tree touched is hydrated from the tree, never from the index's payload
+   * (live D2, `hydrateForWorkingTree`).
+   */
   async tracePath(req: TracePathRequest): Promise<PathTraceResult> {
+    const workingTree = await resolveIndexedWorkingTree(this.deps.collectionRegistry, req, this.deps.indexExists);
+    const view = await this.deps.workingTreeOverlay?.view(workingTree, req.project);
+    const selection = await selectWorkingTreeGraphHandle(view?.readTreeGraph, this.deps.pool);
+    const result = await this.traceInCollection(
+      req,
+      workingTree.baseIndex.collectionName,
+      selection.kind === "tree" ? selection.handle : undefined,
+      view,
+    );
+    if (!view) return result;
+    if (selection.state) recordTreeGraphState(view.marker, selection.state);
+    return { ...result, workingTree: view.marker };
+  }
+
+  /** `treeHandle`, when given, is the graph walked instead of the index's; it is closed here like any other. */
+  private async traceInCollection(
+    req: TracePathRequest,
+    collectionName: string,
+    treeHandle?: CollectionGraphHandle,
+    view?: WorkingTreeView,
+  ): Promise<PathTraceResult> {
     const maxDepth = req.maxDepth ?? DEFAULT_MAX_DEPTH;
     const maxPaths = req.maxPaths ?? DEFAULT_MAX_PATHS;
     const preset = req.rerank; // no default — danger overlay is opt-in (tea-rags-mcp-prqsj)
 
-    const { collectionName } = resolveCollection(this.deps.collectionRegistry, req);
     // No resolver, or a failed one: the addressed name, resolved against no aliases.
     const activePhysicalCollectionName = this.deps.resolveActiveCollection
       ? await this.deps
@@ -104,9 +149,9 @@ export class TracePathOps {
           .catch(() => resolvePhysicalCollection(collectionName, []))
       : resolvePhysicalCollection(collectionName, []);
 
-    let handle: CollectionGraphHandle | undefined;
+    let handle: CollectionGraphHandle | undefined = treeHandle;
     try {
-      handle = await this.deps.pool.acquireReader(activePhysicalCollectionName);
+      handle ??= await this.deps.pool.acquireReader(activePhysicalCollectionName);
     } catch (err) {
       // GraphFacade#withReadHandle's contract (bd tea-rags-mcp-kn2cb): "no
       // path" asserts something about the code, so it is only answered when
@@ -153,10 +198,14 @@ export class TracePathOps {
     // 3. Hydrate every step symbol from Qdrant (one scroll for the whole union).
     const nodes = [...new Set(paths.flat())];
     const symbolIds = [...new Set(nodes.map((key) => parseFileScopedSymbolKey(key).symbolId))];
-    const chunks = await this.deps.qdrant.scrollBySymbolIds(
-      activePhysicalCollectionName,
-      symbolIds,
-      nodes.length * HYDRATION_SCROLL_HEADROOM,
+    const chunks = await this.hydrateForWorkingTree(
+      await this.deps.qdrant.scrollBySymbolIds(
+        activePhysicalCollectionName,
+        symbolIds,
+        nodes.length * HYDRATION_SCROLL_HEADROOM,
+      ),
+      nodes,
+      view,
     );
     // Index hydrated chunks by the SCOPED key, so a namesake in another file
     // can never answer for this node. A symbol spanning multiple chunks within
@@ -178,6 +227,38 @@ export class TracePathOps {
     const traced: TracedPath[] = paths.map((p) => this.assemble(p, byNode, graphRanges, visibility, dangerByNode));
     if (dangerByNode) traced.sort((a, b) => (b.aggregateDanger ?? 0) - (a.aggregateDanger ?? 0));
     return this.withEndpointFacts({ paths: traced, truncated }, from, to);
+  }
+
+  /**
+   * The hydration rows for a working tree (live D2): the index's chunks of the
+   * files the tree did not touch, plus — per path node in a file the tree
+   * CHANGED — the tree's row of that symbol (`#partN` windows merged, as
+   * find_symbol merges them), which also carries the payload its danger is
+   * ranked on. A node in a deleted file, or in a changed file the tree's rows
+   * do not hold, gets no row: its step falls to the graph's range and carries
+   * no overlay. The index's payload of a touched file describes another commit
+   * and never reaches a step.
+   */
+  private async hydrateForWorkingTree(
+    chunks: HydratedChunk[],
+    nodes: readonly FileScopedSymbolId[],
+    view: WorkingTreeView | undefined,
+  ): Promise<HydratedChunk[]> {
+    if (!view || view.touchedPaths.size === 0) return chunks;
+    const untouched = chunks.filter((chunk) => !view.touchedPaths.has(relativePathOf(chunk.payload)));
+    const treeNodes = nodes
+      .map(parseFileScopedSymbolKey)
+      .filter(({ relPath }) => view.touchedPaths.has(relPath) && !view.deletedPaths.has(relPath));
+    if (treeNodes.length === 0 || !view.readDeltaChunks) return untouched;
+    const deltaRows = await view.readDeltaChunks();
+    const merged = treeNodes.flatMap(({ relPath, symbolId }) => {
+      const row = mergedWorkingTreeSymbolRow(deltaRows, relPath, symbolId);
+      return row ? [row] : [];
+    });
+    // Only the steps' rows carry the payload their danger is ranked on (live C1).
+    const treeRows = view.signalDeltaRows ? await view.signalDeltaRows(merged) : merged;
+    claimWorkingTreeFloors(view, ["chunks"], treeRows.length);
+    return [...untouched, ...treeRows];
   }
 
   /**

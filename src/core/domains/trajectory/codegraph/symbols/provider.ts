@@ -20,6 +20,7 @@ import { join, dirname as pathDirname } from "node:path";
 import type { Ignore } from "ignore";
 
 import type { GraphDbClientPool } from "../../../../adapters/duckdb/pool.js";
+import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../../../contracts/codegraph-payload.js";
 import type {
   CodegraphPass1FileAggregates,
   FileExtraction,
@@ -179,7 +180,7 @@ export interface CodegraphProviderDeps {
 export { buildIncludedBy } from "./run-state.js";
 
 export class CodegraphEnrichmentProvider implements EnrichmentProvider {
-  readonly key = "codegraph.symbols";
+  readonly key = CODEGRAPH_SYMBOLS_PROVIDER_KEY;
   readonly signals = [...CODEGRAPH_SYMBOLS_FILE_SIGNALS, ...CODEGRAPH_SYMBOLS_CHUNK_SIGNALS];
   readonly derivedSignals: DerivedSignalDescriptor[];
   readonly filters: FilterDescriptor[] = [];

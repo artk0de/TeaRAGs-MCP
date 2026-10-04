@@ -84,7 +84,15 @@ describe("resolveLanguageCodeVersions", () => {
     // boundaries into `#part1..N` with context prefixes; markdown and the
     // character fallback cut between blocks / syntax-neutral units. Same bump:
     // bd tea-rags-mcp-msv3l — test files chunked by example.
-    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 2, walker: 3, codegraphSchema: 2 });
+    // chunking 3: bd tea-rags-mcp-nu05a — heading-less markdown documents and
+    // oversized preambles split under maxChunkSize (scoped to .md/.markdown).
+    // chunking 4 (unscoped): bd tea-rags-mcp-1xnij — `.tsx` chunked under the
+    // tsx grammar, module remainder keeps top-level code no chunk carried;
+    // bd tea-rags-mcp-8gbh3 — small markdown sections share a chunk and tiny
+    // sections join a neighbour; bd tea-rags-mcp-5xpq4 — test setup stored once
+    // per scope and packed, tiny examples grouped; bd tea-rags-mcp-g5i0a —
+    // adjacent examples of one scope packed up to 1500 chars, member-addressable.
+    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 4, walker: 3, codegraphSchema: 2 });
     // `*` parses nothing of its own, so there is no grammar package to read —
     // and borrowing one language's would make the axis a lie for every other.
     expect(resolved.get(SHARED_LANGUAGE)?.grammar).toBeUndefined();
@@ -457,11 +465,14 @@ describe("seeded support versions", () => {
       // ONE walker bump, so the branch-local 7..66 collapse into 7.
       // Every other language is still at its seed.
       // Every walker collapses to (release v1.44.2) + 1: one bump per release cycle.
+      // ruby 6: bd tea-rags-mcp-0qaht — class variables, `||=` memoization and
+      // accessor macros declare naming-lexicon rows, so an index built by walker
+      // 5 (shipped in v1.45.1) holds none of them.
       const WALKER_BUMPED = new Map([
         ["typescript", 12],
         ["javascript", 4],
         ["python", 9],
-        ["ruby", 5],
+        ["ruby", 6],
         ["java", 3],
         ["rust", 3],
         ["go", 5],

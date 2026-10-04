@@ -43,14 +43,9 @@ export function expandClassBodyMacros(
   // Bare receiver-less fixed-macro invocation (`has_paper_trail` with no args)
   // parses as a lone `identifier`, not a `call`; it still declares its fixed set.
   if (node.type === "identifier") return expandBareFixedMacro(node, catalogue);
-  if (node.type !== "call" && node.type !== "method_call") return [];
-  // Receiver-qualified (`obj.attr_accessor :x`) is a normal invocation, not DSL.
-  if (node.childForFieldName("receiver")) return [];
-  const methodNode = node.childForFieldName("method") ?? node.children.find((c) => c.type === "identifier");
-  if (!methodNode) return [];
-  const macroName = methodNode.text;
-  const startLine = node.startPosition.row + 1;
-  const endLine = node.endPosition.row + 1;
+  const call = macroCallOf(node);
+  if (!call) return [];
+  const { macroName, args, startLine, endLine } = call;
   const mk = (name: string, kind: MethodKind, category: DslCategory): DeclaredMethod => ({
     name,
     kind,
@@ -58,7 +53,6 @@ export function expandClassBodyMacros(
     startLine,
     endLine,
   });
-  const args = node.childForFieldName("arguments") ?? node.children.find((c) => c.type === "argument_list");
 
   // Structural macros (enum, aasm) — walk the AST for their inner declarations,
   // but ONLY when the gem owning the structured macro is active in this project's
@@ -83,6 +77,62 @@ export function expandClassBodyMacros(
   const shape = operands ?? "leading-symbols";
   const bases = extractOperands(args, shape);
   return bases.flatMap((b) => declares(b)).map((m) => mk(m.name, m.kind, category));
+}
+
+/** A receiver-less `call` / `method_call` node read as a class-body macro invocation. */
+interface ClassBodyMacroCall {
+  macroName: string;
+  args: AstNode | null;
+  startLine: number;
+  endLine: number;
+}
+
+/**
+ * The macro-invocation shape shared by every reader of a class-body macro:
+ * `null` for a non-call node and for a receiver-qualified call
+ * (`obj.attr_accessor :x` is a normal invocation, not DSL).
+ */
+function macroCallOf(node: AstNode): ClassBodyMacroCall | null {
+  if (node.type !== "call" && node.type !== "method_call") return null;
+  if (node.childForFieldName("receiver")) return null;
+  const methodNode = node.childForFieldName("method") ?? node.children.find((c) => c.type === "identifier");
+  if (!methodNode) return null;
+  return {
+    macroName: methodNode.text,
+    args: node.childForFieldName("arguments") ?? node.children.find((c) => c.type === "argument_list") ?? null,
+    startLine: node.startPosition.row + 1,
+    endLine: node.endPosition.row + 1,
+  };
+}
+
+/** One operand a declaring macro names, with the kind of the methods it declares for it. */
+export interface ClassBodyMacroOperand {
+  operand: string;
+  category: DslCategory;
+  kind: MethodKind;
+  startLine: number;
+}
+
+/**
+ * The OPERANDS of a declaring class-body macro — `attr_reader :a, :b` → `a`, `b`;
+ * `mount_uploader :avatar, AvatarUploader` → `avatar` — where
+ * {@link expandClassBodyMacros} returns every method synthesised from them. Same
+ * dispatch and gem gating; the kind is the one `declares` gives the operand's
+ * first method. Structured and operand-less fixed macros name no operand → `[]`.
+ */
+export function classBodyMacroOperands(
+  node: AstNode,
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
+): ClassBodyMacroOperand[] {
+  const call = macroCallOf(node);
+  if (!call || STRUCTURED_MACROS.some((e) => e.macroName === call.macroName)) return [];
+  const entry = catalogue.entries[call.macroName];
+  if (!entry?.declares || entry.declaresFixed || !call.args) return [];
+  const { declares, category } = entry;
+  return extractOperands(call.args, entry.operands ?? "leading-symbols").flatMap((operand) => {
+    const kind = declares(operand)[0]?.kind;
+    return kind === undefined ? [] : [{ operand, category, kind, startLine: call.startLine }];
+  });
 }
 
 /**

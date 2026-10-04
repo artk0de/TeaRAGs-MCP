@@ -17,12 +17,14 @@ export interface StallGuardOptions {
   cwd: string;
   /** Kill the child after this long with NO stdout activity (ms). */
   stallTimeoutMs: number;
+  /** The child's whole environment; absent → the parent's. */
+  env?: NodeJS.ProcessEnv;
 }
 
 export async function execWithStallGuard(command: string, args: string[], options: StallGuardOptions): Promise<string> {
-  const { cwd, stallTimeoutMs } = options;
+  const { cwd, stallTimeoutMs, env } = options;
   return new Promise<string>((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"], ...(env ? { env } : {}) });
     trackGitChildProcess(child);
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];

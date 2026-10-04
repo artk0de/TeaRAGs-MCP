@@ -16,8 +16,10 @@ import type { CommitInfo } from "../../../../../../../src/core/adapters/vcs/type
 import type {
   TemporalCochangeBuildMeta,
   TemporalCochangeSnapshot,
+  TemporalSymbolCommitBuffer,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
+  InMemoryTemporalSymbolCommitBuffer,
   TemporalCochangeBuilder,
   type TemporalCochangeHistorySource,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
@@ -68,18 +70,28 @@ function fakeGraphDb(initial: TemporalCochangeBuildMeta | null = null) {
         writes.push(snapshot);
         ({ meta } = snapshot);
       }),
+      replaceTemporalSymbolCommits: vi.fn(async () => undefined),
+      storedTemporalSymbolCommitFilePaths: vi.fn(async () => [] as string[]),
+      deleteTemporalSymbolCommitFiles: vi.fn(async () => undefined),
     },
     writes,
   };
 }
 
-function builder(source: TemporalCochangeHistorySource, sessionGapMinutes: number | null = null) {
-  return new TemporalCochangeBuilder({
-    windowMonths: 6,
-    sessionGapMinutes,
-    historySource: source,
-    now: () => NOW_MS,
-  });
+function builder(
+  source: TemporalCochangeHistorySource,
+  sessionGapMinutes: number | null = null,
+  symbolCommits?: TemporalSymbolCommitBuffer,
+) {
+  return new TemporalCochangeBuilder(
+    {
+      windowMonths: 6,
+      sessionGapMinutes,
+      historySource: source,
+      now: () => NOW_MS,
+    },
+    symbolCommits,
+  );
 }
 
 describe("TemporalCochangeBuilder", () => {
@@ -334,5 +346,80 @@ describe("TemporalCochangeBuilder — no pair outlives its endpoint", () => {
 
     expect(pairs(writes[0])).toEqual(["a.ts~b.ts"]);
     expect(paths(writes[0]).sort()).toEqual(["a.ts", "b.ts"]);
+  });
+});
+
+/**
+ * The symbol-commit flush (bd tea-rags-mcp-3gz4f): every completion drains the
+ * run-scoped buffer the git provider absorbed into and replaces those files'
+ * rows; a build additionally prunes stored rows whose path left the live set,
+ * a fresh path does not (the deletions fingerprint covers it).
+ */
+describe("TemporalCochangeBuilder — symbol-commit flush", () => {
+  function absorb(buffer: InMemoryTemporalSymbolCommitBuffer): void {
+    buffer.absorb("a.ts", new Map([["A#m", new Set(["s1", "s2"])]]));
+    buffer.absorb("b.ts", new Map([["B#n", new Set(["s2"])]]));
+    buffer.absorb("gone.ts", new Map([["G#p", new Set(["s1"])]]));
+  }
+
+  it("drains the buffer and replaces the absorbed files' rows on a FRESH completion, without pruning", async () => {
+    const source = historySource("h1");
+    const { graphDb } = fakeGraphDb();
+    const first = builder(source);
+    const buffer = new InMemoryTemporalSymbolCommitBuffer();
+    // Prime the meta row so the next completion takes the fresh path.
+    await first.onCollectionComplete({ projectRoot: "/repo", graphDb });
+    absorb(buffer);
+
+    await builder(source, null, buffer).onCollectionComplete({ projectRoot: "/repo", graphDb });
+
+    expect(graphDb.replaceTemporalSymbolCommits).toHaveBeenCalledWith([
+      { relPath: "a.ts", symbols: [{ symbolId: "A#m", commitShas: ["s1", "s2"] }] },
+      { relPath: "b.ts", symbols: [{ symbolId: "B#n", commitShas: ["s2"] }] },
+      { relPath: "gone.ts", symbols: [{ symbolId: "G#p", commitShas: ["s1"] }] },
+    ]);
+    expect(graphDb.storedTemporalSymbolCommitFilePaths).not.toHaveBeenCalled();
+    expect(graphDb.deleteTemporalSymbolCommitFiles).not.toHaveBeenCalled();
+    // The flush DRAINS: a completion with nothing absorbed writes nothing.
+    await builder(source, null, buffer).onCollectionComplete({ projectRoot: "/repo", graphDb });
+    expect(graphDb.replaceTemporalSymbolCommits).toHaveBeenCalledTimes(2);
+    expect(graphDb.replaceTemporalSymbolCommits).toHaveBeenLastCalledWith([]);
+  });
+
+  it("prunes stored rows whose path left the live set on a BUILT completion, under the project prefix", async () => {
+    // projectRoot /repo/app ⇒ prefix "app/"; discovery rows and stored rows are
+    // REPO-relative, the live set is too — the prune composes prefix + row.
+    const source: TemporalCochangeHistorySource = {
+      open: async () => ({
+        repoRoot: "/repo",
+        head: "h1",
+        worktreeDeletions: [],
+        trackedPaths: async () => ["app/a.ts", "app/b.ts"],
+        entries: async () => [
+          entry("s2", "alice", 2 * HOUR, ["app/a.ts", "app/b.ts"]),
+          entry("s1", "alice", 1 * HOUR, ["app/a.ts", "app/gone.ts"]),
+        ],
+      }),
+    };
+    const { graphDb } = fakeGraphDb();
+    vi.mocked(graphDb.storedTemporalSymbolCommitFilePaths).mockResolvedValue(["a.ts", "gone.ts"]);
+    const buffer = new InMemoryTemporalSymbolCommitBuffer();
+    absorb(buffer);
+
+    const outcome = await builder(source, null, buffer).onCollectionComplete({ projectRoot: "/repo/app", graphDb });
+
+    expect(outcome.status).toBe("built");
+    expect(graphDb.replaceTemporalSymbolCommits).toHaveBeenCalled();
+    expect(graphDb.deleteTemporalSymbolCommitFiles).toHaveBeenCalledWith(["gone.ts"]);
+  });
+
+  it("is a no-op without a buffer — the hook stays best-effort", async () => {
+    const { graphDb } = fakeGraphDb();
+
+    await builder(historySource("h1")).onCollectionComplete({ projectRoot: "/repo", graphDb });
+
+    expect(graphDb.replaceTemporalSymbolCommits).not.toHaveBeenCalled();
+    expect(graphDb.storedTemporalSymbolCommitFilePaths).not.toHaveBeenCalled();
+    expect(graphDb.deleteTemporalSymbolCommitFiles).not.toHaveBeenCalled();
   });
 });

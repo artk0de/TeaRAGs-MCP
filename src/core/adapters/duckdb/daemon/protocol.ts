@@ -8,12 +8,17 @@ import type {
   GraphFileNode,
   IdentifierBoundCallee,
   IdentifierReplaceEntry,
+  MethodHeadWordQuery,
+  MethodNamePatternQuery,
+  MethodTailVerbQuery,
   OntologyReportQuery,
   RelPath,
   ResolveRunStatsRow,
+  ReviewFileEdge,
   SymbolDefinition,
   SymbolId,
   TemporalCochangeSnapshot,
+  TemporalSymbolCommitFileSnapshot,
   TypeDeclarationReplaceEntry,
   TypeNameQuery,
 } from "../../../contracts/types/codegraph.js";
@@ -71,6 +76,15 @@ export const DAEMON_OPS = [
   "replacePageRanks",
   // Wholesale rewrite of the temporal co-change sub-graph (bd tea-rags-mcp-x4rpp).
   "replaceTemporalCochange",
+  // Per-file symbol-commit rows of the temporal sub-graph (bd tea-rags-mcp-3gz4f).
+  "replaceTemporalSymbolCommits",
+  "deleteTemporalSymbolCommitFiles",
+  // Per-review working-tree file-edge temp tables (bd tea-rags-mcp-89k7k.1.2).
+  // REQUIRED, not legacy-tolerated: an older daemon's silence would read as
+  // "the review wrote no edges" — a dropped review signal, never a fallback.
+  "putReviewFileEdges",
+  "dropReviewFileEdges",
+  "sweepExpiredReviewFileEdges",
   "checkpoint",
   "rebuildEdgeFileTargetIndex",
   "recordRunStats",
@@ -95,6 +109,11 @@ export const DAEMON_OPS = [
   // ── reads (the daemon owns the sole DuckDB connection, so all reads route
   //    through its own RW connection instead of a conflicting cross-process
   //    READ_ONLY attach) ──
+  // A consistent copy of the collection's graph at a caller-chosen path (bd
+  // tea-rags-mcp-xi2r9): only the daemon can read the rows its WAL holds. A READ
+  // of the collection — the live file is untouched. Tolerated legacy op: an
+  // older daemon's "unknown op" becomes a typed refusal, not a drain.
+  "exportSnapshot",
   "getFanIn",
   "getFanInP95",
   "getFanOut",
@@ -133,6 +152,19 @@ export const DAEMON_OPS = [
   // graph would read as "no silent coupling".
   "readTemporalCochangeMeta",
   "readTemporalCochangeGraph",
+  // The admitted bundles' file memberships (bd tea-rags-mcp-c3v6o) — the
+  // split/merge verdicts' component-level counts. REQUIRED likewise: an older
+  // daemon's empty map would read as "nothing changes together".
+  "readTemporalBundleFiles",
+  // Symbol-commit rows of the temporal sub-graph (bd tea-rags-mcp-3gz4f): the
+  // stored-file universe the flush hook prunes gone files against, and one
+  // file's slice. REQUIRED, not legacy-tolerated: an empty answer would read
+  // as "no symbol co-change data".
+  "storedTemporalSymbolCommitFilePaths",
+  "readTemporalSymbolCommits",
+  // One review's working-tree file edges (bd tea-rags-mcp-89k7k.1.2).
+  // REQUIRED: an older daemon's empty answer would read as "no review edges".
+  "readReviewFileEdges",
   // One file's importers / imports for file-scope get_callers / get_callees
   // (bd tea-rags-mcp-gfvr8). REQUIRED, not legacy-tolerated: an empty answer
   // would read as "nothing imports this file".
@@ -159,6 +191,11 @@ export const DAEMON_OPS = [
   "anchorIdentifierTypes",
   "identifierNameTypes",
   "existingSymbolShortNames",
+  // Method-name reads over cg_symbols (naming coverage for untyped methods).
+  // REQUIRED: an older daemon's empty answer would read as a project with no methods.
+  "readMethodHeadWords",
+  "readMethodTailVerbs",
+  "readMethodNamesMatching",
   "countIdentifiers",
   "aggregateIdentifiersByName",
   "identifierLanguageCounts",
@@ -185,12 +222,15 @@ export interface DaemonRequest {
   id: number;
   op: DaemonOp;
   params:
-    | { collection: string } // checkpoint | compactStorage | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | readFileDependencyGraph | readTemporalCochangeMeta | readTemporalCochangeGraph | refreshSymbolSignalsPrev | hasStaleDerivedTables | shutdown | ping
-    | { collection: string; relPaths: RelPath[] } // pruneDerivedForDeletedFiles | invalidateHierarchyDependentsOfDeletedFiles
+    | { collection: string } // checkpoint | compactStorage | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | readFileDependencyGraph | readTemporalCochangeMeta | readTemporalCochangeGraph | readTemporalBundleFiles | storedTemporalSymbolCommitFilePaths | refreshSymbolSignalsPrev | hasStaleDerivedTables | shutdown | ping
+    | { collection: string; relPaths: RelPath[] } // pruneDerivedForDeletedFiles | invalidateHierarchyDependentsOfDeletedFiles | deleteTemporalSymbolCommitFiles
     | { collection: string; languages: string[] } // readNonPublicMemberEdges
     | { collection: string; buildFingerprint?: string } // handshake (fingerprint absent on legacy peers)
     | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile
-    | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut | getFileImporters | getFileImports
+    | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut | getFileImporters | getFileImports | readTemporalSymbolCommits
+    | { collection: string; reviewId: string } // dropReviewFileEdges | readReviewFileEdges
+    | { collection: string; reviewId: string; edges: ReviewFileEdge[] } // putReviewFileEdges
+    | { collection: string; nowEpochSeconds: number; maxAgeSeconds: number } // sweepExpiredReviewFileEdges
     | { collection: string; relPath: RelPath; definitions: SymbolDefinition[] } // upsertSymbols
     | { collection: string; entries: BulkSymbolUpsertEntry[] } // upsertSymbolsBulk
     | { collection: string; entries: BulkFileUpsertEntry[] } // upsertFilesBulk
@@ -200,6 +240,7 @@ export interface DaemonRequest {
     | { collection: string; relPaths: RelPath[]; maxDepth?: number } // getFileMetricsBulk | getSymbolLineRangesBulk (no maxDepth)
     | { collection: string; oldVersion: string; newVersion: string } // finalizeReindex
     | { collection: string; target: string } // removeCollectionDatabase
+    | { collection: string; targetPath: string } // exportSnapshot
     | { collection: string; source: string; target: string } // cloneCollectionDatabase
     | { collection: string; symbolId: SymbolId } // getCallers | getCallees | getCalledByCount | getCallSiteCount
     | { collection: string; symbolId: SymbolId; relPath?: RelPath } // getPageRank
@@ -210,6 +251,7 @@ export interface DaemonRequest {
     | { collection: string; scope: CycleScope; sccs: readonly (readonly string[])[] } // replaceCycles
     | { collection: string; ranks: [string, number][] } // replacePageRanks
     | { collection: string; snapshot: TemporalCochangeSnapshot } // replaceTemporalCochange
+    | { collection: string; files: TemporalSymbolCommitFileSnapshot[] } // replaceTemporalSymbolCommits
     | { collection: string; rows: ResolveRunStatsRow[] } // recordRunStats
     | { collection: string; write: FileResolveStatsWrite } // recordFileResolveStats
     | { collection: string; fqName: string } // getSupertypes | getSubtypes | getTransitiveSubtypes
@@ -220,6 +262,7 @@ export interface DaemonRequest {
         types: string[];
         pathPrefixes?: string[];
         excludePaths?: string[];
+        languages?: string[];
         groupByLanguage?: boolean;
         groupByMultiplicity?: boolean;
         countSameTypeSiblings?: boolean;
@@ -230,29 +273,41 @@ export interface DaemonRequest {
         callees: IdentifierBoundCallee[];
         pathPrefixes?: string[];
         excludePaths?: string[];
+        languages?: string[];
         groupByLanguage?: boolean;
         countHolders?: boolean;
       } // aggregateIdentifiersByCallee
-    | { collection: string; names: string[]; excludePaths?: string[] } // identifierNameTypes | existingSymbolShortNames
+    | { collection: string; names: string[]; excludePaths?: string[]; languages?: string[] } // identifierNameTypes | existingSymbolShortNames
     | {
         collection: string;
         names: string[];
         pathPrefixes?: string[];
         excludePaths?: string[];
+        languages?: string[];
         groupByLanguage?: boolean;
         countHolders?: boolean;
       } // aggregateIdentifiersByName
-    | { collection: string; pathPrefixes?: string[]; pathSuffixes?: string[]; excludePaths?: string[] } // identifierLanguageCounts
+    | {
+        collection: string;
+        pathPrefixes?: string[];
+        pathSuffixes?: string[];
+        excludePaths?: string[];
+        languages?: string[];
+      } // identifierLanguageCounts
     | {
         collection: string;
         limit: number;
         pathPrefixes?: string[];
         excludePaths?: string[];
+        languages?: string[];
         groupByLanguage?: boolean;
       } // sampleIdentifierShapes
     | { collection: string; query: OntologyReportQuery } // readOntologyReportSummary
     | { collection: string; query: OntologyReportQuery; excludedGenericNames: string[] } // readOntologyReportSections
-    | { collection: string; query: TypeNameQuery }; // readTypeNameRows
+    | { collection: string; query: TypeNameQuery } // readTypeNameRows
+    | { collection: string; query: MethodHeadWordQuery } // readMethodHeadWords
+    | { collection: string; query: MethodTailVerbQuery } // readMethodTailVerbs
+    | { collection: string; query: MethodNamePatternQuery }; // readMethodNamesMatching
 }
 
 /**

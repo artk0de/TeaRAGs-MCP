@@ -1,8 +1,10 @@
 {
   "name": "dinopowers",
   "description": "Wrapper skills over superpowers:* that inject tea-rags signals (risk, ownership, churn, impact) into brainstorming, planning, execution, debugging, and review flows",
-  "version": "0.21.3",
-  "author": { "name": "artk0de" },
+  "version": "0.22.0",
+  "author": {
+    "name": "artk0de"
+  },
   "keywords": [
     "superpowers",
     "wrapper",

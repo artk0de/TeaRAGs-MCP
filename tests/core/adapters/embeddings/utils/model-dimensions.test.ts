@@ -191,6 +191,25 @@ describe("getModelDimensions", () => {
   });
 });
 
+describe("getModelDimensions — llama-server GGUF models (HuggingFace ids)", () => {
+  // Widths measured from live llama-server /v1/embeddings output on 2026-10-03.
+  test.each([
+    ["nomic-ai/CodeRankEmbed", 768],
+    ["brokkai/Muninn-small", 384],
+    ["jinaai/jina-code-embeddings-0.5b", 896],
+    ["BAAI/bge-code-v1", 1536],
+    ["Qodo/Qodo-Embed-1-1.5B", 1536],
+    ["nomic-ai/nomic-embed-code", 3584],
+  ])("returns the measured width for %s", (model, width) => {
+    expect(getModelDimensions(model)).toBe(width);
+  });
+
+  test("resolves a quantization-suffixed name to the same width", () => {
+    expect(getModelDimensions("nomic-ai/CodeRankEmbed-q8_0")).toBe(768);
+    expect(getModelDimensions("nomic-ai/nomic-embed-code-fp16")).toBe(3584);
+  });
+});
+
 describe("getModelDimensions — Ollama tag normalization", () => {
   // Invariant: a model resolves to the same dimensions whether or not the user
   // writes the Ollama tag. `ollama list` and the project's own docs print names

@@ -6,6 +6,8 @@
  */
 
 import type { RankingOverlay } from "../../../contracts/types/reranker.js";
+import type { WorkingTreeState } from "../../../contracts/types/working-tree.js";
+import type { WorkingTreeView } from "../working-tree/overlay.js";
 
 export interface ExploreContext {
   collectionName: string;
@@ -21,6 +23,19 @@ export interface ExploreContext {
   pathPattern?: string;
   rerank?: unknown; // RerankMode<string> — unknown to avoid circular deps
   metaOnly?: boolean;
+  /**
+   * The tree this request reads (bd tea-rags-mcp-xi2r9). Floor strategies
+   * substitute its re-read rows; the rest stamp `treeState` on base rows of
+   * its files. Every strategy stamps rows of files it serves from the index
+   * (`indexServedPaths`).
+   */
+  workingTreeView?: WorkingTreeView;
+  /**
+   * The query could not be embedded: the embedding provider is unreachable.
+   * Set → a strategy that has a lexical leg (hybrid's BM25) ranks by it alone,
+   * and `embedding` is absent. `reason` is the provider's error message.
+   */
+  denseUnavailable?: { reason: string };
 }
 
 export interface ExploreResult<P = Record<string, unknown>> {
@@ -28,6 +43,11 @@ export interface ExploreResult<P = Record<string, unknown>> {
   score: number;
   payload?: P;
   rankingOverlay?: RankingOverlay;
+  /**
+   * Set on a base row of a file the working tree changed or deleted, where no
+   * floor replaced it — always on a row of an index-served file.
+   */
+  treeState?: WorkingTreeState;
 }
 
 export interface ExploreStrategy {

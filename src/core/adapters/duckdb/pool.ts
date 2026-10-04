@@ -336,6 +336,8 @@ export class GraphDbClientPool {
    * tea-rags-mcp-hw27k). Cleared by the collection's next successful open.
    */
   private readonly foreignHeldCollections = new Map<PhysicalCollectionName, number>();
+  /** Open {@link acquireFileReader} handles per file path — see {@link isFileReaderOpen}. */
+  private readonly openFileReaders = new Map<string, number>();
 
   constructor(private readonly options: GraphDbClientPoolOptions) {
     this.dbFiles = new CodegraphDbFiles(options.rootDir);
@@ -893,15 +895,46 @@ export class GraphDbClientPool {
    * degrade on that class, not on driver message text (bd tea-rags-mcp-a43tr).
    */
   async acquireRead(physicalCollectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
-    const dbPath = this.pathFor(physicalCollectionName);
-    const graphDb = new DuckDbGraphClient({ path: dbPath, accessMode: "READ_ONLY" });
+    return this.acquireFileReader(this.pathFor(physicalCollectionName));
+  }
+
+  /**
+   * In-process READ_ONLY handle on a graph file this pool does not own — the
+   * working tree's published graph (bd tea-rags-mcp-xi2r9, WTO-7), a
+   * self-contained file no daemon holds, so even daemon mode attaches it
+   * directly. NON-cached: the caller MUST close it.
+   *
+   * @throws DuckDbOpenFailedError when the file cannot be opened.
+   */
+  async acquireFileReader(dbPath: string): Promise<CollectionGraphHandle> {
+    const graphDb = new TrackedFileReaderClient(dbPath, () => {
+      this.releaseFileReader(dbPath);
+    });
     try {
       await graphDb.init();
     } catch (err) {
       await graphDb.close().catch(() => undefined);
       throw new DuckDbOpenFailedError(dbPath, err instanceof Error ? err : undefined);
     }
+    this.openFileReaders.set(dbPath, (this.openFileReaders.get(dbPath) ?? 0) + 1);
+    graphDb.markCounted();
     return { graphDb, symbolTable: this.options.symbolTableFactory() };
+  }
+
+  /**
+   * Whether a handle from {@link acquireFileReader} on `dbPath` is open in this
+   * process — what the working-tree graph cache asks before it deletes a
+   * superseded tree graph (bd tea-rags-mcp-xi2r9, D5). Process-local by nature:
+   * a reader in another server is covered by the cache's grace, not by this.
+   */
+  isFileReaderOpen(dbPath: string): boolean {
+    return (this.openFileReaders.get(dbPath) ?? 0) > 0;
+  }
+
+  private releaseFileReader(dbPath: string): void {
+    const count = (this.openFileReaders.get(dbPath) ?? 0) - 1;
+    if (count > 0) this.openFileReaders.set(dbPath, count);
+    else this.openFileReaders.delete(dbPath);
   }
 
   /**
@@ -927,6 +960,44 @@ export class GraphDbClientPool {
       return this.acquireDaemonHandle(physicalCollectionName);
     }
     return this.acquireRead(physicalCollectionName);
+  }
+
+  /**
+   * Write a consistent copy of the collection's graph to `targetPath` (bd
+   * tea-rags-mcp-xi2r9, WTO-7) — taken by whoever holds the file, because only
+   * the holder sees the rows its WAL keeps (`DuckDbGraphSession#exportSnapshot`):
+   *
+   * - daemon mode — the daemon, over its own connection (`exportSnapshot` op);
+   * - direct mode with a read-write client cached in this pool — that client,
+   *   as a pinned collection op. A READ_ONLY attach beside it would be refused
+   *   by the lock it holds; the client stays cached afterwards;
+   * - direct mode otherwise — a READ_ONLY attach, closed once the copy is done.
+   *
+   * Like `acquireReader`, it never creates the database it is asked to copy.
+   *
+   * @throws CodegraphDatabaseMissingError when the collection has no database.
+   * @throws CodegraphSnapshotExportFailedError when the copy or its publish fails,
+   *   or the running daemon predates the op.
+   */
+  async exportSnapshot(physicalCollectionName: PhysicalCollectionName, targetPath: string): Promise<void> {
+    if (!this.hasDatabase(physicalCollectionName)) {
+      throw new CodegraphDatabaseMissingError(this.pathFor(physicalCollectionName));
+    }
+    if (this.options.daemonSocketPath) {
+      const { graphDb } = await this.acquireDaemonHandle(physicalCollectionName);
+      await graphDb.exportSnapshot(targetPath);
+      return;
+    }
+    if (this.clients.has(physicalCollectionName)) {
+      await this.runCollectionOp(physicalCollectionName, async ({ graphDb }) => graphDb.exportSnapshot(targetPath));
+      return;
+    }
+    const { graphDb } = await this.acquireRead(physicalCollectionName);
+    try {
+      await graphDb.exportSnapshot(targetPath);
+    } finally {
+      await graphDb.close();
+    }
   }
 
   private async openCollection(physicalCollectionName: PhysicalCollectionName): Promise<PoolEntry> {
@@ -1339,6 +1410,38 @@ function wrapNoopClose(client: DaemonGraphDbClient): GraphDbClient {
       return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
     },
   });
+}
+
+/**
+ * The READ_ONLY client {@link GraphDbClientPool#acquireFileReader} hands out:
+ * its first `close()` after the pool counted it reports the release, so the
+ * pool's open-reader count drops exactly once per handle.
+ */
+class TrackedFileReaderClient extends DuckDbGraphClient {
+  private counted = false;
+
+  constructor(
+    dbPath: string,
+    private readonly onRelease: () => void,
+  ) {
+    super({ path: dbPath, accessMode: "READ_ONLY" });
+  }
+
+  /** Called by the pool once the open succeeded and the handle is counted. */
+  markCounted(): void {
+    this.counted = true;
+  }
+
+  override async close(): Promise<void> {
+    try {
+      await super.close();
+    } finally {
+      if (this.counted) {
+        this.counted = false;
+        this.onRelease();
+      }
+    }
+  }
 }
 
 /**

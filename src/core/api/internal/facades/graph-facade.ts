@@ -24,15 +24,21 @@
  * message rather than a silent empty list.
  */
 
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 import { splitMethodSymbol } from "../../../adapters/duckdb/client.js";
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type {
+  PersistedSymbolLineRanges,
   RelPath,
   SymbolChunkLocation,
   SymbolId,
   SymbolVisibilityRow,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
+import type { WorkingTreeGraphReader, WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
+import { recordTreeGraphState, type WorkingTreeOverlay } from "../../../domains/explore/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import {
   resolveInheritedMemberDefiner,
@@ -41,6 +47,7 @@ import {
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import { InvalidParameterError, MissingArgumentError } from "../../errors.js";
 import type { GetArchitectureReportRequest, GetArchitectureReportResponse } from "../../public/dto/architecture.js";
+import type { FindCoChangedRequest, FindCoChangedResult } from "../../public/dto/cochange.js";
 import type {
   FindCyclesRequest,
   FindCyclesResponse,
@@ -49,8 +56,15 @@ import type {
   GetCallersRequest,
   GetCallersResponse,
 } from "../../public/dto/graph.js";
-import { resolveCollection } from "../collection-resolver.js";
+import {
+  resolveCollection,
+  resolveIndexedWorkingTree,
+  resolveWorkingTree,
+  type IndexExistenceCheck,
+} from "../collection-resolver.js";
+import { readWorkingTreeGraph } from "../infra/working-tree-graph-read.js";
 import { ArchitectureReportOps } from "../ops/architecture-report-ops.js";
+import { CochangeOps } from "../ops/cochange-ops.js";
 import { decorateCallees, decorateCallers } from "../ops/declared-visibility-lookup.js";
 import { FileImportOps, normalizeRelativePath } from "../ops/file-import-ops.js";
 
@@ -86,6 +100,20 @@ export interface GraphFacadeDeps {
    * (bd tea-rags-mcp-r8hme.14). Optional: absent, pain is judged on D alone.
    */
   readFileCommitCounts?: (collectionName: string) => Promise<ReadonlyMap<RelPath, number>>;
+  /**
+   * The `workingTree` marker source (bd tea-rags-mcp-xi2r9) for get_callers,
+   * get_callees, find_cycles and get_architecture_report — and, through the
+   * view's `readTreeGraph`, the tree graph they read instead of the index's
+   * when the tree changed files (WTO-7). Optional: absent (unit wiring), no
+   * marker and always the index graph.
+   */
+  workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
+  /**
+   * Whether the resolved index exists — a read of one that does not is refused
+   * with the typed not-found error (live round-3 D3, `resolveIndexedWorkingTree`).
+   * Absent (unit wiring): not checked.
+   */
+  indexExists?: IndexExistenceCheck;
 }
 
 const DEFAULT_LIMIT = 50;
@@ -159,6 +187,7 @@ function resolvedField(read: SymbolEdgeRead<unknown>): { resolvedSymbolId?: Symb
 
 export class GraphFacade {
   private readonly architectureReport = new ArchitectureReportOps();
+  private readonly cochange = new CochangeOps();
   private readonly fileImports = new FileImportOps();
 
   constructor(private readonly deps: GraphFacadeDeps) {}
@@ -182,8 +211,48 @@ export class GraphFacade {
     addr: GraphAddressing,
     fn: (handle: CollectionGraphHandle) => Promise<T>,
     fallback: T,
+    readTreeGraph?: WorkingTreeGraphReader,
   ): Promise<T> {
-    const { collectionName } = resolveCollection(this.deps.collectionRegistry, addr);
+    const { collectionName } = resolveWorkingTree(this.deps.collectionRegistry, addr).baseIndex;
+    const tree = await readWorkingTreeGraph(readTreeGraph, this.deps.pool, fn);
+    return tree.kind === "tree" ? tree.value : this.readGraph(collectionName, fn, fallback);
+  }
+
+  /**
+   * {@link withReadHandle} for the answers that carry the `workingTree` marker
+   * (bd tea-rags-mcp-xi2r9): the tree is measured first, a non-empty delta is
+   * read from the tree's graph when it is built (WTO-7), and the marker — with
+   * the tree-graph state that decided the read — rides on whatever the read
+   * returns, the no-graph fallback included. The overlay never rejects; a read
+   * failure still throws.
+   */
+  private async withMarkedReadHandle<T extends object>(
+    addr: GraphAddressing,
+    fn: (handle: CollectionGraphHandle) => Promise<T>,
+    fallback: T,
+    graph: "tree" | "index" = "tree",
+  ): Promise<T & { workingTree?: WorkingTreeMarker }> {
+    const workingTree = await resolveIndexedWorkingTree(this.deps.collectionRegistry, addr, this.deps.indexExists);
+    const view = await this.deps.workingTreeOverlay?.view(workingTree, addr.project);
+    // `index`: the answer is a property of the INDEX's history, which a working
+    // tree adds nothing to — the tree graph is never asked, and the marker
+    // claims no floor and names no unavailability (live D9).
+    const tree =
+      graph === "tree"
+        ? await readWorkingTreeGraph(view?.readTreeGraph, this.deps.pool, fn)
+        : ({ kind: "base" } as const);
+    const result =
+      tree.kind === "tree" ? tree.value : await this.readGraph(workingTree.baseIndex.collectionName, fn, fallback);
+    if (!view) return result;
+    if ("state" in tree && tree.state) recordTreeGraphState(view.marker, tree.state);
+    return { ...result, workingTree: view.marker };
+  }
+
+  private async readGraph<T>(
+    collectionName: string,
+    fn: (handle: CollectionGraphHandle) => Promise<T>,
+    fallback: T,
+  ): Promise<T> {
     // Expand a Qdrant alias to the active versioned collection so the codegraph
     // pool opens the DuckDB file the write path actually populated (see
     // resolveActiveCollection doc). No resolver, or a failed one, falls back to
@@ -222,14 +291,14 @@ export class GraphFacade {
         throw new InvalidParameterError("includeAmbiguous", "applies to a symbolId target only, not to relativePath");
       }
       const limit = req.limit ?? DEFAULT_LIMIT;
-      return this.withReadHandle(
+      return this.withMarkedReadHandle(
         req,
         async (handle) => this.fileImports.importers(handle.graphDb, target.relativePath, limit),
         FileImportOps.emptyImporters(target.relativePath),
       );
     }
     const { symbolId } = target;
-    return this.withReadHandle(
+    return this.withMarkedReadHandle(
       req,
       async (handle) => {
         const read = await readSymbolEdges(handle.graphDb, symbolId, async (id) => handle.graphDb.getCallers(id));
@@ -267,14 +336,14 @@ export class GraphFacade {
     const target = graphTarget(req);
     if (target.kind === "file") {
       const limit = req.limit ?? DEFAULT_LIMIT;
-      return this.withReadHandle(
+      return this.withMarkedReadHandle(
         req,
         async (handle) => this.fileImports.imports(handle.graphDb, target.relativePath, limit),
         FileImportOps.emptyImports(target.relativePath),
       );
     }
     const { symbolId } = target;
-    return this.withReadHandle(
+    return this.withMarkedReadHandle(
       req,
       async (handle) => {
         const read = await readSymbolEdges(handle.graphDb, symbolId, async (id) => handle.graphDb.getCallees(id));
@@ -285,36 +354,93 @@ export class GraphFacade {
     );
   }
 
-  async resolveSymbolChunk(addr: GraphAddressing, symbolId: SymbolId): Promise<SymbolChunkLocation | null> {
-    return this.withReadHandle(addr, async (handle) => handle.graphDb.findSymbolChunk(symbolId), null);
+  /**
+   * The chunk covering `symbolId`, for find_symbol's codegraph hop. Handed the
+   * request's tree-graph reader, a working tree with a built graph is answered
+   * from it (WTO-7); the caller records the state it was handed on its marker.
+   */
+  async resolveSymbolChunk(
+    addr: GraphAddressing,
+    symbolId: SymbolId,
+    readTreeGraph?: WorkingTreeGraphReader,
+  ): Promise<SymbolChunkLocation | null> {
+    return this.withReadHandle(addr, async (handle) => handle.graphDb.findSymbolChunk(symbolId), null, readTreeGraph);
+  }
+
+  /**
+   * The tree graph's symbol line ranges of `relPaths`, for find_symbol to place
+   * a collapsed symbol of a changed file on the tree's rows (live D1). Read
+   * from the TREE graph only: `null` when it is not built — the index graph's
+   * ranges of a changed file describe another commit.
+   */
+  async readTreeSymbolLineRanges(
+    addr: GraphAddressing,
+    relPaths: readonly RelPath[],
+    readTreeGraph: WorkingTreeGraphReader,
+  ): Promise<ReadonlyMap<RelPath, PersistedSymbolLineRanges> | null> {
+    const tree = await readWorkingTreeGraph(readTreeGraph, this.deps.pool, async (handle) =>
+      handle.graphDb.getSymbolLineRangesBulk(relPaths),
+    );
+    return tree.kind === "tree" ? tree.value : null;
   }
 
   /**
    * Raw declared-visibility rows for the find_symbol outline (bd
    * tea-rags-mcp-sqqkz). Keeps `withReadHandle`'s contract — throws when a graph
    * exists but cannot be read, `[]` when there is none — and leaves degrading to
-   * the caller, which owns whether a missing decoration is acceptable.
+   * the caller, which owns whether a missing decoration is acceptable. Read from
+   * the tree graph like {@link resolveSymbolChunk}.
    */
-  async getSymbolVisibilities(addr: GraphAddressing, symbolIds: readonly SymbolId[]): Promise<SymbolVisibilityRow[]> {
-    return this.withReadHandle(addr, async (handle) => handle.graphDb.getSymbolVisibilities(symbolIds), []);
+  async getSymbolVisibilities(
+    addr: GraphAddressing,
+    symbolIds: readonly SymbolId[],
+    readTreeGraph?: WorkingTreeGraphReader,
+  ): Promise<SymbolVisibilityRow[]> {
+    return this.withReadHandle(
+      addr,
+      async (handle) => handle.graphDb.getSymbolVisibilities(symbolIds),
+      [],
+      readTreeGraph,
+    );
   }
 
   async getArchitectureReport(req: GetArchitectureReportRequest): Promise<GetArchitectureReportResponse> {
     const { readImportSpecifiers, readFileCommitCounts } = this.deps;
-    const addressedCollection = () => resolveCollection(this.deps.collectionRegistry, req).collectionName;
+    const addressedCollection = () => resolveWorkingTree(this.deps.collectionRegistry, req).baseIndex.collectionName;
     const importSpecifiers = readImportSpecifiers
       ? async (relPaths: readonly RelPath[]) => readImportSpecifiers(addressedCollection(), relPaths)
       : undefined;
     const fileCommitCounts = readFileCommitCounts ? async () => readFileCommitCounts(addressedCollection()) : undefined;
-    return this.withReadHandle(
+    return this.withMarkedReadHandle(
       req,
       async (handle) => this.architectureReport.build(handle.graphDb, req, importSpecifiers, fileCommitCounts),
       ArchitectureReportOps.empty(req),
     );
   }
 
+  /**
+   * `find_co_changed` (bd tea-rags-mcp-l1ot.1) — co-change partners from the
+   * temporal sub-graph. The addressed project's root becomes the liveness
+   * predicate: a partner deleted from the working tree after the last build
+   * never surfaces. The guard applies to partners only — a queried file's own
+   * history stays answerable even when the file itself is gone. Co-change is
+   * commit history, so it reads the index's graph whatever the tree holds, and
+   * carries the `workingTree` marker naming the tree it answered beside (D9).
+   */
+  async findCoChanged(req: FindCoChangedRequest): Promise<FindCoChangedResult> {
+    if (req.files.length === 0) throw new MissingArgumentError(["files"]);
+    const { path } = resolveCollection(this.deps.collectionRegistry, req);
+    const pathExists = path ? (relPath: RelPath) => existsSync(join(path, relPath)) : undefined;
+    return this.withMarkedReadHandle(
+      req,
+      async (handle) => this.cochange.find(handle.graphDb, req, pathExists),
+      CochangeOps.empty(req.files.map(normalizeRelativePath)),
+      "index",
+    );
+  }
+
   async findCycles(req: FindCyclesRequest): Promise<FindCyclesResponse> {
-    return this.withReadHandle(
+    return this.withMarkedReadHandle(
       req,
       async (handle) => {
         const entries = await handle.graphDb.findCycles(req.scope, req.pathPattern);

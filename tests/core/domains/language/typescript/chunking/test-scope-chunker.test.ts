@@ -1,6 +1,7 @@
 import Parser from "tree-sitter";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { setupChainOf } from "../../__helpers__/setup-chain.js";
 import {
   buildScopeTree,
   isDslContainerCall,
@@ -231,11 +232,17 @@ describe("produceScopeChunks", () => {
     const node = findTopLevelCall(tree);
     const chunks = produceScopeChunks(node, code, defaultConfig);
 
-    expect(chunks).toHaveLength(2);
-    expect(chunks.map((c) => c.chunkType)).toEqual(["test", "test"]);
+    // INVARIANT CHANGED (bd tea-rags-mcp-g5i0a): the two adjacent examples share
+    // one pack, each addressable as a member.
+    expect(chunks).toHaveLength(1);
+    expect(chunks.map((c) => c.chunkType)).toEqual(["test"]);
     expect(chunks[0].content).toContain("validates name");
-    expect(chunks[1].content).toContain("validates email");
-    expect(chunks.map((c) => c.parentSymbolId)).toEqual(["User.describe 'User'", "User.describe 'User'"]);
+    expect(chunks[0].content).toContain("validates email");
+    expect(chunks[0].memberSymbolIds).toEqual([
+      "User.describe 'User'.it 'validates name correctly with full assertion coverage'",
+      "User.describe 'User'.it 'validates email correctly with full assertion coverage'",
+    ]);
+    expect(chunks.map((c) => c.parentSymbolId)).toEqual(["User.describe 'User'"]);
   });
 
   it("injects parent setup into leaf chunks", () => {
@@ -255,14 +262,20 @@ describe("produceScopeChunks", () => {
     const node = findTopLevelCall(tree);
     const chunks = produceScopeChunks(node, code, defaultConfig);
 
-    expect(chunks).toHaveLength(1);
-    expect(chunks[0].chunkType).toBe("test");
-    expect(chunks[0].content).toContain("signIn(user)");
-    expect(chunks[0].content).toContain("setupDatabase()");
-    expect(chunks[0].content).toContain("has admin role");
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): the parent hooks are the root
+    // scope's own test_setup chunk, referenced by the example, not copied in.
+    expect(chunks).toHaveLength(2);
+    const [setup, example] = chunks;
+    expect(setup).toMatchObject({ chunkType: "test_setup", symbolId: "User.describe 'User'" });
+    expect(setup.content).toContain("signIn(user)");
+    expect(setup.content).toContain("setupDatabase()");
+    expect(example.chunkType).toBe("test");
+    expect(example.content).not.toContain("signIn(user)");
+    expect(example.content).toContain("has admin role");
+    expect(setupChainOf(chunks, example)).toEqual(["User.describe 'User'"]);
     // Line range must NOT include ancestor setup lines — only own scope lines.
     // Ancestor setup is at lines 2-3, child describe starts at line 5.
-    expect(chunks[0].startLine).toBeGreaterThanOrEqual(5);
+    expect(example.startLine).toBeGreaterThanOrEqual(5);
   });
 
   // INVARIANT CHANGED (bd tea-rags-mcp-b55x2): an intermediate scope's own it
@@ -494,7 +507,9 @@ describe("produceScopeChunks edge cases", () => {
     const node = findTopLevelCall(tree);
     const chunks = produceScopeChunks(node, code, defaultConfig);
 
-    expect(chunks).toHaveLength(0);
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): a short example is never
+    // dropped — a lone one stays its own chunk.
+    expect(chunks.map((c) => c.symbolId)).toEqual(["U.describe 't'.it 'ok'"]);
   });
 
   it("includes otherLines in leaf scope test chunk content", () => {
@@ -548,12 +563,17 @@ describe("produceScopeChunks edge cases", () => {
     // INVARIANT CHANGED (bd tea-rags-mcp-b55x2): the root's own it is an
     // example chunk carrying the root's setup, and the nested example
     // inherits that setup too — no test_setup chunk for a scope with examples.
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): that setup is the root's own
+    // test_setup chunk, which both examples reference instead of carrying.
     expect(testChunks).toHaveLength(2);
-    expect(setupChunks).toHaveLength(0);
+    expect(setupChunks).toHaveLength(1);
+    expect(setupChunks[0].content).toContain("signIn(user)");
     expect(testChunks[0].content).toContain("is a class that exists");
-    expect(testChunks[0].content).toContain("signIn(user)");
-    expect(testChunks[1].content).toContain("signIn(user)");
     expect(testChunks[1].content).toContain("has admin role");
+    for (const example of testChunks) {
+      expect(example.content).not.toContain("signIn(user)");
+      expect(setupChainOf(chunks, example)).toEqual(["User.describe 'User'"]);
+    }
   });
 });
 
@@ -693,16 +713,20 @@ describe("produceScopeChunks intermediate-scope branches", () => {
     const testChunks = chunks.filter((c) => c.chunkType === "test");
     const setupChunks = chunks.filter((c) => c.chunkType === "test_setup");
 
-    expect(setupChunks).toHaveLength(0);
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): the middle scope's hook is its
+    // own test_setup chunk; both examples reference it instead of carrying it.
+    expect(setupChunks).toHaveLength(1);
+    expect(setupChunks[0].symbolId).toBe("User.describe 'authenticated'");
+    expect(setupChunks[0].content).toContain("signIn(user)");
     expect(testChunks).toHaveLength(2);
 
     const middle = testChunks.find((c) => c.content.includes("has a token assigned"));
     expect(middle).toBeDefined();
-    expect(middle!.content).toContain("signIn(user)");
+    expect(setupChainOf(chunks, middle!)).toEqual(["User.describe 'authenticated'"]);
     expect(middle!.parentSymbolId).toBe("User.describe 'authenticated'");
 
     const leaf = testChunks.find((c) => c.content.includes("admin role"));
-    expect(leaf!.content).toContain("signIn(user)");
+    expect(setupChainOf(chunks, leaf!)).toEqual(["User.describe 'authenticated'"]);
     expect(leaf!.parentSymbolId).toBe("User.describe 'admin'");
   });
 
@@ -731,11 +755,15 @@ describe("produceScopeChunks intermediate-scope branches", () => {
     const node = findTopLevelCall(tree);
     const chunks = produceScopeChunks(node, code, defaultConfig);
 
-    // The root example chunk includes otherLines (const ROLES, const DEFAULT_TIMEOUT).
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): the root otherLines (const
+    // ROLES, const DEFAULT_TIMEOUT) are the root's own setup chunk, which the
+    // root example references.
     const rootExample = chunks.find((c) => c.content.includes("sensible defaults"));
     expect(rootExample).toBeDefined();
-    expect(rootExample!.content).toContain("ROLES");
-    expect(rootExample!.content).toContain("DEFAULT_TIMEOUT");
+    expect(setupChainOf(chunks, rootExample!)).toEqual(["User.describe 'User'"]);
+    const rootSetup = chunks.find((c) => c.symbolId === "User.describe 'User'");
+    expect(rootSetup!.content).toContain("ROLES");
+    expect(rootSetup!.content).toContain("DEFAULT_TIMEOUT");
   });
 
   it("falls back to scope.name when no fitting top-level arg exists (extractTopLevelName)", () => {

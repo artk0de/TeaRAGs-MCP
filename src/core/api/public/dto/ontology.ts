@@ -12,6 +12,11 @@
  * - `collisions` — a declared name that equals an existing symbol's short name
  *   where that is ambiguous (see {@link OntologyCollisionRule}).
  *
+ * Opt-in `verbs` (spec 2026-09-28 naming coverage, §D5): method names, not
+ * values — per noun tail, the verbs the project uses, with holders
+ * ({@link OntologyVerbGroup}). Descriptive only: the verbs of one tail are
+ * mostly distinct operations, so none is named a deviant of another.
+ *
  * Evidence is a row whose EFFECTIVE type is a concept type: persisted
  * (`annotation`, `constructor`, `binding`, `finder`, …) or `call-return`, each
  * counted per source in `evidence`. `name-inferred` types never count — the
@@ -30,11 +35,12 @@ import type {
   IdentifierTypeSource,
   OntologyCollisionRule,
 } from "../../../contracts/types/codegraph.js";
+import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 
 export type { OntologyCollisionRule } from "../../../contracts/types/codegraph.js";
 
-/** A section of the ontology report. */
-export type OntologyReportSectionName = "synonyms" | "homonyms" | "outliers" | "collisions";
+/** A section of the ontology report; `verbs` is opt-in — computed only when `sections` names it. */
+export type OntologyReportSectionName = "synonyms" | "homonyms" | "outliers" | "collisions" | "verbs";
 
 /** How a name relates to its type (see the naming lexicon's shape classifier). */
 export type OntologyNamingShape = "EXACT" | "QUALIFIED" | "TAIL" | "VERB_TYPE" | "CALLEE_DERIVED" | "FREE";
@@ -57,7 +63,7 @@ export interface GetOntologyReportRequest {
   pathPattern?: string;
   /** Restrict to one language's files; its non-concept types and casing apply. */
   language?: string;
-  /** Sections to compute (default: all four). */
+  /** Sections to compute (default: synonyms, homonyms, outliers, collisions; `verbs` only when named). */
   sections?: OntologyReportSectionName[];
   /** Items per section (default 20, max 100). Collisions: per rule. */
   limit?: number;
@@ -141,6 +147,17 @@ export interface OntologyCollision {
   evidence: OntologyEvidence;
 }
 
+/** One noun tail and the verbs the project reads it with (`load_user` ×7, `fetch_user` ×1). */
+export interface OntologyVerbGroup {
+  /** The noun tail, snake-joined. */
+  tail: string;
+  /** The language namespace's languages present in the group, sorted, comma-joined. */
+  language: string;
+  /** Method symbols holding a name of the group. */
+  holders: number;
+  verbs: { verb: string; holders: number }[];
+}
+
 export interface OntologyReportSummary {
   /** Concept-typed, non-generic rows of the scope — what every section draws from. */
   evidenceRows: number;
@@ -157,8 +174,16 @@ export interface GetOntologyReportResponse {
   homonyms?: OntologyHomonym[];
   outliers?: OntologyOutlier[];
   collisions?: OntologyCollision[];
+  /** Opt-in: per language namespace and noun tail, the verbs the project uses with holders. */
+  verbs?: OntologyVerbGroup[];
   /** Why sections are empty for a reason other than the data — e.g. the codegraph store could not be opened. */
   notices?: string[];
   /** Set when the index predates `cg_identifiers` (migration 033) — reindex, the report is not "clean". */
   driftWarning?: string;
+  /**
+   * Which tree the report read (bd tea-rags-mcp-xi2r9): the tree graph's
+   * identifiers when `floors` holds `"codegraph"`, the index's otherwise
+   * (`treeGraphUnavailable` says why).
+   */
+  workingTree?: WorkingTreeMarker;
 }

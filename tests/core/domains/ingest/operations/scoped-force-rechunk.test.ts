@@ -16,6 +16,7 @@ import {
   MockEmbeddingProvider,
   MockQdrantManager,
 } from "../__helpers__/test-helpers.js";
+import { warmChunkerPoolFactory } from "../__helpers__/warm-chunker-pool.js";
 import { IngestFacade } from "../../../../../src/core/api/index.js";
 import { NotIndexedError } from "../../../../../src/core/domains/ingest/errors.js";
 
@@ -62,6 +63,7 @@ describe("scoped force re-chunk", () => {
       embeddings: new MockEmbeddingProvider(),
       config: defaultTestConfig(),
       trajectoryConfig: defaultTrajectoryConfig(),
+      createChunkerPool: warmChunkerPoolFactory,
     });
     await createTestFile(codebaseDir, "src/app.ts", `export const app = 1;\n${PAD}`);
     await createTestFile(codebaseDir, "src/app.test.ts", `export const appTest = 1;\n${PAD}`);

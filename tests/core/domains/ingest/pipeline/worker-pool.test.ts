@@ -162,6 +162,26 @@ describe("WorkerPool", () => {
       expect(queueChanges.length).toBeGreaterThan(0);
       notifyingPool.forceShutdown();
     });
+
+    it("applies a runtime concurrency change to queued work", () => {
+      const handler = vi.fn().mockImplementation(async () => new Promise(() => {})); // Never resolves
+      for (let i = 1; i <= 5; i++) void pool.submit(createBatch(`batch-${i}`), handler);
+      expect(pool.getActiveWorkers()).toBe(2);
+
+      pool.setConcurrency(4);
+      expect(pool.getActiveWorkers()).toBe(4);
+      expect(pool.getQueueDepth()).toBe(1);
+
+      // Lowering never cancels in-flight work; it only stops new starts.
+      pool.setConcurrency(1);
+      expect(pool.getActiveWorkers()).toBe(4);
+      expect(pool.isAtCapacity()).toBe(true);
+    });
+
+    it("does not mutate the config object it was constructed with", () => {
+      pool.setConcurrency(7);
+      expect(config.concurrency).toBe(2);
+    });
   });
 
   describe("Retry with backoff", () => {

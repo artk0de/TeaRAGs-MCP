@@ -53,8 +53,12 @@
  *      is still judged.
  *
  * Every evidence read honours the answer's `excludePaths`
- * (`NamingLexiconEvidenceScope`, diff mode's changed files): the reader is
- * wrapped once ({@link excludingEvidence}), so no stage can read around it.
+ * (`NamingLexiconEvidenceScope`, diff mode's changed files) and, once the
+ * answer's language is known, its LANGUAGE NAMESPACE (bd tea-rags-mcp-0qaht):
+ * the language and every language sharing its `typeNamespace` — the set type
+ * drafts are judged in — so a TypeScript draft reads TypeScript and JavaScript
+ * rows and never a Ruby local. The reader is wrapped once per scope
+ * ({@link scopedEvidence}), so no stage can read around it.
  *
  * Every evidence row (byType, byCallee, the shape prior's sample) is read split
  * by its file language and classified in THAT language's casing — a mixed Ruby
@@ -71,12 +75,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
-import {
-  listChangedFiles,
-  readAddedLineRangesOfFiles,
-  readMergeBase,
-  type AddedLineRange,
-} from "../../../adapters/vcs/git/git-cli/client.js";
+import type { AddedLineRange } from "../../../adapters/vcs/git/git-cli/client.js";
 import type {
   GraphDbClient,
   IdentifierBoundCallee,
@@ -86,6 +85,7 @@ import type {
   IdentifierLanguageCountRow,
   IdentifierTypeAggregateRow,
   IdentifierTypeMultiplicity,
+  MethodHeadWordRow,
   TypeNameRow,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
@@ -94,9 +94,12 @@ import type {
   IdentifierNamingConvention,
   IdentifierRole,
 } from "../../../contracts/types/language.js";
+import type { WorkingTree } from "../../../contracts/types/working-tree.js";
+import type { WorkingTreeOverlay } from "../../../domains/explore/index.js";
 import {
   detectIdentifierCasing,
   extractConceptTerms,
+  filePrimaryDeclaration,
   isNonConceptType,
   judgeDraftName,
   judgeGenericNames,
@@ -113,10 +116,12 @@ import {
   typeDraftAlignmentWords,
   typeDraftEvidence,
   typeDraftPopulation,
+  typeFamilyMembers,
   typeNameEvidence,
   typeNameHeadCarriers,
   typeNameLastSegment,
   typeNameWords,
+  withFamilyAnalogues,
   type ConceptTerm,
   type ConceptTermHolder,
   type JudgedGenericName,
@@ -154,7 +159,9 @@ import type {
   NamingReviewNotJudgedEntry,
   NamingReviewResult,
 } from "../../public/dto/naming-lexicon.js";
-import { resolveCollection } from "../collection-resolver.js";
+import { resolveIndexedWorkingTree, type IndexExistenceCheck } from "../collection-resolver.js";
+import { DIFF_FILE_CAP, readDiffScope, readTreeLag } from "./diff-scope-reader.js";
+import { readUntypedMethodEvidence, type MethodHeadWordMemo } from "./naming-lexicon-method-evidence.js";
 import type {
   NamingReviewExtractor,
   NamingReviewFileDeclarations,
@@ -162,7 +169,6 @@ import type {
 } from "./naming-review-extraction.js";
 import {
   GENERIC_NAME_BAR,
-  ontologyNonProductionPathFilter,
   ontologyNonProductionPaths,
   ontologyReportQuery,
   ontologyRowCasing,
@@ -188,20 +194,14 @@ const CONCEPT_FIELDS = ["symbolId", "relativePath", "parentSymbolId"];
 /** Casing when neither a descriptor nor the observed names decide one. */
 const FALLBACK_CASING: IdentifierCasing = "snake";
 
-/** Diff mode: changed files one call reviews; the rest are reported as `truncated`. */
-const DIFF_FILE_CAP = 200;
 /**
  * Diff mode: characters of a type declaration's enclosing chunk its concept
  * query carries (spec §4.1) — the head of the chunk, where the declaration and
  * its first members are; the embedding reads a bounded query anyway.
  */
 const DIFF_CONCEPT_CODE_CHARS = 1500;
-/** Diff mode's base when the request names none: the working tree against HEAD (spec §6). */
-const DIFF_DEFAULT_BASE = "HEAD";
 /** Diff mode: how many not-judged entries `notJudgedNames` lists; `notJudgedBy` counts them all. */
 const NOT_JUDGED_NAME_CAP = 50;
-/** Diff mode: a listed file with no diff is reviewed whole — every line reads as added. */
-const WHOLE_FILE: readonly AddedLineRange[] = [{ start: 1, end: Number.MAX_SAFE_INTEGER }];
 
 /** Collided symbol ids a value / return draft's evidence lists — as many as a head alternative's example types. */
 const MAX_COLLISION_EXAMPLES = 3;
@@ -270,6 +270,17 @@ export interface NamingLexiconOpsDeps {
    * Absent → type drafts are judged without head alignment by meaning.
    */
   embeddings?: NamingLexiconEmbeddings;
+  /**
+   * Measures the tree the request reads against its index (bd tea-rags-mcp-xi2r9).
+   * Present → every answer carries `workingTree`; absent (unit wiring) → none.
+   */
+  workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
+  /**
+   * Whether the resolved index exists — a read of one that does not is refused
+   * with the typed not-found error (live round-3 D3, `resolveIndexedWorkingTree`).
+   * Absent (unit wiring): not checked.
+   */
+  indexExists?: IndexExistenceCheck;
 }
 
 /** Diff mode: one changed file's added lines, its working-tree text and its declarations. */
@@ -282,6 +293,8 @@ interface DiffFile {
 
 /** Diff mode's reads: the reviewed files, the evidence they are excluded from, and the files not judged. */
 interface DiffRead {
+  /** The working tree the change was read from. */
+  workTree: string;
   base: string;
   /** `base`'s merge-base with HEAD — what the change is read against. */
   mergeBase: string;
@@ -293,6 +306,8 @@ interface DiffRead {
   /** Files not judged, and the callables of judged files no draft carries. */
   notJudged: NamingReviewNotJudgedEntry[];
   skipped: number;
+  /** What the read could not see: an empty diff names the trees and bases it did not look at. */
+  notices: string[];
 }
 
 /** One added declaration as a draft, with where it was declared. */
@@ -323,6 +338,8 @@ interface TypeAlignmentState {
    * namespace share the read.
    */
   typeNameRows?: Map<string, Promise<TypeNameRow[]>>;
+  /** The method head words (verb lexicon) per evidence scope ({@link MethodHeadWordMemo}), read at most once per request. */
+  methodHeadWordRows?: MethodHeadWordMemo["reads"];
   /** The project's index metrics — its label thresholds — read at most once per request. */
   metrics?: Promise<IndexMetrics>;
 }
@@ -354,6 +371,9 @@ type IdentifierReader = Pick<
   | "anchorIdentifierTypes"
   | "identifierNameTypes"
   | "existingSymbolShortNames"
+  | "readMethodHeadWords"
+  | "readMethodTailVerbs"
+  | "readMethodNamesMatching"
   | "countIdentifiers"
   | "identifierLanguageCounts"
   | "sampleIdentifierShapes"
@@ -375,6 +395,11 @@ type NamingLexiconValueDraft = NamingLexiconDraftName & { kind?: IdentifierDecla
 
 function isTypeDraft(draft: NamingLexiconDraftName): boolean {
   return draft.kind === "type";
+}
+
+/** A `return` draft with no type and no callee: judged by the project's method vocabulary. */
+function isUntypedMethodDraft(draft: NamingLexiconValueDraft): boolean {
+  return draft.kind === "return" && draft.type === undefined && draft.callee === undefined;
 }
 
 /** One byType row after recovery: a store row or a `name-inferred` one. */
@@ -432,12 +457,30 @@ export class NamingLexiconOps {
     scope: NamingLexiconEvidenceScope = {},
   ): Promise<NamingLexiconResult> {
     validateRequest(req);
-    const { collectionName, path: repoRoot } = resolveCollection(this.deps.collectionRegistry, req);
+    // One addressing rule (bd tea-rags-mcp-xi2r9): index reads address the base index, git
+    // reads the tree the caller stands in.
+    const workingTree = await resolveIndexedWorkingTree(this.deps.collectionRegistry, req, this.deps.indexExists);
+    // Every read answer carries the marker (bd tea-rags-mcp-xi2r9, live probe P2-4), on
+    // every return path — so it is attached here, around the whole answer. Measured beside it.
+    const view = this.deps.workingTreeOverlay?.view(workingTree, req.project);
+    const answer = await this.answerNamingLexicon(req, scope, workingTree);
+    return view ? { ...answer, workingTree: (await view).marker } : answer;
+  }
+
+  private async answerNamingLexicon(
+    req: NamingLexiconRequest,
+    scope: NamingLexiconEvidenceScope,
+    workingTree: WorkingTree,
+  ): Promise<NamingLexiconResult> {
+    const { collectionName } = workingTree.baseIndex;
+    const workTree = workingTree.root || undefined;
     // Every sub-read — concept search, metrics — addresses the index resolved HERE, never
     // re-resolves the path: a worktree path hashes to a collection that does not exist (bd tea-rags-mcp-2kplu).
-    const addressed = addressedRequest(req, collectionName, repoRoot);
+    const addressed = addressedRequest(req, collectionName, workTree);
+    const indexLag =
+      workTree === undefined ? undefined : readTreeLag(this.deps.collectionRegistry, collectionName, workTree);
     // Diff mode reads the change first: its files are the evidence every read excludes.
-    const diff = isDiffRequest(req) ? await this.readDiff(req, repoRoot) : undefined;
+    const diff = isDiffRequest(req) ? await this.readDiff(req, workTree) : undefined;
     const excludePaths = [...(scope.excludePaths ?? []), ...(diff?.files ?? [])];
     const activePhysicalCollectionName = this.deps.resolveActiveCollection
       ? await this.deps
@@ -454,18 +497,20 @@ export class NamingLexiconOps {
         byType: [],
         names: [],
         notices: [`codegraph store unavailable: ${errorMessage(error)}`],
+        ...(indexLag ? { indexLag } : {}),
       };
     }
     try {
       const reader = handle.graphDb;
       const context: AnswerContext = { alignment: {}, excludePaths, lookupCollisions: true };
-      const answer = asksLexicon(addressed)
+      const lexicon = asksLexicon(addressed)
         ? await this.answer(reader, addressed, context)
         : { scope: "", byType: [], names: [] };
+      const answer: NamingLexiconResult = { ...lexicon, ...(indexLag ? { indexLag } : {}) };
       if (diff === undefined) return answer;
       // A review's findings carry no evidence: its collisions are not looked up.
       const { review, notices } = await this.review(reader, addressed, diff, { ...context, lookupCollisions: false });
-      const allNotices = unique([...(answer.notices ?? []), ...notices]);
+      const allNotices = unique([...(answer.notices ?? []), ...diff.notices, ...notices]);
       return { ...answer, ...(allNotices.length > 0 ? { notices: allNotices } : {}), review };
     } finally {
       await handle.graphDb.close().catch(() => undefined);
@@ -473,52 +518,41 @@ export class NamingLexiconOps {
   }
 
   /**
-   * Diff mode's git reads (spec §6.1–6.3): the changed files against the base
-   * resolved to its merge-base with HEAD (bd tea-rags-mcp-y33ee) — `files` when
-   * given, else `git diff --name-only` plus untracked files — capped at
-   * {@link DIFF_FILE_CAP}; per file its added line ranges and, when something
-   * was added and a codegraph language walks it, its declarations. A listed
-   * file with no diff is read whole: on a clean tree `files` names committed
-   * code to review, and an empty answer would read as "all conforms".
+   * Diff mode's read, mapped onto the naming-specific half: per reviewed file
+   * its added lines and — when something was added and a codegraph language
+   * walks it — its declarations. A file the ontology calls non-production, one
+   * no codegraph language walks, or an unreadable one is not judged; a listed
+   * file with no diff was read whole by {@link readDiffScope}.
    */
   private async readDiff(req: NamingLexiconRequest, repoRoot: string | undefined): Promise<DiffRead> {
-    if (!repoRoot) {
-      throw new InvalidParameterError("path", "changes / files review the working tree: pass project or path");
-    }
-    const base = req.changes?.base ?? DIFF_DEFAULT_BASE;
-    const mergeBase = await resolveReviewMergeBase(repoRoot, base);
-    const changed = await gitRead(base, async () => listChangedFiles(repoRoot, mergeBase));
-    const listed = req.files ? unique(req.files) : undefined;
-    const all = listed ?? changed;
-    const files = all.slice(0, DIFF_FILE_CAP);
-    const ranges = await gitRead(base, async () => readAddedLineRangesOfFiles(repoRoot, mergeBase, files));
-    const changedSet = new Set(changed);
-    const whole = new Set(listed ? files.filter((relPath) => !changedSet.has(relPath)) : []);
-
-    const nonProduction = ontologyNonProductionPathFilter();
-    const extract = this.deps.extractDeclarations?.forWorkingTree(repoRoot);
+    const read = await readDiffScope(repoRoot, { base: req.changes?.base, files: req.files });
+    // `repoRoot` is the tree the change is read from (`resolveWorkingTree`).
+    const extract = this.deps.extractDeclarations?.forWorkingTree(read.workTree);
     const judged: DiffFile[] = [];
     const notJudged: NamingReviewNotJudgedEntry[] = [];
-    for (const relPath of files) {
-      const added = whole.has(relPath) ? WHOLE_FILE : (ranges.get(relPath) ?? []);
+    for (const relPath of read.files) {
+      const added = read.addedRanges.get(relPath) ?? [];
       if (added.length === 0) continue;
-      const file = nonProduction.ignores(relPath) ? "nonProduction" : readDiffFile(extract, repoRoot, relPath, added);
+      const file = read.nonProduction.has(relPath)
+        ? "nonProduction"
+        : readDiffFile(extract, read.workTree, relPath, added);
       if (typeof file === "string") {
         notJudged.push({ relPath, kind: "file", reason: file });
         continue;
       }
       judged.push(file);
-      notJudged.push(...unjudgedCallables(file));
     }
     return {
-      base,
-      mergeBase,
-      changedFiles: listed ? listed.filter((relPath) => changedSet.has(relPath)).length : changed.length,
-      wholeFiles: whole.size,
-      files,
+      workTree: read.workTree,
+      base: read.base,
+      mergeBase: read.mergeBase,
+      notices: [...read.notices],
+      changedFiles: read.changedFiles,
+      wholeFiles: read.wholeFiles,
+      files: [...read.files],
       judged,
       notJudged,
-      skipped: all.length - files.length,
+      skipped: read.skipped,
     };
   }
 
@@ -601,6 +635,7 @@ export class NamingLexiconOps {
 
     return {
       review: {
+        workTree: diff.workTree,
         base: diff.base,
         mergeBase: diff.mergeBase,
         changedFiles: diff.changedFiles,
@@ -623,8 +658,16 @@ export class NamingLexiconOps {
     req: NamingLexiconRequest,
     context: AnswerContext,
   ): Promise<NamingLexiconResult> {
-    const { alignment } = context;
-    const graphDb = excludingEvidence(reader, context.excludePaths);
+    const { alignment, excludePaths } = context;
+    // Every language: the drift check, and the type-name reads, which scope themselves per draft.
+    const unscoped = scopedEvidence(reader, { excludePaths });
+    // A language the request names scopes every read from the start; else the reads that decide it
+    // (asked type rows, callee rows, language counts) run over every language.
+    const declaredNamespace = this.typeNamespaceLanguages(req.language);
+    const early =
+      declaredNamespace === undefined
+        ? unscoped
+        : scopedEvidence(reader, { excludePaths, languages: declaredNamespace });
     const allDrafts = req.names ?? [];
     const drafts = allDrafts.filter((d): d is NamingLexiconValueDraft => !isTypeDraft(d));
     const typeDrafts = allDrafts.filter(isTypeDraft) as NamingLexiconTypeDraft[];
@@ -633,23 +676,24 @@ export class NamingLexiconOps {
     // 1. Types: asked ∪ anchors' param / return types ∪ drafts' types.
     const anchorTypes =
       req.anchors && req.anchors.length > 0
-        ? (await graphDb.anchorIdentifierTypes(req.anchors)).map((row) => row.typeName)
+        ? (await early.anchorIdentifierTypes(req.anchors)).map((row) => row.typeName)
         : [];
     const askedTypes = unique([...(req.types ?? []), ...anchorTypes, ...drafts.flatMap((d) => d.type ?? [])]);
     const draftCallees = uniqueCallees(drafts.flatMap((d) => (d.callee && d.type === undefined ? [d.callee] : [])));
 
-    // 2. Scope (widening), then the language whose descriptor applies there.
+    // 2. Scope (widening), then the language whose descriptor applies there. A language decided only
+    // afterwards leaves the scope as resolved over every language: it picks a path prefix, not evidence.
     const declared = req.language ? this.deps.namingConventions.get(req.language) : undefined;
     const supportTypes = declared ? conceptTypes(askedTypes, declared) : askedTypes;
-    const scope = await resolveScope(graphDb, pathPatternLiteralPrefix(req.pathPattern), supportTypes, draftCallees);
+    const scope = await resolveScope(early, pathPatternLiteralPrefix(req.pathPattern), supportTypes, draftCallees);
     const pathPrefixes = scope.prefix === "" ? undefined : [scope.prefix];
 
-    // byCallee's rows do not depend on the language, so they are read first: they may decide it.
-    const storedCalleeRows =
+    // byCallee's rows are read before the language is decided: they may decide it.
+    const earlyCalleeRows =
       draftCallees.length === 0
         ? []
         : (scope.calleeRows ??
-          (await graphDb.aggregateIdentifiersByCallee({
+          (await early.aggregateIdentifiersByCallee({
             callees: draftCallees,
             pathPrefixes,
             groupByLanguage: true,
@@ -661,28 +705,41 @@ export class NamingLexiconOps {
     // With no language and no pattern, the rows the request names decide it — read them first.
     let askedTypeRows: LexiconTypeRow[] | undefined;
     if (language === undefined && !req.pathPattern) {
-      askedTypeRows = await readTypeRows(graphDb, askedTypes, pathPrefixes);
-      language = dominantRowLanguage([...askedTypeRows, ...storedCalleeRows]);
+      askedTypeRows = await readTypeRows(early, askedTypes, pathPrefixes);
+      language = dominantRowLanguage([...askedTypeRows, ...earlyCalleeRows]);
       // Type drafts name their files: with no value evidence, their languages decide (bd tea-rags-mcp-icuxg).
       language ??= dominantRowLanguage(typeDrafts.map((d) => ({ language: this.languageOfPath(d.path), n: 1 })));
     }
     if (language === undefined) {
-      const decided = await requestedLanguageCounts(graphDb, req.pathPattern);
+      const decided = await requestedLanguageCounts(early, req.pathPattern);
       projectLanguages = decided.projectCounts;
       language = decided.counts.find((c) => c.language !== null)?.language ?? undefined;
     }
     const convention = language ? this.deps.namingConventions.get(language) : undefined;
     const nonConceptTypes = convention?.nonConceptTypes ?? [];
 
+    // From here on every evidence read stays within the answer's language namespace (bd tea-rags-mcp-0qaht).
+    const namespace = this.typeNamespaceLanguages(language);
+    const scopedLate = namespace !== undefined && declaredNamespace === undefined;
+    const graphDb = scopedLate ? scopedEvidence(reader, { excludePaths, languages: namespace }) : early;
+    // The callee rows were read split by file language with holders per group, so keeping the
+    // namespace's groups is exactly the scoped read — a group of unknown language included, as the store keeps it.
+    const storedCalleeRows = scopedLate
+      ? earlyCalleeRows.filter((row) => typeof row.language !== "string" || namespace.includes(row.language))
+      : earlyCalleeRows;
+
+    // The table is stale when it is empty in EVERY language, not in the answer's.
     const driftWarning =
-      scope.support === 0 && scope.prefix === "" && (await identifierTableIsStale(graphDb, projectLanguages))
+      scope.support === 0 && scope.prefix === "" && (await identifierTableIsStale(unscoped, projectLanguages))
         ? NAMING_LEXICON_DRIFT_WARNING
         : undefined;
 
-    // 3. byType (store aggregate + name-inferred), over the concept types only.
+    // 3. byType (store aggregate + name-inferred), over the concept types only. Asked type rows read
+    // before the language was decided are read again in its namespace: their `name-inferred` rows
+    // weighed a name's typed owners across every language, which no per-row filter can undo.
     const types = askedTypes.filter((t) => !isNonConceptType(t, nonConceptTypes));
     const storedTypeRows =
-      askedTypeRows !== undefined && types.length === askedTypes.length
+      askedTypeRows !== undefined && !scopedLate && types.length === askedTypes.length
         ? askedTypeRows
         : await readTypeRows(graphDb, types, pathPrefixes);
 
@@ -696,7 +753,7 @@ export class NamingLexiconOps {
     // 4. byCallee.
     const byType = buildTypeEntries(types, typeRows, casingFor);
     const byCallee = draftCallees.map((callee) => buildCalleeEntry(callee, calleeRows, casingFor));
-    const typeNameHeads = await this.typeNameHeads(graphDb, req, language);
+    const typeNameHeads = await this.typeNameHeads(unscoped, req, language);
 
     // 5. Concept.
     let conceptTerms: ConceptTerm[] | undefined;
@@ -723,18 +780,28 @@ export class NamingLexiconOps {
             nonConceptTypes,
             conceptTerms,
             pathPrefixes,
-            ontologyLanguages: this.deps.ontologyLanguages,
+            ontologyLanguages: namespaceProfiles(this.deps.ontologyLanguages, namespace),
+            methodHeadWords: {
+              reads: (alignment.methodHeadWordRows ??= new Map<string, Promise<MethodHeadWordRow[]>>()),
+              key: JSON.stringify([
+                typeNamespaceKey(scopedLate ? namespace : declaredNamespace),
+                pathPrefixes ?? [],
+                excludePaths,
+              ]),
+            },
             collisionHolders: context.lookupCollisions
-              ? async (name) => this.collisionHolders(req, name, context.excludePaths)
+              ? async (name) => this.collisionHolders(req, name, excludePaths, namespace)
               : undefined,
           });
     const ownedVerdicts = await this.judgeOwnedValueDrafts(reader, req, drafts, language, context, notices);
     let blindAt = 0;
     const valueVerdicts = drafts.map((d) => ownedVerdicts.get(d) ?? blindVerdicts[blindAt++]);
 
-    // 7. Type names.
+    // 7. Type names — each draft reads its own path language's type namespace, so the reader binds none.
     const typeVerdicts =
-      typeDrafts.length === 0 ? [] : await this.judgeTypeDrafts(graphDb, req, typeDrafts, language, notices, alignment);
+      typeDrafts.length === 0
+        ? []
+        : await this.judgeTypeDrafts(unscoped, req, typeDrafts, language, notices, alignment);
     const names = inDraftOrder(allDrafts, valueVerdicts, typeVerdicts);
 
     return {
@@ -790,19 +857,28 @@ export class NamingLexiconOps {
    * tea-rags-mcp-xsxkr): the indexed symbols whose short name IS the draft's,
    * outside the excluded files, at most {@link MAX_COLLISION_EXAMPLES}. Empty
    * without a symbol lookup or when it fails — the collision itself stands.
+   * Within the answer's language namespace, as the collision flag is (bd
+   * tea-rags-mcp-0qaht): a one-language namespace is the lookup's `language`
+   * filter; a wider one keeps the hits whose path routes into it.
    */
   private async collisionHolders(
     req: NamingLexiconRequest,
     name: string,
     excludePaths: readonly string[],
+    namespace: readonly string[] | undefined,
   ): Promise<string[]> {
     const { explore } = this.deps;
     if (explore.findSymbol === undefined) return [];
+    const inNamespace = (relPath: string): boolean => {
+      const pathLanguage = this.languageOfPath(relPath);
+      return namespace === undefined || pathLanguage === undefined || namespace.includes(pathLanguage);
+    };
     try {
       // A method call: the explore facade reads its own ops through `this`.
       const response = await explore.findSymbol({
         ...collectionRef(req),
         symbol: name,
+        ...(namespace?.length === 1 ? { language: namespace[0] } : {}),
         metaOnly: true,
         fields: COLLISION_LOOKUP_FIELDS,
         limit: COLLISION_LOOKUP_LIMIT,
@@ -810,7 +886,9 @@ export class NamingLexiconOps {
       const ids = response.results.flatMap((r) => {
         const { symbolId, relativePath } = r.payload ?? {};
         if (typeof symbolId !== "string" || typeof relativePath !== "string") return [];
-        return symbolShortName(symbolId) === name && !excludePaths.includes(relativePath) ? [symbolId] : [];
+        return symbolShortName(symbolId) === name && !excludePaths.includes(relativePath) && inNamespace(relativePath)
+          ? [symbolId]
+          : [];
       });
       return unique(ids).slice(0, MAX_COLLISION_EXAMPLES);
     } catch {
@@ -927,6 +1005,7 @@ export class NamingLexiconOps {
         path: draft.path,
         ...(draft.extends !== undefined ? { extends: draft.extends } : {}),
         ...(draft.symbolKind !== undefined ? { symbolKind: draft.symbolKind } : {}),
+        ...(draft.filePrimary !== undefined ? { filePrimary: draft.filePrimary } : {}),
         casing: this.typeCasing(draftLanguage, population),
         evidence,
         conceptNames,
@@ -1208,9 +1287,9 @@ function validateRequest(req: NamingLexiconRequest): void {
 }
 
 /**
- * The request addressed by the index `resolveCollection` resolved once for it
- * (bd tea-rags-mcp-2kplu): its collection explicit, its path the project's
- * root, no project alias left to resolve again. A sub-read handed this ref
+ * The request addressed by the index `resolveWorkingTree` resolved once for it
+ * (bd tea-rags-mcp-2kplu): its collection explicit, its path the tree the
+ * caller stands in, no project alias left to resolve again. A sub-read handed this ref
  * reads that index — never the one the path would hash to.
  */
 function addressedRequest(
@@ -1506,6 +1585,8 @@ interface DraftJudgementContext {
   ontologyLanguages?: readonly OntologyLanguageProfile[];
   /** The symbols a colliding name collides with; absent → not looked up. */
   collisionHolders?: (name: string) => Promise<string[]>;
+  /** The request's verb-vocabulary reads, keyed by the reader's evidence scope. */
+  methodHeadWords?: MethodHeadWordMemo;
 }
 
 /**
@@ -1555,6 +1636,18 @@ async function judgeDrafts(
   if (ctx.collisionHolders) {
     for (const name of draftNames) if (taken.has(name)) holders.set(name, await ctx.collisionHolders(name));
   }
+  // Untyped methods are judged by the project's method vocabulary (spec 2026-09-28 naming coverage, §D4).
+  const untypedMethods = drafts.filter(isUntypedMethodDraft);
+  const untypedMethod =
+    untypedMethods.length === 0
+      ? undefined
+      : await readUntypedMethodEvidence(
+          graphDb,
+          untypedMethods,
+          { pathPrefixes: ctx.pathPrefixes, nonProductionPaths: ontologyNonProductionPaths() },
+          taken,
+          ctx.methodHeadWords,
+        );
   const overridden = new Map<NamingLexiconValueDraft, string[]>();
   for (const draft of drafts) {
     if (draft.kind !== "return" || draft.owner === undefined) continue;
@@ -1562,11 +1655,9 @@ async function judgeDrafts(
     if (declarations.length > 0) overridden.set(draft, declarations);
   }
 
-  return drafts.map((draft) => {
+  const judgedVerdicts = drafts.map((draft) => {
     const kind = draft.kind ?? "local";
-    const ancestorDeclarations = overridden.get(draft) ?? [];
-    const nameRows = homonyms.filter((r) => r.name === draft.name);
-    const verdict = judgeDraftName({
+    return judgeDraftName({
       name: draft.name,
       kind,
       typeName: draft.type,
@@ -1580,10 +1671,25 @@ async function judgeDrafts(
       conceptTerms: ctx.conceptTerms,
       projectShapePrior: prior.shapes,
       projectReturnVerbs: prior.returnVerbs,
-      nameRows: sum(nameRows),
+      nameRows: sum(homonyms.filter((r) => r.name === draft.name)),
       nameIsGeneric: generic.has(draft.name),
-      ...(ancestorDeclarations.length > 0 ? { overrides: ancestorDeclarations[0] } : {}),
+      ...((overridden.get(draft) ?? []).length > 0 ? { overrides: overridden.get(draft)?.[0] } : {}),
+      ...(untypedMethod && isUntypedMethodDraft(draft) ? { untypedMethod: untypedMethod(draft.name) } : {}),
     });
+  });
+  const family = await typeFamilyRows(
+    graphDb,
+    drafts.flatMap((draft, i) =>
+      judgedVerdicts[i].verdict === "NO_CONVENTION" && draft.type !== undefined ? [draft.type] : [],
+    ),
+    ctx.pathPrefixes,
+  );
+
+  return drafts.map((draft, i) => {
+    const ancestorDeclarations = overridden.get(draft) ?? [];
+    const nameRows = homonyms.filter((r) => r.name === draft.name);
+    const verdict =
+      draft.type === undefined ? judgedVerdicts[i] : withFamilyAnalogues(judgedVerdicts[i], family(draft.type));
     const example =
       (verdict.verdict === "MISFIT" ? verdict.holder : undefined) ??
       [...ctx.typeRows, ...ctx.calleeRows].find((r) => r.name === draft.name)?.exampleOwner;
@@ -1608,11 +1714,54 @@ async function judgeDrafts(
   });
 }
 
+/** The most relatives one NO_CONVENTION type is compared with: a wide sibling set is a vocabulary, not a family. */
+const MAX_FAMILY_TYPES = 20;
+
+/**
+ * The value rows of each type's family ({@link typeFamilyMembers}) — what a
+ * NO_CONVENTION draft of that type is offered by analogy (lexicon friction
+ * F3). One type-declaration read and one aggregate over every family, and
+ * neither when no draft needs them.
+ */
+async function typeFamilyRows(
+  graphDb: IdentifierReader,
+  types: readonly string[],
+  pathPrefixes: string[] | undefined,
+): Promise<(type: string) => NamingByTypeRow[]> {
+  if (types.length === 0) return () => [];
+  const declared = (
+    await graphDb.readTypeNameRows({
+      pathPrefixes: [],
+      kinds: TYPE_DRAFT_KINDS,
+      nonProductionPaths: ontologyNonProductionPaths(),
+    })
+  ).map((row) => row.shortName);
+  const families = new Map(
+    unique(types).map((type) => [type, typeFamilyMembers(type, declared).slice(0, MAX_FAMILY_TYPES)]),
+  );
+  const members = unique([...families.values()].flat());
+  if (members.length === 0) return () => [];
+  const rows = await graphDb.aggregateIdentifiersByType({ types: members, pathPrefixes, countHolders: true });
+  return (type) => {
+    const family = new Set(families.get(type) ?? []);
+    return rows
+      .filter((row) => family.has(row.typeName))
+      .map((row) => ({
+        kind: row.kind,
+        name: row.name,
+        n: row.n,
+        exampleOwner: row.exampleOwner,
+        ...(row.holders !== undefined ? { holders: row.holders } : {}),
+      }));
+  };
+}
+
 /**
  * The draft type's rows of the draft's multiplicity (bd tea-rags-mcp-4p3sb.26 —
  * a `T[]` draft against collections of T, a `T` draft against single values),
- * merged per (kind, name, casing) across type sources and file languages. A row
- * written before migration 034 reads `one`, the honest reading of old data.
+ * merged per (kind, name, casing) across type sources and the file languages of
+ * the answer's language namespace — the only rows it read (bd tea-rags-mcp-0qaht).
+ * A row written before migration 034 reads `one`, the honest reading of old data.
  */
 function byTypeRowsFor(
   typeName: string,
@@ -1745,6 +1894,21 @@ function rowCasingResolver(
   };
 }
 
+/**
+ * The ontology language profiles of the answer's language namespace (bd
+ * tea-rags-mcp-0qaht): the generic-name judgement reads only its languages.
+ * No namespace → every profile; a namespace no profile describes → none, and
+ * no generic judgement is read.
+ */
+function namespaceProfiles(
+  profiles: readonly OntologyLanguageProfile[] | undefined,
+  namespace: readonly string[] | undefined,
+): readonly OntologyLanguageProfile[] | undefined {
+  if (profiles === undefined || namespace === undefined) return profiles;
+  const inNamespace = profiles.filter((profile) => namespace.includes(profile.language));
+  return inNamespace.length > 0 ? inNamespace : undefined;
+}
+
 /** The file language most evidence rows come from, weighted by `n`; ties → alphabetical. */
 function dominantRowLanguage(rows: readonly { language?: string | null; n: number }[]): string | undefined {
   const counts = new Map<string, number>();
@@ -1814,35 +1978,6 @@ function inDraftOrder(
 
 // ── diff mode ────────────────────────────────────────────────────────────
 
-/** A git read of diff mode; a failure (unknown base, not a repository) is the caller's input. */
-async function gitRead<T>(base: string, read: () => Promise<T>): Promise<T> {
-  try {
-    return await read();
-  } catch (error) {
-    throw new InvalidParameterError("changes.base", `git diff against '${base}' failed: ${errorMessage(error)}`);
-  }
-}
-
-/**
- * Diff mode's comparison commit (bd tea-rags-mcp-y33ee): `base`'s merge-base
- * with HEAD. A reviewer's `base: "origin/master"` means "what this branch
- * changed", not "how the working tree differs from master's tip" — against a
- * tip that moved on, every file only the base touched reads as the branch's
- * (live on taxdome: 1527 files for a 61-file branch). A commit HEAD descends
- * from is its own merge-base, so an explicit sha is compared as given.
- */
-async function resolveReviewMergeBase(repoRoot: string, base: string): Promise<string> {
-  const mergeBase = await gitRead(base, async () => readMergeBase(repoRoot, base));
-  if (mergeBase === null) {
-    throw new InvalidParameterError(
-      "changes.base",
-      `'${base}' and HEAD share no merge-base — unrelated histories, or a shallow clone cut the fork point off ` +
-        `(git fetch --deepen / --unshallow); pass as base a commit HEAD descends from`,
-    );
-  }
-  return mergeBase;
-}
-
 /**
  * One changed file with its text and declarations, or why it is not judged —
  * no extractor or no codegraph language for the path, or the file is
@@ -1865,16 +2000,21 @@ function readDiffFile(
 }
 
 /**
- * The methods / functions on a file's added lines that no draft carries: a
- * callable's name is judged through its `return` row, which exists only when
- * its return type is known (bd tea-rags-mcp-y33ee).
+ * The methods / functions on a file's added lines that no `return` row
+ * carries — their return type is unknown (bd tea-rags-mcp-y33ee). Each becomes
+ * an untyped `return` draft, judged by the method vocabulary (spec 2026-09-28
+ * naming coverage, §D4); one per declaration, however many symbols it carries.
+ * A name its declaration line does not spell is one a macro composed
+ * (`has_one :account` → `build_account`), not one the author wrote: no draft,
+ * and not counted as not judged either.
  */
-function unjudgedCallables(file: DiffFile): NamingReviewNotJudgedEntry[] {
-  const { relPath, ranges, declarations } = file;
+function untypedCallables(file: DiffFile): DiffFile["declarations"]["callables"] {
+  const { ranges, declarations } = file;
   const returned = new Set(declarations.values.filter((row) => row.kind === "return").map((row) => row.ownerSymbolId));
-  return declarations.callables
-    .filter((callable) => inRanges(callable.line, ranges) && !callable.symbolIds.some((id) => returned.has(id)))
-    .map(({ name, line, kind }) => ({ relPath, line, name, kind, reason: "unknownReturnType" as const }));
+  return declarations.callables.filter(
+    (callable) =>
+      callable.spelledOnLine && inRanges(callable.line, ranges) && !callable.symbolIds.some((id) => returned.has(id)),
+  );
 }
 
 /** `notJudgedBy` counts and the first {@link NOT_JUDGED_NAME_CAP} entries in path / line order; `{}` when none. */
@@ -1899,6 +2039,8 @@ function notJudgedBreakdown(
  * counts it (`novel`) instead of listing it.
  */
 function isNovelVerdict(verdict: NamingVerdict): boolean {
+  // A value no convention binds is a free choice: nothing to act on, like a bare NEW_TERM (lexicon friction F3).
+  if (verdict.verdict === "NO_CONVENTION") return true;
   return verdict.verdict === "NEW_TERM" && verdict.topTerms.length === 0 && (verdict.alternatives?.length ?? 0) === 0;
 }
 
@@ -1960,6 +2102,22 @@ function reviewDrafts(file: DiffFile): ReviewDraft[] {
       },
     });
   }
+  for (const callable of untypedCallables(file)) {
+    const owner = callable.symbolIds.map(memberOwner).find((id) => id !== undefined);
+    drafts.push({
+      relPath,
+      line: callable.line,
+      language,
+      kind: "return",
+      draft: { name: callable.name, kind: "return", ...(owner !== undefined ? { owner } : {}) },
+    });
+  }
+  // The changed file is out of the evidence: only the review sees which declaration is its primary (friction F4).
+  const declared = declarations.types
+    .filter((fact) => !fact.reopens)
+    .toSorted((a, b) => a.line - b.line)
+    .map((fact) => ({ fact, shortName: typeNameLastSegment(fact.typeId), relPath, symbolKind: fact.symbolKind }));
+  const primary = filePrimaryDeclaration(declared)?.fact;
   for (const fact of declarations.types) {
     if (fact.reopens || !inRanges(fact.line, ranges)) continue;
     const ancestor = fact.conforms?.[0];
@@ -1976,6 +2134,7 @@ function reviewDrafts(file: DiffFile): ReviewDraft[] {
         kind: "type",
         path: relPath,
         symbolKind: fact.symbolKind,
+        filePrimary: primary === undefined || primary === fact,
         ...(ancestor !== undefined ? { extends: ancestor } : {}),
         // Spec §4.1: in diff mode the concept query also carries the declaration's enclosing code.
         concept: code === "" ? words : `${words}\n${code}`,
@@ -2082,28 +2241,61 @@ async function ownerTypeAt(
 
 // ── evidence scope ───────────────────────────────────────────────────────
 
+/** What {@link scopedEvidence} binds into every evidence read. */
+interface EvidenceReadScope {
+  /** Files never read (spec §6.4): diff mode's changed files, a value draft's own `path`. */
+  excludePaths?: readonly string[];
+  /** The answer's language namespace (bd tea-rags-mcp-0qaht); absent = every language. */
+  languages?: readonly string[];
+}
+
 /**
- * The reader with `excludePaths` bound into every evidence read (spec §6.4) —
- * one wrapper, so no stage can read the changed files by forgetting to pass
- * them. `anchorIdentifierTypes` (the caller's own anchors) and `hasData` read
- * no evidence and pass through. No paths → the reader itself.
+ * The reader with the answer's evidence scope — `excludePaths` and its language
+ * namespace — bound into every evidence read: one wrapper, so no stage can read
+ * the changed files, or another language's rows, by forgetting to pass them.
+ * `readTypeNameRows` and the method-name reads keep a caller's explicit
+ * `languages` (a type draft reads its own path's namespace). `anchorIdentifierTypes` (the caller's own anchors)
+ * and `hasData` read no evidence and pass through; so does the ontology summary's
+ * language scope, which its query's language profiles carry. Nothing to bind →
+ * the reader itself.
  */
-function excludingEvidence(reader: IdentifierReader, paths: readonly string[] | undefined): IdentifierReader {
-  if (paths === undefined || paths.length === 0) return reader;
-  const excludePaths = [...paths];
+function scopedEvidence(reader: IdentifierReader, scope: EvidenceReadScope): IdentifierReader {
+  const excludePaths = scope.excludePaths === undefined ? [] : [...scope.excludePaths];
+  const languages = scope.languages === undefined ? undefined : [...scope.languages];
+  if (excludePaths.length === 0 && languages === undefined) return reader;
+  const excluded = excludePaths.length > 0 ? { excludePaths } : {};
+  const bound = { ...excluded, ...(languages ? { languages } : {}) };
+  const languagesOf = (explicit: readonly string[] | undefined) => {
+    const scoped = explicit ?? languages;
+    return scoped ? { languages: scoped } : {};
+  };
   return {
-    aggregateIdentifiersByType: async (q) => reader.aggregateIdentifiersByType({ ...q, excludePaths }),
-    aggregateIdentifiersByCallee: async (q) => reader.aggregateIdentifiersByCallee({ ...q, excludePaths }),
-    aggregateIdentifiersByName: async (q) => reader.aggregateIdentifiersByName({ ...q, excludePaths }),
+    aggregateIdentifiersByType: async (q) => reader.aggregateIdentifiersByType({ ...q, ...bound }),
+    aggregateIdentifiersByCallee: async (q) => reader.aggregateIdentifiersByCallee({ ...q, ...bound }),
+    aggregateIdentifiersByName: async (q) => reader.aggregateIdentifiersByName({ ...q, ...bound }),
     anchorIdentifierTypes: async (symbolIds) => reader.anchorIdentifierTypes(symbolIds),
-    identifierNameTypes: async (names) => reader.identifierNameTypes(names, excludePaths),
-    existingSymbolShortNames: async (names) => reader.existingSymbolShortNames(names, excludePaths),
-    countIdentifiers: async (q) => reader.countIdentifiers({ ...q, excludePaths }),
-    identifierLanguageCounts: async (q) => reader.identifierLanguageCounts({ ...q, excludePaths }),
-    sampleIdentifierShapes: async (q) => reader.sampleIdentifierShapes({ ...q, excludePaths }),
+    identifierNameTypes: async (names) =>
+      languages === undefined
+        ? reader.identifierNameTypes(names, excludePaths)
+        : reader.identifierNameTypes(names, excludePaths, languages),
+    existingSymbolShortNames: async (names) =>
+      languages === undefined
+        ? reader.existingSymbolShortNames(names, excludePaths)
+        : reader.existingSymbolShortNames(names, excludePaths, languages),
+    // The caller's explicit `languages` wins, as in `readTypeNameRows`.
+    readMethodHeadWords: async (q) => reader.readMethodHeadWords({ ...q, ...excluded, ...languagesOf(q.languages) }),
+    readMethodTailVerbs: async (q) => reader.readMethodTailVerbs({ ...q, ...excluded, ...languagesOf(q.languages) }),
+    readMethodNamesMatching: async (q) =>
+      reader.readMethodNamesMatching({ ...q, ...excluded, ...languagesOf(q.languages) }),
+    countIdentifiers: async (q) => reader.countIdentifiers({ ...q, ...bound }),
+    identifierLanguageCounts: async (q) => reader.identifierLanguageCounts({ ...q, ...bound }),
+    sampleIdentifierShapes: async (q) => reader.sampleIdentifierShapes({ ...q, ...bound }),
     hasData: async () => reader.hasData(),
-    readOntologyReportSummary: async (q) => reader.readOntologyReportSummary({ ...q, excludePaths }),
-    readTypeNameRows: async (q) => reader.readTypeNameRows({ ...q, excludePaths }),
+    readOntologyReportSummary: async (q) => reader.readOntologyReportSummary({ ...q, ...excluded }),
+    readTypeNameRows: async (q) => {
+      const typeLanguages = q.languages ?? languages;
+      return reader.readTypeNameRows({ ...q, ...excluded, ...(typeLanguages ? { languages: typeLanguages } : {}) });
+    },
     // A fan-in counts edges INTO an unchanged file; nothing of the diff to exclude.
     getFanIn: async (relPath) => reader.getFanIn(relPath),
     // An override is judged against its ANCESTORS' declarations, never the changed file's own.

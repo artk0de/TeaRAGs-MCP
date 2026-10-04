@@ -16,7 +16,9 @@ codebase. SEED → EXPAND → DEDUPLICATE → GROUP.
    Grep, Glob, `grep`, `rg`, `find` PROHIBITED for code discovery. Catch
    yourself reaching for grep/search — STOP, use search-cascade decision tree.
    ONLY acceptable fallback: ripgrep MCP, only after TeaRAGs tools returned no
-   results.
+   results, and only for literal text (markers, phrases, regex). Identifiers
+   (class/method/constant) never: empty `find_symbol` → partial name, then
+   `hybrid_search` (search-cascade).
 3. **Follow search-cascade decision tree** for SEED tool selection.
 4. **Always SEED then EXPAND** — never skip `find_similar` expansion.
 5. **Deduplicate by content overlap** — skip chunks >80% content overlap from

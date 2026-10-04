@@ -238,7 +238,8 @@ registry). Do not memorize from training data — read on demand.
 ## Project calibration
 
 Thresholds vary by codebase. `commitCount` of 8 is "high" in one project,
-"typical" in another. Call `get_index_metrics(project: "<alias>")`, read
+"typical" in another. Call
+`get_index_metrics(path: "<your working directory>")`, read
 `signals[language][signalKey][scope].labelMap` for THIS project's
 percentile-based thresholds before phrasing a filter or weight in absolute
 numbers. See `references/runtime-introspection.md` for the calibration recipe.

@@ -27,6 +27,7 @@ import { join, resolve, sep } from "node:path";
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { importGitHistory } from "../../../../__helpers__/git-history-import.js";
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import type { FileChurnData } from "../../../../../../src/core/adapters/vcs/types.js";
 import {
@@ -49,69 +50,77 @@ const TMP_BASE = realpathSync(tmpdir());
 // default is too tight — the same rationale as the 30s beforeAll hook timeouts.
 vi.setConfig({ testTimeout: 30000 });
 
-/** Refuse to run git outside the temp tree — see client-catfile.test.ts. */
-function gitIn(cwd: string, args: string[], env?: Record<string, string>): string {
-  const r = cwd ? resolve(cwd) : "";
-  if (!r?.startsWith(TMP_BASE + sep)) {
-    throw new Error(`file-discovery.test: refusing git "${args[0]}" in non-temp cwd: ${String(cwd)}`);
-  }
-  return execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, ...env } });
-}
-
-/** Author + deterministic timestamps per commit so ordering is stable. */
-function commitEnv(name: string, email: string, isoDate: string): Record<string, string> {
-  return {
-    GIT_AUTHOR_NAME: name,
-    GIT_AUTHOR_EMAIL: email,
-    GIT_AUTHOR_DATE: isoDate,
-    GIT_COMMITTER_NAME: name,
-    GIT_COMMITTER_EMAIL: email,
-    GIT_COMMITTER_DATE: isoDate,
-  };
-}
-
 /**
  * Multi-commit fixture: linear history + a fix/ branch merged with --no-ff
  * (exercises parents/body — the merge-branch bugfix-classification inputs)
  * + a multi-file commit (one CommitInfo shared across two numstat rows).
  */
 function buildFixtureRepo(tmp: string): void {
-  gitIn(tmp, ["init", "-q", "-b", "main"]);
-  gitIn(tmp, ["config", "user.email", "t@example.com"]);
-  gitIn(tmp, ["config", "user.name", "Test"]);
-
-  writeFileSync(join(tmp, "a.ts"), "const a = 1;\nconst aa = 2;\nconst aaa = 3;\n");
-  writeFileSync(join(tmp, "b.ts"), "const b = 1;\nconst bb = 2;\n");
-  gitIn(tmp, ["add", "-A"]);
-  gitIn(tmp, ["commit", "-q", "-m", "feat: init a and b"], commitEnv("Alice", "alice@x", "2026-01-01T00:00:00Z"));
-
-  writeFileSync(join(tmp, "b.ts"), "const b = 10;\nconst bb = 2;\nconst bbb = 3;\n");
-  gitIn(tmp, ["add", "-A"]);
-  gitIn(tmp, ["commit", "-q", "-m", "improve: b tweak"], commitEnv("Bob", "bob@x", "2026-01-01T01:00:00Z"));
-
-  gitIn(tmp, ["checkout", "-q", "-b", "fix/bug-1"]);
-  writeFileSync(join(tmp, "a.ts"), "const a = 42;\nconst aa = 2;\nconst aaa = 3;\n");
-  gitIn(tmp, ["add", "-A"]);
-  gitIn(tmp, ["commit", "-q", "-m", "fix: bug in a"], commitEnv("Carol", "carol@x", "2026-01-01T02:00:00Z"));
-  writeFileSync(join(tmp, "c.md"), "# notes\n\nline\nline\n");
-  gitIn(tmp, ["add", "-A"]);
-  gitIn(tmp, ["commit", "-q", "-m", "docs: notes"], commitEnv("Carol", "carol@x", "2026-01-01T03:00:00Z"));
-
-  gitIn(tmp, ["checkout", "-q", "main"]);
-  writeFileSync(join(tmp, "d.ts"), "export const d = 1;\n");
-  gitIn(tmp, ["add", "-A"]);
-  gitIn(tmp, ["commit", "-q", "-m", "feat: d"], commitEnv("Alice", "alice@x", "2026-01-01T04:00:00Z"));
-
-  gitIn(
+  if (!resolve(tmp).startsWith(TMP_BASE + sep)) {
+    throw new Error(`file-discovery.test: refusing import in non-temp cwd: ${tmp}`);
+  }
+  // ONE fast-import instead of ~16 add/commit spawns (bd tea-rags-mcp-1r3e5):
+  // the same authors (committer = author), dates, messages, trees, the
+  // fix/bug-1 branch and its --no-ff merge into main.
+  const alice = { name: "Alice", email: "alice@x" };
+  const bob = { name: "Bob", email: "bob@x" };
+  const carol = { name: "Carol", email: "carol@x" };
+  const aFixed = "const a = 42;\nconst aa = 2;\nconst aaa = 3;\n";
+  const notes = "# notes\n\nline\nline\n";
+  importGitHistory(
     tmp,
-    ["merge", "--no-ff", "-q", "fix/bug-1", "-m", "Merge branch 'fix/bug-1'"],
-    commitEnv("Alice", "alice@x", "2026-01-01T05:00:00Z"),
+    [
+      {
+        message: "feat: init a and b",
+        author: alice,
+        authorDate: "2026-01-01T00:00:00Z",
+        writes: { "a.ts": "const a = 1;\nconst aa = 2;\nconst aaa = 3;\n", "b.ts": "const b = 1;\nconst bb = 2;\n" },
+      },
+      {
+        label: "tweak",
+        message: "improve: b tweak",
+        author: bob,
+        authorDate: "2026-01-01T01:00:00Z",
+        writes: { "b.ts": "const b = 10;\nconst bb = 2;\nconst bbb = 3;\n" },
+      },
+      {
+        branch: "fix/bug-1",
+        from: "tweak",
+        message: "fix: bug in a",
+        author: carol,
+        authorDate: "2026-01-01T02:00:00Z",
+        writes: { "a.ts": aFixed },
+      },
+      {
+        label: "docs",
+        branch: "fix/bug-1",
+        message: "docs: notes",
+        author: carol,
+        authorDate: "2026-01-01T03:00:00Z",
+        writes: { "c.md": notes },
+      },
+      {
+        message: "feat: d",
+        author: alice,
+        authorDate: "2026-01-01T04:00:00Z",
+        writes: { "d.ts": "export const d = 1;\n" },
+      },
+      {
+        message: "Merge branch 'fix/bug-1'",
+        merge: ["docs"],
+        author: alice,
+        authorDate: "2026-01-01T05:00:00Z",
+        writes: { "a.ts": aFixed, "c.md": notes },
+      },
+      {
+        message: "improve: sweep a and d",
+        author: bob,
+        authorDate: "2026-01-01T06:00:00Z",
+        writes: { "a.ts": "const a = 42;\nconst aa = 20;\nconst aaa = 3;\n", "d.ts": "export const d = 100;\n" },
+      },
+    ],
+    { config: { "user.email": "t@example.com", "user.name": "Test" } },
   );
-
-  writeFileSync(join(tmp, "a.ts"), "const a = 42;\nconst aa = 20;\nconst aaa = 3;\n");
-  writeFileSync(join(tmp, "d.ts"), "export const d = 100;\n");
-  gitIn(tmp, ["add", "-A"]);
-  gitIn(tmp, ["commit", "-q", "-m", "improve: sweep a and d"], commitEnv("Bob", "bob@x", "2026-01-01T06:00:00Z"));
 }
 
 /** The batch shapes a streaming run would produce (incl. a never-committed path). */

@@ -6,13 +6,13 @@
  * `kernelFrom(LANGUAGE_DEFINITIONS.typescript)` produced (spec §1, §3):
  *   - `loadModule` / `extractLanguage` — same lazy `tree-sitter-typescript`
  *     import; `extractLanguage` picks the `.typescript` grammar object out of
- *     the module (named export OR `default.typescript`). This is the grammar the
- *     CHUNKER uses for BOTH `.ts` and `.tsx` files (`LANGUAGE_MAP` collapses
- *     both extensions to language "typescript", and `LANGUAGE_DEFINITIONS` is
- *     keyed by name → one config) — it calls `extractLanguage` with no
- *     extension. The codegraph walk passes the file's extension, and `.tsx`
- *     selects the `.tsx` grammar (bd tea-rags-mcp-e2pu7 moved that choice here
- *     from a static import in the codegraph extractor).
+ *     the module (named export OR `default.typescript`) for every extension but
+ *     `.tsx`, which selects the `.tsx` grammar. `LANGUAGE_MAP` collapses both
+ *     extensions to language "typescript", so the extension is the only thing
+ *     telling them apart: the chunker and the codegraph walk both pass the
+ *     file's extension (bd tea-rags-mcp-e2pu7 moved that choice here from a
+ *     static import in the codegraph extractor). A call with no extension gets
+ *     the `typescript` grammar.
  *   - `scopeSeparator: "."` — TS/JS namespace join (`namespace A { class B }`
  *     → `A.B`). Methods use `#`/`.` via `SymbolIdComposer`. `.` is also the
  *     composer default, so this matches the unset `LANGUAGE_DEFINITIONS.typescript`
@@ -40,9 +40,8 @@ interface TreeSitterLanguageModule {
 export const typescriptKernel: LanguageKernel = {
   loadModule: async () => import("tree-sitter-typescript"),
   grammarPackage: "tree-sitter-typescript",
-  // The module ships two grammars. `.tsx` (asked for only by the codegraph walk)
-  // gets `tsx`; everything else — every chunker call, which passes no
-  // extension — gets `typescript`.
+  // The module ships two grammars. `.tsx` gets `tsx`; everything else — and a
+  // call passing no extension — gets `typescript`.
   extractLanguage: (mod: TreeSitterLanguageModule, extension?: string) => {
     const grammar = extension === ".tsx" ? "tsx" : "typescript";
     if (typeof mod.default === "object" && mod.default !== null && grammar in mod.default) {

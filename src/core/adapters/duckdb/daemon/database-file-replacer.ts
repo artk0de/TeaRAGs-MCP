@@ -71,12 +71,12 @@ export class DaemonDatabaseFileReplacer {
    * half-way, and acting on it again from outside would not make that safer.
    */
   private async withDaemon(
-    collection: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     replace: (client: DaemonGraphDbClient) => Promise<DaemonDatabaseReplacement | undefined>,
   ): Promise<DaemonDatabaseReplacement> {
     const pid = readDaemonPid(daemonPathsForKeyDir(dirname(this.socketPath)));
     if (pid === undefined || !isDaemonPidAlive(pid)) return { handledBy: "caller", reason: "no-daemon" };
-    const client = new DaemonGraphDbClient(this.socketPath, collection, {
+    const client = new DaemonGraphDbClient(this.socketPath, physicalCollectionName, {
       connectTimeoutMs: CONTROL_CONNECT_TIMEOUT_MS,
     });
     try {
@@ -86,7 +86,7 @@ export class DaemonDatabaseFileReplacer {
       if (isDebug()) {
         process.stderr.write(
           `[tea-rags] codegraph: daemon pid ${pid} is alive but ${this.socketPath} did not accept — replacing ` +
-            `${collection}'s database from this process (bd tea-rags-mcp-r4veq)\n`,
+            `${physicalCollectionName}'s database from this process (bd tea-rags-mcp-r4veq)\n`,
         );
       }
       return { handledBy: "caller", reason: "daemon-unreachable" };

@@ -4,13 +4,13 @@
  * Contains:
  * - App interface (the contract MCP/CLI consumers depend on)
  * - AppDeps interface (what bootstrap provides to create an App)
- * - createApp() factory (assembles internal classes into an App)
+ * - createApp() factory (wires DI-provided handlers into an App)
  *
  * To add a new endpoint:
  * 1. Add DTO to public/dto/<domain>.ts
  * 2. Add method to App interface below
  * 3. Implement in internal/facades/ or internal/ops/
- * 4. Wire in createApp() below — map App method to internal class
+ * 4. Wire via internal/composition.ts (ops construction) + createApp() below
  * 5. Register MCP tool in src/mcp/tools/
  */
 
@@ -21,17 +21,29 @@ import type { EmbeddingModelGuard } from "../../adapters/qdrant/embedding-model-
 import type { Reranker } from "../../domains/explore/reranker.js";
 import { formatIndexDriftReport, type IndexDriftReporter } from "../../domains/maintenance/drift/index.js";
 import type { ProjectInfo } from "../../domains/maintenance/registry/index.js";
-import type { ExploreFacade } from "../internal/facades/explore-facade.js";
-import type { GraphFacade } from "../internal/facades/graph-facade.js";
-import type { IngestFacade } from "../internal/facades/ingest-facade.js";
-import { ArchitectureReportOps } from "../internal/ops/architecture-report-ops.js";
-import { CollectionOps } from "../internal/ops/collection-ops.js";
-import { DocumentMetadataSchemaCompiler } from "../internal/ops/document-metadata-schema.js";
-import { DocumentOps } from "../internal/ops/document-ops.js";
-import type { NamingLexiconOps } from "../internal/ops/naming-lexicon-ops.js";
-import { OntologyReportOps } from "../internal/ops/ontology-report-ops.js";
-import type { ProjectRegistryOps } from "../internal/ops/project-registry-ops.js";
-import type { TracePathOps } from "../internal/ops/trace-path-ops.js";
+import type {
+  CollectionOps,
+  DocumentOps,
+  ExploreFacade,
+  GraphFacade,
+  IngestFacade,
+  NamingLexiconOps,
+  OntologyReportOps,
+  ProjectRegistryOps,
+  ReviewFacade,
+  TracePathOps,
+} from "../index.js";
+// The one facade-level internal reach this file keeps (bd tea-rags-mcp-0qaht.12):
+// ops/schema construction lives in the composition root, and the handler
+// TYPES arrive through the api barrel (`../index.js`), which already legally
+// aggregates composition + facades. No deep `../internal/` path is imported.
+import {
+  composeAppOps,
+  emptyArchitectureReport,
+  emptyCochangeResult,
+  emptyOntologyReport,
+  emptyReviewChangesResult,
+} from "../internal/composition.js";
 import type {
   AddDocumentsRequest,
   CollectionInfo,
@@ -41,6 +53,8 @@ import type {
   EnrichmentProgressCallback,
   ExploreCodeRequest,
   ExploreResponse,
+  FindCoChangedRequest,
+  FindCoChangedResult,
   FindCyclesRequest,
   FindCyclesResponse,
   FindSimilarRequest,
@@ -66,8 +80,11 @@ import type {
   ProgressCallback,
   ProjectRegistryAddress,
   RankChunksRequest,
+  ReviewChangesRequest,
+  ReviewChangesResult,
   SemanticSearchRequest,
   TracePathRequest,
+  WorkingTreeIndexTarget,
 } from "./dto/index.js";
 
 // ---------------------------------------------------------------------------
@@ -162,6 +179,14 @@ export interface App {
   getNamingLexicon: (request: NamingLexiconRequest) => Promise<NamingLexiconResult>;
   /** Naming ontology audit (bd tea-rags-mcp-4p3sb.20) — synonyms, homonyms, outliers, symbol collisions. */
   getOntologyReport: (request: GetOntologyReportRequest) => Promise<GetOntologyReportResponse>;
+  /** Co-change partners (bd tea-rags-mcp-l1ot.1) — the temporal sub-graph: which files historically changed together. */
+  findCoChanged: (request: FindCoChangedRequest) => Promise<FindCoChangedResult>;
+  /**
+   * Diff-scoped review (bd tea-rags-mcp-89k7k.1.4) — every report over ONE
+   * working-tree change in one call, as sections keyed by id (naming,
+   * incompleteChange, cohesion; architecture when its provider ships).
+   */
+  reviewChanges: (request: ReviewChangesRequest) => Promise<ReviewChangesResult>;
 
   // -- Provider availability — sync query used by MCP tool registrars to
   // skip registration when a required trajectory provider is not loaded.
@@ -190,6 +215,14 @@ export interface AppDeps {
    * cannot clobber each other (tea-rags-mcp-pmfm4).
    */
   ingestForPath?: (path: string) => IngestFacade;
+  /**
+   * The base index a working-tree path is read against (live D10, bd
+   * tea-rags-mcp-xi2r9): `getIndexStatus` of a linked worktree answers with
+   * that index's status and the tree's marker, never "not indexed". Wired by
+   * bootstrap to `ExploreFacade#workingTreeIndexOf`. Omitted → the path is
+   * always its own index.
+   */
+  workingTreeIndexOf?: (path: string) => Promise<WorkingTreeIndexTarget | undefined>;
   explore: ExploreFacade;
   reranker: Reranker;
   driftReporter: IndexDriftReporter;
@@ -205,6 +238,23 @@ export interface AppDeps {
   namingLexiconOps?: NamingLexiconOps;
   /** Optional — present when codegraph is wired (built in bootstrap alongside graphFacade). */
   ontologyReportOps?: OntologyReportOps;
+  /**
+   * The diff-scoped review facade (bd tea-rags-mcp-89k7k.1.4). Built in
+   * bootstrap beside `namingLexiconOps` — the review's naming section shares
+   * that instance — and present only when codegraph is wired. Absent →
+   * `App.reviewChanges` answers the not-built envelope
+   * (`emptyReviewChangesResult`).
+   */
+  reviewFacade?: ReviewFacade;
+  /**
+   * Collection/document CRUD handlers, pre-built by the api composition root
+   * (`composeAppOps` in internal/composition.ts) and injected here. Omitted →
+   * `createApp` composes them from the raw handles above (the bare-AppDeps
+   * path tests use).
+   */
+  collectionOps?: CollectionOps;
+  /** Same construction path as `collectionOps` — the pair shares one metadata-schema compiler. */
+  documentOps?: DocumentOps;
   /**
    * Per-collection DuckDB pool — present when codegraph is wired.
    * CollectionOps uses it to delete the per-collection DuckDB file when
@@ -243,12 +293,15 @@ function wireFacades(deps: AppDeps): { explore: ExploreFacade; ingest: IngestFac
 }
 
 /**
- * wireOps — instantiates the App-layer ops classes and forwards the
+ * wireOps — resolves the App-layer ops handlers and forwards the
  * pre-injected ProjectRegistryOps.
  *
  * Ops classes (CollectionOps, DocumentOps) own collection/document CRUD and
- * are created here because they are App-layer wiring concerns — they do not
- * fit inside any domain facade. ProjectRegistryOps is supplied via deps
+ * are constructed by the composition root (`composeAppOps` in
+ * internal/composition.ts), arriving here via DI — which is why composition.ts
+ * is the one facade-level internal module this file imports. The fallback
+ * composes them from the raw infrastructure handles for callers that hand a
+ * bare `AppDeps` (the test path). ProjectRegistryOps is supplied via deps
  * because its construction requires bootstrap-only state (the registry file
  * path).
  *
@@ -259,20 +312,17 @@ function wireOps(deps: AppDeps): {
   document: DocumentOps;
   projectRegistry: ProjectRegistryOps;
 } {
-  // One compiler for both ops: the schema create_collection compiles is the
-  // validator add_documents then finds cached.
-  const metadataSchemas = new DocumentMetadataSchemaCompiler();
+  if (deps.collectionOps && deps.documentOps) {
+    return {
+      collection: deps.collectionOps,
+      document: deps.documentOps,
+      projectRegistry: deps.projectRegistryOps,
+    };
+  }
+  const composed = composeAppOps(deps);
   return {
-    collection: new CollectionOps(
-      deps.qdrant,
-      deps.embeddings,
-      deps.quantizationScalar,
-      deps.turboQuant,
-      deps.modelGuard,
-      deps.codegraphPool,
-      metadataSchemas,
-    ),
-    document: new DocumentOps(deps.qdrant, deps.embeddings, deps.modelGuard, metadataSchemas),
+    collection: deps.collectionOps ?? composed.collection,
+    document: deps.documentOps ?? composed.document,
     projectRegistry: deps.projectRegistryOps,
   };
 }
@@ -300,7 +350,7 @@ export function createApp(deps: AppDeps): App {
     indexCodebase: async (path, options, progress, enrichmentProgress) =>
       (deps.ingestForPath?.(path) ?? facades.ingest).indexCodebase(path, options, progress, enrichmentProgress),
     whenEnrichmentComplete: async () => facades.ingest.whenEnrichmentComplete(),
-    getIndexStatus: async (path) => (deps.ingestForPath?.(path) ?? facades.ingest).getIndexStatus(path),
+    getIndexStatus: async (path) => readIndexStatus(path, deps, facades.ingest),
     clearIndex: async (path) => facades.ingest.clearIndex(path),
 
     // -- Collections — delegate to CollectionOps --
@@ -362,18 +412,34 @@ export function createApp(deps: AppDeps): App {
     getCallees: async (req) => (deps.graphFacade ? deps.graphFacade.getCallees(req) : { callees: [] }),
     findCycles: async (req) => (deps.graphFacade ? deps.graphFacade.findCycles(req) : { cycles: [] }),
     getArchitectureReport: async (req) =>
-      deps.graphFacade ? deps.graphFacade.getArchitectureReport(req) : ArchitectureReportOps.empty(req),
+      deps.graphFacade ? deps.graphFacade.getArchitectureReport(req) : emptyArchitectureReport(req),
     tracePath: async (req) => (deps.tracePathOps ? deps.tracePathOps.tracePath(req) : { paths: [], truncated: false }),
     getNamingLexicon: async (req) =>
       deps.namingLexiconOps ? deps.namingLexiconOps.getNamingLexicon(req) : { scope: "", byType: [], names: [] },
     getOntologyReport: async (req) =>
-      deps.ontologyReportOps ? deps.ontologyReportOps.report(req) : OntologyReportOps.empty(req),
+      deps.ontologyReportOps ? deps.ontologyReportOps.report(req) : emptyOntologyReport(req),
+    findCoChanged: async (req) => (deps.graphFacade ? deps.graphFacade.findCoChanged(req) : emptyCochangeResult(req)),
+    reviewChanges: async (req) =>
+      deps.reviewFacade ? deps.reviewFacade.reviewChanges(req) : emptyReviewChangesResult(req),
 
     // -- Provider availability — backs MCP tool-registrar gating. Source
     // of truth is `registeredProviderKeys` populated by composition from
     // `TrajectoryRegistry.getRegisteredKeys()`.
     hasProvider: (key) => (deps.registeredProviderKeys ?? EMPTY_PROVIDER_SET).has(key),
   };
+}
+
+/**
+ * `getIndexStatus` for the index `path` is read against (live D10): a working
+ * tree answers with its base index's status, `indexPath` and the tree's
+ * marker; any other path is its own index, read through its project's facade.
+ */
+async function readIndexStatus(path: string, deps: AppDeps, ingest: IngestFacade): Promise<IndexStatus> {
+  const target = await deps.workingTreeIndexOf?.(path);
+  const indexPath = target?.indexPath ?? path;
+  const status = await (deps.ingestForPath?.(indexPath) ?? ingest).getIndexStatus(indexPath);
+  if (!target) return status;
+  return { ...status, indexPath, ...(target.workingTree ? { workingTree: target.workingTree } : {}) };
 }
 
 /** Shared empty set so the default-fallback branch on every hasProvider call doesn't allocate. */

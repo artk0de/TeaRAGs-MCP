@@ -24,7 +24,7 @@ to the MCP server.
 | `INGEST_CHUNK_OVERLAP`      | Overlap between adjacent chunks in characters. Prevents loss of context at chunk boundaries.                                              | 300     |
 | `INGEST_ENABLE_AST`         | Use AST-aware chunking (tree-sitter) instead of line-based splitting. Preserves semantic boundaries like functions, classes, and methods. | true    |
 | `INGEST_ENABLE_HYBRID`      | Provision BM25 sparse vectors. Required to use the `hybrid_search` tool.                                                                  | true    |
-| `EMBEDDING_TUNE_BATCH_SIZE` | Chunks per embedding batch sent to the provider. Higher = throughput; lower = less memory.                                                | auto    |
+| `EMBEDDING_TUNE_BATCH_SIZE` | Upper bound on the chunks per embedding batch. The run picks the batch size below it from measured throughput and server failures ([Adaptive Embedding](/config/performance-tuning#adaptive-embedding)). | auto    |
 | `TRAJECTORY_GIT_ENABLED`    | Enrich every chunk with git signals: recent committers (`recent*` family), live-line owners (`blame*` family), commit count, bug-fix rate, age, task IDs. Required for `hotspots` / `techDebt` / `ownership` / `recentActivityConcentration` / `securityAudit` / etc. presets. Silently skipped for non-git directories. | true    |
 
 Legacy names (`CODE_CHUNK_SIZE`, `CODE_CHUNK_OVERLAP`, `CODE_ENABLE_AST`, `CODE_ENABLE_HYBRID`, `CODE_BATCH_SIZE`, `CODE_ENABLE_GIT_METADATA`) still work as fallbacks but are deprecated.
@@ -73,6 +73,55 @@ classes, methods, interfaces.
 **Fallback:** If a language has no tree-sitter grammar, or a node is still too
 large after child extraction, TeaRAGs falls back to character-based splitting
 with overlap — trying to break at empty lines or closing braces.
+
+**Top-level module code.** Statements at the top of a file that no function or
+class chunk carries — a `const loaders = { … }` object beside the file's
+functions, top-level configuration, a script body — are indexed as a module
+remainder chunk (`chunkType: "block"`). Imports, `export … from` lines and bare
+export lists are left out; comments directly above a kept statement stay with
+it. A remainder that is a single named declaration takes its name as
+`symbolId`. Before this, such code was dropped whenever the file produced at
+least one other chunk.
+
+**TSX.** `.tsx` files are parsed with the `tsx` grammar. Under the plain
+`typescript` grammar JSX parsed into error nodes and the component itself was
+not chunked.
+
+**Markdown.** Documents are split by heading. Small sections share a chunk with
+their siblings: an `h3` joins its `h2` while the chunk fits the maximum chunk
+size, and a small `h2` (under 300 characters) joins the chunk before it under
+the same `h1`. An `h1`
+boundary is never crossed. Sections shorter than 50 characters are kept by
+joining a neighbour instead of being dropped; only a document whose whole
+content is under 50 characters produces no chunk. A heading-less document or an
+oversized preamble is split under the chunk size.
+
+**Test files.** Test files (RSpec, and Jest / Vitest / Mocha-style TypeScript
+and JavaScript tests) are chunked by scope:
+
+- **Setup is stored once per scope.** `let`, `before` / `beforeEach` and other
+  setup lines of a `describe` / `context` go into a `test_setup` chunk instead
+  of being copied into every example. The setup of consecutive scopes is packed
+  into one chunk up to the chunk size.
+- **Setup is added back when you read an example.** Search results and
+  `find_symbol` return a test example with the setup of every enclosing scope
+  prepended, outermost first, so the example reads as runnable code.
+  `metaOnly` answers skip this. Setup that comes from shared definitions
+  elsewhere (`include_context`, `shared_examples`, `it_behaves_like`) is not
+  resolved; the delegating line appears as written.
+- **Small adjacent examples are packed.** Examples of the same scope with no
+  child scope between them share one `test` chunk up to 1500 characters; an
+  example larger than that stays on its own. Each example in a pack keeps its
+  own `symbolId`: `find_symbol` on it returns that example alone, with its own
+  line range, and file and scope outlines list every example.
+
+:::note
+
+These chunking changes move the chunk set of existing indexes. After upgrading,
+the drift report asks for `tea-rags index-codebase --project <alias> --force`;
+see [After upgrading tea-rags](/operations/drift-detection#after-upgrading-tea-rags).
+
+:::
 
 :::tip
 
@@ -358,16 +407,21 @@ Enable it when you plan to use rerank presets like `techDebt`, `hotspots`,
    ```bash
    export EMBEDDING_PROVIDER=ollama
    ```
-2. **Increase batch size** if your system has enough memory:
+2. **Check the batch size the run settled on** —
+   `infraHealth.embedding.throughputTune` in `get_index_status`. If it sits at
+   `EMBEDDING_TUNE_BATCH_SIZE`, the ceiling may be holding it back; raise it if
+   your system has enough memory:
    ```bash
-   export EMBEDDING_TUNE_BATCH_SIZE=200
+   export EMBEDDING_TUNE_BATCH_SIZE=2048
    ```
 3. **Exclude large or binary files** that produce low-value chunks (lock files,
    minified bundles, vendored code)
-4. **Increase pipeline concurrency** for cloud providers with spare rate-limit
-   headroom:
+4. **Let pipeline concurrency climb.** Left unset, the run climbs embedding
+   concurrency from 1 up to an implicit ceiling of 8 while throughput rises. An
+   explicit value is a hard cap — set one above 8 only for a cloud provider
+   with spare rate-limit headroom:
    ```bash
-   export INGEST_PIPELINE_CONCURRENCY=4
+   export INGEST_PIPELINE_CONCURRENCY=16
    ```
 
 ### Memory Issues
@@ -376,7 +430,8 @@ Enable it when you plan to use rerank presets like `techDebt`, `hotspots`,
    ```bash
    export INGEST_CHUNK_SIZE=1500
    ```
-2. **Reduce batch size** to process fewer chunks at once:
+2. **Reduce the batch-size ceiling** to process fewer chunks at once (the run
+   never goes above it):
    ```bash
    export EMBEDDING_TUNE_BATCH_SIZE=50
    ```

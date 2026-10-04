@@ -84,6 +84,37 @@ describe("declaredPayloadIndexSet", () => {
     }
   });
 
+  // Qdrant answers order_by only over a range index, so a key rank_chunks
+  // orders by but no index schema serves (an unpinned `timestamp`) would fail
+  // the scroll instead of ranking — the age/recency legs order by the pinned
+  // `git.*.lastModifiedAt` integer indexes (bd tea-rags-mcp-xi2r9).
+  it("orders only by keys some index schema serves", () => {
+    const composition = compositionWithEveryTrajectory();
+    const rankModule = new RankModule(
+      composition.reranker,
+      composition.allDerivedSignals,
+      composition.allPayloadSignalDescriptors,
+    );
+    const types = new Map(
+      composition.allPayloadSignalDescriptors.map((d) => [toPhysicalPayloadKey(d.key), d.type] as const),
+    );
+    const unserved: string[] = [];
+    for (const signal of composition.allDerivedSignals) {
+      for (const level of ["chunk", "file"] as const) {
+        for (const { key } of rankModule.resolveOrderByFields({ [signal.name]: 1 }, level)) {
+          if (payloadFieldIndexSchema(key, types.get(key)!) === undefined) unserved.push(key);
+        }
+      }
+    }
+
+    expect(unserved).toEqual([]);
+    expect(
+      rankModule
+        .resolveOrderByFields({ recency: 1 }, "chunk")
+        .map(({ key }) => payloadFieldIndexSchema(key, "timestamp")),
+    ).toEqual(["integer"]);
+  });
+
   // The keys the bead measured: taxdome lacked the first five, the self-index
   // the last — each collection had only what its rank_chunks history created.
   it("requires every key the two live collections disagreed on", () => {

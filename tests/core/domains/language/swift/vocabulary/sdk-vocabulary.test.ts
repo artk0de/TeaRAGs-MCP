@@ -4,9 +4,10 @@
  * regeneration that loses one fails here rather than as a quiet rate drop.
  */
 
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
-import { SWIFT_SDK_VOCABULARY_JSON } from "../../../../../../src/core/domains/language/swift/vocabulary/sdk-vocabulary.generated.js";
 import { swiftSdkVocabulary } from "../../../../../../src/core/domains/language/swift/vocabulary/sdk-vocabulary.js";
 import { parseSwiftTypeText } from "../../../../../../src/core/domains/language/swift/vocabulary/swift-type-text.js";
 
@@ -101,7 +102,15 @@ describe("SwiftSdkVocabulary", () => {
   });
 
   it("spells every declared and returned type in a grammar the parser covers", () => {
-    const raw = JSON.parse(SWIFT_SDK_VOCABULARY_JSON) as {
+    const raw = JSON.parse(
+      readFileSync(
+        new URL(
+          "../../../../../../src/core/domains/language/swift/vocabulary/sdk-vocabulary.generated.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    ) as {
       types: Record<string, { m: Record<string, string[]> }>;
     };
     let total = 0;

@@ -35,7 +35,8 @@ function validateSchema<T>(
 }
 
 function validateApiKey(embedding: EmbeddingConfig): void {
-  if (embedding.provider === "ollama" || embedding.provider === "onnx") return;
+  // EMBEDDING_API_KEY is optional for llama-server: a loopback server needs none.
+  if (embedding.provider === "ollama" || embedding.provider === "onnx" || embedding.provider === "llama-server") return;
 
   const keyMap: Record<string, keyof EmbeddingConfig> = {
     openai: "openaiApiKey",
@@ -59,6 +60,10 @@ const PROVIDER_BATCH_DEFAULTS: Record<string, number> = {
   openai: 2048,
   cohere: 96,
   voyage: 128,
+  // One batch fans out across every GPU endpoint and its -np slots: 256 over
+  // two GPUs at -np 4 is 8 parallel requests of ~32 texts. The throughput
+  // tuner moves it from there.
+  "llama-server": 256,
 };
 
 function buildEnvInputs(env: EnvReader) {
@@ -95,6 +100,7 @@ function buildEnvInputs(env: EnvReader) {
       "EMBEDDING_UNAVAILABLE_RETRY_BASE_DELAY_MS",
     ),
     failoverConsecutiveFailures: env("EMBEDDING_TUNE_FAILOVER_CONSECUTIVE_FAILURES"),
+    static: env("EMBEDDING_TUNE_STATIC"),
   };
 
   const embedding = {
@@ -107,9 +113,11 @@ function buildEnvInputs(env: EnvReader) {
     ollamaLegacyApi: env("OLLAMA_LEGACY_API"),
     ollamaNumGpu: env("OLLAMA_NUM_GPU"),
     ollamaQuantization: env("OLLAMA_QUANTIZATION", "EMBEDDING_OLLAMA_QUANTIZATION"),
+    autoPull: env("EMBEDDING_AUTO_PULL"),
     openaiApiKey: env("OPENAI_API_KEY"),
     cohereApiKey: env("COHERE_API_KEY"),
     voyageApiKey: env("VOYAGE_API_KEY"),
+    apiKey: env("EMBEDDING_API_KEY"),
     tune: embeddingTune,
   };
 
@@ -175,6 +183,7 @@ function buildEnvInputs(env: EnvReader) {
   const userSetChunkSize = ingest.chunkSize;
   const userSetDeleteBatchSize = qdrantTune.deleteBatchSize;
   const userSetDeleteConcurrency = qdrantTune.deleteConcurrency;
+  const userSetPipelineConcurrency = ingestTune.pipelineConcurrency;
 
   return {
     core,
@@ -188,6 +197,7 @@ function buildEnvInputs(env: EnvReader) {
     userSetChunkSize,
     userSetDeleteBatchSize,
     userSetDeleteConcurrency,
+    userSetPipelineConcurrency,
   };
 }
 
@@ -210,6 +220,13 @@ export function parseAppConfigZod(source: EnvSource = process.env): {
     userSetChunkSize: boolean;
     userSetDeleteBatchSize: boolean;
     userSetDeleteConcurrency: boolean;
+    /**
+     * INGEST_PIPELINE_CONCURRENCY set under any spelling — even to 1. Unset,
+     * the value stays 1 for every consumer except the embedding throughput
+     * tuner's concurrency climb, whose ceiling becomes
+     * IMPLICIT_EMBEDDING_CONCURRENCY_CEILING.
+     */
+    userSetPipelineConcurrency: boolean;
     /**
      * Canonical names of the env families `source` set explicitly, under any
      * spelling — what an index run may pin into its registry entry
@@ -255,6 +272,7 @@ export function parseAppConfigZod(source: EnvSource = process.env): {
       userSetChunkSize: !!inputs.userSetChunkSize,
       userSetDeleteBatchSize: !!inputs.userSetDeleteBatchSize,
       userSetDeleteConcurrency: !!inputs.userSetDeleteConcurrency,
+      userSetPipelineConcurrency: !!inputs.userSetPipelineConcurrency,
       explicitEnvKeys: [...explicitEnvKeys],
     },
   };

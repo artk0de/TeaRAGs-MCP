@@ -314,7 +314,7 @@ describe("NamingLexiconOps", () => {
     it("a FREE-dominant project → no forced suggestion", async () => {
       await seedLocals((i) => `row_${String.fromCharCode(97 + (i % 26))}`);
       const result = await ops.getNamingLexicon({ collection: "c", language: "ruby", names: [draft] });
-      expect(result.names[0]).toMatchObject({ verdict: "NEW_TERM", topTerms: [] });
+      expect(result.names[0]).toMatchObject({ verdict: "NO_CONVENTION", prefer: { analogous: [] } });
       expect(result.names[0]).not.toHaveProperty("suggestion");
     });
 
@@ -1398,8 +1398,9 @@ describe("NamingLexiconOps", () => {
         expect(spy, read).toHaveBeenCalled();
         for (const [query] of spy.mock.calls) expect(query, read).toMatchObject({ excludePaths });
       }
-      expect(nameTypes).toHaveBeenCalledWith(expect.anything(), excludePaths);
-      expect(shortNames).toHaveBeenCalledWith(expect.anything(), excludePaths);
+      // The positional reads carry the answer's language namespace beside the exclusion (bd tea-rags-mcp-0qaht).
+      expect(nameTypes).toHaveBeenCalledWith(expect.anything(), excludePaths, ["ruby"]);
+      expect(shortNames).toHaveBeenCalledWith(expect.anything(), excludePaths, ["ruby"]);
     });
   });
 
@@ -1432,7 +1433,7 @@ describe("NamingLexiconOps", () => {
       const blind = await ops.getNamingLexicon({ collection: "c", language: "ruby", names: [draft] });
       expect(blind.names[0]).toMatchObject({ verdict: "CONFORMS", evidence: { n: 1 } });
       const own = await ops.getNamingLexicon({ collection: "c", language: "ruby", names: [{ ...draft, path: STORE }] });
-      expect(own.names[0]).toMatchObject({ verdict: "NEW_TERM", topTerms: [], evidence: { n: 0 } });
+      expect(own.names[0]).toMatchObject({ verdict: "NO_CONVENTION", prefer: { analogous: [] }, evidence: { n: 0 } });
     });
 
     it("a value draft's `path` takes its own file out of every evidence read, as diff mode does", async () => {
@@ -1442,10 +1443,10 @@ describe("NamingLexiconOps", () => {
       expect(blind.names[0]).toMatchObject({ evidence: { collision: true } });
 
       const own = await ops.getNamingLexicon({ collection: "c", language: "ruby", names: [{ ...draft, path: STORE }] });
+      // Spec D4 (bd tea-rags-mcp-0qaht): an untyped method is judged by method vocabulary; verbless → NO_CONVENTION.
       expect(own.names[0]).toMatchObject({
         name: "store_entity!",
-        verdict: "NEW_TERM",
-        topTerms: [],
+        verdict: "NO_CONVENTION",
         evidence: { n: 0, collision: false },
       });
     });
@@ -1467,7 +1468,7 @@ describe("NamingLexiconOps", () => {
       expect(result.names.map((n) => [n.name, n.verdict])).toEqual([
         ["result", "CONFORMS"],
         ["result", "CONFORMS"],
-        ["outcome_blob", "NEW_TERM"],
+        ["outcome_blob", "NO_CONVENTION"],
       ]);
     });
 
@@ -1539,6 +1540,48 @@ describe("NamingLexiconOps", () => {
         names: [{ name: "Concern", kind: "type", path: "app/lib/refusals/concern.rb" }],
       });
       expect(result.names[0]).toMatchObject({ verdict: "NEW_TERM", evidence: { n: 0 } });
+    });
+  });
+
+  // Lexicon friction F3 (bd tea-rags-mcp-0qaht.1): five `*SymbolId` drafts came back as bare NEW_TERMs
+  // because `SymbolId` values had no rows — while the types specializing it did.
+  it("a value no convention binds is pointed at its type's spelling and its family's names", async () => {
+    const declaration = (typeId: string) => ({
+      language: "typescript",
+      typeId,
+      shortName: typeId,
+      symbolKind: "type_alias" as const,
+      line: 1,
+      reopens: false,
+      supertypes: [],
+    });
+    await db.replaceTypeDeclarationsBulk([
+      { relPath: "src/ids.ts", rows: ["SymbolId", "CallerSymbolId", "CalleeSymbolId"].map(declaration) },
+    ]);
+    const param = (owner: string, name: string, typeName: string): IdentifierRow => ({
+      ownerSymbolId: owner,
+      kind: "param",
+      name,
+      line: 1,
+      typeName,
+      typeSource: "annotation",
+    });
+    await write(
+      [
+        { relPath: "src/a.ts", rows: [param("a", "callerSymbolId", "CallerSymbolId")] },
+        { relPath: "src/b.ts", rows: [param("b", "callerSymbolId", "CallerSymbolId")] },
+        { relPath: "src/c.ts", rows: [param("c", "calleeSymbolId", "CalleeSymbolId")] },
+      ],
+      "typescript",
+    );
+    const result = await ops.getNamingLexicon({
+      collection: "c",
+      language: "typescript",
+      names: [{ name: "sid", kind: "param", type: "SymbolId" }],
+    });
+    expect(result.names[0]).toMatchObject({
+      verdict: "NO_CONVENTION",
+      prefer: { exact: "symbolId", analogous: ["callerSymbolId", "calleeSymbolId"] },
     });
   });
 });

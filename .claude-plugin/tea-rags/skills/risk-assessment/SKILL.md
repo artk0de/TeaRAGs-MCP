@@ -55,14 +55,20 @@ Semantic/hybrid search resolves intent-based scopes.
 
 ## Rules
 
+**Addressing:** every call passes `path=<your working directory>` —
+search-cascade "Addressing the Codebase"; never project alone.
+
 1. **Execute YOURSELF** — no subagents.
 2. **No `git log`, `git diff`, `git blame`** — overlay has git signals.
 3. **No built-in Search/Grep for code discovery** — use tea-rags tools only.
 4. **Search results contain code when metaOnly=false.** Evaluate from search
    results BEFORE any Read or navigation.
-5. **Partial reads only.**
-   `Read(path, offset=startLine, limit=endLine-startLine)` using coordinates
-   from search results. Never read full files.
+5. **Depth → `find_symbol`, never Read** (search-cascade After-Search
+   Navigation): full body `symbol=<symbolId>`, file outline `relativePath`,
+   neighbour `navigation.prev/nextSymbolId`. Partial `Read` only for non-symbol
+   text (config, data). Never read full files. Row with `treeState` = pre-edit
+   index copy, lines stale → `find_symbol` for current code (search-cascade
+   "Addressing the Codebase").
 6. **Minimize tool calls — but never batch across a ranking boundary.** Batch
    what shares a ranking space: all rank_chunks in one message (separate calls),
    all Critical UUIDs into one find_similar (vector math, order-free). Do NOT
@@ -80,7 +86,7 @@ Semantic/hybrid search resolves intent-based scopes.
 1b STRUCTURAL         → rank_chunks × decomposition, godModule ─┘
 2. MERGE              → risk presets ONLY — structural results never enter tiers
 3. EXPAND             → find_similar from Critical only
-4. ENRICH             → partial Read + test coverage + codegraph axis + fix cost
+4. ENRICH             → find_symbol depth + test coverage + codegraph axis + fix cost
                         + god-class attribution + classify
 5. OUTPUT             → top-10 risk map + structural risks + structural debt
 ```
@@ -89,8 +95,8 @@ Semantic/hybrid search resolves intent-based scopes.
 
 Translate $ARGUMENTS into `pathPattern` and `scopeType`.
 
-**Shortcut:** `pathPattern` provided directly as argument (e.g., delegated from
-explore PG-2) → use as-is, `scopeType = "domain"`, skip resolution.
+**Shortcut:** `pathPattern` provided directly as argument (e.g., by a caller
+skill) → use as-is, `scopeType = "domain"`, skip resolution.
 
 ```
 $ARGUMENTS describes...
@@ -148,7 +154,7 @@ Parameters per call:
 
 ```
 rank_chunks:
-  path: <project>
+  path: <your working directory>
   rerank: <preset>
   filter: { presets: "<filter-preset>" }   ← dimension-specific (see table above)
   language: <primary language>             ← omit on polyglot codebases
@@ -297,7 +303,7 @@ No healthy-demoted candidates → skip negativeIds.
 find_similar:
   positiveIds: [<all Critical UUIDs>]   ← batch, not per-candidate
   negativeIds: [<demoted UUIDs>]        ← healthy-demoted from MERGE
-  path: <project>
+  path: <your working directory>
   limit: 10
   rerank: bugHunt                       ← surface risky similar, not just similar
   testFile: "exclude"                   ← REQUIRED — a candidate's own test file
@@ -326,8 +332,8 @@ Add qualifying results as "Related risk" under parent Critical candidate.
 
 For **Critical and High** candidates (typically 5-10 chunks):
 
-**1. Code review** — Content in results (metaOnly=false). Read only when
-surrounding context needed. Use chunk coordinates.
+**1. Code review** — Content in results (metaOnly=false). Surrounding context →
+`find_symbol` (Rule 5), not Read.
 
 **2. Test coverage check — stratified, NEVER one batched call.**
 

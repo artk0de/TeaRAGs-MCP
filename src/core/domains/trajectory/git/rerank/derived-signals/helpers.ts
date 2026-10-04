@@ -4,62 +4,33 @@
  * Supports both nested (git.file.*, git.chunk.*) and flat (git.*) payload formats.
  * Generic algorithms (computeAlpha, blend, normalize, confidenceDampening)
  * live in infra/signal-utils.
+ *
+ * The payload ACCESSORS (GitLike, getGit, fileField, chunkField, payloadAlpha)
+ * live git-side in `git/infra/payload-accessors.ts` and are re-exported here —
+ * the rerank layer's one import surface for them. Age-derivation reads the
+ * same accessors from their git-side home, so the trajectory never reaches
+ * back into the rerank layer (bd tea-rags-mcp-nz15d).
  */
 
-import { blend, computeAlpha, normalize } from "../../../../../contracts/signal-utils.js";
+import { blend, normalize } from "../../../../../contracts/signal-utils.js";
 import type { SignalLevel } from "../../../../../contracts/types/reranker.js";
+import { chunkField, fileField, getGit, payloadAlpha } from "../../infra/payload-accessors.js";
 
 // Re-export generic functions used directly by signal classes
 export { blend, computeAlpha, confidenceDampening, normalize } from "../../../../../contracts/signal-utils.js";
 
+// Re-export the git-side payload accessors (bd tea-rags-mcp-nz15d)
+export { chunkField, fileField, getGit, payloadAlpha };
+export type { GitLike } from "../../infra/payload-accessors.js";
+
 // ---------------------------------------------------------------------------
-// Payload accessors (support nested and flat formats)
+// Numeric sugar over the git-side accessors
 // ---------------------------------------------------------------------------
-
-export interface GitLike {
-  file?: Record<string, unknown>;
-  chunk?: Record<string, unknown>;
-  [key: string]: unknown;
-}
-
-/** Safely extract the git object from the payload. */
-export function getGit(payload: Record<string, unknown>): GitLike | undefined {
-  const { git } = payload;
-  if (git && typeof git === "object") return git as GitLike;
-  return undefined;
-}
-
-/** Read a file-level field, checking nested first then flat. */
-export function fileField(payload: Record<string, unknown>, field: string): unknown {
-  const git = getGit(payload);
-  if (!git) return undefined;
-  // Nested: git.file.<field>
-  if (git.file && typeof git.file === "object" && field in git.file) {
-    return git.file[field];
-  }
-  // Flat: git.<field>
-  if (field in git) {
-    return git[field];
-  }
-  return undefined;
-}
 
 /** Read a file-level numeric field. */
 export function fileNum(payload: Record<string, unknown>, field: string): number {
   const val = fileField(payload, field);
   return typeof val === "number" ? val : 0;
-}
-
-/**
- * Read a chunk-level field, returning undefined if absent.
- * Distinguishes between "field missing" and "field = 0" for correct blend semantics.
- */
-export function chunkField(payload: Record<string, unknown>, field: string): number | undefined {
-  const git = getGit(payload);
-  if (!git?.chunk || typeof git.chunk !== "object") return undefined;
-  if (!(field in git.chunk)) return undefined;
-  const val = git.chunk[field];
-  return typeof val === "number" ? val : undefined;
 }
 
 /**
@@ -81,24 +52,8 @@ export function hasChunkData(payload: Record<string, unknown>): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Blending helpers (compute alpha from payload)
+// Blending helpers (alpha comes from the git-side payloadAlpha accessor)
 // ---------------------------------------------------------------------------
-
-/** Get alpha from payload's chunk and file commit counts. Returns 0 when signalLevel is "file". */
-export function payloadAlpha(payload: Record<string, unknown>, signalLevel?: SignalLevel): number {
-  if (signalLevel === "file") return 0;
-  const chunkCC = chunkField(payload, "commitCount");
-  if (chunkCC === undefined || chunkCC <= 0) return 0;
-
-  // Distinguish "file data absent" from "fileCount = 0":
-  // fileField returns undefined when git.file.commitCount doesn't exist,
-  // meaning chunk-only payload → trust chunk data fully (alpha = 1).
-  const rawFileCC = fileField(payload, "commitCount");
-  if (rawFileCC === undefined) return 1;
-
-  const fileCC = typeof rawFileCC === "number" ? rawFileCC : 0;
-  return computeAlpha(chunkCC, fileCC);
-}
 
 /**
  * Blend a file+chunk numeric signal using payload alpha.

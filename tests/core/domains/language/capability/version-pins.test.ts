@@ -133,6 +133,22 @@ describe("computeVersionPins", () => {
     expect(computeVersionPins(caps, root).faux?.walker?.digest).not.toBe(before);
   });
 
+  // bd tea-rags-mcp-bbo1h.3 — the Swift SDK vocabulary moved out of a `.ts`
+  // string module into a `.json` asset the resolver reads from disk. Data the
+  // walker reads moves its output exactly like code does; a digest blind to it
+  // would let a regenerated vocabulary ship under an unchanged walker version.
+  it("moves the digest when a JSON data asset under the axis changes", () => {
+    const assetFile = join(root, "src/core/domains/language/faux/vocabulary/data.generated.json");
+    write(walkerFile, "export const walk = () => 1;\n");
+    write(assetFile, '{"v":1}\n');
+    const before = computeVersionPins(caps, root).faux?.walker?.digest;
+
+    write(assetFile, '{"v":2}\n');
+
+    expect(computeVersionPins(caps, root).faux?.walker?.digest).not.toBe(before);
+    rmSync(assetFile);
+  });
+
   it("leaves the digest alone when only an excluded source changes", () => {
     write(walkerFile, "export const walk = () => 1;\n");
     const before = computeVersionPins(caps, root).faux?.walker?.digest;

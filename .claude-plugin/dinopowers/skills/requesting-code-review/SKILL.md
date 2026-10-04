@@ -21,10 +21,10 @@ immediately instead of re-excavating context.
 **tea-rags git-bundle query MUST run on `git diff --name-only` BEFORE composing
 the review request** — whenever ≥1 file changed.
 
-Correct tool (`semantic_search`) + custom impact rerank
-(`imports: 0.5, churn: 0.3, ownership: 0.2`) + parameters (brace-expanded
-`pathPattern` over diff files, `metaOnly: true`) + bundle format (per-file
-ownership/churn/taskIds, NOT blast-radius verdict) = core value.
+Correct tool (`semantic_search`) + impact rerank (`blastRadius` / custom
+fallback) (`imports: 0.5, churn: 0.3, ownership: 0.2`) + parameters
+(brace-expanded `pathPattern` over diff files, `metaOnly: true`) + bundle format
+(per-file ownership/churn/taskIds, NOT blast-radius verdict) = core value.
 
 Diff empty: skip wrapper, invoke `superpowers:requesting-code-review` directly.
 Don't fabricate.
@@ -33,10 +33,10 @@ Don't fabricate.
 redirects superpowers:X. NEVER bypass wrapper.
 
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
-`tea-rags/rules/index-freshness.md`. No background reindex hook — worktree-plan
-freshness explicit (clone + per-task reindex in `dinopowers:executing-plans`);
-run `mcp__tea-rags__index_codebase` manually to search code edited but not
-committed, BEFORE first tea-rags call.
+`tea-rags/rules/index-freshness.md`. No background reindex hook. Linked
+worktree: overlay serves uncommitted edits — never reindex for them. Main
+checkout: incremental `mcp__tea-rags__index_codebase` BEFORE first tea-rags call
+over code edited but not committed.
 
 ## Step 1 — Collect diff file list
 
@@ -63,23 +63,22 @@ Issue ONE `mcp__tea-rags__semantic_search` — SAME idiom as
 `dinopowers:writing-plans`:
 
 ```
-project:     <alias from list_projects — RECOMMENDED, omit path when set>
-path:        <current project path — fallback when no alias is registered>
+path:        <your working directory>   ← tea-rags search-cascade "Addressing the Codebase"; never project alone
 query:       <intent from Step 1>
 pathPattern: "{diffFile1,diffFile2,...}"   ← brace expansion
-rerank:      { custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }
+rerank:      "blastRadius"               ← codegraph on; else { custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }
 limit:       <diffFiles.length * 3>
 metaOnly:    true
 ```
 
 Do NOT substitute:
 
-| Wrong tool                                    | Why wrong                                                                     |
-| --------------------------------------------- | ----------------------------------------------------------------------------- |
-| `mcp__tea-rags__hybrid_search`                | Custom rerank tied to `semantic_search`                                       |
-| Named preset (`"codeReview"` / `"ownership"`) | `codeReview` misses `imports`; `ownership` misses churn + taskIds in one call |
-| `git blame` / `git log --format` per-file     | Manual git commands are slower and miss the indexed overlay                   |
-| `mcp__tea-rags__find_similar`                 | Finds code analogs, not diff metadata                                         |
+| Wrong tool                                          | Why wrong                                                                                            |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `mcp__tea-rags__hybrid_search`                      | Same rerank, but its BM25 leg re-ranks by query-token overlap — signal scan wants semantic + signals |
+| Other named preset (`"codeReview"` / `"ownership"`) | `codeReview` misses `imports`; `ownership` misses churn + taskIds in one call                        |
+| `git blame` / `git log --format` per-file           | Manual git commands are slower and miss the indexed overlay                                          |
+| `mcp__tea-rags__find_similar`                       | Finds code analogs, not diff metadata                                                                |
 
 Do NOT pass:
 
@@ -105,22 +104,23 @@ lists.
 
 ## Step 2.6 — Naming pre-check (codegraph only)
 
-`get_naming_lexicon(changes={ base: <Step 1 base> })` — ONE call reviews every
-name the diff's added lines declare (values, types, constants); do not hand-list
-them into `names[]`. Base = the target branch for a branch diff (`main`); the
-tool reads it at its merge-base with HEAD, so a target that moved on adds
-nothing. Omit it for uncommitted work (default `HEAD`). Settle naming before a
-reviewer spends a comment on it: `MISFIT` → rename to `suggestion` before
-sending (or list it under risk flags with the holder) — a type MISFIT with
-`role.evidence: "directory"` only when the type belongs to `role.examples`'
-family, else keep the name; `COLLISION` → rename, or justify against the
-`existing` declaration; `NEW_TERM` → one-line justification in the bundle, or
-take an offered alternative. Answer lives under `review` {base, mergeBase,
-changedFiles, checked, conforming, novel, findings, notJudged, truncated?};
-findings flat `{relPath, line, name, kind, type?, verdict, …}`. Bundle line:
-findings grouped by verdict with `relPath:line`, plus conforming and novel
-counts (`novel` = nothing to compare against, no action). A finding with
-`genericName` = generic name → rename or justify. Reading:
+`review_changes(changes={ base: <Step 1 base> }, sections: ["naming"])` — ONE
+call reviews every name the diff's added lines declare (values, types,
+constants); do not hand-list them into `names[]`. Base = the target branch for a
+branch diff (`main`); the tool reads it at its merge-base with HEAD, so a target
+that moved on adds nothing. Omit it for uncommitted work (default `HEAD`).
+Settle naming before a reviewer spends a comment on it: `MISFIT` → rename to
+`suggestion` before sending (or list it under risk flags with the holder) — a
+type MISFIT with `role.evidence: "directory"` only when the type belongs to
+`role.examples`' family, else keep the name; `COLLISION` → rename, or justify
+against the `existing` declaration; `NEW_TERM` → one-line justification in the
+bundle, or take an offered alternative. Worktree branch → pass `path=<worktree>`
+(alias alone reads the main checkout). Answer lives under `review` {workTree,
+base, mergeBase, changedFiles, checked, conforming, novel, findings, notJudged,
+truncated?}; findings flat `{relPath, line, name, kind, type?, verdict, …}`.
+Bundle line: findings grouped by verdict with `relPath:line`, plus conforming
+and novel counts (`novel` = nothing to compare against, no action). A finding
+with `genericName` = generic name → rename or justify. Reading:
 `tea-rags:data-driven-generation` Step 5 "Naming (lexicon)".
 
 ## Step 3 — Build reviewer-context bundle
@@ -232,8 +232,10 @@ cycle. Wrapper enriches request, doesn't replace review process.
   PAIR-MATCHING, not education. Run Step 2.
 - "Diff is small, skip the bundle" → small diffs to high-churn files still
   benefit from ownership context
-- Substituted git blame/log → redo with semantic_search + custom rerank
-- Named preset instead of custom weights → redo
+- Substituted git blame/log → redo with semantic_search + Step 2 rerank
+- Wrong rerank for codegraph state → redo: `"blastRadius"` when prime
+  `## Enrichment` lists `codegraph.symbols`, else
+  `{imports: 0.5, churn: 0.3, ownership: 0.2}` (tea-rags analytics-rerank)
 - Composed request before Step 2 → revert, restart
 - Pasted raw diff into bundle → bundle is METADATA (ownership/churn/tickets),
   not code

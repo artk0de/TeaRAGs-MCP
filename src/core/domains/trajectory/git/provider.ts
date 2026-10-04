@@ -20,6 +20,7 @@ import type {
   GitAdapterKind,
   OidBatchResolver,
 } from "../../../adapters/vcs/types.js";
+import type { TemporalSymbolCommitBuffer } from "../../../contracts/types/codegraph.js";
 import type { TrajectoryGitConfig } from "../../../contracts/types/config.js";
 import type { FileClassification } from "../../../contracts/types/file-classification.js";
 import type {
@@ -36,6 +37,7 @@ import type {
 } from "../../../contracts/types/provider.js";
 import type { RerankPreset } from "../../../contracts/types/reranker.js";
 import { isDebug } from "../../../infra/runtime.js";
+import { GIT_TRAJECTORY_ALGORITHM_VERSION } from "./algorithm-version.js";
 import { gitFilters } from "./filters.js";
 import { GitBlameStore } from "./infra/blame-store.js";
 import { relativizeChunkMap } from "./infra/build-accumulators.js";
@@ -43,6 +45,7 @@ import { GitEnrichmentCache } from "./infra/cache.js";
 import { buildChunkChurnMap } from "./infra/chunk-reader.js";
 import { defaultBlamePoolSize } from "./infra/churn-walk/blame-pool-defaults.js";
 import { BlameWorkerPool } from "./infra/churn-walk/blame-pool.js";
+import type { ChunkChurnWalkOutcome } from "./infra/churn-walk/protocol.js";
 import { ChunkChurnWalkPool } from "./infra/churn-walk/walk-pool.js";
 import { GitCommitDiscoveryStore } from "./infra/commit-discovery-store.js";
 import { GitCommitDiscovery } from "./infra/commit-discovery.js";
@@ -58,6 +61,7 @@ import { buildBugFixShaSet } from "./infra/merge-branch-resolver.js";
 import type { SquashOptions } from "./infra/metrics.js";
 import { assembleFileSignals } from "./infra/metrics/file-assembler.js";
 import { sliceCommitsFollowingRenames } from "./infra/rename-following.js";
+import { carryDirtyChunkMapOntoHead, zeroOverlaysOfUncommittedRows } from "./infra/working-rows.js";
 import { gitPayloadSignalDescriptors } from "./payload-signals.js";
 import { gitDerivedSignals } from "./rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "./rerank/presets/index.js";
@@ -114,8 +118,25 @@ interface ChunkPhaseHandoffSlice {
   readonly churnByPath: Map<string, FileChurnData>;
 }
 
+/**
+ * The git enrichment policy, as `GitEnrichmentProvider#shouldEnrich` answers
+ * it under `chunkMaxFileLines` — exported so a reader computing git blocks
+ * outside a run (the working tree's on-demand signals) declines exactly what an
+ * index run declines.
+ */
+export function gitEnrichmentScope(
+  file: { classification: FileClassification; fileLines?: number },
+  chunkMaxFileLines: number,
+): EnrichmentScope {
+  if (file.classification.isGenerated) return "none";
+  if (file.classification.isDocumentation) return "file-only";
+  if (file.fileLines !== undefined && file.fileLines > chunkMaxFileLines) return "file-only";
+  return "full";
+}
+
 export class GitEnrichmentProvider implements EnrichmentProvider {
   readonly key = "git";
+  readonly algorithmVersion = GIT_TRAJECTORY_ALGORITHM_VERSION;
 
   // ── Query-side contract ──
   readonly signals = gitPayloadSignalDescriptors;
@@ -208,14 +229,25 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    */
   readonly workerDescriptor?: WorkerEnrichmentDescriptor;
 
+  /** bd tea-rags-mcp-3gz4f — run-scoped symbol commit sets, drained by the temporal hook. */
+  private readonly temporalSymbolCommits?: TemporalSymbolCommitBuffer;
+
   constructor(
     config?: Partial<GitProviderConfig>,
     squashOpts?: SquashOptions,
     workerDescriptor?: WorkerEnrichmentDescriptor,
+    /**
+     * bd tea-rags-mcp-3gz4f — the run-scoped buffer the temporal hook drains.
+     * Main-thread only: never rides the worker config (a class instance cannot
+     * cross postMessage), the off-thread walk returns its sets as data and the
+     * absorption happens here.
+     */
+    temporalSymbolCommits?: TemporalSymbolCommitBuffer,
   ) {
     this.config = { ...DEFAULT_PROVIDER_CONFIG, ...config };
     this.squashOpts = squashOpts;
     this.workerDescriptor = workerDescriptor;
+    this.temporalSymbolCommits = temporalSymbolCommits;
     this.fileSignalTransform = (data, maxEndLine) => {
       const churnData = data as unknown as FileChurnData;
       const blameLines = this.blameByChurnData.get(churnData);
@@ -273,10 +305,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    * tests) enriches fully.
    */
   shouldEnrich(file: { relPath: string; classification: FileClassification; fileLines?: number }): EnrichmentScope {
-    if (file.classification.isGenerated) return "none";
-    if (file.classification.isDocumentation) return "file-only";
-    if (file.fileLines !== undefined && file.fileLines > this.config.chunkMaxFileLines) return "file-only";
-    return "full";
+    return gitEnrichmentScope(file, this.config.chunkMaxFileLines);
   }
 
   readonly fileSignalTransform: FileSignalTransform;
@@ -728,20 +757,41 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     const relPaths = [...chunkMap.keys()].map((key) => (key.startsWith(root) ? key.slice(root.length + 1) : key));
     const handoff = this.sliceChunkHandoff(relPaths);
     let rawResult: Map<string, Map<string, ChunkChurnOverlay>>;
+    let symbolCommits: Map<string, Map<string, Set<string>>> | undefined;
+    let uncommittedOverlays: Map<string, Map<string, ChunkChurnOverlay>>;
     try {
+      // The walk addresses HEAD rows; the chunker read the WORKING tree. A dirty
+      // file's rows are carried onto HEAD first, and rows made only of
+      // uncommitted lines get the walk's zero overlay (bd tea-rags-mcp-xi2r9).
+      const adapter = await this.adapterFor(root);
+      // The duck-typed contract shape is structurally BlobBatchReader (kc93).
+      const carried = await carryDirtyChunkMapOntoHead(
+        adapter,
+        chunkMap,
+        this.config.chunkTimeoutMs,
+        options?.blobReader,
+      );
+      const walkMap = carried.chunkMap;
+      uncommittedOverlays = zeroOverlaysOfUncommittedRows(adapter.repoRoot, carried.uncommittedRows, {
+        fileChurnDataMap: handoff.churnByPath,
+        maxFileLines: this.config.chunkMaxFileLines,
+        ...(this.squashOpts ? { squashOpts: this.squashOpts } : {}),
+      });
       if (walkThread && options?.commitDiscovery && options.skipCache) {
-        rawResult = await this.walkChunkChurnOffThread(
+        const outcome = await this.walkChunkChurnOffThread(
           root,
-          chunkMap,
+          walkMap,
           walkThread,
           options.commitDiscovery,
           handoff,
           options,
         );
+        ({ overlays: rawResult, symbolCommits } = outcome);
       } else {
+        const collected = new Map<string, Map<string, Set<string>>>();
         rawResult = await buildChunkChurnMap(
-          await this.adapterFor(root),
-          chunkMap,
+          adapter,
+          walkMap,
           this.enrichmentCache,
           this.isoGitCache,
           this.config.chunkConcurrency,
@@ -764,7 +814,14 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
           options?.commitDiscovery,
           // iqpuu: per-walk instrumentation for the [ChunkChurn] pipeline line.
           options?.onWalkStats,
+          collected,
         );
+        symbolCommits = collected;
+      }
+      if (this.temporalSymbolCommits && symbolCommits) {
+        for (const [relPath, symbols] of symbolCommits) {
+          this.temporalSymbolCommits.absorb(relPath, symbols);
+        }
       }
     } finally {
       // Released on failure too: a failed walk is healed by backfill/recovery,
@@ -773,12 +830,14 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     }
 
     const result = new Map<string, Map<string, ChunkSignalOverlay>>();
-    for (const [filePath, overlayMap] of rawResult) {
-      const chunkEntries = new Map<string, ChunkSignalOverlay>();
-      for (const [chunkId, overlay] of overlayMap) {
-        chunkEntries.set(chunkId, overlay);
+    for (const overlays of [rawResult, uncommittedOverlays]) {
+      for (const [filePath, overlayMap] of overlays) {
+        const chunkEntries = result.get(filePath) ?? new Map<string, ChunkSignalOverlay>();
+        for (const [chunkId, overlay] of overlayMap) {
+          chunkEntries.set(chunkId, overlay);
+        }
+        result.set(filePath, chunkEntries);
       }
-      result.set(filePath, chunkEntries);
     }
     return result;
   }
@@ -799,9 +858,16 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     discovery: NonNullable<ChunkSignalOptions["commitDiscovery"]>,
     handoff: ChunkPhaseHandoffSlice,
     options?: ChunkSignalOptions,
-  ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
+  ): Promise<ChunkChurnWalkOutcome> {
     const relativeChunkMap = relativizeChunkMap(root, chunkMap);
-    if (relativeChunkMap.size === 0) return new Map();
+    // 3gz4f: the short-circuit reports no symbolCommits — no walk, nothing to
+    // absorb; the zeroed stats keep the shape the caller destructures.
+    if (relativeChunkMap.size === 0) {
+      return {
+        overlays: new Map(),
+        stats: { files: 0, commits: 0, holdCount: 0, semWaitMs: 0, blobReads: 0, patches: 0, memoHits: 0, wallMs: 0 },
+      };
+    }
 
     // Same failure semantics as walkCommits' discovery branch: a broken
     // discovery ⇒ no churn for this batch, never a thrown enrichment error.
@@ -843,6 +909,6 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       useSharedLimiter: options?.concurrencySemaphore !== undefined,
     });
     options?.onWalkStats?.(outcome.stats);
-    return outcome.overlays;
+    return outcome;
   }
 }

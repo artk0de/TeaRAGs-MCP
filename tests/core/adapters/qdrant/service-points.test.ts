@@ -15,6 +15,7 @@ import {
   isServicePointPayload,
   SERVICE_POINT_TYPES,
   servicePointExclusions,
+  withServicePointExclusions,
 } from "../../../../src/core/adapters/qdrant/service-points.js";
 
 describe("service points — the one definition", () => {
@@ -51,5 +52,47 @@ describe("service points — the one definition", () => {
     first.push({ key: "relativePath", match: { value: "x" } });
 
     expect(servicePointExclusions()).toHaveLength(SERVICE_POINT_TYPES.length);
+  });
+});
+
+/**
+ * bd tea-rags-mcp-xi2r9 (live probe): in a small collection the two service
+ * points ranked 3rd and 5th in semantic_search, hybrid_search and find_similar
+ * — every ranked query, because no ranked query excluded them. The exclusion is
+ * applied once, in `QdrantSearchExecutor`, through this function.
+ */
+describe("withServicePointExclusions — the ranked-query filter", () => {
+  const exclusions = () => servicePointExclusions();
+
+  it("should turn an absent or empty filter into the exclusion alone", () => {
+    expect(withServicePointExclusions(undefined)).toEqual({ must_not: exclusions() });
+    expect(withServicePointExclusions({})).toEqual({ must_not: exclusions() });
+  });
+
+  it("should append to a Qdrant filter's must_not and keep its must and should", () => {
+    const must = [{ key: "language", match: { value: "typescript" } }];
+    const should = [{ key: "chunkType", match: { value: "function" } }];
+    const mustNot = [{ key: "isTest", match: { value: true } }];
+
+    expect(withServicePointExclusions({ must, should, must_not: mustNot })).toEqual({
+      must,
+      should,
+      must_not: [...mustNot, ...exclusions()],
+    });
+  });
+
+  it("should expand the flat key/value form as the executor reads it", () => {
+    expect(withServicePointExclusions({ language: "ruby" })).toEqual({
+      must: [{ key: "language", match: { value: "ruby" } }],
+      must_not: exclusions(),
+    });
+  });
+
+  it("should not mutate the caller's filter", () => {
+    const filter = { must_not: [{ key: "isTest", match: { value: true } }] };
+
+    withServicePointExclusions(filter);
+
+    expect(filter.must_not).toHaveLength(1);
   });
 });

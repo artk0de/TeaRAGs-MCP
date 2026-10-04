@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { LlamaServerContextOverflowError } from "../../../../../src/core/adapters/embeddings/llama-server/errors.js";
 import {
   OllamaContextOverflowError,
   OllamaResponseError,
@@ -83,6 +84,14 @@ describe("classifyEmbeddingQuarantinable", () => {
 
     expect(result).toBeInstanceOf(ChunkOversizedError);
     expect(result?.phase).toBe("embed");
+  });
+
+  it("classifies a llama-server single-text size failure as ChunkOversizedError", () => {
+    const err = new LlamaServerContextOverflowError("http://gpu:8081", 500, "input is too large to process");
+
+    const result = classifyEmbeddingQuarantinable(err, path);
+
+    expect(result).toBeInstanceOf(ChunkOversizedError);
   });
 
   it("classifies a 413 embedding response as EmbeddingRejectedError", () => {
