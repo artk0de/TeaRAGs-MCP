@@ -369,3 +369,107 @@ describe("parseBlameOutput", () => {
     expect(gitParsers.parseBlameOutput(stdout)).toEqual([]);
   });
 });
+
+describe("parseNumstatChangedPath — C-quoted path escapes git can emit", () => {
+  it("decodes single-character escapes and keeps an unknown escape's character literally", () => {
+    // `\t` and `\"` are quote_c_style escapes; `\q` is not one, so the
+    // character after the backslash is kept as-is rather than dropped.
+    expect(gitParsers.parseNumstatChangedPath('"dir/a\\tb\\"c\\q.ts"')).toEqual({ path: 'dir/a\tb"cq.ts' });
+  });
+
+  it("stops decoding at a dangling trailing backslash instead of reading past the field", () => {
+    expect(gitParsers.parseNumstatChangedPath('"dir/odd\\"')).toEqual({ path: "dir/odd" });
+  });
+
+  it("leaves a field with an unterminated opening quote untouched", () => {
+    expect(gitParsers.parseNumstatChangedPath('"dir/never-closed.ts')).toEqual({ path: '"dir/never-closed.ts' });
+  });
+});
+
+describe("parseCommitFileNumstat — rows that carry no usable line counts", () => {
+  it("skips blank sections and binary rows, and drops a commit that touched only binaries", () => {
+    const textSha = "a".repeat(40);
+    const binarySha = "b".repeat(40);
+    const stdout = [
+      "",
+      "   ", // whitespace-only section between records
+      textSha,
+      "",
+      "Alice",
+      "alice@example.com",
+      "1700000000",
+      "1700000100",
+      "feat: text",
+      "3\t1\tsrc/a.ts\n-\t-\tassets/logo.png",
+      binarySha,
+      "",
+      "Bob",
+      "bob@example.com",
+      "1700000200",
+      "1700000300",
+      "chore: images",
+      "-\t-\tassets/photo.jpg",
+    ].join("\0");
+
+    const result = gitParsers.parseCommitFileNumstat(stdout);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].commit.sha).toBe(textSha);
+    expect(result[0].committerTimestamp).toBe(1700000100);
+    expect(result[0].files).toEqual([{ path: "src/a.ts", added: 3, deleted: 1 }]);
+  });
+});
+
+describe("parseCommitPathChanges — name-status stream per commit", () => {
+  const H = gitParsers.COMMIT_PATH_CHANGES_HEADER;
+
+  it("groups status rows under their commit header, pairs renames and treats copies as plain adds", () => {
+    const stdout = [
+      "M", // a status row before any header carries no commit and is ignored
+      "orphan.ts",
+      `${H}${"a".repeat(40)} 1700000000`,
+      "\nM",
+      "src/a.ts",
+      "R087",
+      "src/old.ts",
+      "src/new.ts",
+      "C100",
+      "src/template.ts",
+      "src/copy.ts",
+      `${H}${"b".repeat(40)} 1700000100`, // a commit with no rows is not reported
+      `${H}${"c".repeat(40)} 1700000200`,
+      "\nD",
+      "src/gone.ts",
+      "",
+    ].join("\0");
+
+    expect(gitParsers.parseCommitPathChanges(stdout)).toEqual([
+      {
+        sha: "a".repeat(40),
+        timestamp: 1700000000,
+        changedFiles: [
+          { path: "src/a.ts" },
+          { path: "src/new.ts", previousPath: "src/old.ts" },
+          { path: "src/copy.ts" },
+        ],
+      },
+      { sha: "c".repeat(40), timestamp: 1700000200, changedFiles: [{ path: "src/gone.ts" }] },
+    ]);
+  });
+
+  it("keeps the rows parsed so far when the stream is cut inside a rename pair", () => {
+    const stdout = [`${H}${"a".repeat(40)} 1700000000`, "\nM", "src/a.ts", "R100", "src/old.ts"].join("\0");
+
+    expect(gitParsers.parseCommitPathChanges(stdout)).toEqual([
+      { sha: "a".repeat(40), timestamp: 1700000000, changedFiles: [{ path: "src/a.ts" }] },
+    ]);
+  });
+
+  it("keeps the rows parsed so far when the stream is cut after a status letter", () => {
+    const stdout = [`${H}${"a".repeat(40)} 1700000000`, "\nA", "src/a.ts", "M"].join("\0");
+
+    expect(gitParsers.parseCommitPathChanges(stdout)).toEqual([
+      { sha: "a".repeat(40), timestamp: 1700000000, changedFiles: [{ path: "src/a.ts" }] },
+    ]);
+  });
+});
