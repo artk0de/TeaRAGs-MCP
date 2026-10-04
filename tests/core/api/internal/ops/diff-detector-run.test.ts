@@ -490,6 +490,109 @@ describe("mainSequence", () => {
   });
 });
 
+// bd tea-rags-mcp-89k7k.14: stableDependencies and mainSequence judge the
+// overlay's unique pairs MINUS the pairs the indexed graph already holds —
+// only what the diff GENUINELY adds. A changed file's tree read re-serves
+// every import it still holds, so judging the whole set read a one-line
+// barrel edit as 23 new dependencies and saturated the barrel's component to
+// I=1.000 (the recorded replay class).
+describe("diff-added subtraction", () => {
+  const components = new Map([
+    ["src/app/a.ts", { name: "app", instability: 0.2, distanceFromMainSequence: 0.4 }],
+    ["src/lib/b.ts", { name: "lib", instability: 0.9, distanceFromMainSequence: 0.2 }],
+    ["src/lib/c.ts", { name: "lib", instability: 0.9, distanceFromMainSequence: 0.2 }],
+  ]);
+
+  it("does not judge a pair the indexed graph already holds — no SDP finding and no D-delta from a re-read import", () => {
+    const result = runWith(
+      {
+        graph: graphOf([["src/app/a.ts", "src/lib/b.ts"]]),
+        catalog: catalogOf(components),
+      },
+      ["src/app/a.ts"],
+      [["src/app/a.ts", "src/lib/b.ts"]],
+    );
+    expect(subjectsOf(result, "stableDependencies")).toEqual([]);
+    expect(subjectsOf(result, "mainSequence")).toEqual([]);
+  });
+
+  it("still judges a genuinely new pair the indexed graph does not hold", () => {
+    const result = runWith(
+      {
+        graph: graphOf([["src/app/a.ts", "src/lib/c.ts"]]),
+        catalog: catalogOf(components),
+      },
+      ["src/app/a.ts"],
+      [["src/app/a.ts", "src/lib/b.ts"]],
+    );
+    expect(subjectsOf(result, "stableDependencies")).toEqual(["src/app/a.ts -> src/lib/b.ts"]);
+    expect(subjectsOf(result, "mainSequence")).toEqual(["app"]);
+  });
+
+  it("subtracts per pair, not per file — a changed file whose imports did not change contributes zero crossing edges", () => {
+    // The barrel-edit replay class: every overlay pair is a pre-existing
+    // import, so the D-delta machinery has nothing diff-added to weigh.
+    const barrel = new Map<string, ComponentFact>([
+      ["src/api/barrel.ts", { name: "api", instability: 0.054, distanceFromMainSequence: 0.0, connectionCount: 24 }],
+      ["src/lib/b.ts", { name: "lib", instability: 0.9, distanceFromMainSequence: 0.2, connectionCount: 24 }],
+      ["src/lib/c.ts", { name: "lib", instability: 0.9, distanceFromMainSequence: 0.2, connectionCount: 24 }],
+    ]);
+    const result = runWith(
+      {
+        graph: graphOf([
+          ["src/api/barrel.ts", "src/lib/b.ts"],
+          ["src/api/barrel.ts", "src/lib/c.ts"],
+        ]),
+        catalog: catalogOf(barrel),
+      },
+      ["src/api/barrel.ts"],
+      [
+        ["src/api/barrel.ts", "src/lib/b.ts"],
+        ["src/api/barrel.ts", "src/lib/c.ts"],
+      ],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("judges every pair when the graph port is absent — nothing to subtract is never read as 'no edges added' (documented fallback)", () => {
+    const run = new DiffDetectorRun({ catalog: catalogOf(components) });
+    const result = run.run(
+      { changedFiles: ["src/app/a.ts"] },
+      overlayOf([["src/app/a.ts", "src/lib/b.ts"]], ["src/app/a.ts"]),
+    );
+    expect(subjectsOf(result, "stableDependencies")).toEqual(["src/app/a.ts -> src/lib/b.ts"]);
+    expect(subjectsOf(result, "mainSequence")).toEqual(["app"]);
+  });
+
+  it("keeps foundationTerminal on genuinely-new contracts edges — subtracting the pre-existing pairs never silences the annotation", () => {
+    // The a3656904 replay class (bd tea-rags-mcp-r8hme.45): both findings
+    // were single contracts edges the diff DID introduce; the file's other
+    // pre-existing imports must not dilute or silence them.
+    const toFoundation = new Map<string, ComponentFact>([
+      ["src/app/a.ts", { name: "app", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 9 }],
+      ["src/lib/b.ts", { name: "lib", instability: 0.2, distanceFromMainSequence: 0.1, connectionCount: 9 }],
+      [
+        "src/core/contracts/types/x.ts",
+        { name: "src/core/contracts/types", instability: 0.1, distanceFromMainSequence: 0.1, connectionCount: 9 },
+      ],
+    ]);
+    const result = runWith(
+      {
+        graph: graphOf([["src/app/a.ts", "src/lib/b.ts"]]),
+        catalog: catalogOf(toFoundation),
+      },
+      ["src/app/a.ts"],
+      [
+        ["src/app/a.ts", "src/lib/b.ts"],
+        ["src/app/a.ts", "src/core/contracts/types/x.ts"],
+      ],
+    );
+    const finding = result.findings.find((f) => f.detector === "mainSequence");
+    expect(finding?.subject).toBe("app");
+    expect(finding?.foundationTerminal).toBe(true);
+  });
+});
+
 describe("silentCoupling", () => {
   // The run CONSUMES the production verdict (bd tea-rags-mcp-89k7k.1.10):
   // violations arrive already filtered by the detector's exclusion taxonomy,
