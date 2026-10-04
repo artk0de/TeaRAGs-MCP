@@ -23,7 +23,6 @@ import type { IndexDriftReporter } from "../../../domains/maintenance/drift/inde
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
-import { InvalidParameterError } from "../../errors.js";
 import type {
   ExploreCodeRequest,
   ExploreResponse,
@@ -35,6 +34,7 @@ import type {
   SemanticSearchRequest,
 } from "../../public/dto/index.js";
 import type { WorkingTreeIndexTarget } from "../../public/dto/working-tree.js";
+import { InvalidParameterError } from "../../public/errors.js";
 import type { CollectionEmbeddingsResolver } from "../collection-embeddings.js";
 import type { IndexHistoryAnchorResolver } from "../infra/index-history-anchor.js";
 import { ExploreOps } from "../ops/explore-ops.js";

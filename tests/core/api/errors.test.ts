@@ -4,7 +4,7 @@ import {
   CollectionNotProvidedError,
   InputValidationError,
   ProjectNameNotUniqueError,
-} from "../../../src/core/api/errors.js";
+} from "../../../src/core/api/public/errors.js";
 import { TeaRagsError } from "../../../src/core/infra/errors.js";
 
 describe("InputValidationError hierarchy", () => {
@@ -70,7 +70,7 @@ describe("InputValidationError hierarchy", () => {
 
   describe("MissingArgumentError", () => {
     it("has correct code and message", async () => {
-      const { MissingArgumentError } = await import("../../../src/core/api/errors.js");
+      const { MissingArgumentError } = await import("../../../src/core/api/public/errors.js");
       const err = new MissingArgumentError(["name", "path"]);
       expect(err.code).toBe("INPUT_MISSING_ARGUMENT");
       expect(err.message).toContain("name");
@@ -81,7 +81,7 @@ describe("InputValidationError hierarchy", () => {
 
   describe("InvalidParameterError", () => {
     it("has correct code and message", async () => {
-      const { InvalidParameterError } = await import("../../../src/core/api/errors.js");
+      const { InvalidParameterError } = await import("../../../src/core/api/public/errors.js");
       const err = new InvalidParameterError("collection", "must be a string");
       expect(err.code).toBe("INPUT_INVALID_PARAMETER");
       expect(err.message).toContain("collection");
@@ -104,14 +104,14 @@ describe("InputValidationError hierarchy", () => {
 
 describe("ProjectPathMissingError (audit #6/#7, PR3 prereq)", () => {
   it("is an InputValidationError so middleware maps it to 400", async () => {
-    const { ProjectPathMissingError, InputValidationError } = await import("../../../src/core/api/errors.js");
+    const { ProjectPathMissingError, InputValidationError } = await import("../../../src/core/api/public/errors.js");
     const err = new ProjectPathMissingError("alpha", "Run: tea-rags projects register --path <dir> --name alpha");
     expect(err).toBeInstanceOf(InputValidationError);
     expect(err.code).toBe("INPUT_PROJECT_PATH_MISSING");
   });
 
   it("exposes the hint string passed to the constructor", async () => {
-    const { ProjectPathMissingError } = await import("../../../src/core/api/errors.js");
+    const { ProjectPathMissingError } = await import("../../../src/core/api/public/errors.js");
     const hint = "Run: tea-rags projects register --path /repo --name alpha";
     const err = new ProjectPathMissingError("alpha", hint);
     expect(err.hint).toBe(hint);
@@ -124,7 +124,7 @@ describe("StaleProjectAliasError (2026-05-28 worktree-deletion bug)", () => {
   // Cover the constructor surface explicitly — message/hint format is a
   // public contract: users read the hint string verbatim to recover.
   it("is an InputValidationError (middleware maps to 400)", async () => {
-    const { StaleProjectAliasError, InputValidationError } = await import("../../../src/core/api/errors.js");
+    const { StaleProjectAliasError, InputValidationError } = await import("../../../src/core/api/public/errors.js");
     const err = new StaleProjectAliasError("ghosted", "/deleted/path");
     expect(err).toBeInstanceOf(InputValidationError);
     expect(err).toBeInstanceOf(TeaRagsError);
@@ -132,19 +132,19 @@ describe("StaleProjectAliasError (2026-05-28 worktree-deletion bug)", () => {
   });
 
   it("has code INPUT_PROJECT_ALIAS_STALE", async () => {
-    const { StaleProjectAliasError } = await import("../../../src/core/api/errors.js");
+    const { StaleProjectAliasError } = await import("../../../src/core/api/public/errors.js");
     const err = new StaleProjectAliasError("ghosted", "/deleted/path");
     expect(err.code).toBe("INPUT_PROJECT_ALIAS_STALE");
   });
 
   it("has httpStatus 400", async () => {
-    const { StaleProjectAliasError } = await import("../../../src/core/api/errors.js");
+    const { StaleProjectAliasError } = await import("../../../src/core/api/public/errors.js");
     const err = new StaleProjectAliasError("ghosted", "/deleted/path");
     expect(err.httpStatus).toBe(400);
   });
 
   it("embeds the alias name AND the stale path in message", async () => {
-    const { StaleProjectAliasError } = await import("../../../src/core/api/errors.js");
+    const { StaleProjectAliasError } = await import("../../../src/core/api/public/errors.js");
     const err = new StaleProjectAliasError("worktree-x", "/Users/me/old-worktree");
     expect(err.message).toContain("worktree-x");
     expect(err.message).toContain("/Users/me/old-worktree");
@@ -152,7 +152,7 @@ describe("StaleProjectAliasError (2026-05-28 worktree-deletion bug)", () => {
   });
 
   it("hint mentions both unregister and re-register recovery paths with the alias name", async () => {
-    const { StaleProjectAliasError } = await import("../../../src/core/api/errors.js");
+    const { StaleProjectAliasError } = await import("../../../src/core/api/public/errors.js");
     const err = new StaleProjectAliasError("worktree-x", "/Users/me/old");
     expect(err.hint).toContain("tea-rags unregister worktree-x");
     expect(err.hint).toContain("tea-rags register");
@@ -160,7 +160,7 @@ describe("StaleProjectAliasError (2026-05-28 worktree-deletion bug)", () => {
   });
 
   it("toUserMessage() includes code, message AND hint", async () => {
-    const { StaleProjectAliasError } = await import("../../../src/core/api/errors.js");
+    const { StaleProjectAliasError } = await import("../../../src/core/api/public/errors.js");
     const err = new StaleProjectAliasError("ghosted", "/missing");
     const out = err.toUserMessage();
     expect(out).toContain("[INPUT_PROJECT_ALIAS_STALE]");

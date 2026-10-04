@@ -26,13 +26,13 @@ import type { WorkingTree } from "../../../contracts/types/working-tree.js";
 import type { WorkingTreeOverlay } from "../../../domains/explore/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
-import { InvalidParameterError } from "../../errors.js";
 import type {
   ReviewChangesRequest,
   ReviewChangesResult,
   ReviewSectionId,
   ReviewSectionResult,
 } from "../../public/dto/review.js";
+import { InvalidParameterError } from "../../public/errors.js";
 import { resolveIndexedWorkingTree, type IndexExistenceCheck } from "../collection-resolver.js";
 import { DIFF_FILE_CAP, readDiffScope, readTreeLag } from "./diff-scope-reader.js";
 import type { ReviewEdgeExtractionDeps } from "./review-edge-overlay.js";

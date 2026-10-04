@@ -5,11 +5,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { QdrantOptimizerErrorPersistsError } from "../../../../../src/core/adapters/qdrant/errors.js";
+import { OptimizerRecoveryOps } from "../../../../../src/core/api/internal/ops/optimizer-recovery-ops.js";
 import {
   isOptimizerFailure,
-  OptimizerRecoveryOps,
   renderOptimizerRecoveryCommand,
-} from "../../../../../src/core/api/internal/ops/optimizer-recovery-ops.js";
+} from "../../../../../src/core/contracts/optimizer-recovery.js";
 import { NotIndexedError } from "../../../../../src/core/domains/ingest/errors.js";
 import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
 

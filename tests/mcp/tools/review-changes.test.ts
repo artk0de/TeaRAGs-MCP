@@ -29,6 +29,7 @@ function registered(hasCodegraph = true): RegisteredTool | undefined {
   const app = {
     hasProvider: vi.fn(() => hasCodegraph),
     reviewChanges: vi.fn(),
+    reviewSectionIds: () => ["naming", "incompleteChange", "cohesion", "architecture"] as const,
   } as unknown as App;
   registerReviewChangesTool({} as McpServer, { app, register });
   const call = register.mock.calls.find((c) => c[1] === "review_changes");

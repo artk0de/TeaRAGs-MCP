@@ -14,20 +14,14 @@
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { QdrantOptimizerErrorPersistsError } from "../../../adapters/qdrant/errors.js";
+import {
+  isOptimizerFailure,
+  type OptimizerRecoveryOutcome,
+  type OptimizerRecoveryTarget,
+} from "../../../contracts/optimizer-recovery.js";
 import { NotIndexedError } from "../../../domains/ingest/errors.js";
-import { shellQuote } from "../../../domains/maintenance/drift/remedy.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/collection-registry.js";
 import { resolveCollection } from "../collection-resolver.js";
-
-/** Which project to recover: by registry alias, or by project path. */
-export interface OptimizerRecoveryTarget {
-  project?: string;
-  path?: string;
-}
-
-export type OptimizerRecoveryOutcome =
-  | { outcome: "nothing-to-do"; collectionName: string; optimizerStatus: string }
-  | { outcome: "cleared"; collectionName: string; previousOptimizerStatus: string; optimizerStatus: string };
 
 export interface OptimizerRecoveryDeps {
   registry: CollectionRegistry;
@@ -35,20 +29,6 @@ export interface OptimizerRecoveryDeps {
     getCollectionInfo: (name: string) => Promise<{ optimizerStatus: string }>;
     aliases: Pick<QdrantManager["aliases"], "resolveActive">;
   };
-}
-
-/** Prefix `QdrantCollectionAdmin#getCollectionInfo` gives the failed arm of the optimizer status. */
-const OPTIMIZER_ERROR_PREFIX = "error:";
-
-/** True when a rendered optimizer status is Qdrant's `{ error }` arm. */
-export function isOptimizerFailure(optimizerStatus: string | undefined): boolean {
-  return optimizerStatus?.startsWith(OPTIMIZER_ERROR_PREFIX) ?? false;
-}
-
-/** The ready-to-run recovery line the status surfaces print — alias when known, else the path. */
-export function renderOptimizerRecoveryCommand(target: OptimizerRecoveryTarget): string {
-  const address = target.project ? `--project ${target.project}` : `--path ${shellQuote(target.path ?? ".")}`;
-  return `Run: tea-rags qdrant recover ${address}`;
 }
 
 export class OptimizerRecoveryOps {

@@ -6,12 +6,12 @@ import type { Argv, CommandModule } from "yargs";
 
 import { assertRegistryEnvValueParses } from "../../bootstrap/config/parse.js";
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
+import { ProjectRegistryOps } from "../../core/api/index.js";
 import {
   chunkPointsFilter,
   CollectionRegistry,
   InvalidParameterError,
   PROJECT_NAME_RE,
-  ProjectRegistryOps,
   QdrantManager,
   type App,
   type CollectionEntry,

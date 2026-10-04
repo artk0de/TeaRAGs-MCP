@@ -6,12 +6,12 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { InvalidParameterError } from "../../../../../src/core/api/errors.js";
 import {
   ReviewFacade,
   validateReviewChangesRequest,
 } from "../../../../../src/core/api/internal/facades/review-facade.js";
 import type { ReviewChangesResult } from "../../../../../src/core/api/public/dto/review.js";
+import { InvalidParameterError } from "../../../../../src/core/api/public/errors.js";
 
 const ANSWER: ReviewChangesResult = {
   review: {

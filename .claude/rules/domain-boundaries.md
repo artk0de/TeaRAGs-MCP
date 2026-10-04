@@ -24,20 +24,20 @@ paths:
 
 **Dependency rules:**
 
-| Layer                      | Imports from                                              | Exports to                   |
-| -------------------------- | --------------------------------------------------------- | ---------------------------- |
-| `cli/`                     | `bootstrap/`, `core/api/public/`                          | (process entry)              |
-| `mcp/`                     | `core/api/public/`                                        | tool surface                 |
-| `bootstrap/`               | `mcp/`, `core/api/`, `core/{contracts, adapters, infra}/` | composition root             |
-| `src/index.ts`             | `bootstrap/`                                              | process bootstrap            |
-| `core/api/`                | domain modules, `contracts/`, `adapters/`, `infra/`       | `cli/`, `mcp/`, `bootstrap/` |
-| `core/domains/explore/`    | `contracts/`, `adapters/`, `infra/`                       | `api/`                       |
-| `core/domains/trajectory/` | `contracts/`, `adapters/`, `infra/`                       | `api/`                       |
-| `core/domains/ingest/`     | `contracts/`, `adapters/`, `infra/`                       | `api/`                       |
-| `core/domains/language/`   | `contracts/`, `infra/` _(leaf)_                           | injected via factory         |
-| `core/contracts/`          | _(nothing — pure interfaces/types, zero `core/` deps)_    | domain modules, `api/`       |
-| `core/adapters/`           | `contracts/`, `infra/`                                    | domain modules, `api/`       |
-| `core/infra/`              | `contracts/` _(type-only)_                                | all `core/` layers           |
+| Layer                      | Imports from                                                            | Exports to                   |
+| -------------------------- | ----------------------------------------------------------------------- | ---------------------------- |
+| `cli/`                     | `bootstrap/`, `core/api/public/`, `core/api/index.js` (assembly barrel) | (process entry)              |
+| `mcp/`                     | `core/api/public/`                                                      | tool surface                 |
+| `bootstrap/`               | `mcp/`, `core/api/`, `core/{contracts, adapters, infra}/`               | composition root             |
+| `src/index.ts`             | `bootstrap/`                                                            | process bootstrap            |
+| `core/api/`                | domain modules, `contracts/`, `adapters/`, `infra/`                     | `cli/`, `mcp/`, `bootstrap/` |
+| `core/domains/explore/`    | `contracts/`, `adapters/`, `infra/`                                     | `api/`                       |
+| `core/domains/trajectory/` | `contracts/`, `adapters/`, `infra/`                                     | `api/`                       |
+| `core/domains/ingest/`     | `contracts/`, `adapters/`, `infra/`                                     | `api/`                       |
+| `core/domains/language/`   | `contracts/`, `infra/` _(leaf)_                                         | injected via factory         |
+| `core/contracts/`          | _(nothing — pure interfaces/types, zero `core/` deps)_                  | domain modules, `api/`       |
+| `core/adapters/`           | `contracts/`, `infra/`                                                  | domain modules, `api/`       |
+| `core/infra/`              | `contracts/` _(type-only)_                                              | all `core/` layers           |
 
 **Foundation order.** Inside the foundation row the three layers are ordered
 `contracts < infra < adapters`. `contracts` imports nothing; `infra` may
@@ -47,12 +47,20 @@ can form, because `contracts` is held free of every `core/` import by its own
 guard zone. Rationale and the type duplication the stricter rule caused:
 `docs/superpowers/specs/2026-07-26-infra-tidy-design.md`.
 
-**Consumer surface rule (MANDATORY).** `cli`/`mcp` reach `core` ONLY through
-`core/api/public/`. NOT `api/internal`, `contracts`, `adapters`, `infra`
-directly. `api/public/index.ts` = single curated re-export facade:
-consumer-facing runtime symbols + types (error classes, registry utilities,
-`EnrichmentHealthMap`, `IngestCodeConfig`) live in their internal origin layer,
-re-exported through this barrel.
+**Consumer surface rule (MANDATORY).** `mcp` reaches `core` ONLY through
+`core/api/public/` — the CONTRACT surface: `App`/`AppDeps` interfaces, DTOs, the
+input-error vocabulary (`api/public/errors.ts`), pure render/predicate rules
+re-exported from `contracts/`, and TYPE-only re-exports of handler shapes. `cli`
+additionally may import the api root barrel `core/api/index.js` — the ASSEMBLY
+surface — for the runtime pieces its commands construct directly (ops classes,
+the path-collection resolver, `createApp`); a command that news up ops over bare
+clients is a composition actor, not a contract consumer (bd
+tea-rags-mcp-89k7k.22). Deep paths stay forbidden for both: NOT
+`api/internal/**`, `contracts/`, `adapters/`, `infra/` directly. A VALUE
+re-export of an internal runtime symbol through `api/public/index.ts` is the
+defect this split removed — it put the stable contract layer in a dependency
+cycle with the unstable api component (delta 0.87). Pin:
+`tests/core/api/public/sdp-runtime-import-direction.test.ts`.
 
 **Composition roots.**
 
@@ -81,16 +89,21 @@ See spec
 
 **core/api/** — Composition root + unified App interface
 
-- **public/**: App interface, createApp() factory, DTOs by domain
+- **public/**: the CONTRACT layer — App/AppDeps interfaces, DTOs by domain, the
+  input-error vocabulary (public/errors.ts)
   - App interface (public/app.ts): unified public contract for MCP/CLI
-  - createApp() + AppDeps: factory wiring internal classes into App
+  - createApp() + AppDeps wiring: `internal/app-factory.ts` (assembly — bd
+    tea-rags-mcp-89k7k.22), reached through the api root barrel
   - DTOs grouped by domain: explore, ingest, collection, document
 - **internal/**: orchestration + wiring (not exported to MCP consumers)
   - facades/: ExploreFacade, IngestFacade (search/indexing orchestration)
   - ops/: CollectionOps, DocumentOps (CRUD operations)
   - infra/: SchemaBuilder (dynamic MCP schema generation via Reranker API)
   - composition.ts: trajectory registry assembly (which trajectories exist)
-- **index.ts**: barrel exports public/ + SchemaBuilder + createComposition
+- **index.ts**: the ASSEMBLY barrel — createApp (from internal/app-factory),
+  SchemaBuilder, createComposition, ops classes, the path-collection resolver;
+  bootstrap imports it wholesale, cli commands import it for pieces they
+  construct directly
 - Imports from all layers (composition root assembles DI)
 
 **core/domains/explore/** — Query-time exploration engine (domain module)

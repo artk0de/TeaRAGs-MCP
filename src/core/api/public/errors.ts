@@ -2,7 +2,7 @@
  * API-layer error classes — input validation errors thrown by facades.
  */
 
-import { TeaRagsError } from "../infra/errors.js";
+import { TeaRagsError } from "../../infra/errors.js";
 
 /**
  * Input validation error codes. Local strict union — used by InputValidationError

@@ -5,14 +5,14 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
-  CollectionNotProvidedError,
-  ProjectNotRegisteredError,
-  StaleProjectAliasError,
-} from "../../../../src/core/api/errors.js";
-import {
   createPathCollectionResolver,
   resolveCollection,
 } from "../../../../src/core/api/internal/collection-resolver.js";
+import {
+  CollectionNotProvidedError,
+  ProjectNotRegisteredError,
+  StaleProjectAliasError,
+} from "../../../../src/core/api/public/errors.js";
 import { CollectionRegistry } from "../../../../src/core/domains/maintenance/registry/index.js";
 import { resolveCollectionName, validatePath } from "../../../../src/core/infra/collection-name.js";
 

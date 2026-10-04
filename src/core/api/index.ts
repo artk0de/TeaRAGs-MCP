@@ -2,10 +2,17 @@
  * API barrel — unified entry point for all api/ exports.
  *
  * External consumers import from here. Internal structure is hidden.
+ *
+ * Two surfaces leave the api module (bd tea-rags-mcp-89k7k.22): the CONTRACT
+ * surface is `public/index.ts` (cli/mcp), and THIS barrel is the ASSEMBLY
+ * surface — the composition root's entrypoint. Bootstrap (and cli commands
+ * that construct ops with bare clients) import runtime pieces from here;
+ * `createApp` itself lives in `internal/app-factory.ts`, next to the
+ * composition it wires.
  */
 
-// Public surface (App contract + DTOs)
-export { createApp } from "./public/app.js";
+// Public contract types (the factory is assembly — see internal/app-factory.ts)
+export { createApp } from "./internal/app-factory.js";
 export type { App, AppDeps } from "./public/app.js";
 export type {
   // Explore DTOs
@@ -75,6 +82,7 @@ export type { DocumentOps } from "./internal/ops/document-ops.js";
 export { NamingLexiconOps } from "./internal/ops/naming-lexicon-ops.js";
 export { OntologyReportOps, ontologyLanguageProfiles } from "./internal/ops/ontology-report-ops.js";
 export { ProjectRegistryOps } from "./internal/ops/project-registry-ops.js";
+export { OptimizerRecoveryOps } from "./internal/ops/optimizer-recovery-ops.js";
 export { TracePathOps } from "./internal/ops/trace-path-ops.js";
 export { WorktreeOps } from "./internal/ops/worktree-ops.js";
 export { ReviewChangesOps } from "./internal/ops/review-changes-ops.js";
@@ -82,6 +90,11 @@ export type { ReviewChangesOpsDeps } from "./internal/ops/review-changes-ops.js"
 export type { ReviewEdgeExtractionDeps } from "./internal/ops/review-edge-overlay.js";
 export { createNamingReviewExtractor } from "./internal/ops/naming-review-extraction.js";
 export { createPathCollectionResolver } from "./internal/collection-resolver.js";
+// Path→collection resolution and the worktree query helpers moved off the
+// public barrel (bd tea-rags-mcp-89k7k.22): runtime logic, reached by cli
+// through this assembly surface.
+export { resolveBaseIndexEntry, resolveCollection } from "./internal/collection-resolver.js";
+export { listWorktreeInfos, toWorktreeInfo, worktreeInfoForPath } from "./internal/ops/worktree-ops.js";
 export { readPayloadFileCommitCounts } from "./internal/infra/payload-file-commit-count-reader.js";
 export { readPayloadImportSpecifiers } from "./internal/infra/payload-import-specifier-reader.js";
 export {
@@ -100,7 +113,7 @@ export {
   createWorkingTreeGitSignalStore,
   scheduleWorkingTreeGitSignalSweep,
 } from "./internal/infra/working-tree-git-signal-store.js";
-export { InputValidationError, CollectionNotProvidedError } from "./errors.js";
+export { InputValidationError, CollectionNotProvidedError } from "./public/errors.js";
 
 // Project registry types re-exported from infra (public surface)
 export type { CollectionEntry, ProjectInfo } from "../domains/maintenance/registry/index.js";

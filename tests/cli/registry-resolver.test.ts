@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { applyProjectDefaults } from "../../src/cli/registry-resolver.js";
-import { ProjectNotRegisteredError } from "../../src/core/api/errors.js";
+import { ProjectNotRegisteredError } from "../../src/core/api/public/errors.js";
 import { RegistryQdrantBackendUnresolvedError } from "../../src/core/api/public/index.js";
 import { CollectionRegistry } from "../../src/core/domains/maintenance/registry/collection-registry.js";
 
@@ -226,7 +226,7 @@ describe("applyProjectDefaults qdrant backend (bd tea-rags-mcp-lzynm)", () => {
 describe("applyProjectDefaults typed-error refactor (audit #5 + #15)", () => {
   it("throws ProjectNotRegisteredError when the alias is unknown (not process.exit)", async () => {
     const { applyProjectDefaults } = await import("../../src/cli/registry-resolver.js");
-    const { ProjectNotRegisteredError } = await import("../../src/core/api/errors.js");
+    const { ProjectNotRegisteredError } = await import("../../src/core/api/public/errors.js");
     process.env.TEA_RAGS_DATA_DIR = mkdtempSync(join(tmpdir(), "pr3-resolver-"));
     try {
       expect(() => applyProjectDefaults({ project: "ghost" })).toThrow(ProjectNotRegisteredError);
@@ -238,7 +238,7 @@ describe("applyProjectDefaults typed-error refactor (audit #5 + #15)", () => {
 
   it("throws ProjectPathMissingError when entry.path is empty (audit #6/#7 + #15)", async () => {
     const { applyProjectDefaults } = await import("../../src/cli/registry-resolver.js");
-    const { ProjectPathMissingError } = await import("../../src/core/api/errors.js");
+    const { ProjectPathMissingError } = await import("../../src/core/api/public/errors.js");
     const { CollectionRegistry } = await import("../../src/core/domains/maintenance/registry/collection-registry.js");
     process.env.TEA_RAGS_DATA_DIR = mkdtempSync(join(tmpdir(), "pr3-resolver-"));
     try {

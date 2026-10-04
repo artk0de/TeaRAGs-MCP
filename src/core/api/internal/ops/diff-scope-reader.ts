@@ -27,7 +27,7 @@ import {
   readEnclosingRepoGitState,
   rebaseGitPathsOntoRoot,
 } from "../../../infra/repo-git-state.js";
-import { InvalidParameterError } from "../../errors.js";
+import { InvalidParameterError } from "../../public/errors.js";
 import { ontologyNonProductionPathFilter } from "./ontology-report-ops.js";
 
 /** Diff mode: changed files one call reviews; the rest are reported as `skipped`. */

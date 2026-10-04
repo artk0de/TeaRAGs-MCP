@@ -77,14 +77,11 @@ function defaultDeps(): QdrantRecoverDeps {
 
   const recover = async (target: OptimizerRecoveryTarget): Promise<OptimizerRecoveryOutcome> => {
     const { parseAppConfig } = await import("../../bootstrap/config/index.js");
-    const {
-      CollectionRegistry,
-      EMBEDDED_MARKER,
-      OptimizerRecoveryOps: Ops,
-      QdrantManager,
-      resolveQdrantUrl,
-      resolveRegistryQdrantBackend,
-    } = await import("../../core/api/public/index.js");
+    // The ops class is assembly — api root barrel, not the public contract
+    // surface (bd tea-rags-mcp-89k7k.22); the addressing types stay public.
+    const { OptimizerRecoveryOps: Ops } = await import("../../core/api/index.js");
+    const { CollectionRegistry, EMBEDDED_MARKER, QdrantManager, resolveQdrantUrl, resolveRegistryQdrantBackend } =
+      await import("../../core/api/public/index.js");
 
     const config = parseAppConfig();
     const registry = new CollectionRegistry(config.paths.appData, { envCodeDefaults: resolveRegistryEnvCodeDefaults });

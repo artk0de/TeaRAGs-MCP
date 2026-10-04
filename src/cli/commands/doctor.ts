@@ -5,12 +5,11 @@ import type { Argv, CommandModule } from "yargs";
 
 import type { CodegraphDaemonRestartOutcome } from "../../bootstrap/codegraph-daemon-restart.js";
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
+import { ProjectRegistryOps, resolveCollection } from "../../core/api/index.js";
 import {
   CollectionRegistry,
-  ProjectRegistryOps,
   QdrantManager,
   QuarantineStore,
-  resolveCollection,
   validatePath,
   type EmbeddingProvider,
 } from "../../core/api/public/index.js";

@@ -12,7 +12,8 @@ core/
   api/                                 # Composition root + unified App interface
     index.ts                           # Barrel: re-exports public/ + selected internal
     public/
-      app.ts                           # App interface + createApp() + AppDeps
+      app.ts                           # App interface + AppDeps (the contract)
+      errors.ts                        # Input-error vocabulary (contract)
       dto/
         explore.ts                     # Search request/response DTOs
         ingest.ts                      # Indexing DTOs (IndexOptions, IndexStats, etc.)
@@ -22,6 +23,7 @@ core/
       index.ts                         # Public barrel (App + DTOs)
     internal/
       composition.ts                   # createComposition(): trajectory registry assembly
+      app-factory.ts                   # createApp(): wires AppDeps into an App (assembly, 89k7k.22)
       facades/
         explore-facade.ts              # ExploreFacade: orchestrates explore/ domain
         ingest-facade.ts               # IngestFacade: orchestrates ingest/ domain

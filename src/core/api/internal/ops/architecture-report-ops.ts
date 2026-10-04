@@ -77,7 +77,6 @@ import {
   type SilentCouplingViolation,
   type SplitMergeVerdicts,
 } from "../../../domains/trajectory/codegraph/temporal/index.js";
-import { UnknownArchitectureComponentError } from "../../errors.js";
 import type {
   ArchitectureDomainBoundaryEdge,
   ArchitectureDomainReport,
@@ -101,6 +100,7 @@ import type {
   SplitMergeVerdictsSummary,
   StableDependenciesReportSummary,
 } from "../../public/dto/architecture.js";
+import { UnknownArchitectureComponentError } from "../../public/errors.js";
 import {
   deriveArchitectureComponentFacts,
   readProductionArchitectureGraph,

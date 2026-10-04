@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import yargs from "yargs";
 
 import { parseEnvAssignments, projectsCommand } from "../../../src/cli/commands/projects.js";
-import { InvalidParameterError } from "../../../src/core/api/errors.js";
+import { InvalidParameterError } from "../../../src/core/api/public/errors.js";
 import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/collection-registry.js";
 
 describe("parseEnvAssignments", () => {

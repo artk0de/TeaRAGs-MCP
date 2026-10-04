@@ -11,8 +11,8 @@ import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createGitWorkingTreeFixture, type GitWorkingTreeFixture } from "../../__helpers__/git-working-tree-fixture.js";
-import { InvalidParameterError, SubmoduleNotIndexedError } from "../../../../src/core/api/errors.js";
 import { resolveCollection, resolveWorkingTree } from "../../../../src/core/api/internal/collection-resolver.js";
+import { InvalidParameterError, SubmoduleNotIndexedError } from "../../../../src/core/api/public/errors.js";
 import { CollectionRegistry } from "../../../../src/core/domains/maintenance/registry/index.js";
 
 describe("resolveWorkingTree", { timeout: 60_000 }, () => {

@@ -143,7 +143,6 @@ import type { CollectionRegistry } from "../../../domains/maintenance/registry/i
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import { pathPatternLiteralPrefix } from "../../../infra/path-pattern.js";
 import { cosine } from "../../../infra/vector-math.js";
-import { InputValidationError, InvalidParameterError, MissingArgumentError } from "../../errors.js";
 import type { ExploreResponse, FindSymbolRequest, SemanticSearchRequest } from "../../public/dto/explore.js";
 import type { IndexMetrics } from "../../public/dto/metrics.js";
 import type {
@@ -163,6 +162,7 @@ import type {
   NamingReviewNotJudgedEntry,
   NamingReviewResult,
 } from "../../public/dto/naming-lexicon.js";
+import { InputValidationError, InvalidParameterError, MissingArgumentError } from "../../public/errors.js";
 import { resolveIndexedWorkingTree, type IndexExistenceCheck } from "../collection-resolver.js";
 import { DIFF_FILE_CAP, readDiffScope, readTreeLag } from "./diff-scope-reader.js";
 import { readUntypedMethodEvidence, type MethodHeadWordMemo } from "./naming-lexicon-method-evidence.js";
