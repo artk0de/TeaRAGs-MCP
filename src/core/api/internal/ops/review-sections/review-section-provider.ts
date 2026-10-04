@@ -11,7 +11,7 @@
  * could not judge is a `notJudged` entry, never a zero.
  */
 
-import type { GraphDbClient, TemporalCochangeGraph } from "../../../../contracts/types/codegraph.js";
+import type { GraphDbClient, RelPath, TemporalCochangeGraph } from "../../../../contracts/types/codegraph.js";
 import type { ReviewSectionId } from "../../../public/dto/review.js";
 import type { DiffScopeRead, DiffScopeRequest } from "../diff-scope-reader.js";
 import type { NamingLexiconOps } from "../naming-lexicon-ops.js";
@@ -63,6 +63,16 @@ export interface ReviewSectionBuildContext {
    * wires `createNamingReviewExtractor` uses; `undefined` when not wired.
    */
   reviewEdgeExtraction: ReviewEdgeExtractionDeps | undefined;
+  /**
+   * The indexed payload's import specifiers per file (bd tea-rags-mcp-2wsnt)
+   * — the SAME read the whole-repo report's second silent-coupling pass uses
+   * (`readPayloadImportSpecifiers`, bd tea-rags-mcp-rbnkp), bound to this
+   * review's collection. The `architecture` section asks it only about the
+   * walked endpoints of diff-touching one-walked violations, so its cost is
+   * bounded by the diff, never by the graph. Absent (unit wiring) → the
+   * section's silent-coupling facts are the single-pass verdict.
+   */
+  readImportSpecifiers?: (relPaths: readonly RelPath[]) => Promise<ReadonlyMap<RelPath, readonly string[]>>;
 }
 
 /** What a section needs to ANSWER, once it has decided it can build. */

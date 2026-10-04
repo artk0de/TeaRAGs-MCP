@@ -36,6 +36,9 @@ import type { ComponentGraph } from "../../../../domains/trajectory/codegraph/sy
 import {
   computeSplitMergeVerdicts,
   detectSilentCoupling,
+  linkImportedCochangePairs,
+  oneWalkedViolationImporters,
+  type SilentCouplingReport,
 } from "../../../../domains/trajectory/codegraph/temporal/index.js";
 import type { ReviewSectionNotJudgedEntry } from "../../../public/dto/review.js";
 import {
@@ -44,7 +47,7 @@ import {
   distanceFromMainSequenceByComponent,
   readProductionArchitectureGraph,
 } from "../architecture-facts.js";
-import { isDocumentationPath } from "../architecture-report-ops.js";
+import { isDocumentationPath, type ModuleImportSpecifierLookup } from "../architecture-report-ops.js";
 import {
   DiffDetectorRun,
   type DiffDetectorContractReader,
@@ -121,20 +124,47 @@ const EMPTY_EDGES: readonly IndexedGraphEdge[] = [];
  * explanation and let 19–98 historical src~test / CLAUDE.md~code pairs per
  * diff drown the findings; consuming the verdict makes drift structurally
  * impossible. No build / unreadable snapshot degrades to an empty graph
- * (built:false summary, no violations) — silence, never a zero verdict. The
- * report's second `linkImportedCochangePairs` pass (asset-import specifiers)
- * is not replicated: it needs working-tree specifier reads the review does
- * not do; the snapshot's own linkage union covers every resolved import.
+ * (built:false summary, no violations) — silence, never a zero verdict.
+ *
+ * The report's second `linkImportedCochangePairs` pass (asset-import
+ * specifiers, bd tea-rags-mcp-rbnkp) is replicated SCOPED to the pairs the
+ * review can report (bd tea-rags-mcp-2wsnt): the run judges pairs touching
+ * `changedFiles` only, so one-walked violations off the diff cost no read.
+ * Diff-touching one-walked pairs get their walked endpoint's specifiers read
+ * — `readImportSpecifiers`, the SAME payload read the report wires
+ * (`readPayloadImportSpecifiers`) — the snapshot is relinked and the detector
+ * re-run, so a linked pair drops out of the facts exactly as the report's
+ * second pass drops it. A stale payload (the specifier recorded at index
+ * time, not read from the tree) is the report's own semantics, kept here for
+ * parity. No wired read (unit wiring), no snapshot, or no diff-touching
+ * one-walked pair leaves the single-pass verdict.
  */
-export function buildSilentCouplingFacts(
+export async function buildSilentCouplingFacts(
   snapshot: TemporalCochangeGraph | null | undefined,
   productionFiles: readonly FileDependencyGraphFile[],
   productionEdges: readonly FileDependencyEdge[],
-): DiffDetectorSilentCouplingFacts {
-  const report = detectSilentCoupling(snapshot ?? { meta: null, edges: [] }, productionFiles, {
+  changedFiles: readonly string[],
+  readImportSpecifiers?: ModuleImportSpecifierLookup,
+): Promise<DiffDetectorSilentCouplingFacts> {
+  const graph = snapshot ?? { meta: null, edges: [] };
+  const options = {
     isDocumentation: isDocumentationPath,
     fileDependencyEdges: productionEdges,
-  });
+  };
+  const first = detectSilentCoupling(graph, productionFiles, options);
+  if (readImportSpecifiers === undefined || snapshot === null || snapshot === undefined) {
+    return silentCouplingFactsOf(first);
+  }
+  const changed = new Set(changedFiles);
+  const diffTouching = first.violations.filter((v) => changed.has(v.relPathA) || changed.has(v.relPathB));
+  const importers = oneWalkedViolationImporters(diffTouching, productionFiles);
+  if (importers.length === 0) return silentCouplingFactsOf(first);
+  const linked = linkImportedCochangePairs(graph, await readImportSpecifiers(importers));
+  return silentCouplingFactsOf(detectSilentCoupling(linked, productionFiles, options));
+}
+
+/** The report's violation list and exclusion counters, mapped to the port shape. */
+function silentCouplingFactsOf(report: SilentCouplingReport): DiffDetectorSilentCouplingFacts {
   return {
     violations: report.violations.map((v) => ({
       relPathA: v.relPathA,
@@ -290,11 +320,15 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       const splitMerge = wireSplitMerge(context.temporalCochange, context.temporalCochangeError, facts.components);
       // The production silent-coupling verdict over the SAME snapshot (bd
       // tea-rags-mcp-89k7k.1.10) — the run consumes it, never re-judges raw
-      // pairs.
-      const silentCouplingFacts = buildSilentCouplingFacts(
+      // pairs. The asset-import rescue reads the context's payload
+      // specifiers for the diff-touching one-walked pairs only (bd
+      // tea-rags-mcp-2wsnt).
+      const silentCouplingFacts = await buildSilentCouplingFacts(
         context.temporalCochange,
         production.graph.files,
         production.graph.edges,
+        scope.files,
+        context.readImportSpecifiers,
       );
 
       // The working-tree side: every scope file the extraction can walk, one

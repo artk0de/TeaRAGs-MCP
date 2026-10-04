@@ -16,7 +16,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createGitWorkingTreeFixture } from "../../../__helpers__/git-working-tree-fixture.js";
 import { InvalidParameterError } from "../../../../../src/core/api/errors.js";
-import { ReviewChangesOps } from "../../../../../src/core/api/internal/ops/review-changes-ops.js";
+import {
+  ReviewChangesOps,
+  type ReviewChangesOpsDeps,
+} from "../../../../../src/core/api/internal/ops/review-changes-ops.js";
 import type { ReviewChangesRequest } from "../../../../../src/core/api/public/dto/review.js";
 import {
   collectSymbols,
@@ -142,7 +145,7 @@ function graphDbStub(overrides: Partial<GraphStub> = {}): GraphStub {
   return stub;
 }
 
-function makeOps(graph: GraphStub, registryEntry: unknown = {}) {
+function makeOps(graph: GraphStub, registryEntry: unknown = {}, extraDeps: Partial<ReviewChangesOpsDeps> = {}) {
   return new ReviewChangesOps({
     pool: {
       acquireReader: vi.fn(async () => ({ graphDb: graph, symbolTable: {} })),
@@ -156,6 +159,7 @@ function makeOps(graph: GraphStub, registryEntry: unknown = {}) {
       composer: new DefaultSymbolIdComposer(),
     },
     windowMonths: 6,
+    ...extraDeps,
   });
 }
 
@@ -231,6 +235,58 @@ describe("ReviewChangesOps", () => {
     expect(graph.dropReviewFileEdges.mock.calls[0]?.[0]).toBe(graph.putReviewFileEdges.mock.calls[0]?.[0]);
     // the reader is released after the review
     expect(graph.close).toHaveBeenCalledTimes(1);
+  });
+
+  // bd tea-rags-mcp-2wsnt: the payload specifier read rides the deps to the
+  // architecture section, bound to the review's collection — the same read
+  // the whole-repo report's asset-import rescue uses. A diff-touching
+  // one-walked pair (the stylesheet is no walked file) is linked and drops;
+  // the both-walked pair never was a rescue candidate and stays.
+  it("threads the payload specifier read to the architecture section, bound to the collection", async () => {
+    const graph = graphDbStub({
+      cochangeEdges: [
+        {
+          relPathA: CHANGED,
+          relPathB: "src/git/theme.css",
+          support: 9,
+          confidenceAB: 0.9,
+          confidenceBA: 0.9,
+          lift: 3,
+          lastCoChangeAt: 1_700_000_000,
+          sampleCommits: ["a1b2c3"],
+          structurallyLinked: false,
+        },
+        {
+          relPathA: CHANGED,
+          relPathB: PARTNER,
+          support: 9,
+          confidenceAB: 0.9,
+          confidenceBA: 0.9,
+          lift: 3,
+          lastCoChangeAt: 1_700_000_000,
+          sampleCommits: ["a1b2c3"],
+          structurallyLinked: false,
+        },
+      ],
+    });
+    const readImportSpecifiers = vi.fn().mockResolvedValue(new Map([[CHANGED, ["./theme.css"]]]));
+
+    const result = await makeOps(graph, {}, { readImportSpecifiers }).reviewChanges(
+      request({ sections: ["architecture"] }),
+    );
+
+    expect(readImportSpecifiers).toHaveBeenCalledTimes(1);
+    const [calledCollection, calledRelPaths] = readImportSpecifiers.mock.calls[0];
+    expect(calledCollection).toBe("code_test");
+    // The walked endpoint of the diff-touching one-walked pair — the diff
+    // names the stylesheet, so the importer itself is read, not the asset.
+    expect(calledRelPaths).toEqual([CHANGED]);
+    const { findings } = result.review.sections.architecture as {
+      findings: { subject: string }[];
+    };
+    const subjects = findings.map((f) => f.subject);
+    expect(subjects).toContain(`${CHANGED} ~ ${PARTNER}`);
+    expect(subjects).not.toContain(`${CHANGED} ~ src/git/theme.css`);
   });
 
   it("a section allowlist omits the others entirely — absence is not not-built", async () => {
