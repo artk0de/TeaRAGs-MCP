@@ -28,6 +28,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import type {
   FileExtraction,
@@ -217,8 +218,10 @@ async function runCrossPass(
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  provider.beginExtractionRun(collectionName);
-  for (const e of extractions) provider.acceptExtraction(e, { collectionName });
+  provider.beginExtractionRun(fixturePhysicalCollectionName(collectionName));
+  for (const e of extractions) {
+    provider.acceptExtraction(e, { collectionName: fixturePhysicalCollectionName(collectionName) });
+  }
   if (opts.bulkReject) {
     // Reproduce the PRODUCTION accept→drain window: there, many macrotasks of
     // embedding work separate the eager flush from `drainInputSpill`. In this
@@ -229,8 +232,15 @@ async function runCrossPass(
     // an unlatched tail emits `unhandledRejection`).
     await new Promise((r) => setTimeout(r, 0));
   }
-  await provider.streamFileBatch(tmp, paths, { crossPass: true, collectionName });
-  await provider.finalizeSignals(tmp, { crossPass: true, paths, collectionName });
+  await provider.streamFileBatch(tmp, paths, {
+    crossPass: true,
+    collectionName: fixturePhysicalCollectionName(collectionName),
+  });
+  await provider.finalizeSignals(tmp, {
+    crossPass: true,
+    paths,
+    collectionName: fixturePhysicalCollectionName(collectionName),
+  });
 
   const rows = (await client.listAllSymbols()).slice().sort(bySymbol);
   const bulkFlushedRelPaths = bulkSpy.mock.calls.flatMap((c) => c[0]).map((e) => e.relPath);

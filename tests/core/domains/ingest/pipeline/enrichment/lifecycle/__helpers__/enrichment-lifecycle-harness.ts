@@ -61,6 +61,7 @@ import {
   fileScopedSymbolKey,
   type SymbolDefinition,
 } from "../../../../../../../../src/core/contracts/types/codegraph.js";
+import type { PhysicalCollectionName } from "../../../../../../../../src/core/contracts/types/collection-identity.js";
 import type { EnrichmentRunHandle } from "../../../../../../../../src/core/contracts/types/enrichment-executor.js";
 import type {
   ChunkSignalOverlay,
@@ -426,13 +427,13 @@ async function startCodegraphFixture(options: CodegraphFixtureOptions): Promise<
 }
 
 export interface EnrichmentLifecycleHarness {
-  readonly collection: string;
+  readonly collection: PhysicalCollectionName;
   readonly repoRoot: string;
   readonly qdrant: RecordingQdrant;
   readonly executor: ObservedEnrichmentExecutor;
   readonly coordinator: EnrichmentCoordinator;
   /** Spec input shared by every run the test opens over the fixture. */
-  runSpecInput: () => { absolutePath: string; collection: string; fileCount: number };
+  runSpecInput: () => { absolutePath: string; collection: PhysicalCollectionName; fileCount: number };
   /** The stored chunks as the chunk pipeline hands them to `onChunksStored`. */
   chunkItems: () => ChunkItem[];
   /** The stored chunks as the chunk pipeline hands them to `startChunkEnrichment`. */

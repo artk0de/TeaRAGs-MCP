@@ -24,6 +24,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../../__helpers__/test-helpers.js";
+import { fixturePhysicalCollectionName } from "../../../../../__helpers__/collection-identity.js";
 import { DuckDbGraphClient } from "../../../../../../../src/core/adapters/duckdb/client.js";
 import { runDaemon } from "../../../../../../../src/core/adapters/duckdb/daemon/entry.js";
 import { getDaemonPaths } from "../../../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
@@ -63,7 +64,7 @@ const CODEGRAPH_FACTORY_MODULE = join(BUILD, "domains/trajectory/codegraph/facto
 const LANGUAGE_MODULE = join(BUILD, "domains/language/index.js");
 const MIGRATIONS_MODULE = join(BUILD, "domains/maintenance/migration/database/index.js");
 
-const COLLECTION = "code_sgo8v_parity";
+const COLLECTION = fixturePhysicalCollectionName("code_sgo8v_parity");
 
 interface RecomputeOutcome {
   tables: Record<string, string[]>;
@@ -167,7 +168,7 @@ async function recompute(mode: "collection" | "language"): Promise<RecomputeOutc
   const coordinator = new EnrichmentCoordinator(qdrant as never, [provider], undefined, executor);
   const phase = vi.spyOn(pipelineLog, "enrichmentPhase");
   try {
-    await coordinator.recomputeEnrichments(COLLECTION as never, repoRoot, ["codegraph"]);
+    await coordinator.recomputeEnrichments(COLLECTION, repoRoot, ["codegraph"]);
     await coordinator.whenCompletionsSettled(COLLECTION);
 
     const affinityLine = phase.mock.calls.find(([name]) => name === "CODEGRAPH_LANGUAGE_AFFINITY");

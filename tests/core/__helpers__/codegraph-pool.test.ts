@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import type { GlobalSymbolTable, GraphDbClient } from "../../../src/core/contracts/types/codegraph.js";
 import { createStubPool } from "./codegraph-pool.js";
+import { fixturePhysicalCollectionName } from "./collection-identity.js";
 
 function makeStubGraphDb(): GraphDbClient {
   return {} as GraphDbClient;
@@ -25,8 +26,8 @@ describe("createStubPool", () => {
     const symbolTable = makeStubSymbolTable();
     const pool = createStubPool(graphDb, symbolTable);
 
-    const acquired = await pool.acquire("collection_one");
-    const peeked = pool.peek("collection_two");
+    const acquired = await pool.acquire(fixturePhysicalCollectionName("collection_one"));
+    const peeked = pool.peek(fixturePhysicalCollectionName("collection_two"));
 
     expect(acquired.graphDb).toBe(graphDb);
     expect(acquired.symbolTable).toBe(symbolTable);
@@ -36,13 +37,13 @@ describe("createStubPool", () => {
 
   it("release resolves to true (no-op) and closeAll resolves without error", async () => {
     const pool = createStubPool(makeStubGraphDb(), makeStubSymbolTable());
-    await expect(pool.release("collection_one")).resolves.toBe(true);
+    await expect(pool.release(fixturePhysicalCollectionName("collection_one"))).resolves.toBe(true);
     await expect(pool.closeAll()).resolves.toBeUndefined();
   });
 
   it("pathFor returns a :memory:<name> sentinel matching the helper contract", () => {
     const pool = createStubPool(makeStubGraphDb(), makeStubSymbolTable());
-    expect(pool.pathFor("code_abc")).toBe(":memory:code_abc");
-    expect(pool.pathFor("code_xyz")).toBe(":memory:code_xyz");
+    expect(pool.pathFor(fixturePhysicalCollectionName("code_abc"))).toBe(":memory:code_abc");
+    expect(pool.pathFor(fixturePhysicalCollectionName("code_xyz"))).toBe(":memory:code_xyz");
   });
 });

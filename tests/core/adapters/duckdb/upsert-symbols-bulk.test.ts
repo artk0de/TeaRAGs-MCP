@@ -14,6 +14,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../__helpers__/collection-identity.js";
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
 import { DaemonGraphDbClient } from "../../../../src/core/adapters/duckdb/daemon/client.js";
 import { decodeFrames, encodeFrame, type DaemonRequest } from "../../../../src/core/adapters/duckdb/daemon/protocol.js";
@@ -136,7 +137,7 @@ describe("DuckDbGraphClient.upsertSymbolsBulk — direct client", () => {
       { relPath: "x.ts", definitions: [mkDef("x.ts", "X#a", "X#a", "a")] },
       {
         relPath: "y.ts",
-        definitions: [/* @ts-expect-error missing required SymbolDefinition fields */ { relPath: "y.ts" } as any],
+        definitions: [{ relPath: "y.ts" } as any],
       },
     ];
     await expect(sut.upsertSymbolsBulk(bad)).rejects.toBeTruthy();
@@ -207,7 +208,7 @@ describe("upsertSymbolsBulk — daemon proxy parity", () => {
       });
     });
 
-    const collection = "code_bulk_daemon_v1";
+    const collection = fixturePhysicalCollectionName("code_bulk_daemon_v1");
     const client = new DaemonGraphDbClient(socketPath, collection);
     await client.init();
 

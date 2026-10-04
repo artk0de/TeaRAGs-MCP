@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { DaemonGraphDbClient } from "../../../../../src/core/adapters/duckdb/daemon/client.js";
 import {
   decodeFrames,
@@ -93,7 +94,7 @@ describe("DaemonGraphDbClient", () => {
       return null;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     await client.upsertFile({ relPath: "a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
     await client.close();
@@ -124,7 +125,7 @@ describe("DaemonGraphDbClient", () => {
       return null;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
 
     const callers = await client.getCallers("B#help");
@@ -153,7 +154,7 @@ describe("DaemonGraphDbClient", () => {
         : null;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     const rows = await client.getAmbiguousCallersByMember("firm", 25);
     await client.close();
@@ -174,7 +175,7 @@ describe("DaemonGraphDbClient", () => {
       return r.op === "findCycles" ? [] : null;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     await client.findCycles("method", "**/domains/ingest/**");
     await client.close();
@@ -192,7 +193,7 @@ describe("DaemonGraphDbClient", () => {
       return null;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v9");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v9"));
     await client.init();
     await client.removeSymbolsForFile("a.ts");
     await client.checkpoint();
@@ -236,7 +237,7 @@ describe("DaemonGraphDbClient", () => {
       return replies[r.op] ?? null;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
 
     expect(await client.getFanIn("a.ts")).toBe(3);
@@ -287,7 +288,7 @@ describe("DaemonGraphDbClient", () => {
       return null;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     const metrics = await client.getFileMetricsBulk(["a.ts", "b.ts"]);
     await client.close();
@@ -309,7 +310,7 @@ describe("DaemonGraphDbClient", () => {
       return 0;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     await expect(client.getFileMetricsBulk(["a.ts"])).rejects.toThrow("database is invalidated");
     await client.close();
@@ -327,7 +328,7 @@ describe("DaemonGraphDbClient", () => {
       return null;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_w_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_w_v1"));
     await client.init();
     await client.removeFile("a.ts");
     await client.upsertSymbols("a.ts", [
@@ -366,7 +367,7 @@ describe("DaemonGraphDbClient", () => {
       return null;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_w_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_w_v1"));
     await client.init();
     await client.updateSymbolChunkIdsBulk([
       { relPath: "a.ts", chunkIds: new Map([["A#run", "chunk_a"]]) },
@@ -398,7 +399,7 @@ describe("DaemonGraphDbClient", () => {
       return null;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     const result = await client.findSymbolChunk("A#run");
     await client.close();
@@ -412,7 +413,7 @@ describe("DaemonGraphDbClient", () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));
     const socketPath = join(dir, "d.sock");
     await echoServer(socketPath, () => null);
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
 
     // streamAdjacency is the ONLY read that stays daemon-internal: the heavy
@@ -445,7 +446,7 @@ describe("DaemonGraphDbClient", () => {
       });
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     const pending = client.checkpoint();
     await client.close();
@@ -463,7 +464,7 @@ describe("DaemonGraphDbClient", () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));
     const socketPath = join(dir, "d.sock");
     await echoServer(socketPath, () => null);
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     await client.close();
     await expect(client.checkpoint()).rejects.toThrow(/before init|after close/);
@@ -484,7 +485,7 @@ describe("DaemonGraphDbClient", () => {
       });
     }, 150);
 
-    const client = new DaemonGraphDbClient(socketPath, "code_late_v1", {
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_late_v1"), {
       connectTimeoutMs: 5000,
       retryDelayMs: 50,
     });
@@ -506,7 +507,7 @@ describe("DaemonGraphDbClient", () => {
       return r.op === "handshake" ? { buildFingerprint: "daemon-fp" } : null;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_hs_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_hs_v1"));
     await client.init();
     const result = await client.handshake("client-fp");
     await client.close();
@@ -522,7 +523,7 @@ describe("DaemonGraphDbClient", () => {
     // Legacy daemon answers every op with null (the pre-fingerprint handshake shape).
     await echoServer(socketPath, () => null);
 
-    const client = new DaemonGraphDbClient(socketPath, "code_hs_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_hs_v1"));
     await client.init();
     expect(await client.handshake("client-fp")).toBeNull();
     await client.close();
@@ -537,7 +538,7 @@ describe("DaemonGraphDbClient", () => {
       return null;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_hs_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_hs_v1"));
     await client.init();
     await client.requestShutdown();
     await client.close();
@@ -550,7 +551,7 @@ describe("DaemonGraphDbClient", () => {
     const socketPath = join(dir, "never.sock");
     // No server is ever started. init() must give up after connectTimeoutMs
     // rather than retry forever.
-    const client = new DaemonGraphDbClient(socketPath, "code_never_v1", {
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_never_v1"), {
       connectTimeoutMs: 300,
       retryDelayMs: 50,
     });
@@ -567,7 +568,7 @@ describe("DaemonGraphDbClient", () => {
   it("init() failure names the daemon log so the operator can find the cause", async () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));
     const socketPath = join(dir, "codegraph-daemon.sock");
-    const client = new DaemonGraphDbClient(socketPath, "code_never_v1", {
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_never_v1"), {
       connectTimeoutMs: 200,
       retryDelayMs: 50,
     });
@@ -602,7 +603,7 @@ describe("DaemonGraphDbClient", () => {
       });
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     await expect(client.getCallers("Foo#bar")).rejects.toThrow(/connection/i);
   });
@@ -625,7 +626,7 @@ describe("DaemonGraphDbClient", () => {
       });
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     expect(client.isConnected()).toBe(true);
     await expect(client.getCallers("Foo#bar")).rejects.toThrow();
@@ -646,7 +647,7 @@ describe("DaemonGraphDbClient", () => {
     }));
     await echoServer(socketPath, () => symbols);
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     const received = await client.listAllSymbols();
     await client.close();
@@ -673,7 +674,7 @@ describe("DaemonGraphDbClient — readFileDependencyGraph (bd tea-rags-mcp-94hd9
       return r.op === "readFileDependencyGraph" ? graph : null;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     const result = await client.readFileDependencyGraph();
     await client.close();
@@ -697,7 +698,7 @@ describe("DaemonGraphDbClient — getFileImporters / getFileImports (bd tea-rags
       return r.op === "getFileImporters" || r.op === "getFileImports" ? lookup : null;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     const importers = await client.getFileImporters("b.ts");
     const imports = await client.getFileImports("a.ts");
@@ -730,7 +731,7 @@ describe("DaemonGraphDbClient — getSymbolVisibilities (bd tea-rags-mcp-sqqkz)"
       return r.op === "getSymbolVisibilities" ? rows : null;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     const result = await client.getSymbolVisibilities(["A#x", "A#y"]);
     await client.close();
@@ -765,7 +766,7 @@ describe("DaemonGraphDbClient — readNonPublicMemberEdges (bd tea-rags-mcp-r8hm
       return r.op === "readNonPublicMemberEdges" ? rows : null;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     const result = await client.readNonPublicMemberEdges(["python", "ruby"]);
     await client.close();
@@ -796,7 +797,7 @@ describe("DaemonGraphDbClient — cg_identifiers ops (bd tea-rags-mcp-4p3sb.8)",
       return null;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     const entries = [
       { relPath: "a.rb", rows: [{ ownerSymbolId: "A#x", kind: "local" as const, name: "doc", line: 1 }] },
@@ -834,7 +835,7 @@ describe("DaemonGraphDbClient — cg_identifiers ops (bd tea-rags-mcp-4p3sb.8)",
       seen.push(r);
       return null;
     });
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     const entries = [
       {
@@ -869,7 +870,7 @@ describe("DaemonGraphDbClient — cg_identifiers ops (bd tea-rags-mcp-4p3sb.8)",
       seen.push(r);
       return [];
     });
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     await client.aggregateIdentifiersByType({
       types: ["Doc"],
@@ -901,7 +902,7 @@ describe("DaemonGraphDbClient — cg_identifiers ops (bd tea-rags-mcp-4p3sb.8)",
       return null;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     expect(await client.aggregateIdentifiersByName({ names: ["doc"], pathPrefixes: ["app/"] })).toEqual(byName);
     expect(await client.identifierLanguageCounts({ pathPrefixes: ["app/"] })).toEqual(languages);
@@ -922,7 +923,7 @@ describe("DaemonGraphDbClient — cg_identifiers ops (bd tea-rags-mcp-4p3sb.8)",
       seen.push(r);
       return [];
     });
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     await client.identifierLanguageCounts({ pathPrefixes: ["app/"], pathSuffixes: [".rb"] });
     await client.close();
@@ -940,7 +941,7 @@ describe("DaemonGraphDbClient — cg_identifiers ops (bd tea-rags-mcp-4p3sb.8)",
       seen.push(r);
       return [];
     });
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     await client.aggregateIdentifiersByType({ types: ["Doc"], groupByLanguage: true });
     await client.aggregateIdentifiersByCallee({ callees: [{ member: "find" }], groupByLanguage: true });
@@ -969,7 +970,7 @@ describe("DaemonGraphDbClient — type-name rows op (bd tea-rags-mcp-vi0wx)", ()
       return r.op === "readTypeNameRows" ? rows : null;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     const q = {
       pathPrefixes: ["src/"],
@@ -998,12 +999,14 @@ describe("DaemonGraphDbClient — ontology report op (bd tea-rags-mcp-4p3sb.20)"
       return r.op === "readOntologyReportSections" ? sectionRows : null;
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     const q = {
       pathPrefixes: ["app/"],
       extensions: [".rb"],
       nonConceptTypes: [{ extensions: [".rb"], typeNames: ["String"] }],
+      nonProductionPaths: { caseInsensitive: [], caseSensitive: [] },
+      shadowsMethodExtensions: [],
       sections: ["homonyms" as const],
       limit: 5,
       thresholds: {
@@ -1048,7 +1051,7 @@ describe("DaemonGraphDbClient — excludePaths on the naming evidence reads", ()
       return r.op === "countIdentifiers" ? 0 : [];
     });
     const excludePaths = ["src/changed.ts"];
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     await client.aggregateIdentifiersByType({ types: ["Doc"], excludePaths });
     await client.countIdentifiers({ types: ["Doc"], excludePaths });

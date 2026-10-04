@@ -21,6 +21,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { computeExtractionRepair } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/extraction-repair.js";
 
@@ -128,7 +129,7 @@ describe("EnrichmentCoordinator.runRepairPass under CODEGRAPH_FORCE_RESOLVE", ()
       makeExecutor(runFileBatch),
     );
 
-    expect(await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED)).toBe(0);
+    expect(await coordinator.runRepairPass(fixturePhysicalCollectionName("code_x_v1"), "/repo", SCANNED)).toBe(0);
     expect(runFileBatch).not.toHaveBeenCalled();
   });
 
@@ -142,7 +143,7 @@ describe("EnrichmentCoordinator.runRepairPass under CODEGRAPH_FORCE_RESOLVE", ()
       makeExecutor(runFileBatch),
     );
 
-    expect(await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED)).toBe(2);
+    expect(await coordinator.runRepairPass(fixturePhysicalCollectionName("code_x_v1"), "/repo", SCANNED)).toBe(2);
     expect(runFileBatch).toHaveBeenCalledTimes(1);
     const [, root, paths] = runFileBatch.mock.calls[0] as [unknown, string, string[]];
     expect(root).toBe("/repo");
@@ -159,7 +160,7 @@ describe("EnrichmentCoordinator.runRepairPass under CODEGRAPH_FORCE_RESOLVE", ()
       makeExecutor(runFileBatch),
     );
 
-    await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED);
+    await coordinator.runRepairPass(fixturePhysicalCollectionName("code_x_v1"), "/repo", SCANNED);
 
     expect(runFileBatch).toHaveBeenCalledTimes(1);
   });
@@ -176,7 +177,7 @@ describe("EnrichmentCoordinator.runRepairPass under CODEGRAPH_FORCE_RESOLVE", ()
       makeExecutor(runFileBatch),
     );
 
-    expect(await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED)).toBe(0);
+    expect(await coordinator.runRepairPass(fixturePhysicalCollectionName("code_x_v1"), "/repo", SCANNED)).toBe(0);
     expect(runFileBatch).not.toHaveBeenCalled();
   });
 
@@ -194,7 +195,7 @@ describe("EnrichmentCoordinator.runRepairPass under CODEGRAPH_FORCE_RESOLVE", ()
       makeExecutor(runFileBatch),
     );
 
-    await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED);
+    await coordinator.runRepairPass(fixturePhysicalCollectionName("code_x_v1"), "/repo", SCANNED);
 
     const [, , , options] = runFileBatch.mock.calls[0] as [
       unknown,
@@ -214,7 +215,7 @@ describe("EnrichmentCoordinator.runRepairPass under CODEGRAPH_FORCE_RESOLVE", ()
     const runFileBatch = vi.fn().mockResolvedValue(new Map());
     const coordinator = new EnrichmentCoordinator(qdrant, makeProvider(), undefined, makeExecutor(runFileBatch));
 
-    expect(await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED)).toBe(0);
+    expect(await coordinator.runRepairPass(fixturePhysicalCollectionName("code_x_v1"), "/repo", SCANNED)).toBe(0);
     expect(runFileBatch).not.toHaveBeenCalled();
   });
 });
@@ -236,7 +237,7 @@ describe("EnrichmentCoordinator.runRepairPass is a drift check, not a force leve
       makeExecutor(runFileBatch),
     );
 
-    expect(await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED)).toBe(0);
+    expect(await coordinator.runRepairPass(fixturePhysicalCollectionName("code_x_v1"), "/repo", SCANNED)).toBe(0);
     expect(runFileBatch).not.toHaveBeenCalled();
   });
 
@@ -255,7 +256,7 @@ describe("EnrichmentCoordinator.runRepairPass is a drift check, not a force leve
     });
     const coordinator = new EnrichmentCoordinator(qdrant, staleStore, undefined, makeExecutor(runFileBatch));
 
-    expect(await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED)).toBe(1);
+    expect(await coordinator.runRepairPass(fixturePhysicalCollectionName("code_x_v1"), "/repo", SCANNED)).toBe(1);
     const [, , paths] = runFileBatch.mock.calls[0] as [unknown, string, string[]];
     expect(paths).toEqual(["src/b.ts"]);
   });

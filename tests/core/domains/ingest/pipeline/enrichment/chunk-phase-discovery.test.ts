@@ -11,6 +11,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { ChunkPhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/chunk-phase.js";
 import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
@@ -47,12 +48,16 @@ describe("ChunkPhase run-scoped commit discovery (bd tea-rags-mcp-82va1)", () =>
     const createCommitDiscovery = vi.fn().mockReturnValue(instance);
     const ctx = buildCtx("git", { createCommitDiscovery });
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "2026-07-04T10:00:00Z");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "2026-07-04T10:00:00Z");
 
     // Two streaming batches (different files) + post-flush catch-up (third file).
-    phase.onBatch("coll", "/repo", itemsFor("src/a.ts", "c1"));
-    phase.onBatch("coll", "/repo", itemsFor("src/b.ts", "c2"));
-    phase.enrichRemaining("coll", "/repo", new Map([["src/c.ts", [{ chunkId: "c3", startLine: 1, endLine: 10 }]]]));
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", itemsFor("src/a.ts", "c1"));
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", itemsFor("src/b.ts", "c2"));
+    phase.enrichRemaining(
+      fixturePhysicalCollectionName("coll"),
+      "/repo",
+      new Map([["src/c.ts", [{ chunkId: "c3", startLine: 1, endLine: 10 }]]]),
+    );
     await phase.drain();
 
     expect(createCommitDiscovery).toHaveBeenCalledTimes(1);
@@ -73,13 +78,13 @@ describe("ChunkPhase run-scoped commit discovery (bd tea-rags-mcp-82va1)", () =>
       .mockReturnValueOnce(fakeDiscoveryInstance());
     const ctx = buildCtx("git", { createCommitDiscovery });
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
 
-    phase.onBatch("coll", "/repo", itemsFor("src/a.ts", "c1"));
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", itemsFor("src/a.ts", "c1"));
     await phase.drain();
     expect(createCommitDiscovery).toHaveBeenCalledTimes(1);
 
-    phase.onBatch("coll", "/repo", itemsFor("src/b.ts", "c2"));
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", itemsFor("src/b.ts", "c2"));
     await phase.drain();
     expect(createCommitDiscovery).toHaveBeenCalledTimes(2);
   });
@@ -89,9 +94,9 @@ describe("ChunkPhase run-scoped commit discovery (bd tea-rags-mcp-82va1)", () =>
     const applier = new EnrichmentApplier(qdrant as any);
     const ctx = buildCtx("git");
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
 
-    phase.onBatch("coll", "/repo", itemsFor("src/a.ts", "c1"));
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", itemsFor("src/a.ts", "c1"));
     await phase.drain();
 
     expect(ctx.provider.buildChunkSignals).toHaveBeenCalledTimes(1);
@@ -110,11 +115,11 @@ describe("ChunkPhase run-scoped commit discovery (bd tea-rags-mcp-82va1)", () =>
         [withHook.key, withHook],
         [withoutHook.key, withoutHook],
       ]),
-      "coll",
+      fixturePhysicalCollectionName("coll"),
       "ts",
     );
 
-    phase.onBatch("coll", "/repo", itemsFor("src/a.ts", "c1"));
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", itemsFor("src/a.ts", "c1"));
     await phase.drain();
 
     expect(withHook.provider.buildChunkSignals.mock.calls[0][2].commitDiscovery).toBe(instance);

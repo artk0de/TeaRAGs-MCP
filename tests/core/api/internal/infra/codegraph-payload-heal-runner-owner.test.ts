@@ -11,6 +11,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import {
   createCodegraphPayloadHealRunner,
   type CodegraphPayloadHealRunnerDeps,
@@ -93,7 +94,7 @@ async function heal(points: StoredPoint[], graphDb: ReturnType<typeof graphDbStu
     acquireGraphDb: async () => Promise.resolve(graphDb as unknown as GraphDbClient),
     providerKey: PROVIDER_KEY,
   };
-  await createCodegraphPayloadHealRunner(deps).run("coll", new Set());
+  await createCodegraphPayloadHealRunner(deps).run(fixturePhysicalCollectionName("coll"), new Set());
   return qdrant;
 }
 

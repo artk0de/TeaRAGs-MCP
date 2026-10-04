@@ -16,6 +16,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
 import { DaemonGraphDbClient } from "../../../../../src/core/adapters/duckdb/daemon/client.js";
 import { DAEMON_OP_COMMANDS } from "../../../../../src/core/adapters/duckdb/daemon/op-commands.js";
@@ -90,7 +91,7 @@ describe("DaemonGraphDbClient.getSymbolLineRangesBulk (bd tea-rags-mcp-9i2ow)", 
       ];
     });
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     const ranges = await client.getSymbolLineRangesBulk(["walker.ts", "other.ts"]);
     await client.close();
@@ -116,7 +117,7 @@ describe("DaemonGraphDbClient.getSymbolLineRangesBulk (bd tea-rags-mcp-9i2ow)", 
       r.op === "getSymbolLineRangesBulk" ? new Error("unknown daemon op: getSymbolLineRangesBulk") : null,
     );
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     const ranges = await client.getSymbolLineRangesBulk(["walker.ts"]);
     await client.close();
@@ -131,7 +132,7 @@ describe("DaemonGraphDbClient.getSymbolLineRangesBulk (bd tea-rags-mcp-9i2ow)", 
       r.op === "getSymbolLineRangesBulk" ? new Error("IO Error: database is invalidated") : null,
     );
 
-    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
     await client.init();
     await expect(client.getSymbolLineRangesBulk(["walker.ts"])).rejects.toThrow("database is invalidated");
     await client.close();

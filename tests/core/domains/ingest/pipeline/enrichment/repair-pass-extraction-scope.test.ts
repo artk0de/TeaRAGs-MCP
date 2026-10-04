@@ -22,7 +22,9 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { GraphDbClientPool } from "../../../../../../src/core/adapters/duckdb/pool.js";
+import type { FileSignalOptions } from "../../../../../../src/core/contracts/types/provider.js";
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
@@ -31,7 +33,7 @@ import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { buildTestCodegraphDeps } from "../../../trajectory/codegraph/__helpers__/language-factory.js";
 
-const COLLECTION = "code_repair_scope_v1";
+const COLLECTION = fixturePhysicalCollectionName("code_repair_scope_v1");
 
 describe("repair pass — files the walker can never produce a row for", () => {
   let tmp: string;
@@ -75,12 +77,7 @@ describe("repair pass — files the walker can never produce a row for", () => {
     dispatched = [];
     coordinator = new EnrichmentCoordinator({} as never, provider, undefined, {
       runFileBatch: vi.fn(
-        async (
-          p: CodegraphEnrichmentProvider,
-          root: string,
-          paths: string[],
-          options: { collectionName?: string; contentHashes?: ReadonlyMap<string, string> },
-        ) => {
+        async (p: CodegraphEnrichmentProvider, root: string, paths: string[], options: FileSignalOptions) => {
           dispatched.push([...paths].sort());
           return p.streamFileBatch(root, paths, options);
         },

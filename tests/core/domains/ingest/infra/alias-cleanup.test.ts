@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import {
   cleanupOrphanedVersions,
@@ -259,7 +260,11 @@ describe("discardFailedCollectionBuild", () => {
       ["code_abc_v11", "code_abc_v12"],
     );
 
-    const discarded = await discardFailedCollectionBuild(qdrant, "code_abc", "code_abc_v12");
+    const discarded = await discardFailedCollectionBuild(
+      qdrant,
+      "code_abc",
+      fixturePhysicalCollectionName("code_abc_v12"),
+    );
 
     expect(discarded).toBe(true);
     expect(qdrant.deleteCollection).toHaveBeenCalledWith("code_abc_v12");
@@ -273,7 +278,11 @@ describe("discardFailedCollectionBuild", () => {
   it("keeps the partial collection when nothing else serves the base name (bootstrap)", async () => {
     const qdrant = createMockQdrant([], ["code_abc_v1"]);
 
-    const discarded = await discardFailedCollectionBuild(qdrant, "code_abc", "code_abc_v1");
+    const discarded = await discardFailedCollectionBuild(
+      qdrant,
+      "code_abc",
+      fixturePhysicalCollectionName("code_abc_v1"),
+    );
 
     expect(discarded).toBe(false);
     expect(qdrant.deleteCollection).not.toHaveBeenCalled();
@@ -285,7 +294,11 @@ describe("discardFailedCollectionBuild", () => {
   it("keeps the target when the alias already points at it", async () => {
     const qdrant = createMockQdrant([{ aliasName: "code_abc", collectionName: "code_abc_v12" }], ["code_abc_v12"]);
 
-    const discarded = await discardFailedCollectionBuild(qdrant, "code_abc", "code_abc_v12");
+    const discarded = await discardFailedCollectionBuild(
+      qdrant,
+      "code_abc",
+      fixturePhysicalCollectionName("code_abc_v12"),
+    );
 
     expect(discarded).toBe(false);
     expect(qdrant.deleteCollection).not.toHaveBeenCalled();
@@ -297,7 +310,11 @@ describe("discardFailedCollectionBuild", () => {
   it("deletes the half-built version when an unversioned collection still serves the base name", async () => {
     const qdrant = createMockQdrant([], ["code_abc", "code_abc_v2"]);
 
-    const discarded = await discardFailedCollectionBuild(qdrant, "code_abc", "code_abc_v2");
+    const discarded = await discardFailedCollectionBuild(
+      qdrant,
+      "code_abc",
+      fixturePhysicalCollectionName("code_abc_v2"),
+    );
 
     expect(discarded).toBe(true);
     expect(qdrant.deleteCollection).toHaveBeenCalledWith("code_abc_v2");
@@ -310,7 +327,12 @@ describe("discardFailedCollectionBuild", () => {
     );
     const removeCodegraphDb = vi.fn().mockResolvedValue(undefined);
 
-    await discardFailedCollectionBuild(qdrant, "code_abc", "code_abc_v12", removeCodegraphDb);
+    await discardFailedCollectionBuild(
+      qdrant,
+      "code_abc",
+      fixturePhysicalCollectionName("code_abc_v12"),
+      removeCodegraphDb,
+    );
 
     expect(removeCodegraphDb).toHaveBeenCalledWith("code_abc_v12");
   });
@@ -326,7 +348,12 @@ describe("discardFailedCollectionBuild", () => {
     );
     const removeCodegraphDb = vi.fn().mockRejectedValue(new Error("unlink failed"));
 
-    const discarded = await discardFailedCollectionBuild(qdrant, "code_abc", "code_abc_v12", removeCodegraphDb);
+    const discarded = await discardFailedCollectionBuild(
+      qdrant,
+      "code_abc",
+      fixturePhysicalCollectionName("code_abc_v12"),
+      removeCodegraphDb,
+    );
 
     expect(discarded).toBe(true);
     expect(qdrant.deleteCollection).toHaveBeenCalledWith("code_abc_v12");
@@ -339,7 +366,11 @@ describe("discardFailedCollectionBuild", () => {
     const qdrant = createMockQdrant([], []);
     vi.mocked(qdrant.aliases.listAliases).mockRejectedValue(new Error("qdrant unreachable"));
 
-    const discarded = await discardFailedCollectionBuild(qdrant, "code_abc", "code_abc_v12");
+    const discarded = await discardFailedCollectionBuild(
+      qdrant,
+      "code_abc",
+      fixturePhysicalCollectionName("code_abc_v12"),
+    );
 
     expect(discarded).toBe(false);
     expect(qdrant.deleteCollection).not.toHaveBeenCalled();
@@ -352,7 +383,11 @@ describe("discardFailedCollectionBuild", () => {
     );
     vi.mocked(qdrant.deleteCollection).mockRejectedValue(new Error("delete failed"));
 
-    const discarded = await discardFailedCollectionBuild(qdrant, "code_abc", "code_abc_v12");
+    const discarded = await discardFailedCollectionBuild(
+      qdrant,
+      "code_abc",
+      fixturePhysicalCollectionName("code_abc_v12"),
+    );
 
     expect(discarded).toBe(false);
   });

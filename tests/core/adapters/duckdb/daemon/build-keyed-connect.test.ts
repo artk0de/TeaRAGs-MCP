@@ -17,6 +17,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
 import {
   getDaemonPaths,
@@ -34,7 +35,7 @@ import {
 } from "../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
-const COLLECTION = "code_keyed_v1";
+const COLLECTION = fixturePhysicalCollectionName("code_keyed_v1");
 
 let root: string;
 const daemons: (() => Promise<void>)[] = [];
@@ -202,7 +203,7 @@ describe("build-keyed connect flow (42hno)", () => {
       const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
       return new Promise<{ pid: number }>((resolve) =>
         child.once("exit", () => {
-          resolve({ pid: child.pid });
+          resolve({ pid: child.pid! });
         }),
       );
     });
@@ -292,7 +293,7 @@ describe("cross-build shared-collection open retry (42hno)", () => {
       pools.push(loser);
 
       let settled = false;
-      const pending = loser.acquire("code_retry_v1");
+      const pending = loser.acquire(fixturePhysicalCollectionName("code_retry_v1"));
       void pending.then(
         () => {
           settled = true;
@@ -310,7 +311,7 @@ describe("cross-build shared-collection open retry (42hno)", () => {
       // The retry succeeded once the lock was released: the file is real and
       // the loser's client is live on it.
       expect(handle.graphDb).toBeDefined();
-      expect(loser.hasDatabase("code_retry_v1")).toBe(true);
+      expect(loser.hasDatabase(fixturePhysicalCollectionName("code_retry_v1"))).toBe(true);
       await loser.closeAll();
     } finally {
       if (!holder.killed) holder.kill("SIGKILL");
@@ -352,7 +353,9 @@ describe("cross-build shared-collection open retry (42hno)", () => {
         applyMigrations: createDatabaseMigrationApplier(),
       });
       pools.push(pool);
-      await expect(pool.acquire("code_retry_off_v1")).rejects.toBeInstanceOf(DuckDbOpenFailedError);
+      await expect(pool.acquire(fixturePhysicalCollectionName("code_retry_off_v1"))).rejects.toBeInstanceOf(
+        DuckDbOpenFailedError,
+      );
     } finally {
       holder.kill("SIGKILL");
     }
@@ -379,7 +382,7 @@ describe("a corrupt codegraph database fails fast (zgg62)", () => {
     pools.push(pool);
 
     const started = Date.now();
-    const err = await pool.acquire("code_junk_v1").catch((e: unknown) => e);
+    const err = await pool.acquire(fixturePhysicalCollectionName("code_junk_v1")).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(DuckDbOpenFailedError);
     expect((err as InstanceType<typeof DuckDbOpenFailedError>).lockContention).toBe(false);
     expect(Date.now() - started).toBeLessThan(5_000);
@@ -394,7 +397,7 @@ describe("a corrupt codegraph database fails fast (zgg62)", () => {
 
     const started = Date.now();
     const err = await pool
-      .acquireReader("code_junk_daemon_v1")
+      .acquireReader(fixturePhysicalCollectionName("code_junk_daemon_v1"))
       .then(async (handle) => handle.graphDb.hasData())
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(DuckDbOpenFailedError);

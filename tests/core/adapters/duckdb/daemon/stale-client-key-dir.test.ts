@@ -25,6 +25,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import {
   captureBuildFingerprint,
   type BuildFingerprintCapture,
@@ -205,7 +206,7 @@ describe("a stale client process reaches the daemon of the on-disk build (bd tea
     const pool = makeFactoryShapedPool(storageDir, client, { respawn });
 
     const started = Date.now();
-    const { graphDb } = await pool.acquireWrite("code_llrja_ro_v1");
+    const { graphDb } = await pool.acquireWrite(fixturePhysicalCollectionName("code_llrja_ro_v1"));
 
     expect(Date.now() - started).toBeLessThan(3_000);
     await expect(graphDb.getCallers("a.ts#f")).resolves.toEqual([]);
@@ -227,7 +228,7 @@ describe("a stale client process reaches the daemon of the on-disk build (bd tea
     await startDaemon(getDaemonPathsForBuild(storageDir, current.loaded), current.loaded);
     const pool = makeFactoryShapedPool(storageDir, current);
 
-    const { graphDb } = await pool.acquireWrite("code_llrja_own_v1");
+    const { graphDb } = await pool.acquireWrite(fixturePhysicalCollectionName("code_llrja_own_v1"));
     await graphDb.upsertFile({ relPath: "a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
 
     expect(await graphDb.hasData()).toBe(true);
@@ -242,7 +243,7 @@ describe("a client whose build tree is gone fails fast (bd tea-rags-mcp-llrja)",
     const pool = makeFactoryShapedPool(storageDir, client, { respawn });
 
     const started = Date.now();
-    const err = await pool.acquireWrite("code_llrja_gone_v1").catch((e: unknown) => e);
+    const err = await pool.acquireWrite(fixturePhysicalCollectionName("code_llrja_gone_v1")).catch((e: unknown) => e);
 
     // Well under the 5s connect window the old behaviour waited out.
     expect(Date.now() - started).toBeLessThan(1_000);
@@ -261,7 +262,7 @@ describe("a client whose build tree is gone fails fast (bd tea-rags-mcp-llrja)",
     await startDaemon(getDaemonPathsForBuild(storageDir, client.loaded), client.loaded);
     const pool = makeFactoryShapedPool(storageDir, client);
 
-    const { graphDb } = await pool.acquireWrite("code_llrja_gone_live_v1");
+    const { graphDb } = await pool.acquireWrite(fixturePhysicalCollectionName("code_llrja_gone_live_v1"));
 
     expect(await graphDb.hasData()).toBe(false);
   });

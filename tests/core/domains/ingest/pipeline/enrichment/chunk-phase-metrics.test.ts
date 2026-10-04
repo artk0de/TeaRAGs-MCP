@@ -10,6 +10,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { ChunkPhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/chunk-phase.js";
 import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
@@ -54,18 +55,23 @@ describe("ChunkPhase per-provider metrics (bd tea-rags-mcp-iqpuu)", () => {
         [gitCtx.key, gitCtx],
         [cgCtx.key, cgCtx],
       ]),
-      "coll",
+      fixturePhysicalCollectionName("coll"),
       "ts",
     );
 
     // Streaming batch: git dispatches, cg only accumulates.
-    phase.onBatch("coll", "/repo", batchOf("src/a.ts", "c1"));
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", batchOf("src/a.ts", "c1"));
     await phase.drain();
 
     // A visible gap between the git span and the deferred cg pass — if the
     // total still included cg, it would cover this gap too.
     await sleep(30);
-    await phase.runDeferredChunk("coll", cgCtx, "/repo", phase.getDeferredChunkMap("cg"));
+    await phase.runDeferredChunk(
+      fixturePhysicalCollectionName("coll"),
+      cgCtx,
+      "/repo",
+      phase.getDeferredChunkMap("cg"),
+    );
 
     const m = phase.getMetrics();
     expect(m.providerDurationsMs.git).toBeGreaterThan(0);
@@ -82,11 +88,11 @@ describe("ChunkPhase per-provider metrics (bd tea-rags-mcp-iqpuu)", () => {
     // Provider policy drops EVERYTHING from the chunk walk.
     const ctx = buildCtx("git", { buildChunkSignals, shouldEnrich: () => "none" });
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
 
     const phaseSpy = vi.spyOn(pipelineLog, "enrichmentPhase");
     phase.enrichRemaining(
-      "coll",
+      fixturePhysicalCollectionName("coll"),
       "/repo",
       new Map([
         ["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]],

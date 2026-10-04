@@ -117,7 +117,7 @@ describe("DaemonGraphDbClient — replay only after a handshake with the replace
     const first = await daemon(socketPath, dyingAfterHandshake);
     let replacement: { received: string[] } | undefined;
     const client = track(
-      new DaemonGraphDbClient(socketPath, "code_x", {
+      new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x"), {
         retryDelayMs: 5,
         connectTimeoutMs: 2000,
         onConnectionLost: async () => {
@@ -140,7 +140,7 @@ describe("DaemonGraphDbClient — replay only after a handshake with the replace
     const first = await daemon(socketPath, dyingAfterHandshake);
     let replacement: { received: string[] } | undefined;
     const client = track(
-      new DaemonGraphDbClient(socketPath, "code_x", {
+      new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x"), {
         retryDelayMs: 5,
         connectTimeoutMs: 2000,
         onConnectionLost: async () => {
@@ -164,7 +164,7 @@ describe("DaemonGraphDbClient — replay only after a handshake with the replace
     const socketPath = tempSocket();
     const first = await daemon(socketPath, dyingAfterHandshake);
     const client = track(
-      new DaemonGraphDbClient(socketPath, "code_x", {
+      new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x"), {
         retryDelayMs: 5,
         connectTimeoutMs: 2000,
         onConnectionLost: async () => {
@@ -185,7 +185,7 @@ describe("DaemonGraphDbClient — replay only after a handshake with the replace
     const socketPath = tempSocket();
     const first = await daemon(socketPath, dyingAfterHandshake);
     const client = track(
-      new DaemonGraphDbClient(socketPath, "code_x", {
+      new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x"), {
         retryDelayMs: 5,
         connectTimeoutMs: 2000,
         onConnectionLost: async () => {
@@ -215,7 +215,7 @@ describe("DaemonGraphDbClient — a refused replay releases the connection (f924
     const first = await daemon(socketPath, dyingAfterHandshake);
     let replacementConnections = 0;
     const client = track(
-      new DaemonGraphDbClient(socketPath, "code_x", {
+      new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x"), {
         retryDelayMs: 5,
         connectTimeoutMs: 2000,
         onConnectionLost: async () => {
@@ -262,7 +262,7 @@ describe("DaemonGraphDbClient — a refused replay releases the connection (f924
     const socketPath = tempSocket();
     const first = await daemon(socketPath, dyingAfterHandshake);
     const client = track(
-      new DaemonGraphDbClient(socketPath, "code_x", {
+      new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x"), {
         retryDelayMs: 5,
         connectTimeoutMs: 2000,
         readOnDiskBuildFingerprint: () => onDisk,
@@ -295,7 +295,7 @@ describe("DaemonGraphDbClient — a refused replay releases the connection (f924
     const first = await daemon(socketPath, dyingAfterHandshake);
     let replacement: { received: string[] } | undefined;
     const client = track(
-      new DaemonGraphDbClient(socketPath, "code_x", {
+      new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x"), {
         retryDelayMs: 5,
         connectTimeoutMs: 2000,
         readOnDiskBuildFingerprint: () => "fp-B",
