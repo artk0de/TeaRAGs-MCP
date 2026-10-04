@@ -10,10 +10,10 @@ import {
   chunkPointsFilter,
   CollectionRegistry,
   InvalidParameterError,
-  isCollectionBuildInFlight,
   PROJECT_NAME_RE,
   ProjectRegistryOps,
   QdrantManager,
+  type App,
   type CollectionEntry,
   type StaleProjectEntry,
 } from "../../core/api/public/index.js";
@@ -78,8 +78,13 @@ type QdrantSurface = Pick<QdrantManager, "listCollections" | "countPoints"> & {
  * `cleanupOrphanedVersions` skips on, bd tea-rags-mcp-nrylk) tells it from a
  * leftover. Reporting it sent the operator to delete a build mid-run (bd
  * tea-rags-mcp-9ovlp). Shared by `projects orphans` and `doctor`.
+ *
+ * The predicate arrives as an injection (typed by the App method — bd
+ * tea-rags-mcp-89k7k.9): callers hold `ProjectRegistryOps` from the api
+ * surface and pass its method; an App satisfies the same type directly.
  */
 export async function listOrphanPhysicalCollections(
+  isBuildInFlight: App["isCollectionBuildInFlight"],
   client: Pick<QdrantSurface, "getPoint">,
   physicalCollectionNames: readonly string[],
   isAccounted: (physicalCollectionName: string) => boolean,
@@ -88,7 +93,7 @@ export async function listOrphanPhysicalCollections(
   const { getPoint } = client;
   if (!getPoint) return candidates;
   const reader = { getPoint: getPoint.bind(client) };
-  const inFlight = await Promise.all(candidates.map(async (name) => isCollectionBuildInFlight(reader, name)));
+  const inFlight = await Promise.all(candidates.map(async (name) => isBuildInFlight(reader, name)));
   return candidates.filter((_, index) => !inFlight[index]);
 }
 
@@ -404,7 +409,7 @@ export function runInfo(args: InfoArgs): void {
  * QdrantManager via parseAppConfig + resolveQdrantUrl; tests pass a mock.
  */
 export async function runOrphans(args: OrphansArgs, qdrant?: QdrantSurface): Promise<void> {
-  const { registry } = newOps();
+  const { registry, ops } = newOps();
   const client = qdrant ?? (await defaultQdrant());
   const registered = new Set(registry.list().map((e) => e.collectionName));
 
@@ -424,6 +429,7 @@ export async function runOrphans(args: OrphansArgs, qdrant?: QdrantSurface): Pro
 
   const physicalCollectionNames = await client.listCollections();
   const orphanPhysicalCollectionNames = await listOrphanPhysicalCollections(
+    ops.isCollectionBuildInFlight.bind(ops),
     client,
     physicalCollectionNames,
     (physicalCollectionName) => registered.has(physicalCollectionName) || aliasedTargets.has(physicalCollectionName),

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { unavailable } from "../../../src/cli/update-check/types.js";
+import { resolveLanguageCapabilities } from "../../../src/core/domains/language/capability/resolve.js";
 
 const { pingMock, createAppContextMock, parseAppConfigMock } = vi.hoisted(() => ({
   pingMock: vi.fn(),
@@ -54,6 +55,7 @@ describe("runPrime — debug flag reaches the codegraph resolve section", () => 
     pingMock.mockResolvedValue(true);
     createAppContextMock.mockResolvedValue({
       app: {
+        resolveLanguageCapabilities,
         getIndexStatus: vi.fn().mockResolvedValue({
           isIndexed: true,
           status: "indexed",

@@ -38,7 +38,7 @@ import { resolvePresets } from "../../domains/explore/rerank/presets/index.js";
 import { Reranker } from "../../domains/explore/reranker.js";
 import { validateSignalDependencies } from "../../domains/ingest/infra/collection-stats.js";
 import { resolveChunkSetBumpScopes, resolveLanguageCodeVersions } from "../../domains/language/capability/versions.js";
-import { LanguageFactory } from "../../domains/language/index.js";
+import { LanguageFactory, resolveLanguageCapabilities } from "../../domains/language/index.js";
 import type { DeclaredPayloadIndexSet } from "../../domains/maintenance/migration/payload_index_migrations/index.js";
 import { createCodegraphTrajectories, type CodegraphDeps } from "../../domains/trajectory/codegraph/index.js";
 import { CODEGRAPH_FILTER_PRESETS } from "../../domains/trajectory/codegraph/symbols/filter-presets/index.js";
@@ -495,3 +495,16 @@ export function emptyCochangeResult(request: FindCoChangedRequest): FindCoChange
 export function emptyReviewChangesResult(request: ReviewChangesRequest): ReviewChangesResult {
   return ReviewChangesOps.empty(request);
 }
+
+/**
+ * Per-language capability resolution (bd tea-rags-mcp-89k7k.9) — the domain
+ * implementation surfaced for `App.resolveLanguageCapabilities`, so
+ * `public/app.ts` receives the handler through the composition root instead of
+ * importing the domain module: the api/public VALUE edge into
+ * `domains/language/capability` dies here, at the main-sequence-ideal place
+ * for the unstable dependency. Reached through the domain facade
+ * (`domains/language/index.js`), never the deep module. The build-lease half
+ * of the same bead rides `ProjectRegistryOps#isCollectionBuildInFlight`,
+ * which already owned that domain edge.
+ */
+export { resolveLanguageCapabilities };

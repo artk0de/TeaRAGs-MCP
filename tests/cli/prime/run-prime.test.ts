@@ -7,6 +7,7 @@ import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { available, unavailable, upToDate } from "../../../src/cli/update-check/types.js";
 import { QdrantUnavailableError, TeaRagsError } from "../../../src/core/api/public/index.js";
+import { resolveLanguageCapabilities } from "../../../src/core/domains/language/capability/resolve.js";
 import { LanguageFactory } from "../../../src/core/domains/language/factory.js";
 
 const { pingMock, createAppContextMock } = vi.hoisted(() => ({
@@ -70,6 +71,7 @@ describe("runPrime — happy path", () => {
 
     createAppContextMock.mockResolvedValue({
       app: {
+        resolveLanguageCapabilities,
         getIndexStatus: getStatusMock,
         getIndexMetrics: getMetricsMock,
         checkIndexDrift: checkDriftMock,
@@ -99,6 +101,7 @@ describe("runPrime — happy path", () => {
 
     createAppContextMock.mockResolvedValue({
       app: {
+        resolveLanguageCapabilities,
         getIndexStatus: vi.fn().mockResolvedValue({
           isIndexed: true,
           status: "indexed",
@@ -131,6 +134,7 @@ describe("runPrime — happy path", () => {
     pingMock.mockResolvedValue(true);
     createAppContextMock.mockResolvedValue({
       app: {
+        resolveLanguageCapabilities,
         getIndexStatus: vi.fn().mockResolvedValue({
           isIndexed: true,
           status: "indexed",
@@ -200,6 +204,7 @@ describe("runPrime — failure paths", () => {
 
     createAppContextMock.mockResolvedValue({
       app: {
+        resolveLanguageCapabilities,
         getIndexStatus: getStatusMock,
         getIndexMetrics: getMetricsMock,
         checkIndexDrift: checkDriftMock,
@@ -222,6 +227,7 @@ describe("runPrime — status failure that is not a cold Qdrant", () => {
   function contextRejecting(error: unknown, cleanup = vi.fn()) {
     createAppContextMock.mockResolvedValue({
       app: {
+        resolveLanguageCapabilities,
         getIndexStatus: vi.fn().mockRejectedValue(error),
         getIndexMetrics: vi.fn().mockResolvedValue({}),
         checkIndexDrift: vi.fn().mockResolvedValue(null),
@@ -302,6 +308,7 @@ describe("runPrime — cwd fallback", () => {
     });
     createAppContextMock.mockResolvedValue({
       app: {
+        resolveLanguageCapabilities,
         getIndexStatus: getStatusMock,
         getIndexMetrics: vi.fn().mockResolvedValue({
           collection: "c",
@@ -326,6 +333,7 @@ describe("runPrime — update-check integration", () => {
   function buildFullCtx(checkForUpdate: ReturnType<typeof vi.fn>) {
     return {
       app: {
+        resolveLanguageCapabilities,
         getIndexStatus: vi.fn().mockResolvedValue({
           isIndexed: true,
           status: "indexed",
@@ -417,6 +425,7 @@ describe("runPrime — buildUpdateService fallback (yl9tv)", () => {
 
     createAppContextMock.mockResolvedValue({
       app: {
+        resolveLanguageCapabilities,
         getIndexStatus: vi.fn().mockResolvedValue({
           isIndexed: true,
           status: "indexed",
