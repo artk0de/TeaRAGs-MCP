@@ -174,9 +174,32 @@ if [ -n "$RUN_TESTS" ]; then
   # shellcheck disable=SC2086 # word splitting IS the argument list
   npm test -- related --run --reporter=dot --maxWorkers=6 $TESTED_FILES >"$TEST_LOG" 2>&1 || TEST_EXIT=$?
   if [ $TEST_EXIT -ne 0 ]; then
-    grep -E "FAIL|×|Error|failed" "$TEST_LOG" | head -20
+    # A vitest run that finishes ALWAYS ends with its summary block ("Test
+    # Files  N failed (M)"); the two live killed runs (bd tea-rags-mcp-89k7k.5,
+    # 2026-10-04 — an OOM-fatal run and a log truncated mid-flight at load
+    # 71-140) had none. So the summary's presence is the split: with it, a
+    # nonzero exit IS a test verdict; without it, the run died before vitest
+    # could report — not a test failure, and pointing at "details" that do not
+    # exist cost ~40min of log archaeology. Either way the commit does not
+    # proceed: a killed run is no evidence to commit on.
+    if grep -q "Test Files" "$TEST_LOG"; then
+      grep -E "FAIL|×|Error|failed" "$TEST_LOG" | head -20
+      echo ""
+      echo "❌ Tests failed. Run 'npx vitest run' for details."
+      echo "   Full log: $TEST_LOG"
+      exit 1
+    fi
     echo ""
-    echo "❌ Tests failed. Run 'npx vitest run' for details."
+    echo "⚠️  Vitest exited $TEST_EXIT WITHOUT a summary — NOT a test failure. Safe to retry."
+    if grep -Eq "heap out of memory|FATAL ERROR" "$TEST_LOG"; then
+      grep -m1 -E "heap out of memory|FATAL ERROR" "$TEST_LOG"
+      echo "   Class: JavaScript heap exhaustion (live 2026-10-04: workers OOM-killed)."
+      echo "   Retry hint: NODE_OPTIONS=--max-old-space-size=8192 — validated live, the same run passed after the bump."
+    else
+      tail -5 "$TEST_LOG"
+      echo "   Class: run killed mid-flight — load spike / worker death (live 2026-10-04: load 71-140 on 12 cores)."
+      echo "   Retry hint: check uptime; retry when load < 2x ncpu."
+    fi
     echo "   Full log: $TEST_LOG"
     exit 1
   else
