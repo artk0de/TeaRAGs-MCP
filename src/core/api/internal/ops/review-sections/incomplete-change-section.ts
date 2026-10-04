@@ -12,7 +12,11 @@
  * memory — 200-file diffs × ≤20 partners each is small, and per-file reads of
  * an undirected pair table would answer half the question. The build context
  * receives it pre-read (`temporalCochange`), so `isBuilt` stays a pure
- * decision.
+ * decision. A scope the reader's file cap truncated stamps the envelope
+ * `scopeSkippedFiles` (bd tea-rags-mcp-89k7k.7): a past-cap file is not in
+ * the diff set, so neither side of its pairs reads as "in the diff" and its
+ * missing partners are never considered — the findings are partial, never a
+ * clean pass.
  */
 
 import type { IncompleteChangePartner } from "../../../public/dto/review.js";
@@ -42,9 +46,13 @@ export const incompleteChangeSectionProvider: ReviewSectionProvider = {
   },
 
   run: async (context) => {
+    const { scope } = context;
+    // The never-a-clean-pass stamp (bd tea-rags-mcp-89k7k.7): a past-cap file
+    // is not in the diff set, so its pairs are silently unjudged below.
+    const truncatedScope = scope.skipped > 0 ? { scopeSkippedFiles: scope.skipped } : {};
     const graph = context.temporalCochange;
-    if (graph === undefined || graph === null) return { partners: [] };
-    const inDiff = new Set(context.scope.files);
+    if (graph === undefined || graph === null) return { partners: [], ...truncatedScope };
+    const inDiff = new Set(scope.files);
     const findings: IncompleteChangePartner[] = [];
     for (const edge of graph.edges) {
       const aIn = inDiff.has(edge.relPathA);
@@ -67,6 +75,7 @@ export const incompleteChangeSectionProvider: ReviewSectionProvider = {
     const partners = findings.slice(0, PARTNER_CAP);
     return {
       partners,
+      ...truncatedScope,
       ...(findings.length > partners.length ? { truncated: findings.length - partners.length } : {}),
     };
   },

@@ -56,6 +56,15 @@ export interface ReviewSectionEnvelope {
   /** When not built: the substrate that was missing or failed. */
   reason?: string;
   notJudged?: readonly ReviewSectionNotJudgedEntry[];
+  /**
+   * Changed files the diff's file cap skipped while this section judged (bd
+   * tea-rags-mcp-89k7k.7) — the section-level form of
+   * `DiffDetectorStatus.scopeSkippedFiles`, for the sections whose findings
+   * are per-file or per-pair rows and cannot carry it. Present = the verdict
+   * is PARTIAL: a truncated scope never yields a clean pass. Absent on a
+   * not-built section — `built: false` + `reason` already denies the pass.
+   */
+  scopeSkippedFiles?: number;
 }
 
 /**
