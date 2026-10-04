@@ -73,18 +73,27 @@ export function levelCountOf(hasEdges: boolean, maxLevel: number): number {
 
 /**
  * Eades–Lin–Smyth over one knot's internal edges, weighted by call weight:
- * peel sinks to the sequence's end and sources to its front, else remove the
- * vertex with the largest weighted out-degree minus in-degree. The feedback
- * arc set is every edge pointing from later to earlier in the final sequence —
- * removing it leaves the sequence a topological order. Ties break by path, so
- * the cut is deterministic.
+ * peel sources to the sequence's left block and sinks to its right block, else
+ * remove the vertex with the largest weighted out-degree minus in-degree. The
+ * feedback arc set is every edge pointing from later to earlier in the final
+ * sequence — removing it leaves the sequence a topological order. Ties break
+ * by path, so the cut is deterministic.
  */
 export function weightedFeedbackArcSet(
   internal: readonly SimpleEdge[],
 ): { source: string; target: string; callWeight: number }[] {
   const position = new Map<string, number>();
   const remaining = new Set(internal.flatMap((edge) => [edge.source, edge.target]));
-  const sequence: string[] = [];
+  // Sources collect in `front` in peel order and stay that way — the left
+  // block of the canonical sequence. Sinks and max-delta picks append to
+  // `back` in removal order; prepending them to the canonical right block is
+  // the same list read backwards, so `back` reverses once at the end (bd
+  // tea-rags-mcp-89k7k.12: the single list here took sources unshifted and
+  // sinks appended — the two reversals swapped, which cut edges of a pure
+  // source-chain DAG). Same canonical assembly as `eadesLinSmyth` in
+  // layering.ts, which fixed this first (bd tea-rags-mcp-r8hme.42).
+  const front: string[] = [];
+  const back: string[] = [];
   const liveOut = (node: string) => internal.some((e) => e.source === node && remaining.has(e.target));
   const liveIn = (node: string) => internal.some((e) => e.target === node && remaining.has(e.source));
   const weightDelta = (node: string) => {
@@ -104,8 +113,7 @@ export function weightedFeedbackArcSet(
       moved = false;
       for (const node of [...remaining].sort(compareCodePoints)) {
         if (liveOut(node) && liveIn(node)) continue;
-        if (!liveOut(node)) sequence.push(node);
-        else sequence.unshift(node);
+        (liveOut(node) ? front : back).push(node);
         remaining.delete(node);
         moved = true;
       }
@@ -122,9 +130,9 @@ export function weightedFeedbackArcSet(
     }
     if (best === undefined) break;
     remaining.delete(best);
-    sequence.push(best);
+    back.push(best);
   }
-  sequence.forEach((node, index) => position.set(node, index));
+  [...front, ...back.reverse()].forEach((node, index) => position.set(node, index));
 
   return internal
     .filter((edge) => (position.get(edge.source) ?? 0) > (position.get(edge.target) ?? 0))
