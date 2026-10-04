@@ -1,17 +1,15 @@
 /**
  * Otsu's 1-D split (bd tea-rags-mcp-jetrd) — the adaptive cut the
  * leaking-abstraction detector draws over its facade-adoption population, and
- * the policy that turns it into the effective adoption threshold.
+ * the policy that turns it into the effective adoption threshold. Foundation
+ * primitive since bd tea-rags-mcp-89k7k.24 (the temporal verdicts consume it
+ * too), so it is tested beside its `core/infra/graph/` siblings; the
+ * facade-adoption detector's own use stays with the detector, in
+ * `boundary-diagnostics/leaking-abstraction.test.ts`.
  */
 import { describe, expect, it } from "vitest";
 
-import {
-  FACADE_ADOPTION_MAJORITY,
-  FACADE_OTSU_MIN_POPULATION,
-  otsuSplit,
-  resolveFacadeAdoptionThreshold,
-  resolveMajorityFlooredOtsuThreshold,
-} from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
+import { otsuSplit, resolveMajorityFlooredOtsuThreshold } from "../../../../src/core/infra/graph/index.js";
 
 describe("otsuSplit", () => {
   it("cuts a bimodal set at the midpoint of the gap between its modes", () => {
@@ -52,47 +50,6 @@ describe("otsuSplit", () => {
   it("has no split with fewer than two distinct values", () => {
     expect(otsuSplit([])).toBeNull();
     expect(otsuSplit([0.7, 0.7, 0.7])).toBeNull();
-  });
-});
-
-describe("resolveFacadeAdoptionThreshold", () => {
-  it("falls back to the strict majority below the minimum population", () => {
-    expect(FACADE_OTSU_MIN_POPULATION).toBe(8);
-    expect(FACADE_ADOPTION_MAJORITY).toBe(0.5);
-    const policy = resolveFacadeAdoptionThreshold([0, 0, 0.1, 0.9, 1, 1, 1]);
-
-    expect(policy.method).toBe("majority");
-    expect(policy.threshold).toBe(0.5);
-    expect(policy.separability).toBeUndefined();
-    expect(policy.admits(0.5)).toBe(false);
-    expect(policy.admits(0.51)).toBe(true);
-  });
-
-  it("falls back to the majority when the population has one distinct value", () => {
-    const policy = resolveFacadeAdoptionThreshold(Array.from({ length: 9 }, () => 1));
-
-    expect(policy.method).toBe("majority");
-    expect(policy.admits(1)).toBe(true);
-  });
-
-  it("uses the Otsu cut at or above it, never admitting a value at or below the majority", () => {
-    const policy = resolveFacadeAdoptionThreshold([0.1, 0.2, 0.3, 0.55, 0.9, 0.95, 1, 1, 1, 1]);
-
-    expect(policy.method).toBe("otsu");
-    expect(policy.threshold).toBeCloseTo(0.725, 12);
-    expect(policy.separability).toBeGreaterThan(0.9);
-    expect(policy.admits(policy.threshold)).toBe(true);
-    expect(policy.admits(0.9)).toBe(true);
-    expect(policy.admits(0.55)).toBe(false);
-  });
-
-  it("keeps the strict majority floor when the Otsu cut falls below it", () => {
-    const policy = resolveFacadeAdoptionThreshold([0, 0, 0, 0, 0.5, 0.5, 0.6, 0.7]);
-
-    expect(policy.method).toBe("otsu");
-    expect(policy.threshold).toBeCloseTo(0.25, 12);
-    expect(policy.admits(0.5)).toBe(false);
-    expect(policy.admits(0.6)).toBe(true);
   });
 });
 

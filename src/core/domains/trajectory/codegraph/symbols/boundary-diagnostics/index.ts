@@ -36,13 +36,6 @@ export { buildLayeringModel, detectLayeringViolations, layeringKnotKeepCosts, lo
 export { buildLayerMap, collapseDirectory, nodeMapping } from "./layer-map.js";
 export { condensedPositions, sccKnots, weightedFeedbackArcSet, type SimpleEdge } from "./layer-graph.js";
 export {
-  otsuSplit,
-  resolveMajorityFlooredOtsuThreshold,
-  type MajorityFlooredOtsuOptions,
-  type MajorityFlooredOtsuThreshold,
-  type OtsuSplit,
-} from "./otsu-split.js";
-export {
   excludeNonProductionFiles,
   NON_PRODUCTION_REASON,
   type ProductionDependencyGraph,
