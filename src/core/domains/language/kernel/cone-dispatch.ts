@@ -6,8 +6,8 @@ import {
   type DispatchEdge,
   type DispatchFanoutOutcome,
   type SymbolResolutionTarget,
-} from "../../contracts/types/codegraph.js";
-import type { ConeTypeLocator, DispatchResolverComponent } from "../../contracts/types/language.js";
+} from "../../../contracts/types/codegraph.js";
+import type { ConeTypeLocator, DispatchResolverComponent } from "../../../contracts/types/language.js";
 
 /**
  * Language-neutral CHA devirtualization fan-out for polymorphic receivers (bd

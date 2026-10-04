@@ -6,7 +6,7 @@ import {
   type SymbolDefinition,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { lookupEcmascriptSymbolsByShortName } from "../../../shared/ecmascript-symbol-lookup.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
 import type { ResolverConfig } from "./shared.js";
 
 // Uppercase-initial receiver == class name, TS convention.

@@ -2,7 +2,6 @@
 paths:
   - "src/core/domains/language/kernel/**"
   - "src/core/domains/language/resolver-chain.ts"
-  - "src/core/domains/language/cone-dispatch.ts"
   - "src/core/domains/language/import-file-edges.ts"
   - "src/core/domains/language/external-classifier.ts"
   - "src/core/domains/language/factory.ts"

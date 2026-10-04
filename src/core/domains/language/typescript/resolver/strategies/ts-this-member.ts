@@ -1,10 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import {
-  lookupEcmascriptSymbols,
-  lookupEcmascriptSymbolsByShortName,
-} from "../../../shared/ecmascript-symbol-lookup.js";
+import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
 import { classBodyChunkClass, thisHierarchyAccountsFor } from "../ts-receiver-member-evidence.js";
 import type { ResolverConfig } from "./shared.js";
 

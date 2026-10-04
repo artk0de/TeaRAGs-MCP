@@ -33,13 +33,13 @@ import {
 } from "../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../contracts/types/language.js";
 import { resolveImportFileEdges } from "../../import-file-edges.js";
-import { resolveDispatchViaComponents } from "../../resolver-chain.js";
-import { ECMASCRIPT_GLOBALS } from "../../shared/ecmascript-globals.js";
 import {
   lookupEcmascriptSymbols,
   lookupEcmascriptSymbolsByShortName,
   withEcmascriptSymbolKindRoles,
-} from "../../shared/ecmascript-symbol-lookup.js";
+} from "../../kernel/index.js";
+import { resolveDispatchViaComponents } from "../../resolver-chain.js";
+import { ECMASCRIPT_GLOBALS } from "../../shared/ecmascript-globals.js";
 import { capability } from "../capability.js";
 import { JavascriptImportFileMapper, javascriptImportPathCandidates } from "./javascript-import-file-mapper.js";
 import { JavascriptTableDispatchResolver } from "./javascript-table-dispatch.js";

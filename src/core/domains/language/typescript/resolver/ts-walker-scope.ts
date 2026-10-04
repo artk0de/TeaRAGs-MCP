@@ -21,7 +21,7 @@
 import type ts from "typescript";
 
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
-import { lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../kernel/index.js";
 import { loadTypeScriptCompiler } from "./ts-compiler-loader.js";
 
 /** An arrow or function expression — the value `functionValuedDeclaratorName` accepts. */
