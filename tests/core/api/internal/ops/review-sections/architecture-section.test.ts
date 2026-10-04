@@ -786,6 +786,34 @@ describe("architectureSectionProvider.run — splitCandidates wiring", () => {
       findingCount: 0,
     });
   });
+
+  // bd tea-rags-mcp-2wsnt: a diff touching the stylesheet itself — the walked
+  // partner sits outside the diff, so the rescue's read is the section's
+  // context lookup, and a pair the report would rescue must not become a
+  // finding here.
+  it("does not report a diff-touching one-walked pair the recorded asset import links", async () => {
+    writeFile("app/s1.module.css", ".s1 { color: red; }\n");
+    const graph = graphDbStub({ files: [graphFile("app/s1.ts")], edges: [] });
+    const readImportSpecifiers = vi.fn().mockResolvedValue(new Map([["app/s1.ts", ["./s1.module.css"]]]));
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({
+        graphDb: graph,
+        scope: scopeOf(["app/s1.module.css"]),
+        temporalCochange: { meta: { head: "h" }, edges: [strongPair("app/s1.module.css", "app/s1.ts")] },
+        readImportSpecifiers,
+      }),
+    )) as Record<string, unknown>;
+
+    expect(readImportSpecifiers).toHaveBeenCalledTimes(1);
+    expect(readImportSpecifiers.mock.calls[0][0]).toEqual(["app/s1.ts"]);
+    const findings = payload.findings as { detector: string; subject: string }[];
+    expect(findings.filter((f) => f.detector === "silentCoupling")).toEqual([]);
+    const silent = (payload.detectors as { detector: string; built: boolean; findingCount: number }[]).find(
+      (d) => d.detector === "silentCoupling",
+    );
+    expect(silent).toMatchObject({ built: true, findingCount: 0 });
+  });
 });
 
 describe("mintReviewId", () => {
@@ -809,13 +837,13 @@ describe("WiredGraphReader", () => {
 });
 
 describe("buildSilentCouplingFacts", () => {
-  it("hands the run the production verdict: violations mapped to the port shape, excluded counters verbatim", () => {
+  it("hands the run the production verdict: violations mapped to the port shape, excluded counters verbatim", async () => {
     const snapshot = {
       meta: { head: "h" },
       edges: [strongPair("src/a.ts", "src/b.ts"), cochangePair("CLAUDE.md", "src/c.ts", 8)],
     };
     const files = [graphFile("src/a.ts"), graphFile("src/b.ts"), graphFile("src/c.ts")];
-    const facts = buildSilentCouplingFacts(snapshot, files, []);
+    const facts = await buildSilentCouplingFacts(snapshot, files, [], []);
     // CLAUDE.md ~ src/c.ts is a documentation-endpoint pair — excluded by the
     // production taxonomy, never a violation; the strong src~src pair passes.
     expect(facts.violations).toEqual([
@@ -824,8 +852,8 @@ describe("buildSilentCouplingFacts", () => {
     expect(facts.excluded).toMatchObject({ documentationEndpoints: 1 });
   });
 
-  it("an absent or never-built snapshot degrades to the empty verdict — silence, not a zero", () => {
-    const absent = buildSilentCouplingFacts(undefined, [], []);
+  it("an absent or never-built snapshot degrades to the empty verdict — silence, not a zero", async () => {
+    const absent = await buildSilentCouplingFacts(undefined, [], [], []);
     expect(absent.violations).toEqual([]);
     expect(absent.excluded).toEqual({
       testEndpoints: 0,
@@ -834,5 +862,58 @@ describe("buildSilentCouplingFacts", () => {
       unwalkedEndpoints: 0,
       nonPositiveLift: 0,
     });
+  });
+
+  // bd tea-rags-mcp-2wsnt — the report's rbnkp rescue, diff-scoped: the
+  // stylesheet is no codegraph file node, so the strong pair is one-walked;
+  // the walked endpoint's recorded specifiers import it, so the report's
+  // second pass links the pair and the review's facts must drop it the same
+  // way — not report a finding the whole-repo report would have rescued.
+  it("rescues a diff-touching one-walked pair the walked endpoint's recorded asset import links", async () => {
+    const snapshot = { meta: { head: "h" }, edges: [strongPair("app/s1.module.css", "app/s1.ts")] };
+    const files = [graphFile("app/s1.ts")]; // walked census: an asset is no file node
+    const readImportSpecifiers = vi.fn().mockResolvedValue(new Map([["app/s1.ts", ["./s1.module.css"]]]));
+
+    const facts = await buildSilentCouplingFacts(
+      snapshot,
+      files,
+      [],
+      ["app/s1.module.css"], // the diff touches the stylesheet, not the importer
+      readImportSpecifiers,
+    );
+
+    // The read is the report's shape: the walked endpoints of the diff-scoped
+    // one-walked violations, and nothing else.
+    expect(readImportSpecifiers).toHaveBeenCalledTimes(1);
+    expect(readImportSpecifiers.mock.calls[0][0]).toEqual(["app/s1.ts"]);
+    expect(facts.violations).toEqual([]);
+  });
+
+  it("reads specifiers only for the diff-touching one-walked pairs — a pair off the diff costs no read", async () => {
+    const snapshot = {
+      meta: { head: "h" },
+      edges: [strongPair("app/s1.module.css", "app/s1.ts"), strongPair("web/t2.module.css", "web/t2.ts")],
+    };
+    const files = [graphFile("app/s1.ts"), graphFile("web/t2.ts")];
+    const readImportSpecifiers = vi.fn().mockResolvedValue(new Map([["web/t2.ts", ["./t2.module.css"]]]));
+
+    const facts = await buildSilentCouplingFacts(snapshot, files, [], ["web/t2.module.css"], readImportSpecifiers);
+
+    expect(readImportSpecifiers).toHaveBeenCalledTimes(1);
+    expect(readImportSpecifiers.mock.calls[0][0]).toEqual(["web/t2.ts"]);
+    // The linked web pair drops; the unrescued app pair — off the diff, so
+    // the run's judge never sees it — keeps its verdict verbatim.
+    expect(facts.violations).toEqual([
+      { relPathA: "app/s1.module.css", relPathB: "app/s1.ts", support: 9, strength: 0.5958436145024278 },
+    ]);
+  });
+
+  it("no wired read keeps the single-pass verdict — the unit wiring never invents a lookup", async () => {
+    const snapshot = { meta: { head: "h" }, edges: [strongPair("app/s1.module.css", "app/s1.ts")] };
+    const files = [graphFile("app/s1.ts")];
+
+    const facts = await buildSilentCouplingFacts(snapshot, files, [], ["app/s1.module.css"]);
+
+    expect(facts.violations).toHaveLength(1);
   });
 });

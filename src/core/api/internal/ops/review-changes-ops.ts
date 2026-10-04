@@ -20,6 +20,7 @@
  */
 
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
+import type { RelPath } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { WorkingTree } from "../../../contracts/types/working-tree.js";
 import type { WorkingTreeOverlay } from "../../../domains/explore/index.js";
@@ -62,6 +63,18 @@ export interface ReviewChangesOpsDeps {
    * Absent → the section answers not built.
    */
   reviewEdgeExtraction?: ReviewEdgeExtractionDeps;
+  /**
+   * The indexed payload's import specifiers for given files (bd
+   * tea-rags-mcp-2wsnt) — the SAME `readPayloadImportSpecifiers` read the
+   * whole-repo report's second silent-coupling pass uses, over the addressed
+   * collection. Bound to the review's collection before a section sees it.
+   * Absent (unit wiring) → the section's silent-coupling facts are the
+   * single-pass verdict.
+   */
+  readImportSpecifiers?: (
+    collectionName: string,
+    relPaths: readonly RelPath[],
+  ) => Promise<ReadonlyMap<RelPath, readonly string[]>>;
   /** The temporal walk's history window (the git trajectory's `chunkMaxAgeMonths`). */
   windowMonths: number;
   /**
@@ -142,6 +155,13 @@ export class ReviewChangesOps {
           temporalCochangeError = error instanceof Error ? error.message : String(error);
         }
       }
+      // Bound to THIS review's collection — the section addresses no index of
+      // its own (bd tea-rags-mcp-2wsnt).
+      const { readImportSpecifiers } = this.deps;
+      const importSpecifiers =
+        readImportSpecifiers === undefined
+          ? undefined
+          : async (relPaths: readonly RelPath[]) => readImportSpecifiers(collectionName, relPaths);
       const buildContext: ReviewSectionBuildContext = {
         scope,
         graphDb,
@@ -149,6 +169,7 @@ export class ReviewChangesOps {
         temporalCochangeError,
         lexiconOps: this.deps.lexiconOps,
         reviewEdgeExtraction: this.deps.reviewEdgeExtraction,
+        ...(importSpecifiers === undefined ? {} : { readImportSpecifiers: importSpecifiers }),
       };
       const sections: Partial<Record<ReviewSectionId, ReviewSectionResult>> = {};
       for (const provider of providers) {
