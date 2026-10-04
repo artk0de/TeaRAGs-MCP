@@ -402,14 +402,20 @@ describe("ArchitectureReportOps#build — leakingAbstraction (bd tea-rags-mcp-je
         kind: "internal-reach",
         sourceRelPath: "ext/d.ts",
         targetRelPath: "mod/inner.ts",
-        evidence: { ...evidence, callWeight: 1, kindBasis: "file-rule" },
+        evidence: { ...evidence, callWeight: 1, kindBasis: "file-rule", reExportUnsafe: false },
       },
       {
         detector: "leakingAbstraction",
         kind: "bypass",
         sourceRelPath: "ext/e.ts",
         targetRelPath: "mod/shown.ts",
-        evidence: { ...evidence, callWeight: 0, kindBasis: "file-rule" },
+        evidence: {
+          ...evidence,
+          callWeight: 0,
+          kindBasis: "file-rule",
+          reExportUnsafe: true,
+          reExportCyclePath: ["mod/index.ts", "mod/shown.ts"],
+        },
       },
     ]);
     expect(report.rootCauses.filter((r) => r.detector === "leakingAbstraction")).toEqual([

@@ -163,6 +163,7 @@ describe("detectLeakingAbstractions (bd tea-rags-mcp-jetrd)", () => {
         facadeImporterCount: 2,
         deepImporterCount: 1,
         callWeight: 3,
+        reExportUnsafe: false,
       },
       {
         kind: "internal-reach",
@@ -175,6 +176,7 @@ describe("detectLeakingAbstractions (bd tea-rags-mcp-jetrd)", () => {
         facadeImporterCount: 4,
         deepImporterCount: 3,
         callWeight: 1.5,
+        reExportUnsafe: false,
       },
       {
         kind: "bypass",
@@ -187,6 +189,8 @@ describe("detectLeakingAbstractions (bd tea-rags-mcp-jetrd)", () => {
         facadeImporterCount: 4,
         deepImporterCount: 3,
         callWeight: 2,
+        reExportUnsafe: true,
+        reExportCyclePath: ["lib/sync/index.ts", "lib/sync/a.ts"],
       },
       {
         kind: "bypass",
@@ -199,6 +203,8 @@ describe("detectLeakingAbstractions (bd tea-rags-mcp-jetrd)", () => {
         facadeImporterCount: 4,
         deepImporterCount: 3,
         callWeight: 0,
+        reExportUnsafe: true,
+        reExportCyclePath: ["lib/sync/index.ts", "lib/sync/snap/index.ts"],
       },
     ]);
   });
@@ -552,5 +558,116 @@ describe("detectLeakingAbstractions — kindBasis (bd tea-rags-mcp-r8hme.43)", (
   it("marks a nameless bypass with kindBasis file-rule — the file-level rule decided", () => {
     const report = detectLeakingAbstractions(basisFixture());
     expect(basisOf(report, "app/d5.ts")).toEqual({ kind: "bypass", kindBasis: "file-rule" });
+  });
+});
+
+/**
+ * bd tea-rags-mcp-89k7k.3 — the re-export recipe (export the leaked names from
+ * the module's facade and point the violating importer at it) is unsafe when
+ * the facade's own import graph already reaches the leaked target file:
+ * threading the target through the facade then closes an import cycle. Applied
+ * for real on the explore strategies it broke 9 suites at collection with
+ * "Class extends value undefined" (bd tea-rags-mcp-0qaht.31). The violation
+ * carries the first found facade→…→target import path as evidence, capped at
+ * 8 files (RE_EXPORT_CYCLE_PATH_CAP in the detector).
+ */
+describe("detectLeakingAbstractions — reExportUnsafe (bd tea-rags-mcp-89k7k.3)", () => {
+  /**
+   * Mirrors the real case: `m/` holds the facade `index.ts`, which re-exports
+   * `factory.ts`; factory imports `base.ts`, base imports `post-process.ts`;
+   * `app/path-pattern-fill.ts` is the external deep importer reaching
+   * `m/post-process.ts`. Adoption 3 / 4 → active under the majority rule.
+   */
+  function cycleFixture(): FileDependencyGraph {
+    return {
+      files: [
+        walked("m/index.ts"),
+        walked("m/factory.ts"),
+        walked("m/base.ts"),
+        walked("m/post-process.ts"),
+        walked("app/path-pattern-fill.ts"),
+        ...["u1", "u2", "u3"].map((u) => walked(`app/${u}.ts`)),
+      ],
+      edges: [
+        edge("m/index.ts", "m/factory.ts"),
+        edge("m/factory.ts", "m/base.ts"),
+        edge("m/base.ts", "m/post-process.ts"),
+        edge("app/path-pattern-fill.ts", "m/post-process.ts"),
+        ...["u1", "u2", "u3"].map((u) => edge(`app/${u}.ts`, "m/index.ts")),
+      ],
+    };
+  }
+
+  it("flags a violation whose target the facade transitively imports, with the first found path", () => {
+    const report = detectLeakingAbstractions(cycleFixture());
+
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0]).toMatchObject({
+      kind: "internal-reach",
+      kindBasis: "file-rule",
+      sourceRelPath: "app/path-pattern-fill.ts",
+      targetRelPath: "m/post-process.ts",
+      reExportUnsafe: true,
+      reExportCyclePath: ["m/index.ts", "m/factory.ts", "m/base.ts", "m/post-process.ts"],
+    });
+  });
+
+  it("does not flag a violation whose target the facade does not reach", () => {
+    const g = cycleFixture();
+    g.edges = g.edges.filter((e) => !(e.sourceRelPath === "m/factory.ts" && e.targetRelPath === "m/base.ts"));
+    const report = detectLeakingAbstractions(g);
+
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0]).toMatchObject({
+      sourceRelPath: "app/path-pattern-fill.ts",
+      targetRelPath: "m/post-process.ts",
+      reExportUnsafe: false,
+    });
+    expect(report.violations[0]).not.toHaveProperty("reExportCyclePath");
+  });
+
+  it("caps the evidence path: at the cap it flags, past the cap it does not", () => {
+    const chain = (links: number): FileDependencyGraph => {
+      const files = [
+        walked("m/index.ts"),
+        ...Array.from({ length: links }, (_, i) => walked(`m/f${i + 1}.ts`)),
+        ...["u1", "u2", "u3"].map((u) => walked(`app/${u}.ts`)),
+        walked("app/deep.ts"),
+      ];
+      const edges = [
+        edge("m/index.ts", "m/f1.ts"),
+        ...Array.from({ length: links - 1 }, (_, i) => edge(`m/f${i + 1}.ts`, `m/f${i + 2}.ts`)),
+        edge("app/deep.ts", `m/f${links}.ts`),
+        ...["u1", "u2", "u3"].map((u) => edge(`app/${u}.ts`, "m/index.ts")),
+      ];
+      return { files, edges };
+    };
+
+    // facade + 7 hops = 8 files, exactly the cap: still evidence.
+    const atCap = detectLeakingAbstractions(chain(7));
+    expect(atCap.violations[0]).toMatchObject({
+      reExportUnsafe: true,
+      reExportCyclePath: ["m/index.ts", "m/f1.ts", "m/f2.ts", "m/f3.ts", "m/f4.ts", "m/f5.ts", "m/f6.ts", "m/f7.ts"],
+    });
+
+    // One hop deeper: the path would outgrow the cap — no flag, no path.
+    const pastCap = detectLeakingAbstractions(chain(8));
+    expect(pastCap.violations[0]).toMatchObject({ reExportUnsafe: false });
+    expect(pastCap.violations[0]).not.toHaveProperty("reExportCyclePath");
+  });
+
+  it("flags both kinds — the recipe (and its cycle risk) applies to a bypass the same way", () => {
+    const g = cycleFixture();
+    g.files.push(walked("app/u4.ts"));
+    g.edges.push(edge("app/u4.ts", "m/factory.ts"));
+    const report = detectLeakingAbstractions(g);
+
+    const bypass = report.violations.find((v) => v.kind === "bypass");
+    expect(bypass).toMatchObject({
+      sourceRelPath: "app/u4.ts",
+      targetRelPath: "m/factory.ts",
+      reExportUnsafe: true,
+      reExportCyclePath: ["m/index.ts", "m/factory.ts"],
+    });
   });
 });

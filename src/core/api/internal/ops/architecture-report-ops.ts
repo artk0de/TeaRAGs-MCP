@@ -690,6 +690,8 @@ function leakViolations(
         deepImporterCount: v.deepImporterCount,
         callWeight: v.callWeight,
         kindBasis: v.kindBasis,
+        reExportUnsafe: v.reExportUnsafe,
+        ...(v.reExportCyclePath ? { reExportCyclePath: v.reExportCyclePath } : {}),
         ...(v.importedNames ? { importedNames: v.importedNames } : {}),
         ...(v.nonExportedNames ? { nonExportedNames: v.nonExportedNames } : {}),
       },
