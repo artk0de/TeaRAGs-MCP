@@ -1,0 +1,10 @@
+# Installed as .contextignore into every sympy task repository by `prepare`.
+# Checked against the gold patches of every sympy task in SWE-bench Lite.
+
+# Rubi integration rules and their tests, machine-generated from the Mathematica
+# Rubi rule set (single files up to 1.4 MB; present in the 2017-2022 snapshots).
+/sympy/integrals/rubi/
+# Benchmark inputs (bench_solvers.py alone is 436 KB of generated systems).
+/sympy/polys/benchmarks/
+# Data, not code: the isympy man page.
+*.xml

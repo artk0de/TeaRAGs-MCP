@@ -1,0 +1,21 @@
+[project]
+name = "swe-lite-ab"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["swebench>=5,<6", "datasets>=3", "scipy>=1.13"]
+
+[project.scripts]
+swe-lite-ab = "swe_lite_ab.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/swe_lite_ab"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
