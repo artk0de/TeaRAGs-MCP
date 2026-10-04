@@ -442,6 +442,53 @@ interface ResolvedScope {
   calleeRows?: IdentifierCalleeAggregateRow[];
 }
 
+/** Stage 1: the types the request asks about (asked ∪ anchors ∪ drafts') and the drafts' callees. */
+interface AskedNamingSet {
+  askedTypes: string[];
+  draftCallees: IdentifierBoundCallee[];
+}
+
+/**
+ * Stages 1-2: {@link AskedNamingSet} plus the widened scope it resolved to and
+ * the language the answer is written in — with the reads that decided the
+ * language kept, so stage 3 can reuse them instead of re-reading.
+ */
+interface ResolvedNamingScope extends AskedNamingSet {
+  scope: ResolvedScope;
+  pathPrefixes: string[] | undefined;
+  /** byCallee's rows, read before the language was decided — they may have decided it. */
+  earlyCalleeRows: IdentifierCalleeAggregateRow[];
+  /**
+   * Type rows read before the language was decided, when nothing else could
+   * decide it; reused verbatim when the namespace scoping re-reads nothing.
+   */
+  askedTypeRows: LexiconTypeRow[] | undefined;
+  language: string | undefined;
+  convention: IdentifierNamingConvention | undefined;
+  nonConceptTypes: readonly string[];
+  /** The project's language counts, when stage 2 read them — the drift check reuses. */
+  projectLanguages: IdentifierLanguageCountRow[] | undefined;
+}
+
+/**
+ * Stages 3-4: the evidence read in the answer's language namespace (bd
+ * tea-rags-mcp-0qaht) — every later stage reads through `graphDb` — each row
+ * classified in its OWN file language's casing.
+ */
+interface NamespacedNamingEvidence {
+  namespace: readonly string[] | undefined;
+  /** Whether `graphDb` was scoped after the language was decided (else it is the request's declared reader). */
+  scopedLate: boolean;
+  graphDb: IdentifierReader;
+  /** The concept types actually read — the language's non-concept types leave `byType`. */
+  types: string[];
+  typeRows: (LexiconTypeRow & { casing: IdentifierCasing })[];
+  calleeRows: LexiconCalleeRow[];
+  casingFor: KindCasing;
+  rowCasing: RowCasing;
+  driftWarning: string | undefined;
+}
+
 /** Casing per declaration kind: a `return` row names a method. */
 type KindCasing = (kind: IdentifierDeclarationKind) => IdentifierCasing;
 
@@ -683,28 +730,103 @@ export class NamingLexiconOps {
     const typeDrafts = allDrafts.filter(isTypeDraft) as NamingLexiconTypeDraft[];
     const notices: string[] = [];
 
-    // 1. Types: asked ∪ anchors' param / return types ∪ drafts' types.
+    // Stages 1-2 (see the pipeline above): the asked set, then the widened
+    // scope and the language whose descriptor applies there.
+    const asked = await this.readAskedTypes(early, req, drafts);
+    const resolved = await this.resolveAnswerScope(early, req, typeDrafts, asked);
+
+    // Stages 3-4: the evidence read in the answer's language namespace
+    // (bd tea-rags-mcp-0qaht), each row classified in its own language's casing.
+    const evidence = await this.readNamespacedEvidence(unscoped, early, reader, resolved, declaredNamespace, context);
+
+    const byType = buildTypeEntries(evidence.types, evidence.typeRows, evidence.casingFor);
+    const byCallee = resolved.draftCallees.map((callee) =>
+      buildCalleeEntry(callee, evidence.calleeRows, evidence.casingFor),
+    );
+    const typeNameHeads = await this.typeNameHeads(unscoped, req, resolved.language);
+
+    // Stage 5: the concept.
+    const conceptTerms = await this.answerConceptTerms(req, notices);
+
+    // Stage 6: names. A value draft that names its file is judged with that
+    // file out of every read (bd tea-rags-mcp-xsxkr).
+    const blind = drafts.filter((d) => d.path === undefined);
+    const blindVerdicts = await this.judgeBlindValueDrafts(
+      req,
+      blind,
+      resolved,
+      evidence,
+      conceptTerms,
+      declaredNamespace,
+      context,
+    );
+    const ownedVerdicts = await this.judgeOwnedValueDrafts(reader, req, drafts, resolved.language, context, notices);
+    let blindAt = 0;
+    const valueVerdicts = drafts.map((d) => ownedVerdicts.get(d) ?? blindVerdicts[blindAt++]);
+
+    // Stage 7: type names — each draft reads its own path language's type namespace, so the reader binds none.
+    const typeVerdicts =
+      typeDrafts.length === 0
+        ? []
+        : await this.judgeTypeDrafts(unscoped, req, typeDrafts, resolved.language, notices, alignment);
+    const names = inDraftOrder(allDrafts, valueVerdicts, typeVerdicts);
+
+    return {
+      scope: resolved.scope.prefix,
+      ...(resolved.language ? { language: resolved.language } : {}),
+      byType,
+      ...(typeNameHeads ? { typeNameHeads } : {}),
+      ...(resolved.draftCallees.length > 0 ? { byCallee } : {}),
+      ...(conceptTerms ? { concept: { terms: conceptTerms } } : {}),
+      names,
+      ...(notices.length > 0 ? { notices } : {}),
+      ...(evidence.driftWarning ? { driftWarning: evidence.driftWarning } : {}),
+    };
+  }
+
+  /** Stage 1: the types asked ∪ anchors' param / return types ∪ drafts' types, and the drafts' callees. */
+  private async readAskedTypes(
+    early: IdentifierReader,
+    req: NamingLexiconRequest,
+    drafts: readonly NamingLexiconValueDraft[],
+  ): Promise<AskedNamingSet> {
     const anchorTypes =
       req.anchors && req.anchors.length > 0
         ? (await early.anchorIdentifierTypes(req.anchors)).map((row) => row.typeName)
         : [];
     const askedTypes = unique([...(req.types ?? []), ...anchorTypes, ...drafts.flatMap((d) => d.type ?? [])]);
     const draftCallees = uniqueCallees(drafts.flatMap((d) => (d.callee && d.type === undefined ? [d.callee] : [])));
+    return { askedTypes, draftCallees };
+  }
 
-    // 2. Scope (widening), then the language whose descriptor applies there. A language decided only
-    // afterwards leaves the scope as resolved over every language: it picks a path prefix, not evidence.
+  /**
+   * Stage 2: the widened scope, then the language whose descriptor applies
+   * there. A language decided only afterwards leaves the scope as resolved
+   * over every language: it picks a path prefix, not evidence.
+   */
+  private async resolveAnswerScope(
+    early: IdentifierReader,
+    req: NamingLexiconRequest,
+    typeDrafts: readonly NamingLexiconTypeDraft[],
+    asked: AskedNamingSet,
+  ): Promise<ResolvedNamingScope> {
     const declared = req.language ? this.deps.namingConventions.get(req.language) : undefined;
-    const supportTypes = declared ? conceptTypes(askedTypes, declared) : askedTypes;
-    const scope = await resolveScope(early, pathPatternLiteralPrefix(req.pathPattern), supportTypes, draftCallees);
+    const supportTypes = declared ? conceptTypes(asked.askedTypes, declared) : asked.askedTypes;
+    const scope = await resolveScope(
+      early,
+      pathPatternLiteralPrefix(req.pathPattern),
+      supportTypes,
+      asked.draftCallees,
+    );
     const pathPrefixes = scope.prefix === "" ? undefined : [scope.prefix];
 
     // byCallee's rows are read before the language is decided: they may decide it.
     const earlyCalleeRows =
-      draftCallees.length === 0
+      asked.draftCallees.length === 0
         ? []
         : (scope.calleeRows ??
           (await early.aggregateIdentifiersByCallee({
-            callees: draftCallees,
+            callees: asked.draftCallees,
             pathPrefixes,
             groupByLanguage: true,
             countHolders: true,
@@ -715,7 +837,7 @@ export class NamingLexiconOps {
     // With no language and no pattern, the rows the request names decide it — read them first.
     let askedTypeRows: LexiconTypeRow[] | undefined;
     if (language === undefined && !req.pathPattern) {
-      askedTypeRows = await readTypeRows(early, askedTypes, pathPrefixes);
+      askedTypeRows = await readTypeRows(early, asked.askedTypes, pathPrefixes);
       language = dominantRowLanguage([...askedTypeRows, ...earlyCalleeRows]);
       // Type drafts name their files: with no value evidence, their languages decide (bd tea-rags-mcp-icuxg).
       language ??= dominantRowLanguage(typeDrafts.map((d) => ({ language: this.languageOfPath(d.path), n: 1 })));
@@ -726,12 +848,52 @@ export class NamingLexiconOps {
       language = decided.counts.find((c) => c.language !== null)?.language ?? undefined;
     }
     const convention = language ? this.deps.namingConventions.get(language) : undefined;
-    const nonConceptTypes = convention?.nonConceptTypes ?? [];
+    return {
+      ...asked,
+      scope,
+      pathPrefixes,
+      earlyCalleeRows,
+      askedTypeRows,
+      language,
+      convention,
+      nonConceptTypes: convention?.nonConceptTypes ?? [],
+      projectLanguages,
+    };
+  }
 
-    // From here on every evidence read stays within the answer's language namespace (bd tea-rags-mcp-0qaht).
+  /**
+   * Stages 3-4: from here on every evidence read stays within the answer's
+   * language namespace (bd tea-rags-mcp-0qaht). byType (store aggregate +
+   * name-inferred) over the concept types only — asked type rows read before
+   * the language was decided are read again in its namespace: their
+   * `name-inferred` rows weighed a name's typed owners across every language,
+   * which no per-row filter can undo. Casing: the answer's language for
+   * drafts, each row's own language for evidence.
+   */
+  private async readNamespacedEvidence(
+    unscoped: IdentifierReader,
+    early: IdentifierReader,
+    reader: IdentifierReader,
+    resolved: ResolvedNamingScope,
+    declaredNamespace: readonly string[] | undefined,
+    context: AnswerContext,
+  ): Promise<NamespacedNamingEvidence> {
+    const {
+      language,
+      convention,
+      scope,
+      askedTypes,
+      askedTypeRows,
+      earlyCalleeRows,
+      nonConceptTypes,
+      pathPrefixes,
+      projectLanguages,
+    } = resolved;
     const namespace = this.typeNamespaceLanguages(language);
     const scopedLate = namespace !== undefined && declaredNamespace === undefined;
-    const graphDb = scopedLate ? scopedEvidence(reader, { excludePaths, languages: namespace }) : early;
+    const graphDb = scopedLate
+      ? scopedEvidence(reader, { excludePaths: context.excludePaths, languages: namespace })
+      : early;
     // The callee rows were read split by file language with holders per group, so keeping the
     // namespace's groups is exactly the scoped read — a group of unknown language included, as the store keeps it.
     const storedCalleeRows = scopedLate
@@ -744,87 +906,82 @@ export class NamingLexiconOps {
         ? NAMING_LEXICON_DRIFT_WARNING
         : undefined;
 
-    // 3. byType (store aggregate + name-inferred), over the concept types only. Asked type rows read
-    // before the language was decided are read again in its namespace: their `name-inferred` rows
-    // weighed a name's typed owners across every language, which no per-row filter can undo.
     const types = askedTypes.filter((t) => !isNonConceptType(t, nonConceptTypes));
     const storedTypeRows =
       askedTypeRows !== undefined && !scopedLate && types.length === askedTypes.length
         ? askedTypeRows
         : await readTypeRows(graphDb, types, pathPrefixes);
 
-    // Casing: the answer's language for drafts, each row's own language for evidence.
     const observed = [...storedTypeRows, ...storedCalleeRows];
     const casingFor = kindCasing(convention, observed);
     const rowCasing = rowCasingResolver(this.deps.namingConventions, casingFor, kindCasing(undefined, observed));
-    const typeRows = storedTypeRows.map((row) => ({ ...row, casing: rowCasing(row) }));
-    const calleeRows = storedCalleeRows.map((row) => ({ ...row, casing: rowCasing(row) }));
-
-    // 4. byCallee.
-    const byType = buildTypeEntries(types, typeRows, casingFor);
-    const byCallee = draftCallees.map((callee) => buildCalleeEntry(callee, calleeRows, casingFor));
-    const typeNameHeads = await this.typeNameHeads(unscoped, req, language);
-
-    // 5. Concept.
-    let conceptTerms: ConceptTerm[] | undefined;
-    // validateRequest guarantees a language whenever a concept is set.
-    if (req.concept && req.language) {
-      try {
-        conceptTerms = await this.conceptTerms(req, req.concept, req.language);
-      } catch (error) {
-        if (error instanceof InputValidationError) throw error;
-        notices.push(`concept step skipped: ${errorMessage(error)}`);
-      }
-    }
-
-    // 6. Names. A value draft that names its file is judged with that file out of every read (bd tea-rags-mcp-xsxkr).
-    const blind = drafts.filter((d) => d.path === undefined);
-    const blindVerdicts =
-      blind.length === 0
-        ? []
-        : await judgeDrafts(graphDb, blind, {
-            typeRows,
-            calleeRows,
-            casingFor,
-            rowCasing,
-            nonConceptTypes,
-            conceptTerms,
-            pathPrefixes,
-            ontologyLanguages: namespaceProfiles(this.deps.ontologyLanguages, namespace),
-            methodHeadWords: {
-              reads: (alignment.methodHeadWordRows ??= new Map<string, Promise<MethodHeadWordRow[]>>()),
-              key: JSON.stringify([
-                typeNamespaceKey(scopedLate ? namespace : declaredNamespace),
-                pathPrefixes ?? [],
-                excludePaths,
-              ]),
-            },
-            collisionHolders: context.lookupCollisions
-              ? async (name) => this.collisionHolders(req, name, excludePaths, namespace)
-              : undefined,
-          });
-    const ownedVerdicts = await this.judgeOwnedValueDrafts(reader, req, drafts, language, context, notices);
-    let blindAt = 0;
-    const valueVerdicts = drafts.map((d) => ownedVerdicts.get(d) ?? blindVerdicts[blindAt++]);
-
-    // 7. Type names — each draft reads its own path language's type namespace, so the reader binds none.
-    const typeVerdicts =
-      typeDrafts.length === 0
-        ? []
-        : await this.judgeTypeDrafts(unscoped, req, typeDrafts, language, notices, alignment);
-    const names = inDraftOrder(allDrafts, valueVerdicts, typeVerdicts);
-
     return {
-      scope: scope.prefix,
-      ...(language ? { language } : {}),
-      byType,
-      ...(typeNameHeads ? { typeNameHeads } : {}),
-      ...(draftCallees.length > 0 ? { byCallee } : {}),
-      ...(conceptTerms ? { concept: { terms: conceptTerms } } : {}),
-      names,
-      ...(notices.length > 0 ? { notices } : {}),
-      ...(driftWarning ? { driftWarning } : {}),
+      namespace,
+      scopedLate,
+      graphDb,
+      types,
+      typeRows: storedTypeRows.map((row) => ({ ...row, casing: rowCasing(row) })),
+      calleeRows: storedCalleeRows.map((row) => ({ ...row, casing: rowCasing(row) })),
+      casingFor,
+      rowCasing,
+      driftWarning,
     };
+  }
+
+  /**
+   * Stage 5: the concept's terms — `undefined` when the request asks for none.
+   * Any failure but an input error is one notice; the other stages still answer.
+   */
+  private async answerConceptTerms(req: NamingLexiconRequest, notices: string[]): Promise<ConceptTerm[] | undefined> {
+    // validateRequest guarantees a language whenever a concept is set.
+    if (!(req.concept && req.language)) return undefined;
+    try {
+      return await this.conceptTerms(req, req.concept, req.language);
+    } catch (error) {
+      if (error instanceof InputValidationError) throw error;
+      notices.push(`concept step skipped: ${errorMessage(error)}`);
+      return undefined;
+    }
+  }
+
+  /**
+   * Stage 6, the drafts that name no file: judged by the whole evidence the
+   * answer read, in its casing and its language namespace. The drafts that
+   * name their file are judged apart ({@link NamingLexiconOps#judgeOwnedValueDrafts}).
+   */
+  private async judgeBlindValueDrafts(
+    req: NamingLexiconRequest,
+    blind: readonly NamingLexiconValueDraft[],
+    resolved: ResolvedNamingScope,
+    evidence: NamespacedNamingEvidence,
+    conceptTerms: ConceptTerm[] | undefined,
+    declaredNamespace: readonly string[] | undefined,
+    context: AnswerContext,
+  ): Promise<NamingLexiconNameVerdict[]> {
+    if (blind.length === 0) return [];
+    const { alignment, excludePaths } = context;
+    const { typeRows, calleeRows, casingFor, rowCasing, namespace, scopedLate } = evidence;
+    return judgeDrafts(evidence.graphDb, blind, {
+      typeRows,
+      calleeRows,
+      casingFor,
+      rowCasing,
+      nonConceptTypes: resolved.nonConceptTypes,
+      conceptTerms,
+      pathPrefixes: resolved.pathPrefixes,
+      ontologyLanguages: namespaceProfiles(this.deps.ontologyLanguages, namespace),
+      methodHeadWords: {
+        reads: (alignment.methodHeadWordRows ??= new Map<string, Promise<MethodHeadWordRow[]>>()),
+        key: JSON.stringify([
+          typeNamespaceKey(scopedLate ? namespace : declaredNamespace),
+          resolved.pathPrefixes ?? [],
+          excludePaths,
+        ]),
+      },
+      collisionHolders: context.lookupCollisions
+        ? async (name) => this.collisionHolders(req, name, excludePaths, namespace)
+        : undefined,
+    });
   }
 
   /**
