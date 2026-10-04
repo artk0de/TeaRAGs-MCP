@@ -109,6 +109,7 @@ import {
   MIN_NULL_SAMPLE_HEADS,
   nullHeadSample,
   nullSimilarityDistribution,
+  reexportTwins,
   shapeDistribution,
   singleCarrierHeadFiles,
   splitIdentifierWords,
@@ -131,6 +132,7 @@ import {
   type NamingShapeDistribution,
   type NamingShapeRow,
   type NamingVerdict,
+  type ReexportTwins,
   type TypeDraftJudgementInput,
   type TypeDraftPopulation,
   type TypeNameEvidence,
@@ -342,6 +344,13 @@ interface TypeAlignmentState {
   methodHeadWordRows?: MethodHeadWordMemo["reads"];
   /** The project's index metrics — its label thresholds — read at most once per request. */
   metrics?: Promise<IndexMetrics>;
+  /**
+   * The file pairs a re-export joins ({@link reexportTwins}), read at most
+   * once per request; the promise resolves `undefined` when the file graph is
+   * unreadable, and the resolution is final — the collision then stands (bd
+   * tea-rags-mcp-89k7k.15).
+   */
+  reexportTwins?: Promise<ReexportTwins | undefined>;
 }
 
 /**
@@ -380,6 +389,7 @@ type IdentifierReader = Pick<
   | "hasData"
   | "readOntologyReportSummary"
   | "readTypeNameRows"
+  | "readFileDependencyGraph"
   | "getFanIn"
   | "getSupertypes"
   | "getSymbolVisibilities"
@@ -967,6 +977,9 @@ export class NamingLexiconOps {
     let tableEmpty = false;
     const failedBefore = alignment.failure !== undefined;
     const verdicts: NamingLexiconNameVerdict[] = [];
+    // A barrel re-exporting the draft's file is the same declaration, not a clash (bd
+    // tea-rags-mcp-89k7k.15); an unreadable file graph leaves every collision standing.
+    const twins = await (alignment.reexportTwins ??= readReexportTwins(graphDb));
     for (const draft of drafts) {
       const population = typeDraftPopulation(draft);
       const draftLanguage = this.languageOfPath(draft.path) ?? language;
@@ -1009,6 +1022,7 @@ export class NamingLexiconOps {
         casing: this.typeCasing(draftLanguage, population),
         evidence,
         conceptNames,
+        ...(twins !== undefined ? { reexportTwins: twins } : {}),
         ...byMeaning,
       });
       const judgedIn = draftLanguage !== undefined && draftLanguage !== language ? draftLanguage : undefined;
@@ -1955,6 +1969,19 @@ function typeDraftVerdict(
   };
 }
 
+/**
+ * The file pairs a re-export joins ({@link reexportTwins}), read once per
+ * request. A failed read resolves `undefined` — no suppression, every
+ * collision stands (bd tea-rags-mcp-89k7k.15), like {@link NamingLexiconOps#collisionHolders}'s.
+ */
+async function readReexportTwins(graphDb: IdentifierReader): Promise<ReexportTwins | undefined> {
+  try {
+    return reexportTwins((await graphDb.readFileDependencyGraph()).edges);
+  } catch {
+    return undefined;
+  }
+}
+
 /** A type namespace's read key: its languages, `*` for every language. */
 function typeNamespaceKey(languages: readonly string[] | undefined): string {
   return languages === undefined ? "*" : languages.join(",");
@@ -2298,6 +2325,8 @@ function scopedEvidence(reader: IdentifierReader, scope: EvidenceReadScope): Ide
     },
     // A fan-in counts edges INTO an unchanged file; nothing of the diff to exclude.
     getFanIn: async (relPath) => reader.getFanIn(relPath),
+    // The re-export joins are file-graph edges; the evidence scope binds nothing.
+    readFileDependencyGraph: async () => reader.readFileDependencyGraph(),
     // An override is judged against its ANCESTORS' declarations, never the changed file's own.
     getSupertypes: async (fqName) => reader.getSupertypes(fqName),
     getSymbolVisibilities: async (symbolIds) => reader.getSymbolVisibilities(symbolIds),

@@ -12,6 +12,7 @@ import type {
   IdentifierTypeMultiplicity,
 } from "../../../contracts/types/codegraph-extraction.js";
 import type { SymbolDefinitionKind } from "../../../contracts/types/codegraph-symbols.js";
+import type { FileDependencyEdge } from "../../../contracts/types/codegraph.js";
 import type { IdentifierCasing } from "../../../contracts/types/language.js";
 import {
   detectIdentifierCasing,
@@ -1101,6 +1102,46 @@ export interface TypeDraftJudgementInput {
    * (bd tea-rags-mcp-433d2). Candidates like the heads ≥ 2 types carry.
    */
   usageEstablishedHeads?: ReadonlySet<string>;
+  /**
+   * The file pairs a re-export joins, built by {@link reexportTwins} from the
+   * file graph's edges, when the graph was readable. Absent — no graph, or a
+   * failed read — every row stands: the collision itself stands (bd
+   * tea-rags-mcp-89k7k.15).
+   */
+  reexportTwins?: ReexportTwins;
+}
+
+/**
+ * The file pairs a re-export joins (bd tea-rags-mcp-89k7k.15): the file-graph
+ * edges that only forward names (`export { X } from ...`, `export *`), as a
+ * name-keyed membership test over the pair. A barrel re-exporting a module's
+ * surface is not an independent namespace — its row of a forwarded name is the
+ * SAME declaration, never a collision twin of the declaring file's. An edge
+ * without recorded names (a plain import, a row written before the names were
+ * persisted) joins nothing.
+ */
+export interface ReexportTwins {
+  /** Whether an edge between the two files re-exports `name` (either direction). */
+  joins: (a: string, b: string, name: string) => boolean;
+}
+
+/** The re-export joins among the file graph's edges, read once per request. */
+export function reexportTwins(edges: readonly FileDependencyEdge[]): ReexportTwins {
+  const names = new Map<string, Set<string>>();
+  const key = (a: string, b: string): string => (a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`);
+  for (const edge of edges) {
+    const forwarded = edge.reexportedExportNames;
+    if (forwarded === undefined || forwarded.length === 0 || edge.sourceRelPath === edge.targetRelPath) continue;
+    const pair = names.get(key(edge.sourceRelPath, edge.targetRelPath)) ?? new Set<string>();
+    for (const name of forwarded) pair.add(name);
+    names.set(key(edge.sourceRelPath, edge.targetRelPath), pair);
+  }
+  return {
+    joins(a, b, name) {
+      if (a === b) return false;
+      return names.get(key(a, b))?.has(name) ?? false;
+    },
+  };
 }
 
 /** The first existing TYPE with the draft's short name in another, non-ambient file. */
@@ -1111,6 +1152,9 @@ function collidingType(input: TypeDraftJudgementInput): { symbolId: string; relP
     .filter(
       (row) => row.shortName === shortName && row.relPath !== input.path && !AMBIENT_DECLARATION_FILE.test(row.relPath),
     )
+    // A row surfaced through a barrel that re-exports the draft's file is the
+    // same declaration, not an independent namespace's clash (bd tea-rags-mcp-89k7k.15).
+    .filter((row) => input.reexportTwins?.joins(input.path, row.relPath, shortName) !== true)
     .sort((a, b) => a.relPath.localeCompare(b.relPath) || a.symbolId.localeCompare(b.symbolId));
   // A short name the project declares across modules is its convention (one `Result` per
   // namespace, qualified at use), not a homonym to warn about (bd tea-rags-mcp-icuxg).

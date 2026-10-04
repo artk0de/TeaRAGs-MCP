@@ -243,6 +243,29 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     ]);
   });
 
+  // bd tea-rags-mcp-89k7k.15: the DTO barrel re-exporting the declaring file's surface is the SAME
+  // declaration — the pair is no collision; a twin no edge forwards still is.
+  it("a barrel re-exporting the draft's name out of its file is no collision; an independent twin still is", async () => {
+    writeFileSync(join(repo, "src/git/widget.ts"), "export class Widget {}\n");
+    // The barrel's alias row, as the codegraph indexes a `export { Widget } from ...` surface.
+    await db.replaceTypeDeclarationsBulk([{ relPath: "src/dto/widgets.ts", rows: [decl("Widget", "class")] }]);
+    await db.run(
+      "INSERT INTO cg_symbols_edges_file (source_rel_path, target_rel_path, reexported_export_names) VALUES (?, ?, ?)",
+      ["src/dto/widgets.ts", "src/git/widget.ts", "Widget"],
+    );
+    const result = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
+    const names = result.review?.findings.map((f) => f.name) ?? [];
+    expect(names).not.toContain("Widget");
+    // The guard: `Commit` (src/vcs/commit.ts) is declared by no forwarded edge — still a COLLISION.
+    expect(result.review?.findings).toContainEqual(
+      expect.objectContaining({
+        name: "Commit",
+        verdict: "COLLISION",
+        existing: { symbolId: "Commit", relPath: "src/vcs/commit.ts" },
+      }),
+    );
+  });
+
   // bd tea-rags-mcp-icuxg: a diff spanning languages judges each name within its own language.
   it("a type declared in another language is no collision; one in the same language is", async () => {
     await db.replaceTypeDeclarationsBulk([
