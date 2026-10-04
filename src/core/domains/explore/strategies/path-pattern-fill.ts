@@ -14,7 +14,8 @@
  * requests have gone out. No pathPattern → exactly one fetch, results untouched.
  */
 
-import { compilePathPatternMatcher, type PathPatternMatcher } from "../../../infra/path-pattern.js";
+import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
+import { keepPathPatternMatches } from "../post-process.js";
 import type { ExploreResult } from "./types.js";
 
 /**
@@ -42,17 +43,6 @@ export interface PathPatternFetchPlan {
 export interface PathPatternPage {
   matches: ExploreResult[];
   exhausted: boolean;
-}
-
-/** Keep the results whose `payload.relativePath` the matcher selects. */
-export function keepPathPatternMatches<R extends { payload?: Record<string, unknown> }>(
-  results: R[],
-  matcher: PathPatternMatcher,
-): R[] {
-  return results.filter((result) => {
-    const relativePath = result.payload?.relativePath;
-    return typeof relativePath === "string" && matcher(relativePath);
-  });
 }
 
 function countUnits(results: readonly ExploreResult[], unit: PathPatternCountUnit): number {
