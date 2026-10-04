@@ -27,51 +27,28 @@ import type { TypeRef } from "../../../../../contracts/types/language.js";
 import {
   findMemberInAncestorChain,
   propagateReceiverType,
-  symbolLookupOptionsFor,
   typeRefReceiverForm,
   type AncestorClosure,
   type AncestorLinearizer,
-  type CallRoleSymbolLookupOptions,
   type ReceiverTypePorts,
 } from "../../../kernel/index.js";
-import { capability } from "../../capability.js";
 import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
 import { isPythonSourcePath } from "../../vocabulary/source-extensions.js";
 import { PYTHON_SELF_RETURN } from "../../walker/passes/python-type-annotation.js";
 import { pythonModuleReturnKey } from "../../walker/passes/python-type-channels.js";
 import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { mapPythonImportToFile } from "../python-path-mapper.js";
+import { lookupPythonSymbolsByShortName } from "../short-name-lookup.js";
 
 /**
- * Short-name lookup restricted to PYTHON candidates — the ONLY short-name entry
- * point the Python resolver may use (bd tea-rags-mcp-w205u).
- *
- * The symbol table is built once per run over every `CODEGRAPH_LANGUAGES`
- * extension and carries no `language` field, so `lookupByShortName` alone
- * answers with any file that spells the name. It is not a hypothetical: polar's
- * `range(...)` landed on `Paginator.tsx#range` and `GitHub()` on
- * `Icons.tsx#GitHub`, 46 phantoms across two strategies. Wrapping the call
- * rather than filtering per site is what keeps the guard from being forgotten
- * at the next one; see {@link isPythonSourcePath} for why the extension, and
- * not a `language` field, is the axis.
+ * The language-filtered short-name lookup, re-exported so
+ * `strategies/shared.js` stays the one import path the strategies use. It is
+ * DEFINED one level up, in the leaf `../short-name-lookup.js`, so the
+ * resolver-root modules the strategies reach back into — the
+ * `PythonImportFileMapper` type foremost — can use it without closing an
+ * import cycle (bd tea-rags-mcp-0qaht.35); see there.
  */
-export function lookupPythonSymbolsByShortName(
-  ctx: CallContext,
-  name: string,
-  options?: CallRoleSymbolLookupOptions,
-): SymbolDefinition[] {
-  return ctx.symbolTable
-    .lookupByShortName(name, symbolLookupOptionsFor(PYTHON_SYMBOL_KIND_ROLES, options))
-    .filter((def) => isPythonSourcePath(def.relPath));
-}
-
-/**
- * Python's kind roles (bd tea-rags-mcp-jqvbn): `Color(1)` calls an Enum and
- * `UserId(5)` a `NewType`, so both are callees here. A lookup for a part of a
- * call passes its `role` to {@link lookupPythonSymbolsByShortName}; no role is
- * a type lookup.
- */
-export const PYTHON_SYMBOL_KIND_ROLES = capability.codegraph.symbolKindRoles;
+export { lookupPythonSymbolsByShortName, PYTHON_SYMBOL_KIND_ROLES } from "../short-name-lookup.js";
 
 /**
  * Fully-qualified lookup restricted to PYTHON candidates — the lookup the
