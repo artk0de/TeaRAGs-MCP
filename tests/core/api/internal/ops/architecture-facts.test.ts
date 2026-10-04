@@ -120,7 +120,7 @@ describe("ArchitectureFactsCatalog", () => {
     return new ArchitectureFactsCatalog(facts, distances);
   }
 
-  it("serves componentOf with the partition's name and instability; a file outside the graph is undefined", () => {
+  it("serves componentOf with the partition's name, instability and connectionCount; a file outside the graph is undefined", () => {
     const catalog = catalogFixture();
     const app = catalog.componentOf("src/app/a.ts");
     const lib = catalog.componentOf("src/lib/b.ts");
@@ -129,6 +129,10 @@ describe("ArchitectureFactsCatalog", () => {
     // lib Ce 1 / (Ca 0 + Ce 1); app Ca 1 / (Ca 1 + Ce 0).
     expect(lib?.instability).toBeCloseTo(1, 10);
     expect(app?.instability).toBeCloseTo(0, 10);
+    // Ca + Ce per component — the count the diff run's small-N guard reads
+    // (bd tea-rags-mcp-r8hme.45): both sit below the SDP floor here.
+    expect(app?.connectionCount).toBe(1);
+    expect(lib?.connectionCount).toBe(1);
     expect(catalog.componentOf("src/unwalked.ts")).toBeUndefined();
   });
 

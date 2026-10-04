@@ -52,13 +52,31 @@ function graphOf(edges: readonly FixtureEdge[]): DiffDetectorGraphReader {
   };
 }
 
+/** One component's facts as the catalog serves them — the port's own shape, so fixtures cannot drift from it. */
+type ComponentFact = NonNullable<ReturnType<DiffDetectorCatalog["componentOf"]>>;
+
+/**
+ * The `connectionCount` a fixture carries when it states none — above the SDP
+ * floor (`DEFAULT_SDP_MIN_CONNECTION_COUNT`), so an existing fixture's verdict
+ * rests on its instability alone; the below-floor cases state their own.
+ */
+const ABOVE_CONNECTION_FLOOR = 10;
+
 /** Report-derived component/facade facts keyed the way the catalog serves them. */
 function catalogOf(
-  components: ReadonlyMap<string, { name: string; instability: number; distanceFromMainSequence: number }>,
+  components: ReadonlyMap<
+    string,
+    Omit<ComponentFact, "connectionCount"> & Partial<Pick<ComponentFact, "connectionCount">>
+  >,
   facades: ReadonlyMap<string, string> = new Map(),
 ): DiffDetectorCatalog {
   return {
-    componentOf: (relPath) => components.get(relPath),
+    componentOf: (relPath) => {
+      const fact = components.get(relPath);
+      return fact === undefined
+        ? undefined
+        : { ...fact, connectionCount: fact.connectionCount ?? ABOVE_CONNECTION_FLOOR };
+    },
     facadeOf: (componentName) => facades.get(componentName),
     isMarkedlyLessStable: (leanOn, leanedOn) => leanOn - leanedOn >= MARKEDLY_LESS_STABLE_TOLERANCE,
   };
@@ -369,6 +387,86 @@ describe("mainSequence", () => {
     saturated.set("src/hot/s.ts", { name: "hot", instability: 1, distanceFromMainSequence: 0.2 });
     const result = runWith({ catalog: catalogOf(saturated) }, ["src/hot/s.ts"], [["src/hot/s.ts", "src/lib/b.ts"]]);
     expect(subjectsOf(result, "mainSequence")).toEqual([]);
+  });
+
+  // bd tea-rags-mcp-r8hme.45 (a): a component whose whole coupling is a couple
+  // of edges reads instability in steps of 1/n — at connectionCount 1 a single
+  // edge moves it by the full scale, so the diff's +1-per-edge approximation
+  // reads every small component as saturated. The whole-repo detector excludes
+  // such components (`summary.mainSequence.excluded.lowConnectionCount`); the
+  // diff-scoped judgement honors the same SDP floor, and COUNTS the exclusion
+  // on its family row — a zero over below-floor components is not a clean pass.
+  it("excludes a touched component below the SDP connection floor — one edge swings its instability by half the scale", () => {
+    const smallN = new Map<string, ComponentFact>([
+      ["src/tiny/t.ts", { name: "tiny", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 1 }],
+      ["src/lib/b.ts", { name: "lib", instability: 0.2, distanceFromMainSequence: 0.1, connectionCount: 8 }],
+    ]);
+    const result = runWith({ catalog: catalogOf(smallN) }, ["src/tiny/t.ts"], [["src/tiny/t.ts", "src/lib/b.ts"]]);
+    expect(subjectsOf(result, "mainSequence")).toEqual([]);
+    expect(result.detectors.find((d) => d.detector === "mainSequence")).toMatchObject({
+      excludedLowConnectionCount: 1,
+    });
+  });
+
+  it("excludes at the floor the whole-repo detector excludes at — connectionCount below DEFAULT_SDP_MIN_CONNECTION_COUNT, not at it", () => {
+    const atFloor = new Map<string, ComponentFact>([
+      ["src/at/a.ts", { name: "at", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 5 }],
+      ["src/lib/b.ts", { name: "lib", instability: 0.2, distanceFromMainSequence: 0.1, connectionCount: 8 }],
+    ]);
+    const judged = runWith({ catalog: catalogOf(atFloor) }, ["src/at/a.ts"], [["src/at/a.ts", "src/lib/b.ts"]]);
+    expect(subjectsOf(judged, "mainSequence")).toEqual(["at"]);
+
+    const below = new Map<string, ComponentFact>([
+      ["src/at/a.ts", { name: "at", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 4 }],
+      ["src/lib/b.ts", { name: "lib", instability: 0.2, distanceFromMainSequence: 0.1, connectionCount: 8 }],
+    ]);
+    const excluded = runWith({ catalog: catalogOf(below) }, ["src/at/a.ts"], [["src/at/a.ts", "src/lib/b.ts"]]);
+    expect(subjectsOf(excluded, "mainSequence")).toEqual([]);
+  });
+
+  // bd tea-rags-mcp-r8hme.45 (b): a D-delta whose every contributing edge
+  // terminates inside a contracts/ directory is the legal foundation
+  // direction — the lowest layer, which everything may depend on. The finding
+  // stays (the distance moved), but carries the annotation as DATA so a
+  // consumer triages it instead of judging blind.
+  it("annotates a D-delta whose contributing edges all terminate at contracts/", () => {
+    const toFoundation = new Map<string, ComponentFact>([
+      ["src/app/a.ts", { name: "app", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 9 }],
+      [
+        "src/core/contracts/types/x.ts",
+        { name: "src/core/contracts/types", instability: 0.1, distanceFromMainSequence: 0.1, connectionCount: 9 },
+      ],
+    ]);
+    const result = runWith(
+      { catalog: catalogOf(toFoundation) },
+      ["src/app/a.ts"],
+      [["src/app/a.ts", "src/core/contracts/types/x.ts"]],
+    );
+    const finding = result.findings.find((f) => f.detector === "mainSequence");
+    expect(finding?.subject).toBe("app");
+    expect(finding?.foundationTerminal).toBe(true);
+  });
+
+  it("leaves an above-floor component's mixed delta judged but unannotated — one non-contracts edge is enough", () => {
+    const mixed = new Map<string, ComponentFact>([
+      ["src/app/a.ts", { name: "app", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 9 }],
+      ["src/lib/b.ts", { name: "lib", instability: 0.2, distanceFromMainSequence: 0.1, connectionCount: 9 }],
+      [
+        "src/core/contracts/types/x.ts",
+        { name: "src/core/contracts/types", instability: 0.1, distanceFromMainSequence: 0.1, connectionCount: 9 },
+      ],
+    ]);
+    const result = runWith(
+      { catalog: catalogOf(mixed) },
+      ["src/app/a.ts"],
+      [
+        ["src/app/a.ts", "src/core/contracts/types/x.ts"],
+        ["src/app/a.ts", "src/lib/b.ts"],
+      ],
+    );
+    const finding = result.findings.find((f) => f.detector === "mainSequence");
+    expect(finding?.subject).toBe("app");
+    expect(finding?.foundationTerminal).toBeUndefined();
   });
 });
 

@@ -118,7 +118,9 @@ const INSTABILITY_BAND_ROUNDING_EPSILON = 1e-9;
  * `DiffDetectorRun`, never recomputed there. `facadeOf` answers only for a
  * MEASURED module component (a directory component has no facade); an absent
  * main-sequence distance reads 0 (see
- * {@link distanceFromMainSequenceByComponent}).
+ * {@link distanceFromMainSequenceByComponent}). `componentOf` also serves the
+ * component's `connectionCount` — the count the diff run's small-N guard
+ * judges against the SDP floor (bd tea-rags-mcp-r8hme.45).
  */
 export class ArchitectureFactsCatalog implements DiffDetectorCatalog {
   private readonly componentOfRelPath: ReadonlyMap<RelPath, string>;
@@ -137,12 +139,24 @@ export class ArchitectureFactsCatalog implements DiffDetectorCatalog {
     this.distances = distances;
   }
 
-  componentOf(relPath: string): { name: string; instability: number; distanceFromMainSequence: number } | undefined {
+  componentOf(relPath: string):
+    | {
+        name: string;
+        instability: number;
+        distanceFromMainSequence: number;
+        connectionCount: number;
+      }
+    | undefined {
     const name = this.componentOfRelPath.get(relPath);
     if (name === undefined) return undefined;
     const component = this.componentsByName.get(name);
     if (component === undefined) return undefined;
-    return { name, instability: component.instability, distanceFromMainSequence: this.distances.get(name) ?? 0 };
+    return {
+      name,
+      instability: component.instability,
+      distanceFromMainSequence: this.distances.get(name) ?? 0,
+      connectionCount: component.connectionCount,
+    };
   }
 
   facadeOf(componentName: string): string | undefined {
