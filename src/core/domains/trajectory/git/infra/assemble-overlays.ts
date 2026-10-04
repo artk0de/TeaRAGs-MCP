@@ -20,10 +20,12 @@ export interface AssembleOverlaysOptions {
   fileChurnDataMap?: Map<string, FileChurnData>;
   squashOpts?: SquashOptions;
   blameByPath?: Map<string, BlameLine[]>;
+  /** The run's history anchor (unix seconds) — see `history-anchor.ts`; absent ⇒ the wall clock. */
+  historyAnchorSec?: number;
 }
 
 export function assembleOverlays(opts: AssembleOverlaysOptions): Map<string, Map<string, ChunkChurnOverlay>> {
-  const { relativeChunkMap, accumulators, fileChurnDataMap, squashOpts, blameByPath } = opts;
+  const { relativeChunkMap, accumulators, fileChurnDataMap, squashOpts, blameByPath, historyAnchorSec } = opts;
 
   // Build result map
   const result = new Map<string, Map<string, ChunkChurnOverlay>>();
@@ -87,6 +89,7 @@ export function assembleOverlays(opts: AssembleOverlaysOptions): Map<string, Map
           chunkLineCount,
           squashOpts,
           chunkOwnerships?.get(entry.chunkId),
+          historyAnchorSec,
         ),
       );
     }

@@ -18,6 +18,7 @@ import type {
 import type { CommitDiffHunk, CommitDiffMemoPort } from "../../../../contracts/types/commit-diff-memo.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
+import { historyWindowSince } from "./history-anchor.js";
 import { buildBugFixShaSet } from "./merge-branch-resolver.js";
 import { isBugFixCommitOrBranch, type ChunkAccumulator, type SquashOptions } from "./metrics.js";
 import { applyOffsets, changedRowsInRange, mapHunksToChunks, type AdjustedRange } from "./offset-tracker.js";
@@ -119,6 +120,12 @@ export interface WalkCommitsOptions {
    * Absent ⇒ legacy per-batch discovery (recovery / backfill paths).
    */
   commitDiscovery?: WalkCommitDiscovery;
+  /**
+   * The run's history anchor (unix seconds) the per-batch pathspec window ends
+   * at — see `history-anchor.ts`. Absent ⇒ the wall clock. The matrix branch
+   * ignores it: the discovery owns its own window.
+   */
+  historyAnchorSec?: number;
 }
 
 /** One commit's hunks for one file, carried from Phase 1 to Phase 2. */
@@ -486,8 +493,7 @@ export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommits
   // (bd tea-rags-mcp-iqpuu). The field remains on the options for caller
   // compatibility until the cache threading is dropped.
 
-  const effectiveMonths = maxAgeMonths > 0 ? maxAgeMonths : 120;
-  const sinceDate = new Date(Date.now() - effectiveMonths * 30 * 86400 * 1000);
+  const sinceDate = historyWindowSince(maxAgeMonths, opts.historyAnchorSec);
   const filePaths = Array.from(relativeChunkMap.keys());
 
   // Debug timing

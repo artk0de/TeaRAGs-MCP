@@ -153,6 +153,24 @@ describe.skipIf(!esGitAvailable)("EsGitAdapter ⇄ GitCliAdapter equivalence —
     expect(rename?.changedFiles).toContainEqual({ path: "src/helper.ts", previousPath: "src/util.ts" });
   });
 
+  it("readCommitPathChanges: whole-history path log deep-equal INCLUDING order; merges dropped, rename paired", async () => {
+    const oracle = await cli.readCommitPathChanges();
+    expect(await esGit.readCommitPathChanges()).toEqual(oracle);
+
+    expect(oracle.map((e) => e.sha)).toEqual([
+      fixture.headSha,
+      fixture.mainSideSha,
+      fixture.featureSha,
+      fixture.renameSha,
+      fixture.utilSha,
+      fixture.initialSha,
+    ]);
+    expect(oracle.find((e) => e.sha === fixture.renameSha)?.changedFiles).toContainEqual({
+      path: "src/helper.ts",
+      previousPath: "src/util.ts",
+    });
+  });
+
   it("getCommitsSince: --since bounded arrays deep-equal", async () => {
     const oracle = await cli.getCommitsSince(MID_SINCE);
     expect(await esGit.getCommitsSince(MID_SINCE)).toEqual(oracle);

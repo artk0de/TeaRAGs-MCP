@@ -125,6 +125,7 @@ async function runWalk(job: ChunkChurnWalkJobInput): Promise<ChunkChurnWalkOutco
       stats = walkStats;
     },
     symbolCommits,
+    job.historyAnchorSec,
   );
   return { overlays, stats, symbolCommits };
 }

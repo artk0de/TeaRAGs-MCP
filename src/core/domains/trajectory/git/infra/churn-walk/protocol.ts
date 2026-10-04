@@ -52,6 +52,8 @@ export interface ChunkChurnWalkJobInput {
   maxAgeMonths: number;
   chunkTimeoutMs: number;
   maxFileLines: number;
+  /** The run's history anchor (unix seconds) — see `history-anchor.ts`; absent ⇒ the wall clock. */
+  historyAnchorSec?: number;
   /**
    * Mirrors options.concurrencySemaphore presence on the inline path:
    * true => the worker's shared limiter bounds this walk; false =>

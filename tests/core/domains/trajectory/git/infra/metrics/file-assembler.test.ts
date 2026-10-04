@@ -46,7 +46,8 @@ describe("assembleFileSignals", () => {
     expect(result.recentDominantAuthor).toBe("unknown");
     expect(result.commitCount).toBe(0);
     expect(result.fileChurnCount).toBe(0);
-    expect(result.bugFixRate).toBe(0);
+    // Zero commits is a zero OBSERVATION: no rate, never a healthy 0 (bd tea-rags-mcp-i6tkc).
+    expect(result).not.toHaveProperty("bugFixRate");
     expect(result.relativeChurn).toBe(0);
     expect(result.recencyWeightedFreq).toBe(0);
     expect(result.changeDensity).toBe(0);
@@ -64,6 +65,28 @@ describe("assembleFileSignals", () => {
     expect(result.lastModifiedAt).toBeUndefined();
     expect(JSON.parse(JSON.stringify(result))).not.toHaveProperty("ageDays");
     expect(JSON.parse(JSON.stringify(result))).not.toHaveProperty("lastModifiedAt");
+  });
+
+  it("stamps a file the window holds no commit for with its exact lifetime age stamps (bd tea-rags-mcp-i6tkc)", () => {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const lastModifiedAt = nowSec - 86400 * 400;
+    const result = assembleFileSignals(
+      {
+        commits: [],
+        linesAdded: 0,
+        linesDeleted: 0,
+        lifetime: { lastModifiedAt, firstCreatedAt: nowSec - 86400 * 900, lastCommitHash: "old" },
+      },
+      100,
+    );
+    expect(result).toMatchObject({
+      commitCount: 0,
+      lastModifiedAt,
+      firstCreatedAt: nowSec - 86400 * 900,
+      lastCommitHash: "old",
+      ageDays: 400,
+    });
+    expect(result).not.toHaveProperty("bugFixRate");
   });
 
   it("preserves linesAdded/linesDeleted from churn data", () => {

@@ -14,7 +14,12 @@ import { join } from "node:path";
 
 import { CodegraphDbFiles } from "../core/adapters/duckdb/codegraph-db-files.js";
 import { DaemonDatabaseFileReplacer } from "../core/adapters/duckdb/daemon/database-file-replacer.js";
-import { getDaemonPaths, getStorageDir, readDaemonPid, readRefs } from "../core/adapters/duckdb/daemon/lifecycle.js";
+import {
+  getStorageDir,
+  readDaemonPid,
+  readRefs,
+  resolveDaemonClientTarget,
+} from "../core/adapters/duckdb/daemon/lifecycle.js";
 import type { QdrantManager } from "../core/adapters/qdrant/client.js";
 import type { CodegraphFootprintStore } from "../core/contracts/types/footprint.js";
 import { CollectionIndexingLock } from "../core/domains/ingest/infra/index.js";
@@ -43,7 +48,7 @@ export interface FootprintPurgeDeps {
  * that other projects are using.
  */
 export function readCodegraphDaemonLiveness(appDataDir: string): CodegraphDaemonLiveness {
-  const paths = getDaemonPaths(getStorageDir(appDataDir));
+  const { paths } = resolveDaemonClientTarget(getStorageDir(appDataDir));
   return {
     pid: () => readDaemonPid(paths),
     refs: () => readRefs(paths),
@@ -63,7 +68,7 @@ export function readCodegraphDaemonLiveness(appDataDir: string): CodegraphDaemon
  */
 export function createPurgeCodegraphStore(appDataDir: string): CodegraphFootprintStore {
   const codegraphFiles = new CodegraphDbFiles(appDataDir);
-  const daemon = new DaemonDatabaseFileReplacer(getDaemonPaths(getStorageDir(appDataDir)).socketPath);
+  const daemon = new DaemonDatabaseFileReplacer(resolveDaemonClientTarget(getStorageDir(appDataDir)).paths.socketPath);
   return {
     listCollectionDbNames: (base) => codegraphFiles.listCollectionDbNames(base),
     removeCollection: async (collectionName) => {

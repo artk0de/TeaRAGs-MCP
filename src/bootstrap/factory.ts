@@ -8,9 +8,9 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import {
-  getDaemonPaths,
   getStorageDir,
   openDaemonLogFd,
+  resolveDaemonClientTarget,
   sweepOrphanedDaemonKeyDirs,
   type CodegraphDaemonPaths,
 } from "../core/adapters/duckdb/daemon/index.js";
@@ -35,6 +35,7 @@ import {
   enrichmentAlgorithmVersions,
   ExploreFacade,
   GraphFacade,
+  IndexHistoryAnchorResolver,
   IngestFacade,
   NamingLexiconOps,
   ontologyLanguageProfiles,
@@ -361,6 +362,9 @@ function workingTreeGitSignalConfigOf(zodConfig: ReturnType<typeof getZodConfig>
       maxFileLines: trajectoryGit.chunkMaxFileLines,
       concurrency: trajectoryGit.chunkConcurrency,
     },
+    // Only the non-default anchor is carried: a `now` config stays the shape
+    // (and the record fingerprint) it had before the anchor existed.
+    ...(trajectoryGit.anchor === "head" ? { anchor: "head" as const } : {}),
   };
 }
 
@@ -776,7 +780,17 @@ export function wireCodegraph(
   // itself is spawned lazily on the first write (see lazy wrap below) so this
   // wire step stays side-effect-free — merely wiring (no write) never spawns,
   // which is what keeps the unit suite from launching a real daemon.
-  const daemonPaths = getDaemonPaths(getStorageDir(rootDir));
+  //
+  // WHICH daemon (bd tea-rags-mcp-llrja): the spawner and the pool both ask
+  // `resolveDaemonClientTarget` at every spawn check and connect, never a
+  // wire-time path — after a rebuild under this long-lived process, the daemon
+  // spawned from disk keys itself by the NEW build. `daemonPaths` is the
+  // wire-time answer, kept for the consumers that only run while this process
+  // still matches the build on disk (index runs refuse otherwise, bd
+  // tea-rags-mcp-r4z09): worker-thread pools and the run keep-alive.
+  const daemonStorageDir = getStorageDir(rootDir);
+  const resolveDaemonTarget = () => resolveDaemonClientTarget(daemonStorageDir);
+  const daemonPaths = resolveDaemonTarget().paths;
 
   const ambiguousMode = codegraph.ambiguousResolveMode;
   // Single cross-language symbolId mapper injected into every codegraph
@@ -801,9 +815,13 @@ export function wireCodegraph(
   // `memoryLimitMax`, and a replaced daemon's governor ran on the default
   // ceiling).
   const spawnCodegraphDaemon = (): void => {
-    ensureCodegraphDaemon(daemonPaths, {
+    const target = resolveDaemonTarget();
+    // A tree that is gone has no `entry.js` to launch; the pool names the
+    // failure itself (CodegraphClientBuildTreeGoneError).
+    if (target.addressing === "build-tree-gone") return;
+    ensureCodegraphDaemon(target.paths, {
       rootDir,
-      storageDir: daemonPaths.storageDir,
+      storageDir: daemonStorageDir,
       resources: {
         memoryLimit: codegraph.dbMemoryLimit,
         // Governor ceiling rides the spawn env to the daemon; the in-process
@@ -839,10 +857,13 @@ export function wireCodegraph(
     // the lazy wrap below); only the direct-mode `acquireRead` attaches
     // READ_ONLY in-process.
     daemonSocketPath: daemonPaths.socketPath,
+    // Re-resolved at every connect, through the same rule as the spawner above
+    // (bd tea-rags-mcp-llrja).
+    daemonClientTarget: resolveDaemonTarget,
     // Base lifecycle dir (bd tea-rags-mcp-42hno): the pool's one-time legacy
     // migration looks for a pre-keying daemon layout here before its first
     // keyed connect.
-    daemonStorageDir: daemonPaths.storageDir,
+    daemonStorageDir,
     // Build-version handshake restart (bd tea-rags-mcp-ji56r): when the pool's
     // handshake finds a daemon from a DIFFERENT build (stale after `npm run
     // build && npm link`), it drains that daemon gracefully and cold-spawns a
@@ -1323,6 +1344,10 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     }
     return resolved;
   };
+  // The query clock of an index (bd tea-rags-mcp-zwu7m): its stamped
+  // TRAJECTORY_GIT_ANCHOR mode and indexed commit, one resolver per process so
+  // the commit time is read once per (collection, indexedCommit).
+  const historyAnchor = new IndexHistoryAnchorResolver({ collectionRegistry });
   // One overlay per process (bd tea-rags-mcp-xi2r9): its delta reader caches per
   // tree, and every read surface — explore, graph, trace_path — shares it.
   const workingTreeOverlay = new WorkingTreeOverlay({
@@ -1422,6 +1447,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
         resolveActiveCollection,
         workingTreeOverlay,
         indexExists,
+        historyAnchor,
       })
     : undefined;
 
@@ -1649,6 +1675,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     // git then has no git row on either surface (bd tea-rags-mcp-uebug).
     enrichmentHealthFrameForPath: (path) => projectIngestFactory.forPath(path).enrichmentProviderKeys,
     workingTreeOverlay,
+    historyAnchor,
   });
   // NamingLexiconOps (bd tea-rags-mcp-4p3sb.12) reads cg_identifiers through the
   // same pool as TracePathOps, under the same codegraphContext guard, and runs

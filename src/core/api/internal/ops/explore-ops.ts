@@ -78,6 +78,7 @@ import {
 import type { WorkingTreeIndexTarget } from "../../public/dto/working-tree.js";
 import type { CollectionEmbeddingBinding, CollectionEmbeddingsResolver } from "../collection-embeddings.js";
 import { resolveIndexedWorkingTree, resolveWorkingTree } from "../collection-resolver.js";
+import type { IndexHistoryAnchorResolver } from "../infra/index-history-anchor.js";
 
 export interface ExploreOpsDeps {
   qdrant: QdrantManager;
@@ -123,6 +124,12 @@ export interface ExploreOpsDeps {
    * Present → every answer carries `workingTree`; absent (unit wiring) → none.
    */
   workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
+  /**
+   * The query clock of an index (bd tea-rags-mcp-zwu7m): a head-anchored index
+   * reads at its indexed commit's time. Absent (unit wiring) → every request
+   * reads the wall clock.
+   */
+  historyAnchor?: Pick<IndexHistoryAnchorResolver, "anchorSecOf">;
 }
 
 /**
@@ -137,6 +144,12 @@ interface ResolvedExploreTarget {
   /** INDEX root for the drift check; undefined → check by collection name */
   path?: string;
   workingTreeView?: Promise<WorkingTreeView>;
+  /**
+   * The request's ONE history clock, unix seconds — resolved here, once, and
+   * threaded to the typed age filters, the filter-preset compiler and every
+   * rerank. Undefined → the wall clock.
+   */
+  historyAnchorSec?: number;
 }
 
 /**
@@ -215,6 +228,7 @@ export class ExploreOps {
   private readonly visibilityResolver?: SymbolVisibilityResolver;
   private readonly enrichmentHealthFrameForPath?: (path: string) => readonly string[];
   private readonly workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
+  private readonly historyAnchor?: Pick<IndexHistoryAnchorResolver, "anchorSecOf">;
 
   constructor(deps: ExploreOpsDeps) {
     this.qdrant = deps.qdrant;
@@ -232,6 +246,7 @@ export class ExploreOps {
     this.visibilityResolver = deps.visibilityResolver;
     this.enrichmentHealthFrameForPath = deps.enrichmentHealthFrameForPath;
     this.workingTreeOverlay = deps.workingTreeOverlay;
+    this.historyAnchor = deps.historyAnchor;
     this.vectorStrategy = createExploreStrategy(
       "vector",
       deps.qdrant,
@@ -282,7 +297,7 @@ export class ExploreOps {
 
   async rankChunks(request: RankChunksRequest): Promise<ExploreResponse> {
     // Scroll + rerank: no query vector, so the guard checks the model name only.
-    const { collectionName, path, workingTreeView } = await this.resolveAndGuard(
+    const { collectionName, path, workingTreeView, historyAnchorSec } = await this.resolveAndGuard(
       request.collection,
       request.path,
       request.project,
@@ -293,17 +308,17 @@ export class ExploreOps {
     // percentiles resolve from real Stats on the first (cold) query, not
     // fallbacks. Guarded + idempotent — the call in executeExplore is a no-op.
     await this.ensureStats(collectionName);
-    const { filter, presetFilterNotice } = this.buildFilter(request, level, "rank_chunks");
+    const { filter, presetFilterNotice } = this.buildFilter(request, level, "rank_chunks", historyAnchorSec);
     return this.executeExplore(
       this.scrollRankStrategy,
-      buildRankChunksContext(request, collectionName, filter, level),
+      withHistoryClock(buildRankChunksContext(request, collectionName, filter, level), historyAnchorSec),
       path,
       { presetFilterNotice, fields: request.fields, workingTreeView },
     );
   }
 
   async searchCode(request: ExploreCodeRequest): Promise<ExploreResponse> {
-    const { collectionName, path, workingTreeView, embeddings } = await this.resolveAndGuard(
+    const { collectionName, path, workingTreeView, embeddings, historyAnchorSec } = await this.resolveAndGuard(
       request.collection,
       request.path,
       request.project,
@@ -315,10 +330,10 @@ export class ExploreOps {
     // percentiles resolve from real Stats on the first (cold) query, not
     // fallbacks. Guarded + idempotent — the call in executeExplore is a no-op.
     await this.ensureStats(collectionName);
-    const { filter, presetFilterNotice } = this.buildFilter(request, level, "search_code");
+    const { filter, presetFilterNotice } = this.buildFilter(request, level, "search_code", historyAnchorSec);
     return this.executeExplore(
       this.vectorStrategy,
-      buildSearchCodeContext(request, collectionName, embedding, filter),
+      withHistoryClock(buildSearchCodeContext(request, collectionName, embedding, filter), historyAnchorSec),
       path,
       { presetFilterNotice, workingTreeView },
     );
@@ -333,20 +348,21 @@ export class ExploreOps {
     // answers with the provider down; one that embeds code fails fast on its
     // own embed (the strategy holds it to the same read budget).
     const target = await this.resolveAndGuard(request.collection, request.path, request.project, READ_PATH_EMBED);
-    const { collectionName, path, workingTreeView } = target;
+    const { collectionName, path, workingTreeView, historyAnchorSec } = target;
     const similar = strategy ?? this.buildSimilarStrategy(request, target.embeddings);
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
     // Load collection stats BEFORE buildFilter so filter-preset adaptive
     // percentiles resolve from real Stats on the first (cold) query, not
     // fallbacks. Guarded + idempotent — the call in executeExplore is a no-op.
     await this.ensureStats(collectionName);
-    const { filter, presetFilterNotice } = this.buildFilter(request, level);
+    const { filter, presetFilterNotice } = this.buildFilter(request, level, "semantic_search", historyAnchorSec);
     // No confidence: the recommend score IS a similarity and separates
     // perfectly within this leg (measured AUC 1.000), but its query is CODE,
     // which sits far closer to a code corpus than prose does. The cut-points
     // are calibrated on prose queries, so applying them here labels every
     // find_similar response "high". Needs its own calibration corpus first.
-    return this.executeExplore(similar, buildFindSimilarContext(request, collectionName, filter, level), path, {
+    const ctx = withHistoryClock(buildFindSimilarContext(request, collectionName, filter, level), historyAnchorSec);
+    return this.executeExplore(similar, ctx, path, {
       presetFilterNotice,
       fields: request.fields,
       workingTreeView,
@@ -355,14 +371,15 @@ export class ExploreOps {
 
   async findSymbol(request: FindSymbolRequest): Promise<ExploreResponse> {
     // Lookup by symbol: no query vector, so the guard checks the model name only.
-    const { collectionName, path, workingTreeView } = await this.resolveAndGuard(
+    const { collectionName, path, workingTreeView, historyAnchorSec } = await this.resolveAndGuard(
       request.collection,
       request.path,
       request.project,
       { nameOnly: true },
     );
     const strategy = this.buildFindSymbolStrategy(request);
-    const response = await this.executeExplore(strategy, buildFindSymbolContext(request, collectionName), path, {
+    const ctx = withHistoryClock(buildFindSymbolContext(request, collectionName), historyAnchorSec);
+    const response = await this.executeExplore(strategy, ctx, path, {
       fields: request.fields,
       workingTreeView,
     });
@@ -508,15 +525,18 @@ export class ExploreOps {
     { attachConfidence, denseLegOptional }: { attachConfidence: boolean; denseLegOptional: boolean },
   ): Promise<ExploreResponse> {
     const { target, embedding, denseUnavailable } = await this.embedQuery(request, denseLegOptional);
-    const { collectionName, path, workingTreeView } = target;
+    const { collectionName, path, workingTreeView, historyAnchorSec } = target;
     const rerank = resolveDocRerank(request.rerank, request.documentation, request.language);
     const level = resolveEffectiveLevel(request.level, rerank, this.reranker, "semantic_search");
     // Load collection stats BEFORE buildFilter so filter-preset adaptive
     // percentiles resolve from real Stats on the first (cold) query, not
     // fallbacks. Guarded + idempotent — the call in executeExplore is a no-op.
     await this.ensureStats(collectionName);
-    const { filter, presetFilterNotice } = this.buildFilter(request, level);
-    const ctx = buildVectorSearchContext(request, collectionName, embedding, filter, rerank, level);
+    const { filter, presetFilterNotice } = this.buildFilter(request, level, "semantic_search", historyAnchorSec);
+    const ctx = withHistoryClock(
+      buildVectorSearchContext(request, collectionName, embedding, filter, rerank, level),
+      historyAnchorSec,
+    );
     const response = await this.executeExplore(strategy, denseUnavailable ? { ...ctx, denseUnavailable } : ctx, path, {
       attachConfidence,
       presetFilterNotice,
@@ -580,12 +600,20 @@ export class ExploreOps {
     request: Record<string, unknown> | { filter?: Record<string, unknown> },
     level: SignalLevel | undefined,
     tool: "semantic_search" | "search_code" | "rank_chunks" = "semantic_search",
+    historyAnchorSec?: number,
   ): ResolvedExploreFilter {
     const req = request as Record<string, unknown> & { filter?: FilterSpec; rerank?: unknown };
     const presetName = typeof req.rerank === "string" ? req.rerank : undefined;
     const presetDefault = presetName ? this.reranker.getFullPreset(presetName, tool)?.filter : undefined;
     const stats = this.reranker.getCollectionStats();
-    let resolved = resolveFilterSpec(req.filter, presetDefault, stats, level ?? "chunk", this.registry);
+    let resolved = resolveFilterSpec(
+      req.filter,
+      presetDefault,
+      stats,
+      level ?? "chunk",
+      this.registry,
+      historyAnchorSec,
+    );
     const appliesDefault = req.filter === undefined && presetDefault !== undefined;
     if (appliesDefault && presetDefaultExcludesCallerScope(resolved, this.registry.buildFilter(req, level), req)) {
       resolved = undefined;
@@ -594,7 +622,12 @@ export class ExploreOps {
       appliesDefault && resolved !== undefined && presetName !== undefined
         ? buildPresetFilterNotice(presetName, presetDefault, resolved)
         : undefined;
-    return { filter: this.registry.buildMergedFilter(req, resolved, level), presetFilterNotice };
+    // A wall-clock request passes exactly what it passed before the clock existed.
+    const filter =
+      historyAnchorSec === undefined
+        ? this.registry.buildMergedFilter(req, resolved, level)
+        : this.registry.buildMergedFilter(req, resolved, level, historyAnchorSec);
+    return { filter, presetFilterNotice };
   }
 
   private buildFindSymbolStrategy(request: FindSymbolRequest): BaseExploreStrategy {
@@ -656,9 +689,17 @@ export class ExploreOps {
     const resolved = this.targetOf(workingTree, path, project);
     // The collection's own provider and guard (bd tea-rags-mcp-b91f5): the
     // marker is held to the model that will embed for it, never to this
-    // process's default model.
-    const binding = await this.embeddingBindingOf(resolved.collectionName, embeds);
-    return { ...resolved, embeddings: binding.embeddings, modelGuard: binding.modelGuard };
+    // process's default model. The index's history clock is read beside it.
+    const [binding, historyAnchorSec] = await Promise.all([
+      this.embeddingBindingOf(resolved.collectionName, embeds),
+      this.historyAnchor?.anchorSecOf(resolved.collectionName),
+    ]);
+    return {
+      ...resolved,
+      embeddings: binding.embeddings,
+      modelGuard: binding.modelGuard,
+      ...(historyAnchorSec !== undefined ? { historyAnchorSec } : {}),
+    };
   }
 
   /** The collection's embedding binding; the process provider and guard without a resolver. */
@@ -911,6 +952,9 @@ function admitsOnlyOtherValues(condition: unknown, key: string, value: unknown):
  * undefined). `{presets}` is CSV-resolved against the registry, each named
  * preset compiled with collection stats and AND-merged.
  *
+ * `nowSec` is the request's history clock (bd tea-rags-mcp-zwu7m) every
+ * age threshold compiles against; undefined → the wall clock.
+ *
  * Lives here (api/internal) rather than the trajectory registry per domain
  * isolation: this layer may legally import the compiler (trajectory), the
  * typed errors (explore), and the filter merge (adapters).
@@ -921,6 +965,7 @@ export function resolveFilterSpec(
   stats: CollectionSignalStats | undefined,
   level: FilterLevel,
   registry: FilterPresetLookup,
+  nowSec?: number,
 ): Record<string, unknown> | undefined {
   const effective = spec ?? presetDefault;
   if (effective === undefined) return undefined;
@@ -938,7 +983,8 @@ export function resolveFilterSpec(
     for (const name of names) {
       const def = registry.getFilterPresetDef(name);
       if (!def) throw new UnknownFilterPresetError(name);
-      merged = mergeQdrantFilters(merged, compileFilterPreset(def, stats, level));
+      // `nowSec` undefined → the compiler's wall-clock default.
+      merged = mergeQdrantFilters(merged, compileFilterPreset(def, stats, level, nowSec));
     }
     return merged as Record<string, unknown> | undefined;
   }
@@ -971,6 +1017,14 @@ function resolveEffectiveLevel(
     return preset?.signalLevel;
   }
   return undefined;
+}
+
+/**
+ * The context carrying the request's history clock (bd tea-rags-mcp-zwu7m);
+ * a wall-clock request keeps the context it had before the clock existed.
+ */
+function withHistoryClock(ctx: ExploreContext, historyAnchorSec: number | undefined): ExploreContext {
+  return historyAnchorSec === undefined ? ctx : { ...ctx, historyAnchorSec };
 }
 
 function buildVectorSearchContext(

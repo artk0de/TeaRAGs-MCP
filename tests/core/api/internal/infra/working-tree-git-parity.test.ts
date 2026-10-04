@@ -629,6 +629,52 @@ describe.each([
     expect(chunkOf("Engine")).toMatchObject({ commitCount: 4 });
   });
 
+  it("matches a reindex of a tree holding a file the file window holds no commit for (bd tea-rags-mcp-i6tkc)", async () => {
+    const repo = join(scratch, "main");
+    mkdirSync(repo);
+    const { stamp } = commitAll(repo, [
+      {
+        files: { "src/legacy.ts": ENGINE_V1, "src/engine.ts": ENGINE_V1 },
+        message: "init",
+        who: "alice",
+        when: at(900),
+      },
+      {
+        files: { "src/legacy.ts": ENGINE_V1.replace("// b0", "// b1") },
+        message: "fix: legacy",
+        who: "bob",
+        when: at(800),
+      },
+      { rename: ["src/legacy.ts", "src/dormant.ts"], message: "refactor: move legacy", who: "bob", when: at(700) },
+      {
+        label: "stamp",
+        files: { "src/engine.ts": ENGINE_V1.replace("return 1;", "return 1; // v2") },
+        message: "feat: engine step",
+        who: "carol",
+        when: at(20),
+      },
+    ]);
+    const basePoints = await indexAt(repo, ["src/engine.ts", "src/dormant.ts"], squashOpts);
+
+    // Uncommitted: an edit inside a symbol of the dormant file.
+    write(
+      repo,
+      "src/dormant.ts",
+      readFileSync(join(repo, "src/dormant.ts"), "utf8").replace("helperB() + 1", "helperB() + 5"),
+    );
+
+    const delta = ["src/dormant.ts"];
+    const reference = await ingestReference(repo, delta, squashOpts);
+    const rows = await overlayRows(repo, delta, basePoints, stamp, squashOpts);
+
+    expectParity(rows, reference);
+    // Window counters are a zero observation; the age stamps are exact and follow the rename.
+    const file = unstamped(reference.file.get("src/dormant.ts"), "dormant file");
+    expect(file).toMatchObject({ commitCount: 0, lastModifiedAt: Math.floor(Date.parse(at(700)) / 1000) });
+    expect(file).toMatchObject({ firstCreatedAt: Math.floor(Date.parse(at(900)) / 1000) });
+    expect(file).not.toHaveProperty("bugFixRate");
+  });
+
   it("stamps a file past the chunk walk's line limit as ingest's policy does", async () => {
     const oversized = (name: string): string =>
       `export function ${name}(): number {\n  let n = 0;\n${"  n += 1;\n".repeat(WINDOWS.maxFileLines + 5)}  return n;\n}\n`;

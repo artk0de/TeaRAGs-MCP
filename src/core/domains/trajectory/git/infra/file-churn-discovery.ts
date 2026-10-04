@@ -22,6 +22,7 @@
 import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
 import type { CommitFileNumstat, FileChurnData } from "../../../../adapters/vcs/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
+import { historyWindowSince } from "./history-anchor.js";
 import { aggregateFileChurnFollowingRenames } from "./rename-following.js";
 
 /**
@@ -56,6 +57,11 @@ export interface FileChurnDiscoveryOptions {
   timeoutMs: number;
   /** Optional persistent tier; absent ⇒ in-memory single-run discovery. */
   store?: FileChurnDiscoveryPersistence;
+  /**
+   * The run's history anchor (unix seconds) the window ends at — see
+   * `history-anchor.ts`. Absent, or resolving `undefined` ⇒ the wall clock.
+   */
+  historyAnchorSec?: () => Promise<number | undefined>;
 }
 
 /**
@@ -69,11 +75,14 @@ const SINCE_DRIFT_TOLERANCE_MS = 24 * 60 * 60 * 1000;
 /**
  * The file walk's window, frozen at call time: its `--since` date and the
  * lower bound (epoch SECONDS, as git timestamps are) a commit's committer date
- * must reach to count. `maxAgeMonths` ≤ 0 → ten years.
+ * must reach to count. `maxAgeMonths` ≤ 0 → ten years. The window ends at the
+ * history clock: `anchorSec` when the run is anchored, else the wall clock.
  */
-export function fileChurnWindowOf(maxAgeMonths: number): { sinceDate: Date; lowerBoundSec: number } {
-  const effectiveMonths = maxAgeMonths > 0 ? maxAgeMonths : 120;
-  const sinceDate = new Date(Date.now() - effectiveMonths * 30 * 86400 * 1000);
+export function fileChurnWindowOf(
+  maxAgeMonths: number,
+  anchorSec?: number,
+): { sinceDate: Date; lowerBoundSec: number } {
+  const sinceDate = historyWindowSince(maxAgeMonths, anchorSec);
   return { sinceDate, lowerBoundSec: Math.floor(sinceDate.getTime() / 1000) };
 }
 
@@ -161,7 +170,8 @@ export class FileChurnDiscovery {
 
   private async computeFileChurn(): Promise<Map<string, FileChurnData>> {
     // Frozen ONCE with the EXACT legacy per-batch formula (walk-commits.ts).
-    const { sinceDate, lowerBoundSec } = fileChurnWindowOf(this.opts.maxAgeMonths);
+    const anchorSec = await this.opts.historyAnchorSec?.();
+    const { sinceDate, lowerBoundSec } = fileChurnWindowOf(this.opts.maxAgeMonths, anchorSec);
 
     const entries = await this.resolveEntries(sinceDate);
     return aggregateFileChurnWindow(entries, lowerBoundSec);

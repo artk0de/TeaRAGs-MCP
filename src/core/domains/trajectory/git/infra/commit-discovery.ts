@@ -17,6 +17,7 @@
 import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
 import type { CommitChangedPath, CommitInfo } from "../../../../adapters/vcs/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
+import { historyWindowSince } from "./history-anchor.js";
 import { buildBugFixShaSet } from "./merge-branch-resolver.js";
 
 /** One matrix row: a commit plus every file its numstat touched. */
@@ -58,6 +59,11 @@ export interface GitCommitDiscoveryOptions {
   timeoutMs: number;
   /** Optional persistent tier; absent ⇒ in-memory single-run discovery. */
   store?: GitCommitDiscoveryPersistence;
+  /**
+   * The run's history anchor (unix seconds) the window ends at — see
+   * `history-anchor.ts`. Absent, or resolving `undefined` ⇒ the wall clock.
+   */
+  historyAnchorSec?: () => Promise<number | undefined>;
 }
 
 /**
@@ -142,8 +148,7 @@ export class GitCommitDiscovery {
     // Frozen ONCE at first dispatch with the EXACT legacy per-batch formula
     // (walk-commits.ts) — freezing is more consistent than legacy per-batch
     // millisecond drift.
-    const effectiveMonths = this.opts.maxAgeMonths > 0 ? this.opts.maxAgeMonths : 120;
-    const sinceDate = new Date(Date.now() - effectiveMonths * 30 * 86400 * 1000);
+    const sinceDate = historyWindowSince(this.opts.maxAgeMonths, await this.opts.historyAnchorSec?.());
 
     const entries = await this.resolveEntries(sinceDate);
 

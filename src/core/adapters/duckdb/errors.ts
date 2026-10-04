@@ -442,6 +442,38 @@ export class CodegraphClientStaleBuildError extends InfraError {
 }
 
 /**
+ * THIS process's build tree is gone from disk, and no codegraph daemon of the
+ * build it loaded is listening (bd tea-rags-mcp-llrja).
+ *
+ * A rebuild that replaced the tree, `npm i -g` upgrade or a removed worktree
+ * left the running server with no `entry.js` to spawn and no on-disk build to
+ * address — the daemon key directory is derived from a build fingerprint, and
+ * the only one this process can still name is the one it loaded. Raised at
+ * once instead of waiting out the connect window on a socket nothing will ever
+ * create. Distinct from `CodegraphClientStaleBuildError`: there the on-disk
+ * build is known and its daemon answered.
+ */
+export class CodegraphClientBuildTreeGoneError extends InfraError {
+  constructor(target: { socketPath: string; loadedFingerprint: string }, cause?: Error) {
+    super({
+      code: "INFRA_CODEGRAPH_CLIENT_BUILD_TREE_GONE",
+      // The remedy rides the message (bd tea-rags-mcp-a43tr): optional consumers
+      // quote the message when they degrade.
+      message:
+        `This tea-rags process runs build ${target.loadedFingerprint}, whose build tree is no longer on disk — ` +
+        `the build changed under the running server — and no codegraph daemon of that build is listening at ` +
+        `${target.socketPath}; restart the tea-rags MCP server (\`/mcp reconnect\`) to load the current build`,
+      hint:
+        "The tree this process was loaded from was rebuilt, re-linked or uninstalled, so it can neither spawn " +
+        "a codegraph daemon nor tell which build replaced it. tea-rags does not restart its own server process: " +
+        "reconnect the MCP server (`/mcp reconnect`) or restart the client that launched it.",
+      httpStatus: 503,
+      cause,
+    });
+  }
+}
+
+/**
  * The codegraph daemon cannot serve an op this client may need, and nothing
  * here can replace it (bd tea-rags-mcp-39xca.4).
  *
@@ -594,6 +626,7 @@ export class CodegraphDaemonRequestAbortedError extends InfraError {
 export type CodegraphUnavailableError =
   | CodegraphDaemonStaleBuildError
   | CodegraphClientStaleBuildError
+  | CodegraphClientBuildTreeGoneError
   | CodegraphDaemonBuildSkewError
   | CodegraphDaemonExitTimeoutError
   | CodegraphDaemonUnreachableError
@@ -607,6 +640,7 @@ export function isCodegraphUnavailableError(err: unknown): err is CodegraphUnava
   return (
     err instanceof CodegraphDaemonStaleBuildError ||
     err instanceof CodegraphClientStaleBuildError ||
+    err instanceof CodegraphClientBuildTreeGoneError ||
     err instanceof CodegraphDaemonBuildSkewError ||
     err instanceof CodegraphDaemonExitTimeoutError ||
     err instanceof CodegraphDaemonUnreachableError ||

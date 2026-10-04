@@ -66,22 +66,36 @@ export function computeDominantAuthor(commits: CommitInfo[]): AuthorshipResult {
 }
 
 /**
- * Compute temporal metrics: timestamps, age, last commit hash.
+ * The history clock's reading, unix seconds: the run's anchor when one is
+ * given (`TRAJECTORY_GIT_ANCHOR=head` — the HEAD commit's committer time),
+ * else the wall clock.
  */
-export function computeTemporalMetrics(commits: CommitInfo[]): TemporalResult {
+export function historyNowSec(anchorSec?: number): number {
+  return anchorSec ?? Date.now() / 1000;
+}
+
+/**
+ * Compute temporal metrics: timestamps, age, last commit hash. Age is measured
+ * at `anchorSec` (see `historyNowSec`).
+ */
+export function computeTemporalMetrics(commits: CommitInfo[], anchorSec?: number): TemporalResult {
   if (commits.length === 0) {
     return { lastModifiedAt: 0, firstCreatedAt: 0, lastCommitHash: "", ageDays: 0 };
   }
   const sorted = [...commits].sort((a, b) => a.timestamp - b.timestamp);
   const last = sorted[sorted.length - 1];
   const first = sorted[0];
-  const nowSec = Date.now() / 1000;
   return {
     lastModifiedAt: last.timestamp,
     firstCreatedAt: first.timestamp,
     lastCommitHash: last.sha,
-    ageDays: Math.max(0, Math.floor((nowSec - last.timestamp) / 86400)),
+    ageDays: ageDaysAt(last.timestamp, anchorSec),
   };
+}
+
+/** Whole days from a commit timestamp (unix seconds) to the history clock; a future stamp reads 0. */
+export function ageDaysAt(timestamp: number, anchorSec?: number): number {
+  return Math.max(0, Math.floor((historyNowSec(anchorSec) - timestamp) / 86400));
 }
 
 /**
@@ -98,9 +112,9 @@ export function computeRelativeChurn(linesAdded: number, linesDeleted: number, c
  * Compute recency-weighted frequency: sum of exp(-0.1 * daysAgo) per commit.
  * Rounded to 2 decimal places.
  */
-export function computeRecencyWeightedFreq(commits: CommitInfo[]): number {
+export function computeRecencyWeightedFreq(commits: CommitInfo[], anchorSec?: number): number {
   if (commits.length === 0) return 0;
-  const nowSec = Date.now() / 1000;
+  const nowSec = historyNowSec(anchorSec);
   const sum = commits.reduce((acc, c) => {
     const daysAgo = (nowSec - c.timestamp) / 86400;
     return acc + Math.exp(-0.1 * daysAgo);

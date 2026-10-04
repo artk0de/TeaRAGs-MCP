@@ -7,9 +7,10 @@
  * - file — the file walk's window (`TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS`) read
  *   as the run-scoped `FileChurnDiscovery` slices it
  *   (`buildWindowedFileSignalsForPaths`), and for a path the window holds
- *   nothing for the backfill's whole rename-following history
- *   (`buildFileSignalsForPaths`) — ingest's own fallback; then `git blame
- *   HEAD`, the merge-branch bug-fix rule, assembled by `assembleFileSignals`;
+ *   nothing for the zero observation with whole-history age stamps
+ *   (`readFileLifetimeStamps`) — the live file phase's dormant entry; then
+ *   `git blame HEAD`, the merge-branch bug-fix rule, assembled by
+ *   `assembleFileSignals`;
  * - chunk — the chunk walk itself (`buildChunkChurnMapUncached`: the chunk
  *   window's commits as the run-scoped commit matrix slices them — a
  *   full-history pathspec log, `pathspecCommitDiscovery` — zero-context hunks
@@ -35,7 +36,14 @@ import type { BlameLine, CommitWithChangedFiles, FileChurnData } from "../../../
 import type { ChunkLookupEntry } from "../../../../types.js";
 import type { ChunkChurnOverlay, GitFileSignals } from "../types.js";
 import { buildChunkChurnMapUncached, type WalkCommitDiscovery } from "./chunk-reader.js";
+import {
+  addDormantFileChurn,
+  anchorFileChurn,
+  readFileLifetimeStamps,
+  type WindowedFileChurn,
+} from "./file-lifetime.js";
 import { buildFileSignalsForPaths, buildWindowedFileSignalsForPaths } from "./file-reader.js";
+import { historyWindowSince, resolveHistoryAnchorSec, type GitHistoryAnchorMode } from "./history-anchor.js";
 import { buildBugFixShaSet } from "./merge-branch-resolver.js";
 import type { SquashOptions } from "./metrics.js";
 import { computeRelativeChurn } from "./metrics/extractors.js";
@@ -72,7 +80,16 @@ export interface OnDemandGitSignalOptions {
   file?: { maxAgeMonths: number };
   /** The chunk walk's window and budgets, as ingest configures them. */
   chunk: { maxAgeMonths: number; timeoutMs: number; maxFileLines: number; concurrency: number };
+  /**
+   * The history clock (`TRAJECTORY_GIT_ANCHOR`), as ingest configures it:
+   * `head` measures every window and age from the HEAD commit's committer
+   * time, read once per call. Absent ⇒ `now`, the wall clock.
+   */
+  anchor?: GitHistoryAnchorMode;
 }
+
+/** The options with the history anchor resolved once for the whole call. */
+type AnchoredOnDemandOptions = OnDemandGitSignalOptions & { readonly historyAnchorSec?: number };
 
 export interface OnDemandGitSignals {
   file?: GitFileSignals;
@@ -93,23 +110,27 @@ const BLAME_CONCURRENCY = 4;
 export async function buildOnDemandGitSignals(
   adapter: VcsGitAdapter,
   targets: readonly OnDemandGitSignalTarget[],
-  options: OnDemandGitSignalOptions,
+  callOptions: OnDemandGitSignalOptions,
 ): Promise<Map<string, OnDemandGitSignals>> {
   const result = new Map<string, OnDemandGitSignals>();
   if (targets.length === 0) return result;
+  const historyAnchorSec = await resolveHistoryAnchorSec(adapter, callOptions.anchor ?? "now", callOptions.timeoutMs);
+  const options: AnchoredOnDemandOptions =
+    historyAnchorSec === undefined ? callOptions : { ...callOptions, historyAnchorSec };
   const churn = await fileChurnOf(
     adapter,
     targets.map((target) => target.relPath),
     options,
   );
-  const withHistory = targets.filter((target) => (churn.get(target.relPath)?.commits.length ?? 0) > 0);
-  const neverCommitted = targets.filter((target) => (churn.get(target.relPath)?.commits.length ?? 0) === 0);
+  // A dormant file (no commit in the window, history before it) has history.
+  const withHistory = targets.filter((target) => churn.has(target.relPath));
+  const neverCommitted = targets.filter((target) => !churn.has(target.relPath));
   await walkNeverCommitted(adapter, neverCommitted, options, result);
   if (withHistory.length === 0) return result;
 
   const blameByPath = await blameAtHead(adapter, withHistory, churn, options.timeoutMs);
   for (const target of withHistory) {
-    const data = churn.get(target.relPath) as FileChurnData;
+    const data = churn.get(target.relPath) as WindowedFileChurn;
     result.set(target.relPath, {
       ...(target.fileSignals
         ? {
@@ -168,22 +189,31 @@ export function gitFileSignalsAtLineCount(file: Record<string, unknown>, lineCou
 /**
  * Per-path file churn as an index run reads it: the file walk's window
  * (`FileChurnDiscovery`'s slice), and for a path the window holds nothing for
- * its whole history (the backfill). No window configured → the whole history.
+ * the zero observation with its whole-history age stamps — the live file
+ * phase's dormant entry (bd tea-rags-mcp-i6tkc). No window configured → the
+ * whole history.
  */
 async function fileChurnOf(
   adapter: VcsGitAdapter,
   paths: string[],
-  options: OnDemandGitSignalOptions,
-): Promise<Map<string, FileChurnData>> {
-  const windowed = options.file
-    ? await buildWindowedFileSignalsForPaths(adapter, paths, options.file.maxAgeMonths, options.timeoutMs)
-    : new Map<string, FileChurnData>();
-  const missing = paths.filter((path) => !windowed.has(path));
-  if (missing.length === 0) return windowed;
-  for (const [path, data] of await buildFileSignalsForPaths(adapter, missing, options.timeoutMs)) {
-    windowed.set(path, data);
+  options: AnchoredOnDemandOptions,
+): Promise<Map<string, WindowedFileChurn>> {
+  const { historyAnchorSec } = options;
+  if (!options.file) {
+    return anchorFileChurn(await buildFileSignalsForPaths(adapter, paths, options.timeoutMs), historyAnchorSec);
   }
-  return windowed;
+  const windowed: Map<string, WindowedFileChurn> = await buildWindowedFileSignalsForPaths(
+    adapter,
+    paths,
+    options.file.maxAgeMonths,
+    options.timeoutMs,
+    historyAnchorSec,
+  );
+  const dormant = paths.filter((path) => !windowed.has(path));
+  if (dormant.length > 0) {
+    addDormantFileChurn(windowed, dormant, await readFileLifetimeStamps(adapter, options.timeoutMs));
+  }
+  return anchorFileChurn(windowed, historyAnchorSec);
 }
 
 /**
@@ -194,9 +224,13 @@ async function fileChurnOf(
  * simplification hides is lost. The bug-fix set is built over what was read,
  * as the matrix builds it over its rows (merges carry no numstat in either).
  */
-function pathspecCommitDiscovery(adapter: VcsGitAdapter, maxAgeMonths: number, timeoutMs: number): WalkCommitDiscovery {
-  const effectiveMonths = maxAgeMonths > 0 ? maxAgeMonths : 120;
-  const sinceDate = new Date(Date.now() - effectiveMonths * 30 * 86400 * 1000);
+function pathspecCommitDiscovery(
+  adapter: VcsGitAdapter,
+  maxAgeMonths: number,
+  timeoutMs: number,
+  historyAnchorSec?: number,
+): WalkCommitDiscovery {
+  const sinceDate = historyWindowSince(maxAgeMonths, historyAnchorSec);
   let read: CommitWithChangedFiles[] = [];
   return {
     commitsForFiles: async (paths) => {
@@ -216,7 +250,7 @@ function pathspecCommitDiscovery(adapter: VcsGitAdapter, maxAgeMonths: number, t
 async function walkChunks(
   adapter: VcsGitAdapter,
   chunkMap: Map<string, ChunkLookupEntry[]>,
-  options: OnDemandGitSignalOptions,
+  options: AnchoredOnDemandOptions,
   churn?: Map<string, FileChurnData>,
   blameByPath?: Map<string, BlameLine[]>,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
@@ -234,7 +268,10 @@ async function walkChunks(
     blameByPath,
     undefined,
     undefined,
-    pathspecCommitDiscovery(adapter, options.chunk.maxAgeMonths, options.chunk.timeoutMs),
+    pathspecCommitDiscovery(adapter, options.chunk.maxAgeMonths, options.chunk.timeoutMs, options.historyAnchorSec),
+    undefined,
+    undefined,
+    options.historyAnchorSec,
   );
 }
 
@@ -251,7 +288,7 @@ async function walkChunks(
 async function walkNeverCommitted(
   adapter: VcsGitAdapter,
   targets: readonly OnDemandGitSignalTarget[],
-  options: OnDemandGitSignalOptions,
+  options: AnchoredOnDemandOptions,
   result: Map<string, OnDemandGitSignals>,
 ): Promise<void> {
   const chunkMap = new Map<string, ChunkLookupEntry[]>();

@@ -105,8 +105,16 @@ export interface FilterDescriptor {
    * for its probe fails the composition parity test.
    */
   values?: readonly unknown[];
-  /** Convert user param value to Qdrant filter condition(s) */
-  toCondition: (value: unknown, level?: FilterLevel) => FilterConditionResult;
+  /**
+   * Convert user param value to Qdrant filter condition(s).
+   *
+   * `nowSec` is the REQUEST's history clock in unix seconds (bd
+   * tea-rags-mcp-zwu7m): a head-anchored index reads at its indexed commit's
+   * time, so a filter that measures an age from "now" (git `minAgeDays` /
+   * `maxAgeDays`) must take this instant and never read the wall clock itself.
+   * Absent → the wall clock. Filters that measure no age ignore it.
+   */
+  toCondition: (value: unknown, level?: FilterLevel, nowSec?: number) => FilterConditionResult;
 }
 
 // --- File signal transform ---

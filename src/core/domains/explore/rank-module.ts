@@ -7,6 +7,7 @@
 import { toPhysicalPayloadKey } from "../../contracts/signal-utils.js";
 import type { DerivedSignalDescriptor, RerankableResult } from "../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
+import { historyClockRerankOption } from "./history-clock.js";
 import { buildSignalKeyMap, type Reranker } from "./reranker.js";
 
 interface OrderByField {
@@ -51,6 +52,8 @@ export interface RankOptions {
     candidates: { id: string | number; payload: Record<string, unknown> }[],
     legFilters: readonly (Record<string, unknown> | undefined)[],
   ) => Promise<{ id: string | number; payload: Record<string, unknown> }[]>;
+  /** The request's history clock (`ExploreContext.historyAnchorSec`); absent → the wall clock. */
+  historyAnchorSec?: number;
 }
 
 const OVERFETCH_FACTOR = 3;
@@ -266,7 +269,10 @@ export class RankModule {
 
     // Rerank: use cleaned weights (no similarity) with preset overlay mask
     const rerankMode = presetName ? { custom: cleanWeights, preset: presetName } : { custom: cleanWeights };
-    const reranked = await this.reranker.rerank(rerankable, rerankMode, "rank_chunks", { signalLevel: level });
+    const reranked = await this.reranker.rerank(rerankable, rerankMode, "rank_chunks", {
+      signalLevel: level,
+      ...historyClockRerankOption(options),
+    });
 
     return reranked.slice(0, limit);
   }

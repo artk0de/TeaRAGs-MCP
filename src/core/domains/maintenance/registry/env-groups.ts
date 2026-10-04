@@ -84,6 +84,8 @@ export const REGISTRY_ENV_GROUPS: readonly RegistryEnvGroup[] = [
   },
   { canonical: "TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS", aliases: [], consequence: "enrichment:git" },
   { canonical: "TRAJECTORY_GIT_SESSION_GAP_MINUTES", aliases: [], consequence: "enrichment:git" },
+  // The instant every window and age is measured from — a flip moves them all.
+  { canonical: "TRAJECTORY_GIT_ANCHOR", aliases: [], consequence: "enrichment:git" },
   // ingest feature modes (parse.ts `ingest` section). AST on/off and the test
   // path set both decide what a chunk IS.
   { canonical: "INGEST_ENABLE_AST", aliases: ["CODE_ENABLE_AST"], consequence: "chunk-set" },

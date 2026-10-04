@@ -42,6 +42,7 @@ import type { PhysicalCollectionName } from "../../../contracts/types/collection
 import type { RankingOverlay } from "../../../contracts/types/reranker.js";
 import {
   claimWorkingTreeFloors,
+  historyClockRerankOption,
   mergedWorkingTreeSymbolRow,
   recordTreeGraphState,
   relativePathOf,
@@ -56,6 +57,7 @@ import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import type { DeclaredVisibilityIndex } from "../../../infra/declared-visibility-index.js";
 import type { PathStep, PathTraceResult, TracedPath, TracePathRequest } from "../../public/dto/graph.js";
 import { resolveIndexedWorkingTree, type IndexExistenceCheck } from "../collection-resolver.js";
+import type { IndexHistoryAnchorResolver } from "../infra/index-history-anchor.js";
 import { selectWorkingTreeGraphHandle } from "../infra/working-tree-graph-read.js";
 import { lookupDeclaredVisibility } from "./declared-visibility-lookup.js";
 
@@ -87,6 +89,12 @@ export interface TracePathOpsDeps {
    * Absent (unit wiring): not checked.
    */
   indexExists?: IndexExistenceCheck;
+  /**
+   * The query clock of an index (bd tea-rags-mcp-zwu7m): the danger rerank of a
+   * head-anchored index derives age / recency from its indexed commit's time.
+   * Absent (unit wiring) → the wall clock.
+   */
+  historyAnchor?: Pick<IndexHistoryAnchorResolver, "anchorSecOf">;
 }
 
 const EMPTY: PathTraceResult = { paths: [], truncated: false };
@@ -220,7 +228,7 @@ export class TracePathOps {
     // 4. Annotate-only rerank — ONLY when a rerank preset was requested.
     //    Without it, trace_path is lean path enumeration (no danger overlay,
     //    no danger sort). bugHunt is no longer an implicit default.
-    const dangerByNode = preset ? await this.computeDanger(chunks, preset) : undefined;
+    const dangerByNode = preset ? await this.computeDanger(chunks, preset, collectionName) : undefined;
 
     // 5. Assemble TracedPath per enumerated path. With danger, sort by
     //    aggregateDanger desc; without, keep enumeration order.
@@ -426,10 +434,22 @@ export class TracePathOps {
     return out;
   }
 
-  /** Annotate-only rerank over hydrated chunks → per-node danger score + overlay. */
-  private async computeDanger(chunks: HydratedChunk[], preset: string): Promise<Map<FileScopedSymbolId, StepDanger>> {
+  /**
+   * Annotate-only rerank over hydrated chunks → per-node danger score + overlay,
+   * under the index's history clock (bd tea-rags-mcp-zwu7m), read once here —
+   * the only age read of a trace.
+   */
+  private async computeDanger(
+    chunks: HydratedChunk[],
+    preset: string,
+    collectionName: string,
+  ): Promise<Map<FileScopedSymbolId, StepDanger>> {
     const rerankInput = chunks.map((c) => ({ id: c.id, score: 0, payload: c.payload }));
-    const annotated = await this.deps.reranker.rerank(rerankInput, preset, "trace_path", { reorder: false });
+    const historyAnchorSec = await this.deps.historyAnchor?.anchorSecOf(collectionName);
+    const annotated = await this.deps.reranker.rerank(rerankInput, preset, "trace_path", {
+      reorder: false,
+      ...historyClockRerankOption({ historyAnchorSec }),
+    });
     const dangerByNode = new Map<FileScopedSymbolId, StepDanger>();
     for (const r of annotated) {
       // Keyed by (relPath, symbolId): a dangerous namesake in another file must

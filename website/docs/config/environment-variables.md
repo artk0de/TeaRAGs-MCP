@@ -102,6 +102,22 @@ and `tea-rags index-codebase` / `tea-rags tune` replay it automatically with
 | `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES`  | Skip chunk churn for files > N lines                 | `5000`   |
 | `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` | Group commits into sessions (squash noise reduction) | `false`  |
 | `TRAJECTORY_GIT_SESSION_GAP_MINUTES`   | Gap between commits to split sessions                | `30`     |
+| `TRAJECTORY_GIT_ANCHOR`                | Clock git windows and ages are measured from: `now` (wall clock) or `head` (the HEAD commit's committer time) | `now`    |
+
+`TRAJECTORY_GIT_ANCHOR=head` is for indexing a historical snapshot (a pinned
+benchmark checkout, an archived repository): with `now`, a tree whose last
+commit is older than the windows has every file and chunk counter at zero.
+Under `head`, every window, `ageDays` and `recencyWeightedFreq` written at index
+time is measured from HEAD's committer time. Searches against that index use
+the same clock: the `recency` / `age` rerank signals, the `minAgeDays` /
+`maxAgeDays` filters and the age thresholds of filter presets measure from the
+committer time of the commit the index was built at, so a file last changed at
+that commit reads as fresh rather than years old. The mode a search uses is the
+one recorded with the index, not the one in the searching shell; an index built
+with `now`, or before this setting existed, keeps the wall clock. If the indexed
+commit can no longer be read (garbage-collected, repository moved), searches
+fall back to the wall clock. Changing the value is reported as env drift and
+needs `--force-enrichments git`.
 
 ## Trajectory: Codegraph
 

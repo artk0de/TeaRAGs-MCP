@@ -91,6 +91,7 @@ export function buildRegistryEnvSnapshot(config: RegistryEnvSnapshotSource): Rec
   put("TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES", trajectoryGit.chunkMaxFileLines);
   put("TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS", trajectoryGit.squashAwareSessions);
   put("TRAJECTORY_GIT_SESSION_GAP_MINUTES", trajectoryGit.sessionGapMinutes);
+  put("TRAJECTORY_GIT_ANCHOR", trajectoryGit.anchor);
 
   put("INGEST_ENABLE_AST", ingest.enableAST);
   put("INGEST_ENABLE_HYBRID", ingest.enableHybrid);

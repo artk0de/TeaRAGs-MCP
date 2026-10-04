@@ -36,6 +36,13 @@ export interface ExploreContext {
    * and `embedding` is absent. `reason` is the provider's error message.
    */
   denseUnavailable?: { reason: string };
+  /**
+   * The request's history clock, unix SECONDS (bd tea-rags-mcp-zwu7m): the
+   * indexed commit's committer time for a head-anchored index, absent for the
+   * wall clock. Resolved once by the read path; every rerank of the request
+   * derives age / recency from it (`RerankOptions.now`).
+   */
+  historyAnchorSec?: number;
 }
 
 export interface ExploreResult<P = Record<string, unknown>> {

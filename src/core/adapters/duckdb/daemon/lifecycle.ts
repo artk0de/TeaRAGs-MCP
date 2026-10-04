@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { DaemonLock } from "../../qdrant/embedded/daemon-lock.js";
-import { getBuildFingerprint } from "./build-fingerprint.js";
+import { getBuildFingerprint, readOnDiskBuildFingerprint } from "./build-fingerprint.js";
 
 const daemonLock = new DaemonLock();
 
@@ -109,8 +109,88 @@ export function daemonPathsForKeyDir(keyDir: string): CodegraphDaemonPaths {
  * (`TEA_RAGS_CODEGRAPH_DAEMON_DIR`) without re-keying on the daemon side.
  */
 export function getDaemonPaths(storageDir: string): CodegraphDaemonPaths {
-  const buildDir = join(storageDir, getBuildKey());
+  return getDaemonPathsForBuild(storageDir, getBuildFingerprint());
+}
+
+/**
+ * The keyed lifecycle files of the daemon of build `fingerprint` under
+ * `storageDir` — the layout `getDaemonPaths` gives for this process's loaded
+ * build, for any build.
+ */
+export function getDaemonPathsForBuild(storageDir: string, fingerprint: string): CodegraphDaemonPaths {
+  const buildDir = join(storageDir, getBuildKey(fingerprint));
   return { ...daemonPathsForKeyDir(buildDir), storageDir };
+}
+
+/**
+ * How a client process's build relates to the build on disk, and therefore
+ * which key directory it addresses (bd tea-rags-mcp-llrja):
+ * - `own-build` — loaded == on disk (or the fingerprint env override): its own
+ *   build's key dir, exactly `getDaemonPaths`;
+ * - `on-disk-build` — the process predates a rebuild / `npm link` / upgrade:
+ *   the ON-DISK build's key dir, because every daemon spawned from this tree
+ *   runs that build and keys itself by it. The build handshake then settles
+ *   what the stale process may do there (bd tea-rags-mcp-1wr7p);
+ * - `build-tree-gone` — the loaded tree is unreadable: nothing can be spawned
+ *   from it, so only a still-running daemon of the loaded build is reachable.
+ */
+export type CodegraphDaemonClientAddressing = "own-build" | "on-disk-build" | "build-tree-gone";
+
+/** Which daemon a client process talks to right now — see `resolveDaemonClientTarget`. */
+export interface CodegraphDaemonClientTarget {
+  readonly addressing: CodegraphDaemonClientAddressing;
+  readonly paths: CodegraphDaemonPaths;
+  /** The build this process loaded. */
+  readonly loadedFingerprint: string;
+  /** The build on disk now; undefined when the tree is gone. */
+  readonly onDiskFingerprint: string | undefined;
+}
+
+/** The two views of a process's build a client target is decided from. */
+export interface DaemonClientBuildSource {
+  readonly loaded: () => string;
+  readonly onDisk: () => string | undefined;
+}
+
+const PROCESS_BUILD_SOURCE: DaemonClientBuildSource = {
+  loaded: getBuildFingerprint,
+  onDisk: readOnDiskBuildFingerprint,
+};
+
+/**
+ * THE rule for which key directory a CLIENT process addresses (bd
+ * tea-rags-mcp-llrja) — the spawner's alive-check and spawn lock and the
+ * pool's socket connect all resolve through it, so they never disagree.
+ *
+ * Keying a client by its LOADED fingerprint broke as soon as a long-lived
+ * server outlived `npm run build`: it kept addressing the old key dir while the
+ * daemon it spawned from disk — or a fresh process had already spawned — ran
+ * the new build in the new key dir, and every graph call waited out the connect
+ * window on a socket that never appeared. Called per connect, never cached:
+ * the build on disk moves under a running process. A daemon keys itself by its
+ * own loaded build (`getDaemonPaths`), which is the on-disk build it was
+ * spawned from.
+ */
+export function resolveDaemonClientTarget(
+  storageDir: string,
+  build: DaemonClientBuildSource = PROCESS_BUILD_SOURCE,
+): CodegraphDaemonClientTarget {
+  const loadedFingerprint = build.loaded();
+  const onDiskFingerprint = build.onDisk();
+  if (onDiskFingerprint === undefined) {
+    return {
+      addressing: "build-tree-gone",
+      paths: getDaemonPathsForBuild(storageDir, loadedFingerprint),
+      loadedFingerprint,
+      onDiskFingerprint,
+    };
+  }
+  return {
+    addressing: onDiskFingerprint === loadedFingerprint ? "own-build" : "on-disk-build",
+    paths: getDaemonPathsForBuild(storageDir, onDiskFingerprint),
+    loadedFingerprint,
+    onDiskFingerprint,
+  };
 }
 
 /**

@@ -13,10 +13,15 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createPurgeCodegraphStore } from "../../src/bootstrap/footprint-purge.js";
+import { createPurgeCodegraphStore, readCodegraphDaemonLiveness } from "../../src/bootstrap/footprint-purge.js";
 import { DuckDbGraphClient } from "../../src/core/adapters/duckdb/client.js";
 import { runDaemon } from "../../src/core/adapters/duckdb/daemon/entry.js";
-import { getDaemonPaths, getStorageDir } from "../../src/core/adapters/duckdb/daemon/lifecycle.js";
+import {
+  getDaemonPaths,
+  getStorageDir,
+  incrementRefs,
+  resolveDaemonClientTarget,
+} from "../../src/core/adapters/duckdb/daemon/lifecycle.js";
 import { GraphDbClientPool } from "../../src/core/adapters/duckdb/pool.js";
 import {
   createDatabaseMigrationApplier,
@@ -122,5 +127,40 @@ describe("purge codegraph store — routed through the daemon that holds the cli
     await createPurgeCodegraphStore(appDataDir).removeCollection(NAME);
 
     expect(existsSync(direct.pathFor(NAME))).toBe(false);
+  });
+
+  it("with no daemon up, clones the database file itself and lists both generations", async () => {
+    root = mkdtempSync(join(tmpdir(), "r4p-"));
+    const appDataDir = join(root, "app");
+    vi.stubEnv("TEA_RAGS_CODEGRAPH_DAEMON_DIR", join(root, "d"));
+    const direct = makePool(appDataDir);
+    await direct.acquire(NAME);
+    await direct.closeAll();
+    const target = fixturePhysicalCollectionName("code_r4veq_purge_v2");
+
+    const store = createPurgeCodegraphStore(appDataDir);
+    await store.cloneDatabase(NAME, target);
+
+    expect(existsSync(direct.pathFor(target))).toBe(true);
+    expect(existsSync(direct.pathFor(NAME))).toBe(true);
+    expect([...store.listCollectionDbNames("code_r4veq_purge")].sort()).toEqual([NAME, target].sort());
+  });
+});
+
+describe("codegraph daemon liveness — read from the key dir the client addresses", () => {
+  it("reports no pid and the persisted client refs of the daemon this build would talk to", () => {
+    root = mkdtempSync(join(tmpdir(), "r4l-"));
+    const appDataDir = join(root, "app");
+    vi.stubEnv("TEA_RAGS_CODEGRAPH_DAEMON_DIR", join(root, "d"));
+    const liveness = readCodegraphDaemonLiveness(appDataDir);
+
+    expect(liveness.pid()).toBeUndefined();
+    expect(liveness.refs()).toBe(0);
+
+    const { paths } = resolveDaemonClientTarget(getStorageDir(appDataDir));
+    incrementRefs(paths);
+    incrementRefs(paths);
+
+    expect(liveness.refs()).toBe(2);
   });
 });

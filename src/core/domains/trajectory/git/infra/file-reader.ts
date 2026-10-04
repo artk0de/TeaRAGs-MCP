@@ -60,10 +60,10 @@ export async function buildFileSignalMap(
  * of every file signal, delays git-file enrichment start until it finishes; the
  * window caps that. The only flag difference from a per-batch
  * `buildFileSignalsForPaths` call is the absent pathspec (restored in memory by
- * `sliceFileSignalsByPaths`) — the backfill stays unbounded, so a file it later
- * recovers may carry a slightly longer history than a windowed streaming slice;
- * acceptable, both are best-effort churn. Reuses the same numstat-log primitive
- * as `buildFileSignalMap`, so there is a single git-command definition.
+ * `sliceFileSignalsByPaths`). The provider's backfill / recovery slices this
+ * same window too (bd tea-rags-mcp-i6tkc), so no path reads a longer history
+ * than the window. Reuses the same numstat-log primitive as
+ * `buildFileSignalMap`, so there is a single git-command definition.
  *
  * @param timeoutMs - timeout for the git log command (default 60000).
  * @param maxAgeMonths - `--since` window in months; 0 ⇒ full history (default 0).
@@ -120,16 +120,19 @@ const BACKFILL_BATCH = 500;
  * `--since` window and committer-date evict, the same canonical fold
  * (`aggregateFileChurnWindow`), read through a full-history pathspec log
  * instead of a repo-wide one. Renames are followed as `buildFileSignalsForPaths`
- * follows them. A path the window holds no commit for is absent — ingest
- * backfills such a path from its whole history.
+ * follows them. A path the window holds no commit for is absent — the caller
+ * adds its zero-observation entry with whole-history age stamps
+ * (`addDormantFileChurn`), as ingest's file phase does.
  */
 export async function buildWindowedFileSignalsForPaths(
   adapter: VcsGitAdapter,
   paths: string[],
   maxAgeMonths: number,
   timeoutMs = 30000,
+  /** The run's history anchor (unix seconds) — see `history-anchor.ts`; absent ⇒ the wall clock. */
+  anchorSec?: number,
 ): Promise<Map<string, FileChurnData>> {
-  const { sinceDate, lowerBoundSec } = fileChurnWindowOf(maxAgeMonths);
+  const { sinceDate, lowerBoundSec } = fileChurnWindowOf(maxAgeMonths, anchorSec);
   const result = new Map<string, FileChurnData>();
   for (let i = 0; i < paths.length; i += BACKFILL_BATCH) {
     const batch = paths.slice(i, i + BACKFILL_BATCH);
@@ -157,8 +160,10 @@ export async function buildWindowedFileSignalsForPaths(
 }
 
 /**
- * Fetch file-level metadata for specific files (no --since filter).
- * Used as a backfill for files that weren't in the main git log window.
+ * Fetch file-level metadata for specific files over their WHOLE history (no
+ * --since filter). Not an ingest path: a file the window misses is a zero
+ * observation there (bd tea-rags-mcp-i6tkc). It answers callers that configure
+ * no window at all (`buildOnDemandGitSignals` without `file`).
  *
  * Follows renames like the discovery does (bd tea-rags-mcp-aikfk): a pathspec
  * log on a HEAD path alone never sees the commits made under its old name, so

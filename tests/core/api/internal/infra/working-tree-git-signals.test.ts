@@ -469,9 +469,10 @@ describe("createWorkingTreeGitSignalSource", () => {
     });
 
     // Ingest's file walk is the windowed repo-wide discovery
-    // (`TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS`); a path it finds nothing for is
-    // backfilled from its whole history.
-    it("reads git.file over the file walk's window, and a path with nothing in it over its whole history", async () => {
+    // (`TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS`); a path it finds nothing for reads
+    // the zero observation, with its age stamps from the whole history (bd
+    // tea-rags-mcp-i6tkc — it used to be backfilled with lifetime counters).
+    it("reads git.file over the file walk's window, and a path with nothing in it as a zero observation with exact age", async () => {
       const dated = (iso: string, files: Record<string, string>): void => {
         vi.stubEnv("GIT_AUTHOR_DATE", iso);
         vi.stubEnv("GIT_COMMITTER_DATE", iso);
@@ -493,7 +494,11 @@ describe("createWorkingTreeGitSignalSource", () => {
       ]);
 
       expect(signals.get("src/mixed.ts")?.file).toMatchObject({ commitCount: 1 });
-      expect(signals.get("src/old.ts")?.file).toMatchObject({ commitCount: 2 });
+      expect(signals.get("src/old.ts")?.file).toMatchObject({
+        commitCount: 0,
+        lastModifiedAt: Math.floor(Date.parse(longAgo) / 1000),
+      });
+      expect(signals.get("src/old.ts")?.file).not.toHaveProperty("bugFixRate");
     });
   });
 

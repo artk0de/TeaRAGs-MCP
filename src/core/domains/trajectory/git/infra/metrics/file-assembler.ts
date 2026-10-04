@@ -5,11 +5,13 @@
  * Replaces the monolithic computeFileSignals() function.
  */
 
-import type { BlameLine, CommitInfo, FileChurnData } from "../../../../../adapters/vcs/types.js";
+import type { BlameLine, CommitInfo } from "../../../../../adapters/vcs/types.js";
 import type { GitFileSignals } from "../../types.js";
 import { computeBlameOwnership } from "../blame-ownership.js";
+import type { WindowedFileChurn } from "../file-lifetime.js";
 import type { SquashOptions } from "../metrics.js";
 import {
+  ageDaysAt,
   computeBugFixRate,
   computeChangeDensity,
   computeChurnVolatility,
@@ -22,26 +24,35 @@ import {
 import { groupIntoSessions } from "./sessions.js";
 
 export function assembleFileSignals(
-  churnData: FileChurnData,
+  churnData: WindowedFileChurn,
   currentLineCount: number,
   squashOpts?: SquashOptions,
   bugFixShas?: Set<string>,
   blameLines?: BlameLine[],
 ): GitFileSignals {
   const ownership = blameLines && blameLines.length > 0 ? computeBlameOwnership(blameLines).file : null;
-  const { commits } = churnData;
+  const { commits, lifetime, historyAnchorSec } = churnData;
 
   if (commits.length === 0) {
-    // No history → no lastModifiedAt / ageDays at all (mirrors
-    // assembleChunkSignals). A 0 here would read as "committed < 1 day ago"
-    // to anything that treats ageDays 0 or a timestamp as data.
+    // No commit in the window: every counter is the zero observation (bd
+    // tea-rags-mcp-i6tkc), and bugFixRate is left OUT — 0 of 0 commits is not
+    // a healthy rate, and a 0 would land in the sample and the lowest band.
+    // The age stamps come from the whole history when it has any (a dormant
+    // file); with none there is no lastModifiedAt / ageDays at all (mirrors
+    // assembleChunkSignals) — a 0 would read as "committed < 1 day ago".
     return {
       recentDominantAuthor: "unknown",
       recentDominantAuthorEmail: "",
       recentAuthors: [],
       recentDominantAuthorPct: 0,
-      firstCreatedAt: 0,
-      lastCommitHash: "",
+      ...(lifetime
+        ? {
+            lastModifiedAt: lifetime.lastModifiedAt,
+            firstCreatedAt: lifetime.firstCreatedAt,
+            lastCommitHash: lifetime.lastCommitHash,
+            ageDays: ageDaysAt(lifetime.lastModifiedAt, historyAnchorSec),
+          }
+        : { firstCreatedAt: 0, lastCommitHash: "" }),
       commitCount: 0,
       linesAdded: churnData.linesAdded,
       linesDeleted: churnData.linesDeleted,
@@ -50,7 +61,6 @@ export function assembleFileSignals(
       recencyWeightedFreq: 0,
       changeDensity: 0,
       churnVolatility: 0,
-      bugFixRate: 0,
       recentContributorCount: 0,
       taskIds: [],
       blameDominantAuthor: ownership?.blameDominantAuthor ?? "unknown",
@@ -61,7 +71,7 @@ export function assembleFileSignals(
   }
 
   const authorship = computeDominantAuthor(commits);
-  const temporal = computeTemporalMetrics(commits);
+  const temporal = computeTemporalMetrics(commits, historyAnchorSec);
 
   // Squash-aware: use session count for churn-dependent metrics
   const useSquash = squashOpts?.squashAwareSessions === true;
@@ -93,7 +103,7 @@ export function assembleFileSignals(
     linesDeleted: churnData.linesDeleted,
     fileChurnCount: churnData.linesAdded + churnData.linesDeleted,
     relativeChurn: computeRelativeChurn(churnData.linesAdded, churnData.linesDeleted, currentLineCount),
-    recencyWeightedFreq: computeRecencyWeightedFreq(countSource ?? commits),
+    recencyWeightedFreq: computeRecencyWeightedFreq(countSource ?? commits, historyAnchorSec),
     changeDensity: computeChangeDensity(countSource ?? commits),
     churnVolatility: computeChurnVolatility(countSource ?? commits),
     bugFixRate: computeBugFixRate(countSource ?? commits, bugFixShas),

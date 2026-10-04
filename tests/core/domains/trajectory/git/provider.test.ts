@@ -29,6 +29,8 @@ vi.mock("../../../../../src/core/adapters/vcs/git/git-cli/client.js", () => ({
   blameFile: vi.fn().mockResolvedValue([]),
   writeCommitGraph: vi.fn().mockResolvedValue(undefined),
   getHead: vi.fn().mockResolvedValue("headsha"),
+  // Whole-history age log for files the window misses (bd tea-rags-mcp-i6tkc) — no history here.
+  readCommitPathChanges: vi.fn().mockResolvedValue([]),
   // Default: a fresh working reader so the resolveHeadOids success path runs
   // (existing tests only care that blame still runs for every file — see
   // populateBlameMap's oid-miss fallback). Individual tests below override
@@ -102,10 +104,14 @@ describe("GitEnrichmentProvider", () => {
   });
 
   it("declares the overlay keys it omits for 'no commit' as optional, so a re-enrichment clears them (bd 9mwny)", () => {
-    // file: assembleFileSignals leaves both out for a file without history;
-    // chunk: assembleChunkSignals leaves ageDays out when no commit touched the
-    // chunk (its lastModifiedAt stays, as the 0 sentinel).
-    expect(provider.optionalOverlayKeys).toEqual({ file: ["lastModifiedAt", "ageDays"], chunk: ["ageDays"] });
+    // file: assembleFileSignals leaves the age stamps out for a file without
+    // history, and bugFixRate out for a file without commits in the window (bd
+    // tea-rags-mcp-i6tkc); chunk: assembleChunkSignals leaves ageDays out when
+    // no commit touched the chunk (its lastModifiedAt stays, as the 0 sentinel).
+    expect(provider.optionalOverlayKeys).toEqual({
+      file: ["lastModifiedAt", "ageDays", "bugFixRate"],
+      chunk: ["ageDays"],
+    });
   });
 
   it("has fileSignalTransform that calls computeFileSignals", () => {
@@ -141,20 +147,26 @@ describe("GitEnrichmentProvider", () => {
       expect(result.has("src/a.ts")).toBe(true);
     });
 
-    it("calls buildFileSignalsForPaths when options.paths is provided", async () => {
+    it("slices the run-scoped WINDOW discovery when options.paths is provided — never a lifetime walk (bd i6tkc)", async () => {
       vi.mocked(nodeFs.existsSync).mockReturnValue(true);
-      const fakeData = new Map([["src/b.ts", { commits: [], recentAuthors: [] }]]);
-      vi.mocked(buildFileSignalsForPaths).mockResolvedValue(fakeData as any);
+      vi.mocked(buildFileSignalDiscovery).mockClear();
+      vi.mocked(buildFileSignalsForPaths).mockClear();
+      const fakeData = new Map([
+        ["src/b.ts", { commits: [], recentAuthors: [] }],
+        ["src/other.ts", { commits: [], recentAuthors: [] }],
+      ]);
+      vi.mocked(buildFileSignalDiscovery).mockResolvedValue(fakeData as never);
 
       const result = await provider.buildFileSignals("/repo", { paths: ["src/b.ts"] });
 
-      expect(buildFileSignalsForPaths).toHaveBeenCalledWith(
+      expect(buildFileSignalDiscovery).toHaveBeenCalledWith(
         expect.objectContaining({ repoRoot: "/repo" }),
-        ["src/b.ts"],
         60000,
+        12,
+        expect.any(FileChurnDiscovery),
       );
-      expect(result.size).toBe(1);
-      expect(result.has("src/b.ts")).toBe(true);
+      expect(buildFileSignalsForPaths).not.toHaveBeenCalled();
+      expect([...result.keys()]).toEqual(["src/b.ts"]);
     });
 
     it("accumulates blameByRelPath across batched buildFileSignals calls", async () => {
@@ -173,15 +185,14 @@ describe("GitEnrichmentProvider", () => {
         return [];
       });
 
-      const dataAB = new Map([
-        ["src/a.ts", { commits: [], recentAuthors: [] }],
-        ["src/b.ts", { commits: [], recentAuthors: [] }],
-      ]);
-      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(dataAB as any);
+      vi.mocked(buildFileSignalDiscovery).mockResolvedValue(
+        new Map([
+          ["src/a.ts", { commits: [], recentAuthors: [] }],
+          ["src/b.ts", { commits: [], recentAuthors: [] }],
+          ["src/c.ts", { commits: [], recentAuthors: [] }],
+        ]) as never,
+      );
       await provider.buildFileSignals("/repo", { paths: ["src/a.ts", "src/b.ts"] });
-
-      const dataC = new Map([["src/c.ts", { commits: [], recentAuthors: [] }]]);
-      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(dataC as any);
       await provider.buildFileSignals("/repo", { paths: ["src/c.ts"] });
 
       const chunkMap = new Map([
@@ -230,7 +241,7 @@ describe("GitEnrichmentProvider", () => {
       vi.mocked(blameFile).mockResolvedValue([
         { lineNumber: 1, sha: "shaA", author: "Alice", authorEmail: "a@x", timestamp: 0 },
       ]);
-      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(
+      vi.mocked(buildFileSignalDiscovery).mockResolvedValue(
         new Map([["src/a.ts", { commits: [], recentAuthors: [] }]]) as never,
       );
       await provider.buildFileSignals("/repo", { paths: ["src/a.ts"] });
@@ -470,16 +481,16 @@ describe("GitEnrichmentProvider", () => {
       };
       vi.mocked(createCatFileBatchCheck).mockReturnValueOnce(readerA).mockReturnValueOnce(readerB);
 
-      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(
-        new Map([["src/a.ts", { commits: [], recentAuthors: [] }]]) as never,
+      vi.mocked(buildFileSignalDiscovery).mockResolvedValue(
+        new Map([
+          ["src/a.ts", { commits: [], recentAuthors: [] }],
+          ["src/b.ts", { commits: [], recentAuthors: [] }],
+        ]) as never,
       );
       await provider.buildFileSignals("/repo-1", { paths: ["src/a.ts"] });
       // First root: no prior reader exists yet, so there is nothing to close.
       expect(readerA.close).not.toHaveBeenCalled();
 
-      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(
-        new Map([["src/b.ts", { commits: [], recentAuthors: [] }]]) as never,
-      );
       await provider.buildFileSignals("/repo-2", { paths: ["src/b.ts"] });
       // Root switch closes the stale reader bound to the old root — the
       // rejection is swallowed, never propagates.
@@ -510,7 +521,7 @@ describe("GitEnrichmentProvider", () => {
       const createSpy = vi.spyOn(VcsAdapterFactory, "create");
       try {
         vi.mocked(nodeFs.existsSync).mockReturnValue(true);
-        vi.mocked(buildFileSignalsForPaths).mockResolvedValue(new Map() as never);
+        vi.mocked(buildFileSignalDiscovery).mockResolvedValue(new Map() as never);
 
         await provider.buildFileSignals("/repo", { paths: ["src/a.ts"] });
         await provider.buildFileSignals("/repo", { paths: ["src/b.ts"] });
@@ -529,7 +540,7 @@ describe("GitEnrichmentProvider", () => {
       const createSpy = vi.spyOn(VcsAdapterFactory, "create");
       try {
         vi.mocked(nodeFs.existsSync).mockReturnValue(true);
-        vi.mocked(buildFileSignalsForPaths).mockResolvedValue(new Map() as never);
+        vi.mocked(buildFileSignalDiscovery).mockResolvedValue(new Map() as never);
         const esProvider = new GitEnrichmentProvider({ vcsAdapter: "es-git" });
         // The es-git branch fail-louds until T9 — resolve with a stub so the
         // kind-threading assertion is observable without the real binding.
@@ -547,7 +558,7 @@ describe("GitEnrichmentProvider", () => {
       const createSpy = vi.spyOn(VcsAdapterFactory, "create");
       try {
         vi.mocked(nodeFs.existsSync).mockReturnValue(true);
-        vi.mocked(buildFileSignalsForPaths).mockResolvedValue(new Map() as never);
+        vi.mocked(buildFileSignalDiscovery).mockResolvedValue(new Map() as never);
 
         await provider.buildFileSignals("/repo", { paths: [] });
         await provider.finalizeSignals();
@@ -581,7 +592,7 @@ describe("GitEnrichmentProvider", () => {
     it("skips the blame pass entirely when the batch's raw file-churn data is empty", async () => {
       vi.mocked(nodeFs.existsSync).mockReturnValue(true);
       vi.mocked(blameFile).mockClear();
-      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(new Map());
+      vi.mocked(buildFileSignalDiscovery).mockResolvedValue(new Map() as never);
 
       const result = await provider.buildFileSignals("/repo", { paths: [] });
 
@@ -598,7 +609,7 @@ describe("GitEnrichmentProvider", () => {
         close: vi.fn().mockResolvedValue(undefined),
       };
       vi.mocked(createCatFileBatchCheck).mockReturnValueOnce(brokenReader);
-      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(
+      vi.mocked(buildFileSignalDiscovery).mockResolvedValue(
         new Map([["src/a.ts", { commits: [], recentAuthors: [] }]]) as never,
       );
 
@@ -688,6 +699,11 @@ describe("GitEnrichmentProvider", () => {
     /** Unique root per test — the OID-keyed blame cache persists per root. */
     const uniqueRoot = (tag: string) => `/repo-dedupe-${tag}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
+    // The run's file window holds every path these batches name; each batch slices it.
+    beforeEach(() => {
+      vi.mocked(buildFileSignalDiscovery).mockResolvedValue(rawFor(["a.ts", "b.ts", "c.ts"]));
+    });
+
     it("blames a file shared by two concurrent batches exactly once, both batches get its lines", async () => {
       vi.mocked(nodeFs.existsSync).mockReturnValue(true);
       const root = uniqueRoot("concurrent");
@@ -702,12 +718,10 @@ describe("GitEnrichmentProvider", () => {
       const statsA = vi.fn();
       const statsB = vi.fn();
 
-      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["a.ts", "b.ts"]));
       const pA = provider.buildFileSignals(root, { paths: ["a.ts", "b.ts"], onBlameStats: statsA });
       await vi.waitFor(() => {
         expect(blamePoolBlame).toHaveBeenCalledTimes(1);
       });
-      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["b.ts", "c.ts"]));
       const pB = provider.buildFileSignals(root, { paths: ["b.ts", "c.ts"], onBlameStats: statsB });
       await vi.waitFor(() => {
         expect(blamePoolBlame).toHaveBeenCalledTimes(2);
@@ -734,9 +748,7 @@ describe("GitEnrichmentProvider", () => {
       blamePoolBlame.mockImplementation(async () => new Map());
       const stats = vi.fn();
 
-      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["a.ts"]));
       await provider.buildFileSignals(root, { paths: ["a.ts"] });
-      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["a.ts"]));
       await provider.buildFileSignals(root, { paths: ["a.ts"], onBlameStats: stats });
 
       expect(pooledPaths()).toEqual(["a.ts"]);
@@ -757,10 +769,8 @@ describe("GitEnrichmentProvider", () => {
       // map could (wrongly) serve the second call.
       blamePoolBlame.mockImplementation(async () => new Map());
 
-      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["a.ts"]));
       await provider.buildFileSignals(root, { paths: ["a.ts"] });
       oids.set("HEAD:a.ts", "oid-2");
-      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["a.ts"]));
       await provider.buildFileSignals(root, { paths: ["a.ts"] });
 
       expect(pooledPaths()).toEqual(["a.ts", "a.ts"]);
@@ -771,14 +781,11 @@ describe("GitEnrichmentProvider", () => {
       const root = uniqueRoot("finalize");
       blamePoolBlame.mockImplementation(async () => new Map());
 
-      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["a.ts"]));
       await provider.buildFileSignals(root, { paths: ["a.ts"] });
-      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["a.ts"]));
       await provider.buildFileSignals(root, { paths: ["a.ts"] });
       expect(pooledPaths()).toEqual(["a.ts"]); // same run: reused
 
       await provider.finalizeSignals();
-      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["a.ts"]));
       await provider.buildFileSignals(root, { paths: ["a.ts"] });
 
       expect(pooledPaths()).toEqual(["a.ts", "a.ts"]);
@@ -789,9 +796,7 @@ describe("GitEnrichmentProvider", () => {
       const root = uniqueRoot("reject");
       blamePoolBlame.mockRejectedValueOnce(new Error("blame pool closed")).mockImplementation(async () => new Map());
 
-      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["a.ts"]));
       await expect(provider.buildFileSignals(root, { paths: ["a.ts"] })).rejects.toThrow("blame pool closed");
-      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["a.ts"]));
       await provider.buildFileSignals(root, { paths: ["a.ts"] });
 
       expect(pooledPaths()).toEqual(["a.ts", "a.ts"]);

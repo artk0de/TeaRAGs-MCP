@@ -3,7 +3,14 @@
  * No I/O, no state — string → structured data.
  */
 
-import type { BlameLine, CommitChangedPath, CommitFileNumstat, CommitInfo, FileChurnData } from "../../types.js";
+import type {
+  BlameLine,
+  CommitChangedPath,
+  CommitFileNumstat,
+  CommitInfo,
+  CommitPathChanges,
+  FileChurnData,
+} from "../../types.js";
 
 /** The literal git puts between the two sides of a rename in `--numstat`. */
 const RENAME_SEPARATOR = " => ";
@@ -319,6 +326,57 @@ export function parseCommitFileNumstat(stdout: string): CommitFileNumstat[] {
     }
   }
 
+  return result;
+}
+
+/** Marks a commit header token in `parseCommitPathChanges` input — never the first byte of a status or a path. */
+export const COMMIT_PATH_CHANGES_HEADER = "\u0001";
+
+/**
+ * Parse `git log -z -M --name-status --format=<HEADER>%H %at`: a header token
+ * per commit, then per changed path a status token followed by ONE path, or by
+ * TWO (source, destination) for a rename (`R<score>`) or copy (`C<score>`).
+ * `-z` leaves paths unquoted. A rename becomes `{ path: destination,
+ * previousPath: source }`, the pair the numstat parsers produce; a copy names
+ * only its destination, since its source lives on. A commit with no rows (a
+ * merge, which `--name-status` diffs against nothing without `-m`) is dropped,
+ * as the numstat parsers drop it.
+ */
+export function parseCommitPathChanges(stdout: string): CommitPathChanges[] {
+  const tokens = stdout.split("\0");
+  const result: CommitPathChanges[] = [];
+  let current: CommitPathChanges | undefined;
+  const flush = (): void => {
+    if (current && current.changedFiles.length > 0) result.push(current);
+  };
+  let i = 0;
+  while (i < tokens.length) {
+    // git separates the header from the first status row with a newline.
+    const token = tokens[i].replace(/^\n+/, "");
+    i++;
+    if (token === "") continue;
+    if (token.startsWith(COMMIT_PATH_CHANGES_HEADER)) {
+      flush();
+      const [sha, at] = token.slice(COMMIT_PATH_CHANGES_HEADER.length).split(" ");
+      current = { sha, timestamp: parseInt(at ?? "0", 10), changedFiles: [] };
+      continue;
+    }
+    if (!current) continue;
+    const kind = token.charAt(0);
+    if (kind === "R" || kind === "C") {
+      const source = tokens[i];
+      const destination = tokens[i + 1];
+      i += 2;
+      if (source === undefined || destination === undefined) break;
+      current.changedFiles.push(kind === "R" ? { path: destination, previousPath: source } : { path: destination });
+      continue;
+    }
+    const path = tokens[i];
+    i++;
+    if (path === undefined) break;
+    current.changedFiles.push({ path });
+  }
+  flush();
   return result;
 }
 

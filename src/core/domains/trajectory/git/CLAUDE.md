@@ -20,6 +20,63 @@ their own navigators.
   low-commit chunks, so tuning aimed at the ratio alone explains none of the
   observed values; on files older than six months the two effects compound.
 
+- **A file with no commit in the file window is a ZERO OBSERVATION, stamped by
+  the live file phase — never a lifetime walk.**
+  `GitEnrichmentProvider#windowedFileChurn` slices the window discovery and, for
+  every path it misses that the history has, adds the entry
+  `addDormantFileChurn` (`infra/file-lifetime.ts`) builds: zero counters plus
+  `lifetime` age stamps folded from ONE whole-history
+  `VcsGitAdapter#readCommitPathChanges` per run (name-status, no numstat,
+  renames followed through `resolveHeadPaths`). `assembleFileSignals` then
+  writes exact `lastModifiedAt` / `firstCreatedAt` / `lastCommitHash` /
+  `ageDays` and OMITS `bugFixRate` (an optional overlay key, so a recompute
+  deletes the old value). `buildFileSignals({ paths })` — backfill and recovery
+  — and `buildOnDemandGitSignals` read the same two sources. Why: the backfill
+  used to walk each missed file's whole numstat history (5–10 s per 500 paths on
+  taxdome), so files untouched for years carried lifetime commitCount / churn /
+  bugFixRate into hotspot presets and every churn percentile, and a 0 bug-fix
+  rate would have read `healthy` and passed `battleTested`'s `≤ p25` leg (bd
+  tea-rags-mcp-i6tkc). `firstCreatedAt` of a file WITH window commits is still
+  the oldest commit inside the window.
+
+- **Every index-time clock read goes through the run's HISTORY ANCHOR, never a
+  bare `Date.now()`.** `TRAJECTORY_GIT_ANCHOR` (`trajectoryGitSchema`, default
+  `now`) picks it: `GitEnrichmentProvider#getRunHistoryAnchor` resolves `head`
+  ONCE per (root, HEAD) and run to the HEAD commit's committer time
+  (`VcsGitAdapter#readHeadCommitTime`, `infra/history-anchor.ts`), and `now`
+  resolves `undefined`, which every reader maps back to the wall clock. It
+  reaches the discoveries' `--since` and evict bound (`historyAnchorSec`
+  option), the file assembler (`WindowedFileChurn.historyAnchorSec`, stamped by
+  `anchorFileChurn`), the chunk walk and assembler (trailing `historyAnchorSec`,
+  the off-thread job included) and `buildOnDemandGitSignals` (`anchor`). Why: a
+  window or age computed from a second clock disagrees with the rest of the
+  payload the moment the anchor is `head`, and nothing fails — a benchmark
+  snapshot just reads dormant. A `now` run passes nothing, so its calls and
+  payload stay what they were before the anchor existed.
+
+- **A read measures age from the INDEX's anchor, resolved once per request and
+  handed down — no age reader picks its own clock.** The mode is the one the
+  index was STAMPED with (`stampedHistoryAnchorMode` over the registry env
+  snapshot: only an explicit `head` is `head`), and the instant is the committer
+  time of its `indexedCommit`, not of the checkout's current HEAD
+  (`resolveIndexHistoryAnchorSec`, cached per (collection, indexedCommit) by
+  `IndexHistoryAnchorResolver` in `api/internal/infra/`). `ExploreOps` resolves
+  it in `resolveTarget` and carries it as `historyAnchorSec` to the typed age
+  filters (`FilterDescriptor.toCondition`'s `nowSec`, through
+  `TrajectoryRegistry#buildMergedFilter`), the filter-preset compiler
+  (`resolveFilterSpec` → `compileFilterPreset`'s `nowSec`) and every rerank
+  (`ExploreContext.historyAnchorSec` → `RerankOptions.now`, via
+  `historyClockRerankOption`); `TracePathOps#computeDanger` reads it the same
+  way. `undefined` means the wall clock, as at index time, and a wall-clock
+  request passes exactly the arguments it passed before the clock existed. An
+  unreadable commit time (commit gone, git error) is the wall clock with a debug
+  line, never a failed query. Why: a head-anchored payload compared with today
+  ages every chunk of a years-old snapshot by the snapshot's age, so `recency`
+  reads zero, `maxAgeDays` matches nothing and every age threshold of a filter
+  preset is off by the same span — while a `now` index, with nothing to compare
+  against, would never show it. The prime / `get_index_metrics` `ageDays` bands
+  need nothing here: they are percentiles of the stamps the anchored run wrote.
+
 - **The chunk walk follows renames, and the ORDER of the slice is what makes
   that correct.** A commit older than a rename names the file by its old path,
   so `sliceCommitsFollowingRenames` (`infra/rename-following.ts`) re-queries
@@ -36,11 +93,12 @@ their own navigators.
 - **The file walk follows renames through the same alias map.**
   `aggregateFileChurnFollowingRenames` (`infra/rename-following.ts`) folds
   per-commit numstat onto HEAD paths for both `FileChurnDiscovery#fileChurn` and
-  the per-path backfill `buildFileSignalsForPaths`. The discovery resolves
-  aliases over its entries in LOG order and only folds in its committer-date
-  order; the persisted snapshot keeps raw per-commit rows, so a pre-rename
-  commit cached under its old path is re-resolved on every build. The backfill
-  widens with `sliceCommitsFollowingRenames` over
+  the per-path readers `buildFileSignalsForPaths` /
+  `buildWindowedFileSignalsForPaths`. The discovery resolves aliases over its
+  entries in LOG order and only folds in its committer-date order; the persisted
+  snapshot keeps raw per-commit rows, so a pre-rename commit cached under its
+  old path is re-resolved on every build. The per-path readers widen with
+  `sliceCommitsFollowingRenames` over
   `VcsGitAdapter#readCommitFileNumstatForPaths`, which re-reads add/delete
   commits without the pathspec — a pathspec detects renames only between paths
   it names, so on the HEAD path alone the rename prints as a plain add. Unlike
