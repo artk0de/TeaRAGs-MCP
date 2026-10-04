@@ -5,7 +5,7 @@ import {
   type CallContext,
   type CallRef,
   type LocalBinding,
-  type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import {
   TSGlobalShortNameSymbolResolutionStrategy,
@@ -19,7 +19,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/tr
 const tsOptions = { baseUrl: ".", paths: {} };
 const cfg: ResolverConfig = { tsOptions, mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };
 
-const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): NamedSymbol => ({
+const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName,

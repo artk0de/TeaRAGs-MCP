@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { CallContext, CallRef, NamedSymbol } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type { CallContext, CallRef, SymbolDefinition } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { GoCallResolver } from "../../../../../../src/core/domains/language/go/resolver/go-resolver.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -15,7 +15,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/tr
  * id with a TypeScript one was dropped as ambiguous.
  */
 
-const sym = (symbolId: string, relPath: string): NamedSymbol => ({
+const sym = (symbolId: string, relPath: string): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName: symbolId.split(/[#.]/).pop() ?? symbolId,
@@ -23,7 +23,7 @@ const sym = (symbolId: string, relPath: string): NamedSymbol => ({
   scope: [],
 });
 
-function polyglotTable(extra: [string, NamedSymbol[]][] = []): InMemoryGlobalSymbolTable {
+function polyglotTable(extra: [string, SymbolDefinition[]][] = []): InMemoryGlobalSymbolTable {
   const t = new InMemoryGlobalSymbolTable();
   t.upsertFile("api/client.go", [sym("Client", "api/client.go"), sym("Transport", "api/client.go")]);
   t.upsertFile("web/client.ts", [sym("Client", "web/client.ts"), sym("Client#fetch", "web/client.ts")]);

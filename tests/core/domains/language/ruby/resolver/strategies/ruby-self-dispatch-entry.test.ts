@@ -16,7 +16,6 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
-  type NamedSymbol,
   type SymbolDefinition,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
@@ -28,7 +27,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains
 const cfg: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };
 const strat = new RubySelfDispatchEntrySymbolResolutionStrategy(cfg);
 
-const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): NamedSymbol => ({
+const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName,
@@ -36,7 +35,7 @@ const sym = (symbolId: string, shortName: string, relPath: string, scope: string
   scope,
 });
 
-const tableWith = (...files: [string, NamedSymbol[]][]): InMemoryGlobalSymbolTable => {
+const tableWith = (...files: [string, SymbolDefinition[]][]): InMemoryGlobalSymbolTable => {
   const t = new InMemoryGlobalSymbolTable();
   for (const [relPath, defs] of files) t.upsertFile(relPath, defs);
   return t;
@@ -267,7 +266,7 @@ describe("RubySelfDispatchEntrySymbolResolutionStrategy — self-instance delega
 // onto the shared `KindOfService.call` node.
 const DESTROY_FILE = "app/services/destroy.rb";
 
-const overrideTable = (destroyCall: NamedSymbol): InMemoryGlobalSymbolTable =>
+const overrideTable = (destroyCall: SymbolDefinition): InMemoryGlobalSymbolTable =>
   tableWith(
     [
       KOS_FILE,
@@ -280,7 +279,7 @@ const overrideTable = (destroyCall: NamedSymbol): InMemoryGlobalSymbolTable =>
     [DESTROY_FILE, [sym("Destroy", "Destroy", DESTROY_FILE, []), destroyCall]],
   );
 
-const overrideCtx = (destroyCall: NamedSymbol): CallContext =>
+const overrideCtx = (destroyCall: SymbolDefinition): CallContext =>
   v2Ctx({ symbolTable: overrideTable(destroyCall), classAncestors: { Destroy: ["KindOfService"] } });
 
 describe("RubySelfDispatchEntrySymbolResolutionStrategy — constant overrides the delegated instance method", () => {

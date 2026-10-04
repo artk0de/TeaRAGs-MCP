@@ -8,7 +8,7 @@ import type {
   CallContext,
   CallRef,
   ImportRef,
-  NamedSymbol,
+  SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { GoLanguage } from "../../../../../../src/core/domains/language/go/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -24,7 +24,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/tr
  * (`c.handlers[c.index](c)`) is an index, never an instantiation.
  */
 
-const sym = (symbolId: string, relPath: string): NamedSymbol => ({
+const sym = (symbolId: string, relPath: string): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName: symbolId.split(/[#.]/).pop() ?? symbolId,

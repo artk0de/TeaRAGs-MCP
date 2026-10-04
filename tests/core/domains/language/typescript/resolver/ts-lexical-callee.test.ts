@@ -10,7 +10,7 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
-  type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/index.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
@@ -33,7 +33,7 @@ function writeSource(repoRoot: string, relPath: string, lines: string[]): void {
  * so the table must carry the walker's own ids (`main.send`, `parseSnapshot.close`)
  * or the test would only prove agreement with itself.
  */
-function walkedSymbols(relPath: string, lines: string[]): NamedSymbol[] {
+function walkedSymbols(relPath: string, lines: string[]): SymbolDefinition[] {
   const src = `${lines.join("\n")}\n`;
   const parser = new Parser();
   parser.setLanguage(TsLang.typescript);

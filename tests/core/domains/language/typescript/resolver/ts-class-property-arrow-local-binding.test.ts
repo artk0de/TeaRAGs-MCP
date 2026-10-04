@@ -22,7 +22,7 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
-  type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import {
   TSLocalBindingSymbolResolutionStrategy,
@@ -33,7 +33,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/tr
 const tsOptions = { baseUrl: ".", paths: {} };
 const strict: ResolverConfig = { tsOptions, mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };
 
-const sym = (symbolId: string, shortName: string, relPath: string, scope: string[] = []): NamedSymbol => ({
+const sym = (symbolId: string, shortName: string, relPath: string, scope: string[] = []): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName,
@@ -41,7 +41,7 @@ const sym = (symbolId: string, shortName: string, relPath: string, scope: string
   scope,
 });
 
-const tableOf = (...entries: { relPath: string; symbol: NamedSymbol }[]): InMemoryGlobalSymbolTable => {
+const tableOf = (...entries: { relPath: string; symbol: SymbolDefinition }[]): InMemoryGlobalSymbolTable => {
   const built = new InMemoryGlobalSymbolTable();
   for (const { relPath, symbol } of entries) built.upsertFile(relPath, [symbol]);
   return built;

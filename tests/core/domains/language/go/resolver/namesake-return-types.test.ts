@@ -6,7 +6,11 @@ import Parser from "tree-sitter";
 import GoLang from "tree-sitter-go";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { CallContext, FileExtraction, NamedSymbol } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type {
+  CallContext,
+  FileExtraction,
+  SymbolDefinition,
+} from "../../../../../../src/core/contracts/types/codegraph.js";
 import { GoLanguage } from "../../../../../../src/core/domains/language/go/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -20,7 +24,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/tr
  * run walked, making an incremental index resolve differently from a full one.
  */
 
-const sym = (symbolId: string, relPath: string): NamedSymbol => ({
+const sym = (symbolId: string, relPath: string): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName: symbolId.split(/[#.]/).pop() ?? symbolId,

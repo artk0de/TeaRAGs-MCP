@@ -7,7 +7,7 @@ import {
   type DispatchEdge,
   type DispatchFanoutOutcome,
   type DispatchTableDef,
-  type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
   RubyTableDispatchResolver,
@@ -17,7 +17,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains
 
 const cfg: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };
 
-const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): NamedSymbol => ({
+const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName,
@@ -25,7 +25,7 @@ const sym = (symbolId: string, shortName: string, relPath: string, scope: string
   scope,
 });
 
-const tableWith = (...files: [string, NamedSymbol[]][]): InMemoryGlobalSymbolTable => {
+const tableWith = (...files: [string, SymbolDefinition[]][]): InMemoryGlobalSymbolTable => {
   const t = new InMemoryGlobalSymbolTable();
   for (const [relPath, defs] of files) t.upsertFile(relPath, defs);
   return t;
@@ -48,7 +48,7 @@ const edgesOf = (outcome: DispatchFanoutOutcome): DispatchEdge[] => {
 
 // Both files carry the class symbol (resolveConstant resolves the file) AND its
 // #perform method symbol (the dispatched target), mirroring what the walker emits.
-const valueClassFiles = (): [string, NamedSymbol[]][] => [
+const valueClassFiles = (): [string, SymbolDefinition[]][] => [
   [
     "app/jobs/clone.rb",
     [
@@ -252,7 +252,7 @@ describe("RubyTableDispatchResolver (bd tea-rags-mcp-pq02v)", () => {
   });
 
   describe("call shape decides the symbolId form (bd tea-rags-mcp-exmwr)", () => {
-    const classMethodFiles = (): [string, NamedSymbol[]][] => [
+    const classMethodFiles = (): [string, SymbolDefinition[]][] => [
       [
         "app/jobs/clone.rb",
         [
@@ -277,7 +277,7 @@ describe("RubyTableDispatchResolver (bd tea-rags-mcp-pq02v)", () => {
     });
 
     it("does NOT bind a direct class-method call to an instance-form def of the same name", () => {
-      const instanceOnly: [string, NamedSymbol[]][] = [
+      const instanceOnly: [string, SymbolDefinition[]][] = [
         [
           "app/jobs/clone.rb",
           [

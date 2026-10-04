@@ -8,7 +8,7 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
-  type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import {
   TSGlobalShortNameSymbolResolutionStrategy,
@@ -37,7 +37,7 @@ function writePackage(repoRoot: string, name: string, declarations: string[]): v
   writeSource(repoRoot, `node_modules/${name}/index.d.ts`, declarations.join("\n"));
 }
 
-const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): NamedSymbol => ({
+const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName,
@@ -51,7 +51,7 @@ const sym = (symbolId: string, shortName: string, relPath: string, scope: string
  * `pickSingleCandidate` sees a single candidate, so a table carrying two
  * `handler`s would make every assertion below pass for the wrong reason.
  */
-const tableOf = (...symbols: { relPath: string; symbol: NamedSymbol }[]): InMemoryGlobalSymbolTable => {
+const tableOf = (...symbols: { relPath: string; symbol: SymbolDefinition }[]): InMemoryGlobalSymbolTable => {
   const built = new InMemoryGlobalSymbolTable();
   for (const { relPath, symbol } of symbols) built.upsertFile(relPath, [symbol]);
   return built;

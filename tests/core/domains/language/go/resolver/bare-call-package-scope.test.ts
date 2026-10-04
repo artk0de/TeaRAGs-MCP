@@ -4,7 +4,7 @@ import type {
   CallContext,
   CallRef,
   ImportRef,
-  NamedSymbol,
+  SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { GoCallResolver } from "../../../../../../src/core/domains/language/go/resolver/go-resolver.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
@@ -19,7 +19,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/tr
  * lost to `responseWriter#WriteString`, a METHOD in the root package.
  */
 
-const sym = (symbolId: string, relPath: string): NamedSymbol => ({
+const sym = (symbolId: string, relPath: string): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName: symbolId.split(/[#.]/).pop() ?? symbolId,
@@ -29,7 +29,7 @@ const sym = (symbolId: string, relPath: string): NamedSymbol => ({
 
 const bare = (member: string): CallRef => ({ callText: `${member}()`, receiver: null, member, startLine: 5 });
 
-function table(...files: [string, NamedSymbol[]][]): InMemoryGlobalSymbolTable {
+function table(...files: [string, SymbolDefinition[]][]): InMemoryGlobalSymbolTable {
   const t = new InMemoryGlobalSymbolTable();
   for (const [relPath, defs] of files) t.upsertFile(relPath, defs);
   return t;

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import type { CallContext, FileExtraction, NamedSymbol } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type {
+  CallContext,
+  FileExtraction,
+  SymbolDefinition,
+} from "../../../../../../src/core/contracts/types/codegraph.js";
 import { JavaLanguage } from "../../../../../../src/core/domains/language/java/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -18,7 +22,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/tr
 const CALLER = "src/main/java/com/app/Caller.java";
 const BAR = "src/main/java/com/foo/Bar.java";
 
-const def = (symbolId: string, shortName: string, relPath: string, scope: string[]): NamedSymbol => ({
+const def = (symbolId: string, shortName: string, relPath: string, scope: string[]): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName,
