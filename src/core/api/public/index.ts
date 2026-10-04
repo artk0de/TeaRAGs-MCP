@@ -120,7 +120,8 @@ export { QdrantOptimizerErrorPersistsError } from "../../adapters/qdrant/errors.
 // every other status failure as it is (bd tea-rags-mcp-zqg1i).
 export { isQdrantColdError, QdrantUnavailableError } from "../../adapters/qdrant/errors.js";
 
-// ── Project registry — runtime + types (domains/maintenance/registry) ──
+// ── Project registry — runtime (domains/maintenance/registry facade),
+// types (contracts/types/registry.js) ──
 export { CollectionRegistry } from "../../domains/maintenance/registry/index.js";
 export { PROJECT_NAME_RE } from "../../domains/maintenance/registry/index.js";
 export { REGISTRY_ENV_ALLOWLIST, REGISTRY_ENV_GROUPS } from "../../domains/maintenance/registry/index.js";
@@ -148,7 +149,11 @@ export type {
   RegistryLookup,
   RegistryQdrantBackend,
   RegistryQdrantBackendClaim,
-} from "../../domains/maintenance/registry/index.js";
+  // The registry vocabulary lives in contracts (bd tea-rags-mcp-0qaht.36):
+  // this barrel is a stable surface and no longer reaches into the volatile
+  // registry domain for types. Runtime symbols below stay on the domain
+  // facade — api is the composition root and may import domains.
+} from "../../contracts/types/registry.js";
 
 // ── Index freshness — auto-update watcher decision surface (hpg2) ─────
 export {
@@ -245,7 +250,9 @@ export {
 export type { OptimizerRecoveryOutcome, OptimizerRecoveryTarget } from "../internal/ops/optimizer-recovery-ops.js";
 // The one wording of a first index's worktree seed outcome — CLI status block
 // and MCP `index_codebase` response both render it (bd tea-rags-mcp-k8gac).
-export { formatWorktreeSeedReport } from "../../domains/maintenance/worktree/worktree-seed-report.js";
+// Through the worktree domain facade, not the deep module (bd
+// tea-rags-mcp-0qaht.36).
+export { formatWorktreeSeedReport } from "../../domains/maintenance/worktree/index.js";
 
 // ── SchemaBuilder (used by mcp tool registration) ─────────────────────
 // Concrete class lives in api/internal/infra; re-exporting through public

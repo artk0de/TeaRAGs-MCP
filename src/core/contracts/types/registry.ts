@@ -187,3 +187,66 @@ export interface CollectionRegistryPort {
  * any of them reaching into the api layer.
  */
 export type PathCollectionResolver = (path: string) => Promise<CollectionAlias>;
+
+// ── Registry env vocabulary (relocated from
+// domains/maintenance/registry/env-groups.ts, bd tea-rags-mcp-0qaht.36) ──
+// The stable layers (`api/public`, `bootstrap`) re-export/consume these
+// without reaching into the registry domain; the domain modules re-export
+// them unchanged for their own consumers. The group TABLE
+// (`REGISTRY_ENV_GROUPS`) is domain behavior and stays there.
+
+/**
+ * What a change to one env group invalidates in an EXISTING index.
+ *
+ * The classes are the drift remedy lattice read backwards: `chunk-set` moves
+ * chunk point ids (nothing short of `--force` is coherent), each
+ * `enrichment:<trajectory>` rewrites that trajectory's payload in place
+ * (`--force-enrichments <trajectory>`), and `runtime` describes only HOW the
+ * run executes — endpoints, pool sizes, batch sizes, timeouts, DuckDB limits.
+ * Changing a `runtime` value produces byte-identical indexed data, so it is
+ * never drift.
+ */
+export type EnvConsequence = "chunk-set" | "enrichment:git" | "enrichment:codegraph" | "runtime";
+
+/** One alias family: the canonical env name plus its deprecated spellings. */
+export interface RegistryEnvGroup {
+  canonical: string;
+  aliases: readonly string[];
+  /** What a change to this value invalidates in an existing index. */
+  consequence: EnvConsequence;
+}
+
+// ── Registry seed-picking port (relocated from
+// domains/maintenance/registry/env-resolution.ts, bd tea-rags-mcp-0qaht.36) ──
+
+/** Structural subset of CollectionRegistry used by env seed picking — keeps tests fake-friendly. */
+export interface RegistryLookup {
+  findByName: (name: string) => CollectionEntry | null;
+  findByPath: (path: string) => CollectionEntry | null;
+  list: () => CollectionEntry[];
+}
+
+// ── Qdrant backend vocabulary (relocated from
+// domains/maintenance/registry/{qdrant-backend-resolution,errors}.ts,
+// bd tea-rags-mcp-0qaht.36) ──
+
+/** The registry facts an unresolvable-backend report quotes back to the operator. */
+export interface RegistryQdrantBackendClaim {
+  name: string | null;
+  collectionName: string;
+  qdrantUrl: string;
+  teaRagsVersion?: string;
+}
+
+/**
+ * The backend an entry resolves to.
+ *
+ * `embedded` carries no address on purpose: the daemon rebinds an ephemeral
+ * port on restart, so the only durable way to name it is the marker the worker
+ * re-resolves through `ensureDaemon`.
+ */
+export type RegistryQdrantBackend =
+  | { kind: "embedded" }
+  | { kind: "external"; url: string }
+  /** No address on record (recovered stub) — the caller seeds nothing. */
+  | { kind: "unaddressed" };

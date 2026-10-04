@@ -13,6 +13,7 @@
  */
 
 import { InfraError } from "../../../adapters/errors.js";
+import type { RegistryQdrantBackendClaim } from "../../../contracts/types/registry.js";
 
 /**
  * Thrown when registry.json cannot be parsed (invalid JSON, wrong version,
@@ -63,13 +64,10 @@ export class RegistryConcurrencyError extends InfraError {
   }
 }
 
-/** The registry facts an unresolvable-backend report quotes back to the operator. */
-export interface RegistryQdrantBackendClaim {
-  name: string | null;
-  collectionName: string;
-  qdrantUrl: string;
-  teaRagsVersion?: string;
-}
+// `RegistryQdrantBackendClaim` is defined in contracts (bd
+// tea-rags-mcp-0qaht.36); re-exported here unchanged for this domain's
+// consumers.
+export type { RegistryQdrantBackendClaim };
 
 /**
  * Thrown when a registry entry's two records of its Qdrant backend contradict
