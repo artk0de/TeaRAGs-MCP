@@ -290,7 +290,13 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       // overlay is the judgement's view; neither re-reads the other.
       const overlay = new ReviewEdgeOverlay(reads);
       const result = new DiffDetectorRun({ graph, catalog, coupling, contract, ...splitMerge }).run(
-        { changedFiles: scope.files },
+        {
+          changedFiles: scope.files,
+          // A truncated scope marks every built family partial (bd
+          // tea-rags-mcp-89k7k.1.9): the cap's skipped files never reach the
+          // overlay, so a family's zero can rest on edges it never saw.
+          ...(scope.skipped > 0 ? { skippedFiles: scope.skipped } : {}),
+        },
         overlay,
       );
       const { kept, truncatedByDetector } = capFindingsByFamily(result.findings, ARCHITECTURE_FINDING_CAP);

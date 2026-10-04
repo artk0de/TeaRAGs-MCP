@@ -794,3 +794,43 @@ describe("absence of data", () => {
     expect(result.detectors.filter((entry) => entry.built)).toHaveLength(5);
   });
 });
+
+// bd tea-rags-mcp-89k7k.1.9: a truncated diff scope — changed files fell past
+// the reader's file cap — must never read as a clean pass. The closing edge of
+// a cycle can live ONLY in a skipped file, so a zero over unseen files is
+// partial, and the status says so with the skipped count.
+describe("detector statuses over a truncated diff scope", () => {
+  function runScope(scope: { changedFiles: readonly string[]; skippedFiles?: number }): DiffDetectorFindings {
+    return new DiffDetectorRun({
+      graph: graphOf([]),
+      catalog: catalogOf(new Map()),
+      coupling: couplingOf(new Map()),
+    }).run(scope, overlayOf([], scope.changedFiles));
+  }
+
+  it("marks every BUILT family partial with the skipped count — a zero over unseen files is never a clean pass", () => {
+    const result = runScope({ changedFiles: ["src/a.ts"], skippedFiles: 3 });
+    for (const status of result.detectors) {
+      if (!status.built) continue;
+      expect(status, `${status.detector} claimed a clean pass over a truncated diff`).toMatchObject({
+        scopeSkippedFiles: 3,
+      });
+    }
+  });
+
+  it("an unbuilt family keeps its built:false reason — absence was never a clean pass either, and carries no marker", () => {
+    const result = runScope({ changedFiles: ["src/a.ts"], skippedFiles: 3 });
+    const unbuilt = result.detectors.filter((status) => !status.built);
+    expect(unbuilt.length).toBeGreaterThan(0);
+    for (const status of unbuilt) {
+      expect(status.scopeSkippedFiles).toBeUndefined();
+      expect(status.reason).toBeDefined();
+    }
+  });
+
+  it("an untruncated scope carries no marker — zeros are then clean passes", () => {
+    const result = runScope({ changedFiles: ["src/a.ts"] });
+    expect(result.detectors.every((status) => status.scopeSkippedFiles === undefined)).toBe(true);
+    expect(result.detectors.every((status) => status.scopeSkippedFiles !== 0)).toBe(true);
+  });
+});

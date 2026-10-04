@@ -132,9 +132,23 @@ export interface DiffDetectorRunDeps {
   maxTraceHops?: number;
 }
 
-/** The change to judge: the files the diff touches, as the scope reader (F0) read them. */
+/**
+ * The change to judge: the files the diff touches, as the scope reader (F0)
+ * read them. `skippedFiles` says the read was TRUNCATED (bd
+ * tea-rags-mcp-89k7k.1.9) — changed files fell past the reader's file cap, so
+ * the overlay below carries no edge of theirs and a family's zero rests on
+ * files it never saw.
+ */
 export interface DiffDetectorScope {
   changedFiles: readonly string[];
+  /**
+   * Changed files the reader's cap skipped; `0`/absent = the scope is whole.
+   * When > 0 every built family's status is marked partial
+   * (`scopeSkippedFiles`) — a clean pass is never claimed over a truncated
+   * diff, because a cycle's or a leak's closing edge can live ONLY in a
+   * skipped file.
+   */
+  skippedFiles?: number;
 }
 
 export interface DiffDetectorFinding {
@@ -165,6 +179,13 @@ export interface DiffDetectorStatus {
    * cap (`architecture-section.ts`), not by the run.
    */
   truncated?: number;
+  /**
+   * Changed files the diff's file cap skipped while this family judged (bd
+   * tea-rags-mcp-89k7k.1.9). Present = the verdict is PARTIAL: a zero
+   * findingCount over files the run never saw is never a clean pass. Absent
+   * on unbuilt rows — `built: false` + `reason` already denies the pass.
+   */
+  scopeSkippedFiles?: number;
 }
 
 export interface DiffDetectorFindings {
@@ -240,6 +261,12 @@ export class DiffDetectorRun {
     const silentCoupling = this.judgeSilentCoupling(scope.changedFiles, overlay, changed);
     const facadeContract = this.judgeFacadeContract(scope.changedFiles, overlay, changed);
     const splitCandidates = this.judgeSplitCandidates(scope.changedFiles);
+    // Partial over a truncated diff (bd tea-rags-mcp-89k7k.1.9): stamped on
+    // BUILT rows only — an unbuilt row's built:false + reason already denies
+    // the clean pass.
+    const skippedFiles = scope.skippedFiles ?? 0;
+    const partial = (status: DiffDetectorStatus): DiffDetectorStatus =>
+      skippedFiles > 0 ? Object.freeze({ ...status, scopeSkippedFiles: skippedFiles }) : status;
     return {
       findings: Object.freeze([
         ...stableDependencies,
@@ -251,11 +278,11 @@ export class DiffDetectorRun {
         ...splitCandidates,
       ]),
       detectors: Object.freeze([
-        detectorStatus("stableDependencies", stableDependencies.length),
-        detectorStatus("leakingAbstraction", leakingAbstraction.length),
-        detectorStatus("cycles", cycles.length),
-        detectorStatus("mainSequence", mainSequence.length),
-        detectorStatus("silentCoupling", silentCoupling.length),
+        partial(detectorStatus("stableDependencies", stableDependencies.length)),
+        partial(detectorStatus("leakingAbstraction", leakingAbstraction.length)),
+        partial(detectorStatus("cycles", cycles.length)),
+        partial(detectorStatus("mainSequence", mainSequence.length)),
+        partial(detectorStatus("silentCoupling", silentCoupling.length)),
         ...(this.contract === undefined
           ? [
               Object.freeze({
@@ -265,7 +292,7 @@ export class DiffDetectorRun {
                 findingCount: 0,
               }) satisfies DiffDetectorStatus,
             ]
-          : [detectorStatus("facadeContract", facadeContract.length)]),
+          : [partial(detectorStatus("facadeContract", facadeContract.length))]),
         this.splitMerge === undefined
           ? (Object.freeze({
               detector: "splitCandidates",
@@ -273,7 +300,7 @@ export class DiffDetectorRun {
               reason: this.splitMergeAbsentReason,
               findingCount: 0,
             }) satisfies DiffDetectorStatus)
-          : detectorStatus("splitCandidates", splitCandidates.length),
+          : partial(detectorStatus("splitCandidates", splitCandidates.length)),
       ]),
     };
   }

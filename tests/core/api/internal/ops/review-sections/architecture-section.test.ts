@@ -118,7 +118,7 @@ function cochangePair(a: RelPath, b: RelPath, support: number): TemporalCochange
   };
 }
 
-function scopeOf(files: readonly string[]): DiffScopeRead {
+function scopeOf(files: readonly string[], skipped = 0): DiffScopeRead {
   return {
     workTree: workTree!,
     base: "HEAD",
@@ -129,7 +129,7 @@ function scopeOf(files: readonly string[]): DiffScopeRead {
     files,
     addedRanges: new Map(),
     nonProduction: new Set(),
-    skipped: 0,
+    skipped,
   };
 }
 
@@ -396,6 +396,52 @@ describe("architectureSectionProvider.run", () => {
     expect(payload.truncated).toBe(totalFindings - 100);
     // The flooding family's cut is counted on its own row, not hidden in the total.
     expect(detectors.find((status) => status.detector === "silentCoupling")?.truncated).toBeGreaterThan(0);
+  });
+
+  // bd tea-rags-mcp-89k7k.1.9: the change closes a -> b -> x -> a, but the
+  // only file carrying the closing edge x -> a fell past the reader's file
+  // cap — the overlay never sees it, so `cycles` would read as a clean zero.
+  it("a scope over the file cap marks every built detector partial — a cycle closing through a skipped file is never a clean pass", async () => {
+    writeFile("src/app/a.ts", 'import { B } from "../lib/b";\nexport const A = 1;\n');
+    // Skipped past the cap in a real read; here the scope says so directly.
+    writeFile("src/skip/x.ts", 'import { A } from "../app/a";\nexport const X = A;\n');
+    const graph = graphDbStub({
+      files: [graphFile("src/app/a.ts"), graphFile("src/lib/b.ts"), graphFile("src/skip/x.ts")],
+      // The indexed b -> x hop: in the TREE the change closes a -> b -> x -> a
+      // through x's new edge, which the truncated scope never reads.
+      edges: [graphEdge("src/lib/b.ts", "src/skip/x.ts")],
+    });
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({ graphDb: graph, scope: scopeOf(["src/app/a.ts"], 1) }),
+    )) as Record<string, unknown>;
+
+    const detectors = payload.detectors as {
+      detector: string;
+      built: boolean;
+      findingCount: number;
+      scopeSkippedFiles?: number;
+    }[];
+    const cycles = detectors.find((status) => status.detector === "cycles");
+    // An honest zero over unseen files — carried as PARTIAL with the skipped
+    // count, never as a clean pass.
+    expect(cycles).toMatchObject({ built: true, findingCount: 0, scopeSkippedFiles: 1 });
+    for (const status of detectors) {
+      if (!status.built) continue;
+      expect(status.scopeSkippedFiles, `${status.detector} claimed a clean pass over a truncated diff`).toBe(1);
+    }
+  });
+
+  it("an untruncated scope claims no partial marker — zeros are then clean passes", async () => {
+    writeFile("src/app/a.ts", "export const A = 1;\n");
+    const graph = graphDbStub({ files: [graphFile("src/app/a.ts")], edges: [] });
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({ graphDb: graph, scope: scopeOf(["src/app/a.ts"]) }),
+    )) as Record<string, unknown>;
+
+    const detectors = payload.detectors as { scopeSkippedFiles?: number }[];
+    expect(detectors.every((status) => status.scopeSkippedFiles === undefined)).toBe(true);
   });
 });
 
