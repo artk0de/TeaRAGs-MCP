@@ -19,12 +19,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
-import {
-  CollectionRegistry,
-  resolveBaseIndexEntry,
-  resolveRegistryEnv,
-  type CollectionEntry,
-} from "../../core/api/public/index.js";
+import { resolveBaseIndexEntry } from "../../core/api/index.js";
+import { CollectionRegistry, resolveRegistryEnv, type CollectionEntry } from "../../core/api/public/index.js";
 
 /** The request fields a tool addresses its project by — the MCP tool contract. */
 function stringParam(params: Record<string, unknown>, key: string): string | undefined {

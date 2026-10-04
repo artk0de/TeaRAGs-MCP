@@ -270,7 +270,10 @@ declare \`kind: "field"\` rows, same as \`@ivar =\`.
 - New class / constant → names=[{ name: "RubyConstReceiverPass", kind: "type", path: "<its file>", extends: "SymbolResolutionStrategy" }]
 - Words for a concept → concept="<what the symbol denotes, not its name>", language="typescript"
 - Review names a diff adds → review_changes (changes={} = uncommitted vs HEAD, changes={ base: "origin/main" } =
-  branch, sections: ["naming"]) — the same lexicon pipeline; get_naming_lexicon itself takes no diff.
+  branch, sections: ["naming"]) — the same lexicon pipeline wrapped around the whole diff review.
+  get_naming_lexicon takes the diff directly too (bd tea-rags-mcp-89k7k.18): changes={ base? } and/or
+  files=[...] on it reach the same naming review without the other sections — a full diff review
+  (architecture, cohesion, incompleteChange in one call) → review_changes.
   base is read at its merge-base with HEAD (git merge-base <base> HEAD): only the branch's side plus
   uncommitted work, however far base moved on; no merge-base (unrelated / shallow clone) → error.
   files=[...] → those files only: a file with a diff by its added hunks, one with no diff (committed,

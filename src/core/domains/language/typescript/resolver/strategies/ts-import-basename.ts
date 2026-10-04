@@ -1,7 +1,7 @@
 import { CONTINUE, deferred, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { lookupEcmascriptSymbolsByShortName } from "../../../shared/ecmascript-symbol-lookup.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
 import { targetsExternalImport } from "../ts-external-call.js";
 import { importSpecifierNamesReceiver } from "../ts-import-basename-match.js";
 import { mapImportToFile } from "../ts-path-mapper.js";

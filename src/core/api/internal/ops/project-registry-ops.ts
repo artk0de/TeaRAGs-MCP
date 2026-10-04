@@ -21,6 +21,7 @@ import {
 } from "../../../domains/maintenance/registry/index.js";
 import { resolveCollectionName, validatePath, validatePathSync } from "../../../infra/collection-name.js";
 import { ConfigError } from "../../../infra/errors.js";
+import type { ProjectRegistryAddress, StaleProjectEntry, StaleProjectPruneReport } from "../../public/dto/registry.js";
 import {
   InvalidParameterError,
   MissingArgumentError,
@@ -30,8 +31,7 @@ import {
   ProjectNameNotUniqueError,
   ProjectNotRegisteredError,
   ProjectPathAlreadyRegisteredError,
-} from "../../errors.js";
-import type { ProjectRegistryAddress, StaleProjectEntry, StaleProjectPruneReport } from "../../public/dto/registry.js";
+} from "../../public/errors.js";
 
 export interface ProjectRegistryOpsDeps {
   registry: CollectionRegistry;
@@ -522,6 +522,23 @@ export class ProjectRegistryOps {
   }
 
   /**
+   * Whether a collection's build lease is live — the same predicate the orphan
+   * report, the version cleanup and `recoverFromQdrant` below honour (bd
+   * tea-rags-mcp-9ovlp, 9j2cy). Surfaced as a method (bd tea-rags-mcp-89k7k.9)
+   * so `cli/` reads it through the api surface — the App interface delegates
+   * here — instead of the retired barrel re-export of the domain function.
+   * The marker reader is caller-supplied: the read-only CLI paths hold their
+   * own Qdrant client, not an App.
+   */
+  async isCollectionBuildInFlight(
+    qdrant: Pick<QdrantManager, "getPoint">,
+    collection: string,
+    options: { deadWriterEvidenceUpTo?: number } = {},
+  ): Promise<boolean> {
+    return isCollectionBuildInFlight(qdrant, collection, options);
+  }
+
+  /**
    * Recover the project registry from live Qdrant state.
    *
    * Walks all collections in Qdrant and inserts an entry for each collection
@@ -543,7 +560,7 @@ export class ProjectRegistryOps {
     const physicalCollectionNames = await qdrant.listCollections();
     for (const physicalCollectionName of physicalCollectionNames) {
       if (this.deps.registry.get(physicalCollectionName) !== null) continue;
-      if (await isCollectionBuildInFlight(qdrant, physicalCollectionName)) continue;
+      if (await this.isCollectionBuildInFlight(qdrant, physicalCollectionName)) continue;
       let dimensions = 0;
       try {
         const info = await qdrant.getCollectionInfo(physicalCollectionName);

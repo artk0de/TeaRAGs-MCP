@@ -81,7 +81,6 @@ import {
   type PathFilter,
 } from "../../../infra/file-classification/index.js";
 import { pathPatternLiteralPrefix } from "../../../infra/path-pattern.js";
-import { InvalidParameterError } from "../../errors.js";
 import type {
   GetOntologyReportRequest,
   GetOntologyReportResponse,
@@ -96,6 +95,7 @@ import type {
   OntologyValueKind,
   OntologyVerbGroup,
 } from "../../public/dto/ontology.js";
+import { InvalidParameterError } from "../../public/errors.js";
 import { resolveIndexedWorkingTree, type IndexExistenceCheck } from "../collection-resolver.js";
 import { selectWorkingTreeGraphHandle } from "../infra/working-tree-graph-read.js";
 

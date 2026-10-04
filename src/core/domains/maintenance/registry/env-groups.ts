@@ -29,26 +29,12 @@
  * uniformly (an external OLLAMA_URL beats the registry EMBEDDING_BASE_URL).
  */
 
-/**
- * What a change to one env group invalidates in an EXISTING index.
- *
- * The classes are the drift remedy lattice read backwards: `chunk-set` moves
- * chunk point ids (nothing short of `--force` is coherent), each
- * `enrichment:<trajectory>` rewrites that trajectory's payload in place
- * (`--force-enrichments <trajectory>`), and `runtime` describes only HOW the
- * run executes — endpoints, pool sizes, batch sizes, timeouts, DuckDB limits.
- * Changing a `runtime` value produces byte-identical indexed data, so it is
- * never drift.
- */
-export type EnvConsequence = "chunk-set" | "enrichment:git" | "enrichment:codegraph" | "runtime";
+// The vocabulary types live in contracts so the stable layers name them
+// without reaching into this module; re-exported here unchanged for this
+// domain's consumers (bd tea-rags-mcp-0qaht.36).
+import type { EnvConsequence, RegistryEnvGroup } from "../../../contracts/types/registry.js";
 
-/** One alias family: the canonical env name plus its deprecated spellings. */
-export interface RegistryEnvGroup {
-  canonical: string;
-  aliases: readonly string[];
-  /** What a change to this value invalidates in an existing index. */
-  consequence: EnvConsequence;
-}
+export type { EnvConsequence, RegistryEnvGroup };
 
 export const REGISTRY_ENV_GROUPS: readonly RegistryEnvGroup[] = [
   // vcs (parse.ts `vcs` section). Which adapter walks the history is an

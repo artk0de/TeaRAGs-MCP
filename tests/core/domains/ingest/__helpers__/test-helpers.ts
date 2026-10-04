@@ -6,40 +6,58 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { fixtureCollectionAlias, fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import type { EmbeddingProvider } from "../../../../../src/core/adapters/embeddings/base.js";
+import { QdrantAliasManager } from "../../../../../src/core/adapters/qdrant/aliases.js";
 import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
-import type { ExploreCodeConfig, IngestCodeConfig, TrajectoryIngestConfig } from "../../../../../src/core/types.js";
+import type { QdrantConnection } from "../../../../../src/core/adapters/qdrant/connection.js";
+import type {
+  CollectionAliasEntry,
+  PhysicalCollectionName,
+} from "../../../../../src/core/contracts/types/collection-identity.js";
+import { physicalCollectionNamesListedByStorage } from "../../../../../src/core/infra/collection-name.js";
+import type { IngestCodeConfig, TrajectoryIngestConfig } from "../../../../../src/core/types.js";
 
 /** Mock alias manager for QdrantManager */
-class MockAliasManager {
+class MockAliasManager extends QdrantAliasManager {
   private aliasMap = new Map<string, string>(); // aliasName -> collectionName
 
-  async createAlias(alias: string, collection: string): Promise<void> {
+  constructor() {
+    // Every public parent method is overridden below — the alias map never
+    // touches a connection; the private dep is satisfied, never used.
+    super({} as QdrantConnection);
+  }
+
+  override async createAlias(alias: string, collection: string): Promise<void> {
     this.aliasMap.set(alias, collection);
   }
 
-  async switchAlias(alias: string, _fromCollection: string, toCollection: string): Promise<void> {
+  override async switchAlias(alias: string, _fromCollection: string, toCollection: string): Promise<void> {
     this.aliasMap.set(alias, toCollection);
   }
 
-  async deleteAlias(alias: string): Promise<void> {
+  override async deleteAlias(alias: string): Promise<void> {
     this.aliasMap.delete(alias);
   }
 
-  async isAlias(name: string): Promise<boolean> {
+  override async isAlias(name: string): Promise<boolean> {
     return this.aliasMap.has(name);
   }
 
-  async listAliases(): Promise<{ aliasName: string; collectionName: string }[]> {
+  override async listAliases(): Promise<CollectionAliasEntry[]> {
     return Array.from(this.aliasMap.entries()).map(([aliasName, collectionName]) => ({
-      aliasName,
-      collectionName,
+      aliasName: fixtureCollectionAlias(aliasName),
+      collectionName: fixturePhysicalCollectionName(collectionName),
     }));
   }
 
   /** Resolve alias to real collection name (sync for internal use) */
   resolve(name: string): string {
     return this.aliasMap.get(name) ?? name;
+  }
+
+  override async resolveActive(name: string): Promise<PhysicalCollectionName> {
+    return fixturePhysicalCollectionName(this.resolve(name));
   }
 }
 
@@ -151,8 +169,8 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     return false;
   }
 
-  async listCollections(): Promise<string[]> {
-    return Array.from(this.collections.keys());
+  async listCollections(): Promise<PhysicalCollectionName[]> {
+    return physicalCollectionNamesListedByStorage(Array.from(this.collections.keys()));
   }
 
   async createCollection(
@@ -490,14 +508,8 @@ export function defaultTestConfig(): IngestCodeConfig {
     supportedExtensions: [".ts", ".js", ".py"],
     ignorePatterns: ["node_modules/**", "dist/**"],
     enableHybridSearch: false,
-  };
-}
-
-/** Default search test config */
-export function defaultExploreConfig(): ExploreCodeConfig {
-  return {
-    enableHybridSearch: false,
-    defaultSearchLimit: 5,
+    quantizationScalar: false,
+    turboQuant: true,
   };
 }
 

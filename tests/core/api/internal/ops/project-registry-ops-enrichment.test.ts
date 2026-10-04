@@ -4,8 +4,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { ProjectNameNotUniqueError } from "../../../../../src/core/api/errors.js";
 import { ProjectRegistryOps } from "../../../../../src/core/api/internal/ops/project-registry-ops.js";
+import { ProjectNameNotUniqueError } from "../../../../../src/core/api/public/errors.js";
 import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
 
 function fakeQdrant(opts: {

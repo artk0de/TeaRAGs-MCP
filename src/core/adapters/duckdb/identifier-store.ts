@@ -21,12 +21,15 @@
  * rewriting any caller's file.
  */
 
+// The identifier / method-name query and row vocabulary is storage surface —
+// imported from its OWNER (codegraph-storage.ts), not the codegraph barrel:
+// "import a sibling directly when you want the narrow surface". Declares the
+// coupling this store's SQL has with the storage contract
+// (bd tea-rags-mcp-89k7k.25).
 import type {
   AnchorIdentifierTypeRow,
-  CallableSymbolKind,
   IdentifierCalleeAggregateRow,
   IdentifierCalleeScopeQuery,
-  IdentifierDeclarationKind,
   IdentifierLanguageCountQuery,
   IdentifierLanguageCountRow,
   IdentifierNameKindTypeRow,
@@ -38,9 +41,7 @@ import type {
   IdentifierShapeSampleRow,
   IdentifierTypeAggregateQuery,
   IdentifierTypeAggregateRow,
-  IdentifierTypeMultiplicity,
   IdentifierTypeScopeQuery,
-  IdentifierTypeSource,
   MethodHeadWordQuery,
   MethodHeadWordRow,
   MethodNamePatternQuery,
@@ -48,6 +49,12 @@ import type {
   MethodNameScopeQuery,
   MethodTailVerbQuery,
   MethodTailVerbRow,
+} from "../../contracts/types/codegraph-storage.js";
+import type { CallableSymbolKind } from "../../contracts/types/codegraph-symbols.js";
+import type {
+  IdentifierDeclarationKind,
+  IdentifierTypeMultiplicity,
+  IdentifierTypeSource,
   RelPath,
   SymbolId,
 } from "../../contracts/types/codegraph.js";

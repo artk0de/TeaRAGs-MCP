@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { GraphDbClientPool } from "../../../src/core/adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../src/core/adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../src/core/adapters/qdrant/client.js";
-import { InvalidDocumentMetadataSchemaError } from "../../../src/core/api/errors.js";
 import { CollectionOps } from "../../../src/core/api/internal/ops/collection-ops.js";
+import { InvalidDocumentMetadataSchemaError } from "../../../src/core/api/public/errors.js";
 
 function createMockQdrant(): QdrantManager {
   return {

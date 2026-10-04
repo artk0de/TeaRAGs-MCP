@@ -6,9 +6,14 @@
  */
 
 import type { SearchResult } from "../../api/public/dto/explore.js";
-import { CodeChunkGrouper, isTestChunk, isTestExampleChunk } from "./chunk-grouping/code.js";
-import { DocChunkGrouper } from "./chunk-grouping/doc.js";
-import type { MemberVisibilityLookup, ScrollChunk } from "./chunk-grouping/types.js";
+import {
+  CodeChunkGrouper,
+  DocChunkGrouper,
+  isTestChunk,
+  isTestExampleChunk,
+  type MemberVisibilityLookup,
+  type ScrollChunk,
+} from "./chunk-grouping/index.js";
 import { memberOwnerOf, splitFragmentBase, splitFragmentOwnRows } from "./split-fragment.js";
 
 /**

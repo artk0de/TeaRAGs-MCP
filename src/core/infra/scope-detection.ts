@@ -2,7 +2,7 @@ import { isAbsolute } from "node:path";
 
 import picomatch from "picomatch";
 
-import { matchesTestFileConventions } from "./file-classification/classify.js";
+import { matchesTestFileConventions } from "./file-classification/index.js";
 
 export type ChunkScope = "source" | "test" | null;
 

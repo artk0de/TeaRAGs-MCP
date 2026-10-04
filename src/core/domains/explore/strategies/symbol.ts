@@ -68,11 +68,10 @@ import type {
 import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
 import type { WorkingTreeGraphReader } from "../../../contracts/types/working-tree.js";
 import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
-import { isTestExampleChunk } from "../chunk-grouping/code.js";
-import type { ScrollChunk } from "../chunk-grouping/types.js";
+import { isTestExampleChunk, type ScrollChunk } from "../chunk-grouping/index.js";
 import { historyClockRerankOption } from "../history-clock.js";
 import { renderWithDeclaredVisibility } from "../outline-visibility.js";
-import { applyEssentialSignals } from "../post-process.js";
+import { applyEssentialSignals, keepPathPatternMatches } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import { memberOwnerOf, splitFragmentBase } from "../split-fragment.js";
 import { resolveSymbols } from "../symbol-resolve.js";
@@ -80,7 +79,6 @@ import { examplePackMember } from "../test-pack.js";
 import { relativePathOf } from "../working-tree/substitute.js";
 import { claimWorkingTreeFloors, recordingTreeGraphReader } from "../working-tree/tree-graph-marker.js";
 import { BaseExploreStrategy } from "./base.js";
-import { keepPathPatternMatches } from "./path-pattern-fill.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
 
 /** Qdrant scroll page size for symbol discovery. */

@@ -7,10 +7,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import {
-  lookupEcmascriptSymbols,
-  lookupEcmascriptSymbolsByShortName,
-} from "../../../shared/ecmascript-symbol-lookup.js";
+import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
 import type { ResolverConfig } from "./shared.js";
 
 /**

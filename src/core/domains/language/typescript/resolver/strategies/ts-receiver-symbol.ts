@@ -1,10 +1,7 @@
 import { CONTINUE, deferred, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import {
-  lookupEcmascriptSymbols,
-  lookupEcmascriptSymbolsByShortName,
-} from "../../../shared/ecmascript-symbol-lookup.js";
+import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
 import { collectImportedFiles, type ResolverConfig } from "./shared.js";
 
 /**

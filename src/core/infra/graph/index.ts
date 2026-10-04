@@ -8,6 +8,13 @@
 export { tarjanScc, type AdjacencyMap, type Scc } from "./tarjan-scc.js";
 export { pageRank, type PageRankOptions, type PageRankResult } from "./page-rank.js";
 export {
+  otsuSplit,
+  resolveMajorityFlooredOtsuThreshold,
+  type MajorityFlooredOtsuOptions,
+  type MajorityFlooredOtsuThreshold,
+  type OtsuSplit,
+} from "./otsu-split.js";
+export {
   weightThresholdComponents,
   type WeightedComponent,
   type WeightedComponentAnalysis,

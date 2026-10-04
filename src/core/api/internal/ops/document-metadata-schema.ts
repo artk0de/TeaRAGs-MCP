@@ -16,12 +16,12 @@
 
 import { z } from "zod";
 
+import type { AddDocumentsRequest, DocumentMetadataSchema } from "../../public/dto/index.js";
 import {
   DocumentMetadataSchemaViolationError,
   InvalidDocumentMetadataSchemaError,
   type DocumentMetadataViolation,
-} from "../../errors.js";
-import type { AddDocumentsRequest, DocumentMetadataSchema } from "../../public/dto/index.js";
+} from "../../public/errors.js";
 
 /** Key of the schema inside the Qdrant collection metadata. */
 export const DOCUMENT_METADATA_SCHEMA_KEY = "documentMetadataSchema";

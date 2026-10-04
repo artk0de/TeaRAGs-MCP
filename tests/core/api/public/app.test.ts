@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createApp, type App } from "../../../../src/core/api/public/app.js";
+import { createApp } from "../../../../src/core/api/internal/app-factory.js";
+import type { App } from "../../../../src/core/api/public/app.js";
 
 describe("App interface — project registry methods", () => {
   it("declares registerProject, listProjects, unregisterProject", () => {

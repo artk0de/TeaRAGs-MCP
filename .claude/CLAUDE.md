@@ -9,7 +9,7 @@ an MCP tool surface (`src/mcp/`) and a CLI (`src/cli/`) over one core
 **This repo ships the search tooling, so use it on itself** — the self-index is
 project alias `tea-rags` (collection `code_8b243ffe`). Which tool for which
 intent is owned by `.claude-plugin/tea-rags/rules/search-cascade.md`; do not
-reinvent that decision tree here.
+reinvent that decision tree here. c
 
 ## Rule File Convention (MANDATORY)
 

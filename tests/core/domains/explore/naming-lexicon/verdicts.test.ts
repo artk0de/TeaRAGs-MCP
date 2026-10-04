@@ -9,11 +9,13 @@ import type { TypeNameRow } from "../../../../../src/core/domains/explore/naming
 import {
   judgeDraftName,
   judgeTypeDraft,
+  reexportTwins,
   typeDraftMeaningPairs,
   typeDraftPopulation,
   typeFamilyMembers,
   typeNameEvidence,
   withFamilyAnalogues,
+  type ReexportTwins,
 } from "../../../../../src/core/domains/explore/naming-lexicon/verdicts.js";
 
 const TYPE = "TaxAutomationDocument";
@@ -792,12 +794,14 @@ describe("judgeTypeDraft", () => {
     rows: readonly TypeNameRow[],
     draft: { name: string; path: string; extends?: string; symbolKind?: TypeNameRow["symbolKind"] },
     conceptNames: readonly string[] = [],
+    twins?: ReexportTwins,
   ) =>
     judgeTypeDraft({
       ...draft,
       casing: "pascal",
       evidence: typeNameEvidence(rows, typeDraftPopulation(draft)),
       conceptNames,
+      ...(twins !== undefined ? { reexportTwins: twins } : {}),
     });
 
   // A project-wide popular suffix with no inheritance or directory anchor is a guess, not an expected role.
@@ -1014,6 +1018,59 @@ describe("judgeTypeDraft", () => {
         row("Result", "app/services/payments/result.rb"),
       ];
       expect(judge(rows, { name: "Result", path: "app/services/payments/result.rb" }).verdict).toBe("COLLISION");
+    });
+  });
+
+  // bd tea-rags-mcp-89k7k.15: a barrel that re-exports a module's surface (`export { X } from ...`)
+  // is not an independent namespace — its row of a forwarded name is the SAME declaration, so the
+  // pair is no collision. A declaration no edge forwards still collides.
+  describe("a re-export twin is no collision", () => {
+    const CONTRACT = "src/core/contracts/types/architecture-report.ts";
+    const BARREL = "src/core/api/public/dto/architecture.ts";
+    const edge = (sourceRelPath: string, targetRelPath: string, reexportedExportNames: string[]) => ({
+      sourceRelPath,
+      targetRelPath,
+      callWeight: 0,
+      reexportedExportNames,
+    });
+
+    it("a barrel re-exporting the draft's name out of its file → no COLLISION", () => {
+      const rows = [...filler(6), row("Widget", CONTRACT), row("Widget", BARREL)];
+      const twins = reexportTwins([edge(BARREL, CONTRACT, ["Widget"])]);
+      expect(judge(rows, { name: "Widget", path: CONTRACT }, [], twins).verdict).not.toBe("COLLISION");
+    });
+
+    it("the join is symmetric — the barrel's own draft is no collision either", () => {
+      const rows = [...filler(6), row("Widget", CONTRACT), row("Widget", BARREL)];
+      const twins = reexportTwins([edge(BARREL, CONTRACT, ["Widget"])]);
+      expect(judge(rows, { name: "Widget", path: BARREL }, [], twins).verdict).not.toBe("COLLISION");
+    });
+
+    it("an edge that re-exports another name suppresses nothing", () => {
+      const rows = [...filler(6), row("Widget", CONTRACT), row("Widget", BARREL)];
+      const twins = reexportTwins([edge(BARREL, CONTRACT, ["Other"])]);
+      expect(judge(rows, { name: "Widget", path: CONTRACT }, [], twins).verdict).toBe("COLLISION");
+    });
+
+    it("a twin row plus an independent declaration → COLLISION on the independent one only", () => {
+      const rows = [
+        ...filler(6),
+        row("Widget", CONTRACT),
+        row("Widget", BARREL),
+        row("Widget", "src/plugins/extra/widget.ts"),
+      ];
+      const twins = reexportTwins([edge(BARREL, CONTRACT, ["Widget"])]);
+      expect(judge(rows, { name: "Widget", path: CONTRACT }, [], twins)).toMatchObject({
+        verdict: "COLLISION",
+        existing: { relPath: "src/plugins/extra/widget.ts" },
+      });
+    });
+
+    it("two independent declarations in unrelated files, no re-exports → COLLISION", () => {
+      const rows = [...filler(6), row("Commit", "src/git/commit.ts"), row("Commit", "src/vcs/commit.ts")];
+      expect(judge(rows, { name: "Commit", path: "src/vcs/commit.ts" }, [], reexportTwins([])).verdict).toBe(
+        "COLLISION",
+      );
     });
   });
 
@@ -1908,6 +1965,99 @@ describe("judgeDraftName — NO_CONVENTION", () => {
         byTypeRows: [{ ...registryField, n: 2, holders: 2 }],
       }),
     ).toEqual({ verdict: "MISFIT", suggestion: "collectionRegistry", holder: "Ops" });
+  });
+});
+
+// bd tea-rags-mcp-hzrxn: a param name its declaring file already settles is no free choice.
+describe("judgeDraftName — file-local convention dominance", () => {
+  const FILE = "src/core/api/internal/ops/naming-lexicon-ops.ts";
+  /** The declaring file's pre-existing bindings of the draft's role, one entry per name. */
+  const fileLocal = (bindings: { name: string; n: number }[]) => ({ file: FILE, bindings });
+
+  it("a param every pre-existing method of the file binds conforms to the file's idiom, not NO_CONVENTION", () => {
+    expect(
+      judgeDraftName({
+        name: "req",
+        kind: "param",
+        typeName: "NamingLexiconRequest",
+        casing: "camel",
+        fileLocal: fileLocal([{ name: "req", n: 3 }]),
+      }),
+    ).toEqual({ verdict: "CONFORMS", fileLocal: { file: FILE, bindings: 3 } });
+  });
+
+  it("a majority of the file's bindings, not unanimity, is the file's convention", () => {
+    expect(
+      judgeDraftName({
+        name: "req",
+        kind: "param",
+        typeName: "NamingLexiconRequest",
+        casing: "camel",
+        fileLocal: fileLocal([
+          { name: "req", n: 2 },
+          { name: "request", n: 1 },
+        ]),
+      }),
+    ).toEqual({ verdict: "CONFORMS", fileLocal: { file: FILE, bindings: 2 } });
+  });
+
+  it("a file-local minority below the majority share leaves NO_CONVENTION", () => {
+    expect(
+      judgeDraftName({
+        name: "req",
+        kind: "param",
+        typeName: "NamingLexiconRequest",
+        casing: "camel",
+        fileLocal: fileLocal([
+          { name: "req", n: 2 },
+          { name: "request", n: 3 },
+        ]),
+      }),
+    ).toEqual({ verdict: "NO_CONVENTION", prefer: { exact: "namingLexiconRequest", analogous: [] } });
+  });
+
+  it("a name too few pre-existing bindings carry leaves NO_CONVENTION", () => {
+    expect(
+      judgeDraftName({
+        name: "req",
+        kind: "param",
+        typeName: "NamingLexiconRequest",
+        casing: "camel",
+        fileLocal: fileLocal([{ name: "req", n: 1 }]),
+      }),
+    ).toEqual({ verdict: "NO_CONVENTION", prefer: { exact: "namingLexiconRequest", analogous: [] } });
+  });
+
+  it("a name the file's pre-existing bindings never carry leaves NO_CONVENTION", () => {
+    expect(
+      judgeDraftName({
+        name: "req",
+        kind: "param",
+        typeName: "NamingLexiconRequest",
+        casing: "camel",
+        fileLocal: fileLocal([{ name: "request", n: 2 }]),
+      }),
+    ).toEqual({ verdict: "NO_CONVENTION", prefer: { exact: "namingLexiconRequest", analogous: [] } });
+  });
+
+  it("no file-local evidence at all leaves NO_CONVENTION", () => {
+    expect(judgeDraftName({ name: "req", kind: "param", typeName: "NamingLexiconRequest", casing: "camel" })).toEqual({
+      verdict: "NO_CONVENTION",
+      prefer: { exact: "namingLexiconRequest", analogous: [] },
+    });
+  });
+
+  it("a project convention outranks the file's: the file-local precedent never lifts a MISFIT", () => {
+    expect(
+      judgeDraftName({
+        name: "req",
+        kind: "param",
+        typeName: "NamingLexiconRequest",
+        casing: "camel",
+        byTypeRows: [{ kind: "param", name: "request", n: 4, holders: 4, exampleOwner: OWNER }],
+        fileLocal: fileLocal([{ name: "req", n: 3 }]),
+      }),
+    ).toEqual({ verdict: "MISFIT", suggestion: "request", holder: OWNER });
   });
 });
 

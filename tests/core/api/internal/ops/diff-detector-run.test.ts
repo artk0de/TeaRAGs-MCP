@@ -12,10 +12,10 @@ import {
   DiffDetectorRun,
   type DiffDetectorCatalog,
   type DiffDetectorContractReader,
-  type DiffDetectorCouplingReader,
   type DiffDetectorFinding,
   type DiffDetectorFindings,
   type DiffDetectorGraphReader,
+  type DiffDetectorSilentCouplingFacts,
   type DiffDetectorSplitMergeReader,
 } from "../../../../../src/core/api/internal/ops/diff-detector-run.js";
 import { ReviewEdgeOverlay } from "../../../../../src/core/api/internal/ops/review-edge-overlay.js";
@@ -52,23 +52,62 @@ function graphOf(edges: readonly FixtureEdge[]): DiffDetectorGraphReader {
   };
 }
 
+/** One component's facts as the catalog serves them — the port's own shape, so fixtures cannot drift from it. */
+type ComponentFact = NonNullable<ReturnType<DiffDetectorCatalog["componentOf"]>>;
+
+/**
+ * The `connectionCount` a fixture carries when it states none — above the SDP
+ * floor (`DEFAULT_SDP_MIN_CONNECTION_COUNT`), so an existing fixture's verdict
+ * rests on its instability alone; the below-floor cases state their own.
+ */
+const ABOVE_CONNECTION_FLOOR = 10;
+
 /** Report-derived component/facade facts keyed the way the catalog serves them. */
 function catalogOf(
-  components: ReadonlyMap<string, { name: string; instability: number; distanceFromMainSequence: number }>,
+  components: ReadonlyMap<
+    string,
+    Omit<ComponentFact, "connectionCount"> & Partial<Pick<ComponentFact, "connectionCount">>
+  >,
   facades: ReadonlyMap<string, string> = new Map(),
 ): DiffDetectorCatalog {
   return {
-    componentOf: (relPath) => components.get(relPath),
+    componentOf: (relPath) => {
+      const fact = components.get(relPath);
+      return fact === undefined
+        ? undefined
+        : { ...fact, connectionCount: fact.connectionCount ?? ABOVE_CONNECTION_FLOOR };
+    },
     facadeOf: (componentName) => facades.get(componentName),
     isMarkedlyLessStable: (leanOn, leanedOn) => leanOn - leanedOn >= MARKEDLY_LESS_STABLE_TOLERANCE,
   };
 }
 
-/** Co-change pairs per changed file, from plain tuples. */
-function couplingOf(
-  pairs: ReadonlyMap<string, readonly { partner: string; support: number }[]>,
-): DiffDetectorCouplingReader {
-  return { partnersOf: (relPath) => pairs.get(relPath) ?? [] };
+/**
+ * The production silent-coupling verdict as a hand-built port: violations are
+ * the detector's OUTPUT (precomputed by the wiring), so tests construct them
+ * directly — every entry is already strong, unlinked and unexplained per the
+ * production gates.
+ */
+function factsOf(
+  violations: readonly { relPathA: string; relPathB: string; support: number; strength: number }[],
+  excluded: Partial<
+    Record<
+      "testEndpoints" | "generatedEndpoints" | "documentationEndpoints" | "unwalkedEndpoints" | "nonPositiveLift",
+      number
+    >
+  > = {},
+): DiffDetectorSilentCouplingFacts {
+  return {
+    violations,
+    excluded: {
+      testEndpoints: 0,
+      generatedEndpoints: 0,
+      documentationEndpoints: 0,
+      unwalkedEndpoints: 0,
+      nonPositiveLift: 0,
+      ...excluded,
+    },
+  };
 }
 
 /** Facade-contract facts the way the port serves them: facades by component, consumers by facade. */
@@ -130,7 +169,7 @@ function runWith(
   deps: {
     graph?: DiffDetectorGraphReader;
     catalog?: DiffDetectorCatalog;
-    coupling?: DiffDetectorCouplingReader;
+    silentCouplingFacts?: DiffDetectorSilentCouplingFacts;
     splitMerge?: DiffDetectorSplitMergeReader;
     splitMergeAbsentReason?: string;
     maxTraceHops?: number;
@@ -141,7 +180,7 @@ function runWith(
   const run = new DiffDetectorRun({
     graph: deps.graph ?? graphOf([]),
     catalog: deps.catalog ?? catalogOf(new Map()),
-    coupling: deps.coupling ?? couplingOf(new Map()),
+    ...(deps.silentCouplingFacts !== undefined ? { silentCouplingFacts: deps.silentCouplingFacts } : {}),
     ...(deps.splitMerge !== undefined ? { splitMerge: deps.splitMerge } : {}),
     ...(deps.splitMergeAbsentReason !== undefined ? { splitMergeAbsentReason: deps.splitMergeAbsentReason } : {}),
     ...(deps.maxTraceHops !== undefined ? { maxTraceHops: deps.maxTraceHops } : {}),
@@ -182,7 +221,6 @@ function runWithContract(
   const run = new DiffDetectorRun({
     graph: graphOf([]),
     catalog: catalogOf(new Map()),
-    coupling: couplingOf(new Map()),
     ...(contract !== undefined ? { contract } : {}),
   });
   return run.run({ changedFiles }, namedOverlayOf(overlayEdges, changedFiles));
@@ -370,24 +408,341 @@ describe("mainSequence", () => {
     const result = runWith({ catalog: catalogOf(saturated) }, ["src/hot/s.ts"], [["src/hot/s.ts", "src/lib/b.ts"]]);
     expect(subjectsOf(result, "mainSequence")).toEqual([]);
   });
+
+  // bd tea-rags-mcp-r8hme.45 (a): a component whose whole coupling is a couple
+  // of edges reads instability in steps of 1/n — at connectionCount 1 a single
+  // edge moves it by the full scale, so the diff's +1-per-edge approximation
+  // reads every small component as saturated. The whole-repo detector excludes
+  // such components (`summary.mainSequence.excluded.lowConnectionCount`); the
+  // diff-scoped judgement honors the same SDP floor, and COUNTS the exclusion
+  // on its family row — a zero over below-floor components is not a clean pass.
+  it("excludes a touched component below the SDP connection floor — one edge swings its instability by half the scale", () => {
+    const smallN = new Map<string, ComponentFact>([
+      ["src/tiny/t.ts", { name: "tiny", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 1 }],
+      ["src/lib/b.ts", { name: "lib", instability: 0.2, distanceFromMainSequence: 0.1, connectionCount: 8 }],
+    ]);
+    const result = runWith({ catalog: catalogOf(smallN) }, ["src/tiny/t.ts"], [["src/tiny/t.ts", "src/lib/b.ts"]]);
+    expect(subjectsOf(result, "mainSequence")).toEqual([]);
+    expect(result.detectors.find((d) => d.detector === "mainSequence")).toMatchObject({
+      excludedLowConnectionCount: 1,
+    });
+  });
+
+  it("excludes at the floor the whole-repo detector excludes at — connectionCount below DEFAULT_SDP_MIN_CONNECTION_COUNT, not at it", () => {
+    const atFloor = new Map<string, ComponentFact>([
+      ["src/at/a.ts", { name: "at", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 5 }],
+      ["src/lib/b.ts", { name: "lib", instability: 0.2, distanceFromMainSequence: 0.1, connectionCount: 8 }],
+    ]);
+    const judged = runWith({ catalog: catalogOf(atFloor) }, ["src/at/a.ts"], [["src/at/a.ts", "src/lib/b.ts"]]);
+    expect(subjectsOf(judged, "mainSequence")).toEqual(["at"]);
+
+    const below = new Map<string, ComponentFact>([
+      ["src/at/a.ts", { name: "at", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 4 }],
+      ["src/lib/b.ts", { name: "lib", instability: 0.2, distanceFromMainSequence: 0.1, connectionCount: 8 }],
+    ]);
+    const excluded = runWith({ catalog: catalogOf(below) }, ["src/at/a.ts"], [["src/at/a.ts", "src/lib/b.ts"]]);
+    expect(subjectsOf(excluded, "mainSequence")).toEqual([]);
+  });
+
+  // bd tea-rags-mcp-r8hme.45 (b): a D-delta whose every contributing edge
+  // terminates inside a contracts/ directory is the legal foundation
+  // direction — the lowest layer, which everything may depend on. The finding
+  // stays (the distance moved), but carries the annotation as DATA so a
+  // consumer triages it instead of judging blind.
+  it("annotates a D-delta whose contributing edges all terminate at contracts/", () => {
+    const toFoundation = new Map<string, ComponentFact>([
+      ["src/app/a.ts", { name: "app", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 9 }],
+      [
+        "src/core/contracts/types/x.ts",
+        { name: "src/core/contracts/types", instability: 0.1, distanceFromMainSequence: 0.1, connectionCount: 9 },
+      ],
+    ]);
+    const result = runWith(
+      { catalog: catalogOf(toFoundation) },
+      ["src/app/a.ts"],
+      [["src/app/a.ts", "src/core/contracts/types/x.ts"]],
+    );
+    const finding = result.findings.find((f) => f.detector === "mainSequence");
+    expect(finding?.subject).toBe("app");
+    expect(finding?.foundationTerminal).toBe(true);
+  });
+
+  it("leaves an above-floor component's mixed delta judged but unannotated — one non-contracts edge is enough", () => {
+    const mixed = new Map<string, ComponentFact>([
+      ["src/app/a.ts", { name: "app", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 9 }],
+      ["src/lib/b.ts", { name: "lib", instability: 0.2, distanceFromMainSequence: 0.1, connectionCount: 9 }],
+      [
+        "src/core/contracts/types/x.ts",
+        { name: "src/core/contracts/types", instability: 0.1, distanceFromMainSequence: 0.1, connectionCount: 9 },
+      ],
+    ]);
+    const result = runWith(
+      { catalog: catalogOf(mixed) },
+      ["src/app/a.ts"],
+      [
+        ["src/app/a.ts", "src/core/contracts/types/x.ts"],
+        ["src/app/a.ts", "src/lib/b.ts"],
+      ],
+    );
+    const finding = result.findings.find((f) => f.detector === "mainSequence");
+    expect(finding?.subject).toBe("app");
+    expect(finding?.foundationTerminal).toBeUndefined();
+  });
+
+  // bd tea-rags-mcp-89k7k.19: the 89k7k.14 replay residual — one GENUINELY-new
+  // edge on a 24-connection low-I component (the api/public barrel class) read
+  // as a full-scale instability step, D 0.000 -> 0.946, because the +1-per-edge
+  // approximation had no access to the component's actual fan counts. The
+  // catalog now serves Ca/Ce (the report's own ArchitectureComponent facts),
+  // and the recompute is the whole-repo detector's own arithmetic applied to
+  // the post-diff fan: I' = (Ce + k)/(Ca + Ce + k) over k genuinely-new
+  // cross-component edges — the subtraction's output, never the re-read set.
+  describe("fan-count recompute", () => {
+    /** The residual's component: Ca 22, Ce 2, connectionCount 24, I = 2/24, on the sequence. */
+    function lowIFanFixture(): Map<string, ComponentFact> {
+      return new Map<string, ComponentFact>([
+        [
+          "src/api/barrel.ts",
+          {
+            name: "api",
+            instability: 2 / 24,
+            distanceFromMainSequence: 0,
+            connectionCount: 24,
+            afferentCount: 22,
+            efferentCount: 2,
+          },
+        ],
+        [
+          "src/lib/b.ts",
+          {
+            name: "lib",
+            instability: 0.2,
+            distanceFromMainSequence: 0.1,
+            connectionCount: 24,
+            afferentCount: 19,
+            efferentCount: 5,
+          },
+        ],
+      ]);
+    }
+
+    it("recomputes I' from the served fan counts — one genuinely-new edge on a 24-connection component moves D by (Ce+1)/(Ca+Ce+1), not a full-scale step", () => {
+      const result = runWith(
+        { catalog: catalogOf(lowIFanFixture()) },
+        ["src/api/barrel.ts"],
+        [["src/api/barrel.ts", "src/lib/b.ts"]],
+      );
+      expect(subjectsOf(result, "mainSequence")).toEqual(["api"]);
+      const finding = result.findings.find((f) => f.detector === "mainSequence");
+      // I 2/24 -> 3/25 with A held at 1 - 2/24 = 22/24: D moves 0 -> 22/24 + 3/25 - 1 = 0.0367.
+      // Under the +1-per-edge step this saturated to I=1.000, D 0.917 — the residual class.
+      expect(finding?.evidence[0]).toBe("D 0.000 -> 0.037");
+      expect(finding?.evidence[1]).toBe("I 0.083 -> 0.120 = (2+1)/(22+2+1)");
+    });
+
+    it("recomputes with k = the genuinely-new edge count — two new edges give (Ce+2)/(Ca+Ce+2)", () => {
+      const twoTargets = new Map(lowIFanFixture());
+      twoTargets.set("src/other/c.ts", {
+        name: "other",
+        instability: 0.3,
+        distanceFromMainSequence: 0.1,
+        connectionCount: 24,
+        afferentCount: 17,
+        efferentCount: 7,
+      });
+      const result = runWith(
+        { catalog: catalogOf(twoTargets) },
+        ["src/api/barrel.ts"],
+        [
+          ["src/api/barrel.ts", "src/lib/b.ts"],
+          ["src/api/barrel.ts", "src/other/c.ts"],
+        ],
+      );
+      expect(subjectsOf(result, "mainSequence")).toEqual(["api"]);
+      const finding = result.findings.find((f) => f.detector === "mainSequence");
+      // I 2/24 -> 4/26 with A held at 22/24: D moves 0 -> 22/24 + 4/26 - 1 = 0.0705.
+      expect(finding?.evidence[0]).toBe("D 0.000 -> 0.071");
+      expect(finding?.evidence[1]).toBe("I 0.083 -> 0.154 = (2+2)/(22+2+2)");
+    });
+
+    it("keeps the small-N guard ahead of the recompute — a below-floor component is excluded and counted even when its fan counts are served", () => {
+      const smallN = new Map<string, ComponentFact>([
+        [
+          "src/tiny/t.ts",
+          {
+            name: "tiny",
+            instability: 1,
+            distanceFromMainSequence: 0.2,
+            connectionCount: 1,
+            afferentCount: 0,
+            efferentCount: 1,
+          },
+        ],
+        [
+          "src/lib/b.ts",
+          {
+            name: "lib",
+            instability: 0.2,
+            distanceFromMainSequence: 0.1,
+            connectionCount: 8,
+            afferentCount: 6,
+            efferentCount: 2,
+          },
+        ],
+      ]);
+      const result = runWith({ catalog: catalogOf(smallN) }, ["src/tiny/t.ts"], [["src/tiny/t.ts", "src/lib/b.ts"]]);
+      expect(subjectsOf(result, "mainSequence")).toEqual([]);
+      expect(result.detectors.find((d) => d.detector === "mainSequence")).toMatchObject({
+        excludedLowConnectionCount: 1,
+      });
+    });
+
+    it("falls back to the +1-per-edge step when the catalog serves no fan counts — absence is never read as 'no edges' (documented fallback)", () => {
+      const noFans = new Map<string, ComponentFact>([
+        ["src/app/a.ts", { name: "app", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 9 }],
+        ["src/lib/b.ts", { name: "lib", instability: 0.2, distanceFromMainSequence: 0.1, connectionCount: 9 }],
+      ]);
+      const result = runWith({ catalog: catalogOf(noFans) }, ["src/app/a.ts"], [["src/app/a.ts", "src/lib/b.ts"]]);
+      const finding = result.findings.find((f) => f.detector === "mainSequence");
+      // The pre-89k7k.19 step, byte-identical: I 0.5 -> min(1, 1.5) = 1.0, A = 0.8, D 0.3 -> 0.8.
+      expect(finding?.evidence[0]).toBe("D 0.300 -> 0.800");
+      expect(finding?.evidence).toHaveLength(2);
+    });
+  });
+});
+
+// bd tea-rags-mcp-89k7k.14: stableDependencies and mainSequence judge the
+// overlay's unique pairs MINUS the pairs the indexed graph already holds —
+// only what the diff GENUINELY adds. A changed file's tree read re-serves
+// every import it still holds, so judging the whole set read a one-line
+// barrel edit as 23 new dependencies and saturated the barrel's component to
+// I=1.000 (the recorded replay class).
+describe("diff-added subtraction", () => {
+  const components = new Map([
+    ["src/app/a.ts", { name: "app", instability: 0.2, distanceFromMainSequence: 0.4 }],
+    ["src/lib/b.ts", { name: "lib", instability: 0.9, distanceFromMainSequence: 0.2 }],
+    ["src/lib/c.ts", { name: "lib", instability: 0.9, distanceFromMainSequence: 0.2 }],
+  ]);
+
+  it("does not judge a pair the indexed graph already holds — no SDP finding and no D-delta from a re-read import", () => {
+    const result = runWith(
+      {
+        graph: graphOf([["src/app/a.ts", "src/lib/b.ts"]]),
+        catalog: catalogOf(components),
+      },
+      ["src/app/a.ts"],
+      [["src/app/a.ts", "src/lib/b.ts"]],
+    );
+    expect(subjectsOf(result, "stableDependencies")).toEqual([]);
+    expect(subjectsOf(result, "mainSequence")).toEqual([]);
+  });
+
+  it("still judges a genuinely new pair the indexed graph does not hold", () => {
+    const result = runWith(
+      {
+        graph: graphOf([["src/app/a.ts", "src/lib/c.ts"]]),
+        catalog: catalogOf(components),
+      },
+      ["src/app/a.ts"],
+      [["src/app/a.ts", "src/lib/b.ts"]],
+    );
+    expect(subjectsOf(result, "stableDependencies")).toEqual(["src/app/a.ts -> src/lib/b.ts"]);
+    expect(subjectsOf(result, "mainSequence")).toEqual(["app"]);
+  });
+
+  it("subtracts per pair, not per file — a changed file whose imports did not change contributes zero crossing edges", () => {
+    // The barrel-edit replay class: every overlay pair is a pre-existing
+    // import, so the D-delta machinery has nothing diff-added to weigh.
+    const barrel = new Map<string, ComponentFact>([
+      ["src/api/barrel.ts", { name: "api", instability: 0.054, distanceFromMainSequence: 0.0, connectionCount: 24 }],
+      ["src/lib/b.ts", { name: "lib", instability: 0.9, distanceFromMainSequence: 0.2, connectionCount: 24 }],
+      ["src/lib/c.ts", { name: "lib", instability: 0.9, distanceFromMainSequence: 0.2, connectionCount: 24 }],
+    ]);
+    const result = runWith(
+      {
+        graph: graphOf([
+          ["src/api/barrel.ts", "src/lib/b.ts"],
+          ["src/api/barrel.ts", "src/lib/c.ts"],
+        ]),
+        catalog: catalogOf(barrel),
+      },
+      ["src/api/barrel.ts"],
+      [
+        ["src/api/barrel.ts", "src/lib/b.ts"],
+        ["src/api/barrel.ts", "src/lib/c.ts"],
+      ],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("judges every pair when the graph port is absent — nothing to subtract is never read as 'no edges added' (documented fallback)", () => {
+    const run = new DiffDetectorRun({ catalog: catalogOf(components) });
+    const result = run.run(
+      { changedFiles: ["src/app/a.ts"] },
+      overlayOf([["src/app/a.ts", "src/lib/b.ts"]], ["src/app/a.ts"]),
+    );
+    expect(subjectsOf(result, "stableDependencies")).toEqual(["src/app/a.ts -> src/lib/b.ts"]);
+    expect(subjectsOf(result, "mainSequence")).toEqual(["app"]);
+  });
+
+  it("keeps foundationTerminal on genuinely-new contracts edges — subtracting the pre-existing pairs never silences the annotation", () => {
+    // The a3656904 replay class (bd tea-rags-mcp-r8hme.45): both findings
+    // were single contracts edges the diff DID introduce; the file's other
+    // pre-existing imports must not dilute or silence them.
+    const toFoundation = new Map<string, ComponentFact>([
+      ["src/app/a.ts", { name: "app", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 9 }],
+      ["src/lib/b.ts", { name: "lib", instability: 0.2, distanceFromMainSequence: 0.1, connectionCount: 9 }],
+      [
+        "src/core/contracts/types/x.ts",
+        { name: "src/core/contracts/types", instability: 0.1, distanceFromMainSequence: 0.1, connectionCount: 9 },
+      ],
+    ]);
+    const result = runWith(
+      {
+        graph: graphOf([["src/app/a.ts", "src/lib/b.ts"]]),
+        catalog: catalogOf(toFoundation),
+      },
+      ["src/app/a.ts"],
+      [
+        ["src/app/a.ts", "src/lib/b.ts"],
+        ["src/app/a.ts", "src/core/contracts/types/x.ts"],
+      ],
+    );
+    const finding = result.findings.find((f) => f.detector === "mainSequence");
+    expect(finding?.subject).toBe("app");
+    expect(finding?.foundationTerminal).toBe(true);
+  });
 });
 
 describe("silentCoupling", () => {
-  const COUPLING = new Map([["src/a.ts", [{ partner: "src/p.ts", support: 0.82 }]]]);
+  // The run CONSUMES the production verdict (bd tea-rags-mcp-89k7k.1.10):
+  // violations arrive already filtered by the detector's exclusion taxonomy,
+  // strength cut and shared-neighbour explanation — the judge only intersects
+  // them with the diff.
+  const VIOLATION = { relPathA: "src/a.ts", relPathB: "src/p.ts", support: 9, strength: 0.57 };
 
-  it("reports an unexplained strong pair", () => {
-    const result = runWith({ coupling: couplingOf(COUPLING) }, ["src/a.ts"], [["src/a.ts", "src/q.ts"]]);
+  it("reports a production violation involving a changed file, with support and strength evidence", () => {
+    const result = runWith({ silentCouplingFacts: factsOf([VIOLATION]) }, ["src/a.ts"], [["src/a.ts", "src/q.ts"]]);
     expect(subjectsOf(result, "silentCoupling")).toEqual(["src/a.ts ~ src/p.ts"]);
-    expect(result.findings[0]?.evidence[0]).toContain("0.820");
+    expect(result.findings[0]?.evidence).toEqual(["co-change support 9.000", "strength 0.570"]);
+  });
+
+  it("reports a violation whose changed file is the relPathB side", () => {
+    const result = runWith({ silentCouplingFacts: factsOf([VIOLATION]) }, ["src/p.ts"], [["src/p.ts", "src/q.ts"]]);
+    expect(subjectsOf(result, "silentCoupling")).toEqual(["src/p.ts ~ src/a.ts"]);
   });
 
   it("treats a pair the overlay adds a structural edge for as explained", () => {
-    const result = runWith({ coupling: couplingOf(COUPLING) }, ["src/a.ts"], [["src/a.ts", "src/p.ts"]]);
+    const result = runWith({ silentCouplingFacts: factsOf([VIOLATION]) }, ["src/a.ts"], [["src/a.ts", "src/p.ts"]]);
     expect(result.findings).toEqual([]);
   });
 
   it("skips pairs whose partner is also in the diff", () => {
-    const result = runWith({ coupling: couplingOf(COUPLING) }, ["src/a.ts", "src/p.ts"], [["src/a.ts", "src/q.ts"]]);
+    const result = runWith(
+      { silentCouplingFacts: factsOf([VIOLATION]) },
+      ["src/a.ts", "src/p.ts"],
+      [["src/a.ts", "src/q.ts"]],
+    );
     expect(result.findings).toEqual([]);
   });
 
@@ -395,12 +750,65 @@ describe("silentCoupling", () => {
     const result = runWith(
       {
         graph: graphOf([["src/p.ts", "src/a.ts"]]),
-        coupling: couplingOf(COUPLING),
+        silentCouplingFacts: factsOf([VIOLATION]),
       },
       ["src/a.ts"],
       [["src/a.ts", "src/q.ts"]],
     );
     expect(result.findings).toEqual([]);
+  });
+
+  it("only judges the production violation list — a pair the snapshot's linkage union linked never reaches the judge", () => {
+    // The type-only-import class (bd tea-rags-mcp-r8hme.12, tea-rags-mcp-89k7k.4):
+    // the production detector links such pairs before they become violations, so
+    // the facts the wiring hands over cannot contain them; a linked pair missing
+    // from the list is silence here by construction.
+    const result = runWith(
+      { silentCouplingFacts: factsOf([{ relPathA: "src/a.ts", relPathB: "src/q.ts", support: 9, strength: 0.57 }]) },
+      ["src/a.ts", "src/types.ts"],
+      [],
+    );
+    expect(subjectsOf(result, "silentCoupling")).toEqual(["src/a.ts ~ src/q.ts"]);
+  });
+
+  it("reports each violation once when the scope lists its changed file twice", () => {
+    const result = runWith(
+      { silentCouplingFacts: factsOf([VIOLATION]) },
+      ["src/a.ts", "src/a.ts"],
+      [["src/a.ts", "src/q.ts"]],
+    );
+    expect(subjectsOf(result, "silentCoupling")).toEqual(["src/a.ts ~ src/p.ts"]);
+  });
+
+  it("carries the production excluded counters on the status row verbatim", () => {
+    const result = runWith(
+      {
+        silentCouplingFacts: factsOf([VIOLATION], {
+          testEndpoints: 112,
+          documentationEndpoints: 24,
+          unwalkedEndpoints: 4,
+        }),
+      },
+      ["src/a.ts"],
+      [["src/a.ts", "src/q.ts"]],
+    );
+    const silentCoupling = result.detectors.find((detector) => detector.detector === "silentCoupling");
+    expect(silentCoupling?.excluded).toEqual({
+      testEndpoints: 112,
+      generatedEndpoints: 0,
+      documentationEndpoints: 24,
+      unwalkedEndpoints: 4,
+      nonPositiveLift: 0,
+    });
+  });
+
+  it("is silent without the facts port — absence is silence, no excluded block, never a zero verdict", () => {
+    const result = runWith({}, ["src/a.ts"], [["src/a.ts", "src/q.ts"]]);
+    expect(subjectsOf(result, "silentCoupling")).toEqual([]);
+    const silentCoupling = result.detectors.find((detector) => detector.detector === "silentCoupling");
+    expect(silentCoupling?.built).toBe(true);
+    expect(silentCoupling?.findingCount).toBe(0);
+    expect(silentCoupling?.excluded).toBeUndefined();
   });
 });
 
@@ -552,7 +960,6 @@ describe("facadeContract", () => {
     const run = new DiffDetectorRun({
       graph: graphOf([]),
       catalog: catalogOf(new Map()),
-      coupling: couplingOf(new Map()),
       contract: contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["b"] }]]])),
     });
     const first = run.run({ changedFiles: [FACADE] }, overlay);
@@ -708,7 +1115,6 @@ describe("splitCandidates", () => {
     const run = new DiffDetectorRun({
       graph: graphOf([]),
       catalog: catalogOf(new Map()),
-      coupling: couplingOf(new Map()),
       splitMerge: splitMergeOf(splitVerdicts, WIDE),
     });
     const first = run.run({ changedFiles: ["src/wide/x1.ts", "src/wide/y1.ts"] }, overlay);
@@ -734,7 +1140,6 @@ describe("detectors", () => {
           ]),
           new Map([["lib", "src/lib/index.ts"]]),
         ),
-        coupling: couplingOf(new Map([["src/a.ts", [{ partner: "src/p.ts", support: 0.9 }]]])),
       },
       ["src/a.ts", "src/app/a.ts"],
       [
@@ -777,11 +1182,7 @@ describe("detectors", () => {
 
 describe("absence of data", () => {
   it("is never a violation: every fact absent over real edges stays silent", () => {
-    const result = runWith(
-      { coupling: couplingOf(new Map([["src/a.ts", []]])) },
-      ["src/a.ts"],
-      [["src/a.ts", "src/b.ts"]],
-    );
+    const result = runWith({}, ["src/a.ts"], [["src/a.ts", "src/b.ts"]]);
     expect(result.findings).toEqual([]);
     for (const entry of result.detectors) {
       expect(entry.findingCount).toBe(0);
@@ -792,5 +1193,44 @@ describe("absence of data", () => {
     const result = runWith({}, [], []);
     expect(result.findings).toEqual([]);
     expect(result.detectors.filter((entry) => entry.built)).toHaveLength(5);
+  });
+});
+
+// bd tea-rags-mcp-89k7k.1.9: a truncated diff scope — changed files fell past
+// the reader's file cap — must never read as a clean pass. The closing edge of
+// a cycle can live ONLY in a skipped file, so a zero over unseen files is
+// partial, and the status says so with the skipped count.
+describe("detector statuses over a truncated diff scope", () => {
+  function runScope(scope: { changedFiles: readonly string[]; skippedFiles?: number }): DiffDetectorFindings {
+    return new DiffDetectorRun({
+      graph: graphOf([]),
+      catalog: catalogOf(new Map()),
+    }).run(scope, overlayOf([], scope.changedFiles));
+  }
+
+  it("marks every BUILT family partial with the skipped count — a zero over unseen files is never a clean pass", () => {
+    const result = runScope({ changedFiles: ["src/a.ts"], skippedFiles: 3 });
+    for (const status of result.detectors) {
+      if (!status.built) continue;
+      expect(status, `${status.detector} claimed a clean pass over a truncated diff`).toMatchObject({
+        scopeSkippedFiles: 3,
+      });
+    }
+  });
+
+  it("an unbuilt family keeps its built:false reason — absence was never a clean pass either, and carries no marker", () => {
+    const result = runScope({ changedFiles: ["src/a.ts"], skippedFiles: 3 });
+    const unbuilt = result.detectors.filter((status) => !status.built);
+    expect(unbuilt.length).toBeGreaterThan(0);
+    for (const status of unbuilt) {
+      expect(status.scopeSkippedFiles).toBeUndefined();
+      expect(status.reason).toBeDefined();
+    }
+  });
+
+  it("an untruncated scope carries no marker — zeros are then clean passes", () => {
+    const result = runScope({ changedFiles: ["src/a.ts"] });
+    expect(result.detectors.every((status) => status.scopeSkippedFiles === undefined)).toBe(true);
+    expect(result.detectors.every((status) => status.scopeSkippedFiles !== 0)).toBe(true);
   });
 });

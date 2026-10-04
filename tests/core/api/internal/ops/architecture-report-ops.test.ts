@@ -5,11 +5,11 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { UnknownArchitectureComponentError } from "../../../../../src/core/api/errors.js";
 import {
   ArchitectureReportOps,
   buildArchitectureKnotMembership,
 } from "../../../../../src/core/api/internal/ops/architecture-report-ops.js";
+import { UnknownArchitectureComponentError } from "../../../../../src/core/api/public/errors.js";
 import type {
   FileDependencyGraph,
   NonPublicMemberEdge,
@@ -115,8 +115,9 @@ describe("ArchitectureReportOps#build", () => {
         },
       },
       // The same core⇄lib cycle the SDP detector reads as root cause, as the
-      // layering detector (bd tea-rags-mcp-r8hme.22) reports it: a knot and
-      // its minority-weight back-edge.
+      // layering detector (bd tea-rags-mcp-r8hme.22) reports it: a knot whose
+      // canonical cut takes the core → lib flow (bd tea-rags-mcp-r8hme.42),
+      // beside its minority-weight back-edge.
       {
         detector: "layering",
         kind: "knot",
@@ -124,10 +125,13 @@ describe("ArchitectureReportOps#build", () => {
         evidence: {
           feedbackArcSet: [
             {
-              sourceComponent: "lib",
-              targetComponent: "core",
-              callWeight: 1,
-              fileEdges: [{ sourceRelPath: "lib/f5.ts", targetRelPath: "core/a.ts", callWeight: 1 }],
+              sourceComponent: "core",
+              targetComponent: "lib",
+              callWeight: 3,
+              fileEdges: [
+                { sourceRelPath: "core/a.ts", targetRelPath: "lib/f1.ts", callWeight: 2 },
+                { sourceRelPath: "core/b.ts", targetRelPath: "lib/f2.ts", callWeight: 1 },
+              ],
             },
           ],
           cutEdgeCount: 1,
@@ -183,6 +187,83 @@ describe("ArchitectureReportOps#build", () => {
         cycleWithDependents: true,
       },
     ]);
+  });
+
+  // The response shape must carry what the detector's evidence rows carry: the
+  // names an edge's imports bind are how a reader tells the four callWeight-0
+  // causes apart (bd tea-rags-mcp-89k7k.2). The names here are the live shape
+  // that started the bead — app.ts's runtime + type import of drift.
+  it("carries the file edges' export names through to the SDP evidence (tea-rags-mcp-89k7k.2)", async () => {
+    const g = graph();
+    g.edges[2] = {
+      sourceRelPath: "base/a.ts",
+      targetRelPath: "lib/f4.ts",
+      callWeight: 3,
+      importedExportNames: ["formatIndexDriftReport", "IndexDriftReporter"],
+    };
+
+    const report = await new ArchitectureReportOps().build(graphDb(g), {});
+    const base = report.violations.find((v) => v.detector === "stableDependencies" && v.sourceComponent === "base");
+
+    expect(base && "evidence" in base ? base.evidence.fileEdges : []).toEqual([
+      {
+        sourceRelPath: "base/a.ts",
+        targetRelPath: "lib/f4.ts",
+        callWeight: 3,
+        importedExportNames: ["formatIndexDriftReport", "IndexDriftReporter"],
+      },
+    ]);
+  });
+
+  // The response shape must carry the detector's composition-root annotation:
+  // an SDP delta sourced from the declared composition root is triage data (bd
+  // tea-rags-mcp-r8hme.51) — the mapper dropping it would repeat the 0qaht.45
+  // gap, so the survival is pinned by exact shape.
+  it("carries the composition-root annotation through to the SDP evidence (tea-rags-mcp-r8hme.51)", async () => {
+    const files = [file("src/bootstrap/a.ts"), file("src/bootstrap/b.ts"), file("vendor/v.ts"), file("other/o.ts")];
+    const edges: FileDependencyGraph["edges"] = [
+      { sourceRelPath: "src/bootstrap/a.ts", targetRelPath: "src/core/lib/f1.ts", callWeight: 2 },
+      { sourceRelPath: "src/bootstrap/b.ts", targetRelPath: "src/core/lib/f2.ts", callWeight: 1 },
+      { sourceRelPath: "src/core/lib/f1.ts", targetRelPath: "vendor/v.ts", callWeight: 1 },
+      { sourceRelPath: "src/core/lib/f2.ts", targetRelPath: "vendor/v.ts", callWeight: 1 },
+      { sourceRelPath: "src/core/lib/f3.ts", targetRelPath: "vendor/v.ts", callWeight: 1 },
+      { sourceRelPath: "src/core/lib/f4.ts", targetRelPath: "vendor/v.ts", callWeight: 1 },
+      { sourceRelPath: "src/core/lib/f5.ts", targetRelPath: "vendor/v.ts", callWeight: 1 },
+      { sourceRelPath: "other/o.ts", targetRelPath: "src/core/lib/f3.ts", callWeight: 1 },
+    ];
+    // Six importers give src/bootstrap the support floor room: Ca 6, Ce 2,
+    // I = 2/8 against the lib's 5/8 — the same uphill shape the detector-level
+    // fixture uses.
+    for (let i = 1; i <= 6; i++) {
+      files.push(file(`app/c${i}.ts`));
+      edges.push({ sourceRelPath: `app/c${i}.ts`, targetRelPath: "src/bootstrap/b.ts", callWeight: 1 });
+    }
+    for (let i = 1; i <= 5; i++) files.push(file(`src/core/lib/f${i}.ts`));
+    const g: FileDependencyGraph = { files, edges };
+
+    const report = await new ArchitectureReportOps().build(graphDb(g), {});
+    const violation = report.violations.find((v) => v.detector === "stableDependencies");
+
+    expect(violation && "sourceComponent" in violation ? violation.sourceComponent : undefined).toBe("src/bootstrap");
+    expect(
+      violation && "evidence" in violation ? violation.evidence : expect.fail("no stableDependencies violation"),
+    ).toEqual({
+      sourceInstability: 2 / 8,
+      targetInstability: 5 / 8,
+      instabilityDelta: 5 / 8 - 2 / 8,
+      sourceAfferentCount: 6,
+      sourceEfferentCount: 2,
+      targetAfferentCount: 3,
+      targetEfferentCount: 5,
+      callWeight: 3,
+      directoryRelation: "disjoint",
+      fileEdgeCount: 2,
+      compositionRoot: true,
+      fileEdges: [
+        { sourceRelPath: "src/bootstrap/a.ts", targetRelPath: "src/core/lib/f1.ts", callWeight: 2 },
+        { sourceRelPath: "src/bootstrap/b.ts", targetRelPath: "src/core/lib/f2.ts", callWeight: 1 },
+      ],
+    });
   });
 
   it("summarises the component graph, what was judged and excluded, naming each exclusion reason", async () => {
@@ -253,10 +334,11 @@ describe("ArchitectureReportOps#build", () => {
     const whole = await new ArchitectureReportOps().build(graphDb(), {});
 
     const knot = scoped.violations.find((v) => v.detector === "layering" && v.kind === "knot");
-    // core owns no lib/** file; the cut edge lib → core is carried by lib/f5.ts.
+    // core owns no lib/** file; the cut edge core → lib is carried by
+    // core/a.ts and core/b.ts, so it rides out of scope.
     expect(knot).toMatchObject({
       components: ["lib"],
-      evidence: { outOfScopeMemberCount: 1, outOfScopeFeedbackEdgeCount: 0 },
+      evidence: { outOfScopeMemberCount: 1, outOfScopeFeedbackEdgeCount: 1 },
     });
     const wholeKnot = whole.violations.find((v) => v.detector === "layering" && v.kind === "knot");
     expect(wholeKnot).toBeDefined();
@@ -382,7 +464,12 @@ function facadeGraph(): FileDependencyGraph {
 
 describe("ArchitectureReportOps#build — leakingAbstraction (bd tea-rags-mcp-jetrd)", () => {
   it("reports both leak kinds with per-line evidence after the SDP findings", async () => {
-    const report = await new ArchitectureReportOps().build(graphDb(facadeGraph()), {});
+    // mod/shown.ts imports the external bypasser ext/e.ts back — the module's
+    // graph threads out to the violating importer, the shape the re-export
+    // recipe turns into a cycle (bd tea-rags-mcp-89k7k.17).
+    const g = facadeGraph();
+    g.edges.push({ sourceRelPath: "mod/shown.ts", targetRelPath: "ext/e.ts", callWeight: 0 });
+    const report = await new ArchitectureReportOps().build(graphDb(g), {});
     const evidence = {
       moduleDir: "mod",
       facadeRelPath: "mod/index.ts",
@@ -397,14 +484,20 @@ describe("ArchitectureReportOps#build — leakingAbstraction (bd tea-rags-mcp-je
         kind: "internal-reach",
         sourceRelPath: "ext/d.ts",
         targetRelPath: "mod/inner.ts",
-        evidence: { ...evidence, callWeight: 1 },
+        evidence: { ...evidence, callWeight: 1, kindBasis: "file-rule", reExportUnsafe: false },
       },
       {
         detector: "leakingAbstraction",
         kind: "bypass",
         sourceRelPath: "ext/e.ts",
         targetRelPath: "mod/shown.ts",
-        evidence: { ...evidence, callWeight: 0 },
+        evidence: {
+          ...evidence,
+          callWeight: 0,
+          kindBasis: "file-rule",
+          reExportUnsafe: true,
+          reExportCyclePath: ["mod/index.ts", "mod/shown.ts", "ext/e.ts"],
+        },
       },
     ]);
     expect(report.rootCauses.filter((r) => r.detector === "leakingAbstraction")).toEqual([
@@ -520,6 +613,26 @@ describe("ArchitectureReportOps#build — leakingAbstraction (bd tea-rags-mcp-je
     );
     expect(unnamed?.evidence).not.toHaveProperty("importedNames");
     expect(unnamed?.evidence).not.toHaveProperty("nonExportedNames");
+  });
+
+  it("carries kindBasis in the evidence: names for a names-certified bypass, file-rule when the file rule decided (bd tea-rags-mcp-0qaht.45)", async () => {
+    // Names-certified bypass: the deep import takes only what the facade re-exports.
+    const named = facadeGraph();
+    named.edges = named.edges.map((e) => {
+      if (e.sourceRelPath === "mod/index.ts") return { ...e, reexportedExportNames: ["Shown"] };
+      if (e.sourceRelPath === "ext/e.ts") return { ...e, importedExportNames: ["Shown"] };
+      return e;
+    });
+    const namedReport = await new ArchitectureReportOps().build(graphDb(named), {});
+    expect(
+      namedReport.violations.find((v) => v.detector === "leakingAbstraction" && v.sourceRelPath === "ext/e.ts"),
+    ).toMatchObject({ kind: "bypass", evidence: { kindBasis: "names" } });
+
+    // File rule: no names recorded on either side — the file-level rule decided.
+    const plainReport = await new ArchitectureReportOps().build(graphDb(facadeGraph()), {});
+    expect(
+      plainReport.violations.find((v) => v.detector === "leakingAbstraction" && v.sourceRelPath === "ext/e.ts"),
+    ).toMatchObject({ kind: "bypass", evidence: { kindBasis: "file-rule" } });
   });
 });
 
@@ -1514,12 +1627,12 @@ describe("ArchitectureReportOps#build — knotOf view and drillDown (bd tea-rags
 
 /**
  * Keep cost per cut edge on the knotOf page (bd tea-rags-mcp-r8hme.40). On the
- * bidirectional ring every weight is equal, so the greedy sequence is
- * c00, c01, …, c29 and the cut is the 29 edges c_{i+1}→c_i plus c29→c00; what
- * remains is the chain c00→c01→…→c29 and c00→c29. Keeping c_{i+1}→c_i
- * re-collapses exactly c_i⇄c_{i+1} (c_i reaches c_{i+1} only directly), 30
- * members on 29 levels. Keeping c29→c00 closes the whole chain: all 30
- * members, one level.
+ * bidirectional ring every weight is equal, so the canonical greedy sequence
+ * (bd tea-rags-mcp-r8hme.42) is c29, c28, …, c00 and the cut is the 29 ring
+ * edges c_i→c_{i+1} plus the wrap c00→c29; what remains is the chain
+ * c29→c28→…→c00 and c01→c00. Keeping c_i→c_{i+1} re-collapses exactly
+ * c_i⇄c_{i+1} (c_i reaches c_{i+1} only directly), 30 members on 29 levels.
+ * Keeping c00→c29 closes the whole chain: all 30 members, one level.
  */
 describe("ArchitectureReportOps#build — knotOf keep cost per cut edge (bd tea-rags-mcp-r8hme.40)", () => {
   const pairs = (edges: readonly { sourceComponent: string; targetComponent: string }[] | undefined) =>
@@ -1529,23 +1642,37 @@ describe("ArchitectureReportOps#build — knotOf keep cost per cut edge (bd tea-
     const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), { knotOf: "c07", limit: 10 });
 
     const page = report.knot?.knot?.feedbackArcSet ?? [];
-    expect(pairs(page)).toEqual(
-      Array.from({ length: 10 }, (_, i) => `c${String(i + 1).padStart(2, "0")}->c${String(i).padStart(2, "0")}`),
-    );
+    // Canonical ELS (bd tea-rags-mcp-r8hme.42): the cut takes the ring
+    // direction c_i -> c_{i+1} plus the wrap c00 -> c29, one edge per
+    // adjacent pair, sorted by source.
+    expect(pairs(page)).toEqual([
+      "c00->c01",
+      "c00->c29",
+      "c01->c02",
+      "c02->c03",
+      "c03->c04",
+      "c04->c05",
+      "c05->c06",
+      "c06->c07",
+      "c07->c08",
+      "c08->c09",
+    ]);
     for (const edge of page) {
-      expect(edge.keepCost).toEqual({ recollapsedMemberCount: 2, levelsAfterKeep: 29 });
+      // The wrap edge re-collapses the whole ring; every ring step only its own pair.
+      const expected =
+        edge.sourceComponent === "c00" && edge.targetComponent === "c29"
+          ? { recollapsedMemberCount: 30, levelsAfterKeep: 1 }
+          : { recollapsedMemberCount: 2, levelsAfterKeep: 29 };
+      expect(edge.keepCost).toEqual(expected);
     }
   });
 
   it("prices the edge that closes the whole ring as re-collapsing every member", async () => {
-    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), {
-      knotOf: "c07",
-      limit: 10,
-      offset: 20,
-    });
+    const report = await new ArchitectureReportOps().build(graphDb(bidirectionalRing()), { knotOf: "c07", limit: 10 });
 
+    // The wrap edge sorts by source right beside c00 -> c01.
     const closing = report.knot?.knot?.feedbackArcSet.find(
-      (edge) => edge.sourceComponent === "c29" && edge.targetComponent === "c00",
+      (edge) => edge.sourceComponent === "c00" && edge.targetComponent === "c29",
     );
     expect(closing?.keepCost).toEqual({ recollapsedMemberCount: 30, levelsAfterKeep: 1 });
   });
@@ -1558,11 +1685,16 @@ describe("ArchitectureReportOps#build — knotOf keep cost per cut edge (bd tea-
     });
 
     const page = report.knot?.knot?.feedbackArcSet ?? [];
-    expect(pairs(page)).toEqual(["c01->c00", "c02->c01"]);
+    // c00, c01 and c02 own the files carrying four cut edges: the two ring
+    // steps out of c00 and c01, and the wrap c00 -> c29.
+    expect(pairs(page)).toEqual(["c00->c01", "c00->c29", "c01->c02", "c02->c03"]);
+    const costOf = (pair: string) =>
+      page.find((edge) => `${edge.sourceComponent}->${edge.targetComponent}` === pair)?.keepCost;
     // 29 levels is a 30-member reading — the 3 in-scope members alone could span at most 3.
-    for (const edge of page) {
-      expect(edge.keepCost).toEqual({ recollapsedMemberCount: 2, levelsAfterKeep: 29 });
-    }
+    expect(costOf("c00->c01")).toEqual({ recollapsedMemberCount: 2, levelsAfterKeep: 29 });
+    expect(costOf("c00->c29")).toEqual({ recollapsedMemberCount: 30, levelsAfterKeep: 1 });
+    expect(costOf("c01->c02")).toEqual({ recollapsedMemberCount: 2, levelsAfterKeep: 29 });
+    expect(costOf("c02->c03")).toEqual({ recollapsedMemberCount: 2, levelsAfterKeep: 29 });
   });
 
   it("leaves the report's knot findings without a keep cost", async () => {

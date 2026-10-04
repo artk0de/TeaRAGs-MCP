@@ -40,8 +40,8 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
 import { resolveViaChain } from "../../../resolver-chain.js";
-import { lookupEcmascriptSymbolsByShortName } from "../../../shared/ecmascript-symbol-lookup.js";
 import { classifyLexicalCallee } from "../ts-local-callee.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import { sameWalkerScope } from "../ts-walker-scope.js";

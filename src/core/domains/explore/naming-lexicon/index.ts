@@ -84,6 +84,7 @@ export {
   TYPE_DRAFT_KINDS,
   judgeDraftName,
   judgeTypeDraft,
+  reexportTwins,
   singleCarrierHeadFiles,
   typeDraftAlignmentWords,
   typeDraftEvidence,
@@ -95,8 +96,11 @@ export {
 } from "./verdicts.js";
 export type {
   DraftNameJudgementInput,
+  FileLocalBindings,
+  FileLocalRoleBinding,
   NamingExpectedTypeRole,
   NamingPreference,
+  ReexportTwins,
   TypeDraftJudgementInput,
   TypeDraftPopulation,
   TypeNameEvidence,

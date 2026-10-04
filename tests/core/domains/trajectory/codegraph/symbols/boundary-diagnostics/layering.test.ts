@@ -160,7 +160,7 @@ describe("buildLayeringModel", () => {
     expect(model.coverage).toBe(1);
   });
 
-  it("condenses a knot to one node, and the weighted FAS cuts the minority edge", () => {
+  it("condenses a knot to one node, and the weighted FAS cuts one edge", () => {
     const model = buildLayeringModel(buildComponentGraph(knot(), []));
 
     expect(model.levelCount).toBe(3);
@@ -171,12 +171,19 @@ describe("buildLayeringModel", () => {
     expect(model.knots).toEqual([
       {
         components: ["ulanzi", "clock"],
+        // Canonical ELS (bd tea-rags-mcp-r8hme.42): the weighted delta takes
+        // clock (+3) into the right block first, ulanzi follows as the sink,
+        // and the sequence [ulanzi, clock] reads clock → ulanzi backwards —
+        // the whole 4-weight flow, not the minority edge.
         feedbackArcSet: [
           {
-            sourceComponent: "ulanzi",
-            targetComponent: "clock",
-            callWeight: 1,
-            fileEdges: [{ sourceRelPath: "ulanzi/u1.ts", targetRelPath: "clock/c1.ts", callWeight: 1 }],
+            sourceComponent: "clock",
+            targetComponent: "ulanzi",
+            callWeight: 4,
+            fileEdges: [
+              { sourceRelPath: "clock/c1.ts", targetRelPath: "ulanzi/u1.ts", callWeight: 3 },
+              { sourceRelPath: "clock/c2.ts", targetRelPath: "ulanzi/u2.ts", callWeight: 1 },
+            ],
           },
         ],
         cutEdgeCount: 1,
@@ -277,10 +284,13 @@ describe("detectLayeringViolations", () => {
         components: ["ulanzi", "clock"],
         feedbackArcSet: [
           {
-            sourceComponent: "ulanzi",
-            targetComponent: "clock",
-            callWeight: 1,
-            fileEdges: [{ sourceRelPath: "ulanzi/u1.ts", targetRelPath: "clock/c1.ts", callWeight: 1 }],
+            sourceComponent: "clock",
+            targetComponent: "ulanzi",
+            callWeight: 4,
+            fileEdges: [
+              { sourceRelPath: "clock/c1.ts", targetRelPath: "ulanzi/u1.ts", callWeight: 3 },
+              { sourceRelPath: "clock/c2.ts", targetRelPath: "ulanzi/u2.ts", callWeight: 1 },
+            ],
           },
         ],
         cutEdgeCount: 1,
@@ -329,10 +339,10 @@ describe("detectLayeringViolations", () => {
         components: ["x", "y"],
         feedbackArcSet: [
           {
-            sourceComponent: "y",
-            targetComponent: "x",
+            sourceComponent: "x",
+            targetComponent: "y",
             callWeight: 2,
-            fileEdges: [{ sourceRelPath: "y/y.ts", targetRelPath: "x/x.ts", callWeight: 2 }],
+            fileEdges: [{ sourceRelPath: "x/x.ts", targetRelPath: "y/y.ts", callWeight: 2 }],
           },
         ],
         cutEdgeCount: 1,
@@ -538,13 +548,24 @@ describe("detectLayeringViolations — source scope (bd tea-rags-mcp-r8hme.33)",
     const whole = judge(knot()).violations.find((v) => v.kind === "knot");
     const scoped = judgeScoped(knot(), "clock/**").violations.find((v) => v.kind === "knot");
 
-    // ulanzi owns no clock/** file; the only cut edge ulanzi → clock is carried by ulanzi/u1.ts.
+    // ulanzi owns no clock/** file; the cut edge clock → ulanzi is carried by
+    // the clock files, so the projected knot keeps it.
     expect(scoped).toMatchObject({
       kind: "knot",
       components: ["clock"],
       outOfScopeMemberCount: 1,
-      feedbackArcSet: [],
-      outOfScopeFeedbackEdgeCount: 1,
+      feedbackArcSet: [
+        {
+          sourceComponent: "clock",
+          targetComponent: "ulanzi",
+          callWeight: 4,
+          fileEdges: [
+            { sourceRelPath: "clock/c1.ts", targetRelPath: "ulanzi/u1.ts", callWeight: 3 },
+            { sourceRelPath: "clock/c2.ts", targetRelPath: "ulanzi/u2.ts", callWeight: 1 },
+          ],
+        },
+      ],
+      outOfScopeFeedbackEdgeCount: 0,
     });
     // The cost of dissolving the WHOLE knot does not shrink with the scope.
     expect(whole).toBeDefined();
@@ -554,14 +575,15 @@ describe("detectLayeringViolations — source scope (bd tea-rags-mcp-r8hme.33)",
     });
   });
 
-  it("keeps a cut edge in a projected knot when an in-scope file carries it", () => {
+  it("keeps no cut edge in a projected knot when an out-of-scope file carries it", () => {
     const scoped = judgeScoped(knot(), "ulanzi/**").violations.find((v) => v.kind === "knot");
 
+    // The cut edge clock → ulanzi is carried by the clock files; ulanzi owns none.
     expect(scoped).toMatchObject({
       components: ["ulanzi"],
       outOfScopeMemberCount: 1,
-      feedbackArcSet: [{ sourceComponent: "ulanzi", targetComponent: "clock" }],
-      outOfScopeFeedbackEdgeCount: 0,
+      feedbackArcSet: [],
+      outOfScopeFeedbackEdgeCount: 1,
     });
   });
 
@@ -650,10 +672,13 @@ describe("lookupLayeringKnot (bd tea-rags-mcp-r8hme.38)", () => {
         components: ["ulanzi", "clock"],
         feedbackArcSet: [
           {
-            sourceComponent: "ulanzi",
-            targetComponent: "clock",
-            callWeight: 1,
-            fileEdges: [{ sourceRelPath: "ulanzi/u1.ts", targetRelPath: "clock/c1.ts", callWeight: 1 }],
+            sourceComponent: "clock",
+            targetComponent: "ulanzi",
+            callWeight: 4,
+            fileEdges: [
+              { sourceRelPath: "clock/c1.ts", targetRelPath: "ulanzi/u1.ts", callWeight: 3 },
+              { sourceRelPath: "clock/c2.ts", targetRelPath: "ulanzi/u2.ts", callWeight: 1 },
+            ],
           },
         ],
         cutEdgeCount: 1,
@@ -694,17 +719,28 @@ describe("lookupLayeringKnot (bd tea-rags-mcp-r8hme.38)", () => {
   });
 
   it("projects the knot onto a scope the way the knot finding is projected", () => {
-    // ulanzi owns no clock/** file; the cut edge and the back-edge are carried by ulanzi/u1.ts.
+    // The cut edge clock → ulanzi is carried by the clock files — in scope;
+    // the back-edge is carried by ulanzi/u1.ts — out of scope.
     expect(lookup(knot(), "ulanzi", "clock/**")).toMatchObject({
       kind: "inKnot",
       position: { level: 1, depth: 1, inKnot: true },
       knot: {
         components: ["clock"],
-        feedbackArcSet: [],
+        feedbackArcSet: [
+          {
+            sourceComponent: "clock",
+            targetComponent: "ulanzi",
+            callWeight: 4,
+            fileEdges: [
+              { sourceRelPath: "clock/c1.ts", targetRelPath: "ulanzi/u1.ts", callWeight: 3 },
+              { sourceRelPath: "clock/c2.ts", targetRelPath: "ulanzi/u2.ts", callWeight: 1 },
+            ],
+          },
+        ],
         cutEdgeCount: 1,
         backEdges: [],
         outOfScopeMemberCount: 1,
-        outOfScopeFeedbackEdgeCount: 1,
+        outOfScopeFeedbackEdgeCount: 0,
       },
     });
   });

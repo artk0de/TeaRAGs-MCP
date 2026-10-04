@@ -9,8 +9,7 @@
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
-import { fileScopeOf, reduceToFileScope, type FileScope } from "../chunk-grouping/file-scope.js";
-import type { ScrollChunk } from "../chunk-grouping/types.js";
+import { fileScopeOf, reduceToFileScope, type FileScope, type ScrollChunk } from "../chunk-grouping/index.js";
 import { historyClockRerankOption } from "../history-clock.js";
 import { filterMetaOnly } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";

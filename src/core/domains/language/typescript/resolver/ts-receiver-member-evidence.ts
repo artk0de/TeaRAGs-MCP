@@ -61,7 +61,7 @@ import type {
   SymbolDefinition,
   SymbolLookupRole,
 } from "../../../../contracts/types/codegraph.js";
-import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
+import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../kernel/index.js";
 import { reexportOriginFile, type ResolverConfig } from "./strategies/shared.js";
 import { calledMemberDeclarations, declarationOwnerName } from "./strategies/ts-type-checker-shared.js";
 import { loadTypeScriptCompiler } from "./ts-compiler-loader.js";

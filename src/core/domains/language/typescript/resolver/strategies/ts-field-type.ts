@@ -2,7 +2,7 @@ import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { lookupEcmascriptSymbols } from "../../../shared/ecmascript-symbol-lookup.js";
+import { lookupEcmascriptSymbols } from "../../../kernel/index.js";
 import type { ResolverConfig } from "./shared.js";
 
 /**

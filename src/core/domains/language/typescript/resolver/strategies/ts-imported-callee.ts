@@ -7,7 +7,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { lookupEcmascriptSymbolsByShortName } from "../../../shared/ecmascript-symbol-lookup.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
 import { mapImportToFile } from "../ts-path-mapper.js";
 import { reexportOriginFile, type ResolverConfig } from "./shared.js";
 

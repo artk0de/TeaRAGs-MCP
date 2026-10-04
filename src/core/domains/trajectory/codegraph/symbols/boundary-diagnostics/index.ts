@@ -8,7 +8,9 @@ export {
 } from "./component-graph.js";
 export {
   COMPONENT_EVIDENCE_FILE_EDGE_LIMIT,
+  DECLARED_COMPOSITION_ROOT_COMPONENTS,
   detectComponentStableDependencyViolations,
+  isDeclaredCompositionRoot,
 } from "./component-stable-dependencies.js";
 export { classifyDirectoryRelation } from "./directory-relation.js";
 export { FACADE_AGGREGATION_REASON, isFacadeAggregationEdge } from "./facade-aggregation.js";
@@ -35,13 +37,6 @@ export {
 export { buildLayeringModel, detectLayeringViolations, layeringKnotKeepCosts, lookupLayeringKnot } from "./layering.js";
 export { buildLayerMap, collapseDirectory, nodeMapping } from "./layer-map.js";
 export { condensedPositions, sccKnots, weightedFeedbackArcSet, type SimpleEdge } from "./layer-graph.js";
-export {
-  otsuSplit,
-  resolveMajorityFlooredOtsuThreshold,
-  type MajorityFlooredOtsuOptions,
-  type MajorityFlooredOtsuThreshold,
-  type OtsuSplit,
-} from "./otsu-split.js";
 export {
   excludeNonProductionFiles,
   NON_PRODUCTION_REASON,

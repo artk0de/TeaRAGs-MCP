@@ -22,9 +22,9 @@ import {
   createGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
 } from "../../../__helpers__/git-working-tree-fixture.js";
-import { InvalidParameterError } from "../../../../../src/core/api/errors.js";
 import { resolveWorkingTree } from "../../../../../src/core/api/internal/collection-resolver.js";
 import { readDiffScope, readTreeLag } from "../../../../../src/core/api/internal/ops/diff-scope-reader.js";
+import { InvalidParameterError } from "../../../../../src/core/api/public/errors.js";
 import type { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/index.js";
 
 const CHANGED = "src/git/file-reader.ts";
@@ -111,6 +111,50 @@ describe("readDiffScope", { timeout: 60_000 }, () => {
     const read = await readDiffScope(repo, {});
     expect(read.files).toHaveLength(200);
     expect(read.skipped).toBe(2);
+  });
+
+  // bd tea-rags-mcp-89k7k.1.9: files past the cap used to be whatever sorts
+  // last in git's order — a production change was dropped while non-production
+  // notes survived it. The cap now drops by a stated relevance order instead.
+  it("over the cap drops non-production files first — the production change is never what sorts last", async () => {
+    mkdirSync(join(repo, "spikes"));
+    for (let i = 0; i < 200; i++) writeFileSync(join(repo, `spikes/s${String(i).padStart(3, "0")}.md`), "x\n");
+    // 200 masked spike files + the modified production file = 201 changed; the
+    // production file sorts AFTER every spikes/ path.
+    const read = await readDiffScope(repo, {});
+    expect(read.skipped).toBe(1);
+    expect(read.files).toHaveLength(200);
+    expect(read.files).toContain(CHANGED);
+    // All spikes tie at one added line; the tie breaks by path ascending, so
+    // the LAST spike path is the one dropped.
+    expect(read.files).not.toContain("spikes/s199.md");
+  });
+
+  it("over the cap drops the production files with the fewest added lines — ties by path, deterministic", async () => {
+    // A clean base, then a 201-file working-tree change where every z file
+    // gains one line and `aaa-deletion.ts` only loses one: zero added lines.
+    git(repo, "add", "-A");
+    git(repo, "commit", "-q", "-m", "base");
+    for (let i = 0; i < 200; i++) {
+      writeFileSync(join(repo, `src/git/z${String(i).padStart(3, "0")}.ts`), "export const Z = 1;\n");
+    }
+    writeFileSync(join(repo, "src/git/aaa-deletion.ts"), "export const A = 1;\nexport const B = 2;\n");
+    git(repo, "add", "-A");
+    git(repo, "commit", "-q", "-m", "files");
+    for (let i = 0; i < 200; i++) {
+      writeFileSync(
+        join(repo, `src/git/z${String(i).padStart(3, "0")}.ts`),
+        "export const Z = 1;\nexport const MORE = 2;\n",
+      );
+    }
+    writeFileSync(join(repo, "src/git/aaa-deletion.ts"), "export const A = 1;\n");
+
+    const read = await readDiffScope(repo, {});
+    expect(read.skipped).toBe(1);
+    // Zero added lines = the least review surface: dropped first, however
+    // early the path sorts.
+    expect(read.files).not.toContain("src/git/aaa-deletion.ts");
+    expect(read.files).toContain("src/git/z000.ts");
   });
 
   it("a non-production changed file is not judged, and counts as not judged", async () => {

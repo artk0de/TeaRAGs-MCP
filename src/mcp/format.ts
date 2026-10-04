@@ -12,11 +12,95 @@ export interface McpToolResult {
 }
 
 export function formatMcpResponse(data: unknown): McpToolResult {
-  return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+  return { content: [{ type: "text", text: makeStrictJsonSafe(JSON.stringify(data, null, 2)) }] };
 }
 
 export function formatMcpText(text: string): McpToolResult {
-  return { content: [{ type: "text", text }] };
+  return { content: [{ type: "text", text: makeStrictJsonSafe(text) }] };
+}
+
+/**
+ * C0 control chars that are never legal unescaped anywhere in a JSON document:
+ * inside strings they break strict parsers, and outside strings only the JSON
+ * whitespace chars (\t \n \r) are legal. `JSON.stringify` output can never
+ * carry them, so their presence marks hand-assembled text.
+ */
+// Detecting control chars IS this module's job — the rule targets accidental ones.
+// eslint-disable-next-line no-control-regex
+const RAW_WIRE_UNSAFE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/;
+const JSON_WHITESPACE = /[\t\n\r]/;
+
+/**
+ * Make response text safe for strict JSON consumers (bd tea-rags-mcp-89k7k.21).
+ *
+ * The ONE serialization boundary every MCP tool response passes through —
+ * `formatMcpText` forwards pre-built text verbatim, and several handlers
+ * assemble text AFTER a `JSON.stringify` call, so a raw control character in
+ * file-derived evidence (import specifiers, commit messages, composite keys)
+ * reached the wire unescaped and broke jq / python json.load / JSON.parse.
+ *
+ * Escapes raw C0 control chars found INSIDE string literals; anything outside
+ * string literals (pretty-print indentation, appended plain-text sections) is
+ * left untouched. Already-escaped sequences (`\u000b`, `\\`) are recognized
+ * and preserved. Clean text — the overwhelmingly common case — comes back
+ * byte-identical.
+ */
+export function makeStrictJsonSafe(text: string): string {
+  if (!RAW_WIRE_UNSAFE.test(text) && !JSON_WHITESPACE.test(text)) return text;
+  return escapeRawControlCharsInStrings(text);
+}
+
+/** The JSON short escapes, else the `\uXXXX` form strict parsers accept. */
+function controlEscape(code: number): string {
+  switch (code) {
+    case 0x08:
+      return "\\b";
+    case 0x09:
+      return "\\t";
+    case 0x0a:
+      return "\\n";
+    case 0x0c:
+      return "\\f";
+    case 0x0d:
+      return "\\r";
+    default:
+      return `\\u${code.toString(16).padStart(4, "0")}`;
+  }
+}
+
+/**
+ * Single pass tracking in-string state: a backslash skips the escaped char, a
+ * quote toggles, a raw control char inside a string is escaped. Rebuilds the
+ * string only when a mutation actually happened — clean text returns as-is.
+ */
+function escapeRawControlCharsInStrings(text: string): string {
+  let pieces: string[] | null = null;
+  let inString = false;
+  let copied = 0;
+  const n = text.length;
+  for (let i = 0; i < n; i++) {
+    const code = text.charCodeAt(i);
+    if (!inString) {
+      if (code === 0x22) inString = true; // "
+      continue;
+    }
+    if (code === 0x5c) {
+      i++; // backslash: the escaped char (quote, u, control) cannot toggle state
+      continue;
+    }
+    if (code === 0x22) {
+      inString = false; // "
+      continue;
+    }
+    if (code < 0x20) {
+      if (pieces === null) pieces = [];
+      pieces.push(text.slice(copied, i), controlEscape(code));
+      copied = i + 1;
+    }
+  }
+  if (pieces === null) return text;
+  pieces.push(text.slice(copied));
+  return pieces.join("");
 }
 
 export function formatMcpError(message: string): McpToolResult {

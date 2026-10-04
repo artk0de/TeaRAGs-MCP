@@ -13,11 +13,12 @@ import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { InvalidQueryError } from "../errors.js";
+import { keepPathPatternMatches } from "../post-process.js";
 import { RankModule, type RankOptions } from "../rank-module.js";
 import { filterReadsWorkingTreeSignals } from "../working-tree/overlay.js";
 import { workingTreeRowAdmitted } from "../working-tree/sparse-floor.js";
 import { BaseExploreStrategy } from "./base.js";
-import { fetchUntilPathPatternFilled, keepPathPatternMatches, type PathPatternPage } from "./path-pattern-fill.js";
+import { fetchUntilPathPatternFilled, type PathPatternPage } from "./path-pattern-fill.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
 
 /** Initial overfetch multiplier for file-level dedup. */

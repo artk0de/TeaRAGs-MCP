@@ -17,18 +17,29 @@
  *
  * The co-change snapshot arrives PRE-READ in the build context (the
  * orchestration reads it once when either consuming section was requested);
- * a snapshot that is absent, never built, or unreadable degrades the coupling
- * port to no partners — the run's silence contract — while the
- * `incompleteChange` section reports the unreadable case when it was asked
- * for. An empty diff is a VALID review: built, no findings.
+ * a snapshot that is absent, never built, or unreadable degrades the
+ * silent-coupling facts to the empty verdict and `wireSplitMerge` to its
+ * absent reason — the run's silence contract — while the `incompleteChange`
+ * section reports the unreadable case when it was asked for. An empty diff is
+ * a VALID review: built, no findings.
  */
 
 import { randomInt } from "node:crypto";
 
 import { REVIEW_EDGE_MAX_AGE_SECONDS } from "../../../../adapters/duckdb/review-edge-store.js";
-import type { FileDependencyEdge, TemporalCochangeGraph } from "../../../../contracts/types/codegraph.js";
+import type {
+  FileDependencyEdge,
+  FileDependencyGraphFile,
+  TemporalCochangeGraph,
+} from "../../../../contracts/types/codegraph.js";
 import type { ComponentGraph } from "../../../../domains/trajectory/codegraph/symbols/index.js";
-import { computeSplitMergeVerdicts } from "../../../../domains/trajectory/codegraph/temporal/index.js";
+import {
+  computeSplitMergeVerdicts,
+  detectSilentCoupling,
+  linkImportedCochangePairs,
+  oneWalkedViolationImporters,
+  type SilentCouplingReport,
+} from "../../../../domains/trajectory/codegraph/temporal/index.js";
 import type { ReviewSectionNotJudgedEntry } from "../../../public/dto/review.js";
 import {
   ArchitectureFactsCatalog,
@@ -36,12 +47,14 @@ import {
   distanceFromMainSequenceByComponent,
   readProductionArchitectureGraph,
 } from "../architecture-facts.js";
+import { isDocumentationPath, type ModuleImportSpecifierLookup } from "../architecture-report-ops.js";
 import {
   DiffDetectorRun,
   type DiffDetectorContractReader,
-  type DiffDetectorCouplingReader,
+  type DiffDetectorFinding,
   type DiffDetectorGraphReader,
   type DiffDetectorRunDeps,
+  type DiffDetectorSilentCouplingFacts,
 } from "../diff-detector-run.js";
 import {
   readReviewFileEdges,
@@ -101,32 +114,67 @@ export class WiredGraphReader implements DiffDetectorGraphReader {
 const EMPTY_EDGES: readonly IndexedGraphEdge[] = [];
 
 /**
- * `DiffDetectorCouplingReader` over the pre-read co-change snapshot: the pair
- * table is undirected (stored once, `relPathA < relPathB`), so a file's
- * partners are its rows on EITHER side. `null`/`undefined` — no build, or not
- * read for this review — answers no partners: absence is the run's silence,
- * never a zero verdict.
+ * The production silent-coupling verdict for the diff-scoped family (bd
+ * tea-rags-mcp-89k7k.1.10): run the whole-repo detector ONCE over the SAME
+ * pre-read snapshot, the SAME production graph (walked census + file
+ * dependency edges for the shared-neighbour index) and the SAME documentation
+ * predicate the report uses — then hand the run its violation list and
+ * exclusion counters verbatim. Re-judging raw partner rows in the diff path
+ * (the pre-fix behaviour) skipped the strength cut and the shared-neighbour
+ * explanation and let 19–98 historical src~test / CLAUDE.md~code pairs per
+ * diff drown the findings; consuming the verdict makes drift structurally
+ * impossible. No build / unreadable snapshot degrades to an empty graph
+ * (built:false summary, no violations) — silence, never a zero verdict.
+ *
+ * The report's second `linkImportedCochangePairs` pass (asset-import
+ * specifiers, bd tea-rags-mcp-rbnkp) is replicated SCOPED to the pairs the
+ * review can report (bd tea-rags-mcp-2wsnt): the run judges pairs touching
+ * `changedFiles` only, so one-walked violations off the diff cost no read.
+ * Diff-touching one-walked pairs get their walked endpoint's specifiers read
+ * — `readImportSpecifiers`, the SAME payload read the report wires
+ * (`readPayloadImportSpecifiers`) — the snapshot is relinked and the detector
+ * re-run, so a linked pair drops out of the facts exactly as the report's
+ * second pass drops it. A stale payload (the specifier recorded at index
+ * time, not read from the tree) is the report's own semantics, kept here for
+ * parity. No wired read (unit wiring), no snapshot, or no diff-touching
+ * one-walked pair leaves the single-pass verdict.
  */
-export class WiredCouplingReader implements DiffDetectorCouplingReader {
-  private readonly partnersByFile: ReadonlyMap<string, readonly { partner: string; support: number }[]>;
-
-  constructor(snapshot: TemporalCochangeGraph | null | undefined) {
-    const partners = new Map<string, { partner: string; support: number }[]>();
-    if (snapshot) {
-      for (const edge of snapshot.edges) {
-        pushTo(partners, edge.relPathA, { partner: edge.relPathB, support: edge.support });
-        pushTo(partners, edge.relPathB, { partner: edge.relPathA, support: edge.support });
-      }
-    }
-    this.partnersByFile = partners;
+export async function buildSilentCouplingFacts(
+  snapshot: TemporalCochangeGraph | null | undefined,
+  productionFiles: readonly FileDependencyGraphFile[],
+  productionEdges: readonly FileDependencyEdge[],
+  changedFiles: readonly string[],
+  readImportSpecifiers?: ModuleImportSpecifierLookup,
+): Promise<DiffDetectorSilentCouplingFacts> {
+  const graph = snapshot ?? { meta: null, edges: [] };
+  const options = {
+    isDocumentation: isDocumentationPath,
+    fileDependencyEdges: productionEdges,
+  };
+  const first = detectSilentCoupling(graph, productionFiles, options);
+  if (readImportSpecifiers === undefined || snapshot === null || snapshot === undefined) {
+    return silentCouplingFactsOf(first);
   }
-
-  partnersOf(relPath: string): readonly { partner: string; support: number }[] {
-    return this.partnersByFile.get(relPath) ?? EMPTY_PARTNERS;
-  }
+  const changed = new Set(changedFiles);
+  const diffTouching = first.violations.filter((v) => changed.has(v.relPathA) || changed.has(v.relPathB));
+  const importers = oneWalkedViolationImporters(diffTouching, productionFiles);
+  if (importers.length === 0) return silentCouplingFactsOf(first);
+  const linked = linkImportedCochangePairs(graph, await readImportSpecifiers(importers));
+  return silentCouplingFactsOf(detectSilentCoupling(linked, productionFiles, options));
 }
 
-const EMPTY_PARTNERS: readonly { partner: string; support: number }[] = [];
+/** The report's violation list and exclusion counters, mapped to the port shape. */
+function silentCouplingFactsOf(report: SilentCouplingReport): DiffDetectorSilentCouplingFacts {
+  return {
+    violations: report.violations.map((v) => ({
+      relPathA: v.relPathA,
+      relPathB: v.relPathB,
+      support: v.support,
+      strength: v.strength,
+    })),
+    excluded: report.summary.excluded,
+  };
+}
 
 /**
  * `DiffDetectorContractReader` over the report's component partition and the
@@ -268,9 +316,20 @@ export const architectureSectionProvider: ReviewSectionProvider = {
         distanceFromMainSequenceByComponent(facts.components, production.graph.files),
       );
       const graph = new WiredGraphReader(production.graph.edges);
-      const coupling = new WiredCouplingReader(context.temporalCochange);
       const contract = new WiredContractReader(facts.components, production.graph.edges);
       const splitMerge = wireSplitMerge(context.temporalCochange, context.temporalCochangeError, facts.components);
+      // The production silent-coupling verdict over the SAME snapshot (bd
+      // tea-rags-mcp-89k7k.1.10) — the run consumes it, never re-judges raw
+      // pairs. The asset-import rescue reads the context's payload
+      // specifiers for the diff-touching one-walked pairs only (bd
+      // tea-rags-mcp-2wsnt).
+      const silentCouplingFacts = await buildSilentCouplingFacts(
+        context.temporalCochange,
+        production.graph.files,
+        production.graph.edges,
+        scope.files,
+        context.readImportSpecifiers,
+      );
 
       // The working-tree side: every scope file the extraction can walk, one
       // shared run-level context; a file that cannot be read or resolved lands
@@ -288,20 +347,29 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       // The SAME reads feed the overlay — the table is persistence, the
       // overlay is the judgement's view; neither re-reads the other.
       const overlay = new ReviewEdgeOverlay(reads);
-      const result = new DiffDetectorRun({ graph, catalog, coupling, contract, ...splitMerge }).run(
-        { changedFiles: scope.files },
+      const result = new DiffDetectorRun({ graph, catalog, silentCouplingFacts, contract, ...splitMerge }).run(
+        {
+          changedFiles: scope.files,
+          // A truncated scope marks every built family partial (bd
+          // tea-rags-mcp-89k7k.1.9): the cap's skipped files never reach the
+          // overlay, so a family's zero can rest on edges it never saw.
+          ...(scope.skipped > 0 ? { skippedFiles: scope.skipped } : {}),
+        },
         overlay,
       );
-      const findings = result.findings.slice(0, ARCHITECTURE_FINDING_CAP);
+      const { kept, truncatedByDetector } = capFindingsByFamily(result.findings, ARCHITECTURE_FINDING_CAP);
       const notJudged: ReviewSectionNotJudgedEntry[] = overlay.unsupported().map((skip) => ({
         relPath: skip.relPath,
         reason: skip.reason,
         ...(skip.detail !== undefined ? { detail: skip.detail } : {}),
       }));
       return {
-        findings,
-        detectors: result.detectors,
-        ...(result.findings.length > findings.length ? { truncated: result.findings.length - findings.length } : {}),
+        findings: kept,
+        detectors: result.detectors.map((status) => {
+          const truncated = truncatedByDetector.get(status.detector);
+          return truncated === undefined ? status : { ...status, truncated };
+        }),
+        ...(result.findings.length > kept.length ? { truncated: result.findings.length - kept.length } : {}),
         ...(notJudged.length > 0 ? { notJudged } : {}),
       };
     } finally {
@@ -312,6 +380,86 @@ export const architectureSectionProvider: ReviewSectionProvider = {
     }
   },
 };
+
+/**
+ * The findings cap's family-aware policy (bd tea-rags-mcp-35v4v): the plain
+ * `slice(0, cap)` over the run's concatenated findings let one loud family —
+ * 117 silentCoupling pairs on a live 5-file probe diff — push every later
+ * family (facadeContract 1, splitCandidates 2, the most diff-native ones)
+ * entirely into `truncated`, while their detector rows still counted them.
+ *
+ * Allocation, stated once:
+ * 1. FLOOR — every family with ≥1 finding is guaranteed one slot; a family is
+ *    never fully starved, whatever the others' volume (families ≤ 7, cap 100,
+ *    so the floor always fits; were it ever exceeded, earlier family order
+ *    keeps its slots first).
+ * 2. PROPORTIONAL FILL — the remaining budget is split over each family's
+ *    UNMET findings (count − floor) by largest remainder. Sharing the deficit,
+ *    not the raw count, means no share can exceed what a family still lacks —
+ *    no clamping pass. Remainder ties break by the run's family order.
+ * 3. HONESTY — the total never exceeds `cap`; every cut is counted per family
+ *    on the detector row (`truncated`), so `findingCount` minus the family's
+ *    listed findings always reconciles. Kept findings stay in family order,
+ *    each family's own findings in the run's emission order.
+ */
+export function capFindingsByFamily(
+  findings: readonly DiffDetectorFinding[],
+  cap: number,
+): { kept: DiffDetectorFinding[]; truncatedByDetector: ReadonlyMap<string, number> } {
+  if (findings.length <= cap) return { kept: [...findings], truncatedByDetector: new Map() };
+  const order: string[] = [];
+  const byDetector = new Map<string, DiffDetectorFinding[]>();
+  for (const finding of findings) {
+    const family = byDetector.get(finding.detector);
+    if (family === undefined) {
+      byDetector.set(finding.detector, [finding]);
+      order.push(finding.detector);
+    } else family.push(finding);
+  }
+
+  const allocation = new Map<string, number>();
+  let budget = cap;
+  for (const detector of order) {
+    if (budget <= 0) break;
+    allocation.set(detector, 1); // the floor: never fully starved
+    budget--;
+  }
+  const deficitOf = (detector: string): number =>
+    (byDetector.get(detector)?.length ?? 0) - (allocation.get(detector) ?? 0);
+  const unmetTotal = order.reduce((sum, detector) => sum + deficitOf(detector), 0);
+  if (budget > 0 && unmetTotal > 0) {
+    const shares = order.map((detector, index) => ({
+      index,
+      detector,
+      deficit: deficitOf(detector),
+      ideal: (budget * deficitOf(detector)) / unmetTotal,
+    }));
+    for (const share of shares) {
+      allocation.set(share.detector, (allocation.get(share.detector) ?? 0) + Math.floor(share.ideal));
+    }
+    let leftover = budget - shares.reduce((sum, share) => sum + Math.floor(share.ideal), 0);
+    // Largest remainder first; ties keep the run's family order.
+    const byRemainder = shares
+      .map((share) => ({ index: share.index, remainder: share.ideal - Math.floor(share.ideal) }))
+      .sort((a, b) => b.remainder - a.remainder || a.index - b.index);
+    for (const { index } of byRemainder) {
+      if (leftover <= 0) break;
+      if (shares[index].deficit <= Math.floor(shares[index].ideal)) continue; // already served its whole deficit
+      allocation.set(shares[index].detector, (allocation.get(shares[index].detector) ?? 0) + 1);
+      leftover--;
+    }
+  }
+
+  const kept: DiffDetectorFinding[] = [];
+  const truncatedByDetector = new Map<string, number>();
+  for (const detector of order) {
+    const family = byDetector.get(detector) ?? [];
+    const slots = allocation.get(detector) ?? 0;
+    kept.push(...family.slice(0, slots));
+    if (family.length > slots) truncatedByDetector.set(detector, family.length - slots);
+  }
+  return { kept, truncatedByDetector };
+}
 
 function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const list = map.get(key);

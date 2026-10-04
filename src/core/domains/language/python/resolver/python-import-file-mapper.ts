@@ -39,7 +39,7 @@ import type { CallContext, GlobalSymbolTable, RelPath } from "../../../../contra
 import type { ImportFileMapper, ImportFileTarget } from "../../../../contracts/types/language.js";
 import { RunScopedMemo } from "../../kernel/index.js";
 import { PYTHON_STDLIB_MODULES } from "../vocabulary/stdlib-modules.js";
-import { lookupPythonSymbolsByShortName } from "./strategies/shared.js";
+import { lookupPythonSymbolsByShortName } from "./short-name-lookup.js";
 
 /** The suffix that makes a directory a package; `pkg/__init__.py` -> `pkg/`. */
 const INIT_PY = "/__init__.py";

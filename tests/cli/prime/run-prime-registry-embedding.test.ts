@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { unavailable } from "../../../src/cli/update-check/types.js";
+import { resolveLanguageCapabilities } from "../../../src/core/domains/language/capability/resolve.js";
 import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/collection-registry.js";
 
 const { pingMock, createAppContextMock, parseAppConfigMock, realExistsSyncRef } = vi.hoisted(() => ({
@@ -73,6 +74,7 @@ describe("runPrime — registry-first embedding endpoint override", () => {
     pingMock.mockResolvedValue(true);
     createAppContextMock.mockResolvedValue({
       app: {
+        resolveLanguageCapabilities,
         getIndexStatus: vi.fn().mockResolvedValue({ status: "indexed", collectionName: "code_x", chunksCount: 1 }),
         getIndexMetrics: vi.fn().mockResolvedValue({
           collection: "code_x",

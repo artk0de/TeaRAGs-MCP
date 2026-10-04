@@ -8,15 +8,14 @@ import { autoUpdateLogPath, closeAutoUpdateLog, openAutoUpdateLog } from "../../
 import { parseAppConfig } from "../../bootstrap/config/index.js";
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
 import { createAppContext } from "../../bootstrap/factory.js";
+import { createPathCollectionResolver } from "../../core/api/index.js";
 import {
   CollectionRegistry,
-  createPathCollectionResolver,
   IndexFreshnessCheck,
   isQdrantColdError,
   RegistryQdrantBackendUnresolvedError,
   replayableRegistryEnv,
   replayRegistryEnv,
-  resolveLanguageCapabilities,
   resolveRegistryQdrantBackend,
   TeaRagsError,
   type CollectionEntry,
@@ -259,7 +258,9 @@ export async function runPrime(input: {
       registry: registryEntry,
       status: status.value,
       metrics,
-      languageCapabilities: resolveLanguageCapabilities(Object.keys(metrics?.distributions?.language ?? {})),
+      // App method, not the retired barrel re-export (bd tea-rags-mcp-89k7k.9)
+      // — Uniform Access through the wired App prime already holds.
+      languageCapabilities: ctx.app.resolveLanguageCapabilities(Object.keys(metrics?.distributions?.language ?? {})),
       drift: drift.status === "fulfilled" ? drift.value : null,
       update: update.status === "fulfilled" ? update.value : null,
       memory: memory.status === "fulfilled" ? memory.value : null,

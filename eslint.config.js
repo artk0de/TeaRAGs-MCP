@@ -159,13 +159,16 @@ export default tseslint.config(
   // ── Dependency direction guard — full layer matrix ──
   // Spec: docs/superpowers/specs/2026-05-27-dependency-direction-guard-design.md
   // Allowed targets per layer (everything else is an error, incl. `import type`):
-  //   cli       → bootstrap, core/api/public
+  //   cli       → bootstrap, core/api/public, core/api/index (assembly surface, bd tea-rags-mcp-89k7k.22)
   //   mcp       → core/api/public
   //   bootstrap → mcp, core/api/*, core/{contracts,adapters,infra}
   //   index.ts  → bootstrap
   //   api       → core/{domains,contracts,adapters,infra}
   //   domains/* → core/{contracts,adapters,infra}  (never each other)
   //   contracts → (nothing)   adapters → infra   infra → (nothing)
+  // api/public holds the contract only; runtime classes and the App factory
+  // live behind the api root barrel, which cli commands that construct ops
+  // with bare clients import as the assembly seam.
   {
     files: ["src/cli/**/*.ts"],
     rules: {
@@ -182,11 +185,10 @@ export default tseslint.config(
                 "**/core/api/internal/**",
                 "**/core/api/errors",
                 "**/core/api/errors.js",
-                "**/core/api/index",
-                "**/core/api/index.js",
                 "**/mcp/**",
               ],
-              message: "cli may import only bootstrap/ and core/api/public. See .claude/rules/domain-boundaries.md.",
+              message:
+                "cli may import only bootstrap/, core/api/public and the core/api assembly barrel. See .claude/rules/domain-boundaries.md.",
             },
           ],
         },

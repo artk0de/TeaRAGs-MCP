@@ -24,6 +24,7 @@ import type ts from "typescript";
 
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import { resolveLocalBindingType, type CallContext, type CallRef } from "../../../../contracts/types/codegraph.js";
+import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../kernel/index.js";
 import {
   BARE_GLOBAL_CALLABLES,
   ECMASCRIPT_BUILTIN_PROTOTYPE_METHODS,
@@ -31,7 +32,6 @@ import {
   ECMASCRIPT_CONTAINER_PROTOTYPE_METHODS,
   ECMASCRIPT_GLOBALS,
 } from "../../shared/ecmascript-globals.js";
-import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import { findCallExpression } from "./strategies/ts-type-checker-fallback.js";
 import { jsxTagMemberDeclarations } from "./strategies/ts-type-checker-jsx-component.js";
 import {

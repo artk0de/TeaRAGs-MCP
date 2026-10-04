@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
+import { ProjectRegistryOps } from "../../../../../src/core/api/internal/ops/project-registry-ops.js";
 import {
   InvalidParameterError,
   MissingArgumentError,
@@ -12,8 +13,7 @@ import {
   ProjectNameInvalidError,
   ProjectNameNotUniqueError,
   ProjectPathAlreadyRegisteredError,
-} from "../../../../../src/core/api/errors.js";
-import { ProjectRegistryOps } from "../../../../../src/core/api/internal/ops/project-registry-ops.js";
+} from "../../../../../src/core/api/public/errors.js";
 import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
 import { resolveCollectionName, validatePath } from "../../../../../src/core/infra/collection-name.js";
 

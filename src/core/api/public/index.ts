@@ -1,17 +1,29 @@
 /**
- * Public API barrel — the SINGLE entry point for cli/ and mcp/ consumers.
+ * Public API barrel — the CONTRACT surface for cli/ and mcp/ consumers.
  *
  * The dependency-direction guard
  * (`docs/superpowers/specs/2026-05-27-dependency-direction-guard-design.md`)
  * forbids cli/mcp from reaching below this file (no direct imports of
  * `contracts/`, `adapters/`, `infra/`, `api/internal/`, or `bootstrap/`).
- * Every consumer-facing symbol — runtime classes, error types, DTOs,
- * relocated contract types — is re-exported here from its internal layer of
- * origin.
+ *
+ * What this layer holds (bd tea-rags-mcp-89k7k.22): the contract and nothing
+ * else — the `App`/`AppDeps` interfaces, DTOs, the input-error vocabulary
+ * (`./errors.js`), pure render/predicate rules re-exported from `contracts/`,
+ * and TYPE-only re-exports of handler shapes (type-only edges are not
+ * SDP-judged, bd tea-rags-mcp-0qaht.36). RUNTIME classes and assembly
+ * functions (ops classes, the path-collection resolver, `SchemaBuilder`,
+ * `createApp`, `reviewSectionIds`) are NOT re-exported from here — a value
+ * edge onto the unstable api component put the whole consumer surface in a
+ * dependency cycle with it. Consumers that construct runtime pieces reach
+ * them through the api root barrel (`core/api/index.js`, the assembly
+ * surface); deep `api/internal/` paths stay forbidden.
  */
 
-// ── App contract + factory ────────────────────────────────────────────
-export { createApp } from "./app.js";
+// ── App contract ──────────────────────────────────────────────────────
+// The FACTORY is not contract: `createApp` lives in the composition root
+// (`api/internal/app-factory.ts`), re-exported through the api root barrel
+// for bootstrap — the assembly surface (bd tea-rags-mcp-89k7k.22). This
+// barrel keeps the interface types only.
 export type { App, AppDeps } from "./app.js";
 
 // ── DTOs ─────────────────────────────────────────────────────────────
@@ -95,14 +107,18 @@ export type {
 } from "./dto/index.js";
 
 // ── Review sections — ids derived from the live provider registry ─────
-// `reviewSectionIds` is the MCP `sections` enum's single source (bd
+// `App.reviewSectionIds()` is the MCP `sections` enum's single source (bd
 // tea-rags-mcp-89k7k.1.4): a new section appears in the schema with no
 // hand-edited union, and an id whose provider has not shipped is rejected at
-// the boundary. Re-exported here because mcp/ may not import api/internal
-// (dependency-direction guard).
-export { reviewSectionIds } from "../internal/ops/review-sections/index.js";
+// the boundary. Vended through the App (Uniform Access) since
+// tea-rags-mcp-89k7k.22 — the barrel VALUE re-export this used to be was a
+// stable→unstable edge onto the ops that derive it.
 
-// ── Error classes — input validation hierarchy (api/errors.ts) ────────
+// ── Error classes — input validation hierarchy (public/errors.ts) ─────
+// The exception vocabulary IS contract vocabulary (what an App method throws
+// is part of its contract), which is why the classes live IN this layer
+// (moved from api/errors.ts, bd tea-rags-mcp-89k7k.22): api/internal
+// throwers import them from here — the stable direction.
 export {
   InputValidationError,
   CollectionNotProvidedError,
@@ -119,8 +135,8 @@ export {
   InvalidDocumentMetadataSchemaError,
   DocumentMetadataSchemaViolationError,
   UnknownArchitectureComponentError,
-} from "../errors.js";
-export type { InputErrorCode, DocumentMetadataViolation } from "../errors.js";
+} from "./errors.js";
+export type { InputErrorCode, DocumentMetadataViolation } from "./errors.js";
 
 // ── Error classes — foundation + config (infra/errors.ts) ─────────────
 export {
@@ -146,7 +162,8 @@ export { QdrantOptimizerErrorPersistsError } from "../../adapters/qdrant/errors.
 // every other status failure as it is (bd tea-rags-mcp-zqg1i).
 export { isQdrantColdError, QdrantUnavailableError } from "../../adapters/qdrant/errors.js";
 
-// ── Project registry — runtime + types (domains/maintenance/registry) ──
+// ── Project registry — runtime (domains/maintenance/registry facade),
+// types (contracts/types/registry.js) ──
 export { CollectionRegistry } from "../../domains/maintenance/registry/index.js";
 export { PROJECT_NAME_RE } from "../../domains/maintenance/registry/index.js";
 export { REGISTRY_ENV_ALLOWLIST, REGISTRY_ENV_GROUPS } from "../../domains/maintenance/registry/index.js";
@@ -175,7 +192,11 @@ export type {
   RegistryLookup,
   RegistryQdrantBackend,
   RegistryQdrantBackendClaim,
-} from "../../domains/maintenance/registry/index.js";
+  // The registry vocabulary lives in contracts (bd tea-rags-mcp-0qaht.36):
+  // this barrel is a stable surface and no longer reaches into the volatile
+  // registry domain for types. Runtime symbols below stay on the domain
+  // facade — api is the composition root and may import domains.
+} from "../../contracts/types/registry.js";
 
 // ── Index freshness — auto-update watcher decision surface (hpg2) ─────
 export {
@@ -195,21 +216,12 @@ export { detectDefaultBranch } from "../../infra/repo-git-state.js";
 export { validatePath } from "../../infra/collection-name.js";
 
 // ── Path → collection, the one owner (api/internal/collection-resolver.ts) ──
-// Concrete implementation lives in api/internal; re-exported through this
-// barrel because `bootstrap` and `cli` must resolve a request the way a SEARCH
-// does — registry entry first, path hash only for a path nothing claims — and
-// may not reach api/internal directly (bd tea-rags-mcp-dxa9w).
-export {
-  createPathCollectionResolver,
-  resolveBaseIndexEntry,
-  resolveCollection,
-} from "../internal/collection-resolver.js";
+// The resolver is runtime logic, not contract: `bootstrap` and `cli` reach the
+// functions through the api root barrel, which re-exports them from
+// api/internal (bd tea-rags-mcp-dxa9w, moved off this barrel by
+// tea-rags-mcp-89k7k.22). The resolver TYPES stay — type-only edges are not
+// SDP-judged (bd tea-rags-mcp-0qaht.36 vocabulary).
 export type { PathCollectionResolver, ResolveInput } from "../internal/collection-resolver.js";
-
-// ── Build lease — `projects orphans` / `doctor` skip a collection a live run
-// is building, by the same predicate cleanupOrphanedVersions uses (bd
-// tea-rags-mcp-9ovlp) ───
-export { isCollectionBuildInFlight } from "../../domains/ingest/infra/collection-build-lease.js";
 
 // ── Poison-pill quarantine — read surface for `doctor --quarantine` ───
 export { QuarantineStore } from "../../domains/ingest/sync/index.js";
@@ -255,40 +267,38 @@ export { resolveGitCommonDir } from "../../adapters/vcs/git/common-dir.js";
 // ── Language capability ceilings (cli/prime per-index tier lines) ─────
 // Static per-language descriptors, never measured numbers — prime pairs them
 // with the realized resolve rate it already reads (bd tea-rags-mcp-xip6g).
-export { resolveLanguageCapabilities } from "../../domains/language/capability/resolve.js";
+// The resolver itself is an App method now (bd tea-rags-mcp-89k7k.9); only
+// the type stays on this barrel.
 export type { LanguageCapability } from "../../contracts/types/language.js";
 
 // ── Payload signal descriptor (used by mcp schema-emitting code) ──────
 export type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
 
-// ── Internal ops facade (cli/projects + cli/server) ───────────────────
-// Exposing the class here keeps cli out of api/internal — the cli imports
-// `ProjectRegistryOps` from `api/public`, which re-exports the implementation
-// from `api/internal/ops/project-registry-ops.js`.
-export { ProjectRegistryOps } from "../internal/ops/project-registry-ops.js";
-
-// ── Worktree maintenance facade (cli/worktree, CLI-only — NOT on App/MCP) ──
-// Same pattern as ProjectRegistryOps: the CLI instantiates `WorktreeOps` for
-// commands and uses the registry-backed query helpers for list/info, all via
-// `api/public` so cli stays out of api/internal and domains/maintenance.
-export { WorktreeOps, toWorktreeInfo, listWorktreeInfos, worktreeInfoForPath } from "../internal/ops/worktree-ops.js";
+// ── Internal ops facades (cli/projects, cli/worktree) ─────────────────
+// The ops CLASSES are runtime, not contract: cli constructs them through the
+// api root barrel, which re-exports the implementations from
+// `api/internal/ops/` (moved off this barrel by bd tea-rags-mcp-89k7k.22 —
+// a VALUE re-export here was a stable→unstable edge with delta 0.87).
 // ── Qdrant optimizer recovery (cli/qdrant recover; status surfaces print the command) ──
-// CLI-only write path (bd tea-rags-mcp-ye5o): `get_index_status` and `prime`
-// only REPORT a failed optimizer, rendering the command from the same module.
-export {
-  OptimizerRecoveryOps,
-  isOptimizerFailure,
-  renderOptimizerRecoveryCommand,
-} from "../internal/ops/optimizer-recovery-ops.js";
-export type { OptimizerRecoveryOutcome, OptimizerRecoveryTarget } from "../internal/ops/optimizer-recovery-ops.js";
+// The write path (`OptimizerRecoveryOps`) is assembly — root barrel. The
+// failure predicate and the remedy's rendering rule are pure contract
+// vocabulary and live in `contracts/optimizer-recovery.ts` (the `resolve-rate`
+// precedent), re-exported here for both the CLI and MCP status surfaces (bd
+// tea-rags-mcp-ye5o, tea-rags-mcp-89k7k.22).
+export { isOptimizerFailure, renderOptimizerRecoveryCommand } from "../../contracts/optimizer-recovery.js";
+export type { OptimizerRecoveryOutcome, OptimizerRecoveryTarget } from "../../contracts/optimizer-recovery.js";
+export type { OptimizerRecoveryOps } from "../internal/ops/optimizer-recovery-ops.js";
 // The one wording of a first index's worktree seed outcome — CLI status block
 // and MCP `index_codebase` response both render it (bd tea-rags-mcp-k8gac).
-export { formatWorktreeSeedReport } from "../../domains/maintenance/worktree/worktree-seed-report.js";
+// Through the worktree domain facade, not the deep module (bd
+// tea-rags-mcp-0qaht.36).
+export { formatWorktreeSeedReport } from "../../domains/maintenance/worktree/index.js";
 
 // ── SchemaBuilder (used by mcp tool registration) ─────────────────────
-// Concrete class lives in api/internal/infra; re-exporting through public
-// keeps mcp from reaching into api/internal directly.
-export { SchemaBuilder } from "../internal/infra/schema-builder.js";
+// mpc holds the TYPE only — bootstrap constructs the builder and injects it,
+// through the api root barrel (bd tea-rags-mcp-89k7k.22). A VALUE re-export
+// here was a stable→unstable edge; the type-only edge is not SDP-judged.
+export type { SchemaBuilder } from "../internal/infra/schema-builder.js";
 
 // ── Index / enrichment runtime metrics (consumed by mcp formatters) ───
 // Defined in core/types.ts (root) for now — relocation into contracts/types

@@ -35,21 +35,38 @@
  * CURRENT out-edges; the indexed graph behind `DiffDetectorGraphReader` is
  * what the BFS and the reverse-direction checks read, and the cycle BFS never
  * EXPANDS a changed file's node (its stale rows are the overlay's to replace).
- * The one deliberate read of a changed file's INDEXED out-edges is
- * leakingAbstraction's facade evidence — "the facade A already imports" is
- * the pre-diff usage the diff did not add — so the wiring serves those rows
- * for that predicate. Every per-edge detector iterates the overlay's unique
- * (source, target) pairs, so an edge pair is judged — and reported — once,
- * never again from a reverse or duplicated read.
+ * TWO predicates deliberately read a changed file's INDEXED out-edges — the
+ * only places such rows are read at all: leakingAbstraction's facade evidence
+ * ("the facade A already imports" is the pre-diff usage the diff did not add)
+ * and the diff-added subtraction (bd tea-rags-mcp-89k7k.14), which drops from
+ * stableDependencies' and mainSequence's edge set every (source, target) pair
+ * the indexed graph already holds — those two families judge only what the
+ * diff GENUINELY adds, so a one-line edit to a barrel never re-weighs its
+ * pre-existing imports as new coupling. Absent graph port, or a changed file
+ * with no indexed rows, subtracts nothing — a missing fact is never read as
+ * "no edges added". Every per-edge detector iterates the overlay's unique
+ * (source, target) pairs (stableDependencies and mainSequence: the diff-added
+ * subset of them), so an edge pair is judged — and reported — once, never
+ * again from a reverse or duplicated read.
  */
 
-import type { SplitMergeVerdicts } from "../../../domains/trajectory/codegraph/temporal/index.js";
+import { DEFAULT_SDP_MIN_CONNECTION_COUNT } from "../../../domains/trajectory/codegraph/symbols/index.js";
+import type {
+  SilentCouplingExclusionCounts,
+  SilentCouplingViolation,
+  SplitMergeVerdicts,
+} from "../../../domains/trajectory/codegraph/temporal/index.js";
 import type { ReviewEdgeOverlay } from "./review-edge-overlay.js";
 
 /**
  * The indexed graph a detector may traverse, with the diff's own files
  * already meaningless here as traversal sources (see the masking contract
- * above).
+ * above) — and the TWO deliberate changed-source reads that contract names:
+ * leakingAbstraction's facade evidence and the diff-added subtraction's
+ * indexed pairs. Absent from the run's deps, every indexed-graph predicate
+ * reads as "no evidence": the subtraction judges every overlay pair as
+ * diff-added (never zero), the facade evidence and the cycle BFS find
+ * nothing, and the reverse-edge check cannot suppress.
  */
 export interface DiffDetectorGraphReader {
   /** Outgoing file edges of one relPath from the INDEXED graph (excluding type-only). */
@@ -60,17 +77,45 @@ export interface DiffDetectorGraphReader {
 
 /** Component/facade facts the whole-repo report already derived — consumed, never recomputed. */
 export interface DiffDetectorCatalog {
-  componentOf: (relPath: string) => { name: string; instability: number; distanceFromMainSequence: number } | undefined;
+  componentOf: (relPath: string) =>
+    | {
+        name: string;
+        instability: number;
+        distanceFromMainSequence: number;
+        /** Ca + Ce of the component — what the small-N guard below reads. */
+        connectionCount: number;
+        /**
+         * Ca: distinct files outside the component with an edge into it (bd
+         * tea-rags-mcp-89k7k.19) — the report's own component fact, served
+         * when the wiring holds it. Absent, mainSequence falls back to the
+         * documented +1-per-edge step; a missing fact is never read as "no
+         * afferent edges".
+         */
+        afferentCount?: number;
+        /** Ce: distinct files inside the component with an edge out — see {@link afferentCount}. */
+        efferentCount?: number;
+      }
+    | undefined;
   /** The component's facade (undefined = no facade / not adopted). */
   facadeOf: (componentName: string) => string | undefined;
   /** Instability judged markedly greater — the report's own band comparison as a predicate. */
   isMarkedlyLessStable: (leanOn: number, leanedOn: number) => boolean;
 }
 
-/** Co-change pairs involving changed files, from the indexed temporal graph (cg_temporal). */
-export interface DiffDetectorCouplingReader {
-  /** Pairs (changedFile, partner) with their support, one call per changed file. */
-  partnersOf: (relPath: string) => readonly { partner: string; support: number }[];
+/**
+ * The production silent-coupling verdict (bd tea-rags-mcp-89k7k.1.10): the
+ * whole-repo detector's OUTPUT over the SAME co-change snapshot the report
+ * judges — violations already past every gate (endpoint-class exclusions,
+ * Wilson-strength cut, shared-neighbour explanation, linkage union), plus the
+ * detector's own exclusion counters. The diff-scoped family CONSUMES this
+ * verdict and intersects it with the diff; it never re-judges raw co-change
+ * pairs, so the two paths cannot drift (one fact, one place).
+ */
+export interface DiffDetectorSilentCouplingFacts {
+  /** Strong, unlinked, unexplained pairs — the production violation list. */
+  violations: readonly Pick<SilentCouplingViolation, "relPathA" | "relPathB" | "support" | "strength">[];
+  /** Pairs read but not judged, by the production taxonomy — verbatim. */
+  excluded: SilentCouplingExclusionCounts;
 }
 
 /**
@@ -112,9 +157,22 @@ export interface DiffDetectorSplitMergeReader {
 }
 
 export interface DiffDetectorRunDeps {
-  graph: DiffDetectorGraphReader;
+  /**
+   * The indexed graph (see {@link DiffDetectorGraphReader}). Absent = every
+   * indexed-graph predicate reads as "no evidence" — in particular the
+   * diff-added subtraction judges every overlay pair (the pre-89k7k.14
+   * behavior), never zero of them.
+   */
+  graph?: DiffDetectorGraphReader;
   catalog: DiffDetectorCatalog;
-  coupling: DiffDetectorCouplingReader;
+  /**
+   * The production silent-coupling verdict (see
+   * {@link DiffDetectorSilentCouplingFacts}). Absent = the family answers
+   * silence (no findings, no excluded block) — never a zero-over-nothing
+   * verdict; the wiring computes the facts whenever a co-change snapshot
+   * exists, and from an empty graph otherwise (built:false summary).
+   */
+  silentCouplingFacts?: DiffDetectorSilentCouplingFacts;
   /** The facade-contract facts; absent = the family is unbuilt for this run. */
   contract?: DiffDetectorContractReader;
   /**
@@ -128,13 +186,49 @@ export interface DiffDetectorRunDeps {
    * own `noSplitMergeReader`.
    */
   splitMergeAbsentReason?: string;
+  /**
+   * The endpoint-class facts the silent-coupling family needs to apply the
+   * production exclusion taxonomy (bd tea-rags-mcp-89k7k.1.10): the codegraph's
+   * walked-file census and the documentation-path predicate — the same inputs
+   * `detectSilentCoupling` receives. Excluded pairs are counted, never
+   * reported, and surface on the silentCoupling status row's `excluded` block
+   * (the production summary's vocabulary). Absent = every stored partner is
+   * judged; the wiring passes the port whenever a co-change snapshot exists.
+   */
+  couplingExclusions?: {
+    walkedFiles: ReadonlyMap<string, number>;
+    isDocumentation?: (relPath: string) => boolean;
+  };
   /** BFS hop cap for cycle traces (default 8 — the report's own trace depth). */
   maxTraceHops?: number;
+  /**
+   * Minimum component `connectionCount` the main-sequence family judges
+   * (bd tea-rags-mcp-r8hme.45). Default `DEFAULT_SDP_MIN_CONNECTION_COUNT` —
+   * the same floor the whole-repo detector excludes
+   * `summary.mainSequence.excluded.lowConnectionCount` at, read from the
+   * instability descriptor's confidence threshold rather than restated, so
+   * the two cannot drift apart.
+   */
+  minConnectionCount?: number;
 }
 
-/** The change to judge: the files the diff touches, as the scope reader (F0) read them. */
+/**
+ * The change to judge: the files the diff touches, as the scope reader (F0)
+ * read them. `skippedFiles` says the read was TRUNCATED (bd
+ * tea-rags-mcp-89k7k.1.9) — changed files fell past the reader's file cap, so
+ * the overlay below carries no edge of theirs and a family's zero rests on
+ * files it never saw.
+ */
 export interface DiffDetectorScope {
   changedFiles: readonly string[];
+  /**
+   * Changed files the reader's cap skipped; `0`/absent = the scope is whole.
+   * When > 0 every built family's status is marked partial
+   * (`scopeSkippedFiles`) — a clean pass is never claimed over a truncated
+   * diff, because a cycle's or a leak's closing edge can live ONLY in a
+   * skipped file.
+   */
+  skippedFiles?: number;
 }
 
 export interface DiffDetectorFinding {
@@ -150,6 +244,15 @@ export interface DiffDetectorFinding {
   subject: string; // e.g. "A -> B" | "a.ts ~ b.ts" | "component X"
   evidence: string[]; // trace path for cycles; the facade import for leakingAbstraction; deltas for mainSequence
   detail: string; // one sentence a reviewer reads
+  /**
+   * mainSequence only (bd tea-rags-mcp-r8hme.45): EVERY contributing edge of
+   * this D-delta terminates inside a `contracts/` directory — the legal
+   * foundation direction, the lowest layer, which everything above may depend
+   * on. The distance still moved, so the finding stands; the annotation is
+   * data for triage, never a suppression and never prose baked into a
+   * formatter. Present only when true.
+   */
+  foundationTerminal?: true;
 }
 
 /** One detector family's verdict for the run. */
@@ -158,6 +261,37 @@ export interface DiffDetectorStatus {
   built: boolean;
   reason?: string;
   findingCount: number;
+  /**
+   * This family's findings past the slots the section's findings cap
+   * allocated it (bd tea-rags-mcp-35v4v) — counted, not listed;
+   * `findingCount` stays the family's FULL total. Stamped by the section's
+   * cap (`architecture-section.ts`), not by the run.
+   */
+  truncated?: number;
+  /**
+   * Changed files the diff's file cap skipped while this family judged (bd
+   * tea-rags-mcp-89k7k.1.9). Present = the verdict is PARTIAL: a zero
+   * findingCount over files the run never saw is never a clean pass. Absent
+   * on unbuilt rows — `built: false` + `reason` already denies the pass.
+   */
+  scopeSkippedFiles?: number;
+  /**
+   * mainSequence only (bd tea-rags-mcp-r8hme.45): touched components the
+   * connection-count floor excluded — the small-N class whose instability
+   * moves in steps of 1/n, one edge the whole scale. Present when > 0, so a
+   * zero over below-floor components never reads as a clean pass; the
+   * whole-repo report counts the same exclusions in
+   * `summary.mainSequence.excluded.lowConnectionCount`.
+   */
+  excludedLowConnectionCount?: number;
+  /**
+   * Co-change pairs read but not judged, by the production exclusion
+   * taxonomy's classes (bd tea-rags-mcp-89k7k.1.10) — the
+   * `summary.silentCoupling.excluded` vocabulary. Stamped on the
+   * silentCoupling row only, and only when the wiring passed
+   * `silentCouplingFacts`.
+   */
+  excluded?: SilentCouplingExclusionCounts;
 }
 
 export interface DiffDetectorFindings {
@@ -197,58 +331,97 @@ const NO_CONTRACT_READER_REASON = "no contract reader";
  */
 const WHOLE_MODULE_EXPORT_NAME = "*";
 
+/**
+ * The path segment naming a codebase's pure-types foundation layer — the
+ * direction every layer above it may legally depend on (bd
+ * tea-rags-mcp-r8hme.45): `core/contracts` in this repo, `src/contracts`,
+ * `app/contracts` elsewhere. Matched as a SEGMENT, never a substring, so
+ * `contracts.ts` or `my-contracts/` is not the foundation.
+ */
+const FOUNDATION_CONTRACTS_PATH_SEGMENT = "contracts";
+
 export class DiffDetectorRun {
-  private readonly graph: DiffDetectorGraphReader;
+  private readonly graph: DiffDetectorGraphReader | undefined;
   private readonly catalog: DiffDetectorCatalog;
-  private readonly coupling: DiffDetectorCouplingReader;
+  private readonly silentCouplingFacts: DiffDetectorSilentCouplingFacts | undefined;
   private readonly contract: DiffDetectorContractReader | undefined;
   private readonly splitMerge: DiffDetectorSplitMergeReader | undefined;
   private readonly splitMergeAbsentReason: string;
   private readonly maxTraceHops: number;
+  private readonly minConnectionCount: number;
 
   constructor(deps: DiffDetectorRunDeps) {
     this.graph = deps.graph;
     this.catalog = deps.catalog;
-    this.coupling = deps.coupling;
+    this.silentCouplingFacts = deps.silentCouplingFacts;
     this.contract = deps.contract;
     this.splitMerge = deps.splitMerge;
     this.splitMergeAbsentReason = deps.splitMergeAbsentReason ?? NO_SPLIT_MERGE_READER_REASON;
     this.maxTraceHops = deps.maxTraceHops ?? DEFAULT_MAX_TRACE_HOPS;
+    this.minConnectionCount = deps.minConnectionCount ?? DEFAULT_SDP_MIN_CONNECTION_COUNT;
   }
 
   /**
-   * Judge one diff: the edges its changed files add (the overlay) against the
-   * indexed graph and the report-derived facts. Findings come out grouped in
-   * the detectors' order, each detector's own findings in edge/scope order —
-   * deterministic for a given overlay. Never throws on missing facts; see the
-   * module docblock for the silence contract.
+   * Judge one diff: the edges its changed files add (the overlay, minus the
+   * pairs the indexed graph already holds for the families that weigh
+   * diff-added coupling — see the masking contract) against the indexed graph
+   * and the report-derived facts. Findings come out grouped in the detectors'
+   * order, each detector's own findings in edge/scope order — deterministic
+   * for a given overlay. Never throws on missing facts; see the module
+   * docblock for the silence contract.
    */
   run(scope: DiffDetectorScope, overlay: ReviewEdgeOverlay): DiffDetectorFindings {
     const changed = new Set(scope.changedFiles);
     const overlayEdges = uniqueOverlayEdges(scope.changedFiles, overlay);
-    const stableDependencies = this.judgeStableDependencies(overlayEdges);
+    // The subtraction (bd tea-rags-mcp-89k7k.14): only genuinely-new pairs
+    // reach the two families that weigh "what the diff adds"; the per-edge
+    // detectors whose predicate is about the edge AS READ (leakingAbstraction's
+    // facade reach, cycles' closing edge) keep the overlay's own set.
+    const diffAddedEdges = diffAddedOverlayEdges(overlayEdges, this.graph);
+    const stableDependencies = this.judgeStableDependencies(diffAddedEdges);
     const leakingAbstraction = this.judgeLeakingAbstraction(overlayEdges);
     const cycles = this.judgeCycles(overlayEdges, changed);
-    const mainSequence = this.judgeMainSequence(scope.changedFiles, overlayEdges);
+    const mainSequence = this.judgeMainSequence(scope.changedFiles, diffAddedEdges);
     const silentCoupling = this.judgeSilentCoupling(scope.changedFiles, overlay, changed);
     const facadeContract = this.judgeFacadeContract(scope.changedFiles, overlay, changed);
     const splitCandidates = this.judgeSplitCandidates(scope.changedFiles);
+    // Partial over a truncated diff (bd tea-rags-mcp-89k7k.1.9): stamped on
+    // BUILT rows only — an unbuilt row's built:false + reason already denies
+    // the clean pass.
+    const skippedFiles = scope.skippedFiles ?? 0;
+    const partial = (status: DiffDetectorStatus): DiffDetectorStatus =>
+      skippedFiles > 0 ? Object.freeze({ ...status, scopeSkippedFiles: skippedFiles }) : status;
     return {
       findings: Object.freeze([
         ...stableDependencies,
         ...leakingAbstraction,
         ...cycles,
-        ...mainSequence,
-        ...silentCoupling,
+        ...mainSequence.findings,
+        ...silentCoupling.findings,
         ...facadeContract,
         ...splitCandidates,
       ]),
       detectors: Object.freeze([
-        detectorStatus("stableDependencies", stableDependencies.length),
-        detectorStatus("leakingAbstraction", leakingAbstraction.length),
-        detectorStatus("cycles", cycles.length),
-        detectorStatus("mainSequence", mainSequence.length),
-        detectorStatus("silentCoupling", silentCoupling.length),
+        partial(detectorStatus("stableDependencies", stableDependencies.length)),
+        partial(detectorStatus("leakingAbstraction", leakingAbstraction.length)),
+        partial(detectorStatus("cycles", cycles.length)),
+        partial(
+          mainSequence.excludedLowConnectionCount > 0
+            ? Object.freeze({
+                ...detectorStatus("mainSequence", mainSequence.findings.length),
+                excludedLowConnectionCount: mainSequence.excludedLowConnectionCount,
+              })
+            : detectorStatus("mainSequence", mainSequence.findings.length),
+        ),
+        partial(
+          Object.freeze({
+            ...detectorStatus("silentCoupling", silentCoupling.findings.length),
+            // The taxonomy's counters ride the silentCoupling row (bd
+            // tea-rags-mcp-89k7k.1.10); absent facts stamp nothing — a zero
+            // block over an unwired port would claim pairs were judged.
+            ...(silentCoupling.excluded !== undefined ? { excluded: silentCoupling.excluded } : {}),
+          }),
+        ),
         ...(this.contract === undefined
           ? [
               Object.freeze({
@@ -258,7 +431,7 @@ export class DiffDetectorRun {
                 findingCount: 0,
               }) satisfies DiffDetectorStatus,
             ]
-          : [detectorStatus("facadeContract", facadeContract.length)]),
+          : [partial(detectorStatus("facadeContract", facadeContract.length))]),
         this.splitMerge === undefined
           ? (Object.freeze({
               detector: "splitCandidates",
@@ -266,16 +439,18 @@ export class DiffDetectorRun {
               reason: this.splitMergeAbsentReason,
               findingCount: 0,
             }) satisfies DiffDetectorStatus)
-          : detectorStatus("splitCandidates", splitCandidates.length),
+          : partial(detectorStatus("splitCandidates", splitCandidates.length)),
       ]),
     };
   }
 
   /**
-   * Stable Dependencies over what the diff adds: an edge A -> B whose target
-   * end is markedly less stable than its source end. Both ends must map to
-   * report components — the band predicate is the report's own, injected; an
-   * end without component facts is a silent skip, not a clean verdict.
+   * Stable Dependencies over what the diff GENUINELY adds: an edge A -> B
+   * whose target end is markedly less stable than its source end. The edge
+   * set is the subtraction's output (bd tea-rags-mcp-89k7k.14) — a pair the
+   * indexed graph already holds is the diff NOT adding it. Both ends must map
+   * to report components — the band predicate is the report's own, injected;
+   * an end without component facts is a silent skip, not a clean verdict.
    */
   private judgeStableDependencies(edges: readonly OverlayEdge[]): DiffDetectorFinding[] {
     const findings: DiffDetectorFinding[] = [];
@@ -314,7 +489,8 @@ export class DiffDetectorRun {
       if (targetComponent === undefined) continue;
       const facade = this.catalog.facadeOf(targetComponent.name);
       if (facade === undefined || facade === edge.target) continue;
-      const viaFacade = this.graph.edgesFrom(edge.source).some((indexed) => indexed.target === facade);
+      // Absent graph = no indexed facade evidence — absence is silence.
+      const viaFacade = this.graph?.edgesFrom(edge.source).some((indexed) => indexed.target === facade) ?? false;
       if (!viaFacade) continue;
       findings.push({
         detector: "leakingAbstraction",
@@ -358,7 +534,8 @@ export class DiffDetectorRun {
    * `[goal, from, ..., goal]`, undefined when unreachable within the hop cap.
    */
   private traceBackTo(from: string, goal: string, changed: ReadonlySet<string>): readonly string[] | undefined {
-    if (changed.has(from)) return undefined; // a changed node's stale rows are never traversed
+    // No indexed graph = no path back; a changed node's stale rows are never traversed.
+    if (this.graph === undefined || changed.has(from)) return undefined;
     const visited = new Set<string>([from]);
     const queue: { node: string; path: readonly string[]; depth: number }[] = [{ node: from, path: [from], depth: 0 }];
     while (queue.length > 0) {
@@ -380,64 +557,138 @@ export class DiffDetectorRun {
    * components never appear, and a touched component that does not move does
    * not either.
    *
-   * APPROXIMATION (documented per spec; the wiring slice may replace it with
-   * the report's exact recompute): an overlay edge between two DIFFERENT
-   * components moves the SOURCE's component's instability up, one full step
-   * per edge clamped at I=1 — the component's fan counts are not reachable
-   * through these ports, so the exact I' = (Ce+k)/(Ca+Ce+k) is not computable
-   * here. Abstractness A is held constant at the +D solution of
-   * D = |A + I - 1| (A = 1 - I + D): which side of the main sequence the
-   * component sits on is not exposed by the catalog either, and on that
-   * solution the deltaD equals the I increment — the worst case (distance
-   * grows), which is what a diff review wants flagged.
+   * SMALL-N GUARD (bd tea-rags-mcp-r8hme.45): a touched component whose
+   * `connectionCount` is below `minConnectionCount` — the same SDP floor the
+   * whole-repo detector excludes at — is not judged, only counted on the
+   * family's status row. At connectionCount n a component's instability moves
+   * in steps of 1/n, so one new edge on a one-or-two-edge component is a
+   * half-to-full-scale move — the small-N false positive every facade/refactor
+   * diff drew on components whose legal fanOut is one contracts edge. The
+   * guard reads `connectionCount`, which the recompute below never moves (k
+   * lands on top of the fan, not inside it), so it composes with both paths.
+   *
+   * EXACT RECOMPUTE (bd tea-rags-mcp-89k7k.19): when the catalog serves the
+   * component's fan counts (Ca/Ce — the same `ArchitectureComponent` facts
+   * the whole-repo report derives), k genuinely-new outgoing edges move the
+   * SOURCE's component's instability to exactly I' = (Ce + k)/(Ca + Ce + k) —
+   * the whole-repo detector's own instability arithmetic re-applied to the
+   * post-diff fan. One new edge on a 24-connection component moves I by ~1/25,
+   * never the full-scale step that saturated such a component to I=1.000 and
+   * D 0.946 from a single facade import (the 89k7k.14 replay residual: the
+   * +1-per-edge step had no access to the fan counts through the diff ports).
+   * The edge set is the subtraction's output (bd tea-rags-mcp-89k7k.14: a
+   * pair the indexed graph already holds never moves anything).
+   *
+   * FALLBACK (the 89k7k.14 absence rule, documented per spec): a catalog that
+   * serves no fan counts keeps the +1-per-edge step — one full step per
+   * diff-added edge clamped at I=1 — because the fan counts are not reachable
+   * through that port, and a missing fact is never read as "no edges", so the
+   * step judges ALL k edges, never zero of them. Abstractness A is held
+   * constant at the +D solution of D = |A + I - 1| (A = 1 - I + D): which side
+   * of the main sequence the component sits on is not exposed by the catalog
+   * either, and on that solution the deltaD equals the I increment — the
+   * worst case (distance grows), which is what a diff review wants flagged.
+   *
+   * FOUNDATION-TERMINAL ANNOTATION (bd tea-rags-mcp-r8hme.45): a finding
+   * whose contributing edges ALL terminate inside a `contracts/` directory
+   * carries `foundationTerminal: true` — the legal foundation direction
+   * (everything may depend on the lowest layer). Contributing edges are the
+   * DIFF-ADDED ones (post-subtraction): pre-existing imports do not dilute
+   * the annotation. The D still moved, so the finding stands, annotated as
+   * data for triage; one non-contracts diff-added edge is enough to leave it
+   * unannotated.
    */
-  private judgeMainSequence(changedFiles: readonly string[], edges: readonly OverlayEdge[]): DiffDetectorFinding[] {
-    const touched = new Map<string, { instability: number; distanceFromMainSequence: number }>();
+  private judgeMainSequence(
+    changedFiles: readonly string[],
+    edges: readonly OverlayEdge[],
+  ): { findings: DiffDetectorFinding[]; excludedLowConnectionCount: number } {
+    const touched = new Map<
+      string,
+      { instability: number; distanceFromMainSequence: number; afferentCount?: number; efferentCount?: number }
+    >();
+    const judgedComponents = new Set<string>();
+    let excludedLowConnectionCount = 0;
     for (const relPath of changedFiles) {
       const component = this.catalog.componentOf(relPath);
-      if (component === undefined || touched.has(component.name)) continue;
+      if (component === undefined || judgedComponents.has(component.name)) continue;
+      judgedComponents.add(component.name);
+      if (component.connectionCount < this.minConnectionCount) {
+        excludedLowConnectionCount++;
+        continue;
+      }
       touched.set(component.name, {
         instability: component.instability,
         distanceFromMainSequence: component.distanceFromMainSequence,
+        afferentCount: component.afferentCount,
+        efferentCount: component.efferentCount,
       });
     }
-    const crossingEdges = new Map<string, string[]>();
+    const crossingEdges = new Map<string, OverlayEdge[]>();
     for (const edge of edges) {
       const sourceComponent = this.catalog.componentOf(edge.source);
       const targetComponent = this.catalog.componentOf(edge.target);
       if (sourceComponent === undefined || targetComponent === undefined) continue;
       if (sourceComponent.name === targetComponent.name || !touched.has(sourceComponent.name)) continue;
-      const labels = crossingEdges.get(sourceComponent.name);
-      if (labels === undefined) crossingEdges.set(sourceComponent.name, [`${edge.source} -> ${edge.target}`]);
-      else labels.push(`${edge.source} -> ${edge.target}`);
+      const componentEdges = crossingEdges.get(sourceComponent.name);
+      if (componentEdges === undefined) crossingEdges.set(sourceComponent.name, [edge]);
+      else componentEdges.push(edge);
     }
 
     const findings: DiffDetectorFinding[] = [];
     for (const [name, fact] of touched) {
       const edgesOut = crossingEdges.get(name);
       if (edgesOut === undefined) continue;
-      const newInstability = Math.min(1, fact.instability + edgesOut.length);
+      const newEdgeCount = edgesOut.length;
+      // Both counts or neither: one alone cannot feed the exact recompute, and
+      // a half-served fan is the same absent fact as none (the 89k7k.14 rule).
+      const fans =
+        fact.afferentCount !== undefined && fact.efferentCount !== undefined
+          ? { afferentCount: fact.afferentCount, efferentCount: fact.efferentCount }
+          : undefined;
+      const newInstability =
+        fans !== undefined
+          ? (fans.efferentCount + newEdgeCount) / (fans.afferentCount + fans.efferentCount + newEdgeCount)
+          : Math.min(1, fact.instability + newEdgeCount);
       const instabilityDelta = newInstability - fact.instability;
       if (Math.abs(instabilityDelta) <= MAIN_SEQUENCE_EPSILON) continue;
       const abstractness = 1 - fact.instability + fact.distanceFromMainSequence;
       const newDistance = Math.abs(abstractness + newInstability - 1);
+      const foundationTerminal = edgesOut.every((edge) => terminatesAtFoundationContracts(edge.target));
+      // The exact-recompute clause names the arithmetic only when its inputs were served.
+      const recomputeClause = fans !== undefined ? ` — I' = (Ce+k)/(Ca+Ce+k) over the report's fan counts` : "";
       findings.push({
         detector: "mainSequence",
         subject: name,
-        evidence: [`D ${format3(fact.distanceFromMainSequence)} -> ${format3(newDistance)}`, ...edgesOut],
-        detail:
-          `the diff moves ${name} off its main-sequence distance: ${edgesOut.length} cross-component outgoing ` +
-          `edge(s) raise instability ${format3(fact.instability)} -> ${format3(newInstability)} with abstractness held`,
+        evidence: [
+          `D ${format3(fact.distanceFromMainSequence)} -> ${format3(newDistance)}`,
+          ...(fans !== undefined
+            ? [
+                `I ${format3(fact.instability)} -> ${format3(newInstability)} = ` +
+                  `(${fans.efferentCount}+${newEdgeCount})/(${fans.afferentCount}+${fans.efferentCount}+${newEdgeCount})`,
+              ]
+            : []),
+          ...edgesOut.map((edge) => `${edge.source} -> ${edge.target}`),
+        ],
+        detail: `the diff moves ${name} off its main-sequence distance: ${newEdgeCount} cross-component outgoing edge(s) raise instability ${format3(fact.instability)} -> ${format3(newInstability)} with abstractness held${recomputeClause}`,
+        ...(foundationTerminal ? { foundationTerminal: true as const } : {}),
       });
     }
-    return findings;
+    return { findings, excludedLowConnectionCount };
   }
 
   /**
-   * Silent coupling pairs involving a changed file: a strong co-change pair
-   * the diff does not explain. A pair is explained when the overlay adds its
-   * structural edge in either direction, or when one already stands in the
-   * indexed graph's reverse direction (a pre-existing partner -> file edge —
+   * Silent coupling pairs involving a changed file — CONSUMED from the
+   * production verdict (bd tea-rags-mcp-89k7k.1.10): the whole-repo detector
+   * already applied the endpoint-class exclusions (test/generated/
+   * documentation/unwalked/lift), the Wilson-strength cut and the
+   * shared-neighbour explanation over the same snapshot; this family only
+   * intersects the violation list with the diff. Re-judging raw partner rows
+   * here is what let 19–98 historical src~test and CLAUDE.md~code pairs per
+   * diff bury the diff-relevant findings.
+   *
+   * A violation is skipped when the diff itself answers it: the overlay adds
+   * the pair's structural edge in either direction, or a pre-existing edge
+   * stands in the indexed graph's reverse direction (a partner -> file edge —
    * without that check the "no structural edge" sentence below could be
    * false). Both sides in the diff is the review's own business, not a
    * finding (bd tea-rags-mcp-3kykc owns the partner-missing question).
@@ -446,32 +697,39 @@ export class DiffDetectorRun {
     changedFiles: readonly string[],
     overlay: ReviewEdgeOverlay,
     changed: ReadonlySet<string>,
-  ): DiffDetectorFinding[] {
+  ): { findings: DiffDetectorFinding[]; excluded: SilentCouplingExclusionCounts | undefined } {
+    const facts = this.silentCouplingFacts;
+    if (facts === undefined) return { findings: [], excluded: undefined };
     const findings: DiffDetectorFinding[] = [];
     const reported = new Set<string>();
     for (const relPath of changedFiles) {
-      for (const pair of this.coupling.partnersOf(relPath)) {
-        if (changed.has(pair.partner)) continue;
-        const subject = `${relPath} ~ ${pair.partner}`;
+      for (const violation of facts.violations) {
+        if (violation.relPathA !== relPath && violation.relPathB !== relPath) continue;
+        const partner = violation.relPathA === relPath ? violation.relPathB : violation.relPathA;
+        if (changed.has(partner)) continue;
+        const subject = `${relPath} ~ ${partner}`;
         if (reported.has(subject)) continue;
-        const explainedByOverlay =
-          overlay.edgesFrom(relPath).some((edge) => edge.targetRelPath === pair.partner) ||
-          overlay.edgesFrom(pair.partner).some((edge) => edge.targetRelPath === relPath);
-        if (explainedByOverlay) continue;
-        const structurallyVisible = this.graph.edgesTo(relPath).some((indexed) => indexed.source === pair.partner);
-        if (structurallyVisible) continue;
         reported.add(subject);
+        const explainedByOverlay =
+          overlay.edgesFrom(relPath).some((edge) => edge.targetRelPath === partner) ||
+          overlay.edgesFrom(partner).some((edge) => edge.targetRelPath === relPath);
+        if (explainedByOverlay) continue;
+        // Absent graph reads as no indexed reverse edge — same as an empty
+        // one: the check exists to suppress, and what cannot be confirmed
+        // cannot suppress.
+        const structurallyVisible = this.graph?.edgesTo(relPath).some((indexed) => indexed.source === partner) ?? false;
+        if (structurallyVisible) continue;
         findings.push({
           detector: "silentCoupling",
           subject,
-          evidence: [`co-change support ${format3(pair.support)}`],
+          evidence: [`co-change support ${format3(violation.support)}`, `strength ${format3(violation.strength)}`],
           detail:
             `strong co-change with no structural edge and the diff does not add one: ${subject} ` +
-            `(support ${format3(pair.support)})`,
+            `(support ${format3(violation.support)}, strength ${format3(violation.strength)})`,
         });
       }
     }
-    return findings;
+    return { findings, excluded: facts.excluded };
   }
 
   /**
@@ -622,6 +880,28 @@ function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
 }
 
 /**
+ * The overlay's unique pairs minus the pairs the indexed graph already holds
+ * — the edges the diff GENUINELY adds (bd tea-rags-mcp-89k7k.14): a changed
+ * file's tree read re-serves every import it still holds, and judging that
+ * whole set read a one-line barrel edit as 23 new dependencies saturating
+ * the barrel's component to I=1.000. The masking contract's SECOND deliberate
+ * read of a changed source's indexed rows. Absent port, or a source with no
+ * indexed rows, subtracts nothing — a missing fact is never "no edges added".
+ */
+function diffAddedOverlayEdges(
+  overlayEdges: readonly OverlayEdge[],
+  graph: DiffDetectorGraphReader | undefined,
+): readonly OverlayEdge[] {
+  if (graph === undefined) return overlayEdges;
+  const added: OverlayEdge[] = [];
+  for (const edge of overlayEdges) {
+    if (graph.edgesFrom(edge.source).some((indexed) => indexed.target === edge.target)) continue;
+    added.push(edge);
+  }
+  return added;
+}
+
+/**
  * The diff's own edges as unique (source, target) pairs: one read per changed
  * file, self-edges dropped (the overlay's builder already drops them; the
  * guard keeps the judgement total), duplicates collapsed — a scope that lists
@@ -650,4 +930,9 @@ function detectorStatus(detector: DiffDetectorFinding["detector"], findingCount:
 /** Three decimals — the whole-repo report's evidence formatting. */
 function format3(value: number): string {
   return value.toFixed(3);
+}
+
+/** The edge's target lives inside a `contracts/` directory — the foundation everything may depend on. */
+function terminatesAtFoundationContracts(relPath: string): boolean {
+  return relPath.split("/").includes(FOUNDATION_CONTRACTS_PATH_SEGMENT);
 }

@@ -1,17 +1,24 @@
+import type {
+  ArchitectureDirectoryRelation,
+  ArchitectureFileEdge,
+  ConventionPrivacyRule,
+  FacadeLeakKind,
+  FacadeLeakKindBasis,
+  FacadeModuleExclusionReason,
+  LayeringFeedbackEdge,
+  LayeringKeepCost,
+  LayeringViolationKind,
+  MainSequenceComponentVolatilityEvidence,
+  MainSequenceZone,
+} from "../../../../../contracts/types/architecture-report.js";
 import type { FileDependencyEdge, RelPath } from "../../../../../contracts/types/codegraph.js";
 
 /**
- * Where a dependency's target sits relative to its source, by directory:
- *
- * - `same`       — both files in one directory.
- * - `descendant` — the target lives below the source's directory: a module
- *                  reaching into its own sub-parts.
- * - `ancestor`   — the source lives below the target's directory: a sub-part
- *                  reaching up into its enclosing module.
- * - `disjoint`   — neither directory contains the other: the edge crosses into
- *                  a sibling or cousin module, the case module borders are about.
+ * Where a dependency's target sits relative to its source, by directory — the
+ * report's `ArchitectureDirectoryRelation` under its domain name (bd
+ * tea-rags-mcp-0e4vf: one definition, in the finding contract).
  */
-export type DependencyDirectoryRelation = "same" | "descendant" | "ancestor" | "disjoint";
+export type DependencyDirectoryRelation = ArchitectureDirectoryRelation;
 
 export interface StableDependenciesOptions {
   /**
@@ -151,27 +158,29 @@ export interface StableDependenciesReport {
 }
 
 /**
- * How an edge into an active module leaks its abstraction (bd tea-rags-mcp-jetrd):
- *
- * - `bypass`         — the facade itself imports the target (re-exports it): the
- *                      importer could have gone through the facade and did not.
- * - `internal-reach` — the facade does not import the target: the importer
- *                      reaches something the module never offered.
+ * How an edge into an active module leaks its abstraction (bd
+ * tea-rags-mcp-jetrd) — defined once in the finding contract (bd
+ * tea-rags-mcp-0e4vf) and re-exported under the domain facade:
+ * `bypass` = the facade itself imports the target, `internal-reach` = it does
+ * not, so the importer reaches something the module never offered.
  */
-export type FacadeLeakKind = "bypass" | "internal-reach";
+export type { FacadeLeakKind };
 
 /**
- * Why a module's boundary is not judged:
- *
- * - `facade-not-adopted` — adoption not admitted by the adaptive threshold
- *   (`resolveFacadeAdoptionThreshold`): the importers themselves do not treat
- *   the entry file as the module's surface.
- * - `too-few-importers`  — fewer than `FACADE_MIN_EXTERNAL_IMPORTERS` external
- *   importers: adoption over so few files says nothing.
- * - `language-enforced`  — a Go package: the compiler already enforces the
- *   package boundary, so nothing can leak past it at file level.
+ * How a violation's `kind` was decided (bd tea-rags-mcp-r8hme.43) — defined
+ * once in the finding contract (bd tea-rags-mcp-0e4vf): `names` = both edges
+ * carried export names and the comparison decided, `file-rule` = names were
+ * unavailable and the file-level rule decided.
  */
-export type FacadeModuleExclusionReason = "facade-not-adopted" | "too-few-importers" | "language-enforced";
+export type { FacadeLeakKindBasis };
+
+/**
+ * Why a module's boundary is not judged — defined once in the finding contract
+ * (bd tea-rags-mcp-0e4vf): `facade-not-adopted` (admission threshold),
+ * `too-few-importers`, `language-enforced` (a Go package: the compiler already
+ * enforces the boundary).
+ */
+export type { FacadeModuleExclusionReason };
 
 export type FacadeModuleStatus = "active" | FacadeModuleExclusionReason;
 
@@ -199,6 +208,8 @@ export interface FacadeModuleAssessment extends FacadeAdoption {
 /** One edge from outside an active module into one of its non-entry files. */
 export interface FacadeLeakViolation extends FacadeAdoption {
   kind: FacadeLeakKind;
+  /** How `kind` was decided (bd tea-rags-mcp-r8hme.43). */
+  kindBasis: FacadeLeakKindBasis;
   sourceRelPath: RelPath;
   targetRelPath: RelPath;
   /** The innermost active module the edge leaks past. */
@@ -213,6 +224,26 @@ export interface FacadeLeakViolation extends FacadeAdoption {
   importedNames?: string[];
   /** For a names-decided `internal-reach`: the imported names the facade does not expose. */
   nonExportedNames?: string[];
+  /**
+   * Whether the re-export recipe — export the leaked names from the module's
+   * facade and point the violating importer at it — would close an import
+   * cycle: the facade's own import graph already reaches the violating
+   * importer, so the recipe's rewrite (source → facade) closes
+   * source → facade →* source (bd tea-rags-mcp-89k7k.3, endpoint per bd
+   * tea-rags-mcp-89k7k.17). Applied for real on the explore strategies it
+   * broke 9 suites at collection with "Class extends value undefined" (bd
+   * tea-rags-mcp-0qaht.31). Computed for BOTH kinds: the recipe is the
+   * suggested repair for either, and the risk does not depend on the kind.
+   */
+  reExportUnsafe: boolean;
+  /**
+   * The first found facade→…→source import path, facade first — file evidence
+   * for {@link reExportUnsafe}; present only when it is true, and capped at 8
+   * files (`RE_EXPORT_CYCLE_PATH_CAP` in leaking-abstraction.ts; reachability
+   * deeper than the cap counts as absent: a chain that long is not actionable
+   * evidence).
+   */
+  reExportCyclePath?: RelPath[];
 }
 
 export interface LeakingAbstractionOptions {
@@ -268,12 +299,11 @@ export interface LeakingAbstractionReport {
 }
 
 /**
- * Which convention a convention-privacy leak broke (bd tea-rags-mcp-r8hme.1):
- * `python-underscore` — a `_name` member used from another package directory;
- * `ruby-send-private` — `send(:name)` into a private / protected method from
- * outside its class.
+ * Which convention a convention-privacy leak broke (bd tea-rags-mcp-r8hme.1) —
+ * defined once in the finding contract (bd tea-rags-mcp-0e4vf):
+ * `python-underscore` / `ruby-send-private`.
  */
-export type ConventionPrivacyRule = "python-underscore" | "ruby-send-private";
+export type { ConventionPrivacyRule };
 
 export interface ConventionPrivacyOptions {
   /** Picomatch glob: judge only edges whose SOURCE file matches. */
@@ -377,12 +407,11 @@ export interface ComponentStableDependenciesOptions {
   sourcePathPattern?: string;
 }
 
-/** One file edge carrying a component dependency. */
-export interface ComponentDependencyFileEdge {
-  sourceRelPath: RelPath;
-  targetRelPath: RelPath;
-  callWeight: number;
-}
+/**
+ * One file edge carrying a component dependency — the report's
+ * `ArchitectureFileEdge` under its domain name (bd tea-rags-mcp-0e4vf).
+ */
+export type ComponentDependencyFileEdge = ArchitectureFileEdge;
 
 /** A stable component depending on a less stable one. */
 export interface ComponentStableDependencyViolation {
@@ -403,6 +432,13 @@ export interface ComponentStableDependencyViolation {
   fileEdgeCount: number;
   /** The carrying file edges, heaviest call weight first, capped at `COMPONENT_EVIDENCE_FILE_EDGE_LIMIT`. */
   fileEdges: ComponentDependencyFileEdge[];
+  /**
+   * The source component is, or lives inside, a declared composition root
+   * (`DECLARED_COMPOSITION_ROOT_COMPONENTS`, bd tea-rags-mcp-r8hme.51): the
+   * report's `StableDependencyViolationEvidence.compositionRoot` carries the
+   * contract-side meaning. Present only when true.
+   */
+  compositionRoot?: true;
 }
 
 /** Every violation into one unstable target component, as one finding. */
@@ -451,8 +487,8 @@ export interface ComponentStableDependenciesReport {
   summary: ComponentStableDependenciesSummary;
 }
 
-/** Where a component far from the main sequence sits (bd tea-rags-mcp-r8hme.8). */
-export type MainSequenceZone = "pain" | "uselessness";
+/** Where a component far from the main sequence sits (bd tea-rags-mcp-r8hme.8) — from the finding contract. */
+export type { MainSequenceZone };
 
 export interface MainSequenceOptions {
   /** Connection floor on Ca + Ce; defaults to the SDP floor. */
@@ -473,16 +509,12 @@ export interface MainSequenceOptions {
 /** Whether a component changes often enough for the zone of pain to hurt. */
 export type MainSequenceVolatilityLabel = "volatile" | "calm";
 
-/** A component's volatility and the adaptive cut it was judged against. */
-export interface MainSequenceComponentVolatility {
-  /** Mean per-file volatility over the component's files that carry a reading. */
-  value: number;
-  /** Files of the component with a reading — the mean's denominator. */
-  measuredFileCount: number;
-  /** The cut `value` had to reach; it must also be strictly above the median file's reading. */
-  threshold: number;
-  label: MainSequenceVolatilityLabel;
-}
+/**
+ * A component's volatility and the adaptive cut it was judged against — the
+ * report's `MainSequenceComponentVolatilityEvidence` under its domain name (bd
+ * tea-rags-mcp-0e4vf).
+ */
+export type MainSequenceComponentVolatility = MainSequenceComponentVolatilityEvidence;
 
 /** How the volatility cut was drawn; present only when the gate ran. */
 export interface MainSequenceVolatilitySummary {
@@ -590,30 +622,21 @@ export interface LayeringComponentPosition {
   inKnot: boolean;
 }
 
-/** One edge the feedback arc set removes to dissolve a knot. */
-export interface LayeringFeedbackEdge {
-  sourceComponent: string;
-  targetComponent: string;
-  /** Sum of the carried file edges' call weights — the weight the cut pays. */
-  callWeight: number;
-  /** The carrying file edges, heaviest call weight first, capped at `COMPONENT_EVIDENCE_FILE_EDGE_LIMIT`. */
-  fileEdges: FileDependencyEdge[];
-}
+/**
+ * One edge the feedback arc set removes to dissolve a knot — from the finding
+ * contract (bd tea-rags-mcp-0e4vf), whose `fileEdges` carry the report's
+ * `ArchitectureFileEdge`; the graph's richer `FileDependencyEdge` values
+ * assign to it structurally.
+ */
+export type { LayeringFeedbackEdge };
 
 /**
  * What keeping ONE cut edge costs (bd tea-rags-mcp-r8hme.40): the knot's
  * internal edges with every OTHER feedback-arc-set edge removed. Priced on the
- * whole knot, never a scope projection.
+ * whole knot, never a scope projection — from the finding contract (bd
+ * tea-rags-mcp-0e4vf).
  */
-export interface LayeringKeepCost {
-  /**
-   * Members that fall back into a multi-member SCC. 0 means the greedy cut
-   * includes this edge needlessly: it can stay.
-   */
-  recollapsedMemberCount: number;
-  /** Distinct levels the members occupy, re-collapsed SCCs condensed; components outside the knot keep their levels. */
-  levelsAfterKeep: number;
-}
+export type { LayeringKeepCost };
 
 /** One multi-component strongly-connected set of the component graph. */
 export interface LayeringKnot {
@@ -657,13 +680,8 @@ export interface LayeringModel {
   coherence: number;
 }
 
-export type LayeringViolationKind =
-  | "knot"
-  | "backEdge"
-  | "abstractionBypass"
-  | "compositionCycle"
-  | "island"
-  | "layerSkip";
+/** What a `layering` finding says (bd tea-rags-mcp-r8hme.22) — from the finding contract. */
+export type { LayeringViolationKind };
 
 /** A knot: SCC members ranked by Ca, with the edges whose cut levels the members. */
 export interface LayeringKnotViolation {

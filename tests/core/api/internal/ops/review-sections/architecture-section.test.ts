@@ -22,16 +22,20 @@ import type { DiffScopeRead } from "../../../../../../src/core/api/internal/ops/
 import type { ReviewEdgeExtractionDeps } from "../../../../../../src/core/api/internal/ops/review-edge-overlay.js";
 import {
   architectureSectionProvider,
+  buildSilentCouplingFacts,
   mintReviewId,
-  WiredCouplingReader,
   WiredGraphReader,
 } from "../../../../../../src/core/api/internal/ops/review-sections/architecture-section.js";
-import type { ReviewSectionContext } from "../../../../../../src/core/api/internal/ops/review-sections/review-section-provider.js";
+import type {
+  ReviewGraphDb,
+  ReviewSectionContext,
+} from "../../../../../../src/core/api/internal/ops/review-sections/review-section-provider.js";
 import type {
   FileDependencyEdge,
   FileDependencyGraph,
   FileDependencyGraphFile,
   RelPath,
+  TemporalCochangeBuildMeta,
   TemporalCochangeGraph,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import {
@@ -74,6 +78,19 @@ function graphEdge(sourceRelPath: RelPath, targetRelPath: RelPath): FileDependen
   return { sourceRelPath, targetRelPath, callWeight: 1 };
 }
 
+/**
+ * Indexed files whose only role is to sit AROUND a fixture component so its
+ * `connectionCount` reaches the SDP floor (bd tea-rags-mcp-r8hme.45): the
+ * main-sequence family judges a touched component only at connections ≥ the
+ * floor, and a one-edge fixture would land in the exclusion instead.
+ * AFFERENT only — instability stays I=0, and files nothing points at cannot
+ * close a cycle through the overlay.
+ */
+function floorAfferents(target: RelPath, count = 4): Pick<FileDependencyGraph, "files" | "edges"> {
+  const files = Array.from({ length: count }, (_, i) => graphFile(`src/dep/d${i + 1}.ts`));
+  return { files, edges: files.map((f) => graphEdge(f.relPath, target)) };
+}
+
 /** An indexed edge that recorded the names its import takes — the facade-contract demand side. */
 function namedGraphEdge(
   sourceRelPath: RelPath,
@@ -83,14 +100,39 @@ function namedGraphEdge(
   return { sourceRelPath, targetRelPath, callWeight: 1, importedExportNames };
 }
 
+/**
+ * A vitest mock whose signature IS the port method's — when `ReviewGraphDb`
+ * gains or changes a member, the stub stops compiling here instead of
+ * drifting from the port silently (the blind spot bd tea-rags-mcp-89k7k.11
+ * closes; this file held exactly such a drift).
+ */
+type PortMock<K extends keyof ReviewGraphDb> = ReturnType<typeof vi.fn<ReviewGraphDb[K]>>;
+
 interface GraphDbStub {
-  readFileDependencyGraph: ReturnType<typeof vi.fn>;
-  putReviewFileEdges: ReturnType<typeof vi.fn>;
-  dropReviewFileEdges: ReturnType<typeof vi.fn>;
-  sweepExpiredReviewFileEdges: ReturnType<typeof vi.fn>;
-  readTemporalCochangeGraph: ReturnType<typeof vi.fn>;
-  readTemporalSymbolCommits: ReturnType<typeof vi.fn>;
+  readFileDependencyGraph: PortMock<"readFileDependencyGraph">;
+  putReviewFileEdges: PortMock<"putReviewFileEdges">;
+  dropReviewFileEdges: PortMock<"dropReviewFileEdges">;
+  sweepExpiredReviewFileEdges: PortMock<"sweepExpiredReviewFileEdges">;
+  readTemporalCochangeGraph: PortMock<"readTemporalCochangeGraph">;
+  readTemporalSymbolCommits: PortMock<"readTemporalSymbolCommits">;
   close: ReturnType<typeof vi.fn>;
+}
+
+/** Full build provenance — the fields a real `cg_temporal_meta` row carries. */
+function cochangeMeta(head = "h"): TemporalCochangeBuildMeta {
+  return {
+    head,
+    fingerprint: "fixture-fingerprint",
+    builtAt: 1_760_000_000,
+    windowSince: 1_750_000_000,
+    commitCount: 120,
+    bundleCount: 110,
+    admittedBundleCount: 100,
+    maxFilesPerBundle: 30,
+    minSupport: 3,
+    maxPartnersPerFile: 10,
+    sessionGapMinutes: null,
+  };
 }
 
 function graphDbStub(graph: FileDependencyGraph, cochangeEdges: TemporalCochangeGraph["edges"] = []): GraphDbStub {
@@ -99,13 +141,18 @@ function graphDbStub(graph: FileDependencyGraph, cochangeEdges: TemporalCochange
     putReviewFileEdges: vi.fn(async () => undefined),
     dropReviewFileEdges: vi.fn(async () => undefined),
     sweepExpiredReviewFileEdges: vi.fn(async () => []),
-    readTemporalCochangeGraph: vi.fn(async () => ({ meta: { head: "h" }, edges: cochangeEdges })),
+    readTemporalCochangeGraph: vi.fn(async () => ({ meta: cochangeMeta(), edges: cochangeEdges })),
     readTemporalSymbolCommits: vi.fn(async () => ({ relPath: "", symbols: [] })),
     close: vi.fn(async () => undefined),
   };
 }
 
-function cochangePair(a: RelPath, b: RelPath, support: number): TemporalCochangeGraph["edges"][number] {
+function cochangePair(
+  a: RelPath,
+  b: RelPath,
+  support: number,
+  structurallyLinked = false,
+): TemporalCochangeGraph["edges"][number] {
   return {
     relPathA: a,
     relPathB: b,
@@ -115,10 +162,29 @@ function cochangePair(a: RelPath, b: RelPath, support: number): TemporalCochange
     lift: 3,
     lastCoChangeAt: 1_700_000_000,
     sampleCommits: ["a1b2c3"],
+    structurallyLinked,
   };
 }
 
-function scopeOf(files: readonly string[]): DiffScopeRead {
+/**
+ * A pair the production strength cut admits: wilson(9, 10) ≈ 0.596 clears the
+ * 0.5 majority floor — `cochangePair`'s 0.75/0.6 confidences give ≈ 0.47 and
+ * are (correctly) not strong under the machinery the wiring now consumes.
+ */
+function strongPair(
+  a: RelPath,
+  b: RelPath,
+  support = 9,
+  structurallyLinked = false,
+): TemporalCochangeGraph["edges"][number] {
+  return {
+    ...cochangePair(a, b, support, structurallyLinked),
+    confidenceAB: 0.9,
+    confidenceBA: 0.9,
+  };
+}
+
+function scopeOf(files: readonly string[], skipped = 0): DiffScopeRead {
   return {
     workTree: workTree!,
     base: "HEAD",
@@ -129,7 +195,7 @@ function scopeOf(files: readonly string[]): DiffScopeRead {
     files,
     addedRanges: new Map(),
     nonProduction: new Set(),
-    skipped: 0,
+    skipped,
   };
 }
 
@@ -168,33 +234,36 @@ describe("architectureSectionProvider.run", () => {
     writeFile("src/lib/b.ts", "export const B = 1;\n");
     writeFile("src/app/a.ts", 'import { B } from "../lib/b";\nexport const A = B;\n');
     writeFile("docs/notes.md", "# Notes\n");
+    const lift = floorAfferents("src/app/a.ts");
     const graph = graphDbStub(
       {
-        files: [graphFile("src/app/a.ts"), graphFile("src/lib/b.ts"), graphFile("src/other/c.ts")],
+        files: [graphFile("src/app/a.ts"), graphFile("src/lib/b.ts"), graphFile("src/other/c.ts"), ...lift.files],
         // The stale indexed edge the diff replaces: pre-diff, b imported a.
-        edges: [graphEdge("src/lib/b.ts", "src/app/a.ts")],
+        // The four dep files lift app's component to the SDP connection floor
+        // so the main-sequence family judges it (bd tea-rags-mcp-r8hme.45).
+        edges: [graphEdge("src/lib/b.ts", "src/app/a.ts"), ...lift.edges],
       },
-      [cochangePair("src/app/a.ts", "src/other/c.ts", 5)],
+      [strongPair("src/app/a.ts", "src/other/c.ts")],
     );
 
     const payload = (await architectureSectionProvider.run(
       runContext({
         graphDb: graph,
         scope: scopeOf(["src/app/a.ts", "docs/notes.md", "src/gone.ts"]),
-        temporalCochange: { meta: { head: "h" }, edges: [cochangePair("src/app/a.ts", "src/other/c.ts", 5)] },
+        temporalCochange: { meta: cochangeMeta(), edges: [strongPair("src/app/a.ts", "src/other/c.ts")] },
       }),
     )) as Record<string, unknown>;
 
     // Sweep-on-create: once, before anything else, with the store's age bound.
     expect(graph.sweepExpiredReviewFileEdges).toHaveBeenCalledTimes(1);
-    const [nowEpoch, maxAge] = graph.sweepExpiredReviewFileEdges.mock.calls[0] as [number, number];
+    const [nowEpoch, maxAge] = graph.sweepExpiredReviewFileEdges.mock.calls[0];
     expect(maxAge).toBe(3600);
     expect(nowEpoch).toBeGreaterThanOrEqual(Math.floor(Date.now() / 1000) - 120);
 
     // One minted reviewId carries the put and the drop; the edges put are the
     // successful working-tree reads only.
     expect(graph.putReviewFileEdges).toHaveBeenCalledTimes(1);
-    const [putId, putEdges] = graph.putReviewFileEdges.mock.calls[0] as [string, { sourceRelPath: string }[]];
+    const [putId, putEdges] = graph.putReviewFileEdges.mock.calls[0];
     expect(putId).toMatch(REVIEW_ID_PATTERN);
     expect(putEdges).toEqual([
       { sourceRelPath: "src/app/a.ts", targetRelPath: "src/lib/b.ts", importedExportNames: ["B"] },
@@ -249,6 +318,95 @@ describe("architectureSectionProvider.run", () => {
     expect(payload.truncated).toBeUndefined();
   });
 
+  // The wiring-level twin of the production pin (silent-coupling.test.ts:188,
+  // bd tea-rags-mcp-r8hme.12), live-measured as bead tea-rags-mcp-89k7k.4: a
+  // dto/ops pair (support 24) reported as "strong co-change with NO structural
+  // edge" while ops imports 18 DTO names via `import type`. That edge lives in
+  // cg_symbols_edges_file_type_only — readFileDependencyGraph never returns it
+  // — but the co-change snapshot's structurallyLinked flag is computed from the
+  // production union that counts a type-only import as a link, so the pair must
+  // arrive at the judgement already explained.
+  it("does not report a pair linked only by a type-only import — the snapshot's linkage flag explains it", async () => {
+    writeFile("src/dto.ts", "export type A = { x: number };\n");
+    const graph = graphDbStub(
+      {
+        files: [graphFile("src/dto.ts"), graphFile("src/ops.ts")],
+        edges: [],
+      },
+      [cochangePair("src/dto.ts", "src/ops.ts", 24, true)],
+    );
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({
+        graphDb: graph,
+        scope: scopeOf(["src/dto.ts"]),
+        temporalCochange: { meta: cochangeMeta(), edges: [cochangePair("src/dto.ts", "src/ops.ts", 24, true)] },
+      }),
+    )) as Record<string, unknown>;
+
+    const findings = payload.findings as { detector: string; subject: string }[];
+    expect(findings.filter((f) => f.detector === "silentCoupling")).toEqual([]);
+    const detectors = payload.detectors as { detector: string; built: boolean; findingCount: number }[];
+    expect(detectors.find((d) => d.detector === "silentCoupling")).toMatchObject({ built: true, findingCount: 0 });
+  });
+
+  // End-to-end exclusion wiring (bd tea-rags-mcp-89k7k.1.10): the diff-scoped
+  // family must consume the production detector's verdict over the SAME
+  // snapshot — historical src~test and CLAUDE.md~code pairs and unwalked pairs
+  // are counted into the silentCoupling row's `excluded` block (the production
+  // summary's vocabulary) and never reported; weak pairs below the strength
+  // floor are not findings either. On the recorded agent diffs the review used
+  // to answer 19–98 such pairs, burying the diff-relevant ones.
+  it("reports only the production verdict's strong unlinked pairs on this diff, with production's excluded counters", async () => {
+    writeFile("src/app/a.ts", "export const A = 1;\n");
+    const pairEdges = [
+      // (a) historical src~test pair
+      cochangePair("src/app/a.ts", "tests/app/a.test.ts", 9),
+      // (b) CLAUDE.md ~ code pair
+      cochangePair("CLAUDE.md", "src/app/a.ts", 8),
+      // (c) pair with no walked endpoint
+      {
+        ...cochangePair("config/settings.json", "config/settings.schema.json", 6),
+        confidenceAB: 0.6,
+        confidenceBA: 0.6,
+      },
+      // (d) the genuine strong src~src pair — wilson(9,10) ≈ 0.596 > 0.5 floor
+      strongPair("src/app/a.ts", "src/other/c.ts"),
+      // (e) src~src pair below the strength floor — wilson(4,8) ≈ 0.22
+      { ...cochangePair("src/app/a.ts", "src/weak/e.ts", 4), confidenceAB: 0.5, confidenceBA: 0.5 },
+    ];
+    const graph = graphDbStub(
+      {
+        // The codegraph's walked files: tests, CLAUDE.md and the config pair
+        // are not walked.
+        files: [graphFile("src/app/a.ts"), graphFile("src/other/c.ts"), graphFile("src/weak/e.ts")],
+        edges: [],
+      },
+      pairEdges,
+    );
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({
+        graphDb: graph,
+        scope: scopeOf(["src/app/a.ts", "config/settings.json"]),
+        temporalCochange: { meta: cochangeMeta(), edges: pairEdges },
+      }),
+    )) as Record<string, unknown>;
+
+    const findings = payload.findings as { detector: string; subject: string }[];
+    expect(findings.filter((f) => f.detector === "silentCoupling").map((f) => f.subject)).toEqual([
+      "src/app/a.ts ~ src/other/c.ts",
+    ]);
+    const detectors = payload.detectors as { detector: string; excluded?: Record<string, number> }[];
+    expect(detectors.find((d) => d.detector === "silentCoupling")?.excluded).toEqual({
+      testEndpoints: 1,
+      generatedEndpoints: 0,
+      documentationEndpoints: 1,
+      unwalkedEndpoints: 1,
+      nonPositiveLift: 0,
+    });
+  });
+
   it("caps findings at 100 and counts the rest in truncated", async () => {
     const targets = Array.from({ length: 105 }, (_, i) => `src/lib/t${String(i).padStart(3, "0")}.ts`);
     for (const target of targets) writeFile(target, `export const T = 1;\n`);
@@ -256,11 +414,13 @@ describe("architectureSectionProvider.run", () => {
       "src/app/a.ts",
       `${targets.map((_, i) => `import { T${i} } from "../lib/t${String(i).padStart(3, "0")}";\n`).join("")}export const A = 1;\n`,
     );
+    const lift = floorAfferents("src/app/a.ts");
     const graph = graphDbStub({
-      files: [graphFile("src/app/a.ts"), ...targets.map((relPath) => graphFile(relPath))],
+      files: [graphFile("src/app/a.ts"), ...targets.map((relPath) => graphFile(relPath)), ...lift.files],
       // One stale indexed edge: enough for lib I=1 / app I=0, and it closes the
-      // a→t0 edge into a cycle.
-      edges: [graphEdge("src/lib/t000.ts", "src/app/a.ts")],
+      // a→t0 edge into a cycle. The dep files lift app to the SDP connection
+      // floor so its main-sequence move stays judged (bd tea-rags-mcp-r8hme.45).
+      edges: [graphEdge("src/lib/t000.ts", "src/app/a.ts"), ...lift.edges],
     });
 
     const payload = (await architectureSectionProvider.run(
@@ -322,6 +482,126 @@ describe("architectureSectionProvider.run", () => {
       runContext({ graphDb: graph, scope: scopeOf(["src/app/a.ts"]) }),
     )) as Record<string, unknown>;
     expect(payload.findings).toEqual([]);
+  });
+
+  // bd tea-rags-mcp-35v4v (live 2026-10-01): a 5-file probe diff produced 134
+  // findings; the concatenated `slice(0, 100)` in family order let 117
+  // silentCoupling findings push facadeContract (1) and splitCandidates (2)
+  // ENTIRELY into `truncated` — the most diff-native families invisible while
+  // their detector rows still counted them.
+  it("over the findings cap every family with a finding keeps a slot — a silentCoupling flood never starves facadeContract", async () => {
+    // The facadeContract fixture (a facade dropping a re-export consumers
+    // import) beside a 110-partner silent-coupling flood: 111 findings > 100.
+    writeFile("src/lib/x.ts", "export const a = 1;\nexport const b = 2;\n");
+    writeFile("src/lib/y.ts", "export const z = 1;\n");
+    writeFile("src/lib/index.ts", 'export { a } from "./x";\nexport { z } from "./y";\n');
+    const partners = Array.from({ length: 110 }, (_, i) => `src/other/p${String(i).padStart(3, "0")}.ts`);
+    const graph = graphDbStub(
+      {
+        files: [
+          graphFile("src/lib/index.ts"),
+          graphFile("src/lib/x.ts"),
+          graphFile("src/lib/y.ts"),
+          graphFile("src/app/c1.ts"),
+          graphFile("src/app/c2.ts"),
+          graphFile("src/app/c3.ts"),
+        ],
+        edges: [
+          {
+            sourceRelPath: "src/lib/index.ts",
+            targetRelPath: "src/lib/x.ts",
+            callWeight: 1,
+            reexportedExportNames: ["a", "b"],
+          },
+          {
+            sourceRelPath: "src/lib/index.ts",
+            targetRelPath: "src/lib/y.ts",
+            callWeight: 1,
+            reexportedExportNames: ["z"],
+          },
+          namedGraphEdge("src/app/c1.ts", "src/lib/index.ts", ["a"]),
+          namedGraphEdge("src/app/c2.ts", "src/lib/index.ts", ["a"]),
+          namedGraphEdge("src/app/c3.ts", "src/lib/index.ts", ["a", "b"]),
+        ],
+      },
+      partners.map((partner) => strongPair("src/lib/index.ts", partner)),
+    );
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({
+        graphDb: graph,
+        scope: scopeOf(["src/lib/index.ts"]),
+        temporalCochange: { meta: cochangeMeta(), edges: partners.map((p) => strongPair("src/lib/index.ts", p)) },
+      }),
+    )) as Record<string, unknown>;
+
+    // THE live bug: the plain slice kept the first 100 findings in family
+    // order and facadeContract landed wholly in `truncated`.
+    const findings = payload.findings as { detector: string }[];
+    expect(findings.some((finding) => finding.detector === "facadeContract")).toBe(true);
+
+    // The family-aware policy's invariants, whatever the fixture's family mix.
+    expect(findings).toHaveLength(100);
+    const detectors = payload.detectors as { detector: string; findingCount: number; truncated?: number }[];
+    const listedByDetector = new Map<string, number>();
+    for (const finding of findings) {
+      listedByDetector.set(finding.detector, (listedByDetector.get(finding.detector) ?? 0) + 1);
+    }
+    for (const status of detectors) {
+      if (status.findingCount === 0) continue;
+      expect(listedByDetector.get(status.detector) ?? 0, `${status.detector} starved under the cap`).toBeGreaterThan(0);
+      expect((status.truncated ?? 0) + (listedByDetector.get(status.detector) ?? 0)).toBe(status.findingCount);
+    }
+    const totalFindings = detectors.reduce((sum, status) => sum + status.findingCount, 0);
+    expect(payload.truncated).toBe(totalFindings - 100);
+    // The flooding family's cut is counted on its own row, not hidden in the total.
+    expect(detectors.find((status) => status.detector === "silentCoupling")?.truncated).toBeGreaterThan(0);
+  });
+
+  // bd tea-rags-mcp-89k7k.1.9: the change closes a -> b -> x -> a, but the
+  // only file carrying the closing edge x -> a fell past the reader's file
+  // cap — the overlay never sees it, so `cycles` would read as a clean zero.
+  it("a scope over the file cap marks every built detector partial — a cycle closing through a skipped file is never a clean pass", async () => {
+    writeFile("src/app/a.ts", 'import { B } from "../lib/b";\nexport const A = 1;\n');
+    // Skipped past the cap in a real read; here the scope says so directly.
+    writeFile("src/skip/x.ts", 'import { A } from "../app/a";\nexport const X = A;\n');
+    const graph = graphDbStub({
+      files: [graphFile("src/app/a.ts"), graphFile("src/lib/b.ts"), graphFile("src/skip/x.ts")],
+      // The indexed b -> x hop: in the TREE the change closes a -> b -> x -> a
+      // through x's new edge, which the truncated scope never reads.
+      edges: [graphEdge("src/lib/b.ts", "src/skip/x.ts")],
+    });
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({ graphDb: graph, scope: scopeOf(["src/app/a.ts"], 1) }),
+    )) as Record<string, unknown>;
+
+    const detectors = payload.detectors as {
+      detector: string;
+      built: boolean;
+      findingCount: number;
+      scopeSkippedFiles?: number;
+    }[];
+    const cycles = detectors.find((status) => status.detector === "cycles");
+    // An honest zero over unseen files — carried as PARTIAL with the skipped
+    // count, never as a clean pass.
+    expect(cycles).toMatchObject({ built: true, findingCount: 0, scopeSkippedFiles: 1 });
+    for (const status of detectors) {
+      if (!status.built) continue;
+      expect(status.scopeSkippedFiles, `${status.detector} claimed a clean pass over a truncated diff`).toBe(1);
+    }
+  });
+
+  it("an untruncated scope claims no partial marker — zeros are then clean passes", async () => {
+    writeFile("src/app/a.ts", "export const A = 1;\n");
+    const graph = graphDbStub({ files: [graphFile("src/app/a.ts")], edges: [] });
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({ graphDb: graph, scope: scopeOf(["src/app/a.ts"]) }),
+    )) as Record<string, unknown>;
+
+    const detectors = payload.detectors as { scopeSkippedFiles?: number }[];
+    expect(detectors.every((status) => status.scopeSkippedFiles === undefined)).toBe(true);
   });
 });
 
@@ -438,7 +718,7 @@ describe("architectureSectionProvider.run — splitCandidates wiring", () => {
     bundles.set(bundles.size, ["src/wide/x2.ts", "src/wide/y1.ts"]);
     bundles.set(bundles.size, ["src/wide/x2.ts", "src/wide/y1.ts"]);
     return {
-      meta: { head: "h" },
+      meta: cochangeMeta(),
       edges: [
         temporalPair("src/wide/x1.ts", "src/wide/x2.ts", 16, 16, 18),
         temporalPair("src/wide/y1.ts", "src/wide/y2.ts", 20, 22, 20),
@@ -492,7 +772,7 @@ describe("architectureSectionProvider.run — splitCandidates wiring", () => {
       runContext({
         graphDb: graph,
         scope: scopeOf(["src/wide/x1.ts"]),
-        temporalCochange: { meta: { head: "h" }, edges: [], bundles: new Map() },
+        temporalCochange: { meta: cochangeMeta(), edges: [], bundles: new Map() },
       }),
     )) as Record<string, unknown>;
 
@@ -535,6 +815,34 @@ describe("architectureSectionProvider.run — splitCandidates wiring", () => {
       findingCount: 0,
     });
   });
+
+  // bd tea-rags-mcp-2wsnt: a diff touching the stylesheet itself — the walked
+  // partner sits outside the diff, so the rescue's read is the section's
+  // context lookup, and a pair the report would rescue must not become a
+  // finding here.
+  it("does not report a diff-touching one-walked pair the recorded asset import links", async () => {
+    writeFile("app/s1.module.css", ".s1 { color: red; }\n");
+    const graph = graphDbStub({ files: [graphFile("app/s1.ts")], edges: [] });
+    const readImportSpecifiers = vi.fn().mockResolvedValue(new Map([["app/s1.ts", ["./s1.module.css"]]]));
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({
+        graphDb: graph,
+        scope: scopeOf(["app/s1.module.css"]),
+        temporalCochange: { meta: cochangeMeta(), edges: [strongPair("app/s1.module.css", "app/s1.ts")] },
+        readImportSpecifiers,
+      }),
+    )) as Record<string, unknown>;
+
+    expect(readImportSpecifiers).toHaveBeenCalledTimes(1);
+    expect(readImportSpecifiers.mock.calls[0][0]).toEqual(["app/s1.ts"]);
+    const findings = payload.findings as { detector: string; subject: string }[];
+    expect(findings.filter((f) => f.detector === "silentCoupling")).toEqual([]);
+    const silent = (payload.detectors as { detector: string; built: boolean; findingCount: number }[]).find(
+      (d) => d.detector === "silentCoupling",
+    );
+    expect(silent).toMatchObject({ built: true, findingCount: 0 });
+  });
 });
 
 describe("mintReviewId", () => {
@@ -557,22 +865,84 @@ describe("WiredGraphReader", () => {
   });
 });
 
-describe("WiredCouplingReader", () => {
-  it("adapts the co-change snapshot both ways: the file as relPathA or relPathB", () => {
-    const reader = new WiredCouplingReader({
-      meta: { head: "h" },
-      edges: [cochangePair("src/a.ts", "src/b.ts", 4), cochangePair("src/a.ts", "src/z.ts", 2)],
-    });
-    expect(reader.partnersOf("src/a.ts")).toEqual([
-      { partner: "src/b.ts", support: 4 },
-      { partner: "src/z.ts", support: 2 },
+describe("buildSilentCouplingFacts", () => {
+  it("hands the run the production verdict: violations mapped to the port shape, excluded counters verbatim", async () => {
+    const snapshot = {
+      meta: cochangeMeta(),
+      edges: [strongPair("src/a.ts", "src/b.ts"), cochangePair("CLAUDE.md", "src/c.ts", 8)],
+    };
+    const files = [graphFile("src/a.ts"), graphFile("src/b.ts"), graphFile("src/c.ts")];
+    const facts = await buildSilentCouplingFacts(snapshot, files, [], []);
+    // CLAUDE.md ~ src/c.ts is a documentation-endpoint pair — excluded by the
+    // production taxonomy, never a violation; the strong src~src pair passes.
+    expect(facts.violations).toEqual([
+      { relPathA: "src/a.ts", relPathB: "src/b.ts", support: 9, strength: 0.5958436145024278 },
     ]);
-    expect(reader.partnersOf("src/b.ts")).toEqual([{ partner: "src/a.ts", support: 4 }]);
-    expect(reader.partnersOf("src/none.ts")).toEqual([]);
+    expect(facts.excluded).toMatchObject({ documentationEndpoints: 1 });
   });
 
-  it("an absent or never-built snapshot answers no partners — absence is silence, not a zero verdict", () => {
-    expect(new WiredCouplingReader(undefined).partnersOf("src/a.ts")).toEqual([]);
-    expect(new WiredCouplingReader(null).partnersOf("src/a.ts")).toEqual([]);
+  it("an absent or never-built snapshot degrades to the empty verdict — silence, not a zero", async () => {
+    const absent = await buildSilentCouplingFacts(undefined, [], [], []);
+    expect(absent.violations).toEqual([]);
+    expect(absent.excluded).toEqual({
+      testEndpoints: 0,
+      generatedEndpoints: 0,
+      documentationEndpoints: 0,
+      unwalkedEndpoints: 0,
+      nonPositiveLift: 0,
+    });
+  });
+
+  // bd tea-rags-mcp-2wsnt — the report's rbnkp rescue, diff-scoped: the
+  // stylesheet is no codegraph file node, so the strong pair is one-walked;
+  // the walked endpoint's recorded specifiers import it, so the report's
+  // second pass links the pair and the review's facts must drop it the same
+  // way — not report a finding the whole-repo report would have rescued.
+  it("rescues a diff-touching one-walked pair the walked endpoint's recorded asset import links", async () => {
+    const snapshot = { meta: cochangeMeta(), edges: [strongPair("app/s1.module.css", "app/s1.ts")] };
+    const files = [graphFile("app/s1.ts")]; // walked census: an asset is no file node
+    const readImportSpecifiers = vi.fn().mockResolvedValue(new Map([["app/s1.ts", ["./s1.module.css"]]]));
+
+    const facts = await buildSilentCouplingFacts(
+      snapshot,
+      files,
+      [],
+      ["app/s1.module.css"], // the diff touches the stylesheet, not the importer
+      readImportSpecifiers,
+    );
+
+    // The read is the report's shape: the walked endpoints of the diff-scoped
+    // one-walked violations, and nothing else.
+    expect(readImportSpecifiers).toHaveBeenCalledTimes(1);
+    expect(readImportSpecifiers.mock.calls[0][0]).toEqual(["app/s1.ts"]);
+    expect(facts.violations).toEqual([]);
+  });
+
+  it("reads specifiers only for the diff-touching one-walked pairs — a pair off the diff costs no read", async () => {
+    const snapshot = {
+      meta: cochangeMeta(),
+      edges: [strongPair("app/s1.module.css", "app/s1.ts"), strongPair("web/t2.module.css", "web/t2.ts")],
+    };
+    const files = [graphFile("app/s1.ts"), graphFile("web/t2.ts")];
+    const readImportSpecifiers = vi.fn().mockResolvedValue(new Map([["web/t2.ts", ["./t2.module.css"]]]));
+
+    const facts = await buildSilentCouplingFacts(snapshot, files, [], ["web/t2.module.css"], readImportSpecifiers);
+
+    expect(readImportSpecifiers).toHaveBeenCalledTimes(1);
+    expect(readImportSpecifiers.mock.calls[0][0]).toEqual(["web/t2.ts"]);
+    // The linked web pair drops; the unrescued app pair — off the diff, so
+    // the run's judge never sees it — keeps its verdict verbatim.
+    expect(facts.violations).toEqual([
+      { relPathA: "app/s1.module.css", relPathB: "app/s1.ts", support: 9, strength: 0.5958436145024278 },
+    ]);
+  });
+
+  it("no wired read keeps the single-pass verdict — the unit wiring never invents a lookup", async () => {
+    const snapshot = { meta: cochangeMeta(), edges: [strongPair("app/s1.module.css", "app/s1.ts")] };
+    const files = [graphFile("app/s1.ts")];
+
+    const facts = await buildSilentCouplingFacts(snapshot, files, [], ["app/s1.module.css"]);
+
+    expect(facts.violations).toHaveLength(1);
   });
 });

@@ -17,17 +17,14 @@
 
 import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
 import { resolveGitCommonDir } from "../../../adapters/vcs/git/common-dir.js";
-import type { CollectionEntry } from "../../../contracts/types/registry.js";
+// RegistryLookup is defined in contracts (bd tea-rags-mcp-0qaht.36); this
+// module re-exports it unchanged for its existing consumers.
+import type { CollectionEntry, RegistryLookup } from "../../../contracts/types/registry.js";
 import { canonicalRegistryEnvKeys, isBackendRegistryEnvKey, isThroughputTunedEnvKey } from "./env-groups.js";
 import { outerEnvForRegistryStamp, replayRegistryEnv, type AmbientEnvRole } from "./env-replay.js";
 import { resolveRegistryQdrantBackend } from "./qdrant-backend-resolution.js";
 
-/** Structural subset of CollectionRegistry used here — keeps tests fake-friendly. */
-export interface RegistryLookup {
-  findByName: (name: string) => CollectionEntry | null;
-  findByPath: (path: string) => CollectionEntry | null;
-  list: () => CollectionEntry[];
-}
+export type { RegistryLookup };
 
 /**
  * Pick the registry entry whose config should seed the worker env:

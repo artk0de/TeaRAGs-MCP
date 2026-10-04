@@ -60,6 +60,12 @@ jobs:
       - name: Type check scripts
         run: npm run type-check:scripts
 
+      # Tests are invisible to the src lane and unchecked by vitest's
+      # transpile-only run — fixture drift from declared port types stayed
+      # green for commit cycles (bd tea-rags-mcp-89k7k.11).
+      - name: Type check tests
+        run: npm run type-check:tests
+
       - name: Build project
         run: npm run build
 

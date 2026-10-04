@@ -1728,6 +1728,11 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
             windowMonths: zodConfig.trajectoryGit.chunkMaxAgeMonths,
             workingTreeOverlay,
             indexExists,
+            // The architecture section's asset-import rescue reads the SAME
+            // payload specifiers the whole-repo report's second silent-coupling
+            // pass reads (bd tea-rags-mcp-2wsnt) — one reader, two consumers.
+            readImportSpecifiers: async (collectionName, relPaths) =>
+              readPayloadImportSpecifiers(infra.qdrant, collectionName, relPaths),
           }),
         })
       : undefined;

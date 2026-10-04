@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, normalize } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -19,7 +19,10 @@ import type {
 } from "../../src/core/contracts/types/codegraph.js";
 import { DATABASE_MIGRATIONS } from "../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../src/core/domains/maintenance/migration/database/runner.js";
-import { detectStableDependencyViolations } from "../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
+import {
+  buildComponentGraph,
+  detectStableDependencyViolations,
+} from "../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
 
 describe("parseArgs", () => {
   it("requires --db and defaults the rest to the detector's own defaults", () => {
@@ -234,5 +237,102 @@ describe("private collaborators and root causes in the report", () => {
       top: 20,
       judgePrivateCollaborators: true,
     });
+  });
+});
+
+/**
+ * Attribution pin for the SDP premise review (bd tea-rags-mcp-89k7k.2).
+ *
+ * The review once attributed an `api/public → maintenance/drift` file edge to
+ * `src/core/api/public/index.ts` and read its callWeight 0 as type-only. The
+ * source never had that import — `git log --all -S maintenance/drift` finds no
+ * commit ever adding one — and a callWeight 0 edge is not necessarily type-only
+ * (four causes; see the `FileDependencyEdge` docblock). The live graph carried
+ * the truth all along: the ONLY api/public importer of drift is app.ts, whose
+ * import is runtime + type (`formatIndexDriftReport` + `IndexDriftReporter`).
+ *
+ * The pin reads the graph over THIS REPOSITORY'S OWN SOURCES, not over a live
+ * self-index: a corpus copy is what the script demands (the daemon owns the
+ * live file — `assertNotLiveCodegraphDatabase`), and a copy has no place in a
+ * unit test. The scan is the same named-statement scan the stable-layers guard
+ * (`sdp-type-import-direction.test.ts`) uses, resolved through relative
+ * specifiers into graph edges, so it fails when a barrel edge becomes REAL in
+ * the sources — the only way one can reappear, given the walker passes file
+ * edges through verbatim (bd tea-rags-mcp-89k7k.2 diagnosis). Type-only
+ * statements count too, deliberately: the stale premise was exactly "index.ts
+ * re-exports/types from drift", and the stable layers take type vocabulary
+ * from contracts, never from a volatile domain.
+ */
+describe("api-public → maintenance/drift attribution pin (bd tea-rags-mcp-89k7k.2)", () => {
+  const REPO_ROOT = join(import.meta.dirname, "../..");
+  const API_PUBLIC_DIR = "src/core/api/public";
+  const DRIFT_DIR = "src/core/domains/maintenance/drift";
+  const SLICE_DIRS = [API_PUBLIC_DIR, DRIFT_DIR] as const;
+
+  function tsFilesUnder(relDir: string, acc: string[] = []): string[] {
+    for (const entry of readdirSync(join(REPO_ROOT, relDir))) {
+      const rel = `${relDir}/${entry}`;
+      if (statSync(join(REPO_ROOT, rel)).isDirectory()) tsFilesUnder(rel, acc);
+      else if (entry.endsWith(".ts")) acc.push(rel);
+    }
+    return acc;
+  }
+
+  /** Import/export specifiers a file names, one statement at a time (`;`-bounded). */
+  function specifiersOf(text: string): string[] {
+    return [...text.matchAll(/(?:import|export)\b[^;]*?from\s*"([^"]+)"/g)].map((m) => m[1] ?? "");
+  }
+
+  function resolveSpecifier(sourceRelPath: string, specifier: string, scanned: Set<string>): string | undefined {
+    if (!specifier.startsWith(".")) return undefined;
+    // The repo's NodeNext style imports spell `.js`; the file on disk is `.ts`.
+    const rewritten = specifier.replace(/\.js$/, ".ts");
+    const base = normalize(join(dirname(sourceRelPath), rewritten)).replaceAll("\\", "/");
+    for (const candidate of [base, `${base}.ts`, `${base}/index.ts`]) {
+      if (scanned.has(candidate)) return candidate;
+    }
+    return undefined;
+  }
+
+  /** The file dependency graph of the two directories the pin watches. */
+  function repositorySliceGraph(): FileDependencyGraph {
+    const relPaths = SLICE_DIRS.flatMap((dir) => tsFilesUnder(dir));
+    const scanned = new Set(relPaths);
+    const files: FileDependencyGraphFile[] = relPaths.map((relPath) => ({
+      relPath,
+      language: "typescript",
+      symbolCount: 1,
+    }));
+    const edges: FileDependencyGraph["edges"] = [];
+    for (const relPath of relPaths) {
+      const text = readFileSync(join(REPO_ROOT, relPath), "utf-8");
+      for (const specifier of specifiersOf(text)) {
+        const target = resolveSpecifier(relPath, specifier, scanned);
+        if (target) edges.push({ sourceRelPath: relPath, targetRelPath: target, callWeight: 0 });
+      }
+    }
+    return { files, edges };
+  }
+
+  it("carries the component dependency's file edges from app.ts only — no barrel edge", () => {
+    const componentGraph = buildComponentGraph(repositorySliceGraph(), []);
+    const dependency = componentGraph.dependencies.find(
+      (d) => d.sourceComponent === API_PUBLIC_DIR && d.targetComponent === DRIFT_DIR,
+    );
+
+    expect(dependency).toBeDefined();
+    expect(dependency?.fileEdges.map((e) => [e.sourceRelPath, e.targetRelPath])).toEqual([
+      ["src/core/api/public/app.ts", "src/core/domains/maintenance/drift/index.ts"],
+    ]);
+  });
+
+  it("no api/public/index.ts edge reaches maintenance/drift, runtime or type-only", () => {
+    const graph = repositorySliceGraph();
+
+    expect(
+      graph.edges.filter(
+        (e) => e.sourceRelPath === `${API_PUBLIC_DIR}/index.ts` && e.targetRelPath.startsWith(`${DRIFT_DIR}/`),
+      ),
+    ).toEqual([]);
   });
 });

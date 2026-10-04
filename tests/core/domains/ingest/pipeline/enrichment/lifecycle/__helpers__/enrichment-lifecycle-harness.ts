@@ -42,6 +42,7 @@ import {
   MockEmbeddingProvider,
   MockQdrantManager,
 } from "../../../../__helpers__/test-helpers.js";
+import { fixturePhysicalCollectionName } from "../../../../../../__helpers__/collection-identity.js";
 import { DaemonGraphDbClient } from "../../../../../../../../src/core/adapters/duckdb/daemon/client.js";
 import { runDaemon } from "../../../../../../../../src/core/adapters/duckdb/daemon/entry.js";
 import {
@@ -462,7 +463,7 @@ export async function startEnrichmentLifecycleHarness(
   const fixture = await startCodegraphFixture(options);
   const { repoRoot, mainPool } = fixture;
 
-  const collection = `code_p7_${Math.random().toString(36).slice(2, 10)}`;
+  const collection = fixturePhysicalCollectionName(`code_p7_${Math.random().toString(36).slice(2, 10)}`);
   const qdrant = new RecordingQdrant();
   await qdrant.createCollection(collection, 384);
   await qdrant.addPoints(collection, [

@@ -16,13 +16,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
-import { InputValidationError, InvalidParameterError } from "../../../../../src/core/api/errors.js";
 import {
   NamingLexiconOps,
   type NamingLexiconExplore,
 } from "../../../../../src/core/api/internal/ops/naming-lexicon-ops.js";
 import { ontologyLanguageProfiles } from "../../../../../src/core/api/internal/ops/ontology-report-ops.js";
 import type { ExploreResponse, SemanticSearchRequest } from "../../../../../src/core/api/public/dto/index.js";
+import { InputValidationError, InvalidParameterError } from "../../../../../src/core/api/public/errors.js";
 import type {
   IdentifierReplaceEntry,
   IdentifierRow,

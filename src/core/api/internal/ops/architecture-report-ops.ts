@@ -60,6 +60,7 @@ import {
   type LayeringViolation as DomainLayeringViolation,
   type FacadeModuleAssessment,
   type LayeringKeepCost,
+  type LayeringKnot,
   type LayeringKnotLookup,
   type LayeringModel,
   type LayeringReport,
@@ -76,7 +77,6 @@ import {
   type SilentCouplingViolation,
   type SplitMergeVerdicts,
 } from "../../../domains/trajectory/codegraph/temporal/index.js";
-import { UnknownArchitectureComponentError } from "../../errors.js";
 import type {
   ArchitectureDomainBoundaryEdge,
   ArchitectureDomainReport,
@@ -100,7 +100,12 @@ import type {
   SplitMergeVerdictsSummary,
   StableDependenciesReportSummary,
 } from "../../public/dto/architecture.js";
-import { deriveArchitectureComponentFacts, readProductionArchitectureGraph } from "./architecture-facts.js";
+import { UnknownArchitectureComponentError } from "../../public/errors.js";
+import {
+  deriveArchitectureComponentFacts,
+  readProductionArchitectureGraph,
+  type ProductionArchitectureGraph,
+} from "./architecture-facts.js";
 import { ontologyNonProductionPaths } from "./ontology-report-ops.js";
 
 /** Default `GetArchitectureReportRequest.limit`. */
@@ -171,20 +176,55 @@ export class ArchitectureReportOps {
     readImportSpecifiers?: ModuleImportSpecifierLookup,
     readFileCommitCounts?: GitFileCommitCountLookup,
   ): Promise<GetArchitectureReportResponse> {
-    // Every detector judges the production graph (bd tea-rags-mcp-r8hme.9) —
-    // the read and the exclusion live in `architecture-facts.ts` now, shared
-    // with the diff-scoped run (bd tea-rags-mcp-89k7k.1.4).
+    const scope = await this.readScopedGraph(graphDb, request);
+    const runs = await this.runDetectors(graphDb, scope, request, readImportSpecifiers, readFileCommitCounts);
+    const view = this.projectFindings(runs, request);
+    return this.shapeResponse(scope, runs, view, request);
+  }
+
+  /**
+   * The graph the report judges: the production read every detector sees (bd
+   * tea-rags-mcp-r8hme.9), and in domain mode (bd tea-rags-mcp-xb669.1) the
+   * induced sub-graph plus the whole-graph partition its border is positioned
+   * against — the one thing an internal view cannot recompute.
+   */
+  private async readScopedGraph(
+    graphDb: Pick<GraphDbClient, "readFileDependencyGraph">,
+    request: ArchitectureReportScope,
+  ): Promise<ScopedArchitectureGraph> {
+    // The read and the exclusion live in `architecture-facts.ts`, shared with
+    // the diff-scoped run (bd tea-rags-mcp-89k7k.1.4).
     const production = await readProductionArchitectureGraph(graphDb);
-    const { nonProduction } = production;
-    // Domain mode (bd tea-rags-mcp-xb669.1): judge one directory as its own
-    // system — every detector below sees the induced sub-graph. Its border is
-    // read from the WHOLE graph and positioned on the whole-graph stack,
-    // which is the one thing an internal view cannot recompute.
     const whole =
       request.domain === undefined
         ? null
         : buildWholeGraphPartition(production.graph, request.domain, request.pathPattern);
-    const graph = whole ? inducedDomainGraph(production.graph, whole.domainRoot) : production.graph;
+    return {
+      production,
+      whole,
+      graph: whole ? inducedDomainGraph(production.graph, whole.domainRoot) : production.graph,
+    };
+  }
+
+  /**
+   * Every detector family over one scoped graph, in judging order. This is
+   * the seam a new detector joins: a field on
+   * {@link ArchitectureDetectorRuns}, its detect call here, its summary and
+   * violation mappings in {@link ArchitectureReportOps#shapeResponse} — a
+   * one-family change, never more of {@link ArchitectureReportOps#build}.
+   */
+  private async runDetectors(
+    graphDb: Pick<
+      GraphDbClient,
+      "readFileDependencyGraph" | "readNonPublicMemberEdges" | "readTemporalCochangeGraph" | "readTypeNameRows"
+    >,
+    scope: ScopedArchitectureGraph,
+    request: ArchitectureReportScope,
+    readImportSpecifiers?: ModuleImportSpecifierLookup,
+    readFileCommitCounts?: GitFileCommitCountLookup,
+  ): Promise<ArchitectureDetectorRuns> {
+    const { whole, graph } = scope;
+    const { nonProduction } = scope.production;
     // Facade classification + components (bd tea-rags-mcp-r8hme.7): the
     // report-owned derivation in `architecture-facts.ts`.
     const { leaks, components } = deriveArchitectureComponentFacts(graph, request.pathPattern);
@@ -245,25 +285,77 @@ export class ArchitectureReportOps {
     const norms = request.norms
       ? await computeReportNorms(graphDb, graph, layeringComponents.componentOf, request.pathPattern)
       : undefined;
-    const facadePartition = {
-      componentCount: components.components.size,
-      levelCount: buildLayeringModel(components).levelCount,
+    return {
+      leaks,
+      components,
+      sdp,
+      mainSequence,
+      privacy,
+      cochange,
+      silent,
+      layeringComponents,
+      layeringModel,
+      layering,
+      knotLookup,
+      norms,
     };
-    const limit = request.limit ?? DEFAULT_ARCHITECTURE_REPORT_LIMIT;
-    const offset = request.offset ?? 0;
-    // Knot mode (bd tea-rags-mcp-r8hme.39): the WHOLE knot the lookup found
-    // (members before any scope projection) decides which findings sit inside it.
+  }
+
+  /**
+   * The paging every capped list reads, and knot mode's projection of the
+   * runs (bd tea-rags-mcp-r8hme.39): the WHOLE knot the lookup found —
+   * members before any scope projection — decides which findings sit inside
+   * it; the summaries keep reading the unfiltered reports.
+   */
+  private projectFindings(runs: ArchitectureDetectorRuns, request: ArchitectureReportScope): ArchitectureFindingsView {
+    const { knotLookup } = runs;
     const domainKnot =
       knotLookup?.kind === "inKnot"
-        ? layeringModel.knots.find((k) => k.components.includes(knotLookup.component))
+        ? runs.layeringModel.knots.find((k) => k.components.includes(knotLookup.component))
         : undefined;
     const findings = knotLookup
       ? findingsInKnot(
-          { sdp, leaks, privacy, silent, mainSequence },
-          buildArchitectureKnotMembership(domainKnot?.components ?? [], layeringComponents, components),
-          offset,
+          {
+            sdp: runs.sdp,
+            leaks: runs.leaks,
+            privacy: runs.privacy,
+            silent: runs.silent,
+            mainSequence: runs.mainSequence,
+          },
+          buildArchitectureKnotMembership(domainKnot?.components ?? [], runs.layeringComponents, runs.components),
+          request.offset ?? 0,
         )
-      : { sdp, leaks, privacy, silent, mainSequence, layering };
+      : {
+          sdp: runs.sdp,
+          leaks: runs.leaks,
+          privacy: runs.privacy,
+          silent: runs.silent,
+          mainSequence: runs.mainSequence,
+          layering: runs.layering,
+        };
+    return {
+      // The adoption partition's own counts, for comparison against the
+      // domain partition the layering judges.
+      facadePartition: {
+        componentCount: runs.components.components.size,
+        levelCount: buildLayeringModel(runs.components).levelCount,
+      },
+      limit: request.limit ?? DEFAULT_ARCHITECTURE_REPORT_LIMIT,
+      offset: request.offset ?? 0,
+      domainKnot,
+      findings,
+    };
+  }
+
+  /** The response: per-detector summaries, the capped root causes and violations, and the views the request asked for. */
+  private shapeResponse(
+    scope: ScopedArchitectureGraph,
+    runs: ArchitectureDetectorRuns,
+    view: ArchitectureFindingsView,
+    request: ArchitectureReportScope,
+  ): GetArchitectureReportResponse {
+    const { production, whole } = scope;
+    const { findings, facadePartition, limit, offset, domainKnot } = view;
     return {
       ...(request.pathPattern ? { pathPattern: request.pathPattern } : {}),
       summary: {
@@ -272,12 +364,12 @@ export class ArchitectureReportOps {
           excludedEdgeCount: production.excludedEdgeCount,
           reason: NON_PRODUCTION_REASON,
         },
-        stableDependencies: summarise(sdp),
-        leakingAbstraction: summariseLeaks(leaks, privacy, limit),
-        silentCoupling: summariseSilentCoupling(silent, limit),
-        splitMerge: summariseSplitMerge(cochange, components.componentOf),
-        mainSequence: summariseMainSequence(mainSequence),
-        layering: summariseLayering(layering, facadePartition),
+        stableDependencies: summarise(runs.sdp),
+        leakingAbstraction: summariseLeaks(runs.leaks, runs.privacy, limit),
+        silentCoupling: summariseSilentCoupling(runs.silent, limit),
+        splitMerge: summariseSplitMerge(runs.cochange, runs.components.componentOf),
+        mainSequence: summariseMainSequence(runs.mainSequence),
+        layering: summariseLayering(runs.layering, facadePartition),
       },
       rootCauses: [
         ...sdpRootCauses(findings.sdp, limit),
@@ -290,26 +382,28 @@ export class ArchitectureReportOps {
         ...silentViolations(findings.silent, limit),
         ...mainSequenceViolations(findings.mainSequence, limit),
         ...(findings.layering ? layeringViolations(findings.layering, limit) : []),
-        ...(norms ? normsViolations(norms, limit) : []),
+        ...(runs.norms ? normsViolations(runs.norms, limit) : []),
       ],
       // The layer map VIEW only when asked (bd tea-rags-mcp-r8hme.26) — a full
       // map never bloats an unqualified report. Same DOMAIN partition the
       // layering detector judges (bd tea-rags-mcp-r8hme.30), so its
       // boundary edges carry levels consistent with the summary.
-      ...(request.layerMap ? { layerMap: buildLayerMap(layeringComponents, production.graph, request.layerMap) } : {}),
+      ...(request.layerMap
+        ? { layerMap: buildLayerMap(runs.layeringComponents, production.graph, request.layerMap) }
+        : {}),
       // The knot VIEW only when asked (bd tea-rags-mcp-r8hme.38), paged here.
       // Keep costs price the page's cut edges on the WHOLE knot (bd
       // tea-rags-mcp-r8hme.40), whatever projection the page shows.
-      ...(knotLookup
+      ...(runs.knotLookup
         ? {
             knot: knotView(
-              knotLookup,
-              layeringComponents,
+              runs.knotLookup,
+              runs.layeringComponents,
               domainKnot?.instabilitySpread ?? 0,
               (edges) => {
                 // An inKnot lookup always names a knot of the same model.
                 if (!domainKnot) throw new Error("knotOf lookup found a knot the layering model does not hold");
-                return layeringKnotKeepCosts(layeringComponents, layeringModel, domainKnot, edges);
+                return layeringKnotKeepCosts(runs.layeringComponents, runs.layeringModel, domainKnot, edges);
               },
               limit,
               offset,
@@ -318,10 +412,10 @@ export class ArchitectureReportOps {
         : {}),
       // The domain block only in domain mode (bd tea-rags-mcp-xb669.1): the
       // domain's own layering counts plus its border against the system.
-      ...(whole ? { domain: domainView(whole, layeringComponents, layering) } : {}),
+      ...(whole ? { domain: domainView(whole, runs.layeringComponents, runs.layering) } : {}),
       // The norms view only when asked (bd tea-rags-mcp-rpx0v) — the
       // project's own dependency precedents, judged per typed file edge.
-      ...(norms ? { norms: normsDto(norms) } : {}),
+      ...(runs.norms ? { norms: normsDto(runs.norms) } : {}),
     };
   }
 
@@ -375,6 +469,65 @@ export class ArchitectureReportOps {
       violations: [],
     };
   }
+}
+
+/**
+ * The graph one report judges: the production read every detector sees, and
+ * in domain mode the induced sub-graph plus the whole-graph partition
+ * ({@link WholeGraphPartition}) its border is positioned against.
+ */
+interface ScopedArchitectureGraph {
+  production: ProductionArchitectureGraph;
+  /** Null outside domain mode (bd tea-rags-mcp-xb669.1). */
+  whole: WholeGraphPartition | null;
+  graph: FileDependencyGraph;
+}
+
+/**
+ * Every detector family's report over one scoped graph — the one structure a
+ * new detector joins: a field here, a detect call in
+ * {@link ArchitectureReportOps#runDetectors}, a summary and a violation
+ * mapping in {@link ArchitectureReportOps#shapeResponse}.
+ */
+interface ArchitectureDetectorRuns {
+  /** Facade classification + the adoption component partition (bd tea-rags-mcp-r8hme.7). */
+  leaks: LeakingAbstractionReport;
+  components: ComponentGraph;
+  sdp: ComponentStableDependenciesReport;
+  mainSequence: MainSequenceReport;
+  privacy: ConventionPrivacyReport;
+  /** One co-change read feeds both temporal detectors: silent coupling's pairs and the split/merge verdicts' bundle membership. */
+  cochange: TemporalCochangeGraph;
+  silent: SilentCouplingReport;
+  /** The DOMAIN partition the layering judges (bd tea-rags-mcp-r8hme.30) and its model — the knot view reads the same model. */
+  layeringComponents: ComponentGraph;
+  layeringModel: LayeringModel;
+  layering: LayeringReport;
+  /**
+   * Present only in knot mode (bd tea-rags-mcp-r8hme.38); an unknown
+   * component throws before the runs leave
+   * {@link ArchitectureReportOps#runDetectors}, so the view-facing shapes can
+   * assume a resolved lookup.
+   */
+  knotLookup: Exclude<LayeringKnotLookup, { kind: "unknownComponent" }> | undefined;
+  /** Read-time only when asked (bd tea-rags-mcp-rpx0v). */
+  norms: DependencyNormsReport | undefined;
+}
+
+/**
+ * The paging every capped list reads, and knot mode's projection of the runs
+ * (bd tea-rags-mcp-r8hme.39): the findings narrowed to the knot — the
+ * layering report absent there, its back-edges riding the knot view — plus
+ * the whole knot whose keep costs price the page's cut edges (bd
+ * tea-rags-mcp-r8hme.40).
+ */
+interface ArchitectureFindingsView {
+  /** The adoption partition's own counts, reported beside the domain partition's for comparison. */
+  facadePartition: LayeringPartitionCounts;
+  limit: number;
+  offset: number;
+  domainKnot: LayeringKnot | undefined;
+  findings: ArchitectureDetectorReports;
 }
 
 /**
@@ -599,6 +752,7 @@ function sdpViolations(report: ComponentStableDependenciesReport, limit: number)
         callWeight: v.callWeight,
         directoryRelation: v.directoryRelation,
         fileEdgeCount: v.fileEdgeCount,
+        ...(v.compositionRoot ? { compositionRoot: v.compositionRoot } : {}),
         fileEdges: v.fileEdges,
       },
     }),
@@ -689,6 +843,9 @@ function leakViolations(
         facadeImporterCount: v.facadeImporterCount,
         deepImporterCount: v.deepImporterCount,
         callWeight: v.callWeight,
+        kindBasis: v.kindBasis,
+        reExportUnsafe: v.reExportUnsafe,
+        ...(v.reExportCyclePath ? { reExportCyclePath: v.reExportCyclePath } : {}),
         ...(v.importedNames ? { importedNames: v.importedNames } : {}),
         ...(v.nonExportedNames ? { nonExportedNames: v.nonExportedNames } : {}),
       },
@@ -711,8 +868,11 @@ function leakViolations(
  * Documentation by the same language table that sets `isDocumentation` on a
  * chunk — ingest owns it, and this layer is the one allowed to bridge ingest
  * and trajectory, so the detector receives the answer instead of the table.
+ * Exported for the review sections' wiring, which feeds the same predicate to
+ * the diff-scoped silent-coupling exclusions (bd tea-rags-mcp-89k7k.1.10) so
+ * both paths answer documentation identically.
  */
-function isDocumentationPath(relPath: RelPath): boolean {
+export function isDocumentationPath(relPath: RelPath): boolean {
   const language = LANGUAGE_MAP[extname(relPath).toLowerCase()];
   return language !== undefined && DOCUMENTATION_LANGUAGES.has(language);
 }

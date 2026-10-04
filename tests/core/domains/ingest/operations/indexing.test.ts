@@ -156,8 +156,8 @@ describe("IndexPipeline", () => {
         384,
         "Cosine",
         false,
-        undefined,
-        undefined,
+        false,
+        true,
       );
     });
 
@@ -180,8 +180,8 @@ describe("IndexPipeline", () => {
         768,
         "Cosine",
         false,
-        undefined,
-        undefined,
+        false,
+        true,
       );
     });
 
@@ -205,7 +205,7 @@ describe("IndexPipeline", () => {
         "Cosine",
         false,
         true,
-        undefined,
+        true,
       );
     });
 
@@ -228,7 +228,7 @@ describe("IndexPipeline", () => {
         384,
         "Cosine",
         false,
-        undefined,
+        false,
         true,
       );
     });
@@ -381,8 +381,8 @@ describe("IndexPipeline", () => {
         384,
         "Cosine",
         true,
-        undefined,
-        undefined,
+        false,
+        true,
       );
     });
 
@@ -672,8 +672,8 @@ function third() {
         384,
         "Cosine",
         false,
-        undefined,
-        undefined,
+        false,
+        true,
       );
 
       // Should delete real collection and create alias

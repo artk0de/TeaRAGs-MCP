@@ -96,73 +96,14 @@ export type {
   FindCoChangedResult,
 } from "./cochange.js";
 
-export type {
-  // Architecture diagnostics (get_architecture_report)
-  ArchitectureDirectoryRelation,
-  ArchitectureFileEdge,
-  ArchitectureKnotMember,
-  ArchitectureKnotPage,
-  ArchitectureKnotView,
-  ArchitectureReportSummary,
-  ArchitectureRootCause,
-  ArchitectureViolation,
-  ConventionPrivacyArchitectureViolation,
-  ConventionPrivacyRule,
-  ConventionPrivacyViolationEvidence,
-  FacadeLeakArchitectureViolation,
-  FacadeLeakKind,
-  FacadeLeakViolationEvidence,
-  FacadeModuleExclusionReason,
-  FacadeModuleSummary,
-  GetArchitectureReportRequest,
-  GetArchitectureReportResponse,
-  LeakingAbstractionArchitectureRootCause,
-  LeakingAbstractionArchitectureViolation,
-  LeakingAbstractionReportSummary,
-  MainSequenceArchitectureViolation,
-  MainSequenceComponentVolatilityEvidence,
-  MainSequenceReportSummary,
-  MainSequenceViolationEvidence,
-  MainSequenceVolatilityReportSummary,
-  MainSequenceZone,
-  ArchitectureLayerMap,
-  ArchitectureLayerMapOptions,
-  LayerMapBoundaryEdgeDto,
-  LayerMapKnotDto,
-  LayerMapMoveCandidateDto,
-  LayerMapNodeDto,
-  LayeringAbstractionBypassArchitectureViolation,
-  LayeringAbstractionBypassViolationEvidence,
-  LayeringArchitectureViolation,
-  LayeringBackEdgeArchitectureViolation,
-  LayeringBackEdgeViolationEvidence,
-  LayeringCompositionCycleArchitectureViolation,
-  LayeringCompositionCycleViolationEvidence,
-  LayeringFeedbackEdge,
-  LayeringIslandArchitectureViolation,
-  LayeringIslandViolationEvidence,
-  LayeringKeepCost,
-  LayeringKnotArchitectureViolation,
-  LayeringKnotDrillDown,
-  LayeringKnotPageFeedbackEdge,
-  LayeringKnotViolationEvidence,
-  LayeringLayerSkipArchitectureViolation,
-  LayeringLayerSkipViolationEvidence,
-  LayeringReportSummary,
-  LayeringViolationKind,
-  NonProductionExclusionSummary,
-  SilentCouplingArchitectureRootCause,
-  SilentCouplingArchitectureViolation,
-  SilentCouplingBuildSummary,
-  SilentCouplingReportSummary,
-  SilentCouplingStructuralVisibility,
-  SilentCouplingViolationEvidence,
-  StableDependenciesExclusionSummary,
-  StableDependenciesReportSummary,
-  StableDependencyArchitectureRootCause,
-  StableDependencyArchitectureViolation,
-  StableDependencyViolationEvidence,
-} from "./architecture.js";
+// Architecture diagnostics (get_architecture_report) — wholesale, for the
+// same reason `architecture.js` itself re-exports the finding contract with a
+// wildcard: a new detector shape is added ONCE in the contract
+// (bd tea-rags-mcp-0e4vf) and reaches consumers without an edit here. The
+// hand-listed mirror this line replaced made the barrel co-change with the
+// boundary-diagnostics vocabulary on every detector landing
+// (bd tea-rags-mcp-89k7k.25).
+export type * from "./architecture.js";
 
 export type {
   // Naming lexicon (get_naming_lexicon)

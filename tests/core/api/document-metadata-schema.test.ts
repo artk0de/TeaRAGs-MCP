@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  DocumentMetadataSchemaViolationError,
-  InvalidDocumentMetadataSchemaError,
-} from "../../../src/core/api/errors.js";
-import {
   DOCUMENT_METADATA_SCHEMA_KEY,
   DocumentMetadataSchemaCompiler,
   readDocumentMetadataSchema,
 } from "../../../src/core/api/internal/ops/document-metadata-schema.js";
+import {
+  DocumentMetadataSchemaViolationError,
+  InvalidDocumentMetadataSchemaError,
+} from "../../../src/core/api/public/errors.js";
 
 const bulletSchema = {
   type: "object",

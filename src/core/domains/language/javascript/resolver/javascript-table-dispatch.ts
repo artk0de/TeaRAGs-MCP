@@ -12,7 +12,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent, ImportFileMapper } from "../../../../contracts/types/language.js";
-import { lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../kernel/index.js";
 
 /** The normal single-target resolution of a call — the callee side of the join. */
 export type JavascriptCalleeResolver = (call: CallRef, ctx: CallContext) => SymbolResolutionTarget | null;

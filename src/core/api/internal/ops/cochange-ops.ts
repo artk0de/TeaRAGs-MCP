@@ -19,9 +19,9 @@ import type { GraphDbClient, RelPath } from "../../../contracts/types/codegraph.
 import {
   DEFAULT_COCHANGE_PARTNERS_LIMIT,
   rankCochangePartners,
-} from "../../../domains/trajectory/codegraph/temporal/partners/index.js";
-import { MissingArgumentError } from "../../errors.js";
+} from "../../../domains/trajectory/codegraph/temporal/index.js";
 import type { FindCoChangedRequest, FindCoChangedResult } from "../../public/dto/cochange.js";
+import { MissingArgumentError } from "../../public/errors.js";
 import { normalizeRelativePath } from "./file-import-ops.js";
 
 export class CochangeOps {
