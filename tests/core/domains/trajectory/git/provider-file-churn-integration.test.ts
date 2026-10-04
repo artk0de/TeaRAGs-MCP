@@ -25,6 +25,7 @@ import { join, resolve, sep } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { importGitHistory } from "../../../__helpers__/git-history-import.js";
 import { VcsAdapterFactory } from "../../../../../src/core/adapters/vcs/factory.js";
 import { GitCliAdapter } from "../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import type { FileChurnData } from "../../../../../src/core/adapters/vcs/types.js";
@@ -77,6 +78,33 @@ function gitIn(cwd: string, args: string[], isoDate: string): string {
   }).trim();
 }
 
+/**
+ * The fixture history in `cwd` with ONE fast-import (bd tea-rags-mcp-1r3e5)
+ * instead of init/config/add/commit spawns: author and committer are the
+ * configured `Test <t@example.com>`, both dated `date`, as the commit chain made them.
+ */
+function importFixtureHistory(
+  cwd: string,
+  commits: { message: string; date: string; writes: Record<string, string | Buffer> }[],
+): void {
+  if (!resolve(cwd).startsWith(TMP_BASE + sep)) {
+    throw new Error(`provider-file-churn-integration.test: refusing git in non-temp cwd: ${cwd}`);
+  }
+  const test = { name: "Test", email: "t@example.com" };
+  importGitHistory(
+    cwd,
+    commits.map(({ message, date, writes }) => ({ message, author: test, authorDate: date, writes })),
+    {
+      config: {
+        "user.email": "t@example.com",
+        "user.name": "Test",
+        "commit.gpgsign": "false",
+        "diff.algorithm": "myers",
+      },
+    },
+  );
+}
+
 /** Per-file assertion of git file-signal equality, ORDER-AGNOSTIC on the commit
  *  sha set (the canonical fold order of the incremental path may differ from
  *  git-log order under merges, but the derived signals must match). */
@@ -97,35 +125,21 @@ describe("git file signal equality — FileChurnDiscovery vs legacy readNumstatL
 
   beforeEach(() => {
     tmp = mkdtempSync(join(TMP_BASE, "git-filechurn-eq-"));
-    const g = (args: string[], isoDate: string): string => gitIn(tmp, args, isoDate);
 
-    const T1 = daysAgoIso(10);
-    const T2 = daysAgoIso(9);
-    const T3 = daysAgoIso(8);
-
-    g(["init", "-q", "-b", "main"], T1);
-    g(["config", "user.email", "t@example.com"], T1);
-    g(["config", "user.name", "Test"], T1);
-    g(["config", "commit.gpgsign", "false"], T1);
-    g(["config", "diff.algorithm", "myers"], T1);
-
-    // c1 — create src/a.ts (3 lines): +3/-0.
-    writeFileSync(join(tmp, "a.ts"), "x\ny\nz\n");
-    g(["add", "-A"], T1);
-    g(["commit", "-q", "-m", "c1: add a.ts"], T1);
-
-    // c2 — edit a.ts (+3/-1) AND add a binary file. img.png is touched ONLY by
-    // this binary row: the legacy parser drops it entirely; the numstat reader
-    // used to keep it as {0,0}, giving it a phantom commitCount of 1.
-    writeFileSync(join(tmp, "a.ts"), "x\ny1\ny2\ny3\nz\n");
-    writeFileSync(join(tmp, "img.png"), Buffer.from([0x00, 0x01, 0x02, 0xff, 0x00, 0x42]));
-    g(["add", "-A"], T2);
-    g(["commit", "-q", "-m", "c2: edit a.ts + add binary img.png"], T2);
-
-    // c3 — append one line to a.ts (+1/-0).
-    writeFileSync(join(tmp, "a.ts"), "x\ny1\ny2\ny3\nz\nw\n");
-    g(["add", "-A"], T3);
-    g(["commit", "-q", "-m", "c3: append to a.ts"], T3);
+    importFixtureHistory(tmp, [
+      // c1 — create src/a.ts (3 lines): +3/-0.
+      { message: "c1: add a.ts", date: daysAgoIso(10), writes: { "a.ts": "x\ny\nz\n" } },
+      // c2 — edit a.ts (+3/-1) AND add a binary file. img.png is touched ONLY by
+      // this binary row: the legacy parser drops it entirely; the numstat reader
+      // used to keep it as {0,0}, giving it a phantom commitCount of 1.
+      {
+        message: "c2: edit a.ts + add binary img.png",
+        date: daysAgoIso(9),
+        writes: { "a.ts": "x\ny1\ny2\ny3\nz\n", "img.png": Buffer.from([0x00, 0x01, 0x02, 0xff, 0x00, 0x42]) },
+      },
+      // c3 — append one line to a.ts (+1/-0).
+      { message: "c3: append to a.ts", date: daysAgoIso(8), writes: { "a.ts": "x\ny1\ny2\ny3\nz\nw\n" } },
+    ]);
 
     adapter = new GitCliAdapter(tmp);
   });
@@ -173,26 +187,13 @@ describe("GitEnrichmentProvider file-churn wiring — incremental range read (re
     process.env.TEA_RAGS_DATA_DIR = mkdtempSync(join(TMP_BASE, "git-filechurn-store-"));
 
     tmp = mkdtempSync(join(TMP_BASE, "git-filechurn-prov-"));
-    const g = (args: string[], iso: string): string => gitIn(tmp, args, iso);
-    const T1 = daysAgoIso(10);
-    const T2 = daysAgoIso(9);
 
-    g(["init", "-q", "-b", "main"], T1);
-    g(["config", "user.email", "t@example.com"], T1);
-    g(["config", "user.name", "Test"], T1);
-    g(["config", "commit.gpgsign", "false"], T1);
-    g(["config", "diff.algorithm", "myers"], T1);
-
-    // c1 — add a.ts + b.ts.
-    writeFileSync(join(tmp, "a.ts"), "a1\na2\n");
-    writeFileSync(join(tmp, "b.ts"), "b1\n");
-    g(["add", "-A"], T1);
-    g(["commit", "-q", "-m", "c1: add a.ts + b.ts"], T1);
-
-    // c2 — edit a.ts (the cold-run HEAD).
-    writeFileSync(join(tmp, "a.ts"), "a1\na2\na3\n");
-    g(["add", "-A"], T2);
-    g(["commit", "-q", "-m", "c2: edit a.ts"], T2);
+    importFixtureHistory(tmp, [
+      // c1 — add a.ts + b.ts.
+      { message: "c1: add a.ts + b.ts", date: daysAgoIso(10), writes: { "a.ts": "a1\na2\n", "b.ts": "b1\n" } },
+      // c2 — edit a.ts (the cold-run HEAD).
+      { message: "c2: edit a.ts", date: daysAgoIso(9), writes: { "a.ts": "a1\na2\na3\n" } },
+    ]);
 
     realAdapter = new GitCliAdapter(tmp);
     // Spy calls through to the real impl — records the (sinceDate, range) args.

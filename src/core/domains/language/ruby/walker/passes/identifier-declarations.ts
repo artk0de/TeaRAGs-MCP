@@ -7,8 +7,11 @@
  * Ruby writes no annotations, so the only syntactic type is a constructor:
  * `X.new` / `Foo::Bar.new` on the right of the assignment. Any other call
  * (`X.find`, `find_x!`) is left untyped here — its type is joined at sink time
- * from the return-type channels. A compound assignment (`x += 1`) and a
- * multiple assignment (`a, b = …`) declare nothing new for the lexicon.
+ * from the return-type channels. Class variables (`@@x`) are fields like ivars,
+ * and memoization (`@x ||= v`) declares its left side the way `=` does (bd
+ * tea-rags-mcp-0qaht); `+=` and the other compound forms update a binding
+ * declared elsewhere, and a multiple assignment (`a, b = …`) declares nothing
+ * new for the lexicon.
  */
 
 import type { AstNode } from "../../../../../contracts/types/ast.js";
@@ -48,16 +51,28 @@ function parameterSites(list: AstNode): DeclaredIdentifierSite[] {
 const ASSIGNMENT_KIND_BY_LEFT_TYPE: Readonly<Record<string, DeclaredIdentifierSite["kind"]>> = {
   identifier: "local",
   instance_variable: "field",
+  class_variable: "field",
 };
 
-const assignmentRule: IdentifierDeclarationRule = {
-  nodeType: "assignment",
-  collect: (node) => {
-    const left = node.childForFieldName("left");
-    const kind = left ? ASSIGNMENT_KIND_BY_LEFT_TYPE[left.type] : undefined;
-    if (!left || kind === undefined) return [];
-    return [{ nameNode: left, kind, valueNode: node.childForFieldName("right") }];
-  },
+/** `a = v` and `a ||= v` declare `a`; `+=`, `-=`, `&&=` update a binding declared elsewhere. */
+function declaringAssignmentSites(node: AstNode): DeclaredIdentifierSite[] {
+  const left = node.childForFieldName("left");
+  const kind = left ? ASSIGNMENT_KIND_BY_LEFT_TYPE[left.type] : undefined;
+  if (!left || kind === undefined) return [];
+  return [{ nameNode: left, kind, valueNode: node.childForFieldName("right") }];
+}
+
+const assignmentRule: IdentifierDeclarationRule = { nodeType: "assignment", collect: declaringAssignmentSites };
+
+/**
+ * tree-sitter-ruby spells the operator as an anonymous child of
+ * `operator_assignment`. Read by child TYPE, not the `operator` field: the
+ * pipeline walks materialized trees, which keep anonymous children with their
+ * types but answer one field name per child.
+ */
+const memoizingAssignmentRule: IdentifierDeclarationRule = {
+  nodeType: "operator_assignment",
+  collect: (node) => (node.children.some((child) => child.type === "||=") ? declaringAssignmentSites(node) : []),
 };
 
 /**
@@ -76,6 +91,7 @@ export const RUBY_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
     { nodeType: "method_parameters", collect: parameterSites },
     { nodeType: "lambda_parameters", collect: parameterSites },
     assignmentRule,
+    memoizingAssignmentRule,
   ],
   annotationType: () => undefined,
   constructorType: rubyConstructorType,

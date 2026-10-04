@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { importGitHistory, type GitHistoryCommit } from "../../core/__helpers__/git-history-import.js";
+import { copyGitRepoTemplate } from "../../core/__helpers__/git-repo-template.js";
+
 // The derived pins file must never stop a merge: the `version-pins` merge driver
 // keeps ours, and `repin-on-merge.sh` recomputes the pins inside the merge commit.
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -49,21 +52,57 @@ function gitIn(cwd: string, args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8", env: hermeticEnv() });
 }
 
-function writePins(dir: string, content: string): void {
-  const file = join(dir, PINS_PATH);
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, content);
-}
-
 const dirs: string[] = [];
 
-function tempRepo(): string {
+const TEST = { name: "Test", email: "t@example.com" };
+
+/** A commit by the test identity, dated now, as the `add` / `commit` chain made it. */
+function commitOf(
+  message: string,
+  writes: Record<string, string>,
+  extra: Partial<GitHistoryCommit> = {},
+): GitHistoryCommit {
+  return { label: message, message, author: TEST, authorDate: new Date(), writes, ...extra };
+}
+
+const SEED = (): GitHistoryCommit => commitOf("seed", { [PINS_PATH]: "{}\n" });
+
+/**
+ * Lays `commits` down in `dir` with ONE fast-import (bd tea-rags-mcp-1r3e5)
+ * instead of an init/config/add/commit chain, checked out at `main`. Returns
+ * the shas by message.
+ */
+function importInto(dir: string, commits: GitHistoryCommit[]): Record<string, string> {
+  assertTemp(dir);
+  return importGitHistory(dir, commits, {
+    config: { "user.name": "Test", "user.email": "t@example.com", "commit.gpgsign": "false" },
+    env: hermeticEnv(),
+  });
+}
+
+/** A fresh repository of this test's own holding `commits`. */
+function importedRepo(commits: GitHistoryCommit[]): { dir: string; sha: Record<string, string> } {
   const dir = mkdtempSync(join(TMP_BASE, "version-pins-merge-"));
   dirs.push(dir);
-  gitIn(dir, ["init", "-q", "-b", "main"]);
-  gitIn(dir, ["config", "user.name", "Test"]);
-  gitIn(dir, ["config", "user.email", "t@example.com"]);
-  gitIn(dir, ["config", "commit.gpgsign", "false"]);
+  return { dir, sha: importInto(dir, commits) };
+}
+
+/**
+ * A repository holding one `seed` commit of an empty pins file. Most tests
+ * start from it, so it is built once per process and copied per test (bd
+ * tea-rags-mcp-2z4sa). The copy root is resolved because `assertTemp` guards
+ * the symlink-free `TMP_BASE`.
+ */
+function seeded(): string {
+  const copy = copyGitRepoTemplate(
+    "version-pins-seeded",
+    (dir) => {
+      importInto(dir, [SEED()]);
+    },
+    { prefix: "version-pins-merge-", env: hermeticEnv() },
+  );
+  const dir = realpathSync(copy.root);
+  dirs.push(dir);
   return dir;
 }
 
@@ -73,31 +112,24 @@ afterEach(() => {
 
 describe("version-pins merge driver", () => {
   it("resolves a conflicting pins merge to ours with exit 0 and no markers", () => {
-    const dir = tempRepo();
     // The tracked attribute line, verbatim from the repository's .gitattributes.
     const attrLine = readFileSync(join(REPO_ROOT, ".gitattributes"), "utf8")
       .split("\n")
       .find((line) => line.startsWith(`${PINS_PATH} `));
     expect(attrLine).toBe(`${PINS_PATH} merge=version-pins`);
-    writeFileSync(join(dir, ".gitattributes"), `${attrLine}\n`);
+
+    // base (the attribute + pins), `theirs` and `ours` diverging from it.
+    const ours = '{\n  "ts": "ours"\n}\n';
+    const { dir } = importedRepo([
+      commitOf("base", { ".gitattributes": `${attrLine}\n`, [PINS_PATH]: '{\n  "ts": "base"\n}\n' }),
+      commitOf("theirs", { [PINS_PATH]: '{\n  "ts": "theirs"\n}\n' }, { branch: "theirs" }),
+      commitOf("ours", { [PINS_PATH]: ours }),
+    ]);
 
     // Register the driver the way `npm install` (package.json `prepare`) does.
     assertTemp(dir);
     execFileSync("sh", [REGISTER_SCRIPT], { cwd: dir, env: hermeticEnv() });
     expect(gitIn(dir, ["config", "--get", "merge.version-pins.driver"]).trim()).not.toBe("");
-
-    writePins(dir, '{\n  "ts": "base"\n}\n');
-    gitIn(dir, ["add", "-A"]);
-    gitIn(dir, ["commit", "-q", "-m", "base"]);
-
-    gitIn(dir, ["checkout", "-q", "-b", "theirs"]);
-    writePins(dir, '{\n  "ts": "theirs"\n}\n');
-    gitIn(dir, ["commit", "-q", "-am", "theirs"]);
-
-    gitIn(dir, ["checkout", "-q", "main"]);
-    const ours = '{\n  "ts": "ours"\n}\n';
-    writePins(dir, ours);
-    gitIn(dir, ["commit", "-q", "-am", "ours"]);
 
     const merge = spawnSync("git", ["merge", "--no-edit", "theirs"], {
       cwd: dir,
@@ -120,14 +152,6 @@ describe("repin-on-merge.sh", () => {
       encoding: "utf8",
       env: hermeticEnv({ REPIN_CMD: repinCmd }),
     });
-  }
-
-  function seeded(): string {
-    const dir = tempRepo();
-    writePins(dir, "{}\n");
-    gitIn(dir, ["add", "-A"]);
-    gitIn(dir, ["commit", "-q", "-m", "seed"]);
-    return dir;
   }
 
   // The stub stands in for `npm run pin:lang-versions`: it rewrites the pins
@@ -181,34 +205,20 @@ describe("merge hooks end to end", () => {
     gitIn(dir, ["config", "core.hooksPath", hooks]);
   }
 
-  function commitFile(dir: string, file: string, content: string, message: string): void {
-    writeFileSync(join(dir, file), content);
-    gitIn(dir, ["add", "-A"]);
-    gitIn(dir, ["commit", "-q", "-m", message]);
-  }
-
   function gitWithStub(dir: string, args: string[]): ReturnType<typeof spawnSync> {
     assertTemp(dir);
     return spawnSync("git", args, { cwd: dir, encoding: "utf8", env: hermeticEnv({ REPIN_CMD: STUB }) });
   }
 
-  function seeded(): string {
-    const dir = tempRepo();
-    writePins(dir, "{}\n");
-    gitIn(dir, ["add", "-A"]);
-    gitIn(dir, ["commit", "-q", "-m", "seed"]);
-    return dir;
-  }
-
   it("a clean `git merge` commits the re-pinned file in the merge commit itself", () => {
-    const dir = seeded();
     // Hooks go in after the setup commits, so only the merge runs them.
-    gitIn(dir, ["checkout", "-q", "-b", "side"]);
-    commitFile(dir, "side.txt", "side\n", "side");
-    gitIn(dir, ["checkout", "-q", "main"]);
-    commitFile(dir, "main.txt", "main\n", "main");
-    const mainTip = gitIn(dir, ["rev-parse", "HEAD"]).trim();
-    const sideTip = gitIn(dir, ["rev-parse", "side"]).trim();
+    const { dir, sha } = importedRepo([
+      SEED(),
+      commitOf("side", { "side.txt": "side\n" }, { branch: "side" }),
+      commitOf("main", { "main.txt": "main\n" }),
+    ]);
+    const mainTip = sha.main;
+    const sideTip = sha.side;
     installHooks(dir, ["pre-merge-commit", "post-merge"]);
 
     const merge = gitWithStub(dir, ["merge", "--no-edit", "side"]);
@@ -224,11 +234,8 @@ describe("merge hooks end to end", () => {
   });
 
   it("a fast-forward `git merge` rewrites nothing", () => {
-    const dir = seeded();
-    gitIn(dir, ["checkout", "-q", "-b", "side"]);
-    commitFile(dir, "side.txt", "side\n", "side");
-    const sideTip = gitIn(dir, ["rev-parse", "HEAD"]).trim();
-    gitIn(dir, ["checkout", "-q", "main"]);
+    const { dir, sha } = importedRepo([SEED(), commitOf("side", { "side.txt": "side\n" }, { branch: "side" })]);
+    const sideTip = sha.side;
     installHooks(dir, ["pre-merge-commit", "post-merge"]);
 
     const merge = gitWithStub(dir, ["merge", "--no-edit", "side"]);
@@ -238,12 +245,12 @@ describe("merge hooks end to end", () => {
   });
 
   it("a conflicted merge concluded by `git commit` carries the re-pinned file", () => {
-    const dir = seeded();
-    commitFile(dir, "shared.txt", "base\n", "base");
-    gitIn(dir, ["checkout", "-q", "-b", "side"]);
-    commitFile(dir, "shared.txt", "side\n", "side");
-    gitIn(dir, ["checkout", "-q", "main"]);
-    commitFile(dir, "shared.txt", "main\n", "main");
+    const { dir } = importedRepo([
+      SEED(),
+      commitOf("base", { "shared.txt": "base\n" }),
+      commitOf("side", { "shared.txt": "side\n" }, { branch: "side" }),
+      commitOf("main", { "shared.txt": "main\n" }),
+    ]);
     // The tracked pre-commit runs lint-staged / tsc; install only its re-pin line.
     const preCommit = readFileSync(join(REPO_ROOT, ".husky/pre-commit"), "utf8")
       .split("\n")

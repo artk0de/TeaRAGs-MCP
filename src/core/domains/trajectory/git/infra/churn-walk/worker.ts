@@ -105,6 +105,7 @@ async function runWalk(job: ChunkChurnWalkJobInput): Promise<ChunkChurnWalkOutco
   // An empty relativeChunkMap short-circuits before the walk and never fires
   // the callback — report zeroed stats for that case.
   let stats: ChunkChurnWalkStats = ZERO_STATS;
+  const symbolCommits = new Map<string, Map<string, Set<string>>>();
   const overlays = await buildChunkChurnMapUncached(
     adapter,
     job.relativeChunkMap,
@@ -123,8 +124,9 @@ async function runWalk(job: ChunkChurnWalkJobInput): Promise<ChunkChurnWalkOutco
     (walkStats) => {
       stats = walkStats;
     },
+    symbolCommits,
   );
-  return { overlays, stats };
+  return { overlays, stats, symbolCommits };
 }
 
 /** Compute blame for a batch of shallow-history files on THIS worker thread
@@ -169,8 +171,14 @@ if (parentPort) {
         return;
       }
       try {
-        const { overlays, stats } = await runWalk(request.job);
-        parentPort?.postMessage({ type: "walked", id: request.id, overlays, stats } satisfies ChurnWalkThreadResponse);
+        const { overlays, stats, symbolCommits } = await runWalk(request.job);
+        parentPort?.postMessage({
+          type: "walked",
+          id: request.id,
+          overlays,
+          stats,
+          symbolCommits,
+        } satisfies ChurnWalkThreadResponse);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         parentPort?.postMessage({

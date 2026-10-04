@@ -1,0 +1,29 @@
+# tea-rags prime — /Users/Shared/swe-lite-ab/repos/django__django-11039
+
+## Status
+indexed · collection `code_8d88f0f8` · 1930 files / 27011 chunks · 2.1 GB on disk · turbo (8x) quant · last indexed: 20m ago
+
+## Drift
+none
+
+## Enrichment
+git: file healthy, chunk healthy
+codegraph.symbols: file healthy, chunk healthy
+
+## Polyglot
+primary: python · also: javascript, markdown
+→ for non-primary languages, call `get_index_metrics` for their labelMap
+
+## Language capability — ceiling tier · realized resolve
+python: ast full · tests medium · codegraph high · resolve 0.6
+javascript: ast full · tests high · codegraph high
+markdown: ast full · tests na · codegraph none
+
+## Signal thresholds — python
+
+
+## Codegraph resolve
+bareCall 0.97 3922/12156
+dynamic 0.32 924/7518
+selfMember 0.77 2535/3444
+chain 0.08 114/3127

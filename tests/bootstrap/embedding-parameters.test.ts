@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { MODEL_INFO_BUDGET_MS, resolveEmbeddingModelParameters } from "../../src/bootstrap/embedding-parameters.js";
+import {
+  armEmbeddingModelParameters,
+  MODEL_INFO_BUDGET_MS,
+  resolveEmbeddingModelParameters,
+} from "../../src/bootstrap/embedding-parameters.js";
 import type { EmbeddingProvider } from "../../src/core/adapters/embeddings/base.js";
 
 /**
@@ -201,5 +205,53 @@ describe("resolveEmbeddingModelParameters", () => {
       process.off("unhandledRejection", unhandled);
       expect(unhandled).not.toHaveBeenCalled();
     });
+  });
+});
+
+// bd tea-rags-mcp-xi2r9, B3: the composition root asks a provider that picks its
+// endpoint lazily nothing at start — asking would pick it, and on an unreachable
+// primary that costs every cold call the failover probe, embedding or not.
+describe("armEmbeddingModelParameters", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const modelInfo = { model: "someone/unlisted-embed:latest", contextLength: 32768, dimensions: 1024 };
+
+  test("defers to the provider's endpoint decision when the provider makes one lazily", async () => {
+    const hooks: (() => void)[] = [];
+    const resolveModelInfo = vi.fn(async () => modelInfo);
+    const { provider, currentDimensions } = stubProvider({
+      model: "someone/unlisted-embed:latest",
+      dimensions: 768,
+      resolveModelInfo,
+    });
+    provider.whenEndpointResolved = (hook) => {
+      hooks.push(hook);
+    };
+
+    await armEmbeddingModelParameters(provider, undefined);
+    expect(resolveModelInfo).not.toHaveBeenCalled();
+
+    for (const hook of hooks) hook();
+    // The model-info request goes out synchronously inside the hook, so the
+    // first embed — which waits for an in-flight one — carries the window.
+    expect(resolveModelInfo).toHaveBeenCalledOnce();
+    await vi.waitFor(() => {
+      expect(currentDimensions()).toBe(1024);
+    });
+  });
+
+  test("resolves at once, as before, for a provider whose endpoint is fixed", async () => {
+    const resolveModelInfo = vi.fn(async () => modelInfo);
+    const { provider, currentDimensions } = stubProvider({
+      model: "someone/unlisted-embed:latest",
+      dimensions: 768,
+      resolveModelInfo,
+    });
+
+    await armEmbeddingModelParameters(provider, undefined);
+
+    expect(currentDimensions()).toBe(1024);
   });
 });

@@ -51,8 +51,10 @@ import type {
   TemporalCochangeBuildMeta,
   TemporalCochangeGraph,
   TemporalCochangeSnapshot,
+  TemporalSymbolCommitFileSnapshot,
 } from "./codegraph-temporal.js";
 import type { CaseSplitPathPatterns } from "./file-classification.js";
+import type { WorkingTreeGraphReader } from "./working-tree.js";
 
 /**
  * Which `cg_pass1_aggregates` rows `GraphDbClient.listPass1Aggregates` returns.
@@ -175,10 +177,23 @@ export interface IdentifierEvidenceExclusion {
 }
 
 /**
+ * Restricts an identifier read to rows whose file language
+ * (`cg_symbols_files.language`) is one of `languages` (bd tea-rags-mcp-0qaht):
+ * a draft's evidence stays within its language namespace, so Ruby locals never
+ * vote on a TypeScript field. Absent = every language; empty = no rows (as
+ * `readTypeNameRows` reads it). A row whose file language is unknown (no files
+ * row) is kept: nothing places it in another language, and the lexicon cases
+ * it as the answer's own.
+ */
+export interface IdentifierLanguageScope {
+  languages?: readonly string[];
+}
+
+/**
  * The scope of an identifier read: the effective types asked for, optionally
  * narrowed to files under any of `pathPrefixes` (a literal rel_path prefix).
  */
-export interface IdentifierTypeScopeQuery extends IdentifierEvidenceExclusion {
+export interface IdentifierTypeScopeQuery extends IdentifierEvidenceExclusion, IdentifierLanguageScope {
   types: readonly string[];
   pathPrefixes?: readonly string[];
 }
@@ -231,7 +246,8 @@ export interface IdentifierLanguageGroupedRow {
  * without `receiver` matches the member under ANY receiver, receiverless
  * included.
  */
-export interface IdentifierCalleeScopeQuery extends IdentifierLanguageGroupingQuery, IdentifierEvidenceExclusion {
+export interface IdentifierCalleeScopeQuery
+  extends IdentifierLanguageGroupingQuery, IdentifierEvidenceExclusion, IdentifierLanguageScope {
   callees: readonly IdentifierBoundCallee[];
   pathPrefixes?: readonly string[];
   /**
@@ -295,7 +311,7 @@ export interface IdentifierNameTypeRow {
 }
 
 /** A read over every identifier row, optionally narrowed to files under any of `pathPrefixes`. */
-export interface IdentifierScopeQuery extends IdentifierEvidenceExclusion {
+export interface IdentifierScopeQuery extends IdentifierEvidenceExclusion, IdentifierLanguageScope {
   pathPrefixes?: readonly string[];
 }
 
@@ -358,6 +374,74 @@ export interface IdentifierShapeSampleRow extends IdentifierLanguageGroupedRow {
   boundMember: string | null;
   boundReceiver: string | null;
   n: number;
+}
+
+// ── Method-name reads over cg_symbols (naming coverage for untyped methods) ──
+
+/**
+ * A read over declared method / function names (`cg_symbols`, symbol_kind
+ * `method` | `function`), production files only. Constructors
+ * (`initialize`, `constructor`, `__init__`) are never read.
+ */
+export interface MethodNameScopeQuery extends IdentifierScopeQuery, IdentifierLanguageGroupingQuery {
+  nonProductionPaths: TypeNameQuery["nonProductionPaths"];
+}
+
+/**
+ * Head words of multi-word method names — the leading lowercase run before `_`
+ * or a capital (`update_user`, `updateUser` → `update`) — that open at least
+ * `minTails` distinct noun tails (tail normalized across casings, trailing
+ * `!` / `?` dropped). The candidates a language namespace's verb lexicon is
+ * derived from (spec §D4a).
+ */
+export interface MethodHeadWordQuery extends MethodNameScopeQuery {
+  minTails: number;
+}
+
+/** Noun tails more than one of `heads` opens (`load_user` and `fetch_user` contest `user`). Empty `heads` reads nothing. */
+export interface MethodTailVerbQuery extends MethodNameScopeQuery {
+  heads: readonly string[];
+}
+
+/** Names matching any of `patterns` (RE2, anchored by the caller). Empty `patterns` reads nothing. */
+export interface MethodNamePatternQuery extends MethodNameScopeQuery {
+  patterns: readonly string[];
+}
+
+/**
+ * One head word of {@link MethodHeadWordQuery}: `headHolders` = distinct method
+ * symbols whose name it opens, `headTails` = distinct noun tails after it,
+ * `lastHolders` = distinct method symbols of two or more words whose LAST word
+ * it is (`load_user`, `loadUser` → `user`), `valueCompounds` = distinct
+ * compound names it opens (trailing `!` / `?` / `=` dropped) that also name a
+ * value: a non-`return` `cg_identifiers` row of the same evidence scope (and
+ * file language, when grouped) whose name, a leading `@` / `@@` dropped, equals
+ * the compound (`media_attachment` beside `@media_attachment`).
+ */
+export interface MethodHeadWordRow extends IdentifierLanguageGroupedRow {
+  head: string;
+  headHolders: number;
+  headTails: number;
+  lastHolders: number;
+  valueCompounds: number;
+}
+
+/**
+ * One (tail, head) pair of {@link MethodTailVerbQuery}: `tail` is the
+ * normalized noun tail (lowercase, no `_`), `holders` = distinct method
+ * symbols, `name` = the pair's most-held spelling (ties by name).
+ */
+export interface MethodTailVerbRow extends IdentifierLanguageGroupedRow {
+  tail: string;
+  head: string;
+  holders: number;
+  name: string;
+}
+
+/** One method name matched by {@link MethodNamePatternQuery}; `holders` = distinct method symbols. */
+export interface MethodNameRow extends IdentifierLanguageGroupedRow {
+  shortName: string;
+  holders: number;
 }
 
 // ── Ontology audit over cg_identifiers (bd tea-rags-mcp-4p3sb.20) ──
@@ -648,19 +732,44 @@ export interface PersistedSymbolLineRanges {
  * contracts so domains/explore can depend on it without importing api/internal
  * or adapters. Implemented by GraphFacade (adapted to a bare collectionName in
  * bootstrap). Undefined injection = codegraph disabled = fallback no-op.
+ * `readTreeGraph` — the request's working-tree graph (WTO-7): when it answers
+ * `built`, the lookup reads the tree's graph instead of the index's.
  */
 export interface SymbolChunkResolver {
-  resolveSymbolChunk: (collectionName: string, symbolId: SymbolId) => Promise<SymbolChunkLocation | null>;
+  resolveSymbolChunk: (
+    collectionName: string,
+    symbolId: SymbolId,
+    readTreeGraph?: WorkingTreeGraphReader,
+  ) => Promise<SymbolChunkLocation | null>;
+  /**
+   * The symbol line ranges the WORKING TREE's graph holds for `relPaths` (live
+   * D1, bd tea-rags-mcp-xi2r9) — where the tree defines its symbols. A tree
+   * graph carries no chunk id for a delta file's symbol (chunk ids are the
+   * index's), so find_symbol places a collapsed symbol of a changed file on the
+   * tree's own rows by line instead. `null` when the tree graph is not built:
+   * the index graph's ranges describe another commit and are never answered
+   * for a changed file. Optional: absent, the hop reads chunk ids only.
+   */
+  readTreeSymbolLineRanges?: (
+    collectionName: string,
+    relPaths: readonly RelPath[],
+    readTreeGraph: WorkingTreeGraphReader,
+  ) => Promise<ReadonlyMap<RelPath, PersistedSymbolLineRanges> | null>;
 }
 
 /**
  * The read seam the find_symbol outline uses to show each member's DECLARED
  * visibility (bd tea-rags-mcp-sqqkz) — one batched read per outline response.
  * May throw when the graph exists but cannot be read; the outline degrades to
- * its undecorated form. Absent when codegraph is disabled.
+ * its undecorated form. Absent when codegraph is disabled. `readTreeGraph` as
+ * for {@link SymbolChunkResolver}.
  */
 export interface SymbolVisibilityResolver {
-  resolveSymbolVisibilities: (collectionName: string, symbolIds: readonly SymbolId[]) => Promise<SymbolVisibilityRow[]>;
+  resolveSymbolVisibilities: (
+    collectionName: string,
+    symbolIds: readonly SymbolId[],
+    readTreeGraph?: WorkingTreeGraphReader,
+  ) => Promise<SymbolVisibilityRow[]>;
 }
 
 /**
@@ -726,6 +835,29 @@ export type CodegraphStorageCompactionOutcome =
       readonly storedRows: number;
       readonly durationMs: number;
     };
+
+/**
+ * One working-tree file edge of one diff-scoped review (bd
+ * tea-rags-mcp-89k7k.1.2): the changed file imports/knows the target file.
+ * Lived in the slice-A overlay module (`api/internal/ops/review-edge-overlay`)
+ * until the persistence slice needed it too — the adapters layer may not
+ * import api, so the shared shape belongs here, beside the other
+ * {@link GraphDbClient} call shapes.
+ *
+ * The export-name fields (bd tea-rags-mcp-89k7k.1.6) mirror
+ * `FileEdgeExportNames` with the same absence semantics: absent = not
+ * recorded, never read as "names nothing". They are in-memory judgement input
+ * for the diff detectors only — the review edge store persists source and
+ * target alone, so neither field round-trips a table.
+ */
+export interface ReviewFileEdge {
+  sourceRelPath: string;
+  targetRelPath: string;
+  /** The names this edge's import statements take from the target's export surface, unioned per target. */
+  importedExportNames?: string[];
+  /** The names this edge's statements re-export out of the target — the facade-contract detector's supply side. */
+  reexportedExportNames?: string[];
+}
 
 /**
  * Driver-agnostic graph DB client.
@@ -1086,11 +1218,44 @@ export interface GraphDbClient {
   /** The typed `param` and `return` rows of the given owner symbols. */
   anchorIdentifierTypes: (symbolIds: readonly SymbolId[]) => Promise<AnchorIdentifierTypeRow[]>;
 
-  /** Homonymy: per name, which effective types it is bound to and how often (`null` = untyped); `excludePaths` files unread. */
-  identifierNameTypes: (names: readonly string[], excludePaths?: readonly string[]) => Promise<IdentifierNameTypeRow[]>;
+  /**
+   * Homonymy: per name, which effective types it is bound to and how often (`null` = untyped);
+   * `excludePaths` files unread, `languages` scoped as {@link IdentifierLanguageScope}.
+   */
+  identifierNameTypes: (
+    names: readonly string[],
+    excludePaths?: readonly string[],
+    languages?: readonly string[],
+  ) => Promise<IdentifierNameTypeRow[]>;
 
-  /** Collision: the given names that are already a `cg_symbols.short_name` outside the `excludePaths` files. */
-  existingSymbolShortNames: (names: readonly string[], excludePaths?: readonly string[]) => Promise<string[]>;
+  /**
+   * Collision: the given names that are already a `cg_symbols.short_name` outside the `excludePaths`
+   * files, in files of `languages` ({@link IdentifierLanguageScope}: absent = every language).
+   */
+  existingSymbolShortNames: (
+    names: readonly string[],
+    excludePaths?: readonly string[],
+    languages?: readonly string[],
+  ) => Promise<string[]>;
+
+  /**
+   * Head words of production method / function names opening at least
+   * `q.minTails` noun tails, with how often each opens and ends a name — one
+   * row per head (per head and file language under `groupByLanguage`, where
+   * `minTails` applies per language), largest first. Aggregated in SQL — the
+   * method table never reaches the caller.
+   */
+  readMethodHeadWords: (q: MethodHeadWordQuery) => Promise<MethodHeadWordRow[]>;
+
+  /**
+   * Holders per (noun tail, head of `q.heads`) for the tails two or more of
+   * those heads open across the read — contested tails only, so the answer is
+   * bounded by the conflicts, not by the method table.
+   */
+  readMethodTailVerbs: (q: MethodTailVerbQuery) => Promise<MethodTailVerbRow[]>;
+
+  /** Production method / function names matching any of `q.patterns`, with their holders, largest first. */
+  readMethodNamesMatching: (q: MethodNamePatternQuery) => Promise<MethodNameRow[]>;
 
   /** Row count behind {@link aggregateIdentifiersByType} for the same scope — drives scope widening. */
   countIdentifiers: (q: IdentifierTypeScopeQuery) => Promise<number>;
@@ -1219,8 +1384,8 @@ export interface GraphDbClient {
 
   /**
    * Replace `cg_temporal_files` / `cg_temporal_edges_cochange` /
-   * `cg_temporal_meta` with one build, atomically. Wholesale: nothing of the
-   * previous build survives.
+   * `cg_temporal_meta` / `cg_temporal_bundle_files` with one build, atomically.
+   * Wholesale: nothing of the previous build survives.
    */
   replaceTemporalCochange: (snapshot: TemporalCochangeSnapshot) => Promise<void>;
 
@@ -1234,6 +1399,65 @@ export interface GraphDbClient {
    * tea-rags-mcp-b4dcz).
    */
   readTemporalCochangeGraph: () => Promise<TemporalCochangeGraph>;
+
+  /**
+   * The admitted bundles' file memberships (bd tea-rags-mcp-c3v6o), keyed by
+   * bundle id — `cg_temporal_bundle_files`. The component-level counts the
+   * split/merge verdicts need: a bundle counts once per component it touches,
+   * whatever the pair table's caps kept. Empty before the first build, and
+   * empty-but-distinct-from-absent on every index the build populated before
+   * the table existed.
+   */
+  readTemporalBundleFiles: () => Promise<ReadonlyMap<number, readonly RelPath[]>>;
+
+  // ── Temporal symbol-commit store (bd tea-rags-mcp-3gz4f) ──
+
+  /** Replace each named file's symbol-commit rows; files not named stand. */
+  replaceTemporalSymbolCommits: (files: TemporalSymbolCommitFileSnapshot[]) => Promise<void>;
+
+  /** Every file holding symbol-commit rows, sorted — the universe the flush hook prunes against. */
+  storedTemporalSymbolCommitFilePaths: () => Promise<string[]>;
+
+  /** Drop every symbol-commit row of the named files. */
+  deleteTemporalSymbolCommitFiles: (relPaths: string[]) => Promise<void>;
+
+  /** One file's symbol-commit rows, `commitShas` parsed. */
+  readTemporalSymbolCommits: (relPath: RelPath) => Promise<TemporalSymbolCommitFileSnapshot>;
+
+  // ── Per-review working-tree file edges (bd tea-rags-mcp-89k7k.1.2) ──
+  //
+  // One throwaway `cg_review_file_edges_<reviewId>` table per review — the
+  // review id embeds its epoch, so the age sweep reads it off the NAME.
+  // Deliberately outside the migration catalog: the DDL is issued at runtime
+  // and the table is dropped the moment the review ends. The table is a
+  // connection-scoped TEMP table: a review never writes the database file, so
+  // it never moves the base graph's version (bd tea-rags-mcp-xi2r9, D4).
+
+  /**
+   * Create this review's table when absent and APPEND the edges to it, in one
+   * transaction. An empty `edges` still creates the table, so "review with no
+   * edges" stays distinguishable from "review never written". Reviews write
+   * once; a second put to the same id appends — the retry contract, never a
+   * replace.
+   */
+  putReviewFileEdges: (reviewId: string, edges: readonly ReviewFileEdge[]) => Promise<void>;
+
+  /** Drop this review's table. Idempotent — a table already gone is fine. */
+  dropReviewFileEdges: (reviewId: string) => Promise<void>;
+
+  /**
+   * Drop every `cg_review_file_edges_*` table whose embedded epoch is at least
+   * `maxAgeSeconds` behind `nowEpochSeconds`, plus every malformed-named one —
+   * a crashed process's tables die on the next review anywhere. Returns the
+   * dropped table names.
+   */
+  sweepExpiredReviewFileEdges: (nowEpochSeconds: number, maxAgeSeconds: number) => Promise<string[]>;
+
+  /**
+   * This review's edges ordered by (source_rel_path, target_rel_path). A table
+   * that does not exist reads as no edges — never a throw.
+   */
+  readReviewFileEdges: (reviewId: string) => Promise<ReviewFileEdge[]>;
 
   /**
    * The `cg_symbols_edges_file` rows whose TARGET is `relPath` — the files
@@ -1286,6 +1510,20 @@ export interface GraphDbClient {
    * and is reported as a typed error; nothing is lost by retrying on a later run.
    */
   compactStorage: () => Promise<CodegraphStorageCompactionOutcome>;
+
+  /**
+   * Write a consistent copy of the whole store to `targetPath`, a standalone
+   * database file a separate client can open read-write (bd
+   * tea-rags-mcp-xi2r9) — the base a working-tree graph is built on. The copy
+   * holds every committed row, including those not yet checkpointed, and lands
+   * at the target atomically: a reader of `targetPath` sees the previous file
+   * or the complete new one, never a partial copy. The live store is left
+   * exactly as it was.
+   *
+   * A failure — including a store host that cannot export — rejects with a
+   * typed error; nothing is left at `targetPath` that was not there before.
+   */
+  exportSnapshot: (targetPath: string) => Promise<void>;
 
   /**
    * Atomically replace the cycles table for `scope` with the supplied

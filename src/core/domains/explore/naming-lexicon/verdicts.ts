@@ -16,11 +16,13 @@ import type { IdentifierCasing } from "../../../contracts/types/language.js";
 import {
   detectIdentifierCasing,
   joinIdentifierWords,
+  pluralizeIdentifierWords,
   singularizeIdentifierWord,
   splitIdentifierWords,
   typeNameLastSegment,
   typeNameWords,
 } from "./casing.js";
+import { judgeUntypedMethodName, type UntypedMethodEvidence } from "./method-vocabulary.js";
 import {
   CONNECTOR_WORDS,
   isInteriorConnector,
@@ -64,6 +66,7 @@ import {
   deriveTypeRoles,
   endsWithWords,
   expectedRoleFor,
+  filePrimaryDeclaration,
   isNamespaceDeclaration,
   isRoleFamilyMember,
   meetsProjectConventionSpread,
@@ -73,6 +76,7 @@ import {
   TYPE_ROLE_THRESHOLDS,
   typeNameParser,
   type ExpectedTypeRole,
+  type FileDeclaration,
   type TypeNameRow,
   type TypeRoleAssignment,
   type TypeRoleEvidence,
@@ -123,7 +127,29 @@ export type NamingVerdict =
     }
   | { verdict: "MISFIT"; suggestion: string; holder?: string; role?: NamingExpectedTypeRole }
   | { verdict: "NEW_TERM"; topTerms: string[]; alternatives?: TermAlternative[] }
+  /**
+   * A value draft (`param`, `local`, `field`) whose type or call holds no
+   * convention — no name carried by ≥ {@link MIN_ROLE_MEMBERS} owners, or no
+   * rows at all (lexicon friction F3). Not a rename demand and not a free
+   * choice either: the name should be the type's own ({@link NamingPreference.exact})
+   * or read like the names the project gives its relatives
+   * ({@link NamingPreference.analogous}) — a name unlike both is the one to justify.
+   */
+  | { verdict: "NO_CONVENTION"; prefer: NamingPreference }
   | { verdict: "COLLISION"; existing: { symbolId: string; relPath: string } };
+
+/** What a NO_CONVENTION points to (lexicon friction F3). */
+export interface NamingPreference {
+  /** The type spelled in the draft's casing (`collectionRegistry`), plural for a `many` draft; absent untyped. */
+  exact?: string;
+  /**
+   * Names by analogy, heaviest first, at most 5: the value names the draft's
+   * own thin rows carry, then those of its type family — the types
+   * specializing it (`CallerSymbolId` for `SymbolId`), else its siblings by
+   * head word (`*Registry`) — see {@link withFamilyAnalogues}.
+   */
+  analogous: string[];
+}
 
 /** One `byType` aggregate row: a name bound to the draft's type `n` times. */
 export interface NamingByTypeRow {
@@ -209,6 +235,12 @@ export interface DraftNameJudgementInput {
    * supertype's — CONFORMS, whatever the rows say.
    */
   overrides?: string;
+  /**
+   * An untyped `return` draft (no type, no callee): the project's method
+   * vocabulary it is judged by ({@link judgeUntypedMethodName}). Absent → the
+   * bare fallback judges it.
+   */
+  untypedMethod?: UntypedMethodEvidence;
 }
 
 /** A draft's shape conforms when it holds at least this share of the observed rows. */
@@ -642,8 +674,104 @@ export function judgeDraftName(input: DraftNameJudgementInput): NamingVerdict {
   if (input.kind === "return" && input.overrides !== undefined) {
     return { verdict: "CONFORMS", override: { declaredBy: input.overrides } };
   }
+  // An untyped method is judged by the project's method vocabulary (spec 2026-09-28 naming coverage, §D4).
+  if (input.kind === "return" && input.typeName === undefined && input.callee === undefined && input.untypedMethod) {
+    return judgeUntypedMethodName({ name: input.name, casing: input.casing, evidence: input.untypedMethod });
+  }
   const verdict = judgeDraftNameByEvidence(input);
-  return verdict.verdict === "MISFIT" ? keepDraftQualification(input, verdict) : verdict;
+  if (verdict.verdict === "MISFIT") return keepDraftQualification(input, verdict);
+  return isBareNewTerm(verdict) && FREE_CHOICE_KINDS.has(input.kind ?? "local")
+    ? { verdict: "NO_CONVENTION", prefer: namingPreference(input) }
+    : verdict;
+}
+
+/** A NO_CONVENTION's preference from the draft's own evidence; the family is added by {@link withFamilyAnalogues}. */
+function namingPreference(input: DraftNameJudgementInput): NamingPreference {
+  const type = conceptTypeName(input);
+  if (type === undefined) return { analogous: observedNames(input) };
+  const words = typeNameWords(typeNameLastSegment(type));
+  const spelled = input.typeMultiplicity === "many" ? pluralizeIdentifierWords(words) : words;
+  return { exact: joinIdentifierWords(spelled, input.casing), analogous: observedNames(input) };
+}
+
+function conceptTypeName(input: DraftNameJudgementInput): string | undefined {
+  return input.typeName !== undefined && !isNonConceptType(input.typeName, input.nonConceptTypes ?? [])
+    ? input.typeName
+    : undefined;
+}
+
+const MAX_ANALOGUES = 5;
+
+/**
+ * The types a NO_CONVENTION draft's type is judged a relative of (lexicon
+ * friction F3): those SPECIALIZING it — their short name ends in all of its
+ * words and adds some (`CallerSymbolId`, `CalleeSymbolId` for `SymbolId`) —
+ * else its SIBLINGS, the types sharing its last word (`ProjectRegistry` for
+ * `CollectionRegistry`). Never the type itself.
+ */
+export function typeFamilyMembers(typeName: string, declared: readonly string[]): string[] {
+  const words = typeNameWords(typeNameLastSegment(typeName)).map(singularizeIdentifierWord);
+  const own = words.join("_");
+  const endsWith = (other: readonly string[], tail: readonly string[]) =>
+    other.length > tail.length && tail.every((word, i) => other[other.length - tail.length + i] === word);
+  const candidates = [...new Set(declared)]
+    .map((name) => ({ name, words: typeNameWords(typeNameLastSegment(name)).map(singularizeIdentifierWord) }))
+    .filter((c) => c.words.join("_") !== own);
+  const specializing = candidates.filter((c) => endsWith(c.words, words));
+  if (specializing.length > 0) return specializing.map((c) => c.name).sort();
+  const head = words[words.length - 1];
+  return candidates
+    .filter((c) => head !== undefined && c.words[c.words.length - 1] === head)
+    .map((c) => c.name)
+    .sort();
+}
+
+/**
+ * A NO_CONVENTION with its family's value names appended to `analogous`
+ * (lexicon friction F3): `familyRows` are the value rows of
+ * {@link typeFamilyMembers}; their names are ranked by owners, so a name many
+ * relatives' values share leads. Any other verdict is returned as is.
+ */
+export function withFamilyAnalogues(verdict: NamingVerdict, familyRows: readonly NamingByTypeRow[]): NamingVerdict {
+  if (verdict.verdict !== "NO_CONVENTION") return verdict;
+  const perName = new Map<string, number>();
+  for (const row of familyRows) {
+    if (!FREE_CHOICE_KINDS.has(row.kind)) continue;
+    perName.set(row.name, (perName.get(row.name) ?? 0) + (row.holders ?? row.n));
+  }
+  const family = [...perName].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name]) => name);
+  const analogous = [...new Set([...verdict.prefer.analogous, ...family])].slice(0, MAX_ANALOGUES);
+  return { verdict: "NO_CONVENTION", prefer: { ...verdict.prefer, analogous } };
+}
+
+/** The value kinds a missing convention leaves free; a `return` stays judged by the method vocabulary. */
+const FREE_CHOICE_KINDS: ReadonlySet<IdentifierDeclarationKind> = new Set(["param", "local", "field"]);
+
+/**
+ * A NEW_TERM offering nothing: every stage reaches it only when no name has
+ * {@link MIN_ROLE_MEMBERS} owners behind it, or nothing compares at all.
+ */
+function isBareNewTerm(verdict: NamingVerdict): boolean {
+  return verdict.verdict === "NEW_TERM" && verdict.topTerms.length === 0 && (verdict.alternatives?.length ?? 0) === 0;
+}
+
+/**
+ * A NO_CONVENTION's context: the VALUE names the draft's type rows carry, else
+ * its call's — any owner count. A `return` row is a method's name, no name for
+ * a value.
+ */
+function observedNames(input: DraftNameJudgementInput): string[] {
+  const valueRow = (row: { kind: IdentifierDeclarationKind }) => FREE_CHOICE_KINDS.has(row.kind);
+  // A non-concept type (`string`) is not the draft's type to the judgement, so its rows are no context either.
+  const typeRows = conceptTypeName(input) !== undefined ? (input.byTypeRows ?? []).filter(valueRow) : [];
+  const calleeRows =
+    input.callee === undefined
+      ? []
+      : (input.byCalleeRows ?? []).filter(
+          (row) =>
+            valueRow(row) && row.member === input.callee?.member && sameReceiver(row.receiver, input.callee.receiver),
+        );
+  return topRowNames(typeRows.length > 0 ? typeRows : calleeRows);
 }
 
 function judgeDraftNameByEvidence(input: DraftNameJudgementInput): NamingVerdict {
@@ -1129,6 +1257,30 @@ export interface TypeDraftPlacement {
   path: string;
   extends?: string;
   symbolKind?: SymbolDefinitionKind;
+  /**
+   * Whether the draft is its file's primary declaration, when the caller knows
+   * the whole file (diff mode reads it from the working tree, whose changed
+   * files the evidence leaves out). Absent → judged against the file's indexed
+   * declarations ({@link isFilePrimaryDraft}).
+   */
+  filePrimary?: boolean;
+}
+
+/**
+ * Whether a directory's role holds the draft (lexicon friction F4): the role is
+ * read off each file's primary, so only a draft that would be its file's
+ * primary belongs to it — `ModelInfo` beside `IndexingOps` does not. Without
+ * the caller's answer, the draft competes with the file's indexed declarations
+ * placed first, so an undecided tie keeps it held.
+ */
+function isFilePrimaryDraft(draft: TypeDraftPlacement, evidence: TypeNameEvidence): boolean {
+  if (draft.filePrimary !== undefined) return draft.filePrimary;
+  const shortName = typeNameLastSegment(draft.name);
+  const symbolKind = knownDraftKind(draft, evidence);
+  const own: FileDeclaration = { shortName, relPath: draft.path, ...(symbolKind ? { symbolKind } : {}) };
+  const siblings = evidence.rows.filter((row) => row.relPath === draft.path && row.shortName !== shortName);
+  const primary = filePrimaryDeclaration<FileDeclaration>([own, ...siblings]);
+  return primary === undefined || primary === own;
 }
 
 /** The draft's expected role ({@link expectedRoleFor}); a constant has no family, so its `extends` is ignored. */
@@ -1423,7 +1575,9 @@ export function judgeTypeDraft(judged: TypeDraftJudgementInput): NamingVerdict {
     relPath: input.path,
     symbolKind: input.symbolKind,
   });
-  const role = namespace ? undefined : draftRole(input, input.evidence);
+  const derived = namespace ? undefined : draftRole(input, input.evidence);
+  // A directory's role is its files' primaries': a helper declaration beside one is no member (lexicon friction F4).
+  const role = derived?.evidence === "directory" && !isFilePrimaryDraft(input, input.evidence) ? undefined : derived;
   // Only inheritance and directory evidence set an EXPECTED role; a project suffix only confirms,
   // and a cohesive directory family only speaks for its members.
   const nonMember = familyNonMemberRole(input, input.evidence, role) !== undefined;

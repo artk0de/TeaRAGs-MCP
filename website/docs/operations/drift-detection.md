@@ -176,13 +176,45 @@ nothing and repairs itself the next time those points are written.
 
 ## Embedding model
 
-`EmbeddingModelGuard` refuses a collection built by a different embedding model
-than the one currently configured. It checks two things, and the second is why
-an index that "nothing changed" under can still be wrong.
+### Which model a project uses
+
+A registered project is embedded with the model it was indexed with, not with
+the server's `EMBEDDING_MODEL`. Every index run records the project's embedding
+provider, model, endpoints (`EMBEDDING_BASE_URL`, `EMBEDDING_FALLBACK_URL`) and
+tuning in the registry (`~/.tea-rags/registry.json`). Search, `index_codebase`
+and the auto-update run all build the project's provider from that entry. The
+MCP server's environment only supplies defaults: for collections that have no
+registry entry, and for keys the entry does not record.
+
+So one MCP server serves projects indexed with different models. With
+`EMBEDDING_MODEL=nomic-ai/CodeRankEmbed` in the server config, a project indexed
+with `brokkai/Muninn-small` on `:8091–8094` is still queried with Muninn-small on
+`:8091–8094`. When the entry records a different model or provider than the
+server's environment, the server's endpoints are ignored for that project too:
+they serve the wrong model. When the model is the same, the server's endpoints
+win, so moving a model to another host does not require a reindex.
+
+A model switch is a deliberate rebuild. Pass the new model in the environment of
+the CLI run that rebuilds the project — an explicit command-line environment wins
+over the registry — and the run records it:
+
+```bash
+EMBEDDING_MODEL=nomic-ai/CodeRankEmbed EMBEDDING_BASE_URL=http://gpu-host:8081,8082 \
+  tea-rags index-codebase --project <alias> --force
+```
+
+### The guard
+
+`EmbeddingModelGuard` refuses a collection whose vectors came from a different
+model than the one about to embed for it — for a registered project, the model
+in its registry entry. It checks two things, and the second is why an index that
+"nothing changed" under can still be wrong.
 
 **The name.** Every collection's marker point (`__indexing_metadata__`) stores
-`embeddingModel`. Point `EMBEDDING_MODEL` somewhere else and the next search or
-index run fails with HTTP 409:
+`embeddingModel`. If it disagrees with the model that would embed for the
+collection — the registry entry was edited by hand, or an unregistered
+collection is opened with another `EMBEDDING_MODEL` — the next search or index
+run fails with HTTP 409:
 
 ```text
 Embedding model mismatch: collection indexed with "nomic-embed-text",
@@ -210,8 +242,9 @@ canary cosine 0.9412)"
 
 Two ways out:
 
-- Point `EMBEDDING_MODEL` back at the model that built the index — pin a version
-  tag instead of `:latest` if one exists.
+- Embed with the model that built the index — fix the registry entry (or, for
+  an unregistered collection, `EMBEDDING_MODEL`); pin a version tag instead of
+  `:latest` if one exists.
 - Rebuild with the model you now have:
   `tea-rags index-codebase --project <alias> --force`. A full reindex is the only
   tool for this; the vectors themselves are what changed, so
@@ -280,13 +313,24 @@ release that touches a walker, a resolver chain or the shared kernel bumps the
 version the build declares, so every index built before it now carries an older
 stamp: the code moved, the payload did not.
 
-This release bumps the shared walker, so every index built before it reports
-`*.walker: 1 → 2` once. The shared sources run under every language, so the
-recompute it recommends is deliberately not narrowed by `--languages`:
+This release bumps the shared chunking version, so every index built before it
+reports `*.chunking: 2 → 4` once. The bump is unscoped: top-level module code
+is now indexed for every code file, `.tsx` files are parsed with the `tsx`
+grammar, small Markdown sections are grouped instead of standing alone or being
+dropped, and test files store their setup once per scope and pack small
+examples (see [How Chunking Works](/usage/indexing-repositories#how-chunking-works)).
+Each of these moves the chunk set, so the remedy is the plain force:
 
 ```bash
-tea-rags index-codebase --force-enrichments codegraph
+tea-rags index-codebase --project <alias> --force
 ```
+
+An index with codegraph enabled may also report `ruby.walker: 5 → 6`: Ruby
+class variables, `||=` memoization and accessor macros (`attr_reader` and
+friends) now record the declarations the naming tools read. The
+force rebuilds the enrichment layer too, so the one command settles both. Until
+you run it, search keeps working on the old chunks: test examples come back
+with their setup inlined as before, and module-level code stays unindexed.
 
 After that run the stamp catches up and the report goes quiet.
 

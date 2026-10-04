@@ -262,7 +262,58 @@ describe("Ollama failover invalidates the model guard (bd tea-rags-mcp-g5nmi)", 
     await guard.ensureMatch(COLLECTION);
     expect(qdrantSpies.getPoint, "the failover left the stale verdict cached").toHaveBeenCalledTimes(2);
 
-    ctx.cleanup?.();
+    await ctx.cleanup?.();
+  });
+});
+
+// bd tea-rags-mcp-xi2r9, B3: a cold `tea-rags call` of a tool that embeds
+// nothing waited ~6.4 s on the failover probe of an unreachable primary. The
+// composition root and a non-embedding read must not touch an Ollama endpoint;
+// the first embed decides it, model info rides on that decision.
+describe("the composition root leaves the Ollama endpoint undecided until something embeds", () => {
+  const ollamaRequests = (): string[] =>
+    (vi.mocked(fetch).mock.calls as [string | URL][])
+      .map(([input]) => (typeof input === "string" ? input : input.href))
+      .filter((url) => url.startsWith(PRIMARY_URL) || url.startsWith(FALLBACK_URL));
+
+  beforeEach(() => {
+    captured.primaryAlive = false;
+    captured.embeddings = undefined;
+    captured.guard = undefined;
+    qdrantSpies.getPoint.mockReset();
+    qdrantSpies.getPoint.mockResolvedValue({
+      id: INDEXING_METADATA_ID,
+      payload: { embeddingModel: MODEL, canary: { text: EMBEDDING_CANARY_TEXT, vector: CANARY_VECTOR } },
+    });
+    vi.stubGlobal("fetch", vi.fn(fakeFetch));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("builds the context and serves a name-only guard check without one Ollama request", async () => {
+    const ctx = await createAppContext(makeConfig());
+    const guard = captured.guard as EmbeddingModelGuardType;
+
+    await guard.ensureMatch(COLLECTION, { nameOnly: true });
+
+    expect(ollamaRequests()).toEqual([]);
+    await ctx.cleanup?.();
+  });
+
+  it("decides the endpoint on the first embed, fails over, and asks the fallback for model info", async () => {
+    const ctx = await createAppContext(makeConfig());
+    const embeddings = captured.embeddings as OllamaEmbeddingsType;
+
+    await embeddings.embed("query");
+
+    expect(embeddings.getBaseUrl()).toBe(FALLBACK_URL);
+    const requests = ollamaRequests();
+    expect(requests.slice(0, 2)).toEqual([`${PRIMARY_URL}/`, `${PRIMARY_URL}/`]);
+    expect(requests).toContain(`${FALLBACK_URL}/api/show`);
+    expect(requests.at(-1)).toBe(`${FALLBACK_URL}/api/embed`);
+    await ctx.cleanup?.();
   });
 });
 
@@ -289,7 +340,7 @@ describe("the Ollama recovery wait reaches the AppContext caller (bd tea-rags-mc
     embeddings.onRecoveryWait?.({ state: "waiting", url: PRIMARY_URL, elapsedMs: 0, budgetMs: 240_000 });
     expect(events).toEqual([{ state: "waiting", url: PRIMARY_URL, elapsedMs: 0, budgetMs: 240_000 }]);
 
-    ctx.cleanup?.();
+    await ctx.cleanup?.();
   });
 
   it("leaves the hook unset when nobody listens — the MCP server has no screen to show it on", async () => {
@@ -297,6 +348,6 @@ describe("the Ollama recovery wait reaches the AppContext caller (bd tea-rags-mc
 
     expect((captured.embeddings as OllamaEmbeddingsType).onRecoveryWait).toBeUndefined();
 
-    ctx.cleanup?.();
+    await ctx.cleanup?.();
   });
 });

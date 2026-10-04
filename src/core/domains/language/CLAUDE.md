@@ -217,6 +217,17 @@
 - **`TSProgramCache` lives on `TSCallResolver`, refreshed by an mtime re-stat
   per `acquire`; `reset()` has NO caller in `src`.** Why: auditing for a
   run-boundary discard finds nothing and invites a spurious `reset()`.
+- **Only PARSES cross a run boundary, through an injected `TSSourceFileStore` —
+  never a Program.** A long-lived process (the warm working-tree graph child)
+  hands `LanguageFactory` a `CrossRunParseCache`; each run builds a fresh
+  factory, resolver and `TSProgramCache` over it, and the store re-stats every
+  file (mtime + size + parse options) before handing a parse back. Do not
+  "finish the job" by retaining Programs or the host probe memos across runs.
+  Why: a Program embeds module-resolution and existence answers that a file
+  added or deleted between runs moves without touching any file it holds, and
+  dependency edits under an unchanged entry are untracked — a warm run would
+  then differ from a cold one, which the warm-vs-cold equivalence suite
+  (`tree-graph-seed-equivalence.test.ts`) forbids.
 - **A bulk pass is covered by CLOSURE-BATCH Programs, one alive at a time — not
   one whole-project Program and not one per entry file** (bd vtuu4).
   `CODEGRAPH_TS_PROGRAM_STRATEGY` = `coverage` | `whole` | `auto` (default);
@@ -393,6 +404,18 @@
 
 ## Gotchas
 
+- **A TS resolver module never VALUE-imports `typescript`.** It holds
+  `import type ts from "typescript"` and calls `loadTypeScriptCompiler()`
+  (`typescript/resolver/ts-compiler-loader.ts`) at use time — a function-local
+  `const ts = loadTypeScriptCompiler()` shadows only the value meaning, so
+  `ts.Node` in a type position still resolves. A module-level value use (a
+  constant built from `ts.SyntaxKind` / `ts.sys`) must be a memoized getter. The
+  loader is a `createRequire`, so `vi.mock("typescript")` no longer reaches the
+  resolver: mock the loader module instead (`ts-program-cache.test.ts`). Why:
+  one static value import makes every importer of the language domain — the
+  whole test suite, and the chunker worker on each fork, which never resolves a
+  call — load the ~9MB compiler (~100-300ms); guarded by
+  `ts-compiler-loader.test.ts` (bd tea-rags-mcp-bbo1h.2).
 - **`defaultImportFileEdges` asks the CALL chain a MODULE question.**
   `trajectory/codegraph/symbols/resolution-runner.ts` synthesises
   `{ receiver: basename, member: basename }` per import — `member` is a
@@ -480,13 +503,14 @@
   is the real control, not the guard.
 - **The version pins close the other side.**
   `tests/core/domains/language/capability/version-pins.test.ts` hashes (sha256)
-  every non-test `.ts` under a language's directory EXCEPT `chunking/**` and
-  `capability.ts` (axis `walker` — so `kernel.ts`, `index.ts`,
-  `python/vocabulary/`, `ruby/schema|type-ref|codegraph-exclusions|gemfile` are
-  all in it), and `chunking/` + its chunker hooks (axis `chunking`), and pins
-  the digest to `versions.<axis>` in `version-pins.json`. Any change under those
-  paths — a comment included — turns the test red until you either bump the axis
-  (output moved) or re-pin (`npm run pin:lang-versions`, byte-identical claim,
+  every non-test `.ts` and every `.json` data asset under a language's directory
+  EXCEPT `chunking/**` and `capability.ts` (axis `walker` — so `kernel.ts`,
+  `index.ts`, `python/vocabulary/`, `swift/vocabulary/*.json`,
+  `ruby/schema|type-ref|codegraph-exclusions|gemfile` are all in it), and
+  `chunking/` + its chunker hooks (axis `chunking`), and pins the digest to
+  `versions.<axis>` in `version-pins.json`. Any change under those paths — a
+  comment included — turns the test red until you either bump the axis (output
+  moved) or re-pin (`npm run pin:lang-versions`, byte-identical claim,
   `Versions: unchanged — <why>` in the commit body). `capability.ts` is excluded
   because it HOLDS the numbers: digesting it would make every bump invalidate
   its own pin. `codegraphSchema` has no digest; it is judged by hand. Sources
@@ -538,6 +562,27 @@
   calls only: every receiver-bearing edge it produced on this repo was
   fabricated (bd tea-rags-mcp-hwwtw). Why: converting the last un-migrated
   resolver for consistency reproduces a measured regression.
+- **Co-change under `domains/language` runs through CONTRACTS, not imports —
+  `get_architecture_report` silentCoupling pairs between vertical files are by
+  design, and the report's "missing" edge must not be added.** Two shapes, one
+  rule: no file in a vertical is wired to its neighbours by a static import.
+  Walker ↔ resolver: the walker runs inside a chunker worker process (vertical
+  loaded by injected module path — `.claude/rules/domains-language.md` §2), the
+  resolver runs in the codegraph enrichment pass, and they exchange the
+  persisted `FileExtraction` shape, so a per-language feature lands in both
+  files of one commit with no edge for the import graph to see —
+  `typescript/resolver/ts-resolver.ts` ↔ `typescript/walker/walker.ts` is the
+  archetype, both producers of the symbolId stream a chunk is keyed by. Siblings
+  of one contract — two walkers, two resolvers, adjacent chain strategies, two
+  `capability.ts` descriptors, two DSL catalogue entries — never import each
+  other either: a kernel contract change (`kernel/merge-extraction.ts` channel
+  rules, `kernel/receiver-type-propagation.ts` ports) fans out to each `<lang>`
+  copy in ONE commit, so the sibling pairs co-change strongly with no edge
+  wanted between them. A kernel fix landing in only one vertical is the defect
+  shape, not the import. Why: judging these pairs as hidden coupling sends an
+  agent to add imports across the worker-thread DI seam — the edge the report
+  asks for is the seam itself, and closing it re-couples verticals the injected
+  module path exists to keep apart.
 
 ## See also
 

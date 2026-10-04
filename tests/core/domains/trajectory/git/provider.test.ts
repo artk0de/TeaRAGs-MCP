@@ -276,6 +276,7 @@ describe("GitEnrichmentProvider", () => {
         undefined, // diffMemo (7gnre — not passed when no options.diffMemo)
         undefined, // commitDiscovery (82va1 — not passed when no options.commitDiscovery)
         undefined, // onWalkStats (iqpuu — not passed when no options.onWalkStats)
+        expect.any(Map), // symbolCommits out-collector (3gz4f — always passed on the inline path)
       );
     });
   });

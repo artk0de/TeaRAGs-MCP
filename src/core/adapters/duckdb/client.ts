@@ -23,6 +23,7 @@
  * | `DuckDbGraphAnalyticsStore`  | adjacency out, cycles + PageRank back in        |
  * | `DuckDbRunStatsStore`        | `cg_run_stats` + edge-kind distribution         |
  * | `DuckDbTemporalCochangeStore`| `cg_temporal_*` co-change sub-graph             |
+ * | `DuckDbReviewEdgeStore`      | per-review `cg_review_file_edges_*` throwaways  |
  * | `DuckDbIdentifierStore`      | `cg_identifiers` (naming lexicon)               |
  * | `DuckDbOntologyReportStore`  | `cg_identifiers` ontology audit reads           |
  * | `DuckDbTypeNameStore`        | type-level `cg_symbols` rows + their ancestors  |
@@ -71,6 +72,12 @@ import type {
   IdentifierTypeAggregateRow,
   IdentifierTypeScopeQuery,
   InheritanceEdge,
+  MethodHeadWordQuery,
+  MethodHeadWordRow,
+  MethodNamePatternQuery,
+  MethodNameRow,
+  MethodTailVerbQuery,
+  MethodTailVerbRow,
   NonPublicMemberEdge,
   OntologyReportQuery,
   OntologyReportSectionRows,
@@ -80,6 +87,7 @@ import type {
   PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
+  ReviewFileEdge,
   SymbolChunkIdJoinEntry,
   SymbolChunkLocation,
   SymbolDefinition,
@@ -88,6 +96,7 @@ import type {
   TemporalCochangeBuildMeta,
   TemporalCochangeGraph,
   TemporalCochangeSnapshot,
+  TemporalSymbolCommitFileSnapshot,
   TypeDeclarationReplaceEntry,
   TypeNameQuery,
   TypeNameRow,
@@ -100,10 +109,12 @@ import { DuckDbHierarchyReader } from "./hierarchy-reader.js";
 import { DuckDbIdentifierStore } from "./identifier-store.js";
 import { DuckDbMethodEdgeReader } from "./method-edge-reader.js";
 import { DuckDbOntologyReportStore } from "./ontology-report-store.js";
+import { DuckDbReviewEdgeStore } from "./review-edge-store.js";
 import { DuckDbRunStatsStore } from "./run-stats-store.js";
 import { DuckDbSignalDriftStore } from "./signal-drift-store.js";
 import { DuckDbSymbolStore } from "./symbol-store.js";
 import { DuckDbTemporalCochangeStore } from "./temporal-cochange-store.js";
+import { DuckDbTemporalSymbolCommitStore } from "./temporal-symbol-commit-store.js";
 import { DuckDbTypeNameStore } from "./type-name-store.js";
 
 // Graph algorithms (Tarjan SCC, PageRank) intentionally NOT imported
@@ -133,6 +144,8 @@ export class DuckDbGraphClient implements GraphDbClient {
   private readonly runStats: DuckDbRunStatsStore;
   private readonly signalDrift: DuckDbSignalDriftStore;
   private readonly temporalCochange: DuckDbTemporalCochangeStore;
+  private readonly temporalSymbolCommits: DuckDbTemporalSymbolCommitStore;
+  private readonly reviewEdges: DuckDbReviewEdgeStore;
   private readonly identifiers: DuckDbIdentifierStore;
   private readonly ontology: DuckDbOntologyReportStore;
   private readonly typeNames: DuckDbTypeNameStore;
@@ -148,6 +161,8 @@ export class DuckDbGraphClient implements GraphDbClient {
     this.runStats = new DuckDbRunStatsStore(this.session);
     this.signalDrift = new DuckDbSignalDriftStore(this.session);
     this.temporalCochange = new DuckDbTemporalCochangeStore(this.session);
+    this.temporalSymbolCommits = new DuckDbTemporalSymbolCommitStore(this.session);
+    this.reviewEdges = new DuckDbReviewEdgeStore(this.session);
     this.identifiers = new DuckDbIdentifierStore(this.session);
     this.ontology = new DuckDbOntologyReportStore(this.session);
     this.typeNames = new DuckDbTypeNameStore(this.session);
@@ -170,6 +185,11 @@ export class DuckDbGraphClient implements GraphDbClient {
   /** See `GraphDbClient.compactStorage`; the protocol is `DuckDbGraphSession#compactDatabaseFile`. */
   async compactStorage(): Promise<CodegraphStorageCompactionOutcome> {
     return this.session.compactDatabaseFile();
+  }
+
+  /** See `GraphDbClient.exportSnapshot`; the protocol is `DuckDbGraphSession#exportSnapshot`. */
+  async exportSnapshot(targetPath: string): Promise<void> {
+    return this.session.exportSnapshot(targetPath);
   }
 
   /** The database file this client holds open now — what the pool checks its path against. */
@@ -357,12 +377,29 @@ export class DuckDbGraphClient implements GraphDbClient {
   async identifierNameTypes(
     names: readonly string[],
     excludePaths?: readonly string[],
+    languages?: readonly string[],
   ): Promise<IdentifierNameTypeRow[]> {
-    return this.identifiers.identifierNameTypes(names, excludePaths);
+    return this.identifiers.identifierNameTypes(names, excludePaths, languages);
   }
 
-  async existingSymbolShortNames(names: readonly string[], excludePaths?: readonly string[]): Promise<string[]> {
-    return this.identifiers.existingSymbolShortNames(names, excludePaths);
+  async existingSymbolShortNames(
+    names: readonly string[],
+    excludePaths?: readonly string[],
+    languages?: readonly string[],
+  ): Promise<string[]> {
+    return this.identifiers.existingSymbolShortNames(names, excludePaths, languages);
+  }
+
+  async readMethodHeadWords(q: MethodHeadWordQuery): Promise<MethodHeadWordRow[]> {
+    return this.identifiers.readMethodHeadWords(q);
+  }
+
+  async readMethodTailVerbs(q: MethodTailVerbQuery): Promise<MethodTailVerbRow[]> {
+    return this.identifiers.readMethodTailVerbs(q);
+  }
+
+  async readMethodNamesMatching(q: MethodNamePatternQuery): Promise<MethodNameRow[]> {
+    return this.identifiers.readMethodNamesMatching(q);
   }
 
   async countIdentifiers(q: IdentifierTypeScopeQuery): Promise<number> {
@@ -501,6 +538,50 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async readTemporalCochangeGraph(): Promise<TemporalCochangeGraph> {
     return this.temporalCochange.readGraph();
+  }
+
+  async readTemporalBundleFiles(): Promise<ReadonlyMap<number, readonly RelPath[]>> {
+    return this.temporalCochange.readBundleFiles();
+  }
+
+  // ── Temporal symbol-commit store (bd tea-rags-mcp-3gz4f) ──
+
+  async replaceTemporalSymbolCommits(files: TemporalSymbolCommitFileSnapshot[]): Promise<void> {
+    return this.temporalSymbolCommits.replaceFiles(files);
+  }
+
+  async storedTemporalSymbolCommitFilePaths(): Promise<string[]> {
+    return this.temporalSymbolCommits.storedFilePaths();
+  }
+
+  async deleteTemporalSymbolCommitFiles(relPaths: string[]): Promise<void> {
+    return this.temporalSymbolCommits.deleteFiles(relPaths);
+  }
+
+  async readTemporalSymbolCommits(relPath: RelPath): Promise<TemporalSymbolCommitFileSnapshot> {
+    return this.temporalSymbolCommits.readFile(relPath);
+  }
+
+  // ── Per-review working-tree file edges (bd tea-rags-mcp-89k7k.1.2) ──
+  //
+  // Throwaway `cg_review_file_edges_<reviewId>` tables — one per diff-scoped
+  // review, runtime DDL, never in the migration catalog. Cleanup layers and
+  // the append contract are owned by the store's docblock.
+
+  async putReviewFileEdges(reviewId: string, edges: readonly ReviewFileEdge[]): Promise<void> {
+    return this.reviewEdges.putReviewFileEdges(reviewId, edges);
+  }
+
+  async dropReviewFileEdges(reviewId: string): Promise<void> {
+    return this.reviewEdges.dropReviewTable(reviewId);
+  }
+
+  async sweepExpiredReviewFileEdges(nowEpochSeconds: number, maxAgeSeconds: number): Promise<string[]> {
+    return this.reviewEdges.sweepExpiredReviewTables(nowEpochSeconds, maxAgeSeconds);
+  }
+
+  async readReviewFileEdges(reviewId: string): Promise<ReviewFileEdge[]> {
+    return this.reviewEdges.readReviewFileEdges(reviewId);
   }
 
   /** File-scope `get_callers` (bd tea-rags-mcp-gfvr8): the files importing `relPath`. */

@@ -7,31 +7,19 @@
  * No child_process mock — exercises real git against a tiny temp repo,
  * mirroring the real-git harness in `git-cli/client-catfile.test.ts`.
  */
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { importGitHistory } from "../../../__helpers__/git-history-import.js";
 import { GitCliAdapter } from "../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 
 // Temp base captured ONCE at module load (realpath-normalised; macOS /var →
 // /private/var). Guards against running real `git init`/`git commit` outside
 // the temp tree (see client-catfile.test.ts for the same pattern).
 const TMP_BASE = realpathSync(tmpdir());
-
-function gitIn(cwd: string, args: string[], isoDate: string): string {
-  const r = cwd ? resolve(cwd) : "";
-  if (!r?.startsWith(TMP_BASE + sep)) {
-    throw new Error(`commit-file-numstat.test: refusing git "${args[0]}" in non-temp cwd: ${String(cwd)}`);
-  }
-  return execFileSync("git", args, {
-    cwd,
-    encoding: "utf8",
-    env: { ...process.env, GIT_AUTHOR_DATE: isoDate, GIT_COMMITTER_DATE: isoDate },
-  }).trim();
-}
 
 describe("readCommitFileNumstat (real git)", () => {
   let tmp: string;
@@ -45,28 +33,41 @@ describe("readCommitFileNumstat (real git)", () => {
 
   beforeEach(() => {
     tmp = mkdtempSync(join(TMP_BASE, "git-numstat-"));
-    const g = (args: string[], isoDate: string): string => gitIn(tmp, args, isoDate);
+    if (!resolve(tmp).startsWith(TMP_BASE + sep)) {
+      throw new Error(`commit-file-numstat.test: refusing git in non-temp cwd: ${tmp}`);
+    }
 
-    g(["init", "-q", "-b", "main"], T1);
-    g(["config", "user.email", "t@example.com"], T1);
-    g(["config", "user.name", "Test"], T1);
-    g(["config", "commit.gpgsign", "false"], T1);
-    g(["config", "diff.algorithm", "myers"], T1);
-
-    // c1 — creates a.ts (3 lines): pure add, +3/-0.
-    writeFileSync(join(tmp, "a.ts"), "x\ny\nz\n");
-    g(["add", "-A"], T1);
-    g(["commit", "-q", "-m", "c1: add a.ts"], T1);
-    c1sha = g(["rev-parse", "HEAD"], T1);
-
-    // c2 — replaces the middle line of a.ts with 3 lines (+3/-1) and adds a
-    // binary file (NUL bytes trigger git's binary heuristic, same fixture
-    // byte pattern already pinned in equivalence-repo.ts).
-    writeFileSync(join(tmp, "a.ts"), "x\ny1\ny2\ny3\nz\n");
-    writeFileSync(join(tmp, "img.png"), Buffer.from([0x00, 0x01, 0x02, 0xff, 0x00, 0x42]));
-    g(["add", "-A"], T2);
-    g(["commit", "-q", "-m", "c2: edit a.ts + add binary img.png"], T2);
-    c2sha = g(["rev-parse", "HEAD"], T2);
+    // ONE fast-import instead of ~11 init/config/add/commit/rev-parse spawns
+    // (bd tea-rags-mcp-1r3e5): author and committer are the configured user,
+    // both dated T1 / T2, as the commit chain made them.
+    const test = { name: "Test", email: "t@example.com" };
+    const sha = importGitHistory(
+      tmp,
+      [
+        // c1 — creates a.ts (3 lines): pure add, +3/-0.
+        { label: "c1", message: "c1: add a.ts", author: test, authorDate: T1, writes: { "a.ts": "x\ny\nz\n" } },
+        // c2 — replaces the middle line of a.ts with 3 lines (+3/-1) and adds a
+        // binary file (NUL bytes trigger git's binary heuristic, same fixture
+        // byte pattern already pinned in equivalence-repo.ts).
+        {
+          label: "c2",
+          message: "c2: edit a.ts + add binary img.png",
+          author: test,
+          authorDate: T2,
+          writes: { "a.ts": "x\ny1\ny2\ny3\nz\n", "img.png": Buffer.from([0x00, 0x01, 0x02, 0xff, 0x00, 0x42]) },
+        },
+      ],
+      {
+        config: {
+          "user.email": "t@example.com",
+          "user.name": "Test",
+          "commit.gpgsign": "false",
+          "diff.algorithm": "myers",
+        },
+      },
+    );
+    c1sha = sha.c1;
+    c2sha = sha.c2;
 
     adapter = new GitCliAdapter(tmp);
   });

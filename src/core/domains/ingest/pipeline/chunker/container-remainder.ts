@@ -43,7 +43,8 @@ export interface ContainerRemainderInput {
   coveredRows: ReadonlySet<number>;
   /**
    * The container's header row, trimmed — prefixed when that row is itself
-   * covered, and on every window after the one that carries it.
+   * covered, and on every window after the one that carries it. Empty for a
+   * region with no header row (the module remainder): nothing is prefixed.
    */
   containerHeader: string;
   /**
@@ -119,7 +120,9 @@ export function planContainerRemainder(input: ContainerRemainderInput): Containe
   // A window after the one carrying the header row names the container through
   // the same header prefix — otherwise a top-level container's `#part2+` named
   // nothing at all (bd tea-rags-mcp-j4jrn).
-  const headerPrefix = `${containerHeader}\n`;
+  // A headerless region — the MODULE remainder, whose "container" is the file —
+  // passes an empty header and gets no header prefix at all.
+  const headerPrefix = containerHeader === "" ? "" : `${containerHeader}\n`;
   const ownHeaderPrefix = coveredRows.has(headerRow) ? headerPrefix : "";
   const tailPrefix = `${hierarchyPrefix}${headerPrefix}`;
 

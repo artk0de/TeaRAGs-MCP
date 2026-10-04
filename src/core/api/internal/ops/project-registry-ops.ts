@@ -6,6 +6,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
 import { isCollectionBuildInFlight } from "../../../domains/ingest/infra/collection-build-lease.js";
 import {
+  applyOperatorEnvPinEdit,
   applyRegistryEnvEdit,
   canonicalRegistryEnvKeys,
   isIndexRecordedEnvKey,
@@ -126,7 +127,13 @@ export class ProjectRegistryOps {
         .filter((n): n is string => typeof n === "string" && n.length > 0);
       throw new ProjectNotRegisteredError(input.name, available);
     }
-    const { name: _name, autoUpdate: _autoUpdate, ...recordable } = applyRegistryEnvEdit(entry, edit);
+    // Values and pins together: the pin is what lets a throughput-tuned value
+    // replay as a ceiling (bd tea-rags-mcp-y1ynz).
+    const {
+      name: _name,
+      autoUpdate: _autoUpdate,
+      ...recordable
+    } = applyOperatorEnvPinEdit(applyRegistryEnvEdit(entry, edit), edit);
     registry.record(recordable);
     return registry.get(entry.collectionName) ?? entry;
   }

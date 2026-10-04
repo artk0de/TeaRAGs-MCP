@@ -2,6 +2,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { QdrantManager } from "../../../../src/core/adapters/qdrant/client.js";
+import { toQdrantPointId } from "../../../../src/core/adapters/qdrant/point-id.js";
+import { withServicePointExclusions } from "../../../../src/core/adapters/qdrant/service-points.js";
 
 const mockQuery = vi.fn();
 const mockGetCollectionInfo = vi.fn();
@@ -36,14 +38,16 @@ describe("QdrantManager.query()", () => {
       "test_col",
       expect.objectContaining({
         query: {
+          // String ids are mapped as a write maps them (bd tea-rags-mcp-xi2r9).
           recommend: {
-            positive: ["id-1", [0.1, 0.2, 0.3]],
-            negative: ["id-2"],
+            positive: [toQdrantPointId("id-1"), [0.1, 0.2, 0.3]],
+            negative: [toQdrantPointId("id-2")],
             strategy: "best_score",
           },
         },
         limit: 10,
-        filter: { must: [{ key: "language", match: { value: "typescript" } }] },
+        // Ranked queries never rank a service point (bd tea-rags-mcp-xi2r9).
+        filter: withServicePointExclusions({ must: [{ key: "language", match: { value: "typescript" } }] }),
         with_payload: true,
         with_vector: false,
       }),

@@ -90,18 +90,41 @@ function overlapLength(text: string, next: string): number {
   return 0;
 }
 
+/**
+ * The headings a doc chunk OWNS. `MarkdownChunker#buildSectionChunks` names a
+ * chunk after the heading that opened it and records its headingPath as that
+ * heading's ancestors, the heading itself, then every section accumulated after
+ * it — so the chunk owns the entries from its `name` on. The opener is the
+ * first entry carrying the name that ends a strictly deepening prefix (an
+ * ancestor chain). A chunk whose name is no entry of its path — a code block,
+ * "Code: ts" — owns only the last entry.
+ */
+function ownedHeadings(
+  headingPath: { depth: number; text: string }[],
+  name: string | undefined,
+): { depth: number; text: string }[] {
+  if (headingPath.length === 0) return [];
+  const opener = name?.replace(PART_NAME_SUFFIX, "");
+  for (let i = 0; i < headingPath.length; i++) {
+    if (i > 0 && headingPath[i].depth <= headingPath[i - 1].depth) break;
+    if (headingPath[i].text === opener) return headingPath.slice(i);
+  }
+  return headingPath.slice(-1);
+}
+
 export const DocChunkGrouper = {
   /**
    * Group documentation chunks into a TOC outline result.
    *
    * Every heading of every chunk's headingPath is listed once, in startLine
-   * order, but a line carries a section id only for a heading some chunk OWNS —
-   * the last entry of that chunk's headingPath — and takes it from the first
-   * such chunk; the windows of a split section share both the id and the
-   * heading. A heading present only as an ancestor (an H1 directly followed by
-   * an H2 has no chunk of its own) is listed without an id: lending it its
-   * first descendant's id put one section on two TOC lines, and drilling the
-   * ancestor returned the descendant (tea-rags-mcp-mypsl).
+   * order, but a line carries a section id only for a heading some chunk OWNS
+   * (`ownedHeadings`) and takes it from the first such chunk; the windows of a
+   * split section share both the id and the headings. A chunk the markdown
+   * chunker grew by accumulation owns every heading it holds, so its id sits
+   * on each of them — drilling any returns the chunk whose content carries that
+   * heading (bd tea-rags-mcp-8gbh3). A heading present only as an ancestor is
+   * listed without an id: lending it a descendant's id made drilling the
+   * ancestor return the descendant (tea-rags-mcp-mypsl).
    */
   group(chunks: ScrollChunk[]): SearchResult {
     const sorted = [...chunks].sort((a, b) => (Number(a.payload.startLine) || 0) - (Number(b.payload.startLine) || 0));
@@ -127,12 +150,12 @@ export const DocChunkGrouper = {
         }
       }
 
-      const ownHeading = hp[hp.length - 1] as { depth: number; text: string } | undefined;
       const symbolId = c.payload.symbolId as string | undefined;
-      if (!ownHeading || !symbolId || claimedSectionIds.has(symbolId)) continue;
-      const ownKey = `${ownHeading.depth}:${ownHeading.text}`;
-      if (ownSectionIds.has(ownKey)) continue;
-      ownSectionIds.set(ownKey, symbolId);
+      if (!symbolId || claimedSectionIds.has(symbolId)) continue;
+      for (const owned of ownedHeadings(hp, c.payload.name as string | undefined)) {
+        const ownKey = `${owned.depth}:${owned.text}`;
+        if (!ownSectionIds.has(ownKey)) ownSectionIds.set(ownKey, symbolId);
+      }
       claimedSectionIds.add(symbolId);
     }
 

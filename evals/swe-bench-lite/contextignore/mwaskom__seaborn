@@ -1,0 +1,5 @@
+# Installed as .contextignore into every seaborn task repository by `prepare`.
+# Checked against the gold patches of every seaborn task in SWE-bench Lite.
+
+# Vendored helpers (appdirs, docscrape, kde, version, husl).
+/seaborn/external/

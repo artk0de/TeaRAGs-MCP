@@ -8,6 +8,7 @@ import { ChunkPhase } from "../../../../../../src/core/domains/ingest/pipeline/e
 import { CompletionRunner } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/completion-runner.js";
 import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { FilePhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/file-phase.js";
+import { mapMarkerToHealth } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/health-mapper.js";
 import { EnrichmentMarkerStore } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/marker-store.js";
 import { pipelineLog } from "../../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
 
@@ -115,6 +116,79 @@ describe("CompletionRunner", () => {
     expect(final.file.errorMessage).toContain("es-git walk exploded");
     expect(final.chunk.status).toBe("failed");
     expect(final.chunk.errorMessage).toContain("es-git walk exploded");
+  });
+
+  it("reports a codegraph run whose every prefetch failed as FAILED health, never healthy (bd tea-rags-mcp-r4z09)", async () => {
+    // The taxdome incident: a stale MCP process's worker pools met no daemon for
+    // their build, every codegraph.symbols batch failed, and the run still
+    // completed. Pins that the loss is not silent — the terminal markers say
+    // `failed` with the cause, and the health the status report (and the CLI's
+    // `outcome.failed`, via `deriveEnrichmentOutcome`) is built from says so too.
+    const qdrant = new MockQdrantManager();
+    await seedMarkerPoint(qdrant, "coll");
+
+    const applier = new EnrichmentApplier(qdrant as any);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+    const filePhase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+    const chunkPhase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+    filePhase.bindChunkPhase(chunkPhase);
+    const backfiller = new EnrichmentBackfiller(applier, qdrant as any, new InlineEnrichmentExecutor());
+    const runner = new CompletionRunner({
+      filePhase,
+      chunkPhase,
+      backfiller,
+      applier,
+      markerStore: marker,
+      executor: new InlineEnrichmentExecutor(),
+    });
+
+    const daemonError = "No codegraph daemon is running for this process's build (key b-fc73b71a)";
+    const buildChunkSignals = vi.fn().mockResolvedValue(new Map());
+    const ctx = {
+      key: "codegraph.symbols",
+      provider: {
+        key: "codegraph.symbols",
+        defersChunkEnrichment: true,
+        finalizeSignals: vi.fn().mockResolvedValue(new Map()),
+        buildChunkSignals,
+        buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+        streamFileBatch: vi.fn().mockRejectedValue(new Error(daemonError)),
+        resolveRoot: (p: string) => p,
+      } as any,
+      effectiveRoot: "/repo",
+      ignoreFilter: null,
+    };
+    const contexts = new Map([[ctx.key, ctx]]);
+    filePhase.init(contexts, "coll", "run-stale", "ts");
+    chunkPhase.init(contexts, "coll", "ts");
+    await marker.markRunStart("coll", ["codegraph.symbols"], "run-stale", "ts");
+
+    for (const file of ["/repo/a.ts", "/repo/b.ts"]) {
+      const items = [
+        { chunkId: `c-${file}`, chunk: { metadata: { filePath: file }, startLine: 1, endLine: 5 } } as any,
+      ];
+      chunkPhase.onBatch("coll", "/repo", items);
+      const work = filePhase.onBatch("coll", "/repo", items);
+      await Promise.all(work.values());
+    }
+    expect(filePhase.hasPrefetchFailed("codegraph.symbols")).toBe(true);
+
+    // runStartedAt + runId as the coordinator passes them, so the terminal
+    // markers belong to the run the `_run` pointer names.
+    await runner.run("coll", contexts, Date.now() - 1000, undefined, "ts", "run-stale");
+
+    const markers = (await marker.read("coll"))!;
+    const final = (markers.codegraph as any).symbols;
+    expect(final.file.status).toBe("failed");
+    expect(final.chunk.status).toBe("failed");
+    expect(final.file.errorMessage).toContain("No codegraph daemon");
+    // The deferred chunk pass never ran over a failed provider.
+    expect(buildChunkSignals).not.toHaveBeenCalled();
+
+    const health = mapMarkerToHealth(markers, ["codegraph.symbols"])!;
+    expect(health["codegraph.symbols"].file.status).toBe("failed");
+    expect(health["codegraph.symbols"].chunk.status).toBe("failed");
+    expect(health["codegraph.symbols"].file.message).toContain("No codegraph daemon");
   });
 
   it("uses unenrichedReader callback for unenrichedChunks counts when provided", async () => {

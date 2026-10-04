@@ -18,7 +18,9 @@
 
 import { describe, expect, it } from "vitest";
 
-import { buildRegistryEnvSnapshot } from "../../src/bootstrap/config/env-snapshot.js";
+import { buildPinnedRegistryEnvSnapshot, buildRegistryEnvSnapshot } from "../../src/bootstrap/config/env-snapshot.js";
+import { parseAppConfigZod } from "../../src/bootstrap/config/parse.js";
+import { resolveRegistryEnvCodeDefaults } from "../../src/bootstrap/config/registry-env-code-defaults.js";
 import {
   codegraphSchema,
   embeddingSchema,
@@ -32,6 +34,7 @@ import {
   DEDICATED_FIELD_ENV_KEYS,
   REGISTRY_ENV_GROUPS,
 } from "../../src/core/domains/maintenance/registry/env-groups.js";
+import { replayRegistryEnv } from "../../src/core/domains/maintenance/registry/env-replay.js";
 
 const bareFlags = {
   userSetBatchSize: false,
@@ -59,6 +62,7 @@ describe("buildRegistryEnvSnapshot", () => {
       EMBEDDING_DEVICE: "auto",
       OLLAMA_LEGACY_API: "false",
       OLLAMA_NUM_GPU: "999",
+      EMBEDDING_AUTO_PULL: "true",
       TRAJECTORY_GIT_ENABLED: "true",
       TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS: "12",
       TRAJECTORY_GIT_LOG_TIMEOUT_MS: "60000",
@@ -87,6 +91,7 @@ describe("buildRegistryEnvSnapshot", () => {
       EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS: "240000",
       EMBEDDING_TUNE_UNAVAILABLE_RETRY_BASE_DELAY_MS: "2000",
       EMBEDDING_TUNE_FAILOVER_CONSECUTIVE_FAILURES: "3",
+      EMBEDDING_TUNE_STATIC: "false",
       QDRANT_TUNE_UPSERT_BATCH_SIZE: "100",
       QDRANT_TUNE_UPSERT_FLUSH_INTERVAL_MS: "500",
       QDRANT_TUNE_UPSERT_ORDERING: "weak",
@@ -211,5 +216,38 @@ describe("buildRegistryEnvSnapshot", () => {
     for (const key of Object.keys(snapshot)) {
       expect(aliases.has(key)).toBe(false);
     }
+  });
+});
+
+/**
+ * INGEST_PIPELINE_CONCURRENCY explicit-vs-unset across the registry: unset
+ * lets the embed concurrency climb to an implicit ceiling, explicit is a hard
+ * cap — so a registry round trip must never turn one into the other.
+ */
+describe("INGEST_PIPELINE_CONCURRENCY through the registry", () => {
+  const bareEnv = (): Record<string, string> => ({ HOME: "/tmp/tea-rags-env-snapshot-test" });
+
+  it("an unset run pins nothing, so its replay stays unset", () => {
+    const pinned = buildPinnedRegistryEnvSnapshot(parseAppConfigZod(bareEnv()));
+    expect(pinned).not.toHaveProperty("INGEST_PIPELINE_CONCURRENCY");
+
+    const env = bareEnv();
+    replayRegistryEnv(pinned, env);
+    expect(parseAppConfigZod(env).flags.userSetPipelineConcurrency).toBe(false);
+  });
+
+  it("an explicit run pins its value under the canonical key, and the replay stays explicit", () => {
+    const pinned = buildPinnedRegistryEnvSnapshot(parseAppConfigZod({ ...bareEnv(), EMBEDDING_CONCURRENCY: "1" }));
+    expect(pinned).toMatchObject({ INGEST_PIPELINE_CONCURRENCY: "1" });
+
+    const env = bareEnv();
+    replayRegistryEnv(pinned, env);
+    const replayed = parseAppConfigZod(env);
+    expect(replayed.flags.userSetPipelineConcurrency).toBe(true);
+    expect(replayed.ingest.tune.pipelineConcurrency).toBe(1);
+  });
+
+  it("keeps the code default '1' in the default snapshot, so the env-pin migration drops pre-h4l6k frozen pins", () => {
+    expect(resolveRegistryEnvCodeDefaults(bareEnv())).toMatchObject({ INGEST_PIPELINE_CONCURRENCY: "1" });
   });
 });

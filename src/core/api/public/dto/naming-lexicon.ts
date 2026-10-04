@@ -18,6 +18,7 @@ import type {
   TypeNameHeadCarriers,
 } from "../../../domains/explore/naming-lexicon/index.js";
 import type { CollectionRef } from "./explore.js";
+import type { WorkingTreeMarker } from "./working-tree.js";
 
 /**
  * A name the caller is about to write, with whatever it knows about it. A value
@@ -50,6 +51,12 @@ export interface NamingLexiconDraftName {
    * SCREAMING_SNAKE name is a constant, any other a type.
    */
   symbolKind?: SymbolDefinitionKind;
+  /**
+   * `kind: "type"`, diff mode only (not a tool field): whether the declaration
+   * is its file's primary — only a primary is held to its directory's role.
+   * Absent → decided against the file's indexed declarations.
+   */
+  filePrimary?: boolean;
 }
 
 /** A type or constant draft (`kind: "type"`), as the ops layer judges it once `path` is validated. */
@@ -68,7 +75,9 @@ export interface NamingLexiconEvidenceScope {
 /**
  * At least one of `types` / `anchors` / `concept` / `names` / `changes` /
  * `files`; `concept` requires `language`. `changes` and `files` (diff mode, bd
- * tea-rags-mcp-fdef2) need the project's working tree — a `project` or `path`.
+ * tea-rags-mcp-fdef2) need the project's working tree — a `project` or `path`. With `project`, a
+ * `path` names a checkout of the same repository — a linked git worktree —
+ * read against the project's index; `project` alone reads its main checkout.
  */
 export interface NamingLexiconRequest extends CollectionRef {
   /** Glob; its literal prefix (before the first `*?{[`) scopes the rows read. */
@@ -210,20 +219,20 @@ export type NamingReviewFinding = {
 } & NamingVerdict;
 
 /**
- * Why a diff-mode declaration or file was not judged: `unknownReturnType` — a
- * method / function whose return type is unknown, so no draft carries its
- * name; `nonProduction` — a test / script / fixture file; `noCodegraphLanguage`
- * — no codegraph language walks the extension; `unreadable` — the file is gone
- * from the working tree or failed to parse.
+ * Why a diff-mode file was not judged: `nonProduction` — a test / script /
+ * fixture file; `noCodegraphLanguage` — no codegraph language walks the
+ * extension; `unreadable` — the file is gone from the working tree or failed
+ * to parse. A method with no known return type is judged by the project's
+ * method vocabulary, never skipped.
  */
-export type NamingReviewNotJudgedReason = "unknownReturnType" | "nonProduction" | "noCodegraphLanguage" | "unreadable";
+export type NamingReviewNotJudgedReason = "nonProduction" | "noCodegraphLanguage" | "unreadable";
 
 /** One thing diff mode did not judge; a file carries no `line` / `name`. */
 export interface NamingReviewNotJudgedEntry {
   relPath: string;
   line?: number;
   name?: string;
-  /** `file`, or the declaration's kind (`method`, `function`). */
+  /** `file` — only files go unjudged. */
   kind: string;
   reason: NamingReviewNotJudgedReason;
 }
@@ -247,6 +256,8 @@ export interface NamingReviewNote {
 
 /** The naming review of a diff (`changes` / `files`, bd tea-rags-mcp-fdef2). */
 export interface NamingReviewResult {
+  /** The working tree the change was read from: `path` beside `project`, else the addressed tree. */
+  workTree: string;
   /** The ref the request named (`HEAD` when none). */
   base: string;
   /** The commit the change was read against: `base`'s merge-base with HEAD. */
@@ -290,11 +301,10 @@ export interface NamingReviewResult {
    */
   notJudged: number;
   /**
-   * What the review did not judge, per kind (`file`, `method`, `function`) and
-   * reason, counted whole: the files behind `notJudged`, and the methods /
-   * functions on added lines with no known return type — a method name is
-   * judged only through its return type, so these are in neither `checked`
-   * nor `conforming`. Absent when everything was judged.
+   * What the review did not judge, per kind (`file`) and reason, counted
+   * whole: the files behind `notJudged`. A method with no known return type is
+   * judged by the project's method vocabulary and counted in `checked`.
+   * Absent when everything was judged.
    */
   notJudgedBy?: Partial<Record<string, Partial<Record<NamingReviewNotJudgedReason, number>>>>;
   /** The first 50 of `notJudgedBy`, in path and line order — what a reviewer still has to read. */
@@ -334,8 +344,17 @@ export interface NamingLexiconResult {
   names: NamingLexiconNameVerdict[];
   /** e.g. `concept step skipped: …` when embeddings are unavailable, or an empty type-declaration table. */
   notices?: string[];
+  /**
+   * Set when the index was built at another commit than the answer's tree's
+   * HEAD (see `review.workTree`): every verdict rests on evidence
+   * read at `indexedCommit`, so what changed since is not in it. Absent: the
+   * index is at the tree's HEAD, or either commit is unknown.
+   */
+  indexLag?: { indexedCommit: string; treeCommit: string };
   /** Set when the index predates the identifier table — names the reindex. */
   driftWarning?: string;
   /** Diff mode's answer, when the request carried `changes` or `files`. */
   review?: NamingReviewResult;
+  /** How far the caller's tree is from the index this answer read (bd tea-rags-mcp-xi2r9); absent only when no overlay is wired. */
+  workingTree?: WorkingTreeMarker;
 }

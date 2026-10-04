@@ -26,6 +26,7 @@ describe("SearchResultOutputSchema", () => {
       "payload",
       "rankingOverlay",
       "score",
+      "treeState",
     ]);
   });
 
@@ -181,5 +182,115 @@ describe("SearchResultOutputSchema", () => {
       codegraphWarning: "codegraph fallback skipped [INFRA_CODEGRAPH_DAEMON_STALE_BUILD]",
     });
     expect(result.codegraphWarning).toBe("codegraph fallback skipped [INFRA_CODEGRAPH_DAEMON_STALE_BUILD]");
+  });
+});
+
+describe("SearchResultOutputSchema — workingTree (xi2r9.1)", () => {
+  const schema = z.object(SearchResultOutputSchema).strict();
+
+  it("validates a measured marker and a degraded one", () => {
+    const measured = {
+      tree: "/repo/wt",
+      indexedCommit: "a".repeat(40),
+      treeCommit: null,
+      indexedDirty: true,
+      changedFiles: 0,
+      deletedFiles: 0,
+      floors: [],
+    };
+    const degraded = {
+      ...measured,
+      indexedCommit: null,
+      degraded: { reason: "index has no indexedCommit stamp", remedy: "tea-rags index-codebase --project p" },
+    };
+
+    expect(schema.parse({ results: [], workingTree: measured }).workingTree).toEqual(measured);
+    expect(schema.parse({ results: [], workingTree: degraded }).workingTree).toEqual(degraded);
+  });
+});
+
+describe("SearchResultOutputSchema — workingTree dense floor (WTO-5)", () => {
+  const schema = z.object(SearchResultOutputSchema).strict();
+
+  it("validates the dense floor and the reason some rows were ranked without it", () => {
+    const marker = {
+      tree: "/repo/wt",
+      indexedCommit: "a".repeat(40),
+      treeCommit: "b".repeat(40),
+      indexedDirty: false,
+      changedFiles: 2,
+      deletedFiles: 0,
+      floors: ["chunks", "sparse", "dense"],
+      denseUnavailable: { reason: "3 rows pending" },
+    };
+
+    expect(schema.parse({ results: [], workingTree: marker }).workingTree).toEqual(marker);
+  });
+});
+
+describe("SearchResultOutputSchema — workingTree git signals pending", () => {
+  const schema = z.object(SearchResultOutputSchema).strict();
+
+  it("keeps gitUnavailable on the marker", () => {
+    const marker = {
+      tree: "/repo/wt",
+      indexedCommit: "a".repeat(40),
+      treeCommit: "b".repeat(40),
+      indexedDirty: false,
+      changedFiles: 2,
+      deletedFiles: 0,
+      floors: ["chunks", "sparse"],
+      gitUnavailable: { reason: "1 row pending" },
+    };
+
+    expect(schema.parse({ results: [], workingTree: marker }).workingTree).toEqual(marker);
+  });
+});
+
+describe("SearchResultOutputSchema — workingTree index-only files", () => {
+  const schema = z.object(SearchResultOutputSchema).strict();
+
+  it("keeps indexOnlyFiles on the marker", () => {
+    const marker = {
+      tree: "/repo/wt",
+      indexedCommit: "a".repeat(40),
+      treeCommit: "b".repeat(40),
+      indexedDirty: false,
+      changedFiles: 4,
+      deletedFiles: 0,
+      floors: ["chunks"],
+      indexOnlyFiles: 3,
+    };
+
+    expect(schema.parse({ results: [], workingTree: marker }).workingTree).toEqual(marker);
+  });
+});
+
+describe("SearchResultOutputSchema — workingTree pending files", () => {
+  const schema = z.object(SearchResultOutputSchema).strict();
+
+  it("keeps pendingFiles on the marker", () => {
+    const marker = {
+      tree: "/repo/wt",
+      indexedCommit: "a".repeat(40),
+      treeCommit: "b".repeat(40),
+      indexedDirty: false,
+      changedFiles: 4,
+      deletedFiles: 0,
+      floors: ["chunks"],
+      pendingFiles: 2,
+    };
+
+    expect(schema.parse({ results: [], workingTree: marker }).workingTree).toEqual(marker);
+  });
+});
+
+describe("SearchResultOutputSchema — dense leg unavailable", () => {
+  const schema = z.object(SearchResultOutputSchema).strict();
+
+  it("validates the top-level denseUnavailable a BM25-only hybrid answer carries", () => {
+    const denseUnavailable = { reason: "No llama-server endpoint is reachable at http://127.0.0.1:9" };
+
+    expect(schema.parse({ results: [], denseUnavailable }).denseUnavailable).toEqual(denseUnavailable);
   });
 });

@@ -5,7 +5,7 @@
  * Linux/Windows suggest CLI commands.
  */
 
-import { EmbeddingError, type ProviderRecoveryWaitReporting } from "../errors.js";
+import { EmbeddingError, EmbeddingProviderUnavailableError, type ProviderRecoveryWaitReporting } from "../errors.js";
 
 interface OllamaCommands {
   start: string;
@@ -22,7 +22,7 @@ function getOllamaCommands(): OllamaCommands {
   return { start: "ollama serve", stop: "pkill ollama" };
 }
 
-export class OllamaUnavailableError extends EmbeddingError implements ProviderRecoveryWaitReporting {
+export class OllamaUnavailableError extends EmbeddingProviderUnavailableError implements ProviderRecoveryWaitReporting {
   /** HTTP response status from Ollama API (e.g. 429 for rate limit). Undefined for network errors. */
   readonly responseStatus?: number;
   /**
@@ -239,6 +239,21 @@ export class OllamaModelMissingError extends EmbeddingError {
         `Try: ollama pull ${model}\n` +
         `If pull fails, the model name may be wrong — check EMBEDDING_MODEL in your config.\n` +
         `Available models: ollama list | Browse: https://ollama.com/search?c=embedding`,
+      httpStatus: 503,
+    });
+  }
+}
+
+/** EMBEDDING_AUTO_PULL tried to fetch a missing model and the server could not. */
+export class OllamaModelPullFailedError extends EmbeddingError {
+  constructor(model: string, url: string, reason: string) {
+    super({
+      code: "INFRA_OLLAMA_MODEL_PULL_FAILED",
+      message: `Ollama model "${model}" is missing at ${url} and pulling it failed: ${reason}`,
+      hint:
+        `Try: ollama pull ${model}\n` +
+        `If pull fails, the model name may be wrong — check EMBEDDING_MODEL in your config.\n` +
+        `Set EMBEDDING_AUTO_PULL=false to skip the automatic pull.`,
       httpStatus: 503,
     });
   }

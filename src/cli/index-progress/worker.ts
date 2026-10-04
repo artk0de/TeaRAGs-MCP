@@ -480,12 +480,12 @@ export async function main(): Promise<void> {
       send({ type: "qdrant-state", state: "ready", elapsedMs: Date.now() - readinessStart });
     }
     const outcome = await runIndexWorker(ctx.app, path, options, send);
-    ctx.cleanup?.();
+    void ctx.cleanup?.();
     process.exit(outcome.failed.length > 0 ? 1 : 0);
   } catch (error) {
     send(toFatalMessage(error));
     try {
-      ctx.cleanup?.();
+      void ctx.cleanup?.();
     } catch {
       // best-effort cleanup
     }

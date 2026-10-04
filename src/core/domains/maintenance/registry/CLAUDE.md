@@ -2,27 +2,54 @@
 
 ## Invariants
 
-- **Only `name`, `autoUpdate`, `languageVersions` and the worktree provenance
-  pair survive a pipeline `record()` — everything else is overwritten.**
-  `CollectionRegistry#record` replaces the entry with whatever the caller passed
-  and re-attaches exactly those from the existing one. Every other CLI-managed
-  field must be supplied by the caller or it is erased. `languageVersions` is
-  sticky for a sharper reason than the others: it CLAIMS a language layer was
-  rebuilt corpus-wide, so only the run that rebuilt it may advance it
-  (`#stampLanguageVersions`, called from `IndexingOps` because that is the only
-  layer that knows the run mode). Every run calls `record()`, incremental ones
-  included — carrying the stamp there would have auto-update silently clearing
-  the reindex hint it exists to raise. `worktreeOf` / `worktreeName` are kept
-  only when the caller omits `worktreeOf` and the existing entry has it — the
-  only writer is `CollectionRegistry#setWorktreeProvenance`, once at clone time,
-  and `BaseIndexingPipeline#recordRegistryEntry`
-  (`domains/ingest/pipeline/base.ts`) never passes them. Why: the prescribed
-  lifecycle indexes a clone right after `worktree create`; before the pair was
-  sticky that first run wiped it, `CollectionRegistry#findWorktree` missed the
-  clone, `tea-rags worktree remove <name>` threw `WorktreeNotFoundError`, and
-  the plugin cleanup hook's sweep never saw it — silently (bd
-  tea-rags-mcp-ghk1f). Any new field set outside the pipeline must be added to
-  the sticky preserve list here.
+- **Only `name`, `autoUpdate`, `languageVersions`, `trajectoryVersions`,
+  `operatorPinnedEnvKeys` and the worktree provenance pair survive a pipeline
+  `record()` — everything else is overwritten.** `operatorPinnedEnvKeys` is kept
+  only when the caller omits it: the env edit (`ProjectRegistryOps#editEnv`)
+  passes the whole list, a pipeline run never does. `CollectionRegistry#record`
+  replaces the entry with whatever the caller passed and re-attaches exactly
+  those from the existing one. Every other CLI-managed field must be supplied by
+  the caller or it is erased. `languageVersions` is sticky for a sharper reason
+  than the others: it CLAIMS a language layer was rebuilt corpus-wide, so only
+  the run that rebuilt it may advance it (`#stampLanguageVersions`, called from
+  `IndexingOps` because that is the only layer that knows the run mode). Every
+  run calls `record()`, incremental ones included — carrying the stamp there
+  would have auto-update silently clearing the reindex hint it exists to raise.
+  `worktreeOf` / `worktreeName` are kept only when the caller omits `worktreeOf`
+  and the existing entry has it — the only writer is
+  `CollectionRegistry#setWorktreeProvenance`, once at clone time, and
+  `BaseIndexingPipeline#recordRegistryEntry` (`domains/ingest/pipeline/base.ts`)
+  never passes them. Why: the prescribed lifecycle indexes a clone right after
+  `worktree create`; before the pair was sticky that first run wiped it,
+  `CollectionRegistry#findWorktree` missed the clone,
+  `tea-rags worktree remove <name>` threw `WorktreeNotFoundError`, and the
+  plugin cleanup hook's sweep never saw it — silently (bd tea-rags-mcp-ghk1f).
+  Any new field set outside the pipeline must be added to the sticky preserve
+  list here. The entry's legacy `embeddingThroughputOptima` is the one field
+  `record()` actively DROPS, below.
+
+- **Embedding throughput optima are ONE registry-level section, not an entry
+  field.** `RegistryFileV1.embeddingThroughputOptima`, keyed by embedding
+  identity, is read by `CollectionRegistry#readEmbeddingThroughputOptimum` and
+  written only by `CollectionRegistry#recordEmbeddingThroughputOptima` — per
+  key, inside `flushWithCAS`, so `applyEmbeddingThroughputOptimumWrites`
+  (`embedding-throughput-optima.ts`) reconciles each write against the record on
+  disk AT COMMIT, not the instance's cache. The tuner already judged its write
+  against the record it was seeded with
+  (`EmbeddingThroughputTuner#optimumToPersist`) and hands that record along as
+  `storedOptimum`: still on disk → its verdict stands (a slower re-measured seed
+  lowers it); replaced meanwhile → only a comparable aggregate at least as fast
+  wins. `mergeRegistryDelta` lifts every identity the section lacks from the
+  disk entries' per-entry records (`liftEmbeddingThroughputOptima`: aggregate >
+  per-batch, then chars/s, then `settledAt`; legacy `url|model` keys never)
+  BEFORE the delta lands, and `record()` strips the per-entry field — so the
+  entry it rewrites loses nothing and the field dies one entry at a time. Why:
+  throughput is a property of the configuration; a small project never closes
+  the concurrency window a large one measures on the same endpoints, and
+  per-project records made each relearn it (bd tea-rags-mcp-auoxk). An older
+  build reads the file but rebuilds the top level on flush and DROPS the
+  section; the per-entry records it keeps writing are lifted back on the next
+  read — degraded, never corrupt.
 
 - **A registry `env` stamp records operator DECISIONS, and only its own project
   replays it whole.** A run pins the env families its env set explicitly —
@@ -43,6 +70,23 @@
   `REGISTRY_ENV_PIN_MIGRATION_REVISION`, and never runs again — a default-equal
   pin an operator sets afterwards is a decision and stays. Nothing else rewrites
   a pin.
+
+- **A throughput-tuned key replays only when the operator pinned it.**
+  `THROUGHPUT_TUNED_ENV_KEYS` (`env-groups.ts`) bound the embedding throughput
+  tuner, and the config parser cannot tell a replayed value from an exported one
+  — anything in the env is explicit, and explicit is the tuner's hard ceiling.
+  So every replay reads the stamp through `replayableRegistryEnv`
+  (`env-resolution.ts`), which drops such a key unless its canonical name is in
+  `operatorPinnedEnvKeys` — written by `applyOperatorEnvPinEdit` (`env-edit.ts`)
+  on `projects set-env` / `register --env`, removed on `unset-env`. A run's own
+  stamp, a `tea-rags tune` write, and every entry written before the field
+  existed stay on disk but are inert for these keys. A new replay site that
+  reads `entry.env` directly brings the ratchet back. Why: taxdome's Ollama-era
+  `INGEST_PIPELINE_CONCURRENCY=2` and 100 ms batch timeout were replayed into
+  every later run and held a 16-slot llama-server cluster at ~10% of its
+  capacity (bd tea-rags-mcp-y1ynz). What a run learnt about a backend travels in
+  the registry-level `embeddingThroughputOptima` section, keyed by embedding
+  identity (`embeddingThroughputOptimumKey`: provider + endpoint set + model).
 
 - **Data migrations advance `RegistryFileV1.revision`, never `version`.**
   `loadRegistryFile` in every release so far backs up and discards a file whose
@@ -145,15 +189,19 @@
   only `createAppContext(config, { ambientEnvRole: "server" })` — called by
   `runServer` (`cli/commands/server.ts`) and `main` (`src/index.ts`) — narrows a
   server's spawn env to the `runtime` groups through `outerEnvForRegistryStamp`
-  (`env-replay.ts`). A process the server DETACHES replays as an invocation, so
-  it must be handed the already-narrowed env: `buildMcpAutoUpdateTrigger`
-  (`bootstrap/auto-update/mcp-hint.ts`) spawns the updater with
-  `outerEnvForRegistryEntry(entry, process.env, "server")`. Why: a new MCP entry
-  point that omits the option, or a new server-side spawn that lets the child
-  inherit `process.env`, compiles, passes every test, and brings back
-  tea-rags-mcp-o0qsw — a server spawned with one project's `CODE_CHUNK_SIZE`
-  re-chunks every other registered project on its next index run, and the env
-  drift axis reports a finding its own `--force` remedy can never clear.
+  (`env-replay.ts`) — minus the embedding ENDPOINT groups whenever the stamp
+  names another embedding provider or model than the server env (bd
+  tea-rags-mcp-b91f5): an endpoint serves one model, so the server's would send
+  the project's texts to the wrong one. A process the server DETACHES replays as
+  an invocation, so it must be handed the already-narrowed env:
+  `buildMcpAutoUpdateTrigger` (`bootstrap/auto-update/mcp-hint.ts`) spawns the
+  updater with `outerEnvForRegistryEntry(entry, process.env, "server")`. Why: a
+  new MCP entry point that omits the option, or a new server-side spawn that
+  lets the child inherit `process.env`, compiles, passes every test, and brings
+  back tea-rags-mcp-o0qsw — a server spawned with one project's
+  `CODE_CHUNK_SIZE` re-chunks every other registered project on its next index
+  run, and the env drift axis reports a finding its own `--force` remedy can
+  never clear.
 - **`ADAPTIVE_DEFAULT_ENV_KEYS` (`env-groups.ts`) is a fourth coupling.** Those
   four keys are materialized into the snapshot only when the config layer's
   `userSet*` flags say the user set them explicitly. Why: pinning a

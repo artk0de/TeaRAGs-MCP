@@ -233,3 +233,39 @@ describe("get_index_status — optimizer failure remedy", () => {
     expect(result.content[0].text).toContain("Run: tea-rags qdrant recover --project demo");
   });
 });
+
+// Live D10 (bd tea-rags-mcp-xi2r9): a linked worktree is read against its base
+// index; its status is that index's, and the answer names the tree beside it.
+describe("get_index_status — a working tree read against its base index", () => {
+  const MARKER = {
+    tree: "/repo-feature",
+    indexedCommit: "a".repeat(40),
+    treeCommit: "b".repeat(40),
+    indexedDirty: false,
+    changedFiles: 3,
+    deletedFiles: 1,
+    floors: [],
+  };
+
+  it("names the tree, the index it is read against, and the tree's marker", async () => {
+    const checkIndexDrift = vi.fn().mockResolvedValue(null);
+    const { handler, app } = makeStatusHarness(checkIndexDrift);
+    vi.mocked(app.getIndexStatus).mockResolvedValue({
+      isIndexed: true,
+      status: "indexed",
+      collectionName: "code_abc",
+      chunksCount: 100,
+      indexPath: "/repo",
+      workingTree: MARKER,
+    });
+
+    const result = await handler({ path: "/repo-feature" }, {});
+    const { text } = result.content[0];
+
+    expect(text).toContain("Working tree /repo-feature is read against the index of /repo");
+    expect(text).toContain("workingTree: /repo-feature");
+    expect(text).toContain("changed 3 · deleted 1");
+    // Drift is a property of the index, checked at its root.
+    expect(checkIndexDrift).toHaveBeenCalledWith({ path: "/repo", consume: false });
+  });
+});

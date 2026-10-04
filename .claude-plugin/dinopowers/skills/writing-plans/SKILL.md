@@ -32,20 +32,20 @@ fabricate file list.
 redirects superpowers:X. NEVER bypass wrapper.
 
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
-`tea-rags/rules/index-freshness.md`. No background reindex hook — worktree-plan
-freshness explicit (clone + per-task reindex in `dinopowers:executing-plans`);
-run `mcp__tea-rags__index_codebase` manually to search code edited but not
-committed, BEFORE first tea-rags call.
+`tea-rags/rules/index-freshness.md`. No background reindex hook. Linked
+worktree: overlay serves uncommitted edits — never reindex for them. Main
+checkout: incremental `mcp__tea-rags__index_codebase` BEFORE first tea-rags call
+over code edited but not committed.
 
 ## Step 1 — Collect target file set
 
 From user request or existing plan draft, collect concrete file list:
 
-| Source                         | Example                                                       |
-| ------------------------------ | ------------------------------------------------------------- |
-| User names files explicitly    | "update `a.ts`, `b.ts`, `c.ts`"                               |
-| User names a small directory   | `src/core/domains/auth/` → enumerate current files via `Glob` |
-| Existing plan draft references | "Task N modifies `x.ts`" → extract paths                      |
+| Source                         | Example                                                                                                                                       |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| User names files explicitly    | "update `a.ts`, `b.ts`, `c.ts`"                                                                                                               |
+| User names a small directory   | `src/core/domains/auth/` → enumerate files: `semantic_search` `pathPattern: "<dir>/**"`, `level: "file"`, `metaOnly: true` (one row per file) |
+| Existing plan draft references | "Task N modifies `x.ts`" → extract paths                                                                                                      |
 
 Output:
 
@@ -60,8 +60,7 @@ proceeding without tea-rags impact enrichment".
 Issue ONE `mcp__tea-rags__semantic_search` call:
 
 ```
-project:     <alias from list_projects — RECOMMENDED, omit path when set>
-path:        <current project path — fallback when no alias is registered>
+path:        <your working directory>   ← tea-rags search-cascade "Addressing the Codebase"; never project alone
 query:       <intent from Step 1>
 pathPattern: "{file1,file2,file3,...}"   ← brace expansion over fileList
 rerank:      "blastRadius"               ← codegraph on; see OFF fallback below
@@ -82,7 +81,7 @@ Do NOT substitute:
 | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | Separate calls per file                                         | Wasteful — brace expansion does it in one call                                                                                           |
 | Named preset `"hotspots"` / `"codeReview"` / `"impactAnalysis"` | `impactAnalysis` does not exist; these miss the blast-radius dimension. `"blastRadius"` IS the correct named preset when codegraph is on |
-| `mcp__tea-rags__hybrid_search`                                  | Custom rerank weights are tied to `semantic_search`                                                                                      |
+| `mcp__tea-rags__hybrid_search`                                  | Same rerank, but its BM25 leg re-ranks by query-token overlap — signal scan wants semantic + signals                                     |
 | `mcp__tea-rags__find_similar`                                   | Gives symbol analogs, not file impact                                                                                                    |
 | `mcp__tea-rags__find_symbol`                                    | Per-symbol, not per-file signal aggregation                                                                                              |
 | Built-in `Glob` or `git blame` for signals                      | Loses imports + ownership + bugFixRate overlay                                                                                           |
@@ -135,7 +134,7 @@ Diverge when long-time owner stops contributing — `blame*` still says they own
 Compose enrichment block:
 
 ```
-### tea-rags impact enrichment (rerank: imports+churn+ownership)
+### tea-rags impact enrichment (rerank: blastRadius | imports+churn+ownership)
 
 | File | Owner | Churn | Age | Bugs | Tasks |
 |---|---|---|---|---|---|
@@ -214,16 +213,18 @@ authoring cycle — wrapper doesn't replace it, only grounds it.
 
 Plan/spec/brief = doc-chunk source. Re-consult draft via
 `find_symbol(relativePath: "<plan>.md")` heading TOC → drill section via
-`doc:<hash>`. NEVER wholesale re-Read. Edited plan file → hashes moved →
-incremental reindex (`mcp__tea-rags__index_codebase`) before next TOC read.
+`doc:<hash>`. NEVER wholesale re-Read. Edited plan file → hashes moved → main
+checkout: incremental reindex (`mcp__tea-rags__index_codebase`) before next TOC
+read; linked worktree: none — `find_symbol` reads the TOC from the tree.
 
 ## Red Flags — STOP and restart from Step 2
 
 - "I already know which files are risky in this plan" → run Step 2 anyway;
   memory stale
 - "The plan is short, skip impact analysis" → fileList ≥2 entries, run Step 2
-- Substituted named preset for custom weights → redo with
-  `{imports: 0.5, churn: 0.3, ownership: 0.2}`
+- Wrong rerank for codegraph state → redo: `"blastRadius"` when prime
+  `## Enrichment` lists `codegraph.symbols`, else
+  `{imports: 0.5, churn: 0.3, ownership: 0.2}` (tea-rags analytics-rerank)
 - One call per file (sequential) → reissue as ONE call, brace-expanded
   pathPattern
 - `metaOnly: false` → restart with `metaOnly: true`
@@ -238,7 +239,7 @@ incremental reindex (`mcp__tea-rags__index_codebase`) before next TOC read.
 | Mistake                                        | Reality                                                                               |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------- |
 | Use `rerank: "codeReview"` as proxy for impact | `codeReview` lacks imports weight — wrong lens for plan sequencing                    |
-| Use `rerank: "impactAnalysis"`                 | Preset does not exist (see `tea-rags-analytics.md`). Use custom weights.              |
+| Use `rerank: "impactAnalysis"`                 | Preset does not exist. `"blastRadius"` (codegraph on) or custom weights (off).        |
 | Issue N calls for N files                      | Brace expansion + `limit: N*3` returns all in one call                                |
 | Drop files with empty git data from the table  | Silently hides "new file" status; plans must acknowledge new files                    |
 | Collapse aggregation into chunk-level output   | Plans care about files, not chunks. Aggregate by `relativePath`.                      |

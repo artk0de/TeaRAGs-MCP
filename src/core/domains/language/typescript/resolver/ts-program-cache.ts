@@ -133,14 +133,20 @@
  *
  * Changes confined to a transitive dependency of an unchanged entry are
  * deliberately NOT tracked — that file is not re-resolved either.
+ *
+ * What MAY outlive the run is the parses alone, through an injected
+ * `TSSourceFileStore` (the warm working-tree graph child builds one tree again
+ * and again): a fresh cache per run over a store that re-stats every file it
+ * hands back builds the Programs a cold run would, without re-parsing.
  */
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, posix, relative, resolve as resolvePath, sep } from "node:path";
 
-import ts from "typescript";
+import type ts from "typescript";
 
 import type { RelPath } from "../../../../contracts/types/codegraph.js";
+import { loadTypeScriptCompiler } from "./ts-compiler-loader.js";
 import { TSModuleResolutionMemo } from "./ts-module-resolution-memo.js";
 import { TSParsedSourceLru } from "./ts-parsed-source-lru.js";
 import {
@@ -172,6 +178,7 @@ import {
   type TSProgramUnitShape,
 } from "./ts-program-heap-admission.js";
 import { buildTSProgramImportGraph, type TSProgramImportGraph } from "./ts-program-import-graph.js";
+import type { TSSourceFileStore } from "./ts-source-file-store.js";
 
 /** Max Programs retained before the least-recently-used one is dropped. */
 export const TS_PROGRAM_CACHE_MAX_DEFAULT = 8;
@@ -435,6 +442,14 @@ export interface TSProgramCacheOptions {
    * paid `ts.createProgram` for — 42 builds, 10.2 s, 22% of a 46.4 s pass.
    */
   projectRoots?: () => readonly string[];
+  /**
+   * Parses carried in from earlier runs of a long-lived process, re-validated
+   * per read against each file's stamp (`TSSourceFileStore`). Consulted only
+   * where this cache would otherwise PARSE — after its own map and the
+   * retained-Program read-through — and filled with every parse it makes.
+   * Absent (the default): every run parses cold, as before.
+   */
+  sourceFileStore?: TSSourceFileStore;
 }
 
 /**
@@ -551,6 +566,7 @@ interface BatchUnits {
  * values pinned the edge set is identical.
  */
 function buildCompilerOptions(repoRoot: string, tsOptions: TsCompilerOptions): ts.CompilerOptions {
+  const ts = loadTypeScriptCompiler();
   return {
     allowJs: true,
     noEmit: true,
@@ -665,6 +681,14 @@ export class TSProgramCache {
    */
   private wholeAttempted = false;
   private readonly compilerOptions: ts.CompilerOptions;
+  /** See {@link TSProgramCacheOptions.sourceFileStore}; `null` without one. */
+  private readonly sourceFileStore: TSSourceFileStore | null;
+  /**
+   * The compiler options as text — part of every store key, because a parse
+   * depends on them (module detection decides `externalModuleIndicator`) and a
+   * tsconfig edited between two runs must not hand the second the first's parse.
+   */
+  private readonly compilerOptionsKey: string;
   /** Parsed-SourceFile cache shared by every Program this instance builds. */
   private readonly sourceFiles = new Map<string, ts.SourceFile | undefined>();
   /**
@@ -832,6 +856,8 @@ export class TSProgramCache {
     this.readHeapSizeLimitMb = options.readHeapSizeLimitMb ?? readHeapSizeLimitMb;
     this.projectRoots = options.projectRoots ?? ((): readonly string[] => []);
     this.compilerOptions = buildCompilerOptions(this.repoRoot, this.tsOptions);
+    this.sourceFileStore = options.sourceFileStore ?? null;
+    this.compilerOptionsKey = JSON.stringify(this.compilerOptions);
     this.inRootPrefix = `${sep === "/" ? this.repoRoot : this.repoRoot.split(sep).join("/")}/`;
     this.preludeLibFileName = `${this.inRootPrefix}${PRELUDE_LIB_REFERENCES_FILE}`;
     this.parsedText = new TSParsedSourceLru(this.maxParsedSourceTextBytes);
@@ -1498,6 +1524,20 @@ export class TSProgramCache {
     return handle;
   }
 
+  /**
+   * What a parse depends on besides the text: the language version and module
+   * format the compiler asks for, and the compiler options behind the
+   * `setExternalModuleIndicator` callback it passes (a function, so it is keyed
+   * by the options that built it).
+   */
+  private parseVariantKey(languageVersionOrOptions: ts.ScriptTarget | ts.CreateSourceFileOptions): string {
+    const variant =
+      typeof languageVersionOrOptions === "number"
+        ? `${languageVersionOrOptions}`
+        : `${languageVersionOrOptions.languageVersion}|${String(languageVersionOrOptions.impliedNodeFormat)}|${String(languageVersionOrOptions.jsDocParsingMode)}`;
+    return `${variant}|${this.compilerOptionsKey}`;
+  }
+
   /** Drop `absolute`'s parse when the file changed after it was read. */
   private forgetStaleParse(absolute: string, mtimeMs: number): void {
     const parsedAt = this.parsedAtMs.get(absolute);
@@ -1750,6 +1790,7 @@ export class TSProgramCache {
    * owns a run boundary, though nothing in `src` is such a caller today.
    */
   private buildHost(): ts.CompilerHost {
+    const ts = loadTypeScriptCompiler();
     const base = ts.createCompilerHost(this.compilerOptions, true);
     const getSourceFile = base.getSourceFile.bind(base);
     base.getSourceFile = (fileName, languageVersionOrOptions, onError, shouldCreate) => {
@@ -1763,7 +1804,14 @@ export class TSProgramCache {
       }
       const pinned = this.pinnedParseOf(fileName);
       if (pinned) return pinned;
-      const parsed = getSourceFile(fileName, languageVersionOrOptions, onError, shouldCreate);
+      const parse = (): ts.SourceFile | undefined =>
+        getSourceFile(fileName, languageVersionOrOptions, onError, shouldCreate);
+      const parsed =
+        this.sourceFileStore === null || shouldCreate === true
+          ? parse()
+          : this.sourceFileStore.getOrParse(fileName, this.parseVariantKey(languageVersionOrOptions), parse, {
+              exempt: dirname(fileName) === this.defaultLibDir,
+            });
       this.rememberParse(fileName, parsed);
       this.evictParsedOverflow();
       return parsed;
@@ -1885,7 +1933,11 @@ export class TSProgramCache {
   private buildFrom(rootFiles: readonly string[], entryAbsolute: string): CacheEntry | null {
     let program: ts.Program;
     try {
-      program = ts.createProgram({ rootNames: [...rootFiles], options: this.compilerOptions, host: this.host });
+      program = loadTypeScriptCompiler().createProgram({
+        rootNames: [...rootFiles],
+        options: this.compilerOptions,
+        host: this.host,
+      });
     } catch {
       return null;
     } finally {
@@ -1959,7 +2011,7 @@ export class TSProgramCache {
       return [];
     }
     const out: string[] = [];
-    for (const ref of ts.preProcessFile(source, true, true).importedFiles) {
+    for (const ref of loadTypeScriptCompiler().preProcessFile(source, true, true).importedFiles) {
       const targetRel = mapImportToFile(ref.fileName, callerRel, this.tsOptions, this.fileExists);
       if (targetRel === null) continue;
       out.push(resolvePath(this.repoRoot, posix.normalize(targetRel)));

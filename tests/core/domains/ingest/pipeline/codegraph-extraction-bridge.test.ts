@@ -8,10 +8,11 @@
  * drains that exact file: pass-1 (symbol upsert + output-spill append) per line,
  * then pass-2 resolve. `streamFileBatch(crossPass)` is a parse NO-OP. This test
  * exercises the contract against a single provider instance (direct mode, cwd
- * input-spill fallback) and asserts ZERO `extractOneFile` calls across the
- * cross-pass run, plus the non-cross-pass fallback still re-parses.
+ * input-spill fallback, cwd redirected to a per-test temp root) and asserts
+ * ZERO `extractOneFile` calls across the cross-pass run, plus the
+ * non-cross-pass fallback still re-parses.
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,20 +23,18 @@ import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/clien
 import type { FileExtraction } from "../../../../../src/core/contracts/types/codegraph.js";
 import { collectSymbols } from "../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../src/core/domains/language/kernel/symbol-id.js";
+import { runMigrations } from "../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { CodegraphEnrichmentProvider } from "../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { buildTestCodegraphDeps } from "../../trajectory/codegraph/__helpers__/language-factory.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolve(__dirname, "../../../../../src/core/domains/maintenance/migration/database/migrations");
 
-// Direct-mode (no pool) input spill for the undefined-collection case. Clean up
-// ONLY this exact file between tests — the parent `.tea-rags-codegraph-spill`
-// dir is shared with other direct-mode codegraph tests running in parallel
-// (their `asExtractionSink` output spills live there too), so wiping the whole
-// dir would race their in-flight writes.
-const DIRECT_INPUT_SPILL = join(process.cwd(), ".tea-rags-codegraph-spill", "xpass-__direct__.ndjson");
+// Direct mode (no pool) places every spill under `process.cwd()/.tea-rags-codegraph-spill/`.
+// Each test redirects cwd to its own temp root (bd tea-rags-mcp-bbo1h.8): test
+// files run in parallel processes, and a spill under the shared repo-root cwd let
+// one file truncate or unlink the `xpass-__direct__.ndjson` another was draining.
 
 function extraction(relPath: string, klass: string, method: string): FileExtraction {
   return {
@@ -52,9 +51,12 @@ describe("codegraph cross-pass input-spill bridge (yl9tv Task 5b)", () => {
   let client: DuckDbGraphClient;
   let symbolTable: InMemoryGlobalSymbolTable;
   let provider: CodegraphEnrichmentProvider;
+  let origCwd: () => string;
 
   beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "cg-bridge-"));
+    origCwd = process.cwd;
+    Object.defineProperty(process, "cwd", { value: () => tmp, configurable: true });
     client = new DuckDbGraphClient({ path: join(tmp, "g.duckdb") });
     await client.init();
     await runMigrations(client, MIG_DIR);
@@ -66,13 +68,12 @@ describe("codegraph cross-pass input-spill bridge (yl9tv Task 5b)", () => {
       composer: new DefaultSymbolIdComposer(),
       collectSymbols,
     });
-    rmSync(DIRECT_INPUT_SPILL, { force: true });
   });
 
   afterEach(async () => {
     await client.close();
+    Object.defineProperty(process, "cwd", { value: origCwd, configurable: true });
     rmSync(tmp, { recursive: true, force: true });
-    rmSync(DIRECT_INPUT_SPILL, { force: true });
   });
 
   it("appends to the input spill, no-ops streamFileBatch, and drains on cross-pass finalize", async () => {
@@ -96,6 +97,14 @@ describe("codegraph cross-pass input-spill bridge (yl9tv Task 5b)", () => {
     expect(symbolTable.lookupByShortName("one").map((s) => s.symbolId)).toContain("Alpha#one");
     expect(symbolTable.lookupByShortName("two").map((s) => s.symbolId)).toContain("Beta#two");
     expect(extractOneFileSpy).not.toHaveBeenCalled();
+  });
+
+  it("writes the direct-mode input spill under this test's private root, never the repository root", () => {
+    // bd tea-rags-mcp-bbo1h.8 — sibling test files run in parallel processes; a
+    // spill under the shared repo-root cwd let one file unlink another's file.
+    provider.beginExtractionRun();
+    provider.acceptExtraction(extraction("a.rb", "Alpha", "one"));
+    expect(existsSync(join(tmp, ".tea-rags-codegraph-spill", "xpass-__direct__.ndjson"))).toBe(true);
   });
 
   it("falls back to extractOneFile when the run is not cross-pass", async () => {

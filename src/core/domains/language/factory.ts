@@ -10,6 +10,7 @@ import type { SignalFloors } from "../../contracts/types/trajectory.js";
 import { BashLanguage } from "./bash/index.js";
 import { signalFloors as bashSignalFloors } from "./bash/signal-floors.js";
 import { nativeLanguageCapabilities } from "./capability/native.js";
+import type { CrossRunParseCache } from "./cross-run-parse-cache.js";
 import { GrammarPackageNotInstalledError, UnsupportedLanguageError } from "./errors.js";
 import { GoLanguage } from "./go/index.js";
 import { signalFloors as goSignalFloors } from "./go/signal-floors.js";
@@ -105,6 +106,12 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
    * `create` against the built provider's `kernel.grammarPackage`.
    */
   private readonly isGrammarPackageInstalled: (packageName: string) => boolean;
+  /**
+   * Parses carried in from earlier runs of a long-lived process — absent, every
+   * provider parses cold. Only the stores are shared; each provider this
+   * factory builds is otherwise as fresh as the factory.
+   */
+  private readonly crossRunParseCache: CrossRunParseCache | undefined;
 
   /**
    * @param options.ambiguousResolveMode Threaded into native resolvers
@@ -116,17 +123,22 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
    *   `process.cwd()`, which is what every caller got before it existed.
    * @param options.isGrammarPackageInstalled Grammar-package check. Defaults to
    *   resolving the package from this module; tests substitute a fake.
+   * @param options.crossRunParseCache Parse stores a long-lived process hands
+   *   every factory it builds, run after run (the warm working-tree graph
+   *   child). Threaded to the providers that parse.
    */
   constructor(
     options: {
       ambiguousResolveMode?: AmbiguousResolveMode;
       repoRoot?: string;
       isGrammarPackageInstalled?: (packageName: string) => boolean;
+      crossRunParseCache?: CrossRunParseCache;
     } = {},
   ) {
     this.ambiguousResolveMode = options.ambiguousResolveMode ?? DEFAULT_AMBIGUOUS_RESOLVE_MODE;
     this.repoRoot = options.repoRoot ?? process.cwd();
     this.isGrammarPackageInstalled = options.isGrammarPackageInstalled ?? isPackageResolvable;
+    this.crossRunParseCache = options.crossRunParseCache;
   }
 
   /**
@@ -152,7 +164,9 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
   private build(lang: string): LanguageProvider {
     // Native switch — extend with one branch per language vertical.
     if (lang === "ruby") return new RubyLanguage(this.ambiguousResolveMode);
-    if (lang === "typescript") return new TypeScriptLanguage(this.ambiguousResolveMode, this.repoRoot);
+    if (lang === "typescript") {
+      return new TypeScriptLanguage(this.ambiguousResolveMode, this.repoRoot, this.crossRunParseCache?.typescript);
+    }
     if (lang === "javascript") return new JavaScriptLanguage(this.ambiguousResolveMode);
     if (lang === "python") return new PythonLanguage(this.ambiguousResolveMode);
     if (lang === "go") return new GoLanguage(this.ambiguousResolveMode);

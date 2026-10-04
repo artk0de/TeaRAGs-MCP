@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import * as nodeFs from "node:fs";
 
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AppConfig, getZodConfig } from "../../src/bootstrap/config/index.js";
 import { createAppContext, createConfiguredServer, loadPrompts, wireCodegraph } from "../../src/bootstrap/factory.js";
@@ -38,6 +38,72 @@ vi.mock("../../src/core/domains/trajectory/git.js", async (importOriginal) => {
       ) {
         super(config, squashOpts, workerDescriptor);
         captured.gitWorkerDescriptor = workerDescriptor;
+      }
+    },
+  };
+});
+
+// The working-tree stores' writer (bd tea-rags-mcp-xi2r9, B1). The real writer
+// runs — each one the factory builds is recorded, so a test can see what
+// cleanup does with it.
+const capturedWriters = vi.hoisted(() => ({ writers: [] as { close: () => Promise<void> }[] }));
+
+vi.mock("../../src/core/domains/explore/working-tree/file-writer.js", async (importOriginal) => {
+  const mod = await (importOriginal as () => Promise<Record<string, unknown>>)();
+  const create = mod.createWorkingTreeFileWriter as () => { close: () => Promise<void> };
+  return {
+    ...mod,
+    createWorkingTreeFileWriter: () => {
+      const writer = create();
+      capturedWriters.writers.push(writer);
+      return writer;
+    },
+  };
+});
+
+// The working-tree delta warmer and watcher (WTO unbounded delta). The real
+// classes run — each instance the factory builds is recorded with what its
+// teardown was asked, so a test can see which entry point builds a watcher and
+// that cleanup stops both.
+const capturedWarm = vi.hoisted(() => ({
+  watchers: [] as { deps: unknown; closed: number }[],
+  warmers: [] as { disposed: number }[],
+}));
+
+vi.mock("../../src/core/domains/explore/working-tree/watcher.js", async (importOriginal) => {
+  const mod = await (importOriginal as () => Promise<Record<string, unknown>>)();
+  const Orig = mod.WorkingTreeWatcher as new (deps: unknown) => { close: () => void };
+  return {
+    ...mod,
+    WorkingTreeWatcher: class extends Orig {
+      private readonly record = { deps: undefined as unknown, closed: 0 };
+      constructor(deps: unknown) {
+        super(deps);
+        this.record.deps = deps;
+        capturedWarm.watchers.push(this.record);
+      }
+      override close(): void {
+        this.record.closed++;
+        super.close();
+      }
+    },
+  };
+});
+
+vi.mock("../../src/core/domains/explore/working-tree/warmer.js", async (importOriginal) => {
+  const mod = await (importOriginal as () => Promise<Record<string, unknown>>)();
+  const Orig = mod.WorkingTreeDeltaWarmer as new (deps: unknown) => { dispose: () => void };
+  return {
+    ...mod,
+    WorkingTreeDeltaWarmer: class extends Orig {
+      private readonly record = { disposed: 0 };
+      constructor(deps: unknown) {
+        super(deps);
+        capturedWarm.warmers.push(this.record);
+      }
+      override dispose(): void {
+        this.record.disposed++;
+        super.dispose();
       }
     },
   };
@@ -238,7 +304,7 @@ describe("createAppContext", () => {
       const ctx = await createAppContext(makeConfig());
       expect(startWatching).toHaveBeenCalledTimes(1);
       expect(stop).not.toHaveBeenCalled();
-      ctx.cleanup?.();
+      await ctx.cleanup?.();
       expect(stop).toHaveBeenCalledTimes(1);
     } finally {
       startWatching.mockRestore();
@@ -252,12 +318,35 @@ describe("createAppContext", () => {
     const startWatching = vi.spyOn(CollectionRegistry.prototype, "startWatching").mockReturnValue(stop);
     try {
       const ctx = await createAppContext(makeConfig());
-      ctx.cleanup?.();
-      ctx.cleanup?.();
+      await ctx.cleanup?.();
+      await ctx.cleanup?.();
       expect(stop).toHaveBeenCalledTimes(1);
     } finally {
       startWatching.mockRestore();
     }
+  });
+
+  // bd tea-rags-mcp-xi2r9, B1: `tea-rags call` exits right after cleanup, and a
+  // working-tree store write still in flight (a `lastReadAt` bump of background
+  // warm-up work) was cut between its temp and its rename. Cleanup is the
+  // defined flush point: it resolves only once the stores' writer has closed —
+  // every write in flight landed, every later one refused.
+  it("cleanup resolves only once the working-tree stores' writer has closed (bd tea-rags-mcp-xi2r9 B1)", async () => {
+    capturedWriters.writers.length = 0;
+    const ctx = await createAppContext(makeConfig());
+    expect(capturedWriters.writers).toHaveLength(1);
+    const [writer] = capturedWriters.writers;
+    let closed = false;
+    const close = writer.close.bind(writer);
+    writer.close = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await close();
+      closed = true;
+    };
+
+    await ctx.cleanup?.();
+
+    expect(closed).toBe(true);
   });
 
   it("cleanup kills the git children an in-process enrichment left running (bd tea-rags-mcp-w26dc)", async () => {
@@ -271,7 +360,7 @@ describe("createAppContext", () => {
     try {
       trackGitChildProcess(child);
       const ctx = await createAppContext(makeConfig());
-      ctx.cleanup?.();
+      await ctx.cleanup?.();
       const [, signal] = (await exited) as [number | null, NodeJS.Signals | null];
       expect(signal).toBe("SIGKILL");
     } finally {
@@ -296,6 +385,41 @@ describe("createAppContext", () => {
     captured.gitWorkerDescriptor = undefined;
     await createAppContext(makeConfig());
     expect(captured.gitWorkerDescriptor).toBeUndefined();
+  });
+
+  describe("working-tree warm-up (WTO unbounded delta)", () => {
+    beforeEach(() => {
+      capturedWarm.watchers.length = 0;
+      capturedWarm.warmers.length = 0;
+    });
+
+    it("builds one delta warmer for every process and disposes it on cleanup", async () => {
+      const ctx = await createAppContext(makeConfig());
+
+      expect(capturedWarm.warmers).toHaveLength(1);
+      await ctx.cleanup?.();
+      expect(capturedWarm.warmers[0].disposed).toBe(1);
+    });
+
+    it("builds a working-tree watcher for a long-lived server and closes it on cleanup", async () => {
+      const ctx = await createAppContext(makeConfig(), { ambientEnvRole: "server", watchWorkingTrees: true });
+
+      expect(capturedWarm.watchers).toHaveLength(1);
+      expect(capturedWarm.watchers[0].deps).toMatchObject({
+        onSettled: expect.any(Function),
+        accepts: expect.any(Function),
+        log: expect.any(Function),
+      });
+      await ctx.cleanup?.();
+      expect(capturedWarm.watchers[0].closed).toBe(1);
+    });
+
+    it("builds no watcher unless the entry point asks for one (tea-rags call, CLI commands)", async () => {
+      await createAppContext(makeConfig(), { ambientEnvRole: "server", watchWorkingTrees: false });
+      await createAppContext(makeConfig());
+
+      expect(capturedWarm.watchers).toHaveLength(0);
+    });
   });
 
   describe("the ambient env role (tea-rags-mcp-o0qsw)", () => {

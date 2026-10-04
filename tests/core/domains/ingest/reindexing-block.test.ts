@@ -31,6 +31,7 @@ import {
   MockEmbeddingProvider,
   MockQdrantManager,
 } from "./__helpers__/test-helpers.js";
+import { warmChunkerPoolFactory } from "./__helpers__/warm-chunker-pool.js";
 
 vi.mock("tree-sitter", () => ({
   default: class MockParser {
@@ -77,6 +78,7 @@ describe("ReindexPipeline.executeParallelPipelines partial-outcome contract", ()
       embeddings,
       config,
       trajectoryConfig: defaultTrajectoryConfig(),
+      createChunkerPool: warmChunkerPoolFactory,
     });
   });
 
@@ -282,6 +284,7 @@ describe("ReindexPipeline snapshot after a failed delete (next run retries)", ()
       embeddings: new MockEmbeddingProvider(),
       config: defaultTestConfig(),
       trajectoryConfig: defaultTrajectoryConfig(),
+      createChunkerPool: warmChunkerPoolFactory,
     });
   });
 

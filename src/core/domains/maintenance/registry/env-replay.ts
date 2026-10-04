@@ -98,18 +98,43 @@ export function outerEnvForRegistryStamp(
 ): NodeJS.ProcessEnv | Record<string, string> {
   if (role === "invocation") return ambient;
   let outer: NodeJS.ProcessEnv | undefined;
+  const drop = (members: readonly string[]): void => {
+    outer ??= { ...ambient };
+    for (const member of members) delete outer[member];
+  };
+  const differs = (members: readonly string[]): boolean => {
+    const stamped = firstSetValue(stamp ?? {}, members);
+    if (stamped === undefined) return false;
+    const current = firstSetValue(ambient, members);
+    return current !== undefined && current !== stamped;
+  };
+  let identityDiffers = false;
   for (const group of REGISTRY_ENV_GROUPS) {
     if (group.consequence === "runtime") continue;
     const members = [group.canonical, ...group.aliases];
-    const stamped = firstSetValue(stamp ?? {}, members);
-    if (stamped === undefined) continue;
-    const current = firstSetValue(ambient, members);
-    if (current === undefined || current === stamped) continue;
-    outer ??= { ...ambient };
-    for (const member of members) delete outer[member];
+    if (!differs(members)) continue;
+    if (EMBEDDING_IDENTITY_KEYS.has(group.canonical)) identityDiffers = true;
+    drop(members);
+  }
+  // An endpoint is where ONE model is served. A server endpoint for a model the
+  // stamp does not use would send this project's texts to the wrong model, so
+  // it goes with the identity it belongs to (bd tea-rags-mcp-b91f5). Only an
+  // endpoint the stamp pins is dropped — otherwise there is nothing to replace it.
+  if (identityDiffers) {
+    for (const group of REGISTRY_ENV_GROUPS) {
+      if (!EMBEDDING_ENDPOINT_KEYS.has(group.canonical)) continue;
+      const members = [group.canonical, ...group.aliases];
+      if (firstSetValue(stamp ?? {}, members) !== undefined) drop(members);
+    }
   }
   return outer ?? ambient;
 }
+
+/** The groups that say WHICH model embeds: provider kind and model name. */
+const EMBEDDING_IDENTITY_KEYS: ReadonlySet<string> = new Set(["EMBEDDING_PROVIDER", "EMBEDDING_MODEL"]);
+
+/** Runtime groups bound to the embedding identity: where that model is served. */
+const EMBEDDING_ENDPOINT_KEYS: ReadonlySet<string> = new Set(["EMBEDDING_BASE_URL", "EMBEDDING_FALLBACK_URL"]);
 
 /** The value a group resolves to in `env` — first set spelling, canonical first, as the config parser reads it. */
 function firstSetValue(

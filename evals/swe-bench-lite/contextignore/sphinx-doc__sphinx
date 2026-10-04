@@ -1,0 +1,10 @@
+# Installed as .contextignore into every sphinx task repository by `prepare`.
+# Checked against the gold patches of every sphinx task in SWE-bench Lite.
+
+# Vendored jQuery / underscore shipped with the basic theme (not *.min.js, so not
+# caught by tea-rags' builtin patterns).
+/sphinx/themes/basic/static/jquery*.js
+/sphinx/themes/basic/static/underscore*.js
+# Snowball stemmers for the HTML search, vendored and partly minified under plain names.
+/sphinx/search/non-minified-js/
+/sphinx/search/minified-js/

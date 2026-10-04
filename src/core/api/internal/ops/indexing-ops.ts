@@ -8,6 +8,7 @@
  * orchestration lives here; the facade only dispatches.
  */
 
+import { getBuildFingerprint, readOnDiskBuildFingerprint } from "../../../adapters/duckdb/daemon/build-fingerprint.js";
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import { isProviderRecoveryWaitSpent } from "../../../adapters/embeddings/errors.js";
@@ -19,11 +20,16 @@ import { selectProviderKeys } from "../../../contracts/provider-selector.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
 import type { ChunkSetBumpScopes, RechunkFileSelector } from "../../../contracts/types/rechunk.js";
+import type { CollectionRegistryPort } from "../../../contracts/types/registry.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor, ScoreBackground } from "../../../contracts/types/trajectory.js";
 import type { WorktreeSeedReport } from "../../../contracts/types/worktree.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
-import { IndexingAlreadyInProgressError, NotIndexedError } from "../../../domains/ingest/errors.js";
+import {
+  IndexingAlreadyInProgressError,
+  IndexingProcessBuildStaleError,
+  NotIndexedError,
+} from "../../../domains/ingest/errors.js";
 import { computeCollectionStats } from "../../../domains/ingest/infra/collection-stats.js";
 import {
   cleanupOrphanedVersions,
@@ -56,6 +62,7 @@ import { computeScoreBackground } from "../../../infra/score-background.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import type {
   ChangeStats,
+  ChunkerConfig,
   EnrichmentProgressCallback,
   IndexOptions,
   IndexStats,
@@ -121,9 +128,39 @@ export interface IndexingOpsDeps {
    * because the stamp is a claim about WHICH layer this run rebuilt, and only
    * this layer knows the run mode. Omitted → nothing is stamped.
    */
-  collectionRegistry?: LanguageVersionStamper;
+  languageVersionStamper?: LanguageVersionStamper;
+  /**
+   * Registry surface for the codegraph-enabled fact of the finished run
+   * (bd tea-rags-mcp-5m8g3). A recompute that rebuilt the codegraph layer
+   * proves the flag belongs on — it never reaches the pipeline's `record()`,
+   * the only other run-time writer of the dedicated field — so without this
+   * stamp a legacy entry that predates the field composes without the
+   * codegraph tools at call time. Omitted → nothing is stamped.
+   */
+  codegraphEnabledStamper?: CodegraphEnabledStamper;
+  /**
+   * Where the settled embedding throughput optimum of an endpoint + model is
+   * read back for `infraHealth.embedding.throughputTune` (bd tea-rags-mcp-7ju66).
+   * Omitted → the field is never reported.
+   */
+  embeddingThroughputOptima?: Pick<CollectionRegistryPort, "readEmbeddingThroughputOptimum">;
+  /**
+   * Where the last run's producer-starvation verdict is read back for
+   * `infraHealth.embedding.producerStarvation` (bd tea-rags-mcp-y1ynz).
+   * Omitted → the field is never reported.
+   */
+  embeddingProducerStarvation?: Pick<CollectionRegistryPort, "readEmbeddingProducerStarvation">;
   /** Per-language code versions of this build, from the composition root. */
   languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
+  /**
+   * Registry surface for the per-provider algorithm-version stamp
+   * (bd tea-rags-mcp-xi2r9) — written here for the reason the language stamp
+   * is: only this layer knows which providers a run rebuilt for every point.
+   * Omitted → nothing is stamped.
+   */
+  trajectoryVersionStamper?: TrajectoryVersionStamper;
+  /** `EnrichmentProvider.algorithmVersion` per provider key of this build. */
+  trajectoryAlgorithmVersions?: ReadonlyMap<string, number>;
   /**
    * Declared scope of each chunk-set bump (bd tea-rags-mcp-j4oww): what a
    * scoped force must have re-chunked before it may advance a chunk-set stamp.
@@ -166,7 +203,29 @@ export interface IndexingOpsDeps {
    * gate compares a sibling's stamp against. Omitted → that axis is not compared.
    */
   envSnapshot?: Record<string, string>;
+  /**
+   * This process's build as loaded vs as on disk now (bd tea-rags-mcp-r4z09).
+   * Every run compares them before any work and refuses on a mismatch.
+   * Defaults to the codegraph daemon's build fingerprint — the same identity
+   * the worker pools derive their daemon key from.
+   */
+  processBuildFingerprint?: ProcessBuildFingerprintSource;
 }
+
+/**
+ * The build a process LOADED next to the build on disk NOW. `onDisk` is
+ * undefined when the tree cannot be read — then there is nothing to compare,
+ * and the run proceeds.
+ */
+export interface ProcessBuildFingerprintSource {
+  loaded: () => string;
+  onDisk: () => string | undefined;
+}
+
+const DEFAULT_PROCESS_BUILD_FINGERPRINT: ProcessBuildFingerprintSource = {
+  loaded: getBuildFingerprint,
+  onDisk: readOnDiskBuildFingerprint,
+};
 
 /** The one registry mutation this ops layer performs. */
 export interface LanguageVersionStamper {
@@ -179,9 +238,23 @@ export interface LanguageVersionStamper {
   get?: (collectionName: string) => { languageVersions?: Record<string, Partial<LanguageCodeVersions>> } | null;
 }
 
+/** The per-provider algorithm-version mutation this ops layer performs (bd tea-rags-mcp-xi2r9). */
+export interface TrajectoryVersionStamper {
+  stampTrajectoryVersions: (collectionName: string, stamp: Record<string, number>) => void;
+}
+
 /** The one drift-report mutation this ops layer performs. */
 export interface IndexDriftConsumptionResetter {
   reset: (collectionName: string) => void;
+}
+
+/**
+ * The one codegraph-fact registry mutation this ops layer performs
+ * (bd tea-rags-mcp-5m8g3). Method-shaped so the concrete `CollectionRegistry`
+ * satisfies it structurally, the way `LanguageVersionStamper` does.
+ */
+export interface CodegraphEnabledStamper {
+  stampCodegraphEnabled: (collectionName: string) => void;
 }
 
 export class IndexingOps {
@@ -202,8 +275,13 @@ export class IndexingOps {
   private readonly healthCheckRetryAttempts: number;
   private readonly healthCheckRetryDelayMs: number;
   private readonly status: StatusModule;
-  private readonly collectionRegistry?: LanguageVersionStamper;
+  private readonly languageVersionStamper?: LanguageVersionStamper;
+  private readonly codegraphEnabledStamper?: CodegraphEnabledStamper;
+  private readonly embeddingThroughputOptima?: Pick<CollectionRegistryPort, "readEmbeddingThroughputOptimum">;
+  private readonly embeddingProducerStarvation?: Pick<CollectionRegistryPort, "readEmbeddingProducerStarvation">;
   private readonly languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
+  private readonly trajectoryVersionStamper?: TrajectoryVersionStamper;
+  private readonly trajectoryAlgorithmVersions: ReadonlyMap<string, number>;
   private readonly languageChunkSetBumpScopes: ReadonlyMap<string, ChunkSetBumpScopes>;
   private readonly driftReporter?: IndexDriftConsumptionResetter;
   private readonly resolveCollectionForPath: PathCollectionResolver;
@@ -227,6 +305,7 @@ export class IndexingOps {
   private readonly heldIndexingLocks = new Map<string, HeldCollectionIndexingLock>();
   private readonly worktreeSeed?: Pick<WorktreeSeedOps, "seed">;
   private readonly envSnapshot?: Record<string, string>;
+  private readonly processBuildFingerprint: ProcessBuildFingerprintSource;
   /**
    * Enrichment an operation started AFTER its pipeline run, keyed like
    * `indexingCollections` — today only the git rebuild of a seeded collection.
@@ -269,13 +348,19 @@ export class IndexingOps {
       // still lives (bd tea-rags-mcp-f93ao).
       deps.indexingLock,
     );
-    this.collectionRegistry = deps.collectionRegistry;
+    this.languageVersionStamper = deps.languageVersionStamper;
+    this.codegraphEnabledStamper = deps.codegraphEnabledStamper;
+    this.embeddingThroughputOptima = deps.embeddingThroughputOptima;
+    this.embeddingProducerStarvation = deps.embeddingProducerStarvation;
     this.languageCodeVersions = deps.languageCodeVersions;
+    this.trajectoryVersionStamper = deps.trajectoryVersionStamper;
+    this.trajectoryAlgorithmVersions = deps.trajectoryAlgorithmVersions ?? new Map();
     this.languageChunkSetBumpScopes = deps.languageChunkSetBumpScopes ?? new Map();
     this.driftReporter = deps.driftReporter;
     this.indexingLock = deps.indexingLock;
     this.worktreeSeed = deps.worktreeSeed;
     this.envSnapshot = deps.envSnapshot;
+    this.processBuildFingerprint = deps.processBuildFingerprint ?? DEFAULT_PROCESS_BUILD_FINGERPRINT;
   }
 
   /**
@@ -299,6 +384,9 @@ export class IndexingOps {
     progressCallback?: ProgressCallback,
     enrichmentProgress?: EnrichmentProgressCallback,
   ): Promise<IndexStats> {
+    // First of all: a stale process would run its worker pools on another build
+    // than itself (bd tea-rags-mcp-r4z09). Nothing is claimed, deleted or written.
+    this.assertProcessBuildCurrent();
     // Claimed before anything shared is touched: a refused call must not reset
     // the profiler or swap the progress sink out from under the running one.
     const collectionName = await this.claimCollectionForIndexing(path, options);
@@ -364,6 +452,21 @@ export class IndexingOps {
     }
     const stats = await this.fullIndex(path, options, progressCallback);
     return worktreeSeed ? { ...stats, worktreeSeed } : stats;
+  }
+
+  /**
+   * Refuse a run from a process whose loaded build is no longer the build on
+   * disk (bd tea-rags-mcp-r4z09). The worker pools a run spawns load their
+   * modules from disk, so after a rebuild under a live server the run would
+   * span two builds — on taxdome every codegraph prefetch failed against a
+   * daemon keyed by the other build, and the run still completed. An unreadable
+   * tree (`onDisk` undefined) has nothing to compare and proceeds.
+   */
+  private assertProcessBuildCurrent(): void {
+    const onDisk = this.processBuildFingerprint.onDisk();
+    if (onDisk === undefined) return;
+    const loaded = this.processBuildFingerprint.loaded();
+    if (onDisk !== loaded) throw new IndexingProcessBuildStaleError({ loaded, onDisk });
   }
 
   /**
@@ -558,6 +661,7 @@ export class IndexingOps {
    * which forwards here.
    */
   async reindexChanges(path: string, progressCallback?: ProgressCallback): Promise<ChangeStats> {
+    this.assertProcessBuildCurrent();
     // Session start for the deprecated explicit-reindex entry — reset the
     // profiler here too so "embed-warmup" survives to the stage summary (csyve).
     pipelineLog.resetProfiler();
@@ -619,6 +723,21 @@ export class IndexingOps {
     // Best-effort probe of the RUNNING daemon's reported version. getServerVersion
     // swallows all errors → undefined, so this never blocks or fails get_index_status.
     const qdrantVersion = await this.qdrant.getServerVersion();
+    // What the throughput tuner last settled on for the embedding identity in
+    // use right now — the run that just finished recorded it before this read.
+    // Keyed exactly as the tuner keys it: provider + endpoint SET + model (y1ynz).
+    const tuneEndpointUrl = this.embeddings.getThroughputTuneEndpointUrl?.() ?? activeUrl;
+    const throughputTune =
+      tuneEndpointUrl !== undefined
+        ? this.embeddingThroughputOptima?.readEmbeddingThroughputOptimum?.(
+            tuneEndpointUrl,
+            this.embeddings.getModel(),
+            this.embeddings.getProviderName(),
+          )
+        : undefined;
+    // Whether this project's last run starved its embed stage — read from the
+    // entry that run recorded (bd tea-rags-mcp-y1ynz).
+    const producerStarvation = this.embeddingProducerStarvation?.readEmbeddingProducerStarvation?.(aliasCollectionName);
     const infraHealth: IndexStatus["infraHealth"] = {
       qdrant: {
         available: true,
@@ -633,6 +752,8 @@ export class IndexingOps {
         ...(primaryAvailable !== undefined ? { primaryAvailable } : {}),
         ...(fallbackUrl !== undefined ? { fallbackUrl } : {}),
         ...(fallbackAvailable !== undefined ? { fallbackAvailable } : {}),
+        ...(throughputTune !== undefined ? { throughputTune } : {}),
+        ...(producerStarvation !== undefined ? { producerStarvation } : {}),
       },
     };
 
@@ -799,7 +920,7 @@ export class IndexingOps {
    * `Run:` line from), so the run clears exactly the findings it repaired.
    */
   private stampRechunkedChunkSet(collectionName: string, rechunk: RechunkFileSelector): void {
-    const registry = this.collectionRegistry;
+    const registry = this.languageVersionStamper;
     const versions = this.languageCodeVersions;
     if (!registry?.get || !versions) return;
     const indexed = registry.get(collectionName)?.languageVersions ?? {};
@@ -1023,8 +1144,8 @@ export class IndexingOps {
 
   /** Write the stamp a pending seed carries — nothing when it carries none (already paid, or a build without versions). */
   private stampWorktreeSeed(collectionName: string, pending: WorktreeSeedPending): void {
-    if (this.collectionRegistry && Object.keys(pending.languageVersions).length > 0) {
-      this.collectionRegistry.stampLanguageVersions(collectionName, pending.languageVersions);
+    if (this.languageVersionStamper && Object.keys(pending.languageVersions).length > 0) {
+      this.languageVersionStamper.stampLanguageVersions(collectionName, pending.languageVersions);
     }
   }
 
@@ -1133,6 +1254,8 @@ export class IndexingOps {
       const physicalCollectionName = resolvePhysicalCollection(collectionName, await this.qdrant.aliases.listAliases());
       await this.enrichment.recomputeEnrichments(physicalCollectionName, absolutePath, ["git"]);
       await this.refreshStats(path);
+      // Every point's git layer is now this build's, not the sibling's.
+      this.stampTrajectoryVersions(collectionName, ["git"]);
       this.driftReporter?.reset(collectionName);
     } catch (error) {
       console.error(`[IndexingOps] git rebuild of the seeded collection ${collectionName} failed:`, error);
@@ -1247,8 +1370,17 @@ export class IndexingOps {
     // advance. Claiming `grammar` / `chunking` here would silence a hint that
     // is still true. A git-only recompute touches no language layer at all.
     if (selectors.some(isCodegraphSelector)) {
+      // The recompute re-extracted the whole graph — the same claim a full run
+      // makes via recordRegistryEntry's codegraphEnabled. Stamping here is
+      // what heals a legacy entry that predates the dedicated field: its
+      // call-time composition drops the codegraph tools until this runs
+      // (bd tea-rags-mcp-5m8g3).
+      this.codegraphEnabledStamper?.stampCodegraphEnabled(aliasCollectionName);
       this.stampLanguageVersions(aliasCollectionName, languages, "codegraph");
     }
+    // A provider's algorithm stamp claims EVERY point: a run narrowed by
+    // language left the others on the values an older algorithm wrote.
+    if (!languages || languages.length === 0) this.stampTrajectoryVersions(aliasCollectionName, selectors);
     // A git rebuild of every point is the rest of what the seed owed, so the
     // next incremental must not redo it. Anything narrower leaves it pending.
     if (pendingSeed && this.dischargesSeedGitDebt(selectors, languages)) {
@@ -1294,8 +1426,24 @@ export class IndexingOps {
     // the run actually rewrote (bd tea-rags-mcp-dxa9w).
     const aliasCollectionName = await this.resolveCollectionForPath(path);
     this.stampLanguageVersions(aliasCollectionName, options?.languages, "all");
+    this.stampTrajectoryVersions(aliasCollectionName, ["all"]);
     this.driftReporter?.reset(aliasCollectionName);
     return result;
+  }
+
+  /**
+   * Record the algorithm version of every provider `selectors` names
+   * (bd tea-rags-mcp-xi2r9). Called only by a run that rebuilt those providers
+   * for EVERY point — a first index or force, an un-narrowed recompute, a
+   * seeded collection's git rebuild — so the stamp's claim holds.
+   */
+  private stampTrajectoryVersions(collectionName: string, selectors: readonly string[]): void {
+    if (!this.trajectoryVersionStamper) return;
+    const rebuilt = selectProviderKeys([...this.trajectoryAlgorithmVersions.keys()], selectors).matched;
+    if (rebuilt.length === 0) return;
+    const stamp: Record<string, number> = {};
+    for (const key of rebuilt) stamp[key] = this.trajectoryAlgorithmVersions.get(key) as number;
+    this.trajectoryVersionStamper.stampTrajectoryVersions(collectionName, stamp);
   }
 
   /**
@@ -1314,9 +1462,9 @@ export class IndexingOps {
     languages: readonly string[] | undefined,
     scope: "all" | "codegraph",
   ): void {
-    if (!this.collectionRegistry) return;
+    if (!this.languageVersionStamper) return;
     const stamp = this.languageVersionsStamp(languages, scope);
-    if (Object.keys(stamp).length > 0) this.collectionRegistry.stampLanguageVersions(collectionName, stamp);
+    if (Object.keys(stamp).length > 0) this.languageVersionStamper.stampLanguageVersions(collectionName, stamp);
   }
 
   /** The stamp {@link stampLanguageVersions} writes — empty when this build declares no versions. */
@@ -1403,6 +1551,20 @@ export class IndexingOps {
   ): Promise<{ chunkSize: number; modelInfo: ModelInfo | undefined }> {
     const modelInfo = await this.resolveOrBackfillModelInfo(collectionName);
     return { chunkSize: this.resolveEffectiveChunkSize(modelInfo), modelInfo };
+  }
+
+  /**
+   * The chunker config the next sync of `collectionName` would chunk a changed
+   * file with — the size {@link syncChunkingOverrides} derives — for a reader
+   * that chunks like ingest without indexing (the working-tree chunk layer,
+   * bd tea-rags-mcp-xi2r9.3). Read-only: a marker without `modelInfo` is
+   * resolved live and NOT backfilled, because that reader must never write to
+   * the shared index.
+   */
+  async resolveChunkerConfig(collectionName: string): Promise<ChunkerConfig> {
+    const modelInfo = (await this.readMarkerModelInfo(collectionName)) ?? (await this.resolveModelInfo());
+    const chunkSize = this.resolveEffectiveChunkSize(modelInfo);
+    return { chunkSize, chunkOverlap: this.config.chunkOverlap, maxChunkSize: chunkSize };
   }
 
   /**

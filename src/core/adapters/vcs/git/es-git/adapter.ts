@@ -147,6 +147,10 @@ export class EsGitAdapter extends VcsGitAdapter {
     return this.cliHistory.listWorktreeDeletions(timeoutMs);
   }
 
+  async listWorktreeModifications(paths: readonly string[], timeoutMs?: number): Promise<string[]> {
+    return this.cliHistory.listWorktreeModifications(paths, timeoutMs);
+  }
+
   async getCommitsByPathspec(
     sinceDate: Date,
     filePaths: string[],
@@ -159,8 +163,8 @@ export class EsGitAdapter extends VcsGitAdapter {
     return this.cliHistory.readNumstatLogForPaths(paths, timeoutMs);
   }
 
-  async readCommitFileNumstatForPaths(paths: string[], timeoutMs?: number): Promise<CommitFileNumstat[]> {
-    return this.cliHistory.readCommitFileNumstatForPaths(paths, timeoutMs);
+  async readCommitFileNumstatForPaths(paths: string[], timeoutMs?: number, since?: Date): Promise<CommitFileNumstat[]> {
+    return this.cliHistory.readCommitFileNumstatForPaths(paths, timeoutMs, since);
   }
 
   createBlobBatchReader(): BlobBatchReader {

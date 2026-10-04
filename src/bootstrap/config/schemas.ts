@@ -66,10 +66,23 @@ export const embeddingTuneSchema = z.object({
    * 0 disables. Default 3.
    */
   failoverConsecutiveFailures: intWithDefault(3),
+  /**
+   * Opt-out of adaptive embedding (bd tea-rags-mcp-7ju66). By default the
+   * ingest pipeline's throughput tuner moves the embed batch size inside
+   * [EMBEDDING_TUNE_MIN_BATCH_SIZE, EMBEDDING_TUNE_BATCH_SIZE] — down after a
+   * batch the server fails on size, toward the measured fastest size otherwise —
+   * and then climbs the embed concurrency on measured aggregate chars/s, never
+   * inferring it from the endpoint's address. The climb's ceiling is an explicit
+   * INGEST_PIPELINE_CONCURRENCY, or IMPLICIT_EMBEDDING_CONCURRENCY_CEILING (8)
+   * when it is unset. `true` pins the configured batch size and
+   * INGEST_PIPELINE_CONCURRENCY (1 when unset) for the whole run, ignoring any
+   * stored optimum.
+   */
+  static: booleanFromEnv,
 });
 
 export const embeddingSchema = z.object({
-  provider: z.enum(["ollama", "openai", "cohere", "voyage", "onnx"]).default("ollama"),
+  provider: z.enum(["ollama", "openai", "cohere", "voyage", "onnx", "llama-server"]).default("ollama"),
   model: z.string().optional(),
   dimensions: optionalPositiveInt,
   device: z.string().optional().default("auto"),
@@ -87,13 +100,33 @@ export const embeddingSchema = z.object({
    * model guard enforces it). Defaults to `off` (unquantized) — opt in.
    */
   ollamaQuantization: z.enum(["off", "q8_0", "q5_K_M", "q4_K_M", "turbo"]).default("off"),
+  /**
+   * EMBEDDING_AUTO_PULL: when the Ollama server answers `/api/show` with 404
+   * for the configured model, pull it over `/api/pull` at startup instead of
+   * failing every embed with "model not found". Defaults to true; `false`
+   * restores the manual `ollama pull` step.
+   */
+  autoPull: booleanFromEnvWithDefault(true),
   openaiApiKey: z.string().optional(),
   cohereApiKey: z.string().optional(),
   voyageApiKey: z.string().optional(),
+  /**
+   * EMBEDDING_API_KEY: bearer token for a llama-server started with
+   * `--api-key`, sent to every peer and fallback endpoint. Optional — a
+   * server bound to the LAN should set one. A secret: never persisted.
+   */
+  apiKey: z.string().optional(),
   tune: embeddingTuneSchema,
 });
 
 export const ingestTuneSchema = z.object({
+  /**
+   * Embed/upsert worker concurrency and the sync concurrency. Default 1. Unset
+   * (`flags.userSetPipelineConcurrency` false), the adaptive embedding tuner
+   * may still climb the embed concurrency up to
+   * IMPLICIT_EMBEDDING_CONCURRENCY_CEILING; an explicit value — even 1 — is the
+   * climb's hard ceiling.
+   */
   pipelineConcurrency: intWithDefault(1),
   /**
    * Parse worker count. Workers now run as child processes (ProcessTransport),

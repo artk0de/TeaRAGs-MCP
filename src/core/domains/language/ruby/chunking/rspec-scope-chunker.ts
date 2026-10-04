@@ -31,7 +31,7 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { BodyChunkResult, ChunkingHook, TestScope } from "../../../../contracts/types/chunker.js";
-import { produceTestScopeChunks } from "../../kernel/test-scope-chunks.js";
+import { produceTestScopeChunks } from "../../kernel/index.js";
 import { isRspecFile } from "./rspec-filter.js";
 
 // ── Types ────────────────────────────────────────────────────────────

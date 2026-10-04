@@ -9,13 +9,13 @@
  * worker entry from build/.../churn-walk/worker.js (precedent: enrichment
  * infra/worker.test.ts hard-references build/).
  */
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { importGitHistory } from "../../../../__helpers__/git-history-import.js";
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import type { ChunkSignalOverlay } from "../../../../../../src/core/contracts/types/provider.js";
 import { ChunkChurnWalkPool } from "../../../../../../src/core/domains/trajectory/git/infra/churn-walk/walk-pool.js";
@@ -27,30 +27,8 @@ import { GitEnrichmentProvider } from "../../../../../../src/core/domains/trajec
 // /private/var). Guard: these tests run REAL `git init`/`git commit` — refuse
 // loudly if cwd ever points outside the temp tree (see client-catfile.test.ts).
 const TMP_BASE = realpathSync(tmpdir());
-function gitIn(cwd: string, args: string[]): string {
-  const r = cwd ? resolve(cwd) : "";
-  if (!r?.startsWith(TMP_BASE + sep)) {
-    throw new Error(`churn-walk-thread.test: refusing git "${args[0]}" in non-temp cwd: ${String(cwd)}`);
-  }
-  // Pin author/committer via env: inside a `git commit` hook run (pre-commit
-  // affected-tests) git exports GIT_AUTHOR_NAME of the OUTER commit, which
-  // would override the fixture repo's local user.name and break the blame
-  // ownership assertions.
-  return execFileSync("git", args, {
-    cwd,
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      GIT_AUTHOR_NAME: "Test",
-      GIT_AUTHOR_EMAIL: "t@example.com",
-      GIT_COMMITTER_NAME: "Test",
-      GIT_COMMITTER_EMAIL: "t@example.com",
-    },
-  });
-}
 
 let repo: string;
-const g = (args: string[]): string => gitIn(repo, args);
 
 const F1_V1 = `${Array.from({ length: 12 }, (_, i) => `f1 line ${i + 1}`).join("\n")}\n`;
 const F1_V2 = `${["f1 HEAD-EDIT 1", "f1 HEAD-EDIT 2", ...Array.from({ length: 10 }, (_, i) => `f1 line ${i + 3}`)].join("\n")}\n`;
@@ -60,30 +38,28 @@ const F2_V2 = F2_V1.replace("f2 line 8", "f2 EDIT 8");
 
 beforeAll(() => {
   repo = mkdtempSync(join(TMP_BASE, "churn-walk-"));
-  g(["init", "-q"]);
-  g(["config", "user.email", "t@example.com"]);
-  g(["config", "user.name", "Test"]);
-
-  // Commit 1 (root): f1.ts with 12 deterministic lines.
-  writeFileSync(join(repo, "f1.ts"), F1_V1);
-  g(["add", "-A"]);
-  g(["commit", "-q", "-m", "feat: add f1"]);
-
-  // Commit 2: modify f1 head lines.
-  writeFileSync(join(repo, "f1.ts"), F1_V2);
-  g(["add", "-A"]);
-  g(["commit", "-q", "-m", "feat: extend"]);
-
-  // Commit 3: add f2.ts (bug-fix classified body).
-  writeFileSync(join(repo, "f2.ts"), F2_V1);
-  g(["add", "-A"]);
-  g(["commit", "-q", "-m", "fix: broken thing"]);
-
-  // Commit 4: modify f1 tail + f2 (carries a taskId).
-  writeFileSync(join(repo, "f1.ts"), F1_V3);
-  writeFileSync(join(repo, "f2.ts"), F2_V2);
-  g(["add", "-A"]);
-  g(["commit", "-q", "-m", "TD-123 update both"]);
+  if (!resolve(repo).startsWith(TMP_BASE + sep)) {
+    throw new Error(`churn-walk-thread.test: refusing git in non-temp cwd: ${repo}`);
+  }
+  // ONE fast-import instead of ~13 add/commit spawns (bd tea-rags-mcp-1r3e5).
+  // Author and committer are explicit, so a GIT_AUTHOR_NAME exported by an
+  // outer `git commit` hook run cannot leak into the blame ownership.
+  const test = { name: "Test", email: "t@example.com" };
+  const now = new Date();
+  importGitHistory(
+    repo,
+    [
+      // Commit 1 (root): f1.ts with 12 deterministic lines.
+      { message: "feat: add f1", author: test, authorDate: now, writes: { "f1.ts": F1_V1 } },
+      // Commit 2: modify f1 head lines.
+      { message: "feat: extend", author: test, authorDate: now, writes: { "f1.ts": F1_V2 } },
+      // Commit 3: add f2.ts (bug-fix classified body).
+      { message: "fix: broken thing", author: test, authorDate: now, writes: { "f2.ts": F2_V1 } },
+      // Commit 4: modify f1 tail + f2 (carries a taskId).
+      { message: "TD-123 update both", author: test, authorDate: now, writes: { "f1.ts": F1_V3, "f2.ts": F2_V2 } },
+    ],
+    { config: { "user.email": "t@example.com", "user.name": "Test" } },
+  );
 }, 30000); // ~13 sync git spawns; 10s default hook timeout flakes under coverage/CI load (matches file-discovery)
 
 afterAll(() => {

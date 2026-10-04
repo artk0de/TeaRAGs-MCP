@@ -171,4 +171,70 @@ describe("outerEnvForRegistryStamp", () => {
   it("hands a server env back as the same object when it overrides nothing — a caller can tell nothing was dropped", () => {
     expect(outerEnvForRegistryStamp({ INGEST_CHUNK_SIZE: "2000" }, SERVER_ENV, "server")).toBe(SERVER_ENV);
   });
+
+  describe("embedding endpoints follow the embedding model (bd tea-rags-mcp-b91f5)", () => {
+    // One server config serves projects indexed with different models on
+    // different llama-server pools. The endpoint is where THAT model is served,
+    // so a server endpoint is meaningless for a project whose stamped model it
+    // does not serve.
+    const SERVER = {
+      EMBEDDING_PROVIDER: "llama-server",
+      EMBEDDING_MODEL: "brokkai/Muninn-small",
+      EMBEDDING_BASE_URL: "http://192.168.1.71:8091",
+      EMBEDDING_FALLBACK_URL: "http://192.168.1.71:8092",
+    };
+
+    it("drops the server's endpoints when the stamp pins another model and its own endpoints", () => {
+      const outer = outerEnvForRegistryStamp(
+        {
+          EMBEDDING_MODEL: "nomic-ai/CodeRankEmbed",
+          EMBEDDING_BASE_URL: "http://192.168.1.71:8081",
+          EMBEDDING_FALLBACK_URL: "http://192.168.1.71:8082",
+        },
+        SERVER,
+        "server",
+      );
+
+      expect(outer.EMBEDDING_MODEL).toBeUndefined();
+      expect(outer.EMBEDDING_BASE_URL).toBeUndefined();
+      expect(outer.EMBEDDING_FALLBACK_URL).toBeUndefined();
+      expect(outer.EMBEDDING_PROVIDER).toBe("llama-server");
+    });
+
+    it("drops the server's endpoints when the stamp pins another provider kind", () => {
+      const outer = outerEnvForRegistryStamp(
+        { EMBEDDING_PROVIDER: "ollama", EMBEDDING_BASE_URL: "http://localhost:11434" },
+        SERVER,
+        "server",
+      );
+
+      expect(outer.EMBEDDING_BASE_URL).toBeUndefined();
+    });
+
+    it("keeps the server's endpoints when the stamped model is the one it serves — the endpoint is runtime", () => {
+      const outer = outerEnvForRegistryStamp(
+        { EMBEDDING_MODEL: "brokkai/Muninn-small", EMBEDDING_BASE_URL: "http://old-host:8091" },
+        SERVER,
+        "server",
+      );
+
+      expect(outer).toBe(SERVER);
+    });
+
+    it("keeps a server endpoint the stamp does not pin — there is nothing to replace it with", () => {
+      const outer = outerEnvForRegistryStamp({ EMBEDDING_MODEL: "nomic-ai/CodeRankEmbed" }, SERVER, "server");
+
+      expect(outer.EMBEDDING_BASE_URL).toBe("http://192.168.1.71:8091");
+    });
+
+    it("leaves an invocation env whole — an explicit CLI env still switches a project's model", () => {
+      const outer = outerEnvForRegistryStamp(
+        { EMBEDDING_MODEL: "nomic-ai/CodeRankEmbed", EMBEDDING_BASE_URL: "http://192.168.1.71:8081" },
+        SERVER,
+        "invocation",
+      );
+
+      expect(outer).toBe(SERVER);
+    });
+  });
 });

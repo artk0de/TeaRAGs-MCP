@@ -53,12 +53,16 @@ describe("openInProcessMcpSession", () => {
     vi.mocked(createConfiguredServer).mockImplementation(() => echoServer());
   });
 
-  it("prepares the runtime the way `server` does (server env role) and disables auto-update", async () => {
+  it("prepares the runtime the way `server` does (server env role) and disables auto-update and tree watching", async () => {
     const session = await openInProcessMcpSession();
     await session.close();
 
     expect(migrateHomeDir).toHaveBeenCalledOnce();
-    expect(createAppContext).toHaveBeenCalledWith(expect.anything(), { ambientEnvRole: "server" });
+    // A one-shot call exits after one answer: a watcher would only hold fs handles until cleanup.
+    expect(createAppContext).toHaveBeenCalledWith(expect.anything(), {
+      ambientEnvRole: "server",
+      watchWorkingTrees: false,
+    });
     expect(createConfiguredServer).toHaveBeenCalledWith(expect.anything(), null, { autoUpdate: false });
   });
 
@@ -71,6 +75,22 @@ describe("openInProcessMcpSession", () => {
 
     expect(tools.map((t) => t.name)).toEqual(["echo"]);
     expect(result.content).toEqual([{ type: "text", text: "echo:hi" }]);
+  });
+
+  // bd tea-rags-mcp-xi2r9, B1: `tea-rags call` calls process.exit right after
+  // close(); a cleanup that flushes pending store writes must be awaited, or the
+  // exit cuts them between temp and rename.
+  it("close() resolves only after an asynchronous cleanup has settled", async () => {
+    let flushed = false;
+    cleanup.mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      flushed = true;
+    });
+    const session = await openInProcessMcpSession();
+
+    await session.close();
+
+    expect(flushed).toBe(true);
   });
 
   it("close() releases the AppContext exactly once", async () => {

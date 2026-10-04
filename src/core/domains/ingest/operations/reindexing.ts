@@ -90,6 +90,67 @@ export class ReindexPipeline extends BaseIndexingPipeline {
   ): Promise<ChangeStats> {
     const startTime = Date.now();
     const { absolutePath, collectionName: aliasCollectionName } = await this.resolveContext(path);
+    await this.sweepOrphanedVersions(aliasCollectionName);
+    const stats = this.initChangeStats();
+
+    try {
+      const ctx = await this.prepareReindexContext(absolutePath, aliasCollectionName);
+      if (overrides?.rechunk) {
+        stats.filesRechunked = await this.invalidateRechunkWorkSet(ctx, overrides.rechunk);
+      }
+      const { changes, retryPaths, quarantineStore } = await this.detectChangesAndRetries(ctx, stats, progressCallback);
+      const { repaired, deferredChunkHandoff } = await this.repairProviderStores(
+        ctx,
+        overrides?.deferredChunkHandoff,
+        changes,
+        retryPaths,
+      );
+
+      if (this.hasNoChanges(stats) && retryPaths.length === 0) {
+        return await this.finalizeNoChangesRun(ctx, stats, startTime, repaired, deferredChunkHandoff);
+      }
+
+      // Deletion-only: no files to add/modify/retry → skip pipeline init and enrichment
+      if (changes.added.length === 0 && changes.modified.length === 0 && retryPaths.length === 0) {
+        return await this.finalizeDeletionOnlyRun(
+          ctx,
+          changes,
+          stats,
+          startTime,
+          progressCallback,
+          repaired,
+          deferredChunkHandoff,
+        );
+      }
+
+      return await this.executeChangesLeg(
+        ctx,
+        changes,
+        retryPaths,
+        quarantineStore,
+        deferredChunkHandoff,
+        stats,
+        startTime,
+        progressCallback,
+        overrides?.chunkSize,
+      );
+    } catch (error) {
+      this.wrapUnexpectedError(error, ReindexFailedError);
+    } finally {
+      this.stopHeartbeat();
+      const cleaner = new SnapshotCleaner(this.snapshotDir, aliasCollectionName);
+      await cleaner.cleanupAfterIndexing();
+    }
+  }
+
+  // ── Orphan sweep ─────────────────────────────────────────
+
+  /**
+   * Best-effort pre-run cleanup of artifacts no live collection claims.
+   * A sweep failure must never abort an incremental reindex — the sweep is
+   * logged and swallowed.
+   */
+  private async sweepOrphanedVersions(aliasCollectionName: string): Promise<void> {
     // Orphan sweep (55xk2): versioned targets left by killed runs
     // (`<base>_vN` no alias points at) used to survive every INCREMENTAL
     // reindex — only the force path cleaned them at setup, so they piled up
@@ -104,164 +165,6 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       if (isDebug()) {
         console.error(`[Reindex] orphan sweep failed (non-fatal):`, err);
       }
-    }
-    const stats: ChangeStats = {
-      filesAdded: 0,
-      filesModified: 0,
-      filesDeleted: 0,
-      filesNewlyIgnored: 0,
-      filesNewlyUnignored: 0,
-      filesRetried: 0,
-      chunksAdded: 0,
-      chunksDeleted: 0,
-      durationMs: 0,
-      status: "completed",
-    };
-
-    try {
-      const ctx = await this.prepareReindexContext(absolutePath, aliasCollectionName);
-      if (overrides?.rechunk) {
-        stats.filesRechunked = await this.invalidateRechunkWorkSet(ctx, overrides.rechunk);
-      }
-      const resumeFromCheckpoint = await this.checkForCheckpoint(ctx.synchronizer);
-
-      this.reportScanProgress(progressCallback, resumeFromCheckpoint);
-
-      const changes = await this.detectFileChanges(ctx);
-      stats.filesAdded = changes.added.length;
-      stats.filesModified = changes.modified.length;
-      stats.filesDeleted = changes.deleted.length;
-      stats.filesNewlyIgnored = changes.newlyIgnored.length;
-      stats.filesNewlyUnignored = changes.newlyUnignored.length;
-
-      // Poison-pill retry: previously-quarantined files that still exist are
-      // re-attempted even when their content is unchanged (a tea-rags fix may
-      // have shipped, or the file became readable). Computed BEFORE the
-      // no-changes / deletion-only early returns so a pure-retry pass is not
-      // short-circuited.
-      // Alias, not the versioned target: quarantine survives version bumps so a
-      // poison-pill file stays quarantined across a force reindex.
-      const quarantineStore = new QuarantineStore(this.snapshotDir, ctx.collectionName);
-      const retryPaths = await this.computeQuarantineRetry(quarantineStore, ctx, changes);
-      stats.filesRetried = retryPaths.length;
-
-      // Bring provider stores back in line with the code before the run's own
-      // enrichment (bd tea-rags-mcp-6goqa). Deliberately ABOVE both early
-      // returns (bd tea-rags-mcp-gvw8h): the one run that could notice a
-      // drifted store — nothing changed, nothing to chunk — was the one run
-      // that skipped the check, so a repository that went quiet never healed
-      // and no amount of re-running the reindex fixed it.
-      //
-      // What a repair still needs is the finalize that rebuilds the derived
-      // tables and closes the run it opened. Below, each early return drives
-      // that itself through `finalizeRepairedRun`, and pays nothing when the
-      // stores already matched. Silent either way: the cost shows up as time,
-      // not as a message. Hashes come from the scan detectChanges just did, so
-      // nothing is re-read.
-      //
-      // Chunks pre-reindex recovery handed to this run (bd tea-rags-mcp-fxio5)
-      // are narrowed to what the repair will walk, then walked by it and seeded
-      // into whichever run closes it — the finalize below or the chunk pipeline.
-      // A file this run re-chunks is dropped first: its stored points are
-      // replaced, so the handed-off ids are stale, and its fresh chunks reach the
-      // deferred pass through the pipeline anyway. A seeded chunk whose file is
-      // never walked would be stamped `enrichedAt` over an empty overlay.
-      const scannedHashes = ctx.synchronizer.getCurrentFileHashes();
-      const deferredChunkHandoff = this.narrowDeferredChunkHandoff(overrides?.deferredChunkHandoff, scannedHashes, [
-        ...changes.added,
-        ...changes.modified,
-        ...retryPaths,
-      ]);
-      const repaired = await this.enrichment.runRepairPass(
-        ctx.targetCollection,
-        ctx.absolutePath,
-        scannedHashes,
-        deferredChunkHandoffPaths(deferredChunkHandoff),
-      );
-
-      if (this.hasNoChanges(stats) && retryPaths.length === 0) {
-        // A deletion-only run prunes the derived codegraph tables and leaves
-        // them stale rather than paying the recompute on its fast path (bd
-        // tea-rags-mcp-dy852). This branch is the next run that has nothing to
-        // chunk, so it owes that finalize even when the repair found nothing.
-        const staleDerived = repaired === 0 && (await this.enrichment.hasStaleDerivedState(ctx.targetCollection));
-        const finalized = await this.finalizeRepairedRun(ctx, stats, repaired, deferredChunkHandoff, staleDerived);
-        await this.completeCollectionUnlessFinalized(ctx, finalized);
-        // No snapshot: nothing changed, so the stored file list already matches
-        // what is on disk.
-        await this.sealRun(this.reindexSealSpec(ctx, { snapshot: false }));
-        stats.durationMs = Date.now() - startTime;
-        return stats;
-      }
-
-      // Deletion-only: no files to add/modify/retry → skip pipeline init and enrichment
-      if (changes.added.length === 0 && changes.modified.length === 0 && retryPaths.length === 0) {
-        await this.executeDeletionOnly(ctx, changes, stats, progressCallback);
-        // Removing files needs no enrichment, which is what this path is for —
-        // but a repair on THIS run does, so the finalize below overwrites
-        // "skipped" exactly when it had something to finalize.
-        stats.enrichmentStatus = "skipped";
-        const finalized = await this.finalizeRepairedRun(ctx, stats, repaired, deferredChunkHandoff);
-        await this.completeCollectionUnlessFinalized(ctx, finalized);
-        await this.sealRun(this.reindexSealSpec(ctx, { snapshot: true }));
-        stats.durationMs = Date.now() - startTime;
-        return stats;
-      }
-
-      this.startHeartbeat(ctx.targetCollection);
-      const processingCtx = this.initChangesProcessing(
-        ctx,
-        [...changes.added, ...changes.modified, ...retryPaths].length,
-        quarantineStore,
-        deferredChunkHandoff,
-        overrides?.chunkSize,
-      );
-      const {
-        chunksAdded,
-        chunksDeleted,
-        chunkMap,
-        filesSkippedDueToDeleteFailure,
-        filesFailedToDelete,
-        deletionOutcome,
-      } = await executeReindexPipelines({
-        qdrant: this.qdrant,
-        targetCollection: ctx.targetCollection,
-        absolutePath: ctx.absolutePath,
-        changes,
-        retryPaths,
-        quarantineStore,
-        processingCtx,
-        deleteConfig: this.deleteConfig,
-        enableGitMetadata: this.config.enableGitMetadata === true,
-        fileConcurrency: this.tuning.fileConcurrency,
-        notifyDeletions: async (paths) => this.enrichment.notifyDeletions(paths, ctx.targetCollection),
-        progressCallback,
-      });
-      stats.chunksAdded = chunksAdded;
-      stats.chunksDeleted = chunksDeleted;
-      if (filesSkippedDueToDeleteFailure !== undefined && filesSkippedDueToDeleteFailure > 0) {
-        stats.filesSkippedDueToDeleteFailure = filesSkippedDueToDeleteFailure;
-        stats.status = "partial";
-      }
-      if (filesFailedToDelete !== undefined && filesFailedToDelete > 0) {
-        stats.filesFailedToDelete = filesFailedToDelete;
-        stats.status = "partial";
-      }
-
-      this.stopHeartbeat();
-      // Every path whose delete failed still has its old chunks in the index —
-      // a removed file never left it, a modified file's re-ingest was skipped
-      // by the coordinator. Its snapshot entry stays as the previous run left
-      // it, so the next run detects it again and retries (bd tea-rags-mcp-ti1oa).
-      const unreconciled = deletionOutcome?.failed ?? new Set<string>();
-      await this.finalizeReindex(ctx, processingCtx, chunkMap, stats, startTime, unreconciled);
-      return stats;
-    } catch (error) {
-      this.wrapUnexpectedError(error, ReindexFailedError);
-    } finally {
-      this.stopHeartbeat();
-      const cleaner = new SnapshotCleaner(this.snapshotDir, aliasCollectionName);
-      await cleaner.cleanupAfterIndexing();
     }
   }
 
@@ -425,6 +328,94 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     return quarantined.filter((p) => current.has(p) && !queued.has(p));
   }
 
+  /**
+   * The scan stage of an incremental run: checkpoint notice, change
+   * detection, and the poison-pill retry set. Writes the per-change counts
+   * and `filesRetried` onto `stats`; returns the three values the later
+   * stages share — the raw `changes` (the deletion-only check reads its
+   * parts), the retry paths, and the quarantine store both the retry filter
+   * and the changes leg use.
+   */
+  private async detectChangesAndRetries(
+    ctx: ReindexContext,
+    stats: ChangeStats,
+    progressCallback?: ProgressCallback,
+  ): Promise<{ changes: FileChanges; retryPaths: string[]; quarantineStore: QuarantineStore }> {
+    const resumeFromCheckpoint = await this.checkForCheckpoint(ctx.synchronizer);
+
+    this.reportScanProgress(progressCallback, resumeFromCheckpoint);
+
+    const changes = await this.detectFileChanges(ctx);
+    stats.filesAdded = changes.added.length;
+    stats.filesModified = changes.modified.length;
+    stats.filesDeleted = changes.deleted.length;
+    stats.filesNewlyIgnored = changes.newlyIgnored.length;
+    stats.filesNewlyUnignored = changes.newlyUnignored.length;
+
+    // Poison-pill retry: previously-quarantined files that still exist are
+    // re-attempted even when their content is unchanged (a tea-rags fix may
+    // have shipped, or the file became readable). Computed BEFORE the
+    // no-changes / deletion-only early returns so a pure-retry pass is not
+    // short-circuited.
+    // Alias, not the versioned target: quarantine survives version bumps so a
+    // poison-pill file stays quarantined across a force reindex.
+    const quarantineStore = new QuarantineStore(this.snapshotDir, ctx.collectionName);
+    const retryPaths = await this.computeQuarantineRetry(quarantineStore, ctx, changes);
+    stats.filesRetried = retryPaths.length;
+    return { changes, retryPaths, quarantineStore };
+  }
+
+  // ── Store repair ─────────────────────────────────────────
+
+  /**
+   * Bring provider stores back in line with the code before the run's own
+   * enrichment, narrowing the recovery handoff to the files this repair will
+   * walk (bd tea-rags-mcp-fxio5 → narrowDeferredChunkHandoff → forced repair
+   * pass). Returns how many files the repair walked and the narrowed handoff
+   * that seeds whichever run closes it.
+   */
+  private async repairProviderStores(
+    ctx: ReindexContext,
+    recoveryHandoff: DeferredChunkRecoveryHandoff | undefined,
+    changes: FileChanges,
+    retryPaths: string[],
+  ): Promise<{ repaired: number; deferredChunkHandoff: DeferredChunkRecoveryHandoff }> {
+    // Bring provider stores back in line with the code before the run's own
+    // enrichment (bd tea-rags-mcp-6goqa). Deliberately ABOVE both early
+    // returns (bd tea-rags-mcp-gvw8h): the one run that could notice a
+    // drifted store — nothing changed, nothing to chunk — was the one run
+    // that skipped the check, so a repository that went quiet never healed
+    // and no amount of re-running the reindex fixed it.
+    //
+    // What a repair still needs is the finalize that rebuilds the derived
+    // tables and closes the run it opened. Below, each early return drives
+    // that itself through `finalizeRepairedRun`, and pays nothing when the
+    // stores already matched. Silent either way: the cost shows up as time,
+    // not as a message. Hashes come from the scan detectChanges just did, so
+    // nothing is re-read.
+    //
+    // Chunks pre-reindex recovery handed to this run (bd tea-rags-mcp-fxio5)
+    // are narrowed to what the repair will walk, then walked by it and seeded
+    // into whichever run closes it — the finalize below or the chunk pipeline.
+    // A file this run re-chunks is dropped first: its stored points are
+    // replaced, so the handed-off ids are stale, and its fresh chunks reach the
+    // deferred pass through the pipeline anyway. A seeded chunk whose file is
+    // never walked would be stamped `enrichedAt` over an empty overlay.
+    const scannedHashes = ctx.synchronizer.getCurrentFileHashes();
+    const deferredChunkHandoff = this.narrowDeferredChunkHandoff(recoveryHandoff, scannedHashes, [
+      ...changes.added,
+      ...changes.modified,
+      ...retryPaths,
+    ]);
+    const repaired = await this.enrichment.runRepairPass(
+      ctx.targetCollection,
+      ctx.absolutePath,
+      scannedHashes,
+      deferredChunkHandoffPaths(deferredChunkHandoff),
+    );
+    return { repaired, deferredChunkHandoff };
+  }
+
   // ── Parallel processing ──────────────────────────────────
 
   /**
@@ -457,6 +448,72 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     // Embed-phase poison-pill isolation (shares the read/parse quarantine store).
     pCtx.chunkPipeline.setQuarantineStore(quarantineStore);
     return pCtx;
+  }
+
+  /**
+   * The changes leg proper: heartbeat, processing context, the parallel
+   * chunk/delete pipelines, and the finalize that closes the run. Owns the
+   * partial-status downgrade when the delete leg could not reconcile a path.
+   */
+  private async executeChangesLeg(
+    ctx: ReindexContext,
+    changes: FileChanges,
+    retryPaths: string[],
+    quarantineStore: QuarantineStore,
+    deferredChunkHandoff: DeferredChunkRecoveryHandoff,
+    stats: ChangeStats,
+    startTime: number,
+    progressCallback: ProgressCallback | undefined,
+    chunkSizeOverride?: number,
+  ): Promise<ChangeStats> {
+    this.startHeartbeat(ctx.targetCollection);
+    const processingCtx = this.initChangesProcessing(
+      ctx,
+      [...changes.added, ...changes.modified, ...retryPaths].length,
+      quarantineStore,
+      deferredChunkHandoff,
+      chunkSizeOverride,
+    );
+    const {
+      chunksAdded,
+      chunksDeleted,
+      chunkMap,
+      filesSkippedDueToDeleteFailure,
+      filesFailedToDelete,
+      deletionOutcome,
+    } = await executeReindexPipelines({
+      qdrant: this.qdrant,
+      targetCollection: ctx.targetCollection,
+      absolutePath: ctx.absolutePath,
+      changes,
+      retryPaths,
+      quarantineStore,
+      processingCtx,
+      deleteConfig: this.deleteConfig,
+      enableGitMetadata: this.config.enableGitMetadata === true,
+      fileConcurrency: this.tuning.fileConcurrency,
+      notifyDeletions: async (paths) => this.enrichment.notifyDeletions(paths, ctx.targetCollection),
+      progressCallback,
+    });
+    stats.chunksAdded = chunksAdded;
+    stats.chunksDeleted = chunksDeleted;
+    if (filesSkippedDueToDeleteFailure !== undefined && filesSkippedDueToDeleteFailure > 0) {
+      stats.filesSkippedDueToDeleteFailure = filesSkippedDueToDeleteFailure;
+      stats.status = "partial";
+    }
+    if (filesFailedToDelete !== undefined && filesFailedToDelete > 0) {
+      stats.filesFailedToDelete = filesFailedToDelete;
+      stats.status = "partial";
+    }
+
+    this.stopHeartbeat();
+    // Every path whose delete failed still has its old chunks in the index —
+    // a removed file never left it, a modified file's re-ingest was skipped
+    // by the coordinator. Its snapshot entry stays as the previous run left
+    // it, so the next run detects it again and retries (bd tea-rags-mcp-ti1oa).
+    const unreconciled = deletionOutcome?.failed ?? new Set<string>();
+    await this.finalizeReindex(ctx, processingCtx, chunkMap, stats, startTime, unreconciled);
+    return stats;
   }
 
   // ── Finalization ─────────────────────────────────────────
@@ -605,6 +662,59 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     await this.enrichment.runCollectionCompletion(ctx.absolutePath, ctx.targetCollection);
   }
 
+  /**
+   * The no-changes early return: nothing to chunk, nothing to delete. Still
+   * owes the repair finalize (a deletion-only run may have pruned derived
+   * tables it never recomputed) and the seal, without rewriting a snapshot
+   * that already matches disk.
+   */
+  private async finalizeNoChangesRun(
+    ctx: ReindexContext,
+    stats: ChangeStats,
+    startTime: number,
+    repaired: number,
+    deferredChunkHandoff: DeferredChunkRecoveryHandoff,
+  ): Promise<ChangeStats> {
+    // A deletion-only run prunes the derived codegraph tables and leaves
+    // them stale rather than paying the recompute on its fast path (bd
+    // tea-rags-mcp-dy852). This branch is the next run that has nothing to
+    // chunk, so it owes that finalize even when the repair found nothing.
+    const staleDerived = repaired === 0 && (await this.enrichment.hasStaleDerivedState(ctx.targetCollection));
+    const finalized = await this.finalizeRepairedRun(ctx, stats, repaired, deferredChunkHandoff, staleDerived);
+    await this.completeCollectionUnlessFinalized(ctx, finalized);
+    // No snapshot: nothing changed, so the stored file list already matches
+    // what is on disk.
+    await this.sealRun(this.reindexSealSpec(ctx, { snapshot: false }));
+    stats.durationMs = Date.now() - startTime;
+    return stats;
+  }
+
+  /**
+   * The deletion-only early return: deletions need no pipeline and no
+   * enrichment, but a repair on THIS run still owes its finalize, and the
+   * run still owes its seal (with a snapshot — the file list moved).
+   */
+  private async finalizeDeletionOnlyRun(
+    ctx: ReindexContext,
+    changes: FileChanges,
+    stats: ChangeStats,
+    startTime: number,
+    progressCallback: ProgressCallback | undefined,
+    repaired: number,
+    deferredChunkHandoff: DeferredChunkRecoveryHandoff,
+  ): Promise<ChangeStats> {
+    await this.executeDeletionOnly(ctx, changes, stats, progressCallback);
+    // Removing files needs no enrichment, which is what this path is for —
+    // but a repair on THIS run does, so the finalize below overwrites
+    // "skipped" exactly when it had something to finalize.
+    stats.enrichmentStatus = "skipped";
+    const finalized = await this.finalizeRepairedRun(ctx, stats, repaired, deferredChunkHandoff);
+    await this.completeCollectionUnlessFinalized(ctx, finalized);
+    await this.sealRun(this.reindexSealSpec(ctx, { snapshot: true }));
+    stats.durationMs = Date.now() - startTime;
+    return stats;
+  }
+
   // ── Deletion-only fast path ─────────────────────────────
 
   private async executeDeletionOnly(
@@ -655,6 +765,21 @@ export class ReindexPipeline extends BaseIndexingPipeline {
   }
 
   // ── Helpers ──────────────────────────────────────────────
+
+  private initChangeStats(): ChangeStats {
+    return {
+      filesAdded: 0,
+      filesModified: 0,
+      filesDeleted: 0,
+      filesNewlyIgnored: 0,
+      filesNewlyUnignored: 0,
+      filesRetried: 0,
+      chunksAdded: 0,
+      chunksDeleted: 0,
+      durationMs: 0,
+      status: "completed",
+    };
+  }
 
   private hasNoChanges(stats: ChangeStats): boolean {
     return (

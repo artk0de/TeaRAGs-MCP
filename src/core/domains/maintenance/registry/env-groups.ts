@@ -16,7 +16,7 @@
  * (`outerEnvForRegistryStamp` in `env-replay.ts`, tea-rags-mcp-o0qsw).
  *
  * The ONLY env kinds outside this mechanism:
- * - secrets (OPENAI/COHERE/VOYAGE/QDRANT API keys) — never persisted;
+ * - secrets (OPENAI/COHERE/VOYAGE/QDRANT API keys, EMBEDDING_API_KEY) — never persisted;
  * - server/process knobs (DEBUG, SERVER_TRANSPORT, ports, timeouts) —
  *   properties of the process, not of a project.
  *
@@ -29,26 +29,12 @@
  * uniformly (an external OLLAMA_URL beats the registry EMBEDDING_BASE_URL).
  */
 
-/**
- * What a change to one env group invalidates in an EXISTING index.
- *
- * The classes are the drift remedy lattice read backwards: `chunk-set` moves
- * chunk point ids (nothing short of `--force` is coherent), each
- * `enrichment:<trajectory>` rewrites that trajectory's payload in place
- * (`--force-enrichments <trajectory>`), and `runtime` describes only HOW the
- * run executes — endpoints, pool sizes, batch sizes, timeouts, DuckDB limits.
- * Changing a `runtime` value produces byte-identical indexed data, so it is
- * never drift.
- */
-export type EnvConsequence = "chunk-set" | "enrichment:git" | "enrichment:codegraph" | "runtime";
+// The vocabulary types live in contracts so the stable layers name them
+// without reaching into this module; re-exported here unchanged for this
+// domain's consumers (bd tea-rags-mcp-0qaht.36).
+import type { EnvConsequence, RegistryEnvGroup } from "../../../contracts/types/registry.js";
 
-/** One alias family: the canonical env name plus its deprecated spellings. */
-export interface RegistryEnvGroup {
-  canonical: string;
-  aliases: readonly string[];
-  /** What a change to this value invalidates in an existing index. */
-  consequence: EnvConsequence;
-}
+export type { EnvConsequence, RegistryEnvGroup };
 
 export const REGISTRY_ENV_GROUPS: readonly RegistryEnvGroup[] = [
   // vcs (parse.ts `vcs` section). Which adapter walks the history is an
@@ -71,6 +57,8 @@ export const REGISTRY_ENV_GROUPS: readonly RegistryEnvGroup[] = [
   { canonical: "EMBEDDING_DEVICE", aliases: [], consequence: "runtime" },
   { canonical: "OLLAMA_LEGACY_API", aliases: [], consequence: "runtime" },
   { canonical: "OLLAMA_NUM_GPU", aliases: [], consequence: "runtime" },
+  // Whether a missing model is fetched before embedding — never which vectors.
+  { canonical: "EMBEDDING_AUTO_PULL", aliases: [], consequence: "runtime" },
   // trajectoryGit (parse.ts `trajectoryGit` section). The windows and the
   // session model change the COMPUTED signals; the timeouts, pool sizes and
   // concurrency only change how long computing them takes.
@@ -162,6 +150,9 @@ export const REGISTRY_ENV_GROUPS: readonly RegistryEnvGroup[] = [
     consequence: "runtime",
   },
   { canonical: "EMBEDDING_TUNE_FAILOVER_CONSECUTIVE_FAILURES", aliases: [], consequence: "runtime" },
+  // Pins the static batch size / concurrency instead of the throughput tuner —
+  // how fast vectors are computed, never which vectors.
+  { canonical: "EMBEDDING_TUNE_STATIC", aliases: [], consequence: "runtime" },
   // qdrantTune (parse.ts `qdrantTune` section) — write path and storage
   // settings only; quantization is applied in place on the live collection.
   {
@@ -292,3 +283,35 @@ export const ADAPTIVE_DEFAULT_ENV_KEYS: ReadonlySet<string> = new Set([
   "QDRANT_TUNE_DELETE_BATCH_SIZE",
   "QDRANT_TUNE_DELETE_CONCURRENCY",
 ]);
+
+/**
+ * Canonical keys that bound the embedding throughput tuner
+ * (`EmbeddingThroughputTuner`): the pipeline concurrency is the ceiling of its
+ * concurrency climb, the batch size the ceiling of its size climb, and the
+ * minimum size and formation timeout shape every batch it measures.
+ *
+ * A value of one of these is a fact about ONE embedding backend, so a registry
+ * stamp of it replays only when the operator pinned it
+ * (`CollectionEntry.operatorPinnedEnvKeys`, `replayableRegistryEnv`). A value a
+ * run or `tea-rags tune` stamped was measured against whatever served that run;
+ * replayed, it became an explicit setting of every later run and froze the
+ * climb at a single-slot Ollama ceiling on a 16-slot llama-server cluster
+ * (bd tea-rags-mcp-y1ynz). The tuner's own measured optimum, keyed by
+ * embedding identity, is what carries a learnt shape from run to run.
+ */
+export const THROUGHPUT_TUNED_ENV_KEYS: ReadonlySet<string> = new Set([
+  "INGEST_PIPELINE_CONCURRENCY",
+  "EMBEDDING_TUNE_BATCH_SIZE",
+  "EMBEDDING_TUNE_MIN_BATCH_SIZE",
+  "EMBEDDING_TUNE_BATCH_TIMEOUT_MS",
+]);
+
+/**
+ * Whether any spelling of `key` resolves to a {@link THROUGHPUT_TUNED_ENV_KEYS}
+ * family. A spelling shared with another family (`CODE_BATCH_SIZE` also feeds
+ * the Qdrant upsert batch) counts as tuned: replaying it would set the tuner's
+ * ceiling all the same.
+ */
+export function isThroughputTunedEnvKey(key: string): boolean {
+  return canonicalRegistryEnvKeys(key).some((canonical) => THROUGHPUT_TUNED_ENV_KEYS.has(canonical));
+}

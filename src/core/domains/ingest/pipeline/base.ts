@@ -17,18 +17,27 @@ import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
 import type { CollectionAlias, PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { EnrichmentRunHandle } from "../../../contracts/types/enrichment-executor.js";
-import type {
-  CollectionRegistryPort,
-  PathCollectionResolver,
-  RegistryGitState,
+import {
+  embeddingThroughputOptimumKey,
+  type CollectionRegistryPort,
+  type EmbeddingProducerStarvation,
+  type EmbeddingThroughputOptimumWrite,
+  type PathCollectionResolver,
+  type RegistryGitState,
 } from "../../../contracts/types/registry.js";
 import { hashCollectionForPath, validatePath } from "../../../infra/collection-name.js";
 import { TeaRagsError } from "../../../infra/errors.js";
-import { readRepoGitState, readWorkingTreeDirty } from "../../../infra/repo-git-state.js";
+import {
+  findGitToplevel,
+  readRepoGitState,
+  readWorkingTreeDirty,
+  readWorkingTreeDirtyPaths,
+} from "../../../infra/repo-git-state.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, IngestCodeConfig } from "../../../types.js";
 import type { IngestDependencies } from "../factory.js";
 import type { CodegraphDbLister, CodegraphDbRemover } from "../infra/alias-cleanup.js";
-import { ChunkerPool } from "./chunker/infra/pool.js";
+import { ChunkerPool, type ChunkerPoolPort } from "./chunker/infra/pool.js";
+import { EmbeddingThroughputTuner, type EmbeddingEndpointThroughputOptimum } from "./embedding-throughput-tuner.js";
 import type { EnrichmentCoordinator } from "./enrichment/coordinator.js";
 import { reindexRunSpec, type EnrichmentRunSpec, type StreamedEnrichmentRunInput } from "./enrichment/run-spec.js";
 import { ChunkPipeline } from "./index.js";
@@ -40,7 +49,7 @@ import { FileScanner } from "./scanner.js";
 import type { PipelineConfig } from "./types.js";
 
 export interface ProcessingContext {
-  chunkerPool: ChunkerPool;
+  chunkerPool: ChunkerPoolPort;
   chunkPipeline: ChunkPipeline;
   /** The enrichment run this processing feeds; every per-run coordinator call names it. */
   enrichmentRun: EnrichmentRunHandle;
@@ -74,6 +83,10 @@ export interface IndexingRunSealSpec {
   promote?: () => Promise<void>;
   /** Persist the run's sync state (snapshot, checkpoint) once the marker landed. */
   persist: () => Promise<void>;
+  /** What the run's embedding throughput tuner settled on, per endpoint (bd tea-rags-mcp-7ju66). */
+  embeddingThroughputOptima?: EmbeddingEndpointThroughputOptimum[];
+  /** Whether the run's embed stage waited on the chunk producer (bd tea-rags-mcp-y1ynz). */
+  embeddingProducerStarvation?: EmbeddingProducerStarvation;
 }
 
 export interface PipelineTuning {
@@ -297,7 +310,12 @@ export abstract class BaseIndexingPipeline {
     await spec.promote?.();
     await storeIndexingMarker(this.qdrant, this.embeddings, spec.targetCollection, true, spec.modelInfo);
     await spec.persist();
-    await this.recordRegistryEntry(spec.collectionAlias, spec.absolutePath);
+    await this.recordRegistryEntry(
+      spec.collectionAlias,
+      spec.absolutePath,
+      spec.embeddingThroughputOptima,
+      spec.embeddingProducerStarvation,
+    );
   }
 
   /**
@@ -314,7 +332,14 @@ export abstract class BaseIndexingPipeline {
   ): Promise<EnrichmentStatusResult> {
     const getEnrichmentStatus = await this.finalizeProcessing(ctx, chunkMap);
     onFlushed?.();
-    await this.sealRun(seal);
+    // The drained chunk pipeline knows what its throughput tuner settled on and
+    // whether its embed stage starved; the registry entry this seal records
+    // carries both — the optimum to the next run, the verdict to the run's status.
+    await this.sealRun({
+      ...seal,
+      embeddingThroughputOptima: ctx.chunkPipeline?.settledThroughputOptima(),
+      embeddingProducerStarvation: ctx.chunkPipeline?.embeddingProducerStarvation(),
+    });
     return getEnrichmentStatus();
   }
 
@@ -340,8 +365,14 @@ export abstract class BaseIndexingPipeline {
     }
   }
 
-  protected async recordRegistryEntry(collectionName: string, absolutePath: string): Promise<void> {
+  protected async recordRegistryEntry(
+    collectionName: string,
+    absolutePath: string,
+    throughputOptima: readonly EmbeddingEndpointThroughputOptimum[] = [],
+    producerStarvation?: EmbeddingProducerStarvation,
+  ): Promise<void> {
     if (!this.registry) return;
+    this.recordThroughputOptima(throughputOptima);
     try {
       // Chunks only — the indexing marker and schema metadata point are not
       // chunks, and status/metrics leave them out too (bd tea-rags-mcp-39xca.12).
@@ -368,7 +399,7 @@ export abstract class BaseIndexingPipeline {
       // prime re-apply the map registry-first in a fresh shell with the one
       // general rule (outer env > registry env > code default).
       const { envSnapshot } = this;
-      const gitState = this.buildRegistryGitState(absolutePath);
+      const gitState = await this.buildRegistryGitState(absolutePath);
       this.registry.record({
         collectionName,
         path: absolutePath,
@@ -393,6 +424,10 @@ export abstract class BaseIndexingPipeline {
         // freshness checks compare live HEAD against this block. Absent when
         // the codebase is not a git repository.
         ...(gitState !== undefined ? { git: gitState } : {}),
+        // The last run's verdict only: a run that formed no batch says nothing.
+        ...(producerStarvation !== undefined && producerStarvation.formedBatches > 0
+          ? { embeddingProducerStarvation: producerStarvation }
+          : {}),
         indexedAt: new Date().toISOString(),
         teaRagsVersion: this.teaRagsVersion,
         chunksCount,
@@ -403,25 +438,78 @@ export abstract class BaseIndexingPipeline {
   }
 
   /**
-   * Capture the repo git state for the registry entry. The dirty probe spawns
+   * Persist the run's best measured embedding optima — already reconciled with
+   * the stored ones by the tuner (bd tea-rags-mcp-cyw2r) — into the registry's
+   * shared section, keyed by embedding identity: every project seeds from and
+   * writes to the same records (bd tea-rags-mcp-auoxk). Each write carries the
+   * stored optimum the tuner judged it against, so the registry can tell a
+   * record another process landed meanwhile. An endpoint without a URL
+   * (in-process provider) has no stable key. Failure is logged, never thrown —
+   * like the entry itself, the optima are an out-of-band hint.
+   */
+  private recordThroughputOptima(throughputOptima: readonly EmbeddingEndpointThroughputOptimum[]): void {
+    const writes: EmbeddingThroughputOptimumWrite[] = [];
+    for (const { endpoint, optimum, storedOptimum } of throughputOptima) {
+      if (endpoint.url === undefined) continue;
+      writes.push({
+        key: embeddingThroughputOptimumKey(endpoint.url, endpoint.model, endpoint.provider),
+        optimum,
+        ...(storedOptimum !== undefined ? { storedOptimum } : {}),
+      });
+    }
+    if (writes.length === 0) return;
+    try {
+      this.registry?.recordEmbeddingThroughputOptima?.(writes);
+    } catch (err) {
+      process.stderr.write(`[tea-rags] registry throughput optima record failed: ${(err as Error).message}\n`);
+    }
+  }
+
+  /**
+   * Capture the repo git state for the registry entry. The dirty probes spawn
    * `git status` — acceptable at finalize (the run just scanned every file),
    * never on a query path.
+   *
+   * HEAD is read at the git TOPLEVEL: a project registered at a subdirectory of
+   * its repository has no `.git` of its own, and stamping nothing left its
+   * working-tree overlay degraded with a remedy that could not fix it (live
+   * P2-2, bd tea-rags-mcp-xi2r9).
+   *
+   * `indexedDirtyPaths` names the indexed files this run read with content
+   * `indexedCommit` does not hold (live P1-1): the overlay re-reads them, since
+   * a diff against the commit stops seeing them once they are restored. Only
+   * files the ingest rules admit are listed — anything else was never indexed.
+   * The list is stored in full, however long; the legacy
+   * `indexedDirtyPathsOverflowed` flag is never written.
    */
-  private buildRegistryGitState(absolutePath: string): RegistryGitState | undefined {
-    const state = readRepoGitState(absolutePath);
+  private async buildRegistryGitState(absolutePath: string): Promise<RegistryGitState | undefined> {
+    const state = readRepoGitState(findGitToplevel(absolutePath) ?? absolutePath);
     if (state === null) return undefined;
-    return {
+    const gitState: RegistryGitState = {
       indexedBranch: state.branch,
       indexedCommit: state.commit,
       indexedDirty: readWorkingTreeDirty(absolutePath),
     };
+    const dirtyPaths = readWorkingTreeDirtyPaths(absolutePath);
+    if (dirtyPaths === undefined) return gitState;
+    const scanner = this.createScanner();
+    await scanner.loadIgnorePatterns(absolutePath);
+    const indexedDirtyPaths = dirtyPaths.filter((path) => scanner.accepts(path)).sort();
+    return { ...gitState, indexedDirtyPaths };
   }
 
   // ── Processing components (private) ────────────────────
 
-  private createChunkerPool(chunkSizeOverride?: number, gemfileContent?: string, projectRoot?: string): ChunkerPool {
+  private createChunkerPool(
+    chunkSizeOverride?: number,
+    gemfileContent?: string,
+    projectRoot?: string,
+  ): ChunkerPoolPort {
     const chunkSize = chunkSizeOverride ?? this.config.chunkSize;
-    return new ChunkerPool(this.tuning.chunkerPoolSize, {
+    // Injected factory (tests lease warm pools, bd tea-rags-mcp-bbo1h.1) or a
+    // fresh forked pool per run — the production composition injects nothing.
+    const build = this.deps.createChunkerPool ?? ((poolSize, config) => new ChunkerPool(poolSize, config));
+    return build(this.tuning.chunkerPoolSize, {
       chunkSize,
       chunkOverlap: this.config.chunkOverlap,
       // Hard cap = chunkSize. The chunker MUST emit chunks <= maxChunkSize so
@@ -453,10 +541,41 @@ export abstract class BaseIndexingPipeline {
   }
 
   private createChunkPipeline(collectionName: string): ChunkPipeline {
+    const throughputTuner = this.createThroughputTuner();
     return new ChunkPipeline(this.qdrant, this.embeddings, collectionName, this.deps.payloadBuilder, {
       workerPool: this.tuning.pipelineConfig.workerPool,
       accumulator: this.tuning.pipelineConfig.upsertAccumulator,
       enableHybrid: this.config.enableHybridSearch,
+      ...(throughputTuner ? { throughputTuner } : {}),
+    });
+  }
+
+  /**
+   * One tuner per run (bd tea-rags-mcp-7ju66), bounded by the configured tuning:
+   * the configured batch size is the ceiling, EMBEDDING_TUNE_MIN_BATCH_SIZE the
+   * floor (ceiling/16 when unset), `embedConcurrencyCeiling` the ceiling of the
+   * concurrency climb — an explicit INGEST_PIPELINE_CONCURRENCY, or
+   * IMPLICIT_EMBEDDING_CONCURRENCY_CEILING when unset. It is handed the
+   * registry's stored optimum for the active embedding identity: both values
+   * start there (hints the bounds clamp), an aggregate record starts the run
+   * settled, and the run's best point is reconciled against it before it is
+   * persisted (bd tea-rags-mcp-cyw2r). Undefined when EMBEDDING_TUNE_STATIC
+   * pins the static behaviour.
+   */
+  protected createThroughputTuner(): EmbeddingThroughputTuner | undefined {
+    const { pipelineConfig } = this.tuning;
+    if (pipelineConfig.adaptiveEmbedding !== true) return undefined;
+    const ceiling = pipelineConfig.upsertAccumulator.batchSize;
+    const { registry } = this;
+    return new EmbeddingThroughputTuner({
+      ceiling,
+      floor: pipelineConfig.upsertAccumulator.minBatchSize ?? Math.max(1, Math.floor(ceiling / 16)),
+      configuredConcurrency: pipelineConfig.embedConcurrencyCeiling ?? pipelineConfig.workerPool.concurrency,
+      initialConcurrency: pipelineConfig.workerPool.concurrency,
+      storedOptimum: (endpoint) =>
+        endpoint.url === undefined
+          ? undefined
+          : registry?.readEmbeddingThroughputOptimum?.(endpoint.url, endpoint.model, endpoint.provider),
     });
   }
 
@@ -496,7 +615,7 @@ export abstract class BaseIndexingPipeline {
 
   // ── Teardown ─────────────────────────────────────────────
 
-  private async flushAndShutdown(chunkPipeline: ChunkPipeline, chunkerPool: ChunkerPool): Promise<void> {
+  private async flushAndShutdown(chunkPipeline: ChunkPipeline, chunkerPool: ChunkerPoolPort): Promise<void> {
     await chunkPipeline.flush();
     await Promise.all([chunkPipeline.shutdown(), chunkerPool.shutdown()]);
   }

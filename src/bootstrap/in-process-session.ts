@@ -14,15 +14,16 @@ const RELEASE_TIMEOUT_MS = 5_000;
  * The server is the one `tea-rags server` serves: same runtime preparation
  * (`prepareMcpServerRuntime`), same `createConfiguredServer`, so the tool set,
  * the codegraph gating, the schemas, the error middleware and the formatters
- * are the production ones. The single difference is the auto-update trigger,
- * which stays off — see `ConfiguredServerOptions.autoUpdate`.
+ * are the production ones. The differences follow from answering once: the
+ * auto-update trigger stays off (`ConfiguredServerOptions.autoUpdate`), and no
+ * working tree is watched (`McpServerRuntimeOptions.watchWorkingTrees`).
  *
  * `close()` disconnects both transport ends and then releases the AppContext
  * (registry watcher, embedded-Qdrant ref, codegraph pools, git children),
  * bounded so a hanging release cannot keep a one-shot CLI alive.
  */
 export async function openInProcessMcpSession(): Promise<InProcessToolSession> {
-  const { ctx, promptsConfig } = await prepareMcpServerRuntime();
+  const { ctx, promptsConfig } = await prepareMcpServerRuntime({ watchWorkingTrees: false });
   const server = createConfiguredServer(ctx, promptsConfig, { autoUpdate: false });
   const session = await connectInProcessClient(server);
 

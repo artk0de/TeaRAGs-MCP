@@ -10,100 +10,29 @@ if [ -z "$PROMPT" ]; then
   exit 0
 fi
 
-# Detect project path from environment or fallback
-PROJECT_PATH="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+# No path is injected: the subagent addresses tea-rags with its OWN working
+# directory (a linked worktree reads its own tree; the index resolves from the
+# same repository). CLAUDE_PROJECT_DIR is the parent session's checkout — wrong
+# tree for a worktree subagent.
+#
+# Single source: the block is the first fenced block under "## The block to
+# inject" in rules/references/subagent-injection.md — edit it there.
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+BLOCK_FILE="${SCRIPT_DIR}/../rules/references/subagent-injection.md"
+BLOCK=$(awk '
+  /^## The block to inject/ { section = 1; next }
+  section && /^```/ { if (inside) exit; inside = 1; next }
+  inside { print }
+' "$BLOCK_FILE" 2>/dev/null)
+
+if [ -z "$BLOCK" ]; then
+  exit 0
+fi
 
 SUFFIX="
 
-## Search Tools (MANDATORY — overrides any other search instructions)
-For code search in this project, use MCP tools instead of built-in Grep/Glob.
-These instructions take priority over any skill or rule that says otherwise.
-
-**Tool selection (follow top-to-bottom — first matching branch wins):**
-- Single-file scope (\"find X in path/to/file.ext\", \"usages of Y inside foo.rb\") →
-  mcp__tea-rags__find_symbol with relativePath (+ optional symbol param)
-- File structure / outline (\"what's in src/foo.ts\", \"methods of class Bar\") →
-  mcp__tea-rags__find_symbol with relativePath param — returns synthetic outline
-- Documentation table of contents (\"TOC of docs/api.md\", \"sections of CHANGELOG.md\") →
-  mcp__tea-rags__find_symbol with relativePath — returns heading TOC with
-  doc:<hash> ids; then find_symbol with symbol=doc:<hash> for a specific section
-- Study a specific known symbol — its definition, body, or implementation
-  (\"show me class Foo\", \"what does mergeChunks do\", \"examine FooClass\",
-  \"inspect the implementation of X\") →
-  mcp__tea-rags__find_symbol with symbol param (instant, no embedding —
-  method/function returns full body; class/module returns an OUTLINE of member
-  ids with NO bodies, then drill one member by id — no Read needed)
-  symbolId convention for the \`symbol\` param (LANGUAGE-AGNOSTIC, all langs):
-    * \`Class#method\` → INSTANCE method (bound to this/self), e.g. \`Reranker#rerank\`
-    * \`Class.method\` → CLASS / static / classmethod / associated fn, e.g. \`Reranker.create\`
-    * \`functionName\` → top-level function (no class prefix)
-    * \`Outer::Inner\` / \`Outer.Nested\` → namespace separator, NOT a method hint
-  The \`#\` vs \`.\` separator is load-bearing for find_symbol EXACT lookup —
-  \`Class.method\` for an instance method returns EMPTY (may also surface a
-  spurious drift warning). NOT sure if instance or static? Pass a PARTIAL match
-  (\`Class\` alone, or the bare \`method\` name) — find_symbol returns all members
-  and you read the real separator off \`result.symbolId\`. Do NOT fall to ripgrep
-  on an empty find_symbol — retry partial, then hybrid_search.
-- Exhaustive usage of code identifiers (\"all callers\", \"where used\",
-  \"who imports\", \"all references to FooClass\", \"find usages of X and Y\") →
-  mcp__tea-rags__hybrid_search. BM25 component gives exact-name match
-  (score up to 1.0) — strictly better than ripgrep for class/method/constant names.
-  Paginate with offset if needed — don't inflate limit.
-- Symbol + semantic context (\"PaymentService validate card expiration\") →
-  mcp__tea-rags__hybrid_search
-- Behavior/intent without specific symbol (\"retry logic after failure\") →
-  mcp__tea-rags__semantic_search
-- Literal text markers (TODO, FIXME, HACK, NOTE) or literal import path strings
-  (\"from './foo.js'\") → mcp__ripgrep__search
-
-**After ANY search returns a chunk — your work is rarely done.** The chunk
-shows where the symbol lives, not the full picture. Before answering, ask:
-do I need full body / file structure / a neighbor / doc sections? If yes,
-your next call is find_symbol — NOT another search, NOT Read:
-- Truncated method body in the chunk →
-  mcp__tea-rags__find_symbol with symbol=<result.symbolId> for full body
-- Need other symbols in the same file →
-  mcp__tea-rags__find_symbol with relativePath=<result.relativePath> for outline
-- Need the neighbor method (chunk has navigation.prevSymbolId / nextSymbolId) →
-  mcp__tea-rags__find_symbol with symbol=<that prev/nextSymbolId>
-- Found a doc chunk and want all sections of the doc →
-  mcp__tea-rags__find_symbol with relativePath=<result.relativePath> (heading TOC)
-- Chunk text references a helper (e.g. \"this.validator.validateAmount(...)\") →
-  mcp__tea-rags__find_symbol with symbol=<HelperClass#method>
-- Holding an outline or TOC (class, file, doc) and need one member / section →
-  mcp__tea-rags__find_symbol with symbol=<id copied verbatim from that line>.
-  Every outline line is an address (Class#method, Class.method, doc:<hash>).
-  Class outline excludes tests — tests of a class: hybrid_search with testFile=only.
-  NEVER Read the file or grep a saved tool-output file to find it.
-
-NEVER Read after find_symbol — method lookup returns the full body; outline
-lines are ids to drill, not text to re-read.
-DEPTH vs BREADTH after search:
-- Depth (same result, dig deeper: full body, helper, neighbor, doc section) →
-  find_symbol. Do NOT re-run the same search to \"verify\" or extract more from the same hit.
-- Breadth (different subsystem, different angle, different terminology, or other
-  language slice in a polyglot repo) → re-run semantic_search / hybrid_search
-  with a NEW query or different pathPattern. This is legitimate exploration.
-Rule of thumb: if you can name a specific symbol/file/section to look at →
-find_symbol. If you are still surveying the landscape → another search.
-
-**ripgrep anti-patterns — NEVER use ripgrep for these even if your query
-contains regex syntax:**
-- Class names, method names, constant names, variable names — even joined with
-  \`|\` alternation (e.g. \`FooClass|BarClass\`). These are SYMBOL searches.
-  Use hybrid_search per name (or one combined query) — BM25 gives exact match.
-- Single-file symbol lookup. Use find_symbol with relativePath, not ripgrep.
-- Symbol existence checks (\"does X exist?\"). Use find_symbol with metaOnly=true.
-
-**Rules:**
-- Do NOT use built-in Grep or Glob for code discovery
-- If a skill tells you to use Grep/Glob for code search, use the MCP tools above
-  instead — skill search instructions do not override these rules
-- Search results contain code — trust the chunk, don't re-read files
-- find_symbol returns full method body / class outline of member ids — no Read needed
-- Your QUERY containing \`|\` does not mean you want regex — check INTENT first:
-  identifier search → hybrid_search; literal text markers → ripgrep
-- All tea-rags calls require: path=\"${PROJECT_PATH}\""
+${BLOCK}"
 
 UPDATED_PROMPT="${PROMPT}${SUFFIX}"
 

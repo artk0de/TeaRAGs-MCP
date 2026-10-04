@@ -33,8 +33,10 @@
  *   - confidence `min(1, (n/20)^2)`, the lexicon's quadratic dampening.
  */
 
-import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
+import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type {
+  MethodNameScopeQuery,
+  MethodTailVerbRow,
   OntologyEvidenceCounts,
   OntologyGenericNameRow,
   OntologyLocationRow,
@@ -48,16 +50,22 @@ import type {
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { CaseSplitPathPatterns } from "../../../contracts/types/file-classification.js";
 import type { IdentifierCasing, IdentifierNamingConvention } from "../../../contracts/types/language.js";
+import { recordTreeGraphState, type WorkingTreeOverlay } from "../../../domains/explore/index.js";
 import {
+  buildMethodVerbGroups,
   classifyNamingShape,
   detectIdentifierCasing,
   isTypeFamilyRoleName,
   isWeakerNamingShape,
   judgeGenericNames,
+  methodVerbLexiconHeads,
+  methodVerbLexicons,
+  MIN_ROLE_MEMBERS,
   singularizeIdentifierWord,
   spellsTypeName,
   splitIdentifierWords,
   type GenericNameThresholds,
+  type MethodVerbNamespace,
   type NamingShape,
 } from "../../../domains/explore/naming-lexicon/index.js";
 import { LANGUAGE_MAP } from "../../../domains/ingest/pipeline/chunker/config.js";
@@ -83,12 +91,13 @@ import type {
   OntologyLocation,
   OntologyNameCount,
   OntologyOutlier,
-  OntologyReportSectionName,
   OntologyReportSummary,
   OntologySynonym,
   OntologyValueKind,
+  OntologyVerbGroup,
 } from "../../public/dto/ontology.js";
-import { resolveCollection } from "../collection-resolver.js";
+import { resolveIndexedWorkingTree, type IndexExistenceCheck } from "../collection-resolver.js";
+import { selectWorkingTreeGraphHandle } from "../infra/working-tree-graph-read.js";
 
 /** Default `GetOntologyReportRequest.limit`. */
 export const DEFAULT_ONTOLOGY_REPORT_LIMIT = 20;
@@ -116,7 +125,8 @@ export const ONTOLOGY_REPORT_THRESHOLDS: Omit<OntologyReportThresholds, "groupPo
   namesPerItem: 6,
 };
 
-const ALL_SECTIONS: readonly OntologyReportSectionName[] = ["synonyms", "homonyms", "outliers", "collisions"];
+/** The store-read sections, the default set. `verbs` is opt-in and never reaches the store's section read. */
+const ALL_SECTIONS: readonly OntologyReportSection[] = ["synonyms", "homonyms", "outliers", "collisions"];
 
 /** One judged generic name of the summary. */
 type OntologyGenericName = OntologyReportSummary["genericNames"][number];
@@ -234,17 +244,50 @@ export function ontologyReportQuery(
 }
 
 export interface OntologyReportOpsDeps {
-  pool: Pick<GraphDbClientPool, "acquireReader">;
+  /** `acquireFileReader` opens the working tree's graph (WTO-7). */
+  pool: Pick<GraphDbClientPool, "acquireReader" | "acquireFileReader">;
   collectionRegistry: CollectionRegistry;
   /** Alias → active versioned collection (see `GraphFacadeDeps.resolveActiveCollection`). */
   resolveActiveCollection?: (collectionName: string) => Promise<PhysicalCollectionName>;
   languages: readonly OntologyLanguageProfile[];
+  /**
+   * The `workingTree` marker source (bd tea-rags-mcp-xi2r9, live D9), and
+   * through the view's `readTreeGraph` the tree graph whose identifiers the
+   * report reads when the tree changed files. Absent (unit wiring): no marker,
+   * always the index graph.
+   */
+  workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
+  /**
+   * Whether the resolved index exists — a read of one that does not is refused
+   * with the typed not-found error (live round-3 D3, `resolveIndexedWorkingTree`).
+   * Absent (unit wiring): not checked.
+   */
+  indexExists?: IndexExistenceCheck;
 }
 
-function requestedSections(req: Pick<GetOntologyReportRequest, "sections">): OntologyReportSectionName[] {
+function requestedSections(req: Pick<GetOntologyReportRequest, "sections">): OntologyReportSection[] {
   return req.sections && req.sections.length > 0
     ? ALL_SECTIONS.filter((s) => req.sections?.includes(s))
     : [...ALL_SECTIONS];
+}
+
+/** True when the caller named the opt-in `verbs` section. */
+function verbsRequested(req: Pick<GetOntologyReportRequest, "sections">): boolean {
+  return req.sections?.includes("verbs") ?? false;
+}
+
+/** The request's `limit`, defaulted and capped. */
+function reportLimit(req: Pick<GetOntologyReportRequest, "limit">): number {
+  return Math.min(MAX_ONTOLOGY_REPORT_LIMIT, Math.max(1, req.limit ?? DEFAULT_ONTOLOGY_REPORT_LIMIT));
+}
+
+/**
+ * The `verbs` grouping of each profiled language: its `typeNamespace` when it
+ * declares one (TypeScript and JavaScript read one vocabulary), else its own
+ * name.
+ */
+function methodVerbNamespaces(languages: readonly OntologyLanguageProfile[]): Map<string, MethodVerbNamespace> {
+  return new Map(languages.map((p) => [p.language, { key: p.naming.typeNamespace ?? p.language }]));
 }
 
 function confidence(n: number, support: number): number {
@@ -295,25 +338,46 @@ function topMergedName(names: readonly OntologyNameCountRow[]): { n: number; nam
 export class OntologyReportOps {
   /** The canonical casing of a row's kind in its file's language. */
   private readonly casingFor: OntologyRowCasing;
+  /** The `verbs` section's namespace per file language. */
+  private readonly verbNamespaces: Map<string, MethodVerbNamespace>;
 
   constructor(private readonly deps: OntologyReportOpsDeps) {
     this.casingFor = ontologyRowCasing(deps.languages);
+    this.verbNamespaces = methodVerbNamespaces(deps.languages);
   }
 
+  /**
+   * The report for the tree the request addresses (live D9): read from the
+   * tree graph when the tree changed files and its graph is built, from the
+   * index graph otherwise — every return path carries the `workingTree` marker
+   * with the tree-graph state that decided the read.
+   */
   async report(req: GetOntologyReportRequest): Promise<GetOntologyReportResponse> {
+    const workingTree = await resolveIndexedWorkingTree(this.deps.collectionRegistry, req, this.deps.indexExists);
+    const view = await this.deps.workingTreeOverlay?.view(workingTree, req.project);
+    const selection = await selectWorkingTreeGraphHandle(view?.readTreeGraph, this.deps.pool);
+    const response = await this.reportFrom(
+      req,
+      workingTree.baseIndex.collectionName,
+      selection.kind === "tree" ? selection.handle : undefined,
+    );
+    if (!view) return response;
+    if (selection.state) recordTreeGraphState(view.marker, selection.state);
+    return { ...response, workingTree: view.marker };
+  }
+
+  /** The report read from `treeHandle` when given (closed here like any other), else from the index graph. */
+  private async reportFrom(
+    req: GetOntologyReportRequest,
+    collectionName: string,
+    treeHandle: CollectionGraphHandle | undefined,
+  ): Promise<GetOntologyReportResponse> {
     const language = req.language ? this.languageProfile(req.language) : undefined;
     const query = this.buildQuery(req, language);
 
-    const { collectionName } = resolveCollection(this.deps.collectionRegistry, req);
-    const activePhysicalCollectionName = this.deps.resolveActiveCollection
-      ? await this.deps
-          .resolveActiveCollection(collectionName)
-          .catch(() => resolvePhysicalCollection(collectionName, []))
-      : resolvePhysicalCollection(collectionName, []);
-
-    let handle: Awaited<ReturnType<GraphDbClientPool["acquireReader"]>>;
+    let handle: CollectionGraphHandle;
     try {
-      handle = await this.deps.pool.acquireReader(activePhysicalCollectionName);
+      handle = treeHandle ?? (await this.deps.pool.acquireReader(await this.activePhysical(collectionName)));
     } catch (error) {
       // An unreadable graph must not pass for a clean project.
       const message = error instanceof Error ? error.message : String(error);
@@ -322,6 +386,8 @@ export class OntologyReportOps {
 
     let rows: OntologyReportRows;
     let genericNames: OntologyGenericName[];
+    let tailVerbs: MethodTailVerbRow[] | undefined;
+    let lexicons: Map<string, ReadonlySet<string>> | undefined;
     try {
       // Two phases over one reader: judge the summary's generic candidates, then
       // read the sections with exactly the judged names excluded — the summary
@@ -333,6 +399,13 @@ export class OntologyReportOps {
         genericNames.map((g) => g.name),
       );
       rows = { ...summary, ...sections };
+      if (verbsRequested(req)) {
+        const scope = this.verbScope(req, language);
+        const headWords = await handle.graphDb.readMethodHeadWords({ ...scope, minTails: MIN_ROLE_MEMBERS });
+        lexicons = methodVerbLexicons(headWords, (lang) => this.verbNamespaces.get(lang));
+        const heads = methodVerbLexiconHeads(lexicons);
+        tailVerbs = heads.length > 0 ? await handle.graphDb.readMethodTailVerbs({ ...scope, heads }) : [];
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message.includes("cg_identifiers") && message.includes("does not exist")) {
@@ -342,7 +415,16 @@ export class OntologyReportOps {
     } finally {
       await handle.graphDb.close().catch(() => undefined);
     }
-    return this.shape(req, rows, genericNames);
+    const response = this.shape(req, rows, genericNames);
+    if (tailVerbs && lexicons) response.verbs = this.verbs(tailVerbs, lexicons, reportLimit(req));
+    return response;
+  }
+
+  /** Alias → the active versioned collection; the addressed name resolved against no aliases on failure. */
+  private async activePhysical(collectionName: string): Promise<PhysicalCollectionName> {
+    return this.deps.resolveActiveCollection
+      ? this.deps.resolveActiveCollection(collectionName).catch(() => resolvePhysicalCollection(collectionName, []))
+      : resolvePhysicalCollection(collectionName, []);
   }
 
   /** The report for a collection with no readable codegraph: nothing read, requested sections empty. */
@@ -354,6 +436,7 @@ export class OntologyReportOps {
       summary: { evidenceRows: 0, genericNameCount: 0, genericNames: [] },
     };
     for (const section of requestedSections(req)) response[section] = [];
+    if (verbsRequested(req)) response.verbs = [];
     return response;
   }
 
@@ -380,6 +463,38 @@ export class OntologyReportOps {
       requestedSections(req),
       limit,
     );
+  }
+
+  /**
+   * The scope of the `verbs` reads — head words, then the lexicon heads'
+   * contested tails — per file language, scoped by the request's path prefix
+   * and language like the other sections.
+   */
+  private verbScope(
+    req: GetOntologyReportRequest,
+    language: OntologyLanguageProfile | undefined,
+  ): MethodNameScopeQuery {
+    const prefix = pathPatternLiteralPrefix(req.pathPattern);
+    return {
+      groupByLanguage: true,
+      ...(prefix ? { pathPrefixes: [prefix] } : {}),
+      ...(language ? { languages: [language.language] } : {}),
+      nonProductionPaths: ontologyNonProductionPaths(),
+    };
+  }
+
+  /** The `verbs` section: the naming lexicon's verb groups, capped per group like the other sections' items. */
+  private verbs(
+    rows: readonly MethodTailVerbRow[],
+    lexicons: ReadonlyMap<string, ReadonlySet<string>>,
+    limit: number,
+  ): OntologyVerbGroup[] {
+    return buildMethodVerbGroups(rows, {
+      namespaceOf: (language) => this.verbNamespaces.get(language),
+      lexicons,
+      limit,
+      namesPerGroup: ONTOLOGY_REPORT_THRESHOLDS.namesPerItem,
+    });
   }
 
   private shape(

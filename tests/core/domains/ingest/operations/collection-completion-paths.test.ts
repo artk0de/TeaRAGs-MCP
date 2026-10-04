@@ -39,6 +39,7 @@ import {
   MockEmbeddingProvider,
   MockQdrantManager,
 } from "../__helpers__/test-helpers.js";
+import { warmChunkerPoolFactory } from "../__helpers__/warm-chunker-pool.js";
 import { IngestFacade } from "../../../../../src/core/api/index.js";
 import type { EnrichmentExecutor } from "../../../../../src/core/contracts/types/enrichment-executor.js";
 import type { EnrichmentProvider } from "../../../../../src/core/contracts/types/provider.js";
@@ -153,6 +154,7 @@ describe("collection completion on every index-run path (bd tea-rags-mcp-l1ot.2)
       embeddings: new MockEmbeddingProvider(),
       config: { ...defaultTestConfig(), supportedExtensions: [".ts"] },
       trajectoryConfig: defaultTrajectoryConfig(),
+      createChunkerPool: warmChunkerPoolFactory,
       enrichmentProviders: [baseProvider("git"), graphProvider()],
       enrichmentExecutor: recordingExecutor(),
     } as never);

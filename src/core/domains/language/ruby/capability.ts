@@ -77,7 +77,11 @@ export const capability: LanguageCapability = {
   // the cap less the reserved header prefix, so a group that the header used to
   // push over the cap is no longer line-cut into `#partN` windows; the cut
   // points and chunk ids of such classes move.
-  versions: { chunking: 2, walker: 5, codegraphSchema: 2 },
+  // walker 6: bd tea-rags-mcp-0qaht — class variables (`@@x`) and memoization
+  // (`x ||= v`) publish `identifierDeclarations` rows, and accessor macros
+  // declare `field` rows; a walker-5 index carries none of them, so only the
+  // recompute adds them to the naming lexicon.
+  versions: { chunking: 2, walker: 6, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

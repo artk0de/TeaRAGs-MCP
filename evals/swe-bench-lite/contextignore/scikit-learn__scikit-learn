@@ -1,0 +1,10 @@
+# Installed as .contextignore into every scikit-learn task repository by `prepare`.
+# Checked against the gold patches of every scikit-learn task in SWE-bench Lite.
+
+# Vendored Python (joblib, six, funcsigs, _arff, _lobpcg, _packaging, _pilutil).
+/sklearn/externals/
+# Vendored reference CBLAS sources.
+/sklearn/src/cblas/
+# Documentation tooling: the Sphinx theme's JS and the vendored pyparsing of the ML map.
+/doc/themes/
+/doc/tutorial/machine_learning_map/

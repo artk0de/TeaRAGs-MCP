@@ -25,6 +25,7 @@ describe("CodegraphEnrichmentProvider — run-stats persistence (2jet-D)", () =>
   let tmp: string;
   let client: DuckDbGraphClient;
   let provider: CodegraphEnrichmentProvider;
+  let origCwd: () => string;
 
   const makeRoot = (): string => {
     const root = mkdtempSync(join(tmpdir(), "cg-runstats-"));
@@ -51,10 +52,16 @@ describe("CodegraphEnrichmentProvider — run-stats persistence (2jet-D)", () =>
       composer: new DefaultSymbolIdComposer(),
       collectSymbols,
     });
+    // `beginExtractionRun()` truncates the direct-mode `xpass-__direct__.ndjson`
+    // under `process.cwd()`; keep it in this test's temp root so it never touches
+    // a sibling file's spill under the shared repo root (bd tea-rags-mcp-bbo1h.8).
+    origCwd = process.cwd;
+    Object.defineProperty(process, "cwd", { value: () => tmp, configurable: true });
   });
 
   afterEach(async () => {
     await client.close();
+    Object.defineProperty(process, "cwd", { value: origCwd, configurable: true });
     rmSync(tmp, { recursive: true, force: true });
   });
 

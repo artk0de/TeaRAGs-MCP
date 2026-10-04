@@ -14,12 +14,16 @@
  *    still in the working tree) is dropped: its pairs describe code that no
  *    longer exists, and plain deletions are invisible to rename following.
  *
- * Merge commits are dropped by subject (`MERGE_SUBJECT`) and by parent count —
- * a merge restates its branch's changes as one bundle.
+ * Merge commits are dropped by parent count. The subject is NOT consulted: a
+ * numstat row IS attributable history, and a single-parent commit whose
+ * subject says "Merge ..." carries real changes — a squash-merged PR, or the
+ * grafted root of a shallow clone, whose whole-tree diff this rule must keep
+ * (bd tea-rags-mcp-12x1y). A true merge arrives with no numstat rows at all,
+ * so the parent check is the only arm that fires.
  */
 
 import type { RelPath } from "../../../../../contracts/types/codegraph.js";
-import { MERGE_SUBJECT, resolveHeadPaths, type GitCommitDiscoveryEntry } from "../../../git/index.js";
+import { resolveHeadPaths, type GitCommitDiscoveryEntry } from "../../../git/index.js";
 import type { CochangeCommit } from "./commit-bundles.js";
 
 export interface CochangeHistoryScope {
@@ -51,7 +55,7 @@ export function scopeCochangeHistory(
 
   const scoped: CochangeCommit[] = [];
   entries.forEach(({ commit }, index) => {
-    if (commit.parents.length > 1 || MERGE_SUBJECT.test(commit.body.split("\n")[0])) return;
+    if (commit.parents.length > 1) return;
     const files = new Set<RelPath>();
     for (const { headPath } of attributed[index]) {
       if (!headPath.startsWith(scope.projectPrefix)) continue;

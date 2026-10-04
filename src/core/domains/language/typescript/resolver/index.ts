@@ -1,4 +1,9 @@
-export { TSCallResolver } from "./ts-resolver.js";
+export { TSCallResolver, type TSCallResolverOptions } from "./ts-resolver.js";
+export {
+  TS_SOURCE_FILE_STORE_TEXT_BYTES_DEFAULT,
+  TSSourceFileStore,
+  type TSSourceFileStoreUsage,
+} from "./ts-source-file-store.js";
 export { loadTsConfig, loadTsConfigFileNames } from "./ts-config-loader.js";
 export {
   createProjectFileProbe,

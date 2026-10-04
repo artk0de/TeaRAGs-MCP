@@ -157,7 +157,7 @@ function processOver(
     snapshotDir: "/tmp/snap",
     allPayloadSignals: [],
     languageCodeVersions: steps.languageCodeVersions ?? SEED_BUILD,
-    collectionRegistry: { stampLanguageVersions: stores.stampLanguageVersions },
+    languageVersionStamper: { stampLanguageVersions: stores.stampLanguageVersions },
     driftReporter: { reset: vi.fn() },
     resolveCollectionForPath: async (path) => Promise.resolve(path === SIBLING ? "code_main" : "code_wt"),
     envSnapshot: { INGEST_CHUNK_SIZE: "2500" },

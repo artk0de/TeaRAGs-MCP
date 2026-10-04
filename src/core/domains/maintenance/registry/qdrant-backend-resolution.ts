@@ -26,22 +26,12 @@
  */
 
 import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
-import type { CollectionEntry } from "../../../contracts/types/registry.js";
+import type { CollectionEntry, RegistryQdrantBackend } from "../../../contracts/types/registry.js";
 import { RegistryQdrantBackendUnresolvedError } from "./errors.js";
 
-/**
- * The backend an entry resolves to.
- *
- * `embedded` carries no address on purpose: the daemon rebinds an ephemeral
- * port on restart, so the only durable way to name it is the marker the worker
- * re-resolves through `ensureDaemon`.
- */
-export type RegistryQdrantBackend =
-  | { kind: "embedded" }
-  | { kind: "external"; url: string }
-  /** No address on record (recovered stub) — the caller seeds nothing. */
-  | { kind: "unaddressed" };
-
+// `RegistryQdrantBackend` is defined in contracts (bd tea-rags-mcp-0qaht.36);
+// re-exported here unchanged for this domain's consumers.
+export type { RegistryQdrantBackend };
 /**
  * First release whose write path derives `qdrantUrl` and `qdrantEmbedded` from
  * a single `isEmbedded` read, making the pair self-consistent. Shipped as

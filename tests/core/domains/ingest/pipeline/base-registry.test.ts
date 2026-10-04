@@ -5,6 +5,7 @@
  * CollectionEntry in CollectionRegistry (T14 of the Project Registry epic).
  */
 
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,6 +21,7 @@ import {
   MockEmbeddingProvider,
   MockQdrantManager,
 } from "../__helpers__/test-helpers.js";
+import { warmChunkerPoolFactory } from "../__helpers__/warm-chunker-pool.js";
 import { IngestFacade } from "../../../../../src/core/api/index.js";
 import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
 import type { IngestCodeConfig } from "../../../../../src/core/types.js";
@@ -74,6 +76,7 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
       embeddings,
       config,
       trajectoryConfig: defaultTrajectoryConfig(),
+      createChunkerPool: warmChunkerPoolFactory,
       collectionRegistry: registry,
     });
   });
@@ -277,6 +280,87 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
       indexedCommit: "abc123def",
       indexedDirty: false,
     });
+  });
+
+  it("records the git block of the enclosing repository when the codebase is a subdirectory of it (live P2-2)", async () => {
+    mkdirSync(join(codebaseDir, ".git", "refs", "heads"), { recursive: true });
+    writeFileSync(join(codebaseDir, ".git", "HEAD"), "ref: refs/heads/master\n");
+    writeFileSync(join(codebaseDir, ".git", "refs", "heads", "master"), "abc123def\n");
+    const sub = join(codebaseDir, "sub");
+    mkdirSync(sub);
+
+    await createTestFile(sub, "gitstate.ts", "export const x = 1;");
+    await ingest.indexCodebase(sub);
+    const status = await ingest.getIndexStatus(sub);
+
+    expect(registry.get(status.collectionName!)?.git).toEqual({
+      indexedBranch: "master",
+      indexedCommit: "abc123def",
+      indexedDirty: false,
+    });
+  });
+
+  it("records the indexed files that differ from the indexed commit (live P1-1)", async () => {
+    const git = (...args: string[]): string =>
+      execFileSync("git", args, {
+        cwd: codebaseDir,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: "t",
+          GIT_AUTHOR_EMAIL: "t@x",
+          GIT_COMMITTER_NAME: "t",
+          GIT_COMMITTER_EMAIL: "t@x",
+        },
+      });
+    git("init", "-q", "-b", "main");
+    await createTestFile(codebaseDir, "a.ts", "export const a = 1;");
+    await createTestFile(codebaseDir, "b.ts", "export const b = 1;");
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+    await createTestFile(codebaseDir, "a.ts", "export const a = 2;");
+    await createTestFile(codebaseDir, "notes.bin", "not an indexed file");
+
+    await ingest.indexCodebase(codebaseDir);
+    const status = await ingest.getIndexStatus(codebaseDir);
+
+    expect(registry.get(status.collectionName!)?.git).toMatchObject({
+      indexedBranch: "main",
+      indexedDirty: true,
+      indexedDirtyPaths: ["a.ts"],
+    });
+  });
+
+  // No count cap: every dirty indexed file is listed, and the legacy overflow
+  // flag is never written.
+  it("records every dirty indexed file of a tree with 250 of them, sorted, with no overflow flag", async () => {
+    const git = (...args: string[]): string =>
+      execFileSync("git", args, {
+        cwd: codebaseDir,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: "t",
+          GIT_AUTHOR_EMAIL: "t@x",
+          GIT_COMMITTER_NAME: "t",
+          GIT_COMMITTER_EMAIL: "t@x",
+        },
+      });
+    git("init", "-q", "-b", "main");
+    const removed = Array.from({ length: 250 }, (_, i) => `gone${i}.ts`);
+    for (const name of removed) writeFileSync(join(codebaseDir, name), `export const v = 1;\n`);
+    await createTestFile(codebaseDir, "kept.ts", "export const kept = 1;");
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+    for (const name of removed) rmSync(join(codebaseDir, name));
+
+    await ingest.indexCodebase(codebaseDir);
+    const status = await ingest.getIndexStatus(codebaseDir);
+
+    const gitState = registry.get(status.collectionName!)?.git;
+    expect(gitState?.indexedDirty).toBe(true);
+    expect(gitState?.indexedDirtyPaths).toEqual([...removed].sort());
+    expect(gitState).not.toHaveProperty("indexedDirtyPathsOverflowed");
   });
 
   it("omits entry.git when the codebase is not a git repository (hpg2)", async () => {

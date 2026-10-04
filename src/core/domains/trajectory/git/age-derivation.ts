@@ -31,7 +31,7 @@
 import { blend, normalize } from "../../../contracts/signal-utils.js";
 import type { FilterPercentile } from "../../../contracts/types/filter-preset.js";
 import type { AgeDerivationCapability, SignalLevel } from "../../../contracts/types/reranker.js";
-import { chunkField, fileField, payloadAlpha } from "./rerank/derived-signals/helpers.js";
+import { chunkField, fileField, payloadAlpha } from "./infra/payload-accessors.js";
 
 /** Seconds per day — the stamp and the query clock share the unix-seconds unit. */
 export const DAY_SECONDS = 86_400;

@@ -10,6 +10,8 @@
 
 import { execFile, execFileSync, spawn, type ExecFileOptions } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { copyFile, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { resolveGitExecutable } from "../../../../infra/git-executable.js";
@@ -556,25 +558,33 @@ export async function readCommitFileNumstat(
  * without the pathspec (`--no-walk`, one spawn) and their rows touching a named
  * path on either side replace the pathspec-limited ones. Commits that only
  * modified a named path keep their pathspec rows. Log order is preserved.
+ *
+ * `since` present bounds both logs with `--since` and walks them with
+ * `--full-history`: the pathspec-limited form of a repo-wide `git log --since
+ * --numstat` (the run-scoped discovery an index run reads), whose commits a
+ * pathspec log would otherwise simplify away wherever a merge is TREESAME to
+ * one parent for the path (bd tea-rags-mcp-xi2r9).
  */
 export async function readCommitFileNumstatForPaths(
   repoRoot: string,
   paths: string[],
   timeoutMs?: number,
+  since?: Date,
 ): Promise<CommitFileNumstat[]> {
   if (paths.length === 0) return [];
   const effectiveTimeoutMs = timeoutMs ?? 30000;
+  const window = since ? [`--since=${since.toISOString()}`, "--full-history"] : [];
   const entries = parseCommitFileNumstat(
     await execFileForPathspec(
       repoRoot,
-      ["log", "HEAD", "--numstat", NUMSTAT_LOG_FORMAT_WITH_COMMITTER, "--", ...paths],
+      ["log", "HEAD", ...window, "--numstat", NUMSTAT_LOG_FORMAT_WITH_COMMITTER, "--", ...paths],
       effectiveTimeoutMs,
     ),
   );
   const addOrDelete = (
     await execFileForPathspec(
       repoRoot,
-      ["log", "HEAD", "--diff-filter=AD", "--format=%H", "--", ...paths],
+      ["log", "HEAD", ...window, "--diff-filter=AD", "--format=%H", "--", ...paths],
       effectiveTimeoutMs,
     )
   )
@@ -672,6 +682,114 @@ export async function listWorktreeDeletions(repoRoot: string, timeoutMs = TREE_L
   return splitNulTerminated(out);
 }
 
+/**
+ * Paths among `paths` whose working-tree content differs from HEAD — edited,
+ * staged or not — repo-relative (bd tea-rags-mcp-xi2r9). Added, deleted and
+ * untracked paths are not listed: only a path HEAD holds has HEAD rows to
+ * carry a working row onto. `--no-renames`, so a moved file's new side reads
+ * as an add and is left out.
+ */
+export async function listWorktreeModifications(
+  repoRoot: string,
+  paths: readonly string[],
+  timeoutMs = TREE_LISTING_STALL_MS,
+): Promise<string[]> {
+  if (paths.length === 0) return [];
+  const out = await execFileForPathspec(
+    repoRoot,
+    ["diff", "--no-ext-diff", "--no-renames", "--name-only", "-z", "--diff-filter=M", "HEAD", "--", ...paths],
+    timeoutMs,
+  );
+  return splitNulTerminated(out);
+}
+
+/**
+ * When content was committed (bd tea-rags-mcp-xi2r9.3): the commit time, in
+ * epoch ms, of the newest commit on HEAD's history whose diff of
+ * `relativePath` adds or drops the blob `blobId`
+ * (`git log -1 --format=%ct --find-object`). `null` when no such commit
+ * exists — the content is not committed. A path outside a repository rejects.
+ */
+export async function readBlobCommitTime(
+  root: string,
+  relativePath: string,
+  blobId: string,
+  timeoutMs = TREE_LISTING_STALL_MS,
+): Promise<number | null> {
+  const out = await execWithStallGuard(
+    resolveGitExecutable(),
+    ["log", "-1", "--format=%ct", `--find-object=${blobId}`, "HEAD", "--", relativePath],
+    { cwd: root, stallTimeoutMs: timeoutMs },
+  );
+  const seconds = Number(out.trim());
+  return out.trim() === "" || !Number.isFinite(seconds) ? null : seconds * 1000;
+}
+
+/**
+ * The commits on either side of `sinceCommit...headCommit` that touched each
+ * path, repo-relative, newest first (`--no-renames`: a committed move lists
+ * both its sides under its commit).
+ */
+export interface PathCommitsSince {
+  /** Commits reachable from HEAD and not from the stamp (`since..head`) — what HEAD's history adds. */
+  headSide: ReadonlyMap<string, readonly string[]>;
+  /**
+   * Commits reachable from the stamp and not from HEAD — what HEAD's history
+   * lacks. Empty when HEAD descends from the stamp.
+   */
+  stampSide: ReadonlyMap<string, readonly string[]>;
+}
+
+const COMMIT_HEADER_MARK = "\u0001";
+
+/**
+ * Which commits on either side of the stamp touched which paths — one spawn for
+ * the whole symmetric range (`git log --left-right since...head`). The
+ * working-tree overlay's answer to "whose history moved since the index" (live
+ * G1) and to "which commits does a path's history at HEAD hold that the stamp's
+ * does not" (live C2: a path's on-demand git signals are keyed by exactly
+ * that, so a commit touching one file leaves every other file's record valid).
+ * bd tea-rags-mcp-xi2r9. An unknown commit or a path outside a repository rejects.
+ */
+export async function readPathCommitsSince(
+  repoRoot: string,
+  sinceCommit: string,
+  headCommit: string,
+  timeoutMs = TREE_LISTING_STALL_MS,
+): Promise<PathCommitsSince> {
+  const out = await execWithStallGuard(
+    resolveGitExecutable(),
+    [
+      "log",
+      "-z",
+      `--format=${COMMIT_HEADER_MARK}%m%H`,
+      "--name-only",
+      "--no-renames",
+      "--left-right",
+      `${sinceCommit}...${headCommit}`,
+      "--",
+    ],
+    { cwd: repoRoot, stallTimeoutMs: timeoutMs },
+  );
+  const headSide = new Map<string, string[]>();
+  const stampSide = new Map<string, string[]>();
+  let commit: { sha: string; side: Map<string, string[]> } | undefined;
+  for (const token of splitNulTerminated(out)) {
+    const entry = token.replace(/^\n+/, "");
+    if (entry === "") continue;
+    if (entry.startsWith(COMMIT_HEADER_MARK)) {
+      const side = entry.charAt(1) === "<" ? stampSide : headSide;
+      commit = { sha: entry.slice(2), side };
+      continue;
+    }
+    if (!commit) continue;
+    const shas = commit.side.get(entry);
+    if (shas) shas.push(commit.sha);
+    else commit.side.set(entry, [commit.sha]);
+  }
+  return { headSide, stampSide };
+}
+
 function splitNulTerminated(out: string): string[] {
   return out.split("\0").filter((p) => p.length > 0);
 }
@@ -703,6 +821,137 @@ export async function listChangedFiles(
     listUntrackedFiles(repoRoot, [], timeoutMs),
   ]);
   return [...new Set([...splitNulTerminated(tracked), ...untracked])].sort();
+}
+
+/** The working tree against a commit, repo-relative: what reads differently and what is gone. */
+export interface WorkingTreeNameStatus {
+  changed: string[];
+  deleted: string[];
+  /** The untracked, non-ignored files among `changed`. */
+  untracked: string[];
+}
+
+/**
+ * The working tree against `commit` (staged, unstaged and committed-since alike):
+ * `git diff --name-status --no-renames <commit>` — a `D` entry is deleted, every
+ * other status changed, so a move reads as its source deleted and its target
+ * changed — plus every untracked, non-ignored file as changed. Both lists sorted.
+ * An unknown commit or a path outside a repository rejects.
+ */
+export async function readWorkingTreeChanges(
+  repoRoot: string,
+  commit: string,
+  timeoutMs = TREE_LISTING_STALL_MS,
+): Promise<WorkingTreeNameStatus> {
+  const [nameStatus, untracked] = await Promise.all([
+    execWithStallGuard(
+      resolveGitExecutable(),
+      ["diff", "--no-ext-diff", "--no-renames", "--name-status", "-z", commit, "--"],
+      { cwd: repoRoot, stallTimeoutMs: timeoutMs },
+    ),
+    listUntrackedFiles(repoRoot, [], timeoutMs),
+  ]);
+  const changed = new Set(untracked);
+  const deleted: string[] = [];
+  const fields = splitNulTerminated(nameStatus);
+  for (let i = 0; i + 1 < fields.length; i += 2) {
+    if (fields[i] === "D") deleted.push(fields[i + 1]);
+    else changed.add(fields[i + 1]);
+  }
+  return { changed: [...changed].sort(), deleted: deleted.sort(), untracked: [...untracked].sort() };
+}
+
+/** One move git detected between a commit and the working tree, repo-relative. */
+export interface WorkingTreeRenamePair {
+  from: string;
+  to: string;
+}
+
+/**
+ * The moves of the working tree against `commit`, as git's own rename
+ * detection pairs them (`git diff -M --name-status <commit>`): staged, unstaged
+ * and committed-since alike, edits within the similarity threshold included.
+ *
+ * `git diff` sees only paths the index tracks, so an unstaged move — the old
+ * path deleted, the new one untracked — would read as an unrelated delete and
+ * add. The `untracked` files are therefore marked intent-to-add (`add -N`) in a
+ * THROWAWAY copy of the index (`GIT_INDEX_FILE`), which makes them diffable
+ * candidates; the repository's own index is never written.
+ */
+export async function readWorkingTreeRenames(
+  repoRoot: string,
+  commit: string,
+  untracked: readonly string[],
+  timeoutMs = TREE_LISTING_STALL_MS,
+): Promise<WorkingTreeRenamePair[]> {
+  const git = resolveGitExecutable();
+  const diffArgs = ["diff", "--no-ext-diff", "-M", "--name-status", "-z", commit, "--"];
+  if (untracked.length === 0) {
+    return parseRenamePairs(await execWithStallGuard(git, diffArgs, { cwd: repoRoot, stallTimeoutMs: timeoutMs }));
+  }
+  const indexPath = (
+    await execWithStallGuard(git, ["rev-parse", "--path-format=absolute", "--git-path", "index"], {
+      cwd: repoRoot,
+      stallTimeoutMs: timeoutMs,
+    })
+  ).trim();
+  const scratch = await mkdtemp(join(tmpdir(), "tea-rags-renames-"));
+  const scratchIndex = join(scratch, "index");
+  try {
+    // A repository with no index yet (nothing ever staged) has no file to copy:
+    // the scratch index then starts empty, which is what git would read.
+    await copyFile(indexPath, scratchIndex).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    });
+    const env = { ...process.env, GIT_INDEX_FILE: scratchIndex };
+    for (let i = 0; i < untracked.length; i += UNTRACKED_INTENT_BATCH) {
+      await execWithStallGuard(
+        git,
+        ["--literal-pathspecs", "add", "-N", "--", ...untracked.slice(i, i + UNTRACKED_INTENT_BATCH)],
+        {
+          cwd: repoRoot,
+          stallTimeoutMs: timeoutMs,
+          env,
+        },
+      );
+    }
+    return parseRenamePairs(await execWithStallGuard(git, diffArgs, { cwd: repoRoot, stallTimeoutMs: timeoutMs, env }));
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+}
+
+/** Paths per `add -N` — keeps the argv within OS ARG_MAX limits. */
+const UNTRACKED_INTENT_BATCH = 500;
+
+/** The `R<score> old new` entries of a `--name-status -z` diff; every other status names one path. */
+function parseRenamePairs(nameStatus: string): WorkingTreeRenamePair[] {
+  const fields = splitNulTerminated(nameStatus);
+  const pairs: WorkingTreeRenamePair[] = [];
+  for (let i = 0; i < fields.length; ) {
+    const status = fields[i];
+    if (status.startsWith("R") || status.startsWith("C")) {
+      if (status.startsWith("R") && i + 2 < fields.length) pairs.push({ from: fields[i + 1], to: fields[i + 2] });
+      i += 3;
+    } else {
+      i += 2;
+    }
+  }
+  return pairs;
+}
+
+/**
+ * `git status --porcelain=v2 -z --branch --untracked-files=all`, verbatim: one
+ * spawn that carries HEAD (the `# branch.oid <sha>` header, `(initial)` before
+ * the first commit) and every staged, unstaged and untracked path. The text does
+ * not move when an already-modified file is edited again.
+ */
+export async function readStatusPorcelain(repoRoot: string, timeoutMs = TREE_LISTING_STALL_MS): Promise<string> {
+  return execWithStallGuard(
+    resolveGitExecutable(),
+    ["status", "--porcelain=v2", "-z", "--branch", "--untracked-files=all"],
+    { cwd: repoRoot, stallTimeoutMs: timeoutMs },
+  );
 }
 
 /**

@@ -112,6 +112,15 @@ export async function removeStagedCopy(stagingPath: string): Promise<void> {
   await unlink(`${stagingPath}.wal`).catch(() => undefined);
 }
 
+/**
+ * Where a snapshot export stages its copy before renaming it onto `targetPath`
+ * (bd tea-rags-mcp-xi2r9): beside the target, so the rename stays on one
+ * filesystem and is atomic.
+ */
+export function snapshotStagingPath(targetPath: string): string {
+  return `${targetPath}.snapshot-tmp`;
+}
+
 /** Whether `<dbPath>.wal` holds anything a reopen would replay. */
 export function walHoldsData(dbPath: string): boolean {
   const wal = `${dbPath}.wal`;
@@ -124,14 +133,22 @@ export function walHoldsData(dbPath: string): boolean {
  * index recreated, and no WAL left beside the copy — so the file alone IS the
  * database once renamed.
  *
- * The caller must have checkpointed first and must hold every other writer off
- * the connection; a row committed after the copy began would not be in it.
+ * The caller must hold every other writer off the connection; a row committed
+ * after the copy began would not be in it. The copy reads the database as the
+ * connection sees it, WAL included, so a checkpoint is needed only by a caller
+ * that goes on to replace the live file (compaction) — not for the copy itself.
  * A driver failure rejects; a copy that does not match is reported as a
  * `mismatch`. Either way the caller removes the staging files.
+ *
+ * The copy is attached `(READ_WRITE)` explicitly: a READ_ONLY instance attaches
+ * every database read-only by default and refuses to create a missing one
+ * ("Cannot open database … in read-only mode: database does not exist",
+ * measured on @duckdb/node-api 1.5.3), so a snapshot export from a read-only
+ * session needs the mode spelled out. A read-write instance gets what it got.
  */
 export async function writeCompactedCopy(conn: DuckDBConnection, stagingPath: string): Promise<CompactedCopyVerdict> {
   const database = await currentDatabaseName(conn);
-  await conn.run(`ATTACH ${quoteLiteral(stagingPath)} AS ${COMPACTION_TARGET_ALIAS}`);
+  await conn.run(`ATTACH ${quoteLiteral(stagingPath)} AS ${COMPACTION_TARGET_ALIAS} (READ_WRITE)`);
   let verdict: CompactedCopyVerdict;
   try {
     await conn.run(`COPY FROM DATABASE ${quoteIdentifier(database)} TO ${COMPACTION_TARGET_ALIAS}`);

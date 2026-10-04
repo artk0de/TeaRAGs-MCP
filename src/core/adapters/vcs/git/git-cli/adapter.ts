@@ -27,6 +27,7 @@ import {
   isAncestor,
   listTreePaths,
   listWorktreeDeletions,
+  listWorktreeModifications,
   readBlobAsString,
   readCommitFileNumstat,
   readCommitFileNumstatForPaths,
@@ -89,6 +90,10 @@ export class GitCliAdapter extends VcsGitAdapter {
     return listWorktreeDeletions(this.repoRoot, timeoutMs);
   }
 
+  async listWorktreeModifications(paths: readonly string[], timeoutMs?: number): Promise<string[]> {
+    return listWorktreeModifications(this.repoRoot, paths, timeoutMs);
+  }
+
   async getCommitsByPathspec(
     sinceDate: Date,
     filePaths: string[],
@@ -101,8 +106,8 @@ export class GitCliAdapter extends VcsGitAdapter {
     return buildViaCliForPaths(this.repoRoot, paths, timeoutMs);
   }
 
-  async readCommitFileNumstatForPaths(paths: string[], timeoutMs?: number): Promise<CommitFileNumstat[]> {
-    return readCommitFileNumstatForPaths(this.repoRoot, paths, timeoutMs);
+  async readCommitFileNumstatForPaths(paths: string[], timeoutMs?: number, since?: Date): Promise<CommitFileNumstat[]> {
+    return readCommitFileNumstatForPaths(this.repoRoot, paths, timeoutMs, since);
   }
 
   createBlobBatchReader(): BlobBatchReader {

@@ -140,7 +140,7 @@ export class ChunkChurnWalkPool {
     if (!entry) return;
     this.pending.delete(response.id);
     if (response.type === "walked") {
-      entry.resolve({ overlays: response.overlays, stats: response.stats });
+      entry.resolve({ overlays: response.overlays, stats: response.stats, symbolCommits: response.symbolCommits });
     } else {
       entry.reject(new ChunkChurnWalkThreadError(response.error));
     }

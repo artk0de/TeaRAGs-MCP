@@ -1,6 +1,7 @@
 /**
  * The temporal co-change store (bd tea-rags-mcp-x4rpp) — `cg_temporal_files`,
- * `cg_temporal_edges_cochange`, `cg_temporal_meta` (migration 031).
+ * `cg_temporal_edges_cochange`, `cg_temporal_meta` (migration 031) and
+ * `cg_temporal_bundle_files` (bd tea-rags-mcp-c3v6o, migration 042).
  *
  * Pure CRUD, like the analytics store: the extractor that computes the graph
  * and every judgement over it live in `domains/trajectory/codegraph/temporal/`.
@@ -10,6 +11,7 @@
  */
 
 import type {
+  RelPath,
   TemporalCochangeBuildMeta,
   TemporalCochangeEdge,
   TemporalCochangeEdgeWithLinkage,
@@ -64,6 +66,11 @@ interface EdgeRow {
   structurally_linked: boolean;
 }
 
+interface BundleFileRow {
+  bundle_id: number;
+  rel_path: string;
+}
+
 export class DuckDbTemporalCochangeStore {
   constructor(private readonly session: DuckDbGraphSession) {}
 
@@ -73,17 +80,23 @@ export class DuckDbTemporalCochangeStore {
    * generation in the file (`DuckDbGraphSession#recreateEmptyTable`).
    */
   async replace(snapshot: TemporalCochangeSnapshot): Promise<void> {
-    const { meta, files, edges } = snapshot;
+    const { meta, files, edges, bundles } = snapshot;
     await this.session.transaction(async () => {
       await this.session.recreateEmptyTable("cg_temporal_files");
       await this.session.recreateEmptyTable("cg_temporal_edges_cochange");
       await this.session.recreateEmptyTable("cg_temporal_meta");
+      await this.session.recreateEmptyTable("cg_temporal_bundle_files");
       await this.session.insertBatched(
         "cg_temporal_files",
         ["rel_path", "bundle_count", "partner_count", "last_changed_at"],
         files.map((f) => [f.relPath, f.bundleCount, f.partnerCount, f.lastChangedAt]),
       );
       await this.session.insertBatched("cg_temporal_edges_cochange", EDGE_COLUMNS, edges.map(edgeRow));
+      await this.session.insertBatched(
+        "cg_temporal_bundle_files",
+        ["bundle_id", "rel_path"],
+        bundles.flatMap((filesOfBundle, bundleId) => filesOfBundle.map((relPath) => [bundleId, relPath])),
+      );
       await this.session.insertBatched(
         "cg_temporal_meta",
         [
@@ -198,7 +211,27 @@ export class DuckDbTemporalCochangeStore {
        LEFT JOIN undirected u ON u.a = c.rel_path_a AND u.b = c.rel_path_b
        ORDER BY c.rel_path_a, c.rel_path_b`,
     );
-    return { meta, edges: rows.map(edgeFromRow) };
+    return { meta, edges: rows.map(edgeFromRow), bundles: await this.readBundleFiles() };
+  }
+
+  /**
+   * The admitted bundles' file memberships, keyed by bundle id (bd
+   * tea-rags-mcp-c3v6o) — ordered by bundle then path, so a bundle's list is
+   * stable whatever the write batched. An empty map is a build that admitted
+   * no bundle (or no build at all): the report's split/merge block reads that
+   * as not built, never as clean verdicts.
+   */
+  async readBundleFiles(): Promise<ReadonlyMap<number, readonly RelPath[]>> {
+    const rows = await this.session.queryAll<BundleFileRow>(
+      "SELECT bundle_id, rel_path FROM cg_temporal_bundle_files ORDER BY bundle_id, rel_path",
+    );
+    const bundles = new Map<number, RelPath[]>();
+    for (const row of rows) {
+      const files = bundles.get(row.bundle_id);
+      if (files) files.push(row.rel_path);
+      else bundles.set(row.bundle_id, [row.rel_path]);
+    }
+    return bundles;
   }
 }
 

@@ -1,5 +1,6 @@
 import type { Distributions } from "../../../contracts/types/trajectory.js";
 import type { EnrichmentHealthMap } from "../../../domains/ingest/pipeline/enrichment/types.js";
+import type { WorkingTreeMarker } from "./working-tree.js";
 
 /** Signal statistics with label-to-threshold mapping for a single signal. */
 export interface SignalMetrics {
@@ -28,4 +29,6 @@ export interface IndexMetrics {
   signals: Record<string, Record<string, Record<string, SignalMetrics>>>;
   /** Per-provider enrichment health (e.g. { git: { file: ..., chunk: ... } }) */
   enrichment?: EnrichmentHealthMap;
+  /** How far the caller's tree is from this index (bd tea-rags-mcp-xi2r9); absent only when no overlay is wired. */
+  workingTree?: WorkingTreeMarker;
 }

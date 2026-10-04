@@ -1,0 +1,5 @@
+# Installed as .contextignore into every matplotlib task repository by `prepare`.
+# Checked against the gold patches of every matplotlib task in SWE-bench Lite.
+
+# Vendored C++ (Anti-Grain Geometry, ttconv): ~2.6 MB of third-party C++.
+/extern/

@@ -14,11 +14,15 @@
  *   every dense leg or TurboQuant silently costs 2–3 pp of recall. Sparse legs
  *   are not quantized and deliberately do not carry it.
  *
- * Filter normalization (accepting either the simple key/value shape or a real
- * Qdrant filter) is duplicated between `search` and `hybridSearch` exactly as it
- * was in the original class — it is preserved verbatim here rather than unified,
- * because the two accept subtly different nullability and this split is meant to
- * be behaviour-neutral.
+ * - **Chunks only.** Every ranked query's filter goes through
+ *   {@link withServicePointExclusions}: the indexing marker and the schema
+ *   metadata point carry vectors, and nothing else keeps them out of a ranking
+ *   (bd tea-rags-mcp-xi2r9 — they placed 3rd and 5th in a small collection).
+ *   Doing it here, not per caller, is what makes "every ranked query" true.
+ * - **Stored ids.** A point id handed to `query` (find_similar's positive /
+ *   negative ids) is mapped by {@link toQdrantPointId}, the mapping every
+ *   write applies — a `chunk_<hex>` id addresses the point stored under it
+ *   instead of drawing a 400 Bad Request.
  */
 
 import type { QdrantClient } from "@qdrant/js-client-rest";
@@ -31,6 +35,8 @@ import {
   QdrantPointNotFoundError,
   QdrantUnavailableError,
 } from "./errors.js";
+import { toQdrantPointId } from "./point-id.js";
+import { withServicePointExclusions } from "./service-points.js";
 import type { SparseVector } from "./types.js";
 
 type QdrantPayload = Record<string, unknown>;
@@ -73,25 +79,8 @@ export class QdrantSearchExecutor {
     limit = 5,
     filter?: Record<string, unknown>,
   ): Promise<SearchResult[]> {
-    // Convert simple key-value filter to Qdrant filter format
-    // Accepts either:
-    // 1. Simple format: {"category": "database"}
-    // 2. Qdrant format: {must: [{key: "category", match: {value: "database"}}]}
-    let qdrantFilter: Record<string, unknown> | null | undefined;
-    if (filter && Object.keys(filter).length > 0) {
-      // Check if already in Qdrant format (has must/should/must_not keys)
-      if (filter.must || filter.should || filter.must_not) {
-        qdrantFilter = filter;
-      } else {
-        // Convert simple key-value format to Qdrant format
-        qdrantFilter = {
-          must: Object.entries(filter).map(([key, value]) => ({
-            key,
-            match: { value },
-          })),
-        };
-      }
-    }
+    // Accepts the flat {"category": "database"} form or a Qdrant filter.
+    const qdrantFilter = withServicePointExclusions(filter);
 
     // Check if collection uses named vectors (hybrid mode)
     const collectionInfo = await this.lookupCollectionInfo(collectionName);
@@ -130,10 +119,12 @@ export class QdrantSearchExecutor {
   ): Promise<{ id: string | number; score: number; payload?: Record<string, unknown> }[]> {
     const collectionInfo = await this.lookupCollectionInfo(collectionName);
 
+    const toStored = (example: string | number | number[]): string | number | number[] =>
+      Array.isArray(example) ? example : toQdrantPointId(example);
     const recommend: Record<string, unknown> = {
-      positive: options.positive,
+      positive: options.positive.map(toStored),
     };
-    if (options.negative?.length) recommend.negative = options.negative;
+    if (options.negative?.length) recommend.negative = options.negative.map(toStored);
     if (options.strategy) recommend.strategy = options.strategy;
 
     const queryParams: Record<string, unknown> = {
@@ -144,7 +135,7 @@ export class QdrantSearchExecutor {
     };
 
     if (options.offset !== undefined) queryParams.offset = options.offset;
-    if (options.filter) queryParams.filter = options.filter;
+    queryParams.filter = withServicePointExclusions(options.filter);
     if (collectionInfo.hybridEnabled) queryParams.using = "dense";
     queryParams.params = QUANTIZATION_SEARCH_PARAMS;
 
@@ -194,7 +185,7 @@ export class QdrantSearchExecutor {
       with_vector: false,
     };
 
-    if (options.filter) params.filter = options.filter;
+    params.filter = withServicePointExclusions(options.filter);
     if (collectionInfo.hybridEnabled) params.using = "dense";
     params.params = QUANTIZATION_SEARCH_PARAMS;
 
@@ -238,10 +229,15 @@ export class QdrantSearchExecutor {
    *                       decides when it exists (explore's identity leg,
    *                       bd tea-rags-mcp-2fefq); without it the request is the
    *                       plain two-prefetch one, byte for byte.
+   * @param denseVector    Undefined when the query could not be embedded (the
+   *                       embedding provider is down): the request then fuses
+   *                       the sparse prefetch alone — still RRF, so scores keep
+   *                       the rank scale callers fuse against — and the
+   *                       dense-only parts (identity prefetch, weights) drop out.
    */
   async hybridSearch(
     collectionName: string,
-    denseVector: number[],
+    denseVector: number[] | undefined,
     sparseVector: SparseVector,
     fetchLimit: number,
     filter?: Record<string, unknown>,
@@ -254,18 +250,16 @@ export class QdrantSearchExecutor {
       }
     }
 
-    let qdrantFilter: Record<string, unknown> | undefined;
-    if (filter && Object.keys(filter).length > 0) {
-      if (filter.must || filter.should || filter.must_not) {
-        qdrantFilter = filter;
-      } else {
-        qdrantFilter = {
-          must: Object.entries(filter).map(([key, value]) => ({
-            key,
-            match: { value },
-          })),
-        };
-      }
+    const qdrantFilter = withServicePointExclusions(filter);
+
+    if (denseVector === undefined) {
+      return this.runHybridQuery(collectionName, {
+        prefetch: [{ query: sparseVector, using: "text", limit: fetchLimit, filter: qdrantFilter }],
+        query: { fusion: "rrf" },
+        limit: fetchLimit,
+        filter: qdrantFilter,
+        with_payload: true,
+      });
     }
 
     const prefetch: Record<string, unknown>[] = [
@@ -285,7 +279,7 @@ export class QdrantSearchExecutor {
         query: denseVector,
         using: "dense",
         limit: fetchLimit,
-        filter: qdrantFilter ? { must: [qdrantFilter, identityPrefetchFilter] } : identityPrefetchFilter,
+        filter: { must: [qdrantFilter, identityPrefetchFilter] },
         params: QUANTIZATION_SEARCH_PARAMS,
       });
     }
@@ -302,16 +296,22 @@ export class QdrantSearchExecutor {
             },
           };
 
+    return this.runHybridQuery(collectionName, {
+      prefetch,
+      query: fusionQuery,
+      limit: fetchLimit,
+      filter: qdrantFilter,
+      with_payload: true,
+    });
+  }
+
+  /** One fused Query API request; failures surface as the hybrid search's. */
+  private async runHybridQuery(
+    collectionName: string,
+    request: Parameters<QdrantClient["query"]>[1],
+  ): Promise<SearchResult[]> {
     try {
-      const response = await this.connection.call(async () =>
-        this.connection.client.query(collectionName, {
-          prefetch,
-          query: fusionQuery,
-          limit: fetchLimit,
-          filter: qdrantFilter,
-          with_payload: true,
-        }),
-      );
+      const response = await this.connection.call(async () => this.connection.client.query(collectionName, request));
 
       return (response.points ?? []).map((point) => ({
         id: point.id,

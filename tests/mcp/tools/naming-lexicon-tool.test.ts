@@ -169,24 +169,19 @@ describe("get_naming_lexicon", () => {
     expect(vi.mocked(app.getNamingLexicon).mock.calls[0][0].names).toEqual(names);
   });
 
-  // bd tea-rags-mcp-fdef2: diff mode — the declarations a change adds are the drafts.
-  it("accepts `changes` or `files` alone as a request, and tells an agent about the review", () => {
+  // bd tea-rags-mcp-89k7k: the diff review moved to `review_changes` — the
+  // naming tool no longer takes `changes`/`files`. The SDK's zod parse strips
+  // unknown keys, so a stray `changes` beside a valid request is inert (the
+  // handler never sees it); a changes-only request fails the at-least-one
+  // refine at the boundary.
+  it("no longer takes `changes` or `files` — the diff review lives in review_changes", () => {
     const { inputSchema, description } = registered().config;
-    expect(inputSchema.safeParse({ project: "p", changes: {} }).success).toBe(true);
-    expect(inputSchema.safeParse({ project: "p", changes: { base: "main" } }).success).toBe(true);
-    expect(inputSchema.safeParse({ project: "p", files: ["src/a.ts"] }).success).toBe(true);
-    expect(inputSchema.safeParse({ project: "p", files: [] }).success).toBe(false);
-    expect(description).toMatch(/changes/);
-  });
-
-  it("forwards `changes` and `files`", async () => {
-    const { handler, app } = registered();
-    vi.mocked(app.getNamingLexicon).mockResolvedValue({ scope: "", byType: [], names: [] });
-    await handler({ project: "p", changes: { base: "main" }, files: ["src/a.ts"] });
-    expect(vi.mocked(app.getNamingLexicon).mock.calls[0][0]).toMatchObject({
-      changes: { base: "main" },
-      files: ["src/a.ts"],
-    });
+    expect(inputSchema.safeParse({ project: "p", changes: {} }).success).toBe(false);
+    expect(inputSchema.safeParse({ project: "p", files: ["src/a.ts"] }).success).toBe(false);
+    const parsed = inputSchema.safeParse({ project: "p", changes: {}, types: ["Doc"] });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data).toEqual({ project: "p", types: ["Doc"] });
+    expect(description).not.toMatch(/changes/);
   });
 
   it("keeps one-line field descriptions and no examples", () => {

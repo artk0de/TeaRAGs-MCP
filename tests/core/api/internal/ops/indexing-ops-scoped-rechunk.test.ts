@@ -107,41 +107,41 @@ describe("IndexingOps — scoped force", () => {
   });
 
   it("advances the chunking stamp of every language whose pending scoped bump the selection covered", async () => {
-    const collectionRegistry = makeRegistry();
-    const ops = new IndexingOps(makeDeps({ collectionRegistry }));
+    const languageVersionStamper = makeRegistry();
+    const ops = new IndexingOps(makeDeps({ languageVersionStamper }));
 
     await ops.run(process.cwd(), { forceReindex: true, testFile: "only", languages: ["ruby"] });
 
-    expect(collectionRegistry.stampLanguageVersions).toHaveBeenCalledWith(collection, { ruby: { chunking: 2 } });
+    expect(languageVersionStamper.stampLanguageVersions).toHaveBeenCalledWith(collection, { ruby: { chunking: 2 } });
   });
 
   it("advances nothing when the selection is narrower than the pending bump", async () => {
-    const collectionRegistry = makeRegistry();
-    const ops = new IndexingOps(makeDeps({ collectionRegistry }));
+    const languageVersionStamper = makeRegistry();
+    const ops = new IndexingOps(makeDeps({ languageVersionStamper }));
 
     await ops.run(process.cwd(), { forceReindex: true, testFile: "only", pathPattern: "spec/models/**" });
 
-    expect(collectionRegistry.stampLanguageVersions).not.toHaveBeenCalled();
+    expect(languageVersionStamper.stampLanguageVersions).not.toHaveBeenCalled();
   });
 
   it("claims nothing after a partial run — some selected files kept their old chunks", async () => {
-    const collectionRegistry = makeRegistry();
-    const ops = new IndexingOps(makeDeps({ collectionRegistry }, { ...completed, status: "partial" }));
+    const languageVersionStamper = makeRegistry();
+    const ops = new IndexingOps(makeDeps({ languageVersionStamper }, { ...completed, status: "partial" }));
 
     await ops.run(process.cwd(), { forceReindex: true, testFile: "only" });
 
-    expect(collectionRegistry.stampLanguageVersions).not.toHaveBeenCalled();
+    expect(languageVersionStamper.stampLanguageVersions).not.toHaveBeenCalled();
   });
 
   it("re-arms the drift report after the stamp moved", async () => {
     const driftReporter = { reset: vi.fn() };
-    const collectionRegistry = makeRegistry();
-    const ops = new IndexingOps(makeDeps({ collectionRegistry, driftReporter }));
+    const languageVersionStamper = makeRegistry();
+    const ops = new IndexingOps(makeDeps({ languageVersionStamper, driftReporter }));
 
     await ops.run(process.cwd(), { forceReindex: true, testFile: "only" });
 
     expect(driftReporter.reset).toHaveBeenCalledWith(collection);
-    expect(collectionRegistry.stampLanguageVersions.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(languageVersionStamper.stampLanguageVersions.mock.invocationCallOrder[0]).toBeLessThan(
       driftReporter.reset.mock.invocationCallOrder[0],
     );
   });

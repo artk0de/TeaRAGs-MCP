@@ -85,6 +85,13 @@ export interface TemporalCochangeSnapshot {
   meta: TemporalCochangeBuildMeta;
   files: TemporalCochangeFile[];
   edges: TemporalCochangeEdge[];
+  /**
+   * The admitted bundles' file memberships, index = bundle id — the
+   * `cg_temporal_bundle_files` rows (bd tea-rags-mcp-c3v6o). Component-level
+   * counts the pair table cannot answer: a bundle touching a component
+   * through three files still counts once, and pair caps never truncated it.
+   */
+  bundles: readonly (readonly RelPath[])[];
 }
 
 /** A stored co-change pair plus whether the structural graph links its endpoints. */
@@ -101,4 +108,45 @@ export interface TemporalCochangeGraph {
   /** `null` = no build has run for this collection yet. */
   meta: TemporalCochangeBuildMeta | null;
   edges: TemporalCochangeEdgeWithLinkage[];
+  /**
+   * The admitted bundles' file memberships, keyed by bundle id (bd
+   * tea-rags-mcp-c3v6o) — the same rows `readTemporalBundleFiles` answers.
+   * Absent = the read carries no membership (a fixture, or a daemon from a
+   * build before the table existed): absence is silence, never "no bundles"
+   * — an empty build reads as an EMPTY map. The store always sets it.
+   */
+  bundles?: ReadonlyMap<number, readonly RelPath[]>;
+}
+
+/**
+ * One `cg_temporal_symbol_commits` row (bd tea-rags-mcp-3gz4f): the commits
+ * whose hunks touched a symbol's chunk lines inside one file — the chunk
+ * walk's offset tracking collapsed from chunk ids to symbols (`#partN`
+ * windows unioned into the parent, chunks without a symbolId dropped).
+ */
+export interface TemporalSymbolCommitRow {
+  relPath: RelPath;
+  symbolId: string;
+  commitShas: string[];
+}
+
+/** One flushed file's symbol commit sets — the unit the store replaces. */
+export interface TemporalSymbolCommitFileSnapshot {
+  relPath: RelPath;
+  symbols: { symbolId: string; commitShas: string[] }[];
+}
+
+/**
+ * Run-scoped handoff from the git chunk walk to the temporal completion hook
+ * (bd tea-rags-mcp-3gz4f). The git provider ABSORBS each dispatched batch's
+ * per-symbol commit sets on the main thread — the walk thread cannot hold it,
+ * and one file's chunks arrive in several batches — and the temporal hook
+ * DRAINS it at collection completion, replacing each flushed file's rows.
+ * Absorbing a symbol twice unions its sets: the split batches saw disjoint
+ * chunks of the same symbol.
+ */
+export interface TemporalSymbolCommitBuffer {
+  absorb: (relPath: RelPath, symbols: ReadonlyMap<string, ReadonlySet<string>>) => void;
+  /** Every buffered file snapshot, insertion order; empties the buffer. */
+  drainFiles: () => TemporalSymbolCommitFileSnapshot[];
 }

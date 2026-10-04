@@ -60,6 +60,14 @@ export interface NamingReviewCallable {
   name: string;
   line: number;
   kind: "method" | "function";
+  /**
+   * True when the declaration line spells `name` as a whole token
+   * ({@link spellsIdentifier}) — the author wrote it (`def refresh_auth_token`,
+   * the `account` reader of `has_one :account`, `scope :with_firm`). False for a
+   * name a macro composed (`has_one :account` → `build_account`, `account=`;
+   * `belongs_to :owner` → `owner_id=`): no draft of the author's.
+   */
+  spelledOnLine: boolean;
 }
 
 /**
@@ -99,21 +107,55 @@ export function createNamingReviewExtractor(languageFactory: LanguageFactoryDesc
               ? [{ startLine: chunk.startLine, endLine: chunk.endLine }]
               : [],
           ),
-          callables: callablesOf(extraction.language, extraction.chunks),
+          callables: callablesOf(extraction.language, extraction.chunks, text.split("\n")),
         };
       };
     },
   };
 }
 
+/** An identifier character: a name spelled on a line must not continue into, or out of, one. */
+const IDENTIFIER_CHAR = /[\p{L}\p{N}_$]/u;
+/** What may not follow a bare name: an identifier character, or a predicate / bang marker (`valid` in `valid?`). */
+const BARE_NAME_CONTINUATION = /[\p{L}\p{N}_$!?]/u;
+/** What may not follow a setter's `=`: the rest of an operator (`==`, `=~`, `=>`). */
+const SETTER_CONTINUATION = /[=~>]/;
+
+/** True when `after` — the character following `name` on the line, `""` at its end — closes the token. */
+function closesToken(name: string, after: string): boolean {
+  if (after === "") return true;
+  if (name.endsWith("=")) return !SETTER_CONTINUATION.test(after);
+  if (name.endsWith("!") || name.endsWith("?")) return true;
+  return !BARE_NAME_CONTINUATION.test(after);
+}
+
+/**
+ * True when `line` spells `name` as a whole token, trailing marker included:
+ * neither side runs on into an identifier (`account` is not spelled by
+ * `account_id` or `my_account`), a bare name is not spelled by its marked form
+ * (`valid` by `valid?`), and a setter's `=` is not the head of an operator
+ * (`account==x`, `:account=>x`). Language-agnostic: identifier characters are
+ * letters, digits, `_` and `$`.
+ */
+export function spellsIdentifier(line: string, name: string): boolean {
+  if (name.length === 0) return false;
+  for (let at = line.indexOf(name); at >= 0; at = line.indexOf(name, at + 1)) {
+    const opens = at === 0 || !IDENTIFIER_CHAR.test(line.charAt(at - 1));
+    if (opens && closesToken(name, line.charAt(at + name.length))) return true;
+  }
+  return false;
+}
+
 /**
  * Methods and functions, one per declaration: a split method's parts collapse
  * to its first line, the symbols one declaration carries to one entry;
- * constructors dropped.
+ * constructors dropped. `lines` is the file text, split — where each
+ * declaration's {@link NamingReviewCallable.spelledOnLine} is read.
  */
 function callablesOf(
   language: string,
   chunks: readonly { symbolId: string; startLine?: number; symbolKind?: string }[],
+  lines: readonly string[],
 ): NamingReviewCallable[] {
   const firstLine = new Map<string, { line: number; kind: "method" | "function" }>();
   for (const { symbolId, startLine, symbolKind } of chunks) {
@@ -128,7 +170,10 @@ function callablesOf(
     const key = `${line}\u0000${name}`;
     const declaration = byDeclaration.get(key);
     if (declaration) declaration.symbolIds.push(symbolId);
-    else byDeclaration.set(key, { symbolIds: [symbolId], name, line, kind });
+    else {
+      const spelledOnLine = spellsIdentifier(lines[line - 1] ?? "", name);
+      byDeclaration.set(key, { symbolIds: [symbolId], name, line, kind, spelledOnLine });
+    }
   }
   return [...byDeclaration.values()];
 }

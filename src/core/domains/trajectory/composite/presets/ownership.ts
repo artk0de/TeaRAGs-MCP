@@ -1,3 +1,4 @@
+import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../../../contracts/index.js";
 import type { ScoringWeights } from "../../../../contracts/types/provider.js";
 import type { CompositeRerankPreset, OverlayMask, SignalLevel } from "../../../../contracts/types/reranker.js";
 
@@ -13,7 +14,7 @@ export class OwnershipCompositePreset implements CompositeRerankPreset {
   readonly description = "Silo-owned code that other files depend on — prioritised bus-factor target";
   readonly signalLevel: SignalLevel = "file";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar", "trace_path"];
-  readonly requires = ["codegraph.symbols", "git"] as const;
+  readonly requires = [CODEGRAPH_SYMBOLS_PROVIDER_KEY, "git"] as const;
   // chunkChurn dropped (signalLevel "file" → payloadAlpha 0 → always-0 dead
   // weight). Mirrors the git ownership redistribution: ownership +0.05,
   // knowledgeSilo +0.05; fanIn (the composite's blast-radius axis) stays 0.1.

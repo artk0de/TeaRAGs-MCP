@@ -254,7 +254,11 @@ search.
 ## get_naming_lexicon Examples
 
 Codegraph on only. Judges names against project's own vocabulary; never judge a
-name by grep or semantic_search on the draft.
+name by grep or semantic_search on the draft. Evidence read within draft's language
+namespace (languages sharing a naming convention's typeNamespace, e.g. TS + JS);
+never another language's rows. Ruby: \`@@x\`, \`x ||= v\`, and accessor macros
+(attr_*, cattr_*/mattr_*, catalogue accessors — one field per operand) all
+declare \`kind: "field"\` rows, same as \`@ivar =\`.
 
 - "What does the project call values of type T?" → types=["TaxAutomationDocument"], language="ruby"
 - "Is Helper or Concern this area's suffix?" → types=["Helper","Concern"], pathPattern="app/lib/**" —
@@ -265,28 +269,43 @@ name by grep or semantic_search on the draft.
   review leaves out changed files — a declaration never counts, collides with or confirms itself.
 - New class / constant → names=[{ name: "RubyConstReceiverPass", kind: "type", path: "<its file>", extends: "SymbolResolutionStrategy" }]
 - Words for a concept → concept="<what the symbol denotes, not its name>", language="typescript"
-- Review names a diff adds → changes={} (uncommitted vs HEAD) or changes={ base: "origin/main" } (branch).
+- Review names a diff adds → review_changes (changes={} = uncommitted vs HEAD, changes={ base: "origin/main" } =
+  branch, sections: ["naming"]) — the same lexicon pipeline; get_naming_lexicon itself takes no diff.
   base is read at its merge-base with HEAD (git merge-base <base> HEAD): only the branch's side plus
   uncommitted work, however far base moved on; no merge-base (unrelated / shallow clone) → error.
   files=[...] → those files only: a file with a diff by its added hunks, one with no diff (committed,
   clean tree) WHOLE — every declaration it holds, counted in wholeFiles.
   Only added hunks judged; changed files excluded from evidence; cap 200 files (truncated reports rest).
-  Answer → review { base, mergeBase, changedFiles, wholeFiles?, checked, conforming, novel, findings, notes?,
+  project alone → MAIN checkout's tree. Change in a git worktree → project + path="<abs worktree path>"
+  (same repo, else error): project = index, path = tree; diff read there, judged vs project index
+  (collection + path already split so). Empty diff (no files) → notice naming committed-work
+  (changes.base) and worktree (path) exits + repo's other trees — never trust changedFiles: 0 alone.
+  Answer → review { workTree, base, mergeBase, changedFiles, wholeFiles?, checked, conforming, novel, findings, notes?,
   notJudged, notJudgedBy?, notJudgedNames?, truncated? }; changedFiles = files differing from mergeBase
-  (with files: of the listed); notJudgedBy = kind (file | method | function) → reason → count —
-  a method is judged only by its return type, so unknownReturnType methods are in neither checked
-  nor conforming; notJudgedNames = first 50 { relPath, line?, name?, kind, reason } — read them yourself;
+  (with files: of the listed); notJudgedBy = kind (file) → reason → count — only files go unjudged;
+  a method with no known return type is never skipped — it is an untyped return draft, judged by
+  the project's method vocabulary: a lexicon verb the project uses → CONFORMS, a rare one →
+  NEW_TERM (topTerms), never a MISFIT toward another verb of its noun (find_user and build_user are
+  distinct operations, not synonyms); verbless → CONFORMS when declared elsewhere in scope, else
+  NO_CONVENTION (analogues). A name a macro composed (has_one :account → build_account,
+  account=) is not spelled on its declaration line: no draft, not counted; notJudgedNames = first 50 { relPath, line?, name?, kind, reason } — read them yourself;
   findings flat { relPath, line, name, kind, type?, verdict, … } — non-CONFORMS verdicts and
   CONFORMS with alternatives. notes = CONFORMS on a generic name (genericName; information, counted
-  in conforming). novel = NEW_TERM with nothing to compare (not listed). notJudged = files
+  in conforming). novel = NO_CONVENTION, or NEW_TERM with nothing to compare (not listed). notJudged = files
   skipped: tests / non-production, no codegraph language.
   Type / constant names need a codegraph recompute on an index built before type declarations existed.
+- indexLag { indexedCommit, treeCommit } on any answer = index built at another commit than the tree's
+  HEAD (review.workTree tree): every verdict rests on evidence at indexedCommit; later changes unseen.
 
 Verdicts: CONFORMS (vocabulary, not behaviour; may carry alternatives) | MISFIT (suggestion,
 role) | NEW_TERM (topTerms, alternatives — soft,
-never a rename demand) | COLLISION (existing). CONFORMS rests on evidence: a type's carries the
-role or project suffix it rests on (role); a value nothing compares conforms only when other rows
-use the name (evidence.n), else NEW_TERM with no topTerms (novel). A MISFIT (value or return) needs ≥ 2 owners
+never a rename demand) | NO_CONVENTION (prefer { exact?, analogous }) | COLLISION (existing).
+NO_CONVENTION = value (param / local / field) whose type or call has no name ≥ 2 owners share: no
+demand, not free either — name it prefer.exact (type spelled, plural for many) or like
+prefer.analogous (own thin rows, then family values: types specializing it — CallerSymbolId for
+SymbolId — else siblings by head word); a name unlike both needs a reason. CONFORMS rests on evidence: a type's carries the
+role or project suffix it rests on (role); an untyped value nothing compares conforms only when other rows
+use the name (evidence.n), else NO_CONVENTION. A MISFIT (value or return) needs ≥ 2 owners
 (distinct holders, not rows) behind its suggestion, never deletes the draft's qualifier or complement
 (for_payload), never suggests a connector-led row (for_delivery), and a local named after its own
 type conforms unless the type's values are never named that way; a collection named by its
@@ -301,7 +320,9 @@ suffix; project suffix only confirms, never MISFIT. The nearest family decides: 
 of extends as written (A::Workflow::Worker), else of every supertype sharing its last segment. The
 written family's role may be a tail (role.tail AsyncWorkflow, role.word its head workflow): the
 suffix every distinct name carrying the head shares, each word named by that supertype. A draft conforms only
-ending in the whole tail; ExportWorkflow → ExportAsyncWorkflow, ExportJob → ExportJobAsyncWorkflow. A directory-evidence MISFIT is
+ending in the whole tail; ExportWorkflow → ExportAsyncWorkflow, ExportJob → ExportJobAsyncWorkflow. A directory role is read
+off each file's PRIMARY type and holds only a draft that would be its file's primary — a helper interface /
+class beside IndexingOps is no *Ops member (diff mode knows the file; names mode: indexed declarations at path). A directory-evidence MISFIT is
 location-based: rename only when the type belongs to role.examples' family. CONFORMS with
 role.carriedInName=false: the kind a family of action-named types takes from its supertype
 and directory (KindOfService under app/services → service) — what the type IS, never a
@@ -310,6 +331,8 @@ word the name owes.
 ## get_ontology_report Examples
 
 - Project-wide naming audit → sections=["synonyms","homonyms","outliers","collisions"], pathPattern="src/**"
+- Method-naming audit (opt-in) → sections=["verbs"]: per noun tail, the verbs the project uses,
+  with holders — descriptive, contested tails only; no verb is a deviant of another.
 
 ## Pagination
 

@@ -43,6 +43,16 @@ const projectField = () =>
       "[RECOMMENDED] Registered project alias; survives path moves. Resolution priority: collection > project > path.",
     );
 
+/**
+ * `path` hint for every read tool addressed by the { collection, project, path }
+ * triad (bd tea-rags-mcp-xi2r9): `resolveWorkingTree` reads `path` as the TREE
+ * the caller stands in and finds the index registered for the same repository.
+ * One string for the search and codegraph surfaces alike.
+ */
+export const WORKING_TREE_PATH_HINT =
+  "Your working directory, any dir in checkout. Addresses the TREE; index resolves from same repository. " +
+  "Prefer over project in worktrees.";
+
 /** `path` hint for the project-or-path tools (index status / metrics / clear). */
 const PROJECT_OR_PATH_HINT = "Codebase path. Prefer 'project' when an alias is registered.";
 
@@ -170,10 +180,7 @@ function collectionPathFields() {
   return {
     collection: z.string().optional().describe("Raw Qdrant collection name — lowest-level handle; prefer 'project'."),
     project: projectField(),
-    path: z
-      .string()
-      .optional()
-      .describe("Indexed codebase path; auto-resolves to its collection. Prefer 'project' when aliased."),
+    path: z.string().optional().describe(WORKING_TREE_PATH_HINT),
   };
 }
 

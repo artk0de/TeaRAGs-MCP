@@ -14,10 +14,13 @@
  *
  * No resolver (codegraph off), a read that throws (graph unreadable), or a
  * graph that states no level → the first render goes out unchanged. The
- * outline never fails because the decoration did.
+ * outline never fails because the decoration did. On a working tree the read
+ * goes to the tree graph when `readTreeGraph` answers `built` (WTO-7), so a
+ * member the tree added or re-declared is decorated as the tree states it.
  */
 
 import type { SymbolVisibilityResolver } from "../../contracts/types/codegraph.js";
+import type { WorkingTreeGraphReader } from "../../contracts/types/working-tree.js";
 import { DeclaredVisibilityIndex } from "../../infra/declared-visibility-index.js";
 import type { MemberVisibilityLookup } from "./chunk-grouping/types.js";
 
@@ -25,6 +28,7 @@ export async function renderWithDeclaredVisibility<T>(
   render: (visibilityOf?: MemberVisibilityLookup) => T,
   resolver: SymbolVisibilityResolver | undefined,
   collectionName: string,
+  readTreeGraph?: WorkingTreeGraphReader,
 ): Promise<T> {
   if (resolver === undefined) return render();
   const requested = new Set<string>();
@@ -35,7 +39,11 @@ export async function renderWithDeclaredVisibility<T>(
   if (requested.size === 0) return plain;
   let index: DeclaredVisibilityIndex;
   try {
-    index = DeclaredVisibilityIndex.fromRows(await resolver.resolveSymbolVisibilities(collectionName, [...requested]));
+    index = DeclaredVisibilityIndex.fromRows(
+      readTreeGraph
+        ? await resolver.resolveSymbolVisibilities(collectionName, [...requested], readTreeGraph)
+        : await resolver.resolveSymbolVisibilities(collectionName, [...requested]),
+    );
   } catch {
     return plain;
   }

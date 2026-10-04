@@ -10,8 +10,11 @@ import {
   versionedPhysicalCollectionName,
 } from "../../../infra/collection-name.js";
 import { WorktreeCollectionExistsError, WorktreeNotFoundError, WorktreeSourceNotFoundError } from "../errors.js";
-import { cloneCollectionFootprint } from "../footprint/clone-saga.js";
-import type { CollectionFootprintFactory, ResolvedCollection } from "../footprint/index.js";
+import {
+  cloneCollectionFootprint,
+  type CollectionFootprintFactory,
+  type ResolvedCollection,
+} from "../footprint/index.js";
 import type { CollectionRegistry } from "../registry/index.js";
 import {
   ensureGitWorktree as defaultEnsureGitWorktree,
@@ -167,6 +170,11 @@ export class WorktreeProvisioner {
     // current — which is the one thing cloning exists to avoid.
     if (sourceEntry.languageVersions) {
       registry.stampLanguageVersions(targetAliasCollectionName, sourceEntry.languageVersions);
+    }
+    // Same for the per-provider algorithm stamp (bd tea-rags-mcp-xi2r9): the
+    // clone's enrichment payload was computed by the source's algorithms.
+    if (sourceEntry.trajectoryVersions) {
+      registry.stampTrajectoryVersions(targetAliasCollectionName, sourceEntry.trajectoryVersions);
     }
 
     return {

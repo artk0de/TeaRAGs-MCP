@@ -12,7 +12,7 @@ import { extname } from "node:path";
 import Parser from "tree-sitter";
 
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
-import type { ChunkDecision } from "../../../../contracts/types/chunker.js";
+import type { BodyChunkResult, ChunkDecision } from "../../../../contracts/types/chunker.js";
 import type {
   LanguageChunkerHooks,
   LanguageFactoryDescriptor,
@@ -35,10 +35,32 @@ import { AstSymbolSplitter } from "./ast-symbol-splitter.js";
 import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character.js";
 import type { LanguageConfig } from "./config.js";
-import { planContainerRemainder } from "./container-remainder.js";
+import { planContainerRemainder, type ContainerRemainderPart } from "./container-remainder.js";
 import { createHookContext, type ChunkingHook, type HookContext } from "./hooks/types.js";
 import { MarkdownChunker } from "./markdown-chunker.js";
 import { SymbolIdDisambiguator } from "./symbol-id-disambiguator.js";
+
+/**
+ * A test chunk's links a hook body chunk carries into the chunk metadata (bd
+ * tea-rags-mcp-5xpq4): a setup chunk's member scope spans and row counts,
+ * which explore hydrates examples from, and the member ids of a packed chunk,
+ * which find_symbol answers from. On a packed chunk `lineRanges` is aligned
+ * with `memberSymbolIds` (one own range per member) and persists as
+ * `memberLineRanges` (bd tea-rags-mcp-g5i0a): it is what lets find_symbol
+ * answer one member of an example pack with that member's own lines. All
+ * persist; absent keys stay absent.
+ */
+function testChunkLinks(
+  result: BodyChunkResult,
+): Pick<CodeChunk["metadata"], "scopeLineRanges" | "memberRowCounts" | "memberSymbolIds" | "memberLineRanges"> {
+  const packed = result.memberSymbolIds !== undefined && result.lineRanges?.length === result.memberSymbolIds.length;
+  return {
+    ...(result.scopeLineRanges === undefined ? {} : { scopeLineRanges: result.scopeLineRanges }),
+    ...(result.memberRowCounts === undefined ? {} : { memberRowCounts: result.memberRowCounts }),
+    ...(result.memberSymbolIds === undefined ? {} : { memberSymbolIds: result.memberSymbolIds }),
+    ...(packed ? { memberLineRanges: result.lineRanges } : {}),
+  };
+}
 
 /**
  * Everything one `processChildren` pass holds constant while it routes each
@@ -111,19 +133,22 @@ interface ContainerRemainderIdentity {
   symbolId: string | undefined;
   name: string | undefined;
   parentSymbolId: string | undefined;
-  parentType: string;
+  /** The enclosing container's node type; absent for the module remainder, a top-level chunk. */
+  parentType?: string;
   chunkType: NonNullable<CodeChunk["metadata"]["chunkType"]>;
 }
 
 export class TreeSitterChunker implements CodeChunker {
-  /** Cache of initialized parsers (lazy-loaded) */
-  private readonly parserCache: Map<string, LanguageConfig> = new Map();
   /**
-   * Codegraph walk parsers keyed by language + extension (bd
-   * tea-rags-mcp-vqdi6); `null` where the chunk parser's grammar is the one the
-   * extension selects. See {@link walkTreeFor}.
+   * Cache of initialized parsers (lazy-loaded), one per (language, grammar).
+   * The language's default grammar — the one `extractLanguage` returns with no
+   * extension — is keyed by the bare language name; a grammar only an
+   * extension selects (TypeScript's `tsx` for `.tsx`) by
+   * {@link grammarCacheKey}.
    */
-  private readonly walkParsers = new Map<string, Parser | null>();
+  private readonly parserCache: Map<string, LanguageConfig> = new Map();
+  /** `language\0extension` → its {@link parserCache} key, memoized per pair. */
+  private readonly grammarKeys = new Map<string, string>();
   private readonly fallbackChunker: CharacterChunker;
   /** Splits an oversized symbol on statement boundaries (bd tea-rags-mcp-y5vx4). */
   private readonly symbolSplitter: AstSymbolSplitter;
@@ -256,41 +281,75 @@ export class TreeSitterChunker implements CodeChunker {
   }
 
   /**
-   * Get or lazily initialize parser for a language.
-   * Returns null if language is not supported.
+   * Get or lazily initialize the parser for a language under the grammar
+   * `extension` selects (`LanguageKernel.extractLanguage`). A `.tsx` file is
+   * language "typescript" but must parse under the `tsx` grammar — under the
+   * plain one its JSX became ERROR nodes and the component it declares was
+   * never chunked. Omitting `extension` asks for the language's default
+   * grammar. Returns null if language is not supported.
    */
-  private async getLanguageConfig(language: string): Promise<LanguageConfig | null> {
-    // Check cache first
-    const cached = this.parserCache.get(language);
-    if (cached) {
-      return cached;
-    }
-
-    // Check if already loading (avoid duplicate loads)
-    const loading = this.loadingPromises.get(language);
-    if (loading) {
-      return loading;
-    }
-
+  private async getLanguageConfig(language: string, extension?: string): Promise<LanguageConfig | null> {
     // Check if language is registered with the factory
     const provider = this.tryGetProvider(language);
     if (!provider?.chunkerHooks) {
       return null;
     }
+    const key = await this.grammarCacheKey(language, provider.kernel, extension);
+
+    // Check cache first
+    const cached = this.parserCache.get(key);
+    if (cached) {
+      return cached;
+    }
+
+    // Check if already loading (avoid duplicate loads)
+    const loading = this.loadingPromises.get(key);
+    if (loading) {
+      return loading;
+    }
 
     // Start loading
-    const loadPromise = this.initializeParser(language, provider.kernel, provider.chunkerHooks);
-    this.loadingPromises.set(language, loadPromise);
+    const loadPromise = this.initializeParser(
+      language,
+      provider.kernel,
+      provider.chunkerHooks,
+      key === language ? undefined : extension,
+    );
+    this.loadingPromises.set(key, loadPromise);
 
     try {
       const config = await loadPromise;
       if (config) {
-        this.parserCache.set(language, config);
+        this.parserCache.set(key, config);
       }
       return config;
     } finally {
-      this.loadingPromises.delete(language);
+      this.loadingPromises.delete(key);
     }
+  }
+
+  /**
+   * The {@link parserCache} key for `language` files with `extension`: the
+   * bare language name when the extension selects the language's default
+   * grammar (every extension of every single-grammar language), else
+   * `language\0extension`. Answering needs the grammar module, which the
+   * module system caches after the first load.
+   */
+  private async grammarCacheKey(language: string, kernel: LanguageKernel, extension?: string): Promise<string> {
+    if (extension === undefined || kernel.extractLanguage === undefined) return language;
+    const memoKey = `${language}\u0000${extension}`;
+    const memoized = this.grammarKeys.get(memoKey);
+    if (memoized !== undefined) return memoized;
+    let key = language;
+    try {
+      const mod = await kernel.loadModule();
+      if (mod !== null && kernel.extractLanguage(mod, extension) !== kernel.extractLanguage(mod)) key = memoKey;
+    } catch {
+      // The load failure is reported (and the language degraded) by
+      // `initializeParser`, which runs next under the default key.
+    }
+    this.grammarKeys.set(memoKey, key);
+    return key;
   }
 
   /**
@@ -308,18 +367,22 @@ export class TreeSitterChunker implements CodeChunker {
    * capabilities — `kernel` carries parser load + namespace config, `chunkerHooks`
    * carries the chunk-boundary fields. Field-for-field equivalent to the old
    * `LANGUAGE_DEFINITIONS` read (the legacy adapter wraps the same source).
+   * `extension` selects the grammar for a multi-grammar module (`.tsx`).
    */
   private async initializeParser(
     language: string,
     kernel: LanguageKernel,
     hooks: LanguageChunkerHooks,
+    extension?: string,
   ): Promise<LanguageConfig | null> {
     try {
       const startTime = Date.now();
 
       // Dynamic import of language module
       const mod = (await kernel.loadModule()) as Record<string, unknown>;
-      const langModule = (kernel.extractLanguage ? kernel.extractLanguage(mod) : mod.default || mod) as Parser.Language;
+      const langModule = (
+        kernel.extractLanguage ? kernel.extractLanguage(mod, extension) : mod.default || mod
+      ) as Parser.Language;
 
       // Create and configure parser
       const parser = new Parser();
@@ -343,6 +406,7 @@ export class TreeSitterChunker implements CodeChunker {
         disambiguateOverloads: kernel.disambiguateOverloads,
         classifier: hooks.classifier,
         readImportSpecifiers: hooks.readImportSpecifiers,
+        isModuleImport: hooks.isModuleImport,
       };
     } catch (error) {
       console.error(`[TreeSitter] Failed to load parser for ${language}:`, error);
@@ -370,52 +434,24 @@ export class TreeSitterChunker implements CodeChunker {
    * harvest.
    */
   /**
-   * The tree a codegraph walker reads for `filePath`: `chunkTree` itself when
-   * the file's extension selects the grammar it was chunked with, otherwise a
-   * parse under the grammar the extension selects (bd tea-rags-mcp-vqdi6).
+   * The tree a codegraph walker reads for `filePath`: the chunk tree itself.
    *
-   * The chunker holds ONE parser per language and asks the kernel for its
-   * grammar with no extension; the codegraph walk passes the file's extension
-   * (`LanguageKernel.extractLanguage`). The two differ for `.tsx`, which chunks
-   * under the `typescript` grammar and walks under `tsx` — handing the walker
-   * the chunk tree there lost ~72% of taxdome's `.tsx` call sites to JSX parse
-   * errors on the full-index path, while a recompute (which re-parses through
-   * the codegraph provider's own extractor) did not. So the single-parse
-   * economy holds only where the grammars agree, which is every other file.
+   * The codegraph walk parses under the grammar the file's extension selects
+   * (`LanguageKernel.extractLanguage`), and so does the chunker
+   * ({@link getLanguageConfig}), so the chunk parse IS the walk parse for every
+   * file — `.tsx` included. Before the chunker followed the extension it parsed
+   * `.tsx` under the plain `typescript` grammar, and this method re-parsed such
+   * files under `tsx` for the walker (bd tea-rags-mcp-vqdi6: the chunk tree had
+   * lost ~72% of taxdome's `.tsx` call sites to JSX parse errors). The seam
+   * stays so the single-parse economy is stated in one place.
    */
   async walkTreeFor(
-    code: string,
-    filePath: string,
-    language: string,
+    _code: string,
+    _filePath: string,
+    _language: string,
     chunkTree: MaterializedTree,
   ): Promise<MaterializedTree> {
-    const extension = extname(filePath);
-    const key = `${language}\u0000${extension}`;
-    let parser = this.walkParsers.get(key);
-    if (parser === undefined) {
-      parser = await this.walkParserFor(language, extension);
-      this.walkParsers.set(key, parser);
-    }
-    if (parser === null) return chunkTree;
-    return { rootNode: materializeTree(parser.parse(code).rootNode, code) };
-  }
-
-  /**
-   * A parser for the grammar `extension` selects, or `null` when that is the
-   * grammar the language's chunk parser already uses.
-   */
-  private async walkParserFor(language: string, extension: string): Promise<Parser | null> {
-    const kernel = this.tryGetProvider(language)?.kernel;
-    if (kernel?.extractLanguage === undefined) return null;
-    const mod = await kernel.loadModule();
-    // A language that loads no grammar has no chunk parser either, so no chunk
-    // tree reaches here for it; there is nothing to re-parse with.
-    if (mod === null) return null;
-    const walkGrammar = kernel.extractLanguage(mod, extension);
-    if (walkGrammar === kernel.extractLanguage(mod)) return null;
-    const parser = new Parser();
-    parser.setLanguage(walkGrammar as Parser.Language);
-    return parser;
+    return chunkTree;
   }
 
   async chunkWithTree(
@@ -437,7 +473,7 @@ export class TreeSitterChunker implements CodeChunker {
       };
     }
 
-    const langConfig = await this.getLanguageConfig(language);
+    const langConfig = await this.getLanguageConfig(language, extname(filePath));
     if (!langConfig) {
       return {
         chunks: this.enforceMaxChunkSize(await this.fallbackChunker.chunk(code, filePath, language)),
@@ -501,8 +537,11 @@ export class TreeSitterChunker implements CodeChunker {
       // character fallback): done. A degraded AST (rootNode.hasError) that still
       // yields chunks is indexed exactly as today — no quarantine, no marker.
       if (chunks.length > 0 || code.length <= 100) {
+        const merged = this.mergeSmallChunks(chunks);
+        const withRemainder =
+          merged.length > 0 ? this.withModuleRemainder(merged, root, langConfig, code, filePath, language) : merged;
         return {
-          chunks: this.enforceMaxChunkSize(this.mergeSmallChunks(chunks)),
+          chunks: this.enforceMaxChunkSize(withRemainder),
           tree: materializedTree,
           ...(imports ? { imports } : {}),
         };
@@ -753,6 +792,7 @@ export class TreeSitterChunker implements CodeChunker {
                 lineRanges: result.lineRanges,
                 contextPrefix: body.contextPrefix,
                 ...(result.partHeader === undefined ? {} : { partHeader: result.partHeader }),
+                ...testChunkLinks(result),
               },
             });
           }
@@ -1182,7 +1222,8 @@ export class TreeSitterChunker implements CodeChunker {
    */
   getLoadedParsers(): { loaded: string[]; available: string[] } {
     return {
-      loaded: Array.from(this.parserCache.keys()),
+      // One entry per language, however many of its grammars are loaded.
+      loaded: [...new Set(Array.from(this.parserCache.keys(), (key) => key.split("\u0000")[0]))],
       available: this.languages.supported(),
     };
   }
@@ -1486,6 +1527,7 @@ export class TreeSitterChunker implements CodeChunker {
           lineRanges: result.lineRanges,
           ...(body.contextPrefix === undefined ? {} : { contextPrefix: body.contextPrefix }),
           ...(result.partHeader === undefined ? {} : { partHeader: result.partHeader }),
+          ...testChunkLinks(result),
         },
       });
     }
@@ -1831,27 +1873,214 @@ export class TreeSitterChunker implements CodeChunker {
       minContentLength: 50,
     });
 
+    chunks.push(
+      ...this.remainderChunks(
+        parts,
+        { ...identity, chunkType: ctx.containerChunkType ?? identity.chunkType },
+        filePath,
+        language,
+        chunks.length,
+      ),
+    );
+  }
+
+  /**
+   * One remainder's planned parts as chunks: the identity on a single part,
+   * `${symbolId}#partN` parented by the symbol on each window of a split one.
+   * Shared by the container remainder and the module remainder.
+   */
+  private remainderChunks(
+    parts: ContainerRemainderPart[],
+    identity: ContainerRemainderIdentity,
+    filePath: string,
+    language: string,
+    firstChunkIndex: number,
+  ): CodeChunk[] {
     const split = parts.length > 1;
-    parts.forEach((part, i) => {
-      chunks.push({
-        content: part.content,
-        startLine: part.startLine,
-        endLine: part.endLine,
-        metadata: {
-          filePath,
-          language,
-          chunkIndex: chunks.length,
-          chunkType: ctx.containerChunkType ?? identity.chunkType,
-          name:
-            split && identity.name !== undefined ? `${identity.name} (part ${i + 1}/${parts.length})` : identity.name,
-          symbolId: split && identity.symbolId !== undefined ? `${identity.symbolId}#part${i + 1}` : identity.symbolId,
-          parentSymbolId: split ? (identity.symbolId ?? identity.parentSymbolId) : identity.parentSymbolId,
-          parentType: identity.parentType,
-          // A single contiguous run needs no ranges — startLine..endLine says it.
-          ...(part.lineRanges.length > 1 ? { lineRanges: part.lineRanges } : {}),
-        },
-      });
+    return parts.map((part, i) => ({
+      content: part.content,
+      startLine: part.startLine,
+      endLine: part.endLine,
+      metadata: {
+        filePath,
+        language,
+        chunkIndex: firstChunkIndex + i,
+        chunkType: identity.chunkType,
+        name: split && identity.name !== undefined ? `${identity.name} (part ${i + 1}/${parts.length})` : identity.name,
+        symbolId: split && identity.symbolId !== undefined ? `${identity.symbolId}#part${i + 1}` : identity.symbolId,
+        parentSymbolId: split ? (identity.symbolId ?? identity.parentSymbolId) : identity.parentSymbolId,
+        ...(identity.parentType === undefined ? {} : { parentType: identity.parentType }),
+        // A single contiguous run needs no ranges — startLine..endLine says it.
+        ...(part.lineRanges.length > 1 ? { lineRanges: part.lineRanges } : {}),
+      },
+    }));
+  }
+
+  /**
+   * `chunks` plus the MODULE remainder: the top-level statements no chunk
+   * carries, each inserted before the first chunk that starts after it.
+   *
+   * The engine emits chunkable nodes only, so as soon as a file yielded one
+   * chunk, every other top-level statement was lost — a 1,100-line
+   * `const sidebarLoaders = { … }` beside one small function kept 5 of 1,109
+   * lines. The container remainder (bd tea-rags-mcp-deoki) recovers the rows
+   * inside a container; this is the same planner run over the file:
+   *
+   *   - a candidate is a top-level statement NONE of whose rows any chunk
+   *     carries. A partly covered one belongs to the chunks covering it (a
+   *     container owns its other rows through its own remainder);
+   *   - import / re-export statements are never candidates, and a comment is
+   *     one only when it directly precedes a candidate — a comment above a
+   *     chunked symbol is that symbol's, not the module's;
+   *   - the candidates form ONE remainder (`lineRanges` when non-contiguous),
+   *     cut into windows under `maxChunkSize`, dropped below the 50-char floor
+   *     like a container's;
+   *   - a remainder that is exactly one named declaration takes its name and
+   *     symbolId (parts `#partN`), so `find_symbol` resolves the declaration;
+   *     otherwise it is anonymous, as an anonymous container's remainder is.
+   */
+  private withModuleRemainder(
+    chunks: CodeChunk[],
+    root: AstNode,
+    langConfig: LanguageConfig,
+    code: string,
+    filePath: string,
+    language: string,
+  ): CodeChunk[] {
+    const coveredRows = new Set<number>();
+    for (const chunk of chunks) {
+      const ranges = chunk.metadata.lineRanges?.length
+        ? chunk.metadata.lineRanges
+        : [{ start: chunk.startLine, end: chunk.endLine }];
+      for (const { start, end } of ranges) for (let line = start; line <= end; line++) coveredRows.add(line - 1);
+    }
+
+    const candidates = this.moduleRemainderCandidates(root, coveredRows, langConfig);
+    if (candidates.length === 0) return chunks;
+
+    const remainderRows = new Set<number>();
+    for (const node of candidates) {
+      for (let { row } = node.startPosition; row <= node.endPosition.row; row++) remainderRows.add(row);
+    }
+    const firstRow = candidates[0].startPosition.row;
+    const lastRow = candidates[candidates.length - 1].endPosition.row;
+    const outsideRows = new Set<number>();
+    for (let row = firstRow; row <= lastRow; row++) if (!remainderRows.has(row)) outsideRows.add(row);
+
+    const parts = planContainerRemainder({
+      codeLines: code.split("\n"),
+      containerStartRow: firstRow,
+      containerEndRow: lastRow,
+      coveredRows: outsideRows,
+      containerHeader: "",
+      containerHeaderRow: -1,
+      hierarchyPrefix: "",
+      maxChunkSize: this.config.maxChunkSize,
+      minContentLength: 50,
     });
+    if (parts.length === 0) return chunks;
+
+    const statements = candidates.filter((node) => !this.isCommentNode(node));
+    const name = statements.length === 1 ? this.moduleDeclarationName(statements[0]) : undefined;
+    const remainder = this.remainderChunks(
+      parts,
+      { symbolId: this.buildSymbolId(name), name, parentSymbolId: undefined, chunkType: "block" },
+      filePath,
+      language,
+      0,
+    );
+
+    const result = [...chunks];
+    for (const chunk of remainder) {
+      const at = result.findIndex((existing) => existing.startLine > chunk.startLine);
+      result.splice(at === -1 ? result.length : at, 0, chunk);
+    }
+    return result;
+  }
+
+  /**
+   * The top-level nodes the module remainder is made of, in source order:
+   * every root child none of whose rows `coveredRows` holds, minus imports,
+   * minus comments not directly above (no blank row between) a kept statement.
+   */
+  private moduleRemainderCandidates(root: AstNode, coveredRows: Set<number>, langConfig: LanguageConfig): AstNode[] {
+    const uncovered = (node: AstNode): boolean => {
+      for (let { row } = node.startPosition; row <= node.endPosition.row; row++) if (coveredRows.has(row)) return false;
+      return true;
+    };
+    const kept: AstNode[] = [];
+    let pendingComments: AstNode[] = [];
+    for (const node of root.children) {
+      if (!uncovered(node) || this.isModuleImport(node, langConfig)) {
+        pendingComments = [];
+        continue;
+      }
+      if (this.isCommentNode(node)) {
+        const previous = pendingComments[pendingComments.length - 1];
+        if (previous && node.startPosition.row > previous.endPosition.row + 1) pendingComments = [];
+        pendingComments.push(node);
+        continue;
+      }
+      const lastComment = pendingComments[pendingComments.length - 1];
+      if (lastComment && node.startPosition.row <= lastComment.endPosition.row + 1) kept.push(...pendingComments);
+      pendingComments = [];
+      kept.push(node);
+    }
+    return kept;
+  }
+
+  /**
+   * Import node types every grammar names as such — `import_statement`,
+   * `import_from_statement`, `import_declaration`, `use_declaration`,
+   * `package_clause` … — plus a re-export (`export … from`) and a bare export
+   * list (`export { a, b }`).
+   * A language whose import is an ordinary call answers through
+   * `LanguageChunkerHooks.isModuleImport`.
+   */
+  private static readonly IMPORT_NODE_TYPE =
+    /(^|_)import(_|$)|^use_declaration$|^extern_crate_declaration$|^package_(clause|declaration)$|^using_directive$/;
+
+  private isModuleImport(node: AstNode, langConfig: LanguageConfig): boolean {
+    if (TreeSitterChunker.IMPORT_NODE_TYPE.test(node.type)) return true;
+    // An export carrying a `source` (`export … from`) re-exports another module;
+    // one carrying neither a declaration nor a value is a bare export LIST
+    // (`export { a, b }`) naming declarations the file already chunks (bd
+    // tea-rags-mcp-hlgak).
+    if (
+      node.type.includes("export") &&
+      (node.childForFieldName("source") !== null ||
+        (node.childForFieldName("declaration") === null && node.childForFieldName("value") === null))
+    ) {
+      return true;
+    }
+    return langConfig.isModuleImport?.(node) ?? false;
+  }
+
+  private isCommentNode(node: AstNode): boolean {
+    return node.type.includes("comment");
+  }
+
+  /**
+   * The name a top-level statement declares, when it declares exactly one:
+   * the `name` of the declaration (an `export` unwrapped), of its single
+   * declarator / spec (`const x = …`, Go `var x = …`), or the identifier on the
+   * left of a single assignment (Python `X = …`, Ruby `X = …`).
+   */
+  private moduleDeclarationName(node: AstNode): string | undefined {
+    const declaration = node.childForFieldName("declaration") ?? node;
+    const named = (candidate: AstNode | null | undefined): string | undefined =>
+      candidate && /identifier|^constant$/.test(candidate.type) ? candidate.text : undefined;
+
+    const declarators = declaration.namedChildren.filter((child) => /declarator$|_spec$/.test(child.type));
+    if (declarators.length > 1) return undefined;
+    if (declarators.length === 1) return named(declarators[0].childForFieldName("name"));
+
+    const own = named(declaration.childForFieldName("name"));
+    if (own !== undefined) return own;
+
+    const expressions = declaration.namedChildren;
+    const assignment = expressions.length === 1 ? expressions[0] : declaration;
+    return assignment.type.includes("assignment") ? named(assignment.childForFieldName("left")) : undefined;
   }
 
   /**

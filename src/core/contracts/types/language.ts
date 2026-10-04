@@ -530,6 +530,15 @@ export interface LanguageChunkerHooks {
    * does for any file whose parse produced no tree.
    */
   readImportSpecifiers?: (root: AstNode) => string[];
+  /**
+   * Whether a TOP-LEVEL statement only brings another module in, for a language
+   * whose import is not a dedicated node type — Ruby's `require` is an ordinary
+   * `call`. The engine keeps such statements out of the module remainder (the
+   * top-level code no chunk carries). Import node types every grammar names
+   * as such (`import_statement`, `use_declaration`, a re-export `from`) are
+   * recognized by the engine without it.
+   */
+  isModuleImport?: (node: AstNode) => boolean;
 }
 
 /**
@@ -917,6 +926,28 @@ export interface SchemaColumnAccessorSource {
   readonly modelNameForTable: (table: string) => string;
   /** A class owns a schema table only if its ancestry reaches one of these. */
   readonly modelBaseClasses: readonly string[];
+}
+
+/** What a {@link LanguageCrossRunParseCache} has done since it was built, and what it holds now. */
+export interface LanguageCrossRunParseUsage {
+  /** Parses handed back from an earlier run instead of parsing again. */
+  reused: number;
+  /** Parses made (none stored, stale, or under other options). */
+  parsed: number;
+  retainedFiles: number;
+  retainedTextBytes: number;
+}
+
+/**
+ * Parse state a long-lived process carries from one codegraph run to the next
+ * — only what every read re-validates against the file it came from, so a run
+ * over it builds what a cold run builds. Opaque to its holder: built by the
+ * language module (`CrossRunParseCache`) and handed back to the module's
+ * `LanguageFactory`, which threads it to the providers that parse. Everything
+ * else a resolver holds stays scoped to the factory, i.e. to one run.
+ */
+export interface LanguageCrossRunParseCache {
+  usage: () => LanguageCrossRunParseUsage;
 }
 
 /**

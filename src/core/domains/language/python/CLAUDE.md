@@ -21,9 +21,11 @@
   `CODEGRAPH_LANGUAGES` extension and `SymbolDefinition` carries no `language`
   field, so the raw lookup answers with any file that spells the name: polar's
   `range(...)` resolved to `Paginator.tsx#range`. The wrapper in
-  `resolver/strategies/shared.ts` keeps `.py` candidates only, and the extension
-  list is the literal in `vocabulary/source-extensions.ts` because `language` is
-  a leaf domain that may not import the registry from `trajectory/`.
+  `resolver/short-name-lookup.ts` (re-exported by
+  `resolver/strategies/shared.ts`) keeps `.py` candidates only, and the
+  extension list is the literal in `vocabulary/source-extensions.ts` because
+  `language` is a leaf domain that may not import the registry from
+  `trajectory/`.
 - **A BARE call reaches module scope, an enclosing function, an import, or a
   builtin — never a class body.** `globalShortName`'s `receiver === null` arm
   rejects a pick that is none of those: `open(path, mode)` in one file cannot

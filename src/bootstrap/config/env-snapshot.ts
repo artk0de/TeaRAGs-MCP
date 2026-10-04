@@ -79,6 +79,7 @@ export function buildRegistryEnvSnapshot(config: RegistryEnvSnapshotSource): Rec
   put("OLLAMA_LEGACY_API", embedding.ollamaLegacyApi);
   put("OLLAMA_NUM_GPU", embedding.ollamaNumGpu);
   put("OLLAMA_QUANTIZATION", embedding.ollamaQuantization);
+  put("EMBEDDING_AUTO_PULL", embedding.autoPull);
 
   put("TRAJECTORY_GIT_ENABLED", trajectoryGit.enabled);
   put("TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS", trajectoryGit.logMaxAgeMonths);
@@ -121,6 +122,7 @@ export function buildRegistryEnvSnapshot(config: RegistryEnvSnapshotSource): Rec
   put("EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS", embedding.tune.unavailableRetryMaxWaitMs);
   put("EMBEDDING_TUNE_UNAVAILABLE_RETRY_BASE_DELAY_MS", embedding.tune.unavailableRetryBaseDelayMs);
   put("EMBEDDING_TUNE_FAILOVER_CONSECUTIVE_FAILURES", embedding.tune.failoverConsecutiveFailures);
+  put("EMBEDDING_TUNE_STATIC", embedding.tune.static);
 
   put("QDRANT_TUNE_UPSERT_BATCH_SIZE", qdrantTune.upsertBatchSize);
   put("QDRANT_TUNE_UPSERT_FLUSH_INTERVAL_MS", qdrantTune.upsertFlushIntervalMs);

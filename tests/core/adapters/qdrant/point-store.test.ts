@@ -123,3 +123,50 @@ describe("QdrantPointStore#getPoint", () => {
     await expect(store.getPoint("col", 1)).rejects.toBeInstanceOf(QdrantUnavailableError);
   });
 });
+
+/**
+ * `retrieveDenseVectors` (bd tea-rags-mcp-xi2r9, WTO-5): the working tree's
+ * dense floor reuses the stored vector of a base point whose content a delta
+ * row repeats byte for byte, so it reads points by id WITH their dense vector
+ * and a narrowed payload. A hybrid collection names the dense vector `dense`.
+ */
+describe("QdrantPointStore#retrieveDenseVectors", () => {
+  it("reads the points by stored id with the named payload and every vector", async () => {
+    const { store, client } = storeOver(async () => [{ id: 7, payload: { content: "x" }, vector: [0.1, 0.2] }]);
+
+    await store.retrieveDenseVectors("col", [7], ["content"]);
+
+    expect(client.retrieve).toHaveBeenCalledWith("col", {
+      ids: [7],
+      with_payload: { include: ["content"] },
+      with_vector: true,
+    });
+  });
+
+  it("answers the bare vector of a single-vector collection and the dense one of a hybrid collection", async () => {
+    const { store } = storeOver(async () => [
+      { id: 1, payload: { content: "a" }, vector: [0.1, 0.2] },
+      { id: 2, payload: { content: "b" }, vector: { dense: [0.3, 0.4], sparse: { indices: [1], values: [1] } } },
+      { id: 3, payload: { content: "c" } },
+    ]);
+
+    await expect(store.retrieveDenseVectors("col", [1, 2, 3], ["content"])).resolves.toEqual([
+      { id: 1, payload: { content: "a" }, vector: [0.1, 0.2] },
+      { id: 2, payload: { content: "b" }, vector: [0.3, 0.4] },
+      { id: 3, payload: { content: "c" } },
+    ]);
+  });
+
+  it("asks nothing for no ids", async () => {
+    const { store, client } = storeOver(async () => []);
+
+    await expect(store.retrieveDenseVectors("col", [], ["content"])).resolves.toEqual([]);
+    expect(client.retrieve).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a failed read as an InfraError", async () => {
+    const { store } = storeOver(async () => Promise.reject(httpError(500, "boom")));
+
+    await expect(store.retrieveDenseVectors("col", [1], ["content"])).rejects.toBeInstanceOf(InfraError);
+  });
+});

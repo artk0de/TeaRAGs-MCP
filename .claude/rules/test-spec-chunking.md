@@ -91,34 +91,57 @@ interface TestScopeLine {
 
 ## Chunk emission rules (MANDATORY — identical across languages)
 
-The unit is the **example**. Scopes are outline nodes, not chunks.
+The unit is the **example**. Setup is stored ONCE per scope and referenced,
+never copied into examples (bd tea-rags-mcp-5xpq4): copying it embedded tests at
+x1.75 of their source size on taxdome.
 
-| Source                                                        | Output                                                                                                                                                                                |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Every example** (leaf or intermediate scope, root included) | One `chunkType: "test"` chunk. `content` = every ancestor's setup (outermost first) + its scope's own setup + its scope's otherLines + the example, joined with `\n`, then `.trim()`. |
-| **Leaf without examples** (setup/other only)                  | One chunk of its own setup + otherLines (no ancestor setup): `"test"` when a setup line has `delegatesExamples`, else `"test_setup"`.                                                 |
-| **Scope with children or examples**                           | No chunk of its own — its setup reaches the index inside its examples.                                                                                                                |
-| **Empty**                                                     | Zero chunks.                                                                                                                                                                          |
+| Source                                  | Output                                                                                                                                                                                                                                                                                                                                                       |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Every example**                       | One `chunkType: "test"` chunk. `content` = the scope title path (the non-root scope names, outermost first — the engine prepends the root's call row) + the example, joined with `\n`, then `.trim()`. It carries NO setup reference: the setup it inherits is found by its start line (see below).                                                          |
+| **Adjacent examples** (bd g5i0a)        | PACKED: the examples of one scope with no child scope between them (a run) share one `test` chunk, cut greedily in source order while its content stays ≤ `EXAMPLE_GROUP_BUDGET_CHARS` (1500, never above the content budget); an example over the budget on its own stays single. Packing never crosses a scope.                                            |
+| **Tiny examples** (own text < 50 chars) | Never dropped: a tiny example alone in its run joins the nearest multi-example run of its scope, else the other lone tiny ones, before the budget cut; a single tiny example in its scope stays its own chunk.                                                                                                                                               |
+| **Scope with own setup or otherLines**  | Its own lines (no ancestor's) are a MEMBER of a `"test_setup"` chunk that packs consecutive scopes' setup, in source order, up to the content budget; a member oversized on its own is a pack of one, split by the engine's hard cap. A scope with a `delegatesExamples` line is never packed: it keeps a `"test"` chunk of its own, same per-member fields. |
+| **Empty**                               | Zero chunks.                                                                                                                                                                                                                                                                                                                                                 |
 
 Always-applied rules:
 
-- **Min content**: drop chunks where `content.length < 50` (after trim).
-- **Size budget**: when an example chunk exceeds `maxChunkSize`, the setup
-  prefix sheds whole statements from the OUTERMOST end until it fits; the
-  example is never cut by the kernel. An example oversized on its own is split
-  by the engine's hard cap into `<exampleId>#partN` windows (`parentSymbolId` =
-  the example id), which the outline folds back into one line. Every window
-  after the first repeats the example's call row (`it(...)` / `it "..." do`)
-  under the container header (bd tea-rags-mcp-l24yk).
-- **Order**: chunks follow source order — scopes and examples interleaved by
-  start line.
+- **Min content**: a scope's setup with no example below it is dropped under 50
+  characters (after trim); setup an example depends on is kept whatever its size
+  — explore renders it into that example.
+- **Size budget**: when an example chunk exceeds `maxChunkSize`, the title rows
+  shed from the OUTERMOST end until it fits; the example is never cut by the
+  kernel. An example oversized on its own is split by the engine's hard cap into
+  `<exampleId>#partN` windows (`parentSymbolId` = the example id), which the
+  outline folds back into one line. Every window after the first repeats the
+  example's call row (`it(...)` / `it "..." do`) under the container header (bd
+  tea-rags-mcp-l24yk).
+- **Order**: chunks follow source order — a setup pack at its first member's
+  scope, before anything that scope contains; a group at its earliest member.
 
 ## symbolId / parent fields (MANDATORY)
 
-| Chunk           | `symbolId`                         | `name`         | `parentSymbolId` | `parentType`                              |
-| --------------- | ---------------------------------- | -------------- | ---------------- | ----------------------------------------- |
-| Example         | `` `${scopeId}.${example.name}` `` | `example.name` | `scopeId`        | `"test_scope"` (`TEST_SCOPE_PARENT_TYPE`) |
-| Setup-only leaf | `scopeId`                          | `scope.name`   | `topLevelName`   | the container's AST type (engine)         |
+| Chunk        | `symbolId`                         | `name`         | `parentSymbolId` | `parentType`                              | extra                                                                                                              |
+| ------------ | ---------------------------------- | -------------- | ---------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Example      | `` `${scopeId}.${example.name}` `` | `example.name` | `scopeId`        | `"test_scope"` (`TEST_SCOPE_PARENT_TYPE`) | —                                                                                                                  |
+| Example pack | its first member's example id      | first member's | `scopeId`        | `"test_scope"`                            | per member, aligned, source order: `memberSymbolIds`, `lineRanges` (payload `memberLineRanges`), `memberRowCounts` |
+| Setup pack   | first member's `scopeId`           | first member's | `topLevelName`   | the container's AST type (engine)         | per member, aligned: `scopeLineRanges`, `memberRowCounts`; on several members `memberSymbolIds`, `lineRanges`      |
+
+**Setup inheritance is lexical, by line.** An example (or example pack) inherits
+every setup MEMBER of its file whose `scopeLineRanges` entry contains its
+`startLine`, outermost first (earlier start, then the wider span) — RSpec `let`
+/ `before` and Jest `beforeEach` scoping, read without parsing an id (a scope
+name may contain `.` and carry `~N`). A sibling scope's span never contains the
+example; a scope without its own setup is no member and contributes nothing.
+Explore renders only the inherited members' rows, sliced out of their pack by
+`memberRowCounts` — never a sibling packed beside them. An example pack never
+spans scopes, so its members share one chain, rendered once. Setup arriving from
+a definition elsewhere (`include_context`, `shared_examples`, `it_behaves_like`)
+is not resolved: the delegating line sits in its scope's setup chunk as written.
+
+`memberSymbolIds` is filtered on by `find_symbol`, so it is a text-indexed key
+(`TEXT_INDEXED_KEYS`, `schema-v19-member-symbol-ids-text`) matched through
+`exactMatchOnTextIndexed`. `scopeLineRanges`, `memberRowCounts` and
+`memberLineRanges` are only read, never filtered, and carry no payload index.
 
 `scopeId` = `` `${topLevelName}.${scope.name}` `` — the IMMEDIATE scope's name,
 not the path: `User.context 'when admin'.it 'can invite'`. A repeated id gets
@@ -126,8 +149,7 @@ not the path: `User.context 'when admin'.it 'can invite'`. A repeated id gets
 whole tree; a scope's `~N` carries into its examples' ids.
 `parentType: "test_scope"` is what explore reads to draw a scope and to answer a
 scope id with an outline of its examples — a test chunk under any other
-parentType is a setup-only scope or a pre-example-era chunk and renders as a
-plain line.
+parentType is a scope's setup or a pre-example-era chunk.
 
 `topLevelName` extraction priority on root scope's first arg:
 
@@ -138,29 +160,38 @@ plain line.
 ## Outline contract (what agents see)
 
 - `find_symbol(relativePath: <test file>)` lists each scope id once, at its
-  first example, with its example ids nested under it.
+  first example, with its example ids — every member of an example pack included
+  — nested under it. A setup member prints no line of its own where its scope
+  line is drawn; a setup-only scope's member prints its scope id.
 - `find_symbol(symbol: <scope id>)` returns an outline of that scope's example
-  ids, no bodies.
-- `find_symbol(symbol: <example id>)` returns that example's chunk (inherited
-  setup + example), `#partN` windows merged.
+  ids, no bodies, plus the setup chunk packing the scope's own setup (through
+  `memberSymbolIds` when the scope is not the pack's first member).
+- `find_symbol(symbol: <example id>)` returns that example's chunk with its
+  setup chain prepended (read-side hydration,
+  `BaseExploreStrategy#hydrateTestSetup`), `#partN` windows merged. A packed
+  member's id (found through `SymbolSearchStrategy#scrollPackMembers`, or the
+  pack's own id for its first member) returns that member alone, sliced out of
+  the pack with its own lines (`explore/test-pack.ts#examplePackMember`); a pack
+  of an index without `memberRowCounts` / `memberLineRanges` is returned whole.
+  A search hit returns the pack as one result.
 
 ## Line range rule (MANDATORY)
 
-An example chunk's `startLine` / `endLine` are the example's own rows. A
-setup-only chunk's are its own setup + other lines. NEVER include ancestor setup
-line ranges — even though ancestor content is spliced into `content` for
-context. Else `git blame` lookups + `Read` offsets drift onto the parent's setup
-region.
+An example chunk's `startLine` / `endLine` are the example's own rows; an
+example pack's span its members, with `lineRanges` per member. A setup pack's
+span its members' own setup + other lines, with `lineRanges` per member. NEVER
+include ancestor setup line ranges. Else `git blame` lookups + `Read` offsets
+drift onto the parent's setup region.
 
 ## Versioning (MANDATORY)
 
-The example shape is `sharedVersions.chunking` 2 — the epic's ONE bump. A
-language migrating its scope chunker onto the kernel re-pins its own `chunking`
-digest WITHOUT bumping (`npm run pin:lang-versions`, commit body
-`Versions: covered by *.chunking 2 (tea-rags-mcp-phftd)`), as long as that
-shared bump has not yet been released to an index. The bump's scope is test
-files only; its minimal remedy is a scoped `--force` over test files
-(tea-rags-mcp-j4oww).
+The example shape is `sharedVersions.chunking` 2 (epic tea-rags-mcp-phftd); the
+per-scope setup packs, their per-member fields and tiny grouping are `chunking`
+4 (bd tea-rags-mcp-5xpq4), unscoped, as is example packing (bd
+tea-rags-mcp-g5i0a, same unreleased bump). A language migrating its scope
+chunker onto the kernel re-pins its own `chunking` digest WITHOUT bumping
+(`npm run pin:lang-versions`), as long as the shared bump covering the shape has
+not yet been released to an index.
 
 ## Test-file detection (MANDATORY)
 

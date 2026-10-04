@@ -31,6 +31,7 @@ import { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { AmbiguousResolveMode } from "../../../contracts/types/codegraph.js";
 import type {
   CollectSymbolsFn,
+  LanguageCrossRunParseCache,
   LanguageFactoryDescriptor,
   SymbolIdComposer,
 } from "../../../contracts/types/language.js";
@@ -128,10 +129,15 @@ export interface CodegraphWorkerConfig {
  * against the `contracts/` interfaces only — never the concrete classes — so
  * the FACTORY carries no static `domains/language` dependency either (the
  * `import(variable)` is invisible to `no-restricted-imports`). Mirrors the
- * chunker worker's `LanguageModule` interface exactly.
+ * chunker worker's `LanguageModule` interface, plus the cross-run parse
+ * cache constructor the working-tree graph child builds its caches with.
  */
 interface LanguageModule {
-  LanguageFactory: new (options?: { ambiguousResolveMode?: AmbiguousResolveMode }) => LanguageFactoryDescriptor;
+  LanguageFactory: new (options?: {
+    ambiguousResolveMode?: AmbiguousResolveMode;
+    crossRunParseCache?: LanguageCrossRunParseCache;
+  }) => LanguageFactoryDescriptor;
+  CrossRunParseCache: new () => LanguageCrossRunParseCache;
   DefaultSymbolIdComposer: new () => SymbolIdComposer;
   collectSymbols: CollectSymbolsFn;
 }
@@ -165,6 +171,53 @@ export async function createCodegraphEnrichmentProvider(
   config: CodegraphWorkerConfig,
   descriptor?: WorkerEnrichmentDescriptor,
 ): Promise<CodegraphEnrichmentProvider> {
+  return (await createCodegraphProviderRuntime(config, descriptor)).provider;
+}
+
+/**
+ * A provider together with the `GraphDbClientPool` it writes through. The pool
+ * is otherwise private to the provider, and a caller that OWNS the database
+ * files — the working-tree graph build, which must CHECKPOINT and close every
+ * client before its output is self-contained — needs it. Long-lived callers
+ * keep `createCodegraphEnrichmentProvider`.
+ */
+export interface CodegraphProviderRuntime {
+  provider: CodegraphEnrichmentProvider;
+  pool: GraphDbClientPool;
+}
+
+/**
+ * Process-local collaborators a caller may hand {@link createCodegraphProviderRuntime}
+ * beside its plain-data config — things that outlive one runtime and so cannot
+ * be rebuilt from the config.
+ */
+export interface CodegraphProviderRuntimeDeps {
+  /**
+   * Parses carried from earlier runs in this process (the warm working-tree
+   * graph child, which builds one tree again and again), from
+   * {@link createLanguageCrossRunParseCache}. Absent: the run parses cold.
+   */
+  crossRunParseCache?: LanguageCrossRunParseCache;
+}
+
+/**
+ * A fresh cross-run parse cache from the language module at
+ * `languageModulePath` — the same dynamic import the runtime makes, so the
+ * caller holding the cache needs no static `domains/language` dependency.
+ */
+export async function createLanguageCrossRunParseCache(
+  languageModulePath: string,
+): Promise<LanguageCrossRunParseCache> {
+  const lang = (await import(languageModulePath)) as LanguageModule;
+  return new lang.CrossRunParseCache();
+}
+
+/** {@link createCodegraphEnrichmentProvider}, returning the pool the provider was built on as well. */
+export async function createCodegraphProviderRuntime(
+  config: CodegraphWorkerConfig,
+  descriptor?: WorkerEnrichmentDescriptor,
+  runtimeDeps: CodegraphProviderRuntimeDeps = {},
+): Promise<CodegraphProviderRuntime> {
   const lang = (await import(config.languageModulePath)) as LanguageModule;
   // NO root is passed here on purpose. `config.rootDir` is the DuckDB storage
   // root (`paths.appData`), fixed at bootstrap before any collection exists —
@@ -172,7 +225,10 @@ export async function createCodegraphEnrichmentProvider(
   // at a directory that holds no project, so every path alias was silently lost
   // on every project (bd tea-rags-mcp-f4wcm). The root a resolver needs is the
   // one the RUN is indexing, and it arrives per call on `CallContext.projectRoot`.
-  const languageFactory = new lang.LanguageFactory({ ambiguousResolveMode: config.ambiguousResolveMode });
+  const languageFactory = new lang.LanguageFactory({
+    ambiguousResolveMode: config.ambiguousResolveMode,
+    ...(runtimeDeps.crossRunParseCache ? { crossRunParseCache: runtimeDeps.crossRunParseCache } : {}),
+  });
   const composer = new lang.DefaultSymbolIdComposer();
   const { collectSymbols } = lang;
 
@@ -211,7 +267,7 @@ export async function createCodegraphEnrichmentProvider(
     },
   });
 
-  return new CodegraphEnrichmentProvider(
+  const provider = new CodegraphEnrichmentProvider(
     {
       pool,
       composer,
@@ -227,4 +283,5 @@ export async function createCodegraphEnrichmentProvider(
     },
     descriptor,
   );
+  return { provider, pool };
 }

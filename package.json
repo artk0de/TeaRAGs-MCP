@@ -8,11 +8,11 @@
   },
   "scripts": {
     "prebuild": "tsx scripts/prebuild-worker-sweep.ts",
-    "build": "tsc && chmod +x build/cli/index.js",
+    "build": "tsc && tsx scripts/copy-build-assets.ts && chmod +x build/cli/index.js",
     "dev": "tsx src/index.ts",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest --coverage",
+    "test:coverage": "vitest --coverage --maxWorkers=50%",
     "test:providers": "node scripts/verify-providers.js",
     "type-check": "tsc --noEmit",
     "type-check:scripts": "tsc -p tsconfig.scripts.json",
@@ -114,8 +114,8 @@
     "@types/node": "^22.19.15",
     "@types/picomatch": "^4.0.2",
     "@types/yargs": "^17.0.35",
-    "@vitest/coverage-v8": "^4.1.2",
-    "@vitest/ui": "^4.1.2",
+    "@vitest/coverage-v8": "^5.0.3",
+    "@vitest/ui": "^5.0.3",
     "eslint": "^10.1.0",
     "globals": "^17.4.0",
     "husky": "^9.1.7",
@@ -125,7 +125,7 @@
     "semantic-release": "^25.0.3",
     "tsx": "^4.21.0",
     "typescript-eslint": "^8.70.0",
-    "vitest": "^4.1.2"
+    "vitest": "^5.0.3"
   },
   "lint-staged": {
     "*.{ts,js,mts,mjs}": [

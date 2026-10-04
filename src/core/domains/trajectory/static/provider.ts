@@ -37,6 +37,20 @@ export class StaticPayloadBuilder implements PayloadBuilder {
     if (headingPath?.length) payload.headingPath = headingPath;
     const navigation = m.navigation as { prevSymbolId?: string; nextSymbolId?: string } | undefined;
     if (navigation) payload.navigation = navigation;
+    // Test-chunk links (bd tea-rags-mcp-5xpq4): a setup chunk's member scope
+    // spans and row counts, which explore hydrates examples from, and the
+    // members a packed chunk answers find_symbol for. Why they are not
+    // payload signal descriptors: `domains/explore/CLAUDE.md`.
+    const scopeLineRanges = m.scopeLineRanges as { start: number; end: number }[] | undefined;
+    if (scopeLineRanges?.length) payload.scopeLineRanges = scopeLineRanges;
+    const memberRowCounts = m.memberRowCounts as number[] | undefined;
+    if (memberRowCounts?.length) payload.memberRowCounts = memberRowCounts;
+    const memberSymbolIds = m.memberSymbolIds as string[] | undefined;
+    if (memberSymbolIds?.length) payload.memberSymbolIds = memberSymbolIds;
+    // An example pack's own line range per member (bd tea-rags-mcp-g5i0a):
+    // find_symbol answers one member with that member's lines.
+    const memberLineRanges = m.memberLineRanges as { start: number; end: number }[] | undefined;
+    if (memberLineRanges?.length) payload.memberLineRanges = memberLineRanges;
     if (methodLines) {
       payload.methodLines = methodLines;
     }

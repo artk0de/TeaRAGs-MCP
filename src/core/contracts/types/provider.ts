@@ -527,6 +527,16 @@ export type EnrichmentScope = "full" | "file-only" | "none";
 export interface EnrichmentProvider {
   /** Namespace key for Qdrant payload: { [key].file: ..., [key].chunk: ... } */
   readonly key: string;
+  /**
+   * Revision of the computation that writes this provider's payload
+   * (bd tea-rags-mcp-xi2r9). Bumped when an unchanged input now yields
+   * different values under the same keys — no payload-key drift can see that.
+   * A run that rebuilt the provider for every point stamps it on the registry
+   * entry (`CollectionEntry.trajectoryVersions`); the trajectory-version drift
+   * monitor compares the stamp and recommends `--force-enrichments <key>`.
+   * Absent ⇒ the provider is not versioned and never reported.
+   */
+  readonly algorithmVersion?: number;
 
   // ── Query-side contract ──
 

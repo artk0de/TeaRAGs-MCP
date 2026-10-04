@@ -1,5 +1,5 @@
 import type { ComposeSymbolIdOptions, SymbolIdComposer } from "../../../contracts/types/language.js";
-import { INSTANCE_METHOD_SEPARATOR } from "../../../infra/symbolid/classify.js";
+import { INSTANCE_METHOD_SEPARATOR } from "../../../infra/symbolid/index.js";
 
 /**
  * Default `SymbolIdComposer` — the cross-language symbolId mapper at the core

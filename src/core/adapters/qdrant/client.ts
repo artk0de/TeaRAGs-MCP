@@ -276,6 +276,15 @@ export class QdrantManager {
     return this.points.getPointOrThrow(collectionName, id);
   }
 
+  /** Points by id with the named payload keys and their dense vector — see `QdrantPointStore#retrieveDenseVectors`. */
+  async retrieveDenseVectors(
+    collectionName: string,
+    ids: readonly (string | number)[],
+    payloadInclude: string[],
+  ): Promise<{ id: string | number; payload?: Record<string, unknown>; vector?: number[] }[]> {
+    return this.points.retrieveDenseVectors(collectionName, ids, payloadInclude);
+  }
+
   async addPoints(
     collectionName: string,
     points: {
@@ -454,11 +463,12 @@ export class QdrantManager {
   /**
    * Dense + sparse retrieval fused server-side by RRF, optionally weighted, with
    * an optional third dense prefetch narrowed by `identityPrefetchFilter`
-   * (see `QdrantSearchExecutor#hybridSearch`).
+   * (see `QdrantSearchExecutor#hybridSearch`). No dense vector → the sparse
+   * prefetch alone (the embedding provider could not embed the query).
    */
   async hybridSearch(
     collectionName: string,
-    denseVector: number[],
+    denseVector: number[] | undefined,
     sparseVector: SparseVector,
     fetchLimit: number,
     filter?: Record<string, unknown>,

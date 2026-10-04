@@ -22,10 +22,9 @@
  * `QdrantScroller` and `QdrantSearchExecutor` respectively.
  */
 
-import { createHash } from "node:crypto";
-
 import { InfraError } from "../errors.js";
 import type { QdrantConnection } from "./connection.js";
+import { denseVectorOf } from "./dense-vector.js";
 import {
   isVectorDimensionRejection,
   QdrantOperationError,
@@ -34,6 +33,7 @@ import {
   QdrantVectorDimensionMismatchError,
 } from "./errors.js";
 import { anyOfOnTextIndexed } from "./filters/text-indexed-exact.js";
+import { toQdrantPointId } from "./point-id.js";
 import type { SparseVector } from "./types.js";
 
 /** Named by the no-op barrier update in `awaitQueuedUpdates`; its filter matches no point, so nothing is deleted. */
@@ -45,24 +45,9 @@ export class QdrantPointStore {
 
   constructor(private readonly connection: QdrantConnection) {}
 
-  /**
-   * Converts a string ID to UUID format if it's not already a UUID.
-   * Qdrant requires string IDs to be in UUID format.
-   */
+  /** The stored id of `id` — the one mapping every reader shares (`./point-id.ts`). */
   private normalizeId(id: string | number): string | number {
-    if (typeof id === "number") {
-      return id;
-    }
-
-    // Check if already a valid UUID (8-4-4-4-12 format)
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (uuidRegex.test(id)) {
-      return id;
-    }
-
-    // Convert arbitrary string to deterministic UUID v5-like format
-    const hash = createHash("sha256").update(id).digest("hex");
-    return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20, 32)}`;
+    return toQdrantPointId(id);
   }
 
   async countPoints(collectionName: string, filter?: Record<string, unknown>): Promise<number> {
@@ -141,6 +126,38 @@ export class QdrantPointStore {
       id: points[0].id,
       payload: points[0].payload || undefined,
     };
+  }
+
+  /**
+   * Points by id with the named payload keys and their DENSE vector (bd
+   * tea-rags-mcp-xi2r9, WTO-5): the working tree's dense floor reuses the stored
+   * vector of a base point whose content a delta row repeats. A point without a
+   * dense vector comes back without `vector`; an id Qdrant does not hold is
+   * absent. Every failed read throws an `InfraError`.
+   */
+  async retrieveDenseVectors(
+    collectionName: string,
+    ids: readonly (string | number)[],
+    payloadInclude: string[],
+  ): Promise<{ id: string | number; payload?: Record<string, unknown>; vector?: number[] }[]> {
+    if (ids.length === 0) return [];
+    const points = await this.connection
+      .call(async () =>
+        this.connection.client.retrieve(collectionName, {
+          ids: ids.map((id) => this.normalizeId(id)),
+          with_payload: { include: payloadInclude },
+          with_vector: true,
+        }),
+      )
+      .catch((error: unknown) => failPointRead("retrieveDenseVectors", collectionName, error));
+    return points.map((point) => {
+      const vector = denseVectorOf(point.vector);
+      return {
+        id: point.id,
+        ...(point.payload ? { payload: point.payload } : {}),
+        ...(vector ? { vector } : {}),
+      };
+    });
   }
 
   async addPoints(

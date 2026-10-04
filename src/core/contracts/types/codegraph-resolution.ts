@@ -25,7 +25,7 @@ import type { GraphEdges } from "./codegraph-graph.js";
 import type { HierarchyView } from "./codegraph-hierarchy.js";
 import type { CallResultBinding, LocalBinding } from "./codegraph-local-binding.js";
 import type { SelfDispatchArgTemplate } from "./codegraph-pass1.js";
-import type { GlobalSymbolTable, RelPath, SymbolId } from "./codegraph-symbols.js";
+import type { GlobalSymbolTable, RelPath, SymbolId, SymbolKindRoles } from "./codegraph-symbols.js";
 import type { RubyTypeRef } from "./language.js";
 
 /**
@@ -291,6 +291,17 @@ export interface CallContext {
   symbolTable: GlobalSymbolTable;
   /** Optional language-specific config (tsconfig paths, Zeitwerk root, etc.). */
   languageConfig?: unknown;
+  /**
+   * The CALLER's language kind roles — the `codegraph.symbolKindRoles` row of
+   * the vertical whose resolver is resolving (bd tea-rags-mcp-jqvbn). The
+   * ECMAScript family's shared lookup reads it to answer a role (`callee` /
+   * `receiver`) with the calling language's kind set; each vertical injects its
+   * own row at its resolver entry (0qaht.13), so the family's `shared/` module
+   * reaches into no vertical. Absent on a context no vertical built — a harness
+   * driving one strategy directly — where a role narrows nothing, exactly as an
+   * untagged pre-035 row answers every restriction.
+   */
+  symbolKindRoles?: SymbolKindRoles;
   /**
    * Optional per-class field-type map propagated from `FileExtraction`.
    * Resolvers use it to handle `this.<field>.<method>()` cross-class calls

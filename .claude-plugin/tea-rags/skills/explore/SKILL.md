@@ -15,12 +15,12 @@ argument-hint: [what to explore — feature, module, or question]
 
 ## Intent Classification (REQUIRED — pick ONE row before any tool call)
 
-| User intent contains                                | Strategy | Skip if                                  |
-| --------------------------------------------------- | -------- | ---------------------------------------- |
-| "how does X work", "explain Y", "what does Z do"    | EXPLAIN  | active bug → bug-hunt                    |
-| "where is X used", "find all X", "imports of X"     | TRACE    | structural-only → use find_symbol direct |
-| "before I refactor X", "what should I know about Y" | PRE-GEN  | already mid-refactor → executing-plans   |
-| "best example of X", "antipatterns in Y"            | EXEMPLAR | no rerank corpus → ripgrep               |
+| User intent contains                                | Strategy | Skip if                                                          |
+| --------------------------------------------------- | -------- | ---------------------------------------------------------------- |
+| "how does X work", "explain Y", "what does Z do"    | EXPLAIN  | active bug → bug-hunt                                            |
+| "where is X used", "find all X", "imports of X"     | TRACE    | structural-only → use find_symbol direct                         |
+| "before I refactor X", "what should I know about Y" | PRE-GEN  | already mid-refactor → executing-plans                           |
+| "best example of X", "antipatterns in Y"            | EXEMPLAR | no rerank corpus → hybrid_search (ripgrep only for literal text) |
 
 🛑 If unsure, ask user. NEVER assume strategy from partial signals.
 
@@ -112,6 +112,10 @@ Search results complete — no ripgrep verification passes.
 Translate $ARGUMENTS to English (if not already). If user's language differs,
 optionally run secondary query in original language for non-English docs.
 
+Every tea-rags call (search, find_symbol, graph tools):
+`path=<your working directory>` — search-cascade "Addressing the Codebase";
+never project alone.
+
 Apply Intent Classification table above. Then:
 
 1. If risk intent matches → delegate to `risk-assessment/SKILL.md`.
@@ -136,11 +140,12 @@ Extract `pathPattern` from $ARGUMENTS:
 
 **Directory matching** — if word looks like directory name:
 
-1. Search `**/<word>/**` and `**/<word>s/**` (plural)
+1. Probe with a tea-rags search, `pathPattern` `**/<word>/**` and
+   `**/<word>s/**` (plural), `metaOnly: true`, `limit: 3`
 2. One match → use as pathPattern. Multiple → pick deepest or ask. Zero → no
    pathPattern.
 
-Do NOT hardcode aliases — filesystem is source of truth.
+Do NOT hardcode aliases — the probe result is the source of truth.
 
 ### Direct-input intents (no BREADTH needed)
 
@@ -209,8 +214,8 @@ For each interesting result:
 - **"Same thing elsewhere?"** → find_similar (code or chunk ID)
 - **"What is this symbol?"** → find_symbol (returns full definition, no Read
   needed). Fallback: hybrid_search if 0 results.
-- **"Need surrounding context"** → Read file (offset=startLine,
-  limit=endLine-startLine from chunk metadata)
+- **"Need surrounding context"** → `find_symbol` — `relativePath` outline, then
+  drill the neighbour id (`navigation.prev/nextSymbolId`); never Read.
 
 Repeat as needed. Fewer deep dives > many shallow ones.
 

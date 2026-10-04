@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 
+import { setupChainOf } from "../__helpers__/setup-chain.js";
 import {
   TEST_SCOPE_PARENT_TYPE,
+  type BodyChunkResult,
   type TestExample,
   type TestScope,
   type TestScopeLine,
 } from "../../../../../src/core/contracts/types/chunker.js";
-import { produceTestScopeChunks } from "../../../../../src/core/domains/language/kernel/test-scope-chunks.js";
+import {
+  EXAMPLE_GROUP_BUDGET_CHARS,
+  produceTestScopeChunks,
+} from "../../../../../src/core/domains/language/kernel/test-scope-chunks.js";
 
 const CONFIG = { maxChunkSize: 2500 };
 
@@ -17,6 +22,38 @@ function line(text: string, sourceLine: number, delegatesExamples?: boolean): Te
 function example(name: string, startLine: number, body = "expect(subject.value).to eq(42)"): TestExample {
   const text = `  ${name} do\n    ${body}\n  end`;
   return { name, text, startLine, endLine: startLine + 2 };
+}
+
+/** A one-line example whose own chunk is under the 50-character floor. */
+function tiny(name: string, startLine: number): TestExample {
+  return { name, text: `${name} { is_expected.to be_valid }`, startLine, endLine: startLine };
+}
+
+/** A three-row example whose own text is exactly `chars` long. */
+function sized(name: string, startLine: number, chars: number): TestExample {
+  const shell = `  ${name} do\n    \n  end`;
+  return example(name, startLine, "x".repeat(Math.max(0, chars - shell.length)));
+}
+
+/** A packed chunk's members, each as its own rows: the shared header, then the member's rows. */
+function sliceMembers(chunk: BodyChunkResult): string[] {
+  const rows = chunk.content.split("\n");
+  const counts = chunk.memberRowCounts ?? [];
+  const header = rows.length - counts.reduce((a, b) => a + b, 0);
+  let offset = header;
+  return counts.map((n) => {
+    const member = [...rows.slice(0, header), ...rows.slice(offset, offset + n)].join("\n");
+    offset += n;
+    return member;
+  });
+}
+
+function exampleChunks(chunks: BodyChunkResult[]): BodyChunkResult[] {
+  return chunks.filter((c) => c.parentType === TEST_SCOPE_PARENT_TYPE);
+}
+
+function setupChunks(chunks: BodyChunkResult[]): BodyChunkResult[] {
+  return chunks.filter((c) => c.parentType !== TEST_SCOPE_PARENT_TYPE);
 }
 
 function scope(name: string, startLine: number, endLine: number, parts: Partial<TestScope> = {}): TestScope {
@@ -40,19 +77,21 @@ describe("produceTestScopeChunks", () => {
         examples: [example("it 'performs the operation'", 4), example("it 'finalizes the operation'", 8)],
       });
 
-      const chunks = produceTestScopeChunks(root, "Worker", CONFIG);
+      const chunks = exampleChunks(produceTestScopeChunks(root, "Worker", CONFIG));
 
-      expect(chunks.map((c) => c.symbolId)).toEqual([
+      // INVARIANT CHANGED (bd tea-rags-mcp-g5i0a): the two adjacent examples
+      // share one pack, each still addressed by its own member id.
+      expect(chunks.flatMap((c) => c.memberSymbolIds ?? [c.symbolId])).toEqual([
         "Worker.RSpec.describe Worker.it 'performs the operation'",
         "Worker.RSpec.describe Worker.it 'finalizes the operation'",
       ]);
-      expect(chunks.map((c) => c.name)).toEqual(["it 'performs the operation'", "it 'finalizes the operation'"]);
+      expect(chunks.map((c) => c.name)).toEqual(["it 'performs the operation'"]);
       expect(chunks.every((c) => c.parentSymbolId === "Worker.RSpec.describe Worker")).toBe(true);
       expect(chunks.every((c) => c.chunkType === "test")).toBe(true);
       expect(chunks.every((c) => c.parentType === TEST_SCOPE_PARENT_TYPE)).toBe(true);
     });
 
-    it("gives an example chunk the inherited setup, its scope's setup and other lines, then the example", () => {
+    it("gives an example chunk its scope title path and the example, never the setup (5xpq4)", () => {
       const root = scope("describe User", 1, 20, {
         setupLines: [line("  let(:user) { create(:user) }", 2)],
         children: [
@@ -64,17 +103,12 @@ describe("produceTestScopeChunks", () => {
         ],
       });
 
-      const [chunk] = produceTestScopeChunks(root, "User", CONFIG);
+      const [chunk] = exampleChunks(produceTestScopeChunks(root, "User", CONFIG));
 
       expect(chunk.content).toBe(
-        [
-          "let(:user) { create(:user) }",
-          "    before { user.update!(admin: true) }",
-          "    ROLE = :admin",
-          "  it 'can manage accounts' do",
-          "    expect(subject.value).to eq(42)",
-          "  end",
-        ].join("\n"),
+        ["context 'when admin'", "  it 'can manage accounts' do", "    expect(subject.value).to eq(42)", "  end"].join(
+          "\n",
+        ),
       );
       expect(chunk.symbolId).toBe("User.context 'when admin'.it 'can manage accounts'");
       expect(chunk.parentSymbolId).toBe("User.context 'when admin'");
@@ -86,12 +120,12 @@ describe("produceTestScopeChunks", () => {
         examples: [example("it 'is valid with defaults'", 10)],
       });
 
-      const [chunk] = produceTestScopeChunks(root, "User", CONFIG);
+      const [chunk] = exampleChunks(produceTestScopeChunks(root, "User", CONFIG));
 
       expect([chunk.startLine, chunk.endLine]).toEqual([10, 12]);
     });
 
-    it("chunks an intermediate scope's own examples with the setup its ancestors give them", () => {
+    it("chunks an intermediate scope's own examples under their scope title path, without setup", () => {
       const root = scope("describe User", 1, 30, {
         setupLines: [line("  let(:user) { create(:user) }", 2)],
         children: [
@@ -103,14 +137,15 @@ describe("produceTestScopeChunks", () => {
         ],
       });
 
-      const chunks = produceTestScopeChunks(root, "User", CONFIG);
+      const chunks = exampleChunks(produceTestScopeChunks(root, "User", CONFIG));
 
       expect(chunks.map((c) => c.symbolId)).toEqual([
         "User.context 'with a team'.it 'owns the team'",
         "User.context 'when archived'.it 'is read-only'",
       ]);
-      expect(chunks[0].content.startsWith("let(:user) { create(:user) }\n")).toBe(true);
-      expect(chunks[1].content).toContain("let(:team) { create(:team, owner: user) }");
+      expect(chunks[0].content.startsWith("context 'with a team'\n  it 'owns the team' do")).toBe(true);
+      expect(chunks[1].content.startsWith("context 'with a team'\ncontext 'when archived'\n")).toBe(true);
+      expect(chunks.some((c) => c.content.includes("let("))).toBe(false);
     });
 
     it("emits chunks in source order across sibling scopes and a scope's own examples", () => {
@@ -124,11 +159,485 @@ describe("produceTestScopeChunks", () => {
       expect(chunks.map((c) => c.startLine)).toEqual([2, 12, 30]);
     });
 
-    it("drops an example chunk shorter than 50 characters", () => {
-      const tiny: TestExample = { name: "it 'x'", text: "it 'x' {}", startLine: 2, endLine: 2 };
-      const root = scope("describe A", 1, 3, { examples: [tiny] });
+    it("keeps a lone example shorter than 50 characters as its own chunk (5xpq4)", () => {
+      const lone: TestExample = { name: "it 'x'", text: "it 'x' {}", startLine: 2, endLine: 2 };
+      const root = scope("describe A", 1, 3, { examples: [lone] });
 
-      expect(produceTestScopeChunks(root, "A", CONFIG)).toEqual([]);
+      expect(produceTestScopeChunks(root, "A", CONFIG)).toMatchObject([
+        { symbolId: "A.describe A.it 'x'", content: "it 'x' {}", chunkType: "test" },
+      ]);
+    });
+  });
+
+  describe("setup as its own chunk (5xpq4)", () => {
+    // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4, packing): consecutive scopes'
+    // setup shares ONE test_setup chunk up to the content budget — one chunk
+    // per scope recreated the tiny-chunk problem on context-heavy specs.
+    it("packs the setup-bearing scopes' own lines into one test_setup chunk, each member addressable", () => {
+      const root = scope("describe User", 1, 30, {
+        setupLines: [line("  let(:user) { create(:user) }", 2)],
+        children: [
+          scope("context 'when admin'", 4, 20, {
+            setupLines: [line("    before { user.update!(admin: true) }", 5)],
+            otherLines: [line("    ROLE = :admin", 6)],
+            children: [scope("context 'bare'", 8, 18, { examples: [example("it 'can manage accounts'", 9)] })],
+          }),
+        ],
+      });
+
+      const setups = setupChunks(produceTestScopeChunks(root, "User", CONFIG));
+
+      expect(setups).toEqual([
+        {
+          content: "let(:user) { create(:user) }\nbefore { user.update!(admin: true) }\n    ROLE = :admin",
+          startLine: 2,
+          endLine: 6,
+          chunkType: "test_setup",
+          symbolId: "User.describe User",
+          name: "describe User",
+          parentSymbolId: "User",
+          lineRanges: [
+            { start: 2, end: 2 },
+            { start: 5, end: 6 },
+          ],
+          scopeLineRanges: [
+            { start: 1, end: 30 },
+            { start: 4, end: 20 },
+          ],
+          memberRowCounts: [1, 2],
+          memberSymbolIds: ["User.describe User", "User.context 'when admin'"],
+        },
+      ]);
+    });
+
+    it("packs a context-heavy spec's setup by the content budget, not one chunk per scope", () => {
+      // document_policy_spec.rb shape: one describe, many contexts, each with a
+      // let or two and one example.
+      const contexts = Array.from({ length: 40 }, (_, i) =>
+        scope(`context 'when the document is in state ${i}'`, 10 + i * 10, 18 + i * 10, {
+          setupLines: [
+            line(`    let(:state) { :state_${i} }`, 11 + i * 10),
+            ...(i % 2 === 0
+              ? [line(`    let(:document) { create(:document, state: state, index: ${i}) }`, 12 + i * 10)]
+              : []),
+          ],
+          examples: [example("it 'permits the action'", 14 + i * 10)],
+        }),
+      );
+      const root = scope("describe DocumentPolicy", 1, 500, {
+        setupLines: [line("  let(:user) { create(:user, :firm_owner) }", 2)],
+        children: contexts,
+      });
+      const config = { maxChunkSize: 600 };
+
+      const chunks = produceTestScopeChunks(root, "DocumentPolicy", config);
+      const setups = setupChunks(chunks);
+
+      const setupChars = setups.reduce((sum, c) => sum + c.content.length, 0);
+      expect(setups.length).toBeLessThanOrEqual(Math.ceil(setupChars / 600) + 1);
+      expect(setups.length).toBeLessThan(41);
+      expect(setups.every((c) => c.content.length <= 600)).toBe(true);
+      expect(setups.flatMap((c) => c.memberSymbolIds ?? [c.symbolId])).toEqual([
+        "DocumentPolicy.describe DocumentPolicy",
+        ...contexts.map((c) => `DocumentPolicy.${c.name}`),
+      ]);
+      for (const c of setups) {
+        const members = c.scopeLineRanges ?? [];
+        expect(c.memberRowCounts).toHaveLength(members.length);
+        expect(c.lineRanges ?? [{ start: c.startLine, end: c.endLine }]).toHaveLength(members.length);
+        expect((c.memberRowCounts ?? []).reduce((a, b) => a + b, 0)).toBe(c.content.split("\n").length);
+      }
+      // Every example still inherits exactly its own context's setup and the root's.
+      expect(exampleChunks(chunks).map((c) => setupChainOf(chunks, c))).toEqual(
+        contexts.map((c) => ["DocumentPolicy.describe DocumentPolicy", `DocumentPolicy.${c.name}`]),
+      );
+    });
+
+    it("gives an oversized scope's setup a chunk of its own, for the engine's hard cap to split", () => {
+      const big = Array.from({ length: 20 }, (_, i) => line(`    let(:field_${i}) { "value number ${i}" }`, 3 + i));
+      const root = scope("describe Big", 1, 60, {
+        setupLines: [line("  let(:a) { 1 }", 2)],
+        children: [
+          scope("context 'huge'", 3, 40, { setupLines: big, examples: [example("it 'works'", 30)] }),
+          scope("context 'small'", 41, 50, {
+            setupLines: [line("    let(:b) { 2 }", 42)],
+            examples: [example("it 'works too'", 44)],
+          }),
+        ],
+      });
+
+      const setups = setupChunks(produceTestScopeChunks(root, "Big", { maxChunkSize: 300 }));
+
+      expect(setups.map((c) => c.memberSymbolIds ?? [c.symbolId])).toEqual([
+        ["Big.describe Big"],
+        ["Big.context 'huge'"],
+        ["Big.context 'small'"],
+      ]);
+      expect(setups[1].content.length).toBeGreaterThan(300);
+    });
+
+    it("links every example to the setup-bearing scopes whose span contains it, outermost first", () => {
+      const root = scope("describe User", 1, 60, {
+        setupLines: [line("  let(:user) { create(:user) }", 2)],
+        children: [
+          scope("context 'v1.2 api'", 4, 20, {
+            setupLines: [line("    let(:version) { '1.2' }", 5)],
+            children: [
+              scope("context 'bare'", 7, 18, {
+                examples: [example("it 'answers'", 8)],
+              }),
+            ],
+          }),
+          scope("context 'v1.2 api'", 22, 40, {
+            setupLines: [line("    let(:version) { '1.2-beta' }", 23)],
+            examples: [example("it 'answers in beta'", 25)],
+          }),
+        ],
+      });
+
+      const chunks = produceTestScopeChunks(root, "User", CONFIG);
+      const examples = exampleChunks(chunks);
+
+      expect(examples.map((c) => [c.symbolId, setupChainOf(chunks, c)])).toEqual([
+        ["User.context 'bare'.it 'answers'", ["User.describe User", "User.context 'v1.2 api'"]],
+        ["User.context 'v1.2 api'~2.it 'answers in beta'", ["User.describe User", "User.context 'v1.2 api'~2"]],
+      ]);
+    });
+
+    it("never links an example to a sibling scope's setup, even inside one packed chunk", () => {
+      const root = scope("describe User", 1, 40, {
+        children: [
+          scope("context 'as guest'", 2, 12, {
+            setupLines: [line("    let(:user) { build(:user, role: :guest) }", 3)],
+            examples: [example("it 'cannot manage accounts'", 5)],
+          }),
+          scope("context 'as admin'", 14, 24, {
+            setupLines: [line("    let(:user) { build(:user, role: :admin) }", 15)],
+            examples: [example("it 'manages accounts'", 17)],
+          }),
+        ],
+      });
+
+      const chunks = produceTestScopeChunks(root, "User", CONFIG);
+
+      // Both contexts' setup shares one packed chunk; neither leaks into the other.
+      expect(setupChunks(chunks)).toHaveLength(1);
+      expect(exampleChunks(chunks).map((c) => setupChainOf(chunks, c))).toEqual([
+        ["User.context 'as guest'"],
+        ["User.context 'as admin'"],
+      ]);
+    });
+
+    it("stores the setup link on the setup chunk only — an example carries no setup reference", () => {
+      const root = scope("describe A", 1, 10, {
+        setupLines: [line("  let(:a) { 1 }", 2)],
+        examples: [example("it 'reads a'", 4)],
+      });
+
+      const [example1] = exampleChunks(produceTestScopeChunks(root, "A", CONFIG));
+
+      expect(example1).not.toHaveProperty("scopeLineRanges");
+      expect(example1).not.toHaveProperty("memberRowCounts");
+      expect(example1).not.toHaveProperty("setupScopeIds");
+    });
+
+    it("keeps a short setup chunk an example depends on, so hydration can render it", () => {
+      const root = scope("describe A", 1, 10, {
+        setupLines: [line("  let(:a) { 1 }", 2)],
+        examples: [example("it 'reads a'", 4)],
+      });
+
+      const chunks = produceTestScopeChunks(root, "A", CONFIG);
+
+      expect(setupChunks(chunks).map((c) => c.content)).toEqual(["let(:a) { 1 }"]);
+      expect(setupChainOf(chunks, exampleChunks(chunks)[0])).toEqual(["A.describe A"]);
+    });
+
+    it("inherits no setup when no scope above the example has setup", () => {
+      const root = scope("describe A", 1, 10, { examples: [example("it 'stands alone'", 4)] });
+
+      const chunks = produceTestScopeChunks(root, "A", CONFIG);
+
+      expect(setupChainOf(chunks, chunks[0])).toEqual([]);
+    });
+
+    it("types a scope's setup chunk as test when a setup line delegates to shared examples", () => {
+      const root = scope("describe Mailer", 1, 20, {
+        setupLines: [line("  it_behaves_like 'a notifier that retries delivery'", 2, true)],
+        examples: [example("it 'delivers'", 4)],
+      });
+
+      const [setup] = setupChunks(produceTestScopeChunks(root, "Mailer", CONFIG));
+
+      expect(setup).toMatchObject({ symbolId: "Mailer.describe Mailer", chunkType: "test" });
+    });
+
+    it("keeps a delegating scope's setup out of the pack, as its own test chunk the example still inherits", () => {
+      const root = scope("describe Mailer", 1, 30, {
+        setupLines: [line("  let(:mailer) { described_class.new }", 2)],
+        children: [
+          scope("context 'as a notifier'", 4, 14, {
+            setupLines: [line("    it_behaves_like 'a notifier that retries delivery'", 5, true)],
+            examples: [example("it 'delivers'", 7)],
+          }),
+          scope("context 'quietly'", 16, 26, {
+            setupLines: [line("    let(:quiet) { true }", 17)],
+            examples: [example("it 'stays silent'", 19)],
+          }),
+        ],
+      });
+
+      const chunks = produceTestScopeChunks(root, "Mailer", CONFIG);
+
+      expect(setupChunks(chunks).map((c) => [c.chunkType, c.memberSymbolIds ?? [c.symbolId]])).toEqual([
+        ["test_setup", ["Mailer.describe Mailer", "Mailer.context 'quietly'"]],
+        ["test", ["Mailer.context 'as a notifier'"]],
+      ]);
+      expect(setupChainOf(chunks, exampleChunks(chunks)[0])).toEqual([
+        "Mailer.describe Mailer",
+        "Mailer.context 'as a notifier'",
+      ]);
+    });
+  });
+
+  describe("tiny examples are grouped, never dropped (5xpq4)", () => {
+    it("merges consecutive tiny sibling examples into one chunk that names every member", () => {
+      const root = scope("describe User", 1, 10, {
+        examples: [tiny("it", 2), tiny("it", 3), tiny("it", 4)],
+      });
+
+      const chunks = produceTestScopeChunks(root, "User", CONFIG);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toMatchObject({
+        symbolId: "User.describe User.it",
+        chunkType: "test",
+        parentSymbolId: "User.describe User",
+        parentType: TEST_SCOPE_PARENT_TYPE,
+        startLine: 2,
+        endLine: 4,
+        memberSymbolIds: ["User.describe User.it", "User.describe User.it~2", "User.describe User.it~3"],
+      });
+      expect(chunks[0].content).toBe(
+        ["it { is_expected.to be_valid }", "it { is_expected.to be_valid }", "it { is_expected.to be_valid }"].join(
+          "\n",
+        ),
+      );
+    });
+
+    it("folds a lone tiny example into the nearest tiny group of its scope", () => {
+      const root = scope("describe User", 1, 30, {
+        examples: [tiny("it 'a'", 2), example("it 'is a real example'", 4), tiny("it 'b'", 10), tiny("it 'c'", 11)],
+      });
+
+      const chunks = exampleChunks(produceTestScopeChunks(root, "User", CONFIG));
+
+      // INVARIANT CHANGED (bd tea-rags-mcp-g5i0a): the real example sits in the
+      // same run as its tiny siblings, so all four share one pack.
+      expect(chunks.map((c) => c.symbolId)).toEqual(["User.describe User.it 'a'"]);
+      expect(chunks[0].memberSymbolIds).toEqual([
+        "User.describe User.it 'a'",
+        "User.describe User.it 'is a real example'",
+        "User.describe User.it 'b'",
+        "User.describe User.it 'c'",
+      ]);
+      expect(chunks[0].lineRanges).toEqual([
+        { start: 2, end: 2 },
+        { start: 4, end: 6 },
+        { start: 10, end: 10 },
+        { start: 11, end: 11 },
+      ]);
+    });
+
+    it("folds a lone tiny example across a child scope into the nearest pack of its own scope (g5i0a)", () => {
+      const root = scope("describe User", 1, 30, {
+        examples: [tiny("it 'a'", 2), tiny("it 'b'", 10), tiny("it 'c'", 11)],
+        children: [scope("context 'nested'", 4, 8, { examples: [example("it 'is a real example'", 5)] })],
+      });
+
+      const chunks = exampleChunks(produceTestScopeChunks(root, "User", CONFIG));
+
+      expect(chunks.map((c) => c.memberSymbolIds ?? [c.symbolId])).toEqual([
+        ["User.describe User.it 'a'", "User.describe User.it 'b'", "User.describe User.it 'c'"],
+        ["User.context 'nested'.it 'is a real example'"],
+      ]);
+    });
+
+    it("never groups tiny examples across scopes", () => {
+      const root = scope("describe User", 1, 30, {
+        examples: [tiny("it 'a'", 2), tiny("it 'b'", 3)],
+        children: [scope("context 'nested'", 5, 9, { examples: [tiny("it 'c'", 6), tiny("it 'd'", 7)] })],
+      });
+
+      const chunks = produceTestScopeChunks(root, "User", CONFIG);
+
+      expect(chunks.map((c) => c.memberSymbolIds)).toEqual([
+        ["User.describe User.it 'a'", "User.describe User.it 'b'"],
+        ["User.context 'nested'.it 'c'", "User.context 'nested'.it 'd'"],
+      ]);
+      expect(chunks[1].content.startsWith("context 'nested'\n")).toBe(true);
+    });
+
+    it("splits a tiny group at the content budget, keeping every example in some chunk", () => {
+      const examples = Array.from({ length: 6 }, (_, i) => tiny(`it '${i}'`, 2 + i));
+      const root = scope("describe User", 1, 10, { examples });
+
+      const chunks = produceTestScopeChunks(root, "User", { maxChunkSize: 80 });
+
+      expect(chunks.length).toBeGreaterThan(1);
+      expect(chunks.every((c) => c.content.length <= 80)).toBe(true);
+      expect(chunks.flatMap((c) => c.memberSymbolIds ?? [c.symbolId])).toEqual(
+        examples.map((e) => `User.describe User.${e.name}`),
+      );
+    });
+
+    it("links a tiny group to its scope's setup chain", () => {
+      const root = scope("describe User", 1, 10, {
+        setupLines: [line("  subject { build(:user) }", 2)],
+        examples: [tiny("it", 3), tiny("it", 4)],
+      });
+
+      const chunks = produceTestScopeChunks(root, "User", CONFIG);
+
+      expect(setupChainOf(chunks, exampleChunks(chunks)[0])).toEqual(["User.describe User"]);
+    });
+  });
+
+  describe("adjacent examples of one scope are packed up to the group budget (g5i0a)", () => {
+    it("budgets a pack at 1500 characters", () => {
+      expect(EXAMPLE_GROUP_BUDGET_CHARS).toBe(1500);
+    });
+
+    it("packs adjacent examples greedily in source order while the pack stays within the budget", () => {
+      const examples = Array.from({ length: 5 }, (_, i) => sized(`it 'case ${i}'`, 2 + i * 4, 700));
+      const root = scope("describe Policy", 1, 30, { examples });
+
+      const chunks = produceTestScopeChunks(root, "Policy", { maxChunkSize: 4500 });
+
+      expect(chunks.map((c) => c.memberSymbolIds ?? [c.symbolId])).toEqual([
+        ["Policy.describe Policy.it 'case 0'", "Policy.describe Policy.it 'case 1'"],
+        ["Policy.describe Policy.it 'case 2'", "Policy.describe Policy.it 'case 3'"],
+        ["Policy.describe Policy.it 'case 4'"],
+      ]);
+      expect(chunks.every((c) => c.content.length <= EXAMPLE_GROUP_BUDGET_CHARS)).toBe(true);
+      expect(chunks.every((c) => c.chunkType === "test" && c.parentType === TEST_SCOPE_PARENT_TYPE)).toBe(true);
+      expect(chunks[2]).not.toHaveProperty("memberSymbolIds");
+      expect(chunks[2].content).toBe(examples[4].text.trim());
+    });
+
+    it("never packs across a child scope between examples, nor across scopes", () => {
+      const root = scope("describe Cart", 1, 40, {
+        examples: [
+          example("it 'starts empty'", 2),
+          example("it 'adds an item'", 6),
+          example("it 'totals'", 30),
+          example("it 'clears'", 34),
+        ],
+        children: [
+          scope("context 'with a coupon'", 10, 20, {
+            examples: [example("it 'applies the discount'", 12), example("it 'caps the discount'", 16)],
+          }),
+        ],
+      });
+
+      const chunks = produceTestScopeChunks(root, "Cart", CONFIG);
+
+      expect(chunks.map((c) => c.memberSymbolIds ?? [c.symbolId])).toEqual([
+        ["Cart.describe Cart.it 'starts empty'", "Cart.describe Cart.it 'adds an item'"],
+        [
+          "Cart.context 'with a coupon'.it 'applies the discount'",
+          "Cart.context 'with a coupon'.it 'caps the discount'",
+        ],
+        ["Cart.describe Cart.it 'totals'", "Cart.describe Cart.it 'clears'"],
+      ]);
+      expect(chunks[1].parentSymbolId).toBe("Cart.context 'with a coupon'");
+    });
+
+    it("keeps an example over the budget single and packs its neighbours around it", () => {
+      const big = sized("it 'is huge'", 6, EXAMPLE_GROUP_BUDGET_CHARS + 100);
+      const root = scope("describe Report", 1, 30, {
+        examples: [example("it 'starts'", 2), big, example("it 'renders'", 10), example("it 'exports'", 14)],
+      });
+
+      const chunks = produceTestScopeChunks(root, "Report", { maxChunkSize: 4500 });
+
+      expect(chunks.map((c) => c.memberSymbolIds ?? [c.symbolId])).toEqual([
+        ["Report.describe Report.it 'starts'"],
+        ["Report.describe Report.it 'is huge'"],
+        ["Report.describe Report.it 'renders'", "Report.describe Report.it 'exports'"],
+      ]);
+      expect(chunks[1].content).toBe(big.text.trim());
+      expect(chunks[1].partHeader).toBe("it 'is huge' do");
+    });
+
+    it("never packs a delegating setup line with examples: it keeps its own test chunk", () => {
+      const root = scope("describe Mailer", 1, 20, {
+        setupLines: [line("  it_behaves_like 'a notifier that retries delivery'", 6, true)],
+        examples: [example("it 'delivers'", 2), example("it 'retries'", 8)],
+      });
+
+      const chunks = produceTestScopeChunks(root, "Mailer", CONFIG);
+      const [pack] = exampleChunks(chunks);
+
+      expect(pack.memberSymbolIds).toEqual([
+        "Mailer.describe Mailer.it 'delivers'",
+        "Mailer.describe Mailer.it 'retries'",
+      ]);
+      expect(pack.content).not.toContain("it_behaves_like");
+      expect(setupChunks(chunks).map((c) => [c.chunkType, c.symbolId])).toEqual([["test", "Mailer.describe Mailer"]]);
+    });
+
+    it("makes every member addressable: id, own line range and own rows, in source order", () => {
+      const first = example("it 'creates'", 5);
+      const second: TestExample = {
+        name: "it 'updates'",
+        text: "  it 'updates' do\n    record.update!(name: 'b')\n    expect(record.name).to eq('b')\n  end",
+        startLine: 9,
+        endLine: 12,
+      };
+      const root = scope("describe Record", 1, 30, {
+        children: [scope("context 'persisted'", 3, 20, { examples: [first, second] })],
+      });
+
+      const [pack] = produceTestScopeChunks(root, "Record", CONFIG);
+
+      expect(pack).toMatchObject({
+        symbolId: "Record.context 'persisted'.it 'creates'",
+        name: "it 'creates'",
+        parentSymbolId: "Record.context 'persisted'",
+        parentType: TEST_SCOPE_PARENT_TYPE,
+        startLine: 5,
+        endLine: 12,
+        lineRanges: [
+          { start: 5, end: 7 },
+          { start: 9, end: 12 },
+        ],
+        memberSymbolIds: ["Record.context 'persisted'.it 'creates'", "Record.context 'persisted'.it 'updates'"],
+        memberRowCounts: [3, 4],
+      });
+      expect(pack).not.toHaveProperty("scopeLineRanges");
+      expect(sliceMembers(pack)).toEqual([
+        `context 'persisted'\n${first.text.trim()}`,
+        `context 'persisted'\n${second.text.trim()}`,
+      ]);
+    });
+
+    it("gives a pack the setup chain its members share", () => {
+      const root = scope("describe User", 1, 20, {
+        setupLines: [line("  let(:user) { create(:user) }", 2)],
+        children: [
+          scope("context 'admin'", 4, 18, {
+            setupLines: [line("    before { user.update!(admin: true) }", 5)],
+            examples: [example("it 'manages'", 7), example("it 'invites'", 11)],
+          }),
+        ],
+      });
+
+      const chunks = produceTestScopeChunks(root, "User", CONFIG);
+      const [pack] = exampleChunks(chunks);
+
+      expect(pack.memberSymbolIds).toHaveLength(2);
+      expect(setupChainOf(chunks, pack)).toEqual(["User.describe User", "User.context 'admin'"]);
     });
   });
 
@@ -140,7 +649,8 @@ describe("produceTestScopeChunks", () => {
 
       const chunks = produceTestScopeChunks(root, "Parser", CONFIG);
 
-      expect(chunks.map((c) => c.symbolId)).toEqual([
+      // The three share one pack (bd tea-rags-mcp-g5i0a); the ids are its members.
+      expect(chunks.flatMap((c) => c.memberSymbolIds ?? [c.symbolId])).toEqual([
         "Parser.describe Parser.it 'parses'",
         "Parser.describe Parser.it 'parses'~2",
         "Parser.describe Parser.it 'parses'~3",
@@ -205,7 +715,7 @@ describe("produceTestScopeChunks", () => {
       expect(chunk.chunkType).toBe("test");
     });
 
-    it("emits nothing for an intermediate scope that has setup but no examples of its own", () => {
+    it("emits an intermediate scope's own setup as a test_setup chunk named after the scope (5xpq4)", () => {
       const root = scope("describe Mailer", 1, 20, {
         children: [
           scope("context 'with a recipient'", 2, 18, {
@@ -217,26 +727,30 @@ describe("produceTestScopeChunks", () => {
 
       const chunks = produceTestScopeChunks(root, "Mailer", CONFIG);
 
-      expect(chunks.map((c) => c.symbolId)).toEqual(["Mailer.context 'when opted out'.it 'skips delivery'"]);
+      expect(chunks.map((c) => [c.symbolId, c.chunkType])).toEqual([
+        ["Mailer.context 'with a recipient'", "test_setup"],
+        ["Mailer.context 'when opted out'.it 'skips delivery'", "test"],
+      ]);
     });
   });
 
   describe("size budget", () => {
-    it("drops inherited setup outermost-first until the example fits maxChunkSize, keeping the example whole", () => {
-      const outer = line(`  let(:outer) { ${"a".repeat(120)} }`, 2);
-      const inner = line(`    let(:inner) { ${"b".repeat(40)} }`, 5);
+    it("drops scope title rows outermost-first until the example fits maxChunkSize, keeping the example whole", () => {
       const root = scope("describe Budget", 1, 30, {
-        setupLines: [outer],
-        children: [scope("context 'nested'", 4, 20, { setupLines: [inner], examples: [example("it 'fits'", 7)] })],
+        children: [
+          scope(`context '${"o".repeat(60)}'`, 3, 28, {
+            children: [scope("context 'nested'", 4, 20, { examples: [example("it 'fits'", 7)] })],
+          }),
+        ],
       });
       const exampleText = example("it 'fits'", 7).text;
 
       const [chunk] = produceTestScopeChunks(root, "Budget", {
-        maxChunkSize: inner.text.length + exampleText.length + 1,
+        maxChunkSize: "context 'nested'".length + exampleText.length + 1,
       });
 
-      expect(chunk.content).not.toContain("let(:outer)");
-      expect(chunk.content).toContain("let(:inner)");
+      expect(chunk.content).not.toContain("ooo");
+      expect(chunk.content.startsWith("context 'nested'\n")).toBe(true);
       expect(chunk.content.endsWith(exampleText.trim().split("\n").at(-1) ?? "")).toBe(true);
     });
 
@@ -247,7 +761,7 @@ describe("produceTestScopeChunks", () => {
         examples: [big],
       });
 
-      const [chunk] = produceTestScopeChunks(root, "Budget", { maxChunkSize: 100 });
+      const [chunk] = exampleChunks(produceTestScopeChunks(root, "Budget", { maxChunkSize: 100 }));
 
       expect(chunk.content).toBe(big.text.trim());
     });
@@ -259,7 +773,7 @@ describe("produceTestScopeChunks", () => {
       const maxChunkSize = setup.text.length + 1 + fits.text.length;
       const bodyChunkPrefixLength = "RSpec.describe Budget do\n".length;
 
-      const [chunk] = produceTestScopeChunks(root, "Budget", { maxChunkSize, bodyChunkPrefixLength });
+      const [chunk] = exampleChunks(produceTestScopeChunks(root, "Budget", { maxChunkSize, bodyChunkPrefixLength }));
 
       expect(bodyChunkPrefixLength + chunk.content.length).toBeLessThanOrEqual(maxChunkSize);
       expect(chunk.content).toBe(fits.text.trim());

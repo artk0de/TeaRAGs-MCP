@@ -28,11 +28,30 @@
   `isTestExampleChunk` (`chunk-grouping/code.ts`) is the one gate for the scope
   lines of `CodeChunkGrouper.groupFile`, the scope-id outline in
   `resolveSymbols`, and the `#partN` admission in `SymbolSearchStrategy`. Never
-  infer a scope from the id shape: a setup-only scope under its top-level name
-  and an example under its scope are both `<parent>.<name>`. Id and emission
-  contract: `.claude/rules/test-spec-chunking.md`. Why: a pre-example-era test
-  chunk parented to a CLASS would be outlined instead of merged, reversing the
-  u74dj decision its tests pin.
+  infer a scope from the id shape: a scope's setup chunk under its top-level
+  name and an example under its scope are both `<parent>.<name>`. Id and
+  emission contract: `.claude/rules/test-spec-chunking.md`. Why: a
+  pre-example-era test chunk parented to a CLASS would be outlined instead of
+  merged, reversing the u74dj decision its tests pin.
+- **Test setup is hydrated at ONE seam, after the page is final.**
+  `BaseExploreStrategy#hydrateTestSetup` (`TestSetupHydrator`,
+  `test-setup-hydration.ts`) is the last step of every content-bearing
+  `postProcess` — the base one, `ScrollRankStrategy#postProcess`,
+  `SymbolSearchStrategy#postProcess` — and never runs on a metaOnly answer. It
+  fetches every setup chunk of the page's files in one scroll whose filter holds
+  only index-served conditions (`relativePath` text pair, `chunkType` keyword),
+  and gives an example the rows of each packed setup MEMBER whose scope span
+  contains its start line, sliced out of the pack (`test-pack.ts#slicePack`, the
+  one pack-slicing arithmetic, which `examplePackMember` also uses to answer
+  find_symbol for one member of an example pack) — never a sibling packed beside
+  it. Why: the index stores each scope's setup once (bd tea-rags-mcp-5xpq4), so
+  an example returned without it is not runnable in the head; hydrating before
+  the slice pays for results the caller never sees, and a per-strategy copy is
+  the drift this seam exists to prevent. `scopeLineRanges` / `memberRowCounts` /
+  `memberSymbolIds` / `memberLineRanges` are deliberately NOT payload signal
+  descriptors (like `navigation`): a declared key would raise schema drift on
+  every existing index, and metaOnly and `level: "file"` drop them by design.
+  Their contract: `.claude/rules/test-spec-chunking.md`.
 - **A `level: "file"` hit is reduced to file scope AFTER ranking, never
   before.** `FileLevelGrouper` keeps the top chunk per file with its full
   payload; `BaseExploreStrategy#shapeFileLevel` then applies
@@ -113,12 +132,22 @@
   guard here, and tightening to bare-segment globs (as `domains/language` does)
   is a failing change today.
 - **rank_chunks `order_by` keys come from the payload signal descriptors, and
-  only numeric ones order.** `RankModule#resolvePayloadField` maps a source
-  through `buildSignalKeyMap` to its logical key, then `toPhysicalPayloadKey`
-  (`codegraph.chunk.pageRank` → `codegraph.symbols.chunk.pageRank`); a
-  non-`number` descriptor (`isHub`, `isLeaf`) orders nothing and scores only the
+  only numeric scalars order.** `OrderByFieldResolver#resolveOrderSource` maps a
+  source through `buildSignalKeyMap` to its logical key, then
+  `toPhysicalPayloadKey` (`codegraph.chunk.pageRank` →
+  `codegraph.symbols.chunk.pageRank`); a `number` or `timestamp` descriptor
+  orders, any other (`isHub`, `isLeaf`) orders nothing and scores only the
   candidates the numeric legs pooled; a source no descriptor declares orders
-  nothing. `ScrollRankStrategy` must hand `RankModule` the strategy's
+  nothing. Direction is `inverted` read against the value the descriptor
+  normalizes: over an `ageDerivation` stamp source that value is
+  `now − lastModifiedAt`, so `OrderByFieldResolver#resolveScrolls` flips it
+  (`recency` newest stamp first, `age` oldest) and the scroll admits only stamps
+  `> 0`. Why: once age moved to the stamp (bd tea-rags-mcp-9ot33), a
+  `number`-only rule silently dropped both legs — `custom: { recency: 1 }`
+  answered `[]`, and every preset's age/recency leg pooled nothing — while
+  ordering it without the flip pools the OLDEST chunks for `recency`, and an
+  ascending stamp scroll without the floor pools every no-commit `0` sentinel
+  first. `ScrollRankStrategy` must hand `RankModule` the strategy's
   `payloadSignals`, and its `ensureIndexFn` creates an order_by index only for a
   field those descriptors declare, with the schema `payloadFieldIndexSchema`
   (`adapters/qdrant/schema-manager.ts`) derives from the declaration. Why: a

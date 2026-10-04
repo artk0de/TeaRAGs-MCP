@@ -72,6 +72,85 @@ describe("StaticPayloadBuilder", () => {
     expect(payload.imports).toEqual(["./utils.js", "./types.js"]);
   });
 
+  it("writes a grouped chunk's memberSymbolIds (5xpq4)", () => {
+    const testChunk = {
+      content: "it { is_expected.to be_valid }\nit { is_expected.to be_persisted }",
+      startLine: 4,
+      endLine: 5,
+      metadata: {
+        filePath: "/project/spec/user_spec.rb",
+        language: "ruby",
+        chunkIndex: 2,
+        chunkType: "test",
+        memberSymbolIds: ["User.context 'v1.2'~2.it", "User.context 'v1.2'~2.it~2"],
+      } as Record<string, unknown>,
+    };
+    const payload = builder.buildPayload(testChunk, "/project");
+    expect(payload.memberSymbolIds).toEqual(["User.context 'v1.2'~2.it", "User.context 'v1.2'~2.it~2"]);
+  });
+
+  it("writes an example pack's per-member memberLineRanges (g5i0a)", () => {
+    const packChunk = {
+      content: "it 'a' do\n  ok\nend\nit 'b' do\n  ok\nend",
+      startLine: 2,
+      endLine: 9,
+      metadata: {
+        filePath: "/project/spec/user_spec.rb",
+        language: "ruby",
+        chunkIndex: 1,
+        chunkType: "test",
+        memberSymbolIds: ["User.describe User.it 'a'", "User.describe User.it 'b'"],
+        memberLineRanges: [
+          { start: 2, end: 4 },
+          { start: 7, end: 9 },
+        ],
+        memberRowCounts: [3, 3],
+      } as Record<string, unknown>,
+    };
+    const payload = builder.buildPayload(packChunk, "/project");
+    expect(payload.memberLineRanges).toEqual([
+      { start: 2, end: 4 },
+      { start: 7, end: 9 },
+    ]);
+    expect(payload.memberRowCounts).toEqual([3, 3]);
+  });
+
+  it("writes a packed test setup chunk's per-member scopeLineRanges and memberRowCounts (5xpq4)", () => {
+    const setupChunk = {
+      content: "let(:user) { create(:user) }",
+      startLine: 2,
+      endLine: 2,
+      metadata: {
+        filePath: "/project/spec/user_spec.rb",
+        language: "ruby",
+        chunkIndex: 0,
+        chunkType: "test_setup",
+        scopeLineRanges: [
+          { start: 1, end: 30 },
+          { start: 4, end: 20 },
+        ],
+        memberRowCounts: [1, 2],
+      } as Record<string, unknown>,
+    };
+    const payload = builder.buildPayload(setupChunk, "/project");
+    expect(payload.scopeLineRanges).toEqual([
+      { start: 1, end: 30 },
+      { start: 4, end: 20 },
+    ]);
+    expect(payload.memberRowCounts).toEqual([1, 2]);
+  });
+
+  it("omits scopeLineRanges, memberRowCounts and memberSymbolIds when absent or empty", () => {
+    const payload = builder.buildPayload(
+      { ...chunk, metadata: { ...chunk.metadata, memberSymbolIds: [] } },
+      "/project",
+    );
+    expect(payload).not.toHaveProperty("scopeLineRanges");
+    expect(payload).not.toHaveProperty("memberRowCounts");
+    expect(payload).not.toHaveProperty("memberSymbolIds");
+    expect(payload).not.toHaveProperty("memberLineRanges");
+  });
+
   it("writes navigation to payload", () => {
     const navChunk = {
       content: "test",

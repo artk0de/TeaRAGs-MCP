@@ -45,11 +45,12 @@
  * buy precision with an inflated `resolveSuccessRate`. It stays an internal miss.
  */
 
-import ts from "typescript";
+import type ts from "typescript";
 
 import { resolveLocalBindingType, type CallContext, type CallRef } from "../../../../contracts/types/codegraph.js";
 import { lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import { findReceiverExpression } from "./strategies/ts-type-checker-shared.js";
+import { loadTypeScriptCompiler } from "./ts-compiler-loader.js";
 import { isLocalValueBinding } from "./ts-local-callee.js";
 import type { TSProgramCache } from "./ts-program-cache.js";
 import { typeConstituents } from "./ts-type-constituents.js";
@@ -130,7 +131,7 @@ export function receiverIsUnpinnableLocalValueBinding(
   const handle = programCache.acquire(ctx.callerFile);
   if (handle === null) return false;
   const node = findReceiverExpression(handle.sourceFile, call.startLine, call.member);
-  if (node === null || !ts.isIdentifier(node)) return false;
+  if (node === null || !loadTypeScriptCompiler().isIdentifier(node)) return false;
   const { checker } = handle;
   const declarations = checker.getSymbolAtLocation(node)?.getDeclarations() ?? [];
   if (declarations.length === 0 || !declarations.every(isLocalValueBinding)) return false;

@@ -107,6 +107,33 @@ describe("createApp", () => {
     expect(ingest.getIndexStatus).toHaveBeenCalledWith("/repo");
   });
 
+  // Live D10 (bd tea-rags-mcp-xi2r9): a linked worktree has no index of its own
+  // — it is read against its base index, so its status is that index's.
+  it("answers getIndexStatus of a working tree with its base index's status and the tree's marker", async () => {
+    const deps = makeDeps();
+    const marker = {
+      tree: "/repo-feature",
+      indexedCommit: null,
+      treeCommit: null,
+      indexedDirty: false,
+      changedFiles: 1,
+      deletedFiles: 0,
+      floors: [],
+    };
+    deps.ingest.getIndexStatus.mockResolvedValue({ isIndexed: true, status: "indexed", collectionName: "code_repo" });
+    const workingTreeIndexOf = vi.fn(async (path: string) =>
+      path === "/repo-feature" ? { indexPath: "/repo", workingTree: marker } : undefined,
+    );
+    const app = createApp({ ...deps, workingTreeIndexOf } as never);
+
+    const status = await app.getIndexStatus("/repo-feature");
+
+    expect(deps.ingest.getIndexStatus).toHaveBeenCalledWith("/repo");
+    expect(status).toMatchObject({ status: "indexed", indexPath: "/repo", workingTree: marker });
+    await app.getIndexStatus("/repo");
+    expect(deps.ingest.getIndexStatus).toHaveBeenLastCalledWith("/repo");
+  });
+
   it("getSchemaDescriptors calls reranker descriptor methods and returns preset/signal info", () => {
     const deps = makeDeps();
     const app = createApp(deps as never);

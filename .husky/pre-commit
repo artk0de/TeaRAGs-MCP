@@ -160,13 +160,19 @@ if [ -n "$RUN_TESTS" ]; then
   TESTED_FILES=$(git diff --cached --name-only)
   # `|| TEST_EXIT=$?`: husky runs this hook under `sh -e`, which exits on the
   # failing command itself — before the summary below could say what failed.
-  # `--maxWorkers=4` (bd tea-rags-mcp-3xtg7): a related set that pulls many
-  # spawn-heavy real-git fixture files (git adapters, enrichment e2e, indexer)
-  # dies on 5s timeouts at default fork concurrency; the same files are green at
-  # 4. A CLI flag — vitest 4 has no VITEST_MAX_FORKS env.
+  # `--maxWorkers=6` (bd tea-rags-mcp-bbo1h.5, revising 0qaht.27's 2). The cap
+  # was 2 because each file worker spawned its own process fleet — a cold
+  # chunker fork per pipeline run, hundreds per ingest test file — and 4 workers
+  # oversubscribed the box into 30s-timeout coin flips. bbo1h.1 reuses a warm
+  # chunker pool in those files (reindexing + status-module: 408 forks -> 12),
+  # bbo1h.2/.3 stopped every importer of the language domain loading the TS
+  # compiler and the 2.3MB Swift vocabulary. Re-measured on the
+  # collection-name.ts related set (422 files / 4290 tests, load 8-26):
+  # 2w 163s, 4w 117s, 6w 93s mean of two, every run green, no timeouts.
+  # A CLI flag — vitest has no VITEST_MAX_FORKS env.
   TEST_EXIT=0
   # shellcheck disable=SC2086 # word splitting IS the argument list
-  npm test -- related --run --reporter=dot --maxWorkers=4 $TESTED_FILES >"$TEST_LOG" 2>&1 || TEST_EXIT=$?
+  npm test -- related --run --reporter=dot --maxWorkers=6 $TESTED_FILES >"$TEST_LOG" 2>&1 || TEST_EXIT=$?
   if [ $TEST_EXIT -ne 0 ]; then
     grep -E "FAIL|×|Error|failed" "$TEST_LOG" | head -20
     echo ""

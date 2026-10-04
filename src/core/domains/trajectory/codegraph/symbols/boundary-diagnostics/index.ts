@@ -1,5 +1,11 @@
 export { CONVENTION_PRIVACY_LANGUAGES, detectConventionPrivacyLeaks } from "./convention-privacy.js";
-export { buildComponentGraph, COMPONENT_CONTAINMENT_REASON, COMPONENT_MODULE_STATUSES } from "./component-graph.js";
+export {
+  buildComponentGraph,
+  buildDomainComponentGraph,
+  COMPONENT_CONTAINMENT_REASON,
+  COMPONENT_MODULE_STATUSES,
+  DOMAIN_MODULE_STATUSES,
+} from "./component-graph.js";
 export {
   COMPONENT_EVIDENCE_FILE_EDGE_LIMIT,
   detectComponentStableDependencyViolations,
@@ -7,6 +13,7 @@ export {
 export { classifyDirectoryRelation } from "./directory-relation.js";
 export { FACADE_AGGREGATION_REASON, isFacadeAggregationEdge } from "./facade-aggregation.js";
 export { computeFileInstabilities } from "./file-instability.js";
+export { domainBoundaryFileEdges, inducedDomainGraph, type DomainBoundaryFileEdges } from "./induced-domain-graph.js";
 export {
   detectLeakingAbstractions,
   FACADE_ADOPTION_MAJORITY,
@@ -25,6 +32,9 @@ export {
   MAIN_SEQUENCE_STABLE_CONCRETE_CALM_REASON,
   MAIN_SEQUENCE_UNOBSERVABLE_REASON,
 } from "./main-sequence.js";
+export { buildLayeringModel, detectLayeringViolations, layeringKnotKeepCosts, lookupLayeringKnot } from "./layering.js";
+export { buildLayerMap, collapseDirectory, nodeMapping } from "./layer-map.js";
+export { condensedPositions, sccKnots, weightedFeedbackArcSet, type SimpleEdge } from "./layer-graph.js";
 export {
   otsuSplit,
   resolveMajorityFlooredOtsuThreshold,
@@ -66,6 +76,30 @@ export type {
   FacadeAdoption,
   FacadeLeakKind,
   FacadeLeakRootCause,
+  LayeringAbstractionBypassViolation,
+  LayeringBackEdgeViolation,
+  LayeringCompositionCycleViolation,
+  LayeringComponentPosition,
+  LayeringFeedbackEdge,
+  LayeringIslandViolation,
+  LayeringKeepCost,
+  LayeringKnot,
+  LayeringKnotDetail,
+  LayeringKnotDrillDown,
+  LayeringKnotLookup,
+  LayeringKnotViolation,
+  LayeringLayerSkipViolation,
+  LayeringModel,
+  LayerMap,
+  LayerMapBoundaryEdge,
+  LayerMapKnot,
+  LayerMapMoveCandidate,
+  LayerMapNode,
+  LayerMapOptions,
+  LayeringReport,
+  LayeringSummary,
+  LayeringViolation,
+  LayeringViolationKind,
   MainSequenceExclusionCounts,
   MainSequenceOptions,
   MainSequenceReport,

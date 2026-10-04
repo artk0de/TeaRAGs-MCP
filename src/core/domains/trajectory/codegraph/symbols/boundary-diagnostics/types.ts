@@ -1,17 +1,23 @@
+import type {
+  ArchitectureDirectoryRelation,
+  ArchitectureFileEdge,
+  ConventionPrivacyRule,
+  FacadeLeakKind,
+  FacadeModuleExclusionReason,
+  LayeringFeedbackEdge,
+  LayeringKeepCost,
+  LayeringViolationKind,
+  MainSequenceComponentVolatilityEvidence,
+  MainSequenceZone,
+} from "../../../../../contracts/types/architecture-report.js";
 import type { FileDependencyEdge, RelPath } from "../../../../../contracts/types/codegraph.js";
 
 /**
- * Where a dependency's target sits relative to its source, by directory:
- *
- * - `same`       — both files in one directory.
- * - `descendant` — the target lives below the source's directory: a module
- *                  reaching into its own sub-parts.
- * - `ancestor`   — the source lives below the target's directory: a sub-part
- *                  reaching up into its enclosing module.
- * - `disjoint`   — neither directory contains the other: the edge crosses into
- *                  a sibling or cousin module, the case module borders are about.
+ * Where a dependency's target sits relative to its source, by directory — the
+ * report's `ArchitectureDirectoryRelation` under its domain name (bd
+ * tea-rags-mcp-0e4vf: one definition, in the finding contract).
  */
-export type DependencyDirectoryRelation = "same" | "descendant" | "ancestor" | "disjoint";
+export type DependencyDirectoryRelation = ArchitectureDirectoryRelation;
 
 export interface StableDependenciesOptions {
   /**
@@ -151,27 +157,21 @@ export interface StableDependenciesReport {
 }
 
 /**
- * How an edge into an active module leaks its abstraction (bd tea-rags-mcp-jetrd):
- *
- * - `bypass`         — the facade itself imports the target (re-exports it): the
- *                      importer could have gone through the facade and did not.
- * - `internal-reach` — the facade does not import the target: the importer
- *                      reaches something the module never offered.
+ * How an edge into an active module leaks its abstraction (bd
+ * tea-rags-mcp-jetrd) — defined once in the finding contract (bd
+ * tea-rags-mcp-0e4vf) and re-exported under the domain facade:
+ * `bypass` = the facade itself imports the target, `internal-reach` = it does
+ * not, so the importer reaches something the module never offered.
  */
-export type FacadeLeakKind = "bypass" | "internal-reach";
+export type { FacadeLeakKind };
 
 /**
- * Why a module's boundary is not judged:
- *
- * - `facade-not-adopted` — adoption not admitted by the adaptive threshold
- *   (`resolveFacadeAdoptionThreshold`): the importers themselves do not treat
- *   the entry file as the module's surface.
- * - `too-few-importers`  — fewer than `FACADE_MIN_EXTERNAL_IMPORTERS` external
- *   importers: adoption over so few files says nothing.
- * - `language-enforced`  — a Go package: the compiler already enforces the
- *   package boundary, so nothing can leak past it at file level.
+ * Why a module's boundary is not judged — defined once in the finding contract
+ * (bd tea-rags-mcp-0e4vf): `facade-not-adopted` (admission threshold),
+ * `too-few-importers`, `language-enforced` (a Go package: the compiler already
+ * enforces the boundary).
  */
-export type FacadeModuleExclusionReason = "facade-not-adopted" | "too-few-importers" | "language-enforced";
+export type { FacadeModuleExclusionReason };
 
 export type FacadeModuleStatus = "active" | FacadeModuleExclusionReason;
 
@@ -268,12 +268,11 @@ export interface LeakingAbstractionReport {
 }
 
 /**
- * Which convention a convention-privacy leak broke (bd tea-rags-mcp-r8hme.1):
- * `python-underscore` — a `_name` member used from another package directory;
- * `ruby-send-private` — `send(:name)` into a private / protected method from
- * outside its class.
+ * Which convention a convention-privacy leak broke (bd tea-rags-mcp-r8hme.1) —
+ * defined once in the finding contract (bd tea-rags-mcp-0e4vf):
+ * `python-underscore` / `ruby-send-private`.
  */
-export type ConventionPrivacyRule = "python-underscore" | "ruby-send-private";
+export type { ConventionPrivacyRule };
 
 export interface ConventionPrivacyOptions {
   /** Picomatch glob: judge only edges whose SOURCE file matches. */
@@ -377,12 +376,11 @@ export interface ComponentStableDependenciesOptions {
   sourcePathPattern?: string;
 }
 
-/** One file edge carrying a component dependency. */
-export interface ComponentDependencyFileEdge {
-  sourceRelPath: RelPath;
-  targetRelPath: RelPath;
-  callWeight: number;
-}
+/**
+ * One file edge carrying a component dependency — the report's
+ * `ArchitectureFileEdge` under its domain name (bd tea-rags-mcp-0e4vf).
+ */
+export type ComponentDependencyFileEdge = ArchitectureFileEdge;
 
 /** A stable component depending on a less stable one. */
 export interface ComponentStableDependencyViolation {
@@ -451,8 +449,8 @@ export interface ComponentStableDependenciesReport {
   summary: ComponentStableDependenciesSummary;
 }
 
-/** Where a component far from the main sequence sits (bd tea-rags-mcp-r8hme.8). */
-export type MainSequenceZone = "pain" | "uselessness";
+/** Where a component far from the main sequence sits (bd tea-rags-mcp-r8hme.8) — from the finding contract. */
+export type { MainSequenceZone };
 
 export interface MainSequenceOptions {
   /** Connection floor on Ca + Ce; defaults to the SDP floor. */
@@ -473,16 +471,12 @@ export interface MainSequenceOptions {
 /** Whether a component changes often enough for the zone of pain to hurt. */
 export type MainSequenceVolatilityLabel = "volatile" | "calm";
 
-/** A component's volatility and the adaptive cut it was judged against. */
-export interface MainSequenceComponentVolatility {
-  /** Mean per-file volatility over the component's files that carry a reading. */
-  value: number;
-  /** Files of the component with a reading — the mean's denominator. */
-  measuredFileCount: number;
-  /** The cut `value` had to reach; it must also be strictly above the median file's reading. */
-  threshold: number;
-  label: MainSequenceVolatilityLabel;
-}
+/**
+ * A component's volatility and the adaptive cut it was judged against — the
+ * report's `MainSequenceComponentVolatilityEvidence` under its domain name (bd
+ * tea-rags-mcp-0e4vf).
+ */
+export type MainSequenceComponentVolatility = MainSequenceComponentVolatilityEvidence;
 
 /** How the volatility cut was drawn; present only when the gate ran. */
 export interface MainSequenceVolatilitySummary {
@@ -578,4 +572,352 @@ export interface MainSequenceReport {
   /** Farthest first, then component path. */
   violations: MainSequenceViolation[];
   summary: MainSequenceSummary;
+}
+
+/** Position of one component in the inferred layer stack (bd tea-rags-mcp-r8hme.22). */
+export interface LayeringComponentPosition {
+  /** Longest dependency path from the sinks of the condensed graph: 0 = foundation. */
+  level: number;
+  /** Longest dependency path from the roots: 0 = nothing depends on it. */
+  depth: number;
+  /** The component is a member of a multi-component knot (an SCC). */
+  inKnot: boolean;
+}
+
+/**
+ * One edge the feedback arc set removes to dissolve a knot — from the finding
+ * contract (bd tea-rags-mcp-0e4vf), whose `fileEdges` carry the report's
+ * `ArchitectureFileEdge`; the graph's richer `FileDependencyEdge` values
+ * assign to it structurally.
+ */
+export type { LayeringFeedbackEdge };
+
+/**
+ * What keeping ONE cut edge costs (bd tea-rags-mcp-r8hme.40): the knot's
+ * internal edges with every OTHER feedback-arc-set edge removed. Priced on the
+ * whole knot, never a scope projection — from the finding contract (bd
+ * tea-rags-mcp-0e4vf).
+ */
+export type { LayeringKeepCost };
+
+/** One multi-component strongly-connected set of the component graph. */
+export interface LayeringKnot {
+  /** Members, most depended-on (Ca) first, then path. */
+  components: string[];
+  /** The greedy weighted feedback arc set (Eades–Lin–Smyth) that dissolves the knot. */
+  feedbackArcSet: LayeringFeedbackEdge[];
+  /** How many edges the feedback arc set holds. */
+  cutEdgeCount: number;
+  /** Distinct levels the members occupy once the feedback arc set is cut. */
+  levelsAfterCut: number;
+  /**
+   * Every edge inside the set joins a directory to one nested inside it —
+   * composition of a module with its own sub-parts, not a layering defect.
+   */
+  composition: boolean;
+  /**
+   * Max member instability minus min (bd tea-rags-mcp-r8hme.32): a knot fusing
+   * a stable member with a volatile one is an SDP break inside a cycle; a knot
+   * of equally volatile members is a tangle. Knot findings rank by it.
+   */
+  instabilitySpread: number;
+}
+
+/**
+ * Inferred layering of the component graph (bd tea-rags-mcp-r8hme.22) —
+ * report-time, no indexing change. Every downstream consumer (the layer map,
+ * restructuring proposals, what-if, the diff-scoped review) reads this model
+ * through core, never through the MCP DTO.
+ */
+export interface LayeringModel {
+  /** Position of every component; a component with no layering edge sits at level 0, depth 0. */
+  positions: Map<string, LayeringComponentPosition>;
+  /** Number of distinct levels, 0-based; 0 when the graph holds no layering edge. */
+  levelCount: number;
+  /** Knots first, then composition cycles, by member count then members. */
+  knots: LayeringKnot[];
+  /** Share of components outside non-trivial SCCs, over all components; 0 for an empty graph. */
+  coverage: number;
+  /** Spearman rank correlation of level vs instability over components with a layering edge; 0 under two. */
+  coherence: number;
+}
+
+/** What a `layering` finding says (bd tea-rags-mcp-r8hme.22) — from the finding contract. */
+export type { LayeringViolationKind };
+
+/** A knot: SCC members ranked by Ca, with the edges whose cut levels the members. */
+export interface LayeringKnotViolation {
+  kind: "knot";
+  components: string[];
+  feedbackArcSet: LayeringFeedbackEdge[];
+  cutEdgeCount: number;
+  levelsAfterCut: number;
+  /** Max member instability minus min (bd tea-rags-mcp-r8hme.32) — findings rank by it. */
+  instabilitySpread: number;
+  /** Members dropped by the source scope — present only when scoped. */
+  outOfScopeMemberCount?: number;
+  /** Feedback-arc-set edges no in-scope file carries, dropped — present only when scoped. */
+  outOfScopeFeedbackEdgeCount?: number;
+  /** How to reach the WHOLE knot (bd tea-rags-mcp-r8hme.38) — computed before any scope projection. */
+  drillDown: LayeringKnotDrillDown;
+}
+
+/**
+ * The handles that reach one whole knot (bd tea-rags-mcp-r8hme.38): the knot
+ * lookup takes `knotOf`; `pathPattern` selects the smallest subtree holding
+ * every member, when one below the repository root does.
+ */
+export interface LayeringKnotDrillDown {
+  /** The first member by Ca — an exact handle however the members are spread. */
+  knotOf: string;
+  /** Deepest common ancestor directory of every member plus `/**`; absent when that ancestor is the root. */
+  pathPattern?: string;
+}
+
+/**
+ * One knot looked up by a member (bd tea-rags-mcp-r8hme.38): full lists, no
+ * paging or evidence cap — those belong to the caller. Under a source scope
+ * the members and the cut are the same projection the knot finding gets;
+ * `cutEdgeCount` and `levelsAfterCut` stay whole-knot.
+ */
+export interface LayeringKnotDetail {
+  /** Members, most depended-on (Ca) first, then path. */
+  components: string[];
+  /** The feedback arc set, heaviest call weight first. */
+  feedbackArcSet: LayeringFeedbackEdge[];
+  cutEdgeCount: number;
+  levelsAfterCut: number;
+  /** A composition cycle (a directory and its own nested ones), not a layering knot. */
+  composition: boolean;
+  /** The back-edge findings whose both ends are members, in report order; none for a composition cycle. */
+  backEdges: LayeringBackEdgeViolation[];
+  /** Members dropped by the source scope — present only when scoped. */
+  outOfScopeMemberCount?: number;
+  /** Feedback-arc-set edges no in-scope file carries, dropped — present only when scoped. */
+  outOfScopeFeedbackEdgeCount?: number;
+}
+
+/** What `lookupLayeringKnot` found for one component path. */
+export type LayeringKnotLookup =
+  | { kind: "unknownComponent"; component: string }
+  | { kind: "notInKnot"; component: string; position: LayeringComponentPosition }
+  | { kind: "inKnot"; component: string; position: LayeringComponentPosition; knot: LayeringKnotDetail };
+
+/**
+ * The minority-weight direction inside a knot, when the pair's weights
+ * disagree; equal weights are ambiguous and never judged.
+ */
+export interface LayeringBackEdgeViolation {
+  kind: "backEdge";
+  sourceComponent: string;
+  targetComponent: string;
+  /** The back edge's weight — the minority direction. */
+  callWeight: number;
+  /** The majority direction's weight. */
+  counterFlowWeight: number;
+  fileEdgeCount: number;
+  fileEdges: FileDependencyEdge[];
+}
+
+/** A consumer reaching a measured-concrete component that depends on a measured-abstract one below. */
+export interface LayeringAbstractionBypassViolation {
+  kind: "abstractionBypass";
+  /** The consumer that reaches the concrete component directly. */
+  sourceComponent: string;
+  /** The concrete component reached. */
+  targetComponent: string;
+  /** The measured-abstract component beneath it the consumer never touches. */
+  bypassedComponent: string;
+  concreteAbstractness: number;
+  bypassedAbstractness: number;
+  callWeight: number;
+}
+
+/** A parent and its own nested directories cycling — composition, not a layering defect. */
+export interface LayeringCompositionCycleViolation {
+  kind: "compositionCycle";
+  components: string[];
+  nestedPairs: { parentComponent: string; nestedComponent: string }[];
+  /** Members dropped by the source scope — present only when scoped. */
+  outOfScopeMemberCount?: number;
+}
+
+/** A component nothing depends on that does not reach the top of the stack. */
+export interface LayeringIslandViolation {
+  kind: "island";
+  component: string;
+  height: number;
+  depth: number;
+  afferentCount: number;
+  instability: number;
+}
+
+/** A dependency jumping at least two levels straight to a lower one. */
+export interface LayeringLayerSkipViolation {
+  kind: "layerSkip";
+  sourceComponent: string;
+  targetComponent: string;
+  sourceLevel: number;
+  targetLevel: number;
+  skippedLevels: number;
+  callWeight: number;
+}
+
+export type LayeringViolation =
+  | LayeringKnotViolation
+  | LayeringBackEdgeViolation
+  | LayeringAbstractionBypassViolation
+  | LayeringCompositionCycleViolation
+  | LayeringIslandViolation
+  | LayeringLayerSkipViolation;
+
+export interface LayeringSummary {
+  componentCount: number;
+  /** Component dependencies the model judged — every entry of the component graph. */
+  componentEdgeCount: number;
+  levelCount: number;
+  coverage: number;
+  coherence: number;
+  knotCount: number;
+  backEdgeCount: number;
+  abstractionBypassCount: number;
+  compositionCycleCount: number;
+  islandCount: number;
+  layerSkipCount: number;
+  /** Every finding, violations and informational alike. */
+  violationCount: number;
+  scope?: LayeringScope;
+}
+
+/**
+ * Present when `LayeringOptions.sourcePathPattern` scoped the run. Levels,
+ * knots, coverage and coherence stay whole-graph — only findings are scoped.
+ */
+export interface LayeringScope {
+  sourcePathPattern: string;
+  /** Findings the model produced whose source matched no file — dropped, not counted above. */
+  outOfScopeFindingCount: number;
+}
+
+export interface LayeringOptions {
+  /**
+   * Keep only findings a matching file carries: a dependency finding (back-edge,
+   * bypass, layer skip) by its carrying source files, a component finding
+   * (island) by the component's files, a knot or composition cycle by any
+   * member's files.
+   */
+  sourcePathPattern?: string;
+  /**
+   * The model `buildLayeringModel` already built from THIS component graph —
+   * a caller that also looks a knot up passes it so the model (seconds of
+   * CPU on a large repository) is built once per request. A model of any
+   * other graph gives meaningless findings.
+   */
+  model?: LayeringModel;
+}
+
+export interface LayeringReport {
+  /** Knots, back-edges and bypasses first, informational findings last; each group deterministic. */
+  violations: LayeringViolation[];
+  summary: LayeringSummary;
+}
+
+/**
+ * Layer map options (bd tea-rags-mcp-r8hme.26): a VIEW over the layering
+ * model. The scope picks the domain, the granularity picks the node.
+ */
+export interface LayerMapOptions {
+  /**
+   * Picomatch glob: nodes whose path matches live inside the map; edges
+   * crossing the boundary are kept as boundary-out / boundary-in findings
+   * naming the EXTERNAL component and its global level. Absent: the whole
+   * repository, no boundary findings.
+   */
+  scopePathPattern?: string;
+  /** `file` nodes are files; `directory` nodes are components (default). */
+  granularity?: "directory" | "file";
+  /**
+   * With `directory`: collapse every directory DEEPER than this many segments
+   * below the scope root into its ancestor — `0` collapses the whole scope
+   * into one node. The same mapping r8hme.30's domain partition reuses.
+   */
+  directoryDepth?: number;
+}
+
+/** One node of the map with its position in the induced layer stack. */
+export interface LayerMapNode {
+  /** A component directory, a collapsed directory prefix, or a file path. */
+  node: string;
+  level: number;
+  /** Longest path from the roots of the induced graph: 0 = nothing inside depends on it. */
+  depth: number;
+  inKnot: boolean;
+  /** Dependencies (or file edges) from inside the scope into the node. */
+  innerAfferentCount: number;
+  /** Dependencies (or file edges) from the node to inside the scope. */
+  innerEfferentCount: number;
+}
+
+/** One edge crossing the scope boundary, kept — not dropped — by the map. */
+export interface LayerMapBoundaryEdge {
+  /** The inside node the edge leaves from (boundary-out) / enters (boundary-in). */
+  sourceNode?: string;
+  targetNode?: string;
+  /** The component outside the scope the edge reaches / comes from. */
+  externalComponent: string;
+  /** That component's level in the WHOLE-repository stack. */
+  externalLevel: number;
+  /** Sum of the carrying file edges' call weights. */
+  callWeight: number;
+}
+
+/** An inner node with no inner afferents whose outward edges point into one other domain. */
+export interface LayerMapMoveCandidate {
+  node: string;
+  level: number;
+  externalComponent: string;
+  callWeight: number;
+}
+
+/** One multi-node cycle among the map's nodes, with the cut that levels them. */
+export interface LayerMapKnot {
+  components: string[];
+  feedbackArcSet: {
+    sourceComponent: string;
+    targetComponent: string;
+    callWeight: number;
+    fileEdges: { sourceRelPath: string; targetRelPath: string; callWeight: number }[];
+  }[];
+  cutEdgeCount: number;
+  levelsAfterCut: number;
+  /**
+   * Every edge inside the set joins a directory to one nested inside it —
+   * composition of a module with its own sub-parts, the same verdict the
+   * layering summary reports these cycles under (`compositionCycle`, not
+   * `knot`), so the map's knot count reconciles with the summary's
+   * `knotCount` + `compositionCycleCount`.
+   */
+  composition: boolean;
+}
+
+export interface LayerMap {
+  scope?: string;
+  granularity: "directory" | "file";
+  levelCount: number;
+  /** By level, then node. */
+  nodes: LayerMapNode[];
+  /** By member count, then members. */
+  knots: LayerMapKnot[];
+  /** By external component, then source node. */
+  boundaryOut: LayerMapBoundaryEdge[];
+  /** By external component, then target node. */
+  boundaryIn: LayerMapBoundaryEdge[];
+  /** By external component, then node. */
+  moveCandidates: LayerMapMoveCandidate[];
+  summary: {
+    nodeCount: number;
+    innerEdgeCount: number;
+    boundaryOutEdgeCount: number;
+    boundaryInEdgeCount: number;
+  };
 }

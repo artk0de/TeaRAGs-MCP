@@ -47,14 +47,12 @@ export interface CrossPassExtractionRequest {
  * Walk `chunkTree`'s file with its language walker, or `undefined` when the
  * language has none (documentation, unsupported).
  *
- * The walk runs on {@link TreeSitterChunker.walkTreeFor}, not on `chunkTree`
- * itself: the chunker parses every file of a language with ONE grammar, while
- * the codegraph walk takes the grammar the file's EXTENSION selects — the two
- * differ for `.tsx`, which chunks under the `typescript` grammar and walks
- * under `tsx` (bd tea-rags-mcp-vqdi6). Walking the chunk tree there lost ~72%
- * of taxdome's `.tsx` call sites to JSX parse errors, on the full-index path
- * only, since a recompute re-parses through the codegraph provider's own
- * extractor.
+ * The walk runs on {@link TreeSitterChunker.walkTreeFor}, which answers the
+ * chunk tree itself: the chunker and the codegraph walk both parse under the
+ * grammar the file's EXTENSION selects, so `.tsx` chunks and walks under `tsx`.
+ * When the chunker still parsed `.tsx` under the `typescript` grammar, walking
+ * its tree lost ~72% of taxdome's `.tsx` call sites to JSX parse errors (bd
+ * tea-rags-mcp-vqdi6).
  */
 export async function extractFromChunkerParse(
   engine: ChunkerEngine,

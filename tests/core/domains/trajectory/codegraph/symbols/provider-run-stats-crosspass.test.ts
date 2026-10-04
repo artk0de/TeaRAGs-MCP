@@ -24,14 +24,17 @@ import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/cl
 import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
+import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolve(__dirname, "../../../../../../src/core/domains/maintenance/migration/database/migrations");
 
-const DIRECT_INPUT_SPILL = join(process.cwd(), ".tea-rags-codegraph-spill", "xpass-__direct__.ndjson");
+// Direct mode (no pool) places every spill under `process.cwd()/.tea-rags-codegraph-spill/`.
+// Each test redirects cwd to its own temp root (bd tea-rags-mcp-bbo1h.8): test
+// files run in parallel processes, and a spill under the shared repo-root cwd let
+// one file truncate or unlink the `xpass-__direct__.ndjson` another was draining.
 
 // Foo.bar resolves (target in symbol table); Mystery.nope does not → both land
 // in the `constant` bucket, 1 of 2 resolved. Mirrors the makeRoot fixture in
@@ -68,10 +71,9 @@ function mainExtraction(): FileExtraction {
   };
 }
 
-// Unique per-cycle collection ⇒ a private input-spill path, isolating this test
-// from other direct-mode cross-pass tests sharing the cwd spill dir. In direct
-// mode collectionName only routes the spill path; the single injected graphDb is
-// used regardless.
+// Unique per-cycle collection ⇒ a private input-spill path, so the two cycles on
+// one instance never share a spill. In direct mode collectionName only routes the
+// spill path; the single injected graphDb is used regardless.
 async function runCrossPassCycle(
   provider: CodegraphEnrichmentProvider,
   root: string,
@@ -92,9 +94,12 @@ describe("CodegraphEnrichmentProvider — cross-pass run-stats isolation (svhqp)
   let tmp: string;
   let client: DuckDbGraphClient;
   let provider: CodegraphEnrichmentProvider;
+  let origCwd: () => string;
 
   beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "cg-xpass-runstats-"));
+    origCwd = process.cwd;
+    Object.defineProperty(process, "cwd", { value: () => tmp, configurable: true });
     client = new DuckDbGraphClient({ path: join(tmp, "g.duckdb") });
     await client.init();
     await runMigrations(client, MIG_DIR);
@@ -105,13 +110,12 @@ describe("CodegraphEnrichmentProvider — cross-pass run-stats isolation (svhqp)
       composer: new DefaultSymbolIdComposer(),
       collectSymbols,
     });
-    rmSync(DIRECT_INPUT_SPILL, { force: true });
   });
 
   afterEach(async () => {
     await client.close();
+    Object.defineProperty(process, "cwd", { value: origCwd, configurable: true });
     rmSync(tmp, { recursive: true, force: true });
-    rmSync(DIRECT_INPUT_SPILL, { force: true });
   });
 
   it("two cross-pass cycles on a reused instance persist ONLY the second run's counts", async () => {

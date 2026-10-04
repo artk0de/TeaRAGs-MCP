@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { READ_PATH_EMBEDDING_RECOVERY_WAIT_MS } from "../../../../src/core/adapters/embeddings/base.js";
 import { EmbeddingModelMismatchError } from "../../../../src/core/adapters/embeddings/errors.js";
 import { OllamaUnavailableError } from "../../../../src/core/adapters/embeddings/ollama/errors.js";
 import { EmbeddingModelGuard } from "../../../../src/core/adapters/qdrant/embedding-model-guard.js";
@@ -440,6 +441,77 @@ describe("EmbeddingModelGuard canary", () => {
     consoleError.mockRestore();
   });
 
+  /**
+   * A caller that compares no freshly embedded vector against the index
+   * (`rank_chunks`, `find_symbol`) has nothing the canary could protect, and
+   * embedding it made every such cold call wait out the provider's endpoint
+   * failover (~6.4 s on an unreachable primary — bd tea-rags-mcp-xi2r9, B3).
+   */
+  describe("a caller that embeds nothing (nameOnly)", () => {
+    it("checks the name without embedding the canary", async () => {
+      const qdrant = fakeQdrantWithMarker({ embeddingModel: "m", canary: { text: EMBEDDING_CANARY_TEXT, vector: V } });
+      const embed = vi.fn(async () => ({ embedding: ORTHOGONAL }));
+      const guard = new EmbeddingModelGuard(qdrant, "m", 4, { embed } as never);
+
+      await expect(guard.ensureMatch("c", { nameOnly: true })).resolves.toBeUndefined();
+      expect(embed).not.toHaveBeenCalled();
+    });
+
+    it("still rejects a marker naming another model", async () => {
+      const qdrant = fakeQdrantWithMarker({ embeddingModel: "other" });
+      const embed = vi.fn(async () => ({ embedding: V }));
+      const guard = new EmbeddingModelGuard(qdrant, "m", 4, { embed } as never);
+
+      await expect(guard.ensureMatch("c", { nameOnly: true })).rejects.toThrow(EmbeddingModelMismatchError);
+      expect(embed).not.toHaveBeenCalled();
+    });
+
+    it("leaves the canary to the first caller that embeds", async () => {
+      const qdrant = fakeQdrantWithMarker({ embeddingModel: "m", canary: { text: EMBEDDING_CANARY_TEXT, vector: V } });
+      const embed = vi.fn(async () => ({ embedding: ORTHOGONAL }));
+      const guard = new EmbeddingModelGuard(qdrant, "m", 4, { embed } as never);
+
+      await guard.ensureMatch("c", { nameOnly: true });
+      await expect(guard.ensureMatch("c")).rejects.toThrow(/same name, different weights/);
+      expect(embed).toHaveBeenCalledOnce();
+    });
+
+    it("answers from a cached canary mismatch without a Qdrant read", async () => {
+      const qdrant = fakeQdrantWithMarker({ embeddingModel: "m", canary: { text: EMBEDDING_CANARY_TEXT, vector: V } });
+      const guard = new EmbeddingModelGuard(qdrant, "m", 4, providerReturning(ORTHOGONAL));
+      await expect(guard.ensureMatch("c")).rejects.toThrow(EmbeddingModelMismatchError);
+      const reads = qdrant.getPoint.mock.calls.length;
+
+      await expect(guard.ensureMatch("c", { nameOnly: true })).rejects.toThrow(/same name, different weights/);
+      expect(qdrant.getPoint.mock.calls.length).toBe(reads);
+    });
+
+    it("creates no marker for a collection that has none", async () => {
+      const qdrant = fakeQdrantWithMarker(null);
+      const embed = vi.fn(async () => ({ embedding: V }));
+      const guard = new EmbeddingModelGuard(qdrant, "m", 4, { embed } as never);
+
+      await expect(guard.ensureMatch("c", { nameOnly: true })).resolves.toBeUndefined();
+      expect(qdrant.addPoints).not.toHaveBeenCalled();
+      expect(embed).not.toHaveBeenCalled();
+    });
+  });
+
+  it("resolves the provider's endpoint before a check starts, so its failover cannot discard that check", async () => {
+    const qdrant = fakeQdrantWithMarker({ embeddingModel: "m", canary: { text: EMBEDDING_CANARY_TEXT, vector: V } });
+    const slot: { guard?: EmbeddingModelGuard } = {};
+    // The failover hook fires during endpoint resolution, as the factory wires it.
+    const resolveEndpoint = vi.fn(async () => {
+      slot.guard?.invalidateAll();
+    });
+    const embed = vi.fn(async () => ({ embedding: ORTHOGONAL }));
+    const guard = new EmbeddingModelGuard(qdrant, "m", 4, { embed, resolveEndpoint } as never);
+    slot.guard = guard;
+
+    await expect(guard.ensureMatch("c")).rejects.toThrow(/same name, different weights/);
+    expect(resolveEndpoint).toHaveBeenCalledOnce();
+  });
+
   describe("provider down after a spent recovery wait (bd tea-rags-mcp-umatc)", () => {
     // The provider already waited EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS
     // out on the canary embed. A caller that embeds next would wait it out
@@ -519,6 +591,80 @@ describe("EmbeddingModelGuard canary", () => {
       await expect(reader).resolves.toBeUndefined();
       await expect(embedder).rejects.toBe(outage);
       expect(embed).toHaveBeenCalledTimes(1);
+      consoleError.mockRestore();
+    });
+  });
+
+  describe("a read caller that allows no recovery wait", () => {
+    const downAtOnce = () => new OllamaUnavailableError("http://127.0.0.1:59999");
+
+    it("hands the canary embed the caller's recovery budget", async () => {
+      const qdrant = fakeQdrantWithMarker({
+        embeddingModel: "m",
+        canary: { text: EMBEDDING_CANARY_TEXT, vector: V },
+      });
+      const embed = vi.fn(async () => ({ embedding: V }));
+      const guard = new EmbeddingModelGuard(qdrant, "m", 4, { embed } as never);
+
+      await guard.ensureMatch("c", {
+        failOnProviderOutage: true,
+        maxRecoveryWaitMs: READ_PATH_EMBEDDING_RECOVERY_WAIT_MS,
+      });
+
+      expect(embed).toHaveBeenCalledWith(EMBEDDING_CANARY_TEXT, { maxRecoveryWaitMs: 0 });
+    });
+
+    it("gets the outage at once, though the provider spent no wait", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const qdrant = fakeQdrantWithMarker({
+        embeddingModel: "m",
+        canary: { text: EMBEDDING_CANARY_TEXT, vector: V },
+      });
+      const outage = downAtOnce();
+      const guard = new EmbeddingModelGuard(qdrant, "m", 4, { embed: vi.fn().mockRejectedValue(outage) } as never);
+
+      await expect(
+        guard.ensureMatch("c", { failOnProviderOutage: true, maxRecoveryWaitMs: READ_PATH_EMBEDDING_RECOVERY_WAIT_MS }),
+      ).rejects.toBe(outage);
+      consoleError.mockRestore();
+    });
+
+    it("caches neither a pass nor a mismatch for a canary that could not run", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const qdrant = fakeQdrantWithMarker({
+        embeddingModel: "m",
+        canary: { text: EMBEDDING_CANARY_TEXT, vector: V },
+      });
+      const embed = vi.fn().mockRejectedValueOnce(downAtOnce()).mockResolvedValue({ embedding: ORTHOGONAL });
+      const guard = new EmbeddingModelGuard(qdrant, "m", 4, { embed } as never);
+      const read = { maxRecoveryWaitMs: READ_PATH_EMBEDDING_RECOVERY_WAIT_MS };
+
+      await expect(guard.ensureMatch("c", read)).resolves.toBeUndefined();
+      // The provider is back: the canary runs now and finds the drift.
+      await expect(guard.ensureMatch("c", read)).rejects.toThrow(EmbeddingModelMismatchError);
+      expect(embed).toHaveBeenCalledTimes(2);
+      consoleError.mockRestore();
+    });
+
+    it("keeps a zero-wait outage from a caller that would wait longer", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const qdrant = fakeQdrantWithMarker({
+        embeddingModel: "m",
+        canary: { text: EMBEDDING_CANARY_TEXT, vector: V },
+      });
+      const guard = new EmbeddingModelGuard(qdrant, "m", 4, {
+        embed: vi.fn().mockRejectedValue(downAtOnce()),
+      } as never);
+
+      const reader = guard.ensureMatch("c", {
+        failOnProviderOutage: true,
+        maxRecoveryWaitMs: READ_PATH_EMBEDDING_RECOVERY_WAIT_MS,
+      });
+      // Indexing joins the same in-flight check with the configured budget.
+      const indexer = guard.ensureMatch("c", { failOnProviderOutage: true });
+
+      await expect(reader).rejects.toBeInstanceOf(OllamaUnavailableError);
+      await expect(indexer).resolves.toBeUndefined();
       consoleError.mockRestore();
     });
   });

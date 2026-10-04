@@ -17,17 +17,14 @@
 
 import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
 import { resolveGitCommonDir } from "../../../adapters/vcs/git/common-dir.js";
-import type { CollectionEntry } from "../../../contracts/types/registry.js";
-import { isBackendRegistryEnvKey } from "./env-groups.js";
+// RegistryLookup is defined in contracts (bd tea-rags-mcp-0qaht.36); this
+// module re-exports it unchanged for its existing consumers.
+import type { CollectionEntry, RegistryLookup } from "../../../contracts/types/registry.js";
+import { canonicalRegistryEnvKeys, isBackendRegistryEnvKey, isThroughputTunedEnvKey } from "./env-groups.js";
 import { outerEnvForRegistryStamp, replayRegistryEnv, type AmbientEnvRole } from "./env-replay.js";
 import { resolveRegistryQdrantBackend } from "./qdrant-backend-resolution.js";
 
-/** Structural subset of CollectionRegistry used here — keeps tests fake-friendly. */
-export interface RegistryLookup {
-  findByName: (name: string) => CollectionEntry | null;
-  findByPath: (path: string) => CollectionEntry | null;
-  list: () => CollectionEntry[];
-}
+export type { RegistryLookup };
 
 /**
  * Pick the registry entry whose config should seed the worker env:
@@ -190,10 +187,36 @@ export function outerEnvForRegistryEntry(
  * is left to `resolveRegistryEnv`, which weighs it separately.
  */
 function registryStampOf(entry: CollectionEntry): Record<string, string> {
-  const stamp: Record<string, string> = { ...(entry.env ?? entry.tuning) };
+  const stamp: Record<string, string> = { ...replayableRegistryEnv(entry) };
   if (entry.embeddingModel) stamp.EMBEDDING_MODEL = entry.embeddingModel;
   if (entry.embeddingBaseUrl) stamp.EMBEDDING_BASE_URL = entry.embeddingBaseUrl;
   if (entry.embeddingFallbackUrl) stamp.EMBEDDING_FALLBACK_URL = entry.embeddingFallbackUrl;
   if (entry.codegraphEnabled) stamp.CODEGRAPH_ENABLED = "true";
   return stamp;
+}
+
+/**
+ * The part of `entry`'s env stamp (`env`, legacy `tuning`) a run may replay:
+ * everything except a throughput-tuned key (`isThroughputTunedEnvKey`) the
+ * operator did not pin (`operatorPinnedEnvKeys`, bd tea-rags-mcp-y1ynz).
+ *
+ * Every reader that replays a stamp into a run's env goes through here —
+ * `resolveRegistryEnv`, and the `prime` / `tune` commands that replay into
+ * `process.env` — because the config parser cannot tell a replayed value from
+ * one the operator exported: whatever lands in the env is an explicit setting,
+ * and for these keys an explicit setting is the throughput tuner's hard
+ * ceiling. Filtering on the READ side leaves the stamp on disk untouched; an
+ * entry written before pins existed simply stops replaying its tuned values.
+ *
+ * Undefined when the entry carries no stamp at all, like `entry.env ?? entry.tuning`.
+ */
+export function replayableRegistryEnv(
+  entry: Pick<CollectionEntry, "env" | "tuning" | "operatorPinnedEnvKeys"> | null | undefined,
+): Record<string, string> | undefined {
+  const stamp = entry?.env ?? entry?.tuning;
+  if (stamp === undefined) return undefined;
+  const pinned = new Set(entry?.operatorPinnedEnvKeys);
+  const isReplayable = (key: string): boolean =>
+    !isThroughputTunedEnvKey(key) || canonicalRegistryEnvKeys(key).some((canonical) => pinned.has(canonical));
+  return Object.fromEntries(Object.entries(stamp).filter(([key]) => isReplayable(key)));
 }

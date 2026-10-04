@@ -1382,6 +1382,41 @@ describe("resolveSymbols", () => {
       );
     });
 
+    it("lists every member of a grouped tiny-example chunk in the scope outline (5xpq4)", () => {
+      const group = exampleChunk("g-1", `${scopeId}.it`, scopeId, 10);
+      (group.payload as Record<string, unknown>).memberSymbolIds = [`${scopeId}.it`, `${scopeId}.it~2`];
+
+      const results = resolveSymbols([group, exampleChunk("e-1", `${scopeId}.it 'can invite'`, scopeId, 20)], scopeId);
+
+      expect(results[0].payload?.content).toBe(
+        [scopeId, `  ${scopeId}.it`, `  ${scopeId}.it~2`, `  ${scopeId}.it 'can invite'`].join("\n"),
+      );
+    });
+
+    it("answers a scope id with the outline AND the scope's own setup chunk (5xpq4)", () => {
+      const setup = {
+        id: "s-1",
+        payload: {
+          symbolId: scopeId,
+          name: "context 'when admin'",
+          chunkType: "test_setup",
+          parentSymbolId: "User",
+          parentType: "call",
+          relativePath: "spec/models/user_spec.rb",
+          content: "before { user.update!(admin: true) }",
+          startLine: 5,
+          endLine: 5,
+        },
+      };
+
+      const results = resolveSymbols([setup, exampleChunk("e-1", `${scopeId}.it 'can invite'`, scopeId, 10)], scopeId);
+
+      expect(results.map((r) => r.payload?.content)).toEqual([
+        [scopeId, `  ${scopeId}.it 'can invite'`].join("\n"),
+        "before { user.update!(admin: true) }",
+      ]);
+    });
+
     it("lists an oversized example held only as #partN windows once, by its base id", () => {
       const huge = `${scopeId}.it 'exports everything'`;
       const chunks = [

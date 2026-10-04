@@ -2,6 +2,8 @@
  * Pipeline Types - Interfaces for the batching/worker pool system
  */
 
+import { IMPLICIT_EMBEDDING_CONCURRENCY_CEILING } from "./embedding-throughput-tuner.js";
+
 /**
  * Types of operations the pipeline can handle
  */
@@ -58,6 +60,14 @@ export interface ChunkItem extends WorkItem {
       methodLines?: number;
       /** Physical line count of the file (symbol-mass pass); the enrichment policy's size input. */
       moduleLines?: number;
+      /** A test setup chunk's member scope spans (bd tea-rags-mcp-5xpq4). */
+      scopeLineRanges?: { start: number; end: number }[];
+      /** A test setup chunk's rows per member (bd tea-rags-mcp-5xpq4). */
+      memberRowCounts?: number[];
+      /** The member ids a packed test chunk answers find_symbol for (bd tea-rags-mcp-5xpq4). */
+      memberSymbolIds?: string[];
+      /** A packed test chunk's own line range per member, aligned with memberSymbolIds (bd tea-rags-mcp-g5i0a). */
+      memberLineRanges?: { start: number; end: number }[];
     };
   };
   /** Pre-computed chunk ID */
@@ -75,6 +85,14 @@ export interface DeleteItem extends WorkItem {
 }
 
 /**
+ * What made a `BatchAccumulator` let a batch go: it reached its size, the
+ * formation timeout fired on a partial one, or a drain forced the tail out. A
+ * `timeout` batch formed while an embed slot sat idle is the producer-starvation
+ * signal (bd tea-rags-mcp-y1ynz).
+ */
+export type BatchFlushTrigger = "size" | "timeout" | "drain";
+
+/**
  * Batch of work items ready for processing
  */
 export interface Batch<T extends WorkItem = WorkItem> {
@@ -82,6 +100,8 @@ export interface Batch<T extends WorkItem = WorkItem> {
   type: OperationType;
   items: T[];
   createdAt: number;
+  /** Absent on a batch built outside the accumulator. */
+  flushTrigger?: BatchFlushTrigger;
 }
 
 /**
@@ -137,6 +157,19 @@ export interface PipelineConfig {
   upsertAccumulator: BatchAccumulatorConfig;
   /** Batch accumulator settings for deletes */
   deleteAccumulator: BatchAccumulatorConfig;
+  /**
+   * Let the embedding throughput tuner move the upsert batch size and the
+   * upsert concurrency inside their configured bounds (bd tea-rags-mcp-7ju66).
+   * Absent / false = the configured values for the whole run.
+   */
+  adaptiveEmbedding?: boolean;
+  /**
+   * Ceiling of the tuner's concurrency climb; `workerPool.concurrency` is where
+   * it starts without a stored optimum. An explicit INGEST_PIPELINE_CONCURRENCY
+   * is both; unset, the pool stays at 1 and the climb may reach
+   * IMPLICIT_EMBEDDING_CONCURRENCY_CEILING. Absent = `workerPool.concurrency`.
+   */
+  embedConcurrencyCeiling?: number;
 }
 
 /**
@@ -192,13 +225,24 @@ export function buildPipelineConfig(
     batchSize: number;
     minBatchSize?: number;
     batchTimeoutMs: number;
+    /** EMBEDDING_TUNE_STATIC — pin the configured batch size and concurrency. */
+    static?: boolean;
   },
   qdrantTune: {
     deleteConcurrency: number;
     deleteBatchSize: number;
     deleteFlushTimeoutMs: number;
   },
+  options: {
+    /**
+     * Whether INGEST_PIPELINE_CONCURRENCY (any spelling) was set explicitly.
+     * Absent = explicit: `pipelineConcurrency` is the hard ceiling.
+     */
+    pipelineConcurrencyUserSet?: boolean;
+  } = {},
 ): PipelineConfig {
+  const embedConcurrencyCeiling =
+    options.pipelineConcurrencyUserSet === false ? IMPLICIT_EMBEDDING_CONCURRENCY_CEILING : pipelineConcurrency;
   return {
     workerPool: {
       concurrency: pipelineConcurrency,
@@ -223,5 +267,7 @@ export function buildPipelineConfig(
       flushTimeoutMs: qdrantTune.deleteFlushTimeoutMs,
       maxQueueSize: qdrantTune.deleteConcurrency * 2,
     },
+    adaptiveEmbedding: embeddingTune.static !== true,
+    embedConcurrencyCeiling,
   };
 }

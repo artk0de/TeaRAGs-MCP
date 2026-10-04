@@ -6,6 +6,7 @@ import { generateChunkId } from "../../../../../../src/core/domains/ingest/pipel
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
 import { extractClassHeader } from "../../../../../../src/core/domains/language/ruby/chunking/class-body-chunker.js";
 import type { ChunkerConfig } from "../../../../../../src/core/types.js";
+import { memberSetupText, setupChainOf } from "../../../language/__helpers__/setup-chain.js";
 
 // Mirror the composition roots (composition.ts / the chunker worker): the factory
 // builds every native language provider itself — so factory.create("ruby")
@@ -981,6 +982,80 @@ function farewell(name) {
   });
 
   describe("chunk - Ruby", () => {
+    it("stores RSpec setup once per scope, linked to its examples by scope span (bd tea-rags-mcp-5xpq4)", async () => {
+      const code = `RSpec.describe User do
+  let(:user) { create(:user, name: 'Alice', email: 'alice@example.com') }
+
+  context 'when admin' do
+    before { user.update!(admin: true, confirmed_at: Time.current) }
+
+    it 'can manage every account in the organization' do
+      expect(user.can_manage?(Account.all)).to be(true)
+    end
+
+    it { is_expected.to be_valid }
+    it { is_expected.to be_persisted }
+  end
+end
+`;
+      const chunks = await chunker.chunk(code, "spec/models/user_spec.rb", "ruby");
+      const setups = chunks.filter((c) => c.metadata.chunkType === "test_setup");
+      const examples = chunks.filter((c) => c.metadata.parentType === "test_scope");
+
+      // Both scopes' setup is packed into one chunk; each member carries its
+      // whole scope's span, in file lines.
+      expect(setups).toHaveLength(1);
+      expect(setups[0].metadata.memberSymbolIds).toEqual(["User.RSpec.describe User", "User.context 'when admin'"]);
+      expect(setups[0].metadata.scopeLineRanges).toEqual([
+        { start: 1, end: 14 },
+        { start: 4, end: 13 },
+      ]);
+      expect(examples.every((c) => !c.content.includes("let(:user)") && !c.content.includes("before {"))).toBe(true);
+      // INVARIANT CHANGED (bd tea-rags-mcp-g5i0a): the three adjacent examples
+      // of the context share one pack, so one chain serves all of them.
+      expect(examples.map((c) => setupChainOf(chunks, c))).toEqual([
+        ["User.RSpec.describe User", "User.context 'when admin'"],
+      ]);
+      expect(examples[0].metadata.memberSymbolIds).toEqual([
+        "User.context 'when admin'.it 'can manage every account in the organization'",
+        "User.context 'when admin'.it { is_expected.to be_valid }",
+        "User.context 'when admin'.it { is_expected.to be_persisted }",
+      ]);
+    });
+
+    it("persists a pack's per-member line ranges and row counts, aligned with its member ids (bd tea-rags-mcp-g5i0a)", async () => {
+      const code = `RSpec.describe Invoice do
+  it 'totals its line items' do
+    expect(invoice.total).to eq(30)
+  end
+
+  it 'applies the discount' do
+    invoice.discount = 10
+    expect(invoice.total).to eq(20)
+  end
+end
+`;
+      const chunks = await chunker.chunk(code, "spec/models/invoice_spec.rb", "ruby");
+      const [pack] = chunks.filter((c) => c.metadata.parentType === "test_scope");
+
+      expect(pack.metadata.memberSymbolIds).toEqual([
+        "Invoice.RSpec.describe Invoice.it 'totals its line items'",
+        "Invoice.RSpec.describe Invoice.it 'applies the discount'",
+      ]);
+      expect(pack.metadata.memberLineRanges).toEqual([
+        { start: 2, end: 4 },
+        { start: 6, end: 9 },
+      ]);
+      expect(pack.metadata.memberRowCounts).toEqual([3, 4]);
+      const rows = pack.content.split("\n");
+      expect(rows.slice(-4)).toEqual([
+        "it 'applies the discount' do",
+        "    invoice.discount = 10",
+        "    expect(invoice.total).to eq(20)",
+        "  end",
+      ]);
+    });
+
     it("should always extract methods from classes regardless of class size", async () => {
       const code = `
 class UserService
@@ -1586,15 +1661,17 @@ Use the library like this. This is a separate top-level section.
 
       const chunks = await chunker.chunk(code, "README.md", "markdown");
       const sectionChunks = chunks.filter((c) => c.metadata.chunkType === "block" && c.metadata.name);
-      const sectionNames = sectionChunks.map((c) => c.metadata.name);
+      // bd tea-rags-mcp-8gbh3: the small h1 intro and the small h2 share a
+      // chunk, so sections are checked by heading, not by chunk name.
+      const sectionHeadings = sectionChunks.flatMap((c) => c.metadata.headingPath.map((h) => h.text));
 
       // Small h3 sections grouped into parent h2 chunks
-      expect(sectionNames).toContain("Introduction");
-      expect(sectionNames).toContain("Getting Started"); // includes Installation + Configuration
-      expect(sectionNames).toContain("Usage");
+      expect(sectionHeadings).toContain("Introduction");
+      expect(sectionHeadings).toContain("Getting Started"); // includes Installation + Configuration
+      expect(sectionHeadings).toContain("Usage");
 
       // Getting Started chunk contains h3 content
-      const gs = sectionChunks.find((c) => c.metadata.name === "Getting Started");
+      const gs = sectionChunks.find((c) => c.content.includes("## Getting Started"));
       expect(gs!.content).toContain("Installation");
       expect(gs!.content).toContain("Configuration");
     });
@@ -1638,9 +1715,10 @@ This is the first real section with enough content for a valid chunk size.
       const chunks = await chunker.chunk(code, "README.md", "markdown");
       const names = chunks.map((c) => c.metadata.name);
 
-      // h3 before first h2 is now its own chunk (not preamble)
+      // h3 before first h2 is now its own chunk (not preamble). bd
+      // tea-rags-mcp-8gbh3: the small h2 after it joins that chunk.
       expect(names).toContain("A Minor Heading");
-      expect(names).toContain("First Real Section");
+      expect(chunks.flatMap((c) => c.metadata.headingPath.map((h) => h.text))).toContain("First Real Section");
     });
 
     it("should include breadcrumb from ancestor headings in h3 chunks", async () => {
@@ -1667,8 +1745,10 @@ List of available API endpoints and their documentation with examples.
 
       const chunks = await chunker.chunk(code, "api.md", "markdown");
 
-      // h3 sections grouped into h2 "Authentication" chunk with breadcrumbs
-      const authChunk = chunks.find((c) => c.metadata.name === "Authentication");
+      // h3 sections grouped into h2 "Authentication" chunk with breadcrumbs. bd
+      // tea-rags-mcp-8gbh3: the tiny h1 intro opens that chunk, so it is found
+      // by its heading.
+      const authChunk = chunks.find((c) => c.content.includes("## Authentication"));
       expect(authChunk).toBeDefined();
       expect(authChunk!.content).toContain("# API Guide");
       expect(authChunk!.content).toContain("### OAuth Flow");
@@ -3785,7 +3865,8 @@ function funcB() {
   });
 
   describe("markdown section with very small content", () => {
-    it("should skip sections with content under 50 chars", async () => {
+    // bd tea-rags-mcp-8gbh3: a tiny section is kept, never dropped.
+    it("should keep sections with content under 50 chars", async () => {
       const code = [
         "# Short",
         "",
@@ -3798,9 +3879,9 @@ function funcB() {
 
       const chunks = await chunker.chunk(code, "doc.md", "markdown");
 
-      // The "Short" section has < 50 chars total, should be skipped
+      // The "Short" section has < 50 chars total and no sibling under its h1
       const shortSection = chunks.find((c) => c.metadata.name === "Short");
-      expect(shortSection).toBeUndefined();
+      expect(shortSection).toBeDefined();
 
       // The "Detailed Section" should be included
       const detailedSection = chunks.find((c) => c.metadata.name === "Detailed Section");
@@ -4349,10 +4430,13 @@ end`;
 end`;
 
       const chunks = await chunker.chunk(code, "spec/services/payment_service_spec.rb", "ruby");
-      // Scope chunker: leaf scope = describe PaymentService with setup + it
+      // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): the setup is the scope's own
+      // test_setup chunk, which the example references by scope id.
       const testChunk = chunks.find((c) => c.metadata.chunkType === "test");
+      const setupChunk = chunks.find((c) => c.metadata.chunkType === "test_setup");
       expect(testChunk).toBeDefined();
-      expect(testChunk!.content).toContain("let(:gateway)");
+      expect(setupChunk!.content).toContain("let(:gateway)");
+      expect(setupChainOf(chunks, testChunk!)).toEqual([setupChunk!.metadata.symbolId]);
       expect(testChunk!.content).toContain("initializes with a gateway");
     });
 
@@ -4421,26 +4505,32 @@ end`;
 
       // INVARIANT CHANGED (bd tea-rags-mcp-99gkm): one test chunk per EXAMPLE
       // (3 `it` blocks), no longer one per leaf context (was 2).
+      // INVARIANT CHANGED (bd tea-rags-mcp-g5i0a): the two adjacent 'when admin'
+      // examples share one pack; every example keeps its own member id.
       const testChunks = chunks.filter((c) => c.metadata.chunkType === "test");
-      expect(testChunks).toHaveLength(3);
-      expect(testChunks.map((c) => c.metadata.symbolId)).toEqual([
+      expect(testChunks).toHaveLength(2);
+      expect(testChunks.flatMap((c) => c.metadata.memberSymbolIds ?? [c.metadata.symbolId])).toEqual([
         "User.context 'when admin'.it 'has admin access'",
         "User.context 'when admin'.it 'can manage users'",
         "User.context 'when regular'.it 'has limited access'",
       ]);
       expect(testChunks.every((c) => c.metadata.parentType === "test_scope")).toBe(true);
 
-      // 'when admin' leaf should contain injected let(:user) from parent
+      // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): let(:user) and let(:role) are
+      // their scopes' members of the packed test_setup; the examples reference them.
+      expect(memberSetupText(chunks, "User.describe User")).toContain("let(:user)");
+      expect(memberSetupText(chunks, "User.context 'when admin'")).toContain("let(:role)");
+
       const adminChunk = testChunks.find((c) => c.content.includes("admin access"));
       expect(adminChunk).toBeDefined();
-      expect(adminChunk!.content).toContain("let(:user)");
-      expect(adminChunk!.content).toContain("let(:role)");
+      expect(adminChunk!.content).not.toContain("let(:user)");
+      expect(setupChainOf(chunks, adminChunk!)).toEqual(["User.describe User", "User.context 'when admin'"]);
       expect(adminChunk!.metadata.chunkType).toBe("test");
 
-      // 'when regular' leaf should also have injected let(:user)
+      // 'when regular' leaf references only the parent setup
       const regularChunk = testChunks.find((c) => c.content.includes("limited access"));
       expect(regularChunk).toBeDefined();
-      expect(regularChunk!.content).toContain("let(:user)");
+      expect(setupChainOf(chunks, regularChunk!)).toEqual(["User.describe User"]);
     });
 
     it("should NOT affect non-spec Ruby files", async () => {
@@ -4967,10 +5057,13 @@ end`;
       expect(allContent).toContain("sends an email through the mailer");
       expect(allContent).toContain("enqueues a push notification job");
 
-      // Setup should be injected into leaf chunks
+      // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): setup is referenced, not
+      // injected — the root's let(:service) is its own setup chunk, first on
+      // the example's setup chain.
       const emailChunk = testChunks.find((c) => c.content.includes("sends an email"));
       expect(emailChunk).toBeDefined();
-      expect(emailChunk!.content).toContain("let(:service)");
+      const [rootSetupId] = setupChainOf(chunks, emailChunk!);
+      expect(chunks.find((c) => c.metadata.symbolId === rootSetupId)!.content).toContain("let(:service)");
     });
   });
 
@@ -5058,12 +5151,15 @@ end`;
 
       const chunks = await chunker.chunk(code, "spec/services/payment_processor_spec.rb", "ruby");
 
+      // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): setup from all ancestor
+      // levels is referenced root to leaf, each level a member of the packed setup.
       const testChunk = chunks.find((c) => c.metadata.chunkType === "test");
       expect(testChunk).toBeDefined();
-      // Should contain setup from all ancestor levels
-      expect(testChunk!.content).toContain("let(:processor)");
-      expect(testChunk!.content).toContain("let(:card)");
-      expect(testChunk!.content).toContain("let(:amount)");
+      const chain = setupChainOf(chunks, testChunk!).map((id) => memberSetupText(chunks, id));
+      expect(chain).toHaveLength(3);
+      expect(chain[0]).toContain("let(:processor)");
+      expect(chain[1]).toContain("let(:card)");
+      expect(chain[2]).toContain("let(:amount)");
       expect(testChunk!.content).toContain("processes the charge successfully");
     });
   });

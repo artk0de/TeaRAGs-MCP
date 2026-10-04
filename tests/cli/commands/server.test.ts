@@ -61,7 +61,13 @@ describe("server command", () => {
   it("declares a server process, so a registered project's stamp outranks the spawn env (tea-rags-mcp-o0qsw)", async () => {
     await runServer({ http: false });
 
-    expect(vi.mocked(createAppContext).mock.calls[0]?.[1]).toEqual({ ambientEnvRole: "server" });
+    expect(vi.mocked(createAppContext).mock.calls[0]?.[1]).toMatchObject({ ambientEnvRole: "server" });
+  });
+
+  it("watches the working trees it serves, keeping their delta warm between requests", async () => {
+    await runServer({ http: false });
+
+    expect(vi.mocked(createAppContext).mock.calls[0]?.[1]).toMatchObject({ watchWorkingTrees: true });
   });
 
   it("should start stdio server by default", async () => {
@@ -125,8 +131,14 @@ describe("server command", () => {
 
     await runServer({ http: false });
 
-    expect(onSpy).toHaveBeenCalledWith("SIGTERM", cleanup);
-    expect(onSpy).toHaveBeenCalledWith("SIGINT", cleanup);
+    // The listener wraps cleanup (it returns a promise since bd tea-rags-mcp-xi2r9
+    // B1, which a signal listener must not hand back): firing it runs cleanup.
+    const listenerFor = (signal: string) =>
+      onSpy.mock.calls.find(([name]) => name === signal)?.[1] as (() => void) | undefined;
+    listenerFor("SIGTERM")?.();
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    listenerFor("SIGINT")?.();
+    expect(cleanup).toHaveBeenCalledTimes(2);
 
     onSpy.mockRestore();
   });

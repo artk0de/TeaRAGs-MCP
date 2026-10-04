@@ -53,6 +53,8 @@ export type {
 
 export type { IndexMetrics, SignalMetrics } from "./metrics.js";
 
+export type { WorkingTreeFloor, WorkingTreeIndexTarget, WorkingTreeMarker, WorkingTreeState } from "./working-tree.js";
+
 export type {
   // Registry
   ProjectRegistryAddress,
@@ -86,9 +88,21 @@ export type {
 } from "./graph.js";
 
 export type {
+  // Co-change partners (find_co_changed)
+  CoChangeBuildProvenance,
+  CoChangedFileResult,
+  CoChangedPartner,
+  FindCoChangedRequest,
+  FindCoChangedResult,
+} from "./cochange.js";
+
+export type {
   // Architecture diagnostics (get_architecture_report)
   ArchitectureDirectoryRelation,
   ArchitectureFileEdge,
+  ArchitectureKnotMember,
+  ArchitectureKnotPage,
+  ArchitectureKnotView,
   ArchitectureReportSummary,
   ArchitectureRootCause,
   ArchitectureViolation,
@@ -111,6 +125,31 @@ export type {
   MainSequenceViolationEvidence,
   MainSequenceVolatilityReportSummary,
   MainSequenceZone,
+  ArchitectureLayerMap,
+  ArchitectureLayerMapOptions,
+  LayerMapBoundaryEdgeDto,
+  LayerMapKnotDto,
+  LayerMapMoveCandidateDto,
+  LayerMapNodeDto,
+  LayeringAbstractionBypassArchitectureViolation,
+  LayeringAbstractionBypassViolationEvidence,
+  LayeringArchitectureViolation,
+  LayeringBackEdgeArchitectureViolation,
+  LayeringBackEdgeViolationEvidence,
+  LayeringCompositionCycleArchitectureViolation,
+  LayeringCompositionCycleViolationEvidence,
+  LayeringFeedbackEdge,
+  LayeringIslandArchitectureViolation,
+  LayeringIslandViolationEvidence,
+  LayeringKeepCost,
+  LayeringKnotArchitectureViolation,
+  LayeringKnotDrillDown,
+  LayeringKnotPageFeedbackEdge,
+  LayeringKnotViolationEvidence,
+  LayeringLayerSkipArchitectureViolation,
+  LayeringLayerSkipViolationEvidence,
+  LayeringReportSummary,
+  LayeringViolationKind,
   NonProductionExclusionSummary,
   SilentCouplingArchitectureRootCause,
   SilentCouplingArchitectureViolation,
@@ -165,6 +204,23 @@ export type {
   OntologySynonym,
   OntologyValueKind,
 } from "./ontology.js";
+
+export type {
+  // Diff-scoped review (review_changes)
+  CohesionSectionPayload,
+  CohesionSectionResult,
+  IncompleteChangePartner,
+  IncompleteChangeSectionPayload,
+  IncompleteChangeSectionResult,
+  NamingSectionResult,
+  ReviewChangesRequest,
+  ReviewChangesResult,
+  ReviewChangesReviewBlock,
+  ReviewSectionEnvelope,
+  ReviewSectionId,
+  ReviewSectionNotJudgedEntry,
+  ReviewSectionResult,
+} from "./review.js";
 
 export { projectSearchResultPayloads } from "./payload-projection.js";
 export type { PayloadProjectionOutcome } from "./payload-projection.js";

@@ -16,6 +16,7 @@ import { resolve } from "node:path";
 import Parser from "tree-sitter";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { memberSetupText, setupChainOf } from "../../__helpers__/setup-chain.js";
 import type { BodyChunkResult } from "../../../../../../src/core/contracts/types/chunker.js";
 import { resolveSymbols } from "../../../../../../src/core/domains/explore/symbol-resolve.js";
 import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
@@ -65,6 +66,11 @@ function runHook(code: string, maxChunkSize = 5000): BodyChunkResult[] {
   return ctx.bodyChunks;
 }
 
+/** Every id the chunks answer find_symbol for: a pack's members, else the chunk's own id (bd tea-rags-mcp-g5i0a). */
+function addresses(chunks: BodyChunkResult[]): (string | undefined)[] {
+  return chunks.flatMap((c) => c.memberSymbolIds ?? [c.symbolId]);
+}
+
 const body = (label: string): string =>
   `    const result = computeTheExpectedValueFor('${label}');\n    expect(result).toEqual(expected['${label}']);`;
 
@@ -82,7 +88,9 @@ ${body("remove")}
 
     const chunks = runHook(code);
 
-    expect(chunks.map((c) => c.symbolId)).toEqual([
+    // INVARIANT CHANGED (bd tea-rags-mcp-g5i0a): the two adjacent examples
+    // share one pack; each is addressed by its member id and own line range.
+    expect(addresses(chunks)).toEqual([
       "Cart.describe 'Cart'.it 'adds an item'",
       "Cart.describe 'Cart'.it 'removes an item'",
     ]);
@@ -92,8 +100,10 @@ ${body("remove")}
       expect(chunk.parentType).toBe("test_scope");
     }
     expect(chunks[0].name).toBe("it 'adds an item'");
-    expect(chunks[0].content).not.toContain("removes an item");
-    expect([chunks[0].startLine, chunks[0].endLine]).toEqual([2, 5]);
+    expect(chunks[0].lineRanges).toEqual([
+      { start: 2, end: 5 },
+      { start: 7, end: 10 },
+    ]);
   });
 
   it("keeps .skip / .only / .todo / .concurrent visible in scope and example names", () => {
@@ -118,7 +128,7 @@ ${body("ship")}
     const chunks = runHook(code);
     const scopeId = "Cart.describe.only 'focused checkout flow'";
 
-    expect(chunks.map((c) => c.symbolId)).toEqual([
+    expect(addresses(chunks)).toEqual([
       `${scopeId}.it.skip 'applies a coupon'`,
       `${scopeId}.it.only 'charges the card'`,
       `${scopeId}.test.concurrent 'ships the parcel'`,
@@ -139,13 +149,14 @@ ${body("empty")}
 
     const chunks = runHook(code);
 
-    expect(chunks.map((c) => c.name)).toEqual([
-      "it.each 'sums %i and %i into the running total'",
-      "it 'keeps the running total at zero when empty'",
+    // INVARIANT CHANGED (bd tea-rags-mcp-g5i0a): both examples share one pack.
+    expect(addresses(chunks)).toEqual([
+      "Cart.describe 'Cart'.it.each 'sums %i and %i into the running total'",
+      "Cart.describe 'Cart'.it 'keeps the running total at zero when empty'",
     ]);
-    // The parametrized example is an example, so its text never leaks into a
-    // sibling example as scope context.
-    expect(chunks[1].content).not.toContain("it.each");
+    // The parametrized example is an example — a member of its own, never
+    // scope context in front of its sibling.
+    expect(chunks[0].memberRowCounts).toEqual([4, 4]);
   });
 
   it("claims a top-level describe.each(table)(name, fn) container and names it with .each", () => {
@@ -174,13 +185,15 @@ ${body("second")}
   });
 });`;
 
-    expect(runHook(code).map((c) => c.symbolId)).toEqual([
+    expect(addresses(runHook(code))).toEqual([
       "Cart.describe 'Cart'.it 'recalculates the total'",
       "Cart.describe 'Cart'.it 'recalculates the total'~2",
     ]);
   });
 
-  it("prefixes every ancestor's hooks and the scope's own before each example, line range the example's own", () => {
+  // INVARIANT CHANGED (bd tea-rags-mcp-5xpq4): hooks were prefixed into every
+  // example; each scope's hooks are now ONE setup chunk the example references.
+  it("references every ancestor's hooks and the scope's own as setup chunks, line range the example's own", () => {
     const code = `describe('Cart', () => {
   beforeEach(() => { signIn(customer); });
 
@@ -193,11 +206,14 @@ ${body("discount")}
   });
 });`;
 
-    const [chunk] = runHook(code);
+    const chunks = runHook(code);
+    const chunk = chunks.find((c) => c.parentType === "test_scope")!;
 
     expect(chunk.symbolId).toBe("Cart.describe 'with a coupon'.it 'discounts the subtotal'");
-    expect(chunk.content.indexOf("signIn(customer)")).toBeLessThan(chunk.content.indexOf("cart.apply(coupon)"));
-    expect(chunk.content.indexOf("cart.apply(coupon)")).toBeLessThan(chunk.content.indexOf("discounts the subtotal"));
+    expect(setupChainOf(chunks, chunk)).toEqual(["Cart.describe 'Cart'", "Cart.describe 'with a coupon'"]);
+    expect(chunk.content).not.toContain("signIn(customer)");
+    expect(memberSetupText(chunks, "Cart.describe 'Cart'")).toContain("signIn(customer)");
+    expect(memberSetupText(chunks, "Cart.describe 'with a coupon'")).toContain("cart.apply(coupon)");
     expect([chunk.startLine, chunk.endLine]).toEqual([7, 10]);
   });
 
@@ -240,6 +256,7 @@ ${body("anon")}
             startLine: c.startLine,
             endLine: c.endLine,
             content: c.content,
+            ...(c.metadata.memberSymbolIds ? { memberSymbolIds: c.metadata.memberSymbolIds } : {}),
           },
         }));
     }
@@ -247,8 +264,10 @@ ${body("anon")}
     it("addresses every it of the file as its own example, none twice", async () => {
       const itCount = source.split("\n").filter((line) => /^\s*it\(/.test(line)).length;
       const examples = (await payloads()).filter((p) => p.payload.parentType === "test_scope");
-      const baseIds = examples.map((p) => p.payload.symbolId!.replace(/#part\d+$/, ""));
-      const wholeIds = examples.map((p) => p.payload.symbolId).filter((id) => !/#part\d+$/.test(id!));
+      // A pack answers for each of its members (bd tea-rags-mcp-g5i0a).
+      const idsOf = (p: (typeof examples)[number]): string[] => p.payload.memberSymbolIds ?? [p.payload.symbolId!];
+      const baseIds = examples.flatMap(idsOf).map((id) => id.replace(/#part\d+$/, ""));
+      const wholeIds = examples.flatMap(idsOf).filter((id) => !/#part\d+$/.test(id));
 
       expect(new Set(baseIds).size).toBe(itCount);
       expect(new Set(wholeIds).size).toBe(wholeIds.length);

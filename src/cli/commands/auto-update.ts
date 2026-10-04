@@ -55,12 +55,12 @@ function resolveEntry(deps: AutoUpdateCliDeps, project: string): CollectionEntry
 
 export async function runAutoUpdateCliCommand(
   action: AutoUpdateCliAction,
-  argv: AutoUpdateCliArgs,
+  args: AutoUpdateCliArgs,
   deps: AutoUpdateCliDeps,
 ): Promise<void> {
-  const entry = resolveEntry(deps, argv.project);
+  const entry = resolveEntry(deps, args.project);
   if (entry === null) {
-    deps.errOut(`Project '${argv.project}' is not registered. Run: tea-rags projects`);
+    deps.errOut(`Project '${args.project}' is not registered. Run: tea-rags projects`);
     deps.exit(1);
     return;
   }
@@ -68,7 +68,7 @@ export async function runAutoUpdateCliCommand(
 
   switch (action) {
     case "enable": {
-      const targetBranch = argv.branch ?? deps.detectBranch(entry.path);
+      const targetBranch = args.branch ?? deps.detectBranch(entry.path);
       const lastRun = entry.autoUpdate?.lastRun;
       deps.registry.setAutoUpdate(entry.collectionName, {
         enabled: true,
@@ -174,10 +174,10 @@ function defaultDeps(): AutoUpdateCliDeps {
           registry,
           freshness: new FreshnessCheckImpl(),
           clock: () => Date.now(),
-          log: (line) => process.stdout.write(`${line}\n`),
+          out: (line) => process.stdout.write(`${line}\n`),
         });
       } finally {
-        ctx.cleanup?.();
+        void ctx.cleanup?.();
       }
     },
     out: (line) => process.stdout.write(`${line}\n`),
@@ -186,13 +186,13 @@ function defaultDeps(): AutoUpdateCliDeps {
   };
 }
 
-interface AutoUpdateArgv {
+interface AutoUpdateArgs {
   action: string;
   project: string;
   branch?: string;
 }
 
-export const autoUpdateCommand: CommandModule<object, AutoUpdateArgv> = {
+export const autoUpdateCommand: CommandModule<object, AutoUpdateArgs> = {
   command: "auto-update <action>",
   describe: "Keep a project's index fresh on its target branch (enable/disable/status/run).",
   builder: (y) =>

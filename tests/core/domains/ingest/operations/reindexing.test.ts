@@ -12,6 +12,7 @@ import {
   MockEmbeddingProvider,
   MockQdrantManager,
 } from "../__helpers__/test-helpers.js";
+import { warmChunkerPoolFactory } from "../__helpers__/warm-chunker-pool.js";
 import { IngestFacade } from "../../../../../src/core/api/index.js";
 import { PartialDeletionError } from "../../../../../src/core/domains/ingest/errors.js";
 import { EnrichmentCoordinator } from "../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
@@ -64,6 +65,7 @@ describe("ReindexPipeline", () => {
       embeddings,
       config,
       trajectoryConfig: defaultTrajectoryConfig(),
+      createChunkerPool: warmChunkerPoolFactory,
     });
   });
 

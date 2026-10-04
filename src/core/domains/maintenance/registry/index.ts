@@ -23,12 +23,15 @@ export {
   ADAPTIVE_DEFAULT_ENV_KEYS,
   canonicalRegistryEnvKeys,
   DEDICATED_FIELD_ENV_KEYS,
+  isThroughputTunedEnvKey,
   REGISTRY_ENV_ALLOWLIST,
   REGISTRY_ENV_GROUPS,
   registryEnvGroupMembers,
+  THROUGHPUT_TUNED_ENV_KEYS,
 } from "./env-groups.js";
 export type { EnvConsequence, RegistryEnvGroup } from "./env-groups.js";
 export {
+  applyOperatorEnvPinEdit,
   applyRegistryEnvEdit,
   editRegistryEnv,
   INDEX_RECORDED_ENV_KEYS,
@@ -42,6 +45,7 @@ export {
   outerEnvForRegistryEntry,
   pickRegistryEntry,
   pickRegistryEnvSeed,
+  replayableRegistryEnv,
   resolveRegistryEnv,
 } from "./env-resolution.js";
 export type { RegistryLookup } from "./env-resolution.js";
