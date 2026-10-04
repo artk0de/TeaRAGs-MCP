@@ -125,6 +125,15 @@ export type NamingVerdict =
        * novel. `declaredBy` = the nearest ancestor's declaration.
        */
       override?: { declaredBy: string };
+      /**
+       * A value draft conforming to its DECLARING FILE's own idiom (bd
+       * tea-rags-mcp-hzrxn): the file's pre-existing bindings of the same role
+       * carry the draft's name by majority — at least {@link MIN_ROLE_MEMBERS}
+       * of them and at least half the role's bindings, the majority idiom the
+       * type roles read. `bindings` = how many prior bindings carry the name.
+       * Absent: known words alone confirmed the name.
+       */
+      fileLocal?: { file: string; bindings: number };
     }
   | { verdict: "MISFIT"; suggestion: string; holder?: string; role?: NamingExpectedTypeRole }
   | { verdict: "NEW_TERM"; topTerms: string[]; alternatives?: TermAlternative[] }
@@ -188,6 +197,28 @@ export interface NamingReturnVerbShare {
   share: number;
 }
 
+/** One name among a declaring file's pre-existing bindings of a draft's role. */
+export interface FileLocalRoleBinding {
+  name: string;
+  /** How many of the file's pre-existing role bindings carry `name`. */
+  n: number;
+}
+
+/**
+ * The declaring file's own precedent for a draft's role (bd tea-rags-mcp-hzrxn):
+ * the bindings its PRE-EXISTING methods hold — same kind, same type, the draft's
+ * own declaration excluded — one entry per name. Read from the file's working
+ * tree (diff mode), not the index: a changed file's stored copy is stale or
+ * absent, which is why it is excluded from the project evidence. Judged only
+ * where no project-level convention was found; absent = the file's bindings are
+ * unknown (a draft that names no file).
+ */
+export interface FileLocalBindings {
+  /** The declaring file's repo-relative path — what the verdict's evidence names. */
+  file: string;
+  bindings: readonly FileLocalRoleBinding[];
+}
+
 export interface DraftNameJudgementInput {
   name: string;
   /** Defaults to `local`. */
@@ -242,6 +273,13 @@ export interface DraftNameJudgementInput {
    * bare fallback judges it.
    */
   untypedMethod?: UntypedMethodEvidence;
+  /**
+   * The declaring file's pre-existing bindings of the draft's role ({@link
+   * FileLocalBindings}, bd tea-rags-mcp-hzrxn). The LAST precedence: consulted
+   * only where no project-level convention was found, a majority of these rows
+   * naming the draft's name is the file's own convention. Absent = unknown.
+   */
+  fileLocal?: FileLocalBindings;
 }
 
 /** A draft's shape conforms when it holds at least this share of the observed rows. */
@@ -681,9 +719,32 @@ export function judgeDraftName(input: DraftNameJudgementInput): NamingVerdict {
   }
   const verdict = judgeDraftNameByEvidence(input);
   if (verdict.verdict === "MISFIT") return keepDraftQualification(input, verdict);
-  return isBareNewTerm(verdict) && FREE_CHOICE_KINDS.has(input.kind ?? "local")
-    ? { verdict: "NO_CONVENTION", prefer: namingPreference(input) }
-    : verdict;
+  if (isBareNewTerm(verdict) && FREE_CHOICE_KINDS.has(input.kind ?? "local")) {
+    const fileLocal = fileLocalConvention(input);
+    if (fileLocal !== undefined) return fileLocal;
+    return { verdict: "NO_CONVENTION", prefer: namingPreference(input) };
+  }
+  return verdict;
+}
+
+/**
+ * The declaring file's own convention for the draft's role, when its
+ * pre-existing bindings settle the name (bd tea-rags-mcp-hzrxn): the draft's
+ * name is the heaviest of {@link FileLocalBindings.bindings} by
+ * {@link nameSupport} — the same support a project row demand reads — and a
+ * MAJORITY of the role's bindings carry it: at least {@link MIN_ROLE_MEMBERS}
+ * of them and at least the type roles' family share of the total, the same
+ * majority idiom the inheritance families read (a split file has no
+ * convention). The LAST precedence: reached only where no project-level
+ * convention was found.
+ */
+function fileLocalConvention(input: DraftNameJudgementInput): NamingVerdict | undefined {
+  const { fileLocal } = input;
+  if (fileLocal === undefined) return undefined;
+  const total = fileLocal.bindings.reduce((sum, binding) => sum + binding.n, 0);
+  const support = nameSupport(fileLocal.bindings, input.name);
+  if (support < MIN_ROLE_MEMBERS || support / total < TYPE_ROLE_THRESHOLDS.familyShare) return undefined;
+  return { verdict: "CONFORMS", fileLocal: { file: fileLocal.file, bindings: support } };
 }
 
 /** A NO_CONVENTION's preference from the draft's own evidence; the family is added by {@link withFamilyAnalogues}. */

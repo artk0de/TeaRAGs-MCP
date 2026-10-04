@@ -577,6 +577,39 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     expect(after.review?.findings.map((f) => f.name)).not.toContain("sameFirm");
   });
 
+  // bd tea-rags-mcp-hzrxn: a param its file's pre-existing methods bind under one name keeps the
+  // file's idiom — the working-tree precedent settles it, not the project the file is excluded from.
+  it("a param the file's pre-existing methods bind under one name conforms by that file-local precedent", async () => {
+    const handler = "src/git/handler.ts";
+    writeFileSync(
+      join(repo, handler),
+      "export function first(req: Request): void {}\nexport function second(req: Request): void {}\n",
+    );
+    git(repo, "add", "-A");
+    git(repo, "commit", "-q", "-m", "base");
+    writeFileSync(
+      join(repo, handler),
+      "export function first(req: Request): void {}\n" +
+        "export function second(req: Request): void {}\n" +
+        'export function third(req: Request): string { return ""; }\n',
+    );
+    const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
+    // Without the precedent `req` was a NO_CONVENTION (counted novel): `Request` is bound nowhere
+    // else, and the changed file is out of the project evidence.
+    expect(review?.findings.map((f) => f.name)).not.toContain("req");
+    expect(review?.conforming).toBe(1);
+    // `third` — an untyped `string` return the project holds nowhere — is the only novel draft.
+    expect(review?.novel).toBe(1);
+  });
+
+  it("a param with no file-local precedent is still counted as novel", async () => {
+    writeFileSync(join(repo, "src/git/lonely.ts"), 'export function only(req: Request): string { return ""; }\n');
+    const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, files: ["src/git/lonely.ts"] });
+    expect(review?.findings).toEqual([]);
+    expect(review?.conforming).toBe(0);
+    expect(review?.novel).toBe(2);
+  });
+
   // Lexicon friction F1: a project alias resolves to the MAIN checkout, so a change made in a
   // linked worktree was reviewed as `changedFiles: 0` — success-shaped and blind.
   describe("the working tree the review reads", () => {
