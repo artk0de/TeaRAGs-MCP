@@ -64,9 +64,9 @@ function catalogOf(
   };
 }
 
-/** Co-change pairs per changed file, from plain tuples. */
+/** Co-change pairs per changed file, from plain tuples — the snapshot's linkage flag included. */
 function couplingOf(
-  pairs: ReadonlyMap<string, readonly { partner: string; support: number }[]>,
+  pairs: ReadonlyMap<string, readonly { partner: string; support: number; structurallyLinked: boolean }[]>,
 ): DiffDetectorCouplingReader {
   return { partnersOf: (relPath) => pairs.get(relPath) ?? [] };
 }
@@ -373,7 +373,7 @@ describe("mainSequence", () => {
 });
 
 describe("silentCoupling", () => {
-  const COUPLING = new Map([["src/a.ts", [{ partner: "src/p.ts", support: 0.82 }]]]);
+  const COUPLING = new Map([["src/a.ts", [{ partner: "src/p.ts", support: 0.82, structurallyLinked: false }]]]);
 
   it("reports an unexplained strong pair", () => {
     const result = runWith({ coupling: couplingOf(COUPLING) }, ["src/a.ts"], [["src/a.ts", "src/q.ts"]]);
@@ -400,6 +400,22 @@ describe("silentCoupling", () => {
       ["src/a.ts"],
       [["src/a.ts", "src/q.ts"]],
     );
+    expect(result.findings).toEqual([]);
+  });
+
+  // The review-side twin of the production pin (silent-coupling.test.ts:188,
+  // bd tea-rags-mcp-r8hme.12): a pair linked ONLY by an `import type` edge must
+  // not be reported as silently coupled. The graph port reads
+  // cg_symbols_edges_file only (type-only imports are deliberately kept out of
+  // it), so the pair arrives explained by the snapshot's own linkage flag — the
+  // production store's union, which counts a type-only import as a link. The
+  // false-positive class r8hme.12 removed from the production detector survived
+  // here while the judgement ignored the flag (bd tea-rags-mcp-89k7k.4).
+  it("stays silent when the pair is linked only by a type-only import — the snapshot's linkage flag explains it", () => {
+    const linkedOnlyByTypeImport = new Map([
+      ["src/a.ts", [{ partner: "src/types.ts", support: 0.82, structurallyLinked: true }]],
+    ]);
+    const result = runWith({ coupling: couplingOf(linkedOnlyByTypeImport) }, ["src/a.ts"], [["src/a.ts", "src/q.ts"]]);
     expect(result.findings).toEqual([]);
   });
 });

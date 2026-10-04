@@ -104,30 +104,44 @@ const EMPTY_EDGES: readonly IndexedGraphEdge[] = [];
 /**
  * `DiffDetectorCouplingReader` over the pre-read co-change snapshot: the pair
  * table is undirected (stored once, `relPathA < relPathB`), so a file's
- * partners are its rows on EITHER side. `null`/`undefined` — no build, or not
- * read for this review — answers no partners: absence is the run's silence,
- * never a zero verdict.
+ * partners are its rows on EITHER side, each carrying the snapshot's own
+ * `structurallyLinked` verdict — the production store's union, which counts a
+ * type-only import as a link (bd tea-rags-mcp-89k7k.4); dropping it reported
+ * pairs the whole-repo detector explains. `null`/`undefined` — no build, or
+ * not read for this review — answers no partners: absence is the run's
+ * silence, never a zero verdict.
  */
 export class WiredCouplingReader implements DiffDetectorCouplingReader {
-  private readonly partnersByFile: ReadonlyMap<string, readonly { partner: string; support: number }[]>;
+  private readonly partnersByFile: ReadonlyMap<
+    string,
+    readonly { partner: string; support: number; structurallyLinked: boolean }[]
+  >;
 
   constructor(snapshot: TemporalCochangeGraph | null | undefined) {
-    const partners = new Map<string, { partner: string; support: number }[]>();
+    const partners = new Map<string, { partner: string; support: number; structurallyLinked: boolean }[]>();
     if (snapshot) {
       for (const edge of snapshot.edges) {
-        pushTo(partners, edge.relPathA, { partner: edge.relPathB, support: edge.support });
-        pushTo(partners, edge.relPathB, { partner: edge.relPathA, support: edge.support });
+        pushTo(partners, edge.relPathA, {
+          partner: edge.relPathB,
+          support: edge.support,
+          structurallyLinked: edge.structurallyLinked,
+        });
+        pushTo(partners, edge.relPathB, {
+          partner: edge.relPathA,
+          support: edge.support,
+          structurallyLinked: edge.structurallyLinked,
+        });
       }
     }
     this.partnersByFile = partners;
   }
 
-  partnersOf(relPath: string): readonly { partner: string; support: number }[] {
+  partnersOf(relPath: string): readonly { partner: string; support: number; structurallyLinked: boolean }[] {
     return this.partnersByFile.get(relPath) ?? EMPTY_PARTNERS;
   }
 }
 
-const EMPTY_PARTNERS: readonly { partner: string; support: number }[] = [];
+const EMPTY_PARTNERS: readonly { partner: string; support: number; structurallyLinked: boolean }[] = [];
 
 /**
  * `DiffDetectorContractReader` over the report's component partition and the

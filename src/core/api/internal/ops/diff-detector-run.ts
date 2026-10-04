@@ -69,8 +69,19 @@ export interface DiffDetectorCatalog {
 
 /** Co-change pairs involving changed files, from the indexed temporal graph (cg_temporal). */
 export interface DiffDetectorCouplingReader {
-  /** Pairs (changedFile, partner) with their support, one call per changed file. */
-  partnersOf: (relPath: string) => readonly { partner: string; support: number }[];
+  /**
+   * Pairs (changedFile, partner) with their support and the snapshot's own
+   * linkage verdict, one call per changed file. `structurallyLinked` is what
+   * the production store's `readGraph` union computed (bd
+   * tea-rags-mcp-r8hme.12): a regular file edge, a TYPE-ONLY import, a
+   * resolved method edge, or a re-export chain joins the endpoints in either
+   * direction — the same semantics the whole-repo detector judges by, so a
+   * pair the flag explains must never read as "no structural edge" here
+   * either (bd tea-rags-mcp-89k7k.4). The graph port cannot answer this: it
+   * reads `cg_symbols_edges_file` only, which keeps type-only imports out by
+   * design.
+   */
+  partnersOf: (relPath: string) => readonly { partner: string; support: number; structurallyLinked: boolean }[];
 }
 
 /**
@@ -470,11 +481,15 @@ export class DiffDetectorRun {
   /**
    * Silent coupling pairs involving a changed file: a strong co-change pair
    * the diff does not explain. A pair is explained when the overlay adds its
-   * structural edge in either direction, or when one already stands in the
-   * indexed graph's reverse direction (a pre-existing partner -> file edge —
-   * without that check the "no structural edge" sentence below could be
-   * false). Both sides in the diff is the review's own business, not a
-   * finding (bd tea-rags-mcp-3kykc owns the partner-missing question).
+   * structural edge in either direction, when the snapshot's own linkage
+   * verdict already joins it (the production store's union — a type-only
+   * import links too, bd tea-rags-mcp-89k7k.4, the false-positive class
+   * tea-rags-mcp-r8hme.12 removed from the whole-repo detector), or when a
+   * pre-existing edge stands in the indexed graph's reverse direction (a
+   * partner -> file edge — without that check the "no structural edge"
+   * sentence below could be false). Both sides in the diff is the review's
+   * own business, not a finding (bd tea-rags-mcp-3kykc owns the
+   * partner-missing question).
    */
   private judgeSilentCoupling(
     changedFiles: readonly string[],
@@ -492,6 +507,7 @@ export class DiffDetectorRun {
           overlay.edgesFrom(relPath).some((edge) => edge.targetRelPath === pair.partner) ||
           overlay.edgesFrom(pair.partner).some((edge) => edge.targetRelPath === relPath);
         if (explainedByOverlay) continue;
+        if (pair.structurallyLinked) continue;
         const structurallyVisible = this.graph.edgesTo(relPath).some((indexed) => indexed.source === pair.partner);
         if (structurallyVisible) continue;
         reported.add(subject);
