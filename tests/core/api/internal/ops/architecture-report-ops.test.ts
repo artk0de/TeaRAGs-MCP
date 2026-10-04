@@ -215,6 +215,59 @@ describe("ArchitectureReportOps#build", () => {
     ]);
   });
 
+  // The response shape must carry the detector's composition-root annotation:
+  // an SDP delta sourced from the declared composition root is triage data (bd
+  // tea-rags-mcp-r8hme.51) — the mapper dropping it would repeat the 0qaht.45
+  // gap, so the survival is pinned by exact shape.
+  it("carries the composition-root annotation through to the SDP evidence (tea-rags-mcp-r8hme.51)", async () => {
+    const files = [file("src/bootstrap/a.ts"), file("src/bootstrap/b.ts"), file("vendor/v.ts"), file("other/o.ts")];
+    const edges: FileDependencyGraph["edges"] = [
+      { sourceRelPath: "src/bootstrap/a.ts", targetRelPath: "src/core/lib/f1.ts", callWeight: 2 },
+      { sourceRelPath: "src/bootstrap/b.ts", targetRelPath: "src/core/lib/f2.ts", callWeight: 1 },
+      { sourceRelPath: "src/core/lib/f1.ts", targetRelPath: "vendor/v.ts", callWeight: 1 },
+      { sourceRelPath: "src/core/lib/f2.ts", targetRelPath: "vendor/v.ts", callWeight: 1 },
+      { sourceRelPath: "src/core/lib/f3.ts", targetRelPath: "vendor/v.ts", callWeight: 1 },
+      { sourceRelPath: "src/core/lib/f4.ts", targetRelPath: "vendor/v.ts", callWeight: 1 },
+      { sourceRelPath: "src/core/lib/f5.ts", targetRelPath: "vendor/v.ts", callWeight: 1 },
+      { sourceRelPath: "other/o.ts", targetRelPath: "src/core/lib/f3.ts", callWeight: 1 },
+    ];
+    // Six importers give src/bootstrap the support floor room: Ca 6, Ce 2,
+    // I = 2/8 against the lib's 5/8 — the same uphill shape the detector-level
+    // fixture uses.
+    for (let i = 1; i <= 6; i++) {
+      files.push(file(`app/c${i}.ts`));
+      edges.push({ sourceRelPath: `app/c${i}.ts`, targetRelPath: "src/bootstrap/b.ts", callWeight: 1 });
+    }
+    for (let i = 1; i <= 5; i++) files.push(file(`src/core/lib/f${i}.ts`));
+    const g: FileDependencyGraph = { files, edges };
+
+    const report = await new ArchitectureReportOps().build(graphDb(g), {});
+    const violation = report.violations.find((v) => v.detector === "stableDependencies");
+
+    expect(violation && "sourceComponent" in violation ? violation.sourceComponent : undefined).toBe("src/bootstrap");
+    expect(
+      violation && "evidence" in violation
+        ? violation.evidence
+        : expect.fail("no stableDependencies violation"),
+    ).toEqual({
+      sourceInstability: 2 / 8,
+      targetInstability: 5 / 8,
+      instabilityDelta: 5 / 8 - 2 / 8,
+      sourceAfferentCount: 6,
+      sourceEfferentCount: 2,
+      targetAfferentCount: 3,
+      targetEfferentCount: 5,
+      callWeight: 3,
+      directoryRelation: "disjoint",
+      fileEdgeCount: 2,
+      compositionRoot: true,
+      fileEdges: [
+        { sourceRelPath: "src/bootstrap/a.ts", targetRelPath: "src/core/lib/f1.ts", callWeight: 2 },
+        { sourceRelPath: "src/bootstrap/b.ts", targetRelPath: "src/core/lib/f2.ts", callWeight: 1 },
+      ],
+    });
+  });
+
   it("summarises the component graph, what was judged and excluded, naming each exclusion reason", async () => {
     const g = graph();
     const report = await new ArchitectureReportOps().build(graphDb(g), {});

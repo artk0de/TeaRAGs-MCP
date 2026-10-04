@@ -18,6 +18,30 @@ export const COMPONENT_EVIDENCE_FILE_EDGE_LIMIT = 5;
 const INSTABILITY_DELTA_EPSILON = 1e-9;
 
 /**
+ * The composition roots the layer rule declares — `.claude/rules/domain-boundaries.md`,
+ * "Composition roots": `bootstrap/` is the application composition root above
+ * `api/` (parses config, builds AppContext, hands the wired `App` to cli/mcp),
+ * `core/api/` is the core one (assembles deps from every layer below, wires
+ * via DI). Paths are repo-relative, the form a component dir carries.
+ *
+ * DECLARED, never derived: membership is this list, and the layer rule is its
+ * source of truth — no heuristic rediscovers it (bd tea-rags-mcp-r8hme.51,
+ * design call on tea-rags-mcp-89k7k.9). Assembling unstable concretes IS the
+ * root's job, so an SDP delta sourced from one is annotated
+ * (`compositionRoot: true` on the violation) rather than left a blind finding;
+ * the violation stays REPORTED — the annotation is triage data, never a
+ * suppression, exactly the `foundationTerminal` spirit.
+ */
+export const DECLARED_COMPOSITION_ROOT_COMPONENTS: readonly string[] = ["src/bootstrap", "src/core/api"];
+
+/** Whether a component dir is a declared composition root, or lives inside one. */
+export function isDeclaredCompositionRoot(componentDir: string): boolean {
+  return DECLARED_COMPOSITION_ROOT_COMPONENTS.some(
+    (root) => componentDir === root || componentDir.startsWith(`${root}/`),
+  );
+}
+
+/**
  * Stable Dependencies Principle on components (bd tea-rags-mcp-r8hme.7) — the
  * granularity Martin defined it for. File-level instability with Ca + Ce in
  * single digits swung by one edge; a component's counts pool its files.
@@ -42,7 +66,9 @@ const INSTABILITY_DELTA_EPSILON = 1e-9;
  * Coupling is counted over the whole graph; `sourcePathPattern` only decides
  * which dependencies are judged. File-level exclusions (self, unwalked,
  * intra-component, facade aggregation) come from the component graph and are
- * reported alongside.
+ * reported alongside. A dependency whose source is a declared composition root
+ * is judged like any other — it is ANNOTATED, not excluded (see
+ * {@link DECLARED_COMPOSITION_ROOT_COMPONENTS}).
  */
 export function detectComponentStableDependencyViolations(
   componentGraph: ComponentGraph,
@@ -91,6 +117,9 @@ export function detectComponentStableDependencyViolations(
           directoryRelation: dependency.directoryRelation,
           fileEdgeCount: dependency.fileEdges.length,
           fileEdges: evidenceFileEdges(dependency),
+          // The root assembling unstable concretes is the root's job (see
+          // DECLARED_COMPOSITION_ROOT_COMPONENTS): annotated, still reported.
+          ...(isDeclaredCompositionRoot(source.componentDir) ? { compositionRoot: true as const } : {}),
         });
       }
     }
