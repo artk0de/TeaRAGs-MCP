@@ -26,6 +26,13 @@ if [ "$1 $2" = "run build" ]; then
   [ "${STUB_BUILD_EXIT:-0}" = 0 ] || { echo "stub tsc error"; exit "$STUB_BUILD_EXIT"; }
   mkdir -p build
 fi
+# `npm test` replays the transcript in STUB_TEST_LOG and exits STUB_TEST_EXIT.
+# The hook redirects this output into its own TEST_LOG, so the transcript IS
+# the log the hook classifies (bd tea-rags-mcp-89k7k.5).
+if [ "$1" = "test" ]; then
+  [ -n "${STUB_TEST_LOG:-}" ] && cat "$STUB_TEST_LOG" >&2
+  exit "${STUB_TEST_EXIT:-0}"
+fi
 exit 0
 EOF
 chmod +x "$STUBS/npx" "$STUBS/npm"
@@ -107,6 +114,68 @@ stage "src/core/foo.ts" "export const foo = 1;"
 run_hook
 [ "$STATUS" = 0 ] && grep -E "^npm test -- related .*--maxWorkers=6( |$)" "$CALLS" >/dev/null
 note $? "the related-tests run is capped at --maxWorkers=6"
+
+# Fixture transcripts (bd tea-rags-mcp-89k7k.5, live 2026-10-04): what vitest
+# prints when it finishes with failures, versus what was on disk when a run
+# was killed — OOM fatal error, and a log truncated mid-run with no marker.
+GENUINE="$TMPD/transcript-failing.txt"
+OOM="$TMPD/transcript-oom.txt"
+TRUNC="$TMPD/transcript-truncated.txt"
+cat > "$GENUINE" <<'EOF'
+FAIL tests/core/foo.test.ts > foo does bar
+Error: expected 1 to be 2
+
+ Test Files  1 failed (422)
+      Tests  1 failed | 4288 passed (4290)
+EOF
+cat > "$OOM" <<'EOF'
+<--- Last few GCs --->
+[12345:0x7fa] 982341 ms: Mark-sweep 4094.9 (4101.7) -> 4094.9 (4102.2) MB, 1234.5 / 0.0 ms allocation failure
+<--- JS stacktrace --->
+FATAL ERROR: Reached heap limit - Allocation failed - JavaScript heap out of memory
+EOF
+cat > "$TRUNC" <<'EOF'
+run over 422 files
+transforming tests/core/foo.test.ts
+EOF
+
+# 6. bd 89k7k.5: an OOM-killed run exits nonzero with NO vitest summary — that
+#    is not a test failure. The hook must name the class, show the marker line
+#    and the live-validated retry hint, and NOT say "Tests failed".
+fresh_repo
+mkdir -p "$REPO/build"
+stage "src/core/foo.ts" "export const foo = 1;"
+run_hook STUB_TEST_EXIT=134 STUB_TEST_LOG="$OOM"
+[ "$STATUS" = 1 ] \
+  && grep -q "NOT a test failure" "$OUT" \
+  && grep -q "heap out of memory" "$OUT" \
+  && grep -q "max-old-space-size" "$OUT" \
+  && ! grep -q "Tests failed" "$OUT"
+note $? "an OOM-killed run is reported as killed, not as a test failure"
+
+# 7. bd 89k7k.5: a run truncated mid-flight (no summary, no marker at all — the
+#    bead's 18.8k-line log) gets the load class and the uptime hint, and still
+#    not "Tests failed".
+fresh_repo
+mkdir -p "$REPO/build"
+stage "src/core/foo.ts" "export const foo = 1;"
+run_hook STUB_TEST_EXIT=1 STUB_TEST_LOG="$TRUNC"
+[ "$STATUS" = 1 ] \
+  && grep -q "NOT a test failure" "$OUT" \
+  && grep -q "uptime" "$OUT" \
+  && ! grep -q "Tests failed" "$OUT"
+note $? "a run truncated without a summary is reported as killed, with the load hint"
+
+# 8. a completed run WITH a failure summary keeps the current message verbatim
+fresh_repo
+mkdir -p "$REPO/build"
+stage "src/core/foo.ts" "export const foo = 1;"
+run_hook STUB_TEST_EXIT=1 STUB_TEST_LOG="$GENUINE"
+[ "$STATUS" = 1 ] \
+  && grep -q "Tests failed" "$OUT" \
+  && grep -q "FAIL tests/core/foo.test.ts" "$OUT" \
+  && ! grep -q "NOT a test failure" "$OUT"
+note $? "a genuine failing run still reports 'Tests failed' with the FAIL lines"
 
 rm -rf "$TMPD"
 echo "---"; echo "PASS=$PASS FAIL=$FAIL"
