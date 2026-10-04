@@ -235,13 +235,15 @@ function buildTracePathInputShape(schemaBuilder: SchemaBuilder) {
  * description states the call contract only (when to call is selection policy,
  * owned by the search cascade), each field one line, no examples. A test holds
  * the description ≤ 300 chars and the input schema, as clients receive it,
- * ≤ 1.5 KB serialized.
+ * ≤ 1.5 KB serialized. (bd tea-rags-mcp-89k7k.18: the 300-char budget is
+ * zero-sum — the diff-mode clause squeezed out the `{topTerms}`/`{prefer}`/
+ * `genericName` payload names, which the first response self-describes.)
  */
 const NAMING_LEXICON_DESCRIPTION =
-  "Codegraph naming. `types`/`anchors`→names/kind+shape; " +
-  "`names[]`(attr:field; method:return; class/const:type+path)→CONFORMS(vocabulary, not behaviour)|" +
-  "MISFIT{suggestion}|NEW_TERM{topTerms}|NO_CONVENTION{prefer}|COLLISION,+alternatives,genericName; " +
-  "`concept`+`language`→terms.";
+  "Codegraph naming: `types`/`anchors`→names/kind+shape; " +
+  "`names[]`(attr:field;method:return;class/const:type+path)→CONFORMS(vocabulary not behaviour)|" +
+  "MISFIT{suggestion}|NEW_TERM|NO_CONVENTION|COLLISION,+alternatives; `concept`+`language`→terms; " +
+  "`changes`/`files`→diff review; review_changes runs a diff";
 
 function buildNamingLexiconInputSchema() {
   const draftName = z.object({
@@ -259,20 +261,33 @@ function buildNamingLexiconInputSchema() {
   return z
     .object({
       ...collectionPathFields(),
-      pathPattern: z.string().optional().describe("Glob"),
+      // bd tea-rags-mcp-89k7k.18: the 1.5 KB budget is zero-sum — the diff
+      // fields below ride bare (semantics: tool description + schema/overview),
+      // and the `pathPattern`/`anchors` hints came off to pay for them.
+      pathPattern: z.string().optional(),
       language: z.string().optional(),
       types: z.array(z.string()).optional(),
-      anchors: z.array(z.string()).optional().describe("SymbolIds: +param/return types"),
+      anchors: z.array(z.string()).optional(),
       concept: z.string().optional().describe("Domain, not a name"),
       names: z.array(draftName).optional(),
+      // Diff mode: the `NamingLexiconRequest` changes/files the ops answer
+      // with `review` — the same wire shape review_changes sends. No `.min`
+      // on `files`: the refine owns the empty case, exactly like the ops'
+      // `isDiffRequest`.
+      changes: z.object({ base: z.string().optional() }).optional(),
+      files: z.array(z.string()).optional(),
     })
     .refine(
       (req) =>
         (req.types?.length ?? 0) > 0 ||
         (req.anchors?.length ?? 0) > 0 ||
         (req.names?.length ?? 0) > 0 ||
-        (req.concept ?? "").length > 0,
-      { message: "Provide at least one of types, anchors, concept, names" },
+        (req.concept ?? "").length > 0 ||
+        // Mirrors the ops' `isDiffRequest` — no XOR: a diff beside lexicon
+        // fields is exactly what review_changes' naming section sends.
+        req.changes !== undefined ||
+        (req.files?.length ?? 0) > 0,
+      { message: "Provide at least one of types, anchors, concept, names, changes, files" },
     )
     .refine((req) => req.concept === undefined || req.language !== undefined, {
       message: "concept requires language",
