@@ -74,6 +74,19 @@ function graphEdge(sourceRelPath: RelPath, targetRelPath: RelPath): FileDependen
   return { sourceRelPath, targetRelPath, callWeight: 1 };
 }
 
+/**
+ * Indexed files whose only role is to sit AROUND a fixture component so its
+ * `connectionCount` reaches the SDP floor (bd tea-rags-mcp-r8hme.45): the
+ * main-sequence family judges a touched component only at connections ≥ the
+ * floor, and a one-edge fixture would land in the exclusion instead.
+ * AFFERENT only — instability stays I=0, and files nothing points at cannot
+ * close a cycle through the overlay.
+ */
+function floorAfferents(target: RelPath, count = 4): Pick<FileDependencyGraph, "files" | "edges"> {
+  const files = Array.from({ length: count }, (_, i) => graphFile(`src/dep/d${i + 1}.ts`));
+  return { files, edges: files.map((f) => graphEdge(f.relPath, target)) };
+}
+
 /** An indexed edge that recorded the names its import takes — the facade-contract demand side. */
 function namedGraphEdge(
   sourceRelPath: RelPath,
@@ -174,11 +187,14 @@ describe("architectureSectionProvider.run", () => {
     writeFile("src/lib/b.ts", "export const B = 1;\n");
     writeFile("src/app/a.ts", 'import { B } from "../lib/b";\nexport const A = B;\n');
     writeFile("docs/notes.md", "# Notes\n");
+    const lift = floorAfferents("src/app/a.ts");
     const graph = graphDbStub(
       {
-        files: [graphFile("src/app/a.ts"), graphFile("src/lib/b.ts"), graphFile("src/other/c.ts")],
+        files: [graphFile("src/app/a.ts"), graphFile("src/lib/b.ts"), graphFile("src/other/c.ts"), ...lift.files],
         // The stale indexed edge the diff replaces: pre-diff, b imported a.
-        edges: [graphEdge("src/lib/b.ts", "src/app/a.ts")],
+        // The four dep files lift app's component to the SDP connection floor
+        // so the main-sequence family judges it (bd tea-rags-mcp-r8hme.45).
+        edges: [graphEdge("src/lib/b.ts", "src/app/a.ts"), ...lift.edges],
       },
       [cochangePair("src/app/a.ts", "src/other/c.ts", 5)],
     );
@@ -294,11 +310,13 @@ describe("architectureSectionProvider.run", () => {
       "src/app/a.ts",
       `${targets.map((_, i) => `import { T${i} } from "../lib/t${String(i).padStart(3, "0")}";\n`).join("")}export const A = 1;\n`,
     );
+    const lift = floorAfferents("src/app/a.ts");
     const graph = graphDbStub({
-      files: [graphFile("src/app/a.ts"), ...targets.map((relPath) => graphFile(relPath))],
+      files: [graphFile("src/app/a.ts"), ...targets.map((relPath) => graphFile(relPath)), ...lift.files],
       // One stale indexed edge: enough for lib I=1 / app I=0, and it closes the
-      // a→t0 edge into a cycle.
-      edges: [graphEdge("src/lib/t000.ts", "src/app/a.ts")],
+      // a→t0 edge into a cycle. The dep files lift app to the SDP connection
+      // floor so its main-sequence move stays judged (bd tea-rags-mcp-r8hme.45).
+      edges: [graphEdge("src/lib/t000.ts", "src/app/a.ts"), ...lift.edges],
     });
 
     const payload = (await architectureSectionProvider.run(

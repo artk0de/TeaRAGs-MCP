@@ -43,6 +43,7 @@
  * never again from a reverse or duplicated read.
  */
 
+import { DEFAULT_SDP_MIN_CONNECTION_COUNT } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import type { SplitMergeVerdicts } from "../../../domains/trajectory/codegraph/temporal/index.js";
 import type { ReviewEdgeOverlay } from "./review-edge-overlay.js";
 
@@ -60,7 +61,15 @@ export interface DiffDetectorGraphReader {
 
 /** Component/facade facts the whole-repo report already derived — consumed, never recomputed. */
 export interface DiffDetectorCatalog {
-  componentOf: (relPath: string) => { name: string; instability: number; distanceFromMainSequence: number } | undefined;
+  componentOf: (relPath: string) =>
+    | {
+        name: string;
+        instability: number;
+        distanceFromMainSequence: number;
+        /** Ca + Ce of the component — what the small-N guard below reads. */
+        connectionCount: number;
+      }
+    | undefined;
   /** The component's facade (undefined = no facade / not adopted). */
   facadeOf: (componentName: string) => string | undefined;
   /** Instability judged markedly greater — the report's own band comparison as a predicate. */
@@ -141,6 +150,15 @@ export interface DiffDetectorRunDeps {
   splitMergeAbsentReason?: string;
   /** BFS hop cap for cycle traces (default 8 — the report's own trace depth). */
   maxTraceHops?: number;
+  /**
+   * Minimum component `connectionCount` the main-sequence family judges
+   * (bd tea-rags-mcp-r8hme.45). Default `DEFAULT_SDP_MIN_CONNECTION_COUNT` —
+   * the same floor the whole-repo detector excludes
+   * `summary.mainSequence.excluded.lowConnectionCount` at, read from the
+   * instability descriptor's confidence threshold rather than restated, so
+   * the two cannot drift apart.
+   */
+  minConnectionCount?: number;
 }
 
 /**
@@ -175,6 +193,15 @@ export interface DiffDetectorFinding {
   subject: string; // e.g. "A -> B" | "a.ts ~ b.ts" | "component X"
   evidence: string[]; // trace path for cycles; the facade import for leakingAbstraction; deltas for mainSequence
   detail: string; // one sentence a reviewer reads
+  /**
+   * mainSequence only (bd tea-rags-mcp-r8hme.45): EVERY contributing edge of
+   * this D-delta terminates inside a `contracts/` directory — the legal
+   * foundation direction, the lowest layer, which everything above may depend
+   * on. The distance still moved, so the finding stands; the annotation is
+   * data for triage, never a suppression and never prose baked into a
+   * formatter. Present only when true.
+   */
+  foundationTerminal?: true;
 }
 
 /** One detector family's verdict for the run. */
@@ -197,6 +224,15 @@ export interface DiffDetectorStatus {
    * on unbuilt rows — `built: false` + `reason` already denies the pass.
    */
   scopeSkippedFiles?: number;
+  /**
+   * mainSequence only (bd tea-rags-mcp-r8hme.45): touched components the
+   * connection-count floor excluded — the small-N class whose instability
+   * moves in steps of 1/n, one edge the whole scale. Present when > 0, so a
+   * zero over below-floor components never reads as a clean pass; the
+   * whole-repo report counts the same exclusions in
+   * `summary.mainSequence.excluded.lowConnectionCount`.
+   */
+  excludedLowConnectionCount?: number;
 }
 
 export interface DiffDetectorFindings {
@@ -236,6 +272,15 @@ const NO_CONTRACT_READER_REASON = "no contract reader";
  */
 const WHOLE_MODULE_EXPORT_NAME = "*";
 
+/**
+ * The path segment naming a codebase's pure-types foundation layer — the
+ * direction every layer above it may legally depend on (bd
+ * tea-rags-mcp-r8hme.45): `core/contracts` in this repo, `src/contracts`,
+ * `app/contracts` elsewhere. Matched as a SEGMENT, never a substring, so
+ * `contracts.ts` or `my-contracts/` is not the foundation.
+ */
+const FOUNDATION_CONTRACTS_PATH_SEGMENT = "contracts";
+
 export class DiffDetectorRun {
   private readonly graph: DiffDetectorGraphReader;
   private readonly catalog: DiffDetectorCatalog;
@@ -244,6 +289,7 @@ export class DiffDetectorRun {
   private readonly splitMerge: DiffDetectorSplitMergeReader | undefined;
   private readonly splitMergeAbsentReason: string;
   private readonly maxTraceHops: number;
+  private readonly minConnectionCount: number;
 
   constructor(deps: DiffDetectorRunDeps) {
     this.graph = deps.graph;
@@ -253,6 +299,7 @@ export class DiffDetectorRun {
     this.splitMerge = deps.splitMerge;
     this.splitMergeAbsentReason = deps.splitMergeAbsentReason ?? NO_SPLIT_MERGE_READER_REASON;
     this.maxTraceHops = deps.maxTraceHops ?? DEFAULT_MAX_TRACE_HOPS;
+    this.minConnectionCount = deps.minConnectionCount ?? DEFAULT_SDP_MIN_CONNECTION_COUNT;
   }
 
   /**
@@ -283,7 +330,7 @@ export class DiffDetectorRun {
         ...stableDependencies,
         ...leakingAbstraction,
         ...cycles,
-        ...mainSequence,
+        ...mainSequence.findings,
         ...silentCoupling,
         ...facadeContract,
         ...splitCandidates,
@@ -292,7 +339,14 @@ export class DiffDetectorRun {
         partial(detectorStatus("stableDependencies", stableDependencies.length)),
         partial(detectorStatus("leakingAbstraction", leakingAbstraction.length)),
         partial(detectorStatus("cycles", cycles.length)),
-        partial(detectorStatus("mainSequence", mainSequence.length)),
+        partial(
+          mainSequence.excludedLowConnectionCount > 0
+            ? Object.freeze({
+                ...detectorStatus("mainSequence", mainSequence.findings.length),
+                excludedLowConnectionCount: mainSequence.excludedLowConnectionCount,
+              })
+            : detectorStatus("mainSequence", mainSequence.findings.length),
+        ),
         partial(detectorStatus("silentCoupling", silentCoupling.length)),
         ...(this.contract === undefined
           ? [
@@ -425,6 +479,15 @@ export class DiffDetectorRun {
    * components never appear, and a touched component that does not move does
    * not either.
    *
+   * SMALL-N GUARD (bd tea-rags-mcp-r8hme.45): a touched component whose
+   * `connectionCount` is below `minConnectionCount` — the same SDP floor the
+   * whole-repo detector excludes at — is not judged, only counted on the
+   * family's status row. At connectionCount n a component's instability moves
+   * in steps of 1/n, so the +1-per-edge approximation below reads one new
+   * edge on a one-or-two-edge component as a saturation to I=1 — the
+   * small-N false positive every facade/refactor diff drew on components
+   * whose legal fanOut is one contracts edge.
+   *
    * APPROXIMATION (documented per spec; the wiring slice may replace it with
    * the report's exact recompute): an overlay edge between two DIFFERENT
    * components moves the SOURCE's component's instability up, one full step
@@ -435,26 +498,43 @@ export class DiffDetectorRun {
    * component sits on is not exposed by the catalog either, and on that
    * solution the deltaD equals the I increment — the worst case (distance
    * grows), which is what a diff review wants flagged.
+   *
+   * FOUNDATION-TERMINAL ANNOTATION (bd tea-rags-mcp-r8hme.45): a finding
+   * whose contributing edges ALL terminate inside a `contracts/` directory
+   * carries `foundationTerminal: true` — the legal foundation direction
+   * (everything may depend on the lowest layer). The D still moved, so the
+   * finding stands, annotated as data for triage; one non-contracts edge is
+   * enough to leave it unannotated.
    */
-  private judgeMainSequence(changedFiles: readonly string[], edges: readonly OverlayEdge[]): DiffDetectorFinding[] {
+  private judgeMainSequence(
+    changedFiles: readonly string[],
+    edges: readonly OverlayEdge[],
+  ): { findings: DiffDetectorFinding[]; excludedLowConnectionCount: number } {
     const touched = new Map<string, { instability: number; distanceFromMainSequence: number }>();
+    const judgedComponents = new Set<string>();
+    let excludedLowConnectionCount = 0;
     for (const relPath of changedFiles) {
       const component = this.catalog.componentOf(relPath);
-      if (component === undefined || touched.has(component.name)) continue;
+      if (component === undefined || judgedComponents.has(component.name)) continue;
+      judgedComponents.add(component.name);
+      if (component.connectionCount < this.minConnectionCount) {
+        excludedLowConnectionCount++;
+        continue;
+      }
       touched.set(component.name, {
         instability: component.instability,
         distanceFromMainSequence: component.distanceFromMainSequence,
       });
     }
-    const crossingEdges = new Map<string, string[]>();
+    const crossingEdges = new Map<string, OverlayEdge[]>();
     for (const edge of edges) {
       const sourceComponent = this.catalog.componentOf(edge.source);
       const targetComponent = this.catalog.componentOf(edge.target);
       if (sourceComponent === undefined || targetComponent === undefined) continue;
       if (sourceComponent.name === targetComponent.name || !touched.has(sourceComponent.name)) continue;
-      const labels = crossingEdges.get(sourceComponent.name);
-      if (labels === undefined) crossingEdges.set(sourceComponent.name, [`${edge.source} -> ${edge.target}`]);
-      else labels.push(`${edge.source} -> ${edge.target}`);
+      const componentEdges = crossingEdges.get(sourceComponent.name);
+      if (componentEdges === undefined) crossingEdges.set(sourceComponent.name, [edge]);
+      else componentEdges.push(edge);
     }
 
     const findings: DiffDetectorFinding[] = [];
@@ -466,16 +546,21 @@ export class DiffDetectorRun {
       if (Math.abs(instabilityDelta) <= MAIN_SEQUENCE_EPSILON) continue;
       const abstractness = 1 - fact.instability + fact.distanceFromMainSequence;
       const newDistance = Math.abs(abstractness + newInstability - 1);
+      const foundationTerminal = edgesOut.every((edge) => terminatesAtFoundationContracts(edge.target));
       findings.push({
         detector: "mainSequence",
         subject: name,
-        evidence: [`D ${format3(fact.distanceFromMainSequence)} -> ${format3(newDistance)}`, ...edgesOut],
+        evidence: [
+          `D ${format3(fact.distanceFromMainSequence)} -> ${format3(newDistance)}`,
+          ...edgesOut.map((edge) => `${edge.source} -> ${edge.target}`),
+        ],
         detail:
           `the diff moves ${name} off its main-sequence distance: ${edgesOut.length} cross-component outgoing ` +
           `edge(s) raise instability ${format3(fact.instability)} -> ${format3(newInstability)} with abstractness held`,
+        ...(foundationTerminal ? { foundationTerminal: true as const } : {}),
       });
     }
-    return findings;
+    return { findings, excludedLowConnectionCount };
   }
 
   /**
@@ -700,4 +785,9 @@ function detectorStatus(detector: DiffDetectorFinding["detector"], findingCount:
 /** Three decimals — the whole-repo report's evidence formatting. */
 function format3(value: number): string {
   return value.toFixed(3);
+}
+
+/** The edge's target lives inside a `contracts/` directory — the foundation everything may depend on. */
+function terminatesAtFoundationContracts(relPath: string): boolean {
+  return relPath.split("/").includes(FOUNDATION_CONTRACTS_PATH_SEGMENT);
 }
