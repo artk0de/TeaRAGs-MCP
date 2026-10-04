@@ -84,6 +84,16 @@ export interface DiffDetectorCatalog {
         distanceFromMainSequence: number;
         /** Ca + Ce of the component — what the small-N guard below reads. */
         connectionCount: number;
+        /**
+         * Ca: distinct files outside the component with an edge into it (bd
+         * tea-rags-mcp-89k7k.19) — the report's own component fact, served
+         * when the wiring holds it. Absent, mainSequence falls back to the
+         * documented +1-per-edge step; a missing fact is never read as "no
+         * afferent edges".
+         */
+        afferentCount?: number;
+        /** Ce: distinct files inside the component with an edge out — see {@link afferentCount}. */
+        efferentCount?: number;
       }
     | undefined;
   /** The component's facade (undefined = no facade / not adopted). */
@@ -551,23 +561,33 @@ export class DiffDetectorRun {
    * `connectionCount` is below `minConnectionCount` — the same SDP floor the
    * whole-repo detector excludes at — is not judged, only counted on the
    * family's status row. At connectionCount n a component's instability moves
-   * in steps of 1/n, so the +1-per-edge approximation below reads one new
-   * edge on a one-or-two-edge component as a saturation to I=1 — the
-   * small-N false positive every facade/refactor diff drew on components
-   * whose legal fanOut is one contracts edge.
+   * in steps of 1/n, so one new edge on a one-or-two-edge component is a
+   * half-to-full-scale move — the small-N false positive every facade/refactor
+   * diff drew on components whose legal fanOut is one contracts edge. The
+   * guard reads `connectionCount`, which the recompute below never moves (k
+   * lands on top of the fan, not inside it), so it composes with both paths.
    *
-   * APPROXIMATION (documented per spec; the wiring slice may replace it with
-   * the report's exact recompute): a DIFF-ADDED edge between two DIFFERENT
-   * components moves the SOURCE's component's instability up, one full step
-   * per edge clamped at I=1 — the edge set is the subtraction's output (bd
-   * tea-rags-mcp-89k7k.14: a pair the indexed graph already holds never
-   * moves anything), and the component's fan counts are not reachable
-   * through these ports, so the exact I' = (Ce+k)/(Ca+Ce+k) is not computable
-   * here. Abstractness A is held constant at the +D solution of
-   * D = |A + I - 1| (A = 1 - I + D): which side of the main sequence the
-   * component sits on is not exposed by the catalog either, and on that
-   * solution the deltaD equals the I increment — the worst case (distance
-   * grows), which is what a diff review wants flagged.
+   * EXACT RECOMPUTE (bd tea-rags-mcp-89k7k.19): when the catalog serves the
+   * component's fan counts (Ca/Ce — the same `ArchitectureComponent` facts
+   * the whole-repo report derives), k genuinely-new outgoing edges move the
+   * SOURCE's component's instability to exactly I' = (Ce + k)/(Ca + Ce + k) —
+   * the whole-repo detector's own instability arithmetic re-applied to the
+   * post-diff fan. One new edge on a 24-connection component moves I by ~1/25,
+   * never the full-scale step that saturated such a component to I=1.000 and
+   * D 0.946 from a single facade import (the 89k7k.14 replay residual: the
+   * +1-per-edge step had no access to the fan counts through the diff ports).
+   * The edge set is the subtraction's output (bd tea-rags-mcp-89k7k.14: a
+   * pair the indexed graph already holds never moves anything).
+   *
+   * FALLBACK (the 89k7k.14 absence rule, documented per spec): a catalog that
+   * serves no fan counts keeps the +1-per-edge step — one full step per
+   * diff-added edge clamped at I=1 — because the fan counts are not reachable
+   * through that port, and a missing fact is never read as "no edges", so the
+   * step judges ALL k edges, never zero of them. Abstractness A is held
+   * constant at the +D solution of D = |A + I - 1| (A = 1 - I + D): which side
+   * of the main sequence the component sits on is not exposed by the catalog
+   * either, and on that solution the deltaD equals the I increment — the
+   * worst case (distance grows), which is what a diff review wants flagged.
    *
    * FOUNDATION-TERMINAL ANNOTATION (bd tea-rags-mcp-r8hme.45): a finding
    * whose contributing edges ALL terminate inside a `contracts/` directory
@@ -582,7 +602,10 @@ export class DiffDetectorRun {
     changedFiles: readonly string[],
     edges: readonly OverlayEdge[],
   ): { findings: DiffDetectorFinding[]; excludedLowConnectionCount: number } {
-    const touched = new Map<string, { instability: number; distanceFromMainSequence: number }>();
+    const touched = new Map<
+      string,
+      { instability: number; distanceFromMainSequence: number; afferentCount?: number; efferentCount?: number }
+    >();
     const judgedComponents = new Set<string>();
     let excludedLowConnectionCount = 0;
     for (const relPath of changedFiles) {
@@ -596,6 +619,8 @@ export class DiffDetectorRun {
       touched.set(component.name, {
         instability: component.instability,
         distanceFromMainSequence: component.distanceFromMainSequence,
+        afferentCount: component.afferentCount,
+        efferentCount: component.efferentCount,
       });
     }
     const crossingEdges = new Map<string, OverlayEdge[]>();
@@ -613,22 +638,38 @@ export class DiffDetectorRun {
     for (const [name, fact] of touched) {
       const edgesOut = crossingEdges.get(name);
       if (edgesOut === undefined) continue;
-      const newInstability = Math.min(1, fact.instability + edgesOut.length);
+      const newEdgeCount = edgesOut.length;
+      // Both counts or neither: one alone cannot feed the exact recompute, and
+      // a half-served fan is the same absent fact as none (the 89k7k.14 rule).
+      const fans =
+        fact.afferentCount !== undefined && fact.efferentCount !== undefined
+          ? { afferentCount: fact.afferentCount, efferentCount: fact.efferentCount }
+          : undefined;
+      const newInstability =
+        fans !== undefined
+          ? (fans.efferentCount + newEdgeCount) / (fans.afferentCount + fans.efferentCount + newEdgeCount)
+          : Math.min(1, fact.instability + newEdgeCount);
       const instabilityDelta = newInstability - fact.instability;
       if (Math.abs(instabilityDelta) <= MAIN_SEQUENCE_EPSILON) continue;
       const abstractness = 1 - fact.instability + fact.distanceFromMainSequence;
       const newDistance = Math.abs(abstractness + newInstability - 1);
       const foundationTerminal = edgesOut.every((edge) => terminatesAtFoundationContracts(edge.target));
+      // The exact-recompute clause names the arithmetic only when its inputs were served.
+      const recomputeClause = fans !== undefined ? ` — I' = (Ce+k)/(Ca+Ce+k) over the report's fan counts` : "";
       findings.push({
         detector: "mainSequence",
         subject: name,
         evidence: [
           `D ${format3(fact.distanceFromMainSequence)} -> ${format3(newDistance)}`,
+          ...(fans !== undefined
+            ? [
+                `I ${format3(fact.instability)} -> ${format3(newInstability)} = ` +
+                  `(${fans.efferentCount}+${newEdgeCount})/(${fans.afferentCount}+${fans.efferentCount}+${newEdgeCount})`,
+              ]
+            : []),
           ...edgesOut.map((edge) => `${edge.source} -> ${edge.target}`),
         ],
-        detail:
-          `the diff moves ${name} off its main-sequence distance: ${edgesOut.length} cross-component outgoing ` +
-          `edge(s) raise instability ${format3(fact.instability)} -> ${format3(newInstability)} with abstractness held`,
+        detail: `the diff moves ${name} off its main-sequence distance: ${newEdgeCount} cross-component outgoing edge(s) raise instability ${format3(fact.instability)} -> ${format3(newInstability)} with abstractness held${recomputeClause}`,
         ...(foundationTerminal ? { foundationTerminal: true as const } : {}),
       });
     }

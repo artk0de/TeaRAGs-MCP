@@ -488,6 +488,127 @@ describe("mainSequence", () => {
     expect(finding?.subject).toBe("app");
     expect(finding?.foundationTerminal).toBeUndefined();
   });
+
+  // bd tea-rags-mcp-89k7k.19: the 89k7k.14 replay residual — one GENUINELY-new
+  // edge on a 24-connection low-I component (the api/public barrel class) read
+  // as a full-scale instability step, D 0.000 -> 0.946, because the +1-per-edge
+  // approximation had no access to the component's actual fan counts. The
+  // catalog now serves Ca/Ce (the report's own ArchitectureComponent facts),
+  // and the recompute is the whole-repo detector's own arithmetic applied to
+  // the post-diff fan: I' = (Ce + k)/(Ca + Ce + k) over k genuinely-new
+  // cross-component edges — the subtraction's output, never the re-read set.
+  describe("fan-count recompute", () => {
+    /** The residual's component: Ca 22, Ce 2, connectionCount 24, I = 2/24, on the sequence. */
+    function lowIFanFixture(): Map<string, ComponentFact> {
+      return new Map<string, ComponentFact>([
+        [
+          "src/api/barrel.ts",
+          {
+            name: "api",
+            instability: 2 / 24,
+            distanceFromMainSequence: 0,
+            connectionCount: 24,
+            afferentCount: 22,
+            efferentCount: 2,
+          },
+        ],
+        [
+          "src/lib/b.ts",
+          {
+            name: "lib",
+            instability: 0.2,
+            distanceFromMainSequence: 0.1,
+            connectionCount: 24,
+            afferentCount: 19,
+            efferentCount: 5,
+          },
+        ],
+      ]);
+    }
+
+    it("recomputes I' from the served fan counts — one genuinely-new edge on a 24-connection component moves D by (Ce+1)/(Ca+Ce+1), not a full-scale step", () => {
+      const result = runWith(
+        { catalog: catalogOf(lowIFanFixture()) },
+        ["src/api/barrel.ts"],
+        [["src/api/barrel.ts", "src/lib/b.ts"]],
+      );
+      expect(subjectsOf(result, "mainSequence")).toEqual(["api"]);
+      const finding = result.findings.find((f) => f.detector === "mainSequence");
+      // I 2/24 -> 3/25 with A held at 1 - 2/24 = 22/24: D moves 0 -> 22/24 + 3/25 - 1 = 0.0367.
+      // Under the +1-per-edge step this saturated to I=1.000, D 0.917 — the residual class.
+      expect(finding?.evidence[0]).toBe("D 0.000 -> 0.037");
+      expect(finding?.evidence[1]).toBe("I 0.083 -> 0.120 = (2+1)/(22+2+1)");
+    });
+
+    it("recomputes with k = the genuinely-new edge count — two new edges give (Ce+2)/(Ca+Ce+2)", () => {
+      const twoTargets = new Map(lowIFanFixture());
+      twoTargets.set("src/other/c.ts", {
+        name: "other",
+        instability: 0.3,
+        distanceFromMainSequence: 0.1,
+        connectionCount: 24,
+        afferentCount: 17,
+        efferentCount: 7,
+      });
+      const result = runWith(
+        { catalog: catalogOf(twoTargets) },
+        ["src/api/barrel.ts"],
+        [
+          ["src/api/barrel.ts", "src/lib/b.ts"],
+          ["src/api/barrel.ts", "src/other/c.ts"],
+        ],
+      );
+      expect(subjectsOf(result, "mainSequence")).toEqual(["api"]);
+      const finding = result.findings.find((f) => f.detector === "mainSequence");
+      // I 2/24 -> 4/26 with A held at 22/24: D moves 0 -> 22/24 + 4/26 - 1 = 0.0705.
+      expect(finding?.evidence[0]).toBe("D 0.000 -> 0.071");
+      expect(finding?.evidence[1]).toBe("I 0.083 -> 0.154 = (2+2)/(22+2+2)");
+    });
+
+    it("keeps the small-N guard ahead of the recompute — a below-floor component is excluded and counted even when its fan counts are served", () => {
+      const smallN = new Map<string, ComponentFact>([
+        [
+          "src/tiny/t.ts",
+          {
+            name: "tiny",
+            instability: 1,
+            distanceFromMainSequence: 0.2,
+            connectionCount: 1,
+            afferentCount: 0,
+            efferentCount: 1,
+          },
+        ],
+        [
+          "src/lib/b.ts",
+          {
+            name: "lib",
+            instability: 0.2,
+            distanceFromMainSequence: 0.1,
+            connectionCount: 8,
+            afferentCount: 6,
+            efferentCount: 2,
+          },
+        ],
+      ]);
+      const result = runWith({ catalog: catalogOf(smallN) }, ["src/tiny/t.ts"], [["src/tiny/t.ts", "src/lib/b.ts"]]);
+      expect(subjectsOf(result, "mainSequence")).toEqual([]);
+      expect(result.detectors.find((d) => d.detector === "mainSequence")).toMatchObject({
+        excludedLowConnectionCount: 1,
+      });
+    });
+
+    it("falls back to the +1-per-edge step when the catalog serves no fan counts — absence is never read as 'no edges' (documented fallback)", () => {
+      const noFans = new Map<string, ComponentFact>([
+        ["src/app/a.ts", { name: "app", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 9 }],
+        ["src/lib/b.ts", { name: "lib", instability: 0.2, distanceFromMainSequence: 0.1, connectionCount: 9 }],
+      ]);
+      const result = runWith({ catalog: catalogOf(noFans) }, ["src/app/a.ts"], [["src/app/a.ts", "src/lib/b.ts"]]);
+      const finding = result.findings.find((f) => f.detector === "mainSequence");
+      // The pre-89k7k.19 step, byte-identical: I 0.5 -> min(1, 1.5) = 1.0, A = 0.8, D 0.3 -> 0.8.
+      expect(finding?.evidence[0]).toBe("D 0.300 -> 0.800");
+      expect(finding?.evidence).toHaveLength(2);
+    });
+  });
 });
 
 // bd tea-rags-mcp-89k7k.14: stableDependencies and mainSequence judge the
