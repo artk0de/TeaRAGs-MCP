@@ -186,12 +186,20 @@ describe("buildLayerMap — knots inside the scope", () => {
     expect(knot.components.sort()).toEqual(["tiles/b.ts", "tiles/c.ts"]);
     expect(knot.cutEdgeCount).toBe(1);
     expect(knot.levelsAfterCut).toBe(2);
+    // Canonical ELS (bd tea-rags-mcp-89k7k.12): neither vertex peels, the
+    // weighted delta picks c (out 2 − in 1 = +1) over b (−1), c joins the
+    // right block first and b peels after it, so the canonical sequence
+    // [b, c] leaves c→b — the arc INTO the max-delta vertex's partner — as
+    // the one cut. The inverted assembly named the opposite arc b→c. The
+    // levelsAfterCut count is unaffected: over the members b→c→a reads
+    // levels {1, 2} with this cut and {0, 1} with the old one, two distinct
+    // either way.
     expect(knot.feedbackArcSet).toEqual([
       {
-        sourceComponent: "tiles/b.ts",
-        targetComponent: "tiles/c.ts",
-        callWeight: 1,
-        fileEdges: [{ sourceRelPath: "tiles/b.ts", targetRelPath: "tiles/c.ts", callWeight: 1 }],
+        sourceComponent: "tiles/c.ts",
+        targetComponent: "tiles/b.ts",
+        callWeight: 2,
+        fileEdges: [{ sourceRelPath: "tiles/c.ts", targetRelPath: "tiles/b.ts", callWeight: 2 }],
       },
     ]);
   });
