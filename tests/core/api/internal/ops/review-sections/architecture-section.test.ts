@@ -26,12 +26,16 @@ import {
   mintReviewId,
   WiredGraphReader,
 } from "../../../../../../src/core/api/internal/ops/review-sections/architecture-section.js";
-import type { ReviewSectionContext } from "../../../../../../src/core/api/internal/ops/review-sections/review-section-provider.js";
+import type {
+  ReviewGraphDb,
+  ReviewSectionContext,
+} from "../../../../../../src/core/api/internal/ops/review-sections/review-section-provider.js";
 import type {
   FileDependencyEdge,
   FileDependencyGraph,
   FileDependencyGraphFile,
   RelPath,
+  TemporalCochangeBuildMeta,
   TemporalCochangeGraph,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import {
@@ -96,14 +100,39 @@ function namedGraphEdge(
   return { sourceRelPath, targetRelPath, callWeight: 1, importedExportNames };
 }
 
+/**
+ * A vitest mock whose signature IS the port method's — when `ReviewGraphDb`
+ * gains or changes a member, the stub stops compiling here instead of
+ * drifting from the port silently (the blind spot bd tea-rags-mcp-89k7k.11
+ * closes; this file held exactly such a drift).
+ */
+type PortMock<K extends keyof ReviewGraphDb> = ReturnType<typeof vi.fn<ReviewGraphDb[K]>>;
+
 interface GraphDbStub {
-  readFileDependencyGraph: ReturnType<typeof vi.fn>;
-  putReviewFileEdges: ReturnType<typeof vi.fn>;
-  dropReviewFileEdges: ReturnType<typeof vi.fn>;
-  sweepExpiredReviewFileEdges: ReturnType<typeof vi.fn>;
-  readTemporalCochangeGraph: ReturnType<typeof vi.fn>;
-  readTemporalSymbolCommits: ReturnType<typeof vi.fn>;
+  readFileDependencyGraph: PortMock<"readFileDependencyGraph">;
+  putReviewFileEdges: PortMock<"putReviewFileEdges">;
+  dropReviewFileEdges: PortMock<"dropReviewFileEdges">;
+  sweepExpiredReviewFileEdges: PortMock<"sweepExpiredReviewFileEdges">;
+  readTemporalCochangeGraph: PortMock<"readTemporalCochangeGraph">;
+  readTemporalSymbolCommits: PortMock<"readTemporalSymbolCommits">;
   close: ReturnType<typeof vi.fn>;
+}
+
+/** Full build provenance — the fields a real `cg_temporal_meta` row carries. */
+function cochangeMeta(head = "h"): TemporalCochangeBuildMeta {
+  return {
+    head,
+    fingerprint: "fixture-fingerprint",
+    builtAt: 1_760_000_000,
+    windowSince: 1_750_000_000,
+    commitCount: 120,
+    bundleCount: 110,
+    admittedBundleCount: 100,
+    maxFilesPerBundle: 30,
+    minSupport: 3,
+    maxPartnersPerFile: 10,
+    sessionGapMinutes: null,
+  };
 }
 
 function graphDbStub(graph: FileDependencyGraph, cochangeEdges: TemporalCochangeGraph["edges"] = []): GraphDbStub {
@@ -112,7 +141,7 @@ function graphDbStub(graph: FileDependencyGraph, cochangeEdges: TemporalCochange
     putReviewFileEdges: vi.fn(async () => undefined),
     dropReviewFileEdges: vi.fn(async () => undefined),
     sweepExpiredReviewFileEdges: vi.fn(async () => []),
-    readTemporalCochangeGraph: vi.fn(async () => ({ meta: { head: "h" }, edges: cochangeEdges })),
+    readTemporalCochangeGraph: vi.fn(async () => ({ meta: cochangeMeta(), edges: cochangeEdges })),
     readTemporalSymbolCommits: vi.fn(async () => ({ relPath: "", symbols: [] })),
     close: vi.fn(async () => undefined),
   };
@@ -221,20 +250,20 @@ describe("architectureSectionProvider.run", () => {
       runContext({
         graphDb: graph,
         scope: scopeOf(["src/app/a.ts", "docs/notes.md", "src/gone.ts"]),
-        temporalCochange: { meta: { head: "h" }, edges: [strongPair("src/app/a.ts", "src/other/c.ts")] },
+        temporalCochange: { meta: cochangeMeta(), edges: [strongPair("src/app/a.ts", "src/other/c.ts")] },
       }),
     )) as Record<string, unknown>;
 
     // Sweep-on-create: once, before anything else, with the store's age bound.
     expect(graph.sweepExpiredReviewFileEdges).toHaveBeenCalledTimes(1);
-    const [nowEpoch, maxAge] = graph.sweepExpiredReviewFileEdges.mock.calls[0] as [number, number];
+    const [nowEpoch, maxAge] = graph.sweepExpiredReviewFileEdges.mock.calls[0];
     expect(maxAge).toBe(3600);
     expect(nowEpoch).toBeGreaterThanOrEqual(Math.floor(Date.now() / 1000) - 120);
 
     // One minted reviewId carries the put and the drop; the edges put are the
     // successful working-tree reads only.
     expect(graph.putReviewFileEdges).toHaveBeenCalledTimes(1);
-    const [putId, putEdges] = graph.putReviewFileEdges.mock.calls[0] as [string, { sourceRelPath: string }[]];
+    const [putId, putEdges] = graph.putReviewFileEdges.mock.calls[0];
     expect(putId).toMatch(REVIEW_ID_PATTERN);
     expect(putEdges).toEqual([
       { sourceRelPath: "src/app/a.ts", targetRelPath: "src/lib/b.ts", importedExportNames: ["B"] },
@@ -311,7 +340,7 @@ describe("architectureSectionProvider.run", () => {
       runContext({
         graphDb: graph,
         scope: scopeOf(["src/dto.ts"]),
-        temporalCochange: { meta: { head: "h" }, edges: [cochangePair("src/dto.ts", "src/ops.ts", 24, true)] },
+        temporalCochange: { meta: cochangeMeta(), edges: [cochangePair("src/dto.ts", "src/ops.ts", 24, true)] },
       }),
     )) as Record<string, unknown>;
 
@@ -360,7 +389,7 @@ describe("architectureSectionProvider.run", () => {
       runContext({
         graphDb: graph,
         scope: scopeOf(["src/app/a.ts", "config/settings.json"]),
-        temporalCochange: { meta: { head: "h" }, edges: pairEdges },
+        temporalCochange: { meta: cochangeMeta(), edges: pairEdges },
       }),
     )) as Record<string, unknown>;
 
@@ -502,7 +531,7 @@ describe("architectureSectionProvider.run", () => {
       runContext({
         graphDb: graph,
         scope: scopeOf(["src/lib/index.ts"]),
-        temporalCochange: { meta: { head: "h" }, edges: partners.map((p) => strongPair("src/lib/index.ts", p)) },
+        temporalCochange: { meta: cochangeMeta(), edges: partners.map((p) => strongPair("src/lib/index.ts", p)) },
       }),
     )) as Record<string, unknown>;
 
@@ -689,7 +718,7 @@ describe("architectureSectionProvider.run — splitCandidates wiring", () => {
     bundles.set(bundles.size, ["src/wide/x2.ts", "src/wide/y1.ts"]);
     bundles.set(bundles.size, ["src/wide/x2.ts", "src/wide/y1.ts"]);
     return {
-      meta: { head: "h" },
+      meta: cochangeMeta(),
       edges: [
         temporalPair("src/wide/x1.ts", "src/wide/x2.ts", 16, 16, 18),
         temporalPair("src/wide/y1.ts", "src/wide/y2.ts", 20, 22, 20),
@@ -743,7 +772,7 @@ describe("architectureSectionProvider.run — splitCandidates wiring", () => {
       runContext({
         graphDb: graph,
         scope: scopeOf(["src/wide/x1.ts"]),
-        temporalCochange: { meta: { head: "h" }, edges: [], bundles: new Map() },
+        temporalCochange: { meta: cochangeMeta(), edges: [], bundles: new Map() },
       }),
     )) as Record<string, unknown>;
 
@@ -800,7 +829,7 @@ describe("architectureSectionProvider.run — splitCandidates wiring", () => {
       runContext({
         graphDb: graph,
         scope: scopeOf(["app/s1.module.css"]),
-        temporalCochange: { meta: { head: "h" }, edges: [strongPair("app/s1.module.css", "app/s1.ts")] },
+        temporalCochange: { meta: cochangeMeta(), edges: [strongPair("app/s1.module.css", "app/s1.ts")] },
         readImportSpecifiers,
       }),
     )) as Record<string, unknown>;
@@ -839,7 +868,7 @@ describe("WiredGraphReader", () => {
 describe("buildSilentCouplingFacts", () => {
   it("hands the run the production verdict: violations mapped to the port shape, excluded counters verbatim", async () => {
     const snapshot = {
-      meta: { head: "h" },
+      meta: cochangeMeta(),
       edges: [strongPair("src/a.ts", "src/b.ts"), cochangePair("CLAUDE.md", "src/c.ts", 8)],
     };
     const files = [graphFile("src/a.ts"), graphFile("src/b.ts"), graphFile("src/c.ts")];
@@ -870,7 +899,7 @@ describe("buildSilentCouplingFacts", () => {
   // second pass links the pair and the review's facts must drop it the same
   // way — not report a finding the whole-repo report would have rescued.
   it("rescues a diff-touching one-walked pair the walked endpoint's recorded asset import links", async () => {
-    const snapshot = { meta: { head: "h" }, edges: [strongPair("app/s1.module.css", "app/s1.ts")] };
+    const snapshot = { meta: cochangeMeta(), edges: [strongPair("app/s1.module.css", "app/s1.ts")] };
     const files = [graphFile("app/s1.ts")]; // walked census: an asset is no file node
     const readImportSpecifiers = vi.fn().mockResolvedValue(new Map([["app/s1.ts", ["./s1.module.css"]]]));
 
@@ -891,7 +920,7 @@ describe("buildSilentCouplingFacts", () => {
 
   it("reads specifiers only for the diff-touching one-walked pairs — a pair off the diff costs no read", async () => {
     const snapshot = {
-      meta: { head: "h" },
+      meta: cochangeMeta(),
       edges: [strongPair("app/s1.module.css", "app/s1.ts"), strongPair("web/t2.module.css", "web/t2.ts")],
     };
     const files = [graphFile("app/s1.ts"), graphFile("web/t2.ts")];
@@ -909,7 +938,7 @@ describe("buildSilentCouplingFacts", () => {
   });
 
   it("no wired read keeps the single-pass verdict — the unit wiring never invents a lookup", async () => {
-    const snapshot = { meta: { head: "h" }, edges: [strongPair("app/s1.module.css", "app/s1.ts")] };
+    const snapshot = { meta: cochangeMeta(), edges: [strongPair("app/s1.module.css", "app/s1.ts")] };
     const files = [graphFile("app/s1.ts")];
 
     const facts = await buildSilentCouplingFacts(snapshot, files, [], ["app/s1.module.css"]);

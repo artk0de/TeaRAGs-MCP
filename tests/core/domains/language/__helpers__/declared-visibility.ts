@@ -18,18 +18,20 @@ export function declaredVisibilityOf(
   relPath: string,
   languageId: string,
 ): Record<string, string> {
+  const { walker } = language;
+  if (!walker) throw new TypeError(`declaredVisibilityOf: the ${languageId} provider carries no walker`);
   const parser = new Parser();
   parser.setLanguage(grammar as Parser.Language);
   const rootNode = materializeTree(parser.parse(src).rootNode, src);
   const tree = { rootNode };
   const chunks = collectSymbols(
     tree,
-    (node) => language.walker.nameOf(node),
+    (node) => walker.nameOf(node),
     language.kernel.scopeSeparator ?? ".",
     language.kernel.disambiguateOverloads ?? false,
     new DefaultSymbolIdComposer(),
   );
-  const extraction = language.walker.walk({ tree, code: src, relPath, language: languageId, chunks });
+  const extraction = walker.walk({ tree, code: src, relPath, language: languageId, chunks });
   const out: Record<string, string> = {};
   for (const chunk of extraction.chunks) {
     if (chunk.visibility !== undefined) out[chunk.symbolId] = chunk.visibility;

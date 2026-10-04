@@ -118,6 +118,13 @@ if [ -n "$RUN_TYPECHECK" ]; then
   # staged TS file, not only scripts/**: a src/ change is what breaks a script.
   echo "🔍 Running scripts type check..."
   npm run type-check:scripts || { echo "❌ Scripts type check failed"; exit 1; }
+  # tests/ sit outside tsconfig.json's src/ root too, and vitest transpiles
+  # without checking — a test fixture drifting from its declared port type
+  # stayed green for commit cycles (bd tea-rags-mcp-89k7k.11). Gated on any
+  # staged TS file, same as the scripts lane: a src/ type change is exactly
+  # what breaks a test fixture.
+  echo "🔍 Running tests type check..."
+  npm run type-check:tests || { echo "❌ Tests type check failed"; exit 1; }
 fi
 
 if [ -n "$RUN_TESTS" ] && [ ! -d build ]; then
