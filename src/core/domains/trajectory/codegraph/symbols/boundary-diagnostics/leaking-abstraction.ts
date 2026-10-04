@@ -213,7 +213,7 @@ const WHOLE_MODULE_EXPORT_NAME = "*";
 /** Entry files whose imported names ARE the module's exports (Python has no re-export syntax). */
 const IMPORTS_ARE_EXPORTS_ENTRY_NAMES: ReadonlySet<string> = new Set(MODULE_ENTRY_FILE_NAMES.python);
 
-type FacadeLeakClassification = Pick<FacadeLeakViolation, "kind" | "importedNames" | "nonExportedNames">;
+type FacadeLeakClassification = Pick<FacadeLeakViolation, "kind" | "kindBasis" | "importedNames" | "nonExportedNames">;
 
 /** Every name an edge takes from its target, imported or forwarded; `undefined` when none was recorded. */
 function namesTakenBy(edge: FileDependencyEdge): string[] | undefined {
@@ -222,15 +222,18 @@ function namesTakenBy(edge: FileDependencyEdge): string[] | undefined {
 }
 
 /**
- * Kind of a deep edge into a module's non-entry file `x` (bd tea-rags-mcp-r8hme.2).
+ * Kind of a deep edge into a module's non-entry file `x` (bd tea-rags-mcp-r8hme.2),
+ * and HOW it was decided (bd tea-rags-mcp-r8hme.43).
  *
  * With names on BOTH sides — the deep edge's, and the entry file's edge to `x`
  * — it is `bypass` when the facade exposes every name the deep import takes
  * (or exposes all of `x`), `internal-reach` when it does not, listing the names
- * it does not. The facade exposes what it re-exports; a Python `__init__.py`
- * also exposes what it imports. An entry file with no edge to `x` exposes
- * nothing of it. Where either side recorded no names the file-level rule
- * stands: `bypass` iff the entry file has an edge to `x`.
+ * it does not; the kind is `names`-decided. The facade exposes what it
+ * re-exports; a Python `__init__.py` also exposes what it imports. An entry
+ * file with no edge to `x` exposes nothing of it. Where either side recorded no
+ * names the file-level rule stands — `bypass` iff the entry file has an edge to
+ * `x` — and the kind is `file-rule`-decided: a `file-rule` bypass is NOT
+ * certification that the facade already exposes the imported names.
  */
 function classifyFacadeLeak(
   edge: FileDependencyEdge,
@@ -243,7 +246,13 @@ function classifyFacadeLeak(
     .map((entry) => ({ entry, facadeEdge: edgesByKey.get(edgeKey(entry, edge.targetRelPath)) }))
     .filter((f): f is { entry: RelPath; facadeEdge: FileDependencyEdge } => f.facadeEdge !== undefined);
   if (facadeEdges.length === 0) {
-    return { kind: "internal-reach", ...named, ...(importedNames ? { nonExportedNames: importedNames } : {}) };
+    // No facade edge to compare against — the file rule decided (bd tea-rags-mcp-r8hme.43).
+    return {
+      kind: "internal-reach",
+      kindBasis: "file-rule",
+      ...named,
+      ...(importedNames ? { nonExportedNames: importedNames } : {}),
+    };
   }
   const exposed = new Set<string>();
   let facadeNamesRecorded = false;
@@ -254,13 +263,17 @@ function classifyFacadeLeak(
       for (const name of facadeEdge.importedExportNames ?? []) exposed.add(name);
     }
   }
-  if (!importedNames || !facadeNamesRecorded || exposed.has(WHOLE_MODULE_EXPORT_NAME)) {
-    return { kind: "bypass", ...named };
+  if (!importedNames || !facadeNamesRecorded) {
+    return { kind: "bypass", kindBasis: "file-rule", ...named };
+  }
+  if (exposed.has(WHOLE_MODULE_EXPORT_NAME)) {
+    // The `*` re-export is names evidence: the facade exposes all of `x`.
+    return { kind: "bypass", kindBasis: "names", ...named };
   }
   const nonExportedNames = importedNames.filter((name) => !exposed.has(name));
   return nonExportedNames.length === 0
-    ? { kind: "bypass", ...named }
-    : { kind: "internal-reach", ...named, nonExportedNames };
+    ? { kind: "bypass", kindBasis: "names", ...named }
+    : { kind: "internal-reach", kindBasis: "names", ...named, nonExportedNames };
 }
 
 /** Group `violations` by module — see {@link FacadeLeakRootCause}. */

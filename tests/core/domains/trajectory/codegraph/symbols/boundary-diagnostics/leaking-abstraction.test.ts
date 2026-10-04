@@ -154,6 +154,7 @@ describe("detectLeakingAbstractions (bd tea-rags-mcp-jetrd)", () => {
     expect(report.violations).toEqual([
       {
         kind: "internal-reach",
+        kindBasis: "file-rule",
         sourceRelPath: "lib/sync/a.ts",
         targetRelPath: "lib/sync/snap/s.ts",
         moduleDir: "lib/sync/snap",
@@ -165,6 +166,7 @@ describe("detectLeakingAbstractions (bd tea-rags-mcp-jetrd)", () => {
       },
       {
         kind: "internal-reach",
+        kindBasis: "file-rule",
         sourceRelPath: "app/u5.ts",
         targetRelPath: "lib/sync/b.ts",
         moduleDir: "lib/sync",
@@ -176,6 +178,7 @@ describe("detectLeakingAbstractions (bd tea-rags-mcp-jetrd)", () => {
       },
       {
         kind: "bypass",
+        kindBasis: "file-rule",
         sourceRelPath: "app/u4.ts",
         targetRelPath: "lib/sync/a.ts",
         moduleDir: "lib/sync",
@@ -187,6 +190,7 @@ describe("detectLeakingAbstractions (bd tea-rags-mcp-jetrd)", () => {
       },
       {
         kind: "bypass",
+        kindBasis: "file-rule",
         sourceRelPath: "app/u6.ts",
         targetRelPath: "lib/sync/snap/index.ts",
         moduleDir: "lib/sync",
@@ -491,5 +495,62 @@ describe("detectLeakingAbstractions — export names (bd tea-rags-mcp-r8hme.2)",
         : e,
     );
     expect(kindOf(detectLeakingAbstractions(g), "app/d4.ts")?.kind).toBe("bypass");
+  });
+});
+
+/**
+ * bd tea-rags-mcp-r8hme.43 — every verdict names HOW its kind was decided:
+ * `names` when both edges carried export names and the comparison decided,
+ * `file-rule` when names were absent and the file-level rule (bypass iff the
+ * facade has an edge to the target) decided. A nameless bypass read as
+ * names-certified once sent a fix spec to re-export names the facade already
+ * exposed — the export half was a no-op.
+ */
+describe("detectLeakingAbstractions — kindBasis (bd tea-rags-mcp-r8hme.43)", () => {
+  function named(
+    sourceRelPath: string,
+    targetRelPath: string,
+    names: { imported?: string[]; reexported?: string[] },
+  ): FileDependencyEdge {
+    return {
+      sourceRelPath,
+      targetRelPath,
+      callWeight: 0,
+      ...(names.imported ? { importedExportNames: names.imported } : {}),
+      ...(names.reexported ? { reexportedExportNames: names.reexported } : {}),
+    };
+  }
+
+  function basisFixture(): FileDependencyGraph {
+    const facadeUsers = ["app/f0.ts", "app/f1.ts", "app/f2.ts"];
+    return {
+      files: [
+        ...["index.ts", "a.ts"].map((f) => walked(`lib/m/${f}`)),
+        ...facadeUsers.map((f) => walked(f)),
+        walked("app/d1.ts"),
+        walked("app/d5.ts"),
+      ],
+      edges: [
+        named("lib/m/index.ts", "lib/m/a.ts", { reexported: ["x"] }),
+        ...facadeUsers.map((f) => named(f, "lib/m/index.ts", { imported: ["x"] })),
+        named("app/d1.ts", "lib/m/a.ts", { imported: ["x"] }),
+        named("app/d5.ts", "lib/m/a.ts", {}),
+      ],
+    };
+  }
+
+  function basisOf(report: ReturnType<typeof detectLeakingAbstractions>, source: string) {
+    const v = report.violations.find((x) => x.sourceRelPath === source);
+    return v && { kind: v.kind, kindBasis: v.kindBasis };
+  }
+
+  it("marks a bypass whose names the facade re-exports with kindBasis names", () => {
+    const report = detectLeakingAbstractions(basisFixture());
+    expect(basisOf(report, "app/d1.ts")).toEqual({ kind: "bypass", kindBasis: "names" });
+  });
+
+  it("marks a nameless bypass with kindBasis file-rule — the file-level rule decided", () => {
+    const report = detectLeakingAbstractions(basisFixture());
+    expect(basisOf(report, "app/d5.ts")).toEqual({ kind: "bypass", kindBasis: "file-rule" });
   });
 });
