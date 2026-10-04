@@ -76,8 +76,9 @@ export interface DiffTreeLag {
  * One read of a working-tree change (spec §6.1–6.3): the changed files against
  * the base resolved to its merge-base with HEAD (bd tea-rags-mcp-y33ee) —
  * `files` when given, else `git diff --name-only` plus untracked files — capped
- * at {@link DIFF_FILE_CAP}; per file its added line ranges. A listed file with
- * no diff is read whole: on a clean tree `files` names committed code to
+ * at {@link DIFF_FILE_CAP} by the relevance order `byReviewRelevance` states
+ * (bd tea-rags-mcp-89k7k.1.9); per file its added line ranges. A listed file
+ * with no diff is read whole: on a clean tree `files` names committed code to
  * review, and an empty answer would read as "all conforms".
  *
  * Callers resolve the tree with `resolveWorkingTree` (`collection-resolver.ts`) — the
@@ -104,15 +105,29 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
   );
   const listed = req.files ? unique(req.files) : undefined;
   const all = listed ?? changed;
-  const files = all.slice(0, DIFF_FILE_CAP);
+  const changedSet = new Set(changed);
+  const nonProductionFilter = ontologyNonProductionPathFilter();
+  // Added-line ranges are read for EVERY candidate file, not the capped few
+  // (bd tea-rags-mcp-89k7k.1.9): the cap's relevance order below needs each
+  // file's added lines BEFORE choosing which fall over it, and the kept
+  // files' ranges come from the same single read. The extra cost over the old
+  // capped read is the diff body of the files that get skipped — one git diff
+  // invocation either way.
   const ranges = await gitRead(base, async () =>
     readAddedLineRangesOfFiles(
       toplevel,
       mergeBase,
-      files.map((relPath) => gitPathFromRoot(relPath, prefix)),
+      all.map((relPath) => gitPathFromRoot(relPath, prefix)),
     ),
   );
-  const changedSet = new Set(changed);
+  const addedLinesOf = (relPath: string): number =>
+    (ranges.get(gitPathFromRoot(relPath, prefix)) ?? []).reduce((sum, range) => sum + (range.end - range.start + 1), 0);
+  // Over the cap, WHICH files survive is a stated relevance order, not
+  // git's listing order (bd tea-rags-mcp-89k7k.1.9) — see the comparator.
+  const files =
+    all.length > DIFF_FILE_CAP
+      ? [...all].sort(byReviewRelevance(addedLinesOf, changedSet, nonProductionFilter)).slice(0, DIFF_FILE_CAP)
+      : all.slice(0, DIFF_FILE_CAP);
   const whole = new Set(listed ? files.filter((relPath) => !changedSet.has(relPath)) : []);
   const addedRanges = new Map<string, readonly AddedLineRange[]>(
     files.map((relPath) => [
@@ -121,7 +136,6 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
     ]),
   );
 
-  const nonProductionFilter = ontologyNonProductionPathFilter();
   const nonProduction = new Set(files.filter((relPath) => nonProductionFilter.ignores(relPath)));
   return {
     workTree,
@@ -134,6 +148,40 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
     addedRanges,
     nonProduction,
     skipped: all.length - files.length,
+  };
+}
+
+/**
+ * The file cap's relevance order (bd tea-rags-mcp-89k7k.1.9): files past the
+ * cap used to be whatever sorted last in git's listing order — on a live diff
+ * the one production change was dropped while 200 non-production notes
+ * survived it, and graph-based sections then read a clean pass over files
+ * they never saw. Which files SURVIVE the cap, most relevant first:
+ *
+ * 1. PRODUCTION before non-production (the ontology's masks) — a report skips
+ *    non-production files anyway, so they carry the least review surface.
+ * 2. A listed whole-file read before diff-read files — the caller named it
+ *    explicitly and its review surface is the entire file.
+ * 3. Otherwise MORE added lines first — the file that grew most carries the
+ *    most judgement; the fewest-added-lines file is dropped first.
+ * 4. Ties break by path ascending, so the kept set is deterministic for a
+ *    given diff whatever git's listing order was.
+ */
+function byReviewRelevance(
+  addedLinesOf: (relPath: string) => number,
+  changedSet: ReadonlySet<string>,
+  nonProductionFilter: { ignores: (relPath: string) => boolean },
+): (left: string, right: string) => number {
+  return (left, right) => {
+    const leftNonProduction = nonProductionFilter.ignores(left) ? 1 : 0;
+    const rightNonProduction = nonProductionFilter.ignores(right) ? 1 : 0;
+    if (leftNonProduction !== rightNonProduction) return leftNonProduction - rightNonProduction;
+    const leftWhole = changedSet.has(left) ? 0 : 1;
+    const rightWhole = changedSet.has(right) ? 0 : 1;
+    if (leftWhole !== rightWhole) return leftWhole - rightWhole;
+    const addedLines = addedLinesOf(right) - addedLinesOf(left);
+    if (addedLines !== 0) return addedLines;
+    return left < right ? -1 : left > right ? 1 : 0;
   };
 }
 

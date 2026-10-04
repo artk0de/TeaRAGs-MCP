@@ -118,7 +118,7 @@ function cochangePair(a: RelPath, b: RelPath, support: number): TemporalCochange
   };
 }
 
-function scopeOf(files: readonly string[]): DiffScopeRead {
+function scopeOf(files: readonly string[], skipped = 0): DiffScopeRead {
   return {
     workTree: workTree!,
     base: "HEAD",
@@ -129,7 +129,7 @@ function scopeOf(files: readonly string[]): DiffScopeRead {
     files,
     addedRanges: new Map(),
     nonProduction: new Set(),
-    skipped: 0,
+    skipped,
   };
 }
 
@@ -322,6 +322,126 @@ describe("architectureSectionProvider.run", () => {
       runContext({ graphDb: graph, scope: scopeOf(["src/app/a.ts"]) }),
     )) as Record<string, unknown>;
     expect(payload.findings).toEqual([]);
+  });
+
+  // bd tea-rags-mcp-35v4v (live 2026-10-01): a 5-file probe diff produced 134
+  // findings; the concatenated `slice(0, 100)` in family order let 117
+  // silentCoupling findings push facadeContract (1) and splitCandidates (2)
+  // ENTIRELY into `truncated` — the most diff-native families invisible while
+  // their detector rows still counted them.
+  it("over the findings cap every family with a finding keeps a slot — a silentCoupling flood never starves facadeContract", async () => {
+    // The facadeContract fixture (a facade dropping a re-export consumers
+    // import) beside a 110-partner silent-coupling flood: 111 findings > 100.
+    writeFile("src/lib/x.ts", "export const a = 1;\nexport const b = 2;\n");
+    writeFile("src/lib/y.ts", "export const z = 1;\n");
+    writeFile("src/lib/index.ts", 'export { a } from "./x";\nexport { z } from "./y";\n');
+    const partners = Array.from({ length: 110 }, (_, i) => `src/other/p${String(i).padStart(3, "0")}.ts`);
+    const graph = graphDbStub(
+      {
+        files: [
+          graphFile("src/lib/index.ts"),
+          graphFile("src/lib/x.ts"),
+          graphFile("src/lib/y.ts"),
+          graphFile("src/app/c1.ts"),
+          graphFile("src/app/c2.ts"),
+          graphFile("src/app/c3.ts"),
+        ],
+        edges: [
+          {
+            sourceRelPath: "src/lib/index.ts",
+            targetRelPath: "src/lib/x.ts",
+            callWeight: 1,
+            reexportedExportNames: ["a", "b"],
+          },
+          {
+            sourceRelPath: "src/lib/index.ts",
+            targetRelPath: "src/lib/y.ts",
+            callWeight: 1,
+            reexportedExportNames: ["z"],
+          },
+          namedGraphEdge("src/app/c1.ts", "src/lib/index.ts", ["a"]),
+          namedGraphEdge("src/app/c2.ts", "src/lib/index.ts", ["a"]),
+          namedGraphEdge("src/app/c3.ts", "src/lib/index.ts", ["a", "b"]),
+        ],
+      },
+      partners.map((partner) => cochangePair("src/lib/index.ts", partner, 5)),
+    );
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({
+        graphDb: graph,
+        scope: scopeOf(["src/lib/index.ts"]),
+        temporalCochange: { meta: { head: "h" }, edges: partners.map((p) => cochangePair("src/lib/index.ts", p, 5)) },
+      }),
+    )) as Record<string, unknown>;
+
+    // THE live bug: the plain slice kept the first 100 findings in family
+    // order and facadeContract landed wholly in `truncated`.
+    const findings = payload.findings as { detector: string }[];
+    expect(findings.some((finding) => finding.detector === "facadeContract")).toBe(true);
+
+    // The family-aware policy's invariants, whatever the fixture's family mix.
+    expect(findings).toHaveLength(100);
+    const detectors = payload.detectors as { detector: string; findingCount: number; truncated?: number }[];
+    const listedByDetector = new Map<string, number>();
+    for (const finding of findings) {
+      listedByDetector.set(finding.detector, (listedByDetector.get(finding.detector) ?? 0) + 1);
+    }
+    for (const status of detectors) {
+      if (status.findingCount === 0) continue;
+      expect(listedByDetector.get(status.detector) ?? 0, `${status.detector} starved under the cap`).toBeGreaterThan(0);
+      expect((status.truncated ?? 0) + (listedByDetector.get(status.detector) ?? 0)).toBe(status.findingCount);
+    }
+    const totalFindings = detectors.reduce((sum, status) => sum + status.findingCount, 0);
+    expect(payload.truncated).toBe(totalFindings - 100);
+    // The flooding family's cut is counted on its own row, not hidden in the total.
+    expect(detectors.find((status) => status.detector === "silentCoupling")?.truncated).toBeGreaterThan(0);
+  });
+
+  // bd tea-rags-mcp-89k7k.1.9: the change closes a -> b -> x -> a, but the
+  // only file carrying the closing edge x -> a fell past the reader's file
+  // cap — the overlay never sees it, so `cycles` would read as a clean zero.
+  it("a scope over the file cap marks every built detector partial — a cycle closing through a skipped file is never a clean pass", async () => {
+    writeFile("src/app/a.ts", 'import { B } from "../lib/b";\nexport const A = 1;\n');
+    // Skipped past the cap in a real read; here the scope says so directly.
+    writeFile("src/skip/x.ts", 'import { A } from "../app/a";\nexport const X = A;\n');
+    const graph = graphDbStub({
+      files: [graphFile("src/app/a.ts"), graphFile("src/lib/b.ts"), graphFile("src/skip/x.ts")],
+      // The indexed b -> x hop: in the TREE the change closes a -> b -> x -> a
+      // through x's new edge, which the truncated scope never reads.
+      edges: [graphEdge("src/lib/b.ts", "src/skip/x.ts")],
+    });
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({ graphDb: graph, scope: scopeOf(["src/app/a.ts"], 1) }),
+    )) as Record<string, unknown>;
+
+    const detectors = payload.detectors as {
+      detector: string;
+      built: boolean;
+      findingCount: number;
+      scopeSkippedFiles?: number;
+    }[];
+    const cycles = detectors.find((status) => status.detector === "cycles");
+    // An honest zero over unseen files — carried as PARTIAL with the skipped
+    // count, never as a clean pass.
+    expect(cycles).toMatchObject({ built: true, findingCount: 0, scopeSkippedFiles: 1 });
+    for (const status of detectors) {
+      if (!status.built) continue;
+      expect(status.scopeSkippedFiles, `${status.detector} claimed a clean pass over a truncated diff`).toBe(1);
+    }
+  });
+
+  it("an untruncated scope claims no partial marker — zeros are then clean passes", async () => {
+    writeFile("src/app/a.ts", "export const A = 1;\n");
+    const graph = graphDbStub({ files: [graphFile("src/app/a.ts")], edges: [] });
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({ graphDb: graph, scope: scopeOf(["src/app/a.ts"]) }),
+    )) as Record<string, unknown>;
+
+    const detectors = payload.detectors as { scopeSkippedFiles?: number }[];
+    expect(detectors.every((status) => status.scopeSkippedFiles === undefined)).toBe(true);
   });
 });
 
