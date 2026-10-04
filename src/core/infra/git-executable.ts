@@ -77,6 +77,26 @@ export function resolveGitExecutable(): string {
 }
 
 /**
+ * The environment every tea-rags git child runs under: `base` (the parent's
+ * environment by default) with git's OPTIONAL locks disabled (bd
+ * tea-rags-mcp-s5kpv).
+ *
+ * `git status` (and other read commands) opportunistically take `index.lock`
+ * in the user's tree to write refreshed stat info back. A child reaped mid-run
+ * — stall-guard kill, CLI exit — leaves that lock behind and blocks the user's
+ * next `git commit`; even a live one races it. `GIT_OPTIONAL_LOCKS=0` turns
+ * only those optional locks off: locks a command genuinely needs (`git worktree
+ * add`, `git add -N` into a scratch index) are still taken, so the contract
+ * applies to every git child with no read/write split to maintain.
+ *
+ * Returns a fresh object; `process.env` is never mutated. Worker threads get
+ * the same contract because their spawns go through the same call sites.
+ */
+export function buildGitChildProcessEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { ...base, GIT_OPTIONAL_LOCKS: "0" };
+}
+
+/**
  * Worker-thread entry: take the executable the spawning thread already
  * resolved (handed over via `workerData`) instead of probing again, so a
  * process decides once and every thread follows that decision.

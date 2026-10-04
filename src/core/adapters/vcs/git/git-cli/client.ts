@@ -14,7 +14,7 @@ import { copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { resolveGitExecutable } from "../../../../infra/git-executable.js";
+import { buildGitChildProcessEnv, resolveGitExecutable } from "../../../../infra/git-executable.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type {
   BlameLine,
@@ -36,7 +36,11 @@ import {
 } from "./parsers.js";
 import { execWithStallGuard } from "./stall-guard-exec.js";
 
-/** `execFile` as a promise, with the child registered for shutdown reaping (bd tea-rags-mcp-w26dc). */
+/**
+ * `execFile` as a promise, with the child registered for shutdown reaping (bd
+ * tea-rags-mcp-w26dc) and run under the git child env contract — optional locks
+ * off (bd tea-rags-mcp-s5kpv). Git-only, like `execWithStallGuard`.
+ */
 async function execFileAsync(
   file: string,
   args: string[],
@@ -46,7 +50,7 @@ async function execFileAsync(
     const child = execFile(
       file,
       args,
-      { ...options, encoding: options.encoding ?? "utf8" },
+      { ...options, encoding: options.encoding ?? "utf8", env: buildGitChildProcessEnv(options.env) },
       (err: Error | null, stdout: string, stderr: string) => {
         if (err) {
           reject(err);
@@ -125,6 +129,7 @@ export function resolveRepoRoot(absolutePath: string): string {
     return execFileSync(resolveGitExecutable(), ["rev-parse", "--show-toplevel"], {
       cwd: absolutePath,
       encoding: "utf-8",
+      env: buildGitChildProcessEnv(),
     }).trim();
   } catch {
     return absolutePath;
@@ -297,6 +302,7 @@ export function createCatFileBatch(repoRoot: string): CatFileBatchReader {
     const c = spawn(resolveGitExecutable(), ["cat-file", "--batch"], {
       cwd: repoRoot,
       stdio: ["pipe", "pipe", "ignore"],
+      env: buildGitChildProcessEnv(),
     });
     trackGitChildProcess(c);
     c.stdout?.on("data", onData);
@@ -418,6 +424,7 @@ export function createCatFileBatchCheck(repoRoot: string): CatFileBatchCheckRead
     const c = spawn(resolveGitExecutable(), ["cat-file", "--batch-check"], {
       cwd: repoRoot,
       stdio: ["pipe", "pipe", "ignore"],
+      env: buildGitChildProcessEnv(),
     });
     trackGitChildProcess(c);
     c.stdout?.on("data", onData);

@@ -24,7 +24,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { resolveGitExecutable } from "./git-executable.js";
+import { buildGitChildProcessEnv, resolveGitExecutable } from "./git-executable.js";
 
 export interface RepoGitState {
   /** Branch checked out; null = detached HEAD (or a non-branch ref). */
@@ -119,13 +119,16 @@ export function readRepoGitState(repoPath: string): RepoGitState | null {
  * Whether the working tree has uncommitted changes (tracked files only).
  * Spawns `git status --porcelain -uno` — pipeline-finalize use only, NOT the
  * trigger path. Conservative: any failure (git missing, timeout) reads as
- * clean so it never blocks an indexing run's finalize.
+ * clean so it never blocks an indexing run's finalize. Runs with git's optional
+ * locks off, so the read never takes `index.lock` in the user's tree (bd
+ * tea-rags-mcp-s5kpv).
  */
 export function readWorkingTreeDirty(repoPath: string, execFileImpl: typeof execFileSync = execFileSync): boolean {
   try {
     const out = execFileImpl(resolveGitExecutable(), ["-C", repoPath, "status", "--porcelain", "-uno"], {
       timeout: 15_000,
       encoding: "utf-8",
+      env: buildGitChildProcessEnv(),
     });
     return String(out).trim().length > 0;
   } catch {
@@ -215,7 +218,8 @@ export function readWorkingTreeDirtyPaths(
       execFileImpl(
         resolveGitExecutable(),
         ["-C", toplevel, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"],
-        { timeout: 15_000, encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 },
+        // Optional locks off: no `index.lock` in the user's tree (bd tea-rags-mcp-s5kpv).
+        { timeout: 15_000, encoding: "utf-8", maxBuffer: 64 * 1024 * 1024, env: buildGitChildProcessEnv() },
       ),
     );
   } catch {
@@ -240,6 +244,7 @@ export function detectDefaultBranch(repoPath: string, execFileImpl: typeof execF
       execFileImpl(resolveGitExecutable(), ["-C", repoPath, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], {
         timeout: 15_000,
         encoding: "utf-8",
+        env: buildGitChildProcessEnv(),
       }),
     ).trim();
     if (out.length > 0) return out.startsWith("origin/") ? out.slice("origin/".length) : out;

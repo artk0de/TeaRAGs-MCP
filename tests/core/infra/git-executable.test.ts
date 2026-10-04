@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   adoptGitExecutable,
+  buildGitChildProcessEnv,
   createGitExecutableResolver,
   PATH_GIT_EXECUTABLE,
   PLATFORM_GIT_EXECUTABLE,
@@ -109,5 +110,35 @@ describe("adoptGitExecutable", () => {
     adoptGitExecutable("/parent/resolved/git");
 
     expect(resolveGitExecutable()).toBe("/parent/resolved/git");
+  });
+});
+
+/**
+ * The env contract every git child runs under (bd tea-rags-mcp-s5kpv): git's
+ * OPTIONAL locks are off, so a read-only `git status` never takes `index.lock`
+ * in the user's tree to refresh stat info — a child reaped mid-run would leave
+ * that lock behind and block the user's own `git commit`.
+ */
+describe("buildGitChildProcessEnv", () => {
+  it("disables git's optional locks", () => {
+    expect(buildGitChildProcessEnv({}).GIT_OPTIONAL_LOCKS).toBe("0");
+  });
+
+  it("keeps every variable of the base env it is handed", () => {
+    const env = buildGitChildProcessEnv({ PATH: "/bin", GIT_INDEX_FILE: "/tmp/scratch/index" });
+
+    expect(env).toEqual({ PATH: "/bin", GIT_INDEX_FILE: "/tmp/scratch/index", GIT_OPTIONAL_LOCKS: "0" });
+  });
+
+  it("overrides a base env that re-enables optional locks", () => {
+    expect(buildGitChildProcessEnv({ GIT_OPTIONAL_LOCKS: "1" }).GIT_OPTIONAL_LOCKS).toBe("0");
+  });
+
+  it("defaults the base to the parent's environment without mutating it", () => {
+    const env = buildGitChildProcessEnv();
+
+    expect(env.PATH).toBe(process.env.PATH);
+    expect(env.GIT_OPTIONAL_LOCKS).toBe("0");
+    expect(process.env.GIT_OPTIONAL_LOCKS).toBeUndefined();
   });
 });

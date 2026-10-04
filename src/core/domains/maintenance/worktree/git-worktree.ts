@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 
-import { resolveGitExecutable } from "../../../infra/git-executable.js";
+import { buildGitChildProcessEnv, resolveGitExecutable } from "../../../infra/git-executable.js";
 
 /**
  * Idempotent: no-op when targetPath already exists (attach to existing worktree).
@@ -14,7 +14,7 @@ export function ensureGitWorktree(repoRoot: string, name: string, targetPath: st
   if (branch) args.push("-b", branch);
   else args.push("-b", name);
   args.push(targetPath);
-  execFileSync(resolveGitExecutable(), args, { stdio: "pipe" });
+  execFileSync(resolveGitExecutable(), args, { stdio: "pipe", env: buildGitChildProcessEnv() });
   return true;
 }
 
@@ -25,5 +25,5 @@ export function removeGitWorktree(repoRoot: string, targetPath: string, force: b
   const args = ["-C", repoRoot, "worktree", "remove"];
   if (force) args.push("--force");
   args.push(targetPath);
-  execFileSync(resolveGitExecutable(), args, { stdio: "pipe" });
+  execFileSync(resolveGitExecutable(), args, { stdio: "pipe", env: buildGitChildProcessEnv() });
 }

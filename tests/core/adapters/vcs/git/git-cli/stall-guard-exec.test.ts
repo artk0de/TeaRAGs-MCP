@@ -105,3 +105,30 @@ describe("execWithStallGuard", () => {
     expect(stdout).toBe("a\nb\nc");
   });
 });
+
+/**
+ * Every spawn through the guard is a git child, so the guard applies the git
+ * child env contract (bd tea-rags-mcp-s5kpv): optional locks off, the caller's
+ * env kept.
+ */
+describe("execWithStallGuard — git child env", () => {
+  const envProbe =
+    "process.stdout.write(JSON.stringify({ locks: process.env.GIT_OPTIONAL_LOCKS ?? null, extra: process.env.S5KPV_PROBE ?? null }))";
+
+  it("runs the child with git's optional locks disabled", async () => {
+    const out = await execWithStallGuard(process.execPath, ["-e", envProbe], {
+      cwd: process.cwd(),
+      stallTimeoutMs: STALL_WINDOW_MS,
+    });
+    expect(JSON.parse(out)).toEqual({ locks: "0", extra: null });
+  });
+
+  it("keeps the env the caller passes and still disables optional locks", async () => {
+    const out = await execWithStallGuard(process.execPath, ["-e", envProbe], {
+      cwd: process.cwd(),
+      stallTimeoutMs: STALL_WINDOW_MS,
+      env: { ...process.env, S5KPV_PROBE: "kept" },
+    });
+    expect(JSON.parse(out)).toEqual({ locks: "0", extra: "kept" });
+  });
+});

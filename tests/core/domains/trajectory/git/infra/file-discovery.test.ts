@@ -36,10 +36,12 @@ import {
   sliceFileSignalsByPaths,
 } from "../../../../../../src/core/domains/trajectory/git/infra/file-reader.js";
 import { GitEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/git/provider.js";
+import type * as GitExecutableModule from "../../../../../../src/core/infra/git-executable.js";
 
 // The spawn counter is a PATH shim, so pin the PATH executable — otherwise the
 // client resolves Apple's /usr/bin/git and bypasses the shim entirely.
-vi.mock("../../../../../../src/core/infra/git-executable.js", () => ({
+vi.mock("../../../../../../src/core/infra/git-executable.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof GitExecutableModule>()),
   resolveGitExecutable: () => "git",
 }));
 

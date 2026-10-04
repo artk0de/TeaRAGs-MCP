@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createGitWorkingTreeFixture } from "../__helpers__/git-working-tree-fixture.js";
 import {
@@ -137,6 +137,41 @@ describe("readWorkingTreeDirty", () => {
         throw new Error("no git");
       }),
     ).toBe(false);
+  });
+});
+
+/**
+ * `git status` in the user's tree must not take `index.lock` (bd
+ * tea-rags-mcp-s5kpv): every status-class spawn runs with git's optional locks
+ * disabled, so a child reaped mid-run leaves no stale lock and never races the
+ * user's own `git commit`.
+ */
+describe("status-class spawns disable git's optional locks", () => {
+  const envOf = (exec: ReturnType<typeof vi.fn>): NodeJS.ProcessEnv | undefined =>
+    (exec.mock.calls[0]?.[2] as { env?: NodeJS.ProcessEnv } | undefined)?.env;
+
+  it("readWorkingTreeDirty", () => {
+    const exec = vi.fn(() => "");
+    readWorkingTreeDirty("/x", exec as never);
+
+    expect(envOf(exec)?.GIT_OPTIONAL_LOCKS).toBe("0");
+    expect(envOf(exec)?.PATH).toBe(process.env.PATH);
+  });
+
+  it("readWorkingTreeDirtyPaths", () => {
+    const dir = writeRepo({ ".git/HEAD": "ref: refs/heads/main\n" });
+    const exec = vi.fn(() => "");
+    readWorkingTreeDirtyPaths(dir, exec as never);
+
+    expect(envOf(exec)?.GIT_OPTIONAL_LOCKS).toBe("0");
+    expect(envOf(exec)?.PATH).toBe(process.env.PATH);
+  });
+
+  it("detectDefaultBranch", () => {
+    const exec = vi.fn(() => "origin/main\n");
+    detectDefaultBranch("/x", exec as never);
+
+    expect(envOf(exec)?.GIT_OPTIONAL_LOCKS).toBe("0");
   });
 });
 

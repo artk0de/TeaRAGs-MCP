@@ -11,20 +11,25 @@
 
 import { spawn } from "node:child_process";
 
+import { buildGitChildProcessEnv } from "../../../../infra/git-executable.js";
 import { trackGitChildProcess } from "./git-child-process-registry.js";
 
 export interface StallGuardOptions {
   cwd: string;
   /** Kill the child after this long with NO stdout activity (ms). */
   stallTimeoutMs: number;
-  /** The child's whole environment; absent → the parent's. */
+  /**
+   * The child's base environment; absent → the parent's. Either way the git
+   * child env contract is applied on top (bd tea-rags-mcp-s5kpv).
+   */
   env?: NodeJS.ProcessEnv;
 }
 
 export async function execWithStallGuard(command: string, args: string[], options: StallGuardOptions): Promise<string> {
   const { cwd, stallTimeoutMs, env } = options;
   return new Promise<string>((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"], ...(env ? { env } : {}) });
+    // Every child of this guard is git: optional locks off (bd tea-rags-mcp-s5kpv).
+    const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"], env: buildGitChildProcessEnv(env) });
     trackGitChildProcess(child);
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
