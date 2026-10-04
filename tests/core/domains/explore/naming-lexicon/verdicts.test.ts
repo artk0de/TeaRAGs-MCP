@@ -1968,6 +1968,99 @@ describe("judgeDraftName — NO_CONVENTION", () => {
   });
 });
 
+// bd tea-rags-mcp-hzrxn: a param name its declaring file already settles is no free choice.
+describe("judgeDraftName — file-local convention dominance", () => {
+  const FILE = "src/core/api/internal/ops/naming-lexicon-ops.ts";
+  /** The declaring file's pre-existing bindings of the draft's role, one entry per name. */
+  const fileLocal = (bindings: { name: string; n: number }[]) => ({ file: FILE, bindings });
+
+  it("a param every pre-existing method of the file binds conforms to the file's idiom, not NO_CONVENTION", () => {
+    expect(
+      judgeDraftName({
+        name: "req",
+        kind: "param",
+        typeName: "NamingLexiconRequest",
+        casing: "camel",
+        fileLocal: fileLocal([{ name: "req", n: 3 }]),
+      }),
+    ).toEqual({ verdict: "CONFORMS", fileLocal: { file: FILE, bindings: 3 } });
+  });
+
+  it("a majority of the file's bindings, not unanimity, is the file's convention", () => {
+    expect(
+      judgeDraftName({
+        name: "req",
+        kind: "param",
+        typeName: "NamingLexiconRequest",
+        casing: "camel",
+        fileLocal: fileLocal([
+          { name: "req", n: 2 },
+          { name: "request", n: 1 },
+        ]),
+      }),
+    ).toEqual({ verdict: "CONFORMS", fileLocal: { file: FILE, bindings: 2 } });
+  });
+
+  it("a file-local minority below the majority share leaves NO_CONVENTION", () => {
+    expect(
+      judgeDraftName({
+        name: "req",
+        kind: "param",
+        typeName: "NamingLexiconRequest",
+        casing: "camel",
+        fileLocal: fileLocal([
+          { name: "req", n: 2 },
+          { name: "request", n: 3 },
+        ]),
+      }),
+    ).toEqual({ verdict: "NO_CONVENTION", prefer: { exact: "namingLexiconRequest", analogous: [] } });
+  });
+
+  it("a name too few pre-existing bindings carry leaves NO_CONVENTION", () => {
+    expect(
+      judgeDraftName({
+        name: "req",
+        kind: "param",
+        typeName: "NamingLexiconRequest",
+        casing: "camel",
+        fileLocal: fileLocal([{ name: "req", n: 1 }]),
+      }),
+    ).toEqual({ verdict: "NO_CONVENTION", prefer: { exact: "namingLexiconRequest", analogous: [] } });
+  });
+
+  it("a name the file's pre-existing bindings never carry leaves NO_CONVENTION", () => {
+    expect(
+      judgeDraftName({
+        name: "req",
+        kind: "param",
+        typeName: "NamingLexiconRequest",
+        casing: "camel",
+        fileLocal: fileLocal([{ name: "request", n: 2 }]),
+      }),
+    ).toEqual({ verdict: "NO_CONVENTION", prefer: { exact: "namingLexiconRequest", analogous: [] } });
+  });
+
+  it("no file-local evidence at all leaves NO_CONVENTION", () => {
+    expect(judgeDraftName({ name: "req", kind: "param", typeName: "NamingLexiconRequest", casing: "camel" })).toEqual({
+      verdict: "NO_CONVENTION",
+      prefer: { exact: "namingLexiconRequest", analogous: [] },
+    });
+  });
+
+  it("a project convention outranks the file's: the file-local precedent never lifts a MISFIT", () => {
+    expect(
+      judgeDraftName({
+        name: "req",
+        kind: "param",
+        typeName: "NamingLexiconRequest",
+        casing: "camel",
+        byTypeRows: [{ kind: "param", name: "request", n: 4, holders: 4, exampleOwner: OWNER }],
+        fileLocal: fileLocal([{ name: "req", n: 3 }]),
+      }),
+    ).toEqual({ verdict: "MISFIT", suggestion: "request", holder: OWNER });
+  });
+});
+
 describe("typeFamilyMembers — the relatives a NO_CONVENTION draft is compared with", () => {
   const DECLARED = ["SymbolId", "CallerSymbolId", "CalleeSymbolId", "ProjectRegistry", "LanguageRegistry", "Reranker"];
 

@@ -83,6 +83,7 @@ import type {
   IdentifierDeclarationKind,
   IdentifierLanguageCountQuery,
   IdentifierLanguageCountRow,
+  IdentifierRow,
   IdentifierTypeAggregateRow,
   IdentifierTypeMultiplicity,
   MethodHeadWordRow,
@@ -125,6 +126,7 @@ import {
   withFamilyAnalogues,
   type ConceptTerm,
   type ConceptTermHolder,
+  type FileLocalBindings,
   type JudgedGenericName,
   type NamingByCalleeRow,
   type NamingByTypeRow,
@@ -319,7 +321,7 @@ interface ReviewDraft {
   language: string;
   kind: string;
   type?: string;
-  draft: NamingLexiconDraftName;
+  draft: NamingLexiconValueDraft | NamingLexiconTypeDraft;
 }
 
 /**
@@ -399,9 +401,16 @@ type IdentifierReader = Pick<
  * A value draft: `kind` absent or a declaration kind. `owner` is internal (bd
  * tea-rags-mcp-bjfa0): the type a `return` draft is declared in — diff mode's
  * enclosing class, names mode's class at `path` — whose ancestry may already
- * declare the method it names.
+ * declare the method it names. `fileLocal` is internal too (bd
+ * tea-rags-mcp-hzrxn): the declaring file's pre-existing bindings of the
+ * draft's role, which diff mode reads off the working-tree text — not a
+ * request field.
  */
-type NamingLexiconValueDraft = NamingLexiconDraftName & { kind?: IdentifierDeclarationKind; owner?: string };
+type NamingLexiconValueDraft = NamingLexiconDraftName & {
+  kind?: IdentifierDeclarationKind;
+  owner?: string;
+  fileLocal?: FileLocalBindings;
+};
 
 function isTypeDraft(draft: NamingLexiconDraftName): boolean {
   return draft.kind === "type";
@@ -1846,6 +1855,7 @@ async function judgeDrafts(
       nameIsGeneric: generic.has(draft.name),
       ...((overridden.get(draft) ?? []).length > 0 ? { overrides: overridden.get(draft)?.[0] } : {}),
       ...(untypedMethod && isUntypedMethodDraft(draft) ? { untypedMethod: untypedMethod(draft.name) } : {}),
+      ...(draft.fileLocal !== undefined ? { fileLocal: draft.fileLocal } : {}),
     });
   });
   const family = await typeFamilyRows(
@@ -2263,27 +2273,29 @@ function reviewDrafts(file: DiffFile): ReviewDraft[] {
   for (const row of declarations.values) {
     if (!inRanges(row.line, ranges)) continue;
     const owner = row.kind === "return" ? memberOwner(row.ownerSymbolId) : undefined;
+    const draft: NamingLexiconValueDraft = {
+      name: row.name,
+      kind: row.kind,
+      ...(row.typeName !== undefined ? { type: row.typeName } : {}),
+      ...(row.typeMultiplicity !== undefined ? { typeMultiplicity: row.typeMultiplicity } : {}),
+      ...(owner !== undefined ? { owner } : {}),
+      ...(row.boundMember !== undefined
+        ? {
+            callee: {
+              member: row.boundMember,
+              ...(row.boundReceiver !== undefined ? { receiver: row.boundReceiver } : {}),
+            },
+          }
+        : {}),
+      ...fileLocalBindings(file, row),
+    };
     drafts.push({
       relPath,
       line: row.line,
       language,
       kind: row.kind,
       ...(row.typeName !== undefined ? { type: row.typeName } : {}),
-      draft: {
-        name: row.name,
-        kind: row.kind,
-        ...(row.typeName !== undefined ? { type: row.typeName } : {}),
-        ...(row.typeMultiplicity !== undefined ? { typeMultiplicity: row.typeMultiplicity } : {}),
-        ...(owner !== undefined ? { owner } : {}),
-        ...(row.boundMember !== undefined
-          ? {
-              callee: {
-                member: row.boundMember,
-                ...(row.boundReceiver !== undefined ? { receiver: row.boundReceiver } : {}),
-              },
-            }
-          : {}),
-      },
+      draft,
     });
   }
   for (const callable of untypedCallables(file)) {
@@ -2338,6 +2350,36 @@ function reviewDrafts(file: DiffFile): ReviewDraft[] {
 function reviewDraftKey(d: ReviewDraft): string {
   const { path: _path, concept: _concept, ...draft } = d.draft;
   return `${directoryOf(d.relPath)}\u0000${JSON.stringify(draft)}`;
+}
+
+/**
+ * The declaring file's precedent for one added value row (bd
+ * tea-rags-mcp-hzrxn): its PRE-EXISTING bindings of the same role — same kind,
+ * same type and multiplicity, the added lines excluded — counted per name. Read
+ * off the working-tree extraction, never the index: the change's own file is
+ * excluded from every project read, so only this extraction knows what its
+ * settled names are. Empty for an untyped row (the role is the type's) and for
+ * a row nothing pre-existing binds.
+ */
+function fileLocalBindings(file: DiffFile, row: IdentifierRow): { fileLocal?: FileLocalBindings } {
+  if (row.typeName === undefined) return {};
+  const multiplicity = row.typeMultiplicity ?? "one";
+  const perName = new Map<string, number>();
+  for (const prior of file.declarations.values) {
+    if (inRanges(prior.line, file.ranges)) continue;
+    if (prior.kind !== row.kind || prior.typeName !== row.typeName) continue;
+    if ((prior.typeMultiplicity ?? "one") !== multiplicity) continue;
+    perName.set(prior.name, (perName.get(prior.name) ?? 0) + 1);
+  }
+  if (perName.size === 0) return {};
+  return {
+    fileLocal: {
+      file: file.relPath,
+      bindings: [...perName]
+        .map(([name, n]) => ({ name, n }))
+        .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name)),
+    },
+  };
 }
 
 function directoryOf(relPath: string): string {

@@ -96,6 +96,8 @@ export {
 } from "./verdicts.js";
 export type {
   DraftNameJudgementInput,
+  FileLocalBindings,
+  FileLocalRoleBinding,
   NamingExpectedTypeRole,
   NamingPreference,
   ReexportTwins,
