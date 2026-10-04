@@ -752,6 +752,7 @@ function sdpViolations(report: ComponentStableDependenciesReport, limit: number)
         callWeight: v.callWeight,
         directoryRelation: v.directoryRelation,
         fileEdgeCount: v.fileEdgeCount,
+        ...(v.compositionRoot ? { compositionRoot: v.compositionRoot } : {}),
         fileEdges: v.fileEdges,
       },
     }),

@@ -154,6 +154,76 @@ describe("detectComponentStableDependencyViolations", () => {
   });
 
   /**
+   * The composition root assembles unstable concretes — that is its JOB — so
+   * an SDP delta sourced from one is triage data, not a blind verdict (bd
+   * tea-rags-mcp-r8hme.51, design on tea-rags-mcp-89k7k.9). The roots are the
+   * DECLARED ones (`.claude/rules/domain-boundaries.md`), fixture uses the
+   * real component dirs.
+   */
+  describe("a violation sourced from a declared composition root carries the annotation", () => {
+    /** Same uphill shape as `stableCoreOnVolatileLib`, source at the real root. */
+    function bootstrapOnVolatileLib(): FileDependencyGraph {
+      return merge(
+        {
+          files: [file("src/bootstrap/a.ts"), file("src/bootstrap/b.ts")],
+          edges: [
+            edge("src/bootstrap/a.ts", "src/core/lib/f1.ts", 2),
+            edge("src/bootstrap/b.ts", "src/core/lib/f2.ts"),
+          ],
+        },
+        files("app", 6, (p) => edge(p, "src/bootstrap/b.ts")),
+        files("src/core/lib", 5, (p) => edge(p, "vendor/v.ts")),
+        { files: [file("vendor/v.ts"), file("other/o.ts")], edges: [edge("other/o.ts", "src/core/lib/f3.ts")] },
+      );
+    }
+
+    it("stamps compositionRoot: true on the violation", () => {
+      const report = judge(bootstrapOnVolatileLib());
+
+      expect(report.violations).toHaveLength(1);
+      expect(report.violations[0]?.sourceComponent).toBe("src/bootstrap");
+      expect(report.violations[0]?.compositionRoot).toBe(true);
+    });
+
+    it("keeps the violation reported — annotated, never excluded", () => {
+      const report = judge(bootstrapOnVolatileLib());
+
+      expect(report.summary.violationCount).toBe(1);
+      expect(report.summary.judgedEdgeCount).toBeGreaterThan(0);
+    });
+
+    it("leaves the field absent on a non-root source — not undefined-valued noise", () => {
+      const report = judge(stableCoreOnVolatileLib());
+
+      const violation = report.violations[0];
+      expect(violation?.sourceComponent).toBe("core");
+      expect("compositionRoot" in (violation ?? {})).toBe(false);
+    });
+
+    it("annotates a source component nested inside a declared root", () => {
+      // bootstrap/config assembles foundation internals (the config/schemas ->
+      // churn-walk edge of the bead): still the root's job.
+      const graph = merge(
+        {
+          files: [file("src/bootstrap/config/a.ts"), file("src/bootstrap/config/b.ts")],
+          edges: [
+            edge("src/bootstrap/config/a.ts", "src/core/lib/f1.ts", 2),
+            edge("src/bootstrap/config/b.ts", "src/core/lib/f2.ts"),
+          ],
+        },
+        files("app", 6, (p) => edge(p, "src/bootstrap/config/b.ts")),
+        files("src/core/lib", 5, (p) => edge(p, "vendor/v.ts")),
+        { files: [file("vendor/v.ts"), file("other/o.ts")], edges: [edge("other/o.ts", "src/core/lib/f3.ts")] },
+      );
+
+      const report = judge(graph);
+
+      expect(report.violations[0]?.sourceComponent).toBe("src/bootstrap/config");
+      expect(report.violations[0]?.compositionRoot).toBe(true);
+    });
+  });
+
+  /**
    * callWeight 0 has four causes the weight alone cannot separate (a constant,
    * a type used as a value, a JSX element, a re-export — the
    * `FileDependencyEdge` docblock), so the evidence rows carry the export names

@@ -432,6 +432,13 @@ export interface ComponentStableDependencyViolation {
   fileEdgeCount: number;
   /** The carrying file edges, heaviest call weight first, capped at `COMPONENT_EVIDENCE_FILE_EDGE_LIMIT`. */
   fileEdges: ComponentDependencyFileEdge[];
+  /**
+   * The source component is, or lives inside, a declared composition root
+   * (`DECLARED_COMPOSITION_ROOT_COMPONENTS`, bd tea-rags-mcp-r8hme.51): the
+   * report's `StableDependencyViolationEvidence.compositionRoot` carries the
+   * contract-side meaning. Present only when true.
+   */
+  compositionRoot?: true;
 }
 
 /** Every violation into one unstable target component, as one finding. */

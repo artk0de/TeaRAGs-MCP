@@ -90,6 +90,15 @@ export interface StableDependencyViolationEvidence {
   fileEdgeCount: number;
   /** The carrying file edges, heaviest call weight first, capped at 5. */
   fileEdges: ArchitectureFileEdge[];
+  /**
+   * The source component is, or lives inside, a declared composition root
+   * (`DECLARED_COMPOSITION_ROOT_COMPONENTS` in the boundary-diagnostics
+   * domain, bd tea-rags-mcp-r8hme.51): the root's JOB is assembling unstable
+   * concretes, so an SDP delta sourced from it is inherent to that job. The
+   * violation still stands — this is triage data for the reader, never a
+   * suppression (the `foundationTerminal` spirit). Present only when true.
+   */
+  compositionRoot?: true;
 }
 
 /**
