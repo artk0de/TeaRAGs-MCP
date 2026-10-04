@@ -18,16 +18,18 @@ export function typeAbstractnessOf(
   relPath: string,
   languageId: string,
 ): TypeAbstractnessCensus | undefined {
+  const { walker } = language;
+  if (!walker) throw new TypeError(`typeAbstractnessOf: the ${languageId} provider carries no walker`);
   const parser = new Parser();
   parser.setLanguage(grammar as Parser.Language);
   const rootNode = materializeTree(parser.parse(src).rootNode, src);
   const tree = { rootNode };
   const chunks = collectSymbols(
     tree,
-    (node) => language.walker.nameOf(node),
+    (node) => walker.nameOf(node),
     language.kernel.scopeSeparator ?? ".",
     language.kernel.disambiguateOverloads ?? false,
     new DefaultSymbolIdComposer(),
   );
-  return language.walker.walk({ tree, code: src, relPath, language: languageId, chunks }).typeAbstractness;
+  return walker.walk({ tree, code: src, relPath, language: languageId, chunks }).typeAbstractness;
 }
