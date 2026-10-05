@@ -612,7 +612,9 @@
               "type": "str"
             }
           ]
-        }
+        },
+        "paramNames": ["name"],
+        "paramCoordinate": "pkg/base.py::Named#__init__"
       },
       {
         "symbolId": "Named#describe",
@@ -714,7 +716,15 @@
         "line": 16,
         "ownerSymbolId": "Named#describe"
       }
-    ]
+    ],
+    "classFieldParamLinks": {
+      "pkg/base.py::Named": {
+        "name": {
+          "method": "__init__",
+          "param": "name"
+        }
+      }
+    }
   },
   "consumer.py": {
     "relPath": "pkg/consumer.py",
@@ -948,7 +958,9 @@
               "type": "str"
             }
           ]
-        }
+        },
+        "paramNames": ["name", "email"],
+        "paramCoordinate": "pkg/models.py::User#__init__"
       },
       {
         "symbolId": "User#handle",
@@ -1189,7 +1201,15 @@
         "typeName": "str",
         "typeSource": "annotation"
       }
-    ]
+    ],
+    "classFieldParamLinks": {
+      "pkg/models.py::User": {
+        "email": {
+          "method": "__init__",
+          "param": "email"
+        }
+      }
+    }
   },
   "mro_lib.py": {
     "relPath": "pkg/mro_lib.py",
@@ -1270,7 +1290,9 @@
               "type": "str"
             }
           ]
-        }
+        },
+        "paramNames": ["name"],
+        "paramCoordinate": "pkg/mro_lib.py::Registry#__init__"
       }
     ],
     "fileScope": [],

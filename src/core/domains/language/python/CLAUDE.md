@@ -608,10 +608,13 @@
   dunder); `_name` is a convention, not a keyword, and stays unrecorded. The
   dispatch cascade reads it under the ENCLOSING-CLASS access rule it injects,
   never the explicit-receiver default — mangling makes `obj.__x` legal inside a
-  class of the declaring name. No `acceptsBlock` or `paramNames`; the block
-  narrower keeps every candidate on absent evidence. A `@property` is not marked
-  in any way — an attribute read is not a call site, so no `CallRef` ever
-  reaches its signature.
+  class of the declaring name. No `acceptsBlock`; the block narrower keeps every
+  candidate on absent evidence. `paramNames` is NOT a signature fact here: the
+  param-arg-types facet pass writes it on `__init__` chunks only, always paired
+  with `paramCoordinate` (`<relPath>::<dotted class FQ>#__init__`), because a
+  Python symbolId is not the fold coordinate and the trajectory never re-spells
+  one. A `@property` is not marked in any way — an attribute read is not a call
+  site, so no `CallRef` ever reaches its signature.
 - **The class-body reader emits only on project-class EVIDENCE, and is SILENT
   rather than external otherwise.** A bare `X()` and `X.as_manager()` both take
   `declared ∪ importBound` — an import binding is enough because the emitted

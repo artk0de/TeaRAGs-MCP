@@ -9,10 +9,12 @@
 import { createIdentifierDeclarationFacetPass, type ExtractionFacetPass } from "../../kernel/index.js";
 import { pythonAnnotationTypeFacetPass } from "./passes/annotation-type-facts.js";
 import { PYTHON_IDENTIFIER_DECLARATION_SYNTAX } from "./passes/identifier-declarations.js";
+import { pythonParamArgTypesFacetPass } from "./passes/python-param-arg-types.js";
 import { pythonTypeAbstractnessFacetPass } from "./passes/type-abstractness.js";
 
 export const PYTHON_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
   pythonAnnotationTypeFacetPass,
   pythonTypeAbstractnessFacetPass,
   createIdentifierDeclarationFacetPass(PYTHON_IDENTIFIER_DECLARATION_SYNTAX),
+  pythonParamArgTypesFacetPass,
 ];

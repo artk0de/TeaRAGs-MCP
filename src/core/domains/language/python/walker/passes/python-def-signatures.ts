@@ -43,10 +43,10 @@
  * it as `private` would drop legitimate candidates. A module-level `__name`
  * is not mangled and stays unrecorded too.
  *
- * Python does NOT fill `acceptsBlock` or `paramNames`: there is no block
- * argument, and nothing on this path joins an argument POSITION to a parameter
- * NAME. `BlockNarrower` keeps every candidate on absent evidence, so it is
- * inert for Python rather than wrong.
+ * Python does NOT fill `acceptsBlock` here: there is no block argument.
+ * `BlockNarrower` keeps every candidate on absent evidence, so it is inert for
+ * Python rather than wrong. `paramNames` is filled by its own facet pass
+ * (`python-param-arg-types.ts`) from {@link pythonPositionalParamNames}.
  *
  * A `@property` getter is NOT marked in any way: an attribute read is not a
  * call site, so the walker emits no `CallRef` for it and nothing ever narrows
@@ -169,6 +169,52 @@ function pythonDefSignature(defNode: AstNode, dropReceiver: boolean): PythonDefS
     return { arity };
   }
   return { arity, kwargs: { required, optional: [...nameable, ...keywordDefaults], hasSplat: hasKwargSplat } };
+}
+
+/**
+ * The LEADING run of required positional parameter names of one
+ * `function_definition`, in declaration order — what maps a call site's
+ * argument POSITION to a parameter NAME at the parameter-typing barrier (bd
+ * tea-rags-mcp-m99j1.1.17).
+ *
+ * `dropReceiver` drops the implicit `self` / `cls` exactly as
+ * {@link pythonDefSignature} does. The run stops at the first parameter that
+ * is not a plain required positional — a default, a splat, the keyword-only
+ * `*` — because past it a call site's Nth argument no longer pins the Nth
+ * parameter. The positional-only `/` marker breaks nothing: the slots left of
+ * it are still positional.
+ */
+export function pythonPositionalParamNames(defNode: AstNode, dropReceiver: boolean): string[] {
+  const params = defNode.childForFieldName("parameters");
+  if (params === null) return [];
+  const names: string[] = [];
+  let first = true;
+  for (const child of params.namedChildren) {
+    if (child.type === "positional_separator") continue;
+    if (child.type !== "identifier" && child.type !== "typed_parameter") break;
+    const name = paramName(child);
+    if (first) {
+      first = false;
+      if (dropReceiver && (name === "self" || name === "cls")) continue;
+    }
+    names.push(name);
+  }
+  return names;
+}
+
+/** Every parameter NAME a def binds, receiver included — splats and defaults too. */
+export function pythonBoundParamNames(defNode: AstNode): string[] {
+  const params = defNode.childForFieldName("parameters");
+  if (params === null) return [];
+  const names: string[] = [];
+  for (const child of params.namedChildren) {
+    if (PLAIN_PARAM_TYPES.has(child.type)) names.push(paramName(child));
+    else if (child.type === "list_splat_pattern" || child.type === "dictionary_splat_pattern") {
+      const inner = child.namedChildren[0];
+      if (inner?.type === "identifier") names.push(inner.text);
+    }
+  }
+  return names;
 }
 
 /**

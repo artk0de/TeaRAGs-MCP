@@ -1217,7 +1217,7 @@ function extractTypeName(typeField: AstNode): string | null {
  * Anything else (call result, subscript, lambda) returns `null` and
  * the binding is dropped — there's no class name to attribute to.
  */
-function extractConstructorTypeName(fnNode: AstNode): string | null {
+export function extractConstructorTypeName(fnNode: AstNode): string | null {
   if (fnNode.type === "identifier") return fnNode.text;
   if (fnNode.type === "attribute") return fnNode.text;
   return null;
@@ -1233,7 +1233,7 @@ function extractConstructorTypeName(fnNode: AstNode): string | null {
  * unknown return type as a field type (which would let the resolver fabricate
  * a phantom external edge `make_thing#method`).
  */
-function isCapWordsConstructor(typeName: string): boolean {
+export function isCapWordsConstructor(typeName: string): boolean {
   const finalSegment = typeName.slice(typeName.lastIndexOf(".") + 1);
   return /^[A-Z]/.test(finalSegment);
 }
