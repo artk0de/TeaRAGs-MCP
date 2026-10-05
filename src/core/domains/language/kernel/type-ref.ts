@@ -42,6 +42,10 @@ export function typeRefEquals(a: TypeRef, b: TypeRef): boolean {
     const other = (b as { members: readonly TypeRef[] }).members;
     return a.members.length === other.length && a.members.every((m, i) => typeRefEquals(m, other[i]));
   }
+  if (a.form === "tuple") {
+    const other = (b as { elements: readonly TypeRef[] }).elements;
+    return a.elements.length === other.length && a.elements.every((e, i) => typeRefEquals(e, other[i]));
+  }
   return a.name === (b as { name: string }).name;
 }
 
@@ -80,11 +84,26 @@ export function typeRefUnionOf(members: readonly TypeRef[]): TypeRef | undefined
  * Container arms are returned untouched — unwrapping an element type is
  * `returnTypeOf`'s job, and doing it here would decide the member semantics in
  * the wrong place.
+ *
+ * A tuple contributes no arm, like nil: it is read by position
+ * (`typeRefTupleElement`), never dispatched on, so a call on it reaches no
+ * in-project definition.
  */
 export function typeRefNonNilArms(ref: TypeRef): readonly TypeRef[] {
-  if (ref.form === "nil") return [];
+  if (ref.form === "nil" || ref.form === "tuple") return [];
   if (ref.form !== "union") return [ref];
-  return ref.members.filter((m) => m.form !== "nil");
+  return ref.members.filter((m) => m.form !== "nil" && m.form !== "tuple");
+}
+
+/**
+ * The element type at `index` of a tuple ref — the one way a positional product
+ * is taken apart (`a, b = pair`). `null` for an index outside the tuple and for
+ * any non-tuple ref: a destructuring that cannot be read positionally states
+ * nothing, and the caller declines exactly as it would on an unknown value.
+ */
+export function typeRefTupleElement(ref: TypeRef, index: number): TypeRef | null {
+  if (ref.form !== "tuple") return null;
+  return ref.elements[index] ?? null;
 }
 
 /**

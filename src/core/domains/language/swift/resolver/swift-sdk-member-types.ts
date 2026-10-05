@@ -393,7 +393,13 @@ function withArgs(nominal: SwiftNominalTypeRef, args: readonly (TypeRef | undefi
  * itself known only as the member the BOUND declares, so the mark carries.
  */
 export function boundedBy(receiver: TypeRef, type: TypeRef | undefined): TypeRef | undefined {
-  if (type === undefined || receiver.form === "union" || receiver.form === "container" || receiver.form === "nil") {
+  if (
+    type === undefined ||
+    receiver.form === "union" ||
+    receiver.form === "container" ||
+    receiver.form === "tuple" ||
+    receiver.form === "nil"
+  ) {
     return type;
   }
   if (receiver.upperBound !== true || (type.form !== "class" && type.form !== "instance")) return type;

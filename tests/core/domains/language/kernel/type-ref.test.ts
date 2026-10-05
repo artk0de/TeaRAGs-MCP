@@ -6,6 +6,7 @@ import {
   typeRefEquals,
   typeRefNonNilArms,
   typeRefReceiverForm,
+  typeRefTupleElement,
   typeRefUnionOf,
 } from "../../../../../src/core/domains/language/kernel/type-ref.js";
 import {
@@ -53,6 +54,31 @@ describe("kernel TypeRef algebra", () => {
     expect(typeRefReceiverForm({ form: "union", members: [firm, NIL_TYPE_REF] })).toEqual(firm);
     const twoArm: TypeRef = { form: "union", members: [firm, user] };
     expect(typeRefReceiverForm(twoArm)).toEqual(twoArm);
+  });
+
+  it("compares tuples element-wise, length-sensitive", () => {
+    const pair: TypeRef = { form: "tuple", elements: [firm, user] };
+    expect(typeRefEquals(pair, { form: "tuple", elements: [firm, user] })).toBe(true);
+    expect(typeRefEquals(pair, { form: "tuple", elements: [user, firm] })).toBe(false);
+    expect(typeRefEquals(pair, { form: "tuple", elements: [firm] })).toBe(false);
+    expect(typeRefEquals(pair, { form: "union", members: [firm, user] })).toBe(false);
+  });
+
+  it("reads a tuple element by position, null out of range or off a non-tuple", () => {
+    const pair: TypeRef = { form: "tuple", elements: [firm, user] };
+    expect(typeRefTupleElement(pair, 1)).toEqual(user);
+    expect(typeRefTupleElement(pair, 0)).toEqual(firm);
+    expect(typeRefTupleElement(pair, 2)).toBeNull();
+    expect(typeRefTupleElement(pair, -1)).toBeNull();
+    expect(typeRefTupleElement(firm, 0)).toBeNull();
+    expect(typeRefTupleElement({ form: "container", element: firm }, 0)).toBeNull();
+  });
+
+  it("never offers a tuple as a member receiver", () => {
+    const pair: TypeRef = { form: "tuple", elements: [firm, user] };
+    expect(typeRefNonNilArms(pair)).toEqual([]);
+    expect(typeRefReceiverForm(pair)).toBeUndefined();
+    expect(typeRefReceiverForm({ form: "union", members: [firm, pair] })).toEqual(firm);
   });
 });
 

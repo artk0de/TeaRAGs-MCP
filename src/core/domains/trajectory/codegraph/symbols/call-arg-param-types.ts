@@ -50,6 +50,10 @@ function typeRefEquals(a: RubyTypeRef, b: RubyTypeRef): boolean {
     const other = (b as { members: RubyTypeRef[] }).members;
     return a.members.length === other.length && a.members.every((m, i) => typeRefEquals(m, other[i]));
   }
+  if (a.form === "tuple") {
+    const other = (b as { elements: readonly RubyTypeRef[] }).elements;
+    return a.elements.length === other.length && a.elements.every((e, i) => typeRefEquals(e, other[i]));
+  }
   return a.name === (b as { name: string }).name;
 }
 
