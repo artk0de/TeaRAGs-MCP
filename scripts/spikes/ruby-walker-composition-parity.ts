@@ -1,47 +1,55 @@
 /**
- * Ruby native-vs-composed walker parity (E1 seam 0, bd tea-rags-mcp-fmcly).
+ * Ruby walker before/after parity (E1 seam 0, bd tea-rags-mcp-fmcly; rebuilt by
+ * bd tea-rags-mcp-0qaht.58).
  *
- * `scripts/codegraph-chain-tally.ts` has chain specs for python and java only, so
- * there is no tally gate for Ruby. This is the Ruby half of the seam's
- * byte-identical gate: for every Ruby file in a corpus it runs the NATIVE monolith
- * (`extractFromRubyFile`) and the walker the provider actually hands out
+ * The identity gate for a change that must not move Ruby extraction output. For
+ * every Ruby file in a corpus it runs the walker the provider hands out
  * (`LanguageFactory.create("ruby").walker.walk`, composed through
- * `composeExtractionWalker`) over the SAME materialized tree, then compares
- * `JSON.stringify` of both — the exact form the codegraph NDJSON spill sees, so a
- * channel materialised as `{}` where the native emitted nothing surfaces as a
- * mismatch instead of passing a deep compare.
+ * `composeExtractionWalker`) from TWO source trees over the SAME materialized tree
+ * and the SAME symbol chunks, then compares `JSON.stringify` of both — the exact
+ * form the codegraph NDJSON spill sees, so a channel materialised as `{}` where the
+ * other side emitted nothing surfaces as a mismatch instead of passing a deep compare.
  *
- * Expected while `RUBY_EXTRACTION_PASSES` is empty: `mismatches 0`. Once passes
- * exist the two sides legitimately differ and this becomes a diff tool, not a gate.
+ * The AFTER side is this tree. The BEFORE side is either
+ *   - `--before-ref <git ref>` (default `main`): the ref's `src/` extracted with
+ *     `git archive` under `node_modules/.cache/ruby-walker-parity/<sha>/`, so its
+ *     bare package imports resolve to this checkout's `node_modules`; or
+ *   - `--before-root <abs checkout>`: another checkout's `src/` loaded in place.
+ * tsx transpiles the before tree's `.ts` without type-checking it.
  *
- * `--before-root <abs checkout>` turns the same run into a CROSS-CHECKOUT gate, which
- * is what a relocation seam actually needs: the native side becomes
- * `extractFromRubyFile` dynamically imported from
- * `<before-root>/src/core/domains/language/ruby/walker/walker.ts` — another checkout of
- * this repo, pinned at the pre-relocation commit — while the composed side stays the
- * current tree. Both sides parse the SAME file text and the SAME materialized tree, so
- * `mismatches 0` means the relocated code returns byte-identical JSON to the code it
- * replaced, which the same-tree mode cannot show (there both sides run the new store).
- * The flag is optional; without it the run is the original same-tree identity check.
+ * Why not the original native-vs-composed comparison: it compared the native
+ * monolith (`extractFromRubyFile`) with the composed walker, which was an
+ * identity only while `RUBY_EXTRACTION_PASSES` was empty. Once passes existed the
+ * two sides legitimately differed (147/147 sinatra mismatches), so the gate now
+ * compares like with like — composed walker against composed walker.
+ *
+ * `--self-check` proves the comparison is not blind: the BEFORE side is fed the
+ * file with no symbol chunks, which moves every enclosing-symbol id it emits, and
+ * the run passes only when that forced change produces mismatches.
  *
  * Usage:
  *   npx tsx scripts/spikes/ruby-walker-composition-parity.ts \
  *     --corpus ~/Dev/Tools/tea-rags-bench/corpora/mastodon [--limit 500] \
- *     [--before-root /abs/path/to/pre-relocation/checkout]
+ *     [--before-ref main | --before-root /abs/path/to/checkout] [--self-check]
  */
-import { readdirSync, readFileSync } from "node:fs";
-import { extname, join, relative, resolve as resolvePath, sep } from "node:path";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { dirname, extname, join, relative, resolve as resolvePath, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import Parser from "tree-sitter";
 
 import { collectSymbols, DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
-import { extractFromRubyFile } from "../../src/core/domains/language/ruby/index.js";
 import { loadCodegraphGrammarSync } from "../../src/core/domains/trajectory/codegraph/symbols/file-extractor.js";
 import { CODEGRAPH_LANGUAGES } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { materializeTree } from "../../src/core/infra/materialize.js";
 import { resolveCheckoutCommit } from "../lib/checkout-commit.js";
 
 const SKIP_DIRECTORIES = new Set(["node_modules", "vendor", "build", "dist", "tmp", "log", "coverage"]);
+const REPO_ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "../..");
+const LANGUAGE_INDEX = "src/core/domains/language/index.ts";
+
+type RubyWalker = NonNullable<ReturnType<LanguageFactory["create"]>["walker"]>;
 
 function rubyFiles(root: string, limit: number): string[] {
   const found: string[] = [];
@@ -60,20 +68,33 @@ function rubyFiles(root: string, limit: number): string[] {
   return found.sort();
 }
 
-/**
- * The native half of the comparison: this tree's own `extractFromRubyFile`, or — with
- * `--before-root` — the one exported by another checkout's `ruby/walker/walker.ts`.
- * The import is dynamic because the path is only known at runtime; tsx compiles the
- * other checkout's `.ts` the same way it compiles this script.
- */
-async function nativeExtractor(beforeRoot: string | undefined): Promise<typeof extractFromRubyFile> {
-  if (beforeRoot === undefined) return extractFromRubyFile;
-  const modulePath = resolvePath(beforeRoot, "src/core/domains/language/ruby/walker/walker.ts");
-  const loaded = (await import(modulePath)) as { extractFromRubyFile?: typeof extractFromRubyFile };
-  if (typeof loaded.extractFromRubyFile !== "function") {
-    throw new Error(`--before-root checkout exports no extractFromRubyFile: ${modulePath}`);
+/** The before tree for a git ref: its `src/` extracted once per commit, reused after. */
+function extractRef(ref: string): { root: string; commit: string } {
+  const commit = execFileSync("git", ["-C", REPO_ROOT, "rev-parse", "--verify", `${ref}^{commit}`], {
+    encoding: "utf8",
+  }).trim();
+  const root = join(REPO_ROOT, "node_modules", ".cache", "ruby-walker-parity", commit);
+  if (!existsSync(join(root, LANGUAGE_INDEX))) {
+    mkdirSync(root, { recursive: true });
+    const archive = execFileSync("git", ["-C", REPO_ROOT, "archive", commit, "src"], { maxBuffer: 1 << 30 });
+    execFileSync("tar", ["-x", "-C", root], { input: archive });
   }
-  return loaded.extractFromRubyFile;
+  return { root, commit };
+}
+
+/** The before side's composed Ruby walker, loaded from `<root>/src` as its own module graph. */
+async function beforeWalker(root: string): Promise<RubyWalker> {
+  const modulePath = resolvePath(root, LANGUAGE_INDEX);
+  if (realpathSync(modulePath) === realpathSync(resolvePath(REPO_ROOT, LANGUAGE_INDEX))) {
+    throw new Error(`before tree is this tree (${root}) — the comparison would be an identity by construction`);
+  }
+  const loaded = (await import(modulePath)) as { LanguageFactory?: typeof LanguageFactory };
+  if (typeof loaded.LanguageFactory !== "function") {
+    throw new Error(`before tree exports no LanguageFactory: ${modulePath}`);
+  }
+  const { walker } = new loaded.LanguageFactory().create("ruby");
+  if (!walker) throw new Error(`before tree's ruby provider exposes no walker: ${modulePath}`);
+  return walker;
 }
 
 async function main(): Promise<void> {
@@ -84,11 +105,14 @@ async function main(): Promise<void> {
   };
   const root = resolvePath(read("--corpus") ?? process.cwd());
   const limit = Number(read("--limit") ?? 500);
-  const beforeRoot = read("--before-root");
-  // The other checkout's revision, read before the walk: "native from <path>"
-  // stops meaning anything the moment that checkout moves on.
-  const beforeCommit = resolveCheckoutCommit(beforeRoot);
-  const extractNative = await nativeExtractor(beforeRoot);
+  const selfCheck = argv.includes("--self-check");
+  const beforeRootFlag = read("--before-root");
+  const before =
+    beforeRootFlag === undefined
+      ? extractRef(read("--before-ref") ?? "main")
+      : { root: resolvePath(beforeRootFlag), commit: resolveCheckoutCommit(beforeRootFlag) ?? "unknown revision" };
+  const walkBefore = await beforeWalker(before.root);
+
   const config = CODEGRAPH_LANGUAGES[".rb"];
   const factory = new LanguageFactory();
   const { walker } = factory.create(config.language);
@@ -109,14 +133,17 @@ async function main(): Promise<void> {
       composer,
     );
     const input = { tree, code, relPath, language: config.language, chunks };
+    const beforeInput = selfCheck ? { ...input, chunks: [] } : input;
     compared++;
-    if (JSON.stringify(extractNative(input)) !== JSON.stringify(walker.walk(input))) mismatches.push(relPath);
+    if (JSON.stringify(walkBefore.walk(beforeInput)) !== JSON.stringify(walker.walk(input))) mismatches.push(relPath);
   }
-  const nativeLabel =
-    beforeRoot === undefined ? "" : ` · native from ${beforeRoot}@${beforeCommit ?? "unknown revision"}`;
-  console.log(`ruby walker parity · corpus ${root}${nativeLabel}`);
-  console.log(`  compared ${compared} files · mismatches ${mismatches.length}`);
+  console.log(`ruby walker parity · corpus ${root} · before ${before.root}@${before.commit}`);
+  console.log(`  compared ${compared} files · mismatches ${mismatches.length}${selfCheck ? " (self-check)" : ""}`);
   for (const relPath of mismatches.slice(0, 5)) console.log(`  MISMATCH ${relPath}`);
+  if (selfCheck) {
+    console.log(mismatches.length > 0 ? "  self-check PASS: a forced change is visible" : "  self-check FAIL: blind");
+    process.exit(mismatches.length > 0 ? 0 : 1);
+  }
   process.exit(mismatches.length === 0 ? 0 : 1);
 }
 
