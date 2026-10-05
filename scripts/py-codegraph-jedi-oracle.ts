@@ -47,31 +47,23 @@ import {
   type ModuleReexport,
 } from "../src/core/contracts/types/codegraph.js";
 import type {
-  DispatchResolverComponent,
   SymbolResolutionOutcome,
   SymbolResolutionStrategy,
   TypeRef,
 } from "../src/core/contracts/types/language.js";
 import { ExternalCallClassifier } from "../src/core/domains/language/external-classifier.js";
-import { ConeDispatchResolver, DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
+import { DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
 import { dispatchFanoutPolicyFor } from "../src/core/domains/language/kernel/fanout-policy.js";
-import {
-  PythonCallableParamDispatchResolver,
-  PythonChainAnswerProbe,
-  pythonDynamicDispatchEnabled,
-  PythonDynamicDispatchResolver,
-  PythonTableDispatchResolver,
-} from "../src/core/domains/language/python/resolver/dispatch/index.js";
+import { PythonChainAnswerProbe } from "../src/core/domains/language/python/resolver/dispatch/index.js";
+import { createPythonUnionDispatchPorts } from "../src/core/domains/language/python/resolver/dispatch/python-union-ports.js";
 import {
   createPythonSymbolResolutionChain,
   PythonImportFileMapper,
 } from "../src/core/domains/language/python/resolver/index.js";
-import { PythonCallableParamTargets } from "../src/core/domains/language/python/resolver/python-callable-param-targets.js";
+import { PythonAncestorLinearizerCache } from "../src/core/domains/language/python/resolver/python-ancestor-policy.js";
+import { createPythonDispatchComponents } from "../src/core/domains/language/python/resolver/python-dispatch-components.js";
 import { PythonExternalVocabulary } from "../src/core/domains/language/python/resolver/python-external-vocabulary.js";
-import {
-  CONE_MAX_DEFAULT,
-  PythonConeTypeLocator,
-} from "../src/core/domains/language/python/resolver/strategies/index.js";
+import { CONE_MAX_DEFAULT } from "../src/core/domains/language/python/resolver/strategies/index.js";
 import { pythonEnclosingClass } from "../src/core/domains/language/python/resolver/strategies/shared.js";
 import { resolveDispatchViaComponents, resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
 import { MapHierarchyView } from "../src/core/domains/trajectory/codegraph/hierarchy-view.js";
@@ -412,25 +404,27 @@ export async function walkCorpus(
   // here as there, so a flag-off run composes the cone alone on BOTH sides and
   // `dispatchDrift` keeps measuring the composition rather than the flag.
   const parityMapper = new PythonImportFileMapper();
-  const parityExternal = new ExternalCallClassifier(new PythonExternalVocabulary(parityMapper));
+  const parityLinearizers = new PythonAncestorLinearizerCache(parityMapper, DEFAULT_AMBIGUOUS_RESOLVE_MODE);
+  const parityExternal = new ExternalCallClassifier(
+    new PythonExternalVocabulary(parityMapper, parityLinearizers, DEFAULT_AMBIGUOUS_RESOLVE_MODE),
+  );
   // The dict-table component leads, as in production (bd tea-rags-mcp-pbwd).
   // This walk threads no `dispatchTables` / `callbackParams` into its contexts
   // and skips every `call.dispatch` site before the fan pass, so the component
   // answers nothing here; it is composed so the stack stays production's order.
   const parityTableProbe = new PythonChainAnswerProbe(buildPythonChain());
-  const parityComponents: DispatchResolverComponent[] = [
-    new PythonTableDispatchResolver((call, ctx) => parityTableProbe.resolve(call, ctx), parityMapper),
-    // P2 (bd m99j1.1.19) — production's second component.
-    new PythonCallableParamDispatchResolver(new PythonCallableParamTargets(parityMapper)),
-    new ConeDispatchResolver(new PythonConeTypeLocator({ mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE }), CONE_MAX_DEFAULT),
-  ];
-  if (pythonDynamicDispatchEnabled(process.env.CODEGRAPH_PY_DYNAMIC_DISPATCH)) {
-    parityComponents.push(
-      new PythonDynamicDispatchResolver(new PythonChainAnswerProbe(buildPythonChain()), (call, ctx) =>
-        parityExternal.targetsCoreAmbiguousMember(call, ctx),
-      ),
-    );
-  }
+  // The ONE factory `PythonCallResolver` composes with — table, callableParam,
+  // union, cone, [dynamic] — so this stack cannot drift from production's list.
+  const parityComponents = createPythonDispatchComponents({
+    cfg: { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE, coneMax: CONE_MAX_DEFAULT },
+    coneMax: CONE_MAX_DEFAULT,
+    mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+    mapper: parityMapper,
+    linearizers: parityLinearizers,
+    unionPorts: createPythonUnionDispatchPorts(parityMapper, parityLinearizers),
+    probe: parityTableProbe,
+    external: parityExternal,
+  });
   const parityDispatch = {
     resolveDispatch: (call: CallRef, ctx: CallContext) => resolveDispatchViaComponents(parityComponents, call, ctx),
   };
