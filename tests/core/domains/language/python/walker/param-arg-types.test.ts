@@ -302,3 +302,171 @@ describe("python param-arg types — through the fold and the resolver", () => {
     expect(state.classFieldTypesByClassKey[VIEW_KEY]).toBeUndefined();
   });
 });
+
+/**
+ * bd tea-rags-mcp-m99j1.1.52 — a constructor argument is typed from three more
+ * sources: an annotated parameter of the enclosing def, `self.<field>` of a
+ * class whose field type the file states, and a module-level value. Each one is
+ * silent where the name might mean something else at the call site.
+ */
+describe("python param-arg types — widened argument typing (m99j1.1.52)", () => {
+  const HELPER = ["class Helper:", "    def __init__(self, req):", "        self.req = req"];
+  const argTypesOf = (lines: readonly string[]): unknown =>
+    walk("app/w.py", [...lines, "", ...HELPER]).knownTargetCallArgs?.find((r) =>
+      r.targets.includes("app/w.py::Helper#__init__"),
+    )?.argTypes;
+  const REQ = [{ form: "instance", name: "HttpRequest" }];
+
+  it("types an argument that is an annotated parameter of the enclosing def", () => {
+    expect(argTypesOf(["def handle(request: HttpRequest):", "    return Helper(request)"])).toEqual(REQ);
+  });
+
+  it("collapses Optional[A] and A | None to A, and reads a forward reference", () => {
+    expect(argTypesOf(["def handle(request: Optional[HttpRequest]):", "    return Helper(request)"])).toEqual(REQ);
+    expect(argTypesOf(["def handle(request: HttpRequest | None = None):", "    return Helper(request)"])).toEqual(REQ);
+    expect(argTypesOf(['def handle(request: "HttpRequest"):', "    return Helper(request)"])).toEqual(REQ);
+  });
+
+  it("carries an aliased import's source name, as the constructor arm does", () => {
+    expect(
+      argTypesOf([
+        "from django.http import HttpRequest as Req",
+        "def handle(request: Req):",
+        "    return Helper(request)",
+      ]),
+    ).toEqual(REQ);
+  });
+
+  it("declines a builtin annotation — the constructor arm's CapWords gate, so no builtin type is fed", () => {
+    expect(argTypesOf(["def handle(request: str):", "    return Helper(request)"])).toBeUndefined();
+    expect(
+      argTypesOf(["class Owner:", "    req: int", "    def run(self):", "        return Helper(self.req)"]),
+    ).toBeUndefined();
+  });
+
+  it("declines a two-arm union, a class object, and a splat parameter", () => {
+    expect(
+      argTypesOf(["def handle(request: Union[HttpRequest, Other]):", "    return Helper(request)"]),
+    ).toBeUndefined();
+    expect(argTypesOf(["def handle(request: type[HttpRequest]):", "    return Helper(request)"])).toBeUndefined();
+    expect(argTypesOf(["def handle(*request: HttpRequest):", "    return Helper(request)"])).toBeUndefined();
+  });
+
+  it("declines a parameter the body rebinds, or a lambda / comprehension shadows", () => {
+    expect(
+      argTypesOf(["def handle(request: HttpRequest):", "    request = wrap(request)", "    return Helper(request)"]),
+    ).toBeUndefined();
+    expect(
+      argTypesOf(["def handle(request: HttpRequest):", "    return map(lambda request: Helper(request), xs)"]),
+    ).toBeUndefined();
+    expect(
+      argTypesOf(["def handle(request: HttpRequest):", "    return [Helper(request) for request in xs]"]),
+    ).toBeUndefined();
+  });
+
+  it("does not read an outer def's annotated parameter inside a nested def", () => {
+    expect(
+      argTypesOf([
+        "def outer(request: HttpRequest):",
+        "    def inner(request):",
+        "        return Helper(request)",
+        "    return inner",
+      ]),
+    ).toBeUndefined();
+  });
+
+  it("types self.<field> from a class-body annotation or an annotated parameter copy", () => {
+    const viaClassBody = [
+      "class Owner:",
+      "    req: HttpRequest",
+      "    def run(self):",
+      "        return Helper(self.req)",
+    ];
+    expect(argTypesOf(viaClassBody)).toEqual(REQ);
+    const viaParamCopy = [
+      "class Owner:",
+      "    def __init__(self, req: HttpRequest):",
+      "        self.req = req",
+      "    def run(self):",
+      "        return Helper(self.req)",
+    ];
+    expect(argTypesOf(viaParamCopy)).toEqual(REQ);
+  });
+
+  it("types self.<field> every assignment binds to one constructor, and declines a mixed field", () => {
+    const ctor = [
+      "class Owner:",
+      "    def __init__(self):",
+      "        self.req = HttpRequest()",
+      "    def run(self):",
+      "        return Helper(self.req)",
+    ];
+    expect(argTypesOf(ctor)).toEqual(REQ);
+    const mixed = [
+      "class Owner:",
+      "    def __init__(self):",
+      "        self.req = HttpRequest()",
+      "    def reset(self):",
+      "        self.req = None",
+      "    def run(self):",
+      "        return Helper(self.req)",
+    ];
+    expect(argTypesOf(mixed)).toBeUndefined();
+  });
+
+  it("declines self.<field> whose annotations disagree, and another class's field", () => {
+    const conflicting = [
+      "class Owner:",
+      "    req: HttpRequest",
+      "    def __init__(self):",
+      "        self.req: Other = make()",
+      "    def run(self):",
+      "        return Helper(self.req)",
+    ];
+    expect(argTypesOf(conflicting)).toBeUndefined();
+    const otherClass = [
+      "class Typed:",
+      "    req: HttpRequest",
+      "class Owner:",
+      "    def run(self):",
+      "        return Helper(self.req)",
+    ];
+    expect(argTypesOf(otherClass)).toBeUndefined();
+  });
+
+  it("types a module-level value, unless a def binds the name itself", () => {
+    expect(argTypesOf(["DEFAULT = HttpRequest()", "def run():", "    return Helper(DEFAULT)"])).toEqual(REQ);
+    expect(argTypesOf(["DEFAULT = HttpRequest()", "Helper(DEFAULT)"])).toEqual(REQ);
+    expect(
+      argTypesOf(["DEFAULT = HttpRequest()", "def run():", "    DEFAULT = make()", "    return Helper(DEFAULT)"]),
+    ).toBeUndefined();
+    expect(argTypesOf(["DEFAULT = HttpRequest()", "def run(DEFAULT):", "    return Helper(DEFAULT)"])).toBeUndefined();
+    expect(
+      argTypesOf([
+        "DEFAULT = HttpRequest()",
+        "def outer():",
+        "    DEFAULT = make()",
+        "    def inner():",
+        "        return Helper(DEFAULT)",
+      ]),
+    ).toBeUndefined();
+  });
+
+  it("declines a module-level name the module rebinds", () => {
+    expect(
+      argTypesOf(["DEFAULT = HttpRequest()", "DEFAULT = None", "def run():", "    return Helper(DEFAULT)"]),
+    ).toBeUndefined();
+  });
+
+  it("folds an annotated-parameter argument into the callee's parameter type", async () => {
+    const caller = walk("django/core/handlers/base.py", [
+      "from django.http.request import HttpRequest",
+      "from django.views.generic.base import View",
+      "",
+      "def handle(request: HttpRequest):",
+      "    return View(request)",
+    ]);
+    const state = await seal([viewFile(), requestFile(), caller]);
+    expect(state.paramTypes[`${VIEW_KEY}#__init__`]).toEqual({ request: { form: "instance", name: "HttpRequest" } });
+  });
+});
