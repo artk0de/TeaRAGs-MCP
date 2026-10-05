@@ -7,6 +7,7 @@ import {
 import { receiverIsAssignedLocal, type ExactChainAnswerProbe } from "../../../kernel/index.js";
 import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
 import { PYTHON_TYPESHED_MEMBERS } from "../../vocabulary/typeshed-members.js";
+import { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import {
   findPythonImportBinding,
   lookupPythonSymbolsByShortName,
@@ -40,8 +41,13 @@ const PYTHON_CLASS_HEAD = /^_*[A-Z]/;
  * positive — `serializer.is_valid()` attributed to `ConfirmationCode`, the very
  * row `python-local-binding.ts`'s terminal DROP exists to stop.
  */
-function pythonBoundToUntypeableCall(receiver: string, atLine: number, ctx: CallContext): boolean {
-  if (pythonBoundToForeignCall(receiver, atLine, ctx)) return true;
+function pythonBoundToUntypeableCall(
+  receiver: string,
+  atLine: number,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): boolean {
+  if (pythonBoundToForeignCall(receiver, atLine, ctx, mapper)) return true;
   const binding = nearestCallResultBinding(ctx.callResultBindings, receiver, atLine);
   if (binding === undefined) return false;
   const segments = binding.callee.split(".");
@@ -108,6 +114,7 @@ export function pythonDynamicFanoutSuppressed(
   ctx: CallContext,
   probe: ExactChainAnswerProbe,
   coreAmbiguous: (call: CallRef, ctx: CallContext) => boolean,
+  mapper: PythonImportFileMapper = new PythonImportFileMapper(),
 ): boolean {
   const { receiver } = call;
   if (receiver === null || receiver.length === 0) return true;
@@ -119,7 +126,7 @@ export function pythonDynamicFanoutSuppressed(
   if (resolveLocalBinding(ctx.localBindings, receiver, call.startLine) !== undefined) return true;
   if (findPythonImportBinding(ctx.imports, receiver) !== null) return true;
   if (receiverIsAssignedLocal(call, ctx)) return true;
-  if (pythonBoundToUntypeableCall(receiver, call.startLine, ctx)) return true;
+  if (pythonBoundToUntypeableCall(receiver, call.startLine, ctx, mapper)) return true;
   if (coreAmbiguous(call, ctx)) return true;
   if (PYTHON_BUILTINS.has(call.member)) return true;
   if (PYTHON_TYPESHED_MEMBERS.has(call.member)) return true;

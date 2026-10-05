@@ -165,7 +165,7 @@ class PythonConventionReceiverTyping implements ConventionReceiverTypingPorts {
     // back with nothing; when the callee's own head is a name the project does
     // not declare, that silence says the receiver's type is decided somewhere
     // the project cannot read — not that it is undecided.
-    return pythonBoundToForeignCall(receiver, call.startLine, ctx);
+    return pythonBoundToForeignCall(receiver, call.startLine, ctx, this.mapper);
   }
 
   private declaredBases(ctx: CallContext): ReadonlySet<string> {

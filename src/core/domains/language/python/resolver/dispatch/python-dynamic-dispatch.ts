@@ -1,5 +1,6 @@
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import { DynamicDispatchResolver, EnclosingClassPrivateAccess } from "../../../kernel/index.js";
+import { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { lookupPythonSymbolsByShortName } from "../strategies/shared.js";
 import type { PythonChainAnswerProbe } from "./python-chain-probe.js";
 import { pythonDynamicFanoutSuppressed } from "./python-dispatch-gates.js";
@@ -51,11 +52,13 @@ export class PythonDynamicDispatchResolver extends DynamicDispatchResolver {
   constructor(
     probe: PythonChainAnswerProbe,
     coreAmbiguous: (call: CallRef, ctx: CallContext) => boolean,
+    /** The resolver's ONE mapper — the foreign-head gate reads an import alias through it. */
+    mapper: PythonImportFileMapper = new PythonImportFileMapper(),
     /** Read ONCE at composition — never a per-call `process.env` lookup. */
     fanMax: number = resolvePythonDispatchFanMax(process.env.CODEGRAPH_PY_DISPATCH_FAN_MAX),
   ) {
     super({
-      suppressed: (call, ctx) => pythonDynamicFanoutSuppressed(call, ctx, probe, coreAmbiguous),
+      suppressed: (call, ctx) => pythonDynamicFanoutSuppressed(call, ctx, probe, coreAmbiguous, mapper),
       lookupByShortName: (call, ctx) =>
         lookupPythonSymbolsByShortName(ctx, call.member, { role: "callee" }).filter((def) =>
           isPythonInstanceMember(def.symbolId),

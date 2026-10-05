@@ -157,6 +157,26 @@ describe("PythonChainTypeSymbolResolutionStrategy — a class-body manager attri
     expect(strategy().attempt(call, ctx)).toEqual({ kind: "continue" });
   });
 
+  it("seeds a head an import ALIASED as the project class it names (m99j1.1.81)", () => {
+    // `from core.models.object_types import ObjectType as OT` — the spelled `OT`
+    // places nowhere; the binding says it is `ObjectType`.
+    const call: CallRef = {
+      callText: "OT.objects.get_for_model(model)",
+      receiver: "OT.objects",
+      member: "get_for_model",
+      startLine: 12,
+    };
+    const ctx = ctxWith({
+      imports: [
+        { importText: "core.models.object_types", importedNames: ["OT"], importedBindings: { OT: "ObjectType" } },
+      ],
+      classFieldTypesByClassKey: { "core/models/object_types.py::ObjectType": { objects: "ObjectTypeManager" } },
+    });
+    expect(strategy().attempt(call, ctx)).toEqual(
+      resolvedTo("core/models/object_types.py", "ObjectTypeManager#get_for_model"),
+    );
+  });
+
   it("yields to a local variable that shadows the class name", () => {
     const ctx = ctxWith({
       classFieldTypes: { ObjectType: { objects: "ObjectTypeManager" } },
