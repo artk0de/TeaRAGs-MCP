@@ -815,6 +815,101 @@ describe("diff-added subtraction", () => {
   });
 });
 
+describe("pre-existing edge attribution", () => {
+  // bd tea-rags-mcp-89k7k.1.13: cycles and leakingAbstraction judge the
+  // overlay edge AS READ (89k7k.14), so a changed file re-serves edges the
+  // index already holds — those findings must not be worded as diff-introduced.
+  const FACADE = "src/lib/index.ts";
+  const components = new Map([
+    ["src/lib/internal.ts", { name: "lib", instability: 0.3, distanceFromMainSequence: 0.3 }],
+  ]);
+  const facades = new Map([["lib", FACADE]]);
+
+  it("stamps preExisting on a cycle whose closing pair the indexed graph already holds, and says the edge pre-dates the diff", () => {
+    const result = runWith(
+      {
+        graph: graphOf([
+          ["src/a.ts", "src/b.ts"],
+          ["src/b.ts", "src/c.ts"],
+          ["src/c.ts", "src/a.ts"],
+        ]),
+      },
+      ["src/a.ts"],
+      [["src/a.ts", "src/b.ts"]],
+    );
+    const finding = result.findings.find((f) => f.detector === "cycles");
+    expect(finding?.subject).toBe("src/a.ts -> src/b.ts");
+    expect(finding?.preExisting).toBe(true);
+    expect(finding?.detail).toContain("pre-dates the diff");
+    expect(finding?.detail).not.toContain("the new edge");
+    expect(finding?.detail).not.toContain("the diff closes");
+  });
+
+  it("leaves a genuinely new cycle-closing pair unflagged, worded as the diff's new edge", () => {
+    const result = runWith(
+      {
+        graph: graphOf([
+          ["src/b.ts", "src/c.ts"],
+          ["src/c.ts", "src/a.ts"],
+        ]),
+      },
+      ["src/a.ts"],
+      [["src/a.ts", "src/b.ts"]],
+    );
+    const finding = result.findings.find((f) => f.detector === "cycles");
+    expect(finding?.preExisting).toBeUndefined();
+    expect("preExisting" in (finding ?? {})).toBe(false);
+    expect(finding?.detail).toBe(
+      "the diff closes a cycle: the new edge src/a.ts -> src/b.ts plus the indexed path back to src/a.ts",
+    );
+  });
+
+  it("stamps preExisting on a leak whose pair the indexed graph already holds, and says the edge pre-dates the diff", () => {
+    const result = runWith(
+      {
+        graph: graphOf([
+          ["src/app/a.ts", FACADE],
+          ["src/app/a.ts", "src/lib/internal.ts"],
+        ]),
+        catalog: catalogOf(components, facades),
+      },
+      ["src/app/a.ts"],
+      [["src/app/a.ts", "src/lib/internal.ts"]],
+    );
+    const finding = result.findings.find((f) => f.detector === "leakingAbstraction");
+    expect(finding?.subject).toBe("src/app/a.ts -> src/lib/internal.ts");
+    expect(finding?.preExisting).toBe(true);
+    expect(finding?.detail).toContain("pre-dates the diff");
+    expect(finding?.detail).not.toContain("the diff reached past");
+  });
+
+  it("leaves a genuinely new leaking pair unflagged, worded as the diff's reach past the facade", () => {
+    const result = runWith(
+      {
+        graph: graphOf([["src/app/a.ts", FACADE]]),
+        catalog: catalogOf(components, facades),
+      },
+      ["src/app/a.ts"],
+      [["src/app/a.ts", "src/lib/internal.ts"]],
+    );
+    const finding = result.findings.find((f) => f.detector === "leakingAbstraction");
+    expect("preExisting" in (finding ?? {})).toBe(false);
+    expect(finding?.detail).toBe(
+      `the diff reached past the facade src/app/a.ts already uses: src/lib/internal.ts is internal to lib, ` +
+        `whose facade ${FACADE} src/app/a.ts imports`,
+    );
+  });
+
+  it("marks nothing pre-existing when the graph port is absent — absence is an empty graph (documented fallback)", () => {
+    const run = new DiffDetectorRun({ catalog: catalogOf(components, facades) });
+    const result = run.run(
+      { changedFiles: ["src/app/a.ts"] },
+      overlayOf([["src/app/a.ts", "src/lib/internal.ts"]], ["src/app/a.ts"]),
+    );
+    expect(result.findings.some((f) => f.preExisting === true)).toBe(false);
+  });
+});
+
 describe("silentCoupling", () => {
   // The run CONSUMES the production verdict (bd tea-rags-mcp-89k7k.1.10):
   // violations arrive already filtered by the detector's exclusion taxonomy,
