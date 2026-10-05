@@ -176,6 +176,10 @@ export class PythonLanguage implements LanguageProvider {
       // tea-rags-mcp-m99j1.1.30 regression); forwarded for the same reason.
       visibleLocalBindings: (localBindings: CallContext["localBindings"], ctx: CallContext) =>
         callResolver.visibleLocalBindings?.(localBindings, ctx) ?? localBindings,
+      // An all-external union binding is evidence, not a type: the call-site
+      // classifiers read the map without it (bd tea-rags-mcp-m99j1.1.65).
+      classifierLocalBindings: (localBindings: CallContext["localBindings"], ctx: CallContext) =>
+        callResolver.classifierLocalBindings?.(localBindings, ctx) ?? localBindings,
     };
   }
 }

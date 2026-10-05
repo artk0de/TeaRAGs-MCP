@@ -474,12 +474,20 @@ export async function walkCorpus(
         hierarchy,
         instantiatedTypes,
       };
-      localBindings = seedParamLocalBindings(
-        production.visibleLocalBindings?.(localBindings, ctx) ?? localBindings,
-        paramTypesOfChunk(paramTypes, chunk),
-        chunk.startLine,
-      );
+      const visible = production.visibleLocalBindings?.(localBindings, ctx) ?? localBindings;
+      localBindings = seedParamLocalBindings(visible, paramTypesOfChunk(paramTypes, chunk), chunk.startLine);
       ctx.localBindings = localBindings;
+      // The receiver kind and the miss bucket read what the language keeps for
+      // CLASSIFICATION, seeded the same way, as the runner's `forEachCallSite`
+      // does (bd tea-rags-mcp-m99j1.1.65).
+      const classifierVisible =
+        production.classifierLocalBindings?.(visible, { ...ctx, localBindings: visible }) ?? visible;
+      const classifierLocalBindings =
+        classifierVisible === visible
+          ? localBindings
+          : seedParamLocalBindings(classifierVisible, paramTypesOfChunk(paramTypes, chunk), chunk.startLine);
+      const classifierCtx: CallContext =
+        classifierLocalBindings === localBindings ? ctx : { ...ctx, localBindings: classifierLocalBindings };
       for (const call of chunk.calls ?? []) {
         if (call.dispatch !== undefined) {
           // The runner's FIRST channel — an explicit dispatch table, not the
@@ -519,18 +527,18 @@ export async function walkCorpus(
           (declined ??=
             call.dynamicSend === true
               ? "dynamicSend"
-              : (production.targetsExternalImport?.(call, ctx) ?? false)
+              : (production.targetsExternalImport?.(call, classifierCtx) ?? false)
                 ? "external"
                 : symbolTable.lookupByShortName(call.member).length === 0
                   ? "noInProjectDef"
-                  : (production.targetsCoreAmbiguousMember?.(call, ctx) ?? false)
+                  : (production.targetsCoreAmbiguousMember?.(call, classifierCtx) ?? false)
                     ? "coreAmbiguous"
                     : "miss");
         sites.push({
           relPath,
           call,
           ctx,
-          receiverKind: classifyReceiverKind(call, localBindings),
+          receiverKind: classifyReceiverKind(call, classifierLocalBindings),
           chain: exact,
           runnerAnswer,
           fan,

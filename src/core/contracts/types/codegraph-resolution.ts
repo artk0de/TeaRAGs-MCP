@@ -234,6 +234,24 @@ export interface CallResolver {
     localBindings: Record<string, LocalBinding[]> | undefined,
     ctx: CallContext,
   ) => Record<string, LocalBinding[]> | undefined;
+  /**
+   * Optional: of the VISIBLE bindings, the ones the call-site classifiers read
+   * (bd tea-rags-mcp-m99j1.1.65). A binding can be EVIDENCE without being a
+   * TYPE — a union every arm of which is a library or builtin class says the
+   * receiver is no project class, which resolution must keep reading (no guess,
+   * no fan onto a project namesake), yet it names no class a call could reach.
+   * The receiver-kind classifier and the miss-bucket gates read presence and
+   * typedness, so for them such a binding must be as absent as before it was
+   * published. The runner asks once per chunk with the visible map, before
+   * barrier-derived parameter seeding; `ctx` is that chunk's context. Return the
+   * input by identity when nothing is hidden. Mirrors
+   * `LanguageSymbolResolver.classifierLocalBindings`; resolvers that omit it
+   * classify against the visible bindings.
+   */
+  classifierLocalBindings?: (
+    localBindings: Record<string, LocalBinding[]> | undefined,
+    ctx: CallContext,
+  ) => Record<string, LocalBinding[]> | undefined;
 }
 
 /**

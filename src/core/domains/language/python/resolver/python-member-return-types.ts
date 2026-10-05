@@ -648,16 +648,48 @@ export function pythonVisibleLocalBindings(
   ctx: CallContext,
   mapper: PythonImportFileMapper,
 ): Record<string, LocalBinding[]> | undefined {
+  return withoutBindings(localBindings, (binding) => pythonBindingUnionIsUnreadable(binding, ctx, mapper));
+}
+
+/**
+ * The visible bindings as the call-site CLASSIFIERS read them (bd
+ * tea-rags-mcp-m99j1.1.65): every union binding whose union dies is removed.
+ *
+ * After {@link pythonVisibleLocalBindings} the only dead unions left are the
+ * EVIDENCE ones — an arm places to a library or builtin class (httpx
+ * `value: str | bytes`, polar's jinja `template: Template | str`). Resolution
+ * keeps reading them, so nothing guesses or fans onto a project namesake. But
+ * they type no class a call could reach, and the receiver kind and the miss
+ * buckets read presence and typedness: `value.encode()` is the `dynamic` core
+ * homonym it was before m99j1.1.30 published the binding, not a `localVar`
+ * in-project miss. A union every arm of which places to a project class is a
+ * type and stays.
+ *
+ * Returns the input map by identity when nothing is hidden.
+ */
+export function pythonClassifierLocalBindings(
+  localBindings: Record<string, LocalBinding[]> | undefined,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): Record<string, LocalBinding[]> | undefined {
+  return withoutBindings(localBindings, (binding) => pythonPlacedBindingUnion(binding, ctx, mapper) === null);
+}
+
+/** `localBindings` minus every binding `hide` names, a name left with none deleted; the input by identity when nothing goes. */
+function withoutBindings(
+  localBindings: Record<string, LocalBinding[]> | undefined,
+  hide: (binding: LocalBinding) => boolean,
+): Record<string, LocalBinding[]> | undefined {
   if (localBindings === undefined) return undefined;
-  let visible: Record<string, LocalBinding[]> | undefined;
+  let kept: Record<string, LocalBinding[]> | undefined;
   for (const [name, bindings] of Object.entries(localBindings)) {
-    const readable = bindings.filter((binding) => !pythonBindingUnionIsUnreadable(binding, ctx, mapper));
+    const readable = bindings.filter((binding) => !hide(binding));
     if (readable.length === bindings.length) continue;
-    visible ??= Object.assign(createIdentifierRecord<LocalBinding[]>(), localBindings);
-    if (readable.length === 0) delete visible[name];
-    else visible[name] = readable;
+    kept ??= Object.assign(createIdentifierRecord<LocalBinding[]>(), localBindings);
+    if (readable.length === 0) delete kept[name];
+    else kept[name] = readable;
   }
-  return visible ?? localBindings;
+  return kept ?? localBindings;
 }
 
 /** A union binding whose union dies with no library / builtin arm to stand on — see {@link pythonVisibleLocalBindings}. */

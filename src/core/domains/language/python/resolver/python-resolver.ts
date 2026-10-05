@@ -61,7 +61,7 @@ import { createPythonSymbolResolutionChain } from "./python-chain-factory.js";
 import { createPythonDispatchComponents } from "./python-dispatch-components.js";
 import { PythonExternalVocabulary } from "./python-external-vocabulary.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
-import { pythonVisibleLocalBindings } from "./python-member-return-types.js";
+import { pythonClassifierLocalBindings, pythonVisibleLocalBindings } from "./python-member-return-types.js";
 import { PythonUndecidableCallClassifier } from "./python-undecidable.js";
 import { lookupPythonSymbolsByShortName, type ResolverConfig } from "./strategies/index.js";
 
@@ -263,5 +263,15 @@ export class PythonCallResolver implements CallResolver {
    */
   visibleLocalBindings(localBindings: CallContext["localBindings"], ctx: CallContext): CallContext["localBindings"] {
     return pythonVisibleLocalBindings(localBindings, ctx, this.importFileMapper);
+  }
+
+  /**
+   * A union binding that types no project class — all-library / builtin arms,
+   * kept by {@link visibleLocalBindings} as evidence — is no type for the
+   * call-site classifiers (bd tea-rags-mcp-m99j1.1.65) — see
+   * {@link pythonClassifierLocalBindings}. Read through the resolver's ONE mapper.
+   */
+  classifierLocalBindings(localBindings: CallContext["localBindings"], ctx: CallContext): CallContext["localBindings"] {
+    return pythonClassifierLocalBindings(localBindings, ctx, this.importFileMapper);
   }
 }

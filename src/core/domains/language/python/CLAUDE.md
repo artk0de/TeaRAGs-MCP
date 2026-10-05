@@ -524,7 +524,13 @@
   facade's `visibleLocalBindings` BEFORE parameter seeding — so the
   receiver-kind classifier, every presence gate and `namingConvention` see no
   binding at all (httpx `timeout: TimeoutTypes | UseClientDefault` →
-  `Timeout#as_dict`).
+  `Timeout#as_dict`). The EVIDENCE union is evidence, not a type: resolution
+  keeps reading it, while the call-site classifiers — receiver kind and miss
+  bucket — read the map `pythonClassifierLocalBindings` leaves, through the
+  facade's `classifierLocalBindings` (bd tea-rags-mcp-m99j1.1.65). Without that
+  split httpx `value: str | bytes` → `value.encode()` moved from a `dynamic`
+  `coreAmbiguous` homonym to a `localVar` in-project miss with no edge behind
+  it.
 - **Behind them, `resolveDispatch` composes
   `[table, callableParam, union, cone, dynamic]` — `dynamic` is ON by default
   since bd tea-rags-mcp-m99j1.1.57 (`CODEGRAPH_PY_DYNAMIC_DISPATCH=0` drops it),

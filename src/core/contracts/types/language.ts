@@ -783,6 +783,18 @@ export interface LanguageSymbolResolver {
     localBindings: CallContext["localBindings"],
     ctx: CallContext,
   ) => CallContext["localBindings"];
+  /**
+   * Optional: of the VISIBLE bindings, the ones the call-site classifiers — the
+   * receiver kind and the miss bucket — may read (bd tea-rags-mcp-m99j1.1.65).
+   * A binding that is evidence but types no class the language can name keeps
+   * steering resolution and is hidden from classification. Asked once per chunk
+   * by `CallEdgeResolutionRunner`. Mirrors `CallResolver.classifierLocalBindings`;
+   * languages that omit it classify against the visible bindings.
+   */
+  classifierLocalBindings?: (
+    localBindings: CallContext["localBindings"],
+    ctx: CallContext,
+  ) => CallContext["localBindings"];
 }
 
 /**
