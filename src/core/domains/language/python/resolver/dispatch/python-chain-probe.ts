@@ -1,6 +1,6 @@
 import type { CallContext, CallRef, SymbolResolutionTarget } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { resolveViaChain } from "../../../resolver-chain.js";
+import { resolveViaChain } from "../../../kernel/index.js";
 
 /**
  * The chain's answer for a call, computed at most once per call site (bd

@@ -46,8 +46,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent, SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
-import { ExternalCallClassifier } from "../../external-classifier.js";
-import { resolveDispatchViaComponents, resolveViaChain } from "../../resolver-chain.js";
+import { ExternalCallClassifier, resolveDispatchViaComponents, resolveViaChain } from "../../kernel/index.js";
 import { ZEITWERK_PREFIX } from "../zeitwerk-import-marker.js";
 import { RubyExternalVocabulary } from "./ruby-external-vocabulary.js";
 import { lookupRubySymbolsByShortName, rubyMemberLookupRole } from "./short-name-lookup.js";

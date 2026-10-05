@@ -15,8 +15,8 @@
  * What lives here is the part every language agrees on.
  */
 
-import type { CallContext, FileExtraction, GraphEdges, ImportRef } from "../../contracts/types/codegraph.js";
-import type { ImportFileMapper } from "../../contracts/types/language.js";
+import type { CallContext, FileExtraction, GraphEdges, ImportRef } from "../../../contracts/types/codegraph.js";
+import type { ImportFileMapper } from "../../../contracts/types/language.js";
 
 /**
  * The file edge one import produces once mapped to `targetRelPath`: its import

@@ -218,7 +218,7 @@ export interface ConeTypeLocator {
 
 /**
  * The language-specific predicates the generic `ExternalCallClassifier`
- * (`domains/language/external-classifier.ts`) needs to decide whether an
+ * (`domains/language/kernel/external-classifier.ts`) needs to decide whether an
  * UNRESOLVED call targets an external library / framework runtime rather than an
  * in-project resolver miss (bd tea-rags-mcp-cai0). The engine owns the
  * language-neutral receiver-shape branch (bare call vs qualified receiver);
