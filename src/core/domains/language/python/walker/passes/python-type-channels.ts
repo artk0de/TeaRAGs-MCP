@@ -25,9 +25,9 @@
  * absent stays absent here.
  */
 import { createIdentifierRecord } from "../../../../../contracts/identifier-record.js";
-import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
+import type { FileExtraction, LocalBinding } from "../../../../../contracts/types/codegraph.js";
 import type { TypeRef, WalkContext } from "../../../../../contracts/types/language.js";
-import { typeFactChannels, type TypeFactStore } from "../../../kernel/index.js";
+import { typeFactChannels, typeRefReceiverForm, type TypeFactStore } from "../../../kernel/index.js";
 
 /**
  * The run-global address of a MODULE-LEVEL return fact — `<relPath>::<name>`
@@ -89,13 +89,34 @@ export function pythonStructuredReturnKey(kernelKey: string, relPath: string): s
   return kernelKey.split("::").join(".");
 }
 
+/**
+ * A binding whose ref is a union of two or more reachable arms (`x: A | B`, bd
+ * tea-rags-mcp-m99j1.1.30) carries NO name: the kernel store fills `type` with
+ * the first arm as a best-effort string, and every reader that reads `type`
+ * would then type the receiver as that one arm — a confident edge for half the
+ * sites. The arms travel in `typeRef` only, and an empty `type` is what every
+ * `type` reader already treats as "nothing to name". `Optional[A]` collapses to
+ * one arm and keeps its name.
+ */
+function blankUnionBindingNames(localBindings: Record<string, LocalBinding[]> | undefined): void {
+  if (localBindings === undefined) return;
+  for (const bindings of Object.values(localBindings)) {
+    for (const binding of bindings) {
+      if (typeRefReceiverForm(binding.typeRef)?.form === "union") binding.type = "";
+    }
+  }
+}
+
 export function pythonTypeChannels(
   store: TypeFactStore,
   ctx: Pick<WalkContext, "chunks" | "relPath">,
 ): Partial<FileExtraction> {
   const kernel = typeFactChannels(store, ctx.chunks);
   const out: Partial<FileExtraction> = {};
-  if (kernel.chunks !== undefined) out.chunks = kernel.chunks;
+  if (kernel.chunks !== undefined) {
+    for (const chunk of kernel.chunks) blankUnionBindingNames(chunk.localBindings);
+    out.chunks = kernel.chunks;
+  }
 
   if (kernel.structuredReturnTypes !== undefined) {
     const rekeyed: Record<string, TypeRef> = createIdentifierRecord();

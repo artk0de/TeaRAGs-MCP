@@ -13,7 +13,8 @@
  * `ivar` and `return` facts have no such gate: their channels union by key.
  */
 import type { AstNode } from "../../../../../contracts/types/ast.js";
-import type { InlineTypeSource, TypeFact } from "../../../kernel/index.js";
+import type { TypeRef } from "../../../../../contracts/types/language.js";
+import { typeRefReceiverForm, type InlineTypeSource, type TypeFact } from "../../../kernel/index.js";
 import {
   isPythonClassFormDef,
   pythonAnnotationExpression,
@@ -35,7 +36,8 @@ export interface PythonTypeSourceInput {
    * A written class spelling → the one the file's imports bind it to
    * (`utils.CursorWrapper` → `db.backends.utils::CursorWrapper`), bare for a
    * same-file class or builtin (bd tea-rags-mcp-m99j1.1.55). Read by the `ast`
-   * source's return publish only; absent = arms stay bare.
+   * source's return publish and by this source's multi-arm union `param` /
+   * `local` facts (bd tea-rags-mcp-m99j1.1.30); absent = arms stay bare.
    */
   readonly qualifyTypeName?: (written: string) => string;
 }
@@ -113,8 +115,12 @@ function extractPythonAnnotationFacts(input: PythonTypeSourceInput): TypeFact[] 
       if (input.trackLocalTypes) {
         for (const param of pythonTypedParameters(site.node)) {
           if (walkerAlreadyBinds(param.annotation)) continue;
-          const ref = pythonTypeRefFromNode(param.annotation, selfClass);
-          if (ref === undefined || pythonNominalReceiverName(ref) === undefined) continue;
+          const ref = pythonBindingTypeRef(
+            param.annotation,
+            pythonTypeRefFromNode(param.annotation, selfClass),
+            input.qualifyTypeName,
+          );
+          if (ref === undefined) continue;
           facts.push({
             kind: "param",
             source: PYTHON_ANNOTATION_SOURCE,
@@ -153,10 +159,72 @@ function extractPythonAnnotationFacts(input: PythonTypeSourceInput): TypeFact[] 
       facts.push(fact);
     },
     onAnnotatedAssignment: (site) => {
-      pushAssignmentFact(facts, site, input.trackLocalTypes);
+      pushAssignmentFact(facts, site, input);
     },
   });
   return facts;
+}
+
+/**
+ * The ref a `param` / `local` fact carries, or `undefined` to emit none.
+ *
+ * One reachable nominal arm (`Foo`, `Optional[Foo]`) passes UNCHANGED — the
+ * shape every existing binding has. A union of two or more reachable arms
+ * (`A | B`, `Union[A, B]`, `A | B | None`) passes only when every non-nil arm is
+ * an INSTANCE of a named class, and then each arm is qualified through the
+ * file's imports exactly as an inferred return arm is (bd
+ * tea-rags-mcp-m99j1.1.55), so the resolver places it by the declaring file and
+ * an arm it cannot place kills the whole fact (bd tea-rags-mcp-m99j1.1.30). A
+ * container or class-object arm declines: per arm it names no receiver.
+ */
+function pythonBindingTypeRef(
+  annotation: AstNode,
+  ref: TypeRef | undefined,
+  qualifyTypeName: ((written: string) => string) | undefined,
+): TypeRef | undefined {
+  if (ref === undefined) return undefined;
+  if (pythonNominalReceiverName(ref) !== undefined) return ref;
+  if (typeRefReceiverForm(ref)?.form !== "union" || ref.form !== "union") return undefined;
+  const written = qualifyTypeName === undefined ? undefined : writtenArmSpellings(annotation);
+  const members: TypeRef[] = [];
+  for (const arm of ref.members) {
+    if (arm.form === "nil") {
+      members.push(arm);
+      continue;
+    }
+    if (arm.form !== "instance") return undefined;
+    const spelling = written?.get(arm.name);
+    members.push(qualifyTypeName === undefined ? arm : { ...arm, name: qualifyTypeName(spelling ?? arm.name) });
+  }
+  return { ...ref, members };
+}
+
+/**
+ * Bare class name → the spelling the annotation WROTE it with
+ * (`models.Bar` → `Bar` maps back to `models.Bar`). The ref keeps only the bare
+ * name, and the qualifier needs the module the spelling goes through. A bare
+ * name written two different ways in one annotation maps to nothing — the arm
+ * stays bare and the resolver places it by the bare rules.
+ */
+function writtenArmSpellings(annotation: AstNode): Map<string, string> {
+  const spellings = new Map<string, string>();
+  const conflicting = new Set<string>();
+  const record = (text: string): void => {
+    const bare = text.slice(text.lastIndexOf(".") + 1);
+    const seen = spellings.get(bare);
+    if (seen !== undefined && seen !== text) conflicting.add(bare);
+    spellings.set(bare, text);
+  };
+  const descend = (node: AstNode): void => {
+    if (node.type === "identifier" || node.type === "attribute") {
+      record(node.text);
+      return;
+    }
+    for (const child of node.namedChildren) descend(child);
+  };
+  descend(annotation);
+  for (const bare of conflicting) spellings.delete(bare);
+  return spellings;
 }
 
 /**
@@ -255,15 +323,24 @@ export const pythonAnnotationTypeSource: InlineTypeSource<PythonTypeSourceInput>
  * A local / param fact keeps the original, because `LocalBinding.typeRef` does
  * carry them.
  */
-function pushAssignmentFact(facts: TypeFact[], site: PythonAnnotatedAssignmentSite, trackLocalTypes: boolean): void {
+function pushAssignmentFact(
+  facts: TypeFact[],
+  site: PythonAnnotatedAssignmentSite,
+  input: Pick<PythonTypeSourceInput, "trackLocalTypes" | "qualifyTypeName">,
+): void {
   const typeField = site.node.childForFieldName("type");
   if (typeField === null) return;
   const annotation = pythonAnnotationExpression(typeField);
   const selfClass = site.classChain[site.classChain.length - 1];
   const ref = pythonTypeRefFromNode(annotation, selfClass);
   if (ref === undefined) return;
+  const lhs = site.node.namedChild(0);
+  if (lhs === null) return;
   const nominal = pythonNominalReceiverName(ref);
-  if (nominal === undefined) return;
+  if (nominal === undefined) {
+    pushLocalFact(facts, site, lhs, annotation, pythonBindingTypeRef(annotation, ref, input.qualifyTypeName), input);
+    return;
+  }
   const attributeFact = (name: string): TypeFact => ({
     kind: "ivar",
     source: PYTHON_ANNOTATION_SOURCE,
@@ -272,9 +349,6 @@ function pushAssignmentFact(facts: TypeFact[], site: PythonAnnotatedAssignmentSi
     line: site.line,
     type: { form: "instance", name: nominal },
   });
-
-  const lhs = site.node.namedChild(0);
-  if (lhs === null) return;
 
   if (lhs.type === "attribute") {
     const object = lhs.childForFieldName("object");
@@ -291,7 +365,24 @@ function pushAssignmentFact(facts: TypeFact[], site: PythonAnnotatedAssignmentSi
     if (site.classChain.length > 0) facts.push(attributeFact(lhs.text));
     return;
   }
-  if (!trackLocalTypes || walkerAlreadyBinds(annotation)) return;
+  pushLocalFact(facts, site, lhs, annotation, ref, input);
+}
+
+/**
+ * `x: T` inside a function, for a ref {@link pythonBindingTypeRef} admitted.
+ * A union reaches here only from an identifier LHS inside a def: an attribute
+ * fact has no channel that carries arms, so `self.x: A | B` stays silent.
+ */
+function pushLocalFact(
+  facts: TypeFact[],
+  site: PythonAnnotatedAssignmentSite,
+  lhs: AstNode,
+  annotation: AstNode,
+  ref: TypeRef | undefined,
+  input: Pick<PythonTypeSourceInput, "trackLocalTypes">,
+): void {
+  if (ref === undefined || lhs.type !== "identifier" || site.methodName === undefined) return;
+  if (!input.trackLocalTypes || walkerAlreadyBinds(annotation)) return;
   facts.push({
     kind: "local",
     source: PYTHON_ANNOTATION_SOURCE,
