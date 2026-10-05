@@ -41,7 +41,8 @@
  *
  * ── LOCAL-BINDINGS BOUNDARY (no store double-emit) ──
  * `walker/local-bindings.ts::collectRubyBodyReturnTypes` already infers a
- * body-last-expression return for EVERY method via `constInstanceType`, but keyed
+ * body-last-expression return for EVERY method — through the same kernel engine,
+ * under the narrower member ports of `walker/body-return.ts` — but keyed
  * by the BARE method name into the FLAT `functionReturnTypes` channel
  * (`returnTypeOf` fallback path #4). This source is its scope-precise sibling:
  * it fills the `structuredReturnTypes` `"Class#method"` channel (`returnTypeOf`
@@ -63,7 +64,7 @@
  * `kernel/return-inference.ts`, generalized from Ruby's ONE terminal expression
  * to the N terminal arms Python's `return` statements produce. What stayed here
  * is exactly the Ruby-specific half: which node is the terminal
- * ({@link lastBodyExpression}), what an expression's type IS
+ * (`rubyBodyTailExpression`, shared with the member channels in `walker/body-return.ts`), what an expression's type IS
  * ({@link tailInstanceConst} with `Const.new`, `.freeze`/`.tap` passthrough and
  * the coercion ternary), which nodes BIND a name ({@link isBindingNode}), the
  * assignment-event scan ({@link rubyAssignmentEvents}), and the service-entry
@@ -73,6 +74,7 @@ import type { AstNode } from "../../../../../contracts/types/ast.js";
 import { inferReturnTypeName, type ReturnInferencePorts } from "../../../kernel/index.js";
 import { catalogueFor, type RubyDslCatalogue } from "../../dsl/index.js";
 import { readScopeResolution } from "../ast-utils.js";
+import { rubyBodyTailExpression } from "../body-return.js";
 import type { RubyExtractInput } from "../walker.js";
 import { constInstanceType } from "./ast-inference.js";
 import type { RubyInlineTypeSource, RubyTypeFact } from "./types.js";
@@ -154,32 +156,12 @@ function tailInstanceConst(node: AstNode, catalogue: RubyDslCatalogue): string |
   return tailInstanceConst(receiver, catalogue);
 }
 
-/**
- * The body's last value-producing statement, unwrapping an explicit `return EXPR`
- * and skipping `rescue`/`ensure`/`else` tails — mirrors the tail selection in
- * `collectRubyBodyReturnTypes` so both channels see the same last expression.
- */
-function lastBodyExpression(body: AstNode): AstNode | null {
-  const stmts = body.namedChildren.filter((n) => n.type !== "rescue" && n.type !== "ensure" && n.type !== "else");
-  let last = stmts[stmts.length - 1];
-  if (!last) return null;
-  if (last.type === "return") {
-    const arg = last.namedChildren[0];
-    if (!arg) return null;
-    last = arg.type === "argument_list" ? arg.namedChildren[0] : arg;
-    if (!last) return null;
-  }
-  return last;
-}
-
 /** Ruby's answers for the kernel's return-inference engine. Built per file (it closes over the catalogue). */
 function rubyReturnInferencePorts(catalogue: RubyDslCatalogue): ReturnInferencePorts<AstNode, null> {
   return {
     // Ruby's terminal is the body's LAST expression — exactly one, or none.
     terminalExpressions: (defNode) => {
-      const body = defNode.childForFieldName("body");
-      if (!body) return [];
-      const last = lastBodyExpression(body);
+      const last = rubyBodyTailExpression(defNode);
       return last === null ? [] : [last];
     },
     typeOfExpression: (node) => tailInstanceConst(node, catalogue),
