@@ -1,7 +1,7 @@
 {
   "name": "tea-rags",
   "description": "Data-driven code generation strategies powered by TeaRAGs git signals",
-  "version": "0.41.8",
+  "version": "0.41.9",
   "author": {
     "name": "artk0de"
   },
@@ -43,17 +43,6 @@
             "type": "command",
             "command": "tea-rags prime \"$CLAUDE_PROJECT_DIR\"",
             "timeout": 15
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/enforce-tearags-search.sh"
           }
         ]
       }
@@ -106,6 +95,16 @@
             "type": "command",
             "command": "tea-rags prime \"$CLAUDE_PROJECT_DIR\"",
             "timeout": 15
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/enforce-tearags-search.sh"
           }
         ]
       }

@@ -15,8 +15,8 @@ underlying `superpowers:*` skill. Every wrapper:
 3. Extracts a context block from results
 4. Invokes the underlying `superpowers:*` skill with the block prepended
 
-Plus a **PreToolUse hook on `Agent`** (`scripts/inject-wrapper-routing.sh`) that
-appends a wrapper-routing table to every subagent prompt so subagents don't
+Plus a **SubagentStart hook** (`scripts/inject-wrapper-routing.sh`) that hands
+every subagent a wrapper-routing table as additionalContext so subagents don't
 bypass the enrichment layer.
 
 ## Wrapper skills
@@ -58,8 +58,10 @@ help: empty results → report `UNVERIFIABLE` / `TRIVIAL-SCOPE` / `no-area` and
 invoke the underlying skill without fabricating signals.
 
 **Subagent routing via hook, not skill.** The wrapper-routing table is injected
-into every `Agent` tool invocation's `prompt` by a PreToolUse hook. Subagents
-don't need to know which skills exist — the hook tells them.
+into every subagent's context by a SubagentStart hook (additionalContext
+composes with the tea-rags search block; a PreToolUse prompt rewrite collided
+and was lost). Subagents don't need to know which skills exist — the hook tells
+them.
 
 ## Eval methodology
 

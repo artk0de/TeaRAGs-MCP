@@ -1,18 +1,17 @@
 #!/bin/bash
-# PreToolUse hook for Agent tool: route subagent prompts through dinopowers wrappers
-# when their intent matches a wrapper's trigger (brainstorming, planning, debugging,
-# TDD, review, completion). Ensures subagents don't bypass the tea-rags enrichment
-# layer by invoking superpowers:* or ad-hoc tools directly.
+# SubagentStart hook: hand every subagent the dinopowers wrapper routing table as
+# additionalContext, so intents matching a wrapper's trigger (brainstorming,
+# planning, debugging, TDD, code changes, review, completion) go through the
+# tea-rags-enriched wrapper instead of superpowers:* or ad-hoc tools.
+#
+# SubagentStart, not PreToolUse(Agent) + updatedInput: two plugins rewriting the
+# Agent prompt through updatedInput collide (the hooks run in parallel and only
+# one rewrite lands — this table was silently lost next to the tea-rags search
+# block, 2026-10-05). additionalContext from several SubagentStart hooks composes.
 
-INPUT=$(cat)
-PROMPT=$(echo "$INPUT" | jq -r '.tool_input.prompt // empty')
+cat > /dev/null
 
-if [ -z "$PROMPT" ]; then
-  exit 0
-fi
-
-SUFFIX="
-
+ROUTING="
 ## Dinopowers wrapper routing (MANDATORY — overrides direct superpowers:* invocation)
 
 Subagent intents matching any row below MUST invoke the dinopowers wrapper BEFORE
@@ -26,6 +25,7 @@ enrichment, then chains to superpowers internally.
 | Executing plan Tasks that modify files | Skill(dinopowers:executing-plans) |
 | Debugging a concrete symptom (error, stack trace, test failure) | Skill(dinopowers:systematic-debugging) |
 | Writing a new failing test (TDD RED phase) | Skill(dinopowers:test-driven-development) |
+| Writing or changing production code outside a written plan (new function, behaviour change, perf rework) | Skill(tea-rags:data-driven-generation) |
 | Claiming work complete / before commit / before PR | Skill(dinopowers:verification-before-completion) |
 | Agreeing/pushing back on a review comment that names a symbol | Skill(dinopowers:receiving-code-review) |
 | Composing a code review request with a diff | Skill(dinopowers:requesting-code-review) |
@@ -38,12 +38,9 @@ enrichment, then chains to superpowers internally.
 - If a wrapper doesn't match your intent, invoke superpowers:* directly.
 - These routing rules take priority over any skill that says \"invoke superpowers:X\" for a matching intent."
 
-UPDATED_PROMPT="${PROMPT}${SUFFIX}"
-
-jq -n --argjson input "$INPUT" --arg prompt "$UPDATED_PROMPT" '{
+jq -n --arg context "$ROUTING" '{
   hookSpecificOutput: {
-    hookEventName: "PreToolUse",
-    permissionDecision: "allow",
-    updatedInput: ($input.tool_input + { prompt: $prompt })
+    hookEventName: "SubagentStart",
+    additionalContext: $context
   }
 }'

@@ -28,7 +28,8 @@ the agent routinely picked `superpowers:*` over the dinopowers wrapper in main
 sessions because:
 
 1. Global `~/.claude/CLAUDE.md` names `superpowers:*` explicitly.
-2. The PreToolUse hook only sees subagent prompts — main session was unrouted.
+2. The subagent hook (now SubagentStart) only reaches subagents — main session
+   was unrouted.
 3. Old wrapper descriptions used conditional triggers ("Triggers when
    superpowers:X would fire AND...") that read as narrower than the parent.
 

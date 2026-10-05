@@ -1,14 +1,13 @@
 #!/bin/bash
-# PreToolUse hook for Agent tool: inject tea-rags search instructions into subagent prompts.
-# Ensures ALL subagents use mcp__tea-rags__* tools instead of built-in Grep/Glob.
-# Injected unconditionally — the block is small and harmless for non-search tasks.
-
-INPUT=$(cat)
-PROMPT=$(echo "$INPUT" | jq -r '.tool_input.prompt // empty')
-
-if [ -z "$PROMPT" ]; then
-  exit 0
-fi
+# SubagentStart hook: hand every subagent the tea-rags search instructions as
+# additionalContext, so it uses mcp__tea-rags__* tools instead of built-in
+# Grep/Glob. Injected unconditionally — the block is small and harmless for
+# non-search tasks.
+#
+# SubagentStart, not PreToolUse(Agent) + updatedInput: two plugins rewriting the
+# Agent prompt through updatedInput collide (the hooks run in parallel and only
+# one rewrite lands — the dinopowers routing table was silently lost, 2026-10-05).
+# additionalContext from several SubagentStart hooks composes.
 
 # No path is injected: the subagent addresses tea-rags with its OWN working
 # directory (a linked worktree reads its own tree; the index resolves from the
@@ -17,6 +16,8 @@ fi
 #
 # Single source: the block is the first fenced block under "## The block to
 # inject" in rules/references/subagent-injection.md — edit it there.
+
+cat > /dev/null
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 BLOCK_FILE="${SCRIPT_DIR}/../rules/references/subagent-injection.md"
@@ -30,16 +31,9 @@ if [ -z "$BLOCK" ]; then
   exit 0
 fi
 
-SUFFIX="
-
-${BLOCK}"
-
-UPDATED_PROMPT="${PROMPT}${SUFFIX}"
-
-jq -n --argjson input "$INPUT" --arg prompt "$UPDATED_PROMPT" '{
+jq -n --arg context "$BLOCK" '{
   hookSpecificOutput: {
-    hookEventName: "PreToolUse",
-    permissionDecision: "allow",
-    updatedInput: ($input.tool_input + { prompt: $prompt })
+    hookEventName: "SubagentStart",
+    additionalContext: $context
   }
 }'

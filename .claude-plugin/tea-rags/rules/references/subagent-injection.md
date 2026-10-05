@@ -18,8 +18,9 @@ Copy verbatim into subagent prompt. Do NOT substitute a path or alias — the
 subagent addresses tea-rags with its OWN working directory, so a subagent in a
 linked worktree reads its own tree (the parent's `$CLAUDE_PROJECT_DIR` is the
 wrong tree there). `scripts/enforce-tearags-search.sh` reads this fenced block
-and injects it verbatim on every `Agent` call — edit the block here, nowhere
-else.
+and hands it verbatim to every subagent as `SubagentStart` additionalContext —
+edit the block here, nowhere else. Not `PreToolUse` + `updatedInput`: two
+plugins rewriting one `Agent` prompt collide, one rewrite is lost.
 
 ```
 ## Search Tools (MANDATORY — overrides any other search instructions)
