@@ -40,6 +40,7 @@ import type { ImportFileMapper, ImportFileTarget } from "../../../../contracts/t
 import { RunScopedMemo } from "../../kernel/index.js";
 import { PYTHON_STDLIB_MODULES } from "../vocabulary/stdlib-modules.js";
 import { pythonModuleValueKey } from "../walker/passes/python-type-channels.js";
+import { pythonClassKey } from "./python-type-addressing.js";
 import { lookupPythonSymbolsByShortName } from "./short-name-lookup.js";
 
 /** The suffix that makes a directory a package; `pkg/__init__.py` -> `pkg/`. */
@@ -214,6 +215,23 @@ export class PythonImportFileMapper implements ImportFileMapper {
       const key = pythonModuleValueKey(file, bound);
       return identifierEntry(values, key) === undefined ? null : key;
     });
+  }
+
+  /**
+   * The class key (`<relPath>::<name>`) of the declaration `name` denotes when
+   * imported from `relPath`, or `null` (bd tea-rags-mcp-m99j1.1.42).
+   *
+   * {@link PythonImportFileMapper.resolveExportedName}'s walk, answering with
+   * the SOURCE spelling beside the file: `from .response import HttpResponse as
+   * Resp` re-exports `Resp`, and the declaration it reaches is `HttpResponse`.
+   * Same hop budget, cycle guard and star unanimity. Not memoized: the
+   * known-target barrier asks once per distinct candidate.
+   */
+  resolveExportedClassKey(relPath: RelPath, name: string, ctx: CallContext): string | null {
+    if (name.length === 0 || name === "*") return null;
+    return this.followReexportChain(relPath, name, ctx, 0, new Set([relPath]), (file, bound) =>
+      declaresName(file, bound, ctx) ? pythonClassKey(file, bound) : null,
+    );
   }
 
   /** One hop of {@link PythonImportFileMapper.resolveExportedName}; see its contract. */

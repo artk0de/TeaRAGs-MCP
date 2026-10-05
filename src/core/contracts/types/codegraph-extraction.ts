@@ -806,6 +806,26 @@ export interface KnownTargetCallArgs {
 }
 
 /**
+ * Where a {@link KnownTargetCallArgs} candidate the walker spelled really runs
+ * (bd tea-rags-mcp-m99j1.1.42). Both keys are `classKey`s in the key contract
+ * above; the member is the candidate's own.
+ */
+export interface KnownTargetCallee {
+  /** The class whose definition of the member executes — an ancestor when the member is inherited. */
+  readonly definingClassKey: string;
+  /** The class the call instantiates, at its declaring address. */
+  readonly instanceClassKey: string;
+}
+
+/**
+ * Re-address ONE candidate coordinate (`<classKey>#<member>`) that names no
+ * indexed definition, or `null` when the language cannot tell where it runs.
+ * Never guesses: an ambiguous re-export or an ancestry it cannot fully read is
+ * `null`.
+ */
+export type KnownTargetCalleeLocator = (coordinate: string) => KnownTargetCallee | null;
+
+/**
  * The `(method, parameter)` coordinate an `@ivar` copies its value from. Links
  * are keyed by `classKey` then field; see the key contract on
  * {@link KnownTargetCallArgs}.

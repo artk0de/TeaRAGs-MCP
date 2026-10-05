@@ -47,6 +47,7 @@ import {
 } from "../../../contracts/types/codegraph.js";
 import type {
   DependencyManifestSource,
+  KnownTargetCalleeLocatorFactory,
   LanguageChunkerHooks,
   LanguageProvider,
   LanguageSymbolResolver,
@@ -57,6 +58,7 @@ import { composeExtractionWalker, deriveStructuralConformance } from "../kernel/
 import { pythonKernel } from "./kernel.js";
 import { PYTHON_DEPENDENCY_MANIFEST } from "./manifest.js";
 import { PythonCallResolver } from "./resolver/index.js";
+import { createPythonKnownTargetCalleeLocator } from "./resolver/python-known-target-callee-locator.js";
 import { isPythonSourcePath } from "./vocabulary/source-extensions.js";
 import { pythonInertFileExtraction } from "./walker/inert-file-extraction.js";
 import { pyNameOf } from "./walker/name-of.js";
@@ -140,8 +142,15 @@ export class PythonLanguage implements LanguageProvider {
     inertFileExtraction: (nativeRoot) => pythonInertFileExtraction(nativeRoot),
   };
   readonly resolver: LanguageSymbolResolver;
+  /**
+   * Where a constructor call the walker spelled from one file really runs — a
+   * re-exported class, an inherited `__init__` — asked by the parameter-typing
+   * barrier (bd tea-rags-mcp-m99j1.1.42). Same ambiguity mode as the resolver.
+   */
+  readonly knownTargetCalleeLocator: KnownTargetCalleeLocatorFactory;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
+    this.knownTargetCalleeLocator = (input) => createPythonKnownTargetCalleeLocator(input, mode);
     const callResolver: CallResolver = new PythonCallResolver(mode);
     this.resolver = {
       resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null => callResolver.resolve(call, ctx),

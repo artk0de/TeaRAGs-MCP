@@ -101,6 +101,7 @@ import {
 import { CONE_MAX_DEFAULT } from "../src/core/domains/language/python/resolver/strategies/index.js";
 import { resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
 import {
+  collectKnownTargetCalleeLocators,
   collectSchemaColumnSources,
   collectStructuralConformanceDerivers,
 } from "../src/core/domains/trajectory/codegraph/exclusion.js";
@@ -479,6 +480,8 @@ function newProductionRunState(root: string, factory: LanguageFactory): Codegrap
     collectSchemaColumnSources(factory),
     collectDependencyManifestSources(factory),
     collectStructuralConformanceDerivers(factory),
+    undefined,
+    collectKnownTargetCalleeLocators(factory),
   );
   state.bindProjectRoot(root);
   state.loadDeclaredDependencies(root);

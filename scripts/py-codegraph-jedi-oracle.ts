@@ -78,7 +78,9 @@ import { MapHierarchyView } from "../src/core/domains/trajectory/codegraph/hiera
 import {
   deriveClassFieldTypesFromParams,
   foldKnownTargetParamTypes,
+  inheritConstructorFieldLinks,
   paramTypesOfChunk,
+  redirectKnownTargetCallArgs,
   seedParamLocalBindings,
 } from "../src/core/domains/trajectory/codegraph/symbols/call-arg-param-types.js";
 import {
@@ -368,15 +370,27 @@ export async function walkCorpus(
   // The parameter-typing barrier, as `CodegraphRunState#seal` runs it for a
   // class-keyed language: derived fields land UNDER `classFieldTypesByClassKey`,
   // whose own coordinates are the typed-field gate.
-  const paramTypes = foldKnownTargetParamTypes(knownTargetCallArgs, paramNames);
+  // Candidates no indexed def answers are re-addressed first by the language's
+  // callee locator — a re-exported class, an inherited constructor (bd
+  // tea-rags-mcp-m99j1.1.42) — and an inheriting class takes its constructor's
+  // links, gated by the defining class's typed fields as well as its own.
+  const locatorFactory = factory.create("python").knownTargetCalleeLocator;
+  const locate = locatorFactory?.({ symbolTable, moduleReexports, classAncestors });
+  const redirected = redirectKnownTargetCallArgs(knownTargetCallArgs, paramNames, () => locate);
+  const paramTypes = foldKnownTargetParamTypes(redirected.records, redirected.paramNames);
+  const { inheritedConstructors } = redirected;
+  const linksWithInherited = inheritConstructorFieldLinks(classFieldParamLinks, inheritedConstructors);
   const typedClassKeyedFields = new Set<string>();
-  for (const classKey of Object.keys(classFieldParamLinks)) {
-    for (const field of Object.keys(classFieldTypesByClassKey[classKey] ?? {})) {
-      typedClassKeyedFields.add(`${classKey}|${field}`);
+  for (const classKey of Object.keys(linksWithInherited)) {
+    const defining = inheritedConstructors.get(classKey)?.definingClassKey;
+    for (const owner of defining === undefined ? [classKey] : [classKey, defining]) {
+      for (const field of Object.keys(classFieldTypesByClassKey[owner] ?? {})) {
+        typedClassKeyedFields.add(`${classKey}|${field}`);
+      }
     }
   }
   for (const [classKey, fields] of Object.entries(
-    deriveClassFieldTypesFromParams(classFieldParamLinks, paramTypes, typedClassKeyedFields),
+    deriveClassFieldTypesFromParams(linksWithInherited, paramTypes, typedClassKeyedFields),
   )) {
     classFieldTypesByClassKey[classKey] = { ...fields, ...classFieldTypesByClassKey[classKey] };
   }

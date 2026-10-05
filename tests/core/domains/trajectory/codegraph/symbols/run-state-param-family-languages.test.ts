@@ -24,6 +24,7 @@ import type {
   FileExtraction,
   GlobalSymbolTable,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type { KnownTargetCalleeLocatorFactory } from "../../../../../../src/core/contracts/types/language.js";
 import {
   paramTypesOfChunk,
   seedParamLocalBindings,
@@ -160,6 +161,124 @@ describe("the parameter family admits a Python-shaped extraction via its walker-
 
     expect(inc.classFieldTypesByClassKey).toEqual(full.classFieldTypesByClassKey);
     expect(inc.classFieldTypesByClassKey[VIEW_KEY]).toEqual({ request: "WSGIRequest" });
+  });
+});
+
+// ── Barrier-side candidate expansion (bd tea-rags-mcp-m99j1.1.42) ──
+// `from pkg import Response; Response(HttpRequest())` where `pkg/__init__.py`
+// re-exports `Response` from `pkg/response.py`, and `Child(HttpRequest())`
+// where `Child(View)` declares no `__init__` of its own.
+const REEXPORTED_TARGET = "pkg/__init__.py::Response#__init__";
+const RESPONSE_KEY = "pkg/response.py::Response";
+const CHILD_KEY = "pkg/c.py::Child";
+const responseFile: FileExtraction = {
+  relPath: "pkg/response.py",
+  language: "python",
+  imports: [],
+  fileScope: [],
+  chunks: [
+    {
+      symbolId: "Response#__init__",
+      paramCoordinate: `${RESPONSE_KEY}#__init__`,
+      scope: [],
+      calls: [],
+      startLine: 2,
+      paramNames: ["content"],
+    },
+  ],
+  classFieldParamLinks: { [RESPONSE_KEY]: { content: { method: "__init__", param: "content" } } },
+};
+const expandingCallerFile: FileExtraction = {
+  relPath: "pkg/d.py",
+  language: "python",
+  imports: [],
+  fileScope: [],
+  chunks: [],
+  knownTargetCallArgs: [
+    { targets: [REEXPORTED_TARGET], argTypes: [{ form: "instance", name: "HttpRequest" }] },
+    { targets: [`${CHILD_KEY}#__init__`], argTypes: [{ form: "instance", name: "HttpRequest" }] },
+  ],
+};
+const fakeLocatorFactory: KnownTargetCalleeLocatorFactory = () => (coordinate) => {
+  if (coordinate === REEXPORTED_TARGET) return { definingClassKey: RESPONSE_KEY, instanceClassKey: RESPONSE_KEY };
+  if (coordinate === `${CHILD_KEY}#__init__`) return { definingClassKey: VIEW_KEY, instanceClassKey: CHILD_KEY };
+  return null;
+};
+
+function expandingState(): CodegraphRunState {
+  return new CodegraphRunState([], new Map(), new Map(), undefined, new Map([["python", fakeLocatorFactory]]));
+}
+
+async function expandingFullRun(files: readonly FileExtraction[]): Promise<CodegraphRunState> {
+  const state = expandingState();
+  for (const file of files) state.absorb(file, []);
+  await state.seal(noopTable);
+  return state;
+}
+
+async function expandingIncrementalRun(
+  walked: readonly FileExtraction[],
+  unwalked: readonly FileExtraction[],
+): Promise<CodegraphRunState> {
+  const state = expandingState();
+  for (const file of walked) state.absorb(file, []);
+  await state.seal(noopTable, async () => unwalked.flatMap(persistedRow));
+  return state;
+}
+
+describe("the barrier expands a Python candidate no indexed def answers (m99j1.1.42)", () => {
+  const files = [viewFile, responseFile, expandingCallerFile];
+
+  it("follows a re-export to the declaring file's def and derives its field there", async () => {
+    const state = await expandingFullRun(files);
+
+    expect(state.paramTypes[`${RESPONSE_KEY}#__init__`]).toEqual({
+      content: { form: "instance", name: "HttpRequest" },
+    });
+    expect(state.classFieldTypesByClassKey[RESPONSE_KEY]).toEqual({ content: "HttpRequest" });
+  });
+
+  it("joins an inherited constructor against the ancestor's def and keys the field on the asking class too", async () => {
+    const state = await expandingFullRun(files);
+
+    expect(state.paramTypes[`${VIEW_KEY}#__init__`]).toEqual({ request: { form: "instance", name: "HttpRequest" } });
+    expect(state.classFieldTypesByClassKey[VIEW_KEY]).toEqual({ request: "HttpRequest" });
+    expect(state.classFieldTypesByClassKey[CHILD_KEY]).toEqual({ request: "HttpRequest" });
+  });
+
+  it("never derives an inherited field the defining class's walker already typed", async () => {
+    const typed: FileExtraction = {
+      ...viewFile,
+      classFieldTypesByClassKey: { [VIEW_KEY]: { request: "WSGIRequest" } },
+    };
+    const state = await expandingFullRun([typed, responseFile, expandingCallerFile]);
+
+    expect(state.classFieldTypesByClassKey[VIEW_KEY]).toEqual({ request: "WSGIRequest" });
+    expect(state.classFieldTypesByClassKey[CHILD_KEY]).toBeUndefined();
+  });
+
+  it("expands nothing without a locator — the pre-expansion run", async () => {
+    const state = await fullRun(files);
+
+    expect(state.paramTypes[`${RESPONSE_KEY}#__init__`]).toBeUndefined();
+    expect(state.classFieldTypesByClassKey[CHILD_KEY]).toBeUndefined();
+  });
+
+  it("derives what a full run derives when the call site's file was not walked", async () => {
+    const full = await expandingFullRun(files);
+    const inc = await expandingIncrementalRun([viewFile, responseFile], [expandingCallerFile]);
+
+    expect(inc.paramTypes).toEqual(full.paramTypes);
+    expect(inc.classFieldTypesByClassKey).toEqual(full.classFieldTypesByClassKey);
+  });
+
+  it("derives what a full run derives when the defs' files were not walked", async () => {
+    const full = await expandingFullRun(files);
+    const inc = await expandingIncrementalRun([expandingCallerFile], [viewFile, responseFile]);
+
+    expect(inc.paramTypes).toEqual(full.paramTypes);
+    expect(inc.classFieldTypesByClassKey).toEqual(full.classFieldTypesByClassKey);
+    expect(inc.classFieldTypesByClassKey[CHILD_KEY]).toEqual({ request: "HttpRequest" });
   });
 });
 
