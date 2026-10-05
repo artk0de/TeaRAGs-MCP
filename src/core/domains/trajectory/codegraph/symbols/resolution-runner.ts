@@ -898,6 +898,8 @@ export class CallEdgeResolutionRunner {
       // bd tea-rags-mcp-z68v9 — per-chunk, never merged run-global: a local's
       // binding is meaningless outside the body that established it.
       callResultBindings: chunk.callResultBindings,
+      // bd tea-rags-mcp-m99j1.1.57 — per-chunk for the same reason.
+      assignedLocals: chunk.assignedLocals,
       compactDeclaredClasses: this.runState.compactClasses,
       declaredDependencies: this.runState.declaredDependenciesFor(extraction.language),
       projectRoot: this.runState.projectRoot,

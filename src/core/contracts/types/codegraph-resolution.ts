@@ -431,6 +431,14 @@ export interface CallContext {
    */
   callResultBindings?: Record<string, CallResultBinding[]>;
   /**
+   * Per-chunk names the caller's function binds as locals, typed or not,
+   * propagated from `ChunkExtraction.assignedLocals` (bd
+   * tea-rags-mcp-m99j1.1.57). Membership says the receiver IS a local of the
+   * caller's body; whether anything typed it is the other channels' question.
+   * Per-chunk like `callResultBindings`, never merged run-global.
+   */
+  assignedLocals?: readonly string[];
+  /**
    * Run-global `functionName → declaredReturnTypeName` map propagated from
    * `FileExtraction.functionReturnTypes` (merged across all pass-1 files so
    * a call's return type is available even when the function is declared in

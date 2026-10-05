@@ -980,6 +980,19 @@ export interface ChunkExtraction {
    */
   callResultBindings?: Record<string, CallResultBinding[]>;
   /**
+   * Every name the function this chunk represents binds as a LOCAL — typed or
+   * not — sorted and deduped (bd tea-rags-mcp-m99j1.1.57). `localBindings` holds
+   * only the bindings a walker could TYPE and `callResultBindings` only call
+   * results, so "assigned here from an expression nothing types"
+   * (`client = OAUTH_CLIENTS[platform]`) was invisible to a resolver deciding
+   * whether a bare receiver is a local of unknown type. Names only: in Python a
+   * name assigned anywhere in a body is that body's local on every line of it.
+   *
+   * Populated by the Python walker for `def` chunks. Absent on any other chunk
+   * and when the def binds nothing.
+   */
+  assignedLocals?: string[];
+  /**
    * Positional-arity envelope of the method definition this chunk represents
    * (bd xlnub). Populated by the Ruby walker for `method` / `singleton_method`
    * nodes. Undefined for non-method chunks and for languages whose walkers

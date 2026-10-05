@@ -82,8 +82,24 @@ const edgesOf = (outcome: DispatchFanoutOutcome): DispatchEdge[] => {
   return outcome.edges;
 };
 
+/**
+ * The cone composed WITHOUT the untyped-name fan, which is on by default since
+ * bd tea-rags-mcp-m99j1.1.57: this file measures the cone, and an untyped
+ * receiver the cone declines is exactly what the fan would then claim.
+ */
+function coneOnlyResolver(): PythonCallResolver {
+  const before = process.env.CODEGRAPH_PY_DYNAMIC_DISPATCH;
+  process.env.CODEGRAPH_PY_DYNAMIC_DISPATCH = "0";
+  try {
+    return new PythonCallResolver(DEFAULT_AMBIGUOUS_RESOLVE_MODE);
+  } finally {
+    if (before === undefined) delete process.env.CODEGRAPH_PY_DYNAMIC_DISPATCH;
+    else process.env.CODEGRAPH_PY_DYNAMIC_DISPATCH = before;
+  }
+}
+
 describe("PythonCallResolver.resolveDispatch (CHA cone)", () => {
-  const resolver = new PythonCallResolver(DEFAULT_AMBIGUOUS_RESOLVE_MODE);
+  const resolver = coneOnlyResolver();
 
   it("returns [] when the receiver is null (bare call never cones)", () => {
     const symbolTable = tableWith(animalBase, dog);

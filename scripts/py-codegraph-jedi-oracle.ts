@@ -458,6 +458,9 @@ export async function walkCorpus(
         classFieldTypes: extraction.classFieldTypes,
         localBindings,
         callResultBindings: chunk.callResultBindings,
+        // bd tea-rags-mcp-m99j1.1.57 — the dynamic fan's assigned-local gate
+        // reads it; omitting it here measures a gate production does not run.
+        assignedLocals: chunk.assignedLocals,
         classExtends,
         structuredReturnTypes,
         functionReturnTypes,

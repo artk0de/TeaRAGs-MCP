@@ -254,4 +254,30 @@ describe("pythonDynamicFanoutSuppressed (w205u — every shape another layer own
     expect(suppressed(callOf("service", "append"), ctxOf(), probe)).toBe(true);
     expect(pass.calls).toBe(0);
   });
+  it("declines a receiver the caller's def assigns from an expression nothing types (m99j1.1.57)", () => {
+    // polar: `client = OAUTH_CLIENTS[platform]` then `client.get_profile()`;
+    // flask: `loader = self.app.jinja_loader` then `loader.list_templates()`.
+    // No typed channel carries either binding, so only assignment presence
+    // tells the gate the name is a local of unknown type.
+    expect(suppressed(callOf("client", "perform"), ctxOf({ assignedLocals: ["client"] }))).toBe(true);
+  });
+
+  it("declines an assigned local even when its assignment is an in-project call result the chain cannot type", () => {
+    const ctx = ctxOf({
+      assignedLocals: ["service"],
+      callResultBindings: { service: [{ line: 4, callee: "Service.build" }] },
+    });
+    expect(suppressed(callOf("service", "perform"), ctx)).toBe(true);
+  });
+
+  it("still fans a name the def does NOT assign — a parameter, a module global, a closure the walker did not publish", () => {
+    expect(suppressed(callOf("service", "perform"), ctxOf({ assignedLocals: ["other"] }))).toBe(false);
+  });
+
+  it("asks assignment presence before the probe — a membership test, the chain is a walk", () => {
+    const pass = new SilentPass();
+    const probe = new PythonChainAnswerProbe([pass]);
+    expect(suppressed(callOf("client", "perform"), ctxOf({ assignedLocals: ["client"] }), probe)).toBe(true);
+    expect(pass.calls).toBe(0);
+  });
 });

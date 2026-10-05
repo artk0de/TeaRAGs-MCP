@@ -79,6 +79,14 @@ function pythonBoundToUntypeableCall(receiver: string, atLine: number, ctx: Call
  *    terminal DROP is what stopped `serializer.is_valid()` resolving to
  *    `ConfirmationCode`; re-opening it is a different bead;
  *  - an imported name — the `importedName` pass;
+ *  - a name the caller's def ASSIGNS (bd tea-rags-mcp-m99j1.1.57) — a local
+ *    whose binding no typed channel answers at this line, because a typed one
+ *    was declined just above. `client = OAUTH_CLIENTS[platform]`,
+ *    `loader = self.app.jinja_loader`, a Stripe object fetched by a project
+ *    helper: the value's type is decided by an expression, and the project
+ *    class that happens to spell the member is a coincidence. What the fan
+ *    keeps is a name the body never binds — a parameter (duck-typed by its
+ *    callers), a module global, a closure the walker did not publish;
  *  - a receiver bound to a call the project cannot type — a foreign head
  *    (`logger = logging.getLogger(…)`) or a `self.<member>` no project file
  *    declares (`serializer = self.get_serializer(…)`);
@@ -110,6 +118,7 @@ export function pythonDynamicFanoutSuppressed(
   if (PYTHON_BUILTINS.has(receiver)) return true;
   if (resolveLocalBinding(ctx.localBindings, receiver, call.startLine) !== undefined) return true;
   if (findPythonImportBinding(ctx.imports, receiver) !== null) return true;
+  if (ctx.assignedLocals?.includes(receiver) === true) return true;
   if (pythonBoundToUntypeableCall(receiver, call.startLine, ctx)) return true;
   if (coreAmbiguous(call, ctx)) return true;
   if (PYTHON_BUILTINS.has(call.member)) return true;

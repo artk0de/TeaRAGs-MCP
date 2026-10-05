@@ -154,6 +154,7 @@ function moduleScopeContext(ctx: CallContext): CallContext {
     callerSymbolId: undefined,
     localBindings: undefined,
     callResultBindings: undefined,
+    assignedLocals: undefined,
   };
 }
 

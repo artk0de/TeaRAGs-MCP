@@ -42,6 +42,7 @@ import type {
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/index.js";
 import { pythonVocabularyFor } from "../vocabulary/frameworks/index.js";
+import { collectPythonAssignedLocals } from "./passes/python-assigned-locals.js";
 import {
   annotatePythonCalleeParams,
   collectPythonCallableValueFlow,
@@ -332,6 +333,7 @@ interface PythonPerFileChannels {
   callOwnership: ReturnType<typeof assignCallsToInnermostChunks>;
   callResultBindings: Record<string, CallResultBinding[]>;
   defSignatures: ReturnType<typeof collectPythonDefSignatures>;
+  assignedLocals: ReturnType<typeof collectPythonAssignedLocals>;
 }
 
 function collectPythonPerFileChannels(
@@ -368,7 +370,11 @@ function collectPythonPerFileChannels(
   // that is not a def — a class, a module — simply finds nothing, the same
   // absence Ruby leaves on a non-method.
   const defSignatures = collectPythonDefSignatures(root);
-  return { callOwnership, callResultBindings, defSignatures };
+  // bd tea-rags-mcp-m99j1.1.57 — every local a def binds, typed or not, joined
+  // by the same `def` start line. Not gated on `trackTypes`: it states that a
+  // name IS a local, which is true whether or not anything typed it.
+  const assignedLocals = collectPythonAssignedLocals(root);
+  return { callOwnership, callResultBindings, defSignatures, assignedLocals };
 }
 
 /**
@@ -397,6 +403,8 @@ function collectPythonChunkExtractions(
       if (signature.kwargs !== undefined) base.kwargs = signature.kwargs;
       if (signature.visibility !== undefined) base.visibility = signature.visibility;
     }
+    const assignedLocals = perFile.assignedLocals.get(c.startLine);
+    if (assignedLocals !== undefined) base.assignedLocals = assignedLocals;
     if (trackTypes) {
       const bindings = pythonLocalBindingsInRange(flat.localBindingSites, c.startLine, c.endLine);
       if (Object.keys(bindings).length > 0) base.localBindings = bindings;

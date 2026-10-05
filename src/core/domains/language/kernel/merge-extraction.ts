@@ -95,6 +95,8 @@ const CHUNK_EXTRACTION_MERGE_RULEBOOK: ExtractionMergeRulebook<ChunkExtraction> 
   // (bd tea-rags-mcp-z68v9): an unsorted concat would hand a call the pass's
   // later binding purely because the pass ran second.
   callResultBindings: (base, pass) => mergeLocalBindings(base, pass),
+  // A set of names (bd tea-rags-mcp-m99j1.1.57): union, base order first.
+  assignedLocals: (base, pass) => [...new Set([...(base ?? []), ...pass])],
   // Scalars: the base's answer stands; a pass may only FILL one the walker left
   // absent. `??` and not a truthiness test — `acceptsBlock: false` is a proven
   // non-yielder, not a missing value.
