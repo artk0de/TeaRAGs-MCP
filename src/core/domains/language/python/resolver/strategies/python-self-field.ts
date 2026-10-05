@@ -51,6 +51,11 @@ export class PythonSelfFieldSymbolResolutionStrategy implements SymbolResolution
     if (call.receiver?.startsWith("self.") !== true) return CONTINUE;
     const fieldSegment = call.receiver.slice("self.".length);
     if (fieldSegment.includes(".")) return CONTINUE;
+    // `self.get_compiler(using)` is a CALL on self, not a field read: its type is
+    // the method's RETURN, which `chainType` folds through the kernel member
+    // return-type walk (bd tea-rags-mcp-m99j1.1.16). Reading it as a field found
+    // nothing and DROPPED every such chain before the fold could see it.
+    if (fieldSegment.endsWith(")")) return CONTINUE;
 
     // `classFieldTypes` is keyed by the class's OWN short name, so this pass
     // needs the enclosing CLASS — a call made from a nested `def` has that
