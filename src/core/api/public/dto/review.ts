@@ -76,23 +76,60 @@ export interface ReviewSectionEnvelope {
 export type NamingSectionResult = ReviewSectionEnvelope & NamingReviewResult;
 
 /**
+ * What the missing partner IS — the finding's tier, not its evidence (bd
+ * tea-rags-mcp-89k7k.1.12). A missing TEST update is the first-class signal
+ * (top tier); a documentation partner is a separate low tier; a generated
+ * artefact is never a finding at all.
+ */
+export type IncompleteChangePartnerKind = "test" | "source" | "documentation";
+
+/**
  * One incomplete-change finding (the review half of bd tea-rags-mcp-3kykc):
  * history says `file` and `missingPartner` change together; this diff touches
- * `file` and not the partner — the change may be missing its other half.
+ * `file` and not the partner — the change may be missing its other half. The
+ * finding has cleared the coupling-statistics gate (lift above chance, Wilson
+ * strength above the corpus cut — bd tea-rags-mcp-89k7k.1.12): what raw
+ * support used to surface is now only the evidence, never the ranking.
  */
 export interface IncompleteChangePartner {
   file: string;
   missingPartner: string;
+  /** {@link IncompleteChangePartnerKind} of `missingPartner`. */
+  partnerKind: IncompleteChangePartnerKind;
   /** Admitted bundles that touched both files. */
   support: number;
   /** P(missingPartner changes | file changes). */
   confidence: number;
+  /**
+   * How sure the history is the pair moves together — the larger direction's
+   * Wilson lower bound, the same `cochangeStrength` silent coupling ranks by.
+   */
+  strength: number;
+  /** support·N/(changes(A)·changes(B)); above 1 = the pair beats chance. */
+  lift: number;
+  /**
+   * The structural graph joins the two files (an import/call/re-export edge,
+   * either direction) — the diff run's file-granular codegraph fact, ranking
+   * the partner above one that only co-changed historically.
+   */
+  structurallyLinked: boolean;
   /** Unix seconds of the newest bundle that touched both. */
   lastCoChangeAt: number;
 }
 
 export interface IncompleteChangeSectionPayload {
   partners: readonly IncompleteChangePartner[];
+  /**
+   * The strength cut every listed finding cleared: Otsu's over the corpus's
+   * candidate strengths when that population is bimodal enough, the strict
+   * 0.5 majority floor otherwise — `strengthThresholdMethod` says which, so a
+   * `majority` cut is read as the corpus refusing to draw one, not as 0.5
+   * being special (bd tea-rags-mcp-r8hme.46's gate, consumed honestly).
+   */
+  strengthThreshold: number;
+  strengthThresholdMethod: "otsu" | "majority";
+  /** η of the Otsu cut — its evidence, or the rejection evidence under `majority`. */
+  strengthSeparability?: number;
   /** Findings past the cap of 50 — counted, not listed. */
   truncated?: number;
 }
