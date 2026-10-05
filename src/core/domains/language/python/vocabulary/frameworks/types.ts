@@ -65,8 +65,6 @@ export interface PythonFrameworkMemberTypes {
   readonly instanceReturning: ReadonlySet<string>;
   /** Field constructors whose attribute holds an instance of their FIRST argument. */
   readonly associationFields: ReadonlySet<string>;
-  /** Decorators turning a method into an attribute holding its return. */
-  readonly descriptorDecorators: ReadonlySet<string>;
 }
 
 export interface PythonFrameworkVocabulary {
@@ -84,6 +82,14 @@ export interface PythonFrameworkVocabulary {
   readonly facets: ReadonlySet<PythonVocabularyFacet>;
   /** Synthesized member returns, when the framework has any. */
   readonly memberTypes?: PythonFrameworkMemberTypes;
+  /**
+   * Decorators turning a def into an attribute holding its return, spelled by
+   * the QUALIFIED name the decorator's import binds (`werkzeug.utils.cached_property`),
+   * so a project's own namesake never matches. Read by the walker's descriptor
+   * pass under the `descriptorDecorators` facet; the language's own set lives in
+   * `vocabulary/descriptors.ts`.
+   */
+  readonly descriptorDecorators?: ReadonlySet<string>;
 }
 
 /** Build a vocabulary. A factory, not a container — each module calls it with
@@ -93,11 +99,13 @@ export function definePythonFrameworkVocabulary(
   facets: readonly PythonVocabularyFacet[],
   activatedBy?: readonly string[],
   memberTypes?: PythonFrameworkMemberTypes,
+  descriptorDecorators?: readonly string[],
 ): PythonFrameworkVocabulary {
   return {
     framework,
     facets: new Set(facets),
     ...(activatedBy === undefined ? {} : { activatedBy: new Set(activatedBy) }),
     ...(memberTypes === undefined ? {} : { memberTypes }),
+    ...(descriptorDecorators === undefined ? {} : { descriptorDecorators: new Set(descriptorDecorators) }),
   };
 }

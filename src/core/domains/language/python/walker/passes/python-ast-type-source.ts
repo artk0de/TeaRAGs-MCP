@@ -150,21 +150,45 @@ function collectPythonAstScopeTables(root: AstNode): PythonAstScopeTables {
 
 const NO_FIELDS: ReadonlyMap<string, string> = new Map<string, string>();
 
+/** The class an UNANNOTATED def's return expressions name, read against `tables`; null on silence. */
+function inferPythonDefReturnName(
+  defNode: AstNode,
+  selfClass: string | undefined,
+  tables: PythonAstScopeTables,
+): string | null {
+  const scope: PythonReturnScope = {
+    selfClass,
+    fieldTypes: (selfClass === undefined ? undefined : tables.fieldTypes.get(selfClass)) ?? NO_FIELDS,
+    fileReturnTypes: tables.fileReturnTypes,
+  };
+  return inferReturnTypeName(defNode, null, pythonReturnPorts(scope));
+}
+
+/**
+ * This source's return inference for ONE file, for a pass that needs the
+ * inferred return of a def it picked itself (the descriptor pass, bd
+ * tea-rags-mcp-m99j1.1.20). The scope tables cost a descent, so they are built
+ * on the first question and never for a file that asks none.
+ */
+export function pythonInferredReturnReader(
+  root: AstNode,
+): (defNode: AstNode, selfClass: string | undefined) => string | null {
+  let tables: PythonAstScopeTables | undefined;
+  return (defNode, selfClass) => {
+    tables ??= collectPythonAstScopeTables(root);
+    return inferPythonDefReturnName(defNode, selfClass, tables);
+  };
+}
+
 function extractPythonAstFacts(input: PythonTypeSourceInput): TypeFact[] {
-  const { fieldTypes, fileReturnTypes } = collectPythonAstScopeTables(input.root);
+  const tables = collectPythonAstScopeTables(input.root);
   const facts: TypeFact[] = [];
   walkPythonScopes(input.root, {
     onDef: (site) => {
       // An annotated def is the `annotations` source's; re-emitting would only
       // lose the coordinate dedupe race and cost a walk.
       if (site.node.childForFieldName("return_type") !== null) return;
-      const selfClass = site.classChain[site.classChain.length - 1];
-      const scope: PythonReturnScope = {
-        selfClass,
-        fieldTypes: (selfClass === undefined ? undefined : fieldTypes.get(selfClass)) ?? NO_FIELDS,
-        fileReturnTypes,
-      };
-      const name = inferReturnTypeName(site.node, null, pythonReturnPorts(scope));
+      const name = inferPythonDefReturnName(site.node, site.classChain[site.classChain.length - 1], tables);
       if (name === null) return;
       const fact: TypeFact = {
         kind: "return",

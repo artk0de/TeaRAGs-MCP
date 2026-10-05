@@ -3,8 +3,10 @@
  *
  * The synthesized model members and query verbs (`memberTypes`, bd
  * tea-rags-mcp-m99j1.1.21) are answered by the resolver's `frameworkReturnType`
- * port. `associationFields` / `descriptorDecorators` are declared for the
- * walker, which owns reading a field's constructor argument.
+ * port. `associationFields` is declared for the walker, which owns reading a
+ * field's constructor argument. `descriptorDecorators` is read by the walker's
+ * descriptor pass (bd tea-rags-mcp-m99j1.1.20): a `@cached_property` def is an
+ * attribute holding its return.
  *
  * The extraction facet: `as_manager`, the classmethod Django's own QuerySet exposes.
  * `objects = SiteQuerySet.as_manager()` types `Site.objects.<m>` on hop 1 of the
@@ -69,6 +71,6 @@ export const DJANGO_VOCABULARY: PythonFrameworkVocabulary = definePythonFramewor
     selfReturning: new Set(["db_manager"]),
     instanceReturning: new Set(["get", "first", "last", "create", "earliest", "latest"]),
     associationFields: new Set(["ForeignKey", "OneToOneField"]),
-    descriptorDecorators: new Set(["cached_property"]),
   },
+  ["django.utils.functional.cached_property"],
 );

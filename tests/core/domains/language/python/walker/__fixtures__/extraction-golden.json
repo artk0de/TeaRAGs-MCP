@@ -1108,12 +1108,14 @@
     },
     "classFieldTypes": {
       "User": {
-        "email": "str"
+        "email": "str",
+        "handle": "str"
       }
     },
     "classFieldTypesByClassKey": {
       "pkg/models.py::User": {
-        "email": "str"
+        "email": "str",
+        "handle": "str"
       }
     },
     "typeAbstractness": {

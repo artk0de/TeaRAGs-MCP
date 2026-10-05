@@ -80,6 +80,9 @@ function pythonReceiverClassKey(bareType: string, ctx: CallContext, mapper: Pyth
  *
  * A run with no linearizer (a walker-v2 index carrying no `classAncestors`)
  * reads the own class only, which is exactly the pre-seam behaviour.
+ *
+ * This is the CALL read (`obj.member(…)`); {@link pythonInheritedAttributeType}
+ * is the same walk for `obj.member` with no call — see {@link PythonMemberAccess}.
  */
 export function pythonInheritedMemberType(
   bareType: string,
@@ -90,7 +93,38 @@ export function pythonInheritedMemberType(
   linearizer: AncestorLinearizer<CallContext> | undefined,
   args?: readonly TypeRef[],
 ): TypeRef | undefined {
-  const declared = pythonDeclaredMemberType(bareType, member, form, ctx, mapper, linearizer, args);
+  return pythonMemberTypeThroughMro(bareType, member, "call", form, ctx, mapper, linearizer, args);
+}
+
+/**
+ * {@link pythonInheritedMemberType} for an ATTRIBUTE read — `obj.member` with
+ * no call (bd tea-rags-mcp-m99j1.1.20). Same walk, same channels, except that a
+ * member the run knows as a PLAIN method answers nothing: reading it yields a
+ * bound method, not its return.
+ */
+export function pythonInheritedAttributeType(
+  bareType: string,
+  member: string,
+  form: "class" | "instance",
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  linearizer: AncestorLinearizer<CallContext> | undefined,
+  args?: readonly TypeRef[],
+): TypeRef | undefined {
+  return pythonMemberTypeThroughMro(bareType, member, "attribute", form, ctx, mapper, linearizer, args);
+}
+
+function pythonMemberTypeThroughMro(
+  bareType: string,
+  member: string,
+  access: PythonMemberAccess,
+  form: "class" | "instance",
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  linearizer: AncestorLinearizer<CallContext> | undefined,
+  args: readonly TypeRef[] | undefined,
+): TypeRef | undefined {
+  const declared = pythonDeclaredMemberType(bareType, member, access, form, ctx, mapper, linearizer, args);
   if (declared !== undefined) return declared;
   // LAST, and only when the run carries the channel: a field assigned from a
   // CALL, folded ONE level (bd tea-rags-mcp-w205u, E4.6c).
@@ -118,17 +152,34 @@ export function pythonSubstituteSelfReturn(returned: TypeRef | undefined, receiv
     : returned;
 }
 
+/**
+ * How a member is REACHED, which in Python decides what it yields (P3, bd
+ * tea-rags-mcp-m99j1.1.20).
+ *
+ *   - `"call"` — `obj.m(…)`: a method's declared return, a field's type, or a
+ *     framework verb's result. Unchanged from before the split.
+ *   - `"attribute"` — `obj.m`: what the attribute HOLDS. A field (a descriptor
+ *     `@property` / `@cached_property` is recorded as one by the walker's
+ *     descriptor pass) or a framework-synthesized attribute, never the return
+ *     of a def the symbol table declares under that spelling: on a plain method
+ *     `obj.m` is a bound method, so typing it as its return would pin the next
+ *     hop on a class the value is not. A return fact NO def stands behind is
+ *     still read — nothing says it belongs to a method.
+ */
+export type PythonMemberAccess = "attribute" | "call";
+
 /** {@link pythonInheritedMemberType} minus its call-result tier — the pre-E4.6c body. */
 function pythonDeclaredMemberType(
   bareType: string,
   member: string,
+  access: PythonMemberAccess,
   form: "class" | "instance",
   ctx: CallContext,
   mapper: PythonImportFileMapper,
   linearizer: AncestorLinearizer<CallContext> | undefined,
   args?: readonly TypeRef[],
 ): TypeRef | undefined {
-  const resolver = new MemberReturnTypeResolver(pythonMemberReturnTypePorts(ctx, mapper, linearizer));
+  const resolver = new MemberReturnTypeResolver(pythonMemberReturnTypePorts(ctx, mapper, linearizer, access));
   // `args` reach the framework port only: a relation carries its model there.
   const owner: NominalTypeRef = args === undefined ? { form, name: bareType } : { form, name: bareType, args };
   return resolver.returnTypeOf(owner, member, ctx) ?? undefined;
@@ -163,6 +214,7 @@ function pythonMemberReturnTypePorts(
   ctx: CallContext,
   mapper: PythonImportFileMapper,
   linearizer: AncestorLinearizer<CallContext> | undefined,
+  access: PythonMemberAccess,
 ): MemberReturnTypePorts {
   let classKey: string | null | undefined;
   // Addressing the class costs symbol-table work, so it is deferred until
@@ -177,6 +229,10 @@ function pythonMemberReturnTypePorts(
     const fieldType = identifierEntry(identifierEntry(ctx.classFieldTypes, shortName), member);
     if (fieldType !== undefined) return { form: "instance", name: fieldType };
     const separator = owner.form === "class" ? "." : "#";
+    // An attribute read of a def the run declares is a bound method: its return
+    // is its CALL's. A descriptor def never gets here — the walker recorded it
+    // as the field read above.
+    if (access === "attribute" && ctx.symbolTable.lookup(`${classFq}${separator}${member}`).length > 0) return null;
     const returned = pythonReturnFactAsReceiver(ctx.structuredReturnTypes?.[`${classFq}${separator}${member}`]);
     return pythonSubstituteSelfReturn(returned, owner.name) ?? null;
   };
@@ -202,7 +258,7 @@ function pythonMemberReturnTypePorts(
       const parsed = parsePythonClassKey(ancestorKey);
       return parsed === null ? null : onClass(owner, lastSegment(parsed.classFq), parsed.classFq, member);
     },
-    frameworkReturnType: (owner, member) => pythonFrameworkReturnType(owner, member, ctx, mapper, linearizer),
+    frameworkReturnType: (owner, member) => pythonFrameworkReturnType(owner, member, access, ctx, mapper, linearizer),
   };
 }
 
@@ -224,10 +280,14 @@ function pythonMemberReturnTypePorts(
  * framework, the chain pass places it; elsewhere no project file declares it
  * and the pass drops the call as external — never a project namesake guess
  * beyond what the pass already refuses for any type.
+ *
+ * The verbs are methods, so an ATTRIBUTE read (`qs.filter` with no call) skips
+ * them and reaches the synthesized attributes only — see {@link PythonMemberAccess}.
  */
 function pythonFrameworkReturnType(
   owner: NominalTypeRef,
   member: string,
+  access: PythonMemberAccess,
   ctx: CallContext,
   mapper: PythonImportFileMapper,
   linearizer: AncestorLinearizer<CallContext> | undefined,
@@ -238,13 +298,15 @@ function pythonFrameworkReturnType(
     // A user manager (`ContentTypeManager(models.Manager)`) inherits the verb, so
     // the receiver's own subclass is what the next hop resolves on.
     if (
+      access === "call" &&
       vocabulary.selfReturning.has(member) &&
       (isRelationClass || pythonDescendsFromAny(owner.name, vocabulary.relationClasses, ctx, mapper, linearizer))
     ) {
       return owner;
     }
     if (isRelationClass) {
-      if (model === undefined) continue;
+      // Every relation-class answer is a verb's, so an attribute read gets none.
+      if (access === "attribute" || model === undefined) continue;
       if (vocabulary.relationReturning.has(member)) {
         return { form: "instance", name: vocabulary.relationClass, args: [model] };
       }
@@ -472,7 +534,7 @@ function pythonCalleeSpellingType(
   const head = callee.slice(0, dot);
   const method = callee.slice(dot + 1);
   // `self.<method>()` — the receiving class IS the one whose field this is.
-  if (head === "self") return pythonDeclaredMemberType(ownerType, method, "instance", ctx, mapper, linearizer);
+  if (head === "self") return pythonDeclaredMemberType(ownerType, method, "call", "instance", ctx, mapper, linearizer);
   const bareHead = lastSegment(head);
   if (!PYTHON_CLASS_NAME.test(bareHead)) return undefined;
   // Gated on the class resolving into the project, exactly as the chain's own
@@ -481,7 +543,7 @@ function pythonCalleeSpellingType(
   if (resolveTypeFile(bareHead, ctx, mapper) === null && pythonAliasedClassKey(bareHead, ctx, mapper) === null) {
     return undefined;
   }
-  return pythonDeclaredMemberType(bareHead, method, "class", ctx, mapper, linearizer);
+  return pythonDeclaredMemberType(bareHead, method, "call", "class", ctx, mapper, linearizer);
 }
 
 /**

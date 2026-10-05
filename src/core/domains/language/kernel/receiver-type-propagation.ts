@@ -55,6 +55,18 @@ export interface ReceiverTypePorts {
    */
   memberCallTypeOf?: (recv: TypeRef, member: string, argumentText: string, ctx: CallContext) => TypeRef | undefined;
   /**
+   * What READING `member` on `recv` without calling it yields — asked INSTEAD
+   * of {@link memberTypeOf} for a link that carries NO argument list (bd
+   * tea-rags-mcp-m99j1.1.20). OPTIONAL: in a language where a bare member
+   * reference is itself a call (Ruby's `user.name`), the two reads are one and
+   * the language omits it.
+   *
+   * It exists because in Python they are not one: `obj.prop` on a `@property`
+   * yields its return, while `obj.method` on a plain method yields a bound
+   * method whose return belongs to `obj.method()`.
+   */
+  memberAttributeTypeOf?: (recv: TypeRef, member: string, ctx: CallContext) => TypeRef | undefined;
+  /**
    * The type ITERATING a value of type `container` yields, or `null` when the
    * language cannot say (bd tea-rags-mcp-m99j1.1.18). Which containers yield
    * what — a list its element, a project class through its own iterator
@@ -198,6 +210,26 @@ function defaultReceiverHops(receiver: string): string[] {
 }
 
 /**
+ * What ONE raw link yields on `recv`: a link with an argument list goes to
+ * `memberCallTypeOf`, one without to `memberAttributeTypeOf`, each falling back
+ * to `memberTypeOf` when the language omits that port — so a language with
+ * neither optional port reads every link exactly as before they existed.
+ */
+function linkType(recv: TypeRef, link: string, ctx: CallContext, ports: ReceiverTypePorts): TypeRef | undefined {
+  const member = stripCallArgs(link);
+  if (ports.memberCallTypeOf === undefined && ports.memberAttributeTypeOf === undefined) {
+    return ports.memberTypeOf(recv, member, ctx);
+  }
+  const argumentText = callArgumentText(link);
+  if (argumentText === undefined) {
+    return (ports.memberAttributeTypeOf ?? ports.memberTypeOf)(recv, member, ctx);
+  }
+  return ports.memberCallTypeOf === undefined
+    ? ports.memberTypeOf(recv, member, ctx)
+    : ports.memberCallTypeOf(recv, member, argumentText, ctx);
+}
+
+/**
  * Thread a dotted chain receiver through the fold.
  *
  * 1. `segments` arrives ALREADY split as `[head, link1, link2, …]` — the caller
@@ -232,12 +264,7 @@ function propagateChain(
   if (current === undefined) return undefined;
 
   for (let i = startLink; i < links.length; i++) {
-    const member = stripCallArgs(links[i]);
-    const argumentText = ports.memberCallTypeOf === undefined ? undefined : callArgumentText(links[i]);
-    current =
-      argumentText === undefined || ports.memberCallTypeOf === undefined
-        ? ports.memberTypeOf(current, member, ctx)
-        : ports.memberCallTypeOf(current, member, argumentText, ctx);
+    current = linkType(current, links[i], ctx, ports);
     if (current === undefined) return undefined; // STOP-at-unknown-hop
   }
 
