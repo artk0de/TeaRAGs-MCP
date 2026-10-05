@@ -144,14 +144,20 @@ export function resolverInputChannels(inputs: ResolverInputs): Partial<CallConte
 
 /**
  * One call site as pass-2 sees it: the call, its chunk, the chunk's local
- * bindings AFTER barrier-derived parameter seeding (what the receiver-kind
- * classifier reads), and the full `CallContext` the resolver is handed.
+ * bindings AFTER barrier-derived parameter seeding, and the full `CallContext`
+ * the resolver is handed — plus the pair the call-site CLASSIFIERS (receiver
+ * kind, miss bucket) read instead, which differs only where the language keeps
+ * an evidence-only binding out of classification (bd tea-rags-mcp-m99j1.1.65;
+ * `LanguageSymbolResolver.classifierLocalBindings`). Identical by reference
+ * otherwise.
  */
 export interface ResolvableCallSite {
   chunk: ChunkExtraction;
   call: CallRef;
   localBindings: ChunkExtraction["localBindings"];
   ctx: CallContext;
+  classifierLocalBindings: ChunkExtraction["localBindings"];
+  classifierCtx: CallContext;
 }
 
 /**
@@ -775,12 +781,12 @@ export class CallEdgeResolutionRunner {
    * {@link callSiteVerdicts} read.
    */
   private judgeCallSite(
-    { chunk, call, localBindings, ctx }: ResolvableCallSite,
+    { chunk, call, ctx, classifierLocalBindings, classifierCtx }: ResolvableCallSite,
     resolver: LanguageSymbolResolver,
     symbolTable: GlobalSymbolTable,
     calleeKinds: ReadonlySet<SymbolDefinitionKind> | undefined,
   ): CallSiteVerdict {
-    const receiverKind = classifyReceiverKind(call, localBindings);
+    const receiverKind = classifyReceiverKind(call, classifierLocalBindings);
     const edges: MethodEdges = [];
     const fanouts: AmbiguousFanouts = [];
     const outcome = this.dispatchCall(call, chunk, ctx, resolver, edges, fanouts);
@@ -788,7 +794,7 @@ export class CallEdgeResolutionRunner {
     if (outcome === "ambiguous") verdict.ambiguousFanout = fanouts[0];
     else if (outcome === "resolved") {
       verdict.unnarrowedTemplate = this.landedOnSharedTemplate(edges, ctx, receiverKind);
-    } else verdict.missBucket = classifyResolveMiss(call, ctx, resolver, symbolTable, calleeKinds);
+    } else verdict.missBucket = classifyResolveMiss(call, classifierCtx, resolver, symbolTable, calleeKinds);
     return verdict;
   }
 
@@ -845,17 +851,29 @@ export class CallEdgeResolutionRunner {
       // The map seeded is the one the LANGUAGE reads: a binding it cannot read
       // at all is gone before seeding, exactly as if the walker never wrote it
       // (bd tea-rags-mcp-m99j1.1.30 regression).
-      const localBindings = seedParamLocalBindings(
-        this.visibleLocalBindings(extraction, chunk, symbolTable, resolver, inputs),
-        paramTypesOfChunk(this.runState.paramTypes, chunk),
-        chunk.startLine,
-      );
+      const visible = this.visibleLocalBindings(extraction, chunk, symbolTable, resolver, inputs);
+      const paramTypes = paramTypesOfChunk(this.runState.paramTypes, chunk);
+      const localBindings = seedParamLocalBindings(visible, paramTypes, chunk.startLine);
+      // The classifiers read the map seeded the same way from what the language
+      // keeps for classification, so where it hides nothing they read the very
+      // map resolution reads (bd tea-rags-mcp-m99j1.1.65).
+      const classifierVisible = this.classifierLocalBindings(extraction, chunk, symbolTable, resolver, inputs, visible);
+      const classifierLocalBindings =
+        classifierVisible === visible
+          ? localBindings
+          : seedParamLocalBindings(classifierVisible, paramTypes, chunk.startLine);
       for (const call of chunk.calls) {
+        const ctx = this.buildCallContext(extraction, chunk, symbolTable, inputs, localBindings);
         visit({
           chunk,
           call,
           localBindings,
-          ctx: this.buildCallContext(extraction, chunk, symbolTable, inputs, localBindings),
+          ctx,
+          classifierLocalBindings,
+          classifierCtx:
+            classifierLocalBindings === localBindings
+              ? ctx
+              : this.buildCallContext(extraction, chunk, symbolTable, inputs, classifierLocalBindings),
         });
       }
     }
@@ -923,6 +941,29 @@ export class CallEdgeResolutionRunner {
     return resolver.visibleLocalBindings(
       bindings,
       this.buildCallContext(extraction, chunk, symbolTable, inputs, bindings),
+    );
+  }
+
+  /**
+   * Of the chunk's VISIBLE bindings, the ones the call-site classifiers read —
+   * {@link LanguageSymbolResolver.classifierLocalBindings}, asked once per chunk
+   * against the context built over `visible`. A resolver without the hook, no
+   * bindings, no calls: `visible` itself, by identity.
+   */
+  private classifierLocalBindings(
+    extraction: FileExtraction,
+    chunk: ChunkExtraction,
+    symbolTable: GlobalSymbolTable,
+    resolver: LanguageSymbolResolver,
+    inputs: ResolverInputs,
+    visible: ChunkExtraction["localBindings"],
+  ): ChunkExtraction["localBindings"] {
+    if (resolver.classifierLocalBindings === undefined || visible === undefined || chunk.calls.length === 0) {
+      return visible;
+    }
+    return resolver.classifierLocalBindings(
+      visible,
+      this.buildCallContext(extraction, chunk, symbolTable, inputs, visible),
     );
   }
 

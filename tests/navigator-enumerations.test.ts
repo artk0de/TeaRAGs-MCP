@@ -40,6 +40,7 @@ const PIN_TEST = "navigator-enumerations.test.ts";
  * capability — which is a behavioural difference, not an omission.
  */
 const PINNED_CAPABILITY_LANGUAGES: Readonly<Record<string, readonly string[]>> = {
+  classifierLocalBindings: ["python"],
   diagnostics: ["typescript"],
   endResolveVisitGroup: ["typescript"],
   hasInProjectDefinition: ["javascript", "python", "ruby", "swift", "typescript"],
