@@ -590,15 +590,58 @@ export function pythonPlacedReturnFact(
     if (name === null) return null;
     return name === arm.name ? arm : { ...arm, name };
   };
+  const placeUnion = (union: TypeRef & { form: "union" }): TypeRef | null => {
+    const members: TypeRef[] = [];
+    for (const member of union.members) {
+      const placed = placeArm(member, true);
+      if (placed === null) return null;
+      members.push(placed);
+    }
+    return { ...union, members };
+  };
   if (recorded.form === "instance") return placeArm(recorded, false) ?? undefined;
-  if (recorded.form !== "union") return recorded;
-  const members: TypeRef[] = [];
-  for (const member of recorded.members) {
-    const placed = placeArm(member, true);
-    if (placed === null) return undefined;
-    members.push(placed);
+  if (recorded.form === "union") return placeUnion(recorded) ?? undefined;
+  // A union NESTED in a container or tuple (`-> list[A | B]`) is read out by
+  // the caller's derived-binding fold, which places what it folds from the
+  // CALLER's file (bd tea-rags-mcp-m99j1.1.70). Written in another file, its
+  // arms are placed here, by the file that wrote them; one that dies kills the
+  // whole fact, as a top-level union's does. A fact the caller's own file
+  // wrote is left to the fold, which places it by that same file.
+  if (definingFiles.every((file) => file === ctx.callerFile)) return recorded;
+  return pythonPlacedNestedUnions(recorded, placeUnion) ?? undefined;
+}
+
+/**
+ * `recorded` with every union inside its container elements and tuple
+ * positions replaced by what `placeUnion` answers, or null when any of them
+ * dies. A nominal or `nil` is kept as written — only a union's arms are placed.
+ */
+function pythonPlacedNestedUnions(
+  recorded: TypeRef,
+  placeUnion: (union: TypeRef & { form: "union" }) => TypeRef | null,
+): TypeRef | null {
+  switch (recorded.form) {
+    case "union":
+      return placeUnion(recorded);
+    case "container": {
+      const element = pythonPlacedNestedUnions(recorded.element, placeUnion);
+      if (element === null) return null;
+      return element === recorded.element ? recorded : { ...recorded, element };
+    }
+    case "tuple": {
+      const elements: TypeRef[] = [];
+      for (const element of recorded.elements) {
+        const placed = pythonPlacedNestedUnions(element, placeUnion);
+        if (placed === null) return null;
+        elements.push(placed);
+      }
+      return elements.every((element, at) => element === recorded.elements[at]) ? recorded : { ...recorded, elements };
+    }
+    case "class":
+    case "instance":
+    case "nil":
+      return recorded;
   }
-  return { ...recorded, members };
 }
 
 /**

@@ -69,7 +69,13 @@
   sources declaring the name is the same ambiguity the caller declined to guess
   at. `MAX_REEXPORT_HOPS` is 3 with a visited set — a deeper tower or a
   re-export cycle answers the pre-seam refusal rather than a guess, and `null`
-  means "no better answer than the file you came in with", never "absent".
+  means "no better answer than the file you came in with", never "absent". A
+  star never carries a leading-underscore name: the walker records no `__all__`,
+  and without one Python's star import skips them. `importedName`'s
+  module-member read asks this walk LAST (`moduleReexportOutcome`), only after
+  the project-wide declaration hop declines — django's gis `models.CharField`
+  reaches `db/models/fields` two stars away, outside the package the hop's
+  tie-break retries in (bd tea-rags-mcp-m99j1.1.73).
 - **A THIRD question exists, and it terminates on a FILE rather than a
   declaration.** `resolveExportedModule` asks which file a package binds a name
   to as a MODULE, for the shape neither of the other two can answer:
@@ -318,7 +324,17 @@
 - **A guarded fallback RHS still names a class.** `param or Default()` types
   from the RIGHT operand (the left is a bare name with no competing claim), and
   a ternary types only when BOTH arms call the same callee. `A() or B()` and
-  `A(x) if p else B(y)` are unions and decline — the engine never widens.
+  `A(x) if p else B(y)` are unions and decline — the engine never widens. A
+  ternary with ONE `None` arm is `Optional[X]` spelled as a value and reads as
+  its other arm, for fields, locals and module values alike
+  (`pythonOptionalValueArm`, bd tea-rags-mcp-m99j1.1.71); that arm is then read
+  by the plain-RHS rule, so an arm it cannot type stays untyped. A function
+  LOCAL whose two arms both construct a class is the one exception to the
+  decline: `passes/python-conditional-local-facts.ts` publishes it as a `local`
+  union fact, shaped exactly like an annotated `x: A | B`, so the union
+  component places and fans it (bd tea-rags-mcp-m99j1.1.77). Fields and module
+  values still decline — no field union carrier exists, and the shape was 0
+  sites on flask / django / httpx / polar when measured.
 - **A member is looked up through the field type's MRO, not verbatim.**
   `resolvePythonMemberOnTypeThroughMro` owns the two steps between a type NAME
   and the C3 walk (name → file, file + name → class key); `selfField`,
@@ -739,6 +755,18 @@
   `pythonEnclosingClass` reads as "no enclosing class". A stub-only group (a
   `Protocol` or ABC body) keeps the first stub: there the stubs ARE the
   declaration, and yielding would delete the symbol rather than relocate it.
+- **A property's accessor twins share its symbolId and keep NO range of their
+  own, so their bodies are attributed, not ranged.** `@x.setter` / `@x.deleter`
+  / `@x.getter def x` compose the getter's `Cls#x` by design (chunk ids and
+  `find_symbol` rely on the shared id), and `collectSymbols` keeps the getter's
+  range. `collectPythonAccessorTwinRanges` locates each twin and the walker's
+  call ownership treats its body as a range that folds onto the shared chunk,
+  together with its local bindings, call-result bindings and `assignedLocals`
+  (bd tea-rags-mcp-m99j1.1.76). Twin channels sit on later lines than the
+  getter's, so the getter's own calls read exactly what they read before. Only
+  the decorator naming the def's OWN property qualifies: a plain same-named
+  redefinition can be a different body with a different signature and still
+  falls to the class chunk.
 - **Class-body assignments (`objects = <QS>.as_manager()`) feed the SAME two
   field channels as `self.<field> = …`, and they merge UNDERNEATH:** a
   constructor assignment for the same field name wins. Reversing the spread
@@ -860,15 +888,20 @@
   tea-rags-mcp-m99j1.1.68): an unplaceable arm untypes it, a library / builtin
   arm makes it evidence — a fact to `pythonDerivedBindingIsFact`, hidden from
   the classifier bindings. Placement happens only there; a fold NESTED in
-  another reads `pythonDerivedBindingFold`, the raw arms. `contextEnter` is
-  `__enter__`'s return through the member-return MRO walk and nothing when no
-  project class declares one — the constructed instance is never the answer.
-  `except E as e` needs no derived kind: it is a plain instance binding scoped
-  to the handler; a tuple `except (A, B)` and starred targets record nothing.
-  This is a DIFFERENT mechanism from the annotation pass's
-  `python-iteration-facts.ts` (an `ast` fact off an annotated iterable); the two
-  coexist and the annotation one declines a bare `dict` iteration, which yields
-  KEYS while `TypeRef`'s container carries only a value.
+  another reads `pythonDerivedBindingFold`, the raw arms. That placement reads
+  from the CALLER's file, so a union nested in ANOTHER file's container or tuple
+  return (`-> list[A | B]`, arms spelled relative to that file) is placed
+  earlier, by `pythonPlacedReturnFact` at the return read, where the declaring
+  file is known (bd tea-rags-mcp-m99j1.1.70); an arm it cannot place kills the
+  whole fact, as a top-level union's does. `contextEnter` is `__enter__`'s
+  return through the member-return MRO walk and nothing when no project class
+  declares one — the constructed instance is never the answer. `except E as e`
+  needs no derived kind: it is a plain instance binding scoped to the handler; a
+  tuple `except (A, B)` and starred targets record nothing. This is a DIFFERENT
+  mechanism from the annotation pass's `python-iteration-facts.ts` (an `ast`
+  fact off an annotated iterable); the two coexist and the annotation one
+  declines a bare `dict` iteration, which yields KEYS while `TypeRef`'s
+  container carries only a value.
 - **The annotation pass's `ast` source infers a def's return through ONE
   memoised, cycle-guarded fixpoint per file (`PythonReturnFixpoint`).** A
   same-class `self.m()` / `cls.m()` delegation, a same-file def whose own return

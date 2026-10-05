@@ -267,3 +267,43 @@ describe("the netbox row the follow unlocks", () => {
     expect(strategy().attempt(getForModel, ctx)).toEqual({ kind: "continue" });
   });
 });
+
+describe("PythonImportFileMapper#resolveExportedName — what a star carries", () => {
+  const privateTable = (): InMemoryGlobalSymbolTable =>
+    tableWith({
+      "core/__init__.py": [],
+      "core/models/__init__.py": [],
+      "core/models/object_types.py": [{ symbolId: "ObjectType" }, { symbolId: "_registry" }],
+      "core/models/jobs.py": [{ symbolId: "Job" }],
+      "dcim/views.py": [{ symbolId: "site_view" }],
+    });
+
+  it("follows a star to a PUBLIC name the source declares", () => {
+    const ctx = ctxWith({ table: privateTable() });
+    expect(new PythonImportFileMapper().resolveExportedName("core/models/__init__.py", "ObjectType", ctx)).toBe(
+      "core/models/object_types.py",
+    );
+  });
+
+  it("never carries an underscore name through a star", () => {
+    // `from .object_types import *` binds no `_registry`: without an `__all__`
+    // naming it, Python's star import skips every leading-underscore name, so
+    // the package does not export it (bd tea-rags-mcp-m99j1.1.73).
+    const ctx = ctxWith({ table: privateTable() });
+    expect(new PythonImportFileMapper().resolveExportedName("core/models/__init__.py", "_registry", ctx)).toBeNull();
+  });
+
+  it("still follows an EXPLICIT re-export of an underscore name", () => {
+    const ctx = ctxWith({
+      table: privateTable(),
+      moduleReexports: {
+        "core/models/__init__.py": [
+          { exportedName: "_registry", sourceModule: ".object_types", sourceName: "_registry" },
+        ],
+      },
+    });
+    expect(new PythonImportFileMapper().resolveExportedName("core/models/__init__.py", "_registry", ctx)).toBe(
+      "core/models/object_types.py",
+    );
+  });
+});

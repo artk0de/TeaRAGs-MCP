@@ -202,3 +202,83 @@ describe("a module value annotated with a NON-container generic (bd tea-rags-mcp
     }
   });
 });
+
+describe("a module value read THROUGH a module alias (bd tea-rags-mcp-m99j1.1.72)", () => {
+  // django/core/handlers/exception.py:
+  //   from django.core import signals
+  //   signals.got_request_exception.send(sender=None, request=request)
+  // django/core/signals.py: `got_request_exception = Signal(providing_args=[...])`.
+  // The head is a MODULE, its first link a module-level VALUE of that module;
+  // the same fact that types `from django.core.signals import ...` types it.
+  const SIGNALS = tableWith({
+    "django/__init__.py": [],
+    "django/core/__init__.py": [],
+    "django/core/signals.py": [],
+    "django/core/handlers/exception.py": [{ symbolId: "response_for_exception" }],
+    "django/test/__init__.py": [],
+    "django/test/signals.py": [{ symbolId: "clear_cache_handlers" }],
+    "django/dispatch/__init__.py": [],
+    "django/dispatch/dispatcher.py": [
+      { symbolId: "Signal" },
+      { symbolId: "Signal#send", scope: ["Signal"] },
+      { symbolId: "Signal#connect", scope: ["Signal"] },
+    ],
+    // An unrelated `send` the short-name fallback could reach for.
+    "django/core/mail/message.py": [{ symbolId: "send" }],
+  });
+  const SIGNAL_VALUES: Record<string, TypeRef> = {
+    "django/core/signals.py::got_request_exception": instance("Signal"),
+    "django/core/signals.py::setting_changed": instance("Signal"),
+  };
+  const SIGNAL_REEXPORTS: CallContext["moduleReexports"] = {
+    "django/test/signals.py": [
+      { exportedName: "setting_changed", sourceModule: "django.core.signals", sourceName: "setting_changed" },
+    ],
+  };
+  const signalsCtx = (parts: Partial<CallContext> = {}): CallContext => ({
+    callerFile: "django/core/handlers/exception.py",
+    callerScope: ["response_for_exception"],
+    imports: [fromImport("django.core", "signals")],
+    symbolTable: SIGNALS,
+    classAncestors: { "django/dispatch/dispatcher.py::Signal": [] },
+    moduleValueTypes: SIGNAL_VALUES,
+    moduleReexports: SIGNAL_REEXPORTS,
+    ...parts,
+  });
+
+  it("resolves `<module alias>.<singleton>.<member>` on the singleton's class", () => {
+    const target = new PythonCallResolver().resolve(call("signals.got_request_exception", "send"), signalsCtx());
+    expect(target).toEqual({ targetRelPath: "django/dispatch/dispatcher.py", targetSymbolId: "Signal#send" });
+  });
+
+  it("follows the alias module's re-export of the singleton one hop", () => {
+    const target = new PythonCallResolver().resolve(
+      call("signals.setting_changed", "connect"),
+      signalsCtx({ imports: [fromImport("django.test", "signals")] }),
+    );
+    expect(target).toEqual({ targetRelPath: "django/dispatch/dispatcher.py", targetSymbolId: "Signal#connect" });
+  });
+
+  it("resolves an imported singleton the bound module re-exports from another module", () => {
+    // django/contrib/postgres/apps.py: `from django.test.signals import setting_changed`.
+    const target = new PythonCallResolver().resolve(
+      call("setting_changed", "connect"),
+      signalsCtx({ imports: [fromImport("django.test.signals", "setting_changed")] }),
+    );
+    expect(target).toEqual({ targetRelPath: "django/dispatch/dispatcher.py", targetSymbolId: "Signal#connect" });
+  });
+
+  it("says nothing when the alias module holds no fact for the name", () => {
+    const target = new PythonCallResolver().resolve(
+      call("signals.got_request_exception", "send"),
+      signalsCtx({ moduleValueTypes: {} }),
+    );
+    expect(target?.targetSymbolId).not.toBe("Signal#send");
+  });
+
+  it("does not type a CALL of the value as the value", () => {
+    // `signals.factory().send()` reads what calling the value RETURNS.
+    const target = new PythonCallResolver().resolve(call("signals.got_request_exception()", "send"), signalsCtx());
+    expect(target?.targetSymbolId).not.toBe("Signal#send");
+  });
+});

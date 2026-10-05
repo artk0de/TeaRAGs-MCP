@@ -433,7 +433,31 @@ export function pythonModuleValueClass(
 ): PythonModuleValueClass | null {
   if (ctx.moduleValueTypes === undefined) return null;
   const key = pythonModuleValueKeyFor(name, ctx, mapper);
-  if (key === null) return null;
+  return key === null ? null : pythonModuleValueClassAt(key, ctx);
+}
+
+/**
+ * `name` as a module-scope value of the module FILE `moduleFile` — or of the
+ * file it re-exports the name from (`PythonImportFileMapper#resolveExportedValue`)
+ * — or `null` (bd tea-rags-mcp-m99j1.1.72). The reading of
+ * {@link pythonModuleValueClass} for a value reached through a module ALIAS:
+ * `from django.core import signals` then `signals.got_request_exception`, where
+ * the caller binds the module rather than the value, so no binding of the
+ * value's own name exists to start from. Same fact, same class-key gate.
+ */
+export function pythonModuleValueClassIn(
+  moduleFile: string,
+  name: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): PythonModuleValueClass | null {
+  if (ctx.moduleValueTypes === undefined) return null;
+  const key = mapper.resolveExportedValue(moduleFile, name, ctx);
+  return key === null ? null : pythonModuleValueClassAt(key, ctx);
+}
+
+/** The class a `moduleValueTypes` entry names, keyed from the VALUE's own file. */
+function pythonModuleValueClassAt(key: string, ctx: CallContext): PythonModuleValueClass | null {
   const type = identifierEntry(ctx.moduleValueTypes, key);
   if (type?.form !== "instance") return null;
   const valueFile = key.slice(0, key.lastIndexOf("::"));

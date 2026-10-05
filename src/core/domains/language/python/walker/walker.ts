@@ -63,6 +63,10 @@ import {
   pythonDispatchRefOf,
   type PythonDispatchScope,
 } from "./passes/python-dispatch-tables.js";
+import {
+  collectPythonAccessorTwinRanges,
+  type PythonAccessorTwinRange,
+} from "./passes/python-property-accessor-twins.js";
 import { collectPythonStructuralContracts } from "./python-structural-contracts.js";
 import { collectPythonSymbolKinds } from "./symbol-kind.js";
 import { collectPythonTypeDeclarations } from "./type-declarations.js";
@@ -332,6 +336,8 @@ function collectPythonClassChannels(
 /** Channels collected once per FILE and joined to chunks by line. */
 interface PythonPerFileChannels {
   callOwnership: ReturnType<typeof assignCallsToInnermostChunks>;
+  /** Accessor twin def ranges per owning chunk index (bd m99j1.1.76). */
+  accessorTwins: ReadonlyMap<number, readonly PythonAccessorTwinRange[]>;
   callResultBindings: Record<string, CallResultBinding[]>;
   defSignatures: ReturnType<typeof collectPythonDefSignatures>;
   assignedLocals: ReturnType<typeof collectPythonAssignedLocals>;
@@ -355,7 +361,14 @@ function collectPythonPerFileChannels(
   // MRO on the OUTER class and DROPped, a top-level class's copy tripped
   // `selfMember`'s `callerScope.length === 0` guard and let `globalShortName`
   // fabricate 40 phantoms.
-  const callOwnership = assignCallsToInnermostChunks(calls, chunks);
+  const twinRanges = collectPythonAccessorTwinRanges(root, chunks);
+  const callOwnership = assignCallsToOwningChunks(calls, chunks, twinRanges);
+  const accessorTwins = new Map<number, PythonAccessorTwinRange[]>();
+  for (const twin of twinRanges) {
+    const list = accessorTwins.get(twin.ownerIndex);
+    if (list) list.push(twin);
+    else accessorTwins.set(twin.ownerIndex, [twin]);
+  }
   // bd tea-rags-mcp-z68v9 — `NAME = <callee>(…)` sites, collected ONCE per file
   // and sliced per chunk below, because the scan needs whole-file scope nesting
   // to tell a function-body local from a module global.
@@ -375,7 +388,37 @@ function collectPythonPerFileChannels(
   // by the same `def` start line. Not gated on `trackTypes`: it states that a
   // name IS a local, which is true whether or not anything typed it.
   const assignedLocals = collectPythonAssignedLocals(root);
-  return { callOwnership, callResultBindings, defSignatures, assignedLocals };
+  return { callOwnership, accessorTwins, callResultBindings, defSignatures, assignedLocals };
+}
+
+/**
+ * Innermost-chunk call ownership, with each property accessor twin's body
+ * standing in as a range of its own and its bucket then folded onto the chunk
+ * that owns the property's shared symbolId (bd m99j1.1.76). The twin range is
+ * smaller than the class chunk and larger than any def nested in it, so the
+ * innermost rule hands it exactly the calls of its own body. No twins: the
+ * plain innermost assignment, untouched.
+ */
+function assignCallsToOwningChunks(
+  calls: CallRef[],
+  chunks: PythonExtractInput["chunks"],
+  twins: readonly PythonAccessorTwinRange[],
+): Map<number, CallRef[]> {
+  if (twins.length === 0) return assignCallsToInnermostChunks(calls, chunks);
+  const ranges = [
+    ...chunks,
+    ...twins.map((t) => ({ startLine: t.startLine, endLine: t.endLine, scope: chunks[t.ownerIndex].scope })),
+  ];
+  const callOwnership = assignCallsToInnermostChunks(calls, ranges);
+  twins.forEach((twin, i) => {
+    const bucket = callOwnership.get(chunks.length + i);
+    if (bucket === undefined) return;
+    callOwnership.delete(chunks.length + i);
+    const owned = callOwnership.get(twin.ownerIndex);
+    if (owned) owned.push(...bucket);
+    else callOwnership.set(twin.ownerIndex, bucket);
+  });
+  return callOwnership;
 }
 
 /**
@@ -404,16 +447,48 @@ function collectPythonChunkExtractions(
       if (signature.kwargs !== undefined) base.kwargs = signature.kwargs;
       if (signature.visibility !== undefined) base.visibility = signature.visibility;
     }
-    const assignedLocals = perFile.assignedLocals.get(c.startLine);
+    const twins = perFile.accessorTwins.get(chunkIndex);
+    const assignedLocals = pythonAssignedLocalsOfDefs(perFile.assignedLocals, c.startLine, twins);
     if (assignedLocals !== undefined) base.assignedLocals = assignedLocals;
     if (trackTypes) {
       const bindings = pythonLocalBindingsInRange(flat.localBindingSites, c.startLine, c.endLine);
+      for (const twin of twins ?? []) {
+        for (const [name, list] of Object.entries(
+          pythonLocalBindingsInRange(flat.localBindingSites, twin.startLine, twin.endLine),
+        )) {
+          (bindings[name] ??= []).push(...list);
+        }
+      }
       if (Object.keys(bindings).length > 0) base.localBindings = bindings;
-      const inRange = pythonCallResultBindingsInRange(perFile.callResultBindings, c.startLine, c.endLine);
+      let inRange = pythonCallResultBindingsInRange(perFile.callResultBindings, c.startLine, c.endLine);
+      for (const twin of twins ?? []) {
+        const twinRange = pythonCallResultBindingsInRange(perFile.callResultBindings, twin.startLine, twin.endLine);
+        if (twinRange === undefined) continue;
+        inRange ??= createIdentifierRecord();
+        for (const [name, list] of Object.entries(twinRange)) (inRange[name] ??= []).push(...list);
+      }
       if (inRange !== undefined) base.callResultBindings = inRange;
     }
     return base;
   });
+}
+
+/**
+ * The locals a chunk's def binds, plus — for a property chunk — the locals each
+ * accessor twin def binds (bd m99j1.1.76): a twin's call sites join the chunk,
+ * so the names its body binds must too, or a twin-local receiver would read as
+ * a module global. No twins: the def's own list, by identity.
+ */
+function pythonAssignedLocalsOfDefs(
+  byDefLine: ReadonlyMap<number, string[]>,
+  startLine: number,
+  twins: readonly PythonAccessorTwinRange[] | undefined,
+): string[] | undefined {
+  const own = byDefLine.get(startLine);
+  if (twins === undefined) return own;
+  const names = new Set(own);
+  for (const twin of twins) for (const name of byDefLine.get(twin.startLine) ?? []) names.add(name);
+  return names.size > 0 ? [...names] : own;
 }
 
 /**
@@ -623,9 +698,11 @@ function pythonSelfFieldType(inner: AstNode): { readonly field: string; readonly
  * expression that names anything — so `A() or B()` (two competing claims) and
  * `a or b` (no claim) both decline. A ternary declines unless BOTH arms call
  * the same callee, because a union is not a receiver and the engine never
- * widens (`kernel/return-inference.ts`, decision 3).
+ * widens (`kernel/return-inference.ts`, decision 3). A ternary with a `None`
+ * arm is read as its other arm first ({@link pythonOptionalValueArm}).
  */
-function pythonFieldRhsCall(right: AstNode): AstNode | undefined {
+function pythonFieldRhsCall(rhs: AstNode): AstNode | undefined {
+  const right = pythonOptionalValueArm(rhs);
   if (right.type === "call") return right;
   if (right.type === "boolean_operator") {
     if (right.childForFieldName("operator")?.text !== "or") return undefined;
@@ -642,6 +719,28 @@ function pythonFieldRhsCall(right: AstNode): AstNode | undefined {
     return a !== null && b !== null && a.text === b.text ? consequence : undefined;
   }
   return undefined;
+}
+
+/**
+ * The value a right-hand side denotes for a member call (bd
+ * tea-rags-mcp-m99j1.1.71): `X if c else None` and `None if c else X` are
+ * `Optional[X]` spelled as an expression, and a member call reads `Optional[X]`
+ * as `X` — the reading an annotated `Optional[X]` already gets
+ * (`pythonNominalReceiverName` drops the nil arm). Any other node, including a
+ * conditional whose arms are both `None` or both non-`None`, is returned as it
+ * is, so the caller's own rule for that node still decides.
+ *
+ * The non-`None` arm is NOT typed here: each caller reads it exactly as it reads
+ * a plain right-hand side, which keeps an arm that caller cannot type untyped.
+ */
+function pythonOptionalValueArm<TValue extends AstNode | null>(value: TValue): AstNode | TValue {
+  if (value?.type !== "conditional_expression") return value;
+  // No field names on this node: `[consequence, condition, alternative]`.
+  const [consequence, , alternative] = value.namedChildren;
+  if (consequence === undefined || alternative === undefined) return value;
+  const consequenceIsNone = consequence.type === "none";
+  if (consequenceIsNone === (alternative.type === "none")) return value;
+  return consequenceIsNone ? alternative : consequence;
 }
 
 /**
@@ -1379,7 +1478,9 @@ function pythonLocalBindingsInRange(
  *
  * Otherwise constructor-call inference — `var = ClassName(...)` /
  * `var = module.ClassName(...)`. The RHS must be a call whose `function` is an
- * `identifier` (direct) or `attribute` (qualified). Anything else (function
+ * `identifier` (direct) or `attribute` (qualified), after a ternary with a
+ * `None` arm is read as its other arm ({@link pythonOptionalValueArm}).
+ * Anything else (function
  * literal, lambda, factory, list comprehension, etc.) is left unbound.
  *
  * bd tea-rags-mcp-z68v9 — the CapWords gate `collectPythonClassFieldTypes`
@@ -1401,12 +1502,24 @@ export function pythonAssignmentBoundType(
     const typeName = extractTypeName(typeField);
     return typeName ? { type: typeName, annotated: true } : null;
   }
-  const right = assignment.childForFieldName("right");
+  const typeName = pythonLocalConstructorTypeName(pythonOptionalValueArm(assignment.childForFieldName("right")));
+  return typeName === null ? null : { type: typeName, annotated: false };
+}
+
+/**
+ * The class a right-hand side CONSTRUCTS, spelled as written (`Svc`,
+ * `mod.ApiClient`), or `null` — the plain-RHS rule of
+ * {@link pythonAssignmentBoundType}: a `call` whose callee is an identifier or
+ * attribute passing the CapWords gate. Exported so the conditional-local source
+ * (`passes/python-conditional-local-facts.ts`, bd tea-rags-mcp-m99j1.1.77) reads
+ * each arm by the very rule a plain assignment is read by.
+ */
+export function pythonLocalConstructorTypeName(right: AstNode | null): string | null {
   if (right?.type !== "call") return null;
   const fnNode = right.childForFieldName("function");
   if (!fnNode) return null;
   const typeName = extractConstructorTypeName(fnNode);
-  return typeName && pythonLocalCalleeIsConstructor(typeName) ? { type: typeName, annotated: false } : null;
+  return typeName && pythonLocalCalleeIsConstructor(typeName) ? typeName : null;
 }
 
 /**
@@ -1863,7 +1976,8 @@ function pythonCalleeSpine(node: AstNode): { text: string; hops: number } | null
  * is the better answer and `localBindings` already carries it), and a
  * MODULE-level assignment — a module global is not a local, and binding one
  * would type every call site in the file from a single write. `await <call>` IS
- * unwrapped: awaiting a coroutine yields what it declares, and a spine rooted
+ * unwrapped: awaiting a coroutine yields what it declares, and so is a ternary
+ * with a `None` arm ({@link pythonOptionalValueArm}), and a spine rooted
  * at a NAME is recorded with its arguments elided — see
  * {@link pythonCalleeSpelling}.
  *
@@ -1875,7 +1989,7 @@ function collectPythonCallResultBindings(root: AstNode): Record<string, CallResu
   const scan = (node: AstNode, inFunction: boolean): void => {
     if (node.type === "assignment" && inFunction && node.childForFieldName("type") === null) {
       const lhs = node.namedChild(0);
-      const rhs = node.childForFieldName("right");
+      const rhs = pythonOptionalValueArm(node.childForFieldName("right"));
       const call = rhs?.type === "await" ? (rhs.namedChild(0) ?? rhs) : rhs;
       if (lhs?.type === "identifier" && call?.type === "call") {
         const callee = pythonCalleeSpelling(call);

@@ -58,6 +58,8 @@ export interface PythonForStatementSite {
 export interface PythonScopeVisitor {
   onDef?: (site: PythonDefSite) => void;
   onAnnotatedAssignment?: (site: PythonAnnotatedAssignmentSite) => void;
+  /** An assignment with NO `type` field; same site shape, the `assignment` node carrying none. */
+  onPlainAssignment?: (site: PythonAnnotatedAssignmentSite) => void;
   onForStatement?: (site: PythonForStatementSite) => void;
 }
 
@@ -127,6 +129,15 @@ export function walkPythonScopes(root: AstNode, visitor: PythonScopeVisitor): vo
         line: node.startPosition.row + 1,
       });
       return;
+    }
+    // No early return here either: a right-hand side can hold a comprehension.
+    if (node.type === "assignment" && visitor.onPlainAssignment !== undefined) {
+      visitor.onPlainAssignment({
+        node,
+        classChain: [...classChain],
+        methodName: fnStack[fnStack.length - 1],
+        line: node.startPosition.row + 1,
+      });
     }
     // No early return: a `for` body holds the defs and annotated assignments
     // the other visitors still need, and a comprehension clause sits inside an
