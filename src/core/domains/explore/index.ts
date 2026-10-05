@@ -26,12 +26,15 @@ export { resolvePresets, getPresetNames, getPresetWeights } from "./rerank/prese
 export type { RerankPreset } from "./rerank/presets/index.js";
 export { CodeChunkGrouper, DocChunkGrouper } from "./chunk-grouping/index.js";
 export type { ScrollChunk } from "./chunk-grouping/index.js";
+export { IndexMetricsQuery } from "./queries/index-metrics.js";
 export {
   createExploreStrategy,
   HybridSearchStrategy,
   ScrollRankStrategy,
   BaseExploreStrategy,
   SimilarSearchStrategy,
+  SymbolSearchStrategy,
+  FileOutlineStrategy,
   VectorSearchStrategy,
 } from "./strategies/index.js";
 export type {

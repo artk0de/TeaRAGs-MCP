@@ -30,9 +30,9 @@ import {
   IndexingProcessBuildStaleError,
   NotIndexedError,
 } from "../../../domains/ingest/errors.js";
-import { computeCollectionStats } from "../../../domains/ingest/infra/collection-stats.js";
 import {
   cleanupOrphanedVersions,
+  computeCollectionStats,
   isCollectionIndexingInFlight,
   type CollectionIndexingLock,
   type HeldCollectionIndexingLock,
