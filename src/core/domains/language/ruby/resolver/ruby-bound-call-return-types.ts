@@ -98,18 +98,68 @@ function callBindingOutsideCondition(
 ): string | undefined {
   const entries = identifierEntry(ctx.callResultBindings, receiver);
   if (entries === undefined || site.startColumn === undefined) return chunkWide;
-  let kept: CallResultBinding | undefined;
-  for (const entry of entries) if (kept === undefined || entry.line >= kept.line) kept = entry;
+  const kept = keptCallResultBinding(entries);
   if (kept === undefined || !isInsideModifierCondition(kept.conditionSpan, site.startLine, site.startColumn)) {
     return chunkWide;
   }
   if (localCallBindingSpelling(kept.callee) !== chunkWide) return chunkWide;
+  const above = latestCallResultBindingAbove(entries, kept.line);
+  return above === undefined ? undefined : localCallBindingSpelling(above.callee);
+}
+
+/**
+ * Whether `call` is the RIGHT-HAND SIDE of the assignment its receiver's
+ * chunk-wide `localCallBindings` entry records — `record = record.status` read
+ * at `record.status` — with an earlier positioned write of the same name above
+ * that statement (bd tea-rags-mcp-0qaht.57).
+ *
+ * Such a call runs BEFORE the assignment, yet the chunk-wide entry types its
+ * receiver as the statement's own result: `status`'s return. That reading is a
+ * fixed-point guess — it holds only when the type it yields declares the
+ * member (a type-preserving scope chain, `scope = scope.not_excluded_by(…)`),
+ * which is what `resolveBoundCallTarget` checks. The statement
+ * is identified the way {@link callBindingOutsideCondition} identifies it: the
+ * latest positioned write, spelled exactly as the entry, on the call's line,
+ * its callee chain starting at `receiver.member`. A call the 0qaht.55
+ * condition span already places is not a right-hand side. With no earlier
+ * positioned write (a parameter, an unrecorded write) nothing says the name
+ * held anything else, and the answer is `false` — the reading stays as before.
+ */
+export function isOwnAssignmentRightHandSide(
+  call: Pick<CallRef, "receiver" | "member" | "startLine" | "startColumn">,
+  ctx: CallContext,
+): boolean {
+  const { receiver } = call;
+  if (!receiver) return false;
+  const chunkWide = identifierEntry(ctx.localCallBindings, receiver);
+  const entries = identifierEntry(ctx.callResultBindings, receiver);
+  if (chunkWide === undefined || entries === undefined) return false;
+  const kept = keptCallResultBinding(entries);
+  if (kept?.line !== call.startLine || localCallBindingSpelling(kept.callee) !== chunkWide) return false;
+  if (isInsideModifierCondition(kept.conditionSpan, call.startLine, call.startColumn)) return false;
+  const own = `${receiver}.${call.member}`;
+  if (kept.callee !== own && !kept.callee.startsWith(`${own}.`)) return false;
+  return latestCallResultBindingAbove(entries, kept.line) !== undefined;
+}
+
+/** The positioned write the chunk-wide entry keeps: the latest, the last one on a tie. */
+function keptCallResultBinding(entries: readonly CallResultBinding[]): CallResultBinding | undefined {
+  let kept: CallResultBinding | undefined;
+  for (const entry of entries) if (kept === undefined || entry.line >= kept.line) kept = entry;
+  return kept;
+}
+
+/** The latest positioned write strictly above `line`, or `undefined`. */
+function latestCallResultBindingAbove(
+  entries: readonly CallResultBinding[],
+  line: number,
+): CallResultBinding | undefined {
   let above: CallResultBinding | undefined;
   for (const entry of entries) {
-    if (entry.line >= kept.line) continue;
+    if (entry.line >= line) continue;
     if (above === undefined || entry.line >= above.line) above = entry;
   }
-  return above === undefined ? undefined : localCallBindingSpelling(above.callee);
+  return above;
 }
 
 /** A constant spelled as `localCallBindings` records a scope-qualified receiver. */
