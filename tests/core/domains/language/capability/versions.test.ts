@@ -92,7 +92,10 @@ describe("resolveLanguageCodeVersions", () => {
     // sections join a neighbour; bd tea-rags-mcp-5xpq4 — test setup stored once
     // per scope and packed, tiny examples grouped; bd tea-rags-mcp-g5i0a —
     // adjacent examples of one scope packed up to 1500 chars, member-addressable.
-    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 4, walker: 3, codegraphSchema: 2 });
+    // walker 4 (post-v1.45.1): bd tea-rags-mcp-89k7k.31 — resolved type-only
+    // imports merge into `GraphEdges.fileEdges` at callWeight 0 beside the
+    // dedicated `typeOnlyFileEdges` channel.
+    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 4, walker: 4, codegraphSchema: 2 });
     // `*` parses nothing of its own, so there is no grammar package to read —
     // and borrowing one language's would make the axis a lie for every other.
     expect(resolved.get(SHARED_LANGUAGE)?.grammar).toBeUndefined();
@@ -102,7 +105,7 @@ describe("resolveLanguageCodeVersions", () => {
     const stamp = resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE);
     if (stamp) stamp.walker = 99;
 
-    expect(resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE)?.walker).toBe(3);
+    expect(resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE)?.walker).toBe(4);
   });
 });
 

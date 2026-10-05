@@ -102,7 +102,13 @@ export const sharedVersions: LanguageSupportVersions = {
   // re-resolves the unchanged callers whose cone moved. No edge of a full run
   // moves; only a walk fills the table, which this walker's
   // `--force-enrichments codegraph` already does — so `codegraphSchema` stays.
-  walker: 3,
+  // walker 4, bd tea-rags-mcp-89k7k.31: the resolution runner merges resolved
+  // type-only imports into `GraphEdges.fileEdges` (callWeight 0 — no method
+  // edge behind them) beside the dedicated `typeOnlyFileEdges` channel, so
+  // fanIn / instability / transitiveImpact count compile-time dependencies.
+  // No table shape moves — the edges land in existing `cg_symbols_edges_file`
+  // rows — so `codegraphSchema` stays.
+  walker: 4,
   codegraphSchema: 2,
 };
 
