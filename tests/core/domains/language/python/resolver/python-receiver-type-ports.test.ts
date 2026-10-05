@@ -372,6 +372,41 @@ describe("pythonCastHeadType — `typing.cast(T, x)` states the type outright", 
     const ctx = polarCtx({ imports: [{ importText: "polar.models.notification", startLine: 2 }] });
     expect(ports().singleHopType("cast(Notification, row)", 30, ctx)).toBeUndefined();
   });
+
+  // `from polar.models.notification import Notification as N2` — the spelled
+  // `N2` places nowhere; the binding says it is `Notification` (bd
+  // tea-rags-mcp-m99j1.1.86, the cast twin of m99j1.1.81).
+  const aliasImport: ImportRef = {
+    importText: "polar.models.notification",
+    startLine: 2,
+    importedNames: ["N2"],
+    importedBindings: { N2: "Notification" },
+  };
+  const notificationKey = "server/polar/models/notification.py::Notification";
+
+  it("types a bare `cast` whose first argument is an import ALIAS of a project class", () => {
+    const ctx = polarCtx({ imports: [castImport, aliasImport] });
+    expect(ports().singleHopType("cast(N2, row.value)", 30, ctx)).toEqual({ form: "instance", name: notificationKey });
+  });
+
+  it("types a dotted `typing.cast` whose first argument is an import ALIAS of a project class", () => {
+    const ctx = polarCtx({ imports: [typingImport, aliasImport] });
+    expect(ports().seedHead("typing", "cast(N2, row.value)", ctx)).toEqual({
+      type: { form: "instance", name: notificationKey },
+      consumedMembers: 1,
+    });
+  });
+
+  it("declines a cast whose alias names a LIBRARY class, even with a project namesake", () => {
+    const libraryAlias: ImportRef = {
+      importText: "sqlalchemy.orm",
+      startLine: 2,
+      importedNames: ["N2"],
+      importedBindings: { N2: "Notification" },
+    };
+    const ctx = polarCtx({ imports: [castImport, libraryAlias] });
+    expect(ports().singleHopType("cast(N2, row)", 30, ctx)).toBeUndefined();
+  });
 });
 
 describe("pythonMemberTypeOf — `-> Self` is the RECEIVER's class", () => {

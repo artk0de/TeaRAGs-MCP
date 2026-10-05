@@ -177,7 +177,10 @@ function pythonCallHeadReturnType(
  *
  * `callText` arrives whole, parens included. The argument split reuses the
  * kernel's depth scanner rather than adding a second one, because a cast's
- * second argument routinely carries commas of its own.
+ * second argument routinely carries commas of its own. The type head is read
+ * the way a class head is ({@link pythonClassHeadName}), so an import alias of
+ * a project class (`cast(E2, x)`) types as that class (bd
+ * tea-rags-mcp-m99j1.1.86).
  */
 function pythonCastArgumentType(
   callText: string,
@@ -189,8 +192,9 @@ function pythonCastArgumentType(
   const first = splitAtBracketDepthZero(callText.slice(open + 1, -1), ",")[0]?.trim();
   if (first === undefined) return undefined;
   const bare = stripPythonSubscript(first.slice(first.lastIndexOf(".") + 1));
-  if (!PYTHON_CLASS_HEAD.test(bare) || resolveTypeFile(bare, ctx, mapper) === null) return undefined;
-  return { form: "instance", name: bare };
+  if (!PYTHON_CLASS_HEAD.test(bare)) return undefined;
+  const name = pythonClassHeadName(bare, ctx, mapper);
+  return name === null ? undefined : { form: "instance", name };
 }
 
 /** Was `cast` bound from `typing` / `typing_extensions` in this file? */
