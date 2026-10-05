@@ -25,7 +25,12 @@ export { fileEdgesFromResolvedCalls } from "./call-derived-file-edges.js";
 export { SHARED_LANGUAGE, sharedChunkSetBumpScopes, sharedVersions } from "./capability.js";
 export { collectSymbols } from "./collect-symbols.js";
 export { ConeDispatchResolver } from "./cone-dispatch.js";
-export { DynamicDispatchResolver, type DynamicDispatchPorts, type ExactChainAnswerProbe } from "./dynamic-dispatch.js";
+export {
+  DynamicDispatchResolver,
+  receiverIsAssignedLocal,
+  type DynamicDispatchPorts,
+  type ExactChainAnswerProbe,
+} from "./dynamic-dispatch.js";
 export { TableDispatchResolver, type TableDispatchPorts } from "./table-dispatch.js";
 export { MemberReturnTypeResolver, type MemberReturnTypePorts } from "./member-return-type.js";
 export { ReceiverPatternDropSymbolResolutionStrategy } from "./receiver-pattern-drop.js";

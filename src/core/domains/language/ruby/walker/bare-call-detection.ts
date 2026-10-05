@@ -134,6 +134,90 @@ export function collectMethodLocalBindings(methodNode: AstNode): Set<string> {
   return out;
 }
 
+/** Scopes a method body walk never enters: each opens a fresh local scope. */
+const FRESH_SCOPE_NODES = new Set(["method", "singleton_method", "class", "module", "singleton_class"]);
+
+/**
+ * The names a `def` ASSIGNS as locals, typed or not (bd
+ * tea-rags-mcp-m99j1.1.59) — the Ruby producer of `ChunkExtraction.assignedLocals`.
+ *
+ * Unlike {@link collectMethodLocalBindings}, which answers "is this identifier
+ * a local READ" and so folds every binding form together, this set answers "is
+ * this receiver a value an expression decided", so it holds only assignment
+ * targets: `x = …`, `x ||= …` / `x += …`, each bare target of `a, b = …`
+ * (splat and nested destructuring included) and `rescue … => e`. Method params
+ * and block params are excluded — they are bound by a caller, duck-typed, and
+ * stay fan sources — and so is any assigned name that is ALSO one of them.
+ * Nested `def` / `class` / `module` bodies are not entered (fresh scopes);
+ * block bodies are, because a Ruby block reads the method's locals.
+ *
+ * Ruby decides local-vs-method lexically: `w.call` ABOVE the first `w = …` is a
+ * self-method call. A name used as a call receiver on a line before its first
+ * assignment is therefore dropped whole — the set is per def, not per line, so
+ * dropping is the side that cannot mislabel a method call as a local. Known
+ * gap: a name first assigned inside a block is block-local in Ruby, yet a later
+ * `name.x` outside that block still reads as assigned here.
+ */
+export function collectMethodAssignedLocals(methodNode: AstNode): Set<string> {
+  const params = new Set<string>();
+  const firstAssignRow = new Map<string, number>();
+  const firstReceiverRow = new Map<string, number>();
+  const assign = (id: AstNode | null | undefined): void => {
+    if (id?.type !== "identifier") return;
+    const { row } = id.startPosition;
+    const seen = firstAssignRow.get(id.text);
+    if (seen === undefined || row < seen) firstAssignRow.set(id.text, row);
+  };
+  const assignTargets = (list: AstNode): void => {
+    for (const target of list.namedChildren) {
+      if (target.type === "identifier") assign(target);
+      else if (target.type === "rest_assignment") assign(target.namedChildren.find((c) => c.type === "identifier"));
+      else if (target.type === "destructured_left_assignment") assignTargets(target);
+    }
+  };
+  const walk = (node: AstNode): void => {
+    if (node !== methodNode && FRESH_SCOPE_NODES.has(node.type)) return;
+    switch (node.type) {
+      case "method_parameters":
+      case "block_parameters":
+      case "lambda_parameters":
+        for (const child of node.namedChildren) collectParamName(child, params);
+        break;
+      case "assignment":
+      case "operator_assignment": {
+        const lhs = node.childForFieldName("left");
+        if (lhs?.type === "left_assignment_list") assignTargets(lhs);
+        else assign(lhs);
+        break;
+      }
+      case "exception_variable":
+        assign(node.namedChildren[0]);
+        break;
+      case "call": {
+        const recv = node.childForFieldName("receiver");
+        if (recv?.type === "identifier") {
+          const { row } = recv.startPosition;
+          const seen = firstReceiverRow.get(recv.text);
+          if (seen === undefined || row < seen) firstReceiverRow.set(recv.text, row);
+        }
+        break;
+      }
+      default:
+        break;
+    }
+    for (const child of node.children) walk(child);
+  };
+  walk(methodNode);
+  const out = new Set<string>();
+  for (const [name, row] of firstAssignRow) {
+    if (params.has(name)) continue;
+    const used = firstReceiverRow.get(name);
+    if (used !== undefined && used < row) continue;
+    out.add(name);
+  }
+  return out;
+}
+
 /**
  * Pull a parameter's bound name out of a single child of `method_parameters`
  * or `block_parameters`. Required positional params are bare `identifier`;

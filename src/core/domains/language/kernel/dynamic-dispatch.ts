@@ -44,6 +44,20 @@ export interface ExactChainAnswerProbe {
   answers: (call: CallRef, ctx: CallContext) => boolean;
 }
 
+/**
+ * Is the call's receiver a name the caller's def ASSIGNS (bd
+ * tea-rags-mcp-m99j1.1.59)? The shared dynamic-fan gate predicate over
+ * `CallContext.assignedLocals`: a local whose type no typed channel answered is
+ * a value decided by an expression, and the project class that happens to spell
+ * the member is a coincidence. Exact-name membership only — a dotted receiver
+ * (`x.y`) is a different shape another gate owns. Each language publishes its
+ * own set from its walker; whether to consult this is the language gate's call.
+ */
+export function receiverIsAssignedLocal(call: CallRef, ctx: CallContext): boolean {
+  const { receiver } = call;
+  return receiver !== null && ctx.assignedLocals?.includes(receiver) === true;
+}
+
 export interface DynamicDispatchPorts {
   /** The language gate runner, its gate order preserved. `true` → no fan-out. */
   suppressed: (call: CallRef, ctx: CallContext) => boolean;

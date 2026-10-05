@@ -45,3 +45,19 @@ describe("readResolverConfig", () => {
     expect(readResolverConfig({}, "CODEGRAPH_RB").dynamicReceiverConfidence).toBeUndefined();
   });
 });
+
+describe("readResolverConfig — <prefix>_ASSIGNED_LOCAL_GATE (bd tea-rags-mcp-m99j1.1.59)", () => {
+  const read = (raw: string) => readResolverConfig({ CODEGRAPH_RB_ASSIGNED_LOCAL_GATE: raw }, "CODEGRAPH_RB");
+
+  it("reads 1/true as on and 0/false as off", () => {
+    expect(read("1").assignedLocalGate).toBe(true);
+    expect(read("true").assignedLocalGate).toBe(true);
+    expect(read("0").assignedLocalGate).toBe(false);
+    expect(read("false").assignedLocalGate).toBe(false);
+  });
+
+  it("leaves it undefined when unset or unparseable, so the consumer's default decides", () => {
+    expect(readResolverConfig({}, "CODEGRAPH_RB").assignedLocalGate).toBeUndefined();
+    expect(read("maybe").assignedLocalGate).toBeUndefined();
+  });
+});
