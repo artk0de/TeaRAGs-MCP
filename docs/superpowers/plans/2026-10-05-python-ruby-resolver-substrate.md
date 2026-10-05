@@ -557,6 +557,26 @@ export class ReceiverPatternDropSymbolResolutionStrategy implements SymbolResolu
 
 ### Task 10: K6 `MemberReturnTypeResolver` + unified `callResultBindings`
 
+> **Executed as 10a only** (`43dbd7541`). The resolver landed with a separate
+> `ancestorReturnType` port: both languages read an ancestor differently from
+> the owner (Python substitutes `-> Self` with the owner and orders channels
+> differently; Ruby keeps owner-only association accessors off the ancestors).
+> The owner is a `NominalTypeRef`, because union, container, tuple and nil
+> receivers are handled before the kernel call. `flatReturnType` is optional,
+> since Python has no flat step.
+>
+> The Python file split is follow-up `tea-rags-mcp-m99j1.1.29`: an import cycle
+> through seven `shared.ts` helpers blocks it.
+>
+> **10b (channel unification) is deferred** to `tea-rags-mcp-0qaht.50`:
+>
+> - Python already emits positional `callResultBindings`. Ruby is the only
+>   producer of the chunk-wide channel.
+> - Renaming it would rewrite 125 references across 23 Go and Ruby
+>   business-logic test and script files.
+> - Positional reading changes Ruby results, so it is a precision task, not an
+>   identity lift.
+
 **Files:**
 
 - Create `kernel/member-return-type.ts`.
