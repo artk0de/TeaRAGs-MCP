@@ -14,13 +14,17 @@
  * and the driver calls it. A separator, a builtin base name, a mixin keyword or a
  * merge rule appearing here is a defect, not an optimization.
  *
- * ZERO runtime imports, inherited from the Ruby module this came out of:
- * `type-propagation.ts` cannot reach `strategies/shared.ts` (that pulls
- * `walker.ts` → `type-sources/ast-inference` → back into `type-propagation`, a
- * cycle that breaks its top-level const init), so the substrate both sides share
- * has to be a leaf. Hierarchy shapes stay STRUCTURAL — the context is a type
+ * A LEAF, inherited from the Ruby module this came out of: `type-propagation.ts`
+ * cannot reach `strategies/shared.ts` (that pulls `walker.ts` →
+ * `type-sources/ast-inference` → back into `type-propagation`, a cycle that
+ * breaks its top-level const init), so the substrate both sides share has to be
+ * a leaf. Its one runtime import is `./run-scoped-memo.ts`, itself a leaf with
+ * type-only imports. Hierarchy shapes stay STRUCTURAL — the context is a type
  * parameter, so a `CallContext` satisfies it without being imported.
  */
+
+import type { ResolveRunScope } from "../../../contracts/types/codegraph.js";
+import { RunScopedMemo } from "./run-scoped-memo.js";
 
 /**
  * How completely a linearization could be read. `closed` — every branch ended on
@@ -140,4 +144,117 @@ export function findMemberInAncestorChain<TCtx, TTarget>(
     if (target !== null) return { target, definingClassKey: order[i], closure };
   }
   return { target: null, definingClassKey: null, closure };
+}
+
+/**
+ * What {@link AncestorLinearizerCache} reads off a context to decide whether a
+ * run's linearizer is still the right one. Structural, like every hierarchy
+ * shape in this module, so a `CallContext` satisfies it without being imported.
+ */
+export interface AncestorLinearizerCacheContext {
+  /** The resolve run the context belongs to; absent means detached. */
+  readonly runScope?: ResolveRunScope;
+  /** The hierarchy channel a linearizer is built over — the entry's key. */
+  readonly classAncestors?: object;
+  /** The table whose generation stamps the entry. */
+  readonly symbolTable?: { size: () => number };
+}
+
+/** How an {@link AncestorLinearizerCache} builds a run's linearizer. */
+export interface AncestorLinearizerCacheOptions<TCtx, TPolicy extends AncestorLinearizationPolicy<TCtx>> {
+  /**
+   * A FRESH policy per entry. A policy that memoises (Python's does) must not
+   * carry one run's answers into the next, so the cache never shares one.
+   */
+  readonly createPolicy: () => TPolicy;
+  /**
+   * Further channels the policy reads beside `classAncestors`, compared by
+   * identity. An entry whose companions moved is rebuilt — Ruby's order also
+   * reads `classPrependedAncestors` and `classExtends`.
+   */
+  readonly companionsOf?: (ctx: TCtx) => readonly unknown[];
+}
+
+interface AncestorLinearizerCacheEntry<TCtx, TPolicy> {
+  readonly table: object;
+  readonly size: number;
+  readonly companions: readonly unknown[];
+  readonly policy: TPolicy;
+  readonly linearizer: AncestorLinearizer<TCtx>;
+}
+
+const NO_COMPANIONS: readonly unknown[] = Object.freeze([]);
+
+/**
+ * The ONE ancestor linearizer a resolve RUN uses (bd tea-rags-mcp-z99hp,
+ * generalised from `PythonAncestorLinearizerCache`).
+ *
+ * A linearizer is bound to the context it was built with and memoises every
+ * top-level linearization, so handing it to a later call is only sound while
+ * the hierarchy it read cannot have moved. Three things bound that:
+ *
+ *   - the RUN, through `RunScopedMemo` — a resolver and a pooled symbol table
+ *     both outlive a run, and the run-global hierarchy channels are written in
+ *     place by the run state, so neither identity alone names a run;
+ *   - the identity of `classAncestors` beneath it — the per-file fallback hands
+ *     each file its own extraction's hierarchy within one run;
+ *   - the symbol table's identity and SIZE, stamped on the entry — pass 1 walks
+ *     a table that is still growing while the channels grow beside it, so a
+ *     linearization memoised cold must not outlive that growth.
+ *
+ * `undefined` when the context carries no `classAncestors` or no symbol table:
+ * there is nothing to key or stamp an entry by, and the caller keeps its
+ * uncached behaviour.
+ */
+export class AncestorLinearizerCache<
+  TCtx extends AncestorLinearizerCacheContext,
+  TPolicy extends AncestorLinearizationPolicy<TCtx>,
+> {
+  private readonly linearizers = new RunScopedMemo<object, AncestorLinearizerCacheEntry<TCtx, TPolicy>>();
+  private current: AncestorLinearizerCacheEntry<TCtx, TPolicy> | undefined;
+
+  constructor(private readonly options: AncestorLinearizerCacheOptions<TCtx, TPolicy>) {}
+
+  for(ctx: TCtx): AncestorLinearizer<TCtx> | undefined {
+    const ancestors = ctx.classAncestors;
+    const table = ctx.symbolTable;
+    if (ancestors === undefined || table === undefined) return undefined;
+    const size = table.size();
+    const companions = this.options.companionsOf?.(ctx) ?? NO_COMPANIONS;
+    const existing = this.linearizers.get(ctx.runScope, ancestors);
+    const entry =
+      existing?.table === table && existing.size === size && sameIdentities(existing.companions, companions)
+        ? existing
+        : this.build(ctx, ancestors, table, size, companions);
+    this.current = entry;
+    return entry.linearizer;
+  }
+
+  /** The policy of the entry last handed out — the run in flight, or the last one there was. */
+  get currentPolicy(): TPolicy | undefined {
+    return this.current?.policy;
+  }
+
+  private build(
+    ctx: TCtx,
+    ancestors: object,
+    table: object,
+    size: number,
+    companions: readonly unknown[],
+  ): AncestorLinearizerCacheEntry<TCtx, TPolicy> {
+    const policy = this.options.createPolicy();
+    const fresh: AncestorLinearizerCacheEntry<TCtx, TPolicy> = {
+      table,
+      size,
+      companions,
+      policy,
+      linearizer: createAncestorLinearizer(ctx, policy),
+    };
+    this.linearizers.set(ctx.runScope, ancestors, fresh);
+    return fresh;
+  }
+}
+
+function sameIdentities(a: readonly unknown[], b: readonly unknown[]): boolean {
+  return a.length === b.length && a.every((value, i) => value === b[i]);
 }

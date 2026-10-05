@@ -24,14 +24,20 @@
  */
 
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import { createAncestorLinearizer, type AncestorLinearizationPolicy } from "../../kernel/index.js";
+import {
+  AncestorLinearizerCache,
+  createAncestorLinearizer,
+  type AncestorLinearizationPolicy,
+  type AncestorLinearizerCacheContext,
+} from "../../kernel/index.js";
 
 /**
  * The hierarchy facts a linearization needs — the three walker-recorded maps,
- * nothing else. Structural on purpose so a `CallContext` (which carries these
- * plus a symbol table, imports, bindings, …) is accepted without importing it.
+ * plus the run scope and symbol table the kernel cache keys and stamps an entry
+ * by. Structural on purpose so a `CallContext` (which carries these plus
+ * imports, bindings, …) is accepted without importing it.
  */
-export interface RubyAncestorHierarchy {
+export interface RubyAncestorHierarchy extends AncestorLinearizerCacheContext {
   /** `class FQ → [superclass?, ...include/extend mixins]`, declaration order. */
   readonly classAncestors?: Readonly<Record<string, readonly string[]>>;
   /** `class FQ → [...prepend mixins]`, declaration order. */
@@ -72,6 +78,20 @@ const RUBY_ANCESTOR_POLICY: AncestorLinearizationPolicy<RubyAncestorHierarchy> =
 };
 
 /**
+ * Ruby's run-scoped linearizer cache (bd tea-rags-mcp-m99j1.1.7). Ruby's policy
+ * is stateless, so every entry shares {@link RUBY_ANCESTOR_POLICY}; the entry
+ * exists for the linearizer's per-class memo. The order also reads the prepend
+ * and superclass maps, so a hierarchy that swaps either is a different entry.
+ */
+const RUBY_ANCESTOR_LINEARIZER_CACHE = new AncestorLinearizerCache<
+  RubyAncestorHierarchy,
+  AncestorLinearizationPolicy<RubyAncestorHierarchy>
+>({
+  createPolicy: () => RUBY_ANCESTOR_POLICY,
+  companionsOf: (hierarchy) => [hierarchy.classPrependedAncestors, hierarchy.classExtends],
+});
+
+/**
  * `klass`'s ancestors in Ruby's method-lookup order, NEAREST FIRST, with `klass`
  * itself at its true position. The answer to "which of these definitions does a
  * call reach" is simply the first entry that has one.
@@ -102,10 +122,14 @@ const RUBY_ANCESTOR_POLICY: AncestorLinearizationPolicy<RubyAncestorHierarchy> =
  * different axis and not this function's business.
  */
 export function linearizeAncestors(klass: string, hierarchy: RubyAncestorHierarchy): string[] {
-  // A FRESH linearizer per call, deliberately: today's `linearize` cached
-  // nothing, and a longer-lived memo would have to prove it cannot outlive a
-  // mutation of the run-global ancestors map. Ruby pays one extra Map
-  // allocation per call and gains nothing else; Python's long-lived linearizer
-  // is built once per resolver, where the memo is what makes the walk affordable.
-  return [...createAncestorLinearizer(hierarchy, RUBY_ANCESTOR_POLICY).linearize(klass).order];
+  // The run's linearizer whenever the hierarchy names one: `ancestorsInMroOrder`
+  // asks this once per hop of every member walk, against a hierarchy that does
+  // not move between those asks. The proof that the memo cannot outlive a
+  // mutation of the run-global maps is the kernel cache's — run scope,
+  // `classAncestors` identity, table generation, and the two companion maps
+  // below. A hierarchy with nothing to key or stamp an entry by gets a fresh
+  // linearizer, which is what every call got before the cache.
+  const linearizer =
+    RUBY_ANCESTOR_LINEARIZER_CACHE.for(hierarchy) ?? createAncestorLinearizer(hierarchy, RUBY_ANCESTOR_POLICY);
+  return [...linearizer.linearize(klass).order];
 }

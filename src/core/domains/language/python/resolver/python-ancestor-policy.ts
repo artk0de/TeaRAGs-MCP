@@ -48,19 +48,12 @@
  */
 
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import type {
-  AmbiguousResolveMode,
-  CallContext,
-  GlobalSymbolTable,
-  RelPath,
-} from "../../../../contracts/types/codegraph.js";
+import type { AmbiguousResolveMode, CallContext, RelPath } from "../../../../contracts/types/codegraph.js";
 import {
-  createAncestorLinearizer,
+  AncestorLinearizerCache,
   reexportOriginFile,
-  RunScopedMemo,
   type AncestorClosure,
   type AncestorLinearizationPolicy,
-  type AncestorLinearizer,
 } from "../../kernel/index.js";
 import { PYTHON_BUILTINS } from "../vocabulary/builtins.js";
 import { PYTHON_UNRESOLVABLE_BASE } from "../walker/walker.js";
@@ -309,26 +302,11 @@ function classKeyIn(className: string, file: RelPath, ctx: CallContext): BaseKey
 }
 
 /**
- * One run's linearizer, with the generation of the symbol table it answered
- * membership questions against.
- *
- * The stamp is not redundant beside the run key (bd tea-rags-mcp-z99hp).
- * Resolving a base SPELLING goes through membership at three points —
- * `lookupPythonSymbolsByShortName`, `pythonClassKeyIsDeclared`, and the import
- * mapper for every module hop — and a refusal is memoised inside both the
- * policy and the kernel linearizer. Pass 1 walks a table that is still growing,
- * so a cold `unknown` must not outlive the growth that turns it into a pin.
- */
-interface AncestorLinearizerRunEntry {
-  readonly table: GlobalSymbolTable;
-  readonly size: number;
-  readonly policy: PythonAncestorPolicy;
-  readonly linearizer: AncestorLinearizer<CallContext>;
-}
-
-/**
  * The ONE ancestor linearizer a Python RUN uses, keyed by the identity of that
- * run's `classAncestors` (bd tea-rags-mcp-z99hp).
+ * run's `classAncestors` (bd tea-rags-mcp-z99hp) — the kernel's
+ * {@link AncestorLinearizerCache} with Python's policy, plus the fallback
+ * counter a gate prints. The keying and stamping rules are the kernel's; what
+ * follows is why Python needed every one of them.
  *
  * `PythonCallResolver` composes its strategy chain in its CONSTRUCTOR, long
  * before any `CallContext` exists, but a linearizer is bound to a context — so
@@ -356,8 +334,15 @@ interface AncestorLinearizerRunEntry {
  * channel's identity still keys the entry, because the per-file fallback hands
  * each file its own `extraction.classAncestors` within one run.
  *
+ * The symbol-table stamp is not redundant beside the run key. Resolving a base
+ * SPELLING goes through membership at three points —
+ * `lookupPythonSymbolsByShortName`, `pythonClassKeyIsDeclared`, and the import
+ * mapper for every module hop — and a refusal is memoised inside both the
+ * policy and the kernel linearizer. Pass 1 walks a table that is still growing,
+ * so a cold `unknown` must not outlive the growth that turns it into a pin.
+ *
  * Nothing else the policy reads is run-scoped. Everything except
- * `classAncestors` reaches it through `ctx.symbolTable` (stamped above) or
+ * `classAncestors` reaches it through `ctx.symbolTable` (stamped) or
  * through the mapper, which memoises its re-export answers per run itself;
  * nothing reads the CALLER at all, which is what the module docblock means by a
  * caller-independent linearization. A single-file run keys by its
@@ -373,26 +358,9 @@ interface AncestorLinearizerRunEntry {
  * written by walker v2. A caller that gets it keeps its pre-seam behaviour
  * rather than answering from an empty map.
  */
-export class PythonAncestorLinearizerCache {
-  private readonly runs = new RunScopedMemo<object, AncestorLinearizerRunEntry>();
-  /** The entry last handed out — what {@link linearizationFallbacks} reports on. */
-  private current: AncestorLinearizerRunEntry | undefined;
-
-  constructor(
-    private readonly mapper: PythonImportFileMapper,
-    private readonly mode: AmbiguousResolveMode,
-  ) {}
-
-  for(ctx: CallContext): AncestorLinearizer<CallContext> | undefined {
-    const ancestors = ctx.classAncestors;
-    if (ancestors === undefined) return undefined;
-    const table = ctx.symbolTable;
-    const size = table.size();
-    const existing = this.runs.get(ctx.runScope, ancestors);
-    const entry =
-      existing?.table === table && existing.size === size ? existing : this.build(ctx, ancestors, table, size);
-    this.current = entry;
-    return entry.linearizer;
+export class PythonAncestorLinearizerCache extends AncestorLinearizerCache<CallContext, PythonAncestorPolicy> {
+  constructor(mapper: PythonImportFileMapper, mode: AmbiguousResolveMode) {
+    super({ createPolicy: () => createPythonAncestorPolicy(mapper, mode) });
   }
 
   /**
@@ -404,23 +372,6 @@ export class PythonAncestorLinearizerCache {
    * already ended is what a single policy slot did.
    */
   get linearizationFallbacks(): number {
-    return this.current?.policy.linearizationFallbacks ?? 0;
-  }
-
-  private build(
-    ctx: CallContext,
-    ancestors: object,
-    table: GlobalSymbolTable,
-    size: number,
-  ): AncestorLinearizerRunEntry {
-    const policy = createPythonAncestorPolicy(this.mapper, this.mode);
-    const fresh: AncestorLinearizerRunEntry = {
-      table,
-      size,
-      policy,
-      linearizer: createAncestorLinearizer(ctx, policy),
-    };
-    this.runs.set(ctx.runScope, ancestors, fresh);
-    return fresh;
+    return this.currentPolicy?.linearizationFallbacks ?? 0;
   }
 }
