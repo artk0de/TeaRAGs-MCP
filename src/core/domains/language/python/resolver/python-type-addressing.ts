@@ -4,8 +4,8 @@
  * key (`<relPath>::<dotted class FQ>`).
  *
  * A resolver-root leaf by construction (bd tea-rags-mcp-m99j1.1.29): it imports
- * the codegraph contracts, the leaf `short-name-lookup.js`, the builtin
- * vocabulary and the path mapper — never `strategies/shared.ts`. The
+ * the codegraph contracts, the leaf `short-name-lookup.js`, the builtin and
+ * framework vocabularies and the path mapper — never `strategies/shared.ts`. The
  * member-return-type walk (`python-member-return-types.ts`) needs these and
  * lives beside this file, so defining them in the strategies hub would close an
  * import cycle. `strategies/shared.ts` re-exports every name, so existing import
@@ -15,6 +15,7 @@
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext, ImportRef } from "../../../../contracts/types/codegraph.js";
 import { PYTHON_BUILTINS } from "../vocabulary/builtins.js";
+import { isPythonFrameworkAnswerClass } from "../vocabulary/frameworks/index.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import { mapPythonImportToFile } from "./python-path-mapper.js";
 import { lookupPythonSymbolsByShortName } from "./short-name-lookup.js";
@@ -249,6 +250,70 @@ export function pythonImportBoundFile(
 }
 
 /**
+ * The file a framework answer's class lives in, read off the MODULE its
+ * spelling names (`django.db.models.options.Options` → the file
+ * `from django.db.models.options import Options` would bind), or `null` (bd
+ * tea-rags-mcp-m99j1.1.45, m99j1.1.40).
+ *
+ * The caller's imports play no part: the answer already says where the class
+ * lives. So a corpus that IS the framework places it in the framework's own
+ * file even from a caller that never imports it — django-11039 declares a
+ * second `Options` in `django/core/cache/backends/db.py`, and the short-name
+ * read refused to guess between them — while every other corpus maps the
+ * module `external` and answers `null`, so a project class that happens to be
+ * called `Manager` never captures the hop.
+ */
+function pythonFrameworkClassFile(typeName: string, ctx: CallContext, mapper: PythonImportFileMapper): string | null {
+  const at = typeName.lastIndexOf(".");
+  const shortName = typeName.slice(at + 1);
+  const mapped = mapper.mapImportToFile(typeName.slice(0, at), ctx.callerFile, ctx);
+  if (mapped.kind !== "project") return null;
+  if (lookupPythonSymbolsByShortName(ctx, shortName).some((def) => def.relPath === mapped.relPath)) {
+    return mapped.relPath;
+  }
+  return mapper.resolveExportedName(mapped.relPath, shortName, ctx);
+}
+
+/**
+ * The MRO key a TypeRef's NAME addresses: the class it places to through
+ * {@link resolveTypeRefFile}, else — only on that miss — the class an import
+ * RENAMED (bd tea-rags-mcp-w205u, E4.6c; see {@link pythonAliasedClassKey}). A
+ * framework answer gets no alias read: it was placed by its module, and a
+ * caller's alias names a project class it is not (bd tea-rags-mcp-m99j1.1.40).
+ */
+export function pythonTypeRefClassKey(
+  typeName: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): string | null {
+  const bareType = lastSegment(typeName);
+  const targetFile = resolveTypeRefFile(typeName, ctx, mapper);
+  const direct = targetFile === null ? null : pythonBoundClassKey(bareType, targetFile, ctx);
+  if (direct !== null || isPythonFrameworkAnswerClass(typeName)) return direct;
+  return pythonAliasedClassKey(bareType, ctx, mapper);
+}
+
+/**
+ * The file a TypeRef's NAME places to: its last segment through
+ * {@link resolveTypeFile}, unless a framework answer spelled it by module — a
+ * spelling stripped to its last segment would be placed by the short name it
+ * exists to avoid (bd tea-rags-mcp-m99j1.1.45).
+ */
+export function resolveTypeRefFile(
+  typeName: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  member?: string,
+): string | null {
+  return resolveTypeFile(
+    isPythonFrameworkAnswerClass(typeName) ? typeName : lastSegment(typeName),
+    ctx,
+    mapper,
+    member,
+  );
+}
+
+/**
  * Find the file path of a bare class name by walking the import list.
  * Two shapes match:
  *   - `from <module> import <Bare>` — importText is `<module>`; the
@@ -275,11 +340,17 @@ export function pythonImportBoundFile(
  * exactly as they were.
  */
 export function resolveTypeFile(
-  bareType: string,
+  typeName: string,
   ctx: CallContext,
   mapper: PythonImportFileMapper,
   member?: string,
 ): string | null {
+  // A framework answer names its class by module (bd tea-rags-mcp-m99j1.1.45):
+  // placed by that module alone, or not at all. Every other spelling is read
+  // as given — the callers own whether a dotted name is stripped first.
+  if (isPythonFrameworkAnswerClass(typeName)) return pythonFrameworkClassFile(typeName, ctx, mapper);
+  const bareType = typeName;
+
   // An import-bound name the mapper calls EXTERNAL is a library class, and no
   // project file declares it. Deciding that FIRST is what stops the short-name
   // pass below from answering with a namesake: `from datetime import datetime`

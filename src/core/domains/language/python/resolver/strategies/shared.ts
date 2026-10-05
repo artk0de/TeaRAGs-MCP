@@ -36,11 +36,11 @@ import {
   findPythonImportBinding,
   lastSegment,
   parsePythonClassKey,
-  pythonAliasedClassKey,
   pythonBoundClassKey,
   pythonClassKey,
   pythonDeclaredClassFq,
-  resolveTypeFile,
+  pythonTypeRefClassKey,
+  resolveTypeRefFile,
   type PythonImportBinding,
 } from "../python-type-addressing.js";
 import { lookupPythonSymbolsByShortName } from "../short-name-lookup.js";
@@ -64,6 +64,7 @@ export {
   pythonTypeNameIsExternal,
   pythonTypeOwnsMembers,
   resolveTypeFile,
+  resolveTypeRefFile,
   type PythonImportBinding,
 } from "../python-type-addressing.js";
 export {
@@ -318,12 +319,7 @@ export function resolvePythonMemberOnTypeThroughMro(
   linearizer: AncestorLinearizer<CallContext>,
   options: { readonly spellingOrder?: "instanceFirst" | "classFirst" } = {},
 ): PythonTypeMemberResolution {
-  const bareType = lastSegment(typeName);
-  const targetFile = resolveTypeFile(bareType, ctx, mapper);
-  const direct = targetFile === null ? null : pythonBoundClassKey(bareType, targetFile, ctx);
-  // Only on a MISS: an import that RENAMED the class carries the source name,
-  // and the annotation recorded the local one (bd tea-rags-mcp-w205u, E4.6c).
-  const classKey = direct ?? pythonAliasedClassKey(bareType, ctx, mapper);
+  const classKey = pythonTypeRefClassKey(typeName, ctx, mapper);
   if (classKey === null) return UNBOUND_TYPE_MEMBER;
   return resolvePythonInheritedMember(classKey, member, ctx, mode, linearizer, {
     spellingOrder: options.spellingOrder,
@@ -425,7 +421,7 @@ export function resolvePythonMemberOnType(
   mapper: PythonImportFileMapper,
 ): SymbolResolutionTarget | null {
   const bareType = lastSegment(typeName);
-  const targetFile = resolveTypeFile(bareType, ctx, mapper, member);
+  const targetFile = resolveTypeRefFile(typeName, ctx, mapper, member);
   if (!targetFile) return null;
   const candidates = lookupPythonSymbolsByShortName(ctx, member, { role: "callee" }).filter(
     (def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === bareType,

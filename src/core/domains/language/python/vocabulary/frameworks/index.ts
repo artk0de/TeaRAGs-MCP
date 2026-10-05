@@ -72,6 +72,32 @@ export function composePythonVocabulary(declared: ReadonlySet<string> | null): P
 export const FULL_PYTHON_VOCABULARY: PythonVocabularyCatalogue = composePythonVocabulary(null);
 
 /**
+ * Every module-qualified class a registered vocabulary ANSWERS with —
+ * `modelAttributes` classes and the `relationClass` (bd tea-rags-mcp-m99j1.1.45).
+ * Not gated on activation: the spelling can only have come from a vocabulary,
+ * and where it is placed is a property of the spelling, not of the project.
+ */
+const PYTHON_FRAMEWORK_ANSWER_CLASSES: ReadonlySet<string> = new Set(
+  PYTHON_FRAMEWORKS.flatMap((framework) =>
+    framework.memberTypes === undefined
+      ? []
+      : [
+          framework.memberTypes.relationClass,
+          ...[...framework.memberTypes.modelAttributes.values()].map((attribute) => attribute.className),
+        ],
+  ),
+);
+
+/**
+ * Is `typeName` a class a framework answer names by its module? Such a name is
+ * placed the way an absolute import of that module is, never by its last
+ * segment through the caller's imports.
+ */
+export function isPythonFrameworkAnswerClass(typeName: string): boolean {
+  return PYTHON_FRAMEWORK_ANSWER_CLASSES.has(typeName);
+}
+
+/**
  * Per-declared-set catalogue cache, keyed by the set INSTANCE (weak → evicts
  * with the set). The run holds one instance for the whole run, so composition is
  * paid once and every per-file lookup is a map hit.

@@ -10,10 +10,9 @@ import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { createPythonReceiverTypePorts } from "../python-receiver-type-ports.js";
 import {
-  lastSegment,
   resolvePythonMemberOnType,
   resolvePythonMemberOnTypeThroughMro,
-  resolveTypeFile,
+  resolveTypeRefFile,
   type ResolverConfig,
 } from "./shared.js";
 
@@ -126,7 +125,7 @@ function createPythonChainTypeMemberLookup(
 
     // A folded type whose file is not in the project is external — a miss the
     // pass DROPs rather than hand the call to the short-name passes.
-    if (resolveTypeFile(lastSegment(type.name), ctx, mapper) === null) return null;
+    if (resolveTypeRefFile(type.name, ctx, mapper) === null) return null;
 
     // The legacy walk stays below the MRO one, not replaced by it: the pass's
     // miss verdict is DROP either way, so keeping it costs no precision and
