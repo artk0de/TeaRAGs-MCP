@@ -242,7 +242,12 @@
   to DECLARE the class as a unique top-level symbol — exact-symbolId `lookup`,
   the same gate `moduleMemberOutcome` uses. The caller never imports
   `Datatable`, only the module that holds it. `receiverModuleText` moved to
-  `strategies/shared.ts` so both readers ask it the same way.
+  `strategies/shared.ts` so both readers ask it the same way. A third arm asks
+  `resolveExportedName` when that file RE-EXPORTS the class instead of declaring
+  it (django's `sql.DeleteQuery(model)`, a star-importing `sql/__init__.py`) and
+  hands the type on as a PLACED class key, because the caller binds neither the
+  class nor its module and a bare name would be re-placed from the caller's
+  imports (bd tea-rags-mcp-m99j1.1.58).
 - **`-> Self` is recorded as a MARKER and substituted by the reader, through one
   helper.** The annotation facet resolves `Self` against the enclosing class
   everywhere except a RETURN, where it emits the literal name `Self`
@@ -756,12 +761,14 @@
   fact is a NAME, not an edge, and `resolveTypeFile` still has to place it in
   the project (widened for polar's `_client = SlackClient()`, E4.6c; it was
   declared-only until then). `objects = models.Manager()` emits NOTHING: the
-  receiver of the dot is a module and nothing per-file can say which one. Why
-  the silence matters: an external fact makes `chainType` DROP where the call
-  falls through to a later strategy today, so absence — which leaves the
-  receiver untyped and `chainType` on CONTINUE — is what keeps that path
-  byte-identical. There is no manifest gate and no framework registry to
-  consult.
+  receiver of the dot is a module and nothing per-file can say which one. A
+  class-valued attribute (`select_widget = Select`, no call) takes the same
+  evidence plus a CapWords spelling and records the class, read as the instance
+  calling it builds (bd tea-rags-mcp-m99j1.1.58). Why the silence matters: an
+  external fact makes `chainType` DROP where the call falls through to a later
+  strategy today, so absence — which leaves the receiver untyped and `chainType`
+  on CONTINUE — is what keeps that path byte-identical. There is no manifest
+  gate and no framework registry to consult.
 - **A `Mapped[T]` annotation is TRANSPARENT, and that is a language-level
   reading rather than a framework one.** SQLAlchemy 2.0's declarative column
   states "this attribute holds a T" exactly as `ClassVar[T]` does, so `Mapped`

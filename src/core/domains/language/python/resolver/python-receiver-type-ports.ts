@@ -30,6 +30,7 @@ import {
   type ReceiverTypePorts,
 } from "../../kernel/index.js";
 import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
+import { pythonClassKey } from "./python-class-key.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import { pythonDerivedBindingType, pythonElementTypeOf, pythonLocalBindingInForce } from "./python-iteration-types.js";
 import { pythonOwnerIndependentMemberType } from "./python-member-return-types.js";
@@ -104,6 +105,27 @@ function pythonHeadModuleDeclares(
   const moduleFile = pythonHeadModuleFile(head, ctx, mapper);
   if (moduleFile === null) return false;
   return ctx.symbolTable.lookup(member).filter((def) => def.relPath === moduleFile).length === 1;
+}
+
+/**
+ * The placed class key of `member` when the head's module file does not declare
+ * it but RE-EXPORTS it — `resolveExportedName`'s answer (explicit entries over
+ * stars, stars unanimous or refused), accepted only where that file declares
+ * the class once at top level, the same exact-symbolId gate as
+ * {@link pythonHeadModuleDeclares}.
+ */
+function pythonHeadModuleReexportedClassKey(
+  head: string,
+  member: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): string | null {
+  const moduleFile = pythonHeadModuleFile(head, ctx, mapper);
+  if (moduleFile === null) return null;
+  const declaring = mapper.resolveExportedName(moduleFile, member, ctx);
+  if (declaring === null || declaring === moduleFile) return null;
+  const declared = ctx.symbolTable.lookup(member).filter((def) => def.relPath === declaring).length === 1;
+  return declared ? pythonClassKey(declaring, member) : null;
 }
 
 /**
@@ -346,9 +368,17 @@ function pythonModuleAliasSeed(
   const viaCaller =
     ctx.imports.some((imp) => pythonImportMatchesReceiver(imp.importText, head)) &&
     resolveTypeFile(member, ctx, mapper) !== null;
-  if (!viaCaller && !pythonHeadModuleDeclares(head, member, ctx, mapper)) return undefined;
   const form = firstLink.endsWith(")") ? "instance" : "class";
-  return { type: { form, name: member }, consumedMembers: 1 };
+  if (viaCaller || pythonHeadModuleDeclares(head, member, ctx, mapper)) {
+    return { type: { form, name: member }, consumedMembers: 1 };
+  }
+  // Arm three (bd tea-rags-mcp-m99j1.1.58): the head's package RE-EXPORTS the
+  // class — django's `sql.DeleteQuery(model)`, whose `sql/__init__.py`
+  // star-imports `subqueries`. The type travels as a PLACED key: the caller
+  // binds neither the class nor its module, so re-placing the bare name from
+  // the caller's imports would refuse or pick a namesake.
+  const placed = pythonHeadModuleReexportedClassKey(head, member, ctx, mapper);
+  return placed === null ? undefined : { type: { form, name: placed }, consumedMembers: 1 };
 }
 
 /**

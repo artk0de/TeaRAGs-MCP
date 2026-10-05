@@ -118,6 +118,7 @@ function pythonClassBodyFieldType(
   const left = node.childForFieldName("left");
   if (left?.type !== "identifier") return undefined;
   const right = node.childForFieldName("right");
+  if (right?.type === "identifier") return pythonClassValuedField(left.text, right.text, evidence);
   if (right?.type !== "call") return undefined;
   const callee = right.childForFieldName("function");
   if (!callee) return undefined;
@@ -145,6 +146,28 @@ function pythonClassBodyFieldType(
   if (callee.type !== "identifier") return undefined;
   if (!evidence.declared.has(callee.text) && !evidence.importBound.has(callee.text)) return undefined;
   return { field: left.text, type: callee.text };
+}
+
+/** A PEP 8 class spelling (leading underscores allowed). */
+const PYTHON_CLASS_SPELLING = /^_*[A-Z]\w*$/;
+
+/**
+ * `select_widget = Select` — a class attribute that binds a CLASS (bd
+ * tea-rags-mcp-m99j1.1.58). The field records the class name, read as the
+ * instance CALLING it builds: django's `SelectDateWidget` calls
+ * `self.select_widget(attrs, …).get_context(…)` and `BaseModelAdmin` calls
+ * `self.checks_class().check(…)`. The evidence is the bare construction's —
+ * declared in this file or import-bound — plus the CapWords spelling, because
+ * an import binding alone also names functions (`handler = handle`).
+ */
+function pythonClassValuedField(
+  field: string,
+  name: string,
+  evidence: PythonClassNameEvidence,
+): { readonly field: string; readonly type: string } | undefined {
+  if (!PYTHON_CLASS_SPELLING.test(name)) return undefined;
+  if (!evidence.declared.has(name) && !evidence.importBound.has(name)) return undefined;
+  return { field, type: name };
 }
 
 /**
