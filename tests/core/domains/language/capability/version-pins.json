@@ -54,7 +54,7 @@
   "python": {
     "walker": {
       "version": 10,
-      "digest": "sha256:aa9585b8b971f5252739ecaa0ab725a2ea2039eac889db6ed278a9dd7037a5c0"
+      "digest": "sha256:2e3975d6259bcf8a75234f67f504fe87d604ef4dcc33c70907bc23884dfce994"
     }
   },
   "ruby": {
@@ -64,7 +64,7 @@
     },
     "walker": {
       "version": 6,
-      "digest": "sha256:e6e82cd24ce62c6a9ce89c72dd3378a504fed5ded851c6dfaa968db4de5c4755"
+      "digest": "sha256:2e272b1db386ee3a9473924f8364abddb3b3936d392e9b6ced051218bf3911d3"
     }
   },
   "rust": {

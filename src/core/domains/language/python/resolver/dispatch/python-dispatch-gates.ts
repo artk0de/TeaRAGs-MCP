@@ -25,11 +25,12 @@ const PYTHON_CLASS_HEAD = /^_*[A-Z]/;
 
 /**
  * Default of the assigned-local gate when `CODEGRAPH_PY_ASSIGNED_LOCAL_GATE` is
- * unset (bd tea-rags-mcp-m99j1.1.57). `=0` restores the pre-gate fan — the
- * measurement baseline bd tea-rags-mcp-m99j1.1.91 diffs against to enumerate
- * the rows the gate drops.
+ * unset: OFF since bd tea-rags-mcp-o9mk8. The gate (m99j1.1.57) drops correct
+ * edges — the m99j1.1.91 measurement found ~10% of the rows it suppresses are
+ * TRUE — and a lost correct edge is a regression. `=1` opts in; flipping the
+ * default back ON is epic tea-rags-mcp-qg12x (type-source program).
  */
-export const PYTHON_ASSIGNED_LOCAL_GATE_DEFAULT = true;
+export const PYTHON_ASSIGNED_LOCAL_GATE_DEFAULT = false;
 
 /**
  * A receiver bound to a call the project cannot type, in either of the two

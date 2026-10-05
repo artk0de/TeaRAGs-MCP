@@ -37,12 +37,15 @@ import { receiverChainTailIsExternal, receiverIsIndexAccess, resolveConstant } f
 
 /**
  * Default of the assigned-local gate when `CODEGRAPH_RB_ASSIGNED_LOCAL_GATE` is
- * unset (bd tea-rags-mcp-m99j1.1.59). ON: a manual triage of 60 dropped sites
- * (40 mastodon, 20 huginn) found 51 of 59 decidable fabricated (86%) — `Array`
- * / `Hash` / AR-relation / gem values fanned onto project classes that happen
- * to spell `#empty?`, `#size`, `#merge!`, `#host`. `=0` restores the old fan.
+ * unset: OFF since bd tea-rags-mcp-o9mk8. A manual triage of 60 dropped sites
+ * (bd m99j1.1.59; 40 mastodon, 20 huginn) found 51 of 59 decidable fabricated
+ * (86%) — `Array` / `Hash` / AR-relation / gem values fanned onto project
+ * classes that happen to spell `#empty?`, `#size`, `#merge!`, `#host` — but the
+ * 14% TRUE remainder are correct edges the gate loses, and a lost correct edge
+ * is a regression, so ON is not acceptable as a default. `=1` opts in;
+ * flipping it back ON is epic tea-rags-mcp-qg12x (type-source program).
  */
-export const RUBY_ASSIGNED_LOCAL_GATE_DEFAULT = true;
+export const RUBY_ASSIGNED_LOCAL_GATE_DEFAULT = false;
 
 /** Ruby constants begin uppercase; `::`-joined segments form a scope chain. */
 const CONSTANT_RE = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;

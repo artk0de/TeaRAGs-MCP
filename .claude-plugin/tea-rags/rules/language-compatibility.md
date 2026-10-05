@@ -122,7 +122,8 @@ conclude absence from a graph the index says is incomplete.
   nameable param; a `*args` call site omits its count rather than guessing) +
   name-only `dynamic` dispatch LAST, over untyped receivers the body never binds
   (parameters, module globals, closure reads), declining every receiver with
-  type evidence or assigned as a local of the caller's def
+  type evidence, and additionally every receiver assigned as a local of the
+  caller's def when `CODEGRAPH_PY_ASSIGNED_LOCAL_GATE=1` opts in
   (`CODEGRAPH_PY_DYNAMIC_DISPATCH=0` turns it off) + callable-value flow: a
   function passed into an invoked parameter or wrapped by a decorator resolves
   through the `callableParam` pass, several such functions fan as `cone`, and a

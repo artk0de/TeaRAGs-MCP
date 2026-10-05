@@ -125,6 +125,12 @@ describe("pythonDynamicFanoutSuppressed (w205u — every shape another layer own
     probe: PythonChainAnswerProbe = silentProbe(),
     coreAmbiguous = NEVER_CORE_AMBIGUOUS,
   ): boolean => pythonDynamicFanoutSuppressed(call, ctx, probe, coreAmbiguous);
+  // The assigned-local gate is opt-in (CODEGRAPH_PY_ASSIGNED_LOCAL_GATE=1, bd o9mk8): these pin its ON behaviour.
+  const suppressedGateOn = (
+    call: CallRef,
+    ctx: CallContext = ctxOf(),
+    probe: PythonChainAnswerProbe = silentProbe(),
+  ): boolean => pythonDynamicFanoutSuppressed(call, ctx, probe, NEVER_CORE_AMBIGUOUS, undefined, true);
 
   it("declines a bare call (receiver null)", () => {
     expect(suppressed(callOf(null))).toBe(true);
@@ -267,7 +273,7 @@ describe("pythonDynamicFanoutSuppressed (w205u — every shape another layer own
     // flask: `loader = self.app.jinja_loader` then `loader.list_templates()`.
     // No typed channel carries either binding, so only assignment presence
     // tells the gate the name is a local of unknown type.
-    expect(suppressed(callOf("client", "perform"), ctxOf({ assignedLocals: ["client"] }))).toBe(true);
+    expect(suppressedGateOn(callOf("client", "perform"), ctxOf({ assignedLocals: ["client"] }))).toBe(true);
   });
 
   it("declines an assigned local even when its assignment is an in-project call result the chain cannot type", () => {
@@ -275,28 +281,29 @@ describe("pythonDynamicFanoutSuppressed (w205u — every shape another layer own
       assignedLocals: ["service"],
       callResultBindings: { service: [{ line: 4, callee: "Service.build" }] },
     });
-    expect(suppressed(callOf("service", "perform"), ctx)).toBe(true);
+    expect(suppressedGateOn(callOf("service", "perform"), ctx)).toBe(true);
   });
 
   it("still fans a name the def does NOT assign — a parameter, a module global, a closure the walker did not publish", () => {
-    expect(suppressed(callOf("service", "perform"), ctxOf({ assignedLocals: ["other"] }))).toBe(false);
+    expect(suppressedGateOn(callOf("service", "perform"), ctxOf({ assignedLocals: ["other"] }))).toBe(false);
   });
 
-  it("fans an assigned local when the gate is OFF (CODEGRAPH_PY_ASSIGNED_LOCAL_GATE=0, m99j1.1.91 measurement switch)", () => {
+  it("fans an assigned local when the gate is OFF (the default, o9mk8; CODEGRAPH_PY_ASSIGNED_LOCAL_GATE=1 opts in)", () => {
     const ctx = ctxOf({ assignedLocals: ["client"] });
     const call = callOf("client", "perform");
     expect(pythonDynamicFanoutSuppressed(call, ctx, silentProbe(), NEVER_CORE_AMBIGUOUS, undefined, false)).toBe(false);
     expect(pythonDynamicFanoutSuppressed(call, ctx, silentProbe(), NEVER_CORE_AMBIGUOUS, undefined, true)).toBe(true);
   });
 
-  it("keeps the assigned-local gate ON by default", () => {
-    expect(PYTHON_ASSIGNED_LOCAL_GATE_DEFAULT).toBe(true);
+  it("defaults the assigned-local gate OFF (o9mk8) — an assigned local is fanned when nothing is configured", () => {
+    expect(PYTHON_ASSIGNED_LOCAL_GATE_DEFAULT).toBe(false);
+    expect(suppressed(callOf("client", "perform"), ctxOf({ assignedLocals: ["client"] }))).toBe(false);
   });
 
   it("asks assignment presence before the probe — a membership test, the chain is a walk", () => {
     const pass = new SilentPass();
     const probe = new PythonChainAnswerProbe([pass]);
-    expect(suppressed(callOf("client", "perform"), ctxOf({ assignedLocals: ["client"] }), probe)).toBe(true);
+    expect(suppressedGateOn(callOf("client", "perform"), ctxOf({ assignedLocals: ["client"] }), probe)).toBe(true);
     expect(pass.calls).toBe(0);
   });
 });
