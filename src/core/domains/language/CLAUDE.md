@@ -100,10 +100,19 @@
   `merged` (whatever engine answered the file), and `tiebroken` — pyright asked
   about every chain-vs-jedi disagreement and the row re-scored by the fixed rule
   in `scripts/lib/py-oracle-tiebreak.ts`, with the undecidable ones withheld and
-  counted. `--no-tiebreak` reproduces the two-column output byte for byte. Why:
-  D9's oracle-wrong classes were hand-audited once and then carried as a
-  paragraph, so every later increment measured its precision against a number
-  that included known instrument error.
+  counted. Gate precision on the TIEBROKEN rows (`phantomTieb` / `wrongFileTieb`
+  / `missTieb%`): the legacy phantom column is dominated by jedi failing to
+  follow MRO and mixins, and measured django legacy 388 against tiebroken 2.
+  Besides the self-reference pre-empt, the tiebreak WITHHOLDS two shapes jedi
+  cannot score — a call through a PARAMETER (jedi `goto` answers the def owning
+  the parameter, a def on the caller's lexical chain; withheld only when no
+  scope on the target's id is named like the callee, so recursion and a nested
+  class constructed by name stay scored) and `self.__class__(...)` /
+  `type(self)(...)` (jedi answers the builtin attribute). `--no-tiebreak`
+  reproduces the two-column output byte for byte. Why: D9's oracle-wrong classes
+  were hand-audited once and then carried as a paragraph, so every later
+  increment measured its precision against a number that included known
+  instrument error.
 - **`--time-only` is the chain tally's third mode, and it is the only reason
   three languages are comparable at all.** It skips the rebuilt chain and
   resolves every site through the production resolver, so a language with no
@@ -183,6 +192,23 @@
   `PythonImportFileMapper` instead of a private memo. What an `@ivar` is, what a
   capitalized head means, which env caps the hops — all language, none of it in
   the kernel.
+- **Three more fold ports are OPTIONAL, and each moves where the walk STOPS or
+  what a link reads — never how a hop is threaded.** `memberAttributeTypeOf` is
+  asked INSTEAD of `memberTypeOf` for a link with NO argument list (what reading
+  `obj.prop` yields, as against calling it) and falls back to `memberTypeOf`
+  when absent; a language where a bare member reference is itself a call omits
+  it. `elementTypeOf` answers `null` when the language cannot say what iterating
+  a type yields, and the fold never guesses an element.
+  `ownerIndependentMemberType` is consulted ONLY once the fold has lost the
+  link's owner (an untyped head, or a hop after an unknown one) and ONLY for a
+  bare attribute link — a link carrying any bracketed group is a call or
+  subscript, which its name does not fix. `propagateChain` then resumes after
+  that link via `resumeAfterLostOwner`, and every link between the lost owner
+  and the resumed one is skipped, never typed; a TYPED owner keeps
+  `memberTypeOf`'s answer, its refusal included. Why the name must be unique to
+  one framework: a name two libraries spell differently (`objects`) would retype
+  every untyped receiver that happens to end in it, so which names qualify is
+  the language's data, gated on the dependencies it declares.
 - **The ancestor walk is a kernel driver with a per-language ORDER policy.**
   `kernel/ancestor-walk.ts` owns the recursion, the per-path cycle guard, the
   already-reachable dedupe filter, the per-run memo and
@@ -192,10 +218,18 @@
   can leave the project — and gets an MRO: Ruby's module-insertion rule
   (`RUBY_ANCESTOR_POLICY`, behind the unchanged `linearizeAncestors` signature)
   and Python's C3 merge (`createPythonAncestorPolicy`) are two answers to the
-  same question and neither is neutral. A policy is created ONCE per resolver
-  and its linearizer memoizes per class per run, never per call site — netbox is
-  ~3,600 classes against ~30,000 `self.` sites, so a per-site walk is the
-  difference between the perf gate passing and not. Only the top-level entry
+  same question and neither is neutral. Both languages reach the walk through
+  `AncestorLinearizerCache`, whose linearizer memoizes per class per RUN, never
+  per call site — netbox is ~3,600 classes against ~30,000 `self.` sites, so a
+  per-site walk is the difference between the perf gate passing and not. The
+  entry is keyed by `ctx.runScope` and the identity of `classAncestors`, and
+  stamped with the symbol table's identity and SIZE: pass 1 walks a table that
+  is still growing, so a linearization memoised cold must not outlive that
+  growth. A policy that memoises is built FRESH per entry (`createPolicy`) and
+  never shared across runs; a language whose order reads further channels beside
+  `classAncestors` (`companionsOf`) has them compared by identity, and a moved
+  companion rebuilds the entry. A context with no `classAncestors` or no table
+  gets `undefined` and keeps its uncached path. Only the top-level entry
   memoizes: the inner recursion is path-dependent under the cycle guard.
   `AncestorClosure` (`closed` / `external` / `unknown`) is how a miss reports
   WHY, and each language decides what verdict that earns.
@@ -218,6 +252,61 @@
   emit when the guessed class declares no such member needs the language's own
   MRO. Each language supplies ports and keeps its own surface: what counts as a
   terminal expression, what camelizes, what "has subtypes" is evidence of.
+- **The receiver-typed strategies and the dispatch components are kernel
+  skeletons over language PORTS; a language keeps the strategy `name` strings it
+  shipped with.** `kernel/receiver-typed-strategies.ts` owns the verdict once
+  the receiver is typed (nominal type → member walk, anything else undecided,
+  known type with no such member → the strategy's own miss); the language
+  supplies `ReceiverTypingPorts` and a `TypeMemberLookup`, whose kernel half is
+  only the FORM gate (`class` / `instance` reach the language, union / tuple /
+  container / nil answer `null`). `kernel/union-dispatch.ts`,
+  `table-dispatch.ts` and `dynamic-dispatch.ts` are `DispatchResolverComponent`s
+  the language composes in its own order. Three failure modes no kernel test
+  sees: a union component collapses NOTHING above the cone cap (no `poly-base` —
+  a union has no single base, so more than `coneMax` targets emit `[]`); the
+  dynamic component DECLINES whatever its `suppressed` gate says another layer
+  owns, and WHICH calls those are is language knowledge, so a fan-out that
+  replaces the chain's answer is a gate bug, not a kernel one;
+  `ReceiverPatternDropSymbolResolutionStrategy` DROPs on the first matching
+  rule, so a rule that is wrong hides real edges where a wrong strategy would
+  only add a bad one. The `name` is load-bearing:
+  `codegraph-chain-tally.ts --defer` and the oracle's `answeredBy` columns key
+  on it. `kernel/member-return-type.ts` walks ONE precedence — owner's own
+  return, each ancestor in the language's linearized order (nearest declarer
+  answers), a framework hook, then the flat owner-less fact the language gates —
+  first non-null wins and a miss is `null`; the ancestor read is a separate port
+  from the owner read because both readings need the OWNER (Python substitutes a
+  `Self` return with the receiver's class). `readResolverConfig(env, prefix)`
+  reads `<prefix>_CONE_MAX` and `<prefix>_DYNAMIC_CONFIDENCE`; a
+  language-specific flag stays in its own vertical. A language ADDING a kernel
+  component to its stack is a measured change per language, never a symmetry:
+  Python's receiver-pattern drop was proposed and closed WITHOUT a strategy
+  because its measured ceiling (phantom rows per corpus) was below the plan's
+  bar.
+- **A framework vocabulary is gated by the project's DECLARED dependencies, and
+  the rule is the kernel's.** `FrameworkVocabularyRegistry`
+  (`kernel/framework-vocabulary.ts`) decides who is active: a vocabulary with no
+  `activatedBy` is unconditional, a gated one loads iff its family intersects
+  the declared set by EXACT name, and an ABSENT manifest (`undefined`) keeps
+  every vocabulary on — absence of a manifest is absence of evidence — while a
+  manifest declaring nothing gates every conditional one off. Conflating the two
+  silently untypes every fixture, spike and un-packaged corpus. Where the
+  declared set comes from stays the language's `DependencyManifestSource`; a
+  language's vocabulary module only states data, never a branch at the consumer.
+- **A memo whose entries must not outlive one resolve run is a `RunScopedMemo`,
+  and nothing else holds one.** `kernel/run-scoped-memo.ts` keys the caller's
+  own object BENEATH `ctx.runScope`, so the inner key keeps its meaning (the
+  table an answer was read from, the `classAncestors` a linearizer was built
+  over) while the outer key bounds the lifetime. A resolver outlives a run
+  (`LanguageFactory` caches it) and so does a symbol table, so a memo keyed by
+  either served run N's answers to run N+1; keying on a run-global CHANNEL's
+  identity only moved the problem, because `absorb` and `seal` mutate those
+  objects in place. A context built outside a codegraph run carries no scope and
+  falls under `DETACHED_RESOLVE_RUN_SCOPE`: the entry lives as long as the memo.
+  `tests/core/domains/language/run-scoped-cache-keys.test.ts` fails on a
+  table-keyed or bare-object-keyed map under `domains/language`, and the fix is
+  this class, never a guard exception. The `runScope` lifetime itself is owned
+  by `../trajectory/codegraph/CLAUDE.md`.
 - **`TSProgramCache` lives on `TSCallResolver`, refreshed by an mtime re-stat
   per `acquire`; `reset()` has NO caller in `src`.** Why: auditing for a
   run-boundary discard finds nothing and invites a spurious `reset()`.
@@ -450,6 +539,18 @@
   rate, so it is its own walker bump. Why: a chain-only filter turns every
   former cross-language edge into a charged miss, which reads as a recall
   regression the resolver cannot fix.
+- **`targetsUndecidable` is the LAST miss gate, and it moves rows between
+  buckets without touching an edge.** `classifyResolveMiss` returns
+  `unresolvable` (the bucket a dynamic `send` already used) when the facade's
+  optional `targetsUndecidable` answers `true`, asked AFTER
+  `targetsExternalImport`, `hasInProjectDefinition` and
+  `targetsCoreAmbiguousMember` so each earlier bucket stays byte-identical and
+  only the residual `missWithInProjectDef` is carved. The runner reads the
+  FACADE, so a resolver carrying the method behind a facade that does not
+  forward it changes nothing (the `hasInProjectDefinition` failure above); the
+  set that forwards it is pinned in `tests/navigator-enumerations.test.ts`. The
+  verdict is `true` only on PROOF, because a wrong `true` hides a real miss from
+  the denominator.
 - **A TypeScript member call is never committed by a unique short name alone.**
   `globalShortName` and `importNarrowedFallback` accept a candidate for a
   receiver the walker did not type — `this` included, once `thisMember` missed —

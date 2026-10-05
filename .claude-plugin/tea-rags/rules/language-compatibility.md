@@ -106,21 +106,25 @@ conclude absence from a graph the index says is incomplete.
   like a method) + edges restricted to project sources +
   tsx/tsconfig-paths-aware import mapping
 - **JavaScript** — 6-strategy; CommonJS/ESM require resolution (dynamic gaps)
-- **Python** — 9-strategy chain (super, clsMember, selfField, selfMember,
-  localBinding, chainType, namingConvention, importedName, globalShortName) +
-  dict-table dispatch consulted first: a module-level `NAME = {…}` whose values
-  name callables (bare, dotted `Cls.method`, or a nested field dict) fans
-  `NAME[k](…)` / `NAME.get(k)(…)` / a local bound to either out to every entry,
-  a string-literal key narrowing to one, entries resolved the way a direct call
-  from the table's module would be, plus the single-hop callback-param join when
-  a table read is passed as an argument + class-object receivers resolved on the
-  enclosing class's MRO, preferring the class-level symbolId spelling a
-  `@classmethod` carries + ConeDispatch CHA fan-out consulted before the chain,
-  RTA-pruned by the run-global instantiation set and narrowed by call-site arity
-  and keyword keys (a positional parameter may be passed by name, so `arity`
-  counts slots and `kwargs.optional` every nameable param; a `*args` call site
-  omits its count rather than guessing) (name-only `dynamic` dispatch built,
-  measured and PARKED behind `CODEGRAPH_PY_DYNAMIC_DISPATCH`, default off) + C3
+- **Python** — 10-strategy chain (super, clsMember, selfField, selfMember,
+  callableParam, localBinding, chainType, namingConvention, importedName,
+  globalShortName) + dict-table dispatch consulted first: a module-level
+  `NAME = {…}` whose values name callables (bare, dotted `Cls.method`, or a
+  nested field dict) fans `NAME[k](…)` / `NAME.get(k)(…)` / a local bound to
+  either out to every entry, a string-literal key narrowing to one, entries
+  resolved the way a direct call from the table's module would be, plus the
+  single-hop callback-param join when a table read is passed as an argument +
+  class-object receivers resolved on the enclosing class's MRO, preferring the
+  class-level symbolId spelling a `@classmethod` carries + ConeDispatch CHA
+  fan-out consulted before the chain, RTA-pruned by the run-global instantiation
+  set and narrowed by call-site arity and keyword keys (a positional parameter
+  may be passed by name, so `arity` counts slots and `kwargs.optional` every
+  nameable param; a `*args` call site omits its count rather than guessing)
+  (name-only `dynamic` dispatch built, measured and PARKED behind
+  `CODEGRAPH_PY_DYNAMIC_DISPATCH`, default off) + callable-value flow: a
+  function passed into an invoked parameter or wrapped by a decorator resolves
+  through the `callableParam` pass, several such functions fan as `cone`, and a
+  union-typed receiver fans to every arm that defines the member + C3
   linearization over file-qualified class keys, memoized once per run, with
   `super()` dispatching on that MRO from the entry after the enclosing class and
   every member lookup reading up it, a base spelled as a package module alias
@@ -148,20 +152,31 @@ conclude absence from a graph the index says is incomplete.
   declared-or-import-bound constructors, its Django `as_manager` arm active only
   where the project's own manifests declare django (every pyproject.toml /
   requirements\*.txt under the root, PEP 503 normalized, exact match; no
-  manifest anywhere leaves every vocabulary on) + class fields addressed both
-  per-file by short name and run-global by file-qualified class key, with a
-  field assigned from a CALL folded one level against the callee's return +
-  annotation and docstring type facts, `Mapped[T]` read as transparent + an
-  import shadow that spans the whole establishing statement + bare-call
-  resolution in Python's LEGB order (enclosing frames, filtered before the pick,
-  ahead of the caller's own module level, then builtins) with short-name
-  candidates gated to same-language, bare-callable, non-builtin definitions + an
-  inert-file fast path that skips materializing a file whose native tree bears
-  none of the node types the walker can extract from. Measured against jedi
-  merged per file with a pyright LSP second engine, every chain-vs-oracle
-  disagreement arbitrated by a third pyright vote: the `tiebroken` column that
-  stage publishes is the precision figure to quote, and `legacy` stays beside it
-  as the regression gate
+  manifest anywhere leaves every vocabulary on) + framework vocabularies on the
+  same gate: Django managers, `_meta`, relation verbs and `from_queryset` bases
+  answered with the declaring module's class so a project namesake never
+  captures the hop, and SQLAlchemy / werkzeug descriptor decorators read as
+  attributes + module-level value types for imported singletons, and iteration,
+  context-manager, tuple-unpacking and `except` bindings folded at resolve
+  time + return inference through `self` delegation, constructor-assigned fields
+  and same-file defs by a memoised per-file fixpoint + constructor-argument
+  typing that reaches `__init__` through package re-exports and inherited
+  constructors, and receivers typed by an external constructor classified
+  external + calls the static graph cannot decide (an instance member absent
+  from a closed MRO whose class answers `__getattr__`) leaving the resolve
+  denominator + class fields addressed both per-file by short name and
+  run-global by file-qualified class key, with a field assigned from a CALL
+  folded one level against the callee's return + annotation and docstring type
+  facts, `Mapped[T]` read as transparent + an import shadow that spans the whole
+  establishing statement + bare-call resolution in Python's LEGB order
+  (enclosing frames, filtered before the pick, ahead of the caller's own module
+  level, then builtins) with short-name candidates gated to same-language,
+  bare-callable, non-builtin definitions + an inert-file fast path that skips
+  materializing a file whose native tree bears none of the node types the walker
+  can extract from. Measured against jedi merged per file with a pyright LSP
+  second engine, every chain-vs-oracle disagreement arbitrated by a third
+  pyright vote: the `tiebroken` column that stage publishes is the precision
+  figure to quote, and `legacy` stays beside it as the regression gate
 - **Go** — 7-pass chain (localBinding, returnTypeBinding, receiverChain,
   importMatch, receiverDrop, genericInstantiation, globalShortName) + typed
   locals under Go's scope rules (a statement-declared local is in scope after
