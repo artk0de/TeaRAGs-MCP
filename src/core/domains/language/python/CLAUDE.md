@@ -267,7 +267,10 @@
   `resolveOnBoundType` — where the literal `Self` names no file and DROPs — down
   any arm a later seam adds (bd tea-rags-mcp-1v12o.1.6). A class receiver
   substitutes that class, an instance receiver its own type, an untyped receiver
-  nothing.
+  nothing. The substitution reaches a marker at ANY depth — a container element,
+  a tuple position, a union arm, a generic argument (`-> Iterator[Self]` read by
+  a loop) — because a nested marker left in place is read downstream as a class
+  literally named `Self` (bd tea-rags-mcp-m99j1.1.83).
 - **`callResultBindings` is folded at RESOLVE time, and that is the only layer
   where it can be.** The walker records the callee SPELLING a local was assigned
   from (`repository = SubscriptionRepository.from_session(session)` →

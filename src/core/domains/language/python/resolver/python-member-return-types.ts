@@ -159,11 +159,52 @@ function pythonMemberTypeThroughMro(
  * Every read of the channel that can see a receiver funnels through here, so
  * the marker cannot leave this module under any spelling: the MRO walk above,
  * and the call-result binding in {@link pythonCallBindingType}.
+ *
+ * A marker NESTED in the return is the same marker under the same rule (bd
+ * tea-rags-mcp-m99j1.1.83): `-> list[Self]`, `-> tuple[Self, int]`,
+ * `-> Iterator[Self]`, a `Self | Other` arm, a generic argument. Left in place
+ * it reached the loop / unpacking / `__iter__` reader as a class literally
+ * named `Self`. A fact carrying no marker is returned by identity.
  */
 export function pythonSubstituteSelfReturn(returned: TypeRef | undefined, receiverName: string): TypeRef | undefined {
-  return returned?.form === "instance" && returned.name === PYTHON_SELF_RETURN
-    ? { form: "instance", name: receiverName }
-    : returned;
+  return returned === undefined ? undefined : pythonSubstitutedSelfMarker(returned, receiverName);
+}
+
+/** {@link pythonSubstituteSelfReturn} over one `TypeRef`, at any depth; identity when nothing moved. */
+function pythonSubstitutedSelfMarker(type: TypeRef, receiverName: string): TypeRef {
+  switch (type.form) {
+    case "instance":
+    case "class": {
+      if (type.name === PYTHON_SELF_RETURN) {
+        // The top-level rule, unchanged: the marker becomes the receiver itself.
+        return type.form === "instance" && type.args === undefined
+          ? { form: "instance", name: receiverName }
+          : { ...type, name: receiverName };
+      }
+      if (type.args === undefined) return type;
+      const args = pythonSubstitutedSelfMarkers(type.args, receiverName);
+      return args === type.args ? type : { ...type, args };
+    }
+    case "container": {
+      const element = pythonSubstitutedSelfMarker(type.element, receiverName);
+      return element === type.element ? type : { ...type, element };
+    }
+    case "tuple": {
+      const elements = pythonSubstitutedSelfMarkers(type.elements, receiverName);
+      return elements === type.elements ? type : { ...type, elements };
+    }
+    case "union": {
+      const members = pythonSubstitutedSelfMarkers(type.members, receiverName);
+      return members === type.members ? type : { ...type, members: [...members] };
+    }
+    case "nil":
+      return type;
+  }
+}
+
+function pythonSubstitutedSelfMarkers(types: readonly TypeRef[], receiverName: string): readonly TypeRef[] {
+  const substituted = types.map((type) => pythonSubstitutedSelfMarker(type, receiverName));
+  return substituted.every((type, at) => type === types[at]) ? types : substituted;
 }
 
 /**
