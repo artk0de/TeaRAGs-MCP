@@ -14,6 +14,7 @@
 import { FrameworkVocabularyRegistry } from "../../../kernel/framework-vocabulary.js";
 import { DJANGO_VOCABULARY } from "./django.js";
 import type { PythonFrameworkMemberTypes, PythonFrameworkVocabulary, PythonVocabularyFacet } from "./types.js";
+import { WERKZEUG_VOCABULARY } from "./werkzeug.js";
 
 export type {
   PythonFrameworkMemberTypes,
@@ -23,7 +24,7 @@ export type {
 } from "./types.js";
 
 /** Every registered vocabulary. Adding one is a module plus a line here. */
-export const PYTHON_FRAMEWORKS: readonly PythonFrameworkVocabulary[] = [DJANGO_VOCABULARY];
+export const PYTHON_FRAMEWORKS: readonly PythonFrameworkVocabulary[] = [DJANGO_VOCABULARY, WERKZEUG_VOCABULARY];
 
 /** The facets active for one project — the only question a consumer asks. */
 export interface PythonVocabularyCatalogue {
@@ -31,6 +32,8 @@ export interface PythonVocabularyCatalogue {
   readonly hasFacet: (facet: PythonVocabularyFacet) => boolean;
   /** The active frameworks' synthesized member returns, in registration order. */
   readonly memberTypes: readonly PythonFrameworkMemberTypes[];
+  /** The active frameworks' qualified descriptor decorators, unioned. */
+  readonly descriptorDecorators: ReadonlySet<string>;
 }
 
 /** {@link PYTHON_FRAMEWORKS} under the kernel activation rule (bd tea-rags-mcp-m99j1.1.8). */
@@ -51,11 +54,15 @@ export function filterActivePythonFrameworks(
 export function composePythonVocabulary(declared: ReadonlySet<string> | null): PythonVocabularyCatalogue {
   const activeFacets = new Set<PythonVocabularyFacet>();
   const memberTypes: PythonFrameworkMemberTypes[] = [];
+  const descriptorDecorators = new Set<string>();
   for (const framework of PYTHON_FRAMEWORK_REGISTRY.active(declared)) {
     for (const facet of framework.facets) activeFacets.add(facet);
     if (framework.memberTypes !== undefined) memberTypes.push(framework.memberTypes);
+    if (framework.facets.has("descriptorDecorators")) {
+      for (const decorator of framework.descriptorDecorators ?? []) descriptorDecorators.add(decorator);
+    }
   }
-  return { activeFacets, hasFacet: (facet) => activeFacets.has(facet), memberTypes };
+  return { activeFacets, hasFacet: (facet) => activeFacets.has(facet), memberTypes, descriptorDecorators };
 }
 
 /**

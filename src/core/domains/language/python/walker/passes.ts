@@ -9,6 +9,7 @@
 import { createIdentifierDeclarationFacetPass, type ExtractionFacetPass } from "../../kernel/index.js";
 import { pythonAnnotationTypeFacetPass } from "./passes/annotation-type-facts.js";
 import { PYTHON_IDENTIFIER_DECLARATION_SYNTAX } from "./passes/identifier-declarations.js";
+import { pythonDescriptorMembersFacetPass } from "./passes/python-descriptor-members.js";
 import { pythonParamArgTypesFacetPass } from "./passes/python-param-arg-types.js";
 import { pythonTypeAbstractnessFacetPass } from "./passes/type-abstractness.js";
 
@@ -17,4 +18,7 @@ export const PYTHON_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
   pythonTypeAbstractnessFacetPass,
   createIdentifierDeclarationFacetPass(PYTHON_IDENTIFIER_DECLARATION_SYNTAX),
   pythonParamArgTypesFacetPass,
+  // LAST of the field writers: its facts merge UNDER every field an assignment,
+  // annotation or parameter copy already recorded (bd tea-rags-mcp-m99j1.1.20).
+  pythonDescriptorMembersFacetPass,
 ];

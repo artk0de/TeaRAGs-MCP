@@ -69,9 +69,11 @@ export {
 export {
   pythonBareCallReturnType,
   pythonCallBindingType,
+  pythonInheritedAttributeType,
   pythonInheritedMemberType,
   pythonModuleReturnType,
   pythonSubstituteSelfReturn,
+  type PythonMemberAccess,
 } from "../python-member-return-types.js";
 
 /**

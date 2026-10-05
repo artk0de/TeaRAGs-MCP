@@ -5,7 +5,7 @@ import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import {
   pythonEnclosingClass,
-  pythonInheritedMemberType,
+  pythonInheritedAttributeType,
   pythonTypeNameIsExternal,
   resolvePythonMemberOnTypeThroughMro,
   type ResolverConfig,
@@ -67,8 +67,18 @@ export class PythonSelfFieldSymbolResolutionStrategy implements SymbolResolution
     // from 60-odd subclasses in other files, and `classFieldTypes` is keyed by
     // the ASSIGNING class's short name. A field the walk cannot type is
     // `undefined` here and falls to the DROP below exactly as before.
+    // `self.<field>` is an ATTRIBUTE read (bd tea-rags-mcp-m99j1.1.20): a
+    // descriptor answers as the field the walker records it as, a plain method
+    // is a bound method and answers nothing.
     const linearizer = this.linearizers?.for(ctx);
-    const fieldType = pythonInheritedMemberType(enclosing.name, fieldSegment, "instance", ctx, this.mapper, linearizer);
+    const fieldType = pythonInheritedAttributeType(
+      enclosing.name,
+      fieldSegment,
+      "instance",
+      ctx,
+      this.mapper,
+      linearizer,
+    );
     const typeName = fieldType?.form === "instance" ? fieldType.name : undefined;
     if (typeName) {
       // Field type known → resolution is CONSTRAINED to that class, and to the

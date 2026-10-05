@@ -40,10 +40,12 @@ import {
   pythonBareCallReturnType,
   pythonEnclosingClass,
   pythonImportMatchesReceiver,
+  pythonInheritedAttributeType,
   pythonInheritedMemberType,
   pythonModuleValueClass,
   receiverModuleText,
   resolveTypeFile,
+  type PythonMemberAccess,
 } from "./strategies/shared.js";
 
 export const PYTHON_CHAIN_MAX_HOPS_ENV = "CODEGRAPH_PY_CHAIN_MAX_HOPS";
@@ -406,16 +408,23 @@ function pythonClassChainHeadSeed(
  * (bd tea-rags-mcp-yl85b) — see `pythonInheritedMemberType`. This is the one
  * place either channel is consulted, so the walk lives there and not in each
  * strategy.
+ *
+ * `access` splits the kernel's two reads (bd tea-rags-mcp-m99j1.1.20):
+ * `memberTypeOf` is the CALL read, `memberAttributeTypeOf` the read of a link
+ * with no argument list, which never types a known plain method by its return.
+ * See `PythonMemberAccess`.
  */
 function pythonMemberTypeOf(
   recv: TypeRef,
   member: string,
+  access: PythonMemberAccess,
   ctx: CallContext,
   mapper: PythonImportFileMapper,
   linearizers: PythonAncestorLinearizerCache | undefined,
 ): TypeRef | undefined {
   if (recv.form !== "class" && recv.form !== "instance") return undefined;
-  return pythonInheritedMemberType(recv.name, member, recv.form, ctx, mapper, linearizers?.for(ctx), recv.args);
+  const read = access === "call" ? pythonInheritedMemberType : pythonInheritedAttributeType;
+  return read(recv.name, member, recv.form, ctx, mapper, linearizers?.for(ctx), recv.args);
 }
 
 /**
@@ -443,7 +452,7 @@ export function createPythonReceiverTypePorts(
 ): ReceiverTypePorts {
   const classHead = options.classHead ?? false;
   const memberTypeOf = (recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined =>
-    pythonMemberTypeOf(recv, member, ctx, mapper, linearizers);
+    pythonMemberTypeOf(recv, member, "call", ctx, mapper, linearizers);
   const ports: ReceiverTypePorts = Object.freeze({
     singleHopType: (receiver: string, atLine: number, ctx: CallContext): TypeRef | undefined =>
       pythonSingleHopType(receiver, atLine, ctx, mapper, classHead, ports),
@@ -453,6 +462,8 @@ export function createPythonReceiverTypePorts(
       ctx: CallContext,
     ): { type: TypeRef; consumedMembers: 0 | 1 } | undefined => pythonSeedHead(head, firstLink, ctx, mapper),
     memberTypeOf,
+    memberAttributeTypeOf: (recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined =>
+      pythonMemberTypeOf(recv, member, "attribute", ctx, mapper, linearizers),
     elementTypeOf: (container: TypeRef, ctx: CallContext): TypeRef | null =>
       pythonElementTypeOf(container, ctx, memberTypeOf),
     ownerIndependentMemberType: pythonOwnerIndependentMemberType,

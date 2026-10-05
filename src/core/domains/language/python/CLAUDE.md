@@ -96,7 +96,13 @@
   reads `classFieldTypes` (attribute) before `structuredReturnTypes` (return);
   their two key conventions are under Mechanics below. A `container` or `union`
   receiver yields nothing on purpose — `list[Foo]` types the list, not an
-  element.
+  element. A link with NO argument list goes to `memberAttributeTypeOf` instead
+  (`PythonMemberAccess`, bd tea-rags-mcp-m99j1.1.20), and so does the
+  `self.<field>` strategy: it skips the return of any def the symbol table
+  declares under that spelling, because `obj.method` is a bound method. A
+  descriptor (`@property`, `@cached_property`) still types, because the walker's
+  descriptor pass records it in `classFieldTypes`, which is read first.
+  `memberTypeOf` stays the CALL read every in-language caller uses.
 - **The stdlib check runs BEFORE the mapper — in two places.** The mapper probes
   the caller's ancestor directories first, so `import json` from
   `src/flask/tag.py` would otherwise land on flask's own
