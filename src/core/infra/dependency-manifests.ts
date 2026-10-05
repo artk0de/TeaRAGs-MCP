@@ -19,9 +19,17 @@
  * transitively installed distribution, so walking into one would declare the
  * whole resolved world and activate every vocabulary — precisely the failure
  * that makes Ruby prefer the Gemfile over Gemfile.lock.
+ *
+ * At a git work tree's top the declared-dependency read lists the tree with
+ * `git ls-files` (tracked plus untracked-unignored) instead of walking every
+ * directory — once per call, shared by every language — and applies the walk's
+ * own bounds (ignored directories, depth cap) to the listed paths. A manifest
+ * the tree ignores is then no declaration of the project's, the same reason the
+ * vendored trees are skipped. Any other root, or a failed listing, walks.
  */
 
-import { readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type {
@@ -29,6 +37,7 @@ import type {
   DependencyManifestSource,
   LanguageFactoryDescriptor,
 } from "../contracts/types/language.js";
+import { buildGitChildProcessEnv, resolveGitExecutable } from "./git-executable.js";
 
 /**
  * Directories the walk never descends into. Vendored dependency trees
@@ -101,8 +110,9 @@ export function readDeclaredDependenciesByLanguage(
   sources: ReadonlyMap<string, DependencyManifestSource>,
 ): DeclaredDependenciesByLanguage {
   const byLanguage = new Map<string, ReadonlySet<string>>();
+  const listing = workTreeListingOnce(root);
   for (const [language, source] of sources) {
-    const declared = readDeclaredDependencies(root, [source]);
+    const declared = readDeclaredDependenciesListed(root, [source], listing);
     if (declared !== undefined) byLanguage.set(language, declared);
   }
   return byLanguage;
@@ -125,6 +135,15 @@ export function readDeclaredDependenciesByLanguage(
 export function readDeclaredDependencies(
   root: string,
   sources: readonly DependencyManifestSource[],
+): ReadonlySet<string> | undefined {
+  return readDeclaredDependenciesListed(root, sources, workTreeListingOnce(root));
+}
+
+/** {@link readDeclaredDependencies} over a work-tree listing its caller may share between reads. */
+function readDeclaredDependenciesListed(
+  root: string,
+  sources: readonly DependencyManifestSource[],
+  listing: WorkTreeListing,
 ): ReadonlySet<string> | undefined {
   if (sources.length === 0) return undefined;
   const declared = new Set<string>();
@@ -167,6 +186,8 @@ export function readDeclaredDependencies(
         const self = selfSource?.parseSelfPackageName?.(fileName, content);
         if (self !== undefined) selfPackages.push(self);
       },
+      NO_EXTRA_IGNORED_DIRS,
+      listing(),
     );
   }
   // The self-package rule (bd tea-rags-mcp-m99j1.1.21): a project activates its
@@ -227,13 +248,91 @@ export function readManifestFiles(
   return found;
 }
 
-/** The bounded, ignore-aware directory walk both readers share. */
+/**
+ * A root's work-tree file list, read at most once and only when first asked:
+ * root-relative `/`-separated paths, or `undefined` when the root is no git
+ * work tree's top or git cannot list it — the caller then walks.
+ */
+type WorkTreeListing = () => readonly string[] | undefined;
+
+const WORK_TREE_LISTING_TIMEOUT_MS = 30_000;
+const WORK_TREE_LISTING_MAX_BUFFER = 512 * 1024 * 1024;
+
+function workTreeListingOnce(root: string): WorkTreeListing {
+  let listed: { paths: readonly string[] | undefined } | undefined;
+  return () => (listed ??= { paths: listWorkTreeFiles(root) }).paths;
+}
+
+/**
+ * Tracked plus untracked-unignored files under `root`, when `root` is a git
+ * work tree's top (it holds `.git` — a repository, a linked worktree or a
+ * submodule). A root below the top is walked instead: the tree may ignore the
+ * root itself (a scratch corpus), and its manifests are still its own.
+ */
+function listWorkTreeFiles(root: string): readonly string[] | undefined {
+  if (!existsSync(join(root, ".git"))) return undefined;
+  try {
+    const out = execFileSync(
+      resolveGitExecutable(),
+      ["-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+      {
+        encoding: "utf8",
+        env: buildGitChildProcessEnv(),
+        timeout: WORK_TREE_LISTING_TIMEOUT_MS,
+        maxBuffer: WORK_TREE_LISTING_MAX_BUFFER,
+        stdio: ["ignore", "pipe", "ignore"],
+      },
+    );
+    // An unmerged path is listed once per stage.
+    return [...new Set(out.split("\0").filter((path) => path.length > 0))];
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The listed files the walk would reach and `matchesManifestFile` accepts —
+ * the walk's bounds applied to each path: no directory segment in the ignore
+ * sets, no deeper than {@link MAX_MANIFEST_WALK_DEPTH}, and a regular file on
+ * disk now (the walk follows no symlink; a tracked file may be deleted).
+ */
+function visitListedManifests(
+  root: string,
+  paths: readonly string[],
+  matchesManifestFile: (fileName: string) => boolean,
+  onManifest: (dir: string, relDir: string, fileName: string) => void,
+  extraIgnoredDirs: ReadonlySet<string>,
+): void {
+  for (const path of paths) {
+    const segments = path.split("/");
+    const fileName = segments.pop() ?? "";
+    if (segments.length > MAX_MANIFEST_WALK_DEPTH || !matchesManifestFile(fileName)) continue;
+    if (segments.some((dir) => DEPENDENCY_MANIFEST_IGNORED_DIRS.has(dir) || extraIgnoredDirs.has(dir))) continue;
+    const dir = join(root, ...segments);
+    try {
+      if (!lstatSync(join(dir, fileName)).isFile()) continue;
+    } catch {
+      continue;
+    }
+    onManifest(dir, segments.join("/"), fileName);
+  }
+}
+
+/**
+ * The bounded, ignore-aware directory walk both readers share; given a
+ * work-tree listing, the same bounds over the listed paths instead.
+ */
 function walkManifestFiles(
   root: string,
   matchesManifestFile: (fileName: string) => boolean,
   onManifest: (dir: string, relDir: string, fileName: string) => void,
   extraIgnoredDirs: ReadonlySet<string> = NO_EXTRA_IGNORED_DIRS,
+  listed?: readonly string[],
 ): void {
+  if (listed !== undefined) {
+    visitListedManifests(root, listed, matchesManifestFile, onManifest, extraIgnoredDirs);
+    return;
+  }
   const visit = (dir: string, relDir: string, depth: number): void => {
     let entries;
     try {

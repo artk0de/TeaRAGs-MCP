@@ -171,24 +171,38 @@ export class ReviewChangesOps {
         reviewEdgeExtraction: this.deps.reviewEdgeExtraction,
         ...(importSpecifiers === undefined ? {} : { readImportSpecifiers: importSpecifiers }),
       };
+      // The sections are independent reads of one snapshot, so they run
+      // together; the envelope lists them in the requested order whatever
+      // order they finish in. The shared `graphDb` handle takes concurrent
+      // calls: the daemon client multiplexes them by request id, an in-process
+      // session queues its writes (`DuckDbGraphSession#serialize`) and a
+      // section's own reads already overlap (`judgeDrafts`' Promise.all).
+      // Every section settles before the handle closes in `finally`; a failed
+      // one then fails the review with the first failure in requested order.
+      const settled = await Promise.allSettled(
+        providers.map(async (provider): Promise<ReviewSectionResult> => {
+          const verdict = provider.isBuilt(buildContext);
+          if (!verdict.built) {
+            return { built: false, ...(verdict.reason !== undefined ? { reason: verdict.reason } : {}) };
+          }
+          const payload = await provider.run({
+            ...buildContext,
+            addressing,
+            collectionName,
+            windowMonths: this.deps.windowMonths,
+            diffRequest: { base: req.changes?.base, files: req.files },
+          });
+          // Spread AFTER `built: true`: a provider that fails at run time may
+          // answer its own `{ built: false, reason }`, and that verdict wins.
+          return { built: true, ...(payload as object) };
+        }),
+      );
       const sections: Partial<Record<ReviewSectionId, ReviewSectionResult>> = {};
-      for (const provider of providers) {
-        const verdict = provider.isBuilt(buildContext);
-        if (!verdict.built) {
-          sections[provider.id] = { built: false, ...(verdict.reason !== undefined ? { reason: verdict.reason } : {}) };
-          continue;
-        }
-        const payload = await provider.run({
-          ...buildContext,
-          addressing,
-          collectionName,
-          windowMonths: this.deps.windowMonths,
-          diffRequest: { base: req.changes?.base, files: req.files },
-        });
-        // Spread AFTER `built: true`: a provider that fails at run time may
-        // answer its own `{ built: false, reason }`, and that verdict wins.
-        sections[provider.id] = { built: true, ...(payload as object) };
-      }
+      providers.forEach((provider, i) => {
+        const outcome = settled[i];
+        if (outcome.status === "rejected") throw outcome.reason;
+        sections[provider.id] = outcome.value;
+      });
       return {
         review: {
           workTree: scope.workTree,

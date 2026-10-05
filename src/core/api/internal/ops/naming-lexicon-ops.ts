@@ -143,6 +143,7 @@ import {
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import { pathPatternLiteralPrefix } from "../../../infra/path-pattern.js";
+import { Semaphore } from "../../../infra/semaphore.js";
 import { cosine } from "../../../infra/vector-math.js";
 import type { ExploreResponse, FindSymbolRequest, SemanticSearchRequest } from "../../public/dto/explore.js";
 import type { IndexMetrics } from "../../public/dto/metrics.js";
@@ -196,6 +197,16 @@ const MIN_CONCEPT_HOLDERS = 5;
 const CONCEPT_SEARCH_LIMIT = 30;
 const CONCEPT_RERANK = { custom: { similarity: 0.7, chunkFanIn: 0.15, fanIn: 0.15 } };
 const CONCEPT_FIELDS = ["symbolId", "relativePath", "parentSymbolId"];
+
+/**
+ * How many independent remote reads of one kind a request keeps in flight —
+ * the type drafts' concept searches (each an embed, a Qdrant query and a
+ * rerank), the colliding names' holder lookups. Each read is independent of
+ * its siblings, and every answer is assembled in draft / name order whatever
+ * order the reads settle in; the bound keeps a large review from flooding the
+ * embedding provider and Qdrant at once.
+ */
+export const NAMING_LEXICON_READ_CONCURRENCY = 8;
 /** Casing when neither a descriptor nor the observed names decide one. */
 const FALLBACK_CASING: IdentifierCasing = "snake";
 
@@ -354,7 +365,20 @@ interface TypeAlignmentState {
    * tea-rags-mcp-89k7k.15).
    */
   reexportTwins?: Promise<ReexportTwins | undefined>;
+  /**
+   * The concept searches per request shape ({@link NamingLexiconOps#conceptSearch}),
+   * each run at most once per request — the review's per-language answers and
+   * a repeated draft share the search. Settled, so a search started ahead of
+   * its draft and never consumed (an earlier failure stopped alignment) is no
+   * unhandled rejection.
+   */
+  conceptSearches?: Map<string, Promise<ConceptSearchOutcome>>;
+  /** Bounds the request's in-flight concept searches at {@link NAMING_LEXICON_READ_CONCURRENCY}. */
+  conceptSearchSlots?: Semaphore;
 }
+
+/** A settled concept search: its response, or the error it failed with. */
+type ConceptSearchOutcome = { response: ExploreResponse } | { error: unknown };
 
 /**
  * One answer's reads: the files every evidence read leaves out (diff mode's
@@ -1152,6 +1176,15 @@ export class NamingLexiconOps {
     // A barrel re-exporting the draft's file is the same declaration, not a clash (bd
     // tea-rags-mcp-89k7k.15); an unreadable file graph leaves every collision standing.
     const twins = await (alignment.reexportTwins ??= readReexportTwins(graphDb));
+    // Every searched draft's concept search starts here, bounded; the loop below
+    // consumes each in draft order, so the verdicts do not move.
+    if (alignment.failure === undefined) {
+      for (const draft of drafts) {
+        const draftLanguage = this.languageOfPath(draft.path) ?? language;
+        const rows = await this.typeNameRows(graphDb, this.typeNamespaceLanguages(draftLanguage), alignment);
+        if (rows.length > 0) void this.conceptSearch(req, draft, draftLanguage, alignment);
+      }
+    }
     for (const draft of drafts) {
       const population = typeDraftPopulation(draft);
       const draftLanguage = this.languageOfPath(draft.path) ?? language;
@@ -1174,7 +1207,7 @@ export class NamingLexiconOps {
       // self-index that cut the batch from ~65 words per draft to a handful.
       try {
         if (rows.length > 0 && alignment.failure === undefined) {
-          conceptNames = await this.conceptTypeNames(req, draft, draftLanguage, evidence.rows);
+          conceptNames = await this.conceptTypeNames(req, draft, draftLanguage, evidence.rows, alignment);
           byMeaning = await this.alignByMeaning(graphDb, req, draft, evidence, conceptNames, {
             language: draftLanguage,
             alignment,
@@ -1218,8 +1251,31 @@ export class NamingLexiconOps {
     draft: NamingLexiconTypeDraft,
     language: string | undefined,
     population: readonly TypeNameRow[],
+    alignment: TypeAlignmentState,
   ): Promise<string[]> {
-    const response = await this.deps.explore.semanticSearch({
+    const outcome = await this.conceptSearch(req, draft, language, alignment);
+    if ("error" in outcome) throw outcome.error;
+    const { response } = outcome;
+    const known = new Set(population.map((row) => row.shortName));
+    return response.results.flatMap((r) => {
+      const symbolId = r.payload?.symbolId;
+      if (typeof symbolId !== "string") return [];
+      return [...new Set(hitOwnSegments(symbolId))].filter((segment) => known.has(segment));
+    });
+  }
+
+  /**
+   * The draft's concept search, started at most once per request shape and
+   * bounded by the request's slots. The query is the draft's `concept`, the
+   * request's, else the draft's own words.
+   */
+  private async conceptSearch(
+    req: NamingLexiconRequest,
+    draft: NamingLexiconTypeDraft,
+    language: string | undefined,
+    alignment: TypeAlignmentState,
+  ): Promise<ConceptSearchOutcome> {
+    const request: SemanticSearchRequest = {
       ...collectionRef(req),
       query: draft.concept ?? req.concept ?? typeNameWords(draft.name).join(" "),
       ...(language ? { language } : {}),
@@ -1228,13 +1284,19 @@ export class NamingLexiconOps {
       limit: CONCEPT_SEARCH_LIMIT,
       metaOnly: true,
       fields: CONCEPT_FIELDS,
-    });
-    const known = new Set(population.map((row) => row.shortName));
-    return response.results.flatMap((r) => {
-      const symbolId = r.payload?.symbolId;
-      if (typeof symbolId !== "string") return [];
-      return [...new Set(hitOwnSegments(symbolId))].filter((segment) => known.has(segment));
-    });
+    };
+    const searches = (alignment.conceptSearches ??= new Map<string, Promise<ConceptSearchOutcome>>());
+    const key = JSON.stringify(request);
+    let search = searches.get(key);
+    if (search === undefined) {
+      const slots = (alignment.conceptSearchSlots ??= new Semaphore(NAMING_LEXICON_READ_CONCURRENCY));
+      search = withSlot(slots, async () => this.deps.explore.semanticSearch(request)).then(
+        (response): ConceptSearchOutcome => ({ response }),
+        (error: unknown): ConceptSearchOutcome => ({ error }),
+      );
+      searches.set(key, search);
+    }
+    return search;
   }
 
   /**
@@ -1801,6 +1863,16 @@ async function genericDraftNames(
   return new Map(judged.map((g) => [g.name, g]));
 }
 
+/** Runs `read` in one of `slots`, releasing the slot however the read settles. */
+async function withSlot<T>(slots: Semaphore, read: () => Promise<T>): Promise<T> {
+  const release = await slots.acquire();
+  try {
+    return await read();
+  } finally {
+    release();
+  }
+}
+
 async function judgeDrafts(
   graphDb: IdentifierReader,
   drafts: readonly NamingLexiconValueDraft[],
@@ -1821,7 +1893,12 @@ async function judgeDrafts(
   const taken = new Set(collisions);
   const holders = new Map<string, string[]>();
   if (ctx.collisionHolders) {
-    for (const name of draftNames) if (taken.has(name)) holders.set(name, await ctx.collisionHolders(name));
+    // Independent lookups, bounded; the map is filled in name order.
+    const lookup = ctx.collisionHolders;
+    const slots = new Semaphore(NAMING_LEXICON_READ_CONCURRENCY);
+    const takenNames = draftNames.filter((name) => taken.has(name));
+    const results = await Promise.all(takenNames.map(async (name) => withSlot(slots, async () => lookup(name))));
+    takenNames.forEach((name, i) => holders.set(name, results[i]));
   }
   // Untyped methods are judged by the project's method vocabulary (spec 2026-09-28 naming coverage, §D4).
   const untypedMethods = drafts.filter(isUntypedMethodDraft);

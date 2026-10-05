@@ -292,6 +292,40 @@ describe("PythonCallResolver — return arms placed by the declaring file (m99j1
     });
   });
 
+  it("places a bare same-file arm by the declaring file when the caller cannot place the name itself (m99j1.1.67)", () => {
+    // `base/base.py` imports the `utils` MODULE, never the class, and the run
+    // declares two `CursorWrapper`s: the caller's own reading of the bare
+    // `return self` arm names no file, so `with self.cursor() as c` stayed untyped.
+    const ctx = ctxIn(BASE, CURSOR_UNION, {
+      callerScope: ["BaseDatabaseWrapper", "_savepoint"],
+      localBindings: {
+        c: [{ line: 9, endLine: 12, type: "", valueKind: "contextEnter", sourceExpression: "self.cursor()" }],
+      },
+    });
+    ctx.structuredReturnTypes = { ...ctx.structuredReturnTypes, "CursorWrapper#__enter__": instance("CursorWrapper") };
+    expect(new PythonCallResolver().resolve(call("c", "execute"), ctx)).toMatchObject({
+      targetRelPath: UTILS,
+      targetSymbolId: "CursorWrapper#execute",
+    });
+  });
+
+  it("leaves a bare arm unplaced when the declaring file does not declare it (m99j1.1.67)", () => {
+    const ctx = ctxIn(BASE, CURSOR_UNION, {
+      callerScope: ["BaseDatabaseWrapper", "_savepoint"],
+      localBindings: {
+        c: [{ line: 9, endLine: 12, type: "", valueKind: "contextEnter", sourceExpression: "self.cursor()" }],
+      },
+    });
+    // A bare `DatabaseWrapper` (an annotation over an IMPORTED class): two other
+    // files declare it and `utils.py` does not, so nothing licenses a placement.
+    ctx.structuredReturnTypes = {
+      ...ctx.structuredReturnTypes,
+      "CursorWrapper#__enter__": instance("DatabaseWrapper"),
+    };
+    expect(new PythonCallResolver().resolve(call("c", "init"), ctx)).toBeNull();
+    expect(fanTargets(call("c", "init"), ctx)).toEqual([]);
+  });
+
   it("maps `__enter__` over every arm of a union context (`with self.cursor() as c`)", () => {
     const ctx = ctxIn(MYSQL, CURSOR_UNION, {
       localBindings: {
