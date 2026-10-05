@@ -151,6 +151,7 @@ export type {
   CohesionSectionPayload,
   CohesionSectionResult,
   IncompleteChangePartner,
+  IncompleteChangePartnerKind,
   IncompleteChangeSectionPayload,
   IncompleteChangeSectionResult,
   NamingSectionResult,

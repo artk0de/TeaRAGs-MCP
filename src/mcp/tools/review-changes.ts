@@ -29,8 +29,10 @@ const REVIEW_CHANGES_DESCRIPTION =
   "sections = ALLOWLIST, default all registered; unknown id = error; a section NOT requested is OMITTED from the " +
   "map, a requested one whose substrate is missing answers built:false+reason — absence is not not-built. " +
   "naming: declarations the change adds, judged against project vocabulary (the naming-lexicon review, verbatim). " +
-  "incompleteChange: co-change partners of the diff's files the diff does NOT touch (support, confidence, " +
-  "lastCoChangeAt; cap 50). cohesion: per changed file, symbol co-change clusters + split candidates; a file with " +
+  "incompleteChange: co-change partners of the diff's files the diff does NOT touch — findings pass the " +
+  "coupling-statistics gate (lift>1, Wilson strength, majority-floored Otsu cut over the corpus; partnerKind " +
+  "test-first, generated excluded; structurallyLinked ranks above history-only; cap 50). cohesion: per changed " +
+  "file, symbol co-change clusters + split candidates; a file with " +
   "no data = notJudged noCohesionData, never zero (cap 50 reports). architecture: the diff's added edges judged by " +
   "the boundary detectors (stableDependencies, leakingAbstraction, cycles, mainSequence delta, silentCoupling, " +
   "facadeContract); findings cap 100, family-aware — every family keeps >=1 slot; per-family truncated rides each " +
