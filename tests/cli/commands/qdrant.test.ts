@@ -101,3 +101,118 @@ describe("qdrantCommand", () => {
     expect(qdrantCommand.command).toBe("qdrant");
   });
 });
+
+/**
+ * bd tea-rags-mcp-lvlwc — the production wiring behind `qdrant recover`: the
+ * Qdrant endpoint the PROJECT's registry entry addresses (embedded daemon,
+ * external URL) else the configured default, the outcome rendered on stdout,
+ * and the embedded daemon ref released before the process exits.
+ */
+describe("qdrantCommand recover — production wiring", () => {
+  type Backend = { kind: "embedded" } | { kind: "external"; url: string } | { kind: "unaddressed" };
+
+  async function runRecover(argv: string[], backend: Backend, entry: object | undefined) {
+    vi.resetModules();
+    const release = vi.fn();
+    const lookups: string[] = [];
+    const opened: { url: string; apiKey: string }[] = [];
+    const resolvedFrom: string[] = [];
+    const recover = vi.fn(async () => ({
+      outcome: "nothing-to-do" as const,
+      collectionName: "code_demo_v1",
+      optimizerStatus: "ok",
+    }));
+
+    vi.doMock("../../../src/bootstrap/config/index.js", () => ({
+      resolveRegistryEnvCodeDefaults: vi.fn(),
+      parseAppConfig: () => ({ paths: { appData: "/tmp/app" }, qdrantUrl: "http://default:6333", qdrantApiKey: "key" }),
+    }));
+    vi.doMock("../../../src/core/api/index.js", () => ({
+      OptimizerRecoveryOps: class {
+        recover = recover;
+      },
+    }));
+    vi.doMock("../../../src/core/api/public/index.js", async (importOriginal) => ({
+      ...(await importOriginal<object>()),
+      EMBEDDED_MARKER: "embedded",
+      CollectionRegistry: class {
+        findByName(name: string): object | undefined {
+          lookups.push(`name:${name}`);
+          return entry;
+        }
+        findByPath(path: string): object | undefined {
+          lookups.push(`path:${path}`);
+          return entry;
+        }
+      },
+      QdrantManager: class {
+        constructor(url: string, apiKey: string) {
+          opened.push({ url, apiKey });
+        }
+      },
+      resolveRegistryQdrantBackend: () => backend,
+      resolveQdrantUrl: async (from: string) => {
+        resolvedFrom.push(from);
+        return from === "embedded"
+          ? { mode: "embedded", url: "http://127.0.0.1:7001", release }
+          : { mode: "external", url: from };
+      },
+    }));
+
+    const stdout: string[] = [];
+    const write = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      stdout.push(String(chunk));
+      return true;
+    });
+    const exitCodes: unknown[] = [];
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((code?: unknown) => {
+      exitCodes.push(code);
+    }) as never);
+    try {
+      const { qdrantCommand: fresh } = await import("../../../src/cli/commands/qdrant.js");
+      const { default: yargs } = await import("yargs");
+      await yargs([]).command(fresh).exitProcess(false).parseAsync(argv);
+    } finally {
+      write.mockRestore();
+      exitSpy.mockRestore();
+      vi.doUnmock("../../../src/bootstrap/config/index.js");
+      vi.doUnmock("../../../src/core/api/index.js");
+      vi.doUnmock("../../../src/core/api/public/index.js");
+    }
+    return { release, lookups, opened, resolvedFrom, recover, stdout: stdout.join(""), exitCodes };
+  }
+
+  it("reattaches the embedded daemon of a registered alias and releases it on exit", async () => {
+    const run = await runRecover(["qdrant", "recover", "--project", "demo"], { kind: "embedded" }, { name: "demo" });
+
+    expect(run.lookups).toEqual(["name:demo"]);
+    expect(run.resolvedFrom).toEqual(["embedded"]);
+    expect(run.opened).toEqual([{ url: "http://127.0.0.1:7001", apiKey: "key" }]);
+    expect(run.recover).toHaveBeenCalledWith({ project: "demo" });
+    expect(run.stdout).toContain("nothing to do");
+    expect(run.release).toHaveBeenCalledTimes(1);
+    expect(run.exitCodes).toEqual([0]);
+  });
+
+  it("dials the external URL a path-addressed entry names", async () => {
+    const run = await runRecover(
+      ["qdrant", "recover", "--path", "/work/demo", "--json"],
+      { kind: "external", url: "http://remote:6333" },
+      { name: "demo" },
+    );
+
+    expect(run.lookups).toEqual(["path:/work/demo"]);
+    expect(run.resolvedFrom).toEqual(["http://remote:6333"]);
+    expect(run.opened).toEqual([{ url: "http://remote:6333", apiKey: "key" }]);
+    expect(JSON.parse(run.stdout.trim())).toMatchObject({ outcome: "nothing-to-do", collectionName: "code_demo_v1" });
+    expect(run.release).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the configured Qdrant URL when the project has no registry entry", async () => {
+    const run = await runRecover(["qdrant", "recover", "--project", "ghost"], { kind: "unaddressed" }, undefined);
+
+    expect(run.resolvedFrom).toEqual(["http://default:6333"]);
+    expect(run.opened).toEqual([{ url: "http://default:6333", apiKey: "key" }]);
+    expect(run.exitCodes).toEqual([0]);
+  });
+});

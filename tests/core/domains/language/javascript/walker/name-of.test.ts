@@ -416,3 +416,49 @@ describe("jsNameOf — call-valued exported declarators arrive via the TS delega
     expect(names).not.toContain("parsed");
   });
 });
+
+/**
+ * bd tea-rags-mcp-lvlwc — the HTTP-verb dispatch detector fires only on the
+ * express shape: a one-parameter callback whose body assigns a function to
+ * `<obj>[<param>]`, iterated over something that evidently holds HTTP verbs.
+ * Every near-miss must stay silent, every accepted signal must emit the verbs.
+ */
+describe("jsNameOf — forEach dispatch near-misses and verb signals (lvlwc)", () => {
+  const dispatchNames = (src: string): string[] =>
+    collectNames(src).filter((n) => /^app\.(get|post|put|delete|head|options|patch|connect|trace)$/.test(n));
+
+  it("emits no verb symbols for a forEach callback that is not the one-parameter dispatch shape", () => {
+    const shapes = [
+      "methods.forEach();",
+      "methods.forEach(m => { app[m] = function () {}; });",
+      "methods.forEach(function (a, b) { app[a] = function () {}; });",
+      "methods.forEach(function () { app.x = function () {}; });",
+      "methods.forEach(function (m) { app.x[m] = function () {}; });",
+      "methods.forEach(function (m) { app[other] = function () {}; });",
+      "methods.forEach(function (m) { app[m] = 1; });",
+      "methods.forEach(function (m) { this[m] = function () {}; });",
+      "app.methods.forEach(function (m) { app[m] = function () {}; });",
+      "methods.map(function (m) { app[m] = function () {}; });",
+    ];
+    for (const shape of shapes) {
+      expect(dispatchNames(`var methods = require('methods');\n${shape}\n`), shape).toEqual([]);
+    }
+  });
+
+  it("accepts the dispatch on the npm methods package, a local util module, or a verb comparison in the body", () => {
+    const body = "methods.forEach(function (method) { app[method] = function () {}; });\n";
+    expect(dispatchNames(`var methods = require('methods');\n${body}`)).toContain("app.get");
+    expect(dispatchNames(`var methods = require('./utils').methods;\n${body}`)).toContain("app.post");
+    expect(dispatchNames(`var methods = require('../lib/Util');\n${body}`)).toContain("app.patch");
+    expect(dispatchNames(`var methods = require('./helpers');\n${body}`)).toEqual([]);
+    expect(dispatchNames(body)).toEqual([]);
+
+    const compared = (cmp: string): string =>
+      `verbs.forEach(function (method) { if (${cmp}) {} app[method] = function () {}; });\n`;
+    expect(dispatchNames(compared("method === 'get'"))).toContain("app.delete");
+    expect(dispatchNames(compared("'GET' == method"))).toContain("app.trace");
+    expect(dispatchNames(compared("method === 'fetch'"))).toEqual([]);
+    expect(dispatchNames(compared("method !== 'get'"))).toEqual([]);
+    expect(dispatchNames(compared("other === 'get'"))).toEqual([]);
+  });
+});

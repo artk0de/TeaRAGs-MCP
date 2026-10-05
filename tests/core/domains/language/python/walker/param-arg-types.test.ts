@@ -470,3 +470,174 @@ describe("python param-arg types — widened argument typing (m99j1.1.52)", () =
     expect(state.paramTypes[`${VIEW_KEY}#__init__`]).toEqual({ request: { form: "instance", name: "HttpRequest" } });
   });
 });
+
+/**
+ * bd tea-rags-mcp-lvlwc — the silent corners of the call-site typing: every
+ * binding form that poisons a constructor-typed local or rebinds an annotated
+ * parameter, the module-value read through class and lambda scopes, field
+ * writes through tuple / foreign receivers, and the callee spellings that name
+ * no single class. Each one must stay silent rather than feed a wrong type.
+ */
+describe("python param-arg types — binding forms that void an argument type (lvlwc)", () => {
+  const HELPER = ["class Helper:", "    def __init__(self, req):", "        self.req = req"];
+  const argTypesOf = (lines: readonly string[]): unknown =>
+    walk("app/w.py", [...lines, "", ...HELPER]).knownTargetCallArgs?.find((r) =>
+      r.targets.includes("app/w.py::Helper#__init__"),
+    )?.argTypes;
+  const REQ = [{ form: "instance", name: "HttpRequest" }];
+
+  it("declines a constructor-typed local that any other binding form also writes", () => {
+    const rebinds = [
+      "req, other = pair",
+      "req += 1",
+      "for req in xs:\n        pass",
+      "with opener() as req:\n        pass",
+      "(req := make())",
+      "from m import req",
+      "global req",
+      "ys = [1 for req in xs]",
+    ];
+    for (const rebind of rebinds) {
+      const lines = ["def run():", "    req = HttpRequest()", `    ${rebind}`, "    return Helper(req)"];
+      expect(argTypesOf(lines), rebind).toBeUndefined();
+    }
+    expect(argTypesOf(["def run():", "    req = HttpRequest()", "    return Helper(req)"])).toEqual(REQ);
+  });
+
+  it("declines a constructor-typed local assigned two different constructors", () => {
+    const lines = ["def run(flag):", "    req = HttpRequest()", "    req = Other()", "    return Helper(req)"];
+    expect(argTypesOf(lines)).toBeUndefined();
+    const twice = ["def run(flag):", "    req = HttpRequest()", "    req = HttpRequest()", "    return Helper(req)"];
+    expect(argTypesOf(twice)).toEqual(REQ);
+  });
+
+  it("declines an annotated parameter that any statement form rebinds in the body", () => {
+    const rebinds = [
+      "request, other = pair",
+      "request += wrap(1)",
+      "for request in xs:\n        pass",
+      "with opener() as request:\n        pass",
+      "(request := make())",
+      "def request(): pass",
+      "class request: pass",
+      "import request",
+      "from m import request",
+      "global request",
+      "match xs:\n        case [request]:\n            pass",
+    ];
+    for (const rebind of rebinds) {
+      const lines = ["def run(request: HttpRequest):", `    ${rebind}`, "    return Helper(request)"];
+      expect(argTypesOf(lines), rebind).toBeUndefined();
+    }
+  });
+
+  it("reads an annotated parameter at two call sites of one def", () => {
+    const out = walk("app/w.py", [
+      "def run(request: HttpRequest):",
+      "    Helper(request)",
+      "    return Helper(request)",
+      "",
+      ...HELPER,
+    ]);
+    expect(out.knownTargetCallArgs).toHaveLength(2);
+  });
+
+  it("types an argument spelled as a dotted constructor, and past a comment; declines foreign attributes", () => {
+    expect(argTypesOf(["def run():", "    return Helper(models.HttpRequest())"])).toEqual([
+      { form: "instance", name: "models.HttpRequest" },
+    ]);
+    expect(argTypesOf(["def run():", "    return Helper(  # the request", "        HttpRequest())"])).toEqual(REQ);
+    expect(argTypesOf(["def run(thing):", "    return Helper(thing.req)"])).toBeUndefined();
+    expect(argTypesOf(["Helper(thing.req)"])).toBeUndefined();
+  });
+
+  it("reads a module value through a class body only where the class does not bind the name", () => {
+    const base = ["DEFAULT = HttpRequest()", "class K:"];
+    expect(argTypesOf([...base, "    DEFAULT = make()", "    x = Helper(DEFAULT)"])).toBeUndefined();
+    expect(argTypesOf([...base, "    DEFAULT += 1", "    x = Helper(DEFAULT)"])).toBeUndefined();
+    expect(argTypesOf([...base, "    other = 1", "    x = Helper(DEFAULT)"])).toEqual(REQ);
+    expect(argTypesOf([...base, "    def m(self):", "        return Helper(DEFAULT)"])).toEqual(REQ);
+    expect(argTypesOf(["DEFAULT = HttpRequest()", "f = lambda DEFAULT: Helper(DEFAULT)"])).toBeUndefined();
+    expect(argTypesOf(["DEFAULT = HttpRequest()", "f = lambda other: Helper(DEFAULT)"])).toEqual(REQ);
+  });
+
+  it("declines self.<field> when the method rebinds self, or a write goes through a tuple; ignores foreign writes", () => {
+    const rebound = [
+      "class Owner:",
+      "    def __init__(self):",
+      "        self.req = HttpRequest()",
+      "    def run(self):",
+      "        self = other",
+      "        return Helper(self.req)",
+    ];
+    expect(argTypesOf(rebound)).toBeUndefined();
+    const tuple = [
+      "class Owner:",
+      "    def __init__(self):",
+      "        self.req = HttpRequest()",
+      "    def reset(self):",
+      "        self.req, self.n = a, b",
+      "    def run(self):",
+      "        return Helper(self.req)",
+    ];
+    expect(argTypesOf(tuple)).toBeUndefined();
+    const foreign = [
+      "class Owner:",
+      "    def __init__(self, x):",
+      "        self.req = HttpRequest()",
+      "        x.req = Other()",
+      "        for self.n in xs:",
+      "            pass",
+      "    @staticmethod",
+      "    def make(self):",
+      "        self.req = Other()",
+      "    def run(self):",
+      "        return Helper(self.req)",
+    ];
+    expect(argTypesOf(foreign)).toEqual(REQ);
+  });
+
+  it("keeps a field fed by one parameter, ignoring another object's field copy", () => {
+    const out = walk("app/f.py", [
+      "class A:",
+      "    def __init__(self, x, y):",
+      "        self.f = x",
+      "        y.f = x",
+      "        self.g = x",
+      "        self.g = x",
+    ]);
+    expect(out.classFieldParamLinks).toEqual({
+      "app/f.py::A": {
+        f: { method: "__init__", param: "x" },
+        g: { method: "__init__", param: "x" },
+      },
+    });
+  });
+
+  it("emits no call-site record for a callee no single class names", () => {
+    const sites = (lines: readonly string[]): unknown => walk("pkg/mod.py", lines).knownTargetCallArgs;
+    expect(sites(["from ... import View", "def go():", "    return View(HttpRequest())"])).toBeUndefined();
+    expect(
+      sites(["from a import View", "from b import View", "def go():", "    return View(HttpRequest())"]),
+    ).toBeUndefined();
+    expect(
+      sites(["from a import View", "from a import View", "def go():", "    return View(HttpRequest())"]),
+    ).toBeDefined();
+    expect(
+      sites(["class View: pass", "class View: pass", "def go():", "    return View(HttpRequest())"]),
+    ).toBeUndefined();
+    expect(sites(["def go(View):", "    return View(HttpRequest())"])).toBeUndefined();
+    expect(sites(["from a import View as V, other", "def go():", "    return V(HttpRequest())"])).toBeDefined();
+  });
+
+  it("skips the calls inside a class nested in a def, whose self cannot be spelled", () => {
+    const lines = [
+      "def factory():",
+      "    class Inner:",
+      "        def m(self):",
+      "            return Helper(HttpRequest())",
+      "    return Inner",
+    ];
+    expect(argTypesOf(lines)).toBeUndefined();
+  });
+});
