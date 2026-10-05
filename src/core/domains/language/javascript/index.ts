@@ -53,9 +53,12 @@ import { readEcmascriptImportSpecifiers } from "../typescript/chunking/index.js"
 import { javascriptHooks, JsChunkClassifier, jsExportNameExtractor } from "./chunking/index.js";
 import { javascriptKernel } from "./kernel.js";
 import { JavascriptCallResolver } from "./resolver/index.js";
-import { jsNameOf } from "./walker/name-of.js";
-import { JAVASCRIPT_EXTRACTION_PASSES } from "./walker/passes.js";
-import { extractFromJavascriptFile, type JsExtractInput } from "./walker/walker.js";
+import {
+  extractFromJavascriptFile,
+  JAVASCRIPT_EXTRACTION_PASSES,
+  jsNameOf,
+  type JsExtractInput,
+} from "./walker/index.js";
 
 /**
  * Chunk-boundary config for JavaScript — mirrors the chunker slice of the legacy

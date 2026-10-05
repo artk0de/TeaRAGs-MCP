@@ -42,7 +42,7 @@
     },
     "walker": {
       "version": 4,
-      "digest": "sha256:af88528b1a2da5dd2479ea2e73175ee8ec2cc5cfd5477913071557d88d1e4ce7"
+      "digest": "sha256:467a9b707a7d84b406e3b0309cacede7b7549252c515d8a5a596cbe2dda5a05b"
     }
   },
   "markdown": {
@@ -54,7 +54,7 @@
   "python": {
     "walker": {
       "version": 9,
-      "digest": "sha256:91592afc255962b30188a325b9d9e280967b6a28a3cc125472b694d3b929aae7"
+      "digest": "sha256:579757612487ead7cfed3c1dc8be4b6ecbdb89b72a351f3c5d3d90d5bb06ff65"
     }
   },
   "ruby": {
@@ -64,7 +64,7 @@
     },
     "walker": {
       "version": 6,
-      "digest": "sha256:61778b4ff5d67c953cb30025b96500b6cc45f14aa2cf1df2547a0236b947c279"
+      "digest": "sha256:2d7983b6f0e84fefec745673e507aca19c0ff15e0833f931c5c332dfefe6b2f6"
     }
   },
   "rust": {
@@ -80,7 +80,7 @@
     },
     "walker": {
       "version": 7,
-      "digest": "sha256:61b83772aee29d8494da1e4970c1b3f92e987ff14517e87c4da3ac75e6f2ae88"
+      "digest": "sha256:b9a394601d67304b74f48454809518755af6f83c2d114c880a7a01f18afe863b"
     }
   },
   "typescript": {
@@ -90,7 +90,7 @@
     },
     "walker": {
       "version": 12,
-      "digest": "sha256:3e99e4bc7fb3a25bf6262b8ed628a1a1fd40baa566dcd228c1aa0824fc607ade"
+      "digest": "sha256:8d3590398a6e613d9efd785f844a88e7388ec3aea8eda2ac168ffc14c44eb460"
     }
   }
 }
