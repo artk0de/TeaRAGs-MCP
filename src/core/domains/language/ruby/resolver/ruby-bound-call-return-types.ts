@@ -60,18 +60,107 @@ import { selfMemberReturnType } from "./ruby-return-facts.js";
  * modifier guarding the binding's own assignment reads the binding above it
  * instead ({@link callBindingOutsideCondition}). Omitted, the chunk-wide entry
  * answers, as before.
+ *
+ * A BARE binding whose assignment wrote a RECEIVER (`x = Svc.new.call(…)`,
+ * `x = client.call(…)`) is not a self-dispatch at all: the walker keeps only the
+ * outermost method, so the spelling looks receiver-less, but the positioned
+ * write still names what `call` was sent to (bd tea-rags-mcp-0qaht.56). When
+ * that receiver is typed it decides — {@link receiverCallReturnType} — and the
+ * flat map, whose one `call` fact describes some unrelated class, cannot
+ * override it; an untyped receiver keeps the bare reading. `receiverTypeOf` is the receiver-chain fold (`typeOfReceiver`), injected so
+ * this module stays below the engine that re-exports it.
  */
-export function boundCallReturnType(
+export function boundCallReturnTypeVia(
   receiver: string,
   ctx: CallContext,
+  receiverTypeOf: RubyCallReceiverTypeOf,
   site?: Pick<CallRef, "startLine" | "startColumn">,
 ): RubyTypeRef | undefined {
   const chunkWide = identifierEntry(ctx.localCallBindings, receiver);
   if (chunkWide === undefined) return undefined;
   const binding = site === undefined ? chunkWide : callBindingOutsideCondition(receiver, chunkWide, site, ctx);
   if (binding === undefined) return undefined;
+  const write = binding.includes(".") ? undefined : receiverWriteOf(receiver, binding, ctx, site);
+  const writtenReceiverType = write && receiverTypeOf(write.receiver, write.line, ctx);
+  if (writtenReceiverType !== undefined && isNominalRubyTypeRef(writtenReceiverType)) {
+    const owned = receiverCallReturnType(writtenReceiverType, binding, ctx);
+    if (owned === undefined || isNominalRubyTypeRef(owned)) return owned;
+  }
   const derived = rubyReceiverForm(boundCallTypeRef(binding, ctx));
   return qualifyFactTypeName(derived, boundCallFactOwner(binding, ctx), ctx);
+}
+
+/** The receiver-chain fold a bound call's written receiver is typed by. */
+export type RubyCallReceiverTypeOf = (receiver: string, atLine: number, ctx: CallContext) => RubyTypeRef | undefined;
+
+/** A positioned write whose callee was sent to a receiver, split at its last link. */
+interface RubyReceiverCallWrite {
+  readonly line: number;
+  readonly receiver: string;
+}
+
+/**
+ * The positioned write behind a BARE chunk-wide spelling, when that write named
+ * a receiver (bd tea-rags-mcp-0qaht.56) — or `undefined`, and the bare reading
+ * stands exactly as before.
+ *
+ * It is the write the chunk-wide entry KEPT: the latest positioned write,
+ * spelled as the entry — the same identification {@link callBindingOutsideCondition}
+ * uses. A call inside that write's own modifier condition reads the write ABOVE
+ * it; that placement is the condition reader's, so there this answers nothing.
+ * A chain rooted at `self` or a literal is never positioned, so a self-dispatch
+ * never reaches the receiver path.
+ */
+function receiverWriteOf(
+  receiver: string,
+  spelling: string,
+  ctx: CallContext,
+  site: Pick<CallRef, "startLine" | "startColumn"> | undefined,
+): RubyReceiverCallWrite | undefined {
+  const entries = identifierEntry(ctx.callResultBindings, receiver);
+  if (entries === undefined) return undefined;
+  let kept: CallResultBinding | undefined;
+  for (const entry of entries) if (kept === undefined || entry.line >= kept.line) kept = entry;
+  if (kept === undefined || localCallBindingSpelling(kept.callee) !== spelling) return undefined;
+  if (
+    site?.startColumn !== undefined &&
+    isInsideModifierCondition(kept.conditionSpan, site.startLine, site.startColumn)
+  ) {
+    return undefined;
+  }
+  const separator = kept.callee.lastIndexOf(".");
+  return separator > 0 ? { line: kept.line, receiver: kept.callee.slice(0, separator) } : undefined;
+}
+
+/**
+ * What `<receiver>.<member>` returns, read off the receiver's OWN type
+ * (bd tea-rags-mcp-0qaht.56): {@link returnTypeOf} — its class's declared fact,
+ * the MRO, then the flat map only where the member has at most one definition —
+ * and nothing else. The bare-name flat fact, which describes whichever class
+ * annotated a namesake, never overrides a receiver whose class is known.
+ *
+ * Only a NOMINAL receiver comes here, and only a nominal answer — or none —
+ * leaves. Everything else keeps the bare reading exactly as before, because
+ * there the flat map is still the only knowledge the single-target consumer can
+ * use: a receiver the fold cannot type, a relation / union receiver, and a
+ * relation answer (`agents = current_user.agents` is `container(Agent)`, which
+ * `returnTypeBinding` cannot pin, while the flat `Agent` is what huginn's
+ * `agents.build_clone` edges have always read).
+ *
+ * The fact was written in the receiver's class, so the receiver is the scope an
+ * unqualified answer is qualified from.
+ */
+function receiverCallReturnType(
+  receiverType: RubyTypeRef & { name: string },
+  member: string,
+  ctx: CallContext,
+): RubyTypeRef | undefined {
+  return qualifyFactTypeName(rubyReceiverForm(returnTypeOf(receiverType, member, ctx)), receiverType.name, ctx);
+}
+
+/** A class or instance ref — the one shape that names a single constant. */
+function isNominalRubyTypeRef(ref: RubyTypeRef): ref is RubyTypeRef & { name: string } {
+  return ref.form === "class" || ref.form === "instance";
 }
 
 /**

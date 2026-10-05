@@ -51,6 +51,7 @@ import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import {
   resolveLocalBinding,
   type CallContext,
+  type CallRef,
   type CallResultBinding,
 } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
@@ -61,12 +62,12 @@ import {
   type ReceiverTypePorts,
 } from "../../kernel/index.js";
 import { catalogueFor } from "../dsl/index.js";
-import { isProjectDeclaredConstant } from "./ruby-bound-call-return-types.js";
+import { boundCallReturnTypeVia, isProjectDeclaredConstant } from "./ruby-bound-call-return-types.js";
 import { returnTypeOf } from "./ruby-member-return-types.js";
 import { declaredReturnType } from "./ruby-return-facts.js";
 import { nullaryReceiverType } from "./ruby-unbound-receiver-types.js";
 
-export { boundCallReturnType, isOwnAssignmentRightHandSide } from "./ruby-bound-call-return-types.js";
+export { isOwnAssignmentRightHandSide } from "./ruby-bound-call-return-types.js";
 export { CHAIN_MAX_HOPS_DEFAULT } from "../../kernel/index.js";
 export {
   CONTAINER_BLOCK_ITERATION_METHODS,
@@ -137,6 +138,20 @@ export function typeOfReceiver(
   atColumn?: number,
 ): RubyTypeRef | undefined {
   return propagateReceiverType(receiver, atLine, ctx, RUBY_RECEIVER_TYPE_PORTS, atColumn);
+}
+
+/**
+ * The type a receiver BOUND TO A METHOD CALL carries — the `localCallBindings`
+ * channel ({@link boundCallReturnTypeVia}), with a written receiver of that
+ * call typed by this engine's own {@link typeOfReceiver} (bd
+ * tea-rags-mcp-0qaht.56).
+ */
+export function boundCallReturnType(
+  receiver: string,
+  ctx: CallContext,
+  site?: Pick<CallRef, "startLine" | "startColumn">,
+): RubyTypeRef | undefined {
+  return boundCallReturnTypeVia(receiver, ctx, typeOfReceiver, site);
 }
 
 /** Ruby's `singleHopType` port: a receiver with no dot in it. */
