@@ -21,13 +21,10 @@
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
+import { MemberReturnTypeResolver } from "../../kernel/index.js";
 import { rubyNonNilArms, rubyTypeRefEquals } from "../type-ref.js";
 import { activeRecordQueryReturn } from "./ruby-active-record-return-types.js";
-import {
-  declaredReturnTypeOn,
-  flatReturnFactMayOverrideKnownReceiver,
-  inheritedReturnType,
-} from "./ruby-return-facts.js";
+import { flatReturnFactMayOverrideKnownReceiver, RUBY_DECLARED_RETURN_FACT_PORTS } from "./ruby-return-facts.js";
 
 /**
  * Array/Enumerable methods that return a SINGLE ELEMENT from a typed container.
@@ -86,6 +83,45 @@ export const CONTAINER_BLOCK_ITERATION_METHODS = new Set([
 ]);
 
 /**
+ * Channels 1–4 of {@link returnTypeOf} as the kernel `MemberReturnTypeResolver`
+ * walks them (bd tea-rags-mcp-m99j1.1.12): Ruby's declared-fact reads, with two
+ * Ruby-only placements kept inside the ports rather than bent to the kernel's
+ * order.
+ *
+ *  - The Rails association DSL sits in the OWNER read, after the owner's own
+ *    fact and before any ancestor. `belongs_to :firm` declares `#firm` on the
+ *    class that writes it, and the channel has only ever been asked for the
+ *    receiver's own class — never through the MRO. INSTANCE receivers only:
+ *    `belongs_to :firm` defines `#firm` on instances, never on the class
+ *    object, so `SomeClass.firm` is a different method that must fall through
+ *    to the scoped/flat return channels (j9xpf: without this guard a
+ *    class-form receiver silently borrows an instance accessor's type and
+ *    shadows the correct one).
+ *  - The flat `functionReturnTypes` fallback — YARD @return map — is owner-less,
+ *    so it answers only for a member the corpus does not multiply define
+ *    (bd tea-rags-mcp-h4hxh).
+ *
+ * The ActiveRecord query vocabulary is NOT the kernel's framework hook: it runs
+ * after the flat fact, which the kernel's order puts last, so it stays in
+ * {@link returnTypeOf} after the kernel call.
+ */
+const RUBY_MEMBER_RETURN_TYPES = new MemberReturnTypeResolver({
+  ...RUBY_DECLARED_RETURN_FACT_PORTS,
+  declaredReturnType: (owner, member, ctx) => {
+    const direct = RUBY_DECLARED_RETURN_FACT_PORTS.declaredReturnType(owner, member, ctx);
+    if (direct !== null || owner.form !== "instance") return direct;
+    const assocName = ctx.associationTypes?.[owner.name]?.[member];
+    return assocName === undefined ? null : { form: "instance", name: assocName };
+  },
+  flatReturnType: (member, ctx) => {
+    const flatName = identifierEntry(ctx.functionReturnTypes, member);
+    return flatName !== undefined && flatReturnFactMayOverrideKnownReceiver(member, ctx)
+      ? { form: "instance", name: flatName }
+      : null;
+  },
+});
+
+/**
  * The ONE authority for "what type does calling `member` on a receiver of type
  * `recv` yield" (bd tea-rags-mcp-j9xpf — same single-authority discipline as
  * `ivarTypeName`). Every reader — the chain engine's hop walk and the
@@ -123,32 +159,10 @@ export function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext
   // Tuple receiver: read by position, never dispatched on — no member type.
   if (recv.form === "tuple") return undefined;
 
-  // 1. Precise structured return type for this class#member key.
-  const direct = declaredReturnTypeOn(recv.name, member, ctx, recv.form === "class");
-  if (direct !== undefined) return direct;
-
-  // 2. Rails association DSL: associationTypes[className][accessorName] → modelName.
-  //    INSTANCE receivers only — `belongs_to :firm` defines `#firm` on instances,
-  //    never on the class object, so `SomeClass.firm` is a different method that
-  //    must fall through to the scoped/flat return channels below (j9xpf: without
-  //    this guard a class-form receiver silently borrows an instance accessor's
-  //    type and shadows the correct one).
-  if (recv.form === "instance") {
-    const assocName = ctx.associationTypes?.[recv.name]?.[member];
-    if (assocName !== undefined) return { form: "instance", name: assocName };
-  }
-
-  // 3. Ancestor MRO: walk classAncestors[recv.name] for an inherited return type.
-  const inherited = inheritedReturnType(recv.name, member, ctx, recv.form === "class");
-  if (inherited !== undefined) return inherited;
-
-  // 4. Flat functionReturnTypes fallback — YARD @return map, populated today.
-  //    Owner-less, so it answers only for a member the corpus does not multiply
-  //    define (bd tea-rags-mcp-h4hxh).
-  const flatName = identifierEntry(ctx.functionReturnTypes, member);
-  if (flatName !== undefined && flatReturnFactMayOverrideKnownReceiver(member, ctx)) {
-    return { form: "instance", name: flatName };
-  }
+  // 1–4. Declared on the class, Rails association DSL, ancestor MRO, flat
+  //      fallback — the kernel walk over Ruby's ports (bd tea-rags-mcp-m99j1.1.12).
+  const declared = RUBY_MEMBER_RETURN_TYPES.returnTypeOf(recv, member, ctx);
+  if (declared !== null) return declared;
 
   // 5. ActiveRecord query-interface vocabulary — AR-model receivers only,
   //    consulted last so every declared fact above wins over it (G1b).

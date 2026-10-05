@@ -26,6 +26,7 @@ export { SHARED_LANGUAGE, sharedChunkSetBumpScopes, sharedVersions } from "./cap
 export { collectSymbols } from "./collect-symbols.js";
 export { ConeDispatchResolver } from "./cone-dispatch.js";
 export { TableDispatchResolver, type TableDispatchPorts } from "./table-dispatch.js";
+export { MemberReturnTypeResolver, type MemberReturnTypePorts } from "./member-return-type.js";
 export { ReceiverPatternDropSymbolResolutionStrategy } from "./receiver-pattern-drop.js";
 export type { ReceiverPatternDropRule } from "./receiver-pattern-drop.js";
 export {

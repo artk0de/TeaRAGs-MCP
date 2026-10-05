@@ -26,10 +26,13 @@ import {
 import type { TypeRef } from "../../../../../contracts/types/language.js";
 import {
   findMemberInAncestorChain,
+  MemberReturnTypeResolver,
   propagateReceiverType,
   typeRefReceiverForm,
   type AncestorClosure,
   type AncestorLinearizer,
+  type MemberReturnTypePorts,
+  type NominalTypeRef,
   type ReceiverTypePorts,
 } from "../../../kernel/index.js";
 import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
@@ -459,48 +462,79 @@ function pythonDeclaredMemberType(
   mapper: PythonImportFileMapper,
   linearizer: AncestorLinearizer<CallContext> | undefined,
 ): TypeRef | undefined {
-  const separator = form === "class" ? "." : "#";
-  const onClass = (shortName: string, classFq: string): TypeRef | undefined => {
-    const fieldType = identifierEntry(identifierEntry(ctx.classFieldTypes, shortName), member);
-    if (fieldType !== undefined) return { form: "instance", name: fieldType };
-    const returned = pythonReturnFactAsReceiver(ctx.structuredReturnTypes?.[`${classFq}${separator}${member}`]);
-    return pythonSubstituteSelfReturn(returned, bareType);
-  };
-  const byClassKey = (classKey: string): TypeRef | undefined => {
-    const fieldType = identifierEntry(identifierEntry(ctx.classFieldTypesByClassKey, classKey), member);
-    return fieldType === undefined ? undefined : { form: "instance", name: fieldType };
-  };
-  // The own-class read is byte-identical to the pre-seam one: `classFieldTypes`
-  // is bare-name-keyed and `structuredReturnTypes` FQ-keyed, and a receiver
-  // type spells both the same way.
-  const own = onClass(bareType, bareType);
-  if (own !== undefined) return own;
+  const resolver = new MemberReturnTypeResolver(pythonMemberReturnTypePorts(ctx, mapper, linearizer));
+  return resolver.returnTypeOf({ form, name: bareType }, member, ctx) ?? undefined;
+}
+
+/**
+ * Python's reads for the kernel `MemberReturnTypeResolver` (bd
+ * tea-rags-mcp-m99j1.1.12), built per call because the receiver's class key is
+ * computed at most once and shared by the owner read and the ancestor list.
+ *
+ * Owner and ancestor are read in DIFFERENT channel orders, and both orders are
+ * measured behaviour:
+ *
+ *   - the OWNER: its bare-name field, then its return under the receiver
+ *     form's spelling — byte-identical to the pre-seam read, because
+ *     `classFieldTypes` is bare-name-keyed and `structuredReturnTypes`
+ *     FQ-keyed, and a receiver type spells both the same way — then, only when
+ *     the run can read it, the run-global class-key field channel
+ *     (bd tea-rags-mcp-f0xaa): the short-name read only ever sees the CALLER's
+ *     file, so a receiver typed to a class declared elsewhere reaches its
+ *     fields only there;
+ *   - an ANCESTOR: class-key field first, short name second — the qualified
+ *     channel names the file that declares the ancestor, where the bare-name
+ *     one answers with whatever the CALLER's file happens to call that name.
+ *
+ * Every return read substitutes `-> Self` with the OWNER's name, never the
+ * ancestor that declared it. Python has no framework hook and no flat fact on
+ * this path; the call-result tier runs after the kernel walk, in
+ * {@link pythonInheritedMemberType}.
+ */
+function pythonMemberReturnTypePorts(
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  linearizer: AncestorLinearizer<CallContext> | undefined,
+): MemberReturnTypePorts {
+  let classKey: string | null | undefined;
   // Addressing the class costs symbol-table work, so it is deferred until
   // something can read the answer: a run carrying neither the run-global field
   // channel nor a linearizer is the pre-seam path, unchanged.
-  if (linearizer === undefined && ctx.classFieldTypesByClassKey === undefined) return undefined;
-
-  const classKey = pythonReceiverClassKey(bareType, ctx, mapper);
-  if (classKey === null) return undefined;
-  // The own class again, this time run-global (bd tea-rags-mcp-f0xaa) — the
-  // short-name read above only ever sees the CALLER's file, so a receiver typed
-  // to a class declared elsewhere reaches its fields only here.
-  const ownByKey = byClassKey(classKey);
-  if (ownByKey !== undefined) return ownByKey;
-  if (linearizer === undefined) return undefined;
-  for (const ancestorKey of linearizer.linearize(classKey).order) {
-    if (ancestorKey === classKey) continue;
-    // Class-key first, short name second: the qualified channel names the file
-    // that declares this ancestor, where the bare-name one answers with whatever
-    // the CALLER's file happens to call that name.
-    const byKey = byClassKey(ancestorKey);
-    if (byKey !== undefined) return byKey;
-    const parsed = parsePythonClassKey(ancestorKey);
-    if (parsed === null) continue;
-    const hit = onClass(lastSegment(parsed.classFq), parsed.classFq);
-    if (hit !== undefined) return hit;
-  }
-  return undefined;
+  const receiverClassKey = (bareType: string): string | null => {
+    if (linearizer === undefined && ctx.classFieldTypesByClassKey === undefined) return null;
+    if (classKey === undefined) classKey = pythonReceiverClassKey(bareType, ctx, mapper);
+    return classKey;
+  };
+  const onClass = (owner: NominalTypeRef, shortName: string, classFq: string, member: string): TypeRef | null => {
+    const fieldType = identifierEntry(identifierEntry(ctx.classFieldTypes, shortName), member);
+    if (fieldType !== undefined) return { form: "instance", name: fieldType };
+    const separator = owner.form === "class" ? "." : "#";
+    const returned = pythonReturnFactAsReceiver(ctx.structuredReturnTypes?.[`${classFq}${separator}${member}`]);
+    return pythonSubstituteSelfReturn(returned, owner.name) ?? null;
+  };
+  const byClassKey = (key: string, member: string): TypeRef | null => {
+    const fieldType = identifierEntry(identifierEntry(ctx.classFieldTypesByClassKey, key), member);
+    return fieldType === undefined ? null : { form: "instance", name: fieldType };
+  };
+  return {
+    declaredReturnType: (owner, member) => {
+      const own = onClass(owner, owner.name, owner.name, member);
+      if (own !== null) return own;
+      const key = receiverClassKey(owner.name);
+      return key === null ? null : byClassKey(key, member);
+    },
+    ancestorsOf: (owner) => {
+      if (linearizer === undefined) return [];
+      const key = receiverClassKey(owner.name);
+      return key === null ? [] : linearizer.linearize(key).order.filter((ancestorKey) => ancestorKey !== key);
+    },
+    ancestorReturnType: (ancestorKey, owner, member) => {
+      const byKey = byClassKey(ancestorKey, member);
+      if (byKey !== null) return byKey;
+      const parsed = parsePythonClassKey(ancestorKey);
+      return parsed === null ? null : onClass(owner, lastSegment(parsed.classFq), parsed.classFq, member);
+    },
+  };
 }
 
 /** A single capitalized identifier — Python's class-name convention. */

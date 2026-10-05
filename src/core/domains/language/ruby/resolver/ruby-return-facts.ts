@@ -10,9 +10,10 @@
  *  - {@link declaredReturnTypeOn} — the fact written AT that class, honouring
  *    the `.`-vs-`#` key split a CLASS receiver is allowed to see
  *    (bd tea-rags-mcp-8ypeu);
- *  - {@link inheritedReturnType} / {@link declaredReturnType} — the same fact
- *    reached through Ruby's MRO rather than through walker storage order
- *    (bd tea-rags-mcp-mo5ur);
+ *  - {@link RUBY_DECLARED_RETURN_FACT_PORTS} / {@link declaredReturnType} — the
+ *    same fact reached through Ruby's MRO rather than through walker storage
+ *    order (bd tea-rags-mcp-mo5ur), walked by the kernel
+ *    `MemberReturnTypeResolver` (bd tea-rags-mcp-m99j1.1.12);
  *  - {@link selfMemberReturnType} — the fact a RECEIVER-LESS call finds by
  *    dispatching on `self` (bd tea-rags-mcp-rwv3o / -z5gqv / -uuux9).
  *
@@ -26,6 +27,7 @@
 
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
+import { MemberReturnTypeResolver, type MemberReturnTypePorts } from "../../kernel/index.js";
 import { linearizeAncestors } from "./ancestor-linearization.js";
 import { lookupRubySymbolsByShortName } from "./short-name-lookup.js";
 
@@ -40,7 +42,7 @@ import { lookupRubySymbolsByShortName } from "./short-name-lookup.js";
  * growing a second lookup that could drift (bd tea-rags-mcp-6zpds).
  */
 export function declaredReturnType(className: string, member: string, ctx: CallContext): RubyTypeRef | undefined {
-  return declaredReturnTypeOn(className, member, ctx, true) ?? inheritedReturnType(className, member, ctx, true);
+  return RUBY_DECLARED_RETURN_FACTS.returnTypeOf({ form: "class", name: className }, member, ctx) ?? undefined;
 }
 
 /**
@@ -96,7 +98,9 @@ export function flatReturnFactMayOverrideKnownReceiver(member: string, ctx: Call
 }
 
 /**
- * The structured fact `<member>` inherits from the NEAREST ancestor declaring it.
+ * Ruby's declared-fact reads for the kernel `MemberReturnTypeResolver`: the
+ * owner's own {@link declaredReturnTypeOn}, then the same coordinate on each
+ * ancestor the owner inherits `<member>` from, NEAREST first.
  *
  * Same {@link linearizeAncestors} walk as {@link selfMemberReturnType}, and for
  * the same reason: raw `classAncestors` is walker storage order
@@ -104,20 +108,24 @@ export function flatReturnFactMayOverrideKnownReceiver(member: string, ctx: Call
  * hands the superclass's fact to a call Ruby routes through a mixin, and never
  * sees a fact on a grandparent or on a mixin's own ancestor at all. Walking the
  * linearization states Ruby's rule once and keeps the two fact channels from
- * drifting on which coordinate answers (bd tea-rags-mcp-mo5ur).
+ * drifting on which coordinate answers (bd tea-rags-mcp-mo5ur). The owner is
+ * dropped from its own linearization because the owner read already asked that
+ * coordinate — a `prepend`ed module ahead of it still never outranks a fact the
+ * owner declares itself, exactly as before.
+ *
+ * An ancestor is read under the RECEIVER's form, so a class receiver keeps the
+ * `.` coordinate on every inherited hop (bd tea-rags-mcp-8ypeu).
  */
-export function inheritedReturnType(
-  className: string,
-  member: string,
-  ctx: CallContext,
-  classReceiver = false,
-): RubyTypeRef | undefined {
-  for (const ancestor of linearizeAncestors(className, ctx)) {
-    const inherited = declaredReturnTypeOn(ancestor, member, ctx, classReceiver);
-    if (inherited !== undefined) return inherited;
-  }
-  return undefined;
-}
+export const RUBY_DECLARED_RETURN_FACT_PORTS: MemberReturnTypePorts = {
+  declaredReturnType: (owner, member, ctx) =>
+    declaredReturnTypeOn(owner.name, member, ctx, owner.form === "class") ?? null,
+  ancestorsOf: (owner, ctx) => linearizeAncestors(owner.name, ctx).filter((ancestor) => ancestor !== owner.name),
+  ancestorReturnType: (ancestor, owner, member, ctx) =>
+    declaredReturnTypeOn(ancestor, member, ctx, owner.form === "class") ?? null,
+};
+
+/** Facts only — no association accessors, no flat map, no vocabulary. */
+const RUBY_DECLARED_RETURN_FACTS = new MemberReturnTypeResolver(RUBY_DECLARED_RETURN_FACT_PORTS);
 
 /**
  * The OWNER-QUALIFIED return fact a receiver-less call to `member` finds by
