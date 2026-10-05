@@ -743,7 +743,7 @@ export class CallEdgeResolutionRunner {
   ): void {
     const { stats } = this.runState;
     const calleeKinds = this.calleeKindsFor(extraction.language);
-    this.forEachCallSite(extraction, symbolTable, inputs, (site) => {
+    this.forEachCallSite(extraction, symbolTable, resolver, inputs, (site) => {
       const verdict = this.judgeCallSite(site, resolver, symbolTable, calleeKinds);
       methodEdges.push(...verdict.edges);
       if (verdict.ambiguousFanout !== undefined) ambiguousFanouts.push(verdict.ambiguousFanout);
@@ -819,7 +819,7 @@ export class CallEdgeResolutionRunner {
     if (!resolver) return [];
     const out: (ResolvableCallSite & { verdict: CallSiteVerdict })[] = [];
     const calleeKinds = this.calleeKindsFor(extraction.language);
-    this.forEachCallSite(extraction, symbolTable, this.buildResolverInputs(extraction), (site) => {
+    this.forEachCallSite(extraction, symbolTable, resolver, this.buildResolverInputs(extraction), (site) => {
       out.push({ ...site, verdict: this.judgeCallSite(site, resolver, symbolTable, calleeKinds) });
     });
     return out;
@@ -833,6 +833,7 @@ export class CallEdgeResolutionRunner {
   private forEachCallSite(
     extraction: FileExtraction,
     symbolTable: GlobalSymbolTable,
+    resolver: LanguageSymbolResolver,
     inputs: ResolverInputs,
     visit: (site: ResolvableCallSite) => void,
   ): void {
@@ -841,8 +842,11 @@ export class CallEdgeResolutionRunner {
       // def line — the coordinate a YARD `@param` occupies — so every reader
       // downstream, the receiver-kind classifier included, sees ONE kind of
       // fact (bd tea-rags-mcp-bvalc). Names YARD already bound are untouched.
+      // The map seeded is the one the LANGUAGE reads: a binding it cannot read
+      // at all is gone before seeding, exactly as if the walker never wrote it
+      // (bd tea-rags-mcp-m99j1.1.30 regression).
       const localBindings = seedParamLocalBindings(
-        chunk.localBindings,
+        this.visibleLocalBindings(extraction, chunk, symbolTable, resolver, inputs),
         paramTypesOfChunk(this.runState.paramTypes, chunk),
         chunk.startLine,
       );
@@ -897,6 +901,29 @@ export class CallEdgeResolutionRunner {
       if (entries?.includes(target) === true) return true;
     }
     return false;
+  }
+
+  /**
+   * The chunk's walker bindings as its language's resolver exposes them —
+   * {@link LanguageSymbolResolver.visibleLocalBindings}, asked once per chunk
+   * against that chunk's own context. A resolver without the hook, a chunk with
+   * no bindings or no calls: the walker's map, untouched.
+   */
+  private visibleLocalBindings(
+    extraction: FileExtraction,
+    chunk: ChunkExtraction,
+    symbolTable: GlobalSymbolTable,
+    resolver: LanguageSymbolResolver,
+    inputs: ResolverInputs,
+  ): ChunkExtraction["localBindings"] {
+    const bindings = chunk.localBindings;
+    if (resolver.visibleLocalBindings === undefined || bindings === undefined || chunk.calls.length === 0) {
+      return bindings;
+    }
+    return resolver.visibleLocalBindings(
+      bindings,
+      this.buildCallContext(extraction, chunk, symbolTable, inputs, bindings),
+    );
   }
 
   /** One call site's `CallContext` — per-chunk locals plus the run-global maps. */

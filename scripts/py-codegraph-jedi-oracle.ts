@@ -446,11 +446,9 @@ export async function walkCorpus(
     for (const chunk of extraction.chunks) {
       // Folded parameter types enter at the def line, as the runner's
       // `forEachCallSite` seeds them — the classifier below reads them too.
-      const localBindings = seedParamLocalBindings(
-        chunk.localBindings,
-        paramTypesOfChunk(paramTypes, chunk),
-        chunk.startLine,
-      );
+      // What is seeded is the map the resolver READS: a binding it cannot read
+      // is hidden first, exactly as the runner does (bd m99j1.1.30 regression).
+      let { localBindings } = chunk;
       const ctx: CallContext = {
         declaredDependencies: declaredDependencies.get("python"),
         callerFile: relPath,
@@ -476,6 +474,12 @@ export async function walkCorpus(
         hierarchy,
         instantiatedTypes,
       };
+      localBindings = seedParamLocalBindings(
+        production.visibleLocalBindings?.(localBindings, ctx) ?? localBindings,
+        paramTypesOfChunk(paramTypes, chunk),
+        chunk.startLine,
+      );
+      ctx.localBindings = localBindings;
       for (const call of chunk.calls ?? []) {
         if (call.dispatch !== undefined) {
           // The runner's FIRST channel — an explicit dispatch table, not the

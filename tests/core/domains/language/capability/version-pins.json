@@ -6,7 +6,7 @@
     },
     "walker": {
       "version": 4,
-      "digest": "sha256:6f445bf73dbe54a376f245622622464482ae8cf09d8faee6ffaea148b38deb10"
+      "digest": "sha256:0a5146ca6a8a487d247e3777146a46da1d13f19b584d2be9d47eb20eb6746640"
     }
   },
   "bash": {
@@ -54,7 +54,7 @@
   "python": {
     "walker": {
       "version": 9,
-      "digest": "sha256:b72e128db76141c15ced4e2d05f47c4caf60be7a9f6faee70c24f4ad5e3683d1"
+      "digest": "sha256:5ba5c86c2ca06e53b17fc070042acb41b9b3255eaaab8273cff8439b3bf82a24"
     }
   },
   "ruby": {

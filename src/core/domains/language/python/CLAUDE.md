@@ -510,9 +510,16 @@
   name), because every `type` reader would otherwise type the receiver as that
   one arm; `pythonPlacedBindingUnion` places the arms from the caller's own file
   with the return-arm rules and kills the union on any arm that names no project
-  class — a surviving partial union would fan as the whole receiver. A union
-  binding still COUNTS as a fact: `namingConvention` and the `dynamic` gate
-  decline it even when the union dies.
+  class — a surviving partial union would fan as the whole receiver. A dead
+  union counts as a fact only when an arm places to a LIBRARY or builtin class
+  (evidence the receiver may be no project class — polar's jinja
+  `Template | str`); one that dies on arms nothing places (a project type alias,
+  an unresolved name) is hidden from every reader by
+  `pythonVisibleLocalBindings`, which the runner applies per chunk through the
+  facade's `visibleLocalBindings` BEFORE parameter seeding — so the
+  receiver-kind classifier, every presence gate and `namingConvention` see no
+  binding at all (httpx `timeout: TimeoutTypes | UseClientDefault` →
+  `Timeout#as_dict`).
 - **Behind them, `resolveDispatch` composes
   `[table, callableParam, union, cone, dynamic]` — `dynamic` is ON by default
   since bd tea-rags-mcp-m99j1.1.57 (`CODEGRAPH_PY_DYNAMIC_DISPATCH=0` drops it),

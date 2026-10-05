@@ -61,6 +61,7 @@ import { createPythonSymbolResolutionChain } from "./python-chain-factory.js";
 import { createPythonDispatchComponents } from "./python-dispatch-components.js";
 import { PythonExternalVocabulary } from "./python-external-vocabulary.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
+import { pythonVisibleLocalBindings } from "./python-member-return-types.js";
 import { PythonUndecidableCallClassifier } from "./python-undecidable.js";
 import { lookupPythonSymbolsByShortName, type ResolverConfig } from "./strategies/index.js";
 
@@ -253,5 +254,14 @@ export class PythonCallResolver implements CallResolver {
    */
   hasInProjectDefinition(call: CallRef, ctx: CallContext): boolean {
     return lookupPythonSymbolsByShortName(ctx, call.member, { role: "callee" }).length > 0;
+  }
+
+  /**
+   * A union-annotated binding no arm of which this resolver can read is no fact
+   * at all (bd tea-rags-mcp-m99j1.1.30 regression) — see
+   * {@link pythonVisibleLocalBindings}. Read through the resolver's ONE mapper.
+   */
+  visibleLocalBindings(localBindings: CallContext["localBindings"], ctx: CallContext): CallContext["localBindings"] {
+    return pythonVisibleLocalBindings(localBindings, ctx, this.importFileMapper);
   }
 }

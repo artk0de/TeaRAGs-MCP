@@ -49,6 +49,7 @@ const PINNED_CAPABILITY_LANGUAGES: Readonly<Record<string, readonly string[]>> =
   targetsCoreAmbiguousMember: ["python", "ruby"],
   targetsExternalImport: ["java", "javascript", "python", "ruby", "typescript"],
   targetsUndecidable: ["python"],
+  visibleLocalBindings: ["python"],
 };
 
 /**
