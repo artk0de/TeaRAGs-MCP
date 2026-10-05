@@ -8,7 +8,7 @@ import {
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
 import { forEachClassScope, readScopeResolution, walk } from "./ast-utils.js";
-import { inferRubyMemberReturnType } from "./body-return.js";
+import { inferRubyMemberReturnType, type RubyMemberReturnOwner } from "./body-return.js";
 import { constInstanceType, isOrAssignment } from "./type-sources/ast-inference.js";
 import { collectYardParamTypes, YARD_CONST } from "./type-sources/yard.js";
 
@@ -265,24 +265,59 @@ export function collectRubyScopedBodyReturnTypes(
   catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
 ): Record<string, RubyTypeRef> {
   const out: Record<string, RubyTypeRef> = createIdentifierRecord();
-  forEachClassScope(root, (classNode, fq) => {
+  const scopes: { classNode: AstNode; fq: string; scope: readonly string[] }[] = [];
+  forEachClassScope(root, (classNode, fq, scope) => scopes.push({ classNode, fq, scope }));
+  const declaredTypes = new Set(scopes.map((s) => s.fq));
+  const nestingByFq = new Map<string, readonly string[]>();
+  for (const { classNode, fq, scope } of scopes) {
     const classBody = classNode.childForFieldName("body") ?? classNode;
-    const scan = (n: AstNode): void => {
-      // Nested class/module bodies belong to their own fq — forEachClassScope
-      // visits them separately.
-      if (n.type === "class" || n.type === "module") return;
-      if (n.type === "method" || n.type === "singleton_method") {
-        const nameNode = n.childForFieldName("name");
-        if (nameNode === null) return;
-        const type = inferRubyMemberReturnType(n, catalogue, classBody);
-        if (type !== null) out[`${fq}#${nameNode.text}`] = { form: "instance", name: type };
-        return;
-      }
-      for (const child of n.children) scan(child);
+    const methods = ownMethods(classBody);
+    const nesting = [fq, ...(nestingByFq.get(scope.join("::")) ?? [])];
+    nestingByFq.set(fq, nesting);
+    const owner: RubyMemberReturnOwner = {
+      fq,
+      isClass: classNode.type === "class",
+      nesting,
+      declaredTypes,
+      instanceMethods: instanceMethodsByName(methods),
     };
-    for (const child of classBody.children) scan(child);
-  });
+    for (const def of methods) {
+      const nameNode = def.childForFieldName("name");
+      if (nameNode === null) continue;
+      const type = inferRubyMemberReturnType(def, catalogue, classBody, owner);
+      if (type !== null) out[`${fq}#${nameNode.text}`] = { form: "instance", name: type };
+    }
+  }
   return out;
+}
+
+/** The defs a class body owns — nested class / module bodies belong to their own fq. */
+function ownMethods(classBody: AstNode): AstNode[] {
+  const methods: AstNode[] = [];
+  const scan = (n: AstNode): void => {
+    if (n.type === "class" || n.type === "module") return;
+    if (n.type === "method" || n.type === "singleton_method") {
+      methods.push(n);
+      return;
+    }
+    for (const child of n.children) scan(child);
+  };
+  for (const child of classBody.children) scan(child);
+  return methods;
+}
+
+/** Instance defs by name — a `def self.x` and a def inside `class << self` are not. */
+function instanceMethodsByName(methods: readonly AstNode[]): Map<string, AstNode[]> {
+  const byName = new Map<string, AstNode[]>();
+  for (const def of methods) {
+    if (def.type !== "method" || def.parent?.parent?.type === "singleton_class") continue;
+    const name = def.childForFieldName("name")?.text;
+    if (name === undefined) continue;
+    const list = byName.get(name);
+    if (list === undefined) byName.set(name, [def]);
+    else list.push(def);
+  }
+  return byName;
 }
 
 /**
