@@ -84,6 +84,15 @@
   dereferenced. `importedName`'s module arm asks it LAST, only once the composed
   module text has failed to pin a member, so every site that resolves today
   resolves to the same target.
+- **A FOURTH question answers "this name is a library's", and it is the only one
+  of the four whose answer is a DROP.** `reexportsFromLibrary` walks the same
+  channel and reports whether every explicit chain for the name ends at the
+  stdlib or an `external` mapping. `resolveExportedName`'s `null` cannot stand
+  in for it — "no project file declares it" is also what an unindexed file looks
+  like. `importedName`'s module arms ask it after the direct declaration and
+  BEFORE the project-wide declaration hop, which otherwise pinned polar's only
+  `select` (a backoffice form helper) on every `sql.select(Model)` whose
+  `sql.py` re-exports sqlalchemy's (bd tea-rags-mcp-m99j1.1.32).
 - **`chainType` is the ONLY reader of `structuredReturnTypes`.**
   `resolver/strategies/python-chain-type.ts` sits between `localBinding` and
   `importedName` and folds the receiver through the kernel walk with
@@ -231,8 +240,8 @@
   the head's import through `receiverModuleText`, then E4.6a's
   `resolveExportedModule` when that maps nowhere, and require the resulting file
   to DECLARE the class as a unique top-level symbol — exact-symbolId `lookup`,
-  the same gate `moduleMemberTarget` uses. The caller never imports `Datatable`,
-  only the module that holds it. `receiverModuleText` moved to
+  the same gate `moduleMemberOutcome` uses. The caller never imports
+  `Datatable`, only the module that holds it. `receiverModuleText` moved to
   `strategies/shared.ts` so both readers ask it the same way.
 - **`-> Self` is recorded as a MARKER and substituted by the reader, through one
   helper.** The annotation facet resolves `Self` against the enclosing class

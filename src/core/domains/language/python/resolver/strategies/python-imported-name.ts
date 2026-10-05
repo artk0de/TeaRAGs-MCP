@@ -114,7 +114,7 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
     // star-import path below.
     if (call.receiver !== null && !SINGLE_HOP_RECEIVER.test(call.receiver)) {
       const asModulePath = this.resolveDottedModuleReceiver(call.receiver, call, ctx);
-      return asModulePath.kind === "resolved" ? asModulePath : this.multiHopHeadOutcome(call.receiver, ctx);
+      return asModulePath.kind !== "continue" ? asModulePath : this.multiHopHeadOutcome(call.receiver, ctx);
     }
     const localName = call.receiver ?? call.member;
     const binding = findPythonImportBinding(ctx.imports, localName);
@@ -235,10 +235,11 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    * the receiver text, so `import a.b` (head denotes `a`) and `import a.b as c`
    * (head denotes `a.b`) stay one question rather than two.
    *
-   * Tried BEFORE the head check and returning only `resolved`, so a head the
-   * mapper calls external still reaches its DROP: a receiver whose module text
-   * lands outside the project cannot resolve here either, and the refusal is
-   * the stronger verdict. The stdlib guard is the one case where the ORDER
+   * Tried BEFORE the head check, so a head the mapper calls external still
+   * reaches its DROP: a receiver whose module text lands outside the project
+   * cannot resolve here either, and the refusal is the stronger verdict. The
+   * one DROP of its own is a member the mapped module re-exports from a library
+   * (see `moduleMemberOutcome`). The stdlib guard is the one case where the ORDER
    * matters — `os.path` would land on a `path.py` at a source root through the
    * mapper's root probe, so this arm declines it and lets the head check DROP.
    */
@@ -250,8 +251,7 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
     const moduleText = [receiverModuleText(binding), ...segments.slice(1)].join(".");
     const mapped = this.mapper.mapImportToFile(moduleText, ctx.callerFile, ctx);
     if (mapped.kind !== "project") return CONTINUE;
-    const target = this.moduleMemberTarget(call.member, mapped.relPath, ctx);
-    return target ? resolved(target) : CONTINUE;
+    return this.moduleMemberOutcome(call.member, mapped.relPath, ctx);
   }
 
   /**
@@ -348,8 +348,10 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
     // `from . import pan_transfer` is exactly the pair: the hop pins a
     // same-named top-level `def`, whose empty hierarchy reads CLOSED and DROPs,
     // while the module arm maps `.pan_transfer` to the file that declares the
-    // member. 22 rows there, 18 more on the singleton shape above.
-    return declared.kind === "continue" ? CONTINUE : declared;
+    // member. 22 rows there, 18 more on the singleton shape above. The module
+    // arm's own DROP — a member the module re-exports from a library — waits
+    // behind the same siblings for the same reason.
+    return declared.kind === "continue" ? asModule : declared;
   }
 
   /**
@@ -435,6 +437,10 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    * Reached ONLY after the composed text has failed to pin a member, so every
    * site that resolves today resolves to the same target. A `pkg` that is not a
    * project file, or a name the package does not alias, keeps the CONTINUE.
+   *
+   * Either arm DROPs when the module it reached re-exports the member from a
+   * LIBRARY (bd tea-rags-mcp-m99j1.1.32) — the module's own `from` statement is
+   * receiver evidence, and it says the call leaves the project.
    */
   private resolveModuleReceiver(
     binding: PythonImportBinding,
@@ -444,8 +450,8 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
     if (!call.receiver) return CONTINUE; // a bare call names no module
     const mapped = this.mapper.mapImportToFile(receiverModuleText(binding), ctx.callerFile, ctx);
     if (mapped.kind === "project") {
-      const target = this.moduleMemberTarget(call.member, mapped.relPath, ctx);
-      if (target) return resolved(target);
+      const viaModule = this.moduleMemberOutcome(call.member, mapped.relPath, ctx);
+      if (viaModule.kind !== "continue") return viaModule;
     }
     const pkg = this.mapper.mapImportToFile(binding.imp.importText, ctx.callerFile, ctx);
     if (pkg.kind !== "project") return CONTINUE;
@@ -455,7 +461,8 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
     // alias names one file, and a shim that merely re-exports a LIBRARY name
     // must not borrow whatever project symbol happens to spell it.
     const viaAlias = this.moduleDeclarationTarget(call.member, aliased, ctx);
-    return viaAlias ? resolved(viaAlias) : CONTINUE;
+    if (viaAlias) return resolved(viaAlias);
+    return this.mapper.reexportsFromLibrary(aliased, call.member, ctx) ? DROP : CONTINUE;
   }
 
   /**
@@ -491,16 +498,24 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
   }
 
   /**
-   * `member` as a TOP-LEVEL declaration of `moduleFile`, or `null`.
+   * `member` as a TOP-LEVEL declaration of `moduleFile` — resolved, DROP, or
+   * CONTINUE.
    *
    * `lookup` is exact-symbolId, and only a top-level `def` / `class` carries
    * the bare name as its whole id — a method is `Cls#member` or `Cls.member`.
    * So this cannot reach inside a class the way `lookupByShortName` would, and
    * a module declaring the name twice yields two candidates and declines.
+   *
+   * DROP when the module's own `from` statements bind `member` from a LIBRARY
+   * (bd tea-rags-mcp-m99j1.1.32), asked BEFORE the declaration hop below:
+   * that hop asks the whole project who declares the bare name, and polar's
+   * `sql.select(Model)` — `sql.py` re-exporting sqlalchemy's `select` — got
+   * the backoffice form helper that is the project's only `select`.
    */
-  private moduleMemberTarget(member: string, moduleFile: string, ctx: CallContext): SymbolResolutionTarget | null {
+  private moduleMemberOutcome(member: string, moduleFile: string, ctx: CallContext): SymbolResolutionOutcome {
     const direct = this.moduleDeclarationTarget(member, moduleFile, ctx);
-    if (direct) return direct;
+    if (direct) return resolved(direct);
+    if (this.mapper.reexportsFromLibrary(moduleFile, member, ctx)) return DROP;
     // The module re-exports rather than declares — a package `__init__.py`
     // pulling `ColorColumn` out of its own `columns.py`. ONE hop, through the
     // same engine `declaringFile` uses two methods down, so the two questions
@@ -511,17 +526,17 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
     // helper's docblock — so declaration lookup is the mechanism, and it covers
     // `from .columns import *` for free.
     const origin = reexportOriginFile(member, moduleFile, ctx, this.cfg.mode, lookupPythonSymbols);
-    if (!origin) return null;
+    if (!origin) return CONTINUE;
     const hopped = pickSingleCandidate(
       ctx.symbolTable.lookup(member).filter((def) => def.relPath === origin),
       this.cfg.mode,
     );
-    return hopped ? { targetRelPath: hopped.relPath, targetSymbolId: hopped.symbolId } : null;
+    return hopped ? resolved({ targetRelPath: hopped.relPath, targetSymbolId: hopped.symbolId }) : CONTINUE;
   }
 
   /**
    * `member` as a top-level declaration of `moduleFile` and NOTHING else — the
-   * direct half of {@link moduleMemberTarget}, without the re-export hop (bd
+   * direct half of {@link moduleMemberOutcome}, without the re-export hop (bd
    * tea-rags-mcp-w205u, E4.6a).
    *
    * The hop asks "which file in the PROJECT declares this bare name", and that

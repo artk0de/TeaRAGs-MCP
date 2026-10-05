@@ -344,6 +344,72 @@ export class PythonImportFileMapper implements ImportFileMapper {
   }
 
   /**
+   * Does `relPath` bind `name` from a LIBRARY — does every explicit re-export
+   * chain for it end at a module outside the project (bd
+   * tea-rags-mcp-m99j1.1.32)?
+   *
+   * The positive counterpart of {@link resolveExportedName}'s `null`: that one
+   * says "no project file declares it", which is also what an unindexed project
+   * file looks like, and so licenses nothing. This one reads the file's own
+   * `from` statements, so the evidence is the import itself. polar's
+   * `kit/extensions/sqlalchemy/sql.py` declares nothing and opens with
+   * `from sqlalchemy.sql import ... select ...`: `sql.select(Model)` is
+   * sqlalchemy's, and the project's one `select` — a backoffice form helper —
+   * is a namesake.
+   *
+   * Same channel, hop budget and cycle guard as the other walks. A file that
+   * DECLARES the name ends the walk on the project side, and so does every
+   * hop that cannot be classified. Unanimous or not at all: a name with one
+   * project source and one library source (`try`/`except ImportError`) is not
+   * a library name. Stars are skipped — a star from a library names no member.
+   */
+  reexportsFromLibrary(relPath: RelPath, name: string, ctx: CallContext): boolean {
+    if (name.length === 0 || name === "*") return false;
+    return this.followToLibrary(relPath, name, ctx, 0, new Set([relPath]));
+  }
+
+  /** One hop of {@link PythonImportFileMapper.reexportsFromLibrary}; see its contract. */
+  private followToLibrary(
+    relPath: RelPath,
+    name: string,
+    ctx: CallContext,
+    depth: number,
+    visited: Set<RelPath>,
+  ): boolean {
+    if (declaresName(relPath, name, ctx) || depth >= MAX_REEXPORT_HOPS) return false;
+    const entries = identifierEntry(ctx.moduleReexports, relPath);
+    if (entries === undefined) return false;
+    let sources = 0;
+    for (const entry of entries) {
+      if (entry.exportedName !== name || entry.sourceName === undefined) continue;
+      sources++;
+      if (!this.entryLeavesProject(relPath, entry.sourceModule, entry.sourceName, ctx, depth, visited)) return false;
+    }
+    return sources > 0;
+  }
+
+  /**
+   * One explicit entry's verdict: the stdlib snapshot or an `external` mapping
+   * leaves the project; a project file is walked on with the SOURCE spelling;
+   * anything else — `unknown`, a cycle — stays inside.
+   */
+  private entryLeavesProject(
+    fromFile: RelPath,
+    sourceModule: string,
+    sourceName: string,
+    ctx: CallContext,
+    depth: number,
+    visited: Set<RelPath>,
+  ): boolean {
+    if (!sourceModule.startsWith(".") && PYTHON_STDLIB_MODULES.has(sourceModule.split(".")[0])) return true;
+    const target = this.mapImportToFile(sourceModule, fromFile, ctx);
+    if (target.kind === "external") return true;
+    if (target.kind !== "project" || visited.has(target.relPath)) return false;
+    visited.add(target.relPath);
+    return this.followToLibrary(target.relPath, sourceName, ctx, depth + 1, visited);
+  }
+
+  /**
    * The project file one re-export entry points at, or `null` when it leaves the
    * project or has already been walked.
    *
