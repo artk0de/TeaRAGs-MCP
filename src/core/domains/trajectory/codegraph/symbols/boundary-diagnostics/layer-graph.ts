@@ -1,4 +1,4 @@
-import { tarjanScc, type Scc } from "../../../../../infra/graph/tarjan-scc.js";
+import { tarjanScc, type Scc } from "../../../../../infra/graph/index.js";
 
 /**
  * Graph primitives shared by every layering consumer (bd tea-rags-mcp-r8hme.22
