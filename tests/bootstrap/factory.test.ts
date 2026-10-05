@@ -10,6 +10,8 @@ import { createAppContext, createConfiguredServer, loadPrompts, wireCodegraph } 
 import type { ProjectIngestFactory as ProjectIngestFactoryType } from "../../src/bootstrap/project-ingest-factory.js";
 import { trackGitChildProcess } from "../../src/core/adapters/vcs/git/git-cli/git-child-process-registry.js";
 import type { WorkerEnrichmentDescriptor } from "../../src/core/contracts/types/provider.js";
+import type { WorkingTreeDeltaWarmer } from "../../src/core/domains/explore/working-tree/warmer.js";
+import type { WorkingTreeWatcher } from "../../src/core/domains/explore/working-tree/watcher.js";
 import type { EnvDriftMonitor as EnvDriftMonitorType } from "../../src/core/domains/maintenance/drift/env-drift-monitor.js";
 import { CollectionRegistry } from "../../src/core/domains/maintenance/registry/index.js";
 import { CODEGRAPH_LANGUAGE_BY_EXTENSION } from "../../src/core/domains/trajectory/codegraph/index.js";
@@ -21,16 +23,6 @@ import { loadPromptsConfig } from "../../src/mcp/prompts/index.js";
 // to the top of the file by Vitest — the closure reference to `captured` must
 // be in scope at that point.
 const captured = vi.hoisted(() => ({ gitWorkerDescriptor: undefined as WorkerEnrichmentDescriptor | undefined }));
-
-/** Instance shape the mock overrides — declared as methods (a property shape is TS2425 against the real class). */
-interface CloseableBase {
-  // prettier-ignore
-  close: () => void;
-}
-interface DisposableBase {
-  // prettier-ignore
-  dispose: () => void;
-}
 
 // Partial mock of the git trajectory module so the spy can record the
 // workerDescriptor argument passed by wireComposition (bootstrap/factory.ts).
@@ -82,12 +74,12 @@ const capturedWarm = vi.hoisted(() => ({
 
 vi.mock("../../src/core/domains/explore/working-tree/watcher.js", async (importOriginal) => {
   const mod = await (importOriginal as () => Promise<Record<string, unknown>>)();
-  const Orig = mod.WorkingTreeWatcher as new (deps: unknown) => CloseableBase;
+  const Orig = mod.WorkingTreeWatcher as typeof WorkingTreeWatcher;
   return {
     ...mod,
     WorkingTreeWatcher: class extends Orig {
       private readonly record = { deps: undefined as unknown, closed: 0 };
-      constructor(deps: unknown) {
+      constructor(deps: ConstructorParameters<typeof WorkingTreeWatcher>[0]) {
         super(deps);
         this.record.deps = deps;
         capturedWarm.watchers.push(this.record);
@@ -102,12 +94,12 @@ vi.mock("../../src/core/domains/explore/working-tree/watcher.js", async (importO
 
 vi.mock("../../src/core/domains/explore/working-tree/warmer.js", async (importOriginal) => {
   const mod = await (importOriginal as () => Promise<Record<string, unknown>>)();
-  const Orig = mod.WorkingTreeDeltaWarmer as new (deps: unknown) => DisposableBase;
+  const Orig = mod.WorkingTreeDeltaWarmer as typeof WorkingTreeDeltaWarmer;
   return {
     ...mod,
     WorkingTreeDeltaWarmer: class extends Orig {
       private readonly record = { disposed: 0 };
-      constructor(deps: unknown) {
+      constructor(deps: ConstructorParameters<typeof WorkingTreeDeltaWarmer>[0]) {
         super(deps);
         capturedWarm.warmers.push(this.record);
       }
