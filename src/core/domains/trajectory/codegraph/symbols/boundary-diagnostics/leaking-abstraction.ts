@@ -111,9 +111,22 @@ interface ModuleCandidate {
  *
  * A MODULE is a directory holding a language entry file
  * ({@link MODULE_ENTRY_FILE_NAMES}). Its external importers are the files
- * outside it with a file edge into any file inside it (at any depth); each is a
- * FACADE importer when every such edge targets the entry file and a DEEP
- * importer otherwise. `adoption = facade / (facade + deep)`. The boundary is
+ * outside its PARENT directory component — the parent being one that declares
+ * its own assembly barrel (an entry file; see {@link isIntraParentConsumer}) —
+ * with a file edge into any file inside it (at any depth); each is a FACADE
+ * importer when every such edge targets the
+ * entry file and a DEEP importer otherwise. A consumer inside the parent
+ * component — a sibling of the module, or the parent's own assembly files — is
+ * INTERNAL, not external (bd tea-rags-mcp-yo3ue, two-seam model per bd
+ * tea-rags-mcp-89k7k.22): `api/internal` importing `api/public/errors.ts`
+ * directly is the parent's assembly consuming its contract's vocabulary, and
+ * routing it through `api/public/index.ts` would make internal code import the
+ * parent's assembly barrel, which re-exports the internal app-factory — a real
+ * cycle. Such consumers leave the adoption denominators and the violation
+ * candidates, and are counted in `summary.excludedModules.intraParentConsumers`
+ * — distinct module + importer pairs, never silently dropped. The repository
+ * root is not a parent component, so a module directly under it has none.
+ * `adoption = facade / (facade + deep)`. The boundary is
  * ACTIVE when there are at least {@link FACADE_MIN_EXTERNAL_IMPORTERS} external
  * importers and adoption clears the codebase's adaptive threshold
  * ({@link resolveFacadeAdoptionThreshold} over the adoption of every module
@@ -121,7 +134,8 @@ interface ModuleCandidate {
  * reason it is not judged.
  *
  * A VIOLATION is an edge `src → x` where `x` lies inside an active module,
- * `src` outside it, and `x` is not that module's entry. Each edge is reported
+ * `src` outside the module's parent directory component, and `x` is not that
+ * module's entry. Each edge is reported
  * once, against the INNERMOST module it qualifies for. Its kind is decided by
  * {@link classifyFacadeLeak}: by the export names both edges carry when they
  * do, by whether the entry file has an edge to `x` at all otherwise.
@@ -149,10 +163,15 @@ export function detectLeakingAbstractions(
   const edgesByKey = new Map(graph.edges.map((e) => [edgeKey(e.sourceRelPath, e.targetRelPath), e]));
   const importsFrom = importsAdjacency(graph);
 
+  const intraParentConsumerKeys = new Set<string>();
   for (const edge of graph.edges) {
     if (edge.sourceRelPath === edge.targetRelPath) continue;
     for (const module of enclosingModules(candidates, edge.targetRelPath)) {
       if (isInside(edge.sourceRelPath, module.moduleDir)) continue;
+      if (isIntraParentConsumer(edge.sourceRelPath, module.moduleDir, candidates)) {
+        intraParentConsumerKeys.add(edgeKey(module.moduleDir, edge.sourceRelPath));
+        continue;
+      }
       const deep = !module.entries.has(edge.targetRelPath);
       module.importers.set(edge.sourceRelPath, (module.importers.get(edge.sourceRelPath) ?? false) || deep);
     }
@@ -180,6 +199,9 @@ export function detectLeakingAbstractions(
     for (const module of enclosingModules(candidates, edge.targetRelPath)) {
       const assessment = assessments.get(module.moduleDir);
       if (assessment?.status !== "active" || isInside(edge.sourceRelPath, module.moduleDir)) continue;
+      // An intra-parent consumer is internal to the parent component — never a
+      // bypass / internal-reach candidate (bd tea-rags-mcp-yo3ue).
+      if (isIntraParentConsumer(edge.sourceRelPath, module.moduleDir, candidates)) continue;
       judged = true;
       if (module.entries.has(edge.targetRelPath)) continue;
       const facadeRelPath = assessment.facadeRelPath as RelPath;
@@ -225,6 +247,7 @@ export function detectLeakingAbstractions(
         facadeNotAdopted: countStatus("facade-not-adopted"),
         tooFewImporters: countStatus("too-few-importers"),
         languageEnforced: countStatus("language-enforced"),
+        intraParentConsumers: intraParentConsumerKeys.size,
       },
       ...(scope ? { scope } : {}),
     },
@@ -453,6 +476,32 @@ function* enclosingModules(candidates: Map<string, ModuleCandidate>, relPath: Re
 /** `relPath` lies below `dir` at any depth; everything lies below the root `""`. */
 function isInside(relPath: RelPath, dir: string): boolean {
   return dir === "" || relPath.startsWith(`${dir}/`);
+}
+
+/**
+ * `sourceRelPath` is a consumer inside the module's PARENT directory component
+ * — a sibling of the module or the parent's own assembly files, i.e. inside
+ * `directoryOf(moduleDir)` but outside the module itself (the caller already
+ * excluded that). The parent counts as a component only where it DECLARES one:
+ * it holds an entry file, its assembly barrel — the two-seam shape of bd
+ * tea-rags-mcp-89k7k.22 (`api/internal` + `api/index.ts` around
+ * `api/public`). A bare parent directory namespaces its children but assembles
+ * nothing, so its files stay ordinary external consumers — without this the
+ * rule would blind every depth-2 module (`src/lib` consumed by `src/app`).
+ * Segment-compared via {@link isInside}: `api-clone/x.ts` is NOT inside the
+ * parent `api`. The repository root (`""`) is not a parent component, so a
+ * module directly under it has no intra-parent consumers.
+ */
+function isIntraParentConsumer(
+  sourceRelPath: RelPath,
+  moduleDir: string,
+  candidates: ReadonlyMap<string, ModuleCandidate>,
+): boolean {
+  const parentDir = directoryOf(moduleDir);
+  if (parentDir === "") return false;
+  const parent = candidates.get(parentDir);
+  if (parent === undefined || parent.entries.size === 0) return false;
+  return isInside(sourceRelPath, parentDir);
 }
 
 function directoryOf(relPath: string): string {

@@ -853,7 +853,7 @@ export interface LeakingAbstractionReportSummary {
   minExternalImporters: number;
   /** Every file edge read. */
   edgeCount: number;
-  /** In-scope edges entering an active module from outside it. */
+  /** In-scope edges entering an active module from outside its parent directory component. */
   judgedEdgeCount: number;
   /** Total violations of both kinds (facade leaks + convention privacy), before `limit`. */
   violationCount: number;
@@ -869,7 +869,20 @@ export interface LeakingAbstractionReportSummary {
   /** Candidate modules: directories with an entry file, plus Go packages. */
   moduleCount: number;
   activeModuleCount: number;
-  excludedModules: { facadeNotAdopted: number; tooFewImporters: number; languageEnforced: number };
+  excludedModules: {
+    facadeNotAdopted: number;
+    tooFewImporters: number;
+    languageEnforced: number;
+    /**
+     * Distinct module + importer pairs left out of the adoption denominators
+     * and the violation candidates: the importer lies inside the module's
+     * PARENT directory component — a parent holding an assembly barrel (an
+     * entry file) of its own; a sibling or the parent's own assembly files,
+     * internal by the two-seam model (bd tea-rags-mcp-yo3ue). Counts
+     * consumers, not modules — unlike the three keys above.
+     */
+    intraParentConsumers: number;
+  };
   /** Human-readable meaning of each module exclusion. */
   exclusionReasons: Record<FacadeModuleExclusionReason, string>;
   /** The modules whose boundary is judged, by path; capped at `limit`. */

@@ -367,13 +367,15 @@ silently lost.
 Reasons verbatim in `exclusionReasons`. Report them as "not judged", never as
 "clean".
 
-`summary.leakingAbstraction.excludedModules` — modules NOT judged:
+`summary.leakingAbstraction.excludedModules` — first three count modules NOT
+judged; `intraParentConsumers` counts excluded importer pairs:
 
-| Counter            | Meaning                                                               |
-| ------------------ | --------------------------------------------------------------------- |
-| `facadeNotAdopted` | adoption ≤ 0.5 or below adaptive cut — importers don't use the facade |
-| `tooFewImporters`  | < 3 external importers — adoption untrustworthy                       |
-| `languageEnforced` | Go package — compiler enforces boundary, nothing to leak              |
+| Counter                | Meaning                                                                        |
+| ---------------------- | ------------------------------------------------------------------------------ |
+| `facadeNotAdopted`     | adoption ≤ 0.5 or below adaptive cut — importers don't use the facade          |
+| `tooFewImporters`      | < 3 external importers — adoption untrustworthy                                |
+| `languageEnforced`     | Go package — compiler enforces boundary, nothing to leak                       |
+| `intraParentConsumers` | importer inside module's PARENT dir component (parent holds entry file = assembly barrel) — sibling/assembly consumer, internal by two-seam model; counts consumers, not modules |
 
 `summary.silentCoupling.excluded` — pairs read, NOT judged: `testEndpoints`,
 `generatedEndpoints`, `documentationEndpoints`, `unwalkedEndpoints` (neither

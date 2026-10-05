@@ -4,7 +4,9 @@
  * A module is a directory holding a language entry file (its facade). The
  * boundary is judged only where the importers themselves adopted the facade:
  * adoption = facade importers / (facade importers + deep importers) over the
- * distinct external importing files, a file doing both counting as deep.
+ * distinct external importing files — those outside the module's PARENT
+ * directory component (bd tea-rags-mcp-yo3ue) — a file doing both counting as
+ * deep.
  * Active iff at least 3 external importers, adoption > 0.5 and adoption at or
  * above the adaptive (Otsu) threshold over all such modules. A violation is
  * an edge from outside an active module into one of its non-entry files,
@@ -40,9 +42,12 @@ function edge(sourceRelPath: string, targetRelPath: string, callWeight = 0): Fil
  * - `lib/sync/` — facade `index.ts` re-exports `a.ts` and the nested module
  *   `snap/`. Facade-only importers u1..u3, u7; deep importers u4 (facade AND
  *   `a.ts` → deep), u5 (`b.ts`), u6 (`snap/index.ts`, not sync's entry);
- *   u7 facade-only: adoption 4 / 7 → ACTIVE (population of 3 → majority rule).
- * - `lib/sync/snap/` — importers `lib/sync/index.ts` and u6 through the facade,
- *   `lib/sync/a.ts` deep into `s.ts`: 2 / 3 → ACTIVE.
+ *   u7 facade-only: adoption 4 / 7 → ACTIVE (population of 2 → majority rule).
+ * - `lib/sync/snap/` — `lib/sync/index.ts` (the parent's facade) and
+ *   `lib/sync/a.ts` (a sibling) are INTRA-PARENT consumers under `lib/sync`
+ *   (bd tea-rags-mcp-yo3ue): excluded from adoption and from violations,
+ *   counted in `intraParentConsumers`. Only u6 through the facade counts:
+ *   1 external importer → too-few-importers.
  * - `lib/contracts/` — three importers, all deep: 0 / 3 → facade-not-adopted.
  * - `lib/tiny/` — one importer → too-few-importers.
  * - `pkg/store/` — Go package → language-enforced.
@@ -123,11 +128,11 @@ describe("detectLeakingAbstractions (bd tea-rags-mcp-jetrd)", () => {
       {
         moduleDir: "lib/sync/snap",
         facadeRelPath: "lib/sync/snap/index.ts",
-        externalImporterCount: 3,
-        facadeImporterCount: 2,
-        deepImporterCount: 1,
-        adoption: 2 / 3,
-        status: "active",
+        externalImporterCount: 1,
+        facadeImporterCount: 1,
+        deepImporterCount: 0,
+        adoption: 1,
+        status: "too-few-importers",
       },
       {
         moduleDir: "lib/tiny",
@@ -154,19 +159,6 @@ describe("detectLeakingAbstractions (bd tea-rags-mcp-jetrd)", () => {
     const report = detectLeakingAbstractions(fixture());
 
     expect(report.violations).toEqual([
-      {
-        kind: "internal-reach",
-        kindBasis: "file-rule",
-        sourceRelPath: "lib/sync/a.ts",
-        targetRelPath: "lib/sync/snap/s.ts",
-        moduleDir: "lib/sync/snap",
-        facadeRelPath: "lib/sync/snap/index.ts",
-        adoption: 2 / 3,
-        facadeImporterCount: 2,
-        deepImporterCount: 1,
-        callWeight: 3,
-        reExportUnsafe: false,
-      },
       {
         kind: "internal-reach",
         kindBasis: "file-rule",
@@ -224,17 +216,6 @@ describe("detectLeakingAbstractions (bd tea-rags-mcp-jetrd)", () => {
         internalReachCount: 1,
         sources: ["app/u4.ts", "app/u5.ts", "app/u6.ts"],
       },
-      {
-        moduleDir: "lib/sync/snap",
-        facadeRelPath: "lib/sync/snap/index.ts",
-        adoption: 2 / 3,
-        facadeImporterCount: 2,
-        deepImporterCount: 1,
-        violationCount: 1,
-        bypassCount: 0,
-        internalReachCount: 1,
-        sources: ["lib/sync/a.ts"],
-      },
     ]);
   });
 
@@ -255,12 +236,12 @@ describe("detectLeakingAbstractions (bd tea-rags-mcp-jetrd)", () => {
       adoptionThresholdMethod: "majority",
       minExternalImporters: 3,
       edgeCount: g.edges.length,
-      judgedEdgeCount: 10,
-      violationCount: 4,
-      violationsByKind: { bypass: 2, internalReach: 2 },
+      judgedEdgeCount: 8,
+      violationCount: 3,
+      violationsByKind: { bypass: 2, internalReach: 1 },
       moduleCount: 6,
-      activeModuleCount: 2,
-      excludedModules: { facadeNotAdopted: 1, tooFewImporters: 1, languageEnforced: 2 },
+      activeModuleCount: 1,
+      excludedModules: { facadeNotAdopted: 1, tooFewImporters: 2, languageEnforced: 2, intraParentConsumers: 2 },
     });
   });
 
@@ -269,7 +250,9 @@ describe("detectLeakingAbstractions (bd tea-rags-mcp-jetrd)", () => {
     const report = detectLeakingAbstractions(g, { sourcePathPattern: "app/**" });
 
     expect(report.violations.map((v) => v.sourceRelPath)).toEqual(["app/u5.ts", "app/u4.ts", "app/u6.ts"]);
-    expect(report.modules.find((m) => m.moduleDir === "lib/sync/snap")?.adoption).toBe(2 / 3);
+    // snap's only counted importers are the app ones — the lib/sync sibling and
+    // parent facade never entered the denominators (bd tea-rags-mcp-yo3ue).
+    expect(report.modules.find((m) => m.moduleDir === "lib/sync/snap")?.adoption).toBe(1);
     expect(report.summary.scope).toEqual({
       sourcePathPattern: "app/**",
       outOfScopeEdgeCount: g.edges.filter((e) => !e.sourceRelPath.startsWith("app/")).length,
@@ -369,6 +352,132 @@ describe("detectLeakingAbstractions (bd tea-rags-mcp-jetrd)", () => {
       },
     ]);
     expect(report.violations).toEqual([]);
+  });
+});
+
+/**
+ * bd tea-rags-mcp-yo3ue — a consumer inside the leaked module's PARENT
+ * directory component is INTERNAL, not external. The two-seam model (bd
+ * tea-rags-mcp-89k7k.22): `api/public/` is the contract module, everything
+ * else under `api/` — the sibling `api/internal/` and the parent's own
+ * assembly barrel `api/index.ts` — is the parent component that assembles it.
+ * Their direct imports of the contract's error vocabulary (`errors.ts`) are
+ * correct: routing them through `api/public/index.ts` would make internal code
+ * import the parent's assembly barrel, which re-exports the internal
+ * app-factory — a real cycle. Such consumers leave the adoption denominators
+ * and the violation candidates, and are counted in
+ * `summary.excludedModules.intraParentConsumers`, never silently dropped.
+ */
+describe("detectLeakingAbstractions — intra-parent consumers (bd tea-rags-mcp-yo3ue)", () => {
+  /**
+   * `api/public/` — contract module, facade re-exporting `errors.ts`; three
+   * outside consumers use the facade. `api/internal/x.ts` and `api/index.ts`
+   * import `errors.ts` directly — the exact rows the fresh rescan flagged as
+   * false positives on `src/core/api/public`.
+   */
+  function twoSeamGraph(): FileDependencyGraph {
+    return {
+      files: [
+        walked("api/public/index.ts"),
+        walked("api/public/errors.ts"),
+        walked("api/internal/x.ts"),
+        walked("api/index.ts"),
+        ...["s1", "s2", "s3"].map((s) => walked(`app/${s}.ts`)),
+      ],
+      edges: [
+        edge("api/public/index.ts", "api/public/errors.ts"),
+        edge("api/internal/x.ts", "api/public/errors.ts"),
+        edge("api/index.ts", "api/public/errors.ts"),
+        ...["s1", "s2", "s3"].map((s) => edge(`app/${s}.ts`, "api/public/index.ts")),
+      ],
+    };
+  }
+
+  it("treats a consumer inside the parent component as internal: no violation, counted, adoption unpoisoned", () => {
+    const report = detectLeakingAbstractions(twoSeamGraph());
+
+    expect(report.violations).toEqual([]);
+    expect(report.modules.find((m) => m.moduleDir === "api/public")).toMatchObject({
+      externalImporterCount: 3,
+      facadeImporterCount: 3,
+      deepImporterCount: 0,
+      adoption: 1,
+      status: "active",
+    });
+    expect(report.summary.excludedModules.intraParentConsumers).toBe(2);
+  });
+
+  it("still flags the TRUE external deep import — a source outside the parent component reaching past the facade", () => {
+    const g = twoSeamGraph();
+    g.files.push(walked("cli/cmd.ts"));
+    g.edges.push(edge("cli/cmd.ts", "api/public/errors.ts", 2));
+    const report = detectLeakingAbstractions(g);
+
+    expect(report.violations).toEqual([
+      {
+        kind: "bypass",
+        kindBasis: "file-rule",
+        sourceRelPath: "cli/cmd.ts",
+        targetRelPath: "api/public/errors.ts",
+        moduleDir: "api/public",
+        facadeRelPath: "api/public/index.ts",
+        adoption: 3 / 4,
+        facadeImporterCount: 3,
+        deepImporterCount: 1,
+        callWeight: 2,
+        reExportUnsafe: false,
+      },
+    ]);
+    expect(report.summary.excludedModules.intraParentConsumers).toBe(2);
+  });
+
+  it("compares path SEGMENTS: a sibling directory sharing the prefix is not the parent component", () => {
+    const g = twoSeamGraph();
+    g.files.push(walked("api-clone/x.ts"));
+    g.edges.push(edge("api-clone/x.ts", "api/public/errors.ts"));
+    const report = detectLeakingAbstractions(g);
+
+    expect(report.violations.map((v) => v.sourceRelPath)).toEqual(["api-clone/x.ts"]);
+    expect(report.violations[0]).toMatchObject({ moduleDir: "api/public", kind: "bypass" });
+    expect(report.modules.find((m) => m.moduleDir === "api/public")).toMatchObject({
+      externalImporterCount: 4,
+      facadeImporterCount: 3,
+      deepImporterCount: 1,
+      adoption: 3 / 4,
+      status: "active",
+    });
+    expect(report.summary.excludedModules.intraParentConsumers).toBe(2);
+  });
+
+  it("treats a bare parent — no assembly barrel of its own — as a namespace, not a component: its files stay external", () => {
+    // No `lib/index.ts`: nothing assembles `lib/`, so `lib/app/*` consuming
+    // `lib/public/` is an ordinary external consumer, not the parent's
+    // assembly. Without the barrel requirement the rule would blind every
+    // depth-2 module (`src/lib` consumed by `src/app`).
+    const g: FileDependencyGraph = {
+      files: [
+        walked("lib/public/index.ts"),
+        walked("lib/public/errors.ts"),
+        ...["c1", "c2", "c3"].map((c) => walked(`lib/app/${c}.ts`)),
+      ],
+      edges: [
+        edge("lib/public/index.ts", "lib/public/errors.ts"),
+        edge("lib/app/c1.ts", "lib/public/index.ts"),
+        edge("lib/app/c2.ts", "lib/public/index.ts"),
+        edge("lib/app/c3.ts", "lib/public/errors.ts"),
+      ],
+    };
+    const report = detectLeakingAbstractions(g);
+
+    expect(report.modules.find((m) => m.moduleDir === "lib/public")).toMatchObject({
+      externalImporterCount: 3,
+      facadeImporterCount: 2,
+      deepImporterCount: 1,
+      adoption: 2 / 3,
+      status: "active",
+    });
+    expect(report.violations.map((v) => v.sourceRelPath)).toEqual(["lib/app/c3.ts"]);
+    expect(report.summary.excludedModules.intraParentConsumers).toBe(0);
   });
 });
 
