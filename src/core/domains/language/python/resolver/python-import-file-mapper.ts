@@ -39,6 +39,7 @@ import type { CallContext, GlobalSymbolTable, RelPath } from "../../../../contra
 import type { ImportFileMapper, ImportFileTarget } from "../../../../contracts/types/language.js";
 import { RunScopedMemo } from "../../kernel/index.js";
 import { PYTHON_STDLIB_MODULES } from "../vocabulary/stdlib-modules.js";
+import { pythonModuleValueKey } from "../walker/passes/python-type-channels.js";
 import { lookupPythonSymbolsByShortName } from "./short-name-lookup.js";
 
 /** The suffix that makes a directory a package; `pkg/__init__.py` -> `pkg/`. */
@@ -192,6 +193,29 @@ export class PythonImportFileMapper implements ImportFileMapper {
     return answer;
   }
 
+  /**
+   * The `moduleValueTypes` key of the module-scope VALUE `name` denotes when
+   * imported from `relPath`, or `null` (P4, bd tea-rags-mcp-m99j1.1.15).
+   *
+   * {@link PythonImportFileMapper.resolveExportedName}'s walk with a different
+   * terminator: not a file that DECLARES a symbol — a value is no symbol — but
+   * a file whose module scope binds a typed value under the name.
+   * `from django.apps import apps` maps to `django/apps/__init__.py`, which
+   * re-exports `apps` from `.registry`, where `apps = Apps(...)` is the fact.
+   * Same hop budget, same cycle guard, same star unanimity; the answer carries
+   * the SOURCE spelling, so an `as` alias lands on the name the declaring file
+   * actually bound. Not memoized: every hop is a map read plus a memoized
+   * `mapImportToFile`.
+   */
+  resolveExportedValue(relPath: RelPath, name: string, ctx: CallContext): string | null {
+    const values = ctx.moduleValueTypes;
+    if (values === undefined || name.length === 0 || name === "*") return null;
+    return this.followReexportChain(relPath, name, ctx, 0, new Set([relPath]), (file, bound) => {
+      const key = pythonModuleValueKey(file, bound);
+      return identifierEntry(values, key) === undefined ? null : key;
+    });
+  }
+
   /** One hop of {@link PythonImportFileMapper.resolveExportedName}; see its contract. */
   private followReexports(
     relPath: RelPath,
@@ -200,7 +224,25 @@ export class PythonImportFileMapper implements ImportFileMapper {
     depth: number,
     visited: Set<RelPath>,
   ): RelPath | null {
-    if (declaresName(relPath, name, ctx)) return relPath;
+    return this.followReexportChain(relPath, name, ctx, depth, visited, (file, bound) =>
+      declaresName(file, bound, ctx) ? file : null,
+    );
+  }
+
+  /**
+   * The re-export walk {@link resolveExportedName} and {@link resolveExportedValue}
+   * share; `terminal` is what ends it, and what it answers.
+   */
+  private followReexportChain(
+    relPath: RelPath,
+    name: string,
+    ctx: CallContext,
+    depth: number,
+    visited: Set<RelPath>,
+    terminal: (relPath: RelPath, name: string) => string | null,
+  ): string | null {
+    const here = terminal(relPath, name);
+    if (here !== null) return here;
     if (depth >= MAX_REEXPORT_HOPS) return null;
     const entries = identifierEntry(ctx.moduleReexports, relPath);
     if (entries === undefined) return null;
@@ -208,16 +250,16 @@ export class PythonImportFileMapper implements ImportFileMapper {
       if (entry.exportedName !== name || entry.sourceName === undefined) continue;
       const source = this.stepToSource(relPath, entry.sourceModule, ctx, visited);
       if (source === null) continue;
-      const hit = this.followReexports(source, entry.sourceName, ctx, depth + 1, visited);
+      const hit = this.followReexportChain(source, entry.sourceName, ctx, depth + 1, visited, terminal);
       if (hit !== null) return hit;
     }
     // Stars, unanimous or not at all.
-    let only: RelPath | null = null;
+    let only: string | null = null;
     for (const entry of entries) {
       if (entry.exportedName !== "*") continue;
       const source = this.stepToSource(relPath, entry.sourceModule, ctx, visited);
       if (source === null) continue;
-      const hit = this.followReexports(source, name, ctx, depth + 1, visited);
+      const hit = this.followReexportChain(source, name, ctx, depth + 1, visited, terminal);
       if (hit === null) continue;
       if (only !== null && only !== hit) return null;
       only = hit;

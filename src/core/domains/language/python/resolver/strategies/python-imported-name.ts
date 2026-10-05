@@ -7,7 +7,6 @@ import {
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { reexportOriginFile } from "../../../kernel/index.js";
-import { PYTHON_STDLIB_MODULES } from "../../vocabulary/stdlib-modules.js";
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import {
@@ -16,8 +15,11 @@ import {
   lookupPythonSymbolsByShortName,
   pythonBoundClassKey,
   pythonClassKey,
+  pythonImportsStdlibModule,
+  pythonModuleValueClass,
   receiverModuleText,
   resolvePythonInheritedMember,
+  resolvePythonModuleValueMember,
   type PythonImportBinding,
   type ResolverConfig,
 } from "./shared.js";
@@ -119,7 +121,29 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
     if (binding) return this.resolveBinding(binding, call, ctx);
     const sameFile = this.resolveSameFileClassReceiver(call, ctx);
     if (sameFile.kind === "resolved") return sameFile;
+    const sameFileValue = this.resolveTypedModuleValueReceiver(call, ctx);
+    if (sameFileValue.kind === "resolved") return sameFileValue;
     return this.resolveStarImport(call, ctx);
+  }
+
+  /**
+   * The receiver is a module-scope VALUE whose type the walker recorded (P4, bd
+   * tea-rags-mcp-m99j1.1.15) — imported (`from django.apps import apps`) or the
+   * caller module's own global. `chainType` answers this first wherever the
+   * caller's reading of the class agrees with the declaring file's; what
+   * reaches here is the disagreement, so the member is looked up on the class
+   * KEY anchored at the value's file — never re-resolved from the caller.
+   *
+   * Resolve-or-CONTINUE: a typed miss keeps today's fall-through to the untyped
+   * value arm below rather than claiming a verdict on a hierarchy it read only
+   * as far as the project goes.
+   */
+  private resolveTypedModuleValueReceiver(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
+    if (!call.receiver) return CONTINUE;
+    const value = pythonModuleValueClass(call.receiver, ctx, this.mapper);
+    if (value === null) return CONTINUE;
+    const target = resolvePythonModuleValueMember(value, call.member, ctx, this.cfg.mode, this.linearizers?.for(ctx));
+    return target ? resolved(target) : CONTINUE;
   }
 
   /**
@@ -222,7 +246,7 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
     if (!DOTTED_MODULE_RECEIVER.test(receiver)) return CONTINUE;
     const segments = receiver.split(".");
     const binding = findPythonImportBinding(ctx.imports, segments[0]);
-    if (binding === null || importsStdlibModule(binding.imp.importText)) return CONTINUE;
+    if (binding === null || pythonImportsStdlibModule(binding.imp.importText)) return CONTINUE;
     const moduleText = [receiverModuleText(binding), ...segments.slice(1)].join(".");
     const mapped = this.mapper.mapImportToFile(moduleText, ctx.callerFile, ctx);
     if (mapped.kind !== "project") return CONTINUE;
@@ -259,7 +283,7 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
     // The same two-step `resolveBinding` uses, and for the same reason: the
     // stdlib snapshot is a positive verdict the mapper's ancestor probe would
     // shadow with a project module of the same name.
-    if (importsStdlibModule(binding.imp.importText)) return DROP;
+    if (pythonImportsStdlibModule(binding.imp.importText)) return DROP;
     const mapped = this.mapper.mapImportToFile(binding.imp.importText, ctx.callerFile, ctx);
     return mapped.kind === "external" ? DROP : CONTINUE;
   }
@@ -290,7 +314,7 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
     // become in-project phantoms. Absolute-import semantics settle it — a
     // project module of the same name is reachable through a relative or
     // package-qualified import, never through bare `import json`.
-    if (importsStdlibModule(binding.imp.importText)) return DROP;
+    if (pythonImportsStdlibModule(binding.imp.importText)) return DROP;
 
     const mapped = this.mapper.mapImportToFile(binding.imp.importText, ctx.callerFile, ctx);
     if (mapped.kind === "external") return DROP;
@@ -301,6 +325,8 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
 
     const asModule = this.resolveModuleReceiver(binding, call, ctx);
     if (asModule.kind === "resolved") return asModule;
+    const asTypedValue = this.resolveTypedModuleValueReceiver(call, ctx);
+    if (asTypedValue.kind === "resolved") return asTypedValue;
     // The value arm's gate is whether the MAPPED file declares the bound name
     // ITSELF — `declaringFile === mapped.relPath`. A `declaringFile` that came
     // from the re-export HOP is not the same evidence: the hop asks which file
@@ -566,15 +592,9 @@ function packageScopeOf(mappedFile: string): string | null {
   return mappedFile.slice(0, mappedFile.length - "__init__.py".length);
 }
 
-/**
- * Is this an ABSOLUTE import of a stdlib module? Relative text (`.models`) can
- * never name the stdlib and its first segment is empty, so it is excluded
- * rather than tested.
- */
-function importsStdlibModule(importText: string): boolean {
-  if (importText.startsWith(".")) return false;
-  return PYTHON_STDLIB_MODULES.has(importText.split(".")[0]);
-}
+// `importsStdlibModule` MOVED to `./shared.js` as `pythonImportsStdlibModule`
+// (P4, bd tea-rags-mcp-m99j1.1.15): the module-value typing asks the same
+// question before the mapper. Body byte-identical.
 
 // `receiverModuleText` MOVED to `./shared.js` (bd tea-rags-mcp-w205u, E4.6b-1).
 // The chain ports ask the same question of a module-alias head, and

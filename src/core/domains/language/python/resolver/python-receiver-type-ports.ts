@@ -33,10 +33,13 @@ import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js"
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
   findPythonImportBinding,
+  lastSegment,
+  parsePythonClassKey,
   pythonBareCallReturnType,
   pythonEnclosingClass,
   pythonImportMatchesReceiver,
   pythonInheritedMemberType,
+  pythonModuleValueClass,
   receiverModuleText,
   resolveTypeFile,
 } from "./strategies/shared.js";
@@ -201,6 +204,8 @@ function pythonSingleHopType(
   }
   const bound = pythonBindingInForceAt(receiver, atLine, ctx);
   if (bound !== undefined) return { form: "instance", name: bound.type };
+  const moduleValue = pythonModuleValueType(receiver, ctx, mapper);
+  if (moduleValue !== undefined) return moduleValue;
   // A bare class name in receiver position: `Repo.from_session(…)` — CLASS
   // form, so `memberTypeOf` reads the `Cls.member` spelling a `@classmethod`
   // produces. Gated on the class resolving to a PROJECT file: `os.Path` in a
@@ -210,6 +215,29 @@ function pythonSingleHopType(
   return PYTHON_CLASS_HEAD.test(receiver) && resolveTypeFile(receiver, ctx, mapper) !== null
     ? { form: "class", name: receiver }
     : undefined;
+}
+
+/**
+ * A module-scope VALUE as a receiver (P4, bd tea-rags-mcp-m99j1.1.15) — an
+ * imported singleton (`from django.apps import apps`) or the caller module's
+ * own global (`connections = ConnectionHandler()`).
+ *
+ * Every typed fold downstream resolves `type.name` in the CALLER's context, and
+ * the value's class was named in the DECLARING file's. So the type is handed
+ * on only where the two readings agree — the caller's resolution of the class
+ * lands on the file the anchored key names. A disagreement is left to
+ * `importedName`, which reads the anchored key directly.
+ */
+function pythonModuleValueType(
+  receiver: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): TypeRef | undefined {
+  const value = pythonModuleValueClass(receiver, ctx, mapper);
+  if (value === null) return undefined;
+  const anchored = parsePythonClassKey(value.classKey);
+  const callerTypeFile = resolveTypeFile(lastSegment(value.type.name), ctx, mapper);
+  return anchored !== null && callerTypeFile === anchored.relPath ? value.type : undefined;
 }
 
 /**

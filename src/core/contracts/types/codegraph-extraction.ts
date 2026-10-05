@@ -69,6 +69,16 @@ export interface FileExtraction {
    */
   classFieldTypesByClassKey?: Record<string, Record<string, string>>;
   /**
+   * Module-scope VALUES, keyed `<relPath>::<name>` → what the value holds (P4,
+   * bd tea-rags-mcp-m99j1.1.15). `apps = Apps()` at module scope in
+   * `django/apps/registry.py` is `{ "django/apps/registry.py::apps": Apps }`;
+   * a caller that imports `apps`, or a function of the same module reading it
+   * as a global, types its receiver from here. Merged run-global (keys name
+   * their declaring file, so files never collide). Populated by the Python
+   * annotation facet pass only. Plain Record for NDJSON round-trip.
+   */
+  moduleValueTypes?: Record<string, RubyTypeRef>;
+  /**
    * A field assigned from a CALL, as `<relPath>::<dotted class FQ> → field →
    * callee SPELLING` (bd tea-rags-mcp-w205u, E4.6c).
    *

@@ -99,6 +99,9 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
   // Structural contracts (bd 39xca.14): the barrier derives conformers of every
   // contract in the family, so an unwalked interface file still counts.
   structuralContracts: { policy: "hydrate", sliceField: "structuralContracts" },
+  // Python module-scope values (P4, bd m99j1.1.15): an unwalked declaring file
+  // must still type `from pkg import singleton` in a walked caller.
+  moduleValueTypes: { policy: "hydrate", sliceField: "moduleValueTypes" },
 
   extractedFilesByLanguage: {
     policy: "batchOnly",

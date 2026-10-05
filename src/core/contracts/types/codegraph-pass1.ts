@@ -327,4 +327,10 @@ export interface CodegraphPass1FileAggregates {
    * Persisted after the Ruby parameter family, so older rows keep their bytes.
    */
   structuralContracts?: readonly StructuralContractDecl[];
+  /**
+   * Module-scope values, `<relPath>::<name>` → type (P4, bd
+   * tea-rags-mcp-m99j1.1.15). Hydrated: an unwalked declaring file must still
+   * type `from pkg import singleton` in a walked caller.
+   */
+  moduleValueTypes?: Record<string, RubyTypeRef>;
 }

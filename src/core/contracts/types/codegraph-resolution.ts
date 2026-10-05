@@ -348,6 +348,13 @@ export interface CallContext {
    */
   moduleReexports?: Record<string, readonly ModuleReexport[]>;
   /**
+   * `FileExtraction.moduleValueTypes` unioned RUN-GLOBAL — `<relPath>::<name>`
+   * → what a module-scope value holds (P4, bd tea-rags-mcp-m99j1.1.15). Read by
+   * the Python resolver for an imported singleton and a same-module global.
+   * Absent on an index whose walker never wrote it: the receiver stays untyped.
+   */
+  moduleValueTypes?: Record<string, RubyTypeRef>;
+  /**
    * `FileExtraction.buildConstraint` collected RUN-GLOBAL, keyed by relPath (bd
    * tea-rags-mcp-e6xx). Go's resolver reads it only to break a tie between
    * same-package declarations of one name that ALL carry a build constraint,
