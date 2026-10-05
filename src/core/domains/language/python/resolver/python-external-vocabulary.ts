@@ -30,6 +30,7 @@ import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js"
 import { PythonExternalDefinitionProbe } from "./python-external-definition-probe.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import { mapPythonImportToFile } from "./python-path-mapper.js";
+import { pythonBoundClassKey } from "./python-type-addressing.js";
 
 export class PythonExternalVocabulary implements ExternalVocabulary {
   /**
@@ -57,6 +58,7 @@ export class PythonExternalVocabulary implements ExternalVocabulary {
         : new PythonExternalDefinitionProbe(mapper, linearizers, mode, {
             isBareCallExternal: (member, ctx) => this.isBareCallExternal(member, ctx),
             isRootExternalImport: (root, ctx, atLine) => this.rootIsExternalImport(root, ctx, atLine),
+            isTypeConstructedExternally: (typeName, ctx) => this.typeIsConstructedExternally(typeName, ctx),
           });
   }
 
@@ -135,6 +137,41 @@ export class PythonExternalVocabulary implements ExternalVocabulary {
       // A stdlib root is external even when the mapper's synthesised path
       // happens to collide with a project file name (`json.py`, `types.py`).
       return true;
+    }
+    return false;
+  }
+
+  /**
+   * P7 / K12 (bd tea-rags-mcp-m99j1.1.25) — is a receiver TYPE, as the walker
+   * recorded it from a constructor call, a class an external module defines?
+   * `self.ready_event = threading.Event()` records `threading.Event`;
+   * `from threading import Event` then `Event()` records `Event`.
+   *
+   * The import decides, never the short name: a project namesake `Event`
+   * cannot be the class `threading.Event` names, and the short-name probe
+   * alone cannot tell the two apart.
+   *
+   *   - DOTTED: the root is a module, so it is exactly the receiver-root
+   *     question {@link rootIsExternalImport} answers (stdlib guard included).
+   *   - BARE: the name must be BOUND by a non-relative import that does not
+   *     land in the project — and the caller's own file must not declare a
+   *     class of that name, which would shadow the import.
+   *
+   * Builtins are deliberately NOT an arm: a project may declare its own
+   * `ConnectionError`, and the probe's short-name arm already answers a
+   * builtin no project file shadows. `false` is UNKNOWN, never "in project".
+   */
+  private typeIsConstructedExternally(typeName: string, ctx: CallContext): boolean {
+    const root = typeName.split(".")[0];
+    if (root.length === 0) return false;
+    if (typeName.includes(".")) return this.rootIsExternalImport(root, ctx);
+    if (pythonBoundClassKey(root, ctx.callerFile, ctx) !== null) return false;
+    for (const imp of ctx.imports) {
+      const bound =
+        identifierEntry(imp.importedBindings, root) ?? (imp.importedNames?.includes(root) ? root : undefined);
+      if (bound === undefined) continue;
+      if (imp.importText.startsWith(".")) return false; // relative → in-project
+      return !this.importLandsInProject((imp.importText.split(/\s+as\s+/)[0] ?? "").trim(), ctx);
     }
     return false;
   }
