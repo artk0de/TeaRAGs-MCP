@@ -40,7 +40,7 @@ import type { ImportFileMapper, ImportFileTarget } from "../../../../contracts/t
 import { RunScopedMemo } from "../../kernel/index.js";
 import { PYTHON_STDLIB_MODULES } from "../vocabulary/stdlib-modules.js";
 import { pythonModuleValueKey } from "../walker/passes/python-type-channels.js";
-import { pythonClassKey } from "./python-type-addressing.js";
+import { pythonClassKey } from "./python-class-key.js";
 import { lookupPythonSymbolsByShortName } from "./short-name-lookup.js";
 
 /** The suffix that makes a directory a package; `pkg/__init__.py` -> `pkg/`. */

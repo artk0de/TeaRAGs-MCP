@@ -16,27 +16,12 @@ import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext, ImportRef } from "../../../../contracts/types/codegraph.js";
 import { PYTHON_BUILTINS } from "../vocabulary/builtins.js";
 import { isPythonFrameworkAnswerClass } from "../vocabulary/frameworks/index.js";
+import { pythonClassKey } from "./python-class-key.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import { mapPythonImportToFile } from "./python-path-mapper.js";
 import { lookupPythonSymbolsByShortName } from "./short-name-lookup.js";
 
-/**
- * The run-global address of a Python class: `<relPath>::<dotted class FQ>` (bd
- * tea-rags-mcp-9fgdi). `classAncestors` is run-global, so a bare class name
- * cannot be the key — two `Base` classes in two files would conflate. `::` and
- * not a dot, because `Outer.Inner` is a legal class FQ and would not split.
- */
-export function pythonClassKey(relPath: string, classFq: string): string {
-  return `${relPath}::${classFq}`;
-}
-
-/** The inverse of {@link pythonClassKey}; `null` for anything not in that shape. */
-export function parsePythonClassKey(classKey: string): { readonly relPath: string; readonly classFq: string } | null {
-  const at = classKey.indexOf("::");
-  if (at <= 0) return null;
-  const classFq = classKey.slice(at + 2);
-  return classFq.length === 0 ? null : { relPath: classKey.slice(0, at), classFq };
-}
+export { parsePythonClassKey, pythonClassKey } from "./python-class-key.js";
 
 /**
  * The dotted FQ a symbol-table definition is addressed by — its scope plus its
