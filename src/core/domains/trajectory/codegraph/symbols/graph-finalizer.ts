@@ -26,8 +26,7 @@ import type {
   GraphEdges,
 } from "../../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
-import { pageRank } from "../../../../infra/graph/page-rank.js";
-import { tarjanScc } from "../../../../infra/graph/tarjan-scc.js";
+import { pageRank, tarjanScc } from "../../../../infra/graph/index.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import {
   CodegraphCheckpointError,

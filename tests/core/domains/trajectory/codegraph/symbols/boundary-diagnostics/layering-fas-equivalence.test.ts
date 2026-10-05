@@ -23,7 +23,7 @@ import {
   type ComponentDependency,
   type LayeringKnot,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
-import { tarjanScc } from "../../../../../../../src/core/infra/graph/tarjan-scc.js";
+import { tarjanScc } from "../../../../../../../src/core/infra/graph/index.js";
 
 interface OracleFeedbackEdge {
   sourceComponent: string;
