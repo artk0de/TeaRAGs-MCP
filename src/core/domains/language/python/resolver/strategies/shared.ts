@@ -684,20 +684,13 @@ function pythonCalleeSpellingType(
   return pythonDeclaredMemberType(bareHead, method, "class", ctx, mapper, linearizer);
 }
 
-export interface ResolverConfig {
-  mode: AmbiguousResolveMode;
-  /**
-   * Max cone size before CHA devirtualization collapses to a single
-   * `poly-base` edge (bd tea-rags-mcp-f10y). `|cone| ≤ coneMax` persists N
-   * `cone` edges (confidence `1/N`); `> coneMax` persists one base-decl edge
-   * expanded at query time. Defaults to `CONE_MAX_DEFAULT` (8) when omitted;
-   * env `CODEGRAPH_PY_CONE_MAX` overrides at composition.
-   */
-  coneMax?: number;
-}
-
-/** Default cone-size threshold; env `CODEGRAPH_PY_CONE_MAX` overrides at composition. */
-export const CONE_MAX_DEFAULT = 8;
+/**
+ * `ResolverConfig` / `CONE_MAX_DEFAULT` live in the kernel
+ * (`readResolverConfig` builds the config); re-exported so
+ * `strategies/shared.js` stays the one import path the strategies use.
+ * `CODEGRAPH_PY_CONE_MAX` overrides at composition.
+ */
+export { CONE_MAX_DEFAULT, type ResolverConfig } from "../../../kernel/index.js";
 
 /**
  * Resolve `<member>` against `startClass` and, on a miss, its IN-PROJECT

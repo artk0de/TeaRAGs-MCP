@@ -50,7 +50,7 @@ import {
 import type { DispatchResolverComponent, SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { ExternalCallClassifier } from "../../external-classifier.js";
 import { resolveImportFileEdges } from "../../import-file-edges.js";
-import { ConeDispatchResolver } from "../../kernel/index.js";
+import { ConeDispatchResolver, readResolverConfig } from "../../kernel/index.js";
 import { resolveDispatchViaComponents } from "../../resolver-chain.js";
 import {
   PythonChainAnswerProbe,
@@ -62,18 +62,7 @@ import { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import { createPythonSymbolResolutionChain } from "./python-chain-factory.js";
 import { PythonExternalVocabulary } from "./python-external-vocabulary.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
-import {
-  CONE_MAX_DEFAULT,
-  lookupPythonSymbolsByShortName,
-  PythonConeTypeLocator,
-  type ResolverConfig,
-} from "./strategies/index.js";
-
-/** Parse `CODEGRAPH_PY_CONE_MAX`; fall back to the Python default on absent/invalid. */
-function resolveConeMax(raw: string | undefined): number {
-  const parsed = Number(raw);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : CONE_MAX_DEFAULT;
-}
+import { lookupPythonSymbolsByShortName, PythonConeTypeLocator, type ResolverConfig } from "./strategies/index.js";
 
 export class PythonCallResolver implements CallResolver {
   readonly language = "python";
@@ -123,13 +112,12 @@ export class PythonCallResolver implements CallResolver {
   private readonly ancestorLinearizers: PythonAncestorLinearizerCache;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
-    const cfg: ResolverConfig = { mode, coneMax: resolveConeMax(process.env.CODEGRAPH_PY_CONE_MAX) };
+    // Python has no dynamic-receiver confidence knob: take only mode + coneMax.
+    const { coneMax } = readResolverConfig(process.env, "CODEGRAPH_PY", mode);
+    const cfg: ResolverConfig = { mode, coneMax };
     this.ancestorLinearizers = new PythonAncestorLinearizerCache(this.importFileMapper, mode);
     this.chain = createPythonSymbolResolutionChain(cfg, this.importFileMapper, this.ancestorLinearizers);
-    this.cone = new ConeDispatchResolver(
-      new PythonConeTypeLocator(cfg, this.importFileMapper),
-      cfg.coneMax ?? CONE_MAX_DEFAULT,
-    );
+    this.cone = new ConeDispatchResolver(new PythonConeTypeLocator(cfg, this.importFileMapper), coneMax);
     // The classifier is built BEFORE the component that closes over it. The
     // vocabulary gets the run's ONE linearizer cache (bd tea-rags-mcp-1v12o.3):
     // its definition probe asks MRO questions, and a private cache would both
