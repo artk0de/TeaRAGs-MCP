@@ -55,6 +55,7 @@ import {
 } from "./call-arg-param-types.js";
 import { buildHierarchySnapshot, normalizeInheritanceEdges } from "./inheritance-edges.js";
 import { languageFamilyOf, LanguageFamilyRecord, languagesSharingFamilyWith } from "./language-family-record.js";
+import { paramFamilyFactsOf, paramFamilyFieldChannelOf, type ParamFamilyFieldChannel } from "./param-family.js";
 import { selectHydratablePass1Aggregates } from "./pass1-aggregates.js";
 import { RECEIVER_KINDS, type ReceiverKind } from "./receiver-kind.js";
 import {
@@ -810,12 +811,13 @@ export class CodegraphRunState {
   /**
    * Per-run known-target call-site argument types (bd tea-rags-mcp-bvalc), DEDUPED
    * by (targets, argTypes): the fold over agreement is idempotent, so identical
-   * sites contribute one record while disagreeing sites still conflict. Ruby only.
+   * sites contribute one record while disagreeing sites still conflict. Fed by
+   * every language in the parameter family (`paramFamilyFieldChannelOf`).
    */
   readonly knownTargetCallArgs = new Map<string, KnownTargetCallArgs>();
 
   /**
-   * Per-run method-definition index `symbolId → positional param names` (bd
+   * Per-run method-definition index `fold coordinate → positional param names` (bd
    * tea-rags-mcp-bvalc). Maps an argument POSITION to a parameter NAME at the
    * barrier and, holding only real definitions, gates which constant-lookup
    * candidate is the actual callee.
@@ -829,6 +831,18 @@ export class CodegraphRunState {
    * files must present ONE link set to the barrier fold.
    */
   classFieldParamLinks: Record<string, Record<string, ClassFieldParamLink>> = createIdentifierRecord();
+
+  /**
+   * The same links from languages whose fields live on the run-global
+   * `classFieldTypesByClassKey` (bd tea-rags-mcp-m99j1.1.17). Kept apart from
+   * {@link classFieldParamLinks} because a field derived from them lands on
+   * THAT channel, gated by its own keys — so a run with none of these leaves
+   * the class-keyed map exactly as the walkers wrote it. A PARTITION of the
+   * `classFieldParamLinks` channel, not a channel of its own: persisted and
+   * hydrated through that slice field and routed by the slice's language, so it
+   * carries no `RUN_GLOBAL_MAP_PERSISTENCE` entry and stays private.
+   */
+  private classKeyedFieldParamLinks: Record<string, Record<string, ClassFieldParamLink>> = createIdentifierRecord();
 
   /**
    * Coordinates (`"fqClass|@ivar"`) the walker typed on its own anywhere in the
@@ -1055,8 +1069,11 @@ export class CodegraphRunState {
       }
     },
     classFieldParamLinks: (slice) => {
-      for (const [fqClass, fields] of Object.entries(slice.classFieldParamLinks ?? {})) {
-        this.classFieldParamLinks[fqClass] = { ...fields, ...identifierEntry(this.classFieldParamLinks, fqClass) };
+      const fieldChannel = paramFamilyFieldChannelOf(slice.language);
+      if (fieldChannel === undefined) return;
+      const links = this.classFieldParamLinksOn(fieldChannel);
+      for (const [classKey, fields] of Object.entries(slice.classFieldParamLinks ?? {})) {
+        links[classKey] = { ...fields, ...identifierEntry(links, classKey) };
       }
     },
     typedClassFields: (slice) => {
@@ -1442,6 +1459,39 @@ export class CodegraphRunState {
         this.paramTypes,
         this.typedClassFields,
       );
+      this.overlayDerivedClassKeyedFieldTypes();
+    }
+  }
+
+  /** The link accumulator whose derived fields land on `fieldChannel`. */
+  private classFieldParamLinksOn(
+    fieldChannel: ParamFamilyFieldChannel,
+  ): Record<string, Record<string, ClassFieldParamLink>> {
+    return fieldChannel === "perFile" ? this.classFieldParamLinks : this.classKeyedFieldParamLinks;
+  }
+
+  /**
+   * Derive the class-keyed family's fields and overlay them UNDER the run-global
+   * `classFieldTypesByClassKey` (bd tea-rags-mcp-m99j1.1.17). That map is
+   * complete here — walked and hydrated alike — so its own coordinates are the
+   * typed-field gate, and a coordinate the walker typed always keeps its type.
+   * No links ⇒ the map is untouched.
+   */
+  private overlayDerivedClassKeyedFieldTypes(): void {
+    const linkedClasses = Object.keys(this.classKeyedFieldParamLinks);
+    if (linkedClasses.length === 0) return;
+    const typed = new Set<string>();
+    for (const classKey of linkedClasses) {
+      for (const field of Object.keys(identifierEntry(this.classFieldTypesByClassKey, classKey) ?? {})) {
+        typed.add(`${classKey}|${field}`);
+      }
+    }
+    const derived = deriveClassFieldTypesFromParams(this.classKeyedFieldParamLinks, this.paramTypes, typed);
+    for (const [classKey, fields] of Object.entries(derived)) {
+      this.classFieldTypesByClassKey[classKey] = {
+        ...fields,
+        ...identifierEntry(this.classFieldTypesByClassKey, classKey),
+      };
     }
   }
 
@@ -1454,6 +1504,7 @@ export class CodegraphRunState {
     this.knownTargetCallArgs.clear();
     this.paramNames = createIdentifierRecord();
     this.classFieldParamLinks = createIdentifierRecord();
+    this.classKeyedFieldParamLinks = createIdentifierRecord();
     this.typedClassFields.clear();
     this.paramTypes = createIdentifierRecord();
     this.derivedClassFieldTypes = createIdentifierRecord();
@@ -1947,20 +1998,22 @@ export class CodegraphRunState {
     // Interprocedural param typing, Increment 1 (bd tea-rags-mcp-bvalc): LIGHT
     // records only — deduped call-arg shapes, the positional param-name index,
     // `@ivar = <param>` links and the coordinates the walker already typed (the
-    // derivation's gate). Ruby-only, like the consuming fold and resolver paths.
-    if (extraction.language === "ruby") {
-      for (const record of extraction.knownTargetCallArgs ?? []) {
+    // derivation's gate). Only languages in the family, read through the SAME
+    // `paramFamilyFactsOf` the persisted slice is built from (bd
+    // tea-rags-mcp-m99j1.1.17), so a hydrated run admits exactly these facts.
+    const paramFamily = paramFamilyFactsOf(extraction);
+    if (paramFamily !== undefined) {
+      for (const record of paramFamily.knownTargetCallArgs ?? []) {
         this.knownTargetCallArgs.set(knownTargetCallArgsKey(record), record);
       }
-      for (const chunk of extraction.chunks) {
-        if (chunk.paramNames !== undefined) this.paramNames[chunk.symbolId] = chunk.paramNames;
+      for (const [coordinate, names] of Object.entries(paramFamily.methodParamNames)) {
+        this.paramNames[coordinate] = names;
       }
-      for (const [fqClass, fields] of Object.entries(extraction.classFieldParamLinks ?? {})) {
-        this.classFieldParamLinks[fqClass] = { ...identifierEntry(this.classFieldParamLinks, fqClass), ...fields };
+      const links = this.classFieldParamLinksOn(paramFamily.fieldChannel);
+      for (const [classKey, fields] of Object.entries(paramFamily.classFieldParamLinks ?? {})) {
+        links[classKey] = { ...identifierEntry(links, classKey), ...fields };
       }
-      for (const [fqClass, fields] of Object.entries(extraction.classFieldTypes ?? {})) {
-        for (const ivar of Object.keys(fields)) this.typedClassFields.add(`${fqClass}|${ivar}`);
-      }
+      for (const coordinate of paramFamily.typedClassFields) this.typedClassFields.add(coordinate);
     }
   }
 }

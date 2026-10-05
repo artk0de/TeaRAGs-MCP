@@ -27,10 +27,16 @@
  * completed into `classFieldTypes`, under everything the walker typed itself.
  */
 
-import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
+import { createIdentifierRecord, identifierEntry } from "../../../../contracts/identifier-record.js";
 import { typeRefEquals } from "../../../../contracts/type-ref-equals.js";
-import type { ClassFieldParamLink, KnownTargetCallArgs, LocalBinding } from "../../../../contracts/types/codegraph.js";
+import type {
+  ChunkExtraction,
+  ClassFieldParamLink,
+  KnownTargetCallArgs,
+  LocalBinding,
+} from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
+import { paramCoordinateOf } from "./param-family.js";
 
 /** Run-global `"<fqType>#<member>" → paramName → type`, the fold's product. */
 export type KnownTargetParamTypes = Record<string, Record<string, RubyTypeRef>>;
@@ -146,6 +152,18 @@ export function seedParamLocalBindings(
     seeded[name] = [binding];
   }
   return seeded ?? localBindings;
+}
+
+/**
+ * The folded parameter types of the def `chunk` holds, read under its fold
+ * coordinate (`paramCoordinate`, else `symbolId` — bd tea-rags-mcp-m99j1.1.17),
+ * so a walker whose class key is not its symbolId prefix is still found.
+ */
+export function paramTypesOfChunk(
+  paramTypes: KnownTargetParamTypes,
+  chunk: Pick<ChunkExtraction, "symbolId" | "paramCoordinate">,
+): Readonly<Record<string, RubyTypeRef>> | undefined {
+  return identifierEntry(paramTypes, paramCoordinateOf(chunk));
 }
 
 /**

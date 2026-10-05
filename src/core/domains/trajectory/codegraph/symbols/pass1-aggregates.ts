@@ -40,12 +40,13 @@ import type {
   FileExtraction,
   SelfDispatchMethodDecl,
 } from "../../../../contracts/types/codegraph.js";
+import { paramFamilyFactsOf } from "./param-family.js";
 import { PASS1_AGGREGATE_SLICE_FIELDS, type Pass1AggregateSlice } from "./run-global-map-registry.js";
 
 /**
  * Slice fields that are not an extraction field of the same name: the
- * self-dispatch list is handed in beside the extraction, and the two Ruby
- * parameter-family indexes are derived from it (see {@link rubyParamFamilyOf}).
+ * self-dispatch list is handed in beside the extraction, and the two
+ * parameter-family indexes are derived from it (see {@link paramFamilySliceOf}).
  */
 type DerivedSliceField = "selfDispatchMethods" | "methodParamNames" | "typedClassFields";
 
@@ -58,42 +59,23 @@ type DerivedSliceField = "selfDispatchMethods" | "methodParamNames" | "typedClas
 type Pass1AggregateSource = Omit<Pass1AggregateSlice, DerivedSliceField> &
   Pick<FileExtraction, "chunks" | "classFieldTypes">;
 
-/** The language whose walker feeds the parameter-type fold, as `CodegraphRunState#absorb` gates it. */
-const PARAM_FAMILY_LANGUAGE = "ruby";
-
 /**
- * The Ruby parameter family's slice fields (bd tea-rags-mcp-39xca.15), exactly
- * the facts `CodegraphRunState#absorb` merges from the same extraction: the
- * call-site argument types and `@ivar = <param>` links verbatim, the chunks'
- * positional parameter names by symbolId, and the `"fqClass|@ivar"` coordinates
- * the walker typed on its own. Every field is `undefined` for another language,
- * because absorb ignores them there and a hydrated fact the full run never had
- * would make the two runs disagree the other way.
+ * The parameter family's slice fields (bd tea-rags-mcp-39xca.15), exactly the
+ * facts `CodegraphRunState#absorb` merges from the same extraction — both read
+ * {@link paramFamilyFactsOf}, so membership and keys cannot drift between a
+ * full run and a hydrated one. Every field is `undefined` for a language
+ * outside the family: absorb ignores it there, and a hydrated fact the full run
+ * never had would make the two runs disagree the other way.
  */
-function rubyParamFamilyOf(
+function paramFamilySliceOf(
   extraction: Pass1AggregateSource,
 ): Pick<Pass1AggregateSlice, "knownTargetCallArgs" | "methodParamNames" | "classFieldParamLinks" | "typedClassFields"> {
-  if (extraction.language !== PARAM_FAMILY_LANGUAGE) {
-    return {
-      knownTargetCallArgs: undefined,
-      methodParamNames: undefined,
-      classFieldParamLinks: undefined,
-      typedClassFields: undefined,
-    };
-  }
-  const methodParamNames: Record<string, readonly string[]> = {};
-  for (const chunk of extraction.chunks) {
-    if (chunk.paramNames !== undefined) methodParamNames[chunk.symbolId] = chunk.paramNames;
-  }
-  const typedClassFields: string[] = [];
-  for (const [fqClass, fields] of Object.entries(extraction.classFieldTypes ?? {})) {
-    for (const ivar of Object.keys(fields)) typedClassFields.push(`${fqClass}|${ivar}`);
-  }
+  const family = paramFamilyFactsOf(extraction);
   return {
-    knownTargetCallArgs: extraction.knownTargetCallArgs,
-    methodParamNames,
-    classFieldParamLinks: extraction.classFieldParamLinks,
-    typedClassFields,
+    knownTargetCallArgs: family?.knownTargetCallArgs,
+    methodParamNames: family?.methodParamNames,
+    classFieldParamLinks: family?.classFieldParamLinks,
+    typedClassFields: family?.typedClassFields,
   };
 }
 
@@ -118,7 +100,7 @@ export function buildPass1Aggregates(
 ): Pass1AggregateSlice | undefined {
   // One view over every slice field, so the loop needs no per-field branch: the
   // self-dispatch list simply joins the extraction's own fields.
-  const source: Pass1AggregateSlice = { ...extraction, ...rubyParamFamilyOf(extraction), selfDispatchMethods };
+  const source: Pass1AggregateSlice = { ...extraction, ...paramFamilySliceOf(extraction), selfDispatchMethods };
   const slice: Pass1AggregateSlice = { relPath: extraction.relPath, language: extraction.language };
   // Registry order IS the persisted key order — see RUN_GLOBAL_MAP_PERSISTENCE.
   for (const field of PASS1_AGGREGATE_SLICE_FIELDS) {

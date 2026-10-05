@@ -141,8 +141,8 @@ describe("CodegraphRunState.seal hydrates the Ruby parameter family of files thi
   });
 
   it("persists none of the family for a language whose walker does not feed the fold", () => {
-    const python = { ...presenter, relPath: "app/presenter.py", language: "python" };
-    expect(buildPass1Aggregates({ ...python, ...{ knownTargetCallArgs: controller.knownTargetCallArgs } }, [])).toBe(
+    const go = { ...presenter, relPath: "app/presenter.go", language: "go" };
+    expect(buildPass1Aggregates({ ...go, ...{ knownTargetCallArgs: controller.knownTargetCallArgs } }, [])).toBe(
       undefined,
     );
   });

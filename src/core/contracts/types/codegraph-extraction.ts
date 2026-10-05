@@ -769,6 +769,12 @@ export interface ModuleReexport {
  * `classKey`. `classKey` is language-defined (Ruby's fully-qualified constant
  * path, a Python file-qualified class key, ...) but the emitting walker MUST
  * spell it identically across all four channels — the fold never re-spells it.
+ * The definition side of the join is `ChunkExtraction.paramCoordinate` (falling
+ * back to the chunk's `symbolId`), which names the def a chunk holds in the same
+ * spelling. Where a derived field lands depends on the language's class-field
+ * channel: the per-file `classFieldTypes` (Ruby) or the run-global
+ * `classFieldTypesByClassKey` (Python), whose own keys then double as the
+ * typed-field gate.
  */
 export interface KnownTargetCallArgs {
   /**
@@ -964,6 +970,20 @@ export interface ChunkExtraction {
    * NAME at the pass-1→pass-2 barrier.
    */
   paramNames?: string[];
+  /**
+   * The parameter-typing FOLD COORDINATE of the definition this chunk holds —
+   * `<classKey>#<method>` / `<classKey>.<method>`, spelled under the key
+   * contract on {@link KnownTargetCallArgs} (bd tea-rags-mcp-m99j1.1.17).
+   * The fold indexes `paramNames` under it, and pass-2 reads the folded
+   * parameter types back under it when seeding this chunk's `localBindings`.
+   *
+   * Absent ⇒ consumers use `symbolId`, which IS the coordinate when the
+   * language's class key is its symbolId class prefix (Ruby's fully-qualified
+   * constant path — Ruby leaves this unset). A walker whose class key differs
+   * from that prefix (Python's file-qualified `relPath::Cls` against a
+   * `Cls#m` symbolId) MUST spell it here: the trajectory never re-spells keys.
+   */
+  paramCoordinate?: string;
   /**
    * DECLARED access level of the definition this chunk represents (bd xlnub),
    * mapped per language onto one three-value union. Ruby's walker fills it from
