@@ -471,10 +471,14 @@ describe("seeded support versions", () => {
       // ruby 6: bd tea-rags-mcp-0qaht — class variables, `||=` memoization and
       // accessor macros declare naming-lexicon rows, so an index built by walker
       // 5 (shipped in v1.45.1) holds none of them.
+      // python 10: epic tea-rags-mcp-m99j1.1 (Python–Ruby resolver substrate)
+      // moves Python extraction and resolution, so an index built by walker 9
+      // (shipped in v1.45.1) holds none of its twin attributions, Self markers
+      // or call-result spines.
       const WALKER_BUMPED = new Map([
         ["typescript", 12],
         ["javascript", 4],
-        ["python", 9],
+        ["python", 10],
         ["ruby", 6],
         ["java", 3],
         ["rust", 3],

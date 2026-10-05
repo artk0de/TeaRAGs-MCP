@@ -94,7 +94,13 @@ export const capability: LanguageCapability = {
   // Same walker 9, bd tea-rags-mcp-39xca.14: `typing.Protocol` classes are
   // emitted as `structuralContracts`, and a Protocol-typed receiver's cone
   // reaches the classes that satisfy it without subclassing it.
-  versions: { chunking: 1, walker: 9, codegraphSchema: 2 },
+  // walker 10: release v1.45.1 shipped walker 9; epic tea-rags-mcp-m99j1.1
+  // (Python–Ruby resolver substrate) moves extraction and resolution in one
+  // bump — accessor / redefinition twins attributed to the shared chunk,
+  // `return self` published as the Self marker, constructor-rooted call-result
+  // spines, value-receiver constructors untyped, conditional-local unions,
+  // @contextmanager targets, the receiver's own target in the CHA cone.
+  versions: { chunking: 1, walker: 10, codegraphSchema: 2 },
   // PEP 8: classes CapWords, modules short lowercase (underscores allowed),
   // functions, methods, variables and attributes snake_case, module-level
   // constants SCREAMING_SNAKE.
