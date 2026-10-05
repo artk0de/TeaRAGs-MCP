@@ -49,9 +49,15 @@ export interface LocalBinding {
    *   - `"contextEnter"` — a `with <expr> as name` target: what the context
    *     value's `__enter__` returns, not the value itself;
    *   - `"tupleElement"` — an unpacking target (`a, b = <expr>`): the value
-   *     `<expr>` evaluates to, at {@link LocalBinding.tupleIndex} when set.
+   *     `<expr>` evaluates to, at {@link LocalBinding.tupleIndex} when set;
+   *   - `"assignedValue"` (bd tea-rags-mcp-m99j1.1.91) — a plain assignment
+   *     target (`name = <expr>`) whose value no per-file pass can type: the
+   *     whole value `<expr>` evaluates to. Python records it for an attribute
+   *     read or another name (`opts = self.model._meta`, `app = ctx.app`),
+   *     scoped by {@link LocalBinding.scopeEndLine} to the line the def
+   *     rebinds the name.
    *
-   * {@link isDerivedLocalBinding} names the three.
+   * {@link isDerivedLocalBinding} names the four.
    */
   valueKind?: "instance" | "class" | DerivedLocalBindingKind;
   /**
@@ -206,7 +212,7 @@ export function resolveLocalBinding(
 }
 
 /** The {@link LocalBinding.valueKind}s whose type only a resolver can fold out of `sourceExpression`. */
-export type DerivedLocalBindingKind = "iterationElement" | "contextEnter" | "tupleElement";
+export type DerivedLocalBindingKind = "iterationElement" | "contextEnter" | "tupleElement" | "assignedValue";
 
 /**
  * Whether `binding` is DERIVED — it names an expression for the resolver to
@@ -217,7 +223,7 @@ export function isDerivedLocalBinding(
   binding: LocalBinding | undefined,
 ): binding is LocalBinding & { valueKind: DerivedLocalBindingKind } {
   const kind = binding?.valueKind;
-  return kind === "iterationElement" || kind === "contextEnter" || kind === "tupleElement";
+  return kind === "iterationElement" || kind === "contextEnter" || kind === "tupleElement" || kind === "assignedValue";
 }
 
 /**

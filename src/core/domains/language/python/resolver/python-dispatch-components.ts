@@ -49,7 +49,13 @@ export function createPythonDispatchComponents(deps: PythonDispatchComponentDeps
   ];
   if (pythonDynamicDispatchEnabled(process.env.CODEGRAPH_PY_DYNAMIC_DISPATCH)) {
     components.push(
-      new PythonDynamicDispatchResolver(probe, (call, ctx) => external.targetsCoreAmbiguousMember(call, ctx), mapper),
+      new PythonDynamicDispatchResolver(
+        probe,
+        (call, ctx) => external.targetsCoreAmbiguousMember(call, ctx),
+        mapper,
+        undefined,
+        cfg.assignedLocalGate,
+      ),
     );
   }
   return components;

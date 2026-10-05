@@ -24,6 +24,14 @@ import {
 const PYTHON_CLASS_HEAD = /^_*[A-Z]/;
 
 /**
+ * Default of the assigned-local gate when `CODEGRAPH_PY_ASSIGNED_LOCAL_GATE` is
+ * unset (bd tea-rags-mcp-m99j1.1.57). `=0` restores the pre-gate fan — the
+ * measurement baseline bd tea-rags-mcp-m99j1.1.91 diffs against to enumerate
+ * the rows the gate drops.
+ */
+export const PYTHON_ASSIGNED_LOCAL_GATE_DEFAULT = true;
+
+/**
  * A receiver bound to a call the project cannot type, in either of the two
  * shapes that carry no usable evidence.
  *
@@ -115,6 +123,7 @@ export function pythonDynamicFanoutSuppressed(
   probe: ExactChainAnswerProbe,
   coreAmbiguous: (call: CallRef, ctx: CallContext) => boolean,
   mapper: PythonImportFileMapper = new PythonImportFileMapper(),
+  assignedLocalGate: boolean = PYTHON_ASSIGNED_LOCAL_GATE_DEFAULT,
 ): boolean {
   const { receiver } = call;
   if (receiver === null || receiver.length === 0) return true;
@@ -125,7 +134,7 @@ export function pythonDynamicFanoutSuppressed(
   if (PYTHON_BUILTINS.has(receiver)) return true;
   if (resolveLocalBinding(ctx.localBindings, receiver, call.startLine) !== undefined) return true;
   if (findPythonImportBinding(ctx.imports, receiver) !== null) return true;
-  if (receiverIsAssignedLocal(call, ctx)) return true;
+  if (assignedLocalGate && receiverIsAssignedLocal(call, ctx)) return true;
   if (pythonBoundToUntypeableCall(receiver, call.startLine, ctx, mapper)) return true;
   if (coreAmbiguous(call, ctx)) return true;
   if (PYTHON_BUILTINS.has(call.member)) return true;
