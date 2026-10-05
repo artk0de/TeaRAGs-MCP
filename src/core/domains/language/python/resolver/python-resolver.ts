@@ -50,7 +50,7 @@ import {
 import type { DispatchResolverComponent, SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { ExternalCallClassifier } from "../../external-classifier.js";
 import { resolveImportFileEdges } from "../../import-file-edges.js";
-import { ConeDispatchResolver, readResolverConfig } from "../../kernel/index.js";
+import { ConeDispatchResolver, readResolverConfig, UnionDispatchResolver } from "../../kernel/index.js";
 import { resolveDispatchViaComponents } from "../../resolver-chain.js";
 import {
   PythonChainAnswerProbe,
@@ -58,10 +58,12 @@ import {
   PythonDynamicDispatchResolver,
   PythonTableDispatchResolver,
 } from "./dispatch/index.js";
+import { createPythonUnionDispatchPorts } from "./dispatch/python-union-ports.js";
 import { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import { createPythonSymbolResolutionChain } from "./python-chain-factory.js";
 import { PythonExternalVocabulary } from "./python-external-vocabulary.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
+import { createPythonTypeMemberLookup } from "./python-type-member-lookup.js";
 import { lookupPythonSymbolsByShortName, PythonConeTypeLocator, type ResolverConfig } from "./strategies/index.js";
 
 export class PythonCallResolver implements CallResolver {
@@ -80,16 +82,20 @@ export class PythonCallResolver implements CallResolver {
    * (`resolveDispatchViaComponents`). The dict-table component leads (bd
    * tea-rags-mcp-pbwd): it answers only a call the walker tagged with a table
    * read, whose candidate set is the table's own entries, and returns nothing
-   * for every other call. The CHA cone is next because a receiver
-   * whose static type is known is not a guess; `dynamic` would be last because
-   * it answers only what nothing else — the cone, and the exact chain behind its
-   * own probe gate — can.
+   * for every other call. The union component is next (K2, bd
+   * tea-rags-mcp-m99j1.1.22): a receiver whose recorded return annotation names
+   * two reachable arms fans to the arms defining the member, and that evidence
+   * is stronger than the cone's subtype inference, exactly as in Ruby. It
+   * answers nothing for a non-union receiver. The CHA cone is next because a
+   * receiver whose static type is known is not a guess; `dynamic` would be last
+   * because it answers only what nothing else — the cone, and the exact chain
+   * behind its own probe gate — can.
    *
    * `dynamic` is composed ONLY under `CODEGRAPH_PY_DYNAMIC_DISPATCH` and is off
    * by default (D10): its `single` terminal is a name-only claim, and measured
    * over five corpora it is right about as often as it is wrong. With the flag
-   * absent this array is the table and the cone, the cone answering exactly as
-   * it did before E4.1.3 for every call the table does not claim.
+   * absent this array is the table, the union fan and the cone, the cone
+   * answering exactly as it did before E4.1.3 for every call neither claims.
    */
   private readonly dispatchComponents: readonly DispatchResolverComponent[];
   /**
@@ -127,15 +133,21 @@ export class PythonCallResolver implements CallResolver {
     );
     this.probe = new PythonChainAnswerProbe(this.chain);
     const table = new PythonTableDispatchResolver((call, ctx) => this.probe.resolve(call, ctx), this.importFileMapper);
+    const union = new UnionDispatchResolver(
+      createPythonUnionDispatchPorts(this.importFileMapper, this.ancestorLinearizers),
+      createPythonTypeMemberLookup(this.importFileMapper, mode, this.ancestorLinearizers),
+      coneMax,
+    );
     this.dispatchComponents = pythonDynamicDispatchEnabled(process.env.CODEGRAPH_PY_DYNAMIC_DISPATCH)
       ? [
           table,
+          union,
           this.cone,
           new PythonDynamicDispatchResolver(this.probe, (call, ctx) =>
             this.external.targetsCoreAmbiguousMember(call, ctx),
           ),
         ]
-      : [table, this.cone];
+      : [table, union, this.cone];
   }
 
   /**
