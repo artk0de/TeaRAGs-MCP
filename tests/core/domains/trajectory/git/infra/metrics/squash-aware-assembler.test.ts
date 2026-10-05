@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { FileChurnData } from "../../../../../../../src/core/adapters/vcs/types.js";
+import type { CommitInfo, FileChurnData } from "../../../../../../../src/core/adapters/vcs/types.js";
 import type { ChunkAccumulator } from "../../../../../../../src/core/domains/trajectory/git/infra/metrics.js";
 import { assembleChunkSignals } from "../../../../../../../src/core/domains/trajectory/git/infra/metrics/chunk-assembler.js";
 import { assembleFileSignals } from "../../../../../../../src/core/domains/trajectory/git/infra/metrics/file-assembler.js";
@@ -24,11 +24,39 @@ describe("assembleFileSignals with squash-aware sessions", () => {
     // 5 burst commits within 15 minutes = 1 session
     const churnData: FileChurnData = {
       commits: [
-        { sha: "a1", author: "alice", authorEmail: "a@x.com", timestamp: BASE_TS, body: "feat: step 1" },
-        { sha: "a2", author: "alice", authorEmail: "a@x.com", timestamp: BASE_TS + 3 * MIN, body: "feat: step 2" },
-        { sha: "a3", author: "alice", authorEmail: "a@x.com", timestamp: BASE_TS + 6 * MIN, body: "feat: step 3" },
-        { sha: "a4", author: "alice", authorEmail: "a@x.com", timestamp: BASE_TS + 9 * MIN, body: "feat: step 4" },
-        { sha: "a5", author: "alice", authorEmail: "a@x.com", timestamp: BASE_TS + 12 * MIN, body: "feat: step 5" },
+        { sha: "a1", parents: [], author: "alice", authorEmail: "a@x.com", timestamp: BASE_TS, body: "feat: step 1" },
+        {
+          sha: "a2",
+          parents: [],
+          author: "alice",
+          authorEmail: "a@x.com",
+          timestamp: BASE_TS + 3 * MIN,
+          body: "feat: step 2",
+        },
+        {
+          sha: "a3",
+          parents: [],
+          author: "alice",
+          authorEmail: "a@x.com",
+          timestamp: BASE_TS + 6 * MIN,
+          body: "feat: step 3",
+        },
+        {
+          sha: "a4",
+          parents: [],
+          author: "alice",
+          authorEmail: "a@x.com",
+          timestamp: BASE_TS + 9 * MIN,
+          body: "feat: step 4",
+        },
+        {
+          sha: "a5",
+          parents: [],
+          author: "alice",
+          authorEmail: "a@x.com",
+          timestamp: BASE_TS + 12 * MIN,
+          body: "feat: step 5",
+        },
       ],
       linesAdded: 200,
       linesDeleted: 50,
@@ -46,10 +74,25 @@ describe("assembleFileSignals with squash-aware sessions", () => {
     // Session 2: fix commit (2h later)
     const churnData: FileChurnData = {
       commits: [
-        { sha: "a1", author: "alice", authorEmail: "a@x.com", timestamp: BASE_TS, body: "feat: add feature" },
-        { sha: "a2", author: "alice", authorEmail: "a@x.com", timestamp: BASE_TS + 5 * MIN, body: "feat: more" },
+        {
+          sha: "a1",
+          parents: [],
+          author: "alice",
+          authorEmail: "a@x.com",
+          timestamp: BASE_TS,
+          body: "feat: add feature",
+        },
+        {
+          sha: "a2",
+          parents: [],
+          author: "alice",
+          authorEmail: "a@x.com",
+          timestamp: BASE_TS + 5 * MIN,
+          body: "feat: more",
+        },
         {
           sha: "a3",
+          parents: [],
           author: "alice",
           authorEmail: "a@x.com",
           timestamp: BASE_TS + 2 * HOUR,
@@ -67,10 +110,11 @@ describe("assembleFileSignals with squash-aware sessions", () => {
 
   it("uses session-based changeDensity when squash enabled", () => {
     // 10 commits in 2 hours, but only 2 sessions
-    const commits = [];
+    const commits: CommitInfo[] = [];
     for (let i = 0; i < 5; i++) {
       commits.push({
         sha: `a${i}`,
+        parents: [],
         author: "alice",
         authorEmail: "a@x.com",
         timestamp: BASE_TS + i * 5 * MIN,
@@ -80,6 +124,7 @@ describe("assembleFileSignals with squash-aware sessions", () => {
     for (let i = 0; i < 5; i++) {
       commits.push({
         sha: `b${i}`,
+        parents: [],
         author: "alice",
         authorEmail: "a@x.com",
         timestamp: BASE_TS + 2 * HOUR + i * 5 * MIN,
@@ -100,8 +145,15 @@ describe("assembleFileSignals with squash-aware sessions", () => {
   it("does not affect line-based metrics when squash enabled", () => {
     const churnData: FileChurnData = {
       commits: [
-        { sha: "a1", author: "alice", authorEmail: "a@x.com", timestamp: BASE_TS, body: "feat: step 1" },
-        { sha: "a2", author: "alice", authorEmail: "a@x.com", timestamp: BASE_TS + 5 * MIN, body: "feat: step 2" },
+        { sha: "a1", parents: [], author: "alice", authorEmail: "a@x.com", timestamp: BASE_TS, body: "feat: step 1" },
+        {
+          sha: "a2",
+          parents: [],
+          author: "alice",
+          authorEmail: "a@x.com",
+          timestamp: BASE_TS + 5 * MIN,
+          body: "feat: step 2",
+        },
       ],
       linesAdded: 200,
       linesDeleted: 50,
@@ -125,8 +177,15 @@ describe("assembleFileSignals with squash-aware sessions", () => {
   it("returns regular commitCount when squash disabled", () => {
     const churnData: FileChurnData = {
       commits: [
-        { sha: "a1", author: "alice", authorEmail: "a@x.com", timestamp: BASE_TS, body: "feat: a" },
-        { sha: "a2", author: "alice", authorEmail: "a@x.com", timestamp: BASE_TS + 5 * MIN, body: "feat: b" },
+        { sha: "a1", parents: [], author: "alice", authorEmail: "a@x.com", timestamp: BASE_TS, body: "feat: a" },
+        {
+          sha: "a2",
+          parents: [],
+          author: "alice",
+          authorEmail: "a@x.com",
+          timestamp: BASE_TS + 5 * MIN,
+          body: "feat: b",
+        },
       ],
       linesAdded: 10,
       linesDeleted: 5,

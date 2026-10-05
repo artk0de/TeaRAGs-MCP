@@ -35,110 +35,93 @@ function topLevelOfType(src: string, type: string): Parser.SyntaxNode {
 const filter = jsAssignmentFilterHook.filterNode;
 if (!filter) throw new Error("jsAssignmentFilterHook must define filterNode");
 
+/** Run the hook over the first top-level node of `type`, passing the source
+ * text and a stable file path as the contract's second and third arguments. */
+const filterTop = (src: string, type: string): boolean | undefined => filter(topLevelOfType(src, type), src, "spec.js");
+
 describe("jsAssignmentFilterHook.filterNode — expression_statement", () => {
   it("keeps `obj.method = function () {}`", () => {
-    const node = topLevelOfType("obj.method = function () {};\n", "expression_statement");
-    expect(filter(node)).toBe(true);
+    expect(filterTop("obj.method = function () {};\n", "expression_statement")).toBe(true);
   });
 
   it("keeps `Foo.prototype.bar = () => {}`", () => {
-    const node = topLevelOfType("Foo.prototype.bar = () => {};\n", "expression_statement");
-    expect(filter(node)).toBe(true);
+    expect(filterTop("Foo.prototype.bar = () => {};\n", "expression_statement")).toBe(true);
   });
 
   it("keeps `Object.defineProperty(obj, 'name', { get: fn })` (descriptor shape only)", () => {
-    const node = topLevelOfType(
-      "Object.defineProperty(obj, 'name', { get: function () {} });\n",
-      "expression_statement",
+    expect(filterTop("Object.defineProperty(obj, 'name', { get: function () {} });\n", "expression_statement")).toBe(
+      true,
     );
-    expect(filter(node)).toBe(true);
   });
 
   it("keeps `defineGetter(obj, 'name', fn)`", () => {
-    const node = topLevelOfType("defineGetter(obj, 'name', function () {});\n", "expression_statement");
-    expect(filter(node)).toBe(true);
+    expect(filterTop("defineGetter(obj, 'name', function () {});\n", "expression_statement")).toBe(true);
   });
 
   it("keeps `methods.forEach(method => app[method] = fn)` (permissive — resolver decides later)", () => {
-    const node = topLevelOfType(
-      "methods.forEach(function (method) { app[method] = function () {}; });\n",
-      "expression_statement",
-    );
-    expect(filter(node)).toBe(true);
+    expect(
+      filterTop("methods.forEach(function (method) { app[method] = function () {}; });\n", "expression_statement"),
+    ).toBe(true);
   });
 
   it("drops `x = 42` (non-function RHS)", () => {
-    const node = topLevelOfType("x = 42;\n", "expression_statement");
-    expect(filter(node)).toBe(false);
+    expect(filterTop("x = 42;\n", "expression_statement")).toBe(false);
   });
 
   it("drops bare call `foo();` (not a getter helper or forEach dispatch)", () => {
-    const node = topLevelOfType("foo();\n", "expression_statement");
-    expect(filter(node)).toBe(false);
+    expect(filterTop("foo();\n", "expression_statement")).toBe(false);
   });
 
   it("drops `import.meta.url` (no assignment, no recognised call)", () => {
-    const node = topLevelOfType("import.meta.url;\n", "expression_statement");
-    expect(filter(node)).toBe(false);
+    expect(filterTop("import.meta.url;\n", "expression_statement")).toBe(false);
   });
 
   it("drops `Object.defineProperty(obj, 'name', notAnObjectLiteral)` (descriptor must be an object literal)", () => {
-    const node = topLevelOfType("Object.defineProperty(obj, 'name', getDescriptor());\n", "expression_statement");
-    expect(filter(node)).toBe(false);
+    expect(filterTop("Object.defineProperty(obj, 'name', getDescriptor());\n", "expression_statement")).toBe(false);
   });
 
   it("drops `defineGetter(obj, 'name', notAFunction)`", () => {
-    const node = topLevelOfType("defineGetter(obj, 'name', 42);\n", "expression_statement");
-    expect(filter(node)).toBe(false);
+    expect(filterTop("defineGetter(obj, 'name', 42);\n", "expression_statement")).toBe(false);
   });
 
   it("drops `foo.bar(args)` (not a recognised helper)", () => {
     // Not defineProperty, not defineGetter, has 3 args but member.prop != defineProperty.
-    const node = topLevelOfType("util.other(a, b, c);\n", "expression_statement");
-    expect(filter(node)).toBe(false);
+    expect(filterTop("util.other(a, b, c);\n", "expression_statement")).toBe(false);
   });
 
   it("drops `forEach(fn)` (forEach called without member-expression receiver)", () => {
-    const node = topLevelOfType("forEach(function (x) { obj[x] = function () {}; });\n", "expression_statement");
-    expect(filter(node)).toBe(false);
+    expect(filterTop("forEach(function (x) { obj[x] = function () {}; });\n", "expression_statement")).toBe(false);
   });
 });
 
 describe("jsAssignmentFilterHook.filterNode — declarations", () => {
   it("keeps `const Foo = function () {}`", () => {
-    const node = topLevelOfType("const Foo = function () {};\n", "lexical_declaration");
-    expect(filter(node)).toBe(true);
+    expect(filterTop("const Foo = function () {};\n", "lexical_declaration")).toBe(true);
   });
 
   it("keeps `const Foo = () => {}` (arrow form)", () => {
-    const node = topLevelOfType("const Foo = () => {};\n", "lexical_declaration");
-    expect(filter(node)).toBe(true);
+    expect(filterTop("const Foo = () => {};\n", "lexical_declaration")).toBe(true);
   });
 
   it("keeps multi-declarator where ANY value is function-valued", () => {
-    const node = topLevelOfType("const x = 1, Foo = function () {};\n", "lexical_declaration");
-    expect(filter(node)).toBe(true);
+    expect(filterTop("const x = 1, Foo = function () {};\n", "lexical_declaration")).toBe(true);
   });
 
   it("drops `const x = 1` (no function-valued declarator)", () => {
-    const node = topLevelOfType("const x = 1;\n", "lexical_declaration");
-    expect(filter(node)).toBe(false);
+    expect(filterTop("const x = 1;\n", "lexical_declaration")).toBe(false);
   });
 
   it("drops `var x;` (declarator without value)", () => {
-    const node = topLevelOfType("var x;\n", "variable_declaration");
-    expect(filter(node)).toBe(false);
+    expect(filterTop("var x;\n", "variable_declaration")).toBe(false);
   });
 });
 
 describe("jsAssignmentFilterHook.filterNode — unrelated node types", () => {
   it("returns undefined for an unrelated node type (e.g. function_declaration)", () => {
-    const node = topLevelOfType("function foo () {}\n", "function_declaration");
-    expect(filter(node)).toBeUndefined();
+    expect(filterTop("function foo () {}\n", "function_declaration")).toBeUndefined();
   });
 
   it("returns undefined for a class declaration", () => {
-    const node = topLevelOfType("class Foo {}\n", "class_declaration");
-    expect(filter(node)).toBeUndefined();
+    expect(filterTop("class Foo {}\n", "class_declaration")).toBeUndefined();
   });
 });

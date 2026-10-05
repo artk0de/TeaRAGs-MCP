@@ -9,16 +9,18 @@ function docHash(input: string): string {
   return `doc:${createHash("sha256").update(input).digest("hex").slice(0, 12)}`;
 }
 
-function makeChunk(overrides: Partial<CodeChunk> & { metadata: Partial<CodeChunk["metadata"]> }): CodeChunk {
+function makeChunk(
+  overrides: Omit<Partial<CodeChunk>, "metadata"> & { metadata: Partial<CodeChunk["metadata"]> },
+): CodeChunk {
   return {
     content: overrides.content ?? "test content",
     startLine: overrides.startLine ?? 1,
     endLine: overrides.endLine ?? 10,
     metadata: {
-      filePath: "/project/docs/api.md",
-      language: "markdown",
-      chunkIndex: 0,
       ...overrides.metadata,
+      filePath: overrides.metadata.filePath ?? "/project/docs/api.md",
+      language: overrides.metadata.language ?? "markdown",
+      chunkIndex: overrides.metadata.chunkIndex ?? 0,
     },
   };
 }

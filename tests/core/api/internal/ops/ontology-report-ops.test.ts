@@ -17,6 +17,8 @@ import {
   type OntologyLanguageProfile,
 } from "../../../../../src/core/api/internal/ops/ontology-report-ops.js";
 import type {
+  IdentifierTypeSource,
+  OntologyEvidenceCounts,
   OntologyReportQuery,
   OntologyReportRows,
   OntologyReportSectionRows,
@@ -64,6 +66,14 @@ const TS: OntologyLanguageProfile = {
 
 const at = (relPath: string, line = 1, ownerSymbolId = "Svc#run") => ({ relPath, line, ownerSymbolId });
 
+/**
+ * Evidence-counts mint. `constructor` is a legal `IdentifierTypeSource`, so an
+ * object literal typed as `OntologyEvidenceCounts` collides with the prototype
+ * `constructor` member; build the record from pairs instead.
+ */
+const ev = (...pairs: [IdentifierTypeSource | "untyped", number][]): OntologyEvidenceCounts =>
+  Object.fromEntries(pairs) as OntologyEvidenceCounts;
+
 function rows(partial: Partial<OntologyReportRows> = {}): OntologyReportRows {
   return {
     totals: { identifierRows: 100, symbolRows: 10 },
@@ -96,7 +106,9 @@ function genericCandidate(name: string, types: [string, number, string][]) {
   };
 }
 
-function group(partial: Partial<OntologyTypeGroupRow> & Pick<OntologyTypeGroupRow, "typeName" | "names">) {
+function group(
+  partial: Partial<OntologyTypeGroupRow> & Pick<OntologyTypeGroupRow, "typeName" | "names">,
+): OntologyTypeGroupRow {
   const n = partial.names.reduce((s, x) => s + x.n, 0);
   return {
     kind: "local" as const,
@@ -104,7 +116,7 @@ function group(partial: Partial<OntologyTypeGroupRow> & Pick<OntologyTypeGroupRo
     distinctNames: partial.names.length,
     dominantShare: partial.names[0].n / n,
     entropy: 0.5,
-    evidence: { binding: n },
+    evidence: ev(["binding", n]),
     ...partial,
   };
 }
@@ -260,7 +272,7 @@ describe("OntologyReportOps#report — sections", () => {
               { typeName: "Invoice", n: 6, example: at("app/a.rb") },
               { typeName: "Payment", n: 3, example: at("app/b.rb") },
             ],
-            evidence: { binding: 8, "call-return": 1 },
+            evidence: ev(["binding", 8], ["call-return", 1]),
           },
         ],
       }),
@@ -276,7 +288,7 @@ describe("OntologyReportOps#report — sections", () => {
           { type: "Invoice", n: 6, shape: "FREE", example: { relPath: "app/a.rb", line: 1, symbolId: "Svc#run" } },
           { type: "Payment", n: 3, shape: "FREE", example: { relPath: "app/b.rb", line: 1, symbolId: "Svc#run" } },
         ],
-        evidence: { binding: 8, "call-return": 1 },
+        evidence: ev(["binding", 8], ["call-return", 1]),
       },
     ]);
   });
@@ -333,7 +345,7 @@ describe("OntologyReportOps#report — sections", () => {
             typeName: "Payment",
             n: 2,
             example: at("app/p.rb", 6),
-            evidence: { binding: 2 },
+            evidence: ev(["binding", 2]),
           },
           {
             rule: "shadowsMethod",
@@ -341,7 +353,7 @@ describe("OntologyReportOps#report — sections", () => {
             symbol: "Report#title",
             n: 1,
             example: at("app/r.rb", 3, "Report#render"),
-            evidence: { untyped: 1 },
+            evidence: ev(["untyped", 1]),
           },
         ],
       }),
@@ -355,7 +367,7 @@ describe("OntologyReportOps#report — sections", () => {
         type: "Payment",
         n: 2,
         example: { relPath: "app/p.rb", line: 6, symbolId: "Svc#run" },
-        evidence: { binding: 2 },
+        evidence: ev(["binding", 2]),
       },
       {
         rule: "shadowsMethod",
@@ -363,7 +375,7 @@ describe("OntologyReportOps#report — sections", () => {
         symbol: "Report#title",
         n: 1,
         example: { relPath: "app/r.rb", line: 3, symbolId: "Report#render" },
-        evidence: { untyped: 1 },
+        evidence: ev(["untyped", 1]),
       },
     ]);
   });
@@ -445,6 +457,9 @@ describe("OntologyReportOps#report — degraded states", () => {
   it("a graph that cannot be opened degrades to the empty report with a notice saying why", async () => {
     const pool = {
       acquireReader: vi.fn(async () => {
+        throw new Error("lock held");
+      }),
+      acquireFileReader: vi.fn(async (_dbPath: string) => {
         throw new Error("lock held");
       }),
     };
@@ -534,7 +549,7 @@ function homonym(name: string, types: [typeName: string, n: number, relPath: str
     n,
     topTypeShare: Math.max(...types.map(([, count]) => count)) / n,
     types: types.map(([typeName, count, relPath]) => ({ typeName, n: count, example: at(relPath) })),
-    evidence: { binding: n },
+    evidence: ev(["binding", n]),
   };
 }
 

@@ -4,6 +4,8 @@ import type { RerankPreset } from "../../../../src/core/contracts/types/reranker
 import type {
   CollectionSignalStats,
   PayloadSignalDescriptor,
+  ScopedSignalStats,
+  SignalStats,
 } from "../../../../src/core/contracts/types/trajectory.js";
 import { resolvePresets } from "../../../../src/core/domains/explore/rerank/presets/index.js";
 import {
@@ -51,6 +53,16 @@ function withStamps(git?: Record<string, unknown>): Record<string, unknown> | un
   return out;
 }
 
+/**
+ * Fixture-side view of the git payload with the nested file/chunk levels these
+ * fixtures write. The contract types `payload.git` as a flat
+ * `Record<string, unknown>` (the payload is schemaless at that boundary), which
+ * erases the levels for assertion receivers; annotating fixtures with
+ * `FixtureResult` restores them without touching what the tests assert.
+ */
+type GitFixture = Record<string, unknown> & { file?: GitFixture; chunk?: GitFixture };
+type FixtureResult = RerankableResult & { payload?: { git?: GitFixture } };
+
 describe("reranker", () => {
   const reranker = new Reranker(allDescriptors, testPresets, testPayloadSignals);
 
@@ -63,7 +75,7 @@ describe("reranker", () => {
     extraGit: Partial<
       RerankableResult["payload"] extends infer P ? (P extends { git?: infer G } ? G : never) : never
     > = {},
-  ): RerankableResult => ({
+  ): FixtureResult => ({
     score,
     payload: {
       relativePath: `src/file-${score}.ts`,
@@ -182,7 +194,7 @@ describe("reranker", () => {
 
     it("should wire pathRisk into securityAudit preset", async () => {
       // Non-auth path first -- securityAudit must reorder auth path to top
-      const results: RerankableResult[] = [
+      const results: FixtureResult[] = [
         {
           score: 0.8,
           payload: {
@@ -296,7 +308,7 @@ describe("reranker", () => {
       git: Partial<
         RerankableResult["payload"] extends infer P ? (P extends { git?: infer G } ? G : never) : never
       > = {},
-    ): RerankableResult => ({
+    ): FixtureResult => ({
       score,
       payload: {
         relativePath: `src/file-${score}.ts`,
@@ -433,7 +445,7 @@ describe("reranker", () => {
     });
 
     it("should zero statistical signals when commitCount=0", async () => {
-      const results: RerankableResult[] = [
+      const results: FixtureResult[] = [
         {
           score: 0.7,
           payload: { relativePath: "a.ts", startLine: 1, endLine: 50, git: { commitCount: 0, bugFixRate: 100 } },
@@ -486,7 +498,7 @@ describe("reranker", () => {
 
   describe("adaptive normalization bounds", () => {
     it("should distinguish high-churn from moderate-churn in monorepo results", async () => {
-      const highChurn: RerankableResult = {
+      const highChurn: FixtureResult = {
         score: 0.5,
         payload: {
           relativePath: "src/high-churn.ts",
@@ -495,7 +507,7 @@ describe("reranker", () => {
           git: { file: { commitCount: 300, ageDays: 100 } },
         },
       };
-      const moderateChurn: RerankableResult = {
+      const moderateChurn: FixtureResult = {
         score: 0.5,
         payload: {
           relativePath: "src/moderate-churn.ts",
@@ -509,7 +521,7 @@ describe("reranker", () => {
     });
 
     it("should not reduce bounds below DEFAULT_BOUNDS", async () => {
-      const a: RerankableResult = {
+      const a: FixtureResult = {
         score: 0.5,
         payload: {
           relativePath: "src/a.ts",
@@ -518,7 +530,7 @@ describe("reranker", () => {
           git: { file: { commitCount: 3, ageDays: 10 } },
         },
       };
-      const b: RerankableResult = {
+      const b: FixtureResult = {
         score: 0.5,
         payload: {
           relativePath: "src/b.ts",
@@ -534,7 +546,7 @@ describe("reranker", () => {
     });
 
     it("should produce different scores for values that clamp identically under static bounds", async () => {
-      const results: RerankableResult[] = [
+      const results: FixtureResult[] = [
         {
           score: 0.5,
           payload: {
@@ -569,7 +581,7 @@ describe("reranker", () => {
     });
 
     it("should adapt ageDays bounds for very old codebases", async () => {
-      const results: RerankableResult[] = [
+      const results: FixtureResult[] = [
         {
           score: 0.5,
           payload: {
@@ -601,7 +613,7 @@ describe("reranker", () => {
       // Result A: file bugFix=80, chunk bugFix=10  -> effective ~= 80 (alpha low, file dominates)
       // Result B: file bugFix=20, chunk bugFix=90  -> effective ~= 20 (alpha low, file dominates)
       // With bugFix weight, A should rank first because file bugFix=80 > 20
-      const results: RerankableResult[] = [
+      const results: FixtureResult[] = [
         {
           score: 0.8,
           payload: {
@@ -637,7 +649,7 @@ describe("reranker", () => {
       // Result A: file bugFix=20, chunk bugFix=90 -> effective = 0.8*90 + 0.2*20 = 76
       // Result B: file bugFix=80, chunk bugFix=10 -> effective = 0.8*10 + 0.2*80 = 24
       // A should rank first
-      const results: RerankableResult[] = [
+      const results: FixtureResult[] = [
         {
           score: 0.8,
           payload: {
@@ -670,7 +682,7 @@ describe("reranker", () => {
 
     it("should degenerate to file-only when chunk data absent (backward compat)", async () => {
       // No chunk data -> alpha=0 -> effective = file value
-      const results: RerankableResult[] = [
+      const results: FixtureResult[] = [
         {
           score: 0.8,
           payload: {
@@ -701,7 +713,7 @@ describe("reranker", () => {
 
     it("should set alpha=0 when chunk.commitCount=0", async () => {
       // chunk.commitCount=0 -> alpha=0 -> file values used entirely
-      const results: RerankableResult[] = [
+      const results: FixtureResult[] = [
         {
           score: 0.8,
           payload: {
@@ -738,7 +750,7 @@ describe("reranker", () => {
       score: number,
       chunkType: string,
       git: Record<string, unknown> = {},
-    ): RerankableResult => ({
+    ): FixtureResult => ({
       score,
       payload: {
         relativePath: `src/file-${score}.ts`,
@@ -763,7 +775,7 @@ describe("reranker", () => {
     it("should give continuous discount for blocks with partial chunk data (alpha=0.5 -> discount=0.5)", async () => {
       // file.commitCount=10, chunk.commitCount=5 -> coverage=0.5, maturity=1.0 -> alpha=0.5
       // discount = 1.0 - 0.5 = 0.5 (partial penalty)
-      const results: RerankableResult[] = [
+      const results: FixtureResult[] = [
         {
           score: 0.8,
           payload: {
@@ -826,7 +838,7 @@ describe("reranker", () => {
     it("should give zero discount for blocks with rich chunk data (alpha=1.0)", async () => {
       // chunk.commitCount=10, file.commitCount=10 -> coverage=1.0, maturity=1.0 -> alpha=1.0
       // discount = 1.0 - 1.0 = 0.0
-      const results: RerankableResult[] = [
+      const results: FixtureResult[] = [
         {
           score: 0.8,
           payload: {
@@ -866,7 +878,7 @@ describe("reranker", () => {
 
   describe("chunk-level temporal signal blending", () => {
     it("should blend chunk and file burstActivity via alpha", async () => {
-      const results: RerankableResult[] = [
+      const results: FixtureResult[] = [
         {
           score: 0.8,
           payload: {
@@ -898,7 +910,7 @@ describe("reranker", () => {
     });
 
     it("should blend chunk and file changeDensity via alpha", async () => {
-      const results: RerankableResult[] = [
+      const results: FixtureResult[] = [
         {
           score: 0.8,
           payload: {
@@ -930,7 +942,7 @@ describe("reranker", () => {
     });
 
     it("should fall back to file-level when chunk has no temporal signals", async () => {
-      const results: RerankableResult[] = [
+      const results: FixtureResult[] = [
         {
           score: 0.8,
           payload: {
@@ -963,7 +975,7 @@ describe("reranker", () => {
 
   describe("redesigned techDebt preset", () => {
     it("should include knowledgeSilo signal", async () => {
-      const silo: RerankableResult = {
+      const silo: FixtureResult = {
         score: 0.5,
         payload: {
           relativePath: "silo.ts",
@@ -983,7 +995,7 @@ describe("reranker", () => {
           },
         },
       };
-      const shared: RerankableResult = {
+      const shared: FixtureResult = {
         score: 0.5,
         payload: {
           relativePath: "shared.ts",
@@ -1009,7 +1021,7 @@ describe("reranker", () => {
     });
 
     it("should include density signal", async () => {
-      const highDensity: RerankableResult = {
+      const highDensity: FixtureResult = {
         score: 0.5,
         payload: {
           relativePath: "dense.ts",
@@ -1027,7 +1039,7 @@ describe("reranker", () => {
           },
         },
       };
-      const lowDensity: RerankableResult = {
+      const lowDensity: FixtureResult = {
         score: 0.5,
         payload: {
           relativePath: "sparse.ts",
@@ -1064,7 +1076,7 @@ describe("reranker", () => {
     });
 
     it("should handle results with missing payload", async () => {
-      const noPayload: RerankableResult[] = [{ score: 0.9 }, { score: 0.8 }];
+      const noPayload: FixtureResult[] = [{ score: 0.9 }, { score: 0.8 }];
       const result = await reranker.rerank(noPayload, "techDebt", "semantic_search");
       expect(result).toHaveLength(2);
     });
@@ -1088,7 +1100,7 @@ describe("Reranker (v2 class)", () => {
     score: number,
     git?: Record<string, unknown>,
     extra?: Partial<RerankableResult["payload"]>,
-  ): RerankableResult => ({
+  ): FixtureResult => ({
     score,
     payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, ...extra, git: withStamps(git) },
   });
@@ -1318,7 +1330,7 @@ describe("Reranker with resolvedPresets", () => {
     description: "Custom preset",
     tools: ["semantic_search"],
     weights: { similarity: 0.5, recency: 0.5 },
-    overlayMask: { raw: { file: ["ageDays"] } },
+    overlayMask: { file: ["ageDays"] },
   };
 
   const searchCodePreset: RerankPreset = {
@@ -1326,7 +1338,7 @@ describe("Reranker with resolvedPresets", () => {
     description: "Fast find preset",
     tools: ["search_code"],
     weights: { similarity: 0.8, recency: 0.2 },
-    overlayMask: { raw: { file: ["ageDays"] } },
+    overlayMask: { file: ["ageDays"] },
   };
 
   it("uses resolved presets when provided via getPreset()", () => {
@@ -1352,7 +1364,7 @@ describe("Reranker with resolvedPresets", () => {
       description: "Bug-prone danger preset",
       tools: ["semantic_search", "trace_path"],
       weights: { similarity: 0.3, bugFix: 0.7 },
-      overlayMask: { raw: { file: ["bugFixRate"] } },
+      overlayMask: { file: ["bugFixRate"] },
     };
     const reranker = new Reranker(allDescriptors, [tracePathPreset, customPreset, searchCodePreset]);
     // Tagged preset surfaces under trace_path; untagged presets (myPreset, fastFind) do not.
@@ -1380,10 +1392,10 @@ describe("Reranker with resolvedPresets", () => {
       description: "Heavy recency",
       tools: ["semantic_search"],
       weights: { similarity: 0.1, recency: 0.9 },
-      overlayMask: { raw: { file: ["ageDays"] } },
+      overlayMask: { file: ["ageDays"] },
     };
     const reranker = new Reranker(allDescriptors, [heavyRecency]);
-    const results: RerankableResult[] = [
+    const results: FixtureResult[] = [
       {
         score: 0.9,
         payload: {
@@ -1434,7 +1446,7 @@ describe("Reranker with PayloadSignalDescriptor (generic payload reading)", () =
     score: number,
     git?: Record<string, unknown>,
     extra?: Partial<RerankableResult["payload"]>,
-  ): RerankableResult => ({
+  ): FixtureResult => ({
     score,
     payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, ...extra, git: withStamps(git) },
   });
@@ -1528,7 +1540,7 @@ describe("Reranker with PayloadSignalDescriptor (generic payload reading)", () =
       [...testPresets, customPreset],
       customPayloadSignals,
     );
-    const results: RerankableResult[] = [
+    const results: FixtureResult[] = [
       {
         score: 0.9,
         payload: { relativePath: "a.ts", startLine: 1, endLine: 10, metrics: { file: { responseTime: 100 } } },
@@ -1548,9 +1560,14 @@ describe("Reranker with PayloadSignalDescriptor (generic payload reading)", () =
 
 describe("Reranker — per-signal dampening (legacy dampeningSource + unified confidence)", () => {
   const payloadSignals: PayloadSignalDescriptor[] = [
-    { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentiles: [25, 95] } },
-    { key: "git.file.bugFixRate", type: "number", description: "Bug fix rate", stats: { percentiles: [95] } },
-    { key: "git.file.churnVolatility", type: "number", description: "Volatility", stats: { percentiles: [95] } },
+    { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentilesToCompute: [25, 95] } },
+    { key: "git.file.bugFixRate", type: "number", description: "Bug fix rate", stats: { percentilesToCompute: [95] } },
+    {
+      key: "git.file.churnVolatility",
+      type: "number",
+      description: "Volatility",
+      stats: { percentilesToCompute: [95] },
+    },
   ];
 
   // VolatilitySignal migrated in tea-rags-mcp-1wqz. Now exercises the unified
@@ -1575,7 +1592,7 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
     overlayMask: {},
   };
 
-  const makeResult = (score: number, git: Record<string, unknown>): RerankableResult => ({
+  const makeResult = (score: number, git: Record<string, unknown>): FixtureResult => ({
     score,
     payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, git: withStamps(git) },
   });
@@ -1583,13 +1600,18 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
   it("unified path: VolatilitySignal resolves adaptive threshold via confidence.support (commitCount p25)", async () => {
     // Raw descriptor declares confidence — reranker reads `git.file.commitCount` p25.
     const customPayloadSignals: PayloadSignalDescriptor[] = [
-      { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentiles: [25, 95] } },
+      {
+        key: "git.file.commitCount",
+        type: "number",
+        description: "Commits",
+        stats: { percentilesToCompute: [25, 95] },
+      },
       {
         key: "git.file.churnVolatility",
         type: "number",
         description: "Volatility",
         stats: {
-          percentiles: [95],
+          percentilesToCompute: [95],
           confidence: {
             support: "commitCount",
             score: { threshold: 8, adaptivePercentile: 25 },
@@ -1601,7 +1623,9 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
 
     // Collection: commitCount p25=20
     const collectionStats: CollectionSignalStats = {
-      perSignal: new Map([["git.file.commitCount", { count: 500, percentiles: { 25: 20, 95: 100 } }]]),
+      perSignal: new Map([
+        ["git.file.commitCount", { count: 500, min: 0, max: 100, percentiles: { 25: 20, 95: 100 } }],
+      ]),
       perLanguage: new Map(),
       distributions: {
         totalFiles: 0,
@@ -1625,13 +1649,18 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
 
   it("unified path: VolatilitySignal falls back to confidence.score.threshold when no collectionStats", async () => {
     const customPayloadSignals: PayloadSignalDescriptor[] = [
-      { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentiles: [25, 95] } },
+      {
+        key: "git.file.commitCount",
+        type: "number",
+        description: "Commits",
+        stats: { percentilesToCompute: [25, 95] },
+      },
       {
         key: "git.file.churnVolatility",
         type: "number",
         description: "Volatility",
         stats: {
-          percentiles: [95],
+          percentilesToCompute: [95],
           confidence: {
             support: "commitCount",
             score: { threshold: 8, adaptivePercentile: 25 },
@@ -1652,29 +1681,34 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
   it("signals without dampeningSource AND without confidence get no adaptive threshold", () => {
     // similarity has neither — always uses its own logic (no dampening)
     const simDescriptor = allDescriptors.filter((d) => d.name === "similarity");
-    expect(simDescriptor[0].dampeningSource).toBeUndefined();
+    expect((simDescriptor[0] as { dampeningSource?: unknown }).dampeningSource).toBeUndefined();
   });
 
   it("BugFixSignal: dampeningSource removed (migrated to descriptor.stats.confidence)", () => {
     const bf = allDescriptors.find((d) => d.name === "bugFix")!;
-    expect(bf.dampeningSource).toBeUndefined();
+    expect((bf as { dampeningSource?: unknown }).dampeningSource).toBeUndefined();
   });
 
   it("VolatilitySignal: dampeningSource removed (migrated to descriptor.stats.confidence)", () => {
     const vs = allDescriptors.find((d) => d.name === "volatility")!;
-    expect(vs.dampeningSource).toBeUndefined();
+    expect((vs as { dampeningSource?: unknown }).dampeningSource).toBeUndefined();
   });
 
   it("unified path: BugFixSignal reads threshold from raw descriptor's stats.confidence.score", async () => {
     // Declare bugFixRate descriptor with confidence.score.threshold=20 (custom).
     const customPayloadSignals: PayloadSignalDescriptor[] = [
-      { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentiles: [25, 95] } },
+      {
+        key: "git.file.commitCount",
+        type: "number",
+        description: "Commits",
+        stats: { percentilesToCompute: [25, 95] },
+      },
       {
         key: "git.file.bugFixRate",
         type: "number",
         description: "Bug fix rate",
         stats: {
-          percentiles: [95],
+          percentilesToCompute: [95],
           confidence: {
             support: "commitCount",
             score: { threshold: 20 },
@@ -1710,7 +1744,12 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
     // After fix: siblingValues come from the RAW payload at scope, not from
     // the mask-filtered overlay, so the clamp fires regardless of preset mask.
     const customPayloadSignals: PayloadSignalDescriptor[] = [
-      { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentiles: [25, 95] } },
+      {
+        key: "git.file.commitCount",
+        type: "number",
+        description: "Commits",
+        stats: { percentilesToCompute: [25, 95] },
+      },
       {
         key: "git.file.bugFixRate",
         type: "number",
@@ -1745,7 +1784,12 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
       perLanguage: new Map([
         [
           "ruby",
-          new Map([["git.file.bugFixRate", { source: { count: 100, percentiles: { 50: 17, 75: 25, 95: 31 } } }]]),
+          new Map([
+            [
+              "git.file.bugFixRate",
+              { source: { count: 100, min: 0, max: 31, percentiles: { 50: 17, 75: 25, 95: 31 } } },
+            ],
+          ]),
         ],
       ]),
       distributions: {
@@ -1762,7 +1806,7 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
     reranker.setCollectionStats(collectionStats);
 
     // bugFixRate=38 commitCount=3, language=ruby
-    const result: RerankableResult = {
+    const result: FixtureResult = {
       score: 0.9,
       payload: {
         relativePath: "app/services/foo.rb",
@@ -1803,20 +1847,20 @@ describe("Reranker — score dampening k is max(adaptive percentile, declared fl
     threshold: number;
     adaptivePercentile?: number;
   }): PayloadSignalDescriptor[] => [
-    { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentiles: [25, 95] } },
+    { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentilesToCompute: [25, 95] } },
     {
       key: "git.file.churnVolatility",
       type: "number",
       description: "Volatility",
       stats: {
-        percentiles: [95],
+        percentilesToCompute: [95],
         confidence: { support: "commitCount", ...(score ? { score } : {}) },
       },
     },
   ];
 
   const statsWithCommitCountP25 = (p25: number): CollectionSignalStats => ({
-    perSignal: new Map([["git.file.commitCount", { count: 500, percentiles: { 25: p25, 95: 100 } }]]),
+    perSignal: new Map([["git.file.commitCount", { count: 500, min: 0, max: 100, percentiles: { 25: p25, 95: 100 } }]]),
     perLanguage: new Map(),
     distributions: {
       totalFiles: 0,
@@ -1833,7 +1877,7 @@ describe("Reranker — score dampening k is max(adaptive percentile, declared fl
   // churnVolatility=100 is the batch p95, so the normalized value is exactly 1
   // and the preset's single weight makes the final score equal the dampening
   // factor (4 / k)^2 — k is read straight off the assertion.
-  const results = (): RerankableResult[] => [
+  const results = (): FixtureResult[] => [
     {
       score: 0.9,
       payload: {
@@ -1887,8 +1931,8 @@ describe("Reranker — score dampening k is max(adaptive percentile, declared fl
 
 describe("Reranker — collection-level p95 fallback for adaptive bounds", () => {
   const payloadSignals: PayloadSignalDescriptor[] = [
-    { key: "git.file.ageDays", type: "number", description: "Age", stats: { percentiles: [95] } },
-    { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentiles: [25, 95] } },
+    { key: "git.file.ageDays", type: "number", description: "Age", stats: { percentilesToCompute: [95] } },
+    { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentilesToCompute: [25, 95] } },
     // The age floor reads the timestamp's p5 — the descriptor must be declared
     // for the signalKeyMap to resolve it (bd tea-rags-mcp-9ot33).
     { key: "git.file.lastModifiedAt", type: "timestamp", description: "Stamp" },
@@ -1902,9 +1946,10 @@ describe("Reranker — collection-level p95 fallback for adaptive bounds", () =>
     description: "test",
     tools: ["semantic_search"],
     weights: { age: 1.0 },
+    overlayMask: {},
   };
 
-  const makeResult = (score: number, git: Record<string, unknown>): RerankableResult => ({
+  const makeResult = (score: number, git: Record<string, unknown>): FixtureResult => ({
     score,
     payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, git: withStamps(git) },
   });
@@ -1915,7 +1960,10 @@ describe("Reranker — collection-level p95 fallback for adaptive bounds", () =>
     // Collection p5 stamp = 2000 days old (much larger than defaultBound=365)
     const collectionStats: CollectionSignalStats = {
       perSignal: new Map([
-        ["git.file.lastModifiedAt", { count: 1000, percentiles: { 5: NOW_SEC - 2000 * DAY_SECONDS } }],
+        [
+          "git.file.lastModifiedAt",
+          { count: 1000, min: 0, max: NOW_SEC, percentiles: { 5: NOW_SEC - 2000 * DAY_SECONDS } },
+        ],
       ]),
       perLanguage: new Map(),
       distributions: {
@@ -1946,7 +1994,12 @@ describe("Reranker — collection-level p95 fallback for adaptive bounds", () =>
 
     // Collection p5 stamp = 15 days old (young codebase, much less than defaultBound=365)
     const collectionStats: CollectionSignalStats = {
-      perSignal: new Map([["git.file.lastModifiedAt", { count: 100, percentiles: { 5: NOW_SEC - 15 * DAY_SECONDS } }]]),
+      perSignal: new Map([
+        [
+          "git.file.lastModifiedAt",
+          { count: 100, min: 0, max: NOW_SEC, percentiles: { 5: NOW_SEC - 15 * DAY_SECONDS } },
+        ],
+      ]),
       perLanguage: new Map(),
       distributions: {
         totalFiles: 0,
@@ -1990,7 +2043,12 @@ describe("Reranker — collection-level p95 fallback for adaptive bounds", () =>
 
     // Collection p5 stamp = 50 days old (small codebase)
     const collectionStats: CollectionSignalStats = {
-      perSignal: new Map([["git.file.lastModifiedAt", { count: 100, percentiles: { 5: NOW_SEC - 50 * DAY_SECONDS } }]]),
+      perSignal: new Map([
+        [
+          "git.file.lastModifiedAt",
+          { count: 100, min: 0, max: NOW_SEC, percentiles: { 5: NOW_SEC - 50 * DAY_SECONDS } },
+        ],
+      ]),
       perLanguage: new Map(),
       distributions: {
         totalFiles: 0,
@@ -2021,7 +2079,7 @@ describe("signalLevel: file-level preset suppresses chunk overlay", () => {
   const reranker = new Reranker(allDescriptors, testPresets, testPayloadSignals);
 
   it("ownership (file-level preset) should not include chunk in overlay", async () => {
-    const results: RerankableResult[] = [
+    const results: FixtureResult[] = [
       {
         score: 0.8,
         payload: {
@@ -2043,7 +2101,7 @@ describe("signalLevel: file-level preset suppresses chunk overlay", () => {
   });
 
   it("hotspots (chunk-level preset) should include chunk in overlay", async () => {
-    const results: RerankableResult[] = [
+    const results: FixtureResult[] = [
       {
         score: 0.8,
         payload: {
@@ -2064,7 +2122,7 @@ describe("signalLevel: file-level preset suppresses chunk overlay", () => {
   });
 
   it("overrideSignalLevel=file should suppress chunk overlay even for chunk-level preset", async () => {
-    const results: RerankableResult[] = [
+    const results: FixtureResult[] = [
       {
         score: 0.8,
         payload: {
@@ -2093,14 +2151,17 @@ describe("Reranker — label resolution in buildOverlay()", () => {
   // Use gitPayloadSignalDescriptors which have stats.labels on commitCount etc.
   const rerankerWithLabels = new Reranker(allDescriptors, testPresets, testPayloadSignals);
 
-  const makeResult = (git: Record<string, unknown>): RerankableResult => ({
+  const makeResult = (git: Record<string, unknown>): FixtureResult => ({
     score: 0.8,
     payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, language: "typescript", git: withStamps(git) },
   });
 
   it("produces { value, label } for a numeric signal with stats.labels when collectionStats loaded", async () => {
     // git.file.commitCount has stats.labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" }
-    const tsSignals = new Map([
+    // Typed type argument: the two entries declare different percentile key sets,
+    // and the inferred Map<string, A | B> union normalization invents `5?: undefined`
+    // phantom keys that do not fit Record<number, number>.
+    const tsSignals = new Map<string, ScopedSignalStats>([
       [
         "git.file.commitCount",
         { source: { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } } },
@@ -2143,7 +2204,10 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     // Use the techDebt preset + collectionStats that only has commitCount entry.
     // ageDays labels resolve NOW-RELATIVELY off the lastModifiedAt stamp stats
     // (bd tea-rags-mcp-9ot33), so the fixture carries those instead of ageDays.
-    const tsSignals = new Map([
+    // Typed type argument: the two entries declare different percentile key sets,
+    // and the inferred Map<string, A | B> union normalization invents `5?: undefined`
+    // phantom keys that do not fit Record<number, number>.
+    const tsSignals = new Map<string, ScopedSignalStats>([
       [
         "git.file.commitCount",
         { source: { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } } },
@@ -2165,7 +2229,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
       ],
     ]);
     const collectionStats: CollectionSignalStats = {
-      perSignal: new Map([
+      perSignal: new Map<string, SignalStats>([
         ["git.file.commitCount", { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } }],
         [
           "git.file.lastModifiedAt",
@@ -2262,7 +2326,9 @@ describe("Reranker — label resolution in buildOverlay()", () => {
 
   it("uses per-language percentiles when available", async () => {
     const collectionStats: CollectionSignalStats = {
-      perSignal: new Map([["git.file.commitCount", { count: 100, percentiles: { 25: 3, 50: 8, 75: 12, 95: 50 } }]]),
+      perSignal: new Map([
+        ["git.file.commitCount", { count: 100, min: 0, max: 50, percentiles: { 25: 3, 50: 8, 75: 12, 95: 50 } }],
+      ]),
       perLanguage: new Map([
         [
           "ruby",
@@ -2288,7 +2354,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     rerankerWithLabels.setCollectionStats(collectionStats);
 
     // commitCount=7: ruby p75=6 → 7>=6 → "high"; global p75=12 → 7<12 → "typical"
-    const results: RerankableResult[] = [
+    const results: FixtureResult[] = [
       {
         score: 0.8,
         payload: {
@@ -2311,7 +2377,9 @@ describe("Reranker — label resolution in buildOverlay()", () => {
 
   it("returns raw number when language not in perLanguage (no global fallback)", async () => {
     const collectionStats: CollectionSignalStats = {
-      perSignal: new Map([["git.file.commitCount", { count: 100, percentiles: { 25: 5, 50: 8, 75: 12, 95: 50 } }]]),
+      perSignal: new Map([
+        ["git.file.commitCount", { count: 100, min: 0, max: 50, percentiles: { 25: 5, 50: 8, 75: 12, 95: 50 } }],
+      ]),
       perLanguage: new Map(),
       distributions: {
         totalFiles: 100,
@@ -2327,7 +2395,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     rerankerWithLabels.setCollectionStats(collectionStats);
 
     // Language "go" not in perLanguage → raw number, no label (no global fallback)
-    const results: RerankableResult[] = [
+    const results: FixtureResult[] = [
       {
         score: 0.8,
         payload: {
@@ -2634,7 +2702,7 @@ describe("resolveMode (private phase)", () => {
 describe("scoreResults (private phase)", () => {
   const reranker = new Reranker(allDescriptors, testPresets, testPayloadSignals);
 
-  const createResult = (score: number, ageDays: number, commitCount: number): RerankableResult => ({
+  const createResult = (score: number, ageDays: number, commitCount: number): FixtureResult => ({
     score,
     payload: {
       relativePath: `src/f${score}.ts`,
@@ -2649,7 +2717,7 @@ describe("scoreResults (private phase)", () => {
     const results = [createResult(0.8, 30, 5), createResult(0.7, 60, 10)];
     const bounds = (
       reranker as unknown as {
-        computeAdaptiveBounds: (r: RerankableResult[]) => Map<string, number>;
+        computeAdaptiveBounds: (r: FixtureResult[]) => Map<string, number>;
       }
     ).computeAdaptiveBounds(results);
     const resolved = (
@@ -2665,7 +2733,7 @@ describe("scoreResults (private phase)", () => {
     const scored = (
       reranker as unknown as {
         scoreResults: (
-          r: RerankableResult[],
+          r: FixtureResult[],
           b: Map<string, number>,
           res: unknown,
           q: string | undefined,
@@ -2683,7 +2751,7 @@ describe("scoreResults (private phase)", () => {
     const results = [createResult(0.8, 30, 5)];
     const bounds = (
       reranker as unknown as {
-        computeAdaptiveBounds: (r: RerankableResult[]) => Map<string, number>;
+        computeAdaptiveBounds: (r: FixtureResult[]) => Map<string, number>;
       }
     ).computeAdaptiveBounds(results);
     const resolved = (
@@ -2694,7 +2762,7 @@ describe("scoreResults (private phase)", () => {
     const scored = (
       reranker as unknown as {
         scoreResults: (
-          r: RerankableResult[],
+          r: FixtureResult[],
           b: Map<string, number>,
           res: unknown,
           q: string | undefined,
@@ -2796,7 +2864,7 @@ describe("rerank annotate-only mode (reorder: false)", () => {
   // Two equal-score results ordered low-danger-first so the default sort WOULD
   // reorder them (B has high bugFixRate). commitCount=20 keeps bugFix above the
   // confidence-dampening threshold so the ordering is deterministic.
-  const makeDangerResults = (): RerankableResult[] => [
+  const makeDangerResults = (): FixtureResult[] => [
     {
       score: 0.1,
       payload: { relativePath: "a.ts", startLine: 1, endLine: 50, git: { file: { commitCount: 20, bugFixRate: 0 } } },
@@ -2829,7 +2897,7 @@ describe("reranker — batch min-max similarity normalization (cross-scale weigh
   // preset {similarity: 0.5, pathRisk: 0.5}. With pathRisk 0 for both,
   // score = 0.5 * normalizedSimilarity. So the top raw score must yield 0.5 and
   // the bottom 0.0 once similarity is min-max normalized over the batch.
-  const result = (score: number): RerankableResult => ({
+  const result = (score: number): FixtureResult => ({
     score,
     payload: { relativePath: `src/plain-${score}.ts`, startLine: 1, endLine: 20, language: "typescript" },
   });
@@ -2915,7 +2983,7 @@ describe("Reranker — support-gated labels (minSupportPercentile)", () => {
     computedAt: Date.now(),
   });
 
-  const sourcePoint = (commitCount: number): RerankableResult => ({
+  const sourcePoint = (commitCount: number): FixtureResult => ({
     score: 0.8,
     payload: {
       relativePath: "src/a.ts",
@@ -2950,7 +3018,7 @@ describe("Reranker — support-gated labels (minSupportPercentile)", () => {
   it("emits a bare number when the point carries no support value at all", async () => {
     gatedReranker.setCollectionStats(statsWithFloor(SUPPORT_FLOOR));
 
-    const noSupport: RerankableResult = {
+    const noSupport: FixtureResult = {
       score: 0.8,
       payload: {
         relativePath: "src/a.ts",
