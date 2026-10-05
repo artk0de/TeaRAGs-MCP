@@ -48,7 +48,11 @@
  */
 
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import { resolveLocalBinding, type CallContext } from "../../../../contracts/types/codegraph.js";
+import {
+  resolveLocalBinding,
+  type CallContext,
+  type CallResultBinding,
+} from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import {
   CHAIN_MAX_HOPS_DEFAULT,
@@ -57,6 +61,7 @@ import {
   type ReceiverTypePorts,
 } from "../../kernel/index.js";
 import { catalogueFor } from "../dsl/index.js";
+import { isProjectDeclaredConstant } from "./ruby-bound-call-return-types.js";
 import { returnTypeOf } from "./ruby-member-return-types.js";
 import { declaredReturnType } from "./ruby-return-facts.js";
 import { nullaryReceiverType } from "./ruby-unbound-receiver-types.js";
@@ -166,7 +171,7 @@ function rubySingleHopType(receiver: string, atLine: number, ctx: CallContext): 
   // Ruby has no implicit declaration, so `current_client.foo` can only be a
   // ZERO-ARG method call on self or an ancestor. Its return fact types the
   // receiver exactly as a local binding would.
-  if (!binding) return nullaryReceiverType(receiver, ctx);
+  if (!binding) return callResultLocalType(receiver, atLine, ctx) ?? nullaryReceiverType(receiver, ctx);
 
   // Prefer the richer typeRef (union / container) when present (INFRA-A);
   // fall back to reconstructing from type + valueKind for plain bindings.
@@ -176,6 +181,54 @@ function rubySingleHopType(receiver: string, atLine: number, ctx: CallContext): 
       name: binding.type,
     }
   );
+}
+
+/**
+ * Default of the call-result fold when `CODEGRAPH_RB_CALL_RESULT_BINDINGS` is
+ * unset (bd tea-rags-mcp-m99j1.1.62). `0` / `false` turn it off.
+ */
+export const RUBY_CALL_RESULT_BINDINGS_DEFAULT = true;
+
+function callResultBindingsEnabled(): boolean {
+  const raw = process.env.CODEGRAPH_RB_CALL_RESULT_BINDINGS;
+  if (raw === undefined) return RUBY_CALL_RESULT_BINDINGS_DEFAULT;
+  return raw !== "0" && raw !== "false";
+}
+
+/**
+ * The type of a local assigned from a call the walker could not type (bd
+ * tea-rags-mcp-m99j1.1.62): the right-hand side's callee spelling
+ * (`callResultBindings`, `filter = @account.custom_filters.create!(…)`) is
+ * folded through this same receiver chain, as if it had been written at the
+ * call site. The fold runs AT the assignment's line, so a root naming the
+ * local itself (`scope = scope.filtered_for(x)`) reads the binding ABOVE it;
+ * a binding is visible only after its statement (`endLine < atLine`), so each
+ * nested fold asks about a strictly earlier line and the recursion ends.
+ *
+ * Asked only when the walker bound no type itself — a `localBindings` entry is
+ * a type it READ, a fold is an inference — and ahead of the nullary self-call
+ * reading, because a name the method assigns is a local, not a self-call.
+ * When the fold types nothing the nullary reading still answers, exactly as
+ * before this channel existed.
+ *
+ * Only a NOMINAL answer naming a class the run declares is kept. A container,
+ * union or external type would make `chainType` CONTINUE or DROP a call an
+ * older reading resolves, and a fact can name a class nobody declares
+ * (`belongs_to :status` singularized to `Statu`) — measured on mastodon, that
+ * phantom dropped three exact `status.*` edges the naming convention owned.
+ */
+function callResultLocalType(receiver: string, atLine: number, ctx: CallContext): RubyTypeRef | undefined {
+  const bindings = identifierEntry(ctx.callResultBindings, receiver);
+  if (bindings === undefined || !callResultBindingsEnabled()) return undefined;
+  let nearest: CallResultBinding | undefined;
+  for (const binding of bindings) {
+    const visibleFrom = binding.endLine ?? binding.line;
+    if (visibleFrom < atLine && (nearest === undefined || binding.line > nearest.line)) nearest = binding;
+  }
+  if (nearest === undefined) return undefined;
+  const folded = typeOfReceiver(nearest.callee, nearest.line, ctx);
+  if (folded === undefined || (folded.form !== "class" && folded.form !== "instance")) return undefined;
+  return isProjectDeclaredConstant(folded.name, ctx) ? folded : undefined;
 }
 
 /**

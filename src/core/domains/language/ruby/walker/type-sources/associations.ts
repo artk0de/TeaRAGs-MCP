@@ -75,9 +75,10 @@ function literalClassName(value: AstNode | null): string | null {
 /**
  * The associated model constant for an association macro, or `null` (silence):
  * `polymorphic: true` and a non-literal `class_name:` both yield `null`; a literal
- * `class_name:` wins; otherwise the first symbol is singularized + camelized.
+ * `class_name:` wins; otherwise the first symbol is camelized — singularized
+ * first only for a collection shape (`has_many` / `habtm`), as Rails does.
  */
-function deriveAssociationModel(args: AstNode): string | null {
+function deriveAssociationModel(args: AstNode, shape: string): string | null {
   let classNameModel: string | null | undefined; // undefined ⇒ no class_name: pair seen
   for (const arg of args.namedChildren) {
     if (arg.type !== "pair") continue;
@@ -89,7 +90,9 @@ function deriveAssociationModel(args: AstNode): string | null {
   if (classNameModel !== undefined) return classNameModel; // present: literal wins, non-literal silences
   const sym = firstSymbolName(args);
   if (sym === null) return null;
-  const model = camelizeModel(singularizeAssociation(sym));
+  // Rails: a collection's class is `name.singularize.camelize`, a singular
+  // association's `name.camelize` — `belongs_to :status` is `Status`, not `Statu`.
+  const model = camelizeModel(shape === "association-collection" ? singularizeAssociation(sym) : sym);
   return model.length > 0 ? model : null;
 }
 
@@ -105,7 +108,7 @@ function returnTypeForShape(args: AstNode, shape: string, scope: readonly string
     if (self.length === 0) return undefined;
     return { form: "container", element: { form: "instance", name: self } };
   }
-  const model = deriveAssociationModel(args);
+  const model = deriveAssociationModel(args, shape);
   if (model === null) return undefined;
   const modelRef: RubyTypeRef = { form: "instance", name: model };
   return shape === "association-collection" ? { form: "container", element: modelRef } : modelRef;

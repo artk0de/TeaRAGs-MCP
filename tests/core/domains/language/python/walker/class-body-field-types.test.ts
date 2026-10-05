@@ -91,6 +91,40 @@ describe("class-body manager attributes become field facts", () => {
     expect(out.classFieldTypes).toEqual({ X: { name: "CharField" } });
   });
 
+  it("types a class-valued attribute, `select_widget = Select`, as what CALLING it builds", () => {
+    // bd tea-rags-mcp-m99j1.1.58: django's `SelectDateWidget` binds the CLASS and
+    // calls it — `self.select_widget(attrs, choices=…).get_context(…)`. The same
+    // evidence gate as a bare construction: declared here or import-bound.
+    const out = native([
+      "from django.contrib.admin.checks import BaseModelAdminChecks",
+      "",
+      "class Select:",
+      "    pass",
+      "",
+      "class SelectDateWidget:",
+      "    select_widget = Select",
+      "",
+      "class BaseModelAdmin:",
+      "    checks_class = BaseModelAdminChecks",
+    ]);
+    expect(out.classFieldTypes).toEqual({
+      SelectDateWidget: { select_widget: "Select" },
+      BaseModelAdmin: { checks_class: "BaseModelAdminChecks" },
+    });
+  });
+
+  it("says NOTHING for a bare name that is not a CapWords class or has no evidence behind it", () => {
+    const out = native([
+      "from app.handlers import handle",
+      "",
+      "class X:",
+      "    handler = handle",
+      "    widget = MysteryWidget",
+      "    flag = True",
+    ]);
+    expect(out.classFieldTypes).toBeUndefined();
+  });
+
   it("says NOTHING for `from_queryset(…)()`, a literal, or a non-identifier LHS", () => {
     expect(native(["class X(Model):", "    objects = Manager.from_queryset(RQS)()"]).classFieldTypes).toBeUndefined();
     expect(native(["class X(Model):", "    objects = []"]).classFieldTypes).toBeUndefined();
