@@ -113,6 +113,91 @@ function instanceTypeOf(node: AstNode, catalogue: RubyDslCatalogue, readConst: C
   return relationRootConst(receiver, catalogue, readConst);
 }
 
+/**
+ * The instance type of a RECEIVERLESS `new` / `new(...)` evaluated in a
+ * singleton method of a class — `def self.track … new(elapsed, result) end`, or
+ * a `def` inside `class << self` — which is `self.new`, an instance of the
+ * enclosing class (bd tea-rags-mcp-0qaht.54). `null` for every other node.
+ *
+ * `self` is the class only on that exact lexical path, so the walk from the node
+ * to its class refuses everything that re-points or hides it: any block on the
+ * way (`Class.new { … }`, `included do`, `class_methods do`, `instance_eval`),
+ * a nested def, `def obj.x` / `class << obj` on anything but `self`, a module
+ * (which has no `new`), and a `new` written directly in a `class << self` body.
+ * A bare `new` that the def binds as a local (a parameter, an assignment) is a
+ * read of that local, not a constructor call.
+ *
+ * The fq is composed like `forEachClassScope` composes it, so it matches the
+ * owner key the scoped channel writes for the same class.
+ */
+export function singletonNewInstanceType(node: AstNode): string | null {
+  if (!isReceiverlessNew(node)) return null;
+  let def: AstNode | null = null;
+  let singleton = false;
+  for (let p = node.parent; p !== null; p = p.parent) {
+    switch (p.type) {
+      case "block":
+      case "do_block":
+      case "lambda":
+      case "module":
+        return null;
+      case "method":
+        if (def !== null) return null;
+        def = p;
+        break;
+      case "singleton_method":
+        if (def !== null || p.childForFieldName("object")?.type !== "self") return null;
+        def = p;
+        singleton = true;
+        break;
+      case "singleton_class":
+        if (def === null || p.childForFieldName("value")?.type !== "self") return null;
+        singleton = true;
+        break;
+      case "class":
+        if (def === null || !singleton) return null;
+        if (node.type === "identifier" && bindsLocalNamedNew(def)) return null;
+        return lexicalClassFq(p);
+    }
+  }
+  return null;
+}
+
+function isReceiverlessNew(node: AstNode): boolean {
+  if (node.type === "identifier") return node.text === "new";
+  if (node.type !== "call") return false;
+  return node.childForFieldName("receiver") === null && node.childForFieldName("method")?.text === "new";
+}
+
+/** Whether the def binds a local named `new` — a parameter or an assignment. */
+function bindsLocalNamedNew(def: AstNode): boolean {
+  let bound = false;
+  const params = def.childForFieldName("parameters");
+  if (params !== null) walk(params, (n) => (bound ||= n.type === "identifier" && n.text === "new"));
+  const body = def.childForFieldName("body");
+  if (body !== null) {
+    walk(body, (n) => {
+      if (n.type === "assignment" || n.type === "operator_assignment") {
+        bound ||= n.childForFieldName("left")?.text === "new";
+      }
+    });
+  }
+  return bound;
+}
+
+/** A named class's lexical fq — its name under every enclosing named class / module. */
+function lexicalClassFq(classNode: AstNode): string | null {
+  const names: string[] = [];
+  for (let p: AstNode | null = classNode; p !== null; p = p.parent) {
+    if (p.type !== "class" && p.type !== "module") continue;
+    const nameNode = p.childForFieldName("name");
+    if (nameNode === null) continue;
+    names.unshift(nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text);
+  }
+  const fq = names.join("::");
+  return YARD_CONST.test(fq) ? fq : null;
+}
+
 /** `lhs ||= rhs` is the only operator assignment that BINDS a type: the
  *  memoization convention takes the RHS type for the happy-path receiver
  *  (nil branch ignored). `+=`/`-=`/`&&=` mutate or preserve — never bind. */
@@ -363,8 +448,9 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
         return;
       }
 
-      // Single assignment: class-constant instance call.
-      const instType = constInstanceType(rhs, catalogue);
+      // Single assignment: class-constant instance call, or a receiverless
+      // `new(...)` in a singleton method (bd tea-rags-mcp-0qaht.54).
+      const instType = constInstanceType(rhs, catalogue) ?? singletonNewInstanceType(rhs);
       if (instType) {
         emitFact(varName, { form: "instance", name: instType }, line);
         return;
