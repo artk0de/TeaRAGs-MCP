@@ -34,6 +34,7 @@ import {
   findPythonImportBinding,
   lastSegment,
   parsePythonClassKey,
+  pythonAliasedClassKey,
   pythonBoundClassKey,
   pythonClassKey,
   pythonClassKeyIsDeclared,
@@ -108,17 +109,30 @@ export { lookupPythonSymbols, lookupPythonSymbolsByShortName, PYTHON_SYMBOL_KIND
  * head — the walker renders the root's arguments elided, and the `()` is
  * stripped before the probe.
  *
+ * A head an import RENAMED is read through its binding (bd
+ * tea-rags-mcp-m99j1.1.81): `from app.models import Engine as E2` makes `E2`
+ * the project's `Engine`, which no short-name probe of `E2` can see. The
+ * binding answers only when its module maps into the project — an alias of a
+ * library name stays foreign even when the project declares a namesake of the
+ * source name, and an unbound head is probed exactly as before.
+ *
  * Two readers, one definition: `namingConvention` guesses a class from the
  * receiver's SPELLING, the untyped-name dispatch component fans over the
  * member's owners — and both are wrong on exactly this shape.
  */
-export function pythonBoundToForeignCall(receiver: string, atLine: number, ctx: CallContext): boolean {
+export function pythonBoundToForeignCall(
+  receiver: string,
+  atLine: number,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): boolean {
   const binding = nearestCallResultBinding(ctx.callResultBindings, receiver, atLine);
   if (binding === undefined) return false;
   const spelled = binding.callee.split(".")[0] ?? "";
   const head = spelled.endsWith("()") ? spelled.slice(0, -2) : spelled;
   if (head === "self" || head === "cls" || head.length === 0) return false;
-  return lookupPythonSymbolsByShortName(ctx, head).length === 0;
+  if (lookupPythonSymbolsByShortName(ctx, head).length > 0) return false;
+  return pythonAliasedClassKey(head, ctx, mapper) === null;
 }
 
 /** The class a call site is written inside, addressed the way the run keys classes. */

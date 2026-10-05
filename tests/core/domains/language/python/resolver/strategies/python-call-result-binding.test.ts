@@ -23,6 +23,7 @@ import type { TypeRef } from "../../../../../../../src/core/contracts/types/lang
 import { PythonAncestorLinearizerCache } from "../../../../../../../src/core/domains/language/python/resolver/python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
 import { PythonLocalBindingSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-local-binding.js";
+import { pythonBoundToForeignCall } from "../../../../../../../src/core/domains/language/python/resolver/strategies/shared.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 function tableWith(files: Record<string, readonly string[]>): InMemoryGlobalSymbolTable {
@@ -380,5 +381,70 @@ describe("PythonLocalBindingSymbolResolutionStrategy — a local bound to a cons
       callResultBindings: { template: [{ line: 10, callee: "Engine().from_string" }] },
     });
     expect(localBinding().attempt(callOn("template", "render", 12), ctx)).toEqual({ kind: "continue" });
+  });
+});
+
+// bd tea-rags-mcp-m99j1.1.81 — an import ALIAS of a project class is the class.
+// `from tmpl.engine import Engine as E2` then `E2().from_string(code)`: the
+// spelled head `E2` names no project symbol, but the binding says it is
+// `Engine`, and the call must read exactly as its unaliased spelling does.
+describe("a call-bound local whose head is an import alias (m99j1.1.81)", () => {
+  const TABLE = tableWith({
+    "tmpl/base.py": ["Template", "Template#render"],
+    "tmpl/engine.py": ["Engine", "Engine#from_string"],
+    "views/i18n.py": ["run"],
+  });
+  const ALIASED_ENGINE: ImportRef = {
+    importText: "tmpl.engine",
+    startLine: 1,
+    importedNames: ["E2"],
+    importedBindings: { E2: "Engine" },
+  };
+
+  it("types a constructor-rooted spine whose root is an aliased project class", () => {
+    const ctx = ctxWith({
+      callerFile: "views/i18n.py",
+      table: TABLE,
+      imports: [ALIASED_ENGINE],
+      structuredReturnTypes: { "Engine#from_string": { form: "instance", name: "Template" } },
+      callResultBindings: { template: [{ line: 10, callee: "E2().from_string" }] },
+    });
+    expect(localBinding().attempt(callOn("template", "render", 12), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "tmpl/base.py", targetSymbolId: "Template#render" },
+    });
+  });
+
+  it("does not call a local bound through an aliased project class FOREIGN", () => {
+    const ctx = ctxWith({
+      callerFile: "views/i18n.py",
+      table: TABLE,
+      imports: [ALIASED_ENGINE],
+      callResultBindings: { engine: [{ line: 10, callee: "E2" }], tmpl: [{ line: 11, callee: "E2().from_string" }] },
+    });
+    const mapper = new PythonImportFileMapper();
+    expect(pythonBoundToForeignCall("engine", 12, ctx, mapper)).toBe(false);
+    expect(pythonBoundToForeignCall("tmpl", 12, ctx, mapper)).toBe(false);
+  });
+
+  it("keeps a local bound through an aliased LIBRARY name foreign, even with a project namesake", () => {
+    const ctx = ctxWith({
+      callerFile: "views/i18n.py",
+      table: tableWith({ "app/env.py": ["Environment"], "views/i18n.py": ["run"] }),
+      imports: [
+        { importText: "jinja2", startLine: 2, importedNames: ["Env"], importedBindings: { Env: "Environment" } },
+      ],
+      callResultBindings: { env: [{ line: 10, callee: "Env" }] },
+    });
+    expect(pythonBoundToForeignCall("env", 12, ctx, new PythonImportFileMapper())).toBe(true);
+  });
+
+  it("keeps an unbound head foreign, exactly as before", () => {
+    const ctx = ctxWith({
+      callerFile: "views/i18n.py",
+      table: TABLE,
+      callResultBindings: { user: [{ line: 10, callee: "authenticate" }] },
+    });
+    expect(pythonBoundToForeignCall("user", 12, ctx, new PythonImportFileMapper())).toBe(true);
   });
 });

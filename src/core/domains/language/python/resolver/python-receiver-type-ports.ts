@@ -38,6 +38,7 @@ import {
   findPythonImportBinding,
   lastSegment,
   parsePythonClassKey,
+  pythonAliasedClassKey,
   pythonBareCallReturnType,
   pythonEnclosingClass,
   pythonImportMatchesReceiver,
@@ -130,6 +131,20 @@ function pythonHeadModuleReexportedClassKey(
   if (declaring === null || declaring === moduleFile) return null;
   const declared = ctx.symbolTable.lookup(member).filter((def) => def.relPath === declaring).length === 1;
   return declared ? pythonClassKey(declaring, member) : null;
+}
+
+/**
+ * The TypeRef name a CapWords class head denotes, or `null`: the spelling
+ * itself when it places into the project, else — only on that miss — the
+ * placed key of the project class an import ALIASED under it (bd
+ * tea-rags-mcp-m99j1.1.81). `from app.engine import Engine as E2` makes `E2()`
+ * an `Engine`, and the bare `E2` places nowhere. The key and not the source
+ * name, because the caller binds no `Engine` for a later hop to re-place. A
+ * library alias and an unbound head answer `null`, exactly as before.
+ */
+function pythonClassHeadName(head: string, ctx: CallContext, mapper: PythonImportFileMapper): string | null {
+  if (resolveTypeFile(head, ctx, mapper) !== null) return head;
+  return pythonAliasedClassKey(head, ctx, mapper);
 }
 
 /**
@@ -228,7 +243,8 @@ function pythonSingleHopType(
     // load-bearing: a capitalized head keeps today's path exactly.
     const bare = stripPythonSubscript(stripCallArgs(receiver));
     if (PYTHON_CLASS_HEAD.test(bare)) {
-      return resolveTypeFile(bare, ctx, mapper) === null ? undefined : { form: "instance", name: bare };
+      const name = pythonClassHeadName(bare, ctx, mapper);
+      return name === null ? undefined : { form: "instance", name };
     }
     if (pythonCastIsTyping(bare, ctx)) return pythonCastArgumentType(receiver, ctx, mapper);
     return pythonCallHeadReturnType(receiver, ctx, mapper);
@@ -252,10 +268,9 @@ function pythonSingleHopType(
   // produces. Gated on the class resolving to a PROJECT file: `os.Path` in a
   // project that never imports `os` is not evidence, it is a coincidence of
   // capitalisation.
-  if (!classHead) return undefined;
-  return PYTHON_CLASS_HEAD.test(receiver) && resolveTypeFile(receiver, ctx, mapper) !== null
-    ? { form: "class", name: receiver }
-    : undefined;
+  if (!classHead || !PYTHON_CLASS_HEAD.test(receiver)) return undefined;
+  const name = pythonClassHeadName(receiver, ctx, mapper);
+  return name === null ? undefined : { form: "class", name };
 }
 
 /**
@@ -449,8 +464,8 @@ function pythonClassChainHeadSeed(
 ): { type: TypeRef; consumedMembers: 0 } | undefined {
   if (!PYTHON_CLASS_HEAD.test(head)) return undefined;
   if (identifierEntry(ctx.localBindings, head) !== undefined) return undefined;
-  if (resolveTypeFile(head, ctx, mapper) === null) return undefined;
-  return { type: { form: "class", name: head }, consumedMembers: 0 };
+  const name = pythonClassHeadName(head, ctx, mapper);
+  return name === null ? undefined : { type: { form: "class", name }, consumedMembers: 0 };
 }
 
 /**
