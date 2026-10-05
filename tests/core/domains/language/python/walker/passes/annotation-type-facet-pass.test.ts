@@ -65,7 +65,8 @@ describe("pythonAnnotationTypeFacetPass — merged into the composed walker", ()
   it("keys the return annotation by the callee's symbolId and files nothing for `-> None`", () => {
     const returns = extract().structuredReturnTypes ?? {};
     expect(returns["Service#run"]).toEqual({ form: "instance", name: "Session" });
-    expect(Object.keys(returns)).toEqual(["Service#run"]);
+    // The declaring-file twin is the run-global provenance (bd tea-rags-mcp-m99j1.1.35).
+    expect(Object.keys(returns)).toEqual(["Service#run", "pkg/service.py::Service#run"]);
   });
 
   it("publishes neither of the two channels Python drops or re-keys", () => {

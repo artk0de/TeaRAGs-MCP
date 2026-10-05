@@ -22,7 +22,7 @@ import {
 } from "../../kernel/index.js";
 import { isPythonFrameworkAnswerClass, pythonVocabularyFor } from "../vocabulary/frameworks/index.js";
 import { PYTHON_SELF_RETURN } from "../walker/passes/python-type-annotation.js";
-import { pythonModuleReturnKey } from "../walker/passes/python-type-channels.js";
+import { pythonMemberReturnKey, pythonModuleReturnKey } from "../walker/passes/python-type-channels.js";
 import { placePythonClassSpelling } from "./python-ancestor-policy.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
@@ -225,6 +225,12 @@ function pythonMemberReturnTypePorts(
   access: PythonMemberAccess,
 ): MemberReturnTypePorts {
   let classKey: string | null | undefined;
+  // The owner's class key, computed at most once. The owner is the only class
+  // read without a key, so every caller passes the same name.
+  const ownerClassKey = (bareType: string): string | null => {
+    if (classKey === undefined) classKey = pythonReceiverClassKey(bareType, ctx, mapper);
+    return classKey;
+  };
   // Addressing the class costs symbol-table work, so it is deferred until
   // something can read the answer: a run carrying neither the run-global field
   // channel nor a linearizer is the pre-seam path, unchanged.
@@ -232,8 +238,7 @@ function pythonMemberReturnTypePorts(
     // A placed key costs nothing to address, so the perf gate does not apply.
     if (isPythonPlacedClassKey(bareType)) return bareType;
     if (linearizer === undefined && ctx.classFieldTypesByClassKey === undefined) return null;
-    if (classKey === undefined) classKey = pythonReceiverClassKey(bareType, ctx, mapper);
-    return classKey;
+    return ownerClassKey(bareType);
   };
   /** `definingFile` is the file the class lives in when the read knows it (an MRO key). */
   const onClass = (
@@ -251,11 +256,11 @@ function pythonMemberReturnTypePorts(
     // is its CALL's. A descriptor def never gets here — the walker recorded it
     // as the field read above.
     if (access === "attribute" && ctx.symbolTable.lookup(memberFq).length > 0) return null;
-    const recorded = ctx.structuredReturnTypes?.[memberFq];
-    const definingFiles =
-      definingFile === undefined
-        ? [...new Set(ctx.symbolTable.lookup(memberFq).map((def) => def.relPath))]
-        : [definingFile];
+    const declaringFiles = [...new Set(ctx.symbolTable.lookup(memberFq).map((def) => def.relPath))];
+    const factFile = definingFile ?? pythonMemberDeclaringFile(declaringFiles, () => ownerClassKey(classFq));
+    if (factFile === null) return null;
+    const recorded = pythonMemberReturnFact(memberFq, factFile, declaringFiles, ctx);
+    const definingFiles = factFile === undefined ? declaringFiles : [factFile];
     const returned = pythonReturnFactAsReceiver(pythonPlacedReturnFact(recorded, definingFiles, ctx, mapper));
     return pythonSubstituteSelfReturn(returned, owner.name) ?? null;
   };
@@ -282,7 +287,9 @@ function pythonMemberReturnTypePorts(
       // A framework answer's module spelling is no channel key, so its own
       // class is read through the key it was placed at — as an ancestor is.
       const parsed = parsePythonClassKey(key);
-      return parsed === null ? null : onClass(owner, lastSegment(parsed.classFq), parsed.classFq, member);
+      return parsed === null
+        ? null
+        : onClass(owner, lastSegment(parsed.classFq), parsed.classFq, member, parsed.relPath);
     },
     ancestorsOf: (owner) => {
       if (linearizer === undefined) return [];
@@ -299,6 +306,50 @@ function pythonMemberReturnTypePorts(
     },
     frameworkReturnType: (owner, member) => pythonFrameworkReturnType(owner, member, access, ctx, mapper, linearizer),
   };
+}
+
+/**
+ * The file whose fact a member read takes when the read does not already know
+ * the declaring file (bd tea-rags-mcp-m99j1.1.35): the one file declaring the
+ * member, else the file of the RECEIVER's own class key — the narrowing that
+ * keeps django's four `DatabaseWrapper#create_cursor` apart. `undefined` = no
+ * def known (the read is as before); `null` = several files declare the member
+ * and the receiver's class is none of them, so no fact belongs to it.
+ *
+ * `ownerKey` is deferred: addressing the class costs symbol-table work only
+ * the namesake case needs.
+ */
+function pythonMemberDeclaringFile(
+  declaringFiles: readonly string[],
+  ownerKey: () => string | null,
+): string | null | undefined {
+  if (declaringFiles.length <= 1) return declaringFiles[0];
+  const key = ownerKey();
+  const parsed = key === null ? null : parsePythonClassKey(key);
+  return parsed !== null && declaringFiles.includes(parsed.relPath) ? parsed.relPath : null;
+}
+
+/**
+ * `memberFq`'s return fact AS `factFile` WROTE IT (bd tea-rags-mcp-m99j1.1.35):
+ * its file-qualified key first, then the bare key — but the bare key only when
+ * no OTHER file declares the member. The run keeps the bare key's first writer,
+ * so with a namesake it may be another file's answer, and a guess at whose is
+ * the fabrication this exists to stop. An index whose walker predates the
+ * qualified key keeps every unambiguous read.
+ */
+function pythonMemberReturnFact(
+  memberFq: string,
+  factFile: string | undefined,
+  declaringFiles: readonly string[],
+  ctx: CallContext,
+): TypeRef | undefined {
+  if (factFile !== undefined) {
+    const qualified = identifierEntry(ctx.structuredReturnTypes, pythonMemberReturnKey(factFile, memberFq));
+    if (qualified !== undefined) return qualified;
+  }
+  return declaringFiles.every((declaring) => declaring === factFile)
+    ? identifierEntry(ctx.structuredReturnTypes, memberFq)
+    : undefined;
 }
 
 /**

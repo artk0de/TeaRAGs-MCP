@@ -45,12 +45,21 @@ export function pythonModuleReturnKey(relPath: string, name: string): string {
 }
 
 /**
- * `#run` → `pkg/svc.py::run`; `Svc#run` → `Svc#run`; `Outer::Inner#run` →
- * `Outer.Inner#run`.
+ * The run-global address of a CLASS MEMBER's return fact — `<relPath>::<memberFq>`,
+ * i.e. the member spelled on its class key (`pkg/svc.py::Svc#run`; bd
+ * tea-rags-mcp-m99j1.1.35).
  *
- * An empty scope leaves the member separator leading, and that IS the
- * module-level case — the file qualifies it (see {@link pythonModuleReturnKey}).
+ * The bare `Svc#run` stays published too — per-file readers key it by the
+ * callee's symbolId — but the run-global fold keeps its FIRST writer, so a bare
+ * key names no file once two files declare the class: django declares
+ * `DatabaseWrapper` in every backend, only oracle's `create_cursor` returns a
+ * typed cursor, and every other backend's receiver read oracle's answer. This
+ * twin is what a reader narrows by once it knows the receiver's class key.
  */
+export function pythonMemberReturnKey(relPath: string, memberFq: string): string {
+  return `${relPath}::${memberFq}`;
+}
+
 /**
  * The run-global address of a MODULE-SCOPE value — `<relPath>::<name>` (P4, bd
  * tea-rags-mcp-m99j1.1.15). Same shape as {@link pythonModuleReturnKey} and for
@@ -61,8 +70,20 @@ export function pythonModuleValueKey(relPath: string, name: string): string {
   return `${relPath}::${name}`;
 }
 
+/** The kernel spells a module-level def with an empty scope, its member separator leading. */
+function isPythonModuleLevelReturnKey(kernelKey: string): boolean {
+  return kernelKey.startsWith("#") || kernelKey.startsWith(".");
+}
+
+/**
+ * `#run` → `pkg/svc.py::run`; `Svc#run` → `Svc#run`; `Outer::Inner#run` →
+ * `Outer.Inner#run`.
+ *
+ * An empty scope leaves the member separator leading, and that IS the
+ * module-level case — the file qualifies it (see {@link pythonModuleReturnKey}).
+ */
 export function pythonStructuredReturnKey(kernelKey: string, relPath: string): string {
-  if (kernelKey.startsWith("#") || kernelKey.startsWith(".")) {
+  if (isPythonModuleLevelReturnKey(kernelKey)) {
     return pythonModuleReturnKey(relPath, kernelKey.slice(1));
   }
   return kernelKey.split("::").join(".");
@@ -79,7 +100,10 @@ export function pythonTypeChannels(
   if (kernel.structuredReturnTypes !== undefined) {
     const rekeyed: Record<string, TypeRef> = createIdentifierRecord();
     for (const [key, ref] of Object.entries(kernel.structuredReturnTypes)) {
-      rekeyed[pythonStructuredReturnKey(key, ctx.relPath)] = ref;
+      const rekey = pythonStructuredReturnKey(key, ctx.relPath);
+      rekeyed[rekey] = ref;
+      // A class member also lands on its declaring file (bd tea-rags-mcp-m99j1.1.35).
+      if (!isPythonModuleLevelReturnKey(key)) rekeyed[pythonMemberReturnKey(ctx.relPath, rekey)] = ref;
     }
     out.structuredReturnTypes = rekeyed;
   }

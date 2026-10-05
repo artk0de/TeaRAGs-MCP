@@ -74,19 +74,34 @@ describe("pythonTypeChannels — structuredReturnTypes", () => {
   });
 
   it("keys an instance method `Cls#method`", () => {
-    expect(Object.keys(channelsOf([returnFact(["Svc"], "run")]).structuredReturnTypes ?? {})).toEqual(["Svc#run"]);
+    expect(Object.keys(channelsOf([returnFact(["Svc"], "run")]).structuredReturnTypes ?? {})).toEqual([
+      "Svc#run",
+      "pkg/svc.py::Svc#run",
+    ]);
   });
 
   it("keys a classmethod / staticmethod `Cls.method`", () => {
     expect(Object.keys(channelsOf([returnFact(["Svc"], "run", true)]).structuredReturnTypes ?? {})).toEqual([
       "Svc.run",
+      "pkg/svc.py::Svc.run",
     ]);
   });
 
   it("keys a nested class with Python's `.` scope separator", () => {
     expect(Object.keys(channelsOf([returnFact(["Outer", "Inner"], "run")]).structuredReturnTypes ?? {})).toEqual([
       "Outer.Inner#run",
+      "pkg/svc.py::Outer.Inner#run",
     ]);
+  });
+
+  // bd tea-rags-mcp-m99j1.1.35: the channel is folded run-global keeping the
+  // FIRST writer, so a bare `Cls#member` lets one file's namesake class speak
+  // for every other file's. The file-qualified twin is the provenance a reader
+  // narrows by; the bare key stays for the per-file readers keyed by symbolId.
+  it("also keys a class member by the file that declares it, under the class-key spelling", () => {
+    const out = channelsOf([returnFact(["Svc"], "run")]).structuredReturnTypes ?? {};
+    expect(out["pkg/svc.py::Svc#run"]).toEqual({ form: "instance", name: "Session" });
+    expect(out["pkg/svc.py::Svc#run"]).toEqual(out["Svc#run"]);
   });
 });
 
