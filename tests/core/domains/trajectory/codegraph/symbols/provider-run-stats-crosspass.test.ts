@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
@@ -79,14 +80,17 @@ async function runCrossPassCycle(
   root: string,
   collectionName: string,
 ): Promise<void> {
-  provider.beginExtractionRun(collectionName);
-  provider.acceptExtraction(fooExtraction(), { collectionName });
-  provider.acceptExtraction(mainExtraction(), { collectionName });
-  await provider.streamFileBatch(root, ["src/foo.ts", "src/main.ts"], { crossPass: true, collectionName });
+  provider.beginExtractionRun(fixturePhysicalCollectionName(collectionName));
+  provider.acceptExtraction(fooExtraction(), { collectionName: fixturePhysicalCollectionName(collectionName) });
+  provider.acceptExtraction(mainExtraction(), { collectionName: fixturePhysicalCollectionName(collectionName) });
+  await provider.streamFileBatch(root, ["src/foo.ts", "src/main.ts"], {
+    crossPass: true,
+    collectionName: fixturePhysicalCollectionName(collectionName),
+  });
   await provider.finalizeSignals(root, {
     crossPass: true,
     paths: ["src/foo.ts", "src/main.ts"],
-    collectionName,
+    collectionName: fixturePhysicalCollectionName(collectionName),
   });
 }
 
@@ -138,7 +142,7 @@ describe("CodegraphEnrichmentProvider — cross-pass run-stats isolation (svhqp)
 
     // A fresh run starts but no file is fed. beginExtractionRun must zero the
     // leaked tally so getRunMetrics reports the empty run as empty.
-    provider.beginExtractionRun("svhqp_empty");
+    provider.beginExtractionRun(fixturePhysicalCollectionName("svhqp_empty"));
     expect(provider.getRunMetrics()).toBeUndefined();
   });
 });

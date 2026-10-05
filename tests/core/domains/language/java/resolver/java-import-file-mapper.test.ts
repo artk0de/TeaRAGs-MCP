@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { CallContext, NamedSymbol } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type { CallContext, SymbolDefinition } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { JavaImportFileMapper } from "../../../../../../src/core/domains/language/java/resolver/java-import-file-mapper.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -11,7 +11,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/tr
  * import (`java.util.Objects`) it names a file the project cannot contain.
  */
 
-const classDef = (name: string, relPath: string): NamedSymbol => ({
+const classDef = (name: string, relPath: string): SymbolDefinition => ({
   symbolId: name,
   fqName: name,
   shortName: name,
@@ -19,7 +19,7 @@ const classDef = (name: string, relPath: string): NamedSymbol => ({
   scope: [],
 });
 
-const ctxOver = (...files: [string, NamedSymbol[]][]): CallContext => {
+const ctxOver = (...files: [string, SymbolDefinition[]][]): CallContext => {
   const symbolTable = new InMemoryGlobalSymbolTable();
   for (const [relPath, defs] of files) symbolTable.upsertFile(relPath, defs);
   return { callerFile: "src/main/java/com/app/Caller.java", callerScope: [], imports: [], symbolTable };

@@ -11,6 +11,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { INDEXING_METADATA_ID } from "../../../../../../src/core/contracts/constants.js";
 import type { CodegraphStorageCompactionOutcome } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
@@ -84,8 +85,8 @@ async function buildHarness(options: {
     ignoreFilter: null,
   };
   const contexts = new Map([[ctx.key, ctx]]);
-  filePhase.init(contexts as never, "coll", "run-1", "ts");
-  chunkPhase.init(contexts as never, "coll", "ts");
+  filePhase.init(contexts as never, fixturePhysicalCollectionName("coll"), "run-1", "ts");
+  chunkPhase.init(contexts as never, fixturePhysicalCollectionName("coll"), "ts");
   await marker.markRunStart("coll", [ctx.key], "run-1", "ts");
   const markChunkFinal = marker.markChunkFinal.bind(marker);
   vi.spyOn(marker, "markChunkFinal").mockImplementation(async (...args) => {
@@ -99,7 +100,14 @@ describe("CompletionRunner codegraph storage compaction", () => {
   it("compacts once per run, after the heal's baseline refresh and the terminal chunk markers", async () => {
     const { runner, contexts, compact, events } = await buildHarness({ defers: true });
 
-    await runner.run("coll", contexts as never, Date.now() - 1000, undefined, "ts", "run-1");
+    await runner.run(
+      fixturePhysicalCollectionName("coll"),
+      contexts as never,
+      Date.now() - 1000,
+      undefined,
+      "ts",
+      "run-1",
+    );
 
     expect(compact).toHaveBeenCalledTimes(1);
     expect(compact.mock.calls[0]).toEqual(["coll"]);
@@ -109,10 +117,19 @@ describe("CompletionRunner codegraph storage compaction", () => {
   it("is not applicable when the heal was not — the run carried no codegraph", async () => {
     const { runner, contexts, compact } = await buildHarness({ defers: false });
 
-    await runner.run("coll", contexts as never, Date.now() - 1000, undefined, "ts", "run-1");
+    await runner.run(
+      fixturePhysicalCollectionName("coll"),
+      contexts as never,
+      Date.now() - 1000,
+      undefined,
+      "ts",
+      "run-1",
+    );
 
     expect(compact).not.toHaveBeenCalled();
-    expect(await runner.runCodegraphStorageCompaction("coll", { kind: "notApplicable" })).toEqual({
+    expect(
+      await runner.runCodegraphStorageCompaction(fixturePhysicalCollectionName("coll"), { kind: "notApplicable" }),
+    ).toEqual({
       kind: "notApplicable",
     });
   });
@@ -121,14 +138,21 @@ describe("CompletionRunner codegraph storage compaction", () => {
     const { runner } = await buildHarness({ defers: true, wired: false });
 
     expect(
-      await runner.runCodegraphStorageCompaction("coll", { kind: "healed", pointsRewritten: 0, filesTouched: 0 }),
+      await runner.runCodegraphStorageCompaction(fixturePhysicalCollectionName("coll"), {
+        kind: "healed",
+        pointsRewritten: 0,
+        filesTouched: 0,
+      }),
     ).toEqual({ kind: "notApplicable" });
   });
 
   it("still compacts after a heal that failed — the file bloats either way", async () => {
     const { runner, compact } = await buildHarness({ defers: true });
 
-    const outcome = await runner.runCodegraphStorageCompaction("coll", { kind: "failed", error: "qdrant down" });
+    const outcome = await runner.runCodegraphStorageCompaction(fixturePhysicalCollectionName("coll"), {
+      kind: "failed",
+      error: "qdrant down",
+    });
 
     expect(compact).toHaveBeenCalledTimes(1);
     expect(outcome).toEqual({ kind: "settled", outcome: COMPACTED });
@@ -143,9 +167,20 @@ describe("CompletionRunner codegraph storage compaction", () => {
     });
 
     expect(
-      await runner.runCodegraphStorageCompaction("coll", { kind: "healed", pointsRewritten: 0, filesTouched: 0 }),
+      await runner.runCodegraphStorageCompaction(fixturePhysicalCollectionName("coll"), {
+        kind: "healed",
+        pointsRewritten: 0,
+        filesTouched: 0,
+      }),
     ).toEqual({ kind: "failed", error: "rename failed" });
-    const metrics = await runner.run("coll", contexts as never, Date.now() - 1000, undefined, "ts", "run-1");
+    const metrics = await runner.run(
+      fixturePhysicalCollectionName("coll"),
+      contexts as never,
+      Date.now() - 1000,
+      undefined,
+      "ts",
+      "run-1",
+    );
     expect(metrics.totalDurationMs).toBeGreaterThanOrEqual(0);
   });
 });

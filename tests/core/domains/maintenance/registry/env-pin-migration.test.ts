@@ -168,7 +168,7 @@ describe("CollectionRegistry env-pin migration on load (bd tea-rags-mcp-h4l6k)",
     expect(disk.version).toBe(1);
     expect(disk.collections.code_a.env).toEqual({ INGEST_TUNE_FILE_CONCURRENCY: "25" });
 
-    const logged = stderr.mock.calls.map((c) => String(c[0])).join("");
+    const logged = stderr.mock.calls.map((c: unknown[]) => String(c[0])).join("");
     expect(logged).toContain("alpha");
     expect(logged).toContain("1 pin");
     expect(logged).toContain("TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES");

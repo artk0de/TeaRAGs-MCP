@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
@@ -71,13 +72,15 @@ describe("CodegraphEnrichmentProvider — type-abstractness census persistence",
     const mainProvider = new CodegraphEnrichmentProvider(deps);
     const workerProvider = new CodegraphEnrichmentProvider({ ...deps, symbolTable: new InMemoryGlobalSymbolTable() });
 
-    mainProvider.beginExtractionRun(collectionName);
-    for (const e of extractions) mainProvider.acceptExtraction(e, { collectionName });
-    await mainProvider.endExtractionRun(collectionName);
+    mainProvider.beginExtractionRun(fixturePhysicalCollectionName(collectionName));
+    for (const e of extractions) {
+      mainProvider.acceptExtraction(e, { collectionName: fixturePhysicalCollectionName(collectionName) });
+    }
+    await mainProvider.endExtractionRun(fixturePhysicalCollectionName(collectionName));
     await workerProvider.finalizeSignals(tmp, {
       crossPass: true,
       paths: extractions.map((e) => e.relPath),
-      collectionName,
+      collectionName: fixturePhysicalCollectionName(collectionName),
     });
 
     const { files } = await graphDb.readFileDependencyGraph();

@@ -20,7 +20,7 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
-  type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import {
   RubyConstantSymbolResolutionStrategy,
@@ -31,7 +31,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/tr
 
 const cfg: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };
 
-const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): NamedSymbol => ({
+const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName,
@@ -39,7 +39,7 @@ const sym = (symbolId: string, shortName: string, relPath: string, scope: string
   scope,
 });
 
-const tableWith = (...files: [string, NamedSymbol[]][]): InMemoryGlobalSymbolTable => {
+const tableWith = (...files: [string, SymbolDefinition[]][]): InMemoryGlobalSymbolTable => {
   const t = new InMemoryGlobalSymbolTable();
   for (const [relPath, defs] of files) t.upsertFile(relPath, defs);
   return t;
@@ -55,8 +55,11 @@ const ctx = (over: Partial<CallContext> & Pick<CallContext, "symbolTable">): Cal
 const TSX = "app/javascript/Foo.tsx";
 const RB = "app/models/foo.rb";
 
-const tsxFoo = (): [string, NamedSymbol[]] => [TSX, [sym("Foo", "Foo", TSX, []), sym("Foo.bar", "bar", TSX, ["Foo"])]];
-const rbFoo = (): [string, NamedSymbol[]] => [RB, [sym("Foo", "Foo", RB, []), sym("Foo.bar", "bar", RB, ["Foo"])]];
+const tsxFoo = (): [string, SymbolDefinition[]] => [
+  TSX,
+  [sym("Foo", "Foo", TSX, []), sym("Foo.bar", "bar", TSX, ["Foo"])],
+];
+const rbFoo = (): [string, SymbolDefinition[]] => [RB, [sym("Foo", "Foo", RB, []), sym("Foo.bar", "bar", RB, ["Foo"])]];
 
 const fooBar: CallRef = { callText: "Foo.bar(x)", receiver: "Foo", member: "bar", startLine: 1 };
 

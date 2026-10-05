@@ -21,6 +21,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import {
   captureBuildFingerprint,
   type BuildFingerprintCapture,
@@ -144,7 +145,7 @@ describe("stale CLIENT meets the up-to-date daemon (bd tea-rags-mcp-1wr7p)", () 
     const respawn = vi.fn();
     const pool = makePool(paths, client, { respawn });
 
-    const handle = await pool.acquireWrite("code_cstale_ok_v1");
+    const handle = await pool.acquireWrite(fixturePhysicalCollectionName("code_cstale_ok_v1"));
     // Live against the running daemon — a real read round-trip. It proceeds
     // READ-ONLY: writes are pinned by the read-only test below.
     expect(await handle.graphDb.hasData()).toBe(false);
@@ -168,7 +169,7 @@ describe("stale CLIENT meets the up-to-date daemon (bd tea-rags-mcp-1wr7p)", () 
     await startDaemon(paths, onDisk);
     const pool = makePool(paths, client, { respawn: vi.fn() });
 
-    const { graphDb } = await pool.acquireWrite("code_cstale_ro_v1");
+    const { graphDb } = await pool.acquireWrite(fixturePhysicalCollectionName("code_cstale_ro_v1"));
 
     // The reads get_callers / get_callees / trace_path / find_cycles issue.
     await expect(graphDb.getCallers("a.ts#f")).resolves.toEqual([]);
@@ -199,7 +200,7 @@ describe("stale CLIENT meets the up-to-date daemon (bd tea-rags-mcp-1wr7p)", () 
     await startDaemon(paths, client.loaded);
     const pool = makePool(paths, { loaded: client.loaded, readOnDisk: () => client.loaded });
 
-    const { graphDb } = await pool.acquireWrite("code_cstale_fresh_v1");
+    const { graphDb } = await pool.acquireWrite(fixturePhysicalCollectionName("code_cstale_fresh_v1"));
     await graphDb.upsertFile({ relPath: "a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
     expect(await graphDb.hasData()).toBe(true);
   });
@@ -214,7 +215,7 @@ describe("stale CLIENT meets the up-to-date daemon (bd tea-rags-mcp-1wr7p)", () 
     const respawn = vi.fn();
     const pool = makePool(paths, client, { respawn });
 
-    const err = await pool.acquireWrite("code_cstale_short_v1").catch((e: unknown) => e);
+    const err = await pool.acquireWrite(fixturePhysicalCollectionName("code_cstale_short_v1")).catch((e: unknown) => e);
 
     expect(err).toBeInstanceOf(CodegraphClientStaleBuildError);
     expect(err).toBeInstanceOf(InfraError);
@@ -241,7 +242,9 @@ describe("stale CLIENT meets the up-to-date daemon (bd tea-rags-mcp-1wr7p)", () 
 
     const pool = makePool(paths, client);
 
-    await expect(pool.acquireWrite("code_cstale_hookless_v1")).rejects.toThrow(CodegraphClientStaleBuildError);
+    await expect(pool.acquireWrite(fixturePhysicalCollectionName("code_cstale_hookless_v1"))).rejects.toThrow(
+      CodegraphClientStaleBuildError,
+    );
     expect(existsSync(paths.pidFile)).toBe(true);
   });
 
@@ -267,7 +270,7 @@ describe("stale CLIENT meets the up-to-date daemon (bd tea-rags-mcp-1wr7p)", () 
       },
     });
 
-    const handle = await pool.acquireWrite("code_cstale_foreign_v1");
+    const handle = await pool.acquireWrite(fixturePhysicalCollectionName("code_cstale_foreign_v1"));
     // A live read round-trip; the stale client proceeds read-only.
     expect(await handle.graphDb.hasData()).toBe(false);
 
@@ -300,7 +303,7 @@ describe("stale CLIENT meets the up-to-date daemon (bd tea-rags-mcp-1wr7p)", () 
     });
     pools.push(pool);
 
-    await pool.acquireWrite("code_cstale_unreadable_v1");
+    await pool.acquireWrite(fixturePhysicalCollectionName("code_cstale_unreadable_v1"));
     expect(respawns).toBe(1);
   });
 });

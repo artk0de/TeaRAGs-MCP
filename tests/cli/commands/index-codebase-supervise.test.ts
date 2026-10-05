@@ -58,7 +58,7 @@ describe("indexCodebaseCommand handler — real supervisor (default mode)", () =
       "wait-enrichments": false,
     });
 
-    const printed = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+    const printed = stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
     expect(printed).toContain("indexed");
     expect(printed).toContain("code_x");
     expect(exitSpy).toHaveBeenCalledWith(0);

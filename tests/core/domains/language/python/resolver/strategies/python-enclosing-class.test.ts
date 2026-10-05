@@ -22,7 +22,7 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
-  type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import { PythonAncestorLinearizerCache } from "../../../../../../../src/core/domains/language/python/resolver/python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
@@ -38,7 +38,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains
 const cfg: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };
 
 /** A symbol table def whose `scope` + `shortName` spell `symbolId`, as the walk does. */
-const sym = (symbolId: string, scope: string[]): NamedSymbol => ({
+const sym = (symbolId: string, scope: string[]): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName: symbolId.split(/[#.]/).pop() ?? symbolId,
@@ -46,7 +46,7 @@ const sym = (symbolId: string, scope: string[]): NamedSymbol => ({
   scope,
 });
 
-const tableWith = (files: Record<string, NamedSymbol[]>): InMemoryGlobalSymbolTable => {
+const tableWith = (files: Record<string, SymbolDefinition[]>): InMemoryGlobalSymbolTable => {
   const table = new InMemoryGlobalSymbolTable();
   for (const [relPath, defs] of Object.entries(files)) {
     table.upsertFile(
@@ -148,7 +148,14 @@ describe("selfMember / super / selfField through the enclosing-class key", () =>
         symbolTable,
         callerScope: ["App", "template_filter"],
         classAncestors: { "app.py::App": ["scaffold::Scaffold"] },
-        imports: [{ importText: "scaffold", importedNames: ["Scaffold"], importedBindings: { Scaffold: "Scaffold" } }],
+        imports: [
+          {
+            importText: "scaffold",
+            startLine: 1,
+            importedNames: ["Scaffold"],
+            importedBindings: { Scaffold: "Scaffold" },
+          },
+        ],
       }),
     );
     expect(outcome).toEqual({
@@ -174,7 +181,12 @@ describe("selfMember / super / selfField through the enclosing-class key", () =>
         callerScope: ["Authenticator", "_AuthenticatorSignature"],
         classAncestors: { "deps.py::Authenticator._AuthenticatorSignature": ["base::_Authenticator"] },
         imports: [
-          { importText: "base", importedNames: ["_Authenticator"], importedBindings: { _Authenticator: "base" } },
+          {
+            importText: "base",
+            startLine: 1,
+            importedNames: ["_Authenticator"],
+            importedBindings: { _Authenticator: "base" },
+          },
         ],
       }),
     );

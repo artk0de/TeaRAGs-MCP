@@ -9,6 +9,7 @@ import type { QdrantManager } from "../../src/core/adapters/qdrant/client.js";
 import { ExploreFacade, IngestFacade } from "../../src/core/api/index.js";
 import { resolvePresets } from "../../src/core/domains/explore/rerank/presets/index.js";
 import { Reranker } from "../../src/core/domains/explore/reranker.js";
+import { CollectionRegistry } from "../../src/core/domains/maintenance/registry/collection-registry.js";
 import { GitTrajectory } from "../../src/core/domains/trajectory/git.js";
 import { gitDerivedSignals } from "../../src/core/domains/trajectory/git/rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "../../src/core/domains/trajectory/git/rerank/presets/index.js";
@@ -16,6 +17,7 @@ import { TrajectoryRegistry } from "../../src/core/domains/trajectory/index.js";
 import { staticDerivedSignals } from "../../src/core/domains/trajectory/static/rerank/derived-signals/index.js";
 import { STATIC_PRESETS } from "../../src/core/domains/trajectory/static/rerank/presets/index.js";
 import type { IngestCodeConfig } from "../../src/core/types.js";
+import { defaultTrajectoryConfig } from "../core/domains/ingest/__helpers__/test-helpers.js";
 
 // Mock tree-sitter modules to prevent native binding crashes in integration tests
 // Note: vi.mock() is hoisted, so all values must be inline (no external references)
@@ -255,6 +257,14 @@ class MockEmbeddingProvider implements EmbeddingProvider {
   async embedBatch(texts: string[]): Promise<{ embedding: number[]; dimensions: number }[]> {
     return Promise.all(texts.map(async (text) => this.embed(text)));
   }
+
+  async checkHealth(): Promise<boolean> {
+    return true;
+  }
+
+  getProviderName(): string {
+    return "mock";
+  }
 }
 
 describe("IngestFacade + ExploreFacade Integration Tests", () => {
@@ -285,9 +295,27 @@ describe("IngestFacade + ExploreFacade Integration Tests", () => {
       supportedExtensions: [".ts", ".js", ".py", ".go"],
       ignorePatterns: ["node_modules/**", "dist/**", "*.test.*"],
       enableHybridSearch: false,
+      quantizationScalar: false,
+      turboQuant: false,
     };
-    ingest = new IngestFacade({ qdrant: qdrant as any, embeddings, config, trajectoryConfig: {} });
-    explore = new ExploreFacade({ qdrant: qdrant as any, embeddings, reranker, registry });
+    ingest = new IngestFacade({
+      qdrant: qdrant as never,
+      embeddings,
+      config,
+      // The status path reads markers only; a blob read here would mean the
+      // fixture is on the git-walk path, which it must not be.
+      blobReaderFactory: async () => {
+        throw new Error("blob reads are not expected on the integration status path");
+      },
+      trajectoryConfig: defaultTrajectoryConfig(),
+    });
+    explore = new ExploreFacade({
+      qdrant: qdrant as never,
+      embeddings,
+      reranker,
+      registry,
+      collectionRegistry: new CollectionRegistry(join(tempDir, "registry")),
+    });
   });
 
   afterEach(async () => {
@@ -344,11 +372,11 @@ export function validateEmail(email: string): boolean {
       expect(indexStats.status).toBe("completed");
 
       // Search for authentication-related code
-      const authResults = await explore.searchCode(codebaseDir, "authentication login");
+      const authResults = await explore.searchCode({ path: codebaseDir, query: "authentication login" });
 
-      expect(authResults.length).toBeGreaterThan(0);
+      expect(authResults.results.length).toBeGreaterThan(0);
       // Note: With mocked tree-sitter, language detection may fallback to "unknown"
-      expect(["typescript", "unknown"]).toContain(authResults[0].language);
+      expect(["typescript", "unknown"]).toContain(authResults.results[0].payload?.language as string);
 
       // Verify index status
       const status = await ingest.getIndexStatus(codebaseDir);
@@ -392,9 +420,9 @@ def process_data(data):
       expect(stats.filesIndexed).toBe(3);
 
       // Search should find relevant code regardless of language
-      const results = await explore.searchCode(codebaseDir, "process data");
+      const results = await explore.searchCode({ path: codebaseDir, query: "process data" });
 
-      expect(results.length).toBeGreaterThan(0);
+      expect(results.results.length).toBeGreaterThan(0);
     });
   });
 
@@ -452,8 +480,8 @@ export const thirdValue = 3;`,
       expect(updateStats.filesDeleted).toBe(0);
 
       // Verify search includes new content
-      const results = await explore.searchCode(codebaseDir, "third");
-      expect(results.length).toBeGreaterThan(0);
+      const results = await explore.searchCode({ path: codebaseDir, query: "third" });
+      expect(results.results.length).toBeGreaterThan(0);
     });
 
     it("should handle file modifications", async () => {
@@ -529,29 +557,41 @@ export const thirdValue = 3;`,
     });
 
     it("should filter results by file extension", async () => {
-      const results = await explore.searchCode(codebaseDir, "class", {
-        fileTypes: [".ts"],
+      const results = await explore.searchCode({
+        path: codebaseDir,
+        query: "class",
+        ...{
+          fileTypes: [".ts"],
+        },
       });
 
-      results.forEach((result) => {
-        expect(result.fileExtension).toBe(".ts");
+      results.results.forEach((result) => {
+        expect(result.payload?.fileExtension as string).toBe(".ts");
       });
     });
 
     it("should respect search limit", async () => {
-      const results = await explore.searchCode(codebaseDir, "export", {
-        limit: 2,
+      const results = await explore.searchCode({
+        path: codebaseDir,
+        query: "export",
+        ...{
+          limit: 2,
+        },
       });
 
-      expect(results.length).toBeLessThanOrEqual(2);
+      expect(results.results.length).toBeLessThanOrEqual(2);
     });
 
     it("should apply score threshold", async () => {
-      const results = await explore.searchCode(codebaseDir, "service", {
-        scoreThreshold: 0.8,
+      const results = await explore.searchCode({
+        path: codebaseDir,
+        query: "service",
+        ...{
+          scoreThreshold: 0.8,
+        },
       });
 
-      results.forEach((result) => {
+      results.results.forEach((result) => {
         expect(result.score).toBeGreaterThanOrEqual(0.8);
       });
     });
@@ -560,8 +600,12 @@ export const thirdValue = 3;`,
       await createTestFile(codebaseDir, "src/api/endpoints.ts", "export const API = {}");
       await ingest.indexCodebase(codebaseDir, { forceReindex: true });
 
-      const results = await explore.searchCode(codebaseDir, "export", {
-        pathPattern: "src/api/**",
+      const results = await explore.searchCode({
+        path: codebaseDir,
+        query: "export",
+        ...{
+          pathPattern: "src/api/**",
+        },
       });
 
       expect(Array.isArray(results)).toBe(true);
@@ -633,35 +677,47 @@ export function shutdownCore(): void {
       await ingest.indexCodebase(codebaseDir, { forceReindex: true });
 
       // Test: should only return files from src/api/**
-      const apiResults = await explore.searchCode(codebaseDir, "export function", {
-        pathPattern: "src/api/**",
-        limit: 10,
+      const apiResults = await explore.searchCode({
+        path: codebaseDir,
+        query: "export function",
+        ...{
+          pathPattern: "src/api/**",
+          limit: 10,
+        },
       });
 
-      expect(apiResults.length).toBeGreaterThan(0);
-      apiResults.forEach((result) => {
-        expect(result.filePath).toMatch(/^src\/api\//);
+      expect(apiResults.results.length).toBeGreaterThan(0);
+      apiResults.results.forEach((result) => {
+        expect(result.payload?.relativePath as string).toMatch(/^src\/api\//);
       });
 
       // Test: should only return files from src/** (both api and utils)
-      const srcResults = await explore.searchCode(codebaseDir, "export function", {
-        pathPattern: "src/**",
-        limit: 10,
+      const srcResults = await explore.searchCode({
+        path: codebaseDir,
+        query: "export function",
+        ...{
+          pathPattern: "src/**",
+          limit: 10,
+        },
       });
 
-      expect(srcResults.length).toBeGreaterThan(0);
-      srcResults.forEach((result) => {
-        expect(result.filePath).toMatch(/^src\//);
+      expect(srcResults.results.length).toBeGreaterThan(0);
+      srcResults.results.forEach((result) => {
+        expect(result.payload?.relativePath as string).toMatch(/^src\//);
       });
 
       // Test: should exclude non-matching paths
-      const libResults = await explore.searchCode(codebaseDir, "export function", {
-        pathPattern: "lib/**",
-        limit: 10,
+      const libResults = await explore.searchCode({
+        path: codebaseDir,
+        query: "export function",
+        ...{
+          pathPattern: "lib/**",
+          limit: 10,
+        },
       });
 
-      libResults.forEach((result) => {
-        expect(result.filePath).toMatch(/^lib\//);
+      libResults.results.forEach((result) => {
+        expect(result.payload?.relativePath as string).toMatch(/^lib\//);
       });
     });
 
@@ -730,18 +786,22 @@ export function shutdownCore(): void {
       await ingest.indexCodebase(codebaseDir, { forceReindex: true });
 
       // Test: **/workflow/** should match workflow in any directory
-      const workflowResults = await explore.searchCode(codebaseDir, "export class", {
-        pathPattern: "**/workflow/**",
-        limit: 10,
+      const workflowResults = await explore.searchCode({
+        path: codebaseDir,
+        query: "export class",
+        ...{
+          pathPattern: "**/workflow/**",
+          limit: 10,
+        },
       });
 
-      expect(workflowResults.length).toBeGreaterThan(0);
-      workflowResults.forEach((result) => {
-        expect(result.filePath).toContain("workflow");
+      expect(workflowResults.results.length).toBeGreaterThan(0);
+      workflowResults.results.forEach((result) => {
+        expect(result.payload?.relativePath as string).toContain("workflow");
       });
 
       // Verify auth service is NOT in results
-      const hasAuth = workflowResults.some((r) => r.filePath.includes("auth"));
+      const hasAuth = workflowResults.results.some((r) => (r.payload?.relativePath as string).includes("auth"));
       expect(hasAuth).toBe(false);
     });
 
@@ -796,18 +856,23 @@ export interface UserData {
       await ingest.indexCodebase(codebaseDir, { forceReindex: true });
 
       // Test brace expansion: {controllers,services}/**
-      const results = await explore.searchCode(codebaseDir, "User", {
-        pathPattern: "{controllers,services}/**",
-        limit: 10,
+      const results = await explore.searchCode({
+        path: codebaseDir,
+        query: "User",
+        ...{
+          pathPattern: "{controllers,services}/**",
+          limit: 10,
+        },
       });
 
-      expect(results.length).toBeGreaterThan(0);
-      results.forEach((result) => {
-        expect(result.filePath.startsWith("controllers/") || result.filePath.startsWith("services/")).toBe(true);
+      expect(results.results.length).toBeGreaterThan(0);
+      results.results.forEach((result) => {
+        const relPath = result.payload?.relativePath as string;
+        expect(relPath.startsWith("controllers/") || relPath.startsWith("services/")).toBe(true);
       });
 
       // Verify models is NOT in results
-      const hasModels = results.some((r) => r.filePath.startsWith("models/"));
+      const hasModels = results.results.some((r) => (r.payload?.relativePath as string).startsWith("models/"));
       expect(hasModels).toBe(false);
     });
 
@@ -842,13 +907,17 @@ module.exports = { legacyHelper };`,
       await ingest.indexCodebase(codebaseDir, { forceReindex: true });
 
       // Test: **/*.ts should only match TypeScript files
-      const tsResults = await explore.searchCode(codebaseDir, "function", {
-        pathPattern: "**/*.ts",
-        limit: 10,
+      const tsResults = await explore.searchCode({
+        path: codebaseDir,
+        query: "function",
+        ...{
+          pathPattern: "**/*.ts",
+          limit: 10,
+        },
       });
 
-      tsResults.forEach((result) => {
-        expect(result.filePath).toMatch(/\.ts$/);
+      tsResults.results.forEach((result) => {
+        expect(result.payload?.relativePath as string).toMatch(/\.ts$/);
       });
     });
 
@@ -894,13 +963,17 @@ describe('Engine', () => {
       await ingest.indexCodebase(codebaseDir, { forceReindex: true });
 
       // Search in non-test files only using specific pattern
-      const coreResults = await explore.searchCode(codebaseDir, "Engine", {
-        pathPattern: "core/engine.ts",
-        limit: 10,
+      const coreResults = await explore.searchCode({
+        path: codebaseDir,
+        query: "Engine",
+        ...{
+          pathPattern: "core/engine.ts",
+          limit: 10,
+        },
       });
 
-      coreResults.forEach((result) => {
-        expect(result.filePath).not.toContain(".test.");
+      coreResults.results.forEach((result) => {
+        expect(result.payload?.relativePath as string).not.toContain(".test.");
       });
     });
   });
@@ -909,24 +982,39 @@ describe('Engine', () => {
     it("should enable and use hybrid search", async () => {
       const hybridConfig = { ...config, enableHybridSearch: true };
       const hybridIngest = new IngestFacade({
-        qdrant: qdrant as any,
+        qdrant: qdrant as never,
         embeddings,
         config: hybridConfig,
-        trajectoryConfig: {},
+        blobReaderFactory: async () => {
+          throw new Error("blob reads are not expected on the integration path");
+        },
+        trajectoryConfig: defaultTrajectoryConfig(),
       });
-      const hybridSearch = new ExploreFacade({ qdrant: qdrant as any, embeddings, reranker, registry });
+      const hybridSearch = new ExploreFacade({
+        qdrant: qdrant as never,
+        embeddings,
+        reranker,
+        registry,
+        collectionRegistry: new CollectionRegistry(join(tempDir, "registry")),
+      });
 
       await createTestFile(codebaseDir, "search.ts", "function performSearch(query: string) { return results; }");
 
       await hybridIngest.indexCodebase(codebaseDir);
 
-      const results = await hybridSearch.searchCode(codebaseDir, "search query");
+      const results = await hybridSearch.searchCode({ path: codebaseDir, query: "search query" });
 
-      expect(results.length).toBeGreaterThan(0);
+      expect(results.results.length).toBeGreaterThan(0);
     });
 
     it("should fallback to standard search if hybrid not available", async () => {
-      const hybridSearch = new ExploreFacade({ qdrant: qdrant as any, embeddings, reranker, registry });
+      const hybridSearch = new ExploreFacade({
+        qdrant: qdrant as never,
+        embeddings,
+        reranker,
+        registry,
+        collectionRegistry: new CollectionRegistry(join(tempDir, "registry")),
+      });
 
       // Index without hybrid
       await createTestFile(
@@ -942,9 +1030,9 @@ function validate(): boolean {
       await ingest.indexCodebase(codebaseDir);
 
       // Search with hybrid-enabled searcher but collection without hybrid
-      const results = await hybridSearch.searchCode(codebaseDir, "test");
+      const results = await hybridSearch.searchCode({ path: codebaseDir, query: "test" });
 
-      expect(results.length).toBeGreaterThan(0);
+      expect(results.results.length).toBeGreaterThan(0);
     });
   });
 
@@ -1045,8 +1133,8 @@ function validate(): boolean {
       expect(stats.chunksCreated).toBeGreaterThanOrEqual(0);
 
       // Verify all modules are searchable
-      const results = await explore.searchCode(codebaseDir, "Module process id");
-      expect(results.length).toBeGreaterThan(0);
+      const results = await explore.searchCode({ path: codebaseDir, query: "Module process id" });
+      expect(results.results.length).toBeGreaterThan(0);
     });
   });
 
@@ -1229,10 +1317,13 @@ function validate(): boolean {
     it("should use hybrid search during reindexChanges", async () => {
       const hybridConfig = { ...config, enableHybridSearch: true };
       const hybridIngest = new IngestFacade({
-        qdrant: qdrant as any,
+        qdrant: qdrant as never,
         embeddings,
         config: hybridConfig,
-        trajectoryConfig: {},
+        blobReaderFactory: async () => {
+          throw new Error("blob reads are not expected on the integration path");
+        },
+        trajectoryConfig: defaultTrajectoryConfig(),
       });
 
       // Initial indexing with hybrid search

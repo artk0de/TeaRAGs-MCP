@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { GraphDbClientPool } from "../../../../../../src/core/adapters/duckdb/pool.js";
 import type { GraphEdges } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
@@ -55,11 +56,11 @@ describe("CodegraphEnrichmentProvider.readPersistedFileHashes", () => {
   });
 
   it("reports the hash persisted with each file, and null where none was written", async () => {
-    const handle = await pool.acquire("code_demo_v1");
+    const handle = await pool.acquire(fixturePhysicalCollectionName("code_demo_v1"));
     await handle.graphDb.upsertFile({ relPath: "src/a.ts", language: "typescript", contentHash: "h1" }, NO_EDGES);
     await handle.graphDb.upsertFile({ relPath: "src/b.ts", language: "typescript" }, NO_EDGES);
 
-    const hashes = await provider.readPersistedFileHashes("code_demo_v1");
+    const hashes = await provider.readPersistedFileHashes(fixturePhysicalCollectionName("code_demo_v1"));
 
     expect(hashes).toEqual(
       new Map([
@@ -70,7 +71,7 @@ describe("CodegraphEnrichmentProvider.readPersistedFileHashes", () => {
   });
 
   it("returns an empty map for a collection that has no graph yet", async () => {
-    const hashes = await provider.readPersistedFileHashes("code_never_indexed");
+    const hashes = await provider.readPersistedFileHashes(fixturePhysicalCollectionName("code_never_indexed"));
 
     expect(hashes.size).toBe(0);
   });
@@ -98,11 +99,11 @@ describe("CodegraphEnrichmentProvider.readPersistedFileHashes", () => {
         'import { a } from "./a.js";\nexport function b(): number {\n  return a() + 1;\n}\n',
       );
 
-      const opts = { collectionName: "code_repair_v1" };
+      const opts = { collectionName: fixturePhysicalCollectionName("code_repair_v1") };
       await provider.streamFileBatch(repo, ["src/a.ts", "src/b.ts"], opts);
       await provider.finalizeSignals(repo, opts);
 
-      const { graphDb } = await pool.acquire("code_repair_v1");
+      const { graphDb } = await pool.acquire(fixturePhysicalCollectionName("code_repair_v1"));
       expect(await graphDb.findCycles("file")).not.toHaveLength(0);
 
       // The cycle is broken in source. Only a.ts drifted, so only a.ts is in the
@@ -117,7 +118,9 @@ describe("CodegraphEnrichmentProvider.readPersistedFileHashes", () => {
       expect(await graphDb.findCycles("file")).toHaveLength(0);
       // ...and the repaired row now carries the hash it was repaired to, so the
       // next run's check converges instead of repairing the same file forever.
-      expect((await provider.readPersistedFileHashes("code_repair_v1")).get("src/a.ts")).toBe("after");
+      expect(
+        (await provider.readPersistedFileHashes(fixturePhysicalCollectionName("code_repair_v1"))).get("src/a.ts"),
+      ).toBe("after");
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }

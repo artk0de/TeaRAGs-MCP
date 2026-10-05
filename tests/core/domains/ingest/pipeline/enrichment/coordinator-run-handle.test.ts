@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { reindexRunSpec } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/run-spec.js";
 
@@ -52,7 +53,8 @@ function recordingExecutor(dispatched: Map<string, unknown[]>[]) {
   } as never;
 }
 
-const spec = () => reindexRunSpec({ absolutePath: "/repo", collection: "coll", fileCount: 0 });
+const spec = () =>
+  reindexRunSpec({ absolutePath: "/repo", collection: fixturePhysicalCollectionName("coll"), fileCount: 0 });
 
 describe("EnrichmentCoordinator — per-run entries take the run's handle (39xca.3)", () => {
   it("hands back the identity of the run it opened", async () => {

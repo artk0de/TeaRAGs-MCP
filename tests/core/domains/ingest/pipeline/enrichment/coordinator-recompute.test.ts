@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import type { EnrichmentProvider } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
 
@@ -62,7 +63,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments", () => {
     const p = provider("codegraph.symbols", { finalizeSignals, defersChunkEnrichment: true });
     const coordinator = new EnrichmentCoordinator(qdrant as never, [p]);
 
-    await coordinator.recomputeEnrichments("coll", "/repo", ["codegraph"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["codegraph"]);
 
     expect(finalizeSignals).toHaveBeenCalled();
   });
@@ -72,7 +73,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments", () => {
     // recompute is what made the run look like a no-op.
     const coordinator = new EnrichmentCoordinator(qdrant as never, [provider("git")]);
 
-    const metrics = await coordinator.recomputeEnrichments("coll", "/repo", ["git"]);
+    const metrics = await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["git"]);
 
     expect(metrics).toBeDefined();
   });
@@ -81,7 +82,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments", () => {
     const p = provider("git");
     const coordinator = new EnrichmentCoordinator(qdrant as never, [p]);
 
-    await coordinator.recomputeEnrichments("coll", "/repo", ["git"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["git"]);
 
     const paths = (p.buildFileSignals as ReturnType<typeof vi.fn>).mock.calls.flatMap(
       (call) => (call[1] as { paths?: string[] })?.paths ?? [],
@@ -94,7 +95,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments", () => {
     const cg = provider("codegraph.symbols");
     const coordinator = new EnrichmentCoordinator(qdrant as never, [git, cg]);
 
-    await coordinator.recomputeEnrichments("coll", "/repo", ["git"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["git"]);
 
     expect(git.buildFileSignals).toHaveBeenCalled();
     expect(cg.buildFileSignals).not.toHaveBeenCalled();
@@ -105,7 +106,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments", () => {
     const complexity = provider("codegraph.complexity");
     const coordinator = new EnrichmentCoordinator(qdrant as never, [provider("git"), symbols, complexity]);
 
-    await coordinator.recomputeEnrichments("coll", "/repo", ["codegraph"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["codegraph"]);
 
     expect(symbols.buildFileSignals).toHaveBeenCalled();
     expect(complexity.buildFileSignals).toHaveBeenCalled();
@@ -115,7 +116,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments", () => {
     const p = provider("git");
     const coordinator = new EnrichmentCoordinator(qdrant as never, [p]);
 
-    await coordinator.recomputeEnrichments("coll", "/repo", ["nonsense"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["nonsense"]);
 
     expect(p.buildFileSignals).not.toHaveBeenCalled();
   });
@@ -149,9 +150,11 @@ describe("EnrichmentCoordinator.recomputeEnrichments", () => {
     const coordinator = new EnrichmentCoordinator(gated as never, [p]);
 
     let resolved = false;
-    const recompute = coordinator.recomputeEnrichments("coll", "/repo", ["codegraph"]).then(() => {
-      resolved = true;
-    });
+    const recompute = coordinator
+      .recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["codegraph"])
+      .then(() => {
+        resolved = true;
+      });
     await new Promise((resolve) => setTimeout(resolve, 25));
 
     expect(requested).toEqual([chunkMarkerKey]);
@@ -168,7 +171,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments", () => {
     const p = provider("git");
     const coordinator = new EnrichmentCoordinator(qdrantWithPoints([]) as never, [p]);
 
-    await coordinator.recomputeEnrichments("coll", "/repo", ["git"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["git"]);
 
     expect(p.buildFileSignals).not.toHaveBeenCalled();
   });
@@ -202,7 +205,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments", () => {
       const { qdrant, calls } = recordingQdrant();
       const coordinator = new EnrichmentCoordinator(qdrant as never, [provider("git"), provider("codegraph.symbols")]);
 
-      await coordinator.recomputeEnrichments("coll", "/repo", ["git"]);
+      await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["git"]);
 
       const deletes = vi.mocked(qdrant.deletePayloadKeys as (...args: unknown[]) => Promise<void>).mock.calls;
       expect(deletes).toHaveLength(1);
@@ -215,7 +218,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments", () => {
       const { qdrant } = recordingQdrant();
       const coordinator = new EnrichmentCoordinator(qdrant as never, [provider("git")]);
 
-      await coordinator.recomputeEnrichments("coll", "/repo", ["git"], ["ruby"]);
+      await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["git"], ["ruby"]);
 
       const deletes = vi.mocked(qdrant.deletePayloadKeys as (...args: unknown[]) => Promise<void>).mock.calls;
       expect(deletes).toHaveLength(1);
@@ -228,7 +231,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments", () => {
       const p = provider("git");
       const coordinator = new EnrichmentCoordinator(qdrant as never, [p]);
 
-      await coordinator.recomputeEnrichments("coll", "/repo", ["git"]);
+      await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["git"]);
 
       expect(p.buildFileSignals).toHaveBeenCalled();
     });

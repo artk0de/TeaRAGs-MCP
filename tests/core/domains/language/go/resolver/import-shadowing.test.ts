@@ -2,7 +2,7 @@ import Parser from "tree-sitter";
 import GoLang from "tree-sitter-go";
 import { describe, expect, it } from "vitest";
 
-import type { CallContext, NamedSymbol } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type { CallContext, SymbolDefinition } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { GoLanguage } from "../../../../../../src/core/domains/language/go/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -19,7 +19,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/tr
  * validate-B probe corpus.
  */
 
-const sym = (symbolId: string, relPath: string): NamedSymbol => ({
+const sym = (symbolId: string, relPath: string): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName: symbolId.split(/[#.]/).pop() ?? symbolId,

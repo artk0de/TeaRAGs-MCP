@@ -15,6 +15,12 @@ import {
   TEXT_INDEXED_KEYS,
 } from "../../../../../src/core/adapters/qdrant/filters/text-indexed-exact.js";
 
+/** The two-arm shape the paired branch of the union always takes (module-private upstream). */
+type PairedTextIndexedExactMatch = [
+  { key: string; match: { text: string } },
+  { key: string; match: { value: string } },
+];
+
 describe("TEXT_INDEXED_KEYS", () => {
   it("names the payload keys whose Qdrant index is text", () => {
     // Membership follows the INDEX TYPE, not today's callers: nothing matches
@@ -34,7 +40,7 @@ describe("exactMatchOnTextIndexed", () => {
   });
 
   it("defaults the text token to the value itself", () => {
-    const [text, value] = exactMatchOnTextIndexed("relativePath", "a/b.ts");
+    const [text, value] = exactMatchOnTextIndexed("relativePath", "a/b.ts") as PairedTextIndexedExactMatch;
     expect(text.match.text).toBe("a/b.ts");
     expect(value.match.value).toBe("a/b.ts");
   });

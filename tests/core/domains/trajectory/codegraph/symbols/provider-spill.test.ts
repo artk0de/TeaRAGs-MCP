@@ -23,11 +23,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { GraphDbClientPool } from "../../../../../../src/core/adapters/duckdb/pool.js";
-import { createDatabaseMigrationApplier } from "../../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
+import { createDatabaseMigrationApplier } from "../../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { CodegraphSpillIoError } from "../../../../../../src/core/domains/trajectory/errors.js";
@@ -58,7 +59,7 @@ describe("CodegraphEnrichmentProvider — slice 2 spill lifecycle", () => {
   });
 
   it("spill file is removed after a successful finish()", async () => {
-    const sink = provider.asExtractionSink("alpha");
+    const sink = provider.asExtractionSink(fixturePhysicalCollectionName("alpha"));
     await sink.write({
       relPath: "src/index.ts",
       language: "typescript",
@@ -95,7 +96,7 @@ describe("CodegraphEnrichmentProvider — slice 2 spill lifecycle", () => {
   it("does NOT purge spill files of a sibling collection on per-collection acquire", async () => {
     // Acquire ONE collection to materialise the DuckDB file + ensure
     // the .spill dir exists with its empty content.
-    await pool.acquire("alpha");
+    await pool.acquire(fixturePhysicalCollectionName("alpha"));
     const spillDir = join(tmp, "codegraph", ".spill");
     // Simulate a concurrent collection's in-flight spill landing while
     // another collection's DuckDB init is running.
@@ -103,7 +104,7 @@ describe("CodegraphEnrichmentProvider — slice 2 spill lifecycle", () => {
     writeFileSync(inFlightPath, "{}\n");
 
     // Acquire the OTHER collection — must not touch the in-flight file.
-    await pool.acquire("beta");
+    await pool.acquire(fixturePhysicalCollectionName("beta"));
     expect(existsSync(inFlightPath)).toBe(true);
   });
 
@@ -169,7 +170,7 @@ describe("CodegraphEnrichmentProvider — slice 2 spill lifecycle", () => {
   });
 
   it("write() throws a programming error when called after finish() (caller bug guard)", async () => {
-    const sink = provider.asExtractionSink("alpha");
+    const sink = provider.asExtractionSink(fixturePhysicalCollectionName("alpha"));
     await sink.write({
       relPath: "src/index.ts",
       language: "typescript",
@@ -191,10 +192,10 @@ describe("CodegraphEnrichmentProvider — slice 2 spill lifecycle", () => {
 
   it("finish() with zero writes still resolves cleanly (no resolve pass needed)", async () => {
     // Exercises the `spillWriteCount > 0` guard around streamingResolveAndUpsert.
-    const sink = provider.asExtractionSink("empty-coll");
+    const sink = provider.asExtractionSink(fixturePhysicalCollectionName("empty-coll"));
     await sink.finish();
     // No throw, no spill file persisted, no resolver invocation.
-    const handle = await pool.acquire("empty-coll");
+    const handle = await pool.acquire(fixturePhysicalCollectionName("empty-coll"));
     const defs = await handle.graphDb.listAllSymbols();
     expect(defs.length).toBe(0);
   });
@@ -208,7 +209,7 @@ describe("CodegraphEnrichmentProvider — slice 2 spill lifecycle", () => {
     // (<= CODEGRAPH_NODE_FLUSH_FILES), consistent with fix#1's cross-pass
     // batching: a mid-crash cold start rehydrates whole flushed batches and the
     // next incremental reindex re-adds the changed files it re-processes.
-    const sink = provider.asExtractionSink("alpha");
+    const sink = provider.asExtractionSink(fixturePhysicalCollectionName("alpha"));
     await sink.write({
       relPath: "src/index.ts",
       language: "typescript",
@@ -219,7 +220,7 @@ describe("CodegraphEnrichmentProvider — slice 2 spill lifecycle", () => {
     await sink.finish();
 
     // Durable once finish() flushes the buffered node batch (before pass-2).
-    const handle = await pool.acquire("alpha");
+    const handle = await pool.acquire(fixturePhysicalCollectionName("alpha"));
     const defs = await handle.graphDb.listAllSymbols();
     expect(defs.map((d) => d.symbolId)).toContain("EarlyDef");
   });

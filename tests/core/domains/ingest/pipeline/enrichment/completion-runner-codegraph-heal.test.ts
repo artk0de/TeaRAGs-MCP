@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { INDEXING_METADATA_ID } from "../../../../../../src/core/contracts/constants.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { EnrichmentBackfiller } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/backfiller.js";
@@ -68,13 +69,13 @@ async function buildHarness(options: { defers: boolean; heal?: CodegraphPayloadH
     ignoreFilter: null,
   };
   const contexts = new Map([[ctx.key, ctx]]);
-  filePhase.init(contexts as never, "coll", "run-1", "ts");
-  chunkPhase.init(contexts as never, "coll", "ts");
+  filePhase.init(contexts as never, fixturePhysicalCollectionName("coll"), "run-1", "ts");
+  chunkPhase.init(contexts as never, fixturePhysicalCollectionName("coll"), "ts");
   await marker.markRunStart("coll", [ctx.key], "run-1", "ts");
 
   // Accumulate the run's own chunk map — these are the files the finalize pass
   // rewrites, and exactly the ones the heal must NOT touch again.
-  chunkPhase.onBatchProvider("codegraph.symbols", "coll", "/repo", [
+  chunkPhase.onBatchProvider("codegraph.symbols", fixturePhysicalCollectionName("coll"), "/repo", [
     chunkItem("/repo", "src/changed.ts", "c1"),
   ] as never);
 
@@ -92,7 +93,7 @@ describe("CompletionRunner typed completion plan", () => {
       new Map([["src/owed.ts", [{ chunkId: "o1", startLine: 1, endLine: 5 }]]]),
     );
 
-    const deferredPass = await runner.runDeferredChunkPass("coll", contexts as never);
+    const deferredPass = await runner.runDeferredChunkPass(fixturePhysicalCollectionName("coll"), contexts as never);
 
     expect(deferredPass.kind).toBe("deferred");
     const owned = deferredPass.kind === "deferred" ? [...deferredPass.wholeFileRelPaths] : [];
@@ -104,8 +105,12 @@ describe("CompletionRunner typed completion plan", () => {
   it("the heal receives exactly the paths the deferred pass returned", async () => {
     const { runner, contexts, heal } = await buildHarness({ defers: true });
 
-    const deferredPass = await runner.runDeferredChunkPass("coll", contexts as never);
-    const healOutcome = await runner.runCodegraphHeal("coll", deferredPass, "2026-09-15T00:00:00.000Z");
+    const deferredPass = await runner.runDeferredChunkPass(fixturePhysicalCollectionName("coll"), contexts as never);
+    const healOutcome = await runner.runCodegraphHeal(
+      fixturePhysicalCollectionName("coll"),
+      deferredPass,
+      "2026-09-15T00:00:00.000Z",
+    );
 
     expect(heal).toHaveBeenCalledTimes(1);
     const [coll, skip, enrichedAt] = heal.mock.calls[0];
@@ -119,8 +124,8 @@ describe("CompletionRunner typed completion plan", () => {
   it("a run with no deferring provider yields a not-applicable heal without calling the runner", async () => {
     const { runner, contexts, heal } = await buildHarness({ defers: false });
 
-    const deferredPass = await runner.runDeferredChunkPass("coll", contexts as never);
-    const healOutcome = await runner.runCodegraphHeal("coll", deferredPass, "ts");
+    const deferredPass = await runner.runDeferredChunkPass(fixturePhysicalCollectionName("coll"), contexts as never);
+    const healOutcome = await runner.runCodegraphHeal(fixturePhysicalCollectionName("coll"), deferredPass, "ts");
 
     expect(deferredPass).toEqual({ kind: "noDeferringProvider" });
     expect(healOutcome).toEqual({ kind: "notApplicable" });
@@ -135,9 +140,9 @@ describe("CompletionRunner typed completion plan", () => {
       },
     });
 
-    const deferredPass = await runner.runDeferredChunkPass("coll", contexts as never);
+    const deferredPass = await runner.runDeferredChunkPass(fixturePhysicalCollectionName("coll"), contexts as never);
 
-    expect(await runner.runCodegraphHeal("coll", deferredPass, "ts")).toEqual({
+    expect(await runner.runCodegraphHeal(fixturePhysicalCollectionName("coll"), deferredPass, "ts")).toEqual({
       kind: "failed",
       error: "qdrant unreachable",
     });
@@ -160,7 +165,14 @@ describe("CompletionRunner typed completion plan", () => {
       return markChunkFinal(...args);
     });
 
-    await runner.run("coll", contexts as never, Date.now() - 1000, undefined, "ts", "run-1");
+    await runner.run(
+      fixturePhysicalCollectionName("coll"),
+      contexts as never,
+      Date.now() - 1000,
+      undefined,
+      "ts",
+      "run-1",
+    );
 
     expect(events).toEqual(["heal:start", "heal:settled", "chunkMarker"]);
   });
@@ -177,7 +189,14 @@ describe("CompletionRunner codegraph payload heal — seeded deferred chunks", (
       new Map([["src/owed.ts", [{ chunkId: "o1", startLine: 1, endLine: 5 }]]]),
     );
 
-    await runner.run("coll", contexts as never, Date.now() - 1000, undefined, "ts", "run-1");
+    await runner.run(
+      fixturePhysicalCollectionName("coll"),
+      contexts as never,
+      Date.now() - 1000,
+      undefined,
+      "ts",
+      "run-1",
+    );
 
     expect(heal).toHaveBeenCalledTimes(1);
     const [, skip] = heal.mock.calls[0];
@@ -193,7 +212,14 @@ describe("CompletionRunner codegraph payload heal", () => {
   it("heals with the run's own chunk-map files as the skip set", async () => {
     const { runner, contexts, heal } = await buildHarness({ defers: true });
 
-    await runner.run("coll", contexts as never, Date.now() - 1000, undefined, "2026-09-11T00:00:00.000Z", "run-1");
+    await runner.run(
+      fixturePhysicalCollectionName("coll"),
+      contexts as never,
+      Date.now() - 1000,
+      undefined,
+      "2026-09-11T00:00:00.000Z",
+      "run-1",
+    );
 
     expect(heal).toHaveBeenCalledTimes(1);
     const [coll, skip, enrichedAt] = heal.mock.calls[0];
@@ -206,7 +232,14 @@ describe("CompletionRunner codegraph payload heal", () => {
 
   it("skips the heal entirely when no provider in the run defers chunk enrichment", async () => {
     const { runner, contexts, heal } = await buildHarness({ defers: false });
-    await runner.run("coll", contexts as never, Date.now() - 1000, undefined, "ts", "run-1");
+    await runner.run(
+      fixturePhysicalCollectionName("coll"),
+      contexts as never,
+      Date.now() - 1000,
+      undefined,
+      "ts",
+      "run-1",
+    );
     expect(heal).not.toHaveBeenCalled();
   });
 
@@ -218,7 +251,14 @@ describe("CompletionRunner codegraph payload heal", () => {
       },
     });
 
-    const metrics = await runner.run("coll", contexts as never, Date.now() - 1000, undefined, "ts", "run-1");
+    const metrics = await runner.run(
+      fixturePhysicalCollectionName("coll"),
+      contexts as never,
+      Date.now() - 1000,
+      undefined,
+      "ts",
+      "run-1",
+    );
     expect(heal).toHaveBeenCalledTimes(1);
     expect(metrics.totalDurationMs).toBeGreaterThanOrEqual(0);
   });

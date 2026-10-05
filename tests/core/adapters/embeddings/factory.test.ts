@@ -23,7 +23,6 @@ function makeConfig(overrides: Partial<EmbeddingConfig> = {}): EmbeddingConfig {
     cohereApiKey: undefined,
     voyageApiKey: undefined,
     tune: {
-      concurrency: 1,
       batchSize: 1024,
       minBatchSize: undefined,
       batchTimeoutMs: 2000,

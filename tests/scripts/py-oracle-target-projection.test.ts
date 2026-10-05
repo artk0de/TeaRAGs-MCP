@@ -14,6 +14,7 @@
  */
 import { describe, expect, it } from "vitest";
 
+import type { PyOracleFileReply } from "../../scripts/lib/py-oracle-core.js";
 import {
   classifyResidualFamily,
   type PyResidualRow,
@@ -56,7 +57,7 @@ const reply = (target: { relPath: string; symbolId: string } | null) =>
         ],
       },
     ],
-  ] as never);
+  ] as [string, PyOracleFileReply][]);
 
 /** Nothing tier 2 can read — a bare call is decided at tier 1 or not at all. */
 const blindView: PyResidualSourceView = {

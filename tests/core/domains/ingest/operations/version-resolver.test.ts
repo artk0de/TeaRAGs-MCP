@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { fixtureCollectionAlias, fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import {
   computeNewVersion,
   findAliasTarget,
@@ -100,14 +101,24 @@ describe("resolvePhysicalCollection", () => {
   it("resolves an alias to the collection it points at", () => {
     expect(
       resolvePhysicalCollection(BASE, [
-        { aliasName: "code_other", collectionName: "code_other_v3" },
-        { aliasName: BASE, collectionName: `${BASE}_v52` },
+        {
+          aliasName: fixtureCollectionAlias("code_other"),
+          collectionName: fixturePhysicalCollectionName("code_other_v3"),
+        },
+        { aliasName: fixtureCollectionAlias(BASE), collectionName: fixturePhysicalCollectionName(`${BASE}_v52`) },
       ]),
     ).toBe(`${BASE}_v52`);
   });
 
   it("falls back to the literal name when no alias matches", () => {
-    expect(resolvePhysicalCollection(BASE, [{ aliasName: "code_other", collectionName: "code_other_v3" }])).toBe(BASE);
+    expect(
+      resolvePhysicalCollection(BASE, [
+        {
+          aliasName: fixtureCollectionAlias("code_other"),
+          collectionName: fixturePhysicalCollectionName("code_other_v3"),
+        },
+      ]),
+    ).toBe(BASE);
   });
 
   it("falls back to the literal name when there are no aliases at all", () => {
@@ -117,10 +128,21 @@ describe("resolvePhysicalCollection", () => {
 
 describe("findAliasTarget", () => {
   it("returns the collection an alias points at", () => {
-    expect(findAliasTarget(BASE, [{ aliasName: BASE, collectionName: `${BASE}_v52` }])).toBe(`${BASE}_v52`);
+    expect(
+      findAliasTarget(BASE, [
+        { aliasName: fixtureCollectionAlias(BASE), collectionName: fixturePhysicalCollectionName(`${BASE}_v52`) },
+      ]),
+    ).toBe(`${BASE}_v52`);
   });
 
   it("returns undefined when the name is not an alias, so callers can tell absence from identity", () => {
-    expect(findAliasTarget(BASE, [{ aliasName: "code_other", collectionName: "code_other_v3" }])).toBeUndefined();
+    expect(
+      findAliasTarget(BASE, [
+        {
+          aliasName: fixtureCollectionAlias("code_other"),
+          collectionName: fixturePhysicalCollectionName("code_other_v3"),
+        },
+      ]),
+    ).toBeUndefined();
   });
 });

@@ -6,7 +6,7 @@ import Parser from "tree-sitter";
 import GoLang from "tree-sitter-go";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import type { CallContext, CallRef, NamedSymbol } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type { CallContext, CallRef, SymbolDefinition } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { GoLanguage } from "../../../../../../src/core/domains/language/go/index.js";
 import { GoCallResolver } from "../../../../../../src/core/domains/language/go/resolver/go-resolver.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
@@ -21,7 +21,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/tr
  * declaration types it; a local function value of that name does not.
  */
 
-const sym = (symbolId: string, relPath: string): NamedSymbol => ({
+const sym = (symbolId: string, relPath: string): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName: symbolId.split(/[#.]/).pop() ?? symbolId,

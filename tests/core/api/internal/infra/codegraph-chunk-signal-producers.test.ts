@@ -25,6 +25,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
 import { createCodegraphPayloadHealRunner } from "../../../../../src/core/api/internal/infra/codegraph-payload-heal-runner.js";
 import type { ChunkExtraction, GraphDbClient } from "../../../../../src/core/contracts/types/codegraph.js";
@@ -46,7 +47,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/traje
 import { MockQdrantManager } from "../../../domains/ingest/__helpers__/test-helpers.js";
 import { buildTestCodegraphDeps } from "../../../domains/trajectory/codegraph/__helpers__/language-factory.js";
 
-const COLL = "code_producers";
+const COLL = fixturePhysicalCollectionName("code_producers");
 const ROOT = "/repo";
 const ENRICHED_AT = "2026-09-15T00:00:00.000Z";
 const PROVIDER_KEY = "codegraph.symbols";

@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { INDEXING_METADATA_ID } from "../../../../../../src/core/contracts/constants.js";
+import type { PhysicalCollectionName } from "../../../../../../src/core/contracts/types/collection-identity.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { EnrichmentBackfiller } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/backfiller.js";
 import { ChunkPhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/chunk-phase.js";
@@ -10,6 +12,10 @@ import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ing
 import { FilePhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/file-phase.js";
 import { mapMarkerToHealth } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/health-mapper.js";
 import { EnrichmentMarkerStore } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/marker-store.js";
+import type {
+  EnrichmentMarkerMap,
+  EnrichmentProvider,
+} from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
 import { pipelineLog } from "../../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
 
 // Real Qdrant set_payload requires the point to exist; mirror production seed
@@ -51,11 +57,11 @@ describe("CompletionRunner", () => {
       ignoreFilter: null,
     };
     const contexts = new Map([[ctx.key, ctx]]);
-    filePhase.init(contexts, "coll", "run-1", "ts");
-    chunkPhase.init(contexts, "coll", "ts");
+    filePhase.init(contexts, fixturePhysicalCollectionName("coll"), "run-1", "ts");
+    chunkPhase.init(contexts, fixturePhysicalCollectionName("coll"), "ts");
     await marker.markRunStart("coll", ["git"], "run-1", "ts");
 
-    const m = await runner.run("coll", contexts, Date.now() - 1000);
+    const m = await runner.run(fixturePhysicalCollectionName("coll"), contexts, Date.now() - 1000);
     expect(m.totalDurationMs).toBeGreaterThanOrEqual(0);
 
     const final = (await marker.read("coll"))!.git as any;
@@ -99,17 +105,19 @@ describe("CompletionRunner", () => {
       ignoreFilter: null,
     };
     const contexts = new Map([[ctx.key, ctx]]);
-    filePhase.init(contexts, "coll", "run-err", "ts");
-    chunkPhase.init(contexts, "coll", "ts");
+    filePhase.init(contexts, fixturePhysicalCollectionName("coll"), "run-err", "ts");
+    chunkPhase.init(contexts, fixturePhysicalCollectionName("coll"), "ts");
     await marker.markRunStart("coll", ["git"], "run-err", "ts");
 
     // Drive one streaming batch — the provider's file work rejects and the
     // phase records the prefetch failure.
-    const work = filePhase.onBatch("coll", "/repo", [{ chunk: { metadata: { filePath: "/repo/a.ts" } } } as any]);
+    const work = filePhase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", [
+      { chunk: { metadata: { filePath: "/repo/a.ts" } } } as any,
+    ]);
     await Promise.all(work.values());
     expect(filePhase.hasPrefetchFailed("git")).toBe(true);
 
-    await runner.run("coll", contexts, Date.now() - 1000);
+    await runner.run(fixturePhysicalCollectionName("coll"), contexts, Date.now() - 1000);
 
     const final = (await marker.read("coll"))!.git as any;
     expect(final.file.status).toBe("failed");
@@ -159,25 +167,25 @@ describe("CompletionRunner", () => {
       ignoreFilter: null,
     };
     const contexts = new Map([[ctx.key, ctx]]);
-    filePhase.init(contexts, "coll", "run-stale", "ts");
-    chunkPhase.init(contexts, "coll", "ts");
+    filePhase.init(contexts, fixturePhysicalCollectionName("coll"), "run-stale", "ts");
+    chunkPhase.init(contexts, fixturePhysicalCollectionName("coll"), "ts");
     await marker.markRunStart("coll", ["codegraph.symbols"], "run-stale", "ts");
 
     for (const file of ["/repo/a.ts", "/repo/b.ts"]) {
       const items = [
         { chunkId: `c-${file}`, chunk: { metadata: { filePath: file }, startLine: 1, endLine: 5 } } as any,
       ];
-      chunkPhase.onBatch("coll", "/repo", items);
-      const work = filePhase.onBatch("coll", "/repo", items);
+      chunkPhase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", items);
+      const work = filePhase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", items);
       await Promise.all(work.values());
     }
     expect(filePhase.hasPrefetchFailed("codegraph.symbols")).toBe(true);
 
     // runStartedAt + runId as the coordinator passes them, so the terminal
     // markers belong to the run the `_run` pointer names.
-    await runner.run("coll", contexts, Date.now() - 1000, undefined, "ts", "run-stale");
+    await runner.run(fixturePhysicalCollectionName("coll"), contexts, Date.now() - 1000, undefined, "ts", "run-stale");
 
-    const markers = (await marker.read("coll"))!;
+    const markers = (await marker.read("coll"))! as EnrichmentMarkerMap;
     const final = (markers.codegraph as any).symbols;
     expect(final.file.status).toBe("failed");
     expect(final.chunk.status).toBe("failed");
@@ -222,13 +230,16 @@ describe("CompletionRunner", () => {
       ignoreFilter: null,
     };
     const contexts = new Map([[ctx.key, ctx]]);
-    filePhase.init(contexts, "coll", "run-2", "ts");
-    chunkPhase.init(contexts, "coll", "ts");
+    filePhase.init(contexts, fixturePhysicalCollectionName("coll"), "run-2", "ts");
+    chunkPhase.init(contexts, fixturePhysicalCollectionName("coll"), "ts");
     await marker.markRunStart("coll", ["git"], "run-2", "ts");
 
-    const reader = vi.fn(async (_coll: string, _key: string, level: "file" | "chunk") => (level === "file" ? 3 : 17));
+    const reader = vi.fn(
+      async (_coll: PhysicalCollectionName, _provider: EnrichmentProvider, level: "file" | "chunk") =>
+        level === "file" ? 3 : 17,
+    );
 
-    await runner.run("coll", contexts, Date.now() - 100, reader);
+    await runner.run(fixturePhysicalCollectionName("coll"), contexts, Date.now() - 100, reader);
 
     const final = (await marker.read("coll"))!.git as any;
     expect(final.file.unenrichedChunks).toBe(3);
@@ -272,14 +283,14 @@ describe("CompletionRunner", () => {
     };
     const contexts = new Map([[ctx.key, ctx]]);
 
-    filePhase.init(contexts, "coll", "run-3", "ts");
-    chunkPhase.init(contexts, "coll", "ts");
+    filePhase.init(contexts, fixturePhysicalCollectionName("coll"), "run-3", "ts");
+    chunkPhase.init(contexts, fixturePhysicalCollectionName("coll"), "ts");
     await marker.markRunStart("coll", ["git"], "run-3", "ts");
 
     // Stream a batch for a path that streamFileBatch/buildFileSignals returns no
     // overlay for — populates _missedFileChunks so step 3 (backfill) runs and
     // sets backfillOccurred=true.
-    filePhase.onBatch("coll", "/repo", [
+    filePhase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", [
       { chunkId: "c-missed", chunk: { metadata: { filePath: "/repo/missed.ts" }, startLine: 1, endLine: 5 } } as any,
     ]);
     await filePhase.drain();
@@ -287,7 +298,7 @@ describe("CompletionRunner", () => {
     const cb = vi.fn().mockResolvedValue(undefined);
     chunkPhase.setOnComplete(cb);
 
-    await runner.run("coll", contexts, Date.now());
+    await runner.run(fixturePhysicalCollectionName("coll"), contexts, Date.now());
 
     // Backfill ran (missed > 0) → fireOnComplete invoked once with collectionName.
     expect(cb).toHaveBeenCalledTimes(1);
@@ -326,15 +337,15 @@ describe("CompletionRunner", () => {
     };
     const contexts = new Map([[ctx.key, ctx]]);
 
-    filePhase.init(contexts, "coll", "run-4", "ts");
-    chunkPhase.init(contexts, "coll", "ts");
+    filePhase.init(contexts, fixturePhysicalCollectionName("coll"), "run-4", "ts");
+    chunkPhase.init(contexts, fixturePhysicalCollectionName("coll"), "ts");
     await marker.markRunStart("coll", ["git"], "run-4", "ts");
 
     // No onBatch call — _missedFileChunks stays empty, backfill skipped.
     const cb = vi.fn().mockResolvedValue(undefined);
     chunkPhase.setOnComplete(cb);
 
-    await runner.run("coll", contexts, Date.now());
+    await runner.run(fixturePhysicalCollectionName("coll"), contexts, Date.now());
 
     // No backfill → no second fire. Callback may have been invoked by streaming
     // (runner.run drains chunkPhase but no chunkWork was queued either), so
@@ -378,16 +389,16 @@ describe("CompletionRunner", () => {
     };
     const contexts = new Map([[ctx.key, ctx]]);
 
-    filePhase.init(contexts, "coll", "run-fin", "ts");
-    chunkPhase.init(contexts, "coll", "ts");
+    filePhase.init(contexts, fixturePhysicalCollectionName("coll"), "run-fin", "ts");
+    chunkPhase.init(contexts, fixturePhysicalCollectionName("coll"), "ts");
     await marker.markRunStart("coll", ["codegraph.symbols"], "run-fin", "ts");
 
     // Accumulate a deferred chunkMap (deferred provider — onBatch only accumulates).
-    chunkPhase.onBatch("coll", "/repo", [
+    chunkPhase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", [
       { chunkId: "c1", chunk: { metadata: { filePath: "/repo/a.ts" }, startLine: 1, endLine: 10 } } as any,
     ]);
 
-    await runner.run("coll", contexts, Date.now());
+    await runner.run(fixturePhysicalCollectionName("coll"), contexts, Date.now());
 
     expect(finalizeSignals).toHaveBeenCalledWith("/repo", expect.objectContaining({ collectionName: "coll" }));
     // file overlay applied via applyFinalizeFile (key codegraph.symbols.file)
@@ -433,15 +444,15 @@ describe("CompletionRunner", () => {
     };
     const contexts = new Map([[ctx.key, ctx]]);
 
-    filePhase.init(contexts, "coll", "run-def", "ts");
-    chunkPhase.init(contexts, "coll", "ts");
+    filePhase.init(contexts, fixturePhysicalCollectionName("coll"), "run-def", "ts");
+    chunkPhase.init(contexts, fixturePhysicalCollectionName("coll"), "ts");
     await marker.markRunStart("coll", ["codegraph.symbols"], "run-def", "ts");
 
-    chunkPhase.onBatch("coll", "/repo", [
+    chunkPhase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", [
       { chunkId: "c1", chunk: { metadata: { filePath: "/repo/a.ts" }, startLine: 1, endLine: 10 } } as any,
     ]);
 
-    await runner.run("coll", contexts, Date.now());
+    await runner.run(fixturePhysicalCollectionName("coll"), contexts, Date.now());
 
     expect(buildChunkSignals).toHaveBeenCalledWith(
       "/repo",
@@ -486,12 +497,14 @@ describe("CompletionRunner", () => {
     };
     const contexts = new Map([[ctx.key, ctx]]);
 
-    filePhase.init(contexts, "coll", "run-deg", "ts");
-    chunkPhase.init(contexts, "coll", "ts");
+    filePhase.init(contexts, fixturePhysicalCollectionName("coll"), "run-deg", "ts");
+    chunkPhase.init(contexts, fixturePhysicalCollectionName("coll"), "ts");
     await marker.markRunStart("coll", ["git"], "run-deg", "ts");
 
-    const reader = vi.fn(async (_c: string, _k: string, level: "file" | "chunk") => (level === "file" ? 2 : 0));
-    await runner.run("coll", contexts, Date.now(), reader);
+    const reader = vi.fn(async (_c: PhysicalCollectionName, _provider: EnrichmentProvider, level: "file" | "chunk") =>
+      level === "file" ? 2 : 0,
+    );
+    await runner.run(fixturePhysicalCollectionName("coll"), contexts, Date.now(), reader);
 
     const final = (await marker.read("coll"))!.git as any;
     expect(final.file.status).toBe("degraded");
@@ -529,11 +542,11 @@ describe("CompletionRunner", () => {
       ignoreFilter: null,
     };
     const contexts = new Map([[ctx.key, ctx]]);
-    filePhase.init(contexts, "coll", "run-overlap", "ts");
-    chunkPhase.init(contexts, "coll", "ts");
+    filePhase.init(contexts, fixturePhysicalCollectionName("coll"), "run-overlap", "ts");
+    chunkPhase.init(contexts, fixturePhysicalCollectionName("coll"), "ts");
     await marker.markRunStart("coll", ["git"], "run-overlap", "ts");
 
-    const metrics = await runner.run("coll", contexts, Date.now() - 100);
+    const metrics = await runner.run(fixturePhysicalCollectionName("coll"), contexts, Date.now() - 100);
 
     // Dead fields from the old bulk-prefetch model must not be present
     expect(metrics).not.toHaveProperty("overlapMs");
@@ -586,14 +599,14 @@ describe("CompletionRunner", () => {
       ignoreFilter: null,
     };
     const contexts = new Map([[ctx.key, ctx]]);
-    filePhase.init(contexts, "coll", "run-weno4", "rb");
-    chunkPhase.init(contexts, "coll", "rb");
+    filePhase.init(contexts, fixturePhysicalCollectionName("coll"), "run-weno4", "rb");
+    chunkPhase.init(contexts, fixturePhysicalCollectionName("coll"), "rb");
     await marker.markRunStart("coll", ["codegraph.symbols"], "run-weno4", "rb");
 
     const phases = vi.spyOn(pipelineLog, "enrichmentPhase");
     let failures: { provider: string; collection: string; error: string }[];
     try {
-      await runner.run("coll", contexts, Date.now(), async () => 0, "", "run-weno4");
+      await runner.run(fixturePhysicalCollectionName("coll"), contexts, Date.now(), async () => 0, "", "run-weno4");
       // Snapshot before restoring — mockRestore also clears `mock.calls`.
       failures = phases.mock.calls
         .filter(([name]) => name === "PASS1_AGGREGATE_READ_FAILED")
@@ -654,16 +667,16 @@ describe("CompletionRunner", () => {
     };
     const contexts = new Map([[ctx.key, ctx]]);
 
-    filePhase.init(contexts, "coll", "run-1", "rb");
-    chunkPhase.init(contexts, "coll", "rb");
+    filePhase.init(contexts, fixturePhysicalCollectionName("coll"), "run-1", "rb");
+    chunkPhase.init(contexts, fixturePhysicalCollectionName("coll"), "rb");
     await marker.markRunStart("coll", ["codegraph.symbols"], "run-1", "rb");
-    await runner.run("coll", contexts, Date.now(), async () => 0, "", "run-1");
+    await runner.run(fixturePhysicalCollectionName("coll"), contexts, Date.now(), async () => 0, "", "run-1");
     expect(((await marker.read("coll"))!.codegraph as any).symbols.file.status).toBe("degraded");
 
-    filePhase.init(contexts, "coll", "run-2", "rb");
-    chunkPhase.init(contexts, "coll", "rb");
+    filePhase.init(contexts, fixturePhysicalCollectionName("coll"), "run-2", "rb");
+    chunkPhase.init(contexts, fixturePhysicalCollectionName("coll"), "rb");
     await marker.markRunStart("coll", ["codegraph.symbols"], "run-2", "rb");
-    await runner.run("coll", contexts, Date.now(), async () => 0, "", "run-2");
+    await runner.run(fixturePhysicalCollectionName("coll"), contexts, Date.now(), async () => 0, "", "run-2");
 
     expect(((await marker.read("coll"))!.codegraph as any).symbols.file.status).toBe("completed");
   });
@@ -748,18 +761,18 @@ describe("CompletionRunner", () => {
       [codegraphCtx.key, codegraphCtx],
     ]);
 
-    filePhase.init(contexts, "coll", "run-21sr5", "ts");
-    chunkPhase.init(contexts, "coll", "ts");
+    filePhase.init(contexts, fixturePhysicalCollectionName("coll"), "run-21sr5", "ts");
+    chunkPhase.init(contexts, fixturePhysicalCollectionName("coll"), "ts");
     await marker.markRunStart("coll", ["git", "codegraph.symbols"], "run-21sr5", "ts");
 
     // A streamed chunk whose file got no overlay — the out-of-window miss the
     // backfill re-enriches.
-    filePhase.onBatch("coll", "/repo", [
+    filePhase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", [
       { chunkId: "c-missed", chunk: { metadata: { filePath: "/repo/missed.ts" }, startLine: 1, endLine: 5 } } as any,
     ]);
     await filePhase.drain();
 
-    await runner.run("coll", contexts, Date.now());
+    await runner.run(fixturePhysicalCollectionName("coll"), contexts, Date.now());
 
     expect(gitBuildFileSignals).toHaveBeenCalledWith("/repo", expect.objectContaining({ paths: ["missed.ts"] }));
     expect(codegraphFinalizeSawBackfillInFlight).toEqual([true]);
@@ -804,16 +817,18 @@ describe("CompletionRunner", () => {
     };
     const contexts = new Map([[ctx.key, ctx]]);
 
-    filePhase.init(contexts, "coll", "run-ts", "ts", false, undefined, "wholeCorpus", ["typescript"]);
-    chunkPhase.init(contexts, "coll", "ts");
+    filePhase.init(contexts, fixturePhysicalCollectionName("coll"), "run-ts", "ts", false, undefined, "wholeCorpus", [
+      "typescript",
+    ]);
+    chunkPhase.init(contexts, fixturePhysicalCollectionName("coll"), "ts");
     await marker.markRunStart("coll", ["codegraph.symbols"], "run-ts", "ts");
-    await runner.run("coll", contexts, Date.now(), async () => 0, "", "run-ts");
+    await runner.run(fixturePhysicalCollectionName("coll"), contexts, Date.now(), async () => 0, "", "run-ts");
     expect(readPersistedPass1Aggregates).toHaveBeenLastCalledWith("coll", ["typescript"]);
 
-    filePhase.init(contexts, "coll", "run-all", "ts");
-    chunkPhase.init(contexts, "coll", "ts");
+    filePhase.init(contexts, fixturePhysicalCollectionName("coll"), "run-all", "ts");
+    chunkPhase.init(contexts, fixturePhysicalCollectionName("coll"), "ts");
     await marker.markRunStart("coll", ["codegraph.symbols"], "run-all", "ts");
-    await runner.run("coll", contexts, Date.now(), async () => 0, "", "run-all");
+    await runner.run(fixturePhysicalCollectionName("coll"), contexts, Date.now(), async () => 0, "", "run-all");
     expect(readPersistedPass1Aggregates).toHaveBeenLastCalledWith("coll", []);
   });
 });

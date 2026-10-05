@@ -28,11 +28,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { GraphDbClientPool } from "../../../../../../src/core/adapters/duckdb/pool.js";
-import { createDatabaseMigrationApplier } from "../../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
+import { createDatabaseMigrationApplier } from "../../../../../../src/core/domains/maintenance/migration/database/index.js";
 import {
   CodegraphEnrichmentProvider,
   stripVersionSuffix,
@@ -100,10 +101,10 @@ describe("CodegraphEnrichmentProvider — versioned-write / alias-read routing",
     // (`acquireRead`) opens the SAME versioned file — both keyed on the
     // unstripped name. Readers follow the live version via the Qdrant
     // alias swap, NOT via an in-provider strip.
-    await provider.buildFileSignals(root, { collectionName: "code_demo_v3" });
+    await provider.buildFileSignals(root, { collectionName: fixturePhysicalCollectionName("code_demo_v3") });
 
     // The reader opens the same versioned DuckDB file the write targeted.
-    const versionedHandle = await pool.acquire("code_demo_v3");
+    const versionedHandle = await pool.acquire(fixturePhysicalCollectionName("code_demo_v3"));
     const symbols = await versionedHandle.graphDb.listAllSymbols();
     const fooSyms = symbols.filter((s) => s.shortName === "Foo" || s.shortName === "bar");
     expect(fooSyms.length).toBeGreaterThan(0);
@@ -119,9 +120,9 @@ describe("CodegraphEnrichmentProvider — versioned-write / alias-read routing",
     const root = mkdtempSync(join(tmpdir(), "cg-pool-arbitrary-"));
     writeFileSync(join(root, "x.ts"), "export class XService { run() {} }\n");
 
-    await provider.buildFileSignals(root, { collectionName: "project-alpha" });
+    await provider.buildFileSignals(root, { collectionName: fixturePhysicalCollectionName("project-alpha") });
 
-    const handle = await pool.acquire("project-alpha");
+    const handle = await pool.acquire(fixturePhysicalCollectionName("project-alpha"));
     const symbols = await handle.graphDb.listAllSymbols();
     expect(symbols.length).toBeGreaterThan(0);
 

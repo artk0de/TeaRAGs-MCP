@@ -16,6 +16,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
 import type { EnrichmentProvider } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
@@ -79,7 +80,7 @@ describe("EnrichmentCoordinator.runRepairPass holds the daemon guard (as1zl)", (
     const provider = makeProvider({ readPersistedFileHashes: vi.fn().mockResolvedValue(new Map()) });
     const coordinator = new EnrichmentCoordinator(qdrant, provider, undefined, makeExecutor(runFileBatch), guard);
 
-    expect(await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED)).toBe(2);
+    expect(await coordinator.runRepairPass(fixturePhysicalCollectionName("code_x_v1"), "/repo", SCANNED)).toBe(2);
 
     expect(log).toEqual(["begin:code_x_v1", "runFileBatch", "release"]);
     expect(release).toHaveBeenCalledTimes(1);
@@ -92,7 +93,9 @@ describe("EnrichmentCoordinator.runRepairPass holds the daemon guard (as1zl)", (
     const provider = makeProvider({ readPersistedFileHashes: vi.fn().mockResolvedValue(new Map()) });
     const coordinator = new EnrichmentCoordinator(qdrant, provider, undefined, makeExecutor(runFileBatch), guard);
 
-    await expect(coordinator.runRepairPass("code_x_v1", "/repo", SCANNED)).rejects.toThrow("daemon build unavailable");
+    await expect(
+      coordinator.runRepairPass(fixturePhysicalCollectionName("code_x_v1"), "/repo", SCANNED),
+    ).rejects.toThrow("daemon build unavailable");
 
     expect(guard.begin).toHaveBeenCalledWith("code_x_v1");
     expect(release).toHaveBeenCalledTimes(1);
@@ -107,7 +110,7 @@ describe("EnrichmentCoordinator.runRepairPass holds the daemon guard (as1zl)", (
     });
     const coordinator = new EnrichmentCoordinator(qdrant, provider, undefined, makeExecutor(runFileBatch), guard);
 
-    expect(await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED)).toBe(0);
+    expect(await coordinator.runRepairPass(fixturePhysicalCollectionName("code_x_v1"), "/repo", SCANNED)).toBe(0);
 
     expect(runFileBatch).not.toHaveBeenCalled();
     expect(guard.begin).not.toHaveBeenCalled();
@@ -133,7 +136,7 @@ describe("EnrichmentCoordinator.runRepairPass holds the daemon guard (as1zl)", (
       guard,
     );
 
-    await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED);
+    await coordinator.runRepairPass(fixturePhysicalCollectionName("code_x_v1"), "/repo", SCANNED);
 
     expect(log).toEqual(["begin:code_x_v1", "runFileBatch", "runFileBatch", "release"]);
     expect(release).toHaveBeenCalledTimes(1);
@@ -188,7 +191,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments forced repair holds the dae
       guard,
     );
 
-    await coordinator.recomputeEnrichments("code_x_v1", "/repo", ["codegraph"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("code_x_v1"), "/repo", ["codegraph"]);
 
     // The run's own guard (begun at `beginRun`) follows; the repair's must
     // bracket the forced repair's dispatch on its own.

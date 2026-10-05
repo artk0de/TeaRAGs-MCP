@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 
+import type { MergedOracleFileReply, PyOracleFileReply } from "../../scripts/lib/py-oracle-core.js";
 import {
   AnsweredByProbe,
   askOracle,
@@ -32,6 +33,7 @@ const multiBaseCtx = {
   callerFile: "netbox/core/models/data.py",
   callerScope: ["DataSource"],
   symbolTable: new InMemoryGlobalSymbolTable(),
+  imports: [],
   classAncestors: {
     "netbox/core/models/data.py::DataSource": ["netbox.models.features::JobsMixin", "netbox.models::PrimaryModel"],
   },
@@ -42,6 +44,7 @@ const singleBaseCtx = {
   callerFile: "netbox/core/models/data.py",
   callerScope: ["DataSource"],
   symbolTable: new InMemoryGlobalSymbolTable(),
+  imports: [],
   classAncestors: { "netbox/core/models/data.py::DataSource": ["django.db.models::Model"] },
 } as CallContext;
 
@@ -289,6 +292,7 @@ describe("countEnclosingBases", () => {
     const nested = {
       callerFile: "pkg/a.py",
       callerScope: ["Outer", "Inner"],
+      imports: [],
       symbolTable: new InMemoryGlobalSymbolTable(),
       classAncestors: { "pkg/a.py::Outer.Inner": ["a::A", "b::B", "c::C"] },
     } as CallContext;
@@ -321,7 +325,7 @@ describe("buildRows", () => {
           ...overrides,
         },
       ],
-    ] as never);
+    ] as [string, PyOracleFileReply | MergedOracleFileReply][]);
 
   it("marks every row of a parso-damaged file degraded", () => {
     const rows = buildRows([site()], reply([], { parsoErrors: 3 }));

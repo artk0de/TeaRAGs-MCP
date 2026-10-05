@@ -15,6 +15,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../__helpers__/collection-identity.js";
 import { CodegraphDbFiles } from "../../../../src/core/adapters/duckdb/codegraph-db-files.js";
 
 /**
@@ -95,11 +96,13 @@ describe("CodegraphDbFiles — clone publish is atomic (i5kiu)", () => {
     failpoints.copyFileFailOnCall = 1;
     failpoints.copyFilePartialBytes = 3;
 
-    await expect(files.cloneDatabase("code_src", "code_dst")).rejects.toThrow(/simulated SIGKILL/);
+    await expect(
+      files.cloneDatabase(fixturePhysicalCollectionName("code_src"), fixturePhysicalCollectionName("code_dst")),
+    ).rejects.toThrow(/simulated SIGKILL/);
 
     expect(existsSync(targetDb())).toBe(false);
     expect(existsSync(targetWal())).toBe(false);
-    expect(files.has("code_dst")).toBe(false);
+    expect(files.has(fixturePhysicalCollectionName("code_dst"))).toBe(false);
   });
 
   it("a kill after the database copy but before the WAL copy does not publish a WAL-less clone", async () => {
@@ -107,10 +110,12 @@ describe("CodegraphDbFiles — clone publish is atomic (i5kiu)", () => {
     writeFileSync(join(codegraphDir, "code_src.duckdb.wal"), "walbytes");
     failpoints.copyFileFailOnCall = 2;
 
-    await expect(files.cloneDatabase("code_src", "code_dst")).rejects.toThrow(/simulated SIGKILL/);
+    await expect(
+      files.cloneDatabase(fixturePhysicalCollectionName("code_src"), fixturePhysicalCollectionName("code_dst")),
+    ).rejects.toThrow(/simulated SIGKILL/);
 
     expect(existsSync(targetDb())).toBe(false);
-    expect(files.has("code_dst")).toBe(false);
+    expect(files.has(fixturePhysicalCollectionName("code_dst"))).toBe(false);
   });
 
   it("a kill between the two publish renames leaves the target not-cloned, not half-published", async () => {
@@ -120,13 +125,15 @@ describe("CodegraphDbFiles — clone publish is atomic (i5kiu)", () => {
     // only honest mid-publish state.
     failpoints.renameFailOnCall = 2;
 
-    await expect(files.cloneDatabase("code_src", "code_dst")).rejects.toThrow(/simulated SIGKILL/);
+    await expect(
+      files.cloneDatabase(fixturePhysicalCollectionName("code_src"), fixturePhysicalCollectionName("code_dst")),
+    ).rejects.toThrow(/simulated SIGKILL/);
 
     // The database is renamed into place LAST: an interruption mid-publish may
     // leave an orphaned WAL (discardOrphanedWal territory) but must never leave
     // a database file that merely LOOKS complete without its log.
     expect(existsSync(targetDb())).toBe(false);
-    expect(files.has("code_dst")).toBe(false);
+    expect(files.has(fixturePhysicalCollectionName("code_dst"))).toBe(false);
   });
 
   it("resume: staging leftovers of an interrupted clone are cleaned and the next clone is complete", async () => {
@@ -136,13 +143,13 @@ describe("CodegraphDbFiles — clone publish is atomic (i5kiu)", () => {
     writeFileSync(join(codegraphDir, "code_dst.duckdb.clone-tmp"), "half-written");
     writeFileSync(join(codegraphDir, "code_dst.duckdb.clone-tmp.wal"), "half-written");
 
-    await files.cloneDatabase("code_src", "code_dst");
+    await files.cloneDatabase(fixturePhysicalCollectionName("code_src"), fixturePhysicalCollectionName("code_dst"));
 
     expect(readFileSync(targetDb(), "utf-8")).toBe("payload");
     expect(readFileSync(targetWal(), "utf-8")).toBe("walbytes");
     expect(existsSync(join(codegraphDir, "code_dst.duckdb.clone-tmp"))).toBe(false);
     expect(existsSync(join(codegraphDir, "code_dst.duckdb.clone-tmp.wal"))).toBe(false);
-    expect(files.has("code_dst")).toBe(true);
+    expect(files.has(fixturePhysicalCollectionName("code_dst"))).toBe(true);
     // Staging names never match the anchored `<base>(_vN)?.duckdb` pattern, so
     // the orphan sweep must not see the target twice.
     expect(files.listCollectionDbNames("code_dst")).toHaveLength(1);

@@ -20,6 +20,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import {
   DaemonGraphDbClient,
   LEGACY_TOLERATED_OPS,
@@ -253,7 +254,9 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
     const initHook = vi.fn<CollectionInitHook>(async () => undefined);
     const pool = makePool(paths, { buildFingerprint: "NEW-BUILD" }, initHook);
 
-    const err = await pool.acquireWrite("code_caps_hookless_v1").catch((e: unknown) => e);
+    const err = await pool
+      .acquireWrite(fixturePhysicalCollectionName("code_caps_hookless_v1"))
+      .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(CodegraphDaemonBuildSkewError);
     expect(err).toBeInstanceOf(InfraError);
     expect((err as CodegraphDaemonBuildSkewError).missingOps).toEqual(["listPass1Aggregates"]);
@@ -274,7 +277,9 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
 
     const pool = makePool(paths, { buildFingerprint: "NEW-BUILD" });
 
-    const err = await pool.acquireWrite("code_caps_predates_v1").catch((e: unknown) => e);
+    const err = await pool
+      .acquireWrite(fixturePhysicalCollectionName("code_caps_predates_v1"))
+      .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(CodegraphDaemonBuildSkewError);
     // Nothing to name: the daemon never said what it supports.
     expect((err as CodegraphDaemonBuildSkewError).missingOps).toEqual([]);
@@ -297,7 +302,7 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
       },
     });
 
-    const handle = await pool.acquireWrite("code_caps_hooked_v1");
+    const handle = await pool.acquireWrite(fixturePhysicalCollectionName("code_caps_hooked_v1"));
     expect(respawns).toBe(1);
     // The op is live on the replacement — a real round-trip, not merely a connect.
     await expect(handle.graphDb.listPass1Aggregates({ kind: "allLanguages" })).resolves.toEqual([]);
@@ -313,7 +318,7 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
     );
     const warn = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-    const client = new DaemonGraphDbClient(socketPath, "code_caps_tolerated_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_caps_tolerated_v1"));
     await client.init();
     await expect(client.diffSymbolSignals()).resolves.toEqual({ symbols: [], files: [] });
     await expect(client.diffSymbolSignals()).resolves.toEqual({ symbols: [], files: [] });
@@ -332,7 +337,7 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
       r.op === "listPass1Aggregates" ? new Error("unknown daemon op: listPass1Aggregates") : null,
     );
 
-    const client = new DaemonGraphDbClient(socketPath, "code_caps_required_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_caps_required_v1"));
     await client.init();
     const err = await client.listPass1Aggregates({ kind: "allLanguages" }).catch((e: unknown) => e);
     await client.close();

@@ -4,7 +4,7 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
-  type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import {
   TSGlobalShortNameSymbolResolutionStrategy,
@@ -17,7 +17,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/tr
 
 const cfg: ResolverConfig = { tsOptions: { baseUrl: ".", paths: {} }, mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };
 
-const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): NamedSymbol => ({
+const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName,
@@ -25,7 +25,7 @@ const sym = (symbolId: string, shortName: string, relPath: string, scope: string
   scope,
 });
 
-const tableWith = (...files: [string, NamedSymbol[]][]): InMemoryGlobalSymbolTable => {
+const tableWith = (...files: [string, SymbolDefinition[]][]): InMemoryGlobalSymbolTable => {
   const t = new InMemoryGlobalSymbolTable();
   for (const [relPath, defs] of files) t.upsertFile(relPath, defs);
   return t;
@@ -222,7 +222,7 @@ describe("TSImportNarrowedFallbackSymbolResolutionStrategy — builtin-receiver 
 
   it("continues for an untyped builtin-vocabulary member even when one candidate is imported (out.push(x))", () => {
     const call: CallRef = { callText: "out.push(x)", receiver: "out", member: "push", startLine: 9 };
-    const context = ctx({ symbolTable: ambiguous(), imports: [{ importText: "./impl-a.js" }] });
+    const context = ctx({ symbolTable: ambiguous(), imports: [{ importText: "./impl-a.js", startLine: 1 }] });
     expect(claimedExternal(call, context)).toBe(true);
     const outcome = strat.attempt(call, context);
     expect(outcome.kind).toBe("continue");
@@ -232,7 +232,7 @@ describe("TSImportNarrowedFallbackSymbolResolutionStrategy — builtin-receiver 
     const call: CallRef = { callText: "m.push(x)", receiver: "m", member: "push", startLine: 9 };
     const context = ctx({
       symbolTable: ambiguous(),
-      imports: [{ importText: "./impl-a.js" }],
+      imports: [{ importText: "./impl-a.js", startLine: 1 }],
       localBindings: { m: [{ line: 2, type: "Map" }] },
     });
     expect(claimedExternal(call, context)).toBe(true);
@@ -256,7 +256,7 @@ describe("TSImportNarrowedFallbackSymbolResolutionStrategy — builtin-receiver 
       call,
       ctx({
         symbolTable,
-        imports: [{ importText: "./impl-a.js" }],
+        imports: [{ importText: "./impl-a.js", startLine: 1 }],
         localBindings: { impl: [{ line: 2, type: "Handler" }] },
       }),
     );

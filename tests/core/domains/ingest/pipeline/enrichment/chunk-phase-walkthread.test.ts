@@ -10,6 +10,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { ChunkPhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/chunk-phase.js";
 import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
@@ -40,10 +41,10 @@ describe("ChunkPhase churn-walk thread lifecycle (bd tea-rags-mcp-iqpuu)", () =>
     const buildChunkSignals = vi.fn().mockResolvedValue(new Map());
     const ctx = buildCtx({ buildChunkSignals, createChunkChurnWalkThread });
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
 
-    phase.onBatch("coll", "/repo", batchOf("src/a.ts", "c1"));
-    phase.onBatch("coll", "/repo", batchOf("src/b.ts", "c2"));
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", batchOf("src/a.ts", "c1"));
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", batchOf("src/b.ts", "c2"));
     await phase.drain();
 
     expect(createChunkChurnWalkThread).toHaveBeenCalledTimes(1);
@@ -59,9 +60,9 @@ describe("ChunkPhase churn-walk thread lifecycle (bd tea-rags-mcp-iqpuu)", () =>
     const fakeThread = { walk: vi.fn(), close: vi.fn().mockResolvedValue(undefined) };
     const ctx = buildCtx({ createChunkChurnWalkThread: vi.fn(() => fakeThread) });
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
 
-    phase.onBatch("coll", "/repo", batchOf("src/a.ts", "c1"));
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", batchOf("src/a.ts", "c1"));
     expect(fakeThread.close).not.toHaveBeenCalled();
     await phase.drain();
 
@@ -74,9 +75,9 @@ describe("ChunkPhase churn-walk thread lifecycle (bd tea-rags-mcp-iqpuu)", () =>
     const buildChunkSignals = vi.fn().mockResolvedValue(new Map());
     const ctx = buildCtx({ buildChunkSignals });
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
 
-    phase.onBatch("coll", "/repo", batchOf("src/a.ts", "c1"));
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", batchOf("src/a.ts", "c1"));
     await phase.drain();
 
     expect(buildChunkSignals).toHaveBeenCalledTimes(1);
@@ -104,9 +105,9 @@ describe("ChunkPhase churn-walk thread lifecycle (bd tea-rags-mcp-iqpuu)", () =>
     });
     const ctx = buildCtx({ buildChunkSignals });
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
 
-    phase.onBatch("coll", "/repo", batchOf("src/a.ts", "c1"));
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", batchOf("src/a.ts", "c1"));
     await phase.drain();
 
     expect(stepSpy).toHaveBeenCalledWith(

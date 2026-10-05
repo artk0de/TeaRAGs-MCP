@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { INDEXING_METADATA_ID } from "../../../../../../src/core/contracts/constants.js";
 import { mapMarkerToHealth } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/health-mapper.js";
 import { EnrichmentMarkerStore } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/marker-store.js";
@@ -60,7 +61,12 @@ describe("EnrichmentRecovery", () => {
       // resolveRoot returns path with trailing slash
       mockProvider.resolveRoot.mockReturnValue("/repo/");
 
-      await recovery.recoverFileLevel("test-collection", "/repo", mockProvider as any, "2026-01-01T00:00:00Z");
+      await recovery.recoverFileLevel(
+        fixturePhysicalCollectionName("test-collection"),
+        "/repo",
+        mockProvider as any,
+        "2026-01-01T00:00:00Z",
+      );
 
       // applyFileSignals should be called with items containing filePath=/repo/src/foo.ts
       const applierCall = mockApplier.applyFileSignals.mock.calls[0];
@@ -75,7 +81,12 @@ describe("EnrichmentRecovery", () => {
       // resolveRoot returns path without trailing slash
       mockProvider.resolveRoot.mockReturnValue("/repo");
 
-      await recovery.recoverFileLevel("test-collection", "/repo", mockProvider as any, "2026-01-01T00:00:00Z");
+      await recovery.recoverFileLevel(
+        fixturePhysicalCollectionName("test-collection"),
+        "/repo",
+        mockProvider as any,
+        "2026-01-01T00:00:00Z",
+      );
 
       const applierCall = mockApplier.applyFileSignals.mock.calls[0];
       const items = applierCall[4];
@@ -89,7 +100,7 @@ describe("EnrichmentRecovery", () => {
       ]);
 
       const result = await recovery.recoverFileLevel(
-        "test-collection",
+        fixturePhysicalCollectionName("test-collection"),
         "/repo",
         mockProvider as any,
         "2026-01-01T00:00:00Z",
@@ -107,7 +118,7 @@ describe("EnrichmentRecovery", () => {
       ]);
 
       const result = await recovery.recoverFileLevel(
-        "test-collection",
+        fixturePhysicalCollectionName("test-collection"),
         "/repo",
         mockProvider as any,
         "2026-01-01T00:00:00Z",
@@ -140,7 +151,7 @@ describe("EnrichmentRecovery", () => {
       mockQdrant.scrollFiltered.mockResolvedValue([]);
 
       const result = await recovery.recoverFileLevel(
-        "test-collection",
+        fixturePhysicalCollectionName("test-collection"),
         "/repo",
         mockProvider as any,
         "2026-01-01T00:00:00Z",
@@ -160,7 +171,7 @@ describe("EnrichmentRecovery", () => {
       mockProvider.buildFileSignals.mockRejectedValue(new Error("git failure"));
 
       const result = await recovery.recoverFileLevel(
-        "test-collection",
+        fixturePhysicalCollectionName("test-collection"),
         "/repo",
         mockProvider as any,
         "2026-01-01T00:00:00Z",
@@ -180,7 +191,7 @@ describe("EnrichmentRecovery", () => {
       mockApplier.applyChunkSignals.mockResolvedValue(2);
 
       const result = await recovery.recoverChunkLevel(
-        "test-collection",
+        fixturePhysicalCollectionName("test-collection"),
         "/repo",
         mockProvider as any,
         "2026-01-01T00:00:00Z",
@@ -203,7 +214,7 @@ describe("EnrichmentRecovery", () => {
       mockQdrant.scrollFiltered.mockResolvedValue([]);
 
       const result = await recovery.recoverChunkLevel(
-        "test-collection",
+        fixturePhysicalCollectionName("test-collection"),
         "/repo",
         mockProvider as any,
         "2026-01-01T00:00:00Z",
@@ -221,7 +232,7 @@ describe("EnrichmentRecovery", () => {
       mockProvider.buildChunkSignals.mockRejectedValue(new Error("git failure"));
 
       const result = await recovery.recoverChunkLevel(
-        "test-collection",
+        fixturePhysicalCollectionName("test-collection"),
         "/repo",
         mockProvider as any,
         "2026-01-01T00:00:00Z",
@@ -240,7 +251,7 @@ describe("EnrichmentRecovery", () => {
       mockApplier.applyChunkSignals.mockResolvedValue(3);
 
       const result = await recovery.recoverChunkLevel(
-        "test-collection",
+        fixturePhysicalCollectionName("test-collection"),
         "/repo",
         mockProvider as any,
         "2026-01-01T00:00:00Z",
@@ -264,7 +275,7 @@ describe("EnrichmentRecovery", () => {
       mockApplier.applyChunkSignals.mockResolvedValue(1);
 
       const result = await recovery.recoverChunkLevel(
-        "test-collection",
+        fixturePhysicalCollectionName("test-collection"),
         "/repo",
         mockProvider as any,
         "2026-01-01T00:00:00Z",
@@ -279,7 +290,12 @@ describe("EnrichmentRecovery", () => {
       ]);
       mockApplier.applyChunkSignals.mockResolvedValue(1);
 
-      await recovery.recoverChunkLevel("test-collection", "/repo", mockProvider as any, "2026-01-01T00:00:00Z");
+      await recovery.recoverChunkLevel(
+        fixturePhysicalCollectionName("test-collection"),
+        "/repo",
+        mockProvider as any,
+        "2026-01-01T00:00:00Z",
+      );
 
       const chunkMapArg: Map<string, { chunkId: string; startLine: number; endLine: number }[]> =
         mockProvider.buildChunkSignals.mock.calls[0][1];
@@ -406,7 +422,12 @@ describe("EnrichmentRecovery", () => {
     it("passes pageSize to scrollFiltered when provided", async () => {
       const customRecovery = new EnrichmentRecovery(mockQdrant as any, mockApplier as any, { scrollPageSize: 1000 });
 
-      await customRecovery.recoverFileLevel("test-collection", "/repo", mockProvider as any, "2026-01-01T00:00:00Z");
+      await customRecovery.recoverFileLevel(
+        fixturePhysicalCollectionName("test-collection"),
+        "/repo",
+        mockProvider as any,
+        "2026-01-01T00:00:00Z",
+      );
 
       expect(mockQdrant.scrollFiltered).toHaveBeenCalledWith(
         "test-collection",
@@ -418,7 +439,12 @@ describe("EnrichmentRecovery", () => {
     });
 
     it("passes undefined pageSize when not configured", async () => {
-      await recovery.recoverFileLevel("test-collection", "/repo", mockProvider as any, "2026-01-01T00:00:00Z");
+      await recovery.recoverFileLevel(
+        fixturePhysicalCollectionName("test-collection"),
+        "/repo",
+        mockProvider as any,
+        "2026-01-01T00:00:00Z",
+      );
 
       // Fourth arg should be undefined (no custom pageSize)
       const call = mockQdrant.scrollFiltered.mock.calls[0];
@@ -450,7 +476,7 @@ describe("EnrichmentRecovery", () => {
 
     it("recoverFileLevel heals damage past the legacy 10k scroll cap in one pass", async () => {
       const result = await recovery.recoverFileLevel(
-        "test-collection",
+        fixturePhysicalCollectionName("test-collection"),
         "/repo",
         mockProvider as any,
         "2026-01-01T00:00:00Z",
@@ -466,7 +492,12 @@ describe("EnrichmentRecovery", () => {
     });
 
     it("dispatches buildFileSignals in bounded batches of unique paths", async () => {
-      await recovery.recoverFileLevel("test-collection", "/repo", mockProvider as any, "2026-01-01T00:00:00Z");
+      await recovery.recoverFileLevel(
+        fixturePhysicalCollectionName("test-collection"),
+        "/repo",
+        mockProvider as any,
+        "2026-01-01T00:00:00Z",
+      );
 
       const { calls } = mockProvider.buildFileSignals.mock;
       expect(calls.length).toBe(Math.ceil(FILES / RECOVERY_FILE_BATCH_SIZE));
@@ -486,7 +517,7 @@ describe("EnrichmentRecovery", () => {
       setDebug(false);
       try {
         const result = await recovery.recoverFileLevel(
-          "test-collection",
+          fixturePhysicalCollectionName("test-collection"),
           "/repo",
           mockProvider as any,
           "2026-01-01T00:00:00Z",
@@ -511,7 +542,7 @@ describe("EnrichmentRecovery", () => {
       );
 
       const result = await recovery.recoverChunkLevel(
-        "test-collection",
+        fixturePhysicalCollectionName("test-collection"),
         "/repo",
         mockProvider as any,
         "2026-01-01T00:00:00Z",
@@ -531,7 +562,12 @@ describe("EnrichmentRecovery", () => {
     });
 
     it("requests only recovery-relevant payload keys from the scroll", async () => {
-      await recovery.recoverFileLevel("test-collection", "/repo", mockProvider as any, "2026-01-01T00:00:00Z");
+      await recovery.recoverFileLevel(
+        fixturePhysicalCollectionName("test-collection"),
+        "/repo",
+        mockProvider as any,
+        "2026-01-01T00:00:00Z",
+      );
 
       const call = mockQdrant.scrollFiltered.mock.calls[0];
       // `symbolId` joined the projection with bd tea-rags-mcp-9i2ow: the codegraph
@@ -599,7 +635,12 @@ describe("EnrichmentRecovery deferred-chunk handoff (bd tea-rags-mcp-fxio5)", ()
   it("hands a deferring provider's owed chunks back instead of computing them pre-walk", async () => {
     const { applier, executor, markerStore, recovery, contexts } = harness(provider("codegraph.symbols", true));
 
-    const handoff = await recovery.recoverAll("coll", "/repo", contexts as any, markerStore as any);
+    const handoff = await recovery.recoverAll(
+      fixturePhysicalCollectionName("coll"),
+      "/repo",
+      contexts as any,
+      markerStore as any,
+    );
 
     expect(executor.runChunkBatch).not.toHaveBeenCalled();
     expect(applier.applyChunkSignals).not.toHaveBeenCalled();
@@ -624,7 +665,12 @@ describe("EnrichmentRecovery deferred-chunk handoff (bd tea-rags-mcp-fxio5)", ()
   it("keeps healing a streaming provider's chunks in place, with nothing handed off", async () => {
     const { applier, executor, markerStore, recovery, contexts } = harness(provider("git", false));
 
-    const handoff = await recovery.recoverAll("coll", "/repo", contexts as any, markerStore as any);
+    const handoff = await recovery.recoverAll(
+      fixturePhysicalCollectionName("coll"),
+      "/repo",
+      contexts as any,
+      markerStore as any,
+    );
 
     expect(executor.runChunkBatch).toHaveBeenCalledTimes(1);
     expect(applier.applyChunkSignals).toHaveBeenCalledTimes(1);
@@ -683,7 +729,7 @@ describe("EnrichmentRecovery deferred-chunk handoff — non-extractable files (b
     ]);
 
     const result = await recovery.recoverChunkLevel(
-      "coll",
+      fixturePhysicalCollectionName("coll"),
       "/repo",
       tsOnlyGraphProvider() as any,
       "2026-01-01T00:00:00Z",
@@ -708,7 +754,7 @@ describe("EnrichmentRecovery deferred-chunk handoff — non-extractable files (b
     ]);
 
     const result = await recovery.recoverChunkLevel(
-      "coll",
+      fixturePhysicalCollectionName("coll"),
       "/repo",
       tsOnlyGraphProvider() as any,
       "2026-01-01T00:00:00Z",
@@ -790,7 +836,7 @@ describe("EnrichmentRecovery.recoverAll race guard", () => {
     } as any;
     const ctx = new Map([["git", { key: "git", provider, effectiveRoot: "/repo", ignoreFilter: null }]]);
 
-    await recovery.recoverAll("coll", "/repo", ctx, marker);
+    await recovery.recoverAll(fixturePhysicalCollectionName("coll"), "/repo", ctx, marker);
 
     const m = (await marker.read("coll"))!.git as any;
     // The runId changed (BASELINE → NEW_RUN) between snapshot and re-check, so the
@@ -847,7 +893,7 @@ describe("EnrichmentRecovery.recoverAll dangling _run self-heal", () => {
     } as any;
     const ctx = new Map([["git", { key: "git", provider, effectiveRoot: "/repo", ignoreFilter: null }]]);
 
-    await recovery.recoverAll("coll", "/repo", ctx, marker);
+    await recovery.recoverAll(fixturePhysicalCollectionName("coll"), "/repo", ctx, marker);
 
     const enrichment = (await marker.read("coll")) as EnrichmentMarkerMap;
     const git = enrichment.git as any;
@@ -901,7 +947,12 @@ describe("EnrichmentRecovery skip stamps (tea-rags-mcp-zt6qr)", () => {
   it("treats a point carrying a skip stamp as settled, not as a recovery candidate", async () => {
     const { qdrant, recovery } = harness([]);
 
-    await recovery.recoverFileLevel("coll", "/repo", policyProvider() as any, "2026-01-01T00:00:00Z");
+    await recovery.recoverFileLevel(
+      fixturePhysicalCollectionName("coll"),
+      "/repo",
+      policyProvider() as any,
+      "2026-01-01T00:00:00Z",
+    );
 
     // Both terminal markers must be absent for a point to be a candidate:
     // enrichedAt says "enriched", skippedAs says "policy declined it".
@@ -920,7 +971,12 @@ describe("EnrichmentRecovery skip stamps (tea-rags-mcp-zt6qr)", () => {
       { id: "doc-1", payload: { relativePath: "docs/gotchas.md", startLine: 1, endLine: 4 } },
     ]);
 
-    await recovery.recoverChunkLevel("coll", "/repo", policyProvider() as any, "2026-01-01T00:00:00Z");
+    await recovery.recoverChunkLevel(
+      fixturePhysicalCollectionName("coll"),
+      "/repo",
+      policyProvider() as any,
+      "2026-01-01T00:00:00Z",
+    );
 
     expect(applier.applySkipStamps).toHaveBeenCalledWith("coll", "git", "chunk", [
       { id: "doc-1", skippedAs: "documentation" },
@@ -935,7 +991,12 @@ describe("EnrichmentRecovery skip stamps (tea-rags-mcp-zt6qr)", () => {
       { id: "doc-2", payload: { relativePath: "docs/b.md", startLine: 1, endLine: 4 } },
     ]);
 
-    const result = await recovery.recoverChunkLevel("coll", "/repo", policyProvider() as any, "2026-01-01T00:00:00Z");
+    const result = await recovery.recoverChunkLevel(
+      fixturePhysicalCollectionName("coll"),
+      "/repo",
+      policyProvider() as any,
+      "2026-01-01T00:00:00Z",
+    );
 
     expect(applier.applySkipStamps).toHaveBeenCalledWith("coll", "git", "chunk", [
       { id: "doc-1", skippedAs: "documentation" },
@@ -960,7 +1021,12 @@ describe("EnrichmentRecovery skip stamps (tea-rags-mcp-zt6qr)", () => {
       { id: "small-1", payload: { relativePath: "src/small.ts", startLine: 1, endLine: 9, moduleLines: 40 } },
     ]);
 
-    await recovery.recoverChunkLevel("coll", "/repo", sizeAware as any, "2026-01-01T00:00:00Z");
+    await recovery.recoverChunkLevel(
+      fixturePhysicalCollectionName("coll"),
+      "/repo",
+      sizeAware as any,
+      "2026-01-01T00:00:00Z",
+    );
 
     expect(applier.applySkipStamps).toHaveBeenCalledWith("coll", "git", "chunk", [
       { id: "big-1", skippedAs: "oversized" },
@@ -972,7 +1038,12 @@ describe("EnrichmentRecovery skip stamps (tea-rags-mcp-zt6qr)", () => {
       { id: "code-1", payload: { relativePath: "app/models/user.rb", startLine: 1, endLine: 9 } },
     ]);
 
-    await recovery.recoverFileLevel("coll", "/repo", policyProvider() as any, "2026-01-01T00:00:00Z");
+    await recovery.recoverFileLevel(
+      fixturePhysicalCollectionName("coll"),
+      "/repo",
+      policyProvider() as any,
+      "2026-01-01T00:00:00Z",
+    );
 
     expect(applier.applySkipStamps).not.toHaveBeenCalled();
   });

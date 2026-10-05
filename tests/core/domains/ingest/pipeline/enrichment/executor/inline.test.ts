@@ -9,6 +9,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../../__helpers__/collection-identity.js";
 import type { EnrichmentProvider } from "../../../../../../../src/core/contracts/index.js";
 import { InlineEnrichmentExecutor } from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/inline.js";
 
@@ -33,7 +34,7 @@ describe("InlineEnrichmentExecutor", () => {
 
   it("runFileBatch prefers streamFileBatch when present", async () => {
     const p = fakeProvider();
-    const out = await exec.runFileBatch(p, "/root", ["a.ts"], { collectionName: "c" });
+    const out = await exec.runFileBatch(p, "/root", ["a.ts"], { collectionName: fixturePhysicalCollectionName("c") });
     expect(out.get("a.ts")).toEqual({ s: 3 });
     expect(p.streamFileBatch).toHaveBeenCalledWith("/root", ["a.ts"], { collectionName: "c" });
     expect(p.buildFileSignals).not.toHaveBeenCalled();
@@ -41,7 +42,7 @@ describe("InlineEnrichmentExecutor", () => {
 
   it("runFileBatch falls back to buildFileSignals({paths}) when no streamFileBatch", async () => {
     const p = fakeProvider({ streamFileBatch: undefined });
-    const out = await exec.runFileBatch(p, "/root", ["a.ts"], { collectionName: "c" });
+    const out = await exec.runFileBatch(p, "/root", ["a.ts"], { collectionName: fixturePhysicalCollectionName("c") });
     expect(out.get("a.ts")).toEqual({ x: 1 });
     expect(p.buildFileSignals).toHaveBeenCalledWith("/root", { collectionName: "c", paths: ["a.ts"] });
   });
@@ -49,7 +50,9 @@ describe("InlineEnrichmentExecutor", () => {
   it("runFileSignalsRecovery always calls buildFileSignals with paths (no streamFileBatch preference)", async () => {
     // backfiller / recovery semantics: skip the streaming side-effects.
     const p = fakeProvider();
-    const out = await exec.runFileSignalsRecovery(p, "/root", ["a.ts"], { collectionName: "c" });
+    const out = await exec.runFileSignalsRecovery(p, "/root", ["a.ts"], {
+      collectionName: fixturePhysicalCollectionName("c"),
+    });
     expect(out.get("a.ts")).toEqual({ x: 1 });
     expect(p.buildFileSignals).toHaveBeenCalledWith("/root", { collectionName: "c", paths: ["a.ts"] });
     expect(p.streamFileBatch).not.toHaveBeenCalled();
@@ -85,7 +88,11 @@ describe("InlineEnrichmentExecutor", () => {
     const onRelease = vi.fn(async () => undefined);
     const provider = fakeProvider({ onRelease });
     await expect(
-      exec.releaseRun([provider], { runId: "run-1", collection: "code_xxx", absolutePath: "/root" }),
+      exec.releaseRun([provider], {
+        runId: "run-1",
+        collection: fixturePhysicalCollectionName("code_xxx"),
+        absolutePath: "/root",
+      }),
     ).resolves.toBeUndefined();
     expect(onRelease).not.toHaveBeenCalled();
   });
@@ -93,7 +100,11 @@ describe("InlineEnrichmentExecutor", () => {
   it("releaseRun tolerates providers without an onRelease declaration", async () => {
     const provider = fakeProvider();
     await expect(
-      exec.releaseRun([provider], { runId: "run-1", collection: "code_xxx", absolutePath: "/root" }),
+      exec.releaseRun([provider], {
+        runId: "run-1",
+        collection: fixturePhysicalCollectionName("code_xxx"),
+        absolutePath: "/root",
+      }),
     ).resolves.toBeUndefined();
   });
 });

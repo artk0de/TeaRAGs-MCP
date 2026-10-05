@@ -85,7 +85,7 @@ describe("compactStorage daemon op", () => {
     );
     vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-    const client = new DaemonGraphDbClient(socketPath, "code_compact_legacy_v1");
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_compact_legacy_v1"));
     await client.init();
     await expect(client.compactStorage()).resolves.toEqual({ kind: "skipped", reason: "unsupported" });
     await client.close();

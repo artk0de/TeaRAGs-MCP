@@ -8,7 +8,7 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
-  type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import {
   TSGlobalShortNameSymbolResolutionStrategy,
@@ -43,7 +43,7 @@ function writePackage(repoRoot: string, name: string, declaration: string): void
   writeSource(repoRoot, `node_modules/${name}/index.d.ts`, declaration);
 }
 
-const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): NamedSymbol => ({
+const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName,

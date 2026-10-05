@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { CallContext, NamedSymbol } from "../../../../../src/core/contracts/types/codegraph.js";
+import type { CallContext, SymbolDefinition } from "../../../../../src/core/contracts/types/codegraph.js";
 import {
   isEcmascriptSourcePath,
   lookupEcmascriptSymbols,
@@ -20,10 +20,10 @@ const sym = (
   shortName: string,
   relPath: string,
   scope: string[],
-  extra: Partial<NamedSymbol> = {},
-): NamedSymbol => ({ symbolId, fqName: symbolId, shortName, relPath, scope, ...extra });
+  extra: Partial<SymbolDefinition> = {},
+): SymbolDefinition => ({ symbolId, fqName: symbolId, shortName, relPath, scope, ...extra });
 
-const tableWith = (...files: [string, NamedSymbol[]][]): InMemoryGlobalSymbolTable => {
+const tableWith = (...files: [string, SymbolDefinition[]][]): InMemoryGlobalSymbolTable => {
   const t = new InMemoryGlobalSymbolTable();
   for (const [relPath, defs] of files) t.upsertFile(relPath, defs);
   return t;

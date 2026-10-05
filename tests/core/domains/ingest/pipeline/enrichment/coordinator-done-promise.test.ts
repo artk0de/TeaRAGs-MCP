@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { reindexRunSpec } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/run-spec.js";
 import type { EnrichmentProvider } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
@@ -80,11 +81,11 @@ describe("EnrichmentCoordinator — a superseded run's failed completion", () =>
     const coordinator = new EnrichmentCoordinator(qdrantDouble() as never, [failingOnceProvider(held.opened)]);
 
     const supersededRun = coordinator.beginRun(
-      reindexRunSpec({ absolutePath: "/repo", collection: "coll", fileCount: 0 }),
+      reindexRunSpec({ absolutePath: "/repo", collection: fixturePhysicalCollectionName("coll"), fileCount: 0 }),
     );
     const superseded = coordinator.awaitCompletion(supersededRun).catch((error: unknown) => error);
     const currentRun = coordinator.beginRun(
-      reindexRunSpec({ absolutePath: "/repo", collection: "coll", fileCount: 0 }),
+      reindexRunSpec({ absolutePath: "/repo", collection: fixturePhysicalCollectionName("coll"), fileCount: 0 }),
     );
     const current = coordinator.awaitCompletion(currentRun);
 

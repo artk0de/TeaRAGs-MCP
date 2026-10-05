@@ -172,7 +172,7 @@ describe("updateCommand", () => {
     // a live npm-registry fetch. The "unavailable" branch routes to exit(1).
     const exitSpy = vi
       .spyOn(process, "exit")
-      .mockImplementation((() => undefined) as unknown as (code?: number) => never);
+      .mockImplementation((() => undefined) as unknown as (code?: string | number | null) => never);
     try {
       await (updateCommand.handler as (a: unknown) => Promise<void>)({});
       expect(exitSpy).toHaveBeenCalledWith(1);

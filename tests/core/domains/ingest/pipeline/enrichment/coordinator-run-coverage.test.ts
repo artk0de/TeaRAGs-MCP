@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import {
   fullIndexRunSpec,
@@ -54,7 +55,12 @@ describe("EnrichmentCoordinator — finalize run coverage (xpmwg)", () => {
       codegraphProvider(finalizeSignals),
     ]);
 
-    await coordinator.recomputeEnrichments("coll", "/repo", ["codegraph"], ["typescript"]);
+    await coordinator.recomputeEnrichments(
+      fixturePhysicalCollectionName("coll"),
+      "/repo",
+      ["codegraph"],
+      ["typescript"],
+    );
 
     expect(coverageOf(finalizeSignals)).toEqual(["wholeCorpus"]);
   });
@@ -63,7 +69,7 @@ describe("EnrichmentCoordinator — finalize run coverage (xpmwg)", () => {
     const finalizeSignals = vi.fn().mockResolvedValue(new Map());
     const coordinator = new EnrichmentCoordinator(qdrantWithPoints([]) as never, [codegraphProvider(finalizeSignals)]);
 
-    await coordinator.runFinalizeOnly("/repo", "coll");
+    await coordinator.runFinalizeOnly("/repo", fixturePhysicalCollectionName("coll"));
 
     expect(coverageOf(finalizeSignals)).toEqual(["subset"]);
   });
@@ -71,13 +77,20 @@ describe("EnrichmentCoordinator — finalize run coverage (xpmwg)", () => {
   it("an ordinary run is a subset unless its caller declares the whole corpus", async () => {
     const subsetFinalize = vi.fn().mockResolvedValue(new Map());
     const subset = new EnrichmentCoordinator(qdrantWithPoints([]) as never, [codegraphProvider(subsetFinalize)]);
-    const subsetRun = subset.beginRun(reindexRunSpec({ absolutePath: "/repo", collection: "coll", fileCount: 0 }));
+    const subsetRun = subset.beginRun(
+      reindexRunSpec({ absolutePath: "/repo", collection: fixturePhysicalCollectionName("coll"), fileCount: 0 }),
+    );
     await subset.awaitCompletion(subsetRun);
 
     const wholeFinalize = vi.fn().mockResolvedValue(new Map());
     const whole = new EnrichmentCoordinator(qdrantWithPoints([]) as never, [codegraphProvider(wholeFinalize)]);
     const wholeRun = whole.beginRun(
-      fullIndexRunSpec({ absolutePath: "/repo", collection: "coll", fileCount: 0, crossPass: false }),
+      fullIndexRunSpec({
+        absolutePath: "/repo",
+        collection: fixturePhysicalCollectionName("coll"),
+        fileCount: 0,
+        crossPass: false,
+      }),
     );
     await whole.awaitCompletion(wholeRun);
 

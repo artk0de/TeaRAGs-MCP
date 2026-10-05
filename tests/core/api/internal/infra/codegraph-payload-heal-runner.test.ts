@@ -19,6 +19,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import {
   createCodegraphPayloadHealRunner,
   type CodegraphPayloadHealRunnerDeps,
@@ -28,7 +29,7 @@ import type { GraphDbClient } from "../../../../../src/core/contracts/types/code
 import type { BatchPayloadOp } from "../../../../../src/core/domains/ingest/pipeline/enrichment/batch-write.js";
 
 const PROVIDER_KEY = "codegraph.symbols";
-const COLLECTION = "code_test";
+const COLLECTION = fixturePhysicalCollectionName("code_test");
 
 interface StoredPoint {
   id: string;

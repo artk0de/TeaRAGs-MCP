@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { EnrichmentBackfiller } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/backfiller.js";
 import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
@@ -48,7 +49,7 @@ describe("EnrichmentBackfiller", () => {
       ignoreFilter: null,
     };
 
-    await backfiller.runFor("coll", ctx, "2026-05-07T10:00:00Z");
+    await backfiller.runFor(fixturePhysicalCollectionName("coll"), ctx, "2026-05-07T10:00:00Z");
 
     expect(buildFileSignals).toHaveBeenCalledWith("/repo", {
       paths: ["src/a.ts"],
@@ -94,12 +95,15 @@ describe("EnrichmentBackfiller", () => {
     const backfiller = new EnrichmentBackfiller(applier, qdrant as any, new InlineEnrichmentExecutor());
 
     await backfiller.runFor(
-      "coll",
+      fixturePhysicalCollectionName("coll"),
       { key: "git", provider: provider as any, effectiveRoot: "/repo", ignoreFilter: null },
       "2026-09-19T00:00:00Z",
     );
 
-    const git = (await qdrant.getPoint("coll", "c1"))?.payload.git;
+    const git = (await qdrant.getPoint("coll", "c1"))!.payload!.git as {
+      file: Record<string, unknown>;
+      chunk: Record<string, unknown>;
+    };
     expect(git.file).toEqual({ commitCount: 0, enrichedAt: "2026-09-19T00:00:00Z" });
     expect(git.chunk).toEqual({ commitCount: 0, lastModifiedAt: 0, enrichedAt: "2026-09-19T00:00:00Z" });
   });
@@ -119,7 +123,7 @@ describe("EnrichmentBackfiller", () => {
       effectiveRoot: "/repo",
       ignoreFilter: null,
     };
-    await backfiller.runFor("coll", ctx, "ts");
+    await backfiller.runFor(fixturePhysicalCollectionName("coll"), ctx, "ts");
     expect(buildFileSignals).not.toHaveBeenCalled();
   });
 });

@@ -6,7 +6,7 @@ import {
   type CallRef,
   type DispatchEdge,
   type DispatchFanoutOutcome,
-  type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import type { ResolverConfig } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/index.js";
 import { RubyUnionDispatchResolver } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/ruby-union-dispatch.js";
@@ -14,7 +14,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains
 
 const cfg: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };
 
-const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): NamedSymbol => ({
+const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName,
@@ -22,7 +22,7 @@ const sym = (symbolId: string, shortName: string, relPath: string, scope: string
   scope,
 });
 
-const tableWith = (...files: [string, NamedSymbol[]][]): InMemoryGlobalSymbolTable => {
+const tableWith = (...files: [string, SymbolDefinition[]][]): InMemoryGlobalSymbolTable => {
   const t = new InMemoryGlobalSymbolTable();
   for (const [relPath, defs] of files) t.upsertFile(relPath, defs);
   return t;
@@ -47,11 +47,11 @@ const edgesOf = (outcome: DispatchFanoutOutcome): DispatchEdge[] => {
 };
 
 // Shared symbol fixtures
-const aFile: [string, NamedSymbol[]] = [
+const aFile: [string, SymbolDefinition[]] = [
   "app/models/a.rb",
   [sym("A", "A", "app/models/a.rb", []), sym("A#process", "process", "app/models/a.rb", ["A"])],
 ];
-const bFile: [string, NamedSymbol[]] = [
+const bFile: [string, SymbolDefinition[]] = [
   "app/models/b.rb",
   [sym("B", "B", "app/models/b.rb", []), sym("B#process", "process", "app/models/b.rb", ["B"])],
 ];
@@ -139,7 +139,7 @@ describe("RubyUnionDispatchResolver (Task 1.7 — union receiver cone fan-out)",
   });
 
   it("filters external union members — only in-project members with known files emit edges", () => {
-    const repoFile: [string, NamedSymbol[]] = [
+    const repoFile: [string, SymbolDefinition[]] = [
       "app/repositories/repository.rb",
       [
         sym("Repository", "Repository", "app/repositories/repository.rb", []),

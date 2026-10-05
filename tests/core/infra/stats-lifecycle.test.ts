@@ -17,7 +17,7 @@ describe("Reranker.hasCollectionStats", () => {
 
   it("returns true after setCollectionStats", () => {
     const stats: CollectionSignalStats = {
-      perSignal: new Map([["git.file.commitCount", { count: 100, percentiles: { 25: 5 } }]]),
+      perSignal: new Map([["git.file.commitCount", { count: 100, percentiles: { 25: 5 }, min: 0, max: 0 }]]),
       perLanguage: new Map(),
       distributions: {
         totalFiles: 0,
@@ -57,7 +57,7 @@ describe("Stats lifecycle — cold start", () => {
   it("loads cached stats into reranker when cache exists", () => {
     const reranker = new Reranker([], [], []);
     const stats: CollectionSignalStats = {
-      perSignal: new Map([["git.file.commitCount", { count: 50, percentiles: { 25: 3, 95: 42 } }]]),
+      perSignal: new Map([["git.file.commitCount", { count: 50, percentiles: { 25: 3, 95: 42 }, min: 0, max: 0 }]]),
       perLanguage: new Map(),
       distributions: {
         totalFiles: 0,
@@ -110,7 +110,7 @@ describe("Stats lifecycle — post-index refresh", () => {
   it("invalidates reranker stats so next search reloads from cache", () => {
     const reranker = new Reranker([], [], []);
     const oldStats: CollectionSignalStats = {
-      perSignal: new Map([["git.file.commitCount", { count: 50, percentiles: { 25: 3 } }]]),
+      perSignal: new Map([["git.file.commitCount", { count: 50, percentiles: { 25: 3 }, min: 0, max: 0 }]]),
       perLanguage: new Map(),
       distributions: {
         totalFiles: 0,
@@ -128,7 +128,7 @@ describe("Stats lifecycle — post-index refresh", () => {
 
     // Simulate post-index: save new stats + invalidate
     const newStats: CollectionSignalStats = {
-      perSignal: new Map([["git.file.commitCount", { count: 200, percentiles: { 25: 8, 95: 55 } }]]),
+      perSignal: new Map([["git.file.commitCount", { count: 200, percentiles: { 25: 8, 95: 55 }, min: 0, max: 0 }]]),
       perLanguage: new Map(),
       distributions: {
         totalFiles: 0,

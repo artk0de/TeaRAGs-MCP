@@ -9,7 +9,7 @@ import type {
   CallRef,
   DispatchEdge,
   DispatchFanoutOutcome,
-  NamedSymbol,
+  SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { TSTypeCheckerUnionReceiverDispatchResolver } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/ts-type-checker-union-receiver.js";
 import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
@@ -24,7 +24,7 @@ function writeSource(repoRoot: string, relPath: string, content: string): void {
   writeFileSync(abs, content, "utf8");
 }
 
-const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): NamedSymbol => ({
+const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName,
@@ -32,7 +32,7 @@ const sym = (symbolId: string, shortName: string, relPath: string, scope: string
   scope,
 });
 
-const tableWith = (...files: [string, NamedSymbol[]][]): InMemoryGlobalSymbolTable => {
+const tableWith = (...files: [string, SymbolDefinition[]][]): InMemoryGlobalSymbolTable => {
   const table = new InMemoryGlobalSymbolTable();
   for (const [relPath, defs] of files) table.upsertFile(relPath, defs);
   return table;
@@ -47,11 +47,11 @@ const edgesOf = (outcome: DispatchFanoutOutcome): DispatchEdge[] => {
 const sortEdges = (edges: DispatchEdge[]): DispatchEdge[] =>
   [...edges].sort((a, b) => (a.targetSymbolId ?? "").localeCompare(b.targetSymbolId ?? ""));
 
-const A_FILE: [string, NamedSymbol[]] = [
+const A_FILE: [string, SymbolDefinition[]] = [
   "src/a.ts",
   [sym("A", "A", "src/a.ts", []), sym("A#process", "process", "src/a.ts", ["A"])],
 ];
-const B_FILE: [string, NamedSymbol[]] = [
+const B_FILE: [string, SymbolDefinition[]] = [
   "src/b.ts",
   [sym("B", "B", "src/b.ts", []), sym("B#process", "process", "src/b.ts", ["B"])],
 ];

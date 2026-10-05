@@ -20,6 +20,7 @@ import { Worker } from "node:worker_threads";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../../__helpers__/collection-identity.js";
 import type {
   EnrichmentWorkerRequest,
   EnrichmentWorkerResponse,
@@ -254,7 +255,11 @@ export async function createSemaphoreProvider(config) {
       method: "runChunkBatch",
       root: "/repo",
       chunkMap,
-      options: { concurrencySemaphore: corruptedSemaphore, skipCache: true, collectionName: "code_xxx" },
+      options: {
+        concurrencySemaphore: corruptedSemaphore,
+        skipCache: true,
+        collectionName: fixturePhysicalCollectionName("code_xxx"),
+      },
     });
     expect(response.error).toBeUndefined();
     const inner = response.chunkOverlay!.get("a.ts")!;

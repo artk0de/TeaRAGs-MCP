@@ -15,6 +15,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../__helpers__/collection-identity.js";
 import { CodegraphDbFiles } from "../../../../src/core/adapters/duckdb/codegraph-db-files.js";
 import { CodegraphShadowDatabaseRefusedError } from "../../../../src/core/adapters/duckdb/errors.js";
 import { GraphDbClientPool } from "../../../../src/core/adapters/duckdb/pool.js";
@@ -43,17 +44,19 @@ describe("GraphDbClientPool — refuses to create a shadow database (39xca.1)", 
   it("rejects a write acquire of <base> while <base>_vN generations exist, and creates no file", async () => {
     writeFileSync(join(tmp, "codegraph", "code_x_v3.duckdb"), "");
 
-    await expect(pool.acquireWrite("code_x")).rejects.toBeInstanceOf(CodegraphShadowDatabaseRefusedError);
+    await expect(pool.acquireWrite(fixturePhysicalCollectionName("code_x"))).rejects.toBeInstanceOf(
+      CodegraphShadowDatabaseRefusedError,
+    );
 
     expect(existsSync(join(tmp, "codegraph", "code_x.duckdb"))).toBe(false);
   });
 
   it("still opens a <base> database that already exists beside its generations", async () => {
-    await pool.acquireWrite("code_x");
-    await pool.release("code_x");
+    await pool.acquireWrite(fixturePhysicalCollectionName("code_x"));
+    await pool.release(fixturePhysicalCollectionName("code_x"));
     writeFileSync(join(tmp, "codegraph", "code_x_v3.duckdb"), "");
 
-    const handle = await pool.acquireWrite("code_x");
+    const handle = await pool.acquireWrite(fixturePhysicalCollectionName("code_x"));
 
     expect(handle.graphDb).toBeDefined();
   });
@@ -63,8 +66,8 @@ describe("GraphDbClientPool — refuses to create a shadow database (39xca.1)", 
     // generation: nothing named `code_x_v4_vN` exists, so it is not a shadow.
     writeFileSync(join(tmp, "codegraph", "code_x_v3.duckdb"), "");
 
-    await pool.acquireWrite("code_x_v4");
-    await pool.acquireWrite("code_plain");
+    await pool.acquireWrite(fixturePhysicalCollectionName("code_x_v4"));
+    await pool.acquireWrite(fixturePhysicalCollectionName("code_plain"));
 
     expect(existsSync(join(tmp, "codegraph", "code_x_v4.duckdb"))).toBe(true);
     expect(existsSync(join(tmp, "codegraph", "code_plain.duckdb"))).toBe(true);
@@ -89,9 +92,9 @@ describe("CodegraphDbFiles — refuses to clone into a shadow database (39xca.1)
     writeFileSync(join(dir, "code_src_v1.duckdb"), "source");
     writeFileSync(join(dir, "code_t_v2.duckdb"), "");
 
-    await expect(files.cloneDatabase("code_src_v1", "code_t")).rejects.toBeInstanceOf(
-      CodegraphShadowDatabaseRefusedError,
-    );
+    await expect(
+      files.cloneDatabase(fixturePhysicalCollectionName("code_src_v1"), fixturePhysicalCollectionName("code_t")),
+    ).rejects.toBeInstanceOf(CodegraphShadowDatabaseRefusedError);
 
     expect(existsSync(join(dir, "code_t.duckdb"))).toBe(false);
   });

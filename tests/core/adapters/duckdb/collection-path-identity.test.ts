@@ -21,19 +21,27 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { fixtureCollectionAlias, fixturePhysicalCollectionName } from "../../__helpers__/collection-identity.js";
 import { GraphDbClientPool } from "../../../../src/core/adapters/duckdb/pool.js";
+import type {
+  CollectionAlias,
+  CollectionAliasEntry,
+  PhysicalCollectionName,
+} from "../../../../src/core/contracts/types/collection-identity.js";
 import { resolvePhysicalCollection } from "../../../../src/core/domains/ingest/operations/version-resolver.js";
 import { createDatabaseMigrationApplier } from "../../../../src/core/domains/maintenance/migration/database/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
-const ALIASES = [
-  { aliasName: "code_x", collectionName: "code_x_v52" },
-  { aliasName: "code_other", collectionName: "code_other_v3" },
+const ALIASES: readonly CollectionAliasEntry[] = [
+  { aliasName: fixtureCollectionAlias("code_x"), collectionName: fixturePhysicalCollectionName("code_x_v52") },
+  { aliasName: fixtureCollectionAlias("code_other"), collectionName: fixturePhysicalCollectionName("code_other_v3") },
 ];
 
 /** What GraphFacade does before it touches the pool: expand the alias. */
-function readPathName(collectionName: string): string {
-  return ALIASES.find((a) => a.aliasName === collectionName)?.collectionName ?? collectionName;
+function readPathName(collectionName: CollectionAlias): PhysicalCollectionName {
+  return (
+    ALIASES.find((a) => a.aliasName === collectionName)?.collectionName ?? fixturePhysicalCollectionName(collectionName)
+  );
 }
 
 describe("collection path identity", () => {
@@ -56,7 +64,7 @@ describe("collection path identity", () => {
 
   it("write and read resolve the same DuckDB file for an aliased collection", () => {
     const writePath = pool.pathFor(resolvePhysicalCollection("code_x", ALIASES));
-    const readPath = pool.pathFor(readPathName("code_x"));
+    const readPath = pool.pathFor(readPathName(fixtureCollectionAlias("code_x")));
 
     expect(writePath).toBe(readPath);
   });
@@ -73,7 +81,7 @@ describe("collection path identity", () => {
     // must keep resolving to the literal name — the fix must not push those
     // onto a versioned path that does not exist.
     const writePath = pool.pathFor(resolvePhysicalCollection("code_plain", ALIASES));
-    const readPath = pool.pathFor(readPathName("code_plain"));
+    const readPath = pool.pathFor(readPathName(fixtureCollectionAlias("code_plain")));
 
     expect(writePath).toBe(readPath);
     expect(writePath).toBe(join(tmp, "codegraph", "code_plain.duckdb"));

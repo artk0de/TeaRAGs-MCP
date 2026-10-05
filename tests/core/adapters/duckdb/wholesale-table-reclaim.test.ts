@@ -153,7 +153,9 @@ describe("wholesale codegraph table rewrites reclaim the previous generation", (
     expect(graph.meta?.head).toBe(`h${RUNS - 1}`);
     expect(graph.edges.every((e) => e.relPathA.startsWith(`src/g${RUNS - 1}/`))).toBe(true);
     expect(
-      [...(graph.bundles ?? new Map()).values()].every((b) => b.every((p) => p.startsWith(`src/g${RUNS - 1}/`))),
+      [...(graph.bundles ?? new Map()).values()].every((b: Iterable<string>) =>
+        b.every((p: string) => p.startsWith(`src/g${RUNS - 1}/`)),
+      ),
     ).toBe(true);
   });
 
