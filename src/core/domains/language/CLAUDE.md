@@ -238,16 +238,20 @@
   expressions into one nominal type — Ruby hands it the body's last expression,
   Python one node per `return`, and its four rules (map every arm, one-hop
   binding indirection, an unmappable arm kills the inference, two arms naming
-  different types kill it too) are what keep an inferred return single-nominal;
-  `ruby/walker/type-sources/body-last-expr.ts` is now an adapter over it and
-  keeps every export it had. `kernel/naming-convention.ts` owns the two neutral
-  gates behind `payment` → `Payment` (the class must EXIST in the run, and it
-  must have NO subtypes — a polymorphic base named by a variable carries a
-  concrete descendant, which is where every measured convention error came
-  from); it does NOT own the terminal, because refusing to emit when the guessed
-  class declares no such member needs the language's own MRO. Each language
-  supplies ports and keeps its own surface: what counts as a terminal
-  expression, what camelizes, what "has subtypes" is evidence of.
+  different types kill it too) are what keep an inferred return single-nominal.
+  Rule 4 is a LANGUAGE CHOICE (`ReturnUnionPolicy`, bd tea-rags-mcp-m99j1.1.53):
+  without the policy — what Ruby passes — it kills exactly as before; with it
+  the arms become a capped, order-stable union and a binding may carry one plain
+  event per branch, never a join to an ancestor (an override on the subtype is a
+  different target); `ruby/walker/type-sources/body-last-expr.ts` is now an
+  adapter over it and keeps every export it had. `kernel/naming-convention.ts`
+  owns the two neutral gates behind `payment` → `Payment` (the class must EXIST
+  in the run, and it must have NO subtypes — a polymorphic base named by a
+  variable carries a concrete descendant, which is where every measured
+  convention error came from); it does NOT own the terminal, because refusing to
+  emit when the guessed class declares no such member needs the language's own
+  MRO. Each language supplies ports and keeps its own surface: what counts as a
+  terminal expression, what camelizes, what "has subtypes" is evidence of.
 - **The receiver-typed strategies and the dispatch components are kernel
   skeletons over language PORTS; a language keeps the strategy `name` strings it
   shipped with.** `kernel/receiver-typed-strategies.ts` owns the verdict once

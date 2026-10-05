@@ -19,6 +19,7 @@
  * another file's defs, and `localCallBindings` does that hop at resolve time.
  */
 import type { AstNode } from "../../../../../contracts/types/ast.js";
+import type { ReturnArmTypes } from "../../../kernel/index.js";
 import { PYTHON_SELF_RETURN, pythonBareTypeName } from "./python-type-annotation.js";
 
 /** What the enclosing def can see: its class, and three lookups the scope's owner answers. */
@@ -27,10 +28,19 @@ export interface PythonReturnScope {
   readonly selfClass: string | undefined;
   /** The class a `self.<field>` read names, or null. */
   readonly fieldType: (field: string) => string | null;
-  /** What `self.<m>(…)` / `cls.<m>(…)` returns when the enclosing class defines `m`, or null. */
-  readonly selfMethodReturn: (method: string) => string | null;
-  /** What a same-file top-level def `<name>(…)` returns, or null. */
-  readonly fileReturn: (name: string) => string | null;
+  /**
+   * What `self.<m>(…)` / `cls.<m>(…)` returns when the enclosing class defines
+   * `m`, or null — several names when that def's own inference is a union.
+   */
+  readonly selfMethodReturn: (method: string) => ReturnArmTypes | null;
+  /** What a same-file top-level def `<name>(…)` returns (a union as several names), or null. */
+  readonly fileReturn: (name: string) => ReturnArmTypes | null;
+  /**
+   * Told the spelling a constructor arm was WRITTEN in (`utils.CursorWrapper`)
+   * before it is stripped to its last segment (bd tea-rags-mcp-m99j1.1.55). The
+   * inference keeps the bare name; only the publish path qualifies by it.
+   */
+  readonly writtenSpelling?: (bare: string, written: string) => void;
 }
 
 /** A single capitalized identifier — Python's class-name convention. */
@@ -51,7 +61,7 @@ function isSelfCopy(call: AstNode, fn: AstNode): boolean {
   return args.length === 1 && args[0]?.type === "identifier" && args[0].text === "self";
 }
 
-export function pythonReturnExpressionType(node: AstNode, scope: PythonReturnScope): string | null {
+export function pythonReturnExpressionType(node: AstNode, scope: PythonReturnScope): ReturnArmTypes | null {
   if (node.type === "identifier") {
     if (node.text === "self" || node.text === "cls") return scope.selfClass ?? null;
     return null; // a bare local is the kernel engine's binding case, not ours
@@ -72,7 +82,10 @@ export function pythonReturnExpressionType(node: AstNode, scope: PythonReturnSco
   if (fn === null) return null;
   if (fn.type === "identifier") {
     if (fn.text === "cls") return scope.selfClass ?? null;
-    if (PYTHON_CLASS_NAME.test(fn.text)) return fn.text;
+    if (PYTHON_CLASS_NAME.test(fn.text)) {
+      scope.writtenSpelling?.(fn.text, fn.text);
+      return fn.text;
+    }
     return scope.fileReturn(fn.text);
   }
   if (fn.type === "attribute" && scope.selfClass !== undefined) {
@@ -86,7 +99,9 @@ export function pythonReturnExpressionType(node: AstNode, scope: PythonReturnSco
   // `mod.Widget()` — the dotted spelling of a constructor; the LAST segment decides.
   if (fn.type === "attribute" || fn.type === "dotted_name") {
     const bare = pythonBareTypeName(fn.text);
-    return PYTHON_CLASS_NAME.test(bare) ? bare : null;
+    if (!PYTHON_CLASS_NAME.test(bare)) return null;
+    scope.writtenSpelling?.(bare, fn.text);
+    return bare;
   }
   return null;
 }

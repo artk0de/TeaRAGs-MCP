@@ -52,3 +52,16 @@ export function lookupPythonSymbolsByShortName(
  * a type lookup.
  */
 export const PYTHON_SYMBOL_KIND_ROLES = capability.codegraph.symbolKindRoles;
+
+/**
+ * Fully-qualified lookup restricted to PYTHON candidates — the lookup the
+ * Python resolver hands `reexportOriginFile` (bd tea-rags-mcp-nbf8q). The
+ * fq key is no safer than the short name: a top-level class's fqName is its
+ * bare name in every language, so a TypeScript `Flask` beside the package's
+ * own made the barrel hop read two declarations and decline, or land a Python
+ * import on a `.ts` file. Mirrors `lookupEcmascriptSymbols` on the TypeScript
+ * side.
+ */
+export function lookupPythonSymbols(ctx: CallContext, fqName: string): SymbolDefinition[] {
+  return ctx.symbolTable.lookup(fqName).filter((def) => isPythonSourcePath(def.relPath));
+}

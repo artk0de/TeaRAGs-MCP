@@ -21,11 +21,14 @@ import { describe, expect, it } from "vitest";
 import type { AstNode } from "../../../../../../../src/core/contracts/types/ast.js";
 import { TypeFactStore } from "../../../../../../../src/core/domains/language/kernel/type-fact-store.js";
 import type { TypeFact } from "../../../../../../../src/core/domains/language/kernel/type-facts.js";
+import { PY_DISPATCH_FAN_MAX } from "../../../../../../../src/core/domains/language/python/resolver/dispatch/python-dispatch-policy.js";
 import {
   PYTHON_INLINE_TYPE_SOURCES,
   PYTHON_TYPE_SOURCE_ORDER,
+  pythonAnnotationTypeFacetPass,
 } from "../../../../../../../src/core/domains/language/python/walker/passes/annotation-type-facts.js";
 import {
+  PYTHON_RETURN_UNION,
   pythonAstTypeSource,
   pythonInferredReturnReader,
 } from "../../../../../../../src/core/domains/language/python/walker/passes/python-ast-type-source.js";
@@ -117,11 +120,6 @@ describe("pythonAstTypeSource — what it infers", () => {
 });
 
 describe("pythonAstTypeSource — what it declines", () => {
-  it("is silent when two returns disagree", () => {
-    const src = ["def build(flag):", "    if flag:", "        return Widget()", "    return Gadget()", ""].join("\n");
-    expect(facts(src)).toEqual([]);
-  });
-
   it("is silent on a bare return", () => {
     const src = ["def build(flag):", "    if flag:", "        return Widget()", "    return", ""].join("\n");
     expect(facts(src)).toEqual([]);
@@ -330,6 +328,123 @@ describe("pythonAstTypeSource — delegated returns (self-calls, inferred callee
   });
 });
 
+describe("pythonAstTypeSource — union returns (bd tea-rags-mcp-m99j1.1.53)", () => {
+  const union = (...names: string[]) => ({ form: "union", members: names.map(instance) });
+
+  it("caps a union at the resolver's dispatch fan cap — the walker restates it, this pins it", () => {
+    expect(PYTHON_RETURN_UNION.maxArms).toBe(PY_DISPATCH_FAN_MAX);
+  });
+
+  it("unions two returns naming different classes, in declaration order", () => {
+    const src = ["def build(flag):", "    if flag:", "        return Widget()", "    return Gadget()", ""].join("\n");
+    expect(structuredReturnTypes(src)).toEqual({ [moduleKey("build")]: union("Widget", "Gadget") });
+  });
+
+  it("unions a local bound on two branches, and carries the union through self-delegation (django _prepare_cursor)", () => {
+    const src = [
+      "class BaseDatabaseWrapper:",
+      "    def make_debug_cursor(self, cursor):",
+      "        return CursorDebugWrapper(cursor, self)",
+      "    def make_cursor(self, cursor):",
+      "        return CursorWrapper(cursor, self)",
+      "    def _prepare_cursor(self, cursor):",
+      "        if self.queries_logged:",
+      "            wrapped_cursor = self.make_debug_cursor(cursor)",
+      "        else:",
+      "            wrapped_cursor = self.make_cursor(cursor)",
+      "        return wrapped_cursor",
+      "    def _cursor(self, name=None):",
+      "        return self._prepare_cursor(self.create_cursor(name))",
+      "    def cursor(self):",
+      "        return self._cursor()",
+      "",
+    ].join("\n");
+    const channel = structuredReturnTypes(src);
+    expect(channel["BaseDatabaseWrapper#_prepare_cursor"]).toEqual(union("CursorDebugWrapper", "CursorWrapper"));
+    expect(channel["BaseDatabaseWrapper#cursor"]).toEqual(union("CursorDebugWrapper", "CursorWrapper"));
+  });
+
+  it("unions try / except branches, and a branch that conditionally rebinds an earlier value", () => {
+    const tryExcept = [
+      "def build():",
+      "    try:",
+      "        w = Widget()",
+      "    except KeyError:",
+      "        w = Gadget()",
+      "    return w",
+      "",
+    ].join("\n");
+    const conditional = [
+      "def build(flag):",
+      "    w = Widget()",
+      "    if flag:",
+      "        w = Gadget()",
+      "    return w",
+      "",
+    ].join("\n");
+    expect(structuredReturnTypes(tryExcept)).toEqual({ [moduleKey("build")]: union("Widget", "Gadget") });
+    expect(structuredReturnTypes(conditional)).toEqual({ [moduleKey("build")]: union("Widget", "Gadget") });
+  });
+
+  it("is silent when a later unconditional assignment overwrites a branch's value", () => {
+    const src = [
+      "def build(flag):",
+      "    if flag:",
+      "        w = Widget()",
+      "    w = Gadget()",
+      "    return w",
+      "",
+    ].join("\n");
+    expect(facts(src)).toEqual([]);
+  });
+
+  it("is silent on a union wider than the Python dispatch fan cap", () => {
+    const src = [
+      "def build(n):",
+      "    if n == 1:",
+      "        return A()",
+      "    if n == 2:",
+      "        return B()",
+      "    if n == 3:",
+      "        return C()",
+      "    if n == 4:",
+      "        return D()",
+      "    return E()",
+      "",
+    ].join("\n");
+    expect(facts(src)).toEqual([]);
+  });
+
+  it("is silent when one arm is the Self marker — a union never carries it", () => {
+    const src = [
+      "import copy",
+      "class Expr:",
+      "    def pick(self, flag):",
+      "        if flag:",
+      "            return copy.copy(self)",
+      "        return Widget()",
+      "",
+    ].join("\n");
+    expect(facts(src)).toEqual([]);
+  });
+
+  it("the descriptor reader answers null for a union — a field type is one class", () => {
+    const root = parse(
+      [
+        "class Box:",
+        "    def pick(self, flag):",
+        "        if flag:",
+        "            return A()",
+        "        return B()",
+        "",
+      ].join("\n"),
+    );
+    const def = root.namedChildren[0]?.childForFieldName("body")?.namedChildren[0];
+    expect(def?.type).toBe("function_definition");
+    expect(pythonInferredReturnReader(root)(def as AstNode, "Box")).toBeNull();
+  });
+});
+
 describe("pythonAstTypeSource — delegated returns it declines", () => {
   const methodsOf = (src: string): string[] =>
     facts(src)
@@ -418,5 +533,58 @@ describe("pythonAstTypeSource — delegated returns it declines", () => {
       "\n",
     );
     expect(facts(src)).toEqual([]);
+  });
+});
+
+/**
+ * The facet pass publishes inferred arms under the spelling the DECLARING file
+ * binds them by (bd tea-rags-mcp-m99j1.1.55), so a reader in another file places
+ * them where the return was written. The inference itself stays bare.
+ */
+describe("pythonAnnotationTypeFacetPass — return arms qualified by the declaring file's imports", () => {
+  const published = (src: string): Record<string, unknown> =>
+    pythonAnnotationTypeFacetPass.run(parse(src), {
+      code: src,
+      relPath: "db/backends/base/base.py",
+      language: "python",
+      chunks: [],
+    }).structuredReturnTypes ?? {};
+
+  it("keeps a module-attribute constructor's dotted spelling, qualified through the binding", () => {
+    const src = [
+      "from db.backends import utils",
+      "class BaseDatabaseWrapper:",
+      "    def _prepare_cursor(self, cursor):",
+      "        if self.queries_logged:",
+      "            return utils.CursorDebugWrapper(cursor, self)",
+      "        return utils.CursorWrapper(cursor, self)",
+      "",
+    ].join("\n");
+    expect(published(src)).toEqual({
+      "BaseDatabaseWrapper#_prepare_cursor": {
+        form: "union",
+        members: [instance("db.backends.utils::CursorDebugWrapper"), instance("db.backends.utils::CursorWrapper")],
+      },
+    });
+  });
+
+  it("qualifies a from-imported bare name and leaves a same-file class bare", () => {
+    const src = [
+      "from .models import Widget",
+      "class Gadget: pass",
+      "def make(flag):",
+      "    if flag:",
+      "        return Widget()",
+      "    return Gadget()",
+      "",
+    ].join("\n");
+    expect(published(src)).toEqual({
+      "db/backends/base/base.py::make": { form: "union", members: [instance(".models::Widget"), instance("Gadget")] },
+    });
+  });
+
+  it("leaves a dotted spelling no import binds as its bare last segment", () => {
+    const src = ["def make():", "    return Outer.Inner()", ""].join("\n");
+    expect(published(src)).toEqual({ "db/backends/base/base.py::make": instance("Inner") });
   });
 });

@@ -10,7 +10,7 @@
  */
 import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
 import { TypeFactStore, type ExtractionFacetPass, type InlineTypeSource } from "../../../kernel/index.js";
-import { pythonLocalTypeTrackingEnabled } from "../walker.js";
+import { pythonLocalTypeTrackingEnabled, pythonTypeNameQualifier } from "../walker.js";
 import {
   PYTHON_ANNOTATION_SOURCE,
   pythonAnnotationTypeSource,
@@ -53,6 +53,7 @@ export const pythonAnnotationTypeFacetPass: ExtractionFacetPass = {
       root,
       trackLocalTypes: pythonLocalTypeTrackingEnabled(),
       moduleValues: pythonModuleValuesEnabled(),
+      qualifyTypeName: pythonTypeNameQualifier(root),
     };
     const facts = PYTHON_INLINE_TYPE_SOURCES.flatMap((source) => source.extract(input));
     if (facts.length === 0) return {};

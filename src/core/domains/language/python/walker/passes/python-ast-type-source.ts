@@ -11,15 +11,24 @@
  * table and the file's annotated top-level returns — so the pass stays O(defs)
  * and the netbox perf budget holds.
  */
-import type { AstNode } from "../../../../../contracts/types/ast.js";
+import { isSameAstNode, type AstNode } from "../../../../../contracts/types/ast.js";
+import type { TypeRef } from "../../../../../contracts/types/language.js";
 import {
-  inferReturnTypeName,
+  inferReturnTypeNames,
+  typeRefUnionOf,
   type InlineTypeSource,
+  type ReturnArmTypes,
   type ReturnInferencePorts,
+  type ReturnUnionPolicy,
   type TypeFact,
 } from "../../../kernel/index.js";
 import type { PythonTypeSourceInput } from "./python-annotation-type-source.js";
-import { isPythonClassFormDef, pythonAnnotationExpression, walkPythonScopes } from "./python-def-scope-walk.js";
+import {
+  isPythonClassFormDef,
+  pythonAnnotationExpression,
+  walkPythonScopes,
+  type PythonDefSite,
+} from "./python-def-scope-walk.js";
 import { pythonReturnExpressionType, type PythonReturnScope } from "./python-return-expression.js";
 import {
   PYTHON_SELF_RETURN,
@@ -66,28 +75,57 @@ function pythonReturnTerminals(defNode: AstNode): AstNode[] {
   return out;
 }
 
-/** Assignment events to `name` in this def's own scope. Augmented / multiple targets contribute `null`. */
+/**
+ * Assignment events to `name` in this def's own scope. Augmented / multiple
+ * targets contribute `null`, and so does a plain assignment a LATER plain one
+ * overwrites unconditionally (see {@link isOverwrittenLater}) — the union
+ * engine reads several events as one per branch, which a straight-line
+ * reassignment is not.
+ */
 function pythonAssignmentEvents(defNode: AstNode, name: string): (AstNode | null)[] {
-  const events: (AstNode | null)[] = [];
+  const events: { rhs: AstNode | null; statement: AstNode | null }[] = [];
   const body = defNode.childForFieldName("body");
-  if (body === null) return events;
+  if (body === null) return [];
   const scan = (n: AstNode): void => {
     if (PYTHON_NESTED_SCOPES.has(n.type)) return;
     if (n.type === "assignment") {
       const lhs = n.namedChild(0);
-      if (lhs?.type === "identifier" && lhs.text === name) events.push(n.childForFieldName("right"));
-      else if (lhs?.type === "pattern_list" && lhs.namedChildren.some((t) => t.text === name)) events.push(null);
+      if (lhs?.type === "identifier" && lhs.text === name) {
+        events.push({ rhs: n.childForFieldName("right"), statement: n.parent });
+      } else if (lhs?.type === "pattern_list" && lhs.namedChildren.some((t) => t.text === name)) {
+        events.push({ rhs: null, statement: null });
+      }
     } else if (n.type === "augmented_assignment") {
       const lhs = n.namedChild(0);
-      if (lhs?.type === "identifier" && lhs.text === name) events.push(null);
+      if (lhs?.type === "identifier" && lhs.text === name) events.push({ rhs: null, statement: null });
     } else if (n.type === "for_statement") {
       const target = n.childForFieldName("left");
-      if (target?.text === name) events.push(null); // rebound each iteration
+      if (target?.text === name) events.push({ rhs: null, statement: null }); // rebound each iteration
     }
     for (const child of n.namedChildren) scan(child);
   };
   for (const child of body.namedChildren) scan(child);
-  return events;
+  return events.map((event, i) => (isOverwrittenLater(event.statement, events.slice(i + 1)) ? null : event.rhs));
+}
+
+/**
+ * Does a later plain assignment run whenever this one has? It does when the
+ * later statement sits in this statement's own block or in a block enclosing
+ * it: `if c: w = A()` then `w = B()` — `A` never reaches a `return w` after
+ * both. A later statement in a SIBLING branch (`else:`, `except:`) or nested
+ * deeper (`w = A()` then `if c: w = B()`) leaves the earlier value reachable.
+ */
+function isOverwrittenLater(statement: AstNode | null, later: readonly { statement: AstNode | null }[]): boolean {
+  const block = statement?.parent ?? null;
+  if (block === null) return false;
+  return later.some((laterEvent) => {
+    const laterBlock = laterEvent.statement?.parent ?? null;
+    if (laterBlock === null) return false;
+    for (let cursor: AstNode | null = block; cursor !== null; cursor = cursor.parent) {
+      if (isSameAstNode(cursor, laterBlock)) return true;
+    }
+    return false;
+  });
 }
 
 function pythonReturnPorts(scope: PythonReturnScope): ReturnInferencePorts<AstNode, null> {
@@ -98,6 +136,22 @@ function pythonReturnPorts(scope: PythonReturnScope): ReturnInferencePorts<AstNo
     bindingName: (node) => node.text,
     assignmentEvents: (defNode, name) => pythonAssignmentEvents(defNode, name),
   };
+}
+
+/**
+ * Python opts into kernel rule 4's union form (bd tea-rags-mcp-m99j1.1.53):
+ * `_prepare_cursor` binding `CursorDebugWrapper` on one branch and
+ * `CursorWrapper` on the other returns BOTH, and the union-receiver dispatch
+ * fans a call on it to each arm's own member. The cap EQUALS the resolver's
+ * `PY_DISPATCH_FAN_MAX` — a union wider than the fan Python publishes would type
+ * a receiver no edge can follow. It is restated rather than imported so the
+ * walker takes no dependency on the resolver; the test file pins the two equal.
+ */
+export const PYTHON_RETURN_UNION: ReturnUnionPolicy = { maxArms: 4 };
+
+/** One name, or a union of instance arms. */
+function pythonReturnTypeRef(names: readonly string[]): TypeRef | undefined {
+  return typeRefUnionOf(names.map((name) => ({ form: "instance", name })));
 }
 
 /** One def a delegation can land on, with what `walkPythonScopes` read off it. */
@@ -322,20 +376,42 @@ const IN_PROGRESS = Symbol("in-progress");
  * null; because any null arm kills an inference (kernel rule 3), every node on
  * a cycle answers null whichever node the walk entered first, and caching that
  * is order-independent.
+ *
+ * A def's answer is a list: one class, or a union of up to
+ * {@link PYTHON_RETURN_UNION} classes that a delegating def inherits whole
+ * (`cursor` → `_cursor` → `_prepare_cursor`). A union never carries the `Self`
+ * marker — its substitution reads ONE receiver class, so a marker arm is silence.
  */
 class PythonReturnFixpoint {
-  private readonly defReturns = new Map<AstNode, string | null | typeof IN_PROGRESS>();
+  private readonly defReturns = new Map<AstNode, readonly string[] | null | typeof IN_PROGRESS>();
   private readonly fieldReturns = new Map<string, string | null | typeof IN_PROGRESS>();
+  /** `<bare> → <written spelling>`; null when the file writes one bare name two ways. */
+  private readonly spellings = new Map<string, string | null>();
 
   constructor(private readonly tables: PythonAstScopeTables) {}
 
-  /** The class an UNANNOTATED def's return expressions name; null on silence. */
-  inferDef(defNode: AstNode, selfClass: string | undefined): string | null {
+  /**
+   * The spelling the file wrote `bare` in (bd tea-rags-mcp-m99j1.1.55) — the
+   * bare name itself when it was never seen written, or written two ways.
+   */
+  writtenSpellingOf(bare: string): string {
+    return this.spellings.get(bare) ?? bare;
+  }
+
+  private recordSpelling(bare: string, written: string): void {
+    const seen = this.spellings.get(bare);
+    if (seen === undefined) this.spellings.set(bare, written);
+    else if (seen !== written) this.spellings.set(bare, null);
+  }
+
+  /** The classes an UNANNOTATED def's return expressions name; null on silence. */
+  inferDef(defNode: AstNode, selfClass: string | undefined): readonly string[] | null {
     const cached = this.defReturns.get(defNode);
     if (cached === IN_PROGRESS) return null;
     if (cached !== undefined) return cached;
     this.defReturns.set(defNode, IN_PROGRESS);
-    const inferred = inferReturnTypeName(defNode, null, pythonReturnPorts(this.scopeOf(selfClass)));
+    const names = inferReturnTypeNames(defNode, null, pythonReturnPorts(this.scopeOf(selfClass)), PYTHON_RETURN_UNION);
+    const inferred = names !== null && names.length > 1 && names.includes(PYTHON_SELF_RETURN) ? null : names;
     this.defReturns.set(defNode, inferred);
     return inferred;
   }
@@ -346,11 +422,14 @@ class PythonReturnFixpoint {
       fieldType: (field) => (selfClass === undefined ? null : this.fieldType(selfClass, field)),
       selfMethodReturn: (method) => (selfClass === undefined ? null : this.methodReturn(selfClass, method)),
       fileReturn: (name) => this.fileReturn(name),
+      writtenSpelling: (bare, written) => {
+        this.recordSpelling(bare, written);
+      },
     };
   }
 
   /** An annotation on the callee wins; otherwise its body is inferred. `-> Self` stays the marker. */
-  private delegateReturn(def: PythonDelegateDef, selfClass: string | undefined): string | null {
+  private delegateReturn(def: PythonDelegateDef, selfClass: string | undefined): ReturnArmTypes | null {
     if (def.decorators.some((d) => PYTHON_NON_RETURNING_DECORATORS.has(d))) return null;
     const returnType = def.node.childForFieldName("return_type");
     if (returnType === null) return this.inferDef(def.node, selfClass);
@@ -362,14 +441,14 @@ class PythonReturnFixpoint {
   }
 
   /** `self.<method>(…)` — exactly one def of that name in the class body, or silence. */
-  private methodReturn(selfClass: string, method: string): string | null {
+  private methodReturn(selfClass: string, method: string): ReturnArmTypes | null {
     const defs = this.tables.classDelegates.get(selfClass)?.methods.get(method);
     if (defs?.length !== 1) return null;
     return this.delegateReturn(defs[0], selfClass);
   }
 
   /** `<name>(…)` — the annotated table first (its long-standing behaviour), then ONE unannotated def. */
-  private fileReturn(name: string): string | null {
+  private fileReturn(name: string): ReturnArmTypes | null {
     const declared = this.tables.fileReturnTypes.get(name);
     if (declared !== undefined) return declared;
     const defs = this.tables.fileDefs.get(name);
@@ -380,8 +459,9 @@ class PythonReturnFixpoint {
   /**
    * `self.<field>` — the annotated table wins (a typed binding outranks a derived
    * one). Otherwise every write must map to ONE class: a `None` write is the
-   * unset state and neutral, a write that maps to nothing kills, two classes
-   * kill, and a field written only `None` is silence.
+   * unset state and neutral, a write that maps to nothing kills, two classes —
+   * across writes or inside one write's union return — kill (a field type is a
+   * bare class name), and a field written only `None` is silence.
    */
   private fieldType(selfClass: string, field: string): string | null {
     const annotated = this.tables.fieldTypes.get(selfClass)?.get(field);
@@ -404,7 +484,7 @@ class PythonReturnFixpoint {
     for (const event of events) {
       if (event === null) return null;
       if (event.type === "none") continue;
-      const typed = pythonReturnExpressionType(event, scope);
+      const typed = singleName(pythonReturnExpressionType(event, scope));
       if (typed === null || (agreed !== null && agreed !== typed)) return null;
       agreed = typed;
     }
@@ -432,7 +512,8 @@ function pythonDefDecorators(defNode: AstNode): string[] {
  * on the first question and never for a file that asks none.
  *
  * Its consumer files the answer as a FIELD type, which has no receiver to
- * substitute a `Self` marker with, so the marker answers as the declaring class.
+ * substitute a `Self` marker with, so the marker answers as the declaring class;
+ * and a field type is one class, so a union return answers null.
  */
 export function pythonInferredReturnReader(
   root: AstNode,
@@ -440,32 +521,56 @@ export function pythonInferredReturnReader(
   let fixpoint: PythonReturnFixpoint | undefined;
   return (defNode, selfClass) => {
     fixpoint ??= new PythonReturnFixpoint(collectPythonAstScopeTables(root));
-    const inferred = fixpoint.inferDef(defNode, selfClass);
+    const inferred = singleName(fixpoint.inferDef(defNode, selfClass));
     return inferred === PYTHON_SELF_RETURN ? (selfClass ?? null) : inferred;
   };
 }
 
+/** The one class an answer names; a union (or silence) is null. */
+function singleName(typed: ReturnArmTypes | null): string | null {
+  if (typed === null || typeof typed === "string") return typed;
+  return typed.length === 1 ? typed[0] : null;
+}
+
+/**
+ * Every unannotated def's inferred arms, published under the spelling the
+ * DECLARING file binds them by (bd tea-rags-mcp-m99j1.1.55): `utils.CursorWrapper(…)`
+ * in `base/base.py` is `db.backends.utils::CursorWrapper`, so a reader in
+ * another file places the arm where the return was written rather than by
+ * whatever that file calls the bare name. Inference first, publish after, so a
+ * name the file writes two ways is seen as such before any arm is spelled.
+ */
 function extractPythonAstFacts(input: PythonTypeSourceInput): TypeFact[] {
   const fixpoint = new PythonReturnFixpoint(collectPythonAstScopeTables(input.root));
-  const facts: TypeFact[] = [];
+  const inferred: { readonly site: PythonDefSite; readonly names: readonly string[] }[] = [];
   walkPythonScopes(input.root, {
     onDef: (site) => {
       // An annotated def is the `annotations` source's; re-emitting would only
       // lose the coordinate dedupe race and cost a walk.
       if (site.node.childForFieldName("return_type") !== null) return;
-      const name = fixpoint.inferDef(site.node, site.classChain[site.classChain.length - 1]);
-      if (name === null) return;
-      const fact: TypeFact = {
-        kind: "return",
-        source: PYTHON_AST_SOURCE,
-        symbolScope: [...site.classChain],
-        methodName: site.name,
-        type: { form: "instance", name },
-      };
-      if (isPythonClassFormDef(site.decorators)) fact.classForm = true;
-      facts.push(fact);
+      const names = fixpoint.inferDef(site.node, site.classChain[site.classChain.length - 1]);
+      if (names !== null) inferred.push({ site, names });
     },
   });
+  const qualify = input.qualifyTypeName;
+  const facts: TypeFact[] = [];
+  for (const { site, names } of inferred) {
+    const published =
+      qualify === undefined
+        ? names
+        : names.map((name) => (name === PYTHON_SELF_RETURN ? name : qualify(fixpoint.writtenSpellingOf(name))));
+    const type = pythonReturnTypeRef(published);
+    if (type === undefined) continue;
+    const fact: TypeFact = {
+      kind: "return",
+      source: PYTHON_AST_SOURCE,
+      symbolScope: [...site.classChain],
+      methodName: site.name,
+      type,
+    };
+    if (isPythonClassFormDef(site.decorators)) fact.classForm = true;
+    facts.push(fact);
+  }
   return facts;
 }
 

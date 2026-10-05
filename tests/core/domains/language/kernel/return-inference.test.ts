@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   inferReturnTypeName,
+  inferReturnTypeNames,
   type ReturnInferencePorts,
 } from "../../../../../src/core/domains/language/kernel/return-inference.js";
 
@@ -97,5 +98,67 @@ describe("inferReturnTypeName", () => {
       },
     };
     expect(inferReturnTypeName(def, ctx, ports)).toBeNull();
+  });
+});
+
+describe("inferReturnTypeNames — the union option (bd tea-rags-mcp-m99j1.1.53)", () => {
+  const UNION = { maxArms: 3 };
+  const expr = (id: string, type?: string): FakeNode => ({ id, kind: "expr", type });
+  const binding: FakeNode = { id: "r", kind: "binding" };
+
+  it("without the option two arms naming different types still kill (the Ruby default)", () => {
+    const ctx: Ctx = { terminals: [expr("a", "Foo"), expr("b", "Bar")], events: {} };
+    expect(inferReturnTypeNames(def, ctx, ports)).toBeNull();
+    expect(inferReturnTypeName(def, ctx, ports)).toBeNull();
+  });
+
+  it("unions arms naming different types, in declaration order, deduped", () => {
+    const ctx: Ctx = { terminals: [expr("a", "Foo"), expr("b", "Bar"), expr("c", "Foo")], events: {} };
+    expect(inferReturnTypeNames(def, ctx, ports, UNION)).toEqual(["Foo", "Bar"]);
+  });
+
+  it("answers one name when every arm agrees, option or not", () => {
+    const ctx: Ctx = { terminals: [expr("a", "Foo"), expr("b", "Foo")], events: {} };
+    expect(inferReturnTypeNames(def, ctx, ports, UNION)).toEqual(["Foo"]);
+    expect(inferReturnTypeNames(def, ctx, ports)).toEqual(["Foo"]);
+  });
+
+  it("still kills on an unmappable arm", () => {
+    const ctx: Ctx = { terminals: [expr("a", "Foo"), expr("b")], events: {} };
+    expect(inferReturnTypeNames(def, ctx, ports, UNION)).toBeNull();
+  });
+
+  it("kills a union wider than the cap", () => {
+    const ctx: Ctx = { terminals: [expr("a", "A"), expr("b", "B"), expr("c", "C"), expr("d", "D")], events: {} };
+    expect(inferReturnTypeNames(def, ctx, ports, UNION)).toBeNull();
+  });
+
+  it("unions a binding's plain assignment events — one per branch", () => {
+    const ctx: Ctx = {
+      terminals: [binding],
+      events: { r: [expr("v", "CursorDebugWrapper"), expr("w", "CursorWrapper")] },
+    };
+    expect(inferReturnTypeNames(def, ctx, ports, UNION)).toEqual(["CursorDebugWrapper", "CursorWrapper"]);
+    expect(inferReturnTypeName(def, ctx, ports)).toBeNull();
+  });
+
+  it("still kills a binding with a non-plain event, a second binding hop, or no event", () => {
+    const nonPlain: Ctx = { terminals: [binding], events: { r: [expr("v", "Foo"), null] } };
+    const hop: Ctx = {
+      terminals: [binding],
+      events: { r: [expr("v", "Foo"), { id: "s", kind: "binding" }], s: [expr("w", "Bar")] },
+    };
+    const none: Ctx = { terminals: [binding], events: {} };
+    for (const ctx of [nonPlain, hop, none]) expect(inferReturnTypeNames(def, ctx, ports, UNION)).toBeNull();
+  });
+
+  it("folds an arm the language already answers with several names", () => {
+    const multi: ReturnInferencePorts<FakeNode, Ctx> = {
+      ...ports,
+      typeOfExpression: (node) => (node.id === "m" ? ["Foo", "Bar"] : (node.type ?? null)),
+    };
+    const ctx: Ctx = { terminals: [{ id: "m", kind: "expr" }, expr("b", "Baz")], events: {} };
+    expect(inferReturnTypeNames(def, ctx, multi, UNION)).toEqual(["Foo", "Bar", "Baz"]);
+    expect(inferReturnTypeNames(def, ctx, multi)).toBeNull();
   });
 });

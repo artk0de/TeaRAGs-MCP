@@ -43,6 +43,8 @@ import {
   splitReceiverHops,
   typeRefReceiverForm,
   typeRefTupleElement,
+  typeRefUnionOf,
+  type NominalTypeRef,
   type ReceiverTypePorts,
 } from "../../kernel/index.js";
 import { pythonContainerElementKey } from "../walker/passes/python-container-element-facts.js";
@@ -157,10 +159,28 @@ export function pythonDerivedBindingType(
   }
 }
 
-/** What `with <expression> as …` binds: the context value's `__enter__` return, when a project class declares one. */
+/**
+ * What `with <expression> as …` binds: the context value's `__enter__` return,
+ * when a project class declares one. A UNION context (`with self.cursor() as c`,
+ * `cursor -> CursorDebugWrapper | CursorWrapper`) enters every nominal arm and
+ * binds the union of what they yield (bd tea-rags-mcp-m99j1.1.56); one arm that
+ * yields nothing leaves the binding untyped, never a partial union.
+ */
 function enteredValue(expression: string, reader: PythonIterableReader): TypeRef | undefined {
   const context = typeOfValue(expression, reader);
-  if (context?.form !== "instance") return undefined;
+  if (context?.form === "instance") return enteredArm(context, reader);
+  if (context?.form !== "union") return undefined;
+  const entered: TypeRef[] = [];
+  for (const arm of context.members) {
+    if (arm.form === "nil") continue;
+    const value = arm.form === "instance" ? enteredArm(arm, reader) : undefined;
+    if (value === undefined) return undefined;
+    entered.push(value);
+  }
+  return typeRefUnionOf(entered);
+}
+
+function enteredArm(context: NominalTypeRef, reader: PythonIterableReader): TypeRef | undefined {
   return pythonSubstituteSelfReturn(reader.ports.memberTypeOf(context, "__enter__", reader.ctx), context.name);
 }
 
