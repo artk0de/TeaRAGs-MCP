@@ -1427,12 +1427,24 @@ export function pythonAssignmentBoundType(
     const typeName = extractTypeName(typeField);
     return typeName ? { type: typeName, annotated: true } : null;
   }
-  const right = pythonOptionalValueArm(assignment.childForFieldName("right"));
+  const typeName = pythonLocalConstructorTypeName(pythonOptionalValueArm(assignment.childForFieldName("right")));
+  return typeName === null ? null : { type: typeName, annotated: false };
+}
+
+/**
+ * The class a right-hand side CONSTRUCTS, spelled as written (`Svc`,
+ * `mod.ApiClient`), or `null` — the plain-RHS rule of
+ * {@link pythonAssignmentBoundType}: a `call` whose callee is an identifier or
+ * attribute passing the CapWords gate. Exported so the conditional-local source
+ * (`passes/python-conditional-local-facts.ts`, bd tea-rags-mcp-m99j1.1.77) reads
+ * each arm by the very rule a plain assignment is read by.
+ */
+export function pythonLocalConstructorTypeName(right: AstNode | null): string | null {
   if (right?.type !== "call") return null;
   const fnNode = right.childForFieldName("function");
   if (!fnNode) return null;
   const typeName = extractConstructorTypeName(fnNode);
-  return typeName && pythonLocalCalleeIsConstructor(typeName) ? { type: typeName, annotated: false } : null;
+  return typeName && pythonLocalCalleeIsConstructor(typeName) ? typeName : null;
 }
 
 /**
