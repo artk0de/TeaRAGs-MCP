@@ -53,6 +53,7 @@ import {
   readResolverConfig,
   resolveDispatchViaComponents,
   resolveImportFileEdges,
+  type ReceiverTypePorts,
 } from "../../kernel/index.js";
 import { PythonChainAnswerProbe } from "./dispatch/index.js";
 import { createPythonUnionDispatchPorts } from "./dispatch/python-union-ports.js";
@@ -61,7 +62,9 @@ import { createPythonSymbolResolutionChain } from "./python-chain-factory.js";
 import { createPythonDispatchComponents } from "./python-dispatch-components.js";
 import { PythonExternalVocabulary } from "./python-external-vocabulary.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
+import { pythonDerivedBindingFold } from "./python-iteration-types.js";
 import { pythonClassifierLocalBindings, pythonVisibleLocalBindings } from "./python-member-return-types.js";
+import { createPythonReceiverTypePorts } from "./python-receiver-type-ports.js";
 import { PythonUndecidableCallClassifier } from "./python-undecidable.js";
 import { lookupPythonSymbolsByShortName, type ResolverConfig } from "./strategies/index.js";
 
@@ -117,6 +120,11 @@ export class PythonCallResolver implements CallResolver {
   private readonly ancestorLinearizers: PythonAncestorLinearizerCache;
   /** K11 (bd tea-rags-mcp-m99j1.1.24) — the miss classifier's undecidable question. */
   private readonly undecidable: PythonUndecidableCallClassifier;
+  /**
+   * The chain fold's ports, built once: the classifier bindings fold each
+   * DERIVED binding the way the chain fold types it (bd tea-rags-mcp-m99j1.1.68).
+   */
+  private readonly derivedFoldPorts: ReceiverTypePorts;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
     // Python has no dynamic-receiver confidence knob: take only mode + coneMax.
@@ -132,6 +140,7 @@ export class PythonCallResolver implements CallResolver {
       new PythonExternalVocabulary(this.importFileMapper, this.ancestorLinearizers, mode),
     );
     this.probe = new PythonChainAnswerProbe(this.chain);
+    this.derivedFoldPorts = createPythonReceiverTypePorts(this.importFileMapper, this.ancestorLinearizers);
     const unionPorts = createPythonUnionDispatchPorts(this.importFileMapper, this.ancestorLinearizers);
     this.undecidable = new PythonUndecidableCallClassifier(
       unionPorts,
@@ -272,6 +281,8 @@ export class PythonCallResolver implements CallResolver {
    * {@link pythonClassifierLocalBindings}. Read through the resolver's ONE mapper.
    */
   classifierLocalBindings(localBindings: CallContext["localBindings"], ctx: CallContext): CallContext["localBindings"] {
-    return pythonClassifierLocalBindings(localBindings, ctx, this.importFileMapper);
+    return pythonClassifierLocalBindings(localBindings, ctx, this.importFileMapper, (binding) =>
+      pythonDerivedBindingFold(binding, ctx, this.derivedFoldPorts, this.importFileMapper),
+    );
   }
 }

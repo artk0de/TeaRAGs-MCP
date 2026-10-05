@@ -62,6 +62,7 @@ const symbolTable = (() => {
   t.upsertFile("app/models/collection_item.rb", [
     sym("CollectionItem", "CollectionItem", "app/models/collection_item.rb", []),
     sym("CollectionItem#empty_for?", "empty_for?", "app/models/collection_item.rb", ["CollectionItem"]),
+    sym("CollectionItem#accepted_items", "accepted_items", "app/models/collection_item.rb", ["CollectionItem"]),
   ]);
   return t;
 })();
@@ -247,10 +248,13 @@ describe("localCallBindings channel — the condition reads the call binding abo
     });
   });
 
-  it("the right-hand side on the same line reads exactly as before", () => {
+  it("the right-hand side does not type its own receiver with the member Status lacks (0qaht.57)", () => {
+    // `record.status` runs BEFORE `record` is rebound, so `record` there is the
+    // `find_by` result. Reading the statement's own binding typed it as `status`'s
+    // return — `Status`, which declares no `status`: a fabricated file-only edge.
     const rhs = siteOf(chunk, "record.status", 4);
     expect(rhs.startColumn).toBeUndefined();
-    expect(returnBinding.attempt(rhs, ctx)).toEqual(returnBinding.attempt(withoutColumn(rhs), ctx));
+    expect(returnBinding.attempt(rhs, ctx).kind).toBe("continue");
   });
 
   it("the line after the statement reads the guarded call binding", () => {
@@ -276,6 +280,86 @@ describe("localCallBindings channel — the condition reads the call binding abo
     expect(returnBinding.attempt(siteOf(chainChunk, "result.empty_for?(account)", 5), chainCtx)).toEqual({
       kind: "resolved",
       target: { targetRelPath: "app/models/collection_item.rb", targetSymbolId: "CollectionItem#empty_for?" },
+    });
+  });
+});
+
+describe("localCallBindings channel — the right-hand side of a self-referential reassignment (0qaht.57)", () => {
+  // The right-hand side of `x = x.m(…)` runs before the assignment, so reading
+  // the statement's own binding types `x` as `m`'s return. That holds only when
+  // the type it yields declares `m` (a type-preserving scope chain); a type that
+  // does not declare `m` is a circular guess, and the pass declines it — but
+  // only where an earlier positioned write shows `x` held something else.
+  const ctxWith = (src: string, startLine: number, endLine: number, returns: Record<string, string>) => {
+    const chunk = chunkOf(src, startLine, endLine);
+    return { chunk, ctx: contextFor(chunk, returns) };
+  };
+
+  it("a plain reassignment declines the member its own binding's type lacks", () => {
+    const src = [
+      "class Lookup",
+      "  def lookup(model_name, record_id)",
+      "    record = model_name.constantize.find_by(id: record_id)",
+      "    record = record.status",
+      "    record.visible?",
+      "  end",
+      "end",
+    ].join("\n");
+    const { chunk, ctx } = ctxWith(src, 2, 6, { status: "Status" });
+    expect(returnBinding.attempt(siteOf(chunk, "record.status", 4), ctx).kind).toBe("continue");
+    expect(returnBinding.attempt(siteOf(chunk, "record.visible?", 5), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/models/status.rb", targetSymbolId: "Status#visible?" },
+    });
+  });
+
+  it("a type-preserving chain keeps its exact edge", () => {
+    const src = [
+      "class Lookup",
+      "  def lookup(account)",
+      "    result = collection_items",
+      "    result = result.with_accounts",
+      "    result = result.accepted_items(account) if account",
+      "    result",
+      "  end",
+      "end",
+    ].join("\n");
+    const { chunk, ctx } = ctxWith(src, 2, 7, { accepted_items: "CollectionItem" });
+    expect(returnBinding.attempt(siteOf(chunk, "result.accepted_items(account)", 5), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/models/collection_item.rb", targetSymbolId: "CollectionItem#accepted_items" },
+    });
+  });
+
+  it("with no earlier positioned write the statement's own binding answers, as before", () => {
+    const src = [
+      "class Lookup",
+      "  def lookup(record)",
+      "    record = record.status",
+      "    record",
+      "  end",
+      "end",
+    ].join("\n");
+    const { chunk, ctx } = ctxWith(src, 2, 5, { status: "Status" });
+    expect(returnBinding.attempt(siteOf(chunk, "record.status", 3), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/models/status.rb", targetSymbolId: null },
+    });
+  });
+
+  it("a later call on the same name, outside the right-hand side, reads as before", () => {
+    const src = [
+      "class Lookup",
+      "  def lookup(model_name)",
+      "    record = model_name.constantize.find_by(id: 1)",
+      "    record = record.status; record.archived",
+      "  end",
+      "end",
+    ].join("\n");
+    const { chunk, ctx } = ctxWith(src, 2, 5, { status: "Status" });
+    expect(returnBinding.attempt(siteOf(chunk, "record.archived", 4), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/models/status.rb", targetSymbolId: null },
     });
   });
 });

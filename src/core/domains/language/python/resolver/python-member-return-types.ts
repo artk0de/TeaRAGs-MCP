@@ -9,7 +9,13 @@
  */
 
 import { createIdentifierRecord, identifierEntry } from "../../../../contracts/identifier-record.js";
-import type { CallContext, LocalBinding, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
+import {
+  isDerivedLocalBinding,
+  type CallContext,
+  type DerivedLocalBindingKind,
+  type LocalBinding,
+  type SymbolDefinition,
+} from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import {
   MemberReturnTypeResolver,
@@ -614,7 +620,21 @@ export function pythonPlacedBindingUnion(
   ctx: CallContext,
   mapper: PythonImportFileMapper,
 ): TypeRef | null | undefined {
-  const stated = typeRefReceiverForm(binding.typeRef);
+  return pythonPlacedReceiverUnion(typeRefReceiverForm(binding.typeRef), ctx, mapper);
+}
+
+/**
+ * {@link pythonPlacedBindingUnion}'s rules over a receiver-form type the caller
+ * already holds — a union-annotated binding's `typeRef`, or what a DERIVED
+ * binding (loop, `with`, unpacking target) folds to (bd tea-rags-mcp-m99j1.1.68).
+ * Same three answers: `undefined` for no multi-arm union, `null` when it dies,
+ * the placed union otherwise.
+ */
+export function pythonPlacedReceiverUnion(
+  stated: TypeRef | undefined,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): TypeRef | null | undefined {
   if (stated?.form !== "union") return undefined;
   const placed = pythonPlacedReturnFact(stated, [ctx.callerFile], ctx, mapper);
   if (placed?.form !== "union") return null;
@@ -665,14 +685,26 @@ export function pythonVisibleLocalBindings(
  * in-project miss. A union every arm of which places to a project class is a
  * type and stays.
  *
+ * A DERIVED binding is judged on the union `derivedFold` hands back for it (bd
+ * tea-rags-mcp-m99j1.1.68): an evidence union is removed exactly as an
+ * annotated one is, while a union that dies on an arm nothing places stays — it
+ * is an untyped derived binding, which the classifiers always kept.
+ *
  * Returns the input map by identity when nothing is hidden.
  */
 export function pythonClassifierLocalBindings(
   localBindings: Record<string, LocalBinding[]> | undefined,
   ctx: CallContext,
   mapper: PythonImportFileMapper,
+  derivedFold: (binding: LocalBinding & { readonly valueKind: DerivedLocalBindingKind }) => TypeRef | undefined,
 ): Record<string, LocalBinding[]> | undefined {
-  return withoutBindings(localBindings, (binding) => pythonPlacedBindingUnion(binding, ctx, mapper) === null);
+  return withoutBindings(localBindings, (binding) => {
+    if (!isDerivedLocalBinding(binding)) return pythonPlacedBindingUnion(binding, ctx, mapper) === null;
+    const folded = derivedFold(binding);
+    return (
+      pythonPlacedReceiverUnion(folded, ctx, mapper) === null && !pythonReceiverUnionIsUnreadable(folded, ctx, mapper)
+    );
+  });
 }
 
 /** `localBindings` minus every binding `hide` names, a name left with none deleted; the input by identity when nothing goes. */
@@ -698,9 +730,20 @@ function pythonBindingUnionIsUnreadable(
   ctx: CallContext,
   mapper: PythonImportFileMapper,
 ): boolean {
-  if (pythonPlacedBindingUnion(binding, ctx, mapper) !== null) return false;
-  const stated = typeRefReceiverForm(binding.typeRef);
-  if (stated?.form !== "union") return false;
+  return pythonReceiverUnionIsUnreadable(typeRefReceiverForm(binding.typeRef), ctx, mapper);
+}
+
+/**
+ * {@link pythonBindingUnionIsUnreadable} over a receiver-form type the caller
+ * already holds: the union dies and no arm places to a library or builtin class
+ * — absence of evidence (bd tea-rags-mcp-m99j1.1.68 reads a derived fold with it).
+ */
+export function pythonReceiverUnionIsUnreadable(
+  stated: TypeRef | undefined,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): boolean {
+  if (stated?.form !== "union" || pythonPlacedReceiverUnion(stated, ctx, mapper) !== null) return false;
   return !stated.members.some(
     (arm) =>
       arm.form === "instance" &&

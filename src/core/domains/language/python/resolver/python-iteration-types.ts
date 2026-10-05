@@ -52,6 +52,8 @@ import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
   pythonCallBindingType,
   pythonModuleReturnFact,
+  pythonPlacedReceiverUnion,
+  pythonReceiverUnionIsUnreadable,
   pythonSubstituteSelfReturn,
 } from "./python-member-return-types.js";
 import { findPythonImportBinding } from "./python-type-addressing.js";
@@ -134,9 +136,50 @@ function homogeneousTupleElement(elements: readonly TypeRef[]): TypeRef | null {
  *     binds nothing useful);
  *   - `tupleElement` (Task 16b): the expression's value, at `tupleIndex` when
  *     the target unpacks it.
+ *
+ * A fold to a multi-arm UNION obeys the rules a union-annotated binding obeys
+ * (bd tea-rags-mcp-m99j1.1.68, {@link pythonPlacedReceiverUnion}): its arms are
+ * placed, and one arm that names no project class kills it — the binding is
+ * then untyped, never a partial union the dispatch would fan as the whole
+ * receiver.
  */
 export function pythonDerivedBindingType(
-  binding: LocalBinding & { readonly valueKind: DerivedLocalBindingKind },
+  binding: DerivedLocalBinding,
+  ctx: CallContext,
+  ports: ReceiverTypePorts,
+  mapper: PythonImportFileMapper,
+): TypeRef | undefined {
+  const folded = pythonDerivedBindingFold(binding, ctx, ports, mapper);
+  const placed = pythonPlacedReceiverUnion(folded, ctx, mapper);
+  return placed === undefined ? folded : (placed ?? undefined);
+}
+
+/**
+ * Whether a derived binding is a type FACT for the readers that ask only that
+ * — the naming-convention guess, the core-ambiguous classifier. A union that
+ * dies on a library or builtin arm is still evidence (as the annotated one is,
+ * bd tea-rags-mcp-m99j1.1.65); one that dies on an arm nothing places is not
+ * (bd tea-rags-mcp-m99j1.1.68).
+ */
+export function pythonDerivedBindingIsFact(
+  binding: DerivedLocalBinding,
+  ctx: CallContext,
+  ports: ReceiverTypePorts,
+  mapper: PythonImportFileMapper,
+): boolean {
+  const folded = pythonDerivedBindingFold(binding, ctx, ports, mapper);
+  return folded !== undefined && !pythonReceiverUnionIsUnreadable(folded, ctx, mapper);
+}
+
+type DerivedLocalBinding = LocalBinding & { readonly valueKind: DerivedLocalBindingKind };
+
+/**
+ * The fold itself, receiver form, union arms as the facts spelled them. Read
+ * as-is by a fold NESTED in another (a loop over a derived local), so placement
+ * happens once, where the binding leaves the fold.
+ */
+export function pythonDerivedBindingFold(
+  binding: DerivedLocalBinding,
   ctx: CallContext,
   ports: ReceiverTypePorts,
   mapper: PythonImportFileMapper,
@@ -238,7 +281,7 @@ function writtenElement(iterable: string, reader: PythonIterableReader): TypeRef
   );
   if (elementBinding === undefined) return undefined;
   if (isDerivedLocalBinding(elementBinding)) {
-    return pythonDerivedBindingType(elementBinding, reader.ctx, reader.ports, reader.mapper);
+    return pythonDerivedBindingFold(elementBinding, reader.ctx, reader.ports, reader.mapper);
   }
   // A walker-typed element: an identity comprehension over an annotated source.
   if (elementBinding.type === "") return undefined;
@@ -315,7 +358,7 @@ function typeOfValue(expression: string, reader: PythonIterableReader): TypeRef 
     return pythonCallBindingType(called.callee, called.line, ctx, ports, mapper);
   }
   if (bound === undefined) return propagateReceiverType(expression, atLine, ctx, ports);
-  if (isDerivedLocalBinding(bound)) return pythonDerivedBindingType(bound, ctx, ports, mapper);
+  if (isDerivedLocalBinding(bound)) return pythonDerivedBindingFold(bound, ctx, ports, mapper);
   if (bound.type === "") return undefined;
   return bound.typeRef ?? { form: bound.valueKind === "class" ? "class" : "instance", name: bound.type };
 }

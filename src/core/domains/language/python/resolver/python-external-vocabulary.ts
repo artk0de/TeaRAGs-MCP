@@ -31,7 +31,7 @@ import { PYTHON_STDLIB_MODULES } from "../vocabulary/stdlib-modules.js";
 import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import { PythonExternalDefinitionProbe } from "./python-external-definition-probe.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
-import { pythonDerivedBindingType, pythonLocalBindingInForce } from "./python-iteration-types.js";
+import { pythonDerivedBindingIsFact, pythonLocalBindingInForce } from "./python-iteration-types.js";
 import { mapPythonImportToFile } from "./python-path-mapper.js";
 import { createPythonCallBindingPorts } from "./python-receiver-type-ports.js";
 import { pythonBoundClassKey } from "./python-type-addressing.js";
@@ -237,6 +237,6 @@ export class PythonExternalVocabulary implements ExternalVocabulary {
     if (binding === undefined) return false;
     if (!isDerivedLocalBinding(binding)) return true;
     this.iterationPorts ??= createPythonCallBindingPorts(this.mapper, this.linearizers);
-    return pythonDerivedBindingType(binding, ctx, this.iterationPorts, this.mapper) !== undefined;
+    return pythonDerivedBindingIsFact(binding, ctx, this.iterationPorts, this.mapper);
   }
 }

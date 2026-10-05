@@ -82,10 +82,10 @@ describe("pythonAstTypeSource — what it infers", () => {
     );
   });
 
-  it("infers self as the enclosing class", () => {
+  it("infers self as the Self marker, so the reader substitutes the RECEIVER's class (m99j1.1.69)", () => {
     expect(
       structuredReturnTypes(["class Builder:", "    def with_x(self):", "        return self", ""].join("\n")),
-    ).toEqual({ "Builder#with_x": instance("Builder") });
+    ).toEqual({ "Builder#with_x": instance("Self") });
   });
 
   it("infers cls(...) as the enclosing class, keyed with the class-form separator", () => {
@@ -262,6 +262,37 @@ describe("pythonAstTypeSource — delegated returns (self-calls, inferred callee
     expect(structuredReturnTypes(src)["Query#filter"]).toEqual(instance("Self"));
   });
 
+  it("carries an unannotated `return self` callee's marker through a delegation (m99j1.1.69)", () => {
+    const src = [
+      "class Query:",
+      "    def chain(self):",
+      "        return self",
+      "    def filter(self):",
+      "        return self.chain()",
+      "",
+    ].join("\n");
+    expect(structuredReturnTypes(src)["Query#filter"]).toEqual(instance("Self"));
+  });
+
+  it("types a field written `self` or a fluent self-call as the declaring class — a field has no receiver (m99j1.1.69)", () => {
+    const src = [
+      "class Node:",
+      "    def __init__(self):",
+      "        self.me = self",
+      "        self.chained = self.fluent()",
+      "    def fluent(self):",
+      "        return self",
+      "    def get_me(self):",
+      "        return self.me",
+      "    def get_chained(self):",
+      "        return self.chained",
+      "",
+    ].join("\n");
+    const channels = structuredReturnTypes(src);
+    expect(channels["Node#get_me"]).toEqual(instance("Node"));
+    expect(channels["Node#get_chained"]).toEqual(instance("Node"));
+  });
+
   it("types `copy.copy(self)` as the Self marker, through a local", () => {
     const src = [
       "import copy",
@@ -430,6 +461,38 @@ describe("pythonAstTypeSource — union returns (bd tea-rags-mcp-m99j1.1.53)", (
       "",
     ].join("\n");
     expect(facts(src)).toEqual([]);
+  });
+
+  it("keeps a `return self` arm of a union as the enclosing class — a union arm has no receiver to substitute (m99j1.1.69)", () => {
+    const src = [
+      "class Expr:",
+      "    def chain(self):",
+      "        return self",
+      "    def pick(self, flag):",
+      "        if flag:",
+      "            return self",
+      "        return Widget()",
+      "    def pick_delegated(self, flag):",
+      "        if flag:",
+      "            return self.chain()",
+      "        return Widget()",
+      "    def same(self, flag):",
+      "        if flag:",
+      "            return self",
+      "        return Expr()",
+      "",
+    ].join("\n");
+    const channels = structuredReturnTypes(src);
+    expect(channels["Expr#pick"]).toEqual(union("Expr", "Widget"));
+    expect(channels["Expr#pick_delegated"]).toEqual(union("Expr", "Widget"));
+    expect(channels["Expr#same"]).toEqual(instance("Expr"));
+  });
+
+  it("the descriptor reader answers the declaring class for `return self`", () => {
+    const root = parse(["class Box:", "    def me(self):", "        return self", ""].join("\n"));
+    const def = root.namedChildren[0]?.childForFieldName("body")?.namedChildren[0];
+    expect(def?.type).toBe("function_definition");
+    expect(pythonInferredReturnReader(root)(def as AstNode, "Box")).toBe("Box");
   });
 
   it("the descriptor reader answers null for a union — a field type is one class", () => {

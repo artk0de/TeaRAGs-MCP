@@ -60,18 +60,107 @@ import { selfMemberReturnType } from "./ruby-return-facts.js";
  * modifier guarding the binding's own assignment reads the binding above it
  * instead ({@link callBindingOutsideCondition}). Omitted, the chunk-wide entry
  * answers, as before.
+ *
+ * A BARE binding whose assignment wrote a RECEIVER (`x = Svc.new.call(…)`,
+ * `x = client.call(…)`) is not a self-dispatch at all: the walker keeps only the
+ * outermost method, so the spelling looks receiver-less, but the positioned
+ * write still names what `call` was sent to (bd tea-rags-mcp-0qaht.56). When
+ * that receiver is typed it decides — {@link receiverCallReturnType} — and the
+ * flat map, whose one `call` fact describes some unrelated class, cannot
+ * override it; an untyped receiver keeps the bare reading. `receiverTypeOf` is the receiver-chain fold (`typeOfReceiver`), injected so
+ * this module stays below the engine that re-exports it.
  */
-export function boundCallReturnType(
+export function boundCallReturnTypeVia(
   receiver: string,
   ctx: CallContext,
+  receiverTypeOf: RubyCallReceiverTypeOf,
   site?: Pick<CallRef, "startLine" | "startColumn">,
 ): RubyTypeRef | undefined {
   const chunkWide = identifierEntry(ctx.localCallBindings, receiver);
   if (chunkWide === undefined) return undefined;
   const binding = site === undefined ? chunkWide : callBindingOutsideCondition(receiver, chunkWide, site, ctx);
   if (binding === undefined) return undefined;
+  const write = binding.includes(".") ? undefined : receiverWriteOf(receiver, binding, ctx, site);
+  const writtenReceiverType = write && receiverTypeOf(write.receiver, write.line, ctx);
+  if (writtenReceiverType !== undefined && isNominalRubyTypeRef(writtenReceiverType)) {
+    const owned = receiverCallReturnType(writtenReceiverType, binding, ctx);
+    if (owned === undefined || isNominalRubyTypeRef(owned)) return owned;
+  }
   const derived = rubyReceiverForm(boundCallTypeRef(binding, ctx));
   return qualifyFactTypeName(derived, boundCallFactOwner(binding, ctx), ctx);
+}
+
+/** The receiver-chain fold a bound call's written receiver is typed by. */
+export type RubyCallReceiverTypeOf = (receiver: string, atLine: number, ctx: CallContext) => RubyTypeRef | undefined;
+
+/** A positioned write whose callee was sent to a receiver, split at its last link. */
+interface RubyReceiverCallWrite {
+  readonly line: number;
+  readonly receiver: string;
+}
+
+/**
+ * The positioned write behind a BARE chunk-wide spelling, when that write named
+ * a receiver (bd tea-rags-mcp-0qaht.56) — or `undefined`, and the bare reading
+ * stands exactly as before.
+ *
+ * It is the write the chunk-wide entry KEPT: the latest positioned write,
+ * spelled as the entry — the same identification {@link callBindingOutsideCondition}
+ * uses. A call inside that write's own modifier condition reads the write ABOVE
+ * it; that placement is the condition reader's, so there this answers nothing.
+ * A chain rooted at `self` or a literal is never positioned, so a self-dispatch
+ * never reaches the receiver path.
+ */
+function receiverWriteOf(
+  receiver: string,
+  spelling: string,
+  ctx: CallContext,
+  site: Pick<CallRef, "startLine" | "startColumn"> | undefined,
+): RubyReceiverCallWrite | undefined {
+  const entries = identifierEntry(ctx.callResultBindings, receiver);
+  if (entries === undefined) return undefined;
+  let kept: CallResultBinding | undefined;
+  for (const entry of entries) if (kept === undefined || entry.line >= kept.line) kept = entry;
+  if (kept === undefined || localCallBindingSpelling(kept.callee) !== spelling) return undefined;
+  if (
+    site?.startColumn !== undefined &&
+    isInsideModifierCondition(kept.conditionSpan, site.startLine, site.startColumn)
+  ) {
+    return undefined;
+  }
+  const separator = kept.callee.lastIndexOf(".");
+  return separator > 0 ? { line: kept.line, receiver: kept.callee.slice(0, separator) } : undefined;
+}
+
+/**
+ * What `<receiver>.<member>` returns, read off the receiver's OWN type
+ * (bd tea-rags-mcp-0qaht.56): {@link returnTypeOf} — its class's declared fact,
+ * the MRO, then the flat map only where the member has at most one definition —
+ * and nothing else. The bare-name flat fact, which describes whichever class
+ * annotated a namesake, never overrides a receiver whose class is known.
+ *
+ * Only a NOMINAL receiver comes here, and only a nominal answer — or none —
+ * leaves. Everything else keeps the bare reading exactly as before, because
+ * there the flat map is still the only knowledge the single-target consumer can
+ * use: a receiver the fold cannot type, a relation / union receiver, and a
+ * relation answer (`agents = current_user.agents` is `container(Agent)`, which
+ * `returnTypeBinding` cannot pin, while the flat `Agent` is what huginn's
+ * `agents.build_clone` edges have always read).
+ *
+ * The fact was written in the receiver's class, so the receiver is the scope an
+ * unqualified answer is qualified from.
+ */
+function receiverCallReturnType(
+  receiverType: RubyTypeRef & { name: string },
+  member: string,
+  ctx: CallContext,
+): RubyTypeRef | undefined {
+  return qualifyFactTypeName(rubyReceiverForm(returnTypeOf(receiverType, member, ctx)), receiverType.name, ctx);
+}
+
+/** A class or instance ref — the one shape that names a single constant. */
+function isNominalRubyTypeRef(ref: RubyTypeRef): ref is RubyTypeRef & { name: string } {
+  return ref.form === "class" || ref.form === "instance";
 }
 
 /**
@@ -98,18 +187,68 @@ function callBindingOutsideCondition(
 ): string | undefined {
   const entries = identifierEntry(ctx.callResultBindings, receiver);
   if (entries === undefined || site.startColumn === undefined) return chunkWide;
-  let kept: CallResultBinding | undefined;
-  for (const entry of entries) if (kept === undefined || entry.line >= kept.line) kept = entry;
+  const kept = keptCallResultBinding(entries);
   if (kept === undefined || !isInsideModifierCondition(kept.conditionSpan, site.startLine, site.startColumn)) {
     return chunkWide;
   }
   if (localCallBindingSpelling(kept.callee) !== chunkWide) return chunkWide;
+  const above = latestCallResultBindingAbove(entries, kept.line);
+  return above === undefined ? undefined : localCallBindingSpelling(above.callee);
+}
+
+/**
+ * Whether `call` is the RIGHT-HAND SIDE of the assignment its receiver's
+ * chunk-wide `localCallBindings` entry records — `record = record.status` read
+ * at `record.status` — with an earlier positioned write of the same name above
+ * that statement (bd tea-rags-mcp-0qaht.57).
+ *
+ * Such a call runs BEFORE the assignment, yet the chunk-wide entry types its
+ * receiver as the statement's own result: `status`'s return. That reading is a
+ * fixed-point guess — it holds only when the type it yields declares the
+ * member (a type-preserving scope chain, `scope = scope.not_excluded_by(…)`),
+ * which is what `resolveBoundCallTarget` checks. The statement
+ * is identified the way {@link callBindingOutsideCondition} identifies it: the
+ * latest positioned write, spelled exactly as the entry, on the call's line,
+ * its callee chain starting at `receiver.member`. A call the 0qaht.55
+ * condition span already places is not a right-hand side. With no earlier
+ * positioned write (a parameter, an unrecorded write) nothing says the name
+ * held anything else, and the answer is `false` — the reading stays as before.
+ */
+export function isOwnAssignmentRightHandSide(
+  call: Pick<CallRef, "receiver" | "member" | "startLine" | "startColumn">,
+  ctx: CallContext,
+): boolean {
+  const { receiver } = call;
+  if (!receiver) return false;
+  const chunkWide = identifierEntry(ctx.localCallBindings, receiver);
+  const entries = identifierEntry(ctx.callResultBindings, receiver);
+  if (chunkWide === undefined || entries === undefined) return false;
+  const kept = keptCallResultBinding(entries);
+  if (kept?.line !== call.startLine || localCallBindingSpelling(kept.callee) !== chunkWide) return false;
+  if (isInsideModifierCondition(kept.conditionSpan, call.startLine, call.startColumn)) return false;
+  const own = `${receiver}.${call.member}`;
+  if (kept.callee !== own && !kept.callee.startsWith(`${own}.`)) return false;
+  return latestCallResultBindingAbove(entries, kept.line) !== undefined;
+}
+
+/** The positioned write the chunk-wide entry keeps: the latest, the last one on a tie. */
+function keptCallResultBinding(entries: readonly CallResultBinding[]): CallResultBinding | undefined {
+  let kept: CallResultBinding | undefined;
+  for (const entry of entries) if (kept === undefined || entry.line >= kept.line) kept = entry;
+  return kept;
+}
+
+/** The latest positioned write strictly above `line`, or `undefined`. */
+function latestCallResultBindingAbove(
+  entries: readonly CallResultBinding[],
+  line: number,
+): CallResultBinding | undefined {
   let above: CallResultBinding | undefined;
   for (const entry of entries) {
-    if (entry.line >= kept.line) continue;
+    if (entry.line >= line) continue;
     if (above === undefined || entry.line >= above.line) above = entry;
   }
-  return above === undefined ? undefined : localCallBindingSpelling(above.callee);
+  return above;
 }
 
 /** A constant spelled as `localCallBindings` records a scope-qualified receiver. */
