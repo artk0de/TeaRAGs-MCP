@@ -177,6 +177,11 @@ export class PythonExternalDefinitionProbe {
     if (typed !== undefined) return { kind: "typed", type: typed };
     if (this.namesNothingInProject(head, ctx)) return EXTERNAL;
     if (this.imports.isRootExternalImport(head, ctx, atLine)) return EXTERNAL;
+    // A recorded callee spine may be ROOTED at a constructor call, rendered
+    // `AESGCM()` (bd tea-rags-mcp-m99j1.1.74): the class the root names decides
+    // whose value it is. Only on the binding recursion — an inline receiver's
+    // head keeps exactly the answer it had.
+    if (depth > 0 && head.endsWith("()") && this.namesNothingInProject(head.slice(0, -2), ctx)) return EXTERNAL;
     if (depth > 0) return UNKNOWN;
     const bound = nearestCallResultBinding(ctx.callResultBindings, head, atLine);
     return bound === undefined ? UNKNOWN : this.calleeResultOrigin(bound.callee, bound.line, ctx, depth + 1);

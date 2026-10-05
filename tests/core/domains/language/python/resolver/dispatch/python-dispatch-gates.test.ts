@@ -194,6 +194,13 @@ describe("pythonDynamicFanoutSuppressed (w205u — every shape another layer own
     expect(suppressed(callOf("service", "perform"), ctx)).toBe(false);
   });
 
+  it("still fans a receiver bound to a call ROOTED at an in-project constructor", () => {
+    // bd tea-rags-mcp-m99j1.1.74: `x = Service().build()` — the head is the
+    // class `Service`, not the spelling `Service()`.
+    const ctx = ctxOf({ callResultBindings: { service: [{ line: 4, callee: "Service().build" }] } });
+    expect(suppressed(callOf("service", "perform"), ctx)).toBe(false);
+  });
+
   it("declines a receiver with a local binding in force at the call line", () => {
     const ctx = ctxOf({ localBindings: { service: [{ line: 3, type: "Service" }] } });
     expect(suppressed(callOf("service", "perform", 10), ctx)).toBe(true);
