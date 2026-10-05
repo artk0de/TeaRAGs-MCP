@@ -147,9 +147,9 @@ describe("SchemaManager.initializeSchema index types for text-indexed keys", () 
   // named anywhere a caller would look, and every exact match on them scanned
   // the collection for six schema versions with nothing failing.
   it("gives a text index to no key outside TEXT_INDEXED_KEYS", () => {
-    const textIndexed = qdrant.createPayloadIndex.mock.calls
-      .filter(([, , schema]: [string, string, string]) => schema === "text")
-      .map(([, key]: [string, string]) => key);
+    const textIndexed = (qdrant.createPayloadIndex.mock.calls as [string, string, string][])
+      .filter(([, , schema]) => schema === "text")
+      .map(([, key]) => key);
 
     expect([...new Set(textIndexed)].sort()).toEqual([...TEXT_INDEXED_KEYS].sort());
   });

@@ -22,8 +22,8 @@ describe("PayloadSignalDescriptor", () => {
 
 describe("SignalStats", () => {
   it("holds percentile distribution", () => {
-    const stats: SignalStats = { p25: 3, p50: 8, p75: 20, p95: 50, count: 100 };
-    expect(stats.p25).toBeLessThan(stats.p50);
+    const stats: SignalStats = { count: 100, min: 0, max: 100, percentiles: { 25: 3, 50: 8, 75: 20, 95: 50 } };
+    expect(stats.percentiles[25]).toBeLessThan(stats.percentiles[50]);
     expect(stats.count).toBeGreaterThan(0);
   });
 });
@@ -31,7 +31,9 @@ describe("SignalStats", () => {
 describe("CollectionSignalStats", () => {
   it("holds per-signal stats with timestamp", () => {
     const stats: CollectionSignalStats = {
-      perSignal: new Map([["git.file.commitCount", { p25: 3, p50: 8, p75: 20, p95: 50, count: 100 }]]),
+      perSignal: new Map([
+        ["git.file.commitCount", { count: 100, min: 0, max: 100, percentiles: { 25: 3, 50: 8, 75: 20, 95: 50 } }],
+      ]),
       perLanguage: new Map(),
       distributions: {
         totalFiles: 0,
@@ -44,7 +46,7 @@ describe("CollectionSignalStats", () => {
       },
       computedAt: Date.now(),
     };
-    expect(stats.perSignal.get("git.file.commitCount")?.p50).toBe(8);
+    expect(stats.perSignal.get("git.file.commitCount")?.percentiles[50]).toBe(8);
     expect(stats.computedAt).toBeGreaterThan(0);
   });
 });

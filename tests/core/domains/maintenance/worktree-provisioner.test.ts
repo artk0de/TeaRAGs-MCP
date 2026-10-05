@@ -10,8 +10,14 @@ import {
   WorktreeNotFoundError,
   WorktreeSourceNotFoundError,
 } from "../../../../src/core/domains/maintenance/errors.js";
-import { CollectionFootprintFactory } from "../../../../src/core/domains/maintenance/footprint/factory.js";
-import { WorktreeProvisioner } from "../../../../src/core/domains/maintenance/worktree/worktree-provisioner.js";
+import {
+  CollectionFootprintFactory,
+  type FootprintDeps,
+} from "../../../../src/core/domains/maintenance/footprint/factory.js";
+import {
+  WorktreeProvisioner,
+  type WorktreeProvisionerDeps,
+} from "../../../../src/core/domains/maintenance/worktree/worktree-provisioner.js";
 import { resolveCollectionName } from "../../../../src/core/infra/collection-name.js";
 
 function fakeArtifact(id: string, calls: string[], failOn?: string) {
@@ -85,14 +91,14 @@ function makeDeps(over: Partial<Record<string, unknown>> = {}, calls: string[] =
       },
       dataDir: "/data",
       ...over,
-    } as never,
+    },
   };
 }
 
 describe("WorktreeProvisioner.create saga", () => {
   it("clones all artifacts then commits the registry entry with provenance", async () => {
     const { deps, calls, recorded } = makeDeps();
-    const ops = new WorktreeProvisioner(deps);
+    const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     const res = await ops.create({ name: "x", createGit: false });
     expect(calls).toEqual(["clone:qdrant", "clone:codegraph", "clone:snapshot", "clone:stats", "clone:quarantine"]);
     expect(recorded).toHaveLength(1);
@@ -105,7 +111,7 @@ describe("WorktreeProvisioner.create saga", () => {
     // source yields an embedded clone — otherwise a bare-shell reindex of the
     // worktree would pin the source's frozen port instead of re-resolving.
     const { deps, recorded } = makeDeps();
-    const ops = new WorktreeProvisioner(deps);
+    const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     await ops.create({ name: "x", createGit: false });
     expect(recorded[0].qdrantEmbedded).toBe(true);
   });
@@ -117,7 +123,7 @@ describe("WorktreeProvisioner.create saga", () => {
     // Legacy sources store it in the deprecated `tuning` field — the clone
     // normalizes it into `env`.
     const { deps, recorded } = makeDeps();
-    const ops = new WorktreeProvisioner(deps);
+    const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     await ops.create({ name: "x", createGit: false });
     expect(recorded[0].env).toEqual({ TRAJECTORY_GIT_CHUNK_CONCURRENCY: "5" });
   });
@@ -130,7 +136,7 @@ describe("WorktreeProvisioner.create saga", () => {
     // budgets and dies before enrichment — no repair pass, no recovery, and a
     // graph left exactly as stale as the clone found it.
     const { deps, recorded } = makeDeps();
-    const ops = new WorktreeProvisioner(deps);
+    const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     await ops.create({ name: "x", createGit: false });
     expect(recorded[0].embeddingBaseUrl).toBe("http://192.168.1.71:11434");
     expect(recorded[0].embeddingFallbackUrl).toBe("http://localhost:11434");
@@ -141,9 +147,11 @@ describe("WorktreeProvisioner.create saga", () => {
     // than becoming an explicit undefined the registry would serialize.
     const { deps, recorded, sourceEntry } = makeDeps();
     const { embeddingBaseUrl: _b, embeddingFallbackUrl: _f, ...legacy } = sourceEntry;
-    deps.registry.findByName = vi.fn(() => legacy);
-    deps.registry.findByPath = vi.fn((p: string) => (p === process.cwd() ? legacy : null));
-    const ops = new WorktreeProvisioner(deps);
+    deps.registry.findByName = vi.fn(() => legacy) as unknown as typeof deps.registry.findByName;
+    deps.registry.findByPath = vi.fn((p: string) =>
+      p === process.cwd() ? legacy : null,
+    ) as unknown as typeof deps.registry.findByPath;
+    const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     await ops.create({ name: "x", createGit: false });
     expect("embeddingBaseUrl" in recorded[0]).toBe(false);
     expect("embeddingFallbackUrl" in recorded[0]).toBe(false);
@@ -151,10 +159,16 @@ describe("WorktreeProvisioner.create saga", () => {
 
   it("omits the env snapshot on the clone when the source entry has none (legacy entry)", async () => {
     const { deps, recorded, sourceEntry } = makeDeps();
-    const { tuning: _tuning, env: _env, ...legacy } = sourceEntry;
-    deps.registry.findByName = vi.fn(() => legacy);
-    deps.registry.findByPath = vi.fn((p: string) => (p === process.cwd() ? legacy : null));
-    const ops = new WorktreeProvisioner(deps);
+    const {
+      tuning: _tuning,
+      env: _env,
+      ...legacy
+    } = sourceEntry as typeof sourceEntry & { env?: Record<string, string> };
+    deps.registry.findByName = vi.fn(() => legacy) as unknown as typeof deps.registry.findByName;
+    deps.registry.findByPath = vi.fn((p: string) =>
+      p === process.cwd() ? legacy : null,
+    ) as unknown as typeof deps.registry.findByPath;
+    const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     await ops.create({ name: "x", createGit: false });
     expect("env" in recorded[0]).toBe(false);
     expect("tuning" in recorded[0]).toBe(false);
@@ -165,7 +179,7 @@ describe("WorktreeProvisioner.create saga", () => {
     // source. Leaving the stamp off makes every language read as version 1 and
     // the drift monitor demands a --force rebuild of already-current data.
     const { deps, recorded } = makeDeps();
-    const ops = new WorktreeProvisioner(deps);
+    const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     await ops.create({ name: "x", createGit: false });
     expect(deps.registry.stampLanguageVersions).toHaveBeenCalledWith(recorded[0].collectionName, {
       ruby: { walker: 4, codegraphSchema: 2 },
@@ -175,7 +189,7 @@ describe("WorktreeProvisioner.create saga", () => {
   it("does not stamp language versions when the source entry has none (legacy source)", async () => {
     const { deps, sourceEntry } = makeDeps();
     delete (sourceEntry as { languageVersions?: unknown }).languageVersions;
-    const ops = new WorktreeProvisioner(deps);
+    const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     await ops.create({ name: "x", createGit: false });
     expect(deps.registry.stampLanguageVersions).not.toHaveBeenCalled();
   });
@@ -187,7 +201,7 @@ describe("WorktreeProvisioner.create saga", () => {
     Object.assign(sourceEntry, { trajectoryVersions: { git: 2 } });
     const stampTrajectoryVersions = vi.fn();
     Object.assign(deps.registry as object, { stampTrajectoryVersions });
-    await new WorktreeProvisioner(deps).create({ name: "x", createGit: false });
+    await new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps).create({ name: "x", createGit: false });
     expect(stampTrajectoryVersions).toHaveBeenCalledWith(recorded[0].collectionName, { git: 2 });
   });
 
@@ -195,14 +209,14 @@ describe("WorktreeProvisioner.create saga", () => {
     const { deps } = makeDeps();
     const stampTrajectoryVersions = vi.fn();
     Object.assign(deps.registry as object, { stampTrajectoryVersions });
-    await new WorktreeProvisioner(deps).create({ name: "x", createGit: false });
+    await new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps).create({ name: "x", createGit: false });
     expect(stampTrajectoryVersions).not.toHaveBeenCalled();
   });
 
   it("rolls back ALL artifacts including the failing one in reverse on failure", async () => {
     // C2: the failing artifact (snapshot) must participate in rollback
     const { deps, calls, recorded } = makeDeps({}, [], "snapshot");
-    const ops = new WorktreeProvisioner(deps);
+    const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow(/boom snapshot/);
     expect(calls).toEqual([
       "clone:qdrant",
@@ -224,7 +238,7 @@ describe("WorktreeProvisioner.create saga", () => {
     deps.registry.findByPath = vi.fn((p: string) =>
       p === process.cwd() ? sourceEntry : { ...sourceEntry, collectionName: "code_dst" },
     );
-    const ops = new WorktreeProvisioner(deps);
+    const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow(WorktreeCollectionExistsError);
     await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow(/already exists/);
     expect(calls).toEqual([]);
@@ -244,8 +258,8 @@ describe("WorktreeProvisioner.create saga", () => {
     deps.registry.findByPath = vi.fn((p: string) => (p === process.cwd() ? sourceEntry : null));
     deps.registry.get = vi.fn((name: string) =>
       name === targetLogical ? { ...sourceEntry, collectionName: targetLogical, path: "/moved/elsewhere" } : null,
-    );
-    const ops = new WorktreeProvisioner(deps);
+    ) as unknown as typeof deps.registry.get;
+    const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
 
     await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow(WorktreeCollectionExistsError);
     expect(calls).toEqual([]);
@@ -255,9 +269,9 @@ describe("WorktreeProvisioner.create saga", () => {
   it("throws WorktreeSourceNotFoundError when source project is not found", async () => {
     // I1: typed error for source-not-found guard
     const { deps } = makeDeps();
-    deps.registry.findByName = vi.fn(() => null);
+    deps.registry.findByName = vi.fn(() => null) as unknown as typeof deps.registry.findByName;
     deps.registry.findByPath = vi.fn(() => null);
-    const ops = new WorktreeProvisioner(deps);
+    const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     await expect(ops.create({ name: "x", from: "missing", createGit: false })).rejects.toThrow(
       WorktreeSourceNotFoundError,
     );
@@ -278,7 +292,7 @@ describe("WorktreeProvisioner.create with git (C1)", () => {
       ...deps,
       ensureGitWorktree,
       removeGitWorktree,
-    } as never);
+    } as unknown as WorktreeProvisionerDeps);
 
     await expect(ops.create({ name: "x", createGit: true })).rejects.toThrow(/boom qdrant/);
     expect(ensureGitWorktree).toHaveBeenCalled();
@@ -296,7 +310,7 @@ describe("WorktreeProvisioner.create with git (C1)", () => {
       ...deps,
       ensureGitWorktree,
       removeGitWorktree,
-    } as never);
+    } as unknown as WorktreeProvisionerDeps);
 
     await expect(ops.create({ name: "x", createGit: true })).rejects.toThrow(/boom qdrant/);
     expect(ensureGitWorktree).toHaveBeenCalled();
@@ -314,7 +328,7 @@ describe("WorktreeProvisioner.create with git (C1)", () => {
       ...deps,
       ensureGitWorktree,
       removeGitWorktree,
-    } as never);
+    } as unknown as WorktreeProvisionerDeps);
 
     await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow(/boom qdrant/);
     expect(ensureGitWorktree).not.toHaveBeenCalled();
@@ -328,7 +342,7 @@ describe("WorktreeProvisioner.remove guard", () => {
     const { deps } = makeDeps({
       registry: { findWorktree: vi.fn(() => null) },
     });
-    const ops = new WorktreeProvisioner(deps);
+    const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     await expect(ops.remove({ name: "real-project", force: false, keepGit: true })).rejects.toThrow(
       WorktreeNotFoundError,
     );
@@ -359,8 +373,8 @@ describe("WorktreeProvisioner.remove with git cleanup", () => {
     };
     const removeGitWorktree = vi.fn();
     const { deps } = makeDeps();
-    deps.registry.findWorktree = vi.fn(() => worktreeEntry);
-    deps.registry.get = vi.fn(() => sourceEntry);
+    deps.registry.findWorktree = vi.fn(() => worktreeEntry) as unknown as typeof deps.registry.findWorktree;
+    deps.registry.get = vi.fn(() => sourceEntry) as unknown as typeof deps.registry.get;
     deps.qdrant.aliases.resolveActive = vi.fn(async () => "code_src_v1");
 
     const ops = new WorktreeProvisioner({ ...deps, removeGitWorktree } as never);
@@ -384,8 +398,8 @@ describe("WorktreeProvisioner.remove with git cleanup", () => {
     };
     const removeGitWorktree = vi.fn();
     const { deps } = makeDeps();
-    deps.registry.findWorktree = vi.fn(() => worktreeEntry);
-    deps.registry.get = vi.fn(() => ({ path: "/repo" }));
+    deps.registry.findWorktree = vi.fn(() => worktreeEntry) as unknown as typeof deps.registry.findWorktree;
+    deps.registry.get = vi.fn(() => ({ path: "/repo" })) as unknown as typeof deps.registry.get;
     deps.qdrant.aliases.resolveActive = vi.fn(async () => "code_src_v1");
 
     const ops = new WorktreeProvisioner({ ...deps, removeGitWorktree } as never);
@@ -408,7 +422,7 @@ describe("WorktreeProvisioner.remove with git cleanup", () => {
     };
     const removeGitWorktree = vi.fn();
     const { deps } = makeDeps();
-    deps.registry.findWorktree = vi.fn(() => worktreeEntry);
+    deps.registry.findWorktree = vi.fn(() => worktreeEntry) as unknown as typeof deps.registry.findWorktree;
     deps.registry.get = vi.fn(() => null); // source not found
     deps.qdrant.aliases.resolveActive = vi.fn(async () => "code_src_v1");
 
@@ -435,13 +449,13 @@ describe("WorktreeProvisioner.remove indexing lock", () => {
       deleteCollection: vi.fn(async () => undefined),
     };
     const footprintFactory = new CollectionFootprintFactory({
-      qdrant: qdrant as never,
+      qdrant: qdrant as unknown as FootprintDeps["qdrant"],
       pool: {
         cloneDatabase: vi.fn(async () => undefined),
         removeCollection: vi.fn(async () => true),
         listCollectionDbNames: vi.fn(() => []),
       },
-      statsCache: { clone: vi.fn(), invalidate: vi.fn() } as never,
+      statsCache: { clone: vi.fn(), invalidate: vi.fn() } as unknown as FootprintDeps["statsCache"],
       snapshotBaseDir,
       snapshotStoreFactory: () => ({ cloneTo: vi.fn(async () => undefined), delete: vi.fn(async () => undefined) }),
       quarantineStoreFactory: () => ({
@@ -481,11 +495,16 @@ describe("WorktreeProvisioner.remove indexing lock", () => {
       codegraphEnabled: false,
     };
     const { deps } = makeDeps();
-    deps.registry.findWorktree = vi.fn(() => worktreeEntry);
-    deps.qdrant.aliases.resolveActive = vi.fn(async (name: string) => `${name}_v1`);
+    deps.registry.findWorktree = vi.fn(() => worktreeEntry) as unknown as typeof deps.registry.findWorktree;
+    deps.qdrant.aliases.resolveActive = vi.fn(
+      async (name: string) => `${name}_v1`,
+    ) as typeof deps.qdrant.aliases.resolveActive;
     const { footprintFactory, qdrant } = footprintWithRealLock(dir);
 
-    const ops = new WorktreeProvisioner({ ...(deps as object), footprintFactory } as never);
+    const ops = new WorktreeProvisioner({
+      ...deps,
+      footprintFactory,
+    } as unknown as WorktreeProvisionerDeps);
     const result = await ops.remove({ name: "feat", force: false, keepGit: true });
 
     expect(result.removed).toBe(true);
@@ -511,15 +530,15 @@ describe("WorktreeProvisioner.remove physical resolution", () => {
     };
     const { deps, buildCalls } = makeDeps();
     // Stub findWorktree to return a worktree entry
-    deps.registry.findWorktree = vi.fn(() => worktreeEntry);
+    deps.registry.findWorktree = vi.fn(() => worktreeEntry) as unknown as typeof deps.registry.findWorktree;
     // resolveActive returns _v2 for the TARGET collection (simulating post-reindex state)
     deps.qdrant.aliases.resolveActive = vi.fn(async (name: string) => {
       if (name === "code_src") return "code_src_v1";
       if (name === "code_dst") return "code_dst_v2";
       return `${name}_v1`;
-    });
+    }) as unknown as typeof deps.qdrant.aliases.resolveActive;
 
-    const ops = new WorktreeProvisioner(deps);
+    const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     await ops.remove({ name: "feat", force: false, keepGit: true });
 
     // footprintFactory.build must receive target with physicalName = "code_dst_v2"
@@ -540,13 +559,13 @@ describe("WorktreeProvisioner.remove physical resolution", () => {
       codegraphEnabled: false,
     };
     const { deps, buildCalls } = makeDeps();
-    deps.registry.findWorktree = vi.fn(() => worktreeEntry);
+    deps.registry.findWorktree = vi.fn(() => worktreeEntry) as unknown as typeof deps.registry.findWorktree;
     deps.qdrant.aliases.resolveActive = vi.fn(async (name: string) => {
       if (name === "code_src") return "code_src_v1";
       throw new Error("collection not found");
-    });
+    }) as unknown as typeof deps.qdrant.aliases.resolveActive;
 
-    const ops = new WorktreeProvisioner(deps);
+    const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     await ops.remove({ name: "feat", force: false, keepGit: true });
 
     expect(buildCalls).toHaveLength(1);
@@ -602,7 +621,7 @@ describe("WorktreeProvisioner teardown resilience", () => {
       ],
     }));
 
-    const ops = new WorktreeProvisioner(deps);
+    const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
 
     await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow("boom codegraph");
     // Reverse order, and the failing rollback did not stop the earlier artifact from being undone.
@@ -612,13 +631,13 @@ describe("WorktreeProvisioner teardown resilience", () => {
 
   it("remove falls back to the logical source name when the source alias cannot be resolved", async () => {
     const { deps, buildCalls } = makeDeps();
-    deps.registry.findWorktree = vi.fn(() => worktreeEntry);
-    deps.registry.get = vi.fn(() => ({ path: "/repo" }));
+    deps.registry.findWorktree = vi.fn(() => worktreeEntry) as unknown as typeof deps.registry.findWorktree;
+    deps.registry.get = vi.fn(() => ({ path: "/repo" })) as unknown as typeof deps.registry.get;
     deps.qdrant.aliases.resolveActive = vi.fn(async () => {
       throw new Error("alias gone");
     });
 
-    const ops = new WorktreeProvisioner(deps);
+    const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     const res = await ops.remove({ name: "feat", force: false, keepGit: true });
 
     expect(res).toEqual({ removed: true });
@@ -629,8 +648,8 @@ describe("WorktreeProvisioner teardown resilience", () => {
 
   it("remove deregisters the clone even when an artifact teardown rejects", async () => {
     const { deps } = makeDeps();
-    deps.registry.findWorktree = vi.fn(() => worktreeEntry);
-    deps.registry.get = vi.fn(() => ({ path: "/repo" }));
+    deps.registry.findWorktree = vi.fn(() => worktreeEntry) as unknown as typeof deps.registry.findWorktree;
+    deps.registry.get = vi.fn(() => ({ path: "/repo" })) as unknown as typeof deps.registry.get;
     const removed: string[] = [];
     deps.footprintFactory.build = vi.fn(() => ({
       context: { source: {}, target: { logicalName: "code_dst" } },
@@ -653,7 +672,7 @@ describe("WorktreeProvisioner teardown resilience", () => {
       ],
     }));
 
-    const ops = new WorktreeProvisioner(deps);
+    const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     const res = await ops.remove({ name: "feat", force: false, keepGit: true });
 
     expect(res).toEqual({ removed: true });
@@ -691,13 +710,16 @@ describe("WorktreeProvisioner.create path canonicalization", () => {
     symlinkSync(parent, viaSymlink);
     const { deps, recorded } = makeDeps();
     const registryByPath = new Map<string, unknown>();
-    deps.registry.findByPath = vi.fn((p: string) => registryByPath.get(p) ?? null);
+    deps.registry.findByPath = vi.fn(
+      (p: string) => registryByPath.get(p) ?? null,
+    ) as unknown as typeof deps.registry.findByPath;
     deps.registry.record = vi.fn((e: Record<string, unknown>) => {
       recorded.push(e);
       registryByPath.set(e.path as string, e);
+      return recorded.length;
     });
 
-    const res = await new WorktreeProvisioner(deps).create({
+    const res = await new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps).create({
       name: "wt",
       path: join(viaSymlink, "wt"),
       from: "proj",

@@ -7,8 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 /** Env var mapping: [newName, oldName, configKey, testValue, defaultValue] */
-const _ENV_MAPPINGS: [string, string, keyof Awaited<ReturnType<typeof freshImport>>["AppConfig"], string, string][] =
-  [];
+const _ENV_MAPPINGS: [string, string, string, string, string][] = [];
 
 /** All env var names involved (for cleanup) */
 const ALL_KEYS = [

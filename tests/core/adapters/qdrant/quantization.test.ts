@@ -6,7 +6,7 @@ import { QdrantManager } from "../../../../src/core/adapters/qdrant/client.js";
 vi.mock("@qdrant/js-client-rest", () => {
   const createCollection = vi.fn().mockResolvedValue(true);
   const updateCollection = vi.fn().mockResolvedValue(true);
-  function MockQdrantClient() {
+  function MockQdrantClient(this: Record<string, unknown>) {
     this.createCollection = createCollection;
     this.updateCollection = updateCollection;
   }
@@ -65,7 +65,7 @@ describe("QdrantManager.createCollection — quantization", () => {
   it("emits turbo quantization_config when turboQuant=true", async () => {
     await manager.createCollection("test-col", 384, "Cosine", false, false, true);
 
-    const config = mockClient.createCollection.mock.calls.at(-1)[1];
+    const config = mockClient.createCollection.mock.calls.at(-1)![1];
     expect(config.quantization_config).toEqual({
       turbo: { bits: "bits4", always_ram: true },
     });
@@ -74,7 +74,7 @@ describe("QdrantManager.createCollection — quantization", () => {
   it("turboQuant takes precedence over quantizationScalar", async () => {
     await manager.createCollection("test-col", 384, "Cosine", false, true, true);
 
-    const config = mockClient.createCollection.mock.calls.at(-1)[1];
+    const config = mockClient.createCollection.mock.calls.at(-1)![1];
     expect(config.quantization_config).toEqual({
       turbo: { bits: "bits4", always_ram: true },
     });
@@ -96,7 +96,7 @@ describe("QdrantManager.createCollection — strict mode", () => {
       maxResidentMemoryPercent: 90,
     });
 
-    const config = mockClient.createCollection.mock.calls.at(-1)[1];
+    const config = mockClient.createCollection.mock.calls.at(-1)![1];
     expect(config.strict_mode_config).toEqual({ enabled: true, max_resident_memory_percent: 90 });
   });
 
@@ -105,7 +105,7 @@ describe("QdrantManager.createCollection — strict mode", () => {
       searchMaxBatchsize: 256,
     });
 
-    const config = mockClient.createCollection.mock.calls.at(-1)[1];
+    const config = mockClient.createCollection.mock.calls.at(-1)![1];
     expect(config.strict_mode_config).toEqual({ enabled: true, search_max_batchsize: 256 });
   });
 
@@ -115,7 +115,7 @@ describe("QdrantManager.createCollection — strict mode", () => {
       searchMaxBatchsize: 128,
     });
 
-    const config = mockClient.createCollection.mock.calls.at(-1)[1];
+    const config = mockClient.createCollection.mock.calls.at(-1)![1];
     expect(config.strict_mode_config).toEqual({
       enabled: true,
       max_resident_memory_percent: 80,
@@ -126,14 +126,14 @@ describe("QdrantManager.createCollection — strict mode", () => {
   it("omits strict_mode_config when strictMode is undefined", async () => {
     await manager.createCollection("c", 384, "Cosine", false, false, false);
 
-    const config = mockClient.createCollection.mock.calls.at(-1)[1];
+    const config = mockClient.createCollection.mock.calls.at(-1)![1];
     expect(config.strict_mode_config).toBeUndefined();
   });
 
   it("omits strict_mode_config when strictMode has no set fields", async () => {
     await manager.createCollection("c", 384, "Cosine", false, false, false, {});
 
-    const config = mockClient.createCollection.mock.calls.at(-1)[1];
+    const config = mockClient.createCollection.mock.calls.at(-1)![1];
     expect(config.strict_mode_config).toBeUndefined();
   });
 });

@@ -5,6 +5,7 @@ import type { PrimeData, PrimeRegistryEntry } from "../../../src/cli/prime/types
 
 const baseStatus = {
   status: "indexed" as const,
+  isIndexed: true,
   collectionName: "code_abc",
   filesCount: 1,
   chunksCount: 1,

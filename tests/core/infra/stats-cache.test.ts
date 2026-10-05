@@ -5,7 +5,11 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { CollectionSignalStats, Distributions } from "../../../src/core/contracts/types/trajectory.js";
+import type {
+  CollectionSignalStats,
+  Distributions,
+  SignalStats,
+} from "../../../src/core/contracts/types/trajectory.js";
 import { StatsCache } from "../../../src/core/infra/stats-cache.js";
 
 function makeTmpDir(): string {
@@ -56,9 +60,9 @@ describe("StatsCache", () => {
   it("save() writes valid JSON and load() reads it back (round-trip)", () => {
     const stats = makeStats({
       computedAt: 1_700_000_000_000,
-      perSignal: new Map([
+      perSignal: new Map<string, SignalStats>([
         ["git.file.commitCount", { count: 100, percentiles: { 25: 10, 95: 90 }, mean: 50, stddev: 28.87 }],
-        ["git.file.ageDays", { count: 80, mean: 120 }],
+        ["git.file.ageDays", { count: 80, mean: 120, min: 0, max: 0, percentiles: {} }],
       ]),
     });
 
@@ -109,7 +113,9 @@ describe("StatsCache", () => {
 
   it("invalidate() deletes the file and load() returns null after", () => {
     const stats = makeStats({
-      perSignal: new Map([["git.file.commitCount", { count: 5 }]]),
+      perSignal: new Map<string, SignalStats>([
+        ["git.file.commitCount", { count: 5, min: 0, max: 0, percentiles: {} }],
+      ]),
     });
 
     cache.save("delete-me", stats);
@@ -132,7 +138,7 @@ describe("StatsCache", () => {
     const nestedCache = new StatsCache(nestedDir);
 
     const stats = makeStats({
-      perSignal: new Map([["signal.x", { count: 1 }]]),
+      perSignal: new Map<string, SignalStats>([["signal.x", { count: 1, min: 0, max: 0, percentiles: {} }]]),
     });
 
     expect(() => {
@@ -145,7 +151,7 @@ describe("StatsCache", () => {
 
   it("save() persists payloadFieldKeys and load() returns them", () => {
     const stats = makeStats({
-      perSignal: new Map([["a", { count: 1 }]]),
+      perSignal: new Map<string, SignalStats>([["a", { count: 1, min: 0, max: 0, percentiles: {} }]]),
     });
     cache.save("key-test", stats, ["git.file.ageDays", "git.file.commitCount"]);
     const loaded = cache.load("key-test");
@@ -155,8 +161,8 @@ describe("StatsCache", () => {
   it("round-trip preserves Map→Record→Map conversion correctly", () => {
     const perSignal = new Map([
       ["alpha", { count: 10, percentiles: { 50: 5.0, 95: 9.5 } }],
-      ["beta", { count: 20, mean: 7.7 }],
-      ["gamma", { count: 30, stddev: 3.14 }],
+      ["beta", { count: 20, mean: 7.7, min: 0, max: 0, percentiles: {} }],
+      ["gamma", { count: 30, stddev: 3.14, min: 0, max: 0, percentiles: {} }],
     ]);
     const stats = makeStats({ computedAt: 42, perSignal });
 
@@ -191,7 +197,9 @@ describe("StatsCache", () => {
 
       const stats = makeStats({
         computedAt: 1_700_000_000_000,
-        perSignal: new Map([["git.file.commitCount", { count: 70, min: 1, max: 80, mean: 10, percentiles: {} }]]),
+        perSignal: new Map<string, SignalStats>([
+          ["git.file.commitCount", { count: 70, min: 1, max: 80, mean: 10, percentiles: {} }],
+        ]),
         perLanguage: new Map([
           ["typescript", tsSignals],
           ["ruby", rubySignals],
@@ -247,7 +255,7 @@ describe("StatsCache", () => {
         version: 3,
         collectionName: "v3-collection",
         computedAt: 1_700_000_000_000,
-        perSignal: { "git.file.commitCount": { count: 10, mean: 5 } },
+        perSignal: { "git.file.commitCount": { count: 10, mean: 5, min: 0, max: 0, percentiles: {} } },
         distributions: emptyDistributions,
       });
       writeFileSync(filePath, v3Content, "utf-8");
@@ -258,7 +266,9 @@ describe("StatsCache", () => {
 
     it("should handle empty perLanguage", () => {
       const stats = makeStats({
-        perSignal: new Map([["git.file.commitCount", { count: 10 }]]),
+        perSignal: new Map<string, SignalStats>([
+          ["git.file.commitCount", { count: 10, min: 0, max: 0, percentiles: {} }],
+        ]),
         perLanguage: new Map(),
       });
 

@@ -24,7 +24,7 @@ function makeHarness(appOverrides: Record<string, unknown> = {}) {
     captured.push({ name, config, handler });
   });
 
-  const emptyResponse: ExploreResponse = { results: [] };
+  const emptyResponse: ExploreResponse = { results: [], driftWarning: null };
   const app = {
     semanticSearch: vi.fn().mockResolvedValue(emptyResponse),
     hybridSearch: vi.fn().mockResolvedValue(emptyResponse),

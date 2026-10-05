@@ -70,8 +70,8 @@ describe("projects env subcommands", () => {
       });
   }
 
-  const stdout = (): string => stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
-  const stderr = (): string => stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+  const stdout = (): string => stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
+  const stderr = (): string => stderrSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
   const onDisk = () => new CollectionRegistry(dir).findByName("alpha");
 
   it("register --env (repeatable) persists the env with the alias", async () => {

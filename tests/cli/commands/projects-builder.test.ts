@@ -73,7 +73,7 @@ describe("projectsCommand yargs builder/handler wiring", () => {
 
   it("register subcommand closure invokes runRegister", async () => {
     await makeCli().parseAsync(["projects", "register", "--path", repo, "--name", "alpha"]);
-    const out = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+    const out = stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
     expect(out).toMatch(/Registered 'alpha' -> code_/);
   });
 
@@ -81,7 +81,7 @@ describe("projectsCommand yargs builder/handler wiring", () => {
     await makeCli().parseAsync(["projects", "register", "--path", repo, "--name", "alpha"]);
     stdoutSpy.mockClear();
     await makeCli().parseAsync(["projects", "unregister", "--name", "alpha"]);
-    const out = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+    const out = stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
     expect(out).toMatch(/Removed 'alpha'/);
   });
 
@@ -89,7 +89,7 @@ describe("projectsCommand yargs builder/handler wiring", () => {
     await makeCli().parseAsync(["projects", "register", "--path", repo, "--name", "alpha"]);
     stdoutSpy.mockClear();
     await makeCli().parseAsync(["projects", "unregister", "--path", repo]);
-    const out = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+    const out = stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
     expect(out).toMatch(/Removed 'alpha'/);
   });
 
@@ -107,11 +107,11 @@ describe("projectsCommand yargs builder/handler wiring", () => {
 
   it("unregister --collection removes the entry holding that collection", async () => {
     await makeCli().parseAsync(["projects", "register", "--path", repo, "--name", "alpha"]);
-    const registered = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+    const registered = stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
     const collection = /-> (code_\w+)/.exec(registered)![1];
     stdoutSpy.mockClear();
     await makeCli().parseAsync(["projects", "unregister", "--collection", collection]);
-    expect(stdoutSpy.mock.calls.map((c) => String(c[0])).join("")).toMatch(/Removed 'alpha'/);
+    expect(stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("")).toMatch(/Removed 'alpha'/);
   });
 
   it("unregister rejects --collection together with --name", async () => {
@@ -124,7 +124,7 @@ describe("projectsCommand yargs builder/handler wiring", () => {
     await makeCli().parseAsync(["projects", "register", "--path", repo, "--name", "alpha"]);
     stdoutSpy.mockClear();
     await makeCli().parseAsync(["projects", "list"]);
-    const out = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+    const out = stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
     expect(out).toMatch(/NAME/);
     expect(out).toContain("alpha");
   });
@@ -133,7 +133,7 @@ describe("projectsCommand yargs builder/handler wiring", () => {
     await makeCli().parseAsync(["projects", "register", "--path", repo, "--name", "alpha"]);
     stdoutSpy.mockClear();
     await makeCli().parseAsync(["projects", "info", "--name", "alpha"]);
-    const out = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+    const out = stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
     expect(out).toMatch(/^name: +alpha$/m);
     expect(out).toMatch(/^collectionName: +code_/m);
   });
@@ -141,7 +141,7 @@ describe("projectsCommand yargs builder/handler wiring", () => {
   it("$0 default subcommand closure invokes runList when no subcommand given", async () => {
     // No subcommand after `projects` -> default $0 handler should run list.
     await makeCli().parseAsync(["projects"]);
-    const out = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+    const out = stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
     expect(out).toMatch(/no projects registered/);
   });
 
@@ -149,7 +149,7 @@ describe("projectsCommand yargs builder/handler wiring", () => {
     // No --purge: the sweep must not reach for Qdrant at all, so the closure
     // runs against the real (empty) registry without any stubbing.
     await makeCli().parseAsync(["projects", "prune"]);
-    const out = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+    const out = stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
     expect(out).toMatch(/no stale registry entries/);
   });
 
@@ -179,7 +179,7 @@ describe("projectsCommand yargs builder/handler wiring", () => {
           throw err ?? new Error(msg);
         });
       await cli.parseAsync(["projects", "orphans"]);
-      const out = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+      const out = stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
       expect(out).toContain("code_floating");
     } finally {
       vi.doUnmock("../../../src/bootstrap/config/index.js");

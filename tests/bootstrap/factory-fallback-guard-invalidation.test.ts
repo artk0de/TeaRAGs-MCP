@@ -166,6 +166,8 @@ function makeConfig(): AppConfig {
       supportedExtensions: [".ts"],
       ignorePatterns: [],
       enableHybridSearch: false,
+      quantizationScalar: false,
+      turboQuant: false,
     },
     exploreCode: { enableHybridSearch: false, defaultSearchLimit: 5 },
     trajectoryIngest: {},

@@ -352,6 +352,9 @@ describe("createAccumulator", () => {
     deleteBatchSize: 500,
     deleteConcurrency: 8,
     deleteFlushTimeoutMs: 1000,
+    quantizationScalar: false,
+    turboQuant: false,
+    lowMemory: false,
   };
 
   it("should create accumulator from tune config", () => {
