@@ -244,8 +244,10 @@ Pair undirected: `sourceRelPath` = lexicographically smaller. Evidence per line:
 | `directoryRelation: disjoint`      | crosses module border — rank highest                                          |
 
 Fix direction: make coupling explicit (shared contract / generated table / one
-owner) OR merge. Type-only imports are NOT graph edges — pair joined only by
-`import type` can surface; check before claiming "no link".
+owner) OR merge. Type-only imports ARE graph edges (callWeight 0) on indexes
+walked at walker ≥ 4 — a pair joined only by `import type` reads
+structurallyLinked and does not surface; an index walked before that change may
+still miss the edge, so check before claiming "no link".
 
 ## Phase 3d — MAIN SEQUENCE
 
@@ -370,11 +372,11 @@ Reasons verbatim in `exclusionReasons`. Report them as "not judged", never as
 `summary.leakingAbstraction.excludedModules` — first three count modules NOT
 judged; `intraParentConsumers` counts excluded importer pairs:
 
-| Counter                | Meaning                                                                        |
-| ---------------------- | ------------------------------------------------------------------------------ |
-| `facadeNotAdopted`     | adoption ≤ 0.5 or below adaptive cut — importers don't use the facade          |
-| `tooFewImporters`      | < 3 external importers — adoption untrustworthy                                |
-| `languageEnforced`     | Go package — compiler enforces boundary, nothing to leak                       |
+| Counter                | Meaning                                                                                                                                                                          |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `facadeNotAdopted`     | adoption ≤ 0.5 or below adaptive cut — importers don't use the facade                                                                                                            |
+| `tooFewImporters`      | < 3 external importers — adoption untrustworthy                                                                                                                                  |
+| `languageEnforced`     | Go package — compiler enforces boundary, nothing to leak                                                                                                                         |
 | `intraParentConsumers` | importer inside module's PARENT dir component (parent holds entry file = assembly barrel) — sibling/assembly consumer, internal by two-seam model; counts consumers, not modules |
 
 `summary.silentCoupling.excluded` — pairs read, NOT judged: `testEndpoints`,

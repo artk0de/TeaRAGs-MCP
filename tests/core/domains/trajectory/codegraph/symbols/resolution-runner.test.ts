@@ -347,7 +347,7 @@ describe("CallEdgeResolutionRunner.resolve — file-edge dedup", () => {
   });
 });
 
-describe("CallEdgeResolutionRunner.resolve — type-only file edges (bd tea-rags-mcp-r8hme.12)", () => {
+describe("CallEdgeResolutionRunner.resolve — type-only file edges (bd tea-rags-mcp-r8hme.12, tea-rags-mcp-89k7k.31)", () => {
   // Maps every import the extraction it is handed carries, by the same
   // import→file path either channel goes through.
   const importDrivenResolver = {
@@ -375,10 +375,16 @@ describe("CallEdgeResolutionRunner.resolve — type-only file edges (bd tea-rags
     chunks: [],
   });
 
-  it("resolves type-only imports onto typeOnlyFileEdges and keeps them out of fileEdges", () => {
+  it("resolves type-only imports onto fileEdges as structural dependencies AND onto typeOnlyFileEdges", () => {
     const edges = runner().resolve(extraction(["./runner"], ["./protocol", "./protocol"]), {} as GlobalSymbolTable);
 
-    expect(edges.fileEdges).toEqual([{ targetRelPath: "src/runner.ts", importText: "./runner" }]);
+    // 89k7k.31: a type-only import is a compile-time dependency, so the edge
+    // joins the runtime file graph (callWeight reads 0 — no method edge can
+    // sit behind it) and the type-only channel keeps its own row.
+    expect(edges.fileEdges).toEqual([
+      { targetRelPath: "src/runner.ts", importText: "./runner" },
+      { targetRelPath: "src/protocol.ts", importText: "./protocol" },
+    ]);
     expect(edges.typeOnlyFileEdges).toEqual([{ targetRelPath: "src/protocol.ts", importText: "./protocol" }]);
   });
 
@@ -389,7 +395,7 @@ describe("CallEdgeResolutionRunner.resolve — type-only file edges (bd tea-rags
     expect(edges).not.toHaveProperty("typeOnlyFileEdges");
   });
 
-  it("routes an import flagged typeOnly on imports[] (Python `if TYPE_CHECKING:`) to typeOnlyFileEdges", () => {
+  it("routes an import flagged typeOnly on imports[] (Python `if TYPE_CHECKING:`) to fileEdges and typeOnlyFileEdges", () => {
     const seenImports: string[][] = [];
     const recordingResolver = {
       resolve: () => null,
@@ -419,7 +425,10 @@ describe("CallEdgeResolutionRunner.resolve — type-only file edges (bd tea-rags
       {} as GlobalSymbolTable,
     );
 
-    expect(edges.fileEdges).toEqual([{ targetRelPath: "src/forms.ts", importText: "./forms" }]);
+    expect(edges.fileEdges).toEqual([
+      { targetRelPath: "src/forms.ts", importText: "./forms" },
+      { targetRelPath: "src/models.ts", importText: "./models" },
+    ]);
     expect(edges.typeOnlyFileEdges).toEqual([{ targetRelPath: "src/models.ts", importText: "./models" }]);
     expect(seenImports).toEqual([["./forms"], ["./models"]]);
   });

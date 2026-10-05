@@ -142,7 +142,9 @@ export const capability: LanguageCapability = {
   // walker bump, so every branch-local number above collapses into 12.
   // Same walker 12, bd tea-rags-mcp-r8hme.12: statement-level `import type` /
   // `export type … from` are emitted on `typeOnlyImports` and persisted to
-  // `cg_symbols_edges_file_type_only` instead of being dropped.
+  // `cg_symbols_edges_file_type_only` instead of being dropped; since bd
+  // tea-rags-mcp-89k7k.31 (shared walker 4) they also join
+  // `cg_symbols_edges_file` at callWeight 0.
   // Same walker 12, bd tea-rags-mcp-39xca.14: interfaces and object type
   // aliases are emitted as `structuralContracts` and every callable chunk
   // carries its `arity`, so an interface receiver's cone reaches the classes
