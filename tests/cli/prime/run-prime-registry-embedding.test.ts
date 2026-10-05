@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { unavailable } from "../../../src/cli/update-check/types.js";
+import { createPathCollectionResolver } from "../../../src/core/api/index.js";
 import { resolveLanguageCapabilities } from "../../../src/core/domains/language/capability/resolve.js";
 import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/collection-registry.js";
 
@@ -129,7 +130,7 @@ describe("runPrime — registry-first embedding endpoint override", () => {
       });
       wireApp();
 
-      await runPrime({ project: "tracked" });
+      await runPrime({ project: "tracked", createPathCollectionResolver });
 
       expect(envAtParseTime).toBeDefined();
       expect(envAtParseTime?.base).toBe("http://gpu-server:11434");
@@ -172,7 +173,7 @@ describe("runPrime — registry-first embedding endpoint override", () => {
       });
       wireApp();
 
-      await runPrime({ project: "legacy" });
+      await runPrime({ project: "legacy", createPathCollectionResolver });
 
       // Env preserved — registry entry contributed nothing to override.
       expect(envAtParseTime?.base).toBe("http://from-env:11434");

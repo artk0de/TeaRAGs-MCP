@@ -25,7 +25,7 @@ import type { EmbeddingModelGuard } from "../../adapters/qdrant/embedding-model-
 import type { LanguageCapability } from "../../contracts/types/language.js";
 import type { Reranker } from "../../domains/explore/reranker.js";
 import type { IndexDriftReporter } from "../../domains/maintenance/drift/index.js";
-import type { ProjectInfo } from "../../domains/maintenance/registry/index.js";
+import type { CollectionEntry, CollectionRegistry, ProjectInfo } from "../../domains/maintenance/registry/index.js";
 import type {
   CollectionOps,
   DocumentOps,
@@ -34,6 +34,7 @@ import type {
   IngestFacade,
   NamingLexiconOps,
   OntologyReportOps,
+  PathCollectionResolver,
   ProjectRegistryOps,
   ReviewFacade,
   TracePathOps,
@@ -213,6 +214,24 @@ export interface App {
     collection: string,
     options?: { deadWriterEvidenceUpTo?: number },
   ) => Promise<boolean>;
+  /**
+   * The registry entry whose index a read addressed by `path` alone is served
+   * from — the rule the server resolves a request path by
+   * (`resolveWorkingTree`): a linked worktree nobody registered reads its
+   * repository's entry. Null when no entry claims the index. The registry is
+   * caller-supplied, like the lease predicate's marker reader: the read-only
+   * CLI paths hold their own (bd tea-rags-mcp-nkstp).
+   *
+   * @throws the path-validation errors for a bad `path`.
+   */
+  resolveBaseIndexEntry: (registry: CollectionRegistry, path: string) => CollectionEntry | null;
+  /**
+   * The shared path→collection resolver (`createPathCollectionResolver`): the
+   * entry that claims the path wins, the deterministic path hash — pinned to
+   * the canonical spelling — is only its fallback (bd tea-rags-mcp-dxa9w).
+   * Registry caller-supplied, same as {@link App.resolveBaseIndexEntry}.
+   */
+  createPathCollectionResolver: (registry: CollectionRegistry) => PathCollectionResolver;
 
   // -- Provider availability — sync query used by MCP tool registrars to
   // skip registration when a required trajectory provider is not loaded.

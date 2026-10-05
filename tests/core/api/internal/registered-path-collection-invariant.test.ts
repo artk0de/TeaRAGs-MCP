@@ -26,7 +26,7 @@ import { buildMcpAutoUpdateTrigger } from "../../../../src/bootstrap/auto-update
 import { runPrime } from "../../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../../src/cli/update-check/check-service.js";
 import { unavailable } from "../../../../src/cli/update-check/types.js";
-import { IngestFacade } from "../../../../src/core/api/index.js";
+import { createPathCollectionResolver, IngestFacade } from "../../../../src/core/api/index.js";
 import { resolveCollection } from "../../../../src/core/api/internal/collection-resolver.js";
 import { resolveLanguageCapabilities } from "../../../../src/core/domains/language/capability/resolve.js";
 import { CollectionRegistry } from "../../../../src/core/domains/maintenance/registry/collection-registry.js";
@@ -235,7 +235,7 @@ describe("prime at a relocated project's path", () => {
     });
 
     const maybeSpawn = vi.fn().mockReturnValue("disabled");
-    await runPrime({ path: projectDir, autoUpdateTrigger: { maybeSpawn } });
+    await runPrime({ path: projectDir, createPathCollectionResolver, autoUpdateTrigger: { maybeSpawn } });
 
     // A null entry skips the trigger entirely — the call itself is the proof
     // the lookup resolved, and the argument is the proof it resolved right.

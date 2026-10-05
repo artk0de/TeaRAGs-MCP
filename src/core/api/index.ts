@@ -90,6 +90,7 @@ export type { ReviewChangesOpsDeps } from "./internal/ops/review-changes-ops.js"
 export type { ReviewEdgeExtractionDeps } from "./internal/ops/review-edge-overlay.js";
 export { createNamingReviewExtractor } from "./internal/ops/naming-review-extraction.js";
 export { createPathCollectionResolver } from "./internal/collection-resolver.js";
+export type { PathCollectionResolver } from "./internal/collection-resolver.js";
 // Path→collection resolution and the worktree query helpers moved off the
 // public barrel (bd tea-rags-mcp-89k7k.22): runtime logic, reached by cli
 // through this assembly surface.

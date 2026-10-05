@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { unavailable } from "../../../src/cli/update-check/types.js";
+import { createPathCollectionResolver } from "../../../src/core/api/index.js";
 import { resolveLanguageCapabilities } from "../../../src/core/domains/language/capability/resolve.js";
 import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/collection-registry.js";
 
@@ -116,7 +117,7 @@ describe("runPrime — registry-first codegraph enablement override", () => {
       });
       wireApp();
 
-      await runPrime({ project: "cg" });
+      await runPrime({ project: "cg", createPathCollectionResolver });
 
       expect(envAtParseTime).toBe("true");
     } finally {
@@ -149,7 +150,7 @@ describe("runPrime — registry-first codegraph enablement override", () => {
       });
       wireApp();
 
-      await runPrime({ project: "legacy" });
+      await runPrime({ project: "legacy", createPathCollectionResolver });
 
       expect(envAtParseTime).toBeUndefined();
     } finally {

@@ -50,7 +50,13 @@ describe("primeCommand", () => {
     await (primeCommand.handler as PrimeHandler)({ path: "/projects/demo" });
 
     expect(runPrimeMock).toHaveBeenCalledOnce();
-    expect(runPrimeMock).toHaveBeenCalledWith({ path: "/projects/demo", project: undefined });
+    // The command is the composition actor: it also passes the shared
+    // path→collection resolver down (bd tea-rags-mcp-nkstp).
+    expect(runPrimeMock).toHaveBeenCalledWith({
+      path: "/projects/demo",
+      project: undefined,
+      createPathCollectionResolver: expect.any(Function),
+    });
     exitSpy.mockRestore();
   });
 

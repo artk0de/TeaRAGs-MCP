@@ -19,8 +19,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
-import { resolveBaseIndexEntry } from "../../core/api/index.js";
-import { CollectionRegistry, resolveRegistryEnv, type CollectionEntry } from "../../core/api/public/index.js";
+import { CollectionRegistry, resolveRegistryEnv, type App, type CollectionEntry } from "../../core/api/public/index.js";
 
 /** The request fields a tool addresses its project by — the MCP tool contract. */
 function stringParam(params: Record<string, unknown>, key: string): string | undefined {
@@ -36,11 +35,18 @@ function stringParam(params: Record<string, unknown>, key: string): string | und
  * reads its repository's index, so its env is that entry's — the MCP contract
  * lets `path` alone address a worktree. Null when the target is not registered
  * or the path does not validate (the tool reports the bad path itself).
+ *
+ * The path→entry capability arrives as an injection typed by the App method
+ * (bd tea-rags-mcp-nkstp — the 89k7k.9 playbook): this module is a leaf and
+ * holds no edge onto the api assembly barrel; the `call` command constructs
+ * the resolver and passes it, and a wired App satisfies the same type
+ * directly.
  */
 export async function resolveCallProjectEntry(
   registry: CollectionRegistry,
   params: Record<string, unknown>,
   cwd: string,
+  resolveBaseIndexEntry: App["resolveBaseIndexEntry"],
 ): Promise<CollectionEntry | null> {
   const project = stringParam(params, "project");
   if (project) return registry.findByName(project);
@@ -67,10 +73,20 @@ export function applyCallProjectEnv(entry: CollectionEntry | null, env: NodeJS.P
   Object.assign(env, resolveRegistryEnv(entry, env));
 }
 
-/** Production wiring for `CallDeps.prepareProjectEnv`: the user's registry, the process cwd and env. */
-export async function prepareCallProjectEnv(params: Record<string, unknown>): Promise<void> {
+/**
+ * Production wiring for `CallDeps.prepareProjectEnv`: the user's registry, the
+ * process cwd and env. The path→entry capability is passed in by the `call`
+ * command (bd tea-rags-mcp-nkstp) — this leaf constructs no api runtime itself.
+ */
+export async function prepareCallProjectEnv(
+  params: Record<string, unknown>,
+  resolveBaseIndexEntry: App["resolveBaseIndexEntry"],
+): Promise<void> {
   const registry = new CollectionRegistry(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), {
     envCodeDefaults: resolveRegistryEnvCodeDefaults,
   });
-  applyCallProjectEnv(await resolveCallProjectEntry(registry, params, process.cwd()), process.env);
+  applyCallProjectEnv(
+    await resolveCallProjectEntry(registry, params, process.cwd(), resolveBaseIndexEntry),
+    process.env,
+  );
 }
