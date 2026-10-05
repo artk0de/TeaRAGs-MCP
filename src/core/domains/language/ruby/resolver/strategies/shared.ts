@@ -24,29 +24,13 @@ import { linearizeAncestors } from "../ancestor-linearization.js";
 import { isRubyPath, lookupRubySymbolsByShortName } from "../short-name-lookup.js";
 import { resolveZeitwerkConstant } from "../zeitwerk.js";
 
-export interface ResolverConfig {
-  mode: AmbiguousResolveMode;
-  /**
-   * Max cone size before CHA devirtualization collapses to a single
-   * `poly-base` edge (bd tea-rags-mcp-2jet). `|cone| ≤ coneMax` persists N
-   * `cone` edges (confidence `1/N`); `> coneMax` persists one base-decl edge
-   * expanded at query time. Defaults to `CONE_MAX_DEFAULT` (8) when omitted.
-   */
-  coneMax?: number;
-  /**
-   * Confidence weight applied to a dynamic-receiver short-name fan-out edge
-   * (bd tea-rags-mcp-wbj3) BEFORE the per-candidate `1/N` split. A dynamic
-   * receiver (`arr.map`, `obj[k].call`) carries no static type, so its
-   * short-name match is materially weaker than a CHA `cone` candidate (which at
-   * least has a static base type) — this discount marks that. Defaults to
-   * `DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT` (0.5) when omitted; env
-   * `CODEGRAPH_RB_DYNAMIC_CONFIDENCE` overrides at composition.
-   */
-  dynamicReceiverConfidence?: number;
-}
-
-/** Default cone-size threshold; env `CODEGRAPH_RB_CONE_MAX` overrides at composition. */
-export const CONE_MAX_DEFAULT = 8;
+/**
+ * `ResolverConfig` / `CONE_MAX_DEFAULT` live in the kernel
+ * (`readResolverConfig` builds the config); re-exported so
+ * `strategies/shared.js` stays the one import path the strategies use.
+ * `CODEGRAPH_RB_CONE_MAX` / `CODEGRAPH_RB_DYNAMIC_CONFIDENCE` override at composition.
+ */
+export { CONE_MAX_DEFAULT, type ResolverConfig } from "../../../kernel/index.js";
 
 /**
  * Default confidence discount for a dynamic-receiver short-name fan-out edge

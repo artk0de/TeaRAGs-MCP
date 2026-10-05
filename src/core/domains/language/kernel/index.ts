@@ -130,3 +130,10 @@ export {
   type ReceiverTypedStrategyOptions,
   type ReceiverTypingPorts,
 } from "./receiver-typed-strategies.js";
+export {
+  CONE_MAX_DEFAULT,
+  readResolverConfig,
+  type ResolvedResolverConfig,
+  type ResolverConfig,
+  type ResolverEnvPrefix,
+} from "./resolver-config.js";

@@ -47,12 +47,12 @@ import {
 } from "../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent, SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { ExternalCallClassifier } from "../../external-classifier.js";
+import { readResolverConfig } from "../../kernel/index.js";
 import { resolveDispatchViaComponents, resolveViaChain } from "../../resolver-chain.js";
 import { ZEITWERK_PREFIX } from "../zeitwerk-import-marker.js";
 import { RubyExternalVocabulary } from "./ruby-external-vocabulary.js";
 import { lookupRubySymbolsByShortName, rubyMemberLookupRole } from "./short-name-lookup.js";
 import {
-  CONE_MAX_DEFAULT,
   resolveConstant,
   RubyArRelationGuardSymbolResolutionStrategy,
   RubyBareCallSymbolResolutionStrategy,
@@ -73,22 +73,8 @@ import {
   RubySuperSymbolResolutionStrategy,
   RubyTableDispatchResolver,
   RubyUnionDispatchResolver,
-  type ResolverConfig,
 } from "./strategies/index.js";
 import { redirectSelfDispatchTemplate } from "./template-redirect.js";
-
-/** Parse `CODEGRAPH_RB_DYNAMIC_CONFIDENCE` (a float in `(0,1]`); `undefined` on absent/invalid. */
-function resolveDynamicConfidence(raw: string | undefined): number | undefined {
-  if (raw === undefined) return undefined;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed > 0 && parsed <= 1 ? parsed : undefined;
-}
-
-/** Parse `CODEGRAPH_RB_CONE_MAX`; fall back to the shared default on absent/invalid. */
-function resolveConeMax(raw: string | undefined): number {
-  const parsed = Number(raw);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : CONE_MAX_DEFAULT;
-}
 
 export class RubyCallResolver implements CallResolver {
   readonly language = "ruby";
@@ -101,11 +87,7 @@ export class RubyCallResolver implements CallResolver {
   private readonly externalClassifier: ExternalCallClassifier;
 
   constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
-    const cfg: ResolverConfig = {
-      mode,
-      coneMax: resolveConeMax(process.env.CODEGRAPH_RB_CONE_MAX),
-      dynamicReceiverConfidence: resolveDynamicConfidence(process.env.CODEGRAPH_RB_DYNAMIC_CONFIDENCE),
-    };
+    const cfg = readResolverConfig(process.env, "CODEGRAPH_RB", mode);
     this.strategies = [
       new RubySuperSymbolResolutionStrategy(cfg),
       new RubySelfMemberSymbolResolutionStrategy(cfg),
