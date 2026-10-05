@@ -605,43 +605,71 @@ export function pythonPlacedReturnFact(
   // the caller's derived-binding fold, which places what it folds from the
   // CALLER's file (bd tea-rags-mcp-m99j1.1.70). Written in another file, its
   // arms are placed here, by the file that wrote them; one that dies kills the
-  // whole fact, as a top-level union's does. A fact the caller's own file
-  // wrote is left to the fold, which places it by that same file.
+  // whole fact, as a top-level union's does. A single NOMINAL element
+  // (`-> list[A]`, bd tea-rags-mcp-m99j1.1.75) is placed the same way, but
+  // additively: one the declaring file cannot place keeps its spelling and
+  // reads as it always did. A fact the caller's own file wrote is left to the
+  // fold, which places it by that same file.
   if (definingFiles.every((file) => file === ctx.callerFile)) return recorded;
-  return pythonPlacedNestedUnions(recorded, placeUnion) ?? undefined;
+  const placeElement = (element: Extract<TypeRef, { name: string }>): TypeRef => {
+    const name = pythonPlacedElementName(element.name, definingFiles, ctx, mapper);
+    return name === element.name ? element : { ...element, name };
+  };
+  return pythonPlacedNestedTypes(recorded, placeUnion, placeElement) ?? undefined;
 }
 
 /**
  * `recorded` with every union inside its container elements and tuple
  * positions replaced by what `placeUnion` answers, or null when any of them
- * dies. A nominal or `nil` is kept as written — only a union's arms are placed.
+ * dies, and every nominal element there replaced by what `placeElement`
+ * answers, which never dies. A `class` or `nil` is kept as written.
  */
-function pythonPlacedNestedUnions(
+function pythonPlacedNestedTypes(
   recorded: TypeRef,
   placeUnion: (union: TypeRef & { form: "union" }) => TypeRef | null,
+  placeElement: (element: Extract<TypeRef, { name: string }>) => TypeRef,
 ): TypeRef | null {
   switch (recorded.form) {
     case "union":
       return placeUnion(recorded);
+    case "instance":
+      return placeElement(recorded);
     case "container": {
-      const element = pythonPlacedNestedUnions(recorded.element, placeUnion);
+      const element = pythonPlacedNestedTypes(recorded.element, placeUnion, placeElement);
       if (element === null) return null;
       return element === recorded.element ? recorded : { ...recorded, element };
     }
     case "tuple": {
       const elements: TypeRef[] = [];
       for (const element of recorded.elements) {
-        const placed = pythonPlacedNestedUnions(element, placeUnion);
+        const placed = pythonPlacedNestedTypes(element, placeUnion, placeElement);
         if (placed === null) return null;
         elements.push(placed);
       }
       return elements.every((element, at) => element === recorded.elements[at]) ? recorded : { ...recorded, elements };
     }
     case "class":
-    case "instance":
     case "nil":
       return recorded;
   }
+}
+
+/**
+ * A nominal element nested in another file's return → its class key placed by
+ * that file, or the name as written. Unlike {@link pythonPlacedArmName} it
+ * never kills and never strips a library spelling to its last segment: an
+ * element the declaring files cannot place unanimously as a project class
+ * reaches the caller's fold exactly as it did before placement existed.
+ */
+function pythonPlacedElementName(
+  name: string,
+  definingFiles: readonly string[],
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): string {
+  if (isPythonPlacedClassKey(name)) return name;
+  if (!name.includes("::")) return pythonPlacedBareArmName(name, definingFiles, ctx, mapper);
+  return pythonPlacedArmName(name, true, definingFiles, ctx, mapper) ?? name;
 }
 
 /**

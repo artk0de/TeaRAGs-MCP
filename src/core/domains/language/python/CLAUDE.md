@@ -875,15 +875,17 @@
   return (`-> list[A | B]`, arms spelled relative to that file) is placed
   earlier, by `pythonPlacedReturnFact` at the return read, where the declaring
   file is known (bd tea-rags-mcp-m99j1.1.70); an arm it cannot place kills the
-  whole fact, as a top-level union's does. `contextEnter` is `__enter__`'s
-  return through the member-return MRO walk and nothing when no project class
-  declares one — the constructed instance is never the answer. `except E as e`
-  needs no derived kind: it is a plain instance binding scoped to the handler; a
-  tuple `except (A, B)` and starred targets record nothing. This is a DIFFERENT
-  mechanism from the annotation pass's `python-iteration-facts.ts` (an `ast`
-  fact off an annotated iterable); the two coexist and the annotation one
-  declines a bare `dict` iteration, which yields KEYS while `TypeRef`'s
-  container carries only a value.
+  whole fact, as a top-level union's does. A single NOMINAL element there is
+  placed by the same read (bd tea-rags-mcp-m99j1.1.75) but never killed: one the
+  declaring file cannot place keeps its spelling for the caller's fold.
+  `contextEnter` is `__enter__`'s return through the member-return MRO walk and
+  nothing when no project class declares one — the constructed instance is never
+  the answer. `except E as e` needs no derived kind: it is a plain instance
+  binding scoped to the handler; a tuple `except (A, B)` and starred targets
+  record nothing. This is a DIFFERENT mechanism from the annotation pass's
+  `python-iteration-facts.ts` (an `ast` fact off an annotated iterable); the two
+  coexist and the annotation one declines a bare `dict` iteration, which yields
+  KEYS while `TypeRef`'s container carries only a value.
 - **The annotation pass's `ast` source infers a def's return through ONE
   memoised, cycle-guarded fixpoint per file (`PythonReturnFixpoint`).** A
   same-class `self.m()` / `cls.m()` delegation, a same-file def whose own return
