@@ -717,11 +717,24 @@ function pythonBindingUnionIsUnreadable(
  * the arm itself. `CursorWrapper#__enter__` returns `self` in `utils.py`, and
  * read from `mysql/base.py` the bare `CursorWrapper` landed on mysql's own
  * class; that arm is placed by the declaring file.
+ *
+ * The same placement applies where the caller's own reading names NO file
+ * (bd tea-rags-mcp-m99j1.1.67): `base/base.py` imports the `utils` module, not
+ * the class, and with mysql's namesake in the run the bare name read from there
+ * was ambiguous, so `with self.cursor() as cursor` stayed untyped. Only that
+ * silence is replaced — a bare name the caller already places reads as before.
  */
-function pythonPlacedBareArmName(name: string, definingFiles: readonly string[], ctx: CallContext): string {
+function pythonPlacedBareArmName(
+  name: string,
+  definingFiles: readonly string[],
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): string {
   if (definingFiles.length !== 1 || definingFiles[0] === ctx.callerFile) return name;
-  if (pythonBoundClassKey(name, ctx.callerFile, ctx) === null) return name;
-  return pythonBoundClassKey(name, definingFiles[0], ctx) ?? name;
+  const classKey = pythonBoundClassKey(name, definingFiles[0], ctx);
+  if (classKey === null) return name;
+  if (pythonBoundClassKey(name, ctx.callerFile, ctx) !== null) return classKey;
+  return resolveTypeFile(name, ctx, mapper) === null ? classKey : name;
 }
 
 /** One arm's name → its placed key, its bare name, or null (kill). See {@link pythonPlacedReturnFact}. */
@@ -733,7 +746,7 @@ function pythonPlacedArmName(
   mapper: PythonImportFileMapper,
 ): string | null {
   if (isPythonPlacedClassKey(name)) return name;
-  if (!name.includes("::")) return pythonPlacedBareArmName(name, definingFiles, ctx);
+  if (!name.includes("::")) return pythonPlacedBareArmName(name, definingFiles, ctx, mapper);
   // No def stands behind the fact: nothing to place by, so it reads as it always did.
   if (definingFiles.length === 0) return lastSegment(name);
   let placed: string | null = null;
