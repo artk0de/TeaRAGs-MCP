@@ -53,7 +53,7 @@
   },
   "python": {
     "walker": {
-      "version": 9,
+      "version": 10,
       "digest": "sha256:56a653e9f339aea465815118a545626fcf5cfb07c029194354598a72cca3d25a"
     }
   },
