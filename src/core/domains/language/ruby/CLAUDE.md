@@ -64,8 +64,13 @@
   are `kernel/ancestor-walk.ts` (E2 seam 4), supplied from here as
   `RUBY_ANCESTOR_POLICY`. What stayed is what is Ruby: prepends first, then the
   class, then includes ranked last-declared-nearest, then the superclass chain —
-  and Ruby supplies no `boundaryOf`, so every linearization reads `closed`.
-  Ruby's MEMBER walk is NOT the kernel's: `resolveInstanceMethodInClassChain`
+  and Ruby supplies no `boundaryOf`, so every linearization reads `closed`. The
+  memo is the kernel's `AncestorLinearizerCache` (run-scoped, table-size
+  stamped; the contract is a `domains/language/CLAUDE.md` bullet), and Ruby's
+  order reads `classPrependedAncestors` and `classExtends` beside
+  `classAncestors`, so `RubyAncestorHierarchy` must keep carrying them as cache
+  companions — a hierarchy that drops one serves a stale linearization. Ruby's
+  MEMBER walk is NOT the kernel's: `resolveInstanceMethodInClassChain`
   (`strategies/shared.ts`) carries the prepend pre-pass, the schema-column
   preference and the file-only fallback ordering, none of which are neutral, and
   it stays here. Change the order here; change the walk in the kernel and re-run
@@ -83,6 +88,9 @@
   `RUBY_DEPENDENCY_MANIFEST` (`gemfile.ts`) reads the ROOT `Gemfile` alone into
   Ruby's `declaredDependencies`; consumers call `catalogueFor(declared)`,
   memoised per set instance; no root Gemfile → no Ruby entry → full catalogue.
+  The activation rule itself is the kernel's `FrameworkVocabularyRegistry`
+  (`filterActiveFrameworks` and `composeRubyCatalogue` both go through it; its
+  absent-vs-empty-manifest semantics are a `domains/language/CLAUDE.md` bullet).
   `composeRubyCatalogue` folds grammar facets AND `isExternalBareCall` / runtime
   builtins over ACTIVE frameworks only, and `filterActiveFrameworks` keeps a
   framework whose `activatedBy` is `undefined`. Why: a gating defect reproduced

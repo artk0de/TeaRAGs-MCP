@@ -426,14 +426,20 @@
   once and must stay byte-identical. Every DEEPER hop of that walk, and every
   other reader of the map, still trusts a run-global short-name index (bd
   tea-rags-mcp-w205u, E4.4c — a channel defect, not a `super()` one).
-- **Chain order is a correctness argument, not a preference.** Nine passes:
-  `super`, `clsMember`, `selfField`, `selfMember`, `localBinding`, `chainType`,
-  `namingConvention`, `importedName`, `globalShortName`, composed in ONE place
-  (`resolver/python-chain-factory.ts` — both offline harnesses call it, because
-  the hand-copied duplicates drifted and voided every number the oracle
-  printed). See the pass list in `resolver/python-resolver.ts`; the guards
-  (`super`, `selfField`, `selfMember`, `localBinding`) DROP rather than fall
-  through, which is what keeps `serializer.is_valid()` off an unrelated class.
+- **Chain order is a correctness argument, not a preference.** Ten passes:
+  `super`, `clsMember`, `selfField`, `selfMember`, `callableParam`,
+  `localBinding`, `chainType`, `namingConvention`, `importedName`,
+  `globalShortName`, composed in ONE place (`createPythonSymbolResolutionChain`
+  in `resolver/python-chain-factory.ts` — both offline harnesses call it,
+  because the hand-copied duplicates drifted and voided every number the oracle
+  printed; read the order there, never from this list). The guards (`super`,
+  `selfField`, `selfMember`, `localBinding`) DROP rather than fall through,
+  which is what keeps `serializer.is_valid()` off an unrelated class.
+  `callableParam` sits ahead of the import / naming / short-name passes because
+  a parameter shadows every module-scope name, and ahead of `localBinding` only
+  to keep `localBinding → chainType → namingConvention → importedName`
+  contiguous: it DECLINES a call whose name the walker bound in the chunk, so a
+  typed binding still answers first.
 - **`cls` is the enclosing class, and `clsMember` is the only pass that says
   so.** It sits directly after `super` and asks `selfMember`'s question with
   `spellingOrder: "classFirst"`, because `classifyMethod` files a `@classmethod`
@@ -467,7 +473,23 @@
   plus the names a module-level `from` import binds, MINUS imported CapWords
   names, because `ConfigAttribute[bool]("TESTING")` is a generic instantiation
   the chain resolves.
-- **Behind it, `resolveDispatch` composes `[cone]` — `dynamic` is PARKED behind
+- **Two components sit between the table and the cone: `callableParam` and
+  `union`.** `PythonCallableParamDispatchResolver` fans SEVERAL functions passed
+  into an invoked parameter as `cone`; exactly one passed function is the
+  chain's `callableParam` answer and fans nothing, so the two never emit the
+  same edge. Each builds a `PythonCallableParamTargets` over the resolver's one
+  mapper and reads the run-global `callableArgSources` record; the per-member
+  index lives in a `RunScopedMemo`, because the record is mutated in place
+  across passes, so its identity is not the run (a WeakMap keyed by it served
+  one run's index to the next). The union component is the kernel
+  `UnionDispatchResolver` over `createPythonUnionDispatchPorts` (the chain fold,
+  then the call-result binding) and `createPythonTypeMemberLookup`; the SAME
+  ports back `PythonUndecidableCallClassifier`, so "is this receiver typed" has
+  one answer across dispatch and the miss classifier. It fires rarely by
+  construction: the walker gate `pythonNominalReceiverName` drops parameter and
+  local unions, so a union reaches it only through a return annotation.
+- **Behind them, `resolveDispatch` composes
+  `[table, callableParam, union, cone]` — `dynamic` is PARKED behind
   `CODEGRAPH_PY_DYNAMIC_DISPATCH`, default OFF (D10), and the LAST component
   declines every receiver another layer owns.** The flag is read once at
   composition, in production and in the oracle's parity stack alike, so a
@@ -504,6 +526,56 @@
   see is the receiver's type — a module-scope `log = structlog.get_logger()` is
   invisible because `callResultBindings` reach the resolver per CHUNK, and an
   `except … as e` or a Django queryset local carries no binding fact at all.
+- **A framework's answer is placed by the MODULE that declares its class, never
+  by the short name.** The vocabulary spells `django.db.models.options.Options`,
+  `…manager.Manager`, `…query.QuerySet`; `resolveTypeRefFile` /
+  `pythonTypeRefClassKey` (`resolver/python-type-addressing.ts`) place that
+  spelling the way an ABSOLUTE import of the module would, through
+  `PythonImportFileMapper#mapImportToFile` — a project file only where the
+  corpus IS the framework, external everywhere else — and keep the spelling
+  intact through the chain fold, the MRO member walk and the member-return
+  ports. The alias read and the caller's own-file read never stand in for it.
+  Why both halves matter: django declares TWO `class Options`, so a short-name
+  placement through the caller's imports refused to guess and dropped every
+  `self.model._meta.get_field` hop from a file that never imports it; and on a
+  corpus that merely USES the framework, a project class named `Manager` would
+  capture the hop. The qualification lives in the nominal `name`, so it survives
+  every `TypeRef` copy (args / `Self` substitution) — a new slot on the contract
+  would be the wrong fix. Declared facts always beat vocabulary:
+  `frameworkReturnType` is consulted after every declaration on the owner and
+  its ancestors. `ownerIndependentMemberType` is Python's `_meta`-style hop and
+  qualifies a name only when its vocabulary entry says `nameUniqueToFramework`;
+  `objects` never does.
+- **Python run-global class addresses come from the leaf
+  `resolver/python-class-key.ts` (`pythonClassKey`, `parsePythonClassKey`).**
+  `python-import-file-mapper.ts` spells class keys and
+  `python-type-addressing.ts` imports the mapper, so the spelling had to live
+  where both reach it without closing an import cycle (the resolver import-graph
+  guard fails on one). `python-type-addressing.ts` re-exports both names; new
+  code imports from the leaf. Never inline the `<relPath>::<classFq>` literal —
+  `::` and not a dot, because `Outer.Inner` is a legal class FQ and would not
+  split.
+- **A statically undecidable call leaves the denominator through
+  `PythonUndecidableCallClassifier`** (the Python answer to the facade hook
+  `targetsUndecidable`; the runner-side contract is a
+  `domains/language/CLAUDE.md` bullet). `true` only on PROOF: the receiver types
+  to an INSTANCE (a class-form receiver is looked up on the METACLASS, which an
+  instance `__getattr__` never sees), the type places to a project class whose
+  MRO closure is `closed` and declares no such member (a branch that leaves the
+  project may declare it), and a class on that MRO declares `__getattr__` or
+  `__getattribute__`. A `metaclass=` base is deliberately NOT a hook: measured
+  on django, the typed misses under metaclass-built classes were real
+  subclass-only methods, exactly what precision has to keep.
+- **A receiver typed by an EXTERNAL constructor is external, and the import
+  decides — never the short name.** The question is
+  `PythonExternalVocabulary#typeIsConstructedExternally`: a DOTTED type
+  (`threading.Event`) reduces to the receiver-root question, stdlib guard
+  included; a BARE one must be bound by a non-relative import that does not land
+  in the project, and a class of that name declared in the caller's own file
+  vetoes it. Builtins are deliberately not an arm (a project may declare its own
+  `ConnectionError`). It is a CLASSIFICATION change: edges are byte-identical,
+  so an oracle column counted from edges cannot move — read the tally's
+  `external` bucket instead.
 - Resolver architecture rules: `.claude/rules/resolver-architecture.md`.
   Cross-language mechanics: `src/core/domains/language/CLAUDE.md`.
 
@@ -516,18 +588,32 @@
   holds one module per framework carrying `activatedBy` (PEP 503-normalized
   distribution names, matched EXACTLY — `django-filter` is not `django`) and the
   facets it switches on; `pythonVocabularyFor(input.declaredDependencies)`
-  composes the active set and the walker asks `hasFacet`. Today's only gated
-  facet is `classBodyManagerFactory` — the `objects = SomeQuerySet.as_manager()`
-  arm, where the name is evidence only because Django's own classmethod says so.
-  The BARE arm of the same pass (`objects = SomeManager()`, name declared or
-  import-bound) is NOT gated: it rests on project-class evidence with no
-  framework in it, and gating it was measured to cost polar — which declares no
-  Django and spells no `as_manager` — 8 real edges. Gate what the framework
-  OWNS, not the pass that happens to serve it. Absent manifest (`undefined`) is
-  NOT an empty set: no manifest anywhere leaves every vocabulary ACTIVE (Ruby's
-  "no Gemfile → full catalogue" rule), while a manifest declaring nothing gates
-  every conditional one off — conflating the two would silently untype every
-  fixture, spike and un-packaged corpus. The set is built once per run by
+  composes the active set and the walker asks `hasFacet`. The facet names are
+  the `PythonVocabularyFacet` union in `vocabulary/frameworks/types.ts` and the
+  modules in `vocabulary/frameworks/` are the set of frameworks — read both
+  there. Two of them show the rule: `classBodyManagerFactory` is the
+  `objects = SomeQuerySet.as_manager()` arm, and `baseClassFactory` reads a
+  class base that is a CALL to a framework subclass factory
+  (`BaseManager.from_queryset(QuerySet)`) as the TWO classes the produced class
+  carries, receiver first — in both the name is evidence only because the
+  framework's own classmethod says so. A descriptor decorator is a qualified
+  spelling the walker's descriptor pass matches through the file's imports
+  (`sqlalchemy.orm.declared_attr`, `sqlalchemy.ext.hybrid.hybrid_property`), so
+  a project's own namesake never matches. Why SQLAlchemy has a module: the
+  descriptor read skips a member's return whenever the symbol table declares a
+  def at `Cls#m` (a plain method read without a call is a bound method), so a
+  `@declared_attr def discount(cls) -> Mapped[Discount | None]` was silently
+  untyped until its decorator was declared an attribute (polar lost 20 rows).
+  The framework's synthesized MEMBER returns (`memberTypes`) are a different
+  surface from facets — read by the resolver, never the walker. The BARE arm of
+  the same pass (`objects = SomeManager()`, name declared or import-bound) is
+  NOT gated: it rests on project-class evidence with no framework in it, and
+  gating it was measured to cost polar — which declares no Django and spells no
+  `as_manager` — 8 real edges. Gate what the framework OWNS, not the pass that
+  happens to serve it. Absent manifest versus empty declared set is the kernel
+  registry's rule (`domains/language/CLAUDE.md` framework-vocabulary bullet);
+  here, no `pyproject.toml` / `requirements*.txt` anywhere means `undefined`,
+  not an empty set. The set is built once per run by
   `infra/dependency-manifests.ts`, which walks every `pyproject.toml` /
   `requirements*.txt` under the root outside the vendored dirs and unions what
   `manifest.ts` parses out of them; `domains/language` contributes the
@@ -684,3 +770,74 @@
   `client: SyncClientBase` parameter wrote nothing; the facet pass emits an
   `ivar` fact for `self.<field> = <annotated parameter>` in ANY method — one
   hop, one nominal arm, no attribute chain.
+- **A derived local binding carries NO type at walk time, and the resolver folds
+  it.** `LocalBinding.valueKind` has derived kinds — `iterationElement` (`for` /
+  comprehension targets), `contextEnter` (`with X as name`) and `tupleElement`
+  (a flat `a, b = <expr>`) — each with `type: ""`, the value's text in
+  `sourceExpression` and the position in `tupleIndex`;
+  `pythonDerivedBindingType` (`resolver/python-iteration-types.ts`) folds the
+  value at resolve time, and `isDerivedLocalBinding` (`contracts`) is the
+  discriminator. A consumer that reads `.type` off a binding without asking it
+  sees an empty string, not "unknown". On the SAME line a typed binding outranks
+  a derived one. `contextEnter` is `__enter__`'s return through the
+  member-return MRO walk and nothing when no project class declares one — the
+  constructed instance is never the answer. `except E as e` needs no derived
+  kind: it is a plain instance binding scoped to the handler; a tuple
+  `except (A, B)` and starred targets record nothing. This is a DIFFERENT
+  mechanism from the annotation pass's `python-iteration-facts.ts` (an `ast`
+  fact off an annotated iterable); the two coexist and the annotation one
+  declines a bare `dict` iteration, which yields KEYS while `TypeRef`'s
+  container carries only a value.
+- **The annotation pass's `ast` source infers a def's return through ONE
+  memoised, cycle-guarded fixpoint per file (`PythonReturnFixpoint`).** A
+  same-class `self.m()` / `cls.m()` delegation, a same-file def whose own return
+  is inferred, and a `self.<field>` the class assigns from constructors all
+  resolve through it (a `None` write is neutral, any untypable write kills the
+  field); `copy.copy(self)` / `copy.deepcopy(self)` yield the `Self` marker.
+  Every arm still passes the kernel `return-inference.ts` four rules, so a
+  delegation is exactly as precise as its target — do NOT widen an arm past
+  them. The descriptor reader maps the `Self` marker to the DECLARING class,
+  because a field type has no receiver to substitute. The `annotations` source
+  reads a return that names the `self` parameter's own `TypeVar`
+  (`def __enter__(self: T) -> T`) as a `Self` return too.
+- **Module-level values publish run-global as
+  `moduleValueTypes["<relPath>::<name>"]`, and only when module scope binds the
+  name to ONE knowable type** (`walker/passes/python-module-value-facts.ts`,
+  `CODEGRAPH_PY_MODULE_VALUES`, default on). Every other way a module rebinds
+  the name REFUSES it — `client = None` beside `client = Client()`, an augmented
+  assignment, a `for` / `with` / tuple target, an import, a same-named `def` /
+  `class`, a `global` in any function — because the fact is read from functions
+  that run at an unknown point after import. An annotated name publishes only
+  when the annotation's head is an import or a `class` the module binds, which
+  also keeps an inert module factless for the walker's inert fast path.
+- **Callable-value flow has a walker half and a resolver half, joined
+  run-global.** The walker records `CallRef.calleeParam` (a bare call naming a
+  parameter of an enclosing def, module-level owner only) and
+  `FileExtraction.callableArgSources` (every site passing a function reference
+  positionally, keyed `<relPath>::<callee member>`; with stacked decorators only
+  the INNERMOST receives the function itself). Both are SILENT where the name is
+  not what it looks like — a parameter any def between the call and the owner
+  rebinds, or an argument whose head any enclosing scope binds. The resolver
+  half is the `callableParam` pass and dispatch component (Resolver section).
+- **The constructor-argument feed (K7) has a walker half and a barrier half.**
+  `walker/passes/python-param-arg-types.ts` writes `paramNames` /
+  `paramCoordinate` on `__init__` chunks, `knownTargetCallArgs` at CapWords call
+  sites and `classFieldParamLinks` for `self.<field> = <param>` copies; the run
+  state folds them across files at the barrier. The walker can only name a
+  constructor target from ONE file's syntax, which fails twice — a class a
+  package `__init__.py` re-exports, and a class that inherits its `__init__` —
+  so the barrier asks the language's `LanguageProvider#knownTargetCalleeLocator`
+  (`createPythonKnownTargetCalleeLocator`) about exactly those candidates. It
+  answers an INSTANCE class (the re-export followed as the import mapper follows
+  it for a type: an alias by its source spelling, stars only when unanimous) and
+  a DEFINING class (the first MRO class declaring `__init__`, on a CLOSED
+  linearization only — a base outside the project may own the real `__init__`,
+  and joining against a def that never runs types a field from arguments it
+  never received). Argument typing at the site is deliberately narrow: an
+  annotated parameter of the enclosing def with ONE nominal arm (`Optional[A]` →
+  `A`; unions and `type[A]` decline) and never rebound in the body, a
+  `self.<field>` the class declares or every write of which constructs one
+  class, or a published module value. Lambda / comprehension shadowing and
+  enclosing-def or class-body bindings decline; the CapWords gate keeps builtins
+  out. A new capability of this shape is a `LanguageProvider` field, which the
+  barrier looks up per language and skips when absent.
