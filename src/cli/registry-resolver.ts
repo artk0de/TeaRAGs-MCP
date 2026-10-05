@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { resolveRegistryEnvCodeDefaults } from "../bootstrap/config/registry-env-code-defaults.js";
+import { resolveRegistryEnvCodeDefaults } from "../bootstrap/config/index.js";
 import {
   CollectionRegistry,
   EMBEDDED_MARKER,

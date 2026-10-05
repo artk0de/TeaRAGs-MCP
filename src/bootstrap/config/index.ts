@@ -8,3 +8,4 @@ export * from "./paths.js";
 export * from "./utils.js";
 export * from "./schemas.js";
 export * from "./parse.js";
+export * from "./registry-env-code-defaults.js";

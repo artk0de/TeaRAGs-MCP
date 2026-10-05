@@ -8,12 +8,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // NOTE: runWorktreeCreate and runWorktreeRemove are not exported from worktree.ts —
 // they are tested via module-mock exercised by their integration into yargs handlers,
 // and are validated via the worktreeCommand.builder contract test below.
+import { resolveRegistryEnvCodeDefaults } from "../../../src/bootstrap/config/registry-env-code-defaults.js";
 import { runWorktreeInfo, runWorktreeList, worktreeCommand } from "../../../src/cli/commands/worktree.js";
 import { CollectionRegistry } from "../../../src/core/api/public/index.js";
 
 // Mock dynamic bootstrap imports used by runWorktreeCreate / runWorktreeRemove
 vi.mock("../../../src/bootstrap/config/index.js", () => ({
   parseAppConfig: vi.fn(() => ({})),
+  resolveRegistryEnvCodeDefaults,
 }));
 
 vi.mock("../../../src/bootstrap/factory.js", () => ({

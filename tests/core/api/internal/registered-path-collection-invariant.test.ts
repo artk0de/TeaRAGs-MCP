@@ -23,6 +23,7 @@ import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildMcpAutoUpdateTrigger } from "../../../../src/bootstrap/auto-update/mcp-hint.js";
+import { resolveRegistryEnvCodeDefaults } from "../../../../src/bootstrap/config/registry-env-code-defaults.js";
 import { runPrime } from "../../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../../src/cli/update-check/check-service.js";
 import { unavailable } from "../../../../src/cli/update-check/types.js";
@@ -50,6 +51,7 @@ vi.mock("../../../../src/bootstrap/factory.js", () => ({ createAppContext: creat
 vi.mock("../../../../src/bootstrap/config/index.js", () => ({
   parseAppConfig: () => ({}),
   getZodConfig: () => ({ deprecations: [] }),
+  resolveRegistryEnvCodeDefaults,
 }));
 
 vi.mock("tree-sitter", () => ({

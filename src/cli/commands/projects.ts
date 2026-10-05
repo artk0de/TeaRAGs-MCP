@@ -4,8 +4,7 @@ import { join } from "node:path";
 
 import type { Argv, CommandModule } from "yargs";
 
-import { assertRegistryEnvValueParses } from "../../bootstrap/config/parse.js";
-import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
+import { assertRegistryEnvValueParses, resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
 import { ProjectRegistryOps } from "../../core/api/index.js";
 import {
   chunkPointsFilter,
