@@ -480,6 +480,18 @@ export function pythonModuleValueClass(
 }
 
 /**
+ * Does `name` denote a module-scope value the walker typed AT ALL — whatever
+ * class it names, project or foreign (bd tea-rags-mcp-m99j1.1.33)? A
+ * `contextvars.ContextVar` global answers here while
+ * {@link pythonModuleValueClass} refuses it: no project class backs it, yet the
+ * value's type is known, so a convention guess about it is not a guess on an
+ * untyped name.
+ */
+export function pythonModuleValueBound(name: string, ctx: CallContext, mapper: PythonImportFileMapper): boolean {
+  return ctx.moduleValueTypes !== undefined && pythonModuleValueKeyFor(name, ctx, mapper) !== null;
+}
+
+/**
  * Is this an ABSOLUTE import of a stdlib module? Relative text (`.models`) can
  * never name the stdlib and its first segment is empty, so it is excluded
  * rather than tested. (Moved from `python-imported-name.ts`, P4.)
