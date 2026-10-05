@@ -130,6 +130,7 @@ export {
   type ReceiverTypedStrategyOptions,
   type ReceiverTypingPorts,
 } from "./receiver-typed-strategies.js";
+export { UnionDispatchResolver, type UnionDispatchPorts } from "./union-dispatch.js";
 export {
   CONE_MAX_DEFAULT,
   readResolverConfig,
