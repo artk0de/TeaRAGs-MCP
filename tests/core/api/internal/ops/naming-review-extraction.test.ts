@@ -38,7 +38,7 @@ describe("createNamingReviewExtractor", () => {
   });
 
   it("hands the walk the working tree's Gemfile and declared dependencies, read once per review", () => {
-    // Ruby's vocabulary gate reads the raw Gemfile; the manifest walk (here Python's requirements) the rest.
+    // Each language's gate reads its own manifests: Ruby the root Gemfile, Python its requirements.
     const gemfile = 'source "https://rubygems.org"\ngem "rails"\n';
     writeFileSync(join(root, "Gemfile"), gemfile);
     writeFileSync(join(root, "requirements.txt"), "django==5.0\n");
@@ -50,9 +50,9 @@ describe("createNamingReviewExtractor", () => {
     expect(first?.language).toBe("ruby");
     expect(first?.types.map((t) => t.typeId)).toContain("Doc");
     const contexts = extractFileInMemory.mock.calls.map((call) => call[3] as Record<string, unknown>);
-    expect(contexts[0].gemfileContent).toBe(gemfile);
-    expect(contexts[0].declaredDependencies).toBeInstanceOf(Set);
-    expect((contexts[0].declaredDependencies as Set<string>).has("django")).toBe(true);
+    const declared = contexts[0].declaredDependencies as ReadonlyMap<string, ReadonlySet<string>>;
+    expect(declared.get("ruby")).toEqual(new Set(["rails"]));
+    expect(declared.get("python")?.has("django")).toBe(true);
     expect(contexts[1]).toBe(contexts[0]);
   });
 
@@ -60,8 +60,7 @@ describe("createNamingReviewExtractor", () => {
     const extract = createNamingReviewExtractor(new LanguageFactory({})).forWorkingTree(root);
     extract("src/a.ts", "export class A {}\n");
     const context = extractFileInMemory.mock.calls[0][3] as Record<string, unknown>;
-    expect(context.gemfileContent).toBeUndefined();
-    expect(context.declaredDependencies).toBeUndefined();
+    expect((context.declaredDependencies as ReadonlyMap<string, ReadonlySet<string>>).size).toBe(0);
   });
 
   it("returns the chunks' line ranges, so the review can quote a declaration's enclosing code", () => {

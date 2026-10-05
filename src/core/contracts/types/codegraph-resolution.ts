@@ -437,32 +437,21 @@ export interface CallContext {
    */
   compactDeclaredClasses?: ReadonlySet<string>;
   /**
-   * Raw contents of the project's `Gemfile` (Ruby dependency manifest), read once
-   * per run by the codegraph provider from the project root and attached to every
-   * call context. The Ruby resolver reads it via `catalogueForGemfile` (parse +
-   * compose, memoised by content) to gate DSL grammar to the gems THIS project
-   * declares. Raw string, not a parsed Set — the parse lives in `domains/language`
-   * where the catalogue lives, so the provider never imports it. Undefined when no
-   * Gemfile exists → the FULL catalogue (gating off, byte-identical to pre-gating).
-   * Only the Ruby resolver reads it today (bd tea-rags-mcp-adx5p.1).
-   */
-  gemfileContent?: string;
-  /**
-   * Every dependency the project DECLARES, read once per run from its manifests
-   * and normalized per language — the language-neutral form of the same fact
-   * {@link gemfileContent} carries for Ruby, and the value a framework
-   * vocabulary activates against. `undefined` means no manifest exists anywhere,
+   * Every dependency the project DECLARES in the CALLER file's language's
+   * manifests, read once per run and normalized per language — the value a
+   * framework vocabulary activates against (Ruby: the root `Gemfile`'s gems;
+   * Python: every `pyproject.toml` / `requirements*.txt` under the root). `undefined` means no manifest exists anywhere,
    * which leaves every vocabulary active; an empty set is a manifest declaring
    * nothing, which gates every conditional one off.
    *
    * Threaded to the resolver beside the walk input so a resolver-side vocabulary
-   * can gate on the same fact the extraction did — the Python walker is the only
-   * consumer today (bd tea-rags-mcp-w205u.1).
+   * can gate on the same fact the extraction did (bd tea-rags-mcp-w205u.1,
+   * m99j1.1.8).
    */
   declaredDependencies?: ReadonlySet<string>;
   /**
    * Absolute root of the project THIS run is indexing, threaded per run by the
-   * codegraph provider exactly like {@link gemfileContent}. A resolver whose
+   * codegraph provider exactly like {@link declaredDependencies}. A resolver whose
    * answers depend on project-rooted state reads it here rather than capturing
    * a root when it was constructed: the provider is built once, before any
    * collection is bound, so construction time is strictly too early to know

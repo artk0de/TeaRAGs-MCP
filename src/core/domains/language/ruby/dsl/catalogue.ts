@@ -26,6 +26,7 @@
  */
 
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
+import { FrameworkVocabularyRegistry } from "../../kernel/framework-vocabulary.js";
 import { AASM_VOCABULARY } from "./aasm.js";
 import { ROUTING_VOCABULARY } from "./action-dispatch-routing.js";
 import { ACTIVESUPPORT_VOCABULARY } from "./activesupport.js";
@@ -75,7 +76,7 @@ const FRAMEWORKS: readonly RubyFrameworkVocabulary[] = [
   PUNDIT_VOCABULARY,
   ROUTING_VOCABULARY,
   // Gem-gated grammars (activatedBy) — composed into a project catalogue only
-  // when its Gemfile declares the gem (composeRubyCatalogue / catalogueForGemfile).
+  // when its Gemfile declares the gem (composeRubyCatalogue / catalogueFor).
   DRY_VOCABULARY,
   CHEWY_VOCABULARY,
   AMS_VOCABULARY,
@@ -91,6 +92,9 @@ const FRAMEWORKS: readonly RubyFrameworkVocabulary[] = [
   RANSACK_VOCABULARY,
   WILL_PAGINATE_VOCABULARY,
 ];
+
+/** {@link FRAMEWORKS} under the kernel activation rule — memoised per declared gem set. */
+const RUBY_FRAMEWORK_REGISTRY = new FrameworkVocabularyRegistry(FRAMEWORKS);
 
 export const RUBY_DSL: Record<string, RubyDslEntry> = composeEntries(FRAMEWORKS);
 
@@ -160,31 +164,24 @@ export interface RubyDslCatalogue {
   isExternalBareCall: (member: string) => boolean;
 }
 
-const setsIntersect = (a: ReadonlySet<string>, b: ReadonlySet<string>): boolean => {
-  for (const x of a) if (b.has(x)) return true;
-  return false;
-};
-
 /**
  * Compose the Ruby DSL catalogue for a project. `activeGems === null` → the FULL
  * catalogue (no Gemfile / gating off — zero regression, identical to the module
  * consts). A gem set → keep every UNCONDITIONAL vocabulary (`activatedBy`
  * undefined — ruby-core/activesupport/rails) plus any gem-gated vocabulary whose
  * `activatedBy` family intersects the project's gems. A gem's grammar never
- * loads for a project that doesn't declare it (no misfire).
+ * loads for a project that doesn't declare it (no misfire). The rule itself is
+ * the kernel's {@link FrameworkVocabularyRegistry} (bd tea-rags-mcp-m99j1.1.8).
  */
 export function filterActiveFrameworks(
   frameworks: readonly RubyFrameworkVocabulary[],
   activeGems: ReadonlySet<string> | null,
 ): readonly RubyFrameworkVocabulary[] {
-  if (activeGems === null) return frameworks;
-  // Unconditional (`activatedBy` undefined) always loads; gem-gated loads iff its
-  // activation family intersects the project's declared gems.
-  return frameworks.filter((f) => f.activatedBy === undefined || setsIntersect(f.activatedBy, activeGems));
+  return new FrameworkVocabularyRegistry(frameworks).active(activeGems);
 }
 
 export function composeRubyCatalogue(activeGems: ReadonlySet<string> | null): RubyDslCatalogue {
-  const active = filterActiveFrameworks(FRAMEWORKS, activeGems);
+  const active = RUBY_FRAMEWORK_REGISTRY.active(activeGems);
   const enqueueDispatch = composeEnqueueDispatch(active);
   return {
     entries: composeEntries(active),
@@ -219,10 +216,10 @@ const catalogueByGems = new WeakMap<ReadonlySet<string>, RubyDslCatalogue>();
  * shared {@link FULL_RUBY_CATALOGUE} — identical to the pre-gating consts, so a
  * caller that has no gem set is unchanged. A concrete gem set is composed once
  * via {@link composeRubyCatalogue} and cached against that Set instance. The
- * Set-keyed primitive; the resolver reaches it through the content-keyed
- * `catalogueForGemfile` adapter (which parses the raw Gemfile once per run) —
- * this function's `undefined` branch is the FULL fallback both share
- * (bd tea-rags-mcp-adx5p.1).
+ * Set-keyed primitive every consumer reads with `ctx.declaredDependencies` /
+ * `input.declaredDependencies` — Ruby's set is the root Gemfile's gems
+ * (`RUBY_DEPENDENCY_MANIFEST`) — and the content-keyed `catalogueForGemfile`
+ * adapter shares its `undefined` FULL fallback (bd tea-rags-mcp-adx5p.1, m99j1.1.8).
  */
 export function catalogueFor(activeGems: ReadonlySet<string> | null | undefined): RubyDslCatalogue {
   // null / undefined → FULL (gating off). An empty Set is truthy → falls through

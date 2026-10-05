@@ -128,16 +128,15 @@ function extensionsFor(language: HarnessLanguage): readonly string[] {
 /**
  * The provider's run-start seam, mirrored (`provider.ts` `bindRunState`).
  *
- * All four calls, for both languages, because production makes all four for
- * both: `loadGemfile` is a guarded no-op without a Gemfile, `loadSchemaSnapshots`
- * one without a schema snapshot, and `loadDeclaredDependencies` is what gates
+ * All three calls, for both languages, because production makes all three for
+ * both: `loadSchemaSnapshots` is a guarded no-op without a schema snapshot, and
+ * `loadDeclaredDependencies` is what gates
  * each language's conditional framework vocabulary — skipping it would walk a
  * Python corpus with the FULL vocabulary while production walked it with a gated
  * one, and the number reported would then be of a gate nothing ships.
  */
 function bindRunStart(state: CodegraphRunState, root: string): void {
   state.bindProjectRoot(root);
-  state.loadGemfile(root);
   state.loadDeclaredDependencies(root);
   state.loadSchemaSnapshots(root);
 }

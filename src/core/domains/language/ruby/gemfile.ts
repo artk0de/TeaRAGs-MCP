@@ -1,6 +1,7 @@
 import Parser from "tree-sitter";
 import RbLang from "tree-sitter-ruby";
 
+import type { DependencyManifestSource } from "../../../contracts/types/language.js";
 import { catalogueFor, composeRubyCatalogue, type RubyDslCatalogue } from "./dsl/index.js";
 
 /**
@@ -46,17 +47,30 @@ export function gemfileGemNames(content: string): Set<string> {
 }
 
 /**
- * Per-Gemfile-content catalogue cache. Keyed by the raw Gemfile STRING (the
- * value the codegraph provider reads once per run and attaches to every
- * `CallContext.gemfileContent`), so the tree-sitter parse + catalogue
- * composition happen ONCE per distinct Gemfile and every subsequent call-site
- * lookup is O(1). Bounded by the number of distinct projects a process indexes.
+ * Ruby's dependency manifest (bd tea-rags-mcp-m99j1.1.8): the ROOT `Gemfile`,
+ * parsed by {@link gemfileGemNames}. Root-only and Gemfile-only on purpose — the
+ * same file the run used to read raw: `Gemfile.lock` is the resolved transitive
+ * tree, and a nested engine's Gemfile or a gemspec does not declare what the
+ * project's own code uses. No root Gemfile → no Ruby entry → the FULL catalogue.
+ */
+export const RUBY_DEPENDENCY_MANIFEST: DependencyManifestSource = {
+  rootOnly: true,
+  matchesManifestFile: (fileName) => fileName === "Gemfile",
+  parseDeclaredDependencies: (_fileName, content) => [...gemfileGemNames(content)],
+};
+
+/**
+ * Per-Gemfile-content catalogue cache. Keyed by the raw Gemfile STRING, so the
+ * tree-sitter parse + catalogue composition happen ONCE per distinct Gemfile
+ * and every subsequent lookup is O(1). Bounded by the number of distinct
+ * projects a process indexes.
  */
 const catalogueByGemfile = new Map<string, RubyDslCatalogue>();
 
 /**
- * The Ruby DSL catalogue gated to a project's `Gemfile`. This is the entry point
- * the resolver consumers read from `ctx.gemfileContent`: `undefined` (no Gemfile
+ * The Ruby DSL catalogue gated to a project's raw `Gemfile` text — the adapter
+ * for a caller holding the TEXT (harnesses, tests); the index path reads the
+ * parsed set via `catalogueFor(declaredDependencies)`. `undefined` (no Gemfile
  * → gating off) returns the FULL catalogue, identical to the pre-gating module
  * consts; a concrete Gemfile is parsed via {@link gemfileGemNames} and composed
  * via `composeRubyCatalogue`, memoised by the content string so the parse is paid

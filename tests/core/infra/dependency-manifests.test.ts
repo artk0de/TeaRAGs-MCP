@@ -22,7 +22,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { DependencyManifestSource } from "../../../src/core/contracts/types/language.js";
 import { PYTHON_DEPENDENCY_MANIFEST } from "../../../src/core/domains/language/python/manifest.js";
-import { readDeclaredDependencies, readManifestFiles } from "../../../src/core/infra/dependency-manifests.js";
+import { RUBY_DEPENDENCY_MANIFEST } from "../../../src/core/domains/language/ruby/gemfile.js";
+import {
+  readDeclaredDependencies,
+  readDeclaredDependenciesByLanguage,
+  readManifestFiles,
+} from "../../../src/core/infra/dependency-manifests.js";
 
 const SOURCES: readonly DependencyManifestSource[] = [PYTHON_DEPENDENCY_MANIFEST];
 
@@ -152,5 +157,59 @@ describe("readManifestFiles", () => {
 
   it("answers an empty list for a root that does not exist, rather than throwing", () => {
     expect(readManifestFiles(join(root, "nope"), isGoMod)).toEqual([]);
+  });
+});
+
+/**
+ * Ruby's manifest is the ROOT `Gemfile` alone (bd tea-rags-mcp-m99j1.1.8) — the
+ * exact file the `gemfileContent` channel used to read: never `Gemfile.lock` (the
+ * resolved transitive tree), never a nested engine's Gemfile, never a gemspec.
+ */
+describe("RUBY_DEPENDENCY_MANIFEST", () => {
+  const RUBY: readonly DependencyManifestSource[] = [RUBY_DEPENDENCY_MANIFEST];
+
+  it("declares the gems of the root Gemfile", () => {
+    write("Gemfile", 'source "https://rubygems.org"\ngem "rails"\ngroup :test do\n  gem "rspec-rails"\nend\n');
+    expect([...(readDeclaredDependencies(root, RUBY) ?? [])].sort()).toEqual(["rails", "rspec-rails"]);
+  });
+
+  it("answers undefined without a root Gemfile, whatever Gemfile.lock, gemspec or nested Gemfile exist", () => {
+    write("Gemfile.lock", "GEM\n  specs:\n    rails (7.0.0)\n");
+    write("sinatra.gemspec", 's.add_dependency "rack"\n');
+    write("engines/billing/Gemfile", 'gem "sidekiq"\n');
+    expect(readDeclaredDependencies(root, RUBY)).toBeUndefined();
+  });
+
+  it("reads only the root Gemfile when a nested one also exists", () => {
+    write("Gemfile", 'gem "rails"\n');
+    write("engines/billing/Gemfile", 'gem "sidekiq"\n');
+    expect([...(readDeclaredDependencies(root, RUBY) ?? [])]).toEqual(["rails"]);
+  });
+
+  it("treats a Gemfile that names only `gemspec` as a manifest declaring nothing", () => {
+    write("Gemfile", 'source "https://rubygems.org"\ngemspec\n');
+    expect(readDeclaredDependencies(root, RUBY)).toEqual(new Set());
+  });
+});
+
+describe("readDeclaredDependenciesByLanguage", () => {
+  const BY_LANGUAGE = new Map<string, DependencyManifestSource>([
+    ["python", PYTHON_DEPENDENCY_MANIFEST],
+    ["ruby", RUBY_DEPENDENCY_MANIFEST],
+  ]);
+
+  it("keeps each language's declared set apart — a Gemfile never gates Python, a pyproject never gates Ruby", () => {
+    write("Gemfile", 'gem "rails"\n');
+    write("docs/requirements.txt", "sphinx\n");
+    const declared = readDeclaredDependenciesByLanguage(root, BY_LANGUAGE);
+    expect([...(declared.get("ruby") ?? [])]).toEqual(["rails"]);
+    expect([...(declared.get("python") ?? [])]).toEqual(["sphinx"]);
+  });
+
+  it("omits a language whose manifest is absent, so that language keeps every vocabulary", () => {
+    write("Gemfile", 'gem "rails"\n');
+    const declared = readDeclaredDependenciesByLanguage(root, BY_LANGUAGE);
+    expect(declared.has("python")).toBe(false);
+    expect(declared.get("ruby")).toEqual(new Set(["rails"]));
   });
 });

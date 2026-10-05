@@ -19,6 +19,7 @@
 import Parser from "tree-sitter";
 
 import type { FileExtraction } from "../../../../contracts/types/codegraph.js";
+import type { DeclaredDependenciesByLanguage } from "../../../../contracts/types/language.js";
 import { extractCodeFileFromText } from "../../../../infra/code-file-extraction.js";
 import {
   CODEGRAPH_LANGUAGES,
@@ -35,8 +36,8 @@ export type InMemoryExtractionDeps = Pick<
 
 /** The run-level context pass 1 hands every walk; absent means the walker's full catalogue. */
 export interface InMemoryExtractionContext {
-  gemfileContent?: string;
-  declaredDependencies?: ReadonlySet<string>;
+  /** Each language's declared set; the walk carries only its file's language's entry. */
+  declaredDependencies?: DeclaredDependenciesByLanguage;
 }
 
 /**
@@ -68,8 +69,7 @@ export function extractFileInMemory(
       language: config.language,
       scopeSeparator: config.scopeSeparator,
       disambiguateOverloads: config.disambiguateOverloads ?? false,
-      gemfileContent: context.gemfileContent,
-      declaredDependencies: context.declaredDependencies,
+      declaredDependencies: context.declaredDependencies?.get(config.language),
     },
   );
 }

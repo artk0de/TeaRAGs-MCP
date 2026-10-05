@@ -40,9 +40,7 @@ export interface CodeFileExtractionRequest {
   scopeSeparator: string;
   /** Whether duplicate symbol ids in one file get `~N` suffixes instead of being deduped. */
   disambiguateOverloads: boolean;
-  /** The run's Gemfile; undefined walks the FULL DSL catalogue. */
-  gemfileContent?: string;
-  /** The run's declared dependencies; undefined means no manifest, so every vocabulary stays active. */
+  /** This language's declared dependencies; undefined means no manifest, so every vocabulary stays active. */
   declaredDependencies?: ReadonlySet<string>;
 }
 
@@ -58,7 +56,7 @@ export function extractCodeFileFromText(
   request: CodeFileExtractionRequest,
 ): FileExtraction {
   const { parser, walker, collectSymbols, composer } = collaborators;
-  const { relPath, text, language, gemfileContent } = request;
+  const { relPath, text, language, declaredDependencies } = request;
   const nativeTree = parser.parse(text);
   // Ask the NATIVE tree before materializing it — the most expensive thing
   // pass 1 does on generated data tables (bd tea-rags-mcp-1v12o.2.4).
@@ -77,7 +75,7 @@ export function extractCodeFileFromText(
     tree,
     // Gem-gated declares (bd tea-rags-mcp-o5kwh): the Ruby nameOf gates
     // class-body macro DECLARES to the run's gems; other languages ignore it.
-    (node) => walker.nameOf(node, gemfileContent),
+    (node) => walker.nameOf(node, declaredDependencies),
     request.scopeSeparator,
     request.disambiguateOverloads,
     composer,
@@ -88,7 +86,6 @@ export function extractCodeFileFromText(
     relPath,
     language,
     chunks,
-    gemfileContent,
-    declaredDependencies: request.declaredDependencies,
+    declaredDependencies,
   });
 }

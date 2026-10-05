@@ -233,23 +233,22 @@ describe("readReviewFileEdges", () => {
 });
 
 describe("workingTreeExtractionContext", () => {
-  it("carries the working tree's Gemfile content when one is present", () => {
+  it("carries the working tree's Gemfile gems as Ruby's declared set when one is present", () => {
     const tree = freshWorkTree();
-    writeFile("Gemfile", 'source "https://rubygems.org"\n');
+    writeFile("Gemfile", 'source "https://rubygems.org"\ngem "rails"\n');
 
     const context = workingTreeExtractionContext(tree, new LanguageFactory({}));
 
-    expect(context.gemfileContent).toBe('source "https://rubygems.org"\n');
-    expect(context.declaredDependencies).toBeUndefined();
+    expect(context.declaredDependencies?.get("ruby")).toEqual(new Set(["rails"]));
+    expect(context.declaredDependencies?.has("python")).toBe(false);
   });
 
-  it("carries neither half when the tree declares no manifest", () => {
+  it("carries no language's set when the tree declares no manifest", () => {
     const tree = freshWorkTree();
 
     const context = workingTreeExtractionContext(tree, new LanguageFactory({}));
 
-    expect(context.gemfileContent).toBeUndefined();
-    expect(context.declaredDependencies).toBeUndefined();
+    expect(context.declaredDependencies?.size).toBe(0);
   });
 });
 

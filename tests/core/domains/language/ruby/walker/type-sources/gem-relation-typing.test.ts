@@ -3,7 +3,7 @@
  * adds query verbs to `ActiveRecord::Relation` extends the chain the AST
  * type-source walks: `Post.page(1).per(20)` is still a relation OF Post, and
  * `Post.page(1).first` is still a Post. The `relationReturning` facet is what
- * states that, and `catalogueForGemfile(input.gemfileContent)` is what gates it —
+ * states that, and `catalogueFor(input.declaredDependencies)` is what gates it —
  * a project without the gem infers nothing from the same source.
  *
  * These are END-TO-END through `rubyAstInferenceTypeSource`, not facet-membership
@@ -14,13 +14,15 @@ import Parser from "tree-sitter";
 import RbLang from "tree-sitter-ruby";
 import { describe, expect, it } from "vitest";
 
+import { gemfileGemNames } from "../../../../../../../src/core/domains/language/ruby/gemfile.js";
 import { rubyAstInferenceTypeSource } from "../../../../../../../src/core/domains/language/ruby/walker/type-sources/ast-inference.js";
 import type { RubyExtractInput } from "../../../../../../../src/core/domains/language/ruby/walker/walker.js";
 
 function makeInput(code: string, gemfileContent?: string): RubyExtractInput {
   const parser = new Parser();
   parser.setLanguage(RbLang);
-  return { tree: parser.parse(code), code, relPath: "test.rb", language: "ruby", chunks: [], gemfileContent };
+  const declaredDependencies = gemfileContent === undefined ? undefined : gemfileGemNames(gemfileContent);
+  return { tree: parser.parse(code), code, relPath: "test.rb", language: "ruby", chunks: [], declaredDependencies };
 }
 
 const typeOf = (code: string, gemfile?: string): unknown =>

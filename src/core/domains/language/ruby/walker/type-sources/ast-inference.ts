@@ -1,7 +1,6 @@
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
-import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../../dsl/index.js";
-import { catalogueForGemfile } from "../../gemfile.js";
+import { catalogueFor, FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../../dsl/index.js";
 import {
   CONTAINER_BLOCK_ITERATION_METHODS,
   CONTAINER_ELEMENT_RETURNING_METHODS,
@@ -218,7 +217,7 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
     // Gem-gated type-source grammar (adx5p.1b): compose the catalogue for this
     // project's Gemfile once; `instanceReturning` / `relationReturning` facets
     // gate `constInstanceType` / `relationElementConst`. undefined → FULL.
-    const catalogue = catalogueForGemfile(input.gemfileContent);
+    const catalogue = catalogueFor(input.declaredDependencies);
     // Track per-variable most-recent binding for copy-propagation and
     // block-parameter element typing. Maps varName → { type, line }.
     // Pre-seeded with YARD @param types so block-iteration over a

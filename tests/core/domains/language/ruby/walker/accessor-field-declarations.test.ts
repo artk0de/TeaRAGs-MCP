@@ -3,6 +3,7 @@ import RbLang from "tree-sitter-ruby";
 import { describe, expect, it } from "vitest";
 
 import type { WalkInput } from "../../../../../../src/core/contracts/types/language.js";
+import { gemfileGemNames } from "../../../../../../src/core/domains/language/ruby/gemfile.js";
 import { RubyLanguage } from "../../../../../../src/core/domains/language/ruby/index.js";
 import { buildIdentifierRows } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/identifier-rows.js";
 
@@ -44,7 +45,7 @@ function extractionOf(src: string, opts: { gemfile?: string } = {}) {
     relPath: "a.rb",
     language: "ruby",
     chunks: chunksOf(src),
-    gemfileContent: opts.gemfile,
+    declaredDependencies: opts.gemfile === undefined ? undefined : gemfileGemNames(opts.gemfile),
   });
 }
 

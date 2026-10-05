@@ -53,7 +53,7 @@
  * where `RUBY_TYPE_SOURCE_ORDER` (yard > associations > body-last-expr) lets the
  * annotation win.
  *
- * Runtime imports (`constInstanceType`, `catalogueForGemfile`) stay cycle-free:
+ * Runtime imports (`constInstanceType`, `catalogueFor`) stay cycle-free:
  * `walker.ts` is TYPE-imported only, mirroring `associations.ts` / `yard.ts` /
  * `ast-inference.ts` so `INLINE_TYPE_SOURCES` never observes an undefined source.
  *
@@ -71,8 +71,7 @@
  */
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import { inferReturnTypeName, type ReturnInferencePorts } from "../../../kernel/index.js";
-import type { RubyDslCatalogue } from "../../dsl/index.js";
-import { catalogueForGemfile } from "../../gemfile.js";
+import { catalogueFor, type RubyDslCatalogue } from "../../dsl/index.js";
 import { readScopeResolution } from "../ast-utils.js";
 import type { RubyExtractInput } from "../walker.js";
 import { constInstanceType } from "./ast-inference.js";
@@ -294,7 +293,7 @@ export const rubyBodyLastExprTypeSource: RubyInlineTypeSource = {
     const root = input.tree?.rootNode;
     if (!root) return [];
     // Gem-gated `instanceReturning` facet (mirrors ast-inference); undefined → FULL.
-    const catalogue = catalogueForGemfile(input.gemfileContent);
+    const catalogue = catalogueFor(input.declaredDependencies);
     return collectServiceReturnFacts(root, catalogue);
   },
 };

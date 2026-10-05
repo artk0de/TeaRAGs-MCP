@@ -11,6 +11,7 @@ import type { MaterializedTree } from "../../../../../contracts/types/ast.js";
 import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
 import type {
   CollectSymbolsFn,
+  DeclaredDependenciesByLanguage,
   LanguageFactoryDescriptor,
   SymbolIdComposer,
 } from "../../../../../contracts/types/language.js";
@@ -27,13 +28,10 @@ export interface ChunkerEngine {
   languageFactory: LanguageFactoryDescriptor;
   composer: SymbolIdComposer;
   collectSymbols: CollectSymbolsFn;
-  /** Raw Gemfile for the run (adx5p.1b) — passed to the walker so cross-pass
-   *  extraction gates DSL grammar to this project's gems. */
-  gemfileContent?: string;
-  /** The project's declared dependencies (bd tea-rags-mcp-w205u.1), walked ONCE
-   *  per worker at engine build. Same purpose as `gemfileContent`, the other
-   *  direction of the same gate; undefined ⇒ every vocabulary active. */
-  declaredDependencies?: ReadonlySet<string>;
+  /** The project's declared dependencies per language (bd tea-rags-mcp-w205u.1,
+   *  m99j1.1.8), read ONCE per worker at engine build. A walk carries its file's
+   *  language's entry; no entry ⇒ every vocabulary active. */
+  declaredDependencies?: DeclaredDependenciesByLanguage;
 }
 
 /** The file one extraction is for — the fields of a worker request it reads. */
@@ -62,13 +60,14 @@ export async function extractFromChunkerParse(
   const provider = engine.languageFactory.create(request.language);
   const { walker, kernel } = provider;
   if (!walker) return undefined;
+  const declaredDependencies = engine.declaredDependencies?.get(request.language);
   const tree = await engine.chunker.walkTreeFor(request.code, request.filePath, request.language, chunkTree);
   const symbolRanges = engine.collectSymbols(
     tree,
     // Gem-gated declares at cross-pass extraction (bd tea-rags-mcp-o5kwh):
-    // bind the run's Gemfile so the Ruby nameOf gates class-body macro
-    // DECLARES to this project's gems. undefined -> FULL catalogue.
-    (node) => walker.nameOf(node, engine.gemfileContent),
+    // bind the language's declared set so the Ruby nameOf gates class-body
+    // macro DECLARES to this project's gems. undefined -> FULL catalogue.
+    (node) => walker.nameOf(node, declaredDependencies),
     kernel.scopeSeparator ?? ".",
     kernel.disambiguateOverloads ?? false,
     engine.composer,
@@ -79,9 +78,8 @@ export async function extractFromChunkerParse(
     relPath: request.filePath,
     language: request.language,
     chunks: symbolRanges,
-    // Gem-gated DSL grammar at cross-pass extraction (adx5p.1b).
-    gemfileContent: engine.gemfileContent,
-    // Dependency-gated framework vocabularies (bd tea-rags-mcp-w205u.1).
-    declaredDependencies: engine.declaredDependencies,
+    // Dependency-gated framework vocabularies and gem-gated DSL grammar
+    // (bd tea-rags-mcp-w205u.1, adx5p.1b).
+    declaredDependencies,
   });
 }

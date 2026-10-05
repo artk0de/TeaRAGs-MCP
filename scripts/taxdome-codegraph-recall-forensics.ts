@@ -70,8 +70,8 @@ import {
 } from "../src/core/domains/language/kernel/dispatch-narrowing.js";
 import { dispatchFanoutPolicyFor } from "../src/core/domains/language/kernel/fanout-policy.js";
 import { resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
-import type { RubyDslCatalogue } from "../src/core/domains/language/ruby/dsl/index.js";
-import { catalogueForGemfile } from "../src/core/domains/language/ruby/gemfile.js";
+import { catalogueFor, type RubyDslCatalogue } from "../src/core/domains/language/ruby/dsl/index.js";
+import { catalogueForGemfile, gemfileGemNames } from "../src/core/domains/language/ruby/gemfile.js";
 // bd tea-rags-mcp-e8feo — the DROP-surface oracle rebuilds the production chain
 // verbatim (same classes, same order) with ONE slot swapped, so it measures the
 // real precedence rather than a re-implementation of it.
@@ -553,6 +553,8 @@ const gemfileContent =
           return undefined;
         }
       })();
+/** The Gemfile's gems — Ruby's `declaredDependencies` on every context (bd tea-rags-mcp-m99j1.1.8). */
+const declaredGems = gemfileContent === undefined ? undefined : gemfileGemNames(gemfileContent);
 
 // NOTE: extractOneFile (provider.ts:1825-1871) is inlined into main's PASS-1
 // loop so it can also hand the materialized root to collectRealDefNames.
@@ -884,7 +886,7 @@ function resolvePass2(extraction: FileExtraction): void {
         structuredReturnTypes: structuredReturnTypesForResolver,
         classAncestors: ancestorsForResolver,
         compactDeclaredClasses: runCompactClasses,
-        gemfileContent,
+        declaredDependencies: declaredGems,
         classPrependedAncestors: prependedAncestorsForResolver,
         includedBy: includedByForResolver,
         classExtends: extendsForResolver,
@@ -3079,7 +3081,7 @@ function fxCtx(
     structuredReturnTypes: mergedReturns,
     classAncestors: runAncestors,
     compactDeclaredClasses: runCompactClasses,
-    gemfileContent,
+    declaredDependencies: declaredGems,
     classPrependedAncestors: runPrependedAncestors,
     includedBy,
     classExtends: runExtends,
@@ -3479,7 +3481,7 @@ function fxResolvePass(extractions: FileExtraction[], env: FxEnv): FxPassResult 
           structuredReturnTypes: mergedReturns,
           classAncestors: ancestorsForResolver,
           compactDeclaredClasses: runCompactClasses,
-          gemfileContent,
+          declaredDependencies: declaredGems,
           classPrependedAncestors: prependedAncestorsForResolver,
           includedBy: includedByForResolver,
           classExtends: extendsForResolver,
@@ -8576,7 +8578,7 @@ function crContainerMemberType(
     const declared = crDeclaredReturnType(element.name, member, ctx);
     if (declared?.form === "container") return { type: declared, via: "scope" };
   }
-  if (catalogueForGemfile(ctx.gemfileContent).relationReturning.has(member)) return { type: recv, via: "vocabulary" };
+  if (catalogueFor(ctx.declaredDependencies).relationReturning.has(member)) return { type: recv, via: "vocabulary" };
   return { type: undefined, via: "none" };
 }
 
@@ -8587,7 +8589,7 @@ function crIsRelationVerb(element: RubyTypeRef, member: string, ctx: CallContext
     const declared = crDeclaredReturnType(element.name, member, ctx);
     if (declared?.form === "container") return true;
   }
-  return catalogueForGemfile(ctx.gemfileContent).relationReturning.has(member);
+  return catalogueFor(ctx.declaredDependencies).relationReturning.has(member);
 }
 
 type CrRoot = "const" | "ivar" | "ident" | "other";
@@ -8611,7 +8613,7 @@ function crSeed(
   if (headMember !== null && root === "const") {
     const declared = crDeclaredReturnType(head, headMember, ctx);
     if (declared !== undefined) return { type: declared, startLink: 1, root };
-    if (catalogueForGemfile(ctx.gemfileContent).instanceReturning.has(headMember)) {
+    if (catalogueFor(ctx.declaredDependencies).instanceReturning.has(headMember)) {
       return { type: { form: "instance", name: head }, startLink: 1, root };
     }
   }
@@ -9450,7 +9452,7 @@ function ccResolveChain(receiver: string, atLine: number, ctx: CallContext, opts
   } else if (
     headMember !== null &&
     CC_CONST_RE.test(head) &&
-    catalogueForGemfile(ctx.gemfileContent).instanceReturning.has(headMember)
+    catalogueFor(ctx.declaredDependencies).instanceReturning.has(headMember)
   ) {
     current = { form: "instance", name: head };
     startLink = 1;
@@ -9487,7 +9489,7 @@ function ccEvalDefChain(tail: CcDefTail, ctx: CallContext, opts: CcOpts): RubyTy
   if (links.length > CHAIN_MAX_HOPS_DEFAULT) return undefined;
   let current = ccReturnTypeOf({ form: "class", name: head }, firstLink, ctx, opts);
   if (current === undefined) {
-    if (!catalogueForGemfile(ctx.gemfileContent).instanceReturning.has(firstLink)) return undefined;
+    if (!catalogueFor(ctx.declaredDependencies).instanceReturning.has(firstLink)) return undefined;
     current = { form: "instance", name: head };
   }
   for (let i = 1; i < links.length; i++) {
@@ -9581,7 +9583,7 @@ function ccBuildContext(
     structuredReturnTypes: overlay.facts,
     classAncestors: file.ancestors,
     compactDeclaredClasses: runCompactClasses,
-    gemfileContent,
+    declaredDependencies: declaredGems,
     classPrependedAncestors: file.prepended,
     includedBy: file.includedByForResolver,
     classExtends: file.extendsForResolver,
@@ -13044,7 +13046,7 @@ async function main(): Promise<void> {
         relPath,
         language: rbConfig.language,
         chunks,
-        gemfileContent,
+        declaredDependencies: declaredGems,
       });
       ingestPass1(extraction, materializedRoot);
       if (ORACLE_ENABLED) scanOracleAst(materializedRoot, relPath);

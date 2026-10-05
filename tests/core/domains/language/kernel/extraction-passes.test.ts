@@ -98,13 +98,14 @@ describe("toWalkContext", () => {
     });
   });
 
-  it("omits gemfileContent entirely when the run has no Gemfile", () => {
-    expect("gemfileContent" in toWalkContext(stubInput())).toBe(false);
+  it("omits declaredDependencies entirely when the language has no manifest", () => {
+    expect("declaredDependencies" in toWalkContext(stubInput())).toBe(false);
   });
 
-  it("threads gemfileContent when the run has one", () => {
-    const ctx: WalkContext = toWalkContext(stubInput({ gemfileContent: "gem 'rails'" }));
-    expect(ctx.gemfileContent).toBe("gem 'rails'");
+  it("threads declaredDependencies when the language has a manifest", () => {
+    const declared = new Set(["rails"]);
+    const ctx: WalkContext = toWalkContext(stubInput({ declaredDependencies: declared }));
+    expect(ctx.declaredDependencies).toBe(declared);
   });
 
   it("leaves dispatchTableNames absent — the native walker owns that channel", () => {

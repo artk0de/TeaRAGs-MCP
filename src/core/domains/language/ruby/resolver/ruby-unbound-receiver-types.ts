@@ -31,7 +31,7 @@
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import { conventionClassNameFor, type NamingConventionPorts } from "../../kernel/index.js";
-import { catalogueForGemfile } from "../gemfile.js";
+import { catalogueFor } from "../dsl/index.js";
 import { selfMemberReturnType } from "./ruby-return-facts.js";
 import { lookupRubySymbolsByShortName } from "./short-name-lookup.js";
 
@@ -134,7 +134,7 @@ function conventionClassName(snake: string, ctx: CallContext): string | undefine
  *    receiver type poisons every downstream hop.
  */
 function scopedReceiverType(receiver: string, ctx: CallContext): RubyTypeRef | undefined {
-  for (const prefix of catalogueForGemfile(ctx.gemfileContent).instanceReceiverPrefixes) {
+  for (const prefix of catalogueFor(ctx.declaredDependencies).instanceReceiverPrefixes) {
     if (!receiver.startsWith(prefix) || receiver.length === prefix.length) continue;
     const name = conventionClassName(receiver.slice(prefix.length), ctx);
     if (name !== undefined) return { form: "instance", name };

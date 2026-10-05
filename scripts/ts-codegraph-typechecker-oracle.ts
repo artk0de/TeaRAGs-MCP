@@ -176,6 +176,7 @@ import {
   type RelPath,
   type SymbolDefinition,
 } from "../src/core/contracts/types/codegraph.js";
+import type { DeclaredDependenciesByLanguage } from "../src/core/contracts/types/language.js";
 import { BUILTIN_IGNORE_PATTERNS } from "../src/core/domains/ingest/pipeline/ignore-defaults.js";
 import { collectSymbols, DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
 import { loadTsConfig, TSCallResolver } from "../src/core/domains/language/typescript/index.js";
@@ -196,7 +197,10 @@ import { classifyReceiverKind } from "../src/core/domains/trajectory/codegraph/s
 import { symbolDefinitionsOf } from "../src/core/domains/trajectory/codegraph/symbols/symbol-definitions.js";
 import { lastSegment } from "../src/core/domains/trajectory/codegraph/symbols/symbol-name.js";
 import { InMemoryGlobalSymbolTable } from "../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { collectDependencyManifestSources, readDeclaredDependencies } from "../src/core/infra/dependency-manifests.js";
+import {
+  collectDependencyManifestSources,
+  readDeclaredDependenciesByLanguage,
+} from "../src/core/infra/dependency-manifests.js";
 import type { PathFilter } from "../src/core/infra/file-classification/index.js";
 import {
   DECLARATION_FILE_SUFFIXES,
@@ -1590,8 +1594,18 @@ export async function collectSourceFiles(
 export function readCorpusDeclaredDependencies(
   repoRoot: string,
   factory: LanguageFactory,
-): ReadonlySet<string> | undefined {
-  return readDeclaredDependencies(repoRoot, collectDependencyManifestSources(factory));
+): DeclaredDependenciesByLanguage {
+  return readDeclaredDependenciesByLanguage(repoRoot, collectDependencyManifestSources(factory));
+}
+
+/**
+ * Harness parity with the pre-K8 extraction (bd tea-rags-mcp-0qaht.48): the raw
+ * Gemfile never reached {@link extractFile}, so the tally walked Ruby with the
+ * FULL DSL catalogue while production gates it. Dropping Ruby's entry keeps the
+ * substrate baselines byte-identical until they are re-cut with the gate on.
+ */
+function withoutRubyEntry(declared: DeclaredDependenciesByLanguage): DeclaredDependenciesByLanguage {
+  return new Map([...declared].filter(([language]) => language !== "ruby"));
 }
 
 /** Walker output for one file, or `null` when the file could not be parsed. */
@@ -1600,7 +1614,7 @@ export function extractFile(
   relPath: RelPath,
   composer: DefaultSymbolIdComposer,
   factory: LanguageFactory,
-  declaredDependencies?: ReadonlySet<string>,
+  declaredDependencies?: DeclaredDependenciesByLanguage,
   /** Told WHY a file came back `null` from a throw — a census reports the reason, not only the count. */
   onError?: (error: unknown) => void,
 ): FileExtraction | null {
@@ -1616,7 +1630,7 @@ export function extractFile(
     // that materialized what production skips would report a wall production
     // never pays.
     return extractFileInMemory({ languageFactory: factory, collectSymbols, composer }, relPath, code, {
-      declaredDependencies,
+      declaredDependencies: declaredDependencies && withoutRubyEntry(declaredDependencies),
     });
   } catch (error) {
     onError?.(error);

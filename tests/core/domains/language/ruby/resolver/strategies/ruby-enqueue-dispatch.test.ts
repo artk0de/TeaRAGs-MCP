@@ -121,8 +121,8 @@ describe("RubyEnqueueDispatchSymbolResolutionStrategy", () => {
     expect(strat.attempt(call, ctx({ symbolTable: workerTable() })).kind).toBe("continue");
   });
 
-  it("honours ctx.gemfileContent — enqueue dispatch composes off the project's Gemfile (adx5p.1)", () => {
-    // The strategy reads `catalogueForGemfile(ctx.gemfileContent)`. Sidekiq is an
+  it("honours ctx.declaredDependencies — enqueue dispatch composes off the project's Gemfile gems (adx5p.1)", () => {
+    // The strategy reads `catalogueFor(ctx.declaredDependencies)`. Sidekiq is an
     // unconditional vocab today, so a Gemfile declaring it resolves identically to
     // the full catalogue — this pins the wiring (the resolver reads the field,
     // it does not ignore it) and is the byte-identical oracle until a gem-gated
@@ -135,7 +135,7 @@ describe("RubyEnqueueDispatchSymbolResolutionStrategy", () => {
     };
     const outcome = strat.attempt(
       call,
-      ctx({ symbolTable: workerTable(), gemfileContent: 'gem "rails"\ngem "sidekiq"\n' }),
+      ctx({ symbolTable: workerTable(), declaredDependencies: new Set(["rails", "sidekiq"]) }),
     );
     expect(outcome.kind === "resolved" && outcome.target.targetSymbolId).toBe("DistributionWorker#perform");
   });

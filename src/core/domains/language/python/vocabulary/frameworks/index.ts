@@ -11,6 +11,7 @@
  * a denial.
  */
 
+import { FrameworkVocabularyRegistry } from "../../../kernel/framework-vocabulary.js";
 import { DJANGO_VOCABULARY } from "./django.js";
 import type { PythonFrameworkVocabulary, PythonVocabularyFacet } from "./types.js";
 
@@ -25,10 +26,8 @@ export interface PythonVocabularyCatalogue {
   readonly hasFacet: (facet: PythonVocabularyFacet) => boolean;
 }
 
-const setsIntersect = (a: ReadonlySet<string>, b: ReadonlySet<string>): boolean => {
-  for (const x of a) if (b.has(x)) return true;
-  return false;
-};
+/** {@link PYTHON_FRAMEWORKS} under the kernel activation rule (bd tea-rags-mcp-m99j1.1.8). */
+const PYTHON_FRAMEWORK_REGISTRY = new FrameworkVocabularyRegistry(PYTHON_FRAMEWORKS);
 
 /**
  * The vocabularies active for a declared-dependency set. `null` → every one of
@@ -39,13 +38,12 @@ export function filterActivePythonFrameworks(
   frameworks: readonly PythonFrameworkVocabulary[],
   declared: ReadonlySet<string> | null,
 ): readonly PythonFrameworkVocabulary[] {
-  if (declared === null) return frameworks;
-  return frameworks.filter((f) => f.activatedBy === undefined || setsIntersect(f.activatedBy, declared));
+  return new FrameworkVocabularyRegistry(frameworks).active(declared);
 }
 
 export function composePythonVocabulary(declared: ReadonlySet<string> | null): PythonVocabularyCatalogue {
   const activeFacets = new Set<PythonVocabularyFacet>();
-  for (const framework of filterActivePythonFrameworks(PYTHON_FRAMEWORKS, declared)) {
+  for (const framework of PYTHON_FRAMEWORK_REGISTRY.active(declared)) {
     for (const facet of framework.facets) activeFacets.add(facet);
   }
   return { activeFacets, hasFacet: (facet) => activeFacets.has(facet) };

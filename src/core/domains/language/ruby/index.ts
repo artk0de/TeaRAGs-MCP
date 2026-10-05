@@ -34,6 +34,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../contracts/types/codegraph.js";
 import type {
+  DependencyManifestSource,
   LanguageChunkerHooks,
   LanguageProvider,
   LanguageSymbolResolver,
@@ -42,7 +43,8 @@ import type {
 import { composeExtractionWalker } from "../kernel/index.js";
 import { isRubyModuleImport, rubyHooks } from "./chunking/index.js";
 import { RUBY_CODEGRAPH_EXCLUSION_GLOBS } from "./codegraph-exclusions.js";
-import { catalogueForGemfile } from "./gemfile.js";
+import { catalogueFor } from "./dsl/index.js";
+import { RUBY_DEPENDENCY_MANIFEST } from "./gemfile.js";
 import { RUBY_IDENTIFIER_FINDER_METHODS } from "./identifier-finder-methods.js";
 import { rubyKernel } from "./kernel.js";
 import { RubyCallResolver } from "./resolver/ruby-resolver.js";
@@ -105,12 +107,18 @@ export class RubyLanguage implements LanguageProvider {
   readonly walker: LanguageWalker = composeExtractionWalker({
     walk: (input) => extractFromRubyFile(input),
     // Gem-gated declares/nameOf path (bd tea-rags-mcp-o5kwh): compose this
-    // project's catalogue from the run's Gemfile so class-body macro DECLARES
+    // project's catalogue from the run's Gemfile gems so class-body macro DECLARES
     // are gated to the gems THIS project declares. undefined -> FULL catalogue.
-    nameOf: (node, gemfileContent) => rbNameOf(node, catalogueForGemfile(gemfileContent)),
+    nameOf: (node, declaredDependencies) => rbNameOf(node, catalogueFor(declaredDependencies)),
     passes: RUBY_EXTRACTION_PASSES,
   });
   readonly resolver: LanguageSymbolResolver;
+  /**
+   * The root `Gemfile` — the run-start read puts its gems in Ruby's
+   * `declaredDependencies`, which gates the gem-conditional DSL catalogue
+   * (bd tea-rags-mcp-m99j1.1.8).
+   */
+  readonly dependencyManifest: DependencyManifestSource = RUBY_DEPENDENCY_MANIFEST;
   /**
    * Rails non-application-code path globs the codegraph exclusion engine
    * aggregates for Ruby (`db/migrate/**`, `db/data/**`, generated schema

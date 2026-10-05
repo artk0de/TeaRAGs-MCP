@@ -120,7 +120,6 @@ describe("extractCodeFileFromText", () => {
       { parser: pythonParser(), walker, collectSymbols, composer },
       request(text, {
         disambiguateOverloads: true,
-        gemfileContent: "gem 'rails'",
         declaredDependencies,
       }),
     );
@@ -138,7 +137,7 @@ describe("extractCodeFileFromText", () => {
     expect(tree.rootNode).not.toHaveProperty("tree");
 
     boundNameOf(tree.rootNode);
-    expect(nameOf).toHaveBeenCalledWith(tree.rootNode, "gem 'rails'");
+    expect(nameOf).toHaveBeenCalledWith(tree.rootNode, declaredDependencies);
 
     expect(walk).toHaveBeenCalledTimes(1);
     const input = walk.mock.calls[0][0];
@@ -148,7 +147,6 @@ describe("extractCodeFileFromText", () => {
       relPath: "pkg/job.py",
       language: "python",
       chunks: CHUNKS,
-      gemfileContent: "gem 'rails'",
       declaredDependencies,
     });
   });
