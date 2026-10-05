@@ -42,6 +42,13 @@ import type {
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/index.js";
 import { pythonVocabularyFor } from "../vocabulary/frameworks/index.js";
+import {
+  annotatePythonCalleeParams,
+  collectPythonCallableValueFlow,
+  createPythonCallableValueFlow,
+  pythonCallableArgSourcesOf,
+  type PythonCallableValueFlow,
+} from "./passes/python-callable-value-flow.js";
 import { collectPythonClassBodyFieldTypes } from "./passes/python-class-body-fields.js";
 import { collectPythonDefSignatures, pythonCallShape } from "./passes/python-def-signatures.js";
 import {
@@ -101,6 +108,8 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
     input.declaredDependencies,
     flat.classFieldTypes,
   );
+  // P2 (bd m99j1.1.19) — before the calls are sliced per chunk below.
+  annotatePythonCalleeParams(flat.calls, flat.callableValueFlow, input.chunks);
   const perFile = collectPythonPerFileChannels(root, trackTypes, flat.calls, input.chunks);
   const byChunk = collectPythonChunkExtractions(input.chunks, flat, perFile, trackTypes);
   const out: FileExtraction = {
@@ -114,6 +123,8 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   if (Object.keys(flat.dispatchTables).length > 0) out.dispatchTables = flat.dispatchTables;
   const callbackParams = pythonCallbackParamsBySymbol(flat.callbackParamSites, input.chunks);
   if (Object.keys(callbackParams).length > 0) out.callbackParams = callbackParams;
+  const callableArgSources = pythonCallableArgSourcesOf(input.relPath, flat.callableValueFlow);
+  if (callableArgSources) out.callableArgSources = callableArgSources;
   if (Object.keys(classChannels.classAncestors).length > 0) out.classAncestors = classChannels.classAncestors;
   if (Object.keys(flat.classFieldTypes).length > 0) out.classFieldTypes = flat.classFieldTypes;
   if (Object.keys(classChannels.classFieldTypesByClassKey).length > 0) {
@@ -157,6 +168,7 @@ interface PythonFlatChannels {
   localBindingSites: PythonLocalBindingSite[];
   dispatchTables: ReturnType<typeof collectPythonDispatchTables>;
   callbackParamSites: Map<number, Set<number>>;
+  callableValueFlow: PythonCallableValueFlow;
   symbolKinds: Map<number, SymbolDefinitionKind>;
   typeDeclarations: TypeDeclarationFact[];
 }
@@ -197,6 +209,7 @@ function collectPythonFlatChannels(root: AstNode, trackTypes: boolean): PythonFl
   const dispatchScope = createPythonDispatchScope(root, dispatchTables);
   const dispatch = dispatchScope.tableNames.size > 0 ? dispatchScope : null;
   const callbackParamSites = new Map<number, Set<number>>();
+  const callableValueFlow = createPythonCallableValueFlow();
   // bd tea-rags-mcp-vi0wx — each declaration's kind, keyed by its start line and
   // joined to the chunk below the same way `defSignatures` is.
   const symbolKinds = new Map<number, SymbolDefinitionKind>();
@@ -209,6 +222,7 @@ function collectPythonFlatChannels(root: AstNode, trackTypes: boolean): PythonFl
     ...(dispatch === null ? [] : [collectPythonDispatchBindings(dispatch)]),
     collectPythonCalls(calls, dispatch),
     collectPythonCallbackParams(callbackParamSites),
+    collectPythonCallableValueFlow(root, callableValueFlow),
     collectPythonDecoratorCalls(decoratorCalls),
     collectPythonClassExtends(classExtends),
     collectPythonClassFieldTypes(classFieldTypes),
@@ -227,6 +241,7 @@ function collectPythonFlatChannels(root: AstNode, trackTypes: boolean): PythonFl
     localBindingSites,
     dispatchTables,
     callbackParamSites,
+    callableValueFlow,
     symbolKinds,
     typeDeclarations,
   };

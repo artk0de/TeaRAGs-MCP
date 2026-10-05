@@ -73,6 +73,8 @@ describe("buildPythonChain", () => {
       "clsMember",
       "selfField",
       "selfMember",
+      // P2 (bd m99j1.1.19) — the callable-param pass joined ahead of localBinding.
+      "callableParam",
       "localBinding",
       "chainType",
       "namingConvention",

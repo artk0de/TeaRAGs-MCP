@@ -3,6 +3,7 @@
  * `DispatchResolverComponent`s `PythonCallResolver.resolveDispatch` composes,
  * in precedence order, plus the gate and policy values they share.
  */
+export { PythonCallableParamDispatchResolver } from "./python-callable-param-dispatch.js";
 export { PythonChainAnswerProbe } from "./python-chain-probe.js";
 export { pythonDynamicFanoutSuppressed } from "./python-dispatch-gates.js";
 export {

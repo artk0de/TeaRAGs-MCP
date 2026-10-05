@@ -11,7 +11,7 @@
  * `codegraph.ts` barrel.
  */
 
-import type { DispatchRef, DispatchTable } from "./codegraph-dispatch.js";
+import type { CallableArgSource, DispatchRef, DispatchTable } from "./codegraph-dispatch.js";
 import type { InheritanceEdgeDecl, StructuralContractDecl } from "./codegraph-hierarchy.js";
 import type { CallResultBinding, LocalBinding } from "./codegraph-local-binding.js";
 import type { AritySignature, KwargSignature, RelPath, SymbolDefinitionKind, SymbolId } from "./codegraph-symbols.js";
@@ -236,6 +236,16 @@ export interface FileExtraction {
    * NDJSON-spill round-trip; undefined when no params are invoked.
    */
   callbackParams?: Record<string, number[]>;
+  /**
+   * Sites that pass a function reference into a parameter, keyed
+   * `<relPath>::<callee member>` (P2, bd tea-rags-mcp-m99j1.1.19). A decorator
+   * `@d def f` counts as the call `d(f)`. Joined run-global with a call's
+   * {@link CallRef.calleeParam}: the functions passed into a def's parameter are
+   * what the def's `param(...)` invokes. Keys name the passing file, so files
+   * never collide. Populated by the Python walker only. Plain Record for
+   * NDJSON round-trip; undefined when the file passes none.
+   */
+  callableArgSources?: Record<string, CallableArgSource[]>;
   /**
    * Optional unified inheritance edge list (bd tea-rags-mcp-f10y). New capture
    * surface superseding the per-kind classAncestors/classExtends/
@@ -1089,6 +1099,17 @@ export interface CallRef {
    * tea-rags-mcp-g7h1y).
    */
   functionInvokerSite?: { receiver: string; member: string };
+  /**
+   * The callee is a PARAMETER of an enclosing def (P2, bd
+   * tea-rags-mcp-m99j1.1.19): `view_func(*a)` inside `wrapped`, inside
+   * `def csrf_exempt(view_func)`. `ownerSymbolId` is the chunk symbolId of the
+   * def that declares the parameter — the nearest def binding the name, seen
+   * through closures — and `position` its CALL-SITE position (a method's
+   * receiver takes none). Absent when any def between the call and the owner,
+   * or the owner itself, rebinds the name. Read with
+   * `FileExtraction.callableArgSources`. Python only.
+   */
+  calleeParam?: { ownerSymbolId: string; position: number };
   /**
    * Set by the walker when this call site is a JSX component tag rather than a
    * call expression — `<Foo prop={x} />`, which is sugar over

@@ -53,6 +53,7 @@ import { resolveImportFileEdges } from "../../import-file-edges.js";
 import { ConeDispatchResolver, readResolverConfig, UnionDispatchResolver } from "../../kernel/index.js";
 import { resolveDispatchViaComponents } from "../../resolver-chain.js";
 import {
+  PythonCallableParamDispatchResolver,
   PythonChainAnswerProbe,
   pythonDynamicDispatchEnabled,
   PythonDynamicDispatchResolver,
@@ -60,6 +61,7 @@ import {
 } from "./dispatch/index.js";
 import { createPythonUnionDispatchPorts } from "./dispatch/python-union-ports.js";
 import { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
+import { PythonCallableParamTargets } from "./python-callable-param-targets.js";
 import { createPythonSymbolResolutionChain } from "./python-chain-factory.js";
 import { PythonExternalVocabulary } from "./python-external-vocabulary.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
@@ -138,16 +140,22 @@ export class PythonCallResolver implements CallResolver {
       createPythonTypeMemberLookup(this.importFileMapper, mode, this.ancestorLinearizers),
       coneMax,
     );
+    // P2 (bd m99j1.1.19) — several functions passed into an invoked parameter
+    // fan as `cone`; one is the chain's `callableParam` answer and fans nothing.
+    const callableParam = new PythonCallableParamDispatchResolver(
+      new PythonCallableParamTargets(this.importFileMapper),
+    );
     this.dispatchComponents = pythonDynamicDispatchEnabled(process.env.CODEGRAPH_PY_DYNAMIC_DISPATCH)
       ? [
           table,
+          callableParam,
           union,
           this.cone,
           new PythonDynamicDispatchResolver(this.probe, (call, ctx) =>
             this.external.targetsCoreAmbiguousMember(call, ctx),
           ),
         ]
-      : [table, union, this.cone];
+      : [table, callableParam, union, this.cone];
   }
 
   /**

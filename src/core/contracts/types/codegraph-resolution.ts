@@ -12,7 +12,7 @@
  * Re-exported verbatim by the `codegraph.ts` barrel.
  */
 
-import type { DispatchFanoutOutcome, DispatchTableDef } from "./codegraph-dispatch.js";
+import type { CallableArgSource, DispatchFanoutOutcome, DispatchTableDef } from "./codegraph-dispatch.js";
 import type {
   CallRef,
   ChunkExtraction,
@@ -554,6 +554,14 @@ export interface CallContext {
    * fans out to the candidates.
    */
   callbackParams?: Record<string, number[]>;
+  /**
+   * `FileExtraction.callableArgSources` unioned RUN-GLOBAL —
+   * `<relPath>::<callee member>` → the function references that file passes
+   * into the callee (P2, bd tea-rags-mcp-m99j1.1.19). Read by the Python
+   * resolver for a call carrying `CallRef.calleeParam`. Absent on an index
+   * whose walker never wrote it: the call keeps its pre-channel answer.
+   */
+  callableArgSources?: Record<string, CallableArgSource[]>;
   /**
    * Optional bidirectional hierarchy snapshot (bd tea-rags-mcp-f10y). Built by
    * the provider at the pass-1→pass-2 barrier and injected for pass-2. CHA /

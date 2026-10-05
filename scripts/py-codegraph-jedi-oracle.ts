@@ -38,6 +38,7 @@ import { createInterface } from "node:readline";
 import {
   chunkCallerScope,
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+  type CallableArgSource,
   type CallContext,
   type CallRef,
   type ClassFieldParamLink,
@@ -55,6 +56,7 @@ import { ExternalCallClassifier } from "../src/core/domains/language/external-cl
 import { ConeDispatchResolver, DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
 import { dispatchFanoutPolicyFor } from "../src/core/domains/language/kernel/fanout-policy.js";
 import {
+  PythonCallableParamDispatchResolver,
   PythonChainAnswerProbe,
   pythonDynamicDispatchEnabled,
   PythonDynamicDispatchResolver,
@@ -64,6 +66,7 @@ import {
   createPythonSymbolResolutionChain,
   PythonImportFileMapper,
 } from "../src/core/domains/language/python/resolver/index.js";
+import { PythonCallableParamTargets } from "../src/core/domains/language/python/resolver/python-callable-param-targets.js";
 import { PythonExternalVocabulary } from "../src/core/domains/language/python/resolver/python-external-vocabulary.js";
 import {
   CONE_MAX_DEFAULT,
@@ -295,6 +298,8 @@ export async function walkCorpus(
   const moduleReexports: Record<string, readonly ModuleReexport[]> = {};
   // `<relPath>::<name>` → module-scope value type (P4, bd m99j1.1.15).
   const moduleValueTypes: Record<string, TypeRef> = {};
+  // `<relPath>::<callee member>` → function references passed in (P2, bd m99j1.1.19).
+  const callableArgSources: Record<string, CallableArgSource[]> = {};
   // The two channels the CHA cone reads, accumulated exactly as
   // `CodegraphRunState` accumulates them and sealed at the same pass-1→pass-2
   // barrier (bd tea-rags-mcp-o17v2 / pffv). Without them `ctx.hierarchy` is
@@ -342,6 +347,7 @@ export async function walkCorpus(
     }
     if (extraction.moduleReexports) moduleReexports[relPath] = extraction.moduleReexports;
     Object.assign(moduleValueTypes, extraction.moduleValueTypes ?? {});
+    Object.assign(callableArgSources, extraction.callableArgSources ?? {});
     const paramFamily = paramFamilyFactsOf(extraction);
     if (paramFamily !== undefined) {
       knownTargetCallArgs.push(...(paramFamily.knownTargetCallArgs ?? []));
@@ -400,6 +406,8 @@ export async function walkCorpus(
   const parityTableProbe = new PythonChainAnswerProbe(buildPythonChain());
   const parityComponents: DispatchResolverComponent[] = [
     new PythonTableDispatchResolver((call, ctx) => parityTableProbe.resolve(call, ctx), parityMapper),
+    // P2 (bd m99j1.1.19) — production's second component.
+    new PythonCallableParamDispatchResolver(new PythonCallableParamTargets(parityMapper)),
     new ConeDispatchResolver(new PythonConeTypeLocator({ mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE }), CONE_MAX_DEFAULT),
   ];
   if (pythonDynamicDispatchEnabled(process.env.CODEGRAPH_PY_DYNAMIC_DISPATCH)) {
@@ -450,6 +458,7 @@ export async function walkCorpus(
         classFieldCallResults,
         moduleReexports,
         moduleValueTypes,
+        callableArgSources,
         hierarchy,
         instantiatedTypes,
       };

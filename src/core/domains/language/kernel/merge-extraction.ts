@@ -155,6 +155,7 @@ const FILE_EXTRACTION_MERGE_RULEBOOK: ExtractionMergeRulebook<FileExtraction> = 
   classAncestors: (base, pass) => unionBaseWins(base, pass),
   classPrependedAncestors: (base, pass) => unionBaseWins(base, pass),
   callbackParams: (base, pass) => unionBaseWins(base, pass),
+  callableArgSources: (base, pass) => unionBaseWins(base, pass),
   // Keyed by symbolId, not by position — see `mergeChunks`.
   chunks: (base, pass) => mergeChunks(base, pass),
 };

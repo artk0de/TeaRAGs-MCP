@@ -80,6 +80,30 @@ export interface DispatchRef {
 }
 
 /**
+ * One site that passes a FUNCTION REFERENCE into a parameter (P2 callable-value
+ * flow, bd tea-rags-mcp-m99j1.1.19): `register(handler)`, or a decorator
+ * `@csrf_exempt def v` read as the implicit call `csrf_exempt(v)`. Stored under
+ * `FileExtraction.callableArgSources["<relPath>::<callee member>"]`, so the key
+ * names the PASSING file and the callee's short name; this record carries the
+ * rest of the site.
+ *
+ * Both spellings are as the passing file's module scope sees them: the walker
+ * records an argument only when no enclosing def binds its head name, so the
+ * resolver reads `argument` (`v`, `Cls.method`) and `calleeReceiver` (a module
+ * alias, or `null` for a bare callee) from that file's imports and
+ * declarations. A source set is a LOWER bound — a callable passed through a
+ * local, a lambda or a keyword is not recorded — never a guess.
+ */
+export interface CallableArgSource {
+  /** The callee's qualifier as written (`decorators` in `decorators.csrf_exempt(f)`), `null` for a bare name. */
+  calleeReceiver: string | null;
+  /** CALL-SITE position of the argument — the same numbering `callbackParams` uses. */
+  argIndex: number;
+  /** The function passed, spelled from the passing file's module scope: `v` or `Cls.method`. */
+  argument: string;
+}
+
+/**
  * One fan-out edge produced by dispatch / callback-param resolution.
  * `sourceSymbolId: null` ⇒ the edge originates from the calling chunk
  * (the provider fills in the caller's symbolId). A non-null

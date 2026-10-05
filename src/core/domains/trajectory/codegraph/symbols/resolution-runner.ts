@@ -77,6 +77,7 @@ export interface ResolverInputs {
   classFieldCallResults: CallContext["classFieldCallResults"];
   moduleReexports: CallContext["moduleReexports"];
   moduleValueTypes: CallContext["moduleValueTypes"];
+  callableArgSources: CallContext["callableArgSources"];
   buildConstraintsByFile: CallContext["buildConstraintsByFile"];
   typeDeclarations: CallContext["typeDeclarations"];
   /** The run's identity (bd tea-rags-mcp-39xca.6) — always the run state's, never per file. */
@@ -126,6 +127,9 @@ export function resolverInputChannels(inputs: ResolverInputs): Partial<CallConte
     // P4 (bd m99j1.1.15) — module-scope value types. Empty ⇒ an imported
     // singleton stays untyped, the pre-channel answer.
     moduleValueTypes: inputs.moduleValueTypes,
+    // P2 (bd m99j1.1.19) — function references passed into parameters. Empty ⇒
+    // a `param(...)` call keeps its pre-channel answer.
+    callableArgSources: inputs.callableArgSources,
     // bd tea-rags-mcp-e6xx — Go's build-tag twin tie-breaker. Empty ⇒ twins stay
     // ambiguous, the pre-channel answer.
     buildConstraintsByFile: inputs.buildConstraintsByFile,
@@ -562,6 +566,8 @@ export class CallEdgeResolutionRunner {
       moduleReexports: state.moduleReexports,
       // Run-global: an imported value is declared in ANOTHER file (P4).
       moduleValueTypes: state.moduleValueTypes,
+      // Run-global: the passing site is usually ANOTHER file (P2).
+      callableArgSources: state.callableArgSources,
       // Run-global for the same reason: a twin's constraint lives in ANOTHER
       // file of the package (bd tea-rags-mcp-e6xx).
       buildConstraintsByFile: state.buildConstraintsByFile,

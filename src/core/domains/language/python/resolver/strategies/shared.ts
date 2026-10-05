@@ -194,7 +194,18 @@ export function pythonEnclosingClass(ctx: CallContext): PythonEnclosingClass | n
 export function pythonClassKeyIsDeclared(classKey: string, ctx: CallContext): boolean {
   const parsed = parsePythonClassKey(classKey);
   if (parsed === null) return false;
-  return ctx.symbolTable.lookup(parsed.classFq).some((def) => def.relPath === parsed.relPath);
+  return ctx.symbolTable.lookup(parsed.classFq).some((def) => def.relPath === parsed.relPath && !isCallableKind(def));
+}
+
+/**
+ * A `@classmethod` / `@staticmethod` is filed under the CLASS spelling
+ * (`AppConfig.create`), the same join a nested class uses, so the spelling
+ * alone cannot tell `AppConfig.create` the method from `Outer.Inner` the class
+ * (P2, bd tea-rags-mcp-m99j1.1.19). The walker's recorded kind can; a
+ * definition with no kind (an index written before it) keeps counting.
+ */
+function isCallableKind(def: { readonly symbolKind?: string }): boolean {
+  return def.symbolKind === "method" || def.symbolKind === "function";
 }
 
 /** A member found on a class or one of its ancestors, and how far the walk could see. */
