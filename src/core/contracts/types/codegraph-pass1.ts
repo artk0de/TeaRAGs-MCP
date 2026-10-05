@@ -61,6 +61,7 @@
  * Re-exported verbatim by the `codegraph.ts` barrel.
  */
 
+import type { CallableArgSource } from "./codegraph-dispatch.js";
 import type {
   ClassFieldParamLink,
   KnownTargetCallArgs,
@@ -335,4 +336,11 @@ export interface CodegraphPass1FileAggregates {
    * type `from pkg import singleton` in a walked caller.
    */
   moduleValueTypes?: Record<string, RubyTypeRef>;
+  /**
+   * Function references passed into parameters, `<relPath>::<callee member>` →
+   * sites (P2, bd tea-rags-mcp-m99j1.1.19). Hydrated: an unwalked file that
+   * decorates a view with `@csrf_exempt` still feeds `view_func(...)` in a
+   * walked `csrf_exempt`.
+   */
+  callableArgSources?: Record<string, CallableArgSource[]>;
 }

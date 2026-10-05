@@ -55,8 +55,9 @@ export class PythonClsMemberSymbolResolutionStrategy implements SymbolResolution
   ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
+    if (constructsEnclosingClass(call, ctx)) return this.enclosingConstructor(ctx);
     if (call.receiver !== "cls") return CONTINUE;
-    if (clsIsBoundHere(ctx)) return CONTINUE;
+    if (isBoundHere("cls", ctx)) return CONTINUE;
     // The enclosing class, addressed the way the run keys classes — NOT the
     // whole of `callerScope`, which carries the enclosing `def` for a call made
     // from a nested one (bd tea-rags-mcp-graiw).
@@ -75,12 +76,54 @@ export class PythonClsMemberSymbolResolutionStrategy implements SymbolResolution
     });
     return target ? resolved(target) : CONTINUE;
   }
+
+  /**
+   * The enclosing class's `__init__` through the MRO, instance spelling first
+   * (P2, bd tea-rags-mcp-m99j1.1.19). A hierarchy with no in-project `__init__`
+   * CONTINUEs: the constructor is `object`'s, and no later pass answers it.
+   */
+  private enclosingConstructor(ctx: CallContext): SymbolResolutionOutcome {
+    const enclosing = pythonEnclosingClass(ctx);
+    if (enclosing === null) return CONTINUE;
+    const linearizer = this.linearizers?.for(ctx);
+    if (linearizer === undefined) {
+      const legacy = walkClassExtendsForMethod(enclosing.name, PYTHON_INIT_METHOD, ctx, this.cfg.mode);
+      return legacy ? resolved(legacy) : CONTINUE;
+    }
+    const { target } = resolvePythonInheritedMember(enclosing.key, PYTHON_INIT_METHOD, ctx, this.cfg.mode, linearizer);
+    return target ? resolved(target) : CONTINUE;
+  }
 }
 
-/** Did the walker bind a VALUE to the name `cls` in this chunk? Then it is not the class. */
-function clsIsBoundHere(ctx: CallContext): boolean {
+/** The method a call on a class object runs. */
+const PYTHON_INIT_METHOD = "__init__";
+
+/**
+ * `cls(...)`, `type(self)(...)`, `self.__class__(...)` — a call ON the
+ * enclosing class object, i.e. its construction. Each spelling holds only
+ * while the walker bound no value to the name it reads (`cls` / `self`), and
+ * `cls` only inside a def filed under the class spelling (`AppConfig.create`,
+ * a `@classmethod`): in an instance method `cls` is an ordinary local — flask's
+ * `cls = self.test_client_class` — and the class is not what it holds.
+ */
+function constructsEnclosingClass(call: CallRef, ctx: CallContext): boolean {
+  if (call.receiver === null && call.member === "cls") return callerIsClassSpelled(ctx) && !isBoundHere("cls", ctx);
+  if (call.receiver === null && call.member === "type(self)") return !isBoundHere("self", ctx);
+  if (call.receiver === "self" && call.member === "__class__") return !isBoundHere("self", ctx);
+  return false;
+}
+
+/** The calling def is filed `Cls.def` — a `@classmethod` (or `@staticmethod`), never an instance method. */
+function callerIsClassSpelled(ctx: CallContext): boolean {
+  const def = ctx.callerScope[ctx.callerScope.length - 1];
+  const symbolId = ctx.callerSymbolId;
+  return def !== undefined && symbolId !== undefined && !symbolId.includes("#") && symbolId.endsWith(`.${def}`);
+}
+
+/** Did the walker bind a VALUE to `name` in this chunk? Then it is not the class (or its instance). */
+function isBoundHere(name: string, ctx: CallContext): boolean {
   const local = ctx.localBindings;
-  if (local !== undefined && Object.prototype.hasOwnProperty.call(local, "cls")) return true;
+  if (local !== undefined && Object.prototype.hasOwnProperty.call(local, name)) return true;
   const calls = ctx.callResultBindings;
-  return calls !== undefined && Object.prototype.hasOwnProperty.call(calls, "cls");
+  return calls !== undefined && Object.prototype.hasOwnProperty.call(calls, name);
 }

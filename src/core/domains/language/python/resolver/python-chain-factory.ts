@@ -29,6 +29,7 @@
 
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
+import { PythonCallableParamTargets } from "./python-callable-param-targets.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
   PythonChainTypeSymbolResolutionStrategy,
@@ -42,6 +43,7 @@ import {
   PythonSuperSymbolResolutionStrategy,
   type ResolverConfig,
 } from "./strategies/index.js";
+import { PythonCallableParamSymbolResolutionStrategy } from "./strategies/python-callable-param.js";
 
 /**
  * The production chain, in production order.
@@ -75,6 +77,13 @@ export function createPythonSymbolResolutionChain(
     new PythonClsMemberSymbolResolutionStrategy(cfg, linearizers),
     new PythonSelfFieldSymbolResolutionStrategy(cfg, mapper, linearizers),
     new PythonSelfMemberSymbolResolutionStrategy(cfg, linearizers),
+    // A parameter shadows every module-scope name, so `callableParam` answers
+    // before the import / naming / short-name passes (P2, bd m99j1.1.19). It
+    // sits ahead of `localBinding` only to keep `localBinding → chainType →
+    // namingConvention → importedName` contiguous; a call whose name the
+    // walker bound in the chunk is declined inside the pass, so a typed
+    // binding still answers first.
+    new PythonCallableParamSymbolResolutionStrategy(new PythonCallableParamTargets(mapper)),
     new PythonLocalBindingSymbolResolutionStrategy(cfg, mapper, linearizers),
     new PythonChainTypeSymbolResolutionStrategy(cfg, mapper, linearizers),
     new PythonNamingConventionSymbolResolutionStrategy(cfg, mapper, linearizers),

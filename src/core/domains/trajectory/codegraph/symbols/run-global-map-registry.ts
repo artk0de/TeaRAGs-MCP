@@ -102,6 +102,9 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
   // Python module-scope values (P4, bd m99j1.1.15): an unwalked declaring file
   // must still type `from pkg import singleton` in a walked caller.
   moduleValueTypes: { policy: "hydrate", sliceField: "moduleValueTypes" },
+  // Python callable-value flow (P2, bd m99j1.1.19): the file that decorates a
+  // view is rarely the file that declares the decorator.
+  callableArgSources: { policy: "hydrate", sliceField: "callableArgSources" },
 
   extractedFilesByLanguage: {
     policy: "batchOnly",

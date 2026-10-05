@@ -3,6 +3,7 @@ export { PythonClsMemberSymbolResolutionStrategy } from "./python-cls-member.js"
 export { PythonSelfFieldSymbolResolutionStrategy } from "./python-self-field.js";
 export { PythonSelfMemberSymbolResolutionStrategy } from "./python-self-member.js";
 export { PythonLocalBindingSymbolResolutionStrategy, resolveTypeFile } from "./python-local-binding.js";
+export { PythonCallableParamSymbolResolutionStrategy } from "./python-callable-param.js";
 export { PythonChainTypeSymbolResolutionStrategy } from "./python-chain-type.js";
 export { PythonNamingConventionSymbolResolutionStrategy } from "./python-naming-convention.js";
 export { PythonImportedNameSymbolResolutionStrategy } from "./python-imported-name.js";

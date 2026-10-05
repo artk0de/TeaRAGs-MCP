@@ -12,7 +12,8 @@ import type {
 } from "../../../../../contracts/types/codegraph.js";
 import { TableDispatchResolver, type TableDispatchPorts } from "../../../kernel/index.js";
 import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
-import { lookupPythonSymbolsByShortName, pythonImportBoundFile } from "../strategies/shared.js";
+import { resolvePythonModuleScopeSpelling } from "../python-module-scope-spelling.js";
+import { pythonImportBoundFile } from "../strategies/shared.js";
 
 /** The production chain's answer for one call — `PythonChainAnswerProbe#resolve`. */
 export type PythonCallAnswer = (call: CallRef, ctx: CallContext) => SymbolResolutionTarget | null;
@@ -137,25 +138,7 @@ class PythonTableDispatchPorts implements TableDispatchPorts {
       const entryCall: CallRef = { callText: `${spelling}()`, receiver, member, startLine: call.startLine };
       return this.answer(entryCall, moduleScopeContext(ctx));
     }
-    if (receiver === null) return this.declaredAtModuleLevel(member, tableFile, ctx);
-    if (receiver.includes(".")) return null;
-    const cls = this.declaredAtModuleLevel(receiver, tableFile, ctx);
-    if (cls) {
-      const members = lookupPythonSymbolsByShortName(ctx, member, { role: "callee" }).filter(
-        (d) => d.relPath === cls.targetRelPath && d.scope.length === 1 && d.scope[0] === receiver,
-      );
-      return members.length === 1 ? { targetRelPath: members[0].relPath, targetSymbolId: members[0].symbolId } : null;
-    }
-    // `module.fn` — the head is a module the table file imported by name.
-    const moduleFile = this.mapper.resolveExportedModule(tableFile, receiver, ctx);
-    return moduleFile === null ? null : this.declaredAtModuleLevel(member, moduleFile, ctx);
-  }
-
-  /** `name` as the table file sees it: declared there, or re-exported into it. */
-  private declaredAtModuleLevel(name: string, tableFile: RelPath, ctx: CallContext): SymbolResolutionTarget | null {
-    const file = this.mapper.resolveExportedName(tableFile, name, ctx) ?? tableFile;
-    const defs = lookupPythonSymbolsByShortName(ctx, name).filter((d) => d.relPath === file && d.scope.length === 0);
-    return defs.length === 1 ? { targetRelPath: defs[0].relPath, targetSymbolId: defs[0].symbolId } : null;
+    return resolvePythonModuleScopeSpelling(spelling, tableFile, ctx, this.mapper);
   }
 }
 

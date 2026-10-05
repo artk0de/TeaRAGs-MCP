@@ -220,7 +220,7 @@ export function collectPythonCallbackParams(out: Map<number, Set<number>>): Pyth
     const def = enclosingDef(node);
     if (!def) return;
     let positions = positionsByDef.get(def.startIndex);
-    if (!positions) positionsByDef.set(def.startIndex, (positions = callSitePositions(def)));
+    if (!positions) positionsByDef.set(def.startIndex, (positions = pythonCallSitePositions(def)));
     const position = positions.get(callee.text);
     if (position === undefined) return;
     const line = def.startPosition.row + 1;
@@ -324,9 +324,11 @@ function enclosingDef(node: AstNode): AstNode | null {
 /**
  * Parameter name → CALL-SITE position. The `/` marker is not a parameter; a
  * `*args`, a bare `*` or a `**kwargs` ends the positional run. A method's
- * receiver parameter occupies no call-site position.
+ * receiver parameter occupies no call-site position. Shared with the
+ * callable-value flow (`python-callable-value-flow.ts`), whose positions must
+ * be numbered the same way.
  */
-function callSitePositions(def: AstNode): ReadonlyMap<string, number> {
+export function pythonCallSitePositions(def: AstNode): ReadonlyMap<string, number> {
   const positions = new Map<string, number>();
   const params = def.childForFieldName("parameters");
   if (!params) return positions;

@@ -36,6 +36,8 @@ const PRODUCTION_ORDER = [
   "clsMember",
   "selfField",
   "selfMember",
+  // P2 (bd m99j1.1.19) — a parameter shadows every module-scope name.
+  "callableParam",
   "localBinding",
   "chainType",
   "namingConvention",
