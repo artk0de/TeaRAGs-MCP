@@ -28,34 +28,12 @@
  */
 
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
+import { typeRefEquals } from "../../../../contracts/type-ref-equals.js";
 import type { ClassFieldParamLink, KnownTargetCallArgs, LocalBinding } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 
 /** Run-global `"<fqType>#<member>" → paramName → type`, the fold's product. */
 export type KnownTargetParamTypes = Record<string, Record<string, RubyTypeRef>>;
-
-/**
- * Structural identity of two type refs. Two hints AGREE only when they denote
- * the same thing all the way down — `{class, Firm}` and `{instance, Firm}` are
- * a disagreement, not a match, because the resolver dispatches them to
- * different definitions (`Firm.find` vs `Firm#find`).
- */
-function typeRefEquals(a: RubyTypeRef, b: RubyTypeRef): boolean {
-  if (a.form !== b.form) return false;
-  // The nil arm carries nothing to compare — same form is the whole statement
-  // (bd tea-rags-mcp-27q0z).
-  if (a.form === "nil") return true;
-  if (a.form === "container") return typeRefEquals(a.element, (b as { element: RubyTypeRef }).element);
-  if (a.form === "union") {
-    const other = (b as { members: RubyTypeRef[] }).members;
-    return a.members.length === other.length && a.members.every((m, i) => typeRefEquals(m, other[i]));
-  }
-  if (a.form === "tuple") {
-    const other = (b as { elements: readonly RubyTypeRef[] }).elements;
-    return a.elements.length === other.length && a.elements.every((e, i) => typeRefEquals(e, other[i]));
-  }
-  return a.name === (b as { name: string }).name;
-}
 
 /** Sentinel for a position two call sites disagreed about — bound to nothing. */
 const CONFLICTED = Symbol("conflicted");

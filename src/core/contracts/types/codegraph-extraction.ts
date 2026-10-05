@@ -751,6 +751,14 @@ export interface ModuleReexport {
 /**
  * Argument types at ONE call site whose callee is known from syntax alone
  * (bd tea-rags-mcp-bvalc).
+ *
+ * KEY CONTRACT of the parameter-typing channels. The run-level fold joins four
+ * channels by string equality: `targets` here and the folded `paramTypes` are
+ * keyed `<classKey>#<method>`, typed class fields (`typedClassFields`) are keyed
+ * `<classKey>|<field>`, and {@link ClassFieldParamLink} maps are keyed by
+ * `classKey`. `classKey` is language-defined (Ruby's fully-qualified constant
+ * path, a Python file-qualified class key, ...) but the emitting walker MUST
+ * spell it identically across all four channels — the fold never re-spells it.
  */
 export interface KnownTargetCallArgs {
   /**
@@ -771,7 +779,11 @@ export interface KnownTargetCallArgs {
   readonly argTypes: readonly (RubyTypeRef | null)[];
 }
 
-/** The `(method, parameter)` coordinate an `@ivar` copies its value from. */
+/**
+ * The `(method, parameter)` coordinate an `@ivar` copies its value from. Links
+ * are keyed by `classKey` then field; see the key contract on
+ * {@link KnownTargetCallArgs}.
+ */
 export interface ClassFieldParamLink {
   /** Short name of the enclosing instance method, e.g. `"initialize"`. */
   readonly method: string;

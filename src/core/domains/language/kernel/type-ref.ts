@@ -20,34 +20,16 @@
  *     is where "what does calling `m` on this receiver yield" is already
  *     decided once.
  *
- * Pure data, no `contracts/` runtime dependency beyond the type itself, so the
+ * Pure data; equality is the contracts-level `typeRefEquals`, so the
  * cycle-sensitive `ruby/resolver/type-propagation.ts` can import it freely.
  */
+import { typeRefEquals } from "../../../contracts/type-ref-equals.js";
 import type { TypeRef } from "../../../contracts/types/language.js";
 
 /** The nil arm — a value that dispatches to nothing. */
 export const NIL_TYPE_REF: TypeRef = { form: "nil" };
 
-/**
- * Structural equality over every `TypeRef` form. Union arms compare IN ORDER:
- * `typeRefUnionOf` fixes a deterministic order at construction, so two refs
- * built from the same facts compare equal, and a hand-built ref that genuinely
- * lists its arms differently is not silently treated as the same statement.
- */
-export function typeRefEquals(a: TypeRef, b: TypeRef): boolean {
-  if (a.form !== b.form) return false;
-  if (a.form === "nil") return true;
-  if (a.form === "container") return typeRefEquals(a.element, (b as { element: TypeRef }).element);
-  if (a.form === "union") {
-    const other = (b as { members: readonly TypeRef[] }).members;
-    return a.members.length === other.length && a.members.every((m, i) => typeRefEquals(m, other[i]));
-  }
-  if (a.form === "tuple") {
-    const other = (b as { elements: readonly TypeRef[] }).elements;
-    return a.elements.length === other.length && a.elements.every((e, i) => typeRefEquals(e, other[i]));
-  }
-  return a.name === (b as { name: string }).name;
-}
+export { typeRefEquals };
 
 /**
  * Build the ref stating "one of these". Nested unions are flattened so arms are

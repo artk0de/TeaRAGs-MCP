@@ -608,26 +608,33 @@ port, because they precede the kernel call in today's `returnTypeOf`.
 - [ ] `review_changes` → fix → commit
       `refactor(trajectory): kernel member return-type resolver, one call-result channel`.
 
-### Task 11: K7 `call-arg-param-types` into the kernel
+### Task 11: type-ref equality into contracts; param-type fold stays language-agnostic (re-scoped)
+
+The original plan moved `call-arg-param-types.ts` into the kernel behind a
+`ClassFieldKeyPort`. That was wrong. `.claude/rules/domain-boundaries.md`
+forbids `trajectory/** -> domains/language/**`, and the fold's consumers
+(`run-state.ts`, `resolution-runner.ts`) are trajectory. The fold is also a
+run-level join over the complete method-definition index of every language, so
+it belongs to trajectory. The only language-specific part is the spelling of
+`classKey`, which the walker already writes: the fold joins
+`<classKey>#<method>` and `<classKey>|<field>` whatever `classKey` is. A port
+would re-spell keys the language already wrote (YAGNI).
 
 **Files:**
 
-- Move `src/core/domains/trajectory/codegraph/symbols/call-arg-param-types.ts` →
-  `src/core/domains/language/kernel/call-arg-param-types.ts`, and its test file
-  alongside (move, not rewrite).
-- Modify `run-state.ts` and `resolution-runner.ts` imports.
-- Add the port
-  `ClassFieldKeyPort = { methodKey(fqClass: string, method: string): string; fieldKey(fqClass: string, field: string): string; instanceOnly: boolean }`.
-- Replace the private `typeRefEquals` with the kernel one.
+- Create `src/core/contracts/type-ref-equals.ts` (pure `typeRefEquals` over the
+  contract `TypeRef`; precedent `contracts/identifier-record.ts`).
+- `kernel/type-ref.ts` re-exports it; the kernel API is unchanged.
+- Delete the private copy in
+  `trajectory/codegraph/symbols/call-arg-param-types.ts`.
+- Document the key contract on `KnownTargetCallArgs` / `ClassFieldParamLink` in
+  `contracts/types/codegraph-extraction.ts`.
 
-- [ ] Failing test (new):
-  - `deriveClassFieldTypesFromParams` with a Python-shaped port (`"pkg/a.py::A"`
-    keys) produces Python-keyed fields;
-  - the Ruby port reproduces today's `"A#m"` / `"A|@x"` keys.
-- [ ] Implement; Ruby passes `RUBY_CLASS_FIELD_KEY_PORT`. PASS (moved tests
-      unmodified); G-RB + G-PY-ID empty.
-- [ ] `review_changes` → fix → commit
-      `refactor(trajectory): call-arg to param type fold moves into the language kernel`.
+- [x] Characterization test (added, passes immediately): Python-shaped
+      `"pkg/a.py::A"` keys through `deriveClassFieldTypesFromParams`.
+- [x] Existing tests unmodified; G-RB + G-PY-ID empty.
+- [x] Commit
+      `refactor(trajectory): type-ref equality moves to contracts; param-type fold stays language-agnostic`.
 
 ### Task 12: K1 `DynamicDispatchResolver` + `ExactChainAnswerProbe`
 
@@ -749,6 +756,10 @@ Predicted residuals (django oracle, sample-based) are in each task's gate line.
       `feat(trajectory): Python member return types through call chains`.
 
 ### Task 15: K7 Python walker feed — params and fields (walker lane)
+
+> Key contract: the Python walker emits `<classKey>#<method>` /
+> `<classKey>|<field>` with its file-qualified class key, spelled identically
+> across all four channels. No port exists.
 
 **Files:**
 

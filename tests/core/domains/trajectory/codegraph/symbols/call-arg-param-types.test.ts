@@ -190,3 +190,19 @@ describe("mergeDerivedClassFieldTypes (bvalc)", () => {
     expect(mergeDerivedClassFieldTypes(undefined, { A: { "@x": "X" } })).toEqual({ A: { "@x": "X" } });
   });
 });
+
+describe("deriveClassFieldTypesFromParams key-format agnosticism", () => {
+  it("joins file-qualified class keys (Python-shaped) exactly as it joins Ruby ones, skipping declared fields", () => {
+    const out = deriveClassFieldTypesFromParams(
+      {
+        "pkg/a.py::A": {
+          x: { method: "__init__", param: "firm" },
+          y: { method: "__init__", param: "firm" },
+        },
+      },
+      { "pkg/a.py::A#__init__": { firm: FIRM } },
+      new Set(["pkg/a.py::A|y"]),
+    );
+    expect(out).toEqual({ "pkg/a.py::A": { x: "Firm" } });
+  });
+});
