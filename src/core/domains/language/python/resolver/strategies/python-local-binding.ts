@@ -1,6 +1,5 @@
 import {
   nearestCallResultBinding,
-  resolveLocalBindingType,
   type AmbiguousResolveMode,
   type CallContext,
   type SymbolResolutionTarget,
@@ -15,6 +14,7 @@ import {
 } from "../../../kernel/index.js";
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
+import { pythonIterationElementType, pythonLocalBindingInForce } from "../python-iteration-types.js";
 import { createPythonCallBindingPorts } from "../python-receiver-type-ports.js";
 import {
   lastSegment,
@@ -112,7 +112,13 @@ function pythonLocalBindingTyping(
   const ports = createPythonCallBindingPorts(mapper, linearizers);
   return {
     typeOfReceiver: (call, ctx): TypeRef | null => {
-      const boundType = resolveLocalBindingType(ctx.localBindings, call.receiver, call.startLine);
+      const binding = pythonLocalBindingInForce(ctx, call.receiver, call.startLine);
+      // A loop target (bd tea-rags-mcp-m99j1.1.18) is typed by its iterable or
+      // not at all: the call-result binding below it predates the loop.
+      if (binding?.valueKind === "iterationElement") {
+        return pythonIterationElementType(binding, ctx, ports, mapper) ?? null;
+      }
+      const boundType = binding?.type;
       if (boundType) return { form: "instance", name: boundType };
       const bound = nearestCallResultBinding(ctx.callResultBindings, call.receiver, call.startLine);
       if (bound === undefined) return null;

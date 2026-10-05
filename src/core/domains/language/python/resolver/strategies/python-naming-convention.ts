@@ -40,11 +40,7 @@
  * whose annotation this path never reads; they are a different mechanism and
  * are left standing rather than tuned against.
  */
-import {
-  resolveLocalBindingType,
-  type AmbiguousResolveMode,
-  type CallContext,
-} from "../../../../../contracts/types/codegraph.js";
+import type { AmbiguousResolveMode, CallContext } from "../../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../../contracts/types/language.js";
 import {
   conventionClassNameFor,
@@ -54,12 +50,15 @@ import {
   type ConventionReceiverTypingPorts,
   type NamingConventionPorts,
   type ReceiverCallRef,
+  type ReceiverTypePorts,
   type TypeMemberLookup,
 } from "../../../kernel/index.js";
 import { PYTHON_STDLIB_MODULES } from "../../vocabulary/stdlib-modules.js";
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import { PythonExternalVocabulary } from "../python-external-vocabulary.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
+import { pythonIterationElementType, pythonLocalBindingInForce } from "../python-iteration-types.js";
+import { createPythonCallBindingPorts } from "../python-receiver-type-ports.js";
 import {
   lookupPythonSymbolsByShortName,
   pythonBoundClassKey,
@@ -85,7 +84,7 @@ export class PythonNamingConventionSymbolResolutionStrategy extends ConventionRe
   ) {
     super(
       "namingConvention",
-      new PythonConventionReceiverTyping(vocabulary, mapper),
+      new PythonConventionReceiverTyping(vocabulary, mapper, linearizers),
       createPythonConventionMemberLookup(cfg.mode, mapper, linearizers),
     );
   }
@@ -115,10 +114,16 @@ class PythonConventionReceiverTyping implements ConventionReceiverTypingPorts {
     hasSubtypes: (className, ctx) => this.declaredBases(ctx).has(className),
   };
 
+  /** The receiver fold a loop target's iterable is typed through. */
+  private readonly ports: ReceiverTypePorts;
+
   constructor(
     private readonly vocabulary: PythonExternalVocabulary,
     private readonly mapper: PythonImportFileMapper,
-  ) {}
+    linearizers: PythonAncestorLinearizerCache | undefined,
+  ) {
+    this.ports = createPythonCallBindingPorts(mapper, linearizers);
+  }
 
   typeOfReceiver(call: ReceiverCallRef, ctx: CallContext): TypeRef | null {
     const receiver = pythonConventionReceiverName(call.receiver);
@@ -134,8 +139,15 @@ class PythonConventionReceiverTyping implements ConventionReceiverTypingPorts {
     // project class, whatever the project happens to declare under that
     // spelling. Same import question the rest of the chain asks, one memo.
     if (PYTHON_STDLIB_MODULES.has(receiver) || this.vocabulary.isBareCallExternal(receiver, ctx)) return true;
-    // A real fact wins: this pass speaks only for receivers nothing typed.
-    if (resolveLocalBindingType(ctx.localBindings, receiver, call.startLine) !== undefined) return true;
+    // A real fact wins: this pass speaks only for receivers nothing typed. A
+    // loop target (bd tea-rags-mcp-m99j1.1.18) is a fact only when its
+    // iterable folds to a type — an unfolded one is as untyped as no binding.
+    const binding = pythonLocalBindingInForce(ctx, receiver, call.startLine);
+    if (binding?.valueKind === "iterationElement") {
+      if (pythonIterationElementType(binding, ctx, this.ports, this.mapper) !== undefined) return true;
+    } else if (binding !== undefined) {
+      return true;
+    }
     // A module-scope value the walker typed (P4, bd m99j1.1.15) is a fact too:
     // `apps` after `from django.apps import apps` is an `Apps`, not a guess.
     if (pythonModuleValueClass(receiver, ctx, this.mapper) !== null) return true;

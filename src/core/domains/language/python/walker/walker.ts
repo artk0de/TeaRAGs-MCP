@@ -989,6 +989,9 @@ interface PythonLocalBindingSite {
  *   2. Function-parameter type hints (`def f(self, req: Req)`)
  *   3. Constructor-call assignments  (`var = TypeName(...)`)
  *   4. Qualified-constructor calls   (`var = mod.TypeName(...)`)
+ *   5. Loop / comprehension targets  (`for var in <expr>`) — an
+ *      `iterationElement` binding carrying `<expr>`, typed by the resolver
+ *      ({@link pythonIterationElementSites})
  *
  * Sources that are deliberately NOT inferred:
  *   - factory functions without return-type annotations (`var = make()`)
@@ -1026,6 +1029,11 @@ function collectPythonLocalBindingSites(out: PythonLocalBindingSite[]): PythonNo
       return;
     }
 
+    if (node.type === "for_statement" || node.type === "for_in_clause") {
+      out.push(...pythonIterationElementSites(node));
+      return;
+    }
+
     // Function arg type hints — only declarations enclosing this chunk
     // contribute. Tree-sitter emits `typed_parameter` for `name: Type`
     // and `typed_default_parameter` for `name: Type = default`. The
@@ -1050,6 +1058,71 @@ function collectPythonLocalBindingSites(out: PythonLocalBindingSite[]): PythonNo
       if (typeName) out.push({ name: varName, binding: { line, type: typeName } });
     }
   };
+}
+
+/** Comprehension nodes whose `for_in_clause` targets are scoped to the comprehension itself. */
+const PYTHON_COMPREHENSIONS = new Set([
+  "list_comprehension",
+  "set_comprehension",
+  "dictionary_comprehension",
+  "generator_expression",
+]);
+
+/** The longest iterated expression recorded; anything longer is not a spelling the fold can read. */
+const PYTHON_ITERATED_EXPRESSION_MAX = 200;
+
+/**
+ * `iterationElement` sites for one `for` statement or comprehension
+ * `for_in_clause` (bd tea-rags-mcp-m99j1.1.18): each target name, carrying the
+ * ITERATED expression rather than a type — the container's type lives in
+ * facts only the resolver sees.
+ *
+ * Targets read: a single name, or a FLAT tuple of names (`for k, v in …`),
+ * each bound at its element position. A starred, nested or attribute target
+ * emits nothing: no position names its element. Which positions are typeable
+ * (`items()`'s value, `enumerate`'s second) is the resolver's table, not the
+ * walker's.
+ *
+ * A comprehension's target lives only inside the comprehension, so its
+ * binding starts at the comprehension's first line (the element expression
+ * precedes the clause) and ends with `scopeEndLine` at its last. A `for`
+ * target outlives the loop, as Python's does; `endLine` is the header's, the
+ * span on which the name still denotes what it denoted above.
+ */
+function pythonIterationElementSites(node: AstNode): PythonLocalBindingSite[] {
+  const left = node.childForFieldName("left");
+  const right = node.childForFieldName("right");
+  if (left === null || right === null) return [];
+  const sourceExpression = right.text.replace(/\s*\n\s*/g, " ");
+  if (sourceExpression.length > PYTHON_ITERATED_EXPRESSION_MAX) return [];
+  const targets = pythonIterationTargets(left);
+  if (targets.length === 0) return [];
+  const comprehension = node.parent !== null && PYTHON_COMPREHENSIONS.has(node.parent.type) ? node.parent : null;
+  const extent: Pick<LocalBinding, "line" | "endLine" | "scopeEndLine"> =
+    comprehension === null
+      ? { line: node.startPosition.row + 1, endLine: right.endPosition.row + 1 }
+      : { line: comprehension.startPosition.row + 1, scopeEndLine: comprehension.endPosition.row + 1 };
+  return targets.map(({ name, tupleIndex }) => ({
+    name,
+    binding: {
+      line: extent.line,
+      type: "",
+      valueKind: "iterationElement",
+      sourceExpression,
+      ...(tupleIndex === undefined ? {} : { tupleIndex }),
+      ...(extent.endLine === undefined ? {} : { endLine: extent.endLine }),
+      ...(extent.scopeEndLine === undefined ? {} : { scopeEndLine: extent.scopeEndLine }),
+    },
+  }));
+}
+
+/** A loop target's names with their element positions; empty for any shape that is not a name or a flat name tuple. */
+function pythonIterationTargets(left: AstNode): { readonly name: string; readonly tupleIndex?: number }[] {
+  if (left.type === "identifier") return [{ name: left.text }];
+  if (left.type !== "pattern_list" && left.type !== "tuple_pattern") return [];
+  const names = left.namedChildren;
+  if (names.some((child) => child.type !== "identifier")) return [];
+  return names.map((child, tupleIndex) => ({ name: child.text, tupleIndex }));
 }
 
 /**

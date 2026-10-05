@@ -23,13 +23,16 @@ import {
   type CallRef,
 } from "../../../../contracts/types/codegraph.js";
 import type { ExternalVocabulary } from "../../../../contracts/types/language.js";
+import type { ReceiverTypePorts } from "../../kernel/index.js";
 import { PYTHON_BUILTINS } from "../vocabulary/builtins.js";
 import { PYTHON_CORE_MEMBERS } from "../vocabulary/core-members.js";
 import { PYTHON_STDLIB_MODULES } from "../vocabulary/stdlib-modules.js";
 import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import { PythonExternalDefinitionProbe } from "./python-external-definition-probe.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
+import { pythonIterationElementType, pythonLocalBindingInForce } from "./python-iteration-types.js";
 import { mapPythonImportToFile } from "./python-path-mapper.js";
+import { createPythonCallBindingPorts } from "./python-receiver-type-ports.js";
 import { pythonBoundClassKey } from "./python-type-addressing.js";
 
 export class PythonExternalVocabulary implements ExternalVocabulary {
@@ -46,10 +49,12 @@ export class PythonExternalVocabulary implements ExternalVocabulary {
    * exactly what it answered before the probe existed.
    */
   private readonly definitionProbe: PythonExternalDefinitionProbe | undefined;
+  /** The receiver fold a loop target's iterable is typed through, built on first use. */
+  private iterationPorts: ReceiverTypePorts | undefined;
 
   constructor(
     private readonly mapper: PythonImportFileMapper = new PythonImportFileMapper(),
-    linearizers?: PythonAncestorLinearizerCache,
+    private readonly linearizers?: PythonAncestorLinearizerCache,
     mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   ) {
     this.definitionProbe =
@@ -214,9 +219,23 @@ export class PythonExternalVocabulary implements ExternalVocabulary {
    */
   isReceiverTyped(receiver: string, ctx: CallContext, atLine?: number): boolean {
     if (receiver === "self" || receiver === "cls") return true;
-    if (atLine !== undefined && resolveLocalBindingType(ctx.localBindings, receiver, atLine) !== undefined) return true;
+    if (atLine !== undefined && this.localBindingTypes(receiver, ctx, atLine)) return true;
     if (ctx.classFieldTypes === undefined) return false;
     const field = receiver.startsWith("self.") ? receiver.slice("self.".length) : receiver;
     return Object.values(ctx.classFieldTypes).some((fields) => fields[field] !== undefined);
+  }
+
+  /**
+   * Does a local binding TYPE `receiver` at `atLine`? A loop target (bd
+   * tea-rags-mcp-m99j1.1.18) does only when its iterable folds to a type: an
+   * unfolded one says the name is a local and nothing about what it holds, so
+   * it must not lift the site out of the `coreAmbiguous` bucket.
+   */
+  private localBindingTypes(receiver: string, ctx: CallContext, atLine: number): boolean {
+    const binding = pythonLocalBindingInForce(ctx, receiver, atLine);
+    if (binding === undefined) return false;
+    if (binding.valueKind !== "iterationElement") return true;
+    this.iterationPorts ??= createPythonCallBindingPorts(this.mapper, this.linearizers);
+    return pythonIterationElementType(binding, ctx, this.iterationPorts, this.mapper) !== undefined;
   }
 }

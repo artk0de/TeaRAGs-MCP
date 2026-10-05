@@ -32,8 +32,30 @@ export interface LocalBinding {
    * `User.find`, a static method) or an INSTANCE (default; `var = User.new` →
    * `var.save` resolves `User#save`). Absent ⇒ `"instance"` so every existing
    * binding and every other language is unaffected (bd Increment B / var=CONST).
+   *
+   * `"iterationElement"` (bd tea-rags-mcp-m99j1.1.18): the variable is an
+   * ELEMENT drawn from the iterable {@link LocalBinding.sourceExpression}
+   * spells — a `for x in <expr>` target or a comprehension's — whose type
+   * only the resolver can read, because the iterable's container type lives
+   * in facts a per-file pass does not see. `type` is `""` on such a binding:
+   * it names no type until the language's resolver folds the expression, and
+   * a reader that does not know this kind sees an empty (falsy) type rather
+   * than an expression masquerading as a class name.
    */
-  valueKind?: "instance" | "class";
+  valueKind?: "instance" | "class" | "iterationElement";
+  /**
+   * The expression a derived binding is drawn from, as written (whitespace
+   * runs collapsed) — set only with `valueKind: "iterationElement"`, where it
+   * is the ITERATED expression: `self.app_configs.values()`, `enumerate(ops)`.
+   * ABSENT on every other binding.
+   */
+  sourceExpression?: string;
+  /**
+   * 0-based position inside a TUPLE-shaped value the binding destructures —
+   * `for i, op in enumerate(ops)` binds `op` at index 1 of each element.
+   * ABSENT when the binding takes the whole value.
+   */
+  tupleIndex?: number;
   /**
    * Richer receiver type when the bare `type` string can't represent it (union /
    * container); engine prefers `typeRef` when present. Added by INFRA-A so
@@ -114,9 +136,23 @@ export function resolveLocalBinding(
     // Out of its block's scope (bd tea-rags-mcp-e6xx) — `scopeEndLine` is
     // absent on every binding not scoped narrower than the chunk.
     if (binding.scopeEndLine !== undefined && binding.scopeEndLine < atLine) continue;
-    if (binding.line <= atLine && (best === undefined || binding.line > best.line)) best = binding;
+    if (binding.line > atLine) continue;
+    if (best === undefined || binding.line > best.line || outranksOnSameLine(binding, best)) best = binding;
   }
   return best;
+}
+
+/**
+ * On ONE line, a binding that names a type outranks an `iterationElement`
+ * binding, which names only an expression (bd tea-rags-mcp-m99j1.1.18): a
+ * language may type a loop target at extraction time AND record the iterated
+ * expression for the resolver, and the read type is the stronger evidence.
+ * Every other tie keeps the first binding, as before.
+ */
+function outranksOnSameLine(binding: LocalBinding, best: LocalBinding): boolean {
+  return (
+    binding.line === best.line && best.valueKind === "iterationElement" && binding.valueKind !== "iterationElement"
+  );
 }
 
 /**

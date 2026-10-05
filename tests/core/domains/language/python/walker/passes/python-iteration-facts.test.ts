@@ -304,6 +304,11 @@ describe("pythonIterationTypeSource — wired into the facet pass", () => {
 
   it("reaches the composed walker's localBindings", () => {
     const chunk = extract().chunks.find((c) => c.symbolId === "Basket#total");
-    expect(chunk?.localBindings?.["item"]).toEqual([{ line: 5, type: "Item" }]);
+    // The walker's own iteration site (bd tea-rags-mcp-m99j1.1.18) rides beside
+    // the typed fact; the shared lookup ranks the typed one on their line.
+    expect(chunk?.localBindings?.["item"]).toEqual([
+      { line: 5, type: "", valueKind: "iterationElement", sourceExpression: "self.items", endLine: 5 },
+      { line: 5, type: "Item" },
+    ]);
   });
 });
