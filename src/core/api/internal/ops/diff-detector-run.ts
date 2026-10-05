@@ -50,7 +50,10 @@
  * again from a reverse or duplicated read.
  */
 
-import { DEFAULT_SDP_MIN_CONNECTION_COUNT } from "../../../domains/trajectory/codegraph/symbols/index.js";
+import {
+  DEFAULT_SDP_MIN_CONNECTION_COUNT,
+  isDeclaredCompositionRoot,
+} from "../../../domains/trajectory/codegraph/symbols/index.js";
 import type {
   SilentCouplingExclusionCounts,
   SilentCouplingViolation,
@@ -253,6 +256,17 @@ export interface DiffDetectorFinding {
    * formatter. Present only when true.
    */
   foundationTerminal?: true;
+  /**
+   * stableDependencies only (bd tea-rags-mcp-hbceb, parity with the
+   * whole-repo detector's tea-rags-mcp-r8hme.51): the SOURCE component of the
+   * judged edge is, or lives inside, a declared composition root
+   * (`isDeclaredCompositionRoot` in the boundary-diagnostics domain — the
+   * same declared list, never a re-stated one). The root's JOB is assembling
+   * unstable concretes, so an uphill edge sourced from it is inherent to that
+   * job. The finding still stands — this is triage data for the reader, never
+   * a suppression (the `foundationTerminal` spirit). Present only when true.
+   */
+  compositionRoot?: true;
 }
 
 /** One detector family's verdict for the run. */
@@ -470,6 +484,9 @@ export class DiffDetectorRun {
           `the diff leans on the markedly-less-stable side: ${edge.target}'s component ${targetComponent.name} ` +
           `(I=${format3(targetComponent.instability)}) is markedly less stable than ${edge.source}'s ` +
           `${sourceComponent.name} (I=${format3(sourceComponent.instability)})`,
+        // The root assembling unstable concretes is the root's job (see
+        // DECLARED_COMPOSITION_ROOT_COMPONENTS): annotated, still reported.
+        ...(isDeclaredCompositionRoot(sourceComponent.name) ? { compositionRoot: true as const } : {}),
       });
     }
     return findings;
