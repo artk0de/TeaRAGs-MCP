@@ -3205,6 +3205,7 @@ function fxTypeKey(t: RubyTypeRef): string {
   if (t.form === "container") return `c(${fxTypeKey(t.element)})`;
   if (t.form === "union") return `u(${t.members.map(fxTypeKey).join(",")})`;
   if (t.form === "nil") return "nil";
+  if (t.form === "tuple") return `t(${t.elements.map(fxTypeKey).join(",")})`;
   return `${t.form}:${t.name}`;
 }
 
@@ -9663,6 +9664,7 @@ function ccRefText(ref: RubyTypeRef | undefined): string {
   if (ref.form === "nil") return "nil";
   if (ref.form === "container") return `container(${ccRefText(ref.element)})`;
   if (ref.form === "union") return ref.members.map(ccRefText).join("|");
+  if (ref.form === "tuple") return `tuple(${ref.elements.map(ccRefText).join(",")})`;
   return `${ref.form === "class" ? "class " : ""}${ref.name}`;
 }
 
@@ -10451,6 +10453,7 @@ function ssRefText(ref: RubyTypeRef | undefined): string {
   if (ref.form === "nil") return "nil";
   if (ref.form === "container") return `container(${ssRefText(ref.element)})`;
   if (ref.form === "union") return ref.members.map(ssRefText).join("|");
+  if (ref.form === "tuple") return `tuple(${ref.elements.map(ssRefText).join(",")})`;
   return `${ref.form === "class" ? "class " : ""}${ref.name}`;
 }
 
@@ -11131,6 +11134,7 @@ function bdRefText(ref: RubyTypeRef | undefined): string {
   if (ref.form === "nil") return "nil";
   if (ref.form === "container") return `container(${bdRefText(ref.element)})`;
   if (ref.form === "union") return ref.members.map(bdRefText).join("|");
+  if (ref.form === "tuple") return `tuple(${ref.elements.map(bdRefText).join(",")})`;
   return `${ref.form === "class" ? "class " : ""}${ref.name}`;
 }
 
@@ -11691,6 +11695,7 @@ function bcRefText(ref: RubyTypeRef | undefined): string {
   if (ref.form === "nil") return "nil";
   if (ref.form === "container") return `container(${bcRefText(ref.element)})`;
   if (ref.form === "union") return ref.members.map(bcRefText).join("|");
+  if (ref.form === "tuple") return `tuple(${ref.elements.map(bcRefText).join(",")})`;
   return `${ref.form === "class" ? "class " : ""}${ref.name}`;
 }
 
@@ -15661,6 +15666,7 @@ function acRefText(ref: ReturnType<typeof typeOfReceiver>): string {
   if (ref.form === "nil") return "nil";
   if (ref.form === "container") return "container";
   if (ref.form === "union") return "union";
+  if (ref.form === "tuple") return "tuple";
   return `${ref.form === "class" ? "class " : ""}${ref.name}`;
 }
 

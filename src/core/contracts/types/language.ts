@@ -1008,11 +1008,16 @@ export interface LanguageFactoryDescriptor {
  * `Error`): members found on it are callable, but the value's own type may
  * declare members it does not, so it proves nothing about what the value
  * CANNOT reach.
+ *
+ * `tuple` is a fixed-length, positional product — `(Firm, User)` — read only by
+ * destructuring (`typeRefTupleElement`). It is not a member receiver: every
+ * consumer that dispatches on a ref treats it as an undecided form.
  */
 export type TypeRef =
   | { form: "class" | "instance"; name: string; args?: readonly TypeRef[]; upperBound?: true }
   | { form: "union"; members: TypeRef[] }
   | { form: "container"; element: TypeRef }
+  | { form: "tuple"; elements: readonly TypeRef[] }
   | { form: "nil" };
 
 /**

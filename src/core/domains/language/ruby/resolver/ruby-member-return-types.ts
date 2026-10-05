@@ -120,6 +120,9 @@ export function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext
   // Union / nil receiver: the agreement fold (bd tea-rags-mcp-27q0z).
   if (recv.form === "union" || recv.form === "nil") return unionReturnType(recv, member, ctx);
 
+  // Tuple receiver: read by position, never dispatched on — no member type.
+  if (recv.form === "tuple") return undefined;
+
   // 1. Precise structured return type for this class#member key.
   const direct = declaredReturnTypeOn(recv.name, member, ctx, recv.form === "class");
   if (direct !== undefined) return direct;
