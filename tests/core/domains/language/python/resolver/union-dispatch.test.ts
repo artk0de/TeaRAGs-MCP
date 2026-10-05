@@ -138,3 +138,47 @@ describe("PythonCallResolver.resolveDispatch — union receiver (K2, m99j1.1.22)
     expect(dispatchTargets(call("y", "run"), ctxReturning(union(instance("A"), instance("B"))))).toEqual([]);
   });
 });
+
+/**
+ * An INFERRED union return (bd tea-rags-mcp-m99j1.1.53): the walker unions the
+ * arms of `_prepare_cursor` instead of joining them to a common ancestor, and a
+ * subtype arm stays — the fan narrows by member ownership, so an override is
+ * its own edge and an inherited member collapses onto the base's one.
+ */
+describe("PythonCallResolver.resolveDispatch — inferred subtype-arm union (m99j1.1.53)", () => {
+  const UTILS = "db/backends/utils.py";
+  const BASE = "db/backends/base/base.py";
+  const table = tableWith({
+    [UTILS]: [
+      "CursorWrapper",
+      "CursorWrapper#execute",
+      "CursorWrapper#close",
+      "CursorDebugWrapper",
+      "CursorDebugWrapper#execute",
+    ],
+    [BASE]: ["BaseDatabaseWrapper", "BaseDatabaseWrapper#cursor", "BaseDatabaseWrapper#ensure"],
+  });
+  const ctx: CallContext = {
+    callerFile: BASE,
+    callerScope: ["BaseDatabaseWrapper", "ensure"],
+    imports: [importOf("db.backends.utils", "CursorWrapper"), importOf("db.backends.utils", "CursorDebugWrapper")],
+    symbolTable: table,
+    classAncestors: { [`${UTILS}::CursorDebugWrapper`]: ["CursorWrapper"], [`${UTILS}::CursorWrapper`]: [] },
+    structuredReturnTypes: {
+      "BaseDatabaseWrapper#cursor": union(instance("CursorDebugWrapper"), instance("CursorWrapper")),
+    },
+  };
+
+  it("fans `self.cursor().execute()` to the override AND the base", () => {
+    expect(dispatchTargets(call("self.cursor()", "execute"), ctx)).toEqual([
+      { target: "CursorDebugWrapper#execute", kind: "cone", confidence: 0.5 },
+      { target: "CursorWrapper#execute", kind: "cone", confidence: 0.5 },
+    ]);
+  });
+
+  it("collapses an inherited member onto the base's one edge", () => {
+    expect(dispatchTargets(call("self.cursor()", "close"), ctx)).toEqual([
+      { target: "CursorWrapper#close", kind: "cone", confidence: 1 },
+    ]);
+  });
+});

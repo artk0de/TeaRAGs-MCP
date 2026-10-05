@@ -103,7 +103,13 @@ export {
   type ReceiverTypePorts,
 } from "./receiver-type-propagation.js";
 export { reexportOriginFile } from "./reexport-origin.js";
-export { inferReturnTypeName, type ReturnInferencePorts } from "./return-inference.js";
+export {
+  inferReturnTypeName,
+  inferReturnTypeNames,
+  type ReturnArmTypes,
+  type ReturnInferencePorts,
+  type ReturnUnionPolicy,
+} from "./return-inference.js";
 export { DETACHED_RESOLVE_RUN_SCOPE, RunScopedMemo } from "./run-scoped-memo.js";
 export { deriveStructuralConformance } from "./structural-conformance.js";
 export { DefaultSymbolIdComposer, symbolIdNames } from "./symbol-id.js";

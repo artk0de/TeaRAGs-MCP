@@ -19,6 +19,7 @@
  * another file's defs, and `localCallBindings` does that hop at resolve time.
  */
 import type { AstNode } from "../../../../../contracts/types/ast.js";
+import type { ReturnArmTypes } from "../../../kernel/index.js";
 import { PYTHON_SELF_RETURN, pythonBareTypeName } from "./python-type-annotation.js";
 
 /** What the enclosing def can see: its class, and three lookups the scope's owner answers. */
@@ -27,10 +28,13 @@ export interface PythonReturnScope {
   readonly selfClass: string | undefined;
   /** The class a `self.<field>` read names, or null. */
   readonly fieldType: (field: string) => string | null;
-  /** What `self.<m>(…)` / `cls.<m>(…)` returns when the enclosing class defines `m`, or null. */
-  readonly selfMethodReturn: (method: string) => string | null;
-  /** What a same-file top-level def `<name>(…)` returns, or null. */
-  readonly fileReturn: (name: string) => string | null;
+  /**
+   * What `self.<m>(…)` / `cls.<m>(…)` returns when the enclosing class defines
+   * `m`, or null — several names when that def's own inference is a union.
+   */
+  readonly selfMethodReturn: (method: string) => ReturnArmTypes | null;
+  /** What a same-file top-level def `<name>(…)` returns (a union as several names), or null. */
+  readonly fileReturn: (name: string) => ReturnArmTypes | null;
 }
 
 /** A single capitalized identifier — Python's class-name convention. */
@@ -51,7 +55,7 @@ function isSelfCopy(call: AstNode, fn: AstNode): boolean {
   return args.length === 1 && args[0]?.type === "identifier" && args[0].text === "self";
 }
 
-export function pythonReturnExpressionType(node: AstNode, scope: PythonReturnScope): string | null {
+export function pythonReturnExpressionType(node: AstNode, scope: PythonReturnScope): ReturnArmTypes | null {
   if (node.type === "identifier") {
     if (node.text === "self" || node.text === "cls") return scope.selfClass ?? null;
     return null; // a bare local is the kernel engine's binding case, not ours
