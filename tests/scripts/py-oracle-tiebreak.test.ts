@@ -185,6 +185,108 @@ describe("oracleSelfReference", () => {
   });
 });
 
+describe("oracleSelfReference — a call through a parameter (bd tea-rags-mcp-m99j1.1.47)", () => {
+  const paramRow = (overrides: Partial<PyOracleRow> = {}): PyOracleRow =>
+    row({
+      relPath: "django/contrib/auth/decorators.py",
+      startLine: 21,
+      callText: "view_func(request, *args, **kwargs)",
+      receiver: null,
+      member: "view_func",
+      receiverKind: "bareCall",
+      verdict: "missed",
+      chainOutput: "none",
+      chain: undefined,
+      oracleTargetRelPath: "django/contrib/auth/decorators.py",
+      oracleTargetSymbolId: "user_passes_test#decorator",
+      ...overrides,
+    });
+
+  it("books jedi answering a def NESTED in the caller — the parameter's owner", () => {
+    expect(isOracleSelfReference(paramRow(), "user_passes_test")).toBe(true);
+  });
+
+  it("books jedi answering a def ENCLOSING the caller", () => {
+    expect(isOracleSelfReference(paramRow(), "user_passes_test#decorator#_wrapped_view")).toBe(true);
+  });
+
+  it("reads the `.` separator as nesting too", () => {
+    const row = paramRow({ member: "func", oracleTargetSymbolId: "Model.from_db" });
+    expect(isOracleSelfReference(row, "Model.from_db#inner")).toBe(true);
+  });
+
+  it("books pyright answering the enclosing def", () => {
+    const other = paramRow({ oracleTargetSymbolId: null, oracleTargetRelPath: null, verdict: "phantom" });
+    const reply = pyright({ targetRelPath: "django/contrib/auth/decorators.py", targetSymbolId: "user_passes_test" });
+    expect(isOracleSelfReference(other, "user_passes_test#decorator", reply)).toBe(true);
+  });
+
+  it("leaves a call to an enclosing def BY NAME alone — that is recursion, and the oracle can score it", () => {
+    const recursive = paramRow({ member: "outer", callText: "outer(x)", oracleTargetSymbolId: "outer" });
+    expect(isOracleSelfReference(recursive, "outer#inner")).toBe(false);
+  });
+
+  it("leaves a nested class constructed by name alone", () => {
+    const nested = paramRow({ member: "Inner", callText: "Inner()", oracleTargetSymbolId: "outer#Inner#__init__" });
+    expect(isOracleSelfReference(nested, "outer")).toBe(false);
+  });
+
+  it("leaves a def that merely shares a name prefix alone", () => {
+    expect(isOracleSelfReference(paramRow({ oracleTargetSymbolId: "user_passes_test_x" }), "user_passes_test")).toBe(
+      false,
+    );
+  });
+
+  it("leaves a target off the caller's lexical chain alone", () => {
+    expect(isOracleSelfReference(paramRow({ oracleTargetSymbolId: "other#decorator" }), "user_passes_test")).toBe(
+      false,
+    );
+  });
+});
+
+describe("oracleSelfReference — the instance's own class constructed (bd tea-rags-mcp-m99j1.1.47)", () => {
+  const caller = "ListMixin#__add__";
+  const classRow = (overrides: Partial<PyOracleRow> = {}): PyOracleRow =>
+    row({
+      relPath: "django/contrib/gis/geos/mutable_list.py",
+      startLine: 112,
+      callText: "self.__class__([*self, *other])",
+      receiver: "self",
+      member: "__class__",
+      receiverKind: "selfMember",
+      verdict: "phantom",
+      answeredBy: "clsMember",
+      chain: { targetRelPath: "django/contrib/gis/geos/mutable_list.py", targetSymbolId: "ListMixin#__init__" },
+      oracleTargetRelPath: null,
+      oracleTargetSymbolId: null,
+      ...overrides,
+    });
+
+  it("books `self.__class__(...)` — jedi answers the builtin attribute", () => {
+    expect(isOracleSelfReference(classRow(), caller)).toBe(true);
+  });
+
+  it("books `type(self)(...)`", () => {
+    const typeOfSelf = classRow({ callText: "type(self)(value)", receiver: null, member: "type(self)" });
+    expect(isOracleSelfReference(typeOfSelf, caller)).toBe(true);
+  });
+
+  it("does not book `__class__` read off some other receiver", () => {
+    expect(isOracleSelfReference(classRow({ receiver: "other", callText: "other.__class__()" }), caller)).toBe(false);
+  });
+
+  it("stays scoped to a caller symbol like the rest of the pre-empt", () => {
+    expect(isOracleSelfReference(classRow(), undefined)).toBe(false);
+  });
+
+  it("pre-empts the pyright classes and withholds the phantom", () => {
+    expect(tiebreakRow(classRow(), caller, pyright({ kind: "external" }))).toMatchObject({
+      tiebreak: "selfReference",
+      verdictTiebroken: "oracleSelfReference",
+    });
+  });
+});
+
 describe("tiebreakRow", () => {
   it("keeps the verdict and records `notAsked` outside the disagreement set", () => {
     expect(tiebreakRow(row({ verdict: "match" }), "Caller#m", undefined)).toEqual({
