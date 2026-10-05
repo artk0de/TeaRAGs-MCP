@@ -66,6 +66,7 @@ import { createPythonSymbolResolutionChain } from "./python-chain-factory.js";
 import { PythonExternalVocabulary } from "./python-external-vocabulary.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import { createPythonTypeMemberLookup } from "./python-type-member-lookup.js";
+import { PythonUndecidableCallClassifier } from "./python-undecidable.js";
 import { lookupPythonSymbolsByShortName, PythonConeTypeLocator, type ResolverConfig } from "./strategies/index.js";
 
 export class PythonCallResolver implements CallResolver {
@@ -118,6 +119,8 @@ export class PythonCallResolver implements CallResolver {
    * with the run's linearizer on first use.
    */
   private readonly ancestorLinearizers: PythonAncestorLinearizerCache;
+  /** K11 (bd tea-rags-mcp-m99j1.1.24) — the miss classifier's undecidable question. */
+  private readonly undecidable: PythonUndecidableCallClassifier;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
     // Python has no dynamic-receiver confidence knob: take only mode + coneMax.
@@ -135,8 +138,15 @@ export class PythonCallResolver implements CallResolver {
     );
     this.probe = new PythonChainAnswerProbe(this.chain);
     const table = new PythonTableDispatchResolver((call, ctx) => this.probe.resolve(call, ctx), this.importFileMapper);
+    const unionPorts = createPythonUnionDispatchPorts(this.importFileMapper, this.ancestorLinearizers);
+    this.undecidable = new PythonUndecidableCallClassifier(
+      unionPorts,
+      this.importFileMapper,
+      this.ancestorLinearizers,
+      mode,
+    );
     const union = new UnionDispatchResolver(
-      createPythonUnionDispatchPorts(this.importFileMapper, this.ancestorLinearizers),
+      unionPorts,
       createPythonTypeMemberLookup(this.importFileMapper, mode, this.ancestorLinearizers),
       coneMax,
     );
@@ -238,6 +248,16 @@ export class PythonCallResolver implements CallResolver {
    */
   targetsCoreAmbiguousMember(call: CallRef, ctx: CallContext): boolean {
     return this.external.targetsCoreAmbiguousMember(call, ctx);
+  }
+
+  /**
+   * P6 (K11, bd tea-rags-mcp-m99j1.1.24). A typed instance receiver whose member
+   * no class on a closed MRO declares, where that MRO defines `__getattr__` /
+   * `__getattribute__`: the callee is computed at run time. Consulted only for
+   * the residual miss every earlier classifier gate left.
+   */
+  targetsUndecidable(call: CallRef, ctx: CallContext): boolean {
+    return this.undecidable.targetsUndecidable(call, ctx);
   }
 
   /**

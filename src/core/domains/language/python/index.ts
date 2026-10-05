@@ -153,6 +153,8 @@ export class PythonLanguage implements LanguageProvider {
         callResolver.targetsExternalImport?.(call, ctx) ?? false,
       targetsCoreAmbiguousMember: (call: CallRef, ctx: CallContext): boolean =>
         callResolver.targetsCoreAmbiguousMember?.(call, ctx) ?? false,
+      targetsUndecidable: (call: CallRef, ctx: CallContext): boolean =>
+        callResolver.targetsUndecidable?.(call, ctx) ?? false,
       // The miss classifier's `noInProjectDef` gate, asked of Python files only
       // (bd tea-rags-mcp-nbf8q). Forwarded explicitly: the runner reads this
       // facade, never the resolver behind it (bd tea-rags-mcp-x9qsh).

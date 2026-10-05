@@ -1094,5 +1094,11 @@ export function classifyResolveMiss(
   // AFTER the two gates above so externalSkipped / noInProjectDef stay
   // byte-identical; only the residual missWithInProjectDef is carved.
   if (resolver.targetsCoreAmbiguousMember?.(call, ctx) ?? false) return "coreAmbiguous";
+  // bd tea-rags-mcp-m99j1.1.24 (K11) — a STATICALLY UNDECIDABLE target: a typed
+  // receiver whose member no in-project ancestor declares and run-time
+  // attribute lookup answers. Same bucket as a dynamic send. Asked LAST so it
+  // carves only the residual: every bucket above stays byte-identical, and
+  // the rate's denominator shrinks by exactly the rows it moves.
+  if (resolver.targetsUndecidable?.(call, ctx) ?? false) return "unresolvable";
   return "missWithInProjectDef";
 }
