@@ -140,6 +140,22 @@ describe("PythonCallResolver.targetsExternalImport — external-typed receivers 
     expect(resolver.targetsExternalImport(call("row", "save"), ctx)).toBe(true);
   });
 
+  it("flags a receiver bound from a call ROOTED at a constructor no project file declares", () => {
+    // polar: `plaintext = AESGCM(data_key).decrypt(...)` then
+    // `plaintext.decode("utf-8")` — `AESGCM` is cryptography's (bd
+    // tea-rags-mcp-m99j1.1.74).
+    const ctx = ctxWith({ callResultBindings: { plaintext: [{ line: 12, callee: "AESGCM().decrypt" }] } });
+    expect(resolver.targetsExternalImport(call("plaintext", "decode"), ctx)).toBe(true);
+  });
+
+  it("does NOT flag a receiver bound from a call ROOTED at a project constructor", () => {
+    const ctx = ctxWith({
+      files: { "app/engine.py": ["Engine", "Engine#from_string"] },
+      callResultBindings: { template: [{ line: 12, callee: "Engine().from_string" }] },
+    });
+    expect(resolver.targetsExternalImport(call("template", "render"), ctx)).toBe(false);
+  });
+
   it("flags a bare CAPITALIZED receiver no project file declares", () => {
     expect(resolver.targetsExternalImport(call("Faker", "seed"), ctxWith())).toBe(true);
   });

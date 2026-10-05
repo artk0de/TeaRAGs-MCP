@@ -1907,6 +1907,14 @@ const PYTHON_CALLEE_SPELLING = /^[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$/;
  */
 const PYTHON_CALLEE_SPINE_MAX_HOPS = 5;
 
+/** A single capitalized identifier — Python's class-name convention, the head the fold seeds as a constructor. */
+const PYTHON_CONSTRUCTOR_ROOT = /^[A-Z]\w*$/;
+
+/** Is `node` the callee of a constructor call that may ROOT a spine (`Engine` in `Engine().from_string`)? */
+function pythonConstructorRoot(node: AstNode): boolean {
+  return node.type === "identifier" && PYTHON_CONSTRUCTOR_ROOT.test(node.text);
+}
+
 /**
  * The callee spelling of a call node, or `null` when it is not one this channel
  * can hand the fold.
@@ -1920,11 +1928,16 @@ const PYTHON_CALLEE_SPINE_MAX_HOPS = 5;
  * `Reaction.objects.filter(\n    user_id=…,\n).first`, and the raw text carries
  * newlines, commas and `=` into a field the fold splits on `.`.
  *
- * The spine must be ROOTED AT A NAME. `make().build()` stays declined — its
- * head is a call the fold cannot seed, so the whole spine folds to nothing and
- * recording it would buy payload and no answers (bd tea-rags-mcp-z68v9's
- * decision, kept). So does a subscript, a lambda, or anything else that is not
- * an identifier or an attribute access.
+ * The spine must be ROOTED AT A NAME, or at a CONSTRUCTOR call on one:
+ * `Engine().from_string` (django's `template = Engine().from_string(code)`, bd
+ * tea-rags-mcp-m99j1.1.74) is the receiver spelling the fold already seeds as
+ * an instance of `Engine` when the same chain is written inline, so the binding
+ * hands it exactly what the inline call site reads. "Constructor" is the class
+ * spelling `PYTHON_CONSTRUCTOR_ROOT` states, and only a SINGLE identifier — the
+ * shape the fold's seed tests. `make().build()` stays declined (bd
+ * tea-rags-mcp-z68v9's decision, kept): a lower-case root is a factory whose
+ * return the binding has no measured use for. So does a subscript, a lambda,
+ * or anything else that is not an identifier or an attribute access.
  */
 function pythonCalleeSpelling(call: AstNode): string | null {
   const fn = call.childForFieldName("function");
@@ -1949,12 +1962,13 @@ function pythonCalleeSpine(node: AstNode): { text: string; hops: number } | null
   const attribute = node.childForFieldName("attribute");
   if (object === null || attribute?.type !== "identifier") return null;
   // An intermediate call contributes its own callee spine plus the empty
-  // argument list the fold strips back off. Only a METHOD call qualifies: a
-  // call on a bare identifier is the ROOT of the spine (`make().build`), and a
-  // root the fold cannot seed makes the whole spine fold to nothing.
+  // argument list the fold strips back off. A METHOD call qualifies, and so
+  // does a call on a bare identifier — the ROOT of the spine — when that
+  // identifier is spelled as a class: the fold seeds `Engine()` as an instance
+  // of `Engine`, and cannot seed `make()` here.
   const inner = object.type === "call" ? object.childForFieldName("function") : object;
   if (inner === null) return null;
-  if (object.type === "call" && inner.type !== "attribute") return null;
+  if (object.type === "call" && inner.type !== "attribute" && !pythonConstructorRoot(inner)) return null;
   const head = pythonCalleeSpine(inner);
   if (head === null) return null;
   const rendered = object.type === "call" ? `${head.text}()` : head.text;

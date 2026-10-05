@@ -340,3 +340,45 @@ describe("PythonLocalBindingSymbolResolutionStrategy — a local bound to a call
     expect(localBinding().attempt(callOn("comment", "save", 12), ctx)).toEqual({ kind: "continue" });
   });
 });
+
+// bd tea-rags-mcp-m99j1.1.74 — django's `template = Engine().from_string(code)`
+// then `template.render(ctx)`. The callee spine is ROOTED at a constructor
+// call; the fold seeds it as an instance of the class and reads the member's
+// recorded return.
+describe("PythonLocalBindingSymbolResolutionStrategy — a local bound to a constructor-rooted call", () => {
+  const DJANGO_TABLE = tableWith({
+    "tmpl/base.py": ["Template", "Template#render"],
+    "tmpl/engine.py": ["Engine", "Engine#from_string"],
+    "views/i18n.py": ["run"],
+  });
+  const ENGINE_IMPORT: ImportRef = {
+    importText: "tmpl.engine",
+    startLine: 1,
+    importedNames: ["Engine"],
+    importedBindings: { Engine: "Engine" },
+  };
+
+  it("types the local from the member's return on the constructed instance", () => {
+    const ctx = ctxWith({
+      callerFile: "views/i18n.py",
+      table: DJANGO_TABLE,
+      imports: [ENGINE_IMPORT],
+      structuredReturnTypes: { "Engine#from_string": { form: "instance", name: "Template" } },
+      callResultBindings: { template: [{ line: 10, callee: "Engine().from_string" }] },
+    });
+    expect(localBinding().attempt(callOn("template", "render", 12), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "tmpl/base.py", targetSymbolId: "Template#render" },
+    });
+  });
+
+  it("CONTINUEs when the member's return is unknown", () => {
+    const ctx = ctxWith({
+      callerFile: "views/i18n.py",
+      table: DJANGO_TABLE,
+      imports: [ENGINE_IMPORT],
+      callResultBindings: { template: [{ line: 10, callee: "Engine().from_string" }] },
+    });
+    expect(localBinding().attempt(callOn("template", "render", 12), ctx)).toEqual({ kind: "continue" });
+  });
+});

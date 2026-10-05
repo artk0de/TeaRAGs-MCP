@@ -103,7 +103,10 @@ export { lookupPythonSymbols, lookupPythonSymbolsByShortName, PYTHON_SYMBOL_KIND
  *
  * `self` / `cls` heads are the caller's own object and never foreign. The lookup
  * is a symbol-table short-name probe, so a caller that was already going to weigh
- * the site adds no new scan.
+ * the site adds no new scan. A spine ROOTED at a constructor call
+ * (`Engine().from_string`, bd tea-rags-mcp-m99j1.1.74) has the CLASS as its
+ * head — the walker renders the root's arguments elided, and the `()` is
+ * stripped before the probe.
  *
  * Two readers, one definition: `namingConvention` guesses a class from the
  * receiver's SPELLING, the untyped-name dispatch component fans over the
@@ -112,7 +115,8 @@ export { lookupPythonSymbols, lookupPythonSymbolsByShortName, PYTHON_SYMBOL_KIND
 export function pythonBoundToForeignCall(receiver: string, atLine: number, ctx: CallContext): boolean {
   const binding = nearestCallResultBinding(ctx.callResultBindings, receiver, atLine);
   if (binding === undefined) return false;
-  const head = binding.callee.split(".")[0] ?? "";
+  const spelled = binding.callee.split(".")[0] ?? "";
+  const head = spelled.endsWith("()") ? spelled.slice(0, -2) : spelled;
   if (head === "self" || head === "cls" || head.length === 0) return false;
   return lookupPythonSymbolsByShortName(ctx, head).length === 0;
 }

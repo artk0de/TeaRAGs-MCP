@@ -151,3 +151,24 @@ describe("extractFromPythonFile — callResultBindings", () => {
     expect(bindingsOf(src)).toBeUndefined();
   });
 });
+
+// bd tea-rags-mcp-m99j1.1.74 — django's `template = Engine().from_string(code)`.
+// A spine rooted at a CONSTRUCTOR call is one the fold seeds (`Cls(…)` is an
+// instance of `Cls`), so its spelling is recorded with the root's arguments
+// elided, exactly as an intermediate call's are.
+describe("extractFromPythonFile — callResultBindings rooted at a constructor call", () => {
+  it("records `Cls().member` with the constructor's arguments elided", () => {
+    const src = ["def run(content):", "    template = Engine(debug=True).from_string(content)", ""].join("\n");
+    expect(bindingsOf(src)).toEqual({ template: [{ line: 2, callee: "Engine().from_string" }] });
+  });
+
+  it("records a constructor root followed by further calls", () => {
+    const src = ["def run():", "    rows = Query().filter(a=1).first()", ""].join("\n");
+    expect(bindingsOf(src)).toEqual({ rows: [{ line: 2, callee: "Query().filter().first" }] });
+  });
+
+  it("still declines a root call on a lower-case name — not a constructor by convention", () => {
+    const src = ["def run():", "    x = make_engine().from_string('a')", ""].join("\n");
+    expect(bindingsOf(src)).toBeUndefined();
+  });
+});
