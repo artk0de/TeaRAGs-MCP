@@ -623,9 +623,11 @@ function pythonSelfFieldType(inner: AstNode): { readonly field: string; readonly
  * expression that names anything — so `A() or B()` (two competing claims) and
  * `a or b` (no claim) both decline. A ternary declines unless BOTH arms call
  * the same callee, because a union is not a receiver and the engine never
- * widens (`kernel/return-inference.ts`, decision 3).
+ * widens (`kernel/return-inference.ts`, decision 3). A ternary with a `None`
+ * arm is read as its other arm first ({@link pythonOptionalValueArm}).
  */
-function pythonFieldRhsCall(right: AstNode): AstNode | undefined {
+function pythonFieldRhsCall(rhs: AstNode): AstNode | undefined {
+  const right = pythonOptionalValueArm(rhs);
   if (right.type === "call") return right;
   if (right.type === "boolean_operator") {
     if (right.childForFieldName("operator")?.text !== "or") return undefined;
@@ -642,6 +644,28 @@ function pythonFieldRhsCall(right: AstNode): AstNode | undefined {
     return a !== null && b !== null && a.text === b.text ? consequence : undefined;
   }
   return undefined;
+}
+
+/**
+ * The value a right-hand side denotes for a member call (bd
+ * tea-rags-mcp-m99j1.1.71): `X if c else None` and `None if c else X` are
+ * `Optional[X]` spelled as an expression, and a member call reads `Optional[X]`
+ * as `X` — the reading an annotated `Optional[X]` already gets
+ * (`pythonNominalReceiverName` drops the nil arm). Any other node, including a
+ * conditional whose arms are both `None` or both non-`None`, is returned as it
+ * is, so the caller's own rule for that node still decides.
+ *
+ * The non-`None` arm is NOT typed here: each caller reads it exactly as it reads
+ * a plain right-hand side, which keeps an arm that caller cannot type untyped.
+ */
+function pythonOptionalValueArm<TValue extends AstNode | null>(value: TValue): AstNode | TValue {
+  if (value?.type !== "conditional_expression") return value;
+  // No field names on this node: `[consequence, condition, alternative]`.
+  const [consequence, , alternative] = value.namedChildren;
+  if (consequence === undefined || alternative === undefined) return value;
+  const consequenceIsNone = consequence.type === "none";
+  if (consequenceIsNone === (alternative.type === "none")) return value;
+  return consequenceIsNone ? alternative : consequence;
 }
 
 /**
@@ -1379,7 +1403,9 @@ function pythonLocalBindingsInRange(
  *
  * Otherwise constructor-call inference — `var = ClassName(...)` /
  * `var = module.ClassName(...)`. The RHS must be a call whose `function` is an
- * `identifier` (direct) or `attribute` (qualified). Anything else (function
+ * `identifier` (direct) or `attribute` (qualified), after a ternary with a
+ * `None` arm is read as its other arm ({@link pythonOptionalValueArm}).
+ * Anything else (function
  * literal, lambda, factory, list comprehension, etc.) is left unbound.
  *
  * bd tea-rags-mcp-z68v9 — the CapWords gate `collectPythonClassFieldTypes`
@@ -1401,7 +1427,7 @@ export function pythonAssignmentBoundType(
     const typeName = extractTypeName(typeField);
     return typeName ? { type: typeName, annotated: true } : null;
   }
-  const right = assignment.childForFieldName("right");
+  const right = pythonOptionalValueArm(assignment.childForFieldName("right"));
   if (right?.type !== "call") return null;
   const fnNode = right.childForFieldName("function");
   if (!fnNode) return null;
@@ -1863,7 +1889,8 @@ function pythonCalleeSpine(node: AstNode): { text: string; hops: number } | null
  * is the better answer and `localBindings` already carries it), and a
  * MODULE-level assignment — a module global is not a local, and binding one
  * would type every call site in the file from a single write. `await <call>` IS
- * unwrapped: awaiting a coroutine yields what it declares, and a spine rooted
+ * unwrapped: awaiting a coroutine yields what it declares, and so is a ternary
+ * with a `None` arm ({@link pythonOptionalValueArm}), and a spine rooted
  * at a NAME is recorded with its arguments elided — see
  * {@link pythonCalleeSpelling}.
  *
@@ -1875,7 +1902,7 @@ function collectPythonCallResultBindings(root: AstNode): Record<string, CallResu
   const scan = (node: AstNode, inFunction: boolean): void => {
     if (node.type === "assignment" && inFunction && node.childForFieldName("type") === null) {
       const lhs = node.namedChild(0);
-      const rhs = node.childForFieldName("right");
+      const rhs = pythonOptionalValueArm(node.childForFieldName("right"));
       const call = rhs?.type === "await" ? (rhs.namedChild(0) ?? rhs) : rhs;
       if (lhs?.type === "identifier" && call?.type === "call") {
         const callee = pythonCalleeSpelling(call);
