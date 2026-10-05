@@ -14,7 +14,6 @@
  * `trajectory/** -> domains/language/**`).
  */
 
-import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import {
   chunkCallerScope,
   type CallContext,
@@ -30,7 +29,7 @@ import type {
   LanguageFactoryDescriptor,
   LanguageSymbolResolver,
 } from "../../../../contracts/types/language.js";
-import { mergeDerivedClassFieldTypes, seedParamLocalBindings } from "./call-arg-param-types.js";
+import { mergeDerivedClassFieldTypes, paramTypesOfChunk, seedParamLocalBindings } from "./call-arg-param-types.js";
 import { descendantNamesOf, HierarchyDependencyRecorder } from "./hierarchy-dependencies.js";
 import { normalizeInheritanceEdges } from "./inheritance-edges.js";
 import { buildPass1Aggregates } from "./pass1-aggregates.js";
@@ -814,7 +813,7 @@ export class CallEdgeResolutionRunner {
       // fact (bd tea-rags-mcp-bvalc). Names YARD already bound are untouched.
       const localBindings = seedParamLocalBindings(
         chunk.localBindings,
-        identifierEntry(this.runState.paramTypes, chunk.symbolId),
+        paramTypesOfChunk(this.runState.paramTypes, chunk),
         chunk.startLine,
       );
       for (const call of chunk.calls) {

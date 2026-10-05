@@ -286,7 +286,8 @@ export interface CodegraphPass1FileAggregates {
    * `paramTypes` / `derivedClassFieldTypes`, and each lives in a DIFFERENT file
    * from the one it types: the argument types at the CALLER's call site
    * (`knownTargetCallArgs`), the positional parameter names of the CALLEE
-   * (`methodParamNames`, `symbolId → names`, from `ChunkExtraction.paramNames`),
+   * (`methodParamNames`, fold coordinate → names, from `ChunkExtraction.paramNames`
+   * under `paramCoordinate ?? symbolId`),
    * the `@ivar = <param>` links and the `"fqClass|@ivar"` coordinates a walker
    * typed on its own (`classFieldParamLinks` / `typedClassFields`, the class's
    * files — several for a reopened class; the latter derived from
@@ -311,7 +312,8 @@ export interface CodegraphPass1FileAggregates {
    * targets (`#initialize` / class methods), so the slice cannot drift from
    * what `absorb` feeds the fold.
    *
-   * Ruby rows only — the fold and every reader of its products are Ruby's.
+   * Rows of the family's languages only (`paramFamilyFieldChannelOf`, bd
+   * tea-rags-mcp-m99j1.1.17); `typedClassFields` stays per-file-channel only.
    * Persisted LAST, so every other row keeps its bytes.
    */
   knownTargetCallArgs?: readonly KnownTargetCallArgs[];

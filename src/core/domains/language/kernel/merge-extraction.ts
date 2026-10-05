@@ -102,6 +102,7 @@ const CHUNK_EXTRACTION_MERGE_RULEBOOK: ExtractionMergeRulebook<ChunkExtraction> 
   endLine: (base, pass) => base ?? pass,
   arity: (base, pass) => base ?? pass,
   paramNames: (base, pass) => base ?? pass,
+  paramCoordinate: (base, pass) => base ?? pass,
   visibility: (base, pass) => base ?? pass,
   kwargs: (base, pass) => base ?? pass,
   acceptsBlock: (base, pass) => base ?? pass,
