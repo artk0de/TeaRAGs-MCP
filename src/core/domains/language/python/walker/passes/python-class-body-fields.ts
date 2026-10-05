@@ -44,6 +44,8 @@ import type { ImportRef } from "../../../../../contracts/types/codegraph.js";
 /** Django's own QuerySet classmethod: `Q.as_manager()` exposes `Q`'s members. */
 const MANAGER_FACTORY_VERB = "as_manager";
 
+const NO_ASSOCIATION_FIELDS: ReadonlySet<string> = new Set();
+
 export interface PythonClassBodyFieldTypes {
   /** `shortClassName -> field -> typeName`, the per-file channel. */
   readonly byShortName: Record<string, Record<string, string>>;
@@ -109,6 +111,7 @@ function pythonClassBodyFieldType(
   node: AstNode,
   evidence: PythonClassNameEvidence,
   managerFactoryActive: boolean,
+  association: PythonAssociationFieldScope,
 ): { readonly field: string; readonly type: string } | undefined {
   if (node.type !== "assignment") return undefined;
   if (node.childForFieldName("type")) return undefined;
@@ -118,6 +121,15 @@ function pythonClassBodyFieldType(
   if (right?.type !== "call") return undefined;
   const callee = right.childForFieldName("function");
   if (!callee) return undefined;
+
+  const calleeName = callee.type === "attribute" ? callee.childForFieldName("attribute")?.text : callee.text;
+  if (calleeName !== undefined && association.constructors.has(calleeName)) {
+    // The field is the framework's descriptor; the attribute holds the MODEL.
+    // A first argument that names none (`settings.AUTH_USER_MODEL`) types
+    // nothing — never the field class the bare arm below would read.
+    const model = pythonAssociationModelName(right, evidence, association.enclosingClass);
+    return model === undefined ? undefined : { field: left.text, type: model };
+  }
 
   if (callee.type === "attribute") {
     // Django's verb, and only where Django is declared (bd tea-rags-mcp-w205u.1).
@@ -136,6 +148,49 @@ function pythonClassBodyFieldType(
 }
 
 /**
+ * The framework association constructors in force for this file, and the class
+ * whose body is being read — `"self"` names it.
+ */
+interface PythonAssociationFieldScope {
+  readonly constructors: ReadonlySet<string>;
+  readonly enclosingClass: string;
+}
+
+/** `'Author'` / `"app_label.Author"` — a plain one-line literal, no prefix. */
+const PYTHON_MODEL_REFERENCE_LITERAL = /^(['"])([A-Za-z_][\w.]*)\1$/;
+
+/**
+ * The model an association field points at (bd tea-rags-mcp-m99j1.1.51): the
+ * `to=` keyword, else the FIRST positional argument. A class name needs the
+ * same evidence as a bare construction — declared here or import-bound — and
+ * a string reference is Django's own spelling: `"self"` is the enclosing
+ * class, `"app_label.Model"` and `"Model"` name the model by its last
+ * segment, which the resolve-time consumer places or refuses. Anything else
+ * (`settings.AUTH_USER_MODEL`, a dotted class) names no model it can vouch for.
+ */
+function pythonAssociationModelName(
+  call: AstNode,
+  evidence: PythonClassNameEvidence,
+  enclosingClass: string,
+): string | undefined {
+  const fieldArgs = call.childForFieldName("arguments")?.namedChildren ?? [];
+  const toKeyword = fieldArgs.find(
+    (arg) => arg.type === "keyword_argument" && arg.childForFieldName("name")?.text === "to",
+  );
+  const modelArg = toKeyword?.childForFieldName("value") ?? fieldArgs.find((arg) => arg.type !== "keyword_argument");
+  if (modelArg === undefined || modelArg === null) return undefined;
+  if (modelArg.type === "identifier") {
+    return evidence.declared.has(modelArg.text) || evidence.importBound.has(modelArg.text) ? modelArg.text : undefined;
+  }
+  if (modelArg.type !== "string") return undefined;
+  const reference = PYTHON_MODEL_REFERENCE_LITERAL.exec(modelArg.text)?.[2];
+  if (reference === undefined) return undefined;
+  if (reference === "self") return enclosingClass;
+  const model = reference.slice(reference.lastIndexOf(".") + 1);
+  return model.length === 0 ? undefined : model;
+}
+
+/**
  * Both field channels from ONE pass over the class bodies (the colocation rule:
  * every field of a structure populated in one place), so the per-file and
  * run-global maps can never disagree about nesting.
@@ -150,6 +205,7 @@ export function collectPythonClassBodyFieldTypes(
   relPath: string,
   imports: readonly ImportRef[],
   managerFactoryActive: boolean,
+  associationFields: ReadonlySet<string> = NO_ASSOCIATION_FIELDS,
 ): PythonClassBodyFieldTypes {
   const evidence: PythonClassNameEvidence = {
     declared: collectDeclaredClassNames(root),
@@ -171,10 +227,14 @@ export function collectPythonClassBodyFieldTypes(
     if (node.type === "class_definition") {
       // DIRECT statements of this class body only — an assignment nested in a
       // method or a comprehension is not class state.
+      const association: PythonAssociationFieldScope = {
+        constructors: associationFields,
+        enclosingClass: nameNode.text,
+      };
       for (const stmt of body.children) {
         if (stmt.type !== "expression_statement") continue;
         for (const child of stmt.children) {
-          const found = pythonClassBodyFieldType(child, evidence, managerFactoryActive);
+          const found = pythonClassBodyFieldType(child, evidence, managerFactoryActive, association);
           if (found === undefined) continue;
           const short = nameNode.text;
           byShortName[short] = { ...(byShortName[short] ?? {}), [found.field]: found.type };

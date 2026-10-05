@@ -3,8 +3,11 @@
  *
  * The synthesized model members and query verbs (`memberTypes`, bd
  * tea-rags-mcp-m99j1.1.21) are answered by the resolver's `frameworkReturnType`
- * port. `associationFields` is declared for the walker, which owns reading a
- * field's constructor argument. `descriptorDecorators` is read by the walker's
+ * port. `associationFields` is read by the walker's class-body pass, which owns
+ * reading a field's constructor argument (bd tea-rags-mcp-m99j1.1.51):
+ * `author = ForeignKey(Author)` types `book.author` as `Author`.
+ * `ManyToManyField` is absent on purpose — its attribute is a related manager,
+ * not the model. `descriptorDecorators` is read by the walker's
  * descriptor pass (bd tea-rags-mcp-m99j1.1.20): a `@cached_property` def is an
  * attribute holding its return.
  *
