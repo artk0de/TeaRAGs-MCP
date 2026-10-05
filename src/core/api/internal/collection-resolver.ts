@@ -15,7 +15,7 @@ import { resolveGitCommonDir } from "../../adapters/vcs/git/common-dir.js";
 import type { CollectionEntry, PathCollectionResolver } from "../../contracts/types/registry.js";
 import type { WorkingTree } from "../../contracts/types/working-tree.js";
 import { CollectionNotFoundError } from "../../domains/explore/index.js";
-import type { CollectionRegistry } from "../../domains/maintenance/registry/collection-registry.js";
+import type { CollectionRegistry } from "../../domains/maintenance/registry/index.js";
 import {
   collectionAliasOfRegistryEntry,
   resolveCollectionName,

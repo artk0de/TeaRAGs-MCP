@@ -36,26 +36,25 @@ import type {
   SignalFloors,
 } from "../../../contracts/types/trajectory.js";
 import type { WorkingTree, WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
-import { EmptyFilterPresetError, UnknownFilterPresetError } from "../../../domains/explore/errors.js";
 import {
   computeSearchConfidence,
+  createExploreStrategy,
+  EmptyFilterPresetError,
+  FileOutlineStrategy,
+  IndexMetricsQuery,
+  SimilarSearchStrategy,
+  SymbolSearchStrategy,
+  UnknownFilterPresetError,
+  type BaseExploreStrategy,
+  type ExploreContext,
+  type ExploreResult,
   type SearchConfidenceInput,
   type WorkingTreeOverlay,
   type WorkingTreeView,
 } from "../../../domains/explore/index.js";
-import { IndexMetricsQuery } from "../../../domains/explore/queries/index-metrics.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
-import {
-  createExploreStrategy,
-  FileOutlineStrategy,
-  SimilarSearchStrategy,
-  SymbolSearchStrategy,
-  type BaseExploreStrategy,
-  type ExploreContext,
-  type ExploreResult,
-} from "../../../domains/explore/strategies/index.js";
 import { NotIndexedError } from "../../../domains/ingest/errors.js";
-import { StatsRecomputeService } from "../../../domains/ingest/infra/stats-recompute.js";
+import { StatsRecomputeService } from "../../../domains/ingest/infra/index.js";
 import { DOCUMENTATION_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/config.js";
 import { formatIndexDriftReport, type IndexDriftReporter } from "../../../domains/maintenance/drift/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
