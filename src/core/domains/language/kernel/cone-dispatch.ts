@@ -56,7 +56,7 @@ export class ConeDispatchResolver implements DispatchResolverComponent {
 
   private resolveDispatchEdges(call: CallRef, ctx: CallContext): DispatchEdge[] {
     if (!call.receiver) return [];
-    const baseType = resolveLocalBindingType(ctx.localBindings, call.receiver, call.startLine);
+    const baseType = resolveLocalBindingType(ctx.localBindings, call.receiver, call.startLine, call.startColumn);
     if (!baseType || !ctx.hierarchy) return [];
 
     // Direct subtypes of `T`; dedup by source name (a transitive view could

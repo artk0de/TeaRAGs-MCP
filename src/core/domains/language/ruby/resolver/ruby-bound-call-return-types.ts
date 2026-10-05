@@ -15,7 +15,12 @@
  */
 
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import type { CallContext } from "../../../../contracts/types/codegraph.js";
+import {
+  isInsideModifierCondition,
+  type CallContext,
+  type CallRef,
+  type CallResultBinding,
+} from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import { rubyReceiverForm } from "../type-ref.js";
 import { returnTypeOf } from "./ruby-member-return-types.js";
@@ -50,12 +55,75 @@ import { selfMemberReturnType } from "./ruby-return-facts.js";
  * gives up on anything that is not class/instance form. A `[RuleHit, nil]`
  * return left as a raw union would silently cost the exact edge the same
  * annotation used to produce as a bare `[RuleHit]`.
+ *
+ * `site` places the call: given a column, a call inside the condition of a
+ * modifier guarding the binding's own assignment reads the binding above it
+ * instead ({@link callBindingOutsideCondition}). Omitted, the chunk-wide entry
+ * answers, as before.
  */
-export function boundCallReturnType(receiver: string, ctx: CallContext): RubyTypeRef | undefined {
-  const binding = identifierEntry(ctx.localCallBindings, receiver);
+export function boundCallReturnType(
+  receiver: string,
+  ctx: CallContext,
+  site?: Pick<CallRef, "startLine" | "startColumn">,
+): RubyTypeRef | undefined {
+  const chunkWide = identifierEntry(ctx.localCallBindings, receiver);
+  if (chunkWide === undefined) return undefined;
+  const binding = site === undefined ? chunkWide : callBindingOutsideCondition(receiver, chunkWide, site, ctx);
   if (binding === undefined) return undefined;
   const derived = rubyReceiverForm(boundCallTypeRef(binding, ctx));
   return qualifyFactTypeName(derived, boundCallFactOwner(binding, ctx), ctx);
+}
+
+/**
+ * The call binding a call site sees when it sits inside the CONDITION of a
+ * modifier guarding the assignment that binding came from (bd
+ * tea-rags-mcp-0qaht.55): `record = record.status unless record.visible?`
+ * evaluates `record.visible?` BEFORE it rebinds, so there the name holds what
+ * it held above the statement.
+ *
+ * The chunk-wide `localCallBindings` entry carries no position, so the
+ * statement is read off the positioned `callResultBindings` the walker records
+ * for the same assignments: the one whose `conditionSpan` holds the call. It
+ * speaks only when it IS the write the entry kept — the latest positioned
+ * write, spelled exactly as the entry — and then the call reads the latest
+ * positioned write above it in that same spelling, or nothing when there is
+ * none. Anything else — no column, no span holding the call, a later write the
+ * entry kept instead — leaves the chunk-wide entry in force, exactly as before.
+ */
+function callBindingOutsideCondition(
+  receiver: string,
+  chunkWide: string,
+  site: Pick<CallRef, "startLine" | "startColumn">,
+  ctx: CallContext,
+): string | undefined {
+  const entries = identifierEntry(ctx.callResultBindings, receiver);
+  if (entries === undefined || site.startColumn === undefined) return chunkWide;
+  let kept: CallResultBinding | undefined;
+  for (const entry of entries) if (kept === undefined || entry.line >= kept.line) kept = entry;
+  if (kept === undefined || !isInsideModifierCondition(kept.conditionSpan, site.startLine, site.startColumn)) {
+    return chunkWide;
+  }
+  if (localCallBindingSpelling(kept.callee) !== chunkWide) return chunkWide;
+  let above: CallResultBinding | undefined;
+  for (const entry of entries) {
+    if (entry.line >= kept.line) continue;
+    if (above === undefined || entry.line >= above.line) above = entry;
+  }
+  return above === undefined ? undefined : localCallBindingSpelling(above.callee);
+}
+
+/** A constant spelled as `localCallBindings` records a scope-qualified receiver. */
+const LOCAL_CALL_BINDING_CONSTANT = /^[A-Z]\w*(?:::[A-Z]\w*)*$/;
+
+/**
+ * A positioned callee (`callResultBindings`) in the spelling `localCallBindings`
+ * records for the same assignment: `Const.method` when the method is called on
+ * a constant directly, the bare outermost method otherwise.
+ */
+function localCallBindingSpelling(callee: string): string {
+  const links = callee.split(".");
+  const method = links[links.length - 1] ?? callee;
+  return links.length === 2 && LOCAL_CALL_BINDING_CONSTANT.test(links[0] ?? "") ? callee : method;
 }
 
 /**

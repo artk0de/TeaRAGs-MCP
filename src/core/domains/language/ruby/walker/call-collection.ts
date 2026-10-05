@@ -29,6 +29,7 @@ import {
   computePositionalArgAtoms,
   computeSendNameTemplate,
 } from "./method-signatures.js";
+import { isInsideRubyAssignmentCondition } from "./modifier-conditions.js";
 import { emitRegistryConstantRefs, exprToRubyDispatchRef } from "./registry-dispatch.js";
 
 /**
@@ -235,6 +236,9 @@ function emitMethodCallRef(
 ): void {
   const startLine = node.startPosition.row + 1;
   const callRef: CallRef = { callText: node.text, receiver: receiverText, member: method.text, startLine };
+  // A call a modifier evaluates before the assignment it guards is placed by
+  // column against that binding's condition span (bd tea-rags-mcp-0qaht.55).
+  if (receiverText !== null && isInsideRubyAssignmentCondition(node)) callRef.startColumn = node.startPosition.column;
   if (dynamicSend) callRef.dynamicSend = true;
   const dispatch = exprToRubyDispatchRef(node, dispatchTableNames, catalogue);
   if (dispatch?.field) callRef.dispatch = dispatch;

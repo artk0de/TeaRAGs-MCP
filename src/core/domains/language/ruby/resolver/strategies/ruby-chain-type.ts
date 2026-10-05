@@ -11,7 +11,7 @@ import type { ResolverConfig } from "./shared.js";
  * which CONTINUEs on it.
  */
 const RUBY_CHAIN_TYPE_TYPING: ReceiverTypingPorts = {
-  typeOfReceiver: (call, ctx) => typeOfReceiver(call.receiver, call.startLine, ctx) ?? null,
+  typeOfReceiver: (call, ctx) => typeOfReceiver(call.receiver, call.startLine, ctx, call.startColumn) ?? null,
 };
 
 /**

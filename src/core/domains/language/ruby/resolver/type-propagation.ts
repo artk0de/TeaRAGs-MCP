@@ -112,6 +112,10 @@ export const RUBY_RECEIVER_TYPE_PORTS: ReceiverTypePorts = Object.freeze({
  * @param receiver - Raw receiver text from the call site (e.g. `"user"`, `"@client"`, `"a.b.c"`).
  * @param atLine   - 1-based source line of the call; used for position-aware
  *                   local-binding lookup (`LocalBinding.line <= atLine`).
+ * @param atColumn - 0-based column of the call when its site carries one
+ *                   (`CallRef.startColumn`): a call inside a modifier condition
+ *                   does not see the binding that modifier guards (bd
+ *                   tea-rags-mcp-0qaht.55). Omitted, every binding reads as before.
  * @param ctx      - Per-call {@link CallContext} carrying `localBindings`,
  *                   `ivarTypes`, `classFieldTypes`, `associationTypes`,
  *                   `structuredReturnTypes`, `functionReturnTypes`,
@@ -126,12 +130,22 @@ export const RUBY_RECEIVER_TYPE_PORTS: ReceiverTypePorts = Object.freeze({
  * position is where that resolves to `Firm`, because `nil.foo` reaches no
  * in-project definition.
  */
-export function typeOfReceiver(receiver: string, atLine: number, ctx: CallContext): RubyTypeRef | undefined {
-  return propagateReceiverType(receiver, atLine, ctx, RUBY_RECEIVER_TYPE_PORTS);
+export function typeOfReceiver(
+  receiver: string,
+  atLine: number,
+  ctx: CallContext,
+  atColumn?: number,
+): RubyTypeRef | undefined {
+  return propagateReceiverType(receiver, atLine, ctx, RUBY_RECEIVER_TYPE_PORTS, atColumn);
 }
 
 /** Ruby's `singleHopType` port: a receiver with no dot in it. */
-function rubySingleHopType(receiver: string, atLine: number, ctx: CallContext): RubyTypeRef | undefined {
+function rubySingleHopType(
+  receiver: string,
+  atLine: number,
+  ctx: CallContext,
+  atColumn?: number,
+): RubyTypeRef | undefined {
   // ── Index-access on a typed container: `arr[i]` → element type (Task 1.6) ─
   // When the outermost operation is `[...]` and the base var has a container
   // binding, return the element type so call sites like `arr[0].title` can
@@ -143,7 +157,7 @@ function rubySingleHopType(receiver: string, atLine: number, ctx: CallContext): 
     const bracketIdx = trimmed.indexOf("[");
     const baseVar = bracketIdx > 0 ? trimmed.slice(0, bracketIdx) : "";
     if (baseVar && /^[a-z_]\w*$/.test(baseVar)) {
-      const baseBinding = resolveLocalBinding(ctx.localBindings, baseVar, atLine);
+      const baseBinding = resolveLocalBinding(ctx.localBindings, baseVar, atLine, atColumn);
       if (baseBinding?.typeRef?.form === "container") {
         return baseBinding.typeRef.element;
       }
@@ -165,7 +179,7 @@ function rubySingleHopType(receiver: string, atLine: number, ctx: CallContext): 
   // dotted receivers and ivars are already guarded above, and index-access
   // (`arr[0]`) is handled above. The explicit chain guard above is the only
   // structural guard needed.
-  const binding = resolveLocalBinding(ctx.localBindings, receiver, atLine);
+  const binding = resolveLocalBinding(ctx.localBindings, receiver, atLine, atColumn);
   // ── Nullary self-call receiver (bd tea-rags-mcp-pr7fu) ───────────────────
   // An unbound lowercase identifier in receiver position is not a variable —
   // Ruby has no implicit declaration, so `current_client.foo` can only be a

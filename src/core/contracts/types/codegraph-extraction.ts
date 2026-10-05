@@ -1091,6 +1091,15 @@ export interface CallRef {
   member: string;
   startLine: number;
   /**
+   * 0-based column of the call expression's start on `startLine` (bd
+   * tea-rags-mcp-0qaht.55) — what places the call against a binding's
+   * `conditionSpan` on the same line. Optional: ABSENT means unknown, and the
+   * call reads every binding exactly as before. The Ruby walker records it for
+   * a call inside the condition of a modifier guarding an assignment, the one
+   * place a same-line position decides which binding is in force.
+   */
+  startColumn?: number;
+  /**
    * The receiver exactly as the source spells it, where a language's
    * `receiver` normalizes sugar away: Swift strips optional chaining and
    * force unwraps (`a?.b!` → `a.b`) so the receiver matches the names
