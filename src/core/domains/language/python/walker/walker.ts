@@ -51,6 +51,7 @@ import {
   type PythonCallableValueFlow,
 } from "./passes/python-callable-value-flow.js";
 import { collectPythonClassBodyFieldTypes } from "./passes/python-class-body-fields.js";
+import { pythonConstructorReceiverIsValue } from "./passes/python-constructor-receiver.js";
 import { collectPythonContainerElementSites } from "./passes/python-container-element-facts.js";
 import { collectPythonDefSignatures, pythonCallShape } from "./passes/python-def-signatures.js";
 import {
@@ -683,6 +684,9 @@ function pythonSelfFieldType(inner: AstNode): { readonly field: string; readonly
   if (ctor === undefined) return undefined;
   const fnNode = ctor.childForFieldName("function");
   if (!fnNode) return undefined;
+  // bd tea-rags-mcp-m99j1.1.85 — `self._lib.Client(…)` constructs whatever the
+  // injected VALUE `self._lib` holds; no project class is named by it.
+  if (pythonConstructorReceiverIsValue(fnNode)) return undefined;
   const typeName = extractConstructorTypeName(fnNode);
   return typeName && isCapWordsConstructor(typeName) ? { field: fieldName, type: typeName } : undefined;
 }
@@ -771,6 +775,10 @@ function pythonSelfFieldCallee(inner: AstNode): { readonly field: string; readon
   const callable =
     fnNode !== null && (fnNode.type === "identifier" || fnNode.type === "attribute" || fnNode.type === "dotted_name");
   if (!callable) return undefined;
+  // A constructor on a VALUE receiver is declined by the type channel above, not
+  // handed here: it names no class, and folding its last segment would be the
+  // same short-name read (bd tea-rags-mcp-m99j1.1.85).
+  if (isCapWordsConstructor(fnNode.text) && pythonConstructorReceiverIsValue(fnNode)) return undefined;
   return { field: attr.text, callee: fnNode.text };
 }
 
@@ -1517,7 +1525,7 @@ export function pythonAssignmentBoundType(
 export function pythonLocalConstructorTypeName(right: AstNode | null): string | null {
   if (right?.type !== "call") return null;
   const fnNode = right.childForFieldName("function");
-  if (!fnNode) return null;
+  if (!fnNode || pythonConstructorReceiverIsValue(fnNode)) return null;
   const typeName = extractConstructorTypeName(fnNode);
   return typeName && pythonLocalCalleeIsConstructor(typeName) ? typeName : null;
 }

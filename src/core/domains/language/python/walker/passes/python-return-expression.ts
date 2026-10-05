@@ -20,6 +20,7 @@
  */
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { ReturnArmTypes } from "../../../kernel/index.js";
+import { pythonConstructorReceiverIsValue } from "./python-constructor-receiver.js";
 import { PYTHON_SELF_RETURN, pythonBareTypeName } from "./python-type-annotation.js";
 
 /** What the enclosing def can see: its class, and three lookups the scope's owner answers. */
@@ -113,6 +114,8 @@ export function pythonReturnExpressionType(node: AstNode, scope: PythonReturnSco
   }
   // `mod.Widget()` — the dotted spelling of a constructor; the LAST segment decides.
   if (fn.type === "attribute" || fn.type === "dotted_name") {
+    // A VALUE receiver (`self._lib.Client(…)`) names no class (bd tea-rags-mcp-m99j1.1.85).
+    if (pythonConstructorReceiverIsValue(fn)) return null;
     const bare = pythonBareTypeName(fn.text);
     if (!PYTHON_CLASS_NAME.test(bare)) return null;
     scope.writtenSpelling?.(bare, fn.text);
