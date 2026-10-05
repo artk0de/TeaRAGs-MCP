@@ -184,3 +184,105 @@ describe("constructor on a VALUE receiver stays untyped (bd tea-rags-mcp-m99j1.1
     });
   });
 });
+
+/**
+ * A function-LOCAL bound to a value is a value receiver too (bd
+ * tea-rags-mcp-m99j1.1.88): `lib = load(); lib.Client()` and django's
+ * `engine = import_module(settings.SESSION_ENGINE); engine.SessionStore()`
+ * construct whatever the bound value holds. A local bound to a NAME
+ * (`lib = mod`), an import inside the def, an annotated local, a module-level
+ * binding, or a local with any other kind of binding reads exactly as before.
+ */
+describe("constructor on a function-local VALUE receiver stays untyped (bd tea-rags-mcp-m99j1.1.88)", () => {
+  /** `c`'s bound type inside `Cache.get(self)`, whose body is `body` followed by `return c.get(1)`. */
+  const localIn = (body: readonly string[], prelude: readonly string[] = []): string | undefined => {
+    const lines = [
+      "import importlib",
+      "import mod",
+      ...prelude,
+      "class Cache:",
+      "    def get(self):",
+      ...body.map((line) => `        ${line}`),
+      "        return c.get(1)",
+    ];
+    const start = lines.indexOf("    def get(self):") + 1;
+    const r = extract(lines, [{ symbolId: "Cache#get", scope: ["Cache"], startLine: start, endLine: lines.length }]);
+    return (r.chunks[0]?.localBindings?.c ?? []).find((b) => b.type !== "")?.type;
+  };
+
+  describe("local channel", () => {
+    it("declines `lib = load(); c = lib.Client()`", () => {
+      expect(localIn(["lib = load()", "c = lib.Client()"])).toBeUndefined();
+    });
+
+    it("declines `mod = importlib.import_module(…)` shadowing a module import", () => {
+      expect(localIn(["mod = importlib.import_module('x')", "c = mod.Client()"])).toBeUndefined();
+    });
+
+    it("declines a dotted chain rooted at the value local (`lib.sub.Client()`)", () => {
+      expect(localIn(["lib = load()", "c = lib.sub.Client()"])).toBeUndefined();
+    });
+
+    it("declines a local bound to a value in an ENCLOSING def (closure)", () => {
+      const r = extract(
+        [
+          "def outer():",
+          "    lib = load()",
+          "    def inner():",
+          "        c = lib.Client()",
+          "        return c.get(1)",
+          "    return inner",
+        ],
+        [{ symbolId: "outer#inner", scope: ["outer"], startLine: 3, endLine: 5 }],
+      );
+      expect((r.chunks[0]?.localBindings?.c ?? []).find((b) => b.type !== "")?.type).toBeUndefined();
+    });
+
+    it("keeps `lib = mod; c = lib.Client()` — an alias of a module name", () => {
+      expect(localIn(["lib = mod", "c = lib.Client()"])).toBe("lib.Client");
+    });
+
+    it("keeps `import mod as lib` inside the def", () => {
+      expect(localIn(["import mod as lib", "c = lib.Client()"])).toBe("lib.Client");
+    });
+
+    it("keeps a local with one value and one name binding", () => {
+      expect(localIn(["lib = load()", "lib = mod", "c = lib.Client()"])).toBe("lib.Client");
+    });
+
+    it("keeps an annotated local (`lib: Mod = load()`)", () => {
+      expect(localIn(["lib: Mod = load()", "c = lib.Client()"])).toBe("lib.Client");
+    });
+
+    it("keeps a module-level `lib = load()` — no def binds the receiver", () => {
+      expect(localIn(["c = lib.Client()"], ["lib = load()"])).toBe("lib.Client");
+    });
+  });
+
+  it("declines the field channel `self._client = lib.Client()` on a value local", () => {
+    const r = extract([
+      "class Cache:",
+      "    def __init__(self):",
+      "        lib = load()",
+      "        self._client = lib.Client()",
+    ]);
+    expect(r.classFieldTypes?.Cache?._client).toBeUndefined();
+    expect(r.classFieldTypesByClassKey?.["pkg/cache.py::Cache"]?._client).toBeUndefined();
+  });
+
+  it("declines the return channel `return lib.Client()` on a value local", () => {
+    expect(returnOf(["lib = load()", "return lib.Client(1)"])).toBeNull();
+  });
+
+  it("declines the call-argument channel `View(lib.Request())` on a value local", () => {
+    const r = extract([
+      "from app.views import View",
+      "",
+      "def handle():",
+      "    lib = load()",
+      "    return View(lib.Request())",
+    ]);
+    const site = r.knownTargetCallArgs?.find((s) => s.targets.some((t) => t.endsWith("View#__init__")));
+    expect(site?.argTypes).toBeUndefined();
+  });
+});
