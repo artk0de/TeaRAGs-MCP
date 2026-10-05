@@ -1,8 +1,18 @@
-import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
-import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
-import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { ChainTypeSymbolResolutionStrategy, type ReceiverTypingPorts } from "../../../kernel/index.js";
+import { createRubyTypeMemberLookup } from "../ruby-type-member-lookup.js";
 import { typeOfReceiver } from "../type-propagation.js";
-import { resolveTypeInstanceMethod, resolveTypeStaticMethod, type ResolverConfig } from "./shared.js";
+import type { ResolverConfig } from "./shared.js";
+
+/**
+ * Ruby's chain-fold typing: any receiver the propagation engine can type — a
+ * dotted chain, an index access (`arr[0]` — already unwrapped container →
+ * element), a bare identifier a return fact or a framework naming convention
+ * types. Unknown answers `null`; a union or container form reaches the kernel,
+ * which CONTINUEs on it.
+ */
+const RUBY_CHAIN_TYPE_TYPING: ReceiverTypingPorts = {
+  typeOfReceiver: (call, ctx) => typeOfReceiver(call.receiver, call.startLine, ctx) ?? null,
+};
 
 /**
  * Typed-receiver resolution via the type-propagation engine (Increment 1,
@@ -57,24 +67,14 @@ import { resolveTypeInstanceMethod, resolveTypeStaticMethod, type ResolverConfig
  * not resolved here fall to `arRelationGuard` (AR-specific chain guard) then
  * `receiverSetDrop` (catch-all unknown-receiver DROP), preserving the
  * pre-increment behaviour.
+ *
+ * The verdict is the kernel's `ChainTypeSymbolResolutionStrategy` (bd
+ * tea-rags-mcp-m99j1.1.5); this class binds Ruby's typing port, Ruby's
+ * `TypeMemberLookup` (`class` form → static, `instance` → instance method) and
+ * the DROP-on-typed-miss policy above.
  */
-export class RubyChainTypeSymbolResolutionStrategy implements SymbolResolutionStrategy {
-  readonly name = "chainType";
-  constructor(private readonly cfg: ResolverConfig) {}
-
-  attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    const r = call.receiver;
-    if (!r) return CONTINUE;
-
-    // Any receiver the propagation engine can type: a dotted chain, an
-    // index access (`arr[0]` — already unwrapped container → element), a bare
-    // identifier a return fact or a framework naming convention types.
-    const t = typeOfReceiver(r, call.startLine, ctx);
-    // Unknown, union, or container form — let existing passes handle (CONTINUE).
-    if (!t || (t.form !== "class" && t.form !== "instance")) return CONTINUE;
-
-    const resolve = t.form === "class" ? resolveTypeStaticMethod : resolveTypeInstanceMethod;
-    const target = resolve(t.name, call.member, ctx, this.cfg.mode);
-    return target ? resolved(target) : DROP;
+export class RubyChainTypeSymbolResolutionStrategy extends ChainTypeSymbolResolutionStrategy {
+  constructor(cfg: ResolverConfig) {
+    super("chainType", RUBY_CHAIN_TYPE_TYPING, createRubyTypeMemberLookup(cfg.mode), { dropOnTypedMiss: true });
   }
 }
