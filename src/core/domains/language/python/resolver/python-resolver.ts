@@ -50,29 +50,21 @@ import {
 import type { DispatchResolverComponent, SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { ExternalCallClassifier } from "../../external-classifier.js";
 import { resolveImportFileEdges } from "../../import-file-edges.js";
-import { ConeDispatchResolver, readResolverConfig, UnionDispatchResolver } from "../../kernel/index.js";
+import { readResolverConfig } from "../../kernel/index.js";
 import { resolveDispatchViaComponents } from "../../resolver-chain.js";
-import {
-  PythonCallableParamDispatchResolver,
-  PythonChainAnswerProbe,
-  pythonDynamicDispatchEnabled,
-  PythonDynamicDispatchResolver,
-  PythonTableDispatchResolver,
-} from "./dispatch/index.js";
+import { PythonChainAnswerProbe } from "./dispatch/index.js";
 import { createPythonUnionDispatchPorts } from "./dispatch/python-union-ports.js";
 import { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
-import { PythonCallableParamTargets } from "./python-callable-param-targets.js";
 import { createPythonSymbolResolutionChain } from "./python-chain-factory.js";
+import { createPythonDispatchComponents } from "./python-dispatch-components.js";
 import { PythonExternalVocabulary } from "./python-external-vocabulary.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
-import { createPythonTypeMemberLookup } from "./python-type-member-lookup.js";
 import { PythonUndecidableCallClassifier } from "./python-undecidable.js";
-import { lookupPythonSymbolsByShortName, PythonConeTypeLocator, type ResolverConfig } from "./strategies/index.js";
+import { lookupPythonSymbolsByShortName, type ResolverConfig } from "./strategies/index.js";
 
 export class PythonCallResolver implements CallResolver {
   readonly language = "python";
   private readonly chain: SymbolResolutionStrategy[];
-  private readonly cone: ConeDispatchResolver;
   private readonly external: ExternalCallClassifier;
   /**
    * The chain's answer per call site, computed once (bd tea-rags-mcp-w205u).
@@ -128,7 +120,6 @@ export class PythonCallResolver implements CallResolver {
     const cfg: ResolverConfig = { mode, coneMax };
     this.ancestorLinearizers = new PythonAncestorLinearizerCache(this.importFileMapper, mode);
     this.chain = createPythonSymbolResolutionChain(cfg, this.importFileMapper, this.ancestorLinearizers);
-    this.cone = new ConeDispatchResolver(new PythonConeTypeLocator(cfg, this.importFileMapper), coneMax);
     // The classifier is built BEFORE the component that closes over it. The
     // vocabulary gets the run's ONE linearizer cache (bd tea-rags-mcp-1v12o.3):
     // its definition probe asks MRO questions, and a private cache would both
@@ -137,7 +128,6 @@ export class PythonCallResolver implements CallResolver {
       new PythonExternalVocabulary(this.importFileMapper, this.ancestorLinearizers, mode),
     );
     this.probe = new PythonChainAnswerProbe(this.chain);
-    const table = new PythonTableDispatchResolver((call, ctx) => this.probe.resolve(call, ctx), this.importFileMapper);
     const unionPorts = createPythonUnionDispatchPorts(this.importFileMapper, this.ancestorLinearizers);
     this.undecidable = new PythonUndecidableCallClassifier(
       unionPorts,
@@ -145,27 +135,16 @@ export class PythonCallResolver implements CallResolver {
       this.ancestorLinearizers,
       mode,
     );
-    const union = new UnionDispatchResolver(
-      unionPorts,
-      createPythonTypeMemberLookup(this.importFileMapper, mode, this.ancestorLinearizers),
+    this.dispatchComponents = createPythonDispatchComponents({
+      cfg,
       coneMax,
-    );
-    // P2 (bd m99j1.1.19) — several functions passed into an invoked parameter
-    // fan as `cone`; one is the chain's `callableParam` answer and fans nothing.
-    const callableParam = new PythonCallableParamDispatchResolver(
-      new PythonCallableParamTargets(this.importFileMapper),
-    );
-    this.dispatchComponents = pythonDynamicDispatchEnabled(process.env.CODEGRAPH_PY_DYNAMIC_DISPATCH)
-      ? [
-          table,
-          callableParam,
-          union,
-          this.cone,
-          new PythonDynamicDispatchResolver(this.probe, (call, ctx) =>
-            this.external.targetsCoreAmbiguousMember(call, ctx),
-          ),
-        ]
-      : [table, callableParam, union, this.cone];
+      mode,
+      mapper: this.importFileMapper,
+      linearizers: this.ancestorLinearizers,
+      unionPorts,
+      probe: this.probe,
+      external: this.external,
+    });
   }
 
   /**
