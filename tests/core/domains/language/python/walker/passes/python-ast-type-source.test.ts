@@ -49,11 +49,15 @@ function facts(src: string): TypeFact[] {
 function structuredReturnTypes(src: string): Record<string, unknown> {
   const root = parse(src);
   const all = PYTHON_INLINE_TYPE_SOURCES.flatMap((source) => source.extract({ root, trackLocalTypes: true }));
-  return (
+  const channel =
     pythonTypeChannels(TypeFactStore.fromFacts(all, PYTHON_TYPE_SOURCE_ORDER), { chunks: [], relPath: "pkg/svc.py" })
-      .structuredReturnTypes ?? {}
-  );
+      .structuredReturnTypes ?? {};
+  // What is INFERRED is pinned here; a member's declaring-file twin
+  // (`pkg/svc.py::Cls#m`, bd tea-rags-mcp-m99j1.1.35) is the channel test's.
+  return Object.fromEntries(Object.entries(channel).filter(([key]) => !isMemberTwin(key)));
 }
+
+const isMemberTwin = (key: string): boolean => key.startsWith("pkg/svc.py::") && /[#.]/.test(key.slice(12));
 
 const instance = (name: string) => ({ form: "instance", name }) as const;
 
@@ -560,11 +564,14 @@ describe("pythonAnnotationTypeFacetPass — return arms qualified by the declari
       "        return utils.CursorWrapper(cursor, self)",
       "",
     ].join("\n");
+    const prepared = {
+      form: "union",
+      members: [instance("db.backends.utils::CursorDebugWrapper"), instance("db.backends.utils::CursorWrapper")],
+    };
+    // Bare, and its declaring-file twin (bd tea-rags-mcp-m99j1.1.35).
     expect(published(src)).toEqual({
-      "BaseDatabaseWrapper#_prepare_cursor": {
-        form: "union",
-        members: [instance("db.backends.utils::CursorDebugWrapper"), instance("db.backends.utils::CursorWrapper")],
-      },
+      "BaseDatabaseWrapper#_prepare_cursor": prepared,
+      "db/backends/base/base.py::BaseDatabaseWrapper#_prepare_cursor": prepared,
     });
   });
 

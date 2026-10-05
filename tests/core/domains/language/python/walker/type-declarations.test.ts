@@ -228,7 +228,17 @@ describe("Python walker — type and constant declarations", () => {
       // `assignedLocals` (bd tea-rags-mcp-m99j1.1.57) is a later per-chunk
       // channel the golden predates; everything it does not add stays pinned.
       const chunks = rest.chunks.map(({ assignedLocals: _assigned, ...chunk }) => chunk);
-      actual[file] = JSON.parse(JSON.stringify({ ...rest, chunks }));
+      // The declaring-file twin of a member return key (bd
+      // tea-rags-mcp-m99j1.1.35) is a later key the golden predates likewise.
+      const twin = `pkg/${file}::`;
+      const returns = Object.entries(rest.structuredReturnTypes ?? {}).filter(
+        ([key]) => !key.startsWith(twin) || !/[#.]/.test(key.slice(twin.length)),
+      );
+      const pinned =
+        rest.structuredReturnTypes === undefined
+          ? rest
+          : { ...rest, structuredReturnTypes: Object.fromEntries(returns) };
+      actual[file] = JSON.parse(JSON.stringify({ ...pinned, chunks }));
     }
     expect(actual).toEqual(golden);
   });

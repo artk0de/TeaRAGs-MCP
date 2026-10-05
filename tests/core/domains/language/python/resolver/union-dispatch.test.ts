@@ -304,3 +304,71 @@ describe("PythonCallResolver — return arms placed by the declaring file (m99j1
     ]);
   });
 });
+
+describe("PythonCallResolver — a member return fact is read for the RECEIVER's class (m99j1.1.35)", () => {
+  // django declares `DatabaseWrapper` in every backend; only oracle's
+  // `create_cursor` carries a return fact. The run keeps the FIRST writer of the
+  // bare `DatabaseWrapper#create_cursor`, so before the per-file key a
+  // postgresql receiver read oracle's cursor class.
+  const ORACLE = "db/backends/oracle/base.py";
+  const POSTGRES = "db/backends/postgresql/base.py";
+  const table = tableWith({
+    [ORACLE]: [
+      "DatabaseWrapper",
+      "DatabaseWrapper#create_cursor",
+      "DatabaseWrapper#init",
+      "OracleCursor",
+      "OracleCursor#execute",
+    ],
+    [POSTGRES]: [
+      "DatabaseWrapper",
+      "DatabaseWrapper#create_cursor",
+      "DatabaseWrapper#init",
+      "PgCursor",
+      "PgCursor#execute",
+    ],
+  });
+  const ctxIn = (callerFile: string, structuredReturnTypes: Record<string, TypeRef>): CallContext => ({
+    callerFile,
+    callerScope: ["DatabaseWrapper", "init"],
+    imports: [],
+    symbolTable: table,
+    classAncestors: { [`${ORACLE}::DatabaseWrapper`]: [], [`${POSTGRES}::DatabaseWrapper`]: [] },
+    structuredReturnTypes,
+  });
+  const resolve = (ctx: CallContext) => new PythonCallResolver().resolve(call("self.create_cursor()", "execute"), ctx);
+
+  it("declines a namesake receiver whose own class writes no fact, instead of reading the first writer's", () => {
+    const facts = {
+      "DatabaseWrapper#create_cursor": instance("OracleCursor"),
+      [`${ORACLE}::DatabaseWrapper#create_cursor`]: instance("OracleCursor"),
+    };
+    expect(resolve(ctxIn(POSTGRES, facts))).toBeNull();
+    expect(resolve(ctxIn(ORACLE, facts))).toMatchObject({
+      targetRelPath: ORACLE,
+      targetSymbolId: "OracleCursor#execute",
+    });
+  });
+
+  it("gives each namesake receiver its own class's fact when the bare key holds the other's", () => {
+    const facts = {
+      "DatabaseWrapper#create_cursor": instance("PgCursor"),
+      [`${POSTGRES}::DatabaseWrapper#create_cursor`]: instance("PgCursor"),
+      [`${ORACLE}::DatabaseWrapper#create_cursor`]: instance("OracleCursor"),
+    };
+    expect(resolve(ctxIn(ORACLE, facts))).toMatchObject({
+      targetRelPath: ORACLE,
+      targetSymbolId: "OracleCursor#execute",
+    });
+    expect(resolve(ctxIn(POSTGRES, facts))).toMatchObject({
+      targetRelPath: POSTGRES,
+      targetSymbolId: "PgCursor#execute",
+    });
+  });
+
+  it("never reads a bare namesake key — it cannot say which file wrote it", () => {
+    const facts = { "DatabaseWrapper#create_cursor": instance("OracleCursor") };
+    expect(resolve(ctxIn(POSTGRES, facts))).toBeNull();
+    expect(resolve(ctxIn(ORACLE, facts))).toBeNull();
+  });
+});
