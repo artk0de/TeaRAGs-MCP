@@ -22,6 +22,10 @@
   },
   "include": ["tests/**/*", "vitest.config.ts"],
   "exclude": [
+    // NOT part of the ratchet: a fixture that MUST fail to compile. The
+    // collection-identity harness requires exactly one TS2322 from it to prove
+    // the compile step reports errors at all; "fixing" it voids that check.
+    "tests/core/contracts/types/__fixtures__/collection-identity-violation.ts",
     "tests/bootstrap/factory-codegraph-fallback-unavailable.test.ts",
     "tests/bootstrap/factory-fallback-guard-invalidation.test.ts",
     "tests/cli/auto-update/run-updater.test.ts",
