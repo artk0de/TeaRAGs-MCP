@@ -318,7 +318,11 @@
 - **A guarded fallback RHS still names a class.** `param or Default()` types
   from the RIGHT operand (the left is a bare name with no competing claim), and
   a ternary types only when BOTH arms call the same callee. `A() or B()` and
-  `A(x) if p else B(y)` are unions and decline — the engine never widens.
+  `A(x) if p else B(y)` are unions and decline — the engine never widens. A
+  ternary with ONE `None` arm is `Optional[X]` spelled as a value and reads as
+  its other arm, for fields, locals and module values alike
+  (`pythonOptionalValueArm`, bd tea-rags-mcp-m99j1.1.71); that arm is then read
+  by the plain-RHS rule, so an arm it cannot type stays untyped.
 - **A member is looked up through the field type's MRO, not verbatim.**
   `resolvePythonMemberOnTypeThroughMro` owns the two steps between a type NAME
   and the C3 walk (name → file, file + name → class key); `selfField`,
