@@ -286,8 +286,11 @@ function collectPythonClassChannels(
   // here, FILTERED after the class-body merge below, so a field any of the three
   // type collectors answered for is excluded on this file's final type map.
   const fieldCallResultScan: Record<string, Record<string, string | null>> = createIdentifierRecord();
+  // bd tea-rags-mcp-m99j1.1.46 — one catalogue read serves both vocabulary
+  // facets this function consults.
+  const vocabulary = pythonVocabularyFor(declaredDependencies);
   walkPythonClassScopes(root, [
-    collectPythonClassAncestors(classAncestors, relPath, imports),
+    collectPythonClassAncestors(classAncestors, relPath, imports, vocabulary.baseClassFactories),
     collectPythonClassFieldTypesByClassKey(classFieldTypesByClassKey, relPath),
     collectPythonClassFieldCallResults(fieldCallResultScan, relPath),
   ]);
@@ -305,7 +308,7 @@ function collectPythonClassChannels(
     root,
     relPath,
     imports,
-    pythonVocabularyFor(declaredDependencies).hasFacet("classBodyManagerFactory"),
+    vocabulary.hasFacet("classBodyManagerFactory"),
   );
   for (const [key, fields] of Object.entries(classBodyFields.byShortName)) {
     classFieldTypes[key] = { ...fields, ...(classFieldTypes[key] ?? {}) };
@@ -906,6 +909,7 @@ function collectPythonClassAncestors(
   out: Record<string, readonly string[]>,
   relPath: string,
   imports: readonly ImportRef[],
+  baseClassFactories: ReadonlySet<string>,
 ): PythonScopedNodeVisitor {
   return (node, _scope, _classFq, containerScope) => {
     if (containerScope === undefined || node.type !== "class_definition") return;
@@ -919,17 +923,22 @@ function collectPythonClassAncestors(
         // part of the hierarchy.
         const named = base.type === "subscript" ? base.childForFieldName("value") : base;
         if (!named) continue;
-        // A COMPUTED base — `Manager.from_queryset(QuerySet)`. The class it
-        // returns is a run-time value, so record that the branch is unreadable
-        // rather than dropping it and leaving the closure to read `closed`.
+        // A COMPUTED base. A framework subclass factory the active vocabulary
+        // names (`BaseManager.from_queryset(QuerySet)`, bd tea-rags-mcp-m99j1.1.46)
+        // contributes the two classes the produced class carries, spelled like
+        // any other base. Any other call returns a run-time value, so record
+        // that the branch is unreadable rather than dropping it and leaving the
+        // closure to read `closed`.
         if (named.type === "call") {
-          bases.push(PYTHON_UNRESOLVABLE_BASE);
+          const produced = readPythonBaseClassFactoryCall(named, baseClassFactories);
+          if (produced === null) bases.push(PYTHON_UNRESOLVABLE_BASE);
+          else for (const text of produced) bases.push(qualifyPythonBase(text, imports));
           continue;
         }
         // Everything else that is not a name is not a base at all — a
         // `keyword_argument` is the `metaclass=` / `**kwargs` class-keyword
         // channel, which carries no hierarchy and must NOT degrade the closure.
-        if (named.type !== "identifier" && named.type !== "attribute" && named.type !== "dotted_name") continue;
+        if (!isPythonClassNameNode(named)) continue;
         const { text } = named;
         if (text.length === 0 || text === "object") continue;
         bases.push(qualifyPythonBase(text, imports));
@@ -937,6 +946,31 @@ function collectPythonClassAncestors(
     }
     if (bases.length > 0) out[`${relPath}::${fq}`] = bases;
   };
+}
+
+/** A node spelling a class by NAME: `Base`, `models.Model`. */
+function isPythonClassNameNode(node: AstNode): boolean {
+  return node.type === "identifier" || node.type === "attribute" || node.type === "dotted_name";
+}
+
+/**
+ * The base spellings a framework subclass-factory call contributes —
+ * `[receiver, firstArgument]` for `Receiver.<factory>(FirstArgument, …)` — or
+ * `null` when the call is not one: an unnamed method, a bare-function callee,
+ * or a receiver / first positional argument that is not a class name.
+ */
+function readPythonBaseClassFactoryCall(
+  call: AstNode,
+  factories: ReadonlySet<string>,
+): readonly [string, string] | null {
+  const callee = call.childForFieldName("function");
+  if (callee?.type !== "attribute") return null;
+  const method = callee.childForFieldName("attribute");
+  const receiver = callee.childForFieldName("object");
+  if (!method || !receiver || !factories.has(method.text) || !isPythonClassNameNode(receiver)) return null;
+  const first = call.childForFieldName("arguments")?.namedChildren[0];
+  if (!first || !isPythonClassNameNode(first)) return null;
+  return [receiver.text, first.text];
 }
 
 /**
