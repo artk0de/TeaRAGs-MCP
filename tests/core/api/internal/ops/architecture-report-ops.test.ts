@@ -524,7 +524,7 @@ describe("ArchitectureReportOps#build — leakingAbstraction (bd tea-rags-mcp-je
       violationsByKind: { bypass: 1, internalReach: 1 },
       moduleCount: 2,
       activeModuleCount: 1,
-      excludedModules: { facadeNotAdopted: 1, tooFewImporters: 0, languageEnforced: 0 },
+      excludedModules: { facadeNotAdopted: 1, tooFewImporters: 0, languageEnforced: 0, intraParentConsumers: 0 },
       outOfScopeEdgeCount: 1,
     });
     expect(Object.keys(summary.exclusionReasons).sort()).toEqual([

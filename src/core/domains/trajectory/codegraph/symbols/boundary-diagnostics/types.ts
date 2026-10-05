@@ -265,14 +265,29 @@ export interface LeakingAbstractionSummary {
   minExternalImporters: number;
   /** Every file edge read. */
   edgeCount: number;
-  /** In-scope edges entering an active module from outside it — the edges judged. */
+  /**
+   * In-scope edges entering an active module from outside its parent directory
+   * component — the edges judged.
+   */
   judgedEdgeCount: number;
   violationCount: number;
   violationsByKind: { bypass: number; internalReach: number };
   /** Candidate modules: directories with an entry file, plus Go package directories. */
   moduleCount: number;
   activeModuleCount: number;
-  excludedModules: { facadeNotAdopted: number; tooFewImporters: number; languageEnforced: number };
+  excludedModules: {
+    facadeNotAdopted: number;
+    tooFewImporters: number;
+    languageEnforced: number;
+    /**
+     * Distinct module + importer pairs left out of the adoption denominators
+     * and the violation candidates: the importer lies inside the module's
+     * PARENT directory component — a parent holding an assembly barrel (an
+     * entry file) of its own (bd tea-rags-mcp-yo3ue). Counts consumers, not
+     * modules — unlike the three keys above.
+     */
+    intraParentConsumers: number;
+  };
   /** Present when `sourcePathPattern` scoped the run (same shape as the SDP scope). */
   scope?: StableDependenciesScope;
 }
