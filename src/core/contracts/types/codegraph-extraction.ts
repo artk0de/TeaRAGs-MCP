@@ -992,8 +992,11 @@ export interface ChunkExtraction {
    * whether a bare receiver is a local of unknown type. Names only: in Python a
    * name assigned anywhere in a body is that body's local on every line of it.
    *
-   * Populated by the Python walker for `def` chunks. Absent on any other chunk
-   * and when the def binds nothing.
+   * Populated per def chunk by the walkers that publish it; each language owns
+   * its binding forms and scoping rule (Ruby, whose locals are lexical, drops a
+   * name read as a receiver before its first assignment — bd
+   * tea-rags-mcp-m99j1.1.59). Absent on any other chunk and when the def binds
+   * nothing.
    */
   assignedLocals?: string[];
   /**

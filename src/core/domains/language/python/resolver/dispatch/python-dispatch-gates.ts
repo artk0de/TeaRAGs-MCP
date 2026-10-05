@@ -4,7 +4,7 @@ import {
   type CallContext,
   type CallRef,
 } from "../../../../../contracts/types/codegraph.js";
-import type { ExactChainAnswerProbe } from "../../../kernel/index.js";
+import { receiverIsAssignedLocal, type ExactChainAnswerProbe } from "../../../kernel/index.js";
 import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
 import { PYTHON_TYPESHED_MEMBERS } from "../../vocabulary/typeshed-members.js";
 import {
@@ -118,7 +118,7 @@ export function pythonDynamicFanoutSuppressed(
   if (PYTHON_BUILTINS.has(receiver)) return true;
   if (resolveLocalBinding(ctx.localBindings, receiver, call.startLine) !== undefined) return true;
   if (findPythonImportBinding(ctx.imports, receiver) !== null) return true;
-  if (ctx.assignedLocals?.includes(receiver) === true) return true;
+  if (receiverIsAssignedLocal(call, ctx)) return true;
   if (pythonBoundToUntypeableCall(receiver, call.startLine, ctx)) return true;
   if (coreAmbiguous(call, ctx)) return true;
   if (PYTHON_BUILTINS.has(call.member)) return true;

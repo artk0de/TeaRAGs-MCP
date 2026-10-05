@@ -12,6 +12,7 @@ import type { CallContext, CallRef, SymbolDefinition } from "../../../../../src/
 import type { DispatchFanoutPopulation } from "../../../../../src/core/contracts/types/language.js";
 import {
   DynamicDispatchResolver,
+  receiverIsAssignedLocal,
   type DynamicDispatchPorts,
   type ExactChainAnswerProbe,
 } from "../../../../../src/core/domains/language/kernel/index.js";
@@ -123,5 +124,19 @@ describe("DynamicDispatchResolver (K1)", () => {
     const resolver = new DynamicDispatchResolver(ports({ suppressed: (c, cx) => probe.answers(c, cx) }));
     expect(resolver.resolveDispatch(call("answered"), ctx)).toEqual({ kind: "edges", edges: [] });
     expect(resolver.resolveDispatch(call("open"), ctx).kind).toBe("edges");
+  });
+});
+
+describe("receiverIsAssignedLocal (bd tea-rags-mcp-m99j1.1.59)", () => {
+  it("answers true only when the caller's def assigns the exact receiver name", () => {
+    const assigned: CallContext = { ...ctx, assignedLocals: ["x", "conn"] };
+    expect(receiverIsAssignedLocal(call("bar"), assigned)).toBe(true);
+    expect(receiverIsAssignedLocal({ ...call("bar"), receiver: "y" }, assigned)).toBe(false);
+    expect(receiverIsAssignedLocal({ ...call("bar"), receiver: "x.y" }, assigned)).toBe(false);
+  });
+
+  it("answers false when the chunk carries no assigned locals or the call has no receiver", () => {
+    expect(receiverIsAssignedLocal(call("bar"), ctx)).toBe(false);
+    expect(receiverIsAssignedLocal({ ...call("bar"), receiver: null }, { ...ctx, assignedLocals: ["x"] })).toBe(false);
   });
 });

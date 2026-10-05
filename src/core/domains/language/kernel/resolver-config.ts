@@ -28,6 +28,12 @@ export interface ResolverConfig {
    * resolver consumes it; absent → the consumer's own default.
    */
   dynamicReceiverConfidence?: number;
+  /**
+   * Whether the dynamic short-name fan declines a receiver the caller's def
+   * ASSIGNS but no typed channel answered (bd tea-rags-mcp-m99j1.1.59). Only the
+   * Ruby resolver consumes it; absent → the consumer's own default.
+   */
+  assignedLocalGate?: boolean;
 }
 
 /** Config as returned by the reader: `coneMax` is always resolved. */
@@ -46,9 +52,16 @@ function parseDynamicConfidence(raw: string | undefined): number | undefined {
   return Number.isFinite(parsed) && parsed > 0 && parsed <= 1 ? parsed : undefined;
 }
 
+function parseFlag(raw: string | undefined): boolean | undefined {
+  if (raw === "1" || raw === "true") return true;
+  if (raw === "0" || raw === "false") return false;
+  return undefined;
+}
+
 /**
  * Read `<prefix>_CONE_MAX` (positive integer, else `CONE_MAX_DEFAULT`) and
- * `<prefix>_DYNAMIC_CONFIDENCE` (float in `(0,1]`, else `undefined`).
+ * `<prefix>_DYNAMIC_CONFIDENCE` (float in `(0,1]`, else `undefined`) and
+ * `<prefix>_ASSIGNED_LOCAL_GATE` (`1`/`true`, `0`/`false`, else `undefined`).
  */
 export function readResolverConfig(
   env: NodeJS.ProcessEnv,
@@ -59,5 +72,6 @@ export function readResolverConfig(
     mode,
     coneMax: parseConeMax(env[`${prefix}_CONE_MAX`]),
     dynamicReceiverConfidence: parseDynamicConfidence(env[`${prefix}_DYNAMIC_CONFIDENCE`]),
+    assignedLocalGate: parseFlag(env[`${prefix}_ASSIGNED_LOCAL_GATE`]),
   };
 }

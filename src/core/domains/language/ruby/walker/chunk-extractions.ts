@@ -14,10 +14,12 @@
  * intermediate site list nor the innermost-chunk attribution rules.
  */
 
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { SymbolDefinitionKind } from "../../../../contracts/types/codegraph-symbols.js";
 import type { CallRef, ChunkExtraction } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/index.js";
 import type { RubyDslCatalogue } from "../dsl/index.js";
+import { collectMethodAssignedLocals } from "./bare-call-detection.js";
 import type { RubyFileTypeEnv } from "./file-type-env.js";
 import { bindCompoundReceiverChains, collectRubyLocalCallBindingsForChunk } from "./local-bindings.js";
 import { collectRubyMethodSignatures } from "./method-signatures.js";
@@ -57,6 +59,8 @@ export function buildRubyChunkExtractions(
   // Arity + visibility per method def (bd xlnub Task 2). Keyed by 1-based
   // start line — the same line the chunker assigns to the method's chunk.
   const methodSigs = collectRubyMethodSignatures(input.tree.rootNode);
+  // Assigned locals per def (bd tea-rags-mcp-m99j1.1.59), 1-based line ranges.
+  const methodLocals = collectRubyMethodAssignedLocals(input.tree.rootNode);
   // Per-chunk type environments, in `input.chunks` order, so a known-target call
   // site can be typed against the bindings of the chunk that OWNS its line
   // (bd tea-rags-mcp-bvalc). Filled during the chunk loop, read after it.
@@ -85,6 +89,11 @@ export function buildRubyChunkExtractions(
       // the overwhelming majority of defs (bd tea-rags-mcp-bcdfe).
       if (sig.isAbstractStub) base.isAbstractStub = true;
     }
+    // The innermost def CONTAINING the chunk, so a split window of a long def
+    // carries its def's locals too. Not gated on `trackTypes`: membership is a
+    // syntactic fact, like Python's.
+    const assignedLocals = innermostMethodLocals(methodLocals, c.startLine, c.endLine);
+    if (assignedLocals !== undefined) base.assignedLocals = assignedLocals;
     if (trackTypes) {
       // Store provides YARD + AST param/local bindings (position-filtered to chunk).
       const localBindings = store.localBindingsForChunk(c.startLine, c.endLine);
@@ -134,4 +143,48 @@ export function buildRubyChunkExtractions(
     return best ?? { scope: [] };
   };
   return { chunks: byChunk, siteContextAt };
+}
+
+interface RubyMethodAssignedLocals {
+  readonly startLine: number;
+  readonly endLine: number;
+  readonly names: string[];
+}
+
+/**
+ * Every `def` / `def self.` with its assigned locals, in pre-order — defs that
+ * assign nothing included, so the narrowest def still decides for a chunk
+ * nested in one (an outer def's locals never leak into an inner def).
+ */
+function collectRubyMethodAssignedLocals(root: AstNode): RubyMethodAssignedLocals[] {
+  const methods: RubyMethodAssignedLocals[] = [];
+  const walk = (node: AstNode): void => {
+    if (node.type === "method" || node.type === "singleton_method") {
+      methods.push({
+        startLine: node.startPosition.row + 1,
+        endLine: node.endPosition.row + 1,
+        names: [...collectMethodAssignedLocals(node)].sort(),
+      });
+    }
+    for (const child of node.namedChildren) walk(child);
+  };
+  walk(root);
+  return methods;
+}
+
+/**
+ * Locals of the narrowest def whose lines contain `[startLine, endLine]`;
+ * `undefined` when no def contains the chunk or that def assigns nothing.
+ */
+function innermostMethodLocals(
+  methods: readonly RubyMethodAssignedLocals[],
+  startLine: number,
+  endLine: number,
+): string[] | undefined {
+  let best: RubyMethodAssignedLocals | undefined;
+  for (const m of methods) {
+    if (startLine < m.startLine || endLine > m.endLine) continue;
+    if (best === undefined || m.endLine - m.startLine < best.endLine - best.startLine) best = m;
+  }
+  return best !== undefined && best.names.length > 0 ? best.names : undefined;
 }

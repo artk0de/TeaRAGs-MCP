@@ -215,6 +215,7 @@
       "paramNames": ["params"],
       "visibility": "public",
       "acceptsBlock": false,
+      "assignedLocals": ["limit"],
       "localBindings": {
         "limit": [
           {

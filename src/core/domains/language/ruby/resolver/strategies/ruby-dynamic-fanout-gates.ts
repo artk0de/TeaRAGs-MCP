@@ -25,7 +25,7 @@
  */
 
 import type { AmbiguousResolveMode, CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
-import type { ExactChainAnswerProbe } from "../../../kernel/index.js";
+import { receiverIsAssignedLocal, type ExactChainAnswerProbe } from "../../../kernel/index.js";
 import { isExternalQualifiedMember } from "../../dsl/index.js";
 import { SUPER_RECEIVER_SENTINEL } from "../../super-receiver-sentinel.js";
 import { typeOfReceiver } from "../type-propagation.js";
@@ -34,6 +34,15 @@ import { resolveConventionReceiverTarget } from "./ruby-convention-receiver.js";
 import { ivarFieldOwnsReceiver, resolveIvarFieldTarget } from "./ruby-ivar-field.js";
 import { resolveBoundCallTarget } from "./ruby-return-type-binding.js";
 import { receiverChainTailIsExternal, receiverIsIndexAccess, resolveConstant } from "./shared.js";
+
+/**
+ * Default of the assigned-local gate when `CODEGRAPH_RB_ASSIGNED_LOCAL_GATE` is
+ * unset (bd tea-rags-mcp-m99j1.1.59). ON: a manual triage of 60 dropped sites
+ * (40 mastodon, 20 huginn) found 51 of 59 decidable fabricated (86%) — `Array`
+ * / `Hash` / AR-relation / gem values fanned onto project classes that happen
+ * to spell `#empty?`, `#size`, `#merge!`, `#host`. `=0` restores the old fan.
+ */
+export const RUBY_ASSIGNED_LOCAL_GATE_DEFAULT = true;
 
 /** Ruby constants begin uppercase; `::`-joined segments form a scope chain. */
 const CONSTANT_RE = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
@@ -65,17 +74,29 @@ const CONSTANT_RE = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
  * (`typeOfReceiver("posts[0]")` threads the element type), while the untyped
  * case falls through to a live fan-out. Both halves pinned in
  * ruby-dynamic-dispatch.test.ts.
+ *
+ * ASSIGNED LOCAL (bd tea-rags-mcp-m99j1.1.59, behind `assignedLocalGate`): a
+ * receiver the caller's def assigns (`conn = connection_helper`,
+ * `ext = File.extname(path)`) reaches this gate only when no typed channel
+ * answered it — a typed local is already owned by `exactChainOwnsReceiverShape`.
+ * Its value is decided by an expression, so the project class that happens to
+ * spell the member (`#empty?`, `#get`, `#shift`) is a coincidence. The walker's
+ * set excludes params and block params, which stay duck-typed fan sources. It
+ * runs ahead of `exactPass.answers`: every gate is a pure predicate, so the
+ * position changes cost, not result.
  */
 export function rubyDynamicFanoutSuppressed(
   call: CallRef,
   ctx: CallContext,
   mode: AmbiguousResolveMode,
   exactPass: ExactChainAnswerProbe,
+  assignedLocalGate: boolean = RUBY_ASSIGNED_LOCAL_GATE_DEFAULT,
 ): boolean {
   const r = call.receiver;
   if (r === null) return true; // bare call — bare-call exact path
   return (
     exactChainOwnsReceiverShape(r, ctx) ||
+    (assignedLocalGate && receiverIsAssignedLocal(call, ctx)) ||
     exactPass.answers(call, ctx) ||
     receiverLooksLikeArRelationChain(r) || // AR::Relation chain
     receiverIsIndexAccess(r) || // `opts[k]`, `arr[i]` — element type untrackable

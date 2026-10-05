@@ -1,7 +1,11 @@
 import { DynamicDispatchResolver, EXPLICIT_RECEIVER_VISIBILITY_ACCESS } from "../../../kernel/index.js";
 import { RUBY_FANOUT_POPULATION, rubyMemberLookupRole } from "../short-name-lookup.js";
 import { RUBY_DUCK_VOCAB } from "./ruby-duck-vocabulary.js";
-import { rubyDynamicFanoutSuppressed, RubyExactPassAnswerProbe } from "./ruby-dynamic-fanout-gates.js";
+import {
+  RUBY_ASSIGNED_LOCAL_GATE_DEFAULT,
+  rubyDynamicFanoutSuppressed,
+  RubyExactPassAnswerProbe,
+} from "./ruby-dynamic-fanout-gates.js";
 import { DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT, lookupRubySymbolsByShortName, type ResolverConfig } from "./shared.js";
 
 /**
@@ -67,8 +71,9 @@ export function classifyRubyLiteralReceiver(receiver: string | null): string | n
 export class RubyDynamicDispatchResolver extends DynamicDispatchResolver {
   constructor(cfg: ResolverConfig) {
     const exactPass = new RubyExactPassAnswerProbe(cfg.mode);
+    const assignedLocalGate = cfg.assignedLocalGate ?? RUBY_ASSIGNED_LOCAL_GATE_DEFAULT;
     super({
-      suppressed: (call, ctx) => rubyDynamicFanoutSuppressed(call, ctx, cfg.mode, exactPass),
+      suppressed: (call, ctx) => rubyDynamicFanoutSuppressed(call, ctx, cfg.mode, exactPass, assignedLocalGate),
       // Truly dynamic receiver: short-name lookup, ruby-files only.
       lookupByShortName: (call, ctx) =>
         lookupRubySymbolsByShortName(ctx, call.member, { role: rubyMemberLookupRole(call) }),
