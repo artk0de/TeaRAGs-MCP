@@ -93,17 +93,62 @@ export function isDisagreementRow(row: PyOracleRow): boolean {
  * Read off BOTH engines' answers: on polar jedi produced 18 of them and pyright
  * 7, so consulting one alone would leave the other half in the denominator.
  *
+ * Two more shapes share the defect (bd tea-rags-mcp-m99j1.1.47):
+ *
+ * - A call through a PARAMETER — `view_func(...)` inside a decorator closure.
+ *   jedi `goto` lands on the parameter, so the answer is the def that OWNS it,
+ *   which sits on the caller's lexical chain (the caller, a def nested in the
+ *   caller's chunk, or one enclosing it) and never the function passed in.
+ *   jedi `infer()` is no better: on twelve django param sites it answered
+ *   nothing for six and a fan of lambdas, `_operator` builtins and sibling views
+ *   for the rest — no 1:1 target to score against.
+ * - The instance's own class constructed — `self.__class__(...)` and
+ *   `type(self)(...)`. jedi resolves `__class__` to the builtin attribute and
+ *   names no in-project target, so the enclosing class's `__init__` reads as a
+ *   phantom.
+ *
  * Callers scope this to the DISAGREEMENT SET — see `applyTiebreak`. A recursive
  * call answers the caller's own symbol too, and there nobody is wrong.
  */
 export function isOracleSelfReference(
-  row: Pick<PyOracleRow, "oracleTargetSymbolId">,
+  row: Pick<PyOracleRow, "oracleTargetSymbolId" | "receiver" | "member">,
   callerSymbolId: string | undefined,
   pyright?: PyrightReply,
 ): boolean {
   if (callerSymbolId === undefined) return false;
   if (row.oracleTargetSymbolId === callerSymbolId) return true;
-  return pyright?.kind === "inProject" && pyright.targetSymbolId === callerSymbolId;
+  if (pyright?.kind === "inProject" && pyright.targetSymbolId === callerSymbolId) return true;
+  if (constructsOwnClass(row)) return true;
+  const pyrightTarget = pyright?.kind === "inProject" ? pyright.targetSymbolId : null;
+  return [row.oracleTargetSymbolId, pyrightTarget].some((target) =>
+    isParameterOwnerAnswer(target, callerSymbolId, row.member),
+  );
+}
+
+/** `self.__class__(...)` or `type(self)(...)` — as the extractor spells the callee. */
+function constructsOwnClass(row: Pick<PyOracleRow, "receiver" | "member">): boolean {
+  if (row.receiver === "self") return row.member === "__class__";
+  return row.receiver === null && row.member === "type(self)";
+}
+
+/** Symbol-id nesting: `#` and `.` both separate a scope from what it holds. */
+const PY_SCOPE_SEPARATOR = /[#.]/;
+
+function isNestedIn(inner: string, outer: string): boolean {
+  return inner.length > outer.length && inner.startsWith(outer) && PY_SCOPE_SEPARATOR.test(inner[outer.length] ?? "");
+}
+
+/**
+ * Did the oracle answer the def owning a parameter (or local) the call goes
+ * through? The target lies on the caller's lexical chain, and NO scope on its
+ * id is named like the callee — `outer()` inside `outer#inner` is recursion and
+ * `Inner()` answered as `outer#Inner#__init__` is a nested class constructed by
+ * name; both are real answers the oracle can score.
+ */
+function isParameterOwnerAnswer(target: string | null, callerSymbolId: string, member: string): boolean {
+  if (target === null) return false;
+  if (!isNestedIn(target, callerSymbolId) && !isNestedIn(callerSymbolId, target)) return false;
+  return !target.split(PY_SCOPE_SEPARATOR).includes(member);
 }
 
 /**
