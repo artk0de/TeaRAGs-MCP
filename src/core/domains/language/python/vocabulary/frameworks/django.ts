@@ -64,6 +64,9 @@ export const DJANGO_VOCABULARY: PythonFrameworkVocabulary = definePythonFramewor
       "extra",
       "alias",
     ]),
+    // `Manager.db_manager(using, hints)` returns a copy of the manager, same type.
+    // `using` stays in `relationReturning`: it is a QuerySet verb that Manager proxies.
+    selfReturning: new Set(["db_manager"]),
     instanceReturning: new Set(["get", "first", "last", "create", "earliest", "latest"]),
     associationFields: new Set(["ForeignKey", "OneToOneField"]),
     descriptorDecorators: new Set(["cached_property"]),

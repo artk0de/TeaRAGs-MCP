@@ -54,6 +54,13 @@ export interface PythonFrameworkMemberTypes {
   readonly relationClass: string;
   /** Verbs on a relation class that yield another relation of the same model. */
   readonly relationReturning: ReadonlySet<string>;
+  /**
+   * Verbs on a relation class that yield the receiver ITSELF, same class and
+   * same model — `Manager.db_manager(alias)` copies the manager, so the next
+   * hop must resolve on the manager it started from. Distinct from
+   * `relationReturning`, which always lands on `relationClass`.
+   */
+  readonly selfReturning: ReadonlySet<string>;
   /** Verbs on a relation class that yield ONE instance of the model. */
   readonly instanceReturning: ReadonlySet<string>;
   /** Field constructors whose attribute holds an instance of their FIRST argument. */
