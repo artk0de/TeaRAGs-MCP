@@ -147,3 +147,62 @@ describe("Python descriptors — attribute access reads what the attribute holds
     expect(at("other.method_field()", 9)).toBe("Field#db_type");
   });
 });
+
+describe("SQLAlchemy `declared_attr` relationships read as attributes (bd tea-rags-mcp-m99j1.1.50)", () => {
+  const CHECKOUT = "app/checkout.py";
+  const DISCOUNT = "app/discount.py";
+  const LINES = [
+    "from sqlalchemy.orm import Mapped, declared_attr, relationship",
+    "from app.discount import Discount",
+    "",
+    "class Checkout:",
+    "    @declared_attr",
+    "    def discount(cls) -> Mapped[Discount | None]:",
+    "        return relationship(Discount)",
+    "",
+    "    def amount(self, c):",
+    "        self.discount.is_applicable(c)",
+  ];
+
+  function resolveAt(declared: ReadonlySet<string> | undefined): string | null | undefined {
+    const ext = walk(CHECKOUT, LINES, declared);
+    const files: Record<string, readonly string[]> = {
+      [DISCOUNT]: ["Discount", "Discount#is_applicable"],
+      [CHECKOUT]: ["Checkout", "Checkout#discount", "Checkout#amount"],
+    };
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    for (const [relPath, ids] of Object.entries(files)) {
+      symbolTable.upsertFile(
+        relPath,
+        ids.map((symbolId) => {
+          const parts = symbolId.split(/[#.]/);
+          return { symbolId, fqName: symbolId, shortName: parts[parts.length - 1], relPath, scope: parts.slice(0, -1) };
+        }),
+      );
+    }
+    return new PythonCallResolver().resolve(
+      {
+        callText: "self.discount.is_applicable(c)",
+        receiver: "self.discount",
+        member: "is_applicable",
+        startLine: 10,
+      },
+      {
+        callerFile: CHECKOUT,
+        callerScope: ["Checkout", "amount"],
+        imports: ext.imports.map((i) => ({ importText: i.importText, startLine: i.startLine })),
+        symbolTable,
+        ...(ext.classFieldTypes === undefined ? {} : { classFieldTypes: ext.classFieldTypes }),
+        ...(ext.structuredReturnTypes === undefined ? {} : { structuredReturnTypes: ext.structuredReturnTypes }),
+      },
+    )?.targetSymbolId;
+  }
+
+  it("`self.discount.is_applicable(c)` → Discount#is_applicable where SQLAlchemy is declared", () => {
+    expect(resolveAt(new Set(["sqlalchemy"]))).toBe("Discount#is_applicable");
+  });
+
+  it("stays untyped where SQLAlchemy is not declared", () => {
+    expect(resolveAt(new Set(["flask"]))).not.toBe("Discount#is_applicable");
+  });
+});

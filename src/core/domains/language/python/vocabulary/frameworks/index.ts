@@ -13,6 +13,7 @@
 
 import { FrameworkVocabularyRegistry } from "../../../kernel/framework-vocabulary.js";
 import { DJANGO_VOCABULARY } from "./django.js";
+import { SQLALCHEMY_VOCABULARY } from "./sqlalchemy.js";
 import type { PythonFrameworkMemberTypes, PythonFrameworkVocabulary, PythonVocabularyFacet } from "./types.js";
 import { WERKZEUG_VOCABULARY } from "./werkzeug.js";
 
@@ -24,7 +25,11 @@ export type {
 } from "./types.js";
 
 /** Every registered vocabulary. Adding one is a module plus a line here. */
-export const PYTHON_FRAMEWORKS: readonly PythonFrameworkVocabulary[] = [DJANGO_VOCABULARY, WERKZEUG_VOCABULARY];
+export const PYTHON_FRAMEWORKS: readonly PythonFrameworkVocabulary[] = [
+  DJANGO_VOCABULARY,
+  WERKZEUG_VOCABULARY,
+  SQLALCHEMY_VOCABULARY,
+];
 
 /** The facets active for one project — the only question a consumer asks. */
 export interface PythonVocabularyCatalogue {

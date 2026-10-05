@@ -134,4 +134,55 @@ describe("Python descriptor members — a descriptor def is the field it reads a
     ]);
     expect(ext.classFieldTypes?.Expr).toBeUndefined();
   });
+
+  describe("SQLAlchemy descriptors count only where the project declares SQLAlchemy (bd tea-rags-mcp-m99j1.1.50)", () => {
+    const sqlalchemy = new Set(["sqlalchemy"]);
+    const model = (decorator: string, imports: readonly string[]): readonly string[] => [
+      ...imports,
+      "from app.discount import Discount",
+      "",
+      "class Checkout:",
+      `    ${decorator}`,
+      "    def discount(cls) -> Mapped[Discount | None]:",
+      "        return relationship()",
+    ];
+
+    it("`@declared_attr` from `sqlalchemy.orm` over `Mapped[Discount | None]` → field Discount", () => {
+      const lines = model("@declared_attr", ["from sqlalchemy.orm import Mapped, declared_attr, relationship"]);
+      expect(walk(EXPR, lines, sqlalchemy).classFieldTypes?.Checkout).toEqual({ discount: "Discount" });
+    });
+
+    it("the attribute form `@declared_attr.directive` qualifies", () => {
+      const lines = model("@declared_attr.directive", [
+        "from sqlalchemy.orm import Mapped, declared_attr, relationship",
+      ]);
+      expect(walk(EXPR, lines, sqlalchemy).classFieldTypes?.Checkout).toEqual({ discount: "Discount" });
+    });
+
+    it("the legacy `sqlalchemy.ext.declarative.declared_attr` qualifies", () => {
+      const lines = model("@declared_attr", [
+        "from sqlalchemy.ext.declarative import declared_attr",
+        "from sqlalchemy.orm import Mapped, relationship",
+      ]);
+      expect(walk(EXPR, lines, sqlalchemy).classFieldTypes?.Checkout).toEqual({ discount: "Discount" });
+    });
+
+    it("`@hybrid_property` from `sqlalchemy.ext.hybrid` qualifies", () => {
+      const lines = [
+        "from sqlalchemy.ext.hybrid import hybrid_property",
+        "from app.discount import Discount",
+        "",
+        "class Checkout:",
+        "    @hybrid_property",
+        "    def discount(self) -> Discount:",
+        "        return self._d",
+      ];
+      expect(walk(EXPR, lines, sqlalchemy).classFieldTypes?.Checkout).toEqual({ discount: "Discount" });
+    });
+
+    it("records nothing where SQLAlchemy is not declared", () => {
+      const lines = model("@declared_attr", ["from sqlalchemy.orm import Mapped, declared_attr, relationship"]);
+      expect(walk(EXPR, lines, new Set(["flask"])).classFieldTypes?.Checkout).toBeUndefined();
+    });
+  });
 });
