@@ -1,12 +1,18 @@
-import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import {
   nearestCallResultBinding,
   resolveLocalBindingType,
+  type AmbiguousResolveMode,
   type CallContext,
-  type CallRef,
+  type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
-import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import type { ReceiverTypePorts } from "../../../kernel/index.js";
+import type { TypeRef } from "../../../../../contracts/types/language.js";
+import {
+  LocalBindingSymbolResolutionStrategy,
+  typeMemberLookupDefinedFor,
+  type NominalTypeRef,
+  type ReceiverTypingPorts,
+  type TypeMemberLookup,
+} from "../../../kernel/index.js";
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { createPythonCallBindingPorts } from "../python-receiver-type-ports.js";
@@ -64,41 +70,104 @@ export { resolveTypeFile } from "./shared.js";
  * exists for it. That run keeps the pre-seam single-base `classExtends` walk
  * and its flat DROP — minus the file-only edge, which this bead removes on
  * every path.
+ *
+ * The verdict is the kernel's `LocalBindingSymbolResolutionStrategy` (bd
+ * tea-rags-mcp-m99j1.1.5): this class binds {@link pythonLocalBindingTyping} as
+ * the typing port and {@link PythonBoundTypeMemberLookup} as the member walk,
+ * whose miss — not a flag — decides DROP vs CONTINUE. The walk never returns a
+ * file-only target (every arm pins a declared symbol), so the kernel needs no
+ * `requirePinnedTarget` to keep bd tea-rags-mcp-xasyu closed.
  */
-export class PythonLocalBindingSymbolResolutionStrategy implements SymbolResolutionStrategy {
-  readonly name = "localBinding";
-  /** The fold's ports, built ONCE per resolver exactly as `chainType` builds its own. */
-  private readonly ports: ReceiverTypePorts;
+export class PythonLocalBindingSymbolResolutionStrategy extends LocalBindingSymbolResolutionStrategy {
+  constructor(
+    cfg: ResolverConfig,
+    mapper: PythonImportFileMapper = new PythonImportFileMapper(),
+    linearizers?: PythonAncestorLinearizerCache,
+  ) {
+    const lookup = new PythonBoundTypeMemberLookup(cfg.mode, mapper, linearizers);
+    super("localBinding", pythonLocalBindingTyping(mapper, linearizers), lookup, {
+      dropOnTypedMiss: (type, call, ctx) => lookup.missDrops(type, call.member, ctx),
+    });
+  }
+}
+
+/**
+ * The walker's own binding first, the folded call binding second (bd
+ * tea-rags-mcp-z68v9). A `localBindings` entry is a type the walker READ — an
+ * annotation, a constructor call, a parameter hint — and a fold is an
+ * inference, so the read always wins. The read is a bare type name, carried as
+ * an `instance` ref; the member walk below reads only its name.
+ *
+ * The fold answers only for a `class` / `instance` ref: a container or a
+ * union has no single nominal receiver (the kernel CONTINUEs it), and
+ * `pythonInheritedMemberType` already declines to emit one.
+ *
+ * The fold's ports are built ONCE per resolver exactly as `chainType` builds
+ * its own.
+ */
+function pythonLocalBindingTyping(
+  mapper: PythonImportFileMapper,
+  linearizers: PythonAncestorLinearizerCache | undefined,
+): ReceiverTypingPorts {
+  const ports = createPythonCallBindingPorts(mapper, linearizers);
+  return {
+    typeOfReceiver: (call, ctx): TypeRef | null => {
+      const boundType = resolveLocalBindingType(ctx.localBindings, call.receiver, call.startLine);
+      if (boundType) return { form: "instance", name: boundType };
+      const bound = nearestCallResultBinding(ctx.callResultBindings, call.receiver, call.startLine);
+      if (bound === undefined) return null;
+      return pythonCallBindingType(bound.callee, bound.line, ctx, ports, mapper) ?? null;
+    },
+  };
+}
+
+/** Where the member walk on a bound type ended: the target, and the verdict on its miss. */
+interface PythonBoundTypeWalk {
+  readonly target: SymbolResolutionTarget | null;
+  /** `true` = a miss the pass DROPs, `false` = one it hands to the passes below. */
+  readonly dropsMiss: boolean;
+}
+
+/**
+ * The member walk `localBinding` runs on the bound type, and the evidence for
+ * its miss verdict. Not `createPythonTypeMemberLookup`: that one orders the MRO
+ * spellings by the ref's form, while this pass walks in the DEFAULT order and
+ * keeps the walk's closure for the verdict.
+ *
+ * The kernel asks `findMember` and then, on a miss, the verdict predicate — in
+ * one synchronous `attempt`. The last miss is held for that second question so
+ * the MRO is walked once per call site; a predicate asked about any other
+ * (type, member, context) walks again, which answers the same, because the walk
+ * is pure.
+ */
+class PythonBoundTypeMemberLookup implements TypeMemberLookup {
+  private lastMiss:
+    | {
+        readonly typeName: string;
+        readonly member: string;
+        readonly ctx: CallContext;
+        readonly dropsMiss: boolean;
+      }
+    | undefined;
 
   constructor(
-    private readonly cfg: ResolverConfig,
-    private readonly mapper: PythonImportFileMapper = new PythonImportFileMapper(),
-    private readonly linearizers?: PythonAncestorLinearizerCache,
-  ) {
-    this.ports = createPythonCallBindingPorts(mapper, linearizers);
+    private readonly mode: AmbiguousResolveMode,
+    private readonly mapper: PythonImportFileMapper,
+    private readonly linearizers: PythonAncestorLinearizerCache | undefined,
+  ) {}
+
+  findMember(type: TypeRef, member: string, ctx: CallContext): SymbolResolutionTarget | null {
+    if (!typeMemberLookupDefinedFor(type)) return null;
+    const walk = this.walk(type.name, member, ctx);
+    this.lastMiss = walk.target === null ? { typeName: type.name, member, ctx, dropsMiss: walk.dropsMiss } : undefined;
+    return walk.target;
   }
 
-  /**
-   * The walker's own binding first, the folded call binding second (bd
-   * tea-rags-mcp-z68v9). A `localBindings` entry is a type the walker READ — an
-   * annotation, a constructor call, a parameter hint — and a fold is an
-   * inference, so the read always wins.
-   *
-   * The fold answers only for a `class` / `instance` ref: a container or a
-   * union has no single nominal receiver, and `pythonInheritedMemberType`
-   * already declines to emit one. From there the verdict is
-   * {@link resolveOnBoundType}'s, unchanged — an external type DROPs, an
-   * unreadable hierarchy CONTINUEs.
-   */
-  attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    if (!call.receiver) return CONTINUE;
-    const localType = resolveLocalBindingType(ctx.localBindings, call.receiver, call.startLine);
-    if (localType) return this.resolveOnBoundType(localType, call.member, ctx);
-    const bound = nearestCallResultBinding(ctx.callResultBindings, call.receiver, call.startLine);
-    if (bound === undefined) return CONTINUE;
-    const type = pythonCallBindingType(bound.callee, bound.line, ctx, this.ports, this.mapper);
-    if (type === undefined || (type.form !== "class" && type.form !== "instance")) return CONTINUE;
-    return this.resolveOnBoundType(type.name, call.member, ctx);
+  /** The verdict on a miss of `member` on `type`: `true` DROPs, `false` CONTINUEs. */
+  missDrops(type: NominalTypeRef, member: string, ctx: CallContext): boolean {
+    const last = this.lastMiss;
+    if (last?.typeName === type.name && last.member === member && last.ctx === ctx) return last.dropsMiss;
+    return this.walk(type.name, member, ctx).dropsMiss;
   }
 
   /**
@@ -127,7 +196,7 @@ export class PythonLocalBindingSymbolResolutionStrategy implements SymbolResolut
    * external-import arm of `resolveTypeFile`, which is what actually killed
    * polar's `def datetime(value)`, runs regardless of the member.
    */
-  private resolveOnBoundType(typeName: string, member: string, ctx: CallContext): SymbolResolutionOutcome {
+  private walk(typeName: string, member: string, ctx: CallContext): PythonBoundTypeWalk {
     const bareType = lastSegment(typeName);
     const linearizer = this.linearizers?.for(ctx);
     if (linearizer === undefined) {
@@ -136,23 +205,24 @@ export class PythonLocalBindingSymbolResolutionStrategy implements SymbolResolut
       // `classExtends` fallback (bd tea-rags-mcp-yrs0) is the same one
       // `chainType` folds through, and its miss is terminal here as it always
       // was; only the file-only edge below it is gone.
-      if (resolveTypeFile(bareType, ctx, this.mapper, member) === null) return DROP;
-      const legacy = resolvePythonMemberOnType(typeName, member, ctx, this.cfg.mode, this.mapper);
-      return legacy ? resolved(legacy) : DROP;
+      if (resolveTypeFile(bareType, ctx, this.mapper, member) === null) return DROPPED_MISS;
+      const legacy = resolvePythonMemberOnType(typeName, member, ctx, this.mode, this.mapper);
+      return legacy ? { target: legacy, dropsMiss: true } : DROPPED_MISS;
     }
 
     const { target, closure } = resolvePythonMemberOnTypeThroughMro(
       typeName,
       member,
       ctx,
-      this.cfg.mode,
+      this.mode,
       this.mapper,
       linearizer,
     );
-    if (target) return resolved(target);
     // `unbound` IS steps 1 and 2 above answering `null`, and it keeps their
     // terminal DROP (bd tea-rags-mcp-s2w5g moved the two lookups behind the
     // helper so `selfField` and `chainType` ask them the same way).
-    return closure === "external" || closure === "unbound" ? DROP : CONTINUE;
+    return { target, dropsMiss: closure === "external" || closure === "unbound" };
   }
 }
+
+const DROPPED_MISS: PythonBoundTypeWalk = { target: null, dropsMiss: true };

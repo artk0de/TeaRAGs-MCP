@@ -1,7 +1,11 @@
-import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
-import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
-import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { propagateReceiverType, type ReceiverTypePorts } from "../../../kernel/index.js";
+import type { AmbiguousResolveMode } from "../../../../../contracts/types/codegraph.js";
+import {
+  ChainTypeSymbolResolutionStrategy,
+  createTypeMemberLookup,
+  propagateReceiverType,
+  type ReceiverTypingPorts,
+  type TypeMemberLookup,
+} from "../../../kernel/index.js";
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { createPythonReceiverTypePorts } from "../python-receiver-type-ports.js";
@@ -54,11 +58,13 @@ import {
  * **Chain placement:** AFTER `localBinding`, BEFORE `importedName`. Both
  * offline harnesses call `createPythonSymbolResolutionChain`, so the insertion
  * reaches them with no second edit (bd tea-rags-mcp-3yxmy).
+ *
+ * The verdict is the kernel's `ChainTypeSymbolResolutionStrategy` (bd
+ * tea-rags-mcp-m99j1.1.5); this class binds Python's fold as the typing port,
+ * {@link createPythonChainTypeMemberLookup} as the member walk, and the
+ * DROP-on-typed-miss policy above.
  */
-export class PythonChainTypeSymbolResolutionStrategy implements SymbolResolutionStrategy {
-  readonly name = "chainType";
-  private readonly ports: ReceiverTypePorts;
-
+export class PythonChainTypeSymbolResolutionStrategy extends ChainTypeSymbolResolutionStrategy {
   /**
    * `linearizers` is the run's ancestor-MRO cache (bd tea-rags-mcp-yl85b): the
    * fold reads `classFieldTypes` and `structuredReturnTypes` up the hierarchy,
@@ -66,22 +72,45 @@ export class PythonChainTypeSymbolResolutionStrategy implements SymbolResolution
    * site. Optional — a caller without one keeps the own-class-only read.
    */
   constructor(
-    private readonly cfg: ResolverConfig,
-    private readonly mapper: PythonImportFileMapper = new PythonImportFileMapper(),
-    private readonly linearizers?: PythonAncestorLinearizerCache,
+    cfg: ResolverConfig,
+    mapper: PythonImportFileMapper = new PythonImportFileMapper(),
+    linearizers?: PythonAncestorLinearizerCache,
   ) {
-    // ONE ports object for the life of the resolver — the fold allocates
-    // nothing per call site.
-    this.ports = createPythonReceiverTypePorts(mapper, linearizers);
+    super(
+      "chainType",
+      pythonChainTypeTyping(mapper, linearizers),
+      createPythonChainTypeMemberLookup(cfg.mode, mapper, linearizers),
+      { dropOnTypedMiss: true },
+    );
   }
+}
 
-  attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    const { receiver } = call;
-    if (!receiver) return CONTINUE;
+/**
+ * The fold as a typing port. ONE ports object for the life of the resolver —
+ * the fold allocates nothing per call site.
+ */
+function pythonChainTypeTyping(
+  mapper: PythonImportFileMapper,
+  linearizers: PythonAncestorLinearizerCache | undefined,
+): ReceiverTypingPorts {
+  const ports = createPythonReceiverTypePorts(mapper, linearizers);
+  return {
+    typeOfReceiver: (call, ctx) => propagateReceiverType(call.receiver, call.startLine, ctx, ports) ?? null,
+  };
+}
 
-    const type = propagateReceiverType(receiver, call.startLine, ctx, this.ports);
-    if (!type || (type.form !== "class" && type.form !== "instance")) return CONTINUE;
-
+/**
+ * The member walk `chainType` runs on the folded type. Not
+ * `createPythonTypeMemberLookup`: that one orders the MRO spellings by the
+ * ref's form, while this pass walks in the DEFAULT order and guards the
+ * external type between its two walks.
+ */
+function createPythonChainTypeMemberLookup(
+  mode: AmbiguousResolveMode,
+  mapper: PythonImportFileMapper,
+  linearizers: PythonAncestorLinearizerCache | undefined,
+): TypeMemberLookup {
+  return createTypeMemberLookup((type, member, ctx) => {
     // The LAST hop resolves its member through the C3 MRO, exactly as the hops
     // before it read their field and return types (bd tea-rags-mcp-s2w5g).
     // `resolvePythonMemberOnType` below falls back to the single-base
@@ -89,28 +118,20 @@ export class PythonChainTypeSymbolResolutionStrategy implements SymbolResolution
     // declares `BuildRequestMixin` twice — once in the SDK, once in the
     // generator template it is rendered from — so that lookup is ambiguous and
     // answers `null` on a member jedi pins exactly.
-    const linearizer = this.linearizers?.for(ctx);
+    const linearizer = linearizers?.for(ctx);
     if (linearizer !== undefined) {
-      const mro = resolvePythonMemberOnTypeThroughMro(
-        type.name,
-        call.member,
-        ctx,
-        this.cfg.mode,
-        this.mapper,
-        linearizer,
-      );
-      if (mro.target) return resolved(mro.target);
+      const mro = resolvePythonMemberOnTypeThroughMro(type.name, member, ctx, mode, mapper, linearizer);
+      if (mro.target) return mro.target;
     }
 
-    // A folded type whose file is not in the project is external — DROP rather
-    // than hand the call to the short-name passes.
-    if (resolveTypeFile(lastSegment(type.name), ctx, this.mapper) === null) return DROP;
+    // A folded type whose file is not in the project is external — a miss the
+    // pass DROPs rather than hand the call to the short-name passes.
+    if (resolveTypeFile(lastSegment(type.name), ctx, mapper) === null) return null;
 
     // The legacy walk stays below the MRO one, not replaced by it: the pass's
     // miss verdict is DROP either way, so keeping it costs no precision and
     // keeps every edge it already answered — including the ones whose type name
     // the MRO walk cannot address at all.
-    const target = resolvePythonMemberOnType(type.name, call.member, ctx, this.cfg.mode, this.mapper);
-    return target ? resolved(target) : DROP;
-  }
+    return resolvePythonMemberOnType(type.name, member, ctx, mode, mapper);
+  });
 }
