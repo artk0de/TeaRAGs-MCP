@@ -42,6 +42,33 @@ export function isDeclaredCompositionRoot(componentDir: string): boolean {
 }
 
 /**
+ * The entry surfaces the layer rule declares — `.claude/rules/domain-boundaries.md`,
+ * layer diagram: `src/cli` (process entry; its commands are composition
+ * actors over the api assembly barrel) and `src/mcp` (the tool surface over
+ * `core/api/public`). Nothing imports either, so an entry component's
+ * instability — and a diff-window delta on it — is placement, not defect: the
+ * unstable end of the main sequence is where an entry BELONGS. Paths are
+ * repo-relative, the form a component dir carries.
+ *
+ * DECLARED, never derived, the same rule as
+ * `DECLARED_COMPOSITION_ROOT_COMPONENTS` above: membership is this list and
+ * the layer rule is its source of truth — no heuristic rediscovers it (bd
+ * tea-rags-mcp-zh3l0). Maintenance cost, accepted: a new top-level entry
+ * surface (a second binary, a lambda handler) joins this list by hand or
+ * stays unannotated. A mainSequence finding for one carries `entryPoint:
+ * true` — annotated, still REPORTED, triage data never a suppression, exactly
+ * the `foundationTerminal` / `compositionRoot` spirit.
+ */
+export const DECLARED_ENTRY_POINT_COMPONENTS: readonly string[] = ["src/cli", "src/mcp"];
+
+/** Whether a component dir is a declared entry surface, or lives inside one. */
+export function isDeclaredEntryPoint(componentDir: string): boolean {
+  return DECLARED_ENTRY_POINT_COMPONENTS.some(
+    (entrySurface) => componentDir === entrySurface || componentDir.startsWith(`${entrySurface}/`),
+  );
+}
+
+/**
  * Stable Dependencies Principle on components (bd tea-rags-mcp-r8hme.7) — the
  * granularity Martin defined it for. File-level instability with Ca + Ce in
  * single digits swung by one edge; a component's counts pool its files.

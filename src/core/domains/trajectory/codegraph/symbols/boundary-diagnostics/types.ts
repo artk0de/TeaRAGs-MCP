@@ -569,6 +569,15 @@ export interface MainSequenceViolation {
   unmeasuredFileCount: number;
   /** Present when the volatility gate ran and a file of the component carries a reading. */
   volatility?: MainSequenceComponentVolatility;
+  /**
+   * The component is, or lives inside, a declared entry surface
+   * (`DECLARED_ENTRY_POINT_COMPONENTS`, bd tea-rags-mcp-zh3l0): the unstable
+   * end of the main sequence is where an entry component BELONGS, so the
+   * distance is placement, not defect. The violation still stands — triage
+   * data, never a suppression (the `compositionRoot` spirit). Present only
+   * when true.
+   */
+  entryPoint?: true;
 }
 
 /** Components read but not judged, by the first reason that applied. */

@@ -40,7 +40,8 @@ const REVIEW_CHANGES_DESCRIPTION =
   "Detector rows also carry exclusions: mainSequence excludedLowConnectionCount (small-N components below the " +
   "connection floor), silentCoupling excluded block (the production taxonomy's counters) — a zero over excluded " +
   "classes is not a clean pass; foundationTerminal:true on a D-delta finding = every contributing edge ends at " +
-  "contracts/ (triage data, never suppression). scopeSkippedFiles rides section envelopes (incompleteChange, " +
+  "contracts/, entryPoint:true = touched component is a declared cli/mcp entry surface — placement, not defect " +
+  "(both triage data, never suppression). scopeSkippedFiles rides section envelopes (incompleteChange, " +
   "cohesion) and architecture detector rows = files the 200-cap skipped while judged; present = verdict PARTIAL — " +
   "a zero findingCount over them is never a clean pass. " +
   "Envelope: workTree, base, mergeBase, changedFiles, skipped+truncated, indexLag, notices (an empty diff names the " +

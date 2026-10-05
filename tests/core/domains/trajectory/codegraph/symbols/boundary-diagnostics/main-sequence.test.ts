@@ -161,6 +161,56 @@ describe("detectMainSequenceDeviations", () => {
 });
 
 /**
+ * Entry-point annotation (bd tea-rags-mcp-zh3l0): a cli/mcp component sits at
+ * the unstable end of the main sequence BY DESIGN — the layer rule makes it the
+ * entry surface nothing imports, so its instability is placement, not defect.
+ * A distance reported for one carries `entryPoint: true` as triage data, never
+ * a suppression — the same spirit r8hme.51 gave SDP's `compositionRoot`. The
+ * entries are the DECLARED ones (`DECLARED_ENTRY_POINT_COMPONENTS`), fixtures
+ * use the real component dirs.
+ */
+describe("detectMainSequenceDeviations — entry-point annotation (bd tea-rags-mcp-zh3l0)", () => {
+  /** `graph()` plus one abstract, outward-only component at `entryDir` — uselessness at D 1. */
+  function entryGraph(entryDir: string): FileDependencyGraph {
+    const g = graph();
+    for (let i = 1; i <= 5; i++) {
+      g.files.push(file(`${entryDir}/f${i}.ts`, census(1, 0)));
+      g.edges.push(edge(`${entryDir}/f${i}.ts`, "vendor/v.ts"));
+    }
+    return g;
+  }
+
+  it("stamps entryPoint: true on a violation whose component is a declared entry point", () => {
+    const report = judge(entryGraph("src/cli/call"));
+
+    expect(report.violations.find((v) => v.component === "src/cli/call")?.entryPoint).toBe(true);
+    // Annotated, never excluded: the distance is still reported.
+    expect(report.summary.violationCount).toBe(3);
+  });
+
+  it("annotates a component nested anywhere under a declared entry — the mcp surface included", () => {
+    const g = entryGraph("src/cli/commands");
+    for (let i = 1; i <= 5; i++) {
+      g.files.push(file(`src/mcp/tools/t${i}.ts`, census(1, 0)));
+      g.edges.push(edge(`src/mcp/tools/t${i}.ts`, "vendor/v.ts"));
+    }
+
+    const report = judge(g);
+
+    expect(report.violations.find((v) => v.component === "src/cli/commands")?.entryPoint).toBe(true);
+    expect(report.violations.find((v) => v.component === "src/mcp/tools")?.entryPoint).toBe(true);
+  });
+
+  it("leaves the field absent on a non-entry component — not undefined-valued noise", () => {
+    const report = judge(entryGraph("src/cli/call"));
+
+    for (const violation of report.violations.filter((v) => v.component !== "src/cli/call")) {
+      expect("entryPoint" in violation).toBe(false);
+    }
+  });
+});
+
+/**
  * Volatility gate on the zone of pain (bd tea-rags-mcp-r8hme.14): per Martin,
  * stable + concrete hurts only for a component that keeps changing — `String`
  * is stable, concrete and fine. A component's volatility is the mean per-file

@@ -1337,6 +1337,7 @@ function mainSequenceViolations(report: MainSequenceReport, limit: number): Arch
         efferentCount: v.efferentCount,
         fileCount: v.fileCount,
         unmeasuredFileCount: v.unmeasuredFileCount,
+        ...(v.entryPoint ? { entryPoint: v.entryPoint } : {}),
         ...(v.volatility
           ? {
               volatility: {

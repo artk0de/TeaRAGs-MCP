@@ -1,6 +1,7 @@
 import type { FileDependencyGraphFile } from "../../../../../contracts/types/codegraph.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../../../../../infra/graph/index.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
+import { isDeclaredEntryPoint } from "./component-stable-dependencies.js";
 import { DEFAULT_SDP_MIN_CONNECTION_COUNT } from "./stable-dependencies.js";
 import type {
   ComponentGraph,
@@ -135,6 +136,10 @@ export function detectMainSequenceDeviations(
           efferentCount: component.efferentCount,
           fileCount: census.fileCount,
           unmeasuredFileCount: census.fileCount - census.measuredFileCount,
+          // The unstable end of the main sequence is where an entry component
+          // belongs (see DECLARED_ENTRY_POINT_COMPONENTS): annotated, still
+          // reported.
+          ...(isDeclaredEntryPoint(component.componentDir) ? { entryPoint: true as const } : {}),
         },
       });
     }
