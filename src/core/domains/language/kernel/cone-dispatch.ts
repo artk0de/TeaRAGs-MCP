@@ -5,6 +5,7 @@ import {
   type CallRef,
   type DispatchEdge,
   type DispatchFanoutOutcome,
+  type InheritanceEdge,
   type SymbolResolutionTarget,
 } from "../../../contracts/types/codegraph.js";
 import type { ConeTypeLocator, DispatchResolverComponent } from "../../../contracts/types/language.js";
@@ -61,19 +62,34 @@ export class ConeDispatchResolver implements DispatchResolverComponent {
 
     // Direct subtypes of `T`; dedup by source name (a transitive view could
     // repeat a class across depths).
+    const descendants = ctx.hierarchy.getDescendants(baseType);
     const subtypes = new Set<string>();
-    for (const edge of ctx.hierarchy.getDescendants(baseType)) subtypes.add(edge.sourceFqName);
+    for (const edge of descendants) subtypes.add(edge.sourceFqName);
 
     // Keep only subtypes that DIRECTLY override `m` (a method-level pin) — an
     // inheriting subtype that doesn't redefine `m` adds no new target. Keyed by
-    // subtype so the RTA prune (below) can map an instantiated type's nearest
-    // definer back to its cone member.
-    const overrideBySubtype = new Map<string, SymbolResolutionTarget>();
+    // the DEFINING class so the RTA prune (below) can map an instantiated
+    // type's nearest definer back to its cone member.
+    const subtypeOverrides = new Map<string, SymbolResolutionTarget>();
     for (const subtype of subtypes) {
       const target = this.locator.findDirectMethod(subtype, call.member, ctx);
-      if (target) overrideBySubtype.set(subtype, target);
+      if (target) subtypeOverrides.set(subtype, target);
     }
-    if (overrideBySubtype.size === 0) return [];
+    if (subtypeOverrides.size === 0) return [];
+
+    // The RECEIVER's own dispatch target (bd tea-rags-mcp-m99j1.1.84): an
+    // instance of `T` itself lands on `T`'s declaration of `m` (or the nominal
+    // ancestor's it inherits), so that declaration is a cone member beside the
+    // overrides. Only for a language whose locator answers
+    // `isRuntimeDispatchClass`; absent ⇒ subtypes-only, as before. Keyed by its
+    // defining class, so the RTA prune keeps it exactly when an instantiated
+    // type dispatches there — it prunes subclass overrides, never the receiver's
+    // own resolution while `T` or a non-overriding subtype is instantiated.
+    const receiverDeclaration = this.receiverDeclaration(baseType, call.member, ctx, descendants);
+    const coneByDefiner =
+      receiverDeclaration && !subtypeOverrides.has(receiverDeclaration.definer)
+        ? new Map([[receiverDeclaration.definer, receiverDeclaration.target], ...subtypeOverrides])
+        : subtypeOverrides;
 
     // RTA prune (bd tea-rags-mcp-pffv): keep a cone member only when it is the
     // nearest definer of `m` for some INSTANTIATED type `U <: T`. Gated on the
@@ -81,24 +97,27 @@ export class ConeDispatchResolver implements DispatchResolverComponent {
     // pre-pffv full cone (the cone engine is shared across languages; only
     // Ruby populates the set initially). Soundness floor: an empty prune keeps
     // the unpruned cone (zero-evidence metaprogramming case).
-    let live = overrideBySubtype;
+    let live = coneByDefiner;
     if (ctx.instantiatedTypes && ctx.instantiatedTypes.size > 0) {
       const pruned = new Map<string, SymbolResolutionTarget>();
       for (const u of [baseType, ...subtypes]) {
         if (!ctx.instantiatedTypes.has(u)) continue;
         const definer = this.nearestDefiner(u, call.member, ctx);
-        const target = definer ? overrideBySubtype.get(definer) : undefined;
+        const target = definer ? coneByDefiner.get(definer) : undefined;
         if (definer && target) pruned.set(definer, target);
       }
       if (pruned.size > 0) live = pruned;
     }
 
-    const overrides = [...live.values()];
-    const n = overrides.length;
+    const members = [...live.values()];
+    const n = members.length;
+    // The cap counts OVERRIDES: the receiver's own declaration never tips a
+    // cone into the `poly-base` collapse, which already targets that base.
+    const overrideCount = receiverDeclaration && live.has(receiverDeclaration.definer) ? n - 1 : n;
 
-    if (n <= this.coneMax) {
+    if (overrideCount <= this.coneMax) {
       const confidence = 1 / n;
-      return overrides.map((target) => ({
+      return members.map((target) => ({
         sourceSymbolId: null,
         targetRelPath: target.targetRelPath,
         targetSymbolId: target.targetSymbolId,
@@ -134,6 +153,31 @@ export class ConeDispatchResolver implements DispatchResolverComponent {
     if (direct) return direct;
     const file = this.locator.resolveTypeFile(typeName, ctx);
     return file ? { targetRelPath: file, targetSymbolId: null } : null;
+  }
+
+  /**
+   * The receiver's own dispatch target for `member` — `typeName`'s declaration,
+   * else its nearest nominal ancestor's — keyed by that defining class. `null`
+   * when the locator does not answer `isRuntimeDispatchClass` (the language has
+   * not opted in), when no class on the MRO declares `member` in the project,
+   * when `typeName` has no NOMINAL descendant (a contract reached only
+   * structurally is never instantiated), or when the receiver or the defining
+   * class is no runtime class (a `typing.Protocol` stub).
+   */
+  private receiverDeclaration(
+    typeName: string,
+    member: string,
+    ctx: CallContext,
+    descendants: readonly InheritanceEdge[],
+  ): { definer: string; target: SymbolResolutionTarget } | null {
+    if (!this.locator.isRuntimeDispatchClass) return null;
+    const isRuntimeClass = (name: string): boolean => this.locator.isRuntimeDispatchClass?.(name, ctx) ?? false;
+    if (!descendants.some((edge) => NOMINAL_INHERITANCE_KINDS.includes(edge.kind))) return null;
+    if (!isRuntimeClass(typeName)) return null;
+    const definer = this.nearestDefiner(typeName, member, ctx);
+    if (!definer || (definer !== typeName && !isRuntimeClass(definer))) return null;
+    const target = this.locator.findDirectMethod(definer, member, ctx);
+    return target ? { definer, target } : null;
   }
 
   /**

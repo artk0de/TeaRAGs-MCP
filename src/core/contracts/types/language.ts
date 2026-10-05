@@ -217,6 +217,14 @@ export interface ConeTypeLocator {
   resolveTypeFile: (typeName: string, ctx: CallContext) => RelPath | null;
   /** Method declared DIRECTLY on `typeName` (the override pin), or null. */
   findDirectMethod: (typeName: string, member: string, ctx: CallContext) => SymbolResolutionTarget | null;
+  /**
+   * Whether `typeName`'s own declarations are RUNTIME dispatch targets — false
+   * for a structural contract that is never instantiated (a Python
+   * `typing.Protocol`). Implementing it opts the language into keeping the
+   * receiver's own declaration in the cone (bd tea-rags-mcp-m99j1.1.84);
+   * absent ⇒ the cone stays subtypes-only.
+   */
+  isRuntimeDispatchClass?: (typeName: string, ctx: CallContext) => boolean;
 }
 
 /**
