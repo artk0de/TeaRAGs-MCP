@@ -41,18 +41,31 @@ export interface LocalBinding {
    * it names no type until the language's resolver folds the expression, and
    * a reader that does not know this kind sees an empty (falsy) type rather
    * than an expression masquerading as a class name.
+   *
+   * Two more DERIVED kinds share that contract (`type` is `""`, the
+   * expression rides {@link LocalBinding.sourceExpression}), each folded by a
+   * resolver path of its own (bd tea-rags-mcp-m99j1.1.18, Task 16b):
+   *
+   *   - `"contextEnter"` — a `with <expr> as name` target: what the context
+   *     value's `__enter__` returns, not the value itself;
+   *   - `"tupleElement"` — an unpacking target (`a, b = <expr>`): the value
+   *     `<expr>` evaluates to, at {@link LocalBinding.tupleIndex} when set.
+   *
+   * {@link isDerivedLocalBinding} names the three.
    */
-  valueKind?: "instance" | "class" | "iterationElement";
+  valueKind?: "instance" | "class" | DerivedLocalBindingKind;
   /**
    * The expression a derived binding is drawn from, as written (whitespace
-   * runs collapsed) — set only with `valueKind: "iterationElement"`, where it
-   * is the ITERATED expression: `self.app_configs.values()`, `enumerate(ops)`.
-   * ABSENT on every other binding.
+   * runs collapsed) — set only on a derived binding: the ITERATED expression
+   * (`self.app_configs.values()`, `enumerate(ops)`), the CONTEXT expression
+   * (`Lock()`), or the UNPACKED one (`make_pair()`). ABSENT on every other
+   * binding.
    */
   sourceExpression?: string;
   /**
    * 0-based position inside a TUPLE-shaped value the binding destructures —
-   * `for i, op in enumerate(ops)` binds `op` at index 1 of each element.
+   * `for i, op in enumerate(ops)` binds `op` at index 1 of each element,
+   * `a, b = make_pair()` binds `b` at index 1 of the value.
    * ABSENT when the binding takes the whole value.
    */
   tupleIndex?: number;
@@ -142,17 +155,30 @@ export function resolveLocalBinding(
   return best;
 }
 
+/** The {@link LocalBinding.valueKind}s whose type only a resolver can fold out of `sourceExpression`. */
+export type DerivedLocalBindingKind = "iterationElement" | "contextEnter" | "tupleElement";
+
 /**
- * On ONE line, a binding that names a type outranks an `iterationElement`
- * binding, which names only an expression (bd tea-rags-mcp-m99j1.1.18): a
- * language may type a loop target at extraction time AND record the iterated
- * expression for the resolver, and the read type is the stronger evidence.
- * Every other tie keeps the first binding, as before.
+ * Whether `binding` is DERIVED — it names an expression for the resolver to
+ * fold, not a type (`type` is `""`). A reader that does not fold it must treat
+ * the name as untyped, never fall back to a binding from above it.
+ */
+export function isDerivedLocalBinding(
+  binding: LocalBinding | undefined,
+): binding is LocalBinding & { valueKind: DerivedLocalBindingKind } {
+  const kind = binding?.valueKind;
+  return kind === "iterationElement" || kind === "contextEnter" || kind === "tupleElement";
+}
+
+/**
+ * On ONE line, a binding that names a type outranks a derived binding, which
+ * names only an expression (bd tea-rags-mcp-m99j1.1.18): a language may type a
+ * loop or unpacking target at extraction time AND record the expression for
+ * the resolver, and the read type is the stronger evidence. Every other tie
+ * keeps the first binding, as before.
  */
 function outranksOnSameLine(binding: LocalBinding, best: LocalBinding): boolean {
-  return (
-    binding.line === best.line && best.valueKind === "iterationElement" && binding.valueKind !== "iterationElement"
-  );
+  return binding.line === best.line && isDerivedLocalBinding(best) && !isDerivedLocalBinding(binding);
 }
 
 /**

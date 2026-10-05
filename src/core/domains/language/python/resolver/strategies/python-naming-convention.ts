@@ -40,7 +40,11 @@
  * whose annotation this path never reads; they are a different mechanism and
  * are left standing rather than tuned against.
  */
-import type { AmbiguousResolveMode, CallContext } from "../../../../../contracts/types/codegraph.js";
+import {
+  isDerivedLocalBinding,
+  type AmbiguousResolveMode,
+  type CallContext,
+} from "../../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../../contracts/types/language.js";
 import {
   conventionClassNameFor,
@@ -57,7 +61,7 @@ import { PYTHON_STDLIB_MODULES } from "../../vocabulary/stdlib-modules.js";
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import { PythonExternalVocabulary } from "../python-external-vocabulary.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
-import { pythonIterationElementType, pythonLocalBindingInForce } from "../python-iteration-types.js";
+import { pythonDerivedBindingType, pythonLocalBindingInForce } from "../python-iteration-types.js";
 import { createPythonCallBindingPorts } from "../python-receiver-type-ports.js";
 import {
   lookupPythonSymbolsByShortName,
@@ -140,11 +144,12 @@ class PythonConventionReceiverTyping implements ConventionReceiverTypingPorts {
     // spelling. Same import question the rest of the chain asks, one memo.
     if (PYTHON_STDLIB_MODULES.has(receiver) || this.vocabulary.isBareCallExternal(receiver, ctx)) return true;
     // A real fact wins: this pass speaks only for receivers nothing typed. A
-    // loop target (bd tea-rags-mcp-m99j1.1.18) is a fact only when its
-    // iterable folds to a type — an unfolded one is as untyped as no binding.
+    // derived binding — loop, `with` or unpacking target (bd
+    // tea-rags-mcp-m99j1.1.18) — is a fact only when its expression folds to
+    // a type; an unfolded one is as untyped as no binding.
     const binding = pythonLocalBindingInForce(ctx, receiver, call.startLine);
-    if (binding?.valueKind === "iterationElement") {
-      if (pythonIterationElementType(binding, ctx, this.ports, this.mapper) !== undefined) return true;
+    if (isDerivedLocalBinding(binding)) {
+      if (pythonDerivedBindingType(binding, ctx, this.ports, this.mapper) !== undefined) return true;
     } else if (binding !== undefined) {
       return true;
     }

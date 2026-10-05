@@ -1,4 +1,5 @@
 import {
+  isDerivedLocalBinding,
   nearestCallResultBinding,
   type AmbiguousResolveMode,
   type CallContext,
@@ -14,7 +15,7 @@ import {
 } from "../../../kernel/index.js";
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
-import { pythonIterationElementType, pythonLocalBindingInForce } from "../python-iteration-types.js";
+import { pythonDerivedBindingType, pythonLocalBindingInForce } from "../python-iteration-types.js";
 import { createPythonCallBindingPorts } from "../python-receiver-type-ports.js";
 import {
   lastSegment,
@@ -113,10 +114,11 @@ function pythonLocalBindingTyping(
   return {
     typeOfReceiver: (call, ctx): TypeRef | null => {
       const binding = pythonLocalBindingInForce(ctx, call.receiver, call.startLine);
-      // A loop target (bd tea-rags-mcp-m99j1.1.18) is typed by its iterable or
-      // not at all: the call-result binding below it predates the loop.
-      if (binding?.valueKind === "iterationElement") {
-        return pythonIterationElementType(binding, ctx, ports, mapper) ?? null;
+      // A derived binding — loop, `with` or unpacking target (bd
+      // tea-rags-mcp-m99j1.1.18) — is typed by its fold or not at all: the
+      // call-result binding below it predates the statement.
+      if (isDerivedLocalBinding(binding)) {
+        return pythonDerivedBindingType(binding, ctx, ports, mapper) ?? null;
       }
       const boundType = binding?.type;
       if (boundType) return { form: "instance", name: boundType };

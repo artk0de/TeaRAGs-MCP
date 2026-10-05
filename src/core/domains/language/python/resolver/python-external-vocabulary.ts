@@ -18,6 +18,7 @@ import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import { resolveLocalBindingType } from "../../../../contracts/types/codegraph-local-binding.js";
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+  isDerivedLocalBinding,
   type AmbiguousResolveMode,
   type CallContext,
   type CallRef,
@@ -30,7 +31,7 @@ import { PYTHON_STDLIB_MODULES } from "../vocabulary/stdlib-modules.js";
 import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import { PythonExternalDefinitionProbe } from "./python-external-definition-probe.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
-import { pythonIterationElementType, pythonLocalBindingInForce } from "./python-iteration-types.js";
+import { pythonDerivedBindingType, pythonLocalBindingInForce } from "./python-iteration-types.js";
 import { mapPythonImportToFile } from "./python-path-mapper.js";
 import { createPythonCallBindingPorts } from "./python-receiver-type-ports.js";
 import { pythonBoundClassKey } from "./python-type-addressing.js";
@@ -226,16 +227,17 @@ export class PythonExternalVocabulary implements ExternalVocabulary {
   }
 
   /**
-   * Does a local binding TYPE `receiver` at `atLine`? A loop target (bd
-   * tea-rags-mcp-m99j1.1.18) does only when its iterable folds to a type: an
-   * unfolded one says the name is a local and nothing about what it holds, so
-   * it must not lift the site out of the `coreAmbiguous` bucket.
+   * Does a local binding TYPE `receiver` at `atLine`? A derived one — loop,
+   * `with` or unpacking target (bd tea-rags-mcp-m99j1.1.18) — does only when
+   * its expression folds to a type: an unfolded one says the name is a local
+   * and nothing about what it holds, so it must not lift the site out of the
+   * `coreAmbiguous` bucket.
    */
   private localBindingTypes(receiver: string, ctx: CallContext, atLine: number): boolean {
     const binding = pythonLocalBindingInForce(ctx, receiver, atLine);
     if (binding === undefined) return false;
-    if (binding.valueKind !== "iterationElement") return true;
+    if (!isDerivedLocalBinding(binding)) return true;
     this.iterationPorts ??= createPythonCallBindingPorts(this.mapper, this.linearizers);
-    return pythonIterationElementType(binding, ctx, this.iterationPorts, this.mapper) !== undefined;
+    return pythonDerivedBindingType(binding, ctx, this.iterationPorts, this.mapper) !== undefined;
   }
 }
