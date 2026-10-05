@@ -33,11 +33,13 @@ export const DJANGO_VOCABULARY: PythonFrameworkVocabulary = definePythonFramewor
   {
     modelBases: new Set(["Model"]),
     // `ModelBase` installs these on every model class; none is declared on it.
+    // The underscored three are Django's spelling alone, so they type even an
+    // owner the fold lost (`self.model._meta`); `objects` is everyone's.
     modelAttributes: new Map([
-      ["objects", { className: "Manager", carriesModel: true }],
-      ["_default_manager", { className: "Manager", carriesModel: true }],
-      ["_base_manager", { className: "Manager", carriesModel: true }],
-      ["_meta", { className: "Options", carriesModel: false }],
+      ["objects", { className: "Manager", carriesModel: true, nameUniqueToFramework: false }],
+      ["_default_manager", { className: "Manager", carriesModel: true, nameUniqueToFramework: true }],
+      ["_base_manager", { className: "Manager", carriesModel: true, nameUniqueToFramework: true }],
+      ["_meta", { className: "Options", carriesModel: false, nameUniqueToFramework: true }],
     ]),
     // `Manager` proxies every `QuerySet` verb through `from_queryset`.
     relationClasses: new Set(["Manager", "BaseManager", "QuerySet"]),

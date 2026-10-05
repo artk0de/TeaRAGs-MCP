@@ -62,6 +62,21 @@ export interface ReceiverTypePorts {
    * iteration bindings omits it, and nothing in the fold calls it.
    */
   elementTypeOf?: (container: TypeRef, ctx: CallContext) => TypeRef | null;
+  /**
+   * The type of an attribute link from its NAME ALONE, or `undefined` when the
+   * name does not fix one (bd tea-rags-mcp-m99j1.1.37). Consulted ONLY where
+   * the fold has lost the link's owner — an untyped head, or a hop after an
+   * unknown one — and only for a bare attribute link, never a call: a typed
+   * owner always keeps {@link memberTypeOf}'s answer, including its refusal.
+   *
+   * It exists because a framework can install a member on every instance it
+   * manages under a name nothing else uses: Django's `obj._meta` is `Options`
+   * whatever `obj` is, and 28 of 150 sampled django chain misses stopped at the
+   * untyped owner in front of such a name. Which names qualify — and under which
+   * declared dependencies — is the language's data. OPTIONAL: a language that
+   * omits it keeps STOP-at-unknown-hop exactly.
+   */
+  ownerIndependentMemberType?: (member: string, ctx: CallContext) => TypeRef | undefined;
   /** Hop cap; a chain longer than this is untyped rather than half-walked. */
   maxHops: () => number;
   /**
@@ -205,7 +220,10 @@ function defaultReceiverHops(receiver: string): string[] {
  * 2. Seed: `seedHead` first (a head the language can type together with its
  *    first link), else recurse into the single-hop path for `head` alone.
  * 3. For each remaining link: `t = memberTypeOf(t, link)`. First `undefined`
- *    STOPS and the whole receiver is untyped.
+ *    STOPS and the whole receiver is untyped — unless a LATER bare attribute
+ *    link answers {@link ReceiverTypePorts.ownerIndependentMemberType}, in
+ *    which case the walk resumes from that link. Every link between the lost
+ *    owner and the resumed one is skipped, never typed.
  * 4. A chain longer than `maxHops()` links is untyped.
  */
 function propagateChain(
@@ -221,25 +239,55 @@ function propagateChain(
   if (links.length > ports.maxHops()) return undefined;
 
   let current: TypeRef | undefined;
-  let startLink = 0;
+  let nextLink = 0;
   const seeded = ports.seedHead(head, links[0], ctx);
   if (seeded !== undefined) {
     current = seeded.type;
-    startLink = seeded.consumedMembers;
+    nextLink = seeded.consumedMembers;
   } else {
     current = propagateReceiverType(head, atLine, ctx, ports);
   }
-  if (current === undefined) return undefined;
 
-  for (let i = startLink; i < links.length; i++) {
-    const member = stripCallArgs(links[i]);
-    const argumentText = ports.memberCallTypeOf === undefined ? undefined : callArgumentText(links[i]);
+  while (nextLink < links.length || current === undefined) {
+    if (current === undefined) {
+      const resumed = resumeAfterLostOwner(links, nextLink, ctx, ports);
+      if (resumed === undefined) return undefined; // STOP-at-unknown-hop
+      current = resumed.type;
+      nextLink = resumed.followingLink;
+      continue;
+    }
+    const link = links[nextLink++];
+    const member = stripCallArgs(link);
+    const argumentText = ports.memberCallTypeOf === undefined ? undefined : callArgumentText(link);
     current =
       argumentText === undefined || ports.memberCallTypeOf === undefined
         ? ports.memberTypeOf(current, member, ctx)
         : ports.memberCallTypeOf(current, member, argumentText, ctx);
-    if (current === undefined) return undefined; // STOP-at-unknown-hop
   }
 
   return current;
 }
+
+/**
+ * The first bare attribute link at or after `from` whose type the language
+ * fixes by name alone, and the link after it — or `undefined` when the port is
+ * absent or no link qualifies. A link carrying any bracketed group is a call or
+ * a subscript, whose result the name does not fix.
+ */
+function resumeAfterLostOwner(
+  links: readonly string[],
+  from: number,
+  ctx: CallContext,
+  ports: ReceiverTypePorts,
+): { type: TypeRef; followingLink: number } | undefined {
+  if (ports.ownerIndependentMemberType === undefined) return undefined;
+  for (let i = from; i < links.length; i++) {
+    if (!BARE_ATTRIBUTE.test(links[i])) continue;
+    const type = ports.ownerIndependentMemberType(links[i], ctx);
+    if (type !== undefined) return { type, followingLink: i + 1 };
+  }
+  return undefined;
+}
+
+/** A link that is one identifier — no call, subscript or other bracketed group. */
+const BARE_ATTRIBUTE = /^[A-Za-z_]\w*$/;

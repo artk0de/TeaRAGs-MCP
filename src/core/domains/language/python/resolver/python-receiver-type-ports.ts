@@ -32,6 +32,7 @@ import {
 import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import { pythonDerivedBindingType, pythonElementTypeOf, pythonLocalBindingInForce } from "./python-iteration-types.js";
+import { pythonOwnerIndependentMemberType } from "./python-member-return-types.js";
 import {
   findPythonImportBinding,
   lastSegment,
@@ -454,6 +455,7 @@ export function createPythonReceiverTypePorts(
     memberTypeOf,
     elementTypeOf: (container: TypeRef, ctx: CallContext): TypeRef | null =>
       pythonElementTypeOf(container, ctx, memberTypeOf),
+    ownerIndependentMemberType: pythonOwnerIndependentMemberType,
     maxHops: pythonMaxHops,
     // Python opts INTO the bracket-aware hop split; Ruby keeps `split(".")`.
     // See the port's docblock for the 34 mastodon sites that decided it.

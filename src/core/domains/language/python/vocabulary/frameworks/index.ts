@@ -15,7 +15,12 @@ import { FrameworkVocabularyRegistry } from "../../../kernel/framework-vocabular
 import { DJANGO_VOCABULARY } from "./django.js";
 import type { PythonFrameworkMemberTypes, PythonFrameworkVocabulary, PythonVocabularyFacet } from "./types.js";
 
-export type { PythonFrameworkMemberTypes, PythonFrameworkVocabulary, PythonVocabularyFacet } from "./types.js";
+export type {
+  PythonFrameworkMemberTypes,
+  PythonFrameworkModelAttribute,
+  PythonFrameworkVocabulary,
+  PythonVocabularyFacet,
+} from "./types.js";
 
 /** Every registered vocabulary. Adding one is a module plus a line here. */
 export const PYTHON_FRAMEWORKS: readonly PythonFrameworkVocabulary[] = [DJANGO_VOCABULARY];

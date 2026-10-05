@@ -263,6 +263,25 @@ function pythonFrameworkReturnType(
 }
 
 /**
+ * The kernel's `ownerIndependentMemberType` port for Python (bd
+ * tea-rags-mcp-m99j1.1.37): an attribute an ACTIVE framework declares
+ * `nameUniqueToFramework` (`PythonFrameworkModelAttribute`), typed on an owner
+ * the fold could not type. `self.model._meta` → `Options`,
+ * `parent_model._default_manager` → `Manager` naming no model — the owner is
+ * what is unknown, so no model can be threaded.
+ *
+ * Gated by the same declared-dependency catalogue as every other facet, so a
+ * project that does not depend on Django never sees `Options`.
+ */
+export function pythonOwnerIndependentMemberType(member: string, ctx: CallContext): TypeRef | undefined {
+  for (const vocabulary of pythonVocabularyFor(ctx.declaredDependencies).memberTypes) {
+    const attribute = vocabulary.modelAttributes.get(member);
+    if (attribute?.nameUniqueToFramework === true) return { form: "instance", name: attribute.className };
+  }
+  return undefined;
+}
+
+/**
  * Does the class `bareType` names record a base spelled as one of
  * `baseNames` — on itself or anywhere up its in-project MRO? The bases are
  * read as WRITTEN (`models.Model` → `Model`), because the model base is the
