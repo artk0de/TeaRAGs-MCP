@@ -188,6 +188,74 @@ describe("resolver — callable-param flow", () => {
   });
 });
 
+/**
+ * The flask `setupmethod` shape (bd tea-rags-mcp-m99j1.1.66): a module-level
+ * decorator whose closure calls the parameter, applied BARE to methods of a
+ * class in ANOTHER file that reaches it by a relative `from` import. The
+ * decoratees are class-body methods (`App#route`), recorded as `App.route`.
+ * flask itself has 43 such methods — over the corpus fan cap, so its site is
+ * an `ambiguous` verdict there; this pins the channel below the cap.
+ */
+describe("resolver — callable-param flow, decorator on class-body methods in another file", () => {
+  const SCAFFOLD = "pkg/scaffold.py";
+  const APP = "pkg/app.py";
+  const SCAFFOLD_CODE = [
+    "def setupmethod(f):", // 1
+    "    def wrapper_func(self, *args):", // 2
+    "        return f(self, *args)", // 3
+    "    return wrapper_func", // 4
+    "",
+  ].join("\n");
+  const SCAFFOLD_CHUNKS: Chunk[] = [{ symbolId: "setupmethod", startLine: 1, endLine: 4, scope: [] }];
+  const APP_CODE = [
+    "from .scaffold import setupmethod", // 1
+    "", // 2
+    "class App:", // 3
+    "    @setupmethod", // 4
+    "    def route(self, rule):", // 5
+    "        return rule", // 6
+    "", // 7
+    "    @setupmethod", // 8
+    "    def add_url_rule(self, rule):", // 9
+    "        return rule", // 10
+    "",
+  ].join("\n");
+  const APP_CHUNKS: Chunk[] = [
+    { symbolId: "App#route", startLine: 5, endLine: 6, scope: ["App"] },
+    { symbolId: "App#add_url_rule", startLine: 9, endLine: 10, scope: ["App"] },
+  ];
+
+  it("fans the invoked parameter to every decorated method as `cone` edges", () => {
+    const deco = extract(SCAFFOLD_CODE, SCAFFOLD_CHUNKS, SCAFFOLD);
+    const app = extract(APP_CODE, APP_CHUNKS, APP);
+    // The class itself is a module-level definition of the app file.
+    const table = tableOf({
+      "pkg/__init__.py": [],
+      [SCAFFOLD]: SCAFFOLD_CHUNKS,
+      [APP]: [{ symbolId: "App", startLine: 3, endLine: 10, scope: [] }, ...APP_CHUNKS],
+    });
+    const ctx: CallContext = {
+      callerFile: SCAFFOLD,
+      callerScope: ["setupmethod", "wrapper_func"],
+      callerSymbolId: "setupmethod",
+      imports: [],
+      symbolTable: table,
+      callableArgSources: { ...deco.callableArgSources, ...app.callableArgSources },
+      moduleReexports: { [APP]: app.moduleReexports ?? [] },
+    };
+    const call = callIn(deco, "setupmethod", "f");
+    expect(call.calleeParam).toEqual({ ownerSymbolId: "setupmethod", position: 0 });
+
+    const resolver = new PythonCallResolver();
+    expect(resolver.resolve(call, ctx)).toBeNull();
+    const outcome = resolver.resolveDispatch(call, ctx);
+    expect(outcome.kind).toBe("edges");
+    if (outcome.kind !== "edges") return;
+    expect(outcome.edges.map((e) => e.targetSymbolId).sort()).toEqual(["App#add_url_rule", "App#route"]);
+    expect(outcome.edges.every((e) => e.edgeKind === "cone" && e.targetRelPath === APP)).toBe(true);
+  });
+});
+
 describe("resolver — constructing the enclosing class", () => {
   const APPS = "django/apps/config.py";
   const CODE = [
