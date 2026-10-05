@@ -387,3 +387,123 @@ describe("ConeDispatchResolver — structural ancestors never define (bd 39xca.1
     expect(edges.map((e) => e.targetSymbolId).sort()).toEqual(["A#m", "B#m"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// bd tea-rags-mcp-m99j1.1.84 — the receiver's static class is itself a dispatch
+// target. django `lookups = MultiValueDict(); lookups.appendlist(...)` emitted a
+// 1-wide cone to the one subclass override (`QueryDict#appendlist`) and never
+// the receiver's own `MultiValueDict#appendlist`. A language opts in by
+// answering `ConeTypeLocator.isRuntimeDispatchClass`; without it the cone stays
+// subtypes-only.
+// ---------------------------------------------------------------------------
+
+describe("ConeDispatchResolver — receiver declaration stays in the cone (bd m99j1.1.84)", () => {
+  const row = (source: string, ancestor: string, kind: InheritanceEdgeRow["kind"]): InheritanceEdgeRow => ({
+    sourceFqName: source,
+    sourceSymbolId: null,
+    ancestorFqName: ancestor,
+    ancestorSymbolId: null,
+    kind,
+    ordinal: 0,
+  });
+
+  /** `Root <- Base <- {A, B}`, nominal unless `structuralOnly`. */
+  function receiverCtx(opts: {
+    definers: ReadonlySet<string>;
+    instantiated?: ReadonlySet<string>;
+    structuralOnly?: boolean;
+    contracts?: ReadonlySet<string>;
+    optedOut?: boolean;
+  }): { ctx: CallContext; locator: ConeTypeLocator } {
+    const kind: InheritanceEdgeRow["kind"] = opts.structuralOnly ? "structural" : "super";
+    const rows = [row("A", "Base", kind), row("B", "Base", kind)];
+    const rootRow = row("Base", "Root", "super");
+    const snapshot: HierarchySnapshot = {
+      ancestorsBySource: { A: [rows[0]], B: [rows[1]], Base: [rootRow] },
+      descendantsByAncestor: { Base: rows, Root: [rootRow] },
+    };
+    const locator: ConeTypeLocator = {
+      resolveTypeFile: (t) => `${t.toLowerCase()}.py`,
+      findDirectMethod: (t, member): SymbolResolutionTarget | null =>
+        member === "m" && opts.definers.has(t)
+          ? { targetRelPath: `${t.toLowerCase()}.py`, targetSymbolId: `${t}#m` }
+          : null,
+      ...(opts.optedOut ? {} : { isRuntimeDispatchClass: (t: string) => !(opts.contracts ?? new Set()).has(t) }),
+    };
+    const context = {
+      callerFile: "caller.py",
+      callerScope: [],
+      imports: [],
+      symbolTable: {} as never,
+      localBindings: { obj: [{ line: 1, type: "Base" }] },
+      hierarchy: new MapHierarchyView(snapshot),
+      instantiatedTypes: opts.instantiated,
+    } as unknown as CallContext;
+    return { ctx: context, locator };
+  }
+
+  const resolve = (c: { ctx: CallContext; locator: ConeTypeLocator }): DispatchEdge[] =>
+    sortEdges(edgesOf(new ConeDispatchResolver(c.locator, 8).resolveDispatch(rtaCall, c.ctx)));
+
+  it("keeps the receiver's own declaration beside the subclass override", () => {
+    const edges = resolve(receiverCtx({ definers: new Set(["Base", "A"]) }));
+    expect(edges.map((e) => [e.targetSymbolId, e.edgeKind, e.confidence])).toEqual([
+      ["A#m", "cone", 0.5],
+      ["Base#m", "cone", 0.5],
+    ]);
+  });
+
+  it("keeps the declaration the receiver INHERITS from a nominal ancestor", () => {
+    const edges = resolve(receiverCtx({ definers: new Set(["Root", "A"]) }));
+    expect(edges.map((e) => e.targetSymbolId)).toEqual(["A#m", "Root#m"]);
+  });
+
+  it("adds nothing when no class on the receiver's MRO declares the member", () => {
+    const edges = resolve(receiverCtx({ definers: new Set(["A", "B"]) }));
+    expect(edges.map((e) => e.targetSymbolId)).toEqual(["A#m", "B#m"]);
+  });
+
+  it("stays [] when no subtype overrides — the exact chain answers the receiver", () => {
+    expect(resolve(receiverCtx({ definers: new Set(["Base"]) }))).toEqual([]);
+  });
+
+  it("never adds a structural contract's own declaration (a Protocol stub is no runtime target)", () => {
+    const edges = resolve(receiverCtx({ definers: new Set(["Base", "A", "B"]), structuralOnly: true }));
+    expect(edges.map((e) => e.targetSymbolId)).toEqual(["A#m", "B#m"]);
+  });
+
+  it("RTA keeps the declaration an instantiated non-overriding subtype dispatches to", () => {
+    const edges = resolve(receiverCtx({ definers: new Set(["Base", "A"]), instantiated: new Set(["B"]) }));
+    expect(edges.map((e) => [e.targetSymbolId, e.confidence])).toEqual([["Base#m", 1]]);
+  });
+
+  it("RTA prunes subclass overrides only — an instantiated receiver class keeps its own declaration", () => {
+    const edges = resolve(receiverCtx({ definers: new Set(["Base", "A", "B"]), instantiated: new Set(["Base", "A"]) }));
+    expect(edges.map((e) => e.targetSymbolId)).toEqual(["A#m", "Base#m"]);
+  });
+
+  it("never adds the declaration of a receiver the locator says is no runtime class (a Protocol)", () => {
+    const edges = resolve(receiverCtx({ definers: new Set(["Base", "A"]), contracts: new Set(["Base"]) }));
+    expect(edges.map((e) => e.targetSymbolId)).toEqual(["A#m"]);
+  });
+
+  it("never adds a stub the receiver inherits from a contract ancestor", () => {
+    const edges = resolve(receiverCtx({ definers: new Set(["Root", "A"]), contracts: new Set(["Root"]) }));
+    expect(edges.map((e) => e.targetSymbolId)).toEqual(["A#m"]);
+  });
+
+  it("does not count the receiver's declaration toward the cone cap", () => {
+    const c = receiverCtx({ definers: new Set(["Base", "A", "B"]) });
+    const edges = sortEdges(edgesOf(new ConeDispatchResolver(c.locator, 2).resolveDispatch(rtaCall, c.ctx)));
+    expect(edges.map((e) => [e.targetSymbolId, e.edgeKind, e.confidence])).toEqual([
+      ["A#m", "cone", 1 / 3],
+      ["B#m", "cone", 1 / 3],
+      ["Base#m", "cone", 1 / 3],
+    ]);
+  });
+
+  it("a locator that does not answer isRuntimeDispatchClass keeps the cone subtypes-only", () => {
+    const edges = resolve(receiverCtx({ definers: new Set(["Base", "A"]), optedOut: true }));
+    expect(edges.map((e) => e.targetSymbolId)).toEqual(["A#m"]);
+  });
+});

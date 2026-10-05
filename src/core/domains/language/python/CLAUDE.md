@@ -550,6 +550,18 @@
   split httpx `value: str | bytes` → `value.encode()` moved from a `dynamic`
   `coreAmbiguous` homonym to a `localVar` in-project miss with no edge behind
   it.
+- **Python's cone keeps the RECEIVER's own declaration** (bd
+  tea-rags-mcp-m99j1.1.84), opted into by
+  `PythonConeTypeLocator#isRuntimeDispatchClass`. The kernel cone is
+  subtypes-only for a locator that does not answer it, so django's
+  `lookups = MultiValueDict(); lookups.appendlist()` was a 1-wide cone to the
+  `QueryDict` override — a `single` fan replaces the chain's answer, so the
+  exact `MultiValueDict#appendlist` never reached the graph. The receiver's
+  class (or the nominal ancestor it inherits `m` from) is now a cone member,
+  never counted toward `coneMax`. A `typing.Protocol` is not a runtime class —
+  its direct `classAncestors` name `typing::Protocol` — so its stub stays out
+  even when another Protocol subclasses it nominally (polar's
+  `RepositoryProtocol`).
 - **Behind them, `resolveDispatch` composes
   `[table, callableParam, union, cone, dynamic]` — `dynamic` is ON by default
   since bd tea-rags-mcp-m99j1.1.57 (`CODEGRAPH_PY_DYNAMIC_DISPATCH=0` drops it),

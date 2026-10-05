@@ -155,7 +155,10 @@ describe("PythonCallResolver.resolveDispatch (CHA cone)", () => {
     expect(out).toEqual([]);
   });
 
-  it("fans out to N overriding subtypes with confidence 1/N and edgeKind 'cone' (|cone| ≤ K)", () => {
+  // bd tea-rags-mcp-m99j1.1.84: the receiver's own class declares `speak`, so an
+  // `Animal` instance dispatches to `Animal#speak` — it is a cone member beside
+  // the overriding subclasses (N=3), never dropped in their favour.
+  it("fans out to the receiver's declaration and N overriding subtypes with confidence 1/(N+1) (|cone| ≤ K)", () => {
     const symbolTable = tableWith(animalBase, dog, cat);
     const out = sortEdges(
       edgesOf(
@@ -172,19 +175,88 @@ describe("PythonCallResolver.resolveDispatch (CHA cone)", () => {
     expect(out).toEqual([
       {
         sourceSymbolId: null,
+        targetRelPath: "app/models/animal.py",
+        targetSymbolId: "Animal#speak",
+        edgeKind: "cone",
+        confidence: 1 / 3,
+      },
+      {
+        sourceSymbolId: null,
         targetRelPath: "app/animals/cat.py",
         targetSymbolId: "Cat#speak",
         edgeKind: "cone",
-        confidence: 0.5,
+        confidence: 1 / 3,
       },
       {
         sourceSymbolId: null,
         targetRelPath: "app/animals/dog.py",
         targetSymbolId: "Dog#speak",
         edgeKind: "cone",
-        confidence: 0.5,
+        confidence: 1 / 3,
       },
     ]);
+  });
+
+  it("keeps a constructed receiver's own method when one subclass overrides it (django MultiValueDict)", () => {
+    // django urls/resolvers.py: `lookups = MultiValueDict(); lookups.appendlist(...)`.
+    // `QueryDict(MultiValueDict)` overrides `appendlist`; the cone was 1-wide to
+    // `QueryDict#appendlist` and excluded the receiver's own declaration.
+    const symbolTable = tableWith(
+      [
+        "django/utils/datastructures.py",
+        [
+          sym("MultiValueDict", "MultiValueDict", "django/utils/datastructures.py", []),
+          sym("MultiValueDict#appendlist", "appendlist", "django/utils/datastructures.py", ["MultiValueDict"]),
+        ],
+      ],
+      [
+        "django/http/request.py",
+        [
+          sym("QueryDict", "QueryDict", "django/http/request.py", []),
+          sym("QueryDict#appendlist", "appendlist", "django/http/request.py", ["QueryDict"]),
+        ],
+      ],
+    );
+    const out = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "lookups.appendlist", receiver: "lookups", member: "appendlist", startLine: 1 },
+        ctx({
+          symbolTable,
+          localBindings: { lookups: [{ line: 1, type: "MultiValueDict" }] },
+          hierarchy: hierarchyWith({ MultiValueDict: ["QueryDict"] }),
+        }),
+      ),
+    );
+    expect(sortEdges(out).map((edge) => [edge.targetSymbolId, edge.edgeKind, edge.confidence])).toEqual([
+      ["MultiValueDict#appendlist", "cone", 0.5],
+      ["QueryDict#appendlist", "cone", 0.5],
+    ]);
+  });
+
+  it("never adds a typing.Protocol receiver's stub, even when a class subclasses the Protocol nominally", () => {
+    // polar kit/repository/base.py: `self: RepositoryProtocol[M]` with
+    // `RepositorySoftDeletionProtocol(RepositoryProtocol, Protocol)` beneath it —
+    // a nominal descendant, but both are contracts nothing instantiates.
+    const speaker: [string, SymbolDefinition[]] = [
+      "app/protocols.py",
+      [
+        sym("Speaker", "Speaker", "app/protocols.py", []),
+        sym("Speaker#speak", "speak", "app/protocols.py", ["Speaker"]),
+      ],
+    ];
+    const symbolTable = tableWith(speaker, dog, cat);
+    const out = edgesOf(
+      resolver.resolveDispatch(
+        call,
+        ctx({
+          symbolTable,
+          localBindings: { pet: [{ line: 1, type: "Speaker" }] },
+          hierarchy: hierarchyWith({ Speaker: ["Dog", "Cat"] }),
+          classAncestors: { "app/protocols.py::Speaker": ["typing::Protocol"] },
+        }),
+      ),
+    );
+    expect(sortEdges(out).map((edge) => edge.targetSymbolId)).toEqual(["Cat#speak", "Dog#speak"]);
   });
 
   it("collapses to a single poly-base edge to the base decl when |cone| > K", () => {

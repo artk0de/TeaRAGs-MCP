@@ -5,6 +5,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { ConeTypeLocator } from "../../../../../contracts/types/language.js";
+import { isPythonPlacedClassKey, pythonClassKey } from "../python-class-key.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { resolveTypeFile } from "./python-local-binding.js";
 import { lastSegment, lookupPythonSymbolsByShortName, type ResolverConfig } from "./shared.js";
@@ -63,4 +64,43 @@ export class PythonConeTypeLocator implements ConeTypeLocator {
     const target = pickSingleCandidate(candidates, this.cfg.mode);
     return target ? { targetRelPath: target.relPath, targetSymbolId: target.symbolId } : null;
   }
+
+  /**
+   * A class is a runtime dispatch target unless it is a `typing.Protocol` —
+   * a structural contract nothing instantiates, whose member is a stub (bd
+   * tea-rags-mcp-m99j1.1.84). Python requires every Protocol to list
+   * `Protocol` among its OWN bases (a subclass that omits it is a concrete
+   * class), so the direct `classAncestors` spellings decide. A class whose
+   * bases are unknown is a runtime class: the stub case needs evidence.
+   */
+  isRuntimeDispatchClass(typeName: string, ctx: CallContext): boolean {
+    const classKey = isPythonPlacedClassKey(typeName) ? typeName : this.classKeyOf(typeName, ctx);
+    const bases = classKey === null ? undefined : ctx.classAncestors?.[classKey];
+    return !(bases ?? []).some(namesTypingProtocol);
+  }
+
+  private classKeyOf(typeName: string, ctx: CallContext): string | null {
+    const file = resolveTypeFile(lastSegment(typeName), ctx, this.mapper);
+    return file ? pythonClassKey(file, typeName) : null;
+  }
+}
+
+const PROTOCOL_MODULES: ReadonlySet<string> = new Set(["typing", "typing_extensions"]);
+
+/**
+ * Does one `classAncestors` base spelling name `typing.Protocol`? Spellings are
+ * `module::Name` (`typing::Protocol`), a dotted name off a module import
+ * (`typing::typing.Protocol`), or a `|`-joined star-import disjunction; a
+ * generic argument list is stripped.
+ */
+function namesTypingProtocol(spelling: string): boolean {
+  return spelling.split("|").some((alternative) => {
+    const sep = alternative.lastIndexOf("::");
+    const module = sep < 0 ? null : alternative.slice(0, sep);
+    const name = (sep < 0 ? alternative : alternative.slice(sep + 2)).replace(/\[.*$/s, "");
+    const dot = name.lastIndexOf(".");
+    const head = dot < 0 ? module : name.slice(0, dot);
+    const tail = dot < 0 ? name : name.slice(dot + 1);
+    return tail === "Protocol" && head !== null && PROTOCOL_MODULES.has(head);
+  });
 }
