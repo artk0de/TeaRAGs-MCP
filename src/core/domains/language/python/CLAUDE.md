@@ -880,7 +880,12 @@
   them. The descriptor reader maps the `Self` marker to the DECLARING class,
   because a field type has no receiver to substitute. The `annotations` source
   reads a return that names the `self` parameter's own `TypeVar`
-  (`def __enter__(self: T) -> T`) as a `Self` return too.
+  (`def __enter__(self: T) -> T`) as a `Self` return too. A bare `return self`
+  publishes the `Self` marker as well (bd tea-rags-mcp-m99j1.1.69), so
+  `CursorWrapper#__enter__` entered on a `CursorDebugWrapper` arm stays that
+  arm; it travels the fixpoint as a private token because a union treats it
+  apart from a self COPY — a `self` arm is the enclosing class there, a copy
+  kills the union — and a field written from it is the declaring class.
 - **Module-level values publish run-global as
   `moduleValueTypes["<relPath>::<name>"]`, and only when module scope binds the
   name to ONE knowable type** (`walker/passes/python-module-value-facts.ts`,
