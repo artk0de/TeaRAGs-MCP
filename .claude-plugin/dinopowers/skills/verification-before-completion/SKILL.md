@@ -37,9 +37,11 @@ Only new files created (no edits to existing): skip scan, verdict
 (`base` = branch base, e.g. `main`; uncommitted-only work on `main` →
 `changes:{}`) BEFORE "done" when the session edited existing files.
 incompleteChange = co-change partners the diff ignores (forgotten sibling
-edits). architecture = what the diff ADDS judged against the indexed graph
-(unstable targets, facade bypasses, new cycles). Findings are gate input, like
-the blast ladder — address or state why not.
+edits). architecture = diff vs indexed graph (unstable targets, facade bypasses,
+cycles). `preExisting: true` = predates diff, session only touched a file on it
+→ report, never fix inside this change. `entryPoint` / `compositionRoot` /
+`foundationTerminal` = placement, not defect. Rest = gate input, like blast
+ladder — address or state why not.
 
 ## Verdict Ladder (PRESCRIPTIVE — apply before claiming done)
 

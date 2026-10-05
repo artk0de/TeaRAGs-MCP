@@ -299,6 +299,16 @@ when the index was built at another commit than the tree's `HEAD`, `notices`
   both sides of a merge candidate. `detectors` gives a status per detector,
   including `built: false` with its reason. Up to 100 findings.
 
+  `stableDependencies` and `mainSequence` weigh only the edges the change
+  adds. `cycles` and `leakingAbstraction` judge every import of a changed file
+  as it now reads, so they also report a cycle or a facade bypass the change
+  merely touches. Such a finding carries `preExisting: true`: the index already
+  holds that edge, the problem predates the change. Three more markers are
+  triage data, never suppressions: `foundationTerminal` (the edge ends in the
+  shared contracts layer), `compositionRoot` (an SDP finding on a component
+  that assembles the application) and `entryPoint` (a main-sequence shift on a
+  cli or mcp entry component, which belongs at the unstable end).
+
 **Reviewing a diff** (the `naming` section). `changes: {}` reviews the working tree against `HEAD`,
 untracked files included; `changes: { base }` reviews a branch. The base is
 read at its merge-base with `HEAD` (`git merge-base <base> HEAD`), so
