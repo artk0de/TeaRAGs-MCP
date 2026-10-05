@@ -407,9 +407,6 @@ describe("App interface", () => {
       resolveBaseIndexEntry: true,
       createPathCollectionResolver: true,
       hasProvider: true,
-      reviewSectionIds: true,
-      resolveBaseIndexEntry: true,
-      createPathCollectionResolver: true,
     };
     expect(Object.keys(_methods)).toHaveLength(38);
   });
