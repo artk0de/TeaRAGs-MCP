@@ -115,3 +115,13 @@ export {
   type NominalTypeRef,
   type TypeMemberLookup,
 } from "./type-member-lookup.js";
+export {
+  ChainTypeSymbolResolutionStrategy,
+  ConventionReceiverSymbolResolutionStrategy,
+  LocalBindingSymbolResolutionStrategy,
+  ReceiverTypedSymbolResolutionStrategy,
+  type ConventionReceiverTypingPorts,
+  type ReceiverCallRef,
+  type ReceiverTypedStrategyOptions,
+  type ReceiverTypingPorts,
+} from "./receiver-typed-strategies.js";

@@ -1,7 +1,24 @@
-import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
-import { resolveLocalBinding, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
-import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { resolveTypeInstanceMethod, resolveTypeStaticMethod, type ResolverConfig } from "./shared.js";
+import { resolveLocalBinding } from "../../../../../contracts/types/codegraph.js";
+import { LocalBindingSymbolResolutionStrategy, type ReceiverTypingPorts } from "../../../kernel/index.js";
+import { createRubyTypeMemberLookup } from "../ruby-type-member-lookup.js";
+import type { ResolverConfig } from "./shared.js";
+
+/**
+ * Ruby's local-binding typing: the walker's `localBindings` entry in scope at
+ * the call line. Class-valued binding (`var = User`) types the receiver as the
+ * CLASS, so the lookup resolves the STATIC method (`User.find`) via the
+ * dot-form filter. Instance-valued binding (default) types an INSTANCE, so the
+ * lookup resolves the instance method (`User#save`) via the hash-form filter,
+ * excluding any same-named class method from ambiguating the pick (bd
+ * Increment B / var=CONST).
+ */
+const RUBY_LOCAL_TYPE_TYPING: ReceiverTypingPorts = {
+  typeOfReceiver: (call, ctx) => {
+    const binding = resolveLocalBinding(ctx.localBindings, call.receiver, call.startLine);
+    if (!binding) return null;
+    return { form: binding.valueKind === "class" ? "class" : "instance", name: binding.type };
+  },
+};
 
 /**
  * Walker-inferred local type wins over heuristic resolution. When the receiver
@@ -16,27 +33,14 @@ import { resolveTypeInstanceMethod, resolveTypeStaticMethod, type ResolverConfig
  * counts as resolved when the type's file is known but the method isn't), or it
  * drops when the type's file is entirely unknown. It never falls through to the
  * later heuristic passes, mirroring the original orchestrator's `return`.
+ *
+ * The verdict is the kernel's `LocalBindingSymbolResolutionStrategy` (bd
+ * tea-rags-mcp-m99j1.1.5): shared precise type→method lookup (scope-tail +
+ * prepend + ancestor MRO) through Ruby's `TypeMemberLookup`, DROP on a typed
+ * miss.
  */
-export class RubyLocalTypeSymbolResolutionStrategy implements SymbolResolutionStrategy {
-  readonly name = "localType";
-  constructor(private readonly cfg: ResolverConfig) {}
-
-  attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    if (!call.receiver) return CONTINUE;
-    const binding = resolveLocalBinding(ctx.localBindings, call.receiver, call.startLine);
-    if (!binding) return CONTINUE;
-    // Walker-inferred local type → shared precise type→method lookup (scope-tail
-    // + prepend + ancestor MRO). Once a local binding exists the call is terminal
-    // — a miss (the type's file is unknown) DROPS rather than falling through to
-    // a heuristic pass.
-    //
-    // Class-valued binding (`var = User`): resolve the STATIC method (`User.find`)
-    // via the dot-form filter. Instance-valued binding (default): resolve the
-    // instance method (`User#save`) via the hash-form filter, excluding any same-
-    // named class method from ambiguating the pick (bd Increment B / var=CONST).
-    const resolve =
-      binding.valueKind === "class" ? resolveTypeStaticMethod : resolveTypeInstanceMethod;
-    const target = resolve(binding.type, call.member, ctx, this.cfg.mode);
-    return target ? resolved(target) : DROP;
+export class RubyLocalTypeSymbolResolutionStrategy extends LocalBindingSymbolResolutionStrategy {
+  constructor(cfg: ResolverConfig) {
+    super("localType", RUBY_LOCAL_TYPE_TYPING, createRubyTypeMemberLookup(cfg.mode), { dropOnTypedMiss: true });
   }
 }

@@ -1,13 +1,34 @@
-import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import type {
   AmbiguousResolveMode,
   CallContext,
   CallRef,
   SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
-import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import {
+  ConventionReceiverSymbolResolutionStrategy,
+  type ConventionReceiverTypingPorts,
+} from "../../../kernel/index.js";
+import { createRubyTypeMemberLookup } from "../ruby-type-member-lookup.js";
 import { conventionReceiverType, typeOfReceiver } from "../type-propagation.js";
-import { resolveTypeInstanceMethod, type ResolverConfig } from "./shared.js";
+import type { ResolverConfig } from "./shared.js";
+
+/**
+ * Ruby's convention typing. The guess is `conventionReceiverType` — the
+ * receiver-shape regex, then the class-exists and no-subtypes gates — and the
+ * convention only ever yields the `instance` form; the narrowing keeps that a
+ * compile-time fact rather than a comment. A receiver `typeOfReceiver` answers
+ * is typed elsewhere: a real fact wins.
+ */
+const RUBY_CONVENTION_RECEIVER_TYPING: ConventionReceiverTypingPorts = {
+  typeOfReceiver: (call, ctx) => {
+    const type = conventionReceiverType(call.receiver, ctx);
+    return type?.form === "instance" ? type : null;
+  },
+  isTypedElsewhere: (call, ctx) => typeOfReceiver(call.receiver, call.startLine, ctx) !== undefined,
+};
+
+/** One strategy per resolve mode, so the single authority below allocates nothing per call. */
+const conventionStrategyByMode = new Map<AmbiguousResolveMode, RubyConventionReceiverSymbolResolutionStrategy>();
 
 /**
  * The single precise target the `conventionReceiver` pass emits for `call`, or
@@ -24,25 +45,21 @@ import { resolveTypeInstanceMethod, type ResolverConfig } from "./shared.js";
  * rejects the overwhelming majority of receivers with no map lookup at all, so it
  * runs before the `typeOfReceiver` fact probe. Both predicates are pure, so the
  * swap cannot change an answer.
+ *
+ * The answer is the kernel strategy's `findTarget` — the very method its
+ * `attempt` reads — so the two consumers share one code path, not two copies.
  */
 export function resolveConventionReceiverTarget(
   call: CallRef,
   ctx: CallContext,
   mode: AmbiguousResolveMode,
 ): SymbolResolutionTarget | null {
-  const { receiver } = call;
-  if (receiver === null) return null;
-  // The convention only ever yields the `instance` form; the narrowing keeps
-  // that a compile-time fact rather than a comment.
-  const type = conventionReceiverType(receiver, ctx);
-  if (type?.form !== "instance") return null;
-  if (typeOfReceiver(receiver, call.startLine, ctx) !== undefined) return null;
-  const target = resolveTypeInstanceMethod(type.name, call.member, ctx, mode);
-  // Two distinct declines: the MRO offered nothing at all, and the MRO offered
-  // only the file-only degradation. Gate 3 refuses both.
-  if (target === null) return null;
-  if (target.targetSymbolId === null) return null;
-  return target;
+  let strategy = conventionStrategyByMode.get(mode);
+  if (strategy === undefined) {
+    strategy = new RubyConventionReceiverSymbolResolutionStrategy({ mode });
+    conventionStrategyByMode.set(mode, strategy);
+  }
+  return strategy.findTarget(call, ctx);
 }
 
 /**
@@ -87,13 +104,13 @@ export function resolveConventionReceiverTarget(
  * Never DROPs. A DROP here would claim the receiver's type is known-and-foreign,
  * which is exactly what a convention guess cannot establish; `receiverSetDrop`
  * remains the one pass that decides these calls are over.
+ *
+ * The gates and verdict are the kernel's `ConventionReceiverSymbolResolutionStrategy`
+ * (bd tea-rags-mcp-m99j1.1.5) over Ruby's convention typing and Ruby's
+ * `TypeMemberLookup` (`instance` form → `resolveTypeInstanceMethod`).
  */
-export class RubyConventionReceiverSymbolResolutionStrategy implements SymbolResolutionStrategy {
-  readonly name = "conventionReceiver";
-  constructor(private readonly cfg: ResolverConfig) {}
-
-  attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    const target = resolveConventionReceiverTarget(call, ctx, this.cfg.mode);
-    return target === null ? CONTINUE : resolved(target);
+export class RubyConventionReceiverSymbolResolutionStrategy extends ConventionReceiverSymbolResolutionStrategy {
+  constructor(cfg: ResolverConfig) {
+    super("conventionReceiver", RUBY_CONVENTION_RECEIVER_TYPING, createRubyTypeMemberLookup(cfg.mode));
   }
 }
