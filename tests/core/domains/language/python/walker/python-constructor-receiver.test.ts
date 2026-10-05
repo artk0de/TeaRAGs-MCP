@@ -286,3 +286,114 @@ describe("constructor on a function-local VALUE receiver stays untyped (bd tea-r
     expect(site?.argTypes).toBeUndefined();
   });
 });
+
+/**
+ * A BARE CapWords callee that is itself a def-local bound to a value (bd
+ * tea-rags-mcp-m99j1.1.90) — django's oracle `creation.py`
+ * `DatabaseWrapper = type(self.connection); return DatabaseWrapper(...)`, or a
+ * test's `FormSet = formset_factory(...); FormSet(...)` — names no class: LEGB
+ * makes the local shadow every class of that short name, and the local holds
+ * whatever the value is at run time. A local aliasing a name
+ * (`Wrapper = mod.Client`), an import inside the def, a module-level binding,
+ * or no binding at all reads exactly as before.
+ */
+describe("bare constructor callee that is a function-local VALUE stays untyped (bd tea-rags-mcp-m99j1.1.90)", () => {
+  const localIn = (body: readonly string[], prelude: readonly string[] = []): string | undefined => {
+    const lines = ["import mod", ...prelude, "class Cache:", "    def get(self):", ...body.map((l) => `        ${l}`)];
+    lines.push("        return c.get(1)");
+    const start = lines.indexOf("    def get(self):") + 1;
+    const r = extract(lines, [{ symbolId: "Cache#get", scope: ["Cache"], startLine: start, endLine: lines.length }]);
+    return (r.chunks[0]?.localBindings?.c ?? []).find((b) => b.type !== "")?.type;
+  };
+
+  describe("local channel", () => {
+    it("declines `Wrapper = type(self.conn); c = Wrapper()`", () => {
+      expect(localIn(["Wrapper = type(self.conn)", "c = Wrapper()"])).toBeUndefined();
+    });
+
+    it("declines `FormSet = formset_factory(F); c = FormSet()`", () => {
+      expect(localIn(["FormSet = formset_factory(F)", "c = FormSet()"])).toBeUndefined();
+    });
+
+    it("declines a value local of an ENCLOSING def (closure)", () => {
+      const r = extract(
+        [
+          "def outer():",
+          "    Model = apps.get_model('a', 'B')",
+          "    def inner():",
+          "        c = Model()",
+          "        return c.get(1)",
+          "    return inner",
+        ],
+        [{ symbolId: "outer#inner", scope: ["outer"], startLine: 3, endLine: 5 }],
+      );
+      expect((r.chunks[0]?.localBindings?.c ?? []).find((b) => b.type !== "")?.type).toBeUndefined();
+    });
+
+    it("keeps a bare class with no local binding (`c = Client()`)", () => {
+      expect(localIn(["c = Client()"])).toBe("Client");
+    });
+
+    it("keeps `Wrapper = mod.Client; c = Wrapper()` — an alias of a name", () => {
+      expect(localIn(["Wrapper = mod.Client", "c = Wrapper()"])).toBe("Wrapper");
+    });
+
+    it("keeps `from mod import Client` inside the def", () => {
+      expect(localIn(["from mod import Client", "c = Client()"])).toBe("Client");
+    });
+
+    it("keeps a module-level `Client = make()` — no def binds the name", () => {
+      expect(localIn(["c = Client()"], ["Client = make()"])).toBe("Client");
+    });
+
+    // django admin's hook idiom: `ModelForm = self.get_form(...)` returns the
+    // namesake or a subclass of it — measured CORRECT on every resolved row.
+    it("keeps `ModelForm = self.get_form(); c = ModelForm()` — a class hook on self", () => {
+      expect(localIn(["ModelForm = self.get_form(request)", "c = ModelForm()"])).toBe("ModelForm");
+    });
+
+    it("keeps a `cls.<hook>()` binding too", () => {
+      expect(localIn(["Form = cls.get_form_class()", "c = Form()"])).toBe("Form");
+    });
+
+    it("declines `Model = apps.get_model('a', 'B')` — a migration's historical model", () => {
+      expect(localIn(["Model = apps.get_model('a', 'B')", "c = Model()"])).toBeUndefined();
+    });
+  });
+
+  it("keeps the return channel for `ChangeList = self.get_changelist(r); return ChangeList(r)`", () => {
+    expect(returnOf(["ChangeList = self.get_changelist(1)", "return ChangeList(1)"])).toBe("ChangeList");
+  });
+
+  it("declines the field channel `self._client = Wrapper()` on a value local", () => {
+    const r = extract([
+      "class Cache:",
+      "    def __init__(self):",
+      "        Wrapper = type(self.conn)",
+      "        self._client = Wrapper()",
+    ]);
+    expect(r.classFieldTypes?.Cache?._client).toBeUndefined();
+    expect(r.classFieldTypesByClassKey?.["pkg/cache.py::Cache"]?._client).toBeUndefined();
+    expect(r.classFieldCallResults?.["pkg/cache.py::Cache"]?._client).toBeUndefined();
+  });
+
+  it("declines the return channel (django oracle `_maindb_connection` shape)", () => {
+    expect(returnOf(["DatabaseWrapper = type(self._lib)", "return DatabaseWrapper(1)"])).toBeNull();
+  });
+
+  it("keeps the return channel for a bare class with no local binding", () => {
+    expect(returnOf(["return DatabaseWrapper(1)"])).toBe("DatabaseWrapper");
+  });
+
+  it("declines the call-argument channel `View(Req())` on a value local", () => {
+    const r = extract([
+      "from app.views import View",
+      "",
+      "def handle():",
+      "    Req = make()",
+      "    return View(Req())",
+    ]);
+    const site = r.knownTargetCallArgs?.find((s) => s.targets.some((t) => t.endsWith("View#__init__")));
+    expect(site?.argTypes).toBeUndefined();
+  });
+});
