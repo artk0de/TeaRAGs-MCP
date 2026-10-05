@@ -23,7 +23,12 @@ import {
   type TypeFact,
 } from "../../../kernel/index.js";
 import type { PythonTypeSourceInput } from "./python-annotation-type-source.js";
-import { isPythonClassFormDef, pythonAnnotationExpression, walkPythonScopes } from "./python-def-scope-walk.js";
+import {
+  isPythonClassFormDef,
+  pythonAnnotationExpression,
+  walkPythonScopes,
+  type PythonDefSite,
+} from "./python-def-scope-walk.js";
 import { pythonReturnExpressionType, type PythonReturnScope } from "./python-return-expression.js";
 import {
   PYTHON_SELF_RETURN,
@@ -380,8 +385,24 @@ const IN_PROGRESS = Symbol("in-progress");
 class PythonReturnFixpoint {
   private readonly defReturns = new Map<AstNode, readonly string[] | null | typeof IN_PROGRESS>();
   private readonly fieldReturns = new Map<string, string | null | typeof IN_PROGRESS>();
+  /** `<bare> → <written spelling>`; null when the file writes one bare name two ways. */
+  private readonly spellings = new Map<string, string | null>();
 
   constructor(private readonly tables: PythonAstScopeTables) {}
+
+  /**
+   * The spelling the file wrote `bare` in (bd tea-rags-mcp-m99j1.1.55) — the
+   * bare name itself when it was never seen written, or written two ways.
+   */
+  writtenSpellingOf(bare: string): string {
+    return this.spellings.get(bare) ?? bare;
+  }
+
+  private recordSpelling(bare: string, written: string): void {
+    const seen = this.spellings.get(bare);
+    if (seen === undefined) this.spellings.set(bare, written);
+    else if (seen !== written) this.spellings.set(bare, null);
+  }
 
   /** The classes an UNANNOTATED def's return expressions name; null on silence. */
   inferDef(defNode: AstNode, selfClass: string | undefined): readonly string[] | null {
@@ -401,6 +422,9 @@ class PythonReturnFixpoint {
       fieldType: (field) => (selfClass === undefined ? null : this.fieldType(selfClass, field)),
       selfMethodReturn: (method) => (selfClass === undefined ? null : this.methodReturn(selfClass, method)),
       fileReturn: (name) => this.fileReturn(name),
+      writtenSpelling: (bare, written) => {
+        this.recordSpelling(bare, written);
+      },
     };
   }
 
@@ -508,28 +532,45 @@ function singleName(typed: ReturnArmTypes | null): string | null {
   return typed.length === 1 ? typed[0] : null;
 }
 
+/**
+ * Every unannotated def's inferred arms, published under the spelling the
+ * DECLARING file binds them by (bd tea-rags-mcp-m99j1.1.55): `utils.CursorWrapper(…)`
+ * in `base/base.py` is `db.backends.utils::CursorWrapper`, so a reader in
+ * another file places the arm where the return was written rather than by
+ * whatever that file calls the bare name. Inference first, publish after, so a
+ * name the file writes two ways is seen as such before any arm is spelled.
+ */
 function extractPythonAstFacts(input: PythonTypeSourceInput): TypeFact[] {
   const fixpoint = new PythonReturnFixpoint(collectPythonAstScopeTables(input.root));
-  const facts: TypeFact[] = [];
+  const inferred: { readonly site: PythonDefSite; readonly names: readonly string[] }[] = [];
   walkPythonScopes(input.root, {
     onDef: (site) => {
       // An annotated def is the `annotations` source's; re-emitting would only
       // lose the coordinate dedupe race and cost a walk.
       if (site.node.childForFieldName("return_type") !== null) return;
       const names = fixpoint.inferDef(site.node, site.classChain[site.classChain.length - 1]);
-      const type = names === null ? undefined : pythonReturnTypeRef(names);
-      if (type === undefined) return;
-      const fact: TypeFact = {
-        kind: "return",
-        source: PYTHON_AST_SOURCE,
-        symbolScope: [...site.classChain],
-        methodName: site.name,
-        type,
-      };
-      if (isPythonClassFormDef(site.decorators)) fact.classForm = true;
-      facts.push(fact);
+      if (names !== null) inferred.push({ site, names });
     },
   });
+  const qualify = input.qualifyTypeName;
+  const facts: TypeFact[] = [];
+  for (const { site, names } of inferred) {
+    const published =
+      qualify === undefined
+        ? names
+        : names.map((name) => (name === PYTHON_SELF_RETURN ? name : qualify(fixpoint.writtenSpellingOf(name))));
+    const type = pythonReturnTypeRef(published);
+    if (type === undefined) continue;
+    const fact: TypeFact = {
+      kind: "return",
+      source: PYTHON_AST_SOURCE,
+      symbolScope: [...site.classChain],
+      methodName: site.name,
+      type,
+    };
+    if (isPythonClassFormDef(site.decorators)) fact.classForm = true;
+    facts.push(fact);
+  }
   return facts;
 }
 

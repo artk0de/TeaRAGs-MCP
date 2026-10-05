@@ -19,7 +19,6 @@ import {
   pickSingleCandidate,
   type AmbiguousResolveMode,
   type CallContext,
-  type SymbolDefinition,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import {
@@ -28,7 +27,6 @@ import {
   type AncestorLinearizer,
   type NominalTypeRef,
 } from "../../../kernel/index.js";
-import { isPythonSourcePath } from "../../vocabulary/source-extensions.js";
 import { PYTHON_STDLIB_MODULES } from "../../vocabulary/stdlib-modules.js";
 import { pythonModuleValueKey } from "../../walker/passes/python-type-channels.js";
 import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
@@ -38,6 +36,7 @@ import {
   parsePythonClassKey,
   pythonBoundClassKey,
   pythonClassKey,
+  pythonClassKeyIsDeclared,
   pythonDeclaredClassFq,
   pythonTypeRefClassKey,
   resolveTypeRefFile,
@@ -59,6 +58,7 @@ export {
   pythonAliasedClassKey,
   pythonBoundClassKey,
   pythonClassKey,
+  pythonClassKeyIsDeclared,
   pythonDeclaredClassFq,
   pythonImportBoundFile,
   pythonTypeNameIsExternal,
@@ -85,20 +85,7 @@ export {
  * `PythonImportFileMapper` type foremost — can use it without closing an
  * import cycle (bd tea-rags-mcp-0qaht.35); see there.
  */
-export { lookupPythonSymbolsByShortName, PYTHON_SYMBOL_KIND_ROLES } from "../short-name-lookup.js";
-
-/**
- * Fully-qualified lookup restricted to PYTHON candidates — the lookup the
- * Python resolver hands `reexportOriginFile` (bd tea-rags-mcp-nbf8q). The
- * fq key is no safer than the short name: a top-level class's fqName is its
- * bare name in every language, so a TypeScript `Flask` beside the package's
- * own made the barrel hop read two declarations and decline, or land a Python
- * import on a `.ts` file. Mirrors `lookupEcmascriptSymbols` on the TypeScript
- * side.
- */
-export function lookupPythonSymbols(ctx: CallContext, fqName: string): SymbolDefinition[] {
-  return ctx.symbolTable.lookup(fqName).filter((def) => isPythonSourcePath(def.relPath));
-}
+export { lookupPythonSymbols, lookupPythonSymbolsByShortName, PYTHON_SYMBOL_KIND_ROLES } from "../short-name-lookup.js";
 
 /**
  * Was `receiver` assigned, at or above `atLine`, from a call whose CALLEE the
@@ -182,31 +169,6 @@ export function pythonEnclosingClass(ctx: CallContext): PythonEnclosingClass | n
   }
   const classFq = scope.join(".");
   return { key: pythonClassKey(ctx.callerFile, classFq), classFq, name: scope[scope.length - 1] };
-}
-
-/**
- * Does anything in the run DECLARE the class this key addresses (bd
- * tea-rags-mcp-graiw)?
- *
- * The distinction the closure rests on: a class with no bases has no
- * `classAncestors` entry and a miss under it really is evidence of absence,
- * while a key nothing declares carries no evidence either way.
- */
-export function pythonClassKeyIsDeclared(classKey: string, ctx: CallContext): boolean {
-  const parsed = parsePythonClassKey(classKey);
-  if (parsed === null) return false;
-  return ctx.symbolTable.lookup(parsed.classFq).some((def) => def.relPath === parsed.relPath && !isCallableKind(def));
-}
-
-/**
- * A `@classmethod` / `@staticmethod` is filed under the CLASS spelling
- * (`AppConfig.create`), the same join a nested class uses, so the spelling
- * alone cannot tell `AppConfig.create` the method from `Outer.Inner` the class
- * (P2, bd tea-rags-mcp-m99j1.1.19). The walker's recorded kind can; a
- * definition with no kind (an index written before it) keeps counting.
- */
-function isCallableKind(def: { readonly symbolKind?: string }): boolean {
-  return def.symbolKind === "method" || def.symbolKind === "function";
 }
 
 /** A member found on a class or one of its ancestors, and how far the walk could see. */

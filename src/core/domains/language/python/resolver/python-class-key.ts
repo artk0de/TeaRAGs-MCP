@@ -25,3 +25,14 @@ export function parsePythonClassKey(classKey: string): { readonly relPath: strin
   const classFq = classKey.slice(at + 2);
   return classFq.length === 0 ? null : { relPath: classKey.slice(0, at), classFq };
 }
+
+/**
+ * Is `typeName` a class KEY a return-fact reader placed (`db/backends/utils.py::
+ * CursorWrapper`, bd tea-rags-mcp-m99j1.1.55) rather than a written spelling?
+ * The walker's `<module>::<Name>` never reaches a type consumer — the reader
+ * re-spells or kills it — so the file extension is what tells the two apart.
+ */
+export function isPythonPlacedClassKey(typeName: string): boolean {
+  const parsed = parsePythonClassKey(typeName);
+  return parsed !== null && /\.pyi?$/.test(parsed.relPath);
+}

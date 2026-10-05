@@ -31,6 +31,13 @@ export interface PythonTypeSourceInput {
   readonly trackLocalTypes: boolean;
   /** `CODEGRAPH_PY_MODULE_VALUES`, read once by the pass. Gates `moduleValue` facts only; absent = off. */
   readonly moduleValues?: boolean;
+  /**
+   * A written class spelling → the one the file's imports bind it to
+   * (`utils.CursorWrapper` → `db.backends.utils::CursorWrapper`), bare for a
+   * same-file class or builtin (bd tea-rags-mcp-m99j1.1.55). Read by the `ast`
+   * source's return publish only; absent = arms stay bare.
+   */
+  readonly qualifyTypeName?: (written: string) => string;
 }
 
 export interface PythonTypedParam {

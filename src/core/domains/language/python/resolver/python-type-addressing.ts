@@ -16,12 +16,12 @@ import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext, ImportRef } from "../../../../contracts/types/codegraph.js";
 import { PYTHON_BUILTINS } from "../vocabulary/builtins.js";
 import { isPythonFrameworkAnswerClass } from "../vocabulary/frameworks/index.js";
-import { pythonClassKey } from "./python-class-key.js";
+import { isPythonPlacedClassKey, parsePythonClassKey, pythonClassKey } from "./python-class-key.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import { mapPythonImportToFile } from "./python-path-mapper.js";
 import { lookupPythonSymbolsByShortName } from "./short-name-lookup.js";
 
-export { parsePythonClassKey, pythonClassKey } from "./python-class-key.js";
+export { isPythonPlacedClassKey, parsePythonClassKey, pythonClassKey } from "./python-class-key.js";
 
 /**
  * The dotted FQ a symbol-table definition is addressed by — its scope plus its
@@ -90,8 +90,35 @@ export function pythonAliasedClassKey(
   return declaring === null ? null : pythonBoundClassKey(binding.importedName, declaring, ctx);
 }
 
+/**
+ * Does anything in the run DECLARE the class this key addresses (bd
+ * tea-rags-mcp-graiw)?
+ *
+ * The distinction the closure rests on: a class with no bases has no
+ * `classAncestors` entry and a miss under it really is evidence of absence,
+ * while a key nothing declares carries no evidence either way.
+ */
+export function pythonClassKeyIsDeclared(classKey: string, ctx: CallContext): boolean {
+  const parsed = parsePythonClassKey(classKey);
+  if (parsed === null) return false;
+  return ctx.symbolTable.lookup(parsed.classFq).some((def) => def.relPath === parsed.relPath && !isCallableKind(def));
+}
+
+/**
+ * A `@classmethod` / `@staticmethod` is filed under the CLASS spelling
+ * (`AppConfig.create`), the same join a nested class uses, so the spelling
+ * alone cannot tell `AppConfig.create` the method from `Outer.Inner` the class
+ * (P2, bd tea-rags-mcp-m99j1.1.19). The walker's recorded kind can; a
+ * definition with no kind (an index written before it) keeps counting.
+ */
+function isCallableKind(def: { readonly symbolKind?: string }): boolean {
+  return def.symbolKind === "method" || def.symbolKind === "function";
+}
+
+/** The class name a spelling ends in — past a placed key's `relPath::` too (bd tea-rags-mcp-m99j1.1.55). */
 export function lastSegment(qualified: string): string {
-  const parts = qualified.split(".");
+  const keyed = qualified.lastIndexOf("::");
+  const parts = (keyed === -1 ? qualified : qualified.slice(keyed + 2)).split(".");
   return parts[parts.length - 1] ?? qualified;
 }
 
@@ -271,6 +298,7 @@ export function pythonTypeRefClassKey(
   ctx: CallContext,
   mapper: PythonImportFileMapper,
 ): string | null {
+  if (isPythonPlacedClassKey(typeName)) return typeName;
   const bareType = lastSegment(typeName);
   const targetFile = resolveTypeRefFile(typeName, ctx, mapper);
   const direct = targetFile === null ? null : pythonBoundClassKey(bareType, targetFile, ctx);
@@ -291,7 +319,7 @@ export function resolveTypeRefFile(
   member?: string,
 ): string | null {
   return resolveTypeFile(
-    isPythonFrameworkAnswerClass(typeName) ? typeName : lastSegment(typeName),
+    isPythonFrameworkAnswerClass(typeName) || isPythonPlacedClassKey(typeName) ? typeName : lastSegment(typeName),
     ctx,
     mapper,
     member,
@@ -334,6 +362,8 @@ export function resolveTypeFile(
   // placed by that module alone, or not at all. Every other spelling is read
   // as given — the callers own whether a dotted name is stripped first.
   if (isPythonFrameworkAnswerClass(typeName)) return pythonFrameworkClassFile(typeName, ctx, mapper);
+  // A key a return-fact reader placed already names its file (bd tea-rags-mcp-m99j1.1.55).
+  if (isPythonPlacedClassKey(typeName)) return parsePythonClassKey(typeName)?.relPath ?? null;
   const bareType = typeName;
 
   // An import-bound name the mapper calls EXTERNAL is a library class, and no

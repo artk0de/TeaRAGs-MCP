@@ -35,6 +35,12 @@ export interface PythonReturnScope {
   readonly selfMethodReturn: (method: string) => ReturnArmTypes | null;
   /** What a same-file top-level def `<name>(…)` returns (a union as several names), or null. */
   readonly fileReturn: (name: string) => ReturnArmTypes | null;
+  /**
+   * Told the spelling a constructor arm was WRITTEN in (`utils.CursorWrapper`)
+   * before it is stripped to its last segment (bd tea-rags-mcp-m99j1.1.55). The
+   * inference keeps the bare name; only the publish path qualifies by it.
+   */
+  readonly writtenSpelling?: (bare: string, written: string) => void;
 }
 
 /** A single capitalized identifier — Python's class-name convention. */
@@ -76,7 +82,10 @@ export function pythonReturnExpressionType(node: AstNode, scope: PythonReturnSco
   if (fn === null) return null;
   if (fn.type === "identifier") {
     if (fn.text === "cls") return scope.selfClass ?? null;
-    if (PYTHON_CLASS_NAME.test(fn.text)) return fn.text;
+    if (PYTHON_CLASS_NAME.test(fn.text)) {
+      scope.writtenSpelling?.(fn.text, fn.text);
+      return fn.text;
+    }
     return scope.fileReturn(fn.text);
   }
   if (fn.type === "attribute" && scope.selfClass !== undefined) {
@@ -90,7 +99,9 @@ export function pythonReturnExpressionType(node: AstNode, scope: PythonReturnSco
   // `mod.Widget()` — the dotted spelling of a constructor; the LAST segment decides.
   if (fn.type === "attribute" || fn.type === "dotted_name") {
     const bare = pythonBareTypeName(fn.text);
-    return PYTHON_CLASS_NAME.test(bare) ? bare : null;
+    if (!PYTHON_CLASS_NAME.test(bare)) return null;
+    scope.writtenSpelling?.(bare, fn.text);
+    return bare;
   }
   return null;
 }

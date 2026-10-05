@@ -853,6 +853,32 @@ function qualifyThroughStarImports(
 }
 
 /**
+ * A written class spelling → the spelling {@link qualifyPythonBase} gives a
+ * base, for a RETURN arm (bd tea-rags-mcp-m99j1.1.55): `utils.CursorWrapper` +
+ * `from db.backends import utils` → `db.backends.utils::CursorWrapper`. Anything
+ * that does not qualify to ONE `<module>::<Name>` — a same-file class, a builtin,
+ * a star-import disjunction, a dotted spelling no import binds — answers the bare
+ * last segment, which is exactly what the arm was before.
+ *
+ * The file's imports are collected on the first question only: most files
+ * publish no inferred return, and the facet pass that asks has no other way to
+ * see them.
+ */
+export function pythonTypeNameQualifier(root: AstNode): (written: string) => string {
+  let imports: ImportRef[] | undefined;
+  return (written) => {
+    if (imports === undefined) {
+      const scan: PythonImportScan = { imports: [], reexports: [] };
+      walkOnce(root, [collectPythonImports(scan)]);
+      ({ imports } = scan);
+    }
+    const qualified = qualifyPythonBase(written, imports);
+    if (qualified.includes("::") && !qualified.includes("|")) return qualified;
+    return written.slice(written.lastIndexOf(".") + 1);
+  };
+}
+
+/**
  * The base spelling that says "this branch of the hierarchy is unreadable" (bd
  * tea-rags-mcp-invuy).
  *

@@ -25,6 +25,7 @@ import { PY_DISPATCH_FAN_MAX } from "../../../../../../../src/core/domains/langu
 import {
   PYTHON_INLINE_TYPE_SOURCES,
   PYTHON_TYPE_SOURCE_ORDER,
+  pythonAnnotationTypeFacetPass,
 } from "../../../../../../../src/core/domains/language/python/walker/passes/annotation-type-facts.js";
 import {
   PYTHON_RETURN_UNION,
@@ -532,5 +533,58 @@ describe("pythonAstTypeSource — delegated returns it declines", () => {
       "\n",
     );
     expect(facts(src)).toEqual([]);
+  });
+});
+
+/**
+ * The facet pass publishes inferred arms under the spelling the DECLARING file
+ * binds them by (bd tea-rags-mcp-m99j1.1.55), so a reader in another file places
+ * them where the return was written. The inference itself stays bare.
+ */
+describe("pythonAnnotationTypeFacetPass — return arms qualified by the declaring file's imports", () => {
+  const published = (src: string): Record<string, unknown> =>
+    pythonAnnotationTypeFacetPass.run(parse(src), {
+      code: src,
+      relPath: "db/backends/base/base.py",
+      language: "python",
+      chunks: [],
+    }).structuredReturnTypes ?? {};
+
+  it("keeps a module-attribute constructor's dotted spelling, qualified through the binding", () => {
+    const src = [
+      "from db.backends import utils",
+      "class BaseDatabaseWrapper:",
+      "    def _prepare_cursor(self, cursor):",
+      "        if self.queries_logged:",
+      "            return utils.CursorDebugWrapper(cursor, self)",
+      "        return utils.CursorWrapper(cursor, self)",
+      "",
+    ].join("\n");
+    expect(published(src)).toEqual({
+      "BaseDatabaseWrapper#_prepare_cursor": {
+        form: "union",
+        members: [instance("db.backends.utils::CursorDebugWrapper"), instance("db.backends.utils::CursorWrapper")],
+      },
+    });
+  });
+
+  it("qualifies a from-imported bare name and leaves a same-file class bare", () => {
+    const src = [
+      "from .models import Widget",
+      "class Gadget: pass",
+      "def make(flag):",
+      "    if flag:",
+      "        return Widget()",
+      "    return Gadget()",
+      "",
+    ].join("\n");
+    expect(published(src)).toEqual({
+      "db/backends/base/base.py::make": { form: "union", members: [instance(".models::Widget"), instance("Gadget")] },
+    });
+  });
+
+  it("leaves a dotted spelling no import binds as its bare last segment", () => {
+    const src = ["def make():", "    return Outer.Inner()", ""].join("\n");
+    expect(published(src)).toEqual({ "db/backends/base/base.py::make": instance("Inner") });
   });
 });

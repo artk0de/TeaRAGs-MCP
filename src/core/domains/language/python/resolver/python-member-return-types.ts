@@ -23,9 +23,11 @@ import {
 import { isPythonFrameworkAnswerClass, pythonVocabularyFor } from "../vocabulary/frameworks/index.js";
 import { PYTHON_SELF_RETURN } from "../walker/passes/python-type-annotation.js";
 import { pythonModuleReturnKey } from "../walker/passes/python-type-channels.js";
+import { placePythonClassSpelling } from "./python-ancestor-policy.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
   findPythonImportBinding,
+  isPythonPlacedClassKey,
   lastSegment,
   parsePythonClassKey,
   pythonAliasedClassKey,
@@ -50,6 +52,8 @@ import { lookupPythonSymbolsByShortName } from "./short-name-lookup.js";
  * and the import-informed one is the fallback.
  */
 function pythonReceiverClassKey(bareType: string, ctx: CallContext, mapper: PythonImportFileMapper): string | null {
+  // A return arm the reader already placed is its own key (bd tea-rags-mcp-m99j1.1.55).
+  if (isPythonPlacedClassKey(bareType)) return bareType;
   const bare = lastSegment(bareType);
   // A framework answer says which module declares it (bd tea-rags-mcp-m99j1.1.45):
   // neither the caller's own namesake nor an import alias can stand in for it.
@@ -225,20 +229,42 @@ function pythonMemberReturnTypePorts(
   // something can read the answer: a run carrying neither the run-global field
   // channel nor a linearizer is the pre-seam path, unchanged.
   const receiverClassKey = (bareType: string): string | null => {
+    // A placed key costs nothing to address, so the perf gate does not apply.
+    if (isPythonPlacedClassKey(bareType)) return bareType;
     if (linearizer === undefined && ctx.classFieldTypesByClassKey === undefined) return null;
     if (classKey === undefined) classKey = pythonReceiverClassKey(bareType, ctx, mapper);
     return classKey;
   };
-  const onClass = (owner: NominalTypeRef, shortName: string, classFq: string, member: string): TypeRef | null => {
+  /** `definingFile` is the file the class lives in when the read knows it (an MRO key). */
+  const onClass = (
+    owner: NominalTypeRef,
+    shortName: string,
+    classFq: string,
+    member: string,
+    definingFile?: string,
+  ): TypeRef | null => {
     const fieldType = identifierEntry(identifierEntry(ctx.classFieldTypes, shortName), member);
     if (fieldType !== undefined) return { form: "instance", name: fieldType };
     const separator = owner.form === "class" ? "." : "#";
+    const memberFq = `${classFq}${separator}${member}`;
     // An attribute read of a def the run declares is a bound method: its return
     // is its CALL's. A descriptor def never gets here — the walker recorded it
     // as the field read above.
-    if (access === "attribute" && ctx.symbolTable.lookup(`${classFq}${separator}${member}`).length > 0) return null;
-    const returned = pythonReturnFactAsReceiver(ctx.structuredReturnTypes?.[`${classFq}${separator}${member}`]);
+    if (access === "attribute" && ctx.symbolTable.lookup(memberFq).length > 0) return null;
+    const recorded = ctx.structuredReturnTypes?.[memberFq];
+    const definingFiles =
+      definingFile === undefined
+        ? [...new Set(ctx.symbolTable.lookup(memberFq).map((def) => def.relPath))]
+        : [definingFile];
+    const returned = pythonReturnFactAsReceiver(pythonPlacedReturnFact(recorded, definingFiles, ctx, mapper));
     return pythonSubstituteSelfReturn(returned, owner.name) ?? null;
+  };
+  /** The owner's own read — through its key's parts when a reader placed it. */
+  const onOwner = (owner: NominalTypeRef, member: string): TypeRef | null => {
+    const placed = isPythonPlacedClassKey(owner.name) ? parsePythonClassKey(owner.name) : null;
+    return placed === null
+      ? onClass(owner, owner.name, owner.name, member)
+      : onClass(owner, lastSegment(placed.classFq), placed.classFq, member, placed.relPath);
   };
   const byClassKey = (key: string, member: string): TypeRef | null => {
     const fieldType = identifierEntry(identifierEntry(ctx.classFieldTypesByClassKey, key), member);
@@ -246,11 +272,12 @@ function pythonMemberReturnTypePorts(
   };
   return {
     declaredReturnType: (owner, member) => {
-      const own = onClass(owner, owner.name, owner.name, member);
+      const own = onOwner(owner, member);
       if (own !== null) return own;
       const key = receiverClassKey(owner.name);
       if (key === null) return null;
       const byKey = byClassKey(key, member);
+      // A placed owner's own class was already read through its key above.
       if (byKey !== null || !isPythonFrameworkAnswerClass(owner.name)) return byKey;
       // A framework answer's module spelling is no channel key, so its own
       // class is read through the key it was placed at — as an ancestor is.
@@ -266,7 +293,9 @@ function pythonMemberReturnTypePorts(
       const byKey = byClassKey(ancestorKey, member);
       if (byKey !== null) return byKey;
       const parsed = parsePythonClassKey(ancestorKey);
-      return parsed === null ? null : onClass(owner, lastSegment(parsed.classFq), parsed.classFq, member);
+      return parsed === null
+        ? null
+        : onClass(owner, lastSegment(parsed.classFq), parsed.classFq, member, parsed.relPath);
     },
     frameworkReturnType: (owner, member) => pythonFrameworkReturnType(owner, member, access, ctx, mapper, linearizer),
   };
@@ -468,7 +497,93 @@ export function pythonModuleReturnFact(
 ): TypeRef | undefined {
   const defs = lookupPythonSymbolsByShortName(ctx, callee, { role: "callee" }).filter((def) => def.scope.length === 0);
   const file = pythonModuleDefFile(callee, defs, ctx, mapper, unbound);
-  return file === null ? undefined : ctx.structuredReturnTypes?.[pythonModuleReturnKey(file, callee)];
+  if (file === null) return undefined;
+  return pythonPlacedReturnFact(ctx.structuredReturnTypes?.[pythonModuleReturnKey(file, callee)], [file], ctx, mapper);
+}
+
+/**
+ * A recorded return fact with every nominal arm placed by the file that WROTE
+ * the return (bd tea-rags-mcp-m99j1.1.55), never by the caller's file.
+ *
+ * `BaseDatabaseWrapper#cursor` in `base/base.py` returns
+ * `db.backends.utils::CursorDebugWrapper | db.backends.utils::CursorWrapper`;
+ * read from `mysql/base.py`, which declares its own `CursorWrapper`, the bare
+ * name landed on mysql's class, and from a backend importing neither it landed
+ * nowhere — a partial union that dispatched as one confident edge. Each arm is
+ * placed with the base-spelling rules and re-spelled as the class key
+ * `relPath::classFq`. An arm no defining file can place, or that the defining
+ * files place differently, KILLS the whole fact: a partial union is the
+ * fabrication this exists to stop. A SINGLE external arm stays bare, so the
+ * typed-external verdict downstream still applies to it; in a union it kills,
+ * since a call the library may receive is no edge to fan.
+ *
+ * A bare arm reads as before unless the caller's own file declares a namesake —
+ * see {@link pythonPlacedBareArmName}.
+ */
+export function pythonPlacedReturnFact(
+  recorded: TypeRef | undefined,
+  definingFiles: readonly string[],
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): TypeRef | undefined {
+  if (recorded === undefined) return undefined;
+  const placeArm = (arm: TypeRef, inUnion: boolean): TypeRef | null => {
+    if (arm.form !== "instance") return arm;
+    const name = pythonPlacedArmName(arm.name, inUnion, definingFiles, ctx, mapper);
+    if (name === null) return null;
+    return name === arm.name ? arm : { ...arm, name };
+  };
+  if (recorded.form === "instance") return placeArm(recorded, false) ?? undefined;
+  if (recorded.form !== "union") return recorded;
+  const members: TypeRef[] = [];
+  for (const member of recorded.members) {
+    const placed = placeArm(member, true);
+    if (placed === null) return undefined;
+    members.push(placed);
+  }
+  return { ...recorded, members };
+}
+
+/**
+ * A BARE arm — the marker, a framework answer, an older index, an annotation,
+ * a same-file class the walker leaves unqualified (`return self`) — reads as
+ * before, with one exception: the caller's own file declares a NAMESAKE class
+ * the bare name would bind to, while the one file defining the member declares
+ * the arm itself. `CursorWrapper#__enter__` returns `self` in `utils.py`, and
+ * read from `mysql/base.py` the bare `CursorWrapper` landed on mysql's own
+ * class; that arm is placed by the declaring file.
+ */
+function pythonPlacedBareArmName(name: string, definingFiles: readonly string[], ctx: CallContext): string {
+  if (definingFiles.length !== 1 || definingFiles[0] === ctx.callerFile) return name;
+  if (pythonBoundClassKey(name, ctx.callerFile, ctx) === null) return name;
+  return pythonBoundClassKey(name, definingFiles[0], ctx) ?? name;
+}
+
+/** One arm's name → its placed key, its bare name, or null (kill). See {@link pythonPlacedReturnFact}. */
+function pythonPlacedArmName(
+  name: string,
+  inUnion: boolean,
+  definingFiles: readonly string[],
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): string | null {
+  if (isPythonPlacedClassKey(name)) return name;
+  if (!name.includes("::")) return pythonPlacedBareArmName(name, definingFiles, ctx);
+  // No def stands behind the fact: nothing to place by, so it reads as it always did.
+  if (definingFiles.length === 0) return lastSegment(name);
+  let placed: string | null = null;
+  for (const file of definingFiles) {
+    const verdict = placePythonClassSpelling(name, file, ctx, mapper);
+    const answer =
+      verdict.kind === "project"
+        ? verdict.classKey
+        : verdict.kind === "external" && !inUnion
+          ? lastSegment(name)
+          : null;
+    if (answer === null || (placed !== null && placed !== answer)) return null;
+    placed = answer;
+  }
+  return placed;
 }
 
 /**

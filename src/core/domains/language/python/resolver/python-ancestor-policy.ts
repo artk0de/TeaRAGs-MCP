@@ -60,13 +60,12 @@ import { PYTHON_UNRESOLVABLE_BASE } from "../walker/walker.js";
 import { linearizeC3 } from "./mro.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
-  lookupPythonSymbols,
-  lookupPythonSymbolsByShortName,
   parsePythonClassKey,
   pythonClassKey,
   pythonClassKeyIsDeclared,
   pythonDeclaredClassFq,
-} from "./strategies/shared.js";
+} from "./python-type-addressing.js";
+import { lookupPythonSymbols, lookupPythonSymbolsByShortName } from "./short-name-lookup.js";
 
 /** What a base SPELLING turned out to name. Mirrors the import mapper's three states. */
 type BaseKeyVerdict = { readonly kind: "project"; readonly classKey: string } | { readonly kind: AncestorClosure };
@@ -196,6 +195,24 @@ function resolveBaseKey(
     if (verdict.kind === "project") return verdict;
   }
   return UNKNOWN_BASE;
+}
+
+/** {@link BaseKeyVerdict} for a class spelling read outside a base list. */
+export type PythonClassSpellingVerdict = BaseKeyVerdict;
+
+/**
+ * A RETURN arm's spelling placed by the file that wrote the return (bd
+ * tea-rags-mcp-m99j1.1.55) — the walker qualifies return arms exactly as it
+ * qualifies bases, so they are read by the same rules. Always `strict`: an arm
+ * two files could declare is a union the reader kills, never a coin flip.
+ */
+export function placePythonClassSpelling(
+  spelling: string,
+  definingFile: RelPath,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): PythonClassSpellingVerdict {
+  return resolveBaseKey(spelling, definingFile, ctx, mapper, "strict");
 }
 
 /**
