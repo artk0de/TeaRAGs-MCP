@@ -44,6 +44,7 @@ import {
   pythonInheritedAttributeType,
   pythonInheritedMemberType,
   pythonModuleValueClass,
+  pythonModuleValueClassIn,
   receiverModuleText,
   resolveTypeFile,
   type PythonMemberAccess,
@@ -53,6 +54,9 @@ export const PYTHON_CHAIN_MAX_HOPS_ENV = "CODEGRAPH_PY_CHAIN_MAX_HOPS";
 
 /** A single capitalized identifier — Python's class-name convention, no `::`. */
 const PYTHON_CLASS_HEAD = /^[A-Z]\w*$/;
+
+/** A bare attribute link: one identifier, no call and no subscript. */
+const PYTHON_BARE_ATTRIBUTE_LINK = /^[A-Za-z_]\w*$/;
 
 /** The two modules that export `Self` and `cast`. */
 const PYTHON_TYPING_MODULES: ReadonlySet<string> = new Set(["typing", "typing_extensions"]);
@@ -337,7 +341,38 @@ function pythonSeedHead(
   const cast = pythonTypingCastSeed(head, firstLink, ctx, mapper);
   if (cast !== undefined) return cast;
   const alias = pythonModuleAliasSeed(head, firstLink, ctx, mapper);
-  return alias ?? pythonClassChainHeadSeed(head, ctx, mapper);
+  return (
+    alias ?? pythonClassChainHeadSeed(head, ctx, mapper) ?? pythonModuleAliasValueSeed(head, firstLink, ctx, mapper)
+  );
+}
+
+/**
+ * `signals.got_request_exception.send(...)` under `from django.core import
+ * signals` (bd tea-rags-mcp-m99j1.1.72): the head is a MODULE alias and its
+ * first link a module-level VALUE of that module, typed by the same
+ * `moduleValueTypes` fact that types `from django.core.signals import
+ * got_request_exception` — read off the module file the head names, or the one
+ * that file re-exports the name from.
+ *
+ * Tried LAST, so every head another arm seeds keeps its seed. The link must be
+ * a bare attribute: `signals.factory()` reads what calling the value returns.
+ * The type travels as the PLACED class key, keyed from the VALUE's file, for the
+ * reason the re-export arm above gives: the caller binds neither the value nor
+ * its class, so re-placing the bare name from the caller's imports would refuse
+ * or pick a namesake. A module, a name or a class that cannot be placed seeds
+ * nothing.
+ */
+function pythonModuleAliasValueSeed(
+  head: string,
+  firstLink: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): { type: TypeRef; consumedMembers: 1 } | undefined {
+  if (!PYTHON_BARE_ATTRIBUTE_LINK.test(firstLink)) return undefined;
+  const moduleFile = pythonHeadModuleFile(head, ctx, mapper);
+  if (moduleFile === null) return undefined;
+  const value = pythonModuleValueClassIn(moduleFile, firstLink, ctx, mapper);
+  return value === null ? undefined : { type: { form: "instance", name: value.classKey }, consumedMembers: 1 };
 }
 
 /**
