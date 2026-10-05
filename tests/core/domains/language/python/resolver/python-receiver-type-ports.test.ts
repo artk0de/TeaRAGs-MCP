@@ -201,6 +201,70 @@ describe("pythonModuleAliasSeed — a generic subscript on the head's class", ()
   });
 });
 
+/**
+ * A module-alias head whose package RE-EXPORTS the class (bd
+ * tea-rags-mcp-m99j1.1.58): django's `from django.db.models import sql` binds a
+ * package whose `__init__.py` star-imports `subqueries`, so
+ * `sql.DeleteQuery(model).delete_batch(...)` names a class the package itself
+ * never declares. The seed follows the package's own re-export to the declaring
+ * file and hands the type on as a PLACED key, so the caller — which imports
+ * neither `DeleteQuery` nor `subqueries` — never has to re-place the name.
+ */
+describe("pythonModuleAliasSeed — a class the head's package re-exports", () => {
+  const SQL_IMPORT: ImportRef = {
+    importText: "django.db.models",
+    startLine: 5,
+    importedNames: ["signals", "sql"],
+    importedBindings: { signals: "signals", sql: "sql" },
+  };
+  const STARS = (...modules: string[]) => modules.map((sourceModule) => ({ exportedName: "*", sourceModule }));
+
+  function djangoCtx(subqueries: readonly string[], query: readonly string[]): CallContext {
+    const built = new InMemoryGlobalSymbolTable();
+    for (const [relPath, ids] of Object.entries({
+      "django/__init__.py": [],
+      "django/db/__init__.py": [],
+      "django/db/models/__init__.py": [],
+      "django/db/models/deletion.py": ["Collector"],
+      "django/db/models/sql/__init__.py": [],
+      "django/db/models/sql/query.py": query,
+      "django/db/models/sql/subqueries.py": subqueries,
+    })) {
+      built.upsertFile(
+        relPath,
+        ids.map((symbolId) => ({ symbolId, fqName: symbolId, shortName: symbolId, relPath, scope: [] })),
+      );
+    }
+    return {
+      callerFile: "django/db/models/deletion.py",
+      callerScope: ["Collector"],
+      imports: [SQL_IMPORT],
+      symbolTable: built,
+      moduleReexports: {
+        "django/db/models/sql/__init__.py": STARS("django.db.models.sql.query", "django.db.models.sql.subqueries"),
+      },
+    };
+  }
+
+  it("types the constructed instance at the declaring file the re-export names", () => {
+    const ctx = djangoCtx(["DeleteQuery"], ["Query"]);
+    expect(ports().seedHead("sql", "DeleteQuery(model)", ctx)).toEqual({
+      type: { form: "instance", name: "django/db/models/sql/subqueries.py::DeleteQuery" },
+      consumedMembers: 1,
+    });
+  });
+
+  it("declines when two star sources declare the class", () => {
+    const ctx = djangoCtx(["DeleteQuery"], ["Query", "DeleteQuery"]);
+    expect(ports().seedHead("sql", "DeleteQuery(model)", ctx)).toBeUndefined();
+  });
+
+  it("declines when no re-export names a declaring file", () => {
+    const ctx = djangoCtx(["UpdateQuery"], ["Query"]);
+    expect(ports().seedHead("sql", "DeleteQuery(model)", ctx)).toBeUndefined();
+  });
+});
+
 describe("pythonCallHeadReturnType — a lowercase CALL as the chain head", () => {
   const clientImport: ImportRef = {
     importText: "polar.integrations.client",
