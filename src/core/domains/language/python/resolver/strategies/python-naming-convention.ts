@@ -62,7 +62,7 @@ import { PYTHON_STDLIB_MODULES } from "../../vocabulary/stdlib-modules.js";
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import { PythonExternalVocabulary } from "../python-external-vocabulary.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
-import { pythonDerivedBindingType, pythonLocalBindingInForce } from "../python-iteration-types.js";
+import { pythonDerivedBindingIsFact, pythonLocalBindingInForce } from "../python-iteration-types.js";
 import { createPythonCallBindingPorts } from "../python-receiver-type-ports.js";
 import {
   lookupPythonSymbolsByShortName,
@@ -150,7 +150,7 @@ class PythonConventionReceiverTyping implements ConventionReceiverTypingPorts {
     // a type; an unfolded one is as untyped as no binding.
     const binding = pythonLocalBindingInForce(ctx, receiver, call.startLine);
     if (isDerivedLocalBinding(binding)) {
-      if (pythonDerivedBindingType(binding, ctx, this.ports, this.mapper) !== undefined) return true;
+      if (pythonDerivedBindingIsFact(binding, ctx, this.ports, this.mapper)) return true;
     } else if (binding !== undefined) {
       return true;
     }
