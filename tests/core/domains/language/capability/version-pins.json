@@ -6,7 +6,7 @@
     },
     "walker": {
       "version": 3,
-      "digest": "sha256:0aa181737f1c219338d2e375cd3e19c3081db26ce3047fdc2fcb7e3822d90e5c"
+      "digest": "sha256:78ce8b47367d9b0ac38ca83bba67557f9699245de83f09585c0c86fda6746904"
     }
   },
   "bash": {
@@ -64,7 +64,7 @@
     },
     "walker": {
       "version": 6,
-      "digest": "sha256:21bd85a321c66115a8fbf80e0e0c3efded2a879b7e1e5e3d50bb1ea67cff3515"
+      "digest": "sha256:da42de2418549e8cfd0b11d72e2b41941ced24f93c0cd56558e39f56f2c030eb"
     }
   },
   "rust": {

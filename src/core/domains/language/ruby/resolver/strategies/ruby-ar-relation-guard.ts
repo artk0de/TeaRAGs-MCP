@@ -1,6 +1,4 @@
-import { CONTINUE, DROP } from "../../../../../contracts/resolution.js";
-import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
-import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { ReceiverPatternDropSymbolResolutionStrategy } from "../../../kernel/receiver-pattern-drop.js";
 import type { ResolverConfig } from "./shared.js";
 
 /**
@@ -13,13 +11,14 @@ import type { ResolverConfig } from "./shared.js";
  *
  * Continues when the receiver is null or doesn't look like an AR relation chain.
  */
-export class RubyArRelationGuardSymbolResolutionStrategy implements SymbolResolutionStrategy {
-  readonly name = "arRelationGuard";
-  constructor(private readonly _cfg: ResolverConfig) {}
-
-  attempt(call: CallRef, _ctx: CallContext): SymbolResolutionOutcome {
-    if (call.receiver && receiverLooksLikeArRelationChain(call.receiver)) return DROP;
-    return CONTINUE;
+export class RubyArRelationGuardSymbolResolutionStrategy extends ReceiverPatternDropSymbolResolutionStrategy {
+  constructor(_cfg: ResolverConfig) {
+    super("arRelationGuard", [
+      {
+        name: "arRelationChain",
+        matches: (call) => !!call.receiver && receiverLooksLikeArRelationChain(call.receiver),
+      },
+    ]);
   }
 }
 
