@@ -230,7 +230,7 @@ describe("Resource builders", () => {
     // bd tea-rags-mcp-89k7k — the portable routing guide for non-Claude clients:
     // the naming examples keep the lexicon surface, and the diff review routes
     // to review_changes, the tool that owns it now.
-    it("routes naming questions and sends the FULL diff review to review_changes", () => {
+    it("routes naming questions and sends the diff review to review_changes", () => {
       const md = buildSearchGuide();
       const start = md.indexOf("## get_naming_lexicon Examples");
       expect(start).toBeGreaterThanOrEqual(0);
@@ -240,11 +240,7 @@ describe("Resource builders", () => {
       expect(section).toMatch(/types=\[/);
       expect(section).toMatch(/kind: "type"/);
       expect(section).toMatch(/review_changes/);
-      // bd tea-rags-mcp-89k7k.18: the naming tool takes the diff fields
-      // directly now — the guide documents them and keeps review_changes as
-      // the route for a FULL diff review (every section in one call).
-      expect(section).toMatch(/get_naming_lexicon takes the diff directly/);
-      expect(section).toMatch(/full diff review[^→]*→ review_changes/);
+      expect(section).not.toMatch(/get_naming_lexicon.*changes=\{/);
       expect(md).toContain("get_ontology_report");
     });
   });

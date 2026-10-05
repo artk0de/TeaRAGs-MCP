@@ -169,37 +169,19 @@ describe("get_naming_lexicon", () => {
     expect(vi.mocked(app.getNamingLexicon).mock.calls[0][0].names).toEqual(names);
   });
 
-  // bd tea-rags-mcp-89k7k.18: the diff mode is part of the ops contract
-  // (`NamingLexiconRequest.changes`/`files`, answered with `review`) — the MCP
-  // boundary exposes the same shape review_changes sends for its naming
-  // section. Until the schema listed the fields, the SDK's zod parse stripped
-  // them and the at-least-one refine bounced a changes-only request.
-  it("exposes the diff mode: `changes`/`files` validate and satisfy the at-least-one refine", () => {
-    const { inputSchema } = registered().config;
-    expect(inputSchema.safeParse({ project: "p", changes: { base: "main" } }).success).toBe(true);
-    expect(inputSchema.safeParse({ project: "p", files: ["src/a.ts"] }).success).toBe(true);
-    // An empty `files` array is not a diff request — the ops reject it, so does the shape.
-    expect(inputSchema.safeParse({ project: "p", files: [] }).success).toBe(false);
-    // A request that asks for nothing still fails.
-    expect(inputSchema.safeParse({ project: "p" }).success).toBe(false);
-  });
-
-  it("forwards the diff request verbatim to the ops layer", async () => {
-    const { config, handler, app } = registered();
-    vi.mocked(app.getNamingLexicon).mockResolvedValue({ scope: "", byType: [], names: [] });
-    // Parsed the way the SDK parses a tool call: through the boundary schema.
-    await handler(config.inputSchema.parse({ collection: "c", changes: { base: "main" }, files: ["src/a.ts"] }));
-    expect(vi.mocked(app.getNamingLexicon).mock.calls[0][0]).toEqual({
-      collection: "c",
-      changes: { base: "main" },
-      files: ["src/a.ts"],
-    });
-  });
-
-  it("documents the diff mode and routes a full diff review to review_changes", () => {
-    const { description } = registered().config;
-    expect(description).toMatch(/`changes`\/`files`/);
-    expect(description).toMatch(/review_changes/);
+  // bd tea-rags-mcp-89k7k: the diff review moved to `review_changes` — the
+  // naming tool no longer takes `changes`/`files`. The SDK's zod parse strips
+  // unknown keys, so a stray `changes` beside a valid request is inert (the
+  // handler never sees it); a changes-only request fails the at-least-one
+  // refine at the boundary.
+  it("no longer takes `changes` or `files` — the diff review lives in review_changes", () => {
+    const { inputSchema, description } = registered().config;
+    expect(inputSchema.safeParse({ project: "p", changes: {} }).success).toBe(false);
+    expect(inputSchema.safeParse({ project: "p", files: ["src/a.ts"] }).success).toBe(false);
+    const parsed = inputSchema.safeParse({ project: "p", changes: {}, types: ["Doc"] });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data).toEqual({ project: "p", types: ["Doc"] });
+    expect(description).not.toMatch(/changes/);
   });
 
   it("keeps one-line field descriptions and no examples", () => {
