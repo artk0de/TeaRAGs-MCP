@@ -67,12 +67,12 @@ const SHARED_SOURCES: VersionAxisSources[] = [
   {
     axis: "walker",
     paths: [
+      // The kernel holds the shared resolution machinery the verticals lean
+      // on (resolver chain, cone dispatch, which file an import names, whether
+      // a symbol is external, the ECMAScript global vocabulary) — the root
+      // entries it replaced were folded into this directory when the residual
+      // root machinery joined the kernel leaf (bd tea-rags-mcp-89k7k.29).
       `${LANGUAGE_ROOT}/kernel`,
-      `${LANGUAGE_ROOT}/resolver-chain.ts`,
-      // Shared resolution the verticals lean on: which file an import names,
-      // whether a symbol is external, and the ECMAScript global vocabulary.
-      `${LANGUAGE_ROOT}/import-file-edges.ts`,
-      `${LANGUAGE_ROOT}/external-classifier.ts`,
       `${LANGUAGE_ROOT}/shared`,
       // The factory decides WHICH walker and resolver each language gets and
       // with which mode — a change here retargets edges without touching a

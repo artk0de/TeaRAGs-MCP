@@ -52,8 +52,12 @@ import {
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { INSTANCE_METHOD_SEPARATOR } from "../../../../../infra/symbolid/index.js";
-import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
-import { ECMASCRIPT_BUILTIN_TYPES, ECMASCRIPT_GLOBALS } from "../../../shared/ecmascript-globals.js";
+import {
+  ECMASCRIPT_BUILTIN_TYPES,
+  ECMASCRIPT_GLOBALS,
+  lookupEcmascriptSymbols,
+  lookupEcmascriptSymbolsByShortName,
+} from "../../../kernel/index.js";
 import { mapImportToFile, type ProjectFileProbe, type TsCompilerOptions } from "../ts-path-mapper.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import type { ResolverConfig } from "./shared.js";

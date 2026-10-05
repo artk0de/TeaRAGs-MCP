@@ -23,12 +23,20 @@ export { SHARED_LANGUAGE, sharedChunkSetBumpScopes, sharedVersions } from "./cap
 export { collectSymbols } from "./collect-symbols.js";
 export { ConeDispatchResolver } from "./cone-dispatch.js";
 export {
+  BARE_GLOBAL_CALLABLES,
+  ECMASCRIPT_BUILTIN_PROTOTYPE_METHODS,
+  ECMASCRIPT_BUILTIN_TYPES,
+  ECMASCRIPT_CONTAINER_PROTOTYPE_METHODS,
+  ECMASCRIPT_GLOBALS,
+} from "./ecmascript-globals.js";
+export {
   ECMASCRIPT_SOURCE_EXTENSIONS,
   isEcmascriptSourcePath,
   lookupEcmascriptSymbols,
   lookupEcmascriptSymbolsByShortName,
   withEcmascriptSymbolKindRoles,
 } from "./ecmascript-symbol-lookup.js";
+export { ExternalCallClassifier } from "./external-classifier.js";
 export {
   declaredVisibilityFacetPass,
   type DeclaredVisibility,
@@ -82,6 +90,7 @@ export {
   type IdentifierDeclarationSyntax,
   type IdentifierSyntacticType,
 } from "./identifier-declarations.js";
+export { importFileEdge, resolveImportFileEdges } from "./import-file-edges.js";
 export { mergeExtraction, type ExtractionChannelMerger, type ExtractionMergeRulebook } from "./merge-extraction.js";
 export { methodKindFromClassify } from "./method-kind.js";
 export { conventionClassNameFor, type NamingConventionPorts } from "./naming-convention.js";
@@ -95,6 +104,7 @@ export {
   type ReceiverTypePorts,
 } from "./receiver-type-propagation.js";
 export { reexportOriginFile } from "./reexport-origin.js";
+export { resolveDispatchViaComponents, resolveViaChain } from "./resolver-chain.js";
 export { inferReturnTypeName, type ReturnInferencePorts } from "./return-inference.js";
 export { DETACHED_RESOLVE_RUN_SCOPE, RunScopedMemo } from "./run-scoped-memo.js";
 export { deriveStructuralConformance } from "./structural-conformance.js";

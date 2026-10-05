@@ -69,7 +69,7 @@ import {
   type DispatchCandidateNarrower,
 } from "../src/core/domains/language/kernel/dispatch-narrowing.js";
 import { dispatchFanoutPolicyFor } from "../src/core/domains/language/kernel/fanout-policy.js";
-import { resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
+import { resolveViaChain } from "../src/core/domains/language/kernel/index.js";
 import type { RubyDslCatalogue } from "../src/core/domains/language/ruby/dsl/index.js";
 import { catalogueForGemfile } from "../src/core/domains/language/ruby/gemfile.js";
 // bd tea-rags-mcp-e8feo — the DROP-surface oracle rebuilds the production chain

@@ -1,5 +1,5 @@
-import type { CallContext, CallRef } from "../../contracts/types/codegraph.js";
-import type { ExternalVocabulary } from "../../contracts/types/language.js";
+import type { CallContext, CallRef } from "../../../contracts/types/codegraph.js";
+import type { ExternalVocabulary } from "../../../contracts/types/language.js";
 
 /**
  * Language-neutral external-call classifier (bd tea-rags-mcp-cai0). For an

@@ -49,9 +49,13 @@ import type {
   SymbolResolutionStrategy,
   TypeRef,
 } from "../src/core/contracts/types/language.js";
-import { ExternalCallClassifier } from "../src/core/domains/language/external-classifier.js";
 import { ConeDispatchResolver, DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
 import { dispatchFanoutPolicyFor } from "../src/core/domains/language/kernel/fanout-policy.js";
+import {
+  ExternalCallClassifier,
+  resolveDispatchViaComponents,
+  resolveViaChain,
+} from "../src/core/domains/language/kernel/index.js";
 import {
   PythonChainAnswerProbe,
   pythonDynamicDispatchEnabled,
@@ -68,7 +72,6 @@ import {
   PythonConeTypeLocator,
 } from "../src/core/domains/language/python/resolver/strategies/index.js";
 import { pythonEnclosingClass } from "../src/core/domains/language/python/resolver/strategies/shared.js";
-import { resolveDispatchViaComponents, resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
 import { MapHierarchyView } from "../src/core/domains/trajectory/codegraph/hierarchy-view.js";
 import {
   buildHierarchySnapshot,

@@ -58,7 +58,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolIdComposer, SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
-import { resolveViaChain } from "../../resolver-chain.js";
+import { resolveViaChain } from "../../kernel/index.js";
 import { GoModuleMapCache } from "./go-module-map.js";
 import {
   GoGenericInstantiationSymbolResolutionStrategy,
