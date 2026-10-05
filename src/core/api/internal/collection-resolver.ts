@@ -28,7 +28,7 @@ import {
   ProjectNotRegisteredError,
   StaleProjectAliasError,
   SubmoduleNotIndexedError,
-} from "../public/errors.js";
+} from "../public/index.js";
 
 /**
  * Input for resolveCollection — 3-priority resolution:

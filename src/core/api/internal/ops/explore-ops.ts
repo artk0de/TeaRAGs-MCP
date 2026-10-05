@@ -74,8 +74,8 @@ import {
   type PresetFilterNotice,
   type RankChunksRequest,
   type SemanticSearchRequest,
+  type WorkingTreeIndexTarget,
 } from "../../public/dto/index.js";
-import type { WorkingTreeIndexTarget } from "../../public/dto/working-tree.js";
 import type { CollectionEmbeddingBinding, CollectionEmbeddingsResolver } from "../collection-embeddings.js";
 import { resolveIndexedWorkingTree, resolveWorkingTree } from "../collection-resolver.js";
 import type { IndexHistoryAnchorResolver } from "../infra/index-history-anchor.js";

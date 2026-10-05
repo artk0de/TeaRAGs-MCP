@@ -21,7 +21,7 @@ import {
   DocumentMetadataSchemaViolationError,
   InvalidDocumentMetadataSchemaError,
   type DocumentMetadataViolation,
-} from "../../public/errors.js";
+} from "../../public/index.js";
 
 /** Key of the schema inside the Qdrant collection metadata. */
 export const DOCUMENT_METADATA_SCHEMA_KEY = "documentMetadataSchema";
