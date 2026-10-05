@@ -111,6 +111,40 @@ describe("Django model attributes and query verbs", () => {
   });
 });
 
+describe("Django attributes typed by NAME on an untyped owner (bd tea-rags-mcp-m99j1.1.37)", () => {
+  it("model._meta on an untyped model is Options, so _meta.get_field(n) reaches Options#get_field", () => {
+    expect(fold("model._meta", ctx())).toEqual({ form: "instance", name: "Options" });
+    expect(fold("self.model._meta", ctx())).toEqual({ form: "instance", name: "Options" });
+  });
+
+  it("obj._default_manager / _base_manager on an untyped owner are Django's Manager, naming no model", () => {
+    expect(fold("obj._default_manager", ctx())).toEqual({ form: "instance", name: "Manager" });
+    expect(fold("self.UserModel._base_manager", ctx())).toEqual({ form: "instance", name: "Manager" });
+    expect(fold('self.UserModel._default_manager.db_manager("x")', ctx())).toEqual({
+      form: "instance",
+      name: "Manager",
+    });
+  });
+
+  it("a typed model keeps its model-carrying manager", () => {
+    expect(fold("Book._default_manager", ctx())).toEqual({
+      form: "instance",
+      name: "Manager",
+      args: [{ form: "instance", name: "Book" }],
+    });
+  });
+
+  it("x.objects with an untyped x stays untyped: `objects` is not unique to Django", () => {
+    expect(fold("x.objects", ctx())).toBeUndefined();
+    expect(fold("x.objects.all()", ctx())).toBeUndefined();
+  });
+
+  it("is inert where Django is not a declared dependency", () => {
+    expect(fold("model._meta", ctx(new Set(["flask"])))).toBeUndefined();
+    expect(fold("obj._default_manager", ctx(new Set(["flask"])))).toBeUndefined();
+  });
+});
+
 describe("the self-package rule", () => {
   let dir: string | undefined;
   afterEach(() => {

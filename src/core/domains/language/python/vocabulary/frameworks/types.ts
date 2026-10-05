@@ -30,6 +30,23 @@ export type PythonVocabularyFacet =
   | "associationFields"
   | "descriptorDecorators";
 
+/** One attribute a framework synthesizes on every model, and the class it yields. */
+export interface PythonFrameworkModelAttribute {
+  readonly className: string;
+  /** Thread the model into `args`, so a later verb can return it. */
+  readonly carriesModel: boolean;
+  /**
+   * The NAME is the framework's alone (bd tea-rags-mcp-m99j1.1.37): no other
+   * library spells an attribute this way, so on an owner the fold could NOT
+   * type it still yields `className` — with no model in `args`, because the
+   * owner is exactly what is unknown. `_meta` qualifies; `objects` never does,
+   * since every ORM and half the projects that use one say `objects`. A typed
+   * owner ignores the flag: it answers through the model-base gate or not at
+   * all.
+   */
+  readonly nameUniqueToFramework: boolean;
+}
+
 /**
  * The member returns a framework SYNTHESIZES — no project line declares them,
  * so no fact channel can answer for them (bd tea-rags-mcp-m99j1.1.21). Read by
@@ -47,7 +64,7 @@ export interface PythonFrameworkMemberTypes {
    * Attribute → the framework class it yields on a model. `carriesModel`
    * threads the model into `args` so a later verb can return it.
    */
-  readonly modelAttributes: ReadonlyMap<string, { readonly className: string; readonly carriesModel: boolean }>;
+  readonly modelAttributes: ReadonlyMap<string, PythonFrameworkModelAttribute>;
   /** The framework classes the query verbs below are read on. */
   readonly relationClasses: ReadonlySet<string>;
   /** What a `relationReturning` verb yields, carrying the same model. */

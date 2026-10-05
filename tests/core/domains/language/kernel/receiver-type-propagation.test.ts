@@ -237,6 +237,66 @@ describe("propagateReceiverType — the call-argument PORT", () => {
   });
 });
 
+describe("propagateReceiverType — the owner-independent member PORT", () => {
+  // bd tea-rags-mcp-m99j1.1.37: a member whose type the active framework fixes
+  // by NAME alone (`_meta` → Django `Options`) types its hop even when the fold
+  // lost its owner — but only an UNTYPED owner; a typed owner keeps its answer.
+  const ownerIndependentMemberType = (member: string): TypeRef | undefined =>
+    member === "_meta" ? instance("Options") : undefined;
+
+  it("without the port an untyped head leaves the whole chain untyped (identity)", () => {
+    const memberTypeOf = vi.fn(() => instance("Field"));
+    const ports = portsWith({ memberTypeOf });
+    expect(propagateReceiverType("model._meta.pk", 5, ctx(), ports)).toBeUndefined();
+    expect(memberTypeOf).not.toHaveBeenCalled();
+  });
+
+  it("types an owner-independent hop after an untyped head and folds on from it", () => {
+    const ports = portsWith({
+      ownerIndependentMemberType,
+      memberTypeOf: (recv, member) => (recv.name === "Options" && member === "pk" ? instance("Field") : undefined),
+    });
+    expect(propagateReceiverType("model._meta", 5, ctx(), ports)).toEqual(instance("Options"));
+    expect(propagateReceiverType("model._meta.pk", 5, ctx(), ports)).toEqual(instance("Field"));
+  });
+
+  it("types an owner-independent hop after an unknown MIDDLE hop", () => {
+    const ports = portsWith({
+      ownerIndependentMemberType,
+      singleHopType: (receiver) => (receiver === "self" ? instance("Admin") : undefined),
+    });
+    expect(propagateReceiverType("self.model._meta", 5, ctx(), ports)).toEqual(instance("Options"));
+  });
+
+  it("never overrides a typed owner: memberTypeOf's refusal of the hop stands", () => {
+    const port = vi.fn(ownerIndependentMemberType);
+    const ports = portsWith({ ownerIndependentMemberType: port, singleHopType: () => instance("Form") });
+    expect(propagateReceiverType("form._meta", 5, ctx(), ports)).toBeUndefined();
+    expect(port).not.toHaveBeenCalled();
+  });
+
+  it("keeps memberTypeOf's answer on a typed owner", () => {
+    const port = vi.fn(ownerIndependentMemberType);
+    const ports = portsWith({
+      ownerIndependentMemberType: port,
+      singleHopType: () => instance("Book"),
+      memberTypeOf: () => instance("BookOptions"),
+    });
+    expect(propagateReceiverType("book._meta", 5, ctx(), ports)).toEqual(instance("BookOptions"));
+    expect(port).not.toHaveBeenCalled();
+  });
+
+  it("does not answer a CALL link by name", () => {
+    const ports = portsWith({ ownerIndependentMemberType });
+    expect(propagateReceiverType("model._meta()", 5, ctx(), ports)).toBeUndefined();
+  });
+
+  it("an unknown hop AFTER the rescue still stops the walk", () => {
+    const ports = portsWith({ ownerIndependentMemberType });
+    expect(propagateReceiverType("model._meta.unknown", 5, ctx(), ports)).toBeUndefined();
+  });
+});
+
 describe("callArgumentText", () => {
   it("returns the text inside a link's argument list, or undefined when it has none", () => {
     expect(callArgumentText("read(\\.active)")).toBe("\\.active");
