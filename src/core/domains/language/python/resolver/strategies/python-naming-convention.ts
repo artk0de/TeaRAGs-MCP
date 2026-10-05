@@ -64,6 +64,7 @@ import {
   lookupPythonSymbolsByShortName,
   pythonBoundClassKey,
   pythonBoundToForeignCall,
+  pythonModuleValueClass,
   resolvePythonInheritedMember,
   resolveTypeFile,
   type ResolverConfig,
@@ -84,7 +85,7 @@ export class PythonNamingConventionSymbolResolutionStrategy extends ConventionRe
   ) {
     super(
       "namingConvention",
-      new PythonConventionReceiverTyping(vocabulary),
+      new PythonConventionReceiverTyping(vocabulary, mapper),
       createPythonConventionMemberLookup(cfg.mode, mapper, linearizers),
     );
   }
@@ -114,7 +115,10 @@ class PythonConventionReceiverTyping implements ConventionReceiverTypingPorts {
     hasSubtypes: (className, ctx) => this.declaredBases(ctx).has(className),
   };
 
-  constructor(private readonly vocabulary: PythonExternalVocabulary) {}
+  constructor(
+    private readonly vocabulary: PythonExternalVocabulary,
+    private readonly mapper: PythonImportFileMapper,
+  ) {}
 
   typeOfReceiver(call: ReceiverCallRef, ctx: CallContext): TypeRef | null {
     const receiver = pythonConventionReceiverName(call.receiver);
@@ -132,6 +136,9 @@ class PythonConventionReceiverTyping implements ConventionReceiverTypingPorts {
     if (PYTHON_STDLIB_MODULES.has(receiver) || this.vocabulary.isBareCallExternal(receiver, ctx)) return true;
     // A real fact wins: this pass speaks only for receivers nothing typed.
     if (resolveLocalBindingType(ctx.localBindings, receiver, call.startLine) !== undefined) return true;
+    // A module-scope value the walker typed (P4, bd m99j1.1.15) is a fact too:
+    // `apps` after `from django.apps import apps` is an `Apps`, not a guess.
+    if (pythonModuleValueClass(receiver, ctx, this.mapper) !== null) return true;
     // And a FOREIGN right-hand side is a fact of the same kind. The walker saw
     // `user = authenticate(...)`, `localBinding` folded that callee and came
     // back with nothing; when the callee's own head is a name the project does

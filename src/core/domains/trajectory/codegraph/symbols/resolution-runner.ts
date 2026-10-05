@@ -77,6 +77,7 @@ export interface ResolverInputs {
   classFieldTypesByClassKey: CallContext["classFieldTypesByClassKey"];
   classFieldCallResults: CallContext["classFieldCallResults"];
   moduleReexports: CallContext["moduleReexports"];
+  moduleValueTypes: CallContext["moduleValueTypes"];
   buildConstraintsByFile: CallContext["buildConstraintsByFile"];
   typeDeclarations: CallContext["typeDeclarations"];
   /** The run's identity (bd tea-rags-mcp-39xca.6) — always the run state's, never per file. */
@@ -123,6 +124,9 @@ export function resolverInputChannels(inputs: ResolverInputs): Partial<CallConte
     // walk past a package `__init__.py` that re-exports a name or a SUBMODULE
     // instead of declaring it. Empty ⇒ the mapper stops exactly where it did.
     moduleReexports: inputs.moduleReexports,
+    // P4 (bd m99j1.1.15) — module-scope value types. Empty ⇒ an imported
+    // singleton stays untyped, the pre-channel answer.
+    moduleValueTypes: inputs.moduleValueTypes,
     // bd tea-rags-mcp-e6xx — Go's build-tag twin tie-breaker. Empty ⇒ twins stay
     // ambiguous, the pre-channel answer.
     buildConstraintsByFile: inputs.buildConstraintsByFile,
@@ -557,6 +561,8 @@ export class CallEdgeResolutionRunner {
       // asked about a package the CALLER does not own, so this file's own list
       // could never answer. An empty map reads as absent to its only reader.
       moduleReexports: state.moduleReexports,
+      // Run-global: an imported value is declared in ANOTHER file (P4).
+      moduleValueTypes: state.moduleValueTypes,
       // Run-global for the same reason: a twin's constraint lives in ANOTHER
       // file of the package (bd tea-rags-mcp-e6xx).
       buildConstraintsByFile: state.buildConstraintsByFile,

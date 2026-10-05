@@ -284,6 +284,8 @@ export async function walkCorpus(
   // `relPath` → the names its `from` statements bind — what lets the import
   // mapper walk past a package that re-exports rather than declares (xpl83.3).
   const moduleReexports: Record<string, readonly ModuleReexport[]> = {};
+  // `<relPath>::<name>` → module-scope value type (P4, bd m99j1.1.15).
+  const moduleValueTypes: Record<string, TypeRef> = {};
   // The two channels the CHA cone reads, accumulated exactly as
   // `CodegraphRunState` accumulates them and sealed at the same pass-1→pass-2
   // barrier (bd tea-rags-mcp-o17v2 / pffv). Without them `ctx.hierarchy` is
@@ -322,6 +324,7 @@ export async function walkCorpus(
       classFieldCallResults[classKey] = { ...classFieldCallResults[classKey], ...fields };
     }
     if (extraction.moduleReexports) moduleReexports[relPath] = extraction.moduleReexports;
+    Object.assign(moduleValueTypes, extraction.moduleValueTypes ?? {});
     // `() => null` mirrors the sink: the cone reads ancestors by fqName, and
     // the partial table cannot bind symbol ids at pass 1 anyway.
     inheritanceRows.push(...normalizeInheritanceEdges(extraction, () => null));
@@ -398,6 +401,7 @@ export async function walkCorpus(
         classFieldTypesByClassKey,
         classFieldCallResults,
         moduleReexports,
+        moduleValueTypes,
         hierarchy,
         instantiatedTypes,
       };

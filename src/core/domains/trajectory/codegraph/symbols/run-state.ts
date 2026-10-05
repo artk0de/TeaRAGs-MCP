@@ -658,6 +658,14 @@ export class CodegraphRunState {
   moduleReexports: Record<string, readonly ModuleReexport[]> = createIdentifierRecord();
 
   /**
+   * Per-run `FileExtraction.moduleValueTypes` — `<relPath>::<name>` → what a
+   * module-scope value holds (P4, bd tea-rags-mcp-m99j1.1.15). The key names the
+   * declaring file, so two files never collide and a plain key-wise write is
+   * the union.
+   */
+  moduleValueTypes: Record<string, RubyTypeRef> = createIdentifierRecord();
+
+  /**
    * Per-run `FileExtraction.buildConstraint`, keyed by the relPath that declared
    * it (bd tea-rags-mcp-e6xx) — Go's tie-breaker between build-tag twins. A
    * re-walk REPLACES the file's entry, and a walk that finds no constraint
@@ -986,6 +994,13 @@ export class CodegraphRunState {
     moduleReexports: (slice) => {
       if (slice.moduleReexports !== undefined && !(slice.relPath in this.moduleReexports)) {
         this.moduleReexports[slice.relPath] = slice.moduleReexports;
+      }
+    },
+    // Batch-wins per key, like every keyed channel: a walked file's values are
+    // the current truth, and its keys carry its relPath.
+    moduleValueTypes: (slice) => {
+      for (const [key, ref] of Object.entries(slice.moduleValueTypes ?? {})) {
+        if (!(key in this.moduleValueTypes)) this.moduleValueTypes[key] = ref;
       }
     },
     // Ruby `self.table_name` overrides (bd tea-rags-mcp-39xca.9). The schema-column
@@ -1485,6 +1500,7 @@ export class CodegraphRunState {
       this.classFieldTypesByClassKey = createIdentifierRecord();
       this.classFieldCallResults = createIdentifierRecord();
       this.moduleReexports = createIdentifierRecord();
+      this.moduleValueTypes = createIdentifierRecord();
       this.buildConstraintsByFile = createIdentifierRecord();
       this.typeDeclarations = createIdentifierRecord();
       this.structuralContracts = createIdentifierRecord();
@@ -1676,6 +1692,7 @@ export class CodegraphRunState {
     this.classFieldTypesByClassKey = createIdentifierRecord();
     this.classFieldCallResults = createIdentifierRecord();
     this.moduleReexports = createIdentifierRecord();
+    this.moduleValueTypes = createIdentifierRecord();
     this.buildConstraintsByFile = createIdentifierRecord();
     this.typeDeclarations = createIdentifierRecord();
     this.structuralContracts = createIdentifierRecord();
@@ -1723,6 +1740,7 @@ export class CodegraphRunState {
     this.classFieldTypesByClassKey = createIdentifierRecord();
     this.classFieldCallResults = createIdentifierRecord();
     this.moduleReexports = createIdentifierRecord();
+    this.moduleValueTypes = createIdentifierRecord();
     this.buildConstraintsByFile = createIdentifierRecord();
     this.typeDeclarations = createIdentifierRecord();
     this.structuralContracts = createIdentifierRecord();
@@ -1870,6 +1888,8 @@ export class CodegraphRunState {
     if (extraction.moduleReexports) {
       this.moduleReexports[extraction.relPath] = extraction.moduleReexports;
     }
+    // Module-scope values (P4): keys already carry the declaring relPath.
+    if (extraction.moduleValueTypes) Object.assign(this.moduleValueTypes, extraction.moduleValueTypes);
     // The file's build constraint under its own path (bd tea-rags-mcp-e6xx):
     // replaced on a re-walk, and dropped when the file no longer declares one.
     if (extraction.buildConstraint !== undefined) {

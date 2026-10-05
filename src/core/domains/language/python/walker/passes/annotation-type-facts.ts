@@ -19,6 +19,7 @@ import {
 import { PYTHON_AST_SOURCE, pythonAstTypeSource } from "./python-ast-type-source.js";
 import { PYTHON_DOCSTRING_SOURCE, pythonDocstringTypeSource } from "./python-docstring-type-source.js";
 import { pythonIterationTypeSource } from "./python-iteration-facts.js";
+import { pythonModuleValuesEnabled, pythonModuleValueTypeSource } from "./python-module-value-facts.js";
 import { pythonTypeChannels } from "./python-type-channels.js";
 
 /**
@@ -41,13 +42,18 @@ export const PYTHON_INLINE_TYPE_SOURCES: readonly InlineTypeSource<PythonTypeSou
   pythonDocstringTypeSource,
   pythonIterationTypeSource,
   pythonAstTypeSource,
+  pythonModuleValueTypeSource,
 ];
 
 export const pythonAnnotationTypeFacetPass: ExtractionFacetPass = {
   run: (root, ctx): Partial<FileExtraction> => {
     // Read ONCE per file, exactly where the monolith reads it, and pass it down
     // so both sources stay pure functions of their input.
-    const input: PythonTypeSourceInput = { root, trackLocalTypes: pythonLocalTypeTrackingEnabled() };
+    const input: PythonTypeSourceInput = {
+      root,
+      trackLocalTypes: pythonLocalTypeTrackingEnabled(),
+      moduleValues: pythonModuleValuesEnabled(),
+    };
     const facts = PYTHON_INLINE_TYPE_SOURCES.flatMap((source) => source.extract(input));
     if (facts.length === 0) return {};
     return pythonTypeChannels(TypeFactStore.fromFacts(facts, PYTHON_TYPE_SOURCE_ORDER), ctx);

@@ -67,6 +67,11 @@ function coordinateKey(f: TypeFact): string {
   return `${f.kind}|${f.symbolScope.join(",")}|${f.methodName ?? ""}|${f.name ?? ""}|${f.line ?? ""}`;
 }
 
+/** Structural equality of two type refs — the shapes are plain JSON. */
+function sameTypeRef(a: TypeRef | undefined, b: TypeRef): boolean {
+  return a !== undefined && JSON.stringify(a) === JSON.stringify(b);
+}
+
 /**
  * Coordinate key for return-type facts keyed by scope + methodName.
  * Line is intentionally excluded — sidecar/name-keyed return facts lack a line.
@@ -210,6 +215,35 @@ export class TypeFactStore {
         bestRank.set(key, rank);
       }
     }
+    return out;
+  }
+
+  /**
+   * `name → TypeRef` over every `moduleValue` fact — the values a file binds at
+   * MODULE scope. Unlike the coordinate dedupe in {@link fromFacts}, a module
+   * value has no line in its coordinate: one name, one answer per file. The
+   * highest-precedence source wins; when two facts at that SAME rank disagree
+   * (`try: x = A()` / `except: x = B()`) the name has no single type and is
+   * left out rather than decided by order. Undecidable rebinding (`x = None`)
+   * is the source's to refuse — the store only sees typed facts.
+   */
+  moduleValueTypesMap(): Record<string, TypeRef> {
+    const out: Record<string, TypeRef> = createIdentifierRecord();
+    const bestRank = new Map<string, number>();
+    const contested = new Set<string>();
+    for (const f of this.resolvedFacts) {
+      if (f.kind !== "moduleValue" || !f.name) continue;
+      const rank = sourceRank(f.source, this.sourceOrder);
+      const prev = bestRank.get(f.name);
+      if (prev === undefined || rank < prev) {
+        out[f.name] = f.type;
+        bestRank.set(f.name, rank);
+        contested.delete(f.name);
+      } else if (rank === prev && !sameTypeRef(out[f.name], f.type)) {
+        contested.add(f.name);
+      }
+    }
+    for (const name of contested) delete out[name];
     return out;
   }
 

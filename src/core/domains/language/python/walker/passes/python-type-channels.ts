@@ -51,6 +51,16 @@ export function pythonModuleReturnKey(relPath: string, name: string): string {
  * An empty scope leaves the member separator leading, and that IS the
  * module-level case — the file qualifies it (see {@link pythonModuleReturnKey}).
  */
+/**
+ * The run-global address of a MODULE-SCOPE value — `<relPath>::<name>` (P4, bd
+ * tea-rags-mcp-m99j1.1.15). Same shape as {@link pythonModuleReturnKey} and for
+ * the same reason; a separate name because a value and a def return are two
+ * channels a reader must not confuse.
+ */
+export function pythonModuleValueKey(relPath: string, name: string): string {
+  return `${relPath}::${name}`;
+}
+
 export function pythonStructuredReturnKey(kernelKey: string, relPath: string): string {
   if (kernelKey.startsWith("#") || kernelKey.startsWith(".")) {
     return pythonModuleReturnKey(relPath, kernelKey.slice(1));
@@ -92,6 +102,19 @@ export function pythonTypeChannels(
     }
     out.classFieldTypes = classFieldTypes;
     out.classFieldTypesByClassKey = classFieldTypesByClassKey;
+  }
+
+  // Module-scope values (P4, bd tea-rags-mcp-m99j1.1.15), under the same
+  // `<relPath>::<name>` address a module-level return fact uses — the channel
+  // is folded run-global, so the file is what keeps two modules' `client`
+  // apart.
+  const moduleValues = store.moduleValueTypesMap();
+  if (Object.keys(moduleValues).length > 0) {
+    const moduleValueTypes: Record<string, TypeRef> = createIdentifierRecord();
+    for (const [name, ref] of Object.entries(moduleValues)) {
+      moduleValueTypes[pythonModuleValueKey(ctx.relPath, name)] = ref;
+    }
+    out.moduleValueTypes = moduleValueTypes;
   }
 
   return out;

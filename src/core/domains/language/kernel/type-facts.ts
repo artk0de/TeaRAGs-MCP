@@ -12,7 +12,11 @@ import type { TypeRef } from "../../../contracts/types/language.js";
 
 /** One receiver-type fact a source attributes to a symbol coordinate. */
 export interface TypeFact {
-  kind: "param" | "return" | "ivar" | "local" | "attr";
+  /**
+   * `moduleValue` is a name bound at MODULE scope (Python `apps = Apps()`),
+   * coordinate = `name` alone: no owning def, no class scope.
+   */
+  kind: "param" | "return" | "ivar" | "local" | "attr" | "moduleValue";
   /** Source name that produced this fact — used for precedence resolution in {@link TypeFactStore}. */
   source?: string;
   /** Enclosing class/module FQ scope, e.g. ["Octokit","Client"]. */

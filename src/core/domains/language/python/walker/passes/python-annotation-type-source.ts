@@ -29,6 +29,8 @@ export interface PythonTypeSourceInput {
   readonly root: AstNode;
   /** `CODEGRAPH_PY_LOCAL_TYPE_TRACKING`, read once by the pass. Gates `param` / `local` only. */
   readonly trackLocalTypes: boolean;
+  /** `CODEGRAPH_PY_MODULE_VALUES`, read once by the pass. Gates `moduleValue` facts only; absent = off. */
+  readonly moduleValues?: boolean;
 }
 
 interface PythonTypedParam {

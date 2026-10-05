@@ -1021,40 +1021,8 @@ function collectPythonLocalBindingSites(out: PythonLocalBindingSite[]): PythonNo
       // denoted above, because Python evaluates the RHS before rebinding.
       const endLine = node.endPosition.row + 1;
 
-      // PEP 526 — `var: ClassName = ...` or `var: ClassName`
-      const typeField = node.childForFieldName("type");
-      if (typeField) {
-        const typeName = extractTypeName(typeField);
-        if (typeName) out.push({ name: varName, binding: { line, type: typeName, endLine } });
-        // Annotation wins — do not also infer from RHS.
-        return;
-      }
-
-      // Constructor call inference — `var = ClassName(...)` /
-      // `var = module.ClassName(...)`. RHS must be a call whose
-      // `function` is an `identifier` (direct) or `attribute`
-      // (qualified). Anything else (function literal, lambda,
-      // factory, list comprehension, etc.) is left unbound.
-      //
-      // bd tea-rags-mcp-z68v9 — the CapWords gate `collectPythonClassFieldTypes`
-      // has always applied now applies here too. `repository =
-      // AccountRepository.from_session(session)` was recorded as
-      // `type: "AccountRepository.from_session"`, and a method is not a type:
-      // `resolveOnBoundType` takes its last segment, asks for a class called
-      // `from_session`, finds none and DROPs. That was harmless while nothing
-      // else could answer; it is not harmless now that `callResultBindings`
-      // records the same site as a callee the resolver CAN fold, because a
-      // binding here shadows the fold. So a lowercase callee is left to the
-      // channel that can type it — 470 rows on polar, all one shape.
-      const right = node.childForFieldName("right");
-      if (right?.type === "call") {
-        const fnNode = right.childForFieldName("function");
-        if (!fnNode) return;
-        const typeName = extractConstructorTypeName(fnNode);
-        if (typeName && pythonLocalCalleeIsConstructor(typeName)) {
-          out.push({ name: varName, binding: { line, type: typeName, endLine } });
-        }
-      }
+      const typed = pythonAssignmentBoundType(node);
+      if (typed !== null) out.push({ name: varName, binding: { line, type: typed.type, endLine } });
       return;
     }
 
@@ -1104,6 +1072,50 @@ function pythonLocalBindingsInRange(
     (out[site.name] ??= []).push(site.binding);
   }
   return out;
+}
+
+/**
+ * The type an `assignment` binds its single-identifier target to, or `null` —
+ * the one rule the local-binding collector and the module-value source
+ * ({@link collectPythonLocalBindingSites}, `python-module-value-facts.ts`)
+ * share, so a module-scope `x = Cls()` and a function-local one cannot be typed
+ * by two diverging readings.
+ *
+ * `annotated` says which evidence answered: a PEP 526 annotation
+ * (`var: ClassName = ...` / `var: ClassName`) wins outright and its right-hand
+ * side is never read, even when the annotation itself cannot be named
+ * (`Optional[X]` → `null`, not an inference from the RHS).
+ *
+ * Otherwise constructor-call inference — `var = ClassName(...)` /
+ * `var = module.ClassName(...)`. The RHS must be a call whose `function` is an
+ * `identifier` (direct) or `attribute` (qualified). Anything else (function
+ * literal, lambda, factory, list comprehension, etc.) is left unbound.
+ *
+ * bd tea-rags-mcp-z68v9 — the CapWords gate `collectPythonClassFieldTypes`
+ * has always applied applies here too. `repository =
+ * AccountRepository.from_session(session)` was recorded as
+ * `type: "AccountRepository.from_session"`, and a method is not a type:
+ * `resolveOnBoundType` takes its last segment, asks for a class called
+ * `from_session`, finds none and DROPs. That was harmless while nothing
+ * else could answer; it is not harmless now that `callResultBindings`
+ * records the same site as a callee the resolver CAN fold, because a
+ * binding here shadows the fold. So a lowercase callee is left to the
+ * channel that can type it — 470 rows on polar, all one shape.
+ */
+export function pythonAssignmentBoundType(
+  assignment: AstNode,
+): { readonly type: string; readonly annotated: boolean } | null {
+  const typeField = assignment.childForFieldName("type");
+  if (typeField) {
+    const typeName = extractTypeName(typeField);
+    return typeName ? { type: typeName, annotated: true } : null;
+  }
+  const right = assignment.childForFieldName("right");
+  if (right?.type !== "call") return null;
+  const fnNode = right.childForFieldName("function");
+  if (!fnNode) return null;
+  const typeName = extractConstructorTypeName(fnNode);
+  return typeName && pythonLocalCalleeIsConstructor(typeName) ? { type: typeName, annotated: false } : null;
 }
 
 /**
