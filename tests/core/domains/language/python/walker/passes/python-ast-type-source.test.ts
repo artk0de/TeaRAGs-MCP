@@ -25,7 +25,10 @@ import {
   PYTHON_INLINE_TYPE_SOURCES,
   PYTHON_TYPE_SOURCE_ORDER,
 } from "../../../../../../../src/core/domains/language/python/walker/passes/annotation-type-facts.js";
-import { pythonAstTypeSource } from "../../../../../../../src/core/domains/language/python/walker/passes/python-ast-type-source.js";
+import {
+  pythonAstTypeSource,
+  pythonInferredReturnReader,
+} from "../../../../../../../src/core/domains/language/python/walker/passes/python-ast-type-source.js";
 import { pythonTypeChannels } from "../../../../../../../src/core/domains/language/python/walker/passes/python-type-channels.js";
 import { materializeTree } from "../../../../../../../src/core/infra/materialize.js";
 
@@ -193,5 +196,227 @@ describe("pythonAstTypeSource — what it declines", () => {
   it("loses to an annotation on the same def", () => {
     const src = ["class Factory:", "    def build(self) -> Gadget:", "        return Widget()", ""].join("\n");
     expect(structuredReturnTypes(src)).toEqual({ "Factory#build": instance("Gadget") });
+  });
+});
+
+/**
+ * bd tea-rags-mcp-m99j1.1.36 / .1.49 — the return a def DELEGATES to a sibling
+ * on its own class (`return self._cursor()`), to a same-file def whose own
+ * return is itself inferred, or to a field the class assigns from a
+ * constructor. One fixpoint over the file's defs and fields, cycle-guarded; the
+ * kernel's four rules still decide every arm, so a delegation is exactly as
+ * precise as the def it delegates to.
+ */
+describe("pythonAstTypeSource — delegated returns (self-calls, inferred callees, assigned fields)", () => {
+  it("infers a return that delegates to a same-class method through two hops and a local", () => {
+    const src = [
+      "class Conn:",
+      "    def make_cursor(self, c):",
+      "        return CursorWrapper(c, self)",
+      "    def _prepare_cursor(self, c):",
+      "        wrapped = self.make_cursor(c)",
+      "        return wrapped",
+      "    def _cursor(self):",
+      "        return self._prepare_cursor(self.create_cursor())",
+      "    def cursor(self):",
+      "        return self._cursor()",
+      "",
+    ].join("\n");
+    const channels = structuredReturnTypes(src);
+    expect(channels["Conn#cursor"]).toEqual(instance("CursorWrapper"));
+    expect(channels["Conn#_cursor"]).toEqual(instance("CursorWrapper"));
+    expect(channels["Conn#_prepare_cursor"]).toEqual(instance("CursorWrapper"));
+  });
+
+  it("reads a same-class callee's annotation, and a `cls.m()` delegation on a classmethod", () => {
+    const src = [
+      "class Repo:",
+      "    def session(self) -> Session:",
+      "        ...",
+      "    def handle(self):",
+      "        return self.session()",
+      "    @classmethod",
+      "    def build(cls):",
+      "        return cls()",
+      "    @classmethod",
+      "    def default(cls):",
+      "        return cls.build()",
+      "",
+    ].join("\n");
+    const channels = structuredReturnTypes(src);
+    expect(channels["Repo#handle"]).toEqual(instance("Session"));
+    expect(channels["Repo.default"]).toEqual(instance("Repo"));
+  });
+
+  it("carries a `-> Self` callee's marker through, so the reader substitutes the receiver", () => {
+    const src = [
+      "class Query:",
+      "    def chain(self) -> Self:",
+      "        ...",
+      "    def filter(self):",
+      "        return self.chain()",
+      "",
+    ].join("\n");
+    expect(structuredReturnTypes(src)["Query#filter"]).toEqual(instance("Self"));
+  });
+
+  it("types `copy.copy(self)` as the Self marker, through a local", () => {
+    const src = [
+      "import copy",
+      "class Expr:",
+      "    def copy(self):",
+      "        c = copy.copy(self)",
+      "        c.copied = True",
+      "        return c",
+      "    def relabeled(self):",
+      "        return self.copy()",
+      "",
+    ].join("\n");
+    const channels = structuredReturnTypes(src);
+    expect(channels["Expr#copy"]).toEqual(instance("Self"));
+    expect(channels["Expr#relabeled"]).toEqual(instance("Self"));
+  });
+
+  it("infers a same-file callee whose own return is inferred, not annotated", () => {
+    const src = ["def make():", "    return Widget()", "", "def build():", "    return make()", ""].join("\n");
+    expect(structuredReturnTypes(src)[moduleKey("build")]).toEqual(instance("Widget"));
+  });
+
+  it("types a field every assignment of which constructs one class, a None initialiser aside", () => {
+    const src = [
+      "class Form:",
+      "    def __init__(self):",
+      "        self._errors = None",
+      "    def full_clean(self):",
+      "        self._errors = ErrorDict()",
+      "    def errors(self):",
+      "        if self._errors is None:",
+      "            self.full_clean()",
+      "        return self._errors",
+      "",
+    ].join("\n");
+    expect(structuredReturnTypes(src)["Form#errors"]).toEqual(instance("ErrorDict"));
+  });
+
+  it("types a field assigned from a same-class call, and a local bound from a self-call", () => {
+    const src = [
+      "class Expression:",
+      "    def _resolve_output_field(self):",
+      "        return Field()",
+      "    def __init__(self):",
+      "        self._field = self._resolve_output_field()",
+      "    def field(self):",
+      "        return self._field",
+      "    def output_field(self):",
+      "        output_field = self._resolve_output_field()",
+      "        if output_field is None:",
+      "            raise FieldError('x')",
+      "        return output_field",
+      "",
+    ].join("\n");
+    const channels = structuredReturnTypes(src);
+    expect(channels["Expression#field"]).toEqual(instance("Field"));
+    expect(channels["Expression#output_field"]).toEqual(instance("Field"));
+  });
+
+  it("the descriptor reader answers the declaring class for a Self-marked return", () => {
+    const root = parse(
+      ["import copy", "class Expr:", "    def copy(self):", "        return copy.copy(self)", ""].join("\n"),
+    );
+    const classBody = root.namedChildren[1]?.childForFieldName("body");
+    const def = classBody?.namedChildren[0];
+    expect(def?.type).toBe("function_definition");
+    expect(pythonInferredReturnReader(root)(def as AstNode, "Expr")).toBe("Expr");
+  });
+});
+
+describe("pythonAstTypeSource — delegated returns it declines", () => {
+  const methodsOf = (src: string): string[] =>
+    facts(src)
+      .flatMap((f) => (f.methodName === undefined ? [] : [f.methodName]))
+      .sort();
+
+  it("is silent on a delegation cycle, and terminates", () => {
+    const src = [
+      "class Loop:",
+      "    def a(self):",
+      "        return self.b()",
+      "    def b(self, flag):",
+      "        if flag:",
+      "            return Widget()",
+      "        return self.a()",
+      "",
+    ].join("\n");
+    expect(facts(src)).toEqual([]);
+  });
+
+  it("is silent on a self-call to a method the class does not define (inherited or dynamic)", () => {
+    const src = ["class Child(Base):", "    def cursor(self):", "        return self._cursor()", ""].join("\n");
+    expect(facts(src)).toEqual([]);
+  });
+
+  it("is silent on a self-call to a method the class defines twice", () => {
+    const src = [
+      "class Twice:",
+      "    def make(self):",
+      "        return Widget()",
+      "    def make(self):",
+      "        return Widget()",
+      "    def build(self):",
+      "        return self.make()",
+      "",
+    ].join("\n");
+    expect(methodsOf(src)).toEqual(["make", "make"]);
+  });
+
+  it("is silent on a self-call to a property — the call invokes what the property returns", () => {
+    const src = [
+      "class Holder:",
+      "    @property",
+      "    def factory(self):",
+      "        return Widget()",
+      "    def build(self):",
+      "        return self.factory()",
+      "",
+    ].join("\n");
+    expect(methodsOf(src)).toEqual(["factory"]);
+  });
+
+  it.each([
+    ["two different constructors", ["        self.x = Widget()", "        self.x = Gadget()"]],
+    ["a parameter alongside a constructor", ["        self.x = Widget()", "        self.x = other"]],
+    ["an augmented assignment", ["        self.x = Widget()", "        self.x += other"]],
+    ["a tuple target", ["        self.x = Widget()", "        self.x, self.y = pair"]],
+    ["only None", ["        self.x = None"]],
+  ])("is silent on a field assigned %s", (_shape, assignments) => {
+    const src = [
+      "class Holder:",
+      "    def setup(self, other, pair):",
+      ...assignments,
+      "    def get(self):",
+      "        return self.x",
+      "",
+    ].join("\n");
+    expect(facts(src)).toEqual([]);
+  });
+
+  it("a nested class's `self.x` assignment does not type the outer class's field", () => {
+    const src = [
+      "class Outer:",
+      "    class Inner:",
+      "        def __init__(self):",
+      "            self.x = Widget()",
+      "    def get(self):",
+      "        return self.x",
+      "",
+    ].join("\n");
+    expect(methodsOf(src)).toEqual([]);
+  });
+
+  it("is silent on `copy.copy` of something other than self", () => {
+    const src = ["import copy", "class Expr:", "    def dup(self, other):", "        return copy.copy(other)", ""].join(
+      "\n",
+    );
+    expect(facts(src)).toEqual([]);
   });
 });

@@ -21,7 +21,12 @@ import {
 import type { PythonTypeSourceInput } from "./python-annotation-type-source.js";
 import { isPythonClassFormDef, pythonAnnotationExpression, walkPythonScopes } from "./python-def-scope-walk.js";
 import { pythonReturnExpressionType, type PythonReturnScope } from "./python-return-expression.js";
-import { pythonNominalReceiverName, pythonTypeRefFromNode } from "./python-type-annotation.js";
+import {
+  PYTHON_SELF_RETURN,
+  pythonBareTypeName,
+  pythonNominalReceiverName,
+  pythonTypeRefFromNode,
+} from "./python-type-annotation.js";
 
 /**
  * The rank shared by every source that reads the TREE rather than something a
@@ -95,23 +100,180 @@ function pythonReturnPorts(scope: PythonReturnScope): ReturnInferencePorts<AstNo
   };
 }
 
-/** The two lookup tables the return inference reads before it starts. */
+/** One def a delegation can land on, with what `walkPythonScopes` read off it. */
+interface PythonDelegateDef {
+  readonly node: AstNode;
+  readonly decorators: readonly string[];
+}
+
+/** What one class (by short name) declares that a delegated return can read. */
+interface PythonClassDelegates {
+  /** `<method> → defs` for the defs DIRECTLY in the class body. */
+  readonly methods: Map<string, PythonDelegateDef[]>;
+  /**
+   * `<field> → write events` for every unannotated `self.<field> = …` in the
+   * class's methods (nested defs included, nested classes not) and every
+   * class-body `<field> = …`. A write the language will not vouch for —
+   * augmented, tuple target — is `null`.
+   */
+  readonly fieldWrites: Map<string, (AstNode | null)[]>;
+}
+
+/** The lookup tables the return inference reads before it starts. */
 interface PythonAstScopeTables {
   /** Per-class `<field> → <class>` from annotated class-body and `self.x: T` assignments. */
   readonly fieldTypes: Map<string, Map<string, string>>;
-  /** `<top-level def name> → <declared return class>` — the one-hop table. */
+  /** `<top-level def name> → <declared return class>` — annotated defs only. */
   readonly fileReturnTypes: Map<string, string>;
+  /** `<top-level def name> → defs`, for the unannotated ones a delegation infers through. */
+  readonly fileDefs: Map<string, AstNode[]>;
+  /** Per-class sibling methods and field writes; a short name two classes share is absent. */
+  readonly classDelegates: Map<string, PythonClassDelegates>;
 }
 
 /**
- * Both tables off ONE scoped descent (bd tea-rags-mcp-1v12o.2.7, E6.2). They
- * read disjoint node kinds — an annotated assignment and a `def` — and write
- * disjoint maps, so `walkPythonScopes`' own two-callback visitor is all the
- * fusion needs; neither body changes.
+ * A callee whose CALL does not yield its `return`: a property (`self.p()` calls
+ * what `p` returns), its setter/deleter, and a context-manager factory.
+ */
+const PYTHON_NON_RETURNING_DECORATORS: ReadonlySet<string> = new Set([
+  "property",
+  "cached_property",
+  "setter",
+  "getter",
+  "deleter",
+  "contextmanager",
+  "asynccontextmanager",
+]);
+
+/** The `class_definition` a def sits DIRECTLY in, or null (module-level, or nested in a def). */
+function enclosingClassNode(defNode: AstNode): AstNode | null {
+  const outer = defNode.parent?.type === "decorated_definition" ? defNode.parent : defNode;
+  const block = outer.parent;
+  return block?.type === "block" && block.parent?.type === "class_definition" ? block.parent : null;
+}
+
+/** Is this def a module-level statement (`if` / `try` blocks at module scope do not count)? */
+function isModuleLevelDef(defNode: AstNode): boolean {
+  const outer = defNode.parent?.type === "decorated_definition" ? defNode.parent : defNode;
+  return outer.parent?.type === "module";
+}
+
+/** `self.<field>` as an assignment target → the field name. */
+function selfFieldName(target: AstNode | null): string | null {
+  if (target?.type !== "attribute") return null;
+  const object = target.childForFieldName("object");
+  if (object?.type !== "identifier" || object.text !== "self") return null;
+  return target.childForFieldName("attribute")?.text ?? null;
+}
+
+function pushEvent(writes: Map<string, (AstNode | null)[]>, field: string, event: AstNode | null): void {
+  const events = writes.get(field);
+  if (events === undefined) writes.set(field, [event]);
+  else events.push(event);
+}
+
+/** Every `self.<field>` write in one method body; a nested class's `self` is another object. */
+function collectSelfFieldWrites(defNode: AstNode, writes: Map<string, (AstNode | null)[]>): void {
+  const body = defNode.childForFieldName("body");
+  if (body === null) return;
+  const scan = (n: AstNode): void => {
+    if (n.type === "class_definition") return;
+    if (n.type === "assignment") {
+      const lhs = n.childForFieldName("left");
+      const field = selfFieldName(lhs);
+      // An annotated `self.x: T = …` is the field table's; it outranks every derived write.
+      if (field !== null && n.childForFieldName("type") === null) {
+        pushEvent(writes, field, n.childForFieldName("right"));
+      } else if (lhs !== null && lhs.type !== "attribute" && lhs.type !== "identifier") {
+        for (const target of lhs.namedChildren) {
+          const unpacked = selfFieldName(target);
+          if (unpacked !== null) pushEvent(writes, unpacked, null);
+        }
+      }
+    } else if (n.type === "augmented_assignment") {
+      const field = selfFieldName(n.childForFieldName("left"));
+      if (field !== null) pushEvent(writes, field, null);
+    } else if (n.type === "for_statement") {
+      const field = selfFieldName(n.childForFieldName("left"));
+      if (field !== null) pushEvent(writes, field, null);
+    }
+    for (const child of n.namedChildren) scan(child);
+  };
+  for (const child of body.namedChildren) scan(child);
+}
+
+/** Class-body `<field> = …` statements: a class attribute `self.<field>` reads too. */
+function collectClassBodyWrites(classNode: AstNode, writes: Map<string, (AstNode | null)[]>): void {
+  const body = classNode.childForFieldName("body");
+  if (body === null) return;
+  for (const statement of body.namedChildren) {
+    const assignment = statement.type === "expression_statement" ? statement.namedChild(0) : null;
+    if (assignment?.type !== "assignment" || assignment.childForFieldName("type") !== null) continue;
+    const lhs = assignment.childForFieldName("left");
+    if (lhs?.type === "identifier") pushEvent(writes, lhs.text, assignment.childForFieldName("right"));
+  }
+}
+
+/** Short names more than one `class_definition` in the file carries — their tables would mix two classes. */
+function sharedClassNames(root: AstNode): Set<string> {
+  const seen = new Set<string>();
+  const shared = new Set<string>();
+  const scan = (n: AstNode): void => {
+    if (n.type === "class_definition") {
+      const name = n.childForFieldName("name")?.text;
+      if (name !== undefined) {
+        if (seen.has(name)) shared.add(name);
+        seen.add(name);
+      }
+    }
+    for (const child of n.namedChildren) scan(child);
+  };
+  scan(root);
+  return shared;
+}
+
+/**
+ * Every table off ONE scoped descent (bd tea-rags-mcp-1v12o.2.7, E6.2). The
+ * annotated-assignment and annotated-def collectors read disjoint node kinds
+ * and write disjoint maps; the delegate tables (bd tea-rags-mcp-m99j1.1.36)
+ * ride the same `onDef` and scan each class body once, keyed by its node.
  */
 function collectPythonAstScopeTables(root: AstNode): PythonAstScopeTables {
   const byClass = new Map<string, Map<string, string>>();
   const returns = new Map<string, string>();
+  const fileDefs = new Map<string, AstNode[]>();
+  const classDelegates = new Map<string, PythonClassDelegates>();
+  const classBodiesScanned = new Set<AstNode>();
+  const shared = sharedClassNames(root);
+  const delegatesOf = (className: string): PythonClassDelegates => {
+    let delegates = classDelegates.get(className);
+    if (delegates === undefined) {
+      delegates = { methods: new Map(), fieldWrites: new Map() };
+      classDelegates.set(className, delegates);
+    }
+    return delegates;
+  };
+  const recordDelegateDef = (site: { node: AstNode; decorators: readonly string[]; name: string }): void => {
+    if (isModuleLevelDef(site.node)) {
+      const defs = fileDefs.get(site.name);
+      if (defs === undefined) fileDefs.set(site.name, [site.node]);
+      else defs.push(site.node);
+      return;
+    }
+    const classNode = enclosingClassNode(site.node);
+    const className = classNode?.childForFieldName("name")?.text;
+    if (classNode === null || className === undefined || shared.has(className)) return;
+    const delegates = delegatesOf(className);
+    const defs = delegates.methods.get(site.name);
+    const def = { node: site.node, decorators: site.decorators };
+    if (defs === undefined) delegates.methods.set(site.name, [def]);
+    else defs.push(def);
+    collectSelfFieldWrites(site.node, delegates.fieldWrites);
+    if (!classBodiesScanned.has(classNode)) {
+      classBodiesScanned.add(classNode);
+      collectClassBodyWrites(classNode, delegates.fieldWrites);
+    }
+  };
   walkPythonScopes(root, {
     onAnnotatedAssignment: (site) => {
       const owner = site.classChain[site.classChain.length - 1];
@@ -137,6 +299,7 @@ function collectPythonAstScopeTables(root: AstNode): PythonAstScopeTables {
       fields.set(name, nominal);
     },
     onDef: (site) => {
+      recordDelegateDef(site);
       if (site.classChain.length > 0) return;
       const returnType = site.node.childForFieldName("return_type");
       if (returnType === null) return;
@@ -145,23 +308,121 @@ function collectPythonAstScopeTables(root: AstNode): PythonAstScopeTables {
       if (nominal !== undefined) returns.set(site.name, nominal);
     },
   });
-  return { fieldTypes: byClass, fileReturnTypes: returns };
+  return { fieldTypes: byClass, fileReturnTypes: returns, fileDefs, classDelegates };
 }
 
-const NO_FIELDS: ReadonlyMap<string, string> = new Map<string, string>();
+/** Marks a fixpoint node whose answer is being computed — re-entry is a cycle, and a cycle is silence. */
+const IN_PROGRESS = Symbol("in-progress");
 
-/** The class an UNANNOTATED def's return expressions name, read against `tables`; null on silence. */
-function inferPythonDefReturnName(
-  defNode: AstNode,
-  selfClass: string | undefined,
-  tables: PythonAstScopeTables,
-): string | null {
-  const scope: PythonReturnScope = {
-    selfClass,
-    fieldTypes: (selfClass === undefined ? undefined : tables.fieldTypes.get(selfClass)) ?? NO_FIELDS,
-    fileReturnTypes: tables.fileReturnTypes,
-  };
-  return inferReturnTypeName(defNode, null, pythonReturnPorts(scope));
+/**
+ * The file's return inference as a memoised, cycle-guarded fixpoint (bd
+ * tea-rags-mcp-m99j1.1.36). A def's return may read a sibling method's, a
+ * same-file def's, or a field whose writes call either, so each lookup can
+ * recurse into another inference. Re-entering a node still in progress answers
+ * null; because any null arm kills an inference (kernel rule 3), every node on
+ * a cycle answers null whichever node the walk entered first, and caching that
+ * is order-independent.
+ */
+class PythonReturnFixpoint {
+  private readonly defReturns = new Map<AstNode, string | null | typeof IN_PROGRESS>();
+  private readonly fieldReturns = new Map<string, string | null | typeof IN_PROGRESS>();
+
+  constructor(private readonly tables: PythonAstScopeTables) {}
+
+  /** The class an UNANNOTATED def's return expressions name; null on silence. */
+  inferDef(defNode: AstNode, selfClass: string | undefined): string | null {
+    const cached = this.defReturns.get(defNode);
+    if (cached === IN_PROGRESS) return null;
+    if (cached !== undefined) return cached;
+    this.defReturns.set(defNode, IN_PROGRESS);
+    const inferred = inferReturnTypeName(defNode, null, pythonReturnPorts(this.scopeOf(selfClass)));
+    this.defReturns.set(defNode, inferred);
+    return inferred;
+  }
+
+  private scopeOf(selfClass: string | undefined): PythonReturnScope {
+    return {
+      selfClass,
+      fieldType: (field) => (selfClass === undefined ? null : this.fieldType(selfClass, field)),
+      selfMethodReturn: (method) => (selfClass === undefined ? null : this.methodReturn(selfClass, method)),
+      fileReturn: (name) => this.fileReturn(name),
+    };
+  }
+
+  /** An annotation on the callee wins; otherwise its body is inferred. `-> Self` stays the marker. */
+  private delegateReturn(def: PythonDelegateDef, selfClass: string | undefined): string | null {
+    if (def.decorators.some((d) => PYTHON_NON_RETURNING_DECORATORS.has(d))) return null;
+    const returnType = def.node.childForFieldName("return_type");
+    if (returnType === null) return this.inferDef(def.node, selfClass);
+    const ref = pythonTypeRefFromNode(
+      pythonAnnotationExpression(returnType),
+      selfClass === undefined ? undefined : PYTHON_SELF_RETURN,
+    );
+    return (ref === undefined ? undefined : pythonNominalReceiverName(ref)) ?? null;
+  }
+
+  /** `self.<method>(…)` — exactly one def of that name in the class body, or silence. */
+  private methodReturn(selfClass: string, method: string): string | null {
+    const defs = this.tables.classDelegates.get(selfClass)?.methods.get(method);
+    if (defs?.length !== 1) return null;
+    return this.delegateReturn(defs[0], selfClass);
+  }
+
+  /** `<name>(…)` — the annotated table first (its long-standing behaviour), then ONE unannotated def. */
+  private fileReturn(name: string): string | null {
+    const declared = this.tables.fileReturnTypes.get(name);
+    if (declared !== undefined) return declared;
+    const defs = this.tables.fileDefs.get(name);
+    if (defs?.length !== 1) return null;
+    return this.delegateReturn({ node: defs[0], decorators: pythonDefDecorators(defs[0]) }, undefined);
+  }
+
+  /**
+   * `self.<field>` — the annotated table wins (a typed binding outranks a derived
+   * one). Otherwise every write must map to ONE class: a `None` write is the
+   * unset state and neutral, a write that maps to nothing kills, two classes
+   * kill, and a field written only `None` is silence.
+   */
+  private fieldType(selfClass: string, field: string): string | null {
+    const annotated = this.tables.fieldTypes.get(selfClass)?.get(field);
+    if (annotated !== undefined) return annotated;
+    const key = `${selfClass}\u0000${field}`;
+    const cached = this.fieldReturns.get(key);
+    if (cached === IN_PROGRESS) return null;
+    if (cached !== undefined) return cached;
+    this.fieldReturns.set(key, IN_PROGRESS);
+    const typed = this.inferField(selfClass, field);
+    this.fieldReturns.set(key, typed);
+    return typed;
+  }
+
+  private inferField(selfClass: string, field: string): string | null {
+    const events = this.tables.classDelegates.get(selfClass)?.fieldWrites.get(field);
+    if (events === undefined) return null;
+    const scope = this.scopeOf(selfClass);
+    let agreed: string | null = null;
+    for (const event of events) {
+      if (event === null) return null;
+      if (event.type === "none") continue;
+      const typed = pythonReturnExpressionType(event, scope);
+      if (typed === null || (agreed !== null && agreed !== typed)) return null;
+      agreed = typed;
+    }
+    return agreed;
+  }
+}
+
+/** A def's decorator names, read the way `walkPythonScopes` reads them (the callee's last segment). */
+function pythonDefDecorators(defNode: AstNode): string[] {
+  if (defNode.parent?.type !== "decorated_definition") return [];
+  const out: string[] = [];
+  for (const child of defNode.parent.namedChildren) {
+    if (child.type !== "decorator") continue;
+    const expr = child.namedChild(0);
+    const target = expr?.type === "call" ? expr.childForFieldName("function") : expr;
+    if (target !== null && target !== undefined) out.push(pythonBareTypeName(target.text));
+  }
+  return out;
 }
 
 /**
@@ -169,26 +430,30 @@ function inferPythonDefReturnName(
  * inferred return of a def it picked itself (the descriptor pass, bd
  * tea-rags-mcp-m99j1.1.20). The scope tables cost a descent, so they are built
  * on the first question and never for a file that asks none.
+ *
+ * Its consumer files the answer as a FIELD type, which has no receiver to
+ * substitute a `Self` marker with, so the marker answers as the declaring class.
  */
 export function pythonInferredReturnReader(
   root: AstNode,
 ): (defNode: AstNode, selfClass: string | undefined) => string | null {
-  let tables: PythonAstScopeTables | undefined;
+  let fixpoint: PythonReturnFixpoint | undefined;
   return (defNode, selfClass) => {
-    tables ??= collectPythonAstScopeTables(root);
-    return inferPythonDefReturnName(defNode, selfClass, tables);
+    fixpoint ??= new PythonReturnFixpoint(collectPythonAstScopeTables(root));
+    const inferred = fixpoint.inferDef(defNode, selfClass);
+    return inferred === PYTHON_SELF_RETURN ? (selfClass ?? null) : inferred;
   };
 }
 
 function extractPythonAstFacts(input: PythonTypeSourceInput): TypeFact[] {
-  const tables = collectPythonAstScopeTables(input.root);
+  const fixpoint = new PythonReturnFixpoint(collectPythonAstScopeTables(input.root));
   const facts: TypeFact[] = [];
   walkPythonScopes(input.root, {
     onDef: (site) => {
       // An annotated def is the `annotations` source's; re-emitting would only
       // lose the coordinate dedupe race and cost a walk.
       if (site.node.childForFieldName("return_type") !== null) return;
-      const name = inferPythonDefReturnName(site.node, site.classChain[site.classChain.length - 1], tables);
+      const name = fixpoint.inferDef(site.node, site.classChain[site.classChain.length - 1]);
       if (name === null) return;
       const fact: TypeFact = {
         kind: "return",
