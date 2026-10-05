@@ -9,11 +9,14 @@
  */
 
 export {
+  AncestorLinearizerCache,
   createAncestorLinearizer,
   findMemberInAncestorChain,
   type AncestorClosure,
   type AncestorLinearizationPolicy,
   type AncestorLinearizer,
+  type AncestorLinearizerCacheContext,
+  type AncestorLinearizerCacheOptions,
   type AncestorMemberScan,
   type LinearizedAncestors,
 } from "./ancestor-walk.js";
