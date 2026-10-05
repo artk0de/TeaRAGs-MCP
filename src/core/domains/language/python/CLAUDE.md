@@ -663,6 +663,11 @@
   `ConnectionError`). It is a CLASSIFICATION change: edges are byte-identical,
   so an oracle column counted from edges cannot move — read the tally's
   `external` bucket instead.
+- **The assigned-local gate is OFF by default** (bd tea-rags-mcp-o9mk8;
+  `CODEGRAPH_PY_ASSIGNED_LOCAL_GATE=1` opts in): m99j1.1.91 measured ~10% of the
+  rows it suppresses as TRUE edges, and a lost correct edge is a regression.
+  Flipping it back ON is epic tea-rags-mcp-qg12x. The next bullet records what
+  the gate does when enabled.
 - **Un-parked by the assigned-local gate** (bd tea-rags-mcp-m99j1.1.57, after
   the m99j1.1.27 re-measure; `--tiebreak` oracle, flag on vs off). Task 25 left
   one residual a gate could not see: function LOCALS assigned from an expression
@@ -949,13 +954,13 @@
   It is the one TRANSPARENT kind: `pythonLocalBindingInForce` reads past it
   unless its fold names a project class or a library type, so it can only add a
   type — which is how the assigned-local fan gate's lost edges come back as
-  exact ones. `contextEnter` is `__enter__`'s return through the member-return
-  MRO walk and nothing when no project class declares one — the constructed
-  instance is never the answer. A `@contextlib.contextmanager` /
-  `asynccontextmanager` generator (decorator qualified through the file's
-  imports) is the one exception: its annotated `Iterator[T]`-family return is
-  recorded as the library manager class carrying `T`
-  (`generator-context-manager-marker.ts`), and it enters as `T` (bd
+  exact ones (the gate is opt-in, default OFF, bd o9mk8; epic qg12x).
+  `contextEnter` is `__enter__`'s return through the member-return MRO walk and
+  nothing when no project class declares one — the constructed instance is never
+  the answer. A `@contextlib.contextmanager` / `asynccontextmanager` generator
+  (decorator qualified through the file's imports) is the one exception: its
+  annotated `Iterator[T]`-family return is recorded as the library manager class
+  carrying `T` (`generator-context-manager-marker.ts`), and it enters as `T` (bd
   tea-rags-mcp-m99j1.1.87); an unannotated one stays untyped. `except E as e`
   needs no derived kind: it is a plain instance binding scoped to the handler; a
   tuple `except (A, B)` and starred targets record nothing. This is a DIFFERENT

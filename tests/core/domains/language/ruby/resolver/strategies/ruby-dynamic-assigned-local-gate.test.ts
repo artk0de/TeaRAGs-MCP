@@ -68,9 +68,10 @@ describe("Ruby dynamic fan — assigned-local gate (m99j1.1.59)", () => {
     expect(edges).toEqual([]);
   });
 
-  it("declines it by default — the triage passed, so an unset env means on", () => {
+  it("fans it by default — OFF since o9mk8, an unset env means off (14% of the dropped rows were TRUE edges)", () => {
     const resolver = new RubyDynamicDispatchResolver({ mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE });
-    expect(edgesOf(resolver.resolveDispatch(call("w"), ctx({ assignedLocals: ["w"] })))).toEqual([]);
+    const edges = edgesOf(resolver.resolveDispatch(call("w"), ctx({ assignedLocals: ["w"] })));
+    expect(edges.map((e) => e.targetSymbolId)).toEqual(["Widget#refresh_feed"]);
   });
 
   it("still fans on the same site when the gate is off", () => {

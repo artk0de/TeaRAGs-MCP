@@ -138,8 +138,11 @@
   a def (assignments, `||=` / op-assign, multiple assignment, `rescue => e`;
   params and block params excluded; a name read as a receiver before its first
   assignment dropped); `rubyDynamicFanoutSuppressed` asks the kernel gate behind
-  `CODEGRAPH_RB_ASSIGNED_LOCAL_GATE`, default on. Untyped assigned locals are
-  recovered by typing (`callResultBindings`), never by fanning.
+  `CODEGRAPH_RB_ASSIGNED_LOCAL_GATE`, default OFF since bd tea-rags-mcp-o9mk8
+  (`=1` opts in): ~14% of the rows the gate drops are correct edges, and a lost
+  correct edge is a regression. Re-enabling it by default is epic
+  tea-rags-mcp-qg12x. Untyped assigned locals are recovered by typing
+  (`callResultBindings`), never by fanning.
 - **Ruby recall numbers measured before 2026-07-28 sit on a different
   DENOMINATOR.** `RUBY_CODEGRAPH_EXCLUSION_GLOBS` (`codegraph-exclusions.ts`)
   has kept `db/migrate`, `db/data` and the schema snapshots out of the fan-graph
