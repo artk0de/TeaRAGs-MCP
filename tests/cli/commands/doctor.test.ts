@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import yargs from "yargs";
 
+import { resolveRegistryEnvCodeDefaults } from "../../../src/bootstrap/config/registry-env-code-defaults.js";
 import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/collection-registry.js";
 
 describe("CLI 'doctor' command", () => {
@@ -322,6 +323,7 @@ describe("CLI 'doctor' command", () => {
           fallbackBaseUrl: undefined,
         },
       }),
+      resolveRegistryEnvCodeDefaults,
     }));
     vi.doMock("../../../src/core/adapters/qdrant/embedded/daemon.js", () => ({
       resolveQdrantUrl: async () => ({ mode: "external", url: "http://stub" }),
@@ -398,6 +400,7 @@ describe("CLI 'doctor' command", () => {
           fallbackBaseUrl: undefined,
         },
       }),
+      resolveRegistryEnvCodeDefaults,
     }));
     vi.doMock("../../../src/core/adapters/qdrant/embedded/daemon.js", () => ({
       resolveQdrantUrl: async () => ({ mode: "external", url: "http://stub" }),

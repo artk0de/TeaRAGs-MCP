@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 
 import type { CommandModule } from "yargs";
 
-import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
+import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
 import { ProjectRegistryOps } from "../../core/api/index.js";
 import {
   CollectionRegistry,

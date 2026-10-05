@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import yargs, { type Arguments } from "yargs";
 
+import { assertRegistryEnvValueParses } from "../../../src/bootstrap/config/parse.js";
+import { resolveRegistryEnvCodeDefaults } from "../../../src/bootstrap/config/registry-env-code-defaults.js";
 import { projectsCommand } from "../../../src/cli/commands/projects.js";
 
 /**
@@ -159,6 +161,8 @@ describe("projectsCommand yargs builder/handler wiring", () => {
     // + resolveQdrantUrl + new QdrantManager) without touching the network.
     vi.doMock("../../../src/bootstrap/config/index.js", () => ({
       parseAppConfig: () => ({ qdrantUrl: "http://stub", qdrantApiKey: undefined, paths: { appData: "/tmp/x" } }),
+      assertRegistryEnvValueParses,
+      resolveRegistryEnvCodeDefaults,
     }));
     vi.doMock("../../../src/core/adapters/qdrant/embedded/daemon.js", () => ({
       resolveQdrantUrl: async () => ({ mode: "external", url: "http://stub" }),

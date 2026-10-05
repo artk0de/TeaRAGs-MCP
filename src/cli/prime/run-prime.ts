@@ -5,8 +5,7 @@ import { join } from "node:path";
 import { spawnDetachedUpdater } from "../../bootstrap/auto-update/spawner.js";
 import { AutoUpdateTrigger, type AutoUpdateTriggerOutcome } from "../../bootstrap/auto-update/trigger.js";
 import { autoUpdateLogPath, closeAutoUpdateLog, openAutoUpdateLog } from "../../bootstrap/auto-update/updater-log.js";
-import { parseAppConfig } from "../../bootstrap/config/index.js";
-import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
+import { parseAppConfig, resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
 import { createAppContext } from "../../bootstrap/factory.js";
 import {
   CollectionRegistry,

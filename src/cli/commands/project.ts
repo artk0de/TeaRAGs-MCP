@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 
 import type { CommandModule } from "yargs";
 
-import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
+import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
 import { CollectionRegistry } from "../../core/api/public/index.js";
 
 function resolveDataDir(): string {

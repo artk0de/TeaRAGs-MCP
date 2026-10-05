@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { resolveRegistryEnvCodeDefaults } from "../../../src/bootstrap/config/registry-env-code-defaults.js";
 import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import { createPathCollectionResolver } from "../../../src/core/api/index.js";
 import type { CollectionEntry } from "../../../src/core/contracts/types/registry.js";
@@ -26,6 +27,7 @@ vi.mock("../../../src/bootstrap/factory.js", () => ({
 vi.mock("../../../src/bootstrap/config/index.js", () => ({
   parseAppConfig: parseAppConfigMock,
   getZodConfig: () => ({ deprecations: [] }),
+  resolveRegistryEnvCodeDefaults,
 }));
 
 const LIVE_DAEMON_PORT = 52545;

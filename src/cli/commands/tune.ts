@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import type { CommandModule } from "yargs";
 
-import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
+import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
 import {
   CollectionRegistry,
   InputValidationError,

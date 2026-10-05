@@ -18,7 +18,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
+import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
 import { CollectionRegistry, resolveRegistryEnv, type App, type CollectionEntry } from "../../core/api/public/index.js";
 
 /** The request fields a tool addresses its project by — the MCP tool contract. */

@@ -11,7 +11,7 @@ import { resolve } from "node:path";
 
 import type { Argv, CommandModule } from "yargs";
 
-import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
+import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
 import {
   TeaRagsError,
   type OptimizerRecoveryOps,
