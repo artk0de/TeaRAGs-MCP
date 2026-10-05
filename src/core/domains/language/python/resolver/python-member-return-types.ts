@@ -266,9 +266,10 @@ function pythonDescendsFromModel(
   mapper: PythonImportFileMapper,
   linearizer: AncestorLinearizer<CallContext> | undefined,
 ): boolean {
-  const key = pythonReceiverClassKey(bareType, ctx, mapper);
-  if (key === null) return false;
-  const keys = linearizer === undefined ? [key] : [key, ...linearizer.linearize(key).order];
+  const receiverClassKey = pythonReceiverClassKey(bareType, ctx, mapper);
+  if (receiverClassKey === null) return false;
+  const keys =
+    linearizer === undefined ? [receiverClassKey] : [receiverClassKey, ...linearizer.linearize(receiverClassKey).order];
   for (const classKey of keys) {
     const parsed = parsePythonClassKey(classKey);
     if (parsed !== null && modelBases.has(lastSegment(parsed.classFq))) return true;
