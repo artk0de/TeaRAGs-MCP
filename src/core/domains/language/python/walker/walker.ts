@@ -50,6 +50,7 @@ import {
   type PythonCallableValueFlow,
 } from "./passes/python-callable-value-flow.js";
 import { collectPythonClassBodyFieldTypes } from "./passes/python-class-body-fields.js";
+import { collectPythonContainerElementSites } from "./passes/python-container-element-facts.js";
 import { collectPythonDefSignatures, pythonCallShape } from "./passes/python-def-signatures.js";
 import {
   collectPythonCallbackParams,
@@ -231,6 +232,10 @@ function collectPythonFlatChannels(root: AstNode, trackTypes: boolean): PythonFl
   ];
   if (trackTypes) flatVisitors.push(collectPythonLocalBindingSites(localBindingSites));
   walkOnce(root, flatVisitors);
+  // bd tea-rags-mcp-m99j1.1.41 — container element facts ride the same sites
+  // under `<iterable>[]` pseudo-names; the facet needs whole-scope state, so it
+  // runs after the descent rather than as a per-node visitor.
+  if (trackTypes) localBindingSites.push(...collectPythonContainerElementSites(root));
   for (const dc of decoratorCalls) calls.push(dc);
   return {
     imports,

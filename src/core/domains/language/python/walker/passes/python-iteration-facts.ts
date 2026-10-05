@@ -107,7 +107,7 @@ function homogeneousTupleAnnotation(node: AstNode): boolean {
  * `wantValues` is set by a `.values()` receiver and REQUIRES a mapping base;
  * a bare iteration requires the opposite, which is what declines dict keys.
  */
-function iterationElementOf(
+export function pythonAnnotationIterationElement(
   annotation: AstNode,
   selfClass: string | undefined,
   wantValues: boolean,
@@ -161,7 +161,7 @@ function iterationFactFor(site: PythonForStatementSite, index: PythonAnnotationI
   }
   const annotation = iterableAnnotationOf(iterable, site, methodName, index);
   if (annotation === undefined) return undefined;
-  const element = iterationElementOf(annotation, site.classChain[site.classChain.length - 1], wantValues);
+  const element = pythonAnnotationIterationElement(annotation, site.classChain[site.classChain.length - 1], wantValues);
   if (element === undefined) return undefined;
   return {
     kind: "local",

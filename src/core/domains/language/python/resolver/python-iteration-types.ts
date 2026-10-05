@@ -45,6 +45,7 @@ import {
   typeRefTupleElement,
   type ReceiverTypePorts,
 } from "../../kernel/index.js";
+import { pythonContainerElementKey } from "../walker/passes/python-container-element-facts.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
   pythonCallBindingType,
@@ -181,14 +182,48 @@ function iteratedElement(
   const hops = splitReceiverHops(expression);
   const view = hops.length > 1 ? PYTHON_MAPPING_VIEW.exec(hops[hops.length - 1]) : null;
   if (view !== null) {
-    const mapping = typeOfValue(hops.slice(0, -1).join("."), reader);
-    if (mapping?.form !== "container") return undefined;
-    if (view[1] === "values") return atPosition(mapping.element, tupleIndex);
-    return view[1] === "items" && tupleIndex === 1 ? mapping.element : undefined;
+    const spelling = hops.slice(0, -1).join(".");
+    const mapping = typeOfValue(spelling, reader);
+    // An untyped mapping states its element only for the `.values()` view.
+    const value =
+      mapping === undefined
+        ? writtenElement(`${spelling}.values()`, reader)
+        : mapping.form === "container"
+          ? mapping.element
+          : undefined;
+    if (value === undefined) return undefined;
+    if (view[1] === "values") return atPosition(value, tupleIndex);
+    return view[1] === "items" && tupleIndex === 1 ? value : undefined;
   }
   const iterable = typeOfValue(expression, reader);
-  const element = iterable === undefined ? null : (reader.ports.elementTypeOf?.(iterable, reader.ctx) ?? null);
+  if (iterable === undefined) {
+    const written = writtenElement(expression, reader);
+    return written === undefined ? undefined : atPosition(written, tupleIndex);
+  }
+  const element = reader.ports.elementTypeOf?.(iterable, reader.ctx) ?? null;
   return element === null ? undefined : atPosition(element, tupleIndex);
+}
+
+/**
+ * The element an UNTYPED container holds, from the walker's container element
+ * fact on `<iterable>[]` (bd tea-rags-mcp-m99j1.1.41) — what every observed
+ * write into it, or the comprehension that built it, spells. Read only when
+ * the container itself carries no type: a typed container outranks its writes.
+ */
+function writtenElement(iterable: string, reader: PythonIterableReader): TypeRef | undefined {
+  const elementBinding = resolveLocalBinding(
+    reader.ctx.localBindings,
+    pythonContainerElementKey(iterable),
+    reader.atLine,
+  );
+  if (elementBinding === undefined) return undefined;
+  if (isDerivedLocalBinding(elementBinding)) {
+    return pythonDerivedBindingType(elementBinding, reader.ctx, reader.ports, reader.mapper);
+  }
+  // A walker-typed element: an identity comprehension over an annotated source.
+  if (elementBinding.type === "") return undefined;
+  const form = elementBinding.valueKind === "class" ? "class" : "instance";
+  return typeRefReceiverForm(elementBinding.typeRef ?? { form, name: elementBinding.type });
 }
 
 /** The element itself, or its `tupleIndex`-th position when the target destructures it. */
