@@ -20,7 +20,7 @@
  */
 
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import { resolveLocalBinding, type CallContext, type LocalBinding } from "../../../../contracts/types/codegraph.js";
+import type { CallContext, LocalBinding } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import {
   CHAIN_MAX_HOPS_DEFAULT,
@@ -31,6 +31,11 @@ import {
 } from "../../kernel/index.js";
 import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
+import {
+  pythonElementTypeOf,
+  pythonIterationElementType,
+  pythonLocalBindingInForce,
+} from "./python-iteration-types.js";
 import {
   findPythonImportBinding,
   lastSegment,
@@ -178,6 +183,7 @@ function pythonSingleHopType(
   ctx: CallContext,
   mapper: PythonImportFileMapper,
   classHead: boolean,
+  ports: ReceiverTypePorts,
 ): TypeRef | undefined {
   if (receiver === "self") {
     // The enclosing CLASS, addressed the way the run keys classes — not the
@@ -203,6 +209,10 @@ function pythonSingleHopType(
     return pythonCallHeadReturnType(receiver, ctx, mapper);
   }
   const bound = pythonBindingInForceAt(receiver, atLine, ctx);
+  // A loop target is typed by what its iterable yields (bd
+  // tea-rags-mcp-m99j1.1.18) — and an untyped one still IS a binding: the
+  // name a module or a class might carry elsewhere is a local here.
+  if (bound?.valueKind === "iterationElement") return pythonIterationElementType(bound, ctx, ports, mapper);
   if (bound !== undefined) return { form: "instance", name: bound.type };
   const moduleValue = pythonModuleValueType(receiver, ctx, mapper);
   if (moduleValue !== undefined) return moduleValue;
@@ -272,10 +282,10 @@ function pythonModuleValueType(
  * binding being demoted.
  */
 function pythonBindingInForceAt(receiver: string, atLine: number, ctx: CallContext): LocalBinding | undefined {
-  const bound = resolveLocalBinding(ctx.localBindings, receiver, atLine);
+  const bound = pythonLocalBindingInForce(ctx, receiver, atLine);
   if (bound === undefined || atLine > (bound.endLine ?? bound.line)) return bound;
   if (findPythonImportBinding(ctx.imports, receiver) === null) return bound;
-  return resolveLocalBinding(ctx.localBindings, receiver, bound.line - 1);
+  return pythonLocalBindingInForce(ctx, receiver, bound.line - 1);
 }
 
 /**
@@ -435,21 +445,25 @@ export function createPythonReceiverTypePorts(
   options: { readonly classHead?: boolean } = {},
 ): ReceiverTypePorts {
   const classHead = options.classHead ?? false;
-  return Object.freeze({
+  const memberTypeOf = (recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined =>
+    pythonMemberTypeOf(recv, member, ctx, mapper, linearizers);
+  const ports: ReceiverTypePorts = Object.freeze({
     singleHopType: (receiver: string, atLine: number, ctx: CallContext): TypeRef | undefined =>
-      pythonSingleHopType(receiver, atLine, ctx, mapper, classHead),
+      pythonSingleHopType(receiver, atLine, ctx, mapper, classHead, ports),
     seedHead: (
       head: string,
       firstLink: string | undefined,
       ctx: CallContext,
     ): { type: TypeRef; consumedMembers: 0 | 1 } | undefined => pythonSeedHead(head, firstLink, ctx, mapper),
-    memberTypeOf: (recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined =>
-      pythonMemberTypeOf(recv, member, ctx, mapper, linearizers),
+    memberTypeOf,
+    elementTypeOf: (container: TypeRef, ctx: CallContext): TypeRef | null =>
+      pythonElementTypeOf(container, ctx, memberTypeOf),
     maxHops: pythonMaxHops,
     // Python opts INTO the bracket-aware hop split; Ruby keeps `split(".")`.
     // See the port's docblock for the 34 mastodon sites that decided it.
     splitReceiverHops,
   });
+  return ports;
 }
 
 /**

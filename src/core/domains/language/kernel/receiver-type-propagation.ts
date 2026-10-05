@@ -54,6 +54,14 @@ export interface ReceiverTypePorts {
    * the kernel only hands the text over.
    */
   memberCallTypeOf?: (recv: TypeRef, member: string, argumentText: string, ctx: CallContext) => TypeRef | undefined;
+  /**
+   * The type ITERATING a value of type `container` yields, or `null` when the
+   * language cannot say (bd tea-rags-mcp-m99j1.1.18). Which containers yield
+   * what — a list its element, a project class through its own iterator
+   * protocol — is the language's rule. OPTIONAL: a language with no
+   * iteration bindings omits it, and nothing in the fold calls it.
+   */
+  elementTypeOf?: (container: TypeRef, ctx: CallContext) => TypeRef | null;
   /** Hop cap; a chain longer than this is untyped rather than half-walked. */
   maxHops: () => number;
   /**

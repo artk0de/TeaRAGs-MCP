@@ -1,9 +1,6 @@
 {
   "type-declarations.py": {
     "relPath": "pkg/type-declarations.py",
-    "structuralContracts": [
-      { "name": "Readable", "members": [{ "name": "read", "params": 0 }] }
-    ],
     "language": "python",
     "imports": [
       {
@@ -305,6 +302,17 @@
         "ancestor": "Base",
         "kind": "super",
         "ordinal": 0
+      }
+    ],
+    "structuralContracts": [
+      {
+        "name": "Readable",
+        "members": [
+          {
+            "name": "read",
+            "params": 0
+          }
+        ]
       }
     ],
     "structuredReturnTypes": {
@@ -1402,6 +1410,13 @@
         },
         "localBindings": {
           "item": [
+            {
+              "line": 12,
+              "type": "",
+              "valueKind": "iterationElement",
+              "sourceExpression": "raw",
+              "scopeEndLine": 12
+            },
             {
               "line": 12,
               "type": "str"

@@ -116,7 +116,14 @@ export {
   type SidecarTypeSource,
   type TypeFact,
 } from "./type-facts.js";
-export { NIL_TYPE_REF, typeRefEquals, typeRefNonNilArms, typeRefReceiverForm, typeRefUnionOf } from "./type-ref.js";
+export {
+  NIL_TYPE_REF,
+  typeRefEquals,
+  typeRefNonNilArms,
+  typeRefReceiverForm,
+  typeRefTupleElement,
+  typeRefUnionOf,
+} from "./type-ref.js";
 export {
   createTypeMemberLookup,
   typeMemberLookupDefinedFor,
