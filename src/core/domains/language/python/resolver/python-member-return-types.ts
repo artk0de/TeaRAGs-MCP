@@ -20,6 +20,7 @@ import {
   type NominalTypeRef,
   type ReceiverTypePorts,
 } from "../../kernel/index.js";
+import { pythonVocabularyFor } from "../vocabulary/frameworks/index.js";
 import { PYTHON_SELF_RETURN } from "../walker/passes/python-type-annotation.js";
 import { pythonModuleReturnKey } from "../walker/passes/python-type-channels.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
@@ -87,8 +88,9 @@ export function pythonInheritedMemberType(
   ctx: CallContext,
   mapper: PythonImportFileMapper,
   linearizer: AncestorLinearizer<CallContext> | undefined,
+  args?: readonly TypeRef[],
 ): TypeRef | undefined {
-  const declared = pythonDeclaredMemberType(bareType, member, form, ctx, mapper, linearizer);
+  const declared = pythonDeclaredMemberType(bareType, member, form, ctx, mapper, linearizer, args);
   if (declared !== undefined) return declared;
   // LAST, and only when the run carries the channel: a field assigned from a
   // CALL, folded ONE level (bd tea-rags-mcp-w205u, E4.6c).
@@ -124,9 +126,12 @@ function pythonDeclaredMemberType(
   ctx: CallContext,
   mapper: PythonImportFileMapper,
   linearizer: AncestorLinearizer<CallContext> | undefined,
+  args?: readonly TypeRef[],
 ): TypeRef | undefined {
   const resolver = new MemberReturnTypeResolver(pythonMemberReturnTypePorts(ctx, mapper, linearizer));
-  return resolver.returnTypeOf({ form, name: bareType }, member, ctx) ?? undefined;
+  // `args` reach the framework port only: a relation carries its model there.
+  const owner: NominalTypeRef = args === undefined ? { form, name: bareType } : { form, name: bareType, args };
+  return resolver.returnTypeOf(owner, member, ctx) ?? undefined;
 }
 
 /**
@@ -197,7 +202,81 @@ function pythonMemberReturnTypePorts(
       const parsed = parsePythonClassKey(ancestorKey);
       return parsed === null ? null : onClass(owner, lastSegment(parsed.classFq), parsed.classFq, member);
     },
+    frameworkReturnType: (owner, member) => pythonFrameworkReturnType(owner, member, ctx, mapper, linearizer),
   };
+}
+
+/**
+ * What an ACTIVE framework synthesizes for `member` on `owner` (bd
+ * tea-rags-mcp-m99j1.1.21) — the kernel consults it after the owner and every
+ * ancestor declared nothing, so a project's own `objects = ...` still wins.
+ *
+ * Two shapes, both read off {@link PythonFrameworkMemberTypes}:
+ *   - a verb on one of the framework's relation classes CARRYING a model
+ *     (`QuerySet[Book].filter` → `QuerySet[Book]`, `.first` → `Book`). A
+ *     relation class without a model in `args` answers nothing: the model is
+ *     the claim, and a bare `Manager` names none;
+ *   - a synthesized attribute on a MODEL (`Book.objects` → `Manager[Book]`,
+ *     `Book._meta` → `Options`), gated on the owner's recorded bases reaching
+ *     a model base.
+ *
+ * The answer names the framework's OWN class. Where the corpus is the
+ * framework, the chain pass places it; elsewhere no project file declares it
+ * and the pass drops the call as external — never a project namesake guess
+ * beyond what the pass already refuses for any type.
+ */
+function pythonFrameworkReturnType(
+  owner: NominalTypeRef,
+  member: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  linearizer: AncestorLinearizer<CallContext> | undefined,
+): TypeRef | null {
+  for (const vocabulary of pythonVocabularyFor(ctx.declaredDependencies).memberTypes) {
+    const model = owner.args?.[0];
+    if (vocabulary.relationClasses.has(lastSegment(owner.name))) {
+      if (model === undefined) continue;
+      if (vocabulary.relationReturning.has(member)) {
+        return { form: "instance", name: vocabulary.relationClass, args: [model] };
+      }
+      if (vocabulary.instanceReturning.has(member)) return model;
+      continue;
+    }
+    const attribute = vocabulary.modelAttributes.get(member);
+    if (attribute === undefined) continue;
+    if (!pythonDescendsFromModel(owner.name, vocabulary.modelBases, ctx, mapper, linearizer)) continue;
+    const modelRef: TypeRef = { form: "instance", name: owner.name };
+    return attribute.carriesModel
+      ? { form: "instance", name: attribute.className, args: [modelRef] }
+      : { form: "instance", name: attribute.className };
+  }
+  return null;
+}
+
+/**
+ * Does the class `bareType` names record a base spelled as one of
+ * `modelBases` — on itself or anywhere up its in-project MRO? The bases are
+ * read as WRITTEN (`models.Model` → `Model`), because the model base is the
+ * framework's and the hierarchy leaves the project exactly there.
+ */
+function pythonDescendsFromModel(
+  bareType: string,
+  modelBases: ReadonlySet<string>,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  linearizer: AncestorLinearizer<CallContext> | undefined,
+): boolean {
+  const key = pythonReceiverClassKey(bareType, ctx, mapper);
+  if (key === null) return false;
+  const keys = linearizer === undefined ? [key] : [key, ...linearizer.linearize(key).order];
+  for (const classKey of keys) {
+    const parsed = parsePythonClassKey(classKey);
+    if (parsed !== null && modelBases.has(lastSegment(parsed.classFq))) return true;
+    for (const spelling of identifierEntry(ctx.classAncestors, classKey) ?? []) {
+      if (modelBases.has(lastSegment(spelling))) return true;
+    }
+  }
+  return false;
 }
 
 /** A single capitalized identifier — Python's class-name convention. */

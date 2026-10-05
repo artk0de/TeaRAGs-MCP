@@ -875,6 +875,20 @@ export interface DependencyManifestSource {
    * manifest. Absent → the recursive walk (Python's nested `pyproject.toml`).
    */
   readonly rootOnly?: boolean;
+  /**
+   * Files that may name the distribution the project ITSELF publishes
+   * (Python's `setup.py`, `setup.cfg`, `pyproject.toml`) — bd
+   * tea-rags-mcp-m99j1.1.21. Django's own tree depends on `pytz` and declares
+   * `name='Django'`; a vocabulary gated on `django` must load there.
+   */
+  readonly matchesSelfPackageFile?: (fileName: string) => boolean;
+  /**
+   * The normalized self-package name one such file declares, or `undefined`.
+   * The name JOINS a declared set the walk found and never creates one on its
+   * own: a package declaration says nothing about dependencies, so a project
+   * with no manifest keeps the "every vocabulary active" answer.
+   */
+  readonly parseSelfPackageName?: (fileName: string, content: string) => string | undefined;
 }
 
 /**

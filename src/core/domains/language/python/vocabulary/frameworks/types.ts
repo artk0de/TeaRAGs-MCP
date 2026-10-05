@@ -22,7 +22,45 @@
  * and gating it on Django cost polar 8 real edges when measured — so it stays
  * language-level, exactly as `python-class-body-fields.ts` was written.
  */
-export type PythonVocabularyFacet = "classBodyManagerFactory";
+export type PythonVocabularyFacet =
+  | "classBodyManagerFactory"
+  | "modelAttributes"
+  | "relationReturning"
+  | "instanceReturning"
+  | "associationFields"
+  | "descriptorDecorators";
+
+/**
+ * The member returns a framework SYNTHESIZES — no project line declares them,
+ * so no fact channel can answer for them (bd tea-rags-mcp-m99j1.1.21). Read by
+ * the resolver's `frameworkReturnType` port, AFTER every declaration on the
+ * owner and its ancestors: a declared fact always beats vocabulary.
+ *
+ * A relation is spelled as the framework's own class carrying the model in
+ * `args` (`QuerySet[Book]`), never as a `container`: Python's read side
+ * declines containers, and the class name is what the next hop resolves on.
+ */
+export interface PythonFrameworkMemberTypes {
+  /** Bases (by last segment) whose descendants are models: `Model`. */
+  readonly modelBases: ReadonlySet<string>;
+  /**
+   * Attribute → the framework class it yields on a model. `carriesModel`
+   * threads the model into `args` so a later verb can return it.
+   */
+  readonly modelAttributes: ReadonlyMap<string, { readonly className: string; readonly carriesModel: boolean }>;
+  /** The framework classes the query verbs below are read on. */
+  readonly relationClasses: ReadonlySet<string>;
+  /** What a `relationReturning` verb yields, carrying the same model. */
+  readonly relationClass: string;
+  /** Verbs on a relation class that yield another relation of the same model. */
+  readonly relationReturning: ReadonlySet<string>;
+  /** Verbs on a relation class that yield ONE instance of the model. */
+  readonly instanceReturning: ReadonlySet<string>;
+  /** Field constructors whose attribute holds an instance of their FIRST argument. */
+  readonly associationFields: ReadonlySet<string>;
+  /** Decorators turning a method into an attribute holding its return. */
+  readonly descriptorDecorators: ReadonlySet<string>;
+}
 
 export interface PythonFrameworkVocabulary {
   readonly framework: string;
@@ -37,6 +75,8 @@ export interface PythonFrameworkVocabulary {
    */
   readonly activatedBy?: ReadonlySet<string>;
   readonly facets: ReadonlySet<PythonVocabularyFacet>;
+  /** Synthesized member returns, when the framework has any. */
+  readonly memberTypes?: PythonFrameworkMemberTypes;
 }
 
 /** Build a vocabulary. A factory, not a container — each module calls it with
@@ -45,10 +85,12 @@ export function definePythonFrameworkVocabulary(
   framework: string,
   facets: readonly PythonVocabularyFacet[],
   activatedBy?: readonly string[],
+  memberTypes?: PythonFrameworkMemberTypes,
 ): PythonFrameworkVocabulary {
   return {
     framework,
     facets: new Set(facets),
     ...(activatedBy === undefined ? {} : { activatedBy: new Set(activatedBy) }),
+    ...(memberTypes === undefined ? {} : { memberTypes }),
   };
 }

@@ -202,4 +202,43 @@ export const PYTHON_DEPENDENCY_MANIFEST: DependencyManifestSource = {
   matchesManifestFile: (fileName) =>
     fileName === "pyproject.toml" || (fileName.startsWith("requirements") && fileName.endsWith(".txt")),
   parseDeclaredDependencies: (fileName, content) => parsePythonManifest(fileName, content),
+  matchesSelfPackageFile: (fileName) => SELF_PACKAGE_FILES.has(fileName),
+  parseSelfPackageName: (fileName, content) => parsePythonSelfPackageName(fileName, content),
 };
+
+const SELF_PACKAGE_FILES: ReadonlySet<string> = new Set(["setup.py", "setup.cfg", "pyproject.toml"]);
+/** `name='Django'` / `name="Django"` as a keyword argument of the `setup(...)` call. */
+const SETUP_PY_NAME = /\bname\s*=\s*(['"])([A-Za-z0-9._-]+)\1/;
+/** The tables that state the published distribution's own name. */
+const SELF_NAME_TABLES: ReadonlySet<string> = new Set(["metadata", "project", "tool.poetry"]);
+
+/**
+ * The distribution THIS project publishes (bd tea-rags-mcp-m99j1.1.21): `name`
+ * in `setup.py`'s `setup(...)` call, `[metadata]` of `setup.cfg`, or
+ * `[project]` / `[tool.poetry]` of `pyproject.toml` — PEP 503 normalized.
+ *
+ * django-11039 depends on `pytz` and `sqlparse` and declares `name='Django'`:
+ * the code under index IS Django, so Django's vocabulary describes it. A
+ * `setup.py` that computes its name declares none here, which is a miss and
+ * never a guess.
+ */
+export function parsePythonSelfPackageName(fileName: string, content: string): string | undefined {
+  if (fileName === "setup.py") {
+    const match = SETUP_PY_NAME.exec(content);
+    return match === null ? undefined : normalizePythonPackageName(match[2]);
+  }
+  let table = "";
+  for (const raw of content.split(/\r?\n/)) {
+    const line = fileName === "pyproject.toml" ? stripTomlComment(raw) : raw;
+    const header = TABLE_HEADER.exec(line);
+    if (header) {
+      table = header[1].trim();
+      continue;
+    }
+    if (!SELF_NAME_TABLES.has(table)) continue;
+    const assign = /^\s*name\s*[=:]\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9._-]+))\s*$/.exec(line);
+    const name = assign?.[1] ?? assign?.[2] ?? assign?.[3];
+    if (name !== undefined) return normalizePythonPackageName(name);
+  }
+  return undefined;
+}

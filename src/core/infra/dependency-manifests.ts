@@ -144,24 +144,34 @@ export function readDeclaredDependencies(
     found = true;
     for (const name of source.parseDeclaredDependencies(fileName, content)) declared.add(name);
   }
+  const selfPackages: string[] = [];
   if (walked.length > 0) {
+    const declaresSelf = (s: DependencyManifestSource, fileName: string): boolean =>
+      s.matchesSelfPackageFile?.(fileName) === true;
     walkManifestFiles(
       root,
-      (fileName) => walked.some((s) => s.matchesManifestFile(fileName)),
+      (fileName) => walked.some((s) => s.matchesManifestFile(fileName) || declaresSelf(s, fileName)),
       (dir, _relDir, fileName) => {
         const source = walked.find((s) => s.matchesManifestFile(fileName));
-        if (source === undefined) return;
-        found = true;
+        const selfSource = walked.find((s) => declaresSelf(s, fileName));
+        if (source !== undefined) found = true;
         let content: string;
         try {
           content = readFileSync(join(dir, fileName), "utf8");
         } catch {
           return;
         }
-        for (const name of source.parseDeclaredDependencies(fileName, content)) declared.add(name);
+        if (source !== undefined) {
+          for (const name of source.parseDeclaredDependencies(fileName, content)) declared.add(name);
+        }
+        const self = selfSource?.parseSelfPackageName?.(fileName, content);
+        if (self !== undefined) selfPackages.push(self);
       },
     );
   }
+  // The self-package rule (bd tea-rags-mcp-m99j1.1.21): a project activates its
+  // OWN vocabulary — joining a found set, never creating one.
+  if (found) for (const name of selfPackages) declared.add(name);
   return found ? Object.freeze(declared) : undefined;
 }
 

@@ -408,7 +408,7 @@ function pythonMemberTypeOf(
   linearizers: PythonAncestorLinearizerCache | undefined,
 ): TypeRef | undefined {
   if (recv.form !== "class" && recv.form !== "instance") return undefined;
-  return pythonInheritedMemberType(recv.name, member, recv.form, ctx, mapper, linearizers?.for(ctx));
+  return pythonInheritedMemberType(recv.name, member, recv.form, ctx, mapper, linearizers?.for(ctx), recv.args);
 }
 
 /**
