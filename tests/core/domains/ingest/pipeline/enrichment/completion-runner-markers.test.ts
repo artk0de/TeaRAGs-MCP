@@ -11,6 +11,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { INDEXING_METADATA_ID } from "../../../../../../src/core/contracts/constants.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { EnrichmentBackfiller } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/backfiller.js";
@@ -59,7 +60,11 @@ describe("CompletionRunner step markers", () => {
     const phases = vi.spyOn(pipelineLog, "enrichmentPhase").mockImplementation(() => undefined);
 
     try {
-      await buildRunner(qdrant).run("coll", new Map([["git", providerCtx as never]]), Date.now());
+      await buildRunner(qdrant).run(
+        fixturePhysicalCollectionName("coll"),
+        new Map([["git", providerCtx as never]]),
+        Date.now(),
+      );
 
       const steps = phases.mock.calls
         .filter(([name]) => name === "COMPLETION_STEP")
@@ -89,7 +94,12 @@ describe("CompletionRunner step markers", () => {
     const phases = vi.spyOn(pipelineLog, "enrichmentPhase").mockImplementation(() => undefined);
 
     try {
-      await buildRunner(qdrant).run("coll", new Map([["git", providerCtx as never]]), Date.now(), async () => 0);
+      await buildRunner(qdrant).run(
+        fixturePhysicalCollectionName("coll"),
+        new Map([["git", providerCtx as never]]),
+        Date.now(),
+        async () => 0,
+      );
 
       const splits = phases.mock.calls
         .filter(([name]) => name === "COMPLETION_MARKER_SPLIT")

@@ -93,13 +93,13 @@ import {
   JavaThisMemberSymbolResolutionStrategy,
 } from "../src/core/domains/language/java/resolver/strategies/index.js";
 import { dispatchFanoutPolicyFor } from "../src/core/domains/language/kernel/fanout-policy.js";
+import { resolveViaChain } from "../src/core/domains/language/kernel/index.js";
 import {
   createPythonSymbolResolutionChain,
   PythonAncestorLinearizerCache,
   PythonImportFileMapper,
 } from "../src/core/domains/language/python/resolver/index.js";
 import { CONE_MAX_DEFAULT } from "../src/core/domains/language/python/resolver/strategies/index.js";
-import { resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
 import {
   collectKnownTargetCalleeLocators,
   collectSchemaColumnSources,

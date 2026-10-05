@@ -22,6 +22,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
 import { getDaemonPaths, type CodegraphDaemonPaths } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
 import {
@@ -121,7 +122,7 @@ describe("daemon build-handshake auto-restart (integration, real spawned daemon)
       },
     });
 
-    const handle = await pool.acquireWrite("code_hs_v1");
+    const handle = await pool.acquireWrite(fixturePhysicalCollectionName("code_hs_v1"));
     expect(respawns).toBe(1);
 
     // The handle is live against the RESPAWNED daemon — a real write+read
@@ -143,7 +144,7 @@ describe("daemon build-handshake auto-restart (integration, real spawned daemon)
     const respawn = vi.fn();
     const pool = makePool(paths, { buildFingerprint: "SAME-BUILD", respawn });
 
-    const handle = await pool.acquireWrite("code_hs_match_v1");
+    const handle = await pool.acquireWrite(fixturePhysicalCollectionName("code_hs_match_v1"));
     await handle.graphDb.upsertFile({ relPath: "a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
     expect(await handle.graphDb.hasData()).toBe(true);
 
@@ -196,14 +197,14 @@ describe("daemon build-handshake auto-restart (integration, real spawned daemon)
     const pool = makePool(paths, { buildFingerprint: "SAME-BUILD" });
     // A reader only attaches to a database that exists (bd tea-rags-mcp-kn2cb);
     // the fake daemon never opens it, so an empty placeholder is enough.
-    writeFileSync(pool.pathFor("code_hs_gone_v1"), "");
+    writeFileSync(pool.pathFor(fixturePhysicalCollectionName("code_hs_gone_v1")), "");
 
-    const first = await pool.acquireReader("code_hs_gone_v1");
+    const first = await pool.acquireReader(fixturePhysicalCollectionName("code_hs_gone_v1"));
     await expect(first.graphDb.hasData()).rejects.toThrow(/connection/i);
 
     // Same collection, so this comes off the cache — and the cached client is
     // spent. Serving it again would fail every future call in this process.
-    const second = await pool.acquireReader("code_hs_gone_v1");
+    const second = await pool.acquireReader(fixturePhysicalCollectionName("code_hs_gone_v1"));
     expect(await second.graphDb.hasData()).toBe(true);
 
     await pool.closeAll();
@@ -234,7 +235,7 @@ describe("daemon build-handshake auto-restart (integration, real spawned daemon)
     const respawn = vi.fn();
     const pool = makePool(paths, { buildFingerprint: "NEW-BUILD", respawn });
 
-    const handle = await pool.acquireWrite("code_hs_legacy_v1");
+    const handle = await pool.acquireWrite(fixturePhysicalCollectionName("code_hs_legacy_v1"));
     expect(handle.graphDb).toBeDefined();
     expect(respawn).not.toHaveBeenCalled();
 
@@ -250,7 +251,7 @@ describe("daemon build-handshake auto-restart (integration, real spawned daemon)
     // whole machine, so the mismatch must be TOLERATED (status quo behavior).
     const pool = makePool(paths, { buildFingerprint: "NEW-BUILD" });
 
-    const handle = await pool.acquireWrite("code_hs_nohook_v1");
+    const handle = await pool.acquireWrite(fixturePhysicalCollectionName("code_hs_nohook_v1"));
     await handle.graphDb.upsertFile({ relPath: "a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
     expect(await handle.graphDb.hasData()).toBe(true);
     // The stale daemon is still alive — nothing drained it.
@@ -281,7 +282,7 @@ describe("daemon build-handshake auto-restart (integration, real spawned daemon)
       },
     });
 
-    const handle = await pool.acquireWrite("code_hs_race_v1");
+    const handle = await pool.acquireWrite(fixturePhysicalCollectionName("code_hs_race_v1"));
     expect(respawns).toBe(2);
 
     // Live against the daemon from OUR build — a real write+read round-trip
@@ -309,7 +310,9 @@ describe("daemon build-handshake auto-restart (integration, real spawned daemon)
       },
     });
 
-    await expect(pool.acquireWrite("code_hs_stale_v1")).rejects.toThrow(CodegraphDaemonStaleBuildError);
+    await expect(pool.acquireWrite(fixturePhysicalCollectionName("code_hs_stale_v1"))).rejects.toThrow(
+      CodegraphDaemonStaleBuildError,
+    );
     expect(respawns).toBe(3);
 
     await pool.closeAll();
@@ -331,7 +334,9 @@ describe("daemon build-handshake auto-restart (integration, real spawned daemon)
       },
     });
 
-    await expect(pool.acquireWrite("code_hs_bound1_v1")).rejects.toThrow(CodegraphDaemonStaleBuildError);
+    await expect(pool.acquireWrite(fixturePhysicalCollectionName("code_hs_bound1_v1"))).rejects.toThrow(
+      CodegraphDaemonStaleBuildError,
+    );
     expect(respawns).toBe(1);
 
     await pool.closeAll();
@@ -355,7 +360,9 @@ describe("daemon build-handshake auto-restart (integration, real spawned daemon)
       },
     });
 
-    const err = await pool.acquireWrite("code_hs_wedged_diag_v1").catch((e: unknown) => e);
+    const err = await pool
+      .acquireWrite(fixturePhysicalCollectionName("code_hs_wedged_diag_v1"))
+      .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(CodegraphDaemonStaleBuildError);
     expect((err as CodegraphDaemonStaleBuildError).hint).toMatch(/same build came back/i);
     expect((err as CodegraphDaemonStaleBuildError).message).toMatch(/3 restart attempts/i);
@@ -379,7 +386,7 @@ describe("daemon build-handshake auto-restart (integration, real spawned daemon)
       },
     });
 
-    const err = await pool.acquireWrite("code_hs_race_lost_v1").catch((e: unknown) => e);
+    const err = await pool.acquireWrite(fixturePhysicalCollectionName("code_hs_race_lost_v1")).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(CodegraphDaemonStaleBuildError);
     expect((err as CodegraphDaemonStaleBuildError).hint).toMatch(/parallel tea-rags session/i);
     // Names the distinct builds it met, so the reader can see WHICH sessions collided.
@@ -422,7 +429,9 @@ describe("daemon build-handshake auto-restart (integration, real spawned daemon)
       pollIntervalMs: 20,
     });
 
-    await expect(pool.acquireWrite("code_hs_wedged_v1")).rejects.toThrow(CodegraphDaemonExitTimeoutError);
+    await expect(pool.acquireWrite(fixturePhysicalCollectionName("code_hs_wedged_v1"))).rejects.toThrow(
+      CodegraphDaemonExitTimeoutError,
+    );
     // No cold spawn on top of a daemon that still holds the socket + RW lock.
     expect(respawn).not.toHaveBeenCalled();
 

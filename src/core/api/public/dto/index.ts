@@ -22,7 +22,7 @@ export type {
   PresetDescriptors,
 } from "./explore.js";
 
-export { isEnrichmentRecompute } from "./ingest.js";
+export { isEnrichmentRecompute, rechunkSelectorOf } from "./ingest.js";
 
 export type {
   // Ingest
@@ -151,6 +151,7 @@ export type {
   CohesionSectionPayload,
   CohesionSectionResult,
   IncompleteChangePartner,
+  IncompleteChangePartnerKind,
   IncompleteChangeSectionPayload,
   IncompleteChangeSectionResult,
   NamingSectionResult,

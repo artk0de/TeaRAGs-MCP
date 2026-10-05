@@ -17,6 +17,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { INDEXING_METADATA_ID } from "../../../../../../src/core/contracts/constants.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { EnrichmentBackfiller } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/backfiller.js";
@@ -63,7 +64,7 @@ class QueuedWriteQdrant extends MockQdrantManager {
   }
 }
 
-const COLL = "coll";
+const COLL = fixturePhysicalCollectionName("coll");
 const PROVIDER = "codegraph.symbols";
 
 async function seed(qdrant: MockQdrantManager): Promise<void> {

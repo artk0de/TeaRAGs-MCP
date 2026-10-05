@@ -1089,19 +1089,19 @@ describe("QdrantManager", () => {
     it("query injects quantization rescore params", async () => {
       await manager.query("col", { positive: ["id1"], limit: 5 });
 
-      expect(mockClient.query.mock.calls.at(-1)[1]).toMatchObject({ params: RESCORE_PARAMS });
+      expect(mockClient.query.mock.calls.at(-1)![1]).toMatchObject({ params: RESCORE_PARAMS });
     });
 
     it("queryGroups injects quantization rescore params", async () => {
       await manager.queryGroups("col", [0.1, 0.2, 0.3], { groupBy: "relativePath", limit: 5 });
 
-      expect(mockClient.queryGroups.mock.calls.at(-1)[1]).toMatchObject({ params: RESCORE_PARAMS });
+      expect(mockClient.queryGroups.mock.calls.at(-1)![1]).toMatchObject({ params: RESCORE_PARAMS });
     });
 
     it("search injects quantization rescore params", async () => {
       await manager.search("col", [0.1, 0.2, 0.3], 5);
 
-      expect(mockClient.search.mock.calls.at(-1)[1]).toMatchObject({ params: RESCORE_PARAMS });
+      expect(mockClient.search.mock.calls.at(-1)![1]).toMatchObject({ params: RESCORE_PARAMS });
     });
 
     it("hybridSearch injects rescore params on the dense prefetch leg only", async () => {
@@ -1109,7 +1109,7 @@ describe("QdrantManager", () => {
 
       await manager.hybridSearch("col", [0.1, 0.2, 0.3], { indices: [1], values: [0.5] }, 10);
 
-      const body = mockClient.query.mock.calls.at(-1)[1];
+      const body = mockClient.query.mock.calls.at(-1)![1];
       expect(body.prefetch[0]).toMatchObject({ using: "dense", params: RESCORE_PARAMS });
       expect(body.prefetch[1].params).toBeUndefined();
     });
@@ -3286,7 +3286,7 @@ describe("QdrantManager", () => {
 
     it("isEmbedded is true when constructed with an embedded daemon probe", () => {
       const mgr = new QdrantManager("http://127.0.0.1:57331", undefined, undefined, {
-        startupPhase: () => "ready",
+        startupPhase: () => "recovering",
         pid: 99999,
         storagePath: "/tmp/qdrant-test",
       });

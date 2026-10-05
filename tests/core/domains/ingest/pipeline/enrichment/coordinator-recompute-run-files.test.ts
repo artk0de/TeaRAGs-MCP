@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import type { EnrichmentRunHandle } from "../../../../../../src/core/contracts/types/enrichment-executor.js";
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
@@ -56,7 +57,7 @@ describe("EnrichmentCoordinator — the run's declared file set", () => {
     const executor = new RunStartRecorder();
     const coordinator = new EnrichmentCoordinator(qdrantDouble() as never, [provider()], undefined, executor);
 
-    await coordinator.recomputeEnrichments("coll", "/repo", ["codegraph"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["codegraph"]);
 
     expect(executor.starts).toHaveLength(1);
     expect(executor.starts[0].fileCount).toBe(2);

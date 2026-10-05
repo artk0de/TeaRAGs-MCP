@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { fixtureCollectionAlias } from "../../../__helpers__/collection-identity.js";
 import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import { CollectionAlreadyExistsError } from "../../../../../src/core/adapters/qdrant/errors.js";
 import { VersionedCollectionClaimError } from "../../../../../src/core/domains/ingest/errors.js";
@@ -162,7 +163,7 @@ describe("claimVersionedCollection", () => {
 
     const claim = await claimVersionedCollection({
       qdrant,
-      baseCollectionName: "code_abc",
+      baseCollectionName: fixtureCollectionAlias("code_abc"),
       firstVersion: 62,
       createLeasedCollection,
     });
@@ -184,7 +185,7 @@ describe("claimVersionedCollection", () => {
 
     const claim = await claimVersionedCollection({
       qdrant,
-      baseCollectionName: "code_abc",
+      baseCollectionName: fixtureCollectionAlias("code_abc"),
       firstVersion: 62,
       createLeasedCollection,
     });
@@ -204,7 +205,7 @@ describe("claimVersionedCollection", () => {
 
     const claim = await claimVersionedCollection({
       qdrant,
-      baseCollectionName: "code_abc",
+      baseCollectionName: fixtureCollectionAlias("code_abc"),
       firstVersion: 62,
       createLeasedCollection,
     });
@@ -223,7 +224,7 @@ describe("claimVersionedCollection", () => {
 
     const claim = await claimVersionedCollection({
       qdrant,
-      baseCollectionName: "code_abc",
+      baseCollectionName: fixtureCollectionAlias("code_abc"),
       firstVersion: 62,
       createLeasedCollection,
     });
@@ -238,7 +239,7 @@ describe("claimVersionedCollection", () => {
 
     const claim = await claimVersionedCollection({
       qdrant,
-      baseCollectionName: "code_abc",
+      baseCollectionName: fixtureCollectionAlias("code_abc"),
       firstVersion: 62,
       createLeasedCollection,
     });
@@ -259,7 +260,7 @@ describe("claimVersionedCollection", () => {
 
     const claim = await claimVersionedCollection({
       qdrant,
-      baseCollectionName: "code_abc",
+      baseCollectionName: fixtureCollectionAlias("code_abc"),
       firstVersion: 62,
       createLeasedCollection,
     });
@@ -276,7 +277,7 @@ describe("claimVersionedCollection", () => {
     await expect(
       claimVersionedCollection({
         qdrant,
-        baseCollectionName: "code_abc",
+        baseCollectionName: fixtureCollectionAlias("code_abc"),
         firstVersion: 62,
         createLeasedCollection,
       }),
@@ -293,7 +294,7 @@ describe("claimVersionedCollection", () => {
     await expect(
       claimVersionedCollection({
         qdrant,
-        baseCollectionName: "code_abc",
+        baseCollectionName: fixtureCollectionAlias("code_abc"),
         firstVersion: 62,
         createLeasedCollection,
       }),

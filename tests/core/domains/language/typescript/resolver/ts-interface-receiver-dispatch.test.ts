@@ -13,7 +13,6 @@ import {
   type DispatchEdge,
   type DispatchFanoutOutcome,
   type InheritanceEdgeRow,
-  type NamedSymbol,
   type SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/index.js";
@@ -42,7 +41,7 @@ function writeSource(repoRoot: string, relPath: string, lines: string[]): void {
   writeFileSync(abs, `${lines.join("\n")}\n`, "utf8");
 }
 
-const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): NamedSymbol => ({
+const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName,
@@ -135,7 +134,7 @@ const GET_CALL: CallRef = { callText: `memo?.get("a")`, receiver: "memo", member
  * tea-rags-mcp-t5cji). The receiver is an interface to the checker alone, and
  * the cone reaches `Memo` through the run hierarchy's `implements` edge.
  */
-const MEMO_PORT_SYMBOLS: NamedSymbol[] = [];
+const MEMO_PORT_SYMBOLS: SymbolDefinition[] = [];
 const MEMO_SYMBOLS = [
   sym("Memo", "Memo", "src/memo.ts", []),
   sym("Memo#get", "get", "src/memo.ts", ["Memo"]),
@@ -341,7 +340,7 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — interface-typed receiver
    * tea-rags-mcp-t5cji): the member-evidence guard declines the same candidate
    * after this one, so the outcome alone no longer shows this guard spoke.
    */
-  const RUN_MEMO_SET = RUN_MEMO_SYMBOLS.find((s) => s.symbolId === "RunMemo#set") as NamedSymbol;
+  const RUN_MEMO_SET = RUN_MEMO_SYMBOLS.find((s) => s.symbolId === "RunMemo#set") as SymbolDefinition;
 
   it("continues instead of matching the project's only set on an unrelated class", () => {
     writeLonelyPortFixture();
@@ -559,7 +558,7 @@ describe("TSCallResolver.resolveDispatch — object-literal factory as a structu
   ];
 
   /** The rows the TypeScript walker composes for `lines`, as symbol-table entries. */
-  const walkedSymbols = (relPath: string, lines: string[]): NamedSymbol[] => {
+  const walkedSymbols = (relPath: string, lines: string[]): SymbolDefinition[] => {
     const src = `${lines.join("\n")}\n`;
     const parser = new Parser();
     parser.setLanguage(TsLang.typescript);

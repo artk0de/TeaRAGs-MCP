@@ -46,6 +46,8 @@ const facts = (overrides: Partial<PySiteFacts> = {}): PySiteFacts => ({
 });
 
 const row = (overrides: Partial<PyOracleRow> = {}): PyOracleRow => ({
+  oracleTargetRelPath: null,
+  oracleTargetSymbolId: null,
   relPath: "pkg/a.py",
   startLine: 1,
   callText: "x.f()",

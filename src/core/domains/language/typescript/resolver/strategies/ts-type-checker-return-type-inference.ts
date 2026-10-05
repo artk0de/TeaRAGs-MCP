@@ -71,8 +71,11 @@ import {
   type CallRef,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
-import { ECMASCRIPT_GLOBALS } from "../../../shared/ecmascript-globals.js";
+import {
+  ECMASCRIPT_GLOBALS,
+  lookupEcmascriptSymbols,
+  lookupEcmascriptSymbolsByShortName,
+} from "../../../kernel/index.js";
 import { loadTypeScriptCompiler } from "../ts-compiler-loader.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import { declarationAccountsFor } from "../ts-receiver-member-evidence.js";

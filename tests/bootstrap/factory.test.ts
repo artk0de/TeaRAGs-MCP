@@ -10,6 +10,8 @@ import { createAppContext, createConfiguredServer, loadPrompts, wireCodegraph } 
 import type { ProjectIngestFactory as ProjectIngestFactoryType } from "../../src/bootstrap/project-ingest-factory.js";
 import { trackGitChildProcess } from "../../src/core/adapters/vcs/git/git-cli/git-child-process-registry.js";
 import type { WorkerEnrichmentDescriptor } from "../../src/core/contracts/types/provider.js";
+import type { WorkingTreeDeltaWarmer } from "../../src/core/domains/explore/working-tree/warmer.js";
+import type { WorkingTreeWatcher } from "../../src/core/domains/explore/working-tree/watcher.js";
 import type { EnvDriftMonitor as EnvDriftMonitorType } from "../../src/core/domains/maintenance/drift/env-drift-monitor.js";
 import { CollectionRegistry } from "../../src/core/domains/maintenance/registry/index.js";
 import { CODEGRAPH_LANGUAGE_BY_EXTENSION } from "../../src/core/domains/trajectory/codegraph/index.js";
@@ -32,8 +34,8 @@ vi.mock("../../src/core/domains/trajectory/git.js", async (importOriginal) => {
     ...mod,
     GitTrajectory: class extends OrigGitTrajectory {
       constructor(
-        config?: Parameters<typeof OrigGitTrajectory>[0],
-        squashOpts?: Parameters<typeof OrigGitTrajectory>[1],
+        config?: ConstructorParameters<typeof OrigGitTrajectory>[0],
+        squashOpts?: ConstructorParameters<typeof OrigGitTrajectory>[1],
         workerDescriptor?: WorkerEnrichmentDescriptor,
       ) {
         super(config, squashOpts, workerDescriptor);
@@ -72,12 +74,12 @@ const capturedWarm = vi.hoisted(() => ({
 
 vi.mock("../../src/core/domains/explore/working-tree/watcher.js", async (importOriginal) => {
   const mod = await (importOriginal as () => Promise<Record<string, unknown>>)();
-  const Orig = mod.WorkingTreeWatcher as new (deps: unknown) => { close: () => void };
+  const Orig = mod.WorkingTreeWatcher as typeof WorkingTreeWatcher;
   return {
     ...mod,
     WorkingTreeWatcher: class extends Orig {
       private readonly record = { deps: undefined as unknown, closed: 0 };
-      constructor(deps: unknown) {
+      constructor(deps: ConstructorParameters<typeof WorkingTreeWatcher>[0]) {
         super(deps);
         this.record.deps = deps;
         capturedWarm.watchers.push(this.record);
@@ -92,12 +94,12 @@ vi.mock("../../src/core/domains/explore/working-tree/watcher.js", async (importO
 
 vi.mock("../../src/core/domains/explore/working-tree/warmer.js", async (importOriginal) => {
   const mod = await (importOriginal as () => Promise<Record<string, unknown>>)();
-  const Orig = mod.WorkingTreeDeltaWarmer as new (deps: unknown) => { dispose: () => void };
+  const Orig = mod.WorkingTreeDeltaWarmer as typeof WorkingTreeDeltaWarmer;
   return {
     ...mod,
     WorkingTreeDeltaWarmer: class extends Orig {
       private readonly record = { disposed: 0 };
-      constructor(deps: unknown) {
+      constructor(deps: ConstructorParameters<typeof WorkingTreeDeltaWarmer>[0]) {
         super(deps);
         capturedWarm.warmers.push(this.record);
       }
@@ -149,7 +151,7 @@ vi.mock("../../src/core/domains/maintenance/drift/env-drift-monitor.js", async (
 
 // Mock heavy dependencies — use function() (not =>) so `new` works
 vi.mock("../../src/core/adapters/qdrant/client.js", () => ({
-  QdrantManager: vi.fn().mockImplementation(function () {
+  QdrantManager: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
     this.checkHealth = async () => Promise.resolve(true);
     this.url = "http://localhost:6333";
   }),
@@ -165,13 +167,13 @@ vi.mock("../../src/core/adapters/embeddings/factory.js", () => ({
   },
 }));
 vi.mock("../../src/core/api/internal/facades/ingest-facade.js", () => ({
-  IngestFacade: vi.fn().mockImplementation(function () {}),
+  IngestFacade: vi.fn().mockImplementation(function (this: Record<string, unknown>) {}),
 }));
 vi.mock("../../src/core/api/internal/facades/explore-facade.js", () => ({
-  ExploreFacade: vi.fn().mockImplementation(function () {}),
+  ExploreFacade: vi.fn().mockImplementation(function (this: Record<string, unknown>) {}),
 }));
 vi.mock("../../src/core/domains/explore/reranker.js", () => ({
-  Reranker: vi.fn().mockImplementation(function () {
+  Reranker: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
     this.setFilterPresetNames = vi.fn();
     this.setFilterParamNames = vi.fn();
   }),
@@ -180,7 +182,7 @@ vi.mock("../../src/core/domains/explore/rerank/presets/index.js", () => ({
   resolvePresets: vi.fn().mockReturnValue([]),
 }));
 vi.mock("../../src/core/domains/trajectory/static/index.js", () => ({
-  StaticTrajectory: vi.fn().mockImplementation(function () {
+  StaticTrajectory: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
     this.key = "static";
     this.payloadSignals = [];
     this.derivedSignals = [];
@@ -260,6 +262,8 @@ vi.mock("../../src/bootstrap/config/index.js", async () => {
 
 function makeConfig(): AppConfig {
   return {
+    debug: false,
+    vcs: { adapter: "git" },
     qdrantUrl: "http://localhost:6333",
     embeddingProvider: "ollama",
     transportMode: "stdio",
@@ -272,10 +276,8 @@ function makeConfig(): AppConfig {
       supportedExtensions: [".ts"],
       ignorePatterns: [],
       enableHybridSearch: false,
-    },
-    exploreCode: {
-      enableHybridSearch: false,
-      defaultSearchLimit: 5,
+      quantizationScalar: false,
+      turboQuant: false,
     },
     trajectoryIngest: {},
     paths: {
@@ -485,7 +487,7 @@ describe("loadPrompts", () => {
     vi.mocked(loadPromptsConfig).mockImplementation(() => {
       throw new Error("parse error");
     });
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: string | number) => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: string | number | null) => {
       throw new Error("process.exit called");
     });
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -516,7 +518,11 @@ describe("wireCodegraph", () => {
   it("always passes a daemonSocketPath into the pool (daemon is the default write path)", () => {
     // The daemon is base functionality — no opt-in env flag. Wiring always
     // points the pool at the daemon socket regardless of environment.
-    const ctx = wireCodegraph(makeConfig(), zodConfigWithCodegraph());
+    const ctx = wireCodegraph(
+      makeConfig(),
+      zodConfigWithCodegraph(),
+      new CollectionRegistry("/tmp/factory-test-registry"),
+    );
     expect(ctx).toBeDefined();
     const socketPath = (ctx!.pool as unknown as { options: { daemonSocketPath?: string } }).options.daemonSocketPath;
     expect(socketPath).toMatch(/codegraph-daemon\.sock$/);
@@ -525,7 +531,11 @@ describe("wireCodegraph", () => {
   it("declares per-language affinity over exactly the languages the walk stamps (bd tea-rags-mcp-sgo8v)", () => {
     // The executor partitions a run by extension; the partitions only line up
     // with the records' `language` if both come from the one language table.
-    const ctx = wireCodegraph(makeConfig(), zodConfigWithCodegraph());
+    const ctx = wireCodegraph(
+      makeConfig(),
+      zodConfigWithCodegraph(),
+      new CollectionRegistry("/tmp/factory-test-registry"),
+    );
     const descriptor = ctx?.deps.workerDescriptor;
 
     expect(descriptor?.extractionFanout).toBe(true);
@@ -551,12 +561,14 @@ describe("wireCodegraph", () => {
     } as unknown as ReturnType<typeof getZodConfig>;
     const expected = { windowMonths: 6, sessionGapMinutes: 45, vcsAdapter: "git", gitTimeoutMs: 120_000 };
 
-    const ctx = wireCodegraph(makeConfig(), withGit);
+    const ctx = wireCodegraph(makeConfig(), withGit, new CollectionRegistry("/tmp/factory-test-registry"));
 
     expect(ctx?.deps.temporal).toEqual(expected);
     expect((ctx?.deps.workerDescriptor?.serializableConfig as { temporal?: unknown }).temporal).toEqual(expected);
 
     const gitOff = { ...withGit, trajectoryGit: { ...withGit.trajectoryGit, enabled: false } } as typeof withGit;
-    expect(wireCodegraph(makeConfig(), gitOff)?.deps.temporal).toBeUndefined();
+    expect(
+      wireCodegraph(makeConfig(), gitOff, new CollectionRegistry("/tmp/factory-test-registry"))?.deps.temporal,
+    ).toBeUndefined();
   });
 });

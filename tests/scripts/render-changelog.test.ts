@@ -510,7 +510,7 @@ describe("blog posts in the release range", () => {
   it("renders one line per post, in the order given (oldest first)", () => {
     const lines = renderChangelogSection(MINI, { blogPosts: POSTS })
       .split("\n")
-      .filter((l) => l.startsWith("📝"));
+      .filter((l: string) => l.startsWith("📝"));
     expect(lines).toHaveLength(2);
     expect(lines[0]).toContain("Why ranking moved");
     expect(lines[1]).toContain("What the numbers said");

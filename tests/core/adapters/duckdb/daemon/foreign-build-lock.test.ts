@@ -31,6 +31,7 @@ import { pathToFileURL } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { getBuildFingerprint } from "../../../../../src/core/adapters/duckdb/daemon/build-fingerprint.js";
 import { DaemonGraphDbClient } from "../../../../../src/core/adapters/duckdb/daemon/client.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
@@ -49,7 +50,7 @@ import { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.
 import { createDatabaseMigrationApplier } from "../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
-const COLLECTION = "code_foreign_v1";
+const COLLECTION = fixturePhysicalCollectionName("code_foreign_v1");
 const FOREIGN_FINGERPRINT = "/elsewhere/worktree/build/core/adapters/duckdb/daemon|0.0.0|1";
 const BUILD_ROOT = resolve(__dirname, "../../../../../build");
 

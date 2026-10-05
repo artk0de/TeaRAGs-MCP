@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createIndexRunDaemonGuard } from "../../src/bootstrap/factory.js";
+import { fixturePhysicalCollectionName } from "../core/__helpers__/collection-identity.js";
 
 let dir: string | undefined;
 let srv: Server | undefined;
@@ -66,7 +67,7 @@ describe("createIndexRunDaemonGuard", () => {
       },
     });
 
-    const release = await guard.begin("code_guard_v1");
+    const release = await guard.begin(fixturePhysicalCollectionName("code_guard_v1"));
     expect(order).toEqual(["ensure", "verify code_guard_v1 with 0 keep-alive socket(s)"]);
     await vi.waitFor(() => {
       expect(connections).toBe(1);
@@ -84,7 +85,7 @@ describe("createIndexRunDaemonGuard", () => {
       },
     });
 
-    const release = await guard.begin("code_guard_skew_v1");
+    const release = await guard.begin(fixturePhysicalCollectionName("code_guard_skew_v1"));
     await expect(release()).resolves.toBeUndefined();
     const logged = stderr.mock.calls.map((c) => String(c[0])).join("");
     expect(logged).toMatch(/keep-alive failed for code_guard_skew_v1: daemon build skew/);
@@ -104,7 +105,7 @@ describe("createIndexRunDaemonGuard — a daemon that never answers cannot hold 
       beginTimeoutMs: 50,
     });
 
-    const release = await guard.begin("code_guard_hung_v1");
+    const release = await guard.begin(fixturePhysicalCollectionName("code_guard_hung_v1"));
 
     await expect(release()).resolves.toBeUndefined();
     const logged = stderr.mock.calls.map((c) => String(c[0])).join("");
@@ -144,7 +145,7 @@ describe("createIndexRunDaemonGuard — a daemon that never answers cannot hold 
       beginTimeoutMs: 20,
     });
 
-    await guard.begin("code_guard_late_v1");
+    await guard.begin(fixturePhysicalCollectionName("code_guard_late_v1"));
 
     // The acquisition finishes on its own after the bound; the socket it opens
     // must not stay behind as a ref nobody will ever release.

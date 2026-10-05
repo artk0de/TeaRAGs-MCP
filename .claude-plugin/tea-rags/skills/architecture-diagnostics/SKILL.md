@@ -171,13 +171,13 @@ Module = dir with entry file (`index.ts`/`index.tsx`/`index.js`, `__init__.py`,
 `mod.rs`/`lib.rs`). Boundary judged ONLY where importers adopted facade: ≥3
 external importers AND adoption > 0.5 AND adoption ≥ adaptive cut.
 
-| Summary field (`summary.leakingAbstraction`) | Read as                                                                  |
-| -------------------------------------------- | ------------------------------------------------------------------------ |
-| `adoptionThreshold`                          | cut this codebase got; adoption must ALSO be > 0.5                       |
-| `adoptionThresholdMethod`                    | `otsu` = split over module adoptions; `majority` = too few modules (< 8) |
-| `adoptionSeparability`                       | η of Otsu cut; near 1 = clean two-mode split; low = cut is soft, hedge   |
-| `activeModules`                              | modules whose boundary is judged, with facade/deep importer counts       |
-| `notAdoptedModules`                          | facade exists, importers ignore it — name, don't judge                   |
+| Summary field (`summary.leakingAbstraction`) | Read as                                                                                                     |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `adoptionThreshold`                          | cut this codebase got; adoption must ALSO be > 0.5                                                          |
+| `adoptionThresholdMethod`                    | `otsu` = split over module adoptions; `majority` = too few modules (< 8) or adoptions not bimodal (η < 0.8) |
+| `adoptionSeparability`                       | η of the cut; near 1 = clean two-mode split. Present under `majority` too = the η that failed the gate      |
+| `activeModules`                              | modules whose boundary is judged, with facade/deep importer counts                                          |
+| `notAdoptedModules`                          | facade exists, importers ignore it — name, don't judge                                                      |
 
 `rootCauses` with `detector: "leakingAbstraction"` = one per module:
 `violationCount`, `bypassCount`, `internalReachCount`, `sources`. Read first.
@@ -217,15 +217,15 @@ between them. Coupling lives in heads, not code: wire protocol + its two ends,
 descriptor + implementation it describes, sibling files edited as set. History
 from codegraph co-change sub-graph (git window, mass-change commits dropped).
 
-| Summary field (`summary.silentCoupling`) | Read as                                                                        |
-| ---------------------------------------- | ------------------------------------------------------------------------------ |
-| `built`                                  | `false` = no co-change build → not judged, stop here                           |
-| `build`                                  | provenance: `head`, window, `commitCount`, mass cut `maxFilesPerBundle`        |
-| `strengthThreshold`                      | cut this codebase got; strength must ALSO be > 0.5                             |
-| `strengthThresholdMethod`                | `otsu` = split over candidate strengths; `majority` = too few candidates (< 8) |
-| `strongLinkedCount`                      | strong pairs code DOES link — declared coupling, context for `violationCount`  |
-| `sharedNeighbourThreshold`               | Otsu cut over pairs' best shared-neighbour weight ln(N / fanIn); `none` = off  |
-| `explainedPairs`                         | pairs a specific shared neighbour explains; `evidence.explainedBy` names it    |
+| Summary field (`summary.silentCoupling`) | Read as                                                                                                              |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `built`                                  | `false` = no co-change build → not judged, stop here                                                                 |
+| `build`                                  | provenance: `head`, window, `commitCount`, mass cut `maxFilesPerBundle`                                              |
+| `strengthThreshold`                      | cut this codebase got; strength must ALSO be > 0.5                                                                   |
+| `strengthThresholdMethod`                | `otsu` = split over candidate strengths; `majority` = too few candidates (< 8) or strengths not bimodal (η < 0.8)    |
+| `strongLinkedCount`                      | strong pairs code DOES link — declared coupling, context for `violationCount`                                        |
+| `sharedNeighbourThreshold`               | Otsu cut over pairs' best shared-neighbour weight ln(N / fanIn); `none` = off (< 8 weights, or not bimodal, η < 0.8) |
+| `explainedPairs`                         | pairs a specific shared neighbour explains; `evidence.explainedBy` names it                                          |
 
 `rootCauses` with `detector: "silentCoupling"` = file with ≥ 2 silent partners:
 `relPath`, `violationCount`, `maxStrength`, `partners`. Read first — hub of
@@ -244,8 +244,10 @@ Pair undirected: `sourceRelPath` = lexicographically smaller. Evidence per line:
 | `directoryRelation: disjoint`      | crosses module border — rank highest                                          |
 
 Fix direction: make coupling explicit (shared contract / generated table / one
-owner) OR merge. Type-only imports are NOT graph edges — pair joined only by
-`import type` can surface; check before claiming "no link".
+owner) OR merge. Type-only imports ARE graph edges (callWeight 0) on indexes
+walked at walker ≥ 4 — a pair joined only by `import type` reads
+structurallyLinked and does not surface; an index walked before that change may
+still miss the edge, so check before claiming "no link".
 
 ## Phase 3d — MAIN SEQUENCE
 
@@ -262,12 +264,12 @@ shapes and props are concrete-neutral, not counted. Ruby: class/module with a
 | `pain`        | stable + concrete (A + I < 1) — every change hits many      | extract interfaces dependents code against      |
 | `uselessness` | unstable + abstract (A + I > 1) — contracts nobody leans on | drop unused abstractions or merge into concrete |
 
-| Summary field (`summary.mainSequence`) | Read as                                                                                                        |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `distanceThreshold` / `…Method`        | D must exceed it; `majority` = floor 0.5 decided, `otsu` = adaptive cut above                                  |
-| `meanDistance`                         | whole-codebase D over judged components — trend number                                                         |
-| `abstractTypeShareByLanguage`          | abstract share per language — why a language's components are unobservable                                     |
-| `volatility`                           | pain gate: `threshold`/`thresholdMethod` over mean commits per file; absent = gate off (no git data / no pain) |
+| Summary field (`summary.mainSequence`) | Read as                                                                                                                                                                                |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `distanceThreshold` / `…Method`        | D must exceed it; `majority` = floor 0.5 decided, `otsu` = adaptive cut above (`distanceSeparability` under `majority` = η that failed the gate)                                       |
+| `meanDistance`                         | whole-codebase D over judged components — trend number                                                                                                                                 |
+| `abstractTypeShareByLanguage`          | abstract share per language — why a language's components are unobservable                                                                                                             |
+| `volatility`                           | pain gate: `threshold`/`thresholdMethod` over mean commits per file; `fileMedian` = floor OR log population not bimodal (η < 0.8, reported); absent = gate off (no git data / no pain) |
 
 Evidence per line: `distance`, `abstractness`, `instability`, type counts,
 Ca/Ce, `unmeasuredFileCount` (> 0 = partial census, hedge), `volatility`
@@ -330,9 +332,11 @@ validation error naming the enum, before any detector runs.
 `response.norms` exists ONLY when the request carried `norms: true` — skip
 otherwise. The project judged by ITS OWN precedents: ledgers of (roleSrc,
 roleDst, locality) over every typed file edge, one adaptive cut
-(majority-floored Otsu, `threshold.threshold`), then a verdict per edge below
-it. Roles = each file's PRIMARY type's role; `summary.roleFileCount` counts the
-strong ones, `weakRoleFileCount` / `untypedFileCount` never judge.
+(majority-floored Otsu, `threshold.threshold`; `method: "majority"` = min
+support floor decided — too few pairs, or pair supports not bimodal, η < 0.8 and
+reported in `threshold.separability`), then a verdict per edge below it. Roles =
+each file's PRIMARY type's role; `summary.roleFileCount` counts the strong ones,
+`weakRoleFileCount` / `untypedFileCount` never judge.
 
 | Finding      | Read as                                                                                                                                                                                                                 |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -365,13 +369,15 @@ silently lost.
 Reasons verbatim in `exclusionReasons`. Report them as "not judged", never as
 "clean".
 
-`summary.leakingAbstraction.excludedModules` — modules NOT judged:
+`summary.leakingAbstraction.excludedModules` — first three count modules NOT
+judged; `intraParentConsumers` counts excluded importer pairs:
 
-| Counter            | Meaning                                                               |
-| ------------------ | --------------------------------------------------------------------- |
-| `facadeNotAdopted` | adoption ≤ 0.5 or below adaptive cut — importers don't use the facade |
-| `tooFewImporters`  | < 3 external importers — adoption untrustworthy                       |
-| `languageEnforced` | Go package — compiler enforces boundary, nothing to leak              |
+| Counter                | Meaning                                                                                                                                                                          |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `facadeNotAdopted`     | adoption ≤ 0.5 or below adaptive cut — importers don't use the facade                                                                                                            |
+| `tooFewImporters`      | < 3 external importers — adoption untrustworthy                                                                                                                                  |
+| `languageEnforced`     | Go package — compiler enforces boundary, nothing to leak                                                                                                                         |
+| `intraParentConsumers` | importer inside module's PARENT dir component (parent holds entry file = assembly barrel) — sibling/assembly consumer, internal by two-seam model; counts consumers, not modules |
 
 `summary.silentCoupling.excluded` — pairs read, NOT judged: `testEndpoints`,
 `generatedEndpoints`, `documentationEndpoints`, `unwalkedEndpoints` (neither

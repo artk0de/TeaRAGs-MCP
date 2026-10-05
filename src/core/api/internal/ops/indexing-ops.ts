@@ -30,9 +30,9 @@ import {
   IndexingProcessBuildStaleError,
   NotIndexedError,
 } from "../../../domains/ingest/errors.js";
-import { computeCollectionStats } from "../../../domains/ingest/infra/collection-stats.js";
 import {
   cleanupOrphanedVersions,
+  computeCollectionStats,
   isCollectionIndexingInFlight,
   type CollectionIndexingLock,
   type HeldCollectionIndexingLock,
@@ -55,7 +55,7 @@ import {
 import { pipelineLog } from "../../../domains/ingest/pipeline/infra/debug-logger.js";
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
 import { advanceChunkSetStamp } from "../../../domains/maintenance/drift/index.js";
-import type { WorktreeSeedBuildIdentity } from "../../../domains/maintenance/worktree/worktree-seed-source.js";
+import type { WorktreeSeedBuildIdentity } from "../../../domains/maintenance/worktree/index.js";
 import { hashCollectionForPath, validatePath } from "../../../infra/collection-name.js";
 import { isDebug } from "../../../infra/runtime.js";
 import { computeScoreBackground } from "../../../infra/score-background.js";
@@ -70,7 +70,7 @@ import type {
   IngestCodeConfig,
   ProgressCallback,
 } from "../../../types.js";
-import { isEnrichmentRecompute, rechunkSelectorOf } from "../../public/dto/ingest.js";
+import { isEnrichmentRecompute, rechunkSelectorOf } from "../../public/dto/index.js";
 import type { PathCollectionResolver } from "../collection-resolver.js";
 import type { WorktreeSeedAttempt, WorktreeSeedOps, WorktreeSeedSourceRelease } from "./worktree-seed-ops.js";
 

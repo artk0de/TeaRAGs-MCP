@@ -51,9 +51,13 @@ import type {
   SymbolResolutionStrategy,
   TypeRef,
 } from "../src/core/contracts/types/language.js";
-import { ExternalCallClassifier } from "../src/core/domains/language/external-classifier.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
 import { dispatchFanoutPolicyFor } from "../src/core/domains/language/kernel/fanout-policy.js";
+import {
+  ExternalCallClassifier,
+  resolveDispatchViaComponents,
+  resolveViaChain,
+} from "../src/core/domains/language/kernel/index.js";
 import { PythonChainAnswerProbe } from "../src/core/domains/language/python/resolver/dispatch/index.js";
 import { createPythonUnionDispatchPorts } from "../src/core/domains/language/python/resolver/dispatch/python-union-ports.js";
 import {
@@ -65,7 +69,6 @@ import { createPythonDispatchComponents } from "../src/core/domains/language/pyt
 import { PythonExternalVocabulary } from "../src/core/domains/language/python/resolver/python-external-vocabulary.js";
 import { CONE_MAX_DEFAULT } from "../src/core/domains/language/python/resolver/strategies/index.js";
 import { pythonEnclosingClass } from "../src/core/domains/language/python/resolver/strategies/shared.js";
-import { resolveDispatchViaComponents, resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
 import { MapHierarchyView } from "../src/core/domains/trajectory/codegraph/hierarchy-view.js";
 import {
   deriveClassFieldTypesFromParams,

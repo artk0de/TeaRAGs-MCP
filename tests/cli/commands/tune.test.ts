@@ -40,7 +40,7 @@ describe("tune command", () => {
     mockChild = new EventEmitter() as ChildProcess & EventEmitter;
     spawnMock.mockReturnValue(mockChild);
 
-    exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as (code?: number) => never);
+    exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as (code?: string | number | null) => never);
 
     // Isolate from host: clear QDRANT_URL so the resolver doesn't read it.
     savedQdrantUrl = process.env.QDRANT_URL;

@@ -1,6 +1,5 @@
 import type { CycleScope, GraphDbClient } from "../../../contracts/types/codegraph.js";
-import { pageRank } from "../../../infra/graph/page-rank.js";
-import { tarjanScc } from "../../../infra/graph/tarjan-scc.js";
+import { pageRank, tarjanScc } from "../../../infra/graph/index.js";
 import { CodegraphDaemonRequestAbortedError } from "../errors.js";
 
 const OP = "computeAndPersistCyclesAndSignals";

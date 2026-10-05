@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
@@ -76,12 +77,14 @@ describe("CodegraphEnrichmentProvider.acceptExtraction — exclusion filter on t
   });
 
   it("spills an app extraction but DROPS a test-classified one (spec/support, spec/mailers/previews)", () => {
-    provider.acceptExtraction(extractionFor("app/models/invoice.rb"), { collectionName: COLLECTION });
+    provider.acceptExtraction(extractionFor("app/models/invoice.rb"), {
+      collectionName: fixturePhysicalCollectionName(COLLECTION),
+    });
     provider.acceptExtraction(extractionFor("spec/support/gem_extensions/capybara.rb"), {
-      collectionName: COLLECTION,
+      collectionName: fixturePhysicalCollectionName(COLLECTION),
     });
     provider.acceptExtraction(extractionFor("spec/mailers/previews/document_mailer_preview.rb"), {
-      collectionName: COLLECTION,
+      collectionName: fixturePhysicalCollectionName(COLLECTION),
     });
 
     const spilled = readFileSync(SPILL_PATH, "utf8")
@@ -106,10 +109,10 @@ describe("CodegraphEnrichmentProvider.acceptExtraction — exclusion filter on t
     const customSpill = join(process.cwd(), ".tea-rags-codegraph-spill", `xpass-${customCollection}.ndjson`);
     try {
       customExcluder.acceptExtraction(extractionFor("app/legacy/importer.rb"), {
-        collectionName: customCollection,
+        collectionName: fixturePhysicalCollectionName(customCollection),
       });
       customExcluder.acceptExtraction(extractionFor("app/models/invoice.rb"), {
-        collectionName: customCollection,
+        collectionName: fixturePhysicalCollectionName(customCollection),
       });
       expect(existsSync(customSpill)).toBe(true);
       const spilled = readFileSync(customSpill, "utf8")

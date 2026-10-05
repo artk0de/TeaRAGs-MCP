@@ -6,7 +6,7 @@ import {
   type CallRef,
   type HierarchyView,
   type InheritanceEdge,
-  type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import { RubyCallResolver } from "../../../../../../../src/core/domains/language/ruby/resolver/ruby-resolver.js";
 import type { ResolverConfig } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/index.js";
@@ -15,7 +15,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains
 
 const cfg: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };
 
-const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): NamedSymbol => ({
+const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName,
@@ -23,7 +23,7 @@ const sym = (symbolId: string, shortName: string, relPath: string, scope: string
   scope,
 });
 
-const tableWith = (...files: [string, NamedSymbol[]][]): InMemoryGlobalSymbolTable => {
+const tableWith = (...files: [string, SymbolDefinition[]][]): InMemoryGlobalSymbolTable => {
   const t = new InMemoryGlobalSymbolTable();
   for (const [relPath, defs] of files) t.upsertFile(relPath, defs);
   return t;
@@ -154,10 +154,7 @@ describe("RubyIvarFieldSymbolResolutionStrategy — convention tier (bd tea-rags
       ],
       ["app/models/charge.rb", [sym("Charge", "Charge", "app/models/charge.rb", [])]],
     );
-    const outcome = strat.attempt(
-      refundCall,
-      ctx({ symbolTable, classFieldTypes: { Foo: { "@payment": "Charge" } } }),
-    );
+    const outcome = strat.attempt(refundCall, ctx({ symbolTable, classFieldTypes: { Foo: { "@payment": "Charge" } } }));
     expect(outcome.kind).toBe("resolved");
     expect(targetOf(outcome)).toBeNull();
   });

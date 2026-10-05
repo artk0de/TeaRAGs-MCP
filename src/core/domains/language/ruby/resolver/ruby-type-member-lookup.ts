@@ -11,7 +11,7 @@
  */
 import type { AmbiguousResolveMode } from "../../../../contracts/types/codegraph.js";
 import { createTypeMemberLookup, type TypeMemberLookup } from "../../kernel/index.js";
-import { resolveTypeInstanceMethod, resolveTypeStaticMethod } from "./strategies/shared.js";
+import { resolveTypeInstanceMethod, resolveTypeStaticMethod } from "./strategies/index.js";
 
 export function createRubyTypeMemberLookup(mode: AmbiguousResolveMode): TypeMemberLookup {
   return createTypeMemberLookup((type, member, ctx) =>

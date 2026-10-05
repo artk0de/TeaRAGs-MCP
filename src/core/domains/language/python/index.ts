@@ -60,10 +60,13 @@ import { PYTHON_DEPENDENCY_MANIFEST } from "./manifest.js";
 import { PythonCallResolver } from "./resolver/index.js";
 import { createPythonKnownTargetCalleeLocator } from "./resolver/python-known-target-callee-locator.js";
 import { isPythonSourcePath } from "./vocabulary/source-extensions.js";
-import { pythonInertFileExtraction } from "./walker/inert-file-extraction.js";
-import { pyNameOf } from "./walker/name-of.js";
-import { PYTHON_EXTRACTION_PASSES } from "./walker/passes.js";
-import { extractFromPythonFile, type PythonExtractInput } from "./walker/walker.js";
+import {
+  extractFromPythonFile,
+  pyNameOf,
+  PYTHON_EXTRACTION_PASSES,
+  pythonInertFileExtraction,
+  type PythonExtractInput,
+} from "./walker/index.js";
 
 /**
  * Chunk-boundary config for Python — mirrors the chunker slice of the legacy

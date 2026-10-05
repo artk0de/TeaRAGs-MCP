@@ -7,8 +7,7 @@
  */
 import type { AmbiguousResolveMode } from "../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../contracts/types/language.js";
-import type { ExternalCallClassifier } from "../../external-classifier.js";
-import { ConeDispatchResolver, UnionDispatchResolver } from "../../kernel/index.js";
+import { ConeDispatchResolver, UnionDispatchResolver, type ExternalCallClassifier } from "../../kernel/index.js";
 import {
   PythonCallableParamDispatchResolver,
   pythonDynamicDispatchEnabled,

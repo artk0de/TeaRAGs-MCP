@@ -26,6 +26,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { DaemonGraphDbClient } from "../../../../../src/core/adapters/duckdb/daemon/client.js";
 import {
   decodeFrames,
@@ -108,7 +109,7 @@ describe("DaemonGraphDbClient — daemon death mid-request", () => {
 
     let respawns = 0;
     const client = track(
-      new DaemonGraphDbClient(socketPath, "code_x", {
+      new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x"), {
         retryDelayMs: 5,
         connectTimeoutMs: 2000,
         onConnectionLost: async () => {
@@ -130,7 +131,7 @@ describe("DaemonGraphDbClient — daemon death mid-request", () => {
 
     let respawns = 0;
     const client = track(
-      new DaemonGraphDbClient(socketPath, "code_x", {
+      new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x"), {
         retryDelayMs: 5,
         connectTimeoutMs: 2000,
         onConnectionLost: async () => {
@@ -150,7 +151,12 @@ describe("DaemonGraphDbClient — daemon death mid-request", () => {
     const socketPath = tempSocket();
     await daemon(socketPath, () => "die");
 
-    const client = track(new DaemonGraphDbClient(socketPath, "code_x", { retryDelayMs: 5, connectTimeoutMs: 300 }));
+    const client = track(
+      new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x"), {
+        retryDelayMs: 5,
+        connectTimeoutMs: 300,
+      }),
+    );
     await client.init();
 
     await expect(client.hasData()).rejects.toThrow(/daemon closed the connection/);
@@ -162,7 +168,7 @@ describe("DaemonGraphDbClient — daemon death mid-request", () => {
 
     let respawns = 0;
     const client = track(
-      new DaemonGraphDbClient(socketPath, "code_x", {
+      new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x"), {
         retryDelayMs: 5,
         onConnectionLost: () => {
           respawns += 1;

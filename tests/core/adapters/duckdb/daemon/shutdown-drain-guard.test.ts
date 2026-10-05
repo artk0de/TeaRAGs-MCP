@@ -24,6 +24,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { createConnectionHandler } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
 import { getDaemonPaths, type CodegraphDaemonPaths } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
 import {
@@ -43,7 +44,7 @@ import { createDatabaseMigrationApplier } from "../../../../../src/core/domains/
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 /** A collection name that passes `physicalCollectionNameFromDaemonRequest`. */
-const COLLECTION = "code_drain_v1";
+const COLLECTION = fixturePhysicalCollectionName("code_drain_v1");
 
 let root: string;
 const servers: Server[] = [];

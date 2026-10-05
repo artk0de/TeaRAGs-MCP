@@ -18,7 +18,7 @@ function cap(
     language,
     ast: { tier: ast, engine: "e" },
     tests: { tier: tests, detection: "d", tech: "t" },
-    codegraph: { tier: codegraph, tech: "t" },
+    codegraph: { tier: codegraph, tech: "t", symbolKindRoles: { callee: new Set(), receiver: new Set() } },
     versions: { chunking: 1, walker: 1, codegraphSchema: 1 },
   };
 }
@@ -38,7 +38,21 @@ function metrics(language: Record<string, number>, primaries: string[] = []): In
       "git.file.commitCount": { source: { min: 1, max: 9, count: 10, labelMap: { low: 1, high: 5 } } },
     };
   }
-  return { collection: "c", totalChunks: 100, totalFiles: 10, distributions: { language }, signals };
+  return {
+    collection: "c",
+    totalChunks: 100,
+    totalFiles: 10,
+    distributions: {
+      totalFiles: 10,
+      language,
+      chunkType: {},
+      documentation: { docs: 0, code: 10 },
+      topAuthors: [],
+      topBlameAuthors: [],
+      othersCount: 0,
+    },
+    signals,
+  };
 }
 
 function data(overrides: Partial<PrimeData> = {}, status: Partial<IndexStatus> = {}): PrimeData {
@@ -91,9 +105,15 @@ describe("formatPrime — language capability tiers (xip6g)", () => {
           {
             codegraphResolve: {
               inProjectEdgeRecall: 0.9,
+              coveredRecall: 0.9,
               callsAttempted: 100,
               callsResolved: 90,
               callsExternalSkipped: 0,
+              callsUnresolvable: 0,
+              callsNoInProjectDef: 0,
+              callsCoreAmbiguous: 0,
+              ambiguousFanout: 0,
+              callsUnnarrowedTemplate: 0,
               byLanguage: [
                 {
                   language: "typescript",
@@ -101,6 +121,10 @@ describe("formatPrime — language capability tiers (xip6g)", () => {
                   callsAttempted: 60,
                   callsResolved: 59,
                   callsExternalSkipped: 0,
+                  callsUnresolvable: 0,
+                  callsNoInProjectDef: 0,
+                  callsCoreAmbiguous: 0,
+                  callsUnnarrowedTemplate: 0,
                 },
                 {
                   language: "ruby",
@@ -108,6 +132,10 @@ describe("formatPrime — language capability tiers (xip6g)", () => {
                   callsAttempted: 40,
                   callsResolved: 20,
                   callsExternalSkipped: 0,
+                  callsUnresolvable: 0,
+                  callsNoInProjectDef: 0,
+                  callsCoreAmbiguous: 0,
+                  callsUnnarrowedTemplate: 0,
                 },
               ],
             },
@@ -129,9 +157,15 @@ describe("formatPrime — language capability tiers (xip6g)", () => {
           {
             codegraphResolve: {
               inProjectEdgeRecall: 0.93,
+              coveredRecall: 0.93,
               callsAttempted: 100,
               callsResolved: 93,
               callsExternalSkipped: 0,
+              callsUnresolvable: 0,
+              callsNoInProjectDef: 0,
+              callsCoreAmbiguous: 0,
+              ambiguousFanout: 0,
+              callsUnnarrowedTemplate: 0,
             },
           },
         ),
@@ -150,9 +184,15 @@ describe("formatPrime — language capability tiers (xip6g)", () => {
           {
             codegraphResolve: {
               inProjectEdgeRecall: null,
+              coveredRecall: null,
               callsAttempted: 6,
               callsResolved: 0,
               callsExternalSkipped: 6,
+              callsUnresolvable: 0,
+              callsNoInProjectDef: 0,
+              callsCoreAmbiguous: 0,
+              ambiguousFanout: 0,
+              callsUnnarrowedTemplate: 0,
             },
           },
         ),
@@ -169,9 +209,15 @@ describe("formatPrime — language capability tiers (xip6g)", () => {
           {
             codegraphResolve: {
               inProjectEdgeRecall: 0.93,
+              coveredRecall: 0.93,
               callsAttempted: 1,
               callsResolved: 1,
               callsExternalSkipped: 0,
+              callsUnresolvable: 0,
+              callsNoInProjectDef: 0,
+              callsCoreAmbiguous: 0,
+              ambiguousFanout: 0,
+              callsUnnarrowedTemplate: 0,
             },
           },
         ),
@@ -188,9 +234,15 @@ describe("formatPrime — language capability tiers (xip6g)", () => {
           {
             codegraphResolve: {
               inProjectEdgeRecall: 0.93,
+              coveredRecall: 0.93,
               callsAttempted: 1,
               callsResolved: 1,
               callsExternalSkipped: 0,
+              callsUnresolvable: 0,
+              callsNoInProjectDef: 0,
+              callsCoreAmbiguous: 0,
+              ambiguousFanout: 0,
+              callsUnnarrowedTemplate: 0,
             },
           },
         ),

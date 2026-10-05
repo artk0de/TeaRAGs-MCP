@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DISPATCH_FANOUT_CAP_FLOOR } from "../../../../../../src/core/domains/language/kernel/fanout-policy.js";
@@ -882,7 +883,7 @@ describe("CodegraphEnrichmentProvider — pass-1 aggregates injected past a stal
   // Direct mode resolves the constructor-provided store regardless of the name
   // (`getStore`), exactly as `readPersistedFileHashes` does — the name is carried only
   // so the call shape matches the pool-mode one the main thread makes.
-  const COLLECTION = "code_weno4";
+  const COLLECTION = fixturePhysicalCollectionName("code_weno4");
 
   // Same fixture shape as the znxg8 incremental case above: a shared class-method entry
   // that self-instantiates and delegates to the same-named instance template, one

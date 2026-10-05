@@ -31,10 +31,13 @@ export interface FileExtraction {
    * Imports that bring in types only and load nothing at runtime
    * (bd tea-rags-mcp-r8hme.12) — TypeScript's statement-level `import type` /
    * `export type … from`. Kept OUT of {@link FileExtraction.imports}: nothing
-   * that reads the runtime import list (receiver binding, dispatch gates, the
-   * file graph's fanIn / fanOut) may see them. Resolved through the same
-   * import→file path into `GraphEdges.typeOnlyFileEdges`, which only the
-   * structure-vs-history judgement reads. Absent when the file has none.
+   * that reads the runtime import list (receiver binding, dispatch gates) may
+   * see them. Resolved through the same import→file path into
+   * `GraphEdges.typeOnlyFileEdges` — which, since bd tea-rags-mcp-89k7k.31, is
+   * also mirrored into `GraphEdges.fileEdges` at callWeight 0 so the file
+   * graph counts the compile-time dependency — and read by the
+   * structure-vs-history judgement from its own table. Absent when the file
+   * has none.
    */
   typeOnlyImports?: ImportRef[];
   chunks: ChunkExtraction[];
@@ -844,10 +847,11 @@ export interface ImportRef {
    * The import binds names for type facts but loads nothing at runtime
    * (bd tea-rags-mcp-r8hme.12) — Python's `if TYPE_CHECKING:` block. It stays on
    * `imports[]` because a resolver reads its bindings to type annotations; the
-   * resolution runner routes its FILE edge to the type-only table instead of
-   * the runtime file graph. Contrast {@link FileExtraction.typeOnlyImports},
-   * which holds type-only imports a resolver must not see at all. Absent on
-   * every runtime import.
+   * resolution runner routes its FILE edge to the type-only table (and, since
+   * bd tea-rags-mcp-89k7k.31, into the file graph at callWeight 0 alongside
+   * it). Contrast {@link FileExtraction.typeOnlyImports}, which holds
+   * type-only imports a resolver must not see at all. Absent on every runtime
+   * import.
    */
   typeOnly?: true;
   /** Lexical position used by resolvers that need it (TS aliases, Python

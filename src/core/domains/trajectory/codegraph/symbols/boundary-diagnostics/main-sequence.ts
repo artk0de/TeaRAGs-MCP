@@ -83,7 +83,10 @@ interface ComponentCensus {
  * its files that carry one; the cut is Otsu's split over the judged
  * components' log volatilities, floored at the median file's reading (a component
  * whose typical file changes no more than the codebase's typical file is not
- * volatile), and the floor alone below `MAIN_SEQUENCE_OTSU_MIN_POPULATION`.
+ * volatile), and the floor alone below `MAIN_SEQUENCE_OTSU_MIN_POPULATION` or
+ * when the log population is not bimodal enough for a cut (the shared η
+ * separability gate, bd tea-rags-mcp-r8hme.46 — the median then decides, and
+ * the report says `fileMedian` with the η that failed).
  * A pain component past the distance cut but not volatile is counted as
  * `stableConcreteCalm` instead of reported; one with no reading at all is
  * reported, since nothing shows it calm. Uselessness is judged on D alone.

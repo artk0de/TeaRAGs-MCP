@@ -8,7 +8,6 @@ import { autoUpdateLogPath, closeAutoUpdateLog, openAutoUpdateLog } from "../../
 import { parseAppConfig } from "../../bootstrap/config/index.js";
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
 import { createAppContext } from "../../bootstrap/factory.js";
-import { createPathCollectionResolver } from "../../core/api/index.js";
 import {
   CollectionRegistry,
   IndexFreshnessCheck,
@@ -18,6 +17,7 @@ import {
   replayRegistryEnv,
   resolveRegistryQdrantBackend,
   TeaRagsError,
+  type App,
   type CollectionEntry,
 } from "../../core/api/public/index.js";
 import { FileCacheStore } from "../update-check/cache-store.js";
@@ -41,8 +41,16 @@ function resolveDataDir(): string {
  * Look up a registry entry by project name (alias) or by path. Project alias
  * wins when both are provided. Returns null when the registry has no matching
  * entry — caller falls back to heuristic discovery.
+ *
+ * The path→collection capability arrives as an injection typed by the App
+ * method (bd tea-rags-mcp-nkstp — the 89k7k.9 playbook): this module is a leaf
+ * and holds no edge onto the api assembly barrel; the `prime` command passes
+ * the shared resolver, and a wired App satisfies the same type directly.
  */
-async function lookupRegistryEntry(input: { path?: string; project?: string }): Promise<CollectionEntry | null> {
+async function lookupRegistryEntry(
+  input: { path?: string; project?: string },
+  createPathCollectionResolver: App["createPathCollectionResolver"],
+): Promise<CollectionEntry | null> {
   const registry = new CollectionRegistry(resolveDataDir(), { envCodeDefaults: resolveRegistryEnvCodeDefaults });
   if (input.project) {
     return registry.findByName(input.project);
@@ -127,6 +135,12 @@ function statusFailure(path: string, reason: unknown): PrimeFailureReason {
 export async function runPrime(input: {
   path?: string;
   project?: string;
+  /**
+   * The shared path→collection resolver, injected by the `prime` command (bd
+   * tea-rags-mcp-nkstp) — this module is a leaf and constructs no api runtime
+   * itself.
+   */
+  createPathCollectionResolver: App["createPathCollectionResolver"];
   /** Test seam — production builds the real trigger via buildPrimeAutoUpdateTrigger. */
   autoUpdateTrigger?: { maybeSpawn: (collectionName: string) => AutoUpdateTriggerOutcome };
 }): Promise<void> {
@@ -139,7 +153,10 @@ export async function runPrime(input: {
   const hasExplicitPath = typeof input.path === "string" && input.path.length > 0;
   const requestedPath = hasExplicitPath ? input.path : input.project ? undefined : process.cwd();
 
-  const registryEntry = await lookupRegistryEntry({ path: requestedPath, project: input.project });
+  const registryEntry = await lookupRegistryEntry(
+    { path: requestedPath, project: input.project },
+    input.createPathCollectionResolver,
+  );
   const path = registryEntry?.path ?? requestedPath;
 
   if (!path) {

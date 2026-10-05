@@ -62,6 +62,7 @@ const mockDescriptors: PresetDescriptors = {
     semantic_search: ["relevance", "techDebt"],
     search_code: ["relevance", "recent"],
   },
+  payloadSignals: [],
   presetDetails: {
     semantic_search: [
       {
@@ -168,6 +169,7 @@ describe("Resource builders", () => {
         presetNames: { some_tool: [] },
         presetDetails: { some_tool: [] },
         signalDescriptors: [],
+        payloadSignals: [],
       };
       const md = buildPresetsDoc(empty);
       expect(md).toBeDefined();

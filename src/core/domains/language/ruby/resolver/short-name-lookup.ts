@@ -22,7 +22,7 @@ import type {
   SymbolLookupRole,
 } from "../../../../contracts/types/codegraph.js";
 import type { DispatchFanoutPopulation } from "../../../../contracts/types/language.js";
-import { symbolLookupOptionsFor, type CallRoleSymbolLookupOptions } from "../../kernel/symbol-kind-roles.js";
+import { symbolLookupOptionsFor, type CallRoleSymbolLookupOptions } from "../../kernel/index.js";
 import { capability } from "../capability.js";
 
 /** Ruby's kind roles — a bare `Money(x)` calls a method, never `class Money`. */

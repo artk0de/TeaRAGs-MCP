@@ -8,7 +8,7 @@ import {
   type DispatchFanoutOutcome,
   type HierarchyView,
   type InheritanceEdge,
-  type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
   RubyConeDispatchResolver,
@@ -18,7 +18,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains
 
 const cfg: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };
 
-const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): NamedSymbol => ({
+const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName,
@@ -26,7 +26,7 @@ const sym = (symbolId: string, shortName: string, relPath: string, scope: string
   scope,
 });
 
-const tableWith = (...files: [string, NamedSymbol[]][]): InMemoryGlobalSymbolTable => {
+const tableWith = (...files: [string, SymbolDefinition[]][]): InMemoryGlobalSymbolTable => {
   const t = new InMemoryGlobalSymbolTable();
   for (const [relPath, defs] of files) t.upsertFile(relPath, defs);
   return t;
@@ -57,18 +57,18 @@ const ctx = (over: Partial<CallContext> & Pick<CallContext, "symbolTable">): Cal
 // overriding subclasses (bd tea-rags-mcp-2jet, variant A).
 const call: CallRef = { callText: "agent.check", receiver: "agent", member: "check", startLine: 1 };
 
-const agentBase: [string, NamedSymbol[]] = [
+const agentBase: [string, SymbolDefinition[]] = [
   "app/models/agent.rb",
   [sym("Agent", "Agent", "app/models/agent.rb", []), sym("Agent#check", "check", "app/models/agent.rb", ["Agent"])],
 ];
-const website: [string, NamedSymbol[]] = [
+const website: [string, SymbolDefinition[]] = [
   "app/agents/website_agent.rb",
   [
     sym("WebsiteAgent", "WebsiteAgent", "app/agents/website_agent.rb", []),
     sym("WebsiteAgent#check", "check", "app/agents/website_agent.rb", ["WebsiteAgent"]),
   ],
 ];
-const twitter: [string, NamedSymbol[]] = [
+const twitter: [string, SymbolDefinition[]] = [
   "app/agents/twitter_agent.rb",
   [
     sym("TwitterAgent", "TwitterAgent", "app/agents/twitter_agent.rb", []),

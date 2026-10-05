@@ -54,14 +54,17 @@ describe("CodegraphRunState.seal hydrates the pass-1 aggregates of files this ru
     const runState = new CodegraphRunState();
     runState.absorb(walkedFile("app/views.py"), []);
 
-    await runState.seal(noopTable, async () => [
-      persistedSlice("app/models.py", {
-        classAncestors: { "app/models.py::Site": ["NetBoxModel"] },
-        classPrependedAncestors: { "app/models.py::Site": ["Auditable"] },
-        classExtends: { Site: "NetBoxModel" },
-        compactDeclaredClasses: ["app.models.Site"],
-      }),
-    ]);
+    await runState.seal(
+      noopTable,
+      async (): Promise<readonly CodegraphPass1FileAggregates[]> => [
+        persistedSlice("app/models.py", {
+          classAncestors: { "app/models.py::Site": ["NetBoxModel"] },
+          classPrependedAncestors: { "app/models.py::Site": ["Auditable"] },
+          classExtends: { Site: "NetBoxModel" },
+          compactDeclaredClasses: ["app.models.Site"],
+        }),
+      ],
+    );
 
     expect(runState.ancestors).toEqual({ "app/models.py::Site": ["NetBoxModel"] });
     expect(runState.prependedAncestors).toEqual({ "app/models.py::Site": ["Auditable"] });
@@ -86,12 +89,15 @@ describe("CodegraphRunState.seal hydrates the pass-1 aggregates of files this ru
     );
 
     // A DIFFERENT file's persisted row carries the same keys with stale values.
-    await runState.seal(noopTable, async () => [
-      persistedSlice("app/legacy.py", {
-        classAncestors: { "app/models.py::Site": ["NetBoxModel"] },
-        classExtends: { Site: "NetBoxModel" },
-      }),
-    ]);
+    await runState.seal(
+      noopTable,
+      async (): Promise<readonly CodegraphPass1FileAggregates[]> => [
+        persistedSlice("app/legacy.py", {
+          classAncestors: { "app/models.py::Site": ["NetBoxModel"] },
+          classExtends: { Site: "NetBoxModel" },
+        }),
+      ],
+    );
 
     expect(runState.ancestors).toEqual({ "app/models.py::Site": ["AbstractModel"] });
     expect(runState.classExtends).toEqual({ Site: "AbstractModel" });
@@ -102,12 +108,15 @@ describe("CodegraphRunState.seal hydrates the pass-1 aggregates of files this ru
     // The file was walked and now declares nothing — the class was deleted.
     runState.absorb(walkedFile("app/models.py"), []);
 
-    await runState.seal(noopTable, async () => [
-      persistedSlice("app/models.py", {
-        classAncestors: { "app/models.py::Ghost": ["NetBoxModel"] },
-        compactDeclaredClasses: ["app.models.Ghost"],
-      }),
-    ]);
+    await runState.seal(
+      noopTable,
+      async (): Promise<readonly CodegraphPass1FileAggregates[]> => [
+        persistedSlice("app/models.py", {
+          classAncestors: { "app/models.py::Ghost": ["NetBoxModel"] },
+          compactDeclaredClasses: ["app.models.Ghost"],
+        }),
+      ],
+    );
 
     expect(runState.ancestors).toEqual({});
     expect(runState.compactClasses.has("app.models.Ghost")).toBe(false);
@@ -118,9 +127,12 @@ describe("CodegraphRunState.seal hydrates the pass-1 aggregates of files this ru
     const runState = new CodegraphRunState();
     runState.absorb(walkedFile("app/views.py"), []);
 
-    await runState.seal(noopTable, async () => [
-      persistedSlice("app/models.py", { classAncestors: { "app/models.py::Site": ["NetBoxModel"] } }),
-    ]);
+    await runState.seal(
+      noopTable,
+      async (): Promise<readonly CodegraphPass1FileAggregates[]> => [
+        persistedSlice("app/models.py", { classAncestors: { "app/models.py::Site": ["NetBoxModel"] } }),
+      ],
+    );
 
     expect(runState.extractedFilesByLanguage.get("python")).toBe(1);
     expect(runState.extractedRelPathsByLanguage.get("python")).toEqual(["app/views.py"]);
@@ -161,11 +173,14 @@ describe("CodegraphRunState.seal hydrates the Python run-global channels", () =>
     const runState = new CodegraphRunState();
     runState.absorb(walkedFile("app/services.py"), []);
 
-    await runState.seal(noopTable, async () => [
-      persistedSlice("app/models.py", {
-        classFieldTypesByClassKey: { "app/models.py::SyncServiceBase": { client: "HttpClient" } },
-      }),
-    ]);
+    await runState.seal(
+      noopTable,
+      async (): Promise<readonly CodegraphPass1FileAggregates[]> => [
+        persistedSlice("app/models.py", {
+          classFieldTypesByClassKey: { "app/models.py::SyncServiceBase": { client: "HttpClient" } },
+        }),
+      ],
+    );
 
     expect(runState.classFieldTypesByClassKey).toEqual({
       "app/models.py::SyncServiceBase": { client: "HttpClient" },
@@ -186,13 +201,16 @@ describe("CodegraphRunState.seal hydrates the Python run-global channels", () =>
     // key prefix makes this unreachable in production — a key names its own
     // declaring file, and that file's row is skipped when walked — so the guard
     // is pinned here rather than left to the SKIP filter to imply.
-    await runState.seal(noopTable, async () => [
-      persistedSlice("app/legacy.py", {
-        classFieldTypesByClassKey: {
-          "app/models.py::SyncServiceBase": { client: "HttpClient", legacy: "LegacyClient" },
-        },
-      }),
-    ]);
+    await runState.seal(
+      noopTable,
+      async (): Promise<readonly CodegraphPass1FileAggregates[]> => [
+        persistedSlice("app/legacy.py", {
+          classFieldTypesByClassKey: {
+            "app/models.py::SyncServiceBase": { client: "HttpClient", legacy: "LegacyClient" },
+          },
+        }),
+      ],
+    );
 
     expect(runState.classFieldTypesByClassKey).toEqual({
       "app/models.py::SyncServiceBase": { client: "AsyncClient" },
@@ -203,12 +221,15 @@ describe("CodegraphRunState.seal hydrates the Python run-global channels", () =>
     const runState = new CodegraphRunState();
     runState.absorb(walkedFile("app/models.py"), []);
 
-    await runState.seal(noopTable, async () => [
-      persistedSlice("app/models.py", {
-        classFieldTypesByClassKey: { "app/models.py::SyncServiceBase": { client: "HttpClient" } },
-        moduleReexports: [{ exportedName: "Site", sourceModule: ".site", sourceName: "Site" }],
-      }),
-    ]);
+    await runState.seal(
+      noopTable,
+      async (): Promise<readonly CodegraphPass1FileAggregates[]> => [
+        persistedSlice("app/models.py", {
+          classFieldTypesByClassKey: { "app/models.py::SyncServiceBase": { client: "HttpClient" } },
+          moduleReexports: [{ exportedName: "Site", sourceModule: ".site", sourceName: "Site" }],
+        }),
+      ],
+    );
 
     expect(runState.classFieldTypesByClassKey).toEqual({});
     expect(runState.moduleReexports).toEqual({});
@@ -219,9 +240,12 @@ describe("CodegraphRunState.seal hydrates the Python run-global channels", () =>
     runState.absorb(walkedFile("dcim/views.py"), []);
     const reexports = [{ exportedName: "ObjectType", sourceModule: ".object_types", sourceName: "ObjectType" }];
 
-    await runState.seal(noopTable, async () => [
-      persistedSlice("core/models/__init__.py", { moduleReexports: reexports }),
-    ]);
+    await runState.seal(
+      noopTable,
+      async (): Promise<readonly CodegraphPass1FileAggregates[]> => [
+        persistedSlice("core/models/__init__.py", { moduleReexports: reexports }),
+      ],
+    );
 
     expect(runState.moduleReexports).toEqual({ "core/models/__init__.py": reexports });
   });
@@ -234,14 +258,17 @@ describe("CodegraphRunState.seal hydrates the Python run-global channels", () =>
     // Same relPath, stale content. The SKIP filter already drops a walked file's
     // own row; the guard is what makes "the walked list is the whole truth"
     // independent of that filter rather than a consequence of it.
-    await runState.seal(noopTable, async () => [
-      persistedSlice("core/models/__init__.py", {
-        moduleReexports: [
-          { exportedName: "Site", sourceModule: ".site", sourceName: "Site" },
-          { exportedName: "Removed", sourceModule: ".removed", sourceName: "Removed" },
-        ],
-      }),
-    ]);
+    await runState.seal(
+      noopTable,
+      async (): Promise<readonly CodegraphPass1FileAggregates[]> => [
+        persistedSlice("core/models/__init__.py", {
+          moduleReexports: [
+            { exportedName: "Site", sourceModule: ".site", sourceName: "Site" },
+            { exportedName: "Removed", sourceModule: ".removed", sourceName: "Removed" },
+          ],
+        }),
+      ],
+    );
 
     expect(runState.moduleReexports).toEqual({ "core/models/__init__.py": walked });
   });
@@ -269,9 +296,12 @@ describe("CodegraphRunState.seal hydrates the Ruby schema-table overrides", () =
     const runState = new CodegraphRunState();
     runState.absorb(rubyFile("app/services/report.rb"), []);
 
-    await runState.seal(noopTable, async () => [
-      rubySlice("app/models/tax_preparation/juno/client.rb", { "TaxPreparation::Juno::Client": "juno_clients" }),
-    ]);
+    await runState.seal(
+      noopTable,
+      async (): Promise<readonly CodegraphPass1FileAggregates[]> => [
+        rubySlice("app/models/tax_preparation/juno/client.rb", { "TaxPreparation::Juno::Client": "juno_clients" }),
+      ],
+    );
 
     expect(runState.schemaTables).toEqual({ "TaxPreparation::Juno::Client": "juno_clients" });
   });
@@ -280,7 +310,12 @@ describe("CodegraphRunState.seal hydrates the Ruby schema-table overrides", () =
     const runState = new CodegraphRunState();
     runState.absorb(rubyFile("app/models/firm.rb", { classSchemaTables: { Firm: "companies" } }), []);
 
-    await runState.seal(noopTable, async () => [rubySlice("app/models/legacy.rb", { Firm: "firms" })]);
+    await runState.seal(
+      noopTable,
+      async (): Promise<readonly CodegraphPass1FileAggregates[]> => [
+        rubySlice("app/models/legacy.rb", { Firm: "firms" }),
+      ],
+    );
 
     expect(runState.schemaTables).toEqual({ Firm: "companies" });
   });
@@ -289,7 +324,12 @@ describe("CodegraphRunState.seal hydrates the Ruby schema-table overrides", () =
     const runState = new CodegraphRunState();
     runState.absorb(rubyFile("app/models/firm.rb"), []);
 
-    await runState.seal(noopTable, async () => [rubySlice("app/models/firm.rb", { Firm: "companies" })]);
+    await runState.seal(
+      noopTable,
+      async (): Promise<readonly CodegraphPass1FileAggregates[]> => [
+        rubySlice("app/models/firm.rb", { Firm: "companies" }),
+      ],
+    );
 
     expect(runState.schemaTables).toEqual({});
   });
@@ -347,20 +387,28 @@ describe("CodegraphRunState keeps each file's type declarations under its own pa
   it("absorbs an unwalked file's declarations from its persisted row", async () => {
     const runState = new CodegraphRunState();
     runState.absorb(walkedFile("Sources/Spec.swift"), []);
-    const declarations = [{ typeId: "World", reopens: false }];
+    const declarations = [{ typeId: "World", symbolKind: "class" as const, line: 1, reopens: false }];
 
-    await runState.seal(noopTable, async () => [
-      persistedSlice("Sources/World.swift", { typeDeclarations: declarations }),
-    ]);
+    await runState.seal(
+      noopTable,
+      async (): Promise<readonly CodegraphPass1FileAggregates[]> => [
+        persistedSlice("Sources/World.swift", { typeDeclarations: declarations }),
+      ],
+    );
 
     expect(runState.typeDeclarations).toEqual({ "Sources/World.swift": declarations });
   });
 
   it("replaces a re-walked file's list, and drops it once the file declares no type", () => {
     const runState = new CodegraphRunState();
-    runState.absorb(walkedFile("Sources/World.swift", { typeDeclarations: [{ typeId: "World", reopens: false }] }), []);
+    runState.absorb(
+      walkedFile("Sources/World.swift", {
+        typeDeclarations: [{ typeId: "World", symbolKind: "class" as const, line: 1, reopens: false }],
+      }),
+      [],
+    );
 
-    const renamed = [{ typeId: "Globe", reopens: false }];
+    const renamed = [{ typeId: "Globe", symbolKind: "class" as const, line: 1, reopens: false }];
     runState.absorb(walkedFile("Sources/World.swift", { typeDeclarations: renamed }), []);
     expect(runState.typeDeclarations).toEqual({ "Sources/World.swift": renamed });
 
@@ -384,11 +432,14 @@ describe("CodegraphRunState.seal hydrates only the language families this run wa
     const runState = new CodegraphRunState();
     runState.absorb(tsFile("src/app.ts"), []);
 
-    await runState.seal(noopTable, async () => [
-      { relPath: "src/base.ts", language: "typescript", classExtends: { Service: "BaseService" } },
-      { relPath: "src/legacy.js", language: "javascript", classExtends: { Legacy: "Base" } },
-      { relPath: "app/models/firm.rb", language: "ruby", classExtends: { Firm: "ApplicationRecord" } },
-    ]);
+    await runState.seal(
+      noopTable,
+      async (): Promise<readonly CodegraphPass1FileAggregates[]> => [
+        { relPath: "src/base.ts", language: "typescript", classExtends: { Service: "BaseService" } },
+        { relPath: "src/legacy.js", language: "javascript", classExtends: { Legacy: "Base" } },
+        { relPath: "app/models/firm.rb", language: "ruby", classExtends: { Firm: "ApplicationRecord" } },
+      ],
+    );
 
     expect(runState.classExtends).toEqual({ Service: "BaseService", Legacy: "Base" });
   });

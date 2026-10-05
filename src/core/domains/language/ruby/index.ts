@@ -47,11 +47,9 @@ import { catalogueFor } from "./dsl/index.js";
 import { RUBY_DEPENDENCY_MANIFEST } from "./gemfile.js";
 import { RUBY_IDENTIFIER_FINDER_METHODS } from "./identifier-finder-methods.js";
 import { rubyKernel } from "./kernel.js";
-import { RubyCallResolver } from "./resolver/ruby-resolver.js";
+import { RubyCallResolver } from "./resolver/index.js";
 import { RAILS_SCHEMA_COLUMN_ACCESSORS } from "./schema/index.js";
-import { rbNameOf } from "./walker/name-of.js";
-import { RUBY_EXTRACTION_PASSES } from "./walker/passes.js";
-import { extractFromRubyFile, type RubyExtractInput } from "./walker/walker.js";
+import { extractFromRubyFile, rbNameOf, RUBY_EXTRACTION_PASSES, type RubyExtractInput } from "./walker/index.js";
 
 /**
  * Chunk-boundary config for Ruby — mirrors the chunker slice of the legacy

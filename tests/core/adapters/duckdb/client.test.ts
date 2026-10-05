@@ -7,8 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
 import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
-import { pageRank } from "../../../../src/core/infra/graph/page-rank.js";
-import { tarjanScc } from "../../../../src/core/infra/graph/tarjan-scc.js";
+import { pageRank, tarjanScc } from "../../../../src/core/infra/graph/index.js";
 
 // Adapter exposes primitives only (listAdjacency / replaceCycles /
 // replacePageRanks); the orchestration that combines them with the

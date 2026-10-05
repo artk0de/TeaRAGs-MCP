@@ -92,7 +92,12 @@ function factsOf(
   violations: readonly { relPathA: string; relPathB: string; support: number; strength: number }[],
   excluded: Partial<
     Record<
-      "testEndpoints" | "generatedEndpoints" | "documentationEndpoints" | "unwalkedEndpoints" | "nonPositiveLift",
+      | "testEndpoints"
+      | "generatedEndpoints"
+      | "documentationEndpoints"
+      | "unwalkedEndpoints"
+      | "nonPositiveLift"
+      | "explainedByFacadeChain",
       number
     >
   > = {},
@@ -105,6 +110,7 @@ function factsOf(
       documentationEndpoints: 0,
       unwalkedEndpoints: 0,
       nonPositiveLift: 0,
+      explainedByFacadeChain: 0,
       ...excluded,
     },
   };
@@ -268,6 +274,51 @@ describe("stableDependencies", () => {
       [["src/app/a.ts", "src/lib/b.ts"]],
     );
     expect(subjectsOf(result, "stableDependencies")).toEqual(["src/app/a.ts -> src/lib/b.ts"]);
+  });
+
+  // bd tea-rags-mcp-hbceb (parity with the whole-repo detector's
+  // tea-rags-mcp-r8hme.51): the composition root assembles unstable
+  // concretes — that is its JOB — so an SDP finding sourced from a declared
+  // root carries the annotation as triage data, never a suppression. The
+  // roots are the DECLARED ones the whole-repo detector reads
+  // (`isDeclaredCompositionRoot`), fixtures use the real component dirs.
+  it("stamps compositionRoot: true on a finding whose source component is a declared composition root", () => {
+    const bootstrapOnVolatile = new Map([
+      ["src/bootstrap/main.ts", { name: "src/bootstrap", instability: 0.2, distanceFromMainSequence: 0.4 }],
+      ["src/lib/b.ts", { name: "lib", instability: 0.9, distanceFromMainSequence: 0.2 }],
+    ]);
+    const result = runWith(
+      { catalog: catalogOf(bootstrapOnVolatile) },
+      ["src/bootstrap/main.ts"],
+      [["src/bootstrap/main.ts", "src/lib/b.ts"]],
+    );
+    const finding = result.findings.find((f) => f.detector === "stableDependencies");
+    expect(finding?.subject).toBe("src/bootstrap/main.ts -> src/lib/b.ts");
+    expect(finding?.compositionRoot).toBe(true);
+  });
+
+  it("annotates a source component nested inside a declared root", () => {
+    const nested = new Map([
+      [
+        "src/bootstrap/wiring/main.ts",
+        { name: "src/bootstrap/wiring", instability: 0.2, distanceFromMainSequence: 0.4 },
+      ],
+      ["src/lib/b.ts", { name: "lib", instability: 0.9, distanceFromMainSequence: 0.2 }],
+    ]);
+    const result = runWith(
+      { catalog: catalogOf(nested) },
+      ["src/bootstrap/wiring/main.ts"],
+      [["src/bootstrap/wiring/main.ts", "src/lib/b.ts"]],
+    );
+    const finding = result.findings.find((f) => f.detector === "stableDependencies");
+    expect(finding?.compositionRoot).toBe(true);
+  });
+
+  it("leaves a finding whose source is no declared root unannotated — and never annotates the target side", () => {
+    const result = runWith({ catalog: catalogOf(components) }, ["src/app/a.ts"], [["src/app/a.ts", "src/lib/b.ts"]]);
+    const finding = result.findings.find((f) => f.detector === "stableDependencies");
+    expect(finding?.subject).toBe("src/app/a.ts -> src/lib/b.ts");
+    expect("compositionRoot" in (finding ?? {})).toBe(false);
   });
 });
 
@@ -799,6 +850,7 @@ describe("silentCoupling", () => {
       documentationEndpoints: 24,
       unwalkedEndpoints: 4,
       nonPositiveLift: 0,
+      explainedByFacadeChain: 0,
     });
   });
 

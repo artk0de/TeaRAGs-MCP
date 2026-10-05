@@ -14,6 +14,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 
 const qdrant = {} as never;
@@ -67,14 +68,14 @@ describe("EnrichmentCoordinator.hasStaleDerivedState", () => {
       makeExecutor(vi.fn()),
     );
 
-    expect(await coordinator.hasStaleDerivedState("code_x_v1")).toBe(true);
+    expect(await coordinator.hasStaleDerivedState(fixturePhysicalCollectionName("code_x_v1"))).toBe(true);
     expect(hasStaleDerivedState).toHaveBeenCalledWith("code_x_v1");
   });
 
   it("is false when no provider keeps derived state", async () => {
     const coordinator = new EnrichmentCoordinator(qdrant, makeProvider(), undefined, makeExecutor(vi.fn()));
 
-    expect(await coordinator.hasStaleDerivedState("code_x_v1")).toBe(false);
+    expect(await coordinator.hasStaleDerivedState(fixturePhysicalCollectionName("code_x_v1"))).toBe(false);
   });
 
   it("treats an unreadable store as not stale, so a broken provider cannot force a finalize every run", async () => {
@@ -85,7 +86,7 @@ describe("EnrichmentCoordinator.hasStaleDerivedState", () => {
       makeExecutor(vi.fn()),
     );
 
-    expect(await coordinator.hasStaleDerivedState("code_x_v1")).toBe(false);
+    expect(await coordinator.hasStaleDerivedState(fixturePhysicalCollectionName("code_x_v1"))).toBe(false);
   });
 });
 
@@ -106,7 +107,7 @@ describe("EnrichmentCoordinator.runRepairPass", () => {
     const coordinator = new EnrichmentCoordinator(qdrant, provider, undefined, makeExecutor(runFileBatch));
 
     const repaired = await coordinator.runRepairPass(
-      "code_x_v1",
+      fixturePhysicalCollectionName("code_x_v1"),
       "/repo",
       new Map([
         ["src/kept.ts", "same"],
@@ -142,7 +143,11 @@ describe("EnrichmentCoordinator.runRepairPass", () => {
     });
     const coordinator = new EnrichmentCoordinator(qdrant, provider, undefined, makeExecutor(runFileBatch));
 
-    const repaired = await coordinator.runRepairPass("code_x_v1", "/repo", new Map([["src/a.ts", "h1"]]));
+    const repaired = await coordinator.runRepairPass(
+      fixturePhysicalCollectionName("code_x_v1"),
+      "/repo",
+      new Map([["src/a.ts", "h1"]]),
+    );
 
     expect(repaired).toBe(0);
     expect(runFileBatch).not.toHaveBeenCalled();
@@ -152,7 +157,7 @@ describe("EnrichmentCoordinator.runRepairPass", () => {
     const runFileBatch = vi.fn().mockResolvedValue(new Map());
     const coordinator = new EnrichmentCoordinator(qdrant, makeProvider(), undefined, makeExecutor(runFileBatch));
 
-    await coordinator.runRepairPass("code_x_v1", "/repo", new Map([["src/a.ts", "h1"]]));
+    await coordinator.runRepairPass(fixturePhysicalCollectionName("code_x_v1"), "/repo", new Map([["src/a.ts", "h1"]]));
 
     expect(runFileBatch).not.toHaveBeenCalled();
   });
@@ -165,7 +170,7 @@ describe("EnrichmentCoordinator.runRepairPass", () => {
     const coordinator = new EnrichmentCoordinator(qdrant, provider, undefined, makeExecutor(runFileBatch));
 
     await coordinator.runRepairPass(
-      "code_x_v1",
+      fixturePhysicalCollectionName("code_x_v1"),
       "/repo",
       new Map([
         ["src/a.ts", "h1"],
@@ -201,7 +206,7 @@ describe("EnrichmentCoordinator.runFinalizeOnly", () => {
       makeExecutor(vi.fn().mockResolvedValue(new Map()), { runFinalize }),
     );
 
-    await coordinator.runFinalizeOnly("/repo", "code_x_v1");
+    await coordinator.runFinalizeOnly("/repo", fixturePhysicalCollectionName("code_x_v1"));
 
     expect(runFinalize).toHaveBeenCalledTimes(1);
     const [, root, options] = runFinalize.mock.calls[0] as [unknown, string, { collectionName?: string }];
@@ -219,7 +224,7 @@ describe("EnrichmentCoordinator.runFinalizeOnly", () => {
       makeExecutor(vi.fn().mockResolvedValue(new Map()), { releaseRun }),
     );
 
-    await coordinator.runFinalizeOnly("/repo", "code_x_v1");
+    await coordinator.runFinalizeOnly("/repo", fixturePhysicalCollectionName("code_x_v1"));
 
     // The release is the executor-side end-of-run signal — reaching it means the
     // completion sequence ran to the end rather than being short-circuited.
@@ -250,7 +255,7 @@ describe("EnrichmentCoordinator.runRepairPass forced paths (bd tea-rags-mcp-fxio
     const coordinator = new EnrichmentCoordinator(qdrant, provider, undefined, makeExecutor(runFileBatch));
 
     const repaired = await coordinator.runRepairPass(
-      "code_x_v1",
+      fixturePhysicalCollectionName("code_x_v1"),
       "/repo",
       new Map([
         ["src/current.ts", "h1"],
@@ -276,7 +281,7 @@ describe("EnrichmentCoordinator.runRepairPass forced paths (bd tea-rags-mcp-fxio
     const coordinator = new EnrichmentCoordinator(qdrant, provider, undefined, makeExecutor(runFileBatch));
 
     const repaired = await coordinator.runRepairPass(
-      "code_x_v1",
+      fixturePhysicalCollectionName("code_x_v1"),
       "/repo",
       new Map([
         ["src/current.ts", "h1"],
@@ -318,12 +323,12 @@ describe("EnrichmentCoordinator.runFinalizeOnly seeded deferred chunks (bd tea-r
     const handoff = new Map([["codegraph.symbols", new Map([["src/app.ts", entries]])]]);
 
     await coordinator.runRepairPass(
-      "code_x_v1",
+      fixturePhysicalCollectionName("code_x_v1"),
       "/repo",
       new Map([["src/app.ts", "h1"]]),
       new Map([["codegraph.symbols", new Set(["src/app.ts"])]]),
     );
-    await coordinator.runFinalizeOnly("/repo", "code_x_v1", handoff);
+    await coordinator.runFinalizeOnly("/repo", fixturePhysicalCollectionName("code_x_v1"), handoff);
 
     expect(runChunkBatch).toHaveBeenCalledTimes(1);
     const [, root] = runChunkBatch.mock.calls[0];

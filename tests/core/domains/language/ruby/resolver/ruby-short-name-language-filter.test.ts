@@ -25,7 +25,7 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
-  type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { flatReturnFactMayOverrideKnownReceiver } from "../../../../../../src/core/domains/language/ruby/resolver/ruby-return-facts.js";
 import { conventionReceiverType } from "../../../../../../src/core/domains/language/ruby/resolver/ruby-unbound-receiver-types.js";
@@ -53,10 +53,10 @@ const sym = (
   shortName: string,
   relPath: string,
   scope: string[],
-  extra: Partial<NamedSymbol> = {},
-): NamedSymbol => ({ symbolId, fqName: symbolId, shortName, relPath, scope, ...extra });
+  extra: Partial<SymbolDefinition> = {},
+): SymbolDefinition => ({ symbolId, fqName: symbolId, shortName, relPath, scope, ...extra });
 
-const tableWith = (...files: [string, NamedSymbol[]][]): InMemoryGlobalSymbolTable => {
+const tableWith = (...files: [string, SymbolDefinition[]][]): InMemoryGlobalSymbolTable => {
   const t = new InMemoryGlobalSymbolTable();
   for (const [relPath, defs] of files) t.upsertFile(relPath, defs);
   return t;
@@ -129,7 +129,9 @@ describe("cardinality gates — a namesake must not suppress a valid Ruby answer
 
   it("conventionReceiverType: a real Ruby class still resolves (unchanged)", () => {
     const symbolTable = tableWith([RB, [sym("Report", "Report", RB, [])]]);
-    expect(conventionReceiverType("report", ctx({ symbolTable }))?.name).toBe("Report");
+    const ref = conventionReceiverType("report", ctx({ symbolTable }));
+    const refName = ref && (ref.form === "class" || ref.form === "instance") ? ref.name : undefined;
+    expect(refName).toBe("Report");
   });
 });
 
@@ -182,8 +184,8 @@ describe("pick sites — a `.ts`/`.tsx` namesake is never chosen as the target",
       ctx({
         symbolTable,
         imports: [
-          { importText: "report", line: 1 },
-          { importText: lib, line: 1 },
+          { importText: "report", startLine: 1 },
+          { importText: lib, startLine: 1 },
         ],
       }),
     );

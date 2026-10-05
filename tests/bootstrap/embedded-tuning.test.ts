@@ -19,6 +19,8 @@ const baseTune: QdrantTuneConfig = {
   deleteConcurrency: 4,
   deleteFlushTimeoutMs: 1000,
   quantizationScalar: false,
+  turboQuant: false,
+  lowMemory: false,
 };
 
 const noneUserSet = { deleteBatchSize: false, deleteConcurrency: false };

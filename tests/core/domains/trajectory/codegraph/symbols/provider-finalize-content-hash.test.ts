@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
@@ -81,11 +82,18 @@ async function runCrossPass(contentHashes?: ReadonlyMap<string, string>): Promis
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  mainProvider.beginExtractionRun(collectionName);
-  for (const e of EXTRACTIONS) mainProvider.acceptExtraction(e, { collectionName });
-  await mainProvider.endExtractionRun(collectionName);
+  mainProvider.beginExtractionRun(fixturePhysicalCollectionName(collectionName));
+  for (const e of EXTRACTIONS) {
+    mainProvider.acceptExtraction(e, { collectionName: fixturePhysicalCollectionName(collectionName) });
+  }
+  await mainProvider.endExtractionRun(fixturePhysicalCollectionName(collectionName));
 
-  await workerProvider.finalizeSignals(tmp, { crossPass: true, paths, collectionName, contentHashes });
+  await workerProvider.finalizeSignals(tmp, {
+    crossPass: true,
+    paths,
+    collectionName: fixturePhysicalCollectionName(collectionName),
+    contentHashes,
+  });
 
   const rows = await graphDb.listFileContentHashes();
   return new Map(rows.map((r) => [r.relPath, r.contentHash]));

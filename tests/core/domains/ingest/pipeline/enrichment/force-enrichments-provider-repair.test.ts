@@ -31,6 +31,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { EnrichmentMarkerStore } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/marker-store.js";
@@ -100,7 +101,15 @@ describe("EnrichmentCoordinator.runRepairPass with selector-forced providers (cn
       makeExecutor(runFileBatch),
     );
 
-    expect(await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED, undefined, new Set([PROVIDER_KEY]))).toBe(2);
+    expect(
+      await coordinator.runRepairPass(
+        fixturePhysicalCollectionName("code_x_v1"),
+        "/repo",
+        SCANNED,
+        undefined,
+        new Set([PROVIDER_KEY]),
+      ),
+    ).toBe(2);
     expect(runFileBatch).toHaveBeenCalledTimes(1);
     const [, root, paths] = runFileBatch.mock.calls[0] as [unknown, string, string[]];
     expect(root).toBe("/repo");
@@ -118,7 +127,7 @@ describe("EnrichmentCoordinator.runRepairPass with selector-forced providers (cn
       makeExecutor(runFileBatch),
     );
 
-    expect(await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED)).toBe(0);
+    expect(await coordinator.runRepairPass(fixturePhysicalCollectionName("code_x_v1"), "/repo", SCANNED)).toBe(0);
     expect(runFileBatch).not.toHaveBeenCalled();
   });
 
@@ -141,7 +150,7 @@ describe("EnrichmentCoordinator.runRepairPass with selector-forced providers (cn
     const coordinator = new EnrichmentCoordinator(qdrant, scopedStore, undefined, makeExecutor(runFileBatch));
 
     await coordinator.runRepairPass(
-      "code_x_v1",
+      fixturePhysicalCollectionName("code_x_v1"),
       "/repo",
       new Map([["src/a.ts", "h1"]]),
       undefined,
@@ -170,7 +179,7 @@ describe("EnrichmentCoordinator.runRepairPass with selector-forced providers (cn
     });
     const coordinator = new EnrichmentCoordinator(qdrant, scopedStore, undefined, makeExecutor(runFileBatch));
 
-    await coordinator.runRepairPass("code_x_v1", "/repo", new Map([["src/a.ts", "h1"]]));
+    await coordinator.runRepairPass(fixturePhysicalCollectionName("code_x_v1"), "/repo", new Map([["src/a.ts", "h1"]]));
 
     expect(handleDeletedPaths).toHaveBeenCalledWith(["src/gone.ts"], { collectionName: "code_x_v1" });
   });
@@ -233,7 +242,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments forces the store repair (cn
       executor,
     );
 
-    await coordinator.recomputeEnrichments("code_x_v1", "/repo", ["codegraph"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("code_x_v1"), "/repo", ["codegraph"]);
 
     // The forced repair is the only runFileBatch dispatch (see the provider
     // shape above) and it carries the whole stored corpus, hash gate off.
@@ -264,7 +273,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments forces the store repair (cn
       executor,
     );
 
-    await coordinator.recomputeEnrichments("code_x_v1", "/repo", ["codegraph"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("code_x_v1"), "/repo", ["codegraph"]);
 
     expect(events).toContain("forced-repair");
     expect(events).toContain("run-pointer");
@@ -284,7 +293,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments forces the store repair (cn
       executor,
     );
 
-    await coordinator.recomputeEnrichments("code_x_v1", "/repo", ["git"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("code_x_v1"), "/repo", ["git"]);
 
     expect(runFileBatch).not.toHaveBeenCalled();
     expect(phases).not.toHaveBeenCalledWith("RECOMPUTE_FORCED_PROVIDER_REPAIR", expect.anything());
@@ -313,10 +322,14 @@ describe("EnrichmentCoordinator.recomputeEnrichments forces the store repair (cn
 
     // The sync leg's ordinary repair captured the scan's real hashes (store
     // current for the file it knows -> no dispatch).
-    await coordinator.runRepairPass("code_x_v1", "/repo", new Map([["src/a.ts", "realA"]]));
+    await coordinator.runRepairPass(
+      fixturePhysicalCollectionName("code_x_v1"),
+      "/repo",
+      new Map([["src/a.ts", "realA"]]),
+    );
     expect(runFileBatch).not.toHaveBeenCalled();
 
-    await coordinator.recomputeEnrichments("code_x_v1", "/repo", ["codegraph"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("code_x_v1"), "/repo", ["codegraph"]);
 
     // The forced repair walked the whole stored corpus, eligibility included
     // src/c.ts — which no scan hash covers.
@@ -355,10 +368,15 @@ describe("EnrichmentCoordinator.recomputeEnrichments forced repair covers chunkl
     });
     const coordinator = new EnrichmentCoordinator(recomputeQdrant(points) as never, provider, undefined, executor);
     // The sync leg's ordinary repair: the store is current, nothing dispatched.
-    await coordinator.runRepairPass("code_x_v1", "/repo", SYNC_SCAN);
+    await coordinator.runRepairPass(fixturePhysicalCollectionName("code_x_v1"), "/repo", SYNC_SCAN);
     expect(runFileBatch).not.toHaveBeenCalled();
 
-    await coordinator.recomputeEnrichments("code_x_v1", "/repo", ["codegraph"], languages);
+    await coordinator.recomputeEnrichments(
+      fixturePhysicalCollectionName("code_x_v1"),
+      "/repo",
+      ["codegraph"],
+      languages,
+    );
     const walked = [...new Set(runFileBatch.mock.calls.flatMap((call) => call[2]))].sort();
     return { walked, provider };
   }
@@ -402,7 +420,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments surfaces an unreadable stor
       new InlineEnrichmentExecutor(),
     );
 
-    await coordinator.recomputeEnrichments("code_x_v1", "/repo", ["codegraph"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("code_x_v1"), "/repo", ["codegraph"]);
 
     return markFileFinal.mock.calls
       .filter(([, key]) => key === PROVIDER_KEY)

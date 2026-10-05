@@ -23,6 +23,7 @@ export {
   FACADE_MODULE_EXCLUSION_REASONS,
   FACADE_OTSU_MIN_POPULATION,
   MODULE_ENTRY_FILE_NAMES,
+  RE_EXPORT_CYCLE_PATH_CAP,
   resolveFacadeAdoptionThreshold,
   type FacadeAdoptionThresholdPolicy,
 } from "./leaking-abstraction.js";

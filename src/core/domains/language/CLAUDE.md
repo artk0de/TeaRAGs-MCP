@@ -40,8 +40,8 @@
 
 - **Import → file is one seam per language.** `ImportFileMapper`
   (`contracts/types/language.ts`) answers `project | external | unknown`, and
-  `import-file-edges.ts` turns the `project` answers into file edges. Which
-  facades forward `resolveFileEdges` at all is derived and pinned in
+  `kernel/import-file-edges.ts` turns the `project` answers into file edges.
+  Which facades forward `resolveFileEdges` at all is derived and pinned in
   `tests/navigator-enumerations.test.ts`; the per-language wiring below is how
   the forwarding ones reach the seam. Python's `resolveFileEdges` delegates
   there, so its file graph no longer comes from pushing a synthesised call

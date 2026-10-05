@@ -18,7 +18,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
-  type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
   resolveInstanceMethodInClassChain,
@@ -26,7 +26,7 @@ import {
 } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/shared.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
-const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): NamedSymbol => ({
+const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName,
@@ -34,7 +34,7 @@ const sym = (symbolId: string, shortName: string, relPath: string, scope: string
   scope,
 });
 
-const tableWith = (...files: [string, NamedSymbol[]][]): InMemoryGlobalSymbolTable => {
+const tableWith = (...files: [string, SymbolDefinition[]][]): InMemoryGlobalSymbolTable => {
   const t = new InMemoryGlobalSymbolTable();
   for (const [relPath, defs] of files) t.upsertFile(relPath, defs);
   return t;
@@ -48,7 +48,7 @@ const ctx = (over: Partial<CallContext> & Pick<CallContext, "symbolTable">): Cal
 });
 
 /** A class whose file declares the class and (optionally) `#m` on it. */
-const klassFile = (name: string, definesM: boolean): [string, NamedSymbol[]] => {
+const klassFile = (name: string, definesM: boolean): [string, SymbolDefinition[]] => {
   const relPath = `${name.toLowerCase()}.rb`;
   const defs = [sym(name, name, relPath, [])];
   if (definesM) defs.push(sym(`${name}#m`, "m", relPath, [name]));

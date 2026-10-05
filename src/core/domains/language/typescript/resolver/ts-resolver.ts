@@ -92,13 +92,13 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
-import { importFileEdge } from "../../import-file-edges.js";
 import {
   ConeDispatchResolver,
+  importFileEdge,
   lookupEcmascriptSymbolsByShortName,
+  resolveViaChain,
   withEcmascriptSymbolKindRoles,
 } from "../../kernel/index.js";
-import { resolveViaChain } from "../../resolver-chain.js";
 import { capability } from "../capability.js";
 import {
   collectImportedFiles,

@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../__helpers__/collection-identity.js";
 import { INDEXING_METADATA_ID } from "../../../../src/core/contracts/constants.js";
 import { CollectionIndexingLock } from "../../../../src/core/domains/ingest/infra/collection-indexing-lock.js";
 import { QuarantineStore } from "../../../../src/core/domains/ingest/sync/quarantine-store.js";
@@ -20,7 +21,7 @@ import { StatsArtifact } from "../../../../src/core/domains/maintenance/footprin
 function resolved(over: Record<string, unknown> = {}) {
   return {
     logicalName: "code_src",
-    physicalName: "code_src_v1",
+    physicalName: fixturePhysicalCollectionName("code_src_v1"),
     path: "/p",
     embeddingModel: "j",
     embeddingDimensions: 768,
@@ -399,7 +400,8 @@ describe("IndexingLockArtifact", () => {
   it("clone: never copies a lock — the clone is not being indexed", async () => {
     writeLock("code_src", LIVE_PID);
 
-    await artifact().clone(ctx());
+    // Nothing to copy: the lock artifact clones nothing by design.
+    await artifact().clone();
 
     expect(existsSync(lockPath("code_dst"))).toBe(false);
   });

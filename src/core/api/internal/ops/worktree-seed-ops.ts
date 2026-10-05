@@ -50,7 +50,7 @@ import {
   checkWorktreeSeedCompatibility,
   findWorktreeSeedCandidates,
   type WorktreeSeedBuildIdentity,
-} from "../../../domains/maintenance/worktree/worktree-seed-source.js";
+} from "../../../domains/maintenance/worktree/index.js";
 import { versionedPhysicalCollectionName } from "../../../infra/collection-name.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 

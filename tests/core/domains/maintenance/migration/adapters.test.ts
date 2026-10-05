@@ -234,6 +234,9 @@ describe("IndexStoreAdapter", () => {
       addPointsWithSparse: vi.fn().mockResolvedValue(undefined),
       getCollectionInfo: vi.fn().mockResolvedValue({ vectorSize: 384, hybridEnabled: false }),
       updateCollectionSparseConfig: vi.fn().mockResolvedValue(undefined),
+      deletePointsByFilter: vi.fn().mockResolvedValue(undefined),
+      listPayloadIndexes: vi.fn().mockResolvedValue([]),
+      deletePayloadIndex: vi.fn().mockResolvedValue(undefined),
       ...overrides,
     };
   }
@@ -457,12 +460,18 @@ describe("SparseStoreAdapter", () => {
   function makeQdrant(overrides: Record<string, unknown> = {}) {
     return {
       getPoint: vi.fn().mockResolvedValue(null),
+      hasPayloadIndex: vi.fn().mockResolvedValue(false),
+      ensurePayloadIndex: vi.fn().mockResolvedValue(true),
       addPoints: vi.fn().mockResolvedValue(undefined),
       addPointsWithSparse: vi.fn().mockResolvedValue(undefined),
       getCollectionInfo: vi.fn().mockResolvedValue({ vectorSize: 384, hybridEnabled: false }),
       scrollWithVectors: vi.fn().mockImplementation(async function* () {
         /* empty generator */
       }),
+      updateCollectionSparseConfig: vi.fn().mockResolvedValue(undefined),
+      deletePointsByFilter: vi.fn().mockResolvedValue(undefined),
+      listPayloadIndexes: vi.fn().mockResolvedValue([]),
+      deletePayloadIndex: vi.fn().mockResolvedValue(undefined),
       ...overrides,
     };
   }
@@ -702,6 +711,7 @@ describe("sparse version stamp on the schema metadata point", () => {
 
   /** A runner that never has anything to do — fills the pipelines Migrator requires. */
   const idleRunner = {
+    latestVersion: 0,
     getMigrations: () => [],
     getVersion: async () => Promise.resolve(0),
     setVersion: async () => Promise.resolve(),
@@ -712,7 +722,13 @@ describe("sparse version stamp on the schema metadata point", () => {
   }
 
   function migratorFor(sparse: SparseMigrator): Migrator {
-    return new Migrator({ snapshot: idleRunner, schema: idleRunner, sparse, stats: idleRunner });
+    return new Migrator({
+      snapshot: idleRunner,
+      schema: idleRunner,
+      sparse,
+      stats: idleRunner,
+      payloadIndexes: idleRunner,
+    });
   }
 
   it("stamps the latest sparse version at creation, so the first sync rebuilds nothing", async () => {

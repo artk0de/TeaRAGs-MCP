@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { reindexRunSpec } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/run-spec.js";
 
@@ -49,7 +50,9 @@ describe("EnrichmentCoordinator — the run's applier knows each provider's opti
     };
     const coordinator = new EnrichmentCoordinator(qdrant as never, provider, undefined, executor);
 
-    const run = coordinator.beginRun(reindexRunSpec({ absolutePath: "/repo", collection: "coll", fileCount: 0 }));
+    const run = coordinator.beginRun(
+      reindexRunSpec({ absolutePath: "/repo", collection: fixturePhysicalCollectionName("coll"), fileCount: 0 }),
+    );
     coordinator.seedDeferredChunks(
       run,
       new Map([["codegraph.symbols", new Map([["src/app.ts", [{ chunkId: "c-1", startLine: 1, endLine: 20 }]]])]]),

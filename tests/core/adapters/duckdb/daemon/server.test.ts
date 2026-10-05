@@ -4,10 +4,12 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { getBuildFingerprint } from "../../../../../src/core/adapters/duckdb/daemon/build-fingerprint.js";
 import { DAEMON_OP_COMMANDS } from "../../../../../src/core/adapters/duckdb/daemon/op-commands.js";
 import { CodegraphDaemonServer } from "../../../../../src/core/adapters/duckdb/daemon/server.js";
 import { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.js";
+import type { IdentifierRow } from "../../../../../src/core/contracts/types/codegraph-storage.js";
 import { createDatabaseMigrationApplier } from "../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { nonProductionPathPatterns } from "../../../../../src/core/infra/file-classification/index.js";
@@ -30,7 +32,7 @@ function makeServer(buildFingerprint?: string) {
 describe("CodegraphDaemonServer.handle — handshake build fingerprint (bd tea-rags-mcp-ji56r)", () => {
   it("handshake returns the daemon's build fingerprint and opens the collection when the client matches", async () => {
     const { server, pool } = makeServer("fp-same");
-    const c = "code_fp_match_v1";
+    const c = fixturePhysicalCollectionName("code_fp_match_v1");
     const res = await server.handle({ id: 1, op: "handshake", params: { collection: c, buildFingerprint: "fp-same" } });
     expect(res.ok).toBe(true);
     expect((res as { result: unknown }).result).toEqual({
@@ -44,7 +46,7 @@ describe("CodegraphDaemonServer.handle — handshake build fingerprint (bd tea-r
 
   it("handshake from a LEGACY client (no fingerprint) still opens the collection — backward compat", async () => {
     const { server, pool } = makeServer("fp-own");
-    const c = "code_fp_legacy_v1";
+    const c = fixturePhysicalCollectionName("code_fp_legacy_v1");
     const res = await server.handle({ id: 1, op: "handshake", params: { collection: c } });
     expect(res.ok).toBe(true);
     expect((res as { result: unknown }).result).toEqual({
@@ -57,7 +59,7 @@ describe("CodegraphDaemonServer.handle — handshake build fingerprint (bd tea-r
 
   it("handshake with a MISMATCHED client fingerprint skips the acquire (stale code must not touch the DB)", async () => {
     const { server, pool } = makeServer("fp-old");
-    const c = "code_fp_mismatch_v1";
+    const c = fixturePhysicalCollectionName("code_fp_mismatch_v1");
     const res = await server.handle({ id: 1, op: "handshake", params: { collection: c, buildFingerprint: "fp-new" } });
     // Still ok — the daemon reports its fingerprint so the CLIENT decides to restart it.
     expect(res.ok).toBe(true);
@@ -91,7 +93,7 @@ describe("CodegraphDaemonServer.handle — handshake build fingerprint (bd tea-r
 describe("CodegraphDaemonServer.handle", () => {
   it("upsertFile then computeAndPersistCyclesAndSignals persists with no throw", async () => {
     const { server, pool } = makeServer();
-    const c = "code_test_v1";
+    const c = fixturePhysicalCollectionName("code_test_v1");
     expect((await server.handle({ id: 1, op: "handshake", params: { collection: c } })).ok).toBe(true);
     const up = await server.handle({
       id: 2,
@@ -120,7 +122,7 @@ describe("CodegraphDaemonServer.handle", () => {
 
   it("computeAndPersistCyclesAndSignals traverses populated adjacency (file + method edges)", async () => {
     const { server, pool } = makeServer();
-    const c = "code_adj_v1";
+    const c = fixturePhysicalCollectionName("code_adj_v1");
     // Two files with a file-import edge AND a method-call edge so the
     // daemon-side analysis walks non-empty adjacency for both scopes.
     await server.handle({
@@ -166,7 +168,7 @@ describe("CodegraphDaemonServer.handle", () => {
   // (unweighted PageRank would rank them identically).
   it("computeAndPersistCyclesAndSignals weights PageRank by per-edge confidence", async () => {
     const { server, pool } = makeServer();
-    const c = "code_weighted_v1";
+    const c = fixturePhysicalCollectionName("code_weighted_v1");
     await server.handle({
       id: 1,
       op: "upsertFile",
@@ -209,7 +211,7 @@ describe("CodegraphDaemonServer.handle", () => {
 
   it("findCycles op forwards pathPattern so the daemon scopes the result by file path", async () => {
     const { server, pool } = makeServer();
-    const c = "code_cyc_v1";
+    const c = fixturePhysicalCollectionName("code_cyc_v1");
     // Two independent file-import cycles in distinct scopes: one under
     // domains/ingest/, one under domains/explore/.
     const importCycle = async (a: string, b: string): Promise<void> => {
@@ -254,7 +256,7 @@ describe("CodegraphDaemonServer.handle", () => {
 
   it("removeSymbolsForFile and checkpoint dispatch to the pooled graphDb without throwing", async () => {
     const { server, pool } = makeServer();
-    const c = "code_ops_v1";
+    const c = fixturePhysicalCollectionName("code_ops_v1");
     // Seed a file, then remove its symbols and checkpoint — both are
     // write ops that route through pool.acquire(collection).
     await server.handle({
@@ -279,7 +281,7 @@ describe("CodegraphDaemonServer.handle", () => {
 
   it("getCallers read op returns the caller edge array after an upsert that creates a caller relationship", async () => {
     const { server, pool } = makeServer();
-    const c = "code_reads_v1";
+    const c = fixturePhysicalCollectionName("code_reads_v1");
     // a.ts: A#run calls B#help in b.ts → b's B#help has a caller A#run.
     await server.handle({
       id: 1,
@@ -323,7 +325,7 @@ describe("CodegraphDaemonServer.handle", () => {
 
   it("getCallees / findCycles read ops return clean empty arrays on an empty graph", async () => {
     const { server, pool } = makeServer();
-    const c = "code_reads_empty_v1";
+    const c = fixturePhysicalCollectionName("code_reads_empty_v1");
     await server.handle({ id: 1, op: "handshake", params: { collection: c } });
     const callees = await server.handle({
       id: 2,
@@ -344,7 +346,7 @@ describe("CodegraphDaemonServer.handle", () => {
 
   it("dispatches the full proxied surface (reads + writes) against the pooled graphDb without throwing", async () => {
     const { server, pool } = makeServer();
-    const c = "code_full_v1";
+    const c = fixturePhysicalCollectionName("code_full_v1");
     // a.ts imports b.ts and A#run calls B#help — gives both a file edge and a
     // method edge so the fan/impact/pagerank reads have real data to return.
     await server.handle({
@@ -413,7 +415,9 @@ describe("CodegraphDaemonServer.handle", () => {
     expect(
       (await server.handle({ id: 10, op: "getCallSiteCount", params: { collection: c, symbolId: "A#run" } })).ok,
     ).toBe(true);
-    expect((await server.handle({ id: 11, op: "hasData", params: { collection: c } })).result).toBe(true);
+    expect(
+      ((await server.handle({ id: 11, op: "hasData", params: { collection: c } })) as { result: unknown }).result,
+    ).toBe(true);
 
     const all = await server.handle({ id: 12, op: "listAllSymbols", params: { collection: c } });
     expect((all as { result: { symbolId: string }[] }).result.map((s) => s.symbolId)).toContain("A#run");
@@ -455,7 +459,7 @@ describe("CodegraphDaemonServer.handle", () => {
 
   it("recordRunStats then getRunStats round-trips the per-receiver-kind breakdown (bd j431)", async () => {
     const { server, pool } = makeServer();
-    const c = "code_runstats_v1";
+    const c = fixturePhysicalCollectionName("code_runstats_v1");
     await server.handle({ id: 1, op: "handshake", params: { collection: c } });
     const rec = await server.handle({
       id: 2,
@@ -520,7 +524,7 @@ describe("CodegraphDaemonServer.handle", () => {
   // A covered language must read back as the SUM of its files' tallies.
   it("recordFileResolveStats then getRunStats aggregates a covered language's per-file tallies", async () => {
     const { server, pool } = makeServer();
-    const c = "code_file_resolve_stats_v1";
+    const c = fixturePhysicalCollectionName("code_file_resolve_stats_v1");
     await server.handle({ id: 1, op: "handshake", params: { collection: c } });
     const tally = (attempted: number, resolved: number) => ({
       receiverKind: "constant",
@@ -565,7 +569,7 @@ describe("CodegraphDaemonServer.handle", () => {
 
   it("dispatches getCalleeEdges and serialises the Map as entries", async () => {
     const { server, pool } = makeServer();
-    const c = "code_callee_edges_v1";
+    const c = fixturePhysicalCollectionName("code_callee_edges_v1");
     // a.ts: A#run calls B#help (b.ts) AND C#aid (c.ts) — A has two callee edges.
     // The Task-3 SQL ORDERs BY source_symbol_id, target_symbol_id, so for source
     // "A#run" the targets come back sorted: B#help < C#aid.
@@ -598,7 +602,7 @@ describe("CodegraphDaemonServer.handle", () => {
 
   it("updateSymbolChunkIds dispatches the write op and returns null", async () => {
     const { server, pool } = makeServer();
-    const c = "code_chunk_ids_v1";
+    const c = fixturePhysicalCollectionName("code_chunk_ids_v1");
     await server.handle({
       id: 1,
       op: "upsertFile",
@@ -629,7 +633,7 @@ describe("CodegraphDaemonServer.handle", () => {
 
   it("updateSymbolChunkIdsBulk dispatches one write op covering every file in the pass", async () => {
     const { server, pool } = makeServer();
-    const c = "code_chunk_ids_bulk_v1";
+    const c = fixturePhysicalCollectionName("code_chunk_ids_bulk_v1");
     await server.handle({
       id: 1,
       op: "upsertFile",
@@ -679,7 +683,7 @@ describe("CodegraphDaemonServer.handle", () => {
 
   it("findSymbolChunk read op returns the stored SymbolChunkLocation", async () => {
     const { server, pool } = makeServer();
-    const c = "code_find_chunk_v1";
+    const c = fixturePhysicalCollectionName("code_find_chunk_v1");
     await server.handle({
       id: 1,
       op: "upsertFile",
@@ -736,7 +740,7 @@ describe("CodegraphDaemonServer.handle", () => {
         edges: { fileEdges: [], methodEdges: [] },
       },
     });
-    const oldPath = pool.pathFor("code_x_v1");
+    const oldPath = pool.pathFor(fixturePhysicalCollectionName("code_x_v1"));
     expect(existsSync(oldPath)).toBe(true);
     const res = await server.handle({
       id: 3,
@@ -745,7 +749,7 @@ describe("CodegraphDaemonServer.handle", () => {
     });
     expect(res.ok).toBe(true);
     expect(existsSync(oldPath)).toBe(false); // old deleted
-    const ro = await pool.acquireRead("code_x_v2");
+    const ro = await pool.acquireRead(fixturePhysicalCollectionName("code_x_v2"));
     expect(await ro.graphDb.hasData()).toBe(true); // new live
     await ro.graphDb.close();
     await pool.closeAll();
@@ -756,7 +760,7 @@ describe("CodegraphDaemonServer.handle", () => {
   // connection against cg_ambiguous_fanout.
   it("getAmbiguousCallersByMember read op returns member-matched aggregate rows", async () => {
     const { server, pool } = makeServer();
-    const c = "code_ambig_v1";
+    const c = fixturePhysicalCollectionName("code_ambig_v1");
     await server.handle({
       id: 1,
       op: "upsertFile",
@@ -779,7 +783,7 @@ describe("CodegraphDaemonServer.handle", () => {
       params: { collection: c, member: "firm" },
     });
     expect(res.ok).toBe(true);
-    expect(res.result).toEqual([
+    expect((res as { result: unknown }).result).toEqual([
       { sourceSymbolId: "Runner#go", sourceRelPath: "runner.rb", callExpression: "x.firm", candidateCount: 240 },
     ]);
     await pool.closeAll();
@@ -791,7 +795,7 @@ describe("CodegraphDaemonServer.handle", () => {
 describe("CodegraphDaemonServer.handle — readFileDependencyGraph", () => {
   it("is a read op that returns the walked files and file edges", async () => {
     const { server, pool } = makeServer();
-    const c = "code_fdg_v1";
+    const c = fixturePhysicalCollectionName("code_fdg_v1");
     await server.handle({
       id: 1,
       op: "upsertFile",
@@ -831,7 +835,7 @@ describe("CodegraphDaemonServer.handle — readFileDependencyGraph", () => {
 describe("CodegraphDaemonServer.handle — getFileImporters / getFileImports", () => {
   it("are read ops answering one file's importers and imports", async () => {
     const { server, pool } = makeServer();
-    const c = "code_fie_v1";
+    const c = fixturePhysicalCollectionName("code_fie_v1");
     await server.handle({
       id: 1,
       op: "upsertFile",
@@ -872,7 +876,7 @@ describe("CodegraphDaemonServer.handle — getFileImporters / getFileImports", (
 describe("CodegraphDaemonServer.handle — getSymbolVisibilities", () => {
   it("is a read op answering the definitions' declared visibility, NULL as null", async () => {
     const { server, pool } = makeServer();
-    const c = "code_vis_v1";
+    const c = fixturePhysicalCollectionName("code_vis_v1");
     await server.handle({
       id: 1,
       op: "upsertSymbols",
@@ -907,7 +911,7 @@ describe("CodegraphDaemonServer.handle — getSymbolVisibilities", () => {
 describe("CodegraphDaemonServer.handle — readNonPublicMemberEdges", () => {
   it("is a read op that returns method edges into non-public members of the requested languages", async () => {
     const { server, pool } = makeServer();
-    const c = "code_npm_v1";
+    const c = fixturePhysicalCollectionName("code_npm_v1");
     await server.handle({
       id: 1,
       op: "upsertFile",
@@ -970,8 +974,15 @@ describe("CodegraphDaemonServer.handle — readNonPublicMemberEdges", () => {
 describe("CodegraphDaemonServer.handle — cg_identifiers ops", () => {
   it("replaces a file's identifiers (a write) and answers the aggregates (reads)", async () => {
     const { server, pool } = makeServer();
-    const c = "code_ident_v1";
-    const doc = { ownerSymbolId: "A#run", kind: "local", name: "doc", line: 2, typeName: "Doc", typeSource: "binding" };
+    const c = fixturePhysicalCollectionName("code_ident_v1");
+    const doc: IdentifierRow = {
+      ownerSymbolId: "A#run",
+      kind: "local",
+      name: "doc",
+      line: 2,
+      typeName: "Doc",
+      typeSource: "binding",
+    };
     await server.handle({
       id: 1,
       op: "replaceIdentifiersBulk",
@@ -1034,8 +1045,15 @@ describe("CodegraphDaemonServer.handle — cg_identifiers ops", () => {
 
   it("answers the naming-lexicon scope reads (bd tea-rags-mcp-4p3sb.11)", async () => {
     const { server, pool } = makeServer();
-    const c = "code_ident_scope_v1";
-    const doc = { ownerSymbolId: "A#run", kind: "local", name: "doc", line: 2, typeName: "Doc", typeSource: "binding" };
+    const c = fixturePhysicalCollectionName("code_ident_scope_v1");
+    const doc: IdentifierRow = {
+      ownerSymbolId: "A#run",
+      kind: "local",
+      name: "doc",
+      line: 2,
+      typeName: "Doc",
+      typeSource: "binding",
+    };
     await server.handle({
       id: 1,
       op: "replaceIdentifiersBulk",
@@ -1066,8 +1084,8 @@ describe("CodegraphDaemonServer.handle — cg_identifiers ops", () => {
 
   it("applies identifierLanguageCounts' path suffixes", async () => {
     const { server, pool } = makeServer();
-    const c = "code_ident_suffix_v1";
-    const doc = { ownerSymbolId: "A#run", kind: "local", name: "doc", line: 2 };
+    const c = fixturePhysicalCollectionName("code_ident_suffix_v1");
+    const doc: IdentifierRow = { ownerSymbolId: "A#run", kind: "local", name: "doc", line: 2 };
     await server.handle({
       id: 1,
       op: "replaceIdentifiersBulk",
@@ -1090,8 +1108,8 @@ describe("CodegraphDaemonServer.handle — cg_identifiers ops", () => {
 
   it("applies groupByLanguage on the type, callee, name and sample reads", async () => {
     const { server, pool } = makeServer();
-    const c = "code_ident_by_language_v1";
-    const doc = {
+    const c = fixturePhysicalCollectionName("code_ident_by_language_v1");
+    const doc: IdentifierRow = {
       ownerSymbolId: "A#run",
       kind: "local",
       name: "doc",
@@ -1128,8 +1146,13 @@ describe("CodegraphDaemonServer.handle — cg_identifiers ops", () => {
 
   it("passes the multiplicity split and the same-type sibling count through to the type aggregate", async () => {
     const { server, pool } = makeServer();
-    const c = "code_ident_siblings_v1";
-    const binding = { ownerSymbolId: "A#link", line: 2, typeName: "Node", typeSource: "annotation" };
+    const c = fixturePhysicalCollectionName("code_ident_siblings_v1");
+    const binding: Omit<IdentifierRow, "kind" | "name"> = {
+      ownerSymbolId: "A#link",
+      line: 2,
+      typeName: "Node",
+      typeSource: "annotation",
+    };
     await server.handle({
       id: 1,
       op: "replaceIdentifiersBulk",
@@ -1167,7 +1190,7 @@ describe("CodegraphDaemonServer.handle — ontology report reads", () => {
     // process holds no language conventions of its own.
     nonProductionPaths: nonProductionPathPatterns(),
     shadowsMethodExtensions: [".rb"],
-    sections: ["synonyms"],
+    sections: ["synonyms" as const],
     limit: 5,
     thresholds: {
       minSupport: 3,
@@ -1185,8 +1208,8 @@ describe("CodegraphDaemonServer.handle — ontology report reads", () => {
 
   it("are reads and answer the audit over the daemon's connection, excluding the names the caller passes", async () => {
     const { server, pool } = makeServer();
-    const c = "code_onto_v1";
-    const row = (name: string, line: number) => ({
+    const c = fixturePhysicalCollectionName("code_onto_v1");
+    const row = (name: string, line: number): IdentifierRow => ({
       ownerSymbolId: "A#run",
       kind: "local",
       name,
@@ -1231,7 +1254,7 @@ describe("CodegraphDaemonServer.handle — ontology report reads", () => {
 describe("CodegraphDaemonServer.handle — type-name rows", () => {
   it("is a read that answers the same rows as the in-process store", async () => {
     const { server, pool } = makeServer();
-    const c = "code_type_names_v1";
+    const c = fixturePhysicalCollectionName("code_type_names_v1");
     expect((await server.handle({ id: 1, op: "handshake", params: { collection: c } })).ok).toBe(true);
     const { graphDb } = await pool.acquire(c);
     // INVARIANT CHANGED (bd tea-rags-mcp-l2pkp): the read's single source is
@@ -1272,8 +1295,8 @@ describe("CodegraphDaemonServer.handle — type-name rows", () => {
 describe("CodegraphDaemonServer.handle — excludePaths on the naming evidence reads", () => {
   it("drops the excluded file's rows from every identifier read", async () => {
     const { server, pool } = makeServer();
-    const c = "code_ident_exclude_v1";
-    const doc = (name: string) => ({
+    const c = fixturePhysicalCollectionName("code_ident_exclude_v1");
+    const doc = (name: string): IdentifierRow => ({
       ownerSymbolId: "A#run",
       kind: "local",
       name,

@@ -13,6 +13,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { EnrichmentBackfiller } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/backfiller.js";
 import { ChunkPhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/chunk-phase.js";
@@ -33,9 +34,9 @@ describe("ChunkLookupEntry.symbolId producers (bd tea-rags-mcp-9i2ow)", () => {
       ignoreFilter: null as any,
     };
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
 
-    phase.onBatch("coll", "/repo", [
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", [
       {
         chunkId: "c1",
         chunk: { metadata: { filePath: "/repo/src/a.ts", symbolId: PART_ID }, startLine: 20, endLine: 40 },
@@ -72,7 +73,12 @@ describe("ChunkLookupEntry.symbolId producers (bd tea-rags-mcp-9i2ow)", () => {
       filterExtractablePaths: (paths: readonly string[]) => paths,
     };
 
-    const result = await recovery.recoverChunkLevel("coll", "/repo", provider as any, "2026-01-01T00:00:00Z");
+    const result = await recovery.recoverChunkLevel(
+      fixturePhysicalCollectionName("coll"),
+      "/repo",
+      provider as any,
+      "2026-01-01T00:00:00Z",
+    );
 
     expect(qdrant.scrollFiltered.mock.calls[0][4]).toContain("symbolId");
     expect(result.deferredChunks).toEqual(
@@ -117,7 +123,7 @@ describe("ChunkLookupEntry.symbolId producers (bd tea-rags-mcp-9i2ow)", () => {
       start(run, map);
     });
 
-    await coordinator.recomputeEnrichments("coll", "/repo", ["codegraph"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["codegraph"]);
 
     expect(qdrant.scrollFiltered.mock.calls[0][4]).toContain("symbolId");
     expect(passed).toEqual([{ chunkId: "c1", startLine: 20, endLine: 40, symbolId: PART_ID }]);
@@ -142,7 +148,7 @@ describe("ChunkLookupEntry.symbolId producers (bd tea-rags-mcp-9i2ow)", () => {
     const buildChunkSignals = vi.fn().mockResolvedValue(new Map());
     const backfiller = new EnrichmentBackfiller(applier, qdrant as any, new InlineEnrichmentExecutor());
     await backfiller.runFor(
-      "coll",
+      fixturePhysicalCollectionName("coll"),
       {
         key: "codegraph.symbols",
         provider: {

@@ -16,7 +16,6 @@ import type {
   ChunkExtraction,
   HierarchyView,
   InheritanceKind,
-  NamedSymbol,
   SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../../../src/core/contracts/types/language.js";
@@ -31,7 +30,7 @@ import {
 } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/self-dispatch-discovery.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
-const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): NamedSymbol => ({
+const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName,

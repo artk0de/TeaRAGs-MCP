@@ -1,7 +1,7 @@
 ---
 paths:
-  - "src/core/domains/language/resolver-chain.ts"
-  - "src/core/domains/language/external-classifier.ts"
+  - "src/core/domains/language/kernel/resolver-chain.ts"
+  - "src/core/domains/language/kernel/external-classifier.ts"
   - "src/core/domains/language/kernel/cone-dispatch.ts"
   - "src/core/domains/language/*/resolver/**"
   - "src/core/domains/language/*/dsl/**"
@@ -20,8 +20,9 @@ decompose.
 
 ## 1. The facade is thin; responsibilities are engines + injected collaborators
 
-Each `CallResolver` method delegates to generic engine in `domains/language/`
-parameterised by small per-language interface in `contracts/types/language.ts`:
+Each `CallResolver` method delegates to generic engine in
+`domains/language/kernel/` parameterised by small per-language interface in
+`contracts/types/language.ts`:
 
 - resolution chain → `resolveViaChain(SymbolResolutionStrategy[])`
 - dispatch fan-out → `resolveDispatchViaComponents(DispatchResolverComponent[])`
@@ -31,7 +32,7 @@ parameterised by small per-language interface in `contracts/types/language.ts`:
 Engine owns language-NEUTRAL structure (chain precedence, first-non-empty
 fan-out, null-vs-qualified receiver branch). Injected interface owns language
 primitives. This = cone-dispatch precedent — copy it for any new responsibility.
-Engines live in `domains/language/`; injected interfaces live beside
+Engines live in `domains/language/kernel/`; injected interfaces live beside
 `ConeTypeLocator` in `contracts/types/language.ts`.
 
 ## 2. No inline disjunction over data constants

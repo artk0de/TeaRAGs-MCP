@@ -8,7 +8,7 @@ import {
   type DispatchFanoutOutcome,
   type HierarchyView,
   type InheritanceEdge,
-  type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import { PythonLanguage } from "../../../../../../../src/core/domains/language/python/index.js";
 import { PythonCallResolver } from "../../../../../../../src/core/domains/language/python/resolver/index.js";
@@ -16,7 +16,7 @@ import { MapHierarchyView } from "../../../../../../../src/core/domains/trajecto
 import { buildHierarchySnapshot } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/inheritance-edges.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
-const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): NamedSymbol => ({
+const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName,
@@ -24,7 +24,7 @@ const sym = (symbolId: string, shortName: string, relPath: string, scope: string
   scope,
 });
 
-const tableWith = (...files: [string, NamedSymbol[]][]): InMemoryGlobalSymbolTable => {
+const tableWith = (...files: [string, SymbolDefinition[]][]): InMemoryGlobalSymbolTable => {
   const t = new InMemoryGlobalSymbolTable();
   for (const [relPath, defs] of files) t.upsertFile(relPath, defs);
   return t;
@@ -55,18 +55,18 @@ const ctx = (over: Partial<CallContext> & Pick<CallContext, "symbolTable">): Cal
 // subclasses (CHA devirtualization, Python — bd tea-rags-mcp-f10y, N=2).
 const call: CallRef = { callText: "pet.speak", receiver: "pet", member: "speak", startLine: 1 };
 
-const animalBase: [string, NamedSymbol[]] = [
+const animalBase: [string, SymbolDefinition[]] = [
   "app/models/animal.py",
   [
     sym("Animal", "Animal", "app/models/animal.py", []),
     sym("Animal#speak", "speak", "app/models/animal.py", ["Animal"]),
   ],
 ];
-const dog: [string, NamedSymbol[]] = [
+const dog: [string, SymbolDefinition[]] = [
   "app/animals/dog.py",
   [sym("Dog", "Dog", "app/animals/dog.py", []), sym("Dog#speak", "speak", "app/animals/dog.py", ["Dog"])],
 ];
-const cat: [string, NamedSymbol[]] = [
+const cat: [string, SymbolDefinition[]] = [
   "app/animals/cat.py",
   [sym("Cat", "Cat", "app/animals/cat.py", []), sym("Cat#speak", "speak", "app/animals/cat.py", ["Cat"])],
 ];
@@ -226,7 +226,7 @@ describe("PythonCallResolver.resolveDispatch (CHA cone)", () => {
  */
 describe("PythonCallResolver.resolveDispatch — Protocol receiver, structural implementers (39xca.14)", () => {
   it("fans a Protocol-typed call out to every structural implementer", () => {
-    const speaker: [string, NamedSymbol[]] = [
+    const speaker: [string, SymbolDefinition[]] = [
       "app/protocols.py",
       [
         sym("Speaker", "Speaker", "app/protocols.py", []),

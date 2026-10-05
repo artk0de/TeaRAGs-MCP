@@ -39,8 +39,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
-import { resolveImportFileEdges } from "../../import-file-edges.js";
-import { resolveViaChain } from "../../resolver-chain.js";
+import { resolveImportFileEdges, resolveViaChain } from "../../kernel/index.js";
 import { JavaImportFileMapper } from "./java-import-file-mapper.js";
 import {
   JavaEnclosingBareCallSymbolResolutionStrategy,

@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { applyCallProjectEnv, resolveCallProjectEntry } from "../../../src/cli/call/project-env.js";
+import { resolveBaseIndexEntry } from "../../../src/core/api/index.js";
 import { CollectionRegistry } from "../../../src/core/api/public/index.js";
 import {
   createGitWorkingTreeFixture,
@@ -55,31 +56,43 @@ describe("resolveCallProjectEntry", () => {
   });
 
   it("addresses the project named by the `project` param", async () => {
-    const entry = await resolveCallProjectEntry(registry, { project: "bravo" }, alphaDir);
+    const entry = await resolveCallProjectEntry(registry, { project: "bravo" }, alphaDir, resolveBaseIndexEntry);
     expect(entry?.collectionName).toBe("code_bravo");
   });
 
   it("addresses the entry of the `collection` param", async () => {
-    const entry = await resolveCallProjectEntry(registry, { collection: "code_bravo" }, alphaDir);
+    const entry = await resolveCallProjectEntry(
+      registry,
+      { collection: "code_bravo" },
+      alphaDir,
+      resolveBaseIndexEntry,
+    );
     expect(entry?.collectionName).toBe("code_bravo");
   });
 
   it("addresses the entry that claims the `path` param", async () => {
-    const entry = await resolveCallProjectEntry(registry, { path: bravoDir }, alphaDir);
+    const entry = await resolveCallProjectEntry(registry, { path: bravoDir }, alphaDir, resolveBaseIndexEntry);
     expect(entry?.collectionName).toBe("code_bravo");
   });
 
   it("falls back to the cwd's project when the params name none", async () => {
-    const entry = await resolveCallProjectEntry(registry, { symbol: "Foo#bar" }, alphaDir);
+    const entry = await resolveCallProjectEntry(registry, { symbol: "Foo#bar" }, alphaDir, resolveBaseIndexEntry);
     expect(entry?.collectionName).toBe("code_alpha");
   });
 
   it("is null for an unregistered project, collection or path — never borrows another project's env", async () => {
-    expect(await resolveCallProjectEntry(registry, { project: "nope" }, alphaDir)).toBeNull();
-    expect(await resolveCallProjectEntry(registry, { collection: "code_nope" }, alphaDir)).toBeNull();
-    expect(await resolveCallProjectEntry(registry, { path: tmpdir() }, alphaDir)).toBeNull();
+    expect(await resolveCallProjectEntry(registry, { project: "nope" }, alphaDir, resolveBaseIndexEntry)).toBeNull();
     expect(
-      await resolveCallProjectEntry(registry, { path: join(tmpdir(), "does-not-exist-xyz") }, alphaDir),
+      await resolveCallProjectEntry(registry, { collection: "code_nope" }, alphaDir, resolveBaseIndexEntry),
+    ).toBeNull();
+    expect(await resolveCallProjectEntry(registry, { path: tmpdir() }, alphaDir, resolveBaseIndexEntry)).toBeNull();
+    expect(
+      await resolveCallProjectEntry(
+        registry,
+        { path: join(tmpdir(), "does-not-exist-xyz") },
+        alphaDir,
+        resolveBaseIndexEntry,
+      ),
     ).toBeNull();
   });
 });
@@ -114,14 +127,14 @@ describe("resolveCallProjectEntry — a linked worktree addressed by path", { ti
   it("replays the env of the entry whose index the server reads for the worktree `path`", async () => {
     const tree = fixture.addWorktree("a");
 
-    const entry = await resolveCallProjectEntry(registry, { path: tree }, tmpdir());
+    const entry = await resolveCallProjectEntry(registry, { path: tree }, tmpdir(), resolveBaseIndexEntry);
     expect(entry?.collectionName).toBe("code_main");
   });
 
   it("resolves a cwd standing in a linked worktree to the same entry", async () => {
     const tree = fixture.addWorktree("a");
 
-    const entry = await resolveCallProjectEntry(registry, { symbol: "Foo#bar" }, tree);
+    const entry = await resolveCallProjectEntry(registry, { symbol: "Foo#bar" }, tree, resolveBaseIndexEntry);
     expect(entry?.collectionName).toBe("code_main");
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import type { EnrichmentProvider } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
 
@@ -48,7 +49,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments — language filter", () =>
     const qdrant = qdrantDouble();
     const coordinator = new EnrichmentCoordinator(qdrant as never, [provider("git")]);
 
-    await coordinator.recomputeEnrichments("coll", "/repo", ["git"], ["typescript"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["git"], ["typescript"]);
 
     const must = scrollFilter(qdrant).must ?? [];
     expect(must).toContainEqual({ key: "language", match: { any: ["typescript"] } });
@@ -58,7 +59,12 @@ describe("EnrichmentCoordinator.recomputeEnrichments — language filter", () =>
     const qdrant = qdrantDouble();
     const coordinator = new EnrichmentCoordinator(qdrant as never, [provider("git")]);
 
-    await coordinator.recomputeEnrichments("coll", "/repo", ["git"], ["typescript", "ruby"]);
+    await coordinator.recomputeEnrichments(
+      fixturePhysicalCollectionName("coll"),
+      "/repo",
+      ["git"],
+      ["typescript", "ruby"],
+    );
 
     const must = scrollFilter(qdrant).must ?? [];
     expect(must).toContainEqual({ key: "language", match: { any: ["typescript", "ruby"] } });
@@ -70,7 +76,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments — language filter", () =>
     const qdrant = qdrantDouble();
     const coordinator = new EnrichmentCoordinator(qdrant as never, [provider("git")]);
 
-    await coordinator.recomputeEnrichments("coll", "/repo", ["git"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["git"]);
 
     expect(scrollFilter(qdrant).must).toBeUndefined();
   });
@@ -81,7 +87,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments — language filter", () =>
     const qdrant = qdrantDouble();
     const coordinator = new EnrichmentCoordinator(qdrant as never, [provider("git")]);
 
-    await coordinator.recomputeEnrichments("coll", "/repo", ["git"], ["typescript"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["git"], ["typescript"]);
 
     expect(scrollFilter(qdrant).must_not).toHaveLength(3);
   });
@@ -92,7 +98,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments — language filter", () =>
     const qdrant = qdrantDouble();
     const coordinator = new EnrichmentCoordinator(qdrant as never, [provider("git")]);
 
-    await coordinator.recomputeEnrichments("coll", "/repo", ["git"], []);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["git"], []);
 
     expect(scrollFilter(qdrant).must).toBeUndefined();
   });
@@ -136,7 +142,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments — terminal count scope", 
     const recovery = recoveryDouble(() => 0);
     const coordinator = new EnrichmentCoordinator(qdrant as never, [provider("git")], recovery as never);
 
-    await coordinator.recomputeEnrichments("coll", "/repo", ["git"], ["ruby"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["git"], ["ruby"]);
 
     expect(recovery.countUnenriched).toHaveBeenCalledWith("coll", expect.objectContaining({ key: "git" }), "file", [
       "ruby",
@@ -153,7 +159,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments — terminal count scope", 
     const recovery = recoveryDouble(() => 0);
     const coordinator = new EnrichmentCoordinator(qdrant as never, [provider("git")], recovery as never);
 
-    await coordinator.recomputeEnrichments("coll", "/repo", ["git"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["git"]);
 
     expect(recovery.countUnenriched).toHaveBeenCalledWith("coll", expect.objectContaining({ key: "git" }), "file", []);
   });
@@ -163,7 +169,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments — terminal count scope", 
     const recovery = recoveryDouble((languages) => (languages && languages.length > 0 ? 0 : 13_992));
     const coordinator = new EnrichmentCoordinator(qdrant as never, [provider("git")], recovery as never);
 
-    await coordinator.recomputeEnrichments("coll", "/repo", ["git"], ["ruby"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["git"], ["ruby"]);
 
     expect(markerStatuses(qdrant, "enrichment.git.file")).toContain("completed");
     expect(markerStatuses(qdrant, "enrichment.git.chunk")).toContain("completed");

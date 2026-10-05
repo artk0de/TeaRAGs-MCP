@@ -3,8 +3,8 @@ import type {
   CallRef,
   DispatchFanoutOutcome,
   SymbolResolutionTarget,
-} from "../../contracts/types/codegraph.js";
-import type { DispatchResolverComponent, SymbolResolutionStrategy } from "../../contracts/types/language.js";
+} from "../../../contracts/types/codegraph.js";
+import type { DispatchResolverComponent, SymbolResolutionStrategy } from "../../../contracts/types/language.js";
 
 /**
  * Drive an ordered chain of resolution strategies, returning the first

@@ -17,6 +17,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../__helpers__/collection-identity.js";
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
 import { decodeFrames, encodeFrame, type DaemonRequest } from "../../../../src/core/adapters/duckdb/daemon/protocol.js";
 import {
@@ -49,13 +50,13 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     // No file exists yet — peek() returns nothing. The pool created
     // the `.spill/` directory at construction (slice 2 stale-spill
     // cleanup) but no per-collection .duckdb files yet.
-    expect(pool.peek("alpha")).toBeUndefined();
+    expect(pool.peek(fixturePhysicalCollectionName("alpha"))).toBeUndefined();
     expect(readdirSync(join(tmp, "codegraph"))).toEqual([".spill"]);
 
     // First acquire creates the file + runs migrations.
-    const a = await pool.acquire("alpha");
+    const a = await pool.acquire(fixturePhysicalCollectionName("alpha"));
     expect(a.graphDb).toBeDefined();
-    expect(existsSync(pool.pathFor("alpha"))).toBe(true);
+    expect(existsSync(pool.pathFor(fixturePhysicalCollectionName("alpha")))).toBe(true);
     expect(readdirSync(join(tmp, "codegraph"))).toContain("alpha.duckdb");
 
     await pool.closeAll();
@@ -68,8 +69,8 @@ describe("GraphDbClientPool — per-collection isolation", () => {
       applyMigrations: createDatabaseMigrationApplier(),
     });
 
-    const alpha = await pool.acquire("project-alpha");
-    const beta = await pool.acquire("project-beta");
+    const alpha = await pool.acquire(fixturePhysicalCollectionName("project-alpha"));
+    const beta = await pool.acquire(fixturePhysicalCollectionName("project-beta"));
 
     // Same relPath in both projects — would collide under a shared DB
     // because cg_symbols_files PK is just (rel_path). With per-collection
@@ -91,10 +92,10 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     // Each collection sees only its own edge target. If isolation
     // failed (shared file or merged tables), one of these checks
     // would find 2 callers or the wrong path.
-    const alphaCallers = await alpha.graphDb.queryAll<{ target_rel_path: string }>(
+    const alphaCallers = await (alpha.graphDb as DuckDbGraphClient).queryAll<{ target_rel_path: string }>(
       "SELECT target_rel_path FROM cg_symbols_edges_file",
     );
-    const betaCallers = await beta.graphDb.queryAll<{ target_rel_path: string }>(
+    const betaCallers = await (beta.graphDb as DuckDbGraphClient).queryAll<{ target_rel_path: string }>(
       "SELECT target_rel_path FROM cg_symbols_edges_file",
     );
     expect(alphaCallers.map((r) => r.target_rel_path)).toEqual(["alpha-only.ts"]);
@@ -110,8 +111,8 @@ describe("GraphDbClientPool — per-collection isolation", () => {
       applyMigrations: createDatabaseMigrationApplier(),
     });
 
-    const alpha = await pool.acquire("alpha");
-    const beta = await pool.acquire("beta");
+    const alpha = await pool.acquire(fixturePhysicalCollectionName("alpha"));
+    const beta = await pool.acquire(fixturePhysicalCollectionName("beta"));
 
     expect(alpha.symbolTable).not.toBe(beta.symbolTable);
 
@@ -137,11 +138,11 @@ describe("GraphDbClientPool — per-collection isolation", () => {
       applyMigrations: createDatabaseMigrationApplier(),
     });
 
-    const first = await pool.acquire("alpha");
-    const second = await pool.acquire("alpha");
+    const first = await pool.acquire(fixturePhysicalCollectionName("alpha"));
+    const second = await pool.acquire(fixturePhysicalCollectionName("alpha"));
     expect(first.graphDb).toBe(second.graphDb);
     expect(first.symbolTable).toBe(second.symbolTable);
-    expect(pool.peek("alpha")).toBe(first);
+    expect(pool.peek(fixturePhysicalCollectionName("alpha"))).toBe(first);
 
     await pool.closeAll();
   });
@@ -158,7 +159,11 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     });
 
     // Three concurrent acquires for the same collection name.
-    const [a, b, c] = await Promise.all([pool.acquire("alpha"), pool.acquire("alpha"), pool.acquire("alpha")]);
+    const [a, b, c] = await Promise.all([
+      pool.acquire(fixturePhysicalCollectionName("alpha")),
+      pool.acquire(fixturePhysicalCollectionName("alpha")),
+      pool.acquire(fixturePhysicalCollectionName("alpha")),
+    ]);
     // All three got the same handle and the init hook only fired once.
     expect(a.graphDb).toBe(b.graphDb);
     expect(b.graphDb).toBe(c.graphDb);
@@ -174,13 +179,13 @@ describe("GraphDbClientPool — per-collection isolation", () => {
       applyMigrations: createDatabaseMigrationApplier(),
     });
 
-    const first = await pool.acquire("alpha");
-    expect(await pool.release("alpha")).toBe(true);
-    expect(pool.peek("alpha")).toBeUndefined();
+    const first = await pool.acquire(fixturePhysicalCollectionName("alpha"));
+    expect(await pool.release(fixturePhysicalCollectionName("alpha"))).toBe(true);
+    expect(pool.peek(fixturePhysicalCollectionName("alpha"))).toBeUndefined();
     // release of a never-opened collection is a no-op.
-    expect(await pool.release("never")).toBe(false);
+    expect(await pool.release(fixturePhysicalCollectionName("never"))).toBe(false);
 
-    const second = await pool.acquire("alpha");
+    const second = await pool.acquire(fixturePhysicalCollectionName("alpha"));
     // Same file, but a fresh client instance.
     expect(second.graphDb).not.toBe(first.graphDb);
 
@@ -202,12 +207,12 @@ describe("GraphDbClientPool — per-collection isolation", () => {
       },
     });
 
-    const first = await pool.acquire("alpha");
+    const first = await pool.acquire(fixturePhysicalCollectionName("alpha"));
     expect(initHookInvocations).toBe(1);
 
-    expect(await pool.release("alpha")).toBe(true);
+    expect(await pool.release(fixturePhysicalCollectionName("alpha"))).toBe(true);
 
-    const second = await pool.acquire("alpha");
+    const second = await pool.acquire(fixturePhysicalCollectionName("alpha"));
     // Fresh client instance after the release-driven re-open.
     expect(second.graphDb).not.toBe(first.graphDb);
     // The init hook fired a SECOND time — proof openCollection ran again rather
@@ -225,7 +230,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     });
     // Names containing path separators or wildcards are not allowed
     // to escape the codegraph dir.
-    const path = pool.pathFor("../etc/passwd");
+    const path = pool.pathFor(fixturePhysicalCollectionName("../etc/passwd"));
     expect(path.endsWith("codegraph/.._etc_passwd.duckdb")).toBe(true);
   });
 
@@ -245,7 +250,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const newline = String.fromCharCode(10);
     const nul = String.fromCharCode(0);
 
-    const path = pool.pathFor(`a/b${tab}c${newline}d${nul}e`);
+    const path = pool.pathFor(fixturePhysicalCollectionName(`a/b${tab}c${newline}d${nul}e`));
     // Separator + tab + newline + null byte all become `_`.
     expect(path.endsWith(join("codegraph", "a_b_c_d_e.duckdb"))).toBe(true);
     // No raw control char survives anywhere in the resolved leaf.
@@ -261,13 +266,13 @@ describe("GraphDbClientPool — per-collection isolation", () => {
       applyMigrations: createDatabaseMigrationApplier(),
     });
 
-    await pool.acquire("alpha");
-    const dbPath = pool.pathFor("alpha");
+    await pool.acquire(fixturePhysicalCollectionName("alpha"));
+    const dbPath = pool.pathFor(fixturePhysicalCollectionName("alpha"));
     expect(existsSync(dbPath)).toBe(true);
 
-    const evicted = await pool.removeCollection("alpha");
+    const evicted = await pool.removeCollection(fixturePhysicalCollectionName("alpha"));
     expect(evicted).toBe(true);
-    expect(pool.peek("alpha")).toBeUndefined();
+    expect(pool.peek(fixturePhysicalCollectionName("alpha"))).toBeUndefined();
     expect(existsSync(dbPath)).toBe(false);
   });
 
@@ -279,14 +284,14 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     });
 
     // Never acquired — no cached entry, no file on disk. Must not throw.
-    const evicted = await pool.removeCollection("never-opened");
+    const evicted = await pool.removeCollection(fixturePhysicalCollectionName("never-opened"));
     expect(evicted).toBe(false);
-    expect(existsSync(pool.pathFor("never-opened"))).toBe(false);
+    expect(existsSync(pool.pathFor(fixturePhysicalCollectionName("never-opened")))).toBe(false);
 
     // Double-remove of a previously-opened collection also stays quiet.
-    await pool.acquire("alpha");
-    await pool.removeCollection("alpha");
-    const secondEvict = await pool.removeCollection("alpha");
+    await pool.acquire(fixturePhysicalCollectionName("alpha"));
+    await pool.removeCollection(fixturePhysicalCollectionName("alpha"));
+    const secondEvict = await pool.removeCollection(fixturePhysicalCollectionName("alpha"));
     expect(secondEvict).toBe(false);
   });
 
@@ -298,17 +303,17 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     });
     const codegraphDir = join(tmp, "codegraph");
     // Versioned DBs for the base under test.
-    writeFileSync(pool.pathFor("code_abc_v1"), "");
-    writeFileSync(pool.pathFor("code_abc_v3"), "");
+    writeFileSync(pool.pathFor(fixturePhysicalCollectionName("code_abc_v1")), "");
+    writeFileSync(pool.pathFor(fixturePhysicalCollectionName("code_abc_v3")), "");
     // A different project's versioned DB — must NOT be returned.
-    writeFileSync(pool.pathFor("code_other_v2"), "");
+    writeFileSync(pool.pathFor(fixturePhysicalCollectionName("code_other_v2")), "");
     // The unversioned base file. INVARIANT CHANGED (bd tea-rags-mcp-6goqa): this
     // used to be excluded, which is precisely why the shadow <alias>.duckdb the
     // incremental path wrote was invisible to the orphan sweep and could never
     // be reclaimed. It is returned now; the sweep's own guards keep a genuinely
     // unversioned, non-aliased project safe, because such a name is a live
     // Qdrant collection.
-    writeFileSync(pool.pathFor("code_abc"), "");
+    writeFileSync(pool.pathFor(fixturePhysicalCollectionName("code_abc")), "");
     // A WAL sidecar — not a .duckdb file, must NOT be returned.
     writeFileSync(join(codegraphDir, "code_abc_v1.duckdb.wal"), "");
 
@@ -324,7 +329,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
       applyMigrations: createDatabaseMigrationApplier(),
     });
     // Only a foreign project's file exists.
-    writeFileSync(pool.pathFor("code_other_v1"), "");
+    writeFileSync(pool.pathFor(fixturePhysicalCollectionName("code_other_v1")), "");
 
     expect(pool.listCollectionDbNames("code_abc")).toEqual([]);
   });
@@ -347,13 +352,13 @@ describe("GraphDbClientPool — per-collection isolation", () => {
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
     });
-    await pool.acquire("alpha");
-    expect(pool.peek("alpha")).toBeDefined();
-    const evicted = await pool.release("alpha");
+    await pool.acquire(fixturePhysicalCollectionName("alpha"));
+    expect(pool.peek(fixturePhysicalCollectionName("alpha"))).toBeDefined();
+    const evicted = await pool.release(fixturePhysicalCollectionName("alpha"));
     expect(evicted).toBe(true);
-    expect(pool.peek("alpha")).toBeUndefined();
+    expect(pool.peek(fixturePhysicalCollectionName("alpha"))).toBeUndefined();
     // Second release on a now-empty slot is a no-op.
-    expect(await pool.release("alpha")).toBe(false);
+    expect(await pool.release(fixturePhysicalCollectionName("alpha"))).toBe(false);
   });
 
   it("initHook is invoked with the acquired handle", async () => {
@@ -366,8 +371,8 @@ describe("GraphDbClientPool — per-collection isolation", () => {
         seen.push(collectionName);
       },
     });
-    await pool.acquire("alpha");
-    await pool.acquire("alpha"); // cached — no second hook call
+    await pool.acquire(fixturePhysicalCollectionName("alpha"));
+    await pool.acquire(fixturePhysicalCollectionName("alpha")); // cached — no second hook call
     expect(seen).toEqual(["alpha"]);
     await pool.closeAll();
   });
@@ -382,7 +387,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
         throw new Error("hydration failed");
       },
     });
-    const handle = await pool.acquire("alpha");
+    const handle = await pool.acquire(fixturePhysicalCollectionName("alpha"));
     expect(handle.graphDb).toBeDefined();
     expect(handle.symbolTable).toBeDefined();
     // stderr captures the init-hook failure message
@@ -400,21 +405,25 @@ describe("GraphDbClientPool — per-collection isolation", () => {
       applyMigrations: createDatabaseMigrationApplier(),
     });
 
-    const first = await pool.acquire("alpha");
+    const first = await pool.acquire(fixturePhysicalCollectionName("alpha"));
     // Write something distinctive so we can prove the post-remove DB is empty.
     await first.graphDb.upsertFile(
       { relPath: "marker.ts", language: "typescript" },
       { fileEdges: [], methodEdges: [] },
     );
-    const beforeRows = await first.graphDb.queryAll<{ rel_path: string }>("SELECT rel_path FROM cg_symbols_files");
+    const beforeRows = await (first.graphDb as DuckDbGraphClient).queryAll<{ rel_path: string }>(
+      "SELECT rel_path FROM cg_symbols_files",
+    );
     expect(beforeRows.map((r) => r.rel_path)).toContain("marker.ts");
 
-    await pool.removeCollection("alpha");
+    await pool.removeCollection(fixturePhysicalCollectionName("alpha"));
 
-    const second = await pool.acquire("alpha");
+    const second = await pool.acquire(fixturePhysicalCollectionName("alpha"));
     expect(second.graphDb).not.toBe(first.graphDb);
     // Fresh DB — the prior marker row must NOT survive removeCollection.
-    const afterRows = await second.graphDb.queryAll<{ rel_path: string }>("SELECT rel_path FROM cg_symbols_files");
+    const afterRows = await (second.graphDb as DuckDbGraphClient).queryAll<{ rel_path: string }>(
+      "SELECT rel_path FROM cg_symbols_files",
+    );
     expect(afterRows.map((r) => r.rel_path)).not.toContain("marker.ts");
 
     await pool.closeAll();
@@ -436,26 +445,26 @@ describe("GraphDbClientPool — per-collection isolation", () => {
       applyMigrations: createDatabaseMigrationApplier(),
     });
 
-    const dbPath = pool.pathFor("locked");
+    const dbPath = pool.pathFor(fixturePhysicalCollectionName("locked"));
     expect(dbPath).toContain("locked.duckdb");
-    await expect(pool.acquire("locked")).rejects.toMatchObject({
+    await expect(pool.acquire(fixturePhysicalCollectionName("locked"))).rejects.toMatchObject({
       code: "INFRA_DUCKDB_OPEN_FAILED",
       // The raw driver message is preserved as the cause, not leaked into message.
       cause: expect.objectContaining({ message: "Conflicting lock is held" }),
     });
     // A second acquire after a failed open still throws (the failed attempt was
     // not cached as a poisoned entry) and again surfaces the typed error.
-    await expect(pool.acquire("locked")).rejects.toBeInstanceOf(DuckDbOpenFailedError);
+    await expect(pool.acquire(fixturePhysicalCollectionName("locked"))).rejects.toBeInstanceOf(DuckDbOpenFailedError);
 
     // The failed collection was never cached / never left in flight.
-    expect(pool.peek("locked")).toBeUndefined();
+    expect(pool.peek(fixturePhysicalCollectionName("locked"))).toBeUndefined();
 
     // Once the underlying fault clears, the next acquire (real init) succeeds —
     // proving the failed attempt left no poisoned inflight entry behind.
     initSpy.mockRestore();
-    const recovered = await pool.acquire("locked");
+    const recovered = await pool.acquire(fixturePhysicalCollectionName("locked"));
     expect(recovered.graphDb).toBeDefined();
-    expect(pool.peek("locked")).toBe(recovered);
+    expect(pool.peek(fixturePhysicalCollectionName("locked"))).toBe(recovered);
 
     await pool.closeAll();
   });
@@ -472,20 +481,22 @@ describe("GraphDbClientPool — per-collection isolation", () => {
       applyMigrations: createDatabaseMigrationApplier(),
     });
 
-    const entry = await pool.acquire("hung");
-    const dbPath = pool.pathFor("hung");
+    const entry = await pool.acquire(fixturePhysicalCollectionName("hung"));
+    const dbPath = pool.pathFor(fixturePhysicalCollectionName("hung"));
     expect(existsSync(dbPath)).toBe(true);
 
     // The cached connection's close hangs/rejects on this eviction.
     const closeSpy = vi.spyOn(entry.graphDb, "close").mockRejectedValueOnce(new Error("connection still busy"));
 
-    await expect(pool.removeCollection("hung")).rejects.toBeInstanceOf(DuckDbCloseFailedError);
+    await expect(pool.removeCollection(fixturePhysicalCollectionName("hung"))).rejects.toBeInstanceOf(
+      DuckDbCloseFailedError,
+    );
     expect(closeSpy).toHaveBeenCalledTimes(1);
 
     // Contract: the entry is evicted from cache (so the pool is not left
     // half-mutated) but the on-disk file is NOT unlinked while the driver
     // still claims to hold it open.
-    expect(pool.peek("hung")).toBeUndefined();
+    expect(pool.peek(fixturePhysicalCollectionName("hung"))).toBeUndefined();
     expect(existsSync(dbPath)).toBe(true);
 
     // Real close now succeeds — clean up the still-open handle so the temp
@@ -561,12 +572,12 @@ describe("GraphDbClientPool — mode-aware acquireRead/acquireWrite", () => {
       applyMigrations: createDatabaseMigrationApplier(),
     });
     // populate code_x_v2 via write path
-    const w = await pool.acquireWrite("code_x_v2");
+    const w = await pool.acquireWrite(fixturePhysicalCollectionName("code_x_v2"));
     await w.graphDb.upsertFile({ relPath: "a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
     // read path resolves the SAME versioned file (no strip to code_x)
-    const r = await pool.acquireRead("code_x_v2");
+    const r = await pool.acquireRead(fixturePhysicalCollectionName("code_x_v2"));
     expect(await r.graphDb.hasData()).toBe(true);
-    expect(pool.pathFor("code_x_v2")).toContain("code_x_v2.duckdb"); // not code_x.duckdb
+    expect(pool.pathFor(fixturePhysicalCollectionName("code_x_v2"))).toContain("code_x_v2.duckdb"); // not code_x.duckdb
     await r.graphDb.close();
     await pool.closeAll();
     rmSync(root, { recursive: true, force: true });
@@ -581,9 +592,11 @@ describe("GraphDbClientPool — acquireRead open failure is typed (a43tr)", () =
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
     });
-    writeFileSync(pool.pathFor("code_bad_v1"), "not a duckdb database file");
+    writeFileSync(pool.pathFor(fixturePhysicalCollectionName("code_bad_v1")), "not a duckdb database file");
 
-    await expect(pool.acquireReader("code_bad_v1")).rejects.toBeInstanceOf(DuckDbOpenFailedError);
+    await expect(pool.acquireReader(fixturePhysicalCollectionName("code_bad_v1"))).rejects.toBeInstanceOf(
+      DuckDbOpenFailedError,
+    );
 
     await pool.closeAll();
     rmSync(root, { recursive: true, force: true });
@@ -615,12 +628,12 @@ describe("GraphDbClientPool — acquireReader (mode-aware facade read path)", ()
     });
 
     // Populate via the write path so the file has data on disk.
-    const w = await pool.acquireWrite("code_r_v1");
+    const w = await pool.acquireWrite(fixturePhysicalCollectionName("code_r_v1"));
     await w.graphDb.upsertFile({ relPath: "a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
 
     // No daemonSocketPath configured → acquireReader delegates to the
     // in-process READ_ONLY attach and sees the freshly written data.
-    const reader = await pool.acquireReader("code_r_v1");
+    const reader = await pool.acquireReader(fixturePhysicalCollectionName("code_r_v1"));
     expect(reader.graphDb).toBeDefined();
     expect(reader.symbolTable).toBeDefined();
     expect(await reader.graphDb.hasData()).toBe(true);
@@ -669,12 +682,12 @@ describe("GraphDbClientPool — acquireReader (mode-aware facade read path)", ()
     });
     // A reader only attaches to a database that exists; the echo daemon never
     // opens it, so an empty placeholder is enough.
-    writeFileSync(pool.pathFor("code_proxy_v1"), "");
+    writeFileSync(pool.pathFor(fixturePhysicalCollectionName("code_proxy_v1")), "");
 
     // daemonSocketPath set → acquireReader returns a DaemonGraphDbClient that
     // proxies reads through the daemon (the sole RW file opener) instead of a
     // conflicting cross-process READ_ONLY attach.
-    const reader = await pool.acquireReader("code_proxy_v1");
+    const reader = await pool.acquireReader(fixturePhysicalCollectionName("code_proxy_v1"));
     expect(reader.graphDb).toBeDefined();
     expect(reader.symbolTable).toBeDefined();
 
@@ -722,9 +735,11 @@ describe("GraphDbClientPool — acquireReader (mode-aware facade read path)", ()
       daemonSocketPath: socketPath,
     });
 
-    await expect(pool.acquireReader("code_absent_v1")).rejects.toBeInstanceOf(CodegraphDatabaseMissingError);
+    await expect(pool.acquireReader(fixturePhysicalCollectionName("code_absent_v1"))).rejects.toBeInstanceOf(
+      CodegraphDatabaseMissingError,
+    );
     expect(seen).toEqual([]);
-    expect(existsSync(pool.pathFor("code_absent_v1"))).toBe(false);
+    expect(existsSync(pool.pathFor(fixturePhysicalCollectionName("code_absent_v1")))).toBe(false);
 
     await pool.closeAll();
     rmSync(root, { recursive: true, force: true });
@@ -738,8 +753,10 @@ describe("GraphDbClientPool — acquireReader (mode-aware facade read path)", ()
       applyMigrations: createDatabaseMigrationApplier(),
     });
 
-    await expect(pool.acquireReader("code_absent_v1")).rejects.toBeInstanceOf(CodegraphDatabaseMissingError);
-    expect(existsSync(pool.pathFor("code_absent_v1"))).toBe(false);
+    await expect(pool.acquireReader(fixturePhysicalCollectionName("code_absent_v1"))).rejects.toBeInstanceOf(
+      CodegraphDatabaseMissingError,
+    );
+    expect(existsSync(pool.pathFor(fixturePhysicalCollectionName("code_absent_v1")))).toBe(false);
 
     await pool.closeAll();
     rmSync(root, { recursive: true, force: true });
@@ -804,7 +821,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
 
     const handles = [];
     for (let i = 0; i < 5; i++) {
-      handles.push(await pool.acquireWrite("code_cache_v1"));
+      handles.push(await pool.acquireWrite(fixturePhysicalCollectionName("code_cache_v1")));
     }
 
     // All 5 acquires reuse the SAME cached daemon client → one socket.
@@ -830,8 +847,8 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
       daemonSocketPath: socketPath,
     });
 
-    const h1 = await pool.acquireWrite("code_symtab_v1");
-    const h2 = await pool.acquireWrite("code_symtab_v1");
+    const h1 = await pool.acquireWrite(fixturePhysicalCollectionName("code_symtab_v1"));
+    const h2 = await pool.acquireWrite(fixturePhysicalCollectionName("code_symtab_v1"));
 
     // The in-memory symbol table must be the SAME instance across acquires for
     // one collection — codegraph streams per-batch writes through repeated
@@ -847,7 +864,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
     expect(h2.symbolTable.lookupByShortName("bar")).toHaveLength(1);
 
     // A distinct collection still gets its own table.
-    const other = await pool.acquireWrite("code_symtab_other_v1");
+    const other = await pool.acquireWrite(fixturePhysicalCollectionName("code_symtab_other_v1"));
     expect(other.symbolTable).not.toBe(h1.symbolTable);
 
     await pool.closeAll();
@@ -871,14 +888,14 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
       daemonSocketPath: socketPath,
     });
 
-    const w = await pool.acquireWrite("code_rw_symtab_v1");
+    const w = await pool.acquireWrite(fixturePhysicalCollectionName("code_rw_symtab_v1"));
     w.symbolTable.upsertFile("src/a.ts", [
       { symbolId: "Foo#bar", fqName: "Foo#bar", shortName: "bar", relPath: "src/a.ts", scope: ["Foo"] },
     ]);
     // A real daemon creates the file on the write; the echo daemon does not.
-    writeFileSync(pool.pathFor("code_rw_symtab_v1"), "");
+    writeFileSync(pool.pathFor(fixturePhysicalCollectionName("code_rw_symtab_v1")), "");
 
-    const r = await pool.acquireReader("code_rw_symtab_v1");
+    const r = await pool.acquireReader(fixturePhysicalCollectionName("code_rw_symtab_v1"));
     // Same instance across the write/read boundary — not a fresh factory table.
     expect(r.symbolTable).toBe(w.symbolTable);
     // Symbols the write recorded are visible through the reader's table.
@@ -900,11 +917,11 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
       daemonSocketPath: socketPath,
     });
 
-    const w = await pool.acquireWrite("code_shared_v1");
+    const w = await pool.acquireWrite(fixturePhysicalCollectionName("code_shared_v1"));
     // A real daemon creates the file on the write; the echo daemon does not.
-    writeFileSync(pool.pathFor("code_shared_v1"), "");
-    const r1 = await pool.acquireReader("code_shared_v1");
-    const r2 = await pool.acquireReader("code_shared_v1");
+    writeFileSync(pool.pathFor(fixturePhysicalCollectionName("code_shared_v1")), "");
+    const r1 = await pool.acquireReader(fixturePhysicalCollectionName("code_shared_v1"));
+    const r2 = await pool.acquireReader(fixturePhysicalCollectionName("code_shared_v1"));
 
     expect(connections).toBe(1);
     // The read handle's graphDb proxies the same underlying socket.
@@ -913,7 +930,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
     await r2.graphDb.close();
     await w.graphDb.close();
     // Socket still alive after handle closes — a fresh acquire makes no new connection.
-    const r3 = await pool.acquireReader("code_shared_v1");
+    const r3 = await pool.acquireReader(fixturePhysicalCollectionName("code_shared_v1"));
     expect(connections).toBe(1);
     await r3.graphDb.close();
 
@@ -933,9 +950,9 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
       daemonSocketPath: socketPath,
     });
 
-    const a1 = await pool.acquireWrite("alpha_v1");
-    const a2 = await pool.acquireWrite("alpha_v1");
-    const b1 = await pool.acquireWrite("beta_v1");
+    const a1 = await pool.acquireWrite(fixturePhysicalCollectionName("alpha_v1"));
+    const a2 = await pool.acquireWrite(fixturePhysicalCollectionName("alpha_v1"));
+    const b1 = await pool.acquireWrite(fixturePhysicalCollectionName("beta_v1"));
 
     expect(a1.graphDb).toBe(a2.graphDb);
     expect(a1.graphDb).not.toBe(b1.graphDb);
@@ -957,7 +974,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
       daemonSocketPath: socketPath,
     });
 
-    const handle = await pool.acquireWrite("code_noop_v1");
+    const handle = await pool.acquireWrite(fixturePhysicalCollectionName("code_noop_v1"));
     // A real op forwards over the socket (the proxy `get` trap binds the method
     // to the underlying client) and resolves against the echo daemon.
     await expect(handle.graphDb.hasData()).resolves.toBe(null);
@@ -986,8 +1003,8 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
     });
 
     // In-process RW client (acquire) + a daemon-mode write client, both cached.
-    const inProc = await pool.acquire("code_inproc_v1");
-    const daemon = await pool.acquireWrite("code_daemon_v1");
+    const inProc = await pool.acquire(fixturePhysicalCollectionName("code_inproc_v1"));
+    const daemon = await pool.acquireWrite(fixturePhysicalCollectionName("code_daemon_v1"));
     const inProcCloseSpy = vi.spyOn(inProc.graphDb, "close");
 
     await pool.closeAll();
@@ -995,7 +1012,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
     // The in-process client's real close ran; the daemon socket was ended.
     expect(inProcCloseSpy).toHaveBeenCalledTimes(1);
     // After closeAll the cache is empty — a fresh acquireWrite reconnects.
-    await pool.acquireWrite("code_daemon_v1");
+    await pool.acquireWrite(fixturePhysicalCollectionName("code_daemon_v1"));
     expect(connections).toBe(2);
     void daemon;
 
@@ -1017,8 +1034,8 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
 
     // Daemon client whose close() rejects, plus an in-process client whose
     // close() also rejects — closeAll must swallow both and still resolve.
-    const daemon = await pool.acquireWrite("code_rej_daemon_v1");
-    const inProc = await pool.acquire("code_rej_inproc_v1");
+    const daemon = await pool.acquireWrite(fixturePhysicalCollectionName("code_rej_daemon_v1"));
+    const inProc = await pool.acquire(fixturePhysicalCollectionName("code_rej_inproc_v1"));
     // The handle is the no-op-close proxy; reach the real cached client via peek
     // is not exposed for daemon clients, so reject through the underlying socket
     // op instead: spy on the in-process client + force a daemon-side reject by
@@ -1046,9 +1063,9 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
     // Fire N concurrent acquireWrite calls — only ONE socket connection should
     // be established (the daemonInflight map deduplicates concurrent inits).
     const [h1, h2, h3] = await Promise.all([
-      pool.acquireWrite("code_flight_v1"),
-      pool.acquireWrite("code_flight_v1"),
-      pool.acquireWrite("code_flight_v1"),
+      pool.acquireWrite(fixturePhysicalCollectionName("code_flight_v1")),
+      pool.acquireWrite(fixturePhysicalCollectionName("code_flight_v1")),
+      pool.acquireWrite(fixturePhysicalCollectionName("code_flight_v1")),
     ]);
 
     expect(connections).toBe(1);

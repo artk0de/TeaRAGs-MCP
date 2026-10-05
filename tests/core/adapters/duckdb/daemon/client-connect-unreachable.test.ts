@@ -11,6 +11,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { DaemonGraphDbClient } from "../../../../../src/core/adapters/duckdb/daemon/client.js";
 import { CodegraphDaemonUnreachableError } from "../../../../../src/core/adapters/duckdb/errors.js";
 
@@ -25,7 +26,10 @@ describe("DaemonGraphDbClient#init — daemon not listening", () => {
   it("rejects with CodegraphDaemonUnreachableError once the connect window closes", async () => {
     root = mkdtempSync(join(tmpdir(), "cg-unreachable-"));
     const socketPath = join(root, "absent.sock");
-    const client = new DaemonGraphDbClient(socketPath, "code_x", { connectTimeoutMs: 60, retryDelayMs: 10 });
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x"), {
+      connectTimeoutMs: 60,
+      retryDelayMs: 10,
+    });
 
     const err = await client.init().then(
       () => undefined,

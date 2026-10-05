@@ -16,14 +16,14 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { CallContext, CallRef, NamedSymbol } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type { CallContext, CallRef, SymbolDefinition } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { RustCallResolver } from "../../../../../../src/core/domains/language/rust/resolver/rust-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const PARSE = "crates/core/flags/parse.rs";
 const GLOB = "crates/globset/src/glob.rs";
 
-const sym = (symbolId: string, relPath: string, scope: string[] = []): NamedSymbol => ({
+const sym = (symbolId: string, relPath: string, scope: string[] = []): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName: symbolId.split(/#|\.|::/).pop() ?? symbolId,

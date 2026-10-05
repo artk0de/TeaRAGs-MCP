@@ -404,6 +404,7 @@ describe("architectureSectionProvider.run", () => {
       documentationEndpoints: 1,
       unwalkedEndpoints: 1,
       nonPositiveLift: 0,
+      explainedByFacadeChain: 0,
     });
   });
 
@@ -890,6 +891,7 @@ describe("buildSilentCouplingFacts", () => {
       documentationEndpoints: 0,
       unwalkedEndpoints: 0,
       nonPositiveLift: 0,
+      explainedByFacadeChain: 0,
     });
   });
 

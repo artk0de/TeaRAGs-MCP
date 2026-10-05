@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import type { EnrichmentRunHandle } from "../../../../../../src/core/contracts/types/enrichment-executor.js";
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
@@ -164,9 +165,11 @@ describe("EnrichmentCoordinator.recomputeEnrichments — previous run still comp
     );
 
     // The sync leg: a run whose completion the pipeline leaves in the background.
-    const syncRun = coordinator.beginRun(reindexRunSpec({ absolutePath: "/repo", collection: "coll", fileCount: 0 }));
+    const syncRun = coordinator.beginRun(
+      reindexRunSpec({ absolutePath: "/repo", collection: fixturePhysicalCollectionName("coll"), fileCount: 0 }),
+    );
     const syncLeg = coordinator.awaitCompletion(syncRun);
-    const recompute = coordinator.recomputeEnrichments("coll", "/repo", ["codegraph"]);
+    const recompute = coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["codegraph"]);
     await settle();
 
     expect(events.filter((event) => event.kind === "scroll")).toHaveLength(0);
@@ -201,7 +204,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments — previous run still comp
     expect(aRelease).toBeLessThan(bFirstDispatch);
     expect(phases).toHaveBeenCalledWith(
       "RECOMPUTE_AWAIT_PREVIOUS_RUN",
-      expect.objectContaining({ collection: "coll", durationMs: expect.any(Number) }),
+      expect.objectContaining({ collection: fixturePhysicalCollectionName("coll"), durationMs: expect.any(Number) }),
     );
   });
 
@@ -215,9 +218,11 @@ describe("EnrichmentCoordinator.recomputeEnrichments — previous run still comp
       new RecordingEnrichmentExecutor(events),
     );
 
-    const syncRun = coordinator.beginRun(reindexRunSpec({ absolutePath: "/repo", collection: "coll", fileCount: 0 }));
+    const syncRun = coordinator.beginRun(
+      reindexRunSpec({ absolutePath: "/repo", collection: fixturePhysicalCollectionName("coll"), fileCount: 0 }),
+    );
     const syncLeg = coordinator.awaitCompletion(syncRun);
-    const recompute = coordinator.recomputeEnrichments("coll", "/repo", ["codegraph"]);
+    const recompute = coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["codegraph"]);
     await settle();
     held.open();
     await recompute;
@@ -241,9 +246,16 @@ describe("EnrichmentCoordinator.recomputeEnrichments — previous run still comp
       new RecordingEnrichmentExecutor(events),
     );
 
-    coordinator.beginRun(reindexRunSpec({ absolutePath: "/repo", collection: "coll", fileCount: 0 }));
+    coordinator.beginRun(
+      reindexRunSpec({ absolutePath: "/repo", collection: fixturePhysicalCollectionName("coll"), fileCount: 0 }),
+    );
 
-    expect(await withinMs(coordinator.recomputeEnrichments("coll", "/repo", ["codegraph"]), 2_000)).toBe("resolved");
+    expect(
+      await withinMs(
+        coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["codegraph"]),
+        2_000,
+      ),
+    ).toBe("resolved");
     expect(phases).not.toHaveBeenCalledWith("RECOMPUTE_AWAIT_PREVIOUS_RUN", expect.anything());
   });
 
@@ -257,9 +269,11 @@ describe("EnrichmentCoordinator.recomputeEnrichments — previous run still comp
       new RecordingEnrichmentExecutor(events),
     );
 
-    const syncRun = coordinator.beginRun(reindexRunSpec({ absolutePath: "/repo", collection: "coll", fileCount: 0 }));
+    const syncRun = coordinator.beginRun(
+      reindexRunSpec({ absolutePath: "/repo", collection: fixturePhysicalCollectionName("coll"), fileCount: 0 }),
+    );
     await coordinator.awaitCompletion(syncRun);
-    await coordinator.recomputeEnrichments("coll", "/repo", ["codegraph"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["codegraph"]);
 
     expect(phases).not.toHaveBeenCalledWith("RECOMPUTE_AWAIT_PREVIOUS_RUN", expect.anything());
   });
@@ -274,9 +288,11 @@ describe("EnrichmentCoordinator.recomputeEnrichments — previous run still comp
       new RecordingEnrichmentExecutor(events),
     );
 
-    const syncRun = coordinator.beginRun(reindexRunSpec({ absolutePath: "/repo", collection: "coll", fileCount: 0 }));
+    const syncRun = coordinator.beginRun(
+      reindexRunSpec({ absolutePath: "/repo", collection: fixturePhysicalCollectionName("coll"), fileCount: 0 }),
+    );
     const syncLeg = coordinator.awaitCompletion(syncRun).catch((error: unknown) => error);
-    const recompute = coordinator.recomputeEnrichments("coll", "/repo", ["codegraph"]);
+    const recompute = coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["codegraph"]);
     await settle();
     held.open();
 

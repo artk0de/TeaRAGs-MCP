@@ -13,10 +13,16 @@ function createMockMigration(name: string, version: number): Migration {
 
 function createMockRunner(migrations: Migration[], currentVersion = 0): MigrationRunner {
   return {
+    latestVersion: currentVersion,
     getVersion: vi.fn().mockResolvedValue(currentVersion),
     setVersion: vi.fn().mockResolvedValue(undefined),
     getMigrations: () => migrations,
   };
+}
+
+/** The pipelines a routing test does not exercise — present so the record is total. */
+function idlePipelines() {
+  return { sparse: createMockRunner([]), stats: createMockRunner([]), payloadIndexes: createMockRunner([]) };
 }
 
 describe("Migrator", () => {
@@ -40,7 +46,7 @@ describe("Migrator", () => {
     const m2 = createMockMigration("new", 4);
     const runner = createMockRunner([m1, m2], 3);
 
-    const migrator = new Migrator({ snapshot: runner, schema: createMockRunner([]) });
+    const migrator = new Migrator({ snapshot: runner, schema: createMockRunner([]), ...idlePipelines() });
     const result = await migrator.run("snapshot");
 
     expect(m1.apply).not.toHaveBeenCalled();
@@ -68,7 +74,7 @@ describe("Migrator", () => {
       }),
     };
     const runner = createMockRunner([m5, m4], 3);
-    const migrator = new Migrator({ snapshot: runner, schema: createMockRunner([]) });
+    const migrator = new Migrator({ snapshot: runner, schema: createMockRunner([]), ...idlePipelines() });
     await migrator.run("snapshot");
 
     expect(order).toEqual(["v4", "v5"]);
@@ -77,7 +83,7 @@ describe("Migrator", () => {
   it("stores version after successful migrations", async () => {
     const migration = createMockMigration("v8", 8);
     const runner = createMockRunner([migration], 6);
-    const migrator = new Migrator({ snapshot: runner, schema: createMockRunner([]) });
+    const migrator = new Migrator({ snapshot: runner, schema: createMockRunner([]), ...idlePipelines() });
 
     await migrator.run("snapshot");
     expect(runner.setVersion).toHaveBeenCalledWith(8);
@@ -85,7 +91,7 @@ describe("Migrator", () => {
 
   it("does not store version when no migrations applied", async () => {
     const runner = createMockRunner([], 8);
-    const migrator = new Migrator({ snapshot: runner, schema: createMockRunner([]) });
+    const migrator = new Migrator({ snapshot: runner, schema: createMockRunner([]), ...idlePipelines() });
 
     const result = await migrator.run("snapshot");
     expect(runner.setVersion).not.toHaveBeenCalled();
@@ -109,7 +115,7 @@ describe("Migrator", () => {
       apply: vi.fn(),
     };
     const runner = createMockRunner([m1, m2, m3], 3);
-    const migrator = new Migrator({ snapshot: runner, schema: createMockRunner([]) });
+    const migrator = new Migrator({ snapshot: runner, schema: createMockRunner([]), ...idlePipelines() });
 
     await expect(migrator.run("snapshot")).rejects.toThrow("boom");
     expect(m3.apply).not.toHaveBeenCalled();

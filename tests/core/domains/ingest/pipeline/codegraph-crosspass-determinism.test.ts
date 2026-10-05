@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
 import type { FileExtraction } from "../../../../../src/core/contracts/types/codegraph.js";
 import { collectSymbols } from "../../../../../src/core/domains/language/kernel/collect-symbols.js";
@@ -159,17 +160,17 @@ describe("codegraph cross-pass drain determinism (yl9tv)", () => {
       // beginExtractionRun truncates the input spill, THEN acceptExtraction
       // appends each file in the (shuffled) completion order — mirrors the real
       // main-thread cross-pass feed.
-      provider.beginExtractionRun(coll);
-      for (const e of shuffled) provider.acceptExtraction(e, { collectionName: coll });
+      provider.beginExtractionRun(fixturePhysicalCollectionName(coll));
+      for (const e of shuffled) provider.acceptExtraction(e, { collectionName: fixturePhysicalCollectionName(coll) });
       await provider.streamFileBatch(
         tmp,
         base.map((e) => e.relPath),
-        { crossPass: true, collectionName: coll },
+        { crossPass: true, collectionName: fixturePhysicalCollectionName(coll) },
       );
       await provider.finalizeSignals(tmp, {
         crossPass: true,
         paths: base.map((e) => e.relPath),
-        collectionName: coll,
+        collectionName: fixturePhysicalCollectionName(coll),
       });
       const constant = (await client.getRunStats()).find((r) => r.receiverKind === "constant");
       const attempted = constant?.attempted ?? 0;

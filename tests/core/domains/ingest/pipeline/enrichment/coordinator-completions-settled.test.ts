@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { reindexRunSpec } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/run-spec.js";
 import type { EnrichmentProvider } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
 
 const specFor = (absolutePath: string, collection: string) =>
-  reindexRunSpec({ absolutePath, collection, fileCount: 0 });
+  reindexRunSpec({ absolutePath, collection: fixturePhysicalCollectionName(collection), fileCount: 0 });
 
 /**
  * bd tea-rags-mcp-62pgi — `whenCompletionsSettled(collection)` is how an index
@@ -70,7 +71,7 @@ describe("EnrichmentCoordinator.whenCompletionsSettled", () => {
 
     const run = coordinator.beginRun(specFor("/repo", "coll_v2"));
     const completion = coordinator.awaitCompletion(run);
-    const settled = coordinator.whenCompletionsSettled("coll_v2");
+    const settled = coordinator.whenCompletionsSettled(fixturePhysicalCollectionName("coll_v2"));
 
     expect(await isPending(settled)).toBe(true);
     held.open();
@@ -83,7 +84,7 @@ describe("EnrichmentCoordinator.whenCompletionsSettled", () => {
 
     coordinator.beginRun(specFor("/repo", "coll_v2"));
 
-    expect(await isPending(coordinator.whenCompletionsSettled("coll_v2"))).toBe(false);
+    expect(await isPending(coordinator.whenCompletionsSettled(fixturePhysicalCollectionName("coll_v2")))).toBe(false);
   });
 
   it("does not wait on another collection's completion", async () => {
@@ -93,7 +94,7 @@ describe("EnrichmentCoordinator.whenCompletionsSettled", () => {
     const run = coordinator.beginRun(specFor("/other", "other_v1"));
     const completion = coordinator.awaitCompletion(run);
 
-    expect(await isPending(coordinator.whenCompletionsSettled("coll_v2"))).toBe(false);
+    expect(await isPending(coordinator.whenCompletionsSettled(fixturePhysicalCollectionName("coll_v2")))).toBe(false);
     held.open();
     await completion;
   });

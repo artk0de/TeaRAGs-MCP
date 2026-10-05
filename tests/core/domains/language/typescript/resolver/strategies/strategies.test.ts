@@ -5,7 +5,7 @@ import {
   type CallContext,
   type CallRef,
   type HierarchyView,
-  type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
   TSFieldTypeSymbolResolutionStrategy,
@@ -24,7 +24,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains
 
 const cfg: ResolverConfig = { tsOptions: { baseUrl: ".", paths: {} }, mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };
 
-const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): NamedSymbol => ({
+const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName,
@@ -32,7 +32,7 @@ const sym = (symbolId: string, shortName: string, relPath: string, scope: string
   scope,
 });
 
-const tableWith = (...files: [string, NamedSymbol[]][]): InMemoryGlobalSymbolTable => {
+const tableWith = (...files: [string, SymbolDefinition[]][]): InMemoryGlobalSymbolTable => {
   const t = new InMemoryGlobalSymbolTable();
   for (const [relPath, defs] of files) t.upsertFile(relPath, defs);
   return t;
@@ -237,7 +237,7 @@ describe("TSNamedImportSymbolResolutionStrategy", () => {
     const symbolTable = tableWith(["src/rank.ts", [sym("RankModule#run", "run", "src/rank.ts", ["RankModule"])]]);
     const outcome = strat.attempt(
       call,
-      ctx({ symbolTable, imports: [{ importText: "./rank.js", importedNames: ["RankModule"] }] }),
+      ctx({ symbolTable, imports: [{ importText: "./rank.js", startLine: 1, importedNames: ["RankModule"] }] }),
     );
     expect(outcome).toEqual({
       kind: "resolved",
@@ -249,7 +249,7 @@ describe("TSNamedImportSymbolResolutionStrategy", () => {
     const symbolTable = tableWith(["src/rank.ts", [sym("RankModule", "RankModule", "src/rank.ts", [])]]);
     const outcome = strat.attempt(
       call,
-      ctx({ symbolTable, imports: [{ importText: "./rank.js", importedNames: ["RankModule"] }] }),
+      ctx({ symbolTable, imports: [{ importText: "./rank.js", startLine: 1, importedNames: ["RankModule"] }] }),
     );
     // the import statement IS evidence of a module edge, so the answer is kept —
     // but parked, so the tail typeChecker passes still get to pin the member
@@ -258,7 +258,7 @@ describe("TSNamedImportSymbolResolutionStrategy", () => {
 
   it("continues when no import carries the receiver in importedNames", () => {
     const symbolTable = tableWith(["src/rank.ts", [sym("RankModule#run", "run", "src/rank.ts", ["RankModule"])]]);
-    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "./rank.js" }] }));
+    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "./rank.js", startLine: 1 }] }));
     expect(outcome.kind).toBe("continue");
   });
 });
@@ -271,7 +271,7 @@ describe("TSNamedImportSymbolResolutionStrategy barrel/re-export hop (bd tea-rag
     member: "group",
     startLine: 1,
   };
-  const barrelImport = [{ importText: "./grouping/index.js", importedNames: ["FileLevelGrouper"] }];
+  const barrelImport = [{ importText: "./grouping/index.js", startLine: 1, importedNames: ["FileLevelGrouper"] }];
 
   it("pins the member in the file the barrel re-exports it from", () => {
     // The measured defect: `import { FileLevelGrouper } from "./grouping/index.js"`
@@ -422,7 +422,10 @@ describe("TSImportBasenameSymbolResolutionStrategy", () => {
       "src/rank-module.ts",
       [sym("RankModule#run", "run", "src/rank-module.ts", ["RankModule"])],
     ]);
-    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "./rank-module.js" }] }));
+    const outcome = strat.attempt(
+      call,
+      ctx({ symbolTable, imports: [{ importText: "./rank-module.js", startLine: 1 }] }),
+    );
     expect(outcome).toEqual({
       kind: "resolved",
       target: { targetRelPath: "src/rank-module.ts", targetSymbolId: "RankModule#run" },
@@ -431,7 +434,10 @@ describe("TSImportBasenameSymbolResolutionStrategy", () => {
 
   it("defers a file-only edge when the member is not indexed in the mirrored file", () => {
     const symbolTable = tableWith(["src/rank-module.ts", [sym("RankModule", "RankModule", "src/rank-module.ts", [])]]);
-    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "./rank-module.js" }] }));
+    const outcome = strat.attempt(
+      call,
+      ctx({ symbolTable, imports: [{ importText: "./rank-module.js", startLine: 1 }] }),
+    );
     expect(outcome).toEqual({
       kind: "deferred",
       target: { targetRelPath: "src/rank-module.ts", targetSymbolId: null },
@@ -443,7 +449,10 @@ describe("TSImportBasenameSymbolResolutionStrategy", () => {
       "src/unrelated.ts",
       [sym("RankModule#run", "run", "src/unrelated.ts", ["RankModule"])],
     ]);
-    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "./unrelated.js" }] }));
+    const outcome = strat.attempt(
+      call,
+      ctx({ symbolTable, imports: [{ importText: "./unrelated.js", startLine: 1 }] }),
+    );
     expect(outcome.kind).toBe("continue");
   });
 });
@@ -457,7 +466,7 @@ describe("TSReceiverSymbolSymbolResolutionStrategy", () => {
       "src/helper.ts",
       [sym("Helper", "Helper", "src/helper.ts", []), sym("Helper#run", "run", "src/helper.ts", ["Helper"])],
     ]);
-    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "./helper.js" }] }));
+    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "./helper.js", startLine: 1 }] }));
     expect(outcome).toEqual({
       kind: "resolved",
       target: { targetRelPath: "src/helper.ts", targetSymbolId: "Helper#run" },
@@ -466,7 +475,7 @@ describe("TSReceiverSymbolSymbolResolutionStrategy", () => {
 
   it("defers a file-only edge when the receiver's file is found but the member is not", () => {
     const symbolTable = tableWith(["src/helper.ts", [sym("Helper", "Helper", "src/helper.ts", [])]]);
-    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "./helper.js" }] }));
+    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "./helper.js", startLine: 1 }] }));
     expect(outcome).toEqual({
       kind: "deferred",
       target: { targetRelPath: "src/helper.ts", targetSymbolId: null },
@@ -482,7 +491,7 @@ describe("TSReceiverSymbolSymbolResolutionStrategy", () => {
 
 describe("TSGlobalShortNameSymbolResolutionStrategy", () => {
   const strat = new TSGlobalShortNameSymbolResolutionStrategy(cfg);
-  const call: CallRef = { callText: "freeFn()", receiver: undefined, member: "freeFn", startLine: 1 };
+  const call: CallRef = { callText: "freeFn()", receiver: null, member: "freeFn", startLine: 1 };
 
   it("resolves a unique global short-name", () => {
     const symbolTable = tableWith(["src/util.ts", [sym("freeFn", "freeFn", "src/util.ts", [])]]);
@@ -520,7 +529,7 @@ describe("TSImportNarrowedFallbackSymbolResolutionStrategy", () => {
       call,
       ctx({
         symbolTable,
-        imports: [{ importText: "./impl-a.js" }],
+        imports: [{ importText: "./impl-a.js", startLine: 1 }],
         localBindings: { impl: [{ line: 1, type: "Handler" }] },
       }),
     );
@@ -532,7 +541,7 @@ describe("TSImportNarrowedFallbackSymbolResolutionStrategy", () => {
 
   it("continues when the short-name is not ambiguous (N<=1) — leaves the fast path to globalShortName", () => {
     const symbolTable = tableWith(["src/impl-a.ts", [sym("ImplA#handle", "handle", "src/impl-a.ts", ["ImplA"])]]);
-    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "./impl-a.js" }] }));
+    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "./impl-a.js", startLine: 1 }] }));
     expect(outcome.kind).toBe("continue");
   });
 
@@ -541,7 +550,7 @@ describe("TSImportNarrowedFallbackSymbolResolutionStrategy", () => {
       ["src/impl-a.ts", [sym("ImplA#handle", "handle", "src/impl-a.ts", ["ImplA"])]],
       ["src/impl-b.ts", [sym("ImplB#handle", "handle", "src/impl-b.ts", ["ImplB"])]],
     );
-    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "./other.js" }] }));
+    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "./other.js", startLine: 1 }] }));
     expect(outcome.kind).toBe("continue");
   });
 });
@@ -553,7 +562,7 @@ describe("TSImportNarrowedFallbackSymbolResolutionStrategy barrel hop (bd tea-ra
   // (QuarantineStore#load, CollectionRegistry#list, QuarantineStore#clearAll,
   // QuarantineStore#count) all take.
   const call: CallRef = { callText: "new Store().load()", receiver: "new Store()", member: "load", startLine: 1 };
-  const barrelImport = [{ importText: "./stores/index.js", importedNames: ["Store"] }];
+  const barrelImport = [{ importText: "./stores/index.js", startLine: 1, importedNames: ["Store"] }];
 
   it("recovers a barrel-mediated import: narrowing follows the binding's re-export origin", () => {
     // The import maps to the barrel, which declares no `load`, so without the
@@ -588,7 +597,7 @@ describe("TSImportNarrowedFallbackSymbolResolutionStrategy barrel hop (bd tea-ra
     );
     const outcome = strat.attempt(
       call,
-      ctx({ symbolTable, imports: [{ importText: "./stores/impl.js", importedNames: ["Store"] }] }),
+      ctx({ symbolTable, imports: [{ importText: "./stores/impl.js", startLine: 1, importedNames: ["Store"] }] }),
     );
     expect(outcome).toEqual({
       kind: "resolved",
@@ -632,7 +641,7 @@ describe("TSImportNarrowedFallbackSymbolResolutionStrategy barrel hop (bd tea-ra
     );
     const outcome = strat.attempt(
       call,
-      ctx({ symbolTable, imports: [{ importText: "./unrelated.js", importedNames: ["Widget"] }] }),
+      ctx({ symbolTable, imports: [{ importText: "./unrelated.js", startLine: 1, importedNames: ["Widget"] }] }),
     );
     expect(outcome.kind).toBe("continue");
   });

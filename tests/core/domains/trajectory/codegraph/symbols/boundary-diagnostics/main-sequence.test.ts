@@ -270,20 +270,48 @@ describe("detectMainSequenceDeviations — volatility gate on the zone of pain",
     expect(report.summary.excluded.stableConcreteCalm).toBe(5);
   });
 
-  it("splits change counts on a log scale, so a few very hot components do not drag the cut past the active ones", () => {
+  it("refuses the log-scale cut when the population is one continuum and falls to the file median", () => {
     // Calm libraries at 2, active ones at 8 like `core/`, one extreme at 60.
-    // On the raw scale the extreme alone is the upper class and `core/` reads
-    // calm; change counts spread multiplicatively, and on the log scale the
-    // split falls between calm and active.
+    // The judged components' log volatilities are [ln2 ×5 (`ports` + four
+    // calm libs), ln8 ×4 (`core` + three hot libs), ln60] — η = 0.8004/1.1252
+    // ≈ 0.711, below the 0.8 separability gate (bd tea-rags-mcp-r8hme.46):
+    // three levels of mass, none separated like two modes, so the cut would
+    // be arbitrary and the threshold falls back to the documented file
+    // median (2 here).
     const { g, fileVolatility } = withLibraries(8, [2, 2, 2, 2, 8, 8, 8, 60]);
 
     const report = judge(g, { fileVolatility });
 
-    expect(report.summary.volatility?.thresholdMethod).toBe("otsu");
-    expect(report.summary.volatility?.threshold).toBeGreaterThan(2);
-    expect(report.summary.volatility?.threshold).toBeLessThan(8);
+    expect(report.summary.volatility).toMatchObject({ thresholdMethod: "fileMedian", threshold: 2 });
+    // The η that failed the gate is still reported, so the verdict's basis is
+    // visible instead of silent.
+    expect(report.summary.volatility?.separability).toBeCloseTo(0.7113, 3);
+    // The verdicts are the ones the floor draws: every component above the
+    // median file stays in pain, the calm ones drop out exactly as before.
     expect(painComponents(report)).toEqual(["core", "lib5", "lib6", "lib7", "lib8"]);
     expect(report.summary.excluded.stableConcreteCalm).toBe(4);
+  });
+
+  it("splits change counts on a log scale, so a few very hot components do not drag the cut past the active ones", () => {
+    // Calm libraries at 1, active ones at 8 like `core/`, one extreme at 60.
+    // On the raw scale the extreme alone is the upper class and `core/` reads
+    // calm; change counts spread multiplicatively, and on the log scale the
+    // split falls between calm and active. The judged components' log
+    // volatilities [0 ×6 (calm libs), ln2 (`ports`), ln8 ×3 (`core` + two hot
+    // libs), ln60] read η = 1.4280/1.7423 ≈ 0.820 — at or above the
+    // separability gate, so the cut is trusted (bd tea-rags-mcp-r8hme.46's
+    // fixture predecessor at η ≈ 0.711, one continuum, no longer is).
+    const { g, fileVolatility } = withLibraries(8, [1, 1, 1, 1, 1, 1, 8, 8, 60]);
+
+    const report = judge(g, { fileVolatility });
+
+    expect(report.summary.volatility?.thresholdMethod).toBe("otsu");
+    expect(report.summary.volatility?.separability).toBeCloseTo(0.8196, 3);
+    // The cut is the ln2 | ln8 midpoint: exp(ln4) = 4, between the calm and
+    // the active class, with the 60-extreme kept OUT of the upper class.
+    expect(report.summary.volatility?.threshold).toBeCloseTo(4, 9);
+    expect(painComponents(report)).toEqual(["core", "lib7", "lib8", "lib9"]);
+    expect(report.summary.excluded.stableConcreteCalm).toBe(6);
   });
 
   it("keeps a pain component none of whose files has a volatility reading, and gates nothing without readings", () => {

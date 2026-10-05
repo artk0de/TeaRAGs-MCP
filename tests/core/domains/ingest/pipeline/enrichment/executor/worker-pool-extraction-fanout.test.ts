@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../../__helpers__/collection-identity.js";
 import type {
   EnrichmentProvider,
   WorkerEnrichmentDescriptor,
@@ -97,7 +98,7 @@ function paths(count: number): string[] {
 }
 
 async function report(exec: WorkerPoolEnrichmentExecutor, provider: EnrichmentProvider, coll: string) {
-  const out = await exec.runFinalize(provider, "/repo", { collectionName: coll });
+  const out = await exec.runFinalize(provider, "/repo", { collectionName: fixturePhysicalCollectionName(coll) });
   return out.get("report") as unknown as FanoutReport;
 }
 
@@ -132,7 +133,7 @@ describe("WorkerPoolEnrichmentExecutor — pass-1 extraction fan-out", () => {
     const provider = fanoutProvider(fixturePath);
     const batch = paths(40);
 
-    await exec.runFileBatch(provider, "/repo", batch, { collectionName: "code_fanout" });
+    await exec.runFileBatch(provider, "/repo", batch, { collectionName: fixturePhysicalCollectionName("code_fanout") });
     const result = await report(exec, provider, "code_fanout");
 
     // Every file reached the pinned worker exactly once, in batch order.
@@ -150,7 +151,7 @@ describe("WorkerPoolEnrichmentExecutor — pass-1 extraction fan-out", () => {
     const provider = fanoutProvider(fixturePath);
     const batch = paths(40);
 
-    await exec.runFileBatch(provider, "/repo", batch, { collectionName: "code_off" });
+    await exec.runFileBatch(provider, "/repo", batch, { collectionName: fixturePhysicalCollectionName("code_off") });
     const result = await report(exec, provider, "code_off");
 
     expect(result.streamed).toEqual(batch);
@@ -162,7 +163,10 @@ describe("WorkerPoolEnrichmentExecutor — pass-1 extraction fan-out", () => {
     const provider = fanoutProvider(fixturePath);
     const batch = paths(40);
 
-    await exec.runFileBatch(provider, "/repo", batch, { collectionName: "code_xpass", crossPass: true });
+    await exec.runFileBatch(provider, "/repo", batch, {
+      collectionName: fixturePhysicalCollectionName("code_xpass"),
+      crossPass: true,
+    });
     const result = await report(exec, provider, "code_xpass");
 
     expect(result.streamed).toEqual(batch);
@@ -173,13 +177,19 @@ describe("WorkerPoolEnrichmentExecutor — pass-1 extraction fan-out", () => {
     const exec = executor(4);
     const provider = fanoutProvider(fixturePath);
 
-    await exec.runFileBatch(provider, "/repo", paths(20), { collectionName: "code_dedup" });
-    await exec.runFileBatch(provider, "/repo", paths(20), { collectionName: "code_dedup" });
+    await exec.runFileBatch(provider, "/repo", paths(20), {
+      collectionName: fixturePhysicalCollectionName("code_dedup"),
+    });
+    await exec.runFileBatch(provider, "/repo", paths(20), {
+      collectionName: fixturePhysicalCollectionName("code_dedup"),
+    });
     const first = await report(exec, provider, "code_dedup");
     expect(first.absorbed.map((a) => a.relPath)).toEqual(paths(20));
 
-    exec.beginRun({ runId: "run-2", collection: "code_dedup", absolutePath: "/repo" });
-    await exec.runFileBatch(provider, "/repo", paths(20), { collectionName: "code_dedup" });
+    exec.beginRun({ runId: "run-2", collection: fixturePhysicalCollectionName("code_dedup"), absolutePath: "/repo" });
+    await exec.runFileBatch(provider, "/repo", paths(20), {
+      collectionName: fixturePhysicalCollectionName("code_dedup"),
+    });
     const second = await report(exec, provider, "code_dedup");
     expect(second.absorbed.map((a) => a.relPath)).toEqual([...paths(20), ...paths(20)]);
   });
@@ -193,7 +203,9 @@ describe("WorkerPoolEnrichmentExecutor — pass-1 extraction fan-out", () => {
       workerDescriptor: { ...descriptor, extractionFanout: false },
     } as EnrichmentProvider;
 
-    await exec.runFileBatch(undeclared, "/repo", paths(40), { collectionName: "code_undeclared" });
+    await exec.runFileBatch(undeclared, "/repo", paths(40), {
+      collectionName: fixturePhysicalCollectionName("code_undeclared"),
+    });
     const result = await report(exec, undeclared, "code_undeclared");
 
     expect(result.streamed).toEqual(paths(40));

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { EnrichmentBackfiller } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/backfiller.js";
 import { ChunkPhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/chunk-phase.js";
@@ -32,8 +33,8 @@ describe("ChunkPhase", () => {
     const applier = new EnrichmentApplier(qdrant as any);
     const ctx = buildCtx();
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "2026-05-07T10:00:00Z");
-    phase.onBatch("coll", "/repo", items);
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "2026-05-07T10:00:00Z");
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", items);
     await phase.drain();
     expect(ctx.provider.buildChunkSignals).toHaveBeenCalledTimes(1);
   });
@@ -43,9 +44,9 @@ describe("ChunkPhase", () => {
     const applier = new EnrichmentApplier(qdrant as any);
     const ctx = buildCtx({ defersChunkEnrichment: true });
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
 
-    phase.onBatch("coll", "/repo", items);
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", items);
     await phase.drain();
 
     // No streaming dispatch for deferred providers.
@@ -63,11 +64,11 @@ describe("ChunkPhase", () => {
     const applySpy = vi.spyOn(applier, "applyChunkSignals").mockResolvedValue(1);
     const ctx = buildCtx({ defersChunkEnrichment: true, buildChunkSignals });
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
 
-    phase.onBatch("coll", "/repo", items); // accumulate
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", items); // accumulate
     const cm = phase.getDeferredChunkMap("git");
-    await phase.runDeferredChunk("coll", ctx, "/repo", cm);
+    await phase.runDeferredChunk(fixturePhysicalCollectionName("coll"), ctx, "/repo", cm);
 
     expect(buildChunkSignals).toHaveBeenCalledWith(
       "/repo",
@@ -84,9 +85,13 @@ describe("ChunkPhase", () => {
     const applier = new EnrichmentApplier(qdrant as any);
     const ctx = buildCtx({ defersChunkEnrichment: true });
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
 
-    phase.enrichRemaining("coll", "/repo", new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]));
+    phase.enrichRemaining(
+      fixturePhysicalCollectionName("coll"),
+      "/repo",
+      new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]),
+    );
     await phase.drain();
 
     expect(ctx.provider.buildChunkSignals).not.toHaveBeenCalled();
@@ -97,11 +102,15 @@ describe("ChunkPhase", () => {
     const applier = new EnrichmentApplier(qdrant as any);
     const ctx = buildCtx();
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "2026-05-07T10:00:00Z");
-    phase.onBatch("coll", "/repo", items);
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "2026-05-07T10:00:00Z");
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", items);
     await phase.drain();
     ctx.provider.buildChunkSignals.mockClear();
-    phase.enrichRemaining("coll", "/repo", new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]));
+    phase.enrichRemaining(
+      fixturePhysicalCollectionName("coll"),
+      "/repo",
+      new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]),
+    );
     await phase.drain();
     expect(ctx.provider.buildChunkSignals).not.toHaveBeenCalled();
   });
@@ -111,9 +120,13 @@ describe("ChunkPhase", () => {
     const applier = new EnrichmentApplier(qdrant as any);
     const ctx = buildCtx();
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
     phase.markFailed("git");
-    phase.enrichRemaining("coll", "/repo", new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]));
+    phase.enrichRemaining(
+      fixturePhysicalCollectionName("coll"),
+      "/repo",
+      new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]),
+    );
     await phase.drain();
     expect(ctx.provider.buildChunkSignals).not.toHaveBeenCalled();
   });
@@ -123,10 +136,14 @@ describe("ChunkPhase", () => {
     const applier = new EnrichmentApplier(qdrant as any);
     const ctx = buildCtx();
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
     const cb = vi.fn().mockResolvedValue(undefined);
     phase.setOnComplete(cb);
-    phase.enrichRemaining("coll", "/repo", new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]));
+    phase.enrichRemaining(
+      fixturePhysicalCollectionName("coll"),
+      "/repo",
+      new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]),
+    );
     await phase.drain();
     await new Promise((r) => setImmediate(r));
     expect(cb).toHaveBeenCalledWith("coll");
@@ -159,7 +176,7 @@ describe("ChunkPhase", () => {
     });
     const ctx = buildCtx({ buildChunkSignals });
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "2026-05-07T10:00:00Z");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "2026-05-07T10:00:00Z");
 
     const progressCallTimes: number[] = [];
     // Wire applier.onApply — simulates what the coordinator does.
@@ -178,9 +195,9 @@ describe("ChunkPhase", () => {
     ] as any[];
 
     // Queue 3 batches (3 chunkWork promises, each blocked on resolvers)
-    phase.onBatchProvider("git", "coll", "/repo", batchA);
-    phase.onBatchProvider("git", "coll", "/repo", batchB);
-    phase.onBatchProvider("git", "coll", "/repo", batchC);
+    phase.onBatchProvider("git", fixturePhysicalCollectionName("coll"), "/repo", batchA);
+    phase.onBatchProvider("git", fixturePhysicalCollectionName("coll"), "/repo", batchB);
+    phase.onBatchProvider("git", fixturePhysicalCollectionName("coll"), "/repo", batchC);
 
     let drainResolved = false;
     const drainPromise = phase.drain();
@@ -234,7 +251,7 @@ describe("ChunkPhase", () => {
       );
       const ctx = buildCtx({ buildChunkSignals });
       const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-      phase.init(new Map([[ctx.key, ctx]]), "coll", "run-wc");
+      phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "run-wc");
 
       const batchA = [
         { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 10 } },
@@ -248,9 +265,9 @@ describe("ChunkPhase", () => {
 
       // Dispatch all 3 batches. With semaphore(10) all 3 run concurrently.
       // Each captures start = Date.now() at dispatch time (approximately equal).
-      phase.onBatchProvider("git", "coll", "/repo", batchA);
-      phase.onBatchProvider("git", "coll", "/repo", batchB);
-      phase.onBatchProvider("git", "coll", "/repo", batchC);
+      phase.onBatchProvider("git", fixturePhysicalCollectionName("coll"), "/repo", batchA);
+      phase.onBatchProvider("git", fixturePhysicalCollectionName("coll"), "/repo", batchB);
+      phase.onBatchProvider("git", fixturePhysicalCollectionName("coll"), "/repo", batchC);
 
       // Yield to let the async work queue up and invoke buildChunkSignals 3 times.
       await new Promise<void>((r) => setImmediate(r));
@@ -317,11 +334,11 @@ describe("ChunkPhase", () => {
 
       // ── RUN 1 ──────────────────────────────────────────────────────────────
       // init() creates fresh per-provider state (chunkEnrichmentDurationMs = 0).
-      phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1");
+      phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "run-1");
 
       // Dispatch a streaming batch. Date.now() captured inside runChunkSignals
       // as `start`. The promise is fire-and-forget; it is in chunkWork[].
-      phase.onBatch("coll", "/repo", items);
+      phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", items);
 
       // Advance clock by 100ms, then settle the batch so the closure computes
       // Date.now() - start = 100. state.chunkEnrichmentDurationMs += 100.
@@ -336,9 +353,9 @@ describe("ChunkPhase", () => {
       // ── RUN 2 ──────────────────────────────────────────────────────────────
       // Simulate coordinator.beginRun(): re-init the same ChunkPhase instance.
       // This must reset chunkEnrichmentDurationMs to 0 so run 2 starts clean.
-      phase.init(new Map([[ctx.key, ctx]]), "coll", "run-2");
+      phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "run-2");
 
-      phase.onBatch("coll", "/repo", items);
+      phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", items);
 
       // Advance clock by 50ms for run 2's batch.
       vi.advanceTimersByTime(50);
@@ -368,7 +385,7 @@ describe("ChunkPhase", () => {
       const buildChunkSignals = vi.fn().mockResolvedValue(new Map());
       const ctx = buildCtx({ buildChunkSignals });
       const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor(), blobReaderFactory);
-      phase.init(new Map([[ctx.key, ctx]]), "coll", "2026-05-07T10:00:00Z");
+      phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "2026-05-07T10:00:00Z");
 
       const batchA = [
         { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 10 } },
@@ -380,9 +397,9 @@ describe("ChunkPhase", () => {
         { chunkId: "c3", chunk: { metadata: { filePath: "/repo/src/c.ts" }, startLine: 1, endLine: 10 } },
       ] as any[];
 
-      phase.onBatchProvider("git", "coll", "/repo", batchA);
-      phase.onBatchProvider("git", "coll", "/repo", batchB);
-      phase.onBatchProvider("git", "coll", "/repo", batchC);
+      phase.onBatchProvider("git", fixturePhysicalCollectionName("coll"), "/repo", batchA);
+      phase.onBatchProvider("git", fixturePhysicalCollectionName("coll"), "/repo", batchB);
+      phase.onBatchProvider("git", fixturePhysicalCollectionName("coll"), "/repo", batchC);
 
       // The reader is lazily created ONCE for the run, before drain.
       expect(blobReaderFactory).toHaveBeenCalledTimes(1);
@@ -417,7 +434,7 @@ describe("ChunkPhase", () => {
       const buildChunkSignals = vi.fn().mockResolvedValue(new Map());
       const ctx = buildCtx({ buildChunkSignals });
       const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor(), blobReaderFactory);
-      phase.init(new Map([[ctx.key, ctx]]), "coll", "2026-05-07T10:00:00Z");
+      phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "2026-05-07T10:00:00Z");
 
       const batchA = [
         { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 10 } },
@@ -426,8 +443,8 @@ describe("ChunkPhase", () => {
         { chunkId: "c2", chunk: { metadata: { filePath: "/repo/src/b.ts" }, startLine: 1, endLine: 10 } },
       ] as any[];
 
-      phase.onBatchProvider("git", "coll", "/repo", batchA);
-      phase.onBatchProvider("git", "coll", "/repo", batchB);
+      phase.onBatchProvider("git", fixturePhysicalCollectionName("coll"), "/repo", batchA);
+      phase.onBatchProvider("git", fixturePhysicalCollectionName("coll"), "/repo", batchB);
 
       expect(blobReaderFactory).toHaveBeenCalledTimes(1);
       expect(blobReaderFactory).toHaveBeenCalledWith("/repo");
@@ -448,9 +465,9 @@ describe("ChunkPhase", () => {
       const buildChunkSignals = vi.fn().mockResolvedValue(new Map());
       const ctx = buildCtx({ buildChunkSignals });
       const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-      phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+      phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
 
-      phase.onBatch("coll", "/repo", items);
+      phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", items);
       await phase.drain();
 
       // No factory → opts carries no blobReader; provider falls back to its own.
@@ -476,15 +493,19 @@ describe("ChunkPhase", () => {
     });
     const ctx = buildCtx({ buildChunkSignals });
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
 
     let callbackFiredWhileStreamPending = false;
     phase.setOnComplete(async () => {
       if (!streamingResolved) callbackFiredWhileStreamPending = true;
     });
 
-    phase.onBatch("coll", "/repo", items);
-    phase.enrichRemaining("coll", "/repo", new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]));
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", items);
+    phase.enrichRemaining(
+      fixturePhysicalCollectionName("coll"),
+      "/repo",
+      new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]),
+    );
 
     await phase.drain();
     await new Promise((r) => setImmediate(r));
@@ -512,8 +533,8 @@ describe("ChunkPhase", () => {
     ];
 
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
-    phase.onBatch("coll", "/repo", threeFiles);
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", threeFiles);
     await phase.drain();
 
     const enrichedRel = new Set(
@@ -537,7 +558,7 @@ describe("ChunkPhase", () => {
       const buildChunkSignals = vi.fn().mockResolvedValue(new Map());
       const ctx = buildCtx({ buildChunkSignals });
       const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-      phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+      phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
 
       let releaseGate!: () => void;
       const gate = new Promise<void>((r) => {
@@ -545,7 +566,7 @@ describe("ChunkPhase", () => {
       });
 
       // Batch ARRIVES while its file work is still in flight (pending gate).
-      phase.onBatchProvider("git", "coll", "/repo", batchOf("src/a.ts", "c1"), gate);
+      phase.onBatchProvider("git", fixturePhysicalCollectionName("coll"), "/repo", batchOf("src/a.ts", "c1"), gate);
       await new Promise((r) => setImmediate(r));
 
       // Dispatch is file-work-gated: the walk must NOT have started yet.
@@ -554,7 +575,7 @@ describe("ChunkPhase", () => {
       // The post-flush snapshot must ALREADY exclude src/a.ts — its batch is
       // queued and will be covered by its own gated dispatch.
       phase.enrichRemaining(
-        "coll",
+        fixturePhysicalCollectionName("coll"),
         "/repo",
         new Map([
           ["src/a.ts", entriesOf("c1")],
@@ -586,7 +607,7 @@ describe("ChunkPhase", () => {
       });
       const ctx = buildCtx({ buildChunkSignals });
       const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-      phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+      phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
       const applySpy = vi.spyOn(applier, "applyChunkSignals");
 
       let releaseA!: () => void;
@@ -599,12 +620,12 @@ describe("ChunkPhase", () => {
       });
 
       // Two streaming batches arrive, both file-work-gated (in flight).
-      phase.onBatchProvider("git", "coll", "/repo", batchOf("src/a.ts", "c1"), gateA);
-      phase.onBatchProvider("git", "coll", "/repo", batchOf("src/b.ts", "c2"), gateB);
+      phase.onBatchProvider("git", fixturePhysicalCollectionName("coll"), "/repo", batchOf("src/a.ts", "c1"), gateA);
+      phase.onBatchProvider("git", fixturePhysicalCollectionName("coll"), "/repo", batchOf("src/b.ts", "c2"), gateB);
 
       // Post-flush catch-up over the FULL chunk map (a, b in flight; c uncovered).
       phase.enrichRemaining(
-        "coll",
+        fixturePhysicalCollectionName("coll"),
         "/repo",
         new Map([
           ["src/a.ts", entriesOf("c1")],
@@ -645,17 +666,17 @@ describe("ChunkPhase", () => {
       const ctx = buildCtx({ buildChunkSignals, buildFileSignals });
       const executor = new InlineEnrichmentExecutor();
       const phase = new ChunkPhase(applier, executor);
-      phase.init(new Map([[ctx.key, ctx]]), "coll", "t0");
+      phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "t0");
 
       let releaseGate!: () => void;
       const gate = new Promise<void>((r) => {
         releaseGate = r;
       });
       const items = batchOf("src/a.ts", "c1");
-      phase.onBatchProvider("git", "coll", "/repo", items, gate);
+      phase.onBatchProvider("git", fixturePhysicalCollectionName("coll"), "/repo", items, gate);
 
       // src/a.ts is marked at arrival → excluded from the post-flush walk.
-      phase.enrichRemaining("coll", "/repo", new Map([["src/a.ts", entriesOf("c1")]]));
+      phase.enrichRemaining(fixturePhysicalCollectionName("coll"), "/repo", new Map([["src/a.ts", entriesOf("c1")]]));
       releaseGate();
       await phase.drain();
       await new Promise((r) => setImmediate(r));
@@ -669,7 +690,7 @@ describe("ChunkPhase", () => {
 
       // …and backfill re-fetches file AND chunk overlays despite the arrival mark.
       const backfiller = new EnrichmentBackfiller(applier, qdrant as any, executor);
-      await backfiller.runFor("coll", ctx, "t0");
+      await backfiller.runFor(fixturePhysicalCollectionName("coll"), ctx, "t0");
 
       const point = (await qdrant.getPoint("coll", "c1"))!;
       expect((point.payload as any).git.file.commitCount).toBe(2);
@@ -696,9 +717,9 @@ describe("ChunkPhase", () => {
       const stampSpy = vi.spyOn(applier, "applySkipStamps").mockResolvedValue(1);
       const ctx = buildCtx({ shouldEnrich: declineDocsAtChunkLevel });
       const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-      phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+      phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
 
-      phase.onBatch("coll", "/repo", [...items, docItem]);
+      phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", [...items, docItem]);
       await phase.drain();
 
       expect(stampSpy).toHaveBeenCalledWith("coll", "git", "chunk", [{ id: "d1", skippedAs: "documentation" }]);
@@ -712,9 +733,9 @@ describe("ChunkPhase", () => {
       const stampSpy = vi.spyOn(applier, "applySkipStamps").mockResolvedValue(1);
       const ctx = buildCtx({ shouldEnrich: declineDocsAtChunkLevel });
       const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-      phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+      phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
 
-      phase.onBatch("coll", "/repo", [docItem]);
+      phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", [docItem]);
       await phase.drain();
 
       expect(stampSpy).toHaveBeenCalledWith("coll", "git", "chunk", [{ id: "d1", skippedAs: "documentation" }]);
@@ -730,9 +751,9 @@ describe("ChunkPhase", () => {
         shouldEnrich: (f: { classification: { isTest: boolean } }) => (f.classification.isTest ? "none" : "full"),
       });
       const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-      phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+      phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
 
-      phase.onBatch("coll", "/repo", [
+      phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", [
         ...items,
         {
           chunkId: "t1",
@@ -761,9 +782,9 @@ describe("ChunkPhase", () => {
         shouldEnrich: (f: { classification: { isTest: boolean } }) => (f.classification.isTest ? "none" : "full"),
       });
       const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-      phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+      phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
 
-      phase.onBatch("coll", "/repo", [
+      phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", [
         ...items,
         {
           chunkId: "t1",
@@ -771,7 +792,12 @@ describe("ChunkPhase", () => {
         } as any,
       ]);
       await phase.drain();
-      await phase.runDeferredChunk("coll", ctx, "/repo", phase.getDeferredChunkMap("git"));
+      await phase.runDeferredChunk(
+        fixturePhysicalCollectionName("coll"),
+        ctx,
+        "/repo",
+        phase.getDeferredChunkMap("git"),
+      );
 
       const dispatched = buildChunkSignals.mock.calls[0][1] as Map<string, unknown>;
       expect([...dispatched.keys()]).toEqual(["src/a.ts"]);
@@ -795,7 +821,7 @@ describe("ChunkPhase", () => {
           f.fileLines !== undefined && f.fileLines > 100 ? "file-only" : "full",
       });
       const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
-      phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+      phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
 
       // Only the head chunk of a 5000-line file reached this batch: its own
       // endLine is under the cap, the file is not.
@@ -803,7 +829,7 @@ describe("ChunkPhase", () => {
         chunkId: "b1",
         chunk: { metadata: { filePath: "/repo/src/big.ts", moduleLines: 5000 }, startLine: 1, endLine: 10 },
       } as any;
-      phase.onBatch("coll", "/repo", [...items, bigHead]);
+      phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", [...items, bigHead]);
       await phase.drain();
 
       expect(stampSpy).toHaveBeenCalledWith("coll", "git", "chunk", [{ id: "b1", skippedAs: "oversized" }]);

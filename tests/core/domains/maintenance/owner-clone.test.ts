@@ -4,10 +4,11 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../__helpers__/collection-identity.js";
 import { GraphDbClientPool } from "../../../../src/core/adapters/duckdb/pool.js";
-import { createDatabaseMigrationApplier } from "../../../../src/core/domains/maintenance/migration/database/index.js";
 import { QuarantineStore } from "../../../../src/core/domains/ingest/sync/quarantine-store.js";
 import { ShardedSnapshotManager } from "../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js";
+import { createDatabaseMigrationApplier } from "../../../../src/core/domains/maintenance/migration/database/index.js";
 import { StatsCache } from "../../../../src/core/infra/stats-cache.js";
 
 describe("owner clone methods", () => {
@@ -75,11 +76,11 @@ describe("owner clone methods", () => {
       symbolTableFactory: () => ({ symbols: new Map(), methods: new Map() }) as never,
       applyMigrations: createDatabaseMigrationApplier(),
     });
-    const srcPath = pool.pathFor("code_src");
+    const srcPath = pool.pathFor(fixturePhysicalCollectionName("code_src"));
     mkdirSync(join(dir, "codegraph"), { recursive: true });
     writeFileSync(srcPath, "fake-duckdb-content");
-    await pool.cloneDatabase("code_src", "code_dst");
-    expect(existsSync(pool.pathFor("code_dst"))).toBe(true);
+    await pool.cloneDatabase(fixturePhysicalCollectionName("code_src"), fixturePhysicalCollectionName("code_dst"));
+    expect(existsSync(pool.pathFor(fixturePhysicalCollectionName("code_dst")))).toBe(true);
   });
 
   it("GraphDbClientPool.cloneDatabase carries the WAL sidecar across", async () => {
@@ -92,14 +93,16 @@ describe("owner clone methods", () => {
       symbolTableFactory: () => ({ symbols: new Map(), methods: new Map() }) as never,
       applyMigrations: createDatabaseMigrationApplier(),
     });
-    const srcPath = pool.pathFor("code_src");
+    const srcPath = pool.pathFor(fixturePhysicalCollectionName("code_src"));
     mkdirSync(join(dir, "codegraph"), { recursive: true });
     writeFileSync(srcPath, "fake-duckdb-content");
     writeFileSync(`${srcPath}.wal`, "fake-wal-content");
 
-    await pool.cloneDatabase("code_src", "code_dst");
+    await pool.cloneDatabase(fixturePhysicalCollectionName("code_src"), fixturePhysicalCollectionName("code_dst"));
 
-    expect(readFileSync(`${pool.pathFor("code_dst")}.wal`, "utf8")).toBe("fake-wal-content");
+    expect(readFileSync(`${pool.pathFor(fixturePhysicalCollectionName("code_dst"))}.wal`, "utf8")).toBe(
+      "fake-wal-content",
+    );
   });
 
   it("GraphDbClientPool.cloneDatabase drops a stale target WAL when the source has none", async () => {
@@ -112,14 +115,14 @@ describe("owner clone methods", () => {
       symbolTableFactory: () => ({ symbols: new Map(), methods: new Map() }) as never,
       applyMigrations: createDatabaseMigrationApplier(),
     });
-    const srcPath = pool.pathFor("code_src");
+    const srcPath = pool.pathFor(fixturePhysicalCollectionName("code_src"));
     mkdirSync(join(dir, "codegraph"), { recursive: true });
     writeFileSync(srcPath, "fake-duckdb-content");
-    writeFileSync(`${pool.pathFor("code_dst")}.wal`, "stale-wal-from-a-previous-tenant");
+    writeFileSync(`${pool.pathFor(fixturePhysicalCollectionName("code_dst"))}.wal`, "stale-wal-from-a-previous-tenant");
 
-    await pool.cloneDatabase("code_src", "code_dst");
+    await pool.cloneDatabase(fixturePhysicalCollectionName("code_src"), fixturePhysicalCollectionName("code_dst"));
 
-    expect(existsSync(`${pool.pathFor("code_dst")}.wal`)).toBe(false);
+    expect(existsSync(`${pool.pathFor(fixturePhysicalCollectionName("code_dst"))}.wal`)).toBe(false);
   });
 
   it("GraphDbClientPool.cloneDatabase is a no-op when source file is absent", async () => {
@@ -128,7 +131,9 @@ describe("owner clone methods", () => {
       symbolTableFactory: () => ({ symbols: new Map(), methods: new Map() }) as never,
       applyMigrations: createDatabaseMigrationApplier(),
     });
-    await expect(pool.cloneDatabase("code_missing", "code_dst")).resolves.not.toThrow();
-    expect(existsSync(pool.pathFor("code_dst"))).toBe(false);
+    await expect(
+      pool.cloneDatabase(fixturePhysicalCollectionName("code_missing"), fixturePhysicalCollectionName("code_dst")),
+    ).resolves.not.toThrow();
+    expect(existsSync(pool.pathFor(fixturePhysicalCollectionName("code_dst")))).toBe(false);
   });
 });

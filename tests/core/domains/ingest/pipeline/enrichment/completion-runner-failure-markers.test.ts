@@ -13,6 +13,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { INDEXING_METADATA_ID } from "../../../../../../src/core/contracts/constants.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { EnrichmentBackfiller } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/backfiller.js";
@@ -82,12 +83,12 @@ async function buildHarness(): Promise<FailureHarness> {
     ["git", providerContext("git", false)],
     ["codegraph.symbols", providerContext("codegraph.symbols", true)],
   ]);
-  filePhase.init(contexts as never, "coll", "run-1", "ts");
-  chunkPhase.init(contexts as never, "coll", "ts");
+  filePhase.init(contexts as never, fixturePhysicalCollectionName("coll"), "run-1", "ts");
+  chunkPhase.init(contexts as never, fixturePhysicalCollectionName("coll"), "ts");
   await marker.markRunStart("coll", PROVIDER_KEYS, "run-1", "ts");
 
   // A deferred chunk map, so the deferred pass has work to run (and to fail).
-  chunkPhase.onBatchProvider("codegraph.symbols", "coll", "/repo", [
+  chunkPhase.onBatchProvider("codegraph.symbols", fixturePhysicalCollectionName("coll"), "/repo", [
     {
       type: "upsert",
       chunkId: "c1",
@@ -132,10 +133,12 @@ describe("CompletionRunner — a completion that throws settles its unwritten te
     const skew = new Error("codegraph daemon runs an older build without op listPass1Aggregates");
     vi.spyOn(executor, "runFinalize").mockRejectedValue(skew);
 
-    const outcome = await runner.run("coll", contexts as never, Date.now() - 1000, undefined, "ts", "run-1").then(
-      () => undefined,
-      (error: unknown) => error,
-    );
+    const outcome = await runner
+      .run(fixturePhysicalCollectionName("coll"), contexts as never, Date.now() - 1000, undefined, "ts", "run-1")
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
 
     expect(outcome).toBe(skew);
     for (const level of ["file", "chunk"] as const) {
@@ -159,7 +162,9 @@ describe("CompletionRunner — a completion that throws settles its unwritten te
     const boom = new Error("deferred chunk pass exploded");
     vi.spyOn(chunkPhase, "runDeferredChunk").mockRejectedValue(boom);
 
-    await expect(runner.run("coll", contexts as never, Date.now() - 1000, undefined, "ts", "run-1")).rejects.toBe(boom);
+    await expect(
+      runner.run(fixturePhysicalCollectionName("coll"), contexts as never, Date.now() - 1000, undefined, "ts", "run-1"),
+    ).rejects.toBe(boom);
 
     // The file level was already terminal: written once per provider, never overwritten.
     const fileWrites = writesAt(writes, "file");
@@ -198,7 +203,14 @@ describe("CompletionRunner — a completion that throws settles its unwritten te
 
     try {
       await expect(
-        runner.run("coll", contexts as never, Date.now() - 1000, unenrichedReader, "ts", "run-1"),
+        runner.run(
+          fixturePhysicalCollectionName("coll"),
+          contexts as never,
+          Date.now() - 1000,
+          unenrichedReader,
+          "ts",
+          "run-1",
+        ),
       ).rejects.toBe(original);
 
       // One throwing write does not stop the others.
@@ -221,7 +233,14 @@ describe("CompletionRunner — a completion that throws settles its unwritten te
     const phases = vi.spyOn(pipelineLog, "enrichmentPhase");
 
     try {
-      await runner.run("coll", contexts as never, Date.now() - 1000, undefined, "ts", "run-1");
+      await runner.run(
+        fixturePhysicalCollectionName("coll"),
+        contexts as never,
+        Date.now() - 1000,
+        undefined,
+        "ts",
+        "run-1",
+      );
 
       expect(writes.map((write) => `${write.level}:${write.providerKey}:${write.input.status}`)).toEqual([
         "file:git:completed",

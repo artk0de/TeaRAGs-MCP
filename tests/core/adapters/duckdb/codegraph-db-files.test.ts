@@ -13,6 +13,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../__helpers__/collection-identity.js";
 import {
   CODEGRAPH_DB_ARTIFACT_TAXONOMY,
   CodegraphDbFiles,
@@ -81,7 +82,7 @@ describe("CodegraphDbFiles", () => {
     seed("code_a_v1");
     writeFileSync(join(codegraphDir, "code_a_v1.duckdb.wal"), "wal");
 
-    await files.removeCollection("code_a_v1");
+    await files.removeCollection(fixturePhysicalCollectionName("code_a_v1"));
 
     expect(existsSync(join(codegraphDir, "code_a_v1.duckdb"))).toBe(false);
     expect(existsSync(join(codegraphDir, "code_a_v1.duckdb.wal"))).toBe(false);
@@ -105,7 +106,7 @@ describe("CodegraphDbFiles", () => {
       const spill = seedSpill("code_a_v1");
       const other = seedSpill("code_a_v2");
 
-      await files.removeCollection("code_a_v1");
+      await files.removeCollection(fixturePhysicalCollectionName("code_a_v1"));
 
       expect(existsSync(spill)).toBe(false);
       expect(existsSync(other)).toBe(true);
@@ -114,7 +115,7 @@ describe("CodegraphDbFiles", () => {
     it("removes a spill whose generation has no database at all", async () => {
       const spill = seedSpill("code_a_v7");
 
-      await files.removeCollection("code_a_v7");
+      await files.removeCollection(fixturePhysicalCollectionName("code_a_v7"));
 
       expect(existsSync(spill)).toBe(false);
     });
@@ -138,14 +139,14 @@ describe("CodegraphDbFiles", () => {
   });
 
   it("is idempotent — removing an absent collection resolves", async () => {
-    await expect(files.removeCollection("code_never")).resolves.not.toThrow();
+    await expect(files.removeCollection(fixturePhysicalCollectionName("code_never"))).resolves.not.toThrow();
   });
 
   it("copies the DB and its WAL sidecar on clone", async () => {
     seed("code_src", "payload");
     writeFileSync(join(codegraphDir, "code_src.duckdb.wal"), "walbytes");
 
-    await files.cloneDatabase("code_src", "code_dst");
+    await files.cloneDatabase(fixturePhysicalCollectionName("code_src"), fixturePhysicalCollectionName("code_dst"));
 
     expect(readFileSync(join(codegraphDir, "code_dst.duckdb"), "utf-8")).toBe("payload");
     expect(readFileSync(join(codegraphDir, "code_dst.duckdb.wal"), "utf-8")).toBe("walbytes");
@@ -156,24 +157,24 @@ describe("CodegraphDbFiles", () => {
     seed("code_dst", "old");
     writeFileSync(join(codegraphDir, "code_dst.duckdb.wal"), "previous tenant");
 
-    await files.cloneDatabase("code_src", "code_dst");
+    await files.cloneDatabase(fixturePhysicalCollectionName("code_src"), fixturePhysicalCollectionName("code_dst"));
 
     expect(existsSync(join(codegraphDir, "code_dst.duckdb.wal"))).toBe(false);
   });
 
   it("clone is a no-op when the source DB is absent", async () => {
-    await files.cloneDatabase("code_missing", "code_dst");
+    await files.cloneDatabase(fixturePhysicalCollectionName("code_missing"), fixturePhysicalCollectionName("code_dst"));
     expect(existsSync(join(codegraphDir, "code_dst.duckdb"))).toBe(false);
   });
 
   describe("artifact taxonomy — the on-disk set equals exactly what the taxonomy predicts", () => {
     const STEMS: readonly PhysicalCollectionName[] = [
-      "code_a",
-      "code_a_v1",
-      "code_a_v2",
-      "code_b",
-      "code_b_v1",
-      "code_ab_v1",
+      fixturePhysicalCollectionName("code_a"),
+      fixturePhysicalCollectionName("code_a_v1"),
+      fixturePhysicalCollectionName("code_a_v2"),
+      fixturePhysicalCollectionName("code_b"),
+      fixturePhysicalCollectionName("code_b_v1"),
+      fixturePhysicalCollectionName("code_ab_v1"),
     ];
     const BASES = ["code_a", "code_b"] as const;
 
@@ -357,7 +358,7 @@ describe("CodegraphDbFiles", () => {
       writeFileSync(join(codegraphDir, "code_a_v1.duckdb.clone-tmp"), "half");
       writeFileSync(join(codegraphDir, "code_a_v1.duckdb.clone-tmp.wal"), "half");
 
-      await files.removeCollection("code_a_v1");
+      await files.removeCollection(fixturePhysicalCollectionName("code_a_v1"));
 
       // A purge takes both staging pairs: an interrupted clone's leftovers are
       // this database's files too, not something to leave for the next clone
@@ -370,9 +371,9 @@ describe("CodegraphDbFiles", () => {
     it("a shadow-refused clone leaves the disk untouched", async () => {
       seed("code_a_v1");
 
-      await expect(files.cloneDatabase("code_a_v1", "code_a")).rejects.toBeInstanceOf(
-        CodegraphShadowDatabaseRefusedError,
-      );
+      await expect(
+        files.cloneDatabase(fixturePhysicalCollectionName("code_a_v1"), fixturePhysicalCollectionName("code_a")),
+      ).rejects.toBeInstanceOf(CodegraphShadowDatabaseRefusedError);
 
       expect(diskFiles()).toEqual(["codegraph/code_a_v1.duckdb"]);
     });

@@ -33,11 +33,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
+import type { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import { GraphDbClientPool } from "../../../../../../src/core/adapters/duckdb/pool.js";
-import { createDatabaseMigrationApplier } from "../../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
+import { createDatabaseMigrationApplier } from "../../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -71,8 +73,8 @@ describe("CodegraphEnrichmentProvider — cross-collection isolation", () => {
     // back-to-back (or with overlapping timing) left A's `rel_path` rows
     // in B's `cg_symbols_files` table. With per-sink local buffers each
     // finish() drains only its own writes.
-    const sinkA = provider.asExtractionSink("project-alpha");
-    const sinkB = provider.asExtractionSink("project-beta");
+    const sinkA = provider.asExtractionSink(fixturePhysicalCollectionName("project-alpha"));
+    const sinkB = provider.asExtractionSink(fixturePhysicalCollectionName("project-beta"));
 
     // Interleave writes between the two sinks WITHOUT calling finish
     // until both have written. Under the old shared-buffer code, the
@@ -96,11 +98,15 @@ describe("CodegraphEnrichmentProvider — cross-collection isolation", () => {
     await sinkB.finish();
     await sinkA.finish();
 
-    const alphaHandle = await pool.acquire("project-alpha");
-    const betaHandle = await pool.acquire("project-beta");
+    const alphaHandle = await pool.acquire(fixturePhysicalCollectionName("project-alpha"));
+    const betaHandle = await pool.acquire(fixturePhysicalCollectionName("project-beta"));
 
-    const alphaRows = await alphaHandle.graphDb.queryAll<{ rel_path: string }>("SELECT rel_path FROM cg_symbols_files");
-    const betaRows = await betaHandle.graphDb.queryAll<{ rel_path: string }>("SELECT rel_path FROM cg_symbols_files");
+    const alphaRows = await (alphaHandle.graphDb as DuckDbGraphClient).queryAll<{ rel_path: string }>(
+      "SELECT rel_path FROM cg_symbols_files",
+    );
+    const betaRows = await (betaHandle.graphDb as DuckDbGraphClient).queryAll<{ rel_path: string }>(
+      "SELECT rel_path FROM cg_symbols_files",
+    );
 
     expect(alphaRows.map((r) => r.rel_path)).toEqual(["src/test/java/org/apache/commons/lang3/ArrayUtilsTest.java"]);
     expect(betaRows.map((r) => r.rel_path)).toEqual(["config/__init__.py"]);
@@ -112,8 +118,8 @@ describe("CodegraphEnrichmentProvider — cross-collection isolation", () => {
     // relPath — the second project's write clobbered the first's entry
     // and `buildChunkSignals` for the first project resolved to the
     // second project's symbol.
-    const sinkA = provider.asExtractionSink("project-alpha");
-    const sinkB = provider.asExtractionSink("project-beta");
+    const sinkA = provider.asExtractionSink(fixturePhysicalCollectionName("project-alpha"));
+    const sinkB = provider.asExtractionSink(fixturePhysicalCollectionName("project-beta"));
     await sinkA.write({
       relPath: "src/index.ts",
       language: "typescript",
@@ -141,10 +147,10 @@ describe("CodegraphEnrichmentProvider — cross-collection isolation", () => {
     // symbol. Pre-fix this would have failed: both calls resolved to
     // whichever symbolId the shared line-map happened to store last.
     const alphaChunks = await provider.buildChunkSignals("/", chunkMap, {
-      collectionName: "project-alpha",
+      collectionName: fixturePhysicalCollectionName("project-alpha"),
     });
     const betaChunks = await provider.buildChunkSignals("/", chunkMap, {
-      collectionName: "project-beta",
+      collectionName: fixturePhysicalCollectionName("project-beta"),
     });
 
     // The line map for alpha resolves to alphaSymbol; for beta to
@@ -159,8 +165,8 @@ describe("CodegraphEnrichmentProvider — cross-collection isolation", () => {
     // maps. Deleting it from collection A's view must NOT clear B's
     // entry — otherwise an A-side incremental reindex would silently
     // drop B's chunk-symbol resolution.
-    const sinkA = provider.asExtractionSink("project-alpha");
-    const sinkB = provider.asExtractionSink("project-beta");
+    const sinkA = provider.asExtractionSink(fixturePhysicalCollectionName("project-alpha"));
+    const sinkB = provider.asExtractionSink(fixturePhysicalCollectionName("project-beta"));
     await sinkA.write({
       relPath: "src/index.ts",
       language: "typescript",
@@ -178,13 +184,15 @@ describe("CodegraphEnrichmentProvider — cross-collection isolation", () => {
     await sinkA.finish();
     await sinkB.finish();
 
-    await provider.handleDeletedPaths(["src/index.ts"], { collectionName: "project-alpha" });
+    await provider.handleDeletedPaths(["src/index.ts"], {
+      collectionName: fixturePhysicalCollectionName("project-alpha"),
+    });
 
     // A's line map dropped → buildChunkSignals returns no entries for A.
     const alphaChunks = await provider.buildChunkSignals(
       "/",
       new Map([["src/index.ts", [{ chunkId: "c", startLine: 1, endLine: 5 }]]]),
-      { collectionName: "project-alpha" },
+      { collectionName: fixturePhysicalCollectionName("project-alpha") },
     );
     expect(alphaChunks.get("src/index.ts")?.size).toBe(0);
 
@@ -192,7 +200,7 @@ describe("CodegraphEnrichmentProvider — cross-collection isolation", () => {
     const betaChunks = await provider.buildChunkSignals(
       "/",
       new Map([["src/index.ts", [{ chunkId: "c", startLine: 1, endLine: 5 }]]]),
-      { collectionName: "project-beta" },
+      { collectionName: fixturePhysicalCollectionName("project-beta") },
     );
     expect(betaChunks.get("src/index.ts")?.has("c")).toBe(true);
   });
@@ -201,8 +209,8 @@ describe("CodegraphEnrichmentProvider — cross-collection isolation", () => {
     // Tail-end check: after a full write+finish on each collection, the
     // pool-owned symbol tables must still be disjoint — confirms no
     // shared in-memory bookkeeping snuck in via a side channel.
-    const sinkA = provider.asExtractionSink("project-alpha");
-    const sinkB = provider.asExtractionSink("project-beta");
+    const sinkA = provider.asExtractionSink(fixturePhysicalCollectionName("project-alpha"));
+    const sinkB = provider.asExtractionSink(fixturePhysicalCollectionName("project-beta"));
     await sinkA.write({
       relPath: "src/alpha.ts",
       language: "typescript",
@@ -220,8 +228,8 @@ describe("CodegraphEnrichmentProvider — cross-collection isolation", () => {
     await sinkA.finish();
     await sinkB.finish();
 
-    const a = await pool.acquire("project-alpha");
-    const b = await pool.acquire("project-beta");
+    const a = await pool.acquire(fixturePhysicalCollectionName("project-alpha"));
+    const b = await pool.acquire(fixturePhysicalCollectionName("project-beta"));
     expect(a.symbolTable.lookupByShortName("AlphaUtil")).toHaveLength(1);
     expect(a.symbolTable.lookupByShortName("BetaUtil")).toHaveLength(0);
     expect(b.symbolTable.lookupByShortName("BetaUtil")).toHaveLength(1);

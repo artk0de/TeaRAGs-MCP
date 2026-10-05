@@ -29,6 +29,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { GraphDbClientPool } from "../../../../../../src/core/adapters/duckdb/pool.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
@@ -89,7 +90,7 @@ describe("cg_symbols_edges_file target rows (bd tea-rags-mcp-9f613)", () => {
   });
 
   async function readGraph(collectionName: string): Promise<{ edges: EdgeRow[]; known: Set<string> }> {
-    const { graphDb } = await pool.acquire(collectionName);
+    const { graphDb } = await pool.acquire(fixturePhysicalCollectionName(collectionName));
     const db = graphDb as unknown as RawQueryable;
     const edges = await db.queryAll<EdgeRow>(
       "SELECT source_rel_path, target_rel_path FROM cg_symbols_edges_file ORDER BY source_rel_path, target_rel_path",
@@ -119,7 +120,7 @@ describe("cg_symbols_edges_file target rows (bd tea-rags-mcp-9f613)", () => {
       'import { DEFAULTS } from "./types";\nexport function fromExtensionless(): number {\n  return DEFAULTS.retries;\n}\n',
     );
 
-    await provider.buildFileSignals(repo, { collectionName: "code_dts_v1" });
+    await provider.buildFileSignals(repo, { collectionName: fixturePhysicalCollectionName("code_dts_v1") });
     const { edges, known } = await readGraph("code_dts_v1");
 
     // The resolver really did pick the declaration file over the `.ts` that
@@ -146,7 +147,7 @@ describe("cg_symbols_edges_file target rows (bd tea-rags-mcp-9f613)", () => {
       'import { helper } from "./helper.test.js";\nexport function useHelper(): number {\n  return helper();\n}\n',
     );
 
-    await provider.buildFileSignals(repo, { collectionName: "code_excluded_v1" });
+    await provider.buildFileSignals(repo, { collectionName: fixturePhysicalCollectionName("code_excluded_v1") });
     const { edges, known } = await readGraph("code_excluded_v1");
 
     expect(known).not.toContain("src/helper.test.ts");
@@ -155,7 +156,7 @@ describe("cg_symbols_edges_file target rows (bd tea-rags-mcp-9f613)", () => {
     // Severity, pinned: a dangling target is only ever a target, never a source,
     // so it is a pure sink. Tarjan keeps components of size >= 2, and a sink can
     // never be in one — the file cycle report is unaffected.
-    const { graphDb } = await pool.acquire("code_excluded_v1");
+    const { graphDb } = await pool.acquire(fixturePhysicalCollectionName("code_excluded_v1"));
     expect(await graphDb.findCycles("file")).toHaveLength(0);
   });
 });

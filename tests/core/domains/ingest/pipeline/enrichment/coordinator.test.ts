@@ -1,6 +1,8 @@
 import ignore from "ignore";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
+import type { QdrantManager } from "../../../../../../src/core/adapters/qdrant/client.js";
 import type { EnrichmentRunHandle } from "../../../../../../src/core/contracts/types/enrichment-executor.js";
 import type { EnrichmentProvider } from "../../../../../../src/core/contracts/types/provider.js";
 import {
@@ -20,13 +22,16 @@ function runSpec(
   collection: string,
   overrides: Partial<Pick<EnrichmentRunSpec, "crossPass" | "fileCount" | "ignoreFilter">> = {},
 ): EnrichmentRunSpec {
-  return { ...reindexRunSpec({ absolutePath, collection, fileCount: 0 }), ...overrides };
+  return {
+    ...reindexRunSpec({ absolutePath, collection: fixturePhysicalCollectionName(collection), fileCount: 0 }),
+    ...overrides,
+  };
 }
 
 /** A handle no coordinator under test ever issued. */
 const neverIssued = (collection: string): EnrichmentRunHandle => ({
   runId: "never-issued",
-  collection,
+  collection: fixturePhysicalCollectionName(collection),
   absolutePath: "/repo",
 });
 
@@ -44,6 +49,7 @@ describe("EnrichmentCoordinator", () => {
     mockProvider = {
       key: "git",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -109,7 +115,7 @@ describe("EnrichmentCoordinator", () => {
       } as unknown as ConstructorParameters<typeof EnrichmentCoordinator>[2];
 
       const coord = new EnrichmentCoordinator(mockQdrant, mockProvider, recovery, undefined, guard);
-      await coord.runRecovery("coll-recover", "/repo");
+      await coord.runRecovery(fixturePhysicalCollectionName("coll-recover"), "/repo");
 
       expect(guard.begin).toHaveBeenCalledWith("coll-recover");
       expect(order).toEqual(["begin", "recoverAll", "release"]);
@@ -124,7 +130,9 @@ describe("EnrichmentCoordinator", () => {
       } as unknown as ConstructorParameters<typeof EnrichmentCoordinator>[2];
 
       const coord = new EnrichmentCoordinator(mockQdrant, mockProvider, recovery, undefined, guard);
-      await expect(coord.runRecovery("coll-recover", "/repo")).rejects.toThrow("recovery boom");
+      await expect(coord.runRecovery(fixturePhysicalCollectionName("coll-recover"), "/repo")).rejects.toThrow(
+        "recovery boom",
+      );
       expect(release).toHaveBeenCalledTimes(1);
     });
   });
@@ -145,7 +153,7 @@ describe("EnrichmentCoordinator", () => {
     await coord.awaitCompletion(run);
     expect(divergentProvider.buildFileSignals).toHaveBeenCalledWith(
       "/git-root",
-      expect.objectContaining({ collectionName: "test-col", paths: ["a.ts"] }),
+      expect.objectContaining({ collectionName: fixturePhysicalCollectionName("test-col"), paths: ["a.ts"] }),
     );
   });
 
@@ -158,7 +166,7 @@ describe("EnrichmentCoordinator", () => {
     await coordinator.awaitCompletion(run);
     expect(mockProvider.buildFileSignals).toHaveBeenCalledWith(
       "/repo",
-      expect.objectContaining({ collectionName: "test-col" }),
+      expect.objectContaining({ collectionName: fixturePhysicalCollectionName("test-col") }),
     );
   });
 
@@ -348,6 +356,7 @@ describe("EnrichmentCoordinator", () => {
     const providerA: EnrichmentProvider = {
       key: "alpha",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -357,6 +366,7 @@ describe("EnrichmentCoordinator", () => {
     const providerB: EnrichmentProvider = {
       key: "beta",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -375,11 +385,11 @@ describe("EnrichmentCoordinator", () => {
     // Both providers stream the batch in parallel via the buildFileSignals fallback.
     expect(providerA.buildFileSignals).toHaveBeenCalledWith(
       "/repo",
-      expect.objectContaining({ collectionName: "test-col" }),
+      expect.objectContaining({ collectionName: fixturePhysicalCollectionName("test-col") }),
     );
     expect(providerB.buildFileSignals).toHaveBeenCalledWith(
       "/repo",
-      expect.objectContaining({ collectionName: "test-col" }),
+      expect.objectContaining({ collectionName: fixturePhysicalCollectionName("test-col") }),
     );
     expect(multi.providerKeys).toEqual(["alpha", "beta"]);
   });
@@ -400,6 +410,7 @@ describe("EnrichmentCoordinator", () => {
     const gitProvider: EnrichmentProvider = {
       key: "git",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -414,6 +425,7 @@ describe("EnrichmentCoordinator", () => {
     const codegraphProvider: EnrichmentProvider = {
       key: "codegraph.symbols",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       defersChunkEnrichment: true,
@@ -421,7 +433,7 @@ describe("EnrichmentCoordinator", () => {
       streamFileBatch: vi.fn().mockReturnValue(codegraphFileBlocked),
       buildFileSignals: vi.fn().mockResolvedValue(new Map()),
       buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
-    } as any;
+    };
 
     const coord = new EnrichmentCoordinator(mockQdrant, [gitProvider, codegraphProvider]);
     const run = coord.beginRun(runSpec("/repo", "test-col"));
@@ -453,6 +465,7 @@ describe("EnrichmentCoordinator", () => {
     const provider: EnrichmentProvider = {
       key: "git",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -850,7 +863,7 @@ describe("EnrichmentCoordinator — backfill missed files", () => {
     expect(mockProvider.buildFileSignals).toHaveBeenCalledTimes(2);
     expect(mockProvider.buildFileSignals).toHaveBeenLastCalledWith(
       "/repo",
-      expect.objectContaining({ paths: ["src/missing.ts"], collectionName: "test-col" }),
+      expect.objectContaining({ paths: ["src/missing.ts"], collectionName: fixturePhysicalCollectionName("test-col") }),
     );
 
     // Backfilled file should be written via batchSetPayload
@@ -1777,6 +1790,7 @@ describe("EnrichmentCoordinator — per-level enrichment marker", () => {
     mockProvider = {
       key: "git",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -1926,6 +1940,7 @@ describe("EnrichmentCoordinator — recovery integration", () => {
     mockProvider = {
       key: "git",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -1945,7 +1960,7 @@ describe("EnrichmentCoordinator — recovery integration", () => {
 
     const coordWithRecovery = new EnrichmentCoordinator(mockQdrant, mockProvider, recovery);
 
-    await coordWithRecovery.runRecovery("col", "/root");
+    await coordWithRecovery.runRecovery(fixturePhysicalCollectionName("col"), "/root");
 
     // "unenriched" is the invariant here, not an incidental argument: recovery
     // HEALS what is missing. Rebuilding payload that is already present is the
@@ -1956,7 +1971,7 @@ describe("EnrichmentCoordinator — recovery integration", () => {
 
   it("should be no-op when recovery not provided", async () => {
     const coordWithoutRecovery = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    await coordWithoutRecovery.runRecovery("col", "/root");
+    await coordWithoutRecovery.runRecovery(fixturePhysicalCollectionName("col"), "/root");
     // Should not throw, should not call any qdrant methods for recovery
   });
 
@@ -1975,7 +1990,7 @@ describe("EnrichmentCoordinator — recovery integration", () => {
     const countSpy = vi.spyOn(recovery, "countUnenriched").mockResolvedValue(999);
 
     const coordWithRecovery = new EnrichmentCoordinator(mockQdrant, mockProvider, recovery);
-    await coordWithRecovery.runRecovery("col", "/root");
+    await coordWithRecovery.runRecovery(fixturePhysicalCollectionName("col"), "/root");
 
     // countUnenriched should NOT be called — use remainingUnenriched from recover results
     expect(countSpy).not.toHaveBeenCalled();
@@ -2003,7 +2018,7 @@ describe("EnrichmentCoordinator — recovery integration", () => {
 
     const coordWithRecovery = new EnrichmentCoordinator(mockQdrant, mockProvider, recovery);
 
-    await coordWithRecovery.runRecovery("col", "/root");
+    await coordWithRecovery.runRecovery(fixturePhysicalCollectionName("col"), "/root");
 
     // Should have written terminal recovery markers via key-scoped batchSetPayload.
     const ops = mockQdrant.batchSetPayload.mock.calls.flatMap((c: any[]) => c[1] as any[]);
@@ -2031,7 +2046,7 @@ describe("EnrichmentCoordinator — recovery integration", () => {
 
     const coordWithRecovery = new EnrichmentCoordinator(mockQdrant, mockProvider, recovery);
 
-    await coordWithRecovery.runRecovery("col", "/root");
+    await coordWithRecovery.runRecovery(fixturePhysicalCollectionName("col"), "/root");
 
     const ops = mockQdrant.batchSetPayload.mock.calls.flatMap((c: any[]) => c[1] as any[]);
     const fileOp = ops.find((op: any) => op.key === "enrichment.git.file");
@@ -2055,6 +2070,7 @@ describe("EnrichmentCoordinator — streaming chunk enrichment", () => {
     mockProvider = {
       key: "git",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -2207,6 +2223,7 @@ describe("EnrichmentCoordinator — runRecovery stale-marker protection", () => 
   const mkProvider = (key = "git") => ({
     key,
     signals: [],
+    derivedSignals: [],
     filters: [],
     presets: [],
     resolveRoot: vi.fn((p: string) => p),
@@ -2248,8 +2265,8 @@ describe("EnrichmentCoordinator — runRecovery stale-marker protection", () => 
     };
     const recovery = mkRecovery(mockQdrant, 0, 42); // would otherwise write chunk=degraded, unenriched=42
 
-    const coordinator = new EnrichmentCoordinator(mockQdrant, provider as any, recovery);
-    await coordinator.runRecovery("test-col", "/repo");
+    const coordinator = new EnrichmentCoordinator(mockQdrant, provider, recovery);
+    await coordinator.runRecovery(fixturePhysicalCollectionName("test-col"), "/repo");
 
     // Writeback with recovery verdict must NOT happen — fresher run owns the marker now.
     const ops = mockQdrant.batchSetPayload.mock.calls.flatMap((c: any[]) => c[1] as any[]);
@@ -2270,8 +2287,8 @@ describe("EnrichmentCoordinator — runRecovery stale-marker protection", () => 
     };
     const recovery = mkRecovery(mockQdrant, 0, 7);
 
-    const coordinator = new EnrichmentCoordinator(mockQdrant, provider as any, recovery);
-    await coordinator.runRecovery("test-col", "/repo");
+    const coordinator = new EnrichmentCoordinator(mockQdrant, provider, recovery);
+    await coordinator.runRecovery(fixturePhysicalCollectionName("test-col"), "/repo");
 
     const ops = mockQdrant.batchSetPayload.mock.calls.flatMap((c: any[]) => c[1] as any[]);
     const degradedWrite = ops.find((op: any) => op.key === "enrichment.git.chunk" && op.payload?.status === "degraded");
@@ -2294,7 +2311,7 @@ describe("EnrichmentCoordinator — runRecovery stale-marker protection", () => 
         .mockImplementation(async (_col: string, _key: string, level: "file" | "chunk") => (level === "file" ? 3 : 17)),
     };
 
-    const coordinator = new EnrichmentCoordinator(mockQdrant, provider as any, recovery as any);
+    const coordinator = new EnrichmentCoordinator(mockQdrant, provider, recovery as any);
     const run = coordinator.beginRun(runSpec("/repo", "test-col"));
     await new Promise((r) => setTimeout(r, 20));
 
@@ -2331,7 +2348,7 @@ describe("EnrichmentCoordinator — runRecovery stale-marker protection", () => 
       getPoint: vi.fn().mockResolvedValue(null),
     };
 
-    const coordinator = new EnrichmentCoordinator(mockQdrant, provider as any);
+    const coordinator = new EnrichmentCoordinator(mockQdrant, provider);
     const run = coordinator.beginRun(runSpec("/repo", "test-col"));
     await new Promise((r) => setTimeout(r, 20));
 
@@ -2353,8 +2370,8 @@ describe("EnrichmentCoordinator — runRecovery stale-marker protection", () => 
     };
     const recovery = mkRecovery(mockQdrant, 0, 0);
 
-    const coordinator = new EnrichmentCoordinator(mockQdrant, provider as any, recovery);
-    await coordinator.runRecovery("test-col", "/repo");
+    const coordinator = new EnrichmentCoordinator(mockQdrant, provider, recovery);
+    await coordinator.runRecovery(fixturePhysicalCollectionName("test-col"), "/repo");
 
     const ops = mockQdrant.batchSetPayload.mock.calls.flatMap((c: any[]) => c[1] as any[]);
     const recoveryWrite = ops.find(
@@ -2377,6 +2394,7 @@ describe("EnrichmentCoordinator — RunState isolation", () => {
     provider = {
       key: "git",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -2495,6 +2513,7 @@ describe("EnrichmentCoordinator — RunState isolation", () => {
     const streamProvider: EnrichmentProvider = {
       key: "git",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -2528,6 +2547,7 @@ describe("EnrichmentCoordinator — RunState isolation", () => {
     const streamProvider: EnrichmentProvider = {
       key: "git",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -2555,6 +2575,7 @@ describe("EnrichmentCoordinator — RunState isolation", () => {
     const flakyProvider: EnrichmentProvider = {
       key: "git",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -2571,13 +2592,13 @@ describe("EnrichmentCoordinator — RunState isolation", () => {
     // Run 1 — force completion to throw, which rejects donePromise.
     const run1 = coordinator.beginRun(runSpec("/repo-1", "test-col"));
     const runState1 = (
-      coordinator as { currentRun: { completion: { run: unknown }; donePromise: Promise<unknown> } | null }
+      coordinator as unknown as { currentRun: { completion: { run: unknown }; donePromise: Promise<unknown> } | null }
     ).currentRun;
     expect(runState1).not.toBeNull();
     // The orphaned RunState's donePromise rejects too — attach a handler so the
     // rejection isn't reported as unhandled.
     const orphanDone = runState1!.donePromise.catch(() => undefined);
-    vi.spyOn(runState1!.completion, "run" as never).mockRejectedValue(new Error("run 1 failed"));
+    (vi.spyOn(runState1!.completion, "run" as never) as MockInstance).mockRejectedValue(new Error("run 1 failed"));
     await expect(coordinator.awaitCompletion(run1)).rejects.toThrow("run 1 failed");
     await orphanDone;
 
@@ -2605,6 +2626,7 @@ describe("EnrichmentCoordinator — daemon guard error paths", () => {
     mockProvider = {
       key: "git",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -2659,6 +2681,7 @@ describe("EnrichmentCoordinator — maybeHeartbeat throttle and stale-run guard"
     mockProvider = {
       key: "git",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -2780,6 +2803,7 @@ describe("EnrichmentCoordinator — error-swallowing catch paths", () => {
     const mockProvider: EnrichmentProvider = {
       key: "git",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -2815,6 +2839,7 @@ describe("EnrichmentCoordinator — error-swallowing catch paths", () => {
     const mockProvider: EnrichmentProvider = {
       key: "git",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -2848,6 +2873,7 @@ describe("EnrichmentCoordinator — error-swallowing catch paths", () => {
     const mockProvider: EnrichmentProvider = {
       key: "git",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -2885,6 +2911,7 @@ describe("EnrichmentCoordinator — error-swallowing catch paths", () => {
     const mockProvider: EnrichmentProvider = {
       key: "git",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -2927,6 +2954,7 @@ describe("EnrichmentCoordinator — countSettledUnenriched with recovery", () =>
     const mockProvider: EnrichmentProvider = {
       key: "git",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -2946,7 +2974,7 @@ describe("EnrichmentCoordinator — countSettledUnenriched with recovery", () =>
       countUnenriched,
     } as any;
 
-    const coord = new EnrichmentCoordinator(mockQdrant, mockProvider, recovery);
+    const coord = new EnrichmentCoordinator(mockQdrant as unknown as QdrantManager, mockProvider, recovery);
     const run = coord.beginRun(runSpec("/repo", "coll-repoll"));
 
     coord.onChunksStored(run, [
@@ -3001,7 +3029,7 @@ describe("EnrichmentCoordinator — tail-heartbeat (post-embedding enrichment)",
       let unblockChunk!: () => void;
       const chunkBlocked = new Promise<Map<string, never>>((resolve) => {
         unblockChunk = () => {
-          resolve(new Map());
+          resolve(new Map<string, never>());
         };
       });
       let chunkCalled = false;
@@ -3009,6 +3037,7 @@ describe("EnrichmentCoordinator — tail-heartbeat (post-embedding enrichment)",
       const provider: any = {
         key: "git",
         signals: [],
+        derivedSignals: [],
         filters: [],
         presets: [],
         resolveRoot: (p: string) => p,
@@ -3111,6 +3140,7 @@ describe("EnrichmentCoordinator — applier-site heartbeat (post-flush coverage)
       const provider: any = {
         key: "git",
         signals: [],
+        derivedSignals: [],
         filters: [],
         presets: [],
         resolveRoot: (p: string) => p,
@@ -3178,6 +3208,7 @@ describe("EnrichmentCoordinator — onFileExtraction / acceptsExtractions (yl9tv
     return {
       key: "static",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -3236,7 +3267,9 @@ describe("EnrichmentCoordinator — onFileExtraction / acceptsExtractions (yl9tv
     coord.onFileExtraction(run, extraction);
 
     expect(acceptExtraction).toHaveBeenCalledTimes(1);
-    expect(acceptExtraction).toHaveBeenCalledWith(extraction, { collectionName: "coll-y" });
+    expect(acceptExtraction).toHaveBeenCalledWith(extraction, {
+      collectionName: fixturePhysicalCollectionName("coll-y"),
+    });
   });
 
   it("onFileExtraction is silent when no provider has the hook", () => {
@@ -3263,6 +3296,7 @@ describe("EnrichmentCoordinator — error resilience in async callbacks", () => 
     mockProvider = {
       key: "git",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -3353,6 +3387,7 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
     mockProvider = {
       key: "git",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -3746,6 +3781,7 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
     const deferredProvider = {
       key: "codegraph.symbols",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -3753,7 +3789,7 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
       buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
       defersChunkEnrichment: true,
     };
-    const coord = new EnrichmentCoordinator(mockQdrant, deferredProvider as any);
+    const coord = new EnrichmentCoordinator(mockQdrant, deferredProvider);
     const events: EnrichmentProgressEvent[] = [];
     coord.setEnrichmentProgress((e) => events.push(e));
 
@@ -3795,6 +3831,7 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
     const mkProvider = (key: string, deferred: boolean) => ({
       key,
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -3805,7 +3842,7 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
     const coord = new EnrichmentCoordinator(mockQdrant, [
       mkProvider("codegraph.symbols", true),
       mkProvider("git", false),
-    ] as any);
+    ]);
     const order: string[] = [];
     coord.setEnrichmentProgress((e) => order.push(`${e.providerKey}:${e.level}`));
 

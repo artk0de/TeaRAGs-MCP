@@ -69,7 +69,7 @@ const symbols = table({
 });
 
 const typeDeclarations = {
-  "Sources/Request.swift": [{ typeId: "Request", reopens: false }],
+  "Sources/Request.swift": [{ typeId: "Request", symbolKind: "class" as const, line: 1, reopens: false }],
   "Sources/Session.swift": [
     {
       typeId: "Session",
@@ -77,12 +77,12 @@ const typeDeclarations = {
       fieldTypeArguments: { apps: ["String", "Set"], frames: ["Request"] },
     },
   ],
-  "Sources/String+Ext.swift": [{ typeId: "String", reopens: true }],
+  "Sources/String+Ext.swift": [{ typeId: "String", symbolKind: "class" as const, line: 1, reopens: true }],
   "Sources/Range+Ext.swift": [
-    { typeId: "Range", reopens: true },
-    { typeId: "ClosedRange", reopens: true },
+    { typeId: "Range", symbolKind: "class" as const, line: 1, reopens: true },
+    { typeId: "ClosedRange", symbolKind: "class" as const, line: 1, reopens: true },
   ],
-  "Sources/Tile.swift": [{ typeId: "Tile", reopens: false }],
+  "Sources/Tile.swift": [{ typeId: "Tile", symbolKind: "class" as const, line: 1, reopens: false }],
 };
 
 const inSession: CallContext = {

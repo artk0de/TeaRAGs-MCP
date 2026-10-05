@@ -9,3 +9,4 @@
 export { extractFromPythonFile, type PythonExtractInput } from "./walker.js";
 export { pyNameOf } from "./name-of.js";
 export { PYTHON_EXTRACTION_PASSES } from "./passes.js";
+export { pythonInertFileExtraction } from "./inert-file-extraction.js";

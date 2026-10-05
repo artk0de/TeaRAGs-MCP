@@ -4,7 +4,7 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
-  type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { GoCallResolver } from "../../../../../../src/core/domains/language/go/resolver/go-resolver.js";
 import { GoReceiverChainSymbolResolutionStrategy } from "../../../../../../src/core/domains/language/go/resolver/strategies/index.js";
@@ -21,7 +21,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/tr
  * them (`<relPath>::<Type>` on `classFieldTypesByClassKey`).
  */
 
-const sym = (symbolId: string, relPath: string): NamedSymbol => ({
+const sym = (symbolId: string, relPath: string): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName: symbolId.split(/[#.]/).pop() ?? symbolId,

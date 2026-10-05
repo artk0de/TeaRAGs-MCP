@@ -26,6 +26,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { GraphDbClientPool } from "../../../../../../src/core/adapters/duckdb/pool.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
@@ -92,7 +93,7 @@ describe("codegraph spill — a mid-run pool construction must not purge a live 
   });
 
   it("survives a second pool built over the same rootDir while pass-1 is writing", async () => {
-    const sink = newProvider(newPool()).asExtractionSink("alpha");
+    const sink = newProvider(newPool()).asExtractionSink(fixturePhysicalCollectionName("alpha"));
     await sink.write(extraction);
     const [spill] = await spillsOnDisk(1);
 
@@ -104,7 +105,7 @@ describe("codegraph spill — a mid-run pool construction must not purge a live 
   });
 
   it("keeps a live spill safe against every worker of a 4-thread pool", async () => {
-    const sink = newProvider(newPool()).asExtractionSink("alpha");
+    const sink = newProvider(newPool()).asExtractionSink(fixturePhysicalCollectionName("alpha"));
     await sink.write(extraction);
     const [spill] = await spillsOnDisk(1);
 
@@ -121,11 +122,11 @@ describe("codegraph spill — a mid-run pool construction must not purge a live 
   it("keeps a concurrent CLI run's spill on a different collection", async () => {
     // Two overlapping `index-codebase` processes share one data dir. Run A is
     // mid-pass-1 on `alpha`; run B's composition root builds its pool at start.
-    const runA = newProvider(newPool()).asExtractionSink("alpha");
+    const runA = newProvider(newPool()).asExtractionSink(fixturePhysicalCollectionName("alpha"));
     await runA.write(extraction);
     const [spillA] = await spillsOnDisk(1);
 
-    const runB = newProvider(newPool()).asExtractionSink("beta");
+    const runB = newProvider(newPool()).asExtractionSink(fixturePhysicalCollectionName("beta"));
     await runB.write({ ...extraction, relPath: "lib/other.ts" });
     expect(await spillsOnDisk(2)).toHaveLength(2);
     expect(existsSync(spillA)).toBe(true);

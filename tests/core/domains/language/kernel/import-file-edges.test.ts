@@ -7,9 +7,9 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { CallContext, FileExtraction } from "../../../../src/core/contracts/types/codegraph.js";
-import type { ImportFileMapper, ImportFileTarget } from "../../../../src/core/contracts/types/language.js";
-import { resolveImportFileEdges } from "../../../../src/core/domains/language/import-file-edges.js";
+import type { CallContext, FileExtraction } from "../../../../../src/core/contracts/types/codegraph.js";
+import type { ImportFileMapper, ImportFileTarget } from "../../../../../src/core/contracts/types/language.js";
+import { resolveImportFileEdges } from "../../../../../src/core/domains/language/kernel/import-file-edges.js";
 
 function extractionWith(relPath: string, importTexts: string[]): FileExtraction {
   return {

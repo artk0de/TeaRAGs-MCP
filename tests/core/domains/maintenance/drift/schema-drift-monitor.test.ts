@@ -33,7 +33,7 @@ function makeTmpDir(): string {
 
 const SAMPLE_STATS: CollectionSignalStats = {
   computedAt: 1_700_000_000_000,
-  perSignal: new Map([["git.file.commitCount", { count: 100 }]]),
+  perSignal: new Map([["git.file.commitCount", { count: 100, min: 0, max: 0, percentiles: {} }]]),
   perLanguage: new Map(),
   distributions: {
     totalFiles: 0,

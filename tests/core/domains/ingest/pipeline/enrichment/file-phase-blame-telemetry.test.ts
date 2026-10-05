@@ -7,6 +7,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { FilePhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/file-phase.js";
@@ -45,8 +46,8 @@ describe("FilePhase blame telemetry (bd tea-rags-mcp-v2mlw)", () => {
     };
 
     const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
-    phase.onBatch("coll", "/repo", items);
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "run-1", "ts");
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", items);
     await phase.drain();
 
     expect(streamFileBatch).toHaveBeenCalledTimes(1);

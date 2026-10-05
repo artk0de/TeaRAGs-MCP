@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { unavailable } from "../../../src/cli/update-check/types.js";
+import { createPathCollectionResolver } from "../../../src/core/api/index.js";
 import { resolveLanguageCapabilities } from "../../../src/core/domains/language/capability/resolve.js";
 
 const { pingMock, createAppContextMock, parseAppConfigMock } = vi.hoisted(() => ({
@@ -115,7 +116,7 @@ describe("runPrime — debug flag reaches the codegraph resolve section", () => 
   it("renders the receiver-kind breakdown when the parsed config has debug on", async () => {
     parseAppConfigMock.mockReturnValue({ debug: true });
 
-    await runPrime({ path: projectDir });
+    await runPrime({ path: projectDir, createPathCollectionResolver });
 
     const out = String(writeMock.mock.calls[0][0]);
     expect(out).toContain("  constant 0.89 89/100 · 299 unnarrowed");
@@ -125,7 +126,7 @@ describe("runPrime — debug flag reaches the codegraph resolve section", () => 
   it("renders plain rates when the parsed config has debug off", async () => {
     parseAppConfigMock.mockReturnValue({ debug: false });
 
-    await runPrime({ path: projectDir });
+    await runPrime({ path: projectDir, createPathCollectionResolver });
 
     const out = String(writeMock.mock.calls[0][0]);
     expect(out).toContain("resolve rate: ruby 0.89");

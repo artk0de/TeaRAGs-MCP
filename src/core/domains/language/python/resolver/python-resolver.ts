@@ -48,10 +48,12 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent, SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
-import { ExternalCallClassifier } from "../../external-classifier.js";
-import { resolveImportFileEdges } from "../../import-file-edges.js";
-import { readResolverConfig } from "../../kernel/index.js";
-import { resolveDispatchViaComponents } from "../../resolver-chain.js";
+import {
+  ExternalCallClassifier,
+  readResolverConfig,
+  resolveDispatchViaComponents,
+  resolveImportFileEdges,
+} from "../../kernel/index.js";
 import { PythonChainAnswerProbe } from "./dispatch/index.js";
 import { createPythonUnionDispatchPorts } from "./dispatch/python-union-ports.js";
 import { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";

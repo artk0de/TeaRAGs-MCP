@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import type {
   EnrichmentProvider,
   WorkerEnrichmentDescriptor,
@@ -110,7 +111,9 @@ describe("createCodegraphEnrichmentProvider", () => {
       // calls symbolTableFactory() to build the InMemoryGlobalSymbolTable and
       // then initHook() to hydrate it from the (empty) fresh DB.
       const collectionName = "code_factory_test_v1";
-      const result = await provider.buildFileSignals(scanRoot, { collectionName });
+      const result = await provider.buildFileSignals(scanRoot, {
+        collectionName: fixturePhysicalCollectionName(collectionName),
+      });
 
       // An empty scan root yields an empty overlay — confirms the full
       // call path ran without error and symbolTableFactory + initHook executed.
@@ -136,12 +139,14 @@ describe("createCodegraphEnrichmentProvider", () => {
 
       // First pass — indexing an empty directory populates the pool entry;
       // initHook runs against an empty DB (listAllSymbols → []).
-      const firstResult = await provider.buildFileSignals(scanRoot, { collectionName });
+      const firstResult = await provider.buildFileSignals(scanRoot, {
+        collectionName: fixturePhysicalCollectionName(collectionName),
+      });
       expect(firstResult).toBeInstanceOf(Map);
 
       // Release the provider so the pool entry is closed and a subsequent
       // acquire triggers a fresh openCollection → symbolTableFactory + initHook.
-      await provider.onRelease?.(collectionName);
+      await provider.onRelease?.();
     });
   });
 });

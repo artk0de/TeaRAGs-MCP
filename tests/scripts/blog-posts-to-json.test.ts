@@ -114,7 +114,7 @@ describe("collectBlogPostLinks", () => {
   ];
 
   it("sorts posts oldest-first so a multi-post range reads chronologically", () => {
-    expect(collectBlogPostLinks(entries).map((p) => p.slug)).toEqual(["earlier", "later"]);
+    expect(collectBlogPostLinks(entries).map((p: { slug: string }) => p.slug)).toEqual(["earlier", "later"]);
   });
 
   it("emits exactly slug, title, summary and url per post", () => {

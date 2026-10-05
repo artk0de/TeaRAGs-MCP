@@ -36,6 +36,6 @@ describe("parseGitLog", () => {
 
   it("splits multiple records and drops empty trailing ones", () => {
     const raw = `h1${US}s1${US}n1${US}e1${US}${RS}h2${US}s2${US}n2${US}e2${US}${RS}`;
-    expect(parseGitLog(raw).map((c) => c.hash)).toEqual(["h1", "h2"]);
+    expect(parseGitLog(raw).map((c: { hash: string }) => c.hash)).toEqual(["h1", "h2"]);
   });
 });

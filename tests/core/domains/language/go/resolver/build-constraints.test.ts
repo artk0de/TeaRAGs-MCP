@@ -10,7 +10,7 @@ import type {
   CallRef,
   FileExtraction,
   GlobalSymbolTable,
-  NamedSymbol,
+  SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import {
   goBuildContextForHost,
@@ -81,7 +81,7 @@ describe("Go walker — the file's build constraint", () => {
   });
 });
 
-const sym = (symbolId: string, relPath: string): NamedSymbol => ({
+const sym = (symbolId: string, relPath: string): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName: symbolId.split(/[#.]/).pop() ?? symbolId,

@@ -14,6 +14,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../__helpers__/collection-identity.js";
 import { IngestFacade } from "../../../src/core/api/internal/facades/ingest-facade.js";
 import { INDEXING_METADATA_ID } from "../../../src/core/contracts/constants.js";
 import { IndexMetricsQuery } from "../../../src/core/domains/explore/queries/index-metrics.js";
@@ -119,6 +120,11 @@ describe("chunk counts — status, metrics and the recompute agree on one collec
       qdrant: qdrant as never,
       embeddings: new MockEmbeddingProvider(),
       config: defaultTestConfig(),
+      // The status path reads enrichment markers only; a blob read here would
+      // mean the fixture is on the git-walk path, which it must not be.
+      blobReaderFactory: async () => {
+        throw new Error("blob reads are not expected on the status path");
+      },
       trajectoryConfig: defaultTrajectoryConfig(),
     });
     return (await ingest.getIndexStatus(codebaseDir)).chunksCount;
@@ -148,7 +154,7 @@ describe("chunk counts — status, metrics and the recompute agree on one collec
   async function recomputeScrollChunks(): Promise<unknown> {
     const phases = vi.spyOn(pipelineLog, "enrichmentPhase");
     const coordinator = new EnrichmentCoordinator(qdrant as never, [gitProvider()]);
-    await coordinator.recomputeEnrichments(collectionName, codebaseDir, ["git"]);
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName(collectionName), codebaseDir, ["git"]);
     const scroll = phases.mock.calls.find(([phase]) => phase === "RECOMPUTE_SCROLL");
     return (scroll?.[1] as { chunks?: number } | undefined)?.chunks;
   }

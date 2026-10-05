@@ -450,8 +450,19 @@ export class CallEdgeResolutionRunner {
     } finally {
       this.activeHierarchy = undefined;
     }
-    const fileEdges = this.buildFileEdges(extraction, symbolTable, resolver, inputs, methodEdges);
-    const typeOnlyFileEdges = this.buildTypeOnlyFileEdges(extraction, symbolTable, resolver, inputs, fileEdges);
+    const runtimeFileEdges = this.buildFileEdges(extraction, symbolTable, resolver, inputs, methodEdges);
+    const typeOnlyFileEdges = this.buildTypeOnlyFileEdges(extraction, symbolTable, resolver, inputs, runtimeFileEdges);
+    // bd tea-rags-mcp-89k7k.31: a type-only import is a compile-time
+    // dependency, so its resolved edge joins the runtime file graph beside the
+    // dedicated channel — same convention as a call-less re-export edge, it
+    // reads callWeight 0 everywhere the file graph is aggregated (no method
+    // edge can sit behind it), keeping fanIn / instability / blast radius
+    // honest while the coupling it declares stays ranked below runtime ones.
+    // Type-only edges are already filtered against runtime targets and
+    // self-edges, so the concat stays unique per (source, target). Export
+    // names ride along: a type-only import takes names off the target's
+    // surface, and the facade-bypass check reads them off the file edge.
+    const fileEdges = typeOnlyFileEdges.length > 0 ? [...runtimeFileEdges, ...typeOnlyFileEdges] : runtimeFileEdges;
 
     // Class hierarchy (bd tea-rags-mcp-f10y). Persist this file's declared
     // inheritance edges alongside its file/method edges so cg_symbols_inheritance
@@ -461,7 +472,14 @@ export class CallEdgeResolutionRunner {
     // unified inheritanceEdges field, others via the legacy class* Records.
     const inheritance = normalizeInheritanceEdges(extraction, (fq) => symbolTable.lookup(fq)[0]?.symbolId ?? null);
     const edges: GraphEdges = { fileEdges, methodEdges };
-    if (typeOnlyFileEdges.length > 0) edges.typeOnlyFileEdges = typeOnlyFileEdges;
+    if (typeOnlyFileEdges.length > 0) {
+      // The dedicated channel keeps its lean shape — its table has no export
+      // name columns; the merged copy in `fileEdges` carries them.
+      edges.typeOnlyFileEdges = typeOnlyFileEdges.map((e) => ({
+        targetRelPath: e.targetRelPath,
+        importText: e.importText,
+      }));
+    }
     if (inheritance.length > 0) edges.inheritance = inheritance;
     if (ambiguousFanouts.length > 0) edges.ambiguousFanouts = ambiguousFanouts;
     // What the call sites read from the hierarchy (bd tea-rags-mcp-7t2ee), so a
@@ -630,10 +648,16 @@ export class CallEdgeResolutionRunner {
    * `imports[]` entry flagged `typeOnly`. That list is resolved by the very
    * import→file path the runtime list takes — handed to the same resolver as if
    * it were the file's imports — so a specifier maps to the same file either
-   * way. What comes back is kept apart from `fileEdges`: a target a runtime
-   * import already reaches is dropped (the runtime edge says more), and so is a
-   * self-edge. No resolved method edges are passed: a language that derives
-   * file edges from calls would otherwise hand the runtime answer back.
+   * way. A target a runtime import already reaches is dropped (the runtime edge
+   * says more), and so is a self-edge. No resolved method edges are passed: a
+   * language that derives file edges from calls would otherwise hand the
+   * runtime answer back.
+   *
+   * Since bd tea-rags-mcp-89k7k.31 what comes back is ALSO merged into
+   * `fileEdges` by `resolve` — a type-only import is a structural dependency —
+   * while `GraphEdges.typeOnlyFileEdges` keeps its own copy for the co-change
+   * reader; the return shape is the full file-edge one so export names survive
+   * the merge.
    */
   private buildTypeOnlyFileEdges(
     extraction: FileExtraction,
@@ -641,7 +665,7 @@ export class CallEdgeResolutionRunner {
     resolver: LanguageSymbolResolver,
     inputs: ResolverInputs,
     runtimeFileEdges: GraphEdges["fileEdges"],
-  ): NonNullable<GraphEdges["typeOnlyFileEdges"]> {
+  ): GraphEdges["fileEdges"] {
     const typeOnlyImports = [
       ...extraction.imports.filter((imp) => imp.typeOnly),
       ...(extraction.typeOnlyImports ?? []),
@@ -653,9 +677,9 @@ export class CallEdgeResolutionRunner {
       ? resolver.resolveFileEdges(typeOnlyExtraction, ctx, [])
       : defaultImportFileEdges(typeOnlyExtraction, resolver, ctx);
     const runtimeTargets = new Set(runtimeFileEdges.map((e) => e.targetRelPath));
-    return dedupeFileEdgesByTarget(candidates)
-      .filter((e) => e.targetRelPath !== extraction.relPath && !runtimeTargets.has(e.targetRelPath))
-      .map((e) => ({ targetRelPath: e.targetRelPath, importText: e.importText }));
+    return dedupeFileEdgesByTarget(candidates).filter(
+      (e) => e.targetRelPath !== extraction.relPath && !runtimeTargets.has(e.targetRelPath),
+    );
   }
 
   private fileEdgeContext(

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import type { CallContext, CallRef } from "../../../../src/core/contracts/types/codegraph.js";
-import type { ExternalVocabulary } from "../../../../src/core/contracts/types/language.js";
-import { ExternalCallClassifier } from "../../../../src/core/domains/language/external-classifier.js";
+import type { CallContext, CallRef } from "../../../../../src/core/contracts/types/codegraph.js";
+import type { ExternalVocabulary } from "../../../../../src/core/contracts/types/language.js";
+import { ExternalCallClassifier } from "../../../../../src/core/domains/language/kernel/external-classifier.js";
 
 const ctx = {} as CallContext;
 const fakeVocab: ExternalVocabulary = {

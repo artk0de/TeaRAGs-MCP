@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import {
   ALL_LANGUAGES,
   finalizeOnlyRunSpec,
@@ -17,7 +18,12 @@ import {
  */
 describe("EnrichmentRunSpec factories", () => {
   it("a full index resolves the whole corpus of every language, cross-pass as the pipeline decides", () => {
-    const spec = fullIndexRunSpec({ absolutePath: "/repo", collection: "code_v2", fileCount: 12, crossPass: true });
+    const spec = fullIndexRunSpec({
+      absolutePath: "/repo",
+      collection: fixturePhysicalCollectionName("code_v2"),
+      fileCount: 12,
+      crossPass: true,
+    });
 
     expect(spec.scope).toEqual({ kind: "wholeCorpus", languages: ALL_LANGUAGES });
     expect(spec).toMatchObject({ absolutePath: "/repo", collection: "code_v2", fileCount: 12, crossPass: true });
@@ -25,7 +31,11 @@ describe("EnrichmentRunSpec factories", () => {
   });
 
   it("a reindex resolves a subset and never runs the cross-pass", () => {
-    const spec = reindexRunSpec({ absolutePath: "/repo", collection: "code_v2", fileCount: 3 });
+    const spec = reindexRunSpec({
+      absolutePath: "/repo",
+      collection: fixturePhysicalCollectionName("code_v2"),
+      fileCount: 3,
+    });
 
     expect(spec.scope).toEqual({ kind: "subset", languages: ALL_LANGUAGES });
     expect(spec.crossPass).toBe(false);
@@ -35,7 +45,7 @@ describe("EnrichmentRunSpec factories", () => {
   it("a recompute resolves the whole corpus of the languages it was asked for, with its providers", () => {
     const spec = recomputeRunSpec({
       absolutePath: "/repo",
-      collection: "code_v2",
+      collection: fixturePhysicalCollectionName("code_v2"),
       fileCount: 40,
       onlyProviderKeys: ["codegraph.symbols"],
       languages: ["typescript"],
@@ -47,7 +57,7 @@ describe("EnrichmentRunSpec factories", () => {
   });
 
   it("a finalize-only close resolves a subset over no streamed files", () => {
-    const spec = finalizeOnlyRunSpec({ absolutePath: "/repo", collection: "code_v2" });
+    const spec = finalizeOnlyRunSpec({ absolutePath: "/repo", collection: fixturePhysicalCollectionName("code_v2") });
 
     expect(spec.scope).toEqual({ kind: "subset", languages: ALL_LANGUAGES });
     expect(spec).toMatchObject({ fileCount: 0, crossPass: false });

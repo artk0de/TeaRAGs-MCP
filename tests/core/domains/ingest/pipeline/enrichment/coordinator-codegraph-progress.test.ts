@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
 import type { EnrichmentProvider } from "../../../../../../src/core/contracts/types/provider.js";
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
@@ -11,7 +12,12 @@ import type { EnrichmentProgressEvent } from "../../../../../../src/core/types.j
 
 /** A cross-pass run — only the full index takes the cross-pass in production. */
 const crossPassSpec = (collection: string) =>
-  fullIndexRunSpec({ absolutePath: "/repo", collection, fileCount: 0, crossPass: true });
+  fullIndexRunSpec({
+    absolutePath: "/repo",
+    collection: fixturePhysicalCollectionName(collection),
+    fileCount: 0,
+    crossPass: true,
+  });
 
 /**
  * yl9tv Task 3 — surfaces the eager codegraph node-upsert progress (Tasks 1-2:
@@ -38,6 +44,7 @@ describe("EnrichmentCoordinator — codegraph.symbols:symbols progress (yl9tv Ta
     mockProvider = {
       key: "codegraph",
       signals: [],
+      derivedSignals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
@@ -67,7 +74,9 @@ describe("EnrichmentCoordinator — codegraph.symbols:symbols progress (yl9tv Ta
     coordinator.setEnrichmentProgress((e) => events.push(e));
 
     // An incremental run never takes the cross-pass.
-    const run = coordinator.beginRun(reindexRunSpec({ absolutePath: "/repo", collection: "c", fileCount: 0 }));
+    const run = coordinator.beginRun(
+      reindexRunSpec({ absolutePath: "/repo", collection: fixturePhysicalCollectionName("c"), fileCount: 0 }),
+    );
     for (const ex of threeExtractions) coordinator.onFileExtraction(run, ex);
 
     expect(events.filter((e) => e.level === "symbols")).toHaveLength(0);

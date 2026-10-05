@@ -6,13 +6,16 @@ import type {
   DispatchEdge,
   DispatchFanoutOutcome,
   SymbolResolutionTarget,
-} from "../../../../src/core/contracts/types/codegraph.js";
+} from "../../../../../src/core/contracts/types/codegraph.js";
 import type {
   DispatchResolverComponent,
   SymbolResolutionOutcome,
   SymbolResolutionStrategy,
-} from "../../../../src/core/contracts/types/language.js";
-import { resolveDispatchViaComponents, resolveViaChain } from "../../../../src/core/domains/language/resolver-chain.js";
+} from "../../../../../src/core/contracts/types/language.js";
+import {
+  resolveDispatchViaComponents,
+  resolveViaChain,
+} from "../../../../../src/core/domains/language/kernel/resolver-chain.js";
 
 const target = (id: string): SymbolResolutionTarget => ({ targetRelPath: "a.ts", targetSymbolId: id });
 const strategy = (name: string, outcome: SymbolResolutionOutcome): SymbolResolutionStrategy => ({

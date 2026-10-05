@@ -26,6 +26,7 @@ class MockWorker extends EventEmitter {
             type: "result",
             id: msg.id,
             embeddings: msg.texts.map(() => [1, 2, 3]),
+            durationMs: 0,
           } satisfies WorkerResponse),
         );
         break;

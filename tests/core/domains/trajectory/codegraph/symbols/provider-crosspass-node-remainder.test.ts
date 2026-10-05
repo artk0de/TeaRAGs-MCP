@@ -41,13 +41,14 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
+import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolve(__dirname, "../../../../../../src/core/domains/maintenance/migration/database/migrations");
@@ -121,16 +122,22 @@ async function runTwoInstanceCrossPass(
   });
 
   // MAIN thread: run start + per-file accept (tee to spill + node buffer).
-  mainProvider.beginExtractionRun(collectionName);
-  for (const e of extractions) mainProvider.acceptExtraction(e, { collectionName });
+  mainProvider.beginExtractionRun(fixturePhysicalCollectionName(collectionName));
+  for (const e of extractions) {
+    mainProvider.acceptExtraction(e, { collectionName: fixturePhysicalCollectionName(collectionName) });
+  }
   // MAIN thread: end-of-file-phase remainder flush — the seam under test. Awaited
   // before the WORKER's finalize dispatch (nodes-before-edges across instances).
-  await mainProvider.endExtractionRun(collectionName);
+  await mainProvider.endExtractionRun(fixturePhysicalCollectionName(collectionName));
 
   // WORKER thread: drain the MAIN-written spill + resolve edges. Its own node
   // buffer is empty; it must NOT re-run beginExtractionRun (that truncates the
   // spill). This mirrors the coordinator dispatching runFinalize to the worker.
-  await workerProvider.finalizeSignals(tmp, { crossPass: true, paths, collectionName });
+  await workerProvider.finalizeSignals(tmp, {
+    crossPass: true,
+    paths,
+    collectionName: fixturePhysicalCollectionName(collectionName),
+  });
 
   const rows = await graphDb.listAllSymbols();
   return rows.map((r) => r.relPath).sort();

@@ -17,12 +17,12 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
-  type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { RubyCallResolver } from "../../../../../../src/core/domains/language/ruby/resolver/ruby-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
-const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): NamedSymbol => ({
+const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName,

@@ -1,9 +1,6 @@
 ---
 paths:
   - "src/core/domains/language/kernel/**"
-  - "src/core/domains/language/resolver-chain.ts"
-  - "src/core/domains/language/import-file-edges.ts"
-  - "src/core/domains/language/external-classifier.ts"
   - "src/core/domains/language/factory.ts"
   - "src/core/domains/language/shared/**"
   - "src/core/domains/trajectory/codegraph/symbols/resolution-runner.ts"

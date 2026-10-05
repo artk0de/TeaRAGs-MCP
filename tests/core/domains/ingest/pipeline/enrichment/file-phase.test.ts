@@ -2,6 +2,7 @@ import ignore from "ignore";
 import { describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
+import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { INDEXING_METADATA_ID } from "../../../../../../src/core/contracts/constants.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { ChunkPhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/chunk-phase.js";
@@ -54,9 +55,9 @@ describe("FilePhase", () => {
     const ctx = buildCtx({ streamFileBatch });
 
     const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "run-1", "ts");
 
-    phase.onBatch("coll", "/repo", items);
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", items);
     await phase.drain();
 
     expect(streamFileBatch).toHaveBeenCalledWith("/repo", ["src/a.ts"], expect.anything());
@@ -101,12 +102,12 @@ describe("FilePhase", () => {
         [fastCtx.key, fastCtx],
         [slowCtx.key, slowCtx],
       ]),
-      "coll",
+      fixturePhysicalCollectionName("coll"),
       "run-1",
       "ts",
     );
 
-    const perProvider = phase.onBatch("coll", "/repo", items);
+    const perProvider = phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", items);
     expect(perProvider).toBeInstanceOf(Map);
     expect(perProvider.has("fast")).toBe(true);
     expect(perProvider.has("slow")).toBe(true);
@@ -138,9 +139,9 @@ describe("FilePhase", () => {
     const ctx = buildCtx({ streamFileBatch });
 
     const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "run-1", "ts");
 
-    const perProvider = phase.onBatch("coll", "/repo", items);
+    const perProvider = phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", items);
     const p = perProvider.get(ctx.key);
     expect(p).toBeInstanceOf(Promise);
     await p;
@@ -157,9 +158,9 @@ describe("FilePhase", () => {
     const ctx = buildCtx({ buildFileSignals });
 
     const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "run-1", "ts");
 
-    phase.onBatch("coll", "/repo", items);
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", items);
     await phase.drain();
 
     expect(buildFileSignals).toHaveBeenCalledWith("/repo", expect.objectContaining({ paths: ["src/a.ts"] }));
@@ -191,8 +192,8 @@ describe("FilePhase", () => {
     };
 
     const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
-    phase.onBatch("coll", "/repo", items);
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "run-1", "ts");
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", items);
     await phase.drain();
 
     // Extraction is driven (sink fills the graph), but the ∅ result is NOT
@@ -215,7 +216,7 @@ describe("FilePhase", () => {
     };
 
     const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "run-1", "ts");
 
     const fileOverlays = new Map([["src/a.ts", { fanIn: 4 }]]);
     // chunkMap includes a file with NO overlay (e.g. markdown the provider
@@ -225,7 +226,7 @@ describe("FilePhase", () => {
       ["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]],
       ["docs/readme.md", [{ chunkId: "m1", startLine: 1, endLine: 3 }]],
     ]);
-    await phase.applyFinalize("coll", ctx, fileOverlays, chunkMap);
+    await phase.applyFinalize(fixturePhysicalCollectionName("coll"), ctx, fileOverlays, chunkMap);
 
     const ops = qdrant.batchSetPayloadCalls.flatMap((c) => c.operations);
     const matchedOp = ops.find((op: any) => op.key === "codegraph.symbols.file" && op.points[0] === "c1");
@@ -260,8 +261,8 @@ describe("FilePhase", () => {
     };
 
     const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
-    phase.onBatch("coll", "/repo", items);
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "run-1", "ts");
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", items);
     await phase.drain();
 
     expect(streamFileBatch).toHaveBeenCalledTimes(1);
@@ -284,10 +285,10 @@ describe("FilePhase", () => {
 
     const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
     phase.bindChunkPhase(chunkPhase);
-    chunkPhase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
+    chunkPhase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "run-1", "ts");
 
-    phase.onBatch("coll", "/repo", items);
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", items);
     await phase.drain();
 
     expect(phase.hasPrefetchFailed("git")).toBe(true);
@@ -317,9 +318,9 @@ describe("FilePhase", () => {
     ];
 
     const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "run-1", "ts");
 
-    phase.onBatch("coll", "/repo", twoFiles);
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", twoFiles);
     await phase.drain();
 
     // The generated schema.rb is dropped; only the ordinary source is dispatched.
@@ -346,8 +347,8 @@ describe("FilePhase", () => {
     } as any;
 
     const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
-    phase.onBatch("coll", "/repo", [...items, bigHead]);
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "run-1", "ts");
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", [...items, bigHead]);
     await phase.drain();
 
     const isIgnored = applySpy.mock.calls[0][7] as (rel: string, level: "file" | "chunk") => boolean;
@@ -379,9 +380,9 @@ describe("FilePhase", () => {
       const streamFileBatch = vi.fn().mockResolvedValue(new Map());
       const ctx = buildCtx({ streamFileBatch, shouldEnrich: declineGenerated });
       const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
-      phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
+      phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "run-1", "ts");
 
-      phase.onBatch("coll", "/repo", [...items, schemaItem]);
+      phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", [...items, schemaItem]);
       await phase.drain();
 
       expect(stampSpy).toHaveBeenCalledWith("coll", "git", "file", [{ id: "g1", skippedAs: "generated" }]);
@@ -402,9 +403,9 @@ describe("FilePhase", () => {
       const streamFileBatch = vi.fn().mockResolvedValue(new Map());
       const ctx = buildCtx({ streamFileBatch, shouldEnrich: declineGenerated });
       const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
-      phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
+      phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "run-1", "ts");
 
-      const gates = phase.onBatch("coll", "/repo", [schemaItem]);
+      const gates = phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", [schemaItem]);
       await phase.drain();
 
       expect(gates.has("git")).toBe(true);
@@ -423,13 +424,13 @@ describe("FilePhase", () => {
       const streamFileBatch = vi.fn().mockRejectedValue(new Error("blame exploded"));
       const ctx = buildCtx({ streamFileBatch, shouldEnrich: declineGenerated });
       const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
-      phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
+      phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "run-1", "ts");
 
-      phase.onBatch("coll", "/repo", [...items, schemaItem]);
+      phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", [...items, schemaItem]);
       await phase.drain();
       stampSpy.mockClear();
 
-      phase.onBatch("coll", "/repo", [schemaItem]);
+      phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", [schemaItem]);
       await phase.drain();
 
       expect(stampSpy).not.toHaveBeenCalled();

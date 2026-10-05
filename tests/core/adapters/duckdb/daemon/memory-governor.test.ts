@@ -94,7 +94,7 @@ describe("runtime SET memory_limit probe (@duckdb/node-api)", () => {
 describe("DaemonMemoryGovernor — raise on write burst, lower on idle (real daemon path)", () => {
   it("first write op through the daemon server raises memory_limit to the governor max", async () => {
     const { pool, server } = makeGovernedServer("512MB", "1GB");
-    const c = "code_gov_raise_v1";
+    const c = fixturePhysicalCollectionName("code_gov_raise_v1");
     // handshake opens the collection at the BASE limit (non-vacuity baseline).
     expect((await server.handle({ id: 1, op: "handshake", params: { collection: c } })).ok).toBe(true);
     const { graphDb } = await pool.acquire(c);
@@ -111,7 +111,7 @@ describe("DaemonMemoryGovernor — raise on write burst, lower on idle (real dae
 
   it("onIdle restores the base limit on every raised collection before the lock is released", async () => {
     const { pool, governor, server } = makeGovernedServer("512MB", "1GB");
-    const c = "code_gov_idle_v1";
+    const c = fixturePhysicalCollectionName("code_gov_idle_v1");
     await server.handle({ id: 1, op: "handshake", params: { collection: c } });
     await server.handle(upsertFileReq(c));
     const { graphDb } = await pool.acquire(c);
@@ -126,7 +126,7 @@ describe("DaemonMemoryGovernor — raise on write burst, lower on idle (real dae
 
   it("read ops do NOT raise the limit — the governor reacts to writes only", async () => {
     const { pool, server } = makeGovernedServer("512MB", "1GB");
-    const c = "code_gov_read_v1";
+    const c = fixturePhysicalCollectionName("code_gov_read_v1");
     await server.handle({ id: 1, op: "handshake", params: { collection: c } });
     const res = await server.handle({ id: 2, op: "hasData", params: { collection: c } });
     expect(res.ok).toBe(true);

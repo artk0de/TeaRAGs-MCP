@@ -111,7 +111,7 @@ describe("SchemaV17LastCommitTimeIndexes", () => {
       setVersion: async () => undefined,
       getMigrations: () => [],
     };
-    const migrator = new Migrator({ schema: runner, snapshot: noop, sparse: noop, stats: noop });
+    const migrator = new Migrator({ schema: runner, snapshot: noop, sparse: noop, stats: noop, payloadIndexes: noop });
 
     const failure = await migrator.run("schema").catch((error: unknown) => error);
 

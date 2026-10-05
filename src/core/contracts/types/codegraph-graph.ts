@@ -354,10 +354,13 @@ export interface GraphEdges {
   /**
    * Files this file depends on ONLY through type-only imports
    * ({@link FileExtraction.typeOnlyImports}, bd tea-rags-mcp-r8hme.12),
-   * persisted to `cg_symbols_edges_file_type_only` — never to
-   * `cg_symbols_edges_file`, so fanIn / fanOut / PageRank / cycles keep
-   * measuring runtime dependencies. A target a runtime import also reaches is
-   * not repeated here. Absent when there is none.
+   * persisted to `cg_symbols_edges_file_type_only` AND — since bd
+   * tea-rags-mcp-89k7k.31 — mirrored into {@link GraphEdges.fileEdges}, so a
+   * type-only dependency is a first-class file-graph edge reading callWeight 0
+   * (no method edge can sit behind it): fanIn / fanOut / instability / cycles /
+   * PageRank measure compile-time dependencies too, and the co-change reader
+   * keeps its dedicated table. A target a runtime import also reaches is not
+   * repeated here. Absent when there is none.
    */
   typeOnlyFileEdges?: { targetRelPath: RelPath; importText: string | null }[];
   methodEdges: {
