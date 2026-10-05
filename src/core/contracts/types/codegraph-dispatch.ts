@@ -33,8 +33,15 @@ import type { RelPath, SymbolId } from "./codegraph-symbols.js";
  * overload is type-safe without a shape change.
  */
 export interface DispatchTable {
-  entries: Record<string, string | Record<string, string>>;
+  entries: Record<string, DispatchTableEntry>;
 }
+
+/**
+ * One `DispatchTable` value: a callable / class spelling (S2, Ruby registry)
+ * or a `fieldName → spelling` wrapper object (S1). The language reading it
+ * decides which shape it accepts.
+ */
+export type DispatchTableEntry = string | Record<string, string>;
 
 /**
  * A `DispatchTable` paired with the repo-relative path of the file that
