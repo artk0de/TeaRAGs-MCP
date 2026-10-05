@@ -29,7 +29,11 @@ import {
   walkPythonScopes,
   type PythonDefSite,
 } from "./python-def-scope-walk.js";
-import { pythonReturnExpressionType, type PythonReturnScope } from "./python-return-expression.js";
+import {
+  PYTHON_RETURNS_RECEIVER,
+  pythonReturnExpressionType,
+  type PythonReturnScope,
+} from "./python-return-expression.js";
 import {
   PYTHON_SELF_RETURN,
   pythonBareTypeName,
@@ -411,7 +415,7 @@ class PythonReturnFixpoint {
     if (cached !== undefined) return cached;
     this.defReturns.set(defNode, IN_PROGRESS);
     const names = inferReturnTypeNames(defNode, null, pythonReturnPorts(this.scopeOf(selfClass)), PYTHON_RETURN_UNION);
-    const inferred = names !== null && names.length > 1 && names.includes(PYTHON_SELF_RETURN) ? null : names;
+    const inferred = names === null ? null : pythonUnionReceiverArms(names, selfClass);
     this.defReturns.set(defNode, inferred);
     return inferred;
   }
@@ -484,7 +488,7 @@ class PythonReturnFixpoint {
     for (const event of events) {
       if (event === null) return null;
       if (event.type === "none") continue;
-      const typed = singleName(pythonReturnExpressionType(event, scope));
+      const typed = pythonReceiverAsClass(singleName(pythonReturnExpressionType(event, scope)), selfClass);
       if (typed === null || (agreed !== null && agreed !== typed)) return null;
       agreed = typed;
     }
@@ -521,9 +525,36 @@ export function pythonInferredReturnReader(
   let fixpoint: PythonReturnFixpoint | undefined;
   return (defNode, selfClass) => {
     fixpoint ??= new PythonReturnFixpoint(collectPythonAstScopeTables(root));
-    const inferred = singleName(fixpoint.inferDef(defNode, selfClass));
+    const inferred = pythonReceiverAsClass(singleName(fixpoint.inferDef(defNode, selfClass)), selfClass);
     return inferred === PYTHON_SELF_RETURN ? (selfClass ?? null) : inferred;
   };
+}
+
+/**
+ * A `return self` answer where NO receiver will substitute it — a field type,
+ * a descriptor — is the declaring class, which is what it always read as.
+ */
+function pythonReceiverAsClass(name: string | null, selfClass: string | undefined): string | null {
+  return name === PYTHON_RETURNS_RECEIVER ? (selfClass ?? null) : name;
+}
+
+/**
+ * A def's inferred arms as the fixpoint memoises them (bd
+ * tea-rags-mcp-m99j1.1.69). One arm stays as inferred, the receiver token
+ * included, so a delegating def carries it to the publish path. In a UNION the
+ * token becomes the enclosing class — an arm has no receiver of its own, and
+ * that is the arm the union carried before the token existed — while the `Self`
+ * marker (a self copy) still kills it: a union never carries the marker.
+ */
+function pythonUnionReceiverArms(names: readonly string[], selfClass: string | undefined): readonly string[] | null {
+  if (names.length <= 1) return names;
+  const arms: string[] = [];
+  for (const name of names) {
+    const arm = pythonReceiverAsClass(name, selfClass);
+    if (arm === null || arm === PYTHON_SELF_RETURN) return null;
+    if (!arms.includes(arm)) arms.push(arm);
+  }
+  return arms;
 }
 
 /** The one class an answer names; a union (or silence) is null. */
@@ -555,10 +586,12 @@ function extractPythonAstFacts(input: PythonTypeSourceInput): TypeFact[] {
   const qualify = input.qualifyTypeName;
   const facts: TypeFact[] = [];
   for (const { site, names } of inferred) {
+    // A lone receiver token publishes as the marker its readers substitute.
+    const marked = names.map((name) => (name === PYTHON_RETURNS_RECEIVER ? PYTHON_SELF_RETURN : name));
     const published =
       qualify === undefined
-        ? names
-        : names.map((name) => (name === PYTHON_SELF_RETURN ? name : qualify(fixpoint.writtenSpellingOf(name))));
+        ? marked
+        : marked.map((name) => (name === PYTHON_SELF_RETURN ? name : qualify(fixpoint.writtenSpellingOf(name))));
     const type = pythonReturnTypeRef(published);
     if (type === undefined) continue;
     const fact: TypeFact = {

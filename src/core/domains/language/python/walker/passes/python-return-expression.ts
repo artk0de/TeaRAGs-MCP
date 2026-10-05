@@ -4,7 +4,7 @@
  *
  * The shapes, each one measured on the corpora rather than imagined:
  *   `Widget()`         a constructor call              → Widget
- *   `self`             a fluent method                 → the enclosing class
+ *   `self`             a fluent method                 → the receiver (`PYTHON_RETURNS_RECEIVER`)
  *   `cls` / `cls(…)`   a `@classmethod` factory        → the enclosing class
  *   `self.session`     a field the class types         → that field's class
  *   `make()`           a SAME-FILE def                 → its return
@@ -43,6 +43,19 @@ export interface PythonReturnScope {
   readonly writtenSpelling?: (bare: string, written: string) => void;
 }
 
+/**
+ * `return self`: the RECEIVER itself, whose class only the reader knows (bd
+ * tea-rags-mcp-m99j1.1.69). Typed as the enclosing class, `CursorWrapper#__enter__`
+ * collapsed `with self.cursor() as c` — `CursorDebugWrapper | CursorWrapper` —
+ * onto one arm, so `c.execute()` never fanned to the subclass override. A
+ * private token rather than the `Self` marker, because the scope's owner tells
+ * the two apart in a union: a `self` arm is the enclosing class there (an arm
+ * has no receiver to substitute), a self COPY kills the union. Never published —
+ * the owner turns it into the marker or the class first — and not an
+ * identifier, so no class name collides with it.
+ */
+export const PYTHON_RETURNS_RECEIVER = "<self>";
+
 /** A single capitalized identifier — Python's class-name convention. */
 const PYTHON_CLASS_NAME = /^[A-Z]\w*$/;
 
@@ -63,7 +76,9 @@ function isSelfCopy(call: AstNode, fn: AstNode): boolean {
 
 export function pythonReturnExpressionType(node: AstNode, scope: PythonReturnScope): ReturnArmTypes | null {
   if (node.type === "identifier") {
-    if (node.text === "self" || node.text === "cls") return scope.selfClass ?? null;
+    if (scope.selfClass === undefined) return null;
+    if (node.text === "self") return PYTHON_RETURNS_RECEIVER;
+    if (node.text === "cls") return scope.selfClass;
     return null; // a bare local is the kernel engine's binding case, not ours
   }
   if (node.type === "attribute") {
