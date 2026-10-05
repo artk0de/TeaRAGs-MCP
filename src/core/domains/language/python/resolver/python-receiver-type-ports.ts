@@ -20,7 +20,7 @@
  */
 
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import type { CallContext, LocalBinding } from "../../../../contracts/types/codegraph.js";
+import { isDerivedLocalBinding, type CallContext, type LocalBinding } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import {
   CHAIN_MAX_HOPS_DEFAULT,
@@ -31,11 +31,7 @@ import {
 } from "../../kernel/index.js";
 import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
-import {
-  pythonElementTypeOf,
-  pythonIterationElementType,
-  pythonLocalBindingInForce,
-} from "./python-iteration-types.js";
+import { pythonDerivedBindingType, pythonElementTypeOf, pythonLocalBindingInForce } from "./python-iteration-types.js";
 import {
   findPythonImportBinding,
   lastSegment,
@@ -209,10 +205,10 @@ function pythonSingleHopType(
     return pythonCallHeadReturnType(receiver, ctx, mapper);
   }
   const bound = pythonBindingInForceAt(receiver, atLine, ctx);
-  // A loop target is typed by what its iterable yields (bd
-  // tea-rags-mcp-m99j1.1.18) — and an untyped one still IS a binding: the
+  // A derived binding (loop, `with` or unpacking target) is typed by its fold
+  // (bd tea-rags-mcp-m99j1.1.18) — and an untyped one still IS a binding: the
   // name a module or a class might carry elsewhere is a local here.
-  if (bound?.valueKind === "iterationElement") return pythonIterationElementType(bound, ctx, ports, mapper);
+  if (isDerivedLocalBinding(bound)) return pythonDerivedBindingType(bound, ctx, ports, mapper);
   if (bound !== undefined) return { form: "instance", name: bound.type };
   const moduleValue = pythonModuleValueType(receiver, ctx, mapper);
   if (moduleValue !== undefined) return moduleValue;

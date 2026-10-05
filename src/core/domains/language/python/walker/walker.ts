@@ -992,11 +992,17 @@ interface PythonLocalBindingSite {
  *   5. Loop / comprehension targets  (`for var in <expr>`) — an
  *      `iterationElement` binding carrying `<expr>`, typed by the resolver
  *      ({@link pythonIterationElementSites})
+ *   6. Context-manager targets       (`with <expr> as var`) — a
+ *      `contextEnter` binding carrying `<expr>` ({@link pythonContextEnterSites})
+ *   7. Exception handlers            (`except E as var`) — an instance of `E`
+ *      for the handler's lines ({@link pythonExceptionSites})
+ *   8. Tuple unpacking               (`a, b = <expr>`) — `tupleElement`
+ *      bindings ({@link pythonUnpackingSites})
  *
  * Sources that are deliberately NOT inferred:
  *   - factory functions without return-type annotations (`var = make()`)
  *   - chained calls (`var = chain().method()`)
- *   - tuple / star unpacking (`a, b = ...`)
+ *   - star unpacking (`a, *rest = ...`)
  *
  * Called ONCE per file; {@link pythonLocalBindingsInRange} then cuts a chunk's
  * share out of the result. The per-chunk `Record<string, LocalBinding[]>` it
@@ -1016,6 +1022,10 @@ function collectPythonLocalBindingSites(out: PythonLocalBindingSite[]): PythonNo
     //   - `right` is a constructor call → infer from callee identifier
     if (node.type === "assignment") {
       const lhs = node.namedChild(0);
+      if (lhs !== null && PYTHON_UNPACKING_TARGETS.has(lhs.type)) {
+        out.push(...pythonUnpackingSites(node, lhs));
+        return;
+      }
       if (lhs?.type !== "identifier") return;
       const varName = lhs.text;
       // The extent of the ESTABLISHING statement — `node` is the `assignment`,
@@ -1031,6 +1041,16 @@ function collectPythonLocalBindingSites(out: PythonLocalBindingSite[]): PythonNo
 
     if (node.type === "for_statement" || node.type === "for_in_clause") {
       out.push(...pythonIterationElementSites(node));
+      return;
+    }
+
+    if (node.type === "with_item") {
+      out.push(...pythonContextEnterSites(node));
+      return;
+    }
+
+    if (node.type === "except_clause") {
+      out.push(...pythonExceptionSites(node));
       return;
     }
 
@@ -1068,8 +1088,8 @@ const PYTHON_COMPREHENSIONS = new Set([
   "generator_expression",
 ]);
 
-/** The longest iterated expression recorded; anything longer is not a spelling the fold can read. */
-const PYTHON_ITERATED_EXPRESSION_MAX = 200;
+/** The longest expression a derived binding records; anything longer is not a spelling the fold can read. */
+const PYTHON_DERIVED_EXPRESSION_MAX = 200;
 
 /**
  * `iterationElement` sites for one `for` statement or comprehension
@@ -1093,8 +1113,8 @@ function pythonIterationElementSites(node: AstNode): PythonLocalBindingSite[] {
   const left = node.childForFieldName("left");
   const right = node.childForFieldName("right");
   if (left === null || right === null) return [];
-  const sourceExpression = right.text.replace(/\s*\n\s*/g, " ");
-  if (sourceExpression.length > PYTHON_ITERATED_EXPRESSION_MAX) return [];
+  const sourceExpression = pythonDerivedSourceExpression(right);
+  if (sourceExpression === null) return [];
   const targets = pythonIterationTargets(left);
   if (targets.length === 0) return [];
   const comprehension = node.parent !== null && PYTHON_COMPREHENSIONS.has(node.parent.type) ? node.parent : null;
@@ -1123,6 +1143,115 @@ function pythonIterationTargets(left: AstNode): { readonly name: string; readonl
   const names = left.namedChildren;
   if (names.some((child) => child.type !== "identifier")) return [];
   return names.map((child, tupleIndex) => ({ name: child.text, tupleIndex }));
+}
+
+/** An expression as recorded on a derived binding: line breaks collapsed, `null` past the length cap. */
+function pythonDerivedSourceExpression(node: AstNode): string | null {
+  const text = node.text.replace(/\s*\n\s*/g, " ");
+  return text.length > PYTHON_DERIVED_EXPRESSION_MAX ? null : text;
+}
+
+/**
+ * The `contextEnter` site of one `with` item (Task 16b, bd
+ * tea-rags-mcp-m99j1.1.18): `with <expr> as name` binds `name` to what
+ * `<expr>.__enter__()` returns — read by the resolver, which alone sees the
+ * class's members. An item with no `as`, or one that destructures
+ * (`as (a, b)`), records nothing. The target outlives the block, as Python's
+ * does; `endLine` is the context expression's.
+ */
+function pythonContextEnterSites(node: AstNode): PythonLocalBindingSite[] {
+  const pattern = node.childForFieldName("value");
+  if (pattern?.type !== "as_pattern") return [];
+  const target = pattern.childForFieldName("alias")?.namedChild(0);
+  const context = pattern.namedChild(0);
+  if (target?.type !== "identifier" || !context) return [];
+  const sourceExpression = pythonDerivedSourceExpression(context);
+  if (sourceExpression === null) return [];
+  return [
+    {
+      name: target.text,
+      binding: {
+        line: node.startPosition.row + 1,
+        type: "",
+        valueKind: "contextEnter",
+        sourceExpression,
+        endLine: context.endPosition.row + 1,
+      },
+    },
+  ];
+}
+
+/**
+ * The binding of one `except E as name` handler (Task 16b, bd
+ * tea-rags-mcp-m99j1.1.18): an INSTANCE of `E`, spelled as written, for the
+ * handler's lines only — Python deletes the name when the handler ends. `E`
+ * must be a class spelling the constructor rule accepts; a tuple of classes
+ * records nothing (no Python local-binding consumer reads a union yet), nor
+ * does a value such as `except exc_type as e`.
+ */
+function pythonExceptionSites(clause: AstNode): PythonLocalBindingSite[] {
+  const pattern = clause.namedChildren.find((child) => child.type === "as_pattern");
+  if (pattern === undefined) return [];
+  const target = pattern.childForFieldName("alias")?.namedChild(0);
+  const caught = pattern.namedChild(0);
+  if (target?.type !== "identifier" || !caught) return [];
+  const typeName = extractConstructorTypeName(caught);
+  if (typeName === null || !pythonLocalCalleeIsConstructor(typeName)) return [];
+  return [
+    {
+      name: target.text,
+      binding: {
+        line: clause.startPosition.row + 1,
+        type: typeName,
+        endLine: pattern.endPosition.row + 1,
+        scopeEndLine: clause.endPosition.row + 1,
+      },
+    },
+  ];
+}
+
+/** Assignment left-hand sides that unpack a value into names. */
+const PYTHON_UNPACKING_TARGETS = new Set(["pattern_list", "tuple_pattern", "list_pattern"]);
+
+/** Right-hand sides spelled as a literal tuple, whose elements bind one name each. */
+const PYTHON_LITERAL_TUPLES = new Set(["expression_list", "tuple"]);
+
+/**
+ * `tupleElement` sites of one unpacking assignment (Task 16b, bd
+ * tea-rags-mcp-m99j1.1.18), for a FLAT name target only — a starred or nested
+ * target records nothing:
+ *
+ *   - a literal tuple right-hand side of the same arity binds each name to its
+ *     own element's expression (`a, b = x, y`), no position;
+ *   - any other right-hand side binds each name at its position of the value
+ *     (`a, b = make_pair()` → `tupleIndex` 0 and 1).
+ *
+ * A literal of another arity is a runtime error and records nothing.
+ */
+function pythonUnpackingSites(assignment: AstNode, left: AstNode): PythonLocalBindingSite[] {
+  const right = assignment.childForFieldName("right");
+  const names = left.namedChildren;
+  if (!right || names.length === 0 || names.some((child) => child.type !== "identifier")) return [];
+  const extent = { line: assignment.startPosition.row + 1, endLine: assignment.endPosition.row + 1 };
+  const derived = (name: string, valueNode: AstNode, tupleIndex?: number): PythonLocalBindingSite[] => {
+    const sourceExpression = pythonDerivedSourceExpression(valueNode);
+    if (sourceExpression === null) return [];
+    const binding: LocalBinding = {
+      line: extent.line,
+      type: "",
+      valueKind: "tupleElement",
+      sourceExpression,
+      ...(tupleIndex === undefined ? {} : { tupleIndex }),
+      endLine: extent.endLine,
+    };
+    return [{ name, binding }];
+  };
+  if (PYTHON_LITERAL_TUPLES.has(right.type)) {
+    const elements = right.namedChildren;
+    if (elements.length !== names.length || elements.some((element) => element.type === "list_splat")) return [];
+    return names.flatMap((name, i) => derived(name.text, elements[i]));
+  }
+  return names.flatMap((name, i) => derived(name.text, right, i));
 }
 
 /**

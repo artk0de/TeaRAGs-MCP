@@ -359,11 +359,25 @@ export function pythonModuleReturnType(
   mapper: PythonImportFileMapper,
   unbound: PythonUnboundCalleeRule,
 ): TypeRef | undefined {
+  return pythonReturnFactAsReceiver(pythonModuleReturnFact(callee, ctx, mapper, unbound));
+}
+
+/**
+ * {@link pythonModuleReturnType}'s fact AS RECORDED — before the receiver
+ * collapse, which drops a tuple (it is read by position, never dispatched
+ * on). The one reader that wants the raw form is a tuple-unpacking target
+ * (`a, b = make_pair()`, bd tea-rags-mcp-m99j1.1.18), which takes a position
+ * out of it.
+ */
+export function pythonModuleReturnFact(
+  callee: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  unbound: PythonUnboundCalleeRule,
+): TypeRef | undefined {
   const defs = lookupPythonSymbolsByShortName(ctx, callee, { role: "callee" }).filter((def) => def.scope.length === 0);
   const file = pythonModuleDefFile(callee, defs, ctx, mapper, unbound);
-  return file === null
-    ? undefined
-    : pythonReturnFactAsReceiver(ctx.structuredReturnTypes?.[pythonModuleReturnKey(file, callee)]);
+  return file === null ? undefined : ctx.structuredReturnTypes?.[pythonModuleReturnKey(file, callee)];
 }
 
 /**
