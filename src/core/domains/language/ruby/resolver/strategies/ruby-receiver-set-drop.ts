@@ -1,6 +1,4 @@
-import { CONTINUE, DROP } from "../../../../../contracts/resolution.js";
-import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
-import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { ReceiverPatternDropSymbolResolutionStrategy } from "../../../kernel/receiver-pattern-drop.js";
 import type { ResolverConfig } from "./shared.js";
 
 /**
@@ -17,12 +15,8 @@ import type { ResolverConfig } from "./shared.js";
  * bare-call fallback below it still applies because there's no receiver context
  * to narrow with, so this guard only fires when `call.receiver !== null`.
  */
-export class RubyReceiverSetDropSymbolResolutionStrategy implements SymbolResolutionStrategy {
-  readonly name = "receiverSetDrop";
-  constructor(private readonly _cfg: ResolverConfig) {}
-
-  attempt(call: CallRef, _ctx: CallContext): SymbolResolutionOutcome {
-    if (call.receiver !== null) return DROP;
-    return CONTINUE;
+export class RubyReceiverSetDropSymbolResolutionStrategy extends ReceiverPatternDropSymbolResolutionStrategy {
+  constructor(_cfg: ResolverConfig) {
+    super("receiverSetDrop", [{ name: "receiverSet", matches: (call) => call.receiver !== null }]);
   }
 }
