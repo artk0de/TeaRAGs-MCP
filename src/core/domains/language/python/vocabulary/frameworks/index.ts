@@ -34,6 +34,8 @@ export interface PythonVocabularyCatalogue {
   readonly memberTypes: readonly PythonFrameworkMemberTypes[];
   /** The active frameworks' qualified descriptor decorators, unioned. */
   readonly descriptorDecorators: ReadonlySet<string>;
+  /** The active frameworks' base-class factory method names, unioned. */
+  readonly baseClassFactories: ReadonlySet<string>;
 }
 
 /** {@link PYTHON_FRAMEWORKS} under the kernel activation rule (bd tea-rags-mcp-m99j1.1.8). */
@@ -55,14 +57,24 @@ export function composePythonVocabulary(declared: ReadonlySet<string> | null): P
   const activeFacets = new Set<PythonVocabularyFacet>();
   const memberTypes: PythonFrameworkMemberTypes[] = [];
   const descriptorDecorators = new Set<string>();
+  const baseClassFactories = new Set<string>();
   for (const framework of PYTHON_FRAMEWORK_REGISTRY.active(declared)) {
     for (const facet of framework.facets) activeFacets.add(facet);
     if (framework.memberTypes !== undefined) memberTypes.push(framework.memberTypes);
     if (framework.facets.has("descriptorDecorators")) {
       for (const decorator of framework.descriptorDecorators ?? []) descriptorDecorators.add(decorator);
     }
+    if (framework.facets.has("baseClassFactory")) {
+      for (const factory of framework.baseClassFactories ?? []) baseClassFactories.add(factory);
+    }
   }
-  return { activeFacets, hasFacet: (facet) => activeFacets.has(facet), memberTypes, descriptorDecorators };
+  return {
+    activeFacets,
+    hasFacet: (facet) => activeFacets.has(facet),
+    memberTypes,
+    descriptorDecorators,
+    baseClassFactories,
+  };
 }
 
 /**

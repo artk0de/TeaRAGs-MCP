@@ -14,6 +14,10 @@
  * netbox's 148 `chain` misses (bd tea-rags-mcp-xpl83). The verb is the claim, so
  * where Django is not a dependency the dotted call carries none.
  *
+ * The base-factory facet: `from_queryset`, the classmethod Django's BaseManager
+ * exposes. Django's own `Manager` is declared through it, so without it the
+ * manager's MRO stops at the call and every verb on a typed manager misses.
+ *
  * It activates on `django` alone. Not `djangorestframework`, not `django-filter`:
  * those depend on Django and therefore never appear without it, so listing them
  * would widen the family without widening what it matches.
@@ -25,6 +29,7 @@ export const DJANGO_VOCABULARY: PythonFrameworkVocabulary = definePythonFramewor
   "django",
   [
     "classBodyManagerFactory",
+    "baseClassFactory",
     "modelAttributes",
     "relationReturning",
     "instanceReturning",
@@ -75,4 +80,9 @@ export const DJANGO_VOCABULARY: PythonFrameworkVocabulary = definePythonFramewor
     associationFields: new Set(["ForeignKey", "OneToOneField"]),
   },
   ["django.utils.functional.cached_property"],
+  // `class Manager(BaseManager.from_queryset(QuerySet))` (bd tea-rags-mcp-m99j1.1.46):
+  // `from_queryset` returns `type(name, (cls,), <queryset's public methods>)`, so
+  // BaseManager's own members win and QuerySet's follow — the order the walker
+  // records them in.
+  ["from_queryset"],
 );

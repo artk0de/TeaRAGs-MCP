@@ -29,9 +29,19 @@ function parse(src: string): Parser.Tree {
   return parser.parse(src);
 }
 
-function extract(src: string, relPath = "x.py") {
-  return extractFromPythonFile({ tree: parse(src), code: src, relPath, language: "python", chunks: [] });
+function extract(src: string, relPath = "x.py", declaredDependencies?: ReadonlySet<string>) {
+  return extractFromPythonFile({
+    tree: parse(src),
+    code: src,
+    relPath,
+    language: "python",
+    chunks: [],
+    ...(declaredDependencies === undefined ? {} : { declaredDependencies }),
+  });
 }
+
+/** A project whose manifest declares dependencies, none of them Django. */
+const FLASK_ONLY: ReadonlySet<string> = new Set(["flask"]);
 
 /** Every call in `src`, via a single chunk spanning the whole file. */
 function callsIn(src: string): readonly CallRef[] {
@@ -50,12 +60,16 @@ function receiverOf(src: string, member: string): string | null | undefined {
   return callsIn(src).find((c) => c.member === member)?.receiver;
 }
 
-function ancestorsOf(src: string, relPath = "x.py"): Record<string, readonly string[]> {
-  return extract(src, relPath).classAncestors ?? {};
+function ancestorsOf(
+  src: string,
+  relPath = "x.py",
+  declaredDependencies?: ReadonlySet<string>,
+): Record<string, readonly string[]> {
+  return extract(src, relPath, declaredDependencies).classAncestors ?? {};
 }
 
-function basesOf(src: string, key = "x.py::C"): readonly string[] {
-  return ancestorsOf(src)[key] ?? [];
+function basesOf(src: string, key = "x.py::C", declaredDependencies?: ReadonlySet<string>): readonly string[] {
+  return ancestorsOf(src, "x.py", declaredDependencies)[key] ?? [];
 }
 
 describe("collectPythonImports — the binding shapes qualification reads", () => {
@@ -142,24 +156,31 @@ describe("extractFromPythonFile — classAncestors emission", () => {
     expect(extract("def f():\n    pass\n").classAncestors).toBeUndefined();
   });
 
+  // bd tea-rags-mcp-m99j1.1.46 — the three cases below run where Django is NOT
+  // declared: there `from_queryset` is nobody's factory, so the call base stays
+  // unreadable. Under Django the vocabulary reads it (the block below).
   it("records the unresolvable marker for a call-expression base (django `Manager.from_queryset`)", () => {
     // bd tea-rags-mcp-invuy. Skipping the base left the class with NO
     // `classAncestors` entry at all, so `boundaryOf` answered `closed` and
     // `selfMember` DROPped every inherited member on absence of evidence. The
     // marker makes the unreadable branch explicit: the closure degrades to
     // `unknown`, which turns that DROP into a CONTINUE and nothing else.
-    expect(basesOf("class C(Manager.from_queryset(QuerySet)):\n    pass\n")).toEqual([PYTHON_UNRESOLVABLE_BASE]);
+    expect(basesOf("class C(Manager.from_queryset(QuerySet)):\n    pass\n", "x.py::C", FLASK_ONLY)).toEqual([
+      PYTHON_UNRESOLVABLE_BASE,
+    ]);
   });
 
   it("keeps the marker beside the bases it CAN read, in declaration order", () => {
-    expect(basesOf("class C(Base, Manager.from_queryset(QuerySet)):\n    pass\n")).toEqual([
+    expect(basesOf("class C(Base, Manager.from_queryset(QuerySet)):\n    pass\n", "x.py::C", FLASK_ONLY)).toEqual([
       "Base",
       PYTHON_UNRESOLVABLE_BASE,
     ]);
   });
 
   it("marks a subscripted call base too — the subscript strips to the call", () => {
-    expect(basesOf("class C(Manager.from_queryset(QuerySet)[T]):\n    pass\n")).toEqual([PYTHON_UNRESOLVABLE_BASE]);
+    expect(basesOf("class C(Manager.from_queryset(QuerySet)[T]):\n    pass\n", "x.py::C", FLASK_ONLY)).toEqual([
+      PYTHON_UNRESOLVABLE_BASE,
+    ]);
   });
 
   it("does NOT mark a metaclass keyword argument — a class keyword is not a base", () => {
@@ -168,6 +189,67 @@ describe("extractFromPythonFile — classAncestors emission", () => {
 
   it("leaves the single-base classExtends channel exactly as it was", () => {
     expect(extract("class C(A, M):\n    pass\n").classExtends).toEqual({ C: "A" });
+  });
+});
+
+describe("extractFromPythonFile — a framework base-class factory call (bd tea-rags-mcp-m99j1.1.46)", () => {
+  const DJANGO: ReadonlySet<string> = new Set(["django"]);
+
+  it("reads `Base.from_queryset(QS)` under declared Django as the bases [Base, QS], in that order", () => {
+    // django/db/models/manager.py: `class Manager(BaseManager.from_queryset(QuerySet))`.
+    // The produced class subclasses the receiver and copies the queryset's
+    // methods, so the receiver's members win and the queryset's follow.
+    const src = [
+      "from django.db.models.query import QuerySet",
+      "class BaseManager:",
+      "    pass",
+      "class Manager(BaseManager.from_queryset(QuerySet)):",
+      "    pass",
+    ].join("\n");
+    expect(ancestorsOf(src, "django/db/models/manager.py", DJANGO)["django/db/models/manager.py::Manager"]).toEqual([
+      "BaseManager",
+      "django.db.models.query::QuerySet",
+    ]);
+  });
+
+  it("qualifies both spellings through the defining file's imports, beside an ordinary base", () => {
+    const header = ["from django.db import models", "from app.querysets import BookQuerySet"];
+    const factory = [...header, "class C(Mixin, models.Manager.from_queryset(BookQuerySet)):", "    pass"].join("\n");
+    const ordinary = [...header, "class C(Mixin, models.Manager, BookQuerySet):", "    pass"].join("\n");
+    const expected = basesOf(ordinary, "x.py::C", DJANGO);
+    expect(expected).toHaveLength(3);
+    expect(basesOf(factory, "x.py::C", DJANGO)).toEqual(expected);
+  });
+
+  it("strips a subscript on the factory call the same way it strips one on a name", () => {
+    expect(basesOf("class C(Manager.from_queryset(QuerySet)[T]):\n    pass\n", "x.py::C", DJANGO)).toEqual([
+      "Manager",
+      "QuerySet",
+    ]);
+  });
+
+  it("keeps the marker for a factory call whose argument is not a class name", () => {
+    expect(basesOf("class C(Manager.from_queryset(make_qs())):\n    pass\n", "x.py::C", DJANGO)).toEqual([
+      PYTHON_UNRESOLVABLE_BASE,
+    ]);
+    expect(basesOf("class C(Manager.from_queryset()):\n    pass\n", "x.py::C", DJANGO)).toEqual([
+      PYTHON_UNRESOLVABLE_BASE,
+    ]);
+  });
+
+  it("keeps the marker for a call the vocabulary does not name, even under Django", () => {
+    expect(basesOf("class C(Manager.with_extras(QuerySet)):\n    pass\n", "x.py::C", DJANGO)).toEqual([
+      PYTHON_UNRESOLVABLE_BASE,
+    ]);
+    expect(basesOf("class C(from_queryset(QuerySet)):\n    pass\n", "x.py::C", DJANGO)).toEqual([
+      PYTHON_UNRESOLVABLE_BASE,
+    ]);
+  });
+
+  it("reads NOTHING into the factory call where the project declares dependencies without Django", () => {
+    expect(basesOf("class C(Manager.from_queryset(QuerySet)):\n    pass\n", "x.py::C", FLASK_ONLY)).toEqual([
+      PYTHON_UNRESOLVABLE_BASE,
+    ]);
   });
 });
 

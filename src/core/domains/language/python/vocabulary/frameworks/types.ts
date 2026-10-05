@@ -21,9 +21,16 @@
  * import bound) rests on project-class evidence alone, with no framework in it,
  * and gating it on Django cost polar 8 real edges when measured — so it stays
  * language-level, exactly as `python-class-body-fields.ts` was written.
+ *
+ * `baseClassFactory` — reading a class base that is a CALL to one of the
+ * framework's subclass factories (`BaseManager.from_queryset(QuerySet)`) as the
+ * two classes the produced class carries: the receiver it subclasses, then the
+ * first argument whose methods it copies. Same claim shape as the facet above —
+ * the method name is evidence only because the framework defines it.
  */
 export type PythonVocabularyFacet =
   | "classBodyManagerFactory"
+  | "baseClassFactory"
   | "modelAttributes"
   | "relationReturning"
   | "instanceReturning"
@@ -107,6 +114,13 @@ export interface PythonFrameworkVocabulary {
    * `vocabulary/descriptors.ts`.
    */
   readonly descriptorDecorators?: ReadonlySet<string>;
+  /**
+   * Classmethod names whose call, written as a class base, produces a subclass
+   * of the RECEIVER that also carries the FIRST ARGUMENT's methods
+   * (`BaseManager.from_queryset(QuerySet)`). The walker records the two as the
+   * class's bases, receiver first, under the `baseClassFactory` facet.
+   */
+  readonly baseClassFactories?: ReadonlySet<string>;
 }
 
 /** Build a vocabulary. A factory, not a container — each module calls it with
@@ -117,6 +131,7 @@ export function definePythonFrameworkVocabulary(
   activatedBy?: readonly string[],
   memberTypes?: PythonFrameworkMemberTypes,
   descriptorDecorators?: readonly string[],
+  baseClassFactories?: readonly string[],
 ): PythonFrameworkVocabulary {
   return {
     framework,
@@ -124,5 +139,6 @@ export function definePythonFrameworkVocabulary(
     ...(activatedBy === undefined ? {} : { activatedBy: new Set(activatedBy) }),
     ...(memberTypes === undefined ? {} : { memberTypes }),
     ...(descriptorDecorators === undefined ? {} : { descriptorDecorators: new Set(descriptorDecorators) }),
+    ...(baseClassFactories === undefined ? {} : { baseClassFactories: new Set(baseClassFactories) }),
   };
 }
