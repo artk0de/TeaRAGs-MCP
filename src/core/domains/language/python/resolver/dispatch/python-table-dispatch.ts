@@ -5,12 +5,12 @@ import type {
   DispatchEdge,
   DispatchFanoutOutcome,
   DispatchRef,
-  DispatchTable,
   DispatchTableDef,
+  DispatchTableEntry,
   RelPath,
   SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
-import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
+import { TableDispatchResolver, type TableDispatchPorts } from "../../../kernel/index.js";
 import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { lookupPythonSymbolsByShortName, pythonImportBoundFile } from "../strategies/shared.js";
 
@@ -22,10 +22,13 @@ export type PythonCallAnswer = (call: CallRef, ctx: CallContext) => SymbolResolu
  * resolver half of the lookup-table mechanism the TypeScript resolver ships (bd
  * tea-rags-mcp-n0zj), with Ruby's edge vocabulary (bd tea-rags-mcp-pq02v): a
  * static string key narrows to ONE `exact` edge at 1.0, a dynamic key fans to
- * every entry as `registry` edges sharing unit confidence (`1/N`).
+ * every entry as `registry` edges sharing unit confidence (`1/N`). Key
+ * narrowing, dedup and that rule are the kernel's `TableDispatchResolver`; this
+ * class supplies the Python ports (`PythonTableDispatchPorts`).
  *
  * Two channels, both from `CallRef`:
- *   - `dispatch` — fan from the CALLER to each callable the table selects;
+ *   - `dispatch` — fan from the CALLER to each callable the table selects
+ *     (the kernel's own channel);
  *   - `dispatchArgs` — the bounded single-hop join: resolve the ordinary callee
  *     `F` through the production chain, and when a candidate set lands on one of
  *     `F`'s `callbackParams` positions fan from `F` instead.
@@ -35,9 +38,36 @@ export type PythonCallAnswer = (call: CallRef, ctx: CallContext) => SymbolResolu
  * nothing for every call without a dispatch channel, so the cone and the parked
  * `dynamic` component keep their order behind it.
  *
- * Never fabricates. The table is chosen through the CALLER's own evidence —
- * its import binding for the name, or its own file — never by a namesake guess;
- * an entry that does not resolve is dropped, and the rest still fan.
+ * Never fabricates — see `PythonTableDispatchPorts` for how the table and each
+ * entry are chosen.
+ */
+export class PythonTableDispatchResolver extends TableDispatchResolver {
+  constructor(
+    private readonly answer: PythonCallAnswer,
+    mapper: PythonImportFileMapper,
+  ) {
+    super(new PythonTableDispatchPorts(answer, mapper));
+  }
+
+  override resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
+    if (call.dispatch) return super.resolveDispatch(call, ctx);
+    if (!call.dispatchArgs || call.dispatchArgs.length === 0) return { kind: "edges", edges: [] };
+    const callee = this.answer(call, ctx)?.targetSymbolId ?? null;
+    const invoked = callee === null ? undefined : identifierEntry(ctx.callbackParams, callee);
+    if (callee === null || !invoked || invoked.length === 0) return { kind: "edges", edges: [] };
+    const edges: DispatchEdge[] = [];
+    for (const arg of call.dispatchArgs) {
+      if (invoked.includes(arg.argIndex)) edges.push(...this.fanOut(arg.candidate, callee, call, ctx));
+    }
+    return { kind: "edges", edges };
+  }
+}
+
+/**
+ * The Python reading of a dict table. The table is chosen through the
+ * CALLER's own evidence — its import binding for the name, or its own file —
+ * never by a namesake guess; an entry that does not resolve is dropped, and
+ * the rest still fan.
  *
  * An entry resolves the way a DIRECT call spelled the same way would:
  *   - in a table the caller's own file declares, the entry goes through the
@@ -54,48 +84,11 @@ export type PythonCallAnswer = (call: CallRef, ctx: CallContext) => SymbolResolu
  *     ugnest's `SCENARIOS = {"active": active.seed}` registry). A longer
  *     dotted spelling, or a head bound by a plain `import`, drops.
  */
-export class PythonTableDispatchResolver implements DispatchResolverComponent {
+class PythonTableDispatchPorts implements TableDispatchPorts {
   constructor(
     private readonly answer: PythonCallAnswer,
     private readonly mapper: PythonImportFileMapper,
   ) {}
-
-  resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
-    if (call.dispatch) return { kind: "edges", edges: this.fan(call.dispatch, null, call, ctx) };
-    if (!call.dispatchArgs || call.dispatchArgs.length === 0) return { kind: "edges", edges: [] };
-    const callee = this.answer(call, ctx)?.targetSymbolId ?? null;
-    const invoked = callee === null ? undefined : identifierEntry(ctx.callbackParams, callee);
-    if (callee === null || !invoked || invoked.length === 0) return { kind: "edges", edges: [] };
-    const edges: DispatchEdge[] = [];
-    for (const arg of call.dispatchArgs) {
-      if (invoked.includes(arg.argIndex)) edges.push(...this.fan(arg.candidate, callee, call, ctx));
-    }
-    return { kind: "edges", edges };
-  }
-
-  private fan(ref: DispatchRef, sourceSymbolId: string | null, call: CallRef, ctx: CallContext): DispatchEdge[] {
-    const def = this.selectTableDef(ref.table, ctx);
-    if (!def) return [];
-    const targets: SymbolResolutionTarget[] = [];
-    const seen = new Set<string>();
-    for (const spelling of candidateSpellings(def.table, ref)) {
-      const target = this.resolveEntry(spelling, def.relPath, call, ctx);
-      if (!target) continue;
-      const key = `${target.targetRelPath}::${target.targetSymbolId ?? ""}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      targets.push(target);
-    }
-    const isStatic = ref.key !== null;
-    const confidence = isStatic ? 1 : 1 / targets.length;
-    return targets.map((t) => ({
-      sourceSymbolId,
-      targetRelPath: t.targetRelPath,
-      targetSymbolId: t.targetSymbolId,
-      edgeKind: isStatic ? "exact" : "registry",
-      confidence,
-    }));
-  }
 
   /**
    * The table the CALLER means: the file its import binding for the name
@@ -103,20 +96,35 @@ export class PythonTableDispatchResolver implements DispatchResolverComponent {
    * declares the table. Anything else — a namesake declared elsewhere with no
    * binding in sight — is dropped rather than guessed (m46z).
    */
-  private selectTableDef(name: string, ctx: CallContext): DispatchTableDef | null {
-    const defs = identifierEntry(ctx.dispatchTables, name);
+  selectTableDef = (ref: DispatchRef, ctx: CallContext): DispatchTableDef | null => {
+    const defs = identifierEntry(ctx.dispatchTables, ref.table);
     if (!defs || defs.length === 0) return null;
     const file = pythonImportBoundFile(
-      name,
+      ref.table,
       defs.map((d) => d.relPath),
       ctx,
       this.mapper,
     );
     const picked = file === null ? [] : defs.filter((d) => d.relPath === file);
     return picked.length === 1 ? picked[0] : null;
-  }
+  };
 
-  private resolveEntry(
+  /**
+   * S2 (`field === null`) reads the entry itself, S1 reads `entry[field]`; a
+   * wrong-shape entry contributes nothing.
+   */
+  resolveEntry = (
+    dispatchTableEntry: DispatchTableEntry,
+    ref: DispatchRef,
+    def: DispatchTableDef,
+    call: CallRef,
+    ctx: CallContext,
+  ): SymbolResolutionTarget | null => {
+    const spelling = entrySpelling(dispatchTableEntry, ref);
+    return spelling === null ? null : this.resolveSpelling(spelling, def.relPath, call, ctx);
+  };
+
+  private resolveSpelling(
     spelling: string,
     tableFile: RelPath,
     call: CallRef,
@@ -166,24 +174,10 @@ function moduleScopeContext(ctx: CallContext): CallContext {
   };
 }
 
-/**
- * The callable spellings a `DispatchRef` selects. Static key → the one
- * matching entry; dynamic key → every entry. S2 (`field === null`) reads the
- * entry itself, S1 reads `entry[field]`; a wrong-shape entry contributes
- * nothing.
- */
-function candidateSpellings(table: DispatchTable, ref: DispatchRef): string[] {
-  const keys = ref.key !== null ? [ref.key] : Object.keys(table.entries);
-  const spellings: string[] = [];
-  for (const key of keys) {
-    const entry = table.entries[key];
-    if (entry === undefined) continue;
-    if (ref.field === null) {
-      if (typeof entry === "string") spellings.push(entry);
-    } else if (typeof entry === "object") {
-      const callable = entry[ref.field];
-      if (typeof callable === "string") spellings.push(callable);
-    }
-  }
-  return spellings;
+/** The callable spelling one entry carries for `ref`: the entry (S2) or its `field` (S1). */
+function entrySpelling(dispatchTableEntry: DispatchTableEntry, ref: DispatchRef): string | null {
+  if (ref.field === null) return typeof dispatchTableEntry === "string" ? dispatchTableEntry : null;
+  if (typeof dispatchTableEntry !== "object") return null;
+  const callable = dispatchTableEntry[ref.field];
+  return typeof callable === "string" ? callable : null;
 }
