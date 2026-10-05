@@ -50,10 +50,15 @@
  * included — so a DENOMINATOR change is measurable without a reindex, next to
  * the edge counts that must not move (bd tea-rags-mcp-1v12o.3 / c6xuu).
  *
+ * `--dump-edges <path>` writes every site's scored answer and every method edge
+ * production pushes as sorted TSV, then the kind-stats block verbatim
+ * (`scripts/lib/tally-edge-dump.ts`) — the artifact the substrate identity
+ * gates diff against a recorded baseline.
+ *
  * Usage:
  *   npx tsx scripts/codegraph-chain-tally.ts --corpus <abs path> --lang python \
  *     [--defer globalShortName] [--limit N] [--samples 10] [--json out.json] \
- *     [--kind-stats] [--persisted]
+ *     [--kind-stats] [--persisted] [--dump-edges out.tsv]
  *
  *   env -u NODE_OPTIONS npx tsx scripts/codegraph-chain-tally.ts \
  *     --corpus <abs path> --lang ruby --quiet --time-only [--ts-checker=off]
@@ -115,6 +120,7 @@ import {
 import { InMemoryGlobalSymbolTable } from "../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { collectDependencyManifestSources } from "../src/core/infra/dependency-manifests.js";
 import { NO_FAN, scoreFan, type PyFanOutcomeKind } from "./lib/py-oracle-core.js";
+import { formatTallyEdgeDump, type TallyEdgeDumpRow } from "./lib/tally-edge-dump.js";
 import {
   buildCorpusExclusionFilter,
   buildSymbolDefs,
@@ -533,6 +539,8 @@ export interface RunResult {
   kindSamples?: Record<ReceiverKind, string[]>;
   /** Under `--persisted`: the rows `CallEdgeResolutionRunner#resolve` would persist. */
   persisted?: PersistedEdgeTally;
+  /** Under `--dump-edges`: every site's scored answer plus every edge production pushes there. */
+  edgeDump?: TallyEdgeDumpRow[];
 }
 
 /**
@@ -571,6 +579,53 @@ export interface ChainTallyRunOptions {
   kindStats?: boolean;
   /** Also resolve every scored file through the runner and tally its persisted edges. */
   persisted?: boolean;
+  /** Collect the per-site rows `--dump-edges` writes (the substrate identity gates). */
+  edgeDump?: boolean;
+}
+
+/**
+ * One call site's `--dump-edges` rows. The ANSWER row is the outcome the run
+ * scores — the production resolver's under `--time-only`, the rebuilt chain's
+ * otherwise (the two agree whenever `chainDrift` is 0). A `runner:` row follows
+ * for every method edge production pushes there, so a lift that moves a
+ * dispatch-table fan, a union fan or a cone shows in the diff even when the
+ * single answer is unchanged.
+ */
+function edgeDumpRowsOf(site: {
+  relPath: string;
+  call: CallRef;
+  verdict: CallSiteVerdict;
+  answer: SymbolResolutionTarget | null;
+  dispatchTable: boolean;
+}): TallyEdgeDumpRow[] {
+  const { relPath, call, verdict, answer } = site;
+  const base = { relPath, line: call.startLine, callText: call.callText, receiverKind: verdict.receiverKind };
+  const answerKind =
+    answer !== null
+      ? answer.targetSymbolId === null
+        ? "fileOnly"
+        : "exact"
+      : site.dispatchTable
+        ? "dispatchTable"
+        : "none";
+  const rows: TallyEdgeDumpRow[] = [
+    {
+      ...base,
+      targetRelPath: answer?.targetRelPath ?? null,
+      targetSymbolId: answer?.targetSymbolId ?? null,
+      edgeKind: answerKind,
+    },
+  ];
+  for (const edge of verdict.edges) {
+    const confidence = edge.confidence === undefined ? "" : `@${edge.confidence}`;
+    rows.push({
+      ...base,
+      targetRelPath: edge.targetRelPath,
+      targetSymbolId: edge.targetSymbolId,
+      edgeKind: `runner:${edge.edgeKind ?? "exact"}${confidence}`,
+    });
+  }
+  return rows;
 }
 
 /** Residual-miss examples printed per kind. Enough to name the shape, not a dump. */
@@ -698,6 +753,7 @@ export async function run(
   const rows: CallSiteRow[] = [];
   const kindStats = opts.kindStats === true ? emptyReceiverKindTally() : null;
   const kindSamples = opts.kindStats === true ? emptyKindSamples() : null;
+  const edgeDump: TallyEdgeDumpRow[] | null = opts.edgeDump === true ? [] : null;
   let dispatchTableSites = 0;
   let chainDrift = 0;
   let singleSites = 0;
@@ -757,6 +813,9 @@ export async function run(
       if (kindStats !== null && kindSamples !== null) {
         tallyKindStats(kindStats, kindSamples, { call, verdict, relPath: extraction.relPath });
       }
+      edgeDump?.push(
+        ...edgeDumpRowsOf({ relPath: extraction.relPath, call, verdict, answer: baseline, dispatchTable }),
+      );
     }
   }
   const pass2Ms = performance.now() - pass2Start;
@@ -804,6 +863,7 @@ export async function run(
     kindStats: kindStats ?? undefined,
     kindSamples: kindSamples ?? undefined,
     persisted,
+    edgeDump: edgeDump ?? undefined,
     timeOnly,
     timing:
       sampler === null ? undefined : { pass1Ms, pass2Ms, totalMs: pass1Ms + pass2Ms, peakRssMb: sampler.stop(), loc },
@@ -826,6 +886,7 @@ export function parseArgs(argv: readonly string[]) {
     limit: Number(read("--limit") ?? Number.MAX_SAFE_INTEGER),
     samples: Number(read("--samples") ?? 10),
     json: read("--json") ?? null,
+    dumpEdges: read("--dump-edges") ?? null,
     quiet: argv.includes("--quiet"),
     dispatch: !argv.includes("--no-dispatch"),
     timeOnly: argv.includes("--time-only"),
@@ -852,6 +913,7 @@ async function main(): Promise<void> {
     timing: opts.timing,
     kindStats: opts.kindStats,
     persisted: opts.persisted,
+    edgeDump: opts.dumpEdges !== null,
   });
   // The chain A/B scores only the sites production runs the exact chain on; a
   // dispatch-table site has no chain answer to count as "unresolved".
@@ -920,7 +982,13 @@ async function main(): Promise<void> {
         ` · method edges ${p.methodEdges} (naming no corpus file ${p.methodEdgesPhantom})`,
     );
   }
-  if (result.kindStats !== undefined) out.push(...formatKindStatsBlock(result.kindStats, result.kindSamples));
+  const kindStatsBlock =
+    result.kindStats === undefined ? [] : formatKindStatsBlock(result.kindStats, result.kindSamples);
+  out.push(...kindStatsBlock);
+  if (opts.dumpEdges !== null && result.edgeDump !== undefined) {
+    // The block's leading blank line is report spacing, not data.
+    writeFileSync(opts.dumpEdges, formatTallyEdgeDump(result.edgeDump, kindStatsBlock.slice(1).join("\n")));
+  }
   if (result.timing !== undefined) {
     out.push(
       ...formatTimingBlock(result.timing, {
@@ -935,7 +1003,7 @@ async function main(): Promise<void> {
   if (opts.json) {
     writeFileSync(
       opts.json,
-      `${JSON.stringify({ opts, result: { ...result, rows: undefined }, baseline, variant, tally, changed }, null, 2)}\n`,
+      `${JSON.stringify({ opts, result: { ...result, rows: undefined, edgeDump: undefined }, baseline, variant, tally, changed }, null, 2)}\n`,
     );
   }
 }
