@@ -1,3 +1,19 @@
+/**
+ * Domain vocabulary for the silent-coupling detector: the working shapes the
+ * boundary diagnostics compute and exchange internally. This file and
+ * `contracts/types/architecture-report.ts` (the published finding contract)
+ * evolve IN PARALLEL by design, not by drift. The contract owns the
+ * component-level API-facing shapes (finding + evidence envelope + detector
+ * field); these types own the file-level working vocabulary
+ * (`sourceRelPath`/`targetRelPath`, the neighbour index, exclusion counters at
+ * detector granularity). Both grow when a detector lands — a new exclusion or
+ * evidence field lands here AND on the contract — so the two files co-change
+ * on every detector landing. That residual co-change is
+ * producer-and-published-mirror evolution (bd tea-rags-mcp-89k7k.28): accepted
+ * rather than merged into one home, because the granularities genuinely
+ * differ, and a detector exclusion for this pair class would hide real mirror
+ * drift — the one signal worth keeping.
+ */
 import type {
   SilentCouplingBuildSummary,
   SilentCouplingStructuralVisibility,
