@@ -758,9 +758,18 @@
   together with its local bindings, call-result bindings and `assignedLocals`
   (bd tea-rags-mcp-m99j1.1.76). Twin channels sit on later lines than the
   getter's, so the getter's own calls read exactly what they read before. Only
-  the decorator naming the def's OWN property qualifies: a plain same-named
-  redefinition can be a different body with a different signature and still
-  falls to the class chunk.
+  the decorator naming the def's OWN property qualifies as an accessor twin.
+- **A plain same-id redefinition is attributed the same way**
+  (`collectPythonRedefinitionTwinRanges`, bd tea-rags-mcp-m99j1.1.80):
+  alternative defs in `if/else` / `try/except` branches, a nested helper
+  redefined in another branch, a re-declared class and its colliding members.
+  The owner is the chunk whose scope EQUALS the twin's scope and whose id names
+  it, ending before the twin starts; none or several → the twin keeps its old
+  attribution. A re-declared class joins because the index already models the
+  shared id as one class: its unique members own chunks under that id and its
+  bases are filed under it. Before this a top-level twin's calls were DROPPED
+  (no enclosing chunk) and a twin class's method read `self` through the
+  enclosing test method.
 - **Class-body assignments (`objects = <QS>.as_manager()`) feed the SAME two
   field channels as `self.<field> = …`, and they merge UNDERNEATH:** a
   constructor assignment for the same field name wins. Reversing the spread

@@ -65,8 +65,9 @@ import {
 } from "./passes/python-dispatch-tables.js";
 import {
   collectPythonAccessorTwinRanges,
-  type PythonAccessorTwinRange,
+  type PythonSymbolTwinRange,
 } from "./passes/python-property-accessor-twins.js";
+import { collectPythonRedefinitionTwinRanges } from "./passes/python-redefinition-twins.js";
 import { collectPythonStructuralContracts } from "./python-structural-contracts.js";
 import { collectPythonSymbolKinds } from "./symbol-kind.js";
 import { collectPythonTypeDeclarations } from "./type-declarations.js";
@@ -336,8 +337,11 @@ function collectPythonClassChannels(
 /** Channels collected once per FILE and joined to chunks by line. */
 interface PythonPerFileChannels {
   callOwnership: ReturnType<typeof assignCallsToInnermostChunks>;
-  /** Accessor twin def ranges per owning chunk index (bd m99j1.1.76). */
-  accessorTwins: ReadonlyMap<number, readonly PythonAccessorTwinRange[]>;
+  /**
+   * Same-id twin def / class ranges per owning chunk index: property accessor
+   * twins (bd m99j1.1.76) and plain redefinitions (bd m99j1.1.80).
+   */
+  symbolTwins: ReadonlyMap<number, readonly PythonSymbolTwinRange[]>;
   callResultBindings: Record<string, CallResultBinding[]>;
   defSignatures: ReturnType<typeof collectPythonDefSignatures>;
   assignedLocals: ReturnType<typeof collectPythonAssignedLocals>;
@@ -361,13 +365,17 @@ function collectPythonPerFileChannels(
   // MRO on the OUTER class and DROPped, a top-level class's copy tripped
   // `selfMember`'s `callerScope.length === 0` guard and let `globalShortName`
   // fabricate 40 phantoms.
-  const twinRanges = collectPythonAccessorTwinRanges(root, chunks);
+  const accessorTwinRanges = collectPythonAccessorTwinRanges(root, chunks);
+  const twinRanges = [
+    ...accessorTwinRanges,
+    ...collectPythonRedefinitionTwinRanges(root, chunks, new Set(accessorTwinRanges.map((t) => t.startLine))),
+  ];
   const callOwnership = assignCallsToOwningChunks(calls, chunks, twinRanges);
-  const accessorTwins = new Map<number, PythonAccessorTwinRange[]>();
+  const symbolTwins = new Map<number, PythonSymbolTwinRange[]>();
   for (const twin of twinRanges) {
-    const list = accessorTwins.get(twin.ownerIndex);
+    const list = symbolTwins.get(twin.ownerIndex);
     if (list) list.push(twin);
-    else accessorTwins.set(twin.ownerIndex, [twin]);
+    else symbolTwins.set(twin.ownerIndex, [twin]);
   }
   // bd tea-rags-mcp-z68v9 — `NAME = <callee>(…)` sites, collected ONCE per file
   // and sliced per chunk below, because the scan needs whole-file scope nesting
@@ -388,7 +396,7 @@ function collectPythonPerFileChannels(
   // by the same `def` start line. Not gated on `trackTypes`: it states that a
   // name IS a local, which is true whether or not anything typed it.
   const assignedLocals = collectPythonAssignedLocals(root);
-  return { callOwnership, accessorTwins, callResultBindings, defSignatures, assignedLocals };
+  return { callOwnership, symbolTwins, callResultBindings, defSignatures, assignedLocals };
 }
 
 /**
@@ -402,7 +410,7 @@ function collectPythonPerFileChannels(
 function assignCallsToOwningChunks(
   calls: CallRef[],
   chunks: PythonExtractInput["chunks"],
-  twins: readonly PythonAccessorTwinRange[],
+  twins: readonly PythonSymbolTwinRange[],
 ): Map<number, CallRef[]> {
   if (twins.length === 0) return assignCallsToInnermostChunks(calls, chunks);
   const ranges = [
@@ -447,7 +455,7 @@ function collectPythonChunkExtractions(
       if (signature.kwargs !== undefined) base.kwargs = signature.kwargs;
       if (signature.visibility !== undefined) base.visibility = signature.visibility;
     }
-    const twins = perFile.accessorTwins.get(chunkIndex);
+    const twins = perFile.symbolTwins.get(chunkIndex);
     const assignedLocals = pythonAssignedLocalsOfDefs(perFile.assignedLocals, c.startLine, twins);
     if (assignedLocals !== undefined) base.assignedLocals = assignedLocals;
     if (trackTypes) {
@@ -482,7 +490,7 @@ function collectPythonChunkExtractions(
 function pythonAssignedLocalsOfDefs(
   byDefLine: ReadonlyMap<number, string[]>,
   startLine: number,
-  twins: readonly PythonAccessorTwinRange[] | undefined,
+  twins: readonly PythonSymbolTwinRange[] | undefined,
 ): string[] | undefined {
   const own = byDefLine.get(startLine);
   if (twins === undefined) return own;
