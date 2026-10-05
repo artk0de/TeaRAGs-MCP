@@ -69,7 +69,13 @@
   sources declaring the name is the same ambiguity the caller declined to guess
   at. `MAX_REEXPORT_HOPS` is 3 with a visited set — a deeper tower or a
   re-export cycle answers the pre-seam refusal rather than a guess, and `null`
-  means "no better answer than the file you came in with", never "absent".
+  means "no better answer than the file you came in with", never "absent". A
+  star never carries a leading-underscore name: the walker records no `__all__`,
+  and without one Python's star import skips them. `importedName`'s
+  module-member read asks this walk LAST (`moduleReexportOutcome`), only after
+  the project-wide declaration hop declines — django's gis `models.CharField`
+  reaches `db/models/fields` two stars away, outside the package the hop's
+  tie-break retries in (bd tea-rags-mcp-m99j1.1.73).
 - **A THIRD question exists, and it terminates on a FILE rather than a
   declaration.** `resolveExportedModule` asks which file a package binds a name
   to as a MODULE, for the shape neither of the other two can answer:

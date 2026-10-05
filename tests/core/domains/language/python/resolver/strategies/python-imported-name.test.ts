@@ -568,6 +568,88 @@ describe("PythonImportedNameSymbolResolutionStrategy — receiver is a module", 
   });
 });
 
+describe("PythonImportedNameSymbolResolutionStrategy — a module that star-re-exports another package", () => {
+  // django's `contrib/gis/db/models/__init__.py` opens `from django.db.models
+  // import *`, and `django/db/models/__init__.py` in turn star-imports
+  // `.fields`. `from django.contrib.gis.db import models; models.CharField()`
+  // reaches the declaration two star hops away — OUTSIDE the gis package, so
+  // the within-package retry of the declaration hop cannot separate it from
+  // `django/forms/fields.py#CharField` (bd tea-rags-mcp-m99j1.1.73).
+  const GIS_FILES: Record<string, string[]> = {
+    "django/__init__.py": ["setup"],
+    "django/contrib/gis/db/__init__.py": [],
+    "django/contrib/gis/db/models/__init__.py": [],
+    "django/contrib/gis/db/models/aggregates.py": ["Union"],
+    "django/contrib/gis/db/backends/oracle/models.py": ["OracleGeometryColumns"],
+    "django/db/models/__init__.py": [],
+    "django/db/models/fields/__init__.py": ["CharField", "IntegerField"],
+    "django/forms/fields.py": ["CharField", "IntegerField"],
+  };
+  const GIS_REEXPORTS: Record<string, ModuleReexport[]> = {
+    "django/contrib/gis/db/models/__init__.py": [
+      { exportedName: "*", sourceModule: "django.db.models" },
+      { exportedName: "models_all", sourceModule: "django.db.models", sourceName: "__all__" },
+      { exportedName: "*", sourceModule: "django.contrib.gis.db.models.aggregates" },
+    ],
+    "django/db/models/__init__.py": [
+      { exportedName: "*", sourceModule: "django.db.models.fields" },
+      { exportedName: "Integer", sourceModule: "django.db.models.fields", sourceName: "IntegerField" },
+    ],
+  };
+  const GIS_IMPORT: ImportRef = {
+    importText: "django.contrib.gis.db",
+    startLine: 1,
+    importedNames: ["models"],
+    importedBindings: { models: "models" },
+  };
+  const gisCtx = (
+    reexports: Record<string, ModuleReexport[]> = GIS_REEXPORTS,
+    files: Record<string, string[]> = GIS_FILES,
+  ): CallContext => ({
+    ...ctxWith("django/contrib/gis/db/backends/oracle/models.py", [GIS_IMPORT], tableWith(files)),
+    moduleReexports: reexports,
+  });
+
+  it("pins the member declared two star hops away, outside the receiver's package", () => {
+    expect(strategy().attempt(call("models", "CharField"), gisCtx())).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "django/db/models/fields/__init__.py", targetSymbolId: "CharField" },
+    });
+  });
+
+  it("lands an explicit `as` alias on the source spelling the declaring file binds", () => {
+    expect(strategy().attempt(call("models", "Integer"), gisCtx())).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "django/db/models/fields/__init__.py", targetSymbolId: "IntegerField" },
+    });
+  });
+
+  it("CONTINUEs when two star sources both declare the member", () => {
+    const reexports = {
+      ...GIS_REEXPORTS,
+      "django/contrib/gis/db/models/__init__.py": [
+        ...GIS_REEXPORTS["django/contrib/gis/db/models/__init__.py"],
+        { exportedName: "*", sourceModule: "django.forms.fields" },
+      ],
+    };
+    // Same ambiguity the star walk refuses everywhere: which star wins is a
+    // binding-order question, and two declarers is not evidence for either.
+    expect(strategy().attempt(call("models", "CharField"), gisCtx(reexports))).toEqual({ kind: "continue" });
+  });
+
+  it("keeps a name the module declares itself over anything a star brings in", () => {
+    const files = { ...GIS_FILES, "django/contrib/gis/db/models/__init__.py": ["CharField"] };
+    expect(strategy().attempt(call("models", "CharField"), gisCtx(GIS_REEXPORTS, files))).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "django/contrib/gis/db/models/__init__.py", targetSymbolId: "CharField" },
+    });
+  });
+
+  it("CONTINUEs when no star chain reaches a declaration", () => {
+    expect(strategy().attempt(call("models", "Missing"), gisCtx())).toEqual({ kind: "continue" });
+  });
+});
+
 describe("PythonImportedNameSymbolResolutionStrategy — class receiver spellings", () => {
   const jobsTable = () =>
     tableWith({

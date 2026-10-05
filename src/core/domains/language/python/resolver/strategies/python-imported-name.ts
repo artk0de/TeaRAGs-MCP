@@ -13,6 +13,7 @@ import {
   findPythonImportBinding,
   lookupPythonSymbols,
   lookupPythonSymbolsByShortName,
+  parsePythonClassKey,
   pythonBoundClassKey,
   pythonClassKey,
   pythonImportsStdlibModule,
@@ -526,12 +527,37 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
     // helper's docblock — so declaration lookup is the mechanism, and it covers
     // `from .columns import *` for free.
     const origin = reexportOriginFile(member, moduleFile, ctx, this.cfg.mode, lookupPythonSymbols);
-    if (!origin) return CONTINUE;
-    const hopped = pickSingleCandidate(
-      ctx.symbolTable.lookup(member).filter((def) => def.relPath === origin),
-      this.cfg.mode,
-    );
-    return hopped ? resolved({ targetRelPath: hopped.relPath, targetSymbolId: hopped.symbolId }) : CONTINUE;
+    const hopped = origin
+      ? pickSingleCandidate(
+          ctx.symbolTable.lookup(member).filter((def) => def.relPath === origin),
+          this.cfg.mode,
+        )
+      : undefined;
+    if (hopped) return resolved({ targetRelPath: hopped.relPath, targetSymbolId: hopped.symbolId });
+    return this.moduleReexportOutcome(member, moduleFile, ctx);
+  }
+
+  /**
+   * The module's own `from` statements, followed to the file that DECLARES
+   * `member` (bd tea-rags-mcp-m99j1.1.73) — asked only once the declaration hop
+   * above has declined, so every site it answers today keeps its target.
+   *
+   * That hop is a project-wide lookup retried inside the module's package, so a
+   * name declared in two files OUTSIDE the package is a tie it cannot break:
+   * django's `contrib/gis/db/models/__init__.py` star-imports `django.db.models`,
+   * which star-imports `.fields`, and `models.CharField` there is
+   * `django/forms/fields.py`'s namesake as much as the model field's. The
+   * mapper's re-export walk reads what the module actually imports — explicit
+   * entries before stars, an `as` alias landing on its source spelling, stars
+   * unanimous or refused, bounded hops — and the declaration it reaches is
+   * pinned the way `moduleDeclarationTarget` pins any other.
+   */
+  private moduleReexportOutcome(member: string, moduleFile: string, ctx: CallContext): SymbolResolutionOutcome {
+    const declaration = this.mapper.resolveExportedClassKey(moduleFile, member, ctx);
+    const parsed = declaration === null ? null : parsePythonClassKey(declaration);
+    if (parsed === null || parsed.relPath === moduleFile) return CONTINUE;
+    const target = this.moduleDeclarationTarget(parsed.classFq, parsed.relPath, ctx);
+    return target ? resolved(target) : CONTINUE;
   }
 
   /**
