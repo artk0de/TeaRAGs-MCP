@@ -239,8 +239,8 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    * mapper calls external still reaches its DROP: a receiver whose module text
    * lands outside the project cannot resolve here either, and the refusal is
    * the stronger verdict. The stdlib guard is the one case where the ORDER
-   * matters — `os.path` would land on a project `path.py` through the mapper's
-   * ancestor probe, so this arm declines it and lets the head check DROP.
+   * matters — `os.path` would land on a `path.py` at a source root through the
+   * mapper's root probe, so this arm declines it and lets the head check DROP.
    */
   private resolveDottedModuleReceiver(receiver: string, call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!DOTTED_MODULE_RECEIVER.test(receiver)) return CONTINUE;
@@ -281,7 +281,7 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
     const binding = findPythonImportBinding(ctx.imports, head);
     if (binding === null) return CONTINUE;
     // The same two-step `resolveBinding` uses, and for the same reason: the
-    // stdlib snapshot is a positive verdict the mapper's ancestor probe would
+    // stdlib snapshot is a positive verdict the mapper's root probe would
     // shadow with a project module of the same name.
     if (pythonImportsStdlibModule(binding.imp.importText)) return DROP;
     const mapped = this.mapper.mapImportToFile(binding.imp.importText, ctx.callerFile, ctx);
@@ -308,10 +308,11 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
   private resolveBinding(binding: PythonImportBinding, call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     // The stdlib check stays AHEAD of the mapper, the same way
     // `PythonExternalVocabulary.importLandsInProject` keeps it (bd
-    // tea-rags-mcp-mmckn): the mapper probes the caller's ancestor directories
-    // first, so `import json` from `netbox/utilities/forms/fields/fields.py`
-    // lands on netbox's own `netbox/utilities/json.py` and 45 stdlib calls
-    // become in-project phantoms. Absolute-import semantics settle it — a
+    // tea-rags-mcp-mmckn): the mapper once probed every caller ancestor, so
+    // `import json` from `netbox/utilities/forms/fields/fields.py` landed on
+    // netbox's own `netbox/utilities/json.py` and 45 stdlib calls became
+    // in-project phantoms, and a source root can still hold a stdlib-named
+    // module (bd tea-rags-mcp-m99j1.1.31). Absolute-import semantics settle it — a
     // project module of the same name is reachable through a relative or
     // package-qualified import, never through bare `import json`.
     if (pythonImportsStdlibModule(binding.imp.importText)) return DROP;

@@ -103,12 +103,21 @@
   descriptor (`@property`, `@cached_property`) still types, because the walker's
   descriptor pass records it in `classFieldTypes`, which is read first.
   `memberTypeOf` stays the CALL read every in-language caller uses.
-- **The stdlib check runs BEFORE the mapper — in two places.** The mapper probes
-  the caller's ancestor directories first, so `import json` from
-  `src/flask/tag.py` would otherwise land on flask's own
-  `src/flask/json/__init__.py`. Which module the interpreter binds is a sys.path
-  question no static root inference answers. `PythonExternalVocabulary` carries
-  the guard, and so does
+- **An absolute import is probed only at a `sys.path`-shaped root — never at a
+  package.** `mapAbsolute` tries `""`, the seeded roots (caller's own first),
+  then the caller's ancestors that sit ABOVE every package on its chain
+  (`scriptRootsOf`: package-free script trees such as polar's `dev/cli/`, and
+  the parent of a PEP 420 top-level namespace package). Probing every ancestor
+  was how `import jwt` inside `polar/kit/jwt.py` bound the caller itself and
+  `import stripe` bound `polar/integrations/stripe/` (bd
+  tea-rags-mcp-m99j1.1.31); a probed directory is never memoised as a root for
+  the next caller.
+- **The stdlib check runs BEFORE the mapper — in two places.** Before m99j1.1.31
+  the mapper probed every caller ancestor, so `import json` from
+  `src/flask/tag.py` landed on flask's own `src/flask/json/__init__.py`; a
+  source root can still hold a stdlib-named module, and which one the
+  interpreter binds is a sys.path-order question no static root inference
+  answers. `PythonExternalVocabulary` carries the guard, and so does
   `PythonImportedNameSymbolResolutionStrategy.resolveBinding`, which DROPs when
   an ABSOLUTE `importText` heads a stdlib module — measured cause, the ancestor
   scan reaching `netbox/utilities/json.py` and turning 45 stdlib calls into

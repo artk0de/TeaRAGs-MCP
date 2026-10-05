@@ -184,12 +184,11 @@ export class PythonExternalVocabulary implements ExternalVocabulary {
 
   /** Does this import text name a file or a package directory the table holds? */
   private importLandsInProject(importText: string, ctx: CallContext): boolean {
-    // The stdlib check stays AHEAD of the mapper. The mapper probes the
-    // caller's ancestor directories before it consults the stdlib snapshot, so
-    // `import json` from `src/flask/tag.py` would land on flask's own
-    // `src/flask/json/__init__.py`. Which module the interpreter really binds
-    // is a sys.path question no static root inference answers; the vocabulary
-    // keeps its measured answer (bd tea-rags-mcp-mmckn).
+    // The stdlib check stays AHEAD of the mapper. The mapper probes source
+    // roots before it consults the stdlib snapshot, and a root can hold a
+    // stdlib-named module. Which module the interpreter really binds is a
+    // sys.path question no static root inference answers; the vocabulary keeps
+    // its measured answer (bd tea-rags-mcp-mmckn).
     if (PYTHON_STDLIB_MODULES.has(importText.split(".")[0])) return false;
     const mapped = this.mapper.mapImportToFile(importText, ctx.callerFile, ctx);
     if (mapped.kind === "project") return true;
