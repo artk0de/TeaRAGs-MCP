@@ -45,9 +45,12 @@ import { composeExtractionWalker, deriveStructuralConformance, isEcmascriptSourc
 import { readEcmascriptImportSpecifiers, typescriptChunkClassifier, typescriptHooks } from "./chunking/index.js";
 import { typescriptKernel } from "./kernel.js";
 import { loadTsConfig, TSCallResolver, type TSSourceFileStore } from "./resolver/index.js";
-import { tsNameOf } from "./walker/name-of.js";
-import { TYPESCRIPT_EXTRACTION_PASSES } from "./walker/passes.js";
-import { extractFromTypescriptFile, type ExtractInput } from "./walker/walker.js";
+import {
+  extractFromTypescriptFile,
+  tsNameOf,
+  TYPESCRIPT_EXTRACTION_PASSES,
+  type ExtractInput,
+} from "./walker/index.js";
 
 /**
  * Chunk-boundary config for TypeScript — mirrors the chunker slice of the legacy

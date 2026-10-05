@@ -72,9 +72,7 @@ import { composeExtractionWalker, fileEdgesFromResolvedCalls } from "../kernel/i
 import { swiftHooks } from "./chunking/index.js";
 import { swiftKernel } from "./kernel.js";
 import { SwiftCallResolver } from "./resolver/index.js";
-import { swiftNameOf } from "./walker/name-of.js";
-import { SWIFT_EXTRACTION_PASSES } from "./walker/passes.js";
-import { extractFromSwiftFile, type SwiftExtractInput } from "./walker/walker.js";
+import { extractFromSwiftFile, SWIFT_EXTRACTION_PASSES, swiftNameOf, type SwiftExtractInput } from "./walker/index.js";
 
 /**
  * Chunk-boundary config for Swift — mirrors the chunker slice of
