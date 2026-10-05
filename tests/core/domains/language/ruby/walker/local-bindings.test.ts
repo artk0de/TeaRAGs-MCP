@@ -13,6 +13,7 @@ import type { LocalBinding } from "../../../../../../src/core/contracts/types/co
 import {
   bindCompoundReceiverChains,
   collectRubyBodyReturnTypes,
+  collectRubyCallResultBindingsForChunk,
   collectRubyIvarFieldTypes,
   collectRubyLocalCallBindingsForChunk,
   collectRubyScopedBodyReturnTypes,
@@ -450,5 +451,69 @@ describe("collectRubyLocalCallBindingsForChunk — constant receiver keeps its s
   it("`x = Svc.build.call` (chained tail off a constant) keeps the bare method name", () => {
     const result = collectRubyLocalCallBindingsForChunk(parse("x = Svc.build.call\n"), 1, 1);
     expect(result["x"]).toBe("call");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// bd tea-rags-mcp-m99j1.1.62 — `callResultBindings`: the callee SPELLING a local
+// was assigned from, positioned, with every link's arguments stripped, so the
+// resolver can fold the right-hand side through the receiver-type chain. The
+// binding is visible only AFTER its statement (`endLine`), because Ruby
+// evaluates `scope = scope.filtered_for(x)`'s right-hand side against the
+// PREVIOUS `scope`.
+// ---------------------------------------------------------------------------
+describe("collectRubyCallResultBindingsForChunk", () => {
+  it("records a lowercase-rooted chain with its arguments stripped", () => {
+    const src = "filter = @account.custom_filters.create!(title: t)\n";
+    const result = collectRubyCallResultBindingsForChunk(parse(src), 1, 1);
+    expect(result["filter"]).toEqual([{ line: 1, endLine: 1, callee: "@account.custom_filters.create!" }]);
+  });
+
+  it("strips arguments from INNER links too, so a dotted argument cannot split a hop", () => {
+    const src = "agent = Agent.of_type(Agents::Scheduler).active.find_by(id: x.to_i)\n";
+    const result = collectRubyCallResultBindingsForChunk(parse(src), 1, 1);
+    expect(result["agent"]).toEqual([{ line: 1, endLine: 1, callee: "Agent.of_type.active.find_by" }]);
+  });
+
+  it("keeps every assignment positioned — a self-referential reassignment does not shadow its own right-hand side", () => {
+    const src = "scope = Trends.links.query\nscope = scope.filtered_for(acct) if ok\nscope.size\n";
+    const result = collectRubyCallResultBindingsForChunk(parse(src), 1, 3);
+    expect(result["scope"]).toEqual([
+      { line: 1, endLine: 1, callee: "Trends.links.query" },
+      { line: 2, endLine: 2, callee: "scope.filtered_for" },
+    ]);
+  });
+
+  it("records a bare call by its method name and a `&.` link like a `.` link", () => {
+    const src = "query = reorder(id: :desc)\nnext_one = query&.first\n";
+    const result = collectRubyCallResultBindingsForChunk(parse(src), 1, 2);
+    expect(result["query"]).toEqual([{ line: 1, endLine: 1, callee: "reorder" }]);
+    expect(result["next_one"]).toEqual([{ line: 2, endLine: 2, callee: "query.first" }]);
+  });
+
+  it("records an assignment written as an `if` condition", () => {
+    const src = "if agent = job.scheduler_agent\n  agent.control!\nend\n";
+    const result = collectRubyCallResultBindingsForChunk(parse(src), 1, 3);
+    expect(result["agent"]).toEqual([{ line: 1, endLine: 1, callee: "job.scheduler_agent" }]);
+  });
+
+  it("omits a right-hand side the walker types directly — `localBindings` owns `Foo.new`", () => {
+    expect(collectRubyCallResultBindingsForChunk(parse("x = User.new\n"), 1, 1)["x"]).toBeUndefined();
+  });
+
+  it("omits a chain whose root is not a name — an index access, a literal, `self`", () => {
+    const src = "a = opts[:k].fetch\nb = [1].first\nc = self.class.name\nd = foo(1).bar\n";
+    const result = collectRubyCallResultBindingsForChunk(parse(src), 1, 4);
+    expect(result["a"]).toBeUndefined();
+    expect(result["b"]).toBeUndefined();
+    expect(result["c"]).toBeUndefined();
+    expect(result["d"]).toEqual([{ line: 4, endLine: 4, callee: "foo.bar" }]);
+  });
+
+  it("only reads assignments inside the chunk range", () => {
+    const src = "x = a.b\ny = c.d\n";
+    const result = collectRubyCallResultBindingsForChunk(parse(src), 2, 2);
+    expect(result["x"]).toBeUndefined();
+    expect(result["y"]).toEqual([{ line: 2, endLine: 2, callee: "c.d" }]);
   });
 });

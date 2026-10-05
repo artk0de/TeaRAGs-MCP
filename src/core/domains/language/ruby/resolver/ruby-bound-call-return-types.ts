@@ -69,7 +69,7 @@ function boundCallFactOwner(binding: string, ctx: CallContext): string {
 }
 
 /** Does the RUN declare this constant? The question `resolveConstant` asks first. */
-function isProjectDeclaredConstant(name: string, ctx: CallContext): boolean {
+export function isProjectDeclaredConstant(name: string, ctx: CallContext): boolean {
   return identifierEntry(ctx.classAncestors, name) !== undefined || ctx.symbolTable.lookup(name).length > 0;
 }
 
