@@ -7,8 +7,9 @@
  * it does not link, yet that changes together more reliably than chance, is
  * coupling that lives in the developers' heads — a wire protocol and its two
  * ends, a descriptor and the implementation it describes, sibling files edited
- * as a set. Language-agnostic: both sub-graphs are, and nothing here reads a
- * language.
+ * as a set. A pair whose consumption resolves through a chain of adopted
+ * barrels counts as declared too (bd tea-rags-mcp-89k7k.27). Language-agnostic:
+ * both sub-graphs are, and nothing here reads a language.
  */
 
 import { posix } from "node:path";
@@ -23,7 +24,11 @@ import type {
 import { classify } from "../../../../../infra/file-classification/index.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../../../../../infra/graph/index.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
-import { classifyDirectoryRelation } from "../../symbols/boundary-diagnostics/index.js";
+import {
+  classifyDirectoryRelation,
+  MODULE_ENTRY_FILE_NAMES,
+  RE_EXPORT_CYCLE_PATH_CAP,
+} from "../../symbols/boundary-diagnostics/index.js";
 import type {
   SilentCouplingExclusionCounts,
   SilentCouplingOptions,
@@ -66,6 +71,14 @@ export const SILENT_COUPLING_EXPLAINED_REASON =
   "through it, and its weight ln(N / fanIn) clears Otsu's cut over every candidate's heaviest neighbour — " +
   "coupling through a shared contract, not hidden coupling";
 
+/** The module entry files — a re-export/facade chain may run through nothing else. */
+const MODULE_ENTRY_FILES: ReadonlySet<string> = new Set(Object.values(MODULE_ENTRY_FILE_NAMES).flat());
+
+/** The file that makes its directory a module with a facade ({@link MODULE_ENTRY_FILE_NAMES}). */
+function isModuleEntryFile(relPath: RelPath): boolean {
+  return MODULE_ENTRY_FILES.has(relPath.slice(relPath.lastIndexOf("/") + 1));
+}
+
 type ExclusionReason = keyof SilentCouplingExclusionCounts;
 
 interface Candidate {
@@ -91,7 +104,10 @@ interface Candidate {
  * neighbour explains it ({@link SilentCouplingNeighbourIndex}): given the file
  * dependency edges, each candidate's heaviest neighbour weight enters a second
  * Otsu split, and a would-be violation whose neighbour clears it is reported
- * under `explained` instead (bd tea-rags-mcp-r8hme.13).
+ * under `explained` instead (bd tea-rags-mcp-r8hme.13) — unless the pair's
+ * consumption resolves through a re-export/facade chain of module entry files,
+ * adopted consumption of a barrel, counted under
+ * `excluded.explainedByFacadeChain` (bd tea-rags-mcp-89k7k.27).
  *
  * Diagnosis, not prescription: a violation says two files move together for a
  * reason the code does not state, not that the reason is wrong.
@@ -108,6 +124,7 @@ export function detectSilentCoupling(
     documentationEndpoints: 0,
     unwalkedEndpoints: 0,
     nonPositiveLift: 0,
+    explainedByFacadeChain: 0,
   };
   const neighbours = options.fileDependencyEdges
     ? new SilentCouplingNeighbourIndex(options.fileDependencyEdges, walkedFiles.length)
@@ -158,6 +175,13 @@ export function detectSilentCoupling(
     }
     if (sharedNeighbour && explains(sharedNeighbour)) {
       explained.push({ ...toViolation(edge, strength, symbolCounts), explainedBy: sharedNeighbour });
+      continue;
+    }
+    if (
+      neighbours?.resolvesThroughFacadeChain(edge.relPathA, edge.relPathB) ||
+      neighbours?.resolvesThroughFacadeChain(edge.relPathB, edge.relPathA)
+    ) {
+      excluded.explainedByFacadeChain++;
       continue;
     }
     violations.push(toViolation(edge, strength, symbolCounts));
@@ -257,6 +281,39 @@ class SilentCouplingNeighbourIndex {
   private weightOf(relPath: RelPath): number {
     const fanIn = this.importers.get(relPath)?.size ?? 0;
     return fanIn > 0 ? Math.log(Math.max(this.walkedFileCount, fanIn) / fanIn) : 0;
+  }
+
+  /**
+   * Does `importer`'s import of `target` resolve through a re-export/facade
+   * chain — a path of module entry files ({@link isModuleEntryFile}) that ends
+   * in a direct import of the target (bd tea-rags-mcp-89k7k.27)? A pair joined
+   * so is ADOPTED consumption: the vocabulary reaches the importer through the
+   * barrel it declares, so the co-change is explained, not hidden coupling.
+   * The walk is this index's import graph again — no second resolver. Only
+   * entry files may sit between (an ordinary module in the middle is a shared
+   * dependency, which is the shared-neighbour check's question), and a direct
+   * import is no chain: that edge is exactly the coupling the detector exists
+   * to see. The path holds at most {@link RE_EXPORT_CYCLE_PATH_CAP} files —
+   * consumer, barrels, target — like the facade detector's evidence path, so
+   * reachability past the cap counts as absent.
+   */
+  resolvesThroughFacadeChain(importer: RelPath, target: RelPath): boolean {
+    const visited = new Set<RelPath>([importer, target]);
+    let frontier = [...(this.imports.get(importer) ?? [])].filter((next) => next !== target && isModuleEntryFile(next));
+    for (let depth = 0; depth < RE_EXPORT_CYCLE_PATH_CAP - 2 && frontier.length > 0; depth++) {
+      const nextFrontier: RelPath[] = [];
+      for (const entry of frontier) {
+        for (const next of this.imports.get(entry) ?? []) {
+          if (next === target) return true;
+          if (!visited.has(next) && isModuleEntryFile(next)) {
+            visited.add(next);
+            nextFrontier.push(next);
+          }
+        }
+      }
+      frontier = nextFrontier;
+    }
+    return false;
   }
 }
 

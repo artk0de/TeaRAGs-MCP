@@ -92,7 +92,12 @@ function factsOf(
   violations: readonly { relPathA: string; relPathB: string; support: number; strength: number }[],
   excluded: Partial<
     Record<
-      "testEndpoints" | "generatedEndpoints" | "documentationEndpoints" | "unwalkedEndpoints" | "nonPositiveLift",
+      | "testEndpoints"
+      | "generatedEndpoints"
+      | "documentationEndpoints"
+      | "unwalkedEndpoints"
+      | "nonPositiveLift"
+      | "explainedByFacadeChain",
       number
     >
   > = {},
@@ -105,6 +110,7 @@ function factsOf(
       documentationEndpoints: 0,
       unwalkedEndpoints: 0,
       nonPositiveLift: 0,
+      explainedByFacadeChain: 0,
       ...excluded,
     },
   };
@@ -799,6 +805,7 @@ describe("silentCoupling", () => {
       documentationEndpoints: 24,
       unwalkedEndpoints: 4,
       nonPositiveLift: 0,
+      explainedByFacadeChain: 0,
     });
   });
 

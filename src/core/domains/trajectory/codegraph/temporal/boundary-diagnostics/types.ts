@@ -98,6 +98,16 @@ export interface SilentCouplingExclusionCounts {
   unwalkedEndpoints: number;
   /** lift ≤ 1: the pair co-changes no more than independence predicts. */
   nonPositiveLift: number;
+  /**
+   * Strong unlinked in-scope pairs one side's import of the other resolves
+   * through — a re-export/facade chain of module entry files between the
+   * consumer and the target (bd tea-rags-mcp-89k7k.27): adopted consumption
+   * through a barrel, not hidden coupling. Counted here, with no per-pair
+   * record, so a clean pass is never silent about the pairs it explained;
+   * unlike the five above, a pair reaches this count only after clearing the
+   * strength threshold and the scope.
+   */
+  explainedByFacadeChain: number;
 }
 
 /** Provenance of the co-change build the report judged — from the finding contract (bd tea-rags-mcp-0e4vf). */

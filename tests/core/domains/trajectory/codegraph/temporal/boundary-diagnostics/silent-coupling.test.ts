@@ -181,6 +181,7 @@ describe("detectSilentCoupling", () => {
       documentationEndpoints: 1,
       unwalkedEndpoints: 1,
       nonPositiveLift: 1,
+      explainedByFacadeChain: 0,
     });
     expect(report.summary.candidateCount).toBe(0);
   });
@@ -443,5 +444,104 @@ describe("detectSilentCoupling — shared-neighbour explanation (bd tea-rags-mcp
     // a/client.ts has two strong partners, but server is explained: one silent partner is no root cause.
     expect(report.explained.map((v) => v.relPathB)).toContain("b/server.ts");
     expect(report.rootCauses.map((r) => r.relPath)).not.toContain("a/client.ts");
+  });
+});
+
+describe("detectSilentCoupling — facade-chain explanation (bd tea-rags-mcp-89k7k.27)", () => {
+  /**
+   * The bd tea-rags-mcp-89k7k.27 repro shape: a producer imports a module's
+   * vocabulary through two adopted barrels (`app/index.ts` →
+   * `app/boundary/index.ts`) and never the vocabulary file itself, yet all
+   * four files change together. The barrel chain, not the pair, is the
+   * coupling the code declares.
+   */
+  function facadeChainFixture(): {
+    walked: FileDependencyGraphFile[];
+    edges: FileDependencyEdge[];
+    cochange: TemporalCochangeGraph;
+  } {
+    const walked = files("ops/consumer.ts", "app/index.ts", "app/boundary/index.ts", "app/boundary/types.ts");
+    const edge = (sourceRelPath: string, targetRelPath: string): FileDependencyEdge => ({
+      sourceRelPath,
+      targetRelPath,
+      callWeight: 1,
+    });
+    const edges: FileDependencyEdge[] = [
+      edge("ops/consumer.ts", "app/index.ts"),
+      edge("app/index.ts", "app/boundary/index.ts"),
+      edge("app/boundary/index.ts", "app/boundary/types.ts"),
+    ];
+    return { walked, edges, cochange: built([pair("ops/consumer.ts", "app/boundary/types.ts")]) };
+  }
+
+  it("counts a barrel-mediated pair under explainedByFacadeChain instead of judging it", () => {
+    const { walked, edges, cochange } = facadeChainFixture();
+
+    const report = detectSilentCoupling(cochange, walked, { fileDependencyEdges: edges });
+
+    expect(report.violations).toEqual([]);
+    expect(report.explained).toEqual([]);
+    expect(report.summary.explainedCount).toBe(0);
+    expect(report.summary.excluded).toEqual({
+      testEndpoints: 0,
+      generatedEndpoints: 0,
+      documentationEndpoints: 0,
+      unwalkedEndpoints: 0,
+      nonPositiveLift: 0,
+      explainedByFacadeChain: 1,
+    });
+  });
+
+  it("explains the chain whichever endpoint is the consumer", () => {
+    const { walked, edges } = facadeChainFixture();
+
+    const report = detectSilentCoupling(built([pair("app/boundary/types.ts", "ops/consumer.ts")]), walked, {
+      fileDependencyEdges: edges,
+    });
+
+    expect(report.violations).toEqual([]);
+    expect(report.summary.excluded.explainedByFacadeChain).toBe(1);
+  });
+
+  it("still judges a DIRECT deep import of the vocabulary: no entry file between, nothing explains it", () => {
+    const { walked, cochange } = facadeChainFixture();
+    // The deep import sits in plain sight on the walked graph — the shape the
+    // leakingAbstraction detector flags as a bypass, and the pair the
+    // detector exists for. A direct edge is no chain.
+    const edges: FileDependencyEdge[] = [
+      { sourceRelPath: "ops/consumer.ts", targetRelPath: "app/boundary/types.ts", callWeight: 1 },
+    ];
+
+    const report = detectSilentCoupling(cochange, walked, { fileDependencyEdges: edges });
+
+    expect(report.violations.map((v) => `${v.relPathA} ~ ${v.relPathB}`)).toEqual([
+      "ops/consumer.ts ~ app/boundary/types.ts",
+    ]);
+    expect(report.summary.excluded.explainedByFacadeChain).toBe(0);
+  });
+
+  it("still judges a pair whose chain leaves the barrels: an ordinary module in the middle is not a facade", () => {
+    const { walked, cochange } = facadeChainFixture();
+    const edges: FileDependencyEdge[] = [
+      { sourceRelPath: "ops/consumer.ts", targetRelPath: "app/index.ts", callWeight: 1 },
+      { sourceRelPath: "app/index.ts", targetRelPath: "app/boundary/bridge.ts", callWeight: 1 },
+      { sourceRelPath: "app/boundary/bridge.ts", targetRelPath: "app/boundary/types.ts", callWeight: 1 },
+    ];
+
+    const report = detectSilentCoupling(cochange, [...walked, ...files("app/boundary/bridge.ts")], {
+      fileDependencyEdges: edges,
+    });
+
+    expect(report.violations).toHaveLength(1);
+    expect(report.summary.excluded.explainedByFacadeChain).toBe(0);
+  });
+
+  it("explains nothing when the dependency edges are not supplied", () => {
+    const { walked, cochange } = facadeChainFixture();
+
+    const report = detectSilentCoupling(cochange, walked);
+
+    expect(report.violations).toHaveLength(1);
+    expect(report.summary.excluded.explainedByFacadeChain).toBe(0);
   });
 });

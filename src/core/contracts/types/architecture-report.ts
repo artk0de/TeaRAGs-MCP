@@ -961,6 +961,13 @@ export interface SilentCouplingReportSummary {
     unwalkedEndpoints: number;
     /** lift ≤ 1: no more co-change than independence predicts. */
     nonPositiveLift: number;
+    /**
+     * Strong unlinked in-scope pairs one side's import of the other resolves
+     * through — a re-export/facade chain of module entry files (bd
+     * tea-rags-mcp-89k7k.27): adopted consumption through a barrel, not
+     * hidden coupling. No per-pair record — the count is the record.
+     */
+    explainedByFacadeChain: number;
     /** Strong unlinked in-scope pairs a specific shared neighbour explains — see `exclusionReasons`. */
     explainedBySharedNeighbour: number;
   };
