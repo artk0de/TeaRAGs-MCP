@@ -504,6 +504,18 @@
   see is the receiver's type — a module-scope `log = structlog.get_logger()` is
   invisible because `callResultBindings` reach the resolver per CHUNK, and an
   `except … as e` or a Django queryset local carries no binding fact at all.
+- **Re-measured after the receiver-typing wave and still PARKED** (bd
+  tea-rags-mcp-m99j1.1.27; numbers on the bead). The typeshed member decline and
+  the new receiver channels shrank polar's dynamic `single` from 492 to 34, but
+  two residuals remain and neither is a gate this file can write. The single
+  half still fabricates on function LOCALS assigned from an expression nothing
+  types (`loader = self.app.jinja_loader`, `client = OAUTH_CLIENTS[platform]`, a
+  Stripe object named `subscription`): `localBindings` records only typed
+  bindings, so "assigned here but untyped" is not observable until the walker
+  publishes assignment presence (bd tea-rags-mcp-m99j1.1.57). And django's
+  `recall@fan` misses the 0.85 bar because of over-cap `ambiguous` rows, not
+  phantoms (fan-only precision is 18/19) — a decline gate cannot raise it; only
+  a cap or bar decision can.
 - Resolver architecture rules: `.claude/rules/resolver-architecture.md`.
   Cross-language mechanics: `src/core/domains/language/CLAUDE.md`.
 
