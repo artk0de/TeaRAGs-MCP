@@ -19,6 +19,7 @@ import { describe, expect, it } from "vitest";
 import type { AstNode } from "../../../../../../../src/core/contracts/types/ast.js";
 import type { TypeFact } from "../../../../../../../src/core/domains/language/kernel/type-facts.js";
 import { pythonAnnotationTypeSource } from "../../../../../../../src/core/domains/language/python/walker/passes/python-annotation-type-source.js";
+import { pythonTypeNameQualifier } from "../../../../../../../src/core/domains/language/python/walker/walker.js";
 import { materializeTree } from "../../../../../../../src/core/infra/materialize.js";
 
 function parse(src: string): AstNode {
@@ -66,8 +67,18 @@ describe("pythonAnnotationTypeSource — parameters", () => {
     expect(facts("def f(x: list[Foo]): pass\n")).toEqual([]);
   });
 
-  it("declines `Foo | Bar` — two reachable arms, half the sites would be wrong", () => {
-    expect(facts("def f(x: Foo | Bar): pass\n")).toEqual([]);
+  it("emits `Foo | Bar` as a structured union — the arms travel in the ref, never as one name", () => {
+    expect(facts("def f(x: Foo | Bar): pass\n")).toEqual([
+      {
+        kind: "param",
+        source: "annotations",
+        symbolScope: [],
+        methodName: "f",
+        name: "x",
+        line: 1,
+        type: { form: "union", members: [instance("Foo"), instance("Bar")] },
+      },
+    ]);
   });
 
   it("emits a param fact for a forward reference", () => {
@@ -84,6 +95,77 @@ describe("pythonAnnotationTypeSource — parameters", () => {
     const out = facts("def f(x: Optional[Foo] = None): pass\n");
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({ kind: "param", name: "x", methodName: "f" });
+  });
+});
+
+/**
+ * A multi-arm union on a `param` / `local` (bd tea-rags-mcp-m99j1.1.30): the
+ * union dispatch component reads it through `LocalBinding.typeRef`, so the
+ * fact carries every arm, each qualified through the file's imports the way a
+ * return arm is (m99j1.1.55) so the resolver places it by the declaring file.
+ */
+describe("pythonAnnotationTypeSource — union params and locals", () => {
+  const qualifiedFacts = (src: string): TypeFact[] => {
+    const root = parse(src);
+    return pythonAnnotationTypeSource.extract({
+      root,
+      trackLocalTypes: true,
+      qualifyTypeName: pythonTypeNameQualifier(root),
+    });
+  };
+  const typeOf = (src: string, name: string) => qualifiedFacts(src).find((f) => f.name === name)?.type;
+
+  it("reads `Union[Foo, Bar]` as the same union", () => {
+    expect(facts("def f(x: Union[Foo, Bar]): pass\n").map((f) => f.type)).toEqual([
+      { form: "union", members: [instance("Foo"), instance("Bar")] },
+    ]);
+  });
+
+  it("keeps the nil arm of `Foo | Bar | None`", () => {
+    expect(facts("def f(x: Foo | Bar | None): pass\n").map((f) => f.type)).toEqual([
+      { form: "union", members: [instance("Foo"), instance("Bar"), { form: "nil" }] },
+    ]);
+  });
+
+  it("emits a union local at the assignment line", () => {
+    expect(facts("def f():\n    y: Foo | Bar = g()\n")).toEqual([
+      {
+        kind: "local",
+        source: "annotations",
+        symbolScope: [],
+        methodName: "f",
+        name: "y",
+        line: 2,
+        type: { form: "union", members: [instance("Foo"), instance("Bar")] },
+      },
+    ]);
+  });
+
+  it("qualifies each arm through the file's imports, as a return arm is", () => {
+    const src = "from pkg import models\nfrom pkg.a import Foo\n\ndef f(x: Foo | models.Bar | Local): pass\n";
+    expect(typeOf(src, "x")).toEqual({
+      form: "union",
+      members: [instance("pkg.a::Foo"), instance("pkg.models::Bar"), instance("Local")],
+    });
+  });
+
+  it("leaves a single nominal arm unqualified — `Optional[Foo]` collapses as before", () => {
+    expect(typeOf("from pkg.a import Foo\n\ndef f(x: Optional[Foo]): pass\n", "x")).toEqual(nilable("Foo"));
+  });
+
+  it("declines a union with a container arm — `list[Foo] | Bar` names no receiver per arm", () => {
+    expect(facts("def f(x: list[Foo] | Bar): pass\n")).toEqual([]);
+  });
+
+  it("declines a union of class objects — `type[A] | type[B]`", () => {
+    expect(facts("def f(x: type[A] | type[B]): pass\n")).toEqual([]);
+  });
+
+  it("still declines a union class attribute — `classFieldTypes` has nowhere to carry the arms", () => {
+    expect(facts("class C:\n    svc: Foo | Bar\n")).toEqual([]);
+    expect(
+      facts("class C:\n    def __init__(self, svc: Foo | Bar):\n        self.svc = svc\n").map((f) => f.kind),
+    ).toEqual(["param"]);
   });
 });
 

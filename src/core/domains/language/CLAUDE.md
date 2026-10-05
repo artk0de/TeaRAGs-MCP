@@ -486,9 +486,11 @@
   callee's symbolId; `functionReturnTypes` is dropped entirely. A `param` /
   `local` / `ivar` fact is emitted only when `pythonNominalReceiverName` answers
   — one reachable arm — and only for annotation shapes `extractTypeName`
-  (`python/walker/walker.ts`) declines. Why: `LocalBinding.type` is a bare
-  string that flattens a container to its element and a union to its first
-  member, so `xs: list[Foo]` would type the LIST as a `Foo`;
+  (`python/walker/walker.ts`) declines; the one exception is a `param` / `local`
+  union of instance arms, which travels as the structured `typeRef` with `type`
+  blanked (`python/CLAUDE.md`, union component bullet). Why: `LocalBinding.type`
+  is a bare string that flattens a container to its element and a union to its
+  first member, so `xs: list[Foo]` would type the LIST as a `Foo`;
   `mergeLocalBindings` concatenates rather than dedupes, so re-emitting a shape
   the walker already bound doubles the payload on every annotated def; and the
   bare-name `functionReturnTypes` map is absorbed run-global with

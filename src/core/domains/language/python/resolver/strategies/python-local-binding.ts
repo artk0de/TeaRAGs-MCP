@@ -16,6 +16,7 @@ import {
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { pythonDerivedBindingType, pythonLocalBindingInForce } from "../python-iteration-types.js";
+import { pythonPlacedBindingUnion } from "../python-member-return-types.js";
 import { createPythonCallBindingPorts } from "../python-receiver-type-ports.js";
 import {
   lastSegment,
@@ -120,6 +121,10 @@ function pythonLocalBindingTyping(
       if (isDerivedLocalBinding(binding)) {
         return pythonDerivedBindingType(binding, ctx, ports, mapper) ?? null;
       }
+      // A union annotation (bd tea-rags-mcp-m99j1.1.30) is the union dispatch
+      // component's; this pass reads its arms and CONTINUEs, never `type`.
+      const union = binding === undefined ? undefined : pythonPlacedBindingUnion(binding, ctx, mapper);
+      if (union !== undefined) return union;
       const boundType = binding?.type;
       if (boundType) return { form: "instance", name: boundType };
       const bound = nearestCallResultBinding(ctx.callResultBindings, call.receiver, call.startLine);

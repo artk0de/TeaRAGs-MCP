@@ -32,7 +32,7 @@ import {
 import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import { pythonDerivedBindingType, pythonElementTypeOf, pythonLocalBindingInForce } from "./python-iteration-types.js";
-import { pythonOwnerIndependentMemberType } from "./python-member-return-types.js";
+import { pythonOwnerIndependentMemberType, pythonPlacedBindingUnion } from "./python-member-return-types.js";
 import {
   findPythonImportBinding,
   lastSegment,
@@ -212,7 +212,13 @@ function pythonSingleHopType(
   // (bd tea-rags-mcp-m99j1.1.18) — and an untyped one still IS a binding: the
   // name a module or a class might carry elsewhere is a local here.
   if (isDerivedLocalBinding(bound)) return pythonDerivedBindingType(bound, ctx, ports, mapper);
-  if (bound !== undefined) return { form: "instance", name: bound.type };
+  if (bound !== undefined) {
+    // A union annotation (bd tea-rags-mcp-m99j1.1.30) is read from its arms,
+    // never from `type`, which names none of them.
+    const union = pythonPlacedBindingUnion(bound, ctx, mapper);
+    if (union !== undefined) return union ?? undefined;
+    return { form: "instance", name: bound.type };
+  }
   const moduleValue = pythonModuleValueType(receiver, ctx, mapper);
   if (moduleValue !== undefined) return moduleValue;
   // A bare class name in receiver position: `Repo.from_session(…)` — CLASS

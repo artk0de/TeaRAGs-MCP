@@ -2,13 +2,13 @@
  * K2 — Python's consumer of the kernel union-receiver cone fan-out (bd
  * tea-rags-mcp-m99j1.1.22).
  *
- * The only Python fact that carries a union with TWO reachable arms is a
- * recorded RETURN annotation (`-> A | B`, `Union[A, B]`): a `param` / `local`
- * fact is emitted only when the annotation names one nominal receiver
- * (`pythonNominalReceiverName`), and `classFieldTypes` is a bare string map. So
- * the union reaches a receiver through exactly the two folds that read return
- * facts — a call-result binding (`x = make(); x.run()`) and the chain fold
- * (`make().run()`, `self.pick().run()`) — and these tests drive both through
+ * Two Python facts carry a union with TWO reachable arms: a recorded RETURN
+ * annotation (`-> A | B`, `Union[A, B]`) and, since bd tea-rags-mcp-m99j1.1.30,
+ * a union-annotated parameter or local (last describe block);
+ * `classFieldTypes` is a bare string map. A return union reaches a receiver
+ * through the two folds that read return facts — a call-result binding
+ * (`x = make(); x.run()`) and the chain fold (`make().run()`,
+ * `self.pick().run()`) — and these tests drive both through
  * `PythonCallResolver.resolveDispatch`, the surface production reads.
  */
 import { describe, expect, it } from "vitest";
@@ -370,5 +370,53 @@ describe("PythonCallResolver — a member return fact is read for the RECEIVER's
     const facts = { "DatabaseWrapper#create_cursor": instance("OracleCursor") };
     expect(resolve(ctxIn(POSTGRES, facts))).toBeNull();
     expect(resolve(ctxIn(ORACLE, facts))).toBeNull();
+  });
+});
+
+/**
+ * A union-annotated PARAMETER or LOCAL (bd tea-rags-mcp-m99j1.1.30): the walker
+ * publishes `x: A | B` as a binding whose `type` is blank and whose `typeRef`
+ * carries the arms, each qualified through the declaring file's imports. The
+ * declaring file IS the caller's, so the arms are placed from there with the
+ * return-arm rules — and one unplaceable or external arm kills the union.
+ */
+describe("PythonCallResolver — a union-annotated parameter or local (m99j1.1.30)", () => {
+  const unionBinding = (...members: TypeRef[]): Partial<CallContext> => ({
+    localBindings: { x: [{ line: 5, type: "", typeRef: union(...members) }] },
+  });
+
+  it("fans `def handle(x: A | B): x.run()` to both arms as 1/2 cone edges", () => {
+    const ctx = ctxReturning(instance("A"), unionBinding(instance("A"), instance("B")));
+    expect(dispatchTargets(call("x", "run"), ctx)).toEqual([
+      { target: "A#run", kind: "cone", confidence: 0.5 },
+      { target: "B#run", kind: "cone", confidence: 0.5 },
+    ]);
+  });
+
+  it("places qualified arms by the caller's own file — `models.A | models.B | None`", () => {
+    const ctx = ctxReturning(instance("A"), {
+      imports: [importOf("app", "models")],
+      ...unionBinding(instance("app.models::A"), instance("app.models::B"), NIL),
+    });
+    expect(dispatchTargets(call("x", "run"), ctx).map((e) => e.target)).toEqual(["A#run", "B#run"]);
+  });
+
+  it("kills the whole union when one arm is a library class", () => {
+    const ctx = ctxReturning(instance("A"), unionBinding(instance("app.models::A"), instance("requests::Session")));
+    expect(dispatchTargets(call("x", "run"), ctx)).toEqual([]);
+  });
+
+  it("never resolves the exact chain to the first arm", () => {
+    const ctx = ctxReturning(instance("A"), unionBinding(instance("A"), instance("C")));
+    expect(new PythonCallResolver().resolve(call("x", "stop"), ctx)?.targetSymbolId).not.toBe("A#stop");
+    expect(new PythonCallResolver().resolve(call("x", "run"), ctx)).toBeNull();
+  });
+
+  it("keeps a nilable single-arm binding on the exact chain — `Optional[A]` is still `A`", () => {
+    const ctx = ctxReturning(instance("A"), {
+      localBindings: { x: [{ line: 5, type: "A", typeRef: union(instance("A"), NIL) }] },
+    });
+    expect(new PythonCallResolver().resolve(call("x", "run"), ctx)?.targetSymbolId).toBe("A#run");
+    expect(dispatchTargets(call("x", "run"), ctx).some((e) => e.kind === "cone")).toBe(false);
   });
 });

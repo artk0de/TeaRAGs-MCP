@@ -100,6 +100,64 @@ describe("pythonAnnotationTypeFacetPass — merged into the composed walker", ()
   });
 });
 
+/**
+ * A multi-arm union binding (bd tea-rags-mcp-m99j1.1.30) travels ONLY as the
+ * structured `typeRef`. The kernel store's best-effort `type` is the first
+ * arm's name, and every reader that reads `type` would type the receiver as
+ * that one arm — so the Python channel blanks it, and does so only once per
+ * binding: the monolith binds no union, so nothing is doubled.
+ */
+describe("pythonAnnotationTypeFacetPass — a union binding carries no flattened name", () => {
+  const UNION_SOURCE = [
+    "from pkg.a import Foo",
+    "from pkg import models",
+    "",
+    "def run(x: Foo | models.Bar, y: Optional[Foo]):",
+    "    z: Foo | None | models.Bar = make()",
+    "    return x.go(), y.go(), z.go()",
+    "",
+  ].join("\n");
+  const extractUnion = (): FileExtraction => {
+    const parser = new Parser();
+    parser.setLanguage(PyLang);
+    return new PythonLanguage().walker.walk({
+      tree: parser.parse(UNION_SOURCE),
+      code: UNION_SOURCE,
+      relPath: "pkg/service.py",
+      language: "python",
+      chunks: [{ symbolId: "run", startLine: 4, endLine: 6, scope: [] }],
+    });
+  };
+  const bindings = () => chunkOf(extractUnion(), "run")?.localBindings ?? {};
+
+  it("blanks `type` on a union param and keeps the qualified arms in `typeRef`", () => {
+    expect(bindings()["x"]).toEqual([
+      {
+        line: 4,
+        type: "",
+        typeRef: {
+          form: "union",
+          members: [
+            { form: "instance", name: "pkg.a::Foo" },
+            { form: "instance", name: "pkg.models::Bar" },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("blanks a nilable multi-arm local too, and leaves `Optional[Foo]` exactly as before", () => {
+    expect(bindings()["z"]?.map((b) => b.type)).toEqual([""]);
+    expect(bindings()["y"]).toEqual([
+      {
+        line: 4,
+        type: "Foo",
+        typeRef: { form: "union", members: [{ form: "instance", name: "Foo" }, { form: "nil" }] },
+      },
+    ]);
+  });
+});
+
 describe("PYTHON_TYPE_SOURCE_ORDER — the rank the two disjoint sources cannot exercise", () => {
   const coordinate = {
     kind: "param",

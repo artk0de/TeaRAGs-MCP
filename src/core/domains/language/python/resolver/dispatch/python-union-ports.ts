@@ -3,17 +3,18 @@
  * tea-rags-mcp-m99j1.1.22) — what `UnionDispatchResolver` asks a language for:
  * the receiver's static type and the population filter.
  *
- * The typing reports a union only where a Python FACT already carries one, and
- * that is a recorded RETURN annotation and nothing else (`-> A | B`,
- * `Union[A, B]`, `Optional[Union[A, B]]`). A `param` / `local` fact is emitted
- * only when its annotation names ONE nominal receiver
- * (`pythonNominalReceiverName`), and `classFieldTypes` is a bare string map, so
- * neither channel can hand this port a union — and the port does not widen them
- * into one. A return fact reaches a receiver through exactly two folds, asked in
- * the order `localBinding` asks them:
+ * The typing reports a union only where a Python FACT already carries one: a
+ * recorded RETURN annotation (`-> A | B`, `Union[A, B]`,
+ * `Optional[Union[A, B]]`) or a union-annotated PARAMETER / LOCAL
+ * (`x: A | B`, bd tea-rags-mcp-m99j1.1.30), whose binding carries the arms in
+ * `typeRef` and no name in `type`. `classFieldTypes` is a bare string map, so a
+ * field never hands this port a union — and the port does not widen anything
+ * into one. A union reaches a receiver through exactly two folds, asked in the
+ * order `localBinding` asks them:
  *
  *   1. the chain fold — `make().run()`, `self.pick().run()`, and a bare name the
- *      walker bound (always one nominal type, so never a union);
+ *      walker bound (a union binding's arms placed from the caller's own file,
+ *      `pythonPlacedBindingUnion`);
  *   2. the call-result binding — `x = make(); x.run()`, ONE hop, exactly what
  *      `localBinding`'s own typing reads when the walker bound nothing.
  *

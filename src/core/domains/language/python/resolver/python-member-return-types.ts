@@ -9,7 +9,7 @@
  */
 
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import type { CallContext, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
+import type { CallContext, LocalBinding, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import {
   MemberReturnTypeResolver,
@@ -593,6 +593,36 @@ export function pythonPlacedReturnFact(
     members.push(placed);
   }
   return { ...recorded, members };
+}
+
+/**
+ * The union a union-annotated parameter or local states (`x: A | B`, bd
+ * tea-rags-mcp-m99j1.1.30), every arm placed by the file that wrote the
+ * annotation — the caller's own — with the return-arm rules of
+ * {@link pythonPlacedReturnFact}.
+ *
+ * Three answers, because the callers need all three: `undefined` when the
+ * binding is NOT a multi-arm union (the caller keeps its own `type` reading,
+ * which is how `Optional[A]` stays `A`), `null` when the union dies, and the
+ * placed union otherwise. It dies on ANY arm that names no project class — one
+ * the reader cannot place, a library class, a builtin — because the surviving
+ * arms would then fan as the whole receiver: a partial union is the
+ * fabrication.
+ */
+export function pythonPlacedBindingUnion(
+  binding: LocalBinding,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): TypeRef | null | undefined {
+  const stated = typeRefReceiverForm(binding.typeRef);
+  if (stated?.form !== "union") return undefined;
+  const placed = pythonPlacedReturnFact(stated, [ctx.callerFile], ctx, mapper);
+  if (placed?.form !== "union") return null;
+  for (const arm of placed.members) {
+    if (arm.form === "nil") continue;
+    if (arm.form !== "instance" || resolveTypeFile(arm.name, ctx, mapper) === null) return null;
+  }
+  return placed;
 }
 
 /**

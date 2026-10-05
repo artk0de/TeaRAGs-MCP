@@ -503,9 +503,16 @@
   `UnionDispatchResolver` over `createPythonUnionDispatchPorts` (the chain fold,
   then the call-result binding) and `createPythonTypeMemberLookup`; the SAME
   ports back `PythonUndecidableCallClassifier`, so "is this receiver typed" has
-  one answer across dispatch and the miss classifier. It fires rarely by
-  construction: the walker gate `pythonNominalReceiverName` drops parameter and
-  local unions, so a union reaches it only through a return annotation.
+  one answer across dispatch and the miss classifier. A union reaches it through
+  a return annotation or a union-annotated parameter / local (bd
+  tea-rags-mcp-m99j1.1.30). The binding form carries the arms in `typeRef` and
+  an EMPTY `type` (`pythonTypeChannels` blanks the kernel store's first-arm
+  name), because every `type` reader would otherwise type the receiver as that
+  one arm; `pythonPlacedBindingUnion` places the arms from the caller's own file
+  with the return-arm rules and kills the union on any arm that names no project
+  class — a surviving partial union would fan as the whole receiver. A union
+  binding still COUNTS as a fact: `namingConvention` and the `dynamic` gate
+  decline it even when the union dies.
 - **Behind them, `resolveDispatch` composes
   `[table, callableParam, union, cone, dynamic]` — `dynamic` is ON by default
   since bd tea-rags-mcp-m99j1.1.57 (`CODEGRAPH_PY_DYNAMIC_DISPATCH=0` drops it),
