@@ -322,7 +322,13 @@
   ternary with ONE `None` arm is `Optional[X]` spelled as a value and reads as
   its other arm, for fields, locals and module values alike
   (`pythonOptionalValueArm`, bd tea-rags-mcp-m99j1.1.71); that arm is then read
-  by the plain-RHS rule, so an arm it cannot type stays untyped.
+  by the plain-RHS rule, so an arm it cannot type stays untyped. A function
+  LOCAL whose two arms both construct a class is the one exception to the
+  decline: `passes/python-conditional-local-facts.ts` publishes it as a `local`
+  union fact, shaped exactly like an annotated `x: A | B`, so the union
+  component places and fans it (bd tea-rags-mcp-m99j1.1.77). Fields and module
+  values still decline — no field union carrier exists, and the shape was 0
+  sites on flask / django / httpx / polar when measured.
 - **A member is looked up through the field type's MRO, not verbatim.**
   `resolvePythonMemberOnTypeThroughMro` owns the two steps between a type NAME
   and the C3 walk (name → file, file + name → class key); `selfField`,
