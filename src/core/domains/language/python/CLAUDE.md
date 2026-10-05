@@ -749,6 +749,18 @@
   `pythonEnclosingClass` reads as "no enclosing class". A stub-only group (a
   `Protocol` or ABC body) keeps the first stub: there the stubs ARE the
   declaration, and yielding would delete the symbol rather than relocate it.
+- **A property's accessor twins share its symbolId and keep NO range of their
+  own, so their bodies are attributed, not ranged.** `@x.setter` / `@x.deleter`
+  / `@x.getter def x` compose the getter's `Cls#x` by design (chunk ids and
+  `find_symbol` rely on the shared id), and `collectSymbols` keeps the getter's
+  range. `collectPythonAccessorTwinRanges` locates each twin and the walker's
+  call ownership treats its body as a range that folds onto the shared chunk,
+  together with its local bindings, call-result bindings and `assignedLocals`
+  (bd tea-rags-mcp-m99j1.1.76). Twin channels sit on later lines than the
+  getter's, so the getter's own calls read exactly what they read before. Only
+  the decorator naming the def's OWN property qualifies: a plain same-named
+  redefinition can be a different body with a different signature and still
+  falls to the class chunk.
 - **Class-body assignments (`objects = <QS>.as_manager()`) feed the SAME two
   field channels as `self.<field> = …`, and they merge UNDERNEATH:** a
   constructor assignment for the same field name wins. Reversing the spread
