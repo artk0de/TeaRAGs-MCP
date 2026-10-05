@@ -270,7 +270,11 @@ export class PythonImportFileMapper implements ImportFileMapper {
       const hit = this.followReexportChain(source, entry.sourceName, ctx, depth + 1, visited, terminal);
       if (hit !== null) return hit;
     }
-    // Stars, unanimous or not at all.
+    // Stars, unanimous or not at all — and PUBLIC names only. With no
+    // `__all__` to name it (the walker records none), `from m import *` skips
+    // every leading-underscore name, so a star never carries one (bd
+    // tea-rags-mcp-m99j1.1.73).
+    if (name.startsWith("_")) return null;
     let only: string | null = null;
     for (const entry of entries) {
       if (entry.exportedName !== "*") continue;
