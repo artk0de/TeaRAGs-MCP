@@ -126,6 +126,44 @@ describe("Python context-manager bindings — `with X() as name` binds `X.__ente
     expect(resolve(call("c", "request", 11), ctx)?.targetSymbolId).toBe("Client#request");
   });
 
+  // bd tea-rags-mcp-m99j1.1.87 — polar `JobQueueManager.open`:
+  // `@classmethod @contextlib.asynccontextmanager def open(cls) -> AsyncIterator[Self]`.
+  describe("a `@contextmanager` generator binds its yielded element", () => {
+    const QUEUE_FILE = "app/queue.py";
+    const queueCtx = (open: TypeRef): CallContext => ({
+      callerFile: "app/script.py",
+      callerScope: ["run"],
+      imports: [{ importText: "from app.queue import JobQueueManager", startLine: 1 }],
+      symbolTable: tableWith({
+        "app/script.py": ["run"],
+        [QUEUE_FILE]: ["JobQueueManager", "JobQueueManager.open", "JobQueueManager#flush"],
+      }),
+      localBindings: { m: [derived("contextEnter", 10, "JobQueueManager.open(broker, redis)")] },
+      structuredReturnTypes: { "JobQueueManager.open": open },
+    });
+    const manager = (name: string, element: TypeRef): TypeRef => ({ form: "instance", name, args: [element] });
+
+    it("`async with JobQueueManager.open(...) as m` → the Self element, substituted with the receiver class", () => {
+      const ctx = queueCtx(manager("contextlib._AsyncGeneratorContextManager", instance("Self")));
+      expect(resolve(call("m", "flush", 11), ctx)?.targetSymbolId).toBe("JobQueueManager#flush");
+    });
+
+    it("the sync manager reads its element the same way", () => {
+      const ctx = queueCtx(manager("contextlib._GeneratorContextManager", instance("JobQueueManager")));
+      expect(resolve(call("m", "flush", 11), ctx)?.targetSymbolId).toBe("JobQueueManager#flush");
+    });
+
+    it("an undecorated generator's container return still binds nothing", () => {
+      const ctx = queueCtx({ form: "container", element: instance("Self") });
+      expect(resolve(call("m", "flush", 11), ctx)?.targetSymbolId).not.toBe("JobQueueManager#flush");
+    });
+
+    it("a `None` element binds nothing", () => {
+      const ctx = queueCtx(manager("contextlib._GeneratorContextManager", { form: "nil" }));
+      expect(resolve(call("m", "flush", 11), ctx)?.targetSymbolId).not.toBe("JobQueueManager#flush");
+    });
+  });
+
   it("a context value read off a local follows the local's type", () => {
     const ctx: CallContext = {
       callerFile: LOCKS_FILE,

@@ -15,6 +15,7 @@
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { TypeRef } from "../../../../../contracts/types/language.js";
 import { typeRefReceiverForm, type InlineTypeSource, type TypeFact } from "../../../kernel/index.js";
+import { PYTHON_GENERATOR_CONTEXT_MANAGERS } from "../../generator-context-manager-marker.js";
 import {
   isPythonClassFormDef,
   pythonAnnotationExpression,
@@ -22,6 +23,7 @@ import {
   type PythonAnnotatedAssignmentSite,
   type PythonDefSite,
 } from "./python-def-scope-walk.js";
+import { pythonModuleImportBindings, pythonQualifiedDecorators } from "./python-qualified-decorators.js";
 import { PYTHON_SELF_RETURN, pythonNominalReceiverName, pythonTypeRefFromNode } from "./python-type-annotation.js";
 
 export const PYTHON_ANNOTATION_SOURCE = "annotations";
@@ -107,8 +109,44 @@ function isSelfTypedReturn(site: PythonDefSite, returnExpression: AstNode): bool
   return BARE_IDENTIFIER.test(annotation) && annotation === unquoted(returnExpression.text);
 }
 
+/** The generator protocols a `@contextmanager` / `@asynccontextmanager` def may declare. */
+const GENERATOR_RETURN = /^(?:typing\.|collections\.abc\.)?(?:Async)?(?:Iterator|Generator)\s*\[/;
+
+/**
+ * The CALL result of a context-manager generator (bd tea-rags-mcp-m99j1.1.87),
+ * or `undefined` to keep the declared return. `@contextlib.contextmanager def
+ * f() -> Iterator[T]` returns a `_GeneratorContextManager[T]`, recorded as
+ * that manager carrying `T` ({@link PYTHON_GENERATOR_CONTEXT_MANAGERS}) so
+ * `with f() as x` can bind the yielded `T`. The decorator qualifies only
+ * through the file's imports — a namesake from elsewhere is not contextlib's.
+ * Any shape this cannot read — a non-generator return, a `None` element —
+ * keeps the declared return, exactly as before.
+ */
+function generatorContextManagerReturn(
+  site: PythonDefSite,
+  returnExpression: AstNode,
+  declared: TypeRef | undefined,
+  importBindings: () => ReadonlyMap<string, string>,
+): TypeRef | undefined {
+  if (!site.decorators.some((name) => GENERATOR_DECORATOR_NAMES.has(name))) return undefined;
+  if (declared?.form !== "container" || declared.element.form === "nil") return undefined;
+  if (!GENERATOR_RETURN.test(returnExpression.text)) return undefined;
+  for (const qualified of pythonQualifiedDecorators(site.node, importBindings())) {
+    const manager = PYTHON_GENERATOR_CONTEXT_MANAGERS.get(qualified);
+    if (manager !== undefined) return { form: "instance", name: manager, args: [declared.element] };
+  }
+  return undefined;
+}
+
+/** The decorators' bare names, as {@link PythonDefSite.decorators} spells them — a cheap pre-gate. */
+const GENERATOR_DECORATOR_NAMES: ReadonlySet<string> = new Set(
+  [...PYTHON_GENERATOR_CONTEXT_MANAGERS.keys()].map((qualified) => qualified.slice(qualified.lastIndexOf(".") + 1)),
+);
+
 function extractPythonAnnotationFacts(input: PythonTypeSourceInput): TypeFact[] {
   const facts: TypeFact[] = [];
+  let bindings: ReadonlyMap<string, string> | undefined;
+  const importBindings = (): ReadonlyMap<string, string> => (bindings ??= pythonModuleImportBindings(input.root));
   walkPythonScopes(input.root, {
     onDef: (site) => {
       const selfClass = site.classChain[site.classChain.length - 1];
@@ -142,9 +180,10 @@ function extractPythonAnnotationFacts(input: PythonTypeSourceInput): TypeFact[] 
       // means the class the RECEIVER names, which only the resolver knows.
       // See {@link PYTHON_SELF_RETURN}.
       const returnExpression = pythonAnnotationExpression(returnType);
-      const ref = isSelfTypedReturn(site, returnExpression)
+      const declared = isSelfTypedReturn(site, returnExpression)
         ? ({ form: "instance", name: PYTHON_SELF_RETURN } as const)
         : pythonTypeRefFromNode(returnExpression, selfClass === undefined ? undefined : PYTHON_SELF_RETURN);
+      const ref = generatorContextManagerReturn(site, returnExpression, declared, importBindings) ?? declared;
       // A nil-only ref states "no receiver" and no consumer reads that yet;
       // emitting it would put a `-> None` entry on every annotated def.
       if (ref === undefined || ref.form === "nil") return;

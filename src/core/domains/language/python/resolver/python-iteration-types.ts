@@ -47,6 +47,7 @@ import {
   type NominalTypeRef,
   type ReceiverTypePorts,
 } from "../../kernel/index.js";
+import { isPythonGeneratorContextManager } from "../generator-context-manager-marker.js";
 import { pythonContainerElementKey } from "../walker/passes/python-container-element-facts.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
@@ -223,7 +224,14 @@ function enteredValue(expression: string, reader: PythonIterableReader): TypeRef
   return typeRefUnionOf(entered);
 }
 
+/**
+ * One nominal context arm. A `@contextmanager` generator's call result (bd
+ * tea-rags-mcp-m99j1.1.87) enters as the element it yields — the walker
+ * recorded it as the manager class carrying that element, its `Self` already
+ * substituted against the receiver by the call read that produced it.
+ */
 function enteredArm(context: NominalTypeRef, reader: PythonIterableReader): TypeRef | undefined {
+  if (context.form === "instance" && isPythonGeneratorContextManager(context.name)) return context.args?.[0];
   return pythonSubstituteSelfReturn(reader.ports.memberTypeOf(context, "__enter__", reader.ctx), context.name);
 }
 
