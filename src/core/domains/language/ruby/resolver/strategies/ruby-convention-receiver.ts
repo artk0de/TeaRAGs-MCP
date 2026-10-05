@@ -24,7 +24,7 @@ const RUBY_CONVENTION_RECEIVER_TYPING: ConventionReceiverTypingPorts = {
     const type = conventionReceiverType(call.receiver, ctx);
     return type?.form === "instance" ? type : null;
   },
-  isTypedElsewhere: (call, ctx) => typeOfReceiver(call.receiver, call.startLine, ctx) !== undefined,
+  isTypedElsewhere: (call, ctx) => typeOfReceiver(call.receiver, call.startLine, ctx, call.startColumn) !== undefined,
 };
 
 /** One strategy per resolve mode, so the single authority below allocates nothing per call. */

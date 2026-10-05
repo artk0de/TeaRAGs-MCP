@@ -27,6 +27,7 @@ import {
   collectRubyLocalCallBindingsForChunk,
 } from "./local-bindings.js";
 import { collectRubyMethodSignatures } from "./method-signatures.js";
+import { attachModifierConditionSpans, collectRubyGuardedAssignments } from "./modifier-conditions.js";
 import type { KnownTargetCallSite } from "./param-arg-types.js";
 import type { RubyExtractInput } from "./walker.js";
 
@@ -111,6 +112,10 @@ export function buildRubyChunkExtractions(
         };
         bindCompoundReceiverChains(input.tree.rootNode, c.startLine, c.endLine, associationTypes, localBindings, push);
       }
+      // A binding a modifier guards carries the condition's span: the
+      // condition runs before the assignment (bd tea-rags-mcp-0qaht.55).
+      const guarded = collectRubyGuardedAssignments(input.tree.rootNode, c.startLine, c.endLine);
+      attachModifierConditionSpans(guarded, localBindings);
       if (Object.keys(localBindings).length > 0) base.localBindings = localBindings;
       // `localCallBindings` (var → called method) pairs with the run-global
       // `functionReturnTypes` so the resolver binds `x = recv.meth(); x.member`
@@ -125,6 +130,7 @@ export function buildRubyChunkExtractions(
         c.endLine,
         catalogue,
       );
+      attachModifierConditionSpans(guarded, resultBindings);
       if (Object.keys(resultBindings).length > 0) base.callResultBindings = resultBindings;
       // Type environment a known-target call site on these lines inherits
       // (bd tea-rags-mcp-bvalc).

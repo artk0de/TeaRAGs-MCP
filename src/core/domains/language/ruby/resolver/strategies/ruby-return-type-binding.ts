@@ -25,7 +25,7 @@ export function resolveBoundCallTarget(
   mode: AmbiguousResolveMode,
 ): SymbolResolutionTarget | null {
   if (!call.receiver) return null;
-  const returnType = boundCallReturnType(call.receiver, ctx);
+  const returnType = boundCallReturnType(call.receiver, ctx, call);
   // Container / union results are not threaded here — a member call on a relation
   // is the cone resolver's business, not a single-target binding.
   if (returnType?.form !== "class" && returnType?.form !== "instance") return null;

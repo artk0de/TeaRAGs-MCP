@@ -17,7 +17,7 @@ import { CONE_MAX_DEFAULT, isRubyPath, type ResolverConfig } from "./shared.js";
  * proceeds as usual.
  */
 const RUBY_UNION_DISPATCH_PORTS: UnionDispatchPorts = {
-  typeOfReceiver: (call, ctx) => typeOfReceiver(call.receiver, call.startLine, ctx) ?? null,
+  typeOfReceiver: (call, ctx) => typeOfReceiver(call.receiver, call.startLine, ctx, call.startColumn) ?? null,
   ownsPath: isRubyPath,
 };
 

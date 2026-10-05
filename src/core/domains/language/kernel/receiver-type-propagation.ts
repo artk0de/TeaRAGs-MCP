@@ -23,8 +23,13 @@ import type { TypeRef } from "../../../contracts/types/language.js";
 import { typeRefReceiverForm } from "./type-ref.js";
 
 export interface ReceiverTypePorts {
-  /** The language's answer for a receiver with no dot in it. */
-  singleHopType: (receiver: string, atLine: number, ctx: CallContext) => TypeRef | undefined;
+  /**
+   * The language's answer for a receiver with no dot in it. `atColumn` is the
+   * call's 0-based column when the call site carries one (`CallRef.startColumn`,
+   * bd tea-rags-mcp-0qaht.55) — a language that records binding condition spans
+   * reads it; every other ignores it.
+   */
+  singleHopType: (receiver: string, atLine: number, ctx: CallContext, atColumn?: number) => TypeRef | undefined;
   /**
    * A chain head that is not itself a value — a bare constant, a module alias.
    * The link arrives RAW, parens included: whether it was a CALL is
@@ -197,14 +202,19 @@ export function splitReceiverHops(receiver: string): string[] {
  * boundary, so a NILABLE type reaches callers as the one arm a call on it can
  * actually dispatch to. Hops inside the walk stay RAW: collapsing per hop would
  * change what a multi-arm intermediate resolves to.
+ *
+ * `atColumn` — the call's column, when its site carries one — reaches only the
+ * head's `singleHopType`: it places the call against a binding established on
+ * the same line (bd tea-rags-mcp-0qaht.55), which no later hop reads.
  */
 export function propagateReceiverType(
   receiver: string,
   atLine: number,
   ctx: CallContext,
   ports: ReceiverTypePorts,
+  atColumn?: number,
 ): TypeRef | undefined {
-  return typeRefReceiverForm(receiverTypeRefOf(receiver, atLine, ctx, ports));
+  return typeRefReceiverForm(receiverTypeRefOf(receiver, atLine, ctx, ports, atColumn));
 }
 
 /** {@link propagateReceiverType}'s lookup, before the receiver-form collapse. */
@@ -213,10 +223,14 @@ function receiverTypeRefOf(
   atLine: number,
   ctx: CallContext,
   ports: ReceiverTypePorts,
+  atColumn?: number,
 ): TypeRef | undefined {
   const hops = (ports.splitReceiverHops ?? defaultReceiverHops)(receiver);
-  if (hops.length > 1) return propagateChain(hops, atLine, ctx, ports);
-  return ports.singleHopType(receiver, atLine, ctx);
+  if (hops.length > 1) return propagateChain(hops, atLine, ctx, ports, atColumn);
+  // No column, no fourth argument: the port is called exactly as before it existed.
+  return atColumn === undefined
+    ? ports.singleHopType(receiver, atLine, ctx)
+    : ports.singleHopType(receiver, atLine, ctx, atColumn);
 }
 
 /** The hop split every language shipped before the port existed. */
@@ -263,6 +277,7 @@ function propagateChain(
   atLine: number,
   ctx: CallContext,
   ports: ReceiverTypePorts,
+  atColumn?: number,
 ): TypeRef | undefined {
   const head = segments[0];
   if (!head) return undefined;
@@ -277,7 +292,7 @@ function propagateChain(
     current = seeded.type;
     nextLink = seeded.consumedMembers;
   } else {
-    current = propagateReceiverType(head, atLine, ctx, ports);
+    current = propagateReceiverType(head, atLine, ctx, ports, atColumn);
   }
 
   while (nextLink < links.length || current === undefined) {

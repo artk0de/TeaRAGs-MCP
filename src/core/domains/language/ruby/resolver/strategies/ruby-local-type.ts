@@ -14,7 +14,7 @@ import type { ResolverConfig } from "./shared.js";
  */
 const RUBY_LOCAL_TYPE_TYPING: ReceiverTypingPorts = {
   typeOfReceiver: (call, ctx) => {
-    const binding = resolveLocalBinding(ctx.localBindings, call.receiver, call.startLine);
+    const binding = resolveLocalBinding(ctx.localBindings, call.receiver, call.startLine, call.startColumn);
     if (!binding) return null;
     return { form: binding.valueKind === "class" ? "class" : "instance", name: binding.type };
   },

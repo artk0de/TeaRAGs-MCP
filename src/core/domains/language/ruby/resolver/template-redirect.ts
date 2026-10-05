@@ -70,7 +70,7 @@ export function redirectSelfDispatchTemplate(
 
   // Receiver's concrete static type via the EXACT sources the strategies consult
   // (localBindings / ivarTypes / chain propagation) — no re-implemented inference.
-  const typeRef = typeOfReceiver(receiver, call.startLine, ctx);
+  const typeRef = typeOfReceiver(receiver, call.startLine, ctx, call.startColumn);
   if (typeRef === undefined) return target; // untyped receiver → keep original
   if (typeRef.form !== "class" && typeRef.form !== "instance") return target; // union/container → keep
 

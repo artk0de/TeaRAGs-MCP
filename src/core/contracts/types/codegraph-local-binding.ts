@@ -110,6 +110,47 @@ export interface LocalBinding {
    * other language records.
    */
   scopeEndLine?: number;
+  /**
+   * Where the CONDITION of a modifier guarding the establishing statement sits
+   * (bd tea-rags-mcp-0qaht.55): `record = Status.new unless record.present?`.
+   * Ruby evaluates the condition BEFORE the assignment, so a call positioned
+   * inside this span still reads whatever the name denoted above the
+   * statement — {@link resolveLocalBinding} skips the binding for it when the
+   * call's column is known. ABSENT means no such modifier, or a walker that
+   * does not record one.
+   */
+  conditionSpan?: ModifierConditionSpan;
+}
+
+/**
+ * A source span of a modifier's condition (bd tea-rags-mcp-0qaht.55): lines
+ * 1-based, columns 0-based, the end column EXCLUSIVE — tree-sitter's
+ * positions, lines shifted to the codegraph's 1-based convention. When
+ * modifiers nest (`x = a if b unless c`) the span runs from the innermost
+ * condition to the outermost one, since every condition runs before the
+ * assignment.
+ */
+export interface ModifierConditionSpan {
+  readonly startLine: number;
+  readonly startColumn: number;
+  readonly endLine: number;
+  readonly endColumn: number;
+}
+
+/**
+ * Whether the position `line`/`column` lies inside `span` — the test for "this
+ * call runs before the binding the span guards". An absent `column` (or span)
+ * is never inside: the reader cannot place the call, so it reads as before.
+ */
+export function isInsideModifierCondition(
+  span: ModifierConditionSpan | undefined,
+  line: number,
+  column: number | undefined,
+): boolean {
+  if (span === undefined || column === undefined) return false;
+  const afterStart = line > span.startLine || (line === span.startLine && column >= span.startColumn);
+  const beforeEnd = line < span.endLine || (line === span.endLine && column < span.endColumn);
+  return afterStart && beforeEnd;
 }
 
 /**
@@ -127,8 +168,9 @@ export function resolveLocalBindingType(
   bindings: Record<string, LocalBinding[]> | undefined,
   varName: string,
   atLine: number,
+  atColumn?: number,
 ): string | undefined {
-  return resolveLocalBinding(bindings, varName, atLine)?.type;
+  return resolveLocalBinding(bindings, varName, atLine, atColumn)?.type;
 }
 
 /**
@@ -136,11 +178,18 @@ export function resolveLocalBindingType(
  * returning the full binding (so callers can inspect `valueKind` and other
  * fields). Returns `undefined` when no binding is established on or before that
  * line. Position-aware lookup shared with `resolveLocalBindingType`.
+ *
+ * `atColumn` (0-based, the call's own column) places the call INSIDE a line: a
+ * binding whose {@link LocalBinding.conditionSpan} contains the position is
+ * skipped, so a modifier's condition reads exactly what it would read were the
+ * guarded statement absent (bd tea-rags-mcp-0qaht.55). Omitted, every binding
+ * reads as before.
  */
 export function resolveLocalBinding(
   bindings: Record<string, LocalBinding[]> | undefined,
   varName: string,
   atLine: number,
+  atColumn?: number,
 ): LocalBinding | undefined {
   const list = identifierEntry(bindings, varName);
   if (!list || list.length === 0) return undefined;
@@ -150,6 +199,7 @@ export function resolveLocalBinding(
     // absent on every binding not scoped narrower than the chunk.
     if (binding.scopeEndLine !== undefined && binding.scopeEndLine < atLine) continue;
     if (binding.line > atLine) continue;
+    if (isInsideModifierCondition(binding.conditionSpan, atLine, atColumn)) continue;
     if (best === undefined || binding.line > best.line || outranksOnSameLine(binding, best)) best = binding;
   }
   return best;
@@ -253,7 +303,12 @@ export interface CallResultBinding {
    * an optional as what it wraps may ignore it. ABSENT means no such marker
    * was seen, not that the value is proven non-optional.
    */
-  readonly optional?: true;
+  readonly optional?: true; /**
+   * {@link LocalBinding.conditionSpan}'s meaning: the condition of a modifier
+   * guarding the assignment, which runs before it (bd tea-rags-mcp-0qaht.55).
+   * Set by the Ruby walker. ABSENT means no such modifier.
+   */
+  readonly conditionSpan?: ModifierConditionSpan;
 }
 
 /**

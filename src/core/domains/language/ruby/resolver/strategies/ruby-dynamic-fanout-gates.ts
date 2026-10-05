@@ -253,7 +253,7 @@ function exactChainTypesReceiver(
   ctx: CallContext,
   mode: AmbiguousResolveMode,
 ): boolean {
-  const t = typeOfReceiver(receiver, call.startLine, ctx);
+  const t = typeOfReceiver(receiver, call.startLine, ctx, call.startColumn);
   if (t && (t.form === "class" || t.form === "instance")) return true;
   return !ivarFieldOwnsReceiver(call, ctx) && resolveConventionReceiverTarget(call, ctx, mode) !== null;
 }
