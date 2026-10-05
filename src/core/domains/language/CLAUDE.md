@@ -10,6 +10,16 @@
   `explicitRequire` (9); per-site rationale is in the docblocks. Why:
   `resolveViaChain` is order-is-precedence — a reorder retargets edges and no
   test asserts order.
+- **A new typing or dispatch mechanism is ADDITIVE: it answers where the old
+  read was silent or provably wrong, and every other site reads exactly as
+  before.** A correct edge it loses is a regression, never a trade against the
+  edges it gains. Gate it on the evidence the new shape needs (a column, a span,
+  an owner, an opt-in port) so absent evidence degenerates to the old read, and
+  judge it by lost resolved rows per corpus
+  (`codegraph-chain-tally.ts --dump-edges`, base vs after), not by the rate.
+  Why: both a whole-statement exclusion for Ruby's modifier conditions and a
+  prior-binding read for self-reassignments lost correct mastodon edges inside a
+  net-positive delta.
 - **`localBindings` is position-aware — never index
   `ctx.localBindings?.[receiver]`.** `Record<string, LocalBinding[]>`, 1-based
   `line` per binding; read via
@@ -17,11 +27,14 @@
   (`kernel/cone-dispatch.ts` plus five per-language strategies) or
   `resolveLocalBinding` when `valueKind` is needed (Ruby `localType`); greatest
   `line <= atLine` wins, skipping a binding whose optional `scopeEndLine` is
-  already past (Go's function-literal parameters and block-scoped locals). Go
-  reads through its own `goLocalAt` (`go/local-scope.ts`), which adds Go's
-  declaration rule — a binding carrying `endLine` is in scope only AFTER its
-  declaring statement, so `config := config.Load()` still calls the package; the
-  walker sets it only when the right-hand side names the declared identifier
+  already past (Go's function-literal parameters and block-scoped locals) and,
+  given the call's optional column, a binding whose `conditionSpan` contains it
+  (a modifier condition runs BEFORE the assignment it guards; no column or no
+  span reads as before). Go reads through its own `goLocalAt`
+  (`go/local-scope.ts`), which adds Go's declaration rule — a binding carrying
+  `endLine` is in scope only AFTER its declaring statement, so
+  `config := config.Load()` still calls the package; the walker sets it only
+  when the right-hand side names the declared identifier
   (`goDeclarationEndLine`), because a call site has no column and an
   `if e := New(); e.Ok() {` header reads its local on the same line — and
   answers across BOTH of Go's channels (`localBindings`, and the positioned call
@@ -33,8 +46,10 @@
   (`TreeSitterChunker#emitSplitSymbol`, and the `enforceMaxChunkSize`
   post-pass), never seen by the walker. Doc languages diverge too:
   `markdown/index.ts` has `chunkerHooks`, no `walker`/`resolver`, `doc:<hash>`
-  ids. Why: id divergence yields edges pointing at ids no chunk carries —
-  `find_symbol` / `get_callers` return nothing, no error.
+  ids. Members that share a base id BY DESIGN — a property's accessor twins, a
+  same-id redefinition — keep it: their bodies are attributed to the shared
+  chunk, never given a fresh id. Why: id divergence yields edges pointing at ids
+  no chunk carries — `find_symbol` / `get_callers` return nothing, no error.
 
 ## Mechanics
 
@@ -243,15 +258,17 @@
   without the policy — what Ruby passes — it kills exactly as before; with it
   the arms become a capped, order-stable union and a binding may carry one plain
   event per branch, never a join to an ancestor (an override on the subtype is a
-  different target); `ruby/walker/type-sources/body-last-expr.ts` is now an
-  adapter over it and keeps every export it had. `kernel/naming-convention.ts`
-  owns the two neutral gates behind `payment` → `Payment` (the class must EXIST
-  in the run, and it must have NO subtypes — a polymorphic base named by a
-  variable carries a concrete descendant, which is where every measured
-  convention error came from); it does NOT own the terminal, because refusing to
-  emit when the guessed class declares no such member needs the language's own
-  MRO. Each language supplies ports and keeps its own surface: what counts as a
-  terminal expression, what camelizes, what "has subtypes" is evidence of.
+  different target). A language may ask it through more than one PORT SET (what
+  is a binding, what types an expression), and the port set — not a second
+  engine — is where one channel's answers differ from another's.
+  `kernel/naming-convention.ts` owns the two neutral gates behind `payment` →
+  `Payment` (the class must EXIST in the run, and it must have NO subtypes — a
+  polymorphic base named by a variable carries a concrete descendant, which is
+  where every measured convention error came from); it does NOT own the
+  terminal, because refusing to emit when the guessed class declares no such
+  member needs the language's own MRO. Each language supplies ports and keeps
+  its own surface: what counts as a terminal expression, what camelizes, what
+  "has subtypes" is evidence of.
 - **The receiver-typed strategies and the dispatch components are kernel
   skeletons over language PORTS; a language keeps the strategy `name` strings it
   shipped with.** `kernel/receiver-typed-strategies.ts` owns the verdict once
@@ -266,10 +283,12 @@
   a union has no single base, so more than `coneMax` targets emit `[]`); the
   dynamic component DECLINES whatever its `suppressed` gate says another layer
   owns, and WHICH calls those are is language knowledge, so a fan-out that
-  replaces the chain's answer is a gate bug, not a kernel one;
-  `ReceiverPatternDropSymbolResolutionStrategy` DROPs on the first matching
-  rule, so a rule that is wrong hides real edges where a wrong strategy would
-  only add a bad one. The `name` is load-bearing:
+  replaces the chain's answer is a gate bug, not a kernel one (the one shared
+  gate, `receiverIsAssignedLocal`, reads the chunk's `assignedLocals`; which
+  names a def BINDS is the walker's to publish, and a language that publishes
+  none never trips it); `ReceiverPatternDropSymbolResolutionStrategy` DROPs on
+  the first matching rule, so a rule that is wrong hides real edges where a
+  wrong strategy would only add a bad one. The `name` is load-bearing:
   `codegraph-chain-tally.ts --defer` and the oracle's `answeredBy` columns key
   on it. `kernel/member-return-type.ts` walks ONE precedence — owner's own
   return, each ancestor in the language's linearized order (nearest declarer
@@ -283,6 +302,19 @@
   Python's receiver-pattern drop was proposed and closed WITHOUT a strategy
   because its measured ceiling (phantom rows per corpus) was below the plan's
   bar.
+- **The CHA cone (`ConeDispatchResolver`, `kernel/cone-dispatch.ts`) is
+  subtypes-only unless the locator answers
+  `ConeTypeLocator#isRuntimeDispatchClass`.** Opted in, the RECEIVER's own
+  target — its type's declaration of `m`, else the nearest ancestor's — joins
+  the overriding subtypes, keyed by its defining class and never counted toward
+  `coneMax`; it is added only when the type has a NOMINAL descendant and both it
+  and the definer are runtime classes, and a cone with no overriding subtype
+  still emits `[]`. The RTA prune maps each instantiated type to its nearest
+  definer, so it drops subclass OVERRIDES nothing instantiated reaches and keeps
+  the receiver's own target while `T` or a non-overriding subtype is
+  instantiated. What "runtime class" means is the language's. Why: a 1-wide
+  override cone is a `single` fan that REPLACES the chain's answer, so without
+  the receiver's own target the exact edge never reached the graph.
 - **A framework vocabulary is gated by the project's DECLARED dependencies, and
   the rule is the kernel's.** `FrameworkVocabularyRegistry`
   (`kernel/framework-vocabulary.ts`) decides who is active: a vocabulary with no
@@ -460,8 +492,8 @@
   `structuredReturnTypes`, `ivarTypes`, each only when non-empty). Which source
   outranks which is NOT in the kernel: `fromFacts(facts, sourceOrder)` requires
   the order and holds it on the instance, so Ruby passes
-  `RUBY_TYPE_SOURCE_ORDER` (seven ranks, `ruby/walker/type-fact-store.ts`) and
-  Python will pass its own. A Python facet is
+  `RUBY_TYPE_SOURCE_ORDER` (seven ranks, `ruby/walker/type-fact-store.ts`). A
+  Python facet is
   `sources → TypeFactStore.fromFacts(facts, PYTHON_TYPE_SOURCE_ORDER) → typeFactChannels`
   inside one `ExtractionFacetPass`. Ruby does NOT use `typeFactChannels` —
   `ruby/walker/type-channels.ts` folds two more sources in around the store

@@ -184,6 +184,16 @@
   that link carries a real field or return fact, so a class with no matching
   attribute reaches the same strategy it reaches today. A local binding on the
   same name WINS — a name Python rebound is a value, not the class.
+- **Every CapWords class-head reader goes through `pythonClassHeadName`** — the
+  constructor root, `classHead`, the chain-head seed, the `cast` argument (bd
+  tea-rags-mcp-m99j1.1.81/.86). It answers the spelling when that places into
+  the project, and only on a miss the PLACED key of the project class an import
+  renamed (`pythonAliasedClassKey`: `from m import Engine as E2` → `E2()` is an
+  `Engine`); `pythonBoundToForeignCall` takes the same fallback. The key, not
+  the source name, because the caller binds no `Engine` for a later hop to
+  re-place. An alias of a LIBRARY name stays foreign even beside a project
+  namesake. A new head reader that probes the bare spelling reads an aliased
+  project class as untyped or foreign.
 - **A receiver that is nothing but MODULE TEXT gets a fourth arm, and its
   hardest case is a module shadowed by its own assignment.**
   `utilities.fields.ColorField()` spells two or three lowercase hops with no
@@ -279,9 +289,12 @@
   cross-file return type and the callee's own hierarchy are both in scope only
   in the resolver, never in the walker. ONE hop — the returned ref is never
   re-folded — and a real `localBindings` entry always wins, because a walker
-  binding is a type it READ and a fold is an inference. The bare-callee arm is
-  opt-in through `createPythonCallBindingPorts` rather than added to the shared
-  `pythonSingleHopType`: globally on, `Cls.member()` would be answered by
+  binding is a type it READ and a fold is an inference. A callee spine rooted at
+  a call is recorded only when the root is ONE CapWords identifier
+  (`template = Engine().from_string(code)` → `Engine().from_string`, bd
+  tea-rags-mcp-m99j1.1.74); `make().build()` stays declined. The bare-callee arm
+  is opt-in through `createPythonCallBindingPorts` rather than added to the
+  shared `pythonSingleHopType`: globally on, `Cls.member()` would be answered by
   `chainType` one pass EARLIER than `importedName` and through the legacy
   `classExtends` walk instead of the MRO. This is a SECOND channel and not a
   widening of `localCallBindings` — that one is bare-name-keyed and pairs with
@@ -552,15 +565,12 @@
   it.
 - **Python's cone keeps the RECEIVER's own declaration** (bd
   tea-rags-mcp-m99j1.1.84), opted into by
-  `PythonConeTypeLocator#isRuntimeDispatchClass`. The kernel cone is
-  subtypes-only for a locator that does not answer it, so django's
+  `PythonConeTypeLocator#isRuntimeDispatchClass`; the kernel contract, RTA prune
+  included, is a `domains/language/CLAUDE.md` bullet. Measured case: django's
   `lookups = MultiValueDict(); lookups.appendlist()` was a 1-wide cone to the
-  `QueryDict` override — a `single` fan replaces the chain's answer, so the
-  exact `MultiValueDict#appendlist` never reached the graph. The receiver's
-  class (or the nominal ancestor it inherits `m` from) is now a cone member,
-  never counted toward `coneMax`. A `typing.Protocol` is not a runtime class —
-  its direct `classAncestors` name `typing::Protocol` — so its stub stays out
-  even when another Protocol subclasses it nominally (polar's
+  `QueryDict` override. Python's runtime-class answer: a `typing.Protocol` is
+  not one — its direct `classAncestors` name `typing::Protocol` — so its stub
+  stays out even when another Protocol subclasses it nominally (polar's
   `RepositoryProtocol`).
 - **Behind them, `resolveDispatch` composes
   `[table, callableParam, union, cone, dynamic]` — `dynamic` is ON by default
@@ -772,14 +782,15 @@
   declaration, and yielding would delete the symbol rather than relocate it.
 - **A property's accessor twins share its symbolId and keep NO range of their
   own, so their bodies are attributed, not ranged.** `@x.setter` / `@x.deleter`
-  / `@x.getter def x` compose the getter's `Cls#x` by design (chunk ids and
-  `find_symbol` rely on the shared id), and `collectSymbols` keeps the getter's
-  range. `collectPythonAccessorTwinRanges` locates each twin and the walker's
-  call ownership treats its body as a range that folds onto the shared chunk,
-  together with its local bindings, call-result bindings and `assignedLocals`
-  (bd tea-rags-mcp-m99j1.1.76). Twin channels sit on later lines than the
-  getter's, so the getter's own calls read exactly what they read before. Only
-  the decorator naming the def's OWN property qualifies as an accessor twin.
+  / `@x.getter def x` compose the getter's `Cls#x` by design (the shared-id rule
+  is a `domains/language/CLAUDE.md` invariant), and `collectSymbols` keeps the
+  getter's range. `collectPythonAccessorTwinRanges` locates each twin and the
+  walker's call ownership treats its body as a range that folds onto the shared
+  chunk, together with its local bindings, call-result bindings and
+  `assignedLocals` (bd tea-rags-mcp-m99j1.1.76). Twin channels sit on later
+  lines than the getter's, so the getter's own calls read exactly what they read
+  before. Only the decorator naming the def's OWN property qualifies as an
+  accessor twin.
 - **A plain same-id redefinition is attributed the same way**
   (`collectPythonRedefinitionTwinRanges`, bd tea-rags-mcp-m99j1.1.80):
   alternative defs in `if/else` / `try/except` branches, a nested helper
@@ -841,6 +852,18 @@
   strategy today, so absence — which leaves the receiver untyped and `chainType`
   on CONTINUE — is what keeps that path byte-identical. There is no manifest
   gate and no framework registry to consult.
+- **A dotted constructor on a VALUE receiver names no class.** Every reader of
+  `<recv>.<Upper>(…)` strips it to `<Upper>` and places that by short name,
+  which is sound only when `<recv>` is a NAME a module or class is bound by
+  (`mod.Client`, `self.Inner`, `cls.Inner`). `pythonConstructorReceiverIsValue`
+  (`walker/passes/python-constructor-receiver.ts`) decides syntactically that an
+  attribute of an attribute of `self` / `cls`, a name rooted at an enclosing
+  parameter, or a computed expression is a value, and every channel that reads a
+  constructor spelling asks it at its decision point — field types, call-result
+  fields, local bindings, the return fixpoint, call-argument types (bd
+  tea-rags-mcp-m99j1.1.85). A new channel that skips it types django's
+  `self._lib.Client(...)` (an injected module) as whatever project class is
+  called `Client`.
 - **A `Mapped[T]` annotation is TRANSPARENT, and that is a language-level
   reading rather than a framework one.** SQLAlchemy 2.0's declarative column
   states "this attribute holds a T" exactly as `ClassVar[T]` does, so `Mapped`

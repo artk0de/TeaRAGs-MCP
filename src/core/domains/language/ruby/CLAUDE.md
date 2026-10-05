@@ -105,6 +105,41 @@
   fictional annotation classes shadowing derived facts via the `.`-vs-`#` key
   split. Why: chasing a wrong receiver type through the propagation engine or
   the MRO walk is the wrong layer.
+- **Every Ruby body return is the kernel's `inferReturnTypeName`; the channels
+  differ only in PORT SET** (`walker/body-return.ts`, one tail selection
+  `rubyBodyTailExpression`). The member ports (flat `functionReturnTypes` and
+  its owner-keyed twin) never follow a binding and type an expression by
+  `constInstanceType` alone — deliberately narrower than the service-entry ports
+  in `body-last-expr.ts`. The owner-keyed channel's extra shapes (receiverless
+  `new` in a singleton method, self-returning tails, constants qualified by
+  lexical nesting) need a `RubyMemberReturnOwner`, so the flat channel answers
+  as before; they name the DECLARING class, so a subclass receiver of a fluent
+  method gets its parent's type. Widening a port set is a measured behaviour
+  change, never a cleanup.
+- **A local bound to a call has TWO channels, and only the positioned one knows
+  the receiver.** `localCallBindings` is chunk-wide and keeps the OUTERMOST
+  method of a chained right-hand side, so `x = Svc.new.call(uri)` records a bare
+  `call` — read alone, that is the flat bare-name `functionReturnTypes` map,
+  where one `@return` on any `#call` types every service result.
+  `callResultBindings` records the argument-free callee chain at its line:
+  `typeOfReceiver` folds it for a local with no walker binding
+  (`CODEGRAPH_RB_CALL_RESULT_BINDINGS`, default on) and keeps only an answer
+  naming a project-declared class (`belongs_to :status` derives a phantom
+  `Statu`), and `boundCallReturnType` reads the receiver it names, answering
+  over that class when the chain types it nominally. Two positional rules guard
+  the self-referential write: a call inside a modifier condition reads the
+  binding ABOVE the statement (`conditionSpan`, the kernel bullet on
+  `localBindings`), and the right-hand side of `x = x.m` keeps a self-typed
+  reading only when it resolves to a member that type declares
+  (`isOwnAssignmentRightHandSide`). An untyped receiver still reads the flat map
+  — restricting it lost correct huginn rows.
+- **The dynamic fan's assigned-local decline needs Ruby's producer.**
+  `collectMethodAssignedLocals` publishes `assignedLocals` on every chunk inside
+  a def (assignments, `||=` / op-assign, multiple assignment, `rescue => e`;
+  params and block params excluded; a name read as a receiver before its first
+  assignment dropped); `rubyDynamicFanoutSuppressed` asks the kernel gate behind
+  `CODEGRAPH_RB_ASSIGNED_LOCAL_GATE`, default on. Untyped assigned locals are
+  recovered by typing (`callResultBindings`), never by fanning.
 - **Ruby recall numbers measured before 2026-07-28 sit on a different
   DENOMINATOR.** `RUBY_CODEGRAPH_EXCLUSION_GLOBS` (`codegraph-exclusions.ts`)
   has kept `db/migrate`, `db/data` and the schema snapshots out of the fan-graph
