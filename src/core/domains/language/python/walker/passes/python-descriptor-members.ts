@@ -36,91 +36,8 @@ import { pythonDescriptorDecorators } from "../../vocabulary/descriptors.js";
 import { pythonInferredReturnReader } from "./python-ast-type-source.js";
 import { pythonAnnotationExpression, walkPythonScopes } from "./python-def-scope-walk.js";
 import { isPythonMethodDef } from "./python-def-signatures.js";
+import { pythonDefHasQualifiedDecorator, pythonModuleImportBindings } from "./python-qualified-decorators.js";
 import { pythonNominalReceiverName, pythonTypeRefFromNode } from "./python-type-annotation.js";
-
-/** Statements whose blocks still bind at module scope (`try: import x`). */
-const MODULE_SCOPE_BLOCKS: ReadonlySet<string> = new Set([
-  "if_statement",
-  "elif_clause",
-  "else_clause",
-  "try_statement",
-  "except_clause",
-  "finally_clause",
-  "block",
-]);
-
-/** `local name → qualified dotted path` for every absolute module-level import. */
-function pythonModuleImportBindings(root: AstNode): Map<string, string> {
-  const bindings = new Map<string, string>();
-  const visit = (node: AstNode): void => {
-    if (node.type === "import_statement") {
-      for (const name of node.namedChildren) bindImported(bindings, name, null);
-      return;
-    }
-    if (node.type === "import_from_statement") {
-      const [module, ...names] = node.namedChildren;
-      if (module?.type !== "dotted_name") return;
-      for (const name of names) bindImported(bindings, name, module.text);
-      return;
-    }
-    if (node.type === "module" || MODULE_SCOPE_BLOCKS.has(node.type)) {
-      for (const child of node.namedChildren) visit(child);
-    }
-  };
-  visit(root);
-  return bindings;
-}
-
-/**
- * One imported name. `import a.b` binds `a` to `a`; `import a.b as c` binds
- * `c` to `a.b`; `from m import x as y` binds `y` to `m.x`.
- */
-function bindImported(bindings: Map<string, string>, node: AstNode, fromModule: string | null): void {
-  if (node.type === "aliased_import") {
-    const path = node.childForFieldName("name")?.text;
-    const alias = node.childForFieldName("alias")?.text;
-    if (path !== undefined && alias !== undefined) {
-      bindings.set(alias, fromModule === null ? path : `${fromModule}.${path}`);
-    }
-    return;
-  }
-  if (node.type !== "dotted_name") return;
-  if (fromModule !== null) {
-    bindings.set(node.text, `${fromModule}.${node.text}`);
-    return;
-  }
-  const head = node.text.split(".")[0];
-  bindings.set(head, head);
-}
-
-/**
- * The qualified spelling of one decorator, or null for a decorator CALL — a
- * factory (`@app.route("/")`) returns the decorator, so its own name says
- * nothing about what the def becomes.
- */
-function qualifiedDecorator(node: AstNode, bindings: ReadonlyMap<string, string>): string | null {
-  const expr = node.namedChild(0);
-  if (expr === null || (expr.type !== "identifier" && expr.type !== "attribute")) return null;
-  const segments = expr.text.split(".");
-  const head = bindings.get(segments[0]) ?? segments[0];
-  return [head, ...segments.slice(1)].join(".");
-}
-
-/** Does the def's `decorated_definition` carry a decorator in `descriptors`? */
-function isAttributeDescriptor(
-  def: AstNode,
-  bindings: ReadonlyMap<string, string>,
-  descriptors: ReadonlySet<string>,
-): boolean {
-  const decorated = def.parent;
-  if (decorated?.type !== "decorated_definition") return false;
-  for (const child of decorated.namedChildren) {
-    if (child.type !== "decorator") continue;
-    const qualified = qualifiedDecorator(child, bindings);
-    if (qualified !== null && descriptors.has(qualified)) return true;
-  }
-  return false;
-}
 
 /** The one nominal class a def returns — annotated, else inferred — or undefined. */
 function descriptorFieldType(
@@ -157,7 +74,7 @@ export const pythonDescriptorMembersFacetPass: ExtractionFacetPass = {
         // never reaches the import scan.
         if (site.decorators.length === 0 || !isPythonMethodDef(site.node)) return;
         bindings ??= pythonModuleImportBindings(root);
-        if (!isAttributeDescriptor(site.node, bindings, descriptors)) return;
+        if (!pythonDefHasQualifiedDecorator(site.node, bindings, descriptors)) return;
         const selfClass = site.classChain[site.classChain.length - 1];
         const fieldType = descriptorFieldType(site.node, selfClass, inferReturn);
         if (fieldType === undefined) return;

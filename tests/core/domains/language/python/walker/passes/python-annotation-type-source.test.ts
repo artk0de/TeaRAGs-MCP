@@ -17,6 +17,7 @@ import PyLang from "tree-sitter-python";
 import { describe, expect, it } from "vitest";
 
 import type { AstNode } from "../../../../../../../src/core/contracts/types/ast.js";
+import type { TypeRef } from "../../../../../../../src/core/contracts/types/language.js";
 import type { TypeFact } from "../../../../../../../src/core/domains/language/kernel/type-facts.js";
 import { pythonAnnotationTypeSource } from "../../../../../../../src/core/domains/language/python/walker/passes/python-annotation-type-source.js";
 import { pythonTypeNameQualifier } from "../../../../../../../src/core/domains/language/python/walker/walker.js";
@@ -301,6 +302,108 @@ describe("pythonAnnotationTypeSource — returns", () => {
     const out = facts('@app.route("/x")\ndef view() -> Foo: pass\n');
     expect(out).toEqual([
       { kind: "return", source: "annotations", symbolScope: [], methodName: "view", type: instance("Foo") },
+    ]);
+  });
+});
+
+// bd tea-rags-mcp-m99j1.1.87. A `@contextmanager` def's CALL yields a
+// `_GeneratorContextManager[T]` whose `__enter__` returns the generator's
+// yielded `T` — never the declared `Iterator[T]` container itself.
+describe("pythonAnnotationTypeSource — context-manager generator returns", () => {
+  const returns = (src: string) => facts(src).filter((fact) => fact.kind === "return");
+  const manager = (name: string, element: TypeRef) => ({ form: "instance", name, args: [element] }) as const;
+  const SYNC = "contextlib._GeneratorContextManager";
+  const ASYNC = "contextlib._AsyncGeneratorContextManager";
+
+  it("records `from contextlib import contextmanager` + `-> Iterator[Foo]` as the sync manager of Foo", () => {
+    expect(
+      returns("from contextlib import contextmanager\n@contextmanager\ndef f() -> Iterator[Foo]:\n    yield Foo()\n"),
+    ).toEqual([
+      { kind: "return", source: "annotations", symbolScope: [], methodName: "f", type: manager(SYNC, instance("Foo")) },
+    ]);
+  });
+
+  it("reads `@contextlib.contextmanager` with a `Generator[Foo, None, None]` return", () => {
+    expect(
+      returns("import contextlib\n@contextlib.contextmanager\ndef f() -> Generator[Foo, None, None]:\n    yield\n"),
+    ).toEqual([
+      { kind: "return", source: "annotations", symbolScope: [], methodName: "f", type: manager(SYNC, instance("Foo")) },
+    ]);
+  });
+
+  it("reads an aliased module import — `import contextlib as cl; @cl.asynccontextmanager`", () => {
+    expect(
+      returns(
+        "import contextlib as cl\n@cl.asynccontextmanager\nasync def f() -> typing.AsyncIterator[Foo]:\n    yield\n",
+      ),
+    ).toEqual([
+      {
+        kind: "return",
+        source: "annotations",
+        symbolScope: [],
+        methodName: "f",
+        type: manager(ASYNC, instance("Foo")),
+      },
+    ]);
+  });
+
+  it("keeps the Self marker in the element of a stacked `@classmethod @asynccontextmanager` (polar JobQueueManager.open)", () => {
+    const src =
+      "import contextlib\nclass JobQueueManager:\n    @classmethod\n    @contextlib.asynccontextmanager\n" +
+      '    async def open(cls, broker) -> AsyncIterator["Self"]:\n        yield cls()\n';
+    expect(returns(src)).toEqual([
+      {
+        kind: "return",
+        source: "annotations",
+        symbolScope: ["JobQueueManager"],
+        methodName: "open",
+        type: manager(ASYNC, instance("Self")),
+        classForm: true,
+      },
+    ]);
+  });
+
+  it("leaves an un-imported bare `@contextmanager` as before — the name is not bound to contextlib", () => {
+    expect(returns("@contextmanager\ndef f() -> Iterator[Foo]:\n    yield\n")).toEqual([
+      {
+        kind: "return",
+        source: "annotations",
+        symbolScope: [],
+        methodName: "f",
+        type: { form: "container", element: instance("Foo") },
+      },
+    ]);
+  });
+
+  it("leaves a namesake decorator imported from elsewhere as before", () => {
+    expect(
+      returns("from mylib import contextmanager\n@contextmanager\ndef f() -> Iterator[Foo]:\n    yield\n"),
+    ).toEqual([
+      {
+        kind: "return",
+        source: "annotations",
+        symbolScope: [],
+        methodName: "f",
+        type: { form: "container", element: instance("Foo") },
+      },
+    ]);
+  });
+
+  it("leaves a non-iterator return on a context-manager def as before", () => {
+    expect(returns("from contextlib import contextmanager\n@contextmanager\ndef f() -> Foo:\n    yield\n")).toEqual([
+      { kind: "return", source: "annotations", symbolScope: [], methodName: "f", type: instance("Foo") },
+    ]);
+  });
+
+  it("leaves an undecorated `-> Iterator[Foo]` generator as before", () => {
+    expect(returns("import contextlib\ndef f() -> Iterator[Foo]:\n    yield\n")).toEqual([
+      {
+        kind: "return",
+        source: "annotations",
+        symbolScope: [],
+        methodName: "f",
+        type: { form: "container", element: instance("Foo") },
+      },
     ]);
   });
 });
