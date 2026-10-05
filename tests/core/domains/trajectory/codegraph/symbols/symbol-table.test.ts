@@ -258,3 +258,104 @@ describe("InMemoryGlobalSymbolTable#hydrateFiles", () => {
     expect(table.hasFilesUnder("")).toBe(false);
   });
 });
+
+describe("InMemoryGlobalSymbolTable#size tracks every mutator", () => {
+  const def = (relPath: string, name: string): SymbolDefinition => ({
+    symbolId: `${relPath}#${name}`,
+    fqName: `${relPath}#${name}`,
+    shortName: name,
+    relPath,
+    scope: [],
+  });
+
+  /** Recount from the by-short-name reverse index: independent of the counter. */
+  const recount = (table: InMemoryGlobalSymbolTable, names: readonly string[]): number =>
+    names.reduce((sum, name) => sum + table.lookupByShortName(name).length, 0);
+
+  const NAMES = ["a", "b", "c", "d"];
+
+  it("equals the brute-force recount after every public mutator", () => {
+    const table = new InMemoryGlobalSymbolTable();
+    const steps: [string, () => void][] = [
+      [
+        "add file",
+        () => {
+          table.upsertFile("x/one.rb", [def("x/one.rb", "a"), def("x/one.rb", "b")]);
+        },
+      ],
+      [
+        "add second file",
+        () => {
+          table.upsertFile("y/two.rb", [def("y/two.rb", "a"), def("y/two.rb", "c")]);
+        },
+      ],
+      [
+        "replace with fewer defs",
+        () => {
+          table.upsertFile("x/one.rb", [def("x/one.rb", "d")]);
+        },
+      ],
+      [
+        "replace with empty",
+        () => {
+          table.upsertFile("y/two.rb", []);
+        },
+      ],
+      [
+        "replace empty with defs",
+        () => {
+          table.upsertFile("y/two.rb", [def("y/two.rb", "c")]);
+        },
+      ],
+      [
+        "remove unknown file",
+        () => {
+          table.removeFile("nope.rb");
+        },
+      ],
+      [
+        "remove file",
+        () => {
+          table.removeFile("x/one.rb");
+        },
+      ],
+      [
+        "hydrate over existing file",
+        () => {
+          table.hydrate([def("y/two.rb", "a"), def("z/three.rb", "b")]);
+        },
+      ],
+      [
+        "hydrate empty",
+        () => {
+          table.hydrate([]);
+        },
+      ],
+      [
+        "hydrateFiles registers empty + keeps existing",
+        () => {
+          table.hydrateFiles(["y/two.rb", "e/empty.rb"]);
+        },
+      ],
+      [
+        "setSchemaColumns is not counted",
+        () => {
+          table.setSchemaColumns([def("z/three.rb", "col")]);
+        },
+      ],
+      [
+        "remove all",
+        () => {
+          ["y/two.rb", "z/three.rb", "e/empty.rb"].forEach((p) => {
+            table.removeFile(p);
+          });
+        },
+      ],
+    ];
+    for (const [label, step] of steps) {
+      step();
+      expect(table.size(), label).toBe(recount(table, NAMES));
+    }
+    expect(table.size()).toBe(0);
+  });
+});

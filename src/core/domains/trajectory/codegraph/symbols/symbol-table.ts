@@ -36,9 +36,17 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
    * Also the table's FILE MEMBERSHIP set (bd tea-rags-mcp-o7ifx): a file that
    * declares nothing gets an entry holding an empty array rather than none at
    * all, so `hasFile` can answer "in this project" instead of "declares
-   * something". `size()` sums the arrays, so those entries add zero to it.
+   * something". `size()` counts the arrays' elements, so those entries add zero to it.
    */
   private readonly byFile = new Map<RelPath, SymbolDefinition[]>();
+  /**
+   * Running total of the definitions held in `byFile`, so `size()` is O(1).
+   * The run-scoped ancestor-linearizer cache stamps every entry with it on
+   * every lookup, which made an O(files) sum a per-call cost. `byFile` is
+   * mutated in exactly `upsertFile` and `removeFile`; each keeps this in step.
+   * Schema columns are not in `byFile`, so they are not counted.
+   */
+  private definitionCount = 0;
   /**
    * shortName -> SCHEMA-SYNTHESIZED column accessors (bd tea-rags-mcp-8l5fo).
    *
@@ -72,6 +80,7 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
     // read as a directory the project does not own (bd tea-rags-mcp-o7ifx).
     // The two loops below are no-ops for it, so nothing else changes.
     this.byFile.set(relPath, definitions.slice());
+    this.definitionCount += definitions.length;
     for (const dir of ancestorDirs(relPath)) {
       this.dirRefCounts.set(dir, (this.dirRefCounts.get(dir) ?? 0) + 1);
     }
@@ -85,6 +94,7 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
     const existing = this.byFile.get(relPath);
     if (!existing) return;
     this.byFile.delete(relPath);
+    this.definitionCount -= existing.length;
     for (const dir of ancestorDirs(relPath)) {
       const next = (this.dirRefCounts.get(dir) ?? 0) - 1;
       if (next <= 0) this.dirRefCounts.delete(dir);
@@ -136,9 +146,7 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
   }
 
   size(): number {
-    let n = 0;
-    for (const defs of this.byFile.values()) n += defs.length;
-    return n;
+    return this.definitionCount;
   }
 
   /**
