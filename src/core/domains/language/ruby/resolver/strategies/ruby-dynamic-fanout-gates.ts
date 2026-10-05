@@ -25,6 +25,7 @@
  */
 
 import type { AmbiguousResolveMode, CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
+import type { ExactChainAnswerProbe } from "../../../kernel/index.js";
 import { isExternalQualifiedMember } from "../../dsl/index.js";
 import { SUPER_RECEIVER_SENTINEL } from "../../super-receiver-sentinel.js";
 import { typeOfReceiver } from "../type-propagation.js";
@@ -65,12 +66,17 @@ const CONSTANT_RE = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
  * case falls through to a live fan-out. Both halves pinned in
  * ruby-dynamic-dispatch.test.ts.
  */
-export function rubyDynamicFanoutSuppressed(call: CallRef, ctx: CallContext, mode: AmbiguousResolveMode): boolean {
+export function rubyDynamicFanoutSuppressed(
+  call: CallRef,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+  exactPass: ExactChainAnswerProbe,
+): boolean {
   const r = call.receiver;
   if (r === null) return true; // bare call — bare-call exact path
   return (
     exactChainOwnsReceiverShape(r, ctx) ||
-    exactPassAnswersReceiver(call, ctx, mode) ||
+    exactPass.answers(call, ctx) ||
     receiverLooksLikeArRelationChain(r) || // AR::Relation chain
     receiverIsIndexAccess(r) || // `opts[k]`, `arr[i]` — element type untrackable
     receiverChainIsExternal(r, ctx) ||
@@ -95,7 +101,10 @@ function exactChainOwnsReceiverShape(receiver: string, ctx: CallContext): boolea
 
 /**
  * An exact pass ANSWERS this call — gated on the resolved TARGET, not on a type
- * probe, so a receiver the pass declines still fans out.
+ * probe, so a receiver the pass declines still fans out. Ruby's
+ * `ExactChainAnswerProbe`: it asks the two named passes that own an untyped
+ * receiver, not the whole chain (Python's probe runs its chain — see
+ * `PythonChainAnswerProbe`).
  *
  * Receiver bound to a CALL whose return type is known (`result = Svc.call(…)`;
  * bd tea-rags-mcp-j9xpf). The walker cannot type it — that needs another
@@ -121,9 +130,13 @@ function exactChainOwnsReceiverShape(receiver: string, ctx: CallContext): boolea
  * whole answer collapses them, 1173 of 1173 agreeing with what lands
  * (bd tea-rags-mcp-eaml5, `CODEGRAPH_C2COLLAPSE_ORACLE=1` cut 3).
  */
-function exactPassAnswersReceiver(call: CallRef, ctx: CallContext, mode: AmbiguousResolveMode): boolean {
-  if (resolveBoundCallTarget(call, ctx, mode) !== null) return true;
-  return resolveIvarFieldTarget(call, ctx, mode) !== null;
+export class RubyExactPassAnswerProbe implements ExactChainAnswerProbe {
+  constructor(private readonly mode: AmbiguousResolveMode) {}
+
+  answers(call: CallRef, ctx: CallContext): boolean {
+    if (resolveBoundCallTarget(call, ctx, this.mode) !== null) return true;
+    return resolveIvarFieldTarget(call, ctx, this.mode) !== null;
+  }
 }
 
 /**

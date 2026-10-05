@@ -1,5 +1,6 @@
 import type { CallContext, CallRef, SymbolResolutionTarget } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import type { ExactChainAnswerProbe } from "../../../kernel/index.js";
 import { resolveViaChain } from "../../../resolver-chain.js";
 
 /**
@@ -20,8 +21,11 @@ import { resolveViaChain } from "../../../resolver-chain.js";
  * it: the same `CallRef` object is never re-walked under a different context
  * within a run, and checking it makes a harness that does so correct anyway. A
  * `WeakMap` because the walk holds every `CallRef` only as long as its chunk.
+ *
+ * Python's `ExactChainAnswerProbe` (K1, bd tea-rags-mcp-m99j1.1.14): where Ruby
+ * asks two named passes, Python asks the whole chain.
  */
-export class PythonChainAnswerProbe {
+export class PythonChainAnswerProbe implements ExactChainAnswerProbe {
   private readonly memo = new WeakMap<CallRef, { ctx: CallContext; target: SymbolResolutionTarget | null }>();
 
   constructor(private readonly chain: readonly SymbolResolutionStrategy[]) {}

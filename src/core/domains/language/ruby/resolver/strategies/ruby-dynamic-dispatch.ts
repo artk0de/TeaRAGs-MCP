@@ -1,18 +1,7 @@
-import {
-  emptyDispatchFanout,
-  type CallContext,
-  type CallRef,
-  type DispatchFanoutOutcome,
-} from "../../../../../contracts/types/codegraph.js";
-import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
-import {
-  buildDispatchCascade,
-  EXPLICIT_RECEIVER_VISIBILITY_ACCESS,
-  resolveNarrowedFanout,
-} from "../../../kernel/index.js";
+import { DynamicDispatchResolver, EXPLICIT_RECEIVER_VISIBILITY_ACCESS } from "../../../kernel/index.js";
 import { RUBY_FANOUT_POPULATION, rubyMemberLookupRole } from "../short-name-lookup.js";
 import { RUBY_DUCK_VOCAB } from "./ruby-duck-vocabulary.js";
-import { rubyDynamicFanoutSuppressed } from "./ruby-dynamic-fanout-gates.js";
+import { rubyDynamicFanoutSuppressed, RubyExactPassAnswerProbe } from "./ruby-dynamic-fanout-gates.js";
 import { DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT, lookupRubySymbolsByShortName, type ResolverConfig } from "./shared.js";
 
 /**
@@ -43,6 +32,11 @@ export function classifyRubyLiteralReceiver(receiver: string | null): string | n
  * component resolves `m` by global short-name lookup and emits the matches as
  * **discounted** `dynamic` edges: low confidence beats `null`.
  *
+ * The engine is the kernel `DynamicDispatchResolver` (K1, bd
+ * tea-rags-mcp-m99j1.1.14); this class is Ruby's port set — the gate runner,
+ * the role-aware ruby-only lookup, the duck-vocabulary and literal-receiver
+ * cascade data, the configurable discount, and no language cap.
+ *
  * This is a **fan-out** (N edges with per-edge `confidence`), so it implements
  * `DispatchResolverComponent` — NOT the single-target `SymbolResolutionStrategy`
  * chain, whose `SymbolResolutionTarget` carries no confidence field. It composes
@@ -70,28 +64,26 @@ export function classifyRubyLiteralReceiver(receiver: string | null): string | n
  * points outside the project, and `lookupRubySymbolsByShortName` blocks cross-language pollution
  * (bug pl7k: `arr.map` → vendored `d3.js#map`).
  */
-export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
-  private readonly narrowers = buildDispatchCascade({
-    duckVocabulary: RUBY_DUCK_VOCAB,
-    classifyLiteralReceiver: classifyRubyLiteralReceiver,
-    // Ruby `private` forbids any explicit receiver but `self`, and this cascade
-    // only sees non-`self` explicit receivers (`self` and bare calls belong to
-    // the exact chain, `exactChainOwnsReceiverShape`) — so a private candidate
-    // is never reachable here.
-    visibilityAccess: EXPLICIT_RECEIVER_VISIBILITY_ACCESS,
-  });
-
-  constructor(private readonly cfg: ResolverConfig) {}
-
-  resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
-    if (rubyDynamicFanoutSuppressed(call, ctx, this.cfg.mode)) return emptyDispatchFanout();
-
-    // Truly dynamic receiver: short-name lookup, ruby-files only.
-    const candidates = lookupRubySymbolsByShortName(ctx, call.member, { role: rubyMemberLookupRole(call) });
-    if (candidates.length === 0) return emptyDispatchFanout();
-    const discount = this.cfg.dynamicReceiverConfidence ?? DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT;
-    return resolveNarrowedFanout(call, candidates, ctx, this.narrowers, discount, {
+export class RubyDynamicDispatchResolver extends DynamicDispatchResolver {
+  constructor(cfg: ResolverConfig) {
+    const exactPass = new RubyExactPassAnswerProbe(cfg.mode);
+    super({
+      suppressed: (call, ctx) => rubyDynamicFanoutSuppressed(call, ctx, cfg.mode, exactPass),
+      // Truly dynamic receiver: short-name lookup, ruby-files only.
+      lookupByShortName: (call, ctx) =>
+        lookupRubySymbolsByShortName(ctx, call.member, { role: rubyMemberLookupRole(call) }),
+      cascade: {
+        duckVocabulary: RUBY_DUCK_VOCAB,
+        classifyLiteralReceiver: classifyRubyLiteralReceiver,
+        // Ruby `private` forbids any explicit receiver but `self`, and this cascade
+        // only sees non-`self` explicit receivers (`self` and bare calls belong to
+        // the exact chain, `exactChainOwnsReceiverShape`) — so a private candidate
+        // is never reachable here.
+        visibilityAccess: EXPLICIT_RECEIVER_VISIBILITY_ACCESS,
+      },
+      discount: cfg.dynamicReceiverConfidence ?? DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT,
       population: RUBY_FANOUT_POPULATION,
+      // No language cap: Ruby fans out up to the policy cap alone.
     });
   }
 }

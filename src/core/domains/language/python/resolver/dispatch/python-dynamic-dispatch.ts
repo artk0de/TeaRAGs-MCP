@@ -1,11 +1,5 @@
-import {
-  emptyDispatchFanout,
-  type CallContext,
-  type CallRef,
-  type DispatchFanoutOutcome,
-} from "../../../../../contracts/types/codegraph.js";
-import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
-import { buildDispatchCascade, EnclosingClassPrivateAccess, resolveNarrowedFanout } from "../../../kernel/index.js";
+import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
+import { DynamicDispatchResolver, EnclosingClassPrivateAccess } from "../../../kernel/index.js";
 import { lookupPythonSymbolsByShortName } from "../strategies/shared.js";
 import type { PythonChainAnswerProbe } from "./python-chain-probe.js";
 import { pythonDynamicFanoutSuppressed } from "./python-dispatch-gates.js";
@@ -20,7 +14,9 @@ import {
 const isPythonInstanceMember = (symbolId: string): boolean => symbolId.includes("#");
 
 /**
- * Untyped-name short-name fan-out for Python (bd tea-rags-mcp-w205u, E4.1.3).
+ * Untyped-name short-name fan-out for Python (bd tea-rags-mcp-w205u, E4.1.3) —
+ * Python's port set over the kernel `DynamicDispatchResolver` (K1, bd
+ * tea-rags-mcp-m99j1.1.14).
  *
  * `service.execute()` where nothing typed `service`: no annotation, no
  * constructor call, no import — 373 of the 423 rows E4.0.4 attributed to
@@ -51,26 +47,23 @@ const isPythonInstanceMember = (symbolId: string): boolean => symbolId.includes(
  * declaring class's name: the enclosing-class rule, NOT the explicit-receiver
  * default, which would drop `other.__x()` inside the class that declares it.
  */
-export class PythonDynamicDispatchResolver implements DispatchResolverComponent {
-  private readonly narrowers = buildDispatchCascade({ visibilityAccess: new EnclosingClassPrivateAccess() });
-
+export class PythonDynamicDispatchResolver extends DynamicDispatchResolver {
   constructor(
-    private readonly probe: PythonChainAnswerProbe,
-    private readonly coreAmbiguous: (call: CallRef, ctx: CallContext) => boolean,
+    probe: PythonChainAnswerProbe,
+    coreAmbiguous: (call: CallRef, ctx: CallContext) => boolean,
     /** Read ONCE at composition — never a per-call `process.env` lookup. */
-    private readonly fanMax: number = resolvePythonDispatchFanMax(process.env.CODEGRAPH_PY_DISPATCH_FAN_MAX),
-  ) {}
-
-  resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
-    if (pythonDynamicFanoutSuppressed(call, ctx, this.probe, this.coreAmbiguous)) return emptyDispatchFanout();
-    const candidates = lookupPythonSymbolsByShortName(ctx, call.member, { role: "callee" }).filter((def) =>
-      isPythonInstanceMember(def.symbolId),
-    );
-    if (candidates.length === 0) return emptyDispatchFanout();
-    return resolveNarrowedFanout(call, candidates, ctx, this.narrowers, PY_DYNAMIC_RECEIVER_CONFIDENCE, {
-      cap: this.fanMax,
-      edgeKind: "dynamic",
+    fanMax: number = resolvePythonDispatchFanMax(process.env.CODEGRAPH_PY_DISPATCH_FAN_MAX),
+  ) {
+    super({
+      suppressed: (call, ctx) => pythonDynamicFanoutSuppressed(call, ctx, probe, coreAmbiguous),
+      lookupByShortName: (call, ctx) =>
+        lookupPythonSymbolsByShortName(ctx, call.member, { role: "callee" }).filter((def) =>
+          isPythonInstanceMember(def.symbolId),
+        ),
+      cascade: { visibilityAccess: new EnclosingClassPrivateAccess() },
+      discount: PY_DYNAMIC_RECEIVER_CONFIDENCE,
       population: PYTHON_FANOUT_POPULATION,
+      cap: fanMax,
     });
   }
 }

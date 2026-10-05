@@ -4,6 +4,7 @@ import {
   type CallContext,
   type CallRef,
 } from "../../../../../contracts/types/codegraph.js";
+import type { ExactChainAnswerProbe } from "../../../kernel/index.js";
 import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
 import { PYTHON_TYPESHED_MEMBERS } from "../../vocabulary/typeshed-members.js";
 import {
@@ -11,7 +12,6 @@ import {
   lookupPythonSymbolsByShortName,
   pythonBoundToForeignCall,
 } from "../strategies/shared.js";
-import type { PythonChainAnswerProbe } from "./python-chain-probe.js";
 
 /**
  * A receiver whose first LETTER is upper-case is a class object or a module
@@ -98,7 +98,7 @@ function pythonBoundToUntypeableCall(receiver: string, atLine: number, ctx: Call
 export function pythonDynamicFanoutSuppressed(
   call: CallRef,
   ctx: CallContext,
-  probe: PythonChainAnswerProbe,
+  probe: ExactChainAnswerProbe,
   coreAmbiguous: (call: CallRef, ctx: CallContext) => boolean,
 ): boolean {
   const { receiver } = call;
