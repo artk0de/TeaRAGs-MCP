@@ -58,7 +58,7 @@ export interface ReceiverTypedStrategyOptions {
   requirePinnedTarget?: boolean;
 }
 
-function hasReceiver(call: CallRef): call is ReceiverCallRef {
+export function hasReceiver(call: CallRef): call is ReceiverCallRef {
   return Boolean(call.receiver);
 }
 
