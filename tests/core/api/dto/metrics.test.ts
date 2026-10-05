@@ -20,16 +20,18 @@ describe("IndexMetrics DTO", () => {
       signals: {
         global: {
           "git.file.commitCount": {
-            min: 1,
-            max: 47,
-            count: 1709,
-            labelMap: { low: 2, typical: 5, high: 12, extreme: 30 },
+            source: {
+              min: 1,
+              max: 47,
+              count: 1709,
+              labelMap: { low: 2, typical: 5, high: 12, extreme: 30 },
+            },
           },
         },
       },
     };
     expect(metrics.collection).toBe("code_abc123");
-    expect(metrics.signals["global"]["git.file.commitCount"].labelMap.high).toBe(12);
+    expect(metrics.signals["global"]["git.file.commitCount"].source.labelMap.high).toBe(12);
   });
 
   it("should support per-language signal entries", () => {
@@ -49,24 +51,28 @@ describe("IndexMetrics DTO", () => {
       signals: {
         global: {
           "git.file.commitCount": {
-            min: 1,
-            max: 47,
-            count: 100,
-            labelMap: { low: 2, typical: 5, high: 12, extreme: 30 },
+            source: {
+              min: 1,
+              max: 47,
+              count: 100,
+              labelMap: { low: 2, typical: 5, high: 12, extreme: 30 },
+            },
           },
         },
         typescript: {
           "git.file.commitCount": {
-            min: 1,
-            max: 40,
-            count: 80,
-            labelMap: { low: 3, typical: 6, high: 14, extreme: 28 },
+            source: {
+              min: 1,
+              max: 40,
+              count: 80,
+              labelMap: { low: 3, typical: 6, high: 14, extreme: 28 },
+            },
           },
         },
       },
     };
-    expect(metrics.signals["typescript"]["git.file.commitCount"].count).toBe(80);
-    expect(metrics.signals["typescript"]["git.file.commitCount"].labelMap.low).toBe(3);
+    expect(metrics.signals["typescript"]["git.file.commitCount"].source.count).toBe(80);
+    expect(metrics.signals["typescript"]["git.file.commitCount"].source.labelMap.low).toBe(3);
   });
 
   it("should allow optional mean", () => {
@@ -86,15 +92,17 @@ describe("IndexMetrics DTO", () => {
       signals: {
         global: {
           "test.signal": {
-            min: 0,
-            max: 0,
-            mean: 5.2,
-            count: 0,
-            labelMap: {},
+            source: {
+              min: 0,
+              max: 0,
+              mean: 5.2,
+              count: 0,
+              labelMap: {},
+            },
           },
         },
       },
     };
-    expect(metrics.signals["global"]["test.signal"].mean).toBe(5.2);
+    expect(metrics.signals["global"]["test.signal"].source.mean).toBe(5.2);
   });
 });

@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { applyProjectDefaults } from "../../src/cli/registry-resolver.js";
+import { applyProjectDefaults, type ProjectAwareArgs } from "../../src/cli/registry-resolver.js";
 import { ProjectNotRegisteredError } from "../../src/core/api/public/errors.js";
 import { RegistryQdrantBackendUnresolvedError } from "../../src/core/api/public/index.js";
 import { CollectionRegistry } from "../../src/core/domains/maintenance/registry/collection-registry.js";
@@ -50,14 +50,14 @@ describe("applyProjectDefaults", () => {
   });
 
   it("project → fills missing fields from registry", () => {
-    const out = applyProjectDefaults({ project: "alpha" });
+    const out: ProjectAwareArgs = applyProjectDefaults({ project: "alpha" });
     expect(out.path).toBe("/repo/a");
     expect(out["qdrant-url"]).toBe("http://qdrant:6333");
     expect(out.model).toBe("model-y");
   });
 
   it("project + explicit path → explicit wins", () => {
-    const out = applyProjectDefaults({ project: "alpha", path: "/override" });
+    const out: ProjectAwareArgs = applyProjectDefaults({ project: "alpha", path: "/override" });
     expect(out.path).toBe("/override");
     expect(out["qdrant-url"]).toBe("http://qdrant:6333");
   });
@@ -129,17 +129,17 @@ describe("applyProjectDefaults embedding endpoints (tea-rags-mcp-5jstr)", () => 
   });
 
   it("resolves the embedding endpoint from the registry entry, not the localhost default", () => {
-    const out = applyProjectDefaults({ project: "remote" });
+    const out: ProjectAwareArgs = applyProjectDefaults({ project: "remote" });
     expect(out["embedding-url"]).toBe("http://192.168.1.71:11434");
   });
 
   it("resolves the embedding fallback endpoint from the registry entry", () => {
-    const out = applyProjectDefaults({ project: "remote" });
+    const out: ProjectAwareArgs = applyProjectDefaults({ project: "remote" });
     expect(out["embedding-fallback-url"]).toBe("http://127.0.0.1:11434");
   });
 
   it("explicit --embedding-url wins over the registry endpoint", () => {
-    const out = applyProjectDefaults({ project: "remote", "embedding-url": "http://explicit:11434" });
+    const out: ProjectAwareArgs = applyProjectDefaults({ project: "remote", "embedding-url": "http://explicit:11434" });
     expect(out["embedding-url"]).toBe("http://explicit:11434");
     expect(out["embedding-fallback-url"]).toBe("http://127.0.0.1:11434");
   });
@@ -158,7 +158,7 @@ describe("applyProjectDefaults embedding endpoints (tea-rags-mcp-5jstr)", () => 
       chunksCount: 0,
     });
     reg.setName("code_bare", "bare");
-    const out = applyProjectDefaults({ project: "bare" });
+    const out: ProjectAwareArgs = applyProjectDefaults({ project: "bare" });
     expect(out["embedding-url"]).toBeUndefined();
     expect(out["embedding-fallback-url"]).toBeUndefined();
   });
@@ -198,22 +198,25 @@ describe("applyProjectDefaults qdrant backend (bd tea-rags-mcp-lzynm)", () => {
 
   it("maps a frozen embedded-daemon port on a pre-sentinel entry to the embedded marker", () => {
     register({ qdrantUrl: "http://127.0.0.1:58372", teaRagsVersion: "1.28.0" });
-    expect(applyProjectDefaults({ project: "market" })["qdrant-url"]).toBe("embedded");
+    const out: ProjectAwareArgs = applyProjectDefaults({ project: "market" });
+    expect(out["qdrant-url"]).toBe("embedded");
   });
 
   it("keeps the embedded sentinel as the embedded marker", () => {
     register({ qdrantUrl: "embedded", qdrantEmbedded: true, teaRagsVersion: "1.44.2" });
-    expect(applyProjectDefaults({ project: "market" })["qdrant-url"]).toBe("embedded");
+    const out: ProjectAwareArgs = applyProjectDefaults({ project: "market" });
+    expect(out["qdrant-url"]).toBe("embedded");
   });
 
   it("keeps an external Qdrant's address", () => {
     register({ qdrantUrl: "http://qdrant.internal:6333", teaRagsVersion: "1.28.0" });
-    expect(applyProjectDefaults({ project: "market" })["qdrant-url"]).toBe("http://qdrant.internal:6333");
+    const out: ProjectAwareArgs = applyProjectDefaults({ project: "market" });
+    expect(out["qdrant-url"]).toBe("http://qdrant.internal:6333");
   });
 
   it("explicit --qdrant-url wins over the registry backend", () => {
     register({ qdrantUrl: "http://127.0.0.1:58372", teaRagsVersion: "1.28.0" });
-    const out = applyProjectDefaults({ project: "market", "qdrant-url": "http://explicit:6333" });
+    const out: ProjectAwareArgs = applyProjectDefaults({ project: "market", "qdrant-url": "http://explicit:6333" });
     expect(out["qdrant-url"]).toBe("http://explicit:6333");
   });
 
@@ -279,7 +282,7 @@ describe("applyProjectDefaults typed-error refactor (audit #5 + #15)", () => {
         chunksCount: 0,
       });
       reg.setName("code_stub", "stub");
-      const resolved = applyProjectDefaults({ project: "stub" });
+      const resolved: ProjectAwareArgs = applyProjectDefaults({ project: "stub" });
       expect(resolved.model).toBeUndefined();
       expect(resolved["qdrant-url"]).toBeUndefined();
       expect(resolved.path).toBe("/repo/known");
@@ -307,7 +310,7 @@ describe("applyProjectDefaults typed-error refactor (audit #5 + #15)", () => {
         chunksCount: 0,
       });
       reg.setName("code_full", "full");
-      const resolved = applyProjectDefaults({
+      const resolved: ProjectAwareArgs = applyProjectDefaults({
         project: "full",
         path: "/explicit/path",
         model: "explicit-model",

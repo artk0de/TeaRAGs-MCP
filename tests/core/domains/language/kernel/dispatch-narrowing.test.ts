@@ -40,19 +40,19 @@ describe("ArityNarrower", () => {
       def("A#m", { minRequired: 2, maxPositional: 2, hasSplat: false }),
       def("B#m", { minRequired: 0, maxPositional: 1, hasSplat: false }),
     ];
-    expect(new ArityNarrower().narrow(call("m", 1), cands, ctx).map((c) => c.symbolId)).toEqual(["B#m"]);
+    expect(new ArityNarrower().narrow(call("m", 1), cands).map((c) => c.symbolId)).toEqual(["B#m"]);
   });
   it("drops a candidate whose argCount exceeds maxPositional without splat", () => {
     const cands = [
       def("A#m", { minRequired: 0, maxPositional: 1, hasSplat: false }),
       def("B#m", { minRequired: 0, maxPositional: 0, hasSplat: true }),
     ];
-    expect(new ArityNarrower().narrow(call("m", 3), cands, ctx).map((c) => c.symbolId)).toEqual(["B#m"]);
+    expect(new ArityNarrower().narrow(call("m", 3), cands).map((c) => c.symbolId)).toEqual(["B#m"]);
   });
   it("keeps candidates with no recorded arity OR a call with no argCount", () => {
     const cands = [def("A#m"), def("B#m", { minRequired: 5, maxPositional: 5, hasSplat: false })];
-    expect(new ArityNarrower().narrow(call("m", undefined), cands, ctx).length).toBe(2); // no argCount → keep all
-    expect(new ArityNarrower().narrow(call("m", 0), [def("A#m")], ctx).length).toBe(1); // no arity → keep
+    expect(new ArityNarrower().narrow(call("m", undefined), cands).length).toBe(2); // no argCount → keep all
+    expect(new ArityNarrower().narrow(call("m", 0), [def("A#m")]).length).toBe(1); // no arity → keep
   });
 });
 
@@ -76,17 +76,17 @@ describe("KwargNarrower", () => {
 
   it("drops a candidate whose required kwarg the call omits", () => {
     const cands = [kdef("A#m", ["b", "c"]), kdef("B#m", ["b"])];
-    expect(new KwargNarrower().narrow(kcall(["b"]), cands, ctx).map((c) => c.symbolId)).toEqual(["B#m"]);
+    expect(new KwargNarrower().narrow(kcall(["b"]), cands).map((c) => c.symbolId)).toEqual(["B#m"]);
   });
   it("keeps all when the call passes a ** double-splat (unknown runtime keys)", () => {
     const cands = [kdef("A#m", ["b", "c"])];
-    expect(new KwargNarrower().narrow(kcall(["b"], true), cands, ctx).length).toBe(1);
+    expect(new KwargNarrower().narrow(kcall(["b"], true), cands).length).toBe(1);
   });
   it("keeps a candidate with no recorded kwargs (missing data)", () => {
-    expect(new KwargNarrower().narrow(kcall(["z"]), [def("P#m")], ctx).length).toBe(1);
+    expect(new KwargNarrower().narrow(kcall(["z"]), [def("P#m")]).length).toBe(1);
   });
   it("keeps all when the call has no captured kwargKeys", () => {
-    expect(new KwargNarrower().narrow(kcall(undefined), [kdef("A#m", ["b"])], ctx).length).toBe(1);
+    expect(new KwargNarrower().narrow(kcall(undefined), [kdef("A#m", ["b"])]).length).toBe(1);
   });
 
   // extra-unknown-kwarg direction (bd d9o7o Spec #2 B1): a passed key the def
@@ -98,19 +98,19 @@ describe("KwargNarrower", () => {
 
   it("drops a candidate when the call passes an undeclared kwarg key (no ** splat)", () => {
     const cands = [withOpt("A#m", [], ["limit"]), withOpt("B#m", [], ["offset"])];
-    expect(new KwargNarrower().narrow(kcall(["limit"]), cands, ctx).map((c) => c.symbolId)).toEqual(["A#m"]);
+    expect(new KwargNarrower().narrow(kcall(["limit"]), cands).map((c) => c.symbolId)).toEqual(["A#m"]);
   });
   it("keeps a def with ** splat even on an undeclared key", () => {
     const cands = [withOpt("A#m", [], [], true)];
-    expect(new KwargNarrower().narrow(kcall(["whatever"]), cands, ctx).length).toBe(1);
+    expect(new KwargNarrower().narrow(kcall(["whatever"]), cands).length).toBe(1);
   });
   it("keeps a def whose declared set (required ∪ optional) covers every passed key", () => {
     const cands = [withOpt("A#m", ["mode"], ["limit"])];
-    expect(new KwargNarrower().narrow(kcall(["mode", "limit"]), cands, ctx).length).toBe(1);
+    expect(new KwargNarrower().narrow(kcall(["mode", "limit"]), cands).length).toBe(1);
   });
   it("skips the extra-unknown check when optional is not captured (conservative keep)", () => {
     // kdef → kwargs.optional undefined ⇒ full declared set unknown ⇒ keep.
-    expect(new KwargNarrower().narrow(kcall(["anything"]), [kdef("A#m", [])], ctx).length).toBe(1);
+    expect(new KwargNarrower().narrow(kcall(["anything"]), [kdef("A#m", [])]).length).toBe(1);
   });
 });
 
@@ -220,24 +220,24 @@ describe("BlockNarrower", () => {
 
   it("keeps only yielders (true/undefined) when a block is passed and yielders exist", () => {
     const cands = [bdef("A#m", true), bdef("B#m", false), bdef("C#m", undefined)];
-    expect(new BlockNarrower().narrow(bcall(true), cands, ctx).map((c) => c.symbolId)).toEqual(["A#m", "C#m"]);
+    expect(new BlockNarrower().narrow(bcall(true), cands).map((c) => c.symbolId)).toEqual(["A#m", "C#m"]);
   });
   it("keeps ALL when every candidate is a proven non-yielder (defensive block / missed detection)", () => {
     const cands = [bdef("A#m", false), bdef("B#m", false)];
-    expect(new BlockNarrower().narrow(bcall(true), cands, ctx).length).toBe(2);
+    expect(new BlockNarrower().narrow(bcall(true), cands).length).toBe(2);
   });
   it("keeps all when the call passes no block", () => {
     const cands = [bdef("A#m", false)];
-    expect(new BlockNarrower().narrow(bcall(false), cands, ctx).length).toBe(1);
-    expect(new BlockNarrower().narrow(bcall(undefined), cands, ctx).length).toBe(1);
+    expect(new BlockNarrower().narrow(bcall(false), cands).length).toBe(1);
+    expect(new BlockNarrower().narrow(bcall(undefined), cands).length).toBe(1);
   });
 });
 
 describe("DuckVocabularyNarrower", () => {
   it("empties the set when member is in the vocabulary", () => {
     const n = new DuckVocabularyNarrower(new Set(["to_s", "each"]));
-    expect(n.narrow(call("to_s"), [def("A#to_s")], ctx)).toEqual([]);
-    expect(n.narrow(call("perform"), [def("A#perform")], ctx).length).toBe(1);
+    expect(n.narrow(call("to_s"), [def("A#to_s")])).toEqual([]);
+    expect(n.narrow(call("perform"), [def("A#perform")]).length).toBe(1);
   });
 });
 
@@ -256,17 +256,17 @@ describe("LiteralReceiverNarrower", () => {
 
   it("keeps only in-project reopens of the literal's core type", () => {
     const cands = [sdef("String#m", ["String"]), sdef("Foo#m", ["Foo"])];
-    expect(new LiteralReceiverNarrower(classify).narrow(litCall('"s"'), cands, ctx).map((c) => c.symbolId)).toEqual([
+    expect(new LiteralReceiverNarrower(classify).narrow(litCall('"s"'), cands).map((c) => c.symbolId)).toEqual([
       "String#m",
     ]);
   });
   it("empties the fan-out when no candidate reopens the core type", () => {
     const cands = [sdef("Foo#m", ["Foo"]), sdef("Bar#m", ["Bar"])];
-    expect(new LiteralReceiverNarrower(classify).narrow(litCall('"s"'), cands, ctx)).toEqual([]);
+    expect(new LiteralReceiverNarrower(classify).narrow(litCall('"s"'), cands)).toEqual([]);
   });
   it("keeps all when the receiver is not a recognised literal", () => {
     const cands = [sdef("Foo#m", ["Foo"])];
-    expect(new LiteralReceiverNarrower(classify).narrow(litCall("user"), cands, ctx).length).toBe(1);
+    expect(new LiteralReceiverNarrower(classify).narrow(litCall("user"), cands).length).toBe(1);
   });
 });
 

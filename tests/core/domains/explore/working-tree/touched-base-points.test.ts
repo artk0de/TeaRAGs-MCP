@@ -24,6 +24,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { CollectionInfo } from "../../../../../src/core/adapters/qdrant/collection-admin.js";
 import { payloadMatchesFilter } from "../../../../../src/core/adapters/qdrant/filters/payload-match.js";
 import { createWorkingTreeBasePointStore } from "../../../../../src/core/domains/explore/working-tree/base-point-store.js";
 import {
@@ -50,8 +51,18 @@ const BASE = [
 ];
 
 /** A Qdrant that answers each scroll with the rows its filter admits, keeping only the payload asked for. */
+const collectionInfo = (pointsCount: number): CollectionInfo => ({
+  name: "c",
+  vectorSize: 384,
+  pointsCount,
+  distance: "Cosine",
+  status: "green",
+  optimizerStatus: "ok",
+  quantization: "none",
+});
+
 const qdrantHolding = (pointsCount = BASE.length) => ({
-  getCollectionInfo: vi.fn(async () => ({ pointsCount })),
+  getCollectionInfo: vi.fn(async () => collectionInfo(pointsCount)),
   scrollFiltered: vi.fn(
     async (
       _collection: string,
@@ -157,7 +168,7 @@ describe("WorkingTreeTouchedBasePoints", () => {
     let inFlight = 0;
     let peak = 0;
     const qdrant = {
-      getCollectionInfo: vi.fn(async () => ({ pointsCount: 1 })),
+      getCollectionInfo: vi.fn(async () => collectionInfo(1)),
       scrollFiltered: vi.fn(async () => {
         inFlight += 1;
         peak = Math.max(peak, inFlight);
@@ -253,7 +264,7 @@ describe("WorkingTreeTouchedBasePoints", () => {
     const afterFirst = scrolls();
     await reader.pointsOf(request(["src/a.ts"], "light", "run-2"));
     const afterStamp = scrolls();
-    qdrant.getCollectionInfo.mockResolvedValue({ pointsCount: BASE.length + 1 });
+    qdrant.getCollectionInfo.mockResolvedValue(collectionInfo(BASE.length + 1));
     await reader.pointsOf(request(["src/a.ts"], "light", "run-2"));
 
     expect(afterStamp).toBeGreaterThan(afterFirst);
