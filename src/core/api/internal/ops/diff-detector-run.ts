@@ -281,6 +281,17 @@ export interface DiffDetectorFinding {
    * Present only when true.
    */
   entryPoint?: true;
+  /**
+   * cycles and leakingAbstraction only (bd tea-rags-mcp-89k7k.1.13): the
+   * judged (source, target) pair is one the indexed graph ALREADY holds — a
+   * changed file re-serves it, the diff did not add it. Both families judge
+   * the overlay edge as read (89k7k.14), so the finding stands; this marks it
+   * as pre-dating the diff (the cycle / leak is already in the index, the
+   * diff touches a file on it) and the detail says so. Triage data, never a
+   * suppression (the `foundationTerminal` / `compositionRoot` spirit). Absent
+   * graph port = nothing is pre-existing. Present only when true.
+   */
+  preExisting?: true;
 }
 
 /** One detector family's verdict for the run. */
@@ -523,13 +534,17 @@ export class DiffDetectorRun {
       // Absent graph = no indexed facade evidence — absence is silence.
       const viaFacade = this.graph?.edgesFrom(edge.source).some((indexed) => indexed.target === facade) ?? false;
       if (!viaFacade) continue;
+      const preExisting = indexedGraphHolds(this.graph, edge);
+      const leak = `${edge.target} is internal to ${targetComponent.name}, whose facade ${facade} ${edge.source} imports`;
       findings.push({
         detector: "leakingAbstraction",
         subject: `${edge.source} -> ${edge.target}`,
         evidence: [`pre-existing ${edge.source} -> ${facade}`],
-        detail:
-          `the diff reached past the facade ${edge.source} already uses: ${edge.target} is internal to ` +
-          `${targetComponent.name}, whose facade ${facade} ${edge.source} imports`,
+        detail: preExisting
+          ? `the edge ${edge.source} -> ${edge.target} pre-dates the diff (the indexed graph already holds it): ` +
+            `${leak}; the leak is already in the index, the diff touches a file on it`
+          : `the diff reached past the facade ${edge.source} already uses: ${leak}`,
+        ...(preExisting ? { preExisting: true as const } : {}),
       });
     }
     return findings;
@@ -548,13 +563,18 @@ export class DiffDetectorRun {
     for (const edge of edges) {
       const cyclePath = this.traceBackTo(edge.target, edge.source, changed);
       if (cyclePath === undefined) continue;
+      const preExisting = indexedGraphHolds(this.graph, edge);
       findings.push({
         detector: "cycles",
         subject: `${edge.source} -> ${edge.target}`,
         evidence: [cyclePath.join(" -> ")],
-        detail:
-          `the diff closes a cycle: the new edge ${edge.source} -> ${edge.target} plus the indexed path ` +
-          `back to ${edge.source}`,
+        detail: preExisting
+          ? `the edge ${edge.source} -> ${edge.target} pre-dates the diff (the indexed graph already holds it): ` +
+            `with the indexed path back to ${edge.source} the cycle is already in the index, the diff touches ` +
+            `a file on it`
+          : `the diff closes a cycle: the new edge ${edge.source} -> ${edge.target} plus the indexed path ` +
+            `back to ${edge.source}`,
+        ...(preExisting ? { preExisting: true as const } : {}),
       });
     }
     return findings;
@@ -928,12 +948,18 @@ function diffAddedOverlayEdges(
   graph: DiffDetectorGraphReader | undefined,
 ): readonly OverlayEdge[] {
   if (graph === undefined) return overlayEdges;
-  const added: OverlayEdge[] = [];
-  for (const edge of overlayEdges) {
-    if (graph.edgesFrom(edge.source).some((indexed) => indexed.target === edge.target)) continue;
-    added.push(edge);
-  }
-  return added;
+  return overlayEdges.filter((edge) => !indexedGraphHolds(graph, edge));
+}
+
+/**
+ * Whether the indexed graph already holds the overlay edge's (source, target)
+ * pair — the ONE predicate behind both the diff-added subtraction and the
+ * `preExisting` attribution of cycles / leakingAbstraction (bd
+ * tea-rags-mcp-89k7k.1.13). Absent port answers false: absence is an empty
+ * graph, never "already indexed".
+ */
+function indexedGraphHolds(graph: DiffDetectorGraphReader | undefined, edge: OverlayEdge): boolean {
+  return graph?.edgesFrom(edge.source).some((indexed) => indexed.target === edge.target) ?? false;
 }
 
 /**

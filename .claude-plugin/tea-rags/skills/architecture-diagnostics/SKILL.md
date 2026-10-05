@@ -64,6 +64,9 @@ Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
 - **`entryPoint: true` distance read as placement defect.** Declared cli/mcp
   entry surface — unstable end of main sequence is where it BELONGS; nothing
   imports it. Triage data, never suppression.
+- **`preExisting: true` cycle / leak read as diff-introduced.** The index
+  already holds that edge — the diff touches a file on it, did not add it. Still
+  a real cycle / leak; triage data, never suppression.
 - **`layerMap` expected in a bare report.** `response.layerMap` appears ONLY
   when the request carried `layerMap` — absent = not asked, never "no layers".
 - **`island` / `layerSkip` / `compositionCycle` read as violations.**
