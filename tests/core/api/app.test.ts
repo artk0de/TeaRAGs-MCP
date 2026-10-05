@@ -403,9 +403,12 @@ describe("App interface", () => {
       reviewChanges: true,
       resolveLanguageCapabilities: true,
       isCollectionBuildInFlight: true,
+      reviewSectionIds: true,
+      resolveBaseIndexEntry: true,
+      createPathCollectionResolver: true,
       hasProvider: true,
     };
-    expect(Object.keys(_methods)).toHaveLength(35);
+    expect(Object.keys(_methods)).toHaveLength(38);
   });
 
   it("method return types are Promises (except getSchemaDescriptors)", () => {
