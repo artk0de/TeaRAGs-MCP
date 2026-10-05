@@ -312,6 +312,10 @@ const UNBOUND_TYPE_MEMBER: PythonTypeMemberResolution = { target: null, closure:
  * The verdict is the CALLER's. `unbound` and `closed` and `external` are three
  * different pieces of evidence and the passes act on them differently; this
  * function never fabricates a target to settle one.
+ *
+ * `options.spellingOrder` is forwarded to {@link resolvePythonInheritedMember}:
+ * a receiver that IS the class object asks `classFirst`. Omitted, the order is
+ * the instance-first default every existing caller relies on.
  */
 export function resolvePythonMemberOnTypeThroughMro(
   typeName: string,
@@ -320,6 +324,7 @@ export function resolvePythonMemberOnTypeThroughMro(
   mode: AmbiguousResolveMode,
   mapper: PythonImportFileMapper,
   linearizer: AncestorLinearizer<CallContext>,
+  options: { readonly spellingOrder?: "instanceFirst" | "classFirst" } = {},
 ): PythonTypeMemberResolution {
   const bareType = lastSegment(typeName);
   const targetFile = resolveTypeFile(bareType, ctx, mapper);
@@ -328,7 +333,9 @@ export function resolvePythonMemberOnTypeThroughMro(
   // and the annotation recorded the local one (bd tea-rags-mcp-w205u, E4.6c).
   const classKey = direct ?? pythonAliasedClassKey(bareType, ctx, mapper);
   if (classKey === null) return UNBOUND_TYPE_MEMBER;
-  return resolvePythonInheritedMember(classKey, member, ctx, mode, linearizer);
+  return resolvePythonInheritedMember(classKey, member, ctx, mode, linearizer, {
+    spellingOrder: options.spellingOrder,
+  });
 }
 
 /**
