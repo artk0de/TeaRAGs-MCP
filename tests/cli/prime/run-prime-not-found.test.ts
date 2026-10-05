@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { runPrime } from "../../../src/cli/prime/run-prime.js";
+import { createPathCollectionResolver } from "../../../src/core/api/index.js";
 
 vi.mock("../../../src/bootstrap/factory.js", () => ({
   createAppContext: vi.fn(),
@@ -15,7 +16,7 @@ describe("runPrime — project not registered", () => {
       return true;
     };
     try {
-      await runPrime({ project: "this-project-does-not-exist-anywhere" });
+      await runPrime({ project: "this-project-does-not-exist-anywhere", createPathCollectionResolver });
     } finally {
       process.stdout.write = orig;
     }

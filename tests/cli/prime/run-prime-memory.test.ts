@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { unavailable } from "../../../src/cli/update-check/types.js";
+import { createPathCollectionResolver } from "../../../src/core/api/index.js";
 import type { CollectionMemoryMetrics } from "../../../src/core/api/public/index.js";
 import { resolveLanguageCapabilities } from "../../../src/core/domains/language/capability/resolve.js";
 
@@ -99,7 +100,7 @@ describe("runPrime — collection memory report", () => {
     const getCollectionMemory = vi.fn().mockResolvedValue(memory);
     createAppContextMock.mockResolvedValue(appWith(getCollectionMemory));
 
-    await runPrime({ path: projectDir });
+    await runPrime({ path: projectDir, createPathCollectionResolver });
 
     expect(getCollectionMemory).toHaveBeenCalledWith("code_x");
     const out = String(writeMock.mock.calls[0][0]);
@@ -109,7 +110,7 @@ describe("runPrime — collection memory report", () => {
   it("still renders the digest, without the section, when the report read fails", async () => {
     createAppContextMock.mockResolvedValue(appWith(vi.fn().mockRejectedValue(new Error("boom"))));
 
-    await runPrime({ path: projectDir });
+    await runPrime({ path: projectDir, createPathCollectionResolver });
 
     const out = String(writeMock.mock.calls[0][0]);
     expect(out).toContain("## Drift");
@@ -122,7 +123,7 @@ describe("runPrime — collection memory report", () => {
       appWith(getCollectionMemory, { isIndexed: false, status: "not_indexed", collectionName: "code_x" }),
     );
 
-    await runPrime({ path: projectDir });
+    await runPrime({ path: projectDir, createPathCollectionResolver });
 
     expect(getCollectionMemory).not.toHaveBeenCalled();
   });

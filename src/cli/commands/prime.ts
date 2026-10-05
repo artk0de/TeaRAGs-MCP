@@ -1,5 +1,6 @@
 import type { CommandModule } from "yargs";
 
+import { createPathCollectionResolver } from "../../core/api/index.js";
 import { runPrime } from "../prime/run-prime.js";
 
 interface PrimeArgs {
@@ -23,7 +24,10 @@ export const primeCommand: CommandModule<object, PrimeArgs> = {
       }),
   handler: async (argv) => {
     try {
-      await runPrime({ path: argv.path, project: argv.project });
+      // The command is the composition actor (bd tea-rags-mcp-nkstp): it holds
+      // the api assembly seam and passes the path→collection capability down;
+      // the run-prime leaf holds no barrel edge of its own.
+      await runPrime({ path: argv.path, project: argv.project, createPathCollectionResolver });
     } finally {
       // prime runs as a SessionStart/PreCompact hook; Claude Code waits for the
       // process to exit. A lingering libuv handle (DuckDB pool, undici

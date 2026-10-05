@@ -15,6 +15,7 @@ import { hideBin } from "yargs/helpers";
 
 import { openInProcessMcpSession } from "../../bootstrap/in-process-session.js";
 import type { InProcessToolSession } from "../../bootstrap/transport/in-memory.js";
+import { resolveBaseIndexEntry } from "../../core/api/index.js";
 import { CLI_OWNED_TOOLS, cliCommandForTool } from "../call/cli-owned-tools.js";
 import { prepareCallProjectEnv } from "../call/project-env.js";
 import { rememberCallToolNames } from "../call/tool-name-cache.js";
@@ -317,7 +318,10 @@ export const callCommand: CommandModule<object, CallArgs> = {
           rememberToolNames: (names) => {
             rememberCallToolNames(names);
           },
-          prepareProjectEnv: prepareCallProjectEnv,
+          // The command is the composition actor (bd tea-rags-mcp-nkstp): it
+          // holds the api assembly seam and passes the path→entry capability
+          // down; the project-env leaf holds no barrel edge of its own.
+          prepareProjectEnv: async (params) => prepareCallProjectEnv(params, resolveBaseIndexEntry),
         },
       );
     } finally {

@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { unavailable } from "../../../src/cli/update-check/types.js";
+import { createPathCollectionResolver } from "../../../src/core/api/index.js";
 import { CollectionRegistry } from "../../../src/core/api/public/index.js";
 import { resolveLanguageCapabilities } from "../../../src/core/domains/language/capability/resolve.js";
 import { resolveCollectionName } from "../../../src/core/infra/collection-name.js";
@@ -99,7 +100,7 @@ describe("runPrime — auto-update trigger wiring", () => {
     });
 
     const maybeSpawn = vi.fn().mockReturnValue("eligible");
-    await runPrime({ project: "auto-upd-proj", autoUpdateTrigger: { maybeSpawn } });
+    await runPrime({ project: "auto-upd-proj", autoUpdateTrigger: { maybeSpawn }, createPathCollectionResolver });
 
     expect(maybeSpawn).toHaveBeenCalledTimes(1);
     expect(maybeSpawn).toHaveBeenCalledWith(collectionName);

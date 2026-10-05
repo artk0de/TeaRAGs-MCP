@@ -27,6 +27,10 @@ import type { CollectionOps, DocumentOps, ExploreFacade, IngestFacade, ProjectRe
 import type { App, AppDeps } from "../public/app.js";
 import type { IndexStatus, PresetDetail } from "../public/dto/index.js";
 import {
+  createPathCollectionResolver as createPathCollectionResolverImpl,
+  resolveBaseIndexEntry as resolveBaseIndexEntryImpl,
+} from "./collection-resolver.js";
+import {
   composeAppOps,
   emptyArchitectureReport,
   emptyCochangeResult,
@@ -185,10 +189,15 @@ export function createApp(deps: AppDeps): App {
     // -- Domain runtime queries — the capability resolver delegates to the
     // composition-surfaced domain implementation; the lease predicate to
     // ProjectRegistryOps, the registry's collection-claimed oracle, which owns
-    // that domain edge (bd tea-rags-mcp-89k7k.9).
+    // that domain edge (bd tea-rags-mcp-89k7k.9). The two path-resolution
+    // queries delegate to the collection resolver, whose free functions remain
+    // the implementations — the registry is caller-supplied (bd
+    // tea-rags-mcp-nkstp).
     resolveLanguageCapabilities: (languages) => resolveDomainLanguageCapabilities(languages),
     isCollectionBuildInFlight: async (qdrant, collection, options) =>
       ops.projectRegistry.isCollectionBuildInFlight(qdrant, collection, options),
+    resolveBaseIndexEntry: (registry, path) => resolveBaseIndexEntryImpl(registry, path),
+    createPathCollectionResolver: (registry) => createPathCollectionResolverImpl(registry),
 
     // -- Provider availability — backs MCP tool-registrar gating. Source
     // of truth is `registeredProviderKeys` populated by composition from
