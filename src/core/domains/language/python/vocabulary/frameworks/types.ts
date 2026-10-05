@@ -39,6 +39,11 @@ export type PythonVocabularyFacet =
 
 /** One attribute a framework synthesizes on every model, and the class it yields. */
 export interface PythonFrameworkModelAttribute {
+  /**
+   * The class, spelled by the MODULE that declares it
+   * (`django.db.models.options.Options`), never by its short name — see
+   * {@link PythonFrameworkMemberTypes.relationClass}.
+   */
   readonly className: string;
   /** Thread the model into `args`, so a later verb can return it. */
   readonly carriesModel: boolean;
@@ -74,7 +79,16 @@ export interface PythonFrameworkMemberTypes {
   readonly modelAttributes: ReadonlyMap<string, PythonFrameworkModelAttribute>;
   /** The framework classes the query verbs below are read on. */
   readonly relationClasses: ReadonlySet<string>;
-  /** What a `relationReturning` verb yields, carrying the same model. */
+  /**
+   * What a `relationReturning` verb yields, carrying the same model — spelled
+   * by the MODULE that declares it, as every class an answer names is (bd
+   * tea-rags-mcp-m99j1.1.45). The resolver places that spelling the way an
+   * absolute import of the module would: a project file only where the corpus
+   * IS the framework, external everywhere else. A short name would be placed
+   * through the caller's imports instead, which drops the edge where the
+   * framework declares two namesakes and lets a project namesake capture it
+   * where the corpus merely uses the framework (bd tea-rags-mcp-m99j1.1.40).
+   */
   readonly relationClass: string;
   /** Verbs on a relation class that yield another relation of the same model. */
   readonly relationReturning: ReadonlySet<string>;

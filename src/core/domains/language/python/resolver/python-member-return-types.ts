@@ -20,7 +20,7 @@ import {
   type NominalTypeRef,
   type ReceiverTypePorts,
 } from "../../kernel/index.js";
-import { pythonVocabularyFor } from "../vocabulary/frameworks/index.js";
+import { isPythonFrameworkAnswerClass, pythonVocabularyFor } from "../vocabulary/frameworks/index.js";
 import { PYTHON_SELF_RETURN } from "../walker/passes/python-type-annotation.js";
 import { pythonModuleReturnKey } from "../walker/passes/python-type-channels.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
@@ -31,6 +31,7 @@ import {
   pythonAliasedClassKey,
   pythonBoundClassKey,
   pythonImportBoundFile,
+  pythonTypeRefClassKey,
   resolveTypeFile,
 } from "./python-type-addressing.js";
 import { lookupPythonSymbolsByShortName } from "./short-name-lookup.js";
@@ -50,6 +51,9 @@ import { lookupPythonSymbolsByShortName } from "./short-name-lookup.js";
  */
 function pythonReceiverClassKey(bareType: string, ctx: CallContext, mapper: PythonImportFileMapper): string | null {
   const bare = lastSegment(bareType);
+  // A framework answer says which module declares it (bd tea-rags-mcp-m99j1.1.45):
+  // neither the caller's own namesake nor an import alias can stand in for it.
+  if (isPythonFrameworkAnswerClass(bareType)) return pythonTypeRefClassKey(bareType, ctx, mapper);
   const own = pythonBoundClassKey(bare, ctx.callerFile, ctx);
   if (own !== null) return own;
   const imported = resolveTypeFile(bare, ctx, mapper);
@@ -245,7 +249,13 @@ function pythonMemberReturnTypePorts(
       const own = onClass(owner, owner.name, owner.name, member);
       if (own !== null) return own;
       const key = receiverClassKey(owner.name);
-      return key === null ? null : byClassKey(key, member);
+      if (key === null) return null;
+      const byKey = byClassKey(key, member);
+      if (byKey !== null || !isPythonFrameworkAnswerClass(owner.name)) return byKey;
+      // A framework answer's module spelling is no channel key, so its own
+      // class is read through the key it was placed at — as an ancestor is.
+      const parsed = parsePythonClassKey(key);
+      return parsed === null ? null : onClass(owner, lastSegment(parsed.classFq), parsed.classFq, member);
     },
     ancestorsOf: (owner) => {
       if (linearizer === undefined) return [];

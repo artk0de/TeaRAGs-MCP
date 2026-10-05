@@ -25,6 +25,8 @@
 
 import { definePythonFrameworkVocabulary, type PythonFrameworkVocabulary } from "./types.js";
 
+const DJANGO_MANAGER = "django.db.models.manager.Manager";
+
 export const DJANGO_VOCABULARY: PythonFrameworkVocabulary = definePythonFrameworkVocabulary(
   "django",
   [
@@ -42,15 +44,17 @@ export const DJANGO_VOCABULARY: PythonFrameworkVocabulary = definePythonFramewor
     // `ModelBase` installs these on every model class; none is declared on it.
     // The underscored three are Django's spelling alone, so they type even an
     // owner the fold lost (`self.model._meta`); `objects` is everyone's.
+    // Each answer is spelled by the module that declares it (bd
+    // tea-rags-mcp-m99j1.1.45): django-11039 declares two `class Options`.
     modelAttributes: new Map([
-      ["objects", { className: "Manager", carriesModel: true, nameUniqueToFramework: false }],
-      ["_default_manager", { className: "Manager", carriesModel: true, nameUniqueToFramework: true }],
-      ["_base_manager", { className: "Manager", carriesModel: true, nameUniqueToFramework: true }],
-      ["_meta", { className: "Options", carriesModel: false, nameUniqueToFramework: true }],
+      ["objects", { className: DJANGO_MANAGER, carriesModel: true, nameUniqueToFramework: false }],
+      ["_default_manager", { className: DJANGO_MANAGER, carriesModel: true, nameUniqueToFramework: true }],
+      ["_base_manager", { className: DJANGO_MANAGER, carriesModel: true, nameUniqueToFramework: true }],
+      ["_meta", { className: "django.db.models.options.Options", carriesModel: false, nameUniqueToFramework: true }],
     ]),
     // `Manager` proxies every `QuerySet` verb through `from_queryset`.
     relationClasses: new Set(["Manager", "BaseManager", "QuerySet"]),
-    relationClass: "QuerySet",
+    relationClass: "django.db.models.query.QuerySet",
     relationReturning: new Set([
       "all",
       "filter",
