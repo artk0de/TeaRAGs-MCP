@@ -21,7 +21,11 @@ import { assignCallsToInnermostChunks } from "../../kernel/index.js";
 import type { RubyDslCatalogue } from "../dsl/index.js";
 import { collectMethodAssignedLocals } from "./bare-call-detection.js";
 import type { RubyFileTypeEnv } from "./file-type-env.js";
-import { bindCompoundReceiverChains, collectRubyLocalCallBindingsForChunk } from "./local-bindings.js";
+import {
+  bindCompoundReceiverChains,
+  collectRubyCallResultBindingsForChunk,
+  collectRubyLocalCallBindingsForChunk,
+} from "./local-bindings.js";
 import { collectRubyMethodSignatures } from "./method-signatures.js";
 import type { KnownTargetCallSite } from "./param-arg-types.js";
 import type { RubyExtractInput } from "./walker.js";
@@ -113,6 +117,15 @@ export function buildRubyChunkExtractions(
       // to `<meth's return type>#member` (cai0 a71lj, same channel as Go).
       const callBindings = collectRubyLocalCallBindingsForChunk(input.tree.rootNode, c.startLine, c.endLine, catalogue);
       if (Object.keys(callBindings).length > 0) base.localCallBindings = callBindings;
+      // `callResultBindings` (var → positioned callee chain) — the resolver
+      // folds the spelled chain into the local's type (bd tea-rags-mcp-m99j1.1.62).
+      const resultBindings = collectRubyCallResultBindingsForChunk(
+        input.tree.rootNode,
+        c.startLine,
+        c.endLine,
+        catalogue,
+      );
+      if (Object.keys(resultBindings).length > 0) base.callResultBindings = resultBindings;
       // Type environment a known-target call site on these lines inherits
       // (bd tea-rags-mcp-bvalc).
       chunkSites.push({

@@ -1,6 +1,10 @@
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode } from "../../../../contracts/types/ast.js";
-import { resolveLocalBindingType, type LocalBinding } from "../../../../contracts/types/codegraph.js";
+import {
+  resolveLocalBindingType,
+  type CallResultBinding,
+  type LocalBinding,
+} from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
 import { forEachClassScope, readScopeResolution, walk } from "./ast-utils.js";
@@ -435,6 +439,74 @@ export function collectRubyLocalCallBindingsForChunk(
     out[lhs.text] = YARD_CONST.test(receiverText) ? `${receiverText}.${method.text}` : method.text;
   });
   return out;
+}
+
+/**
+ * Collect `varName → CallResultBinding[]` for every assignment in the chunk
+ * whose right-hand side is a call the walker cannot type (bd
+ * tea-rags-mcp-m99j1.1.62): `filter = @account.custom_filters.create!(…)`
+ * records `@account.custom_filters.create!`. The resolver folds that spelling
+ * through the receiver-type chain, because the hop types (an ivar, an
+ * association, another file's return fact) are in scope only there.
+ *
+ * The second channel beside `localCallBindings`, not a widening of it: that one
+ * keeps only the OUTERMOST method, chunk-wide and last-write-wins, which loses
+ * both the receiver a member-return walk needs and the position a
+ * `scope = scope.filtered_for(x)` reassignment needs. Here every assignment is
+ * kept, and `endLine` is the statement's last line — the binding is visible
+ * only BELOW its statement, since Ruby evaluates the right-hand side against
+ * the previous value.
+ *
+ * Every link's arguments are stripped (`Agent.of_type(X).active.find_by(…)` →
+ * `Agent.of_type.active.find_by`), so a dotted argument can never split a hop.
+ * A chain rooted at anything but a name — `self`, an index access, a literal,
+ * a parenthesised expression — is omitted, as is a right-hand side
+ * `constInstanceType` types directly (`localBindings` owns `Foo.new`).
+ */
+export function collectRubyCallResultBindingsForChunk(
+  root: AstNode,
+  startLine: number,
+  endLine: number,
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
+): Record<string, CallResultBinding[]> {
+  const out: Record<string, CallResultBinding[]> = createIdentifierRecord();
+  walk(root, (node) => {
+    if (node.type !== "assignment") return;
+    const line = node.startPosition.row + 1;
+    if (line < startLine || line > endLine) return;
+    const lhs = node.childForFieldName("left");
+    const rhs = node.childForFieldName("right");
+    if (lhs?.type !== "identifier" || !rhs) return;
+    if (rhs.type !== "call" && rhs.type !== "method_call") return;
+    if (constInstanceType(rhs, catalogue) !== null) return; // directly typed → localBindings owns it
+    const links = calleeLinks(rhs);
+    if (links === null) return;
+    (out[lhs.text] ??= []).push({ line, endLine: node.endPosition.row + 1, callee: links.join(".") });
+  });
+  return out;
+}
+
+/** The argument-free links of a call chain rooted at a name, or `null`. */
+function calleeLinks(node: AstNode): string[] | null {
+  switch (node.type) {
+    case "identifier":
+    case "instance_variable":
+    case "constant":
+      return [node.text];
+    case "scope_resolution":
+      return [readScopeResolution(node)];
+    case "call":
+    case "method_call": {
+      const method = node.childForFieldName("method");
+      if (!method) return null;
+      const receiver = node.childForFieldName("receiver");
+      if (!receiver) return [method.text];
+      const head = calleeLinks(receiver);
+      return head === null ? null : [...head, method.text];
+    }
+    default:
+      return null;
+  }
 }
 
 /** A dotted member chain whose root is a bare local — `event.user.agents`.

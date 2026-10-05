@@ -940,3 +940,89 @@ describe("selfMemberReturnType — the caller's form picks the coordinate (z5gqv
     expect(boundCallReturnType("row", ctx)).toEqual({ form: "instance", name: "OwnRow" });
   });
 });
+
+// ── Call-result locals (bd tea-rags-mcp-m99j1.1.62) ─────────────────────────
+//
+// A local assigned from a call the walker cannot type carries the callee
+// SPELLING in `callResultBindings`; the resolver folds that spelling through the
+// same receiver-type chain a written receiver goes through, from the line the
+// assignment sits on.
+
+describe("typeOfReceiver — call-result local (m99j1.1.62)", () => {
+  it("types a local from the chain its right-hand side spells", () => {
+    const ctx = emptyCtx({
+      callerScope: ["BulkImportRowService"],
+      classFieldTypes: { BulkImportRowService: { "@account": "Account" } },
+      associationTypes: { Account: { custom_filters: "CustomFilter" } },
+      classAncestors: { CustomFilter: [] },
+      callResultBindings: { filter: [{ line: 4, endLine: 4, callee: "@account.custom_filters" }] },
+    });
+    expect(typeOfReceiver("filter", 6, ctx)).toEqual({ form: "instance", name: "CustomFilter" });
+  });
+
+  it("is invisible on its own statement — `x = x.m` reads the PREVIOUS x", () => {
+    const ctx = emptyCtx({
+      structuredReturnTypes: {
+        "Trends::Links#query": { form: "instance", name: "Trends::Query" },
+        "Trends::Query#filtered_for": { form: "instance", name: "Trends::Query" },
+      },
+      localBindings: { links: [{ line: 1, type: "Trends::Links" }] },
+      classAncestors: { "Trends::Query": [] },
+      callResultBindings: {
+        scope: [
+          { line: 2, endLine: 2, callee: "links.query" },
+          { line: 3, endLine: 3, callee: "scope.filtered_for" },
+        ],
+      },
+    });
+    // On line 3 the right-hand side's `scope` is line 2's binding.
+    expect(typeOfReceiver("scope", 3, ctx)).toEqual({ form: "instance", name: "Trends::Query" });
+    // Below it, line 3's binding folds through line 2's.
+    expect(typeOfReceiver("scope", 4, ctx)).toEqual({ form: "instance", name: "Trends::Query" });
+    // Above line 2's statement nothing binds it.
+    expect(typeOfReceiver("scope", 2, ctx)).toBeUndefined();
+  });
+
+  it("declines a fold naming a class the project does not declare, so the older readings still answer", () => {
+    // `status = trend.status` where `belongs_to :status` derives `Statu`: a
+    // phantom type would DROP the call the naming convention resolved before.
+    const ctx = emptyCtx({
+      localBindings: { trend: [{ line: 1, type: "StatusTrend" }] },
+      associationTypes: { StatusTrend: { status: "Statu" } },
+      callResultBindings: { status: [{ line: 2, endLine: 2, callee: "trend.status" }] },
+    });
+    expect(typeOfReceiver("status", 4, ctx)).toBeUndefined();
+  });
+
+  it("stays untyped when any hop of the spelled chain is unknown", () => {
+    const ctx = emptyCtx({
+      callResultBindings: { result: [{ line: 2, endLine: 2, callee: "client.fetch" }] },
+    });
+    expect(typeOfReceiver("result", 5, ctx)).toBeUndefined();
+  });
+
+  it("a walker-typed local binding still wins over the call-result fold", () => {
+    const ctx = emptyCtx({
+      localBindings: { user: [{ line: 1, type: "User" }] },
+      structuredReturnTypes: { "Admin.me": { form: "instance", name: "Admin" } },
+      callResultBindings: { user: [{ line: 3, endLine: 3, callee: "Admin.me" }] },
+    });
+    expect(typeOfReceiver("user", 5, ctx)).toEqual({ form: "instance", name: "User" });
+  });
+
+  it("CODEGRAPH_RB_CALL_RESULT_BINDINGS=0 disables the fold", () => {
+    const ctx = emptyCtx({
+      localBindings: { links: [{ line: 1, type: "Trends::Links" }] },
+      classAncestors: { "Trends::Query": [] },
+      structuredReturnTypes: { "Trends::Links#query": { form: "instance", name: "Trends::Query" } },
+      callResultBindings: { scope: [{ line: 2, endLine: 2, callee: "links.query" }] },
+    });
+    process.env.CODEGRAPH_RB_CALL_RESULT_BINDINGS = "0";
+    try {
+      expect(typeOfReceiver("scope", 4, ctx)).toBeUndefined();
+    } finally {
+      delete process.env.CODEGRAPH_RB_CALL_RESULT_BINDINGS;
+    }
+    expect(typeOfReceiver("scope", 4, ctx)).toEqual({ form: "instance", name: "Trends::Query" });
+  });
+});
