@@ -979,7 +979,10 @@ export function tallyPyFan(
         if (fan.kind === "single") tally.singleSites += 1;
         continue;
       }
-      if (!fan.oracleInProject) continue;
+      // The tiebreak withheld the oracle's answer as the parameter's owner
+      // (bd tea-rags-mcp-m99j1.1.64): no ground truth, so no recall either way.
+      // Absent without `--tiebreak`, which keeps that run byte-identical.
+      if (!fan.oracleInProject || row.verdictTiebroken === "oracleSelfReference") continue;
       tally.fanScored += 1;
       if (fan.hitsOracle) {
         tally.fanHits += 1;

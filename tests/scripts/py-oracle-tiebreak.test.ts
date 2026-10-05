@@ -475,6 +475,100 @@ describe("applyTiebreak", () => {
     expect(counts.selfReference).toBe(0);
   });
 
+  /**
+   * bd tea-rags-mcp-m99j1.1.64. A param call the DISPATCH layer fanned is
+   * withheld from the 1:1 rates, so it is never asked — but jedi still answered
+   * the parameter's owner, and the fan tally scored that answer as ground truth
+   * (django: bareCall fanPhantom 11, recall@fan 0.000 on 13 such rows).
+   */
+  describe("a dispatch-withheld row (fan / ambiguous)", () => {
+    const fanned = (overrides: Partial<PyOracleRow> = {}): PyOracleRow =>
+      row({
+        relPath: "views.py",
+        callText: "func(request)",
+        receiver: null,
+        member: "func",
+        receiverKind: "bareCall",
+        verdict: "missed",
+        chainOutput: "none",
+        chain: undefined,
+        oracleTargetRelPath: "views.py",
+        oracleTargetSymbolId: "x_robots_tag",
+        dispatch: {
+          kind: "fan",
+          fan: ["views.py#index", "views.py#sitemap"],
+          fanSize: 2,
+          fanConfidence: 0.5,
+          single: null,
+          hitsOracle: false,
+          oracleInProject: true,
+        },
+        ...overrides,
+      });
+    const site = [{ relPath: "views.py", startLine: 16, callerSymbolId: "x_robots_tag.inner" }];
+
+    it("books the parameter-owner answer as a self-reference although nobody asked pyright", () => {
+      const rowsIn = [fanned()];
+      const plan = planTiebreakAsk(rowsIn, site, (entry) => isDisagreementRow(entry));
+      expect(plan.arbitrated).toEqual([]);
+      const { rows: scored, counts } = applyTiebreak(rowsIn, site, plan, new Map());
+      expect(scored[0]).toMatchObject({ tiebreak: "selfReference", verdictTiebroken: "oracleSelfReference" });
+      expect(counts).toMatchObject({ selfReference: 1, selfReferenceDispatched: 1, disagreementSites: 0 });
+    });
+
+    it("books an over-cap ambiguous decision the same way", () => {
+      const rowsIn = [fanned({ dispatch: { ...fanned().dispatch!, kind: "ambiguous", fan: [], fanSize: 20 } })];
+      const { rows: scored } = applyTiebreak(
+        rowsIn,
+        site,
+        planTiebreakAsk(rowsIn, site, () => false),
+        new Map(),
+      );
+      expect(scored[0]).toMatchObject({ tiebreak: "selfReference", verdictTiebroken: "oracleSelfReference" });
+    });
+
+    it("leaves an ordinary fanned answer notAsked", () => {
+      const rowsIn = [fanned({ oracleTargetRelPath: "other.py", oracleTargetSymbolId: "index" })];
+      const { rows: scored, counts } = applyTiebreak(
+        rowsIn,
+        site,
+        planTiebreakAsk(rowsIn, site, () => false),
+        new Map(),
+      );
+      expect(scored[0]).toMatchObject({ tiebreak: "notAsked", verdictTiebroken: "missed" });
+      expect(counts.selfReferenceDispatched).toBe(0);
+    });
+
+    it("leaves a fanned recursive match alone — agreement is never debt", () => {
+      const rowsIn = [
+        fanned({
+          verdict: "match",
+          chainOutput: "pinned",
+          chain: { targetRelPath: "views.py", targetSymbolId: "x_robots_tag.inner" },
+          oracleTargetSymbolId: "x_robots_tag.inner",
+        }),
+      ];
+      const { rows: scored } = applyTiebreak(
+        rowsIn,
+        site,
+        planTiebreakAsk(rowsIn, site, () => false),
+        new Map(),
+      );
+      expect(scored[0]).toMatchObject({ tiebreak: "notAsked", verdictTiebroken: "match" });
+    });
+
+    it("leaves a degraded oracle answer alone — it is withheld for its own reason", () => {
+      const rowsIn = [fanned({ oracleDegraded: true })];
+      const { rows: scored } = applyTiebreak(
+        rowsIn,
+        site,
+        planTiebreakAsk(rowsIn, site, () => false),
+        new Map(),
+      );
+      expect(scored[0]).toMatchObject({ tiebreak: "notAsked", verdictTiebroken: "missed" });
+    });
+  });
+
   it("gives every row a tiebroken verdict, asked or not", () => {
     const plan = planTiebreakAsk(rows, sites, () => false);
     const { rows: scored } = applyTiebreak(rows, sites, plan, new Map());

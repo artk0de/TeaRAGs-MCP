@@ -1349,7 +1349,8 @@ export function formatTiebreakCounts(counts: PyTiebreakCounts): string {
       ` · sites asked ${String(counts.sitesAsked)} · wall ${(counts.wallMs / 1000).toFixed(1)}s`,
     `  agreesWithChain ${String(counts.agreesWithChain)} · agreesWithJedi ${String(counts.agreesWithJedi)}` +
       ` · third ${String(counts.third)} · noAnswer ${String(counts.noAnswer)}` +
-      ` · selfReference ${String(counts.selfReference)}${selfByVerdict === "" ? "" : ` (${selfByVerdict})`}`,
+      ` · selfReference ${String(counts.selfReference)}${selfByVerdict === "" ? "" : ` (${selfByVerdict})`}` +
+      ` · of them dispatch-withheld ${String(counts.selfReferenceDispatched)}`,
   ].join("\n");
 }
 

@@ -713,6 +713,28 @@ describe("tallyPyFan", () => {
     expect(tally.fanPhantomRate).toBeCloseTo(0.5, 10);
   });
 
+  /**
+   * bd tea-rags-mcp-m99j1.1.64: `func(...)` inside a decorator closure fans to
+   * the decorated defs, and jedi answers the def OWNING `func` — no ground truth
+   * to score the fan against. The tiebreak books it `oracleSelfReference`; the
+   * fan recall must not then read the correct fan as a phantom.
+   */
+  it("keeps a fan row the tiebreak withheld as oracleSelfReference out of the scored fans", () => {
+    const [tally] = tallyPyFan(
+      [
+        row({ dispatch: fanScore({ hitsOracle: false }), verdictTiebroken: "oracleSelfReference" }),
+        row({
+          dispatch: fanScore({ kind: "ambiguous", fan: [], fanSize: 20, hitsOracle: false }),
+          verdictTiebroken: "oracleSelfReference",
+        }),
+        row({ dispatch: fanScore() }),
+      ],
+      (r) => [r.receiverKind],
+    );
+    expect(tally).toMatchObject({ fanSites: 2, ambiguousSites: 1, fanScored: 1, fanHits: 1, fanPhantom: 0 });
+    expect(tally.recallAtFan).toBe(1);
+  });
+
   it("prints both ambiguous denominators — the whole population and the fanned one", () => {
     const [tally] = tallyPyFan(
       [

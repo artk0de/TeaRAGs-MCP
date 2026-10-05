@@ -82,6 +82,23 @@ export function isDisagreementRow(row: PyOracleRow): boolean {
 }
 
 /**
+ * Is this row in the scope of the self-reference pre-empt?
+ *
+ * The disagreement set, plus a disagreement row the DISPATCH layer withheld
+ * (bd tea-rags-mcp-m99j1.1.64). `func(...)` inside a decorator closure fans to
+ * the decorated defs, so the row leaves the 1:1 rates and pyright is never
+ * asked — yet jedi's answer is still the def owning `func`, and the fan tally
+ * scored that answer as ground truth: django read 13 correct callable-param
+ * fans as `fanPhantom`. A degraded row stays out — it is withheld for a reason
+ * of its own, and its answer is not the shape.
+ */
+function isSelfReferenceScope(row: PyOracleRow): boolean {
+  if (isDisagreementRow(row)) return true;
+  const dispatched = row.dispatch?.kind === "fan" || row.dispatch?.kind === "ambiguous";
+  return dispatched && !row.oracleDegraded && PY_DISAGREEMENT_VERDICTS.has(row.verdict);
+}
+
+/**
  * The parameter-declaration shape: `cls(session)` inside `from_session`.
  *
  * `cls` is a parameter whose definition line IS the enclosing `def` line, so
@@ -238,6 +255,8 @@ export interface PyTiebreakCounts {
   /** Self-reference rows, total and split by the verdict they carried. */
   selfReference: number;
   selfReferenceByVerdict: Record<string, number>;
+  /** Of `selfReference`, the rows the dispatch layer had already withheld — fan or ambiguous. */
+  selfReferenceDispatched: number;
   /** Wall the stage added, milliseconds — gate (e). */
   wallMs: number;
 }
@@ -254,6 +273,7 @@ export function emptyTiebreakCounts(): PyTiebreakCounts {
     noAnswer: 0,
     selfReference: 0,
     selfReferenceByVerdict: {},
+    selfReferenceDispatched: 0,
     wallMs: 0,
   };
 }
@@ -263,6 +283,7 @@ export function countTiebreak(counts: PyTiebreakCounts, row: PyOracleRow, outcom
   if (outcome.tiebreak === "selfReference") {
     counts.selfReference += 1;
     counts.selfReferenceByVerdict[row.verdict] = (counts.selfReferenceByVerdict[row.verdict] ?? 0) + 1;
+    if (!isDisagreementRow(row)) counts.selfReferenceDispatched += 1;
     return;
   }
   if (outcome.tiebreak === "notAsked") return;
@@ -356,7 +377,8 @@ export function pyrightReplyAt(reply: PyOracleFileReply | undefined, index: numb
  * `notAsked` — so the three columns stay comparable row for row.
  *
  * The self-reference pre-empt runs on the DISAGREEMENT SET only, arbitrated or
- * not. Scoping it there is not a simplification: `foo()` inside `foo` also
+ * not — plus the disagreement rows the dispatch layer withheld
+ * (`isSelfReferenceScope`). Scoping it there is not a simplification: `foo()` inside `foo` also
  * resolves to the caller's own symbol, and there both engines and the chain are
  * RIGHT. Applied corpus-wide the rule withheld 4 correct ugnest `match` rows
  * before the scope was added. The shape is debt only where the two engines
@@ -379,7 +401,7 @@ export function applyTiebreak(
       : undefined;
     // An undefined caller symbol makes the pre-empt inert, which is how a row
     // outside the disagreement set keeps a legitimate recursive answer.
-    const callerSymbolId = isDisagreementRow(row) ? sites[index]?.callerSymbolId : undefined;
+    const callerSymbolId = isSelfReferenceScope(row) ? sites[index]?.callerSymbolId : undefined;
     const outcome = tiebreakRow(row, callerSymbolId, pyright);
     countTiebreak(counts, row, outcome);
     return { ...row, ...outcome };
