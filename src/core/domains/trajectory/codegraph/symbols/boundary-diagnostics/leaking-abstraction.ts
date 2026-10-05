@@ -59,8 +59,9 @@ export type FacadeAdoptionThresholdPolicy = MajorityFlooredOtsuThreshold;
 /**
  * Resolve the adoption threshold over `population` — the adoption of every
  * candidate module meeting {@link FACADE_MIN_EXTERNAL_IMPORTERS}. Otsu's split
- * (via {@link resolveMajorityFlooredOtsuThreshold}) when the population holds at least
- * {@link FACADE_OTSU_MIN_POPULATION} values and two distinct ones, the strict
+ * (via {@link resolveMajorityFlooredOtsuThreshold}) when the population holds
+ * at least {@link FACADE_OTSU_MIN_POPULATION} values, two distinct ones, and a
+ * cut bimodal enough to trust (the shared η separability gate), the strict
  * majority otherwise. Under either method a value at or below
  * {@link FACADE_ADOPTION_MAJORITY} is never admitted.
  */

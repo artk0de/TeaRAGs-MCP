@@ -57,7 +57,10 @@ describe("otsuSplit", () => {
  * The majority-floored Otsu policy on its own (bd tea-rags-mcp-b4dcz): the
  * facade adoption threshold and the silent-coupling strength threshold are
  * the same rule over different populations, so the rule is parameterised by
- * the floor and the population size Otsu is trusted on.
+ * the floor and the population size Otsu is trusted on. Since bd
+ * tea-rags-mcp-r8hme.46 the policy also GATES the cut: Otsu splits any
+ * population, including one mode with no second to find, so the cut is
+ * trusted only when its η separability reaches the documented gate.
  */
 describe("resolveMajorityFlooredOtsuThreshold", () => {
   const options = { majority: 0.5, minPopulation: 4 };
@@ -69,6 +72,43 @@ describe("resolveMajorityFlooredOtsuThreshold", () => {
     expect(policy.separability).toBeUndefined();
     expect(policy.admits(0.5)).toBe(false);
     expect(policy.admits(0.51)).toBe(true);
+  });
+
+  it("refuses the cut on one mode above the floor and admits the whole mode instead", () => {
+    // Six values ramping 0.7 → 0.8: one diffuse mode, every value above the
+    // floor. Otsu's best cut is the ramp's median 0.75 — between 0.0009
+    // against total 7/6000, η = 27/35 ≈ 0.771, below the gate — which would
+    // report the mode's upper half as the only admitted values (bd
+    // tea-rags-mcp-r8hme.46's defect). The floor admits the WHOLE mode.
+    const policy = resolveMajorityFlooredOtsuThreshold([0.7, 0.72, 0.74, 0.76, 0.78, 0.8], options);
+
+    expect(policy.method).toBe("majority");
+    expect(policy.threshold).toBe(0.5);
+    expect(policy.separability).toBeCloseTo(27 / 35, 12);
+    expect(policy.admits(0.72)).toBe(true);
+    expect(policy.admits(0.74)).toBe(true);
+    expect(policy.admits(0.5)).toBe(false);
+  });
+
+  it("keeps the cut at the gate exactly and refuses it one step below", () => {
+    // [0, 0, 0.25, 0.5, 0.75, 1]: total variance 5/36, best cut 0.25 | 0.5
+    // with between 1/9, so η = 4/5 — exactly OTSU_SEPARABILITY_GATE, to the
+    // bit: the gate is inclusive (the comparison is a strict `<` on the
+    // rejection side), and the cut is the 0.25 | 0.5 midpoint 0.375.
+    const atGate = resolveMajorityFlooredOtsuThreshold([0, 0, 0.25, 0.5, 0.75, 1], options);
+    expect(atGate.method).toBe("otsu");
+    expect(atGate.threshold).toBeCloseTo(0.375, 12);
+    expect(atGate.separability).toBe(0.8);
+
+    // [0, 0.5, 0.5, 0.5, 1, 1, 1] reads η = 25/32 = 0.78125: below the gate,
+    // the floor takes over — and the η that failed the gate is still
+    // reported, so a consumer's report can say why the method fell back.
+    const belowGate = resolveMajorityFlooredOtsuThreshold([0, 0.5, 0.5, 0.5, 1, 1, 1], options);
+    expect(belowGate.method).toBe("majority");
+    expect(belowGate.threshold).toBe(0.5);
+    expect(belowGate.separability).toBeCloseTo(25 / 32, 12);
+    expect(belowGate.admits(0.5)).toBe(false);
+    expect(belowGate.admits(1)).toBe(true);
   });
 
   it("raises the cut to Otsu's split when the population's own gap sits above the floor", () => {
