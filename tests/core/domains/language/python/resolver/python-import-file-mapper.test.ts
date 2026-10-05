@@ -571,6 +571,76 @@ describe("PythonImportFileMapper — the caller's own root leads (bd tea-rags-mc
 });
 
 /**
+ * An absolute import is anchored at a source root, never at a PACKAGE the
+ * caller happens to sit in (bd tea-rags-mcp-m99j1.1.31).
+ *
+ * polar's `server/polar/kit/jwt.py` writes `import jwt` — PyJWT — and
+ * `server/polar/logfire.py` writes `import logfire`, the logfire package.
+ * Python 3 resolves `import jwt` against `sys.path` only (PEP 328 retired the
+ * implicit relative import), and a directory holding `__init__.py` is a package,
+ * not a `sys.path` entry. The ancestor scan offered every ancestor of the caller
+ * as a root, so `server/polar/kit` answered `jwt` with the caller's own file and
+ * `server/polar` answered `logfire` with `server/polar/logfire.py` — and, once
+ * proven, served as a root for every later caller. 7 oracle phantoms.
+ */
+describe("PythonImportFileMapper — a package is never an absolute-import root (bd tea-rags-mcp-m99j1.1.31)", () => {
+  const POLAR_SHADOW_FILES: Record<string, string[]> = {
+    "server/polar/__init__.py": ["__version__"],
+    "server/polar/logfire.py": ["configure_logfire"],
+    "server/polar/logging.py": ["configure"],
+    "server/polar/kit/__init__.py": [],
+    "server/polar/kit/jwt.py": ["encode", "decode"],
+    "server/polar/kit/utils.py": ["utc_now"],
+    "server/polar/worker/__init__.py": [],
+    "server/polar/worker/_memory.py": ["collect"],
+  };
+
+  function mapShadow(importText: string, from: string): unknown {
+    const table = corpusTable(POLAR_SHADOW_FILES);
+    return new PythonImportFileMapper().mapImportToFile(importText, from, ctxFor(table, from));
+  }
+
+  it("`import jwt` inside polar/kit/jwt.py is the library, not the caller's own module", () => {
+    expect(mapShadow("jwt", "server/polar/kit/jwt.py")).toEqual({ kind: "external" });
+  });
+
+  it("`import logfire` from a sibling package is the library, not server/polar/logfire.py", () => {
+    expect(mapShadow("logfire", "server/polar/worker/_memory.py")).toEqual({ kind: "external" });
+  });
+
+  it("`import logfire` inside server/polar/logfire.py itself is the library", () => {
+    expect(mapShadow("logfire", "server/polar/logfire.py")).toEqual({ kind: "external" });
+  });
+
+  it("a package-qualified import of the same module still lands in the project", () => {
+    expect(mapShadow("polar.kit.jwt", "server/polar/worker/_memory.py")).toEqual({
+      kind: "project",
+      relPath: "server/polar/kit/jwt.py",
+    });
+  });
+
+  it("a package probed for one caller is not remembered as a root for the next", () => {
+    const table = corpusTable(POLAR_SHADOW_FILES);
+    const mapper = new PythonImportFileMapper();
+    mapper.mapImportToFile("kit.utils", "server/polar/kit/jwt.py", ctxFor(table, "server/polar/kit/jwt.py"));
+    const from = "server/polar/worker/_memory.py";
+    expect(mapper.mapImportToFile("logfire", from, ctxFor(table, from))).toEqual({ kind: "external" });
+  });
+
+  it("a package-free script tree keeps its own directories as roots", () => {
+    // polar's dev/cli: cli.py puts its directory on sys.path, and the scripts
+    // under commands/ import `shared` from it. No __init__.py anywhere.
+    const files = { ...POLAR_SHADOW_FILES, "dev/cli/shared.py": ["run"], "dev/cli/commands/up.py": ["up"] };
+    const table = corpusTable(files);
+    const from = "dev/cli/commands/up.py";
+    expect(new PythonImportFileMapper().mapImportToFile("shared", from, ctxFor(table, from))).toEqual({
+      kind: "project",
+      relPath: "dev/cli/shared.py",
+    });
+  });
+});
+
+/**
  * `resolveExportedModule` — which FILE a package binds a name to as a MODULE
  * (bd tea-rags-mcp-w205u, E4.6a).
  *

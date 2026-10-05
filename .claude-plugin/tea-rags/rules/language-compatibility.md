@@ -131,52 +131,52 @@ conclude absence from a graph the index says is incomplete.
   resolved through the sibling-module hop, and the legacy single-base walk
   declining a first hop the class's own ancestors do not name while the short
   name is declared in more than one file + import→file mapper resolving through
-  symbol-table membership (seeded source roots plus a caller-ancestor scan,
-  re-export hops, hop-bounded package re-export following to the file that
-  declares a name, a module-shaped sibling hop that terminates on the FILE a
-  package aliases as a submodule, stdlib guard) + kernel receiver-chain
-  propagation for dotted receivers, module-text receivers and call-result locals
-  folded to their callee's return type, split into hops at bracket depth zero so
-  dots inside an argument list or a generic subscript stay in the argument +
-  chain heads that are calls (generic subscript stripped, `typing.cast(T, x)`
-  typed from argument one, a lowercase callee's recorded return read from a
-  per-FILE `<relPath>::<name>` key rather than a run-global bare name, so six
-  namesake `get_client` defs no longer share one fact) + namesake narrowing
-  ahead of the import-SET filter: an ambiguous short name resolves to the file
-  the CALLER's own import binding names, through one re-export hop, and refuses
-  rather than guesses when no binding is in sight + `-> Self` recorded as a
-  marker and substituted with the class the RECEIVER names, applied terminally
-  on the call-result binding as well so the literal marker can never reach file
-  resolution + kernel return inference over return statements + subtype-gated
-  naming-convention receiver typing + class-body attribute typing from
-  declared-or-import-bound constructors, its Django `as_manager` arm active only
-  where the project's own manifests declare django (every pyproject.toml /
-  requirements\*.txt under the root, PEP 503 normalized, exact match; no
-  manifest anywhere leaves every vocabulary on) + framework vocabularies on the
-  same gate: Django managers, `_meta`, relation verbs and `from_queryset` bases
-  answered with the declaring module's class so a project namesake never
-  captures the hop, and SQLAlchemy / werkzeug descriptor decorators read as
-  attributes + module-level value types for imported singletons, and iteration,
-  context-manager, tuple-unpacking and `except` bindings folded at resolve
-  time + return inference through `self` delegation, constructor-assigned fields
-  and same-file defs by a memoised per-file fixpoint + constructor-argument
-  typing that reaches `__init__` through package re-exports and inherited
-  constructors, and receivers typed by an external constructor classified
-  external + calls the static graph cannot decide (an instance member absent
-  from a closed MRO whose class answers `__getattr__`) leaving the resolve
-  denominator + class fields addressed both per-file by short name and
-  run-global by file-qualified class key, with a field assigned from a CALL
-  folded one level against the callee's return + annotation and docstring type
-  facts, `Mapped[T]` read as transparent + an import shadow that spans the whole
-  establishing statement + bare-call resolution in Python's LEGB order
-  (enclosing frames, filtered before the pick, ahead of the caller's own module
-  level, then builtins) with short-name candidates gated to same-language,
-  bare-callable, non-builtin definitions + an inert-file fast path that skips
-  materializing a file whose native tree bears none of the node types the walker
-  can extract from. Measured against jedi merged per file with a pyright LSP
-  second engine, every chain-vs-oracle disagreement arbitrated by a third
-  pyright vote: the `tiebroken` column that stage publishes is the precision
-  figure to quote, and `legacy` stays beside it as the regression gate
+  symbol-table membership (seeded source roots plus the caller's package-free
+  ancestors, never a package directory, re-export hops, hop-bounded package
+  re-export following to the file that declares a name, a module-shaped sibling
+  hop that terminates on the FILE a package aliases as a submodule, stdlib
+  guard) + kernel receiver-chain propagation for dotted receivers, module-text
+  receivers and call-result locals folded to their callee's return type, split
+  into hops at bracket depth zero so dots inside an argument list or a generic
+  subscript stay in the argument + chain heads that are calls (generic subscript
+  stripped, `typing.cast(T, x)` typed from argument one, a lowercase callee's
+  recorded return read from a per-FILE `<relPath>::<name>` key rather than a
+  run-global bare name, so six namesake `get_client` defs no longer share one
+  fact) + namesake narrowing ahead of the import-SET filter: an ambiguous short
+  name resolves to the file the CALLER's own import binding names, through one
+  re-export hop, and refuses rather than guesses when no binding is in sight +
+  `-> Self` recorded as a marker and substituted with the class the RECEIVER
+  names, applied terminally on the call-result binding as well so the literal
+  marker can never reach file resolution + kernel return inference over return
+  statements + subtype-gated naming-convention receiver typing + class-body
+  attribute typing from declared-or-import-bound constructors, its Django
+  `as_manager` arm active only where the project's own manifests declare django
+  (every pyproject.toml / requirements\*.txt under the root, PEP 503 normalized,
+  exact match; no manifest anywhere leaves every vocabulary on) + framework
+  vocabularies on the same gate: Django managers, `_meta`, relation verbs and
+  `from_queryset` bases answered with the declaring module's class so a project
+  namesake never captures the hop, and SQLAlchemy / werkzeug descriptor
+  decorators read as attributes + module-level value types for imported
+  singletons, and iteration, context-manager, tuple-unpacking and `except`
+  bindings folded at resolve time + return inference through `self` delegation,
+  constructor-assigned fields and same-file defs by a memoised per-file
+  fixpoint + constructor-argument typing that reaches `__init__` through package
+  re-exports and inherited constructors, and receivers typed by an external
+  constructor classified external + calls the static graph cannot decide (an
+  instance member absent from a closed MRO whose class answers `__getattr__`)
+  leaving the resolve denominator + class fields addressed both per-file by
+  short name and run-global by file-qualified class key, with a field assigned
+  from a CALL folded one level against the callee's return + annotation and
+  docstring type facts, `Mapped[T]` read as transparent + an import shadow that
+  spans the whole establishing statement + bare-call resolution in Python's LEGB
+  order (enclosing frames, filtered before the pick, ahead of the caller's own
+  module level, then builtins) with short-name candidates gated to
+  same-language, bare-callable, non-builtin definitions + an inert-file fast
+  path that skips materializing a file whose native tree bears none of the node
+  types the walker can extract from. Measured against jedi merged per file with
+  a pyright LSP second engine, every chain-vs-oracle disagreement arbitrated by
+  a third pyright vote: the `tiebroken` column that stage publishes is the
+  precision figure to quote, and `legacy` stays beside it as the regression gate
 - **Go** — 7-pass chain (localBinding, returnTypeBinding, receiverChain,
   importMatch, receiverDrop, genericInstantiation, globalShortName) + typed
   locals under Go's scope rules (a statement-declared local is in scope after

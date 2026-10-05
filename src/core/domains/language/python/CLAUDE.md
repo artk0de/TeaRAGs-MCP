@@ -84,6 +84,15 @@
   dereferenced. `importedName`'s module arm asks it LAST, only once the composed
   module text has failed to pin a member, so every site that resolves today
   resolves to the same target.
+- **A FOURTH question answers "this name is a library's", and it is the only one
+  of the four whose answer is a DROP.** `reexportsFromLibrary` walks the same
+  channel and reports whether every explicit chain for the name ends at the
+  stdlib or an `external` mapping. `resolveExportedName`'s `null` cannot stand
+  in for it — "no project file declares it" is also what an unindexed file looks
+  like. `importedName`'s module arms ask it after the direct declaration and
+  BEFORE the project-wide declaration hop, which otherwise pinned polar's only
+  `select` (a backoffice form helper) on every `sql.select(Model)` whose
+  `sql.py` re-exports sqlalchemy's (bd tea-rags-mcp-m99j1.1.32).
 - **`chainType` is the ONLY reader of `structuredReturnTypes`.**
   `resolver/strategies/python-chain-type.ts` sits between `localBinding` and
   `importedName` and folds the receiver through the kernel walk with
@@ -103,12 +112,21 @@
   descriptor (`@property`, `@cached_property`) still types, because the walker's
   descriptor pass records it in `classFieldTypes`, which is read first.
   `memberTypeOf` stays the CALL read every in-language caller uses.
-- **The stdlib check runs BEFORE the mapper — in two places.** The mapper probes
-  the caller's ancestor directories first, so `import json` from
-  `src/flask/tag.py` would otherwise land on flask's own
-  `src/flask/json/__init__.py`. Which module the interpreter binds is a sys.path
-  question no static root inference answers. `PythonExternalVocabulary` carries
-  the guard, and so does
+- **An absolute import is probed only at a `sys.path`-shaped root — never at a
+  package.** `mapAbsolute` tries `""`, the seeded roots (caller's own first),
+  then the caller's ancestors that sit ABOVE every package on its chain
+  (`scriptRootsOf`: package-free script trees such as polar's `dev/cli/`, and
+  the parent of a PEP 420 top-level namespace package). Probing every ancestor
+  was how `import jwt` inside `polar/kit/jwt.py` bound the caller itself and
+  `import stripe` bound `polar/integrations/stripe/` (bd
+  tea-rags-mcp-m99j1.1.31); a probed directory is never memoised as a root for
+  the next caller.
+- **The stdlib check runs BEFORE the mapper — in two places.** Before m99j1.1.31
+  the mapper probed every caller ancestor, so `import json` from
+  `src/flask/tag.py` landed on flask's own `src/flask/json/__init__.py`; a
+  source root can still hold a stdlib-named module, and which one the
+  interpreter binds is a sys.path-order question no static root inference
+  answers. `PythonExternalVocabulary` carries the guard, and so does
   `PythonImportedNameSymbolResolutionStrategy.resolveBinding`, which DROPs when
   an ABSOLUTE `importText` heads a stdlib module — measured cause, the ancestor
   scan reaching `netbox/utilities/json.py` and turning 45 stdlib calls into
@@ -222,8 +240,8 @@
   the head's import through `receiverModuleText`, then E4.6a's
   `resolveExportedModule` when that maps nowhere, and require the resulting file
   to DECLARE the class as a unique top-level symbol — exact-symbolId `lookup`,
-  the same gate `moduleMemberTarget` uses. The caller never imports `Datatable`,
-  only the module that holds it. `receiverModuleText` moved to
+  the same gate `moduleMemberOutcome` uses. The caller never imports
+  `Datatable`, only the module that holds it. `receiverModuleText` moved to
   `strategies/shared.ts` so both readers ask it the same way.
 - **`-> Self` is recorded as a MARKER and substituted by the reader, through one
   helper.** The annotation facet resolves `Self` against the enclosing class

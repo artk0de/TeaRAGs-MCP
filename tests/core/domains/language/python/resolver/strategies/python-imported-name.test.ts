@@ -1331,3 +1331,128 @@ describe("PythonImportedNameSymbolResolutionStrategy — the package aliases a s
     });
   });
 });
+
+/**
+ * The bound name is a project MODULE, and the member is a name that module
+ * re-exports from a LIBRARY (bd tea-rags-mcp-m99j1.1.32).
+ *
+ * polar's `from polar.kit.extensions.sqlalchemy import sql` binds the project
+ * file `kit/extensions/sqlalchemy/sql.py`, which declares nothing and opens with
+ * `from sqlalchemy.sql import ... select ...`. The module's own `from` statement
+ * says where `select` comes from, and it is not the project: `sql.select(Model)`
+ * is sqlalchemy's. The declaration hop asked the project instead, found its one
+ * `select` — a backoffice form helper — and pinned it. 4 oracle phantoms.
+ */
+describe("PythonImportedNameSymbolResolutionStrategy — a module member re-exported from a library", () => {
+  const SQL_MODULE = "server/polar/kit/extensions/sqlalchemy/sql.py";
+  const FILES: Record<string, string[]> = {
+    "server/polar/__init__.py": ["__version__"],
+    "server/polar/kit/__init__.py": [],
+    "server/polar/kit/extensions/__init__.py": [],
+    "server/polar/kit/extensions/sqlalchemy/__init__.py": [],
+    [SQL_MODULE]: [],
+    "server/polar/backoffice/components/_input.py": ["select"],
+    "server/polar/notifications/service.py": ["NotificationsService"],
+  };
+  const SQL_IMPORT: ImportRef = {
+    importText: "polar.kit.extensions.sqlalchemy",
+    startLine: 9,
+    importedNames: ["sql"],
+    importedBindings: { sql: "sql" },
+  };
+  const PACKAGE_REEXPORTS: Record<string, ModuleReexport[]> = {
+    "server/polar/kit/extensions/sqlalchemy/__init__.py": [
+      { exportedName: "sql", sourceModule: ".", sourceName: "sql" },
+    ],
+  };
+
+  const sqlCtx = (sqlReexports: ModuleReexport[], files: Record<string, string[]> = FILES): CallContext => ({
+    ...ctxWith("server/polar/notifications/service.py", [SQL_IMPORT], tableWith(files)),
+    moduleReexports: { ...PACKAGE_REEXPORTS, [SQL_MODULE]: sqlReexports },
+  });
+
+  it("DROPs: the module's own `from` statement names a library as the member's source", () => {
+    const ctx = sqlCtx([{ exportedName: "select", sourceModule: "sqlalchemy.sql", sourceName: "select" }]);
+    expect(strategy().attempt(call("sql", "select"), ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("DROPs when the library is the standard library", () => {
+    const ctx = sqlCtx([{ exportedName: "select", sourceModule: "select", sourceName: "select" }]);
+    expect(strategy().attempt(call("sql", "select"), ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("DROPs through a project hop that ends at a library", () => {
+    // sql.py -> .base (project) -> sqlalchemy.sql (library).
+    const files = { ...FILES, "server/polar/kit/extensions/sqlalchemy/base.py": [] };
+    const ctx: CallContext = {
+      ...sqlCtx([{ exportedName: "select", sourceModule: ".base", sourceName: "select" }], files),
+    };
+    ctx.moduleReexports = {
+      ...ctx.moduleReexports,
+      "server/polar/kit/extensions/sqlalchemy/base.py": [
+        { exportedName: "select", sourceModule: "sqlalchemy.sql", sourceName: "select" },
+      ],
+    };
+    expect(strategy().attempt(call("sql", "select"), ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("DROPs on the dotted spelling `sqlalchemy.sql.select` reached from the package import", () => {
+    const ctx: CallContext = {
+      ...sqlCtx([{ exportedName: "select", sourceModule: "sqlalchemy.sql", sourceName: "select" }]),
+      imports: [
+        {
+          importText: "polar.kit.extensions",
+          startLine: 9,
+          importedNames: ["sqlalchemy"],
+          importedBindings: { sqlalchemy: "sqlalchemy" },
+        },
+      ],
+    };
+    expect(strategy().attempt(call("sqlalchemy.sql", "select"), ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("still resolves a member the project re-export chain declares", () => {
+    const files = { ...FILES, "server/polar/kit/extensions/sqlalchemy/base.py": ["select"] };
+    const ctx = sqlCtx([{ exportedName: "select", sourceModule: ".base", sourceName: "select" }], files);
+    expect(strategy().attempt(call("sql", "select"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "server/polar/kit/extensions/sqlalchemy/base.py", targetSymbolId: "select" },
+    });
+  });
+
+  it("does not DROP when one source of the name is the project and another a library", () => {
+    // `try: from .compat import select / except ImportError: from sqlalchemy.sql import select`
+    const files = { ...FILES, "server/polar/kit/extensions/sqlalchemy/compat.py": [] };
+    const ctx = sqlCtx(
+      [
+        { exportedName: "select", sourceModule: ".compat", sourceName: "select" },
+        { exportedName: "select", sourceModule: "sqlalchemy.sql", sourceName: "select" },
+      ],
+      files,
+    );
+    expect(strategy().attempt(call("sql", "select"), ctx)).not.toEqual({ kind: "drop" });
+  });
+
+  it("does not DROP on a star import from a library — a star names no member", () => {
+    const ctx = sqlCtx([{ exportedName: "*", sourceModule: "sqlalchemy.sql" }]);
+    expect(strategy().attempt(call("sql", "select"), ctx)).not.toEqual({ kind: "drop" });
+  });
+
+  it("DROPs through the package's module ALIAS arm the same way", () => {
+    // `from . import _sql as sql` in the package: the composed `...sqlalchemy.sql`
+    // names no file, and the alias arm reads `_sql.py`.
+    const ALIASED = "server/polar/kit/extensions/sqlalchemy/_sql.py";
+    const files: Record<string, string[]> = { ...FILES, [ALIASED]: [] };
+    delete files[SQL_MODULE];
+    const ctx: CallContext = {
+      ...ctxWith("server/polar/notifications/service.py", [SQL_IMPORT], tableWith(files)),
+      moduleReexports: {
+        "server/polar/kit/extensions/sqlalchemy/__init__.py": [
+          { exportedName: "sql", sourceModule: ".", sourceName: "_sql" },
+        ],
+        [ALIASED]: [{ exportedName: "select", sourceModule: "sqlalchemy.sql", sourceName: "select" }],
+      },
+    };
+    expect(strategy().attempt(call("sql", "select"), ctx)).toEqual({ kind: "drop" });
+  });
+});

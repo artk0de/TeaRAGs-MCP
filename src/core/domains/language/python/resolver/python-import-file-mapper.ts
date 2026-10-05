@@ -67,25 +67,24 @@ const MISS: ImportPathProbe = { kind: "miss" };
  * the same import text from the same directory against the same table names the
  * same file whatever a run happens to re-export.
  *
- * `roots` is the ordered set of roots that fit: SEEDED from the table's file
- * set when it can list one (bd tea-rags-mcp-60nss), then extended lazily by
- * whatever the ancestor scan proves. On a corpus with one source root, the
- * second import onward skips most of the ancestor scan.
- * `seededCount` marks where the seeded prefix ends, because only a SEEDED root
- * may be hoisted for containing the caller (bd tea-rags-mcp-hg427) — a lazily
- * learned one is an ancestor of the caller already and the scan reaches it.
- * `containingRoots` is that hoist, memoised per `fromDir`: the seeded prefix is
- * fixed for the memo generation, so the answer is a function of `fromDir` alone
- * and costs one scan per directory rather than one per import.
+ * `roots` is the ordered set of source roots, SEEDED from the table's file set
+ * when it can list one (bd tea-rags-mcp-60nss) and fixed for the generation.
+ * It is never extended by what one caller's import happened to find: a root is
+ * a `sys.path` entry, a property of the project, and a directory that answered
+ * one caller's import proves nothing for the next (bd tea-rags-mcp-m99j1.1.31).
+ * `containingRoots` memoises, per `fromDir`, the seeded root that contains it
+ * (bd tea-rags-mcp-hg427); `scriptRoots` the caller's package-free ancestors
+ * (see {@link scriptRootsOf}). Both are functions of `fromDir` alone, so each
+ * costs one scan per directory rather than one per import.
  * `answers` is keyed by `<dir> <importText>` because the same text resolves
  * differently from two directories — every relative import, and any absolute
- * one whose root inference depends on the caller's ancestors.
+ * one whose candidate roots depend on where the caller sits.
  */
 interface ImportMapperTableMemo {
   size: number;
   roots: string[];
-  seededCount: number;
   containingRoots: Map<string, string>;
+  scriptRoots: Map<string, string[]>;
   answers: Map<string, ImportFileTarget>;
 }
 
@@ -345,6 +344,72 @@ export class PythonImportFileMapper implements ImportFileMapper {
   }
 
   /**
+   * Does `relPath` bind `name` from a LIBRARY — does every explicit re-export
+   * chain for it end at a module outside the project (bd
+   * tea-rags-mcp-m99j1.1.32)?
+   *
+   * The positive counterpart of {@link resolveExportedName}'s `null`: that one
+   * says "no project file declares it", which is also what an unindexed project
+   * file looks like, and so licenses nothing. This one reads the file's own
+   * `from` statements, so the evidence is the import itself. polar's
+   * `kit/extensions/sqlalchemy/sql.py` declares nothing and opens with
+   * `from sqlalchemy.sql import ... select ...`: `sql.select(Model)` is
+   * sqlalchemy's, and the project's one `select` — a backoffice form helper —
+   * is a namesake.
+   *
+   * Same channel, hop budget and cycle guard as the other walks. A file that
+   * DECLARES the name ends the walk on the project side, and so does every
+   * hop that cannot be classified. Unanimous or not at all: a name with one
+   * project source and one library source (`try`/`except ImportError`) is not
+   * a library name. Stars are skipped — a star from a library names no member.
+   */
+  reexportsFromLibrary(relPath: RelPath, name: string, ctx: CallContext): boolean {
+    if (name.length === 0 || name === "*") return false;
+    return this.followToLibrary(relPath, name, ctx, 0, new Set([relPath]));
+  }
+
+  /** One hop of {@link PythonImportFileMapper.reexportsFromLibrary}; see its contract. */
+  private followToLibrary(
+    relPath: RelPath,
+    name: string,
+    ctx: CallContext,
+    depth: number,
+    visited: Set<RelPath>,
+  ): boolean {
+    if (declaresName(relPath, name, ctx) || depth >= MAX_REEXPORT_HOPS) return false;
+    const entries = identifierEntry(ctx.moduleReexports, relPath);
+    if (entries === undefined) return false;
+    let sources = 0;
+    for (const entry of entries) {
+      if (entry.exportedName !== name || entry.sourceName === undefined) continue;
+      sources++;
+      if (!this.entryLeavesProject(relPath, entry.sourceModule, entry.sourceName, ctx, depth, visited)) return false;
+    }
+    return sources > 0;
+  }
+
+  /**
+   * One explicit entry's verdict: the stdlib snapshot or an `external` mapping
+   * leaves the project; a project file is walked on with the SOURCE spelling;
+   * anything else — `unknown`, a cycle — stays inside.
+   */
+  private entryLeavesProject(
+    fromFile: RelPath,
+    sourceModule: string,
+    sourceName: string,
+    ctx: CallContext,
+    depth: number,
+    visited: Set<RelPath>,
+  ): boolean {
+    if (!sourceModule.startsWith(".") && PYTHON_STDLIB_MODULES.has(sourceModule.split(".")[0])) return true;
+    const target = this.mapImportToFile(sourceModule, fromFile, ctx);
+    if (target.kind === "external") return true;
+    if (target.kind !== "project" || visited.has(target.relPath)) return false;
+    visited.add(target.relPath);
+    return this.followToLibrary(target.relPath, sourceName, ctx, depth + 1, visited);
+  }
+
+  /**
    * The project file one re-export entry points at, or `null` when it leaves the
    * project or has already been walked.
    *
@@ -373,12 +438,11 @@ export class PythonImportFileMapper implements ImportFileMapper {
     // A grown table can turn `external` into `project`; a stale memo would
     // freeze the cold-pass answer for the whole run.
     if (existing?.size === size) return existing;
-    const roots = seedRoots(table);
     const fresh: ImportMapperTableMemo = {
       size,
-      roots,
-      seededCount: roots.length,
+      roots: seedRoots(table),
       containingRoots: new Map(),
+      scriptRoots: new Map(),
       answers: new Map(),
     };
     this.tableMemos.set(ctx.runScope, table, fresh);
@@ -424,16 +488,16 @@ function declaresName(relPath: RelPath, name: string, ctx: CallContext): boolean
  * even though it holds `models/__init__.py`, because `netbox/dcim/__init__.py`
  * makes it a package rather than a root.
  *
- * Why this is not the ancestor scan's job: the scan can only ever prove a root
- * the importing file sits UNDER. flask's `examples/app.py` imports `flask`
- * absolutely and `src` is nobody's ancestor there, so the scan exhausted and 15
- * bare calls fell out `external` — and whether it exhausted depended on walk
- * order, since visiting `src/flask/app.py` first happened to prove `src`
- * lazily.
+ * Why the caller's ancestors cannot stand in for this: they only ever name a
+ * root the importing file sits UNDER. flask's `examples/app.py` imports `flask`
+ * absolutely and `src` is nobody's ancestor there, so the old ancestor scan
+ * exhausted and 15 bare calls fell out `external` — and whether it exhausted
+ * depended on walk order, since visiting `src/flask/app.py` first happened to
+ * prove `src` lazily.
  *
- * Sorted DEEPEST first, then lexicographically: same tie-break as the ancestor
- * scan (a nested root must not be shadowed by the one above it), and it makes
- * the answer independent of the order files entered the table.
+ * Sorted DEEPEST first, then lexicographically: a nested root must not be
+ * shadowed by the one above it, and it makes the answer independent of the
+ * order files entered the table.
  *
  * One pass over the file keys per memo generation — O(files), no filesystem.
  * Pass 2 runs against a table that no longer grows, so it happens once.
@@ -498,12 +562,25 @@ function mapRelative(head: string, fromDir: string, table: GlobalSymbolTable): I
 /**
  * `a.b.c` — the import root is not the repo root in three of the five corpora,
  * and nothing in the module text says which it is. Try roots cheapest-first:
- * `""`, then the seeded root CONTAINING the caller, then the memo's remaining
- * proven ones, then the importing file's ancestors DEEPEST to SHALLOWEST.
+ * `""`, then the seeded root CONTAINING the caller, then the remaining seeded
+ * roots, then the caller's own SCRIPT roots (see {@link scriptRootsOf}).
  *
- * Deepest-first is load-bearing. netbox holds both `netbox/netbox/settings.py`
- * and the outer `netbox/` directory; a shallow-first ancestor scan would let
- * the outer one shadow the inner package for `netbox.settings`.
+ * Every candidate is a directory that can be a `sys.path` entry, which is the
+ * only place Python 3 looks for an absolute import (PEP 328 retired the
+ * implicit relative one). The scan this replaced offered EVERY ancestor of the
+ * caller, packages included, and a package is never on `sys.path`: polar's
+ * `import jwt` inside `server/polar/kit/jwt.py` answered with the caller's own
+ * file, `import logfire` with `server/polar/logfire.py`, `import stripe` with
+ * `polar/integrations/stripe/__init__.py`, and flask's `import typing` with
+ * `src/flask/typing.py` — each a library or the stdlib (bd
+ * tea-rags-mcp-m99j1.1.31). Measured on the six corpora, every row that scan
+ * answered from a package ancestor was one of those; the one legitimate shape
+ * it served, polar's package-free `dev/cli/` scripts, is what script roots keep.
+ *
+ * Deepest-first among the seeded roots is load-bearing. netbox holds both
+ * `netbox/netbox/settings.py` and the outer `netbox/` directory; a
+ * shallow-first order would let the outer one shadow the inner package for
+ * `netbox.settings`.
  *
  * But one global order cannot be right for a corpus owning two packages of the
  * same name, and polar owns three `polar` directories. `sdk/generator/python/
@@ -524,10 +601,9 @@ function mapAbsolute(
   if (segments.length === 0) return UNKNOWN;
   const modulePath = segments.join("/");
 
-  for (const root of candidateRoots(fromDir, memo.roots, containingSeededRoot(fromDir, memo))) {
+  for (const root of candidateRoots(fromDir, table, memo)) {
     const probe = probePath(root.length === 0 ? modulePath : `${root}/${modulePath}`, table);
     if (probe.kind === "miss") continue;
-    if (!memo.roots.includes(root)) memo.roots.push(root);
     return probe.kind === "project" ? { kind: "project", relPath: probe.relPath } : UNKNOWN;
   }
 
@@ -541,13 +617,13 @@ function mapAbsolute(
 }
 
 /**
- * The deepest SEEDED root that contains `fromDir`, or `""` for none.
+ * The deepest seeded root that contains `fromDir`, or `""` for none.
  *
  * `""` doubles as the "none" answer because hoisting it would be a no-op: the
  * repo root is already `candidateRoots`' first candidate.
  *
- * The seeded prefix is sorted deepest-first, so the FIRST containing root in it
- * is the deepest — two roots at the same depth cannot both be ancestors of one
+ * The seeded roots are sorted deepest-first, so the FIRST containing root is
+ * the deepest — two roots at the same depth cannot both be ancestors of one
  * directory. Containment is tested on a separator boundary, so `server` does
  * not swallow `server-tools/x.py`, and a file sitting directly in the root
  * counts as contained.
@@ -556,8 +632,7 @@ function containingSeededRoot(fromDir: string, memo: ImportMapperTableMemo): str
   const cached = memo.containingRoots.get(fromDir);
   if (cached !== undefined) return cached;
   let containing = "";
-  for (let i = 0; i < memo.seededCount; i++) {
-    const root = memo.roots[i];
+  for (const root of memo.roots) {
     if (root.length === 0) continue;
     if (fromDir === root || fromDir.startsWith(`${root}/`)) {
       containing = root;
@@ -568,21 +643,48 @@ function containingSeededRoot(fromDir: string, memo: ImportMapperTableMemo): str
   return containing;
 }
 
-/**
- * `""`, the caller's own seeded root, the remaining memo-proven roots, then the
- * caller's ancestors deepest-first.
- */
-function candidateRoots(fromDir: string, provenRoots: readonly string[], containing: string): string[] {
+/** `""`, the caller's own seeded root, the remaining seeded roots, then its script roots. */
+function candidateRoots(fromDir: string, table: GlobalSymbolTable, memo: ImportMapperTableMemo): string[] {
+  const containing = containingSeededRoot(fromDir, memo);
   const roots: string[] = [""];
   if (containing.length > 0) roots.push(containing);
-  for (const root of provenRoots) if (!roots.includes(root)) roots.push(root);
+  for (const root of memo.roots) if (!roots.includes(root)) roots.push(root);
+  for (const root of scriptRootsOf(fromDir, table, memo)) if (!roots.includes(root)) roots.push(root);
+  return roots;
+}
+
+/**
+ * The caller's ancestors that can be a SCRIPT's `sys.path` entry, deepest
+ * first — or none.
+ *
+ * A file run as a script puts its own directory on `sys.path`, and a tool that
+ * inserts its directory by hand does the same for the scripts beneath it:
+ * polar's `dev/cli/cli.py` runs `sys.path.insert(0, CLI_DIR)`, and
+ * `dev/cli/commands/*.py` then write `import shared` for `dev/cli/shared.py`.
+ * No `__init__.py` exists anywhere in that tree, so no package names a seeded
+ * root there.
+ *
+ * Admitted only ABOVE the outermost regular package on the caller's chain. A
+ * directory holding `__init__.py` is a package and every directory under it is
+ * package territory — a module, never a `sys.path` entry — so meeting one
+ * discards everything collected below it. What survives above it is a
+ * directory no package encloses: a seeded root already, or the parent of a PEP
+ * 420 namespace package that seeding cannot see (a top-level `polar/` without
+ * `__init__.py` makes `server/polar` look like a root and hides `server`).
+ */
+function scriptRootsOf(fromDir: string, table: GlobalSymbolTable, memo: ImportMapperTableMemo): string[] {
+  const cached = memo.scriptRoots.get(fromDir);
+  if (cached !== undefined) return cached;
+  const chain: string[] = [];
   let dir = fromDir === "." ? "" : fromDir;
   while (dir.length > 0) {
-    if (!roots.includes(dir)) roots.push(dir);
+    if (table.hasFile(`${dir}${INIT_PY}`)) chain.length = 0;
+    else chain.push(dir);
     const parent = posix.dirname(dir);
     dir = parent === "." ? "" : parent;
   }
-  return roots;
+  memo.scriptRoots.set(fromDir, chain);
+  return chain;
 }
 
 /**
