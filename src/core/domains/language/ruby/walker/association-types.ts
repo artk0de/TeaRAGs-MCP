@@ -12,7 +12,7 @@
 
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode } from "../../../../contracts/types/ast.js";
-import { singularizeAssociation } from "../dsl/index.js";
+import { RUBY_DSL, singularizeAssociation } from "../dsl/index.js";
 import { readScopeResolution } from "./ast-utils.js";
 import { YARD_CONST } from "./type-sources/yard.js";
 
@@ -62,7 +62,8 @@ export function associationAccessorName(callNode: AstNode): string | null {
  * Resolve the associated model constant for an association macro call
  * (duzy). An explicit `class_name: 'Foo'` / `class_name: "Acme::Bar"`
  * kwarg wins verbatim (the canonical AR override); otherwise the first
- * symbol argument is singularized + camelized by Rails convention. Returns
+ * symbol argument is camelized by Rails convention — singularized first only
+ * for a collection macro (`has_many` / `habtm`). Returns
  * `null` when neither a usable `class_name:` string nor a leading symbol
  * argument is present — no model edge can be synthesised syntactically.
  */
@@ -84,12 +85,16 @@ export function associationModelConstant(callNode: AstNode): string | null {
     if (value.type === "constant") return value.text;
     if (value.type === "scope_resolution") return readScopeResolution(value);
   }
-  // Convention: first symbol argument → singularize + camelize.
+  // Convention (Rails `association.klass`): a collection macro's first symbol
+  // → singularize + camelize; a singular macro's (`belongs_to` / `has_one`) →
+  // camelize as-is, so `belongs_to :status` is `Status`, not `Statu`.
   const firstArg = args.namedChildren[0];
   if (firstArg?.type !== "simple_symbol") return null;
   const base = firstArg.text.startsWith(":") ? firstArg.text.slice(1) : firstArg.text;
   if (base.length === 0) return null;
-  const model = camelizeModelName(singularizeAssociation(base));
+  const macro = callNode.childForFieldName("method")?.text;
+  const isCollection = macro !== undefined && RUBY_DSL[macro]?.returnShape === "association-collection";
+  const model = camelizeModelName(isCollection ? singularizeAssociation(base) : base);
   return model.length > 0 ? model : null;
 }
 
