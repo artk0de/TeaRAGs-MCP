@@ -19,6 +19,11 @@ import {
 import type { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/index.js";
 
 const CHANGED = "src/git/file-reader.ts";
+// Sections start only after the review has read a real git diff of the fixture
+// repo; under a loaded machine that spawn alone outlasts waitFor's 1 s default.
+// The bound only polls longer — sequential sections still never start cohesion
+// while naming is held, so the assertion fails either way.
+const SECTION_START_WAIT = { timeout: 15_000, interval: 20 };
 
 function git(root: string, ...args: string[]): void {
   execFileSync("git", args, {
@@ -107,7 +112,7 @@ describe("ReviewChangesOps — sections run together", () => {
 
     await vi.waitFor(() => {
       expect(graph.readTemporalSymbolCommits).toHaveBeenCalled();
-    });
+    }, SECTION_START_WAIT);
     naming.resolve(NAMING_ANSWER);
     const result = await pending;
 
@@ -132,7 +137,7 @@ describe("ReviewChangesOps — sections run together", () => {
 
     await vi.waitFor(() => {
       expect(graph.readTemporalSymbolCommits).toHaveBeenCalled();
-    });
+    }, SECTION_START_WAIT);
     await new Promise((resolve) => setTimeout(resolve, 5));
     expect(graph.close).not.toHaveBeenCalled();
 
