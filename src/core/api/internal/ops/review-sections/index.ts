@@ -29,7 +29,7 @@ export type {
 };
 export { architectureSectionProvider, cohesionSectionProvider, incompleteChangeSectionProvider, namingSectionProvider };
 
-/** Every registered section, in the order a default-all review runs them. */
+/** Every registered section, in the order a default-all review lists them (they run concurrently). */
 export const REVIEW_SECTION_PROVIDERS: readonly ReviewSectionProvider[] = [
   namingSectionProvider,
   incompleteChangeSectionProvider,
