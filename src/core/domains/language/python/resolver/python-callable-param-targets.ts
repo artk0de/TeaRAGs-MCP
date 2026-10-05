@@ -5,6 +5,7 @@ import type {
   RelPath,
   SymbolDefinition,
 } from "../../../../contracts/types/codegraph.js";
+import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import { resolvePythonModuleScopeSpelling } from "./python-module-scope-spelling.js";
 
@@ -37,7 +38,7 @@ interface CallableArgSourceEntry {
  */
 export class PythonCallableParamTargets {
   private readonly bySite = new WeakMap<CallRef, { ctx: CallContext; targets: readonly SymbolDefinition[] }>();
-  private readonly byMember = new WeakMap<object, ReadonlyMap<string, readonly CallableArgSourceEntry[]>>();
+  private readonly byMember = new RunScopedMemo<object, ReadonlyMap<string, readonly CallableArgSourceEntry[]>>();
 
   constructor(private readonly mapper: PythonImportFileMapper) {}
 
@@ -72,10 +73,14 @@ export class PythonCallableParamTargets {
     return out;
   }
 
-  /** `callableArgSources` re-keyed by callee member — built once per run-global record. */
+  /**
+   * `callableArgSources` re-keyed by callee member — built once per run and record.
+   * Keyed under `ctx.runScope`: the run-global record is mutated in place across
+   * passes, so its identity alone is not the run (bd tea-rags-mcp-39xca.6).
+   */
   private sitesByMember(ctx: CallContext): ReadonlyMap<string, readonly CallableArgSourceEntry[]> {
     const record = ctx.callableArgSources ?? {};
-    const cached = this.byMember.get(record);
+    const cached = this.byMember.get(ctx.runScope, record);
     if (cached) return cached;
     const index = new Map<string, CallableArgSourceEntry[]>();
     for (const [key, sources] of Object.entries(record)) {
@@ -87,7 +92,7 @@ export class PythonCallableParamTargets {
       if (!list) index.set(member, (list = []));
       for (const source of sources) list.push({ relPath, source });
     }
-    this.byMember.set(record, index);
+    this.byMember.set(ctx.runScope, record, index);
     return index;
   }
 }
