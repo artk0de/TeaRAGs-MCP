@@ -84,6 +84,8 @@ export interface PythonExternalImportPorts {
   isBareCallExternal: (member: string, ctx: CallContext) => boolean;
   /** Is this receiver ROOT bound by a non-relative import that maps outside the project? */
   isRootExternalImport: (root: string, ctx: CallContext, atLine?: number) => boolean;
+  /** Is this recorded type name a class an import binds from outside the project? (P7 / K12) */
+  isTypeConstructedExternally: (typeName: string, ctx: CallContext) => boolean;
 }
 
 export class PythonExternalDefinitionProbe {
@@ -145,11 +147,24 @@ export class PythonExternalDefinitionProbe {
       if (origin.kind !== "typed") return origin;
       const attribute = stripCallArgs(link);
       const attributeOrigin = this.attributeOrigin(origin.type, attribute, ctx);
-      if (attributeOrigin !== "declared") return attributeOrigin === "external" ? EXTERNAL : UNKNOWN;
+      if (attributeOrigin === "external") return EXTERNAL;
       const next = this.ports.memberTypeOf(origin.type, attribute, ctx);
+      if (attributeOrigin === "unknown") return this.fieldOfExternalType(next, ctx) ? EXTERNAL : UNKNOWN;
       origin = next === undefined ? UNKNOWN : { kind: "typed", type: next };
     }
     return origin;
+  }
+
+  /**
+   * P7 / K12 — an instance attribute is no symbol, so `self.ready_event` is
+   * never `declared`; its recorded field type is the only evidence there is.
+   * A type an external constructor produced (`threading.Event()`) makes the
+   * whole receiver external. Any other field type keeps the hop `unknown`,
+   * exactly as before: this arm reads ONE verdict, not the field's hierarchy.
+   */
+  private fieldOfExternalType(type: TypeRef | undefined, ctx: CallContext): boolean {
+    if (type === undefined || (type.form !== "class" && type.form !== "instance")) return false;
+    return this.imports.isTypeConstructedExternally(type.name, ctx);
   }
 
   /**
@@ -222,6 +237,9 @@ export class PythonExternalDefinitionProbe {
     // A `union` / `container` / `nil` receiver names no single class to walk,
     // and `memberTypeOf` already declines them — the same rule, read side.
     if (type.form !== "class" && type.form !== "instance") return "unknown";
+    // P7 / K12 — the constructor's import outranks the short name: a project
+    // namesake must not make `threading.Event` look like a closed project class.
+    if (this.imports.isTypeConstructedExternally(type.name, ctx)) return "external";
     const bare = lastSegment(type.name);
     if (lookupPythonSymbolsByShortName(ctx, bare).length === 0) return "external";
     const linearizer = this.linearizers.for(ctx);
