@@ -1214,6 +1214,7 @@ interface PythonLocalBindingSite {
  * a `Map` would serialize to `{}` and lose every entry.
  */
 function collectPythonLocalBindingSites(out: PythonLocalBindingSite[]): PythonNodeVisitor {
+  const rebindings = new PythonDefRebindingLines();
   return (node) => {
     const line = node.startPosition.row + 1;
 
@@ -1239,7 +1240,11 @@ function collectPythonLocalBindingSites(out: PythonLocalBindingSite[]): PythonNo
       const endLine = node.endPosition.row + 1;
 
       const typed = pythonAssignmentBoundType(node);
-      if (typed !== null) out.push({ name: varName, binding: { line, type: typed.type, endLine } });
+      if (typed !== null) {
+        out.push({ name: varName, binding: { line, type: typed.type, endLine } });
+        return;
+      }
+      out.push(...pythonAssignedValueSites(node, varName, rebindings));
       return;
     }
 
@@ -1412,6 +1417,155 @@ function pythonExceptionSites(clause: AstNode): PythonLocalBindingSite[] {
       },
     },
   ];
+}
+
+/**
+ * The `assignedValue` site of one plain `name = <expr>` assignment inside a
+ * def (bd tea-rags-mcp-m99j1.1.91), for a value the resolver can fold the way
+ * it folds a receiver: an attribute read off a name (`self.model._meta`,
+ * `ctx.app`) or another name (`app = application`). A call already rides
+ * `callResultBindings`; a subscript, a literal, an operator or an annotated
+ * target records nothing here.
+ *
+ * The binding speaks until the def rebinds the name — `scopeEndLine` is the
+ * line of the next binding statement, which still evaluates its right-hand
+ * side against this value — so an unrecorded rebinding (`node = rows[0]`)
+ * never inherits the attribute's type. A module- or class-level assignment
+ * records nothing: the assigned-local gate this recovers is a def's. Nor does
+ * a name the def DECLARES — an annotated parameter or PEP 526 target types
+ * the name for the whole body, as a type checker reads it, and an assignment
+ * of a narrower read must not override it.
+ */
+function pythonAssignedValueSites(
+  assignment: AstNode,
+  name: string,
+  rebindings: PythonDefRebindingLines,
+): PythonLocalBindingSite[] {
+  if (assignment.childForFieldName("type") !== null) return [];
+  const right = assignment.childForFieldName("right");
+  if (right === null || !pythonIsNameOrAttributeRead(right) || right.text === name) return [];
+  const def = pythonEnclosingDef(assignment);
+  if (def === null || rebindings.declares(def, name)) return [];
+  const sourceExpression = pythonDerivedSourceExpression(right);
+  if (sourceExpression === null) return [];
+  const endLine = assignment.endPosition.row + 1;
+  const rebound = rebindings.nextAfter(def, name, endLine);
+  return [
+    {
+      name,
+      binding: {
+        line: assignment.startPosition.row + 1,
+        type: "",
+        valueKind: "assignedValue",
+        sourceExpression,
+        endLine,
+        ...(rebound === undefined ? {} : { scopeEndLine: rebound }),
+      },
+    },
+  ];
+}
+
+/** `name`, or a dotted read `name.a.b` with no call or subscript on the way. */
+function pythonIsNameOrAttributeRead(node: AstNode): boolean {
+  if (node.type === "identifier") return true;
+  if (node.type !== "attribute") return false;
+  const object = node.childForFieldName("object");
+  return object !== null && pythonIsNameOrAttributeRead(object);
+}
+
+/** Node types that open a new Python scope: their bodies bind their own names. */
+const PYTHON_SCOPE_NODES = new Set(["function_definition", "class_definition", "lambda"]);
+
+/** The `def` whose body `node` sits in directly, or `null` at module / class level. */
+function pythonEnclosingDef(node: AstNode): AstNode | null {
+  for (let current = node.parent; current !== null; current = current.parent) {
+    if (current.type === "function_definition") return current;
+    if (PYTHON_SCOPE_NODES.has(current.type)) return null;
+  }
+  return null;
+}
+
+/**
+ * Per-def index of the lines on which the def's OWN body binds each name —
+ * assignment and augmented-assignment targets (flat or destructured), `for`
+ * targets, `with … as` / `except … as` aliases and walrus targets — and of
+ * the names it DECLARES with an annotation (a typed parameter, a PEP 526
+ * target). Nested defs, classes and lambdas bind their own names and are not
+ * entered; a comprehension's target is its own scope too. Built once per def.
+ */
+class PythonDefRebindingLines {
+  private readonly byDef = new Map<string, PythonDefBindingIndex>();
+
+  /** First line after `afterLine` on which `def` binds `name`, if any. */
+  nextAfter(def: AstNode, name: string, afterLine: number): number | undefined {
+    return this.indexOf(def)
+      .lines.get(name)
+      ?.find((line) => line > afterLine);
+  }
+
+  /** Whether `def` annotates `name` anywhere — as a parameter or a PEP 526 target. */
+  declares(def: AstNode, name: string): boolean {
+    return this.indexOf(def).declared.has(name);
+  }
+
+  private indexOf(def: AstNode): PythonDefBindingIndex {
+    const key = `${def.startIndex}:${def.endIndex}`;
+    let index = this.byDef.get(key);
+    if (index === undefined) {
+      index = { lines: new Map(), declared: pythonAnnotatedParameterNames(def) };
+      const body = def.childForFieldName("body");
+      if (body !== null) collectPythonBindingLines(body, index);
+      this.byDef.set(key, index);
+    }
+    return index;
+  }
+}
+
+interface PythonDefBindingIndex {
+  readonly lines: Map<string, number[]>;
+  readonly declared: Set<string>;
+}
+
+/** Names a def's parameter list annotates (`req: Req`, `limit: int = 10`). */
+function pythonAnnotatedParameterNames(def: AstNode): Set<string> {
+  const names = new Set<string>();
+  for (const parameter of def.childForFieldName("parameters")?.namedChildren ?? []) {
+    if (parameter.type !== "typed_parameter" && parameter.type !== "typed_default_parameter") continue;
+    const name = parameter.childForFieldName("name") ?? parameter.namedChildren.find((c) => c.type === "identifier");
+    if (name?.type === "identifier") names.add(name.text);
+  }
+  return names;
+}
+
+function collectPythonBindingLines(node: AstNode, index: PythonDefBindingIndex): void {
+  if (PYTHON_SCOPE_NODES.has(node.type)) return;
+  const record = (target: AstNode | null): void => {
+    if (target === null) return;
+    const line = node.startPosition.row + 1;
+    for (const identifier of pythonTargetIdentifiers(target)) {
+      const lines = index.lines.get(identifier) ?? [];
+      if (lines[lines.length - 1] !== line) lines.push(line);
+      index.lines.set(identifier, lines);
+    }
+  };
+  if (node.type === "assignment" && node.childForFieldName("type") !== null) {
+    const left = node.childForFieldName("left");
+    if (left?.type === "identifier") index.declared.add(left.text);
+  }
+  if (node.type === "assignment" || node.type === "augmented_assignment") record(node.childForFieldName("left"));
+  else if (node.type === "for_statement") record(node.childForFieldName("left"));
+  else if (node.type === "named_expression") record(node.childForFieldName("name"));
+  else if (node.type === "as_pattern") record(node.childForFieldName("alias"));
+  if (node.type === "list_comprehension" || node.type === "generator_expression") return;
+  if (node.type === "set_comprehension" || node.type === "dictionary_comprehension") return;
+  for (const child of node.namedChildren) collectPythonBindingLines(child, index);
+}
+
+/** Every name a binding target binds; an attribute or subscript target binds none. */
+function pythonTargetIdentifiers(target: AstNode): string[] {
+  if (target.type === "identifier") return [target.text];
+  if (target.type === "attribute" || target.type === "subscript") return [];
+  return target.namedChildren.flatMap(pythonTargetIdentifiers);
 }
 
 /** Assignment left-hand sides that unpack a value into names. */

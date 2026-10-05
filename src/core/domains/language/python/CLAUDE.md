@@ -943,12 +943,19 @@
   whole fact, as a top-level union's does. A single NOMINAL element there is
   placed by the same read (bd tea-rags-mcp-m99j1.1.75) but never killed: one the
   declaring file cannot place keeps its spelling for the caller's fold.
-  `contextEnter` is `__enter__`'s return through the member-return MRO walk and
-  nothing when no project class declares one — the constructed instance is never
-  the answer. A `@contextlib.contextmanager` / `asynccontextmanager` generator
-  (decorator qualified through the file's imports) is the one exception: its
-  annotated `Iterator[T]`-family return is recorded as the library manager class
-  carrying `T` (`generator-context-manager-marker.ts`), and it enters as `T` (bd
+  `assignedValue` (bd tea-rags-mcp-m99j1.1.91) is a plain
+  `name = <attribute read | name>` in a def, scoped by `scopeEndLine` to the
+  def's next binding of the name and never written for a name the def annotates.
+  It is the one TRANSPARENT kind: `pythonLocalBindingInForce` reads past it
+  unless its fold names a project class or a library type, so it can only add a
+  type — which is how the assigned-local fan gate's lost edges come back as
+  exact ones. `contextEnter` is `__enter__`'s return through the member-return
+  MRO walk and nothing when no project class declares one — the constructed
+  instance is never the answer. A `@contextlib.contextmanager` /
+  `asynccontextmanager` generator (decorator qualified through the file's
+  imports) is the one exception: its annotated `Iterator[T]`-family return is
+  recorded as the library manager class carrying `T`
+  (`generator-context-manager-marker.ts`), and it enters as `T` (bd
   tea-rags-mcp-m99j1.1.87); an unannotated one stays untyped. `except E as e`
   needs no derived kind: it is a plain instance binding scoped to the handler; a
   tuple `except (A, B)` and starred targets record nothing. This is a DIFFERENT

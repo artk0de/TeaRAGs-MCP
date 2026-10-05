@@ -32,7 +32,13 @@ import {
 import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import { pythonClassKey } from "./python-class-key.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
-import { pythonDerivedBindingType, pythonElementTypeOf, pythonLocalBindingInForce } from "./python-iteration-types.js";
+import {
+  pythonAssignedValueTypes,
+  pythonDerivedBindingType,
+  pythonElementTypeOf,
+  pythonLocalBindingInForce,
+  type PythonAssignedValueTypes,
+} from "./python-iteration-types.js";
 import { pythonOwnerIndependentMemberType, pythonPlacedBindingUnion } from "./python-member-return-types.js";
 import {
   findPythonImportBinding,
@@ -253,7 +259,7 @@ function pythonSingleHopType(
     if (pythonCastIsTyping(bare, ctx)) return pythonCastArgumentType(receiver, ctx, mapper);
     return pythonCallHeadReturnType(receiver, ctx, mapper);
   }
-  const bound = pythonBindingInForceAt(receiver, atLine, ctx);
+  const bound = pythonBindingInForceAt(receiver, atLine, ctx, pythonAssignedValueTypes(ctx, ports, mapper));
   // A derived binding (loop, `with` or unpacking target) is typed by its fold
   // (bd tea-rags-mcp-m99j1.1.18) — and an untyped one still IS a binding: the
   // name a module or a class might carry elsewhere is a local here.
@@ -331,11 +337,16 @@ function pythonModuleValueType(
  * against a binding at 204, the line before the CALL still finds the very
  * binding being demoted.
  */
-function pythonBindingInForceAt(receiver: string, atLine: number, ctx: CallContext): LocalBinding | undefined {
-  const bound = pythonLocalBindingInForce(ctx, receiver, atLine);
+function pythonBindingInForceAt(
+  receiver: string,
+  atLine: number,
+  ctx: CallContext,
+  assignedValueTypes: PythonAssignedValueTypes,
+): LocalBinding | undefined {
+  const bound = pythonLocalBindingInForce(ctx, receiver, atLine, assignedValueTypes);
   if (bound === undefined || atLine > (bound.endLine ?? bound.line)) return bound;
   if (findPythonImportBinding(ctx.imports, receiver) === null) return bound;
-  return pythonLocalBindingInForce(ctx, receiver, bound.line - 1);
+  return pythonLocalBindingInForce(ctx, receiver, bound.line - 1, assignedValueTypes);
 }
 
 /**

@@ -9,6 +9,7 @@ import type {
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../../../../src/core/contracts/types/language.js";
 import {
+  PYTHON_ASSIGNED_LOCAL_GATE_DEFAULT,
   PythonChainAnswerProbe,
   pythonDynamicFanoutSuppressed,
 } from "../../../../../../../src/core/domains/language/python/resolver/dispatch/index.js";
@@ -279,6 +280,17 @@ describe("pythonDynamicFanoutSuppressed (w205u — every shape another layer own
 
   it("still fans a name the def does NOT assign — a parameter, a module global, a closure the walker did not publish", () => {
     expect(suppressed(callOf("service", "perform"), ctxOf({ assignedLocals: ["other"] }))).toBe(false);
+  });
+
+  it("fans an assigned local when the gate is OFF (CODEGRAPH_PY_ASSIGNED_LOCAL_GATE=0, m99j1.1.91 measurement switch)", () => {
+    const ctx = ctxOf({ assignedLocals: ["client"] });
+    const call = callOf("client", "perform");
+    expect(pythonDynamicFanoutSuppressed(call, ctx, silentProbe(), NEVER_CORE_AMBIGUOUS, undefined, false)).toBe(false);
+    expect(pythonDynamicFanoutSuppressed(call, ctx, silentProbe(), NEVER_CORE_AMBIGUOUS, undefined, true)).toBe(true);
+  });
+
+  it("keeps the assigned-local gate ON by default", () => {
+    expect(PYTHON_ASSIGNED_LOCAL_GATE_DEFAULT).toBe(true);
   });
 
   it("asks assignment presence before the probe — a membership test, the chain is a walk", () => {

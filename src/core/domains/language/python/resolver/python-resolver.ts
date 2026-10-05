@@ -127,9 +127,10 @@ export class PythonCallResolver implements CallResolver {
   private readonly derivedFoldPorts: ReceiverTypePorts;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
-    // Python has no dynamic-receiver confidence knob: take only mode + coneMax.
-    const { coneMax } = readResolverConfig(process.env, "CODEGRAPH_PY", mode);
-    const cfg: ResolverConfig = { mode, coneMax };
+    // Python has no dynamic-receiver confidence knob: take mode, coneMax and
+    // the assigned-local gate switch (`CODEGRAPH_PY_ASSIGNED_LOCAL_GATE`).
+    const { coneMax, assignedLocalGate } = readResolverConfig(process.env, "CODEGRAPH_PY", mode);
+    const cfg: ResolverConfig = { mode, coneMax, assignedLocalGate };
     this.ancestorLinearizers = new PythonAncestorLinearizerCache(this.importFileMapper, mode);
     this.chain = createPythonSymbolResolutionChain(cfg, this.importFileMapper, this.ancestorLinearizers);
     // The classifier is built BEFORE the component that closes over it. The

@@ -57,7 +57,7 @@ import {
   pythonReceiverUnionIsUnreadable,
   pythonSubstituteSelfReturn,
 } from "./python-member-return-types.js";
-import { findPythonImportBinding } from "./python-type-addressing.js";
+import { findPythonImportBinding, pythonTypeNameIsExternal, pythonTypeRefClassKey } from "./python-type-addressing.js";
 
 /** Built-ins whose iteration yields their first argument's elements unchanged. */
 const PYTHON_ELEMENT_PRESERVING_BUILTINS = new Set(["list", "set", "frozenset", "tuple", "reversed", "sorted", "iter"]);
@@ -78,6 +78,42 @@ const PYTHON_CONSTRUCTOR_SEGMENT = /^_*[A-Z]/;
 const PYTHON_MAPPING_VIEW = /^(values|items|keys)\(\)$/;
 
 /**
+ * Does an `assignedValue` binding (bd tea-rags-mcp-m99j1.1.91) type its name?
+ * One that does not is TRANSPARENT: the lookup reads on past it to whatever
+ * spoke for the name before, so the binding can only ADD a type — an
+ * attribute read nothing types leaves every reader where it was without it
+ * (the parameter annotation, the naming-convention guess, the fan's gate).
+ */
+export type PythonAssignedValueTypes = (binding: DerivedLocalBinding) => boolean;
+
+/**
+ * The fold every reader asks the transparency question with. A NOMINAL answer
+ * counts only when it names something: a class it places in the project, or a
+ * library type. A spelling that places nowhere (`Mapped[Alias | None]` where
+ * `Alias = RealClass` is a module assignment) would DROP at the member walk,
+ * which is a verdict, not a type — so it stays transparent.
+ */
+export function pythonAssignedValueTypes(
+  ctx: CallContext,
+  ports: ReceiverTypePorts,
+  mapper: PythonImportFileMapper,
+): PythonAssignedValueTypes {
+  return (binding) => {
+    const folded = pythonDerivedBindingType(binding, ctx, ports, mapper);
+    if (folded === undefined) return false;
+    if (folded.form !== "instance" && folded.form !== "class") return true;
+    return (
+      pythonTypeRefClassKey(folded.name, ctx, mapper) !== null || pythonTypeNameIsExternal(folded.name, ctx, mapper)
+    );
+  };
+}
+
+function pythonWithoutBinding(ctx: CallContext, name: string, binding: LocalBinding): CallContext {
+  const list = ctx.localBindings?.[name] ?? [];
+  return { ...ctx, localBindings: { ...ctx.localBindings, [name]: list.filter((other) => other !== binding) } };
+}
+
+/**
  * The binding a name carries at `atLine` once iteration bindings are
  * accounted for — {@link resolveLocalBinding} for every other binding.
  *
@@ -87,10 +123,22 @@ const PYTHON_MAPPING_VIEW = /^(values|items|keys)\(\)$/;
  * rebinds the name, and the iteration binding stops speaking for it
  * (`undefined`, so the caller reads the call-result channel as it would with
  * no binding).
+ *
+ * An `assignedValue` binding whose value `assignedValueTypes` says types
+ * nothing is read PAST (bd tea-rags-mcp-m99j1.1.91). Every resolver reader
+ * passes the fold; omitted, the binding is taken as it stands.
  */
-export function pythonLocalBindingInForce(ctx: CallContext, name: string, atLine: number): LocalBinding | undefined {
+export function pythonLocalBindingInForce(
+  ctx: CallContext,
+  name: string,
+  atLine: number,
+  assignedValueTypes: PythonAssignedValueTypes = () => true,
+): LocalBinding | undefined {
   const best = resolveLocalBinding(ctx.localBindings, name, atLine);
   if (!isDerivedLocalBinding(best)) return best;
+  if (best.valueKind === "assignedValue" && !assignedValueTypes(best)) {
+    return pythonLocalBindingInForce(pythonWithoutBinding(ctx, name, best), name, atLine, assignedValueTypes);
+  }
   const rebound = nearestCallResultBinding(ctx.callResultBindings, name, atLine);
   return rebound !== undefined && rebound.line > best.line ? undefined : best;
 }
@@ -200,6 +248,8 @@ export function pythonDerivedBindingFold(
       const value = typeOfValue(expression, reader);
       return typeRefReceiverForm(value === undefined ? undefined : atPosition(value, binding.tupleIndex));
     }
+    case "assignedValue":
+      return typeRefReceiverForm(typeOfValue(expression, reader));
   }
 }
 
@@ -360,7 +410,7 @@ function typeOfValue(expression: string, reader: PythonIterableReader): TypeRef 
   if (!PYTHON_LOCAL_NAME.test(expression)) {
     return wholeCallValue(expression, reader) ?? propagateReceiverType(expression, atLine, ctx, ports);
   }
-  const bound = pythonLocalBindingInForce(ctx, expression, atLine);
+  const bound = pythonLocalBindingInForce(ctx, expression, atLine, pythonAssignedValueTypes(ctx, ports, mapper));
   const called = nearestCallResultBinding(ctx.callResultBindings, expression, atLine);
   if (called !== undefined && (bound === undefined || called.line > bound.line)) {
     return pythonCallBindingType(called.callee, called.line, ctx, ports, mapper);

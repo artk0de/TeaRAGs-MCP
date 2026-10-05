@@ -15,7 +15,11 @@ import {
 } from "../../../kernel/index.js";
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
-import { pythonDerivedBindingType, pythonLocalBindingInForce } from "../python-iteration-types.js";
+import {
+  pythonAssignedValueTypes,
+  pythonDerivedBindingType,
+  pythonLocalBindingInForce,
+} from "../python-iteration-types.js";
 import { pythonPlacedBindingUnion } from "../python-member-return-types.js";
 import { createPythonCallBindingPorts } from "../python-receiver-type-ports.js";
 import {
@@ -114,7 +118,12 @@ function pythonLocalBindingTyping(
   const ports = createPythonCallBindingPorts(mapper, linearizers);
   return {
     typeOfReceiver: (call, ctx): TypeRef | null => {
-      const binding = pythonLocalBindingInForce(ctx, call.receiver, call.startLine);
+      const binding = pythonLocalBindingInForce(
+        ctx,
+        call.receiver,
+        call.startLine,
+        pythonAssignedValueTypes(ctx, ports, mapper),
+      );
       // A derived binding — loop, `with` or unpacking target (bd
       // tea-rags-mcp-m99j1.1.18) — is typed by its fold or not at all: the
       // call-result binding below it predates the statement.

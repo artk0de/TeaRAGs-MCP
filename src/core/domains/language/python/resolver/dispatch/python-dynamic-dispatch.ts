@@ -3,7 +3,7 @@ import { DynamicDispatchResolver, EnclosingClassPrivateAccess } from "../../../k
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { lookupPythonSymbolsByShortName } from "../strategies/shared.js";
 import type { PythonChainAnswerProbe } from "./python-chain-probe.js";
-import { pythonDynamicFanoutSuppressed } from "./python-dispatch-gates.js";
+import { PYTHON_ASSIGNED_LOCAL_GATE_DEFAULT, pythonDynamicFanoutSuppressed } from "./python-dispatch-gates.js";
 import {
   PY_DYNAMIC_RECEIVER_CONFIDENCE,
   PYTHON_FANOUT_POPULATION,
@@ -56,9 +56,12 @@ export class PythonDynamicDispatchResolver extends DynamicDispatchResolver {
     mapper: PythonImportFileMapper = new PythonImportFileMapper(),
     /** Read ONCE at composition — never a per-call `process.env` lookup. */
     fanMax: number = resolvePythonDispatchFanMax(process.env.CODEGRAPH_PY_DISPATCH_FAN_MAX),
+    /** `CODEGRAPH_PY_ASSIGNED_LOCAL_GATE`, read ONCE by `readResolverConfig`. */
+    assignedLocalGate: boolean = PYTHON_ASSIGNED_LOCAL_GATE_DEFAULT,
   ) {
     super({
-      suppressed: (call, ctx) => pythonDynamicFanoutSuppressed(call, ctx, probe, coreAmbiguous, mapper),
+      suppressed: (call, ctx) =>
+        pythonDynamicFanoutSuppressed(call, ctx, probe, coreAmbiguous, mapper, assignedLocalGate),
       lookupByShortName: (call, ctx) =>
         lookupPythonSymbolsByShortName(ctx, call.member, { role: "callee" }).filter((def) =>
           isPythonInstanceMember(def.symbolId),
