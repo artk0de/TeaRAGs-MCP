@@ -218,6 +218,22 @@ export interface CallResolver {
    * the unfiltered gate.
    */
   hasInProjectDefinition?: (call: CallRef, ctx: CallContext) => boolean;
+  /**
+   * Optional: a chunk's local bindings as this resolver reads them (bd
+   * tea-rags-mcp-m99j1.1.30 regression). A binding the resolver cannot read at
+   * all — a fact standing on nothing it can place — is ABSENCE of evidence, and
+   * must change nothing a binding's mere PRESENCE decides: the receiver-kind
+   * classifier, binding gates, guesses that decline on a typed receiver. The
+   * runner asks once per chunk, BEFORE barrier-derived parameter seeding, and
+   * hands every call site the answer; `ctx` is that chunk's context. Return the
+   * input by identity when nothing is hidden. Mirrors
+   * `LanguageSymbolResolver.visibleLocalBindings`; resolvers that omit it see
+   * every binding.
+   */
+  visibleLocalBindings?: (
+    localBindings: Record<string, LocalBinding[]> | undefined,
+    ctx: CallContext,
+  ) => Record<string, LocalBinding[]> | undefined;
 }
 
 /**

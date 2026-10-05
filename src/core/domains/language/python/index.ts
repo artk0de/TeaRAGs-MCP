@@ -172,6 +172,10 @@ export class PythonLanguage implements LanguageProvider {
       // facade, never the resolver behind it (bd tea-rags-mcp-x9qsh).
       hasInProjectDefinition: (call: CallRef, ctx: CallContext): boolean =>
         callResolver.hasInProjectDefinition?.(call, ctx) ?? false,
+      // An unreadable union binding is hidden from every call-site reader (bd
+      // tea-rags-mcp-m99j1.1.30 regression); forwarded for the same reason.
+      visibleLocalBindings: (localBindings: CallContext["localBindings"], ctx: CallContext) =>
+        callResolver.visibleLocalBindings?.(localBindings, ctx) ?? localBindings,
     };
   }
 }

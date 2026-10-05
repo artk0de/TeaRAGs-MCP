@@ -8,7 +8,7 @@
  * leaf `python-type-addressing.js` and the kernel, never `strategies/shared.ts`.
  */
 
-import { identifierEntry } from "../../../../contracts/identifier-record.js";
+import { createIdentifierRecord, identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext, LocalBinding, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import {
@@ -623,6 +623,58 @@ export function pythonPlacedBindingUnion(
     if (arm.form !== "instance" || resolveTypeFile(arm.name, ctx, mapper) === null) return null;
   }
   return placed;
+}
+
+/**
+ * The chunk's local bindings as every Python reader may see them: a union
+ * binding the resolver cannot read is REMOVED, as if the walker had never
+ * published it (bd tea-rags-mcp-m99j1.1.30 regression).
+ *
+ * {@link pythonPlacedBindingUnion} answers `null` for two different findings.
+ * An arm that places to a library or builtin class is EVIDENCE — the receiver
+ * may be no project class at all — so the binding stays and keeps counting as
+ * a fact (polar's `template: Template | str`, jinja, must not fan or be
+ * guessed). An arm nothing places — a project type ALIAS, an unresolved name —
+ * is ABSENCE of evidence, and a binding standing on it must change nothing:
+ * httpx's `timeout: TimeoutTypes | UseClientDefault` used to reach
+ * `Timeout#as_dict` through the naming-convention guess, and the guess, the
+ * receiver-kind classifier and every binding-presence gate read PRESENCE. A
+ * library arm beside an unknown one is still evidence.
+ *
+ * Returns the input map by identity when nothing is hidden.
+ */
+export function pythonVisibleLocalBindings(
+  localBindings: Record<string, LocalBinding[]> | undefined,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): Record<string, LocalBinding[]> | undefined {
+  if (localBindings === undefined) return undefined;
+  let visible: Record<string, LocalBinding[]> | undefined;
+  for (const [name, bindings] of Object.entries(localBindings)) {
+    const readable = bindings.filter((binding) => !pythonBindingUnionIsUnreadable(binding, ctx, mapper));
+    if (readable.length === bindings.length) continue;
+    visible ??= Object.assign(createIdentifierRecord<LocalBinding[]>(), localBindings);
+    if (readable.length === 0) delete visible[name];
+    else visible[name] = readable;
+  }
+  return visible ?? localBindings;
+}
+
+/** A union binding whose union dies with no library / builtin arm to stand on — see {@link pythonVisibleLocalBindings}. */
+function pythonBindingUnionIsUnreadable(
+  binding: LocalBinding,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): boolean {
+  if (pythonPlacedBindingUnion(binding, ctx, mapper) !== null) return false;
+  const stated = typeRefReceiverForm(binding.typeRef);
+  if (stated?.form !== "union") return false;
+  return !stated.members.some(
+    (arm) =>
+      arm.form === "instance" &&
+      !isPythonPlacedClassKey(arm.name) &&
+      placePythonClassSpelling(arm.name, ctx.callerFile, ctx, mapper).kind === "external",
+  );
 }
 
 /**

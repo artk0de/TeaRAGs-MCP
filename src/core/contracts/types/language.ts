@@ -771,6 +771,18 @@ export interface LanguageSymbolResolver {
    * the unfiltered `lookupByShortName(member).length > 0`.
    */
   hasInProjectDefinition?: (call: CallRef, ctx: CallContext) => boolean;
+  /**
+   * Optional: a chunk's local bindings as this language reads them — a binding
+   * it cannot read at all is hidden from every call-site reader, as if never
+   * emitted (bd tea-rags-mcp-m99j1.1.30 regression). Asked once per chunk by
+   * `CallEdgeResolutionRunner`, before barrier-derived parameter seeding.
+   * Mirrors `CallResolver.visibleLocalBindings`; languages that omit it see
+   * every binding.
+   */
+  visibleLocalBindings?: (
+    localBindings: CallContext["localBindings"],
+    ctx: CallContext,
+  ) => CallContext["localBindings"];
 }
 
 /**
