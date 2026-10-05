@@ -23,7 +23,7 @@ import { readDeclaredDependencies } from "../../../../../../src/core/infra/depen
 function table(): InMemoryGlobalSymbolTable {
   const built = new InMemoryGlobalSymbolTable();
   for (const [relPath, symbolIds] of Object.entries({
-    "shop/models.py": ["Book", "Book#save", "Author", "Author#name_display"],
+    "shop/models.py": ["Book", "Book#save", "Author", "Author#name_display", "BookManager"],
     "shop/views.py": ["show"],
   })) {
     built.upsertFile(
@@ -65,6 +65,35 @@ describe("Django model attributes and query verbs", () => {
   it("_default_manager / _base_manager are managers of the model", () => {
     expect(fold("Book._default_manager.get(pk=1)", ctx())).toEqual({ form: "instance", name: "Book" });
     expect(fold("Book._base_manager.using(db).all().last()", ctx())).toEqual({ form: "instance", name: "Book" });
+  });
+
+  it("Model.objects.db_manager(alias) is the same manager, so the verb after it resolves as without the hop", () => {
+    expect(fold('Book.objects.db_manager("x").get(pk=1)', ctx())).toEqual(fold("Book.objects.get(pk=1)", ctx()));
+    expect(fold('Book.objects.db_manager("x").get(pk=1)', ctx())).toEqual({ form: "instance", name: "Book" });
+    expect(fold('Book.objects.db_manager("x").filter(a=1).first()', ctx())).toEqual({ form: "instance", name: "Book" });
+  });
+
+  it("Model.objects.using(alias) is a queryset of the same model, so the verb after it resolves as without the hop", () => {
+    expect(fold('Book.objects.using("x").filter(a=1).first()', ctx())).toEqual({ form: "instance", name: "Book" });
+  });
+
+  it("db_manager on a custom manager subclass (ContentTypeManager shape) stays on that manager", () => {
+    const custom: CallContext = {
+      ...ctx(),
+      classFieldTypes: { Book: { objects: "BookManager" } },
+      classFieldTypesByClassKey: { "shop/models.py::Book": { objects: "BookManager" } },
+      classAncestors: {
+        "shop/models.py::Book": ["models.Model"],
+        "shop/models.py::BookManager": ["models.Manager"],
+      },
+    };
+    const direct = fold("Book.objects", custom);
+    expect(direct).toEqual({ form: "instance", name: "BookManager" });
+    expect(fold('Book.objects.db_manager("x")', custom)).toEqual(direct);
+  });
+
+  it("db_manager yields no type where Django is not a dependency", () => {
+    expect(fold('Book.objects.db_manager("x").get(pk=1)', ctx(new Set(["flask"])))).toBeUndefined();
   });
 
   it("model._meta is Django's Options, so _meta.get_field(n) reaches Options#get_field", () => {

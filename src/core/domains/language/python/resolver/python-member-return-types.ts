@@ -234,7 +234,16 @@ function pythonFrameworkReturnType(
 ): TypeRef | null {
   for (const vocabulary of pythonVocabularyFor(ctx.declaredDependencies).memberTypes) {
     const model = owner.args?.[0];
-    if (vocabulary.relationClasses.has(lastSegment(owner.name))) {
+    const isRelationClass = vocabulary.relationClasses.has(lastSegment(owner.name));
+    // A user manager (`ContentTypeManager(models.Manager)`) inherits the verb, so
+    // the receiver's own subclass is what the next hop resolves on.
+    if (
+      vocabulary.selfReturning.has(member) &&
+      (isRelationClass || pythonDescendsFromAny(owner.name, vocabulary.relationClasses, ctx, mapper, linearizer))
+    ) {
+      return owner;
+    }
+    if (isRelationClass) {
       if (model === undefined) continue;
       if (vocabulary.relationReturning.has(member)) {
         return { form: "instance", name: vocabulary.relationClass, args: [model] };
@@ -244,7 +253,7 @@ function pythonFrameworkReturnType(
     }
     const attribute = vocabulary.modelAttributes.get(member);
     if (attribute === undefined) continue;
-    if (!pythonDescendsFromModel(owner.name, vocabulary.modelBases, ctx, mapper, linearizer)) continue;
+    if (!pythonDescendsFromAny(owner.name, vocabulary.modelBases, ctx, mapper, linearizer)) continue;
     const modelRef: TypeRef = { form: "instance", name: owner.name };
     return attribute.carriesModel
       ? { form: "instance", name: attribute.className, args: [modelRef] }
@@ -255,13 +264,13 @@ function pythonFrameworkReturnType(
 
 /**
  * Does the class `bareType` names record a base spelled as one of
- * `modelBases` — on itself or anywhere up its in-project MRO? The bases are
+ * `baseNames` — on itself or anywhere up its in-project MRO? The bases are
  * read as WRITTEN (`models.Model` → `Model`), because the model base is the
  * framework's and the hierarchy leaves the project exactly there.
  */
-function pythonDescendsFromModel(
+function pythonDescendsFromAny(
   bareType: string,
-  modelBases: ReadonlySet<string>,
+  baseNames: ReadonlySet<string>,
   ctx: CallContext,
   mapper: PythonImportFileMapper,
   linearizer: AncestorLinearizer<CallContext> | undefined,
@@ -272,9 +281,9 @@ function pythonDescendsFromModel(
     linearizer === undefined ? [receiverClassKey] : [receiverClassKey, ...linearizer.linearize(receiverClassKey).order];
   for (const classKey of keys) {
     const parsed = parsePythonClassKey(classKey);
-    if (parsed !== null && modelBases.has(lastSegment(parsed.classFq))) return true;
+    if (parsed !== null && baseNames.has(lastSegment(parsed.classFq))) return true;
     for (const spelling of identifierEntry(ctx.classAncestors, classKey) ?? []) {
-      if (modelBases.has(lastSegment(spelling))) return true;
+      if (baseNames.has(lastSegment(spelling))) return true;
     }
   }
   return false;
