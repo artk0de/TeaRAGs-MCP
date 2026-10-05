@@ -52,6 +52,7 @@ import {
   type WorkingTreeOverlay,
   type WorkingTreeView,
 } from "../../../domains/explore/index.js";
+import type { ExploreRequestScope } from "../../../domains/explore/request-scope.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import { NotIndexedError } from "../../../domains/ingest/errors.js";
 import { StatsRecomputeService } from "../../../domains/ingest/infra/index.js";
@@ -282,8 +283,18 @@ export class ExploreOps {
   // Public operations — one per App interface method
   // ---------------------------------------------------------------------------
 
-  async semanticSearch(request: SemanticSearchRequest): Promise<ExploreResponse> {
-    return this.embedAndDispatch(request, this.vectorStrategy, { attachConfidence: true, denseLegOptional: false });
+  /**
+   * `scope` is internal (not a request field): the caller's request-wide reads
+   * ({@link ExploreRequestScope}) — passed by a caller that runs many searches
+   * for one answer, so the index probe and the tree measurement run once.
+   */
+  async semanticSearch(request: SemanticSearchRequest, scope?: ExploreRequestScope): Promise<ExploreResponse> {
+    return this.embedAndDispatch(
+      request,
+      this.vectorStrategy,
+      { attachConfidence: true, denseLegOptional: false },
+      scope,
+    );
   }
 
   async hybridSearch(request: HybridSearchRequest): Promise<ExploreResponse> {
@@ -522,8 +533,9 @@ export class ExploreOps {
     request: SemanticSearchRequest | HybridSearchRequest,
     strategy: BaseExploreStrategy,
     { attachConfidence, denseLegOptional }: { attachConfidence: boolean; denseLegOptional: boolean },
+    scope?: ExploreRequestScope,
   ): Promise<ExploreResponse> {
-    const { target, embedding, denseUnavailable } = await this.embedQuery(request, denseLegOptional);
+    const { target, embedding, denseUnavailable } = await this.embedQuery(request, denseLegOptional, scope);
     const { collectionName, path, workingTreeView, historyAnchorSec } = target;
     const rerank = resolveDocRerank(request.rerank, request.documentation, request.language);
     const level = resolveEffectiveLevel(request.level, rerank, this.reranker, "semantic_search");
@@ -558,8 +570,15 @@ export class ExploreOps {
   private async embedQuery(
     request: SemanticSearchRequest | HybridSearchRequest,
     denseLegOptional: boolean,
+    scope?: ExploreRequestScope,
   ): Promise<ExploreQueryEmbedding> {
-    const { modelGuard, ...target } = await this.resolveTarget(request.collection, request.path, request.project, true);
+    const { modelGuard, ...target } = await this.resolveTarget(
+      request.collection,
+      request.path,
+      request.project,
+      true,
+      scope,
+    );
     try {
       await modelGuard?.ensureMatch(target.collectionName, { failOnProviderOutage: true, ...READ_PATH_EMBED });
       const { embedding } = await target.embeddings.embed(request.query, READ_PATH_EMBED);
@@ -677,15 +696,19 @@ export class ExploreOps {
     path: string | undefined,
     project: string | undefined,
     embeds: boolean,
+    scope?: ExploreRequestScope,
   ): Promise<ResolvedExploreTarget & { modelGuard?: EmbeddingModelGuard }> {
     // The one existence seam every read tool resolves through (live round-3 D3):
     // a missing index is refused before the overlay measures the tree.
     const workingTree = await resolveIndexedWorkingTree(
       this.collectionRegistry,
       { collection, project, path },
-      async (name) => this.qdrant.collectionExists(name),
+      async (name) =>
+        scope
+          ? scope.collectionExists(name, async (probed) => this.qdrant.collectionExists(probed))
+          : this.qdrant.collectionExists(name),
     );
-    const resolved = this.targetOf(workingTree, path, project);
+    const resolved = this.targetOf(workingTree, path, project, scope);
     // The collection's own provider and guard (bd tea-rags-mcp-b91f5): the
     // marker is held to the model that will embed for it, never to this
     // process's default model. The index's history clock is read beside it.
@@ -721,13 +744,16 @@ export class ExploreOps {
     workingTree: WorkingTree,
     path?: string,
     project?: string,
+    scope?: ExploreRequestScope,
   ): Omit<ResolvedExploreTarget, "embeddings"> {
     const { collectionName, root } = workingTree.baseIndex;
     const addressedByLocation = path !== undefined || project !== undefined;
     return {
       collectionName,
       path: addressedByLocation ? root : undefined,
-      workingTreeView: this.workingTreeOverlay?.view(workingTree, project),
+      workingTreeView: scope
+        ? this.workingTreeOverlay?.view(workingTree, project, scope.workingTree)
+        : this.workingTreeOverlay?.view(workingTree, project),
     };
   }
 

@@ -59,6 +59,7 @@ export {
   filterReadsWorkingTreeSignals,
   WORKING_TREE_SIGNAL_PAYLOAD_KEYS,
   WORKING_TREE_VIEWED_TREES_KEPT,
+  WorkingTreeMeasurements,
   WorkingTreeOverlay,
   type WorkingTreeSignalledRow,
   type WorkingTreeDeltaChunkSource,

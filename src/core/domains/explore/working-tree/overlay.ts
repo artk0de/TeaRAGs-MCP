@@ -280,6 +280,30 @@ interface WorkingTreeMeasuredDelta {
 
 type WorkingTreeMeasurement = WorkingTreeMeasuredDelta | { kind: "degraded"; view: WorkingTreeView };
 
+/**
+ * The tree measurements of ONE caller request (bd tea-rags-mcp-89k7k.1.18):
+ * every view the request asks for through the same instance shares one
+ * measurement per tree, index and alias. Measuring (the status read and the
+ * change list against the indexed commit) is what a view costs, and a review
+ * runs dozens of searches over a tree that does not move under it. Each view
+ * still builds its own marker, paths and answer deadline from the shared
+ * measurement. Never shared across requests: a later request re-measures, so
+ * no answer reads a tree state older than its request.
+ */
+export class WorkingTreeMeasurements {
+  private readonly measured = new Map<string, Promise<WorkingTreeMeasurement>>();
+
+  /** The measurement of `key`, made by `measure` on its first ask. `measure` never rejects. */
+  async measurementOf(key: string, measure: () => Promise<WorkingTreeMeasurement>): Promise<WorkingTreeMeasurement> {
+    let measurement = this.measured.get(key);
+    if (measurement === undefined) {
+      measurement = measure();
+      this.measured.set(key, measurement);
+    }
+    return measurement;
+  }
+}
+
 export class WorkingTreeOverlay {
   /** The last tree, and the alias it was named by, a view of each root saw — what `prewarm` re-measures. */
   private readonly viewed = new Map<string, { tree: WorkingTree; alias: string | undefined }>();
@@ -291,10 +315,18 @@ export class WorkingTreeOverlay {
   }
 
   /** Never throws for git trouble: a failure becomes `marker.degraded`. */
-  async view(tree: WorkingTree, alias: string | undefined): Promise<WorkingTreeView> {
+  async view(
+    tree: WorkingTree,
+    alias: string | undefined,
+    measurements?: WorkingTreeMeasurements,
+  ): Promise<WorkingTreeView> {
     if (tree.root !== "") this.remember(tree, alias);
-    const measured = await this.measure(tree, alias);
-    if (measured.kind === "degraded") return measured.view;
+    const measured = measurements
+      ? await measurements.measurementOf(measurementKeyOf(tree, alias), async () => this.measure(tree, alias))
+      : await this.measure(tree, alias);
+    // A shared measurement hands its degraded view to every ask: each answer
+    // stamps its own marker, never a sibling's.
+    if (measured.kind === "degraded") return measurements ? copyDegradedView(measured.view) : measured.view;
     const { collectionName } = tree.baseIndex;
     const { marker, delta, deleted, reread, indexOnly } = measured;
     const touched = reread.length + deleted.length;
@@ -506,6 +538,16 @@ export class WorkingTreeOverlay {
       clearTimeout(timer);
     }
   }
+}
+
+/** What a measurement depends on: the tree, the index it is read against, and the alias its remedies name. */
+function measurementKeyOf(tree: WorkingTree, alias: string | undefined): string {
+  return [tree.root, tree.baseIndex.collectionName, tree.baseIndex.root ?? "", alias ?? ""].join("\0");
+}
+
+/** A degraded view with a marker of its own. */
+function copyDegradedView(view: WorkingTreeView): WorkingTreeView {
+  return { ...view, marker: { ...view.marker, floors: [...view.marker.floors] } };
 }
 
 /**
