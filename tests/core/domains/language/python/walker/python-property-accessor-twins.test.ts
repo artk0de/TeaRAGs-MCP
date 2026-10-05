@@ -128,7 +128,10 @@ describe("property accessor twins (m99j1.1.76)", () => {
     expect(callLines(chunk(out, "Point#x#norm"))).toEqual([9]);
   });
 
-  it("does not join a same-named def whose decorator names a DIFFERENT property", () => {
+  // m99j1.1.80 changed this invariant: a def decorated `@y.setter` is not an
+  // accessor of `x`, but it IS a plain redefinition of `Point#x`, so its body
+  // joins the shared chunk through the redefinition pass instead of the class.
+  it("joins a same-named def whose decorator names a DIFFERENT property as a plain redefinition", () => {
     const out = extract([
       "class Point:", //                1
       "    @property", //                2
@@ -140,11 +143,13 @@ describe("property accessor twins (m99j1.1.76)", () => {
       "        self._cs.put(value)", // 8
       "",
     ]);
-    expect(callLines(chunk(out, "Point#x"))).toEqual([]);
-    expect(chunk(out, "Point").calls.map((c) => c.startLine)).toContain(8);
+    expect(callLines(chunk(out, "Point#x"))).toEqual([8]);
+    expect(chunk(out, "Point").calls.map((c) => c.startLine)).not.toContain(8);
   });
 
-  it("leaves a plain same-named redefinition exactly as before", () => {
+  // m99j1.1.80 changed this invariant: a plain redefinition now joins the shared
+  // chunk (python-redefinition-twins.test.ts owns the shapes).
+  it("attributes a plain same-named redefinition to the shared chunk", () => {
     const out = extract([
       "class Point:", //                1
       "    def x(self):", //             2
@@ -154,8 +159,8 @@ describe("property accessor twins (m99j1.1.76)", () => {
       "        self._cs.put(value)", // 6
       "",
     ]);
-    expect(callLines(chunk(out, "Point#x"))).toEqual([]);
-    expect(chunk(out, "Point").calls.map((c) => c.startLine)).toContain(6);
+    expect(callLines(chunk(out, "Point#x"))).toEqual([6]);
+    expect(chunk(out, "Point").calls.map((c) => c.startLine)).not.toContain(6);
   });
 
   it("leaves a setter with no def-declared getter (x = property(...)) exactly as before", () => {

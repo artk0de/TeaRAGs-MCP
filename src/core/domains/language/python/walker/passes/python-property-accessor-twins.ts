@@ -21,8 +21,12 @@
 
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 
-/** A twin accessor def's own line range, owned by the chunk at `ownerIndex`. */
-export interface PythonAccessorTwinRange {
+/**
+ * A same-id twin def's (or class's) own line range — a property accessor twin
+ * here, a plain redefinition in `python-redefinition-twins.ts` — owned by the
+ * chunk at `ownerIndex`, which carries the shared symbolId.
+ */
+export interface PythonSymbolTwinRange {
   ownerIndex: number;
   startLine: number;
   endLine: number;
@@ -81,12 +85,12 @@ function owningChunkIndex(
 export function collectPythonAccessorTwinRanges(
   root: AstNode,
   chunks: readonly { symbolId: string; startLine: number }[],
-): PythonAccessorTwinRange[] {
+): PythonSymbolTwinRange[] {
   const chunkIndexByStart = new Map<number, number>();
   chunks.forEach((c, index) => {
     if (!chunkIndexByStart.has(c.startLine)) chunkIndexByStart.set(c.startLine, index);
   });
-  const twinRanges: PythonAccessorTwinRange[] = [];
+  const twinRanges: PythonSymbolTwinRange[] = [];
   const visit = (node: AstNode): void => {
     if (node.type === "function_definition") {
       const name = defName(node);
