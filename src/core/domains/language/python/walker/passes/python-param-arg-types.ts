@@ -46,6 +46,7 @@ import { symbolIdNames, TypeFactStore, typeRefReceiverForm, type ExtractionFacet
 import { extractConstructorTypeName, isCapWordsConstructor } from "../walker.js";
 import { PYTHON_TYPE_SOURCE_ORDER } from "./annotation-type-facts.js";
 import { pythonAnnotationTypeSource, pythonTypedParameters } from "./python-annotation-type-source.js";
+import { pythonConstructorReceiverIsValue } from "./python-constructor-receiver.js";
 import { isPythonMethodDef, pythonBoundParamNames, pythonPositionalParamNames } from "./python-def-signatures.js";
 import { pythonModuleValuesEnabled, pythonModuleValueTypeSource } from "./python-module-value-facts.js";
 import { pythonTypeRefFromNode } from "./python-type-annotation.js";
@@ -150,7 +151,7 @@ function collectDefFrames(root: AstNode): PythonDefFrame[] {
 function constructorTypeOf(expr: AstNode | null, imports: ReadonlyMap<string, PythonFromImport | null>): string | null {
   if (expr?.type !== "call") return null;
   const fn = expr.childForFieldName("function");
-  if (fn === null) return null;
+  if (fn === null || pythonConstructorReceiverIsValue(fn)) return null;
   const typeName = extractConstructorTypeName(fn);
   if (typeName === null || !isCapWordsConstructor(typeName)) return null;
   // An aliased import spells the class under a name only THIS file knows; the
