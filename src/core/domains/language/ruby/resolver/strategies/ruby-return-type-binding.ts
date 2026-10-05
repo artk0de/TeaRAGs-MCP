@@ -6,7 +6,7 @@ import type {
   SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { boundCallReturnType } from "../type-propagation.js";
+import { boundCallReturnType, isOwnAssignmentRightHandSide } from "../type-propagation.js";
 import { resolveTypeMethod, type ResolverConfig } from "./shared.js";
 
 /**
@@ -29,7 +29,13 @@ export function resolveBoundCallTarget(
   // Container / union results are not threaded here — a member call on a relation
   // is the cone resolver's business, not a single-target binding.
   if (returnType?.form !== "class" && returnType?.form !== "instance") return null;
-  return resolveTypeMethod(returnType.name, call.member, ctx, mode);
+  const target = resolveTypeMethod(returnType.name, call.member, ctx, mode);
+  // The right-hand side of `x = x.m` read through its own statement's binding
+  // (bd tea-rags-mcp-0qaht.57): the type is `m`'s return, a guess that holds
+  // only when that type declares `m`. A file-only answer means it does not —
+  // the edge would be fabricated, so the pass stays silent.
+  if (target?.targetSymbolId === null && isOwnAssignmentRightHandSide(call, ctx)) return null;
+  return target;
 }
 
 /**
