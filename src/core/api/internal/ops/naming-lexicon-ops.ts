@@ -140,6 +140,7 @@ import {
   type TypeDraftPopulation,
   type TypeNameEvidence,
 } from "../../../domains/explore/naming-lexicon/index.js";
+import { ExploreRequestScope } from "../../../domains/explore/request-scope.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import { pathPatternLiteralPrefix } from "../../../infra/path-pattern.js";
@@ -249,6 +250,13 @@ export interface NamingLexiconEmbeddings {
 export interface NamingLexiconExplore {
   semanticSearch: (request: SemanticSearchRequest) => Promise<ExploreResponse>;
   /**
+   * This port's searches bound to one request's shared reads (bd
+   * tea-rags-mcp-89k7k.1.18): a naming request runs every concept search
+   * through it, so the index probe and the working-tree measurement run once
+   * per request, not once per search. Absent → each search reads alone.
+   */
+  withRequestScope?: (scope: ExploreRequestScope) => Pick<NamingLexiconExplore, "semanticSearch">;
+  /**
    * The symbols a colliding value / return draft collides with (bd
    * tea-rags-mcp-xsxkr): their ids on `evidence.collisions`. Absent → the
    * collision is reported without them.
@@ -344,6 +352,8 @@ interface ReviewDraft {
  * (`null`: the population is too small to measure one).
  */
 interface TypeAlignmentState {
+  /** The searches of this request, bound to its shared explore reads (bd tea-rags-mcp-89k7k.1.18). */
+  conceptExplore?: Pick<NamingLexiconExplore, "semanticSearch">;
   failure?: string;
   vectors?: Map<string, number[]>;
   /** Keyed by {@link typeEvidenceKey}: one distribution per type namespace and population. */
@@ -598,7 +608,13 @@ export class NamingLexiconOps {
     }
     try {
       const reader = handle.graphDb;
-      const context: AnswerContext = { alignment: {}, excludePaths, lookupCollisions: true };
+      // One scope per request: its concept searches share the index probe and the tree measurement.
+      const conceptExplore = this.deps.explore.withRequestScope?.(new ExploreRequestScope());
+      const context: AnswerContext = {
+        alignment: conceptExplore ? { conceptExplore } : {},
+        excludePaths,
+        lookupCollisions: true,
+      };
       const lexicon = asksLexicon(addressed)
         ? await this.answer(reader, addressed, context)
         : { scope: "", byType: [], names: [] };
@@ -1290,7 +1306,9 @@ export class NamingLexiconOps {
     let search = searches.get(key);
     if (search === undefined) {
       const slots = (alignment.conceptSearchSlots ??= new Semaphore(NAMING_LEXICON_READ_CONCURRENCY));
-      search = withSlot(slots, async () => this.deps.explore.semanticSearch(request)).then(
+      search = withSlot(slots, async () =>
+        (alignment.conceptExplore ?? this.deps.explore).semanticSearch(request),
+      ).then(
         (response): ConceptSearchOutcome => ({ response }),
         (error: unknown): ConceptSearchOutcome => ({ error }),
       );

@@ -17,6 +17,7 @@ import {
   CollectionNotFoundError as DomainCollectionNotFoundError,
   InvalidQueryError,
 } from "../../../domains/explore/errors.js";
+import type { ExploreRequestScope } from "../../../domains/explore/request-scope.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import type { WorkingTreeOverlay } from "../../../domains/explore/working-tree/index.js";
 import type { IndexDriftReporter } from "../../../domains/maintenance/drift/index.js";
@@ -97,6 +98,15 @@ export class ExploreFacade {
 
   async semanticSearch(request: SemanticSearchRequest): Promise<ExploreResponse> {
     return this.exploreOps.semanticSearch(request);
+  }
+
+  /**
+   * Searches bound to one caller request's shared reads ({@link ExploreRequestScope}):
+   * a caller running many searches for one answer probes the index and
+   * measures the working tree once. The scope lives as long as the caller keeps it.
+   */
+  withRequestScope(scope: ExploreRequestScope): Pick<ExploreFacade, "semanticSearch"> {
+    return { semanticSearch: async (request) => this.exploreOps.semanticSearch(request, scope) };
   }
 
   async hybridSearch(request: HybridSearchRequest): Promise<ExploreResponse> {
