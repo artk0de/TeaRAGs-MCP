@@ -40,7 +40,9 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
+  type ClassFieldParamLink,
   type InheritanceEdgeRow,
+  type KnownTargetCallArgs,
   type ModuleReexport,
 } from "../src/core/contracts/types/codegraph.js";
 import type {
@@ -71,9 +73,16 @@ import { pythonEnclosingClass } from "../src/core/domains/language/python/resolv
 import { resolveDispatchViaComponents, resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
 import { MapHierarchyView } from "../src/core/domains/trajectory/codegraph/hierarchy-view.js";
 import {
+  deriveClassFieldTypesFromParams,
+  foldKnownTargetParamTypes,
+  paramTypesOfChunk,
+  seedParamLocalBindings,
+} from "../src/core/domains/trajectory/codegraph/symbols/call-arg-param-types.js";
+import {
   buildHierarchySnapshot,
   normalizeInheritanceEdges,
 } from "../src/core/domains/trajectory/codegraph/symbols/inheritance-edges.js";
+import { paramFamilyFactsOf } from "../src/core/domains/trajectory/codegraph/symbols/param-family.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { classifyReceiverKind } from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
 import { InMemoryGlobalSymbolTable } from "../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -295,6 +304,14 @@ export async function walkCorpus(
   // identity gate is what proves it rather than this comment.
   const inheritanceRows: InheritanceEdgeRow[] = [];
   const instantiatedTypes = new Set<string>();
+  // The interprocedural PARAMETER family (bd tea-rags-mcp-m99j1.1.17), read
+  // through the same `paramFamilyFactsOf` `CodegraphRunState#absorb` reads and
+  // folded at the same barrier below. Python's fields live on the class-keyed
+  // channel, so no per-file typed-field gate is collected. Duplicate sites are
+  // harmless here: the fold over agreement is idempotent.
+  const knownTargetCallArgs: KnownTargetCallArgs[] = [];
+  const paramNames: Record<string, readonly string[]> = {};
+  const classFieldParamLinks: Record<string, Record<string, ClassFieldParamLink>> = {};
   const extractions: {
     relPath: string;
     extraction: NonNullable<ReturnType<typeof extractFile>>;
@@ -325,6 +342,14 @@ export async function walkCorpus(
     }
     if (extraction.moduleReexports) moduleReexports[relPath] = extraction.moduleReexports;
     Object.assign(moduleValueTypes, extraction.moduleValueTypes ?? {});
+    const paramFamily = paramFamilyFactsOf(extraction);
+    if (paramFamily !== undefined) {
+      knownTargetCallArgs.push(...(paramFamily.knownTargetCallArgs ?? []));
+      Object.assign(paramNames, paramFamily.methodParamNames);
+      for (const [classKey, fields] of Object.entries(paramFamily.classFieldParamLinks ?? {})) {
+        classFieldParamLinks[classKey] = { ...classFieldParamLinks[classKey], ...fields };
+      }
+    }
     // `() => null` mirrors the sink: the cone reads ancestors by fqName, and
     // the partial table cannot bind symbol ids at pass 1 anyway.
     inheritanceRows.push(...normalizeInheritanceEdges(extraction, () => null));
@@ -333,6 +358,22 @@ export async function walkCorpus(
     else symbolTableOnlyFiles++;
   }
   if (!quiet) process.stderr.write(`pass 1: ${extractions.length} python files, ${symbolTable.size()} symbols\n`);
+
+  // The parameter-typing barrier, as `CodegraphRunState#seal` runs it for a
+  // class-keyed language: derived fields land UNDER `classFieldTypesByClassKey`,
+  // whose own coordinates are the typed-field gate.
+  const paramTypes = foldKnownTargetParamTypes(knownTargetCallArgs, paramNames);
+  const typedClassKeyedFields = new Set<string>();
+  for (const classKey of Object.keys(classFieldParamLinks)) {
+    for (const field of Object.keys(classFieldTypesByClassKey[classKey] ?? {})) {
+      typedClassKeyedFields.add(`${classKey}|${field}`);
+    }
+  }
+  for (const [classKey, fields] of Object.entries(
+    deriveClassFieldTypesFromParams(classFieldParamLinks, paramTypes, typedClassKeyedFields),
+  )) {
+    classFieldTypesByClassKey[classKey] = { ...fields, ...classFieldTypesByClassKey[classKey] };
+  }
 
   const production = factory.create("python").resolver;
   if (production === undefined) throw new Error("the python language provider has no resolver");
@@ -384,6 +425,13 @@ export async function walkCorpus(
 
   for (const { relPath, extraction } of extractions) {
     for (const chunk of extraction.chunks) {
+      // Folded parameter types enter at the def line, as the runner's
+      // `forEachCallSite` seeds them — the classifier below reads them too.
+      const localBindings = seedParamLocalBindings(
+        chunk.localBindings,
+        paramTypesOfChunk(paramTypes, chunk),
+        chunk.startLine,
+      );
       const ctx: CallContext = {
         declaredDependencies: declaredDependencies.get("python"),
         callerFile: relPath,
@@ -392,7 +440,7 @@ export async function walkCorpus(
         imports: extraction.imports,
         symbolTable,
         classFieldTypes: extraction.classFieldTypes,
-        localBindings: chunk.localBindings,
+        localBindings,
         callResultBindings: chunk.callResultBindings,
         classExtends,
         structuredReturnTypes,
@@ -455,7 +503,7 @@ export async function walkCorpus(
           relPath,
           call,
           ctx,
-          receiverKind: classifyReceiverKind(call, chunk.localBindings),
+          receiverKind: classifyReceiverKind(call, localBindings),
           chain: exact,
           runnerAnswer,
           fan,
