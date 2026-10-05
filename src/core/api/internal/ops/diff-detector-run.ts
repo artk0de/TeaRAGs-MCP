@@ -53,6 +53,7 @@
 import {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   isDeclaredCompositionRoot,
+  isDeclaredEntryPoint,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import type {
   SilentCouplingExclusionCounts,
@@ -267,6 +268,19 @@ export interface DiffDetectorFinding {
    * a suppression (the `foundationTerminal` spirit). Present only when true.
    */
   compositionRoot?: true;
+  /**
+   * mainSequence only (bd tea-rags-mcp-zh3l0, parity with the whole-repo
+   * detector's DECLARED_ENTRY_POINT_COMPONENTS): the touched component is, or
+   * lives inside, a declared cli/mcp entry surface
+   * (`isDeclaredEntryPoint` in the boundary-diagnostics domain — the same
+   * declared list, never a re-stated one). Nothing imports an entry surface,
+   * so its instability — and a diff-window delta on it — is placement, not
+   * defect: the unstable end of the main sequence is where an entry BELONGS.
+   * The finding still stands — triage data for the reader, never a
+   * suppression (the `foundationTerminal` / `compositionRoot` spirit).
+   * Present only when true.
+   */
+  entryPoint?: true;
 }
 
 /** One detector family's verdict for the run. */
@@ -688,6 +702,10 @@ export class DiffDetectorRun {
         ],
         detail: `the diff moves ${name} off its main-sequence distance: ${newEdgeCount} cross-component outgoing edge(s) raise instability ${format3(fact.instability)} -> ${format3(newInstability)} with abstractness held${recomputeClause}`,
         ...(foundationTerminal ? { foundationTerminal: true as const } : {}),
+        // The unstable end of the main sequence is where an entry component
+        // belongs (see DECLARED_ENTRY_POINT_COMPONENTS): annotated, still
+        // reported.
+        ...(isDeclaredEntryPoint(name) ? { entryPoint: true as const } : {}),
       });
     }
     return { findings, excludedLowConnectionCount };

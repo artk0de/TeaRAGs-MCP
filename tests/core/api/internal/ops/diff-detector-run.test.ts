@@ -540,6 +540,56 @@ describe("mainSequence", () => {
     expect(finding?.foundationTerminal).toBeUndefined();
   });
 
+  // bd tea-rags-mcp-zh3l0 (parity with the whole-repo detector's
+  // DECLARED_ENTRY_POINT_COMPONENTS): a cli/mcp component is the unstable END
+  // of the main sequence by design — nothing imports the entry surface — so a
+  // diff-window D-delta on one is inherent to that placement, not a placement
+  // defect. The finding carries the annotation as triage data, never a
+  // suppression. The entries are the DECLARED ones the whole-repo detector
+  // reads (`isDeclaredEntryPoint`), fixtures use the real component dirs.
+  it("stamps entryPoint: true on a D-delta whose touched component is a declared entry point", () => {
+    const cliEntry = new Map<string, ComponentFact>([
+      [
+        "src/cli/call/call.ts",
+        { name: "src/cli/call", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 9 },
+      ],
+      ["src/lib/b.ts", { name: "lib", instability: 0.2, distanceFromMainSequence: 0.1, connectionCount: 9 }],
+    ]);
+    const result = runWith(
+      { catalog: catalogOf(cliEntry) },
+      ["src/cli/call/call.ts"],
+      [["src/cli/call/call.ts", "src/lib/b.ts"]],
+    );
+    const finding = result.findings.find((f) => f.detector === "mainSequence");
+    expect(finding?.subject).toBe("src/cli/call");
+    expect(finding?.entryPoint).toBe(true);
+  });
+
+  it("annotates a component nested inside a declared entry — the mcp surface included", () => {
+    const nested = new Map<string, ComponentFact>([
+      [
+        "src/mcp/tools/register.ts",
+        { name: "src/mcp/tools", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 9 },
+      ],
+      ["src/lib/b.ts", { name: "lib", instability: 0.2, distanceFromMainSequence: 0.1, connectionCount: 9 }],
+    ]);
+    const result = runWith(
+      { catalog: catalogOf(nested) },
+      ["src/mcp/tools/register.ts"],
+      [["src/mcp/tools/register.ts", "src/lib/b.ts"]],
+    );
+    const finding = result.findings.find((f) => f.detector === "mainSequence");
+    expect(finding?.subject).toBe("src/mcp/tools");
+    expect(finding?.entryPoint).toBe(true);
+  });
+
+  it("leaves a finding whose component is no declared entry unannotated", () => {
+    const result = runWith({ catalog: catalogOf(components) }, ["src/app/a.ts"], [["src/app/a.ts", "src/lib/b.ts"]]);
+    const finding = result.findings.find((f) => f.detector === "mainSequence");
+    expect(finding?.subject).toBe("app");
+    expect("entryPoint" in (finding ?? {})).toBe(false);
+  });
+
   // bd tea-rags-mcp-89k7k.19: the 89k7k.14 replay residual — one GENUINELY-new
   // edge on a 24-connection low-I component (the api/public barrel class) read
   // as a full-scale instability step, D 0.000 -> 0.946, because the +1-per-edge

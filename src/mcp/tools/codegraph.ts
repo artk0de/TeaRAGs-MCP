@@ -426,7 +426,8 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "unstable+abstract; A from walker type census, D > max(0.5, Otsu cut); components whose language " +
       "rarely declares abstractions excluded (unobservableAbstractness); census needs codegraph recompute; pain " +
       "also needs volatility (mean git.file.commitCount per file > max(median file, log-scale Otsu cut)), calm ones " +
-      "counted as stableConcreteCalm. layering: inferred layers without a declared architecture — SCC-condensed " +
+      "counted as stableConcreteCalm; evidence entryPoint:true = declared cli/mcp entry surface — its distance is " +
+      "placement, not defect (triage data, never suppression). layering: inferred layers without a declared architecture — SCC-condensed " +
       "DOMAIN graph (every facade directory is a unit, adoption notwithstanding — a vertical with an unadopted " +
       "facade counts once, not once per subdirectory; facadePartition keeps the adoption partition's component/level " +
       "counts), levels by longest path (L0 = foundation), per-knot greedy weighted feedback arc set " +

@@ -293,6 +293,16 @@ export interface MainSequenceViolationEvidence {
    * the component carries `git.file.commitCount`.
    */
   volatility?: MainSequenceComponentVolatilityEvidence;
+  /**
+   * The component is, or lives inside, a declared cli/mcp entry surface
+   * (`DECLARED_ENTRY_POINT_COMPONENTS` in the boundary-diagnostics domain, bd
+   * tea-rags-mcp-zh3l0): nothing imports an entry surface, so its distance
+   * from the main sequence is placement, not defect — the unstable end is
+   * where an entry BELONGS. The violation still stands — triage data for the
+   * reader, never a suppression (the `compositionRoot` spirit). Present only
+   * when true.
+   */
+  entryPoint?: true;
 }
 
 /** A component's volatility: mean `git.file.commitCount` over its measured files. */

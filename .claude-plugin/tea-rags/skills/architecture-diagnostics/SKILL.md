@@ -61,6 +61,9 @@ Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
   index predates type census — say "needs codegraph recompute".
   `unobservableAbstractness` = language rarely declares abstractions (Ruby duck
   typing) — A 0 is idiom, not verdict.
+- **`entryPoint: true` distance read as placement defect.** Declared cli/mcp
+  entry surface — unstable end of main sequence is where it BELONGS; nothing
+  imports it. Triage data, never suppression.
 - **`layerMap` expected in a bare report.** `response.layerMap` appears ONLY
   when the request carried `layerMap` — absent = not asked, never "no layers".
 - **`island` / `layerSkip` / `compositionCycle` read as violations.**

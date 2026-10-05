@@ -1355,6 +1355,30 @@ describe("ArchitectureReportOps#build — mainSequence (bd tea-rags-mcp-r8hme.8)
     expect(report.violations.at(-1)?.detector).toBe("mainSequence");
   });
 
+  // The response shape must carry the detector's entry-point annotation: a
+  // mainSequence distance on a declared cli/mcp entry component is placement,
+  // not defect (bd tea-rags-mcp-zh3l0) — the mapper dropping it would repeat
+  // the 0qaht.45 gap, so the survival is pinned by exact shape.
+  it("carries the entry-point annotation through to the mainSequence evidence (tea-rags-mcp-zh3l0)", async () => {
+    const g = censusGraph();
+    for (let i = 1; i <= 5; i++) {
+      g.files.push({ ...file(`src/cli/call/f${i}.ts`), typeAbstractness: census(1, 0) });
+      g.edges.push({ sourceRelPath: `src/cli/call/f${i}.ts`, targetRelPath: "vendor/v.ts", callWeight: 1 });
+    }
+
+    const report = await new ArchitectureReportOps().build(graphDb(g), {});
+
+    const mainSequence = report.violations.filter((v) => v.detector === "mainSequence");
+    expect(mainSequence).toHaveLength(3);
+    const cli = mainSequence.find((v) => "component" in v && v.component === "src/cli/call");
+    expect(cli && "evidence" in cli ? cli.evidence : expect.fail("no cli mainSequence violation")).toMatchObject({
+      entryPoint: true,
+    });
+    for (const violation of mainSequence.filter((v) => !("component" in v && v.component === "src/cli/call"))) {
+      expect("evidence" in violation && "entryPoint" in violation.evidence).toBe(false);
+    }
+  });
+
   it("summarises the judged components, the adaptive cut and the exclusions", async () => {
     const summary = (await new ArchitectureReportOps().build(graphDb(censusGraph()), {})).summary.mainSequence;
 
