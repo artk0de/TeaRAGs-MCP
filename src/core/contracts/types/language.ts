@@ -750,6 +750,15 @@ export interface LanguageSymbolResolver {
    */
   targetsCoreAmbiguousMember?: (call: CallRef, ctx: CallContext) => boolean;
   /**
+   * Optional: is this UNRESOLVED call's target statically undecidable? (K11, bd
+   * tea-rags-mcp-m99j1.1.24). A typed receiver whose member is absent from a
+   * fully in-project ancestor walk and is answered by run-time attribute lookup.
+   * Returning `true` moves the residual miss into `callsUnresolvable`, out of
+   * the `resolveSuccessRate` denominator; it never reclassifies a resolved call
+   * and never emits an edge. Mirrors `CallResolver.targetsUndecidable`.
+   */
+  targetsUndecidable?: (call: CallRef, ctx: CallContext) => boolean;
+  /**
    * Optional: does the project declare ANY definition of `call.member` this
    * language could resolve the call to? (bd tea-rags-mcp-t5cji). The miss
    * classifier's `noInProjectDef` gate asks it of an UNRESOLVED call; `false`

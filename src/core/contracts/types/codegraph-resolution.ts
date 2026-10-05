@@ -194,6 +194,21 @@ export interface CallResolver {
    */
   targetsCoreAmbiguousMember?: (call: CallRef, ctx: CallContext) => boolean;
   /**
+   * Optional: is this UNRESOLVED call's target STATICALLY UNDECIDABLE? (K11, bd
+   * tea-rags-mcp-m99j1.1.24). True when the receiver is typed, the member is
+   * absent from that type's fully in-project ancestor walk, and the language's
+   * run-time attribute lookup (Python `__getattr__`) is what answers it — no
+   * static analysis can name the callee. Counted as `callsUnresolvable`, like a
+   * `dynamicSend`, and excluded from the `resolveSuccessRate` denominator.
+   *
+   * Consulted LAST, only for the residual miss every earlier gate left as
+   * `missWithInProjectDef`, and never for a resolved call — so it moves rows
+   * between miss buckets and never emits an edge. A wrong `true` hides a real
+   * miss: answer it only on proof. Mirrors
+   * `LanguageSymbolResolver.targetsUndecidable`.
+   */
+  targetsUndecidable?: (call: CallRef, ctx: CallContext) => boolean;
+  /**
    * Optional: does the project declare ANY definition of `call.member` this
    * resolver could target? (bd tea-rags-mcp-t5cji). Asked by the miss
    * classifier's `noInProjectDef` gate for an UNRESOLVED call, in place of the
