@@ -109,3 +109,9 @@ export {
   type TypeFact,
 } from "./type-facts.js";
 export { NIL_TYPE_REF, typeRefEquals, typeRefNonNilArms, typeRefReceiverForm, typeRefUnionOf } from "./type-ref.js";
+export {
+  createTypeMemberLookup,
+  typeMemberLookupDefinedFor,
+  type NominalTypeRef,
+  type TypeMemberLookup,
+} from "./type-member-lookup.js";
