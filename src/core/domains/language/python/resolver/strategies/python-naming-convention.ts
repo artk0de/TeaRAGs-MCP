@@ -35,10 +35,11 @@
  * (`user = authenticate(…)`, `get_object_or_404(…)`, `RQ_Job.fetch(…)`) whose
  * snake_case name camelizes onto a real project model. `boundToForeignCall`
  * below is the gate that answers them, and it costs nothing — ugnest back to
- * phantom 0 with all 24 of its gains intact. The remaining three are polar's
+ * phantom 0 with all 24 of its gains intact. The remaining three were polar's
  * `_job_queue_manager`, a module global annotated `contextvars.ContextVar[...]`
- * whose annotation this path never reads; they are a different mechanism and
- * are left standing rather than tuned against.
+ * the walker refused to type; it now publishes the generic's base as the
+ * module value, and a foreign-typed module value yields here like any fact
+ * (bd tea-rags-mcp-m99j1.1.33).
  */
 import {
   isDerivedLocalBinding,
@@ -67,7 +68,7 @@ import {
   lookupPythonSymbolsByShortName,
   pythonBoundClassKey,
   pythonBoundToForeignCall,
-  pythonModuleValueClass,
+  pythonModuleValueBound,
   resolvePythonInheritedMember,
   resolveTypeFile,
   type ResolverConfig,
@@ -154,8 +155,11 @@ class PythonConventionReceiverTyping implements ConventionReceiverTypingPorts {
       return true;
     }
     // A module-scope value the walker typed (P4, bd m99j1.1.15) is a fact too:
-    // `apps` after `from django.apps import apps` is an `Apps`, not a guess.
-    if (pythonModuleValueClass(receiver, ctx, this.mapper) !== null) return true;
+    // `apps` after `from django.apps import apps` is an `Apps`, not a guess —
+    // and a value typed FOREIGN is a fact as well (bd m99j1.1.33): polar's
+    // `_job_queue_manager: contextvars.ContextVar[...]` is a `ContextVar`,
+    // not the `JobQueueManager` its name camelizes onto.
+    if (pythonModuleValueBound(receiver, ctx, this.mapper)) return true;
     // And a FOREIGN right-hand side is a fact of the same kind. The walker saw
     // `user = authenticate(...)`, `localBinding` folded that callee and came
     // back with nothing; when the callee's own head is a name the project does

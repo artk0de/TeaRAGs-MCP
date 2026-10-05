@@ -41,6 +41,12 @@ export interface PythonVocabularyCatalogue {
   readonly descriptorDecorators: ReadonlySet<string>;
   /** The active frameworks' base-class factory method names, unioned. */
   readonly baseClassFactories: ReadonlySet<string>;
+  /**
+   * The active frameworks' association field constructors (`ForeignKey`),
+   * unioned under the `associationFields` facet — read by the walker's
+   * class-body pass (bd tea-rags-mcp-m99j1.1.51).
+   */
+  readonly associationFields: ReadonlySet<string>;
 }
 
 /** {@link PYTHON_FRAMEWORKS} under the kernel activation rule (bd tea-rags-mcp-m99j1.1.8). */
@@ -63,6 +69,7 @@ export function composePythonVocabulary(declared: ReadonlySet<string> | null): P
   const memberTypes: PythonFrameworkMemberTypes[] = [];
   const descriptorDecorators = new Set<string>();
   const baseClassFactories = new Set<string>();
+  const associationFields = new Set<string>();
   for (const framework of PYTHON_FRAMEWORK_REGISTRY.active(declared)) {
     for (const facet of framework.facets) activeFacets.add(facet);
     if (framework.memberTypes !== undefined) memberTypes.push(framework.memberTypes);
@@ -72,6 +79,9 @@ export function composePythonVocabulary(declared: ReadonlySet<string> | null): P
     if (framework.facets.has("baseClassFactory")) {
       for (const factory of framework.baseClassFactories ?? []) baseClassFactories.add(factory);
     }
+    if (framework.facets.has("associationFields")) {
+      for (const field of framework.memberTypes?.associationFields ?? []) associationFields.add(field);
+    }
   }
   return {
     activeFacets,
@@ -79,6 +89,7 @@ export function composePythonVocabulary(declared: ReadonlySet<string> | null): P
     memberTypes,
     descriptorDecorators,
     baseClassFactories,
+    associationFields,
   };
 }
 

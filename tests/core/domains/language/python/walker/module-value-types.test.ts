@@ -70,6 +70,33 @@ describe("moduleValueTypes — the walker's module-scope value channel", () => {
     expect(walk(["TIMEOUT: int = 5", "LIMIT: Final = 3"]).moduleValueTypes).toBeUndefined();
   });
 
+  it("types a non-container generic annotation as its BASE, never its argument (bd m99j1.1.33)", () => {
+    const out = walk(
+      [
+        "import contextvars",
+        "from contextvars import ContextVar",
+        "from .jobs import JobQueueManager",
+        '_job_queue_manager: contextvars.ContextVar["JobQueueManager | None"] = contextvars.ContextVar("m")',
+        "_other: ContextVar[JobQueueManager] = ContextVar('o')",
+      ],
+      "polar/worker/_enqueue.py",
+    );
+    expect(out.moduleValueTypes).toEqual({
+      "polar/worker/_enqueue.py::_job_queue_manager": { form: "instance", name: "contextvars.ContextVar" },
+      "polar/worker/_enqueue.py::_other": { form: "instance", name: "ContextVar" },
+    });
+  });
+
+  it("keeps declining a subscripted annotation that is a container or a wrapper", () => {
+    const out = walk([
+      "from .jobs import Job",
+      "JOBS: list[Job] = []",
+      "ONE: Final[Job] = Job()",
+      "MAYBE: Optional[Job] = None",
+    ]);
+    expect(out.moduleValueTypes).toBeUndefined();
+  });
+
   it("keeps a qualified constructor spelling verbatim", () => {
     const out = walk(["import utils", "connections = utils.ConnectionHandler()"], "django/db/__init__.py");
     expect(out.moduleValueTypes).toEqual({

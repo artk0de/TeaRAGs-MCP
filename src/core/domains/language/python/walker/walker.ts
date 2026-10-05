@@ -315,6 +315,7 @@ function collectPythonClassChannels(
     relPath,
     imports,
     vocabulary.hasFacet("classBodyManagerFactory"),
+    vocabulary.associationFields,
   );
   for (const [key, fields] of Object.entries(classBodyFields.byShortName)) {
     classFieldTypes[key] = { ...fields, ...(classFieldTypes[key] ?? {}) };

@@ -40,6 +40,7 @@ import type { InlineTypeSource, TypeFact } from "../../../kernel/index.js";
 import { pythonAssignmentBoundType } from "../walker.js";
 import { PYTHON_ANNOTATION_SOURCE, type PythonTypeSourceInput } from "./python-annotation-type-source.js";
 import { PYTHON_AST_SOURCE } from "./python-ast-type-source.js";
+import { pythonBareTypeName, pythonTypeRefFromNode } from "./python-type-annotation.js";
 
 export const PYTHON_MODULE_VALUES_ENV = "CODEGRAPH_PY_MODULE_VALUES";
 
@@ -154,12 +155,34 @@ function visitModuleAssignment(node: AstNode, scan: PythonModuleScopeScan): void
     collectIdentifiers(left, scan.refused);
     return;
   }
-  const typed = pythonAssignmentBoundType(node);
+  const typed = pythonAssignmentBoundType(node) ?? pythonGenericBaseAnnotation(node);
   if (typed === null) {
     scan.refused.add(left.text);
     return;
   }
   scan.typed.push({ name: left.text, line: node.startPosition.row + 1, ...typed });
+}
+
+/**
+ * `x: contextvars.ContextVar["JobQueueManager | None"] = …` → the BASE spelling
+ * `contextvars.ContextVar` (bd tea-rags-mcp-m99j1.1.33). A generic the
+ * annotation reader keeps as its base — not a container, not a transparent
+ * wrapper — holds a value of that base class; its argument is what a method
+ * RETURNS. Refusing the name instead left it untyped, and polar's snake_case
+ * `_job_queue_manager` then camelized onto the project's `JobQueueManager`.
+ * Transparent wrappers (`Final[Foo]`) and containers keep today's refusal.
+ */
+function pythonGenericBaseAnnotation(assignment: AstNode): { readonly type: string; readonly annotated: true } | null {
+  const typeField = assignment.childForFieldName("type");
+  const generic = typeField?.namedChild(0);
+  if (typeField === null || typeField === undefined || generic === null || generic === undefined) return null;
+  if (generic.type !== "generic_type" && generic.type !== "subscript") return null;
+  const genericBase = generic.childForFieldName("value") ?? generic.namedChild(0);
+  if (genericBase === null || (genericBase.type !== "identifier" && genericBase.type !== "attribute")) return null;
+  const ref = pythonTypeRefFromNode(typeField);
+  return ref?.form === "instance" && ref.name === pythonBareTypeName(genericBase.text)
+    ? { type: genericBase.text, annotated: true }
+    : null;
 }
 
 function collectIdentifiers(node: AstNode | null, into: Set<string>): void {

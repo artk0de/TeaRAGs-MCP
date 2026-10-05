@@ -162,3 +162,43 @@ describe("module-level value receivers", () => {
     expect(target?.targetSymbolId).not.toBe("Apps#populate");
   });
 });
+
+describe("a module value annotated with a NON-container generic (bd tea-rags-mcp-m99j1.1.33)", () => {
+  // polar/worker/_enqueue.py:
+  //   _job_queue_manager: contextvars.ContextVar["JobQueueManager | None"] = ...
+  //   def f(): _job_queue_manager.set(manager)
+  // The value is a `ContextVar`; its generic argument is what `.get()`
+  // RETURNS, not what the receiver is. The snake_case name camelizes onto the
+  // project's `JobQueueManager`, so the naming convention guessed
+  // `JobQueueManager#set` — the annotation is a fact and the guess must yield.
+  const POLAR = tableWith({
+    "polar/worker/_enqueue.py": [
+      { symbolId: "JobQueueManager" },
+      { symbolId: "JobQueueManager#set", scope: ["JobQueueManager"] },
+      { symbolId: "JobQueueManager#get", scope: ["JobQueueManager"] },
+      { symbolId: "enqueue_job" },
+    ],
+  });
+  const polarCtx = (moduleValueTypes: CallContext["moduleValueTypes"]): CallContext => ({
+    callerFile: "polar/worker/_enqueue.py",
+    callerScope: ["enqueue_job"],
+    imports: [{ importText: "contextvars", startLine: 1, importedNames: ["contextvars"] }],
+    symbolTable: POLAR,
+    classAncestors: { "polar/worker/_enqueue.py::JobQueueManager": [] },
+    moduleValueTypes,
+  });
+
+  it("control: with no module-value fact the convention guesses the camelized class", () => {
+    const target = new PythonCallResolver().resolve(call("_job_queue_manager", "set"), polarCtx(undefined));
+    expect(target?.targetSymbolId).toBe("JobQueueManager#set");
+  });
+
+  it("does not resolve `.set` / `.get` onto the generic argument's class", () => {
+    const facts = { "polar/worker/_enqueue.py::_job_queue_manager": instance("contextvars.ContextVar") };
+    const resolver = new PythonCallResolver();
+    for (const member of ["set", "get"]) {
+      const target = resolver.resolve(call("_job_queue_manager", member), polarCtx(facts));
+      expect(target?.targetSymbolId).not.toBe(`JobQueueManager#${member}`);
+    }
+  });
+});
