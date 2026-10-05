@@ -33,12 +33,12 @@ export interface PythonTypeSourceInput {
   readonly moduleValues?: boolean;
 }
 
-interface PythonTypedParam {
+export interface PythonTypedParam {
   readonly name: string;
   readonly annotation: AstNode;
 }
 
-function typedParameters(fn: AstNode): PythonTypedParam[] {
+export function pythonTypedParameters(fn: AstNode): PythonTypedParam[] {
   const params = fn.childForFieldName("parameters");
   if (params === null) return [];
   const out: PythonTypedParam[] = [];
@@ -104,7 +104,7 @@ function extractPythonAnnotationFacts(input: PythonTypeSourceInput): TypeFact[] 
     onDef: (site) => {
       const selfClass = site.classChain[site.classChain.length - 1];
       if (input.trackLocalTypes) {
-        for (const param of typedParameters(site.node)) {
+        for (const param of pythonTypedParameters(site.node)) {
           if (walkerAlreadyBinds(param.annotation)) continue;
           const ref = pythonTypeRefFromNode(param.annotation, selfClass);
           if (ref === undefined || pythonNominalReceiverName(ref) === undefined) continue;
@@ -180,7 +180,7 @@ function pushParameterFieldFacts(facts: TypeFact[], site: PythonDefSite): void {
   const body = site.node.childForFieldName("body");
   if (body === null) return;
   const annotated = new Map<string, AstNode>();
-  for (const param of typedParameters(site.node)) annotated.set(param.name, param.annotation);
+  for (const param of pythonTypedParameters(site.node)) annotated.set(param.name, param.annotation);
   if (annotated.size === 0) return;
   const selfClass = site.classChain[site.classChain.length - 1];
   for (const assignment of selfFieldParameterAssignments(body)) {

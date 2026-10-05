@@ -18,7 +18,12 @@
  *   - `knownTargetCallArgs` — per-position argument types at a CapWords call
  *     whose name the file binds to a class: one it declares at module scope, or
  *     one a `from M import Name` names (the candidates are the files module `M`
- *     can live in; the fold keeps the first that is a real definition);
+ *     can live in; the fold keeps the first that is a real definition). An
+ *     argument is typed when it is a constructor call, the receiver, a local
+ *     bound only to one constructor, a parameter annotated with one nominal arm
+ *     that the body never rebinds, `self.<field>` of a field the class declares
+ *     or constructs as one class, or a module value the `moduleValueTypes`
+ *     channel publishes (bd tea-rags-mcp-m99j1.1.52);
  *   - `classFieldParamLinks` — `self.<field> = <param>` verbatim copies.
  *
  * Every collector is SILENT where it cannot be exact: an argument whose type is
@@ -36,10 +41,14 @@ import type {
   FileExtraction,
   KnownTargetCallArgs,
 } from "../../../../../contracts/types/codegraph.js";
-import type { RubyTypeRef, WalkContext } from "../../../../../contracts/types/language.js";
-import { symbolIdNames, type ExtractionFacetPass } from "../../../kernel/index.js";
+import type { RubyTypeRef, TypeRef, WalkContext } from "../../../../../contracts/types/language.js";
+import { symbolIdNames, TypeFactStore, typeRefReceiverForm, type ExtractionFacetPass } from "../../../kernel/index.js";
 import { extractConstructorTypeName, isCapWordsConstructor } from "../walker.js";
+import { PYTHON_TYPE_SOURCE_ORDER } from "./annotation-type-facts.js";
+import { pythonAnnotationTypeSource, pythonTypedParameters } from "./python-annotation-type-source.js";
 import { isPythonMethodDef, pythonBoundParamNames, pythonPositionalParamNames } from "./python-def-signatures.js";
+import { pythonModuleValuesEnabled, pythonModuleValueTypeSource } from "./python-module-value-facts.js";
+import { pythonTypeRefFromNode } from "./python-type-annotation.js";
 
 /** The only Python callee the fold can address from syntax: the constructor. */
 const PYTHON_INIT_METHOD = "__init__";
@@ -69,6 +78,10 @@ interface PythonDefFrame {
   readonly receiver: string | null;
   /** Lazily computed constructor-typed locals of this def. */
   locals?: ReadonlyMap<string, string | null>;
+  /** Lazily computed names the def's body statements bind in its own scope. */
+  bound?: ReadonlySet<string>;
+  /** Lazily computed `param → class` for parameters annotated with one nominal arm. */
+  annotatedParams?: ReadonlyMap<string, string>;
 }
 
 /** A name a `from M import Source as Local` binds. `null` = bound twice, unusable. */
@@ -273,9 +286,16 @@ export function pythonModuleFileCandidates(relPath: string, moduleText: string):
 
 /** The file's resolution context for constructor calls. */
 interface PythonCallSiteScope {
+  readonly root: AstNode;
   readonly relPath: string;
   readonly imports: ReadonlyMap<string, PythonFromImport | null>;
   readonly moduleClasses: ReadonlyMap<string, boolean>;
+  /** The frame of a def node, by `startIndex` — the enclosing defs of a module-value read. */
+  readonly frameByStart: ReadonlyMap<number, PythonDefFrame>;
+  /** Lazily computed `<dotted class chain> → field → class` (`null` = contested). */
+  fieldTypes?: ReadonlyMap<string, ReadonlyMap<string, string | null>>;
+  /** Lazily computed module-scope value → class, as the `moduleValueTypes` channel publishes it. */
+  moduleValues?: ReadonlyMap<string, string>;
 }
 
 /** `<classKey>#__init__` candidates for a constructor call spelled `name`, or `[]`. */
@@ -290,18 +310,275 @@ function constructorTargets(name: string, scope: PythonCallSiteScope): string[] 
   );
 }
 
+/** Expression nodes that bind their own `for … in` variables (Python 3 comprehension scope). */
+const COMPREHENSION_NODES: ReadonlySet<string> = new Set([
+  "list_comprehension",
+  "set_comprehension",
+  "dictionary_comprehension",
+  "generator_expression",
+]);
+
+/** Add the names an assignment TARGET binds; `obj.x` / `obj[k]` targets bind no name. */
+function targetNames(node: AstNode | null, out: Set<string>): void {
+  if (node === null || node.type === "attribute" || node.type === "subscript") return;
+  if (node.type === "identifier") {
+    out.add(node.text);
+    return;
+  }
+  for (const child of node.namedChildren) targetNames(child, out);
+}
+
+/**
+ * Every name a def's body STATEMENTS bind in the def's own scope,
+ * flow-insensitively: a name rebound anywhere in the body is not the parameter
+ * or the module value at any call site of that body. Comprehension and lambda
+ * variables are not here — they shadow only inside their own expression, which
+ * {@link isShadowedAt} answers at the argument's position.
+ */
+function bodyBindingsOf(frame: PythonDefFrame): ReadonlySet<string> {
+  if (frame.bound !== undefined) return frame.bound;
+  const bound = new Set<string>();
+  const body = frame.node.childForFieldName("body");
+  if (body !== null) {
+    walkScope(body, (n) => {
+      switch (n.type) {
+        case "assignment":
+        case "augmented_assignment":
+        case "for_statement":
+          targetNames(n.childForFieldName("left"), bound);
+          return;
+        case "as_pattern":
+          targetNames(n.childForFieldName("alias"), bound);
+          return;
+        case "named_expression":
+          targetNames(n.childForFieldName("name"), bound);
+          return;
+        case "function_definition":
+        case "class_definition":
+          targetNames(n.childForFieldName("name"), bound);
+          return;
+        case "global_statement":
+        case "nonlocal_statement":
+        case "import_statement":
+        case "import_from_statement":
+        case "case_pattern":
+          identifiersUnder(n, bound);
+          break;
+        default:
+          break;
+      }
+    });
+  }
+  frame.bound = bound;
+  return bound;
+}
+
+/** Does a lambda or comprehension between `node` and `scopeNode` bind `name`? */
+function isShadowedAt(node: AstNode, name: string, scopeNode: AstNode | null): boolean {
+  for (let at = node.parent; at !== null && at !== scopeNode; at = at.parent) {
+    if (at.type === "lambda") {
+      const names = new Set<string>();
+      identifiersUnder(at.childForFieldName("parameters"), names);
+      if (names.has(name)) return true;
+    } else if (COMPREHENSION_NODES.has(at.type)) {
+      const names = new Set<string>();
+      for (const clause of at.namedChildren) {
+        if (clause.type === "for_in_clause") targetNames(clause.childForFieldName("left"), names);
+      }
+      if (names.has(name)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * The class a reference spells, as the callee's file can read it: an aliased
+ * `from M import Source as Local` carries `Source`, as {@link constructorTypeOf}
+ * does for a constructor. `null` for a name the constructor arm's CapWords gate
+ * would refuse (`str`, `int`, `dict`): no fold consumer types a builtin, so the
+ * widened arms feed none either.
+ */
+function sourceClassName(name: string, scope: PythonCallSiteScope): string | null {
+  if (!isCapWordsConstructor(name)) return null;
+  return scope.imports.get(name)?.sourceName ?? name;
+}
+
+/** The one nominal INSTANCE arm of an annotation (`Optional[A]` / `A | None` → `A`), or undefined. */
+function nominalInstanceName(ref: TypeRef | undefined): string | undefined {
+  const receiver = typeRefReceiverForm(ref);
+  return receiver?.form === "instance" ? receiver.name : undefined;
+}
+
+/** `param → class` for the def's parameters annotated with one nominal instance arm. */
+function annotatedParamsOf(frame: PythonDefFrame, scope: PythonCallSiteScope): ReadonlyMap<string, string> {
+  if (frame.annotatedParams !== undefined) return frame.annotatedParams;
+  const selfClass = frame.classChain[frame.classChain.length - 1];
+  const out = new Map<string, string>();
+  for (const param of pythonTypedParameters(frame.node)) {
+    const name = nominalInstanceName(pythonTypeRefFromNode(param.annotation, selfClass));
+    const type = name === undefined ? null : sourceClassName(name, scope);
+    if (type !== null) out.set(param.name, type);
+  }
+  frame.annotatedParams = out;
+  return out;
+}
+
+function agree(fields: Map<string, string | null>, field: string, type: string | null): void {
+  const seen = fields.get(field);
+  fields.set(field, seen === undefined || seen === type ? type : null);
+}
+
+/**
+ * `<dotted class chain> → field → class` for the file's classes. A field the
+ * annotation source types (class-body `x: T`, `self.x: T`, `self.x = <annotated
+ * param>`) takes its DECLARED type; otherwise every `self.x = …` in the class's
+ * instance methods must construct one class. Two disagreeing declarations, or
+ * any non-constructor write of an undeclared field, leave the field `null`.
+ */
+function classFieldTypesOf(scope: PythonCallSiteScope): ReadonlyMap<string, ReadonlyMap<string, string | null>> {
+  const declared = new Map<string, Map<string, string | null>>();
+  for (const fact of pythonAnnotationTypeSource.extract({ root: scope.root, trackLocalTypes: false })) {
+    if (fact.kind !== "ivar" || fact.name === undefined || fact.type.form !== "instance") continue;
+    const key = fact.symbolScope.join(".");
+    const fields = declared.get(key) ?? new Map<string, string | null>();
+    declared.set(key, fields);
+    agree(fields, fact.name, sourceClassName(fact.type.name, scope));
+  }
+  const constructed = new Map<string, Map<string, string | null>>();
+  for (const frame of scope.frameByStart.values()) {
+    const { receiver } = frame;
+    const body = frame.node.childForFieldName("body");
+    if (receiver === null || frame.classChain.length === 0 || body === null) continue;
+    const key = frame.classChain.join(".");
+    const fields = constructed.get(key) ?? new Map<string, string | null>();
+    constructed.set(key, fields);
+    const fieldOf = (target: AstNode): string | undefined => {
+      const fieldOwner = target.childForFieldName("object");
+      return fieldOwner?.type === "identifier" && fieldOwner.text === receiver
+        ? target.childForFieldName("attribute")?.text
+        : undefined;
+    };
+    walkScope(body, (n) => {
+      if (n.type !== "assignment" && n.type !== "augmented_assignment" && n.type !== "for_statement") return;
+      const left = n.childForFieldName("left");
+      if (left === null) return;
+      if (left.type === "attribute") {
+        const field = fieldOf(left);
+        if (field === undefined) return;
+        const type = n.type === "assignment" ? constructorTypeOf(n.childForFieldName("right"), scope.imports) : null;
+        agree(fields, field, type);
+        return;
+      }
+      // A tuple / list target writing `self.x` gives it an unknowable element.
+      walkScope(left, (t) => {
+        const field = t.type === "attribute" ? fieldOf(t) : undefined;
+        if (field !== undefined) agree(fields, field, null);
+      });
+    });
+  }
+  const out = new Map<string, Map<string, string | null>>(constructed);
+  for (const [key, fields] of declared) out.set(key, new Map([...(constructed.get(key) ?? []), ...fields]));
+  return out;
+}
+
+/** Module-scope value → class, exactly as the `moduleValueTypes` channel publishes it. */
+function moduleValuesOf(scope: PythonCallSiteScope): ReadonlyMap<string, string> {
+  const facts = pythonModuleValueTypeSource.extract({
+    root: scope.root,
+    trackLocalTypes: false,
+    moduleValues: pythonModuleValuesEnabled(),
+  });
+  const out = new Map<string, string>();
+  if (facts.length === 0) return out;
+  const published = TypeFactStore.fromFacts(facts, PYTHON_TYPE_SOURCE_ORDER).moduleValueTypesMap();
+  for (const [name, ref] of Object.entries(published)) {
+    const nominal = nominalInstanceName(ref);
+    const type = nominal === undefined ? null : sourceClassName(nominal, scope);
+    if (type !== null) out.set(name, type);
+  }
+  return out;
+}
+
+/**
+ * Does `name` at `node` read the MODULE binding? Not when an enclosing def binds
+ * it (its own or an outer def's — a closure reads the outer local), nor a class
+ * body the read sits in directly, nor a lambda / comprehension around it.
+ */
+function readsModuleBinding(node: AstNode, name: string, scope: PythonCallSiteScope): boolean {
+  let crossedDef = false;
+  for (let at = node.parent; at !== null; at = at.parent) {
+    if (at.type === "function_definition") {
+      const frame = scope.frameByStart.get(at.startIndex);
+      if (frame === undefined || pythonBoundParamNames(at).includes(name) || bodyBindingsOf(frame).has(name)) {
+        return false;
+      }
+      crossedDef = true;
+    } else if (at.type === "class_definition" && !crossedDef) {
+      const classNames = new Set<string>();
+      const body = at.childForFieldName("body");
+      if (body !== null) {
+        for (const stmt of body.namedChildren) {
+          if (stmt.type === "expression_statement") {
+            for (const e of stmt.namedChildren) {
+              if (e.type === "assignment" || e.type === "augmented_assignment") {
+                targetNames(e.childForFieldName("left"), classNames);
+              }
+            }
+          }
+        }
+      }
+      if (classNames.has(name)) return false;
+    } else if (at.type === "lambda") {
+      const names = new Set<string>();
+      identifiersUnder(at.childForFieldName("parameters"), names);
+      if (names.has(name)) return false;
+    }
+  }
+  return !isShadowedAt(node, name, null);
+}
+
 /** The conservatively known type of ONE argument expression, or null. */
 function argTypeOf(arg: AstNode, frame: PythonDefFrame | null, scope: PythonCallSiteScope): RubyTypeRef | null {
   const ctor = constructorTypeOf(arg, scope.imports);
   if (ctor !== null) return { form: "instance", name: ctor };
-  if (arg.type !== "identifier" || frame === null) return null;
-  if (frame.receiver !== null && arg.text === frame.receiver) {
-    const owner = frame.classChain[frame.classChain.length - 1];
-    return owner === undefined ? null : { form: "instance", name: owner };
+  const type = arg.type === "attribute" ? selfFieldTypeOf(arg, frame, scope) : identifierTypeOf(arg, frame, scope);
+  return type === null ? null : { form: "instance", name: type };
+}
+
+/** `self.<field>` of the enclosing class, typed by {@link classFieldTypesOf}. */
+function selfFieldTypeOf(arg: AstNode, frame: PythonDefFrame | null, scope: PythonCallSiteScope): string | null {
+  const fieldOwner = arg.childForFieldName("object");
+  const field = arg.childForFieldName("attribute")?.text;
+  const receiver = frame?.receiver ?? null;
+  if (frame === null || receiver === null || fieldOwner?.type !== "identifier" || fieldOwner.text !== receiver) {
+    return null;
   }
-  frame.locals ??= constructorTypedLocals(frame, scope.imports);
-  const local = frame.locals.get(arg.text);
-  return local === undefined || local === null ? null : { form: "instance", name: local };
+  if (field === undefined || bodyBindingsOf(frame).has(receiver) || isShadowedAt(arg, receiver, frame.node)) {
+    return null;
+  }
+  scope.fieldTypes ??= classFieldTypesOf(scope);
+  return scope.fieldTypes.get(frame.classChain.join("."))?.get(field) ?? null;
+}
+
+/** A bare name: the receiver, a constructor-typed local, an annotated parameter, or a module value. */
+function identifierTypeOf(arg: AstNode, frame: PythonDefFrame | null, scope: PythonCallSiteScope): string | null {
+  if (arg.type !== "identifier") return null;
+  const name = arg.text;
+  if (frame !== null) {
+    if (isShadowedAt(arg, name, frame.node)) return null;
+    if (frame.receiver !== null && name === frame.receiver) {
+      return frame.classChain[frame.classChain.length - 1] ?? null;
+    }
+    frame.locals ??= constructorTypedLocals(frame, scope.imports);
+    const local = frame.locals.get(name);
+    if (local !== undefined && local !== null) return local;
+    const annotated = annotatedParamsOf(frame, scope).get(name);
+    // A parameter the body never rebinds is the parameter at every site.
+    if (annotated !== undefined) return bodyBindingsOf(frame).has(name) ? null : annotated;
+  }
+  if (!readsModuleBinding(arg, name, scope)) return null;
+  scope.moduleValues ??= moduleValuesOf(scope);
+  return scope.moduleValues.get(name) ?? null;
 }
 
 function collectSiteArgs(
@@ -335,11 +612,10 @@ function collectPythonKnownTargetCallArgs(
   scope: PythonCallSiteScope,
 ): KnownTargetCallArgs[] {
   const out: KnownTargetCallArgs[] = [];
-  const frameByStart = new Map(frames.map((f) => [f.node.startIndex, f]));
   const visit = (node: AstNode, frame: PythonDefFrame | null): void => {
     for (const child of node.namedChildren) {
       if (child.type === "call") collectSiteArgs(child, frame, scope, out);
-      const inner = child.type === "function_definition" ? (frameByStart.get(child.startIndex) ?? null) : frame;
+      const inner = child.type === "function_definition" ? (scope.frameByStart.get(child.startIndex) ?? null) : frame;
       // A class nested in a def has no frame; its methods' calls are skipped
       // with it (their `self` cannot be spelled), module-level code is `null`.
       if (child.type === "function_definition" && inner === null) continue;
@@ -425,9 +701,11 @@ export const pythonParamArgTypesFacetPass: ExtractionFacetPass = {
   run: (root, ctx): Partial<FileExtraction> => {
     const frames = collectDefFrames(root);
     const scope: PythonCallSiteScope = {
+      root,
       relPath: ctx.relPath,
       imports: collectFromImports(root),
       moduleClasses: collectModuleClasses(root),
+      frameByStart: new Map(frames.map((f) => [f.node.startIndex, f])),
     };
     const out: Partial<FileExtraction> = {};
     const chunks = constructorParamNameChunks(frames, ctx.chunks, ctx.relPath);
