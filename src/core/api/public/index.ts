@@ -132,6 +132,7 @@ export {
   PathDoesNotExistError,
   ProjectPathMissingError,
   StaleProjectAliasError,
+  SubmoduleNotIndexedError,
   InvalidDocumentMetadataSchemaError,
   DocumentMetadataSchemaViolationError,
   UnknownArchitectureComponentError,

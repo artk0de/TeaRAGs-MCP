@@ -43,7 +43,7 @@ import type {
   CallRef,
   SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
-import { enclosingTypeOf, resolveSelfDispatchHookTarget } from "./strategies/shared.js";
+import { enclosingTypeOf, resolveSelfDispatchHookTarget } from "./strategies/index.js";
 import { typeOfReceiver } from "./type-propagation.js";
 
 /**

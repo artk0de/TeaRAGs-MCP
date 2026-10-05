@@ -15,7 +15,7 @@
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
-import { ACTIVE_RECORD_QUERY_INTERFACE } from "../dsl/rails.js";
+import { ACTIVE_RECORD_QUERY_INTERFACE } from "../dsl/index.js";
 import { catalogueForGemfile } from "../gemfile.js";
 
 /**
