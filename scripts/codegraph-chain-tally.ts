@@ -463,7 +463,7 @@ const SYMBOL_TABLE_EXTENSIONS: readonly string[] = Object.keys(CODEGRAPH_LANGUAG
 /**
  * A run state wired as the provider wires it: the constructor's two
  * language-contributed source vocabularies, then the run-start seam — project
- * root, Gemfile, declared dependencies, schema snapshots.
+ * root, declared dependencies (Ruby's Gemfile among them), schema snapshots.
  *
  * The harness used to keep its own run-global channels and one hierarchy over
  * every language. Production partitions the class-name maps, the return-type
@@ -481,7 +481,6 @@ function newProductionRunState(root: string, factory: LanguageFactory): Codegrap
     collectStructuralConformanceDerivers(factory),
   );
   state.bindProjectRoot(root);
-  state.loadGemfile(root);
   state.loadDeclaredDependencies(root);
   state.loadSchemaSnapshots(root);
   return state;

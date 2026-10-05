@@ -703,10 +703,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // Per-file hashes for this run (bd tea-rags-mcp-6goqa), assigned before any
     // walk so both branches below stamp them.
     if (options?.contentHashes) this.runState.contentHashes = options.contentHashes;
-    // Per-run inputs every resolver reads (project root, Gemfile, declared
+    // Per-run inputs every resolver reads (project root, declared
     // dependencies, schema snapshots): provider construction precedes any project.
     this.runState.bindProjectRoot(root);
-    this.runState.loadGemfile(root);
     this.runState.loadDeclaredDependencies(root);
     this.runState.loadSchemaSnapshots(root);
     // Caller-supplied paths (incremental reindex, and the production ingest path)
@@ -814,7 +813,6 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private bindRunState(root: string, options?: FileSignalOptions): void {
     this.runState.bindProjectRoot(root);
-    this.runState.loadGemfile(root);
     this.runState.loadDeclaredDependencies(root);
     this.runState.loadSchemaSnapshots(root);
     if (options?.contentHashes) this.runState.contentHashes = options.contentHashes;
@@ -835,7 +833,6 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   extractFileBatch = async (root: string, paths: string[]): Promise<FileExtractionFanoutBatch> => {
     this.runState.bindProjectRoot(root);
-    this.runState.loadGemfile(root);
     this.runState.loadDeclaredDependencies(root);
     const extractions: FileExtraction[] = [];
     const pass1ByLanguage: Record<string, FileExtractionPass1Telemetry> = {};

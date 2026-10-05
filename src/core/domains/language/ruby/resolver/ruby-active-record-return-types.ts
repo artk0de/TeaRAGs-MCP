@@ -15,8 +15,8 @@
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
+import { catalogueFor } from "../dsl/index.js";
 import { ACTIVE_RECORD_QUERY_INTERFACE } from "../dsl/rails.js";
-import { catalogueForGemfile } from "../gemfile.js";
 
 /**
  * Whether `className`'s transitive ancestry (walking `ctx.classAncestors`,
@@ -59,7 +59,7 @@ function isDynamicFinder(member: string): boolean {
  */
 export function activeRecordQueryReturn(className: string, member: string, ctx: CallContext): RubyTypeRef | undefined {
   if (!ancestryReaches(className, ACTIVE_RECORD_QUERY_INTERFACE.modelBaseClasses, ctx)) return undefined;
-  const catalogue = catalogueForGemfile(ctx.gemfileContent);
+  const catalogue = catalogueFor(ctx.declaredDependencies);
   if (catalogue.instanceReturning.has(member) || isDynamicFinder(member)) {
     return { form: "instance", name: className };
   }

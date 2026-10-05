@@ -38,13 +38,14 @@ import type {
   TypeDeclarationFact,
 } from "../../../../contracts/types/codegraph.js";
 import type {
+  DeclaredDependenciesByLanguage,
   DependencyManifestSource,
   RubyTypeRef,
   SchemaColumnAccessorSource,
   StructuralConformanceDeriver,
 } from "../../../../contracts/types/language.js";
 import type { FileExtractionAbsorbRole, ProviderRunMetrics } from "../../../../contracts/types/provider.js";
-import { readDeclaredDependencies } from "../../../../infra/dependency-manifests.js";
+import { readDeclaredDependenciesByLanguage } from "../../../../infra/dependency-manifests.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import { MapHierarchyView } from "../hierarchy-view.js";
 import {
@@ -369,6 +370,9 @@ function mintResolveRunScope(): ResolveRunScope {
   return Object.freeze({ runSeq: lastResolveRunSeq });
 }
 
+/** The run-level answer before any manifest read: no language declares anything known. */
+const NO_DECLARED_DEPENDENCIES: DeclaredDependenciesByLanguage = new Map();
+
 export class CodegraphRunState {
   /**
    * Persisted-schema column vocabularies of the registered languages (bd
@@ -382,7 +386,7 @@ export class CodegraphRunState {
      * tea-rags-mcp-w205u.1), collected the same way. Empty ⇒ the manifest walk
      * never runs and every framework vocabulary stays active.
      */
-    private readonly dependencyManifestSources: readonly DependencyManifestSource[] = [],
+    private readonly dependencyManifestSources: ReadonlyMap<string, DependencyManifestSource> = new Map(),
     /**
      * Structural-conformance derivers of the registered languages, by language
      * (bd tea-rags-mcp-39xca.14), collected the same way. A family whose
@@ -843,22 +847,16 @@ export class CodegraphRunState {
   derivedClassFieldTypes: Record<string, Record<string, string>> = createIdentifierRecord();
 
   /**
-   * Raw `Gemfile` contents for the CURRENT run, read ONCE by {@link loadGemfile}
-   * and attached to every resolver `CallContext` so Ruby DSL grammar is gated to
-   * this project's gems. `undefined` ⇒ no Gemfile ⇒ FULL catalogue. Reset
-   * alongside `compactClasses` (bd tea-rags-mcp-adx5p.1).
+   * Every dependency this run's project DECLARES, per language from that
+   * language's own manifests, read ONCE by {@link loadDeclaredDependencies}.
+   * A per-file context carries only its language's set
+   * ({@link declaredDependenciesFor}): Python gates its framework vocabularies
+   * on it, Ruby its gem-gated DSL catalogue. A language with no entry has no
+   * manifest ⇒ every vocabulary ACTIVE; an empty set gates every conditional
+   * vocabulary off. Reset alongside `compactClasses` (bd tea-rags-mcp-w205u.1,
+   * adx5p.1, m99j1.1.8).
    */
-  gemfileContent: string | undefined = undefined;
-  private gemfileLoaded = false;
-
-  /**
-   * Every dependency this run's project DECLARES, unioned across manifests and
-   * normalized per language, read ONCE by {@link loadDeclaredDependencies}. The
-   * Python walker gates its framework vocabularies on it. `undefined` = no
-   * manifest anywhere ⇒ every vocabulary ACTIVE; an empty set gates every
-   * conditional vocabulary off. Lifecycle as `gemfileContent` (bd tea-rags-mcp-w205u.1).
-   */
-  declaredDependencies: ReadonlySet<string> | undefined = undefined;
+  declaredDependencies: DeclaredDependenciesByLanguage = NO_DECLARED_DEPENDENCIES;
   private declaredDependenciesLoaded = false;
 
   /**
@@ -866,7 +864,7 @@ export class CodegraphRunState {
    * {@link bindProjectRoot} and attached to every resolver `CallContext`.
    * Resolvers with project-rooted state (TypeScript tsconfig / file probe /
    * `ts.Program`) bind to it lazily, because the provider is constructed before
-   * any project is known. Lifecycle as `gemfileContent`.
+   * any project is known. Lifecycle as `declaredDependencies`.
    */
   projectRoot: string | undefined = undefined;
 
@@ -1109,28 +1107,12 @@ export class CodegraphRunState {
 
   /**
    * Record the root this run indexes. Unguarded on purpose, unlike
-   * {@link loadGemfile}: it reads nothing, and every run-start seam passes the
+   * {@link loadDeclaredDependencies}: it reads nothing, and every run-start seam passes the
    * same root, so a plain assignment keeps the field truthful even if a seam
    * fires twice.
    */
   bindProjectRoot(root: string): void {
     this.projectRoot = root;
-  }
-
-  /**
-   * Read the project's `Gemfile` ONCE per run (guarded) and forward the RAW
-   * string to every `CallContext`; the parse lives in the resolver
-   * (`catalogueForGemfile`). Absent / unreadable ⇒ `undefined` ⇒ FULL catalogue.
-   * bd tea-rags-mcp-adx5p.1.
-   */
-  loadGemfile(root: string): void {
-    if (this.gemfileLoaded) return;
-    this.gemfileLoaded = true;
-    try {
-      this.gemfileContent = readFileSync(join(root, "Gemfile"), "utf8");
-    } catch {
-      this.gemfileContent = undefined;
-    }
   }
 
   /**
@@ -1143,7 +1125,12 @@ export class CodegraphRunState {
   loadDeclaredDependencies(root: string): void {
     if (this.declaredDependenciesLoaded) return;
     this.declaredDependenciesLoaded = true;
-    this.declaredDependencies = readDeclaredDependencies(root, this.dependencyManifestSources);
+    this.declaredDependencies = readDeclaredDependenciesByLanguage(root, this.dependencyManifestSources);
+  }
+
+  /** The declared set a `language` file's contexts carry; `undefined` ⇒ that language has no manifest. */
+  declaredDependenciesFor(language: string): ReadonlySet<string> | undefined {
+    return this.declaredDependencies.get(language);
   }
 
   /**
@@ -1484,9 +1471,7 @@ export class CodegraphRunState {
       this.stats = createEmptyRunStats();
       this.ancestorsByFamily = new LanguageFamilyRecord();
       this.compactClasses = new Set();
-      this.gemfileContent = undefined;
-      this.gemfileLoaded = false;
-      this.declaredDependencies = undefined;
+      this.declaredDependencies = NO_DECLARED_DEPENDENCIES;
       this.declaredDependenciesLoaded = false;
       this.projectRoot = undefined;
       this.prependedAncestorsByFamily = new LanguageFamilyRecord();
@@ -1570,9 +1555,7 @@ export class CodegraphRunState {
     this.stats = createEmptyRunStats();
     this.ancestorsByFamily = new LanguageFamilyRecord();
     this.compactClasses = new Set();
-    this.gemfileContent = undefined;
-    this.gemfileLoaded = false;
-    this.declaredDependencies = undefined;
+    this.declaredDependencies = NO_DECLARED_DEPENDENCIES;
     this.declaredDependenciesLoaded = false;
     this.projectRoot = undefined;
     this.schemaSnapshots = createIdentifierRecord();
@@ -1675,9 +1658,7 @@ export class CodegraphRunState {
     this.extractedCallSitesByRelPath.clear();
     this.mirroredRelPaths.clear();
     this.compactClasses = new Set();
-    this.gemfileContent = undefined;
-    this.gemfileLoaded = false;
-    this.declaredDependencies = undefined;
+    this.declaredDependencies = NO_DECLARED_DEPENDENCIES;
     this.declaredDependenciesLoaded = false;
     this.projectRoot = undefined;
     // bd tea-rags-mcp-weno4 — injected for ONE run against ONE collection.
@@ -1725,9 +1706,7 @@ export class CodegraphRunState {
     this.extractedCallSitesByRelPath.clear();
     this.mirroredRelPaths.clear();
     this.compactClasses = new Set();
-    this.gemfileContent = undefined;
-    this.gemfileLoaded = false;
-    this.declaredDependencies = undefined;
+    this.declaredDependencies = NO_DECLARED_DEPENDENCIES;
     this.declaredDependenciesLoaded = false;
     this.projectRoot = undefined;
     // bd tea-rags-mcp-weno4 — injected for ONE run against ONE collection.

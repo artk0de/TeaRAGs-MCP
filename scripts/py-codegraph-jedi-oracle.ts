@@ -382,7 +382,7 @@ export async function walkCorpus(
   for (const { relPath, extraction } of extractions) {
     for (const chunk of extraction.chunks) {
       const ctx: CallContext = {
-        declaredDependencies,
+        declaredDependencies: declaredDependencies.get("python"),
         callerFile: relPath,
         callerScope: chunkCallerScope(chunk),
         callerSymbolId: chunk.symbolId,

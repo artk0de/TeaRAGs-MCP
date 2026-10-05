@@ -69,10 +69,7 @@ export function toWalkContext(input: WalkInput): WalkContext {
   };
   // Assigned only when present: an absent key and an explicit `undefined` read
   // the same to a consumer, but only the absent key keeps the shape a run with
-  // no Gemfile would have had.
-  if (input.gemfileContent !== undefined) {
-    ctx.gemfileContent = input.gemfileContent;
-  }
+  // no manifest would have had.
   if (input.declaredDependencies !== undefined) {
     ctx.declaredDependencies = input.declaredDependencies;
   }

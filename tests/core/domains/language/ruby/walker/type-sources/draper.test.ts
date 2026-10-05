@@ -19,6 +19,7 @@ import Parser from "tree-sitter";
 import RbLang from "tree-sitter-ruby";
 import { describe, expect, it } from "vitest";
 
+import { gemfileGemNames } from "../../../../../../../src/core/domains/language/ruby/gemfile.js";
 import { rubyDraperTypeSource } from "../../../../../../../src/core/domains/language/ruby/walker/type-sources/draper.js";
 import type { RubyExtractInput } from "../../../../../../../src/core/domains/language/ruby/walker/walker.js";
 
@@ -29,7 +30,15 @@ function parse(src: string) {
 }
 
 function makeInput(code: string, gemfileContent?: string): RubyExtractInput {
-  return { code, relPath: "app/decorators/x.rb", language: "ruby", tree: parse(code), chunks: [], gemfileContent };
+  const declaredDependencies = gemfileContent === undefined ? undefined : gemfileGemNames(gemfileContent);
+  return {
+    code,
+    relPath: "app/decorators/x.rb",
+    language: "ruby",
+    tree: parse(code),
+    chunks: [],
+    declaredDependencies,
+  };
 }
 
 /** Return facts the source emits for `code`. */

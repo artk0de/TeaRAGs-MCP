@@ -19,13 +19,13 @@
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { IdentifierDeclaration } from "../../../../../contracts/types/codegraph.js";
 import { innermostChunkSymbolId, type ExtractionFacetPass } from "../../../kernel/index.js";
-import { catalogueForGemfile } from "../../gemfile.js";
+import { catalogueFor } from "../../dsl/index.js";
 import { classBodyMacroOperands } from "../macro-expansion.js";
 
 export const rubyAccessorFieldFacetPass: ExtractionFacetPass = {
   run: (root, ctx) => {
     if (ctx.chunks.length === 0) return {};
-    const catalogue = catalogueForGemfile(ctx.gemfileContent);
+    const catalogue = catalogueFor(ctx.declaredDependencies);
     const declarations: IdentifierDeclaration[] = [];
     const seen = new Set<string>();
     const stack: AstNode[] = [root];

@@ -1,7 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { catalogueForGemfile } from "../../gemfile.js";
+import { catalogueFor } from "../../dsl/index.js";
 import { resolveTypeInstanceMethod, type ResolverConfig } from "./shared.js";
 
 /**
@@ -32,7 +32,7 @@ export class RubyEnqueueDispatchSymbolResolutionStrategy implements SymbolResolu
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver === null) return CONTINUE; // bare call — no worker class to route to
     // Gem-gated enqueue verb → `#perform` entrypoint, composed for this project.
-    const entrypoint = catalogueForGemfile(ctx.gemfileContent).enqueueDispatch[call.member];
+    const entrypoint = catalogueFor(ctx.declaredDependencies).enqueueDispatch[call.member];
     if (entrypoint === undefined) return CONTINUE; // not an enqueue verb
     const target = resolveTypeInstanceMethod(call.receiver, entrypoint, ctx, this.cfg.mode);
     return target ? resolved(target) : CONTINUE;

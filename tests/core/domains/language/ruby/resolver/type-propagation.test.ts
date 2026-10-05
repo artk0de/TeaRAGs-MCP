@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CallContext } from "../../../../../../src/core/contracts/types/codegraph.js";
+import { gemfileGemNames } from "../../../../../../src/core/domains/language/ruby/gemfile.js";
 import {
   boundCallReturnType,
   returnTypeOf,
@@ -220,7 +221,7 @@ describe("typeOfReceiver — devise scoped receiver (adx5p.9)", () => {
   it("types `current_user` as an instance of the scope's model", () => {
     const ctx = emptyCtx({
       callerScope: ["PostsController"],
-      gemfileContent: gemfile,
+      declaredDependencies: gemfileGemNames(gemfile),
       symbolTable: tableWith("User"),
     });
     expect(typeOfReceiver("current_user", 12, ctx)).toEqual({ form: "instance", name: "User" });
@@ -229,7 +230,7 @@ describe("typeOfReceiver — devise scoped receiver (adx5p.9)", () => {
   it("camelizes a multi-word scope (`current_admin_user` → AdminUser)", () => {
     const ctx = emptyCtx({
       callerScope: ["Admin::BaseController"],
-      gemfileContent: gemfile,
+      declaredDependencies: gemfileGemNames(gemfile),
       symbolTable: tableWith("AdminUser"),
     });
     expect(typeOfReceiver("current_admin_user", 3, ctx)).toEqual({ form: "instance", name: "AdminUser" });
@@ -238,7 +239,7 @@ describe("typeOfReceiver — devise scoped receiver (adx5p.9)", () => {
   it("stays SILENT when the derived model is not a class the project defines", () => {
     const ctx = emptyCtx({
       callerScope: ["PostsController"],
-      gemfileContent: gemfile,
+      declaredDependencies: gemfileGemNames(gemfile),
       symbolTable: tableWith("User"),
     });
     expect(typeOfReceiver("current_tenant", 12, ctx)).toBeUndefined();
@@ -247,7 +248,7 @@ describe("typeOfReceiver — devise scoped receiver (adx5p.9)", () => {
   it("stays SILENT when the project does not declare devise (no misfire on a same-named method)", () => {
     const ctx = emptyCtx({
       callerScope: ["PostsController"],
-      gemfileContent: 'gem "rails"\n',
+      declaredDependencies: gemfileGemNames('gem "rails"\n'),
       symbolTable: tableWith("User"),
     });
     expect(typeOfReceiver("current_user", 12, ctx)).toBeUndefined();
@@ -256,7 +257,7 @@ describe("typeOfReceiver — devise scoped receiver (adx5p.9)", () => {
   it("a DECLARED fact on the caller's own class wins over the convention", () => {
     const ctx = emptyCtx({
       callerScope: ["PostsController"],
-      gemfileContent: gemfile,
+      declaredDependencies: gemfileGemNames(gemfile),
       symbolTable: tableWith("User", "Impersonation"),
       structuredReturnTypes: { "PostsController#current_user": { form: "instance", name: "Impersonation" } },
     });
@@ -266,7 +267,7 @@ describe("typeOfReceiver — devise scoped receiver (adx5p.9)", () => {
   it("threads a CHAIN whose head is a devise scoped receiver", () => {
     const ctx = emptyCtx({
       callerScope: ["PostsController"],
-      gemfileContent: gemfile,
+      declaredDependencies: gemfileGemNames(gemfile),
       symbolTable: tableWith("User"),
       associationTypes: { User: { account: "Account" } },
     });
@@ -276,7 +277,7 @@ describe("typeOfReceiver — devise scoped receiver (adx5p.9)", () => {
   it("a real local binding still wins — the convention is the LAST fallback", () => {
     const ctx = emptyCtx({
       callerScope: ["PostsController"],
-      gemfileContent: gemfile,
+      declaredDependencies: gemfileGemNames(gemfile),
       symbolTable: tableWith("User", "Employee"),
       localBindings: { current_user: [{ line: 3, type: "Employee" }] },
     });

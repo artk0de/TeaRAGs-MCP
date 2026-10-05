@@ -1,8 +1,8 @@
 /**
  * The run-start dependency-manifest walk (bd tea-rags-mcp-w205u.1).
  *
- * Ruby's gate reads ONE file at a known place, so the codegraph run state reads
- * it inline (`loadGemfile`). Python's does not exist at a known place: polar
+ * Ruby's gate reads ONE file at a known place (`rootOnly`, the root `Gemfile`).
+ * Python's does not exist at a known place: polar
  * declares its dependencies in `server/pyproject.toml`, ugnest in a root
  * `pyproject.toml` plus two `requirements*.txt`, netbox in `requirements.txt`
  * while its `pyproject.toml` marks them dynamic. The answer is therefore a
@@ -24,7 +24,11 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { DependencyManifestSource, LanguageFactoryDescriptor } from "../contracts/types/language.js";
+import type {
+  DeclaredDependenciesByLanguage,
+  DependencyManifestSource,
+  LanguageFactoryDescriptor,
+} from "../contracts/types/language.js";
 
 /**
  * Directories the walk never descends into. Vendored dependency trees
@@ -66,22 +70,42 @@ const NO_EXTRA_IGNORED_DIRS: ReadonlySet<string> = new Set();
 const MAX_MANIFEST_WALK_DEPTH = 4;
 
 /**
- * Every registered language's dependency-manifest reader. Same aggregation shape
- * as `collectSchemaColumnSources`, and for the same reason: the engine must know
- * THAT a language declares dependencies somewhere, never which file or which
- * format. Omitting the factory (tests, fixtures) yields no sources, so the walk
- * answers `undefined` and every vocabulary stays active.
+ * Every registered language's dependency-manifest reader, keyed by language.
+ * Same aggregation shape as `collectSchemaColumnSources`, and for the same
+ * reason: the engine must know THAT a language declares dependencies somewhere,
+ * never which file or which format. Omitting the factory (tests, fixtures)
+ * yields no sources, so every language keeps every vocabulary active.
  */
 export function collectDependencyManifestSources(
   languageFactory?: LanguageFactoryDescriptor,
-): readonly DependencyManifestSource[] {
-  if (!languageFactory) return [];
-  const sources: DependencyManifestSource[] = [];
+): ReadonlyMap<string, DependencyManifestSource> {
+  const sources = new Map<string, DependencyManifestSource>();
+  if (!languageFactory) return sources;
   for (const lang of languageFactory.supported()) {
     const source = languageFactory.create(lang).dependencyManifest;
-    if (source !== undefined) sources.push(source);
+    if (source !== undefined) sources.set(lang, source);
   }
   return sources;
+}
+
+/**
+ * Each language's declared dependencies, read from that language's OWN
+ * manifests only (bd tea-rags-mcp-m99j1.1.8). Kept apart rather than unioned:
+ * Ruby gates on its root `Gemfile` alone, Python on every manifest the walk
+ * finds, and a union would let one language's manifest turn the other's "no
+ * manifest → every vocabulary" answer into a gate. A language with no manifest
+ * gets no key.
+ */
+export function readDeclaredDependenciesByLanguage(
+  root: string,
+  sources: ReadonlyMap<string, DependencyManifestSource>,
+): DeclaredDependenciesByLanguage {
+  const byLanguage = new Map<string, ReadonlySet<string>>();
+  for (const [language, source] of sources) {
+    const declared = readDeclaredDependencies(root, [source]);
+    if (declared !== undefined) byLanguage.set(language, declared);
+  }
+  return byLanguage;
 }
 
 /**
@@ -93,8 +117,10 @@ export function collectDependencyManifestSources(
  * or an un-packaged script must keep the typing it has. An empty set is a project
  * that declares nothing, which gates every conditional vocabulary off.
  *
- * Total: an unreadable directory or file is skipped, never thrown. The result is
- * frozen because it is run-global data handed to every call context.
+ * A `rootOnly` source is read from the root directory alone and counts only
+ * when its file reads. Total: an unreadable directory or file is skipped, never
+ * thrown. The result is frozen because it is run-global data handed to every
+ * call context.
  */
 export function readDeclaredDependencies(
   root: string,
@@ -104,23 +130,50 @@ export function readDeclaredDependencies(
   const declared = new Set<string>();
   let found = false;
 
-  walkManifestFiles(
-    root,
-    (fileName) => sources.some((s) => s.matchesManifestFile(fileName)),
-    (dir, _relDir, fileName) => {
-      const source = sources.find((s) => s.matchesManifestFile(fileName));
-      if (source === undefined) return;
-      found = true;
-      let content: string;
-      try {
-        content = readFileSync(join(dir, fileName), "utf8");
-      } catch {
-        return;
-      }
-      for (const name of source.parseDeclaredDependencies(fileName, content)) declared.add(name);
-    },
-  );
+  const rootOnly = sources.filter((s) => s.rootOnly === true);
+  const walked = sources.filter((s) => s.rootOnly !== true);
+  for (const fileName of rootOnly.length > 0 ? readRootFileNames(root) : []) {
+    const source = rootOnly.find((s) => s.matchesManifestFile(fileName));
+    if (source === undefined) continue;
+    let content: string;
+    try {
+      content = readFileSync(join(root, fileName), "utf8");
+    } catch {
+      continue;
+    }
+    found = true;
+    for (const name of source.parseDeclaredDependencies(fileName, content)) declared.add(name);
+  }
+  if (walked.length > 0) {
+    walkManifestFiles(
+      root,
+      (fileName) => walked.some((s) => s.matchesManifestFile(fileName)),
+      (dir, _relDir, fileName) => {
+        const source = walked.find((s) => s.matchesManifestFile(fileName));
+        if (source === undefined) return;
+        found = true;
+        let content: string;
+        try {
+          content = readFileSync(join(dir, fileName), "utf8");
+        } catch {
+          return;
+        }
+        for (const name of source.parseDeclaredDependencies(fileName, content)) declared.add(name);
+      },
+    );
+  }
   return found ? Object.freeze(declared) : undefined;
+}
+
+/** Non-directory entry names at `root` (symlinks included — the read follows them). */
+function readRootFileNames(root: string): string[] {
+  try {
+    return readdirSync(root, { withFileTypes: true })
+      .filter((entry) => !entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
 }
 
 /** One manifest file the walk found: where it sits, and what it says. */

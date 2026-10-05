@@ -246,10 +246,7 @@ describe("RubyChainTypeSymbolResolutionStrategy — single-segment typed receive
   const firmTable = (): InMemoryGlobalSymbolTable =>
     tableWith([
       "app/models/firm.rb",
-      [
-        sym("Firm", "Firm", "app/models/firm.rb", []),
-        sym("Firm#clients", "clients", "app/models/firm.rb", ["Firm"]),
-      ],
+      [sym("Firm", "Firm", "app/models/firm.rb", []), sym("Firm#clients", "clients", "app/models/firm.rb", ["Firm"])],
     ]);
 
   it("resolves a bare nullary self-call receiver through the caller's own return fact", () => {
@@ -285,7 +282,7 @@ describe("RubyChainTypeSymbolResolutionStrategy — single-segment typed receive
       ctx({
         symbolTable: firmTable(),
         callerScope: ["ApplicationController"],
-        gemfileContent: 'gem "devise"',
+        declaredDependencies: new Set(["devise"]),
       }),
     );
     expect(outcome).toEqual({
@@ -418,10 +415,7 @@ describe("RubyCallResolver composition — chainType before receiverSetDrop", ()
   it("resolves a TYPED bare receiver instead of dropping it at receiverSetDrop", () => {
     const symbolTable = tableWith([
       "app/models/firm.rb",
-      [
-        sym("Firm", "Firm", "app/models/firm.rb", []),
-        sym("Firm#clients", "clients", "app/models/firm.rb", ["Firm"]),
-      ],
+      [sym("Firm", "Firm", "app/models/firm.rb", []), sym("Firm#clients", "clients", "app/models/firm.rb", ["Firm"])],
     ]);
     const resolver = new RubyCallResolver();
     const call: CallRef = {

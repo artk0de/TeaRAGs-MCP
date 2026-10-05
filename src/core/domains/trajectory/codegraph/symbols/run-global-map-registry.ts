@@ -62,7 +62,6 @@ export const NON_AGGREGATE_RUN_STATE_FIELDS = {
   contentHashes: "threaded in from FileSignalOptions for the run; describes files, not a pass-1 aggregate",
   injectedPass1Aggregates: "the hydration SOURCE the main thread read, not a map hydration fills",
   schemaSnapshots: "read from the project root once per run, whatever the batch walked",
-  gemfileContent: "read from the project root once per run, whatever the batch walked",
   declaredDependencies: "read from the project's manifests once per run, whatever the batch walked",
   projectRoot: "the root the run indexes, bound at a run-start seam",
   runScope: "the run's identity token; per run by definition",

@@ -14,7 +14,7 @@
  * worker's chunker engine is built once per process from the init config, and
  * only `chunkSize` / `chunkOverlap` / `maxChunkSize` (plus the constant language
  * module path) shape chunking — so chunk-only requests go to a pool keyed by
- * those. `gemfileContent` and `projectRoot` gate the cross-pass codegraph
+ * those. `projectRoot` gates the cross-pass codegraph
  * extraction only, and the worker turns `projectRoot` into a SNAPSHOT of the
  * project's dependency manifests at init. Sharing that across runs would leak
  * one run's manifest snapshot into the next, so a request that asks for an
@@ -35,7 +35,7 @@ import type { ChunkerConfig } from "../../../../../src/core/types.js";
 const warmChunkOnlyPools = new Map<string, ChunkerPool>();
 
 function chunkOnlyPoolKey(poolSize: number, config: ChunkerConfig): string {
-  const { gemfileContent: _gemfileContent, projectRoot: _projectRoot, ...chunkingConfig } = config;
+  const { projectRoot: _projectRoot, ...chunkingConfig } = config;
   return JSON.stringify({ poolSize, chunkingConfig });
 }
 
@@ -43,7 +43,7 @@ function warmChunkOnlyPool(poolSize: number, config: ChunkerConfig): ChunkerPool
   const key = chunkOnlyPoolKey(poolSize, config);
   let pool = warmChunkOnlyPools.get(key);
   if (!pool) {
-    const { gemfileContent: _gemfileContent, projectRoot: _projectRoot, ...chunkingConfig } = config;
+    const { projectRoot: _projectRoot, ...chunkingConfig } = config;
     pool = new ChunkerPool(poolSize, chunkingConfig);
     warmChunkOnlyPools.set(key, pool);
   }

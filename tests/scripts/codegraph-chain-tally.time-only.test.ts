@@ -181,7 +181,6 @@ async function productionRun(
   const composer = new DefaultSymbolIdComposer();
   const state = new CodegraphRunState(collectSchemaColumnSources(factory), collectDependencyManifestSources(factory));
   state.bindProjectRoot(corpus);
-  state.loadGemfile(corpus);
   state.loadDeclaredDependencies(corpus);
   state.loadSchemaSnapshots(corpus);
   const table = new InMemoryGlobalSymbolTable();

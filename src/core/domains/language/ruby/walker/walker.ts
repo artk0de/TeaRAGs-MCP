@@ -62,7 +62,7 @@
 
 import type { MaterializedTree } from "../../../../contracts/types/ast.js";
 import type { FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
-import { catalogueForGemfile } from "../gemfile.js";
+import { catalogueFor } from "../dsl/index.js";
 import { collectRubyCalls } from "./call-collection.js";
 import { buildRubyChunkExtractions } from "./chunk-extractions.js";
 import { attachRubyClassHierarchyChannels, collectRubyClassAncestors } from "./class-hierarchy.js";
@@ -79,18 +79,18 @@ export interface RubyExtractInput {
   language: string;
   chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[];
   /**
-   * Raw `Gemfile` contents for the run (mirrors `WalkInput.gemfileContent`).
-   * Extraction consumers gate DSL grammar on it via `catalogueForGemfile`;
-   * undefined → FULL catalogue (bd tea-rags-mcp-adx5p.1b).
+   * The root `Gemfile`'s gems for the run (mirrors `WalkInput.declaredDependencies`).
+   * Extraction consumers gate DSL grammar on it via `catalogueFor`;
+   * undefined → FULL catalogue (bd tea-rags-mcp-adx5p.1b, m99j1.1.8).
    */
-  gemfileContent?: string;
+  declaredDependencies?: ReadonlySet<string>;
 }
 
 export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   // Gem-gated DSL grammar at extraction time (adx5p.1b): compose the catalogue
   // for this project's Gemfile once; the emit + type-source consumers below read
-  // its facets. undefined gemfileContent → the FULL catalogue (byte-identical).
-  const catalogue = catalogueForGemfile(input.gemfileContent);
+  // its facets. undefined declaredDependencies → the FULL catalogue (byte-identical).
+  const catalogue = catalogueFor(input.declaredDependencies);
   const explicitImports = collectRubyRequires(input.tree.rootNode);
   const constantRefs = collectRubyConstantRefs(input.tree.rootNode);
   const fileScope = collectRubyDefinedConstants(input.tree.rootNode);

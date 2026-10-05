@@ -1,7 +1,6 @@
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { ExternalVocabulary } from "../../../../contracts/types/language.js";
-import { isCoreAmbiguousMember, isExternalQualifiedMember } from "../dsl/index.js";
-import { catalogueForGemfile } from "../gemfile.js";
+import { catalogueFor, isCoreAmbiguousMember, isExternalQualifiedMember } from "../dsl/index.js";
 import { SUPER_RECEIVER_SENTINEL } from "../super-receiver-sentinel.js";
 import {
   collectAncestorChain,
@@ -26,9 +25,9 @@ import { ivarTypeName, typeOfReceiver } from "./type-propagation.js";
 export class RubyExternalVocabulary implements ExternalVocabulary {
   isBareCallExternal(member: string, ctx?: CallContext): boolean {
     // Gem-gated: a framework/gem bare-call name counts as external only when the
-    // gem is declared for THIS project (`catalogueForGemfile(ctx.gemfileContent)`).
+    // gem is declared for THIS project (`catalogueFor(ctx.declaredDependencies)`).
     // No ctx (or no Gemfile) → the FULL catalogue, identical to the pre-gating check.
-    return catalogueForGemfile(ctx?.gemfileContent).isExternalBareCall(member);
+    return catalogueFor(ctx?.declaredDependencies).isExternalBareCall(member);
   }
 
   isQualifiedMemberExternal(member: string): boolean {

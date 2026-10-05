@@ -230,9 +230,9 @@ export interface ConeTypeLocator {
 export interface ExternalVocabulary {
   /**
    * Is this no-receiver member a framework/runtime/builtin name (zero project
-   * defs)? `ctx` (optional) carries the caller's `gemfileContent` so a gem-gated
-   * vocabulary's bare-call names are recognised as external ONLY when the gem is
-   * declared (`catalogueForGemfile(ctx.gemfileContent)`); an implementation that
+   * defs)? `ctx` (optional) carries the caller's `declaredDependencies` so a
+   * gem-gated vocabulary's bare-call names are recognised as external ONLY when
+   * the gem is declared (`catalogueFor(ctx.declaredDependencies)`); an implementation that
    * does not gate its vocabulary, or a caller that threads no `ctx`, is unaffected
    * (bd tea-rags-mcp-adx5p.1).
    */
@@ -313,14 +313,6 @@ export interface WalkContext {
   relPath: string;
   language: string;
   chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[];
-  /**
-   * Raw contents of the project's `Gemfile`, threaded per run so extraction-time
-   * DSL consumers compose a gem-gated catalogue (`catalogueForGemfile`) for THIS
-   * project. Mirrors {@link WalkInput.gemfileContent}, from which `toWalkContext`
-   * copies it. Undefined → the FULL catalogue (gating off). Only Ruby reads it
-   * today (bd tea-rags-mcp-adx5p.1b); every other language ignores it.
-   */
-  gemfileContent?: string;
   /** Mirrors {@link WalkInput.declaredDependencies}, copied by `toWalkContext`. */
   declaredDependencies?: ReadonlySet<string>;
   dispatchTableNames?: ReadonlySet<string>;
@@ -558,16 +550,10 @@ export interface WalkInput {
   language: string;
   chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[];
   /**
-   * Raw contents of the project's `Gemfile`, threaded per run so extraction-time
-   * DSL consumers (emit / declare / type-source) compose a gem-gated catalogue
-   * (`catalogueForGemfile`) for THIS project. Undefined → the FULL catalogue
-   * (gating off, byte-identical to pre-gating). Only the Ruby walker reads it
-   * today (bd tea-rags-mcp-adx5p.1b).
-   */
-  gemfileContent?: string;
-  /**
-   * Every dependency the project DECLARES, normalized per language and unioned
-   * across every manifest found under the root, read once per run. A language
+   * Every dependency the project DECLARES in THIS file's language's manifests
+   * (`DependencyManifestSource`), normalized per language, read once per run
+   * and selected per file from the run's {@link DeclaredDependenciesByLanguage}
+   * (bd tea-rags-mcp-m99j1.1.8). A language
    * gates a framework vocabulary on membership here, so grammar that only means
    * something under a framework never loads for a project without it.
    *
@@ -576,7 +562,8 @@ export interface WalkInput {
    * evidence leaves every vocabulary ACTIVE (byte-identical to pre-gating, which
    * is what keeps fixtures and un-packaged sources typed); an empty set is a
    * manifest that declares nothing, which gates every conditional vocabulary off.
-   * Only the Python walker reads it today (bd tea-rags-mcp-w205u.1).
+   * Python gates its framework vocabularies on it (bd tea-rags-mcp-w205u.1),
+   * Ruby its gem-gated DSL catalogue (the root `Gemfile`'s gems).
    */
   declaredDependencies?: ReadonlySet<string>;
 }
@@ -590,15 +577,15 @@ export interface WalkInput {
 export interface LanguageWalker {
   walk: (input: WalkInput) => FileExtraction;
   /**
-   * Map an AST node to its symbol descriptor(s). `gemfileContent` (optional) is
-   * the run's raw Gemfile, threaded so a language can gate gem-conditional
-   * class-body DSL grammar to the project's declared gems — only Ruby reads it
-   * (`catalogueForGemfile`); every other language ignores the arg. Undefined →
-   * the FULL catalogue (gating off, byte-identical to pre-gating). The kernel
-   * `collectSymbols` calls this per node with a call-site-bound `gemfileContent`
-   * (bd tea-rags-mcp-o5kwh).
+   * Map an AST node to its symbol descriptor(s). `declaredDependencies`
+   * (optional) is the file's language's declared set, threaded so a language can
+   * gate framework-conditional class-body DSL grammar to what the project
+   * declares — Ruby reads it (`catalogueFor`); a language without such grammar
+   * ignores the arg. Undefined → the FULL catalogue (gating off). The kernel
+   * `collectSymbols` calls this per node with a call-site-bound set
+   * (bd tea-rags-mcp-o5kwh, m99j1.1.8).
    */
-  nameOf: (node: AstNode, gemfileContent?: string) => NamedSymbol | NamedSymbol[] | null;
+  nameOf: (node: AstNode, declaredDependencies?: ReadonlySet<string>) => NamedSymbol | NamedSymbol[] | null;
   /**
    * Native node types of which a file must contain at least one for `walk` to
    * yield anything beyond the empty extraction. Absent → every file is walked.
@@ -882,7 +869,21 @@ export type StructuralConformanceDeriver = (input: StructuralConformanceInput) =
 export interface DependencyManifestSource {
   readonly matchesManifestFile: (fileName: string) => boolean;
   readonly parseDeclaredDependencies: (fileName: string, content: string) => readonly string[];
+  /**
+   * The manifest lives at the project ROOT only (Ruby's `Gemfile`): the walk
+   * does not descend for it, and a matching file it cannot read counts as no
+   * manifest. Absent → the recursive walk (Python's nested `pyproject.toml`).
+   */
+  readonly rootOnly?: boolean;
 }
+
+/**
+ * Each language's declared dependencies, keyed by language id. A language with
+ * no manifest under the root has NO key — the "every vocabulary active" answer —
+ * which an empty set (a manifest declaring nothing) must never be confused with.
+ * Run-level: a per-file context carries only its own language's set.
+ */
+export type DeclaredDependenciesByLanguage = ReadonlyMap<string, ReadonlySet<string>>;
 
 /**
  * One schema table and the instance-accessor names its columns synthesize on the

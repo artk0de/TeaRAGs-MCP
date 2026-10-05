@@ -42,7 +42,7 @@ import type {
 } from "../../../../../contracts/types/language.js";
 import {
   collectDependencyManifestSources,
-  readDeclaredDependencies,
+  readDeclaredDependenciesByLanguage,
 } from "../../../../../infra/dependency-manifests.js";
 import type { ChunkerConfig } from "../../../../../types.js";
 import { createWorkerRuntime } from "../../infra/worker-runtime.js";
@@ -86,7 +86,6 @@ async function buildChunker(config: ChunkerConfig): Promise<ChunkerEngine> {
     languageFactory,
     composer,
     collectSymbols: lang.collectSymbols,
-    gemfileContent: config.gemfileContent,
     // Walked ONCE per worker, here rather than per request: the manifests do not
     // move during a run, and this is the first point that has both the project
     // root and a factory able to say which files are manifests. No root (tests,
@@ -94,7 +93,7 @@ async function buildChunker(config: ChunkerConfig): Promise<ChunkerEngine> {
     declaredDependencies:
       config.projectRoot === undefined
         ? undefined
-        : readDeclaredDependencies(config.projectRoot, collectDependencyManifestSources(languageFactory)),
+        : readDeclaredDependenciesByLanguage(config.projectRoot, collectDependencyManifestSources(languageFactory)),
   };
 }
 

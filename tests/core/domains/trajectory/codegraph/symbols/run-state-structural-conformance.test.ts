@@ -62,7 +62,7 @@ function derivers(): Map<string, StructuralConformanceDeriver> {
 
 describe("CodegraphRunState — structural conformance at the barrier (39xca.14)", () => {
   it("adds the structural implementer to the family's hierarchy view", async () => {
-    const state = new CodegraphRunState([], [], derivers());
+    const state = new CodegraphRunState([], new Map(), derivers());
     state.absorb(file("src/registry.ts", "typescript", { structuralContracts: [registryContract] }), []);
     await state.seal(async () => symbolTable());
 
@@ -94,7 +94,7 @@ describe("CodegraphRunState — structural conformance at the barrier (39xca.14)
         scope: ["POLICY"],
       },
     ]);
-    const state = new CodegraphRunState([], [], derivers());
+    const state = new CodegraphRunState([], new Map(), derivers());
     state.absorb(file("src/registry.ts", "typescript", { structuralContracts: [registryContract] }), []);
     await state.seal(async () => table);
 
@@ -107,7 +107,7 @@ describe("CodegraphRunState — structural conformance at the barrier (39xca.14)
   });
 
   it("keeps the rows out of the persisted inheritance rows and out of a nominal-kinds walk", async () => {
-    const state = new CodegraphRunState([], [], derivers());
+    const state = new CodegraphRunState([], new Map(), derivers());
     state.absorb(file("src/registry.ts", "typescript", { structuralContracts: [registryContract] }), []);
     await state.seal(async () => symbolTable());
 
@@ -118,7 +118,7 @@ describe("CodegraphRunState — structural conformance at the barrier (39xca.14)
   });
 
   it("derives per family: a Python Protocol reaches the Python owner, never the TypeScript or Ruby one", async () => {
-    const state = new CodegraphRunState([], [], derivers());
+    const state = new CodegraphRunState([], new Map(), derivers());
     state.absorb(file("app/protocols.py", "python", { structuralContracts: [registryContract] }), []);
     await state.seal(async () => symbolTable());
 
@@ -148,7 +148,7 @@ describe("CodegraphRunState — structural conformance at the barrier (39xca.14)
         structuralContracts: [{ name: "Gone", members: [{ name: "find", params: 0 }] }],
       },
     ];
-    const state = new CodegraphRunState([], [], derivers());
+    const state = new CodegraphRunState([], new Map(), derivers());
     // `src/gone.ts` is walked this run and no longer declares its contract.
     state.absorb(file("src/gone.ts", "typescript"), []);
     await state.seal(

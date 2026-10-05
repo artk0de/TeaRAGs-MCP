@@ -80,8 +80,9 @@
   get skipped as external.
 - **Gem gating parses the `Gemfile` (never the lock), gates the EXTERNAL surface
   too, and the `RUBY_*` consts are the UNGATED full catalogue.**
-  `catalogueForGemfile` (`gemfile.ts`) memoises by raw Gemfile text in a
-  never-invalidated global `Map`; no Gemfile → full catalogue.
+  `RUBY_DEPENDENCY_MANIFEST` (`gemfile.ts`) reads the ROOT `Gemfile` alone into
+  Ruby's `declaredDependencies`; consumers call `catalogueFor(declared)`,
+  memoised per set instance; no root Gemfile → no Ruby entry → full catalogue.
   `composeRubyCatalogue` folds grammar facets AND `isExternalBareCall` / runtime
   builtins over ACTIVE frameworks only, and `filterActiveFrameworks` keeps a
   framework whose `activatedBy` is `undefined`. Why: a gating defect reproduced

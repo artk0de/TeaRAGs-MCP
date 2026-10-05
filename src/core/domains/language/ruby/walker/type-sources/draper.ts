@@ -23,7 +23,7 @@
  * from `walker.ts` (type-import only) so `INLINE_TYPE_SOURCES` cannot cycle.
  */
 import type { AstNode } from "../../../../../contracts/types/ast.js";
-import { catalogueForGemfile } from "../../gemfile.js";
+import { catalogueFor } from "../../dsl/index.js";
 import { readScopeResolution } from "../ast-utils.js";
 import type { RubyExtractInput } from "../walker.js";
 import type { RubyInlineTypeSource, RubyTypeFact } from "./types.js";
@@ -152,7 +152,7 @@ export const rubyDraperTypeSource: RubyInlineTypeSource = {
   extract(input: RubyExtractInput): RubyTypeFact[] {
     const root = input.tree?.rootNode;
     if (!root) return [];
-    const { entries } = catalogueForGemfile(input.gemfileContent);
+    const { entries } = catalogueFor(input.declaredDependencies);
     const activeVerbs = (verb: string): boolean => entries[verb] !== undefined;
     if (!activeVerbs(DELEGATE_ALL) && !activeVerbs(DECORATES)) return [];
     return collectDecoratorReturnFacts(root, activeVerbs);

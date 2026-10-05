@@ -659,8 +659,7 @@ export class CallEdgeResolutionRunner {
       imports: extraction.imports,
       symbolTable,
       associationTypes: extraction.associationTypes,
-      gemfileContent: this.runState.gemfileContent,
-      declaredDependencies: this.runState.declaredDependencies,
+      declaredDependencies: this.runState.declaredDependenciesFor(extraction.language),
       projectRoot: this.runState.projectRoot,
     };
   }
@@ -889,8 +888,7 @@ export class CallEdgeResolutionRunner {
       // binding is meaningless outside the body that established it.
       callResultBindings: chunk.callResultBindings,
       compactDeclaredClasses: this.runState.compactClasses,
-      gemfileContent: this.runState.gemfileContent,
-      declaredDependencies: this.runState.declaredDependencies,
+      declaredDependencies: this.runState.declaredDependenciesFor(extraction.language),
       projectRoot: this.runState.projectRoot,
       // bd tea-rags-mcp-n0zj — run-global dispatch tables + callback
       // params drive the resolver's fan-out / inter-proc join.

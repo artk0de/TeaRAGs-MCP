@@ -56,7 +56,7 @@ import {
   stripCallArgs,
   type ReceiverTypePorts,
 } from "../../kernel/index.js";
-import { catalogueForGemfile } from "../gemfile.js";
+import { catalogueFor } from "../dsl/index.js";
 import { returnTypeOf } from "./ruby-member-return-types.js";
 import { declaredReturnType } from "./ruby-return-facts.js";
 import { nullaryReceiverType } from "./ruby-unbound-receiver-types.js";
@@ -202,7 +202,7 @@ function rubySeedHead(
   const firstMember = stripCallArgs(firstLink);
   const declared = declaredReturnType(head, firstMember, ctx);
   if (declared !== undefined) return { type: declared, consumedMembers: 1 };
-  if (catalogueForGemfile(ctx.gemfileContent).instanceReturning.has(firstMember)) {
+  if (catalogueFor(ctx.declaredDependencies).instanceReturning.has(firstMember)) {
     return { type: { form: "instance", name: head }, consumedMembers: 1 };
   }
   return undefined;

@@ -6,9 +6,6 @@
  * Subclasses compose these building blocks in their own orchestration flow.
  */
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
 import type { Ignore } from "ignore";
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
@@ -271,7 +268,7 @@ export abstract class BaseIndexingPipeline {
      */
     contentHashes?: ReadonlyMap<string, string>,
   ): ProcessingContext {
-    const chunkerPool = this.createChunkerPool(chunkSizeOverride, this.readGemfile(absolutePath), absolutePath);
+    const chunkerPool = this.createChunkerPool(chunkSizeOverride, absolutePath);
     const chunkPipeline = this.createChunkPipeline(physicalCollectionName);
     // "codegraph-init" stage (csyve) = enrichment beginRun: per-provider context
     // build + (cross-pass) codegraph beginExtractionRun spill reset + phase init.
@@ -500,11 +497,7 @@ export abstract class BaseIndexingPipeline {
 
   // ── Processing components (private) ────────────────────
 
-  private createChunkerPool(
-    chunkSizeOverride?: number,
-    gemfileContent?: string,
-    projectRoot?: string,
-  ): ChunkerPoolPort {
+  private createChunkerPool(chunkSizeOverride?: number, projectRoot?: string): ChunkerPoolPort {
     const chunkSize = chunkSizeOverride ?? this.config.chunkSize;
     // Injected factory (tests lease warm pools, bd tea-rags-mcp-bbo1h.1) or a
     // fresh forked pool per run — the production composition injects nothing.
@@ -516,28 +509,12 @@ export abstract class BaseIndexingPipeline {
       // they fit inside the embedding model's context window. Anything wider
       // is split by enforceMaxChunkSize before reaching the pipeline.
       maxChunkSize: chunkSize,
-      // Gem-gated DSL grammar for cross-pass codegraph extraction (adx5p.1b) —
-      // the walker running on the worker parse composes the catalogue for this
-      // project's Gemfile. undefined → FULL catalogue.
-      gemfileContent,
-      // The same question for the vocabularies gated on DECLARED DEPENDENCIES
-      // (bd tea-rags-mcp-w205u.1). The ROOT travels, not the parsed set: the walk
+      // Vocabularies gated on DECLARED DEPENDENCIES — Python's frameworks and
+      // Ruby's gem-gated DSL grammar (bd tea-rags-mcp-w205u.1, adx5p.1b,
+      // m99j1.1.8). The ROOT travels, not the parsed set: the walk
       // needs the worker's own LanguageFactory to recognise a manifest.
       projectRoot,
     });
-  }
-
-  /**
-   * Read the project's `Gemfile` once per run for gem-gated Ruby DSL grammar
-   * (adx5p.1b). Raw string threaded to the chunker worker; the parse lives in
-   * `domains/language`. Absent / unreadable → undefined → the FULL catalogue.
-   */
-  private readGemfile(absolutePath: string): string | undefined {
-    try {
-      return readFileSync(join(absolutePath, "Gemfile"), "utf8");
-    } catch {
-      return undefined;
-    }
   }
 
   private createChunkPipeline(collectionName: string): ChunkPipeline {

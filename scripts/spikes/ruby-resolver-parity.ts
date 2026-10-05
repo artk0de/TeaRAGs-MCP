@@ -34,8 +34,8 @@
  * the candidate sets and a change that only fires on a polyglot table scores 0.
  * A polyglot run is a SEPARATE population, never the baseline for anything else.
  */
-import { readFileSync, writeFileSync } from "node:fs";
-import { extname, join, resolve as resolvePath, sep } from "node:path";
+import { writeFileSync } from "node:fs";
+import { extname, resolve as resolvePath, sep } from "node:path";
 
 import {
   chunkCallerScope,
@@ -45,9 +45,11 @@ import {
   type SymbolResolutionTarget,
 } from "../../src/core/contracts/types/codegraph.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
+import { RUBY_DEPENDENCY_MANIFEST } from "../../src/core/domains/language/ruby/gemfile.js";
 import { RubyCallResolver } from "../../src/core/domains/language/ruby/resolver/ruby-resolver.js";
 import { CODEGRAPH_LANGUAGES } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import { readDeclaredDependencies } from "../../src/core/infra/dependency-manifests.js";
 import { sameTarget } from "../codegraph-chain-tally.js";
 import { resolveCheckoutCommit } from "../lib/checkout-commit.js";
 import {
@@ -186,7 +188,7 @@ function mergeChannels(channels: RunGlobalChannels, extraction: FileExtraction):
 /**
  * One call site's context. Richer than the tally's because the Ruby fold reads
  * channels the tally never threads — `ivarTypes`, `structuredReturnTypes`,
- * `gemfileContent` — and a channel absent here is a branch the gate cannot
+ * `declaredDependencies` — and a channel absent here is a branch the gate cannot
  * reach. Both sides receive this same object, so the extra channels widen
  * coverage without touching the comparison.
  */
@@ -195,7 +197,7 @@ function buildCallContext(
   chunk: ChunkExtraction,
   symbolTable: InMemoryGlobalSymbolTable,
   channels: RunGlobalChannels,
-  corpus: { root: string; gemfileContent: string | undefined },
+  corpus: { root: string; declaredGems: ReadonlySet<string> | undefined },
 ): CallContext {
   return {
     callerFile: extraction.relPath,
@@ -214,18 +216,14 @@ function buildCallContext(
     classPrependedAncestors: channels.classPrependedAncestors,
     compactDeclaredClasses: channels.compactDeclaredClasses,
     classExtends: channels.classExtends,
-    gemfileContent: corpus.gemfileContent,
+    declaredDependencies: corpus.declaredGems,
     projectRoot: corpus.root,
   };
 }
 
-/** The project's `Gemfile`, as the provider reads it once per run; absent ⇒ ungated catalogue. */
-function readGemfile(root: string): string | undefined {
-  try {
-    return readFileSync(join(root, "Gemfile"), "utf8");
-  } catch {
-    return undefined;
-  }
+/** The project's `Gemfile` gems, as the provider reads them once per run; absent ⇒ ungated catalogue. */
+function readGemfileGems(root: string): ReadonlySet<string> | undefined {
+  return readDeclaredDependencies(root, [RUBY_DEPENDENCY_MANIFEST]);
 }
 
 /**
@@ -279,7 +277,7 @@ export async function run(
     );
   }
 
-  const corpus = { root, gemfileContent: readGemfile(root) };
+  const corpus = { root, declaredGems: readGemfileGems(root) };
   const mismatches: ResolverParityRow[] = [];
   let compared = 0;
   let dispatchSkipped = 0;

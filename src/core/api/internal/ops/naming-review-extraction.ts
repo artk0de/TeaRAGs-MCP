@@ -6,18 +6,15 @@
  * walker's `typeDeclarations` channel (spec §1b).
  *
  * Every walk gets the run-level context the index-time extraction hands its
- * walks (`CodegraphRunState#loadGemfile` / `#loadDeclaredDependencies`): the
- * working tree's `Gemfile` and the dependencies its manifests declare, read once
- * per review — so a Ruby DSL vocabulary is gated the way the indexed rows were.
+ * walks (`CodegraphRunState#loadDeclaredDependencies`): each language's declared
+ * dependencies from the working tree's manifests (Ruby's root `Gemfile` among
+ * them), read once per review — so a Ruby DSL vocabulary is gated the way the indexed rows were.
  *
  * Lives in `api/internal` because it bridges the language domain (walker,
  * symbol collector, composer) and the codegraph trajectory (in-memory
  * extraction, row builder); `NamingLexiconOps` receives it as a dependency and
  * imports neither.
  */
-
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import type { IdentifierRow, TypeDeclarationFact } from "../../../contracts/types/codegraph.js";
 import type { LanguageFactoryDescriptor } from "../../../contracts/types/language.js";
@@ -30,7 +27,10 @@ import {
   type IdentifierFinderVocabulary,
   type InMemoryExtractionContext,
 } from "../../../domains/trajectory/codegraph/index.js";
-import { collectDependencyManifestSources, readDeclaredDependencies } from "../../../infra/dependency-manifests.js";
+import {
+  collectDependencyManifestSources,
+  readDeclaredDependenciesByLanguage,
+} from "../../../infra/dependency-manifests.js";
 
 /** One file's declarations, as the review judges them. */
 export interface NamingReviewFileDeclarations {
@@ -184,20 +184,10 @@ function memberNameOf(symbolId: string): string {
   return cut < 0 ? symbolId : symbolId.slice(cut + 1);
 }
 
-/** The Gemfile (absent → the full catalogue) and the declared dependencies (no manifest → every vocabulary). */
+/** Each language's declared dependencies (a language with no manifest → every vocabulary). */
 function workingTreeContext(
   repoRoot: string,
   sources: ReturnType<typeof collectDependencyManifestSources>,
 ): InMemoryExtractionContext {
-  let gemfileContent: string | undefined;
-  try {
-    gemfileContent = readFileSync(join(repoRoot, "Gemfile"), "utf8");
-  } catch {
-    gemfileContent = undefined;
-  }
-  const declaredDependencies = readDeclaredDependencies(repoRoot, sources);
-  return {
-    ...(gemfileContent !== undefined ? { gemfileContent } : {}),
-    ...(declaredDependencies !== undefined ? { declaredDependencies } : {}),
-  };
+  return { declaredDependencies: readDeclaredDependenciesByLanguage(repoRoot, sources) };
 }

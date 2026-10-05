@@ -402,13 +402,10 @@ export class CodegraphFileExtractor {
         language: langConfig.language,
         scopeSeparator: langConfig.scopeSeparator,
         disambiguateOverloads: langConfig.disambiguateOverloads ?? false,
-        // Gem-gated DSL grammar at extraction time (adx5p.1b, o5kwh): the run's
-        // Gemfile, read once in loadGemfile. undefined → FULL catalogue.
-        gemfileContent: runState.gemfileContent,
-        // Vocabulary gating at extraction time (bd tea-rags-mcp-w205u.1): the run's
-        // declared dependencies, walked once in loadDeclaredDependencies.
-        // undefined → no manifest anywhere → FULL catalogue.
-        declaredDependencies: runState.declaredDependencies,
+        // Vocabulary gating at extraction time (bd tea-rags-mcp-w205u.1,
+        // adx5p.1b, m99j1.1.8): this language's declared dependencies, read once
+        // in loadDeclaredDependencies. undefined → no manifest → FULL catalogue.
+        declaredDependencies: runState.declaredDependenciesFor(langConfig.language),
       },
     );
   }

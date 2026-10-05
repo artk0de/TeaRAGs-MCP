@@ -33,7 +33,10 @@ import type {
   SymbolIdComposer,
 } from "../../../contracts/types/language.js";
 import { extractFileInMemory, type InMemoryExtractionContext } from "../../../domains/trajectory/codegraph/index.js";
-import { collectDependencyManifestSources, readDeclaredDependencies } from "../../../infra/dependency-manifests.js";
+import {
+  collectDependencyManifestSources,
+  readDeclaredDependenciesByLanguage,
+} from "../../../infra/dependency-manifests.js";
 
 /**
  * One working-tree file edge: the changed file imports/knows the target file.
@@ -172,16 +175,11 @@ export function workingTreeExtractionContext(
   workTree: string,
   languageFactory: LanguageFactoryDescriptor,
 ): InMemoryExtractionContext {
-  let gemfileContent: string | undefined;
-  try {
-    gemfileContent = readFileSync(join(workTree, "Gemfile"), "utf8");
-  } catch {
-    gemfileContent = undefined;
-  }
-  const declaredDependencies = readDeclaredDependencies(workTree, collectDependencyManifestSources(languageFactory));
   return {
-    ...(gemfileContent !== undefined ? { gemfileContent } : {}),
-    ...(declaredDependencies !== undefined ? { declaredDependencies } : {}),
+    declaredDependencies: readDeclaredDependenciesByLanguage(
+      workTree,
+      collectDependencyManifestSources(languageFactory),
+    ),
   };
 }
 

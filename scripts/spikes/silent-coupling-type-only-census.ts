@@ -111,7 +111,6 @@ async function computeTypeOnlyEdges(
     collectDependencyManifestSources(factory),
   );
   runState.bindProjectRoot(root);
-  runState.loadGemfile(root);
   runState.loadDeclaredDependencies(root);
   runState.loadSchemaSnapshots(root);
   const symbolTable = new InMemoryGlobalSymbolTable();
