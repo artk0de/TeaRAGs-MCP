@@ -83,6 +83,21 @@ const result = signal.extract(
 );
 ```
 
+## Class-extension mocks vs the method-signature autofix
+
+`eslint --fix` (`method-signature-style`) and prettier both rewrite a method
+signature `foo(x: T): R {}` to the property-arrow form `foo = (x: T): R => {}`.
+Against a `vi.mock` class-extension mock whose base declares the member as a
+METHOD, the property-arrow rewrite is TS2425 — the autofixers fight the mock.
+The stable form does not rely on the member's signature shape at all: declare
+the stub with property arrows deliberately and cast the stubbed value to the
+real class type where the mock is installed
+(`const Stub = MockBase as unknown as RealClass`). The cast is the compatibility
+seam — autofixers can no longer break the mock, and the test keeps the real
+class's type surface. Re-typing the fixture is fixture drift (batch 4 of
+89k7k.26 hit this); the cast is the documented stable form (bd
+tea-rags-mcp-89k7k.33).
+
 ## Domain-specific patterns
 
 | Domain     | What to mock                       | Helper to use           |
