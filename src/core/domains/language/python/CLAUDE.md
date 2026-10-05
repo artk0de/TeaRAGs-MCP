@@ -489,23 +489,25 @@
   construction: the walker gate `pythonNominalReceiverName` drops parameter and
   local unions, so a union reaches it only through a return annotation.
 - **Behind them, `resolveDispatch` composes
-  `[table, callableParam, union, cone]` — `dynamic` is PARKED behind
-  `CODEGRAPH_PY_DYNAMIC_DISPATCH`, default OFF (D10), and the LAST component
-  declines every receiver another layer owns.** The flag is read once at
-  composition, in production and in the oracle's parity stack alike, so a
-  flag-off run is the pre-E4.1.3 cone byte for byte. The runner asks
-  `resolveDispatch` BEFORE `resolve` and lets a non-empty fan REPLACE the
-  chain's answer, so `resolver/dispatch/python-dispatch-gates.ts` is where the
-  component earns its slot: bare / `self` / `cls` / dotted / call-or-index head
-  / capitalised (`_LEADING_UNDERSCORE` included) / builtin-named receiver, a
-  receiver with a local binding in force or an import binding, a receiver bound
-  to a call the project cannot type (foreign head, or a `self.<member>` no file
-  declares), a `coreAmbiguous` or builtin-named MEMBER — then, last because it
-  is the only expensive one, the chain itself. Python cannot probe two named
-  passes the way Ruby does (a bare name is answered by `namingConvention`,
-  `importedName` OR `globalShortName`, and its guards DROP rather than
-  continue), so `PythonChainAnswerProbe` runs the composed chain and memoises
-  per `CallRef` identity with the `CallContext` identity beside it —
+  `[table, callableParam, union, cone, dynamic]` — `dynamic` is ON by default
+  since bd tea-rags-mcp-m99j1.1.57 (`CODEGRAPH_PY_DYNAMIC_DISPATCH=0` drops it),
+  and as the LAST component it declines every receiver another layer owns.** The
+  flag is read once at composition, in production and in the oracle's parity
+  stack alike, so a flag-off run is the pre-E4.1.3 cone byte for byte. The
+  runner asks `resolveDispatch` BEFORE `resolve` and lets a non-empty fan
+  REPLACE the chain's answer, so `resolver/dispatch/python-dispatch-gates.ts` is
+  where the component earns its slot: bare / `self` / `cls` / dotted /
+  call-or-index head / capitalised (`_LEADING_UNDERSCORE` included) /
+  builtin-named receiver, a receiver with a local binding in force or an import
+  binding, a name the caller's def ASSIGNS (the walker's `assignedLocals` — any
+  local, typed or not, since a typed one was declined a gate earlier), a
+  receiver bound to a call the project cannot type (foreign head, or a
+  `self.<member>` no file declares), a `coreAmbiguous` or builtin-named MEMBER —
+  then, last because it is the only expensive one, the chain itself. Python
+  cannot probe two named passes the way Ruby does (a bare name is answered by
+  `namingConvention`, `importedName` OR `globalShortName`, and its guards DROP
+  rather than continue), so `PythonChainAnswerProbe` runs the composed chain and
+  memoises per `CallRef` identity with the `CallContext` identity beside it —
   `PythonCallResolver.resolve` reads the same entry, which is what keeps the
   runner's dispatch→resolve pair at ONE chain run per site. The fan cap is
   Python's own `PY_DISPATCH_FAN_MAX` (4, `CODEGRAPH_PY_DISPATCH_FAN_MAX` to
@@ -515,17 +517,18 @@
   question is asked one gate earlier and a literal receiver never survives the
   shape gates. It DOES inject its visibility access rule (enclosing class, bd
   jwjyr.1).
-- **The `dynamic` component's measured precision is NOT the plan's estimate,
-  both E4.1.3 stop rules fired, and that is why the flag defaults off** (bd
-  tea-rags-mcp-w205u; numbers in
+- **The `dynamic` component's first measured precision was NOT the plan's
+  estimate, both E4.1.3 stop rules fired, and that is why the flag was parked
+  off until the decline gates caught up** (bd tea-rags-mcp-w205u; numbers in
   `docs/superpowers/plans/2026-09-10-python-e4-1-dispatch-fanout.md`, Task
   E4.1.3). It fires on ~5× the sites E4.0.4 attributed to `untypedNameReceiver`,
   and the extra ones are receivers whose real type is a LIBRARY type: +83 new
   1:1 matches against +85 new fabricated edges across the five corpora, and
-  `recall@fan` 0.344 on polar (n=122) against a 0.85 bar. What no gate here can
-  see is the receiver's type — a module-scope `log = structlog.get_logger()` is
-  invisible because `callResultBindings` reach the resolver per CHUNK, and an
-  `except … as e` or a Django queryset local carries no binding fact at all.
+  `recall@fan` 0.344 on polar (n=122) against a 0.85 bar. What no gate could see
+  then was the receiver's type — a module-scope `log = structlog.get_logger()`
+  is invisible because `callResultBindings` reach the resolver per CHUNK, and an
+  `except … as e` or a Django queryset local carried no binding fact at all. The
+  latter is what `assignedLocals` now answers.
 - **A framework's answer is placed by the MODULE that declares its class, never
   by the short name.** The vocabulary spells `django.db.models.options.Options`,
   `…manager.Manager`, `…query.QuerySet`; `resolveTypeRefFile` /
@@ -576,18 +579,28 @@
   `ConnectionError`). It is a CLASSIFICATION change: edges are byte-identical,
   so an oracle column counted from edges cannot move — read the tally's
   `external` bucket instead.
-- **Re-measured after the receiver-typing wave and still PARKED** (bd
-  tea-rags-mcp-m99j1.1.27; numbers on the bead). The typeshed member decline and
-  the new receiver channels shrank polar's dynamic `single` from 492 to 34, but
-  two residuals remain and neither is a gate this file can write. The single
-  half still fabricates on function LOCALS assigned from an expression nothing
-  types (`loader = self.app.jinja_loader`, `client = OAUTH_CLIENTS[platform]`, a
-  Stripe object named `subscription`): `localBindings` records only typed
-  bindings, so "assigned here but untyped" is not observable until the walker
-  publishes assignment presence (bd tea-rags-mcp-m99j1.1.57). And django's
-  `recall@fan` misses the 0.85 bar because of over-cap `ambiguous` rows, not
-  phantoms (fan-only precision is 18/19) — a decline gate cannot raise it; only
-  a cap or bar decision can.
+- **Un-parked by the assigned-local gate** (bd tea-rags-mcp-m99j1.1.57, after
+  the m99j1.1.27 re-measure; `--tiebreak` oracle, flag on vs off). Task 25 left
+  one residual a gate could not see: function LOCALS assigned from an expression
+  nothing types (`loader = self.app.jinja_loader`,
+  `client = OAUTH_CLIENTS[platform]`, a Stripe object named `subscription`)
+  fanned onto a project namesake, because `localBindings` holds only typed
+  bindings. The walker now publishes `assignedLocals` per def chunk — every name
+  the def binds, typed or not, minus its parameters and its `global` /
+  `nonlocal` names, plus the closure locals of enclosing defs — and Python's
+  scoping rule makes the name-only set exact: a name bound anywhere in a body is
+  that body's local on every line of it. The fan therefore dispatches only on
+  names the body never binds: parameters, module globals, closure reads. At the
+  flip: zero new tiebroken fabricated or wrongFile rows on django, polar, flask,
+  netbox and ugnest, httpx byte-identical; django +333 1:1 edges (9952 → 10285),
+  dynamic fan precision 14/15 at size p95 4 (`recall@fan` 0.583, n=24, a
+  diagnostic); netbox's 21 fan sites are polymorphic families jedi cannot score
+  (0 oracle-scored rows, p95 3). Over-cap `ambiguous` sites emit no edge, so
+  they cost recall and never precision, and are counted on their own line:
+  django 60, netbox 14, polar 1, flask 0, ugnest 0. The price is recall on
+  assigned locals the fan used to get right
+  (`app = current_app._get_current_object()`): the gate cannot tell a right
+  guess from a namesake.
 - Resolver architecture rules: `.claude/rules/resolver-architecture.md`.
   Cross-language mechanics: `src/core/domains/language/CLAUDE.md`.
 

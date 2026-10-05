@@ -94,11 +94,12 @@ export class PythonCallResolver implements CallResolver {
    * because it answers only what nothing else — the cone, and the exact chain
    * behind its own probe gate — can.
    *
-   * `dynamic` is composed ONLY under `CODEGRAPH_PY_DYNAMIC_DISPATCH` and is off
-   * by default (D10): its `single` terminal is a name-only claim, and measured
-   * over five corpora it is right about as often as it is wrong. With the flag
-   * absent this array is the table, the union fan and the cone, the cone
-   * answering exactly as it did before E4.1.3 for every call neither claims.
+   * `dynamic` is composed by default since bd tea-rags-mcp-m99j1.1.57 and
+   * `CODEGRAPH_PY_DYNAMIC_DISPATCH=0` drops it: its `single` terminal is a
+   * name-only claim, safe only because its decline gates refuse every receiver
+   * with evidence of another type. With the flag off this array is the table,
+   * the union fan and the cone, the cone answering exactly as it did before
+   * E4.1.3 for every call neither claims.
    */
   private readonly dispatchComponents: readonly DispatchResolverComponent[];
   /**
@@ -196,8 +197,9 @@ export class PythonCallResolver implements CallResolver {
    *    above the cone cap. An unbound or external receiver carries no
    *    `localBinding`, so `T` is undefined and the cone says nothing.
    *  - `dynamic` — the untyped bare-name fan (bd tea-rags-mcp-w205u, E4.1.3),
-   *    capped at `PY_DISPATCH_FAN_MAX`, composed only under
-   *    `CODEGRAPH_PY_DYNAMIC_DISPATCH` (default OFF, D10). It declines every
+   *    capped at `PY_DISPATCH_FAN_MAX`, composed unless
+   *    `CODEGRAPH_PY_DYNAMIC_DISPATCH` turns it off (default ON since bd
+   *    tea-rags-mcp-m99j1.1.57). It declines every
    *    receiver another layer owns, the chain probe included, so the exact
    *    chain stays the default for everything it can answer.
    *

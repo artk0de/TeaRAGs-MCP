@@ -58,22 +58,23 @@ export function resolvePythonDispatchFanMax(raw: string | undefined): number {
 
 /**
  * Is the untyped-name fan composed at all? Read ONCE at composition from
- * `CODEGRAPH_PY_DYNAMIC_DISPATCH`; **default OFF** (bd tea-rags-mcp-w205u, D10).
+ * `CODEGRAPH_PY_DYNAMIC_DISPATCH`; **default ON** since bd
+ * tea-rags-mcp-m99j1.1.57.
  *
- * A name-only fan is not precision-safe for Python without receiver-type
- * evidence. Measured over five corpora it books +83 new 1:1 matches against +85
- * new fabricated edges and `recall@fan` 0.344 on polar, because it fires on ~5×
- * the sites E4.0.4 attributed and the surplus is receivers whose real type is a
- * LIBRARY type with a coincidental single project owner of the member. The
- * component, its probe, its gates and its tests stay — what is parked is the
- * COMPOSITION, so a re-attempt with a type channel behind it is a flag flip and
- * a re-measure rather than an archaeology exercise.
+ * It was parked OFF first (bd tea-rags-mcp-w205u, D10): a name-only fan booked
+ * +83 new 1:1 matches against +85 fabricated edges over five corpora, because
+ * the surplus receivers held a LIBRARY type with a coincidental single project
+ * owner of the member. The decline gates in `pythonDynamicFanoutSuppressed`
+ * closed that gap one evidence channel at a time — typeshed members, typed and
+ * foreign-call bindings, and last the walker's `assignedLocals`, which declines
+ * a local assigned from an expression nothing types. The flip measurement
+ * (`--tiebreak`) is on the bead and in the Python navigator.
  *
- * `1` / `true` / `on` / `yes` turn it on; everything else, absent included,
- * leaves `resolveDispatch` exactly the cone it was before E4.1.3.
+ * `0` / `false` / `off` / `no` turn it off — the re-measure baseline;
+ * everything else, absent included, composes it.
  */
 export function pythonDynamicDispatchEnabled(raw: string | undefined): boolean {
-  if (raw === undefined) return false;
+  if (raw === undefined) return true;
   const value = raw.trim().toLowerCase();
-  return value === "1" || value === "true" || value === "on" || value === "yes";
+  return !(value === "0" || value === "false" || value === "off" || value === "no");
 }

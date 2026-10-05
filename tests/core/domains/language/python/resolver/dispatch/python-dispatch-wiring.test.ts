@@ -63,8 +63,8 @@ const resolverWith = (value: string | undefined): PythonCallResolver => {
   }
 };
 
-describe("PythonCallResolver.resolveDispatch (w205u — [cone] by default, [cone, dynamic] under the flag)", () => {
-  it("composes the CONE ALONE by default — the untyped-name fan is parked (D10)", () => {
+describe("PythonCallResolver.resolveDispatch (m99j1.1.57 — [cone, dynamic] by default, [cone] when the flag turns it off)", () => {
+  it("composes the dynamic fan by default — the same composition the explicit flag asks for", () => {
     const table = tableWith({
       "app/models/mirror.py": ["Mirror", "Mirror#perform"],
       "app/models/replica.py": ["Replica", "Replica#perform"],
@@ -73,8 +73,22 @@ describe("PythonCallResolver.resolveDispatch (w205u — [cone] by default, [cone
     const ctx = ctxOf(table);
     const site = call("thing", "perform");
 
-    expect(resolverWith(undefined).resolveDispatch(site, ctx)).toEqual({ kind: "edges", edges: [] });
+    const byDefault = resolverWith(undefined).resolveDispatch(site, ctx);
+    expect(byDefault).toEqual(resolverWith("1").resolveDispatch(site, ctx));
+    expect(byDefault).not.toEqual({ kind: "edges", edges: [] });
+  });
+
+  it("composes the CONE ALONE when the flag turns the fan off", () => {
+    const table = tableWith({
+      "app/models/mirror.py": ["Mirror", "Mirror#perform"],
+      "app/models/replica.py": ["Replica", "Replica#perform"],
+      "app/handlers.py": ["Handler", "Handler#run"],
+    });
+    const ctx = ctxOf(table);
+    const site = call("thing", "perform");
+
     expect(resolverWith("0").resolveDispatch(site, ctx)).toEqual({ kind: "edges", edges: [] });
+    expect(resolverWith("off").resolveDispatch(site, ctx)).toEqual({ kind: "edges", edges: [] });
   });
 
   it("never replaces an exact chain answer with a fan", () => {

@@ -310,6 +310,12 @@ describe("mergeExtraction — chunks merge by symbolId", () => {
     });
   });
 
+  it("unions assignedLocals as a set, base order first (bd tea-rags-mcp-m99j1.1.57)", () => {
+    const base = baseExtraction({ chunks: [chunk("User#save", { assignedLocals: ["client", "loader"] })] });
+    const merged = mergeExtraction(base, { chunks: [chunk("User#save", { assignedLocals: ["loader", "factor"] })] });
+    expect(merged.chunks[0].assignedLocals).toEqual(["client", "loader", "factor"]);
+  });
+
   it("keeps the base's chunk scalars and lets a pass FILL one the base left absent", () => {
     const base = baseExtraction({
       chunks: [

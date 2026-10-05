@@ -225,7 +225,10 @@ describe("Python walker — type and constant declarations", () => {
     const actual: Record<string, unknown> = {};
     for (const [file, src] of Object.entries(sources)) {
       const { typeDeclarations: _facts, ...rest } = extract(src, `pkg/${file}`);
-      actual[file] = JSON.parse(JSON.stringify(rest));
+      // `assignedLocals` (bd tea-rags-mcp-m99j1.1.57) is a later per-chunk
+      // channel the golden predates; everything it does not add stays pinned.
+      const chunks = rest.chunks.map(({ assignedLocals: _assigned, ...chunk }) => chunk);
+      actual[file] = JSON.parse(JSON.stringify({ ...rest, chunks }));
     }
     expect(actual).toEqual(golden);
   });

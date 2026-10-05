@@ -108,21 +108,20 @@ describe("resolvePythonDispatchFanMax (w205u — the cap, read once at compositi
   });
 });
 
-describe("pythonDynamicDispatchEnabled (w205u — D10, the component is parked)", () => {
-  it("is OFF when the flag is absent or unset to anything but a yes", () => {
-    expect(pythonDynamicDispatchEnabled(undefined)).toBe(false);
-    expect(pythonDynamicDispatchEnabled("")).toBe(false);
-    expect(pythonDynamicDispatchEnabled("0")).toBe(false);
-    expect(pythonDynamicDispatchEnabled("false")).toBe(false);
-    expect(pythonDynamicDispatchEnabled("off")).toBe(false);
-  });
-
-  it("is ON for the four spellings a re-measure would type", () => {
+describe("pythonDynamicDispatchEnabled (m99j1.1.57 — ON by default, the env still turns it off)", () => {
+  it("is ON when the flag is absent, empty or any spelling that is not an off", () => {
+    expect(pythonDynamicDispatchEnabled(undefined)).toBe(true);
+    expect(pythonDynamicDispatchEnabled("")).toBe(true);
     expect(pythonDynamicDispatchEnabled("1")).toBe(true);
     expect(pythonDynamicDispatchEnabled("true")).toBe(true);
-    expect(pythonDynamicDispatchEnabled(" TRUE ")).toBe(true);
     expect(pythonDynamicDispatchEnabled("on")).toBe(true);
-    expect(pythonDynamicDispatchEnabled("yes")).toBe(true);
+  });
+
+  it("is OFF for the four spellings a re-measure would type to turn it off", () => {
+    expect(pythonDynamicDispatchEnabled("0")).toBe(false);
+    expect(pythonDynamicDispatchEnabled("false")).toBe(false);
+    expect(pythonDynamicDispatchEnabled(" OFF ")).toBe(false);
+    expect(pythonDynamicDispatchEnabled("no")).toBe(false);
   });
 });
 

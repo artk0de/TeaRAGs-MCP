@@ -119,9 +119,11 @@ conclude absence from a graph the index says is incomplete.
   fan-out consulted before the chain, RTA-pruned by the run-global instantiation
   set and narrowed by call-site arity and keyword keys (a positional parameter
   may be passed by name, so `arity` counts slots and `kwargs.optional` every
-  nameable param; a `*args` call site omits its count rather than guessing)
-  (name-only `dynamic` dispatch built, measured and PARKED behind
-  `CODEGRAPH_PY_DYNAMIC_DISPATCH`, default off) + callable-value flow: a
+  nameable param; a `*args` call site omits its count rather than guessing) +
+  name-only `dynamic` dispatch LAST, over untyped receivers the body never binds
+  (parameters, module globals, closure reads), declining every receiver with
+  type evidence or assigned as a local of the caller's def
+  (`CODEGRAPH_PY_DYNAMIC_DISPATCH=0` turns it off) + callable-value flow: a
   function passed into an invoked parameter or wrapped by a decorator resolves
   through the `callableParam` pass, several such functions fan as `cone`, and a
   union-typed receiver fans to every arm that defines the member + C3
