@@ -25,6 +25,19 @@
  *     `engine = import_module(settings.SESSION_ENGINE)`, `x = getattr(…)`,
  *     `w = None` — the local holds whatever that value is at run time.
  *
+ * A BARE callee is the same question one level down (bd
+ * tea-rags-mcp-m99j1.1.90): `DatabaseWrapper = type(self.connection);
+ * DatabaseWrapper(…)` or a test's `FormSet = formset_factory(…); FormSet(…)`
+ * calls a def-LOCAL, and LEGB makes that local shadow every class of the same
+ * short name. Such a callee is a value when every binding of it in the nearest
+ * binding def assigns a value — EXCEPT a call on `self` / `cls`
+ * (`ModelForm = self.get_form(…)`): that is the class-hook idiom, whose result
+ * is the namesake or a subclass of it, and it reads as before. Measured on six
+ * corpora: every resolved row the hook shape produced was correct, every one
+ * the other shapes produced was fabricated (`type(…)`, a migration's
+ * `apps.get_model(…)` historical model, which carries none of the project
+ * class's methods).
+ *
  * Everything else — a bare name, a dotted name rooted at one, `self.Upper`, a
  * local aliasing a name (`lib = mod`), an `import … as lib` inside the def, an
  * annotated local, a local with any binding other than a plain value
@@ -41,11 +54,15 @@ const PYTHON_PARAMETER_SCOPES: ReadonlySet<string> = new Set(["function_definiti
 const PYTHON_RECEIVER_NAMES: ReadonlySet<string> = new Set(["self", "cls"]);
 
 /**
- * Is `fn` — the `function` field of a call — a dotted callee whose receiver is
- * a VALUE (see the module comment)? `false` for an identifier callee and for
- * every receiver that can name a module or class.
+ * Is `fn` — the `function` field of a call — a callee that names no class: a
+ * dotted callee whose receiver is a VALUE, or a bare CapWords callee that is a
+ * value-bound def-local (see the module comment)? `false` for every callee that
+ * can name a module or class.
  */
 export function pythonConstructorReceiverIsValue(fn: AstNode): boolean {
+  if (fn.type === "identifier") {
+    return PYTHON_CONSTRUCTOR_SEGMENT.test(fn.text) && isValueBoundLocal(fn, fn.text, isNonHookValueRhs);
+  }
   if (fn.type !== "attribute") return false;
   const receiver = fn.childForFieldName("object");
   if (receiver === null) return false;
@@ -63,7 +80,7 @@ export function pythonConstructorReceiverIsValue(fn: AstNode): boolean {
   // Every caller reads the result only for a CapWords last segment, so a
   // lowercase callee (`json.loads`) never pays for the def-body scan below.
   const attr = fn.childForFieldName("attribute");
-  return attr !== null && PYTHON_CONSTRUCTOR_SEGMENT.test(attr.text) && isValueBoundLocal(fn, root.text);
+  return attr !== null && PYTHON_CONSTRUCTOR_SEGMENT.test(attr.text) && isValueBoundLocal(fn, root.text, isValueRhs);
 }
 
 /** A last segment any constructor channel may read as a class (`Client`, `_Inner`). */
@@ -89,17 +106,21 @@ type PythonLocalBindingVerdict = "unbound" | "value" | "name";
  * reads the enclosing def's local); a class body is never consulted, because
  * a method does not see class-body names.
  */
-function isValueBoundLocal(node: AstNode, name: string): boolean {
+function isValueBoundLocal(node: AstNode, name: string, valueRhs: PythonValueRhsTest): boolean {
   for (let scope = node.parent; scope !== null; scope = scope.parent) {
     if (scope.type !== "function_definition") continue;
-    const verdict = pythonLocalBindingVerdict(scope, name);
+    const verdict = pythonLocalBindingVerdict(scope, name, valueRhs);
     if (verdict !== "unbound") return verdict === "value";
   }
   return false;
 }
 
 /** {@link PythonLocalBindingVerdict} of `name` over the body of `def`, nested scopes excluded. */
-function pythonLocalBindingVerdict(def: AstNode, name: string): PythonLocalBindingVerdict {
+function pythonLocalBindingVerdict(
+  def: AstNode,
+  name: string,
+  valueRhs: PythonValueRhsTest,
+): PythonLocalBindingVerdict {
   const body = def.childForFieldName("body");
   if (body === null) return "unbound";
   let verdict: PythonLocalBindingVerdict = "unbound";
@@ -111,7 +132,7 @@ function pythonLocalBindingVerdict(def: AstNode, name: string): PythonLocalBindi
       if (node.childForFieldName("name")?.text === name) return "name";
       continue;
     }
-    const binding = pythonBindingKind(node, name);
+    const binding = pythonBindingKind(node, name, valueRhs);
     if (binding === "name") return "name";
     if (binding === "value") verdict = "value";
     for (const child of node.namedChildren) pending.push(child);
@@ -120,7 +141,7 @@ function pythonLocalBindingVerdict(def: AstNode, name: string): PythonLocalBindi
 }
 
 /** How the single node `node` binds `name`, if it is a binding construct at all. */
-function pythonBindingKind(node: AstNode, name: string): PythonLocalBindingVerdict {
+function pythonBindingKind(node: AstNode, name: string, valueRhs: PythonValueRhsTest): PythonLocalBindingVerdict {
   switch (node.type) {
     case "assignment": {
       const left = node.childForFieldName("left");
@@ -128,13 +149,13 @@ function pythonBindingKind(node: AstNode, name: string): PythonLocalBindingVerdi
       if (left.type === "identifier") {
         if (left.text !== name) return "unbound";
         if (node.childForFieldName("type") !== null) return "name";
-        return isValueRhs(node.childForFieldName("right")) ? "value" : "name";
+        return valueRhs(node.childForFieldName("right")) ? "value" : "name";
       }
       return bindsIdentifier(left, name) && left.type !== "attribute" && left.type !== "subscript" ? "name" : "unbound";
     }
     case "named_expression":
       if (node.childForFieldName("name")?.text !== name) return "unbound";
-      return isValueRhs(node.childForFieldName("value")) ? "value" : "name";
+      return valueRhs(node.childForFieldName("value")) ? "value" : "name";
     case "augmented_assignment":
       return node.childForFieldName("left")?.text === name ? "name" : "unbound";
     case "for_statement":
@@ -159,8 +180,24 @@ function bindsIdentifier(node: AstNode | null, name: string): boolean {
   return node.namedChildren.some((child) => bindsIdentifier(child, name));
 }
 
+/** Which right-hand sides of a local's binding count as a VALUE for one receiver shape. */
+type PythonValueRhsTest = (rhs: AstNode | null) => boolean;
+
 function isValueRhs(rhs: AstNode | null): boolean {
   return rhs !== null && PYTHON_VALUE_RHS_TYPES.has(rhs.type);
+}
+
+/**
+ * {@link isValueRhs} for a BARE callee, minus the class-hook call on the
+ * method's own receiver (`self.get_form(…)`, `cls.get_form_class()`): that
+ * binding keeps the callee a name (see the module comment).
+ */
+function isNonHookValueRhs(rhs: AstNode | null): boolean {
+  if (!isValueRhs(rhs)) return false;
+  if (rhs?.type !== "call") return true;
+  const fn = rhs.childForFieldName("function");
+  const object = fn?.type === "attribute" ? fn.childForFieldName("object") : null;
+  return object?.type !== "identifier" || !PYTHON_RECEIVER_NAMES.has(object.text);
 }
 
 /** Does a def or lambda enclosing `node` bind `name` as a parameter? */

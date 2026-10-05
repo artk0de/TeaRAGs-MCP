@@ -99,6 +99,8 @@ export function pythonReturnExpressionType(node: AstNode, scope: PythonReturnSco
   if (fn.type === "identifier") {
     if (fn.text === "cls") return scope.selfClass ?? null;
     if (PYTHON_CLASS_NAME.test(fn.text)) {
+      // A def-local bound to a VALUE shadows every class of that name (bd tea-rags-mcp-m99j1.1.90).
+      if (pythonConstructorReceiverIsValue(fn)) return null;
       scope.writtenSpelling?.(fn.text, fn.text);
       return fn.text;
     }
