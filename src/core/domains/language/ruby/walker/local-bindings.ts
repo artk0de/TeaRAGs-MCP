@@ -7,6 +7,7 @@ import {
 } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
+import { RUBY_SELF_COPY_METHODS } from "../self-copy-methods.js";
 import { forEachClassScope, readScopeResolution, walk } from "./ast-utils.js";
 import { inferRubyMemberReturnType, type RubyMemberReturnOwner } from "./body-return.js";
 import { constInstanceType, isOrAssignment } from "./type-sources/ast-inference.js";
@@ -407,6 +408,11 @@ export function collectRubyCallResultBindingsForChunk(
     const lhs = node.childForFieldName("left");
     const rhs = node.childForFieldName("right");
     if (lhs?.type !== "identifier" || !rhs) return;
+    // A paren-less `copy = dup` parses as an identifier, not a call (bd m99j1.1.91).
+    if (rhs.type === "identifier" && RUBY_SELF_COPY_METHODS.has(rhs.text)) {
+      (out[lhs.text] ??= []).push({ line, endLine: node.endPosition.row + 1, callee: rhs.text });
+      return;
+    }
     if (rhs.type !== "call" && rhs.type !== "method_call") return;
     if (constInstanceType(rhs, catalogue) !== null) return; // directly typed → localBindings owns it
     const links = calleeLinks(rhs);

@@ -517,3 +517,19 @@ describe("collectRubyCallResultBindingsForChunk", () => {
     expect(result["y"]).toEqual([{ line: 2, endLine: 2, callee: "c.d" }]);
   });
 });
+
+describe("collectRubyCallResultBindingsForChunk — self-copy verbs (m99j1.1.91)", () => {
+  it("records a paren-less `dup` / `clone` / `itself` right-hand side, which parses as an identifier", () => {
+    const src = "a = dup\nb = clone\nc = itself\n";
+    const result = collectRubyCallResultBindingsForChunk(parse(src), 1, 3);
+    expect(result["a"]).toEqual([{ line: 1, endLine: 1, callee: "dup" }]);
+    expect(result["b"]).toEqual([{ line: 2, endLine: 2, callee: "clone" }]);
+    expect(result["c"]).toEqual([{ line: 3, endLine: 3, callee: "itself" }]);
+  });
+
+  it("still omits any other bare identifier right-hand side (a local alias)", () => {
+    const src = "other = 1\nx = other\n";
+    const result = collectRubyCallResultBindingsForChunk(parse(src), 1, 2);
+    expect(result["x"]).toBeUndefined();
+  });
+});

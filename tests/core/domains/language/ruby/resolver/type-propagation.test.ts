@@ -1026,3 +1026,79 @@ describe("typeOfReceiver — call-result local (m99j1.1.62)", () => {
     expect(typeOfReceiver("scope", 4, ctx)).toEqual({ form: "instance", name: "Trends::Query" });
   });
 });
+
+// ── Self-copy locals (bd tea-rags-mcp-m99j1.1.91) ───────────────────────────
+//
+// `app_client = dup` (octokit `Client#as_app`): `dup` / `clone` / `itself`
+// return an object of the receiver's own class, so a local bound to one inside
+// an instance method of a declared CLASS is an instance of that class. The
+// assigned-local gate dropped the fan these locals used to get; typing them
+// hands the call to the exact chain instead.
+
+describe("typeOfReceiver — self-copy local (m99j1.1.91)", () => {
+  const classTable = (fqName: string, symbolKind: "class" | "module"): InMemoryGlobalSymbolTable => {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("lib/octokit/client.rb", [
+      {
+        symbolId: fqName,
+        fqName,
+        shortName: fqName.split("::").pop()!,
+        relPath: "lib/octokit/client.rb",
+        scope: [],
+        symbolKind,
+      },
+    ]);
+    return table;
+  };
+
+  it.each(["dup", "clone", "itself"])("types `x = %s` in an instance method as the caller's class", (verb) => {
+    const ctx = emptyCtx({
+      callerScope: ["Octokit", "Client"],
+      callerSymbolId: "Octokit::Client#as_app",
+      symbolTable: classTable("Octokit::Client", "class"),
+      callResultBindings: { app_client: [{ line: 2, endLine: 2, callee: verb }] },
+    });
+    expect(typeOfReceiver("app_client", 3, ctx)).toEqual({ form: "instance", name: "Octokit::Client" });
+  });
+
+  it("types `x = dup` in a singleton method as the class object", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Octokit", "Client"],
+      callerSymbolId: "Octokit::Client.build",
+      symbolTable: classTable("Octokit::Client", "class"),
+      callResultBindings: { copy: [{ line: 2, endLine: 2, callee: "dup" }] },
+    });
+    expect(typeOfReceiver("copy", 3, ctx)).toEqual({ form: "class", name: "Octokit::Client" });
+  });
+
+  it("declines inside a MODULE — self there is an unknown includer", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Octokit", "Configurable"],
+      callerSymbolId: "Octokit::Configurable#reset!",
+      symbolTable: classTable("Octokit::Configurable", "module"),
+      callResultBindings: { copy: [{ line: 2, endLine: 2, callee: "dup" }] },
+    });
+    expect(typeOfReceiver("copy", 3, ctx)).toBeUndefined();
+  });
+
+  it("declines outside a method (class body / top level)", () => {
+    const ctx = emptyCtx({
+      callerScope: [],
+      callerSymbolId: "Octokit::Client",
+      symbolTable: classTable("Octokit::Client", "class"),
+      callResultBindings: { copy: [{ line: 2, endLine: 2, callee: "dup" }] },
+    });
+    expect(typeOfReceiver("copy", 3, ctx)).toBeUndefined();
+  });
+
+  it("lets a DECLARED `dup` return fact on the caller's MRO win", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Octokit", "Client"],
+      callerSymbolId: "Octokit::Client#as_app",
+      symbolTable: classTable("Octokit::Client", "class"),
+      structuredReturnTypes: { "Octokit::Client#dup": { form: "instance", name: "Octokit::Client" } },
+      callResultBindings: { app_client: [{ line: 2, endLine: 2, callee: "dup" }] },
+    });
+    expect(typeOfReceiver("app_client", 3, ctx)).toEqual({ form: "instance", name: "Octokit::Client" });
+  });
+});

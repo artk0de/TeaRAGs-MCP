@@ -28,10 +28,11 @@
  * hierarchy lookups, and both tiers' composition. Every export is unchanged.
  */
 
-import type { CallContext } from "../../../../contracts/types/codegraph.js";
+import type { CallContext, SymbolDefinitionKind } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import { conventionClassNameFor, type NamingConventionPorts } from "../../kernel/index.js";
 import { catalogueFor } from "../dsl/index.js";
+import { RUBY_SELF_COPY_METHODS } from "../self-copy-methods.js";
 import { selfMemberReturnType } from "./ruby-return-facts.js";
 import { lookupRubySymbolsByShortName } from "./short-name-lookup.js";
 
@@ -58,10 +59,39 @@ const RECEIVER_KEYWORDS = new Set(["self", "super", "nil", "true", "false", "__m
  * Gated by {@link selfMemberReturnType}: the caller's own class answers, or its
  * ancestors must agree. No fact, or a disagreement, yields `undefined` and the
  * receiver stays untyped exactly as before.
+ *
+ * Between the declared fact and the scoped reader sits the SELF-COPY tier
+ * ({@link selfCopyReceiverType}): `dup` / `clone` / `itself` with no project
+ * fact answer the caller's own class.
  */
 export function nullaryReceiverType(receiver: string, ctx: CallContext): RubyTypeRef | undefined {
   if (RECEIVER_KEYWORDS.has(receiver) || !NULLARY_RECEIVER.test(receiver)) return undefined;
-  return selfMemberReturnType(receiver, ctx) ?? scopedReceiverType(receiver, ctx);
+  return (
+    selfMemberReturnType(receiver, ctx) ?? selfCopyReceiverType(receiver, ctx) ?? scopedReceiverType(receiver, ctx)
+  );
+}
+
+const CLASS_KIND: ReadonlySet<SymbolDefinitionKind> = new Set(["class"]);
+
+/**
+ * `dup` / `clone` / `itself` called on `self` (bd tea-rags-mcp-m99j1.1.91):
+ * Kernel defines all three to answer an object of the receiver's own class, so
+ * `app_client = dup` inside `Octokit::Client#as_app` is an `Octokit::Client`.
+ * In a singleton method `self` is the class object, so the copy is the class.
+ *
+ * Declines — the receiver stays untyped exactly as before — when the caller is
+ * not a method (no `#` / `.` in its symbolId), or its owner is not a DECLARED
+ * CLASS: inside a module `self` is whichever class includes it, which the
+ * module alone cannot name.
+ */
+function selfCopyReceiverType(receiver: string, ctx: CallContext): RubyTypeRef | undefined {
+  if (!RUBY_SELF_COPY_METHODS.has(receiver) || ctx.callerScope.length === 0) return undefined;
+  const callerId = ctx.callerSymbolId ?? "";
+  const form = callerId.includes("#") ? "instance" : callerId.includes(".") ? "class" : undefined;
+  if (form === undefined) return undefined;
+  const enclosingClass = ctx.callerScope.join("::");
+  if (ctx.symbolTable.lookup(enclosingClass, { kinds: CLASS_KIND }).length === 0) return undefined;
+  return { form, name: enclosingClass };
 }
 
 /** `blog_post` → `BlogPost`: upcase each `_`-separated segment (Rails camelize). */
