@@ -1174,7 +1174,11 @@ describe("ArchitectureReportOps#build — dependency norms (bd tea-rags-mcp-rpx0
     );
 
     expect(report.norms?.summary).toMatchObject({ typedEdgeCount: 26, judgedEdgeCount: 26, violationCount: 2 });
-    expect(report.norms?.threshold.method).toBe("otsu");
+    // Pair supports [12, 6, 6, 1, 1] read η = 11.76/16.56 ≈ 0.71 — one
+    // continuum, below the 0.8 separability gate — so the cut falls to the
+    // min-pair-support floor and the singleton pairs stay the findings (bd
+    // tea-rags-mcp-r8hme.46).
+    expect(report.norms?.threshold.method).toBe("majority");
     expect(report.norms?.findings).toEqual([
       expect.objectContaining({
         kind: "misfit",

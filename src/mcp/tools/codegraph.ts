@@ -407,13 +407,13 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "file edges; dependency on nested component not judged; rootCauses by unstable target component, " +
       "cycleWithDependents = target depends on own dependents. leakingAbstraction: " +
       "import past a module facade (index.ts/__init__.py/mod.rs) its importers adopted (>=3 importers, " +
-      "adoption >0.5 and >= adaptive Otsu cut; summary gives threshold, method, separability); kind " +
+      "adoption >0.5 and >= adaptive cut (Otsu when adoptions split bimodally, else the floor; summary gives threshold, method, separability); kind " +
       "bypass = facade re-exports what import takes (by imported names when indexed, else target file), " +
       "internal-reach = it does not (nonExportedNames), conventionPrivacy = Python _name " +
       "used from other package or Ruby send(:private) from outside its class; rootCauses per module. " +
       "silentCoupling: file pair co-changing strongly in git history with no import/re-export/resolved call " +
       "between them (support, P(B|A), P(A|B), lift, strength = Wilson lower bound, sample commits, " +
-      "structuralVisibility); strong = >0.5 and >= adaptive Otsu cut; rootCauses = file with >=2 silent " +
+      "structuralVisibility); strong = >0.5 and >= adaptive cut (Otsu when strengths split bimodally, else the floor); rootCauses = file with >=2 silent " +
       "partners; summary.silentCoupling.built false = no co-change build, not clean. splitMerge: component " +
       "partition vs history over same sub-graph — splitCandidate = one component whose stored internal pairs " +
       "cluster >=2 groups, largestWeightShare < 0.7 (cohesion's cut), files = per-cluster exemplars (<=8); " +

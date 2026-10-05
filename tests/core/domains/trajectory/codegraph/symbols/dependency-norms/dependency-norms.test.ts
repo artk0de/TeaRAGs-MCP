@@ -60,10 +60,14 @@ describe("computeDependencyNorms", () => {
     const { graph, roles } = verdictsFixture();
     const report = computeDependencyNorms({ graph, fileRoles: roles });
 
-    expect(report.threshold.method).toBe("otsu");
-    // The cut splits the precedent pairs (12, 6, 6) from the singletons.
-    expect(report.threshold.threshold).toBeGreaterThan(1);
-    expect(report.threshold.threshold).toBeLessThanOrEqual(6);
+    // The pair-support population [12, 6, 6, 1, 1] is one continuum, not two
+    // modes: η = 11.76/16.56 ≈ 0.71, below the 0.8 separability gate, so the
+    // cut falls to the min-pair-support floor (bd tea-rags-mcp-r8hme.46) —
+    // strictly above 1, which separates the precedent pairs from the
+    // singletons exactly as the refused cut would have.
+    expect(report.threshold.method).toBe("majority");
+    expect(report.threshold.threshold).toBe(1);
+    expect(report.threshold.separability).toBeCloseTo(0.7101, 3);
 
     expect(report.summary).toMatchObject({
       roleFileCount: 11,
