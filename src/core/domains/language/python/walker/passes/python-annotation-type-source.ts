@@ -61,6 +61,43 @@ function walkerAlreadyBinds(annotation: AstNode): boolean {
   return annotation.type === "identifier" || annotation.type === "attribute";
 }
 
+const BARE_IDENTIFIER = /^[A-Za-z_]\w*$/;
+const CLASS_OBJECT_ANNOTATION = /^(?:typing\.)?[Tt]ype\[(.+)\]$/;
+
+/** `"T"` and `T` name the same thing; a forward-reference quote is not a different type. */
+function unquoted(text: string): string {
+  const trimmed = text.trim();
+  return /^(["']).*\1$/.test(trimmed) ? trimmed.slice(1, -1).trim() : trimmed;
+}
+
+/**
+ * `def m(self: T) -> T` — a return that names the FIRST parameter's own
+ * annotation — is a `Self` return spelled with a TypeVar (httpx's
+ * `Client.__enter__`, bd tea-rags-mcp-m99j1.1.44). Whatever the receiver is,
+ * the return is too, so it records the {@link PYTHON_SELF_RETURN} marker exactly
+ * as `-> Self` does; the reader substitutes the receiver's class. Purely
+ * syntactic on purpose: no TypeVar table and no `bound=` lookup, because the
+ * substitution is the right answer for a self-typed TypeVar whatever its bound.
+ *
+ * `@classmethod def m(cls: type[T]) -> T` is the same rule one level up. Only a
+ * def declared in a class body qualifies, and a `@staticmethod` has no self
+ * parameter to read.
+ */
+function isSelfTypedReturn(site: PythonDefSite, returnExpression: AstNode): boolean {
+  if (site.classChain.length === 0 || site.decorators.includes("staticmethod")) return false;
+  const first = site.node.childForFieldName("parameters")?.namedChildren[0];
+  if (first?.type !== "typed_parameter" && first?.type !== "typed_default_parameter") return false;
+  const typeField = first.childForFieldName("type");
+  if (typeField === null) return false;
+  let annotation = unquoted(pythonAnnotationExpression(typeField).text);
+  if (site.decorators.includes("classmethod")) {
+    const inner = CLASS_OBJECT_ANNOTATION.exec(annotation)?.[1];
+    if (inner === undefined) return false;
+    annotation = unquoted(inner);
+  }
+  return BARE_IDENTIFIER.test(annotation) && annotation === unquoted(returnExpression.text);
+}
+
 function extractPythonAnnotationFacts(input: PythonTypeSourceInput): TypeFact[] {
   const facts: TypeFact[] = [];
   walkPythonScopes(input.root, {
@@ -91,10 +128,10 @@ function extractPythonAnnotationFacts(input: PythonTypeSourceInput): TypeFact[] 
       // `Self` resolves to the MARKER here, not to `selfClass`: on a return it
       // means the class the RECEIVER names, which only the resolver knows.
       // See {@link PYTHON_SELF_RETURN}.
-      const ref = pythonTypeRefFromNode(
-        pythonAnnotationExpression(returnType),
-        selfClass === undefined ? undefined : PYTHON_SELF_RETURN,
-      );
+      const returnExpression = pythonAnnotationExpression(returnType);
+      const ref = isSelfTypedReturn(site, returnExpression)
+        ? ({ form: "instance", name: PYTHON_SELF_RETURN } as const)
+        : pythonTypeRefFromNode(returnExpression, selfClass === undefined ? undefined : PYTHON_SELF_RETURN);
       // A nil-only ref states "no receiver" and no consumer reads that yet;
       // emitting it would put a `-> None` entry on every annotated def.
       if (ref === undefined || ref.form === "nil") return;

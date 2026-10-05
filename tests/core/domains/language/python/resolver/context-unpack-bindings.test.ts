@@ -109,6 +109,23 @@ describe("Python context-manager bindings — `with X() as name` binds `X.__ente
     expect(resolve(call("l", "release", 11), ctx)?.targetSymbolId).toBe("RLock#release");
   });
 
+  it("`with Client() as c` where `__enter__(self: T) -> T` records the Self marker → Client#request", () => {
+    const clientFile = "app/client.py";
+    const ctx: CallContext = {
+      callerFile: "app/api.py",
+      callerScope: ["request"],
+      imports: [{ importText: "from app.client import Client", startLine: 1 }],
+      symbolTable: tableWith({
+        "app/api.py": ["request"],
+        [clientFile]: ["Client", "Client#__enter__", "Client#request"],
+      }),
+      localBindings: { c: [derived("contextEnter", 10, "Client()")] },
+      // The marker the annotation pass writes for a self-typed TypeVar return.
+      structuredReturnTypes: { "Client#__enter__": instance("Self") },
+    };
+    expect(resolve(call("c", "request", 11), ctx)?.targetSymbolId).toBe("Client#request");
+  });
+
   it("a context value read off a local follows the local's type", () => {
     const ctx: CallContext = {
       callerFile: LOCKS_FILE,

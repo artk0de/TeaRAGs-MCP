@@ -151,6 +151,62 @@ describe("pythonAnnotationTypeSource — returns", () => {
     }
   });
 
+  // bd tea-rags-mcp-m99j1.1.44. httpx's `Client.__enter__(self: T) -> T`, with
+  // `T = TypeVar("T", bound="Client")`, is a Self return spelled with a
+  // TypeVar. Purely syntactic: the return names the first parameter's own
+  // annotation, so it is whatever the receiver is — no TypeVar table.
+  // A quoted / `type[...]` parameter also yields a `param` fact; this is about the return.
+  const returns = (src: string) => facts(src).filter((fact) => fact.kind === "return");
+  const selfMarker = (methodName: string, classForm?: true) => ({
+    kind: "return",
+    source: "annotations",
+    symbolScope: ["Client"],
+    methodName,
+    type: instance("Self"),
+    ...(classForm === undefined ? {} : { classForm }),
+  });
+
+  it("records `def m(self: T) -> T` as the Self marker", () => {
+    expect(facts("class Client:\n    def __enter__(self: T) -> T:\n        pass\n")).toEqual([selfMarker("__enter__")]);
+  });
+
+  it("records `async def m(self: U) -> U` as the Self marker", () => {
+    expect(facts("class Client:\n    async def __aenter__(self: U) -> U:\n        pass\n")).toEqual([
+      selfMarker("__aenter__"),
+    ]);
+  });
+
+  it("records `@classmethod def m(cls: type[T]) -> T` (and the quoted forms) as a class-form Self marker", () => {
+    for (const cls of ["type[T]", 'type["T"]', "Type[T]"]) {
+      const src = `class Client:\n    @classmethod\n    def make(cls: ${cls}) -> T:\n        pass\n`;
+      expect(returns(src)).toEqual([selfMarker("make", true)]);
+    }
+  });
+
+  it("records a quoted return naming the same TypeVar", () => {
+    expect(returns('class Client:\n    def __enter__(self: "T") -> "T":\n        pass\n')).toEqual([
+      selfMarker("__enter__"),
+    ]);
+  });
+
+  it("does NOT record Self when the TypeVar sits on a non-first parameter", () => {
+    expect(facts("class Client:\n    def m(self, x: T) -> T:\n        pass\n")).toEqual([
+      { kind: "return", source: "annotations", symbolScope: ["Client"], methodName: "m", type: instance("T") },
+    ]);
+  });
+
+  it("does NOT record Self when the return names a different identifier than the first parameter", () => {
+    expect(facts("class Client:\n    def m(self: T) -> U:\n        pass\n")).toEqual([
+      { kind: "return", source: "annotations", symbolScope: ["Client"], methodName: "m", type: instance("U") },
+    ]);
+  });
+
+  it("does NOT record Self for a module-level `def f(x: T) -> T` — not a class-body def", () => {
+    expect(facts("def f(x: T) -> T:\n    pass\n")).toEqual([
+      { kind: "return", source: "annotations", symbolScope: [], methodName: "f", type: instance("T") },
+    ]);
+  });
+
   it("still resolves `Self` against the enclosing class OUTSIDE a return", () => {
     // An ivar names a value the object already holds; only the return is
     // polymorphic in the receiver, so only the return records the marker.
