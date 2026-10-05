@@ -19,8 +19,11 @@ import type {
   DispatchEdge,
   DispatchFanoutOutcome,
   FileExtraction,
+  GlobalSymbolTable,
   GraphEdges,
   InheritanceEdgeRow,
+  KnownTargetCalleeLocator,
+  ModuleReexport,
   NamedSymbol,
   RelPath,
   StructuralContractDecl,
@@ -823,7 +826,29 @@ export interface LanguageProvider {
    * what gates it. Absent → the family derives nothing.
    */
   structuralConformance?: StructuralConformanceDeriver;
+  /**
+   * Optional known-target callee locator (bd tea-rags-mcp-m99j1.1.42) — present
+   * on a language whose walker can name a constructor call's class only from
+   * one file's syntax (Python: a package that re-exports the class, a class
+   * that inherits its `__init__`). The parameter-typing barrier builds one per
+   * run from the run-global maps and asks it about each candidate no indexed
+   * definition answers. Absent → candidates are folded as the walker spelled
+   * them.
+   */
+  knownTargetCalleeLocator?: KnownTargetCalleeLocatorFactory;
 }
+
+/** The run-global facts a {@link KnownTargetCalleeLocatorFactory} reads, complete at the barrier. */
+export interface KnownTargetCalleeLocatorInput {
+  readonly symbolTable: GlobalSymbolTable;
+  /** `relPath` → the names its import statements bind (`CodegraphRunState#moduleReexports`). */
+  readonly moduleReexports: Readonly<Record<RelPath, readonly ModuleReexport[]>>;
+  /** The language family's `classAncestors`, keyed as the walker keys a class. */
+  readonly classAncestors: Readonly<Record<string, readonly string[]>>;
+}
+
+/** Build one run's {@link KnownTargetCalleeLocator}. */
+export type KnownTargetCalleeLocatorFactory = (input: KnownTargetCalleeLocatorInput) => KnownTargetCalleeLocator;
 
 /** Everything {@link StructuralConformanceDeriver} reads, all within ONE language family. */
 export interface StructuralConformanceInput {

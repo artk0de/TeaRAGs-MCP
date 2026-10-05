@@ -33,6 +33,8 @@ import type {
   ChunkExtraction,
   ClassFieldParamLink,
   KnownTargetCallArgs,
+  KnownTargetCallee,
+  KnownTargetCalleeLocator,
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
@@ -86,6 +88,140 @@ export function foldKnownTargetParamTypes(
       params[name] = type;
     }
     if (Object.keys(params).length > 0) out[target] = params;
+  }
+  return out;
+}
+
+/** The constructor an instance class inherits: the class that declares it, and its member name. */
+export interface InheritedConstructor {
+  readonly definingClassKey: string;
+  readonly method: string;
+}
+
+/** {@link redirectKnownTargetCallArgs}'s product — the fold's two inputs, plus who inherits what. */
+export interface RedirectedKnownTargetCallArgs {
+  readonly records: readonly KnownTargetCallArgs[];
+  /** The fold's def index, extended with each inheriting class's coordinate. */
+  readonly paramNames: Readonly<Record<string, readonly string[]>>;
+  /** Instance class key → the constructor it runs, for every call redirected up an ancestry. */
+  readonly inheritedConstructors: ReadonlyMap<string, InheritedConstructor>;
+}
+
+/**
+ * Re-address the known-target call sites no indexed def answers (bd
+ * tea-rags-mcp-m99j1.1.42), BEFORE {@link foldKnownTargetParamTypes} runs.
+ *
+ * A record any candidate already indexes is passed through untouched and its
+ * language's locator is never asked — every call that folded before folds
+ * identically. Otherwise each candidate goes to the locator; the record is
+ * redirected only when every answer names the SAME callee (two candidates
+ * locating two classes is the ambiguity the walker refused to resolve) and that
+ * callee's def has positional names. A redirected record folds into the
+ * defining class's def, where the arguments really flow. When the constructor
+ * is inherited it ALSO folds under the instance class's own coordinate, aliased
+ * to the defining def's names: the fields that constructor assigns are
+ * attributes of the INSTANCE, and keying them by the instance class means a
+ * direct construction of the ancestor with other types cannot silence them.
+ */
+export function redirectKnownTargetCallArgs(
+  records: Iterable<KnownTargetCallArgs>,
+  paramNamesBySymbolId: Readonly<Record<string, readonly string[]>>,
+  locatorOf: (record: KnownTargetCallArgs) => KnownTargetCalleeLocator | undefined,
+): RedirectedKnownTargetCallArgs {
+  const out: KnownTargetCallArgs[] = [];
+  const aliases: Record<string, readonly string[]> = createIdentifierRecord();
+  const inheritedConstructors = new Map<string, InheritedConstructor>();
+  for (const record of records) {
+    out.push(record);
+    if (record.targets.some((target) => paramNamesBySymbolId[target] !== undefined)) continue;
+    const locate = locatorOf(record);
+    if (locate === undefined) continue;
+    const callee = soleCallee(record.targets, locate);
+    if (callee === null) continue;
+    const coordinate = `${callee.definingClassKey}#${callee.method}`;
+    const names = paramNamesBySymbolId[coordinate];
+    if (names === undefined) continue;
+    out.push({ targets: [coordinate], argTypes: record.argTypes });
+    if (callee.instanceClassKey === callee.definingClassKey) continue;
+    aliases[`${callee.instanceClassKey}#${callee.method}`] = names;
+    out.push({ targets: [`${callee.instanceClassKey}#${callee.method}`], argTypes: record.argTypes });
+    inheritedConstructors.set(callee.instanceClassKey, {
+      definingClassKey: callee.definingClassKey,
+      method: callee.method,
+    });
+  }
+  const paramNames = Object.keys(aliases).length === 0 ? paramNamesBySymbolId : { ...paramNamesBySymbolId, ...aliases };
+  return { records: out, paramNames, inheritedConstructors };
+}
+
+/** The one callee every locatable candidate agrees on, with the candidates' member, or `null`. */
+function soleCallee(
+  targets: readonly string[],
+  locate: KnownTargetCalleeLocator,
+): (KnownTargetCallee & { readonly method: string }) | null {
+  let sole: (KnownTargetCallee & { readonly method: string }) | null = null;
+  for (const target of targets) {
+    const at = target.lastIndexOf("#");
+    if (at <= 0) continue;
+    const located = locate(target);
+    if (located === null) continue;
+    const method = target.slice(at + 1);
+    if (sole === null) sole = { ...located, method };
+    else if (
+      sole.definingClassKey !== located.definingClassKey ||
+      sole.instanceClassKey !== located.instanceClassKey ||
+      sole.method !== method
+    ) {
+      return null;
+    }
+  }
+  return sole;
+}
+
+/**
+ * Hand each inheriting class the links its inherited constructor declares
+ * (bd tea-rags-mcp-m99j1.1.42), so the derivation keys `self.<field> = <param>`
+ * on the INSTANCE class as well as on the class that wrote it — Python sets
+ * the attribute on the object under construction, whatever class declared the
+ * `__init__`. Only the constructor's own links travel; the instance class's own
+ * link at a shared field wins. Nothing inherited ⇒ the links by identity.
+ */
+export function inheritConstructorFieldLinks(
+  links: Readonly<Record<string, Readonly<Record<string, ClassFieldParamLink>>>>,
+  inherited: ReadonlyMap<string, InheritedConstructor>,
+): Readonly<Record<string, Readonly<Record<string, ClassFieldParamLink>>>> {
+  let out: Record<string, Readonly<Record<string, ClassFieldParamLink>>> | undefined;
+  for (const [instanceClassKey, { definingClassKey, method }] of inherited) {
+    const constructorLinks: Record<string, ClassFieldParamLink> = createIdentifierRecord();
+    for (const [field, link] of Object.entries(identifierEntry(links, definingClassKey) ?? {})) {
+      if (link.method === method) constructorLinks[field] = link;
+    }
+    if (Object.keys(constructorLinks).length === 0) continue;
+    out ??= { ...links };
+    out[instanceClassKey] = { ...constructorLinks, ...identifierEntry(links, instanceClassKey) };
+  }
+  return out ?? links;
+}
+
+/**
+ * Extend a typed-field gate (`"<classKey>|<field>"`) to the inheriting classes:
+ * a field the DEFINING class typed on its own is typed for the instance class
+ * too, so the derivation never keys a weaker fact where an ancestor-chain read
+ * would meet it first. Nothing inherited ⇒ the gate by identity.
+ */
+export function inheritTypedFields(
+  typed: ReadonlySet<string>,
+  inherited: ReadonlyMap<string, InheritedConstructor>,
+): ReadonlySet<string> {
+  if (inherited.size === 0) return typed;
+  const heirs = new Map<string, string[]>();
+  for (const [instanceClassKey, { definingClassKey }] of inherited) {
+    heirs.set(definingClassKey, [...(heirs.get(definingClassKey) ?? []), instanceClassKey]);
+  }
+  const out = new Set(typed);
+  for (const coordinate of typed) {
+    const bar = coordinate.lastIndexOf("|");
+    for (const heir of heirs.get(coordinate.slice(0, bar)) ?? []) out.add(`${heir}${coordinate.slice(bar)}`);
   }
   return out;
 }

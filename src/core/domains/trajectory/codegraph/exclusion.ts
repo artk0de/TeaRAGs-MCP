@@ -23,6 +23,7 @@
 import ignore from "ignore";
 
 import type {
+  KnownTargetCalleeLocatorFactory,
   LanguageFactoryDescriptor,
   SchemaColumnAccessorSource,
   StructuralConformanceDeriver,
@@ -129,6 +130,26 @@ export function collectStructuralConformanceDerivers(
     if (derive !== undefined) derivers.set(lang, derive);
   }
   return derivers;
+}
+
+/**
+ * Every registered language's known-target callee locator
+ * (`LanguageProvider.knownTargetCalleeLocator`), keyed by language (bd
+ * tea-rags-mcp-m99j1.1.42). The parameter-typing barrier asks one about each
+ * of its language's call sites no indexed def answers; the engine knows THAT a
+ * language can re-address a constructor call, never how it reads imports or
+ * ancestry. Omitting the factory yields none.
+ */
+export function collectKnownTargetCalleeLocators(
+  languageFactory?: LanguageFactoryDescriptor,
+): Map<string, KnownTargetCalleeLocatorFactory> {
+  const locators = new Map<string, KnownTargetCalleeLocatorFactory>();
+  if (!languageFactory) return locators;
+  for (const lang of languageFactory.supported()) {
+    const locator = languageFactory.create(lang).knownTargetCalleeLocator;
+    if (locator !== undefined) locators.set(lang, locator);
+  }
+  return locators;
 }
 
 export function collectSchemaColumnSources(

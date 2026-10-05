@@ -28,6 +28,7 @@ import type {
   HierarchyView,
   InheritanceEdgeRow,
   KnownTargetCallArgs,
+  KnownTargetCalleeLocator,
   ModuleReexport,
   Pass1AggregateReadScope,
   RelPath,
@@ -41,6 +42,7 @@ import type {
 import type {
   DeclaredDependenciesByLanguage,
   DependencyManifestSource,
+  KnownTargetCalleeLocatorFactory,
   RubyTypeRef,
   SchemaColumnAccessorSource,
   StructuralConformanceDeriver,
@@ -52,6 +54,10 @@ import { MapHierarchyView } from "../hierarchy-view.js";
 import {
   deriveClassFieldTypesFromParams,
   foldKnownTargetParamTypes,
+  inheritConstructorFieldLinks,
+  inheritTypedFields,
+  redirectKnownTargetCallArgs,
+  type InheritedConstructor,
   type KnownTargetParamTypes,
 } from "./call-arg-param-types.js";
 import { buildHierarchySnapshot, normalizeInheritanceEdges } from "./inheritance-edges.js";
@@ -403,6 +409,14 @@ export class CodegraphRunState {
      * walkers published it.
      */
     private readonly typeDeclarationReaders?: ReadonlySet<string>,
+    /**
+     * Known-target callee locators of the registered languages, by language (bd
+     * tea-rags-mcp-m99j1.1.42), collected the same way. The parameter-typing
+     * barrier asks one about each of its language's call sites no indexed def
+     * answers. A language with none folds its candidates as the walker spelled
+     * them.
+     */
+    private readonly knownTargetCalleeLocators: ReadonlyMap<string, KnownTargetCalleeLocatorFactory> = new Map(),
   ) {}
 
   /**
@@ -826,6 +840,14 @@ export class CodegraphRunState {
   readonly knownTargetCallArgs = new Map<string, KnownTargetCallArgs>();
 
   /**
+   * The language that emitted each {@link knownTargetCallArgs} record, by the
+   * same dedupe key (bd tea-rags-mcp-m99j1.1.42) — which language's callee
+   * locator the barrier may ask about it. Written beside every record, walked
+   * or hydrated, so both runs route identically.
+   */
+  private readonly knownTargetCallArgsLanguage = new Map<string, string>();
+
+  /**
    * Per-run method-definition index `fold coordinate → positional param names` (bd
    * tea-rags-mcp-bvalc). Maps an argument POSITION to a parameter NAME at the
    * barrier and, holding only real definitions, gates which constant-lookup
@@ -1075,7 +1097,9 @@ export class CodegraphRunState {
     knownTargetCallArgs: (slice) => {
       for (const record of slice.knownTargetCallArgs ?? []) {
         const key = knownTargetCallArgsKey(record);
-        if (!this.knownTargetCallArgs.has(key)) this.knownTargetCallArgs.set(key, record);
+        if (this.knownTargetCallArgs.has(key)) continue;
+        this.knownTargetCallArgs.set(key, record);
+        this.knownTargetCallArgsLanguage.set(key, slice.language);
       }
     },
     paramNames: (slice) => {
@@ -1467,15 +1491,51 @@ export class CodegraphRunState {
     // here is the method-definition index complete, so call-site candidates can be
     // gated against real defs. The fold consumes NO resolution result, which is
     // what lets it run before pass-2 instead of needing a fixpoint with it.
+    // A candidate no indexed def answers is re-addressed first (bd
+    // tea-rags-mcp-m99j1.1.42) — a re-exported class, an inherited constructor —
+    // by its language's locator, over maps this barrier has just completed.
     if (this.knownTargetCallArgs.size > 0) {
-      this.paramTypes = foldKnownTargetParamTypes(this.knownTargetCallArgs.values(), this.paramNames);
+      const locators = await this.buildKnownTargetCalleeLocators(resolveSymbolTable);
+      const redirected = redirectKnownTargetCallArgs(this.knownTargetCallArgs.values(), this.paramNames, (record) => {
+        const language = this.knownTargetCallArgsLanguage.get(knownTargetCallArgsKey(record));
+        return language === undefined ? undefined : locators.get(language);
+      });
+      this.paramTypes = foldKnownTargetParamTypes(redirected.records, redirected.paramNames);
+      const inherited = redirected.inheritedConstructors;
       this.derivedClassFieldTypes = deriveClassFieldTypesFromParams(
-        this.classFieldParamLinks,
+        inheritConstructorFieldLinks(this.classFieldParamLinks, inherited),
         this.paramTypes,
-        this.typedClassFields,
+        inheritTypedFields(this.typedClassFields, inherited),
       );
-      this.overlayDerivedClassKeyedFieldTypes();
+      this.overlayDerivedClassKeyedFieldTypes(inherited);
     }
+  }
+
+  /**
+   * One run's callee locator per language that offers one AND emitted a
+   * known-target record (bd tea-rags-mcp-m99j1.1.42). Built at the barrier,
+   * where the symbol table, the re-export map and the family's ancestry are
+   * complete for walked and hydrated files alike. No such language ⇒ an empty
+   * map and no symbol-table acquire.
+   */
+  private async buildKnownTargetCalleeLocators(
+    resolveSymbolTable: () => Promise<GlobalSymbolTable>,
+  ): Promise<Map<string, KnownTargetCalleeLocator>> {
+    const locators = new Map<string, KnownTargetCalleeLocator>();
+    const languages = new Set(this.knownTargetCallArgsLanguage.values());
+    for (const language of languages) {
+      const factory = this.knownTargetCalleeLocators.get(language);
+      if (factory === undefined) continue;
+      locators.set(
+        language,
+        factory({
+          symbolTable: await resolveSymbolTable(),
+          moduleReexports: this.moduleReexports,
+          classAncestors: this.ancestorsFor(language),
+        }),
+      );
+    }
+    return locators;
   }
 
   /** The link accumulator whose derived fields land on `fieldChannel`. */
@@ -1492,16 +1552,25 @@ export class CodegraphRunState {
    * typed-field gate, and a coordinate the walker typed always keeps its type.
    * No links ⇒ the map is untouched.
    */
-  private overlayDerivedClassKeyedFieldTypes(): void {
-    const linkedClasses = Object.keys(this.classKeyedFieldParamLinks);
+  private overlayDerivedClassKeyedFieldTypes(inherited: ReadonlyMap<string, InheritedConstructor>): void {
+    const links = inheritConstructorFieldLinks(this.classKeyedFieldParamLinks, inherited);
+    const linkedClasses = Object.keys(links);
     if (linkedClasses.length === 0) return;
     const typed = new Set<string>();
     for (const classKey of linkedClasses) {
       for (const field of Object.keys(identifierEntry(this.classFieldTypesByClassKey, classKey) ?? {})) {
         typed.add(`${classKey}|${field}`);
       }
+      // An inherited field the DEFINING class's walker typed stays its type:
+      // the MRO read finds the instance class's key first, so a derived entry
+      // there would shadow it.
+      const defining = inherited.get(classKey)?.definingClassKey;
+      if (defining === undefined) continue;
+      for (const field of Object.keys(identifierEntry(this.classFieldTypesByClassKey, defining) ?? {})) {
+        typed.add(`${classKey}|${field}`);
+      }
     }
-    const derived = deriveClassFieldTypesFromParams(this.classKeyedFieldParamLinks, this.paramTypes, typed);
+    const derived = deriveClassFieldTypesFromParams(links, this.paramTypes, typed);
     for (const [classKey, fields] of Object.entries(derived)) {
       this.classFieldTypesByClassKey[classKey] = {
         ...fields,
@@ -1517,6 +1586,7 @@ export class CodegraphRunState {
    */
   private resetInterprocParamState(): void {
     this.knownTargetCallArgs.clear();
+    this.knownTargetCallArgsLanguage.clear();
     this.paramNames = createIdentifierRecord();
     this.classFieldParamLinks = createIdentifierRecord();
     this.classKeyedFieldParamLinks = createIdentifierRecord();
@@ -2024,7 +2094,9 @@ export class CodegraphRunState {
     const paramFamily = paramFamilyFactsOf(extraction);
     if (paramFamily !== undefined) {
       for (const record of paramFamily.knownTargetCallArgs ?? []) {
-        this.knownTargetCallArgs.set(knownTargetCallArgsKey(record), record);
+        const key = knownTargetCallArgsKey(record);
+        this.knownTargetCallArgs.set(key, record);
+        this.knownTargetCallArgsLanguage.set(key, extraction.language);
       }
       for (const [coordinate, names] of Object.entries(paramFamily.methodParamNames)) {
         this.paramNames[coordinate] = names;
