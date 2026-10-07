@@ -1068,6 +1068,24 @@ describe("silentCoupling", () => {
     expect(result.findings).toEqual([]);
   });
 
+  // bd tea-rags-mcp-lxbrr: the cap limits which files are scanned as sources;
+  // a partner the change touches past it is still in the change.
+  it("skips a pair whose partner the change touches past the scan cap; an untouched partner still reports", () => {
+    const run = new DiffDetectorRun({
+      graph: graphOf([]),
+      catalog: catalogOf(new Map()),
+      silentCouplingFacts: factsOf([
+        VIOLATION,
+        { relPathA: "src/a.ts", relPathB: "src/r.ts", support: 8, strength: 0.56 },
+      ]),
+    });
+    const result = run.run(
+      { changedFiles: ["src/a.ts"], touchedFiles: new Set(["src/a.ts", "src/p.ts"]), skippedFiles: 1 },
+      overlayOf([["src/a.ts", "src/q.ts"]], ["src/a.ts"]),
+    );
+    expect(subjectsOf(result, "silentCoupling")).toEqual(["src/a.ts ~ src/r.ts"]);
+  });
+
   it("stays silent when a structural edge already exists in the reverse direction", () => {
     const result = runWith(
       {
@@ -1165,6 +1183,22 @@ describe("facadeContract", () => {
       contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["b"] }]]])),
       [FACADE, "src/app/a.ts"],
       [[FACADE, "src/lib/x.ts", { reexported: ["a"] }]],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  // bd tea-rags-mcp-lxbrr: "the diff changes it" is judged against the whole
+  // change, not the cap's scanned subset — a past-cap consumer's indexed row is
+  // just as stale.
+  it("skips a consumer the change touches past the scan cap", () => {
+    const run = new DiffDetectorRun({
+      graph: graphOf([]),
+      catalog: catalogOf(new Map()),
+      contract: contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["b"] }]]])),
+    });
+    const result = run.run(
+      { changedFiles: [FACADE], touchedFiles: new Set([FACADE, "src/app/a.ts"]), skippedFiles: 1 },
+      namedOverlayOf([[FACADE, "src/lib/x.ts", { reexported: ["a"] }]], [FACADE]),
     );
     expect(result.findings).toEqual([]);
   });

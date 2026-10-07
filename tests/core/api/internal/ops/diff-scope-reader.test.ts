@@ -113,6 +113,30 @@ describe("readDiffScope", { timeout: 60_000 }, () => {
     expect(read.skipped).toBe(2);
   });
 
+  // bd tea-rags-mcp-lxbrr: the cap limits which files are SCANNED, never what
+  // the change touches — a section asking "is this partner in the change?"
+  // reads the whole change, past-cap and deleted paths included.
+  it("touchedFiles is the whole change: past-cap files and deletions included, uncapped", async () => {
+    writeFileSync(join(repo, "src/gone.ts"), "export const gone = 1;\n");
+    // Commit only the soon-deleted file — CHANGED stays an uncommitted edit.
+    git(repo, "add", "src/gone.ts");
+    git(repo, "commit", "-q", "-m", "add gone");
+    rmSync(join(repo, "src/gone.ts"));
+    mkdirSync(join(repo, "notes"));
+    for (let i = 0; i < 201; i++) writeFileSync(join(repo, `notes/n${String(i).padStart(3, "0")}.md`), "x\n");
+    const read = await readDiffScope(repo, {});
+    expect(read.files).toHaveLength(200);
+    expect(read.files).not.toContain("src/gone.ts");
+    expect(read.touchedFiles.size).toBe(203);
+    expect(read.touchedFiles.has(CHANGED)).toBe(true);
+    expect(read.touchedFiles.has("src/gone.ts")).toBe(true);
+    for (const relPath of read.files) expect(read.touchedFiles.has(relPath)).toBe(true);
+    const pastCap = [...read.touchedFiles].filter(
+      (relPath) => !read.files.includes(relPath) && relPath !== "src/gone.ts",
+    );
+    expect(pastCap).toHaveLength(read.skipped);
+  });
+
   // bd tea-rags-mcp-89k7k.1.9: files past the cap used to be whatever sorts
   // last in git's order — a production change was dropped while non-production
   // notes survived it. The cap now drops by a stated relevance order instead.

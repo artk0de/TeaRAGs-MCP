@@ -194,6 +194,7 @@ function scopeOf(files: readonly string[], skipped = 0): DiffScopeRead {
     changedFiles: files.length,
     wholeFiles: 0,
     files,
+    touchedFiles: new Set(files),
     addedRanges: new Map(),
     nonProduction: new Set(),
     skipped,

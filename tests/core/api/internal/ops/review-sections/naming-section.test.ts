@@ -20,6 +20,7 @@ const scope: DiffScopeRead = {
   changedFiles: 2,
   wholeFiles: 0,
   files: ["src/a.ts", "src/b.ts"],
+  touchedFiles: new Set(["src/a.ts", "src/b.ts"]),
   addedRanges: new Map(),
   nonProduction: new Set(),
   skipped: 0,

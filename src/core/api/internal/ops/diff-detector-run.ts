@@ -253,7 +253,15 @@ export interface DiffDetectorRunDeps {
  * files it never saw.
  */
 export interface DiffDetectorScope {
+  /** The scanned (capped) changed files — the sources every family judges. */
   changedFiles: readonly string[];
+  /**
+   * Every path the change touches, uncapped and deletions included (bd
+   * tea-rags-mcp-lxbrr) — what "the diff also changes it" is asked of
+   * (silentCoupling's partner, facadeContract's consumer). Absent =
+   * `changedFiles` is the whole change.
+   */
+  touchedFiles?: ReadonlySet<string>;
   /**
    * Changed files the reader's cap skipped; `0`/absent = the scope is whole.
    * When > 0 every built family's status is marked partial
@@ -449,6 +457,9 @@ export class DiffDetectorRun {
    */
   run(scope: DiffDetectorScope, overlay: ReviewEdgeOverlay): DiffDetectorFindings {
     const changed = new Set(scope.changedFiles);
+    // Presence in the change (bd tea-rags-mcp-lxbrr) — never the capped set:
+    // a past-cap or deleted file is still part of what the diff carries.
+    const touched = scope.touchedFiles ?? changed;
     const overlayEdges = uniqueOverlayEdges(scope.changedFiles, overlay);
     // The subtraction (bd tea-rags-mcp-89k7k.14): only genuinely-new pairs
     // reach the two families that weigh "what the diff adds"; the per-edge
@@ -459,8 +470,8 @@ export class DiffDetectorRun {
     const leakingAbstraction = this.judgeLeakingAbstraction(overlayEdges);
     const cycles = this.judgeCycles(overlayEdges, changed);
     const mainSequence = this.judgeMainSequence(scope.changedFiles, diffAddedEdges);
-    const silentCoupling = this.judgeSilentCoupling(scope.changedFiles, overlay, changed);
-    const facadeContract = this.judgeFacadeContract(scope.changedFiles, overlay, changed);
+    const silentCoupling = this.judgeSilentCoupling(scope.changedFiles, overlay, touched);
+    const facadeContract = this.judgeFacadeContract(scope.changedFiles, overlay, touched);
     const splitCandidates = this.judgeSplitCandidates(scope.changedFiles);
     // Partial over a truncated diff (bd tea-rags-mcp-89k7k.1.9): stamped on
     // BUILT rows only — an unbuilt row's built:false + reason already denies
@@ -812,12 +823,14 @@ export class DiffDetectorRun {
    * stands in the indexed graph's reverse direction (a partner -> file edge —
    * without that check the "no structural edge" sentence below could be
    * false). Both sides in the diff is the review's own business, not a
-   * finding (bd tea-rags-mcp-3kykc owns the partner-missing question).
+   * finding (bd tea-rags-mcp-3kykc owns the partner-missing question) — and
+   * "in the diff" means the whole change (`inChange`), never the capped scan
+   * (bd tea-rags-mcp-lxbrr).
    */
   private judgeSilentCoupling(
     changedFiles: readonly string[],
     overlay: ReviewEdgeOverlay,
-    changed: ReadonlySet<string>,
+    inChange: ReadonlySet<string>,
   ): {
     findings: DiffDetectorFinding[];
     excluded: SilentCouplingExclusionCounts | undefined;
@@ -831,7 +844,7 @@ export class DiffDetectorRun {
       for (const violation of facts.violations) {
         if (violation.relPathA !== relPath && violation.relPathB !== relPath) continue;
         const partner = violation.relPathA === relPath ? violation.relPathB : violation.relPathA;
-        if (changed.has(partner)) continue;
+        if (inChange.has(partner)) continue;
         const subject = `${relPath} ~ ${partner}`;
         if (reported.has(subject)) continue;
         reported.add(subject);
@@ -870,13 +883,14 @@ export class DiffDetectorRun {
    * indexed graph's. Judged only when the tree recorded a re-export surface
    * at all — "not recorded" must never read as "exports nothing" (the same
    * guard `classifyFacadeLeak`'s `facadeNamesRecorded` makes on the report
-   * side). A consumer the diff also changes is skipped: its indexed row is
+   * side). A consumer the diff also changes (`inChange` — the whole change,
+   * past-cap files included, bd tea-rags-mcp-lxbrr) is skipped: its indexed row is
    * stale, the diff judges its own read.
    */
   private judgeFacadeContract(
     changedFiles: readonly string[],
     overlay: ReviewEdgeOverlay,
-    changed: ReadonlySet<string>,
+    inChange: ReadonlySet<string>,
   ): DiffDetectorFinding[] {
     if (this.contract === undefined) return [];
     const findings: DiffDetectorFinding[] = [];
@@ -898,7 +912,7 @@ export class DiffDetectorRun {
 
       const consumersByDroppedName = new Map<string, Set<string>>();
       for (const consumer of this.contract.indexedConsumersOf(relPath)) {
-        if (changed.has(consumer.source)) continue;
+        if (inChange.has(consumer.source)) continue;
         if (consumer.importedNames === undefined) continue;
         if (consumer.importedNames.includes(WHOLE_MODULE_EXPORT_NAME)) continue;
         for (const name of consumer.importedNames) {

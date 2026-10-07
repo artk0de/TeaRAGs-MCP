@@ -421,6 +421,9 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       }).run(
         {
           changedFiles: scope.files,
+          // Presence is the whole change, the cap limits only the sources (bd
+          // tea-rags-mcp-lxbrr).
+          touchedFiles: scope.touchedFiles,
           // A truncated scope marks every built family partial (bd
           // tea-rags-mcp-89k7k.1.9): the cap's skipped files never reach the
           // overlay, so a family's zero can rest on edges it never saw.

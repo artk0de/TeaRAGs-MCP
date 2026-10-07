@@ -14,10 +14,10 @@ import { realpathSync } from "node:fs";
 
 import { listRepoWorkTrees } from "../../../adapters/vcs/git/common-dir.js";
 import {
-  listChangedFiles,
   listCommitsSince,
   readAddedLineRangesOfFiles,
   readMergeBase,
+  readWorkingTreeChanges,
   type AddedLineRange,
 } from "../../../adapters/vcs/git/git-cli/client.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
@@ -59,6 +59,15 @@ export interface DiffScopeRead {
   wholeFiles: number;
   /** The files under the cap — what evidence exclusion carries. */
   files: readonly string[];
+  /**
+   * Every path the change touches, UNCAPPED (bd tea-rags-mcp-lxbrr): the
+   * reviewed files (listed or changed), every path changed against the
+   * merge-base (committed range + working tree, untracked included) and every
+   * path it deleted. The cap limits which files are SCANNED as sources; a
+   * section asking "is this partner in the change?" asks this set — a
+   * past-cap or deleted partner is in the change, never missing.
+   */
+  touchedFiles: ReadonlySet<string>;
   /** Per reviewed file its added line ranges; a whole-file read is one range over every line. */
   addedRanges: ReadonlyMap<string, readonly AddedLineRange[]>;
   /** The read files the ontology's non-production masks cover — a report skips them, not judges them. */
@@ -106,10 +115,9 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
   const toplevel = findGitToplevel(workTree) ?? workTree;
   const prefix = gitPathPrefix(toplevel, workTree);
   const mergeBase = await resolveReviewMergeBase(toplevel, base);
-  const changed = rebaseGitPathsOntoRoot(
-    await gitRead(base, async () => listChangedFiles(toplevel, mergeBase)),
-    prefix,
-  );
+  const changes = await gitRead(base, async () => readWorkingTreeChanges(toplevel, mergeBase));
+  const changed = rebaseGitPathsOntoRoot(changes.changed, prefix);
+  const deleted = rebaseGitPathsOntoRoot(changes.deleted, prefix);
   const listed = req.files ? unique(req.files) : undefined;
   const all = listed ?? changed;
   const changedSet = new Set(changed);
@@ -153,6 +161,7 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
     changedFiles: listed ? listed.filter((relPath) => changedSet.has(relPath)).length : changed.length,
     wholeFiles: whole.size,
     files,
+    touchedFiles: new Set([...all, ...changed, ...deleted]),
     addedRanges,
     nonProduction,
     skipped: all.length - files.length,
