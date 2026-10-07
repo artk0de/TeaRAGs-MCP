@@ -378,6 +378,42 @@ export function correctedSimilarityFloor(nullSimilarities: readonly number[], co
   return similarityQuantile(nullSimilarities, perComparisonQuantile(comparisons, nullSimilarities.length)) ?? Infinity;
 }
 
+/**
+ * Half-width of the band around a draft's similarity floor inside which a
+ * comparison is BORDERLINE (bd tea-rags-mcp-89k7k.1.17): neither offered nor
+ * rejected, one answer whichever side of the floor it lands.
+ *
+ * The embedding backend is not deterministic — llama-server's continuous
+ * batching moved head-word similarities by ~1e-3 between identical runs
+ * (measured on batched `embedBatch` head-word vectors), and that flipped a
+ * near-floor draft between CONFORMS and NEW_TERM on taxdome. The decision
+ * reads `similarity − floor`, and BOTH terms carry that jitter: the
+ * similarity directly, the floor through the null scores it is a quantile of
+ * (a quantile moves by no more than its inputs do). Worst case the gap moves
+ * by 2 × 1e-3. The band is twice that — 4e-3 — because 1e-3 is an observed
+ * magnitude, not a bound on the tail. It is a property of the backend's
+ * noise, not of the vocabulary: re-measure it when the embedding backend
+ * changes.
+ */
+export const MEANING_FLOOR_JITTER_MARGIN = 4e-3;
+
+/** Where a similarity sits against its floor: clear of the jitter band above or below it, or inside it. */
+export type MeaningFloorSide = "above" | "borderline" | "below";
+
+/**
+ * The side of `floor` a `similarity` is on, with the
+ * {@link MEANING_FLOOR_JITTER_MARGIN} band around the floor read as
+ * `borderline`. An unmeasurable floor (`Infinity`) leaves every similarity below.
+ */
+export function meaningFloorSide(
+  similarity: number,
+  floor: number,
+  margin: number = MEANING_FLOOR_JITTER_MARGIN,
+): MeaningFloorSide {
+  if (similarity > floor + margin) return "above";
+  return similarity >= floor - margin ? "borderline" : "below";
+}
+
 /** A word of the draft's own directory path the project uses as a term. */
 export interface PathTerm {
   word: string;

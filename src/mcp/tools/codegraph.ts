@@ -259,7 +259,7 @@ function buildTracePathInputShape(schemaBuilder: SchemaBuilder) {
 const NAMING_LEXICON_DESCRIPTION =
   "Codegraph naming. `types`/`anchors`→names/kind+shape; " +
   "`names[]`(attr:field; method:return; class/const:type+path)→CONFORMS(vocabulary, not behaviour)|" +
-  "MISFIT{suggestion}|NEW_TERM{topTerms}|NO_CONVENTION{prefer}|COLLISION,+alternatives,genericName; " +
+  "MISFIT{suggestion}|NEW_TERM{topTerms}|NO_CONVENTION{prefer}|COLLISION,+alternatives,borderline,genericName; " +
   "`concept`+`language`→terms.";
 
 /** Diff-review params `get_naming_lexicon` dropped when `review_changes` took them over (bd tea-rags-mcp-89k7k). */

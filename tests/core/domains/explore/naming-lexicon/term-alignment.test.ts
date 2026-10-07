@@ -6,6 +6,8 @@ import {
   anchoredHeadCandidates,
   correctedSimilarityFloor,
   establishedModifiers,
+  MEANING_FLOOR_JITTER_MARGIN,
+  meaningFloorSide,
   MIN_NULL_SAMPLE_HEADS,
   modifierLift,
   NULL_SIMILARITY_QUANTILE,
@@ -451,6 +453,37 @@ describe("correctedSimilarityFloor", () => {
   it("five comparisons → its 0.9^(1/5) quantile, a stricter floor", () => {
     expect(correctedSimilarityFloor(UNIFORM, 5)).toBeCloseTo(0.9 ** (1 / 5));
     expect(correctedSimilarityFloor(UNIFORM, 5)).toBeGreaterThan(correctedSimilarityFloor(UNIFORM, 1));
+  });
+});
+
+// bd tea-rags-mcp-89k7k.1.17: llama-server embedding jitter (~1e-3 between identical runs) flipped a
+// near-floor draft between CONFORMS and NEW_TERM. A similarity within the jitter band of its floor is
+// borderline — one answer whichever side of the floor the jitter lands.
+describe("meaningFloorSide — the jitter band around a similarity floor", () => {
+  const MEASURED_JITTER = 1e-3;
+
+  it("is wide enough to hold the measured jitter on BOTH the similarity and the floor", () => {
+    expect(MEANING_FLOOR_JITTER_MARGIN).toBeGreaterThanOrEqual(2 * MEASURED_JITTER);
+  });
+
+  it("±1e-3 around the floor → borderline on both sides, and at the floor itself", () => {
+    for (const similarity of [0.5 - MEASURED_JITTER, 0.5, 0.5 + MEASURED_JITTER]) {
+      expect(meaningFloorSide(similarity, 0.5), String(similarity)).toBe("borderline");
+    }
+  });
+
+  it("a floor jittered by 1e-3 against a similarity jittered the other way stays borderline", () => {
+    expect(meaningFloorSide(0.5 + MEASURED_JITTER, 0.5 - MEASURED_JITTER)).toBe("borderline");
+    expect(meaningFloorSide(0.5 - MEASURED_JITTER, 0.5 + MEASURED_JITTER)).toBe("borderline");
+  });
+
+  it("clear of the band → above or below, as the bare comparison said", () => {
+    expect(meaningFloorSide(0.5 + MEANING_FLOOR_JITTER_MARGIN + 1e-3, 0.5)).toBe("above");
+    expect(meaningFloorSide(0.5 - MEANING_FLOOR_JITTER_MARGIN - 1e-3, 0.5)).toBe("below");
+  });
+
+  it("an unmeasurable floor (Infinity) is never borderline", () => {
+    expect(meaningFloorSide(0.99, Infinity)).toBe("below");
   });
 });
 

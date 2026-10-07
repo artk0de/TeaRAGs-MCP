@@ -5,6 +5,7 @@ import type {
   NamingShapeDistribution,
   NamingShapeShare,
 } from "../../../../../src/core/domains/explore/naming-lexicon/shapes.js";
+import { MEANING_FLOOR_JITTER_MARGIN } from "../../../../../src/core/domains/explore/naming-lexicon/term-alignment.js";
 import type { TypeNameRow } from "../../../../../src/core/domains/explore/naming-lexicon/type-roles.js";
 import {
   judgeDraftName,
@@ -1232,9 +1233,97 @@ describe("judgeTypeDraft", () => {
     });
 
     it("a similarity equal to the floor is not above it — the floor is what random pairs reach", () => {
-      expect(
-        judgeBySimilarity(METRICS, { name: "IndexNumbers", path: "src/api/numbers.ts" }, new Map([["metrics", 0.5]])),
-      ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+      // bd tea-rags-mcp-89k7k.1.17: not offered; it sits in the jitter band, so it is reported borderline.
+      const verdict = judgeBySimilarity(
+        METRICS,
+        { name: "IndexNumbers", path: "src/api/numbers.ts" },
+        new Map([["metrics", 0.5]]),
+      );
+      expect(verdict).toMatchObject({ verdict: "NEW_TERM", topTerms: [] });
+      expect(verdict).not.toHaveProperty("alternatives");
+    });
+
+    // bd tea-rags-mcp-89k7k.1.17: live on taxdome a draft flipped CONFORMS ↔ NEW_TERM between identical
+    // runs — llama-server embedding jitter (~1e-3) moved a similarity across its floor.
+    describe("a similarity inside the jitter band of the floor gets one verdict, whichever side it lands", () => {
+      const JITTER = 1e-3;
+      /** The verdict with its similarity values dropped: those carry the jitter by construction. */
+      const withoutSimilarities = (verdict: unknown): unknown =>
+        JSON.parse(JSON.stringify(verdict, (key, value: unknown) => (key === "similarity" ? undefined : value)));
+      const judgeAt = (similarities: [string, number][]) =>
+        judgeBySimilarity(METRICS, { name: "IndexNumbers", path: "src/api/numbers.ts" }, new Map(similarities));
+
+      it("±1e-3 around the floor → the same verdict: not offered, reported borderline", () => {
+        const below = judgeAt([["metrics", 0.5 - JITTER]]);
+        const above = judgeAt([["metrics", 0.5 + JITTER]]);
+        expect(withoutSimilarities(above)).toEqual(withoutSimilarities(below));
+        expect(below).toMatchObject({
+          verdict: "NEW_TERM",
+          topTerms: [],
+          borderline: [{ word: "metrics", slot: "head", examples: ["IndexMetrics"] }],
+        });
+        expect(below).not.toHaveProperty("alternatives");
+      });
+
+      it("clear of the band → offered (above) or silent (below), with no borderline", () => {
+        const above = judgeAt([["metrics", 0.5 + MEANING_FLOOR_JITTER_MARGIN + JITTER]]);
+        expect(above).toMatchObject({ verdict: "NEW_TERM", alternatives: [{ word: "metrics", slot: "head" }] });
+        expect(above).not.toHaveProperty("borderline");
+        expect(judgeAt([["metrics", 0.5 - MEANING_FLOOR_JITTER_MARGIN - JITTER]])).toEqual({
+          verdict: "NEW_TERM",
+          topTerms: [],
+        });
+      });
+
+      it("borderline words are listed in word order, never in the jittered similarity order", () => {
+        const one = judgeAt([
+          ["metrics", 0.5 + JITTER],
+          ["status", 0.5 - JITTER],
+        ]);
+        const other = judgeAt([
+          ["metrics", 0.5 - JITTER],
+          ["status", 0.5 + JITTER],
+        ]);
+        expect(withoutSimilarities(one)).toEqual(withoutSimilarities(other));
+        expect(one.verdict === "NEW_TERM" ? one.borderline?.map((b) => b.word) : undefined).toEqual([
+          "metrics",
+          "status",
+        ]);
+      });
+
+      it("a clear alternative is offered while a borderline one rides beside it, not instead of it", () => {
+        const verdict = judgeAt([
+          ["metrics", 0.9],
+          ["status", 0.5 + JITTER],
+        ]);
+        expect(verdict).toMatchObject({
+          verdict: "NEW_TERM",
+          alternatives: [{ word: "metrics" }],
+          borderline: [{ word: "status" }],
+        });
+      });
+
+      it("a directory word on the floor is borderline at either side of it", () => {
+        const rows = [
+          ...filler(6),
+          row("IndexFreshnessProbe", "src/maintenance/freshness/probe.ts"),
+          row("CommitDriftMonitor", "src/maintenance/freshness/monitor.ts"),
+        ];
+        const judgeStaleness = (similarity: number) =>
+          judgeTypeDraft({
+            name: "IndexStalenessChecker",
+            path: "src/maintenance/freshness/staleness-checker.ts",
+            casing: "pascal",
+            evidence: typeNameEvidence(rows, "type"),
+            conceptNames: ["IndexFreshnessProbe"],
+            wordSimilarity: (a, b) => ([a, b].sort().join("|") === "freshness|staleness" ? similarity : 0.1),
+            nullSimilarities: [0.5],
+          });
+        const below = judgeStaleness(0.5 - JITTER);
+        expect(withoutSimilarities(judgeStaleness(0.5 + JITTER))).toEqual(withoutSimilarities(below));
+        expect(below).toMatchObject({ borderline: [{ word: "freshness", replaces: "staleness" }] });
+        expect(below).not.toHaveProperty("alternatives");
+      });
     });
 
     it("no similarity map (embedding unavailable) → no head alternative by meaning", () => {
@@ -1470,6 +1559,24 @@ describe("judgeTypeDraft", () => {
         verdict: "NEW_TERM",
         alternatives: [{ word: "predefined", replaces: "calculated", similarity: 0.8 }],
       });
+    });
+
+    // bd tea-rags-mcp-89k7k.1.17: embedding jitter must not flip a lexical alternative in and out.
+    it("a lifted modifier on the floor (±1e-3) → one verdict either side: borderline, not offered", () => {
+      const judgeAt = (value: number) =>
+        judgeQualifier(
+          PREDEFINED,
+          ["PredefinedTemplate", "PredefinedField"],
+          pairSimilarity("calculated|predefined", value),
+          [0.5],
+        );
+      const below = judgeAt(0.5 - 1e-3);
+      const above = judgeAt(0.5 + 1e-3);
+      expect(above.verdict).toBe(below.verdict);
+      expect(above).not.toHaveProperty("alternatives");
+      expect(below).not.toHaveProperty("alternatives");
+      expect(below).toMatchObject({ borderline: [{ word: "predefined", replaces: "calculated" }] });
+      expect(above).toMatchObject({ borderline: [{ word: "predefined", replaces: "calculated" }] });
     });
 
     it("each (qualifier, lifted modifier) pair is one of the draft's m comparisons", () => {

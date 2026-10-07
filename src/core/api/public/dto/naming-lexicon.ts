@@ -190,6 +190,12 @@ export interface NamingLexiconGenericName {
  * `IndexStalenessChecker` → `freshness` for `staleness`; bd
  * tea-rags-mcp-433d2). Never on MISFIT, and never on a name carrying its
  * expected family / directory role.
+ *
+ * `borderline` rides on a type draft's CONFORMS / NEW_TERM (bd
+ * tea-rags-mcp-89k7k.1.17): alternatives whose similarity sits inside the
+ * embedding backend's run-to-run jitter of the draft's floor. They are not
+ * offered, and the verdict is the one it would be without them — the same
+ * every run; whether one of them fits is the reviewer's call.
  */
 export type NamingLexiconNameVerdict = {
   name: string;
@@ -204,7 +210,7 @@ export type NamingLexiconNameVerdict = {
 
 /**
  * One reviewed declaration that did not simply conform: a verdict other than
- * CONFORMS, or a CONFORMS carrying head `alternatives`.
+ * CONFORMS, or a CONFORMS carrying head `alternatives` or `borderline` ones.
  */
 export type NamingReviewFinding = {
   relPath: string;
@@ -278,12 +284,12 @@ export interface NamingReviewResult {
    */
   checked: number;
   /**
-   * Of `checked`, CONFORMS with no `alternatives` — not listed as a finding. A
+   * Of `checked`, CONFORMS with no `alternatives` and no `borderline` — not listed as a finding. A
    * generic name among them is listed in `notes` (bd tea-rags-mcp-bjfa0).
    */
   conforming: number;
   /**
-   * Of `checked`, NEW_TERM with no `topTerms` and no `alternatives` on a name
+   * Of `checked`, NEW_TERM with no `topTerms`, `alternatives` or `borderline` on a name
    * that is not generic: the project has nothing to compare it with, so there
    * is nothing to act on — not listed.
    */

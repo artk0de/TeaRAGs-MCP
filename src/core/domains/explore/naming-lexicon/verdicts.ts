@@ -56,9 +56,11 @@ import {
   correctedSimilarityFloor,
   establishedModifiers,
   isVocabularyWord,
+  meaningFloorSide,
   modifierLift,
   pathTerms,
   sharesWordStem,
+  type HeadCandidate,
   type ModifierUse,
   type TermAlternative,
 } from "./term-alignment.js";
@@ -98,6 +100,16 @@ export interface NamingExpectedTypeRole {
   tail?: string;
 }
 
+/**
+ * A type draft's `borderline` (bd tea-rags-mcp-89k7k.1.17): the alternatives
+ * whose similarity lies inside the jitter band of the draft's floor
+ * (`MEANING_FLOOR_JITTER_MARGIN`) — the embedding backend's run-to-run noise
+ * could put them on either side, so they are neither offered as
+ * `alternatives` nor dropped, and the verdict is the one it would be without
+ * them, whichever side the noise lands. Word order. Absent when none.
+ */
+export type NamingBorderline = TermAlternative[];
+
 export type NamingVerdict =
   | {
       verdict: "CONFORMS";
@@ -134,9 +146,15 @@ export type NamingVerdict =
        * Absent: known words alone confirmed the name.
        */
       fileLocal?: { file: string; bindings: number };
+      borderline?: NamingBorderline;
     }
   | { verdict: "MISFIT"; suggestion: string; holder?: string; role?: NamingExpectedTypeRole }
-  | { verdict: "NEW_TERM"; topTerms: string[]; alternatives?: TermAlternative[] }
+  | {
+      verdict: "NEW_TERM";
+      topTerms: string[];
+      alternatives?: TermAlternative[];
+      borderline?: NamingBorderline;
+    }
   /**
    * A value draft (`param`, `local`, `field`) whose type or call holds no
    * convention — no name carried by ≥ {@link MIN_ROLE_MEMBERS} owners, or no
@@ -1289,8 +1307,9 @@ function gateQualifierCandidate(
     const similarity = gate.similarity(word, candidate.word);
     if (best === undefined || similarity > best.similarity) best = { word, similarity };
   }
-  if (best === undefined || !(best.similarity > gate.floor)) return undefined;
-  return { ...candidate, similarity: roundSimilarity(best.similarity), replaces: best.word };
+  if (best === undefined) return undefined;
+  const alternative = { ...candidate, similarity: roundSimilarity(best.similarity), replaces: best.word };
+  return passesMeaningGate(gate, best.similarity, () => alternative) ? alternative : undefined;
 }
 
 /**
@@ -1322,18 +1341,18 @@ function termAlternatives(
   const head = alignHead(slots, evidence.headCounts);
   const draftHead = slots.head.at(-1);
   const similarity = head === undefined || draftHead === undefined ? undefined : gate?.similarity(draftHead, head);
+  if (head === undefined) return alternatives;
+  const draftHeadCount = evidence.headCounts.get(slots.head.at(-1) ?? "") ?? 0;
+  const variant: TermAlternative = {
+    word: head,
+    slot: "head",
+    heads: [],
+    domains: [...(evidence.headDirs.get(head) ?? [])].sort().slice(0, MAX_HEAD_DOMAINS),
+    lift: (evidence.headCounts.get(head) ?? 0) / Math.max(1, draftHeadCount),
+    ...(similarity !== undefined ? { similarity: roundSimilarity(similarity) } : {}),
+  };
   // With embeddings, a spelling variant must also MEAN the head: `site` abbreviates `splitter` letter by letter.
-  if (head !== undefined && (gate === undefined || (similarity ?? 0) > gate.floor)) {
-    const draftHeadCount = evidence.headCounts.get(slots.head.at(-1) ?? "") ?? 0;
-    alternatives.push({
-      word: head,
-      slot: "head",
-      heads: [],
-      domains: [...(evidence.headDirs.get(head) ?? [])].sort().slice(0, MAX_HEAD_DOMAINS),
-      lift: (evidence.headCounts.get(head) ?? 0) / Math.max(1, draftHeadCount),
-      ...(similarity !== undefined ? { similarity: roundSimilarity(similarity) } : {}),
-    });
-  }
+  if (gate === undefined || passesMeaningGate(gate, similarity ?? 0, () => variant)) alternatives.push(variant);
   return alternatives;
 }
 
@@ -1351,10 +1370,54 @@ function replaceableWords(words: readonly string[]): string[] {
   return words.filter((_, i) => !isInteriorConnector(words, i));
 }
 
-/** The similarity and the floor it is judged against. */
+/**
+ * The similarity and the floor it is judged against, plus the draft's
+ * borderline comparisons (bd tea-rags-mcp-89k7k.1.17): each judgement passes
+ * a candidate only when its similarity is clear of the floor's jitter band
+ * ({@link meaningFloorSide}), and records one inside the band in `borderline`
+ * — one gate per {@link judgeTypeDraft} call.
+ */
 interface MeaningGate {
   similarity: (a: string, b: string) => number;
   floor: number;
+  borderline: TermAlternative[];
+}
+
+/**
+ * Whether `alternative`, at `similarity`, clears the gate's floor; one inside
+ * the floor's jitter band is recorded as borderline and does not.
+ */
+function passesMeaningGate(gate: MeaningGate, similarity: number, alternative: () => TermAlternative): boolean {
+  const side = meaningFloorSide(similarity, gate.floor);
+  if (side === "borderline") gate.borderline.push(alternative());
+  return side === "above";
+}
+
+/**
+ * The verdict with the gate's borderline alternatives attached, deduplicated
+ * and in word order — never in similarity order, which the jitter reorders.
+ * A word the verdict offers as an alternative is not borderline as well.
+ */
+function withBorderline<V extends NamingVerdict>(verdict: V, gate: MeaningGate | undefined): V {
+  if (gate === undefined || gate.borderline.length === 0) return verdict;
+  if (verdict.verdict !== "CONFORMS" && verdict.verdict !== "NEW_TERM") return verdict;
+  const offered = new Set((verdict.alternatives ?? []).map((alternative) => alternative.word));
+  const seen = new Set<string>();
+  const borderline = gate.borderline
+    .filter((alternative) => !offered.has(alternative.word))
+    .sort(
+      (a, b) =>
+        a.word.localeCompare(b.word) ||
+        (a.replaces ?? "").localeCompare(b.replaces ?? "") ||
+        (a.slot ?? "").localeCompare(b.slot ?? ""),
+    )
+    .filter((alternative) => {
+      const key = `${alternative.word}\u0000${alternative.replaces ?? ""}\u0000${alternative.slot ?? ""}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  return borderline.length > 0 ? { ...verdict, borderline } : verdict;
 }
 
 /**
@@ -1374,7 +1437,11 @@ function meaningGate(input: TypeDraftJudgementInput): MeaningGate | undefined {
     admitted,
     input.liftFloor ?? DEFAULT_LIFT_FLOOR,
   ).length;
-  return { similarity: wordSimilarity, floor: correctedSimilarityFloor(nullSimilarities, comparisons) };
+  return {
+    similarity: wordSimilarity,
+    floor: correctedSimilarityFloor(nullSimilarities, comparisons),
+    borderline: [],
+  };
 }
 
 function roundSimilarity(value: number): number {
@@ -1613,21 +1680,24 @@ function meaningHeadAlternatives(
   const offered = new Set(taken.map((alternative) => alternative.word));
   const draftHeadCount = evidence.headCounts.get(draftHead) ?? 0;
   const admitted = input.usageEstablishedHeads ?? new Set<string>();
+  const toAlternative = (candidate: HeadCandidate, similarity: number): TermAlternative => ({
+    word: candidate.word,
+    slot: "head",
+    heads: [],
+    domains: candidate.domains.slice(0, MAX_HEAD_DOMAINS),
+    lift: (evidence.headCounts.get(candidate.word) ?? 0) / Math.max(1, draftHeadCount),
+    similarity: roundSimilarity(similarity),
+    examples: candidate.examples.slice(0, MAX_HEAD_EXAMPLES),
+  });
   return groundedHeadCandidates(slots, input, evidence, input.conceptNames, admitted)
     .filter((candidate) => !offered.has(candidate.word))
     .map((candidate) => ({ candidate, similarity: gate.similarity(draftHead, candidate.word) }))
-    .filter(({ similarity }) => similarity > gate.floor)
+    .filter(({ candidate, similarity }) =>
+      passesMeaningGate(gate, similarity, () => toAlternative(candidate, similarity)),
+    )
     .sort((a, b) => b.similarity - a.similarity || a.candidate.word.localeCompare(b.candidate.word))
     .slice(0, MAX_MEANING_HEAD_ALTERNATIVES)
-    .map(({ candidate, similarity }) => ({
-      word: candidate.word,
-      slot: "head" as const,
-      heads: [],
-      domains: candidate.domains.slice(0, MAX_HEAD_DOMAINS),
-      lift: (evidence.headCounts.get(candidate.word) ?? 0) / Math.max(1, draftHeadCount),
-      similarity: roundSimilarity(similarity),
-      examples: candidate.examples.slice(0, MAX_HEAD_EXAMPLES),
-    }));
+    .map(({ candidate, similarity }) => toAlternative(candidate, similarity));
 }
 
 /**
@@ -1654,23 +1724,28 @@ function pathTermAlternatives(
     for (const word of replaceableWords(words)) {
       if (sharesWordStem(word, term.word) || (word === head && headTaken)) continue;
       const similarity = gate.similarity(word, term.word);
-      if (similarity > gate.floor && (best === undefined || similarity > best.similarity)) {
-        best = { term, replaces: word, similarity };
-      }
+      const pair = { term, replaces: word, similarity };
+      if (!passesMeaningGate(gate, similarity, () => pathTermAlternative(pair, head))) continue;
+      if (best === undefined || similarity > best.similarity) best = pair;
     }
   }
-  if (best === undefined) return [];
-  return [
-    {
-      word: best.term.word,
-      ...(best.replaces === head ? { slot: "head" as const } : {}),
-      heads: [],
-      domains: [best.term.dir],
-      lift: 0,
-      similarity: roundSimilarity(best.similarity),
-      replaces: best.replaces,
-    },
-  ];
+  return best === undefined ? [] : [pathTermAlternative(best, head)];
+}
+
+/** A directory word offered for the draft word it `replaces` — at the head slot when that word is the head. */
+function pathTermAlternative(
+  pair: { term: { word: string; dir: string }; replaces: string; similarity: number },
+  head: string | undefined,
+): TermAlternative {
+  return {
+    word: pair.term.word,
+    ...(pair.replaces === head ? { slot: "head" as const } : {}),
+    heads: [],
+    domains: [pair.term.dir],
+    lift: 0,
+    similarity: roundSimilarity(pair.similarity),
+    replaces: pair.replaces,
+  };
 }
 
 /**
@@ -1727,6 +1802,30 @@ export function judgeTypeDraft(judged: TypeDraftJudgementInput): NamingVerdict {
   if (existing) return { verdict: "COLLISION", existing };
 
   const gate = meaningGate(input);
+  return withBorderline(
+    judgeTypeDraftTerms(input, { words, draftCasing, namespace, expected, kind, parts }, gate),
+    gate,
+  );
+}
+
+/**
+ * Stages 3–5 of {@link judgeTypeDraft}: term alignment, then CONFORMS / NEW_TERM.
+ * Every comparison by meaning runs through `gate`, which keeps the borderline
+ * ones out of `alternatives` (bd tea-rags-mcp-89k7k.1.17).
+ */
+function judgeTypeDraftTerms(
+  input: TypeDraftJudgementInput,
+  draft: {
+    words: string[];
+    draftCasing: IdentifierCasing;
+    namespace: boolean;
+    expected: ExpectedTypeRole | undefined;
+    kind: ReturnType<typeof unnamedKind>;
+    parts: TypeNameParts;
+  },
+  gate: MeaningGate | undefined,
+): NamingVerdict {
+  const { words, draftCasing, namespace, expected, kind, parts } = draft;
   const lexical = termAlternatives(input, words, gate);
   // The name carries its expected role: its head is right by construction — and the role is its evidence.
   if (lexical.length === 0 && expected) return { verdict: "CONFORMS", role: namedRole(expected, draftCasing) };
