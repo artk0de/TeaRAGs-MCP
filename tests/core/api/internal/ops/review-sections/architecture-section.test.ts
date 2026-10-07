@@ -404,7 +404,7 @@ describe("architectureSectionProvider.run", () => {
       generatedEndpoints: 0,
       documentationEndpoints: 1,
       unwalkedEndpoints: 1,
-      nonPositiveLift: 0,
+      notSignificant: 0,
       explainedByFacadeChain: 0,
     });
   });
@@ -982,7 +982,7 @@ describe("buildSilentCouplingFacts", () => {
       generatedEndpoints: 0,
       documentationEndpoints: 0,
       unwalkedEndpoints: 0,
-      nonPositiveLift: 0,
+      notSignificant: 0,
       explainedByFacadeChain: 0,
     });
   });

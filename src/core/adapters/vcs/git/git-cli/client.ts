@@ -701,6 +701,19 @@ export async function readMergeBase(repoRoot: string, ref: string): Promise<stri
   }
 }
 
+/**
+ * The commits HEAD has that `base` does not (`git rev-list <base>..HEAD`),
+ * newest first — a review's own commits when `base` is its merge-base. Empty
+ * when HEAD is `base`. An unknown commit or a path outside a repository rejects.
+ */
+export async function listCommitsSince(repoRoot: string, base: string): Promise<string[]> {
+  const { stdout } = await execFileAsync(resolveGitExecutable(), ["rev-list", `${base}..HEAD`], {
+    cwd: repoRoot,
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  return stdout.split("\n").filter((line) => line.length > 0);
+}
+
 /** Silence window for the two tree listings below — one bounded spawn each, never a history walk. */
 const TREE_LISTING_STALL_MS = 60_000;
 

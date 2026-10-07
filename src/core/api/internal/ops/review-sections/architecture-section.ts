@@ -36,6 +36,7 @@ import type {
 import type { InMemoryExtractionContext } from "../../../../domains/trajectory/codegraph/index.js";
 import type { ComponentGraph } from "../../../../domains/trajectory/codegraph/symbols/index.js";
 import {
+  assessGraphCochangeSignificance,
   computeSplitMergeVerdicts,
   detectSilentCoupling,
   linkImportedCochangePairs,
@@ -152,11 +153,21 @@ export async function buildSilentCouplingFacts(
   productionEdges: readonly FileDependencyEdge[],
   changedFiles: readonly string[],
   readImportSpecifiers?: ModuleImportSpecifierLookup,
+  diffCommits?: readonly string[],
 ): Promise<DiffDetectorSilentCouplingFacts> {
   const graph = snapshot ?? { meta: null, edges: [] };
+  // The review's question is the diff's pairs, so the significance family is
+  // the query family (bd tea-rags-mcp-89k7k.1.14): every pair touching the
+  // diff, judged against the history minus the diff's own commits.
+  const significance = assessGraphCochangeSignificance(graph, {
+    kind: "query",
+    diffFiles: changedFiles,
+    ...(diffCommits ? { diffCommits } : {}),
+  });
   const options = {
     isDocumentation: isDocumentationPath,
     fileDependencyEdges: productionEdges,
+    ...(significance ? { significance } : {}),
   };
   const first = detectSilentCoupling(graph, productionFiles, options);
   if (readImportSpecifiers === undefined || snapshot === null || snapshot === undefined) {
@@ -180,6 +191,7 @@ function silentCouplingFactsOf(report: SilentCouplingReport): DiffDetectorSilent
       strength: v.strength,
     })),
     excluded: report.summary.excluded,
+    ...(report.summary.cochangeSignificance ? { cochangeSignificance: report.summary.cochangeSignificance } : {}),
   };
 }
 
@@ -375,6 +387,7 @@ export const architectureSectionProvider: ReviewSectionProvider = {
         production.graph.edges,
         scope.files,
         context.readImportSpecifiers,
+        scope.diffCommits,
       );
 
       // The working-tree side: every scope file the extraction can walk, one

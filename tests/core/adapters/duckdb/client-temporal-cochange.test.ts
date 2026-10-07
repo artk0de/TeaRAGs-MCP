@@ -84,7 +84,12 @@ describe("DuckDbGraphClient — temporal co-change store (bd tea-rags-mcp-x4rpp)
 
   it("reads no meta and no edges before the first build", async () => {
     expect(await db.readTemporalCochangeMeta()).toBeNull();
-    expect(await db.readTemporalCochangeGraph()).toEqual({ meta: null, edges: [], bundles: new Map() });
+    expect(await db.readTemporalCochangeGraph()).toEqual({
+      meta: null,
+      edges: [],
+      bundles: new Map(),
+      bundleCommits: new Map(),
+    });
   });
 
   it("round-trips a build and replaces it wholesale on the next one", async () => {

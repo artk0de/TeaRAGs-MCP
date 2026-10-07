@@ -50,6 +50,7 @@
  * again from a reverse or duplicated read.
  */
 
+import type { CochangeSignificanceSummary } from "../../../contracts/types/architecture-report.js";
 import {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   isDeclaredCompositionRoot,
@@ -137,6 +138,8 @@ export interface DiffDetectorSilentCouplingFacts {
   violations: readonly Pick<SilentCouplingViolation, "relPathA" | "relPathB" | "support" | "strength">[];
   /** Pairs read but not judged, by the production taxonomy — verbatim. */
   excluded: SilentCouplingExclusionCounts;
+  /** The pair admission gate's account (bd tea-rags-mcp-89k7k.1.14); absent on the lift fallback. */
+  cochangeSignificance?: CochangeSignificanceSummary;
 }
 
 /**
@@ -357,6 +360,12 @@ export interface DiffDetectorStatus {
    * `silentCouplingFacts`.
    */
   excluded?: SilentCouplingExclusionCounts;
+  /**
+   * How the silentCoupling row's pairs were admitted — the query family of
+   * pairs touching the diff (bd tea-rags-mcp-89k7k.1.14). silentCoupling row
+   * only, and only when the facts carry it.
+   */
+  cochangeSignificance?: CochangeSignificanceSummary;
 }
 
 export interface DiffDetectorFindings {
@@ -488,6 +497,9 @@ export class DiffDetectorRun {
             // tea-rags-mcp-89k7k.1.10); absent facts stamp nothing — a zero
             // block over an unwired port would claim pairs were judged.
             ...(silentCoupling.excluded !== undefined ? { excluded: silentCoupling.excluded } : {}),
+            ...(silentCoupling.cochangeSignificance !== undefined
+              ? { cochangeSignificance: silentCoupling.cochangeSignificance }
+              : {}),
           }),
         ),
         ...(this.contract === undefined
@@ -806,7 +818,11 @@ export class DiffDetectorRun {
     changedFiles: readonly string[],
     overlay: ReviewEdgeOverlay,
     changed: ReadonlySet<string>,
-  ): { findings: DiffDetectorFinding[]; excluded: SilentCouplingExclusionCounts | undefined } {
+  ): {
+    findings: DiffDetectorFinding[];
+    excluded: SilentCouplingExclusionCounts | undefined;
+    cochangeSignificance?: CochangeSignificanceSummary;
+  } {
     const facts = this.silentCouplingFacts;
     if (facts === undefined) return { findings: [], excluded: undefined };
     const findings: DiffDetectorFinding[] = [];
@@ -838,7 +854,11 @@ export class DiffDetectorRun {
         });
       }
     }
-    return { findings, excluded: facts.excluded };
+    return {
+      findings,
+      excluded: facts.excluded,
+      ...(facts.cochangeSignificance ? { cochangeSignificance: facts.cochangeSignificance } : {}),
+    };
   }
 
   /**

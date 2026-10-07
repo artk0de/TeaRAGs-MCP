@@ -1,4 +1,20 @@
 export {
+  assessCochangeSignificance,
+  assessGraphCochangeSignificance,
+  benjaminiHochbergRejectionCount,
+  COCHANGE_SIGNIFICANCE_FDR_Q,
+  configurationNullRate,
+  fullCochangeFamilySize,
+  poissonUpperTail,
+  queryCochangeFamilySize,
+} from "./cochange-significance.js";
+export type {
+  CochangeHistoryTotals,
+  CochangeSignificance,
+  CochangeSignificanceFamily,
+  CochangeSignificanceOptions,
+} from "./cochange-significance.js";
+export {
   cochangeStrength,
   detectSilentCoupling,
   linkImportedCochangePairs,

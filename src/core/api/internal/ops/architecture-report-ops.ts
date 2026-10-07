@@ -68,6 +68,7 @@ import {
   type MainSequenceReport,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import {
+  assessGraphCochangeSignificance,
   computeSplitMergeVerdicts,
   detectSilentCoupling,
   linkImportedCochangePairs,
@@ -557,10 +558,16 @@ async function detectSilentCouplingSeeingAssetImports(
   readImportSpecifiers: ModuleImportSpecifierLookup | undefined,
 ): Promise<SilentCouplingReport> {
   const walkedFiles = production.files;
+  // One full-family significance pass serves both detector runs: relinking
+  // asset imports changes no pair's support. F₂'s existence check is the
+  // build's own liveness — the builder stores only paths tracked at its HEAD
+  // and not deleted in the working tree.
+  const significance = assessGraphCochangeSignificance(cochange, { kind: "full" });
   const options = {
     sourcePathPattern: request.pathPattern,
     isDocumentation: isDocumentationPath,
     fileDependencyEdges: production.edges,
+    ...(significance ? { significance } : {}),
   };
   const first = detectSilentCoupling(cochange, walkedFiles, options);
   if (!readImportSpecifiers) return first;
@@ -914,6 +921,7 @@ function summariseSilentCoupling(report: SilentCouplingReport, limit: number): S
       ? {}
       : { sharedNeighbourSeparability: roundTo3(summary.sharedNeighbourSeparability) }),
     excluded: { ...summary.excluded, explainedBySharedNeighbour: summary.explainedCount },
+    ...(summary.cochangeSignificance ? { cochangeSignificance: { ...summary.cochangeSignificance } } : {}),
     ...(explained ? { exclusionReasons: { explainedBySharedNeighbour: SILENT_COUPLING_EXPLAINED_REASON } } : {}),
     ...(explained
       ? { explainedPairs: report.explained.slice(0, limit).map(toSilentCouplingArchitectureViolation) }

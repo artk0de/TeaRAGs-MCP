@@ -6,6 +6,15 @@
  * finding (the change carries the pair); a pair neither side of which is in
  * the diff is not this review's business.
  *
+ * The co-change significance gate (bd tea-rags-mcp-89k7k.1.14) admits a pair
+ * first: its support, counted over the history MINUS the bundles the diff's own
+ * commits formed (`scope.diffCommits` — the change must not confirm itself),
+ * beats the configuration null that conditions on both files' change counts,
+ * under BH over the query family of every pair touching the diff
+ * ({@link assessGraphCochangeSignificance}). A version manifest or locale file
+ * that co-changes with everything has the change count to explain it, so its
+ * pairs die here. Without bundle membership in the read, lift above 1 admits.
+ *
  * The coupling-statistics gate (bd tea-rags-mcp-89k7k.1.12): raw support
  * ranked noise first — measured 2026-10-05 on an 8-file diff, 234 findings
  * dominated by a hub contracts file and a generated version-pins artefact. A
@@ -48,6 +57,7 @@
 
 import type { RelPath } from "../../../../contracts/types/codegraph.js";
 import {
+  assessGraphCochangeSignificance,
   cochangeStrength,
   SILENT_COUPLING_OTSU_MIN_POPULATION,
   SILENT_COUPLING_STRENGTH_MAJORITY,
@@ -107,6 +117,13 @@ export const incompleteChangeSectionProvider: ReviewSectionProvider = {
       { majority: SILENT_COUPLING_STRENGTH_MAJORITY, minPopulation: SILENT_COUPLING_OTSU_MIN_POPULATION },
     );
 
+    const significance = assessGraphCochangeSignificance(graph, {
+      kind: "query",
+      diffFiles: scope.files,
+      ...(scope.diffCommits ? { diffCommits: scope.diffCommits } : {}),
+    });
+    let notSignificant = 0;
+
     const findings: IncompleteChangePartner[] = [];
     for (const edge of graph.edges) {
       const aIn = inDiff.has(edge.relPathA);
@@ -118,9 +135,12 @@ export const incompleteChangeSectionProvider: ReviewSectionProvider = {
         : [edge.relPathB, edge.relPathA, edge.confidenceBA];
       // A generated artefact on either side is release noise, not a missing update.
       if (isGenerated(file) || isGenerated(missingPartner)) continue;
-      // Chance-level pairs are not findings: the hub's raw support dies here
-      // and on the Wilson floor below.
-      if (edge.lift <= 1) continue;
+      // Pairs the history explains by the two files' change counts are not
+      // findings: the hub's raw support dies here, before the Wilson floor.
+      if (!(significance ? significance.admits(file, missingPartner) : edge.lift > 1)) {
+        notSignificant++;
+        continue;
+      }
       const strength = cochangeStrength(edge);
       if (!policy.admits(strength)) continue;
       findings.push({
@@ -142,6 +162,7 @@ export const incompleteChangeSectionProvider: ReviewSectionProvider = {
       strengthThreshold: policy.threshold,
       strengthThresholdMethod: policy.method,
       ...(policy.separability === undefined ? {} : { strengthSeparability: policy.separability }),
+      ...(significance ? { cochangeSignificance: significance.summary, notSignificant } : {}),
       ...truncatedScope,
       ...(findings.length > partners.length ? { truncated: findings.length - partners.length } : {}),
     };

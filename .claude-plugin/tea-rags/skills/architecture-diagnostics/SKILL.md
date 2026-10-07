@@ -239,15 +239,15 @@ hidden coupling.
 
 Pair undirected: `sourceRelPath` = lexicographically smaller. Evidence per line:
 
-| Evidence                           | Read as                                                                       |
-| ---------------------------------- | ----------------------------------------------------------------------------- |
-| `strength`                         | 95% Wilson lower bound on P(other changes \| one changes), stronger direction |
-| `support`                          | commits (or author sessions) touching both — thin support = hedge             |
-| `confidenceAB` / `confidenceBA`    | P(target \| source) / P(source \| target); asymmetric = one drags other       |
-| `lift`                             | co-change over independence; always > 1 here                                  |
-| `sampleCommits`                    | shas to cite; show one to prove                                               |
-| `structuralVisibility: one-walked` | other file not walked code (config, data, script) — coupling to non-code      |
-| `directoryRelation: disjoint`      | crosses module border — rank highest                                          |
+| Evidence                           | Read as                                                                          |
+| ---------------------------------- | -------------------------------------------------------------------------------- |
+| `strength`                         | 95% Wilson lower bound on P(other changes \| one changes), stronger direction    |
+| `support`                          | commits (or author sessions) touching both — thin support = hedge                |
+| `confidenceAB` / `confidenceBA`    | P(target \| source) / P(source \| target); asymmetric = one drags other          |
+| `lift`                             | co-change over independence (evidence only — admission is the significance gate) |
+| `sampleCommits`                    | shas to cite; show one to prove                                                  |
+| `structuralVisibility: one-walked` | other file not walked code (config, data, script) — coupling to non-code         |
+| `directoryRelation: disjoint`      | crosses module border — rank highest                                             |
 
 Fix direction: make coupling explicit (shared contract / generated table / one
 owner) OR merge. Type-only imports ARE graph edges (callWeight 0) on indexes
@@ -387,10 +387,14 @@ judged; `intraParentConsumers` counts excluded importer pairs:
 
 `summary.silentCoupling.excluded` — pairs read, NOT judged: `testEndpoints`,
 `generatedEndpoints`, `documentationEndpoints`, `unwalkedEndpoints` (neither
-file walked), `nonPositiveLift`, `explainedBySharedNeighbour` (both import a
-low-fanIn file, or A→C→B — shared contract, not hidden coupling; hub neighbour
-explains nothing). A barrel / type-only / object-literal module IS judged — its
-`import type` deps are edges, so a missing edge is evidence.
+file walked), `notSignificant` (support no more than the configuration null
+predicts from the two files' change counts —
+`summary.silentCoupling.cochangeSignificance` gives method, family, q,
+familySize m, tested/admitted counts; a hub file that changes with everything
+dies here), `explainedBySharedNeighbour` (both import a low-fanIn file, or A→C→B
+— shared contract, not hidden coupling; hub neighbour explains nothing). A
+barrel / type-only / object-literal module IS judged — its `import type` deps
+are edges, so a missing edge is evidence.
 
 `summary.mainSequence.excluded` — components NOT judged: `lowConnectionCount`
 (SDP floor), `unmeasured` (no census — recompute), `fewTypes` (< `minTypeCount`

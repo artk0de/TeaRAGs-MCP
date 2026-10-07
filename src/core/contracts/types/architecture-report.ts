@@ -937,6 +937,33 @@ export interface SilentCouplingBuildSummary {
   sessionGapMinutes: number | null;
 }
 
+/**
+ * How a co-change detector chose which pairs to judge (bd
+ * tea-rags-mcp-89k7k.1.14): a Poisson test of each pair's support against the
+ * configuration null over the admitted bundles (λ = n_p·n_q·Qs/M²),
+ * Benjamini–Hochberg at `q` over an a-priori family.
+ */
+export interface CochangeSignificanceSummary {
+  method: "poissonConfigurationNull";
+  /** `full` = every pair of files changed in ≥ 2 bundles; `query` = every such pair touching the diff. */
+  family: "full" | "query";
+  /** The false-discovery rate BH controls. */
+  q: number;
+  /** m — the a-priori family size, never the count of observed pairs. */
+  familySize: number;
+  /** Family pairs seen together at least once — the p-values below 1. */
+  testedPairCount: number;
+  /** Pairs BH rejects whose support reaches the minimum support. */
+  admittedPairCount: number;
+  /**
+   * Review only: the diff's own commits (merge-base..HEAD) left the history,
+   * so the change cannot confirm itself. `bundleCommitsAvailable: false` = the
+   * co-change build predates per-bundle commit ids and nothing could be
+   * excluded.
+   */
+  diffHistory?: { excludedBundleCount: number; bundleCommitsAvailable: boolean };
+}
+
 export interface SilentCouplingReportSummary {
   /**
    * `false` when the codegraph has no co-change build yet (git trajectory off,
@@ -975,6 +1002,11 @@ export interface SilentCouplingReportSummary {
   sharedNeighbourThresholdMethod: "otsu" | "none";
   /** η of the shared-neighbour cut, 3 decimals; absent under `none`. */
   sharedNeighbourSeparability?: number;
+  /**
+   * The pair admission gate (bd tea-rags-mcp-89k7k.1.14); absent when the
+   * co-change read carried no bundle membership to test against.
+   */
+  cochangeSignificance?: CochangeSignificanceSummary;
   /** Pairs read but not judged, by the first reason that applied. */
   excluded: {
     testEndpoints: number;
@@ -982,8 +1014,13 @@ export interface SilentCouplingReportSummary {
     documentationEndpoints: number;
     /** Neither file is walked by the codegraph. */
     unwalkedEndpoints: number;
-    /** lift ≤ 1: no more co-change than independence predicts. */
-    nonPositiveLift: number;
+    /**
+     * The co-change significance gate did not admit the pair
+     * (`cochangeSignificance`): its support is what the configuration null
+     * predicts from the two files' change counts, or it lies outside the
+     * tested family.
+     */
+    notSignificant: number;
     /**
      * Strong unlinked in-scope pairs one side's import of the other resolves
      * through — a re-export/facade chain of module entry files (bd

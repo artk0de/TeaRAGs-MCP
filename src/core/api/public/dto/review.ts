@@ -13,6 +13,7 @@
  * asking for a section never has to guess whether it ran.
  */
 
+import type { CochangeSignificanceSummary } from "../../../contracts/types/architecture-report.js";
 import type { TemporalCohesionReport } from "../../../domains/trajectory/codegraph/temporal/index.js";
 import type { DiffDetectorFinding, DiffDetectorStatus } from "../../internal/ops/diff-detector-run.js";
 import type { CollectionRef } from "./explore.js";
@@ -87,8 +88,9 @@ export type IncompleteChangePartnerKind = "test" | "source" | "documentation";
  * One incomplete-change finding (the review half of bd tea-rags-mcp-3kykc):
  * history says `file` and `missingPartner` change together; this diff touches
  * `file` and not the partner — the change may be missing its other half. The
- * finding has cleared the coupling-statistics gate (lift above chance, Wilson
- * strength above the corpus cut — bd tea-rags-mcp-89k7k.1.12): what raw
+ * finding has cleared the co-change significance gate (bd
+ * tea-rags-mcp-89k7k.1.14) and the Wilson strength cut over the corpus (bd
+ * tea-rags-mcp-89k7k.1.12): what raw
  * support used to surface is now only the evidence, never the ranking.
  */
 export interface IncompleteChangePartner {
@@ -130,6 +132,15 @@ export interface IncompleteChangeSectionPayload {
   strengthThresholdMethod: "otsu" | "majority";
   /** η of the Otsu cut — its evidence, or the rejection evidence under `majority`. */
   strengthSeparability?: number;
+  /**
+   * The pair admission gate every finding cleared before the strength cut (bd
+   * tea-rags-mcp-89k7k.1.14): the query family of pairs touching the diff,
+   * judged against the history minus the diff's own commits. Absent when the
+   * co-change read carried no bundle membership (lift > 1 then admits).
+   */
+  cochangeSignificance?: CochangeSignificanceSummary;
+  /** Diff-touching partner pairs the significance gate did not admit. */
+  notSignificant?: number;
   /** Findings past the cap of 50 — counted, not listed. */
   truncated?: number;
 }

@@ -423,7 +423,10 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "used from other package or Ruby send(:private) from outside its class; rootCauses per module. " +
       "silentCoupling: file pair co-changing strongly in git history with no import/re-export/resolved call " +
       "between them (support, P(B|A), P(A|B), lift, strength = Wilson lower bound, sample commits, " +
-      "structuralVisibility); strong = >0.5 and >= adaptive cut (Otsu when strengths split bimodally, else the floor); rootCauses = file with >=2 silent " +
+      "structuralVisibility); a pair is judged only when it beats the configuration null n_p*n_q*Qs/M^2 " +
+      "(Poisson tail, BH q=0.05 over all pairs of files changed in >=2 bundles; summary.silentCoupling." +
+      "cochangeSignificance, excluded.notSignificant) — hub files (locales, version manifests) die there; " +
+      "strong = >0.5 and >= adaptive cut (Otsu when strengths split bimodally, else the floor); rootCauses = file with >=2 silent " +
       "partners; summary.silentCoupling.built false = no co-change build, not clean. splitMerge: component " +
       "partition vs history over same sub-graph — splitCandidate = one component whose stored internal pairs " +
       "cluster >=2 groups, largestWeightShare < 0.7 (cohesion's cut), files = per-cluster exemplars (<=8); " +

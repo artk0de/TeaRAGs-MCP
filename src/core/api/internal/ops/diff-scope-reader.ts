@@ -15,6 +15,7 @@ import { realpathSync } from "node:fs";
 import { listRepoWorkTrees } from "../../../adapters/vcs/git/common-dir.js";
 import {
   listChangedFiles,
+  listCommitsSince,
   readAddedLineRangesOfFiles,
   readMergeBase,
   type AddedLineRange,
@@ -64,6 +65,12 @@ export interface DiffScopeRead {
   nonProduction: ReadonlySet<string>;
   /** How many changed files fell over the cap. */
   skipped: number;
+  /**
+   * The change's own commits, `mergeBase..HEAD` (bd tea-rags-mcp-89k7k.1.14) —
+   * a co-change test drops the history bundles they formed, so the change
+   * cannot confirm itself. Absent on a scope read without git (a fixture).
+   */
+  diffCommits?: readonly string[];
 }
 
 /** The evidence corpus's lag behind the tree an answer is about. */
@@ -137,6 +144,7 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
   );
 
   const nonProduction = new Set(files.filter((relPath) => nonProductionFilter.ignores(relPath)));
+  const diffCommits = await gitRead(base, async () => listCommitsSince(toplevel, mergeBase));
   return {
     workTree,
     base,
@@ -148,6 +156,7 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
     addedRanges,
     nonProduction,
     skipped: all.length - files.length,
+    diffCommits,
   };
 }
 

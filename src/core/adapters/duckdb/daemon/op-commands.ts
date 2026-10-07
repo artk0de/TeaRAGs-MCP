@@ -441,11 +441,16 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   readFileDependencyGraph: read(async (graphDb) => graphDb.readFileDependencyGraph()),
   readNonPublicMemberEdges: read(async (graphDb, p) => graphDb.readNonPublicMemberEdges(p.languages as string[])),
   readTemporalCochangeMeta: read(async (graphDb) => graphDb.readTemporalCochangeMeta()),
-  // The graph's bundle membership is a Map — entries on the wire, rebuilt by
-  // the client. Absent membership (an older daemon's build) travels absent.
+  // The graph's bundle membership and bundle commits are Maps — entries on
+  // the wire, rebuilt by the client. Absent maps (an older daemon's build)
+  // travel absent.
   readTemporalCochangeGraph: read(async (graphDb) => {
     const graph = await graphDb.readTemporalCochangeGraph();
-    return { ...graph, ...(graph.bundles ? { bundles: [...graph.bundles.entries()] } : {}) };
+    return {
+      ...graph,
+      ...(graph.bundles ? { bundles: [...graph.bundles.entries()] } : {}),
+      ...(graph.bundleCommits ? { bundleCommits: [...graph.bundleCommits.entries()] } : {}),
+    };
   }),
   readTemporalBundleFiles: read(async (graphDb) => [...(await graphDb.readTemporalBundleFiles()).entries()]),
   // Symbol-commit rows of the temporal sub-graph (bd tea-rags-mcp-3gz4f).

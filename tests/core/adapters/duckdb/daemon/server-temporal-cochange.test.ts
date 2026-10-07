@@ -91,6 +91,7 @@ describe("CodegraphDaemonServer.handle — temporal co-change ops", () => {
       meta: SNAPSHOT.meta,
       edges: [{ ...SNAPSHOT.edges[0], structurallyLinked: false }],
       bundles: [[0, ["a.ts", "b.yml"]]],
+      bundleCommits: [],
     });
     expect((bundleFiles as { result: unknown }).result).toEqual([[0, ["a.ts", "b.yml"]]]);
     await pool.closeAll();

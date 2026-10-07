@@ -97,7 +97,7 @@ function factsOf(
       | "generatedEndpoints"
       | "documentationEndpoints"
       | "unwalkedEndpoints"
-      | "nonPositiveLift"
+      | "notSignificant"
       | "explainedByFacadeChain",
       number
     >
@@ -110,7 +110,7 @@ function factsOf(
       generatedEndpoints: 0,
       documentationEndpoints: 0,
       unwalkedEndpoints: 0,
-      nonPositiveLift: 0,
+      notSignificant: 0,
       explainedByFacadeChain: 0,
       ...excluded,
     },
@@ -1120,7 +1120,7 @@ describe("silentCoupling", () => {
       generatedEndpoints: 0,
       documentationEndpoints: 24,
       unwalkedEndpoints: 4,
-      nonPositiveLift: 0,
+      notSignificant: 0,
       explainedByFacadeChain: 0,
     });
   });

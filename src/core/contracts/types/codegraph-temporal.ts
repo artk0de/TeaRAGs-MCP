@@ -92,6 +92,8 @@ export interface TemporalCochangeSnapshot {
    * through three files still counts once, and pair caps never truncated it.
    */
   bundles: readonly (readonly RelPath[])[];
+  /** Each admitted bundle's commit SHAs, aligned with `bundles`; absent = not recorded. */
+  bundleCommits?: readonly (readonly string[])[];
 }
 
 /** A stored co-change pair plus whether the structural graph links its endpoints. */
@@ -116,6 +118,13 @@ export interface TemporalCochangeGraph {
    * — an empty build reads as an EMPTY map. The store always sets it.
    */
   bundles?: ReadonlyMap<number, readonly RelPath[]>;
+  /**
+   * The commit SHAs each admitted bundle was formed from, keyed by bundle id
+   * (`cg_temporal_bundle_commits`, bd tea-rags-mcp-89k7k.1.14) — what lets a
+   * review drop its own commits from the history. Absent or empty = the build
+   * predates the table.
+   */
+  bundleCommits?: ReadonlyMap<number, readonly string[]>;
 }
 
 /**

@@ -57,7 +57,7 @@ export const TEMPORAL_COCHANGE_MIN_SUPPORT = 2;
 export const TEMPORAL_COCHANGE_MAX_PARTNERS_PER_FILE = 20;
 
 /** Bump when the extraction semantics change, so every stored graph rebuilds. */
-const COCHANGE_ALGORITHM_REVISION = 1;
+const COCHANGE_ALGORITHM_REVISION = 2; // 2: per-bundle commit ids (bd tea-rags-mcp-89k7k.1.14)
 
 /** The git trajectory's `chunkTimeoutMs` default. */
 const DEFAULT_GIT_TIMEOUT_MS = 120_000;
@@ -212,6 +212,7 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
       files: graph.files,
       edges: graph.edges,
       bundles: graph.admittedBundles,
+      bundleCommits: graph.admittedBundleCommits,
     });
     await this.flushSymbolCommits(graphDb, live, projectPrefix);
     const t4 = this.now();
