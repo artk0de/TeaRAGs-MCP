@@ -40,6 +40,7 @@ import type {
   GitCommitDiscoveryPersistence,
   PersistedGitCommitDiscovery,
 } from "./commit-discovery.js";
+import { mailmapStampMatches, readMailmapFingerprint } from "./mailmap-fingerprint.js";
 import { resolveRepoIdentity } from "./repo-identity.js";
 import { pruneSnapshots } from "./snapshot-retention.js";
 
@@ -115,19 +116,21 @@ export class GitCommitDiscoveryStore implements GitCommitDiscoveryPersistence {
 
   load(repoRoot: string, head: string): PersistedGitCommitDiscovery | null {
     const identity = resolveRepoIdentity(repoRoot);
-    const hit = this.read(join(this.repoDir(identity), `${head}.json`), identity, head);
+    const mailmap = readMailmapFingerprint(repoRoot);
+    const hit = this.read(join(this.repoDir(identity), `${head}.json`), identity, mailmap, head);
     if (hit || identity === repoRoot) return hit;
-    return this.read(join(this.repoDir(repoRoot), `${head}.json`), repoRoot, head);
+    return this.read(join(this.repoDir(repoRoot), `${head}.json`), repoRoot, mailmap, head);
   }
 
   loadLatest(repoRoot: string): PersistedGitCommitDiscovery | null {
     const identity = resolveRepoIdentity(repoRoot);
-    const hit = this.readLatest(identity);
+    const mailmap = readMailmapFingerprint(repoRoot);
+    const hit = this.readLatest(identity, mailmap);
     if (hit || identity === repoRoot) return hit;
-    return this.readLatest(repoRoot);
+    return this.readLatest(repoRoot, mailmap);
   }
 
-  private readLatest(identity: string): PersistedGitCommitDiscovery | null {
+  private readLatest(identity: string, mailmap: string): PersistedGitCommitDiscovery | null {
     try {
       const dir = this.repoDir(identity);
       let newest: string | undefined;
@@ -142,7 +145,7 @@ export class GitCommitDiscoveryStore implements GitCommitDiscoveryPersistence {
       }
       if (!newest) return null;
       // Same validation as `load` except the head is whatever the file says.
-      return this.read(join(dir, newest), identity);
+      return this.read(join(dir, newest), identity, mailmap);
     } catch (error) {
       this.debugLog("loadLatest", error);
       return null;
@@ -152,12 +155,14 @@ export class GitCommitDiscoveryStore implements GitCommitDiscoveryPersistence {
   save(repoRoot: string, head: string, sinceIso: string, entries: GitCommitDiscoveryEntry[]): void {
     try {
       const identity = resolveRepoIdentity(repoRoot);
+      const mailmap = readMailmapFingerprint(repoRoot);
       const payload: PersistedGitCommitDiscovery = {
         version: CURRENT_VERSION,
         repoRoot: identity,
         head,
         sinceIso,
         entries,
+        ...(mailmap !== "" ? { mailmap } : {}),
       };
       const dir = this.repoDir(identity);
       mkdirSync(dir, { recursive: true });
@@ -185,10 +190,10 @@ export class GitCommitDiscoveryStore implements GitCommitDiscoveryPersistence {
     return join(this.baseDir, createHash("sha256").update(repoRoot).digest("hex").slice(0, 16));
   }
 
-  private read(filePath: string, repoRoot: string, head?: string): PersistedGitCommitDiscovery | null {
+  private read(filePath: string, repoRoot: string, mailmap: string, head?: string): PersistedGitCommitDiscovery | null {
     try {
       const parsed: unknown = JSON.parse(readFileSync(filePath, "utf8"));
-      const snapshot = this.validate(parsed, repoRoot, head);
+      const snapshot = this.validate(parsed, repoRoot, mailmap, head);
       if (!snapshot) return null;
       // A v1 file was just migrated in memory — persist the v2 form over the
       // same path so the transform runs once, not on every load. Best-effort:
@@ -212,12 +217,19 @@ export class GitCommitDiscoveryStore implements GitCommitDiscoveryPersistence {
    * equality check guards against sha256-prefix collisions between repos. A v1
    * payload is UPGRADED here rather than rejected — see the module docblock.
    */
-  private validate(parsed: unknown, repoRoot: string, head?: string): PersistedGitCommitDiscovery | null {
+  private validate(
+    parsed: unknown,
+    repoRoot: string,
+    mailmap: string,
+    head?: string,
+  ): PersistedGitCommitDiscovery | null {
     if (typeof parsed !== "object" || parsed === null) return null;
     const snapshot = parsed as Record<string, unknown>;
     const { version } = snapshot;
     if (version !== 1 && version !== CURRENT_VERSION) return null;
     if (snapshot.repoRoot !== repoRoot) return null;
+    // Authors were read under another .mailmap → stale identities (bd tea-rags-mcp-nsxzh).
+    if (!mailmapStampMatches(snapshot.mailmap, mailmap)) return null;
     if (typeof snapshot.head !== "string" || (head !== undefined && snapshot.head !== head)) return null;
     if (typeof snapshot.sinceIso !== "string") return null;
 
@@ -235,6 +247,7 @@ export class GitCommitDiscoveryStore implements GitCommitDiscoveryPersistence {
       head: snapshot.head,
       sinceIso: snapshot.sinceIso,
       entries,
+      ...(mailmap !== "" ? { mailmap } : {}),
     };
   }
 

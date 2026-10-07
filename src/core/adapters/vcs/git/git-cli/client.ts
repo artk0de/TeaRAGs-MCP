@@ -110,7 +110,7 @@ export async function execFileForPathspec(repoRoot: string, args: string[], time
 
 /** Build CLI args for `git log --numstat`. Uses HEAD (not --all), no --max-count. */
 export function buildCliArgs(sinceDate?: Date): string[] {
-  const args = ["log", "HEAD", "--numstat", "--format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%B%x00"];
+  const args = ["log", "HEAD", "--numstat", "--format=%x00%H%x00%P%x00%aN%x00%aE%x00%at%x00%B%x00"];
   if (sinceDate) {
     args.push(`--since=${sinceDate.toISOString()}`);
   }
@@ -175,7 +175,7 @@ export async function buildViaCliForPaths(
 
   for (let i = 0; i < paths.length; i += BATCH) {
     const batch = paths.slice(i, i + BATCH);
-    const args = ["log", "HEAD", "--numstat", "--format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%B%x00", "--", ...batch];
+    const args = ["log", "HEAD", "--numstat", "--format=%x00%H%x00%P%x00%aN%x00%aE%x00%at%x00%B%x00", "--", ...batch];
 
     try {
       const { stdout } = await execFileAsync(resolveGitExecutable(), args, {
@@ -487,8 +487,17 @@ export function createCatFileBatchCheck(repoRoot: string): CatFileBatchCheckRead
 
 const PATHSPEC_BATCH_SIZE = 500;
 
-/** NUL-delimited log format shared by the numstat log variants below. */
-const NUMSTAT_LOG_FORMAT = "--format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%B%x00";
+/**
+ * NUL-delimited log format shared by the numstat log variants below.
+ *
+ * Every log format in this file reads the author as `%aN` / `%aE` — name and
+ * email AFTER the repo's `.mailmap` — never the raw `%an` / `%ae`, so one
+ * person committing under several identities is one author to the git
+ * trajectory (bd tea-rags-mcp-nsxzh). `git blame --porcelain` applies the
+ * mailmap to `author` / `author-mail` on its own (no flag), so `blameFile`
+ * agrees with the log readers.
+ */
+const NUMSTAT_LOG_FORMAT = "--format=%x00%H%x00%P%x00%aN%x00%aE%x00%at%x00%B%x00";
 
 /**
  * NUL-delimited log format for `readCommitFileNumstat` ONLY — inserts the
@@ -499,7 +508,7 @@ const NUMSTAT_LOG_FORMAT = "--format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%B%x00
  * `NUMSTAT_LOG_FORMAT` above is deliberately left untouched so the chunk path
  * (parseNumstatOutput / parsePathspecOutput) stays byte-identical.
  */
-const NUMSTAT_LOG_FORMAT_WITH_COMMITTER = "--format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%ct%x00%B%x00";
+const NUMSTAT_LOG_FORMAT_WITH_COMMITTER = "--format=%x00%H%x00%P%x00%aN%x00%aE%x00%at%x00%ct%x00%B%x00";
 
 /**
  * Repo-wide `git log --since --numstat` — NO pathspec, NO explicit rev
@@ -1252,7 +1261,7 @@ export async function getCommitsByPathspecSingle(
   const args = [
     "log",
     `--since=${sinceDate.toISOString()}`,
-    "--format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%B%x00",
+    "--format=%x00%H%x00%P%x00%aN%x00%aE%x00%at%x00%B%x00",
     "--numstat",
     "--",
     ...filePaths,

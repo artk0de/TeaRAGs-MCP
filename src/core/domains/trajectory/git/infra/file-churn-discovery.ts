@@ -22,6 +22,7 @@
 import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
 import type { CommitFileNumstat, FileChurnData } from "../../../../adapters/vcs/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
+import { buildAuthorNameDirectory, canonicalizeAuthorNames, type AuthorNameDirectory } from "./author-identity.js";
 import { historyWindowSince } from "./history-anchor.js";
 import { aggregateFileChurnFollowingRenames } from "./rename-following.js";
 
@@ -38,6 +39,8 @@ export interface PersistedFileChurnDiscovery {
   head: string;
   sinceIso: string;
   entries: CommitFileNumstat[];
+  /** `.mailmap` fingerprint the authors were read under; absent = no mailmap (`mailmap-fingerprint.ts`). */
+  mailmap?: string;
 }
 
 /** Persistence seam — the concrete store lives in file-churn-discovery-store.ts. */
@@ -139,6 +142,10 @@ export class FileChurnDiscovery {
    */
   private churnPromise?: Promise<Map<string, FileChurnData>>;
 
+  /** Canonical author names of the run (`author-identity.ts`), set by the build
+   *  that fills `churnPromise` — read via `authorNames()`. */
+  private directory: AuthorNameDirectory = new Map();
+
   constructor(
     adapter: VcsGitAdapter | Promise<VcsGitAdapter>,
     private readonly opts: FileChurnDiscoveryOptions,
@@ -173,8 +180,27 @@ export class FileChurnDiscovery {
     const anchorSec = await this.opts.historyAnchorSec?.();
     const { sinceDate, lowerBoundSec } = fileChurnWindowOf(this.opts.maxAgeMonths, anchorSec);
 
-    const entries = await this.resolveEntries(sinceDate);
+    const raw = await this.resolveEntries(sinceDate);
+    // ONE canonical name per identity for the whole run, from every in-window
+    // commit of the repository (not just files at HEAD). The persisted
+    // snapshot keeps raw names; the directory is rebuilt here each run, so a
+    // warm top-up can never serve a name the current history disagrees with.
+    const inWindow = raw.filter((entry) => entry.committerTimestamp >= lowerBoundSec);
+    this.directory = buildAuthorNameDirectory(inWindow.map((entry) => entry.commit));
+    const entries = raw.map((entry) => {
+      const [commit] = canonicalizeAuthorNames([entry.commit], this.directory);
+      return commit === entry.commit ? entry : { ...entry, commit };
+    });
     return aggregateFileChurnWindow(entries, lowerBoundSec);
+  }
+
+  /**
+   * The run's canonical author names — built with the churn aggregate (awaits
+   * it, sharing its single-flight). Apply to blame lines of the same run.
+   */
+  async authorNames(): Promise<AuthorNameDirectory> {
+    await this.fileChurn();
+    return this.directory;
   }
 
   private async resolveEntries(sinceDate: Date): Promise<CommitFileNumstat[]> {

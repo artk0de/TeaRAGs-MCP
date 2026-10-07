@@ -9,6 +9,7 @@
 import type { BlameLine, FileChurnData } from "../../../../adapters/vcs/types.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import type { ChunkChurnOverlay } from "../types.js";
+import { authorIdentityKey } from "./author-identity.js";
 import { computeBlameOwnership } from "./blame-ownership.js";
 import type { ChunkAccumulator, SquashOptions } from "./metrics.js";
 import { assembleChunkSignals } from "./metrics/chunk-assembler.js";
@@ -49,7 +50,7 @@ export function assembleOverlays(opts: AssembleOverlaysOptions): Map<string, Map
           ? groupIntoSessions(fileChurnData.commits, squashOpts.sessionGapMinutes ?? 30).length
           : rawFileCommitCount;
       fileCommitCount = Math.max(squashedFileCommitCount, 1);
-      const uniqueAuthors = new Set(fileChurnData.commits.map((c) => c.author));
+      const uniqueAuthors = new Set(fileChurnData.commits.map(authorIdentityKey));
       fileContributorCount = uniqueAuthors.size;
     } else {
       // Fallback: union of chunk commit SHAs (original behavior)

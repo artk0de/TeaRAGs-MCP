@@ -28,6 +28,7 @@ import { dirname, join } from "node:path";
 
 import type { BlameLine } from "../../../../adapters/vcs/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
+import { mailmapStampMatches, readMailmapFingerprint } from "./mailmap-fingerprint.js";
 import { resolveRepoIdentity } from "./repo-identity.js";
 
 const DEFAULT_MAX_BYTES = 128 * 1024 * 1024;
@@ -45,6 +46,12 @@ interface PersistedGitBlame {
   repoRoot: string;
   commits: Record<string, { author: string; authorEmail: string; timestamp: number }>;
   files: Record<string, { oid: string; lines: [lineNumber: number, sha: string][] }>;
+  /**
+   * `.mailmap` fingerprint the blame authors were read under; absent = no
+   * mailmap. An OID-keyed entry outlives HEAD moves, so without this stamp a
+   * new mailmap would never reach an unchanged file (`mailmap-fingerprint.ts`).
+   */
+  mailmap?: string;
 }
 
 function isValidCommitEntry(value: unknown): value is PersistedGitBlame["commits"][string] {
@@ -79,13 +86,14 @@ export class GitBlameStore {
    */
   load(repoRoot: string): Map<string, { oid: string; lines: BlameLine[] }> | null {
     const identity = resolveRepoIdentity(repoRoot);
-    return this.read(identity) ?? (identity === repoRoot ? null : this.read(repoRoot));
+    const mailmap = readMailmapFingerprint(repoRoot);
+    return this.read(identity, mailmap) ?? (identity === repoRoot ? null : this.read(repoRoot, mailmap));
   }
 
-  private read(identity: string): Map<string, { oid: string; lines: BlameLine[] }> | null {
+  private read(identity: string, mailmap: string): Map<string, { oid: string; lines: BlameLine[] }> | null {
     try {
       const parsed: unknown = JSON.parse(readFileSync(this.blamePath(identity), "utf8"));
-      const snapshot = this.validate(parsed, identity);
+      const snapshot = this.validate(parsed, identity, mailmap);
       if (!snapshot) return null;
       const result = new Map<string, { oid: string; lines: BlameLine[] }>();
       for (const [relPath, file] of Object.entries(snapshot.files)) {
@@ -122,7 +130,14 @@ export class GitBlameStore {
         persistedFiles[relPath] = { oid: file.oid, lines };
       }
       const identity = resolveRepoIdentity(repoRoot);
-      const payload: PersistedGitBlame = { version: 1, repoRoot: identity, commits, files: persistedFiles };
+      const mailmap = readMailmapFingerprint(repoRoot);
+      const payload: PersistedGitBlame = {
+        version: 1,
+        repoRoot: identity,
+        commits,
+        files: persistedFiles,
+        ...(mailmap !== "" ? { mailmap } : {}),
+      };
       const data = JSON.stringify(payload);
       // Oversized blame map → skip persistence; the run keeps its in-memory copy.
       if (Buffer.byteLength(data) > this.maxBytes) return;
@@ -147,11 +162,13 @@ export class GitBlameStore {
    * equality check guards against sha256-prefix collisions between repos;
    * the referenced-sha check guards a truncated/hand-edited commit table.
    */
-  private validate(parsed: unknown, identity: string): PersistedGitBlame | null {
+  private validate(parsed: unknown, identity: string, mailmap: string): PersistedGitBlame | null {
     if (typeof parsed !== "object" || parsed === null) return null;
     const snapshot = parsed as Record<string, unknown>;
     if (snapshot.version !== 1) return null;
     if (snapshot.repoRoot !== identity) return null;
+    // Blame authors were read under another .mailmap → stale identities (bd tea-rags-mcp-nsxzh).
+    if (!mailmapStampMatches(snapshot.mailmap, mailmap)) return null;
     if (typeof snapshot.commits !== "object" || snapshot.commits === null) return null;
     if (typeof snapshot.files !== "object" || snapshot.files === null) return null;
     const commits = snapshot.commits as Record<string, unknown>;

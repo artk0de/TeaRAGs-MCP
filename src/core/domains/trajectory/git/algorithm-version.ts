@@ -16,5 +16,9 @@
  *   file with no commit in the file window is stamped by the live file phase
  *   with zero counters, no bugFixRate and exact whole-history age stamps, where
  *   the backfill used to give it lifetime counters.
+ * - 4 — one author per identity (bd tea-rags-mcp-nsxzh): authors are read
+ *   after the repo's `.mailmap` and keyed by lowercased email, so name variants
+ *   of one address merge in every author count, dominant author / pct, session
+ *   grouping and the chunk contributor count; ties order by code point.
  */
-export const GIT_TRAJECTORY_ALGORITHM_VERSION = 3;
+export const GIT_TRAJECTORY_ALGORITHM_VERSION = 4;

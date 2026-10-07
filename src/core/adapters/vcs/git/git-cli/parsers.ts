@@ -147,7 +147,7 @@ export function parseNumstatChangedPath(field: string): CommitChangedPath {
 }
 
 /**
- * Parse `git log --numstat --format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%B` output
+ * Parse `git log --numstat --format=%x00%H%x00%P%x00%aN%x00%aE%x00%at%x00%B` output
  * into a per-file FileChurnData map.
  */
 export function parseNumstatOutput(stdout: string): Map<string, FileChurnData> {

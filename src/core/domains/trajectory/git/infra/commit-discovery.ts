@@ -40,6 +40,8 @@ export interface PersistedGitCommitDiscovery {
   head: string;
   sinceIso: string;
   entries: GitCommitDiscoveryEntry[];
+  /** `.mailmap` fingerprint the authors were read under; absent = no mailmap (`mailmap-fingerprint.ts`). */
+  mailmap?: string;
 }
 
 /** Persistence seam — the concrete store lives in commit-discovery-store.ts. */

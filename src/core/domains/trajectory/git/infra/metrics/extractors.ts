@@ -8,6 +8,7 @@
  */
 
 import type { CommitInfo } from "../../../../../adapters/vcs/types.js";
+import { tallyAuthors } from "../author-identity.js";
 import { extractTaskIds, isBugFixCommitOrBranch } from "../utils.js";
 
 export interface AuthorshipResult {
@@ -34,34 +35,15 @@ export function computeDominantAuthor(commits: CommitInfo[]): AuthorshipResult {
   if (commits.length === 0) {
     return { author: "unknown", email: "", pct: 0, authors: [], contributorCount: 0 };
   }
-  const authorCounts = new Map<string, { count: number; email: string }>();
-  for (const c of commits) {
-    const existing = authorCounts.get(c.author);
-    if (existing) {
-      existing.count++;
-    } else {
-      authorCounts.set(c.author, { count: 1, email: c.authorEmail });
-    }
-  }
-  let dominant = "";
-  let dominantEmail = "";
-  let maxCount = 0;
-  for (const [author, data] of authorCounts) {
-    if (data.count > maxCount) {
-      maxCount = data.count;
-      dominant = author;
-      dominantEmail = data.email;
-    }
-  }
+  // One identity per (mailmap-applied) email — see `author-identity.ts`.
+  const tally = tallyAuthors(commits);
+  const [dominant] = tally;
   return {
-    author: dominant,
-    email: dominantEmail,
-    pct: Math.round((maxCount / commits.length) * 100),
-    authors: Array.from(authorCounts.entries())
-      .sort((a, b) => b[1].count - a[1].count)
-      .slice(0, TOP_AUTHORS_CAP)
-      .map(([author]) => author),
-    contributorCount: authorCounts.size,
+    author: dominant.name,
+    email: dominant.email,
+    pct: Math.round((dominant.count / commits.length) * 100),
+    authors: tally.slice(0, TOP_AUTHORS_CAP).map((t) => t.name),
+    contributorCount: tally.length,
   };
 }
 

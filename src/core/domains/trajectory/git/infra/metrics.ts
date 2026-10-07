@@ -16,13 +16,14 @@ import { isBugFixCommit, isBugFixCommitOrBranch, MERGE_SUBJECT } from "./utils.j
  */
 export interface ChunkAccumulator {
   commitShas: Set<string>;
+  /** Author IDENTITY keys (`authorIdentityKey`), not display names. */
   authors: Set<string>;
   bugFixCount: number;
   lastModifiedAt: number;
   linesAdded: number;
   linesDeleted: number;
   commitTimestamps: number[];
-  /** Per-timestamp author (parallel array with commitTimestamps) for session grouping */
+  /** Per-timestamp author identity key (parallel array with commitTimestamps) for session grouping */
   commitAuthors: string[];
   /**
    * Per-timestamp bug-fix flag (parallel array with commitTimestamps). Lets the
