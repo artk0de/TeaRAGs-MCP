@@ -5,15 +5,24 @@
  * groups authors, and two emails stay two identities even when the name is
  * the same.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import type { BlameLine, CommitInfo, FileChurnData } from "../../../../../../src/core/adapters/vcs/types.js";
+import type { VcsGitAdapter } from "../../../../../../src/core/adapters/vcs/git/adapter.js";
+import type {
+  BlameLine,
+  CommitFileNumstat,
+  CommitInfo,
+  FileChurnData,
+} from "../../../../../../src/core/adapters/vcs/types.js";
 import { assembleOverlays } from "../../../../../../src/core/domains/trajectory/git/infra/assemble-overlays.js";
 import {
   authorIdentityKey,
+  buildAuthorNameDirectory,
+  canonicalizeAuthorNames,
   tallyAuthors,
 } from "../../../../../../src/core/domains/trajectory/git/infra/author-identity.js";
 import { computeBlameOwnership } from "../../../../../../src/core/domains/trajectory/git/infra/blame-ownership.js";
+import { FileChurnDiscovery } from "../../../../../../src/core/domains/trajectory/git/infra/file-churn-discovery.js";
 import type { ChunkAccumulator } from "../../../../../../src/core/domains/trajectory/git/infra/metrics.js";
 import { computeDominantAuthor } from "../../../../../../src/core/domains/trajectory/git/infra/metrics/extractors.js";
 import { assembleFileSignals } from "../../../../../../src/core/domains/trajectory/git/infra/metrics/file-assembler.js";
@@ -201,5 +210,93 @@ describe("chunk contributor count keys by identity", () => {
       ]),
     });
     expect(overlays.get("f.ts")?.get("c")?.recentContributorCount).toBe(1);
+  });
+});
+
+describe("one canonical display name per identity for the whole run", () => {
+  const NOW_SEC = Math.floor(Date.now() / 1000);
+
+  function numstat(sha: string, author: string, email: string, path: string, ago: number): CommitFileNumstat {
+    const ts = NOW_SEC - ago;
+    return {
+      commit: commit(sha, author, email, ts),
+      committerTimestamp: ts,
+      files: [{ path, added: 1, deleted: 0 }],
+    };
+  }
+
+  function discoveryOver(entries: CommitFileNumstat[]): FileChurnDiscovery {
+    const adapter = {
+      repoRoot: "/repo",
+      getHead: vi.fn().mockResolvedValue("h".repeat(40)),
+      isAncestor: vi.fn().mockResolvedValue(false),
+      readCommitFileNumstat: vi.fn().mockResolvedValue(entries),
+    };
+    return new FileChurnDiscovery(adapter as unknown as VcsGitAdapter, { maxAgeMonths: 12, timeoutMs: 1000 });
+  }
+
+  // File A's records favour "artk0de", file B's favour "Arthur Korochansky";
+  // repo-wide "Arthur Korochansky" has the most commits (3 vs 2).
+  const entries = [
+    numstat("a1", "artk0de", ART, "a.ts", 100),
+    numstat("a2", "artk0de", ART, "a.ts", 200),
+    numstat("a3", "Arthur Korochansky", ART, "a.ts", 300),
+    numstat("b1", "Arthur Korochansky", ART, "b.ts", 400),
+    numstat("b2", "Arthur Korochansky", ART, "b.ts", 500),
+    numstat("o1", "bob", "bob@example.com", "b.ts", 600),
+  ];
+
+  it("shows the repo-wide most frequent name on every file, so one exact-name filter matches all of them", async () => {
+    const churn = await discoveryOver(entries).fileChurn();
+    const sigsA = assembleFileSignals(churn.get("a.ts") as never, 10);
+    const sigsB = assembleFileSignals(churn.get("b.ts") as never, 10);
+
+    expect(sigsA.recentDominantAuthor).toBe("Arthur Korochansky");
+    expect(sigsB.recentDominantAuthor).toBe("Arthur Korochansky");
+    // The `author=` / `contributor=` filter is an exact match on the NAME.
+    const files = [sigsA, sigsB];
+    expect(files.filter((f) => f.recentDominantAuthor === "Arthur Korochansky")).toHaveLength(2);
+    expect(files.filter((f) => f.recentAuthors.includes("Arthur Korochansky"))).toHaveLength(2);
+  });
+
+  it("applies the same name to blame lines, file and chunk level", async () => {
+    const names = await discoveryOver(entries).authorNames();
+    const lines = canonicalizeAuthorNames(
+      [blame(1, "artk0de", ART), blame(2, "artk0de", ART), blame(3, "bob", "bob@example.com")],
+      names,
+    ) as BlameLine[];
+    const owner = computeBlameOwnership(lines, [{ chunkId: "c", startLine: 1, endLine: 2 }]);
+    expect(owner.file.blameDominantAuthor).toBe("Arthur Korochansky");
+    expect(owner.chunks.get("c")?.blameDominantAuthor).toBe("Arthur Korochansky");
+    expect(owner.file.blameAuthors).toEqual(["Arthur Korochansky", "bob"]);
+  });
+
+  it("keeps the mailmap name: an identity already unified upstream has ONE name the directory cannot override", async () => {
+    const mapped = entries.map((e) => ({
+      ...e,
+      commit: e.commit.authorEmail === ART ? { ...e.commit, author: "Art K" } : e.commit,
+    }));
+    const churn = await discoveryOver(mapped).fileChurn();
+    expect(assembleFileSignals(churn.get("a.ts") as never, 10).recentDominantAuthor).toBe("Art K");
+    expect(assembleFileSignals(churn.get("b.ts") as never, 10).recentDominantAuthor).toBe("Art K");
+  });
+
+  it("falls back to the per-tally name for an identity outside the window (blame-only)", () => {
+    const directory = buildAuthorNameDirectory([commit("x", "Arthur Korochansky", ART)]);
+    const lines = canonicalizeAuthorNames(
+      [blame(1, "old", "old@example.com"), blame(2, "Old", "old@example.com"), blame(3, "old", "old@example.com")],
+      directory,
+    );
+    expect(tallyAuthors(lines)[0].name).toBe("old");
+  });
+
+  it("does not mutate its input and returns the same array when nothing changes", () => {
+    const directory = buildAuthorNameDirectory([commit("x", "N", ART)]);
+    const same = [blame(1, "N", ART)];
+    expect(canonicalizeAuthorNames(same, directory)).toBe(same);
+    const differing = [blame(1, "n", ART)];
+    const out = canonicalizeAuthorNames(differing, directory);
+    expect(out[0].author).toBe("N");
+    expect(differing[0].author).toBe("n");
   });
 });

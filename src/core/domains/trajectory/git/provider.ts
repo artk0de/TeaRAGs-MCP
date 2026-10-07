@@ -39,6 +39,7 @@ import type { RerankPreset } from "../../../contracts/types/reranker.js";
 import { isDebug } from "../../../infra/runtime.js";
 import { GIT_TRAJECTORY_ALGORITHM_VERSION } from "./algorithm-version.js";
 import { gitFilters } from "./filters.js";
+import { canonicalizeAuthorNames, type AuthorNameDirectory } from "./infra/author-identity.js";
 import { GitBlameStore } from "./infra/blame-store.js";
 import { relativizeChunkMap } from "./infra/build-accumulators.js";
 import { GitEnrichmentCache } from "./infra/cache.js";
@@ -624,6 +625,23 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       entries.map(([rel]) => rel),
     );
     const cache = this.ensureBlameCache(root);
+    // One canonical display name per author identity (bd tea-rags-mcp-nsxzh):
+    // the blame cache keeps raw names, the maps the tallies read are canonical.
+    // `rawData` came from this same discovery in a real run, so the latched
+    // build is already settled; a caller that supplied its own churn map (no
+    // discovery behind it) gets the per-tally name instead of a failure.
+    const names = await this.fileChurnDiscoveryFor(root)
+      .authorNames()
+      .catch((error: unknown): AuthorNameDirectory => {
+        if (isDebug()) {
+          console.error(
+            `[GitEnrich] author-name directory unavailable, naming per tally:`,
+            error instanceof Error ? error.message : error,
+          );
+        }
+        return new Map();
+      });
+    const named = (lines: BlameLine[]): BlameLine[] => canonicalizeAuthorNames(lines, names) as BlameLine[];
 
     // Classify and register SYNCHRONOUSLY (no await until the loop ends): a
     // concurrent batch reaching this point later sees every key registered
@@ -638,8 +656,9 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       const cached = oid ? cache.get(relPath) : undefined;
       if (oid && cached?.oid === oid) {
         hits++;
-        this.blameByChurnData.set(churnData, cached.lines);
-        this.blameByRelPath.set(relPath, cached.lines);
+        const lines = named(cached.lines);
+        this.blameByChurnData.set(churnData, lines);
+        this.blameByRelPath.set(relPath, lines);
         continue;
       }
       const runKey = `${root}\0${relPath}\0${oid ?? ""}`;
@@ -663,8 +682,8 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     // child process, so the pool's N workers = N concurrent `git blame` (each
     // worker serial); parallel git blame sustains ~69-89/s uncapped by EDR.
     const recordBlame = (relPath: string, churnData: FileChurnData, lines: BlameLine[]): void => {
-      this.blameByChurnData.set(churnData, lines);
-      this.blameByRelPath.set(relPath, lines);
+      this.blameByChurnData.set(churnData, named(lines));
+      this.blameByRelPath.set(relPath, named(lines));
       const oid = oidByPath.get(relPath);
       // Cache only non-empty results: [] can be a transient blame failure
       // (blameFile swallows errors) — pinning it would freeze the failure.
@@ -703,7 +722,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     // In-run reuse: the owning batch already wrote the OID cache (non-empty
     // lines only), so a joiner records the lines for its own batch state only.
     for (const [relPath, churnData, promise] of joinedEntries) {
-      const lines = await promise;
+      const lines = named(await promise);
       this.blameByChurnData.set(churnData, lines);
       this.blameByRelPath.set(relPath, lines);
     }
