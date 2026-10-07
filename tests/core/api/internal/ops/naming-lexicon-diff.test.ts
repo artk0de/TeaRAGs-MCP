@@ -418,6 +418,66 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     expect(result.review?.conforming).toBe(0);
   });
 
+  // bd tea-rags-mcp-89k7k.1.17: live on taxdome a near-floor draft flipped between a conforming count and a
+  // finding across identical runs — llama-server embedding jitter (~1e-3) moved its similarity across the floor.
+  it("a draft whose alternative sits on the floor is the same borderline finding at ±1e-3 jitter", async () => {
+    await db.replaceTypeDeclarationsBulk([
+      { relPath: "src/a/foo.ts", rows: [decl("FooBackend", "class")] },
+      { relPath: "src/b/bar.ts", rows: [decl("BarBackend", "class")] },
+      { relPath: "src/c/baz.ts", rows: [decl("BazBackend", "class")] },
+      { relPath: "src/emb/provider.ts", rows: [decl("EmbeddingProvider", "class")] },
+      { relPath: "src/code/provider.ts", rows: [decl("CodeProvider", "class")] },
+      ...["Anchor", "Beacon", "Cable", "Dagger", "Ember", "Falcon", "Glacier", "Harbor", "Island", "Jetty"].flatMap(
+        (head) =>
+          ["Left", "Right"].map((side) => ({
+            relPath: `src/${head.toLowerCase()}/${side.toLowerCase()}.ts`,
+            rows: [decl(`${side}${head}`, "class")],
+          })),
+      ),
+    ]);
+    semanticSearch.mockResolvedValue({
+      driftWarning: null,
+      results: [{ id: "p", score: 1, payload: { symbolId: "EmbeddingProvider", relativePath: "src/emb/provider.ts" } }],
+    });
+    mkdirSync(join(repo, "src/emb"), { recursive: true });
+    writeFileSync(join(repo, "src/emb/backend.ts"), "export class EmbeddingBackend {}\n");
+    // Every head is its own axis (null pairs score 0, the floor ≈ 0); `provider` leans `cosine` toward `backend`.
+    const reviewAt = async (cosine: number) => {
+      const axes = new Map<string, number>();
+      const embedBatch = vi.fn(async (texts: string[]) =>
+        texts.map((text) => {
+          const word = text.replace(/^class /, "");
+          const embedding = new Array<number>(32).fill(0);
+          if (word === "backend") embedding[0] = 1;
+          else if (word === "provider") {
+            embedding[0] = cosine;
+            embedding[1] = Math.sqrt(1 - cosine * cosine);
+          } else embedding[axes.get(word) ?? axes.set(word, axes.size + 2).get(word) ?? 0] = 1;
+          return { embedding };
+        }),
+      );
+      const result = await build({ embedBatch }).getNamingLexicon({
+        collection: "c",
+        path: repo,
+        files: ["src/emb/backend.ts"],
+      });
+      return result.review;
+    };
+    const below = await reviewAt(-1e-3);
+    const above = await reviewAt(1e-3);
+    for (const review of [below, above]) {
+      expect(review?.conforming).toBe(0);
+      expect(review?.findings).toEqual([
+        expect.objectContaining({
+          name: "EmbeddingBackend",
+          verdict: "CONFORMS",
+          borderline: [expect.objectContaining({ word: "provider", slot: "head" })],
+        }),
+      ]);
+      expect(review?.findings[0]).not.toHaveProperty("alternatives");
+    }
+  });
+
   // bd tea-rags-mcp-59q9c: live on taxdome the namespace modules were MISFIT → `GettingPaidWorker` / `QuickbooksWorker`.
   it("the namespace modules around a worker get no directory-role MISFIT; the worker is judged by it", async () => {
     const dirPath = "app/workers/getting_paid/quickbooks";

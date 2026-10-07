@@ -713,7 +713,8 @@ export class NamingLexiconOps {
       const judged = verdicts.get(slot[i].language)?.[slot[i].at];
       if (judged === undefined) return;
       const { name: _name, evidence: _evidence, language: _language, genericName, ...verdict } = judged;
-      if (verdict.verdict === "CONFORMS" && verdict.alternatives === undefined) {
+      // A borderline alternative (bd tea-rags-mcp-89k7k.1.17) keeps the draft a finding: the same one every run.
+      if (verdict.verdict === "CONFORMS" && verdict.alternatives === undefined && verdict.borderline === undefined) {
         conforming++;
         // A generic name that conforms is information, not a finding (bd tea-rags-mcp-bjfa0).
         if (genericName !== undefined) {
@@ -742,8 +743,9 @@ export class NamingLexiconOps {
         ...(genericName !== undefined ? { genericName } : {}),
       });
     });
-    findings.sort((a, b) => a.relPath.localeCompare(b.relPath) || a.line - b.line);
-    notes.sort((a, b) => a.relPath.localeCompare(b.relPath) || a.line - b.line);
+    // Total order: findings[i] names one declaration every run (bd tea-rags-mcp-89k7k.1.17).
+    findings.sort((a, b) => a.relPath.localeCompare(b.relPath) || a.line - b.line || compareDeclarationName(a, b));
+    notes.sort((a, b) => a.relPath.localeCompare(b.relPath) || a.line - b.line || compareDeclarationName(a, b));
 
     return {
       review: {
@@ -2338,15 +2340,25 @@ function notJudgedBreakdown(
   return { notJudgedBy: by, notJudgedNames: names };
 }
 
+/** Same-line declarations of one file, by name then kind — the tail of the review's total order. */
+function compareDeclarationName(a: { name: string; kind: string }, b: { name: string; kind: string }): number {
+  return a.name.localeCompare(b.name) || a.kind.localeCompare(b.kind);
+}
+
 /**
- * A verdict with nothing to act on: NEW_TERM with no top terms and no
- * alternatives — the project has nothing to compare the name with. Diff mode
- * counts it (`novel`) instead of listing it.
+ * A verdict with nothing to act on: NEW_TERM with no top terms, no
+ * alternatives and no borderline ones — the project has nothing to compare the
+ * name with. Diff mode counts it (`novel`) instead of listing it.
  */
 function isNovelVerdict(verdict: NamingVerdict): boolean {
   // A value no convention binds is a free choice: nothing to act on, like a bare NEW_TERM (lexicon friction F3).
   if (verdict.verdict === "NO_CONVENTION") return true;
-  return verdict.verdict === "NEW_TERM" && verdict.topTerms.length === 0 && (verdict.alternatives?.length ?? 0) === 0;
+  return (
+    verdict.verdict === "NEW_TERM" &&
+    verdict.topTerms.length === 0 &&
+    (verdict.alternatives?.length ?? 0) === 0 &&
+    verdict.borderline === undefined
+  );
 }
 
 /**

@@ -290,8 +290,8 @@ declare \`kind: "field"\` rows, same as \`@ivar =\`.
   NO_CONVENTION (analogues). A name a macro composed (has_one :account → build_account,
   account=) is not spelled on its declaration line: no draft, not counted; notJudgedNames = first 50 { relPath, line?, name?, kind, reason } — read them yourself;
   findings flat { relPath, line, name, kind, type?, verdict, … } — non-CONFORMS verdicts and
-  CONFORMS with alternatives. notes = CONFORMS on a generic name (genericName; information, counted
-  in conforming). novel = NO_CONVENTION, or NEW_TERM with nothing to compare (not listed). notJudged = files
+  CONFORMS with alternatives or borderline. notes = CONFORMS on a generic name (genericName; information, counted
+  in conforming). novel = NO_CONVENTION, or NEW_TERM with nothing to compare (not listed); a type NEW_TERM with borderline is listed. notJudged = files
   skipped: tests / non-production, no codegraph language.
   Type / constant names need a codegraph recompute on an index built before type declarations existed.
 - indexLag { indexedCommit, treeCommit } on any answer = index built at another commit than the tree's
@@ -300,6 +300,8 @@ declare \`kind: "field"\` rows, same as \`@ivar =\`.
 Verdicts: CONFORMS (vocabulary, not behaviour; may carry alternatives) | MISFIT (suggestion,
 role) | NEW_TERM (topTerms, alternatives — soft,
 never a rename demand) | NO_CONVENTION (prefer { exact?, analogous }) | COLLISION (existing).
+borderline (a type's CONFORMS / NEW_TERM) = alternatives within embedding jitter of the similarity
+floor: not offered, the verdict is the same every run — whether one fits is your call.
 NO_CONVENTION = value (param / local / field) whose type or call has no name ≥ 2 owners share: no
 demand, not free either — name it prefer.exact (type spelled, plural for many) or like
 prefer.analogous (own thin rows, then family values: types specializing it — CallerSymbolId for
