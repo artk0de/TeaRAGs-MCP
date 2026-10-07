@@ -116,7 +116,24 @@ export async function readReviewFileEdges(
   } catch (error) {
     return { relPath, edges: [], skip: { reason: "unreadable", detail: messageOf(error) } };
   }
+  return extractReviewFileEdges(deps, workTree, relPath, text, context);
+}
 
+/**
+ * {@link readReviewFileEdges} over text the caller already holds — the same
+ * walk and resolution, so a revision's blob (the diff base's, bd
+ * tea-rags-mcp-89k7k.1.16) extracts exactly as the working-tree file does.
+ * Resolution answers from `workTree`'s filesystem: an import is mapped to the
+ * file the TREE holds at that path, which is what "the same edge at the base"
+ * needs — a pair compared against the tree's own overlay. Never throws.
+ */
+export function extractReviewFileEdges(
+  deps: ReviewEdgeExtractionDeps,
+  workTree: string,
+  relPath: string,
+  text: string,
+  context: InMemoryExtractionContext = {},
+): ReviewFileEdgeRead {
   let extraction: FileExtraction | null;
   try {
     extraction = extractFileInMemory(deps, relPath, text, context);

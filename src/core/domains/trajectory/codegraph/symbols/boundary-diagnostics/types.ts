@@ -11,7 +11,7 @@ import type {
   MainSequenceComponentVolatilityEvidence,
   MainSequenceZone,
 } from "../../../../../contracts/types/architecture-report.js";
-import type { FileDependencyEdge, RelPath } from "../../../../../contracts/types/codegraph.js";
+import type { FileDependencyEdge, HierarchySnapshot, RelPath } from "../../../../../contracts/types/codegraph.js";
 
 /**
  * Where a dependency's target sits relative to its source, by directory — the
@@ -323,6 +323,15 @@ export type { ConventionPrivacyRule };
 export interface ConventionPrivacyOptions {
   /** Picomatch glob: judge only edges whose SOURCE file matches. */
   sourcePathPattern?: string;
+  /**
+   * The persisted class hierarchy (`cg_symbols_inheritance` as
+   * `GraphDbClient#loadHierarchySnapshot` serves it — the snapshot the
+   * resolver's CHA cone reads) — the evidence `python-underscore` needs to
+   * exempt a subclass calling an inherited `_member` through `self` / `cls` /
+   * `super()` (bd tea-rags-mcp-r8hme.41). Absent = no ancestry evidence, so
+   * no edge is exempted on it.
+   */
+  classHierarchy?: HierarchySnapshot;
 }
 
 /** One method edge that reaches a convention-private member from outside. */

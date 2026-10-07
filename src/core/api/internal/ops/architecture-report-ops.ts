@@ -124,6 +124,17 @@ export const LAYERING_NESTED_PAIR_LIMIT = 10;
 export const LAYERING_KNOT_DRILL_DOWN_HINT =
   "call get_architecture_report with knotOf to page every member and cut edge of this knot";
 
+/**
+ * The graph reads the report judges from. `loadHierarchySnapshot` is optional:
+ * only the convention-privacy subclass exemption (bd tea-rags-mcp-r8hme.41)
+ * reads it, and a reader without it judges every Python candidate as before.
+ */
+type ArchitectureReportGraphDb = Pick<
+  GraphDbClient,
+  "readFileDependencyGraph" | "readNonPublicMemberEdges" | "readTemporalCochangeGraph" | "readTypeNameRows"
+> &
+  Partial<Pick<GraphDbClient, "loadHierarchySnapshot">>;
+
 type ArchitectureReportScope = Pick<
   GetArchitectureReportRequest,
   "pathPattern" | "domain" | "norms" | "limit" | "layerMap" | "knotOf" | "offset"
@@ -168,10 +179,7 @@ export class ArchitectureReportOps {
    * change verdict.
    */
   async build(
-    graphDb: Pick<
-      GraphDbClient,
-      "readFileDependencyGraph" | "readNonPublicMemberEdges" | "readTemporalCochangeGraph" | "readTypeNameRows"
-    >,
+    graphDb: ArchitectureReportGraphDb,
     request: ArchitectureReportScope,
     readImportSpecifiers?: ModuleImportSpecifierLookup,
     readFileCommitCounts?: GitFileCommitCountLookup,
@@ -214,10 +222,7 @@ export class ArchitectureReportOps {
    * one-family change, never more of {@link ArchitectureReportOps#build}.
    */
   private async runDetectors(
-    graphDb: Pick<
-      GraphDbClient,
-      "readFileDependencyGraph" | "readNonPublicMemberEdges" | "readTemporalCochangeGraph" | "readTypeNameRows"
-    >,
+    graphDb: ArchitectureReportGraphDb,
     scope: ScopedArchitectureGraph,
     request: ArchitectureReportScope,
     readImportSpecifiers?: ModuleImportSpecifierLookup,
@@ -252,7 +257,14 @@ export class ArchitectureReportOps {
           !nonProduction.ignores(e.targetRelPath) &&
           (!domainFiles || (domainFiles.has(e.sourceRelPath) && domainFiles.has(e.targetRelPath))),
       ),
-      { sourcePathPattern: request.pathPattern },
+      {
+        sourcePathPattern: request.pathPattern,
+        // The subclass exemption's ancestry (bd tea-rags-mcp-r8hme.41): the
+        // persisted hierarchy, read only when a Python candidate needs it.
+        ...(graphDb.loadHierarchySnapshot !== undefined && memberEdges.some((e) => e.targetLanguage === "python")
+          ? { classHierarchy: await graphDb.loadHierarchySnapshot() }
+          : {}),
+      },
     );
     // One co-change read feeds both temporal detectors: silent coupling's
     // pairs and the split/merge verdicts' bundle membership.

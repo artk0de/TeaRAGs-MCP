@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DiffDetectorRun,
+  type DiffDetectorBaseEdgeReader,
   type DiffDetectorCatalog,
   type DiffDetectorContractReader,
   type DiffDetectorFinding,
@@ -179,6 +180,7 @@ function runWith(
     splitMerge?: DiffDetectorSplitMergeReader;
     splitMergeAbsentReason?: string;
     maxTraceHops?: number;
+    baseEdges?: DiffDetectorBaseEdgeReader;
   },
   changedFiles: readonly string[],
   overlayEdges: readonly FixtureEdge[],
@@ -190,8 +192,21 @@ function runWith(
     ...(deps.splitMerge !== undefined ? { splitMerge: deps.splitMerge } : {}),
     ...(deps.splitMergeAbsentReason !== undefined ? { splitMergeAbsentReason: deps.splitMergeAbsentReason } : {}),
     ...(deps.maxTraceHops !== undefined ? { maxTraceHops: deps.maxTraceHops } : {}),
+    ...(deps.baseEdges !== undefined ? { baseEdges: deps.baseEdges } : {}),
   });
   return run.run({ changedFiles }, overlayOf(overlayEdges, changedFiles));
+}
+
+/**
+ * The diff base's edges per changed source, as the wiring reads them from the
+ * merge-base blobs: a listed source maps to the targets it imported AT THE
+ * BASE (empty = absent or import-free there); an unlisted source answers
+ * undefined — base unknown, the index decides.
+ */
+function baseEdgesOf(bySource: Readonly<Record<string, readonly string[]>>): DiffDetectorBaseEdgeReader {
+  return {
+    targetsAtBase: (relPath) => (relPath in bySource ? new Set(bySource[relPath]) : undefined),
+  };
 }
 
 /** Subjects of one detector's findings, in emission order. */
@@ -907,6 +922,117 @@ describe("pre-existing edge attribution", () => {
       overlayOf([["src/app/a.ts", "src/lib/internal.ts"]], ["src/app/a.ts"]),
     );
     expect(result.findings.some((f) => f.preExisting === true)).toBe(false);
+  });
+});
+
+// bd tea-rags-mcp-89k7k.1.16: "added by the diff" is relative to the DIFF
+// BASE (absent at the merge-base, present in the tree), never to wherever the
+// index sits. The index can lag the base or already contain commits inside the
+// diff range; both orderings must leave the verdict unchanged.
+describe("diff-added relative to the diff base", () => {
+  const components = new Map([
+    ["src/app/a.ts", { name: "app", instability: 0.2, distanceFromMainSequence: 0.4 }],
+    ["src/lib/b.ts", { name: "lib", instability: 0.9, distanceFromMainSequence: 0.2 }],
+  ]);
+  const FACADE = "src/lib/index.ts";
+  const leakComponents = new Map([
+    ["src/lib/internal.ts", { name: "lib", instability: 0.3, distanceFromMainSequence: 0.3 }],
+  ]);
+
+  it("index between base and tree: an edge the diff added still counts as added although the index already holds it", () => {
+    const result = runWith(
+      {
+        graph: graphOf([["src/app/a.ts", "src/lib/b.ts"]]),
+        catalog: catalogOf(components),
+        baseEdges: baseEdgesOf({ "src/app/a.ts": [] }),
+      },
+      ["src/app/a.ts"],
+      [["src/app/a.ts", "src/lib/b.ts"]],
+    );
+    expect(subjectsOf(result, "stableDependencies")).toEqual(["src/app/a.ts -> src/lib/b.ts"]);
+    expect(subjectsOf(result, "mainSequence")).toEqual(["app"]);
+  });
+
+  it("index between base and tree: a cycle the diff closed is not stamped preExisting", () => {
+    const result = runWith(
+      {
+        graph: graphOf([
+          ["src/a.ts", "src/b.ts"],
+          ["src/b.ts", "src/c.ts"],
+          ["src/c.ts", "src/a.ts"],
+        ]),
+        baseEdges: baseEdgesOf({ "src/a.ts": [] }),
+      },
+      ["src/a.ts"],
+      [["src/a.ts", "src/b.ts"]],
+    );
+    const finding = result.findings.find((f) => f.detector === "cycles");
+    expect(finding?.subject).toBe("src/a.ts -> src/b.ts");
+    expect("preExisting" in (finding ?? {})).toBe(false);
+    expect(finding?.detail).toContain("the diff closes a cycle");
+  });
+
+  it("index older than base: an edge the base already held is not diff-added although the index lacks it", () => {
+    const result = runWith(
+      {
+        graph: graphOf([]),
+        catalog: catalogOf(components),
+        baseEdges: baseEdgesOf({ "src/app/a.ts": ["src/lib/b.ts"] }),
+      },
+      ["src/app/a.ts"],
+      [["src/app/a.ts", "src/lib/b.ts"]],
+    );
+    expect(subjectsOf(result, "stableDependencies")).toEqual([]);
+    expect(subjectsOf(result, "mainSequence")).toEqual([]);
+  });
+
+  it("index older than base: a cycle edge the base already held is stamped preExisting, worded against the diff base", () => {
+    const result = runWith(
+      {
+        graph: graphOf([
+          ["src/b.ts", "src/c.ts"],
+          ["src/c.ts", "src/a.ts"],
+        ]),
+        baseEdges: baseEdgesOf({ "src/a.ts": ["src/b.ts"] }),
+      },
+      ["src/a.ts"],
+      [["src/a.ts", "src/b.ts"]],
+    );
+    const finding = result.findings.find((f) => f.detector === "cycles");
+    expect(finding?.preExisting).toBe(true);
+    expect(finding?.detail).toContain("pre-dates the diff");
+    expect(finding?.detail).toContain("diff base");
+  });
+
+  it("reads the facade evidence at the base too: a facade import the base held proves the pre-diff usage", () => {
+    const result = runWith(
+      {
+        graph: graphOf([]),
+        catalog: catalogOf(leakComponents, new Map([["lib", FACADE]])),
+        baseEdges: baseEdgesOf({ "src/app/a.ts": [FACADE] }),
+      },
+      ["src/app/a.ts"],
+      [
+        ["src/app/a.ts", FACADE],
+        ["src/app/a.ts", "src/lib/internal.ts"],
+      ],
+    );
+    const finding = result.findings.find((f) => f.detector === "leakingAbstraction");
+    expect(finding?.subject).toBe("src/app/a.ts -> src/lib/internal.ts");
+    expect("preExisting" in (finding ?? {})).toBe(false);
+  });
+
+  it("falls back to the index for a source whose base edges are unknown", () => {
+    const result = runWith(
+      {
+        graph: graphOf([["src/app/a.ts", "src/lib/b.ts"]]),
+        catalog: catalogOf(components),
+        baseEdges: baseEdgesOf({}),
+      },
+      ["src/app/a.ts"],
+      [["src/app/a.ts", "src/lib/b.ts"]],
+    );
+    expect(subjectsOf(result, "stableDependencies")).toEqual([]);
   });
 });
 

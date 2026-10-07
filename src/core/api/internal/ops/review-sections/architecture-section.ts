@@ -27,11 +27,13 @@
 import { randomInt } from "node:crypto";
 
 import { REVIEW_EDGE_MAX_AGE_SECONDS } from "../../../../adapters/duckdb/review-edge-store.js";
+import { createCatFileBatch, isAncestor } from "../../../../adapters/vcs/git/git-cli/client.js";
 import type {
   FileDependencyEdge,
   FileDependencyGraphFile,
   TemporalCochangeGraph,
 } from "../../../../contracts/types/codegraph.js";
+import type { InMemoryExtractionContext } from "../../../../domains/trajectory/codegraph/index.js";
 import type { ComponentGraph } from "../../../../domains/trajectory/codegraph/symbols/index.js";
 import {
   computeSplitMergeVerdicts,
@@ -40,6 +42,7 @@ import {
   oneWalkedViolationImporters,
   type SilentCouplingReport,
 } from "../../../../domains/trajectory/codegraph/temporal/index.js";
+import { findGitToplevel, gitPathFromRoot, gitPathPrefix } from "../../../../infra/repo-git-state.js";
 import type { ReviewSectionNotJudgedEntry } from "../../../public/dto/review.js";
 import {
   ArchitectureFactsCatalog,
@@ -50,16 +53,20 @@ import {
 import { isDocumentationPath, type ModuleImportSpecifierLookup } from "../architecture-report-ops.js";
 import {
   DiffDetectorRun,
+  type DiffDetectorBaseEdgeReader,
   type DiffDetectorContractReader,
   type DiffDetectorFinding,
   type DiffDetectorGraphReader,
   type DiffDetectorRunDeps,
   type DiffDetectorSilentCouplingFacts,
 } from "../diff-detector-run.js";
+import type { DiffScopeRead } from "../diff-scope-reader.js";
 import {
+  extractReviewFileEdges,
   readReviewFileEdges,
   ReviewEdgeOverlay,
   workingTreeExtractionContext,
+  type ReviewEdgeExtractionDeps,
   type ReviewFileEdgeRead,
 } from "../review-edge-overlay.js";
 import type { ReviewSectionProvider } from "./review-section-provider.js";
@@ -270,6 +277,45 @@ export function wireSplitMerge(
 }
 
 /**
+ * The diff base's edges of the scope files (bd tea-rags-mcp-89k7k.1.16): each
+ * file's blob AT THE MERGE-BASE, walked by the same extraction the tree read
+ * uses ({@link extractReviewFileEdges}). Cost is bounded by the diff — one
+ * `cat-file --batch` process, one blob and one walk per scope file, never a
+ * repository-wide read.
+ *
+ * A path the merge-base does not hold reads as an empty blob — a file the diff
+ * created imported nothing before it, so every edge it holds is diff-added. A
+ * file whose base blob does not extract (unsupported language, failed walk)
+ * answers `undefined` and the indexed graph decides its edges, as before.
+ * Undefined as a whole — the index decides everywhere — when the merge-base
+ * is not a commit the tree's HEAD descends from (no repository, an unknown
+ * sha): an unreadable base is never "nothing existed before".
+ */
+export async function readDiffBaseEdges(
+  scope: Pick<DiffScopeRead, "workTree" | "mergeBase" | "files">,
+  extraction: ReviewEdgeExtractionDeps,
+  context: InMemoryExtractionContext,
+): Promise<DiffDetectorBaseEdgeReader | undefined> {
+  const toplevel = findGitToplevel(scope.workTree);
+  if (toplevel === undefined || scope.files.length === 0) return undefined;
+  if (!(await isAncestor(toplevel, scope.mergeBase, "HEAD"))) return undefined;
+  const prefix = gitPathPrefix(toplevel, scope.workTree);
+  const targetsBySource = new Map<string, ReadonlySet<string>>();
+  const blobs = createCatFileBatch(toplevel);
+  try {
+    for (const relPath of scope.files) {
+      const text = await blobs.read(scope.mergeBase, gitPathFromRoot(relPath, prefix));
+      const read = extractReviewFileEdges(extraction, scope.workTree, relPath, text, context);
+      if (read.skip !== undefined) continue;
+      targetsBySource.set(relPath, new Set(read.edges.map((edge) => edge.targetRelPath)));
+    }
+  } finally {
+    await blobs.close();
+  }
+  return { targetsAtBase: (relPath) => targetsBySource.get(relPath) };
+}
+
+/**
  * The review id the temp table hangs on: `<epochSeconds>-<pid>-<6 alnum>`,
  * minted to the store's validation pattern `/^\d{10}-\d{1,7}-[a-z0-9]{6}$/`
  * exactly — the pattern is the injection guard for a SQL identifier that
@@ -344,10 +390,22 @@ export const architectureSectionProvider: ReviewSectionProvider = {
         reads.flatMap((read) => [...read.edges]),
       );
 
+      // The diff base's side (bd tea-rags-mcp-89k7k.1.16): what "added by
+      // this change" is measured against, read from the merge-base blobs of
+      // the SAME scope files — independent of where the index sits.
+      const baseEdges = await readDiffBaseEdges(scope, reviewEdgeExtraction, extractionContext);
+
       // The SAME reads feed the overlay — the table is persistence, the
       // overlay is the judgement's view; neither re-reads the other.
       const overlay = new ReviewEdgeOverlay(reads);
-      const result = new DiffDetectorRun({ graph, catalog, silentCouplingFacts, contract, ...splitMerge }).run(
+      const result = new DiffDetectorRun({
+        graph,
+        ...(baseEdges !== undefined ? { baseEdges } : {}),
+        catalog,
+        silentCouplingFacts,
+        contract,
+        ...splitMerge,
+      }).run(
         {
           changedFiles: scope.files,
           // A truncated scope marks every built family partial (bd

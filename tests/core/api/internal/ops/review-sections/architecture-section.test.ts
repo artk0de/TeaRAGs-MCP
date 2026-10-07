@@ -12,6 +12,7 @@
  * `review-edge-overlay.test.ts` uses) so the extraction is exercised
  * end-to-end; the indexed graph is a stub behind the graphDb spies.
  */
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -603,6 +604,97 @@ describe("architectureSectionProvider.run", () => {
 
     const detectors = payload.detectors as { scopeSkippedFiles?: number }[];
     expect(detectors.every((status) => status.scopeSkippedFiles === undefined)).toBe(true);
+  });
+});
+
+/** Runs git in the temp tree with a fixed identity — the fixture never reads the user's config. */
+function git(...args: string[]): string {
+  return execFileSync("git", ["-c", "user.name=fixture", "-c", "user.email=fixture@example.com", ...args], {
+    cwd: workTree!,
+    encoding: "utf8",
+  }).trim();
+}
+
+/** Commits everything in the temp repository; returns the commit sha. */
+function commitAll(message: string): string {
+  git("add", "-A");
+  git("commit", "-q", "--no-verify", "-m", message);
+  return git("rev-parse", "HEAD");
+}
+
+// bd tea-rags-mcp-89k7k.1.16: "added by the diff" is judged against the
+// merge-base the scope names, read from its blobs — never against wherever
+// the index sits. The stubbed index below has ALREADY caught up to the tree.
+describe("architectureSectionProvider.run — diff base wiring", () => {
+  const indexedCycle = (): GraphDbStub =>
+    graphDbStub({
+      files: [graphFile("src/app/a.ts"), graphFile("src/lib/b.ts")],
+      edges: [graphEdge("src/app/a.ts", "src/lib/b.ts"), graphEdge("src/lib/b.ts", "src/app/a.ts")],
+    });
+
+  function scopeAt(mergeBase: string): DiffScopeRead {
+    return { ...scopeOf(["src/app/a.ts"]), mergeBase };
+  }
+
+  function cycleFindings(payload: unknown): { subject: string; preExisting?: true; detail: string }[] {
+    return (
+      payload as { findings: { detector: string; subject: string; preExisting?: true; detail: string }[] }
+    ).findings.filter((finding) => finding.detector === "cycles");
+  }
+
+  beforeEach(() => {
+    execFileSync("git", ["init", "-q"], { cwd: workTree! });
+  });
+
+  it("an index that caught up to the diff still reports the cycle the diff closed as new", async () => {
+    writeFile("src/app/a.ts", "export const A = 1;\n");
+    writeFile("src/lib/b.ts", 'import { A } from "../app/a";\nexport const B = A;\n');
+    const base = commitAll("base");
+    writeFile("src/app/a.ts", 'import { B } from "../lib/b";\nexport const A = 1;\nexport const C = B;\n');
+
+    const payload = await architectureSectionProvider.run(
+      runContext({ graphDb: indexedCycle(), scope: scopeAt(base) }),
+    );
+
+    const [finding, ...rest] = cycleFindings(payload);
+    expect(rest).toEqual([]);
+    expect(finding?.subject).toBe("src/app/a.ts -> src/lib/b.ts");
+    expect(finding !== undefined && "preExisting" in finding).toBe(false);
+  });
+
+  it("an edge the merge-base already held stays preExisting, worded against the diff base", async () => {
+    writeFile("src/app/a.ts", 'import { B } from "../lib/b";\nexport const A = 1;\n');
+    writeFile("src/lib/b.ts", 'import { A } from "../app/a";\nexport const B = A;\n');
+    const base = commitAll("base");
+    writeFile("src/app/a.ts", 'import { B } from "../lib/b";\nexport const A = 2;\n');
+
+    const payload = await architectureSectionProvider.run(
+      runContext({
+        graphDb: graphDbStub({
+          files: [graphFile("src/lib/b.ts")],
+          edges: [graphEdge("src/lib/b.ts", "src/app/a.ts")],
+        }),
+        scope: scopeAt(base),
+      }),
+    );
+
+    const [finding] = cycleFindings(payload);
+    expect(finding?.preExisting).toBe(true);
+    expect(finding?.detail).toContain("diff base");
+  });
+
+  it("a merge-base the repository cannot resolve falls back to the index — never reads every edge as added", async () => {
+    writeFile("src/app/a.ts", 'import { B } from "../lib/b";\nexport const A = 1;\n');
+    writeFile("src/lib/b.ts", 'import { A } from "../app/a";\nexport const B = A;\n');
+    commitAll("base");
+
+    const payload = await architectureSectionProvider.run(
+      runContext({ graphDb: indexedCycle(), scope: scopeAt("0000000000000000000000000000000000000000") }),
+    );
+
+    const [finding] = cycleFindings(payload);
+    expect(finding?.preExisting).toBe(true);
+    expect(finding?.detail).toContain("indexed graph already holds it");
   });
 });
 
