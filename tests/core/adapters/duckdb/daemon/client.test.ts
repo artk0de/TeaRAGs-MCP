@@ -1076,3 +1076,77 @@ describe("DaemonGraphDbClient — excludePaths on the naming evidence reads", ()
     }
   });
 });
+
+// bd tea-rags-mcp-89k7k.1.14 / tea-rags-mcp-3vg0x: the daemon is the default read path, and its Maps
+// travel as `[id, value][]` entries — the client, not the server, rebuilds them.
+describe("DaemonGraphDbClient — readTemporalCochangeGraph", () => {
+  const meta = { builtAt: 100, commitCount: 3 };
+  const edges = [{ fileA: "a.ts", fileB: "b.yml", support: 2, structurallyLinked: false }];
+
+  it("rebuilds the bundle membership, commit and burst Maps from the daemon's entry tuples", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return r.op === "readTemporalCochangeGraph"
+        ? {
+            meta,
+            edges,
+            bundles: [
+              [0, ["a.ts", "b.yml"]],
+              [1, ["a.ts"]],
+            ],
+            bundleCommits: [
+              [0, ["s2"]],
+              [1, ["s3", "s1"]],
+            ],
+            bundleBursts: [
+              [0, 0],
+              [1, 0],
+            ],
+          }
+        : null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
+    await client.init();
+    const graph = await client.readTemporalCochangeGraph();
+    await client.close();
+
+    expect(graph).toEqual({
+      meta,
+      edges,
+      bundles: new Map([
+        [0, ["a.ts", "b.yml"]],
+        [1, ["a.ts"]],
+      ]),
+      bundleCommits: new Map([
+        [0, ["s2"]],
+        [1, ["s3", "s1"]],
+      ]),
+      bundleBursts: new Map([
+        [0, 0],
+        [1, 0],
+      ]),
+    });
+    expect(seen.find((r) => r.op === "readTemporalCochangeGraph")?.params).toMatchObject({ collection: "code_x_v1" });
+  });
+
+  it("leaves membership, commits and bursts absent when a daemon from an older build sends none", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    await echoServer(socketPath, (r) => (r.op === "readTemporalCochangeGraph" ? { meta, edges } : null));
+
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
+    await client.init();
+    const graph = await client.readTemporalCochangeGraph();
+    await client.close();
+
+    // Absence is silence, never "no bundles": the significance gate then counts every bundle as its own burst.
+    expect(graph).toEqual({ meta, edges });
+    expect(graph).not.toHaveProperty("bundles");
+    expect(graph).not.toHaveProperty("bundleCommits");
+    expect(graph).not.toHaveProperty("bundleBursts");
+  });
+});
