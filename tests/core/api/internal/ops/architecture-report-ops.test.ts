@@ -670,6 +670,42 @@ describe("ArchitectureReportOps#build — conventionPrivacy (bd tea-rags-mcp-r8h
       conventionPrivacy: { candidateEdgeCount: 1, violationsByRule: { pythonUnderscore: 1, rubySendPrivate: 0 } },
     });
   });
+
+  it("exempts a subclass calling its inherited _member through self, reading the persisted hierarchy (bd tea-rags-mcp-r8hme.41)", async () => {
+    const inherited: NonPublicMemberEdge = {
+      sourceRelPath: "src/flask/app.py",
+      sourceSymbolId: "Flask#handle_exception",
+      targetRelPath: "src/flask/sansio/app.py",
+      targetSymbolId: "App#_find_error_handler",
+      targetShortName: "_find_error_handler",
+      targetVisibility: null,
+      targetLanguage: "python",
+      callExpression: "self._find_error_handler(e, request.blueprints)",
+    };
+    const row = {
+      sourceFqName: "Flask",
+      sourceSymbolId: "Flask",
+      ancestorFqName: "App",
+      ancestorSymbolId: "App",
+      kind: "super" as const,
+      ordinal: 0,
+    };
+    const db = {
+      ...graphDb(facadeGraph(), [inherited, underscoreEdge]),
+      loadHierarchySnapshot: vi.fn().mockResolvedValue({
+        ancestorsBySource: { Flask: [row] },
+        descendantsByAncestor: { App: [row] },
+      }),
+    };
+    const report = await new ArchitectureReportOps().build(db, {});
+
+    expect(db.loadHierarchySnapshot).toHaveBeenCalledTimes(1);
+    expect(
+      report.violations
+        .filter((v) => v.detector === "leakingAbstraction" && v.kind === "conventionPrivacy")
+        .map((v) => v.sourceRelPath),
+    ).toEqual(["app/views.py"]);
+  });
 });
 
 /**

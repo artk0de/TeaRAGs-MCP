@@ -1,5 +1,6 @@
-import type { NonPublicMemberEdge, RelPath } from "../../../../../contracts/types/codegraph.js";
+import type { HierarchyView, NonPublicMemberEdge, RelPath } from "../../../../../contracts/types/codegraph.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
+import { MapHierarchyView } from "../../hierarchy-view.js";
 import type {
   ConventionPrivacyOptions,
   ConventionPrivacyReport,
@@ -31,7 +32,8 @@ const RUBY_SEND_LITERAL = /(?:^|[^\w])(?:public_send|__send__|send)\s*\(?\s*(?::
  *
  * - `python-underscore` — the target's short name starts with `_` and is not a
  *   dunder (`__x__`), and the source file sits in another package directory
- *   than the target's declaring file.
+ *   than the target's declaring file — unless a subclass reaches a member it
+ *   inherited through `self` / `cls` / `super()` (`classHierarchy` option).
  * - `ruby-send-private` — the target is declared `private` / `protected`, the
  *   edge's call is a `send` family call whose literal names the target, and
  *   the source symbol's class is not the target's class.
@@ -48,13 +50,14 @@ export function detectConventionPrivacyLeaks(
     inScope && options.sourcePathPattern
       ? { sourcePathPattern: options.sourcePathPattern, outOfScopeEdgeCount: 0 }
       : undefined;
+  const classHierarchy = options.classHierarchy && new MapHierarchyView(options.classHierarchy);
   const violations: ConventionPrivacyViolation[] = [];
   for (const edge of edges) {
     if (scope && inScope && !inScope(edge.sourceRelPath)) {
       scope.outOfScopeEdgeCount++;
       continue;
     }
-    const rule = conventionPrivacyRule(edge);
+    const rule = conventionPrivacyRule(edge, classHierarchy);
     if (rule) {
       violations.push({
         sourceRelPath: edge.sourceRelPath,
@@ -87,10 +90,14 @@ export function detectConventionPrivacyLeaks(
   };
 }
 
-function conventionPrivacyRule(edge: NonPublicMemberEdge): ConventionPrivacyRule | null {
+function conventionPrivacyRule(
+  edge: NonPublicMemberEdge,
+  classHierarchy: HierarchyView | undefined,
+): ConventionPrivacyRule | null {
   if (edge.targetLanguage === "python") {
     return isPythonConventionPrivate(edge.targetShortName) &&
-      directoryOf(edge.sourceRelPath) !== directoryOf(edge.targetRelPath)
+      directoryOf(edge.sourceRelPath) !== directoryOf(edge.targetRelPath) &&
+      !isPythonInheritedSelfAccess(edge, classHierarchy)
       ? "python-underscore"
       : null;
   }
@@ -110,6 +117,45 @@ function isPythonConventionPrivate(shortName: string): boolean {
   return !(shortName.startsWith("__") && shortName.endsWith("__"));
 }
 
+/**
+ * A subclass reaching a member it inherited (bd tea-rags-mcp-r8hme.41): the
+ * call's receiver is `self`, `cls` or `super(...)` and names the target
+ * directly, and the target's class is an ancestor of the caller's class in
+ * the persisted hierarchy. `_x` is protected by convention, and a subclass is
+ * inside that convention — live flask read `Flask#handle_exception` →
+ * `App#_find_error_handler` as a leak. The Python analogue of the Ruby rule's
+ * "from outside its class". A module-level `_function` has no class, so it is
+ * never exempted.
+ */
+function isPythonInheritedSelfAccess(edge: NonPublicMemberEdge, classHierarchy: HierarchyView | undefined): boolean {
+  if (classHierarchy === undefined) return false;
+  const receiverMember = PYTHON_SELF_RECEIVER_MEMBER.exec(edge.callExpression)?.[1];
+  if (receiverMember !== edge.targetShortName) return false;
+  const targetClass = ownerClassOf(edge.targetSymbolId);
+  const sourceClass = ownerClassOf(edge.sourceSymbolId);
+  if (targetClass === undefined || sourceClass === undefined) return false;
+  return classHierarchy
+    .getAncestors(sourceClass, { transitive: true })
+    .some((ancestor) => ancestor.ancestorSymbolId === targetClass || ancestor.ancestorFqName === targetClass);
+}
+
+/**
+ * `self.<m>` / `cls.<m>` / `super().<m>` / `super(C, self).<m>` at the start
+ * of the call text, capturing `<m>` — the receiver is the instance or class
+ * itself, never an attribute reached through it (`self.app._m` captures `app`).
+ */
+const PYTHON_SELF_RECEIVER_MEMBER = /^\s*(?:self|cls|super\s*\([^()]*\))\s*\.\s*([A-Za-z_]\w*)/;
+
+/**
+ * The class a member symbol belongs to: the id before its member separator
+ * (`A.B#m` / `A.m` → `A.B` / `A`); `undefined` for a top-level function, which
+ * has none.
+ */
+function ownerClassOf(symbolId: string): string | undefined {
+  const cut = Math.max(symbolId.lastIndexOf("#"), symbolId.lastIndexOf("."));
+  return cut === -1 ? undefined : symbolId.slice(0, cut);
+}
+
 function sendNamesTarget(callExpression: string, targetShortName: string): boolean {
   for (const match of callExpression.matchAll(RUBY_SEND_LITERAL)) {
     if (match[1] === targetShortName) return true;
@@ -123,8 +169,7 @@ function sendNamesTarget(callExpression: string, targetShortName: string): boole
  * body or a top-level method — is its own owner.
  */
 function rubyOwnerOf(symbolId: string): string {
-  const cut = Math.max(symbolId.lastIndexOf("#"), symbolId.lastIndexOf("."));
-  return cut === -1 ? symbolId : symbolId.slice(0, cut);
+  return ownerClassOf(symbolId) ?? symbolId;
 }
 
 function directoryOf(relPath: RelPath): string {
