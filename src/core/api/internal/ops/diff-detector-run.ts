@@ -79,6 +79,23 @@ export interface DiffDetectorGraphReader {
   edgesTo: (relPath: string) => readonly { source: string; target: string }[];
 }
 
+/**
+ * The diff BASE's import edges of the changed sources (bd
+ * tea-rags-mcp-89k7k.1.16) — what "held before the change" means. An edge is
+ * diff-added iff it is absent at the base and present in the tree; the indexed
+ * graph cannot answer that once the index sits anywhere but the base (an index
+ * that caught up to a commit inside the diff range already holds the diff's own
+ * edges; one older than the base lacks edges the base held).
+ */
+export interface DiffDetectorBaseEdgeReader {
+  /**
+   * The targets `relPath` imported at the diff base: an empty set when the
+   * file is absent there or imports nothing; `undefined` when the base is
+   * unknown for this file — the indexed graph then decides, as before.
+   */
+  targetsAtBase: (relPath: string) => ReadonlySet<string> | undefined;
+}
+
 /** Component/facade facts the whole-repo report already derived — consumed, never recomputed. */
 export interface DiffDetectorCatalog {
   componentOf: (relPath: string) =>
@@ -168,6 +185,15 @@ export interface DiffDetectorRunDeps {
    * behavior), never zero of them.
    */
   graph?: DiffDetectorGraphReader;
+  /**
+   * The diff base's edges of the changed sources (see
+   * {@link DiffDetectorBaseEdgeReader}). When it answers for a source, it —
+   * not the indexed graph — decides the diff-added subtraction, the
+   * `preExisting` stamp and leakingAbstraction's pre-diff facade evidence for
+   * that source's edges. Absent, or `undefined` for a source = the indexed
+   * graph decides (the pre-89k7k.1.16 behavior).
+   */
+  baseEdges?: DiffDetectorBaseEdgeReader;
   catalog: DiffDetectorCatalog;
   /**
    * The production silent-coupling verdict (see
@@ -381,6 +407,7 @@ const FOUNDATION_CONTRACTS_PATH_SEGMENT = "contracts";
 
 export class DiffDetectorRun {
   private readonly graph: DiffDetectorGraphReader | undefined;
+  private readonly baseEdges: DiffDetectorBaseEdgeReader | undefined;
   private readonly catalog: DiffDetectorCatalog;
   private readonly silentCouplingFacts: DiffDetectorSilentCouplingFacts | undefined;
   private readonly contract: DiffDetectorContractReader | undefined;
@@ -391,6 +418,7 @@ export class DiffDetectorRun {
 
   constructor(deps: DiffDetectorRunDeps) {
     this.graph = deps.graph;
+    this.baseEdges = deps.baseEdges;
     this.catalog = deps.catalog;
     this.silentCouplingFacts = deps.silentCouplingFacts;
     this.contract = deps.contract;
@@ -402,7 +430,8 @@ export class DiffDetectorRun {
 
   /**
    * Judge one diff: the edges its changed files add (the overlay, minus the
-   * pairs the indexed graph already holds for the families that weigh
+   * pairs held before the change — at the diff base, else in the indexed
+   * graph; see `heldBeforeChange` — for the families that weigh
    * diff-added coupling — see the masking contract) against the indexed graph
    * and the report-derived facts. Findings come out grouped in the detectors'
    * order, each detector's own findings in edge/scope order — deterministic
@@ -416,7 +445,7 @@ export class DiffDetectorRun {
     // reach the two families that weigh "what the diff adds"; the per-edge
     // detectors whose predicate is about the edge AS READ (leakingAbstraction's
     // facade reach, cycles' closing edge) keep the overlay's own set.
-    const diffAddedEdges = diffAddedOverlayEdges(overlayEdges, this.graph);
+    const diffAddedEdges = overlayEdges.filter((edge) => this.heldBeforeChange(edge) === undefined);
     const stableDependencies = this.judgeStableDependencies(diffAddedEdges);
     const leakingAbstraction = this.judgeLeakingAbstraction(overlayEdges);
     const cycles = this.judgeCycles(overlayEdges, changed);
@@ -484,6 +513,28 @@ export class DiffDetectorRun {
   }
 
   /**
+   * Which evidence held the (source, target) pair BEFORE the change, or
+   * `undefined` when nothing did — the ONE predicate behind the diff-added
+   * subtraction (bd tea-rags-mcp-89k7k.14: a changed file's tree read
+   * re-serves every import it still holds, and judging that whole set read a
+   * one-line barrel edit as 23 new dependencies), the `preExisting`
+   * attribution of cycles / leakingAbstraction (bd tea-rags-mcp-89k7k.1.13)
+   * and leakingAbstraction's pre-diff facade evidence.
+   *
+   * The diff BASE decides whenever it answers for the source (bd
+   * tea-rags-mcp-89k7k.1.16): "added by this change" means absent at the
+   * merge-base and present in the tree, wherever the index sits. Only a
+   * source the base port cannot answer falls back to the indexed rows — the
+   * masking contract's deliberate changed-source read — and an absent port
+   * there answers `undefined`: a missing fact is never "already held".
+   */
+  private heldBeforeChange(edge: OverlayEdge): HeldBeforeChangeEvidence | undefined {
+    const atBase = this.baseEdges?.targetsAtBase(edge.source);
+    if (atBase !== undefined) return atBase.has(edge.target) ? "base" : undefined;
+    return indexedGraphHolds(this.graph, edge) ? "index" : undefined;
+  }
+
+  /**
    * Stable Dependencies over what the diff GENUINELY adds: an edge A -> B
    * whose target end is markedly less stable than its source end. The edge
    * set is the subtraction's output (bd tea-rags-mcp-89k7k.14) — a pair the
@@ -531,20 +582,22 @@ export class DiffDetectorRun {
       if (targetComponent === undefined) continue;
       const facade = this.catalog.facadeOf(targetComponent.name);
       if (facade === undefined || facade === edge.target) continue;
-      // Absent graph = no indexed facade evidence — absence is silence.
-      const viaFacade = this.graph?.edgesFrom(edge.source).some((indexed) => indexed.target === facade) ?? false;
+      // The pre-diff facade usage, judged at the base when the base answers
+      // (bd tea-rags-mcp-89k7k.1.16); absent evidence is silence.
+      const viaFacade = this.heldBeforeChange({ source: edge.source, target: facade }) !== undefined;
       if (!viaFacade) continue;
-      const preExisting = indexedGraphHolds(this.graph, edge);
+      const heldBy = this.heldBeforeChange(edge);
       const leak = `${edge.target} is internal to ${targetComponent.name}, whose facade ${facade} ${edge.source} imports`;
       findings.push({
         detector: "leakingAbstraction",
         subject: `${edge.source} -> ${edge.target}`,
         evidence: [`pre-existing ${edge.source} -> ${facade}`],
-        detail: preExisting
-          ? `the edge ${edge.source} -> ${edge.target} pre-dates the diff (the indexed graph already holds it): ` +
-            `${leak}; the leak is already in the index, the diff touches a file on it`
-          : `the diff reached past the facade ${edge.source} already uses: ${leak}`,
-        ...(preExisting ? { preExisting: true as const } : {}),
+        detail:
+          heldBy !== undefined
+            ? `the edge ${edge.source} -> ${edge.target} pre-dates the diff (${HELD_BY_WORDING[heldBy]}): ` +
+              `${leak}; the leak is already ${HELD_IN_WORDING[heldBy]}, the diff touches a file on it`
+            : `the diff reached past the facade ${edge.source} already uses: ${leak}`,
+        ...(heldBy !== undefined ? { preExisting: true as const } : {}),
       });
     }
     return findings;
@@ -563,18 +616,19 @@ export class DiffDetectorRun {
     for (const edge of edges) {
       const cyclePath = this.traceBackTo(edge.target, edge.source, changed);
       if (cyclePath === undefined) continue;
-      const preExisting = indexedGraphHolds(this.graph, edge);
+      const heldBy = this.heldBeforeChange(edge);
       findings.push({
         detector: "cycles",
         subject: `${edge.source} -> ${edge.target}`,
         evidence: [cyclePath.join(" -> ")],
-        detail: preExisting
-          ? `the edge ${edge.source} -> ${edge.target} pre-dates the diff (the indexed graph already holds it): ` +
-            `with the indexed path back to ${edge.source} the cycle is already in the index, the diff touches ` +
-            `a file on it`
-          : `the diff closes a cycle: the new edge ${edge.source} -> ${edge.target} plus the indexed path ` +
-            `back to ${edge.source}`,
-        ...(preExisting ? { preExisting: true as const } : {}),
+        detail:
+          heldBy !== undefined
+            ? `the edge ${edge.source} -> ${edge.target} pre-dates the diff (${HELD_BY_WORDING[heldBy]}): ` +
+              `with the indexed path back to ${edge.source} the cycle is already ${HELD_IN_WORDING[heldBy]}, ` +
+              `the diff touches a file on it`
+            : `the diff closes a cycle: the new edge ${edge.source} -> ${edge.target} plus the indexed path ` +
+              `back to ${edge.source}`,
+        ...(heldBy !== undefined ? { preExisting: true as const } : {}),
       });
     }
     return findings;
@@ -934,28 +988,23 @@ function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   else list.push(value);
 }
 
-/**
- * The overlay's unique pairs minus the pairs the indexed graph already holds
- * — the edges the diff GENUINELY adds (bd tea-rags-mcp-89k7k.14): a changed
- * file's tree read re-serves every import it still holds, and judging that
- * whole set read a one-line barrel edit as 23 new dependencies saturating
- * the barrel's component to I=1.000. The masking contract's SECOND deliberate
- * read of a changed source's indexed rows. Absent port, or a source with no
- * indexed rows, subtracts nothing — a missing fact is never "no edges added".
- */
-function diffAddedOverlayEdges(
-  overlayEdges: readonly OverlayEdge[],
-  graph: DiffDetectorGraphReader | undefined,
-): readonly OverlayEdge[] {
-  if (graph === undefined) return overlayEdges;
-  return overlayEdges.filter((edge) => !indexedGraphHolds(graph, edge));
-}
+/** Which evidence held an edge before the change — the parenthetical a `preExisting` detail cites. */
+type HeldBeforeChangeEvidence = "base" | "index";
+
+const HELD_BY_WORDING: Readonly<Record<HeldBeforeChangeEvidence, string>> = {
+  base: "the diff base already holds it",
+  index: "the indexed graph already holds it",
+};
+
+const HELD_IN_WORDING: Readonly<Record<HeldBeforeChangeEvidence, string>> = {
+  base: "at the diff base",
+  index: "in the index",
+};
 
 /**
- * Whether the indexed graph already holds the overlay edge's (source, target)
- * pair — the ONE predicate behind both the diff-added subtraction and the
- * `preExisting` attribution of cycles / leakingAbstraction (bd
- * tea-rags-mcp-89k7k.1.13). Absent port answers false: absence is an empty
+ * Whether the indexed graph holds the (source, target) pair — the fallback
+ * evidence of {@link DiffDetectorRun}'s `heldBeforeChange` for a source the
+ * base port does not answer. Absent port answers false: absence is an empty
  * graph, never "already indexed".
  */
 function indexedGraphHolds(graph: DiffDetectorGraphReader | undefined, edge: OverlayEdge): boolean {
