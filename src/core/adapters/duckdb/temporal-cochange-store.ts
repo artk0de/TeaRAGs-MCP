@@ -12,6 +12,7 @@
  */
 
 import type {
+  CochangeBurstWindowMethod,
   RelPath,
   TemporalCochangeBuildMeta,
   TemporalCochangeEdge,
@@ -52,7 +53,9 @@ interface MetaRow {
   max_files_per_bundle: number;
   min_support: number;
   max_partners_per_file: number;
-  session_gap_minutes: number | null;
+  admitted_burst_count: number | null;
+  burst_window_minutes: number | null;
+  burst_window_method: string | null;
 }
 
 interface EdgeRow {
@@ -81,7 +84,7 @@ export class DuckDbTemporalCochangeStore {
    * generation in the file (`DuckDbGraphSession#recreateEmptyTable`).
    */
   async replace(snapshot: TemporalCochangeSnapshot): Promise<void> {
-    const { meta, files, edges, bundles, bundleCommits } = snapshot;
+    const { meta, files, edges, bundles, bundleCommits, bundleBursts } = snapshot;
     await this.session.transaction(async () => {
       await this.session.recreateEmptyTable("cg_temporal_files");
       await this.session.recreateEmptyTable("cg_temporal_edges_cochange");
@@ -101,8 +104,12 @@ export class DuckDbTemporalCochangeStore {
       );
       await this.session.insertBatched(
         "cg_temporal_bundle_commits",
-        ["bundle_id", "commit_shas"],
-        (bundleCommits ?? []).map((shas, bundleId) => [bundleId, JSON.stringify(shas)]),
+        ["bundle_id", "commit_shas", "burst_id"],
+        (bundleCommits ?? []).map((shas, bundleId) => [
+          bundleId,
+          JSON.stringify(shas),
+          bundleBursts?.[bundleId] ?? null,
+        ]),
       );
       await this.session.insertBatched(
         "cg_temporal_meta",
@@ -118,7 +125,9 @@ export class DuckDbTemporalCochangeStore {
           "max_files_per_bundle",
           "min_support",
           "max_partners_per_file",
-          "session_gap_minutes",
+          "admitted_burst_count",
+          "burst_window_minutes",
+          "burst_window_method",
         ],
         [
           [
@@ -133,7 +142,9 @@ export class DuckDbTemporalCochangeStore {
             meta.maxFilesPerBundle,
             meta.minSupport,
             meta.maxPartnersPerFile,
-            meta.sessionGapMinutes,
+            meta.admittedBurstCount,
+            meta.burstWindowMinutes,
+            meta.burstWindowMethod,
           ],
         ],
       );
@@ -144,7 +155,8 @@ export class DuckDbTemporalCochangeStore {
   async readMeta(): Promise<TemporalCochangeBuildMeta | null> {
     const [row] = await this.session.queryAll<MetaRow>(
       `SELECT head, fingerprint, built_at, window_since, commit_count, bundle_count, admitted_bundle_count,
-              max_files_per_bundle, min_support, max_partners_per_file, session_gap_minutes
+              max_files_per_bundle, min_support, max_partners_per_file, admitted_burst_count,
+              burst_window_minutes, burst_window_method
        FROM cg_temporal_meta WHERE meta_key = ?`,
       [COCHANGE_META_KEY],
     );
@@ -160,7 +172,9 @@ export class DuckDbTemporalCochangeStore {
       maxFilesPerBundle: Number(row.max_files_per_bundle),
       minSupport: Number(row.min_support),
       maxPartnersPerFile: Number(row.max_partners_per_file),
-      sessionGapMinutes: row.session_gap_minutes === null ? null : Number(row.session_gap_minutes),
+      admittedBurstCount: row.admitted_burst_count === null ? null : Number(row.admitted_burst_count),
+      burstWindowMinutes: row.burst_window_minutes === null ? null : Number(row.burst_window_minutes),
+      burstWindowMethod: burstWindowMethodOf(row.burst_window_method),
     };
   }
 
@@ -225,6 +239,7 @@ export class DuckDbTemporalCochangeStore {
       edges: rows.map(edgeFromRow),
       bundles: await this.readBundleFiles(),
       bundleCommits: await this.readBundleCommits(),
+      bundleBursts: await this.readBundleBursts(),
     };
   }
 
@@ -259,6 +274,23 @@ export class DuckDbTemporalCochangeStore {
     );
     return new Map(rows.map((row) => [Number(row.bundle_id), JSON.parse(row.commit_shas) as string[]]));
   }
+
+  /**
+   * Each admitted bundle's author burst, keyed by bundle id (bd
+   * tea-rags-mcp-3vg0x) — what the significance gate counts per. Empty on a
+   * build that predates migration 044.
+   */
+  async readBundleBursts(): Promise<ReadonlyMap<number, number>> {
+    const rows = await this.session.queryAll<{ bundle_id: number; burst_id: number }>(
+      "SELECT bundle_id, burst_id FROM cg_temporal_bundle_commits WHERE burst_id IS NOT NULL ORDER BY bundle_id",
+    );
+    return new Map(rows.map((row) => [Number(row.bundle_id), Number(row.burst_id)]));
+  }
+}
+
+/** A stored method, `null` for a row predating it (or a value this build does not know). */
+function burstWindowMethodOf(stored: string | null): CochangeBurstWindowMethod | null {
+  return stored === "estimated" || stored === "fallback" ? stored : null;
 }
 
 function edgeRow(e: TemporalCochangeEdge): unknown[] {

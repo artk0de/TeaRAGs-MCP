@@ -44,11 +44,19 @@ function git(root: string, ...args: string[]): string {
   });
 }
 
+/**
+ * Fixture commits are a day apart, oldest first — wider than any burst window
+ * (bd tea-rags-mcp-3vg0x), so each commit is its own author burst — and well
+ * inside the 12-month history window.
+ */
+let fixtureDaysAgo = 60;
+
 /** A commit touching `files`, each rewritten to `// <file> <message>`. */
 function commitTouching(files: string[], message: string, extra: Record<string, string> = {}): GitHistoryCommit {
   const t = { name: "t", email: "t@x" };
   const writes = Object.fromEntries(files.map((file) => [file, `// ${file} ${message}\n`]));
-  return { message, author: t, authorDate: new Date(), writes: { ...extra, ...writes } };
+  const authorDate = new Date(Date.now() - fixtureDaysAgo-- * 86_400_000);
+  return { message, author: t, authorDate, writes: { ...extra, ...writes } };
 }
 
 describe(
@@ -93,7 +101,6 @@ describe(
         collectSymbols,
         collectionCompletionHooks: createTemporalCochangeHooks({
           windowMonths: 12,
-          sessionGapMinutes: null,
           vcsAdapter: "git",
           gitTimeoutMs: 30_000,
         }),

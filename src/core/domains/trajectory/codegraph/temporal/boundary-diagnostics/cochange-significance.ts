@@ -22,8 +22,14 @@
  * diff's F₂ files. A pair is admitted when BH rejects it AND its support
  * reaches the build's minimum support — one co-change is never coupling.
  *
+ * The counting unit is the author BURST, not the commit (bd tea-rags-mcp-3vg0x):
+ * the build records each commit bundle's burst, and n_f, M, Qs and supports are
+ * counted once per burst ({@link assessBurstCochangeSignificance}), so the null
+ * stays calibrated on histories where one author re-commits the same files in
+ * quick succession.
+ *
  * Pure: inputs are the bundle memberships the co-change read already carries
- * (`TemporalCochangeGraph#bundles`), so the gate costs no extra query.
+ * (`TemporalCochangeGraph#bundles`, `#bundleBursts`), so the gate costs no extra query.
  * Supports come from the bundles, never from the stored pair table, which the
  * per-file partner cap truncates.
  */
@@ -171,21 +177,64 @@ function pairKey(a: RelPath, b: RelPath): string {
 
 /**
  * Judge every pair of `family` against the configuration null over `bundles`
- * (the history H — already stripped of whatever must not count).
+ * (the history H — already stripped of whatever must not count), each bundle
+ * its own unit. {@link assessBurstCochangeSignificance} with one-commit bursts.
  */
 export function assessCochangeSignificance(
   bundles: Iterable<readonly RelPath[]>,
   family: CochangeSignificanceFamily,
   options: CochangeSignificanceOptions = {},
 ): CochangeSignificance {
-  const history = [...bundles].map((b) => [...new Set(b)]);
+  return assessBurstCochangeSignificance(
+    [...bundles].map((bundle) => [bundle]),
+    family,
+    options,
+  );
+}
+
+/** One burst's counting unit: the files it touched and the pairs one of its commits held. */
+interface BurstUnit {
+  files: RelPath[];
+  pairs: Map<string, { a: RelPath; b: RelPath }>;
+}
+
+/**
+ * Judge every pair of `family` against the configuration null over author
+ * BURSTS (bd tea-rags-mcp-3vg0x) — each burst the member commits' file lists.
+ * A burst is one unit, so a WIP spray re-committing a pair five times is one
+ * co-change: n_f = bursts touching f, M = Σ |files of the burst|, Qs = 2 ×
+ * Σ (distinct pairs ONE member commit held) — never the clique of the burst's
+ * union, which would pair files no commit held — and a pair's support is the
+ * bursts holding it. The research's dedup mode, calibrated on a
+ * burst-preserving null where per-commit counting was not.
+ */
+export function assessBurstCochangeSignificance(
+  bursts: Iterable<readonly (readonly RelPath[])[]>,
+  family: CochangeSignificanceFamily,
+  options: CochangeSignificanceOptions = {},
+): CochangeSignificance {
+  const history: BurstUnit[] = [];
+  for (const commits of bursts) {
+    const files = new Set<RelPath>();
+    const pairs = new Map<string, { a: RelPath; b: RelPath }>();
+    for (const commit of commits) {
+      const members = [...new Set(commit)];
+      for (const relPath of members) files.add(relPath);
+      for (let i = 0; i < members.length; i++) {
+        for (let j = i + 1; j < members.length; j++) {
+          pairs.set(pairKey(members[i], members[j]), { a: members[i], b: members[j] });
+        }
+      }
+    }
+    history.push({ files: [...files], pairs });
+  }
   const changes = new Map<RelPath, number>();
   let membership = 0;
   let pairSlots = 0;
-  for (const bundle of history) {
-    membership += bundle.length;
-    pairSlots += bundle.length * (bundle.length - 1);
-    for (const relPath of bundle) changes.set(relPath, (changes.get(relPath) ?? 0) + 1);
+  for (const unit of history) {
+    membership += unit.files.length;
+    pairSlots += 2 * unit.pairs.size;
+    for (const relPath of unit.files) changes.set(relPath, (changes.get(relPath) ?? 0) + 1);
   }
   const totals: CochangeHistoryTotals = { membership, pairSlots };
   const exists = options.exists ?? (() => true);
@@ -195,21 +244,16 @@ export function assessCochangeSignificance(
   const diff = family.kind === "query" ? new Set(family.diffFiles.filter((relPath) => f2.has(relPath))) : null;
   const familySize = diff ? queryCochangeFamilySize(diff.size, f2.size) : fullCochangeFamilySize(f2.size);
 
-  // Observed supports of the family's pairs — each bundle counts a pair once.
+  // Observed supports of the family's pairs — each burst counts a pair once.
   const supports = new Map<string, { a: RelPath; b: RelPath; support: number }>();
-  for (const bundle of history) {
-    const members = bundle.filter((relPath) => f2.has(relPath));
-    if (diff && !members.some((relPath) => diff.has(relPath))) continue;
-    for (let i = 0; i < members.length; i++) {
-      for (let j = i + 1; j < members.length; j++) {
-        const a = members[i];
-        const b = members[j];
-        if (diff && !diff.has(a) && !diff.has(b)) continue;
-        const key = pairKey(a, b);
-        const entry = supports.get(key);
-        if (entry) entry.support++;
-        else supports.set(key, { a, b, support: 1 });
-      }
+  for (const unit of history) {
+    if (diff && !unit.files.some((relPath) => diff.has(relPath))) continue;
+    for (const [key, { a, b }] of unit.pairs) {
+      if (!f2.has(a) || !f2.has(b)) continue;
+      if (diff && !diff.has(a) && !diff.has(b)) continue;
+      const entry = supports.get(key);
+      if (entry) entry.support++;
+      else supports.set(key, { a, b, support: 1 });
     }
   }
 
@@ -256,11 +300,12 @@ export function assessGraphCochangeSignificance(
   options: CochangeSignificanceOptions = {},
 ): CochangeSignificance | undefined {
   if (graph.bundles === undefined) return undefined;
-  if (family.kind === "full") return assessCochangeSignificance(graph.bundles.values(), family, options);
-  const diffCommits = new Set(family.diffCommits ?? []);
+  const diffCommits = new Set(family.kind === "query" ? (family.diffCommits ?? []) : []);
   const commitsOf = graph.bundleCommits;
   const bundleCommitsAvailable = commitsOf !== undefined && (graph.bundles.size === 0 || commitsOf.size > 0);
-  const history: (readonly RelPath[])[] = [];
+  // Bundles grouped into their author bursts; a bundle with no recorded burst
+  // (a build predating bd tea-rags-mcp-3vg0x) is its own.
+  const bursts = new Map<string, (readonly RelPath[])[]>();
   let excludedBundleCount = 0;
   for (const [bundleId, files] of graph.bundles) {
     const shas = commitsOf?.get(bundleId);
@@ -268,9 +313,14 @@ export function assessGraphCochangeSignificance(
       excludedBundleCount++;
       continue;
     }
-    history.push(files);
+    const burst = graph.bundleBursts?.get(bundleId);
+    const key = burst === undefined ? `bundle:${bundleId}` : `burst:${burst}`;
+    const members = bursts.get(key);
+    if (members) members.push(files);
+    else bursts.set(key, [files]);
   }
-  const significance = assessCochangeSignificance(history, family, options);
+  const significance = assessBurstCochangeSignificance(bursts.values(), family, options);
+  if (family.kind === "full") return significance;
   return {
     summary: { ...significance.summary, diffHistory: { excludedBundleCount, bundleCommitsAvailable } },
     admits: significance.admits,

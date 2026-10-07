@@ -953,14 +953,15 @@ export function wireCodegraph(
   // before any collection is pinned). The daemon socket is always set: the
   // worker connects to the SAME multi-client daemon that owns the RW lock.
   // Temporal co-change build (bd tea-rags-mcp-x4rpp): reads the SAME history the
-  // git trajectory walks — its window, session rule, adapter and timeout — so the
-  // two share one persisted discovery snapshot instead of evicting each other's.
-  // Git history off ⇒ no build; the trajectory still registers, empty.
+  // git trajectory walks — its window, adapter and timeout — so the two share one
+  // persisted discovery snapshot instead of evicting each other's. Its session
+  // rule is NOT shared: co-change bursts use a window derived from the history
+  // (bd tea-rags-mcp-3vg0x). Git history off ⇒ no build; the trajectory still
+  // registers, empty.
   const { trajectoryGit } = zodConfig;
   const temporal: TemporalCochangeConfig | undefined = trajectoryGit?.enabled
     ? {
         windowMonths: trajectoryGit.chunkMaxAgeMonths,
-        sessionGapMinutes: trajectoryGit.squashAwareSessions ? trajectoryGit.sessionGapMinutes : null,
         vcsAdapter: zodConfig.vcs?.adapter ?? "git",
         gitTimeoutMs: trajectoryGit.chunkTimeoutMs,
       }

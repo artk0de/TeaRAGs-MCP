@@ -41,7 +41,6 @@ describe("TemporalTrajectory", () => {
 
     const hooks = createTemporalCochangeHooks({
       windowMonths: 6,
-      sessionGapMinutes: null,
       vcsAdapter: "git",
       gitTimeoutMs: 120_000,
     });

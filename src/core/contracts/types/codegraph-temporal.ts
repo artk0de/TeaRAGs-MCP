@@ -1,7 +1,7 @@
 /**
  * Temporal co-change sub-graph (`cg_temporal_*`, bd tea-rags-mcp-x4rpp) — the
  * process-derived second graph of the codegraph family: which files change in
- * the same commit (or the same author session), measured as association rules.
+ * the same commit, measured as association rules counted once per author burst.
  *
  * The adapter stores and returns these rows; the extractor and every judgement
  * over them live in `domains/trajectory/codegraph/temporal/`.
@@ -17,7 +17,10 @@ import type { RelPath } from "./codegraph-symbols.js";
 /** One file's occurrence in the admitted co-change bundles — a `cg_temporal_files` row. */
 export interface TemporalCochangeFile {
   relPath: RelPath;
-  /** Admitted bundles (commits or sessions) that touched the file — the antecedent count of every rule on it. */
+  /**
+   * Author bursts with an admitted commit touching the file — the antecedent
+   * count of every rule on it (bd tea-rags-mcp-3vg0x: a burst counts a file once).
+   */
   bundleCount: number;
   /** Stored co-change partners after the per-file cap. */
   partnerCount: number;
@@ -32,7 +35,7 @@ export interface TemporalCochangeFile {
 export interface TemporalCochangeEdge {
   relPathA: RelPath;
   relPathB: RelPath;
-  /** Admitted bundles touching both files. */
+  /** Author bursts holding an admitted commit that touched both files. */
   support: number;
   /** P(B changes | A changes) = support / bundleCount(A). */
   confidenceAB: number;
@@ -42,7 +45,7 @@ export interface TemporalCochangeEdge {
   lift: number;
   /** Unix seconds of the newest bundle touching both files. */
   lastCoChangeAt: number;
-  /** Up to three commit SHAs of the newest bundles touching both files, newest first. */
+  /** Up to three commit SHAs touching both files, one per burst, newest first. */
   sampleCommits: string[];
 }
 
@@ -66,19 +69,37 @@ export interface TemporalCochangeBuildMeta {
   windowSince: number;
   /** Non-merge commits in the window that touched at least one in-scope file. */
   commitCount: number;
-  /** Bundles formed from those commits (= commitCount when session bundling is off). */
+  /** Bundles formed from those commits — one per commit, so equal to `commitCount`. */
   bundleCount: number;
-  /** Bundles at or below `maxFilesPerBundle` — the universe N every metric is counted over. */
+  /** Commit bundles at or below `maxFilesPerBundle`. */
   admittedBundleCount: number;
+  /**
+   * Author bursts holding an admitted commit — the universe N every metric is
+   * counted over. `null` = a build predating burst dedup (bd tea-rags-mcp-3vg0x).
+   */
+  admittedBurstCount: number | null;
   /** Adaptive mass-change cut: bundles touching more files than this are dropped. */
   maxFilesPerBundle: number;
   /** Pairs below this support are not stored. */
   minSupport: number;
   /** Per-file storage cap: an edge is kept when it ranks in the top N of either endpoint. */
   maxPartnersPerFile: number;
-  /** Author-session gap bundling commits, in minutes; `null` = one bundle per commit. */
-  sessionGapMinutes: number | null;
+  /**
+   * The burst window W in minutes: consecutive commits of one author identity
+   * less than W apart form one burst, inside which a file or a pair counts once.
+   * Derived per repository at build time. `null` = a build predating it.
+   */
+  burstWindowMinutes: number | null;
+  /** How W was chosen; `null` = a build predating it. */
+  burstWindowMethod: CochangeBurstWindowMethod | null;
 }
+
+/**
+ * `"estimated"` = the half-life of the excess file-set overlap between
+ * consecutive same-author commits; `"fallback"` = too little history to
+ * estimate, the fixed fallback window.
+ */
+export type CochangeBurstWindowMethod = "estimated" | "fallback";
 
 /** What one build writes, wholesale. */
 export interface TemporalCochangeSnapshot {
@@ -94,6 +115,8 @@ export interface TemporalCochangeSnapshot {
   bundles: readonly (readonly RelPath[])[];
   /** Each admitted bundle's commit SHAs, aligned with `bundles`; absent = not recorded. */
   bundleCommits?: readonly (readonly string[])[];
+  /** Each admitted bundle's author-burst id, aligned with `bundles`; absent = not recorded. */
+  bundleBursts?: readonly number[];
 }
 
 /** A stored co-change pair plus whether the structural graph links its endpoints. */
@@ -125,6 +148,13 @@ export interface TemporalCochangeGraph {
    * predates the table.
    */
   bundleCommits?: ReadonlyMap<number, readonly string[]>;
+  /**
+   * The author burst each admitted bundle belongs to, keyed by bundle id (bd
+   * tea-rags-mcp-3vg0x) — what lets the significance gate count a file or a
+   * pair once per burst. Absent or empty = the build predates it; every
+   * bundle is then its own burst.
+   */
+  bundleBursts?: ReadonlyMap<number, number>;
 }
 
 /**

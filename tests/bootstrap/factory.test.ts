@@ -559,7 +559,8 @@ describe("wireCodegraph", () => {
       },
       vcs: { adapter: "git" },
     } as unknown as ReturnType<typeof getZodConfig>;
-    const expected = { windowMonths: 6, sessionGapMinutes: 45, vcsAdapter: "git", gitTimeoutMs: 120_000 };
+    // Squash-aware sessions are on, yet the co-change config carries no session gap (bd tea-rags-mcp-3vg0x).
+    const expected = { windowMonths: 6, vcsAdapter: "git", gitTimeoutMs: 120_000 };
 
     const ctx = wireCodegraph(makeConfig(), withGit, new CollectionRegistry("/tmp/factory-test-registry"));
 

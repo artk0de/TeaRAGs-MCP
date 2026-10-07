@@ -963,7 +963,7 @@ function summariseSplitMerge(
 ): SplitMergeReportSummary {
   const { meta } = cochange;
   if (!meta) return { built: false, reason: "noCochangeBuild" };
-  const provenance = { head: meta.head, builtAt: meta.builtAt, sessionGapMinutes: meta.sessionGapMinutes };
+  const provenance = { head: meta.head, builtAt: meta.builtAt };
   if (!cochange.bundles || cochange.bundles.size === 0) {
     return { built: false, reason: "noBundleMembership", ...provenance };
   }

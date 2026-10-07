@@ -132,7 +132,9 @@ function cochangeMeta(head = "h"): TemporalCochangeBuildMeta {
     maxFilesPerBundle: 30,
     minSupport: 3,
     maxPartnersPerFile: 10,
-    sessionGapMinutes: null,
+    admittedBurstCount: 90,
+    burstWindowMinutes: 120,
+    burstWindowMethod: "fallback",
   };
 }
 

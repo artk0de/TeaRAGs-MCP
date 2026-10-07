@@ -40,7 +40,9 @@ const META: TemporalCochangeBuildMeta = {
   maxFilesPerBundle: 12,
   minSupport: 2,
   maxPartnersPerFile: 20,
-  sessionGapMinutes: null,
+  admittedBurstCount: 21,
+  burstWindowMinutes: 150,
+  burstWindowMethod: "estimated",
 };
 
 function edge(relPathA: string, relPathB: string, support = 3): TemporalCochangeEdge {
@@ -89,7 +91,28 @@ describe("DuckDbGraphClient — temporal co-change store (bd tea-rags-mcp-x4rpp)
       edges: [],
       bundles: new Map(),
       bundleCommits: new Map(),
+      bundleBursts: new Map(),
     });
+  });
+
+  // bd tea-rags-mcp-3vg0x: the burst each admitted bundle belongs to rides beside its commits.
+  it("round-trips each admitted bundle's author burst", async () => {
+    await db.replaceTemporalCochange({
+      ...snapshot([edge("a.ts", "b.ts")]),
+      bundles: [["a.ts", "b.ts"], ["a.ts"], ["c.yml"]],
+      bundleCommits: [["s3"], ["s2"], ["s1"]],
+      bundleBursts: [0, 0, 1],
+    });
+
+    const graph = await db.readTemporalCochangeGraph();
+    expect(graph.bundleBursts).toEqual(
+      new Map([
+        [0, 0],
+        [1, 0],
+        [2, 1],
+      ]),
+    );
+    expect(graph.bundleCommits?.get(2)).toEqual(["s1"]);
   });
 
   it("round-trips a build and replaces it wholesale on the next one", async () => {

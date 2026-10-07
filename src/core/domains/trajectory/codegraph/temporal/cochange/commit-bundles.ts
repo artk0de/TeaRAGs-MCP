@@ -1,15 +1,21 @@
 /**
- * Commit bundling — the unit of co-change (bd tea-rags-mcp-x4rpp, spec open
- * question 4).
+ * Commit bundling — the unit of co-change (bd tea-rags-mcp-x4rpp; burst rule
+ * bd tea-rags-mcp-3vg0x).
  *
- * A bundle is what "changed together" means: one commit, or — with the git
- * trajectory's squash-aware sessions on — one author session, grouped by the
- * SAME rule (`partitionIntoAuthorSessions`), so the two trajectories never
- * disagree about what a session is. The 9szed gate measured that session
- * bundling costs forgotten-change recall on taxdome (27.57% vs 29.44% top-3),
- * because a session erases short-range pairs; it follows the configured
- * `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` rather than being forced on, so an
- * agent-burst repository can opt in and every other stays per-commit.
+ * A bundle is ONE commit: "changed together" means committed together, so two
+ * files never pair because the same author touched them an hour apart. Each
+ * bundle is tagged with its author BURST — the maximal run of one author
+ * identity's commits whose consecutive gaps stay under the window W
+ * (`estimateBurstWindow`) — and the extractor counts a file or a pair at most
+ * once per burst, so a WIP spray re-committing the same two files five times
+ * is one co-change, not five.
+ *
+ * Bursts come from `partitionIntoAuthorSessions`, the git trajectory's one
+ * (author identity, gap) grouping rule, with the co-change build's own W. The
+ * earlier rule — the members of a 30-minute session UNIONED into one bundle —
+ * paired files no commit ever held together and chained concurrent agent
+ * commits into blobs; it is gone, and the build no longer reads
+ * `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS`.
  */
 
 import type { CommitInfo } from "../../../../../adapters/vcs/types.js";
@@ -22,33 +28,36 @@ export interface CochangeCommit {
   files: RelPath[];
 }
 
-/** Files that changed together, with the commits that changed them. */
+/** The files one commit changed together, and the author burst it belongs to. */
 export interface CochangeBundle {
-  /** Member commit SHAs, oldest first — the last one is the bundle's newest. */
+  /** The commit's SHA — exactly one; an array because the stored row is a list. */
   shas: string[];
-  /** Unix seconds of the newest member. */
+  /** Unix seconds of the commit. */
   timestamp: number;
   /** Distinct files, code-point sorted. */
   files: RelPath[];
+  /** Author-burst id: bundles sharing it count a file or a pair once. Opaque, unique per burst. */
+  burst: number;
 }
 
 /**
- * Bundle scoped commits, oldest bundle first. `sessionGapMinutes === null` →
- * one bundle per commit; a number → one per (author, gap) session.
+ * One bundle per commit, oldest first, each tagged with its author burst under
+ * `burstWindowMinutes` (consecutive commits of one identity less than W apart).
  */
 export function bundleCochangeCommits(
   commits: readonly CochangeCommit[],
-  sessionGapMinutes: number | null,
+  burstWindowMinutes: number,
 ): CochangeBundle[] {
-  const groups =
-    sessionGapMinutes === null
-      ? [...commits].sort((a, b) => a.commit.timestamp - b.commit.timestamp).map((c) => [c])
-      : partitionIntoAuthorSessions(commits, (c) => c.commit, sessionGapMinutes);
-  return groups.map((members) => ({
-    shas: members.map((m) => m.commit.sha),
-    timestamp: members[members.length - 1].commit.timestamp,
-    files: [...new Set(members.flatMap((m) => m.files))].sort(compareCodePoints),
-  }));
+  const bursts = partitionIntoAuthorSessions(commits, (c) => c.commit, burstWindowMinutes);
+  const bundles = bursts.flatMap((members, burst) =>
+    members.map((m) => ({
+      shas: [m.commit.sha],
+      timestamp: m.commit.timestamp,
+      files: [...new Set(m.files)].sort(compareCodePoints),
+      burst,
+    })),
+  );
+  return bundles.sort((a, b) => a.timestamp - b.timestamp || compareCodePoints(a.shas[0], b.shas[0]));
 }
 
 /** Locale-independent, so every machine orders paths the same way. */

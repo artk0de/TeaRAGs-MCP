@@ -207,10 +207,12 @@ export function detectSilentCoupling(
             windowSince: graph.meta.windowSince,
             commitCount: graph.meta.commitCount,
             admittedBundleCount: graph.meta.admittedBundleCount,
+            admittedBurstCount: graph.meta.admittedBurstCount,
             maxFilesPerBundle: graph.meta.maxFilesPerBundle,
             minSupport: graph.meta.minSupport,
             maxPartnersPerFile: graph.meta.maxPartnersPerFile,
-            sessionGapMinutes: graph.meta.sessionGapMinutes,
+            burstWindowMinutes: graph.meta.burstWindowMinutes,
+            burstWindowMethod: graph.meta.burstWindowMethod,
           },
         }
       : {}),

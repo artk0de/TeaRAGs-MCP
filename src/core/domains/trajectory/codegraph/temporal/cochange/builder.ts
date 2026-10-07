@@ -3,9 +3,10 @@
  * completion (bd tea-rags-mcp-x4rpp).
  *
  * history (discovery matrix, windowed) → scope to the project's LIVE paths
- * (tracked at HEAD, still in the working tree; renames followed) → bundle (per
- * commit, or per author session) → adaptive mass-change cut → association rules
- * with the storage cap → one wholesale snapshot.
+ * (tracked at HEAD, still in the working tree; renames followed) → the burst
+ * window W, derived from that history → one bundle per commit, tagged with its
+ * author burst → adaptive mass-change cut → association rules counted once per
+ * burst, with the storage cap → one wholesale snapshot.
  *
  * Every incremental index finalizes, so the build is gated on the provenance
  * row: same HEAD, same fingerprint (parameters, project subtree, and the working
@@ -37,6 +38,7 @@ import type {
   CodegraphCollectionCompletionContext,
   CodegraphCollectionCompletionHook,
 } from "../../collection-completion-hook.js";
+import { estimateBurstWindow } from "./burst-window.js";
 import { bundleCochangeCommits, compareCodePoints } from "./commit-bundles.js";
 import { scopeCochangeHistory } from "./history-scope.js";
 import { computeMassChangeCut, MASS_CHANGE_CEILING } from "./mass-change-cut.js";
@@ -56,8 +58,13 @@ export const TEMPORAL_COCHANGE_MIN_SUPPORT = 2;
  */
 export const TEMPORAL_COCHANGE_MAX_PARTNERS_PER_FILE = 20;
 
-/** Bump when the extraction semantics change, so every stored graph rebuilds. */
-const COCHANGE_ALGORITHM_REVISION = 2; // 2: per-bundle commit ids (bd tea-rags-mcp-89k7k.1.14)
+/**
+ * Bump when the extraction semantics change, so every stored graph rebuilds.
+ * Once per release: 2 covers both per-bundle commit ids (bd
+ * tea-rags-mcp-89k7k.1.14) and per-commit bundles with author-burst dedup (bd
+ * tea-rags-mcp-3vg0x), which shipped in the same release.
+ */
+const COCHANGE_ALGORITHM_REVISION = 2;
 
 /** The git trajectory's `chunkTimeoutMs` default. */
 const DEFAULT_GIT_TIMEOUT_MS = 120_000;
@@ -97,8 +104,6 @@ export interface TemporalCochangeHistorySource {
 export interface TemporalCochangeBuilderOptions {
   /** History window in months — the git trajectory's `chunkMaxAgeMonths`. */
   windowMonths: number;
-  /** Author-session gap bundling commits; `null` = one bundle per commit. */
-  sessionGapMinutes: number | null;
   /** `GIT_ADAPTER` for the default git history source; default `"git"` (the CLI). */
   vcsAdapter?: GitAdapterKind;
   /** Inactivity timeout for the default source's `git log`; the git trajectory's `chunkTimeoutMs`. */
@@ -186,7 +191,8 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
       fileExists: (relPath: RelPath) => live.has(`${projectPrefix}${relPath}`),
     });
     const t2 = this.now();
-    const bundles = bundleCochangeCommits(commits, this.options.sessionGapMinutes);
+    const burstWindow = estimateBurstWindow(commits);
+    const bundles = bundleCochangeCommits(commits, burstWindow.minutes);
     const maxFilesPerBundle = computeMassChangeCut(bundles.map((b) => b.files.length));
     const graph = extractCochangeGraph(bundles, {
       minSupport: TEMPORAL_COCHANGE_MIN_SUPPORT,
@@ -202,10 +208,12 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
       commitCount: commits.length,
       bundleCount: bundles.length,
       admittedBundleCount: graph.admittedBundleCount,
+      admittedBurstCount: graph.admittedBurstCount,
       maxFilesPerBundle,
       minSupport: TEMPORAL_COCHANGE_MIN_SUPPORT,
       maxPartnersPerFile: TEMPORAL_COCHANGE_MAX_PARTNERS_PER_FILE,
-      sessionGapMinutes: this.options.sessionGapMinutes,
+      burstWindowMinutes: burstWindow.minutes,
+      burstWindowMethod: burstWindow.method,
     };
     await graphDb.replaceTemporalCochange({
       meta,
@@ -213,6 +221,7 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
       edges: graph.edges,
       bundles: graph.admittedBundles,
       bundleCommits: graph.admittedBundleCommits,
+      bundleBursts: graph.admittedBundleBursts,
     });
     await this.flushSymbolCommits(graphDb, live, projectPrefix);
     const t4 = this.now();
@@ -226,6 +235,9 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
       commitCount: commits.length,
       bundleCount: bundles.length,
       admittedBundleCount: graph.admittedBundleCount,
+      admittedBurstCount: graph.admittedBurstCount,
+      burstWindowMinutes: burstWindow.minutes,
+      burstWindowMethod: burstWindow.method,
       maxFilesPerBundle,
       fileCount: graph.files.length,
       edgeCount: graph.edges.length,
@@ -276,7 +288,6 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
         JSON.stringify({
           revision: COCHANGE_ALGORITHM_REVISION,
           windowMonths: this.options.windowMonths,
-          sessionGapMinutes: this.options.sessionGapMinutes,
           minSupport: TEMPORAL_COCHANGE_MIN_SUPPORT,
           maxPartnersPerFile: TEMPORAL_COCHANGE_MAX_PARTNERS_PER_FILE,
           massChangeCeiling: MASS_CHANGE_CEILING,
