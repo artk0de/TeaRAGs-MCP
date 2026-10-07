@@ -170,18 +170,26 @@ describe("get_naming_lexicon", () => {
   });
 
   // bd tea-rags-mcp-89k7k: the diff review moved to `review_changes` — the
-  // naming tool no longer takes `changes`/`files`. The SDK's zod parse strips
-  // unknown keys, so a stray `changes` beside a valid request is inert (the
-  // handler never sees it); a changes-only request fails the at-least-one
-  // refine at the boundary.
+  // naming tool no longer takes `changes`/`files`. bd tea-rags-mcp-89k7k.1.15:
+  // a stray `changes`/`files` beside a valid request used to be stripped
+  // silently, so a stale caller got a vocabulary answer and believed it had
+  // reviewed a diff. Both keys are now rejected, with an error that names the
+  // tool that owns diff review.
   it("no longer takes `changes` or `files` — the diff review lives in review_changes", () => {
     const { inputSchema, description } = registered().config;
     expect(inputSchema.safeParse({ project: "p", changes: {} }).success).toBe(false);
     expect(inputSchema.safeParse({ project: "p", files: ["src/a.ts"] }).success).toBe(false);
-    const parsed = inputSchema.safeParse({ project: "p", changes: {}, types: ["Doc"] });
-    expect(parsed.success).toBe(true);
-    expect(parsed.success && parsed.data).toEqual({ project: "p", types: ["Doc"] });
     expect(description).not.toMatch(/changes/);
+  });
+
+  it("rejects `changes` or `files` beside a valid request, naming review_changes as the diff-review owner", () => {
+    const { inputSchema } = registered().config;
+    for (const stale of [{ changes: { base: "main" } }, { files: ["src/a.ts"] }]) {
+      const parsed = inputSchema.safeParse({ project: "p", names: [{ name: "row" }], ...stale });
+      expect(parsed.success, JSON.stringify(stale)).toBe(false);
+      const issue = parsed.error?.issues.find((i) => i.path[0] === Object.keys(stale)[0]);
+      expect(issue?.message).toMatch(/review_changes/);
+    }
   });
 
   it("keeps one-line field descriptions and no examples", () => {

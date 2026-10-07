@@ -262,6 +262,9 @@ const NAMING_LEXICON_DESCRIPTION =
   "MISFIT{suggestion}|NEW_TERM{topTerms}|NO_CONVENTION{prefer}|COLLISION,+alternatives,genericName; " +
   "`concept`+`language`→terms.";
 
+/** Diff-review params `get_naming_lexicon` dropped when `review_changes` took them over (bd tea-rags-mcp-89k7k). */
+const REMOVED_NAMING_LEXICON_DIFF_PARAMS = ["changes", "files"] as const;
+
 function buildNamingLexiconInputSchema() {
   const draftName = z.object({
     name: z.string().min(1),
@@ -275,32 +278,52 @@ function buildNamingLexiconInputSchema() {
     path: z.string().optional(),
     extends: z.string().optional(),
   });
-  return z
-    .object({
-      ...collectionPathFields(),
-      pathPattern: z.string().optional().describe("Glob"),
-      language: z.string().optional(),
-      types: z.array(z.string()).optional(),
-      anchors: z.array(z.string()).optional().describe("SymbolIds: +param/return types"),
-      concept: z.string().optional().describe("Domain, not a name"),
-      names: z.array(draftName).optional(),
-    })
-    .refine(
-      (req) =>
-        (req.types?.length ?? 0) > 0 ||
-        (req.anchors?.length ?? 0) > 0 ||
-        (req.names?.length ?? 0) > 0 ||
-        (req.concept ?? "").length > 0,
-      { message: "Provide at least one of types, anchors, concept, names" },
-    )
-    .refine((req) => req.concept === undefined || req.language !== undefined, {
-      message: "concept requires language",
-      path: ["language"],
-    })
-    .refine((req) => (req.names ?? []).every((draft) => draft.kind !== "type" || draft.path !== undefined), {
-      message: "a kind 'type' draft requires path",
-      path: ["names"],
-    });
+  return (
+    z
+      .object({
+        ...collectionPathFields(),
+        pathPattern: z.string().optional().describe("Glob"),
+        language: z.string().optional(),
+        types: z.array(z.string()).optional(),
+        anchors: z.array(z.string()).optional().describe("SymbolIds: +param/return types"),
+        concept: z.string().optional().describe("Domain, not a name"),
+        names: z.array(draftName).optional(),
+      })
+      // bd tea-rags-mcp-89k7k.1.15: the default strip dropped the removed
+      // `changes`/`files` params before any refine saw them, so a stale caller
+      // got a vocabulary answer and believed it had reviewed a diff. `loose`
+      // keeps them visible to the check below. Not `strict`: no other MCP tool
+      // schema rejects unknown keys, and only these two carry a meaning a caller
+      // can still rely on.
+      .loose()
+      .superRefine((req, ctx) => {
+        for (const removed of REMOVED_NAMING_LEXICON_DIFF_PARAMS) {
+          if (removed in req) {
+            ctx.addIssue({
+              code: "custom",
+              path: [removed],
+              message: `'${removed}' was removed: diff review moved to review_changes (sections: ["naming"])`,
+            });
+          }
+        }
+      })
+      .refine(
+        (req) =>
+          (req.types?.length ?? 0) > 0 ||
+          (req.anchors?.length ?? 0) > 0 ||
+          (req.names?.length ?? 0) > 0 ||
+          (req.concept ?? "").length > 0,
+        { message: "Provide at least one of types, anchors, concept, names" },
+      )
+      .refine((req) => req.concept === undefined || req.language !== undefined, {
+        message: "concept requires language",
+        path: ["language"],
+      })
+      .refine((req) => (req.names ?? []).every((draft) => draft.kind !== "type" || draft.path !== undefined), {
+        message: "a kind 'type' draft requires path",
+        path: ["names"],
+      })
+  );
 }
 
 /**
@@ -327,7 +350,9 @@ type CodegraphSchemas = ReturnType<typeof createCodegraphSchemas>;
  * One row of the codegraph tool table — same shape as `SearchToolDef` in
  * explore.ts. The SDK's zod parse strips unknown keys and applies defaults, so
  * `invoke` receives exactly the schema's fields and casts the parsed input to
- * the App method's request DTO.
+ * the App method's request DTO. `get_naming_lexicon` is the one loose
+ * schema (bd tea-rags-mcp-89k7k.1.15): unknown keys reach its handler, which
+ * reads only the DTO fields.
  */
 interface CodegraphToolDef {
   name: string;
