@@ -633,12 +633,13 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     const names = await this.fileChurnDiscoveryFor(root)
       .authorNames()
       .catch((error: unknown): AuthorNameDirectory => {
-        if (isDebug()) {
-          console.error(
-            `[GitEnrich] author-name directory unavailable, naming per tally:`,
-            error instanceof Error ? error.message : error,
-          );
-        }
+        // Warning, not debug: a real adapter failure must not silently degrade
+        // naming (bd tea-rags-mcp-214ib). The fallback itself is unchanged.
+        console.warn(
+          `[GitEnrich] author-name directory unavailable, naming per tally: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
         return new Map();
       });
     const named = (lines: BlameLine[]): BlameLine[] => canonicalizeAuthorNames(lines, names) as BlameLine[];

@@ -205,12 +205,15 @@ their own navigators.
   `FileChurnDiscovery#fileChurn`, read via `authorNames()`). Commits are
   rewritten to it after the discovery and blame lines after the blame cache
   (`canonicalizeAuthorNames`); persisted caches keep raw names, so a warm cache
-  cannot pin a stale one. An identity seen only in blame falls back to
-  `tallyAuthors`' per-tally rule. The three persisted author caches stamp
-  `readMailmapFingerprint` and miss on a different one. Why: `artk0de` and
-  `Arthur Korochansky`, one address, counted as two contributors and split one
-  burst into two sessions on this repo (bd tea-rags-mcp-nsxzh). New code that
-  groups or counts authors must key by identity, never by `author`.
+  cannot pin a stale one. The working-tree overlay (`buildOnDemandGitSignals`)
+  has no discovery, so it builds the same directory from the persisted
+  file-churn snapshot's in-window entries (no git log; no snapshot → per-file
+  names). An identity seen only in blame falls back to `tallyAuthors`' per-tally
+  rule. The three persisted author caches stamp `readMailmapFingerprint` and
+  miss on a different one. Why: `artk0de` and `Arthur Korochansky`, one address,
+  counted as two contributors and split one burst into two sessions on this repo
+  (bd tea-rags-mcp-nsxzh). New code that groups or counts authors must key by
+  identity, never by `author`.
 - **With squash-aware sessions on, `commitCount` is a SESSION count and only
   some signals follow.** `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS=true` groups
   commits per author (gap ≥ `sessionGapMinutes`, default 30; merge commits

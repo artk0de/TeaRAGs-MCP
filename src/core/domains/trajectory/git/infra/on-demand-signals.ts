@@ -35,7 +35,10 @@ import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
 import type { BlameLine, CommitWithChangedFiles, FileChurnData } from "../../../../adapters/vcs/types.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import type { ChunkChurnOverlay, GitFileSignals } from "../types.js";
+import { buildAuthorNameDirectory, canonicalizeAuthorNames, type AuthorNameDirectory } from "./author-identity.js";
 import { buildChunkChurnMapUncached, type WalkCommitDiscovery } from "./chunk-reader.js";
+import { FileChurnDiscoveryStore } from "./file-churn-discovery-store.js";
+import { fileChurnWindowOf, type FileChurnDiscoveryPersistence } from "./file-churn-discovery.js";
 import {
   addDormantFileChurn,
   anchorFileChurn,
@@ -86,6 +89,12 @@ export interface OnDemandGitSignalOptions {
    * time, read once per call. Absent ⇒ `now`, the wall clock.
    */
   anchor?: GitHistoryAnchorMode;
+  /**
+   * Where the run-scoped file-churn snapshot is read from for the canonical
+   * author names (default: the on-disk `FileChurnDiscoveryStore` an index run
+   * writes). Never written here.
+   */
+  churnStore?: FileChurnDiscoveryPersistence;
 }
 
 /** The options with the history anchor resolved once for the whole call. */
@@ -117,10 +126,14 @@ export async function buildOnDemandGitSignals(
   const historyAnchorSec = await resolveHistoryAnchorSec(adapter, callOptions.anchor ?? "now", callOptions.timeoutMs);
   const options: AnchoredOnDemandOptions =
     historyAnchorSec === undefined ? callOptions : { ...callOptions, historyAnchorSec };
-  const churn = await fileChurnOf(
-    adapter,
-    targets.map((target) => target.relPath),
-    options,
+  const names = await persistedAuthorNames(adapter, options);
+  const churn = canonicalizeChurnNames(
+    await fileChurnOf(
+      adapter,
+      targets.map((target) => target.relPath),
+      options,
+    ),
+    names,
   );
   // A dormant file (no commit in the window, history before it) has history.
   const withHistory = targets.filter((target) => churn.has(target.relPath));
@@ -128,7 +141,7 @@ export async function buildOnDemandGitSignals(
   await walkNeverCommitted(adapter, neverCommitted, options, result);
   if (withHistory.length === 0) return result;
 
-  const blameByPath = await blameAtHead(adapter, withHistory, churn, options.timeoutMs);
+  const blameByPath = await blameAtHead(adapter, withHistory, churn, options.timeoutMs, names);
   for (const target of withHistory) {
     const data = churn.get(target.relPath) as WindowedFileChurn;
     result.set(target.relPath, {
@@ -310,6 +323,7 @@ async function blameAtHead(
   targets: readonly OnDemandGitSignalTarget[],
   churn: ReadonlyMap<string, FileChurnData>,
   timeoutMs: number,
+  names: AuthorNameDirectory,
 ): Promise<Map<string, BlameLine[]>> {
   const blameByPath = new Map<string, BlameLine[]>();
   for (let i = 0; i < targets.length; i += BLAME_CONCURRENCY) {
@@ -317,9 +331,51 @@ async function blameAtHead(
       targets.slice(i, i + BLAME_CONCURRENCY).map(async ({ relPath }) => {
         const depth = churn.get(relPath)?.commits.length;
         const lines = await adapter.blameFile(relPath, timeoutMs, depth).catch(() => undefined);
-        if (lines && lines.length > 0) blameByPath.set(relPath, lines);
+        if (lines && lines.length > 0) blameByPath.set(relPath, canonicalizeAuthorNames(lines, names) as BlameLine[]);
       }),
     );
   }
   return blameByPath;
+}
+
+/**
+ * The canonical author names an index run shows (`author-identity.ts`), read
+ * from the repo-wide window commits of the persisted file-churn snapshot — the
+ * exact-HEAD one, else the newest — with NO git log of its own: a query-time
+ * read must not pay a repository walk per call. The overlay has no
+ * `FileChurnDiscovery` (its churn is per path), so it reads the snapshot that
+ * discovery persists; a head that moved since the snapshot only means newer
+ * commits are not in the tally. No snapshot (never indexed here, no window
+ * configured, unreadable store) → an empty directory: names stay per file.
+ */
+async function persistedAuthorNames(
+  adapter: VcsGitAdapter,
+  options: AnchoredOnDemandOptions,
+): Promise<AuthorNameDirectory> {
+  if (!options.file) return new Map();
+  try {
+    const store = options.churnStore ?? new FileChurnDiscoveryStore();
+    const snapshot = store.load(adapter.repoRoot, await adapter.getHead()) ?? store.loadLatest(adapter.repoRoot);
+    if (!snapshot) return new Map();
+    const { lowerBoundSec } = fileChurnWindowOf(options.file.maxAgeMonths, options.historyAnchorSec);
+    return buildAuthorNameDirectory(
+      snapshot.entries.filter((entry) => entry.committerTimestamp >= lowerBoundSec).map((entry) => entry.commit),
+    );
+  } catch {
+    return new Map();
+  }
+}
+
+/** The churn map with each entry's commits rewritten to the canonical names; untouched when nothing changes. */
+function canonicalizeChurnNames(
+  churn: Map<string, WindowedFileChurn>,
+  names: AuthorNameDirectory,
+): Map<string, WindowedFileChurn> {
+  if (names.size === 0) return churn;
+  return new Map(
+    [...churn].map(([path, data]) => {
+      const commits = canonicalizeAuthorNames(data.commits, names) as WindowedFileChurn["commits"];
+      return [path, commits === data.commits ? data : { ...data, commits }];
+    }),
+  );
 }

@@ -776,6 +776,22 @@ describe("GitEnrichmentProvider", () => {
       expect(pooledPaths()).toEqual(["a.ts", "a.ts"]);
     });
 
+    it("warns, naming the error, when the author-name directory is unavailable — and still produces signals (bd 214ib)", async () => {
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+      const root = uniqueRoot("names-warn");
+      blamePoolBlame.mockImplementation(async (_root: string, _kind: string, files: PoolFile[]) => {
+        return new Map(files.map(({ relPath }) => [relPath, [line(`sha-${relPath}`)]]));
+      });
+      vi.spyOn(FileChurnDiscovery.prototype, "authorNames").mockRejectedValueOnce(new Error("git log exploded"));
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      const result = await provider.buildFileSignals(root, { paths: ["a.ts"] });
+
+      expect(result.has("a.ts")).toBe(true);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("git log exploded"));
+      warn.mockRestore();
+    });
+
     it("finalizeSignals drops the run-scoped blame map so the next run re-blames", async () => {
       vi.mocked(nodeFs.existsSync).mockReturnValue(true);
       const root = uniqueRoot("finalize");
