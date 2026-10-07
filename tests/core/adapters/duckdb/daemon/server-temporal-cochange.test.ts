@@ -44,7 +44,9 @@ const SNAPSHOT: TemporalCochangeSnapshot = {
     maxFilesPerBundle: 4,
     minSupport: 2,
     maxPartnersPerFile: 20,
-    sessionGapMinutes: 30,
+    admittedBurstCount: 2,
+    burstWindowMinutes: 120,
+    burstWindowMethod: "fallback",
   },
   files: [
     { relPath: "a.ts", bundleCount: 3, partnerCount: 1, lastChangedAt: 90 },
@@ -63,6 +65,8 @@ const SNAPSHOT: TemporalCochangeSnapshot = {
     },
   ],
   bundles: [["a.ts", "b.yml"]],
+  bundleCommits: [["s2"]],
+  bundleBursts: [0],
 };
 
 describe("CodegraphDaemonServer.handle — temporal co-change ops", () => {
@@ -91,7 +95,8 @@ describe("CodegraphDaemonServer.handle — temporal co-change ops", () => {
       meta: SNAPSHOT.meta,
       edges: [{ ...SNAPSHOT.edges[0], structurallyLinked: false }],
       bundles: [[0, ["a.ts", "b.yml"]]],
-      bundleCommits: [],
+      bundleCommits: [[0, ["s2"]]],
+      bundleBursts: [[0, 0]],
     });
     expect((bundleFiles as { result: unknown }).result).toEqual([[0, ["a.ts", "b.yml"]]]);
     await pool.closeAll();

@@ -463,6 +463,18 @@
   would still stamp an `enrichedAt` marker on every point of every index and
   enter the recovery scan, for tables that live in DuckDB only.
 
+- **Co-change counts per author burst, never per session union.** A bundle is
+  one commit; `bundleCochangeCommits` tags it with its burst (one author
+  identity's commits less than W apart) and every count — the extractor's
+  supports and the significance gate's n_f / M / Qs — counts a file or a pair
+  once per burst, a pair only when ONE commit held it (bd tea-rags-mcp-3vg0x). W
+  comes from the history itself (`estimateBurstWindow`) and is recorded in
+  `cg_temporal_meta`; the build never reads the git trajectory's squash-aware
+  session settings, so flipping `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` moves git
+  signals only. Why: 30-minute session unions paired files no commit held and
+  chained concurrent agent commits into blobs, while plain per-commit counting
+  is overconfident on WIP sprays (burst-preserving null).
+
 ## Gotchas
 
 - **`codegraph.file.instability` is sampled over the files the graph actually

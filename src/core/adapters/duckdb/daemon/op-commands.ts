@@ -441,7 +441,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   readFileDependencyGraph: read(async (graphDb) => graphDb.readFileDependencyGraph()),
   readNonPublicMemberEdges: read(async (graphDb, p) => graphDb.readNonPublicMemberEdges(p.languages as string[])),
   readTemporalCochangeMeta: read(async (graphDb) => graphDb.readTemporalCochangeMeta()),
-  // The graph's bundle membership and bundle commits are Maps — entries on
+  // The graph's bundle membership, commits and bursts are Maps — entries on
   // the wire, rebuilt by the client. Absent maps (an older daemon's build)
   // travel absent.
   readTemporalCochangeGraph: read(async (graphDb) => {
@@ -450,6 +450,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
       ...graph,
       ...(graph.bundles ? { bundles: [...graph.bundles.entries()] } : {}),
       ...(graph.bundleCommits ? { bundleCommits: [...graph.bundleCommits.entries()] } : {}),
+      ...(graph.bundleBursts ? { bundleBursts: [...graph.bundleBursts.entries()] } : {}),
     };
   }),
   readTemporalBundleFiles: read(async (graphDb) => [...(await graphDb.readTemporalBundleFiles()).entries()]),

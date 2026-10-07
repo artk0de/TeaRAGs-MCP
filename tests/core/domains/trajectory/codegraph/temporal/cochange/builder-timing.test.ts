@@ -19,7 +19,8 @@ import {
 import { setDebug } from "../../../../../../../src/core/infra/runtime.js";
 
 const NOW_MS = 1_760_000_000_000;
-const HOUR = 3600;
+/** A day: wider than any burst window (bd tea-rags-mcp-3vg0x), so the two commits are two bursts. */
+const DAY = 86_400;
 
 function entry(sha: string, timestamp: number, paths: string[]) {
   return {
@@ -29,7 +30,7 @@ function entry(sha: string, timestamp: number, paths: string[]) {
 }
 
 /** Newest first, two committed pairs — enough for a nonzero build. */
-const HISTORY = [entry("s2", 2 * HOUR, ["a.ts", "b.ts"]), entry("s1", 1 * HOUR, ["a.ts", "b.ts"])];
+const HISTORY = [entry("s2", 2 * DAY, ["a.ts", "b.ts"]), entry("s1", 1 * DAY, ["a.ts", "b.ts"])];
 
 function historySource(head: string): TemporalCochangeHistorySource {
   return {
@@ -63,7 +64,6 @@ function builder(source: TemporalCochangeHistorySource, clock: number[]) {
   const queue = [...clock];
   return new TemporalCochangeBuilder({
     windowMonths: 6,
-    sessionGapMinutes: null,
     historySource: source,
     now: () => queue.shift() ?? NOW_MS,
   });

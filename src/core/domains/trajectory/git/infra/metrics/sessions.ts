@@ -21,10 +21,10 @@ export interface Session {
 /**
  * Partition items into sessions by (author, time gap), keeping every member.
  *
- * The ONE grouping rule behind squash-aware sessions: `groupIntoSessions`
- * reduces each partition to counts, and the co-change extractor
- * (`trajectory/codegraph/temporal`) unions the members' changed files into one
- * bundle. Members are ordered oldest first; sessions by their last member's
+ * The ONE (author identity, gap) grouping rule: `groupIntoSessions` reduces
+ * each partition to counts for squash-aware sessions, and the co-change build
+ * (`trajectory/codegraph/temporal`) reads each partition as an author burst
+ * under its own history-derived gap. Members are ordered oldest first; sessions by their last member's
  * timestamp ascending (stable, so equal timestamps keep author-first-seen order).
  * No merge filtering here — callers decide what a session may contain.
  *

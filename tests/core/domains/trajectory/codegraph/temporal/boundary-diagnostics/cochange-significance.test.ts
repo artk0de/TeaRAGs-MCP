@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 
 import type { TemporalCochangeGraph } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
+  assessBurstCochangeSignificance,
   assessCochangeSignificance,
   assessGraphCochangeSignificance,
   benjaminiHochbergRejectionCount,
@@ -187,6 +188,82 @@ describe("assessCochangeSignificance", () => {
   });
 });
 
+/** Deterministic PRNG for the shuffled fixtures. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * A burst-shuffled history: `bursts` author bursts, each ONE random two-file
+ * commit re-committed `repeats` times (a WIP spray). File choice is uniform,
+ * so no pair truly co-changes; only the repeats inside a burst correlate.
+ */
+function shuffledBurstCorpus(bursts: number, repeats: number, seed: number): string[][][] {
+  const rng = mulberry32(seed);
+  const files = Array.from({ length: 40 }, (_, i) => `src/r${i}.ts`);
+  const corpus: string[][][] = [];
+  for (let b = 0; b < bursts; b++) {
+    const first = Math.floor(rng() * files.length);
+    let second = Math.floor(rng() * (files.length - 1));
+    if (second >= first) second++;
+    corpus.push(Array.from({ length: repeats }, () => [files[first], files[second]]));
+  }
+  return corpus;
+}
+
+describe("assessBurstCochangeSignificance (bd tea-rags-mcp-3vg0x)", () => {
+  it("counts n_f, M, Qs and supports per burst: a burst's repeats count once", () => {
+    // Burst 1: p~q five times; burst 2: p~q, then p~r (no q~r commit); burst 3: q alone.
+    const bursts = [
+      Array.from({ length: 5 }, () => ["src/p.ts", "src/q.ts"]),
+      [
+        ["src/p.ts", "src/q.ts"],
+        ["src/p.ts", "src/r.ts"],
+      ],
+      [["src/q.ts"]],
+    ];
+
+    const significance = assessBurstCochangeSignificance(bursts, { kind: "full" });
+
+    // n_p = 2, n_q = 3, n_r = 1; M = 2 + 3 + 1 = 6; Qs = 2·(1 + 2 + 0) = 6 — distinct
+    // pairs of the member commits, never the union's clique (q~r never co-committed).
+    const lambda = configurationNullRate(2, 3, { membership: 6, pairSlots: 6 });
+    expect(significance.expectedSupport("src/p.ts", "src/q.ts")).toBeCloseTo(lambda, 15);
+    expect(significance.summary.testedPairCount).toBe(1);
+  });
+
+  it("equals the per-bundle judgement when every burst holds one commit", () => {
+    const corpus = hubCorpus();
+    const perBundle = assessCochangeSignificance(corpus, { kind: "full" });
+    const perBurst = assessBurstCochangeSignificance(
+      corpus.map((b) => [b]),
+      { kind: "full" },
+    );
+
+    expect(perBurst.summary).toEqual(perBundle.summary);
+    expect(perBurst.expectedSupport("src/x.ts", "src/y.ts")).toBe(perBundle.expectedSupport("src/x.ts", "src/y.ts"));
+  });
+
+  it("admits nothing on a burst-shuffled history once the repeats are deduplicated", () => {
+    for (const seed of [1, 2, 3]) {
+      const corpus = shuffledBurstCorpus(400, 5, seed);
+      expect(assessBurstCochangeSignificance(corpus, { kind: "full" }).summary.admittedPairCount).toBe(0);
+    }
+  });
+
+  it("is what keeps the shuffled history quiet: counting every commit is overconfident on it", () => {
+    const corpus = shuffledBurstCorpus(400, 5, 1);
+    expect(assessCochangeSignificance(corpus.flat(), { kind: "full" }).summary.admittedPairCount).toBeGreaterThan(0);
+  });
+});
+
 describe("assessGraphCochangeSignificance", () => {
   const graphOf = (bundles: string[][], commits?: string[][]): TemporalCochangeGraph => ({
     meta: null,
@@ -227,5 +304,43 @@ describe("assessGraphCochangeSignificance", () => {
       diffCommits: ["sha1"],
     });
     expect(significance?.summary.diffHistory).toEqual({ excludedBundleCount: 0, bundleCommitsAvailable: false });
+  });
+
+  describe("author bursts (bd tea-rags-mcp-3vg0x)", () => {
+    const withBursts = (bundles: string[][], bursts: number[], commits?: string[][]): TemporalCochangeGraph => ({
+      ...graphOf(bundles, commits),
+      bundleBursts: new Map(bursts.map((burst, id) => [id, burst])),
+    });
+
+    it("judges a burst's repeated commits as one co-change", () => {
+      const bundles = hubCorpus();
+      // hubCorpus's last 8 bundles are x~y; put them all in one burst.
+      const bursts = bundles.map((_, id) => (id >= bundles.length - 8 ? -1 : id));
+
+      const deduped = assessGraphCochangeSignificance(withBursts(bundles, bursts), { kind: "full" });
+      const perCommit = assessGraphCochangeSignificance(graphOf(bundles), { kind: "full" });
+
+      expect(perCommit?.admits("src/x.ts", "src/y.ts")).toBe(true);
+      expect(deduped?.admits("src/x.ts", "src/y.ts")).toBe(false);
+    });
+
+    it("drops only the diff's own commits from a burst; the burst's other commits still count", () => {
+      const bundles = hubCorpus();
+      const commits = bundles.map((_, id) => [`sha${id}`]);
+      // Each x~y bundle is its own burst, paired with one hub bundle; the diff is the hub bundle.
+      const bursts = bundles.map((_, id) => id);
+      const xyFirst = bundles.length - 8;
+      for (let k = 0; k < 8; k++) bursts[k] = xyFirst + k;
+      const diffCommits = commits.slice(0, 8).map(([sha]) => sha);
+
+      const significance = assessGraphCochangeSignificance(withBursts(bundles, bursts, commits), {
+        kind: "query",
+        diffFiles: ["src/x.ts"],
+        diffCommits,
+      });
+
+      expect(significance?.summary.diffHistory).toEqual({ excludedBundleCount: 8, bundleCommitsAvailable: true });
+      expect(significance?.admits("src/x.ts", "src/y.ts")).toBe(true);
+    });
   });
 });

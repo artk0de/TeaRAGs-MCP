@@ -1,4 +1,5 @@
 export {
+  assessBurstCochangeSignificance,
   assessCochangeSignificance,
   assessGraphCochangeSignificance,
   benjaminiHochbergRejectionCount,

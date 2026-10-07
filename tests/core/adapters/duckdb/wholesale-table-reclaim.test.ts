@@ -125,7 +125,9 @@ describe("wholesale codegraph table rewrites reclaim the previous generation", (
           maxFilesPerBundle: 5,
           minSupport: 2,
           maxPartnersPerFile: 20,
-          sessionGapMinutes: null,
+          admittedBurstCount: 10,
+          burstWindowMinutes: 120,
+          burstWindowMethod: "fallback",
         },
         files: files.map((relPath) => ({ relPath, bundleCount: 3, partnerCount: 1, lastChangedAt: run })),
         edges: files.slice(1).map((relPathB) => ({

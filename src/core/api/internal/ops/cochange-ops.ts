@@ -36,10 +36,7 @@ export class CochangeOps {
     if (graph.meta === null) return CochangeOps.empty(files);
     return {
       built: true,
-      provenance: {
-        ...graph.meta,
-        mode: graph.meta.sessionGapMinutes === null ? "commit" : "session",
-      },
+      provenance: graph.meta,
       files: rankCochangePartners(graph, files, request.limit ?? DEFAULT_COCHANGE_PARTNERS_LIMIT, pathExists),
     };
   }

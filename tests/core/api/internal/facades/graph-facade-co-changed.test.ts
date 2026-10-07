@@ -51,7 +51,9 @@ const cochangeGraph = {
     maxFilesPerBundle: 5,
     minSupport: 2,
     maxPartnersPerFile: 20,
-    sessionGapMinutes: null,
+    admittedBurstCount: 1,
+    burstWindowMinutes: 120,
+    burstWindowMethod: "fallback",
   },
   edges: [
     {

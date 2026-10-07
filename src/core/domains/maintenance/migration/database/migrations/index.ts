@@ -46,6 +46,7 @@ import { SQL_040_CG_TYPE_DECLARATIONS_MEMBER_COUNTS } from "./040-cg-type-declar
 import { SQL_041_CG_TEMPORAL_SYMBOL_COMMITS } from "./041-cg-temporal-symbol-commits.js";
 import { SQL_042_CG_TEMPORAL_BUNDLE_FILES } from "./042-cg-temporal-bundle-files.js";
 import { SQL_043_CG_TEMPORAL_BUNDLE_COMMITS } from "./043-cg-temporal-bundle-commits.js";
+import { SQL_044_CG_TEMPORAL_BURSTS } from "./044-cg-temporal-bursts.js";
 
 export interface DatabaseMigration {
   filename: string;
@@ -96,4 +97,5 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "041-cg-temporal-symbol-commits.sql", sql: SQL_041_CG_TEMPORAL_SYMBOL_COMMITS },
   { filename: "042-cg-temporal-bundle-files.sql", sql: SQL_042_CG_TEMPORAL_BUNDLE_FILES },
   { filename: "043-cg-temporal-bundle-commits.sql", sql: SQL_043_CG_TEMPORAL_BUNDLE_COMMITS },
+  { filename: "044-cg-temporal-bursts.sql", sql: SQL_044_CG_TEMPORAL_BURSTS },
 ];

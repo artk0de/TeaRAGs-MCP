@@ -38,7 +38,6 @@ describe("temporal facade contract (bd tea-rags-mcp-0e4vf)", () => {
 
     const hooks = createTemporalCochangeHooks({
       windowMonths: 6,
-      sessionGapMinutes: null,
       vcsAdapter: "git",
       gitTimeoutMs: 5_000,
     });

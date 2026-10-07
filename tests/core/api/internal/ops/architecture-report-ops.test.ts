@@ -767,7 +767,9 @@ function cochangeGraph(): TemporalCochangeGraph {
       maxFilesPerBundle: 18,
       minSupport: 2,
       maxPartnersPerFile: 20,
-      sessionGapMinutes: 30,
+      admittedBurstCount: 80,
+      burstWindowMinutes: 150,
+      burstWindowMethod: "estimated",
     },
     edges: [
       pair("app/s1.ts", "lib/hub.ts", false),
@@ -813,7 +815,7 @@ describe("ArchitectureReportOps#build — silentCoupling (bd tea-rags-mcp-b4dcz)
 
     expect(summary).toMatchObject({
       built: true,
-      build: { head: "abc123", commitCount: 120, sessionGapMinutes: 30 },
+      build: { head: "abc123", commitCount: 120, burstWindowMinutes: 150, burstWindowMethod: "estimated" },
       pairCount: 3,
       candidateCount: 2,
       strongCount: 2,
@@ -915,7 +917,6 @@ describe("ArchitectureReportOps#build — splitMerge (bd tea-rags-mcp-c3v6o)", (
       built: true,
       head: "abc123",
       builtAt: 1_700_000_100,
-      sessionGapMinutes: 30,
       verdicts: {
         splitCandidates: [],
         mergeCandidates: [
@@ -938,7 +939,6 @@ describe("ArchitectureReportOps#build — splitMerge (bd tea-rags-mcp-c3v6o)", (
       reason: "noBundleMembership",
       head: "abc123",
       builtAt: 1_700_000_100,
-      sessionGapMinutes: 30,
     });
 
     // A read with no `bundles` at all (a fixture, or a daemon from an older

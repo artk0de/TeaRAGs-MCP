@@ -9,6 +9,14 @@ export {
   type TemporalCochangeHistorySource,
 } from "./builder.js";
 export {
+  BURST_WINDOW_FALLBACK_MINUTES,
+  BURST_WINDOW_MAX_MINUTES,
+  BURST_WINDOW_MIN_MINUTES,
+  BURST_WINDOW_MIN_PAIRS,
+  estimateBurstWindow,
+  type BurstWindowEstimate,
+} from "./burst-window.js";
+export {
   bundleCochangeCommits,
   compareCodePoints,
   type CochangeBundle,

@@ -20,7 +20,7 @@
  * `ArchitectureReportSummary`.
  */
 
-import type { RelPath } from "./codegraph.js";
+import type { CochangeBurstWindowMethod, RelPath } from "./codegraph.js";
 import type { WorkingTreeMarker } from "./working-tree.js";
 
 /** How the layer map view picks its nodes (bd tea-rags-mcp-r8hme.26). */
@@ -981,16 +981,27 @@ export interface SilentCouplingBuildSummary {
   /** Unix seconds: the oldest commit the window admitted. */
   windowSince: number;
   commitCount: number;
-  /** Change bundles that survived the mass-change cut. */
+  /** Commit bundles that survived the mass-change cut. */
   admittedBundleCount: number;
+  /**
+   * Author bursts holding an admitted commit — the unit every co-change count
+   * uses (bd tea-rags-mcp-3vg0x). `null` = a build predating burst dedup.
+   */
+  admittedBurstCount: number | null;
   /** The adaptive mass-change cut: bigger bundles were dropped as noise. */
   maxFilesPerBundle: number;
   /** Support floor a stored pair needed. */
   minSupport: number;
   /** Partners kept per file. */
   maxPartnersPerFile: number;
-  /** Author-session gap bundles were merged over; `null` = per commit. */
-  sessionGapMinutes: number | null;
+  /**
+   * Burst window W in minutes: one author identity's commits less than W apart
+   * form one burst, inside which a file or a pair counts once. Derived from the
+   * repository's history at build time; `null` = a build predating it.
+   */
+  burstWindowMinutes: number | null;
+  /** `"estimated"` from the history, or `"fallback"` when it was too small; `null` = predates it. */
+  burstWindowMethod: CochangeBurstWindowMethod | null;
 }
 
 /**
@@ -1181,8 +1192,6 @@ export interface SplitMergeReportSummary {
   head?: string;
   /** Unix seconds of the build; present whenever a build exists. */
   builtAt?: number;
-  /** Author-session gap the build bundled commits over; `null` = per commit. */
-  sessionGapMinutes?: number | null;
   /** Present when built. */
   verdicts?: SplitMergeVerdictsSummary;
 }

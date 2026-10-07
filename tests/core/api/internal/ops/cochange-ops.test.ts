@@ -37,7 +37,9 @@ const META = {
   maxFilesPerBundle: 12,
   minSupport: 2,
   maxPartnersPerFile: 20,
-  sessionGapMinutes: null as number | null,
+  admittedBurstCount: 22 as number | null,
+  burstWindowMinutes: 150 as number | null,
+  burstWindowMethod: "estimated" as "estimated" | "fallback" | null,
 };
 
 function edge(relPathA: string, relPathB: string, support = 3): TemporalCochangeEdge {
@@ -113,8 +115,9 @@ describe("CochangeOps#find", () => {
       maxFilesPerBundle: 12,
       minSupport: 2,
       maxPartnersPerFile: 20,
-      sessionGapMinutes: null,
-      mode: "commit",
+      admittedBurstCount: 22,
+      burstWindowMinutes: 150,
+      burstWindowMethod: "estimated",
     });
     expect(result.files).toEqual([
       {
@@ -140,13 +143,16 @@ describe("CochangeOps#find", () => {
     ]);
   });
 
-  it("derives mode 'session' from the persisted session-bundling gap", async () => {
-    await db.replaceTemporalCochange(snapshot([edge("a.ts", "b.ts")], { ...META, sessionGapMinutes: 30 }));
+  // bd tea-rags-mcp-3vg0x: bundles are always per commit; the provenance names the burst window instead of a mode.
+  it("carries the persisted burst window and how it was chosen", async () => {
+    await db.replaceTemporalCochange(
+      snapshot([edge("a.ts", "b.ts")], { ...META, burstWindowMinutes: 120, burstWindowMethod: "fallback" }),
+    );
 
     const result = await new CochangeOps().find(db, { files: ["a.ts"] });
 
-    expect(result.provenance?.mode).toBe("session");
-    expect(result.provenance?.sessionGapMinutes).toBe(30);
+    expect(result.provenance).toMatchObject({ burstWindowMinutes: 120, burstWindowMethod: "fallback" });
+    expect(result.provenance).not.toHaveProperty("mode");
   });
 
   it("normalizes a leading ./ on the requested files", async () => {

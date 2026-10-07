@@ -1,14 +1,20 @@
 /**
  * The co-change pair extractor (bd tea-rags-mcp-x4rpp): association rules over
- * admitted commit bundles.
+ * admitted commit bundles, counted once per author burst (bd tea-rags-mcp-3vg0x).
  *
- * For files A and B over the N admitted bundles:
- *   support(A,B)    = bundles touching both
+ * For files A and B over the N author bursts holding an admitted commit:
+ *   count(A)        = bursts with an admitted commit touching A
+ *   support(A,B)    = bursts with an admitted commit touching BOTH — one commit
+ *                     must hold the pair; two commits of a burst that touched
+ *                     A and B separately do not pair them
  *   confidence(A→B) = P(B | A) = support / count(A)
  *   lift(A,B)       = support · N / (count(A) · count(B))   — > 1 beats chance
  *
- * N counts single-file bundles too: a file changing alone is evidence against
- * every rule on it, and dropping those bundles inflates every confidence.
+ * Admission is per commit (the mass-change cut), BEFORE bursts are counted: an
+ * oversized commit drops out, its burst's other commits stay. N counts
+ * single-file commits' bursts too: a file changing alone is evidence against
+ * every rule on it, and dropping those inflates every confidence. `lastChangedAt`
+ * / `lastCoChangeAt` are commit timestamps — recency is not a count.
  *
  * Storage cap (spec open question 2 — the bead's answer is BOTH options): pairs
  * under `minSupport` are not stored, and a surviving pair is kept only when it
@@ -21,8 +27,8 @@
  *
  * Memory: file paths are interned to integer ids and a pair is keyed by
  * `lo · 2^26 + hi` (exact in a double), so the counting pass holds two numeric
- * maps and no per-pair object. Sample SHAs are collected in a second pass over
- * the survivors only.
+ * maps and no per-pair object; a burst's dedup sets live only while that burst
+ * is counted. Sample SHAs are collected in a second pass over the survivors only.
  */
 
 import type { RelPath, TemporalCochangeEdge, TemporalCochangeFile } from "../../../../../contracts/types/codegraph.js";
@@ -40,8 +46,10 @@ export interface CochangeExtractionOptions {
 export interface CochangeGraphExtraction {
   files: TemporalCochangeFile[];
   edges: TemporalCochangeEdge[];
-  /** N — the admitted bundles every metric is counted over. */
+  /** Admitted commit bundles. */
   admittedBundleCount: number;
+  /** N — the author bursts holding an admitted bundle, the universe every metric is counted over. */
+  admittedBurstCount: number;
   /**
    * The admitted bundles' file memberships in extraction order (bundle id =
    * index). Component-level counts — `|bundles touching both|` and
@@ -54,6 +62,11 @@ export interface CochangeGraphExtraction {
   admittedBundles: readonly (readonly RelPath[])[];
   /** Each admitted bundle's member commit SHAs, aligned with `admittedBundles` (bd tea-rags-mcp-89k7k.1.14). */
   admittedBundleCommits: readonly (readonly string[])[];
+  /**
+   * Each admitted bundle's author burst, aligned with `admittedBundles`,
+   * renumbered densely from 0 in extraction order (bd tea-rags-mcp-3vg0x).
+   */
+  admittedBundleBursts: readonly number[];
 }
 
 /** Up to this many sample SHAs per stored pair. */
@@ -68,7 +81,20 @@ export function extractCochangeGraph(
   const admitted = bundles
     .filter((b) => b.files.length > 0 && b.files.length <= options.maxFilesPerBundle)
     .sort((a, b) => b.timestamp - a.timestamp);
-  const n = admitted.length;
+
+  // Dense burst ids in extraction order, and each burst's member bundles.
+  const denseBurst = new Map<number, number>();
+  const bundleBursts = admitted.map((bundle) => {
+    let id = denseBurst.get(bundle.burst);
+    if (id === undefined) {
+      id = denseBurst.size;
+      denseBurst.set(bundle.burst, id);
+    }
+    return id;
+  });
+  const n = denseBurst.size;
+  const burstMembers: number[][] = Array.from({ length: n }, () => []);
+  bundleBursts.forEach((burst, index) => burstMembers[burst].push(index));
 
   const ids = new Map<RelPath, number>();
   const paths: RelPath[] = [];
@@ -89,28 +115,41 @@ export function extractCochangeGraph(
   const bundleIds = admitted.map((b) => b.files.map(idOf));
   const support = new Map<number, number>();
   const lastCoChange = new Map<number, number>();
+  // Recency, per commit. Bundles arrive newest first, so the first sighting is the newest.
   admitted.forEach((bundle, index) => {
-    const fileIds = bundleIds[index];
-    for (const id of fileIds) {
-      counts[id] += 1;
-      // Bundles arrive newest first, so the first sighting is the newest.
+    for (const id of bundleIds[index]) {
       if (lastChanged[id] < 0) lastChanged[id] = bundle.timestamp;
     }
-    forEachPair(fileIds, (key) => {
-      support.set(key, (support.get(key) ?? 0) + 1);
+    forEachPair(bundleIds[index], (key) => {
       if (!lastCoChange.has(key)) lastCoChange.set(key, bundle.timestamp);
     });
   });
 
+  // Counts, per burst: a file or a pair counts once however many of the burst's commits repeat it.
+  for (const members of burstMembers) {
+    const files = new Set<number>();
+    const pairs = new Set<number>();
+    for (const index of members) {
+      for (const id of bundleIds[index]) files.add(id);
+      forEachPair(bundleIds[index], (key) => pairs.add(key));
+    }
+    for (const id of files) counts[id] += 1;
+    for (const key of pairs) support.set(key, (support.get(key) ?? 0) + 1);
+  }
+
   const kept = capPartners(support, counts, paths, options);
 
-  const samples = new Map<number, string[]>();
-  for (const key of kept) samples.set(key, []);
+  // One sample per burst — the burst's newest commit holding the pair — newest burst first.
+  const samples = new Map<number, { shas: string[]; bursts: number[] }>();
+  for (const key of kept) samples.set(key, { shas: [], bursts: [] });
   admitted.forEach((bundle, index) => {
     const newestSha = bundle.shas[bundle.shas.length - 1];
+    const burst = bundleBursts[index];
     forEachPair(bundleIds[index], (key) => {
-      const list = samples.get(key);
-      if (list && list.length < SAMPLE_COMMITS_PER_EDGE) list.push(newestSha);
+      const sample = samples.get(key);
+      if (!sample || sample.shas.length >= SAMPLE_COMMITS_PER_EDGE || sample.bursts.includes(burst)) return;
+      sample.shas.push(newestSha);
+      sample.bursts.push(burst);
     });
   });
 
@@ -130,7 +169,7 @@ export function extractCochangeGraph(
       confidenceBA: s / counts[b],
       lift: (s * n) / (counts[a] * counts[b]),
       lastCoChangeAt: lastCoChange.get(key) as number,
-      sampleCommits: samples.get(key) as string[],
+      sampleCommits: (samples.get(key) as { shas: string[] }).shas,
     });
   }
   edges.sort((x, y) => compareCodePoints(x.relPathA, y.relPathA) || compareCodePoints(x.relPathB, y.relPathB));
@@ -147,9 +186,11 @@ export function extractCochangeGraph(
   return {
     files,
     edges,
-    admittedBundleCount: n,
+    admittedBundleCount: admitted.length,
+    admittedBurstCount: n,
     admittedBundles: bundleIds.map((ids) => ids.map((id) => paths[id])),
     admittedBundleCommits: admitted.map((bundle) => bundle.shas),
+    admittedBundleBursts: bundleBursts,
   };
 }
 

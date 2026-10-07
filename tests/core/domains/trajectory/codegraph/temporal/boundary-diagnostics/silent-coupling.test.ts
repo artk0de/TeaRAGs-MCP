@@ -42,7 +42,9 @@ const META: TemporalCochangeBuildMeta = {
   maxFilesPerBundle: 20,
   minSupport: 2,
   maxPartnersPerFile: 20,
-  sessionGapMinutes: null,
+  admittedBurstCount: 150,
+  burstWindowMinutes: 150,
+  burstWindowMethod: "estimated",
 };
 
 /** Wilson lower bound (z = 1.96) of 10 successes out of 10 trials. */
@@ -114,7 +116,14 @@ describe("detectSilentCoupling", () => {
       strengthThresholdMethod: "majority",
     });
     expect(report.summary.strengthSeparability).toBeUndefined();
-    expect(report.summary.build).toMatchObject({ head: "abc123", commitCount: 200, sessionGapMinutes: null });
+    expect(report.summary.build).toMatchObject({
+      head: "abc123",
+      commitCount: 200,
+      admittedBurstCount: 150,
+      burstWindowMinutes: 150,
+      burstWindowMethod: "estimated",
+    });
+    expect(report.summary.build).not.toHaveProperty("sessionGapMinutes");
   });
 
   it("takes the stronger direction: a rare file that always drags a busy one along is strongly coupled", () => {

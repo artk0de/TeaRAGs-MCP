@@ -31,10 +31,12 @@ export type CoChangedPartner = RankedCochangePartner;
 /** One queried file's answer. */
 export type CoChangedFileResult = FileCochangeRanking;
 
-export interface CoChangeBuildProvenance extends TemporalCochangeBuildMeta {
-  /** `"session"` = author-session bundling (`sessionGapMinutes` set); `"commit"` = one bundle per commit. */
-  mode: "commit" | "session";
-}
+/**
+ * How the graph was built. Bundles are always one per commit, counted once per
+ * author burst under `burstWindowMinutes` (bd tea-rags-mcp-3vg0x) — the old
+ * `mode: "commit" | "session"` split is gone with session bundling.
+ */
+export type CoChangeBuildProvenance = TemporalCochangeBuildMeta;
 
 export interface FindCoChangedResult {
   /**

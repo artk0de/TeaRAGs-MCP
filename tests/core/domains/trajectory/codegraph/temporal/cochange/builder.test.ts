@@ -26,7 +26,11 @@ import {
 import type { GitCommitDiscoveryEntry } from "../../../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
 
 const NOW_MS = 1_760_000_000_000;
-const HOUR = 3600;
+/**
+ * Spacing between fixture commits: a day, wider than any burst window
+ * (bd tea-rags-mcp-3vg0x clamps W to 12 h), so each commit is its own author burst.
+ */
+const STEP = 86_400;
 
 function entry(sha: string, author: string, timestamp: number, paths: string[]): GitCommitDiscoveryEntry {
   const commit: CommitInfo = { sha, author, authorEmail: `${author}@x`, timestamp, body: "feat: x", parents: ["p"] };
@@ -35,12 +39,12 @@ function entry(sha: string, author: string, timestamp: number, paths: string[]):
 
 /** Newest first, like the discovery matrix. */
 const HISTORY = [
-  entry("s6", "bob", 6 * HOUR, ["docs.md"]),
-  entry("s5", "alice", 5 * HOUR, ["a.ts", "b.ts"]),
-  entry("s4", "alice", 4 * HOUR, ["a.ts", "c.yml"]),
-  entry("s3", "alice", 3 * HOUR, ["a.ts", "c.yml"]),
-  entry("s2", "alice", 2 * HOUR, ["a.ts", "b.ts"]),
-  entry("s1", "alice", 1 * HOUR, ["a.ts", "b.ts"]),
+  entry("s6", "bob", 6 * STEP, ["docs.md"]),
+  entry("s5", "alice", 5 * STEP, ["a.ts", "b.ts"]),
+  entry("s4", "alice", 4 * STEP, ["a.ts", "c.yml"]),
+  entry("s3", "alice", 3 * STEP, ["a.ts", "c.yml"]),
+  entry("s2", "alice", 2 * STEP, ["a.ts", "b.ts"]),
+  entry("s1", "alice", 1 * STEP, ["a.ts", "b.ts"]),
 ];
 
 function historySource(head: string): TemporalCochangeHistorySource & { entriesRead: () => number } {
@@ -78,15 +82,10 @@ function fakeGraphDb(initial: TemporalCochangeBuildMeta | null = null) {
   };
 }
 
-function builder(
-  source: TemporalCochangeHistorySource,
-  sessionGapMinutes: number | null = null,
-  symbolCommits?: TemporalSymbolCommitBuffer,
-) {
+function builder(source: TemporalCochangeHistorySource, windowMonths = 6, symbolCommits?: TemporalSymbolCommitBuffer) {
   return new TemporalCochangeBuilder(
     {
-      windowMonths: 6,
-      sessionGapMinutes,
+      windowMonths,
       historySource: source,
       now: () => NOW_MS,
     },
@@ -112,7 +111,9 @@ describe("TemporalCochangeBuilder", () => {
       admittedBundleCount: 6,
       maxFilesPerBundle: 2,
       minSupport: 2,
-      sessionGapMinutes: null,
+      admittedBurstCount: 6,
+      burstWindowMinutes: 120,
+      burstWindowMethod: "fallback",
     });
     expect(snapshot.edges.map((e) => [e.relPathA, e.relPathB, e.support])).toEqual([
       ["a.ts", "b.ts", 3],
@@ -137,15 +138,50 @@ describe("TemporalCochangeBuilder", () => {
     await builder(historySource("h1")).onCollectionComplete({ projectRoot: "/repo", graphDb });
 
     await builder(historySource("h2")).onCollectionComplete({ projectRoot: "/repo", graphDb });
-    await builder(historySource("h2"), 30).onCollectionComplete({ projectRoot: "/repo", graphDb });
+    await builder(historySource("h2"), 12).onCollectionComplete({ projectRoot: "/repo", graphDb });
 
-    expect(writes.map((w) => [w.meta.head, w.meta.sessionGapMinutes])).toEqual([
-      ["h1", null],
-      ["h2", null],
-      ["h2", 30],
+    expect(writes.map((w) => [w.meta.head, w.meta.windowSince])).toEqual([
+      ["h1", NOW_MS / 1000 - 6 * 30 * 86400],
+      ["h2", NOW_MS / 1000 - 6 * 30 * 86400],
+      ["h2", NOW_MS / 1000 - 12 * 30 * 86400],
     ]);
-    // Under 30-minute sessions alice's commits are an hour apart — still one bundle each.
-    expect(writes[2].meta.bundleCount).toBe(6);
+  });
+
+  // bd tea-rags-mcp-3vg0x: one bundle per commit, a pair counted once per author burst.
+  it("counts a pair re-committed inside one author burst once, and records the burst window", async () => {
+    const MIN = 60;
+    const burstHistory = [
+      entry("w3", "alice", 10 * MIN, ["a.ts", "b.ts"]),
+      entry("w2", "alice", 5 * MIN, ["a.ts", "b.ts"]),
+      entry("w1", "alice", 0, ["a.ts", "b.ts"]),
+    ];
+    const source: TemporalCochangeHistorySource = {
+      open: async () => ({
+        repoRoot: "/repo",
+        head: "h1",
+        worktreeDeletions: [],
+        trackedPaths: async () => ["a.ts", "b.ts"],
+        entries: async () => burstHistory,
+      }),
+    };
+    const { graphDb, writes } = fakeGraphDb();
+
+    await builder(source).onCollectionComplete({ projectRoot: "/repo", graphDb });
+
+    const [snapshot] = writes;
+    // Too few consecutive pairs to estimate W: the fallback window holds the three commits in one burst.
+    expect(snapshot.meta).toMatchObject({
+      commitCount: 3,
+      bundleCount: 3,
+      admittedBundleCount: 3,
+      admittedBurstCount: 1,
+      burstWindowMinutes: 120,
+      burstWindowMethod: "fallback",
+    });
+    expect(snapshot.edges).toEqual([]);
+    // Every commit keeps its own bundle row and sha; the burst rides beside it.
+    expect(snapshot.bundleCommits).toEqual([["w3"], ["w2"], ["w1"]]);
+    expect(snapshot.bundleBursts).toEqual([0, 0, 0]);
   });
 });
 
@@ -183,7 +219,6 @@ describe("TemporalCochangeBuilder — no pair outlives its endpoint", () => {
   function build(source: TemporalCochangeHistorySource, nowMs = NOW_MS) {
     return new TemporalCochangeBuilder({
       windowMonths: 6,
-      sessionGapMinutes: null,
       historySource: source,
       now: () => nowMs,
     });
@@ -196,12 +231,12 @@ describe("TemporalCochangeBuilder — no pair outlives its endpoint", () => {
 
   /** a.ts co-changes with gone.ts, b.ts and build/out.js, twice each. */
   const HISTORY_WITH_DEAD_PATHS = [
-    entry("s6", "alice", 6 * HOUR, ["a.ts", "gone.ts"]),
-    entry("s5", "alice", 5 * HOUR, ["a.ts", "gone.ts"]),
-    entry("s4", "alice", 4 * HOUR, ["a.ts", "b.ts"]),
-    entry("s3", "alice", 3 * HOUR, ["a.ts", "b.ts"]),
-    entry("s2", "alice", 2 * HOUR, ["a.ts", "build/out.js"]),
-    entry("s1", "alice", 1 * HOUR, ["a.ts", "build/out.js"]),
+    entry("s6", "alice", 6 * STEP, ["a.ts", "gone.ts"]),
+    entry("s5", "alice", 5 * STEP, ["a.ts", "gone.ts"]),
+    entry("s4", "alice", 4 * STEP, ["a.ts", "b.ts"]),
+    entry("s3", "alice", 3 * STEP, ["a.ts", "b.ts"]),
+    entry("s2", "alice", 2 * STEP, ["a.ts", "build/out.js"]),
+    entry("s1", "alice", 1 * STEP, ["a.ts", "build/out.js"]),
   ];
 
   it("keeps no path HEAD does not track, even when a file of that name sits on disk", async () => {
@@ -217,9 +252,9 @@ describe("TemporalCochangeBuilder — no pair outlives its endpoint", () => {
 
   it("attributes a renamed file's history to its HEAD path and never stores the old one", async () => {
     const history = [
-      { commit: entry("s3", "alice", 3 * HOUR, []).commit, changedFiles: [{ path: "b2.ts", previousPath: "b.ts" }] },
-      entry("s2", "alice", 2 * HOUR, ["a.ts", "b.ts"]),
-      entry("s1", "alice", 1 * HOUR, ["a.ts", "b.ts"]),
+      { commit: entry("s3", "alice", 3 * STEP, []).commit, changedFiles: [{ path: "b2.ts", previousPath: "b.ts" }] },
+      entry("s2", "alice", 2 * STEP, ["a.ts", "b.ts"]),
+      entry("s1", "alice", 1 * STEP, ["a.ts", "b.ts"]),
     ];
     const { source } = repo({ head: "h1", tracked: ["a.ts", "b2.ts"], deletions: [], history });
     const { graphDb, writes } = fakeGraphDb();
@@ -292,7 +327,7 @@ describe("TemporalCochangeBuilder — no pair outlives its endpoint", () => {
 
     state.head = "h2";
     state.tracked = ["a.ts", "b.ts"];
-    state.history = [entry("s7", "alice", 7 * HOUR, ["gone.ts"]), ...HISTORY_WITH_DEAD_PATHS];
+    state.history = [entry("s7", "alice", 7 * STEP, ["gone.ts"]), ...HISTORY_WITH_DEAD_PATHS];
     await build(source, NOW_MS + 60_000).onCollectionComplete({ projectRoot: "/repo", graphDb });
 
     expect(pairs(writes[1])).toEqual(["a.ts~b.ts"]);
@@ -336,8 +371,8 @@ describe("TemporalCochangeBuilder — no pair outlives its endpoint", () => {
 
   it("matches a subdirectory project's paths against the REPO-relative tracked set", async () => {
     const history = [
-      entry("s2", "alice", 2 * HOUR, ["app/a.ts", "app/b.ts", "app/old.ts", "infra/x.tf"]),
-      entry("s1", "alice", 1 * HOUR, ["app/a.ts", "app/b.ts", "app/old.ts", "infra/x.tf"]),
+      entry("s2", "alice", 2 * STEP, ["app/a.ts", "app/b.ts", "app/old.ts", "infra/x.tf"]),
+      entry("s1", "alice", 1 * STEP, ["app/a.ts", "app/b.ts", "app/old.ts", "infra/x.tf"]),
     ];
     const { source } = repo({ head: "h1", tracked: ["app/a.ts", "app/b.ts", "infra/x.tf"], deletions: [], history });
     const { graphDb, writes } = fakeGraphDb();
@@ -371,7 +406,7 @@ describe("TemporalCochangeBuilder — symbol-commit flush", () => {
     await first.onCollectionComplete({ projectRoot: "/repo", graphDb });
     absorb(buffer);
 
-    await builder(source, null, buffer).onCollectionComplete({ projectRoot: "/repo", graphDb });
+    await builder(source, 6, buffer).onCollectionComplete({ projectRoot: "/repo", graphDb });
 
     expect(graphDb.replaceTemporalSymbolCommits).toHaveBeenCalledWith([
       { relPath: "a.ts", symbols: [{ symbolId: "A#m", commitShas: ["s1", "s2"] }] },
@@ -381,7 +416,7 @@ describe("TemporalCochangeBuilder — symbol-commit flush", () => {
     expect(graphDb.storedTemporalSymbolCommitFilePaths).not.toHaveBeenCalled();
     expect(graphDb.deleteTemporalSymbolCommitFiles).not.toHaveBeenCalled();
     // The flush DRAINS: a completion with nothing absorbed writes nothing.
-    await builder(source, null, buffer).onCollectionComplete({ projectRoot: "/repo", graphDb });
+    await builder(source, 6, buffer).onCollectionComplete({ projectRoot: "/repo", graphDb });
     expect(graphDb.replaceTemporalSymbolCommits).toHaveBeenCalledTimes(2);
     expect(graphDb.replaceTemporalSymbolCommits).toHaveBeenLastCalledWith([]);
   });
@@ -396,8 +431,8 @@ describe("TemporalCochangeBuilder — symbol-commit flush", () => {
         worktreeDeletions: [],
         trackedPaths: async () => ["app/a.ts", "app/b.ts"],
         entries: async () => [
-          entry("s2", "alice", 2 * HOUR, ["app/a.ts", "app/b.ts"]),
-          entry("s1", "alice", 1 * HOUR, ["app/a.ts", "app/gone.ts"]),
+          entry("s2", "alice", 2 * STEP, ["app/a.ts", "app/b.ts"]),
+          entry("s1", "alice", 1 * STEP, ["app/a.ts", "app/gone.ts"]),
         ],
       }),
     };
@@ -406,7 +441,7 @@ describe("TemporalCochangeBuilder — symbol-commit flush", () => {
     const buffer = new InMemoryTemporalSymbolCommitBuffer();
     absorb(buffer);
 
-    const outcome = await builder(source, null, buffer).onCollectionComplete({ projectRoot: "/repo/app", graphDb });
+    const outcome = await builder(source, 6, buffer).onCollectionComplete({ projectRoot: "/repo/app", graphDb });
 
     expect(outcome.status).toBe("built");
     expect(graphDb.replaceTemporalSymbolCommits).toHaveBeenCalled();
