@@ -29,6 +29,7 @@ import {
   MODULE_ENTRY_FILE_NAMES,
   RE_EXPORT_CYCLE_PATH_CAP,
 } from "../../symbols/boundary-diagnostics/index.js";
+import { assessGraphCochangeSignificance, type CochangeSignificance } from "./cochange-significance.js";
 import type {
   SilentCouplingExclusionCounts,
   SilentCouplingOptions,
@@ -92,8 +93,13 @@ interface Candidate {
  * Judge every stored co-change pair.
  *
  * A pair is a CANDIDATE when neither endpoint is a test, generated or
- * documentation file, at least one endpoint is walked by the codegraph, and its
- * lift is above 1. A walked module that defines no symbol — a barrel, a
+ * documentation file, at least one endpoint is walked by the codegraph, and the
+ * co-change significance gate admits it ({@link assessGraphCochangeSignificance},
+ * bd tea-rags-mcp-89k7k.1.14): its support beats the configuration null that
+ * conditions on both files' change counts, under BH over the a-priori family —
+ * so a key-addressed hub's pairs (a locale file, a version manifest in every
+ * bundle) fall here rather than under a file-level hub cut. A graph carrying no
+ * bundle membership falls back to lift above 1. A walked module that defines no symbol — a barrel, a
  * type-only or an object-literal module — is judged like any other: its
  * `import type` dependencies are file edges (bd tea-rags-mcp-r8hme.12), so a
  * missing edge is evidence there too. Its STRENGTH
@@ -123,15 +129,16 @@ export function detectSilentCoupling(
     generatedEndpoints: 0,
     documentationEndpoints: 0,
     unwalkedEndpoints: 0,
-    nonPositiveLift: 0,
+    notSignificant: 0,
     explainedByFacadeChain: 0,
   };
+  const significance = options.significance ?? assessGraphCochangeSignificance(graph, { kind: "full" });
   const neighbours = options.fileDependencyEdges
     ? new SilentCouplingNeighbourIndex(options.fileDependencyEdges, walkedFiles.length)
     : null;
   const candidates: Candidate[] = [];
   for (const edge of graph.edges) {
-    const reason = exclusionReason(edge, symbolCounts, options.isDocumentation);
+    const reason = exclusionReason(edge, symbolCounts, options.isDocumentation, significance);
     if (reason) {
       excluded[reason]++;
       continue;
@@ -174,7 +181,7 @@ export function detectSilentCoupling(
       continue;
     }
     if (sharedNeighbour && explains(sharedNeighbour)) {
-      explained.push({ ...toViolation(edge, strength, symbolCounts), explainedBy: sharedNeighbour });
+      explained.push({ ...toViolation(edge, strength, symbolCounts, significance), explainedBy: sharedNeighbour });
       continue;
     }
     if (
@@ -184,7 +191,7 @@ export function detectSilentCoupling(
       excluded.explainedByFacadeChain++;
       continue;
     }
-    violations.push(toViolation(edge, strength, symbolCounts));
+    violations.push(toViolation(edge, strength, symbolCounts, significance));
   }
   violations.sort(compareViolations);
   explained.sort(compareViolations);
@@ -227,6 +234,7 @@ export function detectSilentCoupling(
       : { sharedNeighbourThresholdMethod: "none" as const }),
     explainedCount: explained.length,
     excluded,
+    ...(significance ? { cochangeSignificance: significance.summary } : {}),
     ...(scope ? { scope } : {}),
   };
   return { summary, violations, explained, rootCauses };
@@ -432,6 +440,7 @@ function exclusionReason(
   edge: TemporalCochangeEdgeWithLinkage,
   symbolCounts: ReadonlyMap<RelPath, number>,
   isDocumentation: ((relPath: RelPath) => boolean) | undefined,
+  significance: CochangeSignificance | undefined,
 ): ExclusionReason | null {
   const endpoints = [edge.relPathA, edge.relPathB];
   const classes = endpoints.map((p) => classify(p));
@@ -439,7 +448,8 @@ function exclusionReason(
   if (classes.some((c) => c.isGenerated)) return "generatedEndpoints";
   if (isDocumentation && endpoints.some(isDocumentation)) return "documentationEndpoints";
   if (!endpoints.some((p) => symbolCounts.has(p))) return "unwalkedEndpoints";
-  if (edge.lift <= 1) return "nonPositiveLift";
+  const admitted = significance ? significance.admits(edge.relPathA, edge.relPathB) : edge.lift > 1;
+  if (!admitted) return "notSignificant";
   return null;
 }
 
@@ -447,6 +457,7 @@ function toViolation(
   edge: TemporalCochangeEdgeWithLinkage,
   strength: number,
   symbolCounts: ReadonlyMap<RelPath, number>,
+  significance: CochangeSignificance | undefined,
 ): SilentCouplingViolation {
   return {
     relPathA: edge.relPathA,
@@ -456,6 +467,7 @@ function toViolation(
     confidenceBA: edge.confidenceBA,
     lift: edge.lift,
     strength,
+    ...(significance ? { expectedSupport: significance.expectedSupport(edge.relPathA, edge.relPathB) } : {}),
     lastCoChangeAt: edge.lastCoChangeAt,
     sampleCommits: edge.sampleCommits,
     structuralVisibility:

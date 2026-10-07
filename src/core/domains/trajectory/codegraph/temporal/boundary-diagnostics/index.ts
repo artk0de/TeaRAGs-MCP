@@ -1,4 +1,20 @@
 export {
+  assessCochangeSignificance,
+  assessGraphCochangeSignificance,
+  benjaminiHochbergRejectionCount,
+  COCHANGE_SIGNIFICANCE_FDR_Q,
+  configurationNullRate,
+  fullCochangeFamilySize,
+  poissonUpperTail,
+  queryCochangeFamilySize,
+} from "./cochange-significance.js";
+export type {
+  CochangeHistoryTotals,
+  CochangeSignificance,
+  CochangeSignificanceFamily,
+  CochangeSignificanceOptions,
+} from "./cochange-significance.js";
+export {
   cochangeStrength,
   detectSilentCoupling,
   linkImportedCochangePairs,
@@ -10,6 +26,16 @@ export {
   SILENT_COUPLING_STRENGTH_MAJORITY,
   SILENT_COUPLING_WILSON_Z,
 } from "./silent-coupling.js";
+export {
+  groupSilentCouplingPairs,
+  SILENT_COUPLING_GROUP_MIN_PAIRS,
+  silentCouplingPartnerOf,
+} from "./silent-coupling-grouping.js";
+export type {
+  SilentCouplingGroupablePair,
+  SilentCouplingPairGroup,
+  SilentCouplingPairGrouping,
+} from "./silent-coupling-grouping.js";
 export type {
   SilentCouplingBuildSummary,
   SilentCouplingExclusionCounts,

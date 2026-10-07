@@ -40,6 +40,7 @@ function makeContext(
       changedFiles: files.length,
       wholeFiles: 0,
       files,
+      touchedFiles: new Set(files),
       addedRanges: new Map(),
       nonProduction: new Set(),
       skipped,

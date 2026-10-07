@@ -15,11 +15,13 @@
  * drift — the one signal worth keeping.
  */
 import type {
+  CochangeSignificanceSummary,
   SilentCouplingBuildSummary,
   SilentCouplingStructuralVisibility,
 } from "../../../../../contracts/types/architecture-report.js";
 import type { FileDependencyEdge, RelPath } from "../../../../../contracts/types/codegraph.js";
 import type { DependencyDirectoryRelation } from "../../symbols/boundary-diagnostics/index.js";
+import type { CochangeSignificance } from "./cochange-significance.js";
 
 export interface SilentCouplingOptions {
   /** Picomatch glob: a pair is judged when EITHER endpoint matches. The threshold is drawn over every pair. */
@@ -35,6 +37,14 @@ export interface SilentCouplingOptions {
    * absent, no pair is explained.
    */
   fileDependencyEdges?: readonly FileDependencyEdge[];
+  /**
+   * The pair admission gate (bd tea-rags-mcp-89k7k.1.14). Absent, the detector
+   * judges the full family over the graph's own bundles; a graph carrying no
+   * bundle membership (a fixture, a daemon older than the table) falls back to
+   * lift > 1 and reports no `cochangeSignificance`. A review passes its
+   * query-family gate.
+   */
+  significance?: CochangeSignificance;
 }
 
 /**
@@ -76,6 +86,12 @@ export interface SilentCouplingViolation {
    * changes, the other changes too. The severity.
    */
   strength: number;
+  /**
+   * λ — the support the co-change significance gate's configuration null
+   * predicts from the two files' change counts (bd tea-rags-mcp-89k7k.1.14).
+   * Absent when the read carried no bundle membership to test against.
+   */
+  expectedSupport?: number;
   /** Unix seconds of the latest bundle touching both. */
   lastCoChangeAt: number;
   /** A few shas that touched both, newest first. */
@@ -112,8 +128,12 @@ export interface SilentCouplingExclusionCounts {
   documentationEndpoints: number;
   /** Neither endpoint is walked by the codegraph: nothing structural to compare against. */
   unwalkedEndpoints: number;
-  /** lift ≤ 1: the pair co-changes no more than independence predicts. */
-  nonPositiveLift: number;
+  /**
+   * The co-change significance gate ({@link SilentCouplingOptions.significance})
+   * did not admit the pair — its support is what the configuration null
+   * predicts, or it lies outside the tested family.
+   */
+  notSignificant: number;
   /**
    * Strong unlinked in-scope pairs one side's import of the other resolves
    * through — a re-export/facade chain of module entry files between the
@@ -166,6 +186,8 @@ export interface SilentCouplingSummary {
   /** Strong, unlinked, in-scope pairs a specific shared neighbour explains — not violations. */
   explainedCount: number;
   excluded: SilentCouplingExclusionCounts;
+  /** How pairs were admitted; absent on the lift fallback. */
+  cochangeSignificance?: CochangeSignificanceSummary;
   /** Present only when scoped. */
   scope?: { sourcePathPattern: string; outOfScopePairCount: number };
 }

@@ -50,17 +50,30 @@
  * again from a reverse or duplicated read.
  */
 
+import type {
+  CochangeSignificanceSummary,
+  SilentCouplingGroupDrillDown,
+  SilentCouplingGroupPartner,
+} from "../../../contracts/types/architecture-report.js";
 import {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   isDeclaredCompositionRoot,
   isDeclaredEntryPoint,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
-import type {
-  SilentCouplingExclusionCounts,
-  SilentCouplingViolation,
-  SplitMergeVerdicts,
+import {
+  groupSilentCouplingPairs,
+  type SilentCouplingExclusionCounts,
+  type SilentCouplingViolation,
+  type SplitMergeVerdicts,
 } from "../../../domains/trajectory/codegraph/temporal/index.js";
 import type { ReviewEdgeOverlay } from "./review-edge-overlay.js";
+import {
+  SILENT_COUPLING_GROUP_EVIDENCE_PARTNERS,
+  silentCouplingGroupDrillDown,
+  silentCouplingGroupPartners,
+  silentCouplingGroupSubject,
+  type SilentCouplingGroupedPair,
+} from "./silent-coupling-group-findings.js";
 
 /**
  * The indexed graph a detector may traverse, with the diff's own files
@@ -134,9 +147,14 @@ export interface DiffDetectorCatalog {
  */
 export interface DiffDetectorSilentCouplingFacts {
   /** Strong, unlinked, unexplained pairs — the production violation list. */
-  violations: readonly Pick<SilentCouplingViolation, "relPathA" | "relPathB" | "support" | "strength">[];
+  violations: readonly Pick<
+    SilentCouplingViolation,
+    "relPathA" | "relPathB" | "support" | "strength" | "expectedSupport"
+  >[];
   /** Pairs read but not judged, by the production taxonomy — verbatim. */
   excluded: SilentCouplingExclusionCounts;
+  /** The pair admission gate's account (bd tea-rags-mcp-89k7k.1.14); absent on the lift fallback. */
+  cochangeSignificance?: CochangeSignificanceSummary;
 }
 
 /**
@@ -250,7 +268,15 @@ export interface DiffDetectorRunDeps {
  * files it never saw.
  */
 export interface DiffDetectorScope {
+  /** The scanned (capped) changed files — the sources every family judges. */
   changedFiles: readonly string[];
+  /**
+   * Every path the change touches, uncapped and deletions included (bd
+   * tea-rags-mcp-lxbrr) — what "the diff also changes it" is asked of
+   * (silentCoupling's partner, facadeContract's consumer). Absent =
+   * `changedFiles` is the whole change.
+   */
+  touchedFiles?: ReadonlySet<string>;
   /**
    * Changed files the reader's cap skipped; `0`/absent = the scope is whole.
    * When > 0 every built family's status is marked partial
@@ -318,6 +344,14 @@ export interface DiffDetectorFinding {
    * graph port = nothing is pre-existing. Present only when true.
    */
   preExisting?: true;
+  /**
+   * silentCoupling grouped finding only (bd tea-rags-mcp-89k7k.1.14): every
+   * partner of the shared endpoint `subject` names, strongest first — the
+   * evidence lines name the top 3, nothing the grouping took is lost.
+   */
+  partners?: readonly SilentCouplingGroupPartner[];
+  /** silentCoupling grouped finding only: the ready-to-run `find_co_changed` drill into the shared endpoint. */
+  drillDown?: SilentCouplingGroupDrillDown;
 }
 
 /** One detector family's verdict for the run. */
@@ -357,6 +391,19 @@ export interface DiffDetectorStatus {
    * `silentCouplingFacts`.
    */
   excluded?: SilentCouplingExclusionCounts;
+  /**
+   * How the silentCoupling row's pairs were admitted — the query family of
+   * pairs touching the diff (bd tea-rags-mcp-89k7k.1.14). silentCoupling row
+   * only, and only when the facts carry it.
+   */
+  cochangeSignificance?: CochangeSignificanceSummary;
+  /**
+   * silentCoupling row only (bd tea-rags-mcp-89k7k.1.14): the findings the
+   * row's `findingCount` pairs list as — pairs sharing an endpoint become one
+   * grouped finding. The section's cap and this row's `truncated` count these
+   * findings, so the row reconciles `groupedFindingCount = listed + truncated`.
+   */
+  groupedFindingCount?: number;
 }
 
 export interface DiffDetectorFindings {
@@ -440,6 +487,9 @@ export class DiffDetectorRun {
    */
   run(scope: DiffDetectorScope, overlay: ReviewEdgeOverlay): DiffDetectorFindings {
     const changed = new Set(scope.changedFiles);
+    // Presence in the change (bd tea-rags-mcp-lxbrr) — never the capped set:
+    // a past-cap or deleted file is still part of what the diff carries.
+    const touched = scope.touchedFiles ?? changed;
     const overlayEdges = uniqueOverlayEdges(scope.changedFiles, overlay);
     // The subtraction (bd tea-rags-mcp-89k7k.14): only genuinely-new pairs
     // reach the two families that weigh "what the diff adds"; the per-edge
@@ -450,8 +500,8 @@ export class DiffDetectorRun {
     const leakingAbstraction = this.judgeLeakingAbstraction(overlayEdges);
     const cycles = this.judgeCycles(overlayEdges, changed);
     const mainSequence = this.judgeMainSequence(scope.changedFiles, diffAddedEdges);
-    const silentCoupling = this.judgeSilentCoupling(scope.changedFiles, overlay, changed);
-    const facadeContract = this.judgeFacadeContract(scope.changedFiles, overlay, changed);
+    const silentCoupling = this.judgeSilentCoupling(scope.changedFiles, overlay, touched);
+    const facadeContract = this.judgeFacadeContract(scope.changedFiles, overlay, touched);
     const splitCandidates = this.judgeSplitCandidates(scope.changedFiles);
     // Partial over a truncated diff (bd tea-rags-mcp-89k7k.1.9): stamped on
     // BUILT rows only — an unbuilt row's built:false + reason already denies
@@ -483,11 +533,17 @@ export class DiffDetectorRun {
         ),
         partial(
           Object.freeze({
-            ...detectorStatus("silentCoupling", silentCoupling.findings.length),
+            // findingCount stays the PAIR count; the listed findings group
+            // pairs by shared endpoint (bd tea-rags-mcp-89k7k.1.14).
+            ...detectorStatus("silentCoupling", silentCoupling.pairCount),
+            groupedFindingCount: silentCoupling.findings.length,
             // The taxonomy's counters ride the silentCoupling row (bd
             // tea-rags-mcp-89k7k.1.10); absent facts stamp nothing — a zero
             // block over an unwired port would claim pairs were judged.
             ...(silentCoupling.excluded !== undefined ? { excluded: silentCoupling.excluded } : {}),
+            ...(silentCoupling.cochangeSignificance !== undefined
+              ? { cochangeSignificance: silentCoupling.cochangeSignificance }
+              : {}),
           }),
         ),
         ...(this.contract === undefined
@@ -800,22 +856,31 @@ export class DiffDetectorRun {
    * stands in the indexed graph's reverse direction (a partner -> file edge —
    * without that check the "no structural edge" sentence below could be
    * false). Both sides in the diff is the review's own business, not a
-   * finding (bd tea-rags-mcp-3kykc owns the partner-missing question).
+   * finding (bd tea-rags-mcp-3kykc owns the partner-missing question) — and
+   * "in the diff" means the whole change (`inChange`), never the capped scan
+   * (bd tea-rags-mcp-lxbrr).
    */
   private judgeSilentCoupling(
     changedFiles: readonly string[],
     overlay: ReviewEdgeOverlay,
-    changed: ReadonlySet<string>,
-  ): { findings: DiffDetectorFinding[]; excluded: SilentCouplingExclusionCounts | undefined } {
+    inChange: ReadonlySet<string>,
+  ): {
+    findings: DiffDetectorFinding[];
+    /** Admitted pairs, before grouping — the row's `findingCount`. */
+    pairCount: number;
+    excluded: SilentCouplingExclusionCounts | undefined;
+    cochangeSignificance?: CochangeSignificanceSummary;
+  } {
     const facts = this.silentCouplingFacts;
-    if (facts === undefined) return { findings: [], excluded: undefined };
-    const findings: DiffDetectorFinding[] = [];
+    if (facts === undefined) return { findings: [], pairCount: 0, excluded: undefined };
+    // Oriented changed file first: `relPathA` is the diff's side of the pair.
+    const pairs: SilentCouplingGroupedPair[] = [];
     const reported = new Set<string>();
     for (const relPath of changedFiles) {
       for (const violation of facts.violations) {
         if (violation.relPathA !== relPath && violation.relPathB !== relPath) continue;
         const partner = violation.relPathA === relPath ? violation.relPathB : violation.relPathA;
-        if (changed.has(partner)) continue;
+        if (inChange.has(partner)) continue;
         const subject = `${relPath} ~ ${partner}`;
         if (reported.has(subject)) continue;
         reported.add(subject);
@@ -828,17 +893,54 @@ export class DiffDetectorRun {
         // cannot suppress.
         const structurallyVisible = this.graph?.edgesTo(relPath).some((indexed) => indexed.source === partner) ?? false;
         if (structurallyVisible) continue;
-        findings.push({
-          detector: "silentCoupling",
-          subject,
-          evidence: [`co-change support ${format3(violation.support)}`, `strength ${format3(violation.strength)}`],
-          detail:
-            `strong co-change with no structural edge and the diff does not add one: ${subject} ` +
-            `(support ${format3(violation.support)}, strength ${format3(violation.strength)})`,
+        pairs.push({
+          relPathA: relPath,
+          relPathB: partner,
+          support: violation.support,
+          strength: violation.strength,
+          ...(violation.expectedSupport === undefined ? {} : { expectedSupport: violation.expectedSupport }),
         });
       }
     }
-    return { findings, excluded: facts.excluded };
+    // Pairs sharing an endpoint list as ONE finding (bd tea-rags-mcp-89k7k.1.14)
+    // — the same partition get_architecture_report lists its violations by.
+    const { groups, singletons } = groupSilentCouplingPairs(pairs);
+    const findings: DiffDetectorFinding[] = [
+      ...groups.map((group): DiffDetectorFinding => {
+        const partners = silentCouplingGroupPartners(group);
+        const subject = silentCouplingGroupSubject(group.relPath, partners.length);
+        const drillDown = silentCouplingGroupDrillDown(group.relPath, partners.length);
+        return {
+          detector: "silentCoupling",
+          subject,
+          evidence: partners.slice(0, SILENT_COUPLING_GROUP_EVIDENCE_PARTNERS).map((partner) => {
+            const expected =
+              partner.expectedSupport === undefined ? "" : `, expected ${format3(partner.expectedSupport)}`;
+            return `${partner.relPath}: support ${format3(partner.support)}${expected}, strength ${format3(partner.strength)}`;
+          }),
+          detail: `${subject} and the diff adds none; drill in: ${drillDown.hint}`,
+          partners,
+          drillDown,
+        };
+      }),
+      ...singletons.map((pair): DiffDetectorFinding => {
+        const subject = `${pair.relPathA} ~ ${pair.relPathB}`;
+        return {
+          detector: "silentCoupling",
+          subject,
+          evidence: [`co-change support ${format3(pair.support)}`, `strength ${format3(pair.strength)}`],
+          detail:
+            `strong co-change with no structural edge and the diff does not add one: ${subject} ` +
+            `(support ${format3(pair.support)}, strength ${format3(pair.strength)})`,
+        };
+      }),
+    ];
+    return {
+      findings,
+      pairCount: pairs.length,
+      excluded: facts.excluded,
+      ...(facts.cochangeSignificance ? { cochangeSignificance: facts.cochangeSignificance } : {}),
+    };
   }
 
   /**
@@ -850,13 +952,14 @@ export class DiffDetectorRun {
    * indexed graph's. Judged only when the tree recorded a re-export surface
    * at all — "not recorded" must never read as "exports nothing" (the same
    * guard `classifyFacadeLeak`'s `facadeNamesRecorded` makes on the report
-   * side). A consumer the diff also changes is skipped: its indexed row is
+   * side). A consumer the diff also changes (`inChange` — the whole change,
+   * past-cap files included, bd tea-rags-mcp-lxbrr) is skipped: its indexed row is
    * stale, the diff judges its own read.
    */
   private judgeFacadeContract(
     changedFiles: readonly string[],
     overlay: ReviewEdgeOverlay,
-    changed: ReadonlySet<string>,
+    inChange: ReadonlySet<string>,
   ): DiffDetectorFinding[] {
     if (this.contract === undefined) return [];
     const findings: DiffDetectorFinding[] = [];
@@ -878,7 +981,7 @@ export class DiffDetectorRun {
 
       const consumersByDroppedName = new Map<string, Set<string>>();
       for (const consumer of this.contract.indexedConsumersOf(relPath)) {
-        if (changed.has(consumer.source)) continue;
+        if (inChange.has(consumer.source)) continue;
         if (consumer.importedNames === undefined) continue;
         if (consumer.importedNames.includes(WHOLE_MODULE_EXPORT_NAME)) continue;
         for (const name of consumer.importedNames) {

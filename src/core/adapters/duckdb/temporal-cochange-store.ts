@@ -1,7 +1,8 @@
 /**
  * The temporal co-change store (bd tea-rags-mcp-x4rpp) — `cg_temporal_files`,
  * `cg_temporal_edges_cochange`, `cg_temporal_meta` (migration 031) and
- * `cg_temporal_bundle_files` (bd tea-rags-mcp-c3v6o, migration 042).
+ * `cg_temporal_bundle_files` (bd tea-rags-mcp-c3v6o, migration 042) and
+ * `cg_temporal_bundle_commits` (bd tea-rags-mcp-89k7k.1.14, migration 043).
  *
  * Pure CRUD, like the analytics store: the extractor that computes the graph
  * and every judgement over it live in `domains/trajectory/codegraph/temporal/`.
@@ -80,12 +81,13 @@ export class DuckDbTemporalCochangeStore {
    * generation in the file (`DuckDbGraphSession#recreateEmptyTable`).
    */
   async replace(snapshot: TemporalCochangeSnapshot): Promise<void> {
-    const { meta, files, edges, bundles } = snapshot;
+    const { meta, files, edges, bundles, bundleCommits } = snapshot;
     await this.session.transaction(async () => {
       await this.session.recreateEmptyTable("cg_temporal_files");
       await this.session.recreateEmptyTable("cg_temporal_edges_cochange");
       await this.session.recreateEmptyTable("cg_temporal_meta");
       await this.session.recreateEmptyTable("cg_temporal_bundle_files");
+      await this.session.recreateEmptyTable("cg_temporal_bundle_commits");
       await this.session.insertBatched(
         "cg_temporal_files",
         ["rel_path", "bundle_count", "partner_count", "last_changed_at"],
@@ -96,6 +98,11 @@ export class DuckDbTemporalCochangeStore {
         "cg_temporal_bundle_files",
         ["bundle_id", "rel_path"],
         bundles.flatMap((filesOfBundle, bundleId) => filesOfBundle.map((relPath) => [bundleId, relPath])),
+      );
+      await this.session.insertBatched(
+        "cg_temporal_bundle_commits",
+        ["bundle_id", "commit_shas"],
+        (bundleCommits ?? []).map((shas, bundleId) => [bundleId, JSON.stringify(shas)]),
       );
       await this.session.insertBatched(
         "cg_temporal_meta",
@@ -213,7 +220,12 @@ export class DuckDbTemporalCochangeStore {
        LEFT JOIN undirected u ON u.a = c.rel_path_a AND u.b = c.rel_path_b
        ORDER BY c.rel_path_a, c.rel_path_b`,
     );
-    return { meta, edges: rows.map(edgeFromRow), bundles: await this.readBundleFiles() };
+    return {
+      meta,
+      edges: rows.map(edgeFromRow),
+      bundles: await this.readBundleFiles(),
+      bundleCommits: await this.readBundleCommits(),
+    };
   }
 
   /**
@@ -234,6 +246,18 @@ export class DuckDbTemporalCochangeStore {
       else bundles.set(row.bundle_id, [row.rel_path]);
     }
     return bundles;
+  }
+
+  /**
+   * Each admitted bundle's commit SHAs, keyed by bundle id (bd
+   * tea-rags-mcp-89k7k.1.14) — how a review drops its own commits from the
+   * history. Empty on a build that predates migration 043.
+   */
+  async readBundleCommits(): Promise<ReadonlyMap<number, readonly string[]>> {
+    const rows = await this.session.queryAll<{ bundle_id: number; commit_shas: string }>(
+      "SELECT bundle_id, commit_shas FROM cg_temporal_bundle_commits ORDER BY bundle_id",
+    );
+    return new Map(rows.map((row) => [Number(row.bundle_id), JSON.parse(row.commit_shas) as string[]]));
   }
 }
 

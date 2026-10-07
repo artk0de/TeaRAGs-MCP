@@ -180,7 +180,7 @@ describe("detectSilentCoupling", () => {
       generatedEndpoints: 1,
       documentationEndpoints: 1,
       unwalkedEndpoints: 1,
-      nonPositiveLift: 1,
+      notSignificant: 1,
       explainedByFacadeChain: 0,
     });
     expect(report.summary.candidateCount).toBe(0);
@@ -487,7 +487,7 @@ describe("detectSilentCoupling — facade-chain explanation (bd tea-rags-mcp-89k
       generatedEndpoints: 0,
       documentationEndpoints: 0,
       unwalkedEndpoints: 0,
-      nonPositiveLift: 0,
+      notSignificant: 0,
       explainedByFacadeChain: 1,
     });
   });

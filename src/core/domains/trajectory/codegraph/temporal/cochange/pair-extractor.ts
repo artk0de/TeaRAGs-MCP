@@ -52,6 +52,8 @@ export interface CochangeGraphExtraction {
    * holds; each inner array only adds one entry per file per bundle.
    */
   admittedBundles: readonly (readonly RelPath[])[];
+  /** Each admitted bundle's member commit SHAs, aligned with `admittedBundles` (bd tea-rags-mcp-89k7k.1.14). */
+  admittedBundleCommits: readonly (readonly string[])[];
 }
 
 /** Up to this many sample SHAs per stored pair. */
@@ -147,6 +149,7 @@ export function extractCochangeGraph(
     edges,
     admittedBundleCount: n,
     admittedBundles: bundleIds.map((ids) => ids.map((id) => paths[id])),
+    admittedBundleCommits: admitted.map((bundle) => bundle.shas),
   };
 }
 

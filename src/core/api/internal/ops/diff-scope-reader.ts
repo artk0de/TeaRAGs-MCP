@@ -14,9 +14,10 @@ import { realpathSync } from "node:fs";
 
 import { listRepoWorkTrees } from "../../../adapters/vcs/git/common-dir.js";
 import {
-  listChangedFiles,
+  listCommitsSince,
   readAddedLineRangesOfFiles,
   readMergeBase,
+  readWorkingTreeChanges,
   type AddedLineRange,
 } from "../../../adapters/vcs/git/git-cli/client.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
@@ -58,12 +59,27 @@ export interface DiffScopeRead {
   wholeFiles: number;
   /** The files under the cap — what evidence exclusion carries. */
   files: readonly string[];
+  /**
+   * Every path the change touches, UNCAPPED (bd tea-rags-mcp-lxbrr): the
+   * reviewed files (listed or changed), every path changed against the
+   * merge-base (committed range + working tree, untracked included) and every
+   * path it deleted. The cap limits which files are SCANNED as sources; a
+   * section asking "is this partner in the change?" asks this set — a
+   * past-cap or deleted partner is in the change, never missing.
+   */
+  touchedFiles: ReadonlySet<string>;
   /** Per reviewed file its added line ranges; a whole-file read is one range over every line. */
   addedRanges: ReadonlyMap<string, readonly AddedLineRange[]>;
   /** The read files the ontology's non-production masks cover — a report skips them, not judges them. */
   nonProduction: ReadonlySet<string>;
   /** How many changed files fell over the cap. */
   skipped: number;
+  /**
+   * The change's own commits, `mergeBase..HEAD` (bd tea-rags-mcp-89k7k.1.14) —
+   * a co-change test drops the history bundles they formed, so the change
+   * cannot confirm itself. Absent on a scope read without git (a fixture).
+   */
+  diffCommits?: readonly string[];
 }
 
 /** The evidence corpus's lag behind the tree an answer is about. */
@@ -99,10 +115,9 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
   const toplevel = findGitToplevel(workTree) ?? workTree;
   const prefix = gitPathPrefix(toplevel, workTree);
   const mergeBase = await resolveReviewMergeBase(toplevel, base);
-  const changed = rebaseGitPathsOntoRoot(
-    await gitRead(base, async () => listChangedFiles(toplevel, mergeBase)),
-    prefix,
-  );
+  const changes = await gitRead(base, async () => readWorkingTreeChanges(toplevel, mergeBase));
+  const changed = rebaseGitPathsOntoRoot(changes.changed, prefix);
+  const deleted = rebaseGitPathsOntoRoot(changes.deleted, prefix);
   const listed = req.files ? unique(req.files) : undefined;
   const all = listed ?? changed;
   const changedSet = new Set(changed);
@@ -137,6 +152,7 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
   );
 
   const nonProduction = new Set(files.filter((relPath) => nonProductionFilter.ignores(relPath)));
+  const diffCommits = await gitRead(base, async () => listCommitsSince(toplevel, mergeBase));
   return {
     workTree,
     base,
@@ -145,9 +161,11 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
     changedFiles: listed ? listed.filter((relPath) => changedSet.has(relPath)).length : changed.length,
     wholeFiles: whole.size,
     files,
+    touchedFiles: new Set([...all, ...changed, ...deleted]),
     addedRanges,
     nonProduction,
     skipped: all.length - files.length,
+    diffCommits,
   };
 }
 

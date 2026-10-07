@@ -30,7 +30,9 @@ const REVIEW_CHANGES_DESCRIPTION =
   "map, a requested one whose substrate is missing answers built:false+reason — absence is not not-built. " +
   "naming: declarations the change adds, judged against project vocabulary (the naming-lexicon review, verbatim). " +
   "incompleteChange: co-change partners of the diff's files the diff does NOT touch — findings pass the " +
-  "coupling-statistics gate (lift>1, Wilson strength, majority-floored Otsu cut over the corpus; partnerKind " +
+  "co-change significance gate (Poisson test vs configuration null n_p*n_q*Qs/M^2, BH q=0.05 over every pair " +
+  "touching the diff, history minus the diff's own commits; summary cochangeSignificance + notSignificant), then " +
+  "Wilson strength and the majority-floored Otsu cut over the corpus; partnerKind " +
   "test-first, generated excluded; structurallyLinked ranks above history-only; cap 50). cohesion: per changed " +
   "file, symbol co-change clusters + split candidates; a file with " +
   "no data = notJudged noCohesionData, never zero (cap 50 reports). architecture: the diff's added edges judged by " +
@@ -39,7 +41,9 @@ const REVIEW_CHANGES_DESCRIPTION =
   "detector row, findingCount stays the family's FULL total, rows reconcile findingCount = listed + truncated. " +
   "Detector rows also carry exclusions: mainSequence excludedLowConnectionCount (small-N components below the " +
   "connection floor), silentCoupling excluded block (the production taxonomy's counters) — a zero over excluded " +
-  "classes is not a clean pass; foundationTerminal:true on a D-delta finding = every contributing edge ends at " +
+  "classes is not a clean pass; silentCoupling pairs sharing an endpoint list as ONE finding (partners[] = every " +
+  "pair, evidence = 3 strongest with expected support λ, drillDown = ready find_co_changed call) — its row's " +
+  "findingCount counts pairs, groupedFindingCount the findings (= listed + truncated); foundationTerminal:true on a D-delta finding = every contributing edge ends at " +
   "contracts/, entryPoint:true = touched component is a declared cli/mcp entry surface — placement, not defect, " +
   "preExisting:true on a cycles/leakingAbstraction finding = the index already holds that edge — the diff touches " +
   "a file on it, did not add it (all triage data, never suppression). scopeSkippedFiles rides section envelopes (incompleteChange, " +

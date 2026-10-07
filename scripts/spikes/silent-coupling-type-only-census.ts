@@ -147,7 +147,7 @@ function summaryLine(label: string, r: SilentCouplingReport): string {
     `${label}: pairs=${s.pairCount} candidates=${s.candidateCount} strong=${s.strongCount} ` +
     `strongLinked=${s.strongLinkedCount} violations=${s.violationCount} rootCauses=${s.rootCauseCount} ` +
     `threshold=${s.strengthThreshold.toFixed(4)} (${s.strengthThresholdMethod}) ` +
-    `excluded.nonPositiveLift=${s.excluded.nonPositiveLift}`
+    `excluded.notSignificant=${s.excluded.notSignificant}`
   );
 }
 
