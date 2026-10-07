@@ -242,7 +242,7 @@ Pair undirected: `sourceRelPath` = lexicographically smaller. Evidence per line:
 | Evidence                           | Read as                                                                          |
 | ---------------------------------- | -------------------------------------------------------------------------------- |
 | `strength`                         | 95% Wilson lower bound on P(other changes \| one changes), stronger direction    |
-| `support`                          | commits (or author sessions) touching both — thin support = hedge                |
+| `support`                          | author bursts touching both, once per burst — thin support = hedge               |
 | `confidenceAB` / `confidenceBA`    | P(target \| source) / P(source \| target); asymmetric = one drags other          |
 | `lift`                             | co-change over independence (evidence only — admission is the significance gate) |
 | `sampleCommits`                    | shas to cite; show one to prove                                                  |
