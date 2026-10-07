@@ -427,7 +427,10 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "(Poisson tail, BH q=0.05 over all pairs of files changed in >=2 bundles; summary.silentCoupling." +
       "cochangeSignificance, excluded.notSignificant) — hub files (locales, version manifests) die there; " +
       "strong = >0.5 and >= adaptive cut (Otsu when strengths split bimodally, else the floor); rootCauses = file with >=2 silent " +
-      "partners; summary.silentCoupling.built false = no co-change build, not clean. splitMerge: component " +
+      "partners; violations: pairs sharing an endpoint list as ONE kind:group finding (greedy, most pairs first) — " +
+      "partners[] = every pair (support, expectedSupport = null λ, strength), evidence.topPartners = 3 strongest, " +
+      "evidence.drillDown = ready find_co_changed call; limit caps findings, violationCount stays pairs, " +
+      "groupedFindingCount = findings; summary.silentCoupling.built false = no co-change build, not clean. splitMerge: component " +
       "partition vs history over same sub-graph — splitCandidate = one component whose stored internal pairs " +
       "cluster >=2 groups, largestWeightShare < 0.7 (cohesion's cut), files = per-cluster exemplars (<=8); " +
       "mergeCandidate = two components whose admitted bundles overlap (support = bundles touching both, " +

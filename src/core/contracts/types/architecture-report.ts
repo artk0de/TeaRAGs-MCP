@@ -239,6 +239,12 @@ export interface SilentCouplingViolationEvidence {
    * The severity.
    */
   strength: number;
+  /**
+   * λ — the support the significance gate's configuration null predicts from
+   * the two files' change counts, 3 decimals (bd tea-rags-mcp-89k7k.1.14).
+   * Absent when the co-change read carried no bundle membership.
+   */
+  expectedSupport?: number;
   /** Unix seconds of the latest bundle touching both. */
   lastCoChangeAt: number;
   /** A few shas that touched both, newest first. */
@@ -265,6 +271,55 @@ export interface SilentCouplingArchitectureViolation {
   sourceRelPath: RelPath;
   targetRelPath: RelPath;
   evidence: SilentCouplingViolationEvidence;
+}
+
+/** One partner of a grouped silent-coupling finding (bd tea-rags-mcp-89k7k.1.14). */
+export interface SilentCouplingGroupPartner {
+  relPath: RelPath;
+  /** Change bundles touching both files. */
+  support: number;
+  /** λ the configuration null predicts, 3 decimals; absent without bundle membership. */
+  expectedSupport?: number;
+  /** The pair's Wilson-lower-bound strength. */
+  strength: number;
+}
+
+/**
+ * The ready-to-run drill into a grouped silent-coupling finding: the
+ * `find_co_changed` call listing that file's co-change partners. `files` and
+ * `limit` are the call's params; `hint` spells the call out.
+ */
+export interface SilentCouplingGroupDrillDown {
+  tool: "find_co_changed";
+  files: RelPath[];
+  limit: number;
+  hint: string;
+}
+
+/**
+ * Two or more admitted silent-coupling pairs sharing one endpoint, listed as
+ * ONE finding (bd tea-rags-mcp-89k7k.1.14) — a key-addressed file (a locale
+ * file beside every component reading it) otherwise fills the section. The
+ * pairs are each statistically real; grouping is presentation only. Greedy:
+ * the endpoint with the most admitted pairs first, ties by code-point order;
+ * a pair belongs to exactly one group or stays a pair finding.
+ */
+export interface SilentCouplingGroupArchitectureViolation {
+  detector: "silentCoupling";
+  kind: "group";
+  /** The shared endpoint. */
+  relPath: RelPath;
+  subject: string;
+  /** Pairs in the group — every one listed in `partners`. */
+  partnerCount: number;
+  evidence: {
+    /** The strongest partners (≤ 3), strongest first. */
+    topPartners: SilentCouplingGroupPartner[];
+    maxStrength: number;
+    drillDown: SilentCouplingGroupDrillDown;
+  };
+  /** Every partner, strongest first — nothing the grouping took is lost. */
+  partners: SilentCouplingGroupPartner[];
 }
 
 /** Where a component far from the main sequence sits (bd tea-rags-mcp-r8hme.8). */
@@ -645,6 +700,7 @@ export type ArchitectureViolation =
   | StableDependencyArchitectureViolation
   | LeakingAbstractionArchitectureViolation
   | SilentCouplingArchitectureViolation
+  | SilentCouplingGroupArchitectureViolation
   | MainSequenceArchitectureViolation
   | LayeringArchitectureViolation
   | NormArchitectureViolation;
@@ -980,8 +1036,14 @@ export interface SilentCouplingReportSummary {
   strongCount: number;
   /** Strong candidates the structural graph does link — coupling the code declares. */
   strongLinkedCount: number;
-  /** Total violations, before `limit`. */
+  /** Total violations (pairs), before `limit`. */
   violationCount: number;
+  /**
+   * Findings the pairs list as after grouping by shared endpoint (bd
+   * tea-rags-mcp-89k7k.1.14), before `limit`: groups plus ungrouped pairs.
+   * `limit` caps these, not pairs.
+   */
+  groupedFindingCount: number;
   /** Total root causes (files with ≥ 2 silent partners), before `limit`. */
   rootCauseCount: number;
   /**

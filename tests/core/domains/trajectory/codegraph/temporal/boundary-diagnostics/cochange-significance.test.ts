@@ -127,6 +127,17 @@ describe("assessCochangeSignificance", () => {
     expect(significance.summary.admittedPairCount).toBeGreaterThanOrEqual(1);
   });
 
+  // bd tea-rags-mcp-89k7k.1.14 presentation: a grouped finding shows each
+  // partner's support beside the λ the null predicted for it.
+  it("answers the configuration null's expected support λ for a pair, either order", () => {
+    const bundles = [["src/p.ts", "src/q.ts", "src/r.ts"], ["src/p.ts", "src/q.ts"], ["src/p.ts"]];
+    const significance = assessCochangeSignificance(bundles, { kind: "full" });
+    // n_p = 3, n_q = 2, M = 3 + 2 + 1 = 6, Qs = 6 + 2 + 0 = 8.
+    const lambda = configurationNullRate(3, 2, { membership: 6, pairSlots: 8 });
+    expect(significance.expectedSupport("src/p.ts", "src/q.ts")).toBeCloseTo(lambda, 15);
+    expect(significance.expectedSupport("src/q.ts", "src/p.ts")).toBeCloseTo(lambda, 15);
+  });
+
   it("admits nothing on an exchangeable design where every pair co-changes equally", () => {
     const filesOf = ["a", "b", "c", "d", "e", "f"].map((n) => `src/${n}.ts`);
     const bundles: string[][] = [];

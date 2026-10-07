@@ -71,6 +71,7 @@ import {
   assessGraphCochangeSignificance,
   computeSplitMergeVerdicts,
   detectSilentCoupling,
+  groupSilentCouplingPairs,
   linkImportedCochangePairs,
   oneWalkedViolationImporters,
   SILENT_COUPLING_EXPLAINED_REASON,
@@ -96,6 +97,7 @@ import type {
   MainSequenceReportSummary,
   NormArchitectureViolation,
   SilentCouplingArchitectureViolation,
+  SilentCouplingGroupArchitectureViolation,
   SilentCouplingReportSummary,
   SplitMergeReportSummary,
   SplitMergeVerdictsSummary,
@@ -108,6 +110,12 @@ import {
   type ProductionArchitectureGraph,
 } from "./architecture-facts.js";
 import { ontologyNonProductionPaths } from "./ontology-report-ops.js";
+import {
+  SILENT_COUPLING_GROUP_EVIDENCE_PARTNERS,
+  silentCouplingGroupDrillDown,
+  silentCouplingGroupPartners,
+  silentCouplingGroupSubject,
+} from "./silent-coupling-group-findings.js";
 
 /** Default `GetArchitectureReportRequest.limit`. */
 export const DEFAULT_ARCHITECTURE_REPORT_LIMIT = 50;
@@ -907,6 +915,7 @@ function summariseSilentCoupling(report: SilentCouplingReport, limit: number): S
     strongCount: summary.strongCount,
     strongLinkedCount: summary.strongLinkedCount,
     violationCount: summary.violationCount,
+    groupedFindingCount: groupedSilentCouplingFindingCount(report.violations),
     rootCauseCount: summary.rootCauseCount,
     strengthThreshold: summary.strengthThreshold,
     strengthThresholdMethod: summary.strengthThresholdMethod,
@@ -928,6 +937,12 @@ function summariseSilentCoupling(report: SilentCouplingReport, limit: number): S
       : {}),
     ...(summary.scope ? { outOfScopePairCount: summary.scope.outOfScopePairCount } : {}),
   };
+}
+
+/** Groups plus ungrouped pairs — the findings `silentCouplingArchitectureViolations` lists before `limit`. */
+function groupedSilentCouplingFindingCount(violations: readonly SilentCouplingViolation[]): number {
+  const { groups, singletons } = groupSilentCouplingPairs(violations);
+  return groups.length + singletons.length;
 }
 
 function roundTo3(value: number): number {
@@ -996,7 +1011,40 @@ function silentRootCauses(report: SilentCouplingReport, limit: number): Architec
 }
 
 function silentViolations(report: SilentCouplingReport, limit: number): ArchitectureViolation[] {
-  return report.violations.slice(0, limit).map(toSilentCouplingArchitectureViolation);
+  return silentCouplingArchitectureViolations(report.violations, limit);
+}
+
+/**
+ * The silent-coupling violations as listed (bd tea-rags-mcp-89k7k.1.14): pairs
+ * sharing an endpoint ({@link groupSilentCouplingPairs}) become ONE grouped
+ * finding each — greedy order, most pairs first — then the ungrouped pairs in
+ * the detector's strongest-first order. Grouping reads EVERY violation, so a
+ * group's `partners` is complete; `limit` caps the findings, not the pairs.
+ */
+export function silentCouplingArchitectureViolations(
+  violations: readonly SilentCouplingViolation[],
+  limit: number,
+): ArchitectureViolation[] {
+  const { groups, singletons } = groupSilentCouplingPairs(violations);
+  return [
+    ...groups.map((group): SilentCouplingGroupArchitectureViolation => {
+      const partners = silentCouplingGroupPartners(group);
+      return {
+        detector: "silentCoupling",
+        kind: "group",
+        relPath: group.relPath,
+        subject: silentCouplingGroupSubject(group.relPath, partners.length),
+        partnerCount: partners.length,
+        evidence: {
+          topPartners: partners.slice(0, SILENT_COUPLING_GROUP_EVIDENCE_PARTNERS),
+          maxStrength: partners[0].strength,
+          drillDown: silentCouplingGroupDrillDown(group.relPath, partners.length),
+        },
+        partners,
+      };
+    }),
+    ...singletons.map(toSilentCouplingArchitectureViolation),
+  ].slice(0, limit);
 }
 
 function toSilentCouplingArchitectureViolation(v: SilentCouplingViolation): SilentCouplingArchitectureViolation {
@@ -1010,6 +1058,7 @@ function toSilentCouplingArchitectureViolation(v: SilentCouplingViolation): Sile
       confidenceBA: v.confidenceBA,
       lift: v.lift,
       strength: v.strength,
+      ...(v.expectedSupport === undefined ? {} : { expectedSupport: roundTo3(v.expectedSupport) }),
       lastCoChangeAt: v.lastCoChangeAt,
       sampleCommits: v.sampleCommits,
       structuralVisibility: v.structuralVisibility,

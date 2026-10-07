@@ -50,18 +50,30 @@
  * again from a reverse or duplicated read.
  */
 
-import type { CochangeSignificanceSummary } from "../../../contracts/types/architecture-report.js";
+import type {
+  CochangeSignificanceSummary,
+  SilentCouplingGroupDrillDown,
+  SilentCouplingGroupPartner,
+} from "../../../contracts/types/architecture-report.js";
 import {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   isDeclaredCompositionRoot,
   isDeclaredEntryPoint,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
-import type {
-  SilentCouplingExclusionCounts,
-  SilentCouplingViolation,
-  SplitMergeVerdicts,
+import {
+  groupSilentCouplingPairs,
+  type SilentCouplingExclusionCounts,
+  type SilentCouplingViolation,
+  type SplitMergeVerdicts,
 } from "../../../domains/trajectory/codegraph/temporal/index.js";
 import type { ReviewEdgeOverlay } from "./review-edge-overlay.js";
+import {
+  SILENT_COUPLING_GROUP_EVIDENCE_PARTNERS,
+  silentCouplingGroupDrillDown,
+  silentCouplingGroupPartners,
+  silentCouplingGroupSubject,
+  type SilentCouplingGroupedPair,
+} from "./silent-coupling-group-findings.js";
 
 /**
  * The indexed graph a detector may traverse, with the diff's own files
@@ -135,7 +147,10 @@ export interface DiffDetectorCatalog {
  */
 export interface DiffDetectorSilentCouplingFacts {
   /** Strong, unlinked, unexplained pairs — the production violation list. */
-  violations: readonly Pick<SilentCouplingViolation, "relPathA" | "relPathB" | "support" | "strength">[];
+  violations: readonly Pick<
+    SilentCouplingViolation,
+    "relPathA" | "relPathB" | "support" | "strength" | "expectedSupport"
+  >[];
   /** Pairs read but not judged, by the production taxonomy — verbatim. */
   excluded: SilentCouplingExclusionCounts;
   /** The pair admission gate's account (bd tea-rags-mcp-89k7k.1.14); absent on the lift fallback. */
@@ -329,6 +344,14 @@ export interface DiffDetectorFinding {
    * graph port = nothing is pre-existing. Present only when true.
    */
   preExisting?: true;
+  /**
+   * silentCoupling grouped finding only (bd tea-rags-mcp-89k7k.1.14): every
+   * partner of the shared endpoint `subject` names, strongest first — the
+   * evidence lines name the top 3, nothing the grouping took is lost.
+   */
+  partners?: readonly SilentCouplingGroupPartner[];
+  /** silentCoupling grouped finding only: the ready-to-run `find_co_changed` drill into the shared endpoint. */
+  drillDown?: SilentCouplingGroupDrillDown;
 }
 
 /** One detector family's verdict for the run. */
@@ -374,6 +397,13 @@ export interface DiffDetectorStatus {
    * only, and only when the facts carry it.
    */
   cochangeSignificance?: CochangeSignificanceSummary;
+  /**
+   * silentCoupling row only (bd tea-rags-mcp-89k7k.1.14): the findings the
+   * row's `findingCount` pairs list as — pairs sharing an endpoint become one
+   * grouped finding. The section's cap and this row's `truncated` count these
+   * findings, so the row reconciles `groupedFindingCount = listed + truncated`.
+   */
+  groupedFindingCount?: number;
 }
 
 export interface DiffDetectorFindings {
@@ -503,7 +533,10 @@ export class DiffDetectorRun {
         ),
         partial(
           Object.freeze({
-            ...detectorStatus("silentCoupling", silentCoupling.findings.length),
+            // findingCount stays the PAIR count; the listed findings group
+            // pairs by shared endpoint (bd tea-rags-mcp-89k7k.1.14).
+            ...detectorStatus("silentCoupling", silentCoupling.pairCount),
+            groupedFindingCount: silentCoupling.findings.length,
             // The taxonomy's counters ride the silentCoupling row (bd
             // tea-rags-mcp-89k7k.1.10); absent facts stamp nothing — a zero
             // block over an unwired port would claim pairs were judged.
@@ -833,12 +866,15 @@ export class DiffDetectorRun {
     inChange: ReadonlySet<string>,
   ): {
     findings: DiffDetectorFinding[];
+    /** Admitted pairs, before grouping — the row's `findingCount`. */
+    pairCount: number;
     excluded: SilentCouplingExclusionCounts | undefined;
     cochangeSignificance?: CochangeSignificanceSummary;
   } {
     const facts = this.silentCouplingFacts;
-    if (facts === undefined) return { findings: [], excluded: undefined };
-    const findings: DiffDetectorFinding[] = [];
+    if (facts === undefined) return { findings: [], pairCount: 0, excluded: undefined };
+    // Oriented changed file first: `relPathA` is the diff's side of the pair.
+    const pairs: SilentCouplingGroupedPair[] = [];
     const reported = new Set<string>();
     for (const relPath of changedFiles) {
       for (const violation of facts.violations) {
@@ -857,18 +893,51 @@ export class DiffDetectorRun {
         // cannot suppress.
         const structurallyVisible = this.graph?.edgesTo(relPath).some((indexed) => indexed.source === partner) ?? false;
         if (structurallyVisible) continue;
-        findings.push({
-          detector: "silentCoupling",
-          subject,
-          evidence: [`co-change support ${format3(violation.support)}`, `strength ${format3(violation.strength)}`],
-          detail:
-            `strong co-change with no structural edge and the diff does not add one: ${subject} ` +
-            `(support ${format3(violation.support)}, strength ${format3(violation.strength)})`,
+        pairs.push({
+          relPathA: relPath,
+          relPathB: partner,
+          support: violation.support,
+          strength: violation.strength,
+          ...(violation.expectedSupport === undefined ? {} : { expectedSupport: violation.expectedSupport }),
         });
       }
     }
+    // Pairs sharing an endpoint list as ONE finding (bd tea-rags-mcp-89k7k.1.14)
+    // — the same partition get_architecture_report lists its violations by.
+    const { groups, singletons } = groupSilentCouplingPairs(pairs);
+    const findings: DiffDetectorFinding[] = [
+      ...groups.map((group): DiffDetectorFinding => {
+        const partners = silentCouplingGroupPartners(group);
+        const subject = silentCouplingGroupSubject(group.relPath, partners.length);
+        const drillDown = silentCouplingGroupDrillDown(group.relPath, partners.length);
+        return {
+          detector: "silentCoupling",
+          subject,
+          evidence: partners.slice(0, SILENT_COUPLING_GROUP_EVIDENCE_PARTNERS).map((partner) => {
+            const expected =
+              partner.expectedSupport === undefined ? "" : `, expected ${format3(partner.expectedSupport)}`;
+            return `${partner.relPath}: support ${format3(partner.support)}${expected}, strength ${format3(partner.strength)}`;
+          }),
+          detail: `${subject} and the diff adds none; drill in: ${drillDown.hint}`,
+          partners,
+          drillDown,
+        };
+      }),
+      ...singletons.map((pair): DiffDetectorFinding => {
+        const subject = `${pair.relPathA} ~ ${pair.relPathB}`;
+        return {
+          detector: "silentCoupling",
+          subject,
+          evidence: [`co-change support ${format3(pair.support)}`, `strength ${format3(pair.strength)}`],
+          detail:
+            `strong co-change with no structural edge and the diff does not add one: ${subject} ` +
+            `(support ${format3(pair.support)}, strength ${format3(pair.strength)})`,
+        };
+      }),
+    ];
     return {
       findings,
+      pairCount: pairs.length,
       excluded: facts.excluded,
       ...(facts.cochangeSignificance ? { cochangeSignificance: facts.cochangeSignificance } : {}),
     };

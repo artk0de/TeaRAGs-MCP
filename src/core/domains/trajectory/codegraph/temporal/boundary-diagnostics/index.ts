@@ -26,6 +26,16 @@ export {
   SILENT_COUPLING_STRENGTH_MAJORITY,
   SILENT_COUPLING_WILSON_Z,
 } from "./silent-coupling.js";
+export {
+  groupSilentCouplingPairs,
+  SILENT_COUPLING_GROUP_MIN_PAIRS,
+  silentCouplingPartnerOf,
+} from "./silent-coupling-grouping.js";
+export type {
+  SilentCouplingGroupablePair,
+  SilentCouplingPairGroup,
+  SilentCouplingPairGrouping,
+} from "./silent-coupling-grouping.js";
 export type {
   SilentCouplingBuildSummary,
   SilentCouplingExclusionCounts,

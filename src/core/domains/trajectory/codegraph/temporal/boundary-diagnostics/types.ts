@@ -86,6 +86,12 @@ export interface SilentCouplingViolation {
    * changes, the other changes too. The severity.
    */
   strength: number;
+  /**
+   * λ — the support the co-change significance gate's configuration null
+   * predicts from the two files' change counts (bd tea-rags-mcp-89k7k.1.14).
+   * Absent when the read carried no bundle membership to test against.
+   */
+  expectedSupport?: number;
   /** Unix seconds of the latest bundle touching both. */
   lastCoChangeAt: number;
   /** A few shas that touched both, newest first. */

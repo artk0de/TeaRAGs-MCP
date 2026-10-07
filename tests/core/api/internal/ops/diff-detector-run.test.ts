@@ -1068,6 +1068,61 @@ describe("silentCoupling", () => {
     expect(result.findings).toEqual([]);
   });
 
+  // bd tea-rags-mcp-89k7k.1.14 (presentation): live, 15 of 22 rows were one
+  // locale file against each component — every pair real, the section
+  // unreadable. Pairs sharing an endpoint list as ONE finding.
+  it("groups pairs sharing an endpoint into one finding with every partner and a find_co_changed drill; others stay pairs", () => {
+    const pair = (relPathB: string, support: number, strength: number, expectedSupport: number) => ({
+      relPathA: "config/en.yml",
+      relPathB,
+      support,
+      strength,
+      expectedSupport,
+    });
+    const result = runWith(
+      {
+        silentCouplingFacts: factsOf([
+          pair("src/p1.ts", 30, 0.71, 4.8),
+          pair("src/p2.ts", 12, 0.62, 3.25),
+          { relPathA: "src/b.ts", relPathB: "src/z.ts", support: 9, strength: 0.57 },
+          pair("src/p3.ts", 20, 0.66, 4.1234),
+        ]),
+      },
+      ["config/en.yml", "src/b.ts"],
+      [["src/b.ts", "src/q.ts"]],
+    );
+    const silent = result.findings.filter((finding) => finding.detector === "silentCoupling");
+    expect(silent).toEqual([
+      {
+        detector: "silentCoupling",
+        subject: "config/en.yml co-changes significantly with 3 files without a structural edge",
+        evidence: [
+          "src/p1.ts: support 30.000, expected 4.800, strength 0.710",
+          "src/p3.ts: support 20.000, expected 4.123, strength 0.660",
+          "src/p2.ts: support 12.000, expected 3.250, strength 0.620",
+        ],
+        detail:
+          "config/en.yml co-changes significantly with 3 files without a structural edge and the diff adds none; " +
+          'drill in: call find_co_changed(files: ["config/en.yml"], limit: 3) to list this file\'s co-change partners',
+        partners: [
+          { relPath: "src/p1.ts", support: 30, expectedSupport: 4.8, strength: 0.71 },
+          { relPath: "src/p3.ts", support: 20, expectedSupport: 4.123, strength: 0.66 },
+          { relPath: "src/p2.ts", support: 12, expectedSupport: 3.25, strength: 0.62 },
+        ],
+        drillDown: {
+          tool: "find_co_changed",
+          files: ["config/en.yml"],
+          limit: 3,
+          hint: 'call find_co_changed(files: ["config/en.yml"], limit: 3) to list this file\'s co-change partners',
+        },
+      },
+      expect.objectContaining({ subject: "src/b.ts ~ src/z.ts" }),
+    ]);
+    // Counts stay pair counts; the listed findings are counted beside them.
+    const row = result.detectors.find((detector) => detector.detector === "silentCoupling");
+    expect(row).toMatchObject({ findingCount: 4, groupedFindingCount: 2 });
+  });
+
   // bd tea-rags-mcp-lxbrr: the cap limits which files are scanned as sources;
   // a partner the change touches past it is still in the change.
   it("skips a pair whose partner the change touches past the scan cap; an untouched partner still reports", () => {

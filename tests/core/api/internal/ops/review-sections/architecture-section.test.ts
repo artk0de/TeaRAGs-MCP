@@ -494,14 +494,21 @@ describe("architectureSectionProvider.run", () => {
   // their detector rows still counted them.
   it("over the findings cap every family with a finding keeps a slot — a silentCoupling flood never starves facadeContract", async () => {
     // The facadeContract fixture (a facade dropping a re-export consumers
-    // import) beside a 110-partner silent-coupling flood: 111 findings > 100.
+    // import) beside a 110-pair silent-coupling flood: 111 findings > 100.
+    // The flood is 110 DISJOINT pairs (changed fNNN ~ untouched pNNN): pairs
+    // sharing an endpoint list as one grouped finding (bd
+    // tea-rags-mcp-89k7k.1.14), so only disjoint pairs still flood the cap.
     writeFile("src/lib/x.ts", "export const a = 1;\nexport const b = 2;\n");
     writeFile("src/lib/y.ts", "export const z = 1;\n");
     writeFile("src/lib/index.ts", 'export { a } from "./x";\nexport { z } from "./y";\n');
-    const partners = Array.from({ length: 110 }, (_, i) => `src/other/p${String(i).padStart(3, "0")}.ts`);
+    const pad = (i: number) => String(i).padStart(3, "0");
+    const flood = Array.from({ length: 110 }, (_, i) => `src/flood/f${pad(i)}.ts`);
+    for (const relPath of flood) writeFile(relPath, "export const F = 1;\n");
+    const floodPairs = flood.map((relPath, i) => strongPair(relPath, `src/other/p${pad(i)}.ts`));
     const graph = graphDbStub(
       {
         files: [
+          ...flood.map((relPath) => graphFile(relPath)),
           graphFile("src/lib/index.ts"),
           graphFile("src/lib/x.ts"),
           graphFile("src/lib/y.ts"),
@@ -527,14 +534,14 @@ describe("architectureSectionProvider.run", () => {
           namedGraphEdge("src/app/c3.ts", "src/lib/index.ts", ["a", "b"]),
         ],
       },
-      partners.map((partner) => strongPair("src/lib/index.ts", partner)),
+      floodPairs,
     );
 
     const payload = (await architectureSectionProvider.run(
       runContext({
         graphDb: graph,
-        scope: scopeOf(["src/lib/index.ts"]),
-        temporalCochange: { meta: cochangeMeta(), edges: partners.map((p) => strongPair("src/lib/index.ts", p)) },
+        scope: scopeOf(["src/lib/index.ts", ...flood]),
+        temporalCochange: { meta: cochangeMeta(), edges: floodPairs },
       }),
     )) as Record<string, unknown>;
 
@@ -545,7 +552,16 @@ describe("architectureSectionProvider.run", () => {
 
     // The family-aware policy's invariants, whatever the fixture's family mix.
     expect(findings).toHaveLength(100);
-    const detectors = payload.detectors as { detector: string; findingCount: number; truncated?: number }[];
+    // silentCoupling's findingCount counts PAIRS; its listed findings
+    // reconcile against groupedFindingCount (bd tea-rags-mcp-89k7k.1.14).
+    const detectors = (
+      payload.detectors as {
+        detector: string;
+        findingCount: number;
+        groupedFindingCount?: number;
+        truncated?: number;
+      }[]
+    ).map((status) => ({ ...status, findingCount: status.groupedFindingCount ?? status.findingCount }));
     const listedByDetector = new Map<string, number>();
     for (const finding of findings) {
       listedByDetector.set(finding.detector, (listedByDetector.get(finding.detector) ?? 0) + 1);

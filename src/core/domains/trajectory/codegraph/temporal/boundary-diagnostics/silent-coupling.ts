@@ -181,7 +181,7 @@ export function detectSilentCoupling(
       continue;
     }
     if (sharedNeighbour && explains(sharedNeighbour)) {
-      explained.push({ ...toViolation(edge, strength, symbolCounts), explainedBy: sharedNeighbour });
+      explained.push({ ...toViolation(edge, strength, symbolCounts, significance), explainedBy: sharedNeighbour });
       continue;
     }
     if (
@@ -191,7 +191,7 @@ export function detectSilentCoupling(
       excluded.explainedByFacadeChain++;
       continue;
     }
-    violations.push(toViolation(edge, strength, symbolCounts));
+    violations.push(toViolation(edge, strength, symbolCounts, significance));
   }
   violations.sort(compareViolations);
   explained.sort(compareViolations);
@@ -457,6 +457,7 @@ function toViolation(
   edge: TemporalCochangeEdgeWithLinkage,
   strength: number,
   symbolCounts: ReadonlyMap<RelPath, number>,
+  significance: CochangeSignificance | undefined,
 ): SilentCouplingViolation {
   return {
     relPathA: edge.relPathA,
@@ -466,6 +467,7 @@ function toViolation(
     confidenceBA: edge.confidenceBA,
     lift: edge.lift,
     strength,
+    ...(significance ? { expectedSupport: significance.expectedSupport(edge.relPathA, edge.relPathB) } : {}),
     lastCoChangeAt: edge.lastCoChangeAt,
     sampleCommits: edge.sampleCommits,
     structuralVisibility:

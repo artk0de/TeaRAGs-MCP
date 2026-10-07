@@ -71,6 +71,12 @@ export interface CochangeSignificance {
   summary: CochangeSignificanceSummary;
   /** Whether the pair (either order) is admitted. A pair outside the family is not. */
   admits: (relPathA: RelPath, relPathB: RelPath) => boolean;
+  /**
+   * λ for the pair (either order) — the co-change count the configuration null
+   * predicts from the two files' change counts over the judged history. Shown
+   * beside the observed support; 0 for a path the history never changed.
+   */
+  expectedSupport: (relPathA: RelPath, relPathB: RelPath) => number;
 }
 
 /** λ_pq = n_p·n_q·Qs/M² — the configuration null's expected co-change count. */
@@ -232,6 +238,8 @@ export function assessCochangeSignificance(
       admittedPairCount: admitted.size,
     },
     admits: (relPathA, relPathB) => admitted.has(pairKey(relPathA, relPathB)),
+    expectedSupport: (relPathA, relPathB) =>
+      configurationNullRate(changes.get(relPathA) ?? 0, changes.get(relPathB) ?? 0, totals),
   };
 }
 
@@ -266,5 +274,6 @@ export function assessGraphCochangeSignificance(
   return {
     summary: { ...significance.summary, diffHistory: { excludedBundleCount, bundleCommitsAvailable } },
     admits: significance.admits,
+    expectedSupport: significance.expectedSupport,
   };
 }

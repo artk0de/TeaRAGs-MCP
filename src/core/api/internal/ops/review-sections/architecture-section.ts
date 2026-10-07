@@ -189,6 +189,7 @@ function silentCouplingFactsOf(report: SilentCouplingReport): DiffDetectorSilent
       relPathB: v.relPathB,
       support: v.support,
       strength: v.strength,
+      ...(v.expectedSupport === undefined ? {} : { expectedSupport: v.expectedSupport }),
     })),
     excluded: report.summary.excluded,
     ...(report.summary.cochangeSignificance ? { cochangeSignificance: report.summary.cochangeSignificance } : {}),
