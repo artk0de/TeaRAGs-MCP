@@ -359,6 +359,18 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     expect(semanticSearch).toHaveBeenCalledTimes(1);
   });
 
+  // bd tea-rags-mcp-89k7k.1.17: (relPath, line) alone left same-line declarations in extraction order,
+  // so findings[i] could name a different declaration across runs.
+  it("findings declared on one line are ordered by name, not by where they sit on the line", async () => {
+    await db.replaceTypeDeclarationsBulk([{ relPath: "src/zoo/zebra.ts", rows: [decl("Zebra", "class")] }]);
+    writeFileSync(join(repo, "src/git/pair.ts"), "export class Zebra {} export class Commit {}\n");
+    const result = await ops.getNamingLexicon({ collection: "c", path: repo, files: ["src/git/pair.ts"] });
+    expect(result.review?.findings.map((f) => `${f.relPath}:${f.line}:${f.name}:${f.verdict}`)).toEqual([
+      "src/git/pair.ts:1:Commit:COLLISION",
+      "src/git/pair.ts:1:Zebra:COLLISION",
+    ]);
+  });
+
   it("a failing alignment search is one notice for the whole review, and the drafts are still judged", async () => {
     semanticSearch.mockRejectedValue(new Error("ollama unreachable"));
     writeFileSync(join(repo, "src/git/a.ts"), "export class Commit {}\n");
