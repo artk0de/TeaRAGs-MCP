@@ -18,6 +18,7 @@ import type {
 import type { CommitDiffHunk, CommitDiffMemoPort } from "../../../../contracts/types/commit-diff-memo.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
+import { authorIdentityKey } from "./author-identity.js";
 import { historyWindowSince } from "./history-anchor.js";
 import { buildBugFixShaSet } from "./merge-branch-resolver.js";
 import { isBugFixCommitOrBranch, type ChunkAccumulator, type SquashOptions } from "./metrics.js";
@@ -462,14 +463,16 @@ function applyFileHunksToAccumulators(
       }
     }
 
-    // Accumulate per-chunk stats
+    // Accumulate per-chunk stats. Authors are kept as IDENTITY keys
+    // (`author-identity.ts`) — the chunk only counts and session-groups them.
+    const authorKey = authorIdentityKey(commit);
     for (const chunkId of affectedChunkIds) {
       const acc = accumulators.get(chunkId);
       if (!acc) continue;
       acc.commitShas.add(commit.sha);
-      acc.authors.add(commit.author);
+      acc.authors.add(authorKey);
       acc.commitTimestamps.push(commit.timestamp);
-      acc.commitAuthors.push(commit.author);
+      acc.commitAuthors.push(authorKey);
       acc.commitIsFix?.push(isBugFix);
       if (isBugFix) acc.bugFixCount++;
       for (const tid of taskIds) acc.taskIds.add(tid);

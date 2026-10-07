@@ -1,4 +1,5 @@
 import type { BlameLine } from "../../../../adapters/vcs/types.js";
+import { tallyAuthors } from "./author-identity.js";
 
 export interface BlameOwnership {
   blameDominantAuthor: string;
@@ -32,19 +33,15 @@ function unknownOwnership(): BlameOwnership {
 function aggregate(lines: BlameLine[]): BlameOwnership {
   if (lines.length === 0) return unknownOwnership();
 
-  const counts = new Map<string, number>();
-  for (const ln of lines) {
-    counts.set(ln.author, (counts.get(ln.author) ?? 0) + 1);
-  }
-
-  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  const [topAuthor, topCount] = sorted[0];
+  // One identity per (mailmap-applied) email — see `author-identity.ts`.
+  const tally = tallyAuthors(lines);
+  const [top] = tally;
 
   return {
-    blameDominantAuthor: topAuthor,
-    blameDominantAuthorPct: Math.round((topCount / lines.length) * 100),
-    blameAuthors: sorted.slice(0, TOP_AUTHORS_CAP).map(([author]) => author),
-    blameContributorCount: counts.size,
+    blameDominantAuthor: top.name,
+    blameDominantAuthorPct: Math.round((top.count / lines.length) * 100),
+    blameAuthors: tally.slice(0, TOP_AUTHORS_CAP).map((t) => t.name),
+    blameContributorCount: tally.length,
   };
 }
 

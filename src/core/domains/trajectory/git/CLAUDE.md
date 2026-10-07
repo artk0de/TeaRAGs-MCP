@@ -195,6 +195,17 @@ their own navigators.
   means. The blame cache is keyed by file blob OID, not HEAD (the
   `infra/blame-store.ts` header docblock), precisely so ownership survives HEAD
   moves and outlives the log window.
+- **An author is an EMAIL, read after `.mailmap`; the payload still carries
+  NAMES.** Every git reader asks for `%aN` / `%aE` (`git blame --porcelain` maps
+  on its own), and every count, dominant-author pick and session grouping keys
+  by `authorIdentityKey` (`infra/author-identity.ts`, lowercased email); the
+  displayed name is `tallyAuthors`' most frequent name for that identity among
+  the records being tallied, ties by code point. The three persisted author
+  caches stamp `readMailmapFingerprint` and miss on a different one. Why:
+  `artk0de` and `Arthur Korochansky`, one address, counted as two contributors
+  and split one burst into two sessions on this repo (bd tea-rags-mcp-nsxzh).
+  New code that groups or counts authors must key by identity, never by
+  `author`.
 - **With squash-aware sessions on, `commitCount` is a SESSION count and only
   some signals follow.** `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS=true` groups
   commits per author (gap ≥ `sessionGapMinutes`, default 30; merge commits

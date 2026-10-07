@@ -38,6 +38,8 @@ export interface PersistedFileChurnDiscovery {
   head: string;
   sinceIso: string;
   entries: CommitFileNumstat[];
+  /** `.mailmap` fingerprint the authors were read under; absent = no mailmap (`mailmap-fingerprint.ts`). */
+  mailmap?: string;
 }
 
 /** Persistence seam — the concrete store lives in file-churn-discovery-store.ts. */

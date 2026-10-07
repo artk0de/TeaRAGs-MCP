@@ -8,6 +8,7 @@
  */
 
 import type { CommitInfo } from "../../../../../adapters/vcs/types.js";
+import { authorIdentityKey } from "../author-identity.js";
 import { isBugFixCommit, MERGE_SUBJECT } from "../utils.js";
 
 export interface Session {
@@ -36,9 +37,11 @@ export function partitionIntoAuthorSessions<T>(
   commitOf: (item: T) => CommitInfo,
   gapMinutes: number,
 ): T[][] {
+  // Keyed by author IDENTITY (mailmap-applied email), not display name — one
+  // person committing under two names is one burst (bd tea-rags-mcp-nsxzh).
   const byAuthor = new Map<string, T[]>();
   for (const item of items) {
-    const { author } = commitOf(item);
+    const author = authorIdentityKey(commitOf(item));
     const list = byAuthor.get(author);
     if (list) {
       list.push(item);
