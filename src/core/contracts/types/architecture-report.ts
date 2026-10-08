@@ -760,7 +760,65 @@ export interface LayeringReportSummary {
   outOfScopeFindingCount?: number;
 }
 
-export type ArchitectureViolation =
+/**
+ * The raw git readings one file's maintenance cost is read from (bd
+ * tea-rags-mcp-r8hme.20) — the payload's `git.file.commitCount`,
+ * `git.file.bugFixRate` (0–100) and `git.file.ageDays`, verbatim.
+ */
+export interface GitFileMaintenanceSignals {
+  commitCount: number;
+  bugFixRate: number;
+  ageDays: number;
+}
+
+/**
+ * One file's maintenance cost (bd tea-rags-mcp-r8hme.20). Each 0–1 signal is
+ * the file's POSITION in the collection's own distribution of that reading —
+ * the share of measured files strictly below it, scaled so the least active
+ * file reads 0 and the most active reads 1 — so no threshold is tuned to any
+ * one codebase. `cost = churn × (1 + bugFix + recency) / 3`: churn is the base
+ * (a file nobody changes costs nothing to maintain, whatever its bug-fix share
+ * of one commit says), bug-fix share and recency raise it.
+ */
+export interface ArchitectureFileMaintenanceCost {
+  relPath: RelPath;
+  /** 0–1, 3 decimals. */
+  cost: number;
+  /** Position of `commitCount`, 3 decimals. */
+  churn: number;
+  /** Position of `bugFixRate`, 3 decimals. */
+  bugFix: number;
+  /** Position of `ageDays`, inverted — the youngest file reads 1. 3 decimals. */
+  recency: number;
+  commitCount: number;
+  bugFixRate: number;
+  ageDays: number;
+}
+
+/**
+ * What a violation costs to maintain (bd tea-rags-mcp-r8hme.20, after
+ * DV8 / Xiao-Cai "architecture roots": a modularity violation costs the extra
+ * maintenance of the files carrying it). The carrying files are the ones the
+ * violation names — its file endpoints, its file edges, else the files of the
+ * components it names. Absent when the git trajectory measured none of them.
+ */
+export interface ArchitectureMaintenanceCost {
+  /** Mean `cost` over the measured carrying files — 0–1, 3 decimals. The list is ordered by it, costliest first. */
+  score: number;
+  /** Carrying files the violation names. */
+  fileCount: number;
+  /** Of those, the files with git readings — the ones `score` averages. */
+  measuredFileCount: number;
+  /** The costliest carrying file and the signals behind its cost. */
+  hottestFile: ArchitectureFileMaintenanceCost;
+}
+
+/** The maintenance-cost field every listed violation may carry (bd tea-rags-mcp-r8hme.20). */
+export interface ArchitectureMaintenanceCostTag {
+  maintenanceCost?: ArchitectureMaintenanceCost;
+}
+
+export type ArchitectureViolation = (
   | StableDependencyArchitectureViolation
   | LeakingAbstractionArchitectureViolation
   | SilentCouplingArchitectureViolation
@@ -768,7 +826,9 @@ export type ArchitectureViolation =
   | MainSequenceArchitectureViolation
   | HubLikeDependencyArchitectureViolation
   | LayeringArchitectureViolation
-  | NormArchitectureViolation;
+  | NormArchitectureViolation
+) &
+  ArchitectureMaintenanceCostTag;
 
 /**
  * A file edge the project's own norms find precedent-less (bd

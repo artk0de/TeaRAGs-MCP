@@ -115,6 +115,51 @@ describe("GraphFacade#getArchitectureReport", () => {
     expect(summary.mainSequence).toMatchObject({ painCount: 0, excluded: { stableConcreteCalm: 1 } });
   });
 
+  it("ranks violations by maintenance cost read from the addressed collection (bd tea-rags-mcp-r8hme.20)", async () => {
+    const graphDb = {
+      readFileDependencyGraph: vi.fn().mockResolvedValue({
+        files: [
+          { relPath: "app/a.ts", language: "typescript", symbolCount: 1 },
+          { relPath: "lib/b.ts", language: "typescript", symbolCount: 1 },
+        ],
+        edges: [],
+      }),
+      readNonPublicMemberEdges: vi.fn().mockResolvedValue([
+        {
+          sourceSymbolId: "a",
+          sourceRelPath: "app/a.ts",
+          targetSymbolId: "B._hidden",
+          targetRelPath: "lib/b.ts",
+          targetShortName: "_hidden",
+          targetVisibility: null,
+          targetLanguage: "python",
+          callExpression: "b._hidden()",
+        },
+      ]),
+      readTemporalCochangeGraph: vi.fn().mockResolvedValue({ meta: null, edges: [] }),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const readFileMaintenanceSignals = vi.fn().mockResolvedValue(
+      new Map([
+        ["app/a.ts", { commitCount: 9, bugFixRate: 30, ageDays: 2 }],
+        ["lib/b.ts", { commitCount: 1, bugFixRate: 0, ageDays: 90 }],
+      ]),
+    );
+    const facade = new GraphFacade({
+      pool: readerPool(graphDb).pool,
+      collectionRegistry: registry,
+      readFileMaintenanceSignals,
+    });
+
+    const report = await facade.getArchitectureReport({ collection: "code_x" });
+
+    expect(readFileMaintenanceSignals).toHaveBeenCalledWith("code_x");
+    expect(report.violations[0]?.maintenanceCost).toMatchObject({
+      score: 0.5,
+      hottestFile: { relPath: "app/a.ts", cost: 1 },
+    });
+  });
+
   it("returns the empty report when the collection has no graph database", async () => {
     const pool = {
       acquireReader: vi.fn().mockRejectedValue(new Error("no such file")),

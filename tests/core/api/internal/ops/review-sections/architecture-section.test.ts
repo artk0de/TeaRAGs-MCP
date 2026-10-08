@@ -412,6 +412,50 @@ describe("architectureSectionProvider.run", () => {
     });
   });
 
+  it("ranks each family's findings by maintenance cost and tags them — the whole-repo report's ranking (bd tea-rags-mcp-r8hme.20)", async () => {
+    writeFile("src/app/a.ts", "export const A = 1;\n");
+    writeFile("src/hot/x.ts", "export const X = 1;\n");
+    const pairEdges = [strongPair("src/app/a.ts", "src/other/c.ts"), strongPair("src/hot/x.ts", "src/hot/y.ts")];
+    const files = ["src/app/a.ts", "src/other/c.ts", "src/hot/x.ts", "src/hot/y.ts"];
+    const context = (readFileMaintenanceSignals?: ReviewSectionContext["readFileMaintenanceSignals"]) =>
+      runContext({
+        graphDb: graphDbStub({ files: files.map(graphFile), edges: [] }, pairEdges),
+        scope: scopeOf(["src/app/a.ts", "src/hot/x.ts"]),
+        temporalCochange: { meta: cochangeMeta(), edges: pairEdges },
+        ...(readFileMaintenanceSignals ? { readFileMaintenanceSignals } : {}),
+      });
+    const silentOf = (payload: unknown) =>
+      (
+        payload as { findings: { detector: string; subject: string; maintenanceCost?: { score: number } }[] }
+      ).findings.filter((f) => f.detector === "silentCoupling");
+
+    const plain = silentOf(await architectureSectionProvider.run(context()));
+    expect(plain.map((f) => f.subject)).toEqual(["src/app/a.ts ~ src/other/c.ts", "src/hot/x.ts ~ src/hot/y.ts"]);
+    expect(plain.some((f) => f.maintenanceCost !== undefined)).toBe(false);
+
+    const read = vi.fn(
+      async () =>
+        new Map(
+          files.map((relPath) => [
+            relPath,
+            relPath.startsWith("src/hot/")
+              ? { commitCount: 30, bugFixRate: 40, ageDays: 1 }
+              : { commitCount: 1, bugFixRate: 0, ageDays: 300 },
+          ]),
+        ),
+    );
+    const ranked = silentOf(await architectureSectionProvider.run(context(read)));
+
+    expect(ranked.map((f) => f.subject)).toEqual(["src/hot/x.ts ~ src/hot/y.ts", "src/app/a.ts ~ src/other/c.ts"]);
+    expect(ranked[0].maintenanceCost).toMatchObject({
+      score: 1,
+      measuredFileCount: 2,
+      hottestFile: { relPath: "src/hot/x.ts" },
+    });
+    expect(ranked[1].maintenanceCost).toMatchObject({ score: 0 });
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
   it("caps findings at 100 and counts the rest in truncated", async () => {
     const targets = Array.from({ length: 105 }, (_, i) => `src/lib/t${String(i).padStart(3, "0")}.ts`);
     for (const target of targets) writeFile(target, `export const T = 1;\n`);

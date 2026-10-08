@@ -1965,3 +1965,105 @@ describe("ArchitectureReportOps#build — hubLikeDependency (bd tea-rags-mcp-r8h
     });
   });
 });
+
+// bd tea-rags-mcp-r8hme.20 — violations ranked by what they cost to maintain:
+// the git readings of the files carrying them, positioned in the collection's
+// own distribution.
+describe("ArchitectureReportOps#build — maintenance cost (bd tea-rags-mcp-r8hme.20)", () => {
+  /** Every file of `graph()` cold, except the ones named hot. */
+  function maintenanceSignals(hot: readonly string[]) {
+    return vi.fn(
+      async () =>
+        new Map(
+          graph().files.map((f) => [
+            f.relPath,
+            hot.includes(f.relPath)
+              ? { commitCount: 40, bugFixRate: 50, ageDays: 1 }
+              : { commitCount: 1, bugFixRate: 0, ageDays: 300 },
+          ]),
+        ),
+    );
+  }
+
+  const sdpPairs = (violations: readonly { detector: string }[]) =>
+    violations
+      .filter((v) => v.detector === "stableDependencies")
+      .map((v) => {
+        const sdp = v as { sourceComponent: string; targetComponent: string };
+        return `${sdp.sourceComponent}->${sdp.targetComponent}`;
+      });
+
+  it("ranks a family's violations costliest first and tags each with its score and the signals behind it", async () => {
+    const plain = await new ArchitectureReportOps().build(graphDb(), {});
+    expect(sdpPairs(plain.violations)).toEqual(["base->lib", "core->lib"]);
+
+    const report = await new ArchitectureReportOps().build(
+      graphDb(),
+      {},
+      undefined,
+      undefined,
+      maintenanceSignals(["core/a.ts", "lib/f1.ts"]),
+    );
+
+    expect(sdpPairs(report.violations)).toEqual(["core->lib", "base->lib"]);
+    const hottest = report.violations.find((v) => v.detector === "stableDependencies");
+    // Carried by core/a.ts→lib/f1.ts (hot) and core/b.ts→lib/f2.ts (cold).
+    expect(hottest?.maintenanceCost).toEqual({
+      score: 0.5,
+      fileCount: 4,
+      measuredFileCount: 4,
+      hottestFile: {
+        relPath: "core/a.ts",
+        cost: 1,
+        churn: 1,
+        bugFix: 1,
+        recency: 1,
+        commitCount: 40,
+        bugFixRate: 50,
+        ageDays: 1,
+      },
+    });
+  });
+
+  it("caps each family after ranking, so the limit keeps the costliest violation", async () => {
+    const report = await new ArchitectureReportOps().build(
+      graphDb(),
+      { limit: 1 },
+      undefined,
+      undefined,
+      maintenanceSignals(["core/a.ts"]),
+    );
+
+    expect(sdpPairs(report.violations)).toEqual(["core->lib"]);
+  });
+
+  it("lists in detector order with no cost when the git readings are not wired", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(), {});
+
+    expect(report.violations.some((v) => v.maintenanceCost !== undefined)).toBe(false);
+  });
+
+  it("reads the git payload once — the zone-of-pain gate takes its commit counts from the same read", async () => {
+    const read = vi.fn(async () => new Map([["core/a.ts", { commitCount: 9, bugFixRate: 0, ageDays: 3 }]]));
+    const commitCounts = vi.fn(async () => new Map<string, number>());
+
+    await new ArchitectureReportOps().build(graphDb(), {}, undefined, commitCounts, read);
+
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(commitCounts).not.toHaveBeenCalled();
+  });
+
+  it("reads no git payload when nothing is violated", async () => {
+    const read = maintenanceSignals([]);
+
+    await new ArchitectureReportOps().build(
+      graphDb({ files: [file("solo/a.ts")], edges: [] }),
+      {},
+      undefined,
+      undefined,
+      read,
+    );
+
+    expect(read).not.toHaveBeenCalled();
+  });
+});

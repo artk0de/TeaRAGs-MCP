@@ -42,6 +42,7 @@ import {
   OntologyReportOps,
   ProjectRegistryOps,
   readPayloadFileCommitCounts,
+  readPayloadFileMaintenanceSignals,
   readPayloadImportSpecifiers,
   ReviewChangesOps,
   ReviewFacade,
@@ -753,6 +754,14 @@ export function wireCodegraph(
    * reason as above.
    */
   indexExists?: GraphFacadeDeps["indexExists"],
+  /**
+   * Every file's git maintenance readings from the index payload — the
+   * architecture report ranks violations by the maintenance cost of the files
+   * carrying them (bd tea-rags-mcp-r8hme.20). Wired to
+   * `readPayloadFileMaintenanceSignals` over the app's Qdrant by
+   * `createAppContext`; optional for the same reason as above.
+   */
+  readFileMaintenanceSignals?: GraphFacadeDeps["readFileMaintenanceSignals"],
 ): CodegraphContext | undefined {
   // Defensive: legacy/mocked configs may omit the codegraph section
   // entirely. Treat that as "disabled" so the `codegraph.enabled` config
@@ -1026,6 +1035,7 @@ export function wireCodegraph(
     resolveActiveCollection,
     ...(readImportSpecifiers ? { readImportSpecifiers } : {}),
     ...(readFileCommitCounts ? { readFileCommitCounts } : {}),
+    ...(readFileMaintenanceSignals ? { readFileMaintenanceSignals } : {}),
     ...(workingTreeOverlay ? { workingTreeOverlay } : {}),
     ...(indexExists ? { indexExists } : {}),
   });
@@ -1424,6 +1434,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     async (collectionName) => readPayloadFileCommitCounts(infra.qdrant, collectionName),
     workingTreeOverlay,
     indexExists,
+    async (collectionName) => readPayloadFileMaintenanceSignals(infra.qdrant, collectionName),
   );
   // Swept with the chunk store's schedule (first after 2 min, then every 6 h,
   // unref'd, throttled across processes by a stamp) — here,
@@ -1734,6 +1745,11 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
             // pass reads (bd tea-rags-mcp-2wsnt) — one reader, two consumers.
             readImportSpecifiers: async (collectionName, relPaths) =>
               readPayloadImportSpecifiers(infra.qdrant, collectionName, relPaths),
+            // The architecture section ranks its findings by the SAME
+            // maintenance readings the whole-repo report ranks by (bd
+            // tea-rags-mcp-r8hme.20).
+            readFileMaintenanceSignals: async (collectionName) =>
+              readPayloadFileMaintenanceSignals(infra.qdrant, collectionName),
           }),
         })
       : undefined;

@@ -48,7 +48,8 @@ Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
 - **Reading SDP as file-level.** SDP judged on COMPONENTS; file edges in
   `evidence.fileEdges` only show which files carry the dependency.
 - **Using risk-assessment signals (churn, bugFixRate) here.** Other question.
-  Combine only when user asks both.
+  Combine only when user asks both. Exception: per-violation `maintenanceCost` —
+  report's own fix PRIORITY, never verdict.
 - **Proposing tolerance change.** Tolerance fixed, reported in
   `summary.stableDependencies.tolerance`. Not caller knob.
 - **Prescribing a new module layout from leak lines.** Diagnosis, not
@@ -126,6 +127,11 @@ get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>"
 - `limit` caps `violations` + `rootCauses` PER DETECTOR; each
   `summary.<detector>` keeps totals (`violationCount`, `rootCauseCount`).
   Totals > returned → say truncated.
+- Each detector's `violations` ranked costliest-first (before `limit`) by
+  `maintenanceCost`: `score` 0–1 = mean over carrying files, `hottestFile` =
+  costliest carrier + churn/bugFix/recency positions + raw readings. Lead
+  residual list per detector with highest score. Absent = no git readings →
+  detector order.
 - Every finding carries `detector`: `stableDependencies` (Phases 2–3),
   `leakingAbstraction` (Phase 3b), `silentCoupling` (Phase 3c), `mainSequence`
   (Phase 3d), `hubLikeDependency` (Phase 3d2) or `layering` (Phase 3e). Never

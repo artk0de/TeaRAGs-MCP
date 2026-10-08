@@ -45,7 +45,11 @@ import {
   type InheritedMemberGraph,
 } from "../../../domains/trajectory/codegraph/inherited-member-definer.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
-import type { GetArchitectureReportRequest, GetArchitectureReportResponse } from "../../public/dto/architecture.js";
+import type {
+  GetArchitectureReportRequest,
+  GetArchitectureReportResponse,
+  GitFileMaintenanceSignals,
+} from "../../public/dto/architecture.js";
 import type { FindCoChangedRequest, FindCoChangedResult } from "../../public/dto/cochange.js";
 import type {
   FindCyclesRequest,
@@ -100,6 +104,14 @@ export interface GraphFacadeDeps {
    * (bd tea-rags-mcp-r8hme.14). Optional: absent, pain is judged on D alone.
    */
   readFileCommitCounts?: (collectionName: string) => Promise<ReadonlyMap<RelPath, number>>;
+  /**
+   * Every file's git maintenance readings (commit count, bug-fix rate, age),
+   * read from the ADDRESSED collection's payload. The report ranks violations
+   * by the maintenance cost of the files carrying them (bd
+   * tea-rags-mcp-r8hme.20), and the volatility gate takes its commit counts
+   * from the same read. Optional: absent, violations list in detector order.
+   */
+  readFileMaintenanceSignals?: (collectionName: string) => Promise<ReadonlyMap<RelPath, GitFileMaintenanceSignals>>;
   /**
    * The `workingTree` marker source (bd tea-rags-mcp-xi2r9) for get_callers,
    * get_callees, find_cycles and get_architecture_report — and, through the
@@ -405,15 +417,19 @@ export class GraphFacade {
   }
 
   async getArchitectureReport(req: GetArchitectureReportRequest): Promise<GetArchitectureReportResponse> {
-    const { readImportSpecifiers, readFileCommitCounts } = this.deps;
+    const { readImportSpecifiers, readFileCommitCounts, readFileMaintenanceSignals } = this.deps;
     const addressedCollection = () => resolveWorkingTree(this.deps.collectionRegistry, req).baseIndex.collectionName;
     const importSpecifiers = readImportSpecifiers
       ? async (relPaths: readonly RelPath[]) => readImportSpecifiers(addressedCollection(), relPaths)
       : undefined;
     const fileCommitCounts = readFileCommitCounts ? async () => readFileCommitCounts(addressedCollection()) : undefined;
+    const maintenanceSignals = readFileMaintenanceSignals
+      ? async () => readFileMaintenanceSignals(addressedCollection())
+      : undefined;
     return this.withMarkedReadHandle(
       req,
-      async (handle) => this.architectureReport.build(handle.graphDb, req, importSpecifiers, fileCommitCounts),
+      async (handle) =>
+        this.architectureReport.build(handle.graphDb, req, importSpecifiers, fileCommitCounts, maintenanceSignals),
       ArchitectureReportOps.empty(req),
     );
   }

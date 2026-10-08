@@ -97,6 +97,7 @@ export type { PathCollectionResolver } from "./internal/collection-resolver.js";
 export { resolveBaseIndexEntry, resolveCollection } from "./internal/collection-resolver.js";
 export { listWorktreeInfos, toWorktreeInfo, worktreeInfoForPath } from "./internal/ops/worktree-ops.js";
 export { readPayloadFileCommitCounts } from "./internal/infra/payload-file-commit-count-reader.js";
+export { readPayloadFileMaintenanceSignals } from "./internal/infra/payload-file-maintenance-signal-reader.js";
 export { readPayloadImportSpecifiers } from "./internal/infra/payload-import-specifier-reader.js";
 export {
   scheduleWorkingTreeGraphSweep,
