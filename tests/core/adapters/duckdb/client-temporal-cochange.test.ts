@@ -134,6 +134,23 @@ describe("DuckDbGraphClient — temporal co-change store (bd tea-rags-mcp-x4rpp)
     expect(graph.bundleBursts).toEqual(new Map([[0, 0]]));
   });
 
+  // bd tea-rags-mcp-vyxjt: the same READ_ONLY-attach exposure, one migration earlier.
+  it("reads a file a pre-044 build wrote — no burst column — as bursts not recorded", async () => {
+    const old = new DuckDbGraphClient({ path: join(dir, "pre044.duckdb") });
+    await old.init();
+    await runMigrations(
+      old,
+      DATABASE_MIGRATIONS.filter((m) => m.filename < "044"),
+    );
+    await old.run("INSERT INTO cg_temporal_bundle_commits (bundle_id, commit_shas) VALUES (0, '[\"s1\"]')");
+
+    const graph = await old.readTemporalCochangeGraph();
+    await old.close();
+
+    expect(graph.bundleBursts).toEqual(new Map());
+    expect(graph.bundleCommits).toEqual(new Map([[0, ["s1"]]]));
+  });
+
   it("reads a bundle written without task ids as not recorded", async () => {
     await db.replaceTemporalCochange({
       ...snapshot([edge("a.ts", "b.ts")]),
