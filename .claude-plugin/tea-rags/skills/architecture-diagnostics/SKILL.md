@@ -278,13 +278,15 @@ still miss the edge, so check before claiming "no link".
 
 ## Phase 3c2 — SHOTGUN SURGERY
 
-`detector: "shotgunSurgery"`, SAME components as SDP. ONE commit reaching into ≥
-k components, spread recurring beyond chance, components in ≥ 2 structural
-islands. Unit = pair gate's: burst supports k-set only if ONE commit in it held
-all k; each burst once. Burst union never unit (parallel sessions chain
-unrelated commits). Silent coupling's N-way sibling: pair = file level, MERGE =
-two components, this = one change's fan-out. Never filtered by file type or hub
-size. Knot mode omits it.
+`detector: "shotgunSurgery"`, SAME components as SDP. ONE logical change
+reaching into ≥ k components, spread recurring beyond chance, components in ≥ 2
+structural islands. Logical change = burst's commits joined by shared task id
+(commit message), common edited file, or file dependency edge between their
+files; else one commit. Burst supports k-set only if ONE change held all k; each
+burst once. Burst union never unit (parallel sessions chain unrelated commits).
+Silent coupling's N-way sibling: pair = file level, MERGE = two components, this
+= one change's fan-out. Never filtered by file type or hub size. Knot mode omits
+it.
 
 | Summary field (`summary.shotgunSurgery`)  | Read as                                                                                                              |
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
@@ -306,11 +308,37 @@ Evidence per line:
 | `strength`                    | Wilson lower bound of support over component changes                                                               |
 | `islands`                     | structurally connected groups (≥ 2) — where the missing link would go                                              |
 | `exemplarFiles`               | per component the file the holding commits touched most                                                            |
-| `sampleCommits`               | shas to cite — each held the whole spread, one per supporting burst                                                |
+| `carrierFiles`                | per component (aligned) files the holding changes touched, most-touched first (≤ 5) — recipe input                 |
+| `sampleCommits`               | shas to cite — latest commit of each holding change, one per supporting burst                                      |
+| `sampleChanges`               | per sample (aligned) every sha of that logical change — `git show` them to see what one change edited              |
 | `drillDown.hint`              | run verbatim (`find_co_changed`) for file-level partners                                                           |
 
-Fix direction: one owner for the reason to change — collapse the spread behind
-one module / contract; `islands` show where the missing link would go.
+Explain EVERY reported spread before recommending (server judges recurrence, not
+meaning — semantics is agent's job). Recipe, per spread:
+
+1. Changed symbols: per component,
+   `find_symbol(relativePath: <carrierFiles[i][0]>)` → outline; pick a member
+   `sampleChanges[0]` edited (`git show <sha> -- <file>` when unclear);
+   `find_symbol(symbol: <member>, metaOnly: true)` → its chunk `id` (row whose
+   `relativePath` matches).
+2. Cross-component similarity:
+   `find_similar(positiveIds: [<id>], pathPattern: "{<B carrierFiles, comma-joined>}", limit: 3, metaOnly: true)`
+   → cross score. Baseline: same call, `pathPattern` = A's OTHER carrier files →
+   within score. Cross ≥ within = candidate duplicate; then `find_symbol` both
+   top hits and READ them — same logic under different names confirms, same
+   vocabulary only does not. Repeat per island pair.
+3. Classify:
+
+| Verdict                 | Evidence                                                                                                                                                   | Report as                                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `duplicatedConcept`     | step 2 cross ≥ within AND reading confirms same logic, same role                                                                                           | TRUE shotgun — quote BOTH fragments (path:line); fix Move Method / Extract Module              |
+| `featureSlice`          | no cross-component hit; components carry different architectural roles (`get_architecture_report` dependency-norms roles, or layer map levels)             | expected coupling of a vertical feature — deprioritise, no refactor                            |
+| `crossLanguageContract` | components in different languages share field / key identifiers (`get_naming_lexicon` names[] per component, or `hybrid_search` on the shared identifiers) | real implicit contract — recommend shared schema / codegen; cite the identifiers on both sides |
+
+No verdict fits → report raw with evidence, say "unexplained", never guess. Fix
+direction (`duplicatedConcept`): one owner for the reason to change — collapse
+the spread behind one module / contract; `islands` show where the missing link
+would go.
 
 ## Phase 3d — MAIN SEQUENCE
 

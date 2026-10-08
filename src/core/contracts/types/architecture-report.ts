@@ -1351,8 +1351,21 @@ export interface ShotgunSurgeryArchitectureViolation {
     islands: string[][];
     /** Per component (aligned) the file the supporting commits touched most. */
     exemplarFiles: RelPath[];
+    /**
+     * Per component (aligned) the files the supporting changes touched there,
+     * most-touched first (≤ 5) — what an agent explaining the spread reads
+     * (`find_symbol`) and searches across (`find_similar` pathPattern).
+     */
+    carrierFiles: RelPath[][];
     /** Commits that held the spread, one per supporting burst, most recent first (≤ 5). */
     sampleCommits: string[];
+    /**
+     * The logical change behind each sample commit (aligned): every commit of
+     * the burst's change that held the spread — commits joined by a shared
+     * task id, a common edited file or a file dependency edge (bd
+     * tea-rags-mcp-09c4m) — most recent first.
+     */
+    sampleChanges: string[][];
     /** `find_co_changed` over the exemplar files — the file-level partners behind the spread. */
     drillDown: SilentCouplingGroupDrillDown;
   };

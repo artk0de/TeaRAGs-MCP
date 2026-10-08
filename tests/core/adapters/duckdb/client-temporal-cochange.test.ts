@@ -92,7 +92,57 @@ describe("DuckDbGraphClient — temporal co-change store (bd tea-rags-mcp-x4rpp)
       bundles: new Map(),
       bundleCommits: new Map(),
       bundleBursts: new Map(),
+      bundleTaskIds: new Map(),
     });
+  });
+
+  // bd tea-rags-mcp-09c4m: each admitted bundle's commit-message task ids ride beside its commits.
+  it("round-trips each admitted bundle's task ids, a bundle naming none as []", async () => {
+    await db.replaceTemporalCochange({
+      ...snapshot([edge("a.ts", "b.ts")]),
+      bundles: [["a.ts", "b.ts"], ["a.ts"]],
+      bundleCommits: [["s2"], ["s1"]],
+      bundleBursts: [0, 0],
+      bundleTaskIds: [["TD-1", "#7"], []],
+    });
+
+    const graph = await db.readTemporalCochangeGraph();
+    expect(graph.bundleTaskIds).toEqual(
+      new Map([
+        [0, ["TD-1", "#7"]],
+        [1, []],
+      ]),
+    );
+  });
+
+  it("reads a file a pre-045 build wrote — no task-id column — as task ids not recorded", async () => {
+    // A READ_ONLY attach never migrates, so a newer build reads files an older build owns as they are.
+    const old = new DuckDbGraphClient({ path: join(dir, "old.duckdb") });
+    await old.init();
+    await runMigrations(
+      old,
+      DATABASE_MIGRATIONS.filter((m) => m.filename < "045"),
+    );
+    await old.run(
+      "INSERT INTO cg_temporal_bundle_commits (bundle_id, commit_shas, burst_id) VALUES (0, '[\"s1\"]', 0)",
+    );
+
+    const graph = await old.readTemporalCochangeGraph();
+    await old.close();
+
+    expect(graph.bundleTaskIds).toEqual(new Map());
+    expect(graph.bundleBursts).toEqual(new Map([[0, 0]]));
+  });
+
+  it("reads a bundle written without task ids as not recorded", async () => {
+    await db.replaceTemporalCochange({
+      ...snapshot([edge("a.ts", "b.ts")]),
+      bundles: [["a.ts", "b.ts"]],
+      bundleCommits: [["s1"]],
+      bundleBursts: [0],
+    });
+
+    expect((await db.readTemporalCochangeGraph()).bundleTaskIds).toEqual(new Map());
   });
 
   // bd tea-rags-mcp-3vg0x: the burst each admitted bundle belongs to rides beside its commits.

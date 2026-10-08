@@ -117,6 +117,12 @@ export interface TemporalCochangeSnapshot {
   bundleCommits?: readonly (readonly string[])[];
   /** Each admitted bundle's author-burst id, aligned with `bundles`; absent = not recorded. */
   bundleBursts?: readonly number[];
+  /**
+   * The task ids each admitted bundle's commit message names (the git
+   * trajectory's `extractTaskIds`), aligned with `bundles`; `[]` = none named,
+   * absent = not recorded (bd tea-rags-mcp-09c4m).
+   */
+  bundleTaskIds?: readonly (readonly string[])[];
 }
 
 /** A stored co-change pair plus whether the structural graph links its endpoints. */
@@ -155,6 +161,14 @@ export interface TemporalCochangeGraph {
    * bundle is then its own burst.
    */
   bundleBursts?: ReadonlyMap<number, number>;
+  /**
+   * The task ids each admitted bundle's commit message names, keyed by bundle
+   * id (bd tea-rags-mcp-09c4m) — what joins one author burst's commits into
+   * one logical change for shotgun surgery. A bundle naming none maps to `[]`;
+   * absent or empty = the build predates migration 045, and the join falls
+   * back to structure alone.
+   */
+  bundleTaskIds?: ReadonlyMap<number, readonly string[]>;
 }
 
 /**

@@ -1000,6 +1000,45 @@ describe("ArchitectureReportOps#build — shotgunSurgery (bd tea-rags-mcp-r8hme.
     ]);
   });
 
+  it("joins a burst's commits naming one task into one change and exposes what an agent explains it from (09c4m)", async () => {
+    // Each spread is split over two commits of one burst, both naming the task.
+    const bundles = new Map<number, readonly string[]>([
+      ...[...shotgunBundles()].filter(([id]) => id < 20),
+      ...[0, 1, 2].flatMap((b) => [
+        [20 + 2 * b, ["app/c1.ts", "users/u1.ts"]] as const,
+        [21 + 2 * b, ["other/o.ts"]] as const,
+      ]),
+    ]);
+    const bundleBursts = new Map([...bundles.keys()].map((id) => [id, id < 20 ? id : 20 + Math.floor((id - 20) / 2)]));
+    const bundleCommits = new Map([...bundles.keys()].map((id) => [id, [`c${id}`]]));
+    const bundleTaskIds = new Map([...bundles.keys()].map((id) => [id, id < 20 ? [] : [`TD-${bundleBursts.get(id)}`]]));
+    const cochange: TemporalCochangeGraph = {
+      ...cochangeGraph(),
+      edges: [],
+      bundles,
+      bundleBursts,
+      bundleCommits,
+      bundleTaskIds,
+    };
+
+    const report = await new ArchitectureReportOps().build(graphDb(graph(), [], cochange), {});
+
+    const spread = report.violations.find((v) => v.detector === "shotgunSurgery");
+    expect(spread).toMatchObject({
+      components: ["app", "other", "users"],
+      evidence: {
+        support: 3,
+        carrierFiles: [["app/c1.ts"], ["other/o.ts"], ["users/u1.ts"]],
+        sampleCommits: ["c25", "c23", "c21"],
+        sampleChanges: [
+          ["c25", "c24"],
+          ["c23", "c22"],
+          ["c21", "c20"],
+        ],
+      },
+    });
+  });
+
   it("ranks the spread by the maintenance cost of its exemplar files", async () => {
     const cochange: TemporalCochangeGraph = { ...cochangeGraph(), edges: [], bundles: shotgunBundles() };
     const signals = vi.fn(

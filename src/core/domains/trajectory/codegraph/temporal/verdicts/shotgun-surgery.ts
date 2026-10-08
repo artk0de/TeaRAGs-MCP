@@ -8,13 +8,16 @@
  *
  * THE UNIT is the pair significance gate's, lifted to sets
  * (`assessBurstCochangeSignificance`, bd tea-rags-mcp-3vg0x): a k-set is
- * supported by an author BURST only when ONE commit inside it held all k
- * components, and each burst counts at most once. The change that had to edit
- * the spread is a commit; the burst only stops a WIP spray of re-commits from
- * counting as many changes. A burst's union is never a unit — parallel agent
- * sessions committing under one author chain unrelated commits into it, so a
- * union spread is one no single change ever touched. The per-commit sets are
- * the commits' component sets, identical sets of one burst deduplicated (the
+ * supported by an author BURST only when ONE logical change inside it held all
+ * k components, and each burst counts at most once. A logical change is the
+ * burst's commits joined by a shared task id, a common edited file or a file
+ * dependency edge between their files (bd tea-rags-mcp-09c4m,
+ * {@link changeUnitsByBurst}); with nothing joining them it is one commit. The
+ * burst only stops a WIP spray of re-commits from counting as many changes. A
+ * burst's union is never a unit — parallel agent sessions committing under one
+ * author chain unrelated commits into it, so a union spread is one no single
+ * change ever touched. The per-change sets ("per-commit sets" below) are the
+ * changes' component sets, identical sets of one burst deduplicated (the
  * gate's distinct-pairs-per-burst). A bundle without a recorded burst is its
  * own. Only partitioned (production) files count; nothing is filtered by file
  * type or by how often a component changes.
@@ -68,7 +71,7 @@
  * nothing judged, never zeros posing as verdicts.
  */
 
-import type { RelPath } from "../../../../../contracts/types/codegraph.js";
+import type { FileDependencyEdge, RelPath } from "../../../../../contracts/types/codegraph.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../../../../../infra/graph/index.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
 import {
@@ -87,6 +90,9 @@ export const SHOTGUN_SURGERY_MIN_WIDTH = 3;
 
 /** Sample commits listed per finding: one per supporting burst, most recent first. */
 export const SHOTGUN_SURGERY_SAMPLE_COMMITS = 5;
+
+/** Carrier files listed per component of a finding — an output bound, never a judgement. */
+export const SHOTGUN_SURGERY_CARRIER_FILES = 5;
 
 /** Bisection steps fitting a component's inclusion propensity — far below double precision. */
 const PROPENSITY_BISECTION_STEPS = 64;
@@ -108,6 +114,18 @@ export interface ShotgunSurgeryInput {
   bundleBursts?: ReadonlyMap<number, number>;
   /** The commit SHAs of each bundle — the sample commits' source. */
   bundleCommits?: ReadonlyMap<number, readonly string[]>;
+  /**
+   * The task ids each bundle's commit message carries (the git trajectory's
+   * `extractTaskIds`), keyed by bundle id — commits of one burst naming a
+   * common task are one logical change. Absent = not recorded: the change
+   * units fall back to structure alone.
+   */
+  bundleTaskIds?: ReadonlyMap<number, readonly string[]>;
+  /**
+   * The file dependency graph's edges (import / call, either direction) —
+   * commits of one burst editing two ends of an edge are one logical change.
+   */
+  fileDependencyEdges?: readonly Pick<FileDependencyEdge, "sourceRelPath" | "targetRelPath">[];
   /** Picomatch glob: a spread is in scope when an exemplar file of one of its components matches. */
   sourcePathPattern?: string;
 }
@@ -128,8 +146,19 @@ export interface ShotgunSurgerySpread {
   islands: string[][];
   /** Per component (aligned) the file the supporting commits touched most. */
   exemplarFiles: RelPath[];
+  /**
+   * Per component (aligned) the files the supporting changes touched there,
+   * most-touched first (≤ {@link SHOTGUN_SURGERY_CARRIER_FILES}) — what an
+   * agent explaining the spread reads and searches across.
+   */
+  carrierFiles: RelPath[][];
   /** Commits that held the spread, one per supporting burst, most recent first (≤ {@link SHOTGUN_SURGERY_SAMPLE_COMMITS}). */
   sampleCommits: string[];
+  /**
+   * The logical change behind each sample commit, aligned with `sampleCommits`:
+   * every commit of the burst's change that held the spread, most recent first.
+   */
+  sampleChanges: string[][];
 }
 
 export interface ShotgunSurgerySummary {
@@ -297,14 +326,26 @@ interface ShotgunSurgeryChangeUnit {
  * THE CHANGE-UNIT SEAM — the one place that decides what "one change" inside
  * an author burst is; support, the null's opportunities, the width model, the
  * closure and the sample commits all consume its units and their bundle ids,
- * never a bundle directly. Today a change unit is one commit (one bundle).
- * Joining a burst's commits into logical changes (shared task id, files linked
- * by codegraph edges — bd tea-rags-mcp-09c4m) replaces this function alone.
+ * never a bundle directly.
+ *
+ * A change unit is a LOGICAL change (bd tea-rags-mcp-09c4m): the connected
+ * components of a burst's commits under "one change", where two commits are
+ * one change when their messages name a common task id, when they edited a
+ * common partitioned file, or when a file dependency edge (import / call,
+ * either direction) joins a partitioned file of one to a partitioned file of
+ * the other. A unit is the union of its commits' files and carries all their
+ * bundle ids. So a port → backends → consumers change split over commits is
+ * one change, while parallel agent sessions committing under one author stay
+ * apart unless a task or the code itself joins them. Without recorded task
+ * ids the join is structure alone — nothing is tuned per repository.
+ * Semantics (similar code across components) never joins: it only explains a
+ * reported spread, and the consuming agent judges that.
+ *
  * Bursts come back in first-seen order; a bundle without a recorded burst is
  * its own; a bundle touching no partitioned file is no change.
  */
 function changeUnitsByBurst(input: ShotgunSurgeryInput): ShotgunSurgeryChangeUnit[][] {
-  const bursts = new Map<string, ShotgunSurgeryChangeUnit[]>();
+  const bursts = new Map<string, ShotgunSurgeryCommit[]>();
   for (const [bundleId, files] of input.bundles) {
     const filesByComponent = new Map<string, Set<RelPath>>();
     for (const relPath of files) {
@@ -317,12 +358,106 @@ function changeUnitsByBurst(input: ShotgunSurgeryInput): ShotgunSurgeryChangeUni
     if (filesByComponent.size === 0) continue;
     const burst = input.bundleBursts?.get(bundleId);
     const burstKey = burst === undefined ? `bundle:${bundleId}` : `burst:${burst}`;
-    const changeUnit = { filesByComponent, bundleIds: [bundleId] };
+    const commit = { bundleId, filesByComponent, taskIds: input.bundleTaskIds?.get(bundleId) ?? [] };
     const members = bursts.get(burstKey);
-    if (members) members.push(changeUnit);
-    else bursts.set(burstKey, [changeUnit]);
+    if (members) members.push(commit);
+    else bursts.set(burstKey, [commit]);
   }
-  return [...bursts.values()];
+  const neighbours = fileNeighbourIndex(input.fileDependencyEdges ?? []);
+  return [...bursts.values()].map((commits) => joinLogicalChanges(commits, neighbours));
+}
+
+/** One commit of a burst, before joining: its partitioned files and its message's task ids. */
+interface ShotgunSurgeryCommit {
+  bundleId: number;
+  filesByComponent: Map<string, Set<RelPath>>;
+  taskIds: readonly string[];
+}
+
+/** Undirected file adjacency over the dependency edges. */
+function fileNeighbourIndex(
+  edges: readonly Pick<FileDependencyEdge, "sourceRelPath" | "targetRelPath">[],
+): ReadonlyMap<RelPath, ReadonlySet<RelPath>> {
+  const neighbours = new Map<RelPath, Set<RelPath>>();
+  const link = (a: RelPath, b: RelPath): void => {
+    const set = neighbours.get(a);
+    if (set) set.add(b);
+    else neighbours.set(a, new Set([b]));
+  };
+  for (const { sourceRelPath, targetRelPath } of edges) {
+    if (sourceRelPath === targetRelPath) continue;
+    link(sourceRelPath, targetRelPath);
+    link(targetRelPath, sourceRelPath);
+  }
+  return neighbours;
+}
+
+/** One burst's commits joined into logical changes — the connected components of the join. */
+function joinLogicalChanges(
+  commits: readonly ShotgunSurgeryCommit[],
+  neighbours: ReadonlyMap<RelPath, ReadonlySet<RelPath>>,
+): ShotgunSurgeryChangeUnit[] {
+  const parent = commits.map((_, index) => index);
+  const find = (start: number): number => {
+    let root = start;
+    while (parent[root] !== root) root = parent[root];
+    for (let node = start; parent[node] !== root; ) {
+      const next = parent[node];
+      parent[node] = root;
+      node = next;
+    }
+    return root;
+  };
+  const union = (a: number, b: number): void => {
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) parent[Math.max(rootA, rootB)] = Math.min(rootA, rootB);
+  };
+  // A file or a task id first seen in one commit joins every later commit naming it.
+  const fileOwner = new Map<RelPath, number>();
+  const taskOwner = new Map<string, number>();
+  commits.forEach(({ filesByComponent, taskIds }, index) => {
+    for (const relPaths of filesByComponent.values()) {
+      for (const relPath of relPaths) {
+        const owner = fileOwner.get(relPath);
+        if (owner === undefined) fileOwner.set(relPath, index);
+        else union(owner, index);
+      }
+    }
+    for (const taskId of taskIds) {
+      const owner = taskOwner.get(taskId);
+      if (owner === undefined) taskOwner.set(taskId, index);
+      else union(owner, index);
+    }
+  });
+  // An edge between two files the burst edited joins their commits.
+  if (neighbours.size > 0) {
+    for (const [relPath, owner] of fileOwner) {
+      for (const neighbour of neighbours.get(relPath) ?? []) {
+        const other = fileOwner.get(neighbour);
+        if (other !== undefined) union(owner, other);
+      }
+    }
+  }
+  const units = new Map<number, ShotgunSurgeryChangeUnit>();
+  commits.forEach(({ bundleId, filesByComponent }, index) => {
+    const root = find(index);
+    const unit = units.get(root);
+    if (!unit) {
+      units.set(root, {
+        filesByComponent: new Map([...filesByComponent].map(([c, relPaths]) => [c, new Set(relPaths)])),
+        bundleIds: [bundleId],
+      });
+      return;
+    }
+    unit.bundleIds.push(bundleId);
+    for (const [component, relPaths] of filesByComponent) {
+      const held = unit.filesByComponent.get(component);
+      if (held) for (const relPath of relPaths) held.add(relPath);
+      else unit.filesByComponent.set(component, new Set(relPaths));
+    }
+  });
+  return [...units.values()];
 }
 
 /**
@@ -618,22 +753,26 @@ function shapeSpread(
   bundleCommits: ReadonlyMap<number, readonly string[]> | undefined,
 ): ShotgunSurgerySpread {
   const componentChanges = spread.components.map((c) => changes.get(c) ?? 0);
+  const carrierFiles = spread.components.map((c) => carrierFilesOf(spread.supporting, c));
   const fewest = Math.min(...componentChanges);
   const most = Math.max(...componentChanges);
   // One commit per supporting burst — its most recent commit that held the
   // spread — so every sample is a distinct supporting change, never a burst's
   // re-commits crowding the others out.
-  const latestPerBurst = new Map<number, number>();
+  const latestPerBurst = new Map<number, ShotgunSurgeryUnit>();
   for (const unit of spread.supporting) {
-    latestPerBurst.set(unit.burst, Math.max(latestPerBurst.get(unit.burst) ?? unit.order, unit.order));
+    const latest = latestPerBurst.get(unit.burst);
+    if (!latest || unit.order > latest.order) latestPerBurst.set(unit.burst, unit);
   }
   const sampleCommits: string[] = [];
-  for (const bundleId of [...latestPerBurst.values()].sort((a, b) => b - a)) {
-    for (const sha of bundleCommits?.get(bundleId) ?? []) {
-      if (sampleCommits.length < SHOTGUN_SURGERY_SAMPLE_COMMITS && !sampleCommits.includes(sha)) {
-        sampleCommits.push(sha);
-      }
+  const sampleChanges: string[][] = [];
+  for (const unit of [...latestPerBurst.values()].sort((a, b) => b.order - a.order)) {
+    if (sampleChanges.length >= SHOTGUN_SURGERY_SAMPLE_COMMITS) break;
+    for (const sha of bundleCommits?.get(unit.order) ?? []) {
+      if (!sampleCommits.includes(sha)) sampleCommits.push(sha);
     }
+    const change = unit.bundleIds.flatMap((bundleId) => bundleCommits?.get(bundleId) ?? []);
+    if (change.length > 0) sampleChanges.push([...new Set(change)]);
   }
   return {
     components: spread.components,
@@ -646,28 +785,28 @@ function shapeSpread(
       confidenceBA: spread.support / most,
     }),
     islands,
-    exemplarFiles: spread.components.map((c) => exemplarFile(spread.supporting, c)),
+    exemplarFiles: carrierFiles.map((files) => files[0] ?? ""),
+    carrierFiles,
     sampleCommits,
+    sampleChanges,
   };
 }
 
-/** The component's file the supporting commits touched most; ties to the smaller path. */
-function exemplarFile(units: readonly ShotgunSurgeryUnit[], component: string): RelPath {
+/**
+ * The component's files the supporting changes touched, most-touched first,
+ * ties to the smaller path, at most {@link SHOTGUN_SURGERY_CARRIER_FILES}.
+ */
+function carrierFilesOf(units: readonly ShotgunSurgeryUnit[], component: string): RelPath[] {
   const counts = new Map<RelPath, number>();
   for (const unit of units) {
     for (const relPath of unit.filesByComponent.get(component) ?? []) {
       counts.set(relPath, (counts.get(relPath) ?? 0) + 1);
     }
   }
-  let best: RelPath = "";
-  let bestCount = 0;
-  for (const [relPath, count] of counts) {
-    if (count > bestCount || (count === bestCount && compareCodePoints(relPath, best) < 0)) {
-      best = relPath;
-      bestCount = count;
-    }
-  }
-  return best;
+  return [...counts]
+    .sort(([pa, ca], [pb, cb]) => cb - ca || compareCodePoints(pa, pb))
+    .slice(0, SHOTGUN_SURGERY_CARRIER_FILES)
+    .map(([relPath]) => relPath);
 }
 
 function forEachPair(items: readonly string[], visit: (a: string, b: string) => void): void {

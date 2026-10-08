@@ -451,6 +451,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
       ...(graph.bundles ? { bundles: [...graph.bundles.entries()] } : {}),
       ...(graph.bundleCommits ? { bundleCommits: [...graph.bundleCommits.entries()] } : {}),
       ...(graph.bundleBursts ? { bundleBursts: [...graph.bundleBursts.entries()] } : {}),
+      ...(graph.bundleTaskIds ? { bundleTaskIds: [...graph.bundleTaskIds.entries()] } : {}),
     };
   }),
   readTemporalBundleFiles: read(async (graphDb) => [...(await graphDb.readTemporalBundleFiles()).entries()]),

@@ -94,6 +94,45 @@ function burstHistory(
   return { bundles, bundleBursts, bundleCommits, componentOf };
 }
 
+/** One commit of a burst: the components it touched, through `file` (default `f`), and its message's task ids. */
+interface LogicalCommit {
+  components: readonly string[];
+  file?: string;
+  taskIds?: readonly string[];
+}
+
+/**
+ * Like {@link burstHistory}, but each commit names the file it touched in
+ * every component (so two commits share a file only when they name the same
+ * one) and the task ids its message carried.
+ */
+function logicalHistory(
+  lead: readonly (readonly string[])[],
+  bursts: readonly (readonly LogicalCommit[])[],
+): Pick<ShotgunSurgeryInput, "bundles" | "bundleBursts" | "bundleCommits" | "bundleTaskIds" | "componentOf"> {
+  const base = history(lead);
+  const bundles = new Map(base.bundles);
+  const bundleBursts = new Map(base.bundleBursts);
+  const bundleCommits = new Map(base.bundleCommits);
+  const bundleTaskIds = new Map<number, readonly string[]>([...base.bundles.keys()].map((id) => [id, []]));
+  const componentOf = new Map(base.componentOf);
+  let bundleId = bundles.size;
+  bursts.forEach((commits, b) => {
+    commits.forEach(({ components, file = "f", taskIds = [] }, c) => {
+      bundles.set(
+        bundleId,
+        components.map((component) => fileOf(component, file)),
+      );
+      bundleBursts.set(bundleId, lead.length + b);
+      bundleCommits.set(bundleId, [`b${b}c${c}`]);
+      bundleTaskIds.set(bundleId, taskIds);
+      for (const component of components) componentOf.set(fileOf(component, file), component);
+      bundleId++;
+    });
+  });
+  return { bundles, bundleBursts, bundleCommits, bundleTaskIds, componentOf };
+}
+
 /** 30 single-component changes of distinct filler components, plus one lone change to each of `lone`. */
 function background(lone: readonly string[]): string[][] {
   return [...Array.from({ length: 30 }, (_, i) => [`filler${i}`]), ...lone.map((c) => [c])];
@@ -235,16 +274,17 @@ describe("detectShotgunSurgery", () => {
     expect(report.summary.unitCount).toBe(input.bundles.size - 1);
   });
 
-  it("gives no support to a k-set no single commit held, however its burst's commits chain", () => {
-    // Each burst's commits touch two of {a, b, c} apiece; the burst's union is
-    // all three, but no commit ever edited a, b and c together.
+  it("gives no support to a k-set no single change held, however its burst's commits chain", () => {
+    // Each burst's commits touch two of {a, b, c} apiece, each through files
+    // of its own with no link between them; the burst's union is all three,
+    // but no change ever edited a, b and c together.
     const split = [
-      ["a", "b"],
-      ["b", "c"],
-      ["a", "c"],
+      { components: ["a", "b"], file: "x" },
+      { components: ["b", "c"], file: "y" },
+      { components: ["a", "c"], file: "z" },
     ];
     const report = detectShotgunSurgery({
-      ...burstHistory(background(["a", "b", "c"]), [split, split, split]),
+      ...logicalHistory(background(["a", "b", "c"]), [split, split, split]),
       componentDependencies: [],
     });
 
@@ -298,6 +338,97 @@ describe("detectShotgunSurgery", () => {
 
     expect(report.findings.map((f) => f.components)).toEqual([["a", "b", "c"]]);
     expect(report.findings[0].sampleCommits).toEqual(["b2c0", "b1c0", "b0c0"]);
+  });
+
+  it("joins a burst's commits sharing a task id into one change, however unlinked their files", () => {
+    // Each burst: one commit edits a and b, another edits c through a
+    // different file; both messages name the burst's task.
+    const bursts = [0, 1, 2].map((b) => [
+      { components: ["a", "b"], file: "x", taskIds: [`TD-${b}`] },
+      { components: ["c"], file: "y", taskIds: [`TD-${b}`] },
+    ]);
+    const report = detectShotgunSurgery({
+      ...logicalHistory(background(["a", "b", "c"]), bursts),
+      componentDependencies: [],
+    });
+
+    expect(report.findings.map((f) => `${f.components.join(",")}@${f.support}`)).toEqual(["a,b,c@3"]);
+    // One commit per supporting burst; the change behind it is both commits.
+    expect(report.findings[0].sampleCommits).toEqual(["b2c1", "b1c1", "b0c1"]);
+    expect(report.findings[0].sampleChanges).toEqual([
+      ["b2c1", "b2c0"],
+      ["b1c1", "b1c0"],
+      ["b0c1", "b0c0"],
+    ]);
+  });
+
+  it("lists each component's carrier files, most-touched first", () => {
+    const bursts = [0, 1, 2].map((b) => [
+      { components: ["a", "b", "c"], file: "x" },
+      ...(b === 0 ? [{ components: ["a"], file: "y", taskIds: ["TD-9"] }] : []),
+    ]);
+    // Burst 0's second commit joins the first through the shared task id.
+    bursts[0][0] = { ...bursts[0][0], taskIds: ["TD-9"] };
+    const report = detectShotgunSurgery({
+      ...logicalHistory(background(["a", "b", "c"]), bursts),
+      componentDependencies: [],
+    });
+
+    const [finding] = report.findings;
+    expect(finding.carrierFiles).toEqual([
+      [fileOf("a", "x"), fileOf("a", "y")],
+      [fileOf("b", "x")],
+      [fileOf("c", "x")],
+    ]);
+    expect(finding.exemplarFiles).toEqual(finding.carrierFiles.map((files) => files[0]));
+  });
+
+  it("joins a burst's commits whose files a file dependency links, with no task id", () => {
+    const bursts = [0, 1, 2].map(() => [
+      { components: ["a", "b"], file: "x" },
+      { components: ["c"], file: "y" },
+    ]);
+    const report = detectShotgunSurgery({
+      ...logicalHistory(background(["a", "b", "c"]), bursts),
+      // b's file imports c's: one change edited both sides of the import.
+      fileDependencyEdges: [{ sourceRelPath: fileOf("b", "x"), targetRelPath: fileOf("c", "y") }],
+      componentDependencies: [{ sourceComponent: "b", targetComponent: "c" }],
+    });
+
+    expect(report.findings.map((f) => `${f.components.join(",")}@${f.support}`)).toEqual(["a,b,c@3"]);
+    expect(report.findings[0].islands).toEqual([["b", "c"], ["a"]]);
+  });
+
+  it("joins a burst's commits that edited a common file", () => {
+    const bursts = [0, 1, 2].map(() => [
+      { components: ["a", "b"], file: "x" },
+      { components: ["b", "c"], file: "x" },
+    ]);
+    const report = detectShotgunSurgery({
+      ...logicalHistory(background(["a", "b", "c"]), bursts),
+      componentDependencies: [],
+    });
+
+    expect(report.findings.map((f) => `${f.components.join(",")}@${f.support}`)).toEqual(["a,b,c@3"]);
+  });
+
+  it("keeps parallel commits of one burst apart when neither a task id nor a file link joins them", () => {
+    // Two agent sessions under one author: different tasks, unrelated files.
+    const bursts = [0, 1, 2].map((b) => [
+      { components: ["a", "b"], file: "x", taskIds: [`TD-${b}`] },
+      { components: ["c"], file: "y", taskIds: [`AB-${b}`] },
+    ]);
+    const input = logicalHistory(background(["a", "b", "c"]), bursts);
+    const report = detectShotgunSurgery({
+      ...input,
+      fileDependencyEdges: [{ sourceRelPath: fileOf("a", "x"), targetRelPath: fileOf("filler0") }],
+      componentDependencies: [],
+    });
+
+    expect(report.summary.candidateSetCount).toBe(0);
+    expect(report.findings).toEqual([]);
+    // Both commits of every burst stay their own change.
+    expect(report.summary.unitCount).toBe(input.bundles.size);
   });
 
   it("judges nothing without bundle membership", () => {

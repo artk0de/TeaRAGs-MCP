@@ -750,19 +750,21 @@ export class DaemonGraphDbClient implements GraphDbClient {
     // The server serialises the bundle Map as `[id, paths][]` entries — rebuild
     // it here (same pattern as getFileMetricsBulk). An older daemon's reply
     // carries no `bundles` at all: absence stays absence, never "no bundles".
-    const { bundles, bundleCommits, bundleBursts, ...rest } = (await this.call(
+    const { bundles, bundleCommits, bundleBursts, bundleTaskIds, ...rest } = (await this.call(
       "readTemporalCochangeGraph",
       {},
-    )) as Omit<TemporalCochangeGraph, "bundles" | "bundleCommits" | "bundleBursts"> & {
+    )) as Omit<TemporalCochangeGraph, "bundles" | "bundleCommits" | "bundleBursts" | "bundleTaskIds"> & {
       bundles?: [number, readonly RelPath[]][];
       bundleCommits?: [number, readonly string[]][];
       bundleBursts?: [number, number][];
+      bundleTaskIds?: [number, readonly string[]][];
     };
     return {
       ...rest,
       ...(bundles ? { bundles: new Map(bundles) } : {}),
       ...(bundleCommits ? { bundleCommits: new Map(bundleCommits) } : {}),
       ...(bundleBursts ? { bundleBursts: new Map(bundleBursts) } : {}),
+      ...(bundleTaskIds ? { bundleTaskIds: new Map(bundleTaskIds) } : {}),
     };
   }
 

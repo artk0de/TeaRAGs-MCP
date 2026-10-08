@@ -80,4 +80,12 @@ describe("bundleCochangeCommits", () => {
 
     expect(bundles[0].burst).toBe(bundles[1].burst);
   });
+
+  it("carries the task ids the git trajectory reads from each commit's message", () => {
+    const tagged = commit("a", "alice", 0, ["a.ts"]);
+    tagged.commit.body = "fix(api): TD-1234 keep the cursor (#567)";
+    const bundles = bundleCochangeCommits([tagged, commit("b", "alice", MIN, ["b.ts"])], 30);
+
+    expect(bundles.map((b) => b.taskIds)).toEqual([["TD-1234", "#567"], []]);
+  });
 });

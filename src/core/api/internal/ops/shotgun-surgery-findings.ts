@@ -7,7 +7,7 @@
  * reason, never zeros posing as verdicts.
  */
 
-import type { TemporalCochangeGraph } from "../../../contracts/types/codegraph.js";
+import type { FileDependencyEdge, TemporalCochangeGraph } from "../../../contracts/types/codegraph.js";
 import type { ComponentGraph } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import {
   detectShotgunSurgery,
@@ -25,10 +25,15 @@ export type ShotgunSurgeryRun =
   | { built: true; head: string; builtAt: number; report: ShotgunSurgeryReport }
   | { built: false; summary: ShotgunSurgeryReportSummary };
 
-/** Judge the co-change build's bundles over the report's component partition and graph. */
+/**
+ * Judge the co-change build's bundles over the report's component partition
+ * and graph. The file dependency edges and the bundles' task ids join a
+ * burst's commits into logical changes (bd tea-rags-mcp-09c4m).
+ */
 export function runShotgunSurgery(
   cochange: TemporalCochangeGraph,
   components: ComponentGraph,
+  fileDependencyEdges: readonly FileDependencyEdge[],
   sourcePathPattern: string | undefined,
 ): ShotgunSurgeryRun {
   const { meta } = cochange;
@@ -49,6 +54,8 @@ export function runShotgunSurgery(
       bundles: cochange.bundles,
       ...(cochange.bundleBursts ? { bundleBursts: cochange.bundleBursts } : {}),
       ...(cochange.bundleCommits ? { bundleCommits: cochange.bundleCommits } : {}),
+      ...(cochange.bundleTaskIds ? { bundleTaskIds: cochange.bundleTaskIds } : {}),
+      fileDependencyEdges,
       ...(sourcePathPattern ? { sourcePathPattern } : {}),
     }),
   };
@@ -103,7 +110,9 @@ function toShotgunSurgeryViolation(spread: ShotgunSurgerySpread): ShotgunSurgery
       componentChanges: spread.componentChanges,
       islands: spread.islands,
       exemplarFiles: spread.exemplarFiles,
+      carrierFiles: spread.carrierFiles,
       sampleCommits: spread.sampleCommits,
+      sampleChanges: spread.sampleChanges,
       drillDown: {
         tool: "find_co_changed",
         files: spread.exemplarFiles,

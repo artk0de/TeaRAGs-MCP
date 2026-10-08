@@ -51,6 +51,6 @@ export {
 } from "./infra/commit-discovery.js";
 export { GitCommitDiscoveryStore } from "./infra/commit-discovery-store.js";
 export { resolveHeadPaths } from "./infra/rename-following.js";
-export { MERGE_SUBJECT } from "./infra/utils.js";
+export { extractTaskIds, MERGE_SUBJECT } from "./infra/utils.js";
 export { partitionIntoAuthorSessions } from "./infra/metrics/sessions.js";
 export { authorIdentityKey } from "./infra/author-identity.js";

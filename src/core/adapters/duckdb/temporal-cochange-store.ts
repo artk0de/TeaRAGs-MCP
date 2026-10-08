@@ -84,7 +84,7 @@ export class DuckDbTemporalCochangeStore {
    * generation in the file (`DuckDbGraphSession#recreateEmptyTable`).
    */
   async replace(snapshot: TemporalCochangeSnapshot): Promise<void> {
-    const { meta, files, edges, bundles, bundleCommits, bundleBursts } = snapshot;
+    const { meta, files, edges, bundles, bundleCommits, bundleBursts, bundleTaskIds } = snapshot;
     await this.session.transaction(async () => {
       await this.session.recreateEmptyTable("cg_temporal_files");
       await this.session.recreateEmptyTable("cg_temporal_edges_cochange");
@@ -104,12 +104,16 @@ export class DuckDbTemporalCochangeStore {
       );
       await this.session.insertBatched(
         "cg_temporal_bundle_commits",
-        ["bundle_id", "commit_shas", "burst_id"],
-        (bundleCommits ?? []).map((shas, bundleId) => [
-          bundleId,
-          JSON.stringify(shas),
-          bundleBursts?.[bundleId] ?? null,
-        ]),
+        ["bundle_id", "commit_shas", "burst_id", "task_ids"],
+        (bundleCommits ?? []).map((shas, bundleId) => {
+          const taskIds = bundleTaskIds?.[bundleId];
+          return [
+            bundleId,
+            JSON.stringify(shas),
+            bundleBursts?.[bundleId] ?? null,
+            taskIds === undefined ? null : JSON.stringify(taskIds),
+          ];
+        }),
       );
       await this.session.insertBatched(
         "cg_temporal_meta",
@@ -240,6 +244,7 @@ export class DuckDbTemporalCochangeStore {
       bundles: await this.readBundleFiles(),
       bundleCommits: await this.readBundleCommits(),
       bundleBursts: await this.readBundleBursts(),
+      bundleTaskIds: await this.readBundleTaskIds(),
     };
   }
 
@@ -285,6 +290,27 @@ export class DuckDbTemporalCochangeStore {
       "SELECT bundle_id, burst_id FROM cg_temporal_bundle_commits WHERE burst_id IS NOT NULL ORDER BY bundle_id",
     );
     return new Map(rows.map((row) => [Number(row.bundle_id), Number(row.burst_id)]));
+  }
+
+  /**
+   * Each admitted bundle's commit-message task ids, keyed by bundle id (bd
+   * tea-rags-mcp-09c4m) — what joins a burst's commits into one logical
+   * change. `[]` = the message named none; empty map = a build that predates
+   * migration 045. A file without the column reads as not recorded: a
+   * READ_ONLY attach never migrates, so a newer build reads a file an older
+   * build's daemon owns exactly as that build left it.
+   */
+  async readBundleTaskIds(): Promise<ReadonlyMap<number, readonly string[]>> {
+    const [column] = await this.session.queryAll<{ present: number }>(
+      `SELECT count(*)::INTEGER AS present FROM duckdb_columns()
+        WHERE database_name = current_database() AND schema_name = 'main'
+          AND table_name = 'cg_temporal_bundle_commits' AND column_name = 'task_ids'`,
+    );
+    if (!column || Number(column.present) === 0) return new Map();
+    const rows = await this.session.queryAll<{ bundle_id: number; task_ids: string }>(
+      "SELECT bundle_id, task_ids FROM cg_temporal_bundle_commits WHERE task_ids IS NOT NULL ORDER BY bundle_id",
+    );
+    return new Map(rows.map((row) => [Number(row.bundle_id), JSON.parse(row.task_ids) as string[]]));
   }
 }
 

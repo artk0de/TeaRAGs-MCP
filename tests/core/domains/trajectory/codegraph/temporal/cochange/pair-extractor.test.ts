@@ -220,5 +220,14 @@ describe("extractCochangeGraph", () => {
       expect(graph.admittedBundleCommits).toEqual([["s3"], ["s2"], ["s1"]]);
       expect(graph.admittedBundleBursts).toEqual([0, 1, 1]);
     });
+
+    it("returns each admitted bundle's task ids, aligned with the memberships, [] where none were read", () => {
+      const graph = extractCochangeGraph(
+        [{ ...bundle("s1", 1, ["a.ts"]), taskIds: ["TD-1", "#7"] }, bundle("s2", 2, ["b.ts"])],
+        OPTIONS,
+      );
+
+      expect(graph.admittedBundleTaskIds).toEqual([[], ["TD-1", "#7"]]);
+    });
   });
 });
