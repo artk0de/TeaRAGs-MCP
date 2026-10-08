@@ -2039,13 +2039,18 @@ describe("ArchitectureReportOps#build — maintenance cost (bd tea-rags-mcp-r8hm
     expect(sdpPairs(report.violations)).toEqual(["core->lib", "base->lib"]);
     const hottest = report.violations.find((v) => v.detector === "stableDependencies");
     // Carried by core/a.ts→lib/f1.ts (hot) and core/b.ts→lib/f2.ts (cold).
+    // Of 22 files, the 2 hot ones share the top mid-rank 20.5/21, the 20 cold
+    // ones 9.5/21: mean 0.714 over 4 carriers, P(Irwin–Hall(4) ≤ 2.857) = 0.929
+    // (bd tea-rags-mcp-afyku — was the plain mean of costs, 0.5).
     expect(hottest?.maintenanceCost).toEqual({
-      score: 0.5,
+      score: 0.929,
+      meanPosition: 0.714,
       fileCount: 4,
       measuredFileCount: 4,
       hottestFile: {
         relPath: "core/a.ts",
         cost: 1,
+        costPosition: 0.976,
         churn: 1,
         bugFix: 1,
         recency: 1,

@@ -412,10 +412,14 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
     description:
       "Architecture diagnostics: is code laid out correctly (NOT is it risky to touch — use risk-assessment). " +
       "Typed violations with per-line evidence, per detector; scripts/spikes/benchmarks/examples/fixtures excluded. " +
-      "Each detector's violations ranked costliest-first BEFORE limit by maintenanceCost: score 0-1 = mean over " +
-      "carrying files (named files/file edges, else component files) of churn*(1+bugFix+recency)/3, each signal = " +
-      "file's position in collection's own git.file distribution (commitCount, bugFixRate, ageDays inverted); " +
-      "hottestFile = costliest carrier with raw readings; absent = no git readings, detector order kept. " +
+      "Each detector's violations ranked costliest-first BEFORE limit by maintenanceCost. File cost = " +
+      "churn*(1+bugFix+recency)/3, each signal = file's position in collection's own git.file distribution " +
+      "(commitCount, bugFixRate, ageDays inverted); costPosition = cost's mid-rank among all files. Carriers = files " +
+      "on the edges that make the violation (named files; all file edges of a component edge or knot cut; hub's " +
+      "boundary files; zone-of-pain's depended-on files; island/uselessness = all its files). score 0-1 = " +
+      "percentile of carriers' meanPosition vs the mean of as many random files (Irwin-Hall) — comparable across " +
+      "families and carrier counts; hottestFile = costliest carrier with raw readings; absent = no git readings, " +
+      "detector order kept. " +
       "stableDependencies (Stable Dependencies Principle): stable COMPONENT depending on less stable one — " +
       "component = module with measured facade, else directory; evidence = instabilities, Ca/Ce, delta, carrying " +
       "file edges; dependency on nested component not judged; rootCauses by unstable target component, " +

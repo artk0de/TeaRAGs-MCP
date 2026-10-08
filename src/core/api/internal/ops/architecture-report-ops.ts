@@ -116,8 +116,9 @@ import {
 } from "./architecture-facts.js";
 import {
   architectureViolationCarrierFiles,
+  ComponentEdgeCarrierIndex,
   FileMaintenanceCostModel,
-  filesByComponent,
+  rankAndShapeByMaintenanceCost,
   rankByMaintenanceCost,
   type GitFileMaintenanceSignalLookup,
 } from "./architecture-maintenance-cost.js";
@@ -453,19 +454,22 @@ export class ArchitectureReportOps {
     const { production, whole } = scope;
     const { findings, facadePartition, limit, offset, domainKnot } = view;
     // Each family ranked by maintenance cost (bd tea-rags-mcp-r8hme.20)
-    // BEFORE its cap, so the cap keeps the costliest; a family's component
-    // names resolve against the partition its detector judged. A new family
-    // opts in by routing its full list through `ranked`.
-    const adoptionFiles = filesByComponent(runs.components.componentOf);
-    const domainFiles = filesByComponent(runs.layeringComponents.componentOf);
-    const ranked = (
-      family: readonly ArchitectureViolation[],
-      filesOfComponent: (component: string) => readonly RelPath[],
-    ): ArchitectureViolation[] =>
-      rankByMaintenanceCost(family, (v) => architectureViolationCarrierFiles(v, filesOfComponent), costModel).slice(
-        0,
-        limit,
-      );
+    // BEFORE its cap, so the cap keeps the costliest; a family's carriers are
+    // the files on the edges that make it (bd tea-rags-mcp-afyku), read off
+    // the partition its detector judged. A new family opts in by routing its
+    // full list through `ranked`.
+    const adoptionCarriers = costModel
+      ? new ComponentEdgeCarrierIndex(runs.components.componentOf, runs.components.dependencies)
+      : undefined;
+    const domainCarriers = costModel
+      ? new ComponentEdgeCarrierIndex(runs.layeringComponents.componentOf, runs.layeringComponents.dependencies)
+      : undefined;
+    const carriersIn =
+      (index: ComponentEdgeCarrierIndex | undefined) =>
+      (violation: object): RelPath[] =>
+        index ? architectureViolationCarrierFiles(violation, index) : [];
+    const ranked = (family: readonly ArchitectureViolation[], index: ComponentEdgeCarrierIndex | undefined) =>
+      rankByMaintenanceCost(family, carriersIn(index), costModel).slice(0, limit);
     return {
       ...(request.pathPattern ? { pathPattern: request.pathPattern } : {}),
       summary: {
@@ -489,13 +493,22 @@ export class ArchitectureReportOps {
         ...silentRootCauses(findings.silent, limit),
       ],
       violations: [
-        ...ranked(sdpViolations(findings.sdp, UNCAPPED), adoptionFiles),
-        ...ranked(leakViolations(findings.leaks, findings.privacy, UNCAPPED), adoptionFiles),
-        ...ranked(silentViolations(findings.silent, UNCAPPED), adoptionFiles),
-        ...ranked(mainSequenceViolations(findings.mainSequence, UNCAPPED), adoptionFiles),
-        ...ranked(hubLikeDependencyViolations(findings.hubLikeDependency, UNCAPPED), adoptionFiles),
-        ...(findings.layering ? ranked(layeringViolations(findings.layering, UNCAPPED), domainFiles) : []),
-        ...(runs.norms ? ranked(normsViolations(runs.norms, UNCAPPED), domainFiles) : []),
+        ...ranked(sdpViolations(findings.sdp, UNCAPPED), adoptionCarriers),
+        ...ranked(leakViolations(findings.leaks, findings.privacy, UNCAPPED), adoptionCarriers),
+        ...ranked(silentViolations(findings.silent, UNCAPPED), adoptionCarriers),
+        ...ranked(mainSequenceViolations(findings.mainSequence, UNCAPPED), adoptionCarriers),
+        ...ranked(hubLikeDependencyViolations(findings.hubLikeDependency, UNCAPPED), adoptionCarriers),
+        // Ranked on the domain findings: a knot's whole feedback-arc set and a
+        // composition cycle's every nested pair, which the listed form caps.
+        ...(findings.layering
+          ? rankAndShapeByMaintenanceCost(
+              findings.layering.violations,
+              carriersIn(domainCarriers),
+              costModel,
+              toLayeringArchitectureViolation,
+            ).slice(0, limit)
+          : []),
+        ...(runs.norms ? ranked(normsViolations(runs.norms, UNCAPPED), domainCarriers) : []),
       ],
       // The layer map VIEW only when asked (bd tea-rags-mcp-r8hme.26) — a full
       // map never bloats an unqualified report. Same DOMAIN partition the
@@ -1228,10 +1241,6 @@ function summariseLayering(report: LayeringReport, facadePartition: LayeringPart
     violationCount: summary.violationCount,
     ...(summary.scope ? { outOfScopeFindingCount: summary.scope.outOfScopeFindingCount } : {}),
   };
-}
-
-function layeringViolations(report: LayeringReport, limit: number): ArchitectureViolation[] {
-  return report.violations.slice(0, limit).map((v): ArchitectureViolation => toLayeringArchitectureViolation(v));
 }
 
 function toLayeringArchitectureViolation(v: DomainLayeringViolation): ArchitectureViolation {
