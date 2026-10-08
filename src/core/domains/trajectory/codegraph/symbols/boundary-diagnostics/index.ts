@@ -54,9 +54,13 @@ export {
 } from "./production-graph.js";
 export {
   classifyTestSupportFiles,
+  deriveTestOnlyDependencies,
+  resolveExternalImports,
   resolveUnwalkedImportEdges,
   TEST_SUPPORT_REASON,
   type IndexedFileImports,
+  type TestSupportClassification,
+  type UnwalkedDependencyImport,
   type UnwalkedFileImportEdge,
 } from "./test-support.js";
 export {

@@ -29,6 +29,7 @@ import {
   detectLeakingAbstractions,
   detectMainSequenceDeviations,
   excludeNonProductionFiles,
+  resolveExternalImports,
   resolveUnwalkedImportEdges,
   type ComponentGraph,
   type IndexedFileImports,
@@ -52,6 +53,11 @@ export interface TestSupportExclusionCounts {
   excludedFileCount: number;
   /** Edges with a test-support endpoint, left after the non-production exclusion. */
   excludedEdgeCount: number;
+  /**
+   * Distinct dependencies (packages, unwalked files) tests import and no
+   * production file does — the positive evidence test support is tied to.
+   */
+  testOnlyDependencyCount: number;
 }
 
 /**
@@ -70,11 +76,13 @@ export interface ProductionArchitectureGraph extends ProductionDependencyGraph {
  * every detector the diff-scoped run wires, judges THIS graph.
  *
  * Test support is derived from the import relation, not from names: a walked
- * file every importer of which is a test or test support
- * (`classifyTestSupportFiles`). Importers are the graph's edges plus the
- * resolved payload imports of the files the codegraph does not walk
- * (`resolveUnwalkedImportEdges`) — a test is the only kind that makes support,
- * a generated importer keeps its target production. It is classified over the
+ * file every importer of which is a test or test support AND which imports a
+ * test-only dependency or other test support (`classifyTestSupportFiles`).
+ * Importers are the graph's edges plus the resolved payload imports of the
+ * files the codegraph does not walk (`resolveUnwalkedImportEdges`) — a test is
+ * the only kind that makes support, a generated importer keeps its target
+ * production; the dependencies are every indexed file's payload imports of
+ * packages and unwalked files (`resolveExternalImports`). It is classified over the
  * graph BEFORE the non-production cut, so a script importing a file still
  * counts as a non-test importer. Without `readIndexedFileImports` no test
  * importer is known and nothing is classified.
@@ -86,24 +94,40 @@ export async function readProductionArchitectureGraph(
   const indexed = await graphDb.readFileDependencyGraph();
   const nonProductionPaths = buildNonProductionPathFilter();
   const withoutTooling = excludeNonProductionFiles(indexed, nonProductionPaths);
-  const testSupport = readIndexedFileImports
-    ? classifyTestSupportFiles(
-        indexed,
-        resolveUnwalkedImportEdges(
-          await readIndexedFileImports(),
-          indexed.files.map((f) => f.relPath),
-        ),
-      )
-    : new Set<RelPath>();
+  const { testSupport, testOnlyDependencyCount } = await classifyIndexedTestSupport(indexed, readIndexedFileImports);
   const testSupportPaths: PathFilter = { ignores: (relPath) => testSupport.has(relPath) };
   const production = excludeNonProductionFiles(withoutTooling.graph, testSupportPaths);
   return {
     graph: production.graph,
     excludedFileCount: withoutTooling.excludedFileCount,
     excludedEdgeCount: withoutTooling.excludedEdgeCount,
-    testSupport: { excludedFileCount: production.excludedFileCount, excludedEdgeCount: production.excludedEdgeCount },
+    testSupport: {
+      excludedFileCount: production.excludedFileCount,
+      excludedEdgeCount: production.excludedEdgeCount,
+      testOnlyDependencyCount,
+    },
     nonProduction: { ignores: (relPath) => nonProductionPaths.ignores(relPath) || testSupport.has(relPath) },
   };
+}
+
+/**
+ * Test support over the whole indexed graph, and the size of the test-only
+ * dependency set it rests on. Without `readIndexedFileImports` no test
+ * importer is known and nothing is classified.
+ */
+async function classifyIndexedTestSupport(
+  indexed: FileDependencyGraph,
+  readIndexedFileImports: IndexedFileImportLookup | undefined,
+): Promise<{ testSupport: ReadonlySet<RelPath>; testOnlyDependencyCount: number }> {
+  if (!readIndexedFileImports) return { testSupport: new Set(), testOnlyDependencyCount: 0 };
+  const importsByFile = await readIndexedFileImports();
+  const walkedFiles = indexed.files.map((f) => f.relPath);
+  const { files, testOnlyDependencies } = classifyTestSupportFiles(
+    indexed,
+    resolveUnwalkedImportEdges(importsByFile, walkedFiles),
+    resolveExternalImports(importsByFile, walkedFiles),
+  );
+  return { testSupport: files, testOnlyDependencyCount: testOnlyDependencies.size };
 }
 
 /** The component partition with the facade classification it was built from. */

@@ -177,9 +177,13 @@ describe("GraphFacade#getArchitectureReport", () => {
       readTemporalCochangeGraph: vi.fn().mockResolvedValue({ meta: null, edges: [] }),
       close: vi.fn().mockResolvedValue(undefined),
     };
-    const readIndexedFileImports = vi
-      .fn()
-      .mockResolvedValue(new Map([["app/specs/a.spec.ts", { isTest: true, specifiers: ["./a.spec.presets"] }]]));
+    const readIndexedFileImports = vi.fn().mockResolvedValue(
+      new Map([
+        ["app/specs/a.spec.ts", { isTest: true, specifiers: ["./a.spec.presets", "msw"] }],
+        // Positive evidence (89k7k.35.3): the presets import a package only tests import.
+        ["app/specs/a.spec.presets.ts", { isTest: false, specifiers: ["../a", "msw"] }],
+      ]),
+    );
     const facade = new GraphFacade({
       pool: readerPool(graphDb).pool,
       collectionRegistry: registry,

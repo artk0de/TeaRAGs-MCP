@@ -1327,7 +1327,7 @@ describe("ArchitectureReportOps#build — non-production paths (bd tea-rags-mcp-
 // (a `.spec.presets.tsx`, a spec builder) is test support, not architecture.
 describe("ArchitectureReportOps#build — test support (bd tea-rags-mcp-89k7k.35.3)", () => {
   const TEST_SUPPORT =
-    "test support: imported only by test files or by other test support (presets, builders, spec helpers)";
+    "test support: imported only by test files or by other test support, and importing a test-only dependency (one tests import and no production file does) or other test support";
 
   function withPresets(): FileDependencyGraph {
     const g = graph();
@@ -1338,7 +1338,11 @@ describe("ArchitectureReportOps#build — test support (bd tea-rags-mcp-89k7k.35
   }
 
   const readIndexedFileImports = async () =>
-    new Map([["core/specs/b.spec.ts", { isTest: true, specifiers: ["./b.spec.presets"] }]]);
+    new Map([
+      ["core/specs/b.spec.ts", { isTest: true, specifiers: ["./b.spec.presets", "msw"] }],
+      // Positive evidence (89k7k.35.3): the presets import a package only tests import.
+      ["core/specs/b.spec.presets.ts", { isTest: false, specifiers: ["../b", "msw"] }],
+    ]);
 
   it("judges every detector without test support and counts what it left out", async () => {
     const report = await new ArchitectureReportOps().build(
@@ -1353,16 +1357,27 @@ describe("ArchitectureReportOps#build — test support (bd tea-rags-mcp-89k7k.35
 
     expect(report.violations).toEqual(baseline.violations);
     expect(report.summary.stableDependencies.edgeCount).toBe(graph().edges.length);
-    expect(report.summary.testSupport).toEqual({ excludedFileCount: 1, excludedEdgeCount: 1, reason: TEST_SUPPORT });
+    expect(report.summary.testSupport).toEqual({
+      excludedFileCount: 1,
+      excludedEdgeCount: 1,
+      testOnlyDependencyCount: 1,
+      reason: TEST_SUPPORT,
+    });
   });
 
   it("reports nothing excluded as test support without a test-import read, or without a graph database", async () => {
     const report = await new ArchitectureReportOps().build(graphDb(withPresets()), {});
 
-    expect(report.summary.testSupport).toEqual({ excludedFileCount: 0, excludedEdgeCount: 0, reason: TEST_SUPPORT });
+    expect(report.summary.testSupport).toEqual({
+      excludedFileCount: 0,
+      excludedEdgeCount: 0,
+      testOnlyDependencyCount: 0,
+      reason: TEST_SUPPORT,
+    });
     expect(ArchitectureReportOps.empty({}).summary.testSupport).toEqual({
       excludedFileCount: 0,
       excludedEdgeCount: 0,
+      testOnlyDependencyCount: 0,
       reason: TEST_SUPPORT,
     });
   });

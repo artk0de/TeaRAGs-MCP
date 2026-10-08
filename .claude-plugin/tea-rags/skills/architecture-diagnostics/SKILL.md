@@ -124,11 +124,13 @@ get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>"
   domain's own internals. Facade-aggregation edges never count as border.
 - Tooling paths (scripts, spikes, benchmarks, examples, fixtures) removed before
   any detector — `summary.nonProduction` counts them.
-- Test support removed too — a file every importer of which is a test or other
-  test support (`X.spec.presets.tsx`, spec builders), whatever its name;
-  `summary.testSupport` counts them. A dynamically loaded entry point (worker
-  module path, `import(variable)`) that tests import reads as support — a
-  surprising count names those.
+- Test support removed too — file imported only by tests / other support AND
+  importing a test-only dep (package or file tests import, no production file
+  does: `msw`, `@testing-library/*`, test helpers) or other support; name
+  irrelevant. `summary.testSupport` counts files + `testOnlyDependencyCount`.
+  Worker loaded by module path, importing only production deps → stays
+  production. Fixture importing only production code → stays production too (no
+  evidence) — low count ≠ bug.
 - `limit` caps `violations` + `rootCauses` PER DETECTOR; each
   `summary.<detector>` keeps totals (`violationCount`, `rootCauseCount`).
   Totals > returned → say truncated.

@@ -84,8 +84,16 @@ describe("readProductionArchitectureGraph", () => {
     };
     const readIndexedFileImports = vi.fn(async () => {
       return new Map([
-        ["src/modal/specs/Modal.spec.tsx", { isTest: true, specifiers: ["./Modal.spec.presets", "src/modal/Modal"] }],
-        ["tests/used-by-script.test.ts", { isTest: true, specifiers: ["../src/used-by-script.js"] }],
+        [
+          "src/modal/specs/Modal.spec.tsx",
+          { isTest: true, specifiers: ["./Modal.spec.presets", "src/modal/Modal", "msw/node", "@faker-js/faker"] },
+        ],
+        ["tests/used-by-script.test.ts", { isTest: true, specifiers: ["../src/used-by-script.js", "msw"] }],
+        // Positive evidence (89k7k.35.3): each support file imports a package
+        // tests import and no production file does.
+        ["src/modal/specs/Modal.spec.presets.tsx", { isTest: false, specifiers: ["../Modal", "./builder", "msw"] }],
+        ["src/modal/specs/builder.ts", { isTest: false, specifiers: ["@faker-js/faker"] }],
+        ["src/used-by-script.ts", { isTest: false, specifiers: ["node:fs"] }],
       ]);
     });
 
@@ -93,7 +101,7 @@ describe("readProductionArchitectureGraph", () => {
 
     expect(readIndexedFileImports).toHaveBeenCalledTimes(1);
     expect(production.excludedFileCount).toBe(1);
-    expect(production.testSupport).toEqual({ excludedFileCount: 2, excludedEdgeCount: 2 });
+    expect(production.testSupport).toEqual({ excludedFileCount: 2, excludedEdgeCount: 2, testOnlyDependencyCount: 2 });
     expect(production.graph.files.map((f) => f.relPath)).toEqual([
       "src/modal/Modal.tsx",
       "src/modal/public.ts",
@@ -114,7 +122,7 @@ describe("readProductionArchitectureGraph", () => {
 
     const production = await readProductionArchitectureGraph(graphDb);
 
-    expect(production.testSupport).toEqual({ excludedFileCount: 0, excludedEdgeCount: 0 });
+    expect(production.testSupport).toEqual({ excludedFileCount: 0, excludedEdgeCount: 0, testOnlyDependencyCount: 0 });
     expect(production.graph.files).toHaveLength(2);
   });
 });

@@ -552,7 +552,12 @@ export class ArchitectureReportOps {
       ...(request.pathPattern ? { pathPattern: request.pathPattern } : {}),
       summary: {
         nonProduction: { excludedFileCount: 0, excludedEdgeCount: 0, reason: NON_PRODUCTION_REASON },
-        testSupport: { excludedFileCount: 0, excludedEdgeCount: 0, reason: TEST_SUPPORT_REASON },
+        testSupport: {
+          excludedFileCount: 0,
+          excludedEdgeCount: 0,
+          testOnlyDependencyCount: 0,
+          reason: TEST_SUPPORT_REASON,
+        },
         stableDependencies: {
           tolerance: DEFAULT_SDP_TOLERANCE,
           minConnectionCount: DEFAULT_SDP_MIN_CONNECTION_COUNT,
