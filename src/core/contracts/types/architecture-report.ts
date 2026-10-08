@@ -832,14 +832,13 @@ export type ArchitectureViolation = (
   ArchitectureMaintenanceCostTag;
 
 /**
- * A file edge the project's own norms find precedent-less (bd
- * tea-rags-mcp-rpx0v): a MISFIT names the transit its roles normally follow,
- * a NEW_PATTERN names a pair the corpus has never seen between two roles it
- * knows well.
+ * A file edge running against its role pair's established direction (bd
+ * tea-rags-mcp-rpx0v, xb669.8): the pair's sign test of n(A→B) against
+ * n(B→A) is BH-significant and this edge sits on the minority side.
  */
 export interface NormArchitectureViolation {
   detector: "norms";
-  kind: "misfit" | "newPattern";
+  kind: "misfit";
   sourceRelPath: RelPath;
   targetRelPath: RelPath;
   evidence: {
@@ -848,7 +847,8 @@ export interface NormArchitectureViolation {
     locality: ArchitectureNormFinding["locality"];
     callWeight: number;
     pairSupport: number;
-    expectedPath?: ArchitectureNormExpectedPath;
+    pValue: number;
+    establishedDirection: ArchitectureNormEstablishedDirection;
   };
 }
 
@@ -1622,42 +1622,66 @@ export interface ArchitectureDomainReport {
   boundaryIn: ArchitectureDomainBoundaryEdge[];
 }
 
-/** The adaptive pair-support cut, rounded for the report. */
-export interface ArchitectureNormsThreshold {
-  method: "otsu" | "majority";
-  threshold: number;
-  separability?: number;
+/**
+ * One ledger's direction test (bd tea-rags-mcp-xb669.8): per unordered role
+ * pair {A, B}, A ≠ B, localities pooled, the exact two-sided sign test of
+ * n(A→B) against n(B→A) at p = ½, Benjamini–Hochberg at q over the pairs —
+ * the co-change pair gate's q.
+ */
+export interface ArchitectureNormsSignificance {
+  method: "directionInversion";
+  q: number;
+  /** m — role pairs holding at least one edge either way, same-role pairs aside. */
+  familySize: number;
+  /** Pairs BH rejects: each has an established direction. */
+  significantPairCount: number;
+  /** Of those, pairs no edge runs against — a direction, but no MISFIT. */
+  oneWayPairCount: number;
 }
 
-/** The frequent transit a MISFIT names as the path the edge should follow. */
-export interface ArchitectureNormExpectedPath {
-  via: string;
+/** The direction a role pair significantly holds — the one a MISFIT runs against. */
+export interface ArchitectureNormEstablishedDirection {
+  roleSrc: string;
+  roleDst: string;
+  /** Edges along it, localities pooled. */
   support: number;
 }
 
-/** One precedent-less file edge, with the evidence that makes it one. */
+/** One edge against its role pair's established direction, with the evidence that makes it one. */
 export interface ArchitectureNormFinding {
-  kind: "misfit" | "newPattern";
+  kind: "misfit";
+  /** The language family whose ledger judged the edge (bd tea-rags-mcp-xb669.7). */
+  family: string;
   sourceRelPath: RelPath;
   targetRelPath: RelPath;
   roleSrc: string;
   roleDst: string;
   locality: "sameDirectory" | "sameDomain" | "crossDomain";
   callWeight: number;
+  /** Edges roleSrc → roleDst, localities pooled — the minority side. */
   pairSupport: number;
-  expectedPath?: ArchitectureNormExpectedPath;
+  /** The pair's two-sided sign-test p, 3 significant digits. */
+  pValue: number;
+  establishedDirection: ArchitectureNormEstablishedDirection;
 }
 
 /**
  * The dependency-norms view (bd tea-rags-mcp-rpx0v), present only when the
  * request carried `norms`: the project's empirical ledgers per
- * (roleSrc, roleDst, locality) and the verdict for every precedent-less
- * edge between strongly-typed files.
+ * (roleSrc, roleDst, locality) and a MISFIT for every edge between
+ * strongly-typed files that runs against its role pair's established
+ * direction.
  */
 export interface ArchitectureNormsReport {
   summary: {
     roleFileCount: number;
     weakRoleFileCount: number;
+    /**
+     * Of `weakRoleFileCount`, files whose primary type only shapes the I/O of
+     * the function the file is named for (`useXParams`, `XProps`) — bd
+     * tea-rags-mcp-xb669.6.
+     */
+    ioShapeRoleFileCount: number;
     untypedFileCount: number;
     typedEdgeCount: number;
     judgedEdgeCount: number;
@@ -1668,10 +1692,31 @@ export interface ArchitectureNormsReport {
      * when the request carried one (bd tea-rags-mcp-mv8yv).
      */
     outOfScopeFindingCount?: number;
-    excluded: { lowRoleSupportEdgeCount: number };
+    /**
+     * `crossLanguageEdgeCount`: typed edges between two language families — no ledger judges them.
+     * `constantReferenceEdgeCount`: typed edges whose only evidence is a constant nested in the
+     * target's primary type (`BaseAdapter::RateLimitError`) — no role edge (bd tea-rags-mcp-xb669.6).
+     * `uncalledEdgeCount`: typed edges carrying no resolved call (`callWeight` 0) — the source
+     * names the target but never runs its logic, so never a finding; still ledger precedent
+     * (bd tea-rags-mcp-4vj2u). `frameworkRoutedEdgeCount`: typed edges whose every call went through
+     * a framework interface (`Worker.perform_async` routed to `#perform`) — same treatment.
+     * `displacedRoleEdgeCount`: typed edges touching a role read where it does not live (outside
+     * its conventional directories, or of a call shape its home lacks) — same treatment.
+     */
+    excluded: {
+      crossLanguageEdgeCount: number;
+      constantReferenceEdgeCount: number;
+      uncalledEdgeCount: number;
+      frameworkRoutedEdgeCount: number;
+      displacedRoleEdgeCount: number;
+    };
   };
-  threshold: ArchitectureNormsThreshold;
-  /** MISFITs first, then by weight, then by path. */
+  /**
+   * One ledger per language family (bd tea-rags-mcp-xb669.7), each with its
+   * own direction test — role statistics never pool across languages.
+   */
+  ledgers: { family: string; pairCount: number; significance: ArchitectureNormsSignificance }[];
+  /** By weight, then by path. */
   findings: ArchitectureNormFinding[];
 }
 

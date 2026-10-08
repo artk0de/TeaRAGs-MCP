@@ -696,6 +696,14 @@ export interface TypeNameRow {
   symbolKind: SymbolDefinitionKind;
   ancestors: readonly string[];
   /**
+   * The declared SUPERCLASS as written (`class X < Base`, a class's
+   * `extends`) — the one ancestor naming what KIND the type is (bd
+   * tea-rags-mcp-xb669.6). Absent for a module, an interface, or a class
+   * naming none. Mixins (`include` / `prepend`) and implemented interfaces
+   * appear in `ancestors` only: a capability, not a kind.
+   */
+  superclass?: string;
+  /**
    * How many of the TYPE's members are methods and how many are fields (bd
    * tea-rags-mcp-ffxfc): the sum over every production declaration of the same
    * language and type id — a Ruby class body re-opened in another file, a
@@ -705,6 +713,16 @@ export interface TypeNameRow {
    */
   methodCount?: number;
   fieldCount?: number;
+  /**
+   * The type's callables in the symbol table by how they are called (bd
+   * tea-rags-mcp-4vj2u): `Type#m` — on an instance (a mixin's or an object's
+   * methods) — against `Type.m` — on the type itself (`class << self`,
+   * `def self.m`, a `static`). A type with singleton callables only is a
+   * namespace of functions, whatever its name says. Both-or-neither; absent
+   * when the symbol table holds no callable of the type.
+   */
+  instanceMethodCount?: number;
+  singletonMethodCount?: number;
 }
 
 /**

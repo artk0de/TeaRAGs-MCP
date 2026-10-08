@@ -137,8 +137,8 @@ const GetArchitectureReportInputShape = {
     .boolean()
     .optional()
     .describe(
-      "Judge typed file edges against the project's own role precedents: response.norms + norms " +
-        "violations (MISFIT with expected path, NEW_PATTERN).",
+      "Role-pair norms: response.norms + violations for edges against their role pair's established " +
+        "direction (MISFIT).",
     ),
   limit: z
     .number()
@@ -476,8 +476,10 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "option: judge one directory AS ITS OWN SYSTEM (induced sub-graph, every metric recomputed inside — unlike " +
       "pathPattern which filters findings only); response.domain carries its layering counts + border edges naming the " +
       "external component and its whole-graph level. norms " +
-      "option: the project's own dependency precedents per (roleSrc, roleDst, locality) from primary-type roles — " +
-      "norms violations flag a MISFIT (with the expected transit path) or a NEW_PATTERN edge. Summary " +
+      "option: the project's own dependency precedents per (roleSrc, roleDst, locality) from primary-type roles, one " +
+      "ledger per language family (cross-family edges unjudged) — " +
+      "norms violations flag MISFIT edges: against their role pair's established direction (exact sign test of " +
+      "n(A->B) vs n(B->A), BH q=0.05 over the pairs; evidence = both counts, p, established direction). Summary " +
       "counts exclusions with named reasons. Diagnosis, not prescription.",
     schemaKey: "get_architecture_report",
     invoke: async (app, request) =>

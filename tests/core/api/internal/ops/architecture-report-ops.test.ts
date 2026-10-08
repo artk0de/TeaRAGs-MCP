@@ -1294,9 +1294,12 @@ describe("ArchitectureReportOps#build — domain mode (bd tea-rags-mcp-xb669.1)"
  * bd tea-rags-mcp-rpx0v (epic xb669.2): `norms: true` adds the dependency-
  * norms view — every file's primary-type role (derived from the type rows
  * the graph db reads), the project's own precedent ledgers per
- * (roleSrc, roleDst, locality), and a verdict for every precedent-less edge.
- * Four inheritance families: controllers call services, services call
- * repositories, presenters call services; two edges have no precedent.
+ * (roleSrc, roleDst, locality), and a MISFIT for every edge running against
+ * its role pair's established direction (bd tea-rags-mcp-xb669.8: a sign test
+ * of n(A→B) against n(B→A), BH over the pairs). Four inheritance families:
+ * controllers call services and render presenters, services call
+ * repositories, presenters call services; one service calls a controller back
+ * and one repository calls a service back — each 1 against 36.
  */
 describe("ArchitectureReportOps#build — dependency norms (bd tea-rags-mcp-rpx0v)", () => {
   const FAMILIES: readonly [string, string, string, readonly string[]][] = [
@@ -1304,13 +1307,24 @@ describe("ArchitectureReportOps#build — dependency norms (bd tea-rags-mcp-rpx0
     ["ui/form.ts", "UiFormController", "controller", ["IViewController"]],
     ["ui/nav.ts", "UiNavController", "controller", ["IViewController"]],
     ["ui/modal.ts", "UiModalController", "controller", ["IViewController"]],
+    ["ui/menu.ts", "UiMenuController", "controller", ["IViewController"]],
+    ["ui/tabs.ts", "UiTabsController", "controller", ["IViewController"]],
     ["logic/tasks.ts", "TasksService", "service", ["IService"]],
     ["logic/billing.ts", "BillingService", "service", ["IService"]],
     ["logic/reports.ts", "ReportsService", "service", ["IService"]],
+    ["logic/users.ts", "UsersService", "service", ["IService"]],
+    ["logic/audit.ts", "AuditService", "service", ["IService"]],
+    ["logic/search.ts", "SearchService", "service", ["IService"]],
     ["data/taskRepo.ts", "TaskRepository", "repository", ["IRepository"]],
     ["data/billRepo.ts", "BillRepository", "repository", ["IRepository"]],
+    ["data/userRepo.ts", "UserRepository", "repository", ["IRepository"]],
+    ["data/auditRepo.ts", "AuditRepository", "repository", ["IRepository"]],
+    ["data/searchRepo.ts", "SearchRepository", "repository", ["IRepository"]],
+    ["data/reportRepo.ts", "ReportRepository", "repository", ["IRepository"]],
     ["present/board.ts", "BoardPresenter", "presenter", ["IPresenter"]],
     ["present/kanban.ts", "KanbanPresenter", "presenter", ["IPresenter"]],
+    ["present/calendar.ts", "CalendarPresenter", "presenter", ["IPresenter"]],
+    ["present/timeline.ts", "TimelinePresenter", "presenter", ["IPresenter"]],
   ];
 
   function typeRows() {
@@ -1333,12 +1347,13 @@ describe("ArchitectureReportOps#build — dependency norms (bd tea-rags-mcp-rpx0
     for (const c of ofRole("controller")) for (const s of ofRole("service")) add(c, s);
     for (const s of ofRole("service")) for (const r of ofRole("repository")) add(s, r);
     for (const p of ofRole("presenter")) for (const s of ofRole("service")) add(p, s);
-    add("ui/list.ts", "data/taskRepo.ts", 2);
-    add("logic/tasks.ts", "present/board.ts");
+    for (const c of ofRole("controller")) for (const p of ofRole("presenter")) add(c, p);
+    add("logic/tasks.ts", "ui/list.ts", 2); // against controller→service (36:1)
+    add("data/taskRepo.ts", "logic/billing.ts"); // against service→repository (36:1)
     return { files, edges };
   }
 
-  it("judges every precedent-less edge when the request asks for norms", async () => {
+  it("judges every edge against its role pair's established direction when the request asks for norms", async () => {
     const report = await new ArchitectureReportOps().build(
       graphDb(normsGraph(), [], { meta: null, edges: [] }, typeRows()),
       {
@@ -1346,36 +1361,55 @@ describe("ArchitectureReportOps#build — dependency norms (bd tea-rags-mcp-rpx0
       },
     );
 
-    expect(report.norms?.summary).toMatchObject({ typedEdgeCount: 26, judgedEdgeCount: 26, violationCount: 2 });
-    // Pair supports [12, 6, 6, 1, 1] read η = 11.76/16.56 ≈ 0.71 — one
-    // continuum, below the 0.8 separability gate — so the cut falls to the
-    // min-pair-support floor and the singleton pairs stay the findings (bd
-    // tea-rags-mcp-r8hme.46).
-    expect(report.norms?.threshold.method).toBe("majority");
+    expect(report.norms?.summary).toMatchObject({ typedEdgeCount: 122, judgedEdgeCount: 122, violationCount: 2 });
+    // One ecmascript ledger, its direction test over the 4 unordered role
+    // pairs; all 4 have an established direction, 2 of them one-way.
+    expect(report.norms?.ledgers).toEqual([
+      {
+        family: "ecmascript",
+        pairCount: 6,
+        significance: {
+          method: "directionInversion",
+          q: 0.05,
+          familySize: 4,
+          significantPairCount: 4,
+          oneWayPairCount: 2,
+        },
+      },
+    ]);
+    // p = 2·P(X ≤ 1 | n = 37, ½) = 2·38/2^37, to 3 significant digits.
+    const pValue = Number(((2 * 38) / 2 ** 37).toPrecision(3));
     expect(report.norms?.findings).toEqual([
+      {
+        kind: "misfit",
+        family: "ecmascript",
+        sourceRelPath: "logic/tasks.ts",
+        targetRelPath: "ui/list.ts",
+        roleSrc: "service",
+        roleDst: "controller",
+        locality: "crossDomain",
+        callWeight: 2,
+        pairSupport: 1,
+        pValue,
+        establishedDirection: { roleSrc: "controller", roleDst: "service", support: 36 },
+      },
       expect.objectContaining({
         kind: "misfit",
-        sourceRelPath: "ui/list.ts",
-        targetRelPath: "data/taskRepo.ts",
-        roleSrc: "controller",
-        roleDst: "repository",
-        expectedPath: { via: "service", support: 6 },
-      }),
-      expect.objectContaining({
-        kind: "newPattern",
-        sourceRelPath: "logic/tasks.ts",
-        targetRelPath: "present/board.ts",
-        roleSrc: "service",
-        roleDst: "presenter",
+        sourceRelPath: "data/taskRepo.ts",
+        targetRelPath: "logic/billing.ts",
+        roleSrc: "repository",
+        roleDst: "service",
+        pValue,
+        establishedDirection: { roleSrc: "service", roleDst: "repository", support: 36 },
       }),
     ]);
     expect(
       report.violations
         .filter((v) => v.detector === "norms")
-        .map((v) => (v.detector === "norms" ? [v.kind, v.sourceRelPath, v.evidence.roleSrc] : [])),
+        .map((v) => (v.detector === "norms" ? [v.kind, v.sourceRelPath, v.evidence.establishedDirection] : [])),
     ).toEqual([
-      ["misfit", "ui/list.ts", "controller"],
-      ["newPattern", "logic/tasks.ts", "service"],
+      ["misfit", "logic/tasks.ts", { roleSrc: "controller", roleDst: "service", support: 36 }],
+      ["misfit", "data/taskRepo.ts", { roleSrc: "service", roleDst: "repository", support: 36 }],
     ]);
   });
 
@@ -1395,12 +1429,14 @@ describe("ArchitectureReportOps#build — dependency norms (bd tea-rags-mcp-rpx0
   it("scopes norms findings by the request's pathPattern and counts the dropped ones", async () => {
     const report = await new ArchitectureReportOps().build(
       graphDb(normsGraph(), [], { meta: null, edges: [] }, typeRows()),
-      { norms: true, pathPattern: "ui/**" },
+      { norms: true, pathPattern: "logic/**" },
     );
 
     expect(report.norms?.summary).toMatchObject({ violationCount: 1, outOfScopeFindingCount: 1 });
-    expect(report.norms?.findings.map((f) => f.sourceRelPath)).toEqual(["ui/list.ts"]);
-    expect(report.violations.filter((v) => v.detector === "norms").map((v) => v.sourceRelPath)).toEqual(["ui/list.ts"]);
+    expect(report.norms?.findings.map((f) => f.sourceRelPath)).toEqual(["logic/tasks.ts"]);
+    expect(report.violations.filter((v) => v.detector === "norms").map((v) => v.sourceRelPath)).toEqual([
+      "logic/tasks.ts",
+    ]);
   });
 });
 

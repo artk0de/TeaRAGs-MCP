@@ -242,12 +242,15 @@ describe("get_architecture_report", () => {
     expect(schema.safeParse({ project: "tea-rags", domain: "" }).success).toBe(false);
   });
 
-  it("takes a norms flag, and names MISFIT and NEW_PATTERN in the description (bd tea-rags-mcp-rpx0v)", () => {
+  it("takes a norms flag, and names MISFIT as a direction inversion in the description (bd tea-rags-mcp-xb669.8)", () => {
     const { call } = registered();
     const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny>; description: string };
     const schema = z.object(config.inputSchema);
 
-    expect(config.description).toMatch(/NEW_PATTERN/);
+    expect(config.description).toMatch(/MISFIT/);
+    expect(config.description).toMatch(/established direction/);
+    // NEW_PATTERN is a diff-time verdict (xb669.3), never a whole-repo one.
+    expect(config.description).not.toMatch(/NEW_PATTERN/);
     expect(schema.safeParse({ project: "tea-rags", norms: true }).success).toBe(true);
     expect(schema.safeParse({ project: "tea-rags", norms: "yes" }).success).toBe(false);
   });

@@ -25,7 +25,11 @@ import type {
   RelPath,
   TemporalCochangeGraph,
 } from "../../../contracts/types/codegraph.js";
-import { buildDependencyNormFileRoles, TYPE_DRAFT_KINDS } from "../../../domains/explore/naming-lexicon/index.js";
+import {
+  buildDependencyNormFilePrimaryTypes,
+  buildDependencyNormFileRoles,
+  TYPE_DRAFT_KINDS,
+} from "../../../domains/explore/naming-lexicon/index.js";
 import { DOCUMENTATION_LANGUAGES, LANGUAGE_MAP } from "../../../domains/ingest/pipeline/chunker/config.js";
 import {
   buildComponentGraph,
@@ -829,6 +833,7 @@ async function computeReportNorms(
   return computeDependencyNorms({
     graph,
     fileRoles: buildDependencyNormFileRoles(rows),
+    filePrimaryTypes: buildDependencyNormFilePrimaryTypes(rows),
     componentOf,
     sourcePathPattern,
   });
@@ -837,13 +842,22 @@ async function computeReportNorms(
 function normsDto(report: DependencyNormsReport): ArchitectureNormsReport {
   return {
     summary: { ...report.summary },
-    threshold: {
-      method: report.threshold.method,
-      threshold: report.threshold.threshold,
-      ...(report.threshold.separability === undefined ? {} : { separability: round3(report.threshold.separability) }),
-    },
-    findings: report.findings.map((f) => ({ ...f })),
+    ledgers: report.ledgers.map(({ family, pairCount, significance }) => ({
+      family,
+      pairCount,
+      significance: { ...significance },
+    })),
+    findings: report.findings.map((f) => ({
+      ...f,
+      pValue: roundSignificant3(f.pValue),
+      establishedDirection: { ...f.establishedDirection },
+    })),
   };
+}
+
+/** A p-value keeps 3 significant digits — 3 decimals would round every rejected one to 0. */
+function roundSignificant3(value: number): number {
+  return Number(value.toPrecision(3));
 }
 
 function normsViolations(report: DependencyNormsReport, limit: number): NormArchitectureViolation[] {
@@ -859,7 +873,8 @@ function normsViolations(report: DependencyNormsReport, limit: number): NormArch
         locality: f.locality,
         callWeight: f.callWeight,
         pairSupport: f.pairSupport,
-        ...(f.expectedPath ? { expectedPath: { ...f.expectedPath } } : {}),
+        pValue: roundSignificant3(f.pValue),
+        establishedDirection: { ...f.establishedDirection },
       },
     }),
   );

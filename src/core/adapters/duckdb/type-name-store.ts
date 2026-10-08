@@ -158,6 +158,9 @@ export class DuckDbTypeNameStore {
       supertypes: string[];
       method_count: number | null;
       field_count: number | null;
+      superclass: string | null;
+      instance_method_count: number | null;
+      singleton_method_count: number | null;
     }>(
       `WITH members AS (
          SELECT language, type_id,
@@ -178,10 +181,34 @@ export class DuckDbTypeNameStore {
             AND NOT ${nonProduction("rel_path")}
             AND ${excluded.sql}
             AND ${languages.sql}
+       ),
+       supers AS (
+         SELECT source_rel_path, source_fq_name, arg_min(ancestor_fq_name, ordinal) AS superclass
+           FROM cg_symbols_inheritance
+          WHERE kind = 'super'
+          GROUP BY source_rel_path, source_fq_name
+       ),
+       callables AS (
+         SELECT regexp_extract(symbol_id, '^(.+)([#.])[^#.:]+$', 1) AS owner,
+                regexp_extract(symbol_id, '^(.+)([#.])[^#.:]+$', 2) AS separator
+           FROM cg_symbols
+          WHERE symbol_kind IN ('method', 'function')
+            AND NOT ${nonProduction("rel_path")}
+       ),
+       shapes AS (
+         SELECT owner AS type_id,
+                CAST(COUNT(*) FILTER (WHERE separator = '#') AS INTEGER) AS instance_method_count,
+                CAST(COUNT(*) FILTER (WHERE separator = '.') AS INTEGER) AS singleton_method_count
+           FROM callables
+          WHERE owner <> ''
+          GROUP BY owner
        )
-       SELECT s.type_id, s.rel_path, s.short_name, s.symbol_kind, s.supertypes, m.method_count, m.field_count
+       SELECT s.type_id, s.rel_path, s.short_name, s.symbol_kind, s.supertypes, m.method_count, m.field_count,
+              sup.superclass, sh.instance_method_count, sh.singleton_method_count
          FROM scoped s
          LEFT JOIN members m ON m.language = s.language AND m.type_id = s.type_id
+         LEFT JOIN supers sup ON sup.source_rel_path = s.rel_path AND sup.source_fq_name = s.type_id
+         LEFT JOIN shapes sh ON sh.type_id = s.type_id
         ORDER BY s.rel_path, s.line, s.type_id`,
       [...q.kinds, ...prefix.params, ...excluded.params, ...languages.params],
     );
@@ -192,6 +219,17 @@ export class DuckDbTypeNameStore {
         shortName: r.short_name,
         symbolKind: r.symbol_kind,
         ancestors: r.supertypes,
+        // The superclass is the `super` edge the walker wrote for this declaration
+        // (bd tea-rags-mcp-xb669.6): `supertypes` lists it beside the mixins and
+        // implemented interfaces without saying which is which.
+        ...(r.superclass === null ? {} : { superclass: r.superclass }),
+        // bd tea-rags-mcp-4vj2u — present only when the symbol table holds a callable of the type.
+        ...(r.instance_method_count === null || r.singleton_method_count === null
+          ? {}
+          : {
+              instanceMethodCount: Number(r.instance_method_count),
+              singletonMethodCount: Number(r.singleton_method_count),
+            }),
       };
       return r.method_count === null || r.field_count === null
         ? row

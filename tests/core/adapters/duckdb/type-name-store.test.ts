@@ -114,6 +114,57 @@ describe("readTypeNameRows", () => {
     ]);
   });
 
+  it("names the SUPERCLASS apart from mixins and implemented interfaces (xb669.6)", async () => {
+    await db.replaceTypeDeclarationsBulk([
+      {
+        relPath: "app/services/sms/api.rb",
+        rows: [decl("Sms::Api", "module", { language: "ruby", supertypes: ["Api::Contracts::Enforcement"] })],
+      },
+    ]);
+    await db.run(
+      `INSERT INTO cg_symbols_inheritance (source_fq_name, source_rel_path, ancestor_fq_name, kind, ordinal) VALUES
+         ('ExactStrategy', 'src/strategies/exact.ts', 'BaseStrategy', 'super', 0),
+         ('ExactStrategy', 'src/strategies/exact.ts', 'Named', 'implements', 0),
+         ('Sms::Api', 'app/services/sms/api.rb', 'Api::Contracts::Enforcement', 'include', 0)`,
+    );
+    const byId = new Map((await db.readTypeNameRows(query())).map((r) => [r.symbolId, r]));
+
+    expect(byId.get("ExactStrategy")).toMatchObject({
+      ancestors: ["BaseStrategy", "Named"],
+      superclass: "BaseStrategy",
+    });
+    expect(byId.get("Sms::Api")?.ancestors).toEqual(["Api::Contracts::Enforcement"]);
+    expect(byId.get("Sms::Api")).not.toHaveProperty("superclass");
+    expect(byId.get("FuzzyStrategy")).not.toHaveProperty("superclass");
+  });
+
+  it("counts a type's callables called on an instance apart from those called on the type (4vj2u)", async () => {
+    const callable = (relPath: string, symbolId: string, symbolKind: SymbolDefinitionKind = "method") => ({
+      symbolId,
+      fqName: symbolId,
+      shortName: symbolId.split(/[#.]/).at(-1) ?? symbolId,
+      relPath,
+      scope: [],
+      symbolKind,
+    });
+    await db.upsertSymbols("src/strategies/exact.ts", [
+      callable("src/strategies/exact.ts", "ExactStrategy#score"),
+      callable("src/strategies/exact.ts", "ExactStrategy#rank"),
+      callable("src/strategies/exact.ts", "ExactStrategy.create"),
+      // A constant is no callable; a nested type's member is the nested type's.
+      callable("src/strategies/exact.ts", "ExactStrategy.DEFAULTS", "constant"),
+      callable("src/strategies/exact.ts", "ExactStrategy::Options#merge"),
+    ]);
+    await db.upsertSymbols("src/strategies/fuzzy.ts", [callable("src/strategies/fuzzy.ts", "FuzzyStrategy.distance")]);
+    const byId = new Map((await db.readTypeNameRows(query())).map((r) => [r.symbolId, r]));
+
+    expect(byId.get("ExactStrategy")).toMatchObject({ instanceMethodCount: 2, singletonMethodCount: 1 });
+    expect(byId.get("FuzzyStrategy")).toMatchObject({ instanceMethodCount: 0, singletonMethodCount: 1 });
+    // No callable in the symbol table: the shape is unknown, never "no methods".
+    expect(byId.get("StoreKind")).not.toHaveProperty("instanceMethodCount");
+    expect(byId.get("StoreKind")).not.toHaveProperty("singletonMethodCount");
+  });
+
   it("excludes rows of unknown kind and kinds outside the requested set", async () => {
     const ids = (await db.readTypeNameRows(query())).map((r) => r.symbolId);
     expect(ids).not.toContain("LegacyStore");

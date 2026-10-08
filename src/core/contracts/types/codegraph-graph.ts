@@ -80,6 +80,23 @@ export interface FileDependencyEdge extends FileEdgeExportNames {
    * element, a re-export).
    */
   callWeight: number;
+  /**
+   * The part of {@link callWeight} whose calls never NAME the member they land
+   * on (bd tea-rags-mcp-4vj2u): the call text holds neither the target
+   * member's name nor, for a construction, its owner type called directly
+   * (`new Owner(…)`, `Owner(…)`). Such a call ran a framework's interface the
+   * resolver routed into the target — `Worker.perform_async(id)` landing on
+   * `Worker#perform` — so the source knows the target's framework contract,
+   * not its logic. Absent when no call crossing the edge is routed.
+   */
+  frameworkRoutedCallWeight?: number;
+  /**
+   * The edge row's recorded reference (`cg_symbols_edges_file.import_text`):
+   * the FIRST reference the walk saw — a module specifier, or for Ruby the
+   * constant as written (`zeitwerk:BaseAdapter::RateLimitError`). One per
+   * edge, never the union. Absent / `null` when the walk recorded none.
+   */
+  importText?: string | null;
 }
 
 /**
@@ -102,6 +119,24 @@ export interface FileDependencyGraph {
 export interface DependencyNormFileRole {
   role: string;
   strong: boolean;
+  /**
+   * Why a role is weak beyond suffix evidence (bd tea-rags-mcp-xb669.6):
+   * `ioShape` — the primary type only shapes the I/O of the function the file
+   * is named for (`UseXParams` in `useX.ts`, `XProps` in `X.tsx`). Absent on
+   * strong roles and on plain project-suffix roles.
+   */
+  weakReason?: "ioShape";
+  /**
+   * Why a STRONG head-noun role is read where the role does not live (bd
+   * tea-rags-mcp-4vj2u): `outsideRoleHome` — the file sits beneath none of the
+   * role's conventional directories (`app/lib/billing/fee_helper.rb` while
+   * the helpers live in `app/helpers`); `callShape` — the file is called on
+   * the type itself while its role's home carriers are called on instances
+   * (a `class << self` utility among view-helper mixins), or the reverse.
+   * The role still counts as ledger precedent; an edge touching it is never
+   * judged. Absent on a role read at its home.
+   */
+  displaced?: "outsideRoleHome" | "callShape";
 }
 
 /**
