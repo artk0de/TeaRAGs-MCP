@@ -160,6 +160,38 @@ describe("GraphFacade#getArchitectureReport", () => {
     });
   });
 
+  it("drops test support read from the addressed collection's test imports (bd tea-rags-mcp-89k7k.35.3)", async () => {
+    const graphDb = {
+      readFileDependencyGraph: vi.fn().mockResolvedValue({
+        files: [
+          { relPath: "app/main.ts", language: "typescript", symbolCount: 1 },
+          { relPath: "app/a.ts", language: "typescript", symbolCount: 1 },
+          { relPath: "app/specs/a.spec.presets.ts", language: "typescript", symbolCount: 1 },
+        ],
+        edges: [
+          { sourceRelPath: "app/main.ts", targetRelPath: "app/a.ts", callWeight: 1 },
+          { sourceRelPath: "app/specs/a.spec.presets.ts", targetRelPath: "app/a.ts", callWeight: 1 },
+        ],
+      }),
+      readNonPublicMemberEdges: vi.fn().mockResolvedValue([]),
+      readTemporalCochangeGraph: vi.fn().mockResolvedValue({ meta: null, edges: [] }),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const readIndexedFileImports = vi
+      .fn()
+      .mockResolvedValue(new Map([["app/specs/a.spec.ts", { isTest: true, specifiers: ["./a.spec.presets"] }]]));
+    const facade = new GraphFacade({
+      pool: readerPool(graphDb).pool,
+      collectionRegistry: registry,
+      readIndexedFileImports,
+    });
+
+    const { summary } = await facade.getArchitectureReport({ collection: "code_x" });
+
+    expect(readIndexedFileImports).toHaveBeenCalledWith("code_x");
+    expect(summary.testSupport).toMatchObject({ excludedFileCount: 1, excludedEdgeCount: 1 });
+  });
+
   it("returns the empty report when the collection has no graph database", async () => {
     const pool = {
       acquireReader: vi.fn().mockRejectedValue(new Error("no such file")),

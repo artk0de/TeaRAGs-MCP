@@ -67,6 +67,7 @@ import {
   type IndexExistenceCheck,
 } from "../collection-resolver.js";
 import { readWorkingTreeGraph } from "../infra/working-tree-graph-read.js";
+import type { IndexedFileImportLookup } from "../ops/architecture-facts.js";
 import { ArchitectureReportOps } from "../ops/architecture-report-ops.js";
 import { CochangeOps } from "../ops/cochange-ops.js";
 import { decorateCallees, decorateCallers } from "../ops/declared-visibility-lookup.js";
@@ -112,6 +113,13 @@ export interface GraphFacadeDeps {
    * from the same read. Optional: absent, violations list in detector order.
    */
   readFileMaintenanceSignals?: (collectionName: string) => Promise<ReadonlyMap<RelPath, GitFileMaintenanceSignals>>;
+  /**
+   * Every indexed file's module specifiers (and whether it is a test), read from the ADDRESSED collection's
+   * payload (`imports`). The report derives test support from them — files
+   * only tests and other test support import (bd tea-rags-mcp-89k7k.35.3).
+   * Optional: absent, nothing is excluded as test support.
+   */
+  readIndexedFileImports?: (collectionName: string) => ReturnType<IndexedFileImportLookup>;
   /**
    * The `workingTree` marker source (bd tea-rags-mcp-xi2r9) for get_callers,
    * get_callees, find_cycles and get_architecture_report — and, through the
@@ -417,7 +425,8 @@ export class GraphFacade {
   }
 
   async getArchitectureReport(req: GetArchitectureReportRequest): Promise<GetArchitectureReportResponse> {
-    const { readImportSpecifiers, readFileCommitCounts, readFileMaintenanceSignals } = this.deps;
+    const { readImportSpecifiers, readFileCommitCounts, readFileMaintenanceSignals, readIndexedFileImports } =
+      this.deps;
     const addressedCollection = () => resolveWorkingTree(this.deps.collectionRegistry, req).baseIndex.collectionName;
     const importSpecifiers = readImportSpecifiers
       ? async (relPaths: readonly RelPath[]) => readImportSpecifiers(addressedCollection(), relPaths)
@@ -426,10 +435,20 @@ export class GraphFacade {
     const maintenanceSignals = readFileMaintenanceSignals
       ? async () => readFileMaintenanceSignals(addressedCollection())
       : undefined;
+    const indexedFileImports = readIndexedFileImports
+      ? async () => readIndexedFileImports(addressedCollection())
+      : undefined;
     return this.withMarkedReadHandle(
       req,
       async (handle) =>
-        this.architectureReport.build(handle.graphDb, req, importSpecifiers, fileCommitCounts, maintenanceSignals),
+        this.architectureReport.build(
+          handle.graphDb,
+          req,
+          importSpecifiers,
+          fileCommitCounts,
+          maintenanceSignals,
+          indexedFileImports,
+        ),
       ArchitectureReportOps.empty(req),
     );
   }

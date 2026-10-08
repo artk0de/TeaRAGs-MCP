@@ -53,6 +53,13 @@ export {
   type ProductionDependencyGraph,
 } from "./production-graph.js";
 export {
+  classifyTestSupportFiles,
+  resolveUnwalkedImportEdges,
+  TEST_SUPPORT_REASON,
+  type IndexedFileImports,
+  type UnwalkedFileImportEdge,
+} from "./test-support.js";
+export {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   DEFAULT_SDP_TOLERANCE,
   detectStableDependencyViolations,

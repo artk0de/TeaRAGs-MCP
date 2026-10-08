@@ -124,6 +124,11 @@ get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>"
   domain's own internals. Facade-aggregation edges never count as border.
 - Tooling paths (scripts, spikes, benchmarks, examples, fixtures) removed before
   any detector — `summary.nonProduction` counts them.
+- Test support removed too — a file every importer of which is a test or other
+  test support (`X.spec.presets.tsx`, spec builders), whatever its name;
+  `summary.testSupport` counts them. A dynamically loaded entry point (worker
+  module path, `import(variable)`) that tests import reads as support — a
+  surprising count names those.
 - `limit` caps `violations` + `rootCauses` PER DETECTOR; each
   `summary.<detector>` keeps totals (`violationCount`, `rootCauseCount`).
   Totals > returned → say truncated.
@@ -469,7 +474,7 @@ cut) — a settled utility, not pain; reason in `exclusionReasons`.
 
 ```text
 Architecture report: [scope] — [violationCount] SDP violations, [rootCauseCount] root causes
-[componentCount] components ([moduleComponentCount] modules); judged [judgedEdgeCount] of [componentEdgeCount] component deps (excluded: containment N, low support N); tooling excluded: [nonProduction.excludedFileCount] files
+[componentCount] components ([moduleComponentCount] modules); judged [judgedEdgeCount] of [componentEdgeCount] component deps (excluded: containment N, low support N); tooling excluded: [nonProduction.excludedFileCount] files; test support excluded: [testSupport.excludedFileCount] files
 
 ## Root causes
 | # | Target component | I | Dependents | Cycle | Fix direction |

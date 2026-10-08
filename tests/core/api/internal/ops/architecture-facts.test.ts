@@ -60,6 +60,63 @@ describe("readProductionArchitectureGraph", () => {
     expect(production.nonProduction.ignores("scripts/spike.ts")).toBe(true);
     expect(production.nonProduction.ignores("src/a.ts")).toBe(false);
   });
+
+  it("excludes test support — files only tests and other support import — and counts it apart (bd tea-rags-mcp-89k7k.35.3)", async () => {
+    const graphDb = {
+      readFileDependencyGraph: vi.fn(async () =>
+        graphOf(
+          [
+            file("src/modal/Modal.tsx"),
+            file("src/modal/public.ts"),
+            file("src/modal/specs/Modal.spec.presets.tsx"),
+            file("src/modal/specs/builder.ts"),
+            file("src/used-by-script.ts"),
+            file("scripts/spike.ts"),
+          ],
+          [
+            edge("src/modal/public.ts", "src/modal/Modal.tsx"),
+            edge("src/modal/specs/Modal.spec.presets.tsx", "src/modal/Modal.tsx"),
+            edge("src/modal/specs/Modal.spec.presets.tsx", "src/modal/specs/builder.ts"),
+            edge("scripts/spike.ts", "src/used-by-script.ts"),
+          ],
+        ),
+      ),
+    };
+    const readIndexedFileImports = vi.fn(async () => {
+      return new Map([
+        ["src/modal/specs/Modal.spec.tsx", { isTest: true, specifiers: ["./Modal.spec.presets", "src/modal/Modal"] }],
+        ["tests/used-by-script.test.ts", { isTest: true, specifiers: ["../src/used-by-script.js"] }],
+      ]);
+    });
+
+    const production = await readProductionArchitectureGraph(graphDb, readIndexedFileImports);
+
+    expect(readIndexedFileImports).toHaveBeenCalledTimes(1);
+    expect(production.excludedFileCount).toBe(1);
+    expect(production.testSupport).toEqual({ excludedFileCount: 2, excludedEdgeCount: 2 });
+    expect(production.graph.files.map((f) => f.relPath)).toEqual([
+      "src/modal/Modal.tsx",
+      "src/modal/public.ts",
+      "src/used-by-script.ts",
+    ]);
+    expect(production.graph.edges).toEqual([edge("src/modal/public.ts", "src/modal/Modal.tsx")]);
+    // The privacy pass reads the same exclusion through the carried filter.
+    expect(production.nonProduction.ignores("src/modal/specs/builder.ts")).toBe(true);
+    expect(production.nonProduction.ignores("src/modal/Modal.tsx")).toBe(false);
+  });
+
+  it("excludes no test support when no test-import read is wired", async () => {
+    const graphDb = {
+      readFileDependencyGraph: vi.fn(async () =>
+        graphOf([file("src/a.ts"), file("src/a.presets.ts")], [edge("src/a.presets.ts", "src/a.ts")]),
+      ),
+    };
+
+    const production = await readProductionArchitectureGraph(graphDb);
+
+    expect(production.testSupport).toEqual({ excludedFileCount: 0, excludedEdgeCount: 0 });
+    expect(production.graph.files).toHaveLength(2);
+  });
 });
 
 describe("deriveArchitectureComponentFacts", () => {

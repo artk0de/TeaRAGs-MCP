@@ -24,34 +24,86 @@ import type {
 } from "../../../contracts/types/codegraph.js";
 import {
   buildComponentGraph,
+  classifyTestSupportFiles,
   DEFAULT_SDP_TOLERANCE,
   detectLeakingAbstractions,
   detectMainSequenceDeviations,
   excludeNonProductionFiles,
+  resolveUnwalkedImportEdges,
   type ComponentGraph,
+  type IndexedFileImports,
   type LeakingAbstractionReport,
   type ProductionDependencyGraph,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import { buildNonProductionPathFilter, type PathFilter } from "../../../infra/file-classification/index.js";
 import type { DiffDetectorCatalog } from "./diff-detector-run.js";
 
-/** The production graph plus the filter that shaped it — the report re-uses the filter for the member-edge privacy pass. */
+/**
+ * Every indexed file's declared module specifiers (`payload.imports`) and
+ * whether it is a test, keyed by repo-relative path. The codegraph walks no
+ * test, generated or policy-excluded file, so this is the only record of what
+ * those import (bd tea-rags-mcp-89k7k.35.3).
+ */
+export type IndexedFileImportLookup = () => Promise<ReadonlyMap<RelPath, IndexedFileImports>>;
+
+/** What the test-support exclusion took out of the production graph. */
+export interface TestSupportExclusionCounts {
+  /** Walked files only tests and other test support import. */
+  excludedFileCount: number;
+  /** Edges with a test-support endpoint, left after the non-production exclusion. */
+  excludedEdgeCount: number;
+}
+
+/**
+ * The production graph plus the filter that shaped it — the report re-uses the
+ * filter for the member-edge privacy pass, so it names test support too.
+ */
 export interface ProductionArchitectureGraph extends ProductionDependencyGraph {
   nonProduction: PathFilter;
+  testSupport: TestSupportExclusionCounts;
 }
 
 /**
  * Reads the indexed file dependency graph ONCE and applies the report's
- * non-production exclusion (bd tea-rags-mcp-r8hme.9): every detector the
- * report runs, and every detector the diff-scoped run wires, judges THIS
- * graph. Moved verbatim from `ArchitectureReportOps#build`'s opening lines.
+ * non-production exclusion (bd tea-rags-mcp-r8hme.9) and then its test-support
+ * exclusion (bd tea-rags-mcp-89k7k.35.3): every detector the report runs, and
+ * every detector the diff-scoped run wires, judges THIS graph.
+ *
+ * Test support is derived from the import relation, not from names: a walked
+ * file every importer of which is a test or test support
+ * (`classifyTestSupportFiles`). Importers are the graph's edges plus the
+ * resolved payload imports of the files the codegraph does not walk
+ * (`resolveUnwalkedImportEdges`) — a test is the only kind that makes support,
+ * a generated importer keeps its target production. It is classified over the
+ * graph BEFORE the non-production cut, so a script importing a file still
+ * counts as a non-test importer. Without `readIndexedFileImports` no test
+ * importer is known and nothing is classified.
  */
 export async function readProductionArchitectureGraph(
   graphDb: Pick<GraphDbClient, "readFileDependencyGraph">,
+  readIndexedFileImports?: IndexedFileImportLookup,
 ): Promise<ProductionArchitectureGraph> {
-  const nonProduction = buildNonProductionPathFilter();
-  const production = excludeNonProductionFiles(await graphDb.readFileDependencyGraph(), nonProduction);
-  return { ...production, nonProduction };
+  const indexed = await graphDb.readFileDependencyGraph();
+  const nonProductionPaths = buildNonProductionPathFilter();
+  const withoutTooling = excludeNonProductionFiles(indexed, nonProductionPaths);
+  const testSupport = readIndexedFileImports
+    ? classifyTestSupportFiles(
+        indexed,
+        resolveUnwalkedImportEdges(
+          await readIndexedFileImports(),
+          indexed.files.map((f) => f.relPath),
+        ),
+      )
+    : new Set<RelPath>();
+  const testSupportPaths: PathFilter = { ignores: (relPath) => testSupport.has(relPath) };
+  const production = excludeNonProductionFiles(withoutTooling.graph, testSupportPaths);
+  return {
+    graph: production.graph,
+    excludedFileCount: withoutTooling.excludedFileCount,
+    excludedEdgeCount: withoutTooling.excludedEdgeCount,
+    testSupport: { excludedFileCount: production.excludedFileCount, excludedEdgeCount: production.excludedEdgeCount },
+    nonProduction: { ignores: (relPath) => nonProductionPaths.ignores(relPath) || testSupport.has(relPath) },
+  };
 }
 
 /** The component partition with the facade classification it was built from. */

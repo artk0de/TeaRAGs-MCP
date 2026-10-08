@@ -44,6 +44,7 @@ import {
   readPayloadFileCommitCounts,
   readPayloadFileMaintenanceSignals,
   readPayloadImportSpecifiers,
+  readPayloadIndexedFileImports,
   ReviewChangesOps,
   ReviewFacade,
   scheduleWorkingTreeGitSignalSweep,
@@ -762,6 +763,14 @@ export function wireCodegraph(
    * `createAppContext`; optional for the same reason as above.
    */
   readFileMaintenanceSignals?: GraphFacadeDeps["readFileMaintenanceSignals"],
+  /**
+   * Every indexed file's module specifiers (and whether it is a test) from the index payload — the
+   * architecture report derives test support from them (bd
+   * tea-rags-mcp-89k7k.35.3). Wired to `readPayloadIndexedFileImports`
+   * over the app's Qdrant by `createAppContext`; optional for the same reason
+   * as above.
+   */
+  readIndexedFileImports?: GraphFacadeDeps["readIndexedFileImports"],
 ): CodegraphContext | undefined {
   // Defensive: legacy/mocked configs may omit the codegraph section
   // entirely. Treat that as "disabled" so the `codegraph.enabled` config
@@ -1036,6 +1045,7 @@ export function wireCodegraph(
     ...(readImportSpecifiers ? { readImportSpecifiers } : {}),
     ...(readFileCommitCounts ? { readFileCommitCounts } : {}),
     ...(readFileMaintenanceSignals ? { readFileMaintenanceSignals } : {}),
+    ...(readIndexedFileImports ? { readIndexedFileImports } : {}),
     ...(workingTreeOverlay ? { workingTreeOverlay } : {}),
     ...(indexExists ? { indexExists } : {}),
   });
@@ -1435,6 +1445,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     workingTreeOverlay,
     indexExists,
     async (collectionName) => readPayloadFileMaintenanceSignals(infra.qdrant, collectionName),
+    async (collectionName) => readPayloadIndexedFileImports(infra.qdrant, collectionName),
   );
   // Swept with the chunk store's schedule (first after 2 min, then every 6 h,
   // unref'd, throttled across processes by a stamp) — here,
@@ -1750,6 +1761,11 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
             // tea-rags-mcp-r8hme.20).
             readFileMaintenanceSignals: async (collectionName) =>
               readPayloadFileMaintenanceSignals(infra.qdrant, collectionName),
+            // Test support is excluded from the production graph through the
+            // SAME indexed-file import read the whole-repo report uses (bd
+            // tea-rags-mcp-89k7k.35.3).
+            readIndexedFileImports: async (collectionName) =>
+              readPayloadIndexedFileImports(infra.qdrant, collectionName),
           }),
         })
       : undefined;

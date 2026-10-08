@@ -370,7 +370,7 @@ export const architectureSectionProvider: ReviewSectionProvider = {
     try {
       // The indexed side, read once: the graph rows the traversal serves and
       // the report-derived facts the catalogue answers from.
-      const production = await readProductionArchitectureGraph(graphDb);
+      const production = await readProductionArchitectureGraph(graphDb, context.readIndexedFileImports);
       const facts = deriveArchitectureComponentFacts(production.graph);
       const catalog = new ArchitectureFactsCatalog(
         facts,

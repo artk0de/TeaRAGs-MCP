@@ -1323,6 +1323,51 @@ describe("ArchitectureReportOps#build — non-production paths (bd tea-rags-mcp-
   });
 });
 
+// bd tea-rags-mcp-89k7k.35.3 — a file only tests and other test support import
+// (a `.spec.presets.tsx`, a spec builder) is test support, not architecture.
+describe("ArchitectureReportOps#build — test support (bd tea-rags-mcp-89k7k.35.3)", () => {
+  const TEST_SUPPORT =
+    "test support: imported only by test files or by other test support (presets, builders, spec helpers)";
+
+  function withPresets(): FileDependencyGraph {
+    const g = graph();
+    return {
+      files: [...g.files, file("core/specs/b.spec.presets.ts")],
+      edges: [...g.edges, { sourceRelPath: "core/specs/b.spec.presets.ts", targetRelPath: "core/b.ts", callWeight: 3 }],
+    };
+  }
+
+  const readIndexedFileImports = async () =>
+    new Map([["core/specs/b.spec.ts", { isTest: true, specifiers: ["./b.spec.presets"] }]]);
+
+  it("judges every detector without test support and counts what it left out", async () => {
+    const report = await new ArchitectureReportOps().build(
+      graphDb(withPresets()),
+      {},
+      undefined,
+      undefined,
+      undefined,
+      readIndexedFileImports,
+    );
+    const baseline = await new ArchitectureReportOps().build(graphDb(graph()), {});
+
+    expect(report.violations).toEqual(baseline.violations);
+    expect(report.summary.stableDependencies.edgeCount).toBe(graph().edges.length);
+    expect(report.summary.testSupport).toEqual({ excludedFileCount: 1, excludedEdgeCount: 1, reason: TEST_SUPPORT });
+  });
+
+  it("reports nothing excluded as test support without a test-import read, or without a graph database", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(withPresets()), {});
+
+    expect(report.summary.testSupport).toEqual({ excludedFileCount: 0, excludedEdgeCount: 0, reason: TEST_SUPPORT });
+    expect(ArchitectureReportOps.empty({}).summary.testSupport).toEqual({
+      excludedFileCount: 0,
+      excludedEdgeCount: 0,
+      reason: TEST_SUPPORT,
+    });
+  });
+});
+
 // bd tea-rags-mcp-r8hme.8 — Stable Abstractions: per component, A from the
 // walker's type census, I from the component graph, D = |A + I - 1|.
 describe("ArchitectureReportOps#build — mainSequence (bd tea-rags-mcp-r8hme.8)", () => {
