@@ -96,8 +96,35 @@ describe("buildDependencyNormFileRoles — architectural roles (xb669.6)", () =>
     ancestors: string[] = [],
     symbolKind: TypeNameRow["symbolKind"] = "class",
   ): TypeNameRow {
-    return { symbolId: shortName, relPath, shortName, symbolKind, ancestors };
+    // A class's first named ancestor is its superclass; anything else a row names
+    // (a module's `include`, a class's later mixins) is a mixin.
+    const superclass = symbolKind === "class" ? ancestors[0] : undefined;
+    return { symbolId: shortName, relPath, shortName, symbolKind, ancestors, ...(superclass ? { superclass } : {}) };
   }
+
+  it("never forms a role family from a mixin: only the superclass names a kind (xb669.6 owner decision)", () => {
+    const domains = ["sms", "chat", "seats", "billing", "crm", "tasks", "proposals", "invoices"];
+    const title = (d: string) => `${d[0]?.toUpperCase() ?? ""}${d.slice(1)}`;
+    const rows = [
+      // Eight API modules `include Api::Contracts::Enforcement` — a capability, not a kind.
+      ...domains.map((d) => ({
+        ...typed(`app/services/${d}/api/client.rb`, `${title(d)}Client`, [], "module"),
+        ancestors: ["Api::Contracts::Enforcement"],
+      })),
+      // Classes subclassing a base AND including the same mixin: the superclass is the kind.
+      ...domains.map((d) =>
+        typed(`app/models/${d}_thing.rb`, `${title(d)}Thing`, ["ApplicationRecord", "Api::Contracts::Enforcement"]),
+      ),
+      typed("app/models/application_record.rb", "ApplicationRecord", ["ActiveRecord::Base"]),
+    ];
+    const roles = buildDependencyNormFileRoles(rows);
+
+    for (const d of domains) {
+      expect(roles.get(`app/services/${d}/api/client.rb`)?.role, d).not.toBe("enforcement");
+      // The superclass family's majority head — never the mixin family's.
+      expect(roles.get(`app/models/${d}_thing.rb`), d).toEqual({ role: "thing", strong: true });
+    }
+  });
 
   it("gives every member of a LARGE inheritance family that family's one role, whatever its head noun", () => {
     const rows = [

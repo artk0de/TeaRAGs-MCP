@@ -52,14 +52,15 @@ const SHAPE_KINDS: ReadonlySet<TypeNameRow["symbolKind"]> = new Set(["interface"
  */
 export function buildDependencyNormFileRoles(
   rows: readonly TypeNameRow[],
-  assignments: readonly TypeRoleAssignment[] = deriveTypeRoles(rows),
+  assignments?: readonly TypeRoleAssignment[],
 ): Map<RelPath, DependencyNormFileRole> {
+  const kindRows = rows.map(superclassOnly);
   const roleBySymbol = new Map<string, TypeRoleAssignment>();
-  for (const assignment of assignments) {
+  for (const assignment of assignments ?? deriveTypeRoles(kindRows)) {
     if (!roleBySymbol.has(assignment.symbolId)) roleBySymbol.set(assignment.symbolId, assignment);
   }
-  const primaries = primaryRowPerFile(rows);
-  const familyRoleOf = architecturalFamilyRoles(rows, primaries);
+  const primaries = primaryRowPerFile(kindRows);
+  const familyRoleOf = architecturalFamilyRoles(kindRows, primaries);
 
   const entries = new Map<RelPath, { role: DependencyNormFileRole; evidence: TypeRoleEvidence }>();
   for (const [relPath, primary] of primaries) {
@@ -98,6 +99,18 @@ export function buildDependencyNormFilePrimaryTypes(rows: readonly TypeNameRow[]
   return new Map(
     [...primaryRowPerFile(rows)].map(([relPath, primary]) => [relPath, typeNameLastSegment(primary.shortName)]),
   );
+}
+
+/**
+ * `row` with its SUPERCLASS as its only ancestor (bd tea-rags-mcp-xb669.6,
+ * owner decision): a role family is a KIND, and only the superclass says what
+ * a type is. A mixin (`include Api::Contracts::Enforcement` in 86 API
+ * modules) or an implemented interface is a capability shared across kinds —
+ * as a family it would pull every includer into one role and hide the
+ * directory role (`api`) they really carry.
+ */
+function superclassOnly(row: TypeNameRow): TypeNameRow {
+  return { ...row, ancestors: row.superclass === undefined ? [] : [row.superclass] };
 }
 
 function primaryRowPerFile(rows: readonly TypeNameRow[]): Map<RelPath, TypeNameRow> {
@@ -144,7 +157,7 @@ function isIoShape(primary: TypeNameRow): boolean {
  * split, floored by the majority {@link MIN_ROLE_MEMBERS} — so the corpus, not
  * a framework list, says which bases are architectural kinds. A primary takes
  * the NEAREST large family (fewest supertype hops; the more populous on a tie
- * — a mixin beside the superclass must outnumber it to win). The family's role
+ * — the rows arrive {@link superclassOnly}, so a mixin never competes). The family's role
  * is its members' majority head (≥ `familyShare`), else the base's own head:
  * `ApplicationRecord`'s models split over `field` / `template` / `user`, and
  * all of them are `record`s.

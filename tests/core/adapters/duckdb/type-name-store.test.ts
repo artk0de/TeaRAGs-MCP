@@ -114,6 +114,30 @@ describe("readTypeNameRows", () => {
     ]);
   });
 
+  it("names the SUPERCLASS apart from mixins and implemented interfaces (xb669.6)", async () => {
+    await db.replaceTypeDeclarationsBulk([
+      {
+        relPath: "app/services/sms/api.rb",
+        rows: [decl("Sms::Api", "module", { language: "ruby", supertypes: ["Api::Contracts::Enforcement"] })],
+      },
+    ]);
+    await db.run(
+      `INSERT INTO cg_symbols_inheritance (source_fq_name, source_rel_path, ancestor_fq_name, kind, ordinal) VALUES
+         ('ExactStrategy', 'src/strategies/exact.ts', 'BaseStrategy', 'super', 0),
+         ('ExactStrategy', 'src/strategies/exact.ts', 'Named', 'implements', 0),
+         ('Sms::Api', 'app/services/sms/api.rb', 'Api::Contracts::Enforcement', 'include', 0)`,
+    );
+    const byId = new Map((await db.readTypeNameRows(query())).map((r) => [r.symbolId, r]));
+
+    expect(byId.get("ExactStrategy")).toMatchObject({
+      ancestors: ["BaseStrategy", "Named"],
+      superclass: "BaseStrategy",
+    });
+    expect(byId.get("Sms::Api")?.ancestors).toEqual(["Api::Contracts::Enforcement"]);
+    expect(byId.get("Sms::Api")).not.toHaveProperty("superclass");
+    expect(byId.get("FuzzyStrategy")).not.toHaveProperty("superclass");
+  });
+
   it("excludes rows of unknown kind and kinds outside the requested set", async () => {
     const ids = (await db.readTypeNameRows(query())).map((r) => r.symbolId);
     expect(ids).not.toContain("LegacyStore");

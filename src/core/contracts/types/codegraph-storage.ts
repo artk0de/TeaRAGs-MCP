@@ -696,6 +696,14 @@ export interface TypeNameRow {
   symbolKind: SymbolDefinitionKind;
   ancestors: readonly string[];
   /**
+   * The declared SUPERCLASS as written (`class X < Base`, a class's
+   * `extends`) — the one ancestor naming what KIND the type is (bd
+   * tea-rags-mcp-xb669.6). Absent for a module, an interface, or a class
+   * naming none. Mixins (`include` / `prepend`) and implemented interfaces
+   * appear in `ancestors` only: a capability, not a kind.
+   */
+  superclass?: string;
+  /**
    * How many of the TYPE's members are methods and how many are fields (bd
    * tea-rags-mcp-ffxfc): the sum over every production declaration of the same
    * language and type id — a Ruby class body re-opened in another file, a
