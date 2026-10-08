@@ -1,45 +1,44 @@
 import type { FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
-import { resolveMajorityFlooredOtsuThreshold } from "../../../../../infra/graph/index.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
+import {
+  benjaminiHochbergRejectionCount,
+  CONVENTIONAL_FDR_Q,
+  poissonLowerTail,
+} from "../../../../../infra/statistics/index.js";
 import { languageFamilyOf } from "../language-family-record.js";
 import type {
   DependencyNormFinding,
   DependencyNormsInput,
   DependencyNormsReport,
+  DependencyNormsSignificance,
   DependencyNormsSummary,
   NormFindingKind,
   NormLedgerBook,
   NormLedgers,
   NormLocality,
+  NormPairTest,
   NormPlannedEdge,
   PlannedEdgeVerdict,
 } from "./types.js";
 
 /**
- * The pair support below which a ledger never admits an edge, and the
- * population under which Otsu's split is not trusted — the majority floor
- * holds alone there. A pair with ONE edge is indistinguishable from noise;
- * the cut may only raise the bar.
- */
-export const DEFAULT_NORMS_MIN_PAIR_SUPPORT = 1;
-export const DEFAULT_NORMS_OTSU_MIN_POPULATION = 5;
-
-/**
- * The edge count a ROLE must carry (as source or target, across ledgers)
- * before an unprecedented pair of it is a NEW_PATTERN rather than two roles
- * the corpus has barely observed.
- */
-export const DEFAULT_NORMS_FREQUENT_ROLE_EDGES = 4;
-
-/**
  * Empirical dependency norms (bd tea-rags-mcp-rpx0v, epic xb669.2): the
  * repository's own P(edge | roleSrc, roleDst, locality), read off the file
- * graph, and the verdict every precedent-less edge carries. The naming
- * lexicon's CONFORMS / MISFIT for dependencies: a heavy direct precedent
- * CONFORMS (and is not listed); a direct edge without one, whose roles
- * normally meet THROUGH a mid role, is a MISFIT carrying the expected path;
- * a pair the corpus has never seen between two roles it knows well is a
- * NEW_PATTERN.
+ * graph, and the verdict every edge carries. The naming lexicon's CONFORMS /
+ * MISFIT for dependencies.
+ *
+ * THE VERDICT IS A SIGNIFICANCE TEST, NOT A SUPPORT CUT (bd
+ * tea-rags-mcp-xb669.8). Per ledger and locality, independence of roles
+ * predicts λ = out(roleSrc)·in(roleDst)/N edges for a pair; its p-value is the
+ * Poisson lower tail P(X ≤ observed | λ); Benjamini–Hochberg at the co-change
+ * pair gate's q runs over the a-priori family of every pair with λ > 0. A pair
+ * BH rejects is significantly RARER than its roles' activity predicts: a MISFIT
+ * when the roles meet through a conforming mid role (the expected path), else
+ * a NEW_PATTERN. Every other observed pair CONFORMS and is not listed. Measured
+ * on taxdome (bd tea-rags-mcp-xb669.4): every support cut left only singleton
+ * pairs as findings at ~3% precision — a singleton is noise between two
+ * rarely-active roles and signal between two roles that meet constantly
+ * elsewhere, and only the expectation tells them apart.
  *
  * READ-TIME: the whole computation runs over the graph the report already
  * reads plus the role map naming's type-role layer derives — nothing is
@@ -52,8 +51,8 @@ export const DEFAULT_NORMS_FREQUENT_ROLE_EDGES = 4;
  */
 /**
  * The ledgers the report walk and the write-time verdict share (bd
- * tea-rags-mcp-23iii): pair support per (roleSrc, roleDst, locality), each
- * role's edge activity, the adaptive cut with its live predicate. Built once
+ * tea-rags-mcp-23iii): pair support per (roleSrc, roleDst, locality) and the
+ * independence test over it (bd tea-rags-mcp-xb669.8). Built once
  * per input — `computeDependencyNorms` consumes it for every edge it walks,
  * `judgePlannedEdge` for one planned edge a writer is about to add.
  *
@@ -76,18 +75,16 @@ export function buildNormLedgers(input: DependencyNormsInput): NormLedgerBook {
     if (family === undefined || isConstantReference(edge)) continue;
     let tally = tallies.get(family);
     if (tally === undefined) {
-      tally = { pairs: new Map(), activity: new Map(), byLocality: new Map() };
+      tally = { pairs: new Map(), byLocality: new Map() };
       tallies.set(family, tally);
     }
-    const { pairs, activity, byLocality } = tally;
+    const { pairs, byLocality } = tally;
     const { role: roleSrc } = sourceRole;
     const { role: roleDst } = targetRole;
     const locality = localityOf(edge.sourceRelPath, edge.targetRelPath);
     const key = `${roleSrc}\u0000${roleDst}\u0000${locality}`;
     const support = (pairs.get(key) ?? 0) + 1;
     pairs.set(key, support);
-    activity.set(roleSrc, (activity.get(roleSrc) ?? 0) + 1);
-    activity.set(roleDst, (activity.get(roleDst) ?? 0) + 1);
     const local = byLocality.get(locality) ?? new Map<string, number>();
     local.set(`${roleSrc}\u0000${roleDst}`, support);
     byLocality.set(locality, local);
@@ -100,9 +97,7 @@ export function buildNormLedgers(input: DependencyNormsInput): NormLedgerBook {
   }
   const forLanguage = (language: string): NormLedgers => {
     const family = languageFamilyOf(language);
-    return (
-      families.get(family) ?? familyLedger(family, { pairs: new Map(), activity: new Map(), byLocality: new Map() })
-    );
+    return families.get(family) ?? familyLedger(family, { pairs: new Map(), byLocality: new Map() });
   };
   return {
     families,
@@ -116,29 +111,79 @@ export function buildNormLedgers(input: DependencyNormsInput): NormLedgerBook {
 
 interface NormLedgerTally {
   pairs: Map<string, number>;
-  activity: Map<string, number>;
   byLocality: Map<NormLocality, Map<string, number>>;
 }
 
-/** One family's ledger: its own adaptive cut over its own pair-support distribution. */
-function familyLedger(family: string, { pairs, activity, byLocality }: NormLedgerTally): NormLedgers {
-  const threshold = resolveMajorityFlooredOtsuThreshold([...pairs.values()], {
-    majority: DEFAULT_NORMS_MIN_PAIR_SUPPORT,
-    minPopulation: DEFAULT_NORMS_OTSU_MIN_POPULATION,
-  });
-  return {
-    family,
-    pairs,
-    activity,
-    byLocality,
-    threshold: {
-      method: threshold.method,
-      threshold: threshold.threshold,
-      ...(threshold.separability === undefined ? {} : { separability: threshold.separability }),
-    },
-    admitsPairSupport: threshold.admits,
-    pairCount: pairs.size,
+/** One locality's marginals: edges each role sends and receives, and their total N. */
+interface LocalityMarginals {
+  out: Map<string, number>;
+  in: Map<string, number>;
+  total: number;
+}
+
+function localityMarginals(local: ReadonlyMap<string, number>): LocalityMarginals {
+  const marginals: LocalityMarginals = { out: new Map(), in: new Map(), total: 0 };
+  for (const [key, support] of local) {
+    const [roleSrc, roleDst] = key.split("\u0000");
+    marginals.out.set(roleSrc, (marginals.out.get(roleSrc) ?? 0) + support);
+    marginals.in.set(roleDst, (marginals.in.get(roleDst) ?? 0) + support);
+    marginals.total += support;
+  }
+  return marginals;
+}
+
+/**
+ * One family's ledger and its independence test. The family BH controls is
+ * fixed before looking at any pair's count: every (roleSrc, roleDst) of a
+ * locality whose λ is positive, written or not — the unwritten ones are
+ * tested members (their p is e^−λ), never left out because nobody wrote them.
+ * A pair is testable when even a lone edge would clear q (P(X ≤ 1 | λ) ≤ q):
+ * BH's per-rank bound never exceeds q, so an untestable pair is never rare,
+ * whatever the family.
+ */
+function familyLedger(family: string, { pairs, byLocality }: NormLedgerTally): NormLedgers {
+  const q = CONVENTIONAL_FDR_Q;
+  const marginalsOf = new Map<NormLocality, LocalityMarginals>();
+  for (const [locality, local] of byLocality) marginalsOf.set(locality, localityMarginals(local));
+
+  const expectedOf = (roleSrc: string, roleDst: string, locality: NormLocality): number => {
+    const marginals = marginalsOf.get(locality);
+    if (marginals === undefined || marginals.total === 0) return 0;
+    return ((marginals.out.get(roleSrc) ?? 0) * (marginals.in.get(roleDst) ?? 0)) / marginals.total;
   };
+
+  const familyPValues: number[] = [];
+  let testablePairCount = 0;
+  for (const [locality, marginals] of marginalsOf) {
+    const local = byLocality.get(locality);
+    for (const roleSrc of marginals.out.keys()) {
+      for (const roleDst of marginals.in.keys()) {
+        const expected = expectedOf(roleSrc, roleDst, locality);
+        familyPValues.push(poissonLowerTail(local?.get(`${roleSrc}\u0000${roleDst}`) ?? 0, expected));
+        if (poissonLowerTail(1, expected) <= q) testablePairCount++;
+      }
+    }
+  }
+  familyPValues.sort((a, b) => a - b);
+  const rarePairCount = benjaminiHochbergRejectionCount(familyPValues, familyPValues.length, q);
+  // BH rejects every p at or below the largest p it rejected.
+  const rarePValueCut = rarePairCount === 0 ? -1 : familyPValues[rarePairCount - 1];
+
+  const significance: DependencyNormsSignificance = {
+    method: "poissonIndependenceNull",
+    q,
+    familySize: familyPValues.length,
+    testablePairCount,
+    rarePairCount,
+  };
+  const testPair = (roleSrc: string, roleDst: string, locality: NormLocality): NormPairTest => {
+    const support = pairs.get(`${roleSrc}\u0000${roleDst}\u0000${locality}`) ?? 0;
+    const expectedSupport = expectedOf(roleSrc, roleDst, locality);
+    const pValue = poissonLowerTail(support, expectedSupport);
+    const testable = poissonLowerTail(1, expectedSupport) <= q;
+    return { support, expectedSupport, pValue, testable, rare: testable && pValue <= rarePValueCut };
+  };
+  return { family, pairs, byLocality, significance, testPair, pairCount: pairs.size };
 }
 
 /**
@@ -212,9 +257,22 @@ function localityResolver({ componentOf }: DependencyNormsInput) {
 /** The write-time verdict (bd tea-rags-mcp-23iii): "I am about to add this edge — does the project do that?" */
 export function judgePlannedEdge(ledgers: NormLedgers, planned: NormPlannedEdge): PlannedEdgeVerdict {
   const { roleSrc, roleDst, locality } = planned;
-  const pairSupport = ledgers.pairs.get(`${roleSrc}\u0000${roleDst}\u0000${locality}`) ?? 0;
-  if (ledgers.admitsPairSupport(pairSupport)) return { kind: "conforms", pairSupport };
+  const test = ledgers.testPair(roleSrc, roleDst, locality);
+  const evidence = { pairSupport: test.support, expectedSupport: test.expectedSupport, pValue: test.pValue };
+  if (!test.rare) return { kind: test.support > 0 ? "conforms" : "insufficientSupport", ...evidence };
+  const expectedPath = conformingTransit(ledgers, planned);
+  return expectedPath ? { kind: "misfit", ...evidence, expectedPath } : { kind: "newPattern", ...evidence };
+}
 
+/**
+ * The mid role a significantly rare pair's roles meet through instead — both
+ * legs written AND conforming under the same test (testable, not rare); the
+ * heaviest weaker leg wins, ties by role name. A leg merely written once or
+ * twice between roles the null pairs rarely is no route: before bd
+ * tea-rags-mcp-xb669.8 any mid role with both legs ≥ 2 qualified, and on
+ * taxdome that named a transit for nearly every finding.
+ */
+function conformingTransit(ledgers: NormLedgers, { roleSrc, roleDst, locality }: NormPlannedEdge) {
   const local = ledgers.byLocality.get(locality) ?? new Map<string, number>();
   const midRoles = new Set<string>();
   for (const key of local.keys()) {
@@ -222,32 +280,21 @@ export function judgePlannedEdge(ledgers: NormLedgers, planned: NormPlannedEdge)
     midRoles.add(from);
     midRoles.add(to);
   }
+  const conforms = (from: string, to: string): number => {
+    const leg = ledgers.testPair(from, to, locality);
+    return leg.support > 0 && leg.testable && !leg.rare ? leg.support : 0;
+  };
   let via: string | undefined;
   let viaSupport = 0;
-  for (const mid of midRoles) {
-    if (mid === roleSrc || mid === roleDst) {
-      continue;
-    }
-    const inLeg = local.get(`${roleSrc}\u0000${mid}`);
-    const outLeg = local.get(`${mid}\u0000${roleDst}`);
-    if (
-      inLeg === undefined ||
-      outLeg === undefined ||
-      !ledgers.admitsPairSupport(inLeg) ||
-      !ledgers.admitsPairSupport(outLeg)
-    ) {
-      continue;
-    }
-    const support = Math.min(inLeg, outLeg);
+  for (const mid of [...midRoles].sort(compareCodePoints)) {
+    if (mid === roleSrc || mid === roleDst) continue;
+    const support = Math.min(conforms(roleSrc, mid), conforms(mid, roleDst));
     if (support > viaSupport) {
       via = mid;
       viaSupport = support;
     }
   }
-  if (via !== undefined) return { kind: "misfit", pairSupport, expectedPath: { via, support: viaSupport } };
-  const frequent = (role: string) => (ledgers.activity.get(role) ?? 0) >= DEFAULT_NORMS_FREQUENT_ROLE_EDGES;
-  if (frequent(roleSrc) && frequent(roleDst)) return { kind: "newPattern", pairSupport };
-  return { kind: "insufficientSupport", pairSupport };
+  return via === undefined ? undefined : { via, support: viaSupport };
 }
 
 export function computeDependencyNorms(input: DependencyNormsInput): DependencyNormsReport {
@@ -272,7 +319,6 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
   const isConstantReference = constantReferenceTest(input);
 
   const findings: DependencyNormFinding[] = [];
-  let lowRoleSupportEdgeCount = 0;
   let crossLanguageEdgeCount = 0;
   let constantReferenceEdgeCount = 0;
   let typedEdgeCount = 0;
@@ -300,14 +346,12 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
       roleDst: targetRole.role,
       locality,
     });
-    if (verdict.kind === "conforms") continue;
-    if (verdict.kind === "insufficientSupport") {
-      lowRoleSupportEdgeCount++;
-    } else {
-      findings.push(
-        finding(family, edge, { roleSrc: sourceRole.role, roleDst: targetRole.role, locality }, verdict.kind, verdict),
-      );
-    }
+    // Every walked edge is written, so its pair's support is ≥ 1: the verdict
+    // is a finding or CONFORMS, never `insufficientSupport`.
+    if (verdict.kind !== "misfit" && verdict.kind !== "newPattern") continue;
+    findings.push(
+      finding(family, edge, { roleSrc: sourceRole.role, roleDst: targetRole.role, locality }, verdict.kind, verdict),
+    );
   }
 
   findings.sort(
@@ -334,14 +378,14 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
     violationCount: scopedFindings.length,
     pairCount: [...book.families.values()].reduce((sum, ledger) => sum + ledger.pairCount, 0),
     ...(inScope ? { outOfScopeFindingCount: findings.length - scopedFindings.length } : {}),
-    excluded: { lowRoleSupportEdgeCount, crossLanguageEdgeCount, constantReferenceEdgeCount },
+    excluded: { crossLanguageEdgeCount, constantReferenceEdgeCount },
   };
   return {
     summary,
     ledgers: [...book.families.values()].map((ledger) => ({
       family: ledger.family,
       pairCount: ledger.pairCount,
-      threshold: ledger.threshold,
+      significance: { ...ledger.significance },
     })),
     findings: scopedFindings,
   };
@@ -352,7 +396,7 @@ function finding(
   edge: { sourceRelPath: RelPath; targetRelPath: RelPath; callWeight: number },
   { roleSrc, roleDst, locality }: NormPlannedEdge,
   kind: NormFindingKind,
-  { pairSupport, expectedPath }: PlannedEdgeVerdict,
+  { pairSupport, expectedSupport, pValue, expectedPath }: PlannedEdgeVerdict,
 ): DependencyNormFinding {
   return {
     kind,
@@ -364,6 +408,8 @@ function finding(
     locality,
     callWeight: edge.callWeight,
     pairSupport,
+    expectedSupport,
+    pValue,
     ...(expectedPath ? { expectedPath } : {}),
   };
 }

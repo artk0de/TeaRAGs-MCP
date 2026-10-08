@@ -706,10 +706,9 @@ export type ArchitectureViolation =
   | NormArchitectureViolation;
 
 /**
- * A file edge the project's own norms find precedent-less (bd
- * tea-rags-mcp-rpx0v): a MISFIT names the transit its roles normally follow,
- * a NEW_PATTERN names a pair the corpus has never seen between two roles it
- * knows well.
+ * A file edge whose role pair is significantly rarer than independence of
+ * roles predicts (bd tea-rags-mcp-rpx0v, xb669.8): a MISFIT names the
+ * conforming transit its roles follow instead, a NEW_PATTERN has none.
  */
 export interface NormArchitectureViolation {
   detector: "norms";
@@ -722,6 +721,8 @@ export interface NormArchitectureViolation {
     locality: ArchitectureNormFinding["locality"];
     callWeight: number;
     pairSupport: number;
+    expectedSupport: number;
+    pValue: number;
     expectedPath?: ArchitectureNormExpectedPath;
   };
 }
@@ -1301,20 +1302,29 @@ export interface ArchitectureDomainReport {
   boundaryIn: ArchitectureDomainBoundaryEdge[];
 }
 
-/** The adaptive pair-support cut, rounded for the report. */
-export interface ArchitectureNormsThreshold {
-  method: "otsu" | "majority";
-  threshold: number;
-  separability?: number;
+/**
+ * One ledger's independence test (bd tea-rags-mcp-xb669.8): per locality,
+ * λ = out(roleSrc)·in(roleDst)/N, p = P(X ≤ observed | λ), Benjamini–Hochberg
+ * at q over every pair with λ > 0 — the co-change pair gate's machinery.
+ */
+export interface ArchitectureNormsSignificance {
+  method: "poissonIndependenceNull";
+  q: number;
+  /** m — every (roleSrc, roleDst, locality) with λ > 0, written or not. */
+  familySize: number;
+  /** Pairs where even a lone edge could be significant — the rest can never be rare. */
+  testablePairCount: number;
+  /** Pairs BH rejects, written or not. */
+  rarePairCount: number;
 }
 
-/** The frequent transit a MISFIT names as the path the edge should follow. */
+/** The conforming transit a MISFIT names as the path the edge should follow. */
 export interface ArchitectureNormExpectedPath {
   via: string;
   support: number;
 }
 
-/** One precedent-less file edge, with the evidence that makes it one. */
+/** One significantly rare file edge, with the evidence that makes it one. */
 export interface ArchitectureNormFinding {
   kind: "misfit" | "newPattern";
   /** The language family whose ledger judged the edge (bd tea-rags-mcp-xb669.7). */
@@ -1326,6 +1336,10 @@ export interface ArchitectureNormFinding {
   locality: "sameDirectory" | "sameDomain" | "crossDomain";
   callWeight: number;
   pairSupport: number;
+  /** λ — edges independence of roles predicts for the pair, 3 decimals. */
+  expectedSupport: number;
+  /** P(X ≤ pairSupport | λ), 3 significant digits. */
+  pValue: number;
   expectedPath?: ArchitectureNormExpectedPath;
 }
 
@@ -1360,13 +1374,13 @@ export interface ArchitectureNormsReport {
      * `constantReferenceEdgeCount`: typed edges whose only evidence is a constant nested in the
      * target's primary type (`BaseAdapter::RateLimitError`) — no role edge (bd tea-rags-mcp-xb669.6).
      */
-    excluded: { lowRoleSupportEdgeCount: number; crossLanguageEdgeCount: number; constantReferenceEdgeCount: number };
+    excluded: { crossLanguageEdgeCount: number; constantReferenceEdgeCount: number };
   };
   /**
    * One ledger per language family (bd tea-rags-mcp-xb669.7), each with its
-   * own adaptive cut — role statistics never pool across languages.
+   * own independence test — role statistics never pool across languages.
    */
-  ledgers: { family: string; pairCount: number; threshold: ArchitectureNormsThreshold }[];
+  ledgers: { family: string; pairCount: number; significance: ArchitectureNormsSignificance }[];
   /** MISFITs first, then by weight, then by path. */
   findings: ArchitectureNormFinding[];
 }

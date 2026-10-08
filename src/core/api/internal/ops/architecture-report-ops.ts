@@ -701,17 +701,23 @@ async function computeReportNorms(
 function normsDto(report: DependencyNormsReport): ArchitectureNormsReport {
   return {
     summary: { ...report.summary },
-    ledgers: report.ledgers.map(({ family, pairCount, threshold }) => ({
+    ledgers: report.ledgers.map(({ family, pairCount, significance }) => ({
       family,
       pairCount,
-      threshold: {
-        method: threshold.method,
-        threshold: threshold.threshold,
-        ...(threshold.separability === undefined ? {} : { separability: round3(threshold.separability) }),
-      },
+      significance: { ...significance },
     })),
-    findings: report.findings.map((f) => ({ ...f })),
+    findings: report.findings.map((f) => ({
+      ...f,
+      expectedSupport: round3(f.expectedSupport),
+      pValue: roundSignificant3(f.pValue),
+      ...(f.expectedPath ? { expectedPath: { ...f.expectedPath } } : {}),
+    })),
   };
+}
+
+/** A p-value keeps 3 significant digits — 3 decimals would round every rejected one to 0. */
+function roundSignificant3(value: number): number {
+  return Number(value.toPrecision(3));
 }
 
 function normsViolations(report: DependencyNormsReport, limit: number): NormArchitectureViolation[] {
@@ -727,6 +733,8 @@ function normsViolations(report: DependencyNormsReport, limit: number): NormArch
         locality: f.locality,
         callWeight: f.callWeight,
         pairSupport: f.pairSupport,
+        expectedSupport: round3(f.expectedSupport),
+        pValue: roundSignificant3(f.pValue),
         ...(f.expectedPath ? { expectedPath: { ...f.expectedPath } } : {}),
       },
     }),

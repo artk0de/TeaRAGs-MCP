@@ -1157,9 +1157,11 @@ describe("ArchitectureReportOps#build — domain mode (bd tea-rags-mcp-xb669.1)"
  * bd tea-rags-mcp-rpx0v (epic xb669.2): `norms: true` adds the dependency-
  * norms view — every file's primary-type role (derived from the type rows
  * the graph db reads), the project's own precedent ledgers per
- * (roleSrc, roleDst, locality), and a verdict for every precedent-less edge.
- * Four inheritance families: controllers call services, services call
- * repositories, presenters call services; two edges have no precedent.
+ * (roleSrc, roleDst, locality), and a verdict for every edge whose pair is
+ * significantly rarer than independence of roles predicts (bd
+ * tea-rags-mcp-xb669.8). Four inheritance families: controllers call
+ * services and render presenters, services call repositories, presenters
+ * call services; two edges are far rarer than their roles' activity predicts.
  */
 describe("ArchitectureReportOps#build — dependency norms (bd tea-rags-mcp-rpx0v)", () => {
   const FAMILIES: readonly [string, string, string, readonly string[]][] = [
@@ -1167,13 +1169,24 @@ describe("ArchitectureReportOps#build — dependency norms (bd tea-rags-mcp-rpx0
     ["ui/form.ts", "UiFormController", "controller", ["IViewController"]],
     ["ui/nav.ts", "UiNavController", "controller", ["IViewController"]],
     ["ui/modal.ts", "UiModalController", "controller", ["IViewController"]],
+    ["ui/menu.ts", "UiMenuController", "controller", ["IViewController"]],
+    ["ui/tabs.ts", "UiTabsController", "controller", ["IViewController"]],
     ["logic/tasks.ts", "TasksService", "service", ["IService"]],
     ["logic/billing.ts", "BillingService", "service", ["IService"]],
     ["logic/reports.ts", "ReportsService", "service", ["IService"]],
+    ["logic/users.ts", "UsersService", "service", ["IService"]],
+    ["logic/audit.ts", "AuditService", "service", ["IService"]],
+    ["logic/search.ts", "SearchService", "service", ["IService"]],
     ["data/taskRepo.ts", "TaskRepository", "repository", ["IRepository"]],
     ["data/billRepo.ts", "BillRepository", "repository", ["IRepository"]],
+    ["data/userRepo.ts", "UserRepository", "repository", ["IRepository"]],
+    ["data/auditRepo.ts", "AuditRepository", "repository", ["IRepository"]],
+    ["data/searchRepo.ts", "SearchRepository", "repository", ["IRepository"]],
+    ["data/reportRepo.ts", "ReportRepository", "repository", ["IRepository"]],
     ["present/board.ts", "BoardPresenter", "presenter", ["IPresenter"]],
     ["present/kanban.ts", "KanbanPresenter", "presenter", ["IPresenter"]],
+    ["present/calendar.ts", "CalendarPresenter", "presenter", ["IPresenter"]],
+    ["present/timeline.ts", "TimelinePresenter", "presenter", ["IPresenter"]],
   ];
 
   function typeRows() {
@@ -1196,6 +1209,7 @@ describe("ArchitectureReportOps#build — dependency norms (bd tea-rags-mcp-rpx0
     for (const c of ofRole("controller")) for (const s of ofRole("service")) add(c, s);
     for (const s of ofRole("service")) for (const r of ofRole("repository")) add(s, r);
     for (const p of ofRole("presenter")) for (const s of ofRole("service")) add(p, s);
+    for (const c of ofRole("controller")) for (const p of ofRole("presenter")) add(c, p);
     add("ui/list.ts", "data/taskRepo.ts", 2);
     add("logic/tasks.ts", "present/board.ts");
     return { files, edges };
@@ -1209,12 +1223,21 @@ describe("ArchitectureReportOps#build — dependency norms (bd tea-rags-mcp-rpx0
       },
     );
 
-    expect(report.norms?.summary).toMatchObject({ typedEdgeCount: 26, judgedEdgeCount: 26, violationCount: 2 });
-    // Pair supports [12, 6, 6, 1, 1] read η = 11.76/16.56 ≈ 0.71 — one
-    // continuum, below the 0.8 separability gate — so the cut falls to the
-    // min-pair-support floor and the singleton pairs stay the findings (bd
-    // tea-rags-mcp-r8hme.46).
-    expect(report.norms?.ledgers.map((l) => [l.family, l.threshold.method])).toEqual([["ecmascript", "majority"]]);
+    expect(report.norms?.summary).toMatchObject({ typedEdgeCount: 122, judgedEdgeCount: 122, violationCount: 2 });
+    // One ecmascript ledger, its independence test over 3×3 role pairs.
+    expect(report.norms?.ledgers).toEqual([
+      {
+        family: "ecmascript",
+        pairCount: 6,
+        significance: {
+          method: "poissonIndependenceNull",
+          q: 0.05,
+          familySize: 9,
+          testablePairCount: 9,
+          rarePairCount: 5,
+        },
+      },
+    ]);
     expect(report.norms?.findings).toEqual([
       expect.objectContaining({
         kind: "misfit",
@@ -1222,7 +1245,11 @@ describe("ArchitectureReportOps#build — dependency norms (bd tea-rags-mcp-rpx0
         targetRelPath: "data/taskRepo.ts",
         roleSrc: "controller",
         roleDst: "repository",
-        expectedPath: { via: "service", support: 6 },
+        pairSupport: 1,
+        // λ = 61·37/122 to 3 decimals; p = e^−λ(1 + λ) to 3 significant digits.
+        expectedSupport: 18.5,
+        pValue: Number((Math.exp(-18.5) * 19.5).toPrecision(3)),
+        expectedPath: { via: "service", support: 36 },
       }),
       expect.objectContaining({
         kind: "newPattern",

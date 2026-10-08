@@ -104,11 +104,11 @@ get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>"
 - `norms: true` adds the dependency-norms view (bd rpx0v): the project's own
   precedents per (roleSrc, roleDst, locality), roles = each file's PRIMARY
   type's role (naming's type-role layer; suffix-only roles stay weak — never
-  asserted). `response.norms` carries one ledger + adaptive cut per language
-  family + findings; `norms` violations flag every precedent-less edge: `misfit`
-  names the transit its roles normally follow (`expectedPath.via`), `newPattern`
-  names a pair both roles are frequent in but the corpus never shows. Absent
-  flag = no norms block, no `norms` violations.
+  asserted). `response.norms` carries one ledger + independence test per
+  language family + findings; `norms` violations flag every edge whose role pair
+  is significantly RARER than independence of roles predicts: `misfit` names the
+  conforming transit its roles follow instead (`expectedPath.via`), `newPattern`
+  has none. Absent flag = no norms block, no `norms` violations.
 - `domain: "<dir>"` judges one directory AS ITS OWN SYSTEM (bd xb669.1): the
   induced sub-graph — files under the root, edges with both endpoints inside —
   and EVERY metric recomputed inside it. Not `pathPattern`, which keeps
@@ -350,29 +350,41 @@ validation error naming the enum, before any detector runs.
 otherwise. The project judged by ITS OWN precedents: ledgers of (roleSrc,
 roleDst, locality) over every typed file edge, ONE LEDGER PER LANGUAGE FAMILY
 (`norms.ledgers[]`; TypeScript + JavaScript are one family, every other language
-its own) — a Ruby `form` and a TS `form` never pool. Each ledger has its own
-adaptive cut (majority-floored Otsu, `ledgers[].threshold.threshold`;
-`method: "majority"` = min support floor decided — too few pairs, or pair
-supports not bimodal, η < 0.8 and reported in `threshold.separability`), then a
-verdict per edge below it; `finding.family` names the ledger that judged it. An
-edge between two families is never judged
-(`summary.excluded.crossLanguageEdgeCount`). Roles = each file's PRIMARY type's
-role; `summary.roleFileCount` counts the strong ones, `weakRoleFileCount` /
-`untypedFileCount` never judge.
+its own) — a Ruby `form` and a TS `form` never pool. Each ledger runs its own
+significance test (`ledgers[].significance`, the co-change pair gate's
+machinery): per locality, independence of roles predicts
+`expectedSupport = out(roleSrc) · in(roleDst) / N` edges for a pair; the p-value
+is the Poisson lower tail `P(X ≤ pairSupport | expectedSupport)`;
+Benjamini–Hochberg at `q` (0.05) runs over the a-priori family of every pair
+with expected mass (`familySize`, unwritten pairs included). A pair BH rejects
+is significantly RARE; every other written pair CONFORMS and is not listed.
+`testablePairCount` = pairs where even one edge could be significant — the rest
+are pairs of rarely-active roles and can never be flagged, whatever their
+support. `finding.family` names the ledger that judged it. An edge between two
+families is never judged (`summary.excluded.crossLanguageEdgeCount`). Roles =
+each file's PRIMARY type's role; `summary.roleFileCount` counts the strong ones,
+`weakRoleFileCount` / `untypedFileCount` never judge. Of the weak ones,
+`summary.ioShapeRoleFileCount` are files whose primary type only shapes the I/O
+of the function the file is named for (`useXParams`, `XProps`) — never a role.
 
-| Finding      | Read as                                                                                                                                                                                                                 |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `misfit`     | pair below the cut, but its roles meet THROUGH a mid role frequently — `expectedPath: { via, support }` is the precedent the edge bypasses (`Controller -> Repository` should go `Controller -> Service -> Repository`) |
-| `newPattern` | pair below the cut, no frequent transit — both roles frequent on their own (`summary`'s activity), the corpus has simply never seen them meet                                                                           |
-| excluded     | rare pair between two RARE roles (`summary.excluded.lowRoleSupportEdgeCount`) — too little support to name a pattern, never a finding                                                                                   |
+| Finding      | Read as                                                                                                                                                                                                                                                       |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `misfit`     | pair significantly rarer than its roles' activity predicts, and the roles meet THROUGH a mid role whose both legs conform under the same test — `expectedPath: { via, support }` (`Controller -> Repository` should go `Controller -> Service -> Repository`) |
+| `newPattern` | pair significantly rarer than predicted, no conforming transit — the roles are active, the project just does not connect them this way                                                                                                                        |
 
-`locality` says which ledger judged it: `sameDirectory` / `sameDomain` (one
-r8hme.30 domain component) / `crossDomain` — the same edge can conform at home
-and misfit across domains. Read the finding's family
-`ledgers[].threshold.threshold` with it: support 1 in a codebase of 30-ledger
-precedents is noise, not a pattern.
+Every finding carries `pairSupport` (observed), `expectedSupport` (λ) and
+`pValue` — `pairSupport: 3` against `expectedSupport: 40` is a strong finding,
+`pairSupport: 1` against `expectedSupport: 2` never is one. `locality` says
+which ledger judged it: `sameDirectory` / `sameDomain` (one r8hme.30 domain
+component) / `crossDomain` — the same edge can conform at home and misfit across
+domains.
 
-`pathPattern` scopes the FINDINGS by source — ledgers and the cut stay
+`summary.excluded.constantReferenceEdgeCount` — typed edges whose only evidence
+is a constant NESTED in the target's primary type
+(`BaseAdapter::RateLimitError`, no definite call): a dependency on an error
+class, not on the target's role — never judged, in no ledger.
+
+`pathPattern` scopes the FINDINGS by source — ledgers and the test stay
 whole-graph. Findings it drops count in `summary.outOfScopeFindingCount`, never
 silently lost.
 

@@ -36,10 +36,15 @@
 
 import type { CochangeSignificanceSummary } from "../../../../../contracts/types/architecture-report.js";
 import type { RelPath, TemporalCochangeGraph } from "../../../../../contracts/types/codegraph.js";
+import {
+  benjaminiHochbergRejectionCount,
+  CONVENTIONAL_FDR_Q,
+  poissonUpperTail,
+} from "../../../../../infra/statistics/index.js";
 import { TEMPORAL_COCHANGE_MIN_SUPPORT } from "../cochange/index.js";
 
 /** The false-discovery rate BH controls — the conventional 5% FDR. */
-export const COCHANGE_SIGNIFICANCE_FDR_Q = 0.05;
+export const COCHANGE_SIGNIFICANCE_FDR_Q = CONVENTIONAL_FDR_Q;
 
 /** Bundle-size totals of the history the null is conditioned on. */
 export interface CochangeHistoryTotals {
@@ -91,73 +96,10 @@ export function configurationNullRate(changesP: number, changesQ: number, totals
   return (changesP * changesQ * totals.pairSlots) / (totals.membership * totals.membership);
 }
 
-/** Lanczos (g = 7, n = 9) log Γ(x), x > 0. */
-function logGamma(x: number): number {
-  if (x < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * x)) - logGamma(1 - x);
-  const c = [
-    0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313, -176.61502916214059,
-    12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7,
-  ];
-  const z = x - 1;
-  let sum = c[0];
-  for (let i = 1; i < 9; i++) sum += c[i] / (z + i);
-  const t = z + 7.5;
-  return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(sum);
-}
-
-/** Ample for any λ the bundle history produces; the series terminate far earlier. */
-const POISSON_SERIES_TERM_CAP = 1_000_000;
-
-/**
- * P(X ≥ s), X ~ Poisson(λ). The smaller side is summed in log space so a far
- * tail is resolved rather than rounded to 0, and a near-certain tail is not
- * computed as 1 minus a sum that has lost its digits: s > λ sums the upper
- * terms from s upward; s ≤ λ sums the lower terms from s − 1 downward and
- * subtracts.
- */
-export function poissonUpperTail(support: number, lambda: number): number {
-  if (support <= 0) return 1;
-  if (!(lambda > 0)) return 0;
-  if (support === 1) return -Math.expm1(-lambda);
-  if (support > lambda) {
-    const logFirst = -lambda + support * Math.log(lambda) - logGamma(support + 1);
-    let sum = 1;
-    let term = 1;
-    for (let k = support; k < support + POISSON_SERIES_TERM_CAP; k++) {
-      term *= lambda / (k + 1);
-      sum += term;
-      if (term < sum * Number.EPSILON) break;
-    }
-    return Math.min(1, Math.exp(logFirst + Math.log(sum)));
-  }
-  const logLast = -lambda + (support - 1) * Math.log(lambda) - logGamma(support);
-  let sum = 1;
-  let term = 1;
-  for (let k = support - 1; k > 0; k--) {
-    term *= k / lambda;
-    sum += term;
-    if (term < sum * Number.EPSILON) break;
-  }
-  return Math.max(0, -Math.expm1(logLast + Math.log(sum)));
-}
-
-/**
- * Benjamini–Hochberg: the largest k with p_(k) ≤ q·k/m, 0 when none. The
- * p-values are the family's TESTED members ascending; the rest of the family
- * (unobserved pairs, p = 1) still counts in `familySize`.
- */
-export function benjaminiHochbergRejectionCount(
-  ascendingPValues: readonly number[],
-  familySize: number,
-  q: number = COCHANGE_SIGNIFICANCE_FDR_Q,
-): number {
-  if (familySize <= 0) return 0;
-  let rejected = 0;
-  for (let rank = 1; rank <= ascendingPValues.length; rank++) {
-    if (ascendingPValues[rank - 1] <= (q * rank) / familySize) rejected = rank;
-  }
-  return rejected;
-}
+// The Poisson tail and BH live in the foundation since bd tea-rags-mcp-xb669.8
+// (the dependency norms test role pairs with them); re-exported so this gate's
+// public surface is unchanged.
+export { benjaminiHochbergRejectionCount, poissonUpperTail };
 
 /** C(|F₂|, 2) — every pair of files changed in ≥ 2 bundles. */
 export function fullCochangeFamilySize(f2: number): number {

@@ -40,21 +40,44 @@ export interface NormLedgers {
   /** The language family whose edges this ledger counts — `languageFamilyOf` of both endpoints. */
   readonly family: string;
   readonly pairs: ReadonlyMap<string, number>;
-  /** File edges each role carries across this family's ledgers — the frequency test a NEW_PATTERN needs. */
-  readonly activity: ReadonlyMap<string, number>;
   readonly byLocality: ReadonlyMap<NormLocality, ReadonlyMap<string, number>>;
-  readonly threshold: DependencyNormsThreshold;
-  /** The un-rounded predicate: `>= threshold` AND strictly above the majority floor. */
-  admitsPairSupport: (value: number) => boolean;
+  /** The independence test this ledger ran over its role-pair family (bd tea-rags-mcp-xb669.8). */
+  readonly significance: DependencyNormsSignificance;
+  /**
+   * The pair's test against independence of roles in this ledger — defined
+   * for every pair, including one no edge (or no role) of the locality ever
+   * produced: its λ is then 0 and it is untestable.
+   */
+  testPair: (roleSrc: string, roleDst: string, locality: NormLocality) => NormPairTest;
   readonly pairCount: number;
+}
+
+/**
+ * One role pair judged against independence of roles (bd tea-rags-mcp-xb669.8):
+ * λ = out(roleSrc)·in(roleDst)/N over the ledger's edges of one locality.
+ */
+export interface NormPairTest {
+  /** Edges the pair holds in this locality. */
+  support: number;
+  /** λ — the edges independence of roles predicts for the pair. */
+  expectedSupport: number;
+  /** P(X ≤ support | λ): how surprising so FEW edges are. */
+  pValue: number;
+  /**
+   * Whether even a lone edge would be significant at q — P(X ≤ 1 | λ) ≤ q.
+   * An untestable pair can never be rare; with no edge it is unjudgeable.
+   */
+  testable: boolean;
+  /** Benjamini–Hochberg rejected it over the ledger's family: significantly rarer than independence predicts. */
+  rare: boolean;
 }
 
 /**
  * Every language family's ledger (bd tea-rags-mcp-xb669.7). A role name is a
  * word of ONE language's vocabulary — a Ruby `form` and a TypeScript `form`
  * share a spelling, not a habit — so role statistics never pool across
- * families: each family counts its own pairs and activity and cuts its own
- * pair-support distribution.
+ * families: each family counts its own pairs and role marginals and runs its
+ * own independence test.
  */
 export interface NormLedgerBook {
   /** Each family's ledger, in code-point order of family id. */
@@ -80,26 +103,40 @@ export interface NormPlannedEdge {
 
 export type PlannedEdgeVerdictKind = "conforms" | "misfit" | "newPattern" | "insufficientSupport";
 
-/** The write-time answer for one planned edge (bd tea-rags-mcp-23iii). */
+/**
+ * The write-time answer for one planned edge (bd tea-rags-mcp-23iii). Since
+ * bd tea-rags-mcp-xb669.8: `misfit` / `newPattern` = the pair is significantly
+ * rarer than independence of roles predicts; `conforms` = an observed pair
+ * that is not; `insufficientSupport` = a pair with no edge whose absence the
+ * test cannot call significant — no evidence either way.
+ */
 export interface PlannedEdgeVerdict {
   kind: PlannedEdgeVerdictKind;
   pairSupport: number;
-  /** MISFIT only: the frequent transit the planned edge should follow. */
+  /** λ — the edges independence of roles predicts for the pair. */
+  expectedSupport: number;
+  /** P(X ≤ pairSupport | λ). */
+  pValue: number;
+  /** MISFIT only: the conforming transit the planned edge should follow. */
   expectedPath?: DependencyNormExpectedPath;
 }
 
-/** The two verdicts a precedent-less edge can carry; a precedented edge CONFORMS and is not listed. */
+/** The two verdicts a significantly rare edge can carry; every other edge CONFORMS and is not listed. */
 export type NormFindingKind = "misfit" | "newPattern";
 
-/** The frequent transit that replaces a MISFIT's missing direct precedent. */
+/**
+ * The transit a MISFIT's roles meet through instead: `roleSrc -> via -> roleDst`,
+ * both legs observed AND conforming under the same test (testable, not rare) —
+ * a leg of one or two edges between roles the null pairs rarely is no route.
+ */
 export interface DependencyNormExpectedPath {
-  /** The mid role: `roleSrc -> via -> roleDst`, both legs precedented. */
+  /** The mid role. */
   via: string;
   /** The weaker leg's pair support — the precedent the direct edge bypasses. */
   support: number;
 }
 
-/** One precedent-less file edge, with the evidence that makes it one. */
+/** One significantly rare file edge, with the evidence that makes it one. */
 export interface DependencyNormFinding {
   kind: NormFindingKind;
   /** The language family whose ledger judged the edge. */
@@ -110,9 +147,13 @@ export interface DependencyNormFinding {
   roleDst: string;
   locality: NormLocality;
   callWeight: number;
-  /** File edges this pair's ledger holds in this locality — below the cut by construction. */
+  /** File edges this pair's ledger holds in this locality. */
   pairSupport: number;
-  /** MISFIT only: the frequent transit path the edge should follow. */
+  /** λ — the edges independence of roles predicts for the pair; above `pairSupport` by construction. */
+  expectedSupport: number;
+  /** P(X ≤ pairSupport | λ), rejected by BH over the ledger's family. */
+  pValue: number;
+  /** MISFIT only: the conforming transit path the edge should follow. */
   expectedPath?: DependencyNormExpectedPath;
 }
 
@@ -130,7 +171,7 @@ export interface DependencyNormsSummary {
   untypedFileCount: number;
   /** Edges with both endpoints strongly typed — the only ones norms see. */
   typedEdgeCount: number;
-  /** Typed edges judged against their family's ledger — each one precedented or a finding. */
+  /** Typed edges judged against their family's ledger — each one conforming or a finding. */
   judgedEdgeCount: number;
   violationCount: number;
   /** Distinct (family, roleSrc, roleDst, locality) entries, summed over family ledgers. */
@@ -141,8 +182,6 @@ export interface DependencyNormsSummary {
    */
   outOfScopeFindingCount?: number;
   excluded: {
-    /** Rare pairs whose BOTH roles are rare — too little support to name a pattern. */
-    lowRoleSupportEdgeCount: number;
     /**
      * Typed edges whose endpoints sit in different language families (bd
      * tea-rags-mcp-xb669.7) — two role vocabularies, no ledger to judge
@@ -160,18 +199,31 @@ export interface DependencyNormsSummary {
   };
 }
 
-/** The adaptive cut over pair support, serialized — `admits` stays with the live threshold object. */
-export interface DependencyNormsThreshold {
-  method: "otsu" | "majority";
-  threshold: number;
-  separability?: number;
+/**
+ * One ledger's independence test (bd tea-rags-mcp-xb669.8), the dependency
+ * analogue of the co-change pair gate's `CochangeSignificanceSummary`.
+ */
+export interface DependencyNormsSignificance {
+  method: "poissonIndependenceNull";
+  /** The false-discovery rate BH controls — the co-change gate's q. */
+  q: number;
+  /**
+   * m — the A-PRIORI family: every (roleSrc, roleDst, locality) whose λ > 0,
+   * i.e. roleSrc has out-edges and roleDst in-edges in that locality. Pairs no
+   * edge holds are members too, never only the observed ones.
+   */
+  familySize: number;
+  /** Family pairs where even a lone edge could be significant — the rest can never be rare. */
+  testablePairCount: number;
+  /** Pairs BH rejects — written or not. */
+  rarePairCount: number;
 }
 
-/** One family's ledger as the report shows it: its own adaptive cut over its own pairs. */
+/** One family's ledger as the report shows it: its own independence test over its own pairs. */
 export interface DependencyNormsFamilyLedger {
   family: string;
   pairCount: number;
-  threshold: DependencyNormsThreshold;
+  significance: DependencyNormsSignificance;
 }
 
 export interface DependencyNormsReport {

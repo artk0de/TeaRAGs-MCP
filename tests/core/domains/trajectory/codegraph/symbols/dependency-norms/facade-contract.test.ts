@@ -17,10 +17,14 @@ const DEPENDENCY_NORMS_MODULE =
   "../../../../../../../src/core/domains/trajectory/codegraph/symbols/dependency-norms/dependency-norms.ts";
 
 describe("dependency-norms foundation contract (bd tea-rags-mcp-89k7k.24)", () => {
-  it("imports the otsu entry through the infra/graph foundation barrel, not a domain", () => {
+  // bd tea-rags-mcp-xb669.8: the verdict is a Poisson/BH test now, not an Otsu
+  // cut, so the statistics it imports are the co-change gate's — still through
+  // a foundation barrel, never the temporal domain that first defined them.
+  it("imports its statistics through the infra/statistics foundation barrel, not a domain", () => {
     const source = readFileSync(new URL(DEPENDENCY_NORMS_MODULE, import.meta.url), "utf8");
     expect(source).not.toContain("boundary-diagnostics");
-    expect(source).toContain('from "../../../../../infra/graph/index.js"');
+    expect(source).not.toContain("temporal/");
+    expect(source).toContain('from "../../../../../infra/statistics/index.js"');
   });
 
   it("exposes the otsu entry from the foundation barrel as the very function the module defines", () => {
