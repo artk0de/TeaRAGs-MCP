@@ -1214,7 +1214,7 @@ describe("ArchitectureReportOps#build — dependency norms (bd tea-rags-mcp-rpx0
     // continuum, below the 0.8 separability gate — so the cut falls to the
     // min-pair-support floor and the singleton pairs stay the findings (bd
     // tea-rags-mcp-r8hme.46).
-    expect(report.norms?.threshold.method).toBe("majority");
+    expect(report.norms?.ledgers.map((l) => [l.family, l.threshold.method])).toEqual([["ecmascript", "majority"]]);
     expect(report.norms?.findings).toEqual([
       expect.objectContaining({
         kind: "misfit",

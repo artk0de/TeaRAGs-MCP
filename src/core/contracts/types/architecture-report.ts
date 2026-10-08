@@ -1317,6 +1317,8 @@ export interface ArchitectureNormExpectedPath {
 /** One precedent-less file edge, with the evidence that makes it one. */
 export interface ArchitectureNormFinding {
   kind: "misfit" | "newPattern";
+  /** The language family whose ledger judged the edge (bd tea-rags-mcp-xb669.7). */
+  family: string;
   sourceRelPath: RelPath;
   targetRelPath: RelPath;
   roleSrc: string;
@@ -1347,9 +1349,14 @@ export interface ArchitectureNormsReport {
      * when the request carried one (bd tea-rags-mcp-mv8yv).
      */
     outOfScopeFindingCount?: number;
-    excluded: { lowRoleSupportEdgeCount: number };
+    /** `crossLanguageEdgeCount`: typed edges between two language families — no ledger judges them. */
+    excluded: { lowRoleSupportEdgeCount: number; crossLanguageEdgeCount: number };
   };
-  threshold: ArchitectureNormsThreshold;
+  /**
+   * One ledger per language family (bd tea-rags-mcp-xb669.7), each with its
+   * own adaptive cut — role statistics never pool across languages.
+   */
+  ledgers: { family: string; pairCount: number; threshold: ArchitectureNormsThreshold }[];
   /** MISFITs first, then by weight, then by path. */
   findings: ArchitectureNormFinding[];
 }

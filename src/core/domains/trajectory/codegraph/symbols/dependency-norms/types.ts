@@ -23,21 +23,46 @@ export interface DependencyNormsInput {
 export type NormLocality = "sameDirectory" | "sameDomain" | "crossDomain";
 
 /**
- * The project's precedent ledgers, built once per input and shared by the
- * report walk and the write-time verdict. Key format of `pairs` and of each
+ * ONE language family's precedent ledgers, built once per input (see
+ * {@link NormLedgerBook}) and shared by the report walk and the write-time
+ * verdict. Key format of `pairs` and of each
  * `byLocality` map is `${roleSrc}\u0000${roleDst}\u0000${locality}` and
  * `${roleSrc}\u0000${roleDst}` respectively — compose through
  * {@link judgePlannedEdge}, never by hand.
  */
 export interface NormLedgers {
+  /** The language family whose edges this ledger counts — `languageFamilyOf` of both endpoints. */
+  readonly family: string;
   readonly pairs: ReadonlyMap<string, number>;
-  /** File edges each role carries across every ledger — the frequency test a NEW_PATTERN needs. */
+  /** File edges each role carries across this family's ledgers — the frequency test a NEW_PATTERN needs. */
   readonly activity: ReadonlyMap<string, number>;
   readonly byLocality: ReadonlyMap<NormLocality, ReadonlyMap<string, number>>;
   readonly threshold: DependencyNormsThreshold;
   /** The un-rounded predicate: `>= threshold` AND strictly above the majority floor. */
   admitsPairSupport: (value: number) => boolean;
   readonly pairCount: number;
+}
+
+/**
+ * Every language family's ledger (bd tea-rags-mcp-xb669.7). A role name is a
+ * word of ONE language's vocabulary — a Ruby `form` and a TypeScript `form`
+ * share a spelling, not a habit — so role statistics never pool across
+ * families: each family counts its own pairs and activity and cuts its own
+ * pair-support distribution.
+ */
+export interface NormLedgerBook {
+  /** Each family's ledger, in code-point order of family id. */
+  readonly families: ReadonlyMap<string, NormLedgers>;
+  /** `language`'s family ledger — an empty one when no typed edge of that family exists. */
+  forLanguage: (language: string) => NormLedgers;
+  /**
+   * The ledger an edge between these languages is judged against, or
+   * `undefined` when its endpoints sit in different families (or a language
+   * is unknown): such a pair mixes two role vocabularies, so no family's
+   * ledger has ever counted it and judging it there would flag it by
+   * construction.
+   */
+  forEdge: (sourceLanguage: string | undefined, targetLanguage: string | undefined) => NormLedgers | undefined;
 }
 
 /** The edge the writer is about to add, in the same terms the ledgers count. */
@@ -71,6 +96,8 @@ export interface DependencyNormExpectedPath {
 /** One precedent-less file edge, with the evidence that makes it one. */
 export interface DependencyNormFinding {
   kind: NormFindingKind;
+  /** The language family whose ledger judged the edge. */
+  family: string;
   sourceRelPath: RelPath;
   targetRelPath: RelPath;
   roleSrc: string;
@@ -92,10 +119,10 @@ export interface DependencyNormsSummary {
   untypedFileCount: number;
   /** Edges with both endpoints strongly typed — the only ones norms see. */
   typedEdgeCount: number;
-  /** Same set, walked: every typed edge is either precedented or judged. */
+  /** Typed edges judged against their family's ledger — each one precedented or a finding. */
   judgedEdgeCount: number;
   violationCount: number;
-  /** Distinct (roleSrc, roleDst, locality) ledgers. */
+  /** Distinct (family, roleSrc, roleDst, locality) entries, summed over family ledgers. */
   pairCount: number;
   /**
    * Findings no source file matching `sourcePathPattern` carries; present
@@ -105,6 +132,12 @@ export interface DependencyNormsSummary {
   excluded: {
     /** Rare pairs whose BOTH roles are rare — too little support to name a pattern. */
     lowRoleSupportEdgeCount: number;
+    /**
+     * Typed edges whose endpoints sit in different language families (bd
+     * tea-rags-mcp-xb669.7) — two role vocabularies, no ledger to judge
+     * against. Counted in `typedEdgeCount`, absent from `judgedEdgeCount`.
+     */
+    crossLanguageEdgeCount: number;
   };
 }
 
@@ -115,9 +148,17 @@ export interface DependencyNormsThreshold {
   separability?: number;
 }
 
+/** One family's ledger as the report shows it: its own adaptive cut over its own pairs. */
+export interface DependencyNormsFamilyLedger {
+  family: string;
+  pairCount: number;
+  threshold: DependencyNormsThreshold;
+}
+
 export interface DependencyNormsReport {
   summary: DependencyNormsSummary;
-  threshold: DependencyNormsThreshold;
+  /** One entry per language family holding a typed edge, in code-point order of family id. */
+  ledgers: DependencyNormsFamilyLedger[];
   /** MISFITs first, then by weight, then by path — the order the report lists them. */
   findings: DependencyNormFinding[];
 }

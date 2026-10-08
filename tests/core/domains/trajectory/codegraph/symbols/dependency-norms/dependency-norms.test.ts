@@ -65,9 +65,12 @@ describe("computeDependencyNorms", () => {
     // cut falls to the min-pair-support floor (bd tea-rags-mcp-r8hme.46) —
     // strictly above 1, which separates the precedent pairs from the
     // singletons exactly as the refused cut would have.
-    expect(report.threshold.method).toBe("majority");
-    expect(report.threshold.threshold).toBe(1);
-    expect(report.threshold.separability).toBeCloseTo(0.7101, 3);
+    // A TypeScript-only graph is one family, so one ledger carries the cut.
+    expect(report.ledgers).toHaveLength(1);
+    const [{ threshold }] = report.ledgers;
+    expect(threshold.method).toBe("majority");
+    expect(threshold.threshold).toBe(1);
+    expect(threshold.separability).toBeCloseTo(0.7101, 3);
 
     expect(report.summary).toMatchObject({
       roleFileCount: 11,
@@ -176,7 +179,7 @@ describe("computeDependencyNorms", () => {
  */
 describe("judgePlannedEdge", () => {
   const { graph, roles } = verdictsFixture();
-  const ledgers = buildNormLedgers({ graph, fileRoles: roles });
+  const ledgers = buildNormLedgers({ graph, fileRoles: roles }).forLanguage("typescript");
 
   it("conforms a precedented pair", () => {
     expect(judgePlannedEdge(ledgers, { roleSrc: "controller", roleDst: "service", locality: "crossDomain" })).toEqual({
@@ -208,7 +211,7 @@ describe("judgePlannedEdge", () => {
         edges: [...graph.edges, { sourceRelPath: "legacy/main.ts", targetRelPath: "present/board.ts", callWeight: 1 }],
       },
       fileRoles: bootstrapRoles,
-    });
+    }).forLanguage("typescript");
 
     expect(
       judgePlannedEdge(bootstrapLedgers, { roleSrc: "bootstrap", roleDst: "presenter", locality: "crossDomain" }),
@@ -230,10 +233,10 @@ describe("judgePlannedEdge", () => {
 it("the report's findings and judgePlannedEdge agree on every finding pair (one judgment rule)", () => {
   const { graph, roles } = verdictsFixture();
   const report = computeDependencyNorms({ graph, fileRoles: roles });
-  const ledgers = buildNormLedgers({ graph, fileRoles: roles });
+  const book = buildNormLedgers({ graph, fileRoles: roles });
 
   for (const finding of report.findings) {
-    const verdict = judgePlannedEdge(ledgers, {
+    const verdict = judgePlannedEdge(book.forLanguage(finding.family), {
       roleSrc: finding.roleSrc,
       roleDst: finding.roleDst,
       locality: finding.locality,
@@ -278,5 +281,89 @@ describe("computeDependencyNorms - sourcePathPattern", () => {
 
     expect(report.findings).toHaveLength(2);
     expect(report.summary.outOfScopeFindingCount).toBe(0);
+  });
+});
+
+/**
+ * One ledger per language family (bd tea-rags-mcp-xb669.7). A role name is a
+ * word of ONE language's vocabulary: a Ruby `form` persisting straight into a
+ * repository says nothing about how a TypeScript `form` should reach one.
+ *
+ * Fixture: Ruby forms (3) call Ruby repositories (2) directly — 6 precedent
+ * edges, Ruby's habit. TypeScript forms (3) go through services (2, one of
+ * them JavaScript — the ecmascript family shares one import graph) to
+ * repositories (2); one TS form reaches a TS repository directly. A pooled
+ * ledger reads `form -> repository` as Ruby's heavy precedent and CONFORMS the
+ * TS shortcut; per family it is a MISFIT via `service`. One TS form also
+ * reaches a Ruby repository — an edge between two vocabularies.
+ */
+describe("dependency norms are judged per language family", () => {
+  const RB_FORMS = ["app/forms/signup.rb", "app/forms/invoice.rb", "app/forms/job.rb"];
+  const RB_REPOS = ["app/repos/user_repo.rb", "app/repos/job_repo.rb"];
+  const TS_FORMS = ["web/forms/Signup.tsx", "web/forms/Invoice.tsx", "web/forms/CreateJob.tsx"];
+  const TS_SERVICES = ["web/services/users.ts", "web/services/jobs.js"];
+  const TS_REPOS = ["web/repos/userRepo.ts", "web/repos/jobRepo.ts"];
+
+  function polyglotFixture(): { graph: FileDependencyGraph; roles: Map<string, DependencyNormFileRole> } {
+    const languageOf = (relPath: string) =>
+      relPath.endsWith(".rb") ? "ruby" : relPath.endsWith(".js") ? "javascript" : "typescript";
+    const files = [...RB_FORMS, ...RB_REPOS, ...TS_FORMS, ...TS_SERVICES, ...TS_REPOS].map((relPath) => ({
+      relPath,
+      language: languageOf(relPath),
+      symbolCount: 1,
+    }));
+    const roles = new Map<string, DependencyNormFileRole>();
+    for (const f of [...RB_FORMS, ...TS_FORMS]) roles.set(f, { role: "form", strong: true });
+    for (const f of [...RB_REPOS, ...TS_REPOS]) roles.set(f, { role: "repository", strong: true });
+    for (const f of TS_SERVICES) roles.set(f, { role: "service", strong: true });
+    const edges: FileDependencyGraph["edges"] = [];
+    const add = (sourceRelPath: string, targetRelPath: string) => {
+      edges.push({ sourceRelPath, targetRelPath, callWeight: 1 });
+    };
+    for (const f of RB_FORMS) for (const r of RB_REPOS) add(f, r); // Ruby: form -> repository x6
+    for (const f of TS_FORMS) for (const s of TS_SERVICES) add(f, s); // TS: form -> service x6
+    for (const s of TS_SERVICES) for (const r of TS_REPOS) add(s, r); // TS: service -> repository x4
+    add("web/forms/CreateJob.tsx", "web/repos/jobRepo.ts"); // TS shortcut: no TS precedent
+    add("web/forms/Signup.tsx", "app/repos/user_repo.rb"); // cross-language edge
+    return { graph: { files, edges }, roles };
+  }
+
+  it("judges a TS form against TS precedent, not a Ruby namesake's habit", () => {
+    const { graph, roles } = polyglotFixture();
+    const report = computeDependencyNorms({ graph, fileRoles: roles });
+
+    expect(report.findings).toEqual([
+      expect.objectContaining({
+        kind: "misfit",
+        family: "ecmascript",
+        sourceRelPath: "web/forms/CreateJob.tsx",
+        targetRelPath: "web/repos/jobRepo.ts",
+        roleSrc: "form",
+        roleDst: "repository",
+        pairSupport: 1,
+        expectedPath: { via: "service", support: 4 },
+      }),
+    ]);
+  });
+
+  it("leaves a cross-language edge unjudged and out of every ledger, counted with its reason", () => {
+    const { graph, roles } = polyglotFixture();
+    const report = computeDependencyNorms({ graph, fileRoles: roles });
+
+    expect(report.summary).toMatchObject({
+      typedEdgeCount: 18,
+      judgedEdgeCount: 17,
+      excluded: { lowRoleSupportEdgeCount: 0, crossLanguageEdgeCount: 1 },
+    });
+    // Each family cuts its own distribution: Ruby holds one pair, ecmascript three.
+    expect(report.ledgers.map((l) => [l.family, l.pairCount])).toEqual([
+      ["ecmascript", 3],
+      ["ruby", 1],
+    ]);
+    const book = buildNormLedgers({ graph, fileRoles: roles });
+    expect(book.forEdge("typescript", "ruby")).toBeUndefined();
+    expect(book.forEdge("typescript", "javascript")).toBe(book.forLanguage("typescript"));
+    expect(book.forLanguage("ruby").pairs.get("form\u0000repository\u0000crossDomain")).toBe(6);
+    expect(book.forLanguage("typescript").pairs.get("form\u0000repository\u0000crossDomain")).toBe(1);
   });
 });

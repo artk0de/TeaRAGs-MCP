@@ -696,11 +696,15 @@ async function computeReportNorms(
 function normsDto(report: DependencyNormsReport): ArchitectureNormsReport {
   return {
     summary: { ...report.summary },
-    threshold: {
-      method: report.threshold.method,
-      threshold: report.threshold.threshold,
-      ...(report.threshold.separability === undefined ? {} : { separability: round3(report.threshold.separability) }),
-    },
+    ledgers: report.ledgers.map(({ family, pairCount, threshold }) => ({
+      family,
+      pairCount,
+      threshold: {
+        method: threshold.method,
+        threshold: threshold.threshold,
+        ...(threshold.separability === undefined ? {} : { separability: round3(threshold.separability) }),
+      },
+    })),
     findings: report.findings.map((f) => ({ ...f })),
   };
 }

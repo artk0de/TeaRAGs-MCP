@@ -1,11 +1,14 @@
 import type { RelPath } from "../../../../../contracts/types/codegraph.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../../../../../infra/graph/index.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
+import { languageFamilyOf } from "../language-family-record.js";
 import type {
   DependencyNormFinding,
   DependencyNormsInput,
   DependencyNormsReport,
   DependencyNormsSummary,
+  NormFindingKind,
+  NormLedgerBook,
   NormLedgers,
   NormLocality,
   NormPlannedEdge,
@@ -53,26 +56,29 @@ export const DEFAULT_NORMS_FREQUENT_ROLE_EDGES = 4;
  * role's edge activity, the adaptive cut with its live predicate. Built once
  * per input — `computeDependencyNorms` consumes it for every edge it walks,
  * `judgePlannedEdge` for one planned edge a writer is about to add.
+ *
+ * ONE LEDGER PER LANGUAGE FAMILY (bd tea-rags-mcp-xb669.7): role statistics
+ * never pool across languages, and an edge whose endpoints sit in different
+ * families enters no ledger — see {@link NormLedgerBook}.
  */
-export function buildNormLedgers(input: DependencyNormsInput): NormLedgers {
-  const { graph, fileRoles, componentOf } = input;
+export function buildNormLedgers(input: DependencyNormsInput): NormLedgerBook {
+  const { graph, fileRoles } = input;
   const roleOf = (relPath: RelPath) => fileRoles.get(relPath);
-  const pairs = new Map<string, number>();
-  const activity = new Map<string, number>();
-  const byLocality = new Map<NormLocality, Map<string, number>>();
-  const localityOf = (sourceRelPath: RelPath, targetRelPath: RelPath): NormLocality => {
-    if (directoryOf(sourceRelPath) === directoryOf(targetRelPath)) return "sameDirectory";
-    if (componentOf) {
-      const sourceComponent = componentOf.get(sourceRelPath);
-      const targetComponent = componentOf.get(targetRelPath);
-      if (sourceComponent !== undefined && sourceComponent === targetComponent) return "sameDomain";
-    }
-    return "crossDomain";
-  };
+  const familyOfEdge = edgeFamilyResolver(graph);
+  const localityOf = localityResolver(input);
+  const tallies = new Map<string, NormLedgerTally>();
   for (const edge of graph.edges) {
     const sourceRole = roleOf(edge.sourceRelPath);
     const targetRole = roleOf(edge.targetRelPath);
     if (sourceRole?.strong !== true || targetRole?.strong !== true) continue;
+    const family = familyOfEdge(edge.sourceRelPath, edge.targetRelPath);
+    if (family === undefined) continue;
+    let tally = tallies.get(family);
+    if (tally === undefined) {
+      tally = { pairs: new Map(), activity: new Map(), byLocality: new Map() };
+      tallies.set(family, tally);
+    }
+    const { pairs, activity, byLocality } = tally;
     const { role: roleSrc } = sourceRole;
     const { role: roleDst } = targetRole;
     const locality = localityOf(edge.sourceRelPath, edge.targetRelPath);
@@ -86,11 +92,41 @@ export function buildNormLedgers(input: DependencyNormsInput): NormLedgers {
     byLocality.set(locality, local);
   }
 
+  const families = new Map<string, NormLedgers>();
+  for (const family of [...tallies.keys()].sort(compareCodePoints)) {
+    const tally = tallies.get(family);
+    if (tally !== undefined) families.set(family, familyLedger(family, tally));
+  }
+  const forLanguage = (language: string): NormLedgers => {
+    const family = languageFamilyOf(language);
+    return (
+      families.get(family) ?? familyLedger(family, { pairs: new Map(), activity: new Map(), byLocality: new Map() })
+    );
+  };
+  return {
+    families,
+    forLanguage,
+    forEdge: (sourceLanguage, targetLanguage) => {
+      const family = sharedFamily(sourceLanguage, targetLanguage);
+      return family === undefined ? undefined : forLanguage(family);
+    },
+  };
+}
+
+interface NormLedgerTally {
+  pairs: Map<string, number>;
+  activity: Map<string, number>;
+  byLocality: Map<NormLocality, Map<string, number>>;
+}
+
+/** One family's ledger: its own adaptive cut over its own pair-support distribution. */
+function familyLedger(family: string, { pairs, activity, byLocality }: NormLedgerTally): NormLedgers {
   const threshold = resolveMajorityFlooredOtsuThreshold([...pairs.values()], {
     majority: DEFAULT_NORMS_MIN_PAIR_SUPPORT,
     minPopulation: DEFAULT_NORMS_OTSU_MIN_POPULATION,
   });
   return {
+    family,
     pairs,
     activity,
     byLocality,
@@ -101,6 +137,38 @@ export function buildNormLedgers(input: DependencyNormsInput): NormLedgers {
     },
     admitsPairSupport: threshold.admits,
     pairCount: pairs.size,
+  };
+}
+
+/**
+ * The family BOTH languages belong to, or `undefined` when they differ or one
+ * is unknown. Family, not language: `languageFamilyOf` is the codegraph's own
+ * partition of run-global name-keyed maps (bd tea-rags-mcp-nbf8q) — TypeScript
+ * and JavaScript resolve into each other, so they share one import graph and
+ * one role vocabulary; any other language is a family of its own.
+ */
+function sharedFamily(sourceLanguage: string | undefined, targetLanguage: string | undefined): string | undefined {
+  if (sourceLanguage === undefined || targetLanguage === undefined) return undefined;
+  const family = languageFamilyOf(sourceLanguage);
+  return languageFamilyOf(targetLanguage) === family ? family : undefined;
+}
+
+function edgeFamilyResolver(graph: DependencyNormsInput["graph"]) {
+  const languageOf = new Map<RelPath, string>();
+  for (const f of graph.files) languageOf.set(f.relPath, f.language);
+  return (sourceRelPath: RelPath, targetRelPath: RelPath) =>
+    sharedFamily(languageOf.get(sourceRelPath), languageOf.get(targetRelPath));
+}
+
+function localityResolver({ componentOf }: DependencyNormsInput) {
+  return (sourceRelPath: RelPath, targetRelPath: RelPath): NormLocality => {
+    if (directoryOf(sourceRelPath) === directoryOf(targetRelPath)) return "sameDirectory";
+    if (componentOf) {
+      const sourceComponent = componentOf.get(sourceRelPath);
+      const targetComponent = componentOf.get(targetRelPath);
+      if (sourceComponent !== undefined && sourceComponent === targetComponent) return "sameDomain";
+    }
+    return "crossDomain";
   };
 }
 
@@ -157,25 +225,27 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
     else if (!role.strong) weakRoleFileCount++;
   }
 
-  const ledgers = buildNormLedgers(input);
-  const localityOf = (sourceRelPath: RelPath, targetRelPath: RelPath): NormLocality => {
-    if (directoryOf(sourceRelPath) === directoryOf(targetRelPath)) return "sameDirectory";
-    if (input.componentOf) {
-      const sourceComponent = input.componentOf.get(sourceRelPath);
-      const targetComponent = input.componentOf.get(targetRelPath);
-      if (sourceComponent !== undefined && sourceComponent === targetComponent) return "sameDomain";
-    }
-    return "crossDomain";
-  };
+  const book = buildNormLedgers(input);
+  const familyOfEdge = edgeFamilyResolver(graph);
+  const localityOf = localityResolver(input);
 
   const findings: DependencyNormFinding[] = [];
   let lowRoleSupportEdgeCount = 0;
+  let crossLanguageEdgeCount = 0;
   let typedEdgeCount = 0;
   for (const edge of graph.edges) {
     const sourceRole = roleOf(edge.sourceRelPath);
     const targetRole = roleOf(edge.targetRelPath);
     if (sourceRole?.strong !== true || targetRole?.strong !== true) continue;
     typedEdgeCount++;
+    const family = familyOfEdge(edge.sourceRelPath, edge.targetRelPath);
+    // bd tea-rags-mcp-xb669.7: an edge between two role vocabularies has no
+    // ledger to be judged against — UNJUDGED, counted, never a finding.
+    if (family === undefined) {
+      crossLanguageEdgeCount++;
+      continue;
+    }
+    const ledgers = book.forLanguage(family);
     const locality = localityOf(edge.sourceRelPath, edge.targetRelPath);
     const verdict = judgePlannedEdge(ledgers, {
       roleSrc: sourceRole.role,
@@ -187,15 +257,7 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
       lowRoleSupportEdgeCount++;
     } else {
       findings.push(
-        finding(
-          verdict.kind,
-          edge,
-          sourceRole.role,
-          targetRole.role,
-          locality,
-          verdict.pairSupport,
-          verdict.expectedPath,
-        ),
+        finding(family, edge, { roleSrc: sourceRole.role, roleDst: targetRole.role, locality }, verdict.kind, verdict),
       );
     }
   }
@@ -219,30 +281,33 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
     weakRoleFileCount,
     untypedFileCount,
     typedEdgeCount,
-    judgedEdgeCount: typedEdgeCount,
+    judgedEdgeCount: typedEdgeCount - crossLanguageEdgeCount,
     violationCount: scopedFindings.length,
-    pairCount: ledgers.pairCount,
+    pairCount: [...book.families.values()].reduce((sum, ledger) => sum + ledger.pairCount, 0),
     ...(inScope ? { outOfScopeFindingCount: findings.length - scopedFindings.length } : {}),
-    excluded: { lowRoleSupportEdgeCount },
+    excluded: { lowRoleSupportEdgeCount, crossLanguageEdgeCount },
   };
   return {
     summary,
-    threshold: ledgers.threshold,
+    ledgers: [...book.families.values()].map((ledger) => ({
+      family: ledger.family,
+      pairCount: ledger.pairCount,
+      threshold: ledger.threshold,
+    })),
     findings: scopedFindings,
   };
 }
 
 function finding(
-  kind: DependencyNormFinding["kind"],
+  family: string,
   edge: { sourceRelPath: RelPath; targetRelPath: RelPath; callWeight: number },
-  roleSrc: string,
-  roleDst: string,
-  locality: NormLocality,
-  pairSupport: number,
-  expectedPath?: DependencyNormFinding["expectedPath"],
+  { roleSrc, roleDst, locality }: NormPlannedEdge,
+  kind: NormFindingKind,
+  { pairSupport, expectedPath }: PlannedEdgeVerdict,
 ): DependencyNormFinding {
   return {
     kind,
+    family,
     sourceRelPath: edge.sourceRelPath,
     targetRelPath: edge.targetRelPath,
     roleSrc,

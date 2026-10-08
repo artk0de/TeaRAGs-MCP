@@ -104,11 +104,11 @@ get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>"
 - `norms: true` adds the dependency-norms view (bd rpx0v): the project's own
   precedents per (roleSrc, roleDst, locality), roles = each file's PRIMARY
   type's role (naming's type-role layer; suffix-only roles stay weak — never
-  asserted). `response.norms` carries the ledgers' adaptive cut + findings;
-  `norms` violations flag every precedent-less edge: `misfit` names the transit
-  its roles normally follow (`expectedPath.via`), `newPattern` names a pair both
-  roles are frequent in but the corpus never shows. Absent flag = no norms
-  block, no `norms` violations.
+  asserted). `response.norms` carries one ledger + adaptive cut per language
+  family + findings; `norms` violations flag every precedent-less edge: `misfit`
+  names the transit its roles normally follow (`expectedPath.via`), `newPattern`
+  names a pair both roles are frequent in but the corpus never shows. Absent
+  flag = no norms block, no `norms` violations.
 - `domain: "<dir>"` judges one directory AS ITS OWN SYSTEM (bd xb669.1): the
   induced sub-graph — files under the root, edges with both endpoints inside —
   and EVERY metric recomputed inside it. Not `pathPattern`, which keeps
@@ -348,12 +348,17 @@ validation error naming the enum, before any detector runs.
 
 `response.norms` exists ONLY when the request carried `norms: true` — skip
 otherwise. The project judged by ITS OWN precedents: ledgers of (roleSrc,
-roleDst, locality) over every typed file edge, one adaptive cut
-(majority-floored Otsu, `threshold.threshold`; `method: "majority"` = min
-support floor decided — too few pairs, or pair supports not bimodal, η < 0.8 and
-reported in `threshold.separability`), then a verdict per edge below it. Roles =
-each file's PRIMARY type's role; `summary.roleFileCount` counts the strong ones,
-`weakRoleFileCount` / `untypedFileCount` never judge.
+roleDst, locality) over every typed file edge, ONE LEDGER PER LANGUAGE FAMILY
+(`norms.ledgers[]`; TypeScript + JavaScript are one family, every other language
+its own) — a Ruby `form` and a TS `form` never pool. Each ledger has its own
+adaptive cut (majority-floored Otsu, `ledgers[].threshold.threshold`;
+`method: "majority"` = min support floor decided — too few pairs, or pair
+supports not bimodal, η < 0.8 and reported in `threshold.separability`), then a
+verdict per edge below it; `finding.family` names the ledger that judged it. An
+edge between two families is never judged
+(`summary.excluded.crossLanguageEdgeCount`). Roles = each file's PRIMARY type's
+role; `summary.roleFileCount` counts the strong ones, `weakRoleFileCount` /
+`untypedFileCount` never judge.
 
 | Finding      | Read as                                                                                                                                                                                                                 |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -363,8 +368,9 @@ each file's PRIMARY type's role; `summary.roleFileCount` counts the strong ones,
 
 `locality` says which ledger judged it: `sameDirectory` / `sameDomain` (one
 r8hme.30 domain component) / `crossDomain` — the same edge can conform at home
-and misfit across domains. Read `threshold.threshold` with the findings: support
-1 in a codebase of 30-ledger precedents is noise, not a pattern.
+and misfit across domains. Read the finding's family
+`ledgers[].threshold.threshold` with it: support 1 in a codebase of 30-ledger
+precedents is noise, not a pattern.
 
 `pathPattern` scopes the FINDINGS by source — ledgers and the cut stay
 whole-graph. Findings it drops count in `summary.outOfScopeFindingCount`, never
@@ -454,9 +460,9 @@ boundary-out N (→ top external: [component] at L[externalLevel]), boundary-in 
 boundary-out N (heaviest → [externalComponent] at L[externalLevel]), boundary-in N
 | # | Dir | Inner component | External component | L ext | calls |
 
-## Dependency norms — [violationCount] findings; cut [threshold] ([method]); [roleFileCount] typed files
-MISFIT N, NEW_PATTERN N; excluded low-support N; typed [typedEdgeCount] of graph edges
-| # | Kind | Edge (src → dst) | Roles | Locality | Pair support | Expected path |
+## Dependency norms — [violationCount] findings; cut per family [family]: [threshold] ([method]); [roleFileCount] typed files
+MISFIT N, NEW_PATTERN N; excluded low-support N, cross-language N; typed [typedEdgeCount] of graph edges
+| # | Kind | Family | Edge (src → dst) | Roles | Locality | Pair support | Expected path |
 ```
 
 Every line cites evidence numbers from report. No evidence → no claim.
