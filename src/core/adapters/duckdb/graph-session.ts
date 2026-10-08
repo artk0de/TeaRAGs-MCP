@@ -133,7 +133,7 @@ export class DuckDbGraphSession {
   private conn?: DuckDBConnection;
   /**
    * Serialize transactional writes. The incremental reindex path runs
-   * `notifyDeletions` (→ `handleDeletedPaths` → `removeFile` BEGIN/COMMIT)
+   * `notifyDeletions` (→ `handleDeletedPaths` → `removeFiles` BEGIN/COMMIT)
    * and `processRelativeFiles` (→ `upsertFile` BEGIN/COMMIT) in
    * `Promise.all`. DuckDB on a single shared connection rejects the
    * second BEGIN with "cannot start a transaction within a transaction".

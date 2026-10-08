@@ -493,11 +493,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // lose their hash, so the drift repair re-resolves them — also BEFORE the
     // base rows go, because the declared names are read from `cg_symbols`.
     await graphDb.invalidateHierarchyDependentsOfDeletedFiles(paths);
+    // One set-based call for the whole batch (bd tea-rags-mcp-b4drg): edges in
+    // both directions, `cg_symbols` and every per-file row, in one transaction —
+    // a per-path loop was two store round trips per deleted file.
+    await graphDb.removeFiles(paths);
     for (const relPath of paths) {
-      // `removeFile` clears edges AND cg_symbols rows; `removeSymbolsForFile` is
-      // idempotent for symbol-only callers, so calling both is safe.
-      await graphDb.removeFile(relPath);
-      await graphDb.removeSymbolsForFile(relPath);
       symbolTable.removeFile(relPath);
       perColl?.delete(relPath);
     }

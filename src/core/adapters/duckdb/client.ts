@@ -276,6 +276,10 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.fileGraph.removeFile(relPath);
   }
 
+  async removeFiles(relPaths: readonly RelPath[]): Promise<void> {
+    return this.fileGraph.removeFiles(relPaths);
+  }
+
   async listFileContentHashes(): Promise<{ relPath: RelPath; contentHash: string | null }[]> {
     return this.fileGraph.listFileContentHashes();
   }
