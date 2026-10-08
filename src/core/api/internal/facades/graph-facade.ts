@@ -67,6 +67,7 @@ import {
   type IndexExistenceCheck,
 } from "../collection-resolver.js";
 import { readWorkingTreeGraph } from "../infra/working-tree-graph-read.js";
+import type { DeclaredTestDependencyLookup, IndexedFileImportLookup } from "../ops/architecture-facts.js";
 import { ArchitectureReportOps } from "../ops/architecture-report-ops.js";
 import { CochangeOps } from "../ops/cochange-ops.js";
 import { decorateCallees, decorateCallers } from "../ops/declared-visibility-lookup.js";
@@ -112,6 +113,19 @@ export interface GraphFacadeDeps {
    * from the same read. Optional: absent, violations list in detector order.
    */
   readFileMaintenanceSignals?: (collectionName: string) => Promise<ReadonlyMap<RelPath, GitFileMaintenanceSignals>>;
+  /**
+   * Every indexed file's module specifiers (and whether it is a test), read from the ADDRESSED collection's
+   * payload (`imports`). The report derives test support from them — files
+   * only tests and other test support import (bd tea-rags-mcp-89k7k.35.3).
+   * Optional: absent, nothing is excluded as test support.
+   */
+  readIndexedFileImports?: (collectionName: string) => ReturnType<IndexedFileImportLookup>;
+  /**
+   * The development-only packages the manifests under a tree root declare (bd
+   * tea-rags-mcp-89k7k.35.3) — more evidence for the same test-support
+   * exclusion. Optional: absent, the manifests add nothing.
+   */
+  readDeclaredTestDependencies?: (root: string) => ReturnType<DeclaredTestDependencyLookup>;
   /**
    * The `workingTree` marker source (bd tea-rags-mcp-xi2r9) for get_callers,
    * get_callees, find_cycles and get_architecture_report — and, through the
@@ -417,8 +431,15 @@ export class GraphFacade {
   }
 
   async getArchitectureReport(req: GetArchitectureReportRequest): Promise<GetArchitectureReportResponse> {
-    const { readImportSpecifiers, readFileCommitCounts, readFileMaintenanceSignals } = this.deps;
+    const {
+      readImportSpecifiers,
+      readFileCommitCounts,
+      readFileMaintenanceSignals,
+      readIndexedFileImports,
+      readDeclaredTestDependencies,
+    } = this.deps;
     const addressedCollection = () => resolveWorkingTree(this.deps.collectionRegistry, req).baseIndex.collectionName;
+    const addressedRoot = () => resolveWorkingTree(this.deps.collectionRegistry, req).root;
     const importSpecifiers = readImportSpecifiers
       ? async (relPaths: readonly RelPath[]) => readImportSpecifiers(addressedCollection(), relPaths)
       : undefined;
@@ -426,10 +447,27 @@ export class GraphFacade {
     const maintenanceSignals = readFileMaintenanceSignals
       ? async () => readFileMaintenanceSignals(addressedCollection())
       : undefined;
+    const indexedFileImports = readIndexedFileImports
+      ? async () => readIndexedFileImports(addressedCollection())
+      : undefined;
+    const declaredTestDependencies = readDeclaredTestDependencies
+      ? () => {
+          const root = addressedRoot();
+          return root ? readDeclaredTestDependencies(root) : new Set<string>();
+        }
+      : undefined;
     return this.withMarkedReadHandle(
       req,
       async (handle) =>
-        this.architectureReport.build(handle.graphDb, req, importSpecifiers, fileCommitCounts, maintenanceSignals),
+        this.architectureReport.build(
+          handle.graphDb,
+          req,
+          importSpecifiers,
+          fileCommitCounts,
+          maintenanceSignals,
+          indexedFileImports,
+          declaredTestDependencies,
+        ),
       ArchitectureReportOps.empty(req),
     );
   }

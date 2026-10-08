@@ -53,6 +53,7 @@ import {
   MAIN_SEQUENCE_STABLE_CONCRETE_CALM_REASON,
   MAIN_SEQUENCE_UNOBSERVABLE_REASON,
   NON_PRODUCTION_REASON,
+  TEST_SUPPORT_REASON,
   type ComponentGraph,
   type ComponentStableDependenciesReport,
   type ConventionPrivacyReport,
@@ -112,6 +113,8 @@ import { UnknownArchitectureComponentError } from "../../public/errors.js";
 import {
   deriveArchitectureComponentFacts,
   readProductionArchitectureGraph,
+  type DeclaredTestDependencyLookup,
+  type IndexedFileImportLookup,
   type ProductionArchitectureGraph,
 } from "./architecture-facts.js";
 import {
@@ -240,6 +243,12 @@ export class ArchitectureReportOps {
    * with its score. One payload read serves both it and the volatility gate
    * (whose commit counts it carries), and it is read only when some family
    * has a violation to rank.
+   *
+   * `readIndexedFileImports`, when given, lets the production graph drop
+   * test support — files only tests and other test support import (bd
+   * tea-rags-mcp-89k7k.35.3). Absent, no test importer is known and nothing
+   * is dropped as test support. `readDeclaredTestDependencies` adds the
+   * manifests' development-only packages to the evidence it rests on.
    */
   async build(
     graphDb: ArchitectureReportGraphDb,
@@ -247,12 +256,14 @@ export class ArchitectureReportOps {
     readImportSpecifiers?: ModuleImportSpecifierLookup,
     readFileCommitCounts?: GitFileCommitCountLookup,
     readFileMaintenanceSignals?: GitFileMaintenanceSignalLookup,
+    readIndexedFileImports?: IndexedFileImportLookup,
+    readDeclaredTestDependencies?: DeclaredTestDependencyLookup,
   ): Promise<GetArchitectureReportResponse> {
     const maintenanceSignals = readFileMaintenanceSignals ? readOnce(readFileMaintenanceSignals) : undefined;
     const commitCounts = maintenanceSignals
       ? async () => new Map([...(await maintenanceSignals())].map(([relPath, s]) => [relPath, s.commitCount]))
       : readFileCommitCounts;
-    const scope = await this.readScopedGraph(graphDb, request);
+    const scope = await this.readScopedGraph(graphDb, request, readIndexedFileImports, readDeclaredTestDependencies);
     const runs = await this.runDetectors(graphDb, scope, request, readImportSpecifiers, commitCounts);
     const view = this.projectFindings(runs, request);
     const costModel =
@@ -271,10 +282,16 @@ export class ArchitectureReportOps {
   private async readScopedGraph(
     graphDb: Pick<GraphDbClient, "readFileDependencyGraph">,
     request: ArchitectureReportScope,
+    readIndexedFileImports?: IndexedFileImportLookup,
+    readDeclaredTestDependencies?: DeclaredTestDependencyLookup,
   ): Promise<ScopedArchitectureGraph> {
-    // The read and the exclusion live in `architecture-facts.ts`, shared with
+    // The read and the exclusions live in `architecture-facts.ts`, shared with
     // the diff-scoped run (bd tea-rags-mcp-89k7k.1.4).
-    const production = await readProductionArchitectureGraph(graphDb);
+    const production = await readProductionArchitectureGraph(
+      graphDb,
+      readIndexedFileImports,
+      readDeclaredTestDependencies,
+    );
     const whole =
       request.domain === undefined
         ? null
@@ -486,6 +503,7 @@ export class ArchitectureReportOps {
           excludedEdgeCount: production.excludedEdgeCount,
           reason: NON_PRODUCTION_REASON,
         },
+        testSupport: { ...production.testSupport, reason: TEST_SUPPORT_REASON },
         stableDependencies: summarise(runs.sdp),
         leakingAbstraction: summariseLeaks(runs.leaks, runs.privacy, limit),
         silentCoupling: summariseSilentCoupling(runs.silent, limit),
@@ -557,6 +575,12 @@ export class ArchitectureReportOps {
       ...(request.pathPattern ? { pathPattern: request.pathPattern } : {}),
       summary: {
         nonProduction: { excludedFileCount: 0, excludedEdgeCount: 0, reason: NON_PRODUCTION_REASON },
+        testSupport: {
+          excludedFileCount: 0,
+          excludedEdgeCount: 0,
+          testOnlyDependencyCount: 0,
+          reason: TEST_SUPPORT_REASON,
+        },
         stableDependencies: {
           tolerance: DEFAULT_SDP_TOLERANCE,
           minConnectionCount: DEFAULT_SDP_MIN_CONNECTION_COUNT,

@@ -6,6 +6,7 @@ import { STATIC_PRESETS } from "./rerank/presets/index.js";
 import { staticStatsAccumulators } from "./stats/index.js";
 
 export { TrajectoryStaticError, StaticParseFailedError } from "./errors.js";
+export { TEST_EXCLUSION_FILTER_CONDITIONS } from "./test-exclusion.js";
 
 export class StaticTrajectory implements Trajectory {
   readonly key = "static";

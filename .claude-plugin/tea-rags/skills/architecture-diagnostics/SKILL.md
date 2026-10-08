@@ -125,6 +125,17 @@ get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>"
   domain's own internals. Facade-aggregation edges never count as border.
 - Tooling paths (scripts, spikes, benchmarks, examples, fixtures) removed before
   any detector — `summary.nonProduction` counts them.
+- Test support removed too — file imported only by tests / other support AND
+  evidence: named after test importing it (`X.spec.presets.tsx` ← `X.spec.tsx`;
+  `worker.ts` ← `worker.test.ts` = reverse, no evidence), or imports test-only
+  dep (package/file tests import, no production file does; or manifest dev-only
+  — `devDependencies`, Gemfile `:development`/`:test` — tests import; never
+  `node:*`), or imports other support. `summary.testSupport` counts files
+  - `testOnlyDependencyCount`. Worker loaded by module path, importing only
+    production deps → stays production. Fixture importing only production code,
+    not named after its test → stays production (no evidence) — low count ≠ bug.
+    Dev-tool file (codegen type, lint script) only a test imports + importing a
+    devDependency → may count as support.
 - `limit` caps `violations` + `rootCauses` PER DETECTOR; each
   `summary.<detector>` keeps totals (`violationCount`, `rootCauseCount`).
   Totals > returned → say truncated.
@@ -534,7 +545,7 @@ cut) — a settled utility, not pain; reason in `exclusionReasons`.
 
 ```text
 Architecture report: [scope] — [violationCount] SDP violations, [rootCauseCount] root causes
-[componentCount] components ([moduleComponentCount] modules); judged [judgedEdgeCount] of [componentEdgeCount] component deps (excluded: containment N, low support N); tooling excluded: [nonProduction.excludedFileCount] files
+[componentCount] components ([moduleComponentCount] modules); judged [judgedEdgeCount] of [componentEdgeCount] component deps (excluded: containment N, low support N); tooling excluded: [nonProduction.excludedFileCount] files; test support excluded: [testSupport.excludedFileCount] files
 
 ## Root causes
 | # | Target component | I | Dependents | Cycle | Fix direction |

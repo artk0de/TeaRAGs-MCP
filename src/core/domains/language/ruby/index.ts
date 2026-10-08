@@ -39,12 +39,13 @@ import type {
   LanguageProvider,
   LanguageSymbolResolver,
   LanguageWalker,
+  TestDependencyManifestSource,
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker } from "../kernel/index.js";
 import { isRubyModuleImport, rubyHooks } from "./chunking/index.js";
 import { RUBY_CODEGRAPH_EXCLUSION_GLOBS } from "./codegraph-exclusions.js";
 import { catalogueFor } from "./dsl/index.js";
-import { RUBY_DEPENDENCY_MANIFEST } from "./gemfile.js";
+import { RUBY_DEPENDENCY_MANIFEST, RUBY_TEST_DEPENDENCY_MANIFEST } from "./gemfile.js";
 import { RUBY_IDENTIFIER_FINDER_METHODS } from "./identifier-finder-methods.js";
 import { rubyKernel } from "./kernel.js";
 import { RubyCallResolver } from "./resolver/index.js";
@@ -117,6 +118,8 @@ export class RubyLanguage implements LanguageProvider {
    * (bd tea-rags-mcp-m99j1.1.8).
    */
   readonly dependencyManifest: DependencyManifestSource = RUBY_DEPENDENCY_MANIFEST;
+  /** Every `Gemfile`, split by Bundler group (bd tea-rags-mcp-89k7k.35.3). */
+  readonly testDependencyManifest: TestDependencyManifestSource = RUBY_TEST_DEPENDENCY_MANIFEST;
   /**
    * Rails non-application-code path globs the codegraph exclusion engine
    * aggregates for Ruby (`db/migrate/**`, `db/data/**`, generated schema

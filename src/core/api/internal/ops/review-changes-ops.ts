@@ -35,6 +35,7 @@ import type {
 } from "../../public/dto/review.js";
 import { InvalidParameterError } from "../../public/errors.js";
 import { resolveIndexedWorkingTree, type IndexExistenceCheck } from "../collection-resolver.js";
+import type { DeclaredTestDependencyLookup, IndexedFileImportLookup } from "./architecture-facts.js";
 import { DIFF_FILE_CAP, readDiffScope, readTreeLag } from "./diff-scope-reader.js";
 import type { ReviewEdgeExtractionDeps } from "./review-edge-overlay.js";
 import {
@@ -83,6 +84,20 @@ export interface ReviewChangesOpsDeps {
    * section sees it. Absent → the architecture findings stay unranked.
    */
   readFileMaintenanceSignals?: (collectionName: string) => Promise<ReadonlyMap<RelPath, GitFileMaintenanceSignals>>;
+  /**
+   * Every indexed file's module specifiers (and whether it is a test) over the addressed collection (bd
+   * tea-rags-mcp-89k7k.35.3) — the SAME `readPayloadIndexedFileImports`
+   * read the whole-repo report derives test support from. Bound to the
+   * review's collection before a section sees it. Absent → no test support is
+   * excluded from the production graph.
+   */
+  readIndexedFileImports?: (collectionName: string) => ReturnType<IndexedFileImportLookup>;
+  /**
+   * The development-only packages the manifests under the reviewed tree
+   * declare (bd tea-rags-mcp-89k7k.35.3), bound to the review's work tree
+   * before a section sees it. Absent → the manifests add nothing.
+   */
+  readDeclaredTestDependencies?: (root: string) => ReturnType<DeclaredTestDependencyLookup>;
   /** The temporal walk's history window (the git trajectory's `chunkMaxAgeMonths`). */
   windowMonths: number;
   /**
@@ -165,13 +180,20 @@ export class ReviewChangesOps {
       }
       // Bound to THIS review's collection — the section addresses no index of
       // its own (bd tea-rags-mcp-2wsnt).
-      const { readImportSpecifiers, readFileMaintenanceSignals } = this.deps;
+      const { readImportSpecifiers, readFileMaintenanceSignals, readIndexedFileImports } = this.deps;
       const importSpecifiers =
         readImportSpecifiers === undefined
           ? undefined
           : async (relPaths: readonly RelPath[]) => readImportSpecifiers(collectionName, relPaths);
       const maintenanceSignals =
         readFileMaintenanceSignals === undefined ? undefined : async () => readFileMaintenanceSignals(collectionName);
+      const indexedFileImports =
+        readIndexedFileImports === undefined ? undefined : async () => readIndexedFileImports(collectionName);
+      const { readDeclaredTestDependencies } = this.deps;
+      const declaredTestDependencies =
+        readDeclaredTestDependencies === undefined || workTree === undefined
+          ? undefined
+          : () => readDeclaredTestDependencies(workTree);
       const buildContext: ReviewSectionBuildContext = {
         scope,
         graphDb,
@@ -181,6 +203,8 @@ export class ReviewChangesOps {
         reviewEdgeExtraction: this.deps.reviewEdgeExtraction,
         ...(importSpecifiers === undefined ? {} : { readImportSpecifiers: importSpecifiers }),
         ...(maintenanceSignals === undefined ? {} : { readFileMaintenanceSignals: maintenanceSignals }),
+        ...(indexedFileImports === undefined ? {} : { readIndexedFileImports: indexedFileImports }),
+        ...(declaredTestDependencies === undefined ? {} : { readDeclaredTestDependencies: declaredTestDependencies }),
       };
       // The sections are independent reads of one snapshot, so they run
       // together; the envelope lists them in the requested order whatever

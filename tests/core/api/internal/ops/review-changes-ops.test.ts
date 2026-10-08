@@ -323,6 +323,14 @@ describe("ReviewChangesOps", () => {
     expect(findings.find((f) => f.subject === `${CHANGED} ~ ${PARTNER}`)?.maintenanceCost?.score).toBe(0.5);
   });
 
+  it("reads the review collection's test imports once, for the architecture section's test-support exclusion (bd tea-rags-mcp-89k7k.35.3)", async () => {
+    const readIndexedFileImports = vi.fn().mockResolvedValue(new Map());
+
+    await makeOps(graphDbStub(), {}, { readIndexedFileImports }).reviewChanges(request({ sections: ["architecture"] }));
+
+    expect(readIndexedFileImports).toHaveBeenCalledExactlyOnceWith("code_test");
+  });
+
   it("a section allowlist omits the others entirely — absence is not not-built", async () => {
     const graph = graphDbStub();
     const result = await makeOps(graph).reviewChanges(request({ sections: ["cohesion"] }));

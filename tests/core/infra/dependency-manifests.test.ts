@@ -22,10 +22,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { DependencyManifestSource } from "../../../src/core/contracts/types/language.js";
 import { PYTHON_DEPENDENCY_MANIFEST } from "../../../src/core/domains/language/python/manifest.js";
-import { RUBY_DEPENDENCY_MANIFEST } from "../../../src/core/domains/language/ruby/gemfile.js";
+import {
+  RUBY_DEPENDENCY_MANIFEST,
+  RUBY_TEST_DEPENDENCY_MANIFEST,
+} from "../../../src/core/domains/language/ruby/gemfile.js";
+import { PACKAGE_JSON_TEST_DEPENDENCY_MANIFEST } from "../../../src/core/domains/language/typescript/package-manifest.js";
 import {
   readDeclaredDependencies,
   readDeclaredDependenciesByLanguage,
+  readDeclaredTestDependencies,
   readManifestFiles,
 } from "../../../src/core/infra/dependency-manifests.js";
 
@@ -211,5 +216,58 @@ describe("readDeclaredDependenciesByLanguage", () => {
     const declared = readDeclaredDependenciesByLanguage(root, BY_LANGUAGE);
     expect(declared.has("python")).toBe(false);
     expect(declared.get("ruby")).toEqual(new Set(["rails"]));
+  });
+});
+
+// bd tea-rags-mcp-89k7k.35.3 — the development-only packages are evidence for
+// test support: what a manifest declares for development and tests and no
+// manifest declares for run time.
+describe("readDeclaredTestDependencies", () => {
+  const TEST_SOURCES = [PACKAGE_JSON_TEST_DEPENDENCY_MANIFEST, RUBY_TEST_DEPENDENCY_MANIFEST];
+
+  it("reads devDependencies from every package.json, minus what any package.json ships at run time", () => {
+    write(
+      "package.json",
+      JSON.stringify({ dependencies: { react: "^18" }, devDependencies: { vitest: "^3", msw: "^2" } }),
+    );
+    write(
+      "packages/ui/package.json",
+      JSON.stringify({ dependencies: { msw: "^2" }, devDependencies: { jest: "^29" } }),
+    );
+    write("node_modules/x/package.json", JSON.stringify({ devDependencies: { vendored: "1" } }));
+    write("broken/package.json", "{ not json");
+
+    expect(readDeclaredTestDependencies(root, TEST_SOURCES)).toEqual(new Set(["vitest", "jest"]));
+  });
+
+  it("reads the gems of a Gemfile's development and test groups, block or option, and nothing a runtime group names", () => {
+    write(
+      "Gemfile",
+      [
+        'gem "rails"',
+        "group :development, :test do",
+        '  gem "rspec-rails"',
+        "end",
+        "group :test do",
+        '  gem "capybara"',
+        "end",
+        "group :production, :test do",
+        '  gem "pg"',
+        "end",
+        'gem "factory_bot", group: :test',
+        'gem "pry", groups: [:development, :test]',
+        'gem "sidekiq", group: :production',
+      ].join("\n"),
+    );
+
+    expect(readDeclaredTestDependencies(root, TEST_SOURCES)).toEqual(
+      new Set(["rspec-rails", "capybara", "factory_bot", "pry"]),
+    );
+  });
+
+  it("declares nothing when no reader is registered", () => {
+    write("package.json", JSON.stringify({ devDependencies: { vitest: "^3" } }));
+
+    expect(readDeclaredTestDependencies(root, [])).toEqual(new Set());
   });
 });

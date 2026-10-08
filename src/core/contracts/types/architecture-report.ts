@@ -1098,6 +1098,21 @@ export interface NonProductionExclusionSummary {
   reason: string;
 }
 
+/**
+ * Walked files the report left out as test support (bd tea-rags-mcp-89k7k.35.3):
+ * every importer is a test file or other test support, and the file imports a
+ * test-only dependency or other test support.
+ */
+export interface TestSupportExclusionSummary {
+  excludedFileCount: number;
+  /** Edges with a test-support endpoint, left after the non-production exclusion. */
+  excludedEdgeCount: number;
+  /** Distinct dependencies (packages, unwalked files) tests import and no production file does. */
+  testOnlyDependencyCount: number;
+  /** Human-readable meaning of the exclusion. */
+  reason: string;
+}
+
 /** Provenance of the co-change build silent coupling was judged over. */
 export interface SilentCouplingBuildSummary {
   /** HEAD the history was read at. */
@@ -1562,6 +1577,7 @@ export interface PropagationCostReportSummary {
 
 export interface ArchitectureReportSummary {
   nonProduction: NonProductionExclusionSummary;
+  testSupport: TestSupportExclusionSummary;
   stableDependencies: StableDependenciesReportSummary;
   leakingAbstraction: LeakingAbstractionReportSummary;
   silentCoupling: SilentCouplingReportSummary;

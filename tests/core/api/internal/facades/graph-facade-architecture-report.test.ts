@@ -160,6 +160,86 @@ describe("GraphFacade#getArchitectureReport", () => {
     });
   });
 
+  it("drops test support read from the addressed collection's test imports (bd tea-rags-mcp-89k7k.35.3)", async () => {
+    const graphDb = {
+      readFileDependencyGraph: vi.fn().mockResolvedValue({
+        files: [
+          { relPath: "app/main.ts", language: "typescript", symbolCount: 1 },
+          { relPath: "app/a.ts", language: "typescript", symbolCount: 1 },
+          { relPath: "app/specs/a.spec.presets.ts", language: "typescript", symbolCount: 1 },
+        ],
+        edges: [
+          { sourceRelPath: "app/main.ts", targetRelPath: "app/a.ts", callWeight: 1 },
+          { sourceRelPath: "app/specs/a.spec.presets.ts", targetRelPath: "app/a.ts", callWeight: 1 },
+        ],
+      }),
+      readNonPublicMemberEdges: vi.fn().mockResolvedValue([]),
+      readTemporalCochangeGraph: vi.fn().mockResolvedValue({ meta: null, edges: [] }),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const readIndexedFileImports = vi.fn().mockResolvedValue(
+      new Map([
+        ["app/specs/a.spec.ts", { isTest: true, specifiers: ["./a.spec.presets", "msw"] }],
+        // Positive evidence (89k7k.35.3): the presets import a package only tests import.
+        ["app/specs/a.spec.presets.ts", { isTest: false, specifiers: ["../a", "msw"] }],
+      ]),
+    );
+    const facade = new GraphFacade({
+      pool: readerPool(graphDb).pool,
+      collectionRegistry: registry,
+      readIndexedFileImports,
+    });
+
+    const { summary } = await facade.getArchitectureReport({ collection: "code_x" });
+
+    expect(readIndexedFileImports).toHaveBeenCalledWith("code_x");
+    expect(summary.testSupport).toMatchObject({ excludedFileCount: 1, excludedEdgeCount: 1 });
+  });
+
+  it("forwards the declared test dependencies of the addressed tree root into the test-support classification (bd tea-rags-mcp-89k7k.35.3)", async () => {
+    const graphDb = {
+      readFileDependencyGraph: vi.fn().mockResolvedValue({
+        files: [
+          { relPath: "app/main.ts", language: "typescript", symbolCount: 1 },
+          { relPath: "app/a.ts", language: "typescript", symbolCount: 1 },
+          { relPath: "app/helper.ts", language: "typescript", symbolCount: 1 },
+        ],
+        edges: [
+          { sourceRelPath: "app/main.ts", targetRelPath: "app/a.ts", callWeight: 1 },
+          { sourceRelPath: "app/helper.ts", targetRelPath: "app/a.ts", callWeight: 1 },
+        ],
+      }),
+      readNonPublicMemberEdges: vi.fn().mockResolvedValue([]),
+      readTemporalCochangeGraph: vi.fn().mockResolvedValue({ meta: null, edges: [] }),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    // msw is imported by an imported production file, so only the manifest's
+    // development-only declaration makes it test evidence for helper.ts.
+    const readIndexedFileImports = vi.fn().mockResolvedValue(
+      new Map([
+        ["app/helper.test.ts", { isTest: true, specifiers: ["./helper", "msw"] }],
+        ["app/helper.ts", { isTest: false, specifiers: ["msw"] }],
+        ["app/a.ts", { isTest: false, specifiers: ["msw"] }],
+      ]),
+    );
+    const readDeclaredTestDependencies = vi.fn(() => new Set(["msw"]));
+    const rootedRegistry = {
+      ...registry,
+      get: vi.fn(() => ({ collectionName: "code_x", path: "/repo/root" })),
+    } as unknown as CollectionRegistry;
+    const facade = new GraphFacade({
+      pool: readerPool(graphDb).pool,
+      collectionRegistry: rootedRegistry,
+      readIndexedFileImports,
+      readDeclaredTestDependencies,
+    });
+
+    const { summary } = await facade.getArchitectureReport({ collection: "code_x" });
+
+    expect(readDeclaredTestDependencies).toHaveBeenCalledWith("/repo/root");
+    expect(summary.testSupport).toMatchObject({ excludedFileCount: 1 });
+  });
+
   it("returns the empty report when the collection has no graph database", async () => {
     const pool = {
       acquireReader: vi.fn().mockRejectedValue(new Error("no such file")),

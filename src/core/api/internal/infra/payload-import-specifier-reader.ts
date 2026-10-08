@@ -17,6 +17,8 @@
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { exactMatchOnTextIndexed } from "../../../adapters/qdrant/filters/text-indexed-exact.js";
 import type { RelPath } from "../../../contracts/types/codegraph.js";
+import type { IndexedFileImports } from "../../../domains/trajectory/codegraph/symbols/index.js";
+import { TEST_EXCLUSION_FILTER_CONDITIONS } from "../../../domains/trajectory/static/index.js";
 
 /** Files read at once — a bound on concurrent scrolls, not a batch the answer depends on. */
 const IMPORT_SPECIFIER_READ_CONCURRENCY = 8;
@@ -51,4 +53,49 @@ export async function readPayloadImportSpecifiers(
     });
   }
   return specifiers;
+}
+
+/**
+ * Every indexed file's declared specifiers and whether it is a test, keyed by
+ * path (bd tea-rags-mcp-89k7k.35.3). The architecture report derives test
+ * support from it: the codegraph walks no test, generated or policy-excluded
+ * file, so their imports survive only here. "Is a test" is the query path's
+ * one definition (`TEST_EXCLUSION_FILTER_CONDITIONS`): a point carrying any of
+ * its conditions. One payload-narrowed pass, one chunk per file — the way
+ * `readPayloadFileMaintenanceSignals` reads every file.
+ */
+export async function readPayloadIndexedFileImports(
+  qdrant: Pick<QdrantManager, "scrollPayloadPages">,
+  collectionName: string,
+): Promise<Map<RelPath, IndexedFileImports>> {
+  const files = new Map<RelPath, IndexedFileImports>();
+  for await (const page of qdrant.scrollPayloadPages(collectionName, indexedFileImportPayloadKeys())) {
+    for (const { payload } of page) {
+      const { relativePath, imports } = payload;
+      if (typeof relativePath !== "string" || files.has(relativePath)) continue;
+      if (!Array.isArray(imports) || imports.length === 0) continue;
+      files.set(relativePath, {
+        isTest: TEST_EXCLUSION_FILTER_CONDITIONS.some(
+          (condition) => readPayloadPath(payload, condition.key) === condition.match.value,
+        ),
+        specifiers: imports.filter((s): s is string => typeof s === "string"),
+      });
+    }
+  }
+  return files;
+}
+
+/** Read per call, never at module load — the conditions belong to another domain's barrel. */
+function indexedFileImportPayloadKeys(): string[] {
+  return ["relativePath", "imports", ...TEST_EXCLUSION_FILTER_CONDITIONS.map((condition) => condition.key)];
+}
+
+/** A dotted payload path read off the nested payload object. */
+function readPayloadPath(payload: Record<string, unknown>, path: string): unknown {
+  let value: unknown = payload;
+  for (const segment of path.split(".")) {
+    if (typeof value !== "object" || value === null) return undefined;
+    value = (value as Record<string, unknown>)[segment];
+  }
+  return value;
 }

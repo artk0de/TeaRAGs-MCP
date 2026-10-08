@@ -44,6 +44,7 @@ import {
   readPayloadFileCommitCounts,
   readPayloadFileMaintenanceSignals,
   readPayloadImportSpecifiers,
+  readPayloadIndexedFileImports,
   ReviewChangesOps,
   ReviewFacade,
   scheduleWorkingTreeGitSignalSweep,
@@ -62,6 +63,7 @@ import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../core/cont
 import type { PhysicalCollectionName } from "../core/contracts/types/collection-identity.js";
 import type { EmbeddingConfig } from "../core/contracts/types/config.js";
 import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-executor.js";
+import type { LanguageFactoryDescriptor } from "../core/contracts/types/language.js";
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
 import type { PayloadKeyOwner } from "../core/contracts/types/trajectory.js";
 import {
@@ -115,6 +117,10 @@ import {
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { InMemoryTemporalSymbolCommitBuffer } from "../core/domains/trajectory/codegraph/temporal/index.js";
 import { StaticPayloadBuilder } from "../core/domains/trajectory/static/provider.js";
+import {
+  collectTestDependencyManifestSources,
+  readDeclaredTestDependencies,
+} from "../core/infra/dependency-manifests.js";
 import { setDebug } from "../core/infra/runtime.js";
 import { StatsCache } from "../core/infra/stats-cache.js";
 import type { HealthProbes } from "../mcp/middleware/error-handler.js";
@@ -762,6 +768,21 @@ export function wireCodegraph(
    * `createAppContext`; optional for the same reason as above.
    */
   readFileMaintenanceSignals?: GraphFacadeDeps["readFileMaintenanceSignals"],
+  /**
+   * Every indexed file's module specifiers (and whether it is a test) from the index payload — the
+   * architecture report derives test support from them (bd
+   * tea-rags-mcp-89k7k.35.3). Wired to `readPayloadIndexedFileImports`
+   * over the app's Qdrant by `createAppContext`; optional for the same reason
+   * as above.
+   */
+  readIndexedFileImports?: GraphFacadeDeps["readIndexedFileImports"],
+  /**
+   * The development-only packages a tree's manifests declare — more evidence
+   * for the same test-support exclusion (bd tea-rags-mcp-89k7k.35.3). Wired
+   * to `readDeclaredTestDependencies` over the registered languages' readers
+   * by `createAppContext`; optional for the same reason as above.
+   */
+  readDeclaredTestDependencies?: GraphFacadeDeps["readDeclaredTestDependencies"],
 ): CodegraphContext | undefined {
   // Defensive: legacy/mocked configs may omit the codegraph section
   // entirely. Treat that as "disabled" so the `codegraph.enabled` config
@@ -1036,6 +1057,8 @@ export function wireCodegraph(
     ...(readImportSpecifiers ? { readImportSpecifiers } : {}),
     ...(readFileCommitCounts ? { readFileCommitCounts } : {}),
     ...(readFileMaintenanceSignals ? { readFileMaintenanceSignals } : {}),
+    ...(readIndexedFileImports ? { readIndexedFileImports } : {}),
+    ...(readDeclaredTestDependencies ? { readDeclaredTestDependencies } : {}),
     ...(workingTreeOverlay ? { workingTreeOverlay } : {}),
     ...(indexExists ? { indexExists } : {}),
   });
@@ -1425,6 +1448,12 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   });
   // One existence check for every read tool that resolves a tree (live round-3 D3).
   const indexExists = async (collectionName: string): Promise<boolean> => infra.qdrant.collectionExists(collectionName);
+  // The language factory is composed after the codegraph context (which the
+  // composition consumes), so the manifest readers are looked up at call time
+  // (bd tea-rags-mcp-89k7k.35.3).
+  const manifestLanguages: { factory?: LanguageFactoryDescriptor } = {};
+  const readTreeDeclaredTestDependencies = (root: string): ReadonlySet<string> =>
+    readDeclaredTestDependencies(root, collectTestDependencyManifestSources(manifestLanguages.factory));
   const codegraphContext = wireCodegraph(
     config,
     zodConfig,
@@ -1435,6 +1464,8 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     workingTreeOverlay,
     indexExists,
     async (collectionName) => readPayloadFileMaintenanceSignals(infra.qdrant, collectionName),
+    async (collectionName) => readPayloadIndexedFileImports(infra.qdrant, collectionName),
+    readTreeDeclaredTestDependencies,
   );
   // Swept with the chunk store's schedule (first after 2 min, then every 6 h,
   // unref'd, throttled across processes by a stamp) — here,
@@ -1442,6 +1473,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   // live base graph.
   const stopWorkingTreeGraphSweep = scheduleWorkingTreeGraphSweep(workingTreeGraphCache);
   const composition = wireComposition(zodConfig, config.trajectoryIngest, codegraphContext?.deps);
+  manifestLanguages.factory = composition.languageFactory;
 
   // TracePathOps bridges the codegraph adjacency (DuckDB pool) and the explore
   // reranker. It is built here — not inside wireCodegraph — because `reranker`
@@ -1750,6 +1782,12 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
             // tea-rags-mcp-r8hme.20).
             readFileMaintenanceSignals: async (collectionName) =>
               readPayloadFileMaintenanceSignals(infra.qdrant, collectionName),
+            // Test support is excluded from the production graph through the
+            // SAME indexed-file import read the whole-repo report uses (bd
+            // tea-rags-mcp-89k7k.35.3).
+            readIndexedFileImports: async (collectionName) =>
+              readPayloadIndexedFileImports(infra.qdrant, collectionName),
+            readDeclaredTestDependencies: readTreeDeclaredTestDependencies,
           }),
         })
       : undefined;
