@@ -139,10 +139,18 @@ get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>"
   `summary.<detector>` keeps totals (`violationCount`, `rootCauseCount`).
   Totals > returned → say truncated.
 - Each detector's `violations` ranked costliest-first (before `limit`) by
-  `maintenanceCost`: `score` 0–1 = mean over carrying files, `hottestFile` =
-  costliest carrier + churn/bugFix/recency positions + raw readings. Lead
-  residual list per detector with highest score. Absent = no git readings →
-  detector order.
+  `maintenanceCost`. Carriers = files on edges that MAKE violation: named files;
+  all file edges of component edge / knot cut; hub's boundary files;
+  zone-of-pain's depended-on files; island / uselessness = all its files.
+  `score` 0–1 = carriers' `meanPosition` (mean file `costPosition`) shrunk
+  toward 0.5 by `n / (n + n₀)` — n = `measuredFileCount`, n₀ = (1/12) /
+  between-violation variance over the WHOLE report, measured around the null
+  mean 0.5 (empirical Bayes). A 1–2 file pair is pulled toward 0.5, a 7000-file
+  knot keeps its mean, so scores compare ACROSS detectors; 0.5 = typical or
+  unproven, all 0.5 = violations spread no more than noise. Use `meanPosition` +
+  `measuredFileCount` for the raw reading. `hottestFile` = costliest carrier +
+  churn/bugFix/recency positions + raw readings. Lead residual list with highest
+  score. Absent = no git readings → detector order.
 - Every finding carries `detector`: `stableDependencies` (Phases 2–3),
   `leakingAbstraction` (Phase 3b), `silentCoupling` (Phase 3c), `mainSequence`
   (Phase 3d), `hubLikeDependency` (Phase 3d2) or `layering` (Phase 3e). Never

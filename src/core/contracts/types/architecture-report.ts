@@ -784,6 +784,13 @@ export interface ArchitectureFileMaintenanceCost {
   relPath: RelPath;
   /** 0–1, 3 decimals. */
   cost: number;
+  /**
+   * Mid-rank position of `cost` among every measured file's cost (bd
+   * tea-rags-mcp-afyku), 3 decimals: ties share their mean rank, so the
+   * positions of all files average 0.5 — what a violation's
+   * `meanPosition` is scored against.
+   */
+  costPosition: number;
   /** Position of `commitCount`, 3 decimals. */
   churn: number;
   /** Position of `bugFixRate`, 3 decimals. */
@@ -798,16 +805,32 @@ export interface ArchitectureFileMaintenanceCost {
 /**
  * What a violation costs to maintain (bd tea-rags-mcp-r8hme.20, after
  * DV8 / Xiao-Cai "architecture roots": a modularity violation costs the extra
- * maintenance of the files carrying it). The carrying files are the ones the
- * violation names — its file endpoints, its file edges, else the files of the
- * components it names. Absent when the git trajectory measured none of them.
+ * maintenance of the files carrying it). The carrying files are the files on
+ * the edges that MAKE the violation (bd tea-rags-mcp-afyku): its file
+ * endpoints; every file edge of a component edge (SDP, back-edge, layer skip,
+ * abstraction bypass) or of a knot's feedback-arc set; a hub's files on its
+ * afferent/efferent edges; a zone-of-pain component's files its dependents
+ * reach; every file of an island or a zone-of-uselessness component (no edge
+ * carries a missing dependent). Absent when the git trajectory measured none.
  */
 export interface ArchitectureMaintenanceCost {
-  /** Mean `cost` over the measured carrying files — 0–1, 3 decimals. The list is ordered by it, costliest first. */
+  /**
+   * 0–1, 3 decimals: the empirical-Bayes shrunken mean of the carriers' cost
+   * positions, `0.5 + (meanPosition − 0.5) · n / (n + n₀)` over
+   * n = `measuredFileCount`. n₀ = (1/12) / σ²_between, σ²_between estimated
+   * by method of moments over every violation ranked in the same answer (all
+   * families of a report; one review's findings): a mean over few carriers is
+   * pulled toward 0.5, a mean over many keeps its value. Every score reads
+   * 0.5 when the means spread no more than carrier noise predicts, or fewer
+   * than two violations are measured. Comparable across families within one
+   * answer; the list is ordered by it, costliest first.
+   */
   score: number;
+  /** Mean `costPosition` over the measured carrying files — the raw statistic `score` ranks, 0–1, 3 decimals. */
+  meanPosition: number;
   /** Carrying files the violation names. */
   fileCount: number;
-  /** Of those, the files with git readings — the ones `score` averages. */
+  /** Of those, the files with git readings — the ones `score` is over. */
   measuredFileCount: number;
   /** The costliest carrying file and the signals behind its cost. */
   hottestFile: ArchitectureFileMaintenanceCost;

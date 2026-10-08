@@ -123,10 +123,12 @@ import {
 } from "./architecture-facts.js";
 import {
   architectureViolationCarrierFiles,
+  ComponentEdgeCarrierIndex,
   FileMaintenanceCostModel,
-  filesByComponent,
-  rankByMaintenanceCost,
+  maintenanceCostFamily,
+  rankFamiliesByMaintenanceCost,
   type GitFileMaintenanceSignalLookup,
+  type MaintenanceCostFamily,
 } from "./architecture-maintenance-cost.js";
 import { ontologyNonProductionPaths } from "./ontology-report-ops.js";
 import {
@@ -486,19 +488,46 @@ export class ArchitectureReportOps {
     const { production, whole } = scope;
     const { findings, facadePartition, limit, offset, domainKnot } = view;
     // Each family ranked by maintenance cost (bd tea-rags-mcp-r8hme.20)
-    // BEFORE its cap, so the cap keeps the costliest; a family's component
-    // names resolve against the partition its detector judged. A new family
-    // opts in by routing its full list through `ranked`.
-    const adoptionFiles = filesByComponent(runs.components.componentOf);
-    const domainFiles = filesByComponent(runs.layeringComponents.componentOf);
-    const ranked = (
-      family: readonly ArchitectureViolation[],
-      filesOfComponent: (component: string) => readonly RelPath[],
-    ): ArchitectureViolation[] =>
-      rankByMaintenanceCost(family, (v) => architectureViolationCarrierFiles(v, filesOfComponent), costModel).slice(
-        0,
-        limit,
-      );
+    // BEFORE its cap, so the cap keeps the costliest; a family's carriers are
+    // the files on the edges that make it (bd tea-rags-mcp-afyku), read off
+    // the partition its detector judged. Every family is scored in ONE
+    // population — the shrinkage is estimated over all of the report's
+    // violations, uncapped. A new family opts in by adding its full list to
+    // `families`.
+    const adoptionCarriers = costModel
+      ? new ComponentEdgeCarrierIndex(runs.components.componentOf, runs.components.dependencies)
+      : undefined;
+    const domainCarriers = costModel
+      ? new ComponentEdgeCarrierIndex(runs.layeringComponents.componentOf, runs.layeringComponents.dependencies)
+      : undefined;
+    const carriersIn =
+      (index: ComponentEdgeCarrierIndex | undefined) =>
+      (violation: object): RelPath[] =>
+        index ? architectureViolationCarrierFiles(violation, index) : [];
+    const family = (violations: readonly ArchitectureViolation[], index: ComponentEdgeCarrierIndex | undefined) =>
+      maintenanceCostFamily(violations, carriersIn(index));
+    const families: MaintenanceCostFamily<ArchitectureViolation>[] = [
+      family(sdpViolations(findings.sdp, UNCAPPED), adoptionCarriers),
+      family(leakViolations(findings.leaks, findings.privacy, UNCAPPED), adoptionCarriers),
+      family(silentViolations(findings.silent, UNCAPPED), adoptionCarriers),
+      // Knot mode lists the knot's findings only; a spread is not a knot member.
+      ...(runs.knotLookup ? [] : [family(shotgunSurgeryViolations(runs.shotgun, UNCAPPED), adoptionCarriers)]),
+      family(mainSequenceViolations(findings.mainSequence, UNCAPPED), adoptionCarriers),
+      family(hubLikeDependencyViolations(findings.hubLikeDependency, UNCAPPED), adoptionCarriers),
+      // Ranked on the domain findings: a knot's whole feedback-arc set and a
+      // composition cycle's every nested pair, which the listed form caps.
+      ...(findings.layering
+        ? [
+            maintenanceCostFamily(
+              findings.layering.violations,
+              carriersIn(domainCarriers),
+              toLayeringArchitectureViolation,
+            ),
+          ]
+        : []),
+      ...(runs.norms ? [family(normsViolations(runs.norms, UNCAPPED), domainCarriers)] : []),
+    ];
+    const violations = rankFamiliesByMaintenanceCost(families, costModel).flatMap((ranked) => ranked.slice(0, limit));
     return {
       ...(request.pathPattern ? { pathPattern: request.pathPattern } : {}),
       summary: {
@@ -523,17 +552,7 @@ export class ArchitectureReportOps {
         ...leakRootCauses(findings.leaks, limit),
         ...silentRootCauses(findings.silent, limit),
       ],
-      violations: [
-        ...ranked(sdpViolations(findings.sdp, UNCAPPED), adoptionFiles),
-        ...ranked(leakViolations(findings.leaks, findings.privacy, UNCAPPED), adoptionFiles),
-        ...ranked(silentViolations(findings.silent, UNCAPPED), adoptionFiles),
-        // Knot mode lists the knot's findings only; a spread is not a knot member.
-        ...(runs.knotLookup ? [] : ranked(shotgunSurgeryViolations(runs.shotgun, UNCAPPED), adoptionFiles)),
-        ...ranked(mainSequenceViolations(findings.mainSequence, UNCAPPED), adoptionFiles),
-        ...ranked(hubLikeDependencyViolations(findings.hubLikeDependency, UNCAPPED), adoptionFiles),
-        ...(findings.layering ? ranked(layeringViolations(findings.layering, UNCAPPED), domainFiles) : []),
-        ...(runs.norms ? ranked(normsViolations(runs.norms, UNCAPPED), domainFiles) : []),
-      ],
+      violations,
       // The layer map VIEW only when asked (bd tea-rags-mcp-r8hme.26) — a full
       // map never bloats an unqualified report. Same DOMAIN partition the
       // layering detector judges (bd tea-rags-mcp-r8hme.30), so its
@@ -1285,10 +1304,6 @@ function summariseLayering(report: LayeringReport, facadePartition: LayeringPart
     violationCount: summary.violationCount,
     ...(summary.scope ? { outOfScopeFindingCount: summary.scope.outOfScopeFindingCount } : {}),
   };
-}
-
-function layeringViolations(report: LayeringReport, limit: number): ArchitectureViolation[] {
-  return report.violations.slice(0, limit).map((v): ArchitectureViolation => toLayeringArchitectureViolation(v));
 }
 
 function toLayeringArchitectureViolation(v: DomainLayeringViolation): ArchitectureViolation {

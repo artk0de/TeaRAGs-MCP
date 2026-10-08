@@ -487,12 +487,17 @@ describe("architectureSectionProvider.run", () => {
     const ranked = silentOf(await architectureSectionProvider.run(context(read)));
 
     expect(ranked.map((f) => f.subject)).toEqual(["src/hot/x.ts ~ src/hot/y.ts", "src/app/a.ts ~ src/other/c.ts"]);
+    // The score is the carriers' mean cost position shrunk toward 0.5 by the
+    // spread of THIS review's findings around 0.5 (bd tea-rags-mcp-afyku): means
+    // 5/6 and 1/6 over 2 carriers each → σ²_prior = 1/9 − 1/24 = 5/72, n₀ = 6/5,
+    // so the hot pair reads 0.5 + (1/3) · 2 / (2 + 6/5).
     expect(ranked[0].maintenanceCost).toMatchObject({
-      score: 1,
+      score: 0.708,
+      meanPosition: 0.833,
       measuredFileCount: 2,
       hottestFile: { relPath: "src/hot/x.ts" },
     });
-    expect(ranked[1].maintenanceCost).toMatchObject({ score: 0 });
+    expect(ranked[1].maintenanceCost).toMatchObject({ score: 0.292 });
     expect(read).toHaveBeenCalledTimes(1);
   });
 
