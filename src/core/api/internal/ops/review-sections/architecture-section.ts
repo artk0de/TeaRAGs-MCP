@@ -555,8 +555,9 @@ export function capFindingsByFamily(
  * tea-rags-mcp-r8hme.20) — the whole-repo report's scorer and ranker, with
  * THIS review's findings as the population the shrinkage is estimated over
  * (bd tea-rags-mcp-afyku): the same carriers read the same `meanPosition` in
- * both answers, but the score is relative to the findings ranked beside it,
- * and fewer than two measured findings score 0.5. Families keep the run's
+ * both answers, but the score is relative to the findings ranked beside it:
+ * their spread is measured around the null mean 0.5 (the centre the score
+ * shrinks toward), so even a lone finding is scored by the same rule. Families keep the run's
  * order (the cap allocates by family); inside one, costliest first, untagged
  * last. No
  * wired read, or nothing to rank, returns the findings as the run listed them

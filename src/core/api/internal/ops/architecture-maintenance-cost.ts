@@ -139,25 +139,32 @@ export class FileMaintenanceCostModel {
  * The empirical-Bayes shrunken mean of a violation's carrier positions,
  * estimated over the population of violations ranked together.
  *
- * Model: a violation's true cost position is drawn around the centre with a
- * between-violation variance σ²_between; its observed mean m over n carriers
- * adds sampling noise of variance (1/12)/n — 1/12 being the variance of one
- * mid-rank position, uniform on 0…1 under the null. The posterior mean under
- * that normal–normal model is
+ * Model: a violation's true cost position is drawn around the null mean 0.5
+ * with a between-violation variance σ²_prior; its observed mean m over n
+ * carriers adds sampling noise of variance (1/12)/n — 1/12 being the variance
+ * of one mid-rank position, uniform on 0…1 under the null. The posterior mean
+ * under that normal–normal model is
  *
- *     score = 0.5 + (m − 0.5) · n / (n + n₀),   n₀ = (1/12) / σ²_between,
+ *     score = 0.5 + (m − 0.5) · n / (n + n₀),   n₀ = (1/12) / σ²_prior,
  *
  * so n₀ is the carrier count at which a violation's own mean and the centre
- * weigh equally. σ²_between is the method-of-moments estimate over the
- * population: the unbiased variance of the means minus the mean noise term,
- * E[Var(mᵢ)] = σ²_between + mean(1/(12 nᵢ)).
+ * weigh equally. σ²_prior is the method-of-moments estimate over the
+ * population, centred at the null mean 0.5 — the point the score shrinks
+ * toward, and the mean every file position averages to — NOT at the
+ * violations' own grand mean: E[(mᵢ − 0.5)²] = σ²_prior + (1/12)/nᵢ, so
  *
- * When that estimate is not positive — the means spread no more than carrier
- * noise alone predicts — no violation is evidenced to differ from the centre,
- * n₀ is infinite and every score is 0.5. Fewer than two violations leave the
- * variance undefined; they score 0.5 for the same reason (no spread is
- * evidenced), so a lone finding is never put on a scale no other answer uses.
- * The raw mean stays in `meanPosition` either way.
+ *     σ²_prior = mean((mᵢ − 0.5)²) − mean(1/(12 nᵢ)).
+ *
+ * A grand-mean centre measures only the spread AMONG violations: a population
+ * that is hot together (means ≈ 0.75, tight) reads as no spread and collapses
+ * to 0.5, though every violation sits far above the centre the score shrinks
+ * toward. A fixed centre also needs no second observation, so the estimate
+ * exists for a single violation.
+ *
+ * When that estimate is not positive — the means sit no further from the
+ * centre than carrier noise alone predicts — no violation is evidenced to
+ * differ from it, n₀ is infinite and every score is 0.5. The raw mean stays in
+ * `meanPosition` either way.
  */
 export class MaintenanceCostShrinkage {
   private constructor(
@@ -165,21 +172,18 @@ export class MaintenanceCostShrinkage {
     readonly priorFileCount: number,
   ) {}
 
-  /** The shrinkage the population's own spread supports. */
+  /** The shrinkage the population's own spread around the null mean supports. */
   static over(samples: readonly MaintenanceCostCarrierSample[]): MaintenanceCostShrinkage {
-    if (samples.length < 2) return new MaintenanceCostShrinkage(Number.POSITIVE_INFINITY);
-    let meanSum = 0;
+    if (samples.length === 0) return new MaintenanceCostShrinkage(Number.POSITIVE_INFINITY);
+    let squares = 0;
     let noiseSum = 0;
     for (const sample of samples) {
-      meanSum += sample.meanPosition;
+      squares += (sample.meanPosition - NULL_POSITION_MEAN) ** 2;
       noiseSum += NULL_POSITION_VARIANCE / sample.measuredFileCount;
     }
-    const grandMean = meanSum / samples.length;
-    let squares = 0;
-    for (const sample of samples) squares += (sample.meanPosition - grandMean) ** 2;
-    const betweenVariance = squares / (samples.length - 1) - noiseSum / samples.length;
+    const priorVariance = (squares - noiseSum) / samples.length;
     return new MaintenanceCostShrinkage(
-      betweenVariance > 0 ? NULL_POSITION_VARIANCE / betweenVariance : Number.POSITIVE_INFINITY,
+      priorVariance > 0 ? NULL_POSITION_VARIANCE / priorVariance : Number.POSITIVE_INFINITY,
     );
   }
 

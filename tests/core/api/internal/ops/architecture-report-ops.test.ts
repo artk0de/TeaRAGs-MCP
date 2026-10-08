@@ -2042,11 +2042,12 @@ describe("ArchitectureReportOps#build — maintenance cost (bd tea-rags-mcp-r8hm
     // Of 22 files, the 4 hot ones share the top mid-rank 19.5/21, the 18 cold
     // ones 8.5/21: mean 0.929 over 4 carriers. The report's six violations
     // (means 0.929 ×2, 0.667, 0.405 ×3 over 4, 4, 2, 2, 1, 6 carriers) spread
-    // by σ²_between ≈ 0.0293 past carrier noise, so n₀ ≈ 2.85 and the score
-    // is 0.5 + 0.429 · 4 / 6.85 (bd tea-rags-mcp-afyku — empirical-Bayes
-    // shrunken mean; was the Irwin–Hall percentile, before that the plain mean).
+    // by σ²_prior ≈ 0.0335 (second moment around the null mean 0.5, less
+    // carrier noise), so n₀ ≈ 2.49 and the score is 0.5 + 0.429 · 4 / 6.49
+    // (bd tea-rags-mcp-afyku — empirical-Bayes shrunken mean; was the
+    // Irwin–Hall percentile, before that the plain mean).
     expect(hottest?.maintenanceCost).toEqual({
-      score: 0.75,
+      score: 0.764,
       meanPosition: 0.929,
       fileCount: 4,
       measuredFileCount: 4,

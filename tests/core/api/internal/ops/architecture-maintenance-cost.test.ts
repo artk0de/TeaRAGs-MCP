@@ -122,10 +122,10 @@ describe("MaintenanceCostShrinkage — empirical-Bayes shrunken mean over the re
   /** A violation's carrier statistic: its mean cost position over n measured carriers. */
   const sample = (meanPosition: number, measuredFileCount: number) => ({ meanPosition, measuredFileCount });
 
-  it("estimates n₀ = (1/12) / σ²_between, σ²_between by method of moments over the violation means", () => {
-    // Means 0.2, 0.5, 0.8 over 2 carriers each: unbiased Var = 0.09, null term 1/24.
+  it("estimates n₀ = (1/12) / σ²_prior, σ²_prior by method of moments around the null mean 0.5", () => {
+    // Means 0.2, 0.5, 0.8 over 2 carriers each: mean((m − 0.5)²) = 0.06, null term 1/24.
     const shrinkage = MaintenanceCostShrinkage.over([sample(0.2, 2), sample(0.5, 2), sample(0.8, 2)]);
-    const priorFileCount = 1 / 12 / (0.09 - 1 / 24);
+    const priorFileCount = 1 / 12 / (0.06 - 1 / 24);
 
     expect(shrinkage.priorFileCount).toBeCloseTo(priorFileCount, 12);
     expect(shrinkage.scoreOf(sample(0.8, 2))).toBeCloseTo(0.5 + (0.3 * 2) / (2 + priorFileCount), 12);
@@ -158,8 +158,27 @@ describe("MaintenanceCostShrinkage — empirical-Bayes shrunken mean over the re
     for (const s of samples) expect(shrinkage.scoreOf(s)).toBe(0.5);
   });
 
-  it("scores 0.5 with fewer than two violations — a spread needs two means to exist", () => {
-    expect(MaintenanceCostShrinkage.over([sample(0.9, 3)]).scoreOf(sample(0.9, 3))).toBe(0.5);
+  it("does not collapse a population that is hot together: the spread is measured around the null centre 0.5, not around the population's own mean", () => {
+    // Means ≈ 0.75 with a tight spread: around their own mean the variance is ≈ 0, around 0.5 it is ≈ 0.0625.
+    const samples = [sample(0.74, 6), sample(0.75, 6), sample(0.76, 6), sample(0.75, 6)];
+    const shrinkage = MaintenanceCostShrinkage.over(samples);
+
+    expect(Number.isFinite(shrinkage.priorFileCount)).toBe(true);
+    for (const s of samples) expect(shrinkage.scoreOf(s)).toBeGreaterThan(0.5);
+  });
+
+  it("scores a lone strong finding by the same rule — a moment around a fixed centre exists for N = 1", () => {
+    // (0.99 - 0.5)^2 - 1/24 = 0.1984 > 0: n0 = (1/12) / 0.1984.
+    const lone = sample(0.99, 2);
+    const shrinkage = MaintenanceCostShrinkage.over([lone]);
+    const priorFileCount = 1 / 12 / (0.49 ** 2 - 1 / 24);
+
+    expect(shrinkage.priorFileCount).toBeCloseTo(priorFileCount, 12);
+    expect(shrinkage.scoreOf(lone)).toBeGreaterThan(0.5);
+    expect(shrinkage.scoreOf(lone)).toBeCloseTo(0.5 + (0.49 * 2) / (2 + priorFileCount), 12);
+  });
+
+  it("leaves no evidence without a violation — an empty population shrinks everything to the centre", () => {
     expect(MaintenanceCostShrinkage.over([]).priorFileCount).toBe(Number.POSITIVE_INFINITY);
   });
 });
@@ -196,8 +215,9 @@ describe("rankByMaintenanceCost", () => {
     const ranked = rankByMaintenanceCost(items, (i) => i.files, new FileMaintenanceCostModel(corpus()));
 
     expect(ranked.map((i) => i.id)).toEqual(["hot", "warm", "cold", "alsoCold", "unmeasured"]);
-    // Means 1, 2/3, 1/6, 1/6 over one carrier: Var 1/6, null 1/12 → n₀ = 1, so hot reads 0.5 + 0.5 / 2.
-    expect(ranked[0].maintenanceCost?.score).toBe(0.75);
+    // Means 1, 2/3, 1/6, 1/6 over one carrier: mean((m − 0.5)²) = 1/8, null 1/12 → σ²_prior = 1/24, n₀ = 2,
+    // so hot reads 0.5 + 0.5 / 3.
+    expect(ranked[0].maintenanceCost?.score).toBe(0.667);
     expect(ranked[4]).not.toHaveProperty("maintenanceCost");
   });
 
@@ -249,10 +269,10 @@ describe("rankByMaintenanceCost", () => {
     );
 
     expect(rankedSdp.map((i) => i.id)).toEqual(["sdpHot", "sdpCold"]);
-    // Alone, the knot would have no population to spread against and read 0.5;
-    // in the report's population it keeps its own mean.
+    // In the report's population the knot keeps its own mean; alone it is scored
+    // by the same rule against the centre — 7579 carriers barely shrink 0.51.
     expect(rankedKnots[0].maintenanceCost?.score).toBeCloseTo(0.51, 2);
-    expect(rankByMaintenanceCost(knots, (i) => i.files, model)[0].maintenanceCost?.score).toBe(0.5);
+    expect(rankByMaintenanceCost(knots, (i) => i.files, model)[0].maintenanceCost?.score).toBe(0.509);
   });
 
   it("leaves the list untouched without a model — the git trajectory is unavailable", () => {
