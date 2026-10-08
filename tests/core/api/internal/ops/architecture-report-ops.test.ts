@@ -952,6 +952,143 @@ describe("ArchitectureReportOps#build — splitMerge (bd tea-rags-mcp-c3v6o)", (
   });
 });
 
+describe("ArchitectureReportOps#build — shotgunSurgery (bd tea-rags-mcp-r8hme.50)", () => {
+  /**
+   * The default `graph()` partition: app, users and other share no import and
+   * no neighbour. Three changes each touch all three; twenty more touch one
+   * component of their own — the spread recurs far beyond what the three
+   * components' change counts predict.
+   */
+  function shotgunBundles(): ReadonlyMap<number, readonly string[]> {
+    return new Map([
+      ...Array.from({ length: 10 }, (_, id) => [id, ["vendor/v.ts"]] as const),
+      ...Array.from({ length: 10 }, (_, i) => [10 + i, ["core/b.ts"]] as const),
+      ...Array.from({ length: 3 }, (_, i) => [20 + i, ["app/c1.ts", "users/u1.ts", "other/o.ts"]] as const),
+    ]);
+  }
+
+  it("lists a recurring unlinked wide spread with its drill-down and summarises the run", async () => {
+    const cochange: TemporalCochangeGraph = { ...cochangeGraph(), edges: [], bundles: shotgunBundles() };
+    const report = await new ArchitectureReportOps().build(graphDb(graph(), [], cochange), {});
+
+    expect(report.summary.shotgunSurgery).toMatchObject({
+      built: true,
+      head: "abc123",
+      unitCount: 23,
+      wideUnitCount: 3,
+      widthThreshold: 3,
+      admittedSetCount: 1,
+      violationCount: 1,
+      explainedCount: 0,
+      sharedNeighbourThresholdMethod: "none",
+    });
+    const findings = report.violations.filter((v) => v.detector === "shotgunSurgery");
+    expect(findings).toEqual([
+      expect.objectContaining({
+        detector: "shotgunSurgery",
+        components: ["app", "other", "users"],
+        evidence: expect.objectContaining({
+          support: 3,
+          islands: [["app"], ["other"], ["users"]],
+          exemplarFiles: ["app/c1.ts", "other/o.ts", "users/u1.ts"],
+          drillDown: expect.objectContaining({
+            tool: "find_co_changed",
+            files: ["app/c1.ts", "other/o.ts", "users/u1.ts"],
+          }),
+        }),
+      }),
+    ]);
+  });
+
+  it("joins a burst's commits naming one task into one change and exposes what an agent explains it from (09c4m)", async () => {
+    // Each spread is split over two commits of one burst, both naming the task.
+    const bundles = new Map<number, readonly string[]>([
+      ...[...shotgunBundles()].filter(([id]) => id < 20),
+      ...[0, 1, 2].flatMap((b) => [
+        [20 + 2 * b, ["app/c1.ts", "users/u1.ts"]] as const,
+        [21 + 2 * b, ["other/o.ts"]] as const,
+      ]),
+    ]);
+    const bundleBursts = new Map([...bundles.keys()].map((id) => [id, id < 20 ? id : 20 + Math.floor((id - 20) / 2)]));
+    const bundleCommits = new Map([...bundles.keys()].map((id) => [id, [`c${id}`]]));
+    const bundleTaskIds = new Map([...bundles.keys()].map((id) => [id, id < 20 ? [] : [`TD-${bundleBursts.get(id)}`]]));
+    const cochange: TemporalCochangeGraph = {
+      ...cochangeGraph(),
+      edges: [],
+      bundles,
+      bundleBursts,
+      bundleCommits,
+      bundleTaskIds,
+    };
+
+    const report = await new ArchitectureReportOps().build(graphDb(graph(), [], cochange), {});
+
+    const spread = report.violations.find((v) => v.detector === "shotgunSurgery");
+    expect(spread).toMatchObject({
+      components: ["app", "other", "users"],
+      evidence: {
+        support: 3,
+        carrierFiles: [["app/c1.ts"], ["other/o.ts"], ["users/u1.ts"]],
+        sampleCommits: ["c25", "c23", "c21"],
+        sampleChanges: [
+          ["c25", "c24"],
+          ["c23", "c22"],
+          ["c21", "c20"],
+        ],
+      },
+    });
+  });
+
+  it("ranks the spread by the maintenance cost of its exemplar files", async () => {
+    const cochange: TemporalCochangeGraph = { ...cochangeGraph(), edges: [], bundles: shotgunBundles() };
+    const signals = vi.fn(
+      async () =>
+        new Map(
+          graph().files.map((f) => [
+            f.relPath,
+            f.relPath === "app/c1.ts"
+              ? { commitCount: 40, bugFixRate: 50, ageDays: 1 }
+              : { commitCount: 1, bugFixRate: 0, ageDays: 300 },
+          ]),
+        ),
+    );
+
+    const report = await new ArchitectureReportOps().build(
+      graphDb(graph(), [], cochange),
+      {},
+      undefined,
+      undefined,
+      signals,
+    );
+
+    const spread = report.violations.find((v) => v.detector === "shotgunSurgery");
+    expect(spread?.maintenanceCost).toMatchObject({
+      fileCount: 3,
+      hottestFile: { relPath: "app/c1.ts", commitCount: 40 },
+    });
+  });
+
+  it("omits the spreads in knot mode", async () => {
+    const cochange: TemporalCochangeGraph = { ...cochangeGraph(), edges: [], bundles: shotgunBundles() };
+    const plain = await new ArchitectureReportOps().build(graphDb(graph(), [], cochange), {});
+    expect(plain.violations.some((v) => v.detector === "shotgunSurgery")).toBe(true);
+
+    const knot = await new ArchitectureReportOps().build(graphDb(graph(), [], cochange), { knotOf: "lib" });
+    expect(knot.violations.some((v) => v.detector === "shotgunSurgery")).toBe(false);
+  });
+
+  it("degrades to built:false with the split/merge reasons", async () => {
+    const emptyTable = (
+      await new ArchitectureReportOps().build(graphDb(graph(), [], { ...cochangeGraph(), bundles: new Map() }), {})
+    ).summary.shotgunSurgery;
+    expect(emptyTable).toEqual({ built: false, reason: "noBundleMembership", head: "abc123", builtAt: 1_700_000_100 });
+
+    const noBuild = (await new ArchitectureReportOps().build(graphDb(), {})).summary.shotgunSurgery;
+    expect(noBuild).toEqual({ built: false, reason: "noCochangeBuild" });
+    expect(ArchitectureReportOps.empty({}).summary.shotgunSurgery).toEqual({ built: false, reason: "noCochangeBuild" });
+  });
+});
+
 /**
  * bd tea-rags-mcp-r8hme.13: a co-change pair a SPECIFIC shared neighbour
  * explains leaves the violations and is counted under `excluded`, with the

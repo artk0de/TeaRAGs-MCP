@@ -67,6 +67,8 @@ export interface CochangeGraphExtraction {
    * renumbered densely from 0 in extraction order (bd tea-rags-mcp-3vg0x).
    */
   admittedBundleBursts: readonly number[];
+  /** Each admitted bundle's commit-message task ids, aligned with `admittedBundles`; `[]` = none (bd tea-rags-mcp-09c4m). */
+  admittedBundleTaskIds: readonly (readonly string[])[];
 }
 
 /** Up to this many sample SHAs per stored pair. */
@@ -191,6 +193,7 @@ export function extractCochangeGraph(
     admittedBundles: bundleIds.map((ids) => ids.map((id) => paths[id])),
     admittedBundleCommits: admitted.map((bundle) => bundle.shas),
     admittedBundleBursts: bundleBursts,
+    admittedBundleTaskIds: admitted.map((bundle) => bundle.taskIds ?? []),
   };
 }
 

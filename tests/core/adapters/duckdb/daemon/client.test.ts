@@ -1105,6 +1105,10 @@ describe("DaemonGraphDbClient — readTemporalCochangeGraph", () => {
               [0, 0],
               [1, 0],
             ],
+            bundleTaskIds: [
+              [0, ["TD-1"]],
+              [1, []],
+            ],
           }
         : null;
     });
@@ -1129,6 +1133,10 @@ describe("DaemonGraphDbClient — readTemporalCochangeGraph", () => {
         [0, 0],
         [1, 0],
       ]),
+      bundleTaskIds: new Map([
+        [0, ["TD-1"]],
+        [1, []],
+      ]),
     });
     expect(seen.find((r) => r.op === "readTemporalCochangeGraph")?.params).toMatchObject({ collection: "code_x_v1" });
   });
@@ -1148,5 +1156,6 @@ describe("DaemonGraphDbClient — readTemporalCochangeGraph", () => {
     expect(graph).not.toHaveProperty("bundles");
     expect(graph).not.toHaveProperty("bundleCommits");
     expect(graph).not.toHaveProperty("bundleBursts");
+    expect(graph).not.toHaveProperty("bundleTaskIds");
   });
 });

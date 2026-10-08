@@ -20,7 +20,7 @@
 
 import type { CommitInfo } from "../../../../../adapters/vcs/types.js";
 import type { RelPath } from "../../../../../contracts/types/codegraph.js";
-import { partitionIntoAuthorSessions } from "../../../git/index.js";
+import { extractTaskIds, partitionIntoAuthorSessions } from "../../../git/index.js";
 
 /** One scoped commit: the files it touched, as project-relative HEAD paths, each once. */
 export interface CochangeCommit {
@@ -38,6 +38,12 @@ export interface CochangeBundle {
   files: RelPath[];
   /** Author-burst id: bundles sharing it count a file or a pair once. Opaque, unique per burst. */
   burst: number;
+  /**
+   * The task ids the commit's message names — the git trajectory's
+   * `extractTaskIds`, the same reader behind `git.*.taskIds` (bd
+   * tea-rags-mcp-09c4m). Absent = the message was not read.
+   */
+  taskIds?: string[];
 }
 
 /**
@@ -55,6 +61,7 @@ export function bundleCochangeCommits(
       timestamp: m.commit.timestamp,
       files: [...new Set(m.files)].sort(compareCodePoints),
       burst,
+      taskIds: extractTaskIds(m.commit.body),
     })),
   );
   return bundles.sort((a, b) => a.timestamp - b.timestamp || compareCodePoints(a.shas[0], b.shas[0]));

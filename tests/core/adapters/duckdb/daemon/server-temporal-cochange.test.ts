@@ -67,6 +67,7 @@ const SNAPSHOT: TemporalCochangeSnapshot = {
   bundles: [["a.ts", "b.yml"]],
   bundleCommits: [["s2"]],
   bundleBursts: [0],
+  bundleTaskIds: [["TD-1"]],
 };
 
 describe("CodegraphDaemonServer.handle — temporal co-change ops", () => {
@@ -97,6 +98,7 @@ describe("CodegraphDaemonServer.handle — temporal co-change ops", () => {
       bundles: [[0, ["a.ts", "b.yml"]]],
       bundleCommits: [[0, ["s2"]]],
       bundleBursts: [[0, 0]],
+      bundleTaskIds: [[0, ["TD-1"]]],
     });
     expect((bundleFiles as { result: unknown }).result).toEqual([[0, ["a.ts", "b.yml"]]]);
     await pool.closeAll();

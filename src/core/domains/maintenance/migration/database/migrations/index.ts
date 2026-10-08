@@ -47,6 +47,7 @@ import { SQL_041_CG_TEMPORAL_SYMBOL_COMMITS } from "./041-cg-temporal-symbol-com
 import { SQL_042_CG_TEMPORAL_BUNDLE_FILES } from "./042-cg-temporal-bundle-files.js";
 import { SQL_043_CG_TEMPORAL_BUNDLE_COMMITS } from "./043-cg-temporal-bundle-commits.js";
 import { SQL_044_CG_TEMPORAL_BURSTS } from "./044-cg-temporal-bursts.js";
+import { SQL_045_CG_TEMPORAL_BUNDLE_TASK_IDS } from "./045-cg-temporal-bundle-task-ids.js";
 
 export interface DatabaseMigration {
   filename: string;
@@ -98,4 +99,5 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "042-cg-temporal-bundle-files.sql", sql: SQL_042_CG_TEMPORAL_BUNDLE_FILES },
   { filename: "043-cg-temporal-bundle-commits.sql", sql: SQL_043_CG_TEMPORAL_BUNDLE_COMMITS },
   { filename: "044-cg-temporal-bursts.sql", sql: SQL_044_CG_TEMPORAL_BURSTS },
+  { filename: "045-cg-temporal-bundle-task-ids.sql", sql: SQL_045_CG_TEMPORAL_BUNDLE_TASK_IDS },
 ];

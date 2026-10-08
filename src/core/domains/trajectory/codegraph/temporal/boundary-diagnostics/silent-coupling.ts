@@ -252,12 +252,12 @@ export function detectSilentCoupling(
  * weighs ln(N/2); a kernel most files import weighs near 0, so sharing it
  * explains nothing.
  */
-class SilentCouplingNeighbourIndex {
+export class SilentCouplingNeighbourIndex {
   private readonly imports = new Map<RelPath, Set<RelPath>>();
   private readonly importers = new Map<RelPath, Set<RelPath>>();
 
   constructor(
-    edges: readonly FileDependencyEdge[],
+    edges: readonly Pick<FileDependencyEdge, "sourceRelPath" | "targetRelPath">[],
     private readonly walkedFileCount: number,
   ) {
     for (const { sourceRelPath, targetRelPath } of edges) {

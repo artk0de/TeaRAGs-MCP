@@ -823,6 +823,7 @@ export type ArchitectureViolation = (
   | LeakingAbstractionArchitectureViolation
   | SilentCouplingArchitectureViolation
   | SilentCouplingGroupArchitectureViolation
+  | ShotgunSurgeryArchitectureViolation
   | MainSequenceArchitectureViolation
   | HubLikeDependencyArchitectureViolation
   | LayeringArchitectureViolation
@@ -1321,6 +1322,95 @@ export interface SplitMergeReportSummary {
   verdicts?: SplitMergeVerdictsSummary;
 }
 
+/** Why a `shotgunSurgery` block is not built — the split/merge block's reasons: the same substrate. */
+export type ShotgunSurgeryAbsentReason = SplitMergeAbsentReason;
+
+/**
+ * One recurring wide spread (bd tea-rags-mcp-r8hme.50): the changes (author
+ * bursts) that touched every one of `components`, beyond what the
+ * component-level configuration null predicts, with no structural link
+ * joining all of them. Silent coupling's N-way sibling — a pair finding is
+ * file-level, a merge candidate is two components; this is one change's
+ * fan-out.
+ */
+export interface ShotgunSurgeryArchitectureViolation {
+  detector: "shotgunSurgery";
+  /** The spread's components, code-point order. */
+  components: string[];
+  subject: string;
+  evidence: {
+    /** Author bursts with a commit that held the whole spread — each burst once. */
+    support: number;
+    /** λ the null predicts from the components' burst counts and the commits' widths, 3 decimals. */
+    expectedSupport: number;
+    /** Wilson lower bound of support over the least- / most-changed component's changes (larger), 3 decimals. */
+    strength: number;
+    /** Bursts touching each component, aligned with `components`. */
+    componentChanges: number[];
+    /** Structurally connected groups (dependency or specific shared neighbour), largest first; always ≥ 2. */
+    islands: string[][];
+    /** Per component (aligned) the file the supporting commits touched most. */
+    exemplarFiles: RelPath[];
+    /**
+     * Per component (aligned) the files the supporting changes touched there,
+     * most-touched first (≤ 5) — what an agent explaining the spread reads
+     * (`find_symbol`) and searches across (`find_similar` pathPattern).
+     */
+    carrierFiles: RelPath[][];
+    /** Commits that held the spread, one per supporting burst, most recent first (≤ 5). */
+    sampleCommits: string[];
+    /**
+     * The logical change behind each sample commit (aligned): every commit of
+     * the burst's change that held the spread — commits joined by a shared
+     * task id, a common edited file or a file dependency edge (bd
+     * tea-rags-mcp-09c4m) — most recent first.
+     */
+    sampleChanges: string[][];
+    /** `find_co_changed` over the exemplar files — the file-level partners behind the spread. */
+    drillDown: SilentCouplingGroupDrillDown;
+  };
+}
+
+/** The shotgun-surgery block (bd tea-rags-mcp-r8hme.50), beside `splitMerge` in the summary. */
+export interface ShotgunSurgeryReportSummary {
+  /** `false` = no co-change build or no persisted bundle membership — absence of verdicts, not clean. */
+  built: boolean;
+  /** Present only when not built. */
+  reason?: ShotgunSurgeryAbsentReason;
+  head?: string;
+  builtAt?: number;
+  /** Author bursts touching ≥ 1 partitioned component — the support unit: a burst counts once, and only when one of its commits held the whole set. */
+  burstCount?: number;
+  /** Per-commit component sets, identical sets of one burst once — the width model's population. */
+  unitCount?: number;
+  /** Per-commit sets spanning ≥ `widthThreshold` components. */
+  wideUnitCount?: number;
+  /** k: the narrowest spread judged — Otsu over per-commit widths, never below 3. */
+  widthThreshold?: number;
+  widthThresholdMethod?: "otsu" | "floor";
+  /** η of the width split, 3 decimals; absent when no split was tried. */
+  widthSeparability?: number;
+  /** k-sets (exactly k components) wide commits of ≥ 2 bursts held whole — the tested sets. */
+  candidateSetCount?: number;
+  /** BH family C(n, k): every set of exactly k components among the n changed in ≥ 2 bursts. */
+  familySize?: number;
+  q?: number;
+  /** k-sets BH rejected at q. */
+  admittedSetCount?: number;
+  /** Maximal spreads the admitted k-sets merge into (k-sets held by the same commits are one spread). */
+  spreadCount?: number;
+  /** Spreads one structural island explains. */
+  explainedCount?: number;
+  /** Unexplained spreads, before `limit`. */
+  violationCount?: number;
+  /** Otsu cut on shared-neighbour weight ln(N / fanIn) over the component graph, 3 decimals. */
+  sharedNeighbourThreshold?: number;
+  /** `none` = no Otsu cut was drawn; only direct dependencies explain. */
+  sharedNeighbourThresholdMethod?: "otsu" | "none";
+  /** Unexplained spreads with no exemplar file matching `pathPattern`; present only when scoped. */
+  outOfScopeSetCount?: number;
+}
+
 /** How the volatility cut on the zone of pain was drawn. */
 export interface MainSequenceVolatilityReportSummary {
   /** The per-file reading a component's volatility averages. */
@@ -1476,6 +1566,7 @@ export interface ArchitectureReportSummary {
   leakingAbstraction: LeakingAbstractionReportSummary;
   silentCoupling: SilentCouplingReportSummary;
   splitMerge: SplitMergeReportSummary;
+  shotgunSurgery: ShotgunSurgeryReportSummary;
   mainSequence: MainSequenceReportSummary;
   hubLikeDependency: HubLikeDependencyReportSummary;
   propagationCost: PropagationCostReportSummary;

@@ -62,7 +62,8 @@ export const TEMPORAL_COCHANGE_MAX_PARTNERS_PER_FILE = 20;
  * Bump when the extraction semantics change, so every stored graph rebuilds.
  * Once per release: 2 covers both per-bundle commit ids (bd
  * tea-rags-mcp-89k7k.1.14) and per-commit bundles with author-burst dedup (bd
- * tea-rags-mcp-3vg0x), which shipped in the same release.
+ * tea-rags-mcp-3vg0x) and each bundle's commit-message task ids (bd
+ * tea-rags-mcp-09c4m), which ship in the same release.
  */
 const COCHANGE_ALGORITHM_REVISION = 2;
 
@@ -222,6 +223,7 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
       bundles: graph.admittedBundles,
       bundleCommits: graph.admittedBundleCommits,
       bundleBursts: graph.admittedBundleBursts,
+      bundleTaskIds: graph.admittedBundleTaskIds,
     });
     await this.flushSymbolCommits(graphDb, live, projectPrefix);
     const t4 = this.now();

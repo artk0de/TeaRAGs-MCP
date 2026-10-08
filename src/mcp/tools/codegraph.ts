@@ -441,7 +441,11 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "changesA/B = bundles touching each, strength = Wilson lower bound of support/changes, same " +
       ">0.5 + Otsu cut, ONE draw over internal-pair and component-pair strengths); excluded counts " +
       "unpartitionedEndpoints / crossComponentPairs; summary.splitMerge.built false = no co-change build or " +
-      "no persisted bundle membership (pre-042 index), not clean. mainSequence " +
+      "no persisted bundle membership (pre-042 index), not clean. shotgunSurgery: " +
+      "one change (author burst) spanning >=k components (k = Otsu over burst widths, >=3), recurring beyond a " +
+      "component-level configuration null (fitted inclusion propensity, Poisson tail, BH q=0.05), components in >=2 " +
+      "structural islands (no dependency or specific shared neighbour); evidence support, expectedSupport, strength, " +
+      "islands, exemplarFiles, drillDown = find_co_changed; built false = same reasons as splitMerge. mainSequence " +
       "(Stable Abstractions Principle): component far from A+I=1 — pain = stable+concrete, uselessness = " +
       "unstable+abstract; A from walker type census, D > max(0.5, Otsu cut); components whose language " +
       "rarely declares abstractions excluded (unobservableAbstractness); census needs codegraph recompute; pain " +

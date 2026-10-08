@@ -30,6 +30,7 @@ Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
 4. Phase 3 — residual violations, judged by evidence
 5. Phase 3b — LEAKING ABSTRACTION (`detector: "leakingAbstraction"`)
 6. Phase 3c — SILENT COUPLING (`detector: "silentCoupling"`)
+   - Phase 3c2 — SHOTGUN SURGERY (`detector: "shotgunSurgery"`)
 7. Phase 3d — MAIN SEQUENCE (`detector: "mainSequence"`), then 3d2 — HUB-LIKE
    DEPENDENCY (`detector: "hubLikeDependency"`)
 8. Phase 3e — LAYERING (`detector: "layering"`)
@@ -277,6 +278,70 @@ walked at walker ≥ 4 — a pair joined only by `import type` reads
 structurallyLinked and does not surface; an index walked before that change may
 still miss the edge, so check before claiming "no link".
 
+## Phase 3c2 — SHOTGUN SURGERY
+
+`detector: "shotgunSurgery"`, SAME components as SDP. ONE logical change
+reaching into ≥ k components, spread recurring beyond chance, components in ≥ 2
+structural islands. Logical change = burst's commits joined by shared task id
+(commit message) ONLY; else one commit. Shared files and dependency edges never
+join (hub files chain whole bursts). Burst supports k-set only if ONE change
+held all k; each burst once. Burst union never unit (parallel sessions chain
+unrelated commits). Silent coupling's N-way sibling: pair = file level, MERGE =
+two components, this = one change's fan-out. Never filtered by file type or hub
+size. Knot mode omits it.
+
+| Summary field (`summary.shotgunSurgery`)  | Read as                                                                                                              |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `built`                                   | `false` = no co-change build / no bundle membership (`reason`, same as splitMerge) → NOT judged, never report "none" |
+| `widthThreshold` / `widthThresholdMethod` | k = narrowest spread judged; `otsu` = majority-floored Otsu over per-commit widths, `floor` = 3 (never below 3)      |
+| `burstCount`                              | bursts touching a component — support unit (once per burst)                                                          |
+| `unitCount` / `wideUnitCount`             | per-commit component sets (same set in one burst once) / those spanning ≥ k — few wide = little evidence             |
+| `familySize` / `q`                        | BH family C(n, k): every set of exactly k components among n changed in ≥ 2 bursts; FDR q — multiple-testing price   |
+| `candidateSetCount` / `admittedSetCount`  | k-sets wide commits of ≥ 2 bursts held whole (tested) / k-sets passing BH over the null                              |
+| `spreadCount`                             | maximal spreads admitted k-sets merge into: closure = components EVERY holding commit touched; support = k-set's     |
+| `explainedCount`                          | spreads dropped: one structural island (dependency or specific neighbour) explains                                   |
+| `outOfScopeSetCount`                      | scoped only: unexplained spreads with no exemplar file in `pathPattern`                                              |
+
+Evidence per line:
+
+| Evidence                      | Read as                                                                                                            |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `support` / `expectedSupport` | bursts with a commit holding whole spread vs λ null predicts (burst degrees + commit widths); `support` ≫ λ = real |
+| `strength`                    | Wilson lower bound of support over component changes                                                               |
+| `islands`                     | structurally connected groups (≥ 2) — where the missing link would go                                              |
+| `exemplarFiles`               | per component the file the holding commits touched most                                                            |
+| `carrierFiles`                | per component (aligned) files the holding changes touched, most-touched first (≤ 5) — recipe input                 |
+| `sampleCommits`               | shas to cite — latest commit of each holding change, one per supporting burst                                      |
+| `sampleChanges`               | per sample (aligned) every sha of that logical change — `git show` them to see what one change edited              |
+| `drillDown.hint`              | run verbatim (`find_co_changed`) for file-level partners                                                           |
+
+Explain EVERY reported spread before recommending (server judges recurrence, not
+meaning — semantics is agent's job). Recipe, per spread:
+
+1. Changed symbols: per component,
+   `find_symbol(relativePath: <carrierFiles[i][0]>)` → outline; pick a member
+   `sampleChanges[0]` edited (`git show <sha> -- <file>` when unclear);
+   `find_symbol(symbol: <member>, metaOnly: true)` → its chunk `id` (row whose
+   `relativePath` matches).
+2. Cross-component similarity:
+   `find_similar(positiveIds: [<id>], pathPattern: "{<B carrierFiles, comma-joined>}", limit: 3, metaOnly: true)`
+   → cross score. Baseline: same call, `pathPattern` = A's OTHER carrier files →
+   within score. Cross ≥ within = candidate duplicate; then `find_symbol` both
+   top hits and READ them — same logic under different names confirms, same
+   vocabulary only does not. Repeat per island pair.
+3. Classify:
+
+| Verdict                 | Evidence                                                                                                                                                   | Report as                                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `duplicatedConcept`     | step 2 cross ≥ within AND reading confirms same logic, same role                                                                                           | TRUE shotgun — quote BOTH fragments (path:line); fix Move Method / Extract Module              |
+| `featureSlice`          | no cross-component hit; components carry different architectural roles (`get_architecture_report` dependency-norms roles, or layer map levels)             | expected coupling of a vertical feature — deprioritise, no refactor                            |
+| `crossLanguageContract` | components in different languages share field / key identifiers (`get_naming_lexicon` names[] per component, or `hybrid_search` on the shared identifiers) | real implicit contract — recommend shared schema / codegen; cite the identifiers on both sides |
+
+No verdict fits → report raw with evidence, say "unexplained", never guess. Fix
+direction (`duplicatedConcept`): one owner for the reason to change — collapse
+the spread behind one module / contract; `islands` show where the missing link
+would go.
+
 ## Phase 3d — MAIN SEQUENCE
 
 Stable Abstractions Principle over SAME components as SDP. A = abstract /
@@ -488,6 +553,9 @@ Threshold [adoptionThreshold] ([method], η [separability]); [activeModuleCount]
 Threshold [strengthThreshold] ([method], η [separability]); history [commitCount] commits since [windowSince] @ [head]
 | # | File A ↔ File B | Strength | Support | P(B|A) / P(A|B) | Visibility | Sample commit |
 Grouped: | # | Shared file | Partners (N) | Top 3 (support / λ / strength) | Drill (`drillDown.hint`) |
+
+## Shotgun surgery — [violationCount]; k [widthThreshold] ([widthThresholdMethod]); [wideUnitCount]/[unitCount] wide commit sets over [burstCount] bursts; admitted [admittedSetCount] k-sets of family C(n,k) [familySize] (q [q]) → [spreadCount] spreads
+| # | Components | Islands | Support / λ | Strength | Exemplar files | Sample commit | Drill (`drillDown.hint`) |
 
 ## Main sequence — [violationCount] (pain N, uselessness N); mean D [meanDistance]
 Threshold [distanceThreshold] ([method]); volatility cut [volatility.threshold] ([volatility.thresholdMethod]); judged [judgedComponentCount]; excluded: unmeasured N, unobservable N, calm N

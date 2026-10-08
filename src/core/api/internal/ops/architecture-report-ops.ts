@@ -123,6 +123,12 @@ import {
 } from "./architecture-maintenance-cost.js";
 import { ontologyNonProductionPaths } from "./ontology-report-ops.js";
 import {
+  runShotgunSurgery,
+  shotgunSurgeryViolations,
+  summariseShotgunSurgery,
+  type ShotgunSurgeryRun,
+} from "./shotgun-surgery-findings.js";
+import {
   SILENT_COUPLING_GROUP_EVIDENCE_PARTNERS,
   silentCouplingGroupDrillDown,
   silentCouplingGroupPartners,
@@ -202,6 +208,8 @@ function hasArchitectureFindings(view: ArchitectureFindingsView, runs: Architect
     findings.leaks.violations.length > 0 ||
     findings.privacy.violations.length > 0 ||
     findings.silent.violations.length > 0 ||
+    // Knot mode does not list spreads, so they rank nothing there.
+    (!runs.knotLookup && runs.shotgun.built && runs.shotgun.report.findings.length > 0) ||
     findings.mainSequence.violations.length > 0 ||
     findings.hubLikeDependency.violations.length > 0 ||
     (findings.layering?.violations.length ?? 0) > 0 ||
@@ -349,6 +357,9 @@ export class ArchitectureReportOps {
     // pairs and the split/merge verdicts' bundle membership.
     const cochange = await graphDb.readTemporalCochangeGraph();
     const silent = await detectSilentCouplingSeeingAssetImports(cochange, graph, request, readImportSpecifiers);
+    // Shotgun surgery (bd tea-rags-mcp-r8hme.50): the same bundles, over the
+    // adoption partition split/merge judges and its component graph.
+    const shotgun = runShotgunSurgery(cochange, components, request.pathPattern);
     // Inferred layering over the DOMAIN partition (bd tea-rags-mcp-r8hme.30):
     // every facade directory is a unit whether importers adopted it or not —
     // the adoption partition levels a language vertical one component per
@@ -386,6 +397,7 @@ export class ArchitectureReportOps {
       privacy,
       cochange,
       silent,
+      shotgun,
       layeringComponents,
       layeringModel,
       layering,
@@ -478,6 +490,7 @@ export class ArchitectureReportOps {
         leakingAbstraction: summariseLeaks(runs.leaks, runs.privacy, limit),
         silentCoupling: summariseSilentCoupling(runs.silent, limit),
         splitMerge: summariseSplitMerge(runs.cochange, runs.components.componentOf),
+        shotgunSurgery: summariseShotgunSurgery(runs.shotgun),
         mainSequence: summariseMainSequence(runs.mainSequence),
         hubLikeDependency: summariseHubLikeDependency(runs.hubLikeDependency),
         propagationCost: summarisePropagationCost(runs.propagationCost, limit),
@@ -492,6 +505,8 @@ export class ArchitectureReportOps {
         ...ranked(sdpViolations(findings.sdp, UNCAPPED), adoptionFiles),
         ...ranked(leakViolations(findings.leaks, findings.privacy, UNCAPPED), adoptionFiles),
         ...ranked(silentViolations(findings.silent, UNCAPPED), adoptionFiles),
+        // Knot mode lists the knot's findings only; a spread is not a knot member.
+        ...(runs.knotLookup ? [] : ranked(shotgunSurgeryViolations(runs.shotgun, UNCAPPED), adoptionFiles)),
         ...ranked(mainSequenceViolations(findings.mainSequence, UNCAPPED), adoptionFiles),
         ...ranked(hubLikeDependencyViolations(findings.hubLikeDependency, UNCAPPED), adoptionFiles),
         ...(findings.layering ? ranked(layeringViolations(findings.layering, UNCAPPED), domainFiles) : []),
@@ -570,6 +585,7 @@ export class ArchitectureReportOps {
         ),
         silentCoupling: summariseSilentCoupling(detectSilentCoupling({ meta: null, edges: [] }, []), 0),
         splitMerge: { built: false, reason: "noCochangeBuild" },
+        shotgunSurgery: { built: false, reason: "noCochangeBuild" },
         mainSequence: summariseMainSequence(
           detectMainSequenceDeviations(buildComponentGraph({ files: [], edges: [] }, []), []),
         ),
@@ -619,6 +635,8 @@ interface ArchitectureDetectorRuns {
   /** One co-change read feeds both temporal detectors: silent coupling's pairs and the split/merge verdicts' bundle membership. */
   cochange: TemporalCochangeGraph;
   silent: SilentCouplingReport;
+  /** Shotgun surgery over the same co-change read (bd tea-rags-mcp-r8hme.50). */
+  shotgun: ShotgunSurgeryRun;
   /** The DOMAIN partition the layering judges (bd tea-rags-mcp-r8hme.30) and its model — the knot view reads the same model. */
   layeringComponents: ComponentGraph;
   layeringModel: LayeringModel;
