@@ -68,7 +68,10 @@ describe("computePropagationCost", () => {
     expect(computePropagationCost(ring).largestCycleSize).toBe(3);
     const empty = computePropagationCost({ files: [], edges: [] });
     expect(empty.propagationCost).toBe(0);
-    expect(empty.corePeriphery.shape).toBe("hierarchical");
+    // No population to cut: both axes fall back to the floor, so the shape is
+    // undecided rather than hierarchical.
+    expect(empty.corePeriphery.visibilityFanIn.method).toBe("majority");
+    expect(empty.corePeriphery.shape).toBe("indeterminate");
   });
 
   it("classifies core, shared, control and peripheral files by bimodal visibility cuts", () => {
@@ -103,15 +106,31 @@ describe("computePropagationCost", () => {
     expect(corePeriphery.shape).toBe("hierarchical");
   });
 
-  it("falls back to the median cut and calls the system hierarchical when visibility is not bimodal", () => {
+  it("falls back to the median cut and calls the shape indeterminate when visibility is not bimodal", () => {
     const graph: FileDependencyGraph = {
       files: ["a.ts", "b.ts", "c.ts"].map(file),
       edges: [edge("a.ts", "b.ts"), edge("b.ts", "c.ts")],
     };
     const { corePeriphery } = computePropagationCost(graph);
-    expect(corePeriphery.shape).toBe("hierarchical");
+    expect(corePeriphery.shape).toBe("indeterminate");
     expect(corePeriphery.visibilityFanOut).toMatchObject({ method: "majority", threshold: 2 });
     expect(corePeriphery.counts).toEqual({ core: 0, shared: 1, control: 1, peripheral: 1 });
+  });
+
+  it("calls the shape indeterminate when a cut is floored even though a cyclic group clears both floors", () => {
+    // Ring a ⇄ b, a → e, c → a, plus three isolated files: 7 files, below the
+    // Otsu population, so both cuts are the median floor. The ring sits above
+    // both medians and would be a core, but a floored cut is no evidence of a
+    // core-periphery split — nor of its absence.
+    const graph: FileDependencyGraph = {
+      files: ["a.ts", "b.ts", "c.ts", "e.ts", "p1.ts", "p2.ts", "p3.ts"].map(file),
+      edges: [edge("a.ts", "b.ts"), edge("b.ts", "a.ts"), edge("a.ts", "e.ts"), edge("c.ts", "a.ts")],
+    };
+    const { corePeriphery } = computePropagationCost(graph);
+    expect(corePeriphery.visibilityFanIn.method).toBe("majority");
+    expect(corePeriphery.visibilityFanOut.method).toBe("majority");
+    expect(corePeriphery.counts.core).toBe(2);
+    expect(corePeriphery.shape).toBe("indeterminate");
   });
 
   it("breaks the cost down per component: internal closure density, system reach, core files", () => {

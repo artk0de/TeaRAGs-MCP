@@ -17,8 +17,13 @@
  *  - shared     — high fan-in only (depended on, depends on little);
  *  - control    — high fan-out only (depends on much, little depends on it);
  *  - peripheral — neither.
- * The shape is `corePeriphery` only when both cuts found a real split (Otsu,
- * not the median fallback) and a core exists; otherwise `hierarchical`.
+ * Shape (bd tea-rags-mcp-j9kjf):
+ *  - indeterminate — either cut fell back to its median floor (Otsu's eta below
+ *                    the separability gate, or too few files): the visibility
+ *                    distribution gives no evidence of a split, so neither a
+ *                    core-periphery nor a hierarchical reading is supported;
+ *  - corePeriphery — both cuts are Otsu and a core exists;
+ *  - hierarchical  — both cuts are Otsu and no core exists.
  *
  * Cost: one exact closure via {@link transitiveVisibility} — SCC condensation
  * plus bitset rows — and one per component over its induced sub-graph.
@@ -47,6 +52,8 @@ interface PropagationCostComponent {
   coreFileCount: number;
 }
 
+type PropagationCostShape = "corePeriphery" | "hierarchical" | "indeterminate";
+
 interface PropagationCostReport {
   fileCount: number;
   /** Distinct file → file dependencies between walked files, self-edges excluded. */
@@ -56,7 +63,7 @@ interface PropagationCostReport {
   /** Largest dependency cycle, in files (1 when acyclic, 0 when empty). */
   largestCycleSize: number;
   corePeriphery: {
-    shape: "corePeriphery" | "hierarchical";
+    shape: PropagationCostShape;
     /** core / N. */
     coreShare: number;
     counts: { core: number; shared: number; control: number; peripheral: number };
@@ -110,14 +117,13 @@ export function computePropagationCost(
     if (cls === "acyclicHighVisibility") acyclicHighVisibilityFileCount++;
     else counts[cls]++;
   }
-  const bothBimodal = fanInCut.summary.method === "otsu" && fanOutCut.summary.method === "otsu";
   return {
     fileCount,
     edgeCount,
     propagationCost: closureDensity(visibility.reachablePairCount, fileCount),
     largestCycleSize: visibility.largestSccSize,
     corePeriphery: {
-      shape: bothBimodal && counts.core > 0 ? "corePeriphery" : "hierarchical",
+      shape: propagationCostShape(fanInCut.summary, fanOutCut.summary, counts.core),
       coreShare: fileCount === 0 ? 0 : counts.core / fileCount,
       counts,
       acyclicHighVisibilityFileCount,
@@ -128,6 +134,16 @@ export function computePropagationCost(
       ? componentBreakdown(adjacency, options.componentOf, visibility.fanIn, classOf)
       : [],
   };
+}
+
+/** A floored cut is no evidence either way; only two Otsu cuts let the core decide. */
+function propagationCostShape(
+  fanIn: PropagationCostVisibilityCut,
+  fanOut: PropagationCostVisibilityCut,
+  coreFileCount: number,
+): PropagationCostShape {
+  if (fanIn.method === "majority" || fanOut.method === "majority") return "indeterminate";
+  return coreFileCount > 0 ? "corePeriphery" : "hierarchical";
 }
 
 /** Deduplicated walked-file adjacency: no self-edges, no edge to a file outside the graph. */

@@ -2219,11 +2219,11 @@ describe("ArchitectureReportOps#build — propagationCost (bd tea-rags-mcp-r8hme
     expect(capped.summary.propagationCost.componentCount).toBe(summary.componentCount);
   });
 
-  it("reports an empty, hierarchical propagation-cost summary for an empty report", () => {
+  it("reports an empty, indeterminate propagation-cost summary for an empty report", () => {
     expect(ArchitectureReportOps.empty({}).summary.propagationCost).toMatchObject({
       fileCount: 0,
       propagationCost: 0,
-      corePeriphery: { shape: "hierarchical", coreShare: 0 },
+      corePeriphery: { shape: "indeterminate", coreShare: 0 },
       componentCount: 0,
       components: [],
     });
