@@ -34,6 +34,7 @@ import {
   buildLayerMap,
   COMPONENT_CONTAINMENT_REASON,
   computeDependencyNorms,
+  computePropagationCost,
   CONVENTION_PRIVACY_LANGUAGES,
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   DEFAULT_SDP_TOLERANCE,
@@ -99,6 +100,7 @@ import type {
   LeakingAbstractionReportSummary,
   MainSequenceReportSummary,
   NormArchitectureViolation,
+  PropagationCostReportSummary,
   SilentCouplingArchitectureViolation,
   SilentCouplingGroupArchitectureViolation,
   SilentCouplingReportSummary,
@@ -319,6 +321,9 @@ export class ArchitectureReportOps {
             fileVolatility: await commitCounts(),
           })
         : ungatedHubs;
+    // An aggregate over the same graph and partition (bd tea-rags-mcp-r8hme.49),
+    // not a violation family: nothing in it is ranked or capped by finding.
+    const propagationCost = computePropagationCost(graph, { componentOf: components.componentOf });
     const memberEdges = await graphDb.readNonPublicMemberEdges([...CONVENTION_PRIVACY_LANGUAGES]);
     // Domain mode keeps convention-privacy judgement inside the border too:
     // a member edge reaching outside is the domain USING the system, not a
@@ -377,6 +382,7 @@ export class ArchitectureReportOps {
       sdp,
       mainSequence,
       hubLikeDependency,
+      propagationCost,
       privacy,
       cochange,
       silent,
@@ -474,6 +480,7 @@ export class ArchitectureReportOps {
         splitMerge: summariseSplitMerge(runs.cochange, runs.components.componentOf),
         mainSequence: summariseMainSequence(runs.mainSequence),
         hubLikeDependency: summariseHubLikeDependency(runs.hubLikeDependency),
+        propagationCost: summarisePropagationCost(runs.propagationCost, limit),
         layering: summariseLayering(runs.layering, facadePartition),
       },
       rootCauses: [
@@ -569,6 +576,7 @@ export class ArchitectureReportOps {
         hubLikeDependency: summariseHubLikeDependency(
           detectHubLikeDependencies(buildComponentGraph({ files: [], edges: [] }, [])),
         ),
+        propagationCost: summarisePropagationCost(computePropagationCost({ files: [], edges: [] }), 0),
         layering: summariseLayering(detectLayeringViolations(buildComponentGraph({ files: [], edges: [] }, []), []), {
           componentCount: 0,
           levelCount: 0,
@@ -605,6 +613,8 @@ interface ArchitectureDetectorRuns {
   sdp: ComponentStableDependenciesReport;
   mainSequence: MainSequenceReport;
   hubLikeDependency: HubLikeDependencyReport;
+  /** MacCormack propagation cost over the same graph, broken down by the same partition (bd tea-rags-mcp-r8hme.49). */
+  propagationCost: ReturnType<typeof computePropagationCost>;
   privacy: ConventionPrivacyReport;
   /** One co-change read feeds both temporal detectors: silent coupling's pairs and the split/merge verdicts' bundle membership. */
   cochange: TemporalCochangeGraph;
@@ -1514,6 +1524,15 @@ function mainSequenceViolations(report: MainSequenceReport, limit: number): Arch
       },
     }),
   );
+}
+
+/** The whole aggregate, with the component breakdown — already ordered by reach — capped at `limit`. */
+function summarisePropagationCost(
+  report: ReturnType<typeof computePropagationCost>,
+  limit: number,
+): PropagationCostReportSummary {
+  const { components, ...aggregate } = report;
+  return { ...aggregate, componentCount: components.length, components: components.slice(0, limit) };
 }
 
 function summariseHubLikeDependency(report: HubLikeDependencyReport): HubLikeDependencyReportSummary {

@@ -1423,6 +1423,53 @@ export interface HubLikeDependencyReportSummary {
   outOfScopeComponentCount?: number;
 }
 
+/** One visibility axis's cut: Otsu over the per-file counts when bimodal, the median otherwise. */
+export interface PropagationCostVisibilityCutSummary {
+  method: "otsu" | "majority";
+  /** High on this axis = visibility ≥ threshold AND strictly above the median. */
+  threshold: number;
+  /** η of the Otsu split, when one was computed. */
+  separability?: number;
+}
+
+export interface PropagationCostComponentSummary {
+  component: string;
+  fileCount: number;
+  /** Closure density of the component's own induced sub-graph. */
+  propagationCost: number;
+  /** Mean share of the whole system a change to one of its files can reach. */
+  meanReach: number;
+  coreFileCount: number;
+}
+
+/**
+ * MacCormack's propagation cost and the Baldwin–MacCormack core-periphery
+ * reading of the judged file graph (bd tea-rags-mcp-r8hme.49) — an aggregate,
+ * not a violation family.
+ */
+export interface PropagationCostReportSummary {
+  fileCount: number;
+  edgeCount: number;
+  /** Reachable (reflexive) file pairs / N² — the mean share of the system one change can reach. */
+  propagationCost: number;
+  /** Largest dependency cycle, in files. */
+  largestCycleSize: number;
+  corePeriphery: {
+    /** `corePeriphery` only when both visibility cuts are bimodal (Otsu) and a cyclic core exists. */
+    shape: "corePeriphery" | "hierarchical";
+    coreShare: number;
+    counts: { core: number; shared: number; control: number; peripheral: number };
+    /** High fan-in AND fan-out but in no cycle — a hierarchy's waist, not core. */
+    acyclicHighVisibilityFileCount: number;
+    visibilityFanIn: PropagationCostVisibilityCutSummary;
+    visibilityFanOut: PropagationCostVisibilityCutSummary;
+  };
+  /** Components in the adoption partition, before `limit`. */
+  componentCount: number;
+  /** Top components by `meanReach`, capped at `limit`. */
+  components: PropagationCostComponentSummary[];
+}
+
 export interface ArchitectureReportSummary {
   nonProduction: NonProductionExclusionSummary;
   stableDependencies: StableDependenciesReportSummary;
@@ -1431,6 +1478,7 @@ export interface ArchitectureReportSummary {
   splitMerge: SplitMergeReportSummary;
   mainSequence: MainSequenceReportSummary;
   hubLikeDependency: HubLikeDependencyReportSummary;
+  propagationCost: PropagationCostReportSummary;
   layering: LayeringReportSummary;
 }
 
