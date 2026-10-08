@@ -188,6 +188,17 @@ export interface DependencyNormsSummary {
      * `typedEdgeCount`, absent from `judgedEdgeCount` and from every ledger.
      */
     constantReferenceEdgeCount: number;
+    /**
+     * Typed edges carrying no resolved call — `callWeight` 0 (bd
+     * tea-rags-mcp-4vj2u): the source names the target (a factory `.new`, a
+     * subtype registry, an initializer's config, a type-only import) but
+     * never runs its logic, so an inversion along it is no layering mistake.
+     * Still PRECEDENT: the ledgers count it, because the direction of
+     * knowledge is set by every reference. A nested constant reference is
+     * counted under its own reason, never here. Counted in `typedEdgeCount`,
+     * absent from `judgedEdgeCount`.
+     */
+    uncalledEdgeCount: number;
   };
 }
 

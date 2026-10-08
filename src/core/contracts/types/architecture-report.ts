@@ -1375,8 +1375,11 @@ export interface ArchitectureNormsReport {
      * `crossLanguageEdgeCount`: typed edges between two language families — no ledger judges them.
      * `constantReferenceEdgeCount`: typed edges whose only evidence is a constant nested in the
      * target's primary type (`BaseAdapter::RateLimitError`) — no role edge (bd tea-rags-mcp-xb669.6).
+     * `uncalledEdgeCount`: typed edges carrying no resolved call (`callWeight` 0) — the source
+     * names the target but never runs its logic, so never a finding; still ledger precedent
+     * (bd tea-rags-mcp-4vj2u).
      */
-    excluded: { crossLanguageEdgeCount: number; constantReferenceEdgeCount: number };
+    excluded: { crossLanguageEdgeCount: number; constantReferenceEdgeCount: number; uncalledEdgeCount: number };
   };
   /**
    * One ledger per language family (bd tea-rags-mcp-xb669.7), each with its

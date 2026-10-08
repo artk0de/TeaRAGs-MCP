@@ -432,11 +432,12 @@ describe("computeDependencyNorms - constant references are not role edges", () =
       callWeight: 0.5,
       importText: "zeitwerk:Controller1::RateLimitError",
     });
-    // A reference to the primary itself stays a role edge.
+    // A reference to the primary itself stays a role edge (it calls in — a
+    // call-less edge is excluded on its own account, see below).
     graph.edges.push({
       sourceRelPath: "service/service2.ts",
       targetRelPath: "controller/controller2.ts",
-      callWeight: 0,
+      callWeight: 1,
       importText: "zeitwerk:Controller2",
     });
     const filePrimaryTypes = new Map([
@@ -468,5 +469,52 @@ describe("computeDependencyNorms - constant references are not role edges", () =
     });
 
     expect(report.summary.excluded.constantReferenceEdgeCount).toBe(0);
+  });
+});
+
+/**
+ * An edge with no resolved call is no layering dependency (bd
+ * tea-rags-mcp-4vj2u, xb669.8 gold set): measured on taxdome, every call-less
+ * MISFIT was a constant-only mention — a `.new` factory dispatch, an STI
+ * subtype registry, an initializer's config, an enqueue the resolver left
+ * unpinned — 13 FALSE, 0 TRUE. Such an edge names the target, it never runs
+ * the target's logic, so it carries no verdict. It stays PRECEDENT: dropping
+ * call-less edges from the ledgers (55% of taxdome's typed edges) erased the
+ * helper → record direction — helpers read records through the framework's
+ * finders, which resolve to no in-project call — and with it four TRUE
+ * record → helper findings.
+ */
+describe("computeDependencyNorms - an edge with no resolved call is no role edge", () => {
+  it("never judges a call-less edge, counts it with its reason, and keeps it as ledger precedent", () => {
+    const { graph, roles } = inversionFixture();
+    // A second service→controller edge would be another inversion — but it calls nothing.
+    graph.edges.push({
+      sourceRelPath: "service/service1.ts",
+      targetRelPath: "controller/controller1.ts",
+      callWeight: 0,
+    });
+
+    const report = computeDependencyNorms({ graph, fileRoles: roles });
+
+    expect(report.summary.excluded.uncalledEdgeCount).toBe(1);
+    expect(report.summary.typedEdgeCount).toBe(FIXTURE_EDGE_COUNT + 1);
+    expect(report.summary.judgedEdgeCount).toBe(FIXTURE_EDGE_COUNT);
+    expect(report.findings.some((f) => f.sourceRelPath === "service/service1.ts")).toBe(false);
+    const ledger = buildNormLedgers({ graph, fileRoles: roles }).forLanguage("typescript");
+    expect(ledger.pairs.get("service\u0000controller\u0000crossDomain")).toBe(2);
+  });
+
+  it("keeps an edge carrying any resolved call, however small its dispatch share", () => {
+    const { graph, roles } = inversionFixture();
+    graph.edges.push({
+      sourceRelPath: "service/service1.ts",
+      targetRelPath: "controller/controller1.ts",
+      callWeight: 0.25,
+    });
+
+    const report = computeDependencyNorms({ graph, fileRoles: roles });
+
+    expect(report.summary.excluded.uncalledEdgeCount).toBe(0);
+    expect(report.findings.some((f) => f.sourceRelPath === "service/service1.ts")).toBe(true);
   });
 });

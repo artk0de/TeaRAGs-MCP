@@ -75,6 +75,11 @@ export function buildNormLedgers(input: DependencyNormsInput): NormLedgerBook {
     const targetRole = roleOf(edge.targetRelPath);
     if (sourceRole?.strong !== true || targetRole?.strong !== true) continue;
     const family = familyOfEdge(edge.sourceRelPath, edge.targetRelPath);
+    // A call-less edge stays precedent (bd tea-rags-mcp-4vj2u): the direction
+    // of KNOWLEDGE is set by every reference — a query naming the records it
+    // reads through the framework's finders runs no in-project call, yet it is
+    // exactly what establishes query → record. Only a nested constant is no
+    // reference to the target's role at all.
     if (family === undefined || isConstantReference(edge)) continue;
     let tally = tallies.get(family);
     if (tally === undefined) {
@@ -210,6 +215,28 @@ const REFERENCE_CHANNEL_MARKER = /^[A-Za-z_-]+:(?!:)/;
 const NAMESPACE_SEPARATOR = /::|\./;
 
 /**
+ * Why a same-family typed edge carries no verdict. `constantReference` is no
+ * role edge at all — never judged, never precedent. `uncalled` IS precedent
+ * (see `buildNormLedgers`) but never a finding: an inversion is a layering
+ * mistake only when the minority edge runs the target's own logic.
+ */
+type NormEdgeExclusion = "constantReference" | "uncalled";
+
+/** The report walk's exclusion test. A nested constant is named first: its reason is the more specific one. */
+function edgeExclusionResolver(input: DependencyNormsInput) {
+  const isConstantReference = constantReferenceTest(input);
+  return (edge: FileDependencyGraph["edges"][number]): NormEdgeExclusion | undefined => {
+    if (isConstantReference(edge)) return "constantReference";
+    // bd tea-rags-mcp-4vj2u: no resolved call — the source names the target,
+    // it never runs the target's logic (a factory `.new`, a subtype registry,
+    // an initializer's config). Measured on the xb669.8 gold set: 13 FALSE,
+    // 0 TRUE among the call-less MISFITs.
+    if (edge.callWeight <= 0) return "uncalled";
+    return undefined;
+  };
+}
+
+/**
  * Whether an edge's only evidence is a constant NESTED in the target's primary
  * type (bd tea-rags-mcp-xb669.6): its recorded reference is qualified THROUGH
  * the primary (`BaseAdapter::RateLimitError` into base_adapter.rb) to a name
@@ -287,11 +314,12 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
   const book = buildNormLedgers(input);
   const familyOfEdge = edgeFamilyResolver(graph);
   const localityOf = localityResolver(input);
-  const isConstantReference = constantReferenceTest(input);
+  const exclusionOf = edgeExclusionResolver(input);
 
   const findings: DependencyNormFinding[] = [];
   let crossLanguageEdgeCount = 0;
   let constantReferenceEdgeCount = 0;
+  let uncalledEdgeCount = 0;
   let typedEdgeCount = 0;
   for (const edge of graph.edges) {
     const sourceRole = roleOf(edge.sourceRelPath);
@@ -305,9 +333,12 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
       crossLanguageEdgeCount++;
       continue;
     }
-    // bd tea-rags-mcp-xb669.6: a nested constant is no role edge — counted, never judged.
-    if (isConstantReference(edge)) {
-      constantReferenceEdgeCount++;
+    // bd tea-rags-mcp-xb669.6 / 4vj2u: a nested constant or a call-less
+    // reference is no role edge — counted, never judged.
+    const exclusion = exclusionOf(edge);
+    if (exclusion !== undefined) {
+      if (exclusion === "constantReference") constantReferenceEdgeCount++;
+      else uncalledEdgeCount++;
       continue;
     }
     const ledgers = book.forLanguage(family);
@@ -350,11 +381,11 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
     ioShapeRoleFileCount,
     untypedFileCount,
     typedEdgeCount,
-    judgedEdgeCount: typedEdgeCount - crossLanguageEdgeCount - constantReferenceEdgeCount,
+    judgedEdgeCount: typedEdgeCount - crossLanguageEdgeCount - constantReferenceEdgeCount - uncalledEdgeCount,
     violationCount: scopedFindings.length,
     pairCount: [...book.families.values()].reduce((sum, ledger) => sum + ledger.pairCount, 0),
     ...(inScope ? { outOfScopeFindingCount: findings.length - scopedFindings.length } : {}),
-    excluded: { crossLanguageEdgeCount, constantReferenceEdgeCount },
+    excluded: { crossLanguageEdgeCount, constantReferenceEdgeCount, uncalledEdgeCount },
   };
   return {
     summary,
