@@ -5,6 +5,8 @@ import type {
   FacadeLeakKind,
   FacadeLeakKindBasis,
   FacadeModuleExclusionReason,
+  HubLikeDependencyChurnEvidence,
+  HubLikeDependencyNeighbourEvidence,
   LayeringFeedbackEdge,
   LayeringKeepCost,
   LayeringViolationKind,
@@ -643,6 +645,80 @@ export interface MainSequenceReport {
   /** Farthest first, then component path. */
   violations: MainSequenceViolation[];
   summary: MainSequenceSummary;
+}
+
+export interface HubLikeDependencyOptions {
+  /** Connection floor on Ca + Ce; defaults to the SDP floor. */
+  minConnectionCount?: number;
+  /** Report only components holding a file matching this glob; both cuts are still whole-graph. */
+  sourcePathPattern?: string;
+  /**
+   * How often each file changes (the report feeds `git.file.commitCount`),
+   * keyed by path. Given, every hub carries its churn; it never changes a verdict.
+   */
+  fileVolatility?: ReadonlyMap<RelPath, number>;
+}
+
+/** A dependent or dependency of a hub — the report's `HubLikeDependencyNeighbourEvidence` under its domain name. */
+export type HubLikeDependencyNeighbour = HubLikeDependencyNeighbourEvidence;
+
+/** A hub's churn — the report's `HubLikeDependencyChurnEvidence` under its domain name. */
+export type HubLikeDependencyChurn = HubLikeDependencyChurnEvidence;
+
+/** A component whose Ca and Ce both clear their adaptive cuts (bd tea-rags-mcp-r8hme.47). */
+export interface HubLikeDependencyViolation {
+  component: string;
+  kind: ArchitectureComponentKind;
+  facadeRelPath: RelPath | null;
+  afferentCount: number;
+  efferentCount: number;
+  instability: number;
+  fileCount: number;
+  dependentComponentCount: number;
+  dependencyComponentCount: number;
+  /** Heaviest first, capped at `HUB_LIKE_DEPENDENCY_EVIDENCE_LIMIT`. */
+  topDependents: HubLikeDependencyNeighbour[];
+  /** Heaviest first, capped at `HUB_LIKE_DEPENDENCY_EVIDENCE_LIMIT`. */
+  topDependencies: HubLikeDependencyNeighbour[];
+  /** Components reaching the hub through component dependencies, transitively. */
+  transitiveImpact: number;
+  churn?: HubLikeDependencyChurn;
+  /** The component is, or lives inside, a declared composition root. Present only when true. */
+  compositionRoot?: true;
+}
+
+/** One axis cut: Otsu over log(1 + count), floored at the median count. */
+export interface HubLikeDependencyAxisCut {
+  /** On the count scale: the Otsu cut under `otsu`, the median under `median`. */
+  threshold: number;
+  thresholdMethod: "otsu" | "median";
+  separability?: number;
+  median: number;
+}
+
+export interface HubLikeDependencyScope {
+  sourcePathPattern: string;
+  /** Judged components with no file matching the pattern. */
+  outOfScopeComponentCount: number;
+}
+
+export interface HubLikeDependencySummary {
+  componentCount: number;
+  judgedComponentCount: number;
+  violationCount: number;
+  minConnectionCount: number;
+  afferent: HubLikeDependencyAxisCut;
+  efferent: HubLikeDependencyAxisCut;
+  excluded: { lowConnectionCount: number };
+  /** True when `fileVolatility` was given — every hub then carries churn if any of its files has a reading. */
+  churnMeasured: boolean;
+  scope?: HubLikeDependencyScope;
+}
+
+export interface HubLikeDependencyReport {
+  /** Most coupled first: the smaller of Ca and Ce, then the larger, then component path. */
+  violations: HubLikeDependencyViolation[];
+  summary: HubLikeDependencySummary;
 }
 
 /** Position of one component in the inferred layer stack (bd tea-rags-mcp-r8hme.22). */

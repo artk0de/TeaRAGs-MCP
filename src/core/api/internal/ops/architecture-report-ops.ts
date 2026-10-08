@@ -6,7 +6,7 @@
  * boundary detectors owned by the codegraph trajectory — Stable Dependencies,
  * leaking abstraction (bd tea-rags-mcp-jetrd), the main sequence (bd
  * tea-rags-mcp-r8hme.8, its zone of pain gated on git volatility by bd
- * tea-rags-mcp-r8hme.14) and, over the temporal co-change sub-graph, silent
+ * tea-rags-mcp-r8hme.14), hub-like dependencies (bd tea-rags-mcp-r8hme.47) and, over the temporal co-change sub-graph, silent
  * coupling (bd tea-rags-mcp-b4dcz) — and shapes
  * the typed report DTO. Lives in `api/internal` because it bridges the trajectory's
  * detectors and the public DTO — the one layer allowed to import both.
@@ -39,6 +39,7 @@ import {
   DEFAULT_SDP_TOLERANCE,
   detectComponentStableDependencyViolations,
   detectConventionPrivacyLeaks,
+  detectHubLikeDependencies,
   detectLayeringViolations,
   detectLeakingAbstractions,
   detectMainSequenceDeviations,
@@ -59,6 +60,7 @@ import {
   type LayeringFeedbackEdge as DomainLayeringFeedbackEdge,
   type LayeringViolation as DomainLayeringViolation,
   type FacadeModuleAssessment,
+  type HubLikeDependencyReport,
   type LayeringKeepCost,
   type LayeringKnot,
   type LayeringKnotLookup,
@@ -90,6 +92,7 @@ import type {
   FacadeModuleSummary,
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
+  HubLikeDependencyReportSummary,
   LayeringBackEdgeArchitectureViolation,
   LayeringPartitionCounts,
   LayeringReportSummary,
@@ -170,6 +173,9 @@ export type GitFileCommitCountLookup = () => Promise<ReadonlyMap<RelPath, number
 /** The per-file reading the volatility gate averages — named in the summary. */
 const MAIN_SEQUENCE_VOLATILITY_SIGNAL = "git.file.commitCount";
 
+/** The per-file reading a hub's churn averages — named in the summary. */
+const HUB_LIKE_DEPENDENCY_CHURN_SIGNAL = "git.file.commitCount";
+
 export class ArchitectureReportOps {
   /**
    * Judge the graph behind `graphDb` and shape the report. Violations and root
@@ -185,7 +191,8 @@ export class ArchitectureReportOps {
    * `readFileCommitCounts`, when given, gates the zone of pain on volatility
    * (bd tea-rags-mcp-r8hme.14). It is read only when the ungated judgement
    * puts a component in the zone of pain, since only such a component can
-   * change verdict.
+   * change verdict. The same single read attaches churn to hub-like
+   * dependencies (bd tea-rags-mcp-r8hme.47), asked only when a hub exists.
    */
   async build(
     graphDb: ArchitectureReportGraphDb,
@@ -243,17 +250,29 @@ export class ArchitectureReportOps {
     // report-owned derivation in `architecture-facts.ts`.
     const { leaks, components } = deriveArchitectureComponentFacts(graph, request.pathPattern);
     const sdp = detectComponentStableDependencyViolations(components, { sourcePathPattern: request.pathPattern });
+    // One commit-count read, shared by every detector that asks for it.
+    const commitCounts = readFileCommitCounts ? readOnce(readFileCommitCounts) : undefined;
     // Same components, A from the walker's type census (bd tea-rags-mcp-r8hme.8),
     // the zone of pain gated on git volatility (bd tea-rags-mcp-r8hme.14).
     const mainSequenceOptions = { sourcePathPattern: request.pathPattern };
     const ungatedMainSequence = detectMainSequenceDeviations(components, graph.files, mainSequenceOptions);
     const mainSequence =
-      readFileCommitCounts && ungatedMainSequence.summary.painCount > 0
+      commitCounts && ungatedMainSequence.summary.painCount > 0
         ? detectMainSequenceDeviations(components, graph.files, {
             ...mainSequenceOptions,
-            fileVolatility: await readFileCommitCounts(),
+            fileVolatility: await commitCounts(),
           })
         : ungatedMainSequence;
+    // Same components, both Ca and Ce past adaptive cuts (bd tea-rags-mcp-r8hme.47);
+    // churn rides along as evidence, read only when a hub exists.
+    const ungatedHubs = detectHubLikeDependencies(components, { sourcePathPattern: request.pathPattern });
+    const hubLikeDependency =
+      commitCounts && ungatedHubs.summary.violationCount > 0
+        ? detectHubLikeDependencies(components, {
+            sourcePathPattern: request.pathPattern,
+            fileVolatility: await commitCounts(),
+          })
+        : ungatedHubs;
     const memberEdges = await graphDb.readNonPublicMemberEdges([...CONVENTION_PRIVACY_LANGUAGES]);
     // Domain mode keeps convention-privacy judgement inside the border too:
     // a member edge reaching outside is the domain USING the system, not a
@@ -311,6 +330,7 @@ export class ArchitectureReportOps {
       components,
       sdp,
       mainSequence,
+      hubLikeDependency,
       privacy,
       cochange,
       silent,
@@ -342,6 +362,7 @@ export class ArchitectureReportOps {
             privacy: runs.privacy,
             silent: runs.silent,
             mainSequence: runs.mainSequence,
+            hubLikeDependency: runs.hubLikeDependency,
           },
           buildArchitectureKnotMembership(domainKnot?.components ?? [], runs.layeringComponents, runs.components),
           request.offset ?? 0,
@@ -352,6 +373,7 @@ export class ArchitectureReportOps {
           privacy: runs.privacy,
           silent: runs.silent,
           mainSequence: runs.mainSequence,
+          hubLikeDependency: runs.hubLikeDependency,
           layering: runs.layering,
         };
     return {
@@ -390,6 +412,7 @@ export class ArchitectureReportOps {
         silentCoupling: summariseSilentCoupling(runs.silent, limit),
         splitMerge: summariseSplitMerge(runs.cochange, runs.components.componentOf),
         mainSequence: summariseMainSequence(runs.mainSequence),
+        hubLikeDependency: summariseHubLikeDependency(runs.hubLikeDependency),
         layering: summariseLayering(runs.layering, facadePartition),
       },
       rootCauses: [
@@ -402,6 +425,7 @@ export class ArchitectureReportOps {
         ...leakViolations(findings.leaks, findings.privacy, limit),
         ...silentViolations(findings.silent, limit),
         ...mainSequenceViolations(findings.mainSequence, limit),
+        ...hubLikeDependencyViolations(findings.hubLikeDependency, limit),
         ...(findings.layering ? layeringViolations(findings.layering, limit) : []),
         ...(runs.norms ? normsViolations(runs.norms, limit) : []),
       ],
@@ -481,6 +505,9 @@ export class ArchitectureReportOps {
         mainSequence: summariseMainSequence(
           detectMainSequenceDeviations(buildComponentGraph({ files: [], edges: [] }, []), []),
         ),
+        hubLikeDependency: summariseHubLikeDependency(
+          detectHubLikeDependencies(buildComponentGraph({ files: [], edges: [] }, [])),
+        ),
         layering: summariseLayering(detectLayeringViolations(buildComponentGraph({ files: [], edges: [] }, []), []), {
           componentCount: 0,
           levelCount: 0,
@@ -516,6 +543,7 @@ interface ArchitectureDetectorRuns {
   components: ComponentGraph;
   sdp: ComponentStableDependenciesReport;
   mainSequence: MainSequenceReport;
+  hubLikeDependency: HubLikeDependencyReport;
   privacy: ConventionPrivacyReport;
   /** One co-change read feeds both temporal detectors: silent coupling's pairs and the split/merge verdicts' bundle membership. */
   cochange: TemporalCochangeGraph;
@@ -1328,6 +1356,7 @@ interface ArchitectureDetectorReports {
   privacy: ConventionPrivacyReport;
   silent: SilentCouplingReport;
   mainSequence: MainSequenceReport;
+  hubLikeDependency: HubLikeDependencyReport;
   /** Absent in knot mode: the view carries the knot's own back-edges. */
   layering?: LayeringReport;
 }
@@ -1346,7 +1375,7 @@ function findingsInKnot(
 ): ArchitectureDetectorReports {
   const firstPage = offset === 0;
   const keep = <T>(items: readonly T[], inside: (item: T) => boolean): T[] => (firstPage ? items.filter(inside) : []);
-  const { sdp, leaks, privacy, silent, mainSequence } = reports;
+  const { sdp, leaks, privacy, silent, mainSequence, hubLikeDependency } = reports;
   const bothFiles = (v: { sourceRelPath: RelPath; targetRelPath: RelPath }) =>
     membership.holdsFile(v.sourceRelPath) && membership.holdsFile(v.targetRelPath);
   return {
@@ -1375,6 +1404,10 @@ function findingsInKnot(
     mainSequence: {
       ...mainSequence,
       violations: keep(mainSequence.violations, (v) => membership.holdsComponent(v.component)),
+    },
+    hubLikeDependency: {
+      ...hubLikeDependency,
+      violations: keep(hubLikeDependency.violations, (v) => membership.holdsComponent(v.component)),
     },
   };
 }
@@ -1420,6 +1453,61 @@ function mainSequenceViolations(report: MainSequenceReport, limit: number): Arch
       },
     }),
   );
+}
+
+function summariseHubLikeDependency(report: HubLikeDependencyReport): HubLikeDependencyReportSummary {
+  const { summary } = report;
+  const axis = (cut: HubLikeDependencyReport["summary"]["afferent"]) => ({
+    threshold: round3(cut.threshold),
+    thresholdMethod: cut.thresholdMethod,
+    ...(cut.separability === undefined ? {} : { separability: round3(cut.separability) }),
+    median: cut.median,
+  });
+  return {
+    componentCount: summary.componentCount,
+    judgedComponentCount: summary.judgedComponentCount,
+    violationCount: summary.violationCount,
+    minConnectionCount: summary.minConnectionCount,
+    afferent: axis(summary.afferent),
+    efferent: axis(summary.efferent),
+    excluded: { ...summary.excluded },
+    ...(summary.churnMeasured ? { churnSignal: HUB_LIKE_DEPENDENCY_CHURN_SIGNAL } : {}),
+    ...(summary.scope ? { outOfScopeComponentCount: summary.scope.outOfScopeComponentCount } : {}),
+  };
+}
+
+function hubLikeDependencyViolations(report: HubLikeDependencyReport, limit: number): ArchitectureViolation[] {
+  return report.violations.slice(0, limit).map(
+    (v): ArchitectureViolation => ({
+      detector: "hubLikeDependency",
+      component: v.component,
+      componentKind: v.kind,
+      facadeRelPath: v.facadeRelPath,
+      evidence: {
+        afferentCount: v.afferentCount,
+        efferentCount: v.efferentCount,
+        instability: round3(v.instability),
+        fileCount: v.fileCount,
+        dependentComponentCount: v.dependentComponentCount,
+        dependencyComponentCount: v.dependencyComponentCount,
+        topDependents: v.topDependents.map(roundNeighbour),
+        topDependencies: v.topDependencies.map(roundNeighbour),
+        transitiveImpact: v.transitiveImpact,
+        ...(v.churn ? { churn: { value: round3(v.churn.value), measuredFileCount: v.churn.measuredFileCount } } : {}),
+        ...(v.compositionRoot ? { compositionRoot: v.compositionRoot } : {}),
+      },
+    }),
+  );
+}
+
+function roundNeighbour<T extends { callWeight: number }>(neighbour: T): T {
+  return { ...neighbour, callWeight: round3(neighbour.callWeight) };
+}
+
+/** The first call reads; every later one shares its promise. */
+function readOnce<T>(read: () => Promise<T>): () => Promise<T> {
+  let pending: Promise<T> | undefined;
+  return async () => (pending ??= read());
 }
 
 function round3(value: number): number {

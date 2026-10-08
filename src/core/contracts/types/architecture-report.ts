@@ -386,6 +386,70 @@ export interface MainSequenceArchitectureViolation {
   evidence: MainSequenceViolationEvidence;
 }
 
+/** One component on either side of a hub — a dependent or a dependency — as one aggregated component dependency. */
+export interface HubLikeDependencyNeighbourEvidence {
+  component: string;
+  /** Where the dependency's target sits relative to its source, by directory. */
+  directoryRelation: ArchitectureDirectoryRelation;
+  /** How many file edges carry the dependency. */
+  fileEdgeCount: number;
+  /** Sum of the carried file edges' call weights. */
+  callWeight: number;
+}
+
+/** How often a hub changes: mean `git.file.commitCount` over its measured files. */
+export interface HubLikeDependencyChurnEvidence {
+  /** Mean commits per file over the git window, 3 decimals. */
+  value: number;
+  /** Files of the hub carrying a commit count. */
+  measuredFileCount: number;
+}
+
+/** Why a component is a hub-like dependency (bd tea-rags-mcp-r8hme.47). */
+export interface HubLikeDependencyViolationEvidence {
+  /** Ca: distinct files outside the component with an edge into it — above the afferent cut. */
+  afferentCount: number;
+  /** Ce: distinct files inside the component with an edge out of it — above the efferent cut. */
+  efferentCount: number;
+  /** I = Ce / (Ca + Ce), 3 decimals — near 0.5 is why SDP stays silent on a hub. */
+  instability: number;
+  fileCount: number;
+  /** Components with a dependency into the hub. */
+  dependentComponentCount: number;
+  /** Components the hub depends on. */
+  dependencyComponentCount: number;
+  /** The heaviest dependents (most file edges, then call weight), capped. */
+  topDependents: HubLikeDependencyNeighbourEvidence[];
+  /** The heaviest dependencies (most file edges, then call weight), capped. */
+  topDependencies: HubLikeDependencyNeighbourEvidence[];
+  /** Components that reach the hub through component dependencies, transitively — the reach of a change to it. */
+  transitiveImpact: number;
+  /** Present when git data was available and a file of the hub carries a commit count. */
+  churn?: HubLikeDependencyChurnEvidence;
+  /**
+   * The component is, or lives inside, a declared composition root
+   * (`DECLARED_COMPOSITION_ROOT_COMPONENTS`): wiring many components to many
+   * consumers is its job, so the hub shape is expected there. Triage data,
+   * never a suppression. Present only when true.
+   */
+  compositionRoot?: true;
+}
+
+/**
+ * Arcan's hub-like dependency: a component many depend on that itself depends
+ * on many. Its I sits near 0.5, so the Stable Dependencies check does not flag
+ * it and the main sequence may read it as healthy — yet a change on either
+ * side ripples through it.
+ */
+export interface HubLikeDependencyArchitectureViolation {
+  detector: "hubLikeDependency";
+  component: string;
+  componentKind: "module" | "directory";
+  /** The module's entry file; `null` for a directory component. */
+  facadeRelPath: RelPath | null;
+  evidence: HubLikeDependencyViolationEvidence;
+}
+
 /**
  * What a `layering` finding says (bd tea-rags-mcp-r8hme.22): `knot` — a
  * multi-component cycle, `backEdge` — the minority-weight direction inside
@@ -702,6 +766,7 @@ export type ArchitectureViolation =
   | SilentCouplingArchitectureViolation
   | SilentCouplingGroupArchitectureViolation
   | MainSequenceArchitectureViolation
+  | HubLikeDependencyArchitectureViolation
   | LayeringArchitectureViolation
   | NormArchitectureViolation;
 
@@ -1258,6 +1323,44 @@ export interface MainSequenceReportSummary {
   outOfScopeComponentCount?: number;
 }
 
+/** One axis cut of the hub verdict, on the count scale. */
+export interface HubLikeDependencyAxisCutSummary {
+  /** The cut a count had to reach, 3 decimals — the Otsu cut under `otsu`, the median under `median`. */
+  threshold: number;
+  /**
+   * `otsu` = Otsu's split over the judged components' log(1 + count), reported
+   * back on the count scale, a count also strictly above `median`; `median` =
+   * the floor alone (too few judged components, or a split not bimodal enough).
+   */
+  thresholdMethod: "otsu" | "median";
+  /** η of the Otsu cut, 3 decimals — evidence under `otsu`, rejection evidence under `median`; absent when none was computed. */
+  separability?: number;
+  /** Median count over the judged components — a hub's count must be strictly above it. */
+  median: number;
+}
+
+export interface HubLikeDependencyReportSummary {
+  componentCount: number;
+  /** Components at or above `minConnectionCount` — the population both cuts are drawn over. */
+  judgedComponentCount: number;
+  /** Total violations, before `limit`. */
+  violationCount: number;
+  /** Ca + Ce floor, the Stable Dependencies one. */
+  minConnectionCount: number;
+  /** The cut on Ca. */
+  afferent: HubLikeDependencyAxisCutSummary;
+  /** The cut on Ce. */
+  efferent: HubLikeDependencyAxisCutSummary;
+  excluded: {
+    /** Ca + Ce below `minConnectionCount`: too few edges to call the component busy on either side. */
+    lowConnectionCount: number;
+  };
+  /** The per-file reading `evidence.churn` averages; present only when churn was attached. */
+  churnSignal?: "git.file.commitCount";
+  /** Judged components with no file matching `pathPattern`; present only when scoped. */
+  outOfScopeComponentCount?: number;
+}
+
 export interface ArchitectureReportSummary {
   nonProduction: NonProductionExclusionSummary;
   stableDependencies: StableDependenciesReportSummary;
@@ -1265,6 +1368,7 @@ export interface ArchitectureReportSummary {
   silentCoupling: SilentCouplingReportSummary;
   splitMerge: SplitMergeReportSummary;
   mainSequence: MainSequenceReportSummary;
+  hubLikeDependency: HubLikeDependencyReportSummary;
   layering: LayeringReportSummary;
 }
 
