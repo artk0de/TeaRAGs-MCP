@@ -52,7 +52,12 @@ import {
   distanceFromMainSequenceByComponent,
   readProductionArchitectureGraph,
 } from "../architecture-facts.js";
-import { FileMaintenanceCostModel, filesByComponent, rankByMaintenanceCost } from "../architecture-maintenance-cost.js";
+import {
+  FileMaintenanceCostModel,
+  filesByComponent,
+  maintenanceCostFamily,
+  rankFamiliesByMaintenanceCost,
+} from "../architecture-maintenance-cost.js";
 import { isDocumentationPath, type ModuleImportSpecifierLookup } from "../architecture-report-ops.js";
 import {
   DiffDetectorRun,
@@ -547,9 +552,13 @@ export function capFindingsByFamily(
 
 /**
  * The run's findings with each family ranked by maintenance cost (bd
- * tea-rags-mcp-r8hme.20) — the whole-repo report's score and ranker, so a
- * finding costs the same in both answers. Families keep the run's order (the
- * cap allocates by family); inside one, costliest first, untagged last. No
+ * tea-rags-mcp-r8hme.20) — the whole-repo report's scorer and ranker, with
+ * THIS review's findings as the population the shrinkage is estimated over
+ * (bd tea-rags-mcp-afyku): the same carriers read the same `meanPosition` in
+ * both answers, but the score is relative to the findings ranked beside it,
+ * and fewer than two measured findings score 0.5. Families keep the run's
+ * order (the cap allocates by family); inside one, costliest first, untagged
+ * last. No
  * wired read, or nothing to rank, returns the findings as the run listed them
  * and reads nothing.
  */
@@ -563,9 +572,11 @@ export async function rankDiffFindingsByMaintenanceCost(
   const filesOfComponent = filesByComponent(componentOf);
   const byDetector = new Map<string, DiffDetectorFinding[]>();
   for (const finding of findings) pushTo(byDetector, finding.detector, finding);
-  return [...byDetector.values()].flatMap((family) =>
-    rankByMaintenanceCost(family, (finding) => diffFindingCarrierFiles(finding, filesOfComponent), model),
-  );
+  const carriersOf = (finding: DiffDetectorFinding) => diffFindingCarrierFiles(finding, filesOfComponent);
+  return rankFamiliesByMaintenanceCost(
+    [...byDetector.values()].map((family) => maintenanceCostFamily(family, carriersOf)),
+    model,
+  ).flat();
 }
 
 /**

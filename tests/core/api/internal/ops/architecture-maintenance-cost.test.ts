@@ -2,9 +2,10 @@
  * Maintenance cost of an architecture violation (bd tea-rags-mcp-r8hme.20):
  * each file's git readings positioned in the collection's own distribution,
  * churn the base, bug-fix share and recency raising it. A violation is scored
- * by the mean cost position of the files on the edges that make it, read as a
- * percentile against a same-size random-file null (bd tea-rags-mcp-afyku), and
- * lists rank costliest first.
+ * by the mean cost position of the files on the edges that make it, shrunk
+ * toward the centre by how much its carrier count can be trusted against the
+ * spread of the report's violations (empirical Bayes, bd tea-rags-mcp-afyku),
+ * and lists rank costliest first.
  */
 import { describe, expect, it } from "vitest";
 
@@ -12,8 +13,10 @@ import {
   architectureViolationCarrierFiles,
   ComponentEdgeCarrierIndex,
   FileMaintenanceCostModel,
-  meanPositionPercentile,
+  maintenanceCostFamily,
+  MaintenanceCostShrinkage,
   rankByMaintenanceCost,
+  rankFamiliesByMaintenanceCost,
 } from "../../../../../src/core/api/internal/ops/architecture-maintenance-cost.js";
 import type { GitFileMaintenanceSignals } from "../../../../../src/core/api/public/dto/architecture.js";
 
@@ -115,56 +118,59 @@ describe("FileMaintenanceCostModel#fileCost — position of the cost itself (bd 
   });
 });
 
-describe("meanPositionPercentile — the same-size random-file null (bd tea-rags-mcp-afyku)", () => {
-  it("equals the raw position for one carrier: one uniform draw is its own CDF", () => {
-    for (const mean of [0, 0.13, 0.5, 0.77, 1]) {
-      expect(meanPositionPercentile(mean, 1)).toBeCloseTo(mean, 12);
-    }
+describe("MaintenanceCostShrinkage — empirical-Bayes shrunken mean over the report's violations (bd tea-rags-mcp-afyku)", () => {
+  /** A violation's carrier statistic: its mean cost position over n measured carriers. */
+  const sample = (meanPosition: number, measuredFileCount: number) => ({ meanPosition, measuredFileCount });
+
+  it("estimates n₀ = (1/12) / σ²_between, σ²_between by method of moments over the violation means", () => {
+    // Means 0.2, 0.5, 0.8 over 2 carriers each: unbiased Var = 0.09, null term 1/24.
+    const shrinkage = MaintenanceCostShrinkage.over([sample(0.2, 2), sample(0.5, 2), sample(0.8, 2)]);
+    const priorFileCount = 1 / 12 / (0.09 - 1 / 24);
+
+    expect(shrinkage.priorFileCount).toBeCloseTo(priorFileCount, 12);
+    expect(shrinkage.scoreOf(sample(0.8, 2))).toBeCloseTo(0.5 + (0.3 * 2) / (2 + priorFileCount), 12);
   });
 
-  it("is the exact Irwin–Hall CDF of n × mean — two carriers follow the triangular law", () => {
-    // P(U1 + U2 ≤ 1.2) = 1 − 0.8² / 2.
-    expect(meanPositionPercentile(0.6, 2)).toBeCloseTo(0.68, 12);
-    // P(U1 + U2 + U3 ≤ 0.9) = 0.9³ / 6.
-    expect(meanPositionPercentile(0.3, 3)).toBeCloseTo(0.1215, 12);
+  it("keeps a huge carrier set at its own mean and ranks it BELOW a 2-carrier set far above centre when violations spread", () => {
+    const knot = sample(0.51, 7579);
+    const pair = sample(0.95, 2);
+    const shrinkage = MaintenanceCostShrinkage.over([knot, pair, sample(0.05, 3), sample(0.97, 4), sample(0.1, 2)]);
+
+    expect(shrinkage.scoreOf(knot)).toBeCloseTo(0.51, 3);
+    expect(shrinkage.scoreOf(pair)).toBeGreaterThan(shrinkage.scoreOf(knot) + 0.2);
+    expect(shrinkage.scoreOf(pair)).toBeLessThan(0.95);
   });
 
-  it("scores a larger set with the same above-centre mean HIGHER — the mean of more files is harder to reach by chance", () => {
-    const pair = meanPositionPercentile(0.6, 2);
-    const component = meanPositionPercentile(0.6, 40);
+  it("pulls a one-carrier reading toward 0.5 — one file is mostly noise", () => {
+    const single = sample(0.99, 1);
+    const shrinkage = MaintenanceCostShrinkage.over([single, sample(0.2, 3), sample(0.8, 5), sample(0.4, 2)]);
 
-    expect(component).toBeGreaterThan(pair);
-    expect(pair).toBeGreaterThan(0.6);
+    expect(shrinkage.scoreOf(single)).toBeGreaterThan(0.5);
+    expect(shrinkage.scoreOf(single)).toBeLessThan(0.89);
   });
 
-  it("scores a larger set with the same below-centre mean LOWER, and reads 0.5 at the centre for every size", () => {
-    expect(meanPositionPercentile(0.4, 40)).toBeLessThan(meanPositionPercentile(0.4, 2));
-    for (const n of [1, 2, 7, 40, 400, 5000]) {
-      expect(meanPositionPercentile(0.5, n)).toBeCloseTo(0.5, 6);
-    }
+  it("scores every violation 0.5 when the means spread no more than carrier noise predicts", () => {
+    // Var of 0.4 / 0.6 / 0.5 over one carrier each = 0.01 < 1/12: no between-violation spread is evidenced.
+    const samples = [sample(0.4, 1), sample(0.6, 1), sample(0.5, 1)];
+    const shrinkage = MaintenanceCostShrinkage.over(samples);
+
+    expect(shrinkage.priorFileCount).toBe(Number.POSITIVE_INFINITY);
+    for (const s of samples) expect(shrinkage.scoreOf(s)).toBe(0.5);
   });
 
-  it("stays a monotone probability across the exact-to-normal switch, at every size", () => {
-    let previous = 0;
-    for (let n = 1; n <= 600; n++) {
-      const p = meanPositionPercentile(0.52, n);
-      expect(p).toBeGreaterThanOrEqual(previous - 1e-9);
-      expect(p).toBeLessThanOrEqual(1);
-      previous = p;
-    }
-    expect(meanPositionPercentile(0.6, 5000)).toBeCloseTo(1, 12);
-    expect(meanPositionPercentile(0.4, 5000)).toBeCloseTo(0, 12);
+  it("scores 0.5 with fewer than two violations — a spread needs two means to exist", () => {
+    expect(MaintenanceCostShrinkage.over([sample(0.9, 3)]).scoreOf(sample(0.9, 3))).toBe(0.5);
+    expect(MaintenanceCostShrinkage.over([]).priorFileCount).toBe(Number.POSITIVE_INFINITY);
   });
 });
 
 describe("FileMaintenanceCostModel#costOf", () => {
-  it("scores the measured carriers' mean cost position against a same-size null, keeps the mean, names the costliest", () => {
+  it("measures the carriers' mean cost position, counts them, names the costliest — no score without a population", () => {
     const measured = new FileMaintenanceCostModel(corpus()).costOf(["hot.ts", "cold.ts", "unknown.ts", "hot.ts"]);
 
-    // Positions hot 1, cold 1/6 → mean 7/12; P(U1 + U2 ≤ 7/6) = 1 − (5/6)² / 2.
-    expect(measured?.cost).toEqual({
-      score: 0.653,
-      meanPosition: 0.583,
+    // Positions hot 1, cold 1/6 → mean 7/12.
+    expect(measured).toEqual({
+      meanPosition: 7 / 12,
       fileCount: 3,
       measuredFileCount: 2,
       hottestFile: expect.objectContaining({ relPath: "hot.ts", cost: 0.889, costPosition: 1 }),
@@ -190,24 +196,63 @@ describe("rankByMaintenanceCost", () => {
     const ranked = rankByMaintenanceCost(items, (i) => i.files, new FileMaintenanceCostModel(corpus()));
 
     expect(ranked.map((i) => i.id)).toEqual(["hot", "warm", "cold", "alsoCold", "unmeasured"]);
-    expect(ranked[0].maintenanceCost?.score).toBe(1);
+    // Means 1, 2/3, 1/6, 1/6 over one carrier: Var 1/6, null 1/12 → n₀ = 1, so hot reads 0.5 + 0.5 / 2.
+    expect(ranked[0].maintenanceCost?.score).toBe(0.75);
     expect(ranked[4]).not.toHaveProperty("maintenanceCost");
   });
 
-  it("ranks a 40-file violation above a 2-file one whose carriers have the same above-centre mean", () => {
-    // 100 files with distinct commit counts: file i sits at cost position i / 99.
-    const hundred = new Map<string, GitFileMaintenanceSignals>();
-    for (let i = 0; i < 100; i++) hundred.set(`f${i}.ts`, { commitCount: i + 1, bugFixRate: 0, ageDays: 1 });
-    const model = new FileMaintenanceCostModel(hundred);
-    // Both means are 59.5 / 99: the pair {f50, f69} and the forty files f40..f79.
-    const pair = { id: "pair", files: ["f50.ts", "f69.ts"] };
-    const component = { id: "component", files: Array.from({ length: 40 }, (_, k) => `f${40 + k}.ts`) };
+  /** 10 000 files with distinct commit counts: file i sits at cost position i / 9999. */
+  function graded(): FileMaintenanceCostModel {
+    const files = new Map<string, GitFileMaintenanceSignals>();
+    for (let i = 0; i < 10_000; i++) files.set(`f${i}.ts`, { commitCount: i + 1, bugFixRate: 0, ageDays: 1 });
+    return new FileMaintenanceCostModel(files);
+  }
+  const span = (from: number, count: number) => Array.from({ length: count }, (_, k) => `f${from + k}.ts`);
 
-    const ranked = rankByMaintenanceCost([pair, component], (i) => i.files, model);
+  it("ranks a 7579-file knot near the centre BELOW a 2-file pair far above it when violations spread", () => {
+    const knot = { id: "knot", files: span(1311, 7579) }; // mean position 5100 / 9999 ≈ 0.51
+    const pair = { id: "pair", files: ["f9449.ts", "f9549.ts"] }; // mean 9499 / 9999 ≈ 0.95
+    const cold = { id: "cold", files: ["f0.ts", "f100.ts"] };
+    const hot = { id: "hot", files: ["f9999.ts", "f9900.ts", "f9800.ts"] };
 
-    expect(ranked.map((i) => i.id)).toEqual(["component", "pair"]);
-    expect(ranked[0].maintenanceCost?.meanPosition).toBe(ranked[1].maintenanceCost?.meanPosition);
-    expect(ranked[0].maintenanceCost?.score).toBeGreaterThan(ranked[1].maintenanceCost?.score ?? 1);
+    const ranked = rankByMaintenanceCost([knot, cold, pair, hot], (i) => i.files, graded());
+
+    expect(ranked.map((i) => i.id)).toEqual(["hot", "pair", "knot", "cold"]);
+    expect(ranked[2].maintenanceCost?.score).toBeCloseTo(0.51, 2);
+  });
+
+  it("orders equal scores by carrier count, then detector order — all 0.5 when the means do not spread", () => {
+    // Every mean sits within carrier noise of the centre: no spread is evidenced, every score is 0.5.
+    const items = [
+      { id: "small", files: ["f5000.ts"] },
+      { id: "large", files: span(4000, 2000) },
+      { id: "alsoSmall", files: ["f4999.ts"] },
+    ];
+
+    const ranked = rankByMaintenanceCost(items, (i) => i.files, graded());
+
+    expect(ranked.map((i) => i.id)).toEqual(["large", "small", "alsoSmall"]);
+    expect(ranked.map((i) => i.maintenanceCost?.score)).toEqual([0.5, 0.5, 0.5]);
+  });
+
+  it("ranks families over ONE population: n₀ is shared, each family keeps its own list", () => {
+    const model = graded();
+    const sdp = [
+      { id: "sdpCold", files: ["f10.ts"] },
+      { id: "sdpHot", files: ["f9990.ts"] },
+    ];
+    const knots = [{ id: "knot", files: span(1311, 7579) }];
+
+    const [rankedSdp, rankedKnots] = rankFamiliesByMaintenanceCost(
+      [maintenanceCostFamily(sdp, (i) => i.files), maintenanceCostFamily(knots, (i) => i.files)],
+      model,
+    );
+
+    expect(rankedSdp.map((i) => i.id)).toEqual(["sdpHot", "sdpCold"]);
+    // Alone, the knot would have no population to spread against and read 0.5;
+    // in the report's population it keeps its own mean.
+    expect(rankedKnots[0].maintenanceCost?.score).toBeCloseTo(0.51, 2);
+    expect(rankByMaintenanceCost(knots, (i) => i.files, model)[0].maintenanceCost?.score).toBe(0.5);
   });
 
   it("leaves the list untouched without a model — the git trajectory is unavailable", () => {

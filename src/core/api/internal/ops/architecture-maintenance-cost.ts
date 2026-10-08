@@ -12,23 +12,24 @@
  *
  * Comparable across families (bd tea-rags-mcp-afyku): a violation's carriers
  * are the files on the edges that MAKE it ({@link architectureViolationCarrierFiles}),
- * and its score is a percentile against a same-size null — the chance that
- * as many files drawn at random from the collection average no higher cost
- * position ({@link meanPositionPercentile}). A plain mean shrinks toward the
- * centre as the carrier set grows (variance 1/(12n)), so a 40-file component
- * and a 2-file pair never shared a scale; the percentile gives them one.
+ * and its score is the empirical-Bayes shrunken mean of their cost positions
+ * ({@link MaintenanceCostShrinkage}): a mean over few carriers is mostly noise
+ * and is pulled toward the centre, a mean over many stands on its own, and how
+ * hard "few" pulls is estimated from the spread of the violations the report
+ * ranks together — no constant tuned to a corpus.
  *
- * Both report paths rank through {@link rankByMaintenanceCost}: the whole-repo
- * `get_architecture_report` and the diff-scoped `review_changes` architecture
- * section (its own carrier reading of a `DiffDetectorFinding`). A new detector
- * family adopts the score by routing its list through the same ranker.
+ * Both report paths rank through {@link rankFamiliesByMaintenanceCost}: the
+ * whole-repo `get_architecture_report` (every family of the report one
+ * population) and the diff-scoped `review_changes` architecture section (that
+ * review's findings one population, its own carrier reading of a
+ * `DiffDetectorFinding`). A new detector family adopts the score by routing
+ * its list through the same ranker.
  */
 
 import type { RelPath } from "../../../contracts/types/codegraph.js";
 import type {
   ArchitectureFileEdge,
   ArchitectureFileMaintenanceCost,
-  ArchitectureMaintenanceCost,
   ArchitectureMaintenanceCostTag,
   GitFileMaintenanceSignals,
 } from "../../public/dto/architecture.js";
@@ -44,13 +45,18 @@ interface FileMaintenanceCostReading {
   readonly dto: ArchitectureFileMaintenanceCost;
 }
 
-/** A violation's measured cost: the ranking key and the reported DTO. */
-export interface ViolationMaintenanceCostReading {
-  /** P(a same-size random mean ≥ the observed one) — the smaller, the costlier; the ranking key. */
-  readonly upperTail: number;
-  /** The carriers' mean cost position, unrounded — the tie-break. */
+/** The carrier statistic {@link MaintenanceCostShrinkage} reads: a mean position over `measuredFileCount` carriers. */
+export interface MaintenanceCostCarrierSample {
+  /** Mean cost position of the measured carriers, unrounded. */
   readonly meanPosition: number;
-  readonly cost: ArchitectureMaintenanceCost;
+  readonly measuredFileCount: number;
+}
+
+/** A violation's carriers, measured — everything its cost needs except the population it is scored in. */
+export interface ViolationCarrierMeasurement extends MaintenanceCostCarrierSample {
+  /** Carrying files the violation names. */
+  readonly fileCount: number;
+  readonly hottestFile: ArchitectureFileMaintenanceCost;
 }
 
 /**
@@ -103,12 +109,11 @@ export class FileMaintenanceCostModel {
   }
 
   /**
-   * A violation's cost over the files carrying it: the mean cost position of
-   * the measured ones, scored as its percentile against the mean of as many
-   * random collection files, and the costliest one named. Undefined when none
-   * is measured.
+   * A violation's carriers measured: the mean cost position of the measured
+   * ones and the costliest one named. No score — that needs the population
+   * the violation is ranked in. Undefined when none is measured.
    */
-  costOf(carriers: readonly RelPath[]): ViolationMaintenanceCostReading | undefined {
+  costOf(carriers: readonly RelPath[]): ViolationCarrierMeasurement | undefined {
     const files = [...new Set(carriers)];
     let positionSum = 0;
     let measured = 0;
@@ -121,75 +126,168 @@ export class FileMaintenanceCostModel {
       if (hottest === undefined || reading.exact > hottest.exact) hottest = reading;
     }
     if (hottest === undefined) return undefined;
-    const meanPosition = positionSum / measured;
-    const tails = irwinHallTails(meanPosition * measured, measured);
     return {
-      upperTail: tails.upper,
-      meanPosition,
-      cost: {
-        score: round3(tails.lower),
-        meanPosition: round3(meanPosition),
-        fileCount: files.length,
-        measuredFileCount: measured,
-        hottestFile: hottest.dto,
-      },
+      meanPosition: positionSum / measured,
+      measuredFileCount: measured,
+      fileCount: files.length,
+      hottestFile: hottest.dto,
     };
   }
 }
 
 /**
- * P(mean of `n` independent uniform positions ≤ `mean`): the percentile of an
- * observed mean cost position against `n` files drawn at random from the
- * collection — the Irwin–Hall CDF of `n × mean`. One file reads its own
- * position; a larger set reads further from 0.5 for the same mean.
+ * The empirical-Bayes shrunken mean of a violation's carrier positions,
+ * estimated over the population of violations ranked together.
+ *
+ * Model: a violation's true cost position is drawn around the centre with a
+ * between-violation variance σ²_between; its observed mean m over n carriers
+ * adds sampling noise of variance (1/12)/n — 1/12 being the variance of one
+ * mid-rank position, uniform on 0…1 under the null. The posterior mean under
+ * that normal–normal model is
+ *
+ *     score = 0.5 + (m − 0.5) · n / (n + n₀),   n₀ = (1/12) / σ²_between,
+ *
+ * so n₀ is the carrier count at which a violation's own mean and the centre
+ * weigh equally. σ²_between is the method-of-moments estimate over the
+ * population: the unbiased variance of the means minus the mean noise term,
+ * E[Var(mᵢ)] = σ²_between + mean(1/(12 nᵢ)).
+ *
+ * When that estimate is not positive — the means spread no more than carrier
+ * noise alone predicts — no violation is evidenced to differ from the centre,
+ * n₀ is infinite and every score is 0.5. Fewer than two violations leave the
+ * variance undefined; they score 0.5 for the same reason (no spread is
+ * evidenced), so a lone finding is never put on a scale no other answer uses.
+ * The raw mean stays in `meanPosition` either way.
  */
-export function meanPositionPercentile(mean: number, n: number): number {
-  return irwinHallTails(mean * n, n).lower;
+export class MaintenanceCostShrinkage {
+  private constructor(
+    /** n₀: the carrier count at which a violation's own mean weighs as much as the centre; infinite without spread. */
+    readonly priorFileCount: number,
+  ) {}
+
+  /** The shrinkage the population's own spread supports. */
+  static over(samples: readonly MaintenanceCostCarrierSample[]): MaintenanceCostShrinkage {
+    if (samples.length < 2) return new MaintenanceCostShrinkage(Number.POSITIVE_INFINITY);
+    let meanSum = 0;
+    let noiseSum = 0;
+    for (const sample of samples) {
+      meanSum += sample.meanPosition;
+      noiseSum += NULL_POSITION_VARIANCE / sample.measuredFileCount;
+    }
+    const grandMean = meanSum / samples.length;
+    let squares = 0;
+    for (const sample of samples) squares += (sample.meanPosition - grandMean) ** 2;
+    const betweenVariance = squares / (samples.length - 1) - noiseSum / samples.length;
+    return new MaintenanceCostShrinkage(
+      betweenVariance > 0 ? NULL_POSITION_VARIANCE / betweenVariance : Number.POSITIVE_INFINITY,
+    );
+  }
+
+  /** The violation's shrunken mean, unrounded; 0.5 when no spread is evidenced. */
+  scoreOf(sample: MaintenanceCostCarrierSample): number {
+    if (this.priorFileCount === Number.POSITIVE_INFINITY) return NULL_POSITION_MEAN;
+    const weight = sample.measuredFileCount / (sample.measuredFileCount + this.priorFileCount);
+    return NULL_POSITION_MEAN + (sample.meanPosition - NULL_POSITION_MEAN) * weight;
+  }
+}
+
+/** Mean of one mid-rank position — uniform on 0…1 — under the null. A property of the position, not a tunable. */
+const NULL_POSITION_MEAN = 0.5;
+/** Variance of one uniform 0…1 position under the null. A property of the position, not a tunable. */
+const NULL_POSITION_VARIANCE = 1 / 12;
+
+/** One family's items, read for ranking: each item's carriers and its listed shape. */
+export interface MaintenanceCostFamily<V extends object> {
+  readonly size: number;
+  readonly carriersAt: (index: number) => readonly RelPath[];
+  readonly shapeAt: (index: number) => V;
+}
+
+/** A family of items, its carriers read off each item, shaped for the response by `shape` (the item itself by default). */
+export function maintenanceCostFamily<T extends object>(
+  items: readonly T[],
+  carriersOf: (item: T) => readonly RelPath[],
+): MaintenanceCostFamily<T>;
+export function maintenanceCostFamily<T, V extends object>(
+  items: readonly T[],
+  carriersOf: (item: T) => readonly RelPath[],
+  shape: (item: T) => V,
+): MaintenanceCostFamily<V>;
+export function maintenanceCostFamily<T, V extends object>(
+  items: readonly T[],
+  carriersOf: (item: T) => readonly RelPath[],
+  shape?: (item: T) => V,
+): MaintenanceCostFamily<V> {
+  return {
+    size: items.length,
+    carriersAt: (index) => carriersOf(items[index]),
+    // Without `shape` the overload pins T to an object type and V to T.
+    shapeAt: (index) => (shape ? shape(items[index]) : (items[index] as unknown as V)),
+  };
 }
 
 /**
- * The items costliest first, each tagged with its `maintenanceCost`; an item
- * whose carrying files are all unmeasured keeps no tag and sinks below every
- * measured one. Stable: equal costs keep the detector's own order. No model —
- * the git trajectory unavailable — returns the items untouched, in order.
+ * Each family's items costliest first, each tagged with its
+ * `maintenanceCost`, the families scored as ONE population — n₀ is estimated
+ * over every measured item of every family, so a score means the same in
+ * each list. Ties: more measured carriers first, then the detector's order.
+ * An item whose carrying files are all unmeasured keeps no tag and sinks
+ * below every measured one. No model — the git trajectory unavailable —
+ * returns each family shaped, in order.
  */
+export function rankFamiliesByMaintenanceCost<V extends object>(
+  families: readonly MaintenanceCostFamily<V>[],
+  model: FileMaintenanceCostModel | undefined,
+): (V & ArchitectureMaintenanceCostTag)[][] {
+  if (model === undefined) {
+    return families.map((family) => Array.from({ length: family.size }, (_, index) => family.shapeAt(index)));
+  }
+  const measuredFamilies = families.map((family) =>
+    Array.from({ length: family.size }, (_, index) => ({ index, measured: model.costOf(family.carriersAt(index)) })),
+  );
+  const shrinkage = MaintenanceCostShrinkage.over(
+    measuredFamilies.flatMap((entries) => entries.flatMap(({ measured }) => (measured ? [measured] : []))),
+  );
+  return measuredFamilies.map((entries, familyIndex) =>
+    entries
+      .map((entry) => ({ ...entry, score: entry.measured ? shrinkage.scoreOf(entry.measured) : undefined }))
+      .sort((a, b) => compareScored(a, b) || a.index - b.index)
+      .map(({ index, measured, score }) => {
+        const shaped = families[familyIndex].shapeAt(index);
+        if (measured === undefined || score === undefined) return shaped;
+        return {
+          ...shaped,
+          maintenanceCost: {
+            score: round3(score),
+            meanPosition: round3(measured.meanPosition),
+            fileCount: measured.fileCount,
+            measuredFileCount: measured.measuredFileCount,
+            hottestFile: measured.hottestFile,
+          },
+        };
+      }),
+  );
+}
+
+/** {@link rankFamiliesByMaintenanceCost} over one list — the list is the whole population. */
 export function rankByMaintenanceCost<T extends object>(
   items: readonly T[],
   carriersOf: (item: T) => readonly RelPath[],
   model: FileMaintenanceCostModel | undefined,
 ): (T & ArchitectureMaintenanceCostTag)[] {
-  return rankAndShapeByMaintenanceCost(items, carriersOf, model, (item) => item);
+  return rankFamiliesByMaintenanceCost([maintenanceCostFamily(items, carriersOf)], model)[0];
 }
 
-/**
- * {@link rankByMaintenanceCost} over items whose carriers are read before
- * they are shaped for the response — a domain finding holding the full edge
- * lists its listed form caps. Ranked by the upper tail (the smaller, the
- * costlier — it keeps its order where the percentile rounds to 1), then the
- * mean position, then the detector's order.
- */
-export function rankAndShapeByMaintenanceCost<T, V extends object>(
-  items: readonly T[],
-  carriersOf: (item: T) => readonly RelPath[],
-  model: FileMaintenanceCostModel | undefined,
-  shape: (item: T) => V,
-): (V & ArchitectureMaintenanceCostTag)[] {
-  if (model === undefined) return items.map(shape);
-  return items
-    .map((item, index) => ({ index, item, measured: model.costOf(carriersOf(item)) }))
-    .sort((a, b) => compareMeasured(a.measured, b.measured) || a.index - b.index)
-    .map(({ item, measured }) => {
-      const shaped = shape(item);
-      return measured === undefined ? shaped : { ...shaped, maintenanceCost: measured.cost };
-    });
+interface ScoredMeasurement {
+  measured: ViolationCarrierMeasurement | undefined;
+  score: number | undefined;
 }
 
-function compareMeasured(
-  a: ViolationMaintenanceCostReading | undefined,
-  b: ViolationMaintenanceCostReading | undefined,
-): number {
-  if (a === undefined || b === undefined) return (a === undefined ? 1 : 0) - (b === undefined ? 1 : 0);
-  return a.upperTail - b.upperTail || b.meanPosition - a.meanPosition;
+function compareScored(a: ScoredMeasurement, b: ScoredMeasurement): number {
+  if (a.measured === undefined || b.measured === undefined || a.score === undefined || b.score === undefined) {
+    return (a.measured === undefined ? 1 : 0) - (b.measured === undefined ? 1 : 0);
+  }
+  return b.score - a.score || b.measured.measuredFileCount - a.measured.measuredFileCount;
 }
 
 /** One component dependency with the file edges that carry it — the component graph's shape, read structurally. */
@@ -379,102 +477,6 @@ export function filesByComponent(componentOf: ReadonlyMap<RelPath, string>): (co
   const index = new Map<string, RelPath[]>();
   for (const [relPath, component] of componentOf) pushTo(index, component, relPath);
   return (component) => index.get(component) ?? [];
-}
-
-/**
- * Lower and upper tail of the Irwin–Hall distribution — the sum of `n`
- * independent U(0,1) — at `sum`, each computed on the side where it is the
- * smaller probability, so a far tail keeps its precision instead of
- * rounding against 1.
- */
-function irwinHallTails(sum: number, n: number): { lower: number; upper: number } {
-  if (sum <= 0) return { lower: 0, upper: 1 };
-  if (sum >= n) return { lower: 1, upper: 0 };
-  if (sum <= n / 2) {
-    const lower = irwinHallSmallerTail(sum, n);
-    return { lower, upper: 1 - lower };
-  }
-  const upper = irwinHallSmallerTail(n - sum, n);
-  return { lower: 1 - upper, upper };
-}
-
-/**
- * P(U1 + … + Un ≤ t) for 0 < t ≤ n/2, exact:
- * Σ_{k=0}^{⌊t⌋} (−1)^k C(n,k) (t − k)^n / n!, each term in log space.
- *
- * Numerical-stability switch, not a tuning knob: the alternating sum cancels
- * catastrophically once its terms dwarf the result. The loop carries a
- * worst-case rounding-error bound (summation plus each term's log/exp error,
- * in units of machine epsilon); while that bound stays under √ε of the result
- * — at least half of a double's significand survives — the exact value is
- * returned. Past it (from ~40 carriers near the centre; any term that
- * overflows a double), the central-limit normal N(n/2, n/12) with its first
- * Edgeworth term is the better-conditioned reading of the same distribution.
- */
-function irwinHallSmallerTail(t: number, n: number): number {
-  const logFactorials = logFactorialsThrough(n);
-  let sum = 0;
-  let errorBound = 0;
-  for (let k = 0; k < t; k++) {
-    const logBase = Math.log(t - k);
-    const logTerm = n * logBase - logFactorials[k] - logFactorials[n - k];
-    const term = Math.exp(logTerm);
-    sum += k % 2 === 0 ? term : -term;
-    errorBound += term * (n * Math.abs(logBase) + logFactorials[k] + logFactorials[n - k] + k + 2);
-  }
-  if (Number.isFinite(errorBound) && errorBound * Number.EPSILON <= Math.sqrt(Number.EPSILON) * sum) return sum;
-  return irwinHallNormalLowerTail(t, n);
-}
-
-/**
- * The normal reading of the Irwin–Hall CDF with its first Edgeworth term.
- * U(0,1) is symmetric (no skew term) with excess kurtosis −6/5, a property of
- * the uniform, so F(z) ≈ Φ(z) + φ(z)(z³ − 3z) / (20n): error O(1/n²) instead
- * of the plain normal's O(1/n) — 2e-6 against the exact CDF at n = 40.
- */
-function irwinHallNormalLowerTail(t: number, n: number): number {
-  const z = (t - n / 2) / Math.sqrt(n / 12);
-  const density = Math.exp((-z * z) / 2) / Math.sqrt(2 * Math.PI);
-  return Math.max(0, standardNormalLowerTail(z) + (density * (z * z * z - 3 * z)) / (20 * n));
-}
-
-/** Φ(z) = erfc(−z/√2) / 2. */
-function standardNormalLowerTail(z: number): number {
-  return complementaryErrorFunction(-z / Math.SQRT2) / 2;
-}
-
-/**
- * erfc(x) by the Chebyshev fit of Press et al., Numerical Recipes §6.2
- * (`erfcc`): fractional error below 1.2e-7 everywhere, so a far tail keeps
- * its relative precision. The coefficients are the fit, not tunables.
- */
-function complementaryErrorFunction(x: number): number {
-  const z = Math.abs(x);
-  const t = 1 / (1 + z / 2);
-  const tail =
-    t *
-    Math.exp(
-      -z * z -
-        1.26551223 +
-        t *
-          (1.00002368 +
-            t *
-              (0.37409196 +
-                t *
-                  (0.09678418 +
-                    t *
-                      (-0.18628806 +
-                        t *
-                          (0.27886807 + t * (-1.13520398 + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))))),
-    );
-  return x >= 0 ? tail : 2 - tail;
-}
-
-/** ln(k!) for k = 0…n, grown on demand and shared across calls. */
-const LOG_FACTORIALS: number[] = [0];
-function logFactorialsThrough(n: number): readonly number[] {
-  for (let k = LOG_FACTORIALS.length; k <= n; k++) LOG_FACTORIALS.push(LOG_FACTORIALS[k - 1] + Math.log(k));
-  return LOG_FACTORIALS;
 }
 
 /**

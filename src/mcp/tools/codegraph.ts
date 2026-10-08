@@ -417,8 +417,9 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "(commitCount, bugFixRate, ageDays inverted); costPosition = cost's mid-rank among all files. Carriers = files " +
       "on the edges that make the violation (named files; all file edges of a component edge or knot cut; hub's " +
       "boundary files; zone-of-pain's depended-on files; island/uselessness = all its files). score 0-1 = " +
-      "percentile of carriers' meanPosition vs the mean of as many random files (Irwin-Hall) — comparable across " +
-      "families and carrier counts; hottestFile = costliest carrier with raw readings; absent = no git readings, " +
+      "carriers' meanPosition shrunk to 0.5 by n/(n+n0), n = measured carriers, n0 = (1/12)/between-violation " +
+      "variance over the whole report (empirical Bayes; all 0.5 when means spread no more than noise) — few " +
+      "carriers pulled to 0.5, many keep their mean, comparable across families; hottestFile = costliest carrier with raw readings; absent = no git readings, " +
       "detector order kept. " +
       "stableDependencies (Stable Dependencies Principle): stable COMPONENT depending on less stable one — " +
       "component = module with measured facade, else directory; evidence = instabilities, Ca/Ce, delta, carrying " +

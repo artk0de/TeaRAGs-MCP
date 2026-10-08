@@ -815,12 +815,15 @@ export interface ArchitectureFileMaintenanceCost {
  */
 export interface ArchitectureMaintenanceCost {
   /**
-   * 0–1, 3 decimals: the percentile of `meanPosition` against the mean of as
-   * many files drawn at random from the collection — P(random mean ≤ observed),
-   * the Irwin–Hall CDF of n × mean over n = `measuredFileCount`. Comparable
-   * across families of any carrier count: one file reads its own position, a
-   * larger set with the same above-centre mean reads higher. The list is
-   * ordered by it, costliest first.
+   * 0–1, 3 decimals: the empirical-Bayes shrunken mean of the carriers' cost
+   * positions, `0.5 + (meanPosition − 0.5) · n / (n + n₀)` over
+   * n = `measuredFileCount`. n₀ = (1/12) / σ²_between, σ²_between estimated
+   * by method of moments over every violation ranked in the same answer (all
+   * families of a report; one review's findings): a mean over few carriers is
+   * pulled toward 0.5, a mean over many keeps its value. Every score reads
+   * 0.5 when the means spread no more than carrier noise predicts, or fewer
+   * than two violations are measured. Comparable across families within one
+   * answer; the list is ordered by it, costliest first.
    */
   score: number;
   /** Mean `costPosition` over the measured carrying files — the raw statistic `score` ranks, 0–1, 3 decimals. */
