@@ -383,6 +383,27 @@ is a constant NESTED in the target's primary type
 (`BaseAdapter::RateLimitError`, no definite call): a dependency on an error
 class, not on the target's role — never judged, in no ledger.
 
+`summary.excluded.uncalledEdgeCount` — typed edges carrying NO resolved call
+(`callWeight` 0: factory `.new`, subtype registry, initializer config, type-only
+import). Source names target, never runs its logic → never a finding. Still
+ledger precedent: direction of knowledge counts every reference (a query reads
+records through framework finders with no in-project call, yet that IS what
+establishes query → record).
+
+`summary.excluded.frameworkRoutedEdgeCount` — typed edges whose EVERY call went
+through framework interface: call text names neither member it lands on nor its
+owner's construction, along no inheritance edge (`Worker.perform_async(id)`
+routed to `Worker#perform`). Source knows target's framework contract, not its
+logic → never a finding; still precedent. Caveat: a project's own dispatcher
+routing `Service.call(x)` → `#perform` reads the same.
+
+`summary.excluded.displacedRoleEdgeCount` — typed edges touching a DISPLACED
+role: head-noun role read where role does not live — file outside every
+conventional directory of its role (`app/lib/x/fee_helper.rb` while helpers live
+in `app/helpers`), or called on type itself (`class << self`) while role's home
+carriers are called on instances (or reverse). Role stays precedent, edge never
+judged. Edge-level reasons (constant, uncalled, framework-routed) count first.
+
 `pathPattern` scopes the FINDINGS by source — ledgers and the test stay
 whole-graph. Findings it drops count in `summary.outOfScopeFindingCount`, never
 silently lost.
@@ -472,7 +493,7 @@ boundary-out N (heaviest → [externalComponent] at L[externalLevel]), boundary-
 | # | Dir | Inner component | External component | L ext | calls |
 
 ## Dependency norms — [violationCount] MISFIT; per family [family]: [significantPairCount]/[familySize] pairs directed ([oneWayPairCount] one-way); [roleFileCount] typed files
-excluded constant-reference N, cross-language N; typed [typedEdgeCount] of graph edges
+excluded constant-reference N, cross-language N, uncalled N, framework-routed N, displaced-role N; typed [typedEdgeCount] of graph edges
 | # | Family | Edge (src → dst) | Roles | Locality | Against (established → support) | Minority | p |
 ```
 
