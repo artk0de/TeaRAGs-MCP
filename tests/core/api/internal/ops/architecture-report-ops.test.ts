@@ -1966,6 +1966,37 @@ describe("ArchitectureReportOps#build — hubLikeDependency (bd tea-rags-mcp-r8h
   });
 });
 
+// bd tea-rags-mcp-r8hme.49 — MacCormack's propagation cost as a summary
+// aggregate over the judged graph, broken down by the adoption partition.
+describe("ArchitectureReportOps#build — propagationCost (bd tea-rags-mcp-r8hme.49)", () => {
+  it("summarises the judged graph's closure density with a per-component breakdown capped at limit", async () => {
+    const whole = await new ArchitectureReportOps().build(graphDb(hubGraph()), {});
+    const summary = whole.summary.propagationCost;
+    expect(summary.fileCount).toBe(hubGraph().files.length);
+    expect(summary.propagationCost).toBeGreaterThan(0);
+    expect(summary.propagationCost).toBeLessThanOrEqual(1);
+    expect(summary.componentCount).toBeGreaterThan(1);
+    const reaches = summary.components.map((c) => c.meanReach);
+    expect(reaches).toEqual([...reaches].sort((a, b) => b - a));
+    // An aggregate, not a violation family.
+    expect(whole.violations.map((v) => v.detector)).not.toContain("propagationCost");
+
+    const capped = await new ArchitectureReportOps().build(graphDb(hubGraph()), { limit: 1 });
+    expect(capped.summary.propagationCost.components).toEqual([summary.components[0]]);
+    expect(capped.summary.propagationCost.componentCount).toBe(summary.componentCount);
+  });
+
+  it("reports an empty, hierarchical propagation-cost summary for an empty report", () => {
+    expect(ArchitectureReportOps.empty({}).summary.propagationCost).toMatchObject({
+      fileCount: 0,
+      propagationCost: 0,
+      corePeriphery: { shape: "hierarchical", coreShare: 0 },
+      componentCount: 0,
+      components: [],
+    });
+  });
+});
+
 // bd tea-rags-mcp-r8hme.20 — violations ranked by what they cost to maintain:
 // the git readings of the files carrying them, positioned in the collection's
 // own distribution.

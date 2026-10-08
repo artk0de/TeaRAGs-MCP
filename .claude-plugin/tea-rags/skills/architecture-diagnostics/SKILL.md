@@ -324,6 +324,25 @@ Evidence per line: Ca/Ce, `instability`, `dependentComponentCount` /
 `compositionRoot: true` = declared composition root — wiring many to many is its
 job; triage data, never suppression.
 
+## Phase 3d3 — PROPAGATION COST
+
+`summary.propagationCost` — aggregate, NO violations, never in rootCauses.
+MacCormack DSM over SAME file graph: `propagationCost` = reachable file pairs /
+N² = mean share of system one change reaches. Higher = change ripples further.
+No fixed "good" value — compare across runs / components, not to a constant.
+
+| Field                                          | Read as                                                                                                                                           |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `largestCycleSize`                             | biggest file cycle — cyclic mass behind high cost                                                                                                 |
+| `corePeriphery.shape`                          | `corePeriphery` = both visibility cuts bimodal (Otsu) AND cyclic core exists; else `hierarchical`                                                 |
+| `corePeriphery.counts`                         | core = high fan-in AND fan-out AND in cycle; shared = in only; control = out only; peripheral = neither                                           |
+| `corePeriphery.acyclicHighVisibilityFileCount` | high both but in no cycle — hierarchy waist, not core                                                                                             |
+| `visibilityFanIn` / `visibilityFanOut`         | per-axis cut: > median AND ≥ `threshold`; `majority` = median fallback (not bimodal / < 8 files)                                                  |
+| `components[]`                                 | top `limit` by `meanReach` (share of system a change to its files reaches); `propagationCost` = its own internal closure density; `coreFileCount` |
+
+Core-periphery shape + large `coreShare` = tangled core; fix through cycle
+breaking (Phase 3e knots), not per-file.
+
 ## Phase 3e — LAYERING
 
 No declared architecture needed: SCC condensation of the DOMAIN graph — every
@@ -474,6 +493,9 @@ Threshold [distanceThreshold] ([method]); volatility cut [volatility.threshold] 
 
 ## Hub-like dependencies — [violationCount]; cuts Ca > [afferent.threshold] ([method]), Ce > [efferent.threshold] ([method]); judged [judgedComponentCount]
 | # | Component | Ca/Ce | I | Top dependents | Top dependencies | Reach | Commits/file |
+
+## Propagation cost — [propagationCost]; shape [corePeriphery.shape], core [counts.core] ([coreShare]); largest cycle [largestCycleSize]
+| # | Component | Files | Mean reach | Internal PC | Core files |
 
 ## Layering — [levelCount] levels; coverage [coverage], coherence [coherence]
 knots [knotCount] (composition N), backEdges [backEdgeCount], bypasses [abstractionBypassCount]; islands N, skips N, composition cycles N

@@ -15,6 +15,12 @@ export {
   type OtsuSplit,
 } from "./otsu-split.js";
 export {
+  DEFAULT_VISIBILITY_BITSET_WORDS,
+  transitiveVisibility,
+  type TransitiveVisibility,
+  type TransitiveVisibilityOptions,
+} from "./transitive-visibility.js";
+export {
   weightThresholdComponents,
   type WeightedComponent,
   type WeightedComponentAnalysis,
