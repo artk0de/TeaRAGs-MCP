@@ -1339,6 +1339,12 @@ export interface ArchitectureNormsReport {
   summary: {
     roleFileCount: number;
     weakRoleFileCount: number;
+    /**
+     * Of `weakRoleFileCount`, files whose primary type only shapes the I/O of
+     * the function the file is named for (`useXParams`, `XProps`) — bd
+     * tea-rags-mcp-xb669.6.
+     */
+    ioShapeRoleFileCount: number;
     untypedFileCount: number;
     typedEdgeCount: number;
     judgedEdgeCount: number;
@@ -1349,8 +1355,12 @@ export interface ArchitectureNormsReport {
      * when the request carried one (bd tea-rags-mcp-mv8yv).
      */
     outOfScopeFindingCount?: number;
-    /** `crossLanguageEdgeCount`: typed edges between two language families — no ledger judges them. */
-    excluded: { lowRoleSupportEdgeCount: number; crossLanguageEdgeCount: number };
+    /**
+     * `crossLanguageEdgeCount`: typed edges between two language families — no ledger judges them.
+     * `constantReferenceEdgeCount`: typed edges whose only evidence is a constant nested in the
+     * target's primary type (`BaseAdapter::RateLimitError`) — no role edge (bd tea-rags-mcp-xb669.6).
+     */
+    excluded: { lowRoleSupportEdgeCount: number; crossLanguageEdgeCount: number; constantReferenceEdgeCount: number };
   };
   /**
    * One ledger per language family (bd tea-rags-mcp-xb669.7), each with its

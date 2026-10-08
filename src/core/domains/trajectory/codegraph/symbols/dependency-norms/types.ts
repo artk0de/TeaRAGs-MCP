@@ -11,6 +11,12 @@ export interface DependencyNormsInput {
    */
   componentOf?: ReadonlyMap<RelPath, string>;
   /**
+   * Each file's PRIMARY type, last namespace segment (bd tea-rags-mcp-xb669.6)
+   * — what tells an edge reaching the target's role from one reaching only a
+   * constant nested in it. Absent: no edge is excluded as a constant reference.
+   */
+  filePrimaryTypes?: ReadonlyMap<RelPath, string>;
+  /**
    * Picomatch glob scoping the FINDINGS by source file (bd tea-rags-mcp-mv8yv),
    * the way every other detector scopes. Ledgers, supports and the cut stay
    * whole-graph; findings the scope drops are counted in
@@ -115,6 +121,11 @@ export interface DependencyNormsSummary {
   roleFileCount: number;
   /** Files whose only role is a project suffix — never asserted (naming's entry gate). */
   weakRoleFileCount: number;
+  /**
+   * Of `weakRoleFileCount`, files whose primary type only shapes the I/O of
+   * the function the file is named for (bd tea-rags-mcp-xb669.6).
+   */
+  ioShapeRoleFileCount: number;
   /** Graph files with no role assignment at all. */
   untypedFileCount: number;
   /** Edges with both endpoints strongly typed — the only ones norms see. */
@@ -138,6 +149,14 @@ export interface DependencyNormsSummary {
      * against. Counted in `typedEdgeCount`, absent from `judgedEdgeCount`.
      */
     crossLanguageEdgeCount: number;
+    /**
+     * Typed edges whose recorded reference names a constant NESTED in the
+     * target's primary type (`BaseAdapter::RateLimitError`) and that carry no
+     * definite resolved call (bd tea-rags-mcp-xb669.6) — a dependency on an
+     * error class or a constant, not on the target's role. Counted in
+     * `typedEdgeCount`, absent from `judgedEdgeCount` and from every ledger.
+     */
+    constantReferenceEdgeCount: number;
   };
 }
 

@@ -1,4 +1,4 @@
-import type { RelPath } from "../../../../../contracts/types/codegraph.js";
+import type { FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../../../../../infra/graph/index.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
 import { languageFamilyOf } from "../language-family-record.js";
@@ -66,13 +66,14 @@ export function buildNormLedgers(input: DependencyNormsInput): NormLedgerBook {
   const roleOf = (relPath: RelPath) => fileRoles.get(relPath);
   const familyOfEdge = edgeFamilyResolver(graph);
   const localityOf = localityResolver(input);
+  const isConstantReference = constantReferenceTest(input);
   const tallies = new Map<string, NormLedgerTally>();
   for (const edge of graph.edges) {
     const sourceRole = roleOf(edge.sourceRelPath);
     const targetRole = roleOf(edge.targetRelPath);
     if (sourceRole?.strong !== true || targetRole?.strong !== true) continue;
     const family = familyOfEdge(edge.sourceRelPath, edge.targetRelPath);
-    if (family === undefined) continue;
+    if (family === undefined || isConstantReference(edge)) continue;
     let tally = tallies.get(family);
     if (tally === undefined) {
       tally = { pairs: new Map(), activity: new Map(), byLocality: new Map() };
@@ -160,6 +161,42 @@ function edgeFamilyResolver(graph: DependencyNormsInput["graph"]) {
     sharedFamily(languageOf.get(sourceRelPath), languageOf.get(targetRelPath));
 }
 
+/**
+ * The confidence-weighted call sum of ONE full-confidence resolved call — the
+ * least that proves an edge calls INTO its target, whatever constant its
+ * recorded reference names. A dynamic fan-out share sums below it.
+ */
+const DEFINITE_CALL_WEIGHT = 1;
+
+/** A leading reference-channel marker (`zeitwerk:`), never a `::` namespace separator. */
+const REFERENCE_CHANNEL_MARKER = /^[A-Za-z_-]+:(?!:)/;
+const NAMESPACE_SEPARATOR = /::|\./;
+
+/**
+ * Whether an edge's only evidence is a constant NESTED in the target's primary
+ * type (bd tea-rags-mcp-xb669.6): its recorded reference is qualified THROUGH
+ * the primary (`BaseAdapter::RateLimitError` into base_adapter.rb) to a name
+ * other than the primary, and no definite call backs it. Such an edge depends
+ * on an error class or a constant, not on what the target file IS — counting
+ * it would make `rescue Adapter::Error` a worker→adapter precedent.
+ *
+ * Bounded by the persisted fact: an edge row keeps the FIRST reference the
+ * walk saw, so a file naming the nested constant before the primary itself
+ * reads as a constant reference — the call-weight guard keeps every edge that
+ * provably calls in.
+ */
+function constantReferenceTest({ filePrimaryTypes }: DependencyNormsInput) {
+  return (edge: FileDependencyGraph["edges"][number]): boolean => {
+    if (filePrimaryTypes === undefined || edge.importText === undefined || edge.importText === null) return false;
+    if (edge.callWeight >= DEFINITE_CALL_WEIGHT) return false;
+    const primary = filePrimaryTypes.get(edge.targetRelPath);
+    if (primary === undefined) return false;
+    const segments = edge.importText.replace(REFERENCE_CHANNEL_MARKER, "").split(NAMESPACE_SEPARATOR);
+    const named = segments.pop();
+    return named !== primary && segments.includes(primary);
+  };
+}
+
 function localityResolver({ componentOf }: DependencyNormsInput) {
   return (sourceRelPath: RelPath, targetRelPath: RelPath): NormLocality => {
     if (directoryOf(sourceRelPath) === directoryOf(targetRelPath)) return "sameDirectory";
@@ -218,20 +255,26 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
   const roleOf = (relPath: RelPath) => fileRoles.get(relPath);
 
   let weakRoleFileCount = 0;
+  let ioShapeRoleFileCount = 0;
   let untypedFileCount = 0;
   for (const f of graph.files) {
     const role = fileRoles.get(f.relPath);
     if (role === undefined) untypedFileCount++;
-    else if (!role.strong) weakRoleFileCount++;
+    else if (!role.strong) {
+      weakRoleFileCount++;
+      if (role.weakReason === "ioShape") ioShapeRoleFileCount++;
+    }
   }
 
   const book = buildNormLedgers(input);
   const familyOfEdge = edgeFamilyResolver(graph);
   const localityOf = localityResolver(input);
+  const isConstantReference = constantReferenceTest(input);
 
   const findings: DependencyNormFinding[] = [];
   let lowRoleSupportEdgeCount = 0;
   let crossLanguageEdgeCount = 0;
+  let constantReferenceEdgeCount = 0;
   let typedEdgeCount = 0;
   for (const edge of graph.edges) {
     const sourceRole = roleOf(edge.sourceRelPath);
@@ -243,6 +286,11 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
     // ledger to be judged against — UNJUDGED, counted, never a finding.
     if (family === undefined) {
       crossLanguageEdgeCount++;
+      continue;
+    }
+    // bd tea-rags-mcp-xb669.6: a nested constant is no role edge — counted, never judged.
+    if (isConstantReference(edge)) {
+      constantReferenceEdgeCount++;
       continue;
     }
     const ledgers = book.forLanguage(family);
@@ -279,13 +327,14 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
   const summary: DependencyNormsSummary = {
     roleFileCount: [...new Set([...fileRoles].filter(([, r]) => r.strong).map(([p]) => p))].length,
     weakRoleFileCount,
+    ioShapeRoleFileCount,
     untypedFileCount,
     typedEdgeCount,
-    judgedEdgeCount: typedEdgeCount - crossLanguageEdgeCount,
+    judgedEdgeCount: typedEdgeCount - crossLanguageEdgeCount - constantReferenceEdgeCount,
     violationCount: scopedFindings.length,
     pairCount: [...book.families.values()].reduce((sum, ledger) => sum + ledger.pairCount, 0),
     ...(inScope ? { outOfScopeFindingCount: findings.length - scopedFindings.length } : {}),
-    excluded: { lowRoleSupportEdgeCount, crossLanguageEdgeCount },
+    excluded: { lowRoleSupportEdgeCount, crossLanguageEdgeCount, constantReferenceEdgeCount },
   };
   return {
     summary,

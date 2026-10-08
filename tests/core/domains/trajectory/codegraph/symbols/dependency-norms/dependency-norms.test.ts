@@ -367,3 +367,57 @@ describe("dependency norms are judged per language family", () => {
     expect(book.forLanguage("typescript").pairs.get("form\u0000repository\u0000crossDomain")).toBe(1);
   });
 });
+
+/**
+ * A constant reference is not a role edge (bd tea-rags-mcp-xb669.6): measured
+ * on taxdome, `rescue BaseAdapter::RateLimitError` in a retry block counted as
+ * a worker -> adapter edge. The edge's recorded reference names a type nested
+ * in the target's PRIMARY, not the primary — a dependency on an error class,
+ * never on the adapter's role.
+ */
+describe("computeDependencyNorms - constant references are not role edges", () => {
+  it("excludes an edge whose recorded reference names a constant nested in the target's primary type", () => {
+    const { graph, roles } = verdictsFixture();
+    graph.edges.push({
+      sourceRelPath: "logic/billing.ts",
+      targetRelPath: "present/kanban.ts",
+      callWeight: 0.5,
+      importText: "zeitwerk:KanbanPresenter::RateLimitError",
+    });
+    // A reference to the primary itself stays a role edge.
+    graph.edges.push({
+      sourceRelPath: "logic/reports.ts",
+      targetRelPath: "present/kanban.ts",
+      callWeight: 0,
+      importText: "zeitwerk:KanbanPresenter",
+    });
+    const filePrimaryTypes = new Map([["present/kanban.ts", "KanbanPresenter"]]);
+
+    const report = computeDependencyNorms({ graph, fileRoles: roles, filePrimaryTypes });
+
+    expect(report.summary.excluded.constantReferenceEdgeCount).toBe(1);
+    expect(report.findings.some((f) => f.sourceRelPath === "logic/billing.ts")).toBe(false);
+    expect(report.summary.judgedEdgeCount).toBe(report.summary.typedEdgeCount - 1);
+    // The constant reference is never precedent; the reference to the primary
+    // is (tasks -> board plus reports -> kanban).
+    const ledger = buildNormLedgers({ graph, fileRoles: roles, filePrimaryTypes }).forLanguage("typescript");
+    expect(ledger.pairs.get("service\u0000presenter\u0000crossDomain")).toBe(2);
+  });
+
+  it("keeps a nested-constant edge that carries a definite resolved call", () => {
+    const { graph, roles } = verdictsFixture();
+    graph.edges.push({
+      sourceRelPath: "logic/billing.ts",
+      targetRelPath: "present/kanban.ts",
+      callWeight: 1,
+      importText: "zeitwerk:KanbanPresenter::RateLimitError",
+    });
+    const report = computeDependencyNorms({
+      graph,
+      fileRoles: roles,
+      filePrimaryTypes: new Map([["present/kanban.ts", "KanbanPresenter"]]),
+    });
+
+    expect(report.summary.excluded.constantReferenceEdgeCount).toBe(0);
+  });
+});

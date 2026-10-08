@@ -25,7 +25,11 @@ import type {
   RelPath,
   TemporalCochangeGraph,
 } from "../../../contracts/types/codegraph.js";
-import { buildDependencyNormFileRoles, TYPE_DRAFT_KINDS } from "../../../domains/explore/naming-lexicon/index.js";
+import {
+  buildDependencyNormFilePrimaryTypes,
+  buildDependencyNormFileRoles,
+  TYPE_DRAFT_KINDS,
+} from "../../../domains/explore/naming-lexicon/index.js";
 import { DOCUMENTATION_LANGUAGES, LANGUAGE_MAP } from "../../../domains/ingest/pipeline/chunker/config.js";
 import {
   buildComponentGraph,
@@ -688,6 +692,7 @@ async function computeReportNorms(
   return computeDependencyNorms({
     graph,
     fileRoles: buildDependencyNormFileRoles(rows),
+    filePrimaryTypes: buildDependencyNormFilePrimaryTypes(rows),
     componentOf,
     sourcePathPattern,
   });

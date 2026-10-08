@@ -72,6 +72,13 @@ export interface FileDependencyEdge extends FileEdgeExportNames {
    * element, a re-export).
    */
   callWeight: number;
+  /**
+   * The edge row's recorded reference (`cg_symbols_edges_file.import_text`):
+   * the FIRST reference the walk saw — a module specifier, or for Ruby the
+   * constant as written (`zeitwerk:BaseAdapter::RateLimitError`). One per
+   * edge, never the union. Absent / `null` when the walk recorded none.
+   */
+  importText?: string | null;
 }
 
 /**
@@ -94,6 +101,13 @@ export interface FileDependencyGraph {
 export interface DependencyNormFileRole {
   role: string;
   strong: boolean;
+  /**
+   * Why a role is weak beyond suffix evidence (bd tea-rags-mcp-xb669.6):
+   * `ioShape` — the primary type only shapes the I/O of the function the file
+   * is named for (`UseXParams` in `useX.ts`, `XProps` in `X.tsx`). Absent on
+   * strong roles and on plain project-suffix roles.
+   */
+  weakReason?: "ioShape";
 }
 
 /**

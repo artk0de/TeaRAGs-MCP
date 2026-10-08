@@ -88,11 +88,13 @@ describe("DuckDbGraphClient — readFileDependencyGraph", () => {
 
     const byPair = (x: FileDependencyEdge, y: FileDependencyEdge): number =>
       `${x.sourceRelPath}>${x.targetRelPath}`.localeCompare(`${y.sourceRelPath}>${y.targetRelPath}`);
+    // Each edge carries its recorded reference (bd tea-rags-mcp-xb669.6): the
+    // dependency norms read it to tell a nested-constant reference from a role edge.
     expect([...graph.edges].sort(byPair)).toEqual([
-      { sourceRelPath: "src/a.ts", targetRelPath: "gen/ghost.ts", callWeight: 0 },
-      { sourceRelPath: "src/a.ts", targetRelPath: "src/b.ts", callWeight: 1.5 },
-      { sourceRelPath: "src/a.ts", targetRelPath: "src/c.ts", callWeight: 0.25 },
-      { sourceRelPath: "src/b.ts", targetRelPath: "src/c.ts", callWeight: 0 },
+      { sourceRelPath: "src/a.ts", targetRelPath: "gen/ghost.ts", callWeight: 0, importText: "../gen/ghost.js" },
+      { sourceRelPath: "src/a.ts", targetRelPath: "src/b.ts", callWeight: 1.5, importText: "./b.js" },
+      { sourceRelPath: "src/a.ts", targetRelPath: "src/c.ts", callWeight: 0.25, importText: "./c.js" },
+      { sourceRelPath: "src/b.ts", targetRelPath: "src/c.ts", callWeight: 0, importText: "./c.js" },
     ]);
     expect([...graph.files].sort((x, y) => x.relPath.localeCompare(y.relPath))).toEqual([
       { relPath: "src/a.ts", language: "typescript", symbolCount: 2 },

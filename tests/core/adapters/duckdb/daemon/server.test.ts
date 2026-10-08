@@ -824,7 +824,7 @@ describe("CodegraphDaemonServer.handle — readFileDependencyGraph", () => {
         { relPath: "a.ts", language: "typescript", symbolCount: 0 },
         { relPath: "b.ts", language: "typescript", symbolCount: 0 },
       ],
-      edges: [{ sourceRelPath: "a.ts", targetRelPath: "b.ts", callWeight: 0 }],
+      edges: [{ sourceRelPath: "a.ts", targetRelPath: "b.ts", callWeight: 0, importText: "./b" }],
     });
     await pool.closeAll();
   });

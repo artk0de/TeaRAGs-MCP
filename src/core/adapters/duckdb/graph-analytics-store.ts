@@ -135,11 +135,12 @@ export class DuckDbGraphAnalyticsStore {
       source_rel_path: string;
       target_rel_path: string;
       call_weight: number | string;
+      import_text: string | null;
       imported_export_names: string | null;
       reexported_export_names: string | null;
     }>(
       `SELECT e.source_rel_path, e.target_rel_path, COALESCE(c.call_weight, 0) AS call_weight,
-              e.imported_export_names, e.reexported_export_names
+              e.import_text, e.imported_export_names, e.reexported_export_names
        FROM cg_symbols_edges_file e
        LEFT JOIN (
          SELECT source_rel_path, target_rel_path, SUM(COALESCE(confidence, 1.0)) AS call_weight
@@ -172,6 +173,8 @@ export class DuckDbGraphAnalyticsStore {
           sourceRelPath: r.source_rel_path,
           targetRelPath: r.target_rel_path,
           callWeight: Number(r.call_weight),
+          // bd tea-rags-mcp-xb669.6 — the norms tell a nested-constant reference from a role edge.
+          ...(r.import_text ? { importText: r.import_text } : {}),
           ...(imported ? { importedExportNames: imported } : {}),
           ...(reexported ? { reexportedExportNames: reexported } : {}),
         };
