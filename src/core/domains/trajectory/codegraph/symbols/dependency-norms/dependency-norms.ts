@@ -216,11 +216,19 @@ const NAMESPACE_SEPARATOR = /::|\./;
 
 /**
  * Why a same-family typed edge carries no verdict. `constantReference` is no
- * role edge at all — never judged, never precedent. `uncalled` IS precedent
- * (see `buildNormLedgers`) but never a finding: an inversion is a layering
- * mistake only when the minority edge runs the target's own logic.
+ * role edge at all — never judged, never precedent. `uncalled` and
+ * `frameworkRouted` ARE precedent (see `buildNormLedgers`) but never a
+ * finding: an inversion is a layering mistake only when the minority edge
+ * runs the target's own logic.
  */
-type NormEdgeExclusion = "constantReference" | "uncalled";
+type NormEdgeExclusion = "constantReference" | "uncalled" | "frameworkRouted";
+
+/**
+ * Relative slack when comparing the framework-routed part of an edge's call
+ * weight with the whole: both are float sums of the same confidences, so
+ * "every call routed" may differ from equality in the last bits.
+ */
+const CALL_WEIGHT_RELATIVE_EPSILON = 1e-9;
 
 /** The report walk's exclusion test. A nested constant is named first: its reason is the more specific one. */
 function edgeExclusionResolver(input: DependencyNormsInput) {
@@ -232,6 +240,11 @@ function edgeExclusionResolver(input: DependencyNormsInput) {
     // an initializer's config). Measured on the xb669.8 gold set: 13 FALSE,
     // 0 TRUE among the call-less MISFITs.
     if (edge.callWeight <= 0) return "uncalled";
+    // bd tea-rags-mcp-4vj2u: every call went through a framework's interface
+    // (`Worker.perform_async` routed to `Worker#perform`) — the source knows
+    // the target's framework contract, not its logic.
+    const routed = edge.frameworkRoutedCallWeight ?? 0;
+    if (routed >= edge.callWeight * (1 - CALL_WEIGHT_RELATIVE_EPSILON)) return "frameworkRouted";
     return undefined;
   };
 }
@@ -320,6 +333,7 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
   let crossLanguageEdgeCount = 0;
   let constantReferenceEdgeCount = 0;
   let uncalledEdgeCount = 0;
+  let frameworkRoutedEdgeCount = 0;
   let typedEdgeCount = 0;
   for (const edge of graph.edges) {
     const sourceRole = roleOf(edge.sourceRelPath);
@@ -338,7 +352,8 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
     const exclusion = exclusionOf(edge);
     if (exclusion !== undefined) {
       if (exclusion === "constantReference") constantReferenceEdgeCount++;
-      else uncalledEdgeCount++;
+      else if (exclusion === "uncalled") uncalledEdgeCount++;
+      else frameworkRoutedEdgeCount++;
       continue;
     }
     const ledgers = book.forLanguage(family);
@@ -381,11 +396,16 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
     ioShapeRoleFileCount,
     untypedFileCount,
     typedEdgeCount,
-    judgedEdgeCount: typedEdgeCount - crossLanguageEdgeCount - constantReferenceEdgeCount - uncalledEdgeCount,
+    judgedEdgeCount:
+      typedEdgeCount -
+      crossLanguageEdgeCount -
+      constantReferenceEdgeCount -
+      uncalledEdgeCount -
+      frameworkRoutedEdgeCount,
     violationCount: scopedFindings.length,
     pairCount: [...book.families.values()].reduce((sum, ledger) => sum + ledger.pairCount, 0),
     ...(inScope ? { outOfScopeFindingCount: findings.length - scopedFindings.length } : {}),
-    excluded: { crossLanguageEdgeCount, constantReferenceEdgeCount, uncalledEdgeCount },
+    excluded: { crossLanguageEdgeCount, constantReferenceEdgeCount, uncalledEdgeCount, frameworkRoutedEdgeCount },
   };
   return {
     summary,

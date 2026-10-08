@@ -73,6 +73,16 @@ export interface FileDependencyEdge extends FileEdgeExportNames {
    */
   callWeight: number;
   /**
+   * The part of {@link callWeight} whose calls never NAME the member they land
+   * on (bd tea-rags-mcp-4vj2u): the call text holds neither the target
+   * member's name nor, for a construction, its owner type called directly
+   * (`new Owner(…)`, `Owner(…)`). Such a call ran a framework's interface the
+   * resolver routed into the target — `Worker.perform_async(id)` landing on
+   * `Worker#perform` — so the source knows the target's framework contract,
+   * not its logic. Absent when no call crossing the edge is routed.
+   */
+  frameworkRoutedCallWeight?: number;
+  /**
    * The edge row's recorded reference (`cg_symbols_edges_file.import_text`):
    * the FIRST reference the walk saw — a module specifier, or for Ruby the
    * constant as written (`zeitwerk:BaseAdapter::RateLimitError`). One per

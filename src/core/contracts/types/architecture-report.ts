@@ -1377,9 +1377,15 @@ export interface ArchitectureNormsReport {
      * target's primary type (`BaseAdapter::RateLimitError`) — no role edge (bd tea-rags-mcp-xb669.6).
      * `uncalledEdgeCount`: typed edges carrying no resolved call (`callWeight` 0) — the source
      * names the target but never runs its logic, so never a finding; still ledger precedent
-     * (bd tea-rags-mcp-4vj2u).
+     * (bd tea-rags-mcp-4vj2u). `frameworkRoutedEdgeCount`: typed edges whose every call went through
+     * a framework interface (`Worker.perform_async` routed to `#perform`) — same treatment.
      */
-    excluded: { crossLanguageEdgeCount: number; constantReferenceEdgeCount: number; uncalledEdgeCount: number };
+    excluded: {
+      crossLanguageEdgeCount: number;
+      constantReferenceEdgeCount: number;
+      uncalledEdgeCount: number;
+      frameworkRoutedEdgeCount: number;
+    };
   };
   /**
    * One ledger per language family (bd tea-rags-mcp-xb669.7), each with its

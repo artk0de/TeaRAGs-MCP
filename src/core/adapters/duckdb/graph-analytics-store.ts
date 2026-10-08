@@ -53,6 +53,46 @@ function memberPaths(entry: CycleEntry): string[] {
   return entry.memberLocations ? entry.memberLocations.map((m) => m.relativePath) : entry.members;
 }
 
+/** The target member's owner type, last namespace segment (`Owner` of `A::Owner#run`); '' for a free function. */
+const TARGET_OWNER_SQL = String.raw`regexp_extract(target_symbol_id, '([A-Za-z0-9_$]+)[#.][^#.]*$', 1)`;
+
+/**
+ * Whether a resolved method-edge row went through a FRAMEWORK's interface (bd
+ * tea-rags-mcp-4vj2u): it runs along no inheritance edge (`inh`, joined by the
+ * caller — a subclass's `super(…)` names no member, yet runs its base's own
+ * logic), its call text never NAMES the member it landed on, and it is no
+ * construction of that member's owner.
+ *   - Names: some identifier token of the call text is a contiguous run of the
+ *     target member's `_`-separated name segments, a Ruby `?` / `!` / `=`
+ *     suffix aside — the whole name (`x.public_send(:refresh!)` names
+ *     `refresh!`) or the part the caller selects (`Policy.authorized?(u,
+ *     :view_entries)` routed to `Policy#can_view_entries?` names it: the caller
+ *     picked which logic runs).
+ *   - Construction: the owner type called directly (`new Owner(…)`,
+ *     `new Owner<T>(…)`, `Owner(…)`, anywhere in the text, so one nested in
+ *     another call's argument counts).
+ * `Worker.perform_async(id)` routed to `Worker#perform` does neither: the
+ * caller names the framework's enqueue verb, the framework derives the
+ * entrypoint. Derived from the persisted call text and target id, so it needs
+ * no re-walk.
+ */
+const FRAMEWORK_ROUTED_CALL_SQL = String.raw`inh.source_rel_path IS NULL AND NOT (
+  len(list_filter(
+    regexp_split_to_array(call_expression, '[^A-Za-z0-9_$]+'),
+    token -> token <> '' AND contains(
+      '_' || rtrim(regexp_extract(target_symbol_id, '([^#.]+)$', 1), '?!=') || '_',
+      '_' || token || '_'
+    )
+  )) > 0
+  OR (
+    ${TARGET_OWNER_SQL} <> ''
+    AND regexp_matches(
+      call_expression,
+      '(^|[^A-Za-z0-9_$])' || replace(${TARGET_OWNER_SQL}, '$', '\$') || '\s*(<[^()]*>)?\s*\('
+    )
+  )
+)`;
+
 /** `rel_path` of a derived row carried over by migration 028 — its file is unknown. */
 const UNKNOWN_REL_PATH = "";
 
@@ -131,22 +171,34 @@ export class DuckDbGraphAnalyticsStore {
     // Weighted like chunk fanIn: SUM of per-edge dispatch confidence, legacy
     // NULL rows as 1.0. `target_symbol_id IS NOT NULL` mirrors every other
     // method-edge read — an unpinned call is not a resolved one.
+    // `framework_routed_call_weight` (bd tea-rags-mcp-4vj2u): the part of it
+    // whose call text never names the member it lands on — see
+    // FRAMEWORK_ROUTED_CALL_SQL.
     const edgeRows = await this.session.queryAll<{
       source_rel_path: string;
       target_rel_path: string;
       call_weight: number | string;
+      framework_routed_call_weight: number | string | null;
       import_text: string | null;
       imported_export_names: string | null;
       reexported_export_names: string | null;
     }>(
       `SELECT e.source_rel_path, e.target_rel_path, COALESCE(c.call_weight, 0) AS call_weight,
+              c.framework_routed_call_weight,
               e.import_text, e.imported_export_names, e.reexported_export_names
        FROM cg_symbols_edges_file e
        LEFT JOIN (
-         SELECT source_rel_path, target_rel_path, SUM(COALESCE(confidence, 1.0)) AS call_weight
-         FROM cg_symbols_edges_method
-         WHERE target_symbol_id IS NOT NULL
-         GROUP BY source_rel_path, target_rel_path
+         SELECT m.source_rel_path, m.target_rel_path, SUM(COALESCE(m.confidence, 1.0)) AS call_weight,
+                SUM(CASE WHEN ${FRAMEWORK_ROUTED_CALL_SQL} THEN COALESCE(m.confidence, 1.0) ELSE 0 END)
+                  AS framework_routed_call_weight
+         FROM cg_symbols_edges_method m
+         LEFT JOIN (
+           SELECT DISTINCT i.source_rel_path, s.rel_path AS target_rel_path
+           FROM cg_symbols_inheritance i
+           JOIN cg_symbols s ON s.symbol_id = i.ancestor_symbol_id
+         ) inh ON inh.source_rel_path = m.source_rel_path AND inh.target_rel_path = m.target_rel_path
+         WHERE m.target_symbol_id IS NOT NULL
+         GROUP BY m.source_rel_path, m.target_rel_path
        ) c ON c.source_rel_path = e.source_rel_path AND c.target_rel_path = e.target_rel_path
        ORDER BY e.source_rel_path, e.target_rel_path`,
     );
@@ -169,10 +221,13 @@ export class DuckDbGraphAnalyticsStore {
         // bd tea-rags-mcp-r8hme.2 — present only when the walk recorded them.
         const imported = decodeFileEdgeExportNames(r.imported_export_names);
         const reexported = decodeFileEdgeExportNames(r.reexported_export_names);
+        const frameworkRouted = Number(r.framework_routed_call_weight ?? 0);
         return {
           sourceRelPath: r.source_rel_path,
           targetRelPath: r.target_rel_path,
           callWeight: Number(r.call_weight),
+          // bd tea-rags-mcp-4vj2u — present only when a call went through a framework's interface.
+          ...(frameworkRouted > 0 ? { frameworkRoutedCallWeight: frameworkRouted } : {}),
           // bd tea-rags-mcp-xb669.6 — the norms tell a nested-constant reference from a role edge.
           ...(r.import_text ? { importText: r.import_text } : {}),
           ...(imported ? { importedExportNames: imported } : {}),

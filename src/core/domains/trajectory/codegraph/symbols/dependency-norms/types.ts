@@ -199,6 +199,15 @@ export interface DependencyNormsSummary {
      * absent from `judgedEdgeCount`.
      */
     uncalledEdgeCount: number;
+    /**
+     * Typed edges whose EVERY resolved call went through a framework's
+     * interface — `frameworkRoutedCallWeight` covers the whole `callWeight`
+     * (bd tea-rags-mcp-4vj2u): `Worker.perform_async(…)` routed to
+     * `Worker#perform` knows the worker's framework contract, not its logic.
+     * Precedent like an uncalled edge, never a finding; counted in
+     * `typedEdgeCount`, absent from `judgedEdgeCount`.
+     */
+    frameworkRoutedEdgeCount: number;
   };
 }
 

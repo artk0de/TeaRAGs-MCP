@@ -518,3 +518,46 @@ describe("computeDependencyNorms - an edge with no resolved call is no role edge
     expect(report.findings.some((f) => f.sourceRelPath === "service/service1.ts")).toBe(true);
   });
 });
+
+/**
+ * An edge whose every call went through a framework's interface is no
+ * layering dependency either (bd tea-rags-mcp-4vj2u, xb669.8 gold set): a
+ * billing handler, a Rack middleware, a mailer each `Worker.perform_async(…)`
+ * — the resolver routes the enqueue to `Worker#perform`, but the source knows
+ * the worker's framework contract, not its logic. Like a call-less edge it
+ * stays precedent and carries no verdict.
+ */
+describe("computeDependencyNorms - a framework-routed edge is no role edge", () => {
+  it("never judges an edge whose every call is framework-routed, counts it, keeps it as precedent", () => {
+    const { graph, roles } = inversionFixture();
+    graph.edges.push({
+      sourceRelPath: "service/service1.ts",
+      targetRelPath: "controller/controller1.ts",
+      callWeight: 1.5,
+      frameworkRoutedCallWeight: 1.5,
+    });
+
+    const report = computeDependencyNorms({ graph, fileRoles: roles });
+
+    expect(report.summary.excluded.frameworkRoutedEdgeCount).toBe(1);
+    expect(report.summary.judgedEdgeCount).toBe(FIXTURE_EDGE_COUNT);
+    expect(report.findings.some((f) => f.sourceRelPath === "service/service1.ts")).toBe(false);
+    const ledger = buildNormLedgers({ graph, fileRoles: roles }).forLanguage("typescript");
+    expect(ledger.pairs.get("service\u0000controller\u0000crossDomain")).toBe(2);
+  });
+
+  it("judges an edge with at least one call naming the target's own member", () => {
+    const { graph, roles } = inversionFixture();
+    graph.edges.push({
+      sourceRelPath: "service/service1.ts",
+      targetRelPath: "controller/controller1.ts",
+      callWeight: 2,
+      frameworkRoutedCallWeight: 1,
+    });
+
+    const report = computeDependencyNorms({ graph, fileRoles: roles });
+
+    expect(report.summary.excluded.frameworkRoutedEdgeCount).toBe(0);
+    expect(report.findings.some((f) => f.sourceRelPath === "service/service1.ts")).toBe(true);
+  });
+});
