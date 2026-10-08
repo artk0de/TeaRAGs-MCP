@@ -120,9 +120,14 @@ export class DuckDbGraphAnalyticsStore {
       symbol_count: number | string;
       abstract_type_count: number | string | null;
       concrete_type_count: number | string | null;
+      outer_scope_names: string[] | null;
     }>(
+      // bd tea-rags-mcp-r8hme.11 — the outermost scope per symbol, distinct per
+      // file; `list` skips the NULLs a scopeless symbol yields.
       `SELECT f.rel_path, f.language, f.abstract_type_count, f.concrete_type_count,
-              COUNT(s.symbol_id) AS symbol_count
+              COUNT(s.symbol_id) AS symbol_count,
+              list(DISTINCT json_extract_string(s.scope_json, '$[0]') ORDER BY json_extract_string(s.scope_json, '$[0]'))
+                FILTER (WHERE json_extract_string(s.scope_json, '$[0]') IS NOT NULL) AS outer_scope_names
        FROM cg_symbols_files f
        LEFT JOIN cg_symbols s ON s.rel_path = f.rel_path
        GROUP BY f.rel_path, f.language, f.abstract_type_count, f.concrete_type_count
@@ -163,6 +168,7 @@ export class DuckDbGraphAnalyticsStore {
               },
             }
           : {}),
+        ...(r.outer_scope_names && r.outer_scope_names.length > 0 ? { outerScopeNames: [...r.outer_scope_names] } : {}),
       })),
       edges: edgeRows.map((r) => {
         // bd tea-rags-mcp-r8hme.2 — present only when the walk recorded them.

@@ -101,6 +101,27 @@ describe("DuckDbGraphClient — readFileDependencyGraph", () => {
     ]);
   });
 
+  it("carries each file's distinct outermost symbol scopes — the constants it declares members in (bd tea-rags-mcp-r8hme.11)", async () => {
+    await db.upsertFile(
+      { relPath: "app/models/billing/invoice.rb", language: "ruby" },
+      { fileEdges: [], methodEdges: [] },
+    );
+    await db.upsertSymbols("app/models/billing/invoice.rb", [
+      { ...def("app/models/billing/invoice.rb", "Billing::Invoice#total"), scope: ["Billing::Invoice"] },
+      { ...def("app/models/billing/invoice.rb", "Billing::Invoice::Line#sum"), scope: ["Billing::Invoice", "Line"] },
+      { ...def("app/models/billing/invoice.rb", "Billing::Invoice::Line"), scope: ["Billing::Invoice"] },
+    ]);
+
+    const [file] = (await db.readFileDependencyGraph()).files;
+
+    expect(file).toEqual({
+      relPath: "app/models/billing/invoice.rb",
+      language: "ruby",
+      symbolCount: 3,
+      outerScopeNames: ["Billing::Invoice"],
+    });
+  });
+
   it("reads an empty graph as empty", async () => {
     expect(await db.readFileDependencyGraph()).toEqual({ files: [], edges: [] });
   });

@@ -1,5 +1,9 @@
 import type { FileDependencyEdge, FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
-import { classifyDirectoryRelation } from "./directory-relation.js";
+import {
+  classifyComponentRelation,
+  deriveConstantNamespaceComponents,
+  isNamespaceComponent,
+} from "./constant-namespace.js";
 import { isFacadeAggregationEdge } from "./facade-aggregation.js";
 import type {
   ArchitectureComponent,
@@ -52,9 +56,12 @@ export const COMPONENT_CONTAINMENT_REASON =
  *
  * PARTITION. A module whose facade `modules` measured
  * ({@link COMPONENT_MODULE_STATUSES}) owns its directory subtree, minus the
- * subtrees of modules nested inside it. Every other file belongs to its OWN
- * directory — no roll-up into a parent: for Ruby the directory IS the
- * namespace, and rolling small directories up into the nearest ancestor with
+ * subtrees of modules nested inside it. A file outside every such module whose
+ * path spells the constant it declares belongs to that constant's NAMESPACE
+ * (bd tea-rags-mcp-r8hme.11, `deriveConstantNamespaceComponents`):
+ * `app/models/billing/*` and `app/services/billing/*` are one `::Billing`.
+ * Every other file belongs to its OWN directory — no roll-up into a parent:
+ * rolling small directories up into the nearest ancestor with
  * enough files mixed unrelated namespaces into one component (on taxdome it
  * raised the judged component edges from 8962 to 13768 and the violations
  * from 267 to 390 without making any of them more specific).
@@ -79,10 +86,11 @@ export function buildComponentGraph(
   const componentModules = new Map<string, FacadeModuleAssessment>();
   for (const m of modules) if (statuses.has(m.status)) componentModules.set(m.moduleDir, m);
 
+  const namespaceOf = deriveConstantNamespaceComponents(graph.files);
   const componentOf = new Map<RelPath, string>();
   const members = new Map<string, number>();
   for (const f of graph.files) {
-    const component = owningComponent(f.relPath, componentModules);
+    const component = owningComponent(f.relPath, componentModules, namespaceOf);
     componentOf.set(f.relPath, component);
     members.set(component, (members.get(component) ?? 0) + 1);
   }
@@ -116,7 +124,7 @@ export function buildComponentGraph(
     const connectionCount = afferentCount + efferentCount;
     components.set(componentDir, {
       componentDir,
-      kind: module ? "module" : "directory",
+      kind: module ? "module" : isNamespaceComponent(componentDir) ? "namespace" : "directory",
       facadeRelPath: module?.facadeRelPath ?? null,
       fileCount,
       afferentCount,
@@ -132,7 +140,7 @@ export function buildComponentGraph(
       return {
         sourceComponent,
         targetComponent,
-        directoryRelation: classifyDirectoryRelation(`${sourceComponent}/_`, `${targetComponent}/_`),
+        directoryRelation: classifyComponentRelation(sourceComponent, targetComponent),
         callWeight: fileEdges.reduce((sum, e) => sum + e.callWeight, 0),
         fileEdges,
       };
@@ -165,13 +173,20 @@ export function buildDomainComponentGraph(
   return buildComponentGraph(graph, modules, DOMAIN_MODULE_STATUSES);
 }
 
-/** The innermost component module containing `relPath`, else the file's own directory. */
-function owningComponent(relPath: RelPath, componentModules: ReadonlyMap<string, FacadeModuleAssessment>): string {
+/**
+ * The innermost component module containing `relPath`, else the constant
+ * namespace its path spells, else the file's own directory.
+ */
+function owningComponent(
+  relPath: RelPath,
+  componentModules: ReadonlyMap<string, FacadeModuleAssessment>,
+  namespaceOf: ReadonlyMap<RelPath, string>,
+): string {
   const ownDir = directoryOf(relPath);
   let dir = ownDir;
   for (;;) {
     if (componentModules.has(dir)) return dir;
-    if (dir === "") return ownDir;
+    if (dir === "") return namespaceOf.get(relPath) ?? ownDir;
     dir = directoryOf(dir);
   }
 }

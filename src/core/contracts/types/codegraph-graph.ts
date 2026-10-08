@@ -55,6 +55,14 @@ export interface FileDependencyGraphFile {
    * the row predates the census or the language has none.
    */
   typeAbstractness?: TypeAbstractnessCensus;
+  /**
+   * The distinct OUTERMOST scopes of the file's symbols — each `cg_symbols`
+   * row's first `scope` entry, the qualified name the file declares members in
+   * (`Billing::Invoice` for a Ruby `Billing::Invoice#total`). What the
+   * component partition reads a constant namespace off (bd
+   * tea-rags-mcp-r8hme.11). Absent when no symbol of the file has a scope.
+   */
+  outerScopeNames?: string[];
 }
 
 /**

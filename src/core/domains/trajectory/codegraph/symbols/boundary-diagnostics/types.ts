@@ -362,13 +362,18 @@ export interface ConventionPrivacyReport {
 /**
  * How a component came to be (bd tea-rags-mcp-r8hme.7): `module` = a directory
  * whose facade the leaking-abstraction detector measured, owning its subtree;
+ * `namespace` = the files whose paths spell one constant namespace (bd
+ * tea-rags-mcp-r8hme.11), named `::Billing`, across directories;
  * `directory` = the fallback, a plain directory's own files.
  */
-export type ArchitectureComponentKind = "module" | "directory";
+export type ArchitectureComponentKind = "module" | "namespace" | "directory";
 
 /** One component of the partition and its Martin coupling, counted over files. */
 export interface ArchitectureComponent {
-  /** The component's directory, repo-relative; `""` for the repository root. */
+  /**
+   * The component's directory, repo-relative; `""` for the repository root.
+   * A `namespace` component carries its constant path instead (`::Billing`).
+   */
   componentDir: string;
   kind: ArchitectureComponentKind;
   /** The module's entry file; `null` for a directory component. */
