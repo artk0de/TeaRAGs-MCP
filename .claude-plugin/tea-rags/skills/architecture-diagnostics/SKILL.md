@@ -278,33 +278,36 @@ still miss the edge, so check before claiming "no link".
 
 ## Phase 3c2 — SHOTGUN SURGERY
 
-`detector: "shotgunSurgery"`, SAME components as SDP. ONE change (author burst)
-reaching into ≥ k components, spread recurring beyond chance, components in ≥ 2
-structural islands. Silent coupling's N-way sibling: pair = file level, MERGE =
+`detector: "shotgunSurgery"`, SAME components as SDP. ONE commit reaching into ≥
+k components, spread recurring beyond chance, components in ≥ 2 structural
+islands. Unit = pair gate's: burst supports k-set only if ONE commit in it held
+all k; each burst once. Burst union never unit (parallel sessions chain
+unrelated commits). Silent coupling's N-way sibling: pair = file level, MERGE =
 two components, this = one change's fan-out. Never filtered by file type or hub
 size. Knot mode omits it.
 
 | Summary field (`summary.shotgunSurgery`)  | Read as                                                                                                              |
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `built`                                   | `false` = no co-change build / no bundle membership (`reason`, same as splitMerge) → NOT judged, never report "none" |
-| `widthThreshold` / `widthThresholdMethod` | k = narrowest spread judged; `otsu` = majority-floored Otsu over burst widths, `floor` = 3 (never below 3)           |
-| `unitCount` / `wideUnitCount`             | bursts touching a component / bursts spanning ≥ k — few wide = little evidence                                       |
+| `widthThreshold` / `widthThresholdMethod` | k = narrowest spread judged; `otsu` = majority-floored Otsu over per-commit widths, `floor` = 3 (never below 3)      |
+| `burstCount`                              | bursts touching a component — support unit (once per burst)                                                          |
+| `unitCount` / `wideUnitCount`             | per-commit component sets (same set in one burst once) / those spanning ≥ k — few wide = little evidence             |
 | `familySize` / `q`                        | BH family C(n, k): every set of exactly k components among n changed in ≥ 2 bursts; FDR q — multiple-testing price   |
-| `candidateSetCount` / `admittedSetCount`  | k-sets ≥ 2 wide bursts shared (tested) / k-sets passing BH over the null                                             |
-| `spreadCount`                             | maximal spreads admitted k-sets merge into: k-sets recurring in same bursts = one spread, its support = theirs       |
+| `candidateSetCount` / `admittedSetCount`  | k-sets wide commits of ≥ 2 bursts held whole (tested) / k-sets passing BH over the null                              |
+| `spreadCount`                             | maximal spreads admitted k-sets merge into: closure = components EVERY holding commit touched; support = k-set's     |
 | `explainedCount`                          | spreads dropped: one structural island (dependency or specific neighbour) explains                                   |
 | `outOfScopeSetCount`                      | scoped only: unexplained spreads with no exemplar file in `pathPattern`                                              |
 
 Evidence per line:
 
-| Evidence                      | Read as                                                                                                           |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `support` / `expectedSupport` | bursts containing the whole spread vs λ the null predicts from change counts + burst widths; `support` ≫ λ = real |
-| `strength`                    | Wilson lower bound of support over component changes                                                              |
-| `islands`                     | structurally connected groups (≥ 2) — where the missing link would go                                             |
-| `exemplarFiles`               | per component the file the bursts touched most                                                                    |
-| `sampleCommits`               | shas to cite                                                                                                      |
-| `drillDown.hint`              | run verbatim (`find_co_changed`) for file-level partners                                                          |
+| Evidence                      | Read as                                                                                                            |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `support` / `expectedSupport` | bursts with a commit holding whole spread vs λ null predicts (burst degrees + commit widths); `support` ≫ λ = real |
+| `strength`                    | Wilson lower bound of support over component changes                                                               |
+| `islands`                     | structurally connected groups (≥ 2) — where the missing link would go                                              |
+| `exemplarFiles`               | per component the file the holding commits touched most                                                            |
+| `sampleCommits`               | shas to cite — each held the whole spread, one per supporting burst                                                |
+| `drillDown.hint`              | run verbatim (`find_co_changed`) for file-level partners                                                           |
 
 Fix direction: one owner for the reason to change — collapse the spread behind
 one module / contract; `islands` show where the missing link would go.
@@ -502,7 +505,7 @@ Threshold [strengthThreshold] ([method], η [separability]); history [commitCoun
 | # | File A ↔ File B | Strength | Support | P(B|A) / P(A|B) | Visibility | Sample commit |
 Grouped: | # | Shared file | Partners (N) | Top 3 (support / λ / strength) | Drill (`drillDown.hint`) |
 
-## Shotgun surgery — [violationCount]; k [widthThreshold] ([widthThresholdMethod]); [wideUnitCount]/[unitCount] wide bursts; admitted [admittedSetCount] k-sets of family C(n,k) [familySize] (q [q]) → [spreadCount] spreads
+## Shotgun surgery — [violationCount]; k [widthThreshold] ([widthThresholdMethod]); [wideUnitCount]/[unitCount] wide commit sets over [burstCount] bursts; admitted [admittedSetCount] k-sets of family C(n,k) [familySize] (q [q]) → [spreadCount] spreads
 | # | Components | Islands | Support / λ | Strength | Exemplar files | Sample commit | Drill (`drillDown.hint`) |
 
 ## Main sequence — [violationCount] (pain N, uselessness N); mean D [meanDistance]

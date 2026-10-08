@@ -22,6 +22,11 @@
  *     bursts is not significant under the null — no hub cut needed;
  *   - the counting unit is the author burst: re-committing the spread inside
  *     one burst counts once;
+ *   - a burst supports a k-set only when ONE of its commits held all k
+ *     components — the pair gate's "a pair counts only when one commit held
+ *     it", lifted to k; commits of one burst never chain into a union;
+ *   - a spread's closure and sample commits are the commits that held its
+ *     k-sets, never the rest of their bursts;
  *   - no bundle membership = nothing judged, never zeros posing as verdicts.
  */
 
@@ -56,6 +61,35 @@ function history(
     bundleBursts.set(i, i);
     bundleCommits.set(i, [`c${i}`]);
     for (const c of components) componentOf.set(fileOf(c), c);
+  });
+  return { bundles, bundleBursts, bundleCommits, componentOf };
+}
+
+/**
+ * One burst per entry, each burst a list of commits (one bundle each, commit
+ * `b<burst>c<commit>`), appended after `lead` one-commit bursts.
+ */
+function burstHistory(
+  lead: readonly (readonly string[])[],
+  bursts: readonly (readonly (readonly string[])[])[],
+): Pick<ShotgunSurgeryInput, "bundles" | "bundleBursts" | "bundleCommits" | "componentOf"> {
+  const base = history(lead);
+  const bundles = new Map(base.bundles);
+  const bundleBursts = new Map(base.bundleBursts);
+  const bundleCommits = new Map(base.bundleCommits);
+  const componentOf = new Map(base.componentOf);
+  let bundleId = bundles.size;
+  bursts.forEach((commits, b) => {
+    commits.forEach((components, c) => {
+      bundles.set(
+        bundleId,
+        components.map((component) => fileOf(component)),
+      );
+      bundleBursts.set(bundleId, lead.length + b);
+      bundleCommits.set(bundleId, [`b${b}c${c}`]);
+      for (const component of components) componentOf.set(fileOf(component), component);
+      bundleId++;
+    });
   });
   return { bundles, bundleBursts, bundleCommits, componentOf };
 }
@@ -199,6 +233,71 @@ describe("detectShotgunSurgery", () => {
 
     expect(report.findings[0]?.support ?? 0).toBeLessThan(3);
     expect(report.summary.unitCount).toBe(input.bundles.size - 1);
+  });
+
+  it("gives no support to a k-set no single commit held, however its burst's commits chain", () => {
+    // Each burst's commits touch two of {a, b, c} apiece; the burst's union is
+    // all three, but no commit ever edited a, b and c together.
+    const split = [
+      ["a", "b"],
+      ["b", "c"],
+      ["a", "c"],
+    ];
+    const report = detectShotgunSurgery({
+      ...burstHistory(background(["a", "b", "c"]), [split, split, split]),
+      componentDependencies: [],
+    });
+
+    expect(report.summary.candidateSetCount).toBe(0);
+    expect(report.summary.admittedSetCount).toBe(0);
+    expect(report.findings).toEqual([]);
+    expect(report.explained).toEqual([]);
+  });
+
+  it("counts a burst once when one of its commits held the k-set, however many did", () => {
+    const report = detectShotgunSurgery({
+      ...burstHistory(background(["a", "b", "c"]), [
+        // Only the third commit held all three.
+        [
+          ["a", "b"],
+          ["b", "c"],
+          ["a", "b", "c"],
+        ],
+        // Four commits held all three: still one burst.
+        [
+          ["a", "b", "c"],
+          ["a", "b", "c"],
+          ["a", "b", "c"],
+          ["a", "b", "c"],
+        ],
+        [["a", "b", "c"]],
+      ]),
+      componentDependencies: [],
+    });
+
+    expect(report.findings).toHaveLength(1);
+    const [finding] = report.findings;
+    expect(finding.components).toEqual(["a", "b", "c"]);
+    expect(finding.support).toBe(3);
+    // Each component: its lone change + the three bursts.
+    expect(finding.componentChanges).toEqual([4, 4, 4]);
+    // One commit per supporting burst, each one that held {a, b, c} — never
+    // b0c0 / b0c1, which held two, and b1's re-commits do not crowd the rest.
+    expect(finding.sampleCommits).toEqual(["b2c0", "b1c3", "b0c2"]);
+    expect(report.summary.burstCount).toBe(36);
+  });
+
+  it("closes a spread over what the holding commits touched, not over the rest of their bursts", () => {
+    // Every burst edits a, b and c in one commit and d in another: d belongs
+    // to the bursts, never to a change that held the spread.
+    const burst = [["a", "b", "c"], ["d"]];
+    const report = detectShotgunSurgery({
+      ...burstHistory(background(["a", "b", "c", "d"]), [burst, burst, burst]),
+      componentDependencies: [],
+    });
+
+    expect(report.findings.map((f) => f.components)).toEqual([["a", "b", "c"]]);
+    expect(report.findings[0].sampleCommits).toEqual(["b2c0", "b1c0", "b0c0"]);
   });
 
   it("judges nothing without bundle membership", () => {

@@ -1339,9 +1339,9 @@ export interface ShotgunSurgeryArchitectureViolation {
   components: string[];
   subject: string;
   evidence: {
-    /** Author bursts whose component set contains the whole spread. */
+    /** Author bursts with a commit that held the whole spread — each burst once. */
     support: number;
-    /** λ the null predicts from the components' change counts and the bursts' widths, 3 decimals. */
+    /** λ the null predicts from the components' burst counts and the commits' widths, 3 decimals. */
     expectedSupport: number;
     /** Wilson lower bound of support over the least- / most-changed component's changes (larger), 3 decimals. */
     strength: number;
@@ -1349,9 +1349,9 @@ export interface ShotgunSurgeryArchitectureViolation {
     componentChanges: number[];
     /** Structurally connected groups (dependency or specific shared neighbour), largest first; always ≥ 2. */
     islands: string[][];
-    /** Per component (aligned) the file the supporting bursts touched most. */
+    /** Per component (aligned) the file the supporting commits touched most. */
     exemplarFiles: RelPath[];
-    /** Commits of the supporting bursts, most recent first (≤ 5). */
+    /** Commits that held the spread, one per supporting burst, most recent first (≤ 5). */
     sampleCommits: string[];
     /** `find_co_changed` over the exemplar files — the file-level partners behind the spread. */
     drillDown: SilentCouplingGroupDrillDown;
@@ -1366,23 +1366,25 @@ export interface ShotgunSurgeryReportSummary {
   reason?: ShotgunSurgeryAbsentReason;
   head?: string;
   builtAt?: number;
-  /** Author bursts touching ≥ 1 partitioned component — the counting unit. */
+  /** Author bursts touching ≥ 1 partitioned component — the support unit: a burst counts once, and only when one of its commits held the whole set. */
+  burstCount?: number;
+  /** Per-commit component sets, identical sets of one burst once — the width model's population. */
   unitCount?: number;
-  /** Bursts spanning ≥ `widthThreshold` components. */
+  /** Per-commit sets spanning ≥ `widthThreshold` components. */
   wideUnitCount?: number;
-  /** k: the narrowest spread judged — Otsu over burst widths, never below 3. */
+  /** k: the narrowest spread judged — Otsu over per-commit widths, never below 3. */
   widthThreshold?: number;
   widthThresholdMethod?: "otsu" | "floor";
   /** η of the width split, 3 decimals; absent when no split was tried. */
   widthSeparability?: number;
-  /** k-sets (exactly k components) ≥ 2 wide bursts shared — the tested sets. */
+  /** k-sets (exactly k components) wide commits of ≥ 2 bursts held whole — the tested sets. */
   candidateSetCount?: number;
   /** BH family C(n, k): every set of exactly k components among the n changed in ≥ 2 bursts. */
   familySize?: number;
   q?: number;
   /** k-sets BH rejected at q. */
   admittedSetCount?: number;
-  /** Maximal spreads the admitted k-sets merge into (k-sets recurring in the same bursts are one spread). */
+  /** Maximal spreads the admitted k-sets merge into (k-sets held by the same commits are one spread). */
   spreadCount?: number;
   /** Spreads one structural island explains. */
   explainedCount?: number;

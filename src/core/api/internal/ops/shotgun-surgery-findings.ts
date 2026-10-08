@@ -61,6 +61,7 @@ export function summariseShotgunSurgery(run: ShotgunSurgeryRun): ShotgunSurgeryR
     built: true,
     head: run.head,
     builtAt: run.builtAt,
+    burstCount: summary.burstCount,
     unitCount: summary.unitCount,
     wideUnitCount: summary.wideUnitCount,
     widthThreshold: summary.widthThreshold,
