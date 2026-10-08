@@ -1375,16 +1375,16 @@ export interface ShotgunSurgeryReportSummary {
   widthThresholdMethod?: "otsu" | "floor";
   /** η of the width split, 3 decimals; absent when no split was tried. */
   widthSeparability?: number;
-  /** Distinct spreads two wide bursts shared — the tested sets. */
+  /** k-sets (exactly k components) ≥ 2 wide bursts shared — the tested sets. */
   candidateSetCount?: number;
-  /** BH family: every set of k..widest components among those changed in ≥ 2 bursts. */
+  /** BH family C(n, k): every set of exactly k components among the n changed in ≥ 2 bursts. */
   familySize?: number;
   q?: number;
-  /** Spreads BH rejected with support ≥ the build's minimum. */
+  /** k-sets BH rejected at q. */
   admittedSetCount?: number;
-  /** Admitted spreads a wider admitted spread with the same support subsumes. */
-  subsumedSetCount?: number;
-  /** Admitted spreads one structural island explains. */
+  /** Maximal spreads the admitted k-sets merge into (k-sets recurring in the same bursts are one spread). */
+  spreadCount?: number;
+  /** Spreads one structural island explains. */
   explainedCount?: number;
   /** Unexplained spreads, before `limit`. */
   violationCount?: number;

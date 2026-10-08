@@ -19,9 +19,9 @@
  * {@link SHOTGUN_SURGERY_MIN_WIDTH} — two components are the pair question
  * MERGE and silent coupling already answer.
  *
- * RECURRING. Candidate spreads are the pairwise intersections of wide units
- * (≥ k components) — every spread two changes shared, at its widest. A
- * spread's support is the units containing it.
+ * RECURRING. The tested sets are k-sets: sets of EXACTLY k components that ≥ 2
+ * wide units (the build's minimum support) both touched. A set's support is the
+ * units containing it.
  *
  * THE NULL is the configuration null of the pair gate lifted to sets
  * (`assessBurstCochangeSignificance`): it conditions on each component's
@@ -33,8 +33,16 @@
  * gate's n_p·n_q·Qs/M². A component in most changes has P near 1 in every wide
  * unit, so its spreads' λ absorbs their support: the conditioning IS the hub
  * correction, exactly as in the pair gate. p = Poisson upper tail; multiplicity
- * = Benjamini–Hochberg at the pair gate's q over the a-priori family of every
- * set of k..maxWidth components changed in ≥ 2 units.
+ * = Benjamini–Hochberg at the pair gate's q over the a-priori family C(n, k) —
+ * every set of exactly k components among the n changed in ≥ 2 units, the
+ * pair gate's C(|F₂|, 2) lifted to k ({@link shotgunSurgeryFamilySize}). An
+ * untested member counts with p = 1. A family over every width k..widest
+ * (≈ 2e21 on tea-rags's own history) would demand p < 1e-23 and admit nothing.
+ *
+ * MAXIMAL SPREADS. Admitted k-sets merge into the spreads reported: a k-set's
+ * spread is every admitted k-set inside the components all of its supporting
+ * units touched ({@link mergeIntoMaximalSpreads}), so a wider fan-out shows as
+ * one spread with the k-set's support, never as C(width, k) findings.
  *
  * EXPLAINED. A spread is explained when its components form ONE structurally
  * connected group: two components are joined by a component dependency
@@ -125,15 +133,15 @@ export interface ShotgunSurgerySummary {
   /** `otsu` = the codebase's width split raised k; `floor` = {@link SHOTGUN_SURGERY_MIN_WIDTH}. */
   widthThresholdMethod: "otsu" | "floor";
   widthSeparability?: number;
-  /** Distinct spreads two wide units shared — the tested sets. */
+  /** Observed k-sets: sets of exactly k components ≥ the build's minimum support of wide units shared — the tested sets. */
   candidateSetCount: number;
-  /** Σ C(|C₂|, m) over m = k..widest unit — the a-priori BH family. */
+  /** C(n, k), n = components changed in ≥ 2 units — the a-priori BH family; untested members count with p = 1. */
   familySize: number;
   q: number;
-  /** Spreads BH rejected at q with support ≥ the build's minimum. */
+  /** k-sets BH rejected at q. */
   admittedSetCount: number;
-  /** Admitted spreads dropped because a wider admitted spread has the same support. */
-  subsumedSetCount: number;
+  /** Maximal spreads the admitted k-sets merge into — the judged findings before explanation. */
+  spreadCount: number;
   explainedCount: number;
   violationCount: number;
   sharedNeighbourThreshold?: number;
@@ -187,21 +195,16 @@ export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgery
   const widthHistogram = new Map<number, number>();
   for (const width of widths) widthHistogram.set(width, (widthHistogram.get(width) ?? 0) + 1);
 
-  const candidates = intersectWideUnits(wide, widthThreshold);
   const changedTwice = [...changes.values()].filter((n) => n >= 2).length;
-  const widest = wide.reduce((max, unit) => Math.max(max, unit.components.size), 0);
-  const familySize = setFamilySize(changedTwice, widthThreshold, widest);
+  const familySize = shotgunSurgeryFamilySize(changedTwice, widthThreshold);
 
   const propensity = new PropensityModel(changes, widthHistogram);
-  const tested = [...candidates.values()].map((components) => {
-    const supporting = wide.filter((unit) => components.every((c) => unit.components.has(c)));
+  const tested = recurringKSets(wide, widthThreshold).map(({ components, unitIndices }) => {
     const expectedSupport = propensity.expectedSupport(components);
     return {
       components,
-      support: supporting.length,
-      expectedSupport,
-      supporting,
-      p: poissonUpperTail(supporting.length, expectedSupport),
+      unitIndices,
+      p: poissonUpperTail(unitIndices.length, expectedSupport),
     };
   });
   tested.sort((a, b) => a.p - b.p || compareKeys(a.components, b.components));
@@ -209,19 +212,13 @@ export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgery
     tested.map((t) => t.p),
     familySize,
   );
-  const admitted: AdmittedSpread[] = tested
-    .slice(0, rejected)
-    .filter((t) => t.support >= TEMPORAL_COCHANGE_MIN_SUPPORT);
-  const closed = admitted.filter(
-    (spread) =>
-      !admitted.some(
-        (wider) =>
-          wider !== spread &&
-          wider.support === spread.support &&
-          wider.components.length > spread.components.length &&
-          spread.components.every((c) => wider.components.includes(c)),
-      ),
-  );
+  const admitted = tested.slice(0, rejected);
+  const closed: AdmittedSpread[] = mergeIntoMaximalSpreads(admitted, wide).map(({ components, unitIndices }) => ({
+    components,
+    support: unitIndices.length,
+    expectedSupport: propensity.expectedSupport(components),
+    supporting: unitIndices.map((index) => wide[index]),
+  }));
 
   const structure = new ShotgunSurgeryStructure(input.componentDependencies, input.componentOf);
   const islandsOf = structure.islandResolver(closed.map((spread) => spread.components));
@@ -253,11 +250,11 @@ export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgery
       widthThreshold,
       widthThresholdMethod: widthPolicy.method === "otsu" ? "otsu" : "floor",
       ...(widthPolicy.separability === undefined ? {} : { widthSeparability: widthPolicy.separability }),
-      candidateSetCount: candidates.size,
+      candidateSetCount: tested.length,
       familySize,
       q: COCHANGE_SIGNIFICANCE_FDR_Q,
       admittedSetCount: admitted.length,
-      subsumedSetCount: admitted.length - closed.length,
+      spreadCount: closed.length,
       explainedCount: explained.length,
       violationCount: findings.length,
       ...(islandsOf.neighbourThreshold === undefined
@@ -295,33 +292,107 @@ function buildUnits(input: ShotgunSurgeryInput): ShotgunSurgeryUnit[] {
   return units;
 }
 
-/** Every spread of ≥ `minWidth` components two wide units share, keyed by its code-point-sorted members. */
-function intersectWideUnits(wide: readonly ShotgunSurgeryUnit[], minWidth: number): Map<string, string[]> {
-  const candidates = new Map<string, string[]>();
-  for (let i = 0; i < wide.length; i++) {
-    for (let j = i + 1; j < wide.length; j++) {
-      const [small, large] =
-        wide[i].components.size <= wide[j].components.size
-          ? [wide[i].components, wide[j].components]
-          : [wide[j].components, wide[i].components];
-      const shared = [...small].filter((c) => large.has(c));
-      if (shared.length < minWidth) continue;
-      shared.sort(compareCodePoints);
-      candidates.set(shared.join("\u0000"), shared);
-    }
-  }
-  return candidates;
+/** A set of components with the (ascending) indices of the wide units containing all of it. */
+interface ShotgunSurgeryUnitSet {
+  components: string[];
+  unitIndices: number[];
 }
 
-/** Σ_{m=k}^{widest} C(n, m), clamped to the largest finite double. */
-function setFamilySize(n: number, minWidth: number, widest: number): number {
-  let total = 0;
-  for (let m = minWidth; m <= Math.min(widest, n); m++) {
-    let binomial = 1;
-    for (let i = 0; i < m; i++) binomial = (binomial * (n - i)) / (i + 1);
-    total += binomial;
+/**
+ * Every set of exactly `k` components at least
+ * {@link TEMPORAL_COCHANGE_MIN_SUPPORT} wide units share, with those units.
+ * Depth-first over code-point-ordered components, intersecting the units'
+ * index lists as it extends a prefix and abandoning a prefix the moment fewer
+ * than the minimum support still contain it — so the walk visits only the
+ * subsets that recur, never the C(n, k) family itself. A set shared by fewer
+ * units is untested and counts in the family with p = 1, as an unobserved
+ * pair does in the pair gate.
+ */
+function recurringKSets(wide: readonly ShotgunSurgeryUnit[], k: number): ShotgunSurgeryUnitSet[] {
+  const postings = new Map<string, number[]>();
+  wide.forEach((unit, index) => {
+    for (const c of unit.components) {
+      const list = postings.get(c);
+      if (list) list.push(index);
+      else postings.set(c, [index]);
+    }
+  });
+  const items = [...postings]
+    .filter(([, list]) => list.length >= TEMPORAL_COCHANGE_MIN_SUPPORT)
+    .sort(([a], [b]) => compareCodePoints(a, b));
+  const sets: ShotgunSurgeryUnitSet[] = [];
+  const prefix: string[] = [];
+  const extend = (start: number, unitIndices: readonly number[] | undefined): void => {
+    for (let i = start; i <= items.length - (k - prefix.length); i++) {
+      const [component, list] = items[i];
+      const shared = unitIndices === undefined ? list : intersectSorted(unitIndices, list);
+      if (shared.length < TEMPORAL_COCHANGE_MIN_SUPPORT) continue;
+      prefix.push(component);
+      if (prefix.length === k) sets.push({ components: [...prefix], unitIndices: [...shared] });
+      else extend(i + 1, shared);
+      prefix.pop();
+    }
+  };
+  if (k > 0) extend(0, undefined);
+  return sets;
+}
+
+/** Intersection of two ascending index lists. */
+function intersectSorted(a: readonly number[], b: readonly number[]): number[] {
+  const common: number[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      common.push(a[i]);
+      i++;
+      j++;
+    } else if (a[i] < b[j]) i++;
+    else j++;
   }
-  return Math.min(total, Number.MAX_VALUE);
+  return common;
+}
+
+/**
+ * Admitted k-sets merged into maximal spreads. A k-set's spread is every
+ * admitted k-set lying inside the components ALL of its supporting units
+ * touched — the closure of its recurrences. The spread is thereby a set-level
+ * fact: every one of its components was edited by every change that made the
+ * k-set recur, so its support is exactly the k-set's, and k-sets recurring in
+ * the same changes collapse into one spread. Two k-sets recurring in different
+ * changes stay apart even when they share components: their union is reported
+ * only if changes touched the whole of it. Restricting the closure to admitted
+ * k-sets keeps a component the null explains — one in nearly every change —
+ * out of a spread it was never significant in.
+ */
+function mergeIntoMaximalSpreads(
+  admitted: readonly ShotgunSurgeryUnitSet[],
+  wide: readonly ShotgunSurgeryUnit[],
+): ShotgunSurgeryUnitSet[] {
+  const byRecurrence = new Map<string, number[]>();
+  for (const { unitIndices } of admitted) byRecurrence.set(unitIndices.join(","), unitIndices);
+  const spreads: ShotgunSurgeryUnitSet[] = [];
+  for (const unitIndices of byRecurrence.values()) {
+    const units = unitIndices.map((index) => wide[index].components);
+    const members = new Set<string>();
+    for (const { components } of admitted) {
+      if (components.every((c) => units.every((unit) => unit.has(c)))) for (const c of components) members.add(c);
+    }
+    spreads.push({ components: [...members].sort(compareCodePoints), unitIndices });
+  }
+  return spreads.sort((a, b) => compareKeys(a.components, b.components));
+}
+
+/**
+ * C(n, k): every set of exactly k components among the n changed in ≥ 2
+ * units — the a-priori family, the pair gate's C(|F₂|, 2) lifted to k. Clamped
+ * to the largest finite double.
+ */
+export function shotgunSurgeryFamilySize(n: number, k: number): number {
+  if (k < 0 || n < k) return 0;
+  let binomial = 1;
+  for (let i = 0; i < k; i++) binomial = (binomial * (n - i)) / (i + 1);
+  return Math.min(Math.round(binomial), Number.MAX_VALUE);
 }
 
 /**

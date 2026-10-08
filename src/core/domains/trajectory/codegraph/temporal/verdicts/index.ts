@@ -11,6 +11,7 @@ export {
   detectShotgunSurgery,
   SHOTGUN_SURGERY_MIN_WIDTH,
   SHOTGUN_SURGERY_SAMPLE_COMMITS,
+  shotgunSurgeryFamilySize,
   type ShotgunSurgeryComponentDependency,
   type ShotgunSurgeryInput,
   type ShotgunSurgeryReport,

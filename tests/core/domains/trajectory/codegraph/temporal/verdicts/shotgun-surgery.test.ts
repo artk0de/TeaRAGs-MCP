@@ -11,6 +11,13 @@
  *   - the same spread joined by an import chain is EXPLAINED, not a finding;
  *   - a specific shared neighbour (silent coupling's ln(N / fanIn) weight,
  *     Otsu-cut) joins two components the way a direct link does;
+ *   - the BH family is every set of exactly k components among those changed
+ *     in ≥ 2 bursts — C(n, k), the pair gate's C(|F₂|, 2) lifted to k; each
+ *     observed k-set two bursts share is tested, the rest count with p = 1;
+ *   - admitted k-sets merge into maximal spreads: a k-set's spread is the
+ *     admitted k-sets inside the components EVERY one of its bursts touched,
+ *     so k-sets recurring in the same bursts are one spread, and spreads that
+ *     never co-occurred are never glued into a union no change touched;
  *   - a wide spread that recurs only because its components change in most
  *     bursts is not significant under the null — no hub cut needed;
  *   - the counting unit is the author burst: re-committing the spread inside
@@ -24,6 +31,7 @@ import type { RelPath } from "../../../../../../../src/core/contracts/types/code
 import {
   cochangeStrength,
   detectShotgunSurgery,
+  shotgunSurgeryFamilySize,
   type ShotgunSurgeryInput,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
 
@@ -59,6 +67,14 @@ function background(lone: readonly string[]): string[][] {
 
 const SPREAD = ["a", "b", "c", "d"];
 
+describe("shotgunSurgeryFamilySize", () => {
+  it("is C(n, k) — every set of exactly k components changed in ≥ 2 bursts", () => {
+    expect(shotgunSurgeryFamilySize(5, 3)).toBe(10);
+    expect(shotgunSurgeryFamilySize(40, 3)).toBe(9880);
+    expect(shotgunSurgeryFamilySize(2, 3)).toBe(0);
+  });
+});
+
 describe("detectShotgunSurgery", () => {
   it("reports a recurring wide spread that no structural link explains", () => {
     const input = history([...background(SPREAD), SPREAD, SPREAD, SPREAD]);
@@ -78,9 +94,45 @@ describe("detectShotgunSurgery", () => {
     expect(finding.exemplarFiles).toEqual(SPREAD.map((c) => fileOf(c)));
     expect(finding.sampleCommits).toEqual(["c36", "c35", "c34"]);
     expect(report.summary.widthThreshold).toBeGreaterThanOrEqual(3);
-    expect(report.summary.admittedSetCount).toBe(1);
+    // n = 4 components changed ≥ 2×, k = 3: the family is C(4, 3) = 4, and
+    // each of its triples recurs in the three spreads — one maximal spread.
+    expect(report.summary.familySize).toBe(4);
+    expect(report.summary.admittedSetCount).toBe(4);
+    expect(report.summary.spreadCount).toBe(1);
     expect(report.summary.violationCount).toBe(1);
     expect(report.summary.explainedCount).toBe(0);
+  });
+
+  it("tests every observed k-set against the C(n, k) family and merges the admitted ones into one maximal spread", () => {
+    const spread = ["a", "b", "c", "d", "e"];
+    const report = detectShotgunSurgery({
+      ...history([...background(spread), spread, spread, spread]),
+      componentDependencies: [],
+    });
+
+    expect(report.summary.widthThreshold).toBe(3);
+    expect(report.summary.familySize).toBe(shotgunSurgeryFamilySize(5, 3));
+    // All C(5, 3) = 10 triples recur in the same three bursts.
+    expect(report.summary.candidateSetCount).toBe(10);
+    expect(report.summary.admittedSetCount).toBe(10);
+    expect(report.summary.spreadCount).toBe(1);
+    expect(report.findings.map((f) => f.components)).toEqual([spread]);
+    expect(report.findings[0].support).toBe(3);
+  });
+
+  it("keeps spreads recurring in different bursts apart, never gluing them into a union no change touched", () => {
+    const left = ["a", "b", "c", "d"];
+    const right = ["a", "b", "c", "e"];
+    const report = detectShotgunSurgery({
+      ...history([...background(["a", "b", "c", "d", "e"]), left, left, left, right, right, right]),
+      componentDependencies: [],
+    });
+
+    const spreads = report.findings.map((f) => `${f.components.join(",")}@${f.support}`).sort();
+    // {a,b,c} recurs in all six; {a,b,c,d} and {a,b,c,e} in three each;
+    // {a,…,e} never co-occurred, so it is no spread.
+    expect(spreads).toEqual(["a,b,c,d@3", "a,b,c,e@3", "a,b,c@6"]);
+    expect(report.summary.spreadCount).toBe(3);
   });
 
   it("explains the same spread when an import chain joins its components", () => {

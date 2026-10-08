@@ -284,15 +284,16 @@ structural islands. Silent coupling's N-way sibling: pair = file level, MERGE =
 two components, this = one change's fan-out. Never filtered by file type or hub
 size. Knot mode omits it.
 
-| Summary field (`summary.shotgunSurgery`)  | Read as                                                                                                                 |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `built`                                   | `false` = no co-change build / no bundle membership (`reason`, same as splitMerge) → NOT judged, never report "none"    |
-| `widthThreshold` / `widthThresholdMethod` | k = narrowest spread judged; `otsu` = majority-floored Otsu over burst widths, `floor` = 3 (never below 3)              |
-| `unitCount` / `wideUnitCount`             | bursts touching a component / bursts spanning ≥ k — few wide = little evidence                                          |
-| `familySize` / `q`                        | BH family (every k..widest set changed in ≥ 2 bursts) and FDR q — the multiple-testing price                            |
-| `admittedSetCount`                        | spreads passing BH over the null                                                                                        |
-| `subsumedSetCount` / `explainedCount`     | dropped: a wider spread with same support covers it / one structural island (dependency or specific neighbour) explains |
-| `outOfScopeSetCount`                      | scoped only: unexplained spreads with no exemplar file in `pathPattern`                                                 |
+| Summary field (`summary.shotgunSurgery`)  | Read as                                                                                                              |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `built`                                   | `false` = no co-change build / no bundle membership (`reason`, same as splitMerge) → NOT judged, never report "none" |
+| `widthThreshold` / `widthThresholdMethod` | k = narrowest spread judged; `otsu` = majority-floored Otsu over burst widths, `floor` = 3 (never below 3)           |
+| `unitCount` / `wideUnitCount`             | bursts touching a component / bursts spanning ≥ k — few wide = little evidence                                       |
+| `familySize` / `q`                        | BH family C(n, k): every set of exactly k components among n changed in ≥ 2 bursts; FDR q — multiple-testing price   |
+| `candidateSetCount` / `admittedSetCount`  | k-sets ≥ 2 wide bursts shared (tested) / k-sets passing BH over the null                                             |
+| `spreadCount`                             | maximal spreads admitted k-sets merge into: k-sets recurring in same bursts = one spread, its support = theirs       |
+| `explainedCount`                          | spreads dropped: one structural island (dependency or specific neighbour) explains                                   |
+| `outOfScopeSetCount`                      | scoped only: unexplained spreads with no exemplar file in `pathPattern`                                              |
 
 Evidence per line:
 
@@ -501,7 +502,7 @@ Threshold [strengthThreshold] ([method], η [separability]); history [commitCoun
 | # | File A ↔ File B | Strength | Support | P(B|A) / P(A|B) | Visibility | Sample commit |
 Grouped: | # | Shared file | Partners (N) | Top 3 (support / λ / strength) | Drill (`drillDown.hint`) |
 
-## Shotgun surgery — [violationCount]; k [widthThreshold] ([widthThresholdMethod]); [wideUnitCount]/[unitCount] wide bursts; admitted [admittedSetCount] of family [familySize] (q [q])
+## Shotgun surgery — [violationCount]; k [widthThreshold] ([widthThresholdMethod]); [wideUnitCount]/[unitCount] wide bursts; admitted [admittedSetCount] k-sets of family C(n,k) [familySize] (q [q]) → [spreadCount] spreads
 | # | Components | Islands | Support / λ | Strength | Exemplar files | Sample commit | Drill (`drillDown.hint`) |
 
 ## Main sequence — [violationCount] (pain N, uselessness N); mean D [meanDistance]

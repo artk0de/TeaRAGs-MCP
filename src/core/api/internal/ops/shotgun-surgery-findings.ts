@@ -70,7 +70,7 @@ export function summariseShotgunSurgery(run: ShotgunSurgeryRun): ShotgunSurgeryR
     familySize: summary.familySize,
     q: summary.q,
     admittedSetCount: summary.admittedSetCount,
-    subsumedSetCount: summary.subsumedSetCount,
+    spreadCount: summary.spreadCount,
     explainedCount: summary.explainedCount,
     violationCount: summary.violationCount,
     ...(summary.sharedNeighbourThreshold === undefined
