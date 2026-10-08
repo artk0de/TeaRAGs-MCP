@@ -1,4 +1,4 @@
-import type { FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
+import type { DependencyNormFileRole, FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
 import {
   benjaminiHochbergRejectionCount,
@@ -219,9 +219,11 @@ const NAMESPACE_SEPARATOR = /::|\./;
  * role edge at all — never judged, never precedent. `uncalled` and
  * `frameworkRouted` ARE precedent (see `buildNormLedgers`) but never a
  * finding: an inversion is a layering mistake only when the minority edge
- * runs the target's own logic.
+ * runs the target's own logic. `displacedRole` is precedent too: an endpoint's
+ * role is read where that role does not live (bd tea-rags-mcp-4vj2u), so the
+ * edge says nothing about the layer the role names.
  */
-type NormEdgeExclusion = "constantReference" | "uncalled" | "frameworkRouted";
+type NormEdgeExclusion = "constantReference" | "uncalled" | "frameworkRouted" | "displacedRole";
 
 /**
  * Relative slack when comparing the framework-routed part of an edge's call
@@ -230,10 +232,19 @@ type NormEdgeExclusion = "constantReference" | "uncalled" | "frameworkRouted";
  */
 const CALL_WEIGHT_RELATIVE_EPSILON = 1e-9;
 
-/** The report walk's exclusion test. A nested constant is named first: its reason is the more specific one. */
+/**
+ * The report walk's exclusion test. The edge's own evidence is named first — a
+ * nested constant before a missing call before a framework route — and a
+ * displaced endpoint role last, so the edge-level counts do not depend on the
+ * role layer.
+ */
 function edgeExclusionResolver(input: DependencyNormsInput) {
   const isConstantReference = constantReferenceTest(input);
-  return (edge: FileDependencyGraph["edges"][number]): NormEdgeExclusion | undefined => {
+  return (
+    edge: FileDependencyGraph["edges"][number],
+    sourceRole: DependencyNormFileRole,
+    targetRole: DependencyNormFileRole,
+  ): NormEdgeExclusion | undefined => {
     if (isConstantReference(edge)) return "constantReference";
     // bd tea-rags-mcp-4vj2u: no resolved call — the source names the target,
     // it never runs the target's logic (a factory `.new`, a subtype registry,
@@ -245,6 +256,7 @@ function edgeExclusionResolver(input: DependencyNormsInput) {
     // the target's framework contract, not its logic.
     const routed = edge.frameworkRoutedCallWeight ?? 0;
     if (routed >= edge.callWeight * (1 - CALL_WEIGHT_RELATIVE_EPSILON)) return "frameworkRouted";
+    if (sourceRole.displaced !== undefined || targetRole.displaced !== undefined) return "displacedRole";
     return undefined;
   };
 }
@@ -334,6 +346,7 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
   let constantReferenceEdgeCount = 0;
   let uncalledEdgeCount = 0;
   let frameworkRoutedEdgeCount = 0;
+  let displacedRoleEdgeCount = 0;
   let typedEdgeCount = 0;
   for (const edge of graph.edges) {
     const sourceRole = roleOf(edge.sourceRelPath);
@@ -349,11 +362,12 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
     }
     // bd tea-rags-mcp-xb669.6 / 4vj2u: a nested constant or a call-less
     // reference is no role edge — counted, never judged.
-    const exclusion = exclusionOf(edge);
+    const exclusion = exclusionOf(edge, sourceRole, targetRole);
     if (exclusion !== undefined) {
       if (exclusion === "constantReference") constantReferenceEdgeCount++;
       else if (exclusion === "uncalled") uncalledEdgeCount++;
-      else frameworkRoutedEdgeCount++;
+      else if (exclusion === "frameworkRouted") frameworkRoutedEdgeCount++;
+      else displacedRoleEdgeCount++;
       continue;
     }
     const ledgers = book.forLanguage(family);
@@ -401,11 +415,18 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
       crossLanguageEdgeCount -
       constantReferenceEdgeCount -
       uncalledEdgeCount -
-      frameworkRoutedEdgeCount,
+      frameworkRoutedEdgeCount -
+      displacedRoleEdgeCount,
     violationCount: scopedFindings.length,
     pairCount: [...book.families.values()].reduce((sum, ledger) => sum + ledger.pairCount, 0),
     ...(inScope ? { outOfScopeFindingCount: findings.length - scopedFindings.length } : {}),
-    excluded: { crossLanguageEdgeCount, constantReferenceEdgeCount, uncalledEdgeCount, frameworkRoutedEdgeCount },
+    excluded: {
+      crossLanguageEdgeCount,
+      constantReferenceEdgeCount,
+      uncalledEdgeCount,
+      frameworkRoutedEdgeCount,
+      displacedRoleEdgeCount,
+    },
   };
   return {
     summary,

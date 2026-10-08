@@ -138,6 +138,33 @@ describe("readTypeNameRows", () => {
     expect(byId.get("FuzzyStrategy")).not.toHaveProperty("superclass");
   });
 
+  it("counts a type's callables called on an instance apart from those called on the type (4vj2u)", async () => {
+    const callable = (relPath: string, symbolId: string, symbolKind: SymbolDefinitionKind = "method") => ({
+      symbolId,
+      fqName: symbolId,
+      shortName: symbolId.split(/[#.]/).at(-1) ?? symbolId,
+      relPath,
+      scope: [],
+      symbolKind,
+    });
+    await db.upsertSymbols("src/strategies/exact.ts", [
+      callable("src/strategies/exact.ts", "ExactStrategy#score"),
+      callable("src/strategies/exact.ts", "ExactStrategy#rank"),
+      callable("src/strategies/exact.ts", "ExactStrategy.create"),
+      // A constant is no callable; a nested type's member is the nested type's.
+      callable("src/strategies/exact.ts", "ExactStrategy.DEFAULTS", "constant"),
+      callable("src/strategies/exact.ts", "ExactStrategy::Options#merge"),
+    ]);
+    await db.upsertSymbols("src/strategies/fuzzy.ts", [callable("src/strategies/fuzzy.ts", "FuzzyStrategy.distance")]);
+    const byId = new Map((await db.readTypeNameRows(query())).map((r) => [r.symbolId, r]));
+
+    expect(byId.get("ExactStrategy")).toMatchObject({ instanceMethodCount: 2, singletonMethodCount: 1 });
+    expect(byId.get("FuzzyStrategy")).toMatchObject({ instanceMethodCount: 0, singletonMethodCount: 1 });
+    // No callable in the symbol table: the shape is unknown, never "no methods".
+    expect(byId.get("StoreKind")).not.toHaveProperty("instanceMethodCount");
+    expect(byId.get("StoreKind")).not.toHaveProperty("singletonMethodCount");
+  });
+
   it("excludes rows of unknown kind and kinds outside the requested set", async () => {
     const ids = (await db.readTypeNameRows(query())).map((r) => r.symbolId);
     expect(ids).not.toContain("LegacyStore");

@@ -208,6 +208,14 @@ export interface DependencyNormsSummary {
      * `typedEdgeCount`, absent from `judgedEdgeCount`.
      */
     frameworkRoutedEdgeCount: number;
+    /**
+     * Typed edges an endpoint of which carries a DISPLACED role (bd
+     * tea-rags-mcp-4vj2u): a head noun read outside the role's conventional
+     * directories, or with a call shape its home's carriers do not have. Only
+     * edges no edge-level reason above already excluded. Precedent, never a
+     * finding; counted in `typedEdgeCount`, absent from `judgedEdgeCount`.
+     */
+    displacedRoleEdgeCount: number;
   };
 }
 

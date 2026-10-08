@@ -257,3 +257,85 @@ describe("buildDependencyNormFilePrimaryTypes (xb669.6)", () => {
     expect(buildDependencyNormFilePrimaryTypes(rows).get("app/lib/ai/adapters/base_adapter.rb")).toBe("BaseAdapter");
   });
 });
+
+/**
+ * A head noun asserts a role only where the role LIVES (bd tea-rags-mcp-4vj2u,
+ * xb669.8 gold set): taxdome's `helper` lumped Rails view mixins under
+ * `app/helpers`, `class << self` utilities under `lib/helpers` and module
+ * calculators under `app/lib` — 17 FALSE and 6 DOUBTFUL of 51 MISFITs. A role
+ * read off a head noun stays strong (ledger precedent) but is DISPLACED — no
+ * edge touching it carries a verdict — when the file sits outside every
+ * conventional directory of its role, or is called on the type itself while
+ * the role's home carriers are called on instances.
+ */
+describe("buildDependencyNormFileRoles — role homes (4vj2u)", () => {
+  function shaped(relPath: string, shortName: string, instance: number, singleton: number): TypeNameRow {
+    return {
+      symbolId: shortName,
+      relPath,
+      shortName,
+      symbolKind: "module",
+      ancestors: [],
+      instanceMethodCount: instance,
+      singletonMethodCount: singleton,
+    };
+  }
+  const helperRows = [
+    // The home: a conventional `helpers` directory of view mixins.
+    shaped("app/helpers/firms_helper.rb", "FirmsHelper", 9, 2),
+    shaped("app/helpers/clients_helper.rb", "ClientsHelper", 4, 0),
+    shaped("app/helpers/tasks_helper.rb", "TasksHelper", 3, 0),
+    // A `class << self` namespace of functions inside the home.
+    shaped("app/helpers/schedule_helper.rb", "ScheduleHelper", 0, 3),
+    // Named like a helper, outside every `helpers` directory.
+    shaped("app/lib/billing/fee_helper.rb", "FeeHelper", 5, 0),
+    shaped("app/lib/billing/tax_helper.rb", "TaxHelper", 2, 0),
+  ];
+  const helperAssignments = helperRows.map((r) => assignment(r.symbolId, r.relPath, "helper", "directory"));
+
+  it("keeps a carrier at its role's home with its home's call shape", () => {
+    const roles = buildDependencyNormFileRoles(helperRows, helperAssignments);
+
+    expect(roles.get("app/helpers/firms_helper.rb")).toEqual({ role: "helper", strong: true });
+    expect(roles.get("app/helpers/clients_helper.rb")).toEqual({ role: "helper", strong: true });
+  });
+
+  it("displaces a head-noun role outside every conventional directory of that role", () => {
+    const roles = buildDependencyNormFileRoles(helperRows, helperAssignments);
+
+    expect(roles.get("app/lib/billing/fee_helper.rb")).toEqual({
+      role: "helper",
+      strong: true,
+      displaced: "outsideRoleHome",
+    });
+  });
+
+  it("displaces a namespace of functions among a home of instance-called carriers", () => {
+    const roles = buildDependencyNormFileRoles(helperRows, helperAssignments);
+
+    expect(roles.get("app/helpers/schedule_helper.rb")).toEqual({
+      role: "helper",
+      strong: true,
+      displaced: "callShape",
+    });
+  });
+
+  it("never displaces inheritance evidence, a role with no home, or a carrier of unknown shape", () => {
+    const rows = [
+      ...helperRows,
+      { ...shaped("app/lib/billing/sync_worker.rb", "SyncWorker", 0, 1), symbolKind: "class" as const },
+      shaped("app/lib/billing/period_update.rb", "PeriodUpdate", 0, 2),
+      { ...shaped("app/helpers/legacy_helper.rb", "LegacyHelper", 0, 0), instanceMethodCount: undefined },
+    ];
+    const roles = buildDependencyNormFileRoles(rows, [
+      ...helperAssignments,
+      assignment("SyncWorker", "app/lib/billing/sync_worker.rb", "worker", "inheritance"),
+      assignment("PeriodUpdate", "app/lib/billing/period_update.rb", "update", "directory"),
+      assignment("LegacyHelper", "app/helpers/legacy_helper.rb", "helper", "directory"),
+    ]);
+
+    expect(roles.get("app/lib/billing/sync_worker.rb")).toEqual({ role: "worker", strong: true });
+    expect(roles.get("app/lib/billing/period_update.rb")).toEqual({ role: "update", strong: true });
+    expect(roles.get("app/helpers/legacy_helper.rb")).toEqual({ role: "helper", strong: true });
+  });
+});

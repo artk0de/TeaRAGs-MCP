@@ -1379,12 +1379,15 @@ export interface ArchitectureNormsReport {
      * names the target but never runs its logic, so never a finding; still ledger precedent
      * (bd tea-rags-mcp-4vj2u). `frameworkRoutedEdgeCount`: typed edges whose every call went through
      * a framework interface (`Worker.perform_async` routed to `#perform`) — same treatment.
+     * `displacedRoleEdgeCount`: typed edges touching a role read where it does not live (outside
+     * its conventional directories, or of a call shape its home lacks) — same treatment.
      */
     excluded: {
       crossLanguageEdgeCount: number;
       constantReferenceEdgeCount: number;
       uncalledEdgeCount: number;
       frameworkRoutedEdgeCount: number;
+      displacedRoleEdgeCount: number;
     };
   };
   /**

@@ -44,7 +44,10 @@ const SHAPE_KINDS: ReadonlySet<TypeNameRow["symbolKind"]> = new Set(["interface"
  *      it whose role is only a head noun (directory / suffix evidence);
  *   3. a primary that only shapes the I/O of the function the file is named
  *      for (`UseXParams` in `useX.ts`, `XProps` in `X.tsx`) asserts no role:
- *      weak, with `weakReason: "ioShape"`.
+ *      weak, with `weakReason: "ioShape"`;
+ *   4–5. a head-noun role read where the role does not live — outside its
+ *      conventional directories, or with a call shape its home's carriers do
+ *      not have — is DISPLACED (bd tea-rags-mcp-4vj2u, see `applyRoleHomes`).
  *
  * `assignments` is injectable so tests can pin the role layer directly; by
  * default it derives from the same rows. A type may hold one assignment per
@@ -86,7 +89,8 @@ export function buildDependencyNormFileRoles(
     });
   }
 
-  applyConventionalDirectoryRoles(entries);
+  const conventional = applyConventionalDirectoryRoles(entries);
+  applyRoleHomes(entries, primaries, conventional);
   return new Map([...entries].map(([relPath, { role }]) => [relPath, role]));
 }
 
@@ -267,7 +271,7 @@ function architecturalFamilyRoles(
  */
 function applyConventionalDirectoryRoles(
   entries: Map<RelPath, { role: DependencyNormFileRole; evidence: TypeRoleEvidence }>,
-): void {
+): ReadonlyMap<string, string> {
   const tallies = new Map<string, Map<string, number>>();
   for (const [relPath, { role }] of entries) {
     if (!role.strong) continue;
@@ -292,6 +296,84 @@ function applyConventionalDirectoryRoles(
     const role = dir === undefined ? undefined : conventional.get(dir);
     if (role !== undefined && role !== entry.role.role) {
       entries.set(relPath, { role: { role, strong: true }, evidence: "directory" });
+    }
+  }
+  return conventional;
+}
+
+/** How a primary's callables are called: on instances, on the type only, or unknown. */
+type PrimaryCallShape = "instance" | "functions" | undefined;
+
+function callShapeOf(primary: TypeNameRow | undefined): PrimaryCallShape {
+  if (primary?.instanceMethodCount === undefined || primary.singletonMethodCount === undefined) return undefined;
+  if (primary.instanceMethodCount > 0) return "instance";
+  return primary.singletonMethodCount > 0 ? "functions" : undefined;
+}
+
+/**
+ * Rules 4 and 5 of {@link buildDependencyNormFileRoles} (bd tea-rags-mcp-4vj2u):
+ * a head noun asserts a role only where the role LIVES. A role's HOMES are its
+ * conventional directories (rule 2); its home SHAPE is how the majority
+ * (`directoryShare`) of the carriers there with a known shape are called — on
+ * instances (Rails view-helper mixins) or on the type itself (a namespace of
+ * functions). A strong carrier whose role is only a head noun (directory
+ * evidence) is DISPLACED when
+ *   4. the role has a home and the file sits beneath none of them
+ *      (`displaced: "outsideRoleHome"`) — `app/lib/billing/fee_helper.rb` is
+ *      no view helper because its name ends in `Helper`; or
+ *   5. its own shape is not the role's home shape (`displaced: "callShape"`)
+ *      — a `class << self` utility in a helpers directory of mixins.
+ * A displaced role stays STRONG: the ledgers count its edges as precedent
+ * (weakening them erased the helper → record direction the real view helpers
+ * hold, measured), while no edge touching it carries a verdict. Inheritance
+ * evidence and weak readings keep theirs; a carrier of unknown shape is never
+ * displaced by shape. Measured on taxdome (xb669.8 gold set): `helper` lumped
+ * view mixins, `lib` utilities and `app/lib` calculators — 17 FALSE and 6
+ * DOUBTFUL of 51 MISFITs.
+ */
+function applyRoleHomes(
+  entries: Map<RelPath, { role: DependencyNormFileRole; evidence: TypeRoleEvidence }>,
+  primaries: ReadonlyMap<RelPath, TypeNameRow>,
+  conventional: ReadonlyMap<string, string>,
+): void {
+  const homeOf = (relPath: RelPath, role: string): boolean =>
+    ancestorDirectories(relPath).some((dir) => conventional.get(dir) === role);
+  const hasHome = new Set(conventional.values());
+
+  const shapeTally = new Map<string, { instance: number; functions: number }>();
+  for (const [relPath, { role }] of entries) {
+    if (!role.strong || !homeOf(relPath, role.role)) continue;
+    const shape = callShapeOf(primaries.get(relPath));
+    if (shape === undefined) continue;
+    const tally = shapeTally.get(role.role) ?? { instance: 0, functions: 0 };
+    tally[shape]++;
+    shapeTally.set(role.role, tally);
+  }
+  const homeShape = (role: string): PrimaryCallShape => {
+    const tally = shapeTally.get(role);
+    if (tally === undefined) return undefined;
+    const known = tally.instance + tally.functions;
+    if (tally.instance >= MIN_ROLE_MEMBERS && tally.instance / known >= TYPE_ROLE_THRESHOLDS.directoryShare) {
+      return "instance";
+    }
+    if (tally.functions >= MIN_ROLE_MEMBERS && tally.functions / known >= TYPE_ROLE_THRESHOLDS.directoryShare) {
+      return "functions";
+    }
+    return undefined;
+  };
+
+  for (const [relPath, entry] of entries) {
+    const { role } = entry;
+    if (!role.strong || entry.evidence !== "directory") continue;
+    if (!hasHome.has(role.role)) continue;
+    if (!homeOf(relPath, role.role)) {
+      entries.set(relPath, { ...entry, role: { ...role, displaced: "outsideRoleHome" } });
+      continue;
+    }
+    const expected = homeShape(role.role);
+    const shape = callShapeOf(primaries.get(relPath));
+    if (expected !== undefined && shape !== undefined && shape !== expected) {
+      entries.set(relPath, { ...entry, role: { ...role, displaced: "callShape" } });
     }
   }
 }

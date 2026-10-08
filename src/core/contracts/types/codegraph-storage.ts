@@ -713,6 +713,16 @@ export interface TypeNameRow {
    */
   methodCount?: number;
   fieldCount?: number;
+  /**
+   * The type's callables in the symbol table by how they are called (bd
+   * tea-rags-mcp-4vj2u): `Type#m` — on an instance (a mixin's or an object's
+   * methods) — against `Type.m` — on the type itself (`class << self`,
+   * `def self.m`, a `static`). A type with singleton callables only is a
+   * namespace of functions, whatever its name says. Both-or-neither; absent
+   * when the symbol table holds no callable of the type.
+   */
+  instanceMethodCount?: number;
+  singletonMethodCount?: number;
 }
 
 /**

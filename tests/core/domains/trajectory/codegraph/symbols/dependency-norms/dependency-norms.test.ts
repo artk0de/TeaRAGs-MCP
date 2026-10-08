@@ -561,3 +561,47 @@ describe("computeDependencyNorms - a framework-routed edge is no role edge", () 
     expect(report.findings.some((f) => f.sourceRelPath === "service/service1.ts")).toBe(true);
   });
 });
+
+/**
+ * A displaced role is precedent, never a verdict (bd tea-rags-mcp-4vj2u): the
+ * role layer reads `helper` off a `class << self` utility or an `app/lib`
+ * calculator, so an edge touching one says nothing about the helper layer —
+ * yet dropping those files from the ledgers erased the helper → record
+ * direction the real view helpers hold, measured on taxdome.
+ */
+describe("computeDependencyNorms - an edge touching a displaced role is never judged", () => {
+  it("counts the edge, lists no finding, and keeps it in the ledger", () => {
+    const { graph, roles } = inversionFixture();
+    // A controller read off its name alone, outside the controllers' home.
+    roles.set("lib/legacy_controller.ts", { role: "controller", strong: true, displaced: "outsideRoleHome" });
+    graph.files.push({ relPath: "lib/legacy_controller.ts", language: "typescript", symbolCount: 1 });
+    graph.edges.push({
+      sourceRelPath: "service/service1.ts",
+      targetRelPath: "lib/legacy_controller.ts",
+      callWeight: 1,
+    });
+
+    const report = computeDependencyNorms({ graph, fileRoles: roles });
+
+    expect(report.summary.excluded.displacedRoleEdgeCount).toBe(1);
+    expect(report.summary.judgedEdgeCount).toBe(FIXTURE_EDGE_COUNT);
+    expect(report.findings.some((f) => f.targetRelPath === "lib/legacy_controller.ts")).toBe(false);
+    const ledger = buildNormLedgers({ graph, fileRoles: roles }).forLanguage("typescript");
+    expect(ledger.pairs.get("service\u0000controller\u0000crossDomain")).toBe(2);
+  });
+
+  it("names an edge's own exclusion first: a call-less edge into a displaced role counts as uncalled", () => {
+    const { graph, roles } = inversionFixture();
+    roles.set("service/functions.ts", { role: "service", strong: true, displaced: "callShape" });
+    graph.files.push({ relPath: "service/functions.ts", language: "typescript", symbolCount: 1 });
+    graph.edges.push({
+      sourceRelPath: "service/functions.ts",
+      targetRelPath: "controller/controller1.ts",
+      callWeight: 0,
+    });
+
+    const report = computeDependencyNorms({ graph, fileRoles: roles });
+
+    expect(report.summary.excluded).toMatchObject({ uncalledEdgeCount: 1, displacedRoleEdgeCount: 0 });
+  });
+});

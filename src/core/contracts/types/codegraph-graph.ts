@@ -118,6 +118,17 @@ export interface DependencyNormFileRole {
    * strong roles and on plain project-suffix roles.
    */
   weakReason?: "ioShape";
+  /**
+   * Why a STRONG head-noun role is read where the role does not live (bd
+   * tea-rags-mcp-4vj2u): `outsideRoleHome` — the file sits beneath none of the
+   * role's conventional directories (`app/lib/billing/fee_helper.rb` while
+   * the helpers live in `app/helpers`); `callShape` — the file is called on
+   * the type itself while its role's home carriers are called on instances
+   * (a `class << self` utility among view-helper mixins), or the reverse.
+   * The role still counts as ledger precedent; an edge touching it is never
+   * judged. Absent on a role read at its home.
+   */
+  displaced?: "outsideRoleHome" | "callShape";
 }
 
 /**
