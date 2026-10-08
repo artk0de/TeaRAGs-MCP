@@ -5,15 +5,16 @@ description:
   Stable Dependencies Principle violations, leaking abstractions (imports past
   an adopted facade), silent coupling (files changing together with no
   import/call between them), main-sequence distance (zone of pain / uselessness)
-  and the inferred layer stack (SCC-condensed levels, knots, back-edges, layer
-  map, move candidates) with evidence per line, grouped into root causes. Use
-  when asked "is architecture right", "layering violations", "layer map", "which
-  layer", "levels", "move candidate", "wrong dependency direction", "SDP",
-  "stable depends on unstable", "module borders", "facade bypass", "deep
-  imports", "leaking abstraction", "hidden coupling", "change together",
-  "shotgun surgery", "zone of pain", "main sequence", "abstractness",
-  "архитектурные нарушения" — NOT for risk/health of code (use risk-assessment),
-  NOT for one failure (use bug-hunt), NOT for plain cycle listing (find_cycles).
+  hub-like dependencies (high Ca AND Ce) and the inferred layer stack
+  (SCC-condensed levels, knots, back-edges, layer map, move candidates) with
+  evidence per line, grouped into root causes. Use when asked "is architecture
+  right", "layering violations", "layer map", "which layer", "levels", "move
+  candidate", "wrong dependency direction", "SDP", "stable depends on unstable",
+  "module borders", "facade bypass", "deep imports", "leaking abstraction",
+  "hidden coupling", "change together", "shotgun surgery", "zone of pain", "main
+  sequence", "abstractness", "hub-like dependency", "архитектурные нарушения" —
+  NOT for risk/health of code (use risk-assessment), NOT for one failure (use
+  bug-hunt), NOT for plain cycle listing (find_cycles).
 argument-hint: "[scope — pathPattern, subsystem, or 'whole project']"
 ---
 
@@ -29,7 +30,8 @@ Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
 4. Phase 3 — residual violations, judged by evidence
 5. Phase 3b — LEAKING ABSTRACTION (`detector: "leakingAbstraction"`)
 6. Phase 3c — SILENT COUPLING (`detector: "silentCoupling"`)
-7. Phase 3d — MAIN SEQUENCE (`detector: "mainSequence"`)
+7. Phase 3d — MAIN SEQUENCE (`detector: "mainSequence"`), then 3d2 — HUB-LIKE
+   DEPENDENCY (`detector: "hubLikeDependency"`)
 8. Phase 3e — LAYERING (`detector: "layering"`)
 9. Phase 3f — LAYER MAP (only when the request carried `layerMap`)
 10. Phase 4 — EXCLUSIONS: say what not judged
@@ -126,7 +128,8 @@ get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>"
   Totals > returned → say truncated.
 - Every finding carries `detector`: `stableDependencies` (Phases 2–3),
   `leakingAbstraction` (Phase 3b), `silentCoupling` (Phase 3c), `mainSequence`
-  (Phase 3d) or `layering` (Phase 3e). Never mix groups across detectors.
+  (Phase 3d), `hubLikeDependency` (Phase 3d2) or `layering` (Phase 3e). Never
+  mix groups across detectors.
 
 ## Phase 2 — ROOT CAUSES
 
@@ -294,6 +297,27 @@ Ca/Ce, `unmeasuredFileCount` (> 0 = partial census, hedge), `volatility`
 component is volatile — it is rigid AND keeps changing, so it hurts now. Pain
 with no `volatility` = no git reading for its files, hedge.
 
+## Phase 3d2 — HUB-LIKE DEPENDENCY
+
+`detector: "hubLikeDependency"`, SAME components as SDP. Hub = Ca AND Ce both
+past adaptive cut AND balanced (|Ca − Ce| / (Ca + Ce) < 1/4, Arcan) — many
+depend on it, it depends on many. I near 0.5 → SDP silent, main sequence may
+read healthy. Fix direction: split by dependent cluster (`topDependents`) or by
+dependency cluster (`topDependencies`).
+
+| Summary field (`summary.hubLikeDependency`) | Read as                                                                                                                                                        |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `afferent` / `efferent`                     | per-axis cut: count > `median` AND ≥ `threshold`; `otsu` = log-scale cut (η ≥ 0.8), `median` = floor alone (few judged OR not bimodal, η reported if computed) |
+| `judgedComponentCount`                      | components with Ca + Ce ≥ `minConnectionCount` — population both cuts drawn over; most below floor → median of few busy ones decides                           |
+| `excluded.imbalanced`                       | busy on both axes but lopsided (I outside 0.375..0.625) — an SDP / main-sequence end, read there, not a hub                                                    |
+| `churnSignal`                               | present = `evidence.churn` attached (`git.file.commitCount` mean per file); absent = no git data or no hub                                                     |
+
+Evidence per line: Ca/Ce, `instability`, `dependentComponentCount` /
+`dependencyComponentCount`, top-5 each side (`fileEdgeCount`, `callWeight`),
+`transitiveImpact` (components reaching hub transitively), `churn`.
+`compositionRoot: true` = declared composition root — wiring many to many is its
+job; triage data, never suppression.
+
 ## Phase 3e — LAYERING
 
 No declared architecture needed: SCC condensation of the DOMAIN graph — every
@@ -441,6 +465,9 @@ Grouped: | # | Shared file | Partners (N) | Top 3 (support / λ / strength) | Dr
 ## Main sequence — [violationCount] (pain N, uselessness N); mean D [meanDistance]
 Threshold [distanceThreshold] ([method]); volatility cut [volatility.threshold] ([volatility.thresholdMethod]); judged [judgedComponentCount]; excluded: unmeasured N, unobservable N, calm N
 | # | Component | Zone | D | A (abstract/types) | I | Ca/Ce | Commits/file |
+
+## Hub-like dependencies — [violationCount]; cuts Ca > [afferent.threshold] ([method]), Ce > [efferent.threshold] ([method]); judged [judgedComponentCount]
+| # | Component | Ca/Ce | I | Top dependents | Top dependencies | Reach | Commits/file |
 
 ## Layering — [levelCount] levels; coverage [coverage], coherence [coherence]
 knots [knotCount] (composition N), backEdges [backEdgeCount], bypasses [abstractionBypassCount]; islands N, skips N, composition cycles N

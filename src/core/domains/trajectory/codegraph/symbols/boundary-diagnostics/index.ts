@@ -37,6 +37,12 @@ export {
   MAIN_SEQUENCE_STABLE_CONCRETE_CALM_REASON,
   MAIN_SEQUENCE_UNOBSERVABLE_REASON,
 } from "./main-sequence.js";
+export {
+  detectHubLikeDependencies,
+  HUB_LIKE_DEPENDENCY_EVIDENCE_LIMIT,
+  HUB_LIKE_DEPENDENCY_MAX_IMBALANCE,
+  HUB_LIKE_DEPENDENCY_OTSU_MIN_POPULATION,
+} from "./hub-like-dependency.js";
 export { buildLayeringModel, detectLayeringViolations, layeringKnotKeepCosts, lookupLayeringKnot } from "./layering.js";
 export { buildLayerMap, collapseDirectory, nodeMapping } from "./layer-map.js";
 export { condensedPositions, sccKnots, weightedFeedbackArcSet, type SimpleEdge } from "./layer-graph.js";
@@ -98,6 +104,14 @@ export type {
   LayeringSummary,
   LayeringViolation,
   LayeringViolationKind,
+  HubLikeDependencyAxisCut,
+  HubLikeDependencyChurn,
+  HubLikeDependencyNeighbour,
+  HubLikeDependencyOptions,
+  HubLikeDependencyReport,
+  HubLikeDependencyScope,
+  HubLikeDependencySummary,
+  HubLikeDependencyViolation,
   MainSequenceExclusionCounts,
   MainSequenceOptions,
   MainSequenceReport,

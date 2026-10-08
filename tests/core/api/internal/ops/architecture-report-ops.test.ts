@@ -1875,3 +1875,93 @@ describe("ArchitectureReportOps#build — knotOf mode scopes the findings to the
     expect(report.summary).toEqual(whole.summary);
   });
 });
+
+/**
+ * Hub-like dependency (bd tea-rags-mcp-r8hme.47): `hub/` (40 files) has 40
+ * dependents across src1..src8 and depends on all eight sinks (h1..h10) plus
+ * sink1 (h11..h40) — Ca 40, Ce 40, balanced under Arcan's 1/4.
+ * `mid/` is balanced (Ca 3, Ce 3, I 0.5) but no busier than the typical component.
+ */
+function hubGraph(): FileDependencyGraph {
+  const files = [];
+  const edges: FileDependencyGraph["edges"] = [];
+  const add = (sourceRelPath: string, targetRelPath: string) => {
+    edges.push({ sourceRelPath, targetRelPath, callWeight: 1 });
+  };
+  for (let s = 1; s <= 8; s++) files.push(file(`sink${s}/s.ts`));
+  for (let h = 1; h <= 10; h++) {
+    files.push(file(`hub/h${h}.ts`));
+    for (let s = 1; s <= 8; s++) add(`hub/h${h}.ts`, `sink${s}/s.ts`);
+  }
+  for (let h = 11; h <= 40; h++) {
+    files.push(file(`hub/h${h}.ts`));
+    add(`hub/h${h}.ts`, "sink1/s.ts");
+  }
+  for (let c = 1; c <= 8; c++) {
+    for (let f = 1; f <= 5; f++) {
+      files.push(file(`src${c}/f${f}.ts`));
+      add(`src${c}/f${f}.ts`, `hub/h${f}.ts`);
+    }
+  }
+  for (let m = 1; m <= 3; m++) {
+    files.push(file(`mid/m${m}.ts`), file(`user/u${m}.ts`), file(`user/w${m}.ts`));
+    add(`mid/m${m}.ts`, "sink1/s.ts");
+    add(`user/u${m}.ts`, `mid/m${m}.ts`);
+    add(`user/w${m}.ts`, "sink2/s.ts");
+  }
+  return { files, edges };
+}
+
+describe("ArchitectureReportOps#build — hubLikeDependency (bd tea-rags-mcp-r8hme.47)", () => {
+  it("lists the hub as a hubLikeDependency violation with coupling, neighbours and reach as evidence", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(hubGraph()), {});
+
+    const hubs = report.violations.filter((v) => v.detector === "hubLikeDependency");
+    expect(hubs).toHaveLength(1);
+    expect(hubs[0]).toMatchObject({
+      detector: "hubLikeDependency",
+      component: "hub",
+      componentKind: "directory",
+      facadeRelPath: null,
+      evidence: {
+        afferentCount: 40,
+        efferentCount: 40,
+        instability: 0.5,
+        fileCount: 40,
+        dependentComponentCount: 8,
+        dependencyComponentCount: 8,
+        transitiveImpact: 8,
+      },
+    });
+    expect(report.summary.hubLikeDependency).toMatchObject({
+      violationCount: 1,
+      afferent: { median: 3 },
+      efferent: { median: 5 },
+      excluded: { lowConnectionCount: 0, imbalanced: 0 },
+    });
+    expect(report.summary.hubLikeDependency.churnSignal).toBeUndefined();
+  });
+
+  it("attaches the hub's churn from git.file.commitCount", async () => {
+    const read = vi.fn(
+      async () => new Map(hubGraph().files.map((f) => [f.relPath, f.relPath.startsWith("hub/") ? 7 : 1])),
+    );
+
+    const report = await new ArchitectureReportOps().build(graphDb(hubGraph()), {}, undefined, read);
+
+    const hub = report.violations.find((v) => v.detector === "hubLikeDependency");
+    expect(hub && "evidence" in hub ? hub.evidence : expect.fail("no hub")).toMatchObject({
+      churn: { value: 7, measuredFileCount: 40 },
+    });
+    expect(report.summary.hubLikeDependency.churnSignal).toBe("git.file.commitCount");
+  });
+
+  it("reports an empty hub summary for an empty report", () => {
+    expect(ArchitectureReportOps.empty({}).summary.hubLikeDependency).toMatchObject({
+      componentCount: 0,
+      judgedComponentCount: 0,
+      violationCount: 0,
+      afferent: { threshold: 0, thresholdMethod: "median", median: 0 },
+    });
+  });
+});

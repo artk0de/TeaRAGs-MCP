@@ -443,7 +443,10 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "rarely declares abstractions excluded (unobservableAbstractness); census needs codegraph recompute; pain " +
       "also needs volatility (mean git.file.commitCount per file > max(median file, log-scale Otsu cut)), calm ones " +
       "counted as stableConcreteCalm; evidence entryPoint:true = declared cli/mcp entry surface — its distance is " +
-      "placement, not defect (triage data, never suppression). layering: inferred layers without a declared architecture — SCC-condensed " +
+      "placement, not defect (triage data, never suppression). hubLikeDependency: component with BOTH Ca and Ce " +
+      "above adaptive cuts (per axis: > median and >= log-scale Otsu cut when bimodal; Ca+Ce floor as SDP) AND " +
+      "balanced (|Ca-Ce|/(Ca+Ce) < 1/4, Arcan; lopsided = excluded.imbalanced) — I near 0.5, so SDP misses it; evidence = top dependents/dependencies, transitiveImpact (components reaching it), " +
+      "churn (mean git.file.commitCount), compositionRoot:true = triage data. layering: inferred layers without a declared architecture — SCC-condensed " +
       "DOMAIN graph (every facade directory is a unit, adoption notwithstanding — a vertical with an unadopted " +
       "facade counts once, not once per subdirectory; facadePartition keeps the adoption partition's component/level " +
       "counts), levels by longest path (L0 = foundation), per-knot greedy weighted feedback arc set " +
