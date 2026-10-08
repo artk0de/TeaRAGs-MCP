@@ -20,6 +20,15 @@ import type {
 /** Dependents and dependencies listed per hub, heaviest first; the counts keep the totals. */
 export const HUB_LIKE_DEPENDENCY_EVIDENCE_LIMIT = 5;
 
+/**
+ * Arcan's balance condition: a hub's |Ca − Ce| / (Ca + Ce) stays below 1/4,
+ * i.e. I in (0.375, 0.625). A definitional constant of the smell, not a corpus
+ * tuning: the busy-but-lopsided component sits at an end of the instability
+ * axis, where SDP and the main sequence already judge it, so calling it a hub
+ * would report the same component twice under two names (owner, 2026-10-08).
+ */
+export const HUB_LIKE_DEPENDENCY_MAX_IMBALANCE = 0.25;
+
 /** Same population floor the other boundary detectors trust Otsu's split on. */
 export const HUB_LIKE_DEPENDENCY_OTSU_MIN_POPULATION = MAIN_SEQUENCE_OTSU_MIN_POPULATION;
 
@@ -40,6 +49,10 @@ export const HUB_LIKE_DEPENDENCY_OTSU_MIN_POPULATION = MAIN_SEQUENCE_OTSU_MIN_PO
  * two largest components carry most of the variance, so Otsu would isolate
  * them and read every merely busy component as typical. log(1 + count) keeps
  * the many components with Ca 0 (entry points) or Ce 0 (sinks) finite.
+ * A component clearing both cuts is still no hub unless its coupling is
+ * balanced (`HUB_LIKE_DEPENDENCY_MAX_IMBALANCE`); one that is not is counted
+ * in `summary.excluded.imbalanced`. Without it the median floors flagged 16 of
+ * 60 tea-rags components, infra (I 0.06) and language (I 0.97) among them.
  *
  * `sourcePathPattern` only decides which judged components are reported; the
  * cuts are whole-graph. `fileVolatility` attaches churn to every hub and never
@@ -68,12 +81,15 @@ export function detectHubLikeDependencies(
       : undefined;
 
   const hubs: ArchitectureComponent[] = [];
+  let imbalanced = 0;
   for (const component of judged) {
     if (scope && inScope && !(pathsOf.get(component.componentDir) ?? []).some(inScope)) {
       scope.outOfScopeComponentCount++;
       continue;
     }
-    if (afferent.admits(component.afferentCount) && efferent.admits(component.efferentCount)) hubs.push(component);
+    if (!afferent.admits(component.afferentCount) || !efferent.admits(component.efferentCount)) continue;
+    if (couplingImbalance(component) < HUB_LIKE_DEPENDENCY_MAX_IMBALANCE) hubs.push(component);
+    else imbalanced++;
   }
 
   const reach = hubs.length > 0 ? new ReverseComponentReach(componentGraph.dependencies) : undefined;
@@ -116,11 +132,17 @@ export function detectHubLikeDependencies(
       minConnectionCount,
       afferent: afferent.summary,
       efferent: efferent.summary,
-      excluded: { lowConnectionCount },
+      excluded: { lowConnectionCount, imbalanced },
       churnMeasured: options.fileVolatility !== undefined,
       ...(scope ? { scope } : {}),
     },
   };
+}
+
+/** |Ca − Ce| / (Ca + Ce); a judged component has Ca + Ce ≥ the connection floor, so the ratio is defined. */
+function couplingImbalance(component: ArchitectureComponent): number {
+  const total = component.afferentCount + component.efferentCount;
+  return total === 0 ? 1 : Math.abs(component.afferentCount - component.efferentCount) / total;
 }
 
 interface AxisCut {

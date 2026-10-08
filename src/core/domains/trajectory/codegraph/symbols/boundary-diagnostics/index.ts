@@ -40,6 +40,7 @@ export {
 export {
   detectHubLikeDependencies,
   HUB_LIKE_DEPENDENCY_EVIDENCE_LIMIT,
+  HUB_LIKE_DEPENDENCY_MAX_IMBALANCE,
   HUB_LIKE_DEPENDENCY_OTSU_MIN_POPULATION,
 } from "./hub-like-dependency.js";
 export { buildLayeringModel, detectLayeringViolations, layeringKnotKeepCosts, lookupLayeringKnot } from "./layering.js";

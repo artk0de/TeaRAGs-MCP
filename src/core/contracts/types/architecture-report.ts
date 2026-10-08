@@ -1354,6 +1354,8 @@ export interface HubLikeDependencyReportSummary {
   excluded: {
     /** Ca + Ce below `minConnectionCount`: too few edges to call the component busy on either side. */
     lowConnectionCount: number;
+    /** Cleared both cuts but lopsided — |Ca − Ce| / (Ca + Ce) at or above Arcan's 1/4, an SDP / main-sequence end, not a hub. */
+    imbalanced: number;
   };
   /** The per-file reading `evidence.churn` averages; present only when churn was attached. */
   churnSignal?: "git.file.commitCount";

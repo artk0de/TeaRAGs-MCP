@@ -1877,8 +1877,9 @@ describe("ArchitectureReportOps#build — knotOf mode scopes the findings to the
 });
 
 /**
- * Hub-like dependency (bd tea-rags-mcp-r8hme.47): `hub/` (10 files) has 40
- * dependents across src1..src8 and depends on all eight sinks — Ca 40, Ce 10.
+ * Hub-like dependency (bd tea-rags-mcp-r8hme.47): `hub/` (40 files) has 40
+ * dependents across src1..src8 and depends on all eight sinks (h1..h10) plus
+ * sink1 (h11..h40) — Ca 40, Ce 40, balanced under Arcan's 1/4.
  * `mid/` is balanced (Ca 3, Ce 3, I 0.5) but no busier than the typical component.
  */
 function hubGraph(): FileDependencyGraph {
@@ -1891,6 +1892,10 @@ function hubGraph(): FileDependencyGraph {
   for (let h = 1; h <= 10; h++) {
     files.push(file(`hub/h${h}.ts`));
     for (let s = 1; s <= 8; s++) add(`hub/h${h}.ts`, `sink${s}/s.ts`);
+  }
+  for (let h = 11; h <= 40; h++) {
+    files.push(file(`hub/h${h}.ts`));
+    add(`hub/h${h}.ts`, "sink1/s.ts");
   }
   for (let c = 1; c <= 8; c++) {
     for (let f = 1; f <= 5; f++) {
@@ -1920,9 +1925,9 @@ describe("ArchitectureReportOps#build — hubLikeDependency (bd tea-rags-mcp-r8h
       facadeRelPath: null,
       evidence: {
         afferentCount: 40,
-        efferentCount: 10,
-        instability: 0.2,
-        fileCount: 10,
+        efferentCount: 40,
+        instability: 0.5,
+        fileCount: 40,
         dependentComponentCount: 8,
         dependencyComponentCount: 8,
         transitiveImpact: 8,
@@ -1932,7 +1937,7 @@ describe("ArchitectureReportOps#build — hubLikeDependency (bd tea-rags-mcp-r8h
       violationCount: 1,
       afferent: { median: 3 },
       efferent: { median: 5 },
-      excluded: { lowConnectionCount: 0 },
+      excluded: { lowConnectionCount: 0, imbalanced: 0 },
     });
     expect(report.summary.hubLikeDependency.churnSignal).toBeUndefined();
   });
@@ -1946,7 +1951,7 @@ describe("ArchitectureReportOps#build — hubLikeDependency (bd tea-rags-mcp-r8h
 
     const hub = report.violations.find((v) => v.detector === "hubLikeDependency");
     expect(hub && "evidence" in hub ? hub.evidence : expect.fail("no hub")).toMatchObject({
-      churn: { value: 7, measuredFileCount: 10 },
+      churn: { value: 7, measuredFileCount: 40 },
     });
     expect(report.summary.hubLikeDependency.churnSignal).toBe("git.file.commitCount");
   });

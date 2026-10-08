@@ -709,7 +709,8 @@ export interface HubLikeDependencySummary {
   minConnectionCount: number;
   afferent: HubLikeDependencyAxisCut;
   efferent: HubLikeDependencyAxisCut;
-  excluded: { lowConnectionCount: number };
+  /** `imbalanced`: cleared both cuts but |Ca − Ce| / (Ca + Ce) ≥ `HUB_LIKE_DEPENDENCY_MAX_IMBALANCE`. */
+  excluded: { lowConnectionCount: number; imbalanced: number };
   /** True when `fileVolatility` was given — every hub then carries churn if any of its files has a reading. */
   churnMeasured: boolean;
   scope?: HubLikeDependencyScope;

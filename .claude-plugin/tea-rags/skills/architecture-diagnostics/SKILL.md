@@ -300,14 +300,16 @@ with no `volatility` = no git reading for its files, hedge.
 ## Phase 3d2 — HUB-LIKE DEPENDENCY
 
 `detector: "hubLikeDependency"`, SAME components as SDP. Hub = Ca AND Ce both
-past adaptive cut — many depend on it, it depends on many. I near 0.5 → SDP
-silent, main sequence may read healthy. Fix direction: split by dependent
-cluster (`topDependents`) or by dependency cluster (`topDependencies`).
+past adaptive cut AND balanced (|Ca − Ce| / (Ca + Ce) < 1/4, Arcan) — many
+depend on it, it depends on many. I near 0.5 → SDP silent, main sequence may
+read healthy. Fix direction: split by dependent cluster (`topDependents`) or by
+dependency cluster (`topDependencies`).
 
 | Summary field (`summary.hubLikeDependency`) | Read as                                                                                                                                                        |
 | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `afferent` / `efferent`                     | per-axis cut: count > `median` AND ≥ `threshold`; `otsu` = log-scale cut (η ≥ 0.8), `median` = floor alone (few judged OR not bimodal, η reported if computed) |
 | `judgedComponentCount`                      | components with Ca + Ce ≥ `minConnectionCount` — population both cuts drawn over; most below floor → median of few busy ones decides                           |
+| `excluded.imbalanced`                       | busy on both axes but lopsided (I outside 0.375..0.625) — an SDP / main-sequence end, read there, not a hub                                                    |
 | `churnSignal`                               | present = `evidence.churn` attached (`git.file.commitCount` mean per file); absent = no git data or no hub                                                     |
 
 Evidence per line: Ca/Ce, `instability`, `dependentComponentCount` /

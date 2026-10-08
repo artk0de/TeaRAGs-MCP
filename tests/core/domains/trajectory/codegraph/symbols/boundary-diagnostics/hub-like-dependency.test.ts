@@ -4,7 +4,8 @@
  * 0.5, so SDP does not flag it and the main sequence may read it as healthy.
  * Verdict: Ca AND Ce both clear an adaptive cut drawn over the judged
  * component population (majority-floored Otsu on the log scale, the median as
- * the floor), behind the SDP connection-count floor.
+ * the floor), behind the SDP connection-count floor, AND the component is
+ * balanced — |Ca − Ce| / (Ca + Ce) below Arcan's 1/4.
  */
 import { describe, expect, it } from "vitest";
 
@@ -17,6 +18,7 @@ import {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   detectHubLikeDependencies,
   HUB_LIKE_DEPENDENCY_EVIDENCE_LIMIT,
+  HUB_LIKE_DEPENDENCY_MAX_IMBALANCE,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
 
 function file(relPath: string) {
@@ -28,8 +30,10 @@ function edge(sourceRelPath: string, targetRelPath: string, callWeight = 1): Fil
 }
 
 /**
- * `hub/`        — 10 files: 40 dependents (src1..src8 × 5 files) and every file
- *                 imports all 8 sinks: Ca 40, Ce 10, I 0.2.
+ * `hub/`        — 10 files importing all 8 sinks, plus `extraHubFiles` more
+ *                 importing sink1 only; 40 dependents (src1..src8 × 5 files).
+ *                 Default 30 extra: Ca 40, Ce 40, I 0.5 — a balanced hub.
+ *                 0 extra: Ca 40, Ce 10, I 0.2 — busy but unbalanced.
  * `srcN/`       — 5 files each importing a hub file: Ca 0, Ce 5.
  * `sinkN/`      — imported by every hub file: Ca 10+, Ce 0.
  * `mid/`        — 3 dependents, 3 files depending outward: Ca 3, Ce 3, I 0.5 —
@@ -38,13 +42,17 @@ function edge(sourceRelPath: string, targetRelPath: string, callWeight = 1): Fil
  *                 connection floor.
  * `user/`       — 3 files into `mid/`, 2 into `thin/`: Ca 0, Ce 5.
  */
-function graph(): FileDependencyGraph {
+function graph(extraHubFiles = 30): FileDependencyGraph {
   const files = [];
   const edges: FileDependencyEdge[] = [];
   for (let s = 1; s <= 8; s++) files.push(file(`sink${s}/s.ts`));
   for (let h = 1; h <= 10; h++) {
     files.push(file(`hub/h${h}.ts`));
     for (let s = 1; s <= 8; s++) edges.push(edge(`hub/h${h}.ts`, `sink${s}/s.ts`, s));
+  }
+  for (let h = 11; h <= 10 + extraHubFiles; h++) {
+    files.push(file(`hub/h${h}.ts`));
+    edges.push(edge(`hub/h${h}.ts`, "sink1/s.ts"));
   }
   for (let c = 1; c <= 8; c++) {
     for (let f = 1; f <= 5; f++) {
@@ -78,9 +86,9 @@ describe("detectHubLikeDependencies", () => {
       kind: "directory",
       facadeRelPath: null,
       afferentCount: 40,
-      efferentCount: 10,
-      instability: 0.2,
-      fileCount: 10,
+      efferentCount: 40,
+      instability: 0.5,
+      fileCount: 40,
       dependentComponentCount: 8,
       dependencyComponentCount: 8,
       // src1..src8 reach the hub; user reaches mid and thin only.
@@ -95,12 +103,23 @@ describe("detectHubLikeDependencies", () => {
       callWeight: 40,
     });
     expect(hub.topDependencies[0]).toEqual({
-      component: "sink8",
+      component: "sink1",
       directoryRelation: "disjoint",
-      fileEdgeCount: 10,
-      callWeight: 80,
+      fileEdgeCount: 40,
+      callWeight: 40,
     });
     expect(hub.churn).toBeUndefined();
+  });
+
+  // Owner decision 2026-10-08: without the balance condition both cuts fell to
+  // the median on tea-rags and 16 of 60 components read as hubs, infra (I 0.06)
+  // and language (I 0.97) among them — those are SDP's stable / unstable ends,
+  // not the I ≈ 0.5 blind spot this detector exists for.
+  it("does not flag a busy component whose coupling is lopsided, and counts it as imbalanced", () => {
+    const report = judge(graph(0));
+    expect(report.violations).toEqual([]);
+    expect(report.summary.excluded.imbalanced).toBe(1); // hub: Ca 40, Ce 10 → 30/50 = 0.6
+    expect(HUB_LIKE_DEPENDENCY_MAX_IMBALANCE).toBe(0.25);
   });
 
   it("does not flag a balanced component (I near 0.5) that is no busier than the typical component", () => {
