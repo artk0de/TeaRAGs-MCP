@@ -322,6 +322,46 @@ describe("architectureSectionProvider.run", () => {
     expect(payload.truncated).toBeUndefined();
   });
 
+  it("passes the declared test dependencies into the production-graph read — manifest-only evidence drops the support file from the findings (bd tea-rags-mcp-89k7k.35.3)", async () => {
+    writeFile("src/lib/b.ts", "export const B = 1;\n");
+    writeFile("src/app/a.ts", 'import { B } from "../lib/b";\nexport const A = B;\n');
+    const graphOf = () =>
+      graphDbStub({
+        files: [
+          graphFile("src/app/a.ts"),
+          graphFile("src/lib/b.ts"),
+          graphFile("src/other/c.ts"),
+          graphFile("src/other/main.ts"),
+        ],
+        // The stale indexed edge the diff replaces: pre-diff, b imported a.
+        edges: [graphEdge("src/lib/b.ts", "src/app/a.ts"), graphEdge("src/other/main.ts", "src/other/c.ts")],
+      });
+    // msw is imported by an imported production file (c.ts), so the data rule alone never makes it
+    // test-only; only the manifest's devDependencies declaration does.
+    const readIndexedFileImports = async () =>
+      new Map([
+        ["src/lib/b.test.ts", { isTest: true, specifiers: ["./b", "msw"] }],
+        ["src/lib/b.ts", { isTest: false, specifiers: ["msw"] }],
+        ["src/other/c.ts", { isTest: false, specifiers: ["msw"] }],
+      ]);
+    const cycleSubjects = async (readDeclaredTestDependencies?: () => ReadonlySet<string>) => {
+      const payload = (await architectureSectionProvider.run(
+        runContext({
+          graphDb: graphOf(),
+          scope: scopeOf(["src/app/a.ts"]),
+          readIndexedFileImports,
+          readDeclaredTestDependencies,
+        }),
+      )) as { findings: { detector: string; subject: string }[] };
+      return payload.findings.filter((f) => f.detector === "cycles").map((f) => f.subject);
+    };
+    const readDeclaredTestDependencies = vi.fn(() => new Set(["msw"]));
+
+    expect(await cycleSubjects()).toEqual(["src/app/a.ts -> src/lib/b.ts"]);
+    expect(await cycleSubjects(readDeclaredTestDependencies)).toEqual([]);
+    expect(readDeclaredTestDependencies).toHaveBeenCalledTimes(1);
+  });
+
   // The wiring-level twin of the production pin (silent-coupling.test.ts:188,
   // bd tea-rags-mcp-r8hme.12), live-measured as bead tea-rags-mcp-89k7k.4: a
   // dto/ops pair (support 24) reported as "strong co-change with NO structural
