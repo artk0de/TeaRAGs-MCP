@@ -140,8 +140,10 @@ get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>"
 ## Phase 2 — ROOT CAUSES
 
 SDP unit = COMPONENT: module with measured facade (A4 active or not-adopted —
-owns its directory subtree minus nested modules), else plain directory. Ca/Ce
-count distinct files across component border.
+owns its directory subtree minus nested modules), else constant namespace path
+spells (`componentKind: "namespace"`, `::Billing` — Zeitwerk autoload:
+`app/models/billing/*` + `app/services/billing/*` = one), else plain directory.
+Ca/Ce count distinct files across component border.
 
 `rootCauses[]` ordered by `violationCount` desc, then `maxInstabilityDelta`.
 

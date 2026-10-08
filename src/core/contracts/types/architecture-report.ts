@@ -380,7 +380,7 @@ export interface MainSequenceComponentVolatilityEvidence {
 export interface MainSequenceArchitectureViolation {
   detector: "mainSequence";
   component: string;
-  componentKind: "module" | "directory";
+  componentKind: "module" | "namespace" | "directory";
   /** The module's entry file; `null` for a directory component. */
   facadeRelPath: RelPath | null;
   evidence: MainSequenceViolationEvidence;
@@ -444,7 +444,7 @@ export interface HubLikeDependencyViolationEvidence {
 export interface HubLikeDependencyArchitectureViolation {
   detector: "hubLikeDependency";
   component: string;
-  componentKind: "module" | "directory";
+  componentKind: "module" | "namespace" | "directory";
   /** The module's entry file; `null` for a directory component. */
   facadeRelPath: RelPath | null;
   evidence: HubLikeDependencyViolationEvidence;
