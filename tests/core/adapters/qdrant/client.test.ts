@@ -2242,29 +2242,30 @@ describe("QdrantManager", () => {
         concurrency: 1,
       });
 
-      // one scroll per group of ≤200 paths, with filter + metadata-only
-      // projection — three paths is one group
-      expect(mockClient.scroll).toHaveBeenCalledTimes(1);
-      const scrollArgs = mockClient.scroll.mock.calls[0][1];
-      expect(scrollArgs.with_payload).toBe(false);
-      expect(scrollArgs.with_vector).toBe(false);
-      // Set membership over a TEXT-indexed key: one exact pair per path under a
-      // `should`, not a MatchAny. MatchAny reads the key's index, and
-      // `relativePath` has a text index that does not serve it — the single
-      // condition was one full collection scan (bd tea-rags-mcp-ivp12).
-      expect(scrollArgs.filter).toEqual({
-        should: ["src/a.ts", "src/b.ts", "src/c.ts"].map((path) => ({
+      // one scroll per path, each with a filter + metadata-only projection
+      expect(mockClient.scroll).toHaveBeenCalledTimes(3);
+      for (const call of mockClient.scroll.mock.calls) {
+        expect(call[1].with_payload).toBe(false);
+        expect(call[1].with_vector).toBe(false);
+      }
+      // Membership over a TEXT-indexed key: one exact text+value pair per
+      // request, not a MatchAny (a full collection scan on a text index,
+      // bd tea-rags-mcp-ivp12) and not a wide `should` (~6 ms per branch at
+      // 150k points, bd tea-rags-mcp-b4drg).
+      const filters = mockClient.scroll.mock.calls.map((call: unknown[]) => (call[1] as { filter: unknown }).filter);
+      expect(filters).toEqual(
+        ["src/a.ts", "src/b.ts", "src/c.ts"].map((path) => ({
           must: [
             { key: "relativePath", match: { text: path } },
             { key: "relativePath", match: { value: path } },
           ],
         })),
-      });
+      );
 
       // delete called with {points: ids}, NOT with filter
       expect(mockClient.delete).toHaveBeenCalledTimes(1);
       const deleteArgs = mockClient.delete.mock.calls[0][1];
-      expect(deleteArgs.points).toEqual(["id1", "id2", "id3"]);
+      expect([...deleteArgs.points].sort()).toEqual(["id1", "id2", "id3"]);
       expect(deleteArgs.filter).toBeUndefined();
 
       expect(result.deletedPaths).toBe(3);
@@ -2327,10 +2328,11 @@ describe("QdrantManager", () => {
       expect(result.batchCount).toBe(0);
     });
 
-    it("scrolls once per group of up to 200 paths, never per path", async () => {
-      // Phase 1 is a serial scroll pass, one per group of ≤200 paths — no
-      // per-path-batch chunking. Reads are cheap; interleaving them with
-      // writes is what saturated embedded Qdrant.
+    it("scrolls once per path, never per group of paths", async () => {
+      // Phase 1 is a read-only scroll pass with one exact pair per request
+      // (bd tea-rags-mcp-b4drg) — no wide `should`, no per-path-batch chunking.
+      // Reads are cheap; interleaving them with writes is what saturated
+      // embedded Qdrant.
       mockScrollReturning(["id-a", "id-b"]);
       mockClient.delete.mockResolvedValue({});
 
@@ -2340,33 +2342,16 @@ describe("QdrantManager", () => {
         concurrency: 2,
       });
 
-      expect(mockClient.scroll).toHaveBeenCalledTimes(1);
-      // 25 paths is one group, so the filter still carries every path in one
-      // scroll — the shape of the membership condition changed
-      // (bd tea-rags-mcp-ivp12), the one-read-per-group claim did not.
-      expect(mockClient.scroll.mock.calls[0][1].filter).toEqual({
-        should: paths.map((path) => ({
-          must: [
-            { key: "relativePath", match: { text: path } },
-            { key: "relativePath", match: { value: path } },
-          ],
-        })),
-      });
+      expect(mockClient.scroll).toHaveBeenCalledTimes(25);
     });
 
     /**
-     * The grouping exists because the membership condition is now an OR with one
-     * branch per path, where MatchAny was one condition for the whole set: an
-     * unbounded `should` is what returned 500 Internal Server Error from
-     * embedded Qdrant under concurrent load at ~1000 branches
-     * (bd tea-rags-mcp-ivp12). 200 branches is 400 conditions, well inside that.
-     *
      * What must hold is a partition: every path asked for appears in exactly one
-     * group, and no group is oversized — a path silently dropped here is a file
-     * whose chunks are never deleted, which surfaces later as duplicate search
-     * hits rather than as an error.
+     * scroll — a path silently dropped here is a file whose chunks are never
+     * deleted, which surfaces later as duplicate search hits rather than as an
+     * error. Concurrency means the ORDER of requests is not part of the contract.
      */
-    it("partitions a path set larger than one group across scrolls", async () => {
+    it("scrolls every path of a large set exactly once", async () => {
       mockScrollReturning(["id-a"]);
       mockClient.delete.mockResolvedValue({});
 
@@ -2376,16 +2361,16 @@ describe("QdrantManager", () => {
         concurrency: 1,
       });
 
-      expect(mockClient.scroll).toHaveBeenCalledTimes(3); // ceil(450 / 200)
+      expect(mockClient.scroll).toHaveBeenCalledTimes(450);
 
-      const groups = mockClient.scroll.mock.calls.map((call: unknown[]) =>
-        ((call[1] as { filter: { should: { must: { match: { value?: string } }[] }[] } }).filter.should ?? []).map(
-          (branch) => branch.must.find((c) => c.match.value !== undefined)?.match.value,
-        ),
+      const scrolled = mockClient.scroll.mock.calls.map(
+        (call: unknown[]) =>
+          (call[1] as { filter: { must: { match: { value?: string } }[] } }).filter.must.find(
+            (c) => c.match.value !== undefined,
+          )?.match.value,
       );
 
-      expect(groups.map((g) => g.length)).toEqual([200, 200, 50]);
-      expect(groups.flat()).toEqual(paths); // every path, once, in order
+      expect([...scrolled].sort()).toEqual([...paths].sort());
     });
 
     it("parallelizes delete-by-IDs calls under concurrency limit", async () => {
