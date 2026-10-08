@@ -706,13 +706,13 @@ export type ArchitectureViolation =
   | NormArchitectureViolation;
 
 /**
- * A file edge whose role pair is significantly rarer than independence of
- * roles predicts (bd tea-rags-mcp-rpx0v, xb669.8): a MISFIT names the
- * conforming transit its roles follow instead, a NEW_PATTERN has none.
+ * A file edge running against its role pair's established direction (bd
+ * tea-rags-mcp-rpx0v, xb669.8): the pair's sign test of n(A→B) against
+ * n(B→A) is BH-significant and this edge sits on the minority side.
  */
 export interface NormArchitectureViolation {
   detector: "norms";
-  kind: "misfit" | "newPattern";
+  kind: "misfit";
   sourceRelPath: RelPath;
   targetRelPath: RelPath;
   evidence: {
@@ -721,9 +721,8 @@ export interface NormArchitectureViolation {
     locality: ArchitectureNormFinding["locality"];
     callWeight: number;
     pairSupport: number;
-    expectedSupport: number;
     pValue: number;
-    expectedPath?: ArchitectureNormExpectedPath;
+    establishedDirection: ArchitectureNormEstablishedDirection;
   };
 }
 
@@ -1303,30 +1302,33 @@ export interface ArchitectureDomainReport {
 }
 
 /**
- * One ledger's independence test (bd tea-rags-mcp-xb669.8): per locality,
- * λ = out(roleSrc)·in(roleDst)/N, p = P(X ≤ observed | λ), Benjamini–Hochberg
- * at q over every pair with λ > 0 — the co-change pair gate's machinery.
+ * One ledger's direction test (bd tea-rags-mcp-xb669.8): per unordered role
+ * pair {A, B}, A ≠ B, localities pooled, the exact two-sided sign test of
+ * n(A→B) against n(B→A) at p = ½, Benjamini–Hochberg at q over the pairs —
+ * the co-change pair gate's q.
  */
 export interface ArchitectureNormsSignificance {
-  method: "poissonIndependenceNull";
+  method: "directionInversion";
   q: number;
-  /** m — every (roleSrc, roleDst, locality) with λ > 0, written or not. */
+  /** m — role pairs holding at least one edge either way, same-role pairs aside. */
   familySize: number;
-  /** Pairs where even a lone edge could be significant — the rest can never be rare. */
-  testablePairCount: number;
-  /** Pairs BH rejects, written or not. */
-  rarePairCount: number;
+  /** Pairs BH rejects: each has an established direction. */
+  significantPairCount: number;
+  /** Of those, pairs no edge runs against — a direction, but no MISFIT. */
+  oneWayPairCount: number;
 }
 
-/** The conforming transit a MISFIT names as the path the edge should follow. */
-export interface ArchitectureNormExpectedPath {
-  via: string;
+/** The direction a role pair significantly holds — the one a MISFIT runs against. */
+export interface ArchitectureNormEstablishedDirection {
+  roleSrc: string;
+  roleDst: string;
+  /** Edges along it, localities pooled. */
   support: number;
 }
 
-/** One significantly rare file edge, with the evidence that makes it one. */
+/** One edge against its role pair's established direction, with the evidence that makes it one. */
 export interface ArchitectureNormFinding {
-  kind: "misfit" | "newPattern";
+  kind: "misfit";
   /** The language family whose ledger judged the edge (bd tea-rags-mcp-xb669.7). */
   family: string;
   sourceRelPath: RelPath;
@@ -1335,19 +1337,19 @@ export interface ArchitectureNormFinding {
   roleDst: string;
   locality: "sameDirectory" | "sameDomain" | "crossDomain";
   callWeight: number;
+  /** Edges roleSrc → roleDst, localities pooled — the minority side. */
   pairSupport: number;
-  /** λ — edges independence of roles predicts for the pair, 3 decimals. */
-  expectedSupport: number;
-  /** P(X ≤ pairSupport | λ), 3 significant digits. */
+  /** The pair's two-sided sign-test p, 3 significant digits. */
   pValue: number;
-  expectedPath?: ArchitectureNormExpectedPath;
+  establishedDirection: ArchitectureNormEstablishedDirection;
 }
 
 /**
  * The dependency-norms view (bd tea-rags-mcp-rpx0v), present only when the
  * request carried `norms`: the project's empirical ledgers per
- * (roleSrc, roleDst, locality) and the verdict for every precedent-less
- * edge between strongly-typed files.
+ * (roleSrc, roleDst, locality) and a MISFIT for every edge between
+ * strongly-typed files that runs against its role pair's established
+ * direction.
  */
 export interface ArchitectureNormsReport {
   summary: {
@@ -1378,10 +1380,10 @@ export interface ArchitectureNormsReport {
   };
   /**
    * One ledger per language family (bd tea-rags-mcp-xb669.7), each with its
-   * own independence test — role statistics never pool across languages.
+   * own direction test — role statistics never pool across languages.
    */
   ledgers: { family: string; pairCount: number; significance: ArchitectureNormsSignificance }[];
-  /** MISFITs first, then by weight, then by path. */
+  /** By weight, then by path. */
   findings: ArchitectureNormFinding[];
 }
 

@@ -104,11 +104,10 @@ get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>"
 - `norms: true` adds the dependency-norms view (bd rpx0v): the project's own
   precedents per (roleSrc, roleDst, locality), roles = each file's PRIMARY
   type's role (naming's type-role layer; suffix-only roles stay weak — never
-  asserted). `response.norms` carries one ledger + independence test per
-  language family + findings; `norms` violations flag every edge whose role pair
-  is significantly RARER than independence of roles predicts: `misfit` names the
-  conforming transit its roles follow instead (`expectedPath.via`), `newPattern`
-  has none. Absent flag = no norms block, no `norms` violations.
+  asserted). `response.norms` carries one ledger + direction test per language
+  family + findings; `norms` violations flag every edge AGAINST its role pair's
+  established direction (`misfit`, with `establishedDirection`). Absent flag =
+  no norms block, no `norms` violations.
 - `domain: "<dir>"` judges one directory AS ITS OWN SYSTEM (bd xb669.1): the
   induced sub-graph — files under the root, edges with both endpoints inside —
   and EVERY metric recomputed inside it. Not `pathPattern`, which keeps
@@ -350,34 +349,34 @@ validation error naming the enum, before any detector runs.
 otherwise. The project judged by ITS OWN precedents: ledgers of (roleSrc,
 roleDst, locality) over every typed file edge, ONE LEDGER PER LANGUAGE FAMILY
 (`norms.ledgers[]`; TypeScript + JavaScript are one family, every other language
-its own) — a Ruby `form` and a TS `form` never pool. Each ledger runs its own
-significance test (`ledgers[].significance`, the co-change pair gate's
-machinery): per locality, independence of roles predicts
-`expectedSupport = out(roleSrc) · in(roleDst) / N` edges for a pair; the p-value
-is the Poisson lower tail `P(X ≤ pairSupport | expectedSupport)`;
-Benjamini–Hochberg at `q` (0.05) runs over the a-priori family of every pair
-with expected mass (`familySize`, unwritten pairs included). A pair BH rejects
-is significantly RARE; every other written pair CONFORMS and is not listed.
-`testablePairCount` = pairs where even one edge could be significant — the rest
-are pairs of rarely-active roles and can never be flagged, whatever their
-support. `finding.family` names the ledger that judged it. An edge between two
-families is never judged (`summary.excluded.crossLanguageEdgeCount`). Roles =
-each file's PRIMARY type's role; `summary.roleFileCount` counts the strong ones,
-`weakRoleFileCount` / `untypedFileCount` never judge. Of the weak ones,
-`summary.ioShapeRoleFileCount` are files whose primary type only shapes the I/O
-of the function the file is named for (`useXParams`, `XProps`) — never a role.
+its own) — a Ruby `form` and a TS `form` never pool. Each ledger runs own
+direction test (`ledgers[].significance`, method `directionInversion`): per
+unordered role pair {A, B}, A ≠ B, localities pooled, exact two-sided sign test
+of n(A→B) vs n(B→A) at p = ½; Benjamini–Hochberg at `q` (0.05, co-change gate's
+q) over every pair holding ≥1 edge (`familySize`). Pair BH rejects
+(`significantPairCount`) has ESTABLISHED direction; every edge against it =
+MISFIT. `oneWayPairCount` = significant pairs nothing runs against — direction
+fixed, no finding. Everything else CONFORMS, not listed: mutual pair (62:61),
+one-way pair, pair too small to establish anything (3:0, 2:1 never reach q),
+same-role pair (A→A, out of scope). NEW_PATTERN (pair with no history) is NOT
+whole-repo verdict — diff time only. `finding.family` names judging ledger. Edge
+between two families never judged (`summary.excluded.crossLanguageEdgeCount`).
+Roles = each file's PRIMARY type's role; `summary.roleFileCount` counts strong
+ones, `weakRoleFileCount` / `untypedFileCount` never judge. Of weak ones,
+`summary.ioShapeRoleFileCount` = files whose primary type only shapes I/O of
+function file is named for (`useXParams`, `XProps`) — never a role.
 
-| Finding      | Read as                                                                                                                                                                                                                                                       |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `misfit`     | pair significantly rarer than its roles' activity predicts, and the roles meet THROUGH a mid role whose both legs conform under the same test — `expectedPath: { via, support }` (`Controller -> Repository` should go `Controller -> Service -> Repository`) |
-| `newPattern` | pair significantly rarer than predicted, no conforming transit — the roles are active, the project just does not connect them this way                                                                                                                        |
+| Finding  | Read as                                                                                                                                                                                  |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `misfit` | edge runs against pair's established direction — `establishedDirection: { roleSrc, roleDst, support }` is the way the project goes (`Record -> Query` when `Query -> Record` holds 52:6) |
 
-Every finding carries `pairSupport` (observed), `expectedSupport` (λ) and
-`pValue` — `pairSupport: 3` against `expectedSupport: 40` is a strong finding,
-`pairSupport: 1` against `expectedSupport: 2` never is one. `locality` says
-which ledger judged it: `sameDirectory` / `sameDomain` (one r8hme.30 domain
-component) / `crossDomain` — the same edge can conform at home and misfit across
-domains.
+Every finding carries `pairSupport` (edges along the finding's own direction,
+localities pooled — minority side), `establishedDirection.support` (majority)
+and `pValue` (sign test, 3 significant digits). `pairSupport: 1` against
+`support: 24` = strong; heavy minority (24 against 47) = established but
+contested convention — read before calling it a mistake. `locality` = where THIS
+edge sits (`sameDirectory` / `sameDomain` / `crossDomain`); test pools
+localities, so it never changes the verdict.
 
 `summary.excluded.constantReferenceEdgeCount` — typed edges whose only evidence
 is a constant NESTED in the target's primary type
@@ -472,9 +471,9 @@ boundary-out N (→ top external: [component] at L[externalLevel]), boundary-in 
 boundary-out N (heaviest → [externalComponent] at L[externalLevel]), boundary-in N
 | # | Dir | Inner component | External component | L ext | calls |
 
-## Dependency norms — [violationCount] findings; cut per family [family]: [threshold] ([method]); [roleFileCount] typed files
-MISFIT N, NEW_PATTERN N; excluded low-support N, cross-language N; typed [typedEdgeCount] of graph edges
-| # | Kind | Family | Edge (src → dst) | Roles | Locality | Pair support | Expected path |
+## Dependency norms — [violationCount] MISFIT; per family [family]: [significantPairCount]/[familySize] pairs directed ([oneWayPairCount] one-way); [roleFileCount] typed files
+excluded constant-reference N, cross-language N; typed [typedEdgeCount] of graph edges
+| # | Family | Edge (src → dst) | Roles | Locality | Against (established → support) | Minority | p |
 ```
 
 Every line cites evidence numbers from report. No evidence → no claim.

@@ -144,12 +144,13 @@ The `norms: true` flag adds a different kind of answer again: not what the
 architecture should be, but what THIS repository actually does. Every file
 carries the role of its primary type (the naming lexicon's type-role layer),
 the report counts the project's own precedents per (source role, target role,
-locality) — same directory, same domain component, cross-domain — and every
-typed file edge below the adaptive cut gets a verdict. A `misfit` is a direct
-edge whose roles normally meet through a mid role: the finding names that
-transit as the expected path, so a controller reaching a repository reads
-"expected controller → service → repository". A `newPattern` is a pair two
-frequent roles have simply never shown each other. Edges touching an untyped
+locality) — same directory, same domain component, cross-domain — and tests
+each role pair's direction: does A depend on B significantly more often than B
+on A? A `misfit` is an edge running against that established direction — a
+record reaching into a query object when queries reach into records 52 times
+to 6. The finding carries both counts, the p-value and the direction the
+project established. Mutual pairs, one-way pairs and pairs too small to
+establish anything stay quiet. Edges touching an untyped
 or suffix-only-named file are never judged — a suffix suggests a role, it does
 not assert one, and a guessed role would misfit every edge it touches.
 

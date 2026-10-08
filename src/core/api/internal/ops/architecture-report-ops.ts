@@ -708,9 +708,8 @@ function normsDto(report: DependencyNormsReport): ArchitectureNormsReport {
     })),
     findings: report.findings.map((f) => ({
       ...f,
-      expectedSupport: round3(f.expectedSupport),
       pValue: roundSignificant3(f.pValue),
-      ...(f.expectedPath ? { expectedPath: { ...f.expectedPath } } : {}),
+      establishedDirection: { ...f.establishedDirection },
     })),
   };
 }
@@ -733,9 +732,8 @@ function normsViolations(report: DependencyNormsReport, limit: number): NormArch
         locality: f.locality,
         callWeight: f.callWeight,
         pairSupport: f.pairSupport,
-        expectedSupport: round3(f.expectedSupport),
         pValue: roundSignificant3(f.pValue),
-        ...(f.expectedPath ? { expectedPath: { ...f.expectedPath } } : {}),
+        establishedDirection: { ...f.establishedDirection },
       },
     }),
   );

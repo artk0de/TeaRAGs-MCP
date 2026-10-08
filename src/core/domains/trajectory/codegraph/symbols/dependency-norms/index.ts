@@ -1,6 +1,6 @@
 export { buildNormLedgers, computeDependencyNorms, judgePlannedEdge } from "./dependency-norms.js";
 export type {
-  DependencyNormExpectedPath,
+  DependencyNormEstablishedDirection,
   DependencyNormFinding,
   DependencyNormsInput,
   DependencyNormsFamilyLedger,
@@ -11,7 +11,7 @@ export type {
   NormLedgerBook,
   NormLedgers,
   NormLocality,
-  NormPairTest,
+  NormDirectionTest,
   NormPlannedEdge,
   PlannedEdgeVerdict,
   PlannedEdgeVerdictKind,

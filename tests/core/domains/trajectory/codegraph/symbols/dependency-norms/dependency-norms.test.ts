@@ -1,23 +1,26 @@
 /**
  * Dependency norms (bd tea-rags-mcp-rpx0v, epic xb669.2): the repository's
- * empirical P(edge | roleSrc, roleDst, locality), judged per file edge against
- * the project's own precedent — the architecture analogue of the naming
- * lexicon's CONFORMS / MISFIT.
+ * empirical role-pair ledgers, judged per file edge against the project's own
+ * precedent — the architecture analogue of the naming lexicon's CONFORMS /
+ * MISFIT.
  *
- * Since bd tea-rags-mcp-xb669.8 a verdict is a significance test, not a
- * support cut: per ledger and locality, independence of roles predicts
- * λ = out(roleSrc)·in(roleDst)/N edges for a pair, the p-value is the Poisson
- * lower tail P(X ≤ observed | λ), and Benjamini–Hochberg at the co-change
- * gate's q runs over every pair with expected mass. A pair BH rejects is
- * significantly RARE — a MISFIT when its roles meet through a conforming mid
- * role, else a NEW_PATTERN; every other observed pair CONFORMS.
+ * Since bd tea-rags-mcp-xb669.8 (owner decision after the Poisson and NB2
+ * independence nulls both failed on taxdome) a MISFIT is a DIRECTION
+ * INVERSION: per ledger, localities pooled, each unordered role pair {A, B}
+ * (A ≠ B) is a sign test of n(A→B) against n(B→A) at p = ½, Benjamini–Hochberg
+ * at the co-change gate's q over every pair holding an edge. A significant
+ * pair has an established direction, and every edge against it is a MISFIT.
+ * Every other edge CONFORMS. NEW_PATTERN is no whole-repo verdict any more —
+ * it belongs to diff time (xb669.3 / xb669.2).
  *
- * Fixture: controllers (6) call services (6) and render presenters (4),
- * services call repositories (6), presenters call services. Two edges are far
- * rarer than independence predicts: a controller reaching a repository
- * directly (λ ≈ 18.5, observed 1 — the transit controller→service→repository
- * is heavy, a MISFIT with the expected path) and a service calling a
- * presenter (λ ≈ 7.6, observed 1 — no conforming transit, a NEW_PATTERN).
+ * Fixture (one TypeScript family, every endpoint in its role's own directory):
+ *   controller→service 24, service→controller 1      — inverted: 1 MISFIT
+ *   service→repository 30, repository→service 2      — inverted: 2 MISFITs
+ *   model→record 62, record→model 61                 — mutual: nothing
+ *   worker→job 772, job→worker 0                     — one-way: significant, no MISFIT
+ *   presenter→view 3, 0                              — too small to establish anything
+ *   helper→form 2, form→helper 1                     — too small to establish anything
+ *   service→service 5                                — same role: out of scope
  */
 import { describe, expect, it } from "vitest";
 
@@ -30,248 +33,262 @@ import {
   computeDependencyNorms,
   judgePlannedEdge,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/index.js";
+import { signTestPValue } from "../../../../../../../src/core/infra/statistics/index.js";
 
-function file(relPath: string) {
-  return { relPath, language: "typescript", symbolCount: 1 };
+type PairCount = [roleSrc: string, roleDst: string, edgeCount: number];
+
+const PAIR_COUNTS: PairCount[] = [
+  ["controller", "service", 24],
+  ["service", "controller", 1],
+  ["service", "repository", 30],
+  ["repository", "service", 2],
+  ["model", "record", 62],
+  ["record", "model", 61],
+  ["worker", "job", 772],
+  ["presenter", "view", 3],
+  ["helper", "form", 2],
+  ["form", "helper", 1],
+];
+
+/** The i-th file of a role, in that role's own directory. */
+function roleFile(role: string, index: number): string {
+  return `${role}/${role}${index}.ts`;
 }
 
-const CONTROLLERS = ["ui/list.ts", "ui/form.ts", "ui/nav.ts", "ui/modal.ts", "ui/menu.ts", "ui/tabs.ts"];
-const SERVICES = [
-  "logic/tasks.ts",
-  "logic/billing.ts",
-  "logic/reports.ts",
-  "logic/users.ts",
-  "logic/audit.ts",
-  "logic/search.ts",
-];
-const REPOSITORIES = [
-  "data/taskRepo.ts",
-  "data/billRepo.ts",
-  "data/userRepo.ts",
-  "data/auditRepo.ts",
-  "data/searchRepo.ts",
-  "data/reportRepo.ts",
-];
-const PRESENTERS = ["present/board.ts", "present/kanban.ts", "present/calendar.ts", "present/timeline.ts"];
-
-function rolesFixture(): Map<string, DependencyNormFileRole> {
+/**
+ * A graph holding exactly `pairCounts` edges: the i-th edge of a pair joins
+ * the i-th file of each role, so edges never repeat and both directions of a
+ * pair may meet the same two files.
+ */
+function graphFromPairs(
+  pairCounts: PairCount[],
+  sameRoleEdges: number,
+): { graph: FileDependencyGraph; roles: Map<string, DependencyNormFileRole> } {
   const roles = new Map<string, DependencyNormFileRole>();
-  for (const f of CONTROLLERS) roles.set(f, { role: "controller", strong: true });
-  for (const f of SERVICES) roles.set(f, { role: "service", strong: true });
-  for (const f of REPOSITORIES) roles.set(f, { role: "repository", strong: true });
-  for (const f of PRESENTERS) roles.set(f, { role: "presenter", strong: true });
-  return roles;
-}
-
-function verdictsFixture(): { graph: FileDependencyGraph; roles: Map<string, DependencyNormFileRole> } {
-  const files = [...CONTROLLERS, ...SERVICES, ...REPOSITORIES, ...PRESENTERS].map(file);
   const edges: FileDependencyGraph["edges"] = [];
-  const add = (sourceRelPath: string, targetRelPath: string, callWeight = 1) => {
-    edges.push({ sourceRelPath, targetRelPath, callWeight });
+  const add = (roleSrc: string, sourceIndex: number, roleDst: string, targetIndex: number) => {
+    const sourceRelPath = roleFile(roleSrc, sourceIndex);
+    const targetRelPath = roleFile(roleDst, targetIndex);
+    roles.set(sourceRelPath, { role: roleSrc, strong: true });
+    roles.set(targetRelPath, { role: roleDst, strong: true });
+    edges.push({ sourceRelPath, targetRelPath, callWeight: 1 });
   };
-  for (const c of CONTROLLERS) for (const s of SERVICES) add(c, s); // 36 precedent edges
-  for (const s of SERVICES) for (const r of REPOSITORIES) add(s, r); // 36
-  for (const p of PRESENTERS) for (const s of SERVICES) add(p, s); // 24
-  for (const c of CONTROLLERS) for (const p of PRESENTERS) add(c, p); // 24
-  add("ui/list.ts", "data/taskRepo.ts", 2); // λ ≈ 18.5, observed 1; heavy transit via service
-  add("logic/tasks.ts", "present/board.ts"); // λ ≈ 7.6, observed 1; no conforming transit
-  return { graph: { files, edges }, roles: rolesFixture() };
+  for (const [roleSrc, roleDst, count] of pairCounts) for (let i = 0; i < count; i++) add(roleSrc, i, roleDst, i);
+  for (let i = 0; i < sameRoleEdges; i++) add("service", i, "service", i + 1);
+  const files = [...roles.keys()].map((relPath) => ({ relPath, language: "typescript", symbolCount: 1 }));
+  return { graph: { files, edges }, roles };
 }
 
-describe("computeDependencyNorms", () => {
-  it("flags the edges independence of roles predicts far more of: a MISFIT with the expected transit, and a NEW_PATTERN", () => {
-    const { graph, roles } = verdictsFixture();
+function inversionFixture() {
+  return graphFromPairs(PAIR_COUNTS, 5);
+}
+
+const FIXTURE_EDGE_COUNT = 24 + 1 + 30 + 2 + 62 + 61 + 772 + 3 + 2 + 1 + 5;
+
+describe("computeDependencyNorms — MISFIT is a direction inversion", () => {
+  it("tests every unordered role pair holding an edge, same-role pairs aside, under BH", () => {
+    const { graph, roles } = inversionFixture();
     const report = computeDependencyNorms({ graph, fileRoles: roles });
 
-    // A TypeScript-only graph is one family, so one ledger carries the test.
-    // Family: 3 source roles × 3 target roles with expected mass, all in one
-    // locality; BH rejects five — the two flagged edges' pairs plus three
-    // pairs nobody wrote (service→service, presenter→repository,
-    // presenter→presenter), which are tested members but carry no edge.
+    // Six pairs; sorted p: 2^−771 (one-way), 1058/2^32, 52/2^25, ¼, 1, 1.
+    // BH at q = 0.05 over m = 6 rejects the first three.
     expect(report.ledgers).toEqual([
       {
         family: "ecmascript",
-        pairCount: 6,
+        pairCount: 11,
         significance: {
-          method: "poissonIndependenceNull",
+          method: "directionInversion",
           q: 0.05,
-          familySize: 9,
-          testablePairCount: 9,
-          rarePairCount: 5,
+          familySize: 6,
+          significantPairCount: 3,
+          oneWayPairCount: 1,
         },
       },
     ]);
-
     expect(report.summary).toMatchObject({
-      roleFileCount: 22,
-      typedEdgeCount: 122,
-      judgedEdgeCount: 122,
-      violationCount: 2,
+      typedEdgeCount: FIXTURE_EDGE_COUNT,
+      judgedEdgeCount: FIXTURE_EDGE_COUNT,
+      violationCount: 3,
     });
-    // The support cut is gone, and with it the count of edges it skipped.
-    expect(report.summary.excluded).not.toHaveProperty("lowRoleSupportEdgeCount");
-    expect(report.findings).toHaveLength(2);
-    const [misfit, newPattern] = report.findings;
-    expect(misfit).toMatchObject({
-      kind: "misfit",
-      sourceRelPath: "ui/list.ts",
-      targetRelPath: "data/taskRepo.ts",
-      roleSrc: "controller",
-      roleDst: "repository",
-      locality: "crossDomain",
-      callWeight: 2,
-      pairSupport: 1,
-      expectedPath: { via: "service", support: 36 },
-    });
-    // λ = out(controller)·in(repository)/N = 61·37/122; p = e^−λ(1 + λ).
-    expect(misfit.expectedSupport).toBeCloseTo(18.5, 10);
-    expect(misfit.pValue).toBeCloseTo(Math.exp(-18.5) * 19.5, 15);
-    expect(newPattern).toMatchObject({
-      kind: "newPattern",
-      sourceRelPath: "logic/tasks.ts",
-      targetRelPath: "present/board.ts",
-      roleSrc: "service",
-      roleDst: "presenter",
-      locality: "crossDomain",
-      callWeight: 1,
-      pairSupport: 1,
-    });
-    expect(newPattern.expectedSupport).toBeCloseTo((37 * 25) / 122, 10);
-    expect(newPattern).not.toHaveProperty("expectedPath");
   });
 
-  it("flags a pair with several edges when independence expects far more — rarity is relative, not a support floor", () => {
-    const { graph, roles } = verdictsFixture();
-    graph.edges.push(
-      { sourceRelPath: "ui/form.ts", targetRelPath: "data/billRepo.ts", callWeight: 1 },
-      { sourceRelPath: "ui/nav.ts", targetRelPath: "data/userRepo.ts", callWeight: 1 },
-    );
-
+  it("flags the lone edge against a 24:1 established direction, with both counts, p and the direction", () => {
+    const { graph, roles } = inversionFixture();
     const report = computeDependencyNorms({ graph, fileRoles: roles });
 
-    // controller→repository now holds 3 edges against λ ≈ 19.8: still rare.
-    const misfits = report.findings.filter((f) => f.kind === "misfit");
-    expect(misfits.map((f) => f.sourceRelPath).sort()).toEqual(["ui/form.ts", "ui/list.ts", "ui/nav.ts"]);
-    expect(misfits.every((f) => f.pairSupport === 3)).toBe(true);
+    const inverted = report.findings.filter((f) => f.roleSrc === "service" && f.roleDst === "controller");
+    expect(inverted).toEqual([
+      {
+        kind: "misfit",
+        family: "ecmascript",
+        sourceRelPath: "service/service0.ts",
+        targetRelPath: "controller/controller0.ts",
+        roleSrc: "service",
+        roleDst: "controller",
+        locality: "crossDomain",
+        callWeight: 1,
+        pairSupport: 1,
+        pValue: signTestPValue(24, 1),
+        establishedDirection: { roleSrc: "controller", roleDst: "service", support: 24 },
+      },
+    ]);
+    // The majority direction's own edges conform.
+    expect(report.findings.some((f) => f.roleSrc === "controller")).toBe(false);
+  });
+
+  it("flags every minority edge of an inverted pair (30:2 → both repository→service edges)", () => {
+    const { graph, roles } = inversionFixture();
+    const report = computeDependencyNorms({ graph, fileRoles: roles });
+
+    const inverted = report.findings.filter((f) => f.roleSrc === "repository");
+    expect(inverted.map((f) => f.sourceRelPath)).toEqual(["repository/repository0.ts", "repository/repository1.ts"]);
+    expect(inverted.every((f) => f.pairSupport === 2 && f.establishedDirection.support === 30)).toBe(true);
+  });
+
+  it("never flags a mutual pair (62:61), a one-way pair (772:0), a tiny pair (3:0, 2:1) or a same-role pair", () => {
+    const { graph, roles } = inversionFixture();
+    const report = computeDependencyNorms({ graph, fileRoles: roles });
+
+    const flaggedRoles = new Set(report.findings.flatMap((f) => [f.roleSrc, f.roleDst]));
+    for (const role of ["model", "record", "worker", "job", "presenter", "view", "helper", "form"]) {
+      expect(flaggedRoles.has(role)).toBe(false);
+    }
+    expect(report.findings.some((f) => f.roleSrc === f.roleDst)).toBe(false);
+    expect(report.findings).toHaveLength(3);
+    expect(report.findings.every((f) => f.kind === "misfit")).toBe(true);
+  });
+
+  it("pools localities: an inversion split across directories is still one pair", () => {
+    // 12 controller→service edges same-domain and 12 cross-domain, the lone
+    // service→controller edge same-domain: the ledger keeps the localities
+    // apart, the direction test reads the pair once, over all 25 edges.
+    const { graph, roles } = graphFromPairs(
+      [
+        ["controller", "service", 24],
+        ["service", "controller", 1],
+      ],
+      0,
+    );
+    const componentOf = new Map<string, string>();
+    for (let i = 0; i < 12; i++) {
+      componentOf.set(roleFile("controller", i), "app");
+      componentOf.set(roleFile("service", i), "app");
+    }
+
+    const report = computeDependencyNorms({ graph, fileRoles: roles, componentOf });
+    const ledger = buildNormLedgers({ graph, fileRoles: roles, componentOf }).forLanguage("typescript");
+
+    expect(ledger.pairs.get("controller\u0000service\u0000sameDomain")).toBe(12);
+    expect(ledger.pairs.get("controller\u0000service\u0000crossDomain")).toBe(12);
+    expect(report.findings).toEqual([
+      expect.objectContaining({
+        sourceRelPath: "service/service0.ts",
+        locality: "sameDomain",
+        pairSupport: 1,
+        establishedDirection: { roleSrc: "controller", roleDst: "service", support: 24 },
+      }),
+    ]);
   });
 
   it("judges locality: same-directory, then same-domain, else cross-domain", () => {
-    const { graph, roles: baseRoles } = verdictsFixture();
-    // Two files of one directory and two of one domain component, different
-    // directories: the same service→service precedent pair read three ways.
+    const { roles: baseRoles } = inversionFixture();
     const edges = [
       { sourceRelPath: "logic/tasks.ts", targetRelPath: "logic/reports.ts", callWeight: 3 },
       { sourceRelPath: "logic/billing.ts", targetRelPath: "logic/inner/notes.ts", callWeight: 3 },
     ];
-    const localGraph = { files: [...graph.files, file("logic/inner/notes.ts")], edges };
+    const files = ["logic/tasks.ts", "logic/reports.ts", "logic/billing.ts", "logic/inner/notes.ts"].map((relPath) => ({
+      relPath,
+      language: "typescript",
+      symbolCount: 1,
+    }));
     const roles = new Map(baseRoles);
-    roles.set("logic/inner/notes.ts", { role: "service", strong: true });
-    const componentOf = new Map([
-      ["logic/tasks.ts", "logic"],
-      ["logic/reports.ts", "logic"],
-      ["logic/billing.ts", "logic"],
-      ["logic/inner/notes.ts", "logic"],
-    ]);
+    for (const f of files) roles.set(f.relPath, { role: "service", strong: true });
+    const componentOf = new Map(files.map((f) => [f.relPath, "logic"]));
 
-    const report = computeDependencyNorms({ graph: localGraph, fileRoles: roles, componentOf });
+    const ledger = buildNormLedgers({ graph: { files, edges }, fileRoles: roles, componentOf }).forLanguage(
+      "typescript",
+    );
 
-    // Each locality keeps its own pair counts and its own marginals: the same
-    // role pair read once same-directory, once same-domain, never cross-domain.
-    const ledger = buildNormLedgers({ graph: localGraph, fileRoles: roles, componentOf }).forLanguage("typescript");
     expect(ledger.pairs.get("service\u0000service\u0000sameDirectory")).toBe(1);
     expect(ledger.pairs.get("service\u0000service\u0000sameDomain")).toBe(1);
     expect(ledger.pairs.has("service\u0000service\u0000crossDomain")).toBe(false);
-    // One edge per locality is all its own null expects (λ = 1·1/1): nothing
-    // there is rarer than predicted, so nothing is a finding.
-    expect(report.findings).toEqual([]);
-    expect(report.summary.judgedEdgeCount).toBe(2);
   });
 
   it("never judges an edge touching an untyped or weak-role file, and counts both", () => {
-    const { graph, roles } = verdictsFixture();
-    const files = [...graph.files, file("x/unknown.ts"), file("ui/loose.ts")];
-    roles.set("ui/loose.ts", { role: "helper", strong: false });
+    const { graph, roles } = inversionFixture();
+    const files = [...graph.files, { relPath: "x/unknown.ts", language: "typescript", symbolCount: 1 }];
+    files.push({ relPath: "controller/loose.ts", language: "typescript", symbolCount: 1 });
+    roles.set("controller/loose.ts", { role: "helper", strong: false });
     const edges = [
       ...graph.edges,
-      { sourceRelPath: "x/unknown.ts", targetRelPath: "data/taskRepo.ts", callWeight: 5 },
-      { sourceRelPath: "ui/loose.ts", targetRelPath: "logic/tasks.ts", callWeight: 5 },
+      { sourceRelPath: "x/unknown.ts", targetRelPath: "controller/controller0.ts", callWeight: 5 },
+      { sourceRelPath: "controller/loose.ts", targetRelPath: "controller/controller1.ts", callWeight: 5 },
     ];
 
     const report = computeDependencyNorms({ graph: { files, edges }, fileRoles: roles });
 
     expect(report.summary.untypedFileCount).toBe(1);
     expect(report.summary.weakRoleFileCount).toBe(1);
-    expect(report.summary.typedEdgeCount).toBe(122);
-    expect(report.summary.judgedEdgeCount).toBe(122);
+    expect(report.summary.typedEdgeCount).toBe(FIXTURE_EDGE_COUNT);
+    expect(report.summary.judgedEdgeCount).toBe(FIXTURE_EDGE_COUNT);
     expect(report.findings.map((f) => f.sourceRelPath)).not.toContain("x/unknown.ts");
-    expect(report.findings.map((f) => f.sourceRelPath)).not.toContain("ui/loose.ts");
-  });
-
-  it("conforms a singleton pair the null expects no more of: a rarely-active role is no anomaly", () => {
-    const { graph, roles } = verdictsFixture();
-    const files = [...graph.files, file("legacy/main.ts")];
-    roles.set("legacy/main.ts", { role: "bootstrap", strong: true });
-    const edges = [
-      ...graph.edges,
-      { sourceRelPath: "legacy/main.ts", targetRelPath: "present/board.ts", callWeight: 1 },
-    ];
-
-    const report = computeDependencyNorms({ graph: { files, edges }, fileRoles: roles });
-
-    // bootstrap carries this one edge: λ = 1·25/123 ≈ 0.2 — one observed edge
-    // is MORE than independence predicts, never a finding.
-    expect(report.findings.some((f) => f.roleSrc === "bootstrap")).toBe(false);
-    expect(report.summary.violationCount).toBe(2);
-    // Its pairs enter the family, but no count could make them significantly rare.
-    expect(report.ledgers[0].significance).toMatchObject({ familySize: 12, testablePairCount: 9, rarePairCount: 5 });
+    expect(report.findings.map((f) => f.sourceRelPath)).not.toContain("controller/loose.ts");
   });
 });
 
 /**
- * bd tea-rags-mcp-23iii (xb669.3): the WRITE-TIME verdict — "I am about to
- * add this edge; does the project do that?" — reads the same ledgers the
- * report findings came from, so one judgment rule serves both.
+ * bd tea-rags-mcp-23iii: the WRITE-TIME verdict — "I am about to add this
+ * edge; does the project do that?" — reads the same ledgers the report
+ * findings came from, so one judgment rule serves both.
  */
 describe("judgePlannedEdge", () => {
-  const { graph, roles } = verdictsFixture();
+  const { graph, roles } = inversionFixture();
   const ledgers = buildNormLedgers({ graph, fileRoles: roles }).forLanguage("typescript");
 
-  it("conforms a pair the project does about as often as independence predicts", () => {
+  it("conforms an edge along the established direction", () => {
     const verdict = judgePlannedEdge(ledgers, { roleSrc: "controller", roleDst: "service", locality: "crossDomain" });
-    expect(verdict).toMatchObject({ kind: "conforms", pairSupport: 36 });
-    expect(verdict.expectedSupport).toBeCloseTo((61 * 60) / 122, 10);
-    expect(verdict).not.toHaveProperty("expectedPath");
+    expect(verdict).toMatchObject({ kind: "conforms", pairSupport: 24 });
+    expect(verdict).not.toHaveProperty("establishedDirection");
   });
 
-  it("names the transit for a significantly rare pair the project routes through a mid role", () => {
+  it("calls an edge against the established direction a MISFIT and names the direction", () => {
     expect(
-      judgePlannedEdge(ledgers, { roleSrc: "controller", roleDst: "repository", locality: "crossDomain" }),
-    ).toMatchObject({ kind: "misfit", pairSupport: 1, expectedPath: { via: "service", support: 36 } });
+      judgePlannedEdge(ledgers, { roleSrc: "service", roleDst: "controller", locality: "sameDomain" }),
+    ).toMatchObject({
+      kind: "misfit",
+      pairSupport: 1,
+      pValue: signTestPValue(24, 1),
+      establishedDirection: { roleSrc: "controller", roleDst: "service", support: 24 },
+    });
   });
 
-  it("names a NEW_PATTERN for a significantly rare pair with no conforming transit", () => {
-    const verdict = judgePlannedEdge(ledgers, { roleSrc: "service", roleDst: "presenter", locality: "crossDomain" });
-    expect(verdict).toMatchObject({ kind: "newPattern", pairSupport: 1 });
-    expect(verdict).not.toHaveProperty("expectedPath");
+  it("calls a first edge against a one-way pair a MISFIT too — nobody wrote it, the direction is established", () => {
+    expect(judgePlannedEdge(ledgers, { roleSrc: "job", roleDst: "worker", locality: "crossDomain" })).toMatchObject({
+      kind: "misfit",
+      pairSupport: 0,
+      establishedDirection: { roleSrc: "worker", roleDst: "job", support: 772 },
+    });
   });
 
-  it("judges an unwritten pair whose absence is significant: presenter→repository goes through service", () => {
-    // λ = 24·37/122 ≈ 7.3 and nobody wrote one: p = e^−λ, rejected by BH.
-    expect(
-      judgePlannedEdge(ledgers, { roleSrc: "presenter", roleDst: "repository", locality: "crossDomain" }),
-    ).toMatchObject({ kind: "misfit", pairSupport: 0, expectedPath: { via: "service", support: 24 } });
+  it("conforms either direction of a mutual pair", () => {
+    expect(judgePlannedEdge(ledgers, { roleSrc: "record", roleDst: "model", locality: "crossDomain" }).kind).toBe(
+      "conforms",
+    );
   });
 
-  it("answers a pair the null has nothing to say about with insufficient support, not a fabricated verdict", () => {
-    // No edge ever targets a controller: λ = 0, no test exists.
+  it("answers a pair with no established pattern with insufficient support, not a fabricated verdict", () => {
+    // No history at all, and a pair too small to establish a direction.
     expect(
       judgePlannedEdge(ledgers, { roleSrc: "presenter", roleDst: "controller", locality: "crossDomain" }),
-    ).toMatchObject({ kind: "insufficientSupport", pairSupport: 0, expectedSupport: 0, pValue: 1 });
+    ).toMatchObject({ kind: "insufficientSupport", pairSupport: 0, pValue: 1 });
+    expect(judgePlannedEdge(ledgers, { roleSrc: "view", roleDst: "presenter", locality: "crossDomain" })).toMatchObject(
+      { kind: "insufficientSupport", pairSupport: 0 },
+    );
   });
 });
 
-it("the report's findings and judgePlannedEdge agree on every finding pair (one judgment rule)", () => {
-  const { graph, roles } = verdictsFixture();
+it("the report's findings and judgePlannedEdge agree on every finding (one judgment rule)", () => {
+  const { graph, roles } = inversionFixture();
   const report = computeDependencyNorms({ graph, fileRoles: roles });
   const book = buildNormLedgers({ graph, fileRoles: roles });
 
@@ -283,45 +300,41 @@ it("the report's findings and judgePlannedEdge agree on every finding pair (one 
     });
     expect(verdict.kind).toBe(finding.kind);
     expect(verdict.pairSupport).toBe(finding.pairSupport);
-    expect(verdict.expectedSupport).toBe(finding.expectedSupport);
     expect(verdict.pValue).toBe(finding.pValue);
-    expect(verdict.expectedPath).toEqual(finding.expectedPath);
+    expect(verdict.establishedDirection).toEqual(finding.establishedDirection);
   }
   expect(report.findings.length).toBeGreaterThan(0);
 });
 
 /**
  * bd tea-rags-mcp-mv8yv: `sourcePathPattern` scopes the FINDINGS by source
- * file, the way every other detector scopes - ledgers, supports and the cut
- * stay whole-graph (instability, adoption and strength cut do too), and the
- * findings the scope drops are counted, not silently lost.
+ * file, the way every other detector scopes - ledgers and the test stay
+ * whole-graph, and the findings the scope drops are counted, not silently
+ * lost.
  */
 describe("computeDependencyNorms - sourcePathPattern", () => {
   it("keeps findings whose source matches and counts the rest as out of scope", () => {
-    const { graph, roles } = verdictsFixture();
-    const report = computeDependencyNorms({ graph, fileRoles: roles, sourcePathPattern: "ui/**" });
+    const { graph, roles } = inversionFixture();
+    const report = computeDependencyNorms({ graph, fileRoles: roles, sourcePathPattern: "service/**" });
 
-    // Both precedent-less edges are ui-list-sourced? No: the misfit is
-    // ui/list.ts -> data/taskRepo.ts (ui source, kept); the newPattern is
-    // logic/tasks.ts -> present/board.ts (logic source, dropped).
-    expect(report.findings.map((f) => [f.kind, f.sourceRelPath])).toEqual([["misfit", "ui/list.ts"]]);
-    expect(report.summary.outOfScopeFindingCount).toBe(1);
+    expect(report.findings.map((f) => [f.kind, f.sourceRelPath])).toEqual([["misfit", "service/service0.ts"]]);
+    expect(report.summary.outOfScopeFindingCount).toBe(2);
     expect(report.summary.violationCount).toBe(1);
   });
 
   it("leaves the summary untouched when the pattern names no scope", () => {
-    const { graph, roles } = verdictsFixture();
+    const { graph, roles } = inversionFixture();
     const report = computeDependencyNorms({ graph, fileRoles: roles });
 
     expect(report.summary).not.toHaveProperty("outOfScopeFindingCount");
-    expect(report.summary.violationCount).toBe(2);
+    expect(report.summary.violationCount).toBe(3);
   });
 
   it("admits all findings under a pattern every source matches", () => {
-    const { graph, roles } = verdictsFixture();
-    const report = computeDependencyNorms({ graph, fileRoles: roles, sourcePathPattern: "{ui,logic,present,data}/**" });
+    const { graph, roles } = inversionFixture();
+    const report = computeDependencyNorms({ graph, fileRoles: roles, sourcePathPattern: "**" });
 
-    expect(report.findings).toHaveLength(2);
+    expect(report.findings).toHaveLength(3);
     expect(report.summary.outOfScopeFindingCount).toBe(0);
   });
 });
@@ -331,90 +344,52 @@ describe("computeDependencyNorms - sourcePathPattern", () => {
  * word of ONE language's vocabulary: a Ruby `form` persisting straight into a
  * repository says nothing about how a TypeScript `form` should reach one.
  *
- * Fixture: Ruby forms (6) call Ruby repositories (4) directly — 24 precedent
- * edges, Ruby's habit. TypeScript forms (6) go through services (4, one of
- * them JavaScript — the ecmascript family shares one import graph) to
- * repositories (4); one TS form reaches a TS repository directly. A pooled
- * ledger reads `form -> repository` as Ruby's heavy precedent and CONFORMS the
- * TS shortcut (25 observed against λ ≈ 31); per family it is a MISFIT via
- * `service` (1 observed against λ ≈ 10.4). One TS form also reaches a Ruby
- * repository — an edge between two vocabularies.
+ * Fixture: Ruby forms call Ruby repositories (24) and one repository calls a
+ * form back; TypeScript runs the OPPOSITE convention — repositories call forms
+ * (24) and one form calls a repository. Pooled, the pair is an even 25:25 and
+ * nothing is inverted; per family each language has its own 24:1 inversion.
+ * One TS form also reaches a Ruby repository — an edge between two
+ * vocabularies.
  */
 describe("dependency norms are judged per language family", () => {
-  const RB_FORMS = [
-    "app/forms/signup.rb",
-    "app/forms/invoice.rb",
-    "app/forms/job.rb",
-    "app/forms/profile.rb",
-    "app/forms/settings.rb",
-    "app/forms/billing.rb",
-  ];
-  const RB_REPOS = [
-    "app/repos/user_repo.rb",
-    "app/repos/job_repo.rb",
-    "app/repos/bill_repo.rb",
-    "app/repos/profile_repo.rb",
-  ];
-  const TS_FORMS = [
-    "web/forms/Signup.tsx",
-    "web/forms/Invoice.tsx",
-    "web/forms/CreateJob.tsx",
-    "web/forms/Profile.tsx",
-    "web/forms/Settings.tsx",
-    "web/forms/Billing.tsx",
-  ];
-  const TS_SERVICES = [
-    "web/services/users.ts",
-    "web/services/jobs.js",
-    "web/services/bills.ts",
-    "web/services/profiles.ts",
-  ];
-  const TS_REPOS = [
-    "web/repos/userRepo.ts",
-    "web/repos/jobRepo.ts",
-    "web/repos/billRepo.ts",
-    "web/repos/profileRepo.ts",
-  ];
-
   function polyglotFixture(): { graph: FileDependencyGraph; roles: Map<string, DependencyNormFileRole> } {
-    const languageOf = (relPath: string) =>
-      relPath.endsWith(".rb") ? "ruby" : relPath.endsWith(".js") ? "javascript" : "typescript";
-    const files = [...RB_FORMS, ...RB_REPOS, ...TS_FORMS, ...TS_SERVICES, ...TS_REPOS].map((relPath) => ({
-      relPath,
-      language: languageOf(relPath),
-      symbolCount: 1,
-    }));
+    const files: FileDependencyGraph["files"] = [];
     const roles = new Map<string, DependencyNormFileRole>();
-    for (const f of [...RB_FORMS, ...TS_FORMS]) roles.set(f, { role: "form", strong: true });
-    for (const f of [...RB_REPOS, ...TS_REPOS]) roles.set(f, { role: "repository", strong: true });
-    for (const f of TS_SERVICES) roles.set(f, { role: "service", strong: true });
     const edges: FileDependencyGraph["edges"] = [];
+    const fileOf = (dir: string, role: string, index: number, ext: string) => {
+      const relPath = `${dir}/${role}${index}.${ext}`;
+      if (!roles.has(relPath)) {
+        roles.set(relPath, { role, strong: true });
+        const language = ext === "rb" ? "ruby" : ext === "js" ? "javascript" : "typescript";
+        files.push({ relPath, language, symbolCount: 1 });
+      }
+      return relPath;
+    };
     const add = (sourceRelPath: string, targetRelPath: string) => {
       edges.push({ sourceRelPath, targetRelPath, callWeight: 1 });
     };
-    for (const f of RB_FORMS) for (const r of RB_REPOS) add(f, r); // Ruby: form -> repository x24
-    for (const f of TS_FORMS) for (const s of TS_SERVICES) add(f, s); // TS: form -> service x24
-    for (const s of TS_SERVICES) for (const r of TS_REPOS) add(s, r); // TS: service -> repository x16
-    add("web/forms/CreateJob.tsx", "web/repos/jobRepo.ts"); // TS shortcut: no TS precedent
-    add("web/forms/Signup.tsx", "app/repos/user_repo.rb"); // cross-language edge
+    for (let i = 0; i < 24; i++) add(fileOf("app/forms", "form", i, "rb"), fileOf("app/repos", "repository", i, "rb"));
+    add(fileOf("app/repos", "repository", 0, "rb"), fileOf("app/forms", "form", 1, "rb"));
+    // TypeScript (one repository in JavaScript — ecmascript is one family).
+    for (let i = 0; i < 24; i++) {
+      add(fileOf("web/repos", "repository", i, i === 0 ? "js" : "ts"), fileOf("web/forms", "form", i, "tsx"));
+    }
+    add(fileOf("web/forms", "form", 0, "tsx"), fileOf("web/repos", "repository", 1, "ts"));
+    add(fileOf("web/forms", "form", 2, "tsx"), fileOf("app/repos", "repository", 2, "rb")); // cross-language
     return { graph: { files, edges }, roles };
   }
 
-  it("judges a TS form against TS precedent, not a Ruby namesake's habit", () => {
+  it("judges each family against its own direction, not the pooled even split", () => {
     const { graph, roles } = polyglotFixture();
     const report = computeDependencyNorms({ graph, fileRoles: roles });
 
-    expect(report.findings).toEqual([
-      expect.objectContaining({
-        kind: "misfit",
-        family: "ecmascript",
-        sourceRelPath: "web/forms/CreateJob.tsx",
-        targetRelPath: "web/repos/jobRepo.ts",
-        roleSrc: "form",
-        roleDst: "repository",
-        pairSupport: 1,
-        expectedPath: { via: "service", support: 16 },
-      }),
+    expect(report.findings.map((f) => [f.family, f.sourceRelPath, f.targetRelPath])).toEqual([
+      ["ruby", "app/repos/repository0.rb", "app/forms/form1.rb"],
+      ["ecmascript", "web/forms/form0.tsx", "web/repos/repository1.ts"],
+    ]);
+    expect(report.findings.map((f) => f.establishedDirection)).toEqual([
+      { roleSrc: "form", roleDst: "repository", support: 24 },
+      { roleSrc: "repository", roleDst: "form", support: 24 },
     ]);
   });
 
@@ -423,14 +398,13 @@ describe("dependency norms are judged per language family", () => {
     const report = computeDependencyNorms({ graph, fileRoles: roles });
 
     expect(report.summary).toMatchObject({
-      typedEdgeCount: 66,
-      judgedEdgeCount: 65,
+      typedEdgeCount: 51,
+      judgedEdgeCount: 50,
       excluded: { crossLanguageEdgeCount: 1 },
     });
-    // Each family tests its own pairs: Ruby holds one pair, ecmascript three.
-    expect(report.ledgers.map((l) => [l.family, l.pairCount])).toEqual([
-      ["ecmascript", 3],
-      ["ruby", 1],
+    expect(report.ledgers.map((l) => [l.family, l.pairCount, l.significance.familySize])).toEqual([
+      ["ecmascript", 2, 1],
+      ["ruby", 2, 1],
     ]);
     const book = buildNormLedgers({ graph, fileRoles: roles });
     expect(book.forEdge("typescript", "ruby")).toBeUndefined();
@@ -449,45 +423,48 @@ describe("dependency norms are judged per language family", () => {
  */
 describe("computeDependencyNorms - constant references are not role edges", () => {
   it("excludes an edge whose recorded reference names a constant nested in the target's primary type", () => {
-    const { graph, roles } = verdictsFixture();
+    const { graph, roles } = inversionFixture();
+    // A second controller-bound edge from a service would deepen the
+    // inversion — but it only names a constant nested in the controller.
     graph.edges.push({
-      sourceRelPath: "logic/billing.ts",
-      targetRelPath: "present/kanban.ts",
+      sourceRelPath: "service/service1.ts",
+      targetRelPath: "controller/controller1.ts",
       callWeight: 0.5,
-      importText: "zeitwerk:KanbanPresenter::RateLimitError",
+      importText: "zeitwerk:Controller1::RateLimitError",
     });
     // A reference to the primary itself stays a role edge.
     graph.edges.push({
-      sourceRelPath: "logic/reports.ts",
-      targetRelPath: "present/kanban.ts",
+      sourceRelPath: "service/service2.ts",
+      targetRelPath: "controller/controller2.ts",
       callWeight: 0,
-      importText: "zeitwerk:KanbanPresenter",
+      importText: "zeitwerk:Controller2",
     });
-    const filePrimaryTypes = new Map([["present/kanban.ts", "KanbanPresenter"]]);
+    const filePrimaryTypes = new Map([
+      ["controller/controller1.ts", "Controller1"],
+      ["controller/controller2.ts", "Controller2"],
+    ]);
 
     const report = computeDependencyNorms({ graph, fileRoles: roles, filePrimaryTypes });
 
     expect(report.summary.excluded.constantReferenceEdgeCount).toBe(1);
-    expect(report.findings.some((f) => f.sourceRelPath === "logic/billing.ts")).toBe(false);
+    expect(report.findings.some((f) => f.sourceRelPath === "service/service1.ts")).toBe(false);
     expect(report.summary.judgedEdgeCount).toBe(report.summary.typedEdgeCount - 1);
-    // The constant reference is never precedent; the reference to the primary
-    // is (tasks -> board plus reports -> kanban).
     const ledger = buildNormLedgers({ graph, fileRoles: roles, filePrimaryTypes }).forLanguage("typescript");
-    expect(ledger.pairs.get("service\u0000presenter\u0000crossDomain")).toBe(2);
+    expect(ledger.pairs.get("service\u0000controller\u0000crossDomain")).toBe(2);
   });
 
   it("keeps a nested-constant edge that carries a definite resolved call", () => {
-    const { graph, roles } = verdictsFixture();
+    const { graph, roles } = inversionFixture();
     graph.edges.push({
-      sourceRelPath: "logic/billing.ts",
-      targetRelPath: "present/kanban.ts",
+      sourceRelPath: "service/service1.ts",
+      targetRelPath: "controller/controller1.ts",
       callWeight: 1,
-      importText: "zeitwerk:KanbanPresenter::RateLimitError",
+      importText: "zeitwerk:Controller1::RateLimitError",
     });
     const report = computeDependencyNorms({
       graph,
       fileRoles: roles,
-      filePrimaryTypes: new Map([["present/kanban.ts", "KanbanPresenter"]]),
+      filePrimaryTypes: new Map([["controller/controller1.ts", "Controller1"]]),
     });
 
     expect(report.summary.excluded.constantReferenceEdgeCount).toBe(0);

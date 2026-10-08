@@ -41,35 +41,31 @@ export interface NormLedgers {
   readonly family: string;
   readonly pairs: ReadonlyMap<string, number>;
   readonly byLocality: ReadonlyMap<NormLocality, ReadonlyMap<string, number>>;
-  /** The independence test this ledger ran over its role-pair family (bd tea-rags-mcp-xb669.8). */
+  /** The direction test this ledger ran over its role pairs (bd tea-rags-mcp-xb669.8). */
   readonly significance: DependencyNormsSignificance;
   /**
-   * The pair's test against independence of roles in this ledger — defined
-   * for every pair, including one no edge (or no role) of the locality ever
-   * produced: its λ is then 0 and it is untestable.
+   * The direction test of roleSrc → roleDst, localities pooled — defined for
+   * every pair, including one no edge ever produced (p = 1, never
+   * significant) and a same-role pair (out of scope: p = 1).
    */
-  testPair: (roleSrc: string, roleDst: string, locality: NormLocality) => NormPairTest;
+  testDirection: (roleSrc: string, roleDst: string) => NormDirectionTest;
   readonly pairCount: number;
 }
 
 /**
- * One role pair judged against independence of roles (bd tea-rags-mcp-xb669.8):
- * λ = out(roleSrc)·in(roleDst)/N over the ledger's edges of one locality.
+ * One directed role pair read against its reverse (bd tea-rags-mcp-xb669.8):
+ * the exact two-sided sign test of n(roleSrc → roleDst) against
+ * n(roleDst → roleSrc) at p = ½, localities pooled.
  */
-export interface NormPairTest {
-  /** Edges the pair holds in this locality. */
+export interface NormDirectionTest {
+  /** Edges roleSrc → roleDst, every locality. */
   support: number;
-  /** λ — the edges independence of roles predicts for the pair. */
-  expectedSupport: number;
-  /** P(X ≤ support | λ): how surprising so FEW edges are. */
+  /** Edges roleDst → roleSrc, every locality. */
+  reverseSupport: number;
+  /** The sign test's two-sided p — 1 for a same-role or edgeless pair. */
   pValue: number;
-  /**
-   * Whether even a lone edge would be significant at q — P(X ≤ 1 | λ) ≤ q.
-   * An untestable pair can never be rare; with no edge it is unjudgeable.
-   */
-  testable: boolean;
-  /** Benjamini–Hochberg rejected it over the ledger's family: significantly rarer than independence predicts. */
-  rare: boolean;
+  /** Benjamini–Hochberg rejected the pair over the ledger's family: it has an established direction. */
+  significant: boolean;
 }
 
 /**
@@ -77,7 +73,7 @@ export interface NormPairTest {
  * word of ONE language's vocabulary — a Ruby `form` and a TypeScript `form`
  * share a spelling, not a habit — so role statistics never pool across
  * families: each family counts its own pairs and role marginals and runs its
- * own independence test.
+ * own direction test.
  */
 export interface NormLedgerBook {
   /** Each family's ledger, in code-point order of family id. */
@@ -101,42 +97,40 @@ export interface NormPlannedEdge {
   locality: NormLocality;
 }
 
-export type PlannedEdgeVerdictKind = "conforms" | "misfit" | "newPattern" | "insufficientSupport";
+export type PlannedEdgeVerdictKind = "conforms" | "misfit" | "insufficientSupport";
 
 /**
  * The write-time answer for one planned edge (bd tea-rags-mcp-23iii). Since
- * bd tea-rags-mcp-xb669.8: `misfit` / `newPattern` = the pair is significantly
- * rarer than independence of roles predicts; `conforms` = an observed pair
- * that is not; `insufficientSupport` = a pair with no edge whose absence the
- * test cannot call significant — no evidence either way.
+ * bd tea-rags-mcp-xb669.8: `misfit` = the edge runs against its role pair's
+ * established direction (a first edge against a one-way pair included);
+ * `conforms` = any other direction the ledger holds an edge for;
+ * `insufficientSupport` = no established pattern — a direction nobody wrote
+ * whose pair has no significant direction. That last answer is what diff time
+ * reads as a NEW_PATTERN (xb669.3 / xb669.2); the whole-repo report never
+ * names one.
  */
 export interface PlannedEdgeVerdict {
   kind: PlannedEdgeVerdictKind;
+  /** Edges roleSrc → roleDst the ledger holds, localities pooled. */
   pairSupport: number;
-  /** λ — the edges independence of roles predicts for the pair. */
-  expectedSupport: number;
-  /** P(X ≤ pairSupport | λ). */
+  /** The pair's two-sided sign-test p. */
   pValue: number;
-  /** MISFIT only: the conforming transit the planned edge should follow. */
-  expectedPath?: DependencyNormExpectedPath;
+  /** MISFIT only: the direction the project established for the pair. */
+  establishedDirection?: DependencyNormEstablishedDirection;
 }
 
-/** The two verdicts a significantly rare edge can carry; every other edge CONFORMS and is not listed. */
-export type NormFindingKind = "misfit" | "newPattern";
+/** The one verdict the whole-repo report lists; every other edge CONFORMS and is not listed. */
+export type NormFindingKind = "misfit";
 
-/**
- * The transit a MISFIT's roles meet through instead: `roleSrc -> via -> roleDst`,
- * both legs observed AND conforming under the same test (testable, not rare) —
- * a leg of one or two edges between roles the null pairs rarely is no route.
- */
-export interface DependencyNormExpectedPath {
-  /** The mid role. */
-  via: string;
-  /** The weaker leg's pair support — the precedent the direct edge bypasses. */
+/** The direction a role pair significantly holds — the one a MISFIT runs against. */
+export interface DependencyNormEstablishedDirection {
+  roleSrc: string;
+  roleDst: string;
+  /** Edges along it, localities pooled. */
   support: number;
 }
 
-/** One significantly rare file edge, with the evidence that makes it one. */
+/** One edge against its role pair's established direction, with the evidence that makes it one. */
 export interface DependencyNormFinding {
   kind: NormFindingKind;
   /** The language family whose ledger judged the edge. */
@@ -147,14 +141,12 @@ export interface DependencyNormFinding {
   roleDst: string;
   locality: NormLocality;
   callWeight: number;
-  /** File edges this pair's ledger holds in this locality. */
+  /** Edges roleSrc → roleDst the ledger holds, localities pooled — the minority side. */
   pairSupport: number;
-  /** λ — the edges independence of roles predicts for the pair; above `pairSupport` by construction. */
-  expectedSupport: number;
-  /** P(X ≤ pairSupport | λ), rejected by BH over the ledger's family. */
+  /** The pair's two-sided sign-test p, rejected by BH over the ledger's family. */
   pValue: number;
-  /** MISFIT only: the conforming transit path the edge should follow. */
-  expectedPath?: DependencyNormExpectedPath;
+  /** The direction the edge runs against: roleDst → roleSrc and its support. */
+  establishedDirection: DependencyNormEstablishedDirection;
 }
 
 export interface DependencyNormsSummary {
@@ -200,26 +192,25 @@ export interface DependencyNormsSummary {
 }
 
 /**
- * One ledger's independence test (bd tea-rags-mcp-xb669.8), the dependency
+ * One ledger's direction test (bd tea-rags-mcp-xb669.8), the dependency
  * analogue of the co-change pair gate's `CochangeSignificanceSummary`.
  */
 export interface DependencyNormsSignificance {
-  method: "poissonIndependenceNull";
+  method: "directionInversion";
   /** The false-discovery rate BH controls — the co-change gate's q. */
   q: number;
-  /**
-   * m — the A-PRIORI family: every (roleSrc, roleDst, locality) whose λ > 0,
-   * i.e. roleSrc has out-edges and roleDst in-edges in that locality. Pairs no
-   * edge holds are members too, never only the observed ones.
-   */
+  /** m — unordered role pairs {A, B}, A ≠ B, holding at least one edge either way. */
   familySize: number;
-  /** Family pairs where even a lone edge could be significant — the rest can never be rare. */
-  testablePairCount: number;
-  /** Pairs BH rejects — written or not. */
-  rarePairCount: number;
+  /** Pairs BH rejects: each has an established direction. */
+  significantPairCount: number;
+  /**
+   * Of `significantPairCount`, pairs no edge runs against — they fix a
+   * direction but carry no MISFIT.
+   */
+  oneWayPairCount: number;
 }
 
-/** One family's ledger as the report shows it: its own independence test over its own pairs. */
+/** One family's ledger as the report shows it: its own direction test over its own pairs. */
 export interface DependencyNormsFamilyLedger {
   family: string;
   pairCount: number;
@@ -230,6 +221,6 @@ export interface DependencyNormsReport {
   summary: DependencyNormsSummary;
   /** One entry per language family holding a typed edge, in code-point order of family id. */
   ledgers: DependencyNormsFamilyLedger[];
-  /** MISFITs first, then by weight, then by path — the order the report lists them. */
+  /** By weight, then by path — the order the report lists them. */
   findings: DependencyNormFinding[];
 }

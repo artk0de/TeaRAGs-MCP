@@ -1157,11 +1157,12 @@ describe("ArchitectureReportOps#build — domain mode (bd tea-rags-mcp-xb669.1)"
  * bd tea-rags-mcp-rpx0v (epic xb669.2): `norms: true` adds the dependency-
  * norms view — every file's primary-type role (derived from the type rows
  * the graph db reads), the project's own precedent ledgers per
- * (roleSrc, roleDst, locality), and a verdict for every edge whose pair is
- * significantly rarer than independence of roles predicts (bd
- * tea-rags-mcp-xb669.8). Four inheritance families: controllers call
- * services and render presenters, services call repositories, presenters
- * call services; two edges are far rarer than their roles' activity predicts.
+ * (roleSrc, roleDst, locality), and a MISFIT for every edge running against
+ * its role pair's established direction (bd tea-rags-mcp-xb669.8: a sign test
+ * of n(A→B) against n(B→A), BH over the pairs). Four inheritance families:
+ * controllers call services and render presenters, services call
+ * repositories, presenters call services; one service calls a controller back
+ * and one repository calls a service back — each 1 against 36.
  */
 describe("ArchitectureReportOps#build — dependency norms (bd tea-rags-mcp-rpx0v)", () => {
   const FAMILIES: readonly [string, string, string, readonly string[]][] = [
@@ -1210,12 +1211,12 @@ describe("ArchitectureReportOps#build — dependency norms (bd tea-rags-mcp-rpx0
     for (const s of ofRole("service")) for (const r of ofRole("repository")) add(s, r);
     for (const p of ofRole("presenter")) for (const s of ofRole("service")) add(p, s);
     for (const c of ofRole("controller")) for (const p of ofRole("presenter")) add(c, p);
-    add("ui/list.ts", "data/taskRepo.ts", 2);
-    add("logic/tasks.ts", "present/board.ts");
+    add("logic/tasks.ts", "ui/list.ts", 2); // against controller→service (36:1)
+    add("data/taskRepo.ts", "logic/billing.ts"); // against service→repository (36:1)
     return { files, edges };
   }
 
-  it("judges every precedent-less edge when the request asks for norms", async () => {
+  it("judges every edge against its role pair's established direction when the request asks for norms", async () => {
     const report = await new ArchitectureReportOps().build(
       graphDb(normsGraph(), [], { meta: null, edges: [] }, typeRows()),
       {
@@ -1224,48 +1225,54 @@ describe("ArchitectureReportOps#build — dependency norms (bd tea-rags-mcp-rpx0
     );
 
     expect(report.norms?.summary).toMatchObject({ typedEdgeCount: 122, judgedEdgeCount: 122, violationCount: 2 });
-    // One ecmascript ledger, its independence test over 3×3 role pairs.
+    // One ecmascript ledger, its direction test over the 4 unordered role
+    // pairs; all 4 have an established direction, 2 of them one-way.
     expect(report.norms?.ledgers).toEqual([
       {
         family: "ecmascript",
         pairCount: 6,
         significance: {
-          method: "poissonIndependenceNull",
+          method: "directionInversion",
           q: 0.05,
-          familySize: 9,
-          testablePairCount: 9,
-          rarePairCount: 5,
+          familySize: 4,
+          significantPairCount: 4,
+          oneWayPairCount: 2,
         },
       },
     ]);
+    // p = 2·P(X ≤ 1 | n = 37, ½) = 2·38/2^37, to 3 significant digits.
+    const pValue = Number(((2 * 38) / 2 ** 37).toPrecision(3));
     expect(report.norms?.findings).toEqual([
+      {
+        kind: "misfit",
+        family: "ecmascript",
+        sourceRelPath: "logic/tasks.ts",
+        targetRelPath: "ui/list.ts",
+        roleSrc: "service",
+        roleDst: "controller",
+        locality: "crossDomain",
+        callWeight: 2,
+        pairSupport: 1,
+        pValue,
+        establishedDirection: { roleSrc: "controller", roleDst: "service", support: 36 },
+      },
       expect.objectContaining({
         kind: "misfit",
-        sourceRelPath: "ui/list.ts",
-        targetRelPath: "data/taskRepo.ts",
-        roleSrc: "controller",
-        roleDst: "repository",
-        pairSupport: 1,
-        // λ = 61·37/122 to 3 decimals; p = e^−λ(1 + λ) to 3 significant digits.
-        expectedSupport: 18.5,
-        pValue: Number((Math.exp(-18.5) * 19.5).toPrecision(3)),
-        expectedPath: { via: "service", support: 36 },
-      }),
-      expect.objectContaining({
-        kind: "newPattern",
-        sourceRelPath: "logic/tasks.ts",
-        targetRelPath: "present/board.ts",
-        roleSrc: "service",
-        roleDst: "presenter",
+        sourceRelPath: "data/taskRepo.ts",
+        targetRelPath: "logic/billing.ts",
+        roleSrc: "repository",
+        roleDst: "service",
+        pValue,
+        establishedDirection: { roleSrc: "service", roleDst: "repository", support: 36 },
       }),
     ]);
     expect(
       report.violations
         .filter((v) => v.detector === "norms")
-        .map((v) => (v.detector === "norms" ? [v.kind, v.sourceRelPath, v.evidence.roleSrc] : [])),
+        .map((v) => (v.detector === "norms" ? [v.kind, v.sourceRelPath, v.evidence.establishedDirection] : [])),
     ).toEqual([
-      ["misfit", "ui/list.ts", "controller"],
-      ["newPattern", "logic/tasks.ts", "service"],
+      ["misfit", "logic/tasks.ts", { roleSrc: "controller", roleDst: "service", support: 36 }],
+      ["misfit", "data/taskRepo.ts", { roleSrc: "service", roleDst: "repository", support: 36 }],
     ]);
   });
 
@@ -1285,12 +1292,14 @@ describe("ArchitectureReportOps#build — dependency norms (bd tea-rags-mcp-rpx0
   it("scopes norms findings by the request's pathPattern and counts the dropped ones", async () => {
     const report = await new ArchitectureReportOps().build(
       graphDb(normsGraph(), [], { meta: null, edges: [] }, typeRows()),
-      { norms: true, pathPattern: "ui/**" },
+      { norms: true, pathPattern: "logic/**" },
     );
 
     expect(report.norms?.summary).toMatchObject({ violationCount: 1, outOfScopeFindingCount: 1 });
-    expect(report.norms?.findings.map((f) => f.sourceRelPath)).toEqual(["ui/list.ts"]);
-    expect(report.violations.filter((v) => v.detector === "norms").map((v) => v.sourceRelPath)).toEqual(["ui/list.ts"]);
+    expect(report.norms?.findings.map((f) => f.sourceRelPath)).toEqual(["logic/tasks.ts"]);
+    expect(report.violations.filter((v) => v.detector === "norms").map((v) => v.sourceRelPath)).toEqual([
+      "logic/tasks.ts",
+    ]);
   });
 });
 
