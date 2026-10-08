@@ -47,6 +47,14 @@ import type { DiffDetectorCatalog } from "./diff-detector-run.js";
  */
 export type IndexedFileImportLookup = () => Promise<ReadonlyMap<RelPath, IndexedFileImports>>;
 
+/**
+ * The packages the addressed tree's manifests declare for development and
+ * tests only (bd tea-rags-mcp-89k7k.35.3) — `package.json` `devDependencies`,
+ * Gemfile `:development` / `:test` groups. A test-support classification input,
+ * read from the working tree by the composition root.
+ */
+export type DeclaredTestDependencyLookup = () => ReadonlySet<string>;
+
 /** What the test-support exclusion took out of the production graph. */
 export interface TestSupportExclusionCounts {
   /** Walked files only tests and other test support import. */
@@ -90,11 +98,16 @@ export interface ProductionArchitectureGraph extends ProductionDependencyGraph {
 export async function readProductionArchitectureGraph(
   graphDb: Pick<GraphDbClient, "readFileDependencyGraph">,
   readIndexedFileImports?: IndexedFileImportLookup,
+  readDeclaredTestDependencies?: DeclaredTestDependencyLookup,
 ): Promise<ProductionArchitectureGraph> {
   const indexed = await graphDb.readFileDependencyGraph();
   const nonProductionPaths = buildNonProductionPathFilter();
   const withoutTooling = excludeNonProductionFiles(indexed, nonProductionPaths);
-  const { testSupport, testOnlyDependencyCount } = await classifyIndexedTestSupport(indexed, readIndexedFileImports);
+  const { testSupport, testOnlyDependencyCount } = await classifyIndexedTestSupport(
+    indexed,
+    readIndexedFileImports,
+    readDeclaredTestDependencies,
+  );
   const testSupportPaths: PathFilter = { ignores: (relPath) => testSupport.has(relPath) };
   const production = excludeNonProductionFiles(withoutTooling.graph, testSupportPaths);
   return {
@@ -118,6 +131,7 @@ export async function readProductionArchitectureGraph(
 async function classifyIndexedTestSupport(
   indexed: FileDependencyGraph,
   readIndexedFileImports: IndexedFileImportLookup | undefined,
+  readDeclaredTestDependencies: DeclaredTestDependencyLookup | undefined,
 ): Promise<{ testSupport: ReadonlySet<RelPath>; testOnlyDependencyCount: number }> {
   if (!readIndexedFileImports) return { testSupport: new Set(), testOnlyDependencyCount: 0 };
   const importsByFile = await readIndexedFileImports();
@@ -126,6 +140,7 @@ async function classifyIndexedTestSupport(
     indexed,
     resolveUnwalkedImportEdges(importsByFile, walkedFiles),
     resolveExternalImports(importsByFile, walkedFiles),
+    readDeclaredTestDependencies?.(),
   );
   return { testSupport: files, testOnlyDependencyCount: testOnlyDependencies.size };
 }

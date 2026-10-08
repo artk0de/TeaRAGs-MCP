@@ -850,6 +850,15 @@ export interface LanguageProvider {
    */
   dependencyManifest?: DependencyManifestSource;
   /**
+   * Optional development-dependency reader (bd tea-rags-mcp-89k7k.35.3) — which
+   * manifests declare packages for development and tests only, and how to split
+   * one's packages into those and the rest. The composition root reads the
+   * files (`readDeclaredTestDependencies` in `infra/dependency-manifests.ts`); a
+   * package tests import that the manifests declare for development only is
+   * evidence of test support. Absent → this language declares none.
+   */
+  testDependencyManifest?: TestDependencyManifestSource;
+  /**
    * Optional finder vocabulary for the naming lexicon (bd tea-rags-mcp-4p3sb.9) —
    * member names that, called on a CONSTANT receiver, return an instance of that
    * constant (Rails `Doc.find(id)`, `Doc.find_by!(…)`). The codegraph row builder
@@ -932,6 +941,24 @@ export type StructuralConformanceDeriver = (input: StructuralConformanceInput) =
  * Both halves must be total and silent: an unreadable or malformed manifest
  * declares nothing rather than failing a run.
  */
+/**
+ * How one language's manifests separate development and test packages from
+ * the rest (bd tea-rags-mcp-89k7k.35.3). `matchesManifestFile` is asked per file
+ * BASENAME during the walk; `parseDependencyScopes` splits one file's declared
+ * packages. Both halves must be total and silent: a malformed manifest declares
+ * nothing.
+ */
+export interface TestDependencyManifestSource {
+  readonly matchesManifestFile: (fileName: string) => boolean;
+  readonly parseDependencyScopes: (fileName: string, content: string) => DeclaredDependencyScopes;
+}
+
+/** One manifest's packages, split by whether they serve development and tests only. */
+export interface DeclaredDependencyScopes {
+  readonly developmentOnly: readonly string[];
+  readonly runtime: readonly string[];
+}
+
 export interface DependencyManifestSource {
   readonly matchesManifestFile: (fileName: string) => boolean;
   readonly parseDeclaredDependencies: (fileName: string, content: string) => readonly string[];

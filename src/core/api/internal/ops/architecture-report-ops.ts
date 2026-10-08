@@ -113,6 +113,7 @@ import { UnknownArchitectureComponentError } from "../../public/errors.js";
 import {
   deriveArchitectureComponentFacts,
   readProductionArchitectureGraph,
+  type DeclaredTestDependencyLookup,
   type IndexedFileImportLookup,
   type ProductionArchitectureGraph,
 } from "./architecture-facts.js";
@@ -238,7 +239,8 @@ export class ArchitectureReportOps {
    * `readIndexedFileImports`, when given, lets the production graph drop
    * test support — files only tests and other test support import (bd
    * tea-rags-mcp-89k7k.35.3). Absent, no test importer is known and nothing
-   * is dropped as test support.
+   * is dropped as test support. `readDeclaredTestDependencies` adds the
+   * manifests' development-only packages to the evidence it rests on.
    */
   async build(
     graphDb: ArchitectureReportGraphDb,
@@ -247,12 +249,13 @@ export class ArchitectureReportOps {
     readFileCommitCounts?: GitFileCommitCountLookup,
     readFileMaintenanceSignals?: GitFileMaintenanceSignalLookup,
     readIndexedFileImports?: IndexedFileImportLookup,
+    readDeclaredTestDependencies?: DeclaredTestDependencyLookup,
   ): Promise<GetArchitectureReportResponse> {
     const maintenanceSignals = readFileMaintenanceSignals ? readOnce(readFileMaintenanceSignals) : undefined;
     const commitCounts = maintenanceSignals
       ? async () => new Map([...(await maintenanceSignals())].map(([relPath, s]) => [relPath, s.commitCount]))
       : readFileCommitCounts;
-    const scope = await this.readScopedGraph(graphDb, request, readIndexedFileImports);
+    const scope = await this.readScopedGraph(graphDb, request, readIndexedFileImports, readDeclaredTestDependencies);
     const runs = await this.runDetectors(graphDb, scope, request, readImportSpecifiers, commitCounts);
     const view = this.projectFindings(runs, request);
     const costModel =
@@ -272,10 +275,15 @@ export class ArchitectureReportOps {
     graphDb: Pick<GraphDbClient, "readFileDependencyGraph">,
     request: ArchitectureReportScope,
     readIndexedFileImports?: IndexedFileImportLookup,
+    readDeclaredTestDependencies?: DeclaredTestDependencyLookup,
   ): Promise<ScopedArchitectureGraph> {
     // The read and the exclusions live in `architecture-facts.ts`, shared with
     // the diff-scoped run (bd tea-rags-mcp-89k7k.1.4).
-    const production = await readProductionArchitectureGraph(graphDb, readIndexedFileImports);
+    const production = await readProductionArchitectureGraph(
+      graphDb,
+      readIndexedFileImports,
+      readDeclaredTestDependencies,
+    );
     const whole =
       request.domain === undefined
         ? null

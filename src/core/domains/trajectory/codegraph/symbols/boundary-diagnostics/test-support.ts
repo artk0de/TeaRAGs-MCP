@@ -1,10 +1,11 @@
+import { isBuiltin } from "node:module";
 import { posix } from "node:path";
 
 import type { FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
 
 /** What the test-support exclusion takes out, named for a report (bd tea-rags-mcp-89k7k.35.3). */
 export const TEST_SUPPORT_REASON =
-  "test support: imported only by test files or by other test support, and importing a test-only dependency (one tests import and no production file does) or other test support";
+  "test support: imported only by test files or by other test support, and named after a test importing it, importing a test-only dependency (one tests import and no production file does, or one the manifests declare for development only) or importing other test support";
 
 /** The module specifiers one indexed file declares (`payload.imports`), and whether it is a test file. */
 export interface IndexedFileImports {
@@ -205,13 +206,17 @@ function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
 
 /**
  * The test-only dependencies (bd tea-rags-mcp-89k7k.35.3): what at least one
- * test file imports and no production file does. A production importer is any
- * non-test file outside `testSideFiles` — a walked one, or an unwalked one
- * such as a generated client. Insertion order of the imports is kept.
+ * test file imports and no production file does, plus what a test imports
+ * and the manifests declare for development only (`declaredTestDependencies`,
+ * whatever production imports). A production importer is any non-test file
+ * outside `testSideFiles` — a walked one, or an unwalked one such as a
+ * generated client. A Node core module (`node:fs`, bare `fs`) is never
+ * test-only: every runtime ships it. Insertion order of the imports is kept.
  */
 export function deriveTestOnlyDependencies(
   externalImports: readonly UnwalkedDependencyImport[],
   testSideFiles: ReadonlySet<RelPath>,
+  declaredTestDependencies: ReadonlySet<string> = NO_DECLARED_TEST_DEPENDENCIES,
 ): Set<string> {
   const testImported = new Set<string>();
   const productionImported = new Set<string>();
@@ -219,8 +224,35 @@ export function deriveTestOnlyDependencies(
     if (sourceIsTest) testImported.add(dependency);
     else if (!testSideFiles.has(sourceRelPath)) productionImported.add(dependency);
   }
-  return new Set([...testImported].filter((dependency) => !productionImported.has(dependency)));
+  return new Set(
+    [...testImported].filter(
+      (dependency) =>
+        !isBuiltin(dependency) && (declaredTestDependencies.has(dependency) || !productionImported.has(dependency)),
+    ),
+  );
 }
+
+const NO_DECLARED_TEST_DEPENDENCIES: ReadonlySet<string> = new Set();
+
+/**
+ * Whether `candidate` is named after `test` (bd tea-rags-mcp-89k7k.35.3): its
+ * basename without extension extends the test's, as a proper prefix followed
+ * by a separator — `X.spec.presets.tsx` after `X.spec.tsx`. A relation between
+ * two files, never a name pattern: `worker.ts` is not named after
+ * `worker.test.ts`, whose name extends the worker's instead.
+ */
+function isNamedAfterTest(candidate: RelPath, test: RelPath): boolean {
+  const name = stripExtension(posix.basename(candidate));
+  const testName = stripExtension(posix.basename(test));
+  return (
+    testName !== "" &&
+    name.length > testName.length &&
+    name.startsWith(testName) &&
+    SEPARATOR.test(name[testName.length])
+  );
+}
+
+const SEPARATOR = /[^\p{L}\p{N}]/u;
 
 /**
  * The walked files that exist only to serve tests (bd tea-rags-mcp-89k7k.35.3),
@@ -230,7 +262,22 @@ export function deriveTestOnlyDependencies(
  * - (a) it has an importer and every importer is a test file or in S;
  * - (g) a test reaches it through members of S (grounding);
  * - (b) it reaches, through imports staying inside S (itself included), a
- *   file that imports a test-only dependency (`deriveTestOnlyDependencies`).
+ *   file that imports a test-only dependency (`deriveTestOnlyDependencies`)
+ *   or is named after a test importing it (`isNamedAfterTest`:
+ *   `X.spec.presets.tsx` imported by `X.spec.tsx`).
+ *
+ * The name relation is a root of the same reachability, so a member that
+ * imports a companion is evidenced through it, as through any other member;
+ * what the companion itself imports is not — evidence never flows down an
+ * import, or a companion importing the production file it tests would vouch
+ * for it. It also settles one absence: a walked file nothing imports that
+ * imports a companion counts as non-production in (a), because its evidence
+ * (the name relation) is independent of the test-only set and no entry point
+ * loaded by module path imports a test's companion.
+ *
+ * `declaredTestDependencies` are what the repository's manifests declare for
+ * development and tests only; one a test imports is test-only even when a
+ * production file imports it too. A Node core module never is.
  *
  * (a) alone rests on ABSENCE of production importers, which a fixture shares
  * with an entry point loaded by module path (a worker), so (b) demands
@@ -264,6 +311,7 @@ export function classifyTestSupportFiles(
   graph: FileDependencyGraph,
   unwalkedImportEdges: readonly UnwalkedFileImportEdge[],
   externalImports: readonly UnwalkedDependencyImport[],
+  declaredTestDependencies: ReadonlySet<string> = NO_DECLARED_TEST_DEPENDENCIES,
 ): TestSupportClassification {
   const walked = new Set(graph.files.map((f) => f.relPath));
   const importers = new Map<RelPath, Set<RelPath>>();
@@ -275,12 +323,14 @@ export function classifyTestSupportFiles(
   }
   const testFiles = new Set<RelPath>();
   const testReached = new Set<RelPath>();
+  const namedAfterTest = new Set<RelPath>();
   for (const { sourceRelPath, targetRelPath, sourceIsTest } of unwalkedImportEdges) {
     if (walked.has(sourceRelPath) || !walked.has(targetRelPath)) continue;
     addTo(importers, targetRelPath, sourceRelPath);
     if (!sourceIsTest) continue;
     testFiles.add(sourceRelPath);
     testReached.add(targetRelPath);
+    if (isNamedAfterTest(targetRelPath, sourceRelPath)) namedAfterTest.add(targetRelPath);
   }
   const dependenciesOf = new Map<RelPath, Set<string>>();
   for (const { sourceRelPath, dependency } of externalImports) {
@@ -288,6 +338,14 @@ export function classifyTestSupportFiles(
   }
 
   const unimported = new Set([...walked].filter((relPath) => !importers.has(relPath)));
+  // A file nothing imports that imports a companion named after its test is
+  // a leftover of that test's support, never production (89k7k.35.3): the
+  // evidence is the name relation alone, independent of the test-only set,
+  // so no entry point loaded by module path can earn it.
+  const testSideOrphans = new Set(
+    [...unimported].filter((relPath) => [...(imported.get(relPath) ?? [])].some((t) => namedAfterTest.has(t))),
+  );
+  const isNonProduction = (relPath: RelPath): boolean => testFiles.has(relPath) || testSideOrphans.has(relPath);
   const closeAndGround = (members: Set<RelPath>, isNonProduction: (relPath: RelPath) => boolean): Set<RelPath> => {
     for (;;) {
       closeOverImporters(members, importers, imported, isNonProduction);
@@ -300,14 +358,20 @@ export function classifyTestSupportFiles(
       for (const relPath of members) if (!grounded.has(relPath)) members.delete(relPath);
     }
   };
-  const testSide = closeAndGround(new Set(importers.keys()), (i) => testFiles.has(i));
-  const testOnly = deriveTestOnlyDependencies(externalImports, new Set([...testSide, ...unimported]));
+  const testSide = closeAndGround(new Set(importers.keys()), isNonProduction);
+  const testOnly = deriveTestOnlyDependencies(
+    externalImports,
+    new Set([...testSide, ...unimported]),
+    declaredTestDependencies,
+  );
 
   const support = new Set(importers.keys());
   for (;;) {
-    closeAndGround(support, (i) => testFiles.has(i));
+    closeAndGround(support, isNonProduction);
     const evidenced = reachableFrom(
-      [...support].filter((f) => [...(dependenciesOf.get(f) ?? [])].some((d) => testOnly.has(d))),
+      [...support].filter(
+        (f) => namedAfterTest.has(f) || [...(dependenciesOf.get(f) ?? [])].some((d) => testOnly.has(d)),
+      ),
       importers,
       support,
     );

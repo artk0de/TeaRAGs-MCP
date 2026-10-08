@@ -113,6 +113,34 @@ describe("readProductionArchitectureGraph", () => {
     expect(production.nonProduction.ignores("src/modal/Modal.tsx")).toBe(false);
   });
 
+  it("counts a package the manifests declare for development only as test-only evidence, though production imports it (bd tea-rags-mcp-89k7k.35.3)", async () => {
+    const graphDb = {
+      readFileDependencyGraph: vi.fn(async () =>
+        graphOf(
+          [file("src/modal/Modal.tsx"), file("src/modal/public.ts"), file("src/modal/specs/renderHelper.tsx")],
+          [edge("src/modal/public.ts", "src/modal/Modal.tsx")],
+        ),
+      ),
+    };
+    const readIndexedFileImports = async () =>
+      new Map([
+        ["src/modal/specs/Modal.test.tsx", { isTest: true, specifiers: ["./renderHelper", "@testing-library/react"] }],
+        ["src/modal/specs/renderHelper.tsx", { isTest: false, specifiers: ["@testing-library/react"] }],
+        ["src/modal/Modal.tsx", { isTest: false, specifiers: ["@testing-library/react"] }],
+      ]);
+    const readDeclaredTestDependencies = vi.fn(() => new Set(["@testing-library/react"]));
+
+    const production = await readProductionArchitectureGraph(
+      graphDb,
+      readIndexedFileImports,
+      readDeclaredTestDependencies,
+    );
+
+    expect(readDeclaredTestDependencies).toHaveBeenCalledTimes(1);
+    expect(production.testSupport).toEqual({ excludedFileCount: 1, excludedEdgeCount: 0, testOnlyDependencyCount: 1 });
+    expect(production.nonProduction.ignores("src/modal/specs/renderHelper.tsx")).toBe(true);
+  });
+
   it("excludes no test support when no test-import read is wired", async () => {
     const graphDb = {
       readFileDependencyGraph: vi.fn(async () =>

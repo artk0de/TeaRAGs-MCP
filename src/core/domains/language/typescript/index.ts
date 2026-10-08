@@ -40,10 +40,12 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
   StructuralConformanceDeriver,
+  TestDependencyManifestSource,
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker, deriveStructuralConformance, isEcmascriptSourcePath } from "../kernel/index.js";
 import { readEcmascriptImportSpecifiers, typescriptChunkClassifier, typescriptHooks } from "./chunking/index.js";
 import { typescriptKernel } from "./kernel.js";
+import { PACKAGE_JSON_TEST_DEPENDENCY_MANIFEST } from "./package-manifest.js";
 import { loadTsConfig, TSCallResolver, type TSSourceFileStore } from "./resolver/index.js";
 import {
   extractFromTypescriptFile,
@@ -115,6 +117,8 @@ export class TypeScriptLanguage implements LanguageProvider {
     passes: TYPESCRIPT_EXTRACTION_PASSES,
   });
   readonly resolver: LanguageSymbolResolver;
+  /** Every `package.json`, split by section (bd tea-rags-mcp-89k7k.35.3). */
+  readonly testDependencyManifest: TestDependencyManifestSource = PACKAGE_JSON_TEST_DEPENDENCY_MANIFEST;
   /**
    * Interfaces are structural (bd tea-rags-mcp-39xca.14): a class or factory
    * carrying an interface's members satisfies it without `implements`. The

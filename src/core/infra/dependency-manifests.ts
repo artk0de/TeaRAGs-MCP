@@ -36,6 +36,7 @@ import type {
   DeclaredDependenciesByLanguage,
   DependencyManifestSource,
   LanguageFactoryDescriptor,
+  TestDependencyManifestSource,
 } from "../contracts/types/language.js";
 import { buildGitChildProcessEnv, resolveGitExecutable } from "./git-executable.js";
 
@@ -95,6 +96,51 @@ export function collectDependencyManifestSources(
     if (source !== undefined) sources.set(lang, source);
   }
   return sources;
+}
+
+/**
+ * Every registered language's development-dependency reader (bd
+ * tea-rags-mcp-89k7k.35.3), each distinct reader once — TypeScript and
+ * JavaScript share theirs. Omitting the factory yields none.
+ */
+export function collectTestDependencyManifestSources(
+  languageFactory?: LanguageFactoryDescriptor,
+): readonly TestDependencyManifestSource[] {
+  if (!languageFactory) return [];
+  const sources = new Set<TestDependencyManifestSource>();
+  for (const lang of languageFactory.supported()) {
+    const source = languageFactory.create(lang).testDependencyManifest;
+    if (source !== undefined) sources.add(source);
+  }
+  return [...sources];
+}
+
+/**
+ * The packages the manifests under `root` declare for development and tests
+ * only (bd tea-rags-mcp-89k7k.35.3): declared development-only by some
+ * manifest and runtime by none, so a package one workspace ships and another
+ * only tests with is never counted. Same walk, bounds and ignore list as
+ * {@link readManifestFiles}; total — an unreadable or malformed manifest
+ * declares nothing.
+ */
+export function readDeclaredTestDependencies(
+  root: string,
+  sources: readonly TestDependencyManifestSource[],
+): ReadonlySet<string> {
+  if (sources.length === 0) return new Set();
+  const developmentOnly = new Set<string>();
+  const runtime = new Set<string>();
+  for (const { fileName, content } of readManifestFiles(root, (name) =>
+    sources.some((s) => s.matchesManifestFile(name)),
+  )) {
+    for (const source of sources) {
+      if (!source.matchesManifestFile(fileName)) continue;
+      const scopes = source.parseDependencyScopes(fileName, content);
+      for (const name of scopes.developmentOnly) developmentOnly.add(name);
+      for (const name of scopes.runtime) runtime.add(name);
+    }
+  }
+  return new Set([...developmentOnly].filter((name) => !runtime.has(name)));
 }
 
 /**

@@ -1,7 +1,11 @@
 import Parser from "tree-sitter";
 import RbLang from "tree-sitter-ruby";
 
-import type { DependencyManifestSource } from "../../../contracts/types/language.js";
+import type {
+  DeclaredDependencyScopes,
+  DependencyManifestSource,
+  TestDependencyManifestSource,
+} from "../../../contracts/types/language.js";
 import { catalogueFor, composeRubyCatalogue, type RubyDslCatalogue } from "./dsl/index.js";
 
 /**
@@ -57,6 +61,83 @@ export const RUBY_DEPENDENCY_MANIFEST: DependencyManifestSource = {
   rootOnly: true,
   matchesManifestFile: (fileName) => fileName === "Gemfile",
   parseDeclaredDependencies: (_fileName, content) => [...gemfileGemNames(content)],
+};
+
+/** Bundler groups whose gems serve development and tests only. */
+const DEVELOPMENT_GROUPS: ReadonlySet<string> = new Set(["development", "test"]);
+
+/**
+ * A Gemfile's gems split by Bundler group (bd tea-rags-mcp-89k7k.35.3): a gem
+ * declared inside `group :test do … end` / `group :development, :test do … end`,
+ * or with a `group:` / `groups:` option naming only those groups, is
+ * development-only; every other gem is runtime. A group naming any other group
+ * (`group :production, :test`) is runtime.
+ */
+export function gemfileDependencyScopes(content: string): DeclaredDependencyScopes {
+  const parser = new Parser();
+  parser.setLanguage(RbLang);
+  const developmentOnly = new Set<string>();
+  const runtime = new Set<string>();
+
+  const visit = (node: Parser.SyntaxNode, inDevelopmentGroup: boolean): void => {
+    const method = node.childForFieldName("method")?.text;
+    const args = isCall(node)
+      ? (node.childForFieldName("arguments") ?? node.namedChildren.find((c) => c.type === "argument_list"))
+      : undefined;
+    let childInDevelopmentGroup = inDevelopmentGroup;
+    if (method === "gem" && args) {
+      const name = stringValue(args.namedChildren[0]);
+      if (name) {
+        const optionGroups = args.namedChildren.filter((c) => c.type === "pair" && isGroupKey(c));
+        const development =
+          inDevelopmentGroup ||
+          (optionGroups.length > 0 &&
+            optionGroups.every((pair) => namesOnlyDevelopmentGroups([pair.childForFieldName("value")])));
+        (development ? developmentOnly : runtime).add(name);
+      }
+    } else if (method === "group" && args) {
+      childInDevelopmentGroup = inDevelopmentGroup || namesOnlyDevelopmentGroups(args.namedChildren);
+    }
+    for (const child of node.children) visit(child, childInDevelopmentGroup);
+  };
+
+  visit(parser.parse(content).rootNode, false);
+  return { developmentOnly: [...developmentOnly], runtime: [...runtime] };
+}
+
+function isCall(node: Parser.SyntaxNode): boolean {
+  return node.type === "call" || node.type === "command" || node.type === "method_call";
+}
+
+function isGroupKey(pair: Parser.SyntaxNode): boolean {
+  const key = pair.childForFieldName("key")?.text.replace(/^:|:$/g, "");
+  return key === "group" || key === "groups";
+}
+
+/** Whether the nodes name at least one group and only development or test groups. */
+function namesOnlyDevelopmentGroups(nodes: readonly (Parser.SyntaxNode | null)[]): boolean {
+  const names: string[] = [];
+  const collect = (node: Parser.SyntaxNode | null): boolean => {
+    if (node === null) return false;
+    if (node.type === "array") return node.namedChildren.every(collect);
+    const name = node.type === "simple_symbol" ? node.text.slice(1) : stringValue(node);
+    if (name === undefined) return false;
+    names.push(name);
+    return true;
+  };
+  return nodes.every(collect) && names.length > 0 && names.every((name) => DEVELOPMENT_GROUPS.has(name));
+}
+
+function stringValue(node: Parser.SyntaxNode | null | undefined): string | undefined {
+  if (node?.type !== "string") return undefined;
+  const inner = node.namedChildren.find((c) => c.type === "string_content");
+  return inner ? inner.text : node.text.replace(/^["']|["']$/g, "") || undefined;
+}
+
+/** Ruby's development-dependency manifest: every `Gemfile`, split by Bundler group. */
+export const RUBY_TEST_DEPENDENCY_MANIFEST: TestDependencyManifestSource = {
+  matchesManifestFile: (fileName) => fileName === "Gemfile",
+  parseDependencyScopes: (_fileName, content) => gemfileDependencyScopes(content),
 };
 
 /**

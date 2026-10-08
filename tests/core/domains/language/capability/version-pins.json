@@ -42,7 +42,7 @@
     },
     "walker": {
       "version": 4,
-      "digest": "sha256:467a9b707a7d84b406e3b0309cacede7b7549252c515d8a5a596cbe2dda5a05b"
+      "digest": "sha256:59fde8656724f6a6394bc461b4ba79aa489cdebf45d653464f5e8bec506455f4"
     }
   },
   "markdown": {
@@ -64,7 +64,7 @@
     },
     "walker": {
       "version": 6,
-      "digest": "sha256:2e272b1db386ee3a9473924f8364abddb3b3936d392e9b6ced051218bf3911d3"
+      "digest": "sha256:63a8b630633d250a5db040ec183edbeac32e076fe3368fb0bc8ef1a747b3727e"
     }
   },
   "rust": {
@@ -90,7 +90,7 @@
     },
     "walker": {
       "version": 12,
-      "digest": "sha256:8d3590398a6e613d9efd785f844a88e7388ec3aea8eda2ac168ffc14c44eb460"
+      "digest": "sha256:da560d27ef4d713758c71cb4676579f228462aedf96650153b5b144bcac72a84"
     }
   }
 }

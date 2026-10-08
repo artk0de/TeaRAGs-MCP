@@ -47,9 +47,11 @@ import type {
   LanguageProvider,
   LanguageSymbolResolver,
   LanguageWalker,
+  TestDependencyManifestSource,
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker } from "../kernel/index.js";
 import { readEcmascriptImportSpecifiers } from "../typescript/chunking/index.js";
+import { PACKAGE_JSON_TEST_DEPENDENCY_MANIFEST } from "../typescript/package-manifest.js";
 import { javascriptHooks, JsChunkClassifier, jsExportNameExtractor } from "./chunking/index.js";
 import { javascriptKernel } from "./kernel.js";
 import { JavascriptCallResolver } from "./resolver/index.js";
@@ -147,6 +149,8 @@ export class JavaScriptLanguage implements LanguageProvider {
     passes: JAVASCRIPT_EXTRACTION_PASSES,
   });
   readonly resolver: LanguageSymbolResolver;
+  /** Every `package.json`, split by section — the object TypeScript reads too (bd tea-rags-mcp-89k7k.35.3). */
+  readonly testDependencyManifest: TestDependencyManifestSource = PACKAGE_JSON_TEST_DEPENDENCY_MANIFEST;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
     const javascriptResolver = new JavascriptCallResolver(mode);

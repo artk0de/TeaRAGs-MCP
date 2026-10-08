@@ -14,7 +14,7 @@
 import type { GitFileMaintenanceSignals } from "../../../../contracts/types/architecture-report.js";
 import type { GraphDbClient, RelPath, TemporalCochangeGraph } from "../../../../contracts/types/codegraph.js";
 import type { ReviewSectionId } from "../../../public/dto/review.js";
-import type { IndexedFileImportLookup } from "../architecture-facts.js";
+import type { DeclaredTestDependencyLookup, IndexedFileImportLookup } from "../architecture-facts.js";
 import type { DiffScopeRead, DiffScopeRequest } from "../diff-scope-reader.js";
 import type { NamingLexiconOps } from "../naming-lexicon-ops.js";
 import type { ReviewEdgeExtractionDeps } from "../review-edge-overlay.js";
@@ -91,6 +91,12 @@ export interface ReviewSectionBuildContext {
    * graph. Absent (unit wiring) → no test support is excluded.
    */
   readIndexedFileImports?: IndexedFileImportLookup;
+  /**
+   * The development-only packages the reviewed tree's manifests declare (bd
+   * tea-rags-mcp-89k7k.35.3), evidence for the same test-support exclusion.
+   * Absent → the manifests add nothing.
+   */
+  readDeclaredTestDependencies?: DeclaredTestDependencyLookup;
 }
 
 /** What a section needs to ANSWER, once it has decided it can build. */

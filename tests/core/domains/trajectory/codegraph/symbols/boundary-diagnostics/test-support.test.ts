@@ -146,17 +146,20 @@ describe("classifyTestSupportFiles", () => {
   });
 
   it("keeps a file importing a package production also imports in production, though tests import it too", () => {
+    // The fixture is not named after its test: the name relation is evidence
+    // of its own (89k7k.35.3), and this case pins the package rule alone.
+    const fixture = "app/modal/specs/modalFixture.tsx";
     const page = "app/pages/Page.tsx";
     const router = "app/router.tsx";
     const graph: FileDependencyGraph = {
-      files: [file(PRESETS), file(page), file(router)],
+      files: [file(fixture), file(page), file(router)],
       edges: [edge(router, page)],
     };
 
     const support = supportOf(
       graph,
-      [testImport(SPEC, PRESETS)],
-      [testUses(SPEC, "react"), uses(PRESETS, "react"), uses(page, "react")],
+      [testImport(SPEC, fixture)],
+      [testUses(SPEC, "react"), uses(fixture, "react"), uses(page, "react")],
     );
 
     expect(support.size).toBe(0);
@@ -298,11 +301,13 @@ describe("classifyTestSupportFiles", () => {
 
     expect(support.size).toBe(0);
   });
-  it("counts a file a file nothing imports keeps out of support as production evidence against its imports", () => {
-    // ClientTodos presets is imported by a test and by an unused presets file
-    // nothing imports, so (a) keeps it out of support, and it stays a
-    // production importer of the page type: neutrality is never transitive,
-    // or a worker loaded by module path would hand its whole subtree to tests.
+  it("treats a file nothing imports as test-side when it imports a companion named after the test importing it", () => {
+    // tests/types/Page.ts on taxdome (89k7k.35.3): ClientTodos presets is
+    // imported by its test and by an unused presets file nothing imports. The
+    // unused file imports a name-related companion — evidence independent of
+    // the test-only set, so no worker loaded by module path qualifies — and so
+    // stops counting as a production importer: the presets become support and
+    // the page type, imported only by tests and support, becomes test-only.
     const unused = "app/todos/units/specs/Unused.spec.presets.tsx";
     const todos = "app/todos/specs/ClientTodos.spec.presets.tsx";
     const pageType = "app/tests/types/Page.ts";
@@ -317,8 +322,105 @@ describe("classifyTestSupportFiles", () => {
       [testUses(SPEC, pageType), uses(PRESETS, pageType), uses(todos, pageType)],
     );
 
+    expect([...classification.files].sort()).toEqual([PRESETS, todos].sort());
+    expect([...classification.testOnlyDependencies]).toEqual([pageType]);
+  });
+
+  it("names a file whose name extends the name of the test importing it as test support, with no test-only import", () => {
+    // Name relation (89k7k.35.3 owner decision): Modal.spec.presets.tsx is
+    // the companion of the Modal.spec.tsx that imports it — positive evidence
+    // between two files, not a name pattern.
+    const graph: FileDependencyGraph = { files: [file(MODAL), file(PRESETS)], edges: [edge(PRESETS, MODAL)] };
+
+    const support = supportOf(graph, [testImport(SPEC, PRESETS)], [uses(PRESETS, "react"), uses(MODAL, "react")]);
+
+    expect([...support]).toEqual([PRESETS]);
+  });
+
+  it("grounds the file importing a name-related companion through the existing reachability", () => {
+    const shared = "app/modal/specs/sharedPresets.ts";
+    const graph: FileDependencyGraph = {
+      files: [file(MODAL), file(PRESETS), file(shared)],
+      edges: [edge(shared, PRESETS), edge(PRESETS, MODAL)],
+    };
+
+    const support = supportOf(graph, [testImport(SPEC, PRESETS), testImport(SPEC, shared)], []);
+
+    expect([...support].sort()).toEqual([PRESETS, shared].sort());
+  });
+
+  it("keeps a worker its test is named after in production — the relation runs the other way", () => {
+    const worker = "src/chunker/infra/worker.ts";
+    const graph: FileDependencyGraph = { files: [file(worker)], edges: [] };
+
+    const support = supportOf(
+      graph,
+      [testImport("tests/chunker/infra/worker.test.ts", worker)],
+      [testUses("tests/chunker/infra/worker.test.ts", "vitest"), uses(worker, "node:worker_threads")],
+    );
+
+    expect(support.size).toBe(0);
+  });
+
+  it("does not take a name that merely starts like the test's name, without a separator, as related", () => {
+    const presetsLike = "app/modal/specs/Modal.specification.ts";
+    const graph: FileDependencyGraph = { files: [file(presetsLike)], edges: [] };
+
+    const support = supportOf(graph, [testImport(SPEC, presetsLike)], []);
+
+    expect(support.size).toBe(0);
+  });
+
+  it("adds a package a manifest declares for development only, once a test imports it, even when production imports it too", () => {
+    const helper = "app/modal/specs/modalHelper.ts";
+    const graph: FileDependencyGraph = {
+      files: [file(FACADE), file(MODAL), file(helper)],
+      edges: [edge(FACADE, MODAL)],
+    };
+
+    const classification = classifyTestSupportFiles(
+      graph,
+      [testImport("app/modal/specs/Other.test.tsx", helper)],
+      [
+        testUses("app/modal/specs/Other.test.tsx", "@testing-library/react"),
+        uses(helper, "@testing-library/react"),
+        uses(MODAL, "@testing-library/react"),
+        uses(MODAL, "eslint"),
+      ],
+      new Set(["@testing-library/react", "eslint"]),
+    );
+
+    expect([...classification.files]).toEqual([helper]);
+    expect([...classification.testOnlyDependencies]).toEqual(["@testing-library/react"]);
+  });
+
+  it("never lets a Node core module into the test-only set, whatever imports or declares it", () => {
+    const helper = "tests/support/fsHelper.ts";
+    const test = "tests/a.test.ts";
+
+    const classification = classifyTestSupportFiles(
+      { files: [file(helper)], edges: [] },
+      [testImport(test, helper)],
+      [testUses(test, "node:test"), uses(helper, "node:test"), testUses(test, "fs"), uses(helper, "fs")],
+      new Set(["fs"]),
+    );
+
     expect(classification.files.size).toBe(0);
     expect(classification.testOnlyDependencies.size).toBe(0);
+  });
+
+  it("keeps an unimported file that imports no name-related companion as production evidence in (a)", () => {
+    const unused = "app/todos/units/Unused.tsx";
+    const todosHelper = "app/todos/specs/todosHelper.ts";
+    const graph: FileDependencyGraph = { files: [file(todosHelper), file(unused)], edges: [edge(unused, todosHelper)] };
+
+    const support = supportOf(
+      graph,
+      [testImport("app/todos/specs/ClientTodos.spec.tsx", todosHelper)],
+      [testUses("app/todos/specs/ClientTodos.spec.tsx", "msw"), uses(todosHelper, "msw")],
+    );
+
+    expect(support.size).toBe(0);
   });
 
   it("keeps a dependency test-only when its only other importer is a file nothing imports", () => {
