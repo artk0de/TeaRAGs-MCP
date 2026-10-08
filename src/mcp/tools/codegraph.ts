@@ -462,7 +462,8 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "churn (mean git.file.commitCount), compositionRoot:true = triage data. summary.propagationCost (aggregate, " +
       "no violations; MacCormack DSM): reachable file pairs / N^2 = mean share of the system one change reaches; " +
       "corePeriphery classes files by visibility fan-in/out cuts (Otsu, else median) — core = high both AND in a " +
-      "cycle, shared = in only, control = out only; shape corePeriphery only when both cuts bimodal and core > 0; " +
+      "cycle, shared = in only, control = out only; shape = indeterminate when either cut fell back to the median " +
+      "(no evidence of a split either way), else corePeriphery when core > 0, else hierarchical; " +
       "components (top limit by meanReach) carry internal propagationCost. layering: inferred layers without a declared architecture — SCC-condensed " +
       "DOMAIN graph (every facade directory is a unit, adoption notwithstanding — a vertical with an unadopted " +
       "facade counts once, not once per subdirectory; facadePartition keeps the adoption partition's component/level " +

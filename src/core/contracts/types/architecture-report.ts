@@ -1583,8 +1583,12 @@ export interface PropagationCostReportSummary {
   /** Largest dependency cycle, in files. */
   largestCycleSize: number;
   corePeriphery: {
-    /** `corePeriphery` only when both visibility cuts are bimodal (Otsu) and a cyclic core exists. */
-    shape: "corePeriphery" | "hierarchical";
+    /**
+     * `indeterminate` when either visibility cut fell back to its median floor
+     * (no evidence of a split either way); otherwise `corePeriphery` when a
+     * cyclic core exists, `hierarchical` when none does.
+     */
+    shape: "corePeriphery" | "hierarchical" | "indeterminate";
     coreShare: number;
     counts: { core: number; shared: number; control: number; peripheral: number };
     /** High fan-in AND fan-out but in no cycle — a hierarchy's waist, not core. */
