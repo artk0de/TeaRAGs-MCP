@@ -109,6 +109,13 @@ import {
   readProductionArchitectureGraph,
   type ProductionArchitectureGraph,
 } from "./architecture-facts.js";
+import {
+  architectureViolationCarrierFiles,
+  FileMaintenanceCostModel,
+  filesByComponent,
+  rankByMaintenanceCost,
+  type GitFileMaintenanceSignalLookup,
+} from "./architecture-maintenance-cost.js";
 import { ontologyNonProductionPaths } from "./ontology-report-ops.js";
 import {
   SILENT_COUPLING_GROUP_EVIDENCE_PARTNERS,
@@ -170,6 +177,29 @@ export type GitFileCommitCountLookup = () => Promise<ReadonlyMap<RelPath, number
 /** The per-file reading the volatility gate averages — named in the summary. */
 const MAIN_SEQUENCE_VOLATILITY_SIGNAL = "git.file.commitCount";
 
+/** A family's full list — the maintenance-cost ranking caps it, after ordering (bd tea-rags-mcp-r8hme.20). */
+const UNCAPPED = Number.POSITIVE_INFINITY;
+
+/** The lookup, read at most once however many consumers ask. */
+function readOnce<T>(read: () => Promise<T>): () => Promise<T> {
+  let pending: Promise<T> | undefined;
+  return async () => (pending ??= read());
+}
+
+/** Whether any family the report lists holds a violation — the maintenance read is skipped otherwise. */
+function hasArchitectureFindings(view: ArchitectureFindingsView, runs: ArchitectureDetectorRuns): boolean {
+  const { findings } = view;
+  return (
+    findings.sdp.violations.length > 0 ||
+    findings.leaks.violations.length > 0 ||
+    findings.privacy.violations.length > 0 ||
+    findings.silent.violations.length > 0 ||
+    findings.mainSequence.violations.length > 0 ||
+    (findings.layering?.violations.length ?? 0) > 0 ||
+    (runs.norms?.findings.length ?? 0) > 0
+  );
+}
+
 export class ArchitectureReportOps {
   /**
    * Judge the graph behind `graphDb` and shape the report. Violations and root
@@ -186,17 +216,32 @@ export class ArchitectureReportOps {
    * (bd tea-rags-mcp-r8hme.14). It is read only when the ungated judgement
    * puts a component in the zone of pain, since only such a component can
    * change verdict.
+   *
+   * `readFileMaintenanceSignals`, when given, ranks every violation family
+   * by maintenance cost (bd tea-rags-mcp-r8hme.20) and tags each violation
+   * with its score. One payload read serves both it and the volatility gate
+   * (whose commit counts it carries), and it is read only when some family
+   * has a violation to rank.
    */
   async build(
     graphDb: ArchitectureReportGraphDb,
     request: ArchitectureReportScope,
     readImportSpecifiers?: ModuleImportSpecifierLookup,
     readFileCommitCounts?: GitFileCommitCountLookup,
+    readFileMaintenanceSignals?: GitFileMaintenanceSignalLookup,
   ): Promise<GetArchitectureReportResponse> {
+    const maintenanceSignals = readFileMaintenanceSignals ? readOnce(readFileMaintenanceSignals) : undefined;
+    const commitCounts = maintenanceSignals
+      ? async () => new Map([...(await maintenanceSignals())].map(([relPath, s]) => [relPath, s.commitCount]))
+      : readFileCommitCounts;
     const scope = await this.readScopedGraph(graphDb, request);
-    const runs = await this.runDetectors(graphDb, scope, request, readImportSpecifiers, readFileCommitCounts);
+    const runs = await this.runDetectors(graphDb, scope, request, readImportSpecifiers, commitCounts);
     const view = this.projectFindings(runs, request);
-    return this.shapeResponse(scope, runs, view, request);
+    const costModel =
+      maintenanceSignals && hasArchitectureFindings(view, runs)
+        ? new FileMaintenanceCostModel(await maintenanceSignals())
+        : undefined;
+    return this.shapeResponse(scope, runs, view, request, costModel);
   }
 
   /**
@@ -374,9 +419,24 @@ export class ArchitectureReportOps {
     runs: ArchitectureDetectorRuns,
     view: ArchitectureFindingsView,
     request: ArchitectureReportScope,
+    costModel?: FileMaintenanceCostModel,
   ): GetArchitectureReportResponse {
     const { production, whole } = scope;
     const { findings, facadePartition, limit, offset, domainKnot } = view;
+    // Each family ranked by maintenance cost (bd tea-rags-mcp-r8hme.20)
+    // BEFORE its cap, so the cap keeps the costliest; a family's component
+    // names resolve against the partition its detector judged. A new family
+    // opts in by routing its full list through `ranked`.
+    const adoptionFiles = filesByComponent(runs.components.componentOf);
+    const domainFiles = filesByComponent(runs.layeringComponents.componentOf);
+    const ranked = (
+      family: readonly ArchitectureViolation[],
+      filesOfComponent: (component: string) => readonly RelPath[],
+    ): ArchitectureViolation[] =>
+      rankByMaintenanceCost(family, (v) => architectureViolationCarrierFiles(v, filesOfComponent), costModel).slice(
+        0,
+        limit,
+      );
     return {
       ...(request.pathPattern ? { pathPattern: request.pathPattern } : {}),
       summary: {
@@ -398,12 +458,12 @@ export class ArchitectureReportOps {
         ...silentRootCauses(findings.silent, limit),
       ],
       violations: [
-        ...sdpViolations(findings.sdp, limit),
-        ...leakViolations(findings.leaks, findings.privacy, limit),
-        ...silentViolations(findings.silent, limit),
-        ...mainSequenceViolations(findings.mainSequence, limit),
-        ...(findings.layering ? layeringViolations(findings.layering, limit) : []),
-        ...(runs.norms ? normsViolations(runs.norms, limit) : []),
+        ...ranked(sdpViolations(findings.sdp, UNCAPPED), adoptionFiles),
+        ...ranked(leakViolations(findings.leaks, findings.privacy, UNCAPPED), adoptionFiles),
+        ...ranked(silentViolations(findings.silent, UNCAPPED), adoptionFiles),
+        ...ranked(mainSequenceViolations(findings.mainSequence, UNCAPPED), adoptionFiles),
+        ...(findings.layering ? ranked(layeringViolations(findings.layering, UNCAPPED), domainFiles) : []),
+        ...(runs.norms ? ranked(normsViolations(runs.norms, UNCAPPED), domainFiles) : []),
       ],
       // The layer map VIEW only when asked (bd tea-rags-mcp-r8hme.26) — a full
       // map never bloats an unqualified report. Same DOMAIN partition the

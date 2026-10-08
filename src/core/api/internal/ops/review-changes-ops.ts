@@ -20,6 +20,7 @@
  */
 
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
+import type { GitFileMaintenanceSignals } from "../../../contracts/types/architecture-report.js";
 import type { RelPath } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { WorkingTree } from "../../../contracts/types/working-tree.js";
@@ -75,6 +76,13 @@ export interface ReviewChangesOpsDeps {
     collectionName: string,
     relPaths: readonly RelPath[],
   ) => Promise<ReadonlyMap<RelPath, readonly string[]>>;
+  /**
+   * Every file's git maintenance readings over the addressed collection (bd
+   * tea-rags-mcp-r8hme.20) — the SAME `readPayloadFileMaintenanceSignals` read
+   * the whole-repo report ranks by. Bound to the review's collection before a
+   * section sees it. Absent → the architecture findings stay unranked.
+   */
+  readFileMaintenanceSignals?: (collectionName: string) => Promise<ReadonlyMap<RelPath, GitFileMaintenanceSignals>>;
   /** The temporal walk's history window (the git trajectory's `chunkMaxAgeMonths`). */
   windowMonths: number;
   /**
@@ -157,11 +165,13 @@ export class ReviewChangesOps {
       }
       // Bound to THIS review's collection — the section addresses no index of
       // its own (bd tea-rags-mcp-2wsnt).
-      const { readImportSpecifiers } = this.deps;
+      const { readImportSpecifiers, readFileMaintenanceSignals } = this.deps;
       const importSpecifiers =
         readImportSpecifiers === undefined
           ? undefined
           : async (relPaths: readonly RelPath[]) => readImportSpecifiers(collectionName, relPaths);
+      const maintenanceSignals =
+        readFileMaintenanceSignals === undefined ? undefined : async () => readFileMaintenanceSignals(collectionName);
       const buildContext: ReviewSectionBuildContext = {
         scope,
         graphDb,
@@ -170,6 +180,7 @@ export class ReviewChangesOps {
         lexiconOps: this.deps.lexiconOps,
         reviewEdgeExtraction: this.deps.reviewEdgeExtraction,
         ...(importSpecifiers === undefined ? {} : { readImportSpecifiers: importSpecifiers }),
+        ...(maintenanceSignals === undefined ? {} : { readFileMaintenanceSignals: maintenanceSignals }),
       };
       // The sections are independent reads of one snapshot, so they run
       // together; the envelope lists them in the requested order whatever

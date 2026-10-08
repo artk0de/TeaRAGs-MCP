@@ -37,7 +37,8 @@ const REVIEW_CHANGES_DESCRIPTION =
   "file, symbol co-change clusters + split candidates; a file with " +
   "no data = notJudged noCohesionData, never zero (cap 50 reports). architecture: the diff's added edges judged by " +
   "the boundary detectors (stableDependencies, leakingAbstraction, cycles, mainSequence delta, silentCoupling, " +
-  "facadeContract); findings cap 100, family-aware — every family keeps >=1 slot; per-family truncated rides each " +
+  "facadeContract); each family ranked costliest-first before the cap by maintenanceCost (get_architecture_report's " +
+  "score over the files the finding names; absent = no git readings); findings cap 100, family-aware — every family keeps >=1 slot; per-family truncated rides each " +
   "detector row, findingCount stays the family's FULL total, rows reconcile findingCount = listed + truncated. " +
   "Detector rows also carry exclusions: mainSequence excludedLowConnectionCount (small-N components below the " +
   "connection floor), silentCoupling excluded block (the production taxonomy's counters) — a zero over excluded " +

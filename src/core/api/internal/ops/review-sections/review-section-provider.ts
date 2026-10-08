@@ -11,6 +11,7 @@
  * could not judge is a `notJudged` entry, never a zero.
  */
 
+import type { GitFileMaintenanceSignals } from "../../../../contracts/types/architecture-report.js";
 import type { GraphDbClient, RelPath, TemporalCochangeGraph } from "../../../../contracts/types/codegraph.js";
 import type { ReviewSectionId } from "../../../public/dto/review.js";
 import type { DiffScopeRead, DiffScopeRequest } from "../diff-scope-reader.js";
@@ -73,6 +74,14 @@ export interface ReviewSectionBuildContext {
    * section's silent-coupling facts are the single-pass verdict.
    */
   readImportSpecifiers?: (relPaths: readonly RelPath[]) => Promise<ReadonlyMap<RelPath, readonly string[]>>;
+  /**
+   * Every file's git maintenance readings (bd tea-rags-mcp-r8hme.20) — the
+   * SAME read the whole-repo report ranks its violations by
+   * (`readPayloadFileMaintenanceSignals`), bound to this review's collection.
+   * The `architecture` section reads it once, only when it has findings to
+   * rank. Absent (unit wiring) → findings list in the run's order, untagged.
+   */
+  readFileMaintenanceSignals?: () => Promise<ReadonlyMap<RelPath, GitFileMaintenanceSignals>>;
 }
 
 /** What a section needs to ANSWER, once it has decided it can build. */

@@ -51,6 +51,7 @@
  */
 
 import type {
+  ArchitectureMaintenanceCost,
   CochangeSignificanceSummary,
   SilentCouplingGroupDrillDown,
   SilentCouplingGroupPartner,
@@ -352,6 +353,13 @@ export interface DiffDetectorFinding {
   partners?: readonly SilentCouplingGroupPartner[];
   /** silentCoupling grouped finding only: the ready-to-run `find_co_changed` drill into the shared endpoint. */
   drillDown?: SilentCouplingGroupDrillDown;
+  /**
+   * What the finding costs to maintain (bd tea-rags-mcp-r8hme.20) — the
+   * whole-repo report's score over the files the finding names. Stamped by
+   * the section (`architecture-section.ts`), not by the run; absent when the
+   * git readings are not wired or none of those files is measured.
+   */
+  maintenanceCost?: ArchitectureMaintenanceCost;
 }
 
 /** One detector family's verdict for the run. */

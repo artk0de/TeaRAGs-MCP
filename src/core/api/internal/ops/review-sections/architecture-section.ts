@@ -31,6 +31,7 @@ import { createCatFileBatch, isAncestor } from "../../../../adapters/vcs/git/git
 import type {
   FileDependencyEdge,
   FileDependencyGraphFile,
+  RelPath,
   TemporalCochangeGraph,
 } from "../../../../contracts/types/codegraph.js";
 import type { InMemoryExtractionContext } from "../../../../domains/trajectory/codegraph/index.js";
@@ -51,6 +52,7 @@ import {
   distanceFromMainSequenceByComponent,
   readProductionArchitectureGraph,
 } from "../architecture-facts.js";
+import { FileMaintenanceCostModel, filesByComponent, rankByMaintenanceCost } from "../architecture-maintenance-cost.js";
 import { isDocumentationPath, type ModuleImportSpecifierLookup } from "../architecture-report-ops.js";
 import {
   DiffDetectorRun,
@@ -70,7 +72,7 @@ import {
   type ReviewEdgeExtractionDeps,
   type ReviewFileEdgeRead,
 } from "../review-edge-overlay.js";
-import type { ReviewSectionProvider } from "./review-section-provider.js";
+import type { ReviewSectionBuildContext, ReviewSectionProvider } from "./review-section-provider.js";
 
 /** Findings the section lists; the rest are counted in `truncated`. */
 export const ARCHITECTURE_FINDING_CAP = 100;
@@ -432,7 +434,14 @@ export const architectureSectionProvider: ReviewSectionProvider = {
         },
         overlay,
       );
-      const { kept, truncatedByDetector } = capFindingsByFamily(result.findings, ARCHITECTURE_FINDING_CAP);
+      // Ranked by maintenance cost BEFORE the cap (bd tea-rags-mcp-r8hme.20),
+      // so a family's slots keep its costliest findings.
+      const findings = await rankDiffFindingsByMaintenanceCost(
+        result.findings,
+        context.readFileMaintenanceSignals,
+        facts.components.componentOf,
+      );
+      const { kept, truncatedByDetector } = capFindingsByFamily(findings, ARCHITECTURE_FINDING_CAP);
       const notJudged: ReviewSectionNotJudgedEntry[] = overlay.unsupported().map((skip) => ({
         relPath: skip.relPath,
         reason: skip.reason,
@@ -444,7 +453,7 @@ export const architectureSectionProvider: ReviewSectionProvider = {
           const truncated = truncatedByDetector.get(status.detector);
           return truncated === undefined ? status : { ...status, truncated };
         }),
-        ...(result.findings.length > kept.length ? { truncated: result.findings.length - kept.length } : {}),
+        ...(findings.length > kept.length ? { truncated: findings.length - kept.length } : {}),
         ...(notJudged.length > 0 ? { notJudged } : {}),
       };
     } finally {
@@ -535,6 +544,56 @@ export function capFindingsByFamily(
   }
   return { kept, truncatedByDetector };
 }
+
+/**
+ * The run's findings with each family ranked by maintenance cost (bd
+ * tea-rags-mcp-r8hme.20) — the whole-repo report's score and ranker, so a
+ * finding costs the same in both answers. Families keep the run's order (the
+ * cap allocates by family); inside one, costliest first, untagged last. No
+ * wired read, or nothing to rank, returns the findings as the run listed them
+ * and reads nothing.
+ */
+export async function rankDiffFindingsByMaintenanceCost(
+  findings: readonly DiffDetectorFinding[],
+  readFileMaintenanceSignals: ReviewSectionBuildContext["readFileMaintenanceSignals"],
+  componentOf: ReadonlyMap<RelPath, string>,
+): Promise<readonly DiffDetectorFinding[]> {
+  if (readFileMaintenanceSignals === undefined || findings.length === 0) return findings;
+  const model = new FileMaintenanceCostModel(await readFileMaintenanceSignals());
+  const filesOfComponent = filesByComponent(componentOf);
+  const byDetector = new Map<string, DiffDetectorFinding[]>();
+  for (const finding of findings) pushTo(byDetector, finding.detector, finding);
+  return [...byDetector.values()].flatMap((family) =>
+    rankByMaintenanceCost(family, (finding) => diffFindingCarrierFiles(finding, filesOfComponent), model),
+  );
+}
+
+/**
+ * The files a diff finding names: a grouped silent-coupling finding's shared
+ * endpoint and partners; otherwise the subject's endpoints (`A -> B`,
+ * `a ~ b`, or one path) — a component name standing for its files under the
+ * report's partition, any other endpoint taken as the file path it is.
+ */
+function diffFindingCarrierFiles(
+  finding: DiffDetectorFinding,
+  filesOfComponent: (component: string) => readonly RelPath[],
+): RelPath[] {
+  const endpoints =
+    finding.partners === undefined
+      ? finding.subject.split(SUBJECT_ENDPOINT_SEPARATOR)
+      : [...(finding.drillDown?.files ?? []), ...finding.partners.map((partner) => partner.relPath)];
+  return [
+    ...new Set(
+      endpoints.flatMap((endpoint) => {
+        const files = filesOfComponent(endpoint);
+        return files.length > 0 ? files : [endpoint];
+      }),
+    ),
+  ];
+}
+
+/** The separators `DiffDetectorFinding.subject` joins its endpoints with — an edge, a pair. */
+const SUBJECT_ENDPOINT_SEPARATOR = / -> | ~ /;
 
 function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const list = map.get(key);

@@ -289,6 +289,40 @@ describe("ReviewChangesOps", () => {
     expect(subjects).not.toContain(`${CHANGED} ~ src/git/theme.css`);
   });
 
+  it("threads the maintenance-signal read to the architecture section, bound to the collection (bd tea-rags-mcp-r8hme.20)", async () => {
+    const graph = graphDbStub({
+      cochangeEdges: [
+        {
+          relPathA: CHANGED,
+          relPathB: PARTNER,
+          support: 9,
+          confidenceAB: 0.9,
+          confidenceBA: 0.9,
+          lift: 3,
+          lastCoChangeAt: 1_700_000_000,
+          sampleCommits: ["a1b2c3"],
+          structurallyLinked: false,
+        },
+      ],
+    });
+    const readFileMaintenanceSignals = vi.fn().mockResolvedValue(
+      new Map([
+        [CHANGED, { commitCount: 8, bugFixRate: 25, ageDays: 2 }],
+        [PARTNER, { commitCount: 1, bugFixRate: 0, ageDays: 90 }],
+      ]),
+    );
+
+    const result = await makeOps(graph, {}, { readFileMaintenanceSignals }).reviewChanges(
+      request({ sections: ["architecture"] }),
+    );
+
+    expect(readFileMaintenanceSignals).toHaveBeenCalledExactlyOnceWith("code_test");
+    const { findings } = result.review.sections.architecture as {
+      findings: { subject: string; maintenanceCost?: { score: number } }[];
+    };
+    expect(findings.find((f) => f.subject === `${CHANGED} ~ ${PARTNER}`)?.maintenanceCost?.score).toBe(0.5);
+  });
+
   it("a section allowlist omits the others entirely — absence is not not-built", async () => {
     const graph = graphDbStub();
     const result = await makeOps(graph).reviewChanges(request({ sections: ["cohesion"] }));
