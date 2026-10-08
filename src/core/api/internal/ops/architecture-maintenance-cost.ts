@@ -156,13 +156,14 @@ export interface ArchitectureViolationCarrierFields {
   evidence?: {
     fileEdges?: readonly ArchitectureFileEdge[];
     feedbackArcSet?: readonly { fileEdges: readonly ArchitectureFileEdge[] }[];
+    exemplarFiles?: readonly RelPath[];
   };
 }
 
 /**
  * The files carrying one violation: the files it names (endpoints, a shared
  * endpoint and its partners, the file edges behind a component edge or a
- * knot's feedback arcs); only when it names none, the files of the components
+ * knot's feedback arcs, a spread's exemplar files); only when it names none, the files of the components
  * it names — the most specific carrier the violation states.
  */
 export function architectureViolationCarrierFiles(
@@ -187,6 +188,7 @@ export function architectureViolationCarrierFiles(
   for (const partner of violation.partners ?? []) push(partner.relPath);
   pushEdges(violation.evidence?.fileEdges);
   for (const arc of violation.evidence?.feedbackArcSet ?? []) pushEdges(arc.fileEdges);
+  for (const relPath of violation.evidence?.exemplarFiles ?? []) push(relPath);
   if (files.length > 0) return [...new Set(files)];
 
   const components = [

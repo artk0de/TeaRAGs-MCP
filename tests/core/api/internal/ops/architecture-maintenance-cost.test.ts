@@ -153,6 +153,15 @@ describe("architectureViolationCarrierFiles", () => {
     ).toEqual(["hub.ts", "p1.ts", "p2.ts"]);
   });
 
+  it("prefers a spread's exemplar files over its components' whole file sets", () => {
+    const carriers = architectureViolationCarrierFiles(
+      { components: ["core", "lib"], evidence: { exemplarFiles: ["core/a.ts", "lib/c.ts"] } },
+      filesOf,
+    );
+
+    expect(carriers).toEqual(["core/a.ts", "lib/c.ts"]);
+  });
+
   it("prefers the file edges behind a component edge over the components' whole file sets", () => {
     const carriers = architectureViolationCarrierFiles(
       {

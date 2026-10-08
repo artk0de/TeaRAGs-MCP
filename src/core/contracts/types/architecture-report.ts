@@ -823,6 +823,7 @@ export type ArchitectureViolation = (
   | LeakingAbstractionArchitectureViolation
   | SilentCouplingArchitectureViolation
   | SilentCouplingGroupArchitectureViolation
+  | ShotgunSurgeryArchitectureViolation
   | MainSequenceArchitectureViolation
   | HubLikeDependencyArchitectureViolation
   | LayeringArchitectureViolation
@@ -1321,6 +1322,80 @@ export interface SplitMergeReportSummary {
   verdicts?: SplitMergeVerdictsSummary;
 }
 
+/** Why a `shotgunSurgery` block is not built — the split/merge block's reasons: the same substrate. */
+export type ShotgunSurgeryAbsentReason = SplitMergeAbsentReason;
+
+/**
+ * One recurring wide spread (bd tea-rags-mcp-r8hme.50): the changes (author
+ * bursts) that touched every one of `components`, beyond what the
+ * component-level configuration null predicts, with no structural link
+ * joining all of them. Silent coupling's N-way sibling — a pair finding is
+ * file-level, a merge candidate is two components; this is one change's
+ * fan-out.
+ */
+export interface ShotgunSurgeryArchitectureViolation {
+  detector: "shotgunSurgery";
+  /** The spread's components, code-point order. */
+  components: string[];
+  subject: string;
+  evidence: {
+    /** Author bursts whose component set contains the whole spread. */
+    support: number;
+    /** λ the null predicts from the components' change counts and the bursts' widths, 3 decimals. */
+    expectedSupport: number;
+    /** Wilson lower bound of support over the least- / most-changed component's changes (larger), 3 decimals. */
+    strength: number;
+    /** Bursts touching each component, aligned with `components`. */
+    componentChanges: number[];
+    /** Structurally connected groups (dependency or specific shared neighbour), largest first; always ≥ 2. */
+    islands: string[][];
+    /** Per component (aligned) the file the supporting bursts touched most. */
+    exemplarFiles: RelPath[];
+    /** Commits of the supporting bursts, most recent first (≤ 5). */
+    sampleCommits: string[];
+    /** `find_co_changed` over the exemplar files — the file-level partners behind the spread. */
+    drillDown: SilentCouplingGroupDrillDown;
+  };
+}
+
+/** The shotgun-surgery block (bd tea-rags-mcp-r8hme.50), beside `splitMerge` in the summary. */
+export interface ShotgunSurgeryReportSummary {
+  /** `false` = no co-change build or no persisted bundle membership — absence of verdicts, not clean. */
+  built: boolean;
+  /** Present only when not built. */
+  reason?: ShotgunSurgeryAbsentReason;
+  head?: string;
+  builtAt?: number;
+  /** Author bursts touching ≥ 1 partitioned component — the counting unit. */
+  unitCount?: number;
+  /** Bursts spanning ≥ `widthThreshold` components. */
+  wideUnitCount?: number;
+  /** k: the narrowest spread judged — Otsu over burst widths, never below 3. */
+  widthThreshold?: number;
+  widthThresholdMethod?: "otsu" | "floor";
+  /** η of the width split, 3 decimals; absent when no split was tried. */
+  widthSeparability?: number;
+  /** Distinct spreads two wide bursts shared — the tested sets. */
+  candidateSetCount?: number;
+  /** BH family: every set of k..widest components among those changed in ≥ 2 bursts. */
+  familySize?: number;
+  q?: number;
+  /** Spreads BH rejected with support ≥ the build's minimum. */
+  admittedSetCount?: number;
+  /** Admitted spreads a wider admitted spread with the same support subsumes. */
+  subsumedSetCount?: number;
+  /** Admitted spreads one structural island explains. */
+  explainedCount?: number;
+  /** Unexplained spreads, before `limit`. */
+  violationCount?: number;
+  /** Otsu cut on shared-neighbour weight ln(N / fanIn) over the component graph, 3 decimals. */
+  sharedNeighbourThreshold?: number;
+  /** `none` = no Otsu cut was drawn; only direct dependencies explain. */
+  sharedNeighbourThresholdMethod?: "otsu" | "none";
+  /** Unexplained spreads with no exemplar file matching `pathPattern`; present only when scoped. */
+  outOfScopeSetCount?: number;
+}
+
 /** How the volatility cut on the zone of pain was drawn. */
 export interface MainSequenceVolatilityReportSummary {
   /** The per-file reading a component's volatility averages. */
@@ -1429,6 +1504,7 @@ export interface ArchitectureReportSummary {
   leakingAbstraction: LeakingAbstractionReportSummary;
   silentCoupling: SilentCouplingReportSummary;
   splitMerge: SplitMergeReportSummary;
+  shotgunSurgery: ShotgunSurgeryReportSummary;
   mainSequence: MainSequenceReportSummary;
   hubLikeDependency: HubLikeDependencyReportSummary;
   layering: LayeringReportSummary;

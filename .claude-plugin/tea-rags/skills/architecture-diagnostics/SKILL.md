@@ -30,6 +30,7 @@ Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
 4. Phase 3 — residual violations, judged by evidence
 5. Phase 3b — LEAKING ABSTRACTION (`detector: "leakingAbstraction"`)
 6. Phase 3c — SILENT COUPLING (`detector: "silentCoupling"`)
+   - Phase 3c2 — SHOTGUN SURGERY (`detector: "shotgunSurgery"`)
 7. Phase 3d — MAIN SEQUENCE (`detector: "mainSequence"`), then 3d2 — HUB-LIKE
    DEPENDENCY (`detector: "hubLikeDependency"`)
 8. Phase 3e — LAYERING (`detector: "layering"`)
@@ -275,6 +276,38 @@ walked at walker ≥ 4 — a pair joined only by `import type` reads
 structurallyLinked and does not surface; an index walked before that change may
 still miss the edge, so check before claiming "no link".
 
+## Phase 3c2 — SHOTGUN SURGERY
+
+`detector: "shotgunSurgery"`, SAME components as SDP. ONE change (author burst)
+reaching into ≥ k components, spread recurring beyond chance, components in ≥ 2
+structural islands. Silent coupling's N-way sibling: pair = file level, MERGE =
+two components, this = one change's fan-out. Never filtered by file type or hub
+size. Knot mode omits it.
+
+| Summary field (`summary.shotgunSurgery`)  | Read as                                                                                                                 |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `built`                                   | `false` = no co-change build / no bundle membership (`reason`, same as splitMerge) → NOT judged, never report "none"    |
+| `widthThreshold` / `widthThresholdMethod` | k = narrowest spread judged; `otsu` = majority-floored Otsu over burst widths, `floor` = 3 (never below 3)              |
+| `unitCount` / `wideUnitCount`             | bursts touching a component / bursts spanning ≥ k — few wide = little evidence                                          |
+| `familySize` / `q`                        | BH family (every k..widest set changed in ≥ 2 bursts) and FDR q — the multiple-testing price                            |
+| `admittedSetCount`                        | spreads passing BH over the null                                                                                        |
+| `subsumedSetCount` / `explainedCount`     | dropped: a wider spread with same support covers it / one structural island (dependency or specific neighbour) explains |
+| `outOfScopeSetCount`                      | scoped only: unexplained spreads with no exemplar file in `pathPattern`                                                 |
+
+Evidence per line:
+
+| Evidence                      | Read as                                                                                                           |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `support` / `expectedSupport` | bursts containing the whole spread vs λ the null predicts from change counts + burst widths; `support` ≫ λ = real |
+| `strength`                    | Wilson lower bound of support over component changes                                                              |
+| `islands`                     | structurally connected groups (≥ 2) — where the missing link would go                                             |
+| `exemplarFiles`               | per component the file the bursts touched most                                                                    |
+| `sampleCommits`               | shas to cite                                                                                                      |
+| `drillDown.hint`              | run verbatim (`find_co_changed`) for file-level partners                                                          |
+
+Fix direction: one owner for the reason to change — collapse the spread behind
+one module / contract; `islands` show where the missing link would go.
+
 ## Phase 3d — MAIN SEQUENCE
 
 Stable Abstractions Principle over SAME components as SDP. A = abstract /
@@ -467,6 +500,9 @@ Threshold [adoptionThreshold] ([method], η [separability]); [activeModuleCount]
 Threshold [strengthThreshold] ([method], η [separability]); history [commitCount] commits since [windowSince] @ [head]
 | # | File A ↔ File B | Strength | Support | P(B|A) / P(A|B) | Visibility | Sample commit |
 Grouped: | # | Shared file | Partners (N) | Top 3 (support / λ / strength) | Drill (`drillDown.hint`) |
+
+## Shotgun surgery — [violationCount]; k [widthThreshold] ([widthThresholdMethod]); [wideUnitCount]/[unitCount] wide bursts; admitted [admittedSetCount] of family [familySize] (q [q])
+| # | Components | Islands | Support / λ | Strength | Exemplar files | Sample commit | Drill (`drillDown.hint`) |
 
 ## Main sequence — [violationCount] (pain N, uselessness N); mean D [meanDistance]
 Threshold [distanceThreshold] ([method]); volatility cut [volatility.threshold] ([volatility.thresholdMethod]); judged [judgedComponentCount]; excluded: unmeasured N, unobservable N, calm N
