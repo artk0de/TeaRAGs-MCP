@@ -210,6 +210,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
     await this.call("removeFile", { relPath });
   }
 
+  async removeFiles(relPaths: readonly RelPath[]): Promise<void> {
+    await this.call("removeFiles", { relPaths: [...relPaths] });
+  }
+
   async removeSymbolsForFile(relPath: RelPath): Promise<void> {
     await this.call("removeSymbolsForFile", { relPath });
   }

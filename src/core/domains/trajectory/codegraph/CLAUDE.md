@@ -119,7 +119,8 @@
   `upsertSymbolsBulk` follows every key its diff deleted into the edge table; a
   deleted, renamed-away or newly ignored file goes through
   `CodegraphEnrichmentProvider#handleDeletedPaths` →
-  `DuckDbFileGraphStore#removeFile`; a file the codegraph exclusion starts
+  `DuckDbFileGraphStore#removeFiles` (one set-based transaction for the batch,
+  same table list as `removeFile`); a file the codegraph exclusion starts
   declining is orphaned by `EnrichmentCoordinator#runRepairPass`. A full
   `--force` inherits nothing because a new `_vN` is a new DuckDB file. Why:
   edges are reconciled per SOURCE file, so a caller in an unchanged file is

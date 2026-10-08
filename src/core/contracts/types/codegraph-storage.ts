@@ -916,6 +916,13 @@ export interface GraphDbClient {
   /** Used by incremental reindex when a file is removed from disk. */
   removeFile: (relPath: RelPath) => Promise<void>;
 
+  /** Set-based {@link removeFile} for a deletion batch (bd tea-rags-mcp-b4drg):
+   *  removes exactly the union of `removeFile(p)` over `relPaths`, in ONE
+   *  transaction (and, on the daemon, one IPC round-trip). Called by
+   *  `handleDeletedPaths`. Duplicates and unknown paths are tolerated; an empty
+   *  list is a no-op. */
+  removeFiles: (relPaths: readonly RelPath[]) => Promise<void>;
+
   /** Reads for metric computation (Tier 1) and MCP tools. */
   getFanIn: (relPath: RelPath) => Promise<number>;
   getFanOut: (relPath: RelPath) => Promise<number>;

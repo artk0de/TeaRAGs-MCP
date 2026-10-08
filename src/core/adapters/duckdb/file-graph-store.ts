@@ -89,6 +89,48 @@ const FANOUT_VALUES = ["member", "candidate_count"] as const;
 // Migration 039 (bd tea-rags-mcp-7t2ee): one row per (file, type it asked about).
 const HIERARCHY_DEPENDENCY_KEYS = ["source_rel_path", "type_name"] as const;
 const HIERARCHY_DEPENDENCY_VALUES = ["descendant_names"] as const;
+/**
+ * What removing a file clears — the ONE table list both {@link
+ * DuckDbFileGraphStore#removeFile} and its set-based form
+ * {@link DuckDbFileGraphStore#removeFiles} walk, so a table one learns to clear
+ * the other clears too. DuckDB rejects ON DELETE CASCADE, so the cascade is
+ * these lists, in this order: edges first, `cg_symbols_files` last.
+ *
+ * - Edge tables are cleared where the file is the source OR the target.
+ * - Per-source tables hold what the file's own walk wrote.
+ * - Per-file tables, keyed by `rel_path`: the symbols; pass-1 aggregates; the
+ *   resolve tallies (bd tea-rags-mcp-xpmwg — `getRunStats` sums them per
+ *   language, so a deleted file's calls must stop counting); the declared
+ *   identifiers (bd tea-rags-mcp-4p3sb.8 — or the naming lexicon keeps counting
+ *   names from a file that is gone); the type declarations (bd
+ *   tea-rags-mcp-vi0wx — or type roles keep counting its types); and the file
+ *   row itself.
+ */
+const REMOVED_FILE_EDGE_TABLES = [
+  "cg_symbols_edges_method",
+  "cg_symbols_edges_file",
+  "cg_symbols_edges_file_type_only",
+] as const;
+const REMOVED_FILE_SOURCE_TABLES = [
+  "cg_symbols_inheritance",
+  "cg_ambiguous_fanout",
+  "cg_hierarchy_dependencies",
+] as const;
+const REMOVED_FILE_REL_PATH_TABLES = [
+  "cg_symbols",
+  "cg_pass1_aggregates",
+  "cg_file_resolve_stats",
+  "cg_identifiers",
+  "cg_type_declarations",
+  "cg_symbols_files",
+] as const;
+/**
+ * `removeFiles`' scratch list of the paths being removed, in the
+ * connection-scoped `temp` catalog — never the database file. One name is safe:
+ * every write runs serialized on the session's one connection.
+ */
+const REMOVED_PATHS_TEMP_TABLE = "temp.main.cg_removed_rel_paths";
+
 /** `descendant_names` separator: a type name never holds a newline. */
 const DESCENDANT_NAME_SEPARATOR = "\n";
 
@@ -405,38 +447,63 @@ export class DuckDbFileGraphStore {
   }
 
   async removeFile(relPath: RelPath): Promise<void> {
-    // DuckDB rejects ON DELETE CASCADE; emulate manually. Order matters —
-    // delete every edge that references this rel_path (as source OR
-    // target), then delete the file row itself. Wrapped in a transaction
-    // so a partial failure leaves the DB consistent.
+    // Every table of the removed-file cascade (see REMOVED_FILE_EDGE_TABLES),
+    // in one transaction so a partial failure leaves the DB consistent.
     return this.session.transaction(async () => {
-      await this.session.run("DELETE FROM cg_symbols_edges_method WHERE source_rel_path = ? OR target_rel_path = ?", [
-        relPath,
-        relPath,
-      ]);
-      await this.session.run("DELETE FROM cg_symbols_edges_file WHERE source_rel_path = ? OR target_rel_path = ?", [
-        relPath,
-        relPath,
-      ]);
-      await this.session.run(
-        "DELETE FROM cg_symbols_edges_file_type_only WHERE source_rel_path = ? OR target_rel_path = ?",
-        [relPath, relPath],
+      for (const table of REMOVED_FILE_EDGE_TABLES) {
+        await this.session.run(`DELETE FROM ${table} WHERE source_rel_path = ? OR target_rel_path = ?`, [
+          relPath,
+          relPath,
+        ]);
+      }
+      for (const table of REMOVED_FILE_SOURCE_TABLES) {
+        await this.session.run(`DELETE FROM ${table} WHERE source_rel_path = ?`, [relPath]);
+      }
+      for (const table of REMOVED_FILE_REL_PATH_TABLES) {
+        await this.session.run(`DELETE FROM ${table} WHERE rel_path = ?`, [relPath]);
+      }
+    });
+  }
+
+  /**
+   * Set-based {@link removeFile} over many paths (bd tea-rags-mcp-b4drg): the
+   * rows it removes are exactly the union of `removeFile(p)` per path, in ONE
+   * transaction and one DELETE per table and direction instead of twelve per
+   * path. Measured on 2716 deleted taxdome files: 18.8 s per path (5432 daemon
+   * round trips) against ~1 s here.
+   *
+   * The paths go into a temp table and each DELETE semi-joins it, so a large
+   * set costs one scan per table rather than one per chunk of an `IN` list. An
+   * edge table takes two DELETEs — by source, then by target — because a
+   * `source OR target` predicate cannot use either column's index.
+   *
+   * DELETE-only by design: no row is re-inserted in this transaction, so it
+   * cannot form the delete-then-insert-of-the-same-key shape that aborts a
+   * DuckDB commit (see {@link writeFileRowsBulk}). A caller that re-walks a
+   * removed path does so in a later transaction.
+   */
+  async removeFiles(relPaths: readonly RelPath[]): Promise<void> {
+    const unique = [...new Set(relPaths)];
+    if (unique.length === 0) return;
+    const removed = `(SELECT rel_path FROM ${REMOVED_PATHS_TEMP_TABLE})`;
+    return this.session.transaction(async () => {
+      await this.session.exec(`CREATE OR REPLACE TEMP TABLE cg_removed_rel_paths (rel_path VARCHAR NOT NULL)`);
+      await this.session.insertBatched(
+        REMOVED_PATHS_TEMP_TABLE,
+        ["rel_path"],
+        unique.map((relPath) => [relPath]),
       );
-      await this.session.run("DELETE FROM cg_symbols_inheritance WHERE source_rel_path = ?", [relPath]);
-      await this.session.run("DELETE FROM cg_ambiguous_fanout WHERE source_rel_path = ?", [relPath]);
-      await this.session.run("DELETE FROM cg_hierarchy_dependencies WHERE source_rel_path = ?", [relPath]);
-      await this.session.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
-      await this.session.run("DELETE FROM cg_pass1_aggregates WHERE rel_path = ?", [relPath]);
-      // The file's resolve tallies (bd tea-rags-mcp-xpmwg): `getRunStats` sums
-      // them per language, so a deleted file's calls must stop counting.
-      await this.session.run("DELETE FROM cg_file_resolve_stats WHERE rel_path = ?", [relPath]);
-      // The file's declared identifiers (bd tea-rags-mcp-4p3sb.8) go with it, or
-      // the naming lexicon keeps counting names from a file that is gone.
-      await this.session.run("DELETE FROM cg_identifiers WHERE rel_path = ?", [relPath]);
-      // Its type declarations (bd tea-rags-mcp-vi0wx) likewise, or type roles
-      // keep counting types from a file that is gone.
-      await this.session.run("DELETE FROM cg_type_declarations WHERE rel_path = ?", [relPath]);
-      await this.session.run("DELETE FROM cg_symbols_files WHERE rel_path = ?", [relPath]);
+      for (const table of REMOVED_FILE_EDGE_TABLES) {
+        await this.session.exec(`DELETE FROM ${table} WHERE source_rel_path IN ${removed}`);
+        await this.session.exec(`DELETE FROM ${table} WHERE target_rel_path IN ${removed}`);
+      }
+      for (const table of REMOVED_FILE_SOURCE_TABLES) {
+        await this.session.exec(`DELETE FROM ${table} WHERE source_rel_path IN ${removed}`);
+      }
+      for (const table of REMOVED_FILE_REL_PATH_TABLES) {
+        await this.session.exec(`DELETE FROM ${table} WHERE rel_path IN ${removed}`);
+      }
+      await this.session.exec(`DROP TABLE ${REMOVED_PATHS_TEMP_TABLE}`);
     });
   }
 

@@ -209,6 +209,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   // ── writes ──
   upsertFile: write(async (graphDb, p) => graphDb.upsertFile(p.node as GraphFileNode, p.edges as GraphEdges)),
   removeFile: write(async (graphDb, p) => graphDb.removeFile(p.relPath as RelPath)),
+  removeFiles: write(async (graphDb, p) => graphDb.removeFiles(p.relPaths as RelPath[])),
   removeSymbolsForFile: write(async (graphDb, p) => graphDb.removeSymbolsForFile(p.relPath as RelPath)),
   invalidateHierarchyDependentsOfDeletedFiles: write(async (graphDb, p) =>
     graphDb.invalidateHierarchyDependentsOfDeletedFiles(p.relPaths as RelPath[]),

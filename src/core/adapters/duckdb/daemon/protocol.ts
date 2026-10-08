@@ -62,6 +62,8 @@ export const DAEMON_OPS = [
   // ── writes ──
   "upsertFile",
   "removeFile",
+  // Set-based removeFile for a deletion batch (bd tea-rags-mcp-b4drg).
+  "removeFiles",
   "removeSymbolsForFile",
   // Derived-table prune on deletion (bd tea-rags-mcp-dy852).
   "pruneDerivedForDeletedFiles",
@@ -223,7 +225,7 @@ export interface DaemonRequest {
   op: DaemonOp;
   params:
     | { collection: string } // checkpoint | compactStorage | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | readFileDependencyGraph | readTemporalCochangeMeta | readTemporalCochangeGraph | readTemporalBundleFiles | storedTemporalSymbolCommitFilePaths | refreshSymbolSignalsPrev | hasStaleDerivedTables | shutdown | ping
-    | { collection: string; relPaths: RelPath[] } // pruneDerivedForDeletedFiles | invalidateHierarchyDependentsOfDeletedFiles | deleteTemporalSymbolCommitFiles
+    | { collection: string; relPaths: RelPath[] } // removeFiles | pruneDerivedForDeletedFiles | invalidateHierarchyDependentsOfDeletedFiles | deleteTemporalSymbolCommitFiles
     | { collection: string; languages: string[] } // readNonPublicMemberEdges
     | { collection: string; buildFingerprint?: string } // handshake (fingerprint absent on legacy peers)
     | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile
