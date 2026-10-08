@@ -281,12 +281,12 @@ still miss the edge, so check before claiming "no link".
 `detector: "shotgunSurgery"`, SAME components as SDP. ONE logical change
 reaching into ≥ k components, spread recurring beyond chance, components in ≥ 2
 structural islands. Logical change = burst's commits joined by shared task id
-(commit message), common edited file, or file dependency edge between their
-files; else one commit. Burst supports k-set only if ONE change held all k; each
-burst once. Burst union never unit (parallel sessions chain unrelated commits).
-Silent coupling's N-way sibling: pair = file level, MERGE = two components, this
-= one change's fan-out. Never filtered by file type or hub size. Knot mode omits
-it.
+(commit message) ONLY; else one commit. Shared files and dependency edges never
+join (hub files chain whole bursts). Burst supports k-set only if ONE change
+held all k; each burst once. Burst union never unit (parallel sessions chain
+unrelated commits). Silent coupling's N-way sibling: pair = file level, MERGE =
+two components, this = one change's fan-out. Never filtered by file type or hub
+size. Knot mode omits it.
 
 | Summary field (`summary.shotgunSurgery`)  | Read as                                                                                                              |
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |

@@ -274,17 +274,16 @@ describe("detectShotgunSurgery", () => {
     expect(report.summary.unitCount).toBe(input.bundles.size - 1);
   });
 
-  it("gives no support to a k-set no single change held, however its burst's commits chain", () => {
-    // Each burst's commits touch two of {a, b, c} apiece, each through files
-    // of its own with no link between them; the burst's union is all three,
-    // but no change ever edited a, b and c together.
+  it("gives no support to a k-set no single commit held, however its burst's commits chain", () => {
+    // Each burst's commits touch two of {a, b, c} apiece; the burst's union is
+    // all three, but no commit ever edited a, b and c together.
     const split = [
-      { components: ["a", "b"], file: "x" },
-      { components: ["b", "c"], file: "y" },
-      { components: ["a", "c"], file: "z" },
+      ["a", "b"],
+      ["b", "c"],
+      ["a", "c"],
     ];
     const report = detectShotgunSurgery({
-      ...logicalHistory(background(["a", "b", "c"]), [split, split, split]),
+      ...burstHistory(background(["a", "b", "c"]), [split, split, split]),
       componentDependencies: [],
     });
 
@@ -383,23 +382,23 @@ describe("detectShotgunSurgery", () => {
     expect(finding.exemplarFiles).toEqual(finding.carrierFiles.map((files) => files[0]));
   });
 
-  it("joins a burst's commits whose files a file dependency links, with no task id", () => {
+  it("keeps commits apart whose files a file dependency links, when no task id joins them", () => {
+    // Hub files and dense import edges chain whole bursts (measured: 0 -> 5
+    // violations on tea-rags), so structure is no evidence of one change.
     const bursts = [0, 1, 2].map(() => [
       { components: ["a", "b"], file: "x" },
       { components: ["c"], file: "y" },
     ]);
     const report = detectShotgunSurgery({
       ...logicalHistory(background(["a", "b", "c"]), bursts),
-      // b's file imports c's: one change edited both sides of the import.
-      fileDependencyEdges: [{ sourceRelPath: fileOf("b", "x"), targetRelPath: fileOf("c", "y") }],
       componentDependencies: [{ sourceComponent: "b", targetComponent: "c" }],
     });
 
-    expect(report.findings.map((f) => `${f.components.join(",")}@${f.support}`)).toEqual(["a,b,c@3"]);
-    expect(report.findings[0].islands).toEqual([["b", "c"], ["a"]]);
+    expect(report.findings).toEqual([]);
+    expect(report.summary.candidateSetCount).toBe(0);
   });
 
-  it("joins a burst's commits that edited a common file", () => {
+  it("keeps commits apart that edited a common file, when no task id joins them", () => {
     const bursts = [0, 1, 2].map(() => [
       { components: ["a", "b"], file: "x" },
       { components: ["b", "c"], file: "x" },
@@ -409,10 +408,11 @@ describe("detectShotgunSurgery", () => {
       componentDependencies: [],
     });
 
-    expect(report.findings.map((f) => `${f.components.join(",")}@${f.support}`)).toEqual(["a,b,c@3"]);
+    expect(report.findings).toEqual([]);
+    expect(report.summary.candidateSetCount).toBe(0);
   });
 
-  it("keeps parallel commits of one burst apart when neither a task id nor a file link joins them", () => {
+  it("keeps parallel commits of one burst apart when no task id joins them", () => {
     // Two agent sessions under one author: different tasks, unrelated files.
     const bursts = [0, 1, 2].map((b) => [
       { components: ["a", "b"], file: "x", taskIds: [`TD-${b}`] },
@@ -421,7 +421,6 @@ describe("detectShotgunSurgery", () => {
     const input = logicalHistory(background(["a", "b", "c"]), bursts);
     const report = detectShotgunSurgery({
       ...input,
-      fileDependencyEdges: [{ sourceRelPath: fileOf("a", "x"), targetRelPath: fileOf("filler0") }],
       componentDependencies: [],
     });
 

@@ -10,8 +10,7 @@
  * (`assessBurstCochangeSignificance`, bd tea-rags-mcp-3vg0x): a k-set is
  * supported by an author BURST only when ONE logical change inside it held all
  * k components, and each burst counts at most once. A logical change is the
- * burst's commits joined by a shared task id, a common edited file or a file
- * dependency edge between their files (bd tea-rags-mcp-09c4m,
+ * burst's commits joined by a shared task id (bd tea-rags-mcp-09c4m,
  * {@link changeUnitsByBurst}); with nothing joining them it is one commit. The
  * burst only stops a WIP spray of re-commits from counting as many changes. A
  * burst's union is never a unit — parallel agent sessions committing under one
@@ -71,7 +70,7 @@
  * nothing judged, never zeros posing as verdicts.
  */
 
-import type { FileDependencyEdge, RelPath } from "../../../../../contracts/types/codegraph.js";
+import type { RelPath } from "../../../../../contracts/types/codegraph.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../../../../../infra/graph/index.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
 import {
@@ -121,11 +120,6 @@ export interface ShotgunSurgeryInput {
    * units fall back to structure alone.
    */
   bundleTaskIds?: ReadonlyMap<number, readonly string[]>;
-  /**
-   * The file dependency graph's edges (import / call, either direction) —
-   * commits of one burst editing two ends of an edge are one logical change.
-   */
-  fileDependencyEdges?: readonly Pick<FileDependencyEdge, "sourceRelPath" | "targetRelPath">[];
   /** Picomatch glob: a spread is in scope when an exemplar file of one of its components matches. */
   sourcePathPattern?: string;
 }
@@ -330,16 +324,15 @@ interface ShotgunSurgeryChangeUnit {
  *
  * A change unit is a LOGICAL change (bd tea-rags-mcp-09c4m): the connected
  * components of a burst's commits under "one change", where two commits are
- * one change when their messages name a common task id, when they edited a
- * common partitioned file, or when a file dependency edge (import / call,
- * either direction) joins a partitioned file of one to a partitioned file of
- * the other. A unit is the union of its commits' files and carries all their
- * bundle ids. So a port → backends → consumers change split over commits is
- * one change, while parallel agent sessions committing under one author stay
- * apart unless a task or the code itself joins them. Without recorded task
- * ids the join is structure alone — nothing is tuned per repository.
- * Semantics (similar code across components) never joins: it only explains a
- * reported spread, and the consuming agent judges that.
+ * one change when their messages name a common task id. A unit is the union
+ * of its commits' files and carries all their bundle ids. Task ids are specific
+ * by nature, so the join cannot chain a burst through a hub. Structure never
+ * joins: a shared file or a dependency edge is no evidence of one change -
+ * measured on tea-rags, joining through them chained whole bursts (provider.ts
+ * sits in 144 commits) into 8-152-commit "changes" and turned 0 shotgun
+ * violations into 5. Semantics (similar code across components) never joins
+ * either: it only explains a reported spread, and the consuming agent judges
+ * that. Without recorded task ids a unit is one commit.
  *
  * Bursts come back in first-seen order; a bundle without a recorded burst is
  * its own; a bundle touching no partitioned file is no change.
@@ -363,8 +356,7 @@ function changeUnitsByBurst(input: ShotgunSurgeryInput): ShotgunSurgeryChangeUni
     if (members) members.push(commit);
     else bursts.set(burstKey, [commit]);
   }
-  const neighbours = fileNeighbourIndex(input.fileDependencyEdges ?? []);
-  return [...bursts.values()].map((commits) => joinLogicalChanges(commits, neighbours));
+  return [...bursts.values()].map(joinLogicalChanges);
 }
 
 /** One commit of a burst, before joining: its partitioned files and its message's task ids. */
@@ -374,29 +366,8 @@ interface ShotgunSurgeryCommit {
   taskIds: readonly string[];
 }
 
-/** Undirected file adjacency over the dependency edges. */
-function fileNeighbourIndex(
-  edges: readonly Pick<FileDependencyEdge, "sourceRelPath" | "targetRelPath">[],
-): ReadonlyMap<RelPath, ReadonlySet<RelPath>> {
-  const neighbours = new Map<RelPath, Set<RelPath>>();
-  const link = (a: RelPath, b: RelPath): void => {
-    const set = neighbours.get(a);
-    if (set) set.add(b);
-    else neighbours.set(a, new Set([b]));
-  };
-  for (const { sourceRelPath, targetRelPath } of edges) {
-    if (sourceRelPath === targetRelPath) continue;
-    link(sourceRelPath, targetRelPath);
-    link(targetRelPath, sourceRelPath);
-  }
-  return neighbours;
-}
-
 /** One burst's commits joined into logical changes — the connected components of the join. */
-function joinLogicalChanges(
-  commits: readonly ShotgunSurgeryCommit[],
-  neighbours: ReadonlyMap<RelPath, ReadonlySet<RelPath>>,
-): ShotgunSurgeryChangeUnit[] {
+function joinLogicalChanges(commits: readonly ShotgunSurgeryCommit[]): ShotgunSurgeryChangeUnit[] {
   const parent = commits.map((_, index) => index);
   const find = (start: number): number => {
     let root = start;
@@ -413,32 +384,15 @@ function joinLogicalChanges(
     const rootB = find(b);
     if (rootA !== rootB) parent[Math.max(rootA, rootB)] = Math.min(rootA, rootB);
   };
-  // A file or a task id first seen in one commit joins every later commit naming it.
-  const fileOwner = new Map<RelPath, number>();
+  // A task id first seen in one commit joins every later commit naming it.
   const taskOwner = new Map<string, number>();
-  commits.forEach(({ filesByComponent, taskIds }, index) => {
-    for (const relPaths of filesByComponent.values()) {
-      for (const relPath of relPaths) {
-        const owner = fileOwner.get(relPath);
-        if (owner === undefined) fileOwner.set(relPath, index);
-        else union(owner, index);
-      }
-    }
+  commits.forEach(({ taskIds }, index) => {
     for (const taskId of taskIds) {
       const owner = taskOwner.get(taskId);
       if (owner === undefined) taskOwner.set(taskId, index);
       else union(owner, index);
     }
   });
-  // An edge between two files the burst edited joins their commits.
-  if (neighbours.size > 0) {
-    for (const [relPath, owner] of fileOwner) {
-      for (const neighbour of neighbours.get(relPath) ?? []) {
-        const other = fileOwner.get(neighbour);
-        if (other !== undefined) union(owner, other);
-      }
-    }
-  }
   const units = new Map<number, ShotgunSurgeryChangeUnit>();
   commits.forEach(({ bundleId, filesByComponent }, index) => {
     const root = find(index);

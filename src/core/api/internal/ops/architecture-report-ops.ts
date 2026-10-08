@@ -354,7 +354,7 @@ export class ArchitectureReportOps {
     const silent = await detectSilentCouplingSeeingAssetImports(cochange, graph, request, readImportSpecifiers);
     // Shotgun surgery (bd tea-rags-mcp-r8hme.50): the same bundles, over the
     // adoption partition split/merge judges and its component graph.
-    const shotgun = runShotgunSurgery(cochange, components, graph.edges, request.pathPattern);
+    const shotgun = runShotgunSurgery(cochange, components, request.pathPattern);
     // Inferred layering over the DOMAIN partition (bd tea-rags-mcp-r8hme.30):
     // every facade directory is a unit whether importers adopted it or not —
     // the adoption partition levels a language vertical one component per
