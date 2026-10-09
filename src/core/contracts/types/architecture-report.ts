@@ -1483,6 +1483,8 @@ export interface ShotgunSurgeryReportSummary {
   spreadCount?: number;
   /** Spreads one structural island explains. */
   explainedCount?: number;
+  /** Explained spreads only a dependency chain a → x → b joins, x a component a genuine supporting change touched — findings without that join. Part of `explainedCount`. */
+  chainExplainedCount?: number;
   /** Unexplained spreads, before `limit`. */
   violationCount?: number;
   /** Otsu cut on shared-neighbour weight ln(N / fanIn) over the component graph, 3 decimals. */

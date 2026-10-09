@@ -983,6 +983,7 @@ describe("ArchitectureReportOps#build — shotgunSurgery (bd tea-rags-mcp-r8hme.
       admittedSetCount: 1,
       violationCount: 1,
       explainedCount: 0,
+      chainExplainedCount: 0,
       sharedNeighbourThresholdMethod: "none",
     });
     const findings = report.violations.filter((v) => v.detector === "shotgunSurgery");

@@ -999,6 +999,7 @@ describe("detectShotgunSurgery — mechanical commits", () => {
       admittedSetCount: 4,
       spreadCount: 1,
       explainedCount: 0,
+      chainExplainedCount: 0,
       violationCount: 1,
       sharedNeighbourThresholdMethod: "none",
     });
@@ -1568,6 +1569,98 @@ describe("detectShotgunSurgery — retirement changes", () => {
 
     expect(report.findings.map((f) => [f.components, f.support])).toEqual([[SPREAD, 4]]);
     expect(report.retired).toEqual([]);
+  });
+});
+
+// bd tea-rags-mcp-zf9yz.3: a change that walked a dependency chain and edited the link in between.
+describe("detectShotgunSurgery — a dependency chain through the change's own footprint", () => {
+  // a renders r, r renders b; b, c, d are directly linked. Only a two-hop
+  // chain through r — never a spread member — reaches a.
+  const CHAIN = [
+    { sourceComponent: "a", targetComponent: "r" },
+    { sourceComponent: "r", targetComponent: "b" },
+    { sourceComponent: "b", targetComponent: "c" },
+    { sourceComponent: "c", targetComponent: "d" },
+  ];
+
+  it("joins the chain's ends when a supporting change touched the link between them", () => {
+    const input = history([...background([...SPREAD, "r"]), [...SPREAD, "r"], SPREAD, SPREAD]);
+    const report = detectShotgunSurgery({ ...input, componentDependencies: CHAIN });
+
+    expect(report.findings).toEqual([]);
+    expect(report.explained.map((s) => [s.components, s.islands])).toEqual([[SPREAD, [SPREAD]]]);
+    expect(report.summary.chainExplainedCount).toBe(1);
+  });
+
+  it("joins nothing through a link no supporting change touched, however often it changed elsewhere", () => {
+    const input = history([...background([...SPREAD, "r"]), ["r", "filler0"], SPREAD, SPREAD, SPREAD]);
+    const report = detectShotgunSurgery({ ...input, componentDependencies: CHAIN });
+
+    expect(report.explained).toEqual([]);
+    expect(report.findings.map((s) => [s.components, s.islands])).toEqual([[SPREAD, [["b", "c", "d"], ["a"]]]]);
+    expect(report.summary.chainExplainedCount).toBe(0);
+  });
+
+  it("follows the chain's direction only — a common dependency or a common dependent is no chain", () => {
+    const input = history([...background([...SPREAD, "r"]), [...SPREAD, "r"], SPREAD, SPREAD]);
+    for (const shared of [
+      [
+        { sourceComponent: "a", targetComponent: "r" },
+        { sourceComponent: "b", targetComponent: "r" },
+      ],
+      [
+        { sourceComponent: "r", targetComponent: "a" },
+        { sourceComponent: "r", targetComponent: "b" },
+      ],
+    ]) {
+      const report = detectShotgunSurgery({ ...input, componentDependencies: [...shared, ...CHAIN.slice(2)] });
+      expect(report.findings.map((s) => s.islands)).toEqual([[["b", "c", "d"], ["a"]]]);
+    }
+  });
+
+  it("leaves a spread a direct dependency explains as it was, counting no chain", () => {
+    const input = history([...background([...SPREAD, "r"]), [...SPREAD, "r"], SPREAD, SPREAD]);
+    const report = detectShotgunSurgery({
+      ...input,
+      componentDependencies: [...CHAIN, { sourceComponent: "a", targetComponent: "b" }],
+    });
+
+    expect(report.explained.map((s) => s.islands)).toEqual([[SPREAD]]);
+    expect(report.summary.chainExplainedCount).toBe(0);
+  });
+
+  it("does not let a discounted retiring change's footprint join the chain", () => {
+    const additive = (sha: string, base: number, components: readonly string[]): LineCommit => ({
+      sha,
+      rows: rowsOver(components, 2, (row) => [base + row, 0], sha),
+    });
+    const removal: LineCommit = { sha: "removal", rows: rowsOver([...SPREAD, "r"], 2, (row) => [0, 60 + row], "r") };
+    const run = (changes: readonly LineCommit[]) =>
+      detectShotgunSurgery({
+        ...timed(lineHistory(background([...SPREAD, "r"]), [...RETIREMENT_CORPUS, ...changes])),
+        componentDependencies: CHAIN,
+      });
+
+    // r reached only by the newer removal, which the spread discounts.
+    const discounted = run([
+      additive("feature", 40, SPREAD),
+      additive("second", 120, SPREAD),
+      additive("third", 140, SPREAD),
+      removal,
+    ]);
+    expect(discounted.summary.retirementUnitCount).toBe(1);
+    expect(discounted.findings.map((s) => [s.components, s.islands])).toEqual([[SPREAD, [["b", "c", "d"], ["a"]]]]);
+
+    // The same chain, r reached by a genuine change.
+    const genuine = run([
+      additive("feature", 40, SPREAD),
+      additive("second", 120, [...SPREAD, "r"]),
+      additive("third", 140, SPREAD),
+      removal,
+    ]);
+    expect(genuine.findings).toEqual([]);
+    expect(genuine.explained.map((s) => s.components)).toEqual([SPREAD]);
+    expect(genuine.summary.chainExplainedCount).toBe(1);
   });
 });
 
