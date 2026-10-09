@@ -24,6 +24,7 @@ const DOMAIN_TYPES = "../../../../src/core/domains/trajectory/codegraph/symbols/
 const TEMPORAL_TYPES = "../../../../src/core/domains/trajectory/codegraph/temporal/boundary-diagnostics/types.ts";
 const DTO = "../../../../src/core/api/public/dto/architecture.ts";
 const MCP_TOOL = "../../../../src/mcp/tools/codegraph.ts";
+const REPORT_OPS = "../../../../src/core/api/internal/ops/architecture-report-ops.ts";
 
 describe("architecture-report contract (bd tea-rags-mcp-0e4vf)", () => {
   it("imports nothing outside contracts — the finding contract stays pure", () => {
@@ -57,6 +58,23 @@ describe("architecture-report contract (bd tea-rags-mcp-0e4vf)", () => {
     expect(source).toContain("export type DependencyDirectoryRelation = ArchitectureDirectoryRelation;");
     expect(source).toContain("export type ComponentDependencyFileEdge = ArchitectureFileEdge;");
     expect(source).toContain("export type MainSequenceComponentVolatility = MainSequenceComponentVolatilityEvidence;");
+  });
+
+  it("derives the last two hand-synced pairs from one source (bd tea-rags-mcp-r8hme.44)", () => {
+    const domain = readSource(DOMAIN_TYPES);
+    // The knot drill-down and the volatility cut are contract types under their domain names…
+    expect(domain).toMatch(
+      /export type \{[^}]*\bLayeringKnotDrillDown\b[^}]*\} from "[^"]*contracts\/types\/architecture-report\.js"/,
+    );
+    expect(domain).toContain("export type MainSequenceVolatilitySummary = MainSequenceVolatilityCut;");
+    expect(domain).not.toContain("export interface LayeringKnotDrillDown");
+    expect(domain).not.toContain("export interface MainSequenceVolatilitySummary");
+    // …the report's volatility summary extends that one cut instead of restating it…
+    expect(readSource(CONTRACT_MODULE)).toContain(
+      "export interface MainSequenceVolatilityReportSummary extends MainSequenceVolatilityCut",
+    );
+    // …and the ops layer no longer injects the knot hint at map time.
+    expect(readSource(REPORT_OPS)).not.toContain("LAYERING_KNOT_DRILL_DOWN_HINT");
   });
 
   it("sources the shared vocabulary from the contract (temporal boundary-diagnostics)", () => {

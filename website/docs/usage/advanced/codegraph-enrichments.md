@@ -299,6 +299,19 @@ when the index was built at another commit than the tree's `HEAD`, `notices`
   both sides of a merge candidate. `detectors` gives a status per detector,
   including `built: false` with its reason. Up to 100 findings.
 
+  Each finding names what it judged in `endpoints`, a typed object whose
+  `kind` says which shape it is: `fileEdge` (cycles, leaks), `componentEdge`
+  (an SDP finding: the component pair and the file edge carrying it),
+  `filePair` (a silent-coupling pair, the changed file first), `fileGroup` (a
+  grouped silent-coupling finding), `file` (a facade), `component`
+  (main-sequence shift, split) or `componentPair` (merge). The field names
+  match the `get_architecture_report` violations, so a finding can be matched
+  to the whole-repo report without parsing text. `evidence` is structured per
+  detector (instabilities, the cycle path, the D and I deltas with their fan
+  counts, the dropped names and their consumers, the touched clusters), with
+  numbers at 3 decimals. `subject` is the same endpoints rendered as one line,
+  and `detail` is the sentence a reviewer reads.
+
   `stableDependencies` and `mainSequence` weigh only the edges the change
   adds. `cycles` and `leakingAbstraction` judge every import of a changed file
   as it now reads, so they also report a cycle or a facade bypass the change

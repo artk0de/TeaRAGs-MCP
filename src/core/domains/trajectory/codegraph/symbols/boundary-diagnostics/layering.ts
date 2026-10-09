@@ -310,8 +310,20 @@ function knotDrillDown(members: readonly string[]): LayeringKnotDrillDown {
     shared = i;
   }
   const ancestor = first.slice(0, shared).join("/");
-  return { knotOf: members[0] ?? "", ...(ancestor ? { pathPattern: `${ancestor}/**` } : {}) };
+  return {
+    knotOf: members[0] ?? "",
+    ...(ancestor ? { pathPattern: `${ancestor}/**` } : {}),
+    hint: LAYERING_KNOT_DRILL_DOWN_HINT,
+  };
 }
+
+/**
+ * Points a knot finding at the `knotOf` view (bd tea-rags-mcp-r8hme.38) — owned
+ * by the detector that emits the drill-down (bd tea-rags-mcp-r8hme.44), so the
+ * report reads it off the finding instead of stitching it in at map time.
+ */
+export const LAYERING_KNOT_DRILL_DOWN_HINT =
+  "call get_architecture_report with knotOf to page every member and cut edge of this knot";
 
 /**
  * One knot looked up by any member (bd tea-rags-mcp-r8hme.38) — the handle a

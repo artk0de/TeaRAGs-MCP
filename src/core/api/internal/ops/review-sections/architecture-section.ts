@@ -34,6 +34,10 @@ import type {
   RelPath,
   TemporalCochangeGraph,
 } from "../../../../contracts/types/codegraph.js";
+import {
+  diffFindingEndpointRefs,
+  type DiffDetectorFinding,
+} from "../../../../contracts/types/diff-detector-finding.js";
 import type { InMemoryExtractionContext } from "../../../../domains/trajectory/codegraph/index.js";
 import type { ComponentGraph } from "../../../../domains/trajectory/codegraph/symbols/index.js";
 import {
@@ -64,7 +68,6 @@ import {
   DiffDetectorRun,
   type DiffDetectorBaseEdgeReader,
   type DiffDetectorContractReader,
-  type DiffDetectorFinding,
   type DiffDetectorGraphReader,
   type DiffDetectorRunDeps,
   type DiffDetectorSilentCouplingFacts,
@@ -587,31 +590,24 @@ export async function rankDiffFindingsByMaintenanceCost(
 }
 
 /**
- * The files a diff finding names: a grouped silent-coupling finding's shared
- * endpoint and partners; otherwise the subject's endpoints (`A -> B`,
- * `a ~ b`, or one path) — a component name standing for its files under the
- * report's partition, any other endpoint taken as the file path it is.
+ * The files a diff finding names, read off its structured endpoints (bd
+ * tea-rags-mcp-r8hme.44): a grouped silent-coupling finding's shared endpoint
+ * and partners; otherwise the endpoint files, and each endpoint component
+ * standing for its files under the report's partition — a component the
+ * partition does not hold keeps its name, as before the endpoints were typed.
  */
 function diffFindingCarrierFiles(
   finding: DiffDetectorFinding,
   filesOfComponent: (component: string) => readonly RelPath[],
 ): RelPath[] {
-  const endpoints =
-    finding.partners === undefined
-      ? finding.subject.split(SUBJECT_ENDPOINT_SEPARATOR)
-      : [...(finding.drillDown?.files ?? []), ...finding.partners.map((partner) => partner.relPath)];
-  return [
-    ...new Set(
-      endpoints.flatMap((endpoint) => {
-        const files = filesOfComponent(endpoint);
-        return files.length > 0 ? files : [endpoint];
-      }),
-    ),
-  ];
+  const refs = diffFindingEndpointRefs(finding.endpoints);
+  const files = [...refs.files, ...(finding.partners ?? []).map((partner) => partner.relPath)];
+  const componentFiles = refs.components.flatMap((component) => {
+    const members = filesOfComponent(component);
+    return members.length > 0 ? members : [component];
+  });
+  return [...new Set([...files, ...componentFiles])];
 }
-
-/** The separators `DiffDetectorFinding.subject` joins its endpoints with — an edge, a pair. */
-const SUBJECT_ENDPOINT_SEPARATOR = / -> | ~ /;
 
 function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const list = map.get(key);

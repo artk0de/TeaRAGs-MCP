@@ -13,13 +13,13 @@ import {
   type DiffDetectorBaseEdgeReader,
   type DiffDetectorCatalog,
   type DiffDetectorContractReader,
-  type DiffDetectorFinding,
   type DiffDetectorFindings,
   type DiffDetectorGraphReader,
   type DiffDetectorSilentCouplingFacts,
   type DiffDetectorSplitMergeReader,
 } from "../../../../../src/core/api/internal/ops/diff-detector-run.js";
 import { ReviewEdgeOverlay } from "../../../../../src/core/api/internal/ops/review-edge-overlay.js";
+import type { DiffDetectorFinding } from "../../../../../src/core/contracts/types/diff-detector-finding.js";
 import type { SplitMergeVerdicts } from "../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
 
 /** A file edge as a fixture tuple. */
@@ -268,7 +268,16 @@ describe("stableDependencies", () => {
     const result = runWith({ catalog: catalogOf(components) }, ["src/app/a.ts"], [["src/app/a.ts", "src/lib/b.ts"]]);
     expect(subjectsOf(result, "stableDependencies")).toEqual(["src/app/a.ts -> src/lib/b.ts"]);
     const finding = result.findings[0];
-    expect(finding?.evidence.length).toBeGreaterThan(0);
+    // Structured endpoints (bd tea-rags-mcp-r8hme.44): the judged component
+    // pair the whole-repo SDP violation keys on, plus the file edge carrying it.
+    expect(finding?.endpoints).toEqual({
+      kind: "componentEdge",
+      sourceComponent: "app",
+      targetComponent: "lib",
+      sourceRelPath: "src/app/a.ts",
+      targetRelPath: "src/lib/b.ts",
+    });
+    expect(finding?.evidence).toEqual({ sourceInstability: 0.2, targetInstability: 0.9 });
     expect(finding?.detail).toContain("markedly");
   });
 
@@ -359,7 +368,12 @@ describe("leakingAbstraction", () => {
       [["src/app/a.ts", "src/lib/internal.ts"]],
     );
     expect(subjectsOf(result, "leakingAbstraction")).toEqual(["src/app/a.ts -> src/lib/internal.ts"]);
-    expect(result.findings[0]?.evidence).toContain(`pre-existing src/app/a.ts -> ${FACADE}`);
+    expect(result.findings[0]?.endpoints).toEqual({
+      kind: "fileEdge",
+      sourceRelPath: "src/app/a.ts",
+      targetRelPath: "src/lib/internal.ts",
+    });
+    expect(result.findings[0]?.evidence).toEqual({ facadeRelPath: FACADE });
   });
 
   it("does not fire without the pre-existing facade import", () => {
@@ -416,7 +430,12 @@ describe("cycles", () => {
       [["src/a.ts", "src/b.ts"]],
     );
     expect(subjectsOf(result, "cycles")).toEqual(["src/a.ts -> src/b.ts"]);
-    expect(result.findings[0]?.evidence).toContain("src/a.ts -> src/b.ts -> src/c.ts -> src/a.ts");
+    expect(result.findings[0]?.endpoints).toEqual({
+      kind: "fileEdge",
+      sourceRelPath: "src/a.ts",
+      targetRelPath: "src/b.ts",
+    });
+    expect(result.findings[0]?.evidence).toEqual({ path: ["src/a.ts", "src/b.ts", "src/c.ts", "src/a.ts"] });
   });
 
   it("finds nothing when the reverse direction is unreachable", () => {
@@ -446,7 +465,7 @@ describe("cycles", () => {
     expect(masked.findings).toEqual([]);
 
     const unmasked = runWith({ graph }, ["src/a.ts"], [["src/a.ts", "src/b.ts"]]);
-    expect(unmasked.findings[0]?.evidence).toContain("src/a.ts -> src/b.ts -> src/m.ts -> src/a.ts");
+    expect(unmasked.findings[0]?.evidence).toEqual({ path: ["src/a.ts", "src/b.ts", "src/m.ts", "src/a.ts"] });
   });
 });
 
@@ -462,8 +481,11 @@ describe("mainSequence", () => {
     expect(subjectsOf(result, "mainSequence")).toEqual(["app"]);
     const finding = result.findings[0];
     // I 0.5 -> 1.0 with A held at 1 - I + D = 0.8: D moves 0.3 -> 0.8.
-    expect(finding?.evidence[0]).toBe("D 0.300 -> 0.800");
-    expect(finding?.evidence).toContain("src/app/a.ts -> src/lib/b.ts");
+    expect(finding?.endpoints).toEqual({ kind: "component", component: "app" });
+    expect(finding?.evidence).toMatchObject({ distanceBefore: 0.3, distanceAfter: 0.8 });
+    expect(finding?.evidence).toMatchObject({
+      edges: [{ sourceRelPath: "src/app/a.ts", targetRelPath: "src/lib/b.ts" }],
+    });
   });
 
   it("never lists the components no changed file belongs to", () => {
@@ -691,8 +713,13 @@ describe("mainSequence", () => {
       const finding = result.findings.find((f) => f.detector === "mainSequence");
       // I 2/24 -> 3/25 with A held at 1 - 2/24 = 22/24: D moves 0 -> 22/24 + 3/25 - 1 = 0.0367.
       // Under the +1-per-edge step this saturated to I=1.000, D 0.917 — the residual class.
-      expect(finding?.evidence[0]).toBe("D 0.000 -> 0.037");
-      expect(finding?.evidence[1]).toBe("I 0.083 -> 0.120 = (2+1)/(22+2+1)");
+      expect(finding?.evidence).toMatchObject({
+        distanceBefore: 0,
+        distanceAfter: 0.037,
+        instabilityBefore: 0.083,
+        instabilityAfter: 0.12,
+        fanCounts: { afferentCount: 22, efferentCount: 2, addedEdgeCount: 1 },
+      });
     });
 
     it("recomputes with k = the genuinely-new edge count — two new edges give (Ce+2)/(Ca+Ce+2)", () => {
@@ -716,8 +743,13 @@ describe("mainSequence", () => {
       expect(subjectsOf(result, "mainSequence")).toEqual(["api"]);
       const finding = result.findings.find((f) => f.detector === "mainSequence");
       // I 2/24 -> 4/26 with A held at 22/24: D moves 0 -> 22/24 + 4/26 - 1 = 0.0705.
-      expect(finding?.evidence[0]).toBe("D 0.000 -> 0.071");
-      expect(finding?.evidence[1]).toBe("I 0.083 -> 0.154 = (2+2)/(22+2+2)");
+      expect(finding?.evidence).toMatchObject({
+        distanceBefore: 0,
+        distanceAfter: 0.071,
+        instabilityBefore: 0.083,
+        instabilityAfter: 0.154,
+        fanCounts: { afferentCount: 22, efferentCount: 2, addedEdgeCount: 2 },
+      });
     });
 
     it("keeps the small-N guard ahead of the recompute — a below-floor component is excluded and counted even when its fan counts are served", () => {
@@ -760,8 +792,13 @@ describe("mainSequence", () => {
       const result = runWith({ catalog: catalogOf(noFans) }, ["src/app/a.ts"], [["src/app/a.ts", "src/lib/b.ts"]]);
       const finding = result.findings.find((f) => f.detector === "mainSequence");
       // The pre-89k7k.19 step, byte-identical: I 0.5 -> min(1, 1.5) = 1.0, A = 0.8, D 0.3 -> 0.8.
-      expect(finding?.evidence[0]).toBe("D 0.300 -> 0.800");
-      expect(finding?.evidence).toHaveLength(2);
+      expect(finding?.evidence).toEqual({
+        distanceBefore: 0.3,
+        distanceAfter: 0.8,
+        instabilityBefore: 0.5,
+        instabilityAfter: 1,
+        edges: [{ sourceRelPath: "src/app/a.ts", targetRelPath: "src/lib/b.ts" }],
+      });
     });
   });
 });
@@ -1085,7 +1122,12 @@ describe("silentCoupling", () => {
   it("reports a production violation involving a changed file, with support and strength evidence", () => {
     const result = runWith({ silentCouplingFacts: factsOf([VIOLATION]) }, ["src/a.ts"], [["src/a.ts", "src/q.ts"]]);
     expect(subjectsOf(result, "silentCoupling")).toEqual(["src/a.ts ~ src/p.ts"]);
-    expect(result.findings[0]?.evidence).toEqual(["co-change support 9.000", "strength 0.570"]);
+    expect(result.findings[0]?.endpoints).toEqual({
+      kind: "filePair",
+      sourceRelPath: "src/a.ts",
+      targetRelPath: "src/p.ts",
+    });
+    expect(result.findings[0]?.evidence).toEqual({ support: 9, strength: 0.57 });
   });
 
   it("reports a violation whose changed file is the relPathB side", () => {
@@ -1135,11 +1177,14 @@ describe("silentCoupling", () => {
       {
         detector: "silentCoupling",
         subject: "config/en.yml co-changes significantly with 3 files without a structural edge",
-        evidence: [
-          "src/p1.ts: support 30.000, expected 4.800, strength 0.710",
-          "src/p3.ts: support 20.000, expected 4.123, strength 0.660",
-          "src/p2.ts: support 12.000, expected 3.250, strength 0.620",
-        ],
+        endpoints: { kind: "fileGroup", relPath: "config/en.yml", partnerCount: 3 },
+        evidence: {
+          topPartners: [
+            { relPath: "src/p1.ts", support: 30, expectedSupport: 4.8, strength: 0.71 },
+            { relPath: "src/p3.ts", support: 20, expectedSupport: 4.123, strength: 0.66 },
+            { relPath: "src/p2.ts", support: 12, expectedSupport: 3.25, strength: 0.62 },
+          ],
+        },
         detail:
           "config/en.yml co-changes significantly with 3 files without a structural edge and the diff adds none; " +
           'drill in: call find_co_changed(files: ["config/en.yml"], limit: 3) to list this file\'s co-change partners',
@@ -1259,7 +1304,8 @@ describe("facadeContract", () => {
     );
     expect(subjectsOf(result, "facadeContract")).toEqual([FACADE]);
     const finding = result.findings.find((f) => f.detector === "facadeContract");
-    expect(finding?.evidence).toEqual(["b: consumed by src/app/a.ts"]);
+    expect(finding?.endpoints).toEqual({ kind: "file", relPath: FACADE, component: "src/lib" });
+    expect(finding?.evidence).toEqual({ droppedNames: [{ name: "b", consumers: ["src/app/a.ts"] }] });
     expect(finding?.detail).toContain("stops re-exporting");
   });
 
@@ -1344,7 +1390,7 @@ describe("facadeContract", () => {
       [[FACADE, "src/lib/x.ts", { reexported: ["a"] }]],
     );
     const finding = result.findings.find((f) => f.detector === "facadeContract");
-    expect(finding?.evidence).toEqual(["b: consumed by src/app/a.ts"]);
+    expect(finding?.evidence).toEqual({ droppedNames: [{ name: "b", consumers: ["src/app/a.ts"] }] });
   });
 
   it("skips a facade whose indexed read recorded no re-export surface — nothing recorded, nothing to drop from", () => {
@@ -1399,11 +1445,13 @@ describe("facadeContract", () => {
       [[FACADE, "src/lib/x.ts", { reexported: ["kept"] }]],
     );
     const finding = result.findings.find((f) => f.detector === "facadeContract");
-    expect(finding?.evidence).toEqual([
-      "aa: consumed by src/app/a.ts, src/app/z.ts",
-      "mm: consumed by src/app/a.ts",
-      "zz: consumed by src/app/z.ts",
-    ]);
+    expect(finding?.evidence).toEqual({
+      droppedNames: [
+        { name: "aa", consumers: ["src/app/a.ts", "src/app/z.ts"] },
+        { name: "mm", consumers: ["src/app/a.ts"] },
+        { name: "zz", consumers: ["src/app/z.ts"] },
+      ],
+    });
   });
 
   it("judging the same overlay twice yields the identical findings and statuses", () => {
@@ -1447,10 +1495,14 @@ describe("splitCandidates", () => {
     expect(result.findings.find((f) => f.detector === "splitCandidates")).toEqual({
       detector: "splitCandidates",
       subject: "wide",
-      evidence: [
-        "cluster 1: 1 of 2 changed files — src/wide/y1.ts",
-        "cluster 2: 1 of 2 changed files — src/wide/x1.ts",
-      ],
+      endpoints: { kind: "component", component: "wide" },
+      evidence: {
+        clusterCount: 2,
+        touchedClusters: [
+          { cluster: 1, fileCount: 2, changedFileCount: 1, changedFiles: ["src/wide/y1.ts"] },
+          { cluster: 2, fileCount: 2, changedFileCount: 1, changedFiles: ["src/wide/x1.ts"] },
+        ],
+      },
       detail:
         "the diff works across the seam of wide, a component whose history already splits into 2 co-change groups",
     });
@@ -1479,10 +1531,13 @@ describe("splitCandidates", () => {
       [],
     );
     const finding = result.findings.find((f) => f.detector === "splitCandidates");
-    expect(finding?.evidence).toEqual([
-      `cluster 1: 6 of 6 changed files — ${cluster.slice(0, 4).join(", ")}`,
-      "cluster 2: 1 of 1 changed files — src/wide/other.ts",
-    ]);
+    expect(finding?.evidence).toEqual({
+      clusterCount: 2,
+      touchedClusters: [
+        { cluster: 1, fileCount: 6, changedFileCount: 6, changedFiles: cluster.slice(0, 4) },
+        { cluster: 2, fileCount: 1, changedFileCount: 1, changedFiles: ["src/wide/other.ts"] },
+      ],
+    });
   });
 
   it("fires a merge finding when changed files sit on both sides of a candidate pair", () => {
@@ -1508,7 +1563,12 @@ describe("splitCandidates", () => {
     expect(result.findings.find((f) => f.detector === "splitCandidates")).toEqual({
       detector: "splitCandidates",
       subject: "alpha ~ beta",
-      evidence: ["strength 0.852", "alpha: src/alpha/a1.ts, src/alpha/a2.ts", "beta: src/beta/b1.ts"],
+      endpoints: { kind: "componentPair", componentA: "alpha", componentB: "beta" },
+      evidence: {
+        strength: 0.852,
+        sideA: { changedFileCount: 2, changedFiles: ["src/alpha/a1.ts", "src/alpha/a2.ts"] },
+        sideB: { changedFileCount: 1, changedFiles: ["src/beta/b1.ts"] },
+      },
       detail: "the diff bridges alpha and beta, two components whose admitted bundles already move them as one unit",
     });
   });

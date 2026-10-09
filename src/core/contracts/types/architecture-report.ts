@@ -1487,20 +1487,28 @@ export interface ShotgunSurgeryReportSummary {
   outOfScopeSetCount?: number;
 }
 
-/** How the volatility cut on the zone of pain was drawn. */
-export interface MainSequenceVolatilityReportSummary {
-  /** The per-file reading a component's volatility averages. */
-  signal: "git.file.commitCount";
-  /** 3 decimals. */
+/**
+ * How the volatility cut on the zone of pain was drawn — ONE shape for the
+ * detector that draws it (the domain's `MainSequenceVolatilitySummary` is this
+ * type) and the report that shows it (bd tea-rags-mcp-r8hme.44). The detector
+ * carries full precision; the report rounds the numbers to 3 decimals.
+ */
+export interface MainSequenceVolatilityCut {
   threshold: number;
-  /** `otsu` = Otsu's split over judged components' log volatilities (cut reported back on the count scale), floored at `fileMedian`; `fileMedian` = the floor alone (too few components). */
+  /** `otsu` = Otsu's split over judged components' log volatilities (cut reported back on the reading's scale), floored at `fileMedian`; `fileMedian` = the floor alone (too few components). */
   thresholdMethod: "otsu" | "fileMedian";
-  /** η of the Otsu cut, 3 decimals; absent under `fileMedian`. */
+  /** η of the Otsu cut; absent under `fileMedian`. */
   separability?: number;
-  /** Median commit count over the judged graph's files — a volatile component's mean must be strictly above it. */
+  /** Median reading over the judged graph's files — a volatile component's mean must be strictly above it. */
   fileMedian: number;
   /** Judged components with a measured file — the population the cut is drawn over. */
   measuredComponentCount: number;
+}
+
+/** The volatility cut as the report shows it: the cut, numbers at 3 decimals, plus the per-file reading it averaged. */
+export interface MainSequenceVolatilityReportSummary extends MainSequenceVolatilityCut {
+  /** The per-file reading a component's volatility averages. */
+  signal: "git.file.commitCount";
 }
 
 export interface MainSequenceReportSummary {
