@@ -61,9 +61,9 @@ import {
   gitFilters,
   gitPayloadSignalDescriptors,
   gitStatsAccumulators,
+  type GitProviderConfig,
+  type SquashOptions,
 } from "../../domains/trajectory/git/index.js";
-import type { SquashOptions } from "../../domains/trajectory/git/infra/metrics.js";
-import type { GitProviderConfig } from "../../domains/trajectory/git/provider.js";
 import { TrajectoryRegistry } from "../../domains/trajectory/index.js";
 import { STATIC_FILTER_PRESETS } from "../../domains/trajectory/static/filter-presets/index.js";
 import { StaticTrajectory } from "../../domains/trajectory/static/index.js";
