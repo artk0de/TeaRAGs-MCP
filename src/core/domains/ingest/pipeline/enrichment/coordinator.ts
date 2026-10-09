@@ -29,7 +29,6 @@ import type {
 } from "../../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentRunCoverage } from "../../../../contracts/types/provider.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, EnrichmentProgressCallback } from "../../../../types.js";
-import { detectLanguage } from "../chunker/utils/language-detector.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
 import { EnrichmentApplier, type EnrichmentApplyEvent } from "./applier.js";
@@ -42,6 +41,11 @@ import { computeExtractionRepair, type ExtractionRepair } from "./extraction-rep
 import { FilePhase } from "./file-phase.js";
 import { EnrichmentMarkerStore } from "./marker-store.js";
 import { filterFileEnrichPaths } from "./policy.js";
+import {
+  recomputeLanguagesCoverPath,
+  type RecomputeProviderDeferral,
+  type RepairPassRecomputeDeferral,
+} from "./recompute-deferral.js";
 import type { DeferredChunkRecoveryHandoff, EnrichmentRecovery } from "./recovery.js";
 import {
   ALL_LANGUAGES,
@@ -381,6 +385,12 @@ export class EnrichmentCoordinator {
      * run retries the drift check.
      */
     onStoreReadFailure?: (providerKey: string) => void,
+    /**
+     * Providers a `--force-enrichments` sync leg leaves to the recompute that
+     * follows it (bd tea-rags-mcp-b4drg) — see `RepairPassRecomputeDeferral`.
+     * Omitted on every other path.
+     */
+    recomputeDeferral?: RepairPassRecomputeDeferral,
   ): Promise<number> {
     let repaired = 0;
     this.runContentHashes = scanned;
@@ -442,6 +452,25 @@ export class EnrichmentCoordinator {
         const drifted = new Set(repair);
         const handedOff = forced.filter((path) => !drifted.has(path));
         repair.push(...handedOff);
+        if (recomputeDeferral?.providerKeys.has(provider.key) && repair.length > 0) {
+          // Left to the recompute only when it re-extracts every path this walk
+          // would: its forced repair covers the same language scope. Orphans
+          // were pruned above either way. A handed-off chunk needs THIS run's
+          // walk and seed (bd tea-rags-mcp-fxio5), so it declines too.
+          const declined =
+            handedOff.length > 0 ||
+            repair.some((path) => !recomputeLanguagesCoverPath(recomputeDeferral.languages, path));
+          if (!declined) {
+            pipelineLog.enrichmentPhase("REPAIR_DEFERRED_TO_RECOMPUTE", {
+              provider: provider.key,
+              collection: physicalCollectionName,
+              deferred: repair.length,
+              orphaned: orphans.length,
+            });
+            continue;
+          }
+          recomputeDeferral.onDeclined(provider.key);
+        }
         if (repair.length > 0) {
           pipelineLog.enrichmentPhase("REPAIR_PASS", {
             provider: provider.key,
@@ -480,13 +509,52 @@ export class EnrichmentCoordinator {
   }
 
   /**
+   * The provider keys a `--force-enrichments` sync leg may leave to the
+   * recompute that follows it (bd tea-rags-mcp-b4drg): the selectors' matches,
+   * provided the recompute reaches every file the sync leg streams. A changed
+   * file outside a `--languages` recompute is enriched by no other leg, so one
+   * such path keeps every provider in the sync leg — the ordinary behaviour.
+   * Empty when there is no deferral; `runRepairPass` may still decline a
+   * provider afterwards (`RepairPassRecomputeDeferral#onDeclined`).
+   */
+  resolveRecomputeDeferredProviderKeys(
+    deferral: RecomputeProviderDeferral | undefined,
+    workSetRelPaths: readonly string[],
+  ): Set<string> {
+    if (!deferral) return new Set();
+    const { matched } = selectProviderKeys(this.providerKeys, deferral.selectors);
+    if (matched.length === 0) return new Set();
+    const uncovered = workSetRelPaths.filter((path) => !recomputeLanguagesCoverPath(deferral.languages, path));
+    if (uncovered.length > 0) {
+      pipelineLog.enrichmentPhase("SYNC_LEG_DEFERRAL_DECLINED", {
+        providers: matched,
+        uncoveredFiles: uncovered.length,
+        sample: uncovered.slice(0, 5),
+      });
+      return new Set();
+    }
+    return new Set(matched);
+  }
+
+  /** The providers `onlyProviderKeys` names; omitted means every registered provider. */
+  private providersOf(onlyProviderKeys: readonly string[] | undefined): readonly EnrichmentProvider[] {
+    return onlyProviderKeys === undefined
+      ? this.providers
+      : this.providers.filter((p) => onlyProviderKeys.includes(p.key));
+  }
+
+  /**
    * Whether any provider's derived state was pruned by a deletion and not yet
    * recomputed (bd tea-rags-mcp-dy852) — the other reason, besides a repair, a
    * reindex with nothing to chunk still owes `runFinalizeOnly`. A provider whose
    * store cannot be read counts as not stale.
    */
-  async hasStaleDerivedState(physicalCollectionName: PhysicalCollectionName): Promise<boolean> {
-    for (const provider of this.providers) {
+  async hasStaleDerivedState(
+    physicalCollectionName: PhysicalCollectionName,
+    /** Ask only these providers — a sync leg's run providers (bd tea-rags-mcp-b4drg). Omitted asks every one. */
+    onlyProviderKeys?: readonly string[],
+  ): Promise<boolean> {
+    for (const provider of this.providersOf(onlyProviderKeys)) {
       if (!provider.hasStaleDerivedState) continue;
       try {
         if (await provider.hasStaleDerivedState(physicalCollectionName)) return true;
@@ -517,8 +585,17 @@ export class EnrichmentCoordinator {
    * A run that DID finalize reaches the same work through `completeRun` (bd
    * tea-rags-mcp-vtuu4), never through the provider's finalize.
    */
-  async runCollectionCompletion(absolutePath: string, physicalCollectionName: PhysicalCollectionName): Promise<void> {
-    await this.completeCollectionOf(this.providers, absolutePath, physicalCollectionName);
+  async runCollectionCompletion(
+    absolutePath: string,
+    physicalCollectionName: PhysicalCollectionName,
+    /**
+     * Ask only these providers. A `--force-enrichments` sync leg omits the ones
+     * it left to the recompute, whose own run completes them in the same
+     * operation (bd tea-rags-mcp-b4drg). Omitted asks every one.
+     */
+    onlyProviderKeys?: readonly string[],
+  ): Promise<void> {
+    await this.completeCollectionOf(this.providersOf(onlyProviderKeys), absolutePath, physicalCollectionName);
   }
 
   /**
@@ -582,8 +659,16 @@ export class EnrichmentCoordinator {
      * reads the deferred chunk map.
      */
     deferredChunkHandoff?: DeferredChunkRecoveryHandoff,
+    /** Open the run on these providers only — see `EnrichmentRunSpec.onlyProviderKeys` (bd tea-rags-mcp-b4drg). */
+    onlyProviderKeys?: readonly string[],
   ): Promise<EnrichmentMetrics> {
-    const run = this.beginRun(finalizeOnlyRunSpec({ absolutePath, collection: physicalCollectionName }));
+    const run = this.beginRun(
+      finalizeOnlyRunSpec({
+        absolutePath,
+        collection: physicalCollectionName,
+        ...(onlyProviderKeys ? { onlyProviderKeys } : {}),
+      }),
+    );
     if (deferredChunkHandoff) this.seedDeferredChunks(run, deferredChunkHandoff);
     return this.awaitCompletion(run);
   }
@@ -809,7 +894,7 @@ export class EnrichmentCoordinator {
         [...stored.chunkMap.keys()].map((relPath) => [relPath, hashesBeforeForcedRepair?.get(relPath) ?? ""]),
       );
       for (const [relPath, hash] of hashesBeforeForcedRepair ?? []) {
-        if (languages && languages.length > 0 && !languages.includes(detectLanguage(relPath))) continue;
+        if (!recomputeLanguagesCoverPath(languages, relPath)) continue;
         eligibilityMap.set(relPath, hash);
       }
       pipelineLog.enrichmentPhase("RECOMPUTE_FORCED_PROVIDER_REPAIR", {
@@ -1029,8 +1114,7 @@ export class EnrichmentCoordinator {
       runState.chunkPhase.setOnComplete(this._onChunkEnrichmentComplete);
     }
 
-    const runProviders =
-      onlyProviderKeys === undefined ? this.providers : this.providers.filter((p) => onlyProviderKeys.includes(p.key));
+    const runProviders = this.providersOf(onlyProviderKeys);
     runState.contexts = new Map(
       runProviders.map((provider) => {
         const effectiveRoot = provider.resolveRoot(absolutePath);
@@ -1085,11 +1169,18 @@ export class EnrichmentCoordinator {
     // per-level in_progress/pending is persisted (terminal-only model). The
     // promise is tracked on the run so awaitCompletion gates on it before the
     // terminal writes, keeping `_run` present before they land.
-    runState.markRunStartPromise = physicalCollectionName
-      ? this.markerStore
-          .markRunStart(physicalCollectionName, [...runState.contexts.keys()], runState.runId, runState.startedAt)
-          .catch(() => undefined)
-      : Promise.resolve();
+    //
+    // A run with NO providers — a `--force-enrichments` sync leg that left every
+    // provider to the recompute (bd tea-rags-mcp-b4drg) — writes no pointer and
+    // holds no keep-alive: `awaitCompletion` closes it without a completion, so
+    // nothing would ever write its terminals or release the daemon.
+    const runHasProviders = runState.contexts.size > 0;
+    runState.markRunStartPromise =
+      physicalCollectionName && runHasProviders
+        ? this.markerStore
+            .markRunStart(physicalCollectionName, [...runState.contexts.keys()], runState.runId, runState.startedAt)
+            .catch(() => undefined)
+        : Promise.resolve();
 
     // Hold the codegraph daemon alive for the whole run. Fire-and-forget here
     // (non-blocking begin); `awaitCompletion` awaits the release and calls it
@@ -1097,7 +1188,7 @@ export class EnrichmentCoordinator {
     // less or anonymous run has nothing to keep alive. begin never rejects
     // (guard contract), but .catch keeps a stray rejection from going unhandled.
     runState.daemonReleasePromise =
-      physicalCollectionName && this.providers.length > 0
+      physicalCollectionName && runHasProviders
         ? this.daemonGuard.begin(physicalCollectionName).catch(() => NOOP_RELEASE)
         : Promise.resolve(NOOP_RELEASE);
     return runState.handle;

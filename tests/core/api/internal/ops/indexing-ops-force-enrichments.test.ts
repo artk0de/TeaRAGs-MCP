@@ -113,12 +113,15 @@ describe("IndexingOps — forceEnrichments", () => {
 
     await ops.run("/repo", { forceEnrichments: ["codegraph"] });
 
-    // Exact arity: no provider selectors reach the sync — only the chunking
-    // overrides every sync carries (model-derived size; config size here, as
-    // the provider reports no model info).
+    // Exact arity: nothing forces the sync — the chunking overrides every sync
+    // carries (model-derived size; config size here, as the provider reports no
+    // model info), plus the deferral that leaves the selected providers to the
+    // recompute (bd tea-rags-mcp-b4drg). A deferral narrows the leg; it never
+    // forces it.
     expect(deps.reindex.reindexChanges).toHaveBeenCalledWith("/repo", undefined, {
       chunkSize: 1000,
       modelInfo: undefined,
+      recomputeDeferral: { selectors: ["codegraph"], languages: [] },
     });
   });
 
@@ -134,10 +137,13 @@ describe("IndexingOps — forceEnrichments", () => {
 
     await ops.run("/repo", { forceEnrichments: ["codegraph"], languages: ["typescript"] });
 
-    // Exact arity and exact overrides: no language filter reaches the sync.
+    // Exact arity and exact overrides: the languages reach the sync only as
+    // the deferral's coverage (bd tea-rags-mcp-b4drg) — a path outside them
+    // keeps the ordinary incremental, so the drift repair stays unnarrowed.
     expect(deps.reindex.reindexChanges).toHaveBeenCalledWith("/repo", undefined, {
       chunkSize: 1000,
       modelInfo: undefined,
+      recomputeDeferral: { selectors: ["codegraph"], languages: ["typescript"] },
     });
     expect(deps.enrichment.recomputeEnrichments).toHaveBeenCalledWith(
       expect.any(String),

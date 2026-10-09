@@ -19,6 +19,10 @@ import {
   type PipelineTuning,
   type ProcessingContext,
 } from "../pipeline/base.js";
+import type {
+  RecomputeProviderDeferral,
+  RepairPassRecomputeDeferral,
+} from "../pipeline/enrichment/recompute-deferral.js";
 import type { DeferredChunkRecoveryHandoff } from "../pipeline/enrichment/recovery.js";
 import { pipelineLog } from "../pipeline/infra/debug-logger.js";
 import type { FileScanner } from "../pipeline/scanner.js";
@@ -52,6 +56,13 @@ interface ReindexContext {
   synchronizer: ParallelFileSynchronizer;
   scanner: FileScanner;
   currentFiles: string[];
+  /**
+   * The providers this run enriches and completes, set once the deferral is
+   * settled (`ReindexPipeline#settleRecomputeDeferral`). Undefined — every
+   * provider — unless a `--force-enrichments` sync leg left some to the
+   * recompute that follows it (bd tea-rags-mcp-b4drg).
+   */
+  runProviderKeys?: readonly string[];
 }
 
 export class ReindexPipeline extends BaseIndexingPipeline {
@@ -86,6 +97,14 @@ export class ReindexPipeline extends BaseIndexingPipeline {
        * picks joins the work set as a MODIFIED file and is re-chunked in place.
        */
       rechunk?: RechunkFileSelector;
+      /**
+       * Set ONLY by the sync leg of `--force-enrichments`
+       * (`IndexingOps#recomputeEnrichments`): the providers the recompute that
+       * follows will rebuild, which this run leaves to it (bd
+       * tea-rags-mcp-b4drg) — see `settleRecomputeDeferral`. MCP
+       * `index_codebase` and the auto-updater never pass it.
+       */
+      recomputeDeferral?: RecomputeProviderDeferral;
     },
   ): Promise<ChangeStats> {
     const startTime = Date.now();
@@ -99,12 +118,28 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         stats.filesRechunked = await this.invalidateRechunkWorkSet(ctx, overrides.rechunk);
       }
       const { changes, retryPaths, quarantineStore } = await this.detectChangesAndRetries(ctx, stats, progressCallback);
+      const recomputeDeferral = overrides?.recomputeDeferral;
+      const deferredProviderKeys = recomputeDeferral
+        ? this.enrichment.resolveRecomputeDeferredProviderKeys(recomputeDeferral, [
+            ...changes.added,
+            ...changes.modified,
+            ...retryPaths,
+          ])
+        : new Set<string>();
       const { repaired, deferredChunkHandoff } = await this.repairProviderStores(
         ctx,
         overrides?.deferredChunkHandoff,
         changes,
         retryPaths,
+        recomputeDeferral && deferredProviderKeys.size > 0
+          ? {
+              providerKeys: deferredProviderKeys,
+              languages: recomputeDeferral.languages,
+              onDeclined: (providerKey) => deferredProviderKeys.delete(providerKey),
+            }
+          : undefined,
       );
+      this.settleRecomputeDeferral(ctx, deferredProviderKeys);
 
       if (this.hasNoChanges(stats) && retryPaths.length === 0) {
         return await this.finalizeNoChangesRun(ctx, stats, startTime, repaired, deferredChunkHandoff);
@@ -379,6 +414,8 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     recoveryHandoff: DeferredChunkRecoveryHandoff | undefined,
     changes: FileChanges,
     retryPaths: string[],
+    /** A `--force-enrichments` sync leg's providers left to the recompute (bd tea-rags-mcp-b4drg). */
+    recomputeDeferral?: RepairPassRecomputeDeferral,
   ): Promise<{ repaired: number; deferredChunkHandoff: DeferredChunkRecoveryHandoff }> {
     // Bring provider stores back in line with the code before the run's own
     // enrichment (bd tea-rags-mcp-6goqa). Deliberately ABOVE both early
@@ -412,8 +449,40 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       ctx.absolutePath,
       scannedHashes,
       deferredChunkHandoffPaths(deferredChunkHandoff),
+      undefined,
+      undefined,
+      recomputeDeferral,
     );
     return { repaired, deferredChunkHandoff };
+  }
+
+  /**
+   * Fix the providers this run enriches and completes once the deferral is
+   * settled (bd tea-rags-mcp-b4drg): every provider but the ones a
+   * `--force-enrichments` sync leg still leaves to the recompute after the
+   * repair pass had its say. With none deferred — every path but that sync leg
+   * — `runProviderKeys` stays undefined and the run is exactly what it was.
+   *
+   * What a deferred provider still gets here: the deletion hook
+   * (`EnrichmentCoordinator#notifyDeletions` asks every provider, run or not)
+   * and the repair pass's orphan prune — the recompute's selector-forced
+   * repair prunes nothing, so dropping either would leave deleted files' graph
+   * rows standing. What it does NOT get: per-file streaming, a finalize, the
+   * codegraph heal, its terminal markers, or `completeCollection`. Skipping the
+   * last is legal only because the recompute's own run completes the
+   * collection in the same operation (`EnrichmentCoordinator#completeRun`).
+   * Should the recompute throw first, nothing is lost: the store is behind the
+   * tree on exactly the files this leg changed, so the next run's drift repair
+   * re-extracts them, recovery picks up their unenriched points, and that run's
+   * completion closes the collection.
+   */
+  private settleRecomputeDeferral(ctx: ReindexContext, deferredProviderKeys: ReadonlySet<string>): void {
+    if (deferredProviderKeys.size === 0) return;
+    ctx.runProviderKeys = this.enrichment.providerKeys.filter((key) => !deferredProviderKeys.has(key));
+    pipelineLog.reindexPhase("SYNC_LEG_PROVIDERS_DEFERRED", {
+      deferred: [...deferredProviderKeys],
+      enriched: ctx.runProviderKeys,
+    });
   }
 
   // ── Parallel processing ──────────────────────────────────
@@ -440,6 +509,8 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       ctx.scanner,
       chunkSizeOverride,
       changedFileCount,
+      undefined,
+      ctx.runProviderKeys,
     );
     // `initProcessing` just ran `beginRun`. Seed the recovery handoff into that
     // run before any batch or its completion reads the deferred chunk map; the
@@ -635,6 +706,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         ctx.absolutePath,
         ctx.targetCollection,
         deferredChunkHandoff,
+        ...runProviderKeysArg(ctx),
       );
       stats.enrichmentStatus = "completed";
       return true;
@@ -659,7 +731,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
    */
   private async completeCollectionUnlessFinalized(ctx: ReindexContext, finalized: boolean): Promise<void> {
     if (finalized) return;
-    await this.enrichment.runCollectionCompletion(ctx.absolutePath, ctx.targetCollection);
+    await this.enrichment.runCollectionCompletion(ctx.absolutePath, ctx.targetCollection, ...runProviderKeysArg(ctx));
   }
 
   /**
@@ -679,7 +751,8 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     // them stale rather than paying the recompute on its fast path (bd
     // tea-rags-mcp-dy852). This branch is the next run that has nothing to
     // chunk, so it owes that finalize even when the repair found nothing.
-    const staleDerived = repaired === 0 && (await this.enrichment.hasStaleDerivedState(ctx.targetCollection));
+    const staleDerived =
+      repaired === 0 && (await this.enrichment.hasStaleDerivedState(ctx.targetCollection, ...runProviderKeysArg(ctx)));
     const finalized = await this.finalizeRepairedRun(ctx, stats, repaired, deferredChunkHandoff, staleDerived);
     await this.completeCollectionUnlessFinalized(ctx, finalized);
     // No snapshot: nothing changed, so the stored file list already matches
@@ -819,6 +892,15 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     }
     return this.enrichment.narrowDeferredChunkHandoff(untouched, scanned);
   }
+}
+
+/**
+ * The trailing `onlyProviderKeys` argument of a coordinator call, present only
+ * when a `--force-enrichments` sync leg narrowed the run (bd
+ * tea-rags-mcp-b4drg) — every other path calls exactly as it always did.
+ */
+function runProviderKeysArg(ctx: ReindexContext): [] | [readonly string[]] {
+  return ctx.runProviderKeys ? [ctx.runProviderKeys] : [];
 }
 
 /** A handoff's relPaths per provider — the forced paths `runRepairPass` walks. */

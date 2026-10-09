@@ -42,10 +42,19 @@
   `EnrichmentCoordinator#completeRun` once its completion settled, on the main
   thread and never from inside the worker's finalize (bd tea-rags-mcp-vtuu4);
   the sync leg of `--force-enrichments`, the auto-updater and MCP
-  `index_codebase` all ARE `reindexChanges`.
+  `index_codebase` all ARE `reindexChanges`. The ONE narrowing: the sync leg of
+  `--force-enrichments` leaves the SELECTED providers out of its run, its repair
+  finalize and its completion ask (`ReindexPipeline#settleRecomputeDeferral`, bd
+  tea-rags-mcp-b4drg), legal only because the recompute's `completeRun`
+  completes them in the same operation; deletions and the repair's orphan prune
+  still reach them, and a changed or drifted path outside `--languages` declines
+  the deferral. Only `IndexingOps#recomputeEnrichments` passes
+  `recomputeDeferral`.
   `tests/core/domains/ingest/operations/collection-completion-paths.test.ts`
-  pins one case per path. Why: codegraph's co-change graph is a function of HEAD
-  and the working tree's deletions, both of which exactly these runs move — a
+  pins one case per path;
+  `tests/core/domains/ingest/operations/force-enrichments-sync-leg-deferral.test.ts`
+  pins the deferral. Why: codegraph's co-change graph is a function of HEAD and
+  the working tree's deletions, both of which exactly these runs move — a
   committed `git rm` took the deletion-only return and left the deleted file's
   pairs and the old HEAD standing (bd tea-rags-mcp-l1ot.2). The ask is cheap
   when nothing moved (two git spawns and one meta read) and must stay so: every

@@ -79,6 +79,12 @@ export interface StreamedEnrichmentRunInput {
   fileCount: number;
   ignoreFilter?: Ignore;
   contentHashes?: ReadonlyMap<string, string>;
+  /**
+   * Only a `--force-enrichments` sync leg sets it: every provider but the ones
+   * it left to the recompute (bd tea-rags-mcp-b4drg). Omitted means every
+   * provider.
+   */
+  onlyProviderKeys?: readonly string[];
 }
 
 /** Full index or `--force`: every scanned file streams, so the run covers the whole corpus. */
@@ -111,6 +117,8 @@ export function recomputeRunSpec(input: {
 export function finalizeOnlyRunSpec(input: {
   absolutePath: string;
   collection: PhysicalCollectionName;
+  /** A `--force-enrichments` sync leg's run providers (bd tea-rags-mcp-b4drg); omitted means every provider. */
+  onlyProviderKeys?: readonly string[];
 }): EnrichmentRunSpec {
   return { ...input, crossPass: false, fileCount: 0, scope: { kind: "subset", languages: ALL_LANGUAGES } };
 }
