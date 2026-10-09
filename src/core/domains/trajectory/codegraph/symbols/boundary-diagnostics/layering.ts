@@ -116,6 +116,8 @@ export function detectLayeringViolations(
   options: LayeringOptions = {},
 ): LayeringReport {
   const model = options.model ?? buildLayeringModel(componentGraph);
+  const foundations = measureLayeringFoundationComponents(componentGraph, files, model);
+  const skips = layerSkips(componentGraph, model, foundations);
   const compositionKnots = model.knots.filter((knot) => knot.composition);
   // Knot findings rank by member-instability spread (bd tea-rags-mcp-r8hme.32):
   // a knot fusing a stable member with a volatile one is an SDP break inside a
@@ -152,7 +154,7 @@ export function detectLayeringViolations(
       }),
     ),
     ...islands(componentGraph, model),
-    ...layerSkips(componentGraph, model),
+    ...skips.reported,
   ];
 
   const inScope = compilePathPatternMatcher(options.sourcePathPattern);
@@ -160,6 +162,9 @@ export function detectLayeringViolations(
   const violations = sourceScope
     ? allFindings.filter((finding) => findingInScope(sourceScope, finding)).map((f) => projectOntoScope(sourceScope, f))
     : allFindings;
+  const exemptedSkips = sourceScope
+    ? skips.exempted.filter((skip) => findingInScope(sourceScope, skip))
+    : skips.exempted;
   const scope =
     sourceScope && options.sourcePathPattern
       ? { sourcePathPattern: options.sourcePathPattern, outOfScopeFindingCount: allFindings.length - violations.length }
@@ -180,6 +185,14 @@ export function detectLayeringViolations(
     layerSkipCount: count("layerSkip"),
     violationCount: violations.length,
     ...(scope ? { scope } : {}),
+    ...(foundations.size > 0
+      ? {
+          foundation: {
+            components: [...foundations].sort(compareCodePoints),
+            exemptedLayerSkipCount: exemptedSkips.length,
+          },
+        }
+      : {}),
   };
   return { violations, summary };
 }
@@ -957,19 +970,59 @@ function islands(componentGraph: ComponentGraph, model: LayeringModel): Layering
 }
 
 /**
+ * The measured layering foundation (bd tea-rags-mcp-89k7k.35.11): every
+ * component standing for itself at L0 — nothing below it, not inside a knot
+ * (a knot member's level is its knot's) — whose measured abstractness is
+ * exactly 1, i.e. it declares abstract types and no concrete one.
+ * "Measured" is the same reading `abstractionBypasses` judges by: the walker's
+ * type census summed over the component's files, and at least
+ * `BYPASS_MIN_TYPE_COUNT` types (the main-sequence floor) — below it one type
+ * decides A on its own. No path, directory name or constant enters: a
+ * pure-types shared kernel is recognised by what it is, in any repository.
+ *
+ * A dependency into such a component is relaxed layering, legal from any
+ * level: it carries no behaviour to bypass, and its level is a longest-path
+ * artefact of whatever depends on it. Both pipelines read it from here — the
+ * whole-repo layering exempts skips into it, the diff-scoped run marks
+ * main-sequence deltas into it `foundationTerminal`.
+ */
+export function measureLayeringFoundationComponents(
+  componentGraph: ComponentGraph,
+  files: readonly FileDependencyGraphFile[],
+  model: LayeringModel,
+): ReadonlySet<string> {
+  const abstractness = abstractnessByComponent(componentGraph, files);
+  const foundations = new Set<string>();
+  for (const [component, position] of model.positions) {
+    if (position.inKnot || position.level !== 0) continue;
+    const reading = abstractness.get(component);
+    if (!reading || reading.typeCount < BYPASS_MIN_TYPE_COUNT || reading.abstractness !== 1) continue;
+    foundations.add(component);
+  }
+  return foundations;
+}
+
+/**
  * Layer skips: a dependency jumping `LAYER_SKIP_MIN_LEVELS` or more straight
  * down. Judged only between components standing for themselves — a knot
- * member's level is its knot's, not its own, and would misread.
+ * member's level is its knot's, not its own, and would misread. A skip into a
+ * measured foundation (`measureLayeringFoundationComponents`) is legal relaxed
+ * layering: returned as exempted, counted in the summary, never reported.
  */
-function layerSkips(componentGraph: ComponentGraph, model: LayeringModel): LayeringLayerSkipViolation[] {
-  const findings: LayeringLayerSkipViolation[] = [];
+function layerSkips(
+  componentGraph: ComponentGraph,
+  model: LayeringModel,
+  foundations: ReadonlySet<string>,
+): { reported: LayeringLayerSkipViolation[]; exempted: LayeringLayerSkipViolation[] } {
+  const reported: LayeringLayerSkipViolation[] = [];
+  const exempted: LayeringLayerSkipViolation[] = [];
   for (const dependency of componentGraph.dependencies) {
     const source = model.positions.get(dependency.sourceComponent);
     const target = model.positions.get(dependency.targetComponent);
     if (!source || !target || source.inKnot || target.inKnot) continue;
     const skipped = source.level - target.level;
     if (skipped < LAYER_SKIP_MIN_LEVELS) continue;
-    findings.push({
+    (foundations.has(dependency.targetComponent) ? exempted : reported).push({
       kind: "layerSkip",
       sourceComponent: dependency.sourceComponent,
       targetComponent: dependency.targetComponent,
@@ -979,12 +1032,15 @@ function layerSkips(componentGraph: ComponentGraph, model: LayeringModel): Layer
       callWeight: dependency.callWeight,
     });
   }
-  return findings.sort(
-    (a, b) =>
-      b.skippedLevels - a.skippedLevels ||
-      compareCodePoints(a.sourceComponent, b.sourceComponent) ||
-      compareCodePoints(a.targetComponent, b.targetComponent),
-  );
+  return {
+    reported: reported.sort(
+      (a, b) =>
+        b.skippedLevels - a.skippedLevels ||
+        compareCodePoints(a.sourceComponent, b.sourceComponent) ||
+        compareCodePoints(a.targetComponent, b.targetComponent),
+    ),
+    exempted,
+  };
 }
 
 function byMemberCountThenMembers(a: LayeringKnot, b: LayeringKnot): number {

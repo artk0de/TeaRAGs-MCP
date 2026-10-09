@@ -940,6 +940,18 @@ export interface LayeringSummary {
   /** Every finding, violations and informational alike. */
   violationCount: number;
   scope?: LayeringScope;
+  /** The measured foundation; present only when the graph holds one (bd tea-rags-mcp-89k7k.35.11). */
+  foundation?: LayeringFoundationSummary;
+}
+
+/**
+ * The components `measureLayeringFoundationComponents` names, and the layer
+ * skips into them that were not reported — counted under the same source
+ * scope as the findings.
+ */
+export interface LayeringFoundationSummary {
+  components: string[];
+  exemptedLayerSkipCount: number;
 }
 
 /**

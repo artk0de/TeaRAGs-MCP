@@ -1320,6 +1320,7 @@ function summariseLayering(report: LayeringReport, facadePartition: LayeringPart
     layerSkipCount: summary.layerSkipCount,
     violationCount: summary.violationCount,
     ...(summary.scope ? { outOfScopeFindingCount: summary.scope.outOfScopeFindingCount } : {}),
+    ...(summary.foundation ? { foundation: summary.foundation } : {}),
   };
 }
 

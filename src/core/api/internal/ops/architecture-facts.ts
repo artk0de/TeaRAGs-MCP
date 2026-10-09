@@ -24,11 +24,14 @@ import type {
 } from "../../../contracts/types/codegraph.js";
 import {
   buildComponentGraph,
+  buildDomainComponentGraph,
+  buildLayeringModel,
   classifyTestSupportFiles,
   DEFAULT_SDP_TOLERANCE,
   detectLeakingAbstractions,
   detectMainSequenceDeviations,
   excludeNonProductionFiles,
+  measureLayeringFoundationComponents,
   resolveExternalImports,
   resolveUnwalkedImportEdges,
   type ComponentGraph,
@@ -188,6 +191,32 @@ export function distanceFromMainSequenceByComponent(
 }
 
 /**
+ * The files of the measured layering foundation (bd tea-rags-mcp-89k7k.35.11):
+ * `measureLayeringFoundationComponents` over the SAME domain partition and
+ * layering model the report's layering detector judges
+ * (`buildDomainComponentGraph` over the facade classification), mapped back to
+ * files — the diff run addresses an edge's target by file, and its own
+ * component partition is the adoption one. Diff-run-only surface: the report
+ * reads the foundation off its layering summary.
+ */
+export function measureLayeringFoundationFiles(
+  graph: FileDependencyGraph,
+  facts: ArchitectureComponentFacts,
+): ReadonlySet<RelPath> {
+  const layeringComponents = buildDomainComponentGraph(graph, facts.leaks.modules);
+  const foundations = measureLayeringFoundationComponents(
+    layeringComponents,
+    graph.files,
+    buildLayeringModel(layeringComponents),
+  );
+  const files = new Set<RelPath>();
+  for (const [relPath, component] of layeringComponents.componentOf) {
+    if (foundations.has(component)) files.add(relPath);
+  }
+  return files;
+}
+
+/**
  * The report's own instability band as a predicate: `leanedOnInstability` is
  * markedly less stable than `leaningInstability` when it sits beyond
  * `DEFAULT_SDP_TOLERANCE` — the exact comparison the report's
@@ -221,8 +250,14 @@ export class ArchitectureFactsCatalog implements DiffDetectorCatalog {
   private readonly componentsByName: ComponentGraph["components"];
   private readonly facadeByComponent: ReadonlyMap<string, RelPath>;
   private readonly distances: ReadonlyMap<string, number>;
+  private readonly layeringFoundationFiles: ReadonlySet<RelPath>;
 
-  constructor(facts: ArchitectureComponentFacts, distances: ReadonlyMap<string, number>) {
+  constructor(
+    facts: ArchitectureComponentFacts,
+    distances: ReadonlyMap<string, number>,
+    layeringFoundationFiles: ReadonlySet<RelPath>,
+  ) {
+    this.layeringFoundationFiles = layeringFoundationFiles;
     this.componentOfRelPath = facts.components.componentOf;
     this.componentsByName = facts.components.components;
     this.facadeByComponent = new Map(
@@ -263,5 +298,9 @@ export class ArchitectureFactsCatalog implements DiffDetectorCatalog {
 
   isMarkedlyLessStable(leanOn: number, leanedOn: number): boolean {
     return isMarkedlyLessStableBySdpBand(leanOn, leanedOn);
+  }
+
+  isLayeringFoundation(relPath: string): boolean {
+    return this.layeringFoundationFiles.has(relPath);
   }
 }

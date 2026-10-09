@@ -50,6 +50,7 @@ import {
   ArchitectureFactsCatalog,
   deriveArchitectureComponentFacts,
   distanceFromMainSequenceByComponent,
+  measureLayeringFoundationFiles,
   readProductionArchitectureGraph,
 } from "../architecture-facts.js";
 import {
@@ -384,6 +385,7 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       const catalog = new ArchitectureFactsCatalog(
         facts,
         distanceFromMainSequenceByComponent(facts.components, production.graph.files),
+        measureLayeringFoundationFiles(production.graph, facts),
       );
       const graph = new WiredGraphReader(production.graph.edges);
       const contract = new WiredContractReader(facts.components, production.graph.edges);
