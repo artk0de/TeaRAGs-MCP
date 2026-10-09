@@ -7,8 +7,11 @@
  * lexical order; applied filenames are recorded in `schema_migrations`
  * so reruns are no-ops.
  *
- * Migrations are passed in as an array of `{ filename, sql }` records
- * — they live as TS modules under
+ * Migrations are passed in as an array of `DatabaseMigration` records —
+ * `{ filename, sql }` for a static script, `{ filename, run }` for a
+ * procedural step that reads the catalog before acting. Both kinds share one
+ * filename order, one transaction per migration, and one ledger. They live as
+ * TS modules under
  * `src/core/domains/maintenance/migration/database/migrations/` so the compiled
  * `build/` artifact ships them as JavaScript (tsc does not copy raw
  * SQL files). Tests may also pass a directory path; the runner then
@@ -29,14 +32,34 @@ export interface MigrationResult {
   skipped: string[];
 }
 
-export interface InlineMigration {
-  filename: string;
-  sql: string;
+/** A migration whose whole effect is one static SQL script (the `.sql` twin carries its bytes). */
+export interface SqlDatabaseMigration {
+  readonly filename: string;
+  readonly sql: string;
+}
+
+/**
+ * A migration whose effect depends on what the database holds — e.g. dropping
+ * tables whose names are only known from the catalog (bd tea-rags-mcp-bdnfu).
+ * `run` executes inside the same BEGIN/COMMIT as a SQL migration and is
+ * recorded in `schema_migrations` under `filename` exactly like one; a throw
+ * rolls back everything it did and leaves it unrecorded. It has no `.sql` twin.
+ */
+export interface ProceduralDatabaseMigration {
+  readonly filename: string;
+  readonly run: (client: MigrationCapableClient) => Promise<void>;
+}
+
+/** One ledger entry: discriminated by which of `sql` / `run` it carries. */
+export type DatabaseMigration = SqlDatabaseMigration | ProceduralDatabaseMigration;
+
+export function isSqlDatabaseMigration(migration: DatabaseMigration): migration is SqlDatabaseMigration {
+  return "sql" in migration;
 }
 
 export async function runMigrations(
   client: MigrationCapableClient,
-  source: string | InlineMigration[],
+  source: string | readonly DatabaseMigration[],
 ): Promise<MigrationResult> {
   await client.exec(
     "CREATE TABLE IF NOT EXISTS schema_migrations (filename VARCHAR PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
@@ -47,14 +70,15 @@ export async function runMigrations(
   const migrations = typeof source === "string" ? loadFromDisk(source) : [...source].sort(byFilename);
 
   const result: MigrationResult = { applied: [], skipped: [] };
-  for (const { filename, sql } of migrations) {
+  for (const migration of migrations) {
+    const { filename } = migration;
     if (applied.has(filename)) {
       result.skipped.push(filename);
       continue;
     }
     await client.exec("BEGIN");
     try {
-      await client.exec(sql);
+      await applyMigrationBody(client, migration);
       await client.run("INSERT INTO schema_migrations (filename) VALUES (?)", [filename]);
       await client.exec("COMMIT");
       result.applied.push(filename);
@@ -66,13 +90,22 @@ export async function runMigrations(
   return result;
 }
 
-function loadFromDisk(dir: string): InlineMigration[] {
+/** The migration's own effect, inside the caller's transaction. Both kinds handled; no third exists. */
+async function applyMigrationBody(client: MigrationCapableClient, migration: DatabaseMigration): Promise<void> {
+  if (isSqlDatabaseMigration(migration)) {
+    await client.exec(migration.sql);
+    return;
+  }
+  await migration.run(client);
+}
+
+function loadFromDisk(dir: string): SqlDatabaseMigration[] {
   return readdirSync(dir)
     .filter((f) => f.endsWith(".sql"))
     .sort()
     .map((filename) => ({ filename, sql: readFileSync(join(dir, filename), "utf8") }));
 }
 
-function byFilename(a: InlineMigration, b: InlineMigration): number {
+function byFilename(a: DatabaseMigration, b: DatabaseMigration): number {
   return a.filename < b.filename ? -1 : a.filename > b.filename ? 1 : 0;
 }

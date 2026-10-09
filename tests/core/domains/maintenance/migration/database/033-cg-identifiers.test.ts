@@ -7,7 +7,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import { SQL_033_CG_IDENTIFIERS } from "../../../../../../src/core/domains/maintenance/migration/database/migrations/033-cg-identifiers.js";
 import { DATABASE_MIGRATIONS } from "../../../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
-import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
+import {
+  isSqlDatabaseMigration,
+  runMigrations,
+} from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 // bd tea-rags-mcp-4p3sb.8 — identifier declarations for the naming lexicon. No
 // key and no secondary index: rows are replaced per file and read by GROUP BY,
@@ -63,7 +66,9 @@ describe("033 cg identifiers migration", () => {
   });
 
   it("is registered in DATABASE_MIGRATIONS with the .ts export as its sql", () => {
-    const entry = DATABASE_MIGRATIONS.find((m) => m.filename === "033-cg-identifiers.sql");
+    const entry = DATABASE_MIGRATIONS.filter(isSqlDatabaseMigration).find(
+      (m) => m.filename === "033-cg-identifiers.sql",
+    );
     expect(entry?.sql).toBe(SQL_033_CG_IDENTIFIERS);
   });
 });

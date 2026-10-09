@@ -24,6 +24,7 @@ import {
   DATABASE_MIGRATIONS,
   type DatabaseMigration,
 } from "../src/core/domains/maintenance/migration/database/migrations/index.js";
+import { isSqlDatabaseMigration } from "../src/core/domains/maintenance/migration/database/runner.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -49,7 +50,8 @@ export function writeMigrationTwins(
   migrations: readonly DatabaseMigration[] = DATABASE_MIGRATIONS,
 ): string[] {
   const rewritten: string[] = [];
-  for (const migration of migrations) {
+  // A procedural migration has no SQL text, so it has no twin to derive.
+  for (const migration of migrations.filter(isSqlDatabaseMigration)) {
     const path = join(dir, migration.filename);
     if (readTwin(path) === migration.sql) continue;
     writeFileSync(path, migration.sql, "utf8");
@@ -60,9 +62,10 @@ export function writeMigrationTwins(
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const rewritten = writeMigrationTwins();
+  const twinCount = DATABASE_MIGRATIONS.filter(isSqlDatabaseMigration).length;
   console.log(
     rewritten.length === 0
-      ? `✓ ${DATABASE_MIGRATIONS.length} migration .sql twins already match their .ts strings.`
-      : `✓ regenerated ${rewritten.length} of ${DATABASE_MIGRATIONS.length} migration .sql twins: ${rewritten.join(", ")}`,
+      ? `✓ ${twinCount} migration .sql twins already match their .ts strings.`
+      : `✓ regenerated ${rewritten.length} of ${twinCount} migration .sql twins: ${rewritten.join(", ")}`,
   );
 }

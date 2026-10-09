@@ -8,7 +8,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import { SQL_024_CG_SYMBOLS_LINE_RANGE } from "../../../../../../src/core/domains/maintenance/migration/database/migrations/024-cg-symbols-line-range.js";
 import { DATABASE_MIGRATIONS } from "../../../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
-import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
+import {
+  isSqlDatabaseMigration,
+  runMigrations,
+} from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const MIGRATIONS_DIR = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -67,7 +70,9 @@ describe("024 cg_symbols line range migration", () => {
   });
 
   it("is registered in DATABASE_MIGRATIONS with the .ts export as its sql", () => {
-    const entry = DATABASE_MIGRATIONS.find((m) => m.filename === "024-cg-symbols-line-range.sql");
+    const entry = DATABASE_MIGRATIONS.filter(isSqlDatabaseMigration).find(
+      (m) => m.filename === "024-cg-symbols-line-range.sql",
+    );
     expect(entry).toBeDefined();
     expect(entry?.sql).toBe(SQL_024_CG_SYMBOLS_LINE_RANGE);
   });

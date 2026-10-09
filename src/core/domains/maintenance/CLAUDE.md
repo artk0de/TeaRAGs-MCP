@@ -50,6 +50,22 @@
   repair a divergence by running it rather than by hand-editing the `.sql`. The
   ledger keys on the FILENAME string in `schema_migrations` (`runMigrations`),
   so renaming an already-applied file re-runs it.
+- **A database migration whose effect depends on the catalog is PROCEDURAL, and
+  has no twin.** `DatabaseMigration` (`migration/database/runner.ts`) is a union
+  discriminated by which key an entry carries: `SqlDatabaseMigration`
+  (`{ filename, sql }`, twinned as above) or `ProceduralDatabaseMigration`
+  (`{ filename, run(client) }`) — narrow with `isSqlDatabaseMigration`, never by
+  cast. `runMigrations` gives both one filename order, one BEGIN/COMMIT per
+  migration and one ledger; a throwing `run` rolls back and stays unrecorded. A
+  procedural ledger key ends in `.ts` (its module is the migration), so the twin
+  guard, `npm run gen:migration-sql` and the co-change revision guard all filter
+  by `isSqlDatabaseMigration`. Why it matters: that last guard derives its
+  `cg_temporal_*` set from SQL text, so a procedural migration that touches a
+  `cg_temporal_*` table is invisible to it — its author owns the
+  `COCHANGE_ALGORITHM_REVISION` bump (the guard's docblock in
+  `algorithm-revision-guard.test.ts`). Migrations run only on the read-write
+  graph open (`GraphDbClientPool`, via the injected `DatabaseMigrationApplier`);
+  a read-only session never applies one.
 - **Drift compares FEATURE-FLAG-dependent descriptors against index-time keys.**
   `SchemaDriftMonitor`'s `currentPayloadKeys` (`SchemaDriftMonitor#constructor`)
   is NOT read from Qdrant — it is the payload-signal descriptor set the CURRENT
