@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
+import { anyOfOnTextIndexed } from "../../../../../../src/core/adapters/qdrant/filters/text-indexed-exact.js";
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import type { EnrichmentProvider } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
 
@@ -89,6 +90,31 @@ describe("EnrichmentCoordinator.recomputeEnrichments — language filter", () =>
 
     await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["git"], ["typescript"]);
 
+    expect(scrollFilter(qdrant).must_not).toHaveLength(3);
+  });
+
+  it("also scrolls the paths the sync leg handed over outside the languages (bd tea-rags-mcp-zdg3y)", async () => {
+    // A changed doc under `--languages typescript` is enriched by no other leg:
+    // its points must reach the recompute's file and chunk phases.
+    const qdrant = qdrantDouble();
+    const coordinator = new EnrichmentCoordinator(qdrant as never, [provider("git")]);
+
+    await coordinator.recomputeEnrichments(
+      fixturePhysicalCollectionName("coll"),
+      "/repo",
+      ["git"],
+      ["typescript"],
+      new Set(["docs/guide.md"]),
+    );
+
+    expect(scrollFilter(qdrant).must).toEqual([
+      {
+        should: [
+          { key: "language", match: { any: ["typescript"] } },
+          anyOfOnTextIndexed("relativePath", ["docs/guide.md"]),
+        ],
+      },
+    ]);
     expect(scrollFilter(qdrant).must_not).toHaveLength(3);
   });
 

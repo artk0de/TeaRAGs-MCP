@@ -20,8 +20,11 @@
  * - the selected provider's completion runs exactly once over the whole
  *   operation, from the recompute;
  * - a plain incremental (MCP `index_codebase`, auto-update) is untouched;
- * - a `--languages` recompute that does not cover a changed file declines the
- *   deferral, since nothing would enrich that file otherwise.
+ * - a path a `--languages` recompute would not reach (a changed doc, a drifted
+ *   file of another language) does NOT decline the deferral: the sync leg
+ *   hands it to the recompute as explicit extra scope, and the recompute
+ *   enriches it (bd tea-rags-mcp-zdg3y — on taxdome 11 changed `.md` files
+ *   declined the deferral and reinstated the double pass).
  */
 
 import { promises as fs } from "node:fs";
@@ -176,7 +179,7 @@ describe("--force-enrichments — the sync leg leaves the selected providers to 
     ingest = new IngestFacade({
       qdrant: new MockQdrantManager() as never,
       embeddings: new MockEmbeddingProvider(),
-      config: { ...defaultTestConfig(), supportedExtensions: [".ts", ".py"] },
+      config: { ...defaultTestConfig(), supportedExtensions: [".ts", ".py", ".md"] },
       trajectoryConfig: defaultTrajectoryConfig(),
       createChunkerPool: warmChunkerPoolFactory,
       enrichmentProviders: [baseProvider(GIT_KEY), graphProvider()],
@@ -206,6 +209,17 @@ describe("--force-enrichments — the sync leg leaves the selected providers to 
     vi.restoreAllMocks();
     await cleanupTempDir(tempDir);
   });
+
+  /** The extra paths the sync leg handed to the recompute — the spy's trailing argument. */
+  function handedToRecompute(): string[] {
+    const lastCall = vi.mocked(EnrichmentCoordinator.prototype.recomputeEnrichments).mock.calls.at(-1);
+    return [...(lastCall?.[4] ?? [])].sort();
+  }
+
+  function recomputeLegEvents(): string[] {
+    const boundary = events.indexOf(RECOMPUTE);
+    return boundary === -1 ? [] : events.slice(boundary);
+  }
 
   async function forceEnrichments(options: { languages?: string[] } = {}): Promise<void> {
     await ingest.indexCodebase(codebaseDir, { forceEnrichments: ["codegraph"], ...options });
@@ -269,7 +283,7 @@ describe("--force-enrichments — the sync leg leaves the selected providers to 
     );
   });
 
-  it("defers a covered drift repair, but walks a drifted file outside --languages and keeps the provider", async () => {
+  it("defers a covered drift repair, and hands a drifted file outside --languages to the recompute", async () => {
     await createTestFile(codebaseDir, "tool.py", Array.from({ length: 60 }, (_, i) => `v${i} = ${i}`).join("\n"));
     await ingest.indexCodebase(codebaseDir);
     await ingest.whenEnrichmentComplete();
@@ -281,26 +295,57 @@ describe("--force-enrichments — the sync leg leaves the selected providers to 
     expect(graphEvents(syncLegEvents())).toEqual([]);
 
     // Uncovered drift: the store fell behind on an unchanged python file the
-    // typescript recompute never reaches, so only the sync leg can heal it.
+    // typescript recompute's languages never reach. The sync leg still walks
+    // nothing for the provider: it hands the path to the recompute, which
+    // re-extracts it (bd tea-rags-mcp-zdg3y).
     events.length = 0;
     persistedHashes.set("tool.py", "drifted");
     await createTestFile(codebaseDir, "util.ts", sourceOf("changedAgain"));
     await forceEnrichments({ languages: ["typescript"] });
-    expect(graphEvents(syncLegEvents())).toEqual(
-      expect.arrayContaining([`${GRAPH_KEY}:extract:tool.py`, `${GRAPH_KEY}:extract:util.ts`, `${GRAPH_KEY}:finalize`]),
+    expect(graphEvents(syncLegEvents())).toEqual([]);
+    expect(handedToRecompute()).toEqual(["tool.py"]);
+    expect(recomputeLegEvents()).toEqual(
+      expect.arrayContaining([`${GRAPH_KEY}:extract:tool.py`, `${GRAPH_KEY}:extract:util.ts`]),
     );
   });
 
-  it("declines the deferral when the recompute's languages do not cover a changed file", async () => {
-    // A python recompute never scrolls or repairs the TypeScript file, so the
-    // sync leg is the only leg that can enrich it.
+  it("hands a changed file outside the recompute's languages to the recompute instead of declining", async () => {
+    // A python recompute's languages do not reach the TypeScript file; the
+    // sync leg hands it over rather than enriching it itself.
     await createTestFile(codebaseDir, "tool.py", Array.from({ length: 60 }, (_, i) => `v${i} = ${i}`).join("\n"));
     await createTestFile(codebaseDir, "util.ts", sourceOf("changed"));
 
     await forceEnrichments({ languages: ["python"] });
 
-    expect(graphEvents(syncLegEvents())).toEqual(
-      expect.arrayContaining([`${GRAPH_KEY}:extract:util.ts`, `${GRAPH_KEY}:finalize`]),
+    expect(graphEvents(syncLegEvents())).toEqual([]);
+    expect(handedToRecompute()).toEqual(["util.ts"]);
+    expect(recomputeLegEvents()).toEqual(
+      expect.arrayContaining([`${GRAPH_KEY}:extract:util.ts`, `${GRAPH_KEY}:extract:tool.py`]),
     );
+  });
+
+  it("defers the provider for a mixed work set: the covered file and the uncovered doc both reach the recompute", async () => {
+    // Live on taxdome (bd tea-rags-mcp-zdg3y): `--languages typescript,ruby`
+    // with 11 changed `.md` files declined the deferral, so the sync leg
+    // enriched every changed file and completed the collection, and the
+    // recompute redid all of it.
+    await createTestFile(codebaseDir, "util.ts", sourceOf("changed"));
+    await createTestFile(
+      codebaseDir,
+      "README.md",
+      ["# Guide", "", ...Array.from({ length: 40 }, (_, i) => `Paragraph ${i} of the guide.`)].join("\n"),
+    );
+
+    await forceEnrichments({ languages: ["typescript", "ruby"] });
+
+    expect(graphEvents(syncLegEvents())).toEqual([]);
+    expect(syncLegEvents()).toEqual(expect.arrayContaining([`${GIT_KEY}:extract:util.ts`]));
+    expect(handedToRecompute()).toEqual(["README.md"]);
+    expect(recomputeLegEvents()).toEqual(
+      expect.arrayContaining([`${GRAPH_KEY}:extract:util.ts`, `${GRAPH_KEY}:extract:README.md`]),
+    );
+    // Enriched and completed exactly once over the operation, by the recompute.
+    expect(events.filter((event) => event === `${GRAPH_KEY}:finalize`)).toHaveLength(1);
+    expect(events.filter((event) => event === `${GRAPH_KEY}:completeCollection`)).toHaveLength(1);
   });
 });

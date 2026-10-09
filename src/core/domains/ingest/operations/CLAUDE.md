@@ -47,9 +47,18 @@
   finalize and its completion ask (`ReindexPipeline#settleRecomputeDeferral`, bd
   tea-rags-mcp-b4drg), legal only because the recompute's `completeRun`
   completes them in the same operation; deletions and the repair's orphan prune
-  still reach them, and a changed or drifted path outside `--languages` declines
-  the deferral. Only `IndexingOps#recomputeEnrichments` passes
-  `recomputeDeferral`.
+  still reach them. A changed or drifted path outside `--languages` does NOT
+  decline the deferral: the sync leg records it in the deferral's
+  `handedOverRelPaths` and `IndexingOps#recomputeEnrichments` hands that set to
+  `EnrichmentCoordinator#recomputeEnrichments`, whose scroll, skip-stamp
+  retirement and forced repair admit it by name (`recomputeScopeCoversPath` /
+  `recomputeScopePointFilter`, bd tea-rags-mcp-zdg3y) — so every file is
+  enriched for a deferred provider exactly once, by the recompute. The only
+  remaining decline is a recovery-handed-off chunk (`runRepairPass`, bd
+  tea-rags-mcp-fxio5). Why: nearly every real change set carries a doc or config
+  file, and the old all-or-nothing decline reinstated the whole double pass on
+  taxdome for 11 changed `.md` files. Only `IndexingOps#recomputeEnrichments`
+  passes `recomputeDeferral`.
   `tests/core/domains/ingest/operations/collection-completion-paths.test.ts`
   pins one case per path;
   `tests/core/domains/ingest/operations/force-enrichments-sync-leg-deferral.test.ts`

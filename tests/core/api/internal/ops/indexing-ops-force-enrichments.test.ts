@@ -97,6 +97,7 @@ describe("IndexingOps — forceEnrichments", () => {
       expect.any(String),
       ["codegraph", "git"],
       undefined,
+      new Set(),
     );
   });
 
@@ -121,7 +122,7 @@ describe("IndexingOps — forceEnrichments", () => {
     expect(deps.reindex.reindexChanges).toHaveBeenCalledWith("/repo", undefined, {
       chunkSize: 1000,
       modelInfo: undefined,
-      recomputeDeferral: { selectors: ["codegraph"], languages: [] },
+      recomputeDeferral: { selectors: ["codegraph"], languages: [], handedOverRelPaths: new Set() },
     });
   });
 
@@ -143,13 +144,44 @@ describe("IndexingOps — forceEnrichments", () => {
     expect(deps.reindex.reindexChanges).toHaveBeenCalledWith("/repo", undefined, {
       chunkSize: 1000,
       modelInfo: undefined,
-      recomputeDeferral: { selectors: ["codegraph"], languages: ["typescript"] },
+      recomputeDeferral: { selectors: ["codegraph"], languages: ["typescript"], handedOverRelPaths: new Set() },
     });
     expect(deps.enrichment.recomputeEnrichments).toHaveBeenCalledWith(
       expect.any(String),
       expect.any(String),
       ["codegraph"],
       ["typescript"],
+      new Set(),
+    );
+  });
+
+  it("hands the paths the sync leg left outside --languages to the recompute (bd tea-rags-mcp-zdg3y)", async () => {
+    // The collector travels inside the deferral and comes back to the
+    // recompute as its extra scope — the one channel between the two legs.
+    const deps = makeDeps({
+      reindex: {
+        reindexChanges: vi.fn(
+          async (
+            _path: string,
+            _cb: unknown,
+            overrides: { recomputeDeferral?: { handedOverRelPaths: Set<string> } },
+          ) => {
+            overrides.recomputeDeferral?.handedOverRelPaths.add("docs/guide.md");
+            return changeStats;
+          },
+        ),
+      } as never,
+    });
+    const ops = new IndexingOps(deps);
+
+    await ops.run("/repo", { forceEnrichments: ["codegraph"], languages: ["typescript"] });
+
+    expect(deps.enrichment.recomputeEnrichments).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      ["codegraph"],
+      ["typescript"],
+      new Set(["docs/guide.md"]),
     );
   });
 
@@ -249,6 +281,7 @@ describe("IndexingOps — forceEnrichments", () => {
       expect.any(String),
       ["codegraph"],
       undefined,
+      new Set(),
     );
   });
 
@@ -263,6 +296,7 @@ describe("IndexingOps — forceEnrichments", () => {
       expect.any(String),
       ["codegraph"],
       undefined,
+      new Set(),
     );
   });
 

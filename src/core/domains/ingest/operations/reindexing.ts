@@ -135,6 +135,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
           ? {
               providerKeys: deferredProviderKeys,
               languages: recomputeDeferral.languages,
+              handedOverRelPaths: recomputeDeferral.handedOverRelPaths,
               onDeclined: (providerKey) => deferredProviderKeys.delete(providerKey),
             }
           : undefined,
