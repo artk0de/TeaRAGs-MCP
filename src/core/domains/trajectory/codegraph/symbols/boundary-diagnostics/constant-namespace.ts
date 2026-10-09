@@ -83,6 +83,21 @@ export function classifyComponentRelation(source: string, target: string): Depen
   return classifyDirectoryRelation(`${namespacePath(source)}/_`, `${namespacePath(target)}/_`);
 }
 
+/**
+ * A component's chain in its own tree, outermost first and itself last: a
+ * namespace's enclosing namespaces by constant path (`::Billing`,
+ * `::Billing::Refunds`), a directory's enclosing directories by path. The
+ * two trees share no node — the nesting {@link classifyComponentRelation}
+ * judges — and the repository root (`""`) is no node of either.
+ */
+export function componentAncestry(component: string): string[] {
+  const namespace = isNamespaceComponent(component);
+  const segments = namespace ? constantSegments(component) : component.split("/").filter((s) => s.length > 0);
+  const separator = namespace ? CONSTANT_PATH_SEPARATOR : "/";
+  const prefix = namespace ? NAMESPACE_COMPONENT_PREFIX : "";
+  return segments.map((_, i) => `${prefix}${segments.slice(0, i + 1).join(separator)}`);
+}
+
 /** `::Billing::Refunds` → `Billing/Refunds`, so nesting reads like a path. */
 function namespacePath(component: string): string {
   return constantSegments(component).join("/");

@@ -68,6 +68,9 @@ export function summariseShotgunSurgery(run: ShotgunSurgeryRun): ShotgunSurgeryR
     builtAt: run.builtAt,
     burstCount: summary.burstCount,
     unitCount: summary.unitCount,
+    ...(summary.umbrellaTaskIdCut === undefined ? {} : { umbrellaTaskIdCut: summary.umbrellaTaskIdCut }),
+    umbrellaTaskIdCount: summary.umbrellaTaskIdCount,
+    ...(summary.typicalChangeWidth === undefined ? {} : { typicalChangeWidth: summary.typicalChangeWidth }),
     wideUnitCount: summary.wideUnitCount,
     widthThreshold: summary.widthThreshold,
     widthThresholdMethod: summary.widthThresholdMethod,
@@ -100,9 +103,11 @@ function toShotgunSurgeryViolation(spread: ShotgunSurgerySpread): ShotgunSurgery
     components: spread.components,
     subject:
       `${spread.support} changes each touched all ${spread.components.length} components ` +
-      `(${spread.islands.length} unlinked islands; null expects ${roundTo3(spread.expectedSupport)})`,
+      `(${spread.islands.length} unlinked islands; weighted ${roundTo3(spread.weightedSupport)}, ` +
+      `null expects ${roundTo3(spread.expectedSupport)})`,
     evidence: {
       support: spread.support,
+      weightedSupport: roundTo3(spread.weightedSupport),
       expectedSupport: roundTo3(spread.expectedSupport),
       strength: roundTo3(spread.strength),
       componentChanges: spread.componentChanges,

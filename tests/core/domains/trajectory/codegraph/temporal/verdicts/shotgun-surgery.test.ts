@@ -35,7 +35,9 @@ import { describe, expect, it } from "vitest";
 import type { RelPath } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
   cochangeStrength,
+  compoundPoissonUpperTailBound,
   detectShotgunSurgery,
+  poissonUpperTail,
   shotgunSurgeryFamilySize,
   type ShotgunSurgeryInput,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
@@ -145,6 +147,34 @@ describe("shotgunSurgeryFamilySize", () => {
     expect(shotgunSurgeryFamilySize(5, 3)).toBe(10);
     expect(shotgunSurgeryFamilySize(40, 3)).toBe(9880);
     expect(shotgunSurgeryFamilySize(2, 3)).toBe(0);
+  });
+});
+
+describe("compoundPoissonUpperTailBound", () => {
+  it("bounds the Poisson upper tail from above, within a small factor, when every weight is 1", () => {
+    for (const lambda of [1e-6, 1e-3, 0.1, 2]) {
+      for (const observed of [2, 3, 6]) {
+        const exact = poissonUpperTail(observed, lambda);
+        const bound = compoundPoissonUpperTailBound(observed, [{ weight: 1, mean: lambda }]);
+        expect(bound).toBeGreaterThanOrEqual(exact);
+        expect(bound).toBeLessThanOrEqual(Math.min(1, 10 * exact));
+      }
+    }
+  });
+
+  it("is 1 at or below the expected weighted sum", () => {
+    expect(compoundPoissonUpperTailBound(0.5, [{ weight: 0.25, mean: 2 }])).toBe(1);
+    expect(compoundPoissonUpperTailBound(0, [])).toBe(1);
+  });
+
+  it("prices a sum of tiny weights by the chance of one heavy event, not by their count", () => {
+    // 0.01 needs one weight-1 event (mean 1e-3) or ten weight-0.001 events (mean 1e-3 each way).
+    const p = compoundPoissonUpperTailBound(0.01, [
+      { weight: 1, mean: 1e-3 },
+      { weight: 0.001, mean: 1e-3 },
+    ]);
+    expect(p).toBeGreaterThanOrEqual(1 - Math.exp(-1e-3));
+    expect(p).toBeLessThan(0.05);
   });
 });
 
@@ -428,6 +458,151 @@ describe("detectShotgunSurgery", () => {
     expect(report.findings).toEqual([]);
     // Both commits of every burst stay their own change.
     expect(report.summary.unitCount).toBe(input.bundles.size);
+  });
+
+  it("joins one task's commits across bursts into one logical change, counted once", () => {
+    // TD-7 held the spread in two bursts a day apart: one task, one change.
+    const bursts = [
+      [{ components: ["a", "b", "c"], taskIds: ["TD-7"] }],
+      [{ components: ["a", "b", "c"], taskIds: ["TD-7"] }],
+      [{ components: ["a", "b", "c"], taskIds: ["TD-8"] }],
+      [{ components: ["a", "b", "c"], taskIds: ["TD-9"] }],
+    ];
+    const report = detectShotgunSurgery({
+      ...logicalHistory(background(["a", "b", "c"]), bursts),
+      componentDependencies: [],
+    });
+
+    expect(report.findings.map((f) => `${f.components.join(",")}@${f.support}`)).toEqual(["a,b,c@3"]);
+    // The TD-7 change is both of its commits, newest first.
+    expect(report.findings[0].sampleChanges).toEqual([["b3c0"], ["b2c0"], ["b1c0", "b0c0"]]);
+  });
+
+  it("lets no umbrella task id join — an upper outlier of the ids' own breadth", () => {
+    // Ordinary ids: each names one or two companions (2 or 3 distinct ids on
+    // its commits). EPIC rides on nine sub-tasks' commits — 10 distinct ids,
+    // above the Tukey fence over log2 of that breadth (cut 5 here).
+    const ordinary: LogicalCommit[][] = [
+      ...Array.from({ length: 6 }, (_, i) => [{ components: [`p${i}`], taskIds: [`P-${i}`, `Q-${i}`] }]),
+      ...Array.from({ length: 4 }, (_, i) => [{ components: [`r${i}`], taskIds: [`R-${i}`, `S-${i}`, `U-${i}`] }]),
+    ];
+    const epic: LogicalCommit[][] = Array.from({ length: 9 }, (_, j) => [
+      { components: j < 3 ? ["a", "b", "c"] : [`sub${j}`], taskIds: ["EPIC-1", `SUB-${j}`] },
+    ]);
+    const report = detectShotgunSurgery({
+      ...logicalHistory(background(["a", "b", "c"]), [...ordinary, ...epic]),
+      componentDependencies: [],
+    });
+
+    expect(report.summary.umbrellaTaskIdCut).toBe(5);
+    expect(report.summary.umbrellaTaskIdCount).toBe(1);
+    // Three sub-tasks held the spread: three changes, never one EPIC blob.
+    expect(report.findings.map((f) => `${f.components.join(",")}@${f.support}`)).toEqual(["a,b,c@3"]);
+  });
+
+  it("weighs a change beyond the typical width T by its specificity, C(T, k) / C(width, k)", () => {
+    // Twenty three-component changes of their own make T = 3 (the Tukey
+    // fence over the widths). Two changes held exactly {a, b, c}; a third
+    // held it inside five components: C(3, 3) / C(5, 3) = 1/10.
+    const narrow = Array.from({ length: 20 }, (_, i) => [`n${i}x`, `n${i}y`, `n${i}z`]);
+    const report = detectShotgunSurgery({
+      ...history([
+        ...background(["a", "b", "c"]),
+        ...narrow,
+        ["a", "b", "c"],
+        ["a", "b", "c"],
+        ["a", "b", "c", "w1", "w2"],
+      ]),
+      componentDependencies: [],
+    });
+
+    expect(report.summary.typicalChangeWidth).toBe(3);
+    const [finding] = report.findings;
+    expect(finding.components).toEqual(["a", "b", "c"]);
+    expect(finding.support).toBe(3);
+    expect(finding.weightedSupport).toBeCloseTo(1 + 1 + 1 / 10, 10);
+  });
+
+  it("counts a change within the typical width whole", () => {
+    const report = detectShotgunSurgery({
+      ...history([...background(["a", "b", "c"]), ["a", "b", "c", "w1"], ["a", "b", "c", "w2"], ["a", "b", "c", "w3"]]),
+      componentDependencies: [],
+    });
+
+    expect(report.summary.typicalChangeWidth).toBeGreaterThanOrEqual(4);
+    expect(report.findings[0].weightedSupport).toBe(3);
+  });
+
+  it("does not admit a triple only wide sweeps held, where narrow changes make specific evidence cheap", () => {
+    // a, b and c each change alone twenty times, and 400 narrow changes of
+    // their own (3–12 components) fill the history: one specific co-change of
+    // a, b and c is a modest event. Two 80-component sweeps that happened to
+    // include them weigh 2 · C(T, 3) / C(80, 3) — far less than one such change.
+    const lone = Array.from({ length: 20 }, () => [["a"], ["b"], ["c"]]).flat();
+    const narrow = Array.from({ length: 400 }, (_, i) => Array.from({ length: 3 + (i % 10) }, (_, j) => `n${i}_${j}`));
+    const sweep = (s: number) => ["a", "b", "c", ...Array.from({ length: 77 }, (_, i) => `sweep${s}_${i}`)];
+    const swept = detectShotgunSurgery({
+      ...history([...background([]), ...lone, ...narrow, sweep(0), sweep(1)]),
+      componentDependencies: [],
+    });
+    const specific = detectShotgunSurgery({
+      ...history([...background([]), ...lone, ...narrow, ["a", "b", "c"], ["a", "b", "c"]]),
+      componentDependencies: [],
+    });
+
+    expect(swept.summary.candidateSetCount).toBe(1);
+    expect(swept.summary.admittedSetCount).toBe(0);
+    expect(specific.summary.admittedSetCount).toBe(1);
+  });
+
+  it("explains siblings of one feature subtree that a typical change covers whole", () => {
+    // The only multi-component changes are the three spreads: T = 4. The
+    // subtree `page` holds 4 changed components — one typical change can
+    // edit all of it, so its children are one feature, dependent by
+    // construction, and their co-change is no shotgun surgery.
+    const spread = ["page/a", "page/b", "page/c", "page/d"];
+    const report = detectShotgunSurgery({
+      ...history([...background(spread), spread, spread, spread]),
+      componentDependencies: [],
+    });
+
+    expect(report.summary.typicalChangeWidth).toBe(4);
+    expect(report.findings).toEqual([]);
+    expect(report.explained.map((s) => s.islands)).toEqual([[spread]]);
+    expect(report.summary.violationCount).toBe(0);
+  });
+
+  it("keeps siblings apart when their common subtree is wider than a typical change", () => {
+    // Same spread, but `page` also holds five components changed alone: 9
+    // changed components under it, more than T = 4 — no one change covers
+    // the subtree, so sharing it is no evidence of one feature.
+    const spread = ["page/a", "page/b", "page/c", "page/d"];
+    const others = ["page/e", "page/f", "page/g", "page/h", "page/i"];
+    const report = detectShotgunSurgery({
+      ...history([...background([...spread, ...others]), spread, spread, spread]),
+      componentDependencies: [],
+    });
+
+    expect(report.summary.typicalChangeWidth).toBe(4);
+    expect(report.findings.map((f) => f.islands)).toEqual([spread.map((c) => [c])]);
+  });
+
+  it("groups namespace and directory components by their own trees, never across them", () => {
+    // `::Billing` and `billing` each hold two changed components, inside
+    // T = 4; a namespace and a directory share no ancestor, so the backend
+    // and frontend halves stay two islands and the spread is still reported.
+    const spread = ["::Billing::Charges", "::Billing::Refunds", "billing/form", "billing/table"];
+    const report = detectShotgunSurgery({
+      ...history([...background(spread), spread, spread, spread]),
+      componentDependencies: [],
+    });
+
+    expect(report.findings.map((f) => f.islands)).toEqual([
+      [
+        ["::Billing::Charges", "::Billing::Refunds"],
+        ["billing/form", "billing/table"],
+      ],
+    ]);
   });
 
   it("judges nothing without bundle membership", () => {
