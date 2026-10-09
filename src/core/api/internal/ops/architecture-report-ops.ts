@@ -21,14 +21,13 @@ import { extname } from "node:path";
 import type {
   FileDependencyEdge,
   FileDependencyGraph,
-  GraphDbClient,
   RelPath,
   TemporalCochangeGraph,
+  TypeNameRow,
 } from "../../../contracts/types/codegraph.js";
 import {
   buildDependencyNormFilePrimaryTypes,
   buildDependencyNormFileRoles,
-  TYPE_DRAFT_KINDS,
 } from "../../../domains/explore/naming-lexicon/index.js";
 import { DOCUMENTATION_LANGUAGES, LANGUAGE_MAP } from "../../../domains/ingest/pipeline/chunker/config.js";
 import {
@@ -39,7 +38,6 @@ import {
   COMPONENT_CONTAINMENT_REASON,
   computeDependencyNorms,
   computePropagationCost,
-  CONVENTION_PRIVACY_LANGUAGES,
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   DEFAULT_SDP_TOLERANCE,
   detectComponentStableDependencyViolations,
@@ -116,11 +114,15 @@ import type {
 import { UnknownArchitectureComponentError } from "../../public/errors.js";
 import {
   deriveArchitectureComponentFacts,
-  readProductionArchitectureGraph,
   type DeclaredTestDependencyLookup,
   type IndexedFileImportLookup,
   type ProductionArchitectureGraph,
 } from "./architecture-facts.js";
+import {
+  readArchitectureGraphFacts,
+  type ArchitectureGraphFacts,
+  type ArchitectureReportGraphDb,
+} from "./architecture-graph-facts.js";
 import {
   architectureViolationCarrierFiles,
   ComponentEdgeCarrierIndex,
@@ -130,7 +132,6 @@ import {
   type GitFileMaintenanceSignalLookup,
   type MaintenanceCostFamily,
 } from "./architecture-maintenance-cost.js";
-import { ontologyNonProductionPaths } from "./ontology-report-ops.js";
 import {
   runShotgunSurgery,
   shotgunSurgeryViolations,
@@ -160,17 +161,6 @@ export const LAYERING_NESTED_PAIR_LIMIT = 10;
 export const LAYERING_KNOT_DRILL_DOWN_HINT =
   "call get_architecture_report with knotOf to page every member and cut edge of this knot";
 
-/**
- * The graph reads the report judges from. `loadHierarchySnapshot` is optional:
- * only the convention-privacy subclass exemption (bd tea-rags-mcp-r8hme.41)
- * reads it, and a reader without it judges every Python candidate as before.
- */
-type ArchitectureReportGraphDb = Pick<
-  GraphDbClient,
-  "readFileDependencyGraph" | "readNonPublicMemberEdges" | "readTemporalCochangeGraph" | "readTypeNameRows"
-> &
-  Partial<Pick<GraphDbClient, "loadHierarchySnapshot">>;
-
 type ArchitectureReportScope = Pick<
   GetArchitectureReportRequest,
   "pathPattern" | "domain" | "norms" | "limit" | "layerMap" | "knotOf" | "offset"
@@ -193,6 +183,17 @@ export type ModuleImportSpecifierLookup = (
  * (bd tea-rags-mcp-r8hme.14).
  */
 export type GitFileCommitCountLookup = () => Promise<ReadonlyMap<RelPath, number>>;
+
+/**
+ * The history lookups one report judgement may read beside its graph facts —
+ * see {@link ArchitectureReportOps#build} for what each one gates. An edge
+ * overlay does not change them.
+ */
+export interface ArchitectureReportHistoryLookups {
+  readImportSpecifiers?: ModuleImportSpecifierLookup;
+  readFileCommitCounts?: GitFileCommitCountLookup;
+  readFileMaintenanceSignals?: GitFileMaintenanceSignalLookup;
+}
 
 /** The per-file reading the volatility gate averages — named in the summary. */
 const MAIN_SEQUENCE_VOLATILITY_SIGNAL = "git.file.commitCount";
@@ -265,12 +266,35 @@ export class ArchitectureReportOps {
     readIndexedFileImports?: IndexedFileImportLookup,
     readDeclaredTestDependencies?: DeclaredTestDependencyLookup,
   ): Promise<GetArchitectureReportResponse> {
+    const facts = await readArchitectureGraphFacts(
+      graphDb,
+      request,
+      readIndexedFileImports,
+      readDeclaredTestDependencies,
+    );
+    return this.judge(facts, request, { readImportSpecifiers, readFileCommitCounts, readFileMaintenanceSignals });
+  }
+
+  /**
+   * Judge one graph-facts snapshot and shape the report — every detector
+   * family, pure over `facts` plus the history lookups (bd
+   * tea-rags-mcp-89k7k.35.4). The index's own facts give the report
+   * {@link ArchitectureReportOps#build} returns; facts derived by
+   * `applyEdgeOverlay` give the same report over a working tree's edges, so
+   * a diff can be judged base-versus-overlay with the full detector set.
+   */
+  async judge(
+    facts: ArchitectureGraphFacts,
+    request: ArchitectureReportScope,
+    lookups: ArchitectureReportHistoryLookups = {},
+  ): Promise<GetArchitectureReportResponse> {
+    const { readImportSpecifiers, readFileCommitCounts, readFileMaintenanceSignals } = lookups;
     const maintenanceSignals = readFileMaintenanceSignals ? readOnce(readFileMaintenanceSignals) : undefined;
     const commitCounts = maintenanceSignals
       ? async () => new Map([...(await maintenanceSignals())].map(([relPath, s]) => [relPath, s.commitCount]))
       : readFileCommitCounts;
-    const scope = await this.readScopedGraph(graphDb, request, readIndexedFileImports, readDeclaredTestDependencies);
-    const runs = await this.runDetectors(graphDb, scope, request, readImportSpecifiers, commitCounts);
+    const scope = this.scopeGraph(facts.production, request);
+    const runs = await this.runDetectors(facts, scope, request, readImportSpecifiers, commitCounts);
     const view = this.projectFindings(runs, request);
     const costModel =
       maintenanceSignals && hasArchitectureFindings(view, runs)
@@ -285,19 +309,10 @@ export class ArchitectureReportOps {
    * induced sub-graph plus the whole-graph partition its border is positioned
    * against — the one thing an internal view cannot recompute.
    */
-  private async readScopedGraph(
-    graphDb: Pick<GraphDbClient, "readFileDependencyGraph">,
+  private scopeGraph(
+    production: ProductionArchitectureGraph,
     request: ArchitectureReportScope,
-    readIndexedFileImports?: IndexedFileImportLookup,
-    readDeclaredTestDependencies?: DeclaredTestDependencyLookup,
-  ): Promise<ScopedArchitectureGraph> {
-    // The read and the exclusions live in `architecture-facts.ts`, shared with
-    // the diff-scoped run (bd tea-rags-mcp-89k7k.1.4).
-    const production = await readProductionArchitectureGraph(
-      graphDb,
-      readIndexedFileImports,
-      readDeclaredTestDependencies,
-    );
+  ): ScopedArchitectureGraph {
     const whole =
       request.domain === undefined
         ? null
@@ -315,9 +330,10 @@ export class ArchitectureReportOps {
    * {@link ArchitectureDetectorRuns}, its detect call here, its summary and
    * violation mappings in {@link ArchitectureReportOps#shapeResponse} — a
    * one-family change, never more of {@link ArchitectureReportOps#build}.
+   * Pure over `facts`: it reads no graph DB, only the history lookups.
    */
   private async runDetectors(
-    graphDb: ArchitectureReportGraphDb,
+    facts: ArchitectureGraphFacts,
     scope: ScopedArchitectureGraph,
     request: ArchitectureReportScope,
     readImportSpecifiers?: ModuleImportSpecifierLookup,
@@ -355,7 +371,7 @@ export class ArchitectureReportOps {
     // An aggregate over the same graph and partition (bd tea-rags-mcp-r8hme.49),
     // not a violation family: nothing in it is ranked or capped by finding.
     const propagationCost = computePropagationCost(graph, { componentOf: components.componentOf });
-    const memberEdges = await graphDb.readNonPublicMemberEdges([...CONVENTION_PRIVACY_LANGUAGES]);
+    const { memberEdges, classHierarchy } = facts;
     // Domain mode keeps convention-privacy judgement inside the border too:
     // a member edge reaching outside is the domain USING the system, not a
     // privacy leak of the system the domain reports on.
@@ -371,14 +387,12 @@ export class ArchitectureReportOps {
         sourcePathPattern: request.pathPattern,
         // The subclass exemption's ancestry (bd tea-rags-mcp-r8hme.41): the
         // persisted hierarchy, read only when a Python candidate needs it.
-        ...(graphDb.loadHierarchySnapshot !== undefined && memberEdges.some((e) => e.targetLanguage === "python")
-          ? { classHierarchy: await graphDb.loadHierarchySnapshot() }
-          : {}),
+        ...(classHierarchy !== undefined ? { classHierarchy } : {}),
       },
     );
     // One co-change read feeds both temporal detectors: silent coupling's
     // pairs and the split/merge verdicts' bundle membership.
-    const cochange = await graphDb.readTemporalCochangeGraph();
+    const { cochange } = facts;
     const silent = await detectSilentCouplingSeeingAssetImports(cochange, graph, request, readImportSpecifiers);
     // Shotgun surgery (bd tea-rags-mcp-r8hme.50): the same bundles, over the
     // adoption partition split/merge judges and its component graph.
@@ -407,8 +421,8 @@ export class ArchitectureReportOps {
     // already in memory. Same domain partition the layering judges for
     // sameDomain locality. Findings scope by the request's pathPattern, the
     // way every other detector scopes (bd tea-rags-mcp-mv8yv).
-    const norms = request.norms
-      ? await computeReportNorms(graphDb, graph, layeringComponents.componentOf, request.pathPattern)
+    const norms = facts.typeNameRows
+      ? computeReportNorms(facts.typeNameRows, graph, layeringComponents.componentOf, request.pathPattern)
       : undefined;
     return {
       leaks,
@@ -832,23 +846,19 @@ function aggregateBoundaryEdges(
 }
 
 /**
- * Dependency norms, read-time (bd tea-rags-mcp-rpx0v): the type rows naming's
- * role layer reads anyway (whole project, production paths), each file's
+ * Dependency norms, read-time (bd tea-rags-mcp-rpx0v): over the type rows
+ * naming's role layer reads anyway (whole project, production paths, read
+ * into the graph facts only when norms are asked), each file's
  * PRIMARY type's role, and the verdicts over the graph the report already
  * holds. `componentOf` is the same DOMAIN partition the layering judges, so
  * `sameDomain` locality means "one unit of r8hme.30".
  */
-async function computeReportNorms(
-  graphDb: Pick<GraphDbClient, "readTypeNameRows">,
+function computeReportNorms(
+  rows: readonly TypeNameRow[],
   graph: FileDependencyGraph,
   componentOf: ReadonlyMap<RelPath, string>,
   sourcePathPattern: string | undefined,
-): Promise<DependencyNormsReport> {
-  const rows = await graphDb.readTypeNameRows({
-    pathPrefixes: [],
-    kinds: TYPE_DRAFT_KINDS,
-    nonProductionPaths: ontologyNonProductionPaths(),
-  });
+): DependencyNormsReport {
   return computeDependencyNorms({
     graph,
     fileRoles: buildDependencyNormFileRoles(rows),
