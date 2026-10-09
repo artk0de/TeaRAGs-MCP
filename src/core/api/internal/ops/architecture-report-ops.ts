@@ -25,6 +25,7 @@ import type {
   TemporalCochangeGraph,
   TypeNameRow,
 } from "../../../contracts/types/codegraph.js";
+import { silentCouplingGroupSubject } from "../../../contracts/types/diff-detector-finding.js";
 import {
   buildDependencyNormFilePrimaryTypes,
   buildDependencyNormFileRoles,
@@ -143,7 +144,6 @@ import {
   SILENT_COUPLING_GROUP_EVIDENCE_PARTNERS,
   silentCouplingGroupDrillDown,
   silentCouplingGroupPartners,
-  silentCouplingGroupSubject,
 } from "./silent-coupling-group-findings.js";
 
 /** Default `GetArchitectureReportRequest.limit`. */
@@ -157,10 +157,6 @@ export const LAYERING_FEEDBACK_EDGE_LIMIT = 10;
 
 /** Parent↔nested pairs listed per composition cycle; `nestedPairCount` keeps the total. */
 export const LAYERING_NESTED_PAIR_LIMIT = 10;
-
-/** Points a knot finding at the `knotOf` view (bd tea-rags-mcp-r8hme.38). */
-export const LAYERING_KNOT_DRILL_DOWN_HINT =
-  "call get_architecture_report with knotOf to page every member and cut edge of this knot";
 
 type ArchitectureReportScope = Pick<
   GetArchitectureReportRequest,
@@ -1341,7 +1337,7 @@ function toLayeringArchitectureViolation(v: DomainLayeringViolation): Architectu
           ...(v.outOfScopeFeedbackEdgeCount !== undefined
             ? { outOfScopeFeedbackEdgeCount: v.outOfScopeFeedbackEdgeCount }
             : {}),
-          drillDown: { ...v.drillDown, hint: LAYERING_KNOT_DRILL_DOWN_HINT },
+          drillDown: v.drillDown,
         },
       };
     case "backEdge":

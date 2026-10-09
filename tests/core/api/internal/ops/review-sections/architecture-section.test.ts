@@ -847,12 +847,13 @@ describe("architectureSectionProvider.run — facadeContract wiring", () => {
       runContext({ graphDb: graph, scope: scopeOf(["src/lib/index.ts"]) }),
     )) as Record<string, unknown>;
 
-    const findings = payload.findings as { detector: string; subject: string; evidence: string[] }[];
+    const findings = payload.findings as { detector: string; subject: string; evidence: unknown }[];
     expect(findings.filter((f) => f.detector === "facadeContract")).toEqual([
       {
         detector: "facadeContract",
         subject: "src/lib/index.ts",
-        evidence: ["b: consumed by src/app/c3.ts"],
+        endpoints: { kind: "file", relPath: "src/lib/index.ts", component: "src/lib" },
+        evidence: { droppedNames: [{ name: "b", consumers: ["src/app/c3.ts"] }] },
         detail: expect.stringContaining("stops re-exporting"),
       },
     ]);
@@ -946,14 +947,18 @@ describe("architectureSectionProvider.run — splitCandidates wiring", () => {
       }),
     )) as Record<string, unknown>;
 
-    const findings = payload.findings as { detector: string; subject: string; evidence: string[] }[];
+    const findings = payload.findings as { detector: string; subject: string; evidence: unknown }[];
     expect(findings.find((f) => f.detector === "splitCandidates")).toEqual({
       detector: "splitCandidates",
       subject: "src/wide",
-      evidence: [
-        "cluster 1: 1 of 2 changed files — src/wide/y1.ts",
-        "cluster 2: 1 of 2 changed files — src/wide/x1.ts",
-      ],
+      endpoints: { kind: "component", component: "src/wide" },
+      evidence: {
+        clusterCount: 2,
+        touchedClusters: [
+          { cluster: 1, fileCount: 2, changedFileCount: 1, changedFiles: ["src/wide/y1.ts"] },
+          { cluster: 2, fileCount: 2, changedFileCount: 1, changedFiles: ["src/wide/x1.ts"] },
+        ],
+      },
       detail:
         "the diff works across the seam of src/wide, a component whose history already splits into 2 co-change groups",
     });

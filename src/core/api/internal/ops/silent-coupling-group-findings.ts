@@ -4,8 +4,10 @@
  * `get_architecture_report`'s violations and `review_changes`' architecture
  * findings — so one shared endpoint reads the same in both. The partition
  * itself is the domain's `groupSilentCouplingPairs`; this module only shapes a
- * group into what an agent reads: the partners strongest first, a subject,
- * and the `find_co_changed` call that drills into the file.
+ * group into what an agent reads: the partners strongest first and the
+ * `find_co_changed` call that drills into the file. The subject wording is the
+ * finding contract's (`silentCouplingGroupSubject`, contracts/types/
+ * diff-detector-finding.ts), rendered from the group's endpoint.
  */
 
 import type {
@@ -52,11 +54,6 @@ export function silentCouplingGroupPartners(
         b.support - a.support ||
         (a.relPath < b.relPath ? -1 : a.relPath > b.relPath ? 1 : 0),
     );
-}
-
-/** One line naming the shared endpoint and how many files it couples to. */
-export function silentCouplingGroupSubject(relPath: RelPath, partnerCount: number): string {
-  return `${relPath} co-changes significantly with ${partnerCount} files without a structural edge`;
 }
 
 /** The `find_co_changed` call listing `relPath`'s co-change partners, ready to run. */

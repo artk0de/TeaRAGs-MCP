@@ -9,8 +9,10 @@ import type {
   HubLikeDependencyNeighbourEvidence,
   LayeringFeedbackEdge,
   LayeringKeepCost,
+  LayeringKnotDrillDown,
   LayeringViolationKind,
   MainSequenceComponentVolatilityEvidence,
+  MainSequenceVolatilityCut,
   MainSequenceZone,
 } from "../../../../../contracts/types/architecture-report.js";
 import type { FileDependencyEdge, HierarchySnapshot, RelPath } from "../../../../../contracts/types/codegraph.js";
@@ -547,21 +549,12 @@ export type MainSequenceVolatilityLabel = "volatile" | "calm";
  */
 export type MainSequenceComponentVolatility = MainSequenceComponentVolatilityEvidence;
 
-/** How the volatility cut was drawn; present only when the gate ran. */
-export interface MainSequenceVolatilitySummary {
-  threshold: number;
-  /**
-   * `otsu` = Otsu's split over the judged components' LOG volatilities, floored at
-   * the median file; `fileMedian` = too few components for Otsu, the floor alone.
-   */
-  thresholdMethod: "otsu" | "fileMedian";
-  /** η of the Otsu cut; absent under `fileMedian`. */
-  separability?: number;
-  /** Median reading over the graph's files: a volatile component's mean must be strictly above it. */
-  fileMedian: number;
-  /** Judged components with at least one measured file — the Otsu population. */
-  measuredComponentCount: number;
-}
+/**
+ * How the volatility cut was drawn; present only when the gate ran — the
+ * report's `MainSequenceVolatilityCut` under its domain name (bd
+ * tea-rags-mcp-r8hme.44), at full precision.
+ */
+export type MainSequenceVolatilitySummary = MainSequenceVolatilityCut;
 
 /** One component judged against the main sequence, far enough off it to report. */
 export interface MainSequenceViolation {
@@ -816,16 +809,12 @@ export interface LayeringKnotViolation {
 }
 
 /**
- * The handles that reach one whole knot (bd tea-rags-mcp-r8hme.38): the knot
- * lookup takes `knotOf`; `pathPattern` selects the smallest subtree holding
- * every member, when one below the repository root does.
+ * The handles that reach one whole knot (bd tea-rags-mcp-r8hme.38) are the
+ * report's contract shape, `hint` included (bd tea-rags-mcp-r8hme.44): the
+ * detector emits the hint (`LAYERING_KNOT_DRILL_DOWN_HINT`), so no surface
+ * re-stitches it at map time.
  */
-export interface LayeringKnotDrillDown {
-  /** The first member by Ca — an exact handle however the members are spread. */
-  knotOf: string;
-  /** Deepest common ancestor directory of every member plus `/**`; absent when that ancestor is the root. */
-  pathPattern?: string;
-}
+export type { LayeringKnotDrillDown } from "../../../../../contracts/types/architecture-report.js";
 
 /**
  * One knot looked up by a member (bd tea-rags-mcp-r8hme.38): full lists, no

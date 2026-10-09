@@ -21,6 +21,12 @@ import {
   measureLayeringFoundationComponents,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
 
+/**
+ * The knot drill-down's reviewer hint (bd tea-rags-mcp-r8hme.44): owned by the
+ * detector that emits the drill-down, so every surface reads one text.
+ */
+const KNOT_DRILL_DOWN_HINT = "call get_architecture_report with knotOf to page every member and cut edge of this knot";
+
 function file(relPath: string, typeAbstractness?: TypeAbstractnessCensus) {
   return { relPath, language: "typescript", symbolCount: 1, ...(typeAbstractness ? { typeAbstractness } : {}) };
 }
@@ -296,7 +302,7 @@ describe("detectLayeringViolations", () => {
         ],
         cutEdgeCount: 1,
         levelsAfterCut: 2,
-        drillDown: { knotOf: "ulanzi" },
+        drillDown: { knotOf: "ulanzi", hint: KNOT_DRILL_DOWN_HINT },
         instabilitySpread: 2 / 3 - 2 / 5,
       },
       {
@@ -348,7 +354,7 @@ describe("detectLayeringViolations", () => {
         ],
         cutEdgeCount: 1,
         levelsAfterCut: 2,
-        drillDown: { knotOf: "x" },
+        drillDown: { knotOf: "x", hint: KNOT_DRILL_DOWN_HINT },
         // x and y read the same instability (1/2 each) — a tangle, not a break.
         instabilitySpread: 0,
       },
@@ -694,11 +700,15 @@ describe("detectLayeringViolations — knot drillDown (bd tea-rags-mcp-r8hme.38)
   };
 
   it("names the top member by Ca and the deepest common ancestor of every member", () => {
-    expect(knotFinding(judge(subtreeKnot()).violations).drillDown).toEqual({ knotOf: "x/b", pathPattern: "x/**" });
+    expect(knotFinding(judge(subtreeKnot()).violations).drillDown).toEqual({
+      knotOf: "x/b",
+      pathPattern: "x/**",
+      hint: KNOT_DRILL_DOWN_HINT,
+    });
   });
 
   it("omits the pathPattern when the members share no directory below the repository root", () => {
-    expect(knotFinding(judge(knot()).violations).drillDown).toEqual({ knotOf: "ulanzi" });
+    expect(knotFinding(judge(knot()).violations).drillDown).toEqual({ knotOf: "ulanzi", hint: KNOT_DRILL_DOWN_HINT });
   });
 
   it("keeps the whole-knot drillDown on a finding projected onto a scope", () => {

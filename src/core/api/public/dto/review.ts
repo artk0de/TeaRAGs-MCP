@@ -14,8 +14,8 @@
  */
 
 import type { CochangeSignificanceSummary } from "../../../contracts/types/architecture-report.js";
+import type { DiffDetectorFinding, DiffDetectorStatus } from "../../../contracts/types/diff-detector-finding.js";
 import type { TemporalCohesionReport } from "../../../domains/trajectory/codegraph/temporal/index.js";
-import type { DiffDetectorFinding, DiffDetectorStatus } from "../../internal/ops/diff-detector-run.js";
 import type { CollectionRef } from "./explore.js";
 import type { NamingReviewResult } from "./naming-lexicon.js";
 import type { WorkingTreeMarker } from "./working-tree.js";

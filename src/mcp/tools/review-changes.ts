@@ -37,13 +37,14 @@ const REVIEW_CHANGES_DESCRIPTION =
   "file, symbol co-change clusters + split candidates; a file with " +
   "no data = notJudged noCohesionData, never zero (cap 50 reports). architecture: the diff's added edges judged by " +
   "the boundary detectors (stableDependencies, leakingAbstraction, cycles, mainSequence delta, silentCoupling, " +
-  "facadeContract); each family ranked costliest-first before the cap by maintenanceCost (get_architecture_report's " +
+  "facadeContract); a finding = endpoints (typed by kind, get_architecture_report's endpoint fields) + structured " +
+  "evidence + subject (endpoints as text) + detail; each family ranked costliest-first before the cap by maintenanceCost (get_architecture_report's " +
   "shrunken mean over the files the finding names, n0 estimated over this review's findings; <2 measured = 0.5; absent = no git readings); findings cap 100, family-aware — every family keeps >=1 slot; per-family truncated rides each " +
   "detector row, findingCount stays the family's FULL total, rows reconcile findingCount = listed + truncated. " +
   "Detector rows also carry exclusions: mainSequence excludedLowConnectionCount (small-N components below the " +
   "connection floor), silentCoupling excluded block (the production taxonomy's counters) — a zero over excluded " +
   "classes is not a clean pass; silentCoupling pairs sharing an endpoint list as ONE finding (partners[] = every " +
-  "pair, evidence = 3 strongest with expected support λ, drillDown = ready find_co_changed call) — its row's " +
+  "pair, evidence.topPartners = 3 strongest with expected support λ, drillDown = ready find_co_changed call) — its row's " +
   "findingCount counts pairs, groupedFindingCount the findings (= listed + truncated); foundationTerminal:true on a D-delta finding = every contributing edge ends in " +
   "an abstract L0 foundation, entryPoint:true = touched component is a declared cli/mcp entry surface — placement, not defect, " +
   "preExisting:true on a cycles/leakingAbstraction finding = the index already holds that edge — the diff touches " +

@@ -50,12 +50,15 @@
  * again from a reverse or duplicated read.
  */
 
-import type {
-  ArchitectureMaintenanceCost,
-  CochangeSignificanceSummary,
-  SilentCouplingGroupDrillDown,
-  SilentCouplingGroupPartner,
-} from "../../../contracts/types/architecture-report.js";
+import type { CochangeSignificanceSummary } from "../../../contracts/types/architecture-report.js";
+import {
+  renderDiffFindingSubject,
+  type DiffDetectorFamily,
+  type DiffDetectorFinding,
+  type DiffDetectorStatus,
+  type DiffFindingChangedFiles,
+  type DiffFindingEndpoints,
+} from "../../../contracts/types/diff-detector-finding.js";
 import {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   isDeclaredCompositionRoot,
@@ -72,7 +75,6 @@ import {
   SILENT_COUPLING_GROUP_EVIDENCE_PARTNERS,
   silentCouplingGroupDrillDown,
   silentCouplingGroupPartners,
-  silentCouplingGroupSubject,
   type SilentCouplingGroupedPair,
 } from "./silent-coupling-group-findings.js";
 
@@ -296,133 +298,6 @@ export interface DiffDetectorScope {
   skippedFiles?: number;
 }
 
-export interface DiffDetectorFinding {
-  detector:
-    | "stableDependencies"
-    | "leakingAbstraction"
-    | "cycles"
-    | "mainSequence"
-    | "silentCoupling"
-    | "facadeContract"
-    | "splitCandidates";
-  /** What the judgement anchors on — an edge, a pair, a component delta. */
-  subject: string; // e.g. "A -> B" | "a.ts ~ b.ts" | "component X"
-  evidence: string[]; // trace path for cycles; the facade import for leakingAbstraction; deltas for mainSequence
-  detail: string; // one sentence a reviewer reads
-  /**
-   * mainSequence only (bd tea-rags-mcp-r8hme.45): EVERY contributing edge of
-   * this D-delta terminates inside the measured layering foundation
-   * (abstractness 1 at L0, bd tea-rags-mcp-89k7k.35.11) — the legal
-   * foundation direction, the lowest layer, which everything above may depend
-   * on. The distance still moved, so the finding stands; the annotation is
-   * data for triage, never a suppression and never prose baked into a
-   * formatter. Present only when true.
-   */
-  foundationTerminal?: true;
-  /**
-   * stableDependencies only (bd tea-rags-mcp-hbceb, parity with the
-   * whole-repo detector's tea-rags-mcp-r8hme.51): the SOURCE component of the
-   * judged edge is, or lives inside, a declared composition root
-   * (`isDeclaredCompositionRoot` in the boundary-diagnostics domain — the
-   * same declared list, never a re-stated one). The root's JOB is assembling
-   * unstable concretes, so an uphill edge sourced from it is inherent to that
-   * job. The finding still stands — this is triage data for the reader, never
-   * a suppression (the `foundationTerminal` spirit). Present only when true.
-   */
-  compositionRoot?: true;
-  /**
-   * mainSequence only (bd tea-rags-mcp-zh3l0, parity with the whole-repo
-   * detector's DECLARED_ENTRY_POINT_COMPONENTS): the touched component is, or
-   * lives inside, a declared cli/mcp entry surface
-   * (`isDeclaredEntryPoint` in the boundary-diagnostics domain — the same
-   * declared list, never a re-stated one). Nothing imports an entry surface,
-   * so its instability — and a diff-window delta on it — is placement, not
-   * defect: the unstable end of the main sequence is where an entry BELONGS.
-   * The finding still stands — triage data for the reader, never a
-   * suppression (the `foundationTerminal` / `compositionRoot` spirit).
-   * Present only when true.
-   */
-  entryPoint?: true;
-  /**
-   * cycles and leakingAbstraction only (bd tea-rags-mcp-89k7k.1.13): the
-   * judged (source, target) pair is one the indexed graph ALREADY holds — a
-   * changed file re-serves it, the diff did not add it. Both families judge
-   * the overlay edge as read (89k7k.14), so the finding stands; this marks it
-   * as pre-dating the diff (the cycle / leak is already in the index, the
-   * diff touches a file on it) and the detail says so. Triage data, never a
-   * suppression (the `foundationTerminal` / `compositionRoot` spirit). Absent
-   * graph port = nothing is pre-existing. Present only when true.
-   */
-  preExisting?: true;
-  /**
-   * silentCoupling grouped finding only (bd tea-rags-mcp-89k7k.1.14): every
-   * partner of the shared endpoint `subject` names, strongest first — the
-   * evidence lines name the top 3, nothing the grouping took is lost.
-   */
-  partners?: readonly SilentCouplingGroupPartner[];
-  /** silentCoupling grouped finding only: the ready-to-run `find_co_changed` drill into the shared endpoint. */
-  drillDown?: SilentCouplingGroupDrillDown;
-  /**
-   * What the finding costs to maintain (bd tea-rags-mcp-r8hme.20) — the
-   * whole-repo report's score over the files the finding names. Stamped by
-   * the section (`architecture-section.ts`), not by the run; absent when the
-   * git readings are not wired or none of those files is measured.
-   */
-  maintenanceCost?: ArchitectureMaintenanceCost;
-}
-
-/** One detector family's verdict for the run. */
-export interface DiffDetectorStatus {
-  detector: string;
-  built: boolean;
-  reason?: string;
-  findingCount: number;
-  /**
-   * This family's findings past the slots the section's findings cap
-   * allocated it (bd tea-rags-mcp-35v4v) — counted, not listed;
-   * `findingCount` stays the family's FULL total. Stamped by the section's
-   * cap (`architecture-section.ts`), not by the run.
-   */
-  truncated?: number;
-  /**
-   * Changed files the diff's file cap skipped while this family judged (bd
-   * tea-rags-mcp-89k7k.1.9). Present = the verdict is PARTIAL: a zero
-   * findingCount over files the run never saw is never a clean pass. Absent
-   * on unbuilt rows — `built: false` + `reason` already denies the pass.
-   */
-  scopeSkippedFiles?: number;
-  /**
-   * mainSequence only (bd tea-rags-mcp-r8hme.45): touched components the
-   * connection-count floor excluded — the small-N class whose instability
-   * moves in steps of 1/n, one edge the whole scale. Present when > 0, so a
-   * zero over below-floor components never reads as a clean pass; the
-   * whole-repo report counts the same exclusions in
-   * `summary.mainSequence.excluded.lowConnectionCount`.
-   */
-  excludedLowConnectionCount?: number;
-  /**
-   * Co-change pairs read but not judged, by the production exclusion
-   * taxonomy's classes (bd tea-rags-mcp-89k7k.1.10) — the
-   * `summary.silentCoupling.excluded` vocabulary. Stamped on the
-   * silentCoupling row only, and only when the wiring passed
-   * `silentCouplingFacts`.
-   */
-  excluded?: SilentCouplingExclusionCounts;
-  /**
-   * How the silentCoupling row's pairs were admitted — the query family of
-   * pairs touching the diff (bd tea-rags-mcp-89k7k.1.14). silentCoupling row
-   * only, and only when the facts carry it.
-   */
-  cochangeSignificance?: CochangeSignificanceSummary;
-  /**
-   * silentCoupling row only (bd tea-rags-mcp-89k7k.1.14): the findings the
-   * row's `findingCount` pairs list as — pairs sharing an endpoint become one
-   * grouped finding. The section's cap and this row's `truncated` count these
-   * findings, so the row reconciles `groupedFindingCount = listed + truncated`.
-   */
-  groupedFindingCount?: number;
-}
-
 export interface DiffDetectorFindings {
   findings: readonly DiffDetectorFinding[];
   /** Per-family verdict — `splitCandidates` carries the wiring's reason when its port is absent. */
@@ -613,21 +488,29 @@ export class DiffDetectorRun {
       const targetComponent = this.catalog.componentOf(edge.target);
       if (sourceComponent === undefined || targetComponent === undefined) continue;
       if (!this.catalog.isMarkedlyLessStable(targetComponent.instability, sourceComponent.instability)) continue;
-      findings.push({
-        detector: "stableDependencies",
-        subject: `${edge.source} -> ${edge.target}`,
-        evidence: [
-          `${edge.source} in ${sourceComponent.name}: instability ${format3(sourceComponent.instability)}`,
-          `${edge.target} in ${targetComponent.name}: instability ${format3(targetComponent.instability)}`,
-        ],
-        detail:
-          `the diff leans on the markedly-less-stable side: ${edge.target}'s component ${targetComponent.name} ` +
-          `(I=${format3(targetComponent.instability)}) is markedly less stable than ${edge.source}'s ` +
-          `${sourceComponent.name} (I=${format3(sourceComponent.instability)})`,
-        // The root assembling unstable concretes is the root's job (see
-        // DECLARED_COMPOSITION_ROOT_COMPONENTS): annotated, still reported.
-        ...(isDeclaredCompositionRoot(sourceComponent.name) ? { compositionRoot: true as const } : {}),
-      });
+      findings.push(
+        withRenderedSubject({
+          detector: "stableDependencies",
+          endpoints: {
+            kind: "componentEdge",
+            sourceComponent: sourceComponent.name,
+            targetComponent: targetComponent.name,
+            sourceRelPath: edge.source,
+            targetRelPath: edge.target,
+          },
+          evidence: {
+            sourceInstability: round3(sourceComponent.instability),
+            targetInstability: round3(targetComponent.instability),
+          },
+          detail:
+            `the diff leans on the markedly-less-stable side: ${edge.target}'s component ${targetComponent.name} ` +
+            `(I=${format3(targetComponent.instability)}) is markedly less stable than ${edge.source}'s ` +
+            `${sourceComponent.name} (I=${format3(sourceComponent.instability)})`,
+          // The root assembling unstable concretes is the root's job (see
+          // DECLARED_COMPOSITION_ROOT_COMPONENTS): annotated, still reported.
+          ...(isDeclaredCompositionRoot(sourceComponent.name) ? { compositionRoot: true as const } : {}),
+        }),
+      );
     }
     return findings;
   }
@@ -652,17 +535,19 @@ export class DiffDetectorRun {
       if (!viaFacade) continue;
       const heldBy = this.heldBeforeChange(edge);
       const leak = `${edge.target} is internal to ${targetComponent.name}, whose facade ${facade} ${edge.source} imports`;
-      findings.push({
-        detector: "leakingAbstraction",
-        subject: `${edge.source} -> ${edge.target}`,
-        evidence: [`pre-existing ${edge.source} -> ${facade}`],
-        detail:
-          heldBy !== undefined
-            ? `the edge ${edge.source} -> ${edge.target} pre-dates the diff (${HELD_BY_WORDING[heldBy]}): ` +
-              `${leak}; the leak is already ${HELD_IN_WORDING[heldBy]}, the diff touches a file on it`
-            : `the diff reached past the facade ${edge.source} already uses: ${leak}`,
-        ...(heldBy !== undefined ? { preExisting: true as const } : {}),
-      });
+      findings.push(
+        withRenderedSubject({
+          detector: "leakingAbstraction",
+          endpoints: { kind: "fileEdge", sourceRelPath: edge.source, targetRelPath: edge.target },
+          evidence: { facadeRelPath: facade },
+          detail:
+            heldBy !== undefined
+              ? `the edge ${edge.source} -> ${edge.target} pre-dates the diff (${HELD_BY_WORDING[heldBy]}): ` +
+                `${leak}; the leak is already ${HELD_IN_WORDING[heldBy]}, the diff touches a file on it`
+              : `the diff reached past the facade ${edge.source} already uses: ${leak}`,
+          ...(heldBy !== undefined ? { preExisting: true as const } : {}),
+        }),
+      );
     }
     return findings;
   }
@@ -681,19 +566,21 @@ export class DiffDetectorRun {
       const cyclePath = this.traceBackTo(edge.target, edge.source, changed);
       if (cyclePath === undefined) continue;
       const heldBy = this.heldBeforeChange(edge);
-      findings.push({
-        detector: "cycles",
-        subject: `${edge.source} -> ${edge.target}`,
-        evidence: [cyclePath.join(" -> ")],
-        detail:
-          heldBy !== undefined
-            ? `the edge ${edge.source} -> ${edge.target} pre-dates the diff (${HELD_BY_WORDING[heldBy]}): ` +
-              `with the indexed path back to ${edge.source} the cycle is already ${HELD_IN_WORDING[heldBy]}, ` +
-              `the diff touches a file on it`
-            : `the diff closes a cycle: the new edge ${edge.source} -> ${edge.target} plus the indexed path ` +
-              `back to ${edge.source}`,
-        ...(heldBy !== undefined ? { preExisting: true as const } : {}),
-      });
+      findings.push(
+        withRenderedSubject({
+          detector: "cycles",
+          endpoints: { kind: "fileEdge", sourceRelPath: edge.source, targetRelPath: edge.target },
+          evidence: { path: [...cyclePath] },
+          detail:
+            heldBy !== undefined
+              ? `the edge ${edge.source} -> ${edge.target} pre-dates the diff (${HELD_BY_WORDING[heldBy]}): ` +
+                `with the indexed path back to ${edge.source} the cycle is already ${HELD_IN_WORDING[heldBy]}, ` +
+                `the diff touches a file on it`
+              : `the diff closes a cycle: the new edge ${edge.source} -> ${edge.target} plus the indexed path ` +
+                `back to ${edge.source}`,
+          ...(heldBy !== undefined ? { preExisting: true as const } : {}),
+        }),
+      );
     }
     return findings;
   }
@@ -827,26 +714,26 @@ export class DiffDetectorRun {
       const foundationTerminal = edgesOut.every((edge) => this.catalog.isLayeringFoundation(edge.target));
       // The exact-recompute clause names the arithmetic only when its inputs were served.
       const recomputeClause = fans !== undefined ? ` — I' = (Ce+k)/(Ca+Ce+k) over the report's fan counts` : "";
-      findings.push({
-        detector: "mainSequence",
-        subject: name,
-        evidence: [
-          `D ${format3(fact.distanceFromMainSequence)} -> ${format3(newDistance)}`,
-          ...(fans !== undefined
-            ? [
-                `I ${format3(fact.instability)} -> ${format3(newInstability)} = ` +
-                  `(${fans.efferentCount}+${newEdgeCount})/(${fans.afferentCount}+${fans.efferentCount}+${newEdgeCount})`,
-              ]
-            : []),
-          ...edgesOut.map((edge) => `${edge.source} -> ${edge.target}`),
-        ],
-        detail: `the diff moves ${name} off its main-sequence distance: ${newEdgeCount} cross-component outgoing edge(s) raise instability ${format3(fact.instability)} -> ${format3(newInstability)} with abstractness held${recomputeClause}`,
-        ...(foundationTerminal ? { foundationTerminal: true as const } : {}),
-        // The unstable end of the main sequence is where an entry component
-        // belongs (see DECLARED_ENTRY_POINT_COMPONENTS): annotated, still
-        // reported.
-        ...(isDeclaredEntryPoint(name) ? { entryPoint: true as const } : {}),
-      });
+      findings.push(
+        withRenderedSubject({
+          detector: "mainSequence",
+          endpoints: { kind: "component", component: name },
+          evidence: {
+            distanceBefore: round3(fact.distanceFromMainSequence),
+            distanceAfter: round3(newDistance),
+            instabilityBefore: round3(fact.instability),
+            instabilityAfter: round3(newInstability),
+            ...(fans !== undefined ? { fanCounts: { ...fans, addedEdgeCount: newEdgeCount } } : {}),
+            edges: edgesOut.map((edge) => ({ sourceRelPath: edge.source, targetRelPath: edge.target })),
+          },
+          detail: `the diff moves ${name} off its main-sequence distance: ${newEdgeCount} cross-component outgoing edge(s) raise instability ${format3(fact.instability)} -> ${format3(newInstability)} with abstractness held${recomputeClause}`,
+          ...(foundationTerminal ? { foundationTerminal: true as const } : {}),
+          // The unstable end of the main sequence is where an entry component
+          // belongs (see DECLARED_ENTRY_POINT_COMPONENTS): annotated, still
+          // reported.
+          ...(isDeclaredEntryPoint(name) ? { entryPoint: true as const } : {}),
+        }),
+      );
     }
     return { findings, excludedLowConnectionCount };
   }
@@ -918,31 +805,31 @@ export class DiffDetectorRun {
     const findings: DiffDetectorFinding[] = [
       ...groups.map((group): DiffDetectorFinding => {
         const partners = silentCouplingGroupPartners(group);
-        const subject = silentCouplingGroupSubject(group.relPath, partners.length);
+        const endpoints = { kind: "fileGroup", relPath: group.relPath, partnerCount: partners.length } as const;
         const drillDown = silentCouplingGroupDrillDown(group.relPath, partners.length);
-        return {
+        return withRenderedSubject({
           detector: "silentCoupling",
-          subject,
-          evidence: partners.slice(0, SILENT_COUPLING_GROUP_EVIDENCE_PARTNERS).map((partner) => {
-            const expected =
-              partner.expectedSupport === undefined ? "" : `, expected ${format3(partner.expectedSupport)}`;
-            return `${partner.relPath}: support ${format3(partner.support)}${expected}, strength ${format3(partner.strength)}`;
-          }),
-          detail: `${subject} and the diff adds none; drill in: ${drillDown.hint}`,
+          endpoints,
+          evidence: { topPartners: partners.slice(0, SILENT_COUPLING_GROUP_EVIDENCE_PARTNERS) },
+          detail: `${renderDiffFindingSubject(endpoints)} and the diff adds none; drill in: ${drillDown.hint}`,
           partners,
           drillDown,
-        };
+        });
       }),
       ...singletons.map((pair): DiffDetectorFinding => {
-        const subject = `${pair.relPathA} ~ ${pair.relPathB}`;
-        return {
+        const endpoints = { kind: "filePair", sourceRelPath: pair.relPathA, targetRelPath: pair.relPathB } as const;
+        return withRenderedSubject({
           detector: "silentCoupling",
-          subject,
-          evidence: [`co-change support ${format3(pair.support)}`, `strength ${format3(pair.strength)}`],
+          endpoints,
+          evidence: {
+            support: round3(pair.support),
+            strength: round3(pair.strength),
+            ...(pair.expectedSupport === undefined ? {} : { expectedSupport: round3(pair.expectedSupport) }),
+          },
           detail:
-            `strong co-change with no structural edge and the diff does not add one: ${subject} ` +
+            `strong co-change with no structural edge and the diff does not add one: ${renderDiffFindingSubject(endpoints)} ` +
             `(support ${format3(pair.support)}, strength ${format3(pair.strength)})`,
-        };
+        });
       }),
     ];
     return {
@@ -1004,18 +891,22 @@ export class DiffDetectorRun {
       if (consumersByDroppedName.size === 0) continue;
 
       const droppedNames = [...consumersByDroppedName.keys()].sort();
-      findings.push({
-        detector: "facadeContract",
-        subject: relPath,
-        evidence: droppedNames.map((name) => {
-          const sources = [...(consumersByDroppedName.get(name) ?? [])].sort();
-          return `${name}: consumed by ${sources.join(", ")}`;
+      findings.push(
+        withRenderedSubject({
+          detector: "facadeContract",
+          endpoints: { kind: "file", relPath, component: componentDir },
+          evidence: {
+            droppedNames: droppedNames.map((name) => ({
+              name,
+              consumers: [...(consumersByDroppedName.get(name) ?? [])].sort(),
+            })),
+          },
+          detail:
+            `the diff stops re-exporting names the module's consumers still import: ` +
+            `${droppedNames.join(", ")} left ${relPath}'s re-export surface while indexed files outside ` +
+            `${componentDir} still import them`,
         }),
-        detail:
-          `the diff stops re-exporting names the module's consumers still import: ` +
-          `${droppedNames.join(", ")} left ${relPath}'s re-export surface while indexed files outside ` +
-          `${componentDir} still import them`,
-      });
+      );
     }
     return findings;
   }
@@ -1044,18 +935,23 @@ export class DiffDetectorRun {
         })
         .filter((cluster) => cluster.hit.length > 0);
       if (touched.length < 2) continue;
-      findings.push({
-        detector: "splitCandidates",
-        subject: candidate.component,
-        evidence: touched.map(
-          (cluster) =>
-            `cluster ${cluster.index + 1}: ${cluster.hit.length} of ${cluster.size} changed files — ` +
-            `${cluster.hit.slice(0, SPLIT_MERGE_EVIDENCE_FILE_CAP).join(", ")}`,
-        ),
-        detail:
-          `the diff works across the seam of ${candidate.component}, a component whose history already splits ` +
-          `into ${candidate.clusters} co-change groups`,
-      });
+      findings.push(
+        withRenderedSubject({
+          detector: "splitCandidates",
+          endpoints: { kind: "component", component: candidate.component },
+          evidence: {
+            clusterCount: candidate.clusters,
+            touchedClusters: touched.map((cluster) => ({
+              cluster: cluster.index + 1,
+              fileCount: cluster.size,
+              ...cappedChangedFiles(cluster.hit),
+            })),
+          },
+          detail:
+            `the diff works across the seam of ${candidate.component}, a component whose history already splits ` +
+            `into ${candidate.clusters} co-change groups`,
+        }),
+      );
     }
 
     const changedByComponent = new Map<string, string[]>();
@@ -1067,32 +963,45 @@ export class DiffDetectorRun {
       const sideA = changedByComponent.get(candidate.componentA);
       const sideB = changedByComponent.get(candidate.componentB);
       if (sideA === undefined || sideB === undefined) continue;
-      findings.push({
-        detector: "splitCandidates",
-        subject: `${candidate.componentA} ~ ${candidate.componentB}`,
-        evidence: [
-          `strength ${format3(candidate.strength)}`,
-          `${candidate.componentA}: ${cappedFileList(sideA)}`,
-          `${candidate.componentB}: ${cappedFileList(sideB)}`,
-        ],
-        detail:
-          `the diff bridges ${candidate.componentA} and ${candidate.componentB}, two components whose admitted ` +
-          `bundles already move them as one unit`,
-      });
+      findings.push(
+        withRenderedSubject({
+          detector: "splitCandidates",
+          endpoints: { kind: "componentPair", componentA: candidate.componentA, componentB: candidate.componentB },
+          evidence: {
+            strength: round3(candidate.strength),
+            sideA: cappedChangedFiles(sideA),
+            sideB: cappedChangedFiles(sideB),
+          },
+          detail:
+            `the diff bridges ${candidate.componentA} and ${candidate.componentB}, two components whose admitted ` +
+            `bundles already move them as one unit`,
+        }),
+      );
     }
     return findings;
   }
 }
 
 /**
- * A merge side's changed files capped at {@link SPLIT_MERGE_EVIDENCE_FILE_CAP}
- * exemplars; a merge line carries no "N of M" count, so the overflow is
- * counted here instead of silently dropped.
+ * Changed files capped at {@link SPLIT_MERGE_EVIDENCE_FILE_CAP} exemplars;
+ * the count stays whole, so the overflow is counted instead of silently
+ * dropped.
  */
-function cappedFileList(files: readonly string[]): string {
-  const shown = files.slice(0, SPLIT_MERGE_EVIDENCE_FILE_CAP).join(", ");
-  const overflow = files.length - SPLIT_MERGE_EVIDENCE_FILE_CAP;
-  return overflow > 0 ? `${shown} (+${overflow} more)` : shown;
+function cappedChangedFiles(files: readonly string[]): DiffFindingChangedFiles {
+  return { changedFileCount: files.length, changedFiles: files.slice(0, SPLIT_MERGE_EVIDENCE_FILE_CAP) };
+}
+
+/** A finding draft: everything but the subject, which is rendered from the endpoints. */
+type DiffDetectorFindingDraft = DiffDetectorFinding extends infer Finding
+  ? Finding extends { endpoints: DiffFindingEndpoints }
+    ? Omit<Finding, "subject">
+    : never
+  : never;
+
+/** A finding whose `subject` is rendered from its endpoints — never authored beside them (bd tea-rags-mcp-r8hme.44). */
+function withRenderedSubject(draft: DiffDetectorFindingDraft): DiffDetectorFinding {
+  // Key order detector, subject, endpoints, … — the reading order the finding had before endpoints existed.
+  return Object.assign({ detector: draft.detector, subject: renderDiffFindingSubject(draft.endpoints) }, draft);
 }
 
 function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
@@ -1146,11 +1055,16 @@ function uniqueOverlayEdges(changedFiles: readonly string[], overlay: ReviewEdge
 }
 
 /** A built detector family's verdict row. */
-function detectorStatus(detector: DiffDetectorFinding["detector"], findingCount: number): DiffDetectorStatus {
+function detectorStatus(detector: DiffDetectorFamily, findingCount: number): DiffDetectorStatus {
   return Object.freeze({ detector, built: true, findingCount });
 }
 
 /** Three decimals — the whole-repo report's evidence formatting. */
 function format3(value: number): string {
   return value.toFixed(3);
+}
+
+/** Three decimals as a number — the precision structured evidence carries, the report's `round3`. */
+function round3(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }
