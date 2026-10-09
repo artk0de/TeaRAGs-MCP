@@ -14,8 +14,12 @@ type StoredPoint = { id: string; payload: Record<string, unknown> };
  * keys, and re-reads the live payload per page — so a write made between pages
  * is visible to the next one, as it is on Qdrant. `failOnWrite` makes the Nth
  * `batchSetPayload` call throw, standing in for a crash mid-backfill.
+ * `falseCandidates` are ids the scroll admits although their live payload
+ * already carries the twin — what Qdrant 1.18.2 does after a `set_payload`
+ * sweep, when the missing-twin filter's `is_empty` admits unvacuumed dead
+ * versions and the scroll hands back the live point.
  */
-function storeHolding(points: StoredPoint[], options: { failOnWrite?: number } = {}) {
+function storeHolding(points: StoredPoint[], options: { failOnWrite?: number; falseCandidates?: string[] } = {}) {
   const inventory = new Map<string, string>();
   let writes = 0;
   const pageRequests: { payloadInclude: string[]; filter?: Record<string, unknown>; pageSize?: number }[] = [];
@@ -44,7 +48,12 @@ function storeHolding(points: StoredPoint[], options: { failOnWrite?: number } =
       for (;;) {
         const page = sorted
           .filter((p) => afterId === undefined || p.id > afterId)
-          .filter((p) => request.filter === undefined || payloadMatchesFilter(p.payload, request.filter))
+          .filter(
+            (p) =>
+              request.filter === undefined ||
+              payloadMatchesFilter(p.payload, request.filter) ||
+              (options.falseCandidates ?? []).includes(p.id),
+          )
           .slice(0, pageSize);
         if (page.length === 0) return;
         afterId = page[page.length - 1].id;
@@ -115,14 +124,14 @@ describe("SchemaV20RelativePathExactKeyword", () => {
     ]);
   });
 
-  it("reads only relativePath — never content — and asks only for points that still lack the key", async () => {
+  it("reads only relativePath and its twin — never content — and asks only for points that still lack the key", async () => {
     const store = storeHolding([chunk("a1", "src/a.ts")]);
 
     await new SchemaV20RelativePathExactKeyword(COLLECTION, store).apply();
 
     expect(store.pageRequests).toHaveLength(1);
     const [request] = store.pageRequests;
-    expect(request.payloadInclude).toEqual(["relativePath"]);
+    expect(request.payloadInclude).toEqual(["relativePath", "relativePathExact"]);
     expect(request.filter).toBeDefined();
     const filter = request.filter as Record<string, unknown>;
     expect(payloadMatchesFilter({ relativePath: "x.ts" }, filter)).toBe(true);
@@ -187,6 +196,19 @@ describe("SchemaV20RelativePathExactKeyword", () => {
     expect(points.every((p) => p.payload.relativePathExact === p.payload.relativePath)).toBe(true);
     expect(resumed.applied[0]).toBe("relativePathExact backfilled on 1500 points");
     expect(store.inventory.get("relativePathExact")).toBe("keyword");
+  });
+
+  it("never rewrites a candidate whose live payload already carries the twin (unvacuumed dead versions)", async () => {
+    const done = [chunk("a1", "src/a.ts"), chunk("a2", "src/a.ts")];
+    for (const point of done) point.payload.relativePathExact = point.payload.relativePath;
+    const left = chunk("b1", "src/b.ts");
+    const store = storeHolding([...done, left], { falseCandidates: ["a1", "a2"] });
+
+    const result = await new SchemaV20RelativePathExactKeyword(COLLECTION, store).apply();
+
+    expect(store.batchSetPayload.mock.calls.flatMap((call) => call[1].flatMap((op) => op.points))).toEqual(["b1"]);
+    expect(left.payload.relativePathExact).toBe("src/b.ts");
+    expect(result.applied[0]).toBe("relativePathExact backfilled on 1 points");
   });
 
   it("names relativePathExact among the schema-managed index keys, so v16 never drops it", () => {

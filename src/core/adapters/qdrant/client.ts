@@ -85,6 +85,7 @@ export class QdrantManager {
       // Waited writes: the caller's keyword filter runs right after the heal
       // and must see every twin it wrote.
       backfillStore: {
+        countPoints: async (collection, filter) => this.countPoints(collection, filter),
         scrollPayloadPages: (collection, request) =>
           this.scrollPayloadPages(collection, request.payloadInclude, request.pageSize, request.filter),
         batchSetPayload: async (collection, operations) => this.batchSetPayload(collection, operations, { wait: true }),

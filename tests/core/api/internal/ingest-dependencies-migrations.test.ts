@@ -190,8 +190,15 @@ describe("createIngestDependencies — schema v16 reconciliation", () => {
       "schema-v20-relative-path-exact-keyword",
     ]);
     // bd tea-rags-mcp-ejio7 — the v20 backfill reads through the real adapter
-    // with `relativePath` alone, then keyword-indexes the twin.
-    expect(qdrant.scrollPayloadPages).toHaveBeenCalledWith("code_8b243ffe", ["relativePath"], 1000, expect.anything());
+    // with `relativePath` and the twin (never `content`) — the twin so it can
+    // skip candidates whose live payload already carries it — then
+    // keyword-indexes the twin.
+    expect(qdrant.scrollPayloadPages).toHaveBeenCalledWith(
+      "code_8b243ffe",
+      ["relativePath", "relativePathExact"],
+      1000,
+      expect.anything(),
+    );
     expect(qdrant.ensurePayloadIndex).toHaveBeenCalledWith("code_8b243ffe", "relativePathExact", "keyword");
     expect(qdrant.ensurePayloadIndex).toHaveBeenCalledWith("code_8b243ffe", "git.file.lastModifiedAt", "integer");
     expect(qdrant.ensurePayloadIndex).toHaveBeenCalledWith("code_8b243ffe", "git.chunk.lastModifiedAt", "integer");

@@ -1,18 +1,28 @@
 /**
  * The ONE owner of "give every point that has a `relativePath` its
  * keyword-indexed twin `relativePathExact`" (bd tea-rags-mcp-ejio7; contract
- * `contracts/relative-path-exact.ts`). Two callers share it: the v20 schema
- * migration (`schema-v20-relative-path-exact-keyword`), which backfills a
- * collection once, and `RelativePathExactCapability`, which heals the points a
- * build OLDER than the twin wrote into a collection already stamped v20 before
- * it lets a membership filter name the key.
+ * `contracts/relative-path-exact.ts`) — and of COUNTING the points that still
+ * lack it. Two callers share it: the v20 schema migration
+ * (`schema-v20-relative-path-exact-keyword`), which backfills a collection
+ * once, and `RelativePathExactCapability`, which heals the points a build
+ * OLDER than the twin wrote into a collection already stamped v20 before it
+ * lets a membership filter name the key.
  *
- * - **Never reads `content`.** The scroll asks for `relativePath` alone.
+ * Why counting and walking are split: the missing-twin filter is an ABSENCE
+ * condition, and absence conditions over-admit right after a `set_payload`
+ * sweep (the Qdrant behaviour is stated once, in the `adapters/qdrant`
+ * navigator). So the filter only nominates CANDIDATES; the count that decides
+ * whether any point is missing uses presence conditions alone
+ * ({@link countPointsMissingRelativePathExact}), and the walk re-checks every
+ * candidate's live payload before it writes ({@link backfillRelativePathExact}).
+ *
+ * - **Never reads `content`.** The scroll asks for `relativePath` and the twin.
  * - **Paginated, never one capped read** — a capped read would leave a large
  *   collection half-done.
- * - **Idempotent and resumable.** The filter admits only points still lacking
- *   the twin, so a re-run writes exactly what an interrupted run left, and a
- *   run over a healed collection writes nothing.
+ * - **Idempotent and resumable.** A candidate whose live payload already
+ *   carries the right twin is skipped, so a re-run writes exactly what an
+ *   interrupted run left, and a run over a healed collection writes nothing —
+ *   even while dead versions still make the filter nominate every point.
  * - **Skips points without a path** (schema metadata, indexing marker,
  *   documents) and empty paths — the twin of nothing matches no membership
  *   filter anyway.
@@ -20,16 +30,31 @@
 
 import { RELATIVE_PATH_EXACT_KEY } from "../../contracts/relative-path-exact.js";
 
-/** Points that have a `relativePath` and still lack its keyword twin. */
+/**
+ * CANDIDATES for the backfill: points that have a `relativePath` and (per the
+ * index) lack its keyword twin. A superset of the truly missing points while
+ * unvacuumed dead versions exist — never use it to COUNT missing points.
+ */
 export const RELATIVE_PATH_EXACT_MISSING_FILTER: Record<string, unknown> = {
   must: [{ is_empty: { key: RELATIVE_PATH_EXACT_KEY } }],
   must_not: [{ is_empty: { key: "relativePath" } }],
 };
 
+/** Points that carry a `relativePath` — a presence condition. */
+const HAS_RELATIVE_PATH_FILTER: Record<string, unknown> = {
+  must_not: [{ is_empty: { key: "relativePath" } }],
+};
+
+/** Points that carry both a `relativePath` and its twin — presence conditions only. */
+const HAS_RELATIVE_PATH_AND_TWIN_FILTER: Record<string, unknown> = {
+  must_not: [{ is_empty: { key: "relativePath" } }, { is_empty: { key: RELATIVE_PATH_EXACT_KEY } }],
+};
+
 /**
  * Points per backfill page. Each page is one scroll carrying only
- * `relativePath`, and its writes are one `batchSetPayload` — one operation per
- * distinct path — so a page bounds both the read and the write side.
+ * `relativePath` and its twin, and its writes are one `batchSetPayload` — one
+ * operation per distinct path — so a page bounds both the read and the write
+ * side.
  */
 const BACKFILL_PAGE_SIZE = 1_000;
 
@@ -45,35 +70,63 @@ export interface RelativePathExactBackfillStore {
   ) => Promise<void>;
 }
 
-/**
- * Whether any point has a path but lacks the twin — one scroll of limit 1
- * with {@link RELATIVE_PATH_EXACT_MISSING_FILTER}, stopped after its first page.
- */
-export async function hasPointsMissingRelativePathExact(
-  store: RelativePathExactBackfillStore,
-  collection: string,
-): Promise<boolean> {
-  const pages = store.scrollPayloadPages(collection, {
-    // One short key rather than none: the scroller drops a point whose
-    // payload comes back null.
-    payloadInclude: ["relativePath"],
-    filter: RELATIVE_PATH_EXACT_MISSING_FILTER,
-    pageSize: 1,
-  });
-  for await (const page of pages) {
-    if (page.length > 0) return true;
-  }
-  return false;
+/** The backfill store plus the exact count the missing-twin probe needs. */
+export interface RelativePathExactProbeStore extends RelativePathExactBackfillStore {
+  /** EXACT number of points `filter` admits (every point without one). */
+  countPoints: (collection: string, filter?: Record<string, unknown>) => Promise<number>;
 }
 
-/** Write the twin onto every point lacking it, grouped by path; returns how many points were written. */
+/**
+ * How many points have a `relativePath` but lack the twin, from two exact
+ * PRESENCE counts: `|has path| − |has path ∧ has twin|`.
+ *
+ * Neither count names an absence condition, so dead versions cannot inflate
+ * the answer: `must_not is_empty` admits a point only by what its live payload
+ * CARRIES. Measured on `code_8b243ffe_v71` (46 097 live points, 29 104
+ * unvacuumed dead versions — all of which carry `relativePath`): `has path`
+ * counted 46 095 in 4 ms and `has path ∧ has twin` 46 095 in ~415 ms, where
+ * the `is_empty`-twin form counted 29 104 "missing". The cheaper of the
+ * measured correct formulations — `total − |twin MatchExcept| − |is_empty path|`
+ * cost ~635 ms and leans on an absence condition (`is_empty relativePath`) that
+ * a re-upserted path-less point (schema metadata, marker) could inflate,
+ * understating what is missing.
+ *
+ * The two counts run concurrently; a writer landing between them can skew the
+ * difference either way by what it wrote, and the answer is clamped at 0. An
+ * empty-string path counts as having a path but is never twinned (see the
+ * module docblock), so such a point reads as missing on every probe — none
+ * exist in practice (0 on the self-index).
+ */
+export async function countPointsMissingRelativePathExact(
+  store: RelativePathExactProbeStore,
+  collection: string,
+): Promise<number> {
+  const [withPath, withPathAndTwin] = await Promise.all([
+    store.countPoints(collection, HAS_RELATIVE_PATH_FILTER),
+    store.countPoints(collection, HAS_RELATIVE_PATH_AND_TWIN_FILTER),
+  ]);
+  return Math.max(0, withPath - withPathAndTwin);
+}
+
+/**
+ * Write the twin onto every point whose LIVE payload lacks it (or carries a
+ * different value), grouped by path; returns how many points were written.
+ *
+ * Candidates come from {@link RELATIVE_PATH_EXACT_MISSING_FILTER}; each one's
+ * live payload is checked before it is written, so a false candidate (a point
+ * nominated by its unvacuumed dead version) costs a read and never a write —
+ * a rewrite would only leave another dead version behind. With `missing`
+ * known (the probe's count), the walk stops once that many points are written
+ * instead of reading every remaining false candidate.
+ */
 export async function backfillRelativePathExact(
   store: RelativePathExactBackfillStore,
   collection: string,
+  options: { missing?: number } = {},
 ): Promise<number> {
   let backfilled = 0;
   const pages = store.scrollPayloadPages(collection, {
-    payloadInclude: ["relativePath"],
+    payloadInclude: ["relativePath", RELATIVE_PATH_EXACT_KEY],
     filter: RELATIVE_PATH_EXACT_MISSING_FILTER,
     pageSize: BACKFILL_PAGE_SIZE,
   });
@@ -82,16 +135,19 @@ export async function backfillRelativePathExact(
     for (const { id, payload } of page) {
       const path = payload.relativePath;
       if (typeof path !== "string" || path.length === 0) continue;
+      if (payload[RELATIVE_PATH_EXACT_KEY] === path) continue;
       const ids = idsByPath.get(path);
       if (ids) ids.push(id);
       else idsByPath.set(path, [id]);
     }
-    if (idsByPath.size === 0) continue;
-    await store.batchSetPayload(
-      collection,
-      [...idsByPath].map(([path, points]) => ({ payload: { [RELATIVE_PATH_EXACT_KEY]: path }, points })),
-    );
-    for (const ids of idsByPath.values()) backfilled += ids.length;
+    if (idsByPath.size > 0) {
+      await store.batchSetPayload(
+        collection,
+        [...idsByPath].map(([path, points]) => ({ payload: { [RELATIVE_PATH_EXACT_KEY]: path }, points })),
+      );
+      for (const ids of idsByPath.values()) backfilled += ids.length;
+    }
+    if (options.missing !== undefined && backfilled >= options.missing) break;
   }
   return backfilled;
 }

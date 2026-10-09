@@ -151,13 +151,32 @@
   the index. The stamp alone does not exclude such points — a build OLDER than
   the key (the global binary auto-update or an MCP server runs) upserts twinless
   points into a v20 collection, and that build has no guard. The gate closes it
-  by healing before it serves, on every call (no cached yes): a limit-1 probe,
-  and when it hits, the v20 migration's own backfill
-  (`relative-path-exact-backfill.ts`, the one owner of that write; concurrent
-  callers on one physical collection share one heal). A failed heal answers no.
-  A new membership consumer calls the gate; it never reads the schema version or
-  probes itself. Single-path lookups keep the pair — one pair is already
-  index-served (bd tea-rags-mcp-ejio7).
+  by healing before it serves: two exact presence counts give the number of
+  points missing the twin, and when it is above zero, the v20 migration's own
+  backfill (`relative-path-exact-backfill.ts`, the one owner of that count and
+  that write; concurrent callers on one physical collection share one heal). A
+  yes is remembered per physical collection for 60 s, a no never; a failed probe
+  or heal answers no. The TTL's cost and residual window are the
+  `RelativePathExactCapability` docblock. A new membership consumer calls the
+  gate; it never reads the schema version or probes itself. Single-path lookups
+  keep the pair — one pair is already index-served (bd tea-rags-mcp-ejio7).
+
+- **ABSENCE conditions over-count right after a `set_payload` sweep (Qdrant
+  1.18.2).** `set_payload` is copy-on-write: the older version of each point it
+  touches stays in its segment, marked deleted, until the optimizer vacuums it.
+  A condition that admits a point by a value it LACKS — `is_empty`, or a value
+  match under `must_not` — admits those dead versions too, while a PRESENCE
+  condition (`match`, `values_count`, `must_not is_empty`) does not. Measured on
+  `code_8b243ffe_v71` right after v20 backfilled 45 700 points: 46 097 live
+  points, `points_count` 75 201; `is_empty relativePathExact` (with
+  `must_not is_empty relativePath`) counted 29 104 and
+  `must_not relativePathExact match.except` 29 104, where the true number was 0,
+  and a scroll on that filter returned live points that HAD the key; every
+  presence count was exact. Not reproducible on a fresh, optimized scratch
+  collection. So an absence filter may only NOMINATE candidates — a count that
+  decides something uses presence conditions, and a write first re-checks each
+  candidate's live payload; rewriting a false candidate only leaves another dead
+  version behind (bd tea-rags-mcp-ejio7).
 
 ## Gotchas
 

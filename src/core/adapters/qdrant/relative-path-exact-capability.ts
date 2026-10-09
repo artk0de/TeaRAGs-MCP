@@ -4,7 +4,7 @@
  * so the point store, the working-tree base-point reader and test-setup
  * hydration cannot disagree about a collection.
  *
- * Yes requires two things, checked on EVERY call:
+ * Yes requires two things:
  *
  * 1. **The collection's schema version is at least
  *    `RELATIVE_PATH_EXACT_SCHEMA_VERSION`.** The schema pipeline stamps a
@@ -18,27 +18,34 @@
  *    points without it into a v20 collection, and nothing in that build can be
  *    taught to stop. A keyword filter would miss those points with no error —
  *    a delete or rename leaves them behind as ghosts. So the gate heals before
- *    it serves: one limit-1 probe for such points
- *    (`hasPointsMissingRelativePathExact`), and when it finds one, the same
- *    backfill the v20 migration runs (`backfillRelativePathExact`, the single
- *    owner of that write). A backfill that fails answers no.
+ *    it serves: two exact PRESENCE counts give the number missing
+ *    (`countPointsMissingRelativePathExact` — never an `is_empty` probe, which
+ *    counts unvacuumed dead versions as missing; see the `adapters/qdrant`
+ *    navigator), and when it is above zero, the same backfill the v20
+ *    migration runs (`backfillRelativePathExact`, the single owner of that
+ *    write), bounded by that number. A probe or backfill that fails answers no.
  *
- * Why per call, with no remembered yes: an older writer can add twinless
- * points at any moment, so a cached yes is exactly the hazard. The probe is
- * one filtered scroll of limit 1 over two indexed keys. Measured on a
- * 150k-point / 30k-path scratch collection (Qdrant 1.18.2, 2026-10-09): the
- * probe is p50 0.5 ms with 0 or 50 points missing, healing 50 points 27 ms,
- * while 256 paths cost p50 7 ms as one keyword MatchAny against p50 93 ms as
- * per-path exact pairs at the point store's concurrency of 4 — a positive TTL
- * would save under 1% of what serving saves, so none is kept. The residual window — an older build writing between the probe
- * and the caller's filter — is the same race any concurrent writer has with a
- * delete and is closed by the next call.
+ * **A yes is remembered per physical collection for `SERVED_TTL_MS` (60 s);
+ * a no never is.** The probe is not free: measured on the self-index
+ * (`code_8b243ffe_v71`, 46 097 points, Qdrant 1.18.2, 2026-10-09) the two
+ * counts cost ~420 ms together, almost all of it the `has path ∧ has twin`
+ * count. What one yes saves is per call: 256 paths cost p50 7 ms as one
+ * keyword MatchAny against p50 93 ms as per-path exact pairs at the point
+ * store's concurrency of 4 (150k-point scratch collection) — so probing on
+ * every call would cost several times what serving saves, while one probe
+ * a minute is amortised over every membership filter inside it.
+ * The residual window this buys: an OLDER build that writes twinless points
+ * inside the 60 s after a yes leaves them invisible to a keyword filter until
+ * the next probe heals them — a delete in that window can miss them and leave
+ * a stale chunk until the path is next touched. That build is the only writer
+ * that omits the twin, and the window is bounded by the TTL.
  *
  * Concurrent callers on one PHYSICAL collection share one in-flight check
  * (version read, probe, backfill), so a burst of deletes never runs parallel
  * backfills; the shared promise is dropped once it settles. Resolving the
- * alias is one alias-list read per call, which keeps an alias switched onto a
- * collection an OLDER build created from inheriting the old target's answer.
+ * alias is one alias-list read per call and the remembered yes is keyed by the
+ * physical name, which keeps an alias switched onto a collection an OLDER
+ * build created from inheriting the old target's answer.
  *
  * Never throws: an unreadable alias list, metadata point, probe or backfill
  * answers no, which is always correct, only slower.
@@ -47,17 +54,20 @@
 import { RELATIVE_PATH_EXACT_SCHEMA_VERSION } from "../../contracts/relative-path-exact.js";
 import {
   backfillRelativePathExact,
-  hasPointsMissingRelativePathExact,
-  type RelativePathExactBackfillStore,
+  countPointsMissingRelativePathExact,
+  type RelativePathExactProbeStore,
 } from "./relative-path-exact-backfill.js";
+
+/** How long a yes is remembered per physical collection; the docblock above says why 60 s. */
+const SERVED_TTL_MS = 60_000;
 
 export interface RelativePathExactCapabilityDeps {
   /** The physical collection an alias names, or the name itself. */
   resolvePhysical: (collectionName: string) => Promise<string>;
   /** The stamped schema version, or `undefined` when the collection has no schema metadata. */
   readSchemaVersion: (physicalCollectionName: string) => Promise<number | undefined>;
-  /** Where the probe and the heal read and write; its writes must be visible to the caller's next filter. */
-  backfillStore: RelativePathExactBackfillStore;
+  /** Where the probe counts and the heal reads and writes; its writes must be visible to the caller's next filter. */
+  backfillStore: RelativePathExactProbeStore;
 }
 
 /** The gate's surface, as its consumers take it. */
@@ -67,6 +77,8 @@ export interface RelativePathExactGate {
 
 export class RelativePathExactCapability implements RelativePathExactGate {
   private readonly inFlight = new Map<string, Promise<boolean>>();
+  /** Physical collection → epoch ms until which its yes stands. */
+  private readonly servedUntil = new Map<string, number>();
 
   constructor(private readonly deps: RelativePathExactCapabilityDeps) {}
 
@@ -77,6 +89,8 @@ export class RelativePathExactCapability implements RelativePathExactGate {
     } catch {
       return false;
     }
+    const until = this.servedUntil.get(physical);
+    if (until !== undefined && Date.now() < until) return true;
     const pending = this.inFlight.get(physical);
     if (pending) return pending;
     const check = this.check(physical).finally(() => this.inFlight.delete(physical));
@@ -85,12 +99,13 @@ export class RelativePathExactCapability implements RelativePathExactGate {
   }
 
   private async check(physical: string): Promise<boolean> {
+    this.servedUntil.delete(physical);
     try {
       const version = await this.deps.readSchemaVersion(physical);
       if (version === undefined || version < RELATIVE_PATH_EXACT_SCHEMA_VERSION) return false;
-      if (await hasPointsMissingRelativePathExact(this.deps.backfillStore, physical)) {
-        await backfillRelativePathExact(this.deps.backfillStore, physical);
-      }
+      const missing = await countPointsMissingRelativePathExact(this.deps.backfillStore, physical);
+      if (missing > 0) await backfillRelativePathExact(this.deps.backfillStore, physical, { missing });
+      this.servedUntil.set(physical, Date.now() + SERVED_TTL_MS);
       return true;
     } catch {
       return false;
