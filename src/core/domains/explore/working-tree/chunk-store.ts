@@ -60,7 +60,7 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
 import type { SparseVector } from "../../../adapters/qdrant/types.js";
-import { readBlobCommitTime as gitReadBlobCommitTime } from "../../../adapters/vcs/git/git-cli/client.js";
+import { readBlobCommitTime as gitReadBlobCommitTime } from "../../../adapters/vcs/index.js";
 import { fileContentHash } from "../../../infra/file-content-hash.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import {

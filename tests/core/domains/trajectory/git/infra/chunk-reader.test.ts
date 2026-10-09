@@ -10,11 +10,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
-import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/cat-file.js";
+import * as gitClientHistory from "../../../../../../src/core/adapters/vcs/git/git-cli/history.js";
 import * as chunkReader from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 
 // Enable cross-module spy interception for adapter functions
-vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (importOriginal) => importOriginal());
+vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/cat-file.js", async (importOriginal) => importOriginal());
+vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/history.js", async (importOriginal) => importOriginal());
 
 // walk-commits reads blobs via `createCatFileBatch(repoRoot).read(oid, path)`.
 // Mock the batch reader and drive returned blob content through the `read` fn —
@@ -40,7 +42,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
 
   it("should skip files whose chunks exceed maxFileLines (no blob read)", async () => {
     // Mock pathspec to return a commit touching our file
-    vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
+    vi.spyOn(gitClientHistory, "getCommitsByPathspec").mockResolvedValue([
       {
         commit: {
           sha: "a".repeat(40),
@@ -84,7 +86,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
   });
 
   it("diffs a commit that carries no parents (loose fixture shape) against the empty tree", async () => {
-    vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
+    vi.spyOn(gitClientHistory, "getCommitsByPathspec").mockResolvedValue([
       {
         commit: {
           sha: "a".repeat(40),
@@ -125,7 +127,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
   });
 
   it("credits a root commit with the lines it adds, like `git log -L` (bd tea-rags-mcp-z8w16)", async () => {
-    vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
+    vi.spyOn(gitClientHistory, "getCommitsByPathspec").mockResolvedValue([
       {
         commit: {
           sha: "a".repeat(40),
@@ -168,7 +170,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
   });
 
   it("should skip when both blobs are empty", async () => {
-    vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
+    vi.spyOn(gitClientHistory, "getCommitsByPathspec").mockResolvedValue([
       {
         commit: {
           sha: "a".repeat(40),
@@ -208,7 +210,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
   });
 
   it("should handle structuredPatch throwing (caught by try/catch in processCommitEntry)", async () => {
-    vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
+    vi.spyOn(gitClientHistory, "getCommitsByPathspec").mockResolvedValue([
       {
         commit: {
           sha: "a".repeat(40),
@@ -258,7 +260,7 @@ describe("processCommitEntry — no relevant files", () => {
   });
 
   it("should skip commit when changedFiles don't match any chunk file", async () => {
-    vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
+    vi.spyOn(gitClientHistory, "getCommitsByPathspec").mockResolvedValue([
       {
         commit: {
           sha: "a".repeat(40),
@@ -306,7 +308,7 @@ describe("processCommitEntry — bug fix accumulation", () => {
     const commitSha = "a".repeat(40);
 
     // Mock getCommitsByPathspec (cross-module from chunk-reader → gitClient)
-    vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
+    vi.spyOn(gitClientHistory, "getCommitsByPathspec").mockResolvedValue([
       {
         commit: {
           sha: commitSha,
@@ -373,7 +375,7 @@ describe("buildChunkChurnMapUncached — single-chunk files", () => {
     // invariant that every chunk has chunk-level data — recovery flagged them
     // as unenriched forever, reranker had no overlay to read, blame was lost.
     const commitSha = "a".repeat(40);
-    vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
+    vi.spyOn(gitClientHistory, "getCommitsByPathspec").mockResolvedValue([
       {
         commit: {
           sha: commitSha,
@@ -438,7 +440,7 @@ describe("buildChunkChurnMapUncached — fallback fileCommitCount", () => {
 
   it("should use union of chunk SHAs as denominator when fileChurnDataMap is not provided", async () => {
     const commitSha = "a".repeat(40);
-    vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
+    vi.spyOn(gitClientHistory, "getCommitsByPathspec").mockResolvedValue([
       {
         commit: {
           sha: commitSha,
@@ -489,7 +491,7 @@ describe("buildChunkChurnMapUncached — CLI pathspec failure", () => {
   });
 
   it("should return empty overlays when getCommitsByPathspec throws (no fallback)", async () => {
-    vi.spyOn(gitClient, "getCommitsByPathspec").mockRejectedValue(new Error("CLI failed"));
+    vi.spyOn(gitClientHistory, "getCommitsByPathspec").mockRejectedValue(new Error("CLI failed"));
 
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -525,7 +527,7 @@ describe("buildChunkChurnMapUncached — external semaphore", () => {
 
   it("uses external semaphore's acquire/release when provided", async () => {
     const commitSha = "a".repeat(40);
-    vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
+    vi.spyOn(gitClientHistory, "getCommitsByPathspec").mockResolvedValue([
       {
         commit: {
           sha: commitSha,
@@ -590,7 +592,7 @@ describe("buildChunkChurnMapUncached — external semaphore", () => {
   it("falls back to internal semaphore when externalSemaphore is undefined", async () => {
     // Regression guard: existing call sites that don't pass semaphore still work
     const commitSha = "a".repeat(40);
-    vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
+    vi.spyOn(gitClientHistory, "getCommitsByPathspec").mockResolvedValue([
       {
         commit: {
           sha: commitSha,
@@ -635,7 +637,7 @@ describe("buildChunkChurnMapUncached — injected blobReader", () => {
 
   it("uses an injected blobReader and does NOT spawn/close its own (caller owns lifecycle)", async () => {
     const commitSha = "a".repeat(40);
-    vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
+    vi.spyOn(gitClientHistory, "getCommitsByPathspec").mockResolvedValue([
       {
         commit: {
           sha: commitSha,
@@ -689,7 +691,7 @@ describe("buildChunkChurnMapUncached — injected blobReader", () => {
 
   it("spawns and closes its OWN reader when none is injected (regression guard)", async () => {
     const commitSha = "a".repeat(40);
-    vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
+    vi.spyOn(gitClientHistory, "getCommitsByPathspec").mockResolvedValue([
       {
         commit: {
           sha: commitSha,
@@ -732,7 +734,7 @@ describe("buildChunkChurnMapUncached — concurrency control", () => {
     const sha2 = "b".repeat(40);
 
     // Mock getCommitsByPathspec (cross-module from chunk-reader → gitClient)
-    vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
+    vi.spyOn(gitClientHistory, "getCommitsByPathspec").mockResolvedValue([
       {
         commit: {
           sha: sha1,

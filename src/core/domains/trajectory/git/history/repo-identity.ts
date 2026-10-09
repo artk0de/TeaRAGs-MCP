@@ -10,7 +10,7 @@
  * or re-linking a checkout means a new path, hence a new key — so an unbounded
  * process-lifetime memo is safe and stays small (one entry per indexed repo).
  */
-import { resolveGitCommonDir } from "../../../../adapters/vcs/git/common-dir.js";
+import { resolveGitCommonDir } from "../../../../adapters/vcs/index.js";
 
 const identityByWorkingTree = new Map<string, string>();
 

@@ -75,7 +75,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
-import type { AddedLineRange } from "../../../adapters/vcs/git/git-cli/client.js";
+import type { AddedLineRange } from "../../../adapters/vcs/index.js";
 import type {
   CallableSymbolKind,
   GraphDbClient,

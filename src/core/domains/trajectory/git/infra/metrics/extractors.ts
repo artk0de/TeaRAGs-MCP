@@ -7,7 +7,7 @@
  * Extracted from the monolithic computeFileSignals() in metrics.ts.
  */
 
-import type { CommitInfo } from "../../../../../adapters/vcs/types.js";
+import type { CommitInfo } from "../../../../../adapters/vcs/index.js";
 import { extractTaskIds, isBugFixCommitOrBranch, tallyAuthors } from "../../history/index.js";
 
 export interface AuthorshipResult {

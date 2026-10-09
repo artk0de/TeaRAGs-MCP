@@ -9,12 +9,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import * as gitClientHistory from "../../../../../../src/core/adapters/vcs/git/git-cli/history.js";
 import {
   GitCommitDiscovery,
   type GitCommitDiscoveryEntry,
 } from "../../../../../../src/core/domains/trajectory/git/history/commit-discovery.js";
 
 vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (importOriginal) => importOriginal());
+vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/history.js", async (importOriginal) => importOriginal());
 
 function entry(sha: string, paths: string[]): GitCommitDiscoveryEntry {
   return {
@@ -31,7 +33,7 @@ describe("GitCommitDiscovery#allEntries (bd tea-rags-mcp-x4rpp)", () => {
   it("returns every row in log order and shares the one build with commitsForFiles", async () => {
     vi.spyOn(gitClient, "getHead").mockResolvedValue("h".repeat(40));
     const log = vi
-      .spyOn(gitClient, "getCommitsSince")
+      .spyOn(gitClientHistory, "getCommitsSince")
       .mockResolvedValue([entry("sha3", ["a.ts"]), entry("sha2", ["b.ts", "c.yml"]), entry("sha1", ["a.ts"])]);
     const discovery = new GitCommitDiscovery(new GitCliAdapter("/repo"), { maxAgeMonths: 6, timeoutMs: 1000 });
 

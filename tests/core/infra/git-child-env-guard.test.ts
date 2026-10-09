@@ -28,7 +28,7 @@ const GIT_CHILD_ENV_BUILDER = "buildGitChildProcessEnv";
 /** Helper → file declaring it. Each spawns ONLY git and applies the env contract inside. */
 const GIT_SPAWN_HELPERS: Readonly<Record<string, string>> = {
   execWithStallGuard: "src/core/adapters/vcs/git/git-cli/stall-guard-exec.ts",
-  execFileAsync: "src/core/adapters/vcs/git/git-cli/client.ts",
+  execFileAsync: "src/core/adapters/vcs/git/git-cli/exec.ts",
 };
 
 /** The node:child_process primitives a helper may wrap. */
@@ -157,7 +157,7 @@ describe("git child env guard (bd tea-rags-mcp-s5kpv)", () => {
  * There is none today.
  */
 const WORKTREE_DIFF_HELPER = "execWorktreeDiffOnScratchIndex";
-const WORKTREE_DIFF_HELPER_FILE = "src/core/adapters/vcs/git/git-cli/client.ts";
+const WORKTREE_DIFF_HELPER_FILE = "src/core/adapters/vcs/git/git-cli/working-tree.ts";
 const COMMIT_ONLY_DIFF_ARGV_SITES: ReadonlySet<string> = new Set<string>();
 
 function findDiffArgvSites(sourceFile: ts.SourceFile): { location: string; ok: boolean }[] {

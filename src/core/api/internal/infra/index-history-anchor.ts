@@ -16,7 +16,7 @@
  * every age read from there.
  */
 
-import { readCommitTime as readCommitTimeAt } from "../../../adapters/vcs/git/git-cli/client.js";
+import { readCommitTime as readCommitTimeAt } from "../../../adapters/vcs/index.js";
 import type { CollectionEntry } from "../../../contracts/types/registry.js";
 import { resolveIndexHistoryAnchorSec, stampedHistoryAnchorMode } from "../../../domains/trajectory/git/index.js";
 

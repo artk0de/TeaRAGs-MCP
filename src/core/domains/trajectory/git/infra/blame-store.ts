@@ -26,7 +26,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import type { BlameLine } from "../../../../adapters/vcs/types.js";
+import type { BlameLine } from "../../../../adapters/vcs/index.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import { mailmapStampMatches, readMailmapFingerprint, resolveRepoIdentity } from "../history/index.js";
 

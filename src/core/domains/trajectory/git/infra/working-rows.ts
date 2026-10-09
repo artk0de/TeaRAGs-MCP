@@ -28,8 +28,7 @@ import { isAbsolute } from "node:path";
 
 import { structuredPatch } from "diff";
 
-import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
-import type { BlobBatchReader, FileChurnData } from "../../../../adapters/vcs/types.js";
+import type { BlobBatchReader, FileChurnData, VcsGitAdapter } from "../../../../adapters/vcs/index.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import type { ChunkChurnOverlay } from "../types.js";

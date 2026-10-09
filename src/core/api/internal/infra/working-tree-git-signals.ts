@@ -48,9 +48,12 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
-import { VcsAdapterFactory } from "../../../adapters/vcs/factory.js";
-import { readPathCommitsSince, type PathCommitsSince } from "../../../adapters/vcs/git/git-cli/client.js";
-import type { GitAdapterKind } from "../../../adapters/vcs/types.js";
+import {
+  readPathCommitsSince,
+  VcsAdapterFactory,
+  type GitAdapterKind,
+  type PathCommitsSince,
+} from "../../../adapters/vcs/index.js";
 import type { FileClassification } from "../../../contracts/types/file-classification.js";
 import type {
   WorkingTreeGitSignals,

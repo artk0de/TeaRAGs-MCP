@@ -7,8 +7,7 @@
  * receive repoRoot per method).
  */
 
-import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
-import type { FileChurnData } from "../../../../adapters/vcs/types.js";
+import type { FileChurnData, VcsGitAdapter } from "../../../../adapters/vcs/index.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import { extractTaskIds } from "../history/index.js";
 import type { ChunkChurnOverlay } from "../types.js";

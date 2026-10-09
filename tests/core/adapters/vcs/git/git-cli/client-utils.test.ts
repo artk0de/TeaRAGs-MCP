@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/exec.js";
+import * as gitClientHistory from "../../../../../../src/core/adapters/vcs/git/git-cli/history.js";
 
 // ─── withTimeout utility ─────────────────────────────────────────────────────
 
@@ -27,7 +28,7 @@ describe("withTimeout", () => {
 
 describe("buildCliArgs", () => {
   it("should not include --since when sinceDate is undefined", () => {
-    const args: string[] = gitClient.buildCliArgs(undefined);
+    const args: string[] = gitClientHistory.buildCliArgs(undefined);
     expect(args).toContain("log");
     expect(args).toContain("HEAD");
     expect(args).toContain("--numstat");
@@ -37,7 +38,7 @@ describe("buildCliArgs", () => {
 
   it("should include --since with ISO date when sinceDate is provided", () => {
     const date = new Date("2025-01-15T00:00:00.000Z");
-    const args: string[] = gitClient.buildCliArgs(date);
+    const args: string[] = gitClientHistory.buildCliArgs(date);
     const sinceArg = args.find((a: string) => a.startsWith("--since="));
     expect(sinceArg).toBeDefined();
     expect(sinceArg).toContain("2025-01-15");
@@ -91,7 +92,7 @@ describe("getCommitsByPathspecBatched (via getCommitsByPathspec)", () => {
   });
 
   it("should return empty array for empty file paths", async () => {
-    const result = await gitClient.getCommitsByPathspec("/repo", new Date(), []);
+    const result = await gitClientHistory.getCommitsByPathspec("/repo", new Date(), []);
     expect(result).toEqual([]);
   });
 });

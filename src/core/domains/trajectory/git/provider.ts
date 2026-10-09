@@ -9,17 +9,17 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { VcsAdapterFactory } from "../../../adapters/vcs/factory.js";
-import type { VcsGitAdapter } from "../../../adapters/vcs/git/adapter.js";
-import { resolveRepoRoot } from "../../../adapters/vcs/git/git-cli/client.js";
-import type {
-  BlameLine,
-  CommitInfo,
-  CommitWithChangedFiles,
-  FileChurnData,
-  GitAdapterKind,
-  OidBatchResolver,
-} from "../../../adapters/vcs/types.js";
+import {
+  resolveRepoRoot,
+  VcsAdapterFactory,
+  type BlameLine,
+  type CommitInfo,
+  type CommitWithChangedFiles,
+  type FileChurnData,
+  type GitAdapterKind,
+  type OidBatchResolver,
+  type VcsGitAdapter,
+} from "../../../adapters/vcs/index.js";
 import type { TemporalSymbolCommitBuffer } from "../../../contracts/types/codegraph.js";
 import type { TrajectoryGitConfig } from "../../../contracts/types/config.js";
 import type { FileClassification } from "../../../contracts/types/file-classification.js";

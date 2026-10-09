@@ -3,11 +3,9 @@ import * as nodeFs from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { VcsAdapterFactory } from "../../../../../src/core/adapters/vcs/factory.js";
-import {
-  blameFile,
-  createCatFileBatchCheck,
-  getHead,
-} from "../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import { createCatFileBatchCheck } from "../../../../../src/core/adapters/vcs/git/git-cli/cat-file.js";
+import { getHead } from "../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import { blameFile } from "../../../../../src/core/adapters/vcs/git/git-cli/history.js";
 import { GitCommitDiscovery } from "../../../../../src/core/domains/trajectory/git/history/commit-discovery.js";
 import { buildChunkChurnMap } from "../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import { ChunkChurnWalkPool } from "../../../../../src/core/domains/trajectory/git/infra/churn-walk/walk-pool.js";
@@ -26,11 +24,17 @@ vi.mock("node:fs", async () => {
 
 vi.mock("../../../../../src/core/adapters/vcs/git/git-cli/client.js", () => ({
   resolveRepoRoot: vi.fn((p: string) => p),
-  blameFile: vi.fn().mockResolvedValue([]),
   writeCommitGraph: vi.fn().mockResolvedValue(undefined),
   getHead: vi.fn().mockResolvedValue("headsha"),
+}));
+
+vi.mock("../../../../../src/core/adapters/vcs/git/git-cli/history.js", () => ({
+  blameFile: vi.fn().mockResolvedValue([]),
   // Whole-history age log for files the window misses (bd tea-rags-mcp-i6tkc) — no history here.
   readCommitPathChanges: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("../../../../../src/core/adapters/vcs/git/git-cli/cat-file.js", () => ({
   // Default: a fresh working reader so the resolveHeadOids success path runs
   // (existing tests only care that blame still runs for every file — see
   // populateBlameMap's oid-miss fallback). Individual tests below override

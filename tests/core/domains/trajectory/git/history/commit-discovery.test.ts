@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import * as gitClientHistory from "../../../../../../src/core/adapters/vcs/git/git-cli/history.js";
 import type { CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
 import {
   GitCommitDiscovery,
@@ -22,6 +23,7 @@ import {
 
 // Enable cross-module spy interception for adapter functions.
 vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (importOriginal) => importOriginal());
+vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/history.js", async (importOriginal) => importOriginal());
 
 const HEAD = "h".repeat(40);
 const PRIOR_HEAD = "g".repeat(40);
@@ -66,7 +68,7 @@ describe("GitCommitDiscovery (bd tea-rags-mcp-82va1)", () => {
   it("builds the matrix from ONE repo-wide log and slices per file set preserving log order", async () => {
     vi.spyOn(gitClient, "getHead").mockResolvedValue(HEAD);
     const sinceSpy = vi
-      .spyOn(gitClient, "getCommitsSince")
+      .spyOn(gitClientHistory, "getCommitsSince")
       .mockResolvedValue([entry("sha3", ["a.ts"]), entry("sha2", ["b.ts", "a.ts"]), entry("sha1", ["a.ts"])]);
     const discovery = new GitCommitDiscovery(new GitCliAdapter("/repo"), { maxAgeMonths: 6, timeoutMs: 5000 });
 
@@ -86,7 +88,7 @@ describe("GitCommitDiscovery (bd tea-rags-mcp-82va1)", () => {
 
   it("single-flights concurrent first calls (getCommitsSince called once across Promise.all)", async () => {
     vi.spyOn(gitClient, "getHead").mockResolvedValue(HEAD);
-    const sinceSpy = vi.spyOn(gitClient, "getCommitsSince").mockResolvedValue([entry("sha1", ["a.ts"])]);
+    const sinceSpy = vi.spyOn(gitClientHistory, "getCommitsSince").mockResolvedValue([entry("sha1", ["a.ts"])]);
     const discovery = new GitCommitDiscovery(new GitCliAdapter("/repo"), { maxAgeMonths: 6, timeoutMs: 5000 });
 
     await Promise.all([discovery.commitsForFiles(["a.ts"]), discovery.getBugFixShas()]);
@@ -96,7 +98,7 @@ describe("GitCommitDiscovery (bd tea-rags-mcp-82va1)", () => {
 
   it("builds the bugFixShaSet over ALL matrix commits (superset semantics)", async () => {
     vi.spyOn(gitClient, "getHead").mockResolvedValue(HEAD);
-    vi.spyOn(gitClient, "getCommitsSince").mockResolvedValue([
+    vi.spyOn(gitClientHistory, "getCommitsSince").mockResolvedValue([
       entry("mergesha", ["merged.ts"], "Merge branch 'fix/crash'", ["sha1", "sha2"]),
       entry("sha2", ["b.ts"], "restore ordering", ["sha1"]),
       entry("sha1", ["a.ts"], "feat: base", []),
@@ -113,7 +115,7 @@ describe("GitCommitDiscovery (bd tea-rags-mcp-82va1)", () => {
 
   it("exact-HEAD store hit skips the log entirely and does NOT re-save", async () => {
     vi.spyOn(gitClient, "getHead").mockResolvedValue(HEAD);
-    const sinceSpy = vi.spyOn(gitClient, "getCommitsSince").mockResolvedValue([]);
+    const sinceSpy = vi.spyOn(gitClientHistory, "getCommitsSince").mockResolvedValue([]);
     const freshIso = new Date(legacySinceMs(6)).toISOString();
     const store = fakeStore({
       load: vi.fn().mockReturnValue(persisted(HEAD, freshIso, [entry("sha1", ["a.ts"])])),
@@ -130,9 +132,9 @@ describe("GitCommitDiscovery (bd tea-rags-mcp-82va1)", () => {
 
   it("tops up from a prior-HEAD ancestor snapshot via getCommitsInRange (no full log)", async () => {
     vi.spyOn(gitClient, "getHead").mockResolvedValue(HEAD);
-    const sinceSpy = vi.spyOn(gitClient, "getCommitsSince").mockResolvedValue([]);
+    const sinceSpy = vi.spyOn(gitClientHistory, "getCommitsSince").mockResolvedValue([]);
     const ancestorSpy = vi.spyOn(gitClient, "isAncestor").mockResolvedValue(true);
-    const rangeSpy = vi.spyOn(gitClient, "getCommitsInRange").mockResolvedValue([entry("freshsha", ["a.ts"])]);
+    const rangeSpy = vi.spyOn(gitClientHistory, "getCommitsInRange").mockResolvedValue([entry("freshsha", ["a.ts"])]);
     const priorIso = new Date(legacySinceMs(6)).toISOString();
     const priorEntries = [entry("oldsha", ["a.ts"])];
     const store = fakeStore({
@@ -158,9 +160,9 @@ describe("GitCommitDiscovery (bd tea-rags-mcp-82va1)", () => {
 
   it("rebuilds fully when the prior snapshot HEAD is not an ancestor", async () => {
     vi.spyOn(gitClient, "getHead").mockResolvedValue(HEAD);
-    const sinceSpy = vi.spyOn(gitClient, "getCommitsSince").mockResolvedValue([entry("sha1", ["a.ts"])]);
+    const sinceSpy = vi.spyOn(gitClientHistory, "getCommitsSince").mockResolvedValue([entry("sha1", ["a.ts"])]);
     vi.spyOn(gitClient, "isAncestor").mockResolvedValue(false);
-    const rangeSpy = vi.spyOn(gitClient, "getCommitsInRange").mockResolvedValue([]);
+    const rangeSpy = vi.spyOn(gitClientHistory, "getCommitsInRange").mockResolvedValue([]);
     const priorIso = new Date(legacySinceMs(6)).toISOString();
     const store = fakeStore({
       loadLatest: vi.fn().mockReturnValue(persisted(PRIOR_HEAD, priorIso, [entry("oldsha", ["a.ts"])])),
@@ -179,8 +181,8 @@ describe("GitCommitDiscovery (bd tea-rags-mcp-82va1)", () => {
 
   it("rebuilds fully when the cached window drifted beyond the 24h tolerance", async () => {
     vi.spyOn(gitClient, "getHead").mockResolvedValue(HEAD);
-    const sinceSpy = vi.spyOn(gitClient, "getCommitsSince").mockResolvedValue([entry("sha1", ["a.ts"])]);
-    const rangeSpy = vi.spyOn(gitClient, "getCommitsInRange").mockResolvedValue([]);
+    const sinceSpy = vi.spyOn(gitClientHistory, "getCommitsSince").mockResolvedValue([entry("sha1", ["a.ts"])]);
+    const rangeSpy = vi.spyOn(gitClientHistory, "getCommitsInRange").mockResolvedValue([]);
     // 40 days older than the wanted window — far beyond the 24h tolerance.
     const driftedIso = new Date(legacySinceMs(6) - 40 * 86400 * 1000).toISOString();
     const store = fakeStore({
@@ -198,7 +200,7 @@ describe("GitCommitDiscovery (bd tea-rags-mcp-82va1)", () => {
 
   it("works without a store — plain single discovery", async () => {
     vi.spyOn(gitClient, "getHead").mockResolvedValue(HEAD);
-    const sinceSpy = vi.spyOn(gitClient, "getCommitsSince").mockResolvedValue([entry("sha1", ["a.ts"])]);
+    const sinceSpy = vi.spyOn(gitClientHistory, "getCommitsSince").mockResolvedValue([entry("sha1", ["a.ts"])]);
     const discovery = new GitCommitDiscovery(new GitCliAdapter("/repo"), { maxAgeMonths: 6, timeoutMs: 5000 });
 
     expect((await discovery.commitsForFiles(["a.ts"])).map((e) => e.commit.sha)).toEqual(["sha1"]);

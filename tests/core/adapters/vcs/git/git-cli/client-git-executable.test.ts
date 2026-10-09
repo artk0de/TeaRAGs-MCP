@@ -11,7 +11,8 @@ import { EventEmitter } from "node:events";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { blameFile, createCatFileBatch } from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import { createCatFileBatch } from "../../../../../../src/core/adapters/vcs/git/git-cli/cat-file.js";
+import { blameFile } from "../../../../../../src/core/adapters/vcs/git/git-cli/history.js";
 import type * as GitExecutableModule from "../../../../../../src/core/infra/git-executable.js";
 
 const RESOLVED_GIT = "/resolved/by/test/git";

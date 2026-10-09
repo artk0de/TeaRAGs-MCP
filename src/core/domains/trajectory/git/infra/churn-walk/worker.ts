@@ -21,9 +21,13 @@
 
 import { parentPort, workerData } from "node:worker_threads";
 
-import { VcsAdapterFactory } from "../../../../../adapters/vcs/factory.js";
-import type { VcsGitAdapter } from "../../../../../adapters/vcs/git/adapter.js";
-import type { BlameLine, BlobBatchReader, GitAdapterKind } from "../../../../../adapters/vcs/types.js";
+import {
+  VcsAdapterFactory,
+  type BlameLine,
+  type BlobBatchReader,
+  type GitAdapterKind,
+  type VcsGitAdapter,
+} from "../../../../../adapters/vcs/index.js";
 import { CommitDiffMemo } from "../../../../../infra/commit-diff-memo.js";
 import { adoptGitExecutable } from "../../../../../infra/git-executable.js";
 import { Semaphore } from "../../../../../infra/semaphore.js";

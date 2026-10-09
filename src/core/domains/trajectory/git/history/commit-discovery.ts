@@ -14,8 +14,7 @@
  * `git log oldHead..newHead`; anything stale/corrupt/drifted rebuilds fully.
  */
 
-import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
-import type { CommitChangedPath, CommitInfo } from "../../../../adapters/vcs/types.js";
+import type { CommitChangedPath, CommitInfo, VcsGitAdapter } from "../../../../adapters/vcs/index.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import { historyWindowSince } from "./history-anchor.js";
 import { buildBugFixShaSet } from "./merge-branch-resolver.js";

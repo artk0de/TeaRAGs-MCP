@@ -6,10 +6,9 @@
 import { spawn } from "node:child_process";
 
 import { buildGitChildProcessEnv, resolveGitExecutable } from "../../../../infra/git-executable.js";
-import { execFileAsync } from "./exec.js";
+import { execFileAsync, TREE_LISTING_STALL_MS } from "./exec.js";
 import { trackGitChildProcess } from "./git-child-process-registry.js";
 import { execWithStallGuard } from "./stall-guard-exec.js";
-import { TREE_LISTING_STALL_MS } from "./working-tree.js";
 
 // ── Object reads (CLI cat-file — never loads the packfile into memory) ──
 // isomorphic-git's readBlob loaded the ENTIRE packfile into a JS ArrayBuffer

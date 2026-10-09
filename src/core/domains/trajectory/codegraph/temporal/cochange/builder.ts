@@ -24,9 +24,7 @@ import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { relative, sep } from "node:path";
 
-import { VcsAdapterFactory } from "../../../../../adapters/vcs/factory.js";
-import { resolveRepoRoot } from "../../../../../adapters/vcs/git/git-cli/client.js";
-import type { GitAdapterKind } from "../../../../../adapters/vcs/types.js";
+import { resolveRepoRoot, VcsAdapterFactory, type GitAdapterKind } from "../../../../../adapters/vcs/index.js";
 import type {
   RelPath,
   TemporalCochangeBuildMeta,

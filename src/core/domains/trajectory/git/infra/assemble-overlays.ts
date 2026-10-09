@@ -6,7 +6,7 @@
  * Map<relativePath, Map<chunkId, ChunkChurnOverlay>>.
  */
 
-import type { BlameLine, FileChurnData } from "../../../../adapters/vcs/types.js";
+import type { BlameLine, FileChurnData } from "../../../../adapters/vcs/index.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import { authorIdentityKey, groupIntoSessions } from "../history/index.js";
 import type { ChunkChurnOverlay } from "../types.js";
