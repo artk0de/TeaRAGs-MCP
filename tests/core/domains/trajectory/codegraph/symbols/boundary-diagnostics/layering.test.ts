@@ -19,6 +19,7 @@ import {
   detectLayeringViolations,
   lookupLayeringKnot,
   measureLayeringFoundationComponents,
+  measureLayeringFoundationTerminalComponents,
   type FacadeModuleAssessment,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
 
@@ -617,6 +618,10 @@ describe("detectLayeringViolations — source scope (bd tea-rags-mcp-r8hme.33)",
 /**
  * `layered()` with a type census on `core` (L0) and, optionally, `lib` (L1),
  * plus `app/deep2.ts` reaching `lib` directly — a second skip, L3 → L1.
+ * `lib/y.ts` and `proto/p.ts` also reach the uncensused `util` (L0), so
+ * neither depends on the foundation alone: `lib` stays a reported skip target
+ * once `core` is measured foundation, and neither is foundation-terminal (bd
+ * tea-rags-mcp-r8hme.52.3).
  */
 function layeredWithCensus(
   coreCensus: TypeAbstractnessCensus | undefined,
@@ -630,8 +635,8 @@ function layeredWithCensus(
     if (f.relPath === "lib/x.ts") return withCensus(f.relPath, libCensus);
     return f;
   });
-  g.files.push(file("app/deep2.ts"));
-  g.edges.push(edge("app/deep2.ts", "lib/x.ts"));
+  g.files.push(file("app/deep2.ts"), file("util/u.ts"));
+  g.edges.push(edge("app/deep2.ts", "lib/x.ts"), edge("lib/y.ts", "util/u.ts"), edge("proto/p.ts", "util/u.ts"));
   return g;
 }
 
@@ -679,6 +684,111 @@ describe("layering foundation — measured, never named (bd tea-rags-mcp-89k7k.3
 
     expect(scoped("app/deep.ts")).toEqual({ components: ["core"], exemptedLayerSkipCount: 1 });
     expect(scoped("app/m.ts")).toEqual({ components: ["core"], exemptedLayerSkipCount: 0 });
+  });
+});
+
+/**
+ * One measured foundation `core` (abstractness 1, L0) and the shapes one step
+ * out from it, all reached directly from `app` at the top of a tower:
+ * - `kit` — concrete, depends on `core` alone (foundation-terminal, L1);
+ * - `leaf` — concrete, depends on nothing (Ce 0, L0): one step out from
+ *   nothing, so a concrete L0 that keeps its skips (bd tea-rags-mcp-89k7k.35.11);
+ * - `kern` — depends on `core` AND on the terminal `kit` (kernel shape, L2);
+ * - `hop1 → core`, `hop2 → hop1` — a two-hop chain: `hop1` is terminal,
+ *   `hop2` is not, since `hop1` is not itself foundation.
+ * `svc` sits on `kern` and `hop2` (L3), `app` on `svc` (L4).
+ */
+function foundationTerminals(): FileDependencyGraph {
+  const concrete = census(0, 5);
+  const files = [
+    file("core/a.ts", census(5, 0)),
+    file("kit/k.ts", concrete),
+    file("leaf/l.ts", concrete),
+    file("kern/k.ts", concrete),
+    file("hop1/h.ts", concrete),
+    file("hop2/h.ts", concrete),
+    file("svc/s.ts", concrete),
+    file("app/x.ts", concrete),
+  ];
+  const edges = [
+    edge("kit/k.ts", "core/a.ts"),
+    edge("kern/k.ts", "core/a.ts"),
+    edge("kern/k.ts", "kit/k.ts"),
+    edge("hop1/h.ts", "core/a.ts"),
+    edge("hop2/h.ts", "hop1/h.ts"),
+    edge("svc/s.ts", "kern/k.ts"),
+    edge("svc/s.ts", "hop2/h.ts"),
+    edge("app/x.ts", "svc/s.ts"),
+    edge("app/x.ts", "core/a.ts"),
+    edge("app/x.ts", "kit/k.ts"),
+    edge("app/x.ts", "leaf/l.ts"),
+    edge("app/x.ts", "kern/k.ts"),
+    edge("app/x.ts", "hop1/h.ts"),
+    edge("app/x.ts", "hop2/h.ts"),
+  ];
+  return { files, edges };
+}
+
+describe("layering foundation-terminal targets (bd tea-rags-mcp-r8hme.52.3)", () => {
+  it("names every non-knot component whose dependencies all land in the measured foundation", () => {
+    const g = foundationTerminals();
+    const components = buildComponentGraph(g, []);
+    const model = buildLayeringModel(components);
+    const foundations = measureLayeringFoundationComponents(components, g.files, model);
+
+    expect([...measureLayeringFoundationTerminalComponents(components, model, foundations)].sort()).toEqual([
+      "hop1",
+      "kit",
+    ]);
+  });
+
+  it("exempts a skip into a component whose only dependency is the foundation", () => {
+    const report = judge(foundationTerminals());
+
+    expect(skipTargets(report)).not.toContain("kit");
+    // app → core, kern → core (foundation); app → kit, app → hop1 (terminal).
+    expect(report.summary.foundation).toEqual({
+      components: ["core"],
+      terminalComponents: ["hop1", "kit"],
+      exemptedLayerSkipCount: 4,
+    });
+  });
+
+  it("still reports a skip into a concrete Ce 0 leaf — not one step out from the foundation", () => {
+    expect(skipTargets(judge(foundationTerminals()))).toContain("leaf");
+  });
+
+  it("still reports a skip into the kernel shape — a component that also depends on a non-foundation terminal", () => {
+    expect(skipTargets(judge(foundationTerminals()))).toContain("kern");
+  });
+
+  it("still reports a skip into the second hop of a chain — the exemption goes exactly one step out", () => {
+    const report = judge(foundationTerminals());
+
+    expect(skipTargets(report)).toContain("hop2");
+    expect(skipTargets(report)).not.toContain("hop1");
+    expect(report.summary.layerSkipCount).toBe(3);
+  });
+
+  it("never names a knot member terminal, even when the knot only reaches the foundation", () => {
+    const g = foundationTerminals();
+    g.files.push(file("ra/a.ts"), file("rb/b.ts"));
+    g.edges.push(
+      edge("ra/a.ts", "rb/b.ts"),
+      edge("rb/b.ts", "ra/a.ts"),
+      edge("ra/a.ts", "core/a.ts"),
+      edge("app/x.ts", "ra/a.ts"),
+    );
+    const components = buildComponentGraph(g, []);
+    const model = buildLayeringModel(components);
+    const terminals = measureLayeringFoundationTerminalComponents(
+      components,
+      model,
+      measureLayeringFoundationComponents(components, g.files, model),
+    );
+
+    expect(terminals.has("ra")).toBe(false);
+    expect(terminals.has("rb")).toBe(false);
   });
 });
 

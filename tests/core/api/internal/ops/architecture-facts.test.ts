@@ -292,6 +292,37 @@ describe("ArchitectureFactsCatalog", () => {
     expect(catalog.isLayeringFoundation("src/unwalked.ts")).toBe(false);
   });
 
+  // bd tea-rags-mcp-r8hme.52.3: the whole-repo layering also exempts skips into
+  // a foundation-terminal component — one whose every dependency lands in the
+  // measured foundation — and the diff run's predicate answers the same set.
+  it("isLayeringFoundation answers the foundation-terminal components the whole-repo layering exempts", () => {
+    const concrete = { abstractTypeCount: 0, concreteTypeCount: 5 };
+    const graph = graphOf(
+      [
+        file("src/app/a.ts", concrete),
+        file("src/spi/port.ts", { abstractTypeCount: 5, concreteTypeCount: 0 }),
+        file("src/kit/k.ts", concrete),
+        file("src/kern/k.ts", concrete),
+      ],
+      [
+        edge("src/kit/k.ts", "src/spi/port.ts"),
+        edge("src/kern/k.ts", "src/spi/port.ts"),
+        edge("src/kern/k.ts", "src/kit/k.ts"),
+        edge("src/app/a.ts", "src/kern/k.ts"),
+      ],
+    );
+    const facts = deriveArchitectureComponentFacts(graph);
+    const catalog = new ArchitectureFactsCatalog(
+      facts,
+      distanceFromMainSequenceByComponent(facts.components, graph.files),
+      measureLayeringFoundationFiles(graph, facts),
+    );
+
+    expect(catalog.isLayeringFoundation("src/kit/k.ts")).toBe(true);
+    expect(catalog.isLayeringFoundation("src/kern/k.ts")).toBe(false);
+    expect(catalog.isLayeringFoundation("src/app/a.ts")).toBe(false);
+  });
+
   it("isMarkedlyLessStable answers the report's own SDP band", () => {
     const catalog = catalogFixture();
     // Exactly at the tolerance is NOT markedly less stable (the detector flags

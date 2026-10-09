@@ -763,8 +763,12 @@ export interface LayeringReportSummary {
    * whose measured abstractness is 1. A layer skip into one is legal relaxed
    * layering and is not reported; `exemptedLayerSkipCount` counts those, under
    * the same scope as the findings. Absent when no component qualifies.
+   * `terminalComponents` (bd tea-rags-mcp-r8hme.52.3): the components outside
+   * any knot with at least one dependency, every one landing in the foundation —
+   * a skip into one is exempted and counted the same way. Present only when one
+   * qualifies.
    */
-  foundation?: { components: string[]; exemptedLayerSkipCount: number };
+  foundation?: { components: string[]; terminalComponents?: string[]; exemptedLayerSkipCount: number };
 }
 
 /**

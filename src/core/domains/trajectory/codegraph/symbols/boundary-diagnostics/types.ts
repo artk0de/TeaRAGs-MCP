@@ -957,12 +957,15 @@ export interface LayeringSummary {
 }
 
 /**
- * The components `measureLayeringFoundationComponents` names, and the layer
- * skips into them that were not reported — counted under the same source
- * scope as the findings.
+ * The components `measureLayeringFoundationComponents` names, the
+ * foundation-terminal components one step out from them
+ * (`measureLayeringFoundationTerminalComponents`, bd tea-rags-mcp-r8hme.52.3;
+ * present only when one qualifies), and the layer skips into either set that
+ * were not reported — counted under the same source scope as the findings.
  */
 export interface LayeringFoundationSummary {
   components: string[];
+  terminalComponents?: string[];
   exemptedLayerSkipCount: number;
 }
 
