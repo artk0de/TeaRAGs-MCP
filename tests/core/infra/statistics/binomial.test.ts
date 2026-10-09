@@ -5,7 +5,30 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { binomialLowerTail, signTestPValue } from "../../../../src/core/infra/statistics/index.js";
+import { binomialLowerTail, binomialUpperTail, signTestPValue } from "../../../../src/core/infra/statistics/index.js";
+
+describe("binomialUpperTail", () => {
+  it("sums the exact terms: P(X ≥ 3 | n = 4, ½) = 5/16", () => {
+    expect(binomialUpperTail(3, 4, 0.5)).toBeCloseTo(5 / 16, 15);
+    // P(X ≥ 2 | n = 3, 0.2) = 3 · 0.2² · 0.8 + 0.2³.
+    expect(binomialUpperTail(2, 3, 0.2)).toBeCloseTo(3 * 0.04 * 0.8 + 0.008, 15);
+  });
+
+  it("is 1 at or below zero successes and 0 above n", () => {
+    expect(binomialUpperTail(0, 4, 0.3)).toBe(1);
+    expect(binomialUpperTail(-2, 4, 0.3)).toBe(1);
+    expect(binomialUpperTail(5, 4, 0.3)).toBe(0);
+  });
+
+  it("resolves a tail at p = 1e-15 instead of cancelling it to 0, rising with p", () => {
+    const tiny = binomialUpperTail(2, 10, 1e-15);
+    expect(tiny).toBeGreaterThan(0);
+    expect(Number.isFinite(tiny)).toBe(true);
+    // ≈ C(10, 2) · p² for p this small.
+    expect(tiny / (45 * 1e-30)).toBeCloseTo(1, 6);
+    expect(binomialUpperTail(2, 10, 1e-14)).toBeGreaterThan(tiny);
+  });
+});
 
 describe("binomialLowerTail", () => {
   it("sums the exact terms: P(X ≤ 1 | n = 4, ½) = 5/16", () => {

@@ -4,5 +4,6 @@
  */
 
 export { poissonUpperTail } from "./poisson.js";
-export { binomialLowerTail, signTestPValue } from "./binomial.js";
+export { binomialLowerTail, binomialUpperTail, signTestPValue } from "./binomial.js";
+export { mulberry32, seedFromKey } from "./seeded-random.js";
 export { benjaminiHochbergRejectionCount, CONVENTIONAL_FDR_Q } from "./benjamini-hochberg.js";

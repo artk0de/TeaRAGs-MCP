@@ -34,6 +34,34 @@ export function binomialLowerTail(successes: number, trials: number, probability
 }
 
 /**
+ * P(X ≥ k), X ~ Binomial(n, p). Summed upward from the term at k in log space
+ * (via {@link logGamma}), relative to that term — never as
+ * 1 − {@link binomialLowerTail}, which cancels to 0 once the tail falls below
+ * double precision (p ~ 1e-10 and smaller).
+ */
+export function binomialUpperTail(successes: number, trials: number, probability: number): number {
+  if (successes <= 0) return 1;
+  if (successes > trials || probability <= 0) return 0;
+  if (probability >= 1) return 1;
+  const logTermAtK =
+    logGamma(trials + 1) -
+    logGamma(successes + 1) -
+    logGamma(trials - successes + 1) +
+    successes * Math.log(probability) +
+    (trials - successes) * Math.log1p(-probability);
+  const oddsUp = probability / (1 - probability);
+  let sum = 1;
+  let term = 1;
+  for (let i = successes; i < trials; i++) {
+    // term(i + 1) / term(i) = (n − i) / (i + 1) · p / (1 − p)
+    term *= ((trials - i) / (i + 1)) * oddsUp;
+    sum += term;
+    if (term < sum * Number.EPSILON) break;
+  }
+  return Math.min(1, Math.exp(logTermAtK + Math.log(sum)));
+}
+
+/**
  * The exact two-sided sign test of `a` against `b` at p = ½: twice the
  * minority's lower tail, capped at 1 — the null is symmetric, so which side is
  * the minority is read off the counts. An empty pair carries no evidence (1).

@@ -32,15 +32,23 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { RelPath } from "../../../../../../../src/core/contracts/types/codegraph.js";
+import type { CochangeFileLineCounts, RelPath } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
+  classifyShotgunSurgeryMechanicalBundles,
   cochangeStrength,
   compoundPoissonUpperTailBound,
   detectShotgunSurgery,
+  findShotgunSurgeryEchoPairs,
   poissonUpperTail,
+  SHOTGUN_SURGERY_ECHO_EXACT_PERMUTATIONS,
+  SHOTGUN_SURGERY_ECHO_EXCEEDANCES,
+  shotgunSurgeryEchoPermutationPValue,
   shotgunSurgeryFamilySize,
+  shotgunSurgeryMirroredNetShare,
+  shotgunSurgeryModalUniformityPValue,
   type ShotgunSurgeryInput,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
+import { binomialUpperTail, mulberry32 } from "../../../../../../../src/core/infra/statistics/index.js";
 
 /** Component `c` holds `src/<c>/*.ts`. */
 function fileOf(component: string, name = "f"): RelPath {
@@ -626,5 +634,465 @@ describe("detectShotgunSurgery", () => {
     expect(inScope.findings).toHaveLength(1);
     expect(outOfScope.findings).toEqual([]);
     expect(outOfScope.summary.outOfScopeSetCount).toBe(1);
+  });
+});
+
+/** One commit's partitioned rows: component, file name, and its (added, deleted) lines — absent = not recorded. */
+interface LineCommit {
+  sha: string;
+  rows: readonly (readonly [component: string, file: string, counts?: readonly [added: number, deleted: number]])[];
+  taskIds?: readonly string[];
+  /** The author burst; default = a burst of its own. */
+  burst?: number;
+}
+
+/**
+ * `lead` one-commit bursts (as {@link history}) whose every file carries a
+ * distinct addition-only line count — no (added, deleted) key shared, no
+ * deletion — followed by `commits`, one bundle each, in order.
+ */
+function lineHistory(lead: readonly (readonly string[])[], commits: readonly LineCommit[]): ShotgunSurgeryInput {
+  const base = history(lead);
+  const bundles = new Map(base.bundles);
+  const bundleBursts = new Map(base.bundleBursts);
+  const bundleCommits = new Map(base.bundleCommits);
+  const bundleTaskIds = new Map<number, readonly string[]>([...base.bundles.keys()].map((id) => [id, []]));
+  const componentOf = new Map(base.componentOf);
+  const bundleFileLines = new Map<number, Map<RelPath, CochangeFileLineCounts>>();
+  for (const [id, files] of base.bundles) {
+    bundleFileLines.set(id, new Map(files.map((relPath, i) => [relPath, { added: 1000 * (id + 1) + i, deleted: 0 }])));
+  }
+  commits.forEach(({ sha, rows, taskIds = [], burst }, j) => {
+    const id = lead.length + j;
+    const files: RelPath[] = [];
+    const lines = new Map<RelPath, CochangeFileLineCounts>();
+    for (const [component, file, counts] of rows) {
+      const relPath = fileOf(component, file);
+      files.push(relPath);
+      componentOf.set(relPath, component);
+      if (counts) lines.set(relPath, { added: counts[0], deleted: counts[1] });
+    }
+    bundles.set(id, files);
+    bundleBursts.set(id, burst ?? 10_000 + j);
+    bundleCommits.set(id, [sha]);
+    bundleTaskIds.set(id, taskIds);
+    bundleFileLines.set(id, lines);
+  });
+  return {
+    componentOf,
+    componentDependencies: [],
+    bundles,
+    bundleBursts,
+    bundleCommits,
+    bundleTaskIds,
+    bundleFileLines,
+  };
+}
+
+/** `files` files in each of `components`, each row's counts from `counts(rowIndex)`. */
+function rowsOver(
+  components: readonly string[],
+  files: number,
+  counts: (row: number) => readonly [number, number],
+  prefix = "f",
+): LineCommit["rows"] {
+  const rows: [string, string, readonly [number, number]][] = [];
+  for (const component of components) {
+    for (let f = 0; f < files; f++) rows.push([component, `${prefix}${f}`, counts(rows.length)]);
+  }
+  return rows;
+}
+
+/** The same input with no line counts recorded. */
+function withoutLines(input: ShotgunSurgeryInput): ShotgunSurgeryInput {
+  const { bundleFileLines: _lines, ...rest } = input;
+  return rest;
+}
+
+/** 49 single-component commits of 12 files each, every row a distinct key: 588 rows that make no sweep. */
+const MECHANICAL_CORPUS: LineCommit[] = Array.from({ length: 49 }, (_, j) => ({
+  sha: `corpus${j}`,
+  rows: rowsOver([`corpus${j}`], 12, (row) => [100_000 + 100 * j + row, 0]),
+}));
+
+describe("classifyShotgunSurgeryMechanicalBundles", () => {
+  it("calls a commit mechanical when one (added, deleted) pair repeats over all its files beyond chance", () => {
+    // 12 rows of (1, 1) among 600: the pair's corpus share is 0.02.
+    const input = lineHistory([], [...MECHANICAL_CORPUS, { sha: "sweep", rows: rowsOver(SPREAD, 3, () => [1, 1]) }]);
+    const classification = classifyShotgunSurgeryMechanicalBundles(input);
+
+    expect([...classification.bundleIds]).toEqual([49]);
+    expect(classification.testedCount).toBe(1);
+    expect(detectShotgunSurgery(input).summary).toMatchObject({ mechanicalTestedCount: 1, mechanicalCommitCount: 1 });
+  });
+
+  it("does not call a commit of the same width mechanical when its line counts vary", () => {
+    const input = lineHistory(
+      [],
+      [...MECHANICAL_CORPUS, { sha: "feature", rows: rowsOver(SPREAD, 3, (row) => [row + 1, row]) }],
+    );
+    const classification = classifyShotgunSurgeryMechanicalBundles(input);
+
+    expect(classification.bundleIds.size).toBe(0);
+    expect(classification.testedCount).toBe(1);
+  });
+
+  it("tests no commit with fewer than 3 line-counted files or fewer than 3 components", () => {
+    const input = lineHistory(
+      [],
+      [
+        ...MECHANICAL_CORPUS,
+        // Four components, two of their files counted.
+        {
+          sha: "sparse",
+          rows: [
+            ["a", "f", [1, 1]],
+            ["b", "f", [1, 1]],
+            ["c", "f"],
+            ["d", "f"],
+          ],
+        },
+        // Twelve uniform rows over two components.
+        { sha: "narrow", rows: rowsOver(["a", "b"], 6, () => [1, 1]) },
+      ],
+    );
+    const classification = classifyShotgunSurgeryMechanicalBundles(input);
+
+    expect(classification.bundleIds.size).toBe(0);
+    expect(classification.testedCount).toBe(0);
+  });
+
+  it("never calls a bundle without recorded line counts mechanical", () => {
+    const input = lineHistory([], [...MECHANICAL_CORPUS, { sha: "sweep", rows: rowsOver(SPREAD, 3, () => [1, 1]) }]);
+    const lines = new Map(input.bundleFileLines);
+    lines.delete(49);
+    const classification = classifyShotgunSurgeryMechanicalBundles({ ...input, bundleFileLines: lines });
+
+    expect(classification.bundleIds.size).toBe(0);
+    expect(classification.testedCount).toBe(0);
+  });
+});
+
+describe("shotgunSurgeryModalUniformityPValue", () => {
+  it("is 1 when no key repeats", () => {
+    expect(shotgunSurgeryModalUniformityPValue(12, 1, [0.5, 0.5])).toBe(1);
+    expect(shotgunSurgeryModalUniformityPValue(12, 0, [1])).toBe(1);
+  });
+
+  it("bounds the full union sum from above when it stops early over many tiny shares", () => {
+    const shares = [0.3, 0.1, ...Array.from({ length: 6000 }, () => 0.6 / 6000)].sort((a, b) => b - a);
+    const full = shares.reduce((sum, share) => sum + binomialUpperTail(5, 12, share), 0);
+    const bound = shotgunSurgeryModalUniformityPValue(12, 5, shares);
+
+    expect(bound).toBeGreaterThanOrEqual(full);
+    expect(bound).toBeLessThan(full * 1.001);
+  });
+});
+
+describe("detectShotgunSurgery — mechanical commits", () => {
+  it("drops mechanical commits from the support, so two sweeps and one change are no recurrence", () => {
+    const input = lineHistory(background(SPREAD), [
+      { sha: "change", rows: SPREAD.map((c, i) => [c, "f", [i + 1, 0]] as const) },
+      { sha: "sweep1", rows: SPREAD.map((c) => [c, "s", [1, 1]] as const) },
+      { sha: "sweep2", rows: SPREAD.map((c) => [c, "s", [1, 1]] as const) },
+    ]);
+
+    const kept = detectShotgunSurgery(withoutLines(input));
+    expect(kept.findings.map((f) => `${f.components.join(",")}@${f.support}`)).toEqual(["a,b,c,d@3"]);
+    const report = detectShotgunSurgery(input);
+    expect(report.summary.mechanicalCommitCount).toBe(2);
+    expect(report.findings).toEqual([]);
+  });
+
+  it("keeps the null of the counted history: sweeps elsewhere leave an unrelated spread's expectation unchanged", () => {
+    const spreads = [0, 1, 2].map((s) => ({
+      sha: `spread${s}`,
+      rows: rowsOver(SPREAD, 1, (row) => [500 * (s + 1) + row, 0]),
+    }));
+    const sweeps = Array.from({ length: 30 }, (_, j) => ({
+      sha: `sweep${j}`,
+      rows: rowsOver(["x0", "x1", "x2", "x3"], 1, () => [j + 1, j + 1], "s"),
+    }));
+    const withSweeps = detectShotgunSurgery(lineHistory(background(SPREAD), [...spreads, ...sweeps]));
+    const deleted = detectShotgunSurgery(lineHistory(background(SPREAD), spreads));
+
+    expect(withSweeps.summary.mechanicalCommitCount).toBe(30);
+    expect(withSweeps.findings).toHaveLength(1);
+    expect(withSweeps.findings[0].expectedSupport).toBe(deleted.findings[0].expectedSupport);
+    expect(withSweeps.findings).toEqual(deleted.findings);
+    // Kept, the sweeps would have moved the null.
+    const kept = detectShotgunSurgery(withoutLines(lineHistory(background(SPREAD), [...spreads, ...sweeps])));
+    expect(kept.findings.find((f) => f.components.join() === SPREAD.join())?.expectedSupport).not.toBe(
+      deleted.findings[0].expectedSupport,
+    );
+  });
+
+  it("joins a task's other commits when one of them is mechanical, leaving the sweep out", () => {
+    const commits: LineCommit[] = [0, 1, 2].flatMap((b) => [
+      {
+        sha: `b${b}c0`,
+        rows: [
+          ["a", "x", [10 * b + 1, 0]],
+          ["b", "x", [10 * b + 2, 0]],
+        ] as const,
+        taskIds: [`TD-${b}`],
+        burst: b,
+      },
+      { sha: `b${b}c1`, rows: [["c", "y", [10 * b + 3, 0]]] as const, taskIds: [`TD-${b}`], burst: b },
+    ]);
+    commits.push({ sha: "sweep", rows: rowsOver(["p", "q", "r"], 3, () => [1, 1]), taskIds: ["TD-2"], burst: 2 });
+    const input = lineHistory(background(["a", "b", "c"]), commits);
+
+    const report = detectShotgunSurgery(input);
+    expect(report.summary.mechanicalCommitCount).toBe(1);
+    expect(report.findings.map((f) => f.components)).toEqual([["a", "b", "c"]]);
+    expect(report.findings[0].sampleChanges).toEqual([
+      ["b2c1", "b2c0"],
+      ["b1c1", "b1c0"],
+      ["b0c1", "b0c0"],
+    ]);
+    expect(detectShotgunSurgery(withoutLines(input)).findings[0].sampleChanges[0]).toContain("sweep");
+  });
+
+  it("reads an empty line-count map as not recorded — the store's answer for a build before migration 046", () => {
+    const input = { ...history([...background(SPREAD), SPREAD, SPREAD, SPREAD]), componentDependencies: [] };
+
+    expect(detectShotgunSurgery({ ...input, bundleFileLines: new Map() })).toEqual(detectShotgunSurgery(input));
+  });
+
+  it("matches the report without line counts byte for byte, with no mechanical or echo summary fields", () => {
+    const report = detectShotgunSurgery({
+      ...history([...background(SPREAD), SPREAD, SPREAD, SPREAD]),
+      componentDependencies: [],
+    });
+
+    expect(report.findings.map((f) => [f.support, f.weightedSupport, f.expectedSupport, f.strength])).toEqual([
+      [3, 3, 0.029184959375878016, 0.30063605244263664],
+    ]);
+    expect(report.summary).toEqual({
+      burstCount: 37,
+      unitCount: 37,
+      umbrellaTaskIdCount: 0,
+      typicalChangeWidth: 4,
+      wideUnitCount: 3,
+      widthThreshold: 3,
+      widthThresholdMethod: "otsu",
+      widthSeparability: 0.9999999999999993,
+      candidateSetCount: 4,
+      familySize: 4,
+      q: 0.05,
+      admittedSetCount: 4,
+      spreadCount: 1,
+      explainedCount: 0,
+      violationCount: 1,
+      sharedNeighbourThresholdMethod: "none",
+    });
+  });
+});
+
+/** Ten files over SPREAD: a and b three each, c and d two each. */
+const ECHO_FILES: readonly (readonly [string, string])[] = [
+  ["a", "e0"],
+  ["a", "e1"],
+  ["a", "e2"],
+  ["b", "e0"],
+  ["b", "e1"],
+  ["b", "e2"],
+  ["c", "e0"],
+  ["c", "e1"],
+  ["d", "e0"],
+  ["d", "e1"],
+];
+const ECHO_ADDED = [5, 9, 2, 7, 11, 3, 8, 4, 6, 10];
+
+/** A flag added over eight files, removed with a few lines kept per file, and one unrelated change of the spread. */
+function flagHistory(): ShotgunSurgeryInput {
+  const added = [12, 3, 7, 1, 20, 5, 9, 2];
+  const removed = [
+    [1, 12],
+    [0, 3],
+    [2, 7],
+    [0, 1],
+    [3, 20],
+    [0, 5],
+    [1, 9],
+    [0, 2],
+  ] as const;
+  // Two files in each of SPREAD's four components.
+  const files = ECHO_FILES.filter(([, f]) => f !== "e2");
+  return lineHistory(background(SPREAD), [
+    { sha: "flag-add", rows: files.map(([c, f], i) => [c, f, [added[i], 0]] as const) },
+    { sha: "other", rows: rowsOver(SPREAD, 1, (row) => [700 + row, 0], "h") },
+    { sha: "flag-remove", rows: files.map(([c, f], i) => [c, f, removed[i]] as const) },
+  ]);
+}
+
+describe("detectShotgunSurgery — echoes", () => {
+  it("joins an exact revert to its original, so the spread they both held loses one change", () => {
+    const input = lineHistory(background(SPREAD), [
+      { sha: "original", rows: ECHO_FILES.map(([c, f], i) => [c, f, [ECHO_ADDED[i], 0]] as const) },
+      { sha: "revert", rows: ECHO_FILES.map(([c, f], i) => [c, f, [0, ECHO_ADDED[i]]] as const) },
+    ]);
+
+    expect(detectShotgunSurgery(withoutLines(input)).findings.map((f) => f.support)).toEqual([2]);
+    const report = detectShotgunSurgery(input);
+    expect(report.summary.echoCandidatePairCount).toBe(1);
+    expect(report.summary.echoPairCount).toBe(1);
+    expect(report.findings).toEqual([]);
+    expect(report.explained).toEqual([]);
+  });
+
+  it("does not join a follow-up that adds to the same files", () => {
+    const input = lineHistory(background(SPREAD), [
+      { sha: "feature", rows: ECHO_FILES.map(([c, f], i) => [c, f, [ECHO_ADDED[i], 0]] as const) },
+      { sha: "follow-up", rows: ECHO_FILES.map(([c, f], i) => [c, f, [ECHO_ADDED[i] + 1, 1]] as const) },
+    ]);
+    const report = detectShotgunSurgery(input);
+
+    expect(report.summary.echoCandidatePairCount).toBe(1);
+    expect(report.summary.echoPairCount).toBe(0);
+  });
+
+  it("joins a flag removal to its addition as one change of the spread's support", () => {
+    const report = detectShotgunSurgery(flagHistory());
+
+    expect(report.summary.echoPairCount).toBe(1);
+    expect(report.findings.map((f) => f.components)).toEqual([SPREAD]);
+    expect(report.findings[0].sampleChanges).toEqual([["flag-remove", "flag-add"], ["other"]]);
+  });
+
+  it("never zeroes an echo: the original keeps its evidence, joined with its revert", () => {
+    const flagged = flagHistory();
+    expect(detectShotgunSurgery(withoutLines(flagged)).findings[0].support).toBe(3);
+    expect(detectShotgunSurgery(flagged).findings[0].support).toBe(2);
+  });
+
+  it("decides the same whatever order the bundles arrive in, and the same on every run", () => {
+    const input = flagHistory();
+    const reversed = { ...input, bundles: new Map([...input.bundles].reverse()) };
+
+    expect(detectShotgunSurgery(reversed)).toEqual(detectShotgunSurgery(input));
+    expect(detectShotgunSurgery(input)).toEqual(detectShotgunSurgery(input));
+  });
+
+  it("never tests a pair touching a mechanical commit", () => {
+    const input = lineHistory(
+      [],
+      [
+        ...MECHANICAL_CORPUS,
+        { sha: "sweep", rows: ECHO_FILES.map(([c, f]) => [c, f, [3, 0]] as const) },
+        { sha: "cleanup", rows: ECHO_FILES.map(([c, f], i) => [c, f, [0, ECHO_ADDED[i]]] as const) },
+      ],
+    );
+    const report = detectShotgunSurgery(input);
+
+    expect(report.summary.mechanicalCommitCount).toBe(1);
+    expect(report.summary.echoCandidatePairCount).toBe(0);
+  });
+});
+
+describe("shotgunSurgeryMirroredNetShare", () => {
+  it("is the opposite-sign overlap over the larger magnitude, 0 when both are empty", () => {
+    expect(shotgunSurgeryMirroredNetShare([5, 3], [-5, -3])).toBe(1);
+    expect(shotgunSurgeryMirroredNetShare([4, 2, 0], [-2, 2, 3])).toBeCloseTo(2 / 9, 15);
+    expect(shotgunSurgeryMirroredNetShare([0, 0], [0, 0])).toBe(0);
+    expect(shotgunSurgeryMirroredNetShare([], [])).toBe(0);
+  });
+});
+
+describe("shotgunSurgeryEchoPermutationPValue", () => {
+  const options = { exceedances: SHOTGUN_SURGERY_ECHO_EXCEEDANCES, maxPermutations: 1000 };
+
+  /** A `random` that counts its calls. */
+  function countingRandom(seed = 1): { random: () => number; calls: () => number } {
+    let calls = 0;
+    const next = mulberry32(seed);
+    return {
+      random: () => {
+        calls++;
+        return next();
+      },
+      calls: () => calls,
+    };
+  }
+
+  it("is 1 without sampling when nothing is mirrored", () => {
+    const rng = countingRandom();
+    expect(shotgunSurgeryEchoPermutationPValue([5, 3, 2], [1, 4, 0], rng.random, options)).toBe(1);
+    expect(rng.calls()).toBe(0);
+  });
+
+  it("enumerates every permutation exactly when the positions are few", () => {
+    // Of the 4! = 24 assignments of {−2, −1, 0, 0}, only the two that keep
+    // −2 and −1 in place (the zeros in either order) mirror whole.
+    const rng = countingRandom();
+    expect(shotgunSurgeryEchoPermutationPValue([2, 1, 0, 0], [-2, -1, 0, 0], rng.random, options)).toBe(2 / 24);
+    expect(rng.calls()).toBe(0);
+    expect(SHOTGUN_SURGERY_ECHO_EXACT_PERMUTATIONS).toBe(40_320);
+  });
+
+  it("stops sampling at exactly the requested exceedances (Besag–Clifford)", () => {
+    // Every assignment of nine −1s mirrors nine +1s whole: each shuffle exceeds.
+    const rng = countingRandom();
+    const p = shotgunSurgeryEchoPermutationPValue(Array(9).fill(1), Array(9).fill(-1), rng.random, options);
+    expect(p).toBe(1);
+    // Fisher–Yates over nine positions draws eight numbers per shuffle.
+    expect(rng.calls()).toBe(SHOTGUN_SURGERY_ECHO_EXCEEDANCES * 8);
+  });
+
+  it("floors at 1 / (cap + 1) when no shuffle reaches the observed mirror", () => {
+    const rng = countingRandom();
+    const first = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    const p = shotgunSurgeryEchoPermutationPValue(
+      first,
+      first.map((v) => -v),
+      rng.random,
+      { exceedances: SHOTGUN_SURGERY_ECHO_EXCEEDANCES, maxPermutations: 20 },
+    );
+    expect(p).toBe(1 / 21);
+    expect(rng.calls()).toBe(20 * 8);
+  });
+});
+
+describe("findShotgunSurgeryEchoPairs", () => {
+  /** Two wide commits over the ten echo files, mirrored in part, under the given bundle ids. */
+  function pairInput(ids: readonly [number, number]) {
+    const first = [5, -3, 2, 7, -1, 4, 6, -2, 3, 1];
+    const second = [-4, 2, 3, 1, -2, 5, -1, 3, 2, -3];
+    const files = ECHO_FILES.map(([c, f]) => fileOf(c, f));
+    const filesByComponent = new Map<string, Set<RelPath>>();
+    ECHO_FILES.forEach(([c], i) => {
+      const set = filesByComponent.get(c) ?? new Set<RelPath>();
+      set.add(files[i]);
+      filesByComponent.set(c, set);
+    });
+    const linesOf = (nets: readonly number[]) =>
+      new Map(files.map((relPath, i) => [relPath, { added: Math.max(nets[i], 0), deleted: Math.max(-nets[i], 0) }]));
+    return {
+      commits: ids.map((bundleId) => ({ bundleId, filesByComponent })),
+      input: {
+        bundleFileLines: new Map([
+          [ids[0], linesOf(first)],
+          [ids[1], linesOf(second)],
+        ]),
+        bundleCommits: new Map([
+          [ids[0], ["sha-first"]],
+          [ids[1], ["sha-second"]],
+        ]),
+      },
+    };
+  }
+
+  it("seeds each pair from its commits' SHAs, so renumbered bundles get the same p-values", () => {
+    const a = pairInput([1, 2]);
+    const b = pairInput([9, 4]);
+    const before = findShotgunSurgeryEchoPairs(a.commits, a.input);
+    const after = findShotgunSurgeryEchoPairs(b.commits, b.input);
+
+    expect(before.candidatePairCount).toBe(1);
+    expect(after.candidates.map((c) => c.pValue)).toEqual(before.candidates.map((c) => c.pValue));
+    // A sampled p, neither the floor nor the no-mirror 1.
+    expect(before.candidates[0].pValue).toBeGreaterThan(1 / 21);
+    expect(before.candidates[0].pValue).toBeLessThan(1);
   });
 });

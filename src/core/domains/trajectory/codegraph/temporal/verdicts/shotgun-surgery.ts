@@ -23,6 +23,22 @@
  * Only partitioned (production) files count; nothing is filtered by file type
  * or by how often a component changes.
  *
+ * MECHANICAL (bd tea-rags-mcp-dm61n). A sweep — a rename, an import rewrite, a
+ * flag removal — repeats one per-file (added, deleted) pattern across every
+ * file it touches, and is a fan-out by construction, not evidence of one.
+ * {@link classifyShotgunSurgeryMechanicalBundles} tests each commit's modal
+ * line-count pair against the corpus distribution of those pairs (union
+ * bound, BH), and a commit it calls mechanical leaves the WHOLE history in
+ * {@link collectCommits}: degrees, bursts, opportunities, units and umbrella
+ * breadth. Never weight 0 — a 0-weight unit still clears the support gate,
+ * still counts as an opportunity the null expects mass from, still shrinks the
+ * closure and still moves k and T, and its bursts still fit x_c; removal makes
+ * the null the configuration null of the counted population, fitted on the
+ * same bursts whose units are counted (THE NULL's proof carries over). The
+ * classification is per commit and precedes the join, so a task's genuine
+ * commits still join each other. No line counts recorded → no commit is
+ * mechanical, and the summary carries none of the stage's fields.
+ *
  * WIDE. A unit is wide when it spans ≥ k components. k is the codebase's own:
  * the majority-floored Otsu split over every unit's width
  * ({@link resolveMajorityFlooredOtsuThreshold}), never below
@@ -88,6 +104,7 @@
 import type { CochangeFileLineCounts, RelPath } from "../../../../../contracts/types/codegraph.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../../../../../infra/graph/index.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
+import { binomialUpperTail, mulberry32, seedFromKey } from "../../../../../infra/statistics/index.js";
 import { componentAncestry } from "../../symbols/boundary-diagnostics/index.js";
 import {
   benjaminiHochbergRejectionCount,
@@ -110,6 +127,23 @@ export const SHOTGUN_SURGERY_CARRIER_FILES = 5;
 
 /** Bisection steps fitting a component's inclusion propensity — far below double precision. */
 const PROPENSITY_BISECTION_STEPS = 64;
+
+/**
+ * Besag–Clifford stop for the echo permutation test: sampling ends at this
+ * many permutations scoring at least the observed mirror, p = h / k. Ten keeps
+ * the p of a null-like pair within a factor of ~1.4 while spending almost
+ * nothing on it; only a pair near the floor runs to the cap ⌈m / q⌉.
+ */
+export const SHOTGUN_SURGERY_ECHO_EXCEEDANCES = 10;
+
+/** Positions! up to this (8! — |U| ≤ 8) the echo p-value is enumerated exactly instead of sampled. */
+export const SHOTGUN_SURGERY_ECHO_EXACT_PERMUTATIONS = 40_320;
+
+/** Relative tie tolerance of the echo statistic: a permutation scoring within it of the observed exceeds (conservative). */
+const ECHO_SCORE_TOLERANCE = 1e-12;
+
+/** Relative size below which the remaining union-bound terms are added as one bound and the sum stops. */
+const MODAL_UNIFORMITY_REMAINDER_RELATIVE = 1e-9;
 
 /** A component dependency, either direction joining the two components. */
 export interface ShotgunSurgeryComponentDependency {
@@ -138,10 +172,13 @@ export interface ShotgunSurgeryInput {
   /**
    * The +/- line counts each bundle's commit made to its files, keyed like
    * `bundles` — by bundle id — then by the file's path, the same `RelPath` the
-   * bundle's membership list and `componentOf` use (bd tea-rags-mcp-dm61n). A
-   * file with no recorded count is absent from its bundle's map; absent or
-   * empty = the build predates migration 046. Carried, not yet read: the
-   * detector does not consult it.
+   * bundle's membership list and `componentOf` use (bd tea-rags-mcp-dm61n),
+   * HEAD-attributed with renames summed onto the head path. A file with no
+   * recorded count (binary) is absent from its bundle's map. A bundle absent
+   * from the map has unknown line counts: never mechanical, never in an echo
+   * pair. The whole map absent or empty = not recorded (the build predates
+   * migration 046): neither the mechanical nor the echo stage runs, and their
+   * summary fields are absent, never zeros.
    */
   bundleFileLines?: ReadonlyMap<number, ReadonlyMap<RelPath, CochangeFileLineCounts>>;
   /** Picomatch glob: a spread is in scope when an exemplar file of one of its components matches. */
@@ -186,8 +223,16 @@ export interface ShotgunSurgerySpread {
 }
 
 export interface ShotgunSurgerySummary {
-  /** Author bursts touching ≥ 1 partitioned component — the support unit. */
+  /** Author bursts touching ≥ 1 partitioned component through a non-mechanical commit — the support unit. */
   burstCount: number;
+  /** Commits tested for line-count uniformity (≥ 3 components and ≥ 3 line-counted files) — the BH family. Absent = line counts not recorded. */
+  mechanicalTestedCount?: number;
+  /** Commits BH called mechanical, left out of the whole history (degrees, units, umbrella breadth). Absent = line counts not recorded. */
+  mechanicalCommitCount?: number;
+  /** Non-mechanical wide commit pairs sharing ≥ 3 components — the echo BH family m. Absent = line counts not recorded. */
+  echoCandidatePairCount?: number;
+  /** Pairs BH called echoes (a revert or flag removal and its original), joined into one logical change. Absent = line counts not recorded. */
+  echoPairCount?: number;
   /** Logical changes' component sets (identical sets sharing a burst once) — the width model's population. */
   unitCount: number;
   /**
@@ -255,6 +300,8 @@ interface ShotgunSurgeryHistory {
   /** Width → bursts touching that many components — the degrees' M. */
   burstWidths: Map<number, number>;
   umbrella: ShotgunSurgeryUmbrellaTaskIds;
+  /** The echo test's outcome; absent when no line counts were recorded. */
+  echo: ShotgunSurgeryEchoAssessment | undefined;
 }
 
 interface AdmittedSpread {
@@ -268,7 +315,11 @@ interface AdmittedSpread {
 
 /** Judge the history's wide changes. See the module docblock for every contract. */
 export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgeryReport {
-  const { units, burstCount, changes, burstWidths, umbrella } = buildHistory(input);
+  const mechanical = lineCountsRecorded(input) ? classifyShotgunSurgeryMechanicalBundles(input) : undefined;
+  const { units, burstCount, changes, burstWidths, umbrella, echo } = buildHistory(
+    input,
+    mechanical?.bundleIds ?? new Set(),
+  );
   const widths = units.map((unit) => unit.components.size);
   const widthPolicy = resolveMajorityFlooredOtsuThreshold(widths, {
     majority: SHOTGUN_SURGERY_MIN_WIDTH - 1,
@@ -341,6 +392,12 @@ export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgery
     explained,
     summary: {
       burstCount,
+      ...(mechanical === undefined
+        ? {}
+        : { mechanicalTestedCount: mechanical.testedCount, mechanicalCommitCount: mechanical.bundleIds.size }),
+      ...(echo === undefined
+        ? {}
+        : { echoCandidatePairCount: echo.candidatePairCount, echoPairCount: echo.pairs.length }),
       unitCount: units.length,
       ...(umbrella.cut === undefined ? {} : { umbrellaTaskIdCut: umbrella.cut }),
       umbrellaTaskIdCount: umbrella.ids.size,
@@ -388,12 +445,18 @@ interface ShotgunSurgeryUmbrellaTaskIds {
 
 /**
  * The commits touching a partitioned file, each with the index of its author
- * burst (first-seen order); a bundle without a recorded burst is its own.
+ * burst (first-seen order); a bundle without a recorded burst is its own. A
+ * bundle in `excluded` (a mechanical commit) is skipped exactly like one with
+ * no partitioned file: no burst index, no degree, no unit.
  */
-function collectCommits(input: ShotgunSurgeryInput): { commits: ShotgunSurgeryCommit[]; burstCount: number } {
+function collectCommits(
+  input: ShotgunSurgeryInput,
+  excluded: ReadonlySet<number>,
+): { commits: ShotgunSurgeryCommit[]; burstCount: number } {
   const burstIndex = new Map<string, number>();
   const commits: ShotgunSurgeryCommit[] = [];
   for (const [bundleId, files] of input.bundles) {
+    if (excluded.has(bundleId)) continue;
     const filesByComponent = new Map<string, Set<RelPath>>();
     for (const relPath of files) {
       const component = input.componentOf.get(relPath);
@@ -475,14 +538,20 @@ function resolveUmbrellaTaskIds(commits: readonly ShotgunSurgeryCommit[]): Shotg
  *
  * ECHOES — a revert, or a feature flag added and later removed — are the same
  * logical event twice. A revert that keeps its original's message keeps its
- * task id and joins here. Anything else needs the inverse-diff evidence (per
- * file added / deleted lines mirrored), which the co-change store does not
- * persist: `cg_temporal_bundle_files` holds paths only. Until it does, an echo
- * without a shared task id counts as a second change.
+ * task id and joins here. Anything else is caught by the inverse-diff
+ * evidence: {@link findShotgunSurgeryEchoPairs} tests whether one commit's
+ * per-file net lines mirror another's beyond chance (permutation null, BH),
+ * and every echo pair it admits unions here like a shared task id — whatever
+ * task ids either side carries, so a revert under a different id becomes one
+ * change with its original. An echo JOINS, never zeroes: zeroing a revert
+ * would drop its original's evidence too. Umbrella ids still never join.
+ * Without line counts there are no echo pairs, and an echo without a shared
+ * task id counts as a second change.
  */
 function joinLogicalChanges(
   commits: readonly ShotgunSurgeryCommit[],
   umbrella: ShotgunSurgeryUmbrellaTaskIds,
+  echoPairs: readonly ShotgunSurgeryEchoPair[],
 ): ShotgunSurgeryChangeUnit[] {
   const joins = new DisjointSets(commits.length);
   // A task id first seen in one commit joins every later commit naming it.
@@ -495,6 +564,14 @@ function joinLogicalChanges(
       else joins.union(owner, index);
     }
   });
+  if (echoPairs.length > 0) {
+    const indexOf = new Map(commits.map(({ bundleId }, index) => [bundleId, index]));
+    for (const { first, second } of echoPairs) {
+      const a = indexOf.get(first);
+      const b = indexOf.get(second);
+      if (a !== undefined && b !== undefined) joins.union(a, b);
+    }
+  }
   const units = new Map<number, ShotgunSurgeryChangeUnit>();
   commits.forEach(({ bundleId, burst, filesByComponent }, index) => {
     const root = joins.find(index);
@@ -521,8 +598,8 @@ function joinLogicalChanges(
  * one change. A burst's union only feeds the degrees — n_c and the burst
  * widths M is drawn from — never a unit.
  */
-function buildHistory(input: ShotgunSurgeryInput): ShotgunSurgeryHistory {
-  const { commits, burstCount } = collectCommits(input);
+function buildHistory(input: ShotgunSurgeryInput, mechanical: ReadonlySet<number>): ShotgunSurgeryHistory {
+  const { commits, burstCount } = collectCommits(input, mechanical);
   const burstComponents = Array.from({ length: burstCount }, () => new Set<string>());
   for (const { burst, filesByComponent } of commits) {
     for (const c of filesByComponent.keys()) burstComponents[burst].add(c);
@@ -535,7 +612,8 @@ function buildHistory(input: ShotgunSurgeryInput): ShotgunSurgeryHistory {
   }
 
   const umbrella = resolveUmbrellaTaskIds(commits);
-  const changeUnits = joinLogicalChanges(commits, umbrella);
+  const echo = lineCountsRecorded(input) ? findShotgunSurgeryEchoPairs(commits, input) : undefined;
+  const changeUnits = joinLogicalChanges(commits, umbrella, echo?.pairs ?? []);
   const sameSet = new DisjointSets(changeUnits.length);
   const firstBySetAndBurst = new Map<string, number>();
   const setKeys = changeUnits.map(({ filesByComponent }) =>
@@ -573,7 +651,297 @@ function buildHistory(input: ShotgunSurgeryInput): ShotgunSurgeryHistory {
     unit.bundleIds.sort((a, b) => b - a);
     unit.bursts = [...new Set(unit.bursts)].sort((a, b) => a - b);
   }
-  return { units, burstCount, changes, burstWidths, umbrella };
+  return { units, burstCount, changes, burstWidths, umbrella, echo };
+}
+
+/**
+ * Whether the build recorded line counts at all: absent OR empty is a build
+ * predating migration 046 (the store reads an empty map there), and then
+ * neither the mechanical nor the echo stage runs.
+ */
+function lineCountsRecorded(input: Pick<ShotgunSurgeryInput, "bundleFileLines">): boolean {
+  return (input.bundleFileLines?.size ?? 0) > 0;
+}
+
+/** Commits the uniformity test calls mechanical, and the family it tested. */
+export interface ShotgunSurgeryMechanicalClassification {
+  bundleIds: ReadonlySet<number>;
+  /** Commits with ≥ {@link SHOTGUN_SURGERY_MIN_WIDTH} components and ≥ {@link SHOTGUN_SURGERY_MIN_WIDTH} line-counted files — the BH family. */
+  testedCount: number;
+}
+
+/**
+ * MECHANICAL — a sweep's per-file line counts are one pattern repeated
+ * (rename, import rewrite, flag removal). Rows = the commit's partitioned
+ * files with line counts, each keyed by its exact (added, deleted) pair.
+ * π = the corpus distribution of those keys over EVERY commit's rows.
+ * Statistic c = the commit's modal key count over n rows. Null: rows iid from
+ * π. p = min(1, Σ_v P(Bin(n, π_v) ≥ c)) — the union bound on the multinomial
+ * max ({@link shotgunSurgeryModalUniformityPValue}); c < 2 → p = 1. BH at
+ * {@link COCHANGE_SIGNIFICANCE_FDR_Q} over the tested commits. A bundle the
+ * line-count map does not hold is never tested.
+ */
+export function classifyShotgunSurgeryMechanicalBundles(
+  input: Pick<ShotgunSurgeryInput, "bundles" | "componentOf" | "bundleFileLines">,
+): ShotgunSurgeryMechanicalClassification {
+  const lines = input.bundleFileLines;
+  if (!lines) return { bundleIds: new Set(), testedCount: 0 };
+  const keyCounts = new Map<string, number>();
+  let rowTotal = 0;
+  const profiles: { bundleId: number; rows: number; modal: number }[] = [];
+  for (const [bundleId, files] of input.bundles) {
+    const counts = lines.get(bundleId);
+    if (!counts) continue;
+    const components = new Set<string>();
+    const own = new Map<string, number>();
+    let rows = 0;
+    for (const relPath of files) {
+      const component = input.componentOf.get(relPath);
+      if (component === undefined) continue;
+      components.add(component);
+      const row = counts.get(relPath);
+      if (!row) continue;
+      const key = `${row.added},${row.deleted}`;
+      own.set(key, (own.get(key) ?? 0) + 1);
+      keyCounts.set(key, (keyCounts.get(key) ?? 0) + 1);
+      rows++;
+    }
+    rowTotal += rows;
+    if (components.size < SHOTGUN_SURGERY_MIN_WIDTH || rows < SHOTGUN_SURGERY_MIN_WIDTH) continue;
+    profiles.push({ bundleId, rows, modal: Math.max(...own.values()) });
+  }
+  const shares = [...keyCounts.values()].map((count) => count / rowTotal).sort((a, b) => b - a);
+  const tested = profiles.map(({ bundleId, rows, modal }) => ({
+    bundleId,
+    p: shotgunSurgeryModalUniformityPValue(rows, modal, shares),
+  }));
+  tested.sort((a, b) => a.p - b.p || a.bundleId - b.bundleId);
+  const rejected = benjaminiHochbergRejectionCount(
+    tested.map((t) => t.p),
+    tested.length,
+  );
+  return { bundleIds: new Set(tested.slice(0, rejected).map((t) => t.bundleId)), testedCount: tested.length };
+}
+
+/**
+ * Σ_v P(Bin(n, π_v) ≥ c) over the shares sorted descending, as a valid upper
+ * bound: once term_i · (remaining shares) < sum · 1e-9, add term_i ·
+ * (remaining) — each later term is ≤ term_i because the tail rises with π —
+ * and stop. The remainder is bounded, never dropped. Clamped to 1; c < 2 → 1.
+ */
+export function shotgunSurgeryModalUniformityPValue(
+  rowCount: number,
+  modalCount: number,
+  sharesDescending: readonly number[],
+): number {
+  if (modalCount < 2) return 1;
+  let sum = 0;
+  for (let i = 0; i < sharesDescending.length; i++) {
+    const term = binomialUpperTail(modalCount, rowCount, sharesDescending[i]);
+    sum += term;
+    const remaining = sharesDescending.length - i - 1;
+    if (term * remaining < sum * MODAL_UNIFORMITY_REMAINDER_RELATIVE) {
+      sum += term * remaining;
+      break;
+    }
+    if (sum >= 1) return 1;
+  }
+  return Math.min(1, sum);
+}
+
+/** An echo: two commits that are one logical event (an original and its revert / flag removal). */
+export interface ShotgunSurgeryEchoPair {
+  /** The smaller bundle id. */
+  first: number;
+  /** The larger bundle id. */
+  second: number;
+  /** The pair's permutation p-value. */
+  pValue: number;
+}
+
+export interface ShotgunSurgeryEchoAssessment {
+  /** The pairs BH admitted at {@link COCHANGE_SIGNIFICANCE_FDR_Q} — the joined echoes. */
+  pairs: ShotgunSurgeryEchoPair[];
+  /** Every tested pair, by (p, first, second); `pairs` is its admitted prefix. */
+  candidates: ShotgunSurgeryEchoPair[];
+  /** m — the BH family. */
+  candidatePairCount: number;
+}
+
+/** A commit as the echo test reads it: its bundle and its partitioned files. */
+export interface ShotgunSurgeryEchoCommit {
+  bundleId: number;
+  filesByComponent: ReadonlyMap<string, ReadonlySet<RelPath>>;
+}
+
+/**
+ * ECHO — a revert or flag removal mirrors an earlier commit's per-file net
+ * lines. Population: the given (non-mechanical) commits with recorded line
+ * counts spanning ≥ {@link SHOTGUN_SURGERY_MIN_WIDTH} components — the
+ * constant, not k, since k is drawn from the units the join shapes.
+ * Candidates: pairs sharing ≥ {@link SHOTGUN_SURGERY_MIN_WIDTH} components.
+ * Statistic: {@link shotgunSurgeryMirroredNetShare} over U = files either
+ * changed, net = added − deleted, zero-padded on U. Null: given one side's
+ * vector, every assignment of the other side's values to U's positions is
+ * equally likely ({@link shotgunSurgeryEchoPermutationPValue}), with the
+ * sampling cap B = ⌈m / q⌉ so the floor 1 / (B + 1) clears BH at any rank.
+ * BH over all m candidates. Determinism: the side held fixed, U's order and
+ * the RNG seed all derive from the two bundles' first commit SHAs (bundle ids
+ * when no SHA is recorded), so the p-value is independent of evaluation order
+ * and of how a rebuild numbers the bundles.
+ */
+export function findShotgunSurgeryEchoPairs(
+  commits: readonly ShotgunSurgeryEchoCommit[],
+  input: Pick<ShotgunSurgeryInput, "bundleFileLines" | "bundleCommits">,
+): ShotgunSurgeryEchoAssessment {
+  const lines = input.bundleFileLines;
+  const nets = new Map<number, Map<RelPath, number>>();
+  const postings = new Map<string, number[]>();
+  const wide: number[] = [];
+  for (const { bundleId, filesByComponent } of commits) {
+    const counts = lines?.get(bundleId);
+    if (!counts || filesByComponent.size < SHOTGUN_SURGERY_MIN_WIDTH) continue;
+    const net = new Map<RelPath, number>();
+    for (const relPaths of filesByComponent.values()) {
+      for (const relPath of relPaths) {
+        const row = counts.get(relPath);
+        if (row) net.set(relPath, row.added - row.deleted);
+      }
+    }
+    nets.set(bundleId, net);
+    wide.push(bundleId);
+  }
+  wide.sort((a, b) => a - b);
+  const componentsOf = new Map(commits.map(({ bundleId, filesByComponent }) => [bundleId, filesByComponent]));
+  for (const bundleId of wide) {
+    for (const component of componentsOf.get(bundleId)?.keys() ?? []) {
+      const list = postings.get(component);
+      if (list) list.push(bundleId);
+      else postings.set(component, [bundleId]);
+    }
+  }
+  const pairs: [number, number][] = [];
+  for (const first of wide) {
+    const shared = new Map<number, number>();
+    for (const component of componentsOf.get(first)?.keys() ?? []) {
+      for (const other of postings.get(component) ?? []) {
+        if (other > first) shared.set(other, (shared.get(other) ?? 0) + 1);
+      }
+    }
+    for (const [second, count] of shared) if (count >= SHOTGUN_SURGERY_MIN_WIDTH) pairs.push([first, second]);
+  }
+
+  const m = pairs.length;
+  const maxPermutations = Math.ceil(m / COCHANGE_SIGNIFICANCE_FDR_Q);
+  const keyOf = (bundleId: number): string => input.bundleCommits?.get(bundleId)?.[0] ?? `bundle:${bundleId}`;
+  const candidates: ShotgunSurgeryEchoPair[] = pairs.map(([first, second]) => {
+    // Orient by the data, never by the bundle numbering: the side with the
+    // smaller key is held fixed, and the key pair seeds the RNG.
+    const [fixedId, permutedId] =
+      compareCodePoints(keyOf(first), keyOf(second)) <= 0 ? [first, second] : [second, first];
+    const fixed = nets.get(fixedId) ?? new Map<RelPath, number>();
+    const permuted = nets.get(permutedId) ?? new Map<RelPath, number>();
+    const positions = [...new Set([...fixed.keys(), ...permuted.keys()])].sort(compareCodePoints);
+    const random = mulberry32(seedFromKey(`${keyOf(fixedId)}\u0000${keyOf(permutedId)}`));
+    const pValue = shotgunSurgeryEchoPermutationPValue(
+      positions.map((relPath) => fixed.get(relPath) ?? 0),
+      positions.map((relPath) => permuted.get(relPath) ?? 0),
+      random,
+      { exceedances: SHOTGUN_SURGERY_ECHO_EXCEEDANCES, maxPermutations },
+    );
+    return { first, second, pValue };
+  });
+  candidates.sort((a, b) => a.pValue - b.pValue || a.first - b.first || a.second - b.second);
+  const rejected = benjaminiHochbergRejectionCount(
+    candidates.map((c) => c.pValue),
+    m,
+  );
+  return { pairs: candidates.slice(0, rejected), candidates, candidatePairCount: m };
+}
+
+/**
+ * The mirrored share of two aligned net vectors:
+ * Σ_{x_f·y_f < 0} min(|x_f|, |y_f|) / Σ_f max(|x_f|, |y_f|) — 0 when both are
+ * empty. Only opposite-sign mass counts, so file overlap alone never scores.
+ */
+export function shotgunSurgeryMirroredNetShare(first: readonly number[], second: readonly number[]): number {
+  let mirrored = 0;
+  let mass = 0;
+  for (let i = 0; i < first.length; i++) {
+    const a = first[i];
+    const b = second[i];
+    if (a * b < 0) mirrored += Math.min(Math.abs(a), Math.abs(b));
+    mass += Math.max(Math.abs(a), Math.abs(b));
+  }
+  return mass === 0 ? 0 : mirrored / mass;
+}
+
+/**
+ * P(score(first, π·second) ≥ observed) under uniform π over positions: exact
+ * (Heap's algorithm) when positions! ≤ {@link SHOTGUN_SURGERY_ECHO_EXACT_PERMUTATIONS},
+ * else Besag–Clifford sequential Monte Carlo over Fisher–Yates shuffles —
+ * p = h / k at the `exceedances`-th exceedance, (g + 1) / (B + 1) at the
+ * `maxPermutations` cap. A score within {@link ECHO_SCORE_TOLERANCE} of the
+ * observed exceeds (ties count against the pair). Observed 0 → 1, no sampling.
+ * Both forms are super-uniform.
+ */
+export function shotgunSurgeryEchoPermutationPValue(
+  first: readonly number[],
+  second: readonly number[],
+  random: () => number,
+  options: { exceedances: number; maxPermutations: number },
+): number {
+  const observed = shotgunSurgeryMirroredNetShare(first, second);
+  if (observed === 0) return 1;
+  const threshold = observed - ECHO_SCORE_TOLERANCE;
+  const n = second.length;
+  const permuted = [...second];
+  if (factorialAtMost(n, SHOTGUN_SURGERY_ECHO_EXACT_PERMUTATIONS)) {
+    // Heap's algorithm visits every permutation once.
+    let exceeding = 0;
+    let total = 0;
+    const visit = (): void => {
+      total++;
+      if (shotgunSurgeryMirroredNetShare(first, permuted) >= threshold) exceeding++;
+    };
+    visit();
+    const stack = new Array<number>(n).fill(0);
+    for (let i = 0; i < n; ) {
+      if (stack[i] < i) {
+        const j = i % 2 === 0 ? 0 : stack[i];
+        [permuted[j], permuted[i]] = [permuted[i], permuted[j]];
+        visit();
+        stack[i]++;
+        i = 0;
+      } else {
+        stack[i] = 0;
+        i++;
+      }
+    }
+    return exceeding / total;
+  }
+  let exceeding = 0;
+  for (let drawn = 1; drawn <= options.maxPermutations; drawn++) {
+    for (let i = n - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1));
+      [permuted[i], permuted[j]] = [permuted[j], permuted[i]];
+    }
+    if (shotgunSurgeryMirroredNetShare(first, permuted) >= threshold) {
+      exceeding++;
+      if (exceeding >= options.exceedances) return exceeding / drawn;
+    }
+  }
+  return (exceeding + 1) / (options.maxPermutations + 1);
+}
+
+/** n! ≤ limit, without overflowing. */
+function factorialAtMost(n: number, limit: number): boolean {
+  let product = 1;
+  for (let i = 2; i <= n; i++) {
+    product *= i;
+    if (product > limit) return false;
+  }
+  return true;
 }
 
 /** Add `from`'s files into `into`, component by component. */

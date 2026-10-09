@@ -478,6 +478,18 @@
   carries its commit's numstat `+/-` line counts, keyed by HEAD path
   (`cg_temporal_bundle_files.lines_added/lines_deleted`, migration 046).
 
+- **A mechanical commit leaves the shotgun history whole, never weighted 0; an
+  echo joins, never zeroes.** `classifyShotgunSurgeryMechanicalBundles` names
+  the sweeps and `collectCommits` (temporal/verdicts/shotgun-surgery.ts) skips
+  them before burst indexing, so degrees, opportunities, units and umbrella
+  breadth all drop them and the configuration null stays the null of the counted
+  population — a 0-weight unit would still clear the support gate and inflate
+  the opportunities. `findShotgunSurgeryEchoPairs` pairs feed
+  `joinLogicalChanges` as unions: zeroing a revert drops its original's evidence
+  too (echo-zero lost TRUE recall on taxdome). Permutation p-values seed from
+  the pair's SHAs (`seedFromKey`), never from evaluation order. An empty
+  line-count map is a pre-046 build: neither stage runs.
+
 ## Gotchas
 
 - **`codegraph.file.instability` is sampled over the files the graph actually

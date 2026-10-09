@@ -1419,8 +1419,16 @@ export interface ShotgunSurgeryReportSummary {
   reason?: ShotgunSurgeryAbsentReason;
   head?: string;
   builtAt?: number;
-  /** Author bursts touching ≥ 1 partitioned component — the null's degree unit (n_c, burst widths). */
+  /** Author bursts touching ≥ 1 partitioned component through a non-mechanical commit — the null's degree unit (n_c, burst widths). */
   burstCount?: number;
+  /** Commits tested for per-file line-count uniformity (the BH family). Absent = line counts not recorded (pre-migration index), not "no sweeps". */
+  mechanicalTestedCount?: number;
+  /** Commits called mechanical (sweeps), left out of the whole history. Absent = line counts not recorded. */
+  mechanicalCommitCount?: number;
+  /** Non-mechanical wide commit pairs sharing ≥ 3 components — the echo test's BH family. Absent = line counts not recorded. */
+  echoCandidatePairCount?: number;
+  /** Echo pairs (a revert / flag removal and its original) joined into one logical change. Absent = line counts not recorded. */
+  echoPairCount?: number;
   /** Logical changes' component sets (commits joined by a non-umbrella task id across bursts; identical sets sharing a burst once) — the width model's population. */
   unitCount?: number;
   /** Tukey fence over log2 of each task id's breadth (distinct ids on its commits): an id above it is an umbrella and joins nothing. */

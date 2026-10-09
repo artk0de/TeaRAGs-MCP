@@ -5,7 +5,10 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { runShotgunSurgery } from "../../../../../src/core/api/internal/ops/shotgun-surgery-findings.js";
+import {
+  runShotgunSurgery,
+  summariseShotgunSurgery,
+} from "../../../../../src/core/api/internal/ops/shotgun-surgery-findings.js";
 import type { TemporalCochangeGraph } from "../../../../../src/core/contracts/types/codegraph.js";
 import type { ComponentGraph } from "../../../../../src/core/domains/trajectory/codegraph/symbols/index.js";
 import type {
@@ -76,5 +79,36 @@ describe("runShotgunSurgery — per-file line counts reach the detector (bd tea-
     runShotgunSurgery(cochange, COMPONENTS, undefined);
 
     expect(detectorInputs[0]).not.toHaveProperty("bundleFileLines");
+  });
+});
+
+describe("summariseShotgunSurgery — mechanical and echo counts (bd tea-rags-mcp-dm61n)", () => {
+  it("reports the four stage counts when line counts were recorded", () => {
+    const bundleFileLines = new Map([[0, new Map([["a.ts", { added: 3, deleted: 1 }]])]]);
+    const summary = summariseShotgunSurgery(
+      runShotgunSurgery(
+        { meta: META, edges: [], bundles: new Map([[0, ["a.ts", "b.ts"]]]), bundleFileLines },
+        COMPONENTS,
+        undefined,
+      ),
+    );
+
+    expect(summary).toMatchObject({
+      mechanicalTestedCount: 0,
+      mechanicalCommitCount: 0,
+      echoCandidatePairCount: 0,
+      echoPairCount: 0,
+    });
+  });
+
+  it("leaves them absent, never zero, when the build predates line counts", () => {
+    const summary = summariseShotgunSurgery(
+      runShotgunSurgery({ meta: META, edges: [], bundles: new Map([[0, ["a.ts", "b.ts"]]]) }, COMPONENTS, undefined),
+    );
+
+    expect(summary).not.toHaveProperty("mechanicalTestedCount");
+    expect(summary).not.toHaveProperty("mechanicalCommitCount");
+    expect(summary).not.toHaveProperty("echoCandidatePairCount");
+    expect(summary).not.toHaveProperty("echoPairCount");
   });
 });

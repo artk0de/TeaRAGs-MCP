@@ -20,6 +20,7 @@
  */
 
 import type { CochangeBurstWindowMethod } from "../../../../../contracts/types/codegraph.js";
+import { mulberry32 } from "../../../../../infra/statistics/index.js";
 import { authorIdentityKey } from "../../../git/index.js";
 import type { CochangeCommit } from "./commit-bundles.js";
 
@@ -173,16 +174,4 @@ function jaccard(a: readonly string[], b: readonly string[]): number {
   for (const file of b) if (set.has(file)) shared++;
   const union = set.size + b.length - shared;
   return union === 0 ? 0 : shared / union;
-}
-
-/** Small deterministic PRNG (mulberry32), uniform in [0, 1). */
-function mulberry32(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
 }
