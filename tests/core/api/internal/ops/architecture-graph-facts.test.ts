@@ -6,18 +6,18 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  applyEdgeOverlay,
-  ARCHITECTURE_FACTS_NOT_REFRESHED_BY_EDGE_OVERLAY,
-  readArchitectureGraphFacts,
-} from "../../../../../src/core/api/internal/ops/architecture-graph-facts.js";
+import { readArchitectureGraphFacts } from "../../../../../src/core/api/internal/ops/architecture-graph-facts.js";
 import { ArchitectureReportOps } from "../../../../../src/core/api/internal/ops/architecture-report-ops.js";
-import { ReviewEdgeOverlay } from "../../../../../src/core/api/internal/ops/review-edge-overlay.js";
 import type {
   FileDependencyGraph,
   NonPublicMemberEdge,
   TemporalCochangeGraph,
 } from "../../../../../src/core/contracts/types/codegraph.js";
+import {
+  applyEdgeOverlay,
+  ARCHITECTURE_FACTS_NOT_REFRESHED_BY_EDGE_OVERLAY,
+  ReviewEdgeOverlay,
+} from "../../../../../src/core/domains/trajectory/codegraph/symbols/index.js";
 
 function file(relPath: string) {
   return { relPath, language: "typescript", symbolCount: 1 };

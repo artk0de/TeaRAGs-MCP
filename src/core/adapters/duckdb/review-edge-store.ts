@@ -27,8 +27,12 @@
  * coexist in one temp catalog under their unique ids; a review holds one
  * handle from sweep to drop, so direct mode sees its own table throughout. A
  * connection that closes mid-review (idle eviction, compaction's reopen) takes
- * the table with it, which reads as "no edges" — the same answer as a dropped
- * table.
+ * the table with it — the same end state as a dropped table.
+ *
+ * The store is WRITE-ONLY (bd tea-rags-mcp-89k7k.35.19): nothing reads the
+ * table back. The review judges through the pure `ReviewEdgeOverlay` it
+ * built from the same reads (codegraph domain), so the read this store once
+ * offered had no production caller and was removed with its daemon op.
  *
  * Cleanup contract — guaranteed, not best-effort. Three layers:
  *
@@ -87,11 +91,6 @@ function quoteIdentifier(name: string): string {
 /** The review table in DuckDB's connection-scoped `temp` catalog — never the database file. */
 function tempTable(name: string): string {
   return `temp.main.${quoteIdentifier(name)}`;
-}
-
-interface EdgeRow {
-  source_rel_path: string;
-  target_rel_path: string;
 }
 
 /** A review table the catalog lists — a temp one, or a persistent leftover of an older build. */
@@ -162,22 +161,5 @@ export class DuckDbReviewEdgeStore {
       dropped.push(name);
     }
     return dropped;
-  }
-
-  /** The review's edges ordered by (source, target); a missing table reads as none. */
-  async readReviewFileEdges(reviewId: string): Promise<ReviewFileEdge[]> {
-    const name = reviewTableName(reviewId);
-    const found = await this.session.queryAll<{ n: number }>(
-      "SELECT count(*) AS n FROM duckdb_tables() WHERE temporary AND schema_name = 'main' AND table_name = ?",
-      [name],
-    );
-    // The driver hands BIGINT back as a STRING in JSON mode — "0" === 0 is
-    // false, and a dropped table would then fall through to a SELECT on a
-    // missing name instead of reading as no edges.
-    if (Number(found[0]?.n ?? 0) === 0) return [];
-    const rows = await this.session.queryAll<EdgeRow>(
-      `SELECT source_rel_path, target_rel_path FROM ${tempTable(name)} ORDER BY source_rel_path, target_rel_path`,
-    );
-    return rows.map((r) => ({ sourceRelPath: r.source_rel_path, targetRelPath: r.target_rel_path }));
   }
 }

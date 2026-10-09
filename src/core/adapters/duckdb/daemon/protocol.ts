@@ -173,9 +173,6 @@ export const DAEMON_OPS = [
   // as "no symbol co-change data".
   "storedTemporalSymbolCommitFilePaths",
   "readTemporalSymbolCommits",
-  // One review's working-tree file edges (bd tea-rags-mcp-89k7k.1.2).
-  // REQUIRED: an older daemon's empty answer would read as "no review edges".
-  "readReviewFileEdges",
   // One file's importers / imports for file-scope get_callers / get_callees
   // (bd tea-rags-mcp-gfvr8). REQUIRED, not legacy-tolerated: an empty answer
   // would read as "nothing imports this file".
@@ -356,7 +353,6 @@ export interface DaemonOpParamsMap {
   readTemporalBundleFiles: NoDaemonOpParams;
   storedTemporalSymbolCommitFilePaths: NoDaemonOpParams;
   readTemporalSymbolCommits: { relPath: string };
-  readReviewFileEdges: { reviewId: string };
   getFileImporters: { relPath: RelPath };
   getFileImports: { relPath: RelPath };
   hasStaleDerivedTables: NoDaemonOpParams;

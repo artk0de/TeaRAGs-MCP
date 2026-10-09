@@ -1,5 +1,5 @@
 /**
- * `readReviewFileEdges` + `ReviewEdgeOverlay` — slice A of the working-tree
+ * `readWorkingTreeFileEdges` — slice A of the working-tree
  * file-edge overlay (bd tea-rags-mcp-89k7k.1.2, F1): one changed file's import
  * edges read from the working tree the diff belongs to, and the pure
  * per-review view F2's detectors will read the indexed graph through.
@@ -18,17 +18,16 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
-  readReviewFileEdges,
-  ReviewEdgeOverlay,
+  readWorkingTreeFileEdges,
   workingTreeExtractionContext,
   type ReviewEdgeExtractionDeps,
-  type ReviewFileEdgeRead,
 } from "../../../../../src/core/api/internal/ops/review-edge-overlay.js";
 import {
   collectSymbols,
   DefaultSymbolIdComposer,
   LanguageFactory,
 } from "../../../../../src/core/domains/language/index.js";
+import { ReviewEdgeOverlay } from "../../../../../src/core/domains/trajectory/codegraph/symbols/index.js";
 
 /** One temp working tree per test; removed afterwards. */
 let workTree: string | undefined;
@@ -60,13 +59,13 @@ function realDeps(): ReviewEdgeExtractionDeps {
   };
 }
 
-describe("readReviewFileEdges", () => {
+describe("readWorkingTreeFileEdges", () => {
   it("resolves a relative import to the working-tree file it names", async () => {
     const tree = freshWorkTree();
     writeFile("src/b.ts", "export const B = 1;\n");
     writeFile("src/a.ts", 'import { B } from "./b";\nexport const A = B;\n');
 
-    const read = await readReviewFileEdges(realDeps(), tree, "src/a.ts");
+    const read = await readWorkingTreeFileEdges(realDeps(), tree, "src/a.ts");
 
     expect(read.relPath).toBe("src/a.ts");
     expect(read.language).toBe("typescript");
@@ -78,7 +77,7 @@ describe("readReviewFileEdges", () => {
     const tree = freshWorkTree();
     writeFile("src/a.ts", 'import { X } from "some-pkg/x";\nexport const A = X;\n');
 
-    const read = await readReviewFileEdges(realDeps(), tree, "src/a.ts");
+    const read = await readWorkingTreeFileEdges(realDeps(), tree, "src/a.ts");
 
     // Honest slice-A pin: a bare specifier without a tsconfig `paths` alias and
     // without node_modules names no project file, so no edge is fabricated.
@@ -92,7 +91,7 @@ describe("readReviewFileEdges", () => {
     writeFile("src/b.ts", "export const B = 1;\n");
     writeFile("src/alias.ts", 'import { B } from "@/b";\nexport const A = B;\n');
 
-    const read = await readReviewFileEdges(realDeps(), tree, "src/alias.ts");
+    const read = await readWorkingTreeFileEdges(realDeps(), tree, "src/alias.ts");
 
     expect(read.edges).toEqual([
       { sourceRelPath: "src/alias.ts", targetRelPath: "src/b.ts", importedExportNames: ["B"] },
@@ -105,7 +104,7 @@ describe("readReviewFileEdges", () => {
     // must not survive the working-tree existence gate.
     writeFile("src/a.ts", 'import { NOPE } from "./gone";\nexport const A = 1;\n');
 
-    const read = await readReviewFileEdges(realDeps(), tree, "src/a.ts");
+    const read = await readWorkingTreeFileEdges(realDeps(), tree, "src/a.ts");
 
     expect(read.edges).toEqual([]);
     expect(read.skip).toBeUndefined();
@@ -115,7 +114,7 @@ describe("readReviewFileEdges", () => {
     const tree = freshWorkTree();
     writeFile("docs/notes.md", "# Notes\n\nProse only.\n");
 
-    const read = await readReviewFileEdges(realDeps(), tree, "docs/notes.md");
+    const read = await readWorkingTreeFileEdges(realDeps(), tree, "docs/notes.md");
 
     expect(read.language).toBeUndefined();
     expect(read.edges).toEqual([]);
@@ -125,7 +124,7 @@ describe("readReviewFileEdges", () => {
   it("reports unreadable for a path the working tree does not hold", async () => {
     const tree = freshWorkTree();
 
-    const read = await readReviewFileEdges(realDeps(), tree, "src/missing.ts");
+    const read = await readWorkingTreeFileEdges(realDeps(), tree, "src/missing.ts");
 
     expect(read.edges).toEqual([]);
     expect(read.skip?.reason).toBe("unreadable");
@@ -136,7 +135,7 @@ describe("readReviewFileEdges", () => {
     const tree = freshWorkTree();
     writeFile("app/models/user.rb", 'class User\n  def name = "n"\nend\n');
 
-    const read = await readReviewFileEdges(realDeps(), tree, "app/models/user.rb");
+    const read = await readWorkingTreeFileEdges(realDeps(), tree, "app/models/user.rb");
 
     // The walk succeeds (the Ruby grammar is installed); the gate is the
     // mapper: Ruby's file edges answer from indexed state slice A cannot hydrate.
@@ -150,7 +149,7 @@ describe("readReviewFileEdges", () => {
     writeFile("src/b.ts", "export const B = 1;\n");
     writeFile("src/broken.ts", 'import { B } from "./b";\nconst x: = {{{{\nfunction f( {\n');
 
-    const read = await readReviewFileEdges(realDeps(), tree, "src/broken.ts");
+    const read = await readWorkingTreeFileEdges(realDeps(), tree, "src/broken.ts");
 
     // Honest pin: tree-sitter recovers, the walker extracts the import, and the
     // review gains the edge. `parseFailed` fires only when the walk THROWS.
@@ -173,8 +172,8 @@ describe("readReviewFileEdges", () => {
       composer: new DefaultSymbolIdComposer(),
     };
 
-    const bad = await readReviewFileEdges(throwing, tree, "src/a.ts");
-    const good = await readReviewFileEdges(realDeps(), tree, "src/a.ts");
+    const bad = await readWorkingTreeFileEdges(throwing, tree, "src/a.ts");
+    const good = await readWorkingTreeFileEdges(realDeps(), tree, "src/a.ts");
 
     expect(bad.skip?.reason).toBe("parseFailed");
     expect(bad.skip?.detail).toContain("collectSymbols exploded");
@@ -195,8 +194,8 @@ describe("readReviewFileEdges", () => {
       'import { B } from "./b";\nimport { B as B2 } from "./b.js";\nexport const T = B + B2;\n',
     );
 
-    const self = await readReviewFileEdges(realDeps(), tree, "src/self.ts");
-    const twice = await readReviewFileEdges(realDeps(), tree, "src/twice.ts");
+    const self = await readWorkingTreeFileEdges(realDeps(), tree, "src/self.ts");
+    const twice = await readWorkingTreeFileEdges(realDeps(), tree, "src/twice.ts");
 
     expect(self.edges).toEqual([]);
     expect(twice.edges).toEqual([
@@ -210,7 +209,7 @@ describe("readReviewFileEdges", () => {
     writeFile("src/c.ts", "export const C = 1;\n");
     writeFile("src/facade.ts", 'import { C } from "./c";\nexport { B } from "./b";\nexport const F = 1;\n');
 
-    const read = await readReviewFileEdges(realDeps(), tree, "src/facade.ts");
+    const read = await readWorkingTreeFileEdges(realDeps(), tree, "src/facade.ts");
     const overlay = new ReviewEdgeOverlay([read]);
 
     expect(overlay.edgesFrom("src/facade.ts")).toEqual([
@@ -224,7 +223,7 @@ describe("readReviewFileEdges", () => {
     writeFile("src/b.ts", "export const B = 1;\nexport const C = 2;\n");
     writeFile("src/twice.ts", 'import { B } from "./b";\nimport { C } from "./b.js";\nexport const T = B + C;\n');
 
-    const read = await readReviewFileEdges(realDeps(), tree, "src/twice.ts");
+    const read = await readWorkingTreeFileEdges(realDeps(), tree, "src/twice.ts");
 
     expect(read.edges).toEqual([
       { sourceRelPath: "src/twice.ts", targetRelPath: "src/b.ts", importedExportNames: ["B", "C"] },
@@ -249,71 +248,5 @@ describe("workingTreeExtractionContext", () => {
     const context = workingTreeExtractionContext(tree, new LanguageFactory({}));
 
     expect(context.declaredDependencies?.size).toBe(0);
-  });
-});
-
-describe("ReviewEdgeOverlay", () => {
-  function read(
-    relPath: string,
-    edges: readonly [string, string][],
-    skip?: ReviewFileEdgeRead["skip"],
-  ): ReviewFileEdgeRead {
-    return {
-      relPath,
-      edges: edges.map(([sourceRelPath, targetRelPath]) => ({ sourceRelPath, targetRelPath })),
-      ...(skip !== undefined ? { skip } : {}),
-    };
-  }
-
-  it("masks every read relPath, whatever the read found", () => {
-    const overlay = new ReviewEdgeOverlay([
-      read("src/a.ts", [["src/a.ts", "src/b.ts"]]),
-      read("src/empty.ts", []),
-      read("docs/notes.md", [], { reason: "noCodegraphLanguage" }),
-      read("src/gone.ts", [], { reason: "unreadable", detail: "ENOENT" }),
-    ]);
-
-    expect([...overlay.masked].sort()).toEqual(["docs/notes.md", "src/a.ts", "src/empty.ts", "src/gone.ts"]);
-  });
-
-  it("answers edgesFrom for a file with edges, without edges, and outside the read", () => {
-    const overlay = new ReviewEdgeOverlay([
-      read("src/a.ts", [
-        ["src/a.ts", "src/b.ts"],
-        ["src/a.ts", "src/c.ts"],
-      ]),
-      read("src/empty.ts", []),
-    ]);
-
-    expect(overlay.edgesFrom("src/a.ts")).toEqual([
-      { sourceRelPath: "src/a.ts", targetRelPath: "src/b.ts" },
-      { sourceRelPath: "src/a.ts", targetRelPath: "src/c.ts" },
-    ]);
-    expect(overlay.edgesFrom("src/empty.ts")).toEqual([]);
-    expect(overlay.edgesFrom("src/unchanged.ts")).toEqual([]);
-  });
-
-  it("lists the skipped reads with their reasons and details", () => {
-    const overlay = new ReviewEdgeOverlay([
-      read("src/a.ts", [["src/a.ts", "src/b.ts"]]),
-      read("docs/notes.md", [], { reason: "noCodegraphLanguage" }),
-      read("src/gone.ts", [], { reason: "unreadable", detail: "ENOENT: no such file" }),
-      read("app/user.rb", [], { reason: "unsupportedLanguage", detail: "index-backed mapper" }),
-      read("src/broken.py", [], { reason: "parseFailed", detail: "grammar missing" }),
-    ]);
-
-    expect(overlay.unsupported()).toEqual([
-      { relPath: "docs/notes.md", reason: "noCodegraphLanguage" },
-      { relPath: "src/gone.ts", reason: "unreadable", detail: "ENOENT: no such file" },
-      { relPath: "app/user.rb", reason: "unsupportedLanguage", detail: "index-backed mapper" },
-      { relPath: "src/broken.py", reason: "parseFailed", detail: "grammar missing" },
-    ]);
-  });
-
-  it("hands out frozen edge views — the overlay is pure after construction", () => {
-    const overlay = new ReviewEdgeOverlay([read("src/a.ts", [["src/a.ts", "src/b.ts"]])]);
-
-    expect(Object.isFrozen(overlay.edgesFrom("src/a.ts"))).toBe(true);
-    expect(Object.isFrozen(overlay.edgesFrom("src/empty.ts"))).toBe(true);
   });
 });
