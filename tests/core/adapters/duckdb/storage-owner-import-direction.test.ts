@@ -25,20 +25,7 @@ const IDENTIFIER_STORE = "src/core/adapters/duckdb/identifier-store.ts";
 
 /** Names `codegraph-storage.ts` itself defines — the storage surface. */
 const STORAGE_OWNED = {
-  [OP_COMMANDS]: [
-    "BulkFileUpsertEntry",
-    "BulkSymbolUpsertEntry",
-    "GraphDbClient",
-    "IdentifierReplaceEntry",
-    "MethodHeadWordQuery",
-    "MethodNamePatternQuery",
-    "MethodTailVerbQuery",
-    "OntologyReportQuery",
-    "Pass1AggregateReadScope",
-    "ReviewFileEdge",
-    "TypeDeclarationReplaceEntry",
-    "TypeNameQuery",
-  ],
+  [OP_COMMANDS]: ["GraphDbClient"],
   [IDENTIFIER_STORE]: [
     "AnchorIdentifierTypeRow",
     "IdentifierCalleeAggregateRow",
