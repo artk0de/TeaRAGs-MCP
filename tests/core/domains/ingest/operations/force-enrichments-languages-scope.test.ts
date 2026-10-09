@@ -192,12 +192,24 @@ describe("--force-enrichments with --languages — repair-pass scope (bd tea-rag
     // Drift repair is the sync leg's own job and is unrelated to what the run
     // was asked to force: a ruby row that fell behind heals on a run that
     // selected typescript, because the alternative is a store that never
-    // converges once its files stop changing (bd tea-rags-mcp-6goqa).
+    // converges once its files stop changing (bd tea-rags-mcp-6goqa). Since bd
+    // tea-rags-mcp-zdg3y the sync leg no longer walks it itself: it hands the
+    // path to the recompute as extra scope, whose forced repair admits it
+    // regardless of `--languages` (pinned on that side by
+    // `force-enrichments-provider-repair.test.ts`).
     persistedHashes.set("worker.rb", "stale-hash");
 
     await ingest.indexCodebase(codebaseDir, { forceEnrichments: ["codegraph"], languages: ["typescript"] });
 
-    expect(repairedPaths).toEqual(["worker.rb"]);
+    expect(repairedPaths).toEqual([]);
+    const recompute = vi.mocked(EnrichmentCoordinator.prototype.recomputeEnrichments);
+    expect(recompute).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      ["codegraph"],
+      ["typescript"],
+      new Set(["worker.rb"]),
+    );
   });
 
   it("does not prune the unselected language's rows as orphans", async () => {

@@ -360,6 +360,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments forced repair covers chunkl
   async function recomputeAfterSync(
     points: { id: string; payload: Record<string, unknown> }[],
     languages?: readonly string[],
+    handedOverRelPaths?: ReadonlySet<string>,
   ): Promise<{ walked: string[]; provider: EnrichmentProvider }> {
     const executor = new InlineEnrichmentExecutor();
     const runFileBatch = vi.spyOn(executor, "runFileBatch");
@@ -376,6 +377,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments forced repair covers chunkl
       "/repo",
       ["codegraph"],
       languages,
+      handedOverRelPaths,
     );
     const walked = [...new Set(runFileBatch.mock.calls.flatMap((call) => call[2]))].sort();
     return { walked, provider };
@@ -394,6 +396,15 @@ describe("EnrichmentCoordinator.recomputeEnrichments forced repair covers chunkl
       ["typescript"],
     );
     expect(walked).toEqual(["src/a.ts", "src/tiny.ts"]);
+  });
+
+  it("admits a path outside --languages that the sync leg handed over (bd tea-rags-mcp-zdg3y)", async () => {
+    const { walked } = await recomputeAfterSync(
+      [{ id: "c1", payload: { relativePath: "src/a.ts", startLine: 1, endLine: 10, language: "typescript" } }],
+      ["typescript"],
+      new Set(["app/models/user.rb"]),
+    );
+    expect(walked).toEqual(["app/models/user.rb", "src/a.ts", "src/tiny.ts"]);
   });
 
   it("still repairs and finalizes when the scope holds no stored chunk at all", async () => {

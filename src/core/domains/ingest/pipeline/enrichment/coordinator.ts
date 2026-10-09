@@ -42,8 +42,11 @@ import { FilePhase } from "./file-phase.js";
 import { EnrichmentMarkerStore } from "./marker-store.js";
 import { filterFileEnrichPaths } from "./policy.js";
 import {
-  recomputeLanguagesCoverPath,
+  handOverUncoveredPaths,
+  recomputeScopeCoversPath,
+  recomputeScopePointFilter,
   type RecomputeProviderDeferral,
+  type RecomputeScopePointFilter,
   type RepairPassRecomputeDeferral,
 } from "./recompute-deferral.js";
 import type { DeferredChunkRecoveryHandoff, EnrichmentRecovery } from "./recovery.js";
@@ -453,18 +456,22 @@ export class EnrichmentCoordinator {
         const handedOff = forced.filter((path) => !drifted.has(path));
         repair.push(...handedOff);
         if (recomputeDeferral?.providerKeys.has(provider.key) && repair.length > 0) {
-          // Left to the recompute only when it re-extracts every path this walk
-          // would: its forced repair covers the same language scope. Orphans
-          // were pruned above either way. A handed-off chunk needs THIS run's
-          // walk and seed (bd tea-rags-mcp-fxio5), so it declines too.
-          const declined =
-            handedOff.length > 0 ||
-            repair.some((path) => !recomputeLanguagesCoverPath(recomputeDeferral.languages, path));
-          if (!declined) {
+          // Left to the recompute, which re-extracts every path this walk
+          // would: a drifted path its languages do not reach is handed over
+          // as extra scope (bd tea-rags-mcp-zdg3y). Orphans were pruned above
+          // either way. A handed-off chunk needs THIS run's walk and seed (bd
+          // tea-rags-mcp-fxio5) — the one case that still declines.
+          if (handedOff.length === 0) {
+            const handedOver = handOverUncoveredPaths(
+              recomputeDeferral.languages,
+              recomputeDeferral.handedOverRelPaths,
+              repair,
+            );
             pipelineLog.enrichmentPhase("REPAIR_DEFERRED_TO_RECOMPUTE", {
               provider: provider.key,
               collection: physicalCollectionName,
               deferred: repair.length,
+              handedOverOutsideLanguages: handedOver,
               orphaned: orphans.length,
             });
             continue;
@@ -510,12 +517,13 @@ export class EnrichmentCoordinator {
 
   /**
    * The provider keys a `--force-enrichments` sync leg may leave to the
-   * recompute that follows it (bd tea-rags-mcp-b4drg): the selectors' matches,
-   * provided the recompute reaches every file the sync leg streams. A changed
-   * file outside a `--languages` recompute is enriched by no other leg, so one
-   * such path keeps every provider in the sync leg — the ordinary behaviour.
-   * Empty when there is no deferral; `runRepairPass` may still decline a
-   * provider afterwards (`RepairPassRecomputeDeferral#onDeclined`).
+   * recompute that follows it (bd tea-rags-mcp-b4drg): the selectors' matches.
+   * A changed file outside a `--languages` recompute does NOT keep them in the
+   * sync leg: it is handed over (`deferral.handedOverRelPaths`) and the
+   * recompute admits it by name, so the provider still enriches it exactly
+   * once (bd tea-rags-mcp-zdg3y). Empty when there is no deferral;
+   * `runRepairPass` may still decline a provider afterwards
+   * (`RepairPassRecomputeDeferral#onDeclined`).
    */
   resolveRecomputeDeferredProviderKeys(
     deferral: RecomputeProviderDeferral | undefined,
@@ -524,14 +532,13 @@ export class EnrichmentCoordinator {
     if (!deferral) return new Set();
     const { matched } = selectProviderKeys(this.providerKeys, deferral.selectors);
     if (matched.length === 0) return new Set();
-    const uncovered = workSetRelPaths.filter((path) => !recomputeLanguagesCoverPath(deferral.languages, path));
-    if (uncovered.length > 0) {
-      pipelineLog.enrichmentPhase("SYNC_LEG_DEFERRAL_DECLINED", {
+    const handedOver = handOverUncoveredPaths(deferral.languages, deferral.handedOverRelPaths, workSetRelPaths);
+    if (handedOver > 0) {
+      pipelineLog.enrichmentPhase("SYNC_LEG_UNCOVERED_PATHS_HANDED_TO_RECOMPUTE", {
         providers: matched,
-        uncoveredFiles: uncovered.length,
-        sample: uncovered.slice(0, 5),
+        handedOver,
+        sample: [...deferral.handedOverRelPaths].slice(0, 5),
       });
-      return new Set();
     }
     return new Set(matched);
   }
@@ -823,6 +830,13 @@ export class EnrichmentCoordinator {
      * happens in the facade — by here the list is already known-good.
      */
     languages?: readonly string[],
+    /**
+     * Paths outside `languages` the `--force-enrichments` sync leg left to this
+     * recompute (bd tea-rags-mcp-zdg3y) — the scroll, the skip-stamp
+     * retirement and the forced repair admit them by name, so no file is
+     * enriched by neither leg. Omitted on every other path.
+     */
+    handedOverRelPaths?: ReadonlySet<string>,
   ): Promise<EnrichmentMetrics> {
     const { matched } = selectProviderKeys(this.providerKeys, selectors);
     if (matched.length === 0) return EMPTY_METRICS;
@@ -848,16 +862,18 @@ export class EnrichmentCoordinator {
     // of the whole selected corpus, and a silent phase that long reads as a hang
     // (bd tea-rags-mcp-6aytq).
     const scrollStartedAt = Date.now();
-    const stored = await this.scrollStoredChunks(physicalCollectionName, absolutePath, languages);
+    const scopeFilter = recomputeScopePointFilter(languages, handedOverRelPaths);
+    const stored = await this.scrollStoredChunks(physicalCollectionName, absolutePath, scopeFilter);
     pipelineLog.enrichmentPhase("RECOMPUTE_SCROLL", {
       collection: physicalCollectionName,
       chunks: stored.items.length,
       files: stored.fileCount,
       durationMs: Date.now() - scrollStartedAt,
       ...(languages && languages.length > 0 ? { languages: [...languages] } : {}),
+      ...(handedOverRelPaths && handedOverRelPaths.size > 0 ? { handedOverPaths: handedOverRelPaths.size } : {}),
     });
 
-    await this.retireSkipStamps(physicalCollectionName, matched, languages);
+    await this.retireSkipStamps(physicalCollectionName, matched, scopeFilter);
 
     // The recompute's own writes to a provider's per-file store are ADDITIVE —
     // only the repair leg's diffing per-file write (`applyScopedRowDiff`)
@@ -884,7 +900,8 @@ export class EnrichmentCoordinator {
       // under force the value is never compared.
       //
       // Membership is the stored-chunk scope PLUS the working-tree scan the
-      // sync leg captured, narrowed to `languages` (bd tea-rags-mcp-nlbhg): a
+      // sync leg captured, narrowed to `languages` plus the paths the sync leg
+      // handed over (bd tea-rags-mcp-nlbhg, zdg3y): a
       // file that yields no chunk has no Qdrant point, so the stored scope
       // alone never re-extracted it although its edges belong in the graph.
       // Each provider's own extractability filter still narrows the set
@@ -894,7 +911,7 @@ export class EnrichmentCoordinator {
         [...stored.chunkMap.keys()].map((relPath) => [relPath, hashesBeforeForcedRepair?.get(relPath) ?? ""]),
       );
       for (const [relPath, hash] of hashesBeforeForcedRepair ?? []) {
-        if (!recomputeLanguagesCoverPath(languages, relPath)) continue;
+        if (!recomputeScopeCoversPath(languages, handedOverRelPaths, relPath)) continue;
         eligibilityMap.set(relPath, hash);
       }
       pipelineLog.enrichmentPhase("RECOMPUTE_FORCED_PROVIDER_REPAIR", {
@@ -979,11 +996,11 @@ export class EnrichmentCoordinator {
   private async retireSkipStamps(
     physicalCollectionName: PhysicalCollectionName,
     providerKeys: readonly string[],
-    languages: readonly string[] | undefined,
+    scopeFilter: RecomputeScopePointFilter,
   ): Promise<void> {
     const keys = providerKeys.flatMap((key) => [`${key}.file.skippedAs`, `${key}.chunk.skippedAs`]);
     const filter = {
-      ...(languages && languages.length > 0 ? { must: [{ key: "language", match: { any: [...languages] } }] } : {}),
+      ...scopeFilter,
       should: keys.map((key) => ({ must_not: [{ is_empty: { key } }] })),
     };
     try {
@@ -1013,20 +1030,16 @@ export class EnrichmentCoordinator {
   private async scrollStoredChunks(
     collectionName: string,
     absolutePath: string,
-    languages?: readonly string[],
+    scopeFilter: RecomputeScopePointFilter,
   ): Promise<{ items: ChunkItem[]; chunkMap: Map<string, ChunkLookupEntry[]>; fileCount: number }> {
     const root = absolutePath.endsWith("/") ? absolutePath.slice(0, -1) : absolutePath;
     // Narrowing here rather than after the read is the point of the flag: a
-    // post-filter would still pull every point of the corpus through memory.
-    // An EMPTY list means "no restriction" — `match: { any: [] }` selects
-    // nothing in Qdrant, which would turn the run into a silent no-op that
-    // still reports success.
-    const languageFilter =
-      languages && languages.length > 0 ? { must: [{ key: "language", match: { any: [...languages] } }] } : {};
+    // post-filter would still pull every point of the corpus through memory
+    // (`recomputeScopePointFilter`).
     const points = await this.qdrant.scrollFiltered(
       collectionName,
       {
-        ...languageFilter,
+        ...scopeFilter,
         must_not: [...servicePointExclusions(), { is_empty: { key: "relativePath" } }],
       },
       RECOMPUTE_SCROLL_HARD_CAP,

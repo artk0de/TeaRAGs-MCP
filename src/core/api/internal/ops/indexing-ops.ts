@@ -1360,15 +1360,18 @@ export class IndexingOps {
     // (git under `--force-enrichments codegraph`) keep their ordinary
     // incremental here, since nothing else will touch them; deletions still
     // reach every provider's hook, and the repair's orphan prune still runs —
-    // the selector-forced repair prunes nothing. `ReindexPipeline` declines
-    // the deferral whenever the recompute does not cover a path the sync leg
-    // must enrich (a changed or drifted file outside `--languages`).
-    // `ReindexPipeline#settleRecomputeDeferral` owns the details, including why
-    // skipping the collection completion here loses nothing if the recompute
-    // throws.
+    // the selector-forced repair prunes nothing. A path the recompute's
+    // `--languages` would not reach (a changed doc, a drifted file of another
+    // language) no longer declines the deferral: the sync leg collects it into
+    // `handedOverRelPaths`, and the recompute below admits it by name (bd
+    // tea-rags-mcp-zdg3y — on taxdome 11 changed `.md` files reinstated the
+    // whole double pass). `ReindexPipeline#settleRecomputeDeferral` owns the
+    // details, including why skipping the collection completion here loses
+    // nothing if the recompute throws.
+    const handedOverRelPaths = new Set<string>();
     const changeStats = await this.reindex.reindexChanges(path, progressCallback, {
       ...(await this.syncChunkingOverrides(aliasCollectionName)),
-      recomputeDeferral: { selectors, languages: languages ?? [] },
+      recomputeDeferral: { selectors, languages: languages ?? [], handedOverRelPaths },
     });
     // A seed a dead process left pending (bd tea-rags-mcp-k8gac): its stamp is
     // paid now, ahead of the recompute's own — see `payPendingSeedStamp`.
@@ -1379,6 +1382,7 @@ export class IndexingOps {
       absolutePath,
       selectors,
       languages,
+      handedOverRelPaths,
     );
     const enrichmentDurationMs = Date.now() - startedAt;
     await this.refreshStats(path);
