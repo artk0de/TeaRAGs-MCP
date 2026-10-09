@@ -3,43 +3,17 @@
 // sibling directly when you want the narrow surface". Declares the coupling
 // the daemon's dispatch table has with codegraph-storage.ts
 // (bd tea-rags-mcp-89k7k.25).
-import type {
-  BulkFileUpsertEntry,
-  BulkSymbolUpsertEntry,
-  GraphDbClient,
-  IdentifierReplaceEntry,
-  MethodHeadWordQuery,
-  MethodNamePatternQuery,
-  MethodTailVerbQuery,
-  OntologyReportQuery,
-  Pass1AggregateReadScope,
-  ReviewFileEdge,
-  TypeDeclarationReplaceEntry,
-  TypeNameQuery,
-} from "../../../contracts/types/codegraph-storage.js";
-import type {
-  CycleScope,
-  FileResolveStatsWrite,
-  FileScopedSymbolRef,
-  GraphEdges,
-  GraphFileNode,
-  IdentifierBoundCallee,
-  RelPath,
-  ResolveRunStatsRow,
-  SymbolDefinition,
-  SymbolId,
-  TemporalCochangeSnapshot,
-  TemporalSymbolCommitFileSnapshot,
-} from "../../../contracts/types/codegraph.js";
+import type { GraphDbClient } from "../../../contracts/types/codegraph-storage.js";
 import { physicalCollectionNameFromDaemonRequest } from "../../../infra/collection-name.js";
 import type { GraphDbClientPool } from "../pool.js";
 import { computeAndPersistCyclesAndSignals } from "./graph-analysis.js";
-import type { DaemonHandshakeResult, DaemonOp } from "./protocol.js";
+import type { DaemonHandshakeResult, DaemonOp, DaemonRequestParams } from "./protocol.js";
 
 /**
- * A request's params as they come off the wire. The `DaemonRequest["params"]`
- * union is per-op, so each command narrows the fields it needs itself — same
- * cast-at-use idiom the switch statement this table replaced used.
+ * A request's params as they come off the wire, untyped. The loose
+ * `DaemonOpCommandTable` (tests, stand-in servers, the dispatcher) sees them
+ * this way; the production table is DEFINED over each op's typed
+ * `DaemonRequestParams<Op>` (`DaemonOpCommandDefinitions`).
  */
 type DaemonOpParams = Record<string, unknown>;
 
@@ -68,7 +42,14 @@ export interface DaemonOpContext {
  *             so reads route through its own RW connection too)
  * - `daemon` — no handle at all; the op acts on the daemon itself
  */
-export type DaemonOpCommand =
+export type DaemonOpCommand = DaemonOpCommandOf<DaemonOpParams>;
+
+/**
+ * The command shape for params type `P`: loose (`DaemonOpParams`) for the
+ * dispatcher and stand-in tables, one op's `DaemonRequestParams<Op>` for a
+ * definition.
+ */
+export type DaemonOpCommandOf<P> =
   | {
       readonly access: "read" | "write";
       /**
@@ -76,7 +57,7 @@ export type DaemonOpCommand =
        * tea-rags-mcp-f924y). Only an op long enough to be worth stopping
        * midway reads it; the server itself drops a write that has not started.
        */
-      readonly run: (graphDb: GraphDbClient, p: DaemonOpParams, signal?: AbortSignal) => Promise<unknown>;
+      readonly run: (graphDb: GraphDbClient, p: P, signal?: AbortSignal) => Promise<unknown>;
     }
   | {
       readonly access: "daemon";
@@ -87,8 +68,11 @@ export type DaemonOpCommand =
        * `isDaemonWriteOp` covers every op from this one table.
        */
       readonly mutates: boolean;
-      readonly run: (ctx: DaemonOpContext, p: DaemonOpParams) => Promise<unknown>;
+      readonly run: (ctx: DaemonOpContext, p: P) => Promise<unknown>;
     };
+
+/** One op's command, its `run` receiving that op's typed request params. */
+export type DaemonOpCommandFor<Op extends DaemonOp> = DaemonOpCommandOf<DaemonRequestParams<Op>>;
 
 /**
  * A dispatch table a `CodegraphDaemonServer` serves. Partial because a daemon
@@ -105,10 +89,20 @@ export type DaemonOpCommandTable = Readonly<Partial<Record<DaemonOp, DaemonOpCom
  */
 export type DaemonOpCommandsByOp = Readonly<Record<DaemonOp, DaemonOpCommand>>;
 
+/**
+ * The table as it is AUTHORED: one command per `DaemonOp`, each `run`
+ * receiving THAT op's `DaemonRequestParams<Op>` - an entry reading a param its
+ * op does not declare is a compile error (bd tea-rags-mcp-89k7k.35.9). The
+ * mapped key is what correlates a command with its op; the dispatcher cannot
+ * (it looks the op up at runtime), which is why `DAEMON_OP_COMMANDS` widens
+ * this type once, below.
+ */
+export type DaemonOpCommandDefinitions = { readonly [Op in DaemonOp]: DaemonOpCommandFor<Op> };
+
 /** A write op: governed handle, and the wire result is always a `null` ack. */
-function write(
-  run: (graphDb: GraphDbClient, p: DaemonOpParams, signal?: AbortSignal) => Promise<void>,
-): DaemonOpCommand {
+function write<Op extends DaemonOp>(
+  run: (graphDb: GraphDbClient, p: DaemonRequestParams<Op>, signal?: AbortSignal) => Promise<void>,
+): DaemonOpCommandFor<Op> {
   return {
     access: "write",
     run: async (graphDb, p, signal) => {
@@ -119,7 +113,9 @@ function write(
 }
 
 /** A read op: pooled handle, result forwarded to the client as-is. */
-function read(run: (graphDb: GraphDbClient, p: DaemonOpParams) => Promise<unknown>): DaemonOpCommand {
+function read<Op extends DaemonOp>(
+  run: (graphDb: GraphDbClient, p: DaemonRequestParams<Op>) => Promise<unknown>,
+): DaemonOpCommandFor<Op> {
   return { access: "read", run };
 }
 
@@ -129,7 +125,7 @@ function read(run: (graphDb: GraphDbClient, p: DaemonOpParams) => Promise<unknow
  * a command here is a compile error, and the table is greppable/enumerable in
  * a way the 200-line switch it replaced was not.
  */
-export const DAEMON_OP_COMMANDS: DaemonOpCommandsByOp = {
+const DAEMON_OP_COMMAND_DEFINITIONS: DaemonOpCommandDefinitions = {
   handshake: {
     access: "daemon",
     // Opens + migrates only for a client of THIS daemon's build — the daemon's
@@ -137,7 +133,7 @@ export const DAEMON_OP_COMMANDS: DaemonOpCommandsByOp = {
     // from another build leaves the store untouched.
     mutates: false,
     run: async (ctx, p) => {
-      const clientFingerprint = p.buildFingerprint as string | undefined;
+      const clientFingerprint = p.buildFingerprint;
       // A client from a DIFFERENT build may be about to drain-restart this
       // daemon — do NOT open/migrate the DB with code that may be the stale
       // side. It may equally proceed against this daemon instead: a client
@@ -215,69 +211,54 @@ export const DAEMON_OP_COMMANDS: DaemonOpCommandsByOp = {
   },
 
   // ── writes ──
-  upsertFile: write(async (graphDb, p) => graphDb.upsertFile(p.node as GraphFileNode, p.edges as GraphEdges)),
-  removeFile: write(async (graphDb, p) => graphDb.removeFile(p.relPath as RelPath)),
-  removeFiles: write(async (graphDb, p) => graphDb.removeFiles(p.relPaths as RelPath[])),
-  removeSymbolsForFile: write(async (graphDb, p) => graphDb.removeSymbolsForFile(p.relPath as RelPath)),
+  upsertFile: write(async (graphDb, p) => graphDb.upsertFile(p.node, p.edges)),
+  removeFile: write(async (graphDb, p) => graphDb.removeFile(p.relPath)),
+  removeFiles: write(async (graphDb, p) => graphDb.removeFiles(p.relPaths)),
+  removeSymbolsForFile: write(async (graphDb, p) => graphDb.removeSymbolsForFile(p.relPath)),
   invalidateHierarchyDependentsOfDeletedFiles: write(async (graphDb, p) =>
-    graphDb.invalidateHierarchyDependentsOfDeletedFiles(p.relPaths as RelPath[]),
+    graphDb.invalidateHierarchyDependentsOfDeletedFiles(p.relPaths),
   ),
-  pruneDerivedForDeletedFiles: write(async (graphDb, p) =>
-    graphDb.pruneDerivedForDeletedFiles(p.relPaths as RelPath[]),
-  ),
-  upsertSymbols: write(async (graphDb, p) =>
-    graphDb.upsertSymbols(p.relPath as RelPath, p.definitions as SymbolDefinition[]),
-  ),
-  upsertSymbolsBulk: write(async (graphDb, p) => graphDb.upsertSymbolsBulk(p.entries as BulkSymbolUpsertEntry[])),
-  upsertFilesBulk: write(async (graphDb, p) => graphDb.upsertFilesBulk(p.entries as BulkFileUpsertEntry[])),
+  pruneDerivedForDeletedFiles: write(async (graphDb, p) => graphDb.pruneDerivedForDeletedFiles(p.relPaths)),
+  upsertSymbols: write(async (graphDb, p) => graphDb.upsertSymbols(p.relPath, p.definitions)),
+  upsertSymbolsBulk: write(async (graphDb, p) => graphDb.upsertSymbolsBulk(p.entries)),
+  upsertFilesBulk: write(async (graphDb, p) => graphDb.upsertFilesBulk(p.entries)),
   // entries → Map (mirrors replacePageRanks rebuild).
-  updateSymbolChunkIds: write(async (graphDb, p) =>
-    graphDb.updateSymbolChunkIds(p.relPath as RelPath, new Map(p.chunkIds as [SymbolId, string][])),
-  ),
+  updateSymbolChunkIds: write(async (graphDb, p) => graphDb.updateSymbolChunkIds(p.relPath, new Map(p.chunkIds))),
   // Same entries → Map rebuild, once per file in the pass.
   updateSymbolChunkIdsBulk: write(async (graphDb, p) =>
     graphDb.updateSymbolChunkIdsBulk(
-      (p.entries as { relPath: RelPath; chunkIds: [SymbolId, string][] }[]).map((e) => ({
+      p.entries.map((e) => ({
         relPath: e.relPath,
         chunkIds: new Map(e.chunkIds),
       })),
     ),
   ),
-  replaceCycles: write(async (graphDb, p) =>
-    graphDb.replaceCycles(p.scope as CycleScope, p.sccs as readonly (readonly string[])[]),
-  ),
+  replaceCycles: write(async (graphDb, p) => graphDb.replaceCycles(p.scope, p.sccs)),
   // Ranks ride the wire as `[symbolId, rank][]` entries (a Map cannot
   // JSON-serialise) — rebuild the Map before delegating to the adapter.
-  replacePageRanks: write(async (graphDb, p) => graphDb.replacePageRanks(new Map(p.ranks as [string, number][]))),
+  replacePageRanks: write(async (graphDb, p) => graphDb.replacePageRanks(new Map(p.ranks))),
   // Plain arrays on the wire — the snapshot is JSON-shaped already.
-  replaceTemporalCochange: write(async (graphDb, p) =>
-    graphDb.replaceTemporalCochange(p.snapshot as TemporalCochangeSnapshot),
-  ),
+  replaceTemporalCochange: write(async (graphDb, p) => graphDb.replaceTemporalCochange(p.snapshot)),
   // Per-file symbol-commit rows (bd tea-rags-mcp-3gz4f); JSON-shaped on the wire.
-  replaceTemporalSymbolCommits: write(async (graphDb, p) =>
-    graphDb.replaceTemporalSymbolCommits(p.files as TemporalSymbolCommitFileSnapshot[]),
-  ),
+  replaceTemporalSymbolCommits: write(async (graphDb, p) => graphDb.replaceTemporalSymbolCommits(p.files)),
   deleteTemporalSymbolCommitFiles: write(async (graphDb, p) =>
-    graphDb.deleteTemporalSymbolCommitFiles([...(p.relPaths as string[])]),
+    graphDb.deleteTemporalSymbolCommitFiles([...p.relPaths]),
   ),
   // Per-review working-tree file-edge temp tables (bd tea-rags-mcp-89k7k.1.2);
   // JSON-shaped on the wire.
-  putReviewFileEdges: write(async (graphDb, p) =>
-    graphDb.putReviewFileEdges(p.reviewId as string, p.edges as ReviewFileEdge[]),
-  ),
-  dropReviewFileEdges: write(async (graphDb, p) => graphDb.dropReviewFileEdges(p.reviewId as string)),
+  putReviewFileEdges: write(async (graphDb, p) => graphDb.putReviewFileEdges(p.reviewId, p.edges)),
+  dropReviewFileEdges: write(async (graphDb, p) => graphDb.dropReviewFileEdges(p.reviewId)),
   // A write that answers with its OUTCOME — the dropped table names — instead
   // of the `null` ack (same shape as compactStorage): the caller logs what the
   // sweep collected, and the null ack would throw the contract away.
   sweepExpiredReviewFileEdges: {
     access: "write",
-    run: async (graphDb, p) =>
-      graphDb.sweepExpiredReviewFileEdges(p.nowEpochSeconds as number, p.maxAgeSeconds as number),
+    run: async (graphDb, p) => graphDb.sweepExpiredReviewFileEdges(p.nowEpochSeconds, p.maxAgeSeconds),
   },
   checkpoint: write(async (graphDb) => graphDb.checkpoint()),
   rebuildEdgeFileTargetIndex: write(async (graphDb) => graphDb.rebuildEdgeFileTargetIndex()),
-  recordRunStats: write(async (graphDb, p) => graphDb.recordRunStats(p.rows as ResolveRunStatsRow[])),
-  recordFileResolveStats: write(async (graphDb, p) => graphDb.recordFileResolveStats(p.write as FileResolveStatsWrite)),
+  recordRunStats: write(async (graphDb, p) => graphDb.recordRunStats(p.rows)),
+  recordFileResolveStats: write(async (graphDb, p) => graphDb.recordFileResolveStats(p.write)),
   computeAndPersistCyclesAndSignals: write(async (graphDb, _p, signal) =>
     computeAndPersistCyclesAndSignals(graphDb, signal),
   ),
@@ -290,165 +271,137 @@ export const DAEMON_OP_COMMANDS: DaemonOpCommandsByOp = {
   // its symbol table and every socket stay as they are.
   compactStorage: { access: "write", run: async (graphDb) => graphDb.compactStorage() },
   // bd tea-rags-mcp-4p3sb.8 — the naming lexicon's per-file identifier rows.
-  replaceIdentifiersBulk: write(async (graphDb, p) =>
-    graphDb.replaceIdentifiersBulk(p.entries as IdentifierReplaceEntry[]),
-  ),
+  replaceIdentifiersBulk: write(async (graphDb, p) => graphDb.replaceIdentifiersBulk(p.entries)),
   // bd tea-rags-mcp-vi0wx — the naming lexicon's per-file type-declaration rows.
-  replaceTypeDeclarationsBulk: write(async (graphDb, p) =>
-    graphDb.replaceTypeDeclarationsBulk(p.entries as TypeDeclarationReplaceEntry[]),
-  ),
+  replaceTypeDeclarationsBulk: write(async (graphDb, p) => graphDb.replaceTypeDeclarationsBulk(p.entries)),
 
   // ── full-proxy reads (the daemon owns the sole DuckDB connection, so
   //    every read routes through its own RW connection) ──
   // bd tea-rags-mcp-xi2r9 — a READ of the collection: the snapshot is copied
   // through the pooled client's session, which leaves the live file as it was,
   // so a client that may only read (1wr7p) may still ask for it.
-  exportSnapshot: read(async (graphDb, p) => graphDb.exportSnapshot(p.targetPath as string)),
-  getFanIn: read(async (graphDb, p) => graphDb.getFanIn(p.relPath as RelPath)),
+  exportSnapshot: read(async (graphDb, p) => graphDb.exportSnapshot(p.targetPath)),
+  getFanIn: read(async (graphDb, p) => graphDb.getFanIn(p.relPath)),
   getFanInP95: read(async (graphDb) => graphDb.getFanInP95()),
-  getFanOut: read(async (graphDb, p) => graphDb.getFanOut(p.relPath as RelPath)),
-  getCallers: read(async (graphDb, p) => graphDb.getCallers(p.symbolId as SymbolId)),
-  getAmbiguousCallersByMember: read(async (graphDb, p) =>
-    graphDb.getAmbiguousCallersByMember(p.member as string, p.limit as number | undefined),
-  ),
-  findSymbolChunk: read(async (graphDb, p) => graphDb.findSymbolChunk(p.symbolId as SymbolId)),
-  getSymbolVisibilities: read(async (graphDb, p) => graphDb.getSymbolVisibilities(p.symbolIds as SymbolId[])),
+  getFanOut: read(async (graphDb, p) => graphDb.getFanOut(p.relPath)),
+  getCallers: read(async (graphDb, p) => graphDb.getCallers(p.symbolId)),
+  getAmbiguousCallersByMember: read(async (graphDb, p) => graphDb.getAmbiguousCallersByMember(p.member, p.limit)),
+  findSymbolChunk: read(async (graphDb, p) => graphDb.findSymbolChunk(p.symbolId)),
+  getSymbolVisibilities: read(async (graphDb, p) => graphDb.getSymbolVisibilities(p.symbolIds)),
   // Naming-lexicon reads over cg_identifiers (bd tea-rags-mcp-4p3sb.8).
   aggregateIdentifiersByType: read(async (graphDb, p) =>
     graphDb.aggregateIdentifiersByType({
-      types: p.types as string[],
-      pathPrefixes: p.pathPrefixes as string[] | undefined,
-      excludePaths: p.excludePaths as string[] | undefined,
-      languages: p.languages as string[] | undefined,
-      groupByLanguage: p.groupByLanguage as boolean | undefined,
-      groupByMultiplicity: p.groupByMultiplicity as boolean | undefined,
-      countSameTypeSiblings: p.countSameTypeSiblings as boolean | undefined,
-      countHolders: p.countHolders as boolean | undefined,
-      groupByOwnerKind: p.groupByOwnerKind as boolean | undefined,
+      types: p.types,
+      pathPrefixes: p.pathPrefixes,
+      excludePaths: p.excludePaths,
+      languages: p.languages,
+      groupByLanguage: p.groupByLanguage,
+      groupByMultiplicity: p.groupByMultiplicity,
+      countSameTypeSiblings: p.countSameTypeSiblings,
+      countHolders: p.countHolders,
+      groupByOwnerKind: p.groupByOwnerKind,
     }),
   ),
   aggregateIdentifiersByCallee: read(async (graphDb, p) =>
     graphDb.aggregateIdentifiersByCallee({
-      callees: p.callees as IdentifierBoundCallee[],
-      pathPrefixes: p.pathPrefixes as string[] | undefined,
-      excludePaths: p.excludePaths as string[] | undefined,
-      languages: p.languages as string[] | undefined,
-      groupByLanguage: p.groupByLanguage as boolean | undefined,
-      countHolders: p.countHolders as boolean | undefined,
+      callees: p.callees,
+      pathPrefixes: p.pathPrefixes,
+      excludePaths: p.excludePaths,
+      languages: p.languages,
+      groupByLanguage: p.groupByLanguage,
+      countHolders: p.countHolders,
     }),
   ),
-  anchorIdentifierTypes: read(async (graphDb, p) => graphDb.anchorIdentifierTypes(p.symbolIds as SymbolId[])),
+  anchorIdentifierTypes: read(async (graphDb, p) => graphDb.anchorIdentifierTypes(p.symbolIds)),
   // The language scope travels only when set: an unscoped call keeps its two-argument shape.
   identifierNameTypes: read(async (graphDb, p) =>
-    graphDb.identifierNameTypes(
-      p.names as string[],
-      p.excludePaths as string[] | undefined,
-      ...(p.languages === undefined ? [] : [p.languages as string[]]),
-    ),
+    graphDb.identifierNameTypes(p.names, p.excludePaths, ...(p.languages === undefined ? [] : [p.languages])),
   ),
   existingSymbolShortNames: read(async (graphDb, p) =>
-    graphDb.existingSymbolShortNames(
-      p.names as string[],
-      p.excludePaths as string[] | undefined,
-      ...(p.languages === undefined ? [] : [p.languages as string[]]),
-    ),
+    graphDb.existingSymbolShortNames(p.names, p.excludePaths, ...(p.languages === undefined ? [] : [p.languages])),
   ),
   // Method-name reads over cg_symbols: the query carries the non-production masks, so it travels whole.
-  readMethodHeadWords: read(async (graphDb, p) => graphDb.readMethodHeadWords(p.query as MethodHeadWordQuery)),
-  readMethodTailVerbs: read(async (graphDb, p) => graphDb.readMethodTailVerbs(p.query as MethodTailVerbQuery)),
-  readMethodNamesMatching: read(async (graphDb, p) =>
-    graphDb.readMethodNamesMatching(p.query as MethodNamePatternQuery),
-  ),
+  readMethodHeadWords: read(async (graphDb, p) => graphDb.readMethodHeadWords(p.query)),
+  readMethodTailVerbs: read(async (graphDb, p) => graphDb.readMethodTailVerbs(p.query)),
+  readMethodNamesMatching: read(async (graphDb, p) => graphDb.readMethodNamesMatching(p.query)),
   countIdentifiers: read(async (graphDb, p) =>
     graphDb.countIdentifiers({
-      types: p.types as string[],
-      pathPrefixes: p.pathPrefixes as string[] | undefined,
-      excludePaths: p.excludePaths as string[] | undefined,
-      languages: p.languages as string[] | undefined,
+      types: p.types,
+      pathPrefixes: p.pathPrefixes,
+      excludePaths: p.excludePaths,
+      languages: p.languages,
     }),
   ),
   // Naming-lexicon scope reads (bd tea-rags-mcp-4p3sb.11).
   aggregateIdentifiersByName: read(async (graphDb, p) =>
     graphDb.aggregateIdentifiersByName({
-      names: p.names as string[],
-      pathPrefixes: p.pathPrefixes as string[] | undefined,
-      excludePaths: p.excludePaths as string[] | undefined,
-      languages: p.languages as string[] | undefined,
-      groupByLanguage: p.groupByLanguage as boolean | undefined,
-      countHolders: p.countHolders as boolean | undefined,
+      names: p.names,
+      pathPrefixes: p.pathPrefixes,
+      excludePaths: p.excludePaths,
+      languages: p.languages,
+      groupByLanguage: p.groupByLanguage,
+      countHolders: p.countHolders,
     }),
   ),
   identifierLanguageCounts: read(async (graphDb, p) =>
     graphDb.identifierLanguageCounts({
-      pathPrefixes: p.pathPrefixes as string[] | undefined,
-      pathSuffixes: p.pathSuffixes as string[] | undefined,
-      excludePaths: p.excludePaths as string[] | undefined,
-      languages: p.languages as string[] | undefined,
+      pathPrefixes: p.pathPrefixes,
+      pathSuffixes: p.pathSuffixes,
+      excludePaths: p.excludePaths,
+      languages: p.languages,
     }),
   ),
   sampleIdentifierShapes: read(async (graphDb, p) =>
     graphDb.sampleIdentifierShapes({
-      limit: p.limit as number,
-      pathPrefixes: p.pathPrefixes as string[] | undefined,
-      excludePaths: p.excludePaths as string[] | undefined,
-      languages: p.languages as string[] | undefined,
-      groupByLanguage: p.groupByLanguage as boolean | undefined,
+      limit: p.limit,
+      pathPrefixes: p.pathPrefixes,
+      excludePaths: p.excludePaths,
+      languages: p.languages,
+      groupByLanguage: p.groupByLanguage,
     }),
   ),
   // Ontology audit over cg_identifiers (bd tea-rags-mcp-4p3sb.20).
-  readOntologyReportSummary: read(async (graphDb, p) =>
-    graphDb.readOntologyReportSummary(p.query as OntologyReportQuery),
-  ),
+  readOntologyReportSummary: read(async (graphDb, p) => graphDb.readOntologyReportSummary(p.query)),
   readOntologyReportSections: read(async (graphDb, p) =>
-    graphDb.readOntologyReportSections(p.query as OntologyReportQuery, p.excludedGenericNames as string[]),
+    graphDb.readOntologyReportSections(p.query, p.excludedGenericNames),
   ),
   // Type-level symbols + ancestors for type roles (bd tea-rags-mcp-vi0wx).
-  readTypeNameRows: read(async (graphDb, p) => graphDb.readTypeNameRows(p.query as TypeNameQuery)),
+  readTypeNameRows: read(async (graphDb, p) => graphDb.readTypeNameRows(p.query)),
   // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
   getSymbolLineRangesBulk: read(async (graphDb, p) => [
-    ...(await graphDb.getSymbolLineRangesBulk(p.relPaths as RelPath[])).entries(),
+    ...(await graphDb.getSymbolLineRangesBulk(p.relPaths)).entries(),
   ]),
-  getCallees: read(async (graphDb, p) => graphDb.getCallees(p.symbolId as SymbolId)),
+  getCallees: read(async (graphDb, p) => graphDb.getCallees(p.symbolId)),
   // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
-  getCalleeEdges: read(async (graphDb, p) => [...(await graphDb.getCalleeEdges(p.symbolIds as SymbolId[])).entries()]),
+  getCalleeEdges: read(async (graphDb, p) => [...(await graphDb.getCalleeEdges(p.symbolIds)).entries()]),
   // File-scoped twin (bd tea-rags-mcp-oxnvl) — a SEPARATE op, so a daemon still
   // running from an older build never receives `getCalleeEdges` with a payload
   // shape it predates. Same Map→entries serialisation.
-  getCalleeEdgesScoped: read(async (graphDb, p) => [
-    ...(await graphDb.getCalleeEdgesScoped(p.refs as FileScopedSymbolRef[])).entries(),
-  ]),
-  getSymbolRelPaths: read(async (graphDb, p) => [
-    ...(await graphDb.getSymbolRelPaths(p.symbolIds as SymbolId[])).entries(),
-  ]),
-  getCalledByCount: read(async (graphDb, p) => graphDb.getCalledByCount(p.symbolId as SymbolId)),
-  getCallSiteCount: read(async (graphDb, p) => graphDb.getCallSiteCount(p.symbolId as SymbolId)),
+  getCalleeEdgesScoped: read(async (graphDb, p) => [...(await graphDb.getCalleeEdgesScoped(p.refs)).entries()]),
+  getSymbolRelPaths: read(async (graphDb, p) => [...(await graphDb.getSymbolRelPaths(p.symbolIds)).entries()]),
+  getCalledByCount: read(async (graphDb, p) => graphDb.getCalledByCount(p.symbolId)),
+  getCallSiteCount: read(async (graphDb, p) => graphDb.getCallSiteCount(p.symbolId)),
   // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
   getChunkSignalsBulk: read(async (graphDb) => [...(await graphDb.getChunkSignalsBulk()).entries()]),
   hasData: read(async (graphDb) => graphDb.hasData()),
   getRunStats: read(async (graphDb) => graphDb.getRunStats()),
   getEdgeKindDistribution: read(async (graphDb) => graphDb.getEdgeKindDistribution()),
   listAllSymbols: read(async (graphDb) => graphDb.listAllSymbols()),
-  listPass1Aggregates: read(async (graphDb, p) => graphDb.listPass1Aggregates(p.scope as Pass1AggregateReadScope)),
-  listHierarchyDependencies: read(async (graphDb, p) =>
-    graphDb.listHierarchyDependencies(p.scope as Pass1AggregateReadScope),
-  ),
+  listPass1Aggregates: read(async (graphDb, p) => graphDb.listPass1Aggregates(p.scope)),
+  listHierarchyDependencies: read(async (graphDb, p) => graphDb.listHierarchyDependencies(p.scope)),
   listFileContentHashes: read(async (graphDb) => graphDb.listFileContentHashes()),
-  getTransitiveImpact: read(async (graphDb, p) =>
-    graphDb.getTransitiveImpact(p.relPath as RelPath, p.maxDepth as number | undefined),
-  ),
+  getTransitiveImpact: read(async (graphDb, p) => graphDb.getTransitiveImpact(p.relPath, p.maxDepth)),
   // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
   getFileMetricsBulk: read(async (graphDb, p) => [
-    ...(await graphDb.getFileMetricsBulk(p.relPaths as RelPath[], p.maxDepth as number | undefined)).entries(),
+    ...(await graphDb.getFileMetricsBulk(p.relPaths, p.maxDepth)).entries(),
   ]),
-  findCycles: read(async (graphDb, p) =>
-    graphDb.findCycles(p.scope as CycleScope, p.pathPattern as string | undefined),
-  ),
+  findCycles: read(async (graphDb, p) => graphDb.findCycles(p.scope, p.pathPattern)),
   // The adapter returns a `Map<string, string[]>`; serialise as entries
   // so it survives JSON framing (the client rebuilds the Map).
-  listAdjacency: read(async (graphDb, p) => [...(await graphDb.listAdjacency(p.scope as CycleScope)).entries()]),
+  listAdjacency: read(async (graphDb, p) => [...(await graphDb.listAdjacency(p.scope)).entries()]),
   // Plain arrays on the wire — nothing to rebuild on the client.
   readFileDependencyGraph: read(async (graphDb) => graphDb.readFileDependencyGraph()),
-  readNonPublicMemberEdges: read(async (graphDb, p) => graphDb.readNonPublicMemberEdges(p.languages as string[])),
+  readNonPublicMemberEdges: read(async (graphDb, p) => graphDb.readNonPublicMemberEdges(p.languages)),
   readTemporalCochangeMeta: read(async (graphDb) => graphDb.readTemporalCochangeMeta()),
   // The graph's bundle membership, commits, bursts, commit times and per-file line counts
   // (a Map of Maps — nested entries) are Maps — entries on
@@ -476,19 +429,17 @@ export const DAEMON_OP_COMMANDS: DaemonOpCommandsByOp = {
   readTemporalBundleFiles: read(async (graphDb) => [...(await graphDb.readTemporalBundleFiles()).entries()]),
   // Symbol-commit rows of the temporal sub-graph (bd tea-rags-mcp-3gz4f).
   storedTemporalSymbolCommitFilePaths: read(async (graphDb) => graphDb.storedTemporalSymbolCommitFilePaths()),
-  readTemporalSymbolCommits: read(async (graphDb, p) => graphDb.readTemporalSymbolCommits(p.relPath as string)),
+  readTemporalSymbolCommits: read(async (graphDb, p) => graphDb.readTemporalSymbolCommits(p.relPath)),
   // File-scope get_callers / get_callees (bd tea-rags-mcp-gfvr8). Plain data.
-  getFileImporters: read(async (graphDb, p) => graphDb.getFileImporters(p.relPath as RelPath)),
-  getFileImports: read(async (graphDb, p) => graphDb.getFileImports(p.relPath as RelPath)),
+  getFileImporters: read(async (graphDb, p) => graphDb.getFileImporters(p.relPath)),
+  getFileImports: read(async (graphDb, p) => graphDb.getFileImports(p.relPath)),
   hasStaleDerivedTables: read(async (graphDb) => graphDb.hasStaleDerivedTables()),
-  getPageRank: read(async (graphDb, p) =>
-    graphDb.getPageRank(p.symbolId as SymbolId, p.relPath as RelPath | undefined),
-  ),
+  getPageRank: read(async (graphDb, p) => graphDb.getPageRank(p.symbolId, p.relPath)),
 
   // ── class hierarchy (bd tea-rags-mcp-f10y) ──
-  getSupertypes: read(async (graphDb, p) => graphDb.getSupertypes(p.fqName as string)),
-  getSubtypes: read(async (graphDb, p) => graphDb.getSubtypes(p.fqName as string)),
-  getTransitiveSubtypes: read(async (graphDb, p) => graphDb.getTransitiveSubtypes(p.fqName as string)),
+  getSupertypes: read(async (graphDb, p) => graphDb.getSupertypes(p.fqName)),
+  getSubtypes: read(async (graphDb, p) => graphDb.getSubtypes(p.fqName)),
+  getTransitiveSubtypes: read(async (graphDb, p) => graphDb.getTransitiveSubtypes(p.fqName)),
   // HierarchySnapshot is plain Records — JSON-serialisable, no entries() dance.
   loadHierarchySnapshot: read(async (graphDb) => graphDb.loadHierarchySnapshot()),
 
@@ -497,6 +448,16 @@ export const DAEMON_OP_COMMANDS: DaemonOpCommandsByOp = {
   // Map-returning reads above.
   diffSymbolSignals: read(async (graphDb) => graphDb.diffSymbolSignals()),
 };
+
+/**
+ * The dispatch table the server serves. The ONE place the per-op param typing
+ * is erased: the dispatcher looks a command up by a runtime `req.op` and hands
+ * it the wire params, a correlation the type system cannot express, so it sees
+ * the loose `DaemonOpCommand` (the type tests and stand-in servers use).
+ * Type-level soundness lives in `DAEMON_OP_COMMAND_DEFINITIONS`; the wire
+ * frames are untouched.
+ */
+export const DAEMON_OP_COMMANDS = DAEMON_OP_COMMAND_DEFINITIONS as unknown as DaemonOpCommandsByOp;
 
 /**
  * Whether `op` changes what the daemon holds — the graph store, a collection's

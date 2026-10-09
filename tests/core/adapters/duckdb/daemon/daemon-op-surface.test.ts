@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   DAEMON_OP_COMMANDS,
+  type DaemonOpCommandDefinitions,
   type DaemonOpCommandsByOp,
 } from "../../../../../src/core/adapters/duckdb/daemon/op-commands.js";
 import {
@@ -43,6 +44,19 @@ describe("daemon op surface typing (89k7k.35.6)", () => {
     // @ts-expect-error — `getCallers` is missing: the command table is exhaustive over DaemonOp.
     const table: DaemonOpCommandsByOp = withoutGetCallers;
     expect(Object.keys(table)).not.toContain("getCallers");
+  });
+
+  it("a command reading a param its op does not declare does not compile (89k7k.35.9)", () => {
+    // `removeFile` declares `relPath`; a command reading `relPaths` (another op's field) is a type error.
+    const misreading: DaemonOpCommandDefinitions["removeFile"] = {
+      access: "write",
+      // @ts-expect-error — `relPaths` is not a param of `removeFile`; the command reads typed params.
+      run: async (graphDb, p) => graphDb.removeFiles(p.relPaths),
+    };
+    expect(misreading.access).toBe("write");
+    expectTypeOf<Parameters<DaemonOpCommandDefinitions["removeFile"]["run"]>[1]["relPath"]>().toEqualTypeOf<
+      DaemonOpParamsMap["removeFile"]["relPath"]
+    >();
   });
 
   it("the exclusions and lifecycle ops are real names, and the runtime op list matches the command table", () => {

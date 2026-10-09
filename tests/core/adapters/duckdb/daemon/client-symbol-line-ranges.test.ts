@@ -157,7 +157,10 @@ describe("DaemonGraphDbClient.getSymbolLineRangesBulk (bd tea-rags-mcp-9i2ow)", 
       ]);
       const command = DAEMON_OP_COMMANDS.getSymbolLineRangesBulk;
       expect(command.access).toBe("read");
-      const result = command.access === "read" ? await command.run(graphDb, { relPaths: ["walker.ts"] }) : undefined;
+      const result =
+        command.access === "read"
+          ? await command.run(graphDb, { collection: "code_line_ranges_v1", relPaths: ["walker.ts"] })
+          : undefined;
       expect(result).toEqual([
         ["walker.ts", { ranges: [{ symbolId: "outer", startLine: 1, endLine: 9 }], rowsWithoutRanges: 0 }],
       ]);
