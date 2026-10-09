@@ -126,6 +126,8 @@ export {
   type ReturnUnionPolicy,
 } from "./return-inference.js";
 export { DETACHED_RESOLVE_RUN_SCOPE, RunScopedMemo } from "./run-scoped-memo.js";
+export { FrameworkVocabularyRegistry } from "./framework-vocabulary.js";
+export type { FrameworkVocabularyDescriptor } from "./framework-vocabulary.js";
 export { deriveStructuralConformance } from "./structural-conformance.js";
 export { DefaultSymbolIdComposer, symbolIdNames } from "./symbol-id.js";
 export { produceTestScopeChunks } from "./test-scope-chunks.js";

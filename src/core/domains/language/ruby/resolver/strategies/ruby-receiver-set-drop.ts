@@ -1,4 +1,4 @@
-import { ReceiverPatternDropSymbolResolutionStrategy } from "../../../kernel/receiver-pattern-drop.js";
+import { ReceiverPatternDropSymbolResolutionStrategy } from "../../../kernel/index.js";
 import type { ResolverConfig } from "./shared.js";
 
 /**
