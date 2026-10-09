@@ -26,7 +26,7 @@
  */
 
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
-import { FrameworkVocabularyRegistry } from "../../kernel/framework-vocabulary.js";
+import { FrameworkVocabularyRegistry } from "../../kernel/index.js";
 import { AASM_VOCABULARY } from "./aasm.js";
 import { ROUTING_VOCABULARY } from "./action-dispatch-routing.js";
 import { ACTIVESUPPORT_VOCABULARY } from "./activesupport.js";

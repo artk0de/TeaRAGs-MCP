@@ -11,7 +11,7 @@
  * a denial.
  */
 
-import { FrameworkVocabularyRegistry } from "../../../kernel/framework-vocabulary.js";
+import { FrameworkVocabularyRegistry } from "../../../kernel/index.js";
 import { DJANGO_VOCABULARY } from "./django.js";
 import { SQLALCHEMY_VOCABULARY } from "./sqlalchemy.js";
 import type { PythonFrameworkMemberTypes, PythonFrameworkVocabulary, PythonVocabularyFacet } from "./types.js";
