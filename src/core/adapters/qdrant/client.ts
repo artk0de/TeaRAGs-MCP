@@ -82,6 +82,13 @@ export class QdrantManager {
     this.relativePathExact = new RelativePathExactCapability({
       resolvePhysical: async (name) => this.aliases.resolveActive(name),
       readSchemaVersion: async (physical) => (await metadataPoint.read(physical))?.schemaVersion,
+      // Waited writes: the caller's keyword filter runs right after the heal
+      // and must see every twin it wrote.
+      backfillStore: {
+        scrollPayloadPages: (collection, request) =>
+          this.scrollPayloadPages(collection, request.payloadInclude, request.pageSize, request.filter),
+        batchSetPayload: async (collection, operations) => this.batchSetPayload(collection, operations, { wait: true }),
+      },
     });
     this.points = new QdrantPointStore(this.connection, this.relativePathExact);
     // Bound to THIS method, not to `collections.getCollectionInfo`: the search

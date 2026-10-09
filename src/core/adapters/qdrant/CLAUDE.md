@@ -144,13 +144,20 @@
   (`filters/relative-path-exact.ts#relativePathExactFilter`), but only where
   `RelativePathExactCapability#isServed` — reached as
   `QdrantManager#servesRelativePathExact`, or injected into `QdrantPointStore` —
-  says the collection's stamped schema version reached
-  `RELATIVE_PATH_EXACT_SCHEMA_VERSION`. Everywhere else the text+value pairs
-  stay. Why: below that version the v20 backfill has not finished, a point
-  without the key escapes a keyword filter with no error, and a delete that
-  misses a point leaves a stale chunk in the index. A new membership consumer
-  calls the gate; it never reads the schema version itself. Single-path lookups
-  keep the pair — one pair is already index-served (bd tea-rags-mcp-ejio7).
+  says yes: the collection's stamped schema version reached
+  `RELATIVE_PATH_EXACT_SCHEMA_VERSION` AND no point lacks the key. Everywhere
+  else the text+value pairs stay. Why: a point without the key escapes a keyword
+  filter with no error, and a delete that misses a point leaves a stale chunk in
+  the index. The stamp alone does not exclude such points — a build OLDER than
+  the key (the global binary auto-update or an MCP server runs) upserts twinless
+  points into a v20 collection, and that build has no guard. The gate closes it
+  by healing before it serves, on every call (no cached yes): a limit-1 probe,
+  and when it hits, the v20 migration's own backfill
+  (`relative-path-exact-backfill.ts`, the one owner of that write; concurrent
+  callers on one physical collection share one heal). A failed heal answers no.
+  A new membership consumer calls the gate; it never reads the schema version or
+  probes itself. Single-path lookups keep the pair — one pair is already
+  index-served (bd tea-rags-mcp-ejio7).
 
 ## Gotchas
 
