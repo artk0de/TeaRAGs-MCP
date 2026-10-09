@@ -106,17 +106,17 @@ const HIERARCHY_DEPENDENCY_VALUES = ["descendant_names"] as const;
  *   tea-rags-mcp-vi0wx — or type roles keep counting its types); and the file
  *   row itself.
  */
-const REMOVED_FILE_EDGE_TABLES = [
+export const REMOVED_FILE_EDGE_TABLES = [
   "cg_symbols_edges_method",
   "cg_symbols_edges_file",
   "cg_symbols_edges_file_type_only",
 ] as const;
-const REMOVED_FILE_SOURCE_TABLES = [
+export const REMOVED_FILE_SOURCE_TABLES = [
   "cg_symbols_inheritance",
   "cg_ambiguous_fanout",
   "cg_hierarchy_dependencies",
 ] as const;
-const REMOVED_FILE_REL_PATH_TABLES = [
+export const REMOVED_FILE_REL_PATH_TABLES = [
   "cg_symbols",
   "cg_pass1_aggregates",
   "cg_file_resolve_stats",
