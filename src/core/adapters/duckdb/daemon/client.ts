@@ -52,7 +52,6 @@ import type {
   PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
-  ReviewFileEdge,
   SymbolChunkIdJoinEntry,
   SymbolChunkLocation,
   SymbolDefinition,
@@ -726,25 +725,6 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async readTemporalSymbolCommits(relPath: string): Promise<TemporalSymbolCommitFileSnapshot> {
     return (await this.call("readTemporalSymbolCommits", { relPath })) as TemporalSymbolCommitFileSnapshot;
-  }
-
-  // ── Per-review working-tree file edges (bd tea-rags-mcp-89k7k.1.2) ──
-  // REQUIRED ops: an older daemon is restarted at handshake, never asked — a
-  // dropped review's edge table must fail loudly, not read as empty.
-
-  async putReviewFileEdges(reviewId: string, edges: readonly ReviewFileEdge[]): Promise<void> {
-    await this.call("putReviewFileEdges", { reviewId, edges: [...edges] });
-  }
-
-  async dropReviewFileEdges(reviewId: string): Promise<void> {
-    await this.call("dropReviewFileEdges", { reviewId });
-  }
-
-  async sweepExpiredReviewFileEdges(nowEpochSeconds: number, maxAgeSeconds: number): Promise<string[]> {
-    return (await this.call("sweepExpiredReviewFileEdges", {
-      nowEpochSeconds,
-      maxAgeSeconds,
-    })) as string[];
   }
 
   async readTemporalCochangeMeta(): Promise<TemporalCochangeBuildMeta | null> {

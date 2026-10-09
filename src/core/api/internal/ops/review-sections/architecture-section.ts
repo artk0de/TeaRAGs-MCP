@@ -24,9 +24,6 @@
  * a VALID review: built, no findings.
  */
 
-import { randomInt } from "node:crypto";
-
-import { REVIEW_EDGE_MAX_AGE_SECONDS } from "../../../../adapters/duckdb/review-edge-store.js";
 import { createCatFileBatch, isAncestor } from "../../../../adapters/vcs/index.js";
 import type {
   FileDependencyEdge,
@@ -87,9 +84,6 @@ import type { ReviewSectionBuildContext, ReviewSectionProvider } from "./review-
 
 /** Findings the section lists; the rest are counted in `truncated`. */
 export const ARCHITECTURE_FINDING_CAP = 100;
-
-/** The minted id's random tail: lowercase alnum, the store's pattern exactly. */
-const REVIEW_ID_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 
 /** One indexed edge as the detector ports serve it — direction and endpoints, nothing else. */
 interface IndexedGraphEdge {
@@ -341,18 +335,6 @@ export async function readDiffBaseEdges(
   return { targetsAtBase: (relPath) => targetsBySource.get(relPath) };
 }
 
-/**
- * The review id the temp table hangs on: `<epochSeconds>-<pid>-<6 alnum>`,
- * minted to the store's validation pattern `/^\d{10}-\d{1,7}-[a-z0-9]{6}$/`
- * exactly — the pattern is the injection guard for a SQL identifier that
- * cannot travel as a bind parameter.
- */
-export function mintReviewId(epochSeconds: number): string {
-  let token = "";
-  for (let i = 0; i < 6; i++) token += REVIEW_ID_ALPHABET[randomInt(REVIEW_ID_ALPHABET.length)];
-  return `${String(epochSeconds).padStart(10, "0")}-${process.pid}-${token}`;
-}
-
 export const architectureSectionProvider: ReviewSectionProvider = {
   id: "architecture",
   consumesTemporalCochange: true,
@@ -373,111 +355,94 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       return { built: false, reason: "architecture substrate vanished between isBuilt and run" };
     }
 
-    // Cleanup layer 2 — sweep-on-create: a crashed process's tables die on the
-    // next review anywhere, before this one mints its own.
-    const nowEpochSeconds = Math.floor(Date.now() / 1000);
-    await graphDb.sweepExpiredReviewFileEdges(nowEpochSeconds, REVIEW_EDGE_MAX_AGE_SECONDS);
-    const reviewId = mintReviewId(nowEpochSeconds);
-    try {
-      // The indexed side, read once: the graph rows the traversal serves and
-      // the report-derived facts the catalogue answers from.
-      const production = await readProductionArchitectureGraph(
-        graphDb,
-        context.readIndexedFileImports,
-        context.readDeclaredTestDependencies,
-      );
-      const facts = deriveArchitectureComponentFacts(production.graph);
-      const catalog = new ArchitectureFactsCatalog(
-        facts,
-        distanceFromMainSequenceByComponent(facts.components, production.graph.files),
-        measureLayeringFoundationFiles(production.graph, facts),
-      );
-      const graph = new WiredGraphReader(production.graph.edges);
-      const contract = new WiredContractReader(facts.components, production.graph.edges);
-      const splitMerge = wireSplitMerge(context.temporalCochange, context.temporalCochangeError, facts.components);
-      // The production silent-coupling verdict over the SAME snapshot (bd
-      // tea-rags-mcp-89k7k.1.10) — the run consumes it, never re-judges raw
-      // pairs. The asset-import rescue reads the context's payload
-      // specifiers for the diff-touching one-walked pairs only (bd
-      // tea-rags-mcp-2wsnt).
-      const silentCouplingFacts = await buildSilentCouplingFacts(
-        context.temporalCochange,
-        production.graph.files,
-        production.graph.edges,
-        scope.files,
-        context.readImportSpecifiers,
-        scope.diffCommits,
-      );
+    // The indexed side, read once: the graph rows the traversal serves and
+    // the report-derived facts the catalogue answers from.
+    const production = await readProductionArchitectureGraph(
+      graphDb,
+      context.readIndexedFileImports,
+      context.readDeclaredTestDependencies,
+    );
+    const facts = deriveArchitectureComponentFacts(production.graph);
+    const catalog = new ArchitectureFactsCatalog(
+      facts,
+      distanceFromMainSequenceByComponent(facts.components, production.graph.files),
+      measureLayeringFoundationFiles(production.graph, facts),
+    );
+    const graph = new WiredGraphReader(production.graph.edges);
+    const contract = new WiredContractReader(facts.components, production.graph.edges);
+    const splitMerge = wireSplitMerge(context.temporalCochange, context.temporalCochangeError, facts.components);
+    // The production silent-coupling verdict over the SAME snapshot (bd
+    // tea-rags-mcp-89k7k.1.10) — the run consumes it, never re-judges raw
+    // pairs. The asset-import rescue reads the context's payload
+    // specifiers for the diff-touching one-walked pairs only (bd
+    // tea-rags-mcp-2wsnt).
+    const silentCouplingFacts = await buildSilentCouplingFacts(
+      context.temporalCochange,
+      production.graph.files,
+      production.graph.edges,
+      scope.files,
+      context.readImportSpecifiers,
+      scope.diffCommits,
+    );
 
-      // The working-tree side: every scope file the extraction can walk, one
-      // shared run-level context; a file that cannot be read or resolved lands
-      // in the overlay's unsupported reads — notJudged, never edge-free.
-      const extractionContext = workingTreeExtractionContext(scope.workTree, reviewEdgeExtraction.languageFactory);
-      const reads: ReviewFileEdgeRead[] = [];
-      for (const relPath of scope.files) {
-        reads.push(await readWorkingTreeFileEdges(reviewEdgeExtraction, scope.workTree, relPath, extractionContext));
-      }
-      await graphDb.putReviewFileEdges(
-        reviewId,
-        reads.flatMap((read) => [...read.edges]),
-      );
-
-      // The diff base's side (bd tea-rags-mcp-89k7k.1.16): what "added by
-      // this change" is measured against, read from the merge-base blobs of
-      // the SAME scope files — independent of where the index sits.
-      const baseEdges = await readDiffBaseEdges(scope, reviewEdgeExtraction, extractionContext);
-
-      // The SAME reads feed the overlay — the table is persistence, the
-      // overlay is the judgement's view; neither re-reads the other.
-      const overlay = new ReviewEdgeOverlay(reads);
-      const result = new DiffDetectorRun({
-        graph,
-        ...(baseEdges !== undefined ? { baseEdges } : {}),
-        catalog,
-        silentCouplingFacts,
-        contract,
-        ...splitMerge,
-      }).run(
-        {
-          changedFiles: scope.files,
-          // Presence is the whole change, the cap limits only the sources (bd
-          // tea-rags-mcp-lxbrr).
-          touchedFiles: scope.touchedFiles,
-          // A truncated scope marks every built family partial (bd
-          // tea-rags-mcp-89k7k.1.9): the cap's skipped files never reach the
-          // overlay, so a family's zero can rest on edges it never saw.
-          ...(scope.skipped > 0 ? { skippedFiles: scope.skipped } : {}),
-        },
-        overlay,
-      );
-      // Ranked by maintenance cost BEFORE the cap (bd tea-rags-mcp-r8hme.20),
-      // so a family's slots keep its costliest findings.
-      const findings = await rankDiffFindingsByMaintenanceCost(
-        result.findings,
-        context.readFileMaintenanceSignals,
-        facts.components.componentOf,
-      );
-      const { kept, truncatedByDetector } = capFindingsByFamily(findings, ARCHITECTURE_FINDING_CAP);
-      const notJudged: ReviewSectionNotJudgedEntry[] = overlay.unsupported().map((skip) => ({
-        relPath: skip.relPath,
-        reason: skip.reason,
-        ...(skip.detail !== undefined ? { detail: skip.detail } : {}),
-      }));
-      return {
-        findings: kept,
-        detectors: result.detectors.map((status) => {
-          const truncated = truncatedByDetector.get(status.detector);
-          return truncated === undefined ? status : { ...status, truncated };
-        }),
-        ...(findings.length > kept.length ? { truncated: findings.length - kept.length } : {}),
-        ...(notJudged.length > 0 ? { notJudged } : {}),
-      };
-    } finally {
-      // Cleanup layer 1 — the finally-drop, idempotent (`DROP TABLE IF EXISTS`)
-      // and failure-tolerant: a drop error never masks the answer above it,
-      // and the age sweep collects whatever it leaves.
-      await graphDb.dropReviewFileEdges(reviewId).catch(() => undefined);
+    // The working-tree side: every scope file the extraction can walk, one
+    // shared run-level context; a file that cannot be read or resolved lands
+    // in the overlay's unsupported reads — notJudged, never edge-free.
+    const extractionContext = workingTreeExtractionContext(scope.workTree, reviewEdgeExtraction.languageFactory);
+    const reads: ReviewFileEdgeRead[] = [];
+    for (const relPath of scope.files) {
+      reads.push(await readWorkingTreeFileEdges(reviewEdgeExtraction, scope.workTree, relPath, extractionContext));
     }
+
+    // The diff base's side (bd tea-rags-mcp-89k7k.1.16): what "added by
+    // this change" is measured against, read from the merge-base blobs of
+    // the SAME scope files — independent of where the index sits.
+    const baseEdges = await readDiffBaseEdges(scope, reviewEdgeExtraction, extractionContext);
+
+    // The overlay is the judgement's view over the reads.
+    const overlay = new ReviewEdgeOverlay(reads);
+    const result = new DiffDetectorRun({
+      graph,
+      ...(baseEdges !== undefined ? { baseEdges } : {}),
+      catalog,
+      silentCouplingFacts,
+      contract,
+      ...splitMerge,
+    }).run(
+      {
+        changedFiles: scope.files,
+        // Presence is the whole change, the cap limits only the sources (bd
+        // tea-rags-mcp-lxbrr).
+        touchedFiles: scope.touchedFiles,
+        // A truncated scope marks every built family partial (bd
+        // tea-rags-mcp-89k7k.1.9): the cap's skipped files never reach the
+        // overlay, so a family's zero can rest on edges it never saw.
+        ...(scope.skipped > 0 ? { skippedFiles: scope.skipped } : {}),
+      },
+      overlay,
+    );
+    // Ranked by maintenance cost BEFORE the cap (bd tea-rags-mcp-r8hme.20),
+    // so a family's slots keep its costliest findings.
+    const findings = await rankDiffFindingsByMaintenanceCost(
+      result.findings,
+      context.readFileMaintenanceSignals,
+      facts.components.componentOf,
+    );
+    const { kept, truncatedByDetector } = capFindingsByFamily(findings, ARCHITECTURE_FINDING_CAP);
+    const notJudged: ReviewSectionNotJudgedEntry[] = overlay.unsupported().map((skip) => ({
+      relPath: skip.relPath,
+      reason: skip.reason,
+      ...(skip.detail !== undefined ? { detail: skip.detail } : {}),
+    }));
+    return {
+      findings: kept,
+      detectors: result.detectors.map((status) => {
+        const truncated = truncatedByDetector.get(status.detector);
+        return truncated === undefined ? status : { ...status, truncated };
+      }),
+      ...(findings.length > kept.length ? { truncated: findings.length - kept.length } : {}),
+      ...(notJudged.length > 0 ? { notJudged } : {}),
+    };
   },
 };
 

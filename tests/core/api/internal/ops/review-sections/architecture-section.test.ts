@@ -24,7 +24,6 @@ import type { ReviewEdgeExtractionDeps } from "../../../../../../src/core/api/in
 import {
   architectureSectionProvider,
   buildSilentCouplingFacts,
-  mintReviewId,
   WiredGraphReader,
 } from "../../../../../../src/core/api/internal/ops/review-sections/architecture-section.js";
 import type {
@@ -44,8 +43,6 @@ import {
   DefaultSymbolIdComposer,
   LanguageFactory,
 } from "../../../../../../src/core/domains/language/index.js";
-
-const REVIEW_ID_PATTERN = /^\d{10}-\d{1,7}-[a-z0-9]{6}$/;
 
 /** One temp working tree per test; removed afterwards. */
 let workTree: string | undefined;
@@ -111,9 +108,6 @@ type PortMock<K extends keyof ReviewGraphDb> = ReturnType<typeof vi.fn<ReviewGra
 
 interface GraphDbStub {
   readFileDependencyGraph: PortMock<"readFileDependencyGraph">;
-  putReviewFileEdges: PortMock<"putReviewFileEdges">;
-  dropReviewFileEdges: PortMock<"dropReviewFileEdges">;
-  sweepExpiredReviewFileEdges: PortMock<"sweepExpiredReviewFileEdges">;
   readTemporalCochangeGraph: PortMock<"readTemporalCochangeGraph">;
   readTemporalSymbolCommits: PortMock<"readTemporalSymbolCommits">;
   close: ReturnType<typeof vi.fn>;
@@ -141,9 +135,6 @@ function cochangeMeta(head = "h"): TemporalCochangeBuildMeta {
 function graphDbStub(graph: FileDependencyGraph, cochangeEdges: TemporalCochangeGraph["edges"] = []): GraphDbStub {
   return {
     readFileDependencyGraph: vi.fn(async () => graph),
-    putReviewFileEdges: vi.fn(async () => undefined),
-    dropReviewFileEdges: vi.fn(async () => undefined),
-    sweepExpiredReviewFileEdges: vi.fn(async () => []),
     readTemporalCochangeGraph: vi.fn(async () => ({ meta: cochangeMeta(), edges: cochangeEdges })),
     readTemporalSymbolCommits: vi.fn(async () => ({ relPath: "", symbols: [] })),
     close: vi.fn(async () => undefined),
@@ -257,30 +248,6 @@ describe("architectureSectionProvider.run", () => {
         temporalCochange: { meta: cochangeMeta(), edges: [strongPair("src/app/a.ts", "src/other/c.ts")] },
       }),
     )) as Record<string, unknown>;
-
-    // Sweep-on-create: once, before anything else, with the store's age bound.
-    expect(graph.sweepExpiredReviewFileEdges).toHaveBeenCalledTimes(1);
-    const [nowEpoch, maxAge] = graph.sweepExpiredReviewFileEdges.mock.calls[0];
-    expect(maxAge).toBe(3600);
-    expect(nowEpoch).toBeGreaterThanOrEqual(Math.floor(Date.now() / 1000) - 120);
-
-    // One minted reviewId carries the put and the drop; the edges put are the
-    // successful working-tree reads only.
-    expect(graph.putReviewFileEdges).toHaveBeenCalledTimes(1);
-    const [putId, putEdges] = graph.putReviewFileEdges.mock.calls[0];
-    expect(putId).toMatch(REVIEW_ID_PATTERN);
-    expect(putEdges).toEqual([
-      { sourceRelPath: "src/app/a.ts", targetRelPath: "src/lib/b.ts", importedExportNames: ["B"] },
-    ]);
-    expect(graph.dropReviewFileEdges).toHaveBeenCalledTimes(1);
-    expect(graph.dropReviewFileEdges.mock.calls[0]?.[0]).toBe(putId);
-    // sweep → put → drop, in that order.
-    expect(graph.sweepExpiredReviewFileEdges.mock.invocationCallOrder[0]).toBeLessThan(
-      graph.putReviewFileEdges.mock.invocationCallOrder[0],
-    );
-    expect(graph.putReviewFileEdges.mock.invocationCallOrder[0]).toBeLessThan(
-      graph.dropReviewFileEdges.mock.invocationCallOrder[0],
-    );
 
     // The run judged the overlay edge against the indexed graph and the facts:
     // stableDependencies (indexed lib I=1 markedly above app I=0), cycles (the
@@ -531,51 +498,15 @@ describe("architectureSectionProvider.run", () => {
     expect(payload.truncated).toBe(7);
   });
 
-  it("an empty diff is a valid review: built, no findings, empty put still minted and dropped", async () => {
+  it("an empty diff is a valid review: built, no findings", async () => {
     const graph = graphDbStub({ files: [graphFile("src/app/a.ts")], edges: [] });
 
     const payload = (await architectureSectionProvider.run(
       runContext({ graphDb: graph, scope: scopeOf([]) }),
     )) as Record<string, unknown>;
 
-    expect(graph.putReviewFileEdges).toHaveBeenCalledTimes(1);
-    expect(graph.putReviewFileEdges.mock.calls[0]?.[1]).toEqual([]);
-    expect(graph.dropReviewFileEdges).toHaveBeenCalledTimes(1);
     expect(payload.findings).toEqual([]);
     expect((payload.detectors as { findingCount: number }[]).every((d) => d.findingCount === 0)).toBe(true);
-  });
-
-  it("drops the temp table even when the run fails — a poisoned indexed-graph read", async () => {
-    const graph = graphDbStub({ files: [], edges: [] });
-    graph.readFileDependencyGraph.mockRejectedValue(new Error("wal corrupt"));
-
-    await expect(
-      architectureSectionProvider.run(runContext({ graphDb: graph, scope: scopeOf(["src/app/a.ts"]) })),
-    ).rejects.toThrow(/wal corrupt/);
-    expect(graph.dropReviewFileEdges).toHaveBeenCalledTimes(1);
-    expect(graph.dropReviewFileEdges.mock.calls[0]?.[0]).toMatch(REVIEW_ID_PATTERN);
-  });
-
-  it("drops the temp table even when the put fails", async () => {
-    writeFile("src/app/a.ts", "export const A = 1;\n");
-    const graph = graphDbStub({ files: [graphFile("src/app/a.ts")], edges: [] });
-    graph.putReviewFileEdges.mockRejectedValue(new Error("daemon gone"));
-
-    await expect(
-      architectureSectionProvider.run(runContext({ graphDb: graph, scope: scopeOf(["src/app/a.ts"]) })),
-    ).rejects.toThrow(/daemon gone/);
-    expect(graph.dropReviewFileEdges).toHaveBeenCalledTimes(1);
-  });
-
-  it("a drop failure never masks the original answer", async () => {
-    writeFile("src/app/a.ts", "export const A = 1;\n");
-    const graph = graphDbStub({ files: [graphFile("src/app/a.ts")], edges: [] });
-    graph.dropReviewFileEdges.mockRejectedValue(new Error("drop exploded"));
-
-    const payload = (await architectureSectionProvider.run(
-      runContext({ graphDb: graph, scope: scopeOf(["src/app/a.ts"]) }),
-    )) as Record<string, unknown>;
-    expect(payload.findings).toEqual([]);
   });
 
   // bd tea-rags-mcp-35v4v (live 2026-10-01): a 5-file probe diff produced 134
@@ -1048,16 +979,6 @@ describe("architectureSectionProvider.run — splitCandidates wiring", () => {
       (d) => d.detector === "silentCoupling",
     );
     expect(silent).toMatchObject({ built: true, findingCount: 0 });
-  });
-});
-
-describe("mintReviewId", () => {
-  it("mints the store's id shape exactly: epoch-pid-six lowercase alnum", () => {
-    const now = Math.floor(Date.now() / 1000);
-    const id = mintReviewId(now);
-    expect(id).toMatch(REVIEW_ID_PATTERN);
-    expect(id.startsWith(`${now}-`)).toBe(true);
-    expect(mintReviewId(now)).not.toBe(mintReviewId(now));
   });
 });
 

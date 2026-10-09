@@ -23,7 +23,6 @@ import type {
   OntologyReportQuery,
   RelPath,
   ResolveRunStatsRow,
-  ReviewFileEdge,
   SymbolDefinition,
   SymbolId,
   TemporalCochangeSnapshot,
@@ -90,12 +89,6 @@ export const DAEMON_OPS = [
   // Per-file symbol-commit rows of the temporal sub-graph (bd tea-rags-mcp-3gz4f).
   "replaceTemporalSymbolCommits",
   "deleteTemporalSymbolCommitFiles",
-  // Per-review working-tree file-edge temp tables (bd tea-rags-mcp-89k7k.1.2).
-  // REQUIRED, not legacy-tolerated: an older daemon's silence would read as
-  // "the review wrote no edges" — a dropped review signal, never a fallback.
-  "putReviewFileEdges",
-  "dropReviewFileEdges",
-  "sweepExpiredReviewFileEdges",
   "checkpoint",
   "rebuildEdgeFileTargetIndex",
   "recordRunStats",
@@ -309,9 +302,6 @@ export interface DaemonOpParamsMap {
   replaceTemporalCochange: { snapshot: TemporalCochangeSnapshot };
   replaceTemporalSymbolCommits: { files: TemporalSymbolCommitFileSnapshot[] };
   deleteTemporalSymbolCommitFiles: { relPaths: RelPath[] };
-  putReviewFileEdges: { reviewId: string; edges: ReviewFileEdge[] };
-  dropReviewFileEdges: { reviewId: string };
-  sweepExpiredReviewFileEdges: { nowEpochSeconds: number; maxAgeSeconds: number };
   checkpoint: NoDaemonOpParams;
   rebuildEdgeFileTargetIndex: NoDaemonOpParams;
   recordRunStats: { rows: ResolveRunStatsRow[] };
