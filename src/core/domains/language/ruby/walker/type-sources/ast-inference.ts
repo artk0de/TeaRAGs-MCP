@@ -5,8 +5,8 @@ import {
   CONTAINER_BLOCK_ITERATION_METHODS,
   CONTAINER_ELEMENT_RETURNING_METHODS,
 } from "../../resolver/type-propagation.js";
-import { lexicalScopeFqName, readScopeResolution, typeConstantName, walk } from "../ast-utils.js";
-import type { RubyExtractInput } from "../walker.js";
+import { lexicalScopeFqName, readScopeResolution, typeConstantName, walk } from "../shared/ast-utils.js";
+import type { RubyExtractInput } from "../shared/extract-input.js";
 import type { RubyInlineTypeSource, RubyTypeFact } from "./types.js";
 import { collectYardParamTypes, YARD_CONST } from "./yard.js";
 

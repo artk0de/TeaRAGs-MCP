@@ -128,13 +128,13 @@ import {
   rubyTypeRefEquals,
   rubyUnionOf,
 } from "../src/core/domains/language/ruby/type-ref.js";
+import { rbNameOf } from "../src/core/domains/language/ruby/walker/index.js";
+import { constantLookupCandidates } from "../src/core/domains/language/ruby/walker/param-arg-types.js";
 import {
   forEachClassScope,
   readScopeResolution,
   walk as walkAst,
-} from "../src/core/domains/language/ruby/walker/ast-utils.js";
-import { rbNameOf } from "../src/core/domains/language/ruby/walker/index.js";
-import { constantLookupCandidates } from "../src/core/domains/language/ruby/walker/param-arg-types.js";
+} from "../src/core/domains/language/ruby/walker/shared/ast-utils.js";
 import {
   constInstanceType,
   RUBY_BLOCK_ITERATOR_METHODS,

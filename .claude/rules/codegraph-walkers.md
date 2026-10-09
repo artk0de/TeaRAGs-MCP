@@ -19,9 +19,11 @@ monolith), `name-of.ts`, `index.ts`, and `passes.ts` — the ordered
 languages. Facet-pass modules live under `walker/passes/` (Go, Python; Python's
 monolith also imports shared helpers from there). Any other helper of the
 monolith sits beside `walker.ts` (Ruby, TypeScript), and Ruby groups two
-families in `walker/structured/` and `walker/type-sources/`. Companion
-**resolver** translates extracted imports + call receivers into graph edges;
-lives at `src/core/domains/language/<lang>/resolver/` (entry
+families in `walker/structured/` and `walker/type-sources/`, plus a
+`walker/shared/` leaf (input type, AST helpers) both the monolith and its
+type-sources import, so the type-sources never import back into `walker/`.
+Companion **resolver** translates extracted imports + call receivers into graph
+edges; lives at `src/core/domains/language/<lang>/resolver/` (entry
 `<lang>-resolver.ts`, e.g. `ruby/resolver/ruby-resolver.ts`; TypeScript's is
 `ts-resolver.ts`).
 

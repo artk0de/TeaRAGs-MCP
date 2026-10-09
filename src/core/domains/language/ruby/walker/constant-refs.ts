@@ -17,7 +17,7 @@
 import { isSameAstNode, type AstNode } from "../../../../contracts/types/ast.js";
 import type { ImportRef } from "../../../../contracts/types/codegraph.js";
 import { ZEITWERK_PREFIX } from "../zeitwerk-import-marker.js";
-import { readScopeResolution, walk } from "./ast-utils.js";
+import { readScopeResolution, walk } from "./shared/ast-utils.js";
 
 /**
  * `require 'foo'`, `require_relative './foo'`. Tree-sitter-ruby emits

@@ -8,8 +8,8 @@ import {
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
 import { RUBY_SELF_COPY_METHODS } from "../self-copy-methods.js";
-import { forEachClassScope, readScopeResolution, walk } from "./ast-utils.js";
 import { inferRubyMemberReturnType, type RubyMemberReturnOwner } from "./body-return.js";
+import { forEachClassScope, readScopeResolution, walk } from "./shared/ast-utils.js";
 import { constInstanceType, isOrAssignment } from "./type-sources/ast-inference.js";
 import { collectYardParamTypes, YARD_CONST } from "./type-sources/yard.js";
 

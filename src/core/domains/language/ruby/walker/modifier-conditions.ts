@@ -12,7 +12,7 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { CallResultBinding, LocalBinding, ModifierConditionSpan } from "../../../../contracts/types/codegraph.js";
-import { walk } from "./ast-utils.js";
+import { walk } from "./shared/ast-utils.js";
 
 /** Modifiers whose `condition` field runs BEFORE their `body`. */
 const CONDITION_FIRST_MODIFIERS: ReadonlySet<string> = new Set([

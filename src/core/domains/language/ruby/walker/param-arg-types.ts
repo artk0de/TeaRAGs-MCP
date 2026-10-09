@@ -37,7 +37,7 @@ import {
 } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
-import { forEachClassScope, lexicalScopeFqName, readScopeResolution } from "./ast-utils.js";
+import { forEachClassScope, lexicalScopeFqName, readScopeResolution } from "./shared/ast-utils.js";
 import { constInstanceType } from "./type-sources/ast-inference.js";
 import { YARD_CONST } from "./type-sources/yard.js";
 

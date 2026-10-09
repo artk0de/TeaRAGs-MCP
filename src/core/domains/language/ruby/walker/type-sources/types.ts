@@ -6,7 +6,7 @@
  * left in this file.
  */
 import type { InlineTypeSource } from "../../../kernel/index.js";
-import type { RubyExtractInput } from "../walker.js";
+import type { RubyExtractInput } from "../shared/extract-input.js";
 
 export type {
   ProjectTypeSourceContext,
