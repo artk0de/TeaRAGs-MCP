@@ -24,7 +24,7 @@ import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { relative, sep } from "node:path";
 
-import { resolveRepoRoot, VcsAdapterFactory, type GitAdapterKind } from "../../../../../adapters/vcs/index.js";
+import { VcsAdapterFactory, type GitAdapterKind } from "../../../../../adapters/vcs/index.js";
 import type {
   RelPath,
   TemporalCochangeBuildMeta,
@@ -129,7 +129,7 @@ export class GitTemporalCochangeHistorySource implements TemporalCochangeHistory
   constructor(private readonly options: { vcsAdapter: GitAdapterKind; windowMonths: number; timeoutMs: number }) {}
 
   async open(projectRoot: string): Promise<TemporalCochangeHistory> {
-    const repoRoot = resolveRepoRoot(projectRoot);
+    const repoRoot = VcsAdapterFactory.resolveRepoRoot(projectRoot);
     const adapter = await VcsAdapterFactory.create(this.options.vcsAdapter, repoRoot);
     const head = await adapter.getHead();
     return {

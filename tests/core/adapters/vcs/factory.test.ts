@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { VcsAdapterUnavailableError } from "../../../../src/core/adapters/vcs/errors.js";
@@ -46,5 +50,20 @@ describe("VcsAdapterFactory", () => {
     const err = await VcsAdapterFactory.create("svn" as never, process.cwd()).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ConfigValueInvalidError);
     expect((err as ConfigValueInvalidError).message).toContain("svn");
+  });
+
+  it("resolveRepoRoot → the git toplevel of a path inside the repo", () => {
+    expect(VcsAdapterFactory.resolveRepoRoot(path.join(process.cwd(), "src"))).toBe(
+      VcsAdapterFactory.resolveRepoRoot(process.cwd()),
+    );
+  });
+
+  it("resolveRepoRoot → the input path when it is not inside a git repo", () => {
+    const outside = mkdtempSync(path.join(tmpdir(), "vcs-no-repo-"));
+    try {
+      expect(VcsAdapterFactory.resolveRepoRoot(outside)).toBe(outside);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 });

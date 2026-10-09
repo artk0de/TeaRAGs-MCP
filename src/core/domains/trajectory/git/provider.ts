@@ -10,7 +10,6 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import {
-  resolveRepoRoot,
   VcsAdapterFactory,
   type BlameLine,
   type CommitInfo,
@@ -265,7 +264,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   }
 
   resolveRoot(absolutePath: string): string {
-    return resolveRepoRoot(absolutePath);
+    return VcsAdapterFactory.resolveRepoRoot(absolutePath);
   }
 
   /** Lazy per-root adapter for the run — one factory call per root, shared as
