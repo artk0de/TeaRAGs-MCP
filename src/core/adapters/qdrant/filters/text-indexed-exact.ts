@@ -127,6 +127,12 @@ export function exactMatchOnTextIndexed(
  * cheaper than N scans, and still hundreds of times more expensive than this.
  * Twenty pairs measured 27 ms against 706 ms for the equivalent MatchAny.
  *
+ * For a SET of paths there is a cheaper shape than this one on collections at
+ * schema v20+: one MatchAny on the keyword-indexed twin `relativePathExact`
+ * (`./relative-path-exact.ts`, bd tea-rags-mcp-ejio7). Its gate,
+ * `RelativePathExactCapability`, decides per collection; this `should` is
+ * what an unserved collection keeps.
+ *
  * `tokenOf` derives each branch's text token; omit it where the value is its
  * own token (paths). The shape is decided per VALUE, so one operator-named
  * symbol in a set does not cost the other branches their text condition.

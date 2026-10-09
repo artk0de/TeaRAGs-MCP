@@ -1,5 +1,6 @@
 import { extname, relative } from "node:path";
 
+import { RELATIVE_PATH_EXACT_KEY } from "../../../contracts/relative-path-exact.js";
 import type { PayloadBuilder } from "../../../contracts/types/provider.js";
 import { detectTestFile } from "./test-detection.js";
 
@@ -22,6 +23,9 @@ export class StaticPayloadBuilder implements PayloadBuilder {
       codebasePath,
       chunkIndex: m.chunkIndex,
     };
+    // The keyword-indexed twin path-membership filters match (bd
+    // tea-rags-mcp-ejio7); not a payload signal descriptor — see the contract.
+    payload[RELATIVE_PATH_EXACT_KEY] = payload.relativePath;
     if (m.name) payload.name = m.name;
     if (m.chunkType) payload.chunkType = m.chunkType;
     if (m.parentSymbolId) payload.parentSymbolId = m.parentSymbolId;

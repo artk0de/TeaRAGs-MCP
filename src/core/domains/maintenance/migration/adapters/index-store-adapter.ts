@@ -80,6 +80,13 @@ export class IndexStoreAdapter implements IndexStore, PayloadIndexStore {
     return this.qdrant.scrollFiltered(collection, {}, 10000);
   }
 
+  scrollPayloadPages(
+    collection: string,
+    request: { payloadInclude: string[]; filter?: Record<string, unknown>; pageSize?: number },
+  ): AsyncIterable<{ id: string | number; payload: Record<string, unknown> }[]> {
+    return this.qdrant.scrollPayloadPages(collection, request.payloadInclude, request.pageSize, request.filter);
+  }
+
   async batchSetPayload(
     collection: string,
     operations: { payload: Record<string, unknown>; points: (string | number)[] }[],

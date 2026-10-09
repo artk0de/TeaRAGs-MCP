@@ -20,8 +20,11 @@
  * never leaks in.
  *
  * One page → one Qdrant scroll over the setup chunks of every file the page's
- * examples come from. The filter is index-served only: `relativePath` through
- * its text index (the exact text + value pair) and `chunkType` through its
+ * examples come from. The filter is index-served only: the file set as one
+ * MatchAny on the keyword-indexed `relativePathExact` where the collection
+ * carries it (schema v20+, bd tea-rags-mcp-ejio7 — the gate is
+ * `QdrantManager#servesRelativePathExact`), else `relativePath` through its
+ * text index (the exact text + value pair per file); `chunkType` through its
  * keyword index. `chunkType` admits `test` as well as `test_setup` because a
  * scope whose setup runs shared examples is typed `test`; the examples that
  * arm also returns carry no `scopeLineRanges` and are dropped here, client-side,
@@ -44,6 +47,7 @@
  */
 
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
+import { relativePathExactFilter } from "../../adapters/qdrant/filters/relative-path-exact.js";
 import { exactMatchOnTextIndexed } from "../../adapters/qdrant/filters/text-indexed-exact.js";
 import { TEST_SCOPE_PARENT_TYPE } from "../../contracts/types/chunker.js";
 import { isLineRange, slicePack } from "./test-pack.js";
@@ -77,7 +81,11 @@ interface SetupMember {
 }
 
 export class TestSetupHydrator {
-  constructor(private readonly qdrant: Pick<QdrantManager, "scrollFiltered">) {}
+  /** `servesRelativePathExact` absent → the file set is always named by text+value pairs. */
+  constructor(
+    private readonly qdrant: Pick<QdrantManager, "scrollFiltered"> &
+      Partial<Pick<QdrantManager, "servesRelativePathExact">>,
+  ) {}
 
   /**
    * The same results, each test example carrying its setup chain in front of
@@ -99,11 +107,14 @@ export class TestSetupHydrator {
     const fromTree = workingTreeView?.readDeltaChunks ? workingTreeView : undefined;
     const indexFiles = [...files].filter((file) => !fromTree?.touchedPaths.has(file));
     const treeFiles = [...files].filter((file) => fromTree?.touchedPaths.has(file));
+    const keyword =
+      indexFiles.length > 0 &&
+      ((await this.qdrant.servesRelativePathExact?.(collectionName).catch(() => false)) ?? false);
     const [indexPoints, treePoints] = await Promise.all([
       indexFiles.length > 0
         ? this.qdrant.scrollFiltered(
             collectionName,
-            setupFilter(indexFiles),
+            setupFilter(indexFiles, keyword),
             SETUP_SCROLL_LIMIT,
             undefined,
             SETUP_PAYLOAD_KEYS,
@@ -180,10 +191,16 @@ async function treeSetupPoints(
   );
 }
 
-/** Every setup chunk (both chunk types) of the given files — index-served conditions only. */
-function setupFilter(relativePaths: string[]): Record<string, unknown> {
+/**
+ * Every setup chunk (both chunk types) of the given files — index-served
+ * conditions only. `keyword`: the collection carries `relativePathExact`. The
+ * file set is one page's, so one MatchAny names it whole.
+ */
+function setupFilter(relativePaths: string[], keyword: boolean): Record<string, unknown> {
+  const chunkTypes = { key: "chunkType", match: { any: SETUP_CHUNK_TYPES } };
+  if (keyword) return { must: [chunkTypes, ...relativePathExactFilter(relativePaths).must] };
   return {
-    must: [{ key: "chunkType", match: { any: SETUP_CHUNK_TYPES } }],
+    must: [chunkTypes],
     should: relativePaths.map((relativePath) => ({ must: exactMatchOnTextIndexed("relativePath", relativePath) })),
   };
 }

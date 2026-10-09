@@ -68,6 +68,16 @@ export interface IndexStore {
   getCollectionInfo: (collection: string) => Promise<{ hybridEnabled: boolean; vectorSize: number }>;
   updateSparseConfig: (collection: string) => Promise<void>;
   deletePointsByFilter: (collection: string, filter: Record<string, unknown>) => Promise<void>;
+  /**
+   * Page through the points `filter` admits (every point without one),
+   * carrying only the `payloadInclude` keys and no vectors. For backfills over
+   * collections too large for {@link IndexStore.scrollAllPayload}'s single
+   * capped read; a write to a yielded page does not move the walk.
+   */
+  scrollPayloadPages?: (
+    collection: string,
+    request: { payloadInclude: string[]; filter?: Record<string, unknown>; pageSize?: number },
+  ) => AsyncIterable<{ id: string | number; payload: Record<string, unknown> }[]>;
   /** Scroll all points returning id + payload. For field rename migrations. */
   scrollAllPayload?: (collection: string) => Promise<{ id: string | number; payload: Record<string, unknown> }[]>;
   /** Batch set payload on specific points. */

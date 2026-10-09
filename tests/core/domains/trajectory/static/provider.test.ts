@@ -33,6 +33,14 @@ describe("StaticPayloadBuilder", () => {
     expect(payload.symbolId).toBe("hello");
   });
 
+  // bd tea-rags-mcp-ejio7 — the keyword-indexed twin of `relativePath` that
+  // path-membership filters match with one MatchAny.
+  it("writes relativePathExact identical to relativePath", () => {
+    const payload = builder.buildPayload(chunk, "/project");
+    expect(payload.relativePathExact).toBe("src/hello.ts");
+    expect(payload.relativePathExact).toBe(payload.relativePath);
+  });
+
   it("computes methodDensity from content and methodLines", () => {
     const payload = builder.buildPayload(chunk, "/project");
     expect(payload.methodLines).toBe(10);

@@ -41,6 +41,8 @@ import {
 import { QdrantConnection, type EmbeddedDaemonProbe } from "./connection.js";
 import { QdrantPayloadIndexManager, type PayloadFieldIndex } from "./payload-index.js";
 import { QdrantPointStore } from "./point-store.js";
+import { RelativePathExactCapability } from "./relative-path-exact-capability.js";
+import { SchemaMetadataPointStore } from "./schema-metadata-point.js";
 import { QdrantScroller } from "./scroller.js";
 import { QdrantSearchExecutor, type SearchResult } from "./search-executor.js";
 import { QdrantSnapshotStore } from "./snapshots.js";
@@ -63,6 +65,7 @@ export class QdrantManager {
   private readonly searcher: QdrantSearchExecutor;
   private readonly scroller: QdrantScroller;
   private readonly snapshots: QdrantSnapshotStore;
+  private readonly relativePathExact: RelativePathExactCapability;
 
   constructor(
     url = "http://localhost:6333",
@@ -73,7 +76,14 @@ export class QdrantManager {
     this.connection = new QdrantConnection(url, apiKey, reconnect, daemon);
     this.collections = new QdrantCollectionAdmin(this.connection);
     this.payloadIndexes = new QdrantPayloadIndexManager(this.connection);
-    this.points = new QdrantPointStore(this.connection);
+    // One gate per manager, shared by the point store and every domain reader
+    // that asks through `servesRelativePathExact`, so they share one cache.
+    const metadataPoint = new SchemaMetadataPointStore(this);
+    this.relativePathExact = new RelativePathExactCapability({
+      resolvePhysical: async (name) => this.aliases.resolveActive(name),
+      readSchemaVersion: async (physical) => (await metadataPoint.read(physical))?.schemaVersion,
+    });
+    this.points = new QdrantPointStore(this.connection, this.relativePathExact);
     // Bound to THIS method, not to `collections.getCollectionInfo`: the search
     // methods self-called `this.getCollectionInfo` when they lived on this class,
     // so the lookup must stay late-bound through the facade to keep that seam.
@@ -350,7 +360,16 @@ export class QdrantManager {
     return this.points.deletePointsByFilter(collectionName, filter);
   }
 
-  /** Delete every point of N paths in ONE request, via an OR filter. */
+  /**
+   * Whether path-membership filters on this collection may match the
+   * keyword-indexed `relativePathExact` — answered by the one shared gate
+   * (`relative-path-exact-capability.ts`, bd tea-rags-mcp-ejio7).
+   */
+  async servesRelativePathExact(collectionName: string): Promise<boolean> {
+    return this.relativePathExact.isServed(collectionName);
+  }
+
+  /** Delete every point of N paths in grouped membership filters. */
   async deletePointsByPaths(collectionName: string, relativePaths: string[]): Promise<void> {
     return this.points.deletePointsByPaths(collectionName, relativePaths);
   }
@@ -496,13 +515,14 @@ export class QdrantManager {
     return this.scroller.scrollWithVectors(collectionName, batchSize);
   }
 
-  /** Scroll every point with the named payload keys only, no vectors, yielding pages. */
+  /** Scroll every point (or every point `filter` admits) with the named payload keys only, no vectors, yielding pages. */
   scrollPayloadPages(
     collectionName: string,
     payloadInclude: string[],
     batchSize = 1000,
+    filter?: Record<string, unknown>,
   ): AsyncGenerator<{ id: string | number; payload: Record<string, unknown> }[]> {
-    return this.scroller.scrollPayloadPages(collectionName, payloadInclude, batchSize);
+    return this.scroller.scrollPayloadPages(collectionName, payloadInclude, batchSize, filter);
   }
 
   /** Distinct values of one payload field across the collection. */

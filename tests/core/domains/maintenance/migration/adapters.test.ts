@@ -656,6 +656,29 @@ describe("IndexStoreAdapter bulk payload operations", () => {
     expect(qdrant.batchSetPayload).toHaveBeenCalledWith("col", operations);
   });
 
+  // bd tea-rags-mcp-ejio7 — the v20 backfill's read: pages, the named keys
+  // only, the filter forwarded.
+  it("scrollPayloadPages pages through the filtered collection with only the named keys", async () => {
+    const pages = [[{ id: 1, payload: { relativePath: "a.ts" } }], [{ id: 2, payload: { relativePath: "b.ts" } }]];
+    const scrollPayloadPages = vi.fn(async function* () {
+      yield* pages;
+    });
+    const adapter = new IndexStoreAdapter(makeBulkQdrant({ scrollPayloadPages }) as any);
+    const filter = { must: [{ is_empty: { key: "relativePathExact" } }] };
+
+    const seen: unknown[] = [];
+    for await (const page of adapter.scrollPayloadPages("col", {
+      payloadInclude: ["relativePath"],
+      filter,
+      pageSize: 500,
+    })) {
+      seen.push(page);
+    }
+
+    expect(scrollPayloadPages).toHaveBeenCalledWith("col", ["relativePath"], 500, filter);
+    expect(seen).toEqual(pages);
+  });
+
   it("deletePayloadKeys drops the legacy keys a rename migration leaves behind", async () => {
     const qdrant = makeBulkQdrant();
     const adapter = new IndexStoreAdapter(qdrant as any);

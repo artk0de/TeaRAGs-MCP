@@ -336,4 +336,42 @@ describe("TestSetupHydrator", () => {
 
     expect(hit.payload.content).toBe(`${HEADER}\nit 'a' do\nend`);
   });
+
+  // bd tea-rags-mcp-ejio7 — a collection carrying the keyword-indexed
+  // `relativePathExact` (schema v20+) answers the page's file set with one
+  // MatchAny instead of a `should` of text+value pairs.
+  describe("on a collection carrying relativePathExact", () => {
+    it("names the page's files with one keyword MatchAny, beside the chunkType condition", async () => {
+      const scrollFiltered = vi
+        .fn()
+        .mockResolvedValue([setupPoint("User.RSpec.describe User", { start: 1, end: 40 }, "let(:a) { 1 }")]);
+      const servesRelativePathExact = vi.fn(async () => true);
+      const hydrator = new TestSetupHydrator({ scrollFiltered, servesRelativePathExact });
+
+      const [hydrated] = await hydrator.hydrate(
+        [example("User.it 'a'", 3, "it 'a' do\nend"), example("Other.it 'b'", 3, "it 'b' do\nend", "spec/b_spec.rb")],
+        "code_x",
+      );
+
+      expect(servesRelativePathExact).toHaveBeenCalledWith("code_x");
+      const [, filter] = scrollFiltered.mock.calls[0];
+      expect(filter).toEqual({
+        must: [
+          { key: "chunkType", match: { any: ["test_setup", "test"] } },
+          { key: "relativePathExact", match: { any: [SPEC, "spec/b_spec.rb"] } },
+        ],
+      });
+      expect(hydrated.payload.content).toBe(`${HEADER}\nlet(:a) { 1 }\nit 'a' do\nend`);
+    });
+
+    it("keeps the text+value pairs when the collection is not served", async () => {
+      const scrollFiltered = vi.fn().mockResolvedValue([]);
+      const hydrator = new TestSetupHydrator({ scrollFiltered, servesRelativePathExact: vi.fn(async () => false) });
+
+      await hydrator.hydrate([example("User.it 'a'", 3, "it 'a' do\nend")], "code_x");
+
+      const conditions = conditionsOf(scrollFiltered.mock.calls[0][1]);
+      expect([...conditions.keys()].sort()).toEqual(["chunkType", "relativePath"]);
+    });
+  });
 });

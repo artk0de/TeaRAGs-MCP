@@ -138,6 +138,20 @@
   by the v5 text index, and new collections never get it
   (`SchemaManager#initializeSchema`, bd tea-rags-mcp-ivp12).
 
+- **Path-SET membership asks the gate before it may name `relativePathExact`.**
+  The keyword-indexed twin of `relativePath` (contract
+  `contracts/relative-path-exact.ts`) serves a whole path set as one MatchAny
+  (`filters/relative-path-exact.ts#relativePathExactFilter`), but only where
+  `RelativePathExactCapability#isServed` — reached as
+  `QdrantManager#servesRelativePathExact`, or injected into `QdrantPointStore` —
+  says the collection's stamped schema version reached
+  `RELATIVE_PATH_EXACT_SCHEMA_VERSION`. Everywhere else the text+value pairs
+  stay. Why: below that version the v20 backfill has not finished, a point
+  without the key escapes a keyword filter with no error, and a delete that
+  misses a point leaves a stale chunk in the index. A new membership consumer
+  calls the gate; it never reads the schema version itself. Single-path lookups
+  keep the pair — one pair is already index-served (bd tea-rags-mcp-ejio7).
+
 ## Gotchas
 
 - **The canary throw puts a description where the error expects a model name.**
