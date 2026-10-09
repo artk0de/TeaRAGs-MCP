@@ -32,6 +32,7 @@ import {
   detectMainSequenceDeviations,
   excludeNonProductionFiles,
   measureLayeringFoundationComponents,
+  measureLayeringFoundationTerminalComponents,
   resolveExternalImports,
   resolveUnwalkedImportEdges,
   type ComponentGraph,
@@ -197,21 +198,22 @@ export function distanceFromMainSequenceByComponent(
  * (`buildDomainComponentGraph` over the facade classification), mapped back to
  * files — the diff run addresses an edge's target by file, and its own
  * component partition is the adoption one. Diff-run-only surface: the report
- * reads the foundation off its layering summary.
+ * reads the foundation off its layering summary. It carries the
+ * foundation-terminal components too (bd tea-rags-mcp-r8hme.52.3,
+ * `measureLayeringFoundationTerminalComponents`): exactly the set whose layer
+ * skips the whole-repo layering exempts.
  */
 export function measureLayeringFoundationFiles(
   graph: FileDependencyGraph,
   facts: ArchitectureComponentFacts,
 ): ReadonlySet<RelPath> {
   const layeringComponents = buildDomainComponentGraph(graph, facts.leaks.modules);
-  const foundations = measureLayeringFoundationComponents(
-    layeringComponents,
-    graph.files,
-    buildLayeringModel(layeringComponents),
-  );
+  const model = buildLayeringModel(layeringComponents);
+  const foundations = measureLayeringFoundationComponents(layeringComponents, graph.files, model);
+  const terminals = measureLayeringFoundationTerminalComponents(layeringComponents, model, foundations);
   const files = new Set<RelPath>();
   for (const [relPath, component] of layeringComponents.componentOf) {
-    if (foundations.has(component)) files.add(relPath);
+    if (foundations.has(component) || terminals.has(component)) files.add(relPath);
   }
   return files;
 }

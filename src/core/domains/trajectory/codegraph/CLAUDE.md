@@ -549,7 +549,16 @@
   `contracts` path segment while the layering run flagged the same edges — 29 of
   57 layerSkips on this repo were skips into that pure-types component (bd
   tea-rags-mcp-89k7k.35.11). A concrete L0 target keeps its skips; a name check
-  anywhere in either pipeline reintroduces the disagreement.
+  anywhere in either pipeline reintroduces the disagreement. The exemption goes
+  exactly ONE step out (bd tea-rags-mcp-r8hme.52.3):
+  `measureLayeringFoundationTerminalComponents` names each non-knot component
+  with at least one dependency, every one into the foundation, and both
+  pipelines exempt foundation ∪ terminal — `summary.foundation` lists the
+  terminals, `measureLayeringFoundationFiles` maps them to files. Never close it
+  transitively: "every dependency foundation-or-exempt" absorbs every acyclic
+  component of a DAG (measured 60 of 88), and a kernel over a terminal leaf
+  kernel keeps its skips. Cost: skips past a wrapping kernel straight into the
+  leaf it wraps (`language/<lang> → infra/symbolid`) leave the layering view.
 
 ## Gotchas
 

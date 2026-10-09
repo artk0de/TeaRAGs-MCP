@@ -117,7 +117,8 @@ export function detectLayeringViolations(
 ): LayeringReport {
   const model = options.model ?? buildLayeringModel(componentGraph);
   const foundations = measureLayeringFoundationComponents(componentGraph, files, model);
-  const skips = layerSkips(componentGraph, model, foundations);
+  const terminals = measureLayeringFoundationTerminalComponents(componentGraph, model, foundations);
+  const skips = layerSkips(componentGraph, model, new Set([...foundations, ...terminals]));
   const compositionKnots = model.knots.filter((knot) => knot.composition);
   // Knot findings rank by member-instability spread (bd tea-rags-mcp-r8hme.32):
   // a knot fusing a stable member with a volatile one is an SDP break inside a
@@ -185,10 +186,11 @@ export function detectLayeringViolations(
     layerSkipCount: count("layerSkip"),
     violationCount: violations.length,
     ...(scope ? { scope } : {}),
-    ...(foundations.size > 0
+    ...(foundations.size > 0 || terminals.size > 0
       ? {
           foundation: {
             components: [...foundations].sort(compareCodePoints),
+            ...(terminals.size > 0 ? { terminalComponents: [...terminals].sort(compareCodePoints) } : {}),
             exemptedLayerSkipCount: exemptedSkips.length,
           },
         }
@@ -1021,16 +1023,55 @@ export function measureLayeringFoundationComponents(
 }
 
 /**
+ * The foundation-terminal components (bd tea-rags-mcp-r8hme.52.3): outside any
+ * knot, not foundation themselves, with at least one outgoing component
+ * dependency and every one of them landing in the measured foundation. Such a
+ * concrete leaf kernel sits at L1 by construction, its only chains ending in
+ * the foundation, so a skip into it measures the importer's height, not a
+ * layer it bypassed.
+ *
+ * Exactly one step out from the measured set, never its closure: "every
+ * dependency is foundation-or-terminal" absorbs every acyclic component on a
+ * DAG, since each one bottoms out in the foundation. A component reaching a
+ * terminal that is not foundation (a kernel over a leaf kernel) earns its
+ * level through a real chain and keeps its skips. A Ce 0 component is not one
+ * step out from anything: it is an L0 component the foundation measurement
+ * already judged, and a concrete one keeps its skips (bd
+ * tea-rags-mcp-89k7k.35.11).
+ */
+export function measureLayeringFoundationTerminalComponents(
+  componentGraph: ComponentGraph,
+  model: LayeringModel,
+  foundations: ReadonlySet<string>,
+): ReadonlySet<string> {
+  const reachesFoundation = new Set<string>();
+  const reachesBeyondFoundation = new Set<string>();
+  for (const dependency of componentGraph.dependencies) {
+    (foundations.has(dependency.targetComponent) ? reachesFoundation : reachesBeyondFoundation).add(
+      dependency.sourceComponent,
+    );
+  }
+  const terminals = new Set<string>();
+  for (const [component, position] of model.positions) {
+    if (position.inKnot || foundations.has(component)) continue;
+    if (reachesFoundation.has(component) && !reachesBeyondFoundation.has(component)) terminals.add(component);
+  }
+  return terminals;
+}
+
+/**
  * Layer skips: a dependency jumping `LAYER_SKIP_MIN_LEVELS` or more straight
  * down. Judged only between components standing for themselves — a knot
  * member's level is its knot's, not its own, and would misread. A skip into a
- * measured foundation (`measureLayeringFoundationComponents`) is legal relaxed
- * layering: returned as exempted, counted in the summary, never reported.
+ * measured foundation (`measureLayeringFoundationComponents`) or a
+ * foundation-terminal component
+ * (`measureLayeringFoundationTerminalComponents`) is legal relaxed layering:
+ * returned as exempted, counted in the summary, never reported.
  */
 function layerSkips(
   componentGraph: ComponentGraph,
   model: LayeringModel,
-  foundations: ReadonlySet<string>,
+  exemptTargets: ReadonlySet<string>,
 ): { reported: LayeringLayerSkipViolation[]; exempted: LayeringLayerSkipViolation[] } {
   const reported: LayeringLayerSkipViolation[] = [];
   const exempted: LayeringLayerSkipViolation[] = [];
@@ -1040,7 +1081,7 @@ function layerSkips(
     if (!source || !target || source.inKnot || target.inKnot) continue;
     const skipped = source.level - target.level;
     if (skipped < LAYER_SKIP_MIN_LEVELS) continue;
-    (foundations.has(dependency.targetComponent) ? exempted : reported).push({
+    (exemptTargets.has(dependency.targetComponent) ? exempted : reported).push({
       kind: "layerSkip",
       sourceComponent: dependency.sourceComponent,
       targetComponent: dependency.targetComponent,
