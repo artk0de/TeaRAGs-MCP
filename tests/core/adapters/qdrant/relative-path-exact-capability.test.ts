@@ -402,6 +402,45 @@ describe("QdrantManager#servesRelativePathExact", () => {
     });
   });
 
+  it("heals points an older build wrote without the twin: scrolls the candidates and writes the twin, waited", async () => {
+    const { manager, client } = managerOver(20);
+    let healed = false;
+    const stub = client as unknown as Record<string, unknown>;
+    stub.count = vi.fn(async (_c: string, req: { filter: { must_not: unknown[] } }) => ({
+      // Two of the seven path-carrying points lack the twin until the write lands.
+      count: req.filter.must_not.length === 1 || healed ? 7 : 5,
+    }));
+    stub.scroll = vi.fn(async () => ({
+      points: [
+        { id: 1, payload: { relativePath: "a.ts" } },
+        { id: 2, payload: { relativePath: "b.ts" } },
+      ],
+      next_page_offset: null,
+    }));
+    const batchUpdate = vi.fn(async () => {
+      healed = true;
+      return {};
+    });
+    stub.batchUpdate = batchUpdate;
+
+    expect(await manager.servesRelativePathExact("code_x")).toBe(true);
+
+    expect(stub.scroll).toHaveBeenCalledWith(
+      "code_x_v3",
+      expect.objectContaining({ with_payload: { include: ["relativePath", "relativePathExact"] } }),
+    );
+    expect(batchUpdate).toHaveBeenCalledWith(
+      "code_x_v3",
+      expect.objectContaining({
+        wait: true,
+        operations: [
+          { set_payload: expect.objectContaining({ payload: { relativePathExact: "a.ts" } }) },
+          { set_payload: expect.objectContaining({ payload: { relativePathExact: "b.ts" } }) },
+        ],
+      }),
+    );
+  });
+
   it("reads the schema metadata point of the alias's physical collection", async () => {
     const { manager, client } = managerOver(20);
     expect(await manager.servesRelativePathExact("code_x")).toBe(true);
