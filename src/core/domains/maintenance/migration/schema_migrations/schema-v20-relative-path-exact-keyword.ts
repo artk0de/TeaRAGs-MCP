@@ -1,6 +1,7 @@
 import {
   backfillRelativePathExact,
   ensureRelativePathExactIndexComplete,
+  probeRelativePathExactPresence,
 } from "../../../../adapters/qdrant/relative-path-exact-backfill.js";
 import {
   RELATIVE_PATH_EXACT_KEY,
@@ -9,7 +10,12 @@ import {
 import type { IndexStore, Migration, StepResult } from "../types.js";
 
 type V20Store = IndexStore &
-  Required<Pick<IndexStore, "scrollPayloadPages" | "batchSetPayload" | "listPayloadIndexes" | "createPayloadIndex">>;
+  Required<
+    Pick<
+      IndexStore,
+      "scrollPayloadPages" | "batchSetPayload" | "listPayloadIndexes" | "createPayloadIndex" | "countPoints"
+    >
+  >;
 
 /**
  * Give every existing point the keyword-indexed twin of `relativePath` (bd
@@ -35,6 +41,9 @@ type V20Store = IndexStore &
  * optimizer rebuilds segments can miss some of them, and `ensureIndex` skips an
  * index that merely exists. A still-short index does not fail the migration;
  * the gate re-checks it before it serves and answers no until it is complete.
+ * Completeness is judged against the LIVE count of points carrying the twin
+ * (a presence count taken before the backfill, plus the points it wrote), not
+ * against `relativePath`'s `payload_schema` points, which dead versions inflate.
  *
  * Backfill first, index second: the index is built once over the backfilled
  * values rather than updated per write. The order is not load-bearing for
@@ -50,6 +59,7 @@ export class SchemaV20RelativePathExactKeyword implements Migration {
   ) {}
 
   async apply(): Promise<StepResult> {
+    const { withBoth } = await probeRelativePathExactPresence(this.store, this.collection);
     const backfilled = await backfillRelativePathExact(this.store, this.collection);
 
     await this.store.ensureIndex(this.collection, RELATIVE_PATH_EXACT_KEY, "keyword");
@@ -59,6 +69,7 @@ export class SchemaV20RelativePathExactKeyword implements Migration {
         recreateKeywordIndex: async (collection, field) => this.store.createPayloadIndex(collection, field, "keyword"),
       },
       this.collection,
+      withBoth + backfilled,
     );
     return {
       applied: [

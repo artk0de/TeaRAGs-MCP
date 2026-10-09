@@ -92,7 +92,11 @@ export class SchemaMigrator implements MigrationRunner {
                 Required<
                   Pick<
                     IndexStore,
-                    "scrollPayloadPages" | "batchSetPayload" | "listPayloadIndexes" | "createPayloadIndex"
+                    | "scrollPayloadPages"
+                    | "batchSetPayload"
+                    | "listPayloadIndexes"
+                    | "createPayloadIndex"
+                    | "countPoints"
                   >
                 >,
             ),

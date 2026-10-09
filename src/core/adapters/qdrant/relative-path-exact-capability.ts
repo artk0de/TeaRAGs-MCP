@@ -19,7 +19,7 @@
  *    taught to stop. A keyword filter would miss those points with no error —
  *    a delete or rename leaves them behind as ghosts. So the gate heals before
  *    it serves: two exact PRESENCE counts give the number missing
- *    (`countPointsMissingRelativePathExact` — never an `is_empty` probe, which
+ *    (`probeRelativePathExactPresence` — never an `is_empty` probe, which
  *    counts unvacuumed dead versions as missing; see the `adapters/qdrant`
  *    navigator), and when it is above zero, the same backfill the v20
  *    migration runs (`backfillRelativePathExact`, the single owner of that
@@ -28,10 +28,13 @@
  * 3. **The keyword index covers every point.** An index created while the
  *    optimizer was rebuilding segments can miss some of them, and a filter on
  *    it then full-scans (measured: index on 2 of 4 segments, ~400 ms for one
- *    path). `ensureRelativePathExactIndexComplete` compares `payload_schema`
- *    point counts, re-creates the index once when short, and answers no when
- *    it is still short (the caller keeps the pairs). It runs after the heal,
- *    so the twins it indexes are all written.
+ *    path). `ensureRelativePathExactIndexComplete` compares the index's
+ *    `payload_schema` point count with the LIVE twin count the probe already
+ *    computed (plus the points the heal just wrote) — never with
+ *    `relativePath`'s count, which dead pre-backfill versions inflate — then
+ *    re-creates the index once when short and answers no when it is still
+ *    short (the caller keeps the pairs). It runs after the heal, so the twins
+ *    it indexes are all written.
  *
  * **A yes is remembered per physical collection for `SERVED_TTL_MS` (60 s);
  * a no never is.** The probe is not free: measured on the self-index
@@ -62,8 +65,8 @@
 import { RELATIVE_PATH_EXACT_SCHEMA_VERSION } from "../../contracts/relative-path-exact.js";
 import {
   backfillRelativePathExact,
-  countPointsMissingRelativePathExact,
   ensureRelativePathExactIndexComplete,
+  probeRelativePathExactPresence,
   type RelativePathExactIndexStore,
   type RelativePathExactProbeStore,
 } from "./relative-path-exact-backfill.js";
@@ -115,9 +118,11 @@ export class RelativePathExactCapability implements RelativePathExactGate {
     try {
       const version = await this.deps.readSchemaVersion(physical);
       if (version === undefined || version < RELATIVE_PATH_EXACT_SCHEMA_VERSION) return false;
-      const missing = await countPointsMissingRelativePathExact(this.deps.backfillStore, physical);
-      if (missing > 0) await backfillRelativePathExact(this.deps.backfillStore, physical, { missing });
-      if (!(await ensureRelativePathExactIndexComplete(this.deps.keywordIndex, physical))) return false;
+      const { withBoth, missing } = await probeRelativePathExactPresence(this.deps.backfillStore, physical);
+      const healed = missing > 0 ? await backfillRelativePathExact(this.deps.backfillStore, physical, { missing }) : 0;
+      if (!(await ensureRelativePathExactIndexComplete(this.deps.keywordIndex, physical, withBoth + healed))) {
+        return false;
+      }
       this.servedUntil.set(physical, Date.now() + SERVED_TTL_MS);
       return true;
     } catch {

@@ -78,6 +78,8 @@ export interface IndexStore {
     collection: string,
     request: { payloadInclude: string[]; filter?: Record<string, unknown>; pageSize?: number },
   ) => AsyncIterable<{ id: string | number; payload: Record<string, unknown> }[]>;
+  /** EXACT number of points `filter` admits (every point without one). */
+  countPoints?: (collection: string, filter?: Record<string, unknown>) => Promise<number>;
   /** Scroll all points returning id + payload. For field rename migrations. */
   scrollAllPayload?: (collection: string) => Promise<{ id: string | number; payload: Record<string, unknown> }[]>;
   /** Batch set payload on specific points. */

@@ -87,6 +87,10 @@ export class IndexStoreAdapter implements IndexStore, PayloadIndexStore {
     return this.qdrant.scrollPayloadPages(collection, request.payloadInclude, request.pageSize, request.filter);
   }
 
+  async countPoints(collection: string, filter?: Record<string, unknown>): Promise<number> {
+    return this.qdrant.countPoints(collection, filter);
+  }
+
   async batchSetPayload(
     collection: string,
     operations: { payload: Record<string, unknown>; points: (string | number)[] }[],

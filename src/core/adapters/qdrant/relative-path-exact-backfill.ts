@@ -13,7 +13,7 @@
  * sweep (the Qdrant behaviour is stated once, in the `adapters/qdrant`
  * navigator). So the filter only nominates CANDIDATES; the count that decides
  * whether any point is missing uses presence conditions alone
- * ({@link countPointsMissingRelativePathExact}), and the walk re-checks every
+ * ({@link probeRelativePathExactPresence}), and the walk re-checks every
  * candidate's live payload before it writes ({@link backfillRelativePathExact}).
  *
  * - **Never reads `content`.** The scroll asks for `relativePath` and the twin.
@@ -76,9 +76,19 @@ export interface RelativePathExactProbeStore extends RelativePathExactBackfillSt
   countPoints: (collection: string, filter?: Record<string, unknown>) => Promise<number>;
 }
 
+/** The exact LIVE presence counts of `relativePath` and its twin on one collection. */
+export interface RelativePathExactPresence {
+  /** Points that carry a `relativePath`. */
+  withPath: number;
+  /** Points that carry both a `relativePath` and its twin — the live twin count the keyword index is judged against. */
+  withBoth: number;
+  /** `withPath − withBoth`, clamped at 0: points that still lack the twin. */
+  missing: number;
+}
+
 /**
- * How many points have a `relativePath` but lack the twin, from two exact
- * PRESENCE counts: `|has path| − |has path ∧ has twin|`.
+ * The live presence counts of `relativePath` and its twin, from two exact
+ * PRESENCE counts; `missing` is `|has path| − |has path ∧ has twin|`.
  *
  * Neither count names an absence condition, so dead versions cannot inflate
  * the answer: `must_not is_empty` admits a point only by what its live payload
@@ -97,15 +107,15 @@ export interface RelativePathExactProbeStore extends RelativePathExactBackfillSt
  * module docblock), so such a point reads as missing on every probe — none
  * exist in practice (0 on the self-index).
  */
-export async function countPointsMissingRelativePathExact(
+export async function probeRelativePathExactPresence(
   store: RelativePathExactProbeStore,
   collection: string,
-): Promise<number> {
-  const [withPath, withPathAndTwin] = await Promise.all([
+): Promise<RelativePathExactPresence> {
+  const [withPath, withBoth] = await Promise.all([
     store.countPoints(collection, HAS_RELATIVE_PATH_FILTER),
     store.countPoints(collection, HAS_RELATIVE_PATH_AND_TWIN_FILTER),
   ]);
-  return Math.max(0, withPath - withPathAndTwin);
+  return { withPath, withBoth, missing: Math.max(0, withPath - withBoth) };
 }
 
 /**
@@ -163,24 +173,28 @@ export interface RelativePathExactIndexStore {
 /**
  * Whether the keyword index on `relativePathExact` covers every point — the
  * ONE predicate of that, from a `payload_schema` listing: the index exists and
- * its `points` is not below `relativePath`'s.
+ * its `points` is not below `liveTwinCount`, the EXACT number of live points
+ * that carry the twin (`RelativePathExactPresence#withBoth`, plus any point
+ * the caller just healed).
  *
- * Why `relativePath`'s count is the reference: both keys are written onto the
- * same points (the twin is the backfill of the path), so on a healed
- * collection the two indexes must count the same points; and both counts
- * include the unvacuumed record versions of each segment, so they stay
- * comparable where a comparison with the live point count would not.
- * Measured on a live embedded Qdrant 1.18.2 collection: an index created while
- * the optimizer was rebuilding segments missed two of four, and
- * `payload_schema` read `relativePathExact.points` 35 135 against
- * `relativePath.points` 75 199 — every keyword filter then full-scanned
- * (~400 ms even for one path).
+ * Why `payload_schema`'s `relativePath.points` is NOT a valid reference: it
+ * counts unvacuumed dead record versions, and the dead versions written before
+ * the backfill carry `relativePath` but never the twin, so it stays above the
+ * twin's count on a fully indexed collection until a vacuum. Measured on
+ * `code_8b243ffe` (Qdrant 1.18.2): `relativePathExact.points` 46 107 against
+ * `relativePath.points` 75 211 (29 104 dead pre-backfill versions) with exactly
+ * 46 107 live twins — complete, yet judged incomplete, so the index was
+ * re-created on every refresh. The live presence count has no such inflation.
+ * A genuinely short index (an index created while the optimizer rebuilt
+ * segments missed two of four; `relativePathExact.points` 35 135, every keyword
+ * filter then full-scanned, ~400 ms for one path) reads below it.
  */
-export function isRelativePathExactIndexComplete(indexes: { field: string; points: number }[]): boolean {
+export function isRelativePathExactIndexComplete(
+  indexes: { field: string; points: number }[],
+  liveTwinCount: number,
+): boolean {
   const twin = indexes.find((index) => index.field === RELATIVE_PATH_EXACT_KEY);
-  if (!twin) return false;
-  const path = indexes.find((index) => index.field === "relativePath");
-  return twin.points >= (path?.points ?? 0);
+  return twin !== undefined && twin.points >= liveTwinCount;
 }
 
 /**
@@ -188,14 +202,17 @@ export function isRelativePathExactIndexComplete(indexes: { field: string; point
  * does. An incomplete or absent index is re-created once (a forced
  * `PUT /index`, which Qdrant treats as idempotent — measured 0.6 s — and which
  * indexes every segment, where the first creation raced the optimizer) and
- * re-read; still incomplete answers false. Store failures propagate: the gate
- * turns them into a no, the migration into a retry.
+ * re-read; still incomplete answers false. `liveTwinCount` is the live number
+ * of points carrying the twin, as {@link isRelativePathExactIndexComplete}
+ * takes it. Store failures propagate: the gate turns them into a no, the
+ * migration into a retry.
  */
 export async function ensureRelativePathExactIndexComplete(
   store: RelativePathExactIndexStore,
   collection: string,
+  liveTwinCount: number,
 ): Promise<boolean> {
-  if (isRelativePathExactIndexComplete(await store.listPayloadIndexes(collection))) return true;
+  if (isRelativePathExactIndexComplete(await store.listPayloadIndexes(collection), liveTwinCount)) return true;
   await store.recreateKeywordIndex(collection, RELATIVE_PATH_EXACT_KEY);
-  return isRelativePathExactIndexComplete(await store.listPayloadIndexes(collection));
+  return isRelativePathExactIndexComplete(await store.listPayloadIndexes(collection), liveTwinCount);
 }

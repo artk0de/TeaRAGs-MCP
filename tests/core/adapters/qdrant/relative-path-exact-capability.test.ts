@@ -311,7 +311,8 @@ describe("RelativePathExactCapability#isServed", () => {
       const deadVersions = points.map(deadVersionOf);
       const missing = oldBuildPoint("a-missing", "m.ts"); // sorts before every false candidate
       points.push(missing);
-      const { gate, backfillStore } = capability({ c: 20 }, {}, points, { deadVersions });
+      const complete = keywordIndexWith({ twin: 2_501, path: 2_501 });
+      const { gate, backfillStore } = capability({ c: 20 }, {}, points, { deadVersions }, complete);
       expect(await gate.isServed("c")).toBe(true);
       expect(missing.payload.relativePathExact).toBe("m.ts");
       expect(writtenIds(backfillStore)).toEqual(["a-missing"]);
@@ -427,20 +428,72 @@ describe("QdrantManager#servesRelativePathExact", () => {
   });
 });
 
+/** `count` points that carry both `relativePath` and its twin: the live presence count the gate judges the index against. */
+const twinnedPoints = (count: number): StoredPoint[] =>
+  Array.from({ length: count }, (_, i) => twinned(`p${String(i).padStart(4, "0")}`, `f${i}.ts`));
+
 describe("RelativePathExactCapability keyword-index completeness", () => {
-  it("serves without re-creating when the index covers every point", async () => {
-    const { gate, keywordIndex } = capability({ c: 20 }, {}, [], {}, keywordIndexWith({ twin: 75_199, path: 75_199 }));
+  // Measured on code_8b243ffe_v71 (Qdrant 1.18.2, 2026-10-09): payload_schema
+  // read relativePath.points 75 211 and relativePathExact.points 46 107, the
+  // difference being 29 104 unvacuumed dead versions written BEFORE the
+  // backfill (they carry relativePath, never the twin). Exactly 46 107 live
+  // points carry the twin, so the index was complete — and the gate re-created
+  // it on every TTL refresh and answered no.
+  it("serves without re-creating when relativePath.points is inflated by dead pre-backfill versions", async () => {
+    const live = twinnedPoints(5);
+    const { gate, keywordIndex } = capability({ c: 20 }, {}, live, {}, keywordIndexWith({ twin: 5, path: 5 + 3_000 }));
 
     expect(await gate.isServed("c")).toBe(true);
     expect(keywordIndex.recreateKeywordIndex).not.toHaveBeenCalled();
   });
 
-  it("re-creates a keyword index that missed segments once, then serves", async () => {
-    const { gate, keywordIndex } = capability({ c: 20 }, {}, [], {}, keywordIndexWith({ twin: 35_135, path: 75_199 }));
+  it("serves a complete index whose point count equals the live presence count", async () => {
+    const { gate, keywordIndex } = capability(
+      { c: 20 },
+      {},
+      twinnedPoints(4),
+      {},
+      keywordIndexWith({ twin: 4, path: 4 }),
+    );
+
+    expect(await gate.isServed("c")).toBe(true);
+    expect(keywordIndex.recreateKeywordIndex).not.toHaveBeenCalled();
+  });
+
+  it("re-creates a keyword index that missed segments (below the live presence count) once, then serves", async () => {
+    const { gate, keywordIndex } = capability(
+      { c: 20 },
+      {},
+      twinnedPoints(10),
+      {},
+      keywordIndexWith({ twin: 4, path: 3_000 }, { recreateYields: { twin: 10, path: 3_000 } }),
+    );
 
     expect(await gate.isServed("c")).toBe(true);
     expect(keywordIndex.recreateKeywordIndex).toHaveBeenCalledTimes(1);
     expect(keywordIndex.recreateKeywordIndex).toHaveBeenCalledWith("c", "relativePathExact");
+  });
+
+  it("counts the points it just healed as live twins, so a healed collection is judged against all of them", async () => {
+    const points = [...twinnedPoints(3), oldBuildPoint("old-1", "x.ts"), oldBuildPoint("old-2", "y.ts")];
+    const { gate, keywordIndex } = capability({ c: 20 }, {}, points, {}, keywordIndexWith({ twin: 5, path: 5 }));
+
+    expect(await gate.isServed("c")).toBe(true);
+    expect(keywordIndex.recreateKeywordIndex).not.toHaveBeenCalled();
+  });
+
+  it("re-creates when the index lacks the points the heal just wrote", async () => {
+    const points = [...twinnedPoints(3), oldBuildPoint("old-1", "x.ts"), oldBuildPoint("old-2", "y.ts")];
+    const { gate, keywordIndex } = capability(
+      { c: 20 },
+      {},
+      points,
+      {},
+      keywordIndexWith({ twin: 3, path: 3 }, { recreateYields: { twin: 5, path: 5 } }),
+    );
+
+    expect(await gate.isServed("c")).toBe(true);
+    expect(keywordIndex.recreateKeywordIndex).toHaveBeenCalledTimes(1);
   });
 
   it("re-creates an absent keyword index", async () => {
@@ -452,7 +505,7 @@ describe("RelativePathExactCapability keyword-index completeness", () => {
 
   it("answers no, and does not remember it, when the index is still short after the re-create", async () => {
     const index = keywordIndexWith({ twin: 5, path: 10 }, { recreateYields: { twin: 5, path: 10 } });
-    const { gate } = capability({ c: 20 }, {}, [], {}, index);
+    const { gate } = capability({ c: 20 }, {}, twinnedPoints(10), {}, index);
 
     expect(await gate.isServed("c")).toBe(false);
     expect(await gate.isServed("c")).toBe(false);
@@ -468,13 +521,19 @@ describe("RelativePathExactCapability keyword-index completeness", () => {
   it("answers no when the re-create fails", async () => {
     const index = keywordIndexWith({ twin: 1, path: 10 });
     index.recreateKeywordIndex.mockRejectedValueOnce(new Error("qdrant down"));
-    const { gate } = capability({ c: 20 }, {}, [], {}, index);
+    const { gate } = capability({ c: 20 }, {}, twinnedPoints(10), {}, index);
 
     expect(await gate.isServed("c")).toBe(false);
   });
 
   it("checks the index once for concurrent callers and not again inside the served TTL", async () => {
-    const { gate, keywordIndex } = capability({ c: 20 }, {}, [], {}, keywordIndexWith({ twin: 1, path: 10 }));
+    const { gate, keywordIndex } = capability(
+      { c: 20 },
+      {},
+      twinnedPoints(10),
+      {},
+      keywordIndexWith({ twin: 1, path: 10 }),
+    );
 
     await Promise.all([gate.isServed("c"), gate.isServed("c")]);
     await gate.isServed("c");

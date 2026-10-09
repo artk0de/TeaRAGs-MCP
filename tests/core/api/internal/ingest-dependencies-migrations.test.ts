@@ -135,6 +135,8 @@ describe("createIngestDependencies — schema v16 reconciliation", () => {
       // The v20 relativePathExact backfill pages through points lacking the
       // twin (bd tea-rags-mcp-ejio7); this fixture holds none.
       scrollPayloadPages: vi.fn(async function* () {}),
+      // ... and judges the index against exact presence counts (none here).
+      countPoints: vi.fn().mockResolvedValue(0),
       batchSetPayload: vi.fn().mockResolvedValue(undefined),
       // The v20 index-completeness check re-creates the twin index this static
       // inventory does not list.

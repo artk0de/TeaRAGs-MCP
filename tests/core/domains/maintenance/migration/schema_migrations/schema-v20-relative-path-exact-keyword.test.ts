@@ -21,18 +21,30 @@ type StoredPoint = { id: string; payload: Record<string, unknown> };
  */
 function storeHolding(
   points: StoredPoint[],
-  options: { failOnWrite?: number; falseCandidates?: string[]; indexMissesSegments?: "until-recreate" | "always" } = {},
+  options: {
+    failOnWrite?: number;
+    falseCandidates?: string[];
+    indexMissesSegments?: "until-recreate" | "always";
+    /** Unvacuumed dead pre-backfill versions: counted by `relativePath`'s payload_schema points, never live. */
+    deadVersions?: number;
+  } = {},
 ) {
   const inventory = new Map<string, string>();
   // `ensureIndex` created the twin index while the optimizer rebuilt segments:
   // it counts fewer points than `relativePath` until an explicit re-create.
   let recreated = false;
   const indexedPoints = () => points.filter((p) => typeof p.payload.relativePath === "string").length;
+  const countFilters: Record<string, unknown>[] = [];
   let writes = 0;
   const pageRequests: { payloadInclude: string[]; filter?: Record<string, unknown>; pageSize?: number }[] = [];
   const store = {
     inventory,
     pageRequests,
+    countFilters,
+    countPoints: vi.fn(async (_c: string, filter?: Record<string, unknown>) => {
+      if (filter) countFilters.push(filter);
+      return points.filter((p) => filter === undefined || payloadMatchesFilter(p.payload, filter)).length;
+    }),
     getSchemaVersion: vi.fn().mockResolvedValue(19),
     ensureIndex: vi.fn(async (_c: string, field: string, type: string) => {
       if (inventory.has(field)) return false;
@@ -40,7 +52,7 @@ function storeHolding(
       return true;
     }),
     listPayloadIndexes: vi.fn(async () => [
-      { field: "relativePath", dataType: "text", points: indexedPoints() },
+      { field: "relativePath", dataType: "text", points: indexedPoints() + (options.deadVersions ?? 0) },
       ...(inventory.has("relativePathExact")
         ? [
             {
@@ -251,6 +263,44 @@ describe("SchemaV20RelativePathExactKeyword", () => {
     expect(store.createPayloadIndex).toHaveBeenCalledTimes(1);
     expect(store.createPayloadIndex).toHaveBeenCalledWith(COLLECTION, "relativePathExact", "keyword");
     expect(result.applied[1]).toBe("relativePathExact:keyword");
+  });
+
+  // Dead pre-backfill versions carry relativePath but never the twin, so
+  // payload_schema counts relativePath far above the twin (live: 75 211 vs
+  // 46 107 with exactly 46 107 live twins). The migration judges the index
+  // against the LIVE presence count, not against relativePath's.
+  it("does not re-create an index that covers every live twin while relativePath.points counts dead versions", async () => {
+    const store = storeHolding([chunk("a1", "src/a.ts"), chunk("b1", "src/b.ts")], { deadVersions: 500 });
+
+    const result = await new SchemaV20RelativePathExactKeyword(COLLECTION, store).apply();
+
+    expect(store.createPayloadIndex).not.toHaveBeenCalled();
+    expect(result.applied[1]).toBe("relativePathExact:keyword");
+  });
+
+  it("judges the index against a live presence count (must_not is_empty), never an absence condition", async () => {
+    const store = storeHolding([chunk("a1", "src/a.ts"), chunk("b1", "src/b.ts")]);
+
+    await new SchemaV20RelativePathExactKeyword(COLLECTION, store).apply();
+
+    const bothPresent = store.countFilters.find(
+      (f) => Array.isArray(f.must_not) && (f.must_not as unknown[]).length === 2 && f.must === undefined,
+    );
+    expect(bothPresent).toEqual({
+      must_not: [{ is_empty: { key: "relativePath" } }, { is_empty: { key: "relativePathExact" } }],
+    });
+  });
+
+  it("counts the points its own backfill wrote as live twins when judging the index", async () => {
+    const store = storeHolding([chunk("a1", "src/a.ts"), chunk("b1", "src/b.ts"), chunk("c1", "src/c.ts")], {
+      indexMissesSegments: "always",
+    });
+
+    const result = await new SchemaV20RelativePathExactKeyword(COLLECTION, store).apply();
+
+    // 3 live twins after the backfill; the index counts floor(3/2) = 1 -> short -> re-created.
+    expect(store.createPayloadIndex).toHaveBeenCalledTimes(1);
+    expect(result.applied[1]).toBe("relativePathExact:keyword (index still incomplete after re-create)");
   });
 
   it("does not re-create a complete index", async () => {
