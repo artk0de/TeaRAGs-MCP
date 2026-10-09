@@ -24,6 +24,8 @@ function recordingIndexStore(seen: Set<IndexKey>): IndexStore {
     batchSetPayload: async () => undefined,
     deletePayloadKeys: async () => undefined,
     listPayloadIndexes: async () => [],
+    // v20's completeness check re-creates the (here absent) twin index; the key was already recorded by ensureIndex.
+    createPayloadIndex: async () => undefined,
     dropPayloadIndex: async () => undefined,
   };
 }

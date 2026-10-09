@@ -90,6 +90,10 @@ export class QdrantManager {
           this.scrollPayloadPages(collection, request.payloadInclude, request.pageSize, request.filter),
         batchSetPayload: async (collection, operations) => this.batchSetPayload(collection, operations, { wait: true }),
       },
+      keywordIndex: {
+        listPayloadIndexes: async (collection) => this.listPayloadIndexes(collection),
+        recreateKeywordIndex: async (collection, field) => this.createPayloadIndex(collection, field, "keyword"),
+      },
     });
     this.points = new QdrantPointStore(this.connection, this.relativePathExact);
     // Bound to THIS method, not to `collections.getCollectionInfo`: the search

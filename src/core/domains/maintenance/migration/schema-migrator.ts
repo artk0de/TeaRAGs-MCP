@@ -88,7 +88,13 @@ export class SchemaMigrator implements MigrationRunner {
             new SchemaV19MemberSymbolIdsText(collection, indexStore),
             new SchemaV20RelativePathExactKeyword(
               collection,
-              indexStore as IndexStore & Required<Pick<IndexStore, "scrollPayloadPages" | "batchSetPayload">>,
+              indexStore as IndexStore &
+                Required<
+                  Pick<
+                    IndexStore,
+                    "scrollPayloadPages" | "batchSetPayload" | "listPayloadIndexes" | "createPayloadIndex"
+                  >
+                >,
             ),
           ]
         : []),

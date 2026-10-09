@@ -151,3 +151,51 @@ export async function backfillRelativePathExact(
   }
   return backfilled;
 }
+
+/** The two index operations the completeness check needs; `QdrantManager` and the migration's `IndexStore` both provide them. */
+export interface RelativePathExactIndexStore {
+  /** Every payload field index with its indexed-point count; a read failure propagates. */
+  listPayloadIndexes: (collection: string) => Promise<{ field: string; points: number }[]>;
+  /** Issue the keyword index creation for `field` even when an index already exists (idempotent on Qdrant), waited. */
+  recreateKeywordIndex: (collection: string, field: string) => Promise<void>;
+}
+
+/**
+ * Whether the keyword index on `relativePathExact` covers every point — the
+ * ONE predicate of that, from a `payload_schema` listing: the index exists and
+ * its `points` is not below `relativePath`'s.
+ *
+ * Why `relativePath`'s count is the reference: both keys are written onto the
+ * same points (the twin is the backfill of the path), so on a healed
+ * collection the two indexes must count the same points; and both counts
+ * include the unvacuumed record versions of each segment, so they stay
+ * comparable where a comparison with the live point count would not.
+ * Measured on a live embedded Qdrant 1.18.2 collection: an index created while
+ * the optimizer was rebuilding segments missed two of four, and
+ * `payload_schema` read `relativePathExact.points` 35 135 against
+ * `relativePath.points` 75 199 — every keyword filter then full-scanned
+ * (~400 ms even for one path).
+ */
+export function isRelativePathExactIndexComplete(indexes: { field: string; points: number }[]): boolean {
+  const twin = indexes.find((index) => index.field === RELATIVE_PATH_EXACT_KEY);
+  if (!twin) return false;
+  const path = indexes.find((index) => index.field === "relativePath");
+  return twin.points >= (path?.points ?? 0);
+}
+
+/**
+ * Make the `relativePathExact` keyword index cover every point; true when it
+ * does. An incomplete or absent index is re-created once (a forced
+ * `PUT /index`, which Qdrant treats as idempotent — measured 0.6 s — and which
+ * indexes every segment, where the first creation raced the optimizer) and
+ * re-read; still incomplete answers false. Store failures propagate: the gate
+ * turns them into a no, the migration into a retry.
+ */
+export async function ensureRelativePathExactIndexComplete(
+  store: RelativePathExactIndexStore,
+  collection: string,
+): Promise<boolean> {
+  if (isRelativePathExactIndexComplete(await store.listPayloadIndexes(collection))) return true;
+  await store.recreateKeywordIndex(collection, RELATIVE_PATH_EXACT_KEY);
+  return isRelativePathExactIndexComplete(await store.listPayloadIndexes(collection));
+}

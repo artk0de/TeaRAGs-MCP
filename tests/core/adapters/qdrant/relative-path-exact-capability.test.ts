@@ -116,19 +116,46 @@ const deadVersionOf = (point: StoredPoint): StoredPoint => ({
 const writtenIds = (store: ReturnType<typeof backfillStoreOver>) =>
   store.batchSetPayload.mock.calls.flatMap((call) => call[1].flatMap((op) => op.points));
 
+/**
+ * The keyword-index side: `payload_schema` point counts per field. Default is a
+ * complete index. `recreateYields` is what the counts read after a re-create
+ * (default: the index becomes complete); `failList` makes the listing throw.
+ */
+function keywordIndexWith(
+  counts: { twin?: number; path?: number } = { twin: 10, path: 10 },
+  options: { recreateYields?: { twin?: number; path?: number }; failList?: boolean } = {},
+) {
+  let current = counts;
+  const listing = () => [
+    ...(current.path === undefined ? [] : [{ field: "relativePath", points: current.path }]),
+    ...(current.twin === undefined ? [] : [{ field: "relativePathExact", points: current.twin }]),
+  ];
+  return {
+    listPayloadIndexes: vi.fn(async (_collection: string) => {
+      if (options.failList) throw new Error("qdrant down");
+      return listing();
+    }),
+    recreateKeywordIndex: vi.fn(async (_collection: string, _field: string) => {
+      current = options.recreateYields ?? { twin: current.path ?? 0, path: current.path };
+    }),
+  };
+}
+
 function capability(
   versions: Record<string, number | undefined>,
   aliases: Record<string, string> = {},
   points: StoredPoint[] = [],
   storeOptions: { failWrites?: boolean; failCounts?: boolean; deadVersions?: StoredPoint[] } = {},
+  keywordIndex: ReturnType<typeof keywordIndexWith> = keywordIndexWith(),
 ) {
   const readSchemaVersion = vi.fn(async (physical: string) => versions[physical]);
   const resolvePhysical = vi.fn(async (name: string) => aliases[name] ?? name);
   const backfillStore = backfillStoreOver(points, storeOptions);
   return {
-    gate: new RelativePathExactCapability({ readSchemaVersion, resolvePhysical, backfillStore }),
+    gate: new RelativePathExactCapability({ readSchemaVersion, resolvePhysical, backfillStore, keywordIndex }),
     readSchemaVersion,
     backfillStore,
+    keywordIndex,
   };
 }
 
@@ -182,6 +209,7 @@ describe("RelativePathExactCapability#isServed", () => {
         throw new Error("qdrant down");
       },
       backfillStore,
+      keywordIndex: keywordIndexWith(),
     });
     const failingAliases = new RelativePathExactCapability({
       resolvePhysical: async () => {
@@ -189,6 +217,7 @@ describe("RelativePathExactCapability#isServed", () => {
       },
       readSchemaVersion: async () => 20,
       backfillStore,
+      keywordIndex: keywordIndexWith(),
     });
     expect(await failingVersion.isServed("c")).toBe(false);
     expect(await failingAliases.isServed("c")).toBe(false);
@@ -335,10 +364,42 @@ describe("QdrantManager#servesRelativePathExact", () => {
       ),
       count: vi.fn(async () => ({ count: 7 })),
       scroll: vi.fn(async () => ({ points: [], next_page_offset: null })),
+      // A complete keyword index: both keys count the same points.
+      getCollection: vi.fn(async () => ({
+        payload_schema: {
+          relativePath: { data_type: "text", points: 7 },
+          relativePathExact: { data_type: "keyword", points: 7 },
+        },
+      })),
+      createPayloadIndex: vi.fn(async () => ({})),
     };
     (manager as unknown as { client: unknown }).client = client;
     return { manager, client };
   }
+
+  it("re-issues the keyword index creation, waited, when payload_schema shows it short", async () => {
+    const { manager, client } = managerOver(20);
+    client.getCollection
+      .mockResolvedValueOnce({
+        payload_schema: {
+          relativePath: { data_type: "text", points: 7 },
+          relativePathExact: { data_type: "keyword", points: 3 },
+        },
+      })
+      .mockResolvedValue({
+        payload_schema: {
+          relativePath: { data_type: "text", points: 7 },
+          relativePathExact: { data_type: "keyword", points: 7 },
+        },
+      });
+
+    expect(await manager.servesRelativePathExact("code_x")).toBe(true);
+    expect(client.createPayloadIndex).toHaveBeenCalledWith("code_x_v3", {
+      field_name: "relativePathExact",
+      field_schema: "keyword",
+      wait: true,
+    });
+  });
 
   it("reads the schema metadata point of the alias's physical collection", async () => {
     const { manager, client } = managerOver(20);
@@ -363,5 +424,61 @@ describe("QdrantManager#servesRelativePathExact", () => {
   it("answers no below v20 and without a metadata point", async () => {
     expect(await managerOver(19).manager.servesRelativePathExact("code_x")).toBe(false);
     expect(await managerOver(undefined).manager.servesRelativePathExact("code_x")).toBe(false);
+  });
+});
+
+describe("RelativePathExactCapability keyword-index completeness", () => {
+  it("serves without re-creating when the index covers every point", async () => {
+    const { gate, keywordIndex } = capability({ c: 20 }, {}, [], {}, keywordIndexWith({ twin: 75_199, path: 75_199 }));
+
+    expect(await gate.isServed("c")).toBe(true);
+    expect(keywordIndex.recreateKeywordIndex).not.toHaveBeenCalled();
+  });
+
+  it("re-creates a keyword index that missed segments once, then serves", async () => {
+    const { gate, keywordIndex } = capability({ c: 20 }, {}, [], {}, keywordIndexWith({ twin: 35_135, path: 75_199 }));
+
+    expect(await gate.isServed("c")).toBe(true);
+    expect(keywordIndex.recreateKeywordIndex).toHaveBeenCalledTimes(1);
+    expect(keywordIndex.recreateKeywordIndex).toHaveBeenCalledWith("c", "relativePathExact");
+  });
+
+  it("re-creates an absent keyword index", async () => {
+    const { gate, keywordIndex } = capability({ c: 20 }, {}, [], {}, keywordIndexWith({ path: 10 }));
+
+    expect(await gate.isServed("c")).toBe(true);
+    expect(keywordIndex.recreateKeywordIndex).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers no, and does not remember it, when the index is still short after the re-create", async () => {
+    const index = keywordIndexWith({ twin: 5, path: 10 }, { recreateYields: { twin: 5, path: 10 } });
+    const { gate } = capability({ c: 20 }, {}, [], {}, index);
+
+    expect(await gate.isServed("c")).toBe(false);
+    expect(await gate.isServed("c")).toBe(false);
+    expect(index.recreateKeywordIndex).toHaveBeenCalledTimes(2);
+  });
+
+  it("answers no when the index listing fails", async () => {
+    const { gate } = capability({ c: 20 }, {}, [], {}, keywordIndexWith({ twin: 10, path: 10 }, { failList: true }));
+
+    expect(await gate.isServed("c")).toBe(false);
+  });
+
+  it("answers no when the re-create fails", async () => {
+    const index = keywordIndexWith({ twin: 1, path: 10 });
+    index.recreateKeywordIndex.mockRejectedValueOnce(new Error("qdrant down"));
+    const { gate } = capability({ c: 20 }, {}, [], {}, index);
+
+    expect(await gate.isServed("c")).toBe(false);
+  });
+
+  it("checks the index once for concurrent callers and not again inside the served TTL", async () => {
+    const { gate, keywordIndex } = capability({ c: 20 }, {}, [], {}, keywordIndexWith({ twin: 1, path: 10 }));
+
+    await Promise.all([gate.isServed("c"), gate.isServed("c")]);
+    await gate.isServed("c");
+
+    expect(keywordIndex.recreateKeywordIndex).toHaveBeenCalledTimes(1);
   });
 });

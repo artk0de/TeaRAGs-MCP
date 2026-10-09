@@ -1,11 +1,15 @@
-import { backfillRelativePathExact } from "../../../../adapters/qdrant/relative-path-exact-backfill.js";
+import {
+  backfillRelativePathExact,
+  ensureRelativePathExactIndexComplete,
+} from "../../../../adapters/qdrant/relative-path-exact-backfill.js";
 import {
   RELATIVE_PATH_EXACT_KEY,
   RELATIVE_PATH_EXACT_SCHEMA_VERSION,
 } from "../../../../contracts/relative-path-exact.js";
 import type { IndexStore, Migration, StepResult } from "../types.js";
 
-type V20Store = IndexStore & Required<Pick<IndexStore, "scrollPayloadPages" | "batchSetPayload">>;
+type V20Store = IndexStore &
+  Required<Pick<IndexStore, "scrollPayloadPages" | "batchSetPayload" | "listPayloadIndexes" | "createPayloadIndex">>;
 
 /**
  * Give every existing point the keyword-indexed twin of `relativePath` (bd
@@ -26,6 +30,12 @@ type V20Store = IndexStore & Required<Pick<IndexStore, "scrollPayloadPages" | "b
  * which the capability gate also runs to heal points a build older than the
  * twin wrote after this migration stamped the collection.
  *
+ * The index is then checked for completeness and re-created once when short
+ * (`ensureRelativePathExactIndexComplete`): an index created while the
+ * optimizer rebuilds segments can miss some of them, and `ensureIndex` skips an
+ * index that merely exists. A still-short index does not fail the migration;
+ * the gate re-checks it before it serves and answers no until it is complete.
+ *
  * Backfill first, index second: the index is built once over the backfilled
  * values rather than updated per write. The order is not load-bearing for
  * correctness — the gate reads the stamp, not the index.
@@ -43,8 +53,18 @@ export class SchemaV20RelativePathExactKeyword implements Migration {
     const backfilled = await backfillRelativePathExact(this.store, this.collection);
 
     await this.store.ensureIndex(this.collection, RELATIVE_PATH_EXACT_KEY, "keyword");
+    const complete = await ensureRelativePathExactIndexComplete(
+      {
+        listPayloadIndexes: async (collection) => this.store.listPayloadIndexes(collection),
+        recreateKeywordIndex: async (collection, field) => this.store.createPayloadIndex(collection, field, "keyword"),
+      },
+      this.collection,
+    );
     return {
-      applied: [`${RELATIVE_PATH_EXACT_KEY} backfilled on ${backfilled} points`, `${RELATIVE_PATH_EXACT_KEY}:keyword`],
+      applied: [
+        `${RELATIVE_PATH_EXACT_KEY} backfilled on ${backfilled} points`,
+        `${RELATIVE_PATH_EXACT_KEY}:keyword${complete ? "" : " (index still incomplete after re-create)"}`,
+      ],
     };
   }
 }

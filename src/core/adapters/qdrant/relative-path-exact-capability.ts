@@ -4,7 +4,7 @@
  * so the point store, the working-tree base-point reader and test-setup
  * hydration cannot disagree about a collection.
  *
- * Yes requires two things:
+ * Yes requires three things:
  *
  * 1. **The collection's schema version is at least
  *    `RELATIVE_PATH_EXACT_SCHEMA_VERSION`.** The schema pipeline stamps a
@@ -24,6 +24,14 @@
  *    navigator), and when it is above zero, the same backfill the v20
  *    migration runs (`backfillRelativePathExact`, the single owner of that
  *    write), bounded by that number. A probe or backfill that fails answers no.
+ *
+ * 3. **The keyword index covers every point.** An index created while the
+ *    optimizer was rebuilding segments can miss some of them, and a filter on
+ *    it then full-scans (measured: index on 2 of 4 segments, ~400 ms for one
+ *    path). `ensureRelativePathExactIndexComplete` compares `payload_schema`
+ *    point counts, re-creates the index once when short, and answers no when
+ *    it is still short (the caller keeps the pairs). It runs after the heal,
+ *    so the twins it indexes are all written.
  *
  * **A yes is remembered per physical collection for `SERVED_TTL_MS` (60 s);
  * a no never is.** The probe is not free: measured on the self-index
@@ -55,6 +63,8 @@ import { RELATIVE_PATH_EXACT_SCHEMA_VERSION } from "../../contracts/relative-pat
 import {
   backfillRelativePathExact,
   countPointsMissingRelativePathExact,
+  ensureRelativePathExactIndexComplete,
+  type RelativePathExactIndexStore,
   type RelativePathExactProbeStore,
 } from "./relative-path-exact-backfill.js";
 
@@ -68,6 +78,8 @@ export interface RelativePathExactCapabilityDeps {
   readSchemaVersion: (physicalCollectionName: string) => Promise<number | undefined>;
   /** Where the probe counts and the heal reads and writes; its writes must be visible to the caller's next filter. */
   backfillStore: RelativePathExactProbeStore;
+  /** Where the keyword index's completeness is read and, when short, re-created. */
+  keywordIndex: RelativePathExactIndexStore;
 }
 
 /** The gate's surface, as its consumers take it. */
@@ -105,6 +117,7 @@ export class RelativePathExactCapability implements RelativePathExactGate {
       if (version === undefined || version < RELATIVE_PATH_EXACT_SCHEMA_VERSION) return false;
       const missing = await countPointsMissingRelativePathExact(this.deps.backfillStore, physical);
       if (missing > 0) await backfillRelativePathExact(this.deps.backfillStore, physical, { missing });
+      if (!(await ensureRelativePathExactIndexComplete(this.deps.keywordIndex, physical))) return false;
       this.servedUntil.set(physical, Date.now() + SERVED_TTL_MS);
       return true;
     } catch {

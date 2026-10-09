@@ -89,6 +89,8 @@ export interface IndexStore {
   deletePayloadKeys?: (collection: string, keys: string[]) => Promise<void>;
   /** Every payload field index on the collection. A read failure propagates — never an empty list. */
   listPayloadIndexes?: (collection: string) => Promise<PayloadFieldIndex[]>;
+  /** Create one payload field index, also when it exists (Qdrant treats the repeat as idempotent). */
+  createPayloadIndex?: (collection: string, field: string, schema: PayloadFieldIndexSchema) => Promise<void>;
   /** Drop one payload field index; the payload values stay. */
   dropPayloadIndex?: (collection: string, field: string) => Promise<void>;
 }

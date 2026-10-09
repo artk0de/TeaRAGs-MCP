@@ -154,12 +154,19 @@
   by healing before it serves: two exact presence counts give the number of
   points missing the twin, and when it is above zero, the v20 migration's own
   backfill (`relative-path-exact-backfill.ts`, the one owner of that count and
-  that write; concurrent callers on one physical collection share one heal). A
-  yes is remembered per physical collection for 60 s, a no never; a failed probe
-  or heal answers no. The TTL's cost and residual window are the
-  `RelativePathExactCapability` docblock. A new membership consumer calls the
-  gate; it never reads the schema version or probes itself. Single-path lookups
-  keep the pair — one pair is already index-served (bd tea-rags-mcp-ejio7).
+  that write; concurrent callers on one physical collection share one heal). The
+  gate also requires the keyword index to cover every point: an index created
+  while the optimizer rebuilds segments can miss some (measured on 1.18.2: 2 of
+  4 segments, so every keyword filter full-scanned, ~400 ms for one path), and
+  `payload_schema` shows it as `relativePathExact.points` below
+  `relativePath.points` (35 135 vs 75 199).
+  `ensureRelativePathExactIndexComplete` re-issues the creation once (the v20
+  migration runs it too) and answers no if still short. A yes is remembered per
+  physical collection for 60 s, a no never; a failed probe or heal answers no.
+  The TTL's cost and residual window are the `RelativePathExactCapability`
+  docblock. A new membership consumer calls the gate; it never reads the schema
+  version or probes itself. Single-path lookups keep the pair — one pair is
+  already index-served (bd tea-rags-mcp-ejio7).
 
 - **ABSENCE conditions over-count right after a `set_payload` sweep (Qdrant
   1.18.2).** `set_payload` is copy-on-write: the older version of each point it

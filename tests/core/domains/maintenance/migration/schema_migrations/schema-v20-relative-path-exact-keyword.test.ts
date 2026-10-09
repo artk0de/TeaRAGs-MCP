@@ -19,8 +19,15 @@ type StoredPoint = { id: string; payload: Record<string, unknown> };
  * sweep, when the missing-twin filter's `is_empty` admits unvacuumed dead
  * versions and the scroll hands back the live point.
  */
-function storeHolding(points: StoredPoint[], options: { failOnWrite?: number; falseCandidates?: string[] } = {}) {
+function storeHolding(
+  points: StoredPoint[],
+  options: { failOnWrite?: number; falseCandidates?: string[]; indexMissesSegments?: "until-recreate" | "always" } = {},
+) {
   const inventory = new Map<string, string>();
+  // `ensureIndex` created the twin index while the optimizer rebuilt segments:
+  // it counts fewer points than `relativePath` until an explicit re-create.
+  let recreated = false;
+  const indexedPoints = () => points.filter((p) => typeof p.payload.relativePath === "string").length;
   let writes = 0;
   const pageRequests: { payloadInclude: string[]; filter?: Record<string, unknown>; pageSize?: number }[] = [];
   const store = {
@@ -31,6 +38,25 @@ function storeHolding(points: StoredPoint[], options: { failOnWrite?: number; fa
       if (inventory.has(field)) return false;
       inventory.set(field, type);
       return true;
+    }),
+    listPayloadIndexes: vi.fn(async () => [
+      { field: "relativePath", dataType: "text", points: indexedPoints() },
+      ...(inventory.has("relativePathExact")
+        ? [
+            {
+              field: "relativePathExact",
+              dataType: "keyword",
+              points:
+                options.indexMissesSegments === "always" || (options.indexMissesSegments && !recreated)
+                  ? Math.floor(indexedPoints() / 2)
+                  : indexedPoints(),
+            },
+          ]
+        : []),
+    ]),
+    createPayloadIndex: vi.fn(async (_c: string, field: string, type: string) => {
+      inventory.set(field, type);
+      recreated = true;
     }),
     storeSchemaVersion: vi.fn().mockResolvedValue(undefined),
     hasPayloadIndex: vi.fn(async (_c: string, field: string) => inventory.has(field)),
@@ -213,5 +239,34 @@ describe("SchemaV20RelativePathExactKeyword", () => {
 
   it("names relativePathExact among the schema-managed index keys, so v16 never drops it", () => {
     expect(SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS).toContain("relativePathExact");
+  });
+
+  it("re-creates the keyword index once when ensureIndex left it short of relativePath's points", async () => {
+    const store = storeHolding([chunk("a1", "src/a.ts"), chunk("b1", "src/b.ts")], {
+      indexMissesSegments: "until-recreate",
+    });
+
+    const result = await new SchemaV20RelativePathExactKeyword(COLLECTION, store).apply();
+
+    expect(store.createPayloadIndex).toHaveBeenCalledTimes(1);
+    expect(store.createPayloadIndex).toHaveBeenCalledWith(COLLECTION, "relativePathExact", "keyword");
+    expect(result.applied[1]).toBe("relativePathExact:keyword");
+  });
+
+  it("does not re-create a complete index", async () => {
+    const store = storeHolding([chunk("a1", "src/a.ts")]);
+
+    await new SchemaV20RelativePathExactKeyword(COLLECTION, store).apply();
+
+    expect(store.createPayloadIndex).not.toHaveBeenCalled();
+  });
+
+  it("reports a still-incomplete index without failing the migration (the gate re-checks before serving)", async () => {
+    const store = storeHolding([chunk("a1", "src/a.ts"), chunk("b1", "src/b.ts")], { indexMissesSegments: "always" });
+
+    const result = await new SchemaV20RelativePathExactKeyword(COLLECTION, store).apply();
+
+    expect(store.createPayloadIndex).toHaveBeenCalledTimes(1);
+    expect(result.applied[1]).toBe("relativePathExact:keyword (index still incomplete after re-create)");
   });
 });
