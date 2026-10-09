@@ -28,12 +28,6 @@
  * `CODEGRAPH_NODE_DRAIN_OVERLAP=0` restores the blocking barrier.
  */
 
-import { once } from "node:events";
-import { createWriteStream, type WriteStream } from "node:fs";
-import { appendFile, mkdir, rm, writeFile } from "node:fs/promises";
-import { dirname as pathDirname } from "node:path";
-
-import { spillLiveMarkerPath } from "../../../../contracts/types/codegraph-spill.js";
 import type {
   CodegraphPass1FileAggregates,
   ExtractionSink,
@@ -45,7 +39,8 @@ import type {
 } from "../../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { FileExtractionAbsorbRole } from "../../../../contracts/types/provider.js";
-import { CodegraphMetricsError, CodegraphSpillIoError } from "../../errors.js";
+import { CodegraphMetricsError } from "../../errors.js";
+import { CodegraphExtractionSpillWriter } from "./extraction-spill-writer.js";
 import { normalizeInheritanceEdges } from "./inheritance-edges.js";
 import type { SymbolNodeFlushQueue } from "./node-flush.js";
 import type { CodegraphRunState } from "./run-state.js";
@@ -187,155 +182,18 @@ export function createCodegraphExtractionSink(
   // `runId` is unique per sink so concurrent ingest passes (rare but possible
   // across collections) get unique files. Spill files left by a CRASHED run are
   // reclaimed by the sweep every pool construction runs; a live one is spared by
-  // the `.live` marker written in `ensureSpillStream` below.
-  const spillPath = deps.spillPathFor(physicalCollectionName, runId);
+  // the `.live` marker `CodegraphExtractionSpillWriter` writes on first append.
+  const spill = new CodegraphExtractionSpillWriter(deps.spillPathFor(physicalCollectionName, runId));
   // Read once per sink — i.e. once per run — so a test can stub it and a run
   // cannot change its mind halfway through `finish`.
   const overlapNodeDrain = process.env.CODEGRAPH_NODE_DRAIN_OVERLAP !== "0";
-  let spillStream: WriteStream | null = null;
-  let spillWriteCount = 0;
   let finished = false;
-
-  const ensureSpillStream = async (): Promise<WriteStream> => {
-    if (spillStream) return spillStream;
-    try {
-      await mkdir(pathDirname(spillPath), { recursive: true });
-      // Claim the spill BEFORE it exists (bd tea-rags-mcp-v6gxr). Every pool
-      // built while this run is in flight — an unpinned fan-out worker's, the
-      // daemon's, a second CLI run's — sweeps this directory on construction,
-      // and the marker's pid is the only thing that tells it apart from the
-      // residue of a crashed run. Written first so the ordering never leaves an
-      // unclaimed spill on disk. `spillLiveMarkerPath` is the pool's, so the
-      // writer and the sweeper cannot disagree about the name.
-      await writeFile(spillLiveMarkerPath(spillPath), `${process.pid}`, "utf8");
-      spillStream = createWriteStream(spillPath, { encoding: "utf8" });
-    } catch (err) {
-      throw new CodegraphSpillIoError(spillPath, "open", err instanceof Error ? err : undefined);
-    }
-    return spillStream;
-  };
-
-  const cleanupSpill = async (): Promise<void> => {
-    // Best-effort: unlink the spill regardless of success/failure so a failed
-    // run does not leak GBs of NDJSON. ENOENT means a prior cleanup already
-    // happened (idempotent), all other errors are swallowed because the pool
-    // init re-purges on next process start anyway. The marker goes with it —
-    // left behind, it would pin a spill that no longer exists to a pid that
-    // outlives it.
-    await rm(spillPath, { force: true }).catch(() => undefined);
-    await rm(spillLiveMarkerPath(spillPath), { force: true }).catch(() => undefined);
-  };
 
   const assertOpen = (method: string): void => {
     if (finished) {
       // Caller bug — write after finish. Surface as a programming error so
       // the test path catches it; a typed error is overkill for an invariant.
       throw new Error(`CodegraphEnrichmentProvider sink: ${method}() called after finish()`);
-    }
-  };
-
-  /** `write`'s persistence half: a walked file's defs land in the in-memory
-   * table, the durable node rows, and the line index. */
-  const persistPass1State = async (extraction: FileExtraction): Promise<void> => {
-    const symbolTable = await deps.resolveSymbolTable(physicalCollectionName);
-    const defs = deps.buildSymbolDefs(extraction);
-    // Persist defs to both the in-memory table (for in-pass resolver lookups)
-    // AND DuckDB (for cold-start hydration of a later partial reindex).
-    // Streaming the symbols rather than batching at finish means the resolver
-    // in pass-2 can resolve calls into files that were walked earlier in
-    // pass-1 even when those rows already landed; the in-memory table is the
-    // source of truth during the run, DuckDB is the durable copy.
-    //
-    // On the cross-pass drain the durable copy was already written by the
-    // eager batched flush, so `skipDurableNodeWrite` suppresses the
-    // (idempotent) per-file re-write here; the in-memory table build stays
-    // unconditional (the resolver needs it in this context).
-    absorbPass1FileState(deps.runState, symbolTable, extraction, defs, "own");
-    if (!skipDurableNodeWrite) {
-      deps.nodeFlush.buffer(
-        extraction.relPath,
-        defs,
-        deps.collectionKey(physicalCollectionName),
-        physicalCollectionName,
-        deps.buildIdentifierRows(extraction),
-        buildTypeDeclarationRows(extraction),
-      );
-    }
-    deps.indexChunkSymbolsByLine(physicalCollectionName, extraction);
-  };
-
-  /** `write`'s spill half: append the raw extraction as one NDJSON line,
-   * honoring the stream's back-pressure before returning. */
-  const appendExtractionToSpill = async (extraction: FileExtraction): Promise<void> => {
-    const stream = await ensureSpillStream();
-    const line = `${JSON.stringify(extraction)}\n`;
-    const ok = stream.write(line);
-    if (!ok) {
-      // Back-pressure — wait for the drain event before the next write
-      // returns. Prevents a fast walker from filling the OS pipe and
-      // ballooning kernel buffers.
-      try {
-        await once(stream, "drain");
-      } catch (err) {
-        throw new CodegraphSpillIoError(spillPath, "write", err instanceof Error ? err : undefined);
-      }
-    }
-    spillWriteCount += 1;
-    deps.runState.stats.extractedFiles += 1;
-  };
-
-  /** `finish` stage: close the writable end of the spill before the reader
-   * opens it. */
-  const closeSpillStream = async (): Promise<void> => {
-    const streamToClose = spillStream;
-    if (streamToClose) {
-      // Close the writable end before the reader opens it. `end` takes a
-      // callback and finishes the file with a final flush.
-      await new Promise<void>((resolve, reject) => {
-        streamToClose.end((err?: Error | null) => {
-          if (err) reject(new CodegraphSpillIoError(spillPath, "write", err));
-          else resolve();
-        });
-      });
-    }
-  };
-
-  /** `finish` stage: the pass-1→pass-2 barrier — freeze the run-global maps
-   * and hydrate the persisted pass-1 slices this run did not walk. */
-  const sealRunState = async (): Promise<void> => {
-    // Pass-1→pass-2 barrier (bd tea-rags-mcp-o17v2 + cai0/2oky5 + DEFECT 2):
-    // pass-1 is complete, so the run-global maps are frozen. Build the
-    // hierarchy view + reverse include-by index ONCE and discover the
-    // self-dispatch templates; pass-2 threads all three into every resolve
-    // `CallContext`. The symbol table is resolved lazily — only the
-    // self-dispatch branch needs it, so a run without candidates pays no
-    // extra pool acquire.
-    //
-    // The persisted pass-1 slices (bd tea-rags-mcp-znxg8) are absorbed
-    // INSIDE `seal`, ahead of all three, because all three are computed from
-    // the maps they feed. This run walked a batch; the registry has to
-    // describe the project, or a concrete `Service.call` whose template file
-    // was not in the batch degrades onto that template.
-    await deps.runState.seal(
-      async () => deps.resolveSymbolTable(physicalCollectionName),
-      async (scope) => deps.loadPersistedPass1Aggregates(scope, physicalCollectionName),
-    );
-  };
-
-  /** `finish` stage: unchanged callers whose cone moved join pass-2 only,
-   * appended to the closed spill. */
-  const appendConeMovedDependents = async (): Promise<void> => {
-    // Unchanged callers whose cone moved (bd tea-rags-mcp-7t2ee), appended to
-    // the closed spill. The barrier already hydrated their pass-1 facts from
-    // their persisted slices, which describe this very content, so they join
-    // pass-2 only — no merge, no node write, no walk ranges.
-    const dependents =
-      spillWriteCount > 0 ? ((await deps.extractHierarchyDependents?.(physicalCollectionName)) ?? []) : [];
-    if (dependents.length > 0) {
-      await appendDependentsToSpill(spillPath, dependents);
-      for (const extraction of dependents) deps.runState.admitReresolvedFile(extraction);
-      spillWriteCount += dependents.length;
-      deps.runState.stats.extractedFiles += dependents.length;
     }
   };
 
@@ -347,8 +205,10 @@ export function createCodegraphExtractionSink(
     },
     write: async (extraction) => {
       assertOpen("write");
-      await persistPass1State(extraction);
-      await appendExtractionToSpill(extraction);
+      await persistOwnedPass1State(deps, physicalCollectionName, skipDurableNodeWrite, extraction);
+      // The spill half: the raw extraction as one NDJSON line.
+      await spill.append(extraction);
+      deps.runState.stats.extractedFiles += 1;
     },
     finish: async (options) => {
       finished = true;
@@ -371,11 +231,11 @@ export function createCodegraphExtractionSink(
         // The kill-switch shape: settle the whole chain here and pass-2 starts
         // against a fully durable `cg_symbols`, exactly as it did before.
         if (!overlapNodeDrain) await deps.nodeFlush.settle();
-        await closeSpillStream();
-        await sealRunState();
-        await appendConeMovedDependents();
-        if (spillWriteCount > 0) {
-          await deps.resolveAndUpsert(spillPath, physicalCollectionName);
+        await spill.close();
+        await sealRunState(deps, physicalCollectionName);
+        await appendConeMovedDependents(deps, physicalCollectionName, spill);
+        if (spill.rowCount > 0) {
+          await deps.resolveAndUpsert(spill.spillPath, physicalCollectionName);
         }
         // The real nodes-before-metrics point. A latched flush error surfaces
         // here instead of before pass-2: the run still aborts on it, one stage
@@ -401,18 +261,89 @@ export function createCodegraphExtractionSink(
         // the root cause and must be the error that surfaces. Mirrors
         // `GraphBuildFinalizer#resolveAndUpsert`'s closing `settleFlush`.
         await deps.nodeFlush.settle().catch(() => undefined);
-        await cleanupSpill();
+        await spill.cleanup();
       }
     },
   };
 }
 
-/** Append re-resolved extractions to a spill whose write stream is already closed. */
-async function appendDependentsToSpill(spillPath: string, extractions: readonly FileExtraction[]): Promise<void> {
-  try {
-    await appendFile(spillPath, extractions.map((extraction) => `${JSON.stringify(extraction)}\n`).join(""), "utf8");
-  } catch (err) {
-    throw new CodegraphSpillIoError(spillPath, "write", err instanceof Error ? err : undefined);
+/** `write`'s persistence half: a walked file's defs land in the in-memory
+ * table, the durable node rows, and the line index. */
+async function persistOwnedPass1State(
+  deps: CodegraphSinkDeps,
+  physicalCollectionName: PhysicalCollectionName | undefined,
+  skipDurableNodeWrite: boolean,
+  extraction: FileExtraction,
+): Promise<void> {
+  const symbolTable = await deps.resolveSymbolTable(physicalCollectionName);
+  const defs = deps.buildSymbolDefs(extraction);
+  // Persist defs to both the in-memory table (for in-pass resolver lookups)
+  // AND DuckDB (for cold-start hydration of a later partial reindex).
+  // Streaming the symbols rather than batching at finish means the resolver
+  // in pass-2 can resolve calls into files that were walked earlier in
+  // pass-1 even when those rows already landed; the in-memory table is the
+  // source of truth during the run, DuckDB is the durable copy.
+  //
+  // On the cross-pass drain the durable copy was already written by the
+  // eager batched flush, so `skipDurableNodeWrite` suppresses the
+  // (idempotent) per-file re-write here; the in-memory table build stays
+  // unconditional (the resolver needs it in this context).
+  absorbPass1FileState(deps.runState, symbolTable, extraction, defs, "own");
+  if (!skipDurableNodeWrite) {
+    deps.nodeFlush.buffer(
+      extraction.relPath,
+      defs,
+      deps.collectionKey(physicalCollectionName),
+      physicalCollectionName,
+      deps.buildIdentifierRows(extraction),
+      buildTypeDeclarationRows(extraction),
+    );
+  }
+  deps.indexChunkSymbolsByLine(physicalCollectionName, extraction);
+}
+
+/** `finish` stage: the pass-1→pass-2 barrier — freeze the run-global maps
+ * and hydrate the persisted pass-1 slices this run did not walk. */
+async function sealRunState(
+  deps: CodegraphSinkDeps,
+  physicalCollectionName: PhysicalCollectionName | undefined,
+): Promise<void> {
+  // Pass-1→pass-2 barrier (bd tea-rags-mcp-o17v2 + cai0/2oky5 + DEFECT 2):
+  // pass-1 is complete, so the run-global maps are frozen. Build the
+  // hierarchy view + reverse include-by index ONCE and discover the
+  // self-dispatch templates; pass-2 threads all three into every resolve
+  // `CallContext`. The symbol table is resolved lazily — only the
+  // self-dispatch branch needs it, so a run without candidates pays no
+  // extra pool acquire.
+  //
+  // The persisted pass-1 slices (bd tea-rags-mcp-znxg8) are absorbed
+  // INSIDE `seal`, ahead of all three, because all three are computed from
+  // the maps they feed. This run walked a batch; the registry has to
+  // describe the project, or a concrete `Service.call` whose template file
+  // was not in the batch degrades onto that template.
+  await deps.runState.seal(
+    async () => deps.resolveSymbolTable(physicalCollectionName),
+    async (scope) => deps.loadPersistedPass1Aggregates(scope, physicalCollectionName),
+  );
+}
+
+/** `finish` stage: unchanged callers whose cone moved join pass-2 only,
+ * appended to the closed spill. */
+async function appendConeMovedDependents(
+  deps: CodegraphSinkDeps,
+  physicalCollectionName: PhysicalCollectionName | undefined,
+  spill: CodegraphExtractionSpillWriter,
+): Promise<void> {
+  // Unchanged callers whose cone moved (bd tea-rags-mcp-7t2ee), appended to
+  // the closed spill. The barrier already hydrated their pass-1 facts from
+  // their persisted slices, which describe this very content, so they join
+  // pass-2 only — no merge, no node write, no walk ranges.
+  const dependents =
+    spill.rowCount > 0 ? ((await deps.extractHierarchyDependents?.(physicalCollectionName)) ?? []) : [];
+  if (dependents.length > 0) {
+    await spill.appendAfterClose(dependents);
+    for (const extraction of dependents) deps.runState.admitReresolvedFile(extraction);
+    deps.runState.stats.extractedFiles += dependents.length;
   }
 }
 
