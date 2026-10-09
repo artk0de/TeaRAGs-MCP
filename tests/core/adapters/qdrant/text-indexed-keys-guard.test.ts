@@ -102,6 +102,8 @@ describe("exact matching on a text-indexed key goes through the helper", () => {
       `{ key: "language", match: { value: "ruby" } }`,
       `{ key: "fileExtension", match: { any: exts } }`,
       `{ is_empty: { key: "relativePath" } }`,
+      // bd tea-rags-mcp-ejio7 — the keyword-indexed twin is MatchAny's home.
+      `{ key: "relativePathExact", match: { any: paths } }`,
     ];
     for (const source of allowed) {
       expect(findDegradedIn(source), source).toEqual([]);

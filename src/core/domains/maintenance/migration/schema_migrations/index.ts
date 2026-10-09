@@ -14,3 +14,4 @@ export { SchemaV16DropUndeclaredPayloadIndexes } from "./schema-v16-drop-undecla
 export { SchemaV17LastCommitTimeIndexes } from "./schema-v17-last-commit-time-indexes.js";
 export { SchemaV18RecentAuthorsIndex } from "./schema-v18-recent-authors-index.js";
 export { SchemaV19MemberSymbolIdsText } from "./schema-v19-member-symbol-ids-text.js";
+export { SchemaV20RelativePathExactKeyword } from "./schema-v20-relative-path-exact-keyword.js";

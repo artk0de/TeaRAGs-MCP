@@ -62,6 +62,23 @@ describe("QdrantManager.scrollPayloadPages", () => {
     expect(mockScroll.mock.calls[2][1].offset).toBe(42);
   });
 
+  // bd tea-rags-mcp-ejio7 — the v20 backfill pages only through points that
+  // still lack the key, so a resumed run never re-reads finished ones.
+  it("forwards a filter when one is given", async () => {
+    mockScroll.mockResolvedValue({ points: [], next_page_offset: null });
+    const filter = { must: [{ is_empty: { key: "relativePathExact" } }] };
+
+    await collect(manager.scrollPayloadPages("coll", ["relativePath"], 500, filter));
+
+    expect(mockScroll).toHaveBeenCalledWith("coll", {
+      limit: 500,
+      offset: undefined,
+      with_payload: { include: ["relativePath"] },
+      with_vector: false,
+      filter,
+    });
+  });
+
   it("honours a caller-chosen page size", async () => {
     mockScroll.mockResolvedValue({ points: [], next_page_offset: null });
 

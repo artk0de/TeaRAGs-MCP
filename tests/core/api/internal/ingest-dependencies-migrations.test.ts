@@ -132,6 +132,10 @@ describe("createIngestDependencies — schema v16 reconciliation", () => {
         .mockResolvedValue(SELF_INDEX_PAYLOAD_SCHEMA.map(([field, dataType, points]) => ({ field, dataType, points }))),
       deletePayloadIndex: vi.fn().mockResolvedValue(undefined),
       ensurePayloadIndex: vi.fn().mockResolvedValue(true),
+      // The v20 relativePathExact backfill pages through points lacking the
+      // twin (bd tea-rags-mcp-ejio7); this fixture holds none.
+      scrollPayloadPages: vi.fn(async function* () {}),
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
     };
   }
 
@@ -157,7 +161,7 @@ describe("createIngestDependencies — schema v16 reconciliation", () => {
       "git.file.isHub",
       "git.file.transitiveImpact",
     ]);
-    expect(summary).toMatchObject({ fromVersion: 15, toVersion: 19 });
+    expect(summary).toMatchObject({ fromVersion: 15, toVersion: 20 });
   });
 
   // bd tea-rags-mcp-9mwny — the same sweep then gives the self-index the
@@ -183,14 +187,19 @@ describe("createIngestDependencies — schema v16 reconciliation", () => {
       "schema-v17-last-commit-time-indexes",
       "schema-v18-recent-authors-index",
       "schema-v19-member-symbol-ids-text",
+      "schema-v20-relative-path-exact-keyword",
     ]);
+    // bd tea-rags-mcp-ejio7 — the v20 backfill reads through the real adapter
+    // with `relativePath` alone, then keyword-indexes the twin.
+    expect(qdrant.scrollPayloadPages).toHaveBeenCalledWith("code_8b243ffe", ["relativePath"], 1000, expect.anything());
+    expect(qdrant.ensurePayloadIndex).toHaveBeenCalledWith("code_8b243ffe", "relativePathExact", "keyword");
     expect(qdrant.ensurePayloadIndex).toHaveBeenCalledWith("code_8b243ffe", "git.file.lastModifiedAt", "integer");
     expect(qdrant.ensurePayloadIndex).toHaveBeenCalledWith("code_8b243ffe", "git.chunk.lastModifiedAt", "integer");
     expect(qdrant.ensurePayloadIndex).toHaveBeenCalledWith("code_8b243ffe", "git.file.recentAuthors", "keyword");
     expect(qdrant.ensurePayloadIndex).toHaveBeenCalledWith("code_8b243ffe", "memberSymbolIds", "text");
   });
 
-  it("stamps new collections at the latest version, which includes v16 through v19", async () => {
+  it("stamps new collections at the latest version, which includes v16 through v20", async () => {
     const qdrant = { ...selfIndexQdrant(), getPoint: vi.fn().mockResolvedValue(null), createPayloadIndex: vi.fn() };
     const deps = createIngestDependencies(
       qdrant as unknown as QdrantManager,
@@ -204,7 +213,7 @@ describe("createIngestDependencies — schema v16 reconciliation", () => {
     await deps.createSchemaManager("code_new").initializeSchema("code_new");
 
     expect(qdrant.addPoints).toHaveBeenCalledWith("code_new", [
-      expect.objectContaining({ payload: expect.objectContaining({ schemaVersion: 19 }) }),
+      expect.objectContaining({ payload: expect.objectContaining({ schemaVersion: 20 }) }),
     ]);
   });
 });

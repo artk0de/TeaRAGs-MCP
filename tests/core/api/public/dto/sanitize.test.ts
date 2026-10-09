@@ -46,4 +46,15 @@ describe("stripInternalFields", () => {
     });
     expect(result.headingPath).toEqual([{ depth: 1, text: "Title" }]);
   });
+
+  // bd tea-rags-mcp-ejio7 — the keyword-indexed twin of `relativePath` exists
+  // for path-membership filters only; a response repeating the path is noise.
+  it("strips relativePathExact and keeps relativePath", () => {
+    const payload = { relativePath: "src/a.ts", relativePathExact: "src/a.ts", content: "code" };
+
+    const result = stripInternalFields(payload);
+
+    expect(result).toEqual({ relativePath: "src/a.ts", content: "code" });
+    expect(payload.relativePathExact).toBe("src/a.ts");
+  });
 });

@@ -148,6 +148,18 @@ describe("SchemaManager", () => {
       expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith("new-collection", "symbolId", "text");
     });
 
+    // bd tea-rags-mcp-ejio7 — path-membership filters match the keyword twin
+    // of `relativePath` with one MatchAny; a fresh collection is stamped at the
+    // latest schema version, so v20 never runs on it and this is its only index.
+    it("should create a keyword index on relativePathExact for new collections", async () => {
+      mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
+
+      await schemaManager.initializeSchema("new-collection");
+
+      expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith("new-collection", "relativePathExact", "keyword");
+      expect(payloadFieldIndexSchema("relativePathExact", "string")).toBe("keyword");
+    });
+
     it("should create payload indexes for nested codegraph filter paths", async () => {
       mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
 

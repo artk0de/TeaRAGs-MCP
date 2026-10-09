@@ -30,14 +30,22 @@
  *   written back after a read added paths; a one-shot process over a warm
  *   store scrolls nothing it already holds. The heavy tier stays in memory.
  *
- * One scroll PER PATH, served by the text index on `relativePath`. A filter
- * naming many paths — `anyOfOnTextIndexed`'s `should`, or a bare `match.any` —
- * makes the planner scan: on the live `code_665c0e4c` (137 paths, 1972 points)
- * one multi-path scroll with payload took 4482 ms, the per-path scrolls 448 ms;
- * on the self-index (159 paths, ids only) 1.5 s against 160 ms.
+ * One scroll PER PATH, served by the text index on `relativePath` — unless the
+ * collection carries the keyword-indexed `relativePathExact` (schema v20+, bd
+ * tea-rags-mcp-ejio7; the gate is `QdrantManager#servesRelativePathExact`),
+ * where one MatchAny scroll per group of paths is index-served. On
+ * `relativePath` a filter naming many paths — `anyOfOnTextIndexed`'s `should`,
+ * or a bare `match.any` — makes the planner scan: on the live `code_665c0e4c`
+ * (137 paths, 1972 points) one multi-path scroll with payload took 4482 ms, the
+ * per-path scrolls 448 ms; on the self-index (159 paths, ids only) 1.5 s
+ * against 160 ms.
  */
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import {
+  relativePathExactFilter,
+  relativePathExactGroups,
+} from "../../../adapters/qdrant/filters/relative-path-exact.js";
 import { exactMatchOnTextIndexed } from "../../../adapters/qdrant/filters/text-indexed-exact.js";
 import type {
   WorkingTreeBasePoint,
@@ -108,7 +116,9 @@ export class WorkingTreeTouchedBasePoints {
   private readonly now: () => number;
 
   constructor(
-    private readonly qdrant: Pick<QdrantManager, "scrollFiltered" | "getCollectionInfo">,
+    /** `servesRelativePathExact` absent → every collection reads per path, as before bd tea-rags-mcp-ejio7. */
+    private readonly qdrant: Pick<QdrantManager, "scrollFiltered" | "getCollectionInfo"> &
+      Partial<Pick<QdrantManager, "servesRelativePathExact">>,
     private readonly deps: WorkingTreeTouchedBasePointsDeps = {},
   ) {
     this.now = deps.now ?? Date.now;
@@ -268,43 +278,87 @@ export class WorkingTreeTouchedBasePoints {
     await light.persisting;
   }
 
-  /** One scroll per path, {@link SCROLL_CONCURRENCY} at a time; each path's own promise. */
+  /**
+   * Each path's own promise of its points, {@link SCROLL_CONCURRENCY} scrolls
+   * at a time: one keyword MatchAny scroll per group of paths on a collection
+   * carrying `relativePathExact` (bd tea-rags-mcp-ejio7), one text+value pair
+   * per path otherwise. A failed scroll rejects every path it named.
+   */
   private scrollEach(
     collectionName: string,
     paths: readonly string[],
     payload: readonly string[],
   ): Map<string, Promise<PathPoints>> {
-    const settles = paths.map(() => {
-      let resolve!: (points: PathPoints) => void;
-      let reject!: (error: unknown) => void;
-      const promise = new Promise<PathPoints>((onResolve, onReject) => {
-        resolve = onResolve;
-        reject = onReject;
-      });
-      return { promise, resolve, reject };
-    });
-    let next = 0;
-    const worker = async (): Promise<void> => {
-      while (next < paths.length) {
-        const index = next++;
-        try {
-          settles[index].resolve(
-            await this.qdrant.scrollFiltered(
-              collectionName,
-              { must: exactMatchOnTextIndexed("relativePath", paths[index]) },
-              MAX_POINTS_PER_PATH,
-              SCROLL_PAGE_SIZE,
-              [...payload],
-            ),
-          );
-        } catch (error) {
-          settles[index].reject(error);
+    const settles = new Map(
+      paths.map((path) => {
+        let resolve!: (points: PathPoints) => void;
+        let reject!: (error: unknown) => void;
+        const promise = new Promise<PathPoints>((onResolve, onReject) => {
+          resolve = onResolve;
+          reject = onReject;
+        });
+        return [path, { promise, resolve, reject }] as const;
+      }),
+    );
+    const include = [...payload];
+    const scrollPerPath = (path: string) => async () =>
+      this.qdrant.scrollFiltered(
+        collectionName,
+        { must: exactMatchOnTextIndexed("relativePath", path) },
+        MAX_POINTS_PER_PATH,
+        SCROLL_PAGE_SIZE,
+        include,
+      );
+    const scrollGroup = (group: string[]) => async () =>
+      this.qdrant.scrollFiltered(
+        collectionName,
+        relativePathExactFilter(group),
+        MAX_POINTS_PER_PATH * group.length,
+        SCROLL_PAGE_SIZE,
+        include,
+      );
+
+    void (async () => {
+      // The gate never throws; the catch keeps a broken double from leaving
+      // every path's promise pending forever.
+      const served = (await this.qdrant.servesRelativePathExact?.(collectionName).catch(() => false)) ?? false;
+      const units = served
+        ? relativePathExactGroups(paths).map((group) => ({ group, scroll: scrollGroup(group) }))
+        : paths.map((path) => ({ group: [path], scroll: scrollPerPath(path) }));
+      let next = 0;
+      const worker = async (): Promise<void> => {
+        while (next < units.length) {
+          const { group, scroll } = units[next++];
+          try {
+            const byPath = groupByPath(await scroll(), group);
+            for (const path of group) settles.get(path)?.resolve(byPath.get(path) ?? []);
+          } catch (error) {
+            for (const path of group) settles.get(path)?.reject(error);
+          }
         }
-      }
-    };
-    for (let i = 0; i < Math.min(SCROLL_CONCURRENCY, paths.length); i++) void worker();
-    return new Map(paths.map((path, i) => [path, settles[i].promise]));
+      };
+      await Promise.all(Array.from({ length: Math.min(SCROLL_CONCURRENCY, units.length) }, worker));
+    })();
+    return new Map(paths.map((path) => [path, (settles.get(path) as { promise: Promise<PathPoints> }).promise]));
   }
+}
+
+/**
+ * A scroll's points by the path they belong to. A one-path scroll needs no
+ * reading — its filter already decided — so only a group is split, by the
+ * point's `relativePath` (the light payload always carries it).
+ */
+function groupByPath(points: readonly WorkingTreeBasePoint[], group: readonly string[]): Map<string, PathPoints> {
+  if (group.length === 1) return new Map([[group[0], points]]);
+  const byPath = new Map<string, WorkingTreeBasePoint[]>();
+  for (const point of points) {
+    const path = point.payload.relativePath;
+    if (typeof path !== "string") continue;
+    const bucket = byPath.get(path);
+    if (bucket) bucket.push(point);
+    else byPath.set(path, [point]);
+  }
+  return byPath;
 }
 
 /** A full point cut to its light payload. */

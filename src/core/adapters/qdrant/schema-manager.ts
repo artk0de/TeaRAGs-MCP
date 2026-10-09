@@ -14,6 +14,7 @@
  * - v8: Added text index on `symbolId` for partial match filtering
  */
 
+import { RELATIVE_PATH_EXACT_KEY } from "../../contracts/relative-path-exact.js";
 import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
 import type { QdrantManager } from "../qdrant/client.js";
 import { TEXT_INDEXED_KEYS } from "./filters/text-indexed-exact.js";
@@ -150,6 +151,18 @@ export const RECENT_AUTHORS_FILTER_INDEXES: readonly { readonly path: string; re
   { path: "git.file.recentAuthors", schema: "keyword" },
 ];
 
+/**
+ * The keyword-indexed twin of the text-indexed `relativePath`, which
+ * path-MEMBERSHIP filters match with one MatchAny (bd tea-rags-mcp-ejio7; the
+ * contract is `contracts/relative-path-exact.ts`, the gate
+ * `./relative-path-exact-capability.ts`).
+ * `schema-v20-relative-path-exact-keyword` backfills the key and creates this
+ * index on collections that already exist.
+ */
+export const RELATIVE_PATH_EXACT_INDEXES: readonly { readonly path: string; readonly schema: IndexSchema }[] = [
+  { path: RELATIVE_PATH_EXACT_KEY, schema: "keyword" },
+];
+
 /** Payload keys filtered by exact value, each carrying a `keyword` index (schema v6). */
 export const KEYWORD_FILTER_INDEX_KEYS = ["language", "fileExtension", "chunkType"] as const;
 
@@ -171,6 +184,7 @@ export const SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS: readonly string[] = [
   ...ENRICHMENT_SCAN_INDEXES.map(({ path }) => path),
   ...LAST_COMMIT_TIME_FILTER_INDEXES.map(({ path }) => path),
   ...RECENT_AUTHORS_FILTER_INDEXES.map(({ path }) => path),
+  ...RELATIVE_PATH_EXACT_INDEXES.map(({ path }) => path),
 ];
 
 /** A Qdrant payload field-index schema this project creates. */
@@ -187,6 +201,7 @@ const SCHEMA_MANAGED_PAYLOAD_INDEX_SCHEMAS: ReadonlyMap<string, PayloadFieldInde
   ...ENRICHMENT_SCAN_INDEXES.map(({ path, schema }): [string, PayloadFieldIndexSchema] => [path, schema]),
   ...LAST_COMMIT_TIME_FILTER_INDEXES.map(({ path, schema }): [string, PayloadFieldIndexSchema] => [path, schema]),
   ...RECENT_AUTHORS_FILTER_INDEXES.map(({ path, schema }): [string, PayloadFieldIndexSchema] => [path, schema]),
+  ...RELATIVE_PATH_EXACT_INDEXES.map(({ path, schema }): [string, PayloadFieldIndexSchema] => [path, schema]),
 ]);
 
 /**
@@ -321,6 +336,15 @@ export class SchemaManager {
     // Create the keyword index the `contributor` typed filter matches on
     // (git.file.recentAuthors — every recent-window committer, dominant or not).
     for (const { path, schema } of RECENT_AUTHORS_FILTER_INDEXES) {
+      await this.qdrant.createPayloadIndex(collectionName, path, schema);
+      indexes.push(path);
+    }
+
+    // Create the keyword index path-membership filters match on
+    // (relativePathExact). Stamping this collection at the latest version is
+    // what lets the membership gate trust every point to carry the key — they
+    // are all written by a builder that sets it.
+    for (const { path, schema } of RELATIVE_PATH_EXACT_INDEXES) {
       await this.qdrant.createPayloadIndex(collectionName, path, schema);
       indexes.push(path);
     }

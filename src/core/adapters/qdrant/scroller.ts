@@ -75,11 +75,17 @@ export class QdrantScroller {
    * The generator is the API, not a convenience: the caller consumes a page,
    * acts on it, and drops it, so peak memory is one page plus whatever the
    * caller chose to keep.
+   *
+   * `filter` narrows the walk to the points it admits — the v20 backfill pages
+   * only through points still lacking `relativePathExact`. The cursor is a
+   * point id, so a write the caller makes to an already-yielded page cannot
+   * move the walk.
    */
   async *scrollPayloadPages(
     collectionName: string,
     payloadInclude: string[],
     batchSize = 1000,
+    filter?: Record<string, unknown>,
   ): AsyncGenerator<{ id: string | number; payload: Record<string, unknown> }[]> {
     let offset: string | number | null = null;
 
@@ -90,6 +96,7 @@ export class QdrantScroller {
           offset: offset ?? undefined,
           with_payload: { include: payloadInclude },
           with_vector: false,
+          ...(filter ? { filter } : {}),
         }),
       );
 

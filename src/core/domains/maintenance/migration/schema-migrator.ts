@@ -15,6 +15,7 @@ import {
   SchemaV17LastCommitTimeIndexes,
   SchemaV18RecentAuthorsIndex,
   SchemaV19MemberSymbolIdsText,
+  SchemaV20RelativePathExactKeyword,
 } from "./schema_migrations/index.js";
 import type { EnrichmentStore, IndexStore, Migration, MigrationRunner, SnapshotStore } from "./types.js";
 
@@ -31,7 +32,9 @@ export interface SchemaMigratorOptions {
    * that has them performs the drop. Every migration ABOVE 16 rides the same
    * gate — applying one stamps the collection past 16, and the drop would never
    * run there. Production always supplies the set, so there the latest schema
-   * version is 18; a construction without it reports 15.
+   * version is 20; a construction without it reports 15. The
+   * `relativePathExact` membership gate keys on 20, so a process without the
+   * set never qualifies a collection it creates (bd tea-rags-mcp-ejio7).
    */
   declaredPayloadKeys?: ReadonlySet<string>;
 }
@@ -83,6 +86,10 @@ export class SchemaMigrator implements MigrationRunner {
             new SchemaV17LastCommitTimeIndexes(collection, indexStore),
             new SchemaV18RecentAuthorsIndex(collection, indexStore),
             new SchemaV19MemberSymbolIdsText(collection, indexStore),
+            new SchemaV20RelativePathExactKeyword(
+              collection,
+              indexStore as IndexStore & Required<Pick<IndexStore, "scrollPayloadPages" | "batchSetPayload">>,
+            ),
           ]
         : []),
     ];

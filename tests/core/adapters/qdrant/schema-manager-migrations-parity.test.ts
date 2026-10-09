@@ -19,6 +19,8 @@ function recordingIndexStore(seen: Set<IndexKey>): IndexStore {
     updateSparseConfig: async () => undefined,
     deletePointsByFilter: async () => undefined,
     scrollAllPayload: async () => [],
+    // A collection with no points: the v20 backfill pages through nothing.
+    async *scrollPayloadPages() {},
     batchSetPayload: async () => undefined,
     deletePayloadKeys: async () => undefined,
     listPayloadIndexes: async () => [],

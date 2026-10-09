@@ -26,6 +26,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CollectionInfo } from "../../../../../src/core/adapters/qdrant/collection-admin.js";
 import { payloadMatchesFilter } from "../../../../../src/core/adapters/qdrant/filters/payload-match.js";
+import { RELATIVE_PATHS_PER_KEYWORD_FILTER } from "../../../../../src/core/adapters/qdrant/filters/relative-path-exact.js";
 import { createWorkingTreeBasePointStore } from "../../../../../src/core/domains/explore/working-tree/base-point-store.js";
 import {
   WORKING_TREE_HEAVY_BASE_POINT_TTL_MS,
@@ -384,5 +385,110 @@ describe("WorkingTreeTouchedBasePoints", () => {
 
       expect(scrolledPaths(qdrant)).toEqual(["src/a.ts"]);
     });
+  });
+});
+
+/**
+ * bd tea-rags-mcp-ejio7 — on a collection carrying the keyword-indexed
+ * `relativePathExact` (schema v20+), one MatchAny names a GROUP of paths: the
+ * per-path scroll existed only because a multi-path filter on the text-indexed
+ * `relativePath` scanned the collection. A collection without it keeps the
+ * per-path pairs above.
+ */
+describe("WorkingTreeTouchedBasePoints on a collection carrying relativePathExact", () => {
+  const servedQdrant = () => {
+    const base = BASE.map((point) => ({
+      ...point,
+      payload: { ...point.payload, relativePathExact: point.payload.relativePath },
+    }));
+    return {
+      getCollectionInfo: vi.fn(async () => collectionInfo(base.length)),
+      servesRelativePathExact: vi.fn(async () => true),
+      scrollFiltered: vi.fn(
+        async (
+          _collection: string,
+          filter: Record<string, unknown>,
+          _limit: number,
+          _page?: number,
+          include?: string[],
+        ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> =>
+          base
+            .filter((point) => payloadMatchesFilter(point.payload, filter))
+            .map((point) => ({
+              id: point.id,
+              payload: Object.fromEntries(
+                Object.entries(point.payload).filter(([key]) => include === undefined || include.includes(key)),
+              ),
+            })),
+      ),
+    };
+  };
+
+  it("reads several paths with one keyword MatchAny scroll and splits the points back by path", async () => {
+    const qdrant = servedQdrant();
+
+    const points = await new WorkingTreeTouchedBasePoints(qdrant).pointsOf(
+      request(["src/b.ts", "src/a.ts", "src/new.ts"]),
+    );
+
+    expect(qdrant.scrollFiltered).toHaveBeenCalledTimes(1);
+    expect(qdrant.scrollFiltered.mock.calls[0][1]).toEqual({
+      must: [{ key: "relativePathExact", match: { any: ["src/a.ts", "src/b.ts", "src/new.ts"] } }],
+    });
+    expect([...points.keys()]).toEqual(["src/a.ts", "src/b.ts"]);
+    expect(points.get("src/a.ts")?.map((p) => p.id)).toEqual(["a1", "a2"]);
+    expect(points.get("src/a.ts")?.[0].payload).toEqual({
+      relativePath: "src/a.ts",
+      symbolId: "A#one",
+      startLine: 1,
+      endLine: 3,
+    });
+  });
+
+  it("keeps a path the index holds nothing of as known, so it is not scrolled again", async () => {
+    const qdrant = servedQdrant();
+    const reader = new WorkingTreeTouchedBasePoints(qdrant);
+
+    await reader.pointsOf(request(["src/a.ts", "src/new.ts"]));
+    await reader.pointsOf(request(["src/a.ts", "src/new.ts", "src/c.ts"]));
+
+    expect(qdrant.scrollFiltered).toHaveBeenCalledTimes(2);
+    expect(qdrant.scrollFiltered.mock.calls[1][1]).toEqual({
+      must: [{ key: "relativePathExact", match: { any: ["src/c.ts"] } }],
+    });
+  });
+
+  it("caps a group at the keyword-filter path budget", async () => {
+    const qdrant = servedQdrant();
+    const many = Array.from({ length: 600 }, (_, i) => `src/gen${String(i).padStart(3, "0")}.ts`);
+
+    await new WorkingTreeTouchedBasePoints(qdrant).pointsOf(request(many));
+
+    const groups = qdrant.scrollFiltered.mock.calls.map(
+      ([, filter]) => (filter as { must: { match: { any: string[] } }[] }).must[0].match.any,
+    );
+    expect(groups.length).toBeGreaterThan(1);
+    for (const group of groups) expect(group.length).toBeLessThanOrEqual(RELATIVE_PATHS_PER_KEYWORD_FILTER);
+    expect(groups.flat().sort()).toEqual([...many].sort());
+  });
+
+  it("falls back to one pair per path when the collection is not served", async () => {
+    const qdrant = { ...servedQdrant(), servesRelativePathExact: vi.fn(async () => false) };
+
+    await new WorkingTreeTouchedBasePoints(qdrant).pointsOf(request(["src/a.ts", "src/b.ts"]));
+
+    expect(qdrant.scrollFiltered).toHaveBeenCalledTimes(2);
+    expect(scrolledPaths(qdrant as unknown as Qdrant)).toEqual(["src/a.ts", "src/b.ts"]);
+  });
+
+  it("rejects every path of a group whose scroll failed, and retries them on the next request", async () => {
+    const qdrant = servedQdrant();
+    qdrant.scrollFiltered.mockRejectedValueOnce(new Error("boom"));
+    const reader = new WorkingTreeTouchedBasePoints(qdrant);
+
+    await expect(reader.pointsOf(request(["src/a.ts", "src/b.ts"]))).rejects.toThrow("boom");
+    const points = await reader.pointsOf(request(["src/a.ts", "src/b.ts"]));
+
+    expect([...points.keys()]).toEqual(["src/a.ts", "src/b.ts"]);
   });
 });

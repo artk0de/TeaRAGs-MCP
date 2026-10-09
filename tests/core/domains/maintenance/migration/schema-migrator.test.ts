@@ -105,7 +105,7 @@ describe("SchemaMigrator", () => {
     expect(migrator.getMigrations().find((m) => m.version === 16)?.name).toBe(
       "schema-v16-drop-undeclared-payload-indexes",
     );
-    expect(migrator.latestVersion).toBe(19);
+    expect(migrator.latestVersion).toBe(20);
   });
 
   it("does not register v16 from an empty declared key set", () => {
@@ -144,6 +144,18 @@ describe("SchemaMigrator", () => {
       declaredPayloadKeys: new Set(["git.chunk.ageDays"]),
     });
     expect(migrator.getMigrations().find((m) => m.version === 19)?.name).toBe("schema-v19-member-symbol-ids-text");
+  });
+
+  // bd tea-rags-mcp-ejio7 — v20 backfills relativePathExact and keyword-indexes
+  // it; path-membership consumers switch to MatchAny only at version >= 20.
+  it("registers v20 after v19 when the declared keys are supplied, and not without them", () => {
+    const migrator = new SchemaMigrator(COLLECTION, createMockIndexStore(), {
+      enableHybrid: false,
+      declaredPayloadKeys: new Set(["git.chunk.ageDays"]),
+    });
+    expect(migrator.getMigrations().find((m) => m.version === 20)?.name).toBe("schema-v20-relative-path-exact-keyword");
+    const ungated = new SchemaMigrator(COLLECTION, createMockIndexStore(), { enableHybrid: false });
+    expect(ungated.getMigrations().find((m) => m.version === 20)).toBeUndefined();
   });
 
   // Any migration above 16 stamps the collection past 16: registering v17

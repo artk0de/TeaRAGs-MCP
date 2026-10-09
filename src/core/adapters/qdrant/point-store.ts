@@ -32,8 +32,10 @@ import {
   QdrantUnavailableError,
   QdrantVectorDimensionMismatchError,
 } from "./errors.js";
+import { relativePathExactFilter, relativePathExactGroups } from "./filters/relative-path-exact.js";
 import { anyOfOnTextIndexed, exactMatchOnTextIndexed } from "./filters/text-indexed-exact.js";
 import { toQdrantPointId } from "./point-id.js";
+import type { RelativePathExactGate } from "./relative-path-exact-capability.js";
 import type { SparseVector } from "./types.js";
 
 /** Named by the no-op barrier update in `awaitQueuedUpdates`; its filter matches no point, so nothing is deleted. */
@@ -43,7 +45,15 @@ export class QdrantPointStore {
   /** Page size for scroll pagination when collecting point IDs by filter. */
   private static readonly SCROLL_PAGE_SIZE = 1000;
 
-  constructor(private readonly connection: QdrantConnection) {}
+  /**
+   * `relativePathExact` is the gate the membership methods consult
+   * (`./relative-path-exact-capability.ts`); without one every collection is
+   * treated as unserved and keeps the exact text+value pairs.
+   */
+  constructor(
+    private readonly connection: QdrantConnection,
+    private readonly relativePathExact: RelativePathExactGate = { isServed: async () => false },
+  ) {}
 
   /** The stored id of `id` — the one mapping every reader shares (`./point-id.ts`). */
   private normalizeId(id: string | number): string | number {
@@ -368,11 +378,15 @@ export class QdrantPointStore {
   }
 
   /**
-   * OPTIMIZED: Batch delete points for many file paths in few requests.
-   * Uses OR (should) filter to match any of the paths in a group.
+   * Delete every point of many file paths in a few waited requests.
    *
-   * Before: N files → N HTTP requests (even with Promise.all)
-   * After: N files → ceil(N / {@link QdrantPointStore.PATHS_PER_FILTER}) requests
+   * On a collection the `relativePathExact` gate serves (bd
+   * tea-rags-mcp-ejio7), each request is one keyword MatchAny over up to
+   * `RELATIVE_PATHS_PER_KEYWORD_FILTER` paths — index-served at any width. The
+   * rest of this docblock is the shape an unserved collection keeps.
+   *
+   * Uses OR (should) filter to match any of the paths in a group:
+   * N files → ceil(N / {@link QdrantPointStore.PATHS_PER_FILTER}) requests.
    *
    * Each branch of the OR is an exact PAIR, not a bare `match.value`: the
    * `relativePath` index is `text`, so a lone value condition is a full
@@ -393,6 +407,15 @@ export class QdrantPointStore {
    * measured, and not safe to measure against a live collection.
    */
   async deletePointsByPaths(collectionName: string, relativePaths: string[]): Promise<void> {
+    if (relativePaths.length === 0) return;
+    if (await this.relativePathExact.isServed(collectionName)) {
+      for (const group of relativePathExactGroups(relativePaths)) {
+        await this.connection.call(async () =>
+          this.connection.client.delete(collectionName, { wait: true, filter: relativePathExactFilter(group) }),
+        );
+      }
+      return;
+    }
     for (const group of QdrantPointStore.groupPaths(relativePaths)) {
       await this.connection.call(async () =>
         this.connection.client.delete(collectionName, {
@@ -406,10 +429,14 @@ export class QdrantPointStore {
   /**
    * PHASE-SEPARATED DELETE: one read pass, parallel writes.
    *
-   * Phase 1 (read-only, concurrency 4): one `scroll` per path, each carrying a
-   * single exact text+value pair, paginated to exhaustion to collect IDs
-   * (bd tea-rags-mcp-b4drg — a wide `should` is ~4x slower). Pure read — never
-   * touches WAL, never competes with upserts, never triggers optimizer repack.
+   * Phase 1 (read-only, concurrency 4): on a collection the
+   * `relativePathExact` gate serves, one `scroll` per group of up to
+   * `RELATIVE_PATHS_PER_KEYWORD_FILTER` paths, a keyword MatchAny (bd
+   * tea-rags-mcp-ejio7); otherwise one `scroll` per path, each carrying a
+   * single exact text+value pair (bd tea-rags-mcp-b4drg — a wide `should` is
+   * ~4x slower). Either way paginated to exhaustion to collect IDs. Pure read —
+   * never touches WAL, never competes with upserts, never triggers optimizer
+   * repack.
    *
    * Phase 2 (parallel writes): collected IDs are split into chunks of
    * `batchSize` and deleted via `client.delete({points})` with up to
@@ -446,7 +473,7 @@ export class QdrantPointStore {
 
     const { batchSize, concurrency, onProgress } = options;
 
-    // Phase 1: collect all IDs, one exact pair per scroll (read-only).
+    // Phase 1: collect all IDs (read-only).
     const ids = await this.collectPointIdsForPaths(collectionName, relativePaths);
 
     if (ids.length === 0) {
@@ -497,10 +524,13 @@ export class QdrantPointStore {
   }
 
   /**
-   * Paths per membership filter in `deletePointsByPaths`, the L1 delete-by-filter
-   * fallback — the only request left that addresses a SET of paths in one
-   * filter. The id-collecting scroll sends one pair per request instead (see
-   * {@link QdrantPointStore.SCROLL_PATH_CONCURRENCY}).
+   * Paths per `should`-of-pairs filter in `deletePointsByPaths` on a collection
+   * the `relativePathExact` gate does NOT serve — there it is the only request
+   * that addresses a SET of paths in one filter, and the id-collecting scroll
+   * sends one pair per request instead (see
+   * {@link QdrantPointStore.SCROLL_PATH_CONCURRENCY}). A served collection
+   * groups by `RELATIVE_PATHS_PER_KEYWORD_FILTER` and none of the costs below
+   * apply to it (bd tea-rags-mcp-ejio7).
    *
    * The shape used to be one MatchAny over the whole set. `relativePath`
    * carries a TEXT index, which serves neither `any` nor `value`, so that
@@ -524,14 +554,16 @@ export class QdrantPointStore {
   private static readonly PATHS_PER_FILTER = 200;
 
   /**
-   * Scroll requests in flight while collecting point ids, one path each.
+   * Scroll requests in flight while collecting point ids — one path each on an
+   * unserved collection, one keyword group each on a served one.
    *
    * Measured on the taxdome collection (153,598 points, TEXT index on
    * `relativePath`, 2716 paths, 13,928 ids): one pair per request at
    * concurrency 4 took 4.3 s (1.57 ms/path) against 22.0-22.6 s for groups of
    * 200; concurrency 8 gained nothing, and groups of 10 at concurrency 4 took
    * 4.7 s (tea-rags-mcp-b4drg). Reads only — phase 1 never competes with
-   * writes.
+   * writes. The keyword-group cost is not measured here; it is the reason
+   * `relativePathExact` exists (bd tea-rags-mcp-ejio7).
    */
   private static readonly SCROLL_PATH_CONCURRENCY = 4;
 
@@ -550,23 +582,30 @@ export class QdrantPointStore {
 
   private async collectPointIdsForPaths(collectionName: string, paths: string[]): Promise<(string | number)[]> {
     // A path listed twice would collect its points twice (the old OR-filter
-    // matched each point once however often a path was repeated).
-    const queue = [...new Set(paths)];
+    // matched each point once however often a path was repeated) — both
+    // shapes below name each distinct path once.
+    const filters = (await this.relativePathExact.isServed(collectionName))
+      ? relativePathExactGroups(paths).map((group) => relativePathExactFilter(group))
+      : [...new Set(paths)].map((path) => ({ must: exactMatchOnTextIndexed("relativePath", path) }));
     const ids: (string | number)[] = [];
     let next = 0;
     const worker = async (): Promise<void> => {
-      while (next < queue.length) {
-        const path = queue[next++];
-        ids.push(...(await this.scrollIdsForPath(collectionName, path)));
+      while (next < filters.length) {
+        const filter = filters[next++];
+        ids.push(...(await this.scrollIdsMatching(collectionName, filter)));
       }
     };
-    await Promise.all(Array.from({ length: Math.min(QdrantPointStore.SCROLL_PATH_CONCURRENCY, queue.length) }, worker));
+    await Promise.all(
+      Array.from({ length: Math.min(QdrantPointStore.SCROLL_PATH_CONCURRENCY, filters.length) }, worker),
+    );
     return ids;
   }
 
-  /** Every point id of one path: a single exact text+value pair, paged to exhaustion. */
-  private async scrollIdsForPath(collectionName: string, path: string): Promise<(string | number)[]> {
-    const filter = { must: exactMatchOnTextIndexed("relativePath", path) };
+  /** Every point id one membership filter admits, paged to exhaustion. */
+  private async scrollIdsMatching(
+    collectionName: string,
+    filter: Record<string, unknown>,
+  ): Promise<(string | number)[]> {
     const ids: (string | number)[] = [];
     let offset: string | number | undefined = undefined;
     do {
