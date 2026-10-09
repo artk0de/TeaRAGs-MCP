@@ -219,11 +219,13 @@ describe("collection completion on every index-run path (bd tea-rags-mcp-l1ot.2)
     ]);
   });
 
-  it("--force-enrichments of the graph provider — sync leg asks, the recompute completes after its finalize", async () => {
+  it("--force-enrichments of the graph provider — the sync leg leaves it to the recompute, which completes after its finalize", async () => {
+    // bd tea-rags-mcp-b4drg: the sync leg no longer asks the selected
+    // provider; the recompute's completion follows in the same operation.
     await indexed();
     expect(
       await completionsOf(async () => ingest.indexCodebase(codebaseDir, { forceEnrichments: ["codegraph"] })),
-    ).toEqual(["completeCollection", "finalize", "completeCollection"]);
+    ).toEqual(["finalize", "completeCollection"]);
   });
 
   it("--force-enrichments of another provider only — the sync leg still asks the graph provider", async () => {

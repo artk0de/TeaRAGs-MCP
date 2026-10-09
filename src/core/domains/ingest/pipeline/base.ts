@@ -267,6 +267,11 @@ export abstract class BaseIndexingPipeline {
      * hashes reach the coordinator through `runRepairPass`.
      */
     contentHashes?: ReadonlyMap<string, string>,
+    /**
+     * The providers this run enriches; omitted means every one. Only a
+     * `--force-enrichments` sync leg narrows it (bd tea-rags-mcp-b4drg).
+     */
+    onlyProviderKeys?: readonly string[],
   ): ProcessingContext {
     const chunkerPool = this.createChunkerPool(chunkSizeOverride, absolutePath);
     const chunkPipeline = this.createChunkPipeline(physicalCollectionName);
@@ -281,6 +286,7 @@ export abstract class BaseIndexingPipeline {
       fileCount,
       ignoreFilter: scanner.getIgnoreFilter(),
       contentHashes,
+      ...(onlyProviderKeys ? { onlyProviderKeys } : {}),
     });
     pipelineLog.addStageTime("codegraph-init", Date.now() - codegraphInitStart);
     chunkPipeline.start();

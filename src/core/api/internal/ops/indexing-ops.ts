@@ -1348,11 +1348,28 @@ export class IndexingOps {
     // It DOES carry the chunking overrides every other sync carries: a file the
     // tree changed is re-chunked here, and chunked at another size its
     // boundaries — and point ids — would disagree with every other file's.
-    const changeStats = await this.reindex.reindexChanges(
-      path,
-      progressCallback,
-      await this.syncChunkingOverrides(aliasCollectionName),
-    );
+    //
+    // And it leaves the SELECTED providers to the recompute (bd
+    // tea-rags-mcp-b4drg). The forced repair above walks every eligible file of
+    // the recompute's languages — chunkless ones included — and its run
+    // finalizes and completes the collection, so the sync leg's own work for
+    // those providers was pure duplication: on taxdome 2026-10-09 their
+    // per-file extraction of 2.9k changed files, fileFinalize 56 s, the
+    // codegraph heal over 16,228 files 17 s, chunkMarkers 26 s and the
+    // co-change rebuild, all redone a minute later. Non-selected providers
+    // (git under `--force-enrichments codegraph`) keep their ordinary
+    // incremental here, since nothing else will touch them; deletions still
+    // reach every provider's hook, and the repair's orphan prune still runs —
+    // the selector-forced repair prunes nothing. `ReindexPipeline` declines
+    // the deferral whenever the recompute does not cover a path the sync leg
+    // must enrich (a changed or drifted file outside `--languages`).
+    // `ReindexPipeline#settleRecomputeDeferral` owns the details, including why
+    // skipping the collection completion here loses nothing if the recompute
+    // throws.
+    const changeStats = await this.reindex.reindexChanges(path, progressCallback, {
+      ...(await this.syncChunkingOverrides(aliasCollectionName)),
+      recomputeDeferral: { selectors, languages: languages ?? [] },
+    });
     // A seed a dead process left pending (bd tea-rags-mcp-k8gac): its stamp is
     // paid now, ahead of the recompute's own — see `payPendingSeedStamp`.
     const pendingSeed = await this.payPendingSeedStamp(aliasCollectionName);
