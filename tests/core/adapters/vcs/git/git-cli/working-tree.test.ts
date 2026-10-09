@@ -14,12 +14,12 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { importGitHistory } from "../../../../__helpers__/git-history-import.js";
+import { readMergeBase } from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 import {
   listChangedFiles,
   readAddedLineRanges,
   readAddedLineRangesOfFiles,
-  readMergeBase,
-} from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+} from "../../../../../../src/core/adapters/vcs/git/git-cli/working-tree.js";
 
 function git(root: string, ...args: string[]): string {
   return execFileSync("git", args, {

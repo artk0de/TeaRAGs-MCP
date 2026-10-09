@@ -11,11 +11,8 @@ import { join, resolve, sep } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { importGitHistory } from "../../../../__helpers__/git-history-import.js";
-import {
-  buildViaCli,
-  createCatFileBatch,
-  readBlobAsString,
-} from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import { createCatFileBatch, readBlobAsString } from "../../../../../../src/core/adapters/vcs/git/git-cli/cat-file.js";
+import { buildViaCli } from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 
 // Temp base captured ONCE at module load (realpath-normalised; macOS /var →
 // /private/var). Every fixture mkdtemp uses this — NOT a fresh tmpdir() call in
