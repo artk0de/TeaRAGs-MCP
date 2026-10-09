@@ -11,9 +11,19 @@ import { ConfigValueInvalidError } from "../../infra/errors.js";
 import { VcsAdapterUnavailableError } from "./errors.js";
 import type { VcsGitAdapter } from "./git/adapter.js";
 import { GitCliAdapter } from "./git/git-cli/adapter.js";
+import { resolveRepoRoot } from "./git/git-cli/client.js";
 import type { GitAdapterKind } from "./types.js";
 
 export class VcsAdapterFactory {
+  /**
+   * Resolve the repository root an adapter must be constructed with, from an
+   * arbitrary path inside it. Falls back to the input path when it is not in a
+   * git repository. Pair with `create`: root first, adapter second.
+   */
+  static resolveRepoRoot(absolutePath: string): string {
+    return resolveRepoRoot(absolutePath);
+  }
+
   static async create(adapter: GitAdapterKind, repoRoot: string): Promise<VcsGitAdapter> {
     switch (adapter) {
       case "git":

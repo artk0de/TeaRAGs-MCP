@@ -256,11 +256,6 @@ function defaultBuilt(
   };
 }
 
-/** Flush microtasks and one macrotask turn, so background work can settle. */
-async function settle(): Promise<void> {
-  for (let i = 0; i < 20; i++) await new Promise((resolve) => setImmediate(resolve));
-}
-
 describe("WorkingTreeGraphCache#graphFor", () => {
   it("builds the tree graph from a base snapshot and publishes it under the tree's key", async () => {
     const { cache, builder, pool } = harness();
@@ -317,8 +312,9 @@ describe("WorkingTreeGraphCache#graphFor", () => {
     const root = treeDir("t1");
 
     expect(await cache.graphFor(request(root), 0)).toMatchObject({ kind: "unavailable" });
-    await settle();
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await vi.waitFor(() => {
+      expect(treeEntries()).toHaveLength(1);
+    });
 
     expectBuilt(await cache.graphFor(request(root), 10_000));
     expect(builder.inputs).toHaveLength(1);
@@ -398,7 +394,9 @@ describe("WorkingTreeGraphCache#graphFor", () => {
     };
 
     const pending = cache.graphFor(request(treeDir("t1")), 10_000);
-    await settle();
+    await vi.waitFor(() => {
+      expect(builder.inputs).toHaveLength(1);
+    });
     builder.gate.open();
     const dbPath = expectBuilt(await pending);
 
@@ -976,8 +974,9 @@ describe("WorkingTreeGraphCache — process exit (D6)", () => {
     builder.gate = gate();
 
     const pending = cache.graphFor(request(treeDir("t1")), 10_000);
-    await settle();
-    expect(exitHooks.active.size).toBe(1);
+    await vi.waitFor(() => {
+      expect(exitHooks.active.size).toBe(1);
+    });
 
     builder.gate.open();
     expectBuilt(await pending);
@@ -993,7 +992,9 @@ describe("WorkingTreeGraphCache — process exit (D6)", () => {
     };
 
     const pending = cache.graphFor(request(treeDir("t1")), 10_000);
-    while (builder.inputs.length === 0) await settle();
+    await vi.waitFor(() => {
+      expect(builder.inputs).toHaveLength(1);
+    });
     expect(existsSync(staging)).toBe(true);
 
     exitHooks.fire();
