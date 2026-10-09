@@ -97,6 +97,14 @@ export type DaemonOpCommand =
  */
 export type DaemonOpCommandTable = Readonly<Partial<Record<DaemonOp, DaemonOpCommand>>>;
 
+/**
+ * The production dispatch table's type: one command for EVERY `DaemonOp`, no
+ * `Partial` — an op without a command is a compile error (bd
+ * tea-rags-mcp-89k7k.35.6). `DaemonOp` itself is held to `GraphDbClient` by
+ * `DaemonOpSurfaceCoversGraphDbClient` (protocol.ts).
+ */
+export type DaemonOpCommandsByOp = Readonly<Record<DaemonOp, DaemonOpCommand>>;
+
 /** A write op: governed handle, and the wire result is always a `null` ack. */
 function write(
   run: (graphDb: GraphDbClient, p: DaemonOpParams, signal?: AbortSignal) => Promise<void>,
@@ -121,7 +129,7 @@ function read(run: (graphDb: GraphDbClient, p: DaemonOpParams) => Promise<unknow
  * a command here is a compile error, and the table is greppable/enumerable in
  * a way the 200-line switch it replaced was not.
  */
-export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
+export const DAEMON_OP_COMMANDS: DaemonOpCommandsByOp = {
   handshake: {
     access: "daemon",
     // Opens + migrates only for a client of THIS daemon's build — the daemon's

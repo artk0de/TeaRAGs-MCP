@@ -1,4 +1,14 @@
 import type {
+  GraphDbClient,
+  IdentifierCalleeScopeQuery,
+  IdentifierLanguageCountQuery,
+  IdentifierNameScopeQuery,
+  IdentifierShapeSampleQuery,
+  IdentifierTypeAggregateQuery,
+  IdentifierTypeScopeQuery,
+  Pass1AggregateReadScope,
+} from "../../../contracts/types/codegraph-storage.js";
+import type {
   BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CycleScope,
@@ -6,7 +16,6 @@ import type {
   FileScopedSymbolRef,
   GraphEdges,
   GraphFileNode,
-  IdentifierBoundCallee,
   IdentifierReplaceEntry,
   MethodHeadWordQuery,
   MethodNamePatternQuery,
@@ -220,96 +229,175 @@ export const DAEMON_OPS = [
 
 export type DaemonOp = (typeof DAEMON_OPS)[number];
 
+/**
+ * Ops that act on the daemon or a collection's files, not on the graph store:
+ * the only ops that are NOT a `GraphDbClient` member (bd
+ * tea-rags-mcp-89k7k.35.6).
+ */
+export const DAEMON_LIFECYCLE_OPS = [
+  "handshake",
+  "shutdown",
+  "ping",
+  "finalizeReindex",
+  "removeCollectionDatabase",
+  "cloneCollectionDatabase",
+] as const satisfies readonly DaemonOp[];
+
+export type DaemonLifecycleOp = (typeof DAEMON_LIFECYCLE_OPS)[number];
+
+/**
+ * `GraphDbClient` members that deliberately have no daemon op, each with the
+ * reason. Every other member must be a `DaemonOp` of the same name — see
+ * {@link DaemonOpSurfaceCoversGraphDbClient}.
+ */
+export const DAEMON_UNPROXIED_GRAPH_DB_CLIENT_MEMBERS = {
+  init: "connection lifecycle: the daemon client opens its own socket (DaemonConnectionLifecycle#init)",
+  close: "connection lifecycle: the daemon client closes its own socket; the daemon owns the store's lifetime",
+  streamAdjacency:
+    "daemon-internal: graph analysis runs daemon-side (computeAndPersistCyclesAndSignals), so the stream never crosses IPC",
+} as const satisfies Partial<Record<keyof GraphDbClient, string>>;
+
+export type DaemonUnproxiedGraphDbClientMember = keyof typeof DAEMON_UNPROXIED_GRAPH_DB_CLIENT_MEMBERS;
+
+/** Members of `Client` that neither ride a daemon op nor are a named exclusion; `never` = covered. */
+export type GraphDbClientMembersWithoutDaemonOp<Client> = Exclude<
+  keyof Client,
+  DaemonOp | DaemonUnproxiedGraphDbClientMember
+>;
+
+/** Graph ops with no `Client` member of the same name; `never` = every graph op proxies a member. */
+export type DaemonOpsWithoutGraphDbClientMember<Client> = Exclude<DaemonOp, keyof Client | DaemonLifecycleOp>;
+
+/** Instantiating it with any element but `never` is a compile error naming the offending keys. */
+type AssertNoDaemonOpSurfaceGaps<Gaps extends readonly never[]> = Gaps;
+
+/**
+ * Compile-time guard: adding a `GraphDbClient` member without its `DAEMON_OPS`
+ * entry (or an exclusion above), or an op without a member, fails `tsc` here.
+ */
+export type DaemonOpSurfaceCoversGraphDbClient = AssertNoDaemonOpSurfaceGaps<
+  [GraphDbClientMembersWithoutDaemonOp<GraphDbClient>, DaemonOpsWithoutGraphDbClientMember<GraphDbClient>]
+>;
+
+/** An op that sends nothing but the collection. */
+type NoDaemonOpParams = Record<never, never>;
+
+/**
+ * The wire params of every op, minus the `collection` every request carries
+ * (the client adds it). The client's `call` and the request type read it, so
+ * the op→params mapping is a type, not a comment.
+ */
+export interface DaemonOpParamsMap {
+  // ── daemon lifecycle ──
+  handshake: { buildFingerprint?: string }; // absent on legacy peers
+  shutdown: NoDaemonOpParams;
+  ping: NoDaemonOpParams;
+  finalizeReindex: { oldVersion: string; newVersion: string };
+  removeCollectionDatabase: { target: string };
+  cloneCollectionDatabase: { source: string; target: string };
+  // ── writes ──
+  upsertFile: { node: GraphFileNode; edges: GraphEdges };
+  removeFile: { relPath: RelPath };
+  removeFiles: { relPaths: RelPath[] };
+  removeSymbolsForFile: { relPath: RelPath };
+  pruneDerivedForDeletedFiles: { relPaths: RelPath[] };
+  invalidateHierarchyDependentsOfDeletedFiles: { relPaths: RelPath[] };
+  upsertSymbols: { relPath: RelPath; definitions: SymbolDefinition[] };
+  upsertSymbolsBulk: { entries: BulkSymbolUpsertEntry[] };
+  upsertFilesBulk: { entries: readonly BulkFileUpsertEntry[] };
+  updateSymbolChunkIds: { relPath: RelPath; chunkIds: [string, string][] };
+  updateSymbolChunkIdsBulk: { entries: { relPath: RelPath; chunkIds: [string, string][] }[] };
+  replaceCycles: { scope: CycleScope; sccs: readonly (readonly string[])[] };
+  replacePageRanks: { ranks: [string, number][] };
+  replaceTemporalCochange: { snapshot: TemporalCochangeSnapshot };
+  replaceTemporalSymbolCommits: { files: TemporalSymbolCommitFileSnapshot[] };
+  deleteTemporalSymbolCommitFiles: { relPaths: RelPath[] };
+  putReviewFileEdges: { reviewId: string; edges: ReviewFileEdge[] };
+  dropReviewFileEdges: { reviewId: string };
+  sweepExpiredReviewFileEdges: { nowEpochSeconds: number; maxAgeSeconds: number };
+  checkpoint: NoDaemonOpParams;
+  rebuildEdgeFileTargetIndex: NoDaemonOpParams;
+  recordRunStats: { rows: ResolveRunStatsRow[] };
+  recordFileResolveStats: { write: FileResolveStatsWrite };
+  computeAndPersistCyclesAndSignals: NoDaemonOpParams;
+  refreshSymbolSignalsPrev: NoDaemonOpParams;
+  compactStorage: NoDaemonOpParams;
+  replaceIdentifiersBulk: { entries: IdentifierReplaceEntry[] };
+  replaceTypeDeclarationsBulk: { entries: TypeDeclarationReplaceEntry[] };
+  // ── reads ──
+  exportSnapshot: { targetPath: string };
+  getFanIn: { relPath: RelPath };
+  getFanInP95: NoDaemonOpParams;
+  getFanOut: { relPath: RelPath };
+  getCallers: { symbolId: SymbolId };
+  getCallees: { symbolId: SymbolId };
+  getAmbiguousCallersByMember: { member: string; limit?: number };
+  getCalleeEdges: { symbolIds: SymbolId[] };
+  getCalleeEdgesScoped: { refs: FileScopedSymbolRef[] };
+  getSymbolRelPaths: { symbolIds: SymbolId[] };
+  getCalledByCount: { symbolId: SymbolId };
+  getCallSiteCount: { symbolId: SymbolId };
+  getChunkSignalsBulk: NoDaemonOpParams;
+  hasData: NoDaemonOpParams;
+  getRunStats: NoDaemonOpParams;
+  getEdgeKindDistribution: NoDaemonOpParams;
+  listAllSymbols: NoDaemonOpParams;
+  listPass1Aggregates: { scope: Pass1AggregateReadScope };
+  listHierarchyDependencies: { scope: Pass1AggregateReadScope };
+  listFileContentHashes: NoDaemonOpParams;
+  getTransitiveImpact: { relPath: RelPath; maxDepth?: number };
+  getFileMetricsBulk: { relPaths: readonly RelPath[]; maxDepth?: number };
+  findCycles: { scope: CycleScope; pathPattern?: string };
+  listAdjacency: { scope: CycleScope };
+  readFileDependencyGraph: NoDaemonOpParams;
+  readNonPublicMemberEdges: { languages: string[] };
+  readTemporalCochangeMeta: NoDaemonOpParams;
+  readTemporalCochangeGraph: NoDaemonOpParams;
+  readTemporalBundleFiles: NoDaemonOpParams;
+  storedTemporalSymbolCommitFilePaths: NoDaemonOpParams;
+  readTemporalSymbolCommits: { relPath: string };
+  readReviewFileEdges: { reviewId: string };
+  getFileImporters: { relPath: RelPath };
+  getFileImports: { relPath: RelPath };
+  hasStaleDerivedTables: NoDaemonOpParams;
+  getPageRank: { symbolId: SymbolId; relPath?: RelPath };
+  findSymbolChunk: { symbolId: SymbolId };
+  getSymbolVisibilities: { symbolIds: SymbolId[] };
+  getSymbolLineRangesBulk: { relPaths: readonly RelPath[] };
+  diffSymbolSignals: NoDaemonOpParams;
+  aggregateIdentifiersByType: IdentifierTypeAggregateQuery;
+  aggregateIdentifiersByCallee: IdentifierCalleeScopeQuery;
+  anchorIdentifierTypes: { symbolIds: SymbolId[] };
+  identifierNameTypes: { names: string[]; excludePaths?: string[]; languages?: string[] };
+  existingSymbolShortNames: { names: string[]; excludePaths?: string[]; languages?: string[] };
+  readMethodHeadWords: { query: MethodHeadWordQuery };
+  readMethodTailVerbs: { query: MethodTailVerbQuery };
+  readMethodNamesMatching: { query: MethodNamePatternQuery };
+  countIdentifiers: IdentifierTypeScopeQuery;
+  aggregateIdentifiersByName: IdentifierNameScopeQuery;
+  identifierLanguageCounts: IdentifierLanguageCountQuery;
+  sampleIdentifierShapes: IdentifierShapeSampleQuery;
+  readOntologyReportSummary: { query: OntologyReportQuery };
+  readOntologyReportSections: { query: OntologyReportQuery; excludedGenericNames: string[] };
+  readTypeNameRows: { query: TypeNameQuery };
+  getSupertypes: { fqName: string };
+  getSubtypes: { fqName: string };
+  getTransitiveSubtypes: { fqName: string };
+  loadHierarchySnapshot: NoDaemonOpParams;
+}
+
+/** Compile-time guard: `DaemonOpParamsMap` has exactly the `DaemonOp` keys. */
+export type DaemonOpParamsMapCoversDaemonOps = AssertNoDaemonOpSurfaceGaps<
+  [Exclude<DaemonOp, keyof DaemonOpParamsMap>, Exclude<keyof DaemonOpParamsMap, DaemonOp>]
+>;
+
+/** One op's full request params: its wire shape plus the collection. */
+export type DaemonRequestParams<Op extends DaemonOp> = { collection: string } & DaemonOpParamsMap[Op];
+
 export interface DaemonRequest {
   id: number;
   op: DaemonOp;
-  params:
-    | { collection: string } // checkpoint | compactStorage | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | readFileDependencyGraph | readTemporalCochangeMeta | readTemporalCochangeGraph | readTemporalBundleFiles | storedTemporalSymbolCommitFilePaths | refreshSymbolSignalsPrev | hasStaleDerivedTables | shutdown | ping
-    | { collection: string; relPaths: RelPath[] } // removeFiles | pruneDerivedForDeletedFiles | invalidateHierarchyDependentsOfDeletedFiles | deleteTemporalSymbolCommitFiles
-    | { collection: string; languages: string[] } // readNonPublicMemberEdges
-    | { collection: string; buildFingerprint?: string } // handshake (fingerprint absent on legacy peers)
-    | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile
-    | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut | getFileImporters | getFileImports | readTemporalSymbolCommits
-    | { collection: string; reviewId: string } // dropReviewFileEdges | readReviewFileEdges
-    | { collection: string; reviewId: string; edges: ReviewFileEdge[] } // putReviewFileEdges
-    | { collection: string; nowEpochSeconds: number; maxAgeSeconds: number } // sweepExpiredReviewFileEdges
-    | { collection: string; relPath: RelPath; definitions: SymbolDefinition[] } // upsertSymbols
-    | { collection: string; entries: BulkSymbolUpsertEntry[] } // upsertSymbolsBulk
-    | { collection: string; entries: BulkFileUpsertEntry[] } // upsertFilesBulk
-    | { collection: string; relPath: RelPath; chunkIds: [string, string][] } // updateSymbolChunkIds
-    | { collection: string; entries: { relPath: RelPath; chunkIds: [string, string][] }[] } // updateSymbolChunkIdsBulk
-    | { collection: string; relPath: RelPath; maxDepth?: number } // getTransitiveImpact
-    | { collection: string; relPaths: RelPath[]; maxDepth?: number } // getFileMetricsBulk | getSymbolLineRangesBulk (no maxDepth)
-    | { collection: string; oldVersion: string; newVersion: string } // finalizeReindex
-    | { collection: string; target: string } // removeCollectionDatabase
-    | { collection: string; targetPath: string } // exportSnapshot
-    | { collection: string; source: string; target: string } // cloneCollectionDatabase
-    | { collection: string; symbolId: SymbolId } // getCallers | getCallees | getCalledByCount | getCallSiteCount
-    | { collection: string; symbolId: SymbolId; relPath?: RelPath } // getPageRank
-    | { collection: string; member: string; limit?: number } // getAmbiguousCallersByMember
-    | { collection: string; symbolIds: SymbolId[] } // getCalleeEdges | getSymbolRelPaths | getSymbolVisibilities | anchorIdentifierTypes
-    | { collection: string; refs: FileScopedSymbolRef[] } // getCalleeEdgesScoped
-    | { collection: string; scope: CycleScope; pathPattern?: string } // findCycles (pathPattern) | listAdjacency
-    | { collection: string; scope: CycleScope; sccs: readonly (readonly string[])[] } // replaceCycles
-    | { collection: string; ranks: [string, number][] } // replacePageRanks
-    | { collection: string; snapshot: TemporalCochangeSnapshot } // replaceTemporalCochange
-    | { collection: string; files: TemporalSymbolCommitFileSnapshot[] } // replaceTemporalSymbolCommits
-    | { collection: string; rows: ResolveRunStatsRow[] } // recordRunStats
-    | { collection: string; write: FileResolveStatsWrite } // recordFileResolveStats
-    | { collection: string; fqName: string } // getSupertypes | getSubtypes | getTransitiveSubtypes
-    | { collection: string; entries: IdentifierReplaceEntry[] } // replaceIdentifiersBulk
-    | { collection: string; entries: TypeDeclarationReplaceEntry[] } // replaceTypeDeclarationsBulk
-    | {
-        collection: string;
-        types: string[];
-        pathPrefixes?: string[];
-        excludePaths?: string[];
-        languages?: string[];
-        groupByLanguage?: boolean;
-        groupByMultiplicity?: boolean;
-        countSameTypeSiblings?: boolean;
-        countHolders?: boolean;
-      } // aggregateIdentifiersByType | countIdentifiers
-    | {
-        collection: string;
-        callees: IdentifierBoundCallee[];
-        pathPrefixes?: string[];
-        excludePaths?: string[];
-        languages?: string[];
-        groupByLanguage?: boolean;
-        countHolders?: boolean;
-      } // aggregateIdentifiersByCallee
-    | { collection: string; names: string[]; excludePaths?: string[]; languages?: string[] } // identifierNameTypes | existingSymbolShortNames
-    | {
-        collection: string;
-        names: string[];
-        pathPrefixes?: string[];
-        excludePaths?: string[];
-        languages?: string[];
-        groupByLanguage?: boolean;
-        countHolders?: boolean;
-      } // aggregateIdentifiersByName
-    | {
-        collection: string;
-        pathPrefixes?: string[];
-        pathSuffixes?: string[];
-        excludePaths?: string[];
-        languages?: string[];
-      } // identifierLanguageCounts
-    | {
-        collection: string;
-        limit: number;
-        pathPrefixes?: string[];
-        excludePaths?: string[];
-        languages?: string[];
-        groupByLanguage?: boolean;
-      } // sampleIdentifierShapes
-    | { collection: string; query: OntologyReportQuery } // readOntologyReportSummary
-    | { collection: string; query: OntologyReportQuery; excludedGenericNames: string[] } // readOntologyReportSections
-    | { collection: string; query: TypeNameQuery } // readTypeNameRows
-    | { collection: string; query: MethodHeadWordQuery } // readMethodHeadWords
-    | { collection: string; query: MethodTailVerbQuery } // readMethodTailVerbs
-    | { collection: string; query: MethodNamePatternQuery }; // readMethodNamesMatching
+  params: DaemonRequestParams<DaemonOp>;
 }
 
 /**
