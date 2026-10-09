@@ -19,6 +19,7 @@ import {
   detectLayeringViolations,
   lookupLayeringKnot,
   measureLayeringFoundationComponents,
+  type FacadeModuleAssessment,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
 
 /**
@@ -828,5 +829,72 @@ describe("lookupLayeringKnot (bd tea-rags-mcp-r8hme.38)", () => {
     const found = lookup(knot(), "clock");
 
     expect(found.kind === "inKnot" ? found.knot : {}).not.toHaveProperty("outOfScopeMemberCount");
+  });
+});
+
+function facadeModule(moduleDir: string, externalImporterCount: number): FacadeModuleAssessment {
+  return {
+    moduleDir,
+    facadeRelPath: `${moduleDir}/index.ts`,
+    externalImporterCount,
+    facadeImporterCount: externalImporterCount,
+    deepImporterCount: 0,
+    adoption: externalImporterCount === 0 ? 0 : 1,
+    status: "active",
+  };
+}
+
+/**
+ * `core` ← `lib` ← `svc` ← `app`. `lib/index.ts` re-exports the nested
+ * `lib/inner` facade — the only edge into `lib/inner`, which uses `core`.
+ * `proto` depends on core with nothing depending on it and no facade — a
+ * detached island. `tool/index.ts` is a facade no file imports, over code
+ * using core: an entry, a composition root.
+ */
+function aggregated(): FileDependencyGraph {
+  const files = [
+    file("core/a.ts"),
+    file("lib/index.ts"),
+    file("lib/x.ts"),
+    file("lib/inner/index.ts"),
+    file("lib/inner/k.ts"),
+    file("svc/s.ts"),
+    file("app/m.ts"),
+    file("proto/p.ts"),
+    file("tool/index.ts"),
+    file("tool/run.ts"),
+  ];
+  const edges = [
+    edge("lib/x.ts", "core/a.ts"),
+    edge("lib/inner/k.ts", "core/a.ts"),
+    { ...edge("lib/index.ts", "lib/inner/index.ts"), reexportedExportNames: ["K"] },
+    edge("lib/inner/index.ts", "lib/inner/k.ts"),
+    edge("lib/index.ts", "lib/x.ts"),
+    edge("svc/s.ts", "lib/index.ts"),
+    edge("app/m.ts", "svc/s.ts"),
+    edge("proto/p.ts", "core/a.ts"),
+    edge("tool/index.ts", "tool/run.ts"),
+    edge("tool/run.ts", "core/a.ts"),
+  ];
+  return { files, edges };
+}
+
+describe("detectLayeringViolations — islands reached through a facade (bd tea-rags-mcp-r8hme.52.2)", () => {
+  const modules = [facadeModule("lib", 1), facadeModule("lib/inner", 0), facadeModule("tool", 0)];
+  const islandsOf = (g: FileDependencyGraph) =>
+    detectLayeringViolations(buildComponentGraph(g, modules), g.files)
+      .violations.filter((v) => v.kind === "island")
+      .map((v) => (v.kind === "island" ? v.component : ""));
+
+  it("does not report a child reached only by its parent facade's re-export as an island", () => {
+    expect(islandsOf(aggregated())).not.toContain("lib/inner");
+  });
+
+  it("does not report an entry-facade component as an island", () => {
+    expect(islandsOf(aggregated())).not.toContain("tool");
+  });
+
+  it("still reports a Ca 0 component with no aggregation and no entry facade", () => {
+    expect(islandsOf(aggregated())).toEqual(["proto"]);
   });
 });

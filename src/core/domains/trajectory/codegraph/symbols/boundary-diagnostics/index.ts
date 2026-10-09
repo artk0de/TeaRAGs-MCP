@@ -78,6 +78,7 @@ export type {
   ArchitectureComponentKind,
   ComponentDependency,
   ComponentDependencyFileEdge,
+  ComponentFacadeAggregation,
   ComponentGraph,
   ComponentGraphExclusionCounts,
   ComponentStableDependenciesExclusionCounts,

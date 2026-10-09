@@ -390,6 +390,24 @@ export interface ArchitectureComponent {
   connectionCount: number;
   /** Ce / (Ca + Ce); 0 with no edge. */
   instability: number;
+  /**
+   * The component holds a module facade nothing in the project imports: no
+   * file edge reaches the facade file (facade aggregation included) and no
+   * external file reaches the module. A process or package entry — a root by
+   * measurement, never by name (bd tea-rags-mcp-r8hme.52.2). Absent otherwise.
+   */
+  entryFacade?: true;
+}
+
+/**
+ * A parent component's facade re-exporting the facade of a component nested
+ * inside it (`isFacadeAggregationEdge`, bd tea-rags-mcp-r8hme.52.2). Kept out
+ * of the dependencies and the coupling counts; recorded so a detector can see
+ * that the nested component is reached through the parent's surface.
+ */
+export interface ComponentFacadeAggregation {
+  parentComponent: string;
+  nestedComponent: string;
 }
 
 /** File edges from one component into another, as one dependency. */
@@ -423,6 +441,11 @@ export interface ComponentGraph {
   /** By source component, then target component. */
   dependencies: ComponentDependency[];
   excluded: ComponentGraphExclusionCounts;
+  /**
+   * Distinct parent → nested pairs the excluded facade-aggregation edges
+   * carry, by parent then nested component.
+   */
+  facadeAggregations: ComponentFacadeAggregation[];
   /** Every file edge read. */
   fileEdgeCount: number;
 }

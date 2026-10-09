@@ -290,3 +290,53 @@ describe("buildComponentGraph — constant-namespace partition", () => {
     expect(buildComponentGraph(g, [module("lib", "active")]).componentOf.get("lib/billing/invoice.rb")).toBe("lib");
   });
 });
+
+/**
+ * Facade aggregation stays out of the dependencies, but the graph remembers it
+ * (bd tea-rags-mcp-r8hme.52.2): a nested component whose only in-edge is its
+ * parent facade's re-export is reached through the parent's surface.
+ */
+describe("buildComponentGraph — facade aggregation record (bd tea-rags-mcp-r8hme.52.2)", () => {
+  const modules = [
+    module("lib", "active"),
+    module("lib/inner", "facade-not-adopted"),
+    module("small", "too-few-importers"),
+  ];
+
+  it("records each aggregation as a parent → nested component pair while excluded keeps its count", () => {
+    const components = buildComponentGraph(graph(), modules);
+
+    expect(components.facadeAggregations).toEqual([{ parentComponent: "lib", nestedComponent: "lib/inner" }]);
+    expect(components.excluded.facadeAggregations).toBe(1);
+  });
+
+  it("names one pair once however many aggregation edges carry it", () => {
+    const g = graph();
+    g.edges.push(edge("lib/index.ts", "lib/inner/index.ts", { reexportedExportNames: ["Y"] }));
+
+    expect(buildComponentGraph(g, modules).facadeAggregations).toEqual([
+      { parentComponent: "lib", nestedComponent: "lib/inner" },
+    ]);
+  });
+
+  it("marks an entry facade: a module facade no file imports and no external file reaches", () => {
+    const g: FileDependencyGraph = {
+      files: [file("cli/index.ts"), file("cli/run.ts"), file("lib/index.ts"), file("lib/a.ts")],
+      edges: [edge("cli/index.ts", "cli/run.ts"), edge("cli/run.ts", "lib/index.ts")],
+    };
+    const entry = { ...module("cli", "facade-not-adopted"), externalImporterCount: 0, facadeImporterCount: 0 };
+    const components = buildComponentGraph(g, [entry, module("lib", "active")]);
+
+    expect(components.components.get("cli")?.entryFacade).toBe(true);
+    expect(components.components.get("lib")).not.toHaveProperty("entryFacade");
+  });
+
+  it("does not mark a facade whose only importer is its parent facade's re-export", () => {
+    const components = buildComponentGraph(graph(), [
+      module("lib", "active"),
+      { ...module("lib/inner", "facade-not-adopted"), externalImporterCount: 0 },
+    ]);
+
+    expect(components.components.get("lib/inner")).not.toHaveProperty("entryFacade");
+  });
+});
