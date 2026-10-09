@@ -70,6 +70,7 @@ function catalogOf(
     Omit<ComponentFact, "connectionCount"> & Partial<Pick<ComponentFact, "connectionCount">>
   >,
   facades: ReadonlyMap<string, string> = new Map(),
+  layeringFoundationFiles: ReadonlySet<string> = new Set(),
 ): DiffDetectorCatalog {
   return {
     componentOf: (relPath) => {
@@ -80,8 +81,12 @@ function catalogOf(
     },
     facadeOf: (componentName) => facades.get(componentName),
     isMarkedlyLessStable: (leanOn, leanedOn) => leanOn - leanedOn >= MARKEDLY_LESS_STABLE_TOLERANCE,
+    isLayeringFoundation: (relPath) => layeringFoundationFiles.has(relPath),
   };
 }
+
+/** The measured layering foundation the report would name for these fixtures' contracts file. */
+const CONTRACTS_FOUNDATION = new Set(["src/core/contracts/types/x.ts"]);
 
 /**
  * The production silent-coupling verdict as a hand-built port: violations are
@@ -524,7 +529,7 @@ describe("mainSequence", () => {
       ],
     ]);
     const result = runWith(
-      { catalog: catalogOf(toFoundation) },
+      { catalog: catalogOf(toFoundation, new Map(), CONTRACTS_FOUNDATION) },
       ["src/app/a.ts"],
       [["src/app/a.ts", "src/core/contracts/types/x.ts"]],
     );
@@ -543,12 +548,46 @@ describe("mainSequence", () => {
       ],
     ]);
     const result = runWith(
-      { catalog: catalogOf(mixed) },
+      { catalog: catalogOf(mixed, new Map(), CONTRACTS_FOUNDATION) },
       ["src/app/a.ts"],
       [
         ["src/app/a.ts", "src/core/contracts/types/x.ts"],
         ["src/app/a.ts", "src/lib/b.ts"],
       ],
+    );
+    const finding = result.findings.find((f) => f.detector === "mainSequence");
+    expect(finding?.subject).toBe("app");
+    expect(finding?.foundationTerminal).toBeUndefined();
+  });
+
+  // bd tea-rags-mcp-89k7k.35.11: the foundation is the MEASURED one the
+  // whole-repo layering exempts from layerSkip (abstractness 1 at L0), served
+  // by the catalog — never a directory name. Both pipelines agree on it.
+  it("annotates a delta into a measured foundation whatever the directory is called", () => {
+    const toFoundation = new Map<string, ComponentFact>([
+      ["src/app/a.ts", { name: "app", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 9 }],
+      ["src/spi/port.ts", { name: "src/spi", instability: 0.1, distanceFromMainSequence: 0.1, connectionCount: 9 }],
+    ]);
+    const result = runWith(
+      { catalog: catalogOf(toFoundation, new Map(), new Set(["src/spi/port.ts"])) },
+      ["src/app/a.ts"],
+      [["src/app/a.ts", "src/spi/port.ts"]],
+    );
+    expect(result.findings.find((f) => f.detector === "mainSequence")?.foundationTerminal).toBe(true);
+  });
+
+  it("leaves a delta into a contracts/ directory unannotated when it is not a measured foundation", () => {
+    const toContracts = new Map<string, ComponentFact>([
+      ["src/app/a.ts", { name: "app", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 9 }],
+      [
+        "src/core/contracts/types/x.ts",
+        { name: "src/core/contracts/types", instability: 0.1, distanceFromMainSequence: 0.1, connectionCount: 9 },
+      ],
+    ]);
+    const result = runWith(
+      { catalog: catalogOf(toContracts) },
+      ["src/app/a.ts"],
+      [["src/app/a.ts", "src/core/contracts/types/x.ts"]],
     );
     const finding = result.findings.find((f) => f.detector === "mainSequence");
     expect(finding?.subject).toBe("app");
@@ -816,7 +855,7 @@ describe("diff-added subtraction", () => {
     const result = runWith(
       {
         graph: graphOf([["src/app/a.ts", "src/lib/b.ts"]]),
-        catalog: catalogOf(toFoundation),
+        catalog: catalogOf(toFoundation, new Map(), CONTRACTS_FOUNDATION),
       },
       ["src/app/a.ts"],
       [

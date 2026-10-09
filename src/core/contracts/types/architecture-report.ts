@@ -758,6 +758,13 @@ export interface LayeringReportSummary {
    * Levels, coverage and coherence stay whole-graph under a scope.
    */
   outOfScopeFindingCount?: number;
+  /**
+   * The measured foundation (bd tea-rags-mcp-89k7k.35.11): components at L0
+   * whose measured abstractness is 1. A layer skip into one is legal relaxed
+   * layering and is not reported; `exemptedLayerSkipCount` counts those, under
+   * the same scope as the findings. Absent when no component qualifies.
+   */
+  foundation?: { components: string[]; exemptedLayerSkipCount: number };
 }
 
 /**

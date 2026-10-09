@@ -45,7 +45,13 @@ export {
   HUB_LIKE_DEPENDENCY_OTSU_MIN_POPULATION,
 } from "./hub-like-dependency.js";
 export { computePropagationCost, PROPAGATION_COST_OTSU_MIN_POPULATION } from "./propagation-cost.js";
-export { buildLayeringModel, detectLayeringViolations, layeringKnotKeepCosts, lookupLayeringKnot } from "./layering.js";
+export {
+  buildLayeringModel,
+  detectLayeringViolations,
+  layeringKnotKeepCosts,
+  lookupLayeringKnot,
+  measureLayeringFoundationComponents,
+} from "./layering.js";
 export { buildLayerMap, collapseDirectory, nodeMapping } from "./layer-map.js";
 export { condensedPositions, sccKnots, weightedFeedbackArcSet, type SimpleEdge } from "./layer-graph.js";
 export {

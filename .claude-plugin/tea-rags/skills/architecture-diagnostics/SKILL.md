@@ -469,6 +469,7 @@ layering edge sits at level 0, depth 0.
 | `facadePartition`                  | `{componentCount, levelCount}` of the facade-adoption partition — its per-subdirectory split reads deeper levels; comparison only |
 | `coverage`                         | share of components outside multi-component knots — low = knot(s) dominate                                                        |
 | `coherence`                        | rank correlation level vs instability — high = low layers really are the stable ones                                              |
+| `foundation`                       | `{components, exemptedLayerSkipCount}` — L0 components with measured abstractness 1 (≥5 types); absent = none qualifies           |
 
 Violations first, informational last, in `violations` order:
 
@@ -479,7 +480,7 @@ Violations first, informational last, in `violations` order:
 | `abstractionBypass` | consumer takes a measured-concrete component, measured-abstract one beneath it | `bypassedComponent`, `concreteAbstractness` / `bypassedAbstractness`; census-gated (≥5 types), same-knot pairs never judged                                                                                                                           |
 | `compositionCycle`  | parent ↔ own nested directories cycling                                        | informational — `nestedPairs`; composition of a module with its sub-parts                                                                                                                                                                             |
 | `island`            | nothing depends on it AND it does not reach the top of the stack               | informational — `height`/`depth`, `afferentCount: 0`                                                                                                                                                                                                  |
-| `layerSkip`         | dependency jumping ≥2 levels to a lower one, never between knot members        | informational, weakest — `skippedLevels`, `callWeight`; hints a missing middle layer                                                                                                                                                                  |
+| `layerSkip`         | dependency jumping ≥2 levels to a lower one, never between knot members        | informational, weakest — `skippedLevels`, `callWeight`; hints a missing middle layer. Never into a `foundation` component (relaxed layering is legal there); a skip into a concrete L0 still counts                                                   |
 
 ## Phase 3f — LAYER MAP
 

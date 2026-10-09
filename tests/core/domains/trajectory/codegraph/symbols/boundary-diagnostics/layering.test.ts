@@ -18,6 +18,7 @@ import {
   buildLayeringModel,
   detectLayeringViolations,
   lookupLayeringKnot,
+  measureLayeringFoundationComponents,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
 
 function file(relPath: string, typeAbstractness?: TypeAbstractnessCensus) {
@@ -603,6 +604,74 @@ describe("detectLayeringViolations — source scope (bd tea-rags-mcp-r8hme.33)",
       nestedPairs: [{ parentComponent: "parent", nestedComponent: "parent/nested" }],
       outOfScopeMemberCount: 1,
     });
+  });
+});
+
+/**
+ * `layered()` with a type census on `core` (L0) and, optionally, `lib` (L1),
+ * plus `app/deep2.ts` reaching `lib` directly — a second skip, L3 → L1.
+ */
+function layeredWithCensus(
+  coreCensus: TypeAbstractnessCensus | undefined,
+  libCensus?: TypeAbstractnessCensus,
+): FileDependencyGraph {
+  const g = layered();
+  const withCensus = (relPath: string, c: TypeAbstractnessCensus | undefined) =>
+    c === undefined ? file(relPath) : file(relPath, c);
+  g.files = g.files.map((f) => {
+    if (f.relPath === "core/a.ts") return withCensus(f.relPath, coreCensus);
+    if (f.relPath === "lib/x.ts") return withCensus(f.relPath, libCensus);
+    return f;
+  });
+  g.files.push(file("app/deep2.ts"));
+  g.edges.push(edge("app/deep2.ts", "lib/x.ts"));
+  return g;
+}
+
+const skipTargets = (report: ReturnType<typeof judge>) =>
+  report.violations.filter((v) => v.kind === "layerSkip").map((v) => (v.kind === "layerSkip" ? v.targetComponent : ""));
+
+describe("layering foundation — measured, never named (bd tea-rags-mcp-89k7k.35.11)", () => {
+  it("does not report a skip into an abstractness-1 L0 component", () => {
+    const report = judge(layeredWithCensus(census(5, 0)));
+
+    expect(skipTargets(report)).toEqual(["lib"]);
+    expect(report.summary.layerSkipCount).toBe(1);
+    expect(report.summary.foundation).toEqual({ components: ["core"], exemptedLayerSkipCount: 1 });
+  });
+
+  it("still reports a skip into a concrete or mixed L0 component", () => {
+    expect(skipTargets(judge(layeredWithCensus(census(0, 5))))).toEqual(["core", "lib"]);
+    expect(skipTargets(judge(layeredWithCensus(census(4, 1))))).toEqual(["core", "lib"]);
+    expect(judge(layeredWithCensus(census(4, 1))).summary.foundation).toBeUndefined();
+  });
+
+  it("still reports a skip into an abstractness-1 component above L0", () => {
+    const report = judge(layeredWithCensus(census(0, 5), census(5, 0)));
+
+    expect(skipTargets(report)).toEqual(["core", "lib"]);
+    expect(report.summary.foundation).toBeUndefined();
+  });
+
+  it("needs the main-sequence type floor before abstractness 1 counts as measured", () => {
+    expect(skipTargets(judge(layeredWithCensus(census(2, 0))))).toEqual(["core", "lib"]);
+  });
+
+  it("names the foundation set from the model and the census alone", () => {
+    const g = layeredWithCensus(census(5, 0), census(5, 0));
+    const components = buildComponentGraph(g, []);
+    expect([...measureLayeringFoundationComponents(components, g.files, buildLayeringModel(components))]).toEqual([
+      "core",
+    ]);
+  });
+
+  it("counts an exempted skip under a scope only when its carrying file matches", () => {
+    const g = layeredWithCensus(census(5, 0));
+    const scoped = (pattern: string) =>
+      detectLayeringViolations(buildComponentGraph(g, []), g.files, { sourcePathPattern: pattern }).summary.foundation;
+
+    expect(scoped("app/deep.ts")).toEqual({ components: ["core"], exemptedLayerSkipCount: 1 });
+    expect(scoped("app/m.ts")).toEqual({ components: ["core"], exemptedLayerSkipCount: 0 });
   });
 });
 

@@ -16,6 +16,7 @@ import {
   deriveArchitectureComponentFacts,
   distanceFromMainSequenceByComponent,
   isMarkedlyLessStableBySdpBand,
+  measureLayeringFoundationFiles,
   readProductionArchitectureGraph,
 } from "../../../../../src/core/api/internal/ops/architecture-facts.js";
 import type {
@@ -210,7 +211,7 @@ describe("ArchitectureFactsCatalog", () => {
     );
     const facts = deriveArchitectureComponentFacts(graph);
     const distances = distanceFromMainSequenceByComponent(facts.components, graph.files);
-    return new ArchitectureFactsCatalog(facts, distances);
+    return new ArchitectureFactsCatalog(facts, distances, measureLayeringFoundationFiles(graph, facts));
   }
 
   it("serves componentOf with the partition's name, instability, connectionCount and fan counts; a file outside the graph is undefined", () => {
@@ -251,7 +252,11 @@ describe("ArchitectureFactsCatalog", () => {
         [...[1, 2, 3, 4, 5].map((n) => edge(`flex/f${n}.ts`, "rigid/x.ts"))],
       );
       const facts = deriveArchitectureComponentFacts(graph);
-      return new ArchitectureFactsCatalog(facts, distanceFromMainSequenceByComponent(facts.components, graph.files));
+      return new ArchitectureFactsCatalog(
+        facts,
+        distanceFromMainSequenceByComponent(facts.components, graph.files),
+        measureLayeringFoundationFiles(graph, facts),
+      );
     })();
     expect(pain.componentOf("rigid/x.ts")?.distanceFromMainSequence).toBeCloseTo(1, 10);
   });
@@ -260,6 +265,31 @@ describe("ArchitectureFactsCatalog", () => {
     const catalog = catalogFixture();
     expect(catalog.facadeOf("src/app")).toBeUndefined();
     expect(catalog.facadeOf("no/such")).toBeUndefined();
+  });
+
+  // bd tea-rags-mcp-89k7k.35.11: the diff run's foundationTerminal reads the
+  // SAME measured foundation the whole-repo layering exempts from layerSkip —
+  // abstractness 1 at L0 of the domain partition, never a directory name.
+  it("isLayeringFoundation answers the measured layering foundation, not a path name", () => {
+    const graph = graphOf(
+      [
+        file("src/app/a.ts", { abstractTypeCount: 0, concreteTypeCount: 5 }),
+        file("src/spi/port.ts", { abstractTypeCount: 5, concreteTypeCount: 0 }),
+        file("src/contracts/c.ts", { abstractTypeCount: 0, concreteTypeCount: 5 }),
+      ],
+      [edge("src/app/a.ts", "src/spi/port.ts"), edge("src/app/a.ts", "src/contracts/c.ts")],
+    );
+    const facts = deriveArchitectureComponentFacts(graph);
+    const catalog = new ArchitectureFactsCatalog(
+      facts,
+      distanceFromMainSequenceByComponent(facts.components, graph.files),
+      measureLayeringFoundationFiles(graph, facts),
+    );
+
+    expect(catalog.isLayeringFoundation("src/spi/port.ts")).toBe(true);
+    expect(catalog.isLayeringFoundation("src/contracts/c.ts")).toBe(false);
+    expect(catalog.isLayeringFoundation("src/app/a.ts")).toBe(false);
+    expect(catalog.isLayeringFoundation("src/unwalked.ts")).toBe(false);
   });
 
   it("isMarkedlyLessStable answers the report's own SDP band", () => {

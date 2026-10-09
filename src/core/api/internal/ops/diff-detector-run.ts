@@ -135,6 +135,14 @@ export interface DiffDetectorCatalog {
   facadeOf: (componentName: string) => string | undefined;
   /** Instability judged markedly greater — the report's own band comparison as a predicate. */
   isMarkedlyLessStable: (leanOn: number, leanedOn: number) => boolean;
+  /**
+   * Whether the file belongs to the measured layering foundation (bd
+   * tea-rags-mcp-89k7k.35.11) — the components the whole-repo layering
+   * exempts from layerSkip (`measureLayeringFoundationComponents`: abstractness
+   * 1 at L0). The diff run's `foundationTerminal` reads THIS, so both
+   * pipelines name the same foundation; a file outside the graph is false.
+   */
+  isLayeringFoundation: (relPath: string) => boolean;
 }
 
 /**
@@ -303,7 +311,8 @@ export interface DiffDetectorFinding {
   detail: string; // one sentence a reviewer reads
   /**
    * mainSequence only (bd tea-rags-mcp-r8hme.45): EVERY contributing edge of
-   * this D-delta terminates inside a `contracts/` directory — the legal
+   * this D-delta terminates inside the measured layering foundation
+   * (abstractness 1 at L0, bd tea-rags-mcp-89k7k.35.11) — the legal
    * foundation direction, the lowest layer, which everything above may depend
    * on. The distance still moved, so the finding stands; the annotation is
    * data for triage, never a suppression and never prose baked into a
@@ -450,15 +459,6 @@ const NO_CONTRACT_READER_REASON = "no contract reader";
  * surface holds, so no single name drop can break it.
  */
 const WHOLE_MODULE_EXPORT_NAME = "*";
-
-/**
- * The path segment naming a codebase's pure-types foundation layer — the
- * direction every layer above it may legally depend on (bd
- * tea-rags-mcp-r8hme.45): `core/contracts` in this repo, `src/contracts`,
- * `app/contracts` elsewhere. Matched as a SEGMENT, never a substring, so
- * `contracts.ts` or `my-contracts/` is not the foundation.
- */
-const FOUNDATION_CONTRACTS_PATH_SEGMENT = "contracts";
 
 export class DiffDetectorRun {
   private readonly graph: DiffDetectorGraphReader | undefined;
@@ -759,13 +759,15 @@ export class DiffDetectorRun {
    * worst case (distance grows), which is what a diff review wants flagged.
    *
    * FOUNDATION-TERMINAL ANNOTATION (bd tea-rags-mcp-r8hme.45): a finding
-   * whose contributing edges ALL terminate inside a `contracts/` directory
-   * carries `foundationTerminal: true` — the legal foundation direction
-   * (everything may depend on the lowest layer). Contributing edges are the
-   * DIFF-ADDED ones (post-subtraction): pre-existing imports do not dilute
-   * the annotation. The D still moved, so the finding stands, annotated as
-   * data for triage; one non-contracts diff-added edge is enough to leave it
-   * unannotated.
+   * whose contributing edges ALL terminate inside the measured layering
+   * foundation (`DiffDetectorCatalog#isLayeringFoundation`, bd
+   * tea-rags-mcp-89k7k.35.11 — the same set the whole-repo layering exempts
+   * from layerSkip, never a directory name) carries `foundationTerminal: true`
+   * — the legal foundation direction (everything may depend on the lowest
+   * layer). Contributing edges are the DIFF-ADDED ones (post-subtraction):
+   * pre-existing imports do not dilute the annotation. The D still moved, so
+   * the finding stands, annotated as data for triage; one diff-added edge
+   * outside the foundation is enough to leave it unannotated.
    */
   private judgeMainSequence(
     changedFiles: readonly string[],
@@ -822,7 +824,7 @@ export class DiffDetectorRun {
       if (Math.abs(instabilityDelta) <= MAIN_SEQUENCE_EPSILON) continue;
       const abstractness = 1 - fact.instability + fact.distanceFromMainSequence;
       const newDistance = Math.abs(abstractness + newInstability - 1);
-      const foundationTerminal = edgesOut.every((edge) => terminatesAtFoundationContracts(edge.target));
+      const foundationTerminal = edgesOut.every((edge) => this.catalog.isLayeringFoundation(edge.target));
       // The exact-recompute clause names the arithmetic only when its inputs were served.
       const recomputeClause = fans !== undefined ? ` — I' = (Ce+k)/(Ca+Ce+k) over the report's fan counts` : "";
       findings.push({
@@ -1151,9 +1153,4 @@ function detectorStatus(detector: DiffDetectorFinding["detector"], findingCount:
 /** Three decimals — the whole-repo report's evidence formatting. */
 function format3(value: number): string {
   return value.toFixed(3);
-}
-
-/** The edge's target lives inside a `contracts/` directory — the foundation everything may depend on. */
-function terminatesAtFoundationContracts(relPath: string): boolean {
-  return relPath.split("/").includes(FOUNDATION_CONTRACTS_PATH_SEGMENT);
 }

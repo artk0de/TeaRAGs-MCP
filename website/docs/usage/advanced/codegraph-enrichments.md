@@ -305,7 +305,8 @@ when the index was built at another commit than the tree's `HEAD`, `notices`
   merely touches. Such a finding carries `preExisting: true`: the index already
   holds that edge, the problem predates the change. Three more markers are
   triage data, never suppressions: `foundationTerminal` (the edge ends in the
-  shared contracts layer), `compositionRoot` (an SDP finding on a component
+  measured foundation: a bottom-level component whose types are all abstract,
+  the same set the layering report exempts from `layerSkip`), `compositionRoot` (an SDP finding on a component
   that assembles the application) and `entryPoint` (a main-sequence shift on a
   cli or mcp entry component, which belongs at the unstable end).
 

@@ -510,6 +510,20 @@
   (`compoundPoissonUpperTailLogBound`), because p underflows a double near
   1e-308 and every spread past it would tie at +∞.
 
+- **The layering foundation is MEASURED, never named, and one predicate serves
+  both pipelines.** `measureLayeringFoundationComponents`
+  (symbols/boundary-diagnostics/layering.ts) names every L0 component outside a
+  knot whose census abstractness is exactly 1 over at least the main-sequence
+  type floor. `detectLayeringViolations` drops a layerSkip into one and counts
+  it in `summary.foundation`; the diff run's `foundationTerminal` reads the same
+  set through `DiffDetectorCatalog#isLayeringFoundation`, which
+  `measureLayeringFoundationFiles` (api/internal/ops/architecture-facts.ts)
+  builds over the report's DOMAIN partition. Why: the diff run once keyed on a
+  `contracts` path segment while the layering run flagged the same edges — 29 of
+  57 layerSkips on this repo were skips into that pure-types component (bd
+  tea-rags-mcp-89k7k.35.11). A concrete L0 target keeps its skips; a name check
+  anywhere in either pipeline reintroduces the disagreement.
+
 ## Gotchas
 
 - **`codegraph.file.instability` is sampled over the files the graph actually
