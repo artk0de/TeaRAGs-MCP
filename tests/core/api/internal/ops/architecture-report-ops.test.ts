@@ -1033,11 +1033,12 @@ describe("ArchitectureReportOps#build — shotgunSurgery (bd tea-rags-mcp-r8hme.
       evidence: {
         support: 3,
         carrierFiles: [["app/c1.ts"], ["other/o.ts"], ["users/u1.ts"]],
-        sampleCommits: ["c25", "c23", "c21"],
+        // No timestamps: the store numbers bundles newest first, so the smallest id is the newest (dlvyi).
+        sampleCommits: ["c20", "c22", "c24"],
         sampleChanges: [
-          ["c25", "c24"],
-          ["c23", "c22"],
-          ["c21", "c20"],
+          ["c20", "c21"],
+          ["c22", "c23"],
+          ["c24", "c25"],
         ],
       },
     });

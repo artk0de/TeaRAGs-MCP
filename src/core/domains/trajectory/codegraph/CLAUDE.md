@@ -492,12 +492,28 @@
   (`findShotgunSurgeryLifecyclePairs`, bd tea-rags-mcp-zf9yz) also joins and
   never removes: dropping deletion-dominant commits was measured and lost a TRUE
   finding (taxdome SG06), because retiring a feature flag touches exactly the
-  places it was wired into and is shotgun evidence. Pairs and file revisits are
-  oriented by `ShotgunSurgeryInput.bundleTimestamps`, never by bundle id
-  (`extractCochangeGraph` numbers bundles newest first), and
+  places it was wired into and is shotgun evidence. Pairs, file revisits and
+  every "newer / older" the detector reads (sample commits included) go through
+  `bundleChronology`: `ShotgunSurgeryInput.bundleTimestamps`, else the store's
+  numbering — `extractCochangeGraph` numbers bundles newest first, so the
+  SMALLEST id is the newest. A max-id "recency" listed the oldest commits as the
+  newest on every finding (bd tea-rags-mcp-dlvyi). And
   `ShotgunSurgeryLifecycleNull#mirrorProbability` is max(pooled, per-file)
   because a pooled-only null joins unrelated ±1 edits to a registry file.
 
+- **A retiring change is discounted inside a spread, never removed from the
+  shotgun history.** `classifyShotgunSurgeryRetirementUnits` calls a unit
+  retiring when its net-negative files beat the corpus rate, and
+  `genuineSupport` (temporal/verdicts/shotgun-surgery.ts) drops it from a
+  spread's support unless it is that spread's OLDEST supporting change, dated by
+  its oldest commit TOUCHING the spread; a spread left under
+  `TEMPORAL_COCHANGE_MIN_SUPPORT` goes to `ShotgunSurgeryReport.retired`. The
+  family floor is `shotgunSurgeryRetirementMinFiles` — derived from the corpus
+  rate and q, never a constant. Why: removing retiring units from the history
+  (the mechanical treatment) moved T 31 → 19 and the umbrella cut 11 → 5 and
+  lost 8 TRUE findings on taxdome; dating by the change's first commit anywhere
+  kept a spread the touching-commit rule retires, and an oldest retirement
+  (taxdome SG51's TD-92214) retires nothing the spread saw.
 - **The shotgun list's order is the detector's, and nothing downstream re-sorts
   it.** `compareSpreads` (temporal/verdicts/shotgun-surgery.ts) ranks by
   `ShotgunSurgerySpread.familyEvidence`, and `ArchitectureReportOps#build`

@@ -49,6 +49,7 @@ import {
   shotgunSurgeryLifecyclePValue,
   shotgunSurgeryMirroredNetShare,
   shotgunSurgeryModalUniformityPValue,
+  shotgunSurgeryRetirementMinFiles,
   type ShotgunSurgeryInput,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
 import { binomialUpperTail, mulberry32 } from "../../../../../../../src/core/infra/statistics/index.js";
@@ -58,7 +59,12 @@ function fileOf(component: string, name = "f"): RelPath {
   return `src/${component}/${name}.ts`;
 }
 
-/** One burst per entry, each burst one bundle of one commit `c<i>`. */
+/**
+ * One burst per entry, each burst one bundle of one commit `c<i>`. Bundle ids
+ * ascend in list order and no timestamps are recorded, so — the store numbering
+ * bundles newest first — the FIRST listed bundle is the newest (bd
+ * tea-rags-mcp-dlvyi). The builders below share that numbering.
+ */
 function history(
   bursts: readonly (readonly string[])[],
 ): Pick<ShotgunSurgeryInput, "bundles" | "bundleBursts" | "bundleCommits" | "componentOf"> {
@@ -244,7 +250,8 @@ describe("detectShotgunSurgery", () => {
     );
     expect(finding.islands).toEqual([["a"], ["b"], ["c"], ["d"]]);
     expect(finding.exemplarFiles).toEqual(SPREAD.map((c) => fileOf(c)));
-    expect(finding.sampleCommits).toEqual(["c36", "c35", "c34"]);
+    // No timestamps: the smallest bundle id is the newest (the store numbers bundles newest first).
+    expect(finding.sampleCommits).toEqual(["c34", "c35", "c36"]);
     expect(report.summary.widthThreshold).toBeGreaterThanOrEqual(3);
     // n = 4 components changed ≥ 2×, k = 3: the family is C(4, 3) = 4, and
     // each of its triples recurs in the three spreads — one maximal spread.
@@ -401,7 +408,7 @@ describe("detectShotgunSurgery", () => {
     expect(finding.componentChanges).toEqual([4, 4, 4]);
     // One commit per supporting burst, each one that held {a, b, c} — never
     // b0c0 / b0c1, which held two, and b1's re-commits do not crowd the rest.
-    expect(finding.sampleCommits).toEqual(["b2c0", "b1c3", "b0c2"]);
+    expect(finding.sampleCommits).toEqual(["b0c2", "b1c0", "b2c0"]);
     expect(report.summary.burstCount).toBe(36);
   });
 
@@ -415,7 +422,7 @@ describe("detectShotgunSurgery", () => {
     });
 
     expect(report.findings.map((f) => f.components)).toEqual([["a", "b", "c"]]);
-    expect(report.findings[0].sampleCommits).toEqual(["b2c0", "b1c0", "b0c0"]);
+    expect(report.findings[0].sampleCommits).toEqual(["b0c0", "b1c0", "b2c0"]);
   });
 
   it("joins a burst's commits sharing a task id into one change, however unlinked their files", () => {
@@ -432,11 +439,11 @@ describe("detectShotgunSurgery", () => {
 
     expect(report.findings.map((f) => `${f.components.join(",")}@${f.support}`)).toEqual(["a,b,c@3"]);
     // One commit per supporting burst; the change behind it is both commits.
-    expect(report.findings[0].sampleCommits).toEqual(["b2c1", "b1c1", "b0c1"]);
+    expect(report.findings[0].sampleCommits).toEqual(["b0c0", "b1c0", "b2c0"]);
     expect(report.findings[0].sampleChanges).toEqual([
-      ["b2c1", "b2c0"],
-      ["b1c1", "b1c0"],
-      ["b0c1", "b0c0"],
+      ["b0c0", "b0c1"],
+      ["b1c0", "b1c1"],
+      ["b2c0", "b2c1"],
     ]);
   });
 
@@ -524,7 +531,7 @@ describe("detectShotgunSurgery", () => {
 
     expect(report.findings.map((f) => `${f.components.join(",")}@${f.support}`)).toEqual(["a,b,c@3"]);
     // The TD-7 change is both of its commits, newest first.
-    expect(report.findings[0].sampleChanges).toEqual([["b3c0"], ["b2c0"], ["b1c0", "b0c0"]]);
+    expect(report.findings[0].sampleChanges).toEqual([["b0c0", "b1c0"], ["b2c0"], ["b3c0"]]);
   });
 
   it("lets no umbrella task id join — an upper outlier of the ids' own breadth", () => {
@@ -955,11 +962,11 @@ describe("detectShotgunSurgery — mechanical commits", () => {
     expect(report.summary.mechanicalCommitCount).toBe(1);
     expect(report.findings.map((f) => f.components)).toEqual([["a", "b", "c"]]);
     expect(report.findings[0].sampleChanges).toEqual([
-      ["b2c1", "b2c0"],
-      ["b1c1", "b1c0"],
-      ["b0c1", "b0c0"],
+      ["b0c0", "b0c1"],
+      ["b1c0", "b1c1"],
+      ["b2c0", "b2c1"],
     ]);
-    expect(detectShotgunSurgery(withoutLines(input)).findings[0].sampleChanges[0]).toContain("sweep");
+    expect(detectShotgunSurgery(withoutLines(input)).findings[0].sampleChanges.flat()).toContain("sweep");
   });
 
   it("reads an empty line-count map as not recorded — the store's answer for a build before migration 046", () => {
@@ -1066,7 +1073,7 @@ describe("detectShotgunSurgery — echoes", () => {
 
     expect(report.summary.echoPairCount).toBe(1);
     expect(report.findings.map((f) => f.components)).toEqual([SPREAD]);
-    expect(report.findings[0].sampleChanges).toEqual([["flag-remove", "flag-add"], ["other"]]);
+    expect(report.findings[0].sampleChanges).toEqual([["flag-add", "flag-remove"], ["other"]]);
   });
 
   it("never zeroes an echo: the original keeps its evidence, joined with its revert", () => {
@@ -1213,9 +1220,16 @@ function timed(input: ShotgunSurgeryInput, order: (bundleId: number) => number =
   };
 }
 
-/** The same input with no commit timestamps recorded. */
+/**
+ * The same history as a build without commit timestamps reads it: no
+ * timestamps, and the bundles renumbered newest first — the store's numbering,
+ * which then carries the chronology (bd tea-rags-mcp-dlvyi).
+ */
 function untimed(input: ShotgunSurgeryInput): ShotgunSurgeryInput {
-  const { bundleTimestamps: _timestamps, ...rest } = input;
+  const timestamps = input.bundleTimestamps ?? new Map<number, number>();
+  const newestFirst = [...input.bundles.keys()].sort((a, b) => (timestamps.get(b) ?? 0) - (timestamps.get(a) ?? 0));
+  const rank = new Map(newestFirst.map((id, index) => [id, index]));
+  const { bundleTimestamps: _timestamps, ...rest } = renumbered(input, (id) => rank.get(id) ?? id);
   return rest;
 }
 
@@ -1360,7 +1374,7 @@ describe("detectShotgunSurgery — lifecycle pairs", () => {
 
     expect(plain.summary).not.toHaveProperty("lifecycleCandidatePairCount");
     expect(plain.summary).not.toHaveProperty("lifecyclePairCount");
-    expect(detectShotgunSurgery({ ...input, bundleTimestamps: new Map() })).toEqual(plain);
+    expect(detectShotgunSurgery({ ...untimed(input), bundleTimestamps: new Map() })).toEqual(plain);
     expect(detectShotgunSurgery(withoutLines(input))).toEqual(detectShotgunSurgery(withoutLines(untimed(input))));
   });
 
@@ -1387,6 +1401,186 @@ describe("detectShotgunSurgery — lifecycle pairs", () => {
 
     expect(report.summary.lifecyclePairCount).toBe(1);
     expect(report.findings).toEqual(detectShotgunSurgery(untimed(input)).findings);
+  });
+});
+
+/**
+ * `copies` one-commit changes of SPREAD after the background, renumbered so
+ * the changes sit at `ids` (the background after them), dated by `at(id)`.
+ */
+function sampledSpread(ids: readonly number[], at?: (bundleId: number) => number): ShotgunSurgeryInput {
+  const lead = background(SPREAD);
+  const input = {
+    ...history([...lead, ...ids.map(() => SPREAD)]),
+    componentDependencies: [],
+  };
+  const top = Math.max(...ids) + 1;
+  const placed = renumbered(input, (id) => (id < lead.length ? top + id : ids[id - lead.length]));
+  if (!at) return placed;
+  return { ...placed, bundleTimestamps: new Map([...placed.bundles.keys()].map((id) => [id, at(id)])) };
+}
+
+// bd tea-rags-mcp-dlvyi: bundle ids are numbered newest first, so recency comes from the timestamps, else the smallest id.
+describe("detectShotgunSurgery — sample commits are the newest changes", () => {
+  it("lists the newest change first by commit timestamp", () => {
+    // The changes sit at ids 0, 5 and 9; id 0 is the newest commit, as the store numbers them.
+    const input = sampledSpread([0, 5, 9], (id) => 1_800_000_000 - 60 * id);
+    const sha = (id: number) => input.bundleCommits?.get(id)?.[0];
+
+    const [finding] = detectShotgunSurgery(input).findings;
+    expect(finding.sampleCommits).toEqual([sha(0), sha(5), sha(9)]);
+    expect(finding.sampleChanges).toEqual([[sha(0)], [sha(5)], [sha(9)]]);
+  });
+
+  it("follows the timestamps where they contradict the bundle numbering", () => {
+    const input = sampledSpread([0, 5, 9], (id) => 1_800_000_000 + 60 * id);
+    const sha = (id: number) => input.bundleCommits?.get(id)?.[0];
+
+    expect(detectShotgunSurgery(input).findings[0].sampleCommits).toEqual([sha(9), sha(5), sha(0)]);
+  });
+
+  it("falls back to the smallest bundle id as the newest when no timestamps are recorded", () => {
+    const input = sampledSpread([0, 5, 9]);
+    const sha = (id: number) => input.bundleCommits?.get(id)?.[0];
+
+    expect(detectShotgunSurgery(input).findings[0].sampleCommits).toEqual([sha(0), sha(5), sha(9)]);
+  });
+
+  it("samples the newest changes when more support the spread than are listed", () => {
+    const ids = [0, 2, 4, 6, 8, 10];
+    const input = sampledSpread(ids, (id) => 1_800_000_000 - 60 * id);
+    const sha = (id: number) => input.bundleCommits?.get(id)?.[0];
+
+    const [finding] = detectShotgunSurgery(input).findings;
+    expect(finding.support).toBe(6);
+    expect(finding.sampleCommits).toEqual([0, 2, 4, 6, 8].map(sha));
+  });
+
+  it("names a joined change by its newest commit and lists the change's commits newest first", () => {
+    // Bundles 0 and 9 share TD-1, one change; 5 and 12 are two more. Bundle 9 is the newest commit of all.
+    const input = sampledSpread([0, 5, 9, 12], (id) => 1_800_000_000 + 60 * (id === 9 ? 100 : id));
+    const sha = (id: number) => input.bundleCommits?.get(id)?.[0];
+    const joined = {
+      ...input,
+      bundleTaskIds: new Map([...input.bundles.keys()].map((id) => [id, id === 0 || id === 9 ? ["TD-1"] : []])),
+    };
+
+    const [finding] = detectShotgunSurgery(joined).findings;
+    expect(finding.support).toBe(3);
+    expect(finding.sampleCommits).toEqual([sha(9), sha(12), sha(5)]);
+    expect(finding.sampleChanges).toEqual([[sha(9), sha(0)], [sha(12)], [sha(5)]]);
+  });
+});
+
+/** 20 one-file commits each deleting lines from a filler component of its own: the corpus's net-negative files. */
+const RETIREMENT_CORPUS: LineCommit[] = Array.from({ length: 20 }, (_, j) => ({
+  sha: `trim${j}`,
+  rows: [[`trim${j}`, "f", [0, 5 + j]] as const],
+}));
+
+/** The changes of SPREAD a retirement fixture lists, two fresh files per component each. */
+const RETIREMENT_CHANGES: Record<string, LineCommit> = {
+  // Adds lines everywhere it touches.
+  feature: { sha: "feature", rows: rowsOver(SPREAD, 2, (row) => [40 + row, 0], "a") },
+  // Deletes lines everywhere it touches: a flag removal, not a mirror of `feature` (other files).
+  removal: { sha: "removal", rows: rowsOver(SPREAD, 2, (row) => [0, 60 + row], "r") },
+  // Deletes on 2 of its 8 files, adds on the rest.
+  partial: { sha: "partial", rows: rowsOver(SPREAD, 2, (row) => (row < 2 ? [0, 80 + row] : [90 + row, 0]), "p") },
+  second: { sha: "second", rows: rowsOver(SPREAD, 2, (row) => [120 + row, 0], "s") },
+  third: { sha: "third", rows: rowsOver(SPREAD, 2, (row) => [140 + row, 0], "t") },
+};
+
+/** The background, {@link RETIREMENT_CORPUS}, then the named changes of SPREAD — dated in the order listed. */
+function retirementHistory(changes: readonly (keyof typeof RETIREMENT_CHANGES)[]): ShotgunSurgeryInput {
+  return timed(lineHistory(background(SPREAD), [...RETIREMENT_CORPUS, ...changes.map((c) => RETIREMENT_CHANGES[c])]));
+}
+
+// bd tea-rags-mcp-zf9yz.2: a change retiring code is no independent evidence of a spread it closes.
+describe("detectShotgunSurgery — retirement changes", () => {
+  it("calls a change retiring code when its files go net-negative beyond the corpus rate", () => {
+    const retiring = detectShotgunSurgery(retirementHistory(["feature", "removal"])).summary;
+    expect(retiring.retirementTestedCount).toBe(2);
+    expect(retiring.retirementUnitCount).toBe(1);
+
+    expect(detectShotgunSurgery(retirementHistory(["feature", "partial"])).summary.retirementUnitCount).toBe(0);
+  });
+
+  it("runs only when line counts and commit timestamps are both recorded", () => {
+    const input = retirementHistory(["feature", "removal"]);
+    for (const subject of [withoutLines(input), untimed(input)]) {
+      const report = detectShotgunSurgery(subject);
+      expect(report.summary).not.toHaveProperty("retirementTestedCount");
+      expect(report.summary).not.toHaveProperty("retirementUnitCount");
+      expect(report.summary).not.toHaveProperty("retiredSpreadCount");
+      expect(report.retired).toEqual([]);
+    }
+  });
+
+  it("retires a spread whose only other support is a newer change retiring code", () => {
+    const input = retirementHistory(["feature", "removal"]);
+    const linked = {
+      ...input,
+      componentDependencies: [
+        { sourceComponent: "a", targetComponent: "b" },
+        { sourceComponent: "b", targetComponent: "c" },
+        { sourceComponent: "c", targetComponent: "d" },
+      ],
+    };
+
+    expect(detectShotgunSurgery(untimed(input)).findings.map((f) => f.components)).toEqual([SPREAD]);
+    const report = detectShotgunSurgery(input);
+    expect(report.findings).toEqual([]);
+    expect(report.retired.map((s) => [s.components, s.support])).toEqual([[SPREAD, 2]]);
+    expect(report.summary.retiredSpreadCount).toBe(1);
+    expect(report.summary.spreadCount).toBe(1);
+    expect(report.summary.violationCount).toBe(0);
+    // Neither a finding nor an explanation, whatever the structure.
+    const explainedAway = detectShotgunSurgery(linked);
+    expect(explainedAway.explained).toEqual([]);
+    expect(explainedAway.retired.map((s) => s.components)).toEqual([SPREAD]);
+  });
+
+  it("counts a retiring change that is the spread's oldest support — it retires nothing the spread saw", () => {
+    const report = detectShotgunSurgery(retirementHistory(["removal", "feature"]));
+
+    expect(report.summary.retirementUnitCount).toBe(1);
+    expect(report.findings.map((f) => [f.components, f.support])).toEqual([[SPREAD, 2]]);
+    expect(report.retired).toEqual([]);
+    expect(report.summary.retiredSpreadCount).toBe(0);
+  });
+
+  it("dates a retiring change by its oldest commit that touched the spread, not by its first commit elsewhere", () => {
+    // The removal's task began before the feature, outside the spread, and reached the spread after it.
+    const start: LineCommit = { sha: "removal-start", rows: [["elsewhere", "f", [0, 30]]], taskIds: ["TD-R"] };
+    const removal: LineCommit = { ...RETIREMENT_CHANGES.removal, taskIds: ["TD-R"] };
+    const input = timed(
+      lineHistory(background(SPREAD), [...RETIREMENT_CORPUS, start, RETIREMENT_CHANGES.feature, removal]),
+    );
+
+    const report = detectShotgunSurgery(input);
+    expect(report.summary.retirementUnitCount).toBe(1);
+    expect(report.findings).toEqual([]);
+    expect(report.retired.map((s) => s.components)).toEqual([SPREAD]);
+  });
+
+  it("keeps a spread its genuine changes still support, the newer retiring change discounted", () => {
+    const report = detectShotgunSurgery(retirementHistory(["feature", "second", "third", "removal"]));
+
+    expect(report.findings.map((f) => [f.components, f.support])).toEqual([[SPREAD, 4]]);
+    expect(report.retired).toEqual([]);
+  });
+});
+
+describe("shotgunSurgeryRetirementMinFiles", () => {
+  it("is the fewest files an all-negative change needs to reach p ≤ q at the corpus rate", () => {
+    // 0.21² = 0.044 ≤ 0.05; 0.5⁵ = 0.031 ≤ 0.05 < 0.5⁴.
+    expect(shotgunSurgeryRetirementMinFiles(0.21, 0.05)).toBe(2);
+    expect(shotgunSurgeryRetirementMinFiles(0.5, 0.05)).toBe(5);
+    expect(shotgunSurgeryRetirementMinFiles(0.04, 0.05)).toBe(1);
+  });
+
+  it("admits no change when every file the corpus counted went net-negative", () => {
+    expect(shotgunSurgeryRetirementMinFiles(1, 0.05)).toBe(Number.POSITIVE_INFINITY);
   });
 });
 

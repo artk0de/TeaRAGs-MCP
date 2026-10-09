@@ -25,6 +25,7 @@ export {
   ShotgunSurgeryLifecycleNull,
   shotgunSurgeryMirroredNetShare,
   shotgunSurgeryModalUniformityPValue,
+  shotgunSurgeryRetirementMinFiles,
   shotgunSurgeryWideCommitPairs,
   type ShotgunSurgeryComponentDependency,
   type ShotgunSurgeryEchoAssessment,
