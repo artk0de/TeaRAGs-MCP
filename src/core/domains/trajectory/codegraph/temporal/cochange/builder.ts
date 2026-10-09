@@ -68,9 +68,15 @@ export const TEMPORAL_COCHANGE_MAX_PARTNERS_PER_FILE = 20;
  * tea-rags-mcp-09c4m), which ship in the same release. 3: each bundle file
  * carries its commit's +/- line counts (bd tea-rags-mcp-dm61n), and each
  * bundle its commit time (bd tea-rags-mcp-zf9yz), which ship in the same
- * release.
+ * release. 4 (bd tea-rags-mcp-hzm7g): migration 047's `committed_at` landed
+ * after builds had already stamped 3, so those snapshots were reused with the
+ * column NULL (and any pre-046 one with NULL line counts); 4 rebuilds them.
+ *
+ * Bump on EVERY migration that adds a persisted `cg_temporal_*` field — a
+ * reused snapshot never fills it. `algorithm-revision-guard.test.ts` pins the
+ * revision to the derived set of those migrations and fails when one is added.
  */
-const COCHANGE_ALGORITHM_REVISION = 3;
+export const COCHANGE_ALGORITHM_REVISION = 4;
 
 /** The git trajectory's `chunkTimeoutMs` default. */
 const DEFAULT_GIT_TIMEOUT_MS = 120_000;

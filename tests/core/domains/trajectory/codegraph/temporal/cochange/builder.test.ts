@@ -10,6 +10,8 @@
  *   - a moved HEAD or a changed parameter rebuilds.
  */
 
+import { createHash } from "node:crypto";
+
 import { describe, expect, it, vi } from "vitest";
 
 import type { CommitInfo } from "../../../../../../../src/core/adapters/vcs/types.js";
@@ -18,6 +20,11 @@ import type {
   TemporalCochangeSnapshot,
   TemporalSymbolCommitBuffer,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
+import {
+  MASS_CHANGE_CEILING,
+  TEMPORAL_COCHANGE_MAX_PARTNERS_PER_FILE,
+  TEMPORAL_COCHANGE_MIN_SUPPORT,
+} from "../../../../../../../src/core/domains/trajectory/codegraph/temporal/cochange/index.js";
 import {
   InMemoryTemporalSymbolCommitBuffer,
   TemporalCochangeBuilder,
@@ -456,5 +463,58 @@ describe("TemporalCochangeBuilder — symbol-commit flush", () => {
     expect(graphDb.replaceTemporalSymbolCommits).not.toHaveBeenCalled();
     expect(graphDb.storedTemporalSymbolCommitFilePaths).not.toHaveBeenCalled();
     expect(graphDb.deleteTemporalSymbolCommitFiles).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * bd tea-rags-mcp-hzm7g: a snapshot built before the persisted shape grew
+ * (migration 046 line counts, 047 commit time) carries NULL in the new
+ * columns. The skip rule must not keep it: the revision in the fingerprint
+ * moved past 3, so a meta stamped under revision 3 rebuilds even at the same
+ * HEAD inside a day.
+ */
+describe("TemporalCochangeBuilder — a revision-3 snapshot rebuilds", () => {
+  /** The fingerprint the revision-3 builder stamped for these build parameters. */
+  function revision3Fingerprint(windowMonths: number): string {
+    return createHash("sha256")
+      .update(
+        JSON.stringify({
+          revision: 3,
+          windowMonths,
+          minSupport: TEMPORAL_COCHANGE_MIN_SUPPORT,
+          maxPartnersPerFile: TEMPORAL_COCHANGE_MAX_PARTNERS_PER_FILE,
+          massChangeCeiling: MASS_CHANGE_CEILING,
+          projectPrefix: "",
+          worktreeDeletions: [],
+        }),
+      )
+      .digest("hex")
+      .slice(0, 16);
+  }
+
+  it("rebuilds a same-HEAD snapshot built inside a day whose fingerprint was stamped under revision 3", async () => {
+    const nowSeconds = NOW_MS / 1000;
+    const stale: TemporalCochangeBuildMeta = {
+      head: "h1",
+      fingerprint: revision3Fingerprint(6),
+      builtAt: nowSeconds - 60,
+      windowSince: nowSeconds - 6 * 30 * 86400,
+      commitCount: 6,
+      bundleCount: 6,
+      admittedBundleCount: 6,
+      admittedBurstCount: 6,
+      maxFilesPerBundle: 2,
+      minSupport: TEMPORAL_COCHANGE_MIN_SUPPORT,
+      maxPartnersPerFile: TEMPORAL_COCHANGE_MAX_PARTNERS_PER_FILE,
+      burstWindowMinutes: 120,
+      burstWindowMethod: "fallback",
+    };
+    const { graphDb, writes } = fakeGraphDb(stale);
+
+    const outcome = await builder(historySource("h1")).onCollectionComplete({ projectRoot: "/repo", graphDb });
+
+    expect(outcome.status).toBe("built");
+    expect(writes).toHaveLength(1);
+    expect(writes[0].meta.fingerprint).not.toBe(stale.fingerprint);
   });
 });
