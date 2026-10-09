@@ -477,8 +477,6 @@ export const DAEMON_OP_COMMANDS: DaemonOpCommandsByOp = {
   // Symbol-commit rows of the temporal sub-graph (bd tea-rags-mcp-3gz4f).
   storedTemporalSymbolCommitFilePaths: read(async (graphDb) => graphDb.storedTemporalSymbolCommitFilePaths()),
   readTemporalSymbolCommits: read(async (graphDb, p) => graphDb.readTemporalSymbolCommits(p.relPath as string)),
-  // One review's working-tree file edges (bd tea-rags-mcp-89k7k.1.2).
-  readReviewFileEdges: read(async (graphDb, p) => graphDb.readReviewFileEdges(p.reviewId as string)),
   // File-scope get_callers / get_callees (bd tea-rags-mcp-gfvr8). Plain data.
   getFileImporters: read(async (graphDb, p) => graphDb.getFileImporters(p.relPath as RelPath)),
   getFileImports: read(async (graphDb, p) => graphDb.getFileImports(p.relPath as RelPath)),

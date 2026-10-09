@@ -18,8 +18,8 @@ import {
   type DiffDetectorSilentCouplingFacts,
   type DiffDetectorSplitMergeReader,
 } from "../../../../../src/core/api/internal/ops/diff-detector-run.js";
-import { ReviewEdgeOverlay } from "../../../../../src/core/api/internal/ops/review-edge-overlay.js";
 import type { DiffDetectorFinding } from "../../../../../src/core/contracts/types/diff-detector-finding.js";
+import { ReviewEdgeOverlay } from "../../../../../src/core/domains/trajectory/codegraph/symbols/index.js";
 import type { SplitMergeVerdicts } from "../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
 
 /** A file edge as a fixture tuple. */

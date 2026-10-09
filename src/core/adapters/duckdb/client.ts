@@ -582,10 +582,6 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.reviewEdges.sweepExpiredReviewTables(nowEpochSeconds, maxAgeSeconds);
   }
 
-  async readReviewFileEdges(reviewId: string): Promise<ReviewFileEdge[]> {
-    return this.reviewEdges.readReviewFileEdges(reviewId);
-  }
-
   /** File-scope `get_callers` (bd tea-rags-mcp-gfvr8): the files importing `relPath`. */
   async getFileImporters(relPath: RelPath): Promise<FileImportLookup> {
     return this.analytics.getFileImporters(relPath);

@@ -4,14 +4,17 @@
  * envelopes, and the age sweep that guarantees a crashed process's tables die
  * on the next review anywhere.
  *
+ * The store is write-only (bd tea-rags-mcp-89k7k.35.19): no port reads the
+ * table back, so the tests observe it with a direct catalog/SQL probe on the
+ * same connection (`reviewTableEdges`).
+ *
  * Invariants under test:
- *   - put → read round-trips the edges ordered by (source, target);
+ *   - put writes the edges (probed ordered by (source, target));
  *   - a second put to the SAME reviewId APPENDS (reviews write once, so this
  *     only matters for a retry);
  *   - an empty put still creates the table — "review with no edges" stays
  *     distinguishable from "review never written";
- *   - drop removes the TABLE (information_schema absence), and read after
- *     drop answers [] instead of throwing;
+ *   - drop removes the TABLE (information_schema absence);
  *   - sweep drops exactly the expired tables plus every malformed-named one,
  *     and returns the dropped names.
  */
@@ -49,6 +52,15 @@ async function catalogRows(db: DuckDbGraphClient, table: string): Promise<number
   return Number(rows[0]?.n ?? 0);
 }
 
+/** One review table's rows, ordered by (source, target), read straight off the connection's temp catalog. */
+async function reviewTableEdges(db: Pick<DuckDbGraphClient, "queryAll">, reviewId: string): Promise<ReviewFileEdge[]> {
+  const rows = await db.queryAll<{ source_rel_path: string; target_rel_path: string }>(
+    `SELECT source_rel_path, target_rel_path FROM temp.main."cg_review_file_edges_${reviewId}" ` +
+      "ORDER BY source_rel_path, target_rel_path",
+  );
+  return rows.map((r) => edge(r.source_rel_path, r.target_rel_path));
+}
+
 describe("DuckDbGraphClient — per-review file-edge store (bd tea-rags-mcp-89k7k.1.2)", () => {
   let dir: string;
   let db: DuckDbGraphClient;
@@ -65,25 +77,24 @@ describe("DuckDbGraphClient — per-review file-edge store (bd tea-rags-mcp-89k7
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("round-trips put → read ordered by (source, target), and a second put to the same review appends", async () => {
+  it("put writes the edges, and a second put to the same review appends", async () => {
     await db.putReviewFileEdges(REVIEW_ID, [edge("src/b.ts", "src/d.ts"), edge("src/a.ts", "src/c.ts")]);
     await db.putReviewFileEdges(REVIEW_ID, [edge("src/a.ts", "src/b.ts")]);
 
-    expect(await db.readReviewFileEdges(REVIEW_ID)).toEqual([
+    expect(await reviewTableEdges(db, REVIEW_ID)).toEqual([
       edge("src/a.ts", "src/b.ts"),
       edge("src/a.ts", "src/c.ts"),
       edge("src/b.ts", "src/d.ts"),
     ]);
   });
 
-  it("an empty put still creates the table; drop removes the table itself and read answers []", async () => {
+  it("an empty put still creates the table; drop removes the table itself", async () => {
     await db.putReviewFileEdges(REVIEW_ID, []);
     expect(await catalogRows(db, TABLE)).toBe(1);
-    expect(await db.readReviewFileEdges(REVIEW_ID)).toEqual([]);
+    expect(await reviewTableEdges(db, REVIEW_ID)).toEqual([]);
 
     await db.dropReviewFileEdges(REVIEW_ID);
     expect(await catalogRows(db, TABLE)).toBe(0);
-    expect(await db.readReviewFileEdges(REVIEW_ID)).toEqual([]);
   });
 
   it("sweeps only the expired tables plus malformed-named ones, and returns the dropped names", async () => {
@@ -114,17 +125,17 @@ function databaseState(dbPath: string): string[] {
   return [fileState(dbPath), fileState(`${dbPath}.wal`)];
 }
 
-/** One full review lifecycle: sweep-on-create, put, read, finally-drop. */
+/** One full review lifecycle: sweep-on-create, put, (probe), finally-drop. */
 async function runReview(
   db: Pick<
     DuckDbGraphClient,
-    "sweepExpiredReviewFileEdges" | "putReviewFileEdges" | "readReviewFileEdges" | "dropReviewFileEdges"
+    "sweepExpiredReviewFileEdges" | "putReviewFileEdges" | "dropReviewFileEdges" | "queryAll"
   >,
   reviewId: string,
 ): Promise<ReviewFileEdge[]> {
   await db.sweepExpiredReviewFileEdges(Number(reviewId.slice(0, 10)), 3600);
   await db.putReviewFileEdges(reviewId, [edge("src/a.ts", "src/b.ts")]);
-  const read = await db.readReviewFileEdges(reviewId);
+  const read = await reviewTableEdges(db, reviewId);
   await db.dropReviewFileEdges(reviewId);
   return read;
 }
@@ -217,17 +228,14 @@ describe("review scratch tables never touch the database file (bd tea-rags-mcp-x
         expect(response.ok).toBe(true);
         return (response as { result?: unknown }).result;
       };
-      const reads = await Promise.all(
+      await Promise.all(
         ids.map(async (reviewId, i) => {
           await call("sweepExpiredReviewFileEdges", { nowEpochSeconds: 1700000000, maxAgeSeconds: 3600 });
           await call("putReviewFileEdges", { reviewId, edges: [edge(`src/${String(i)}.ts`, "src/t.ts")] });
-          const read = await call("readReviewFileEdges", { reviewId });
           await call("dropReviewFileEdges", { reviewId });
-          return read;
         }),
       );
 
-      expect(reads).toEqual(ids.map((_, i) => [edge(`src/${String(i)}.ts`, "src/t.ts")]));
       expect(databaseState(path)).toEqual(before);
     } finally {
       await pool.closeAll();
@@ -242,7 +250,7 @@ describe("review-edge ops through the daemon (bd tea-rags-mcp-89k7k.1.2)", () =>
     root = undefined;
   });
 
-  it("put writes and read answers through the server's pooled collection", async () => {
+  it("put writes and the sweep drops through the server's pooled collection", async () => {
     root = mkdtempSync(join(tmpdir(), "cg-daemon-review-edges-"));
     const pool = new GraphDbClientPool({
       rootDir: root,
@@ -255,17 +263,11 @@ describe("review-edge ops through the daemon (bd tea-rags-mcp-89k7k.1.2)", () =>
       expect(DAEMON_OP_COMMANDS.putReviewFileEdges.access).toBe("write");
       expect(DAEMON_OP_COMMANDS.dropReviewFileEdges.access).toBe("write");
       expect(DAEMON_OP_COMMANDS.sweepExpiredReviewFileEdges.access).toBe("write");
-      expect(DAEMON_OP_COMMANDS.readReviewFileEdges.access).toBe("read");
 
       const put = await server.handle({
         id: 1,
         op: "putReviewFileEdges",
         params: { collection: c, reviewId: REVIEW_ID, edges: [edge("src/a.ts", "src/b.ts")] },
-      });
-      const read = await server.handle({
-        id: 2,
-        op: "readReviewFileEdges",
-        params: { collection: c, reviewId: REVIEW_ID },
       });
       const sweep = await server.handle({
         id: 3,
@@ -274,16 +276,9 @@ describe("review-edge ops through the daemon (bd tea-rags-mcp-89k7k.1.2)", () =>
       });
 
       expect(put.ok).toBe(true);
-      expect((read as { result: unknown }).result).toEqual([edge("src/a.ts", "src/b.ts")]);
       // Age is read off the id's EMBEDDED epoch, not the wall clock: an id
       // minted 3600s before `now` is expired exactly here, daemon or not.
       expect((sweep as { result: unknown }).result).toEqual([TABLE]);
-      const after = await server.handle({
-        id: 4,
-        op: "readReviewFileEdges",
-        params: { collection: c, reviewId: REVIEW_ID },
-      });
-      expect((after as { result: unknown }).result).toEqual([]);
     } finally {
       await pool.closeAll();
     }

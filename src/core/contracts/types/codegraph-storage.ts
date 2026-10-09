@@ -1494,12 +1494,6 @@ export interface GraphDbClient {
   sweepExpiredReviewFileEdges: (nowEpochSeconds: number, maxAgeSeconds: number) => Promise<string[]>;
 
   /**
-   * This review's edges ordered by (source_rel_path, target_rel_path). A table
-   * that does not exist reads as no edges — never a throw.
-   */
-  readReviewFileEdges: (reviewId: string) => Promise<ReviewFileEdge[]>;
-
-  /**
    * The `cg_symbols_edges_file` rows whose TARGET is `relPath` — the files
    * importing it — each weighted like {@link readFileDependencyGraph}'s edges.
    * File-scope `get_callers` reads it (bd tea-rags-mcp-gfvr8).

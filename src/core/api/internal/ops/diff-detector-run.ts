@@ -63,6 +63,7 @@ import {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   isDeclaredCompositionRoot,
   isDeclaredEntryPoint,
+  type ReviewEdgeOverlay,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import {
   groupSilentCouplingPairs,
@@ -70,7 +71,6 @@ import {
   type SilentCouplingViolation,
   type SplitMergeVerdicts,
 } from "../../../domains/trajectory/codegraph/temporal/index.js";
-import type { ReviewEdgeOverlay } from "./review-edge-overlay.js";
 import {
   SILENT_COUPLING_GROUP_EVIDENCE_PARTNERS,
   silentCouplingGroupDrillDown,

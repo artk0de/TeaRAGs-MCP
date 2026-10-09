@@ -747,10 +747,6 @@ export class DaemonGraphDbClient implements GraphDbClient {
     })) as string[];
   }
 
-  async readReviewFileEdges(reviewId: string): Promise<ReviewFileEdge[]> {
-    return (await this.call("readReviewFileEdges", { reviewId })) as ReviewFileEdge[];
-  }
-
   async readTemporalCochangeMeta(): Promise<TemporalCochangeBuildMeta | null> {
     return (await this.call("readTemporalCochangeMeta", {})) as TemporalCochangeBuildMeta | null;
   }

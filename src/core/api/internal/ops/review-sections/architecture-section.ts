@@ -2,7 +2,7 @@
  * The `architecture` review section (bd tea-rags-mcp-89k7k.1.4, F3 slice 2):
  * the wiring of F2's `DiffDetectorRun` to the REAL substrate — the indexed
  * graph and the whole-repo report's extracted facts (`architecture-facts.ts`)
- * on one side, F1's working-tree edges (`readReviewFileEdges` →
+ * on one side, F1's working-tree edges (`readWorkingTreeFileEdges` →
  * `ReviewEdgeOverlay`) on the other. This section owns NO judgement: the
  * detectors are `DiffDetectorRun`'s, the facts are the report's; what lives
  * here is the RUN FLOW and the per-review temp table's guaranteed cleanup.
@@ -39,7 +39,11 @@ import {
   type DiffDetectorFinding,
 } from "../../../../contracts/types/diff-detector-finding.js";
 import type { InMemoryExtractionContext } from "../../../../domains/trajectory/codegraph/index.js";
-import type { ComponentGraph } from "../../../../domains/trajectory/codegraph/symbols/index.js";
+import {
+  ReviewEdgeOverlay,
+  type ComponentGraph,
+  type ReviewFileEdgeRead,
+} from "../../../../domains/trajectory/codegraph/symbols/index.js";
 import {
   assessGraphCochangeSignificance,
   computeSplitMergeVerdicts,
@@ -75,11 +79,9 @@ import {
 import type { DiffScopeRead } from "../diff-scope-reader.js";
 import {
   extractReviewFileEdges,
-  readReviewFileEdges,
-  ReviewEdgeOverlay,
+  readWorkingTreeFileEdges,
   workingTreeExtractionContext,
   type ReviewEdgeExtractionDeps,
-  type ReviewFileEdgeRead,
 } from "../review-edge-overlay.js";
 import type { ReviewSectionBuildContext, ReviewSectionProvider } from "./review-section-provider.js";
 
@@ -413,7 +415,7 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       const extractionContext = workingTreeExtractionContext(scope.workTree, reviewEdgeExtraction.languageFactory);
       const reads: ReviewFileEdgeRead[] = [];
       for (const relPath of scope.files) {
-        reads.push(await readReviewFileEdges(reviewEdgeExtraction, scope.workTree, relPath, extractionContext));
+        reads.push(await readWorkingTreeFileEdges(reviewEdgeExtraction, scope.workTree, relPath, extractionContext));
       }
       await graphDb.putReviewFileEdges(
         reviewId,

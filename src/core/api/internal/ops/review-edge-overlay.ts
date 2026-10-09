@@ -1,13 +1,16 @@
 /**
  * Working-tree file edges for one diff-scoped review — slice A of F1
- * (bd tea-rags-mcp-89k7k.1.2): `readReviewFileEdges` walks ONE changed file's
- * text with the same in-memory extraction the index runs
+ * (bd tea-rags-mcp-89k7k.1.2): `readWorkingTreeFileEdges` walks ONE changed
+ * file's text with the same in-memory extraction the index runs
  * (`extractFileInMemory` over the naming-review trio), resolves its imports to
  * project files through the language facade's `resolveFileEdges`, and gates
  * every target on WORKING-TREE existence — the review judges the tree as it
  * stands, so a file the index holds but the tree lost is never a target.
- * `ReviewEdgeOverlay` is the pure per-review view over those reads: the diff's
- * files masked out of the indexed graph, plus this review's own edges.
+ * This module is one PRODUCER of `ReviewEdgeOverlay` reads; the overlay value
+ * itself — the diff's files masked out of the indexed graph, plus this
+ * review's own edges — is pure domain logic and lives in the codegraph domain
+ * (`domains/trajectory/codegraph/symbols/edge-overlay`, bd
+ * tea-rags-mcp-89k7k.35.19).
  *
  * Which languages resolve edges here: TypeScript alone in slice A — its
  * import→file mapper (`ts-path-mapper`, reached through the facade the
@@ -33,6 +36,7 @@ import type {
   SymbolIdComposer,
 } from "../../../contracts/types/language.js";
 import { extractFileInMemory, type InMemoryExtractionContext } from "../../../domains/trajectory/codegraph/index.js";
+import type { ReviewFileEdgeRead } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import {
   collectDependencyManifestSources,
   readDeclaredDependenciesByLanguage,
@@ -45,16 +49,6 @@ import {
  * api — and re-exported here so this module's public surface is unchanged.
  */
 export type { ReviewFileEdge };
-
-/** Why a changed file yielded no edges (upstream renders it as notJudged, never edge-free). */
-export type ReviewEdgeSkipReason = "noCodegraphLanguage" | "unreadable" | "unsupportedLanguage" | "parseFailed";
-
-export interface ReviewFileEdgeRead {
-  relPath: string;
-  language?: string;
-  edges: readonly ReviewFileEdge[];
-  skip?: { reason: ReviewEdgeSkipReason; detail?: string };
-}
 
 /**
  * The languages whose import→file resolution answers from the WORKING TREE
@@ -104,7 +98,7 @@ export interface ReviewEdgeExtractionDeps {
  * path hands every walk — build it once per review with
  * {@link workingTreeExtractionContext} and pass it to every file.
  */
-export async function readReviewFileEdges(
+export async function readWorkingTreeFileEdges(
   deps: ReviewEdgeExtractionDeps,
   workTree: string,
   relPath: string,
@@ -120,7 +114,7 @@ export async function readReviewFileEdges(
 }
 
 /**
- * {@link readReviewFileEdges} over text the caller already holds — the same
+ * {@link readWorkingTreeFileEdges} over text the caller already holds — the same
  * walk and resolution, so a revision's blob (the diff base's, bd
  * tea-rags-mcp-89k7k.1.16) extracts exactly as the working-tree file does.
  * Resolution answers from `workTree`'s filesystem: an import is mapped to the
@@ -186,7 +180,7 @@ export function extractReviewFileEdges(
  * `Gemfile` and the dependencies its manifests declare, the same wiring
  * `naming-review-extraction.ts` gives its walks (kept local here because that
  * module's copy is closure-private). Read once per review, then handed to
- * every {@link readReviewFileEdges} call.
+ * every {@link readWorkingTreeFileEdges} call.
  */
 export function workingTreeExtractionContext(
   workTree: string,
@@ -265,56 +259,6 @@ function unionRecordedNames(first: string[] | undefined, second: readonly string
   }
   return first;
 }
-
-/**
- * Per-review view over file edges: the diff's files MASKED out of the indexed
- * graph, plus this review's own working-tree edges. F2 detectors read indexed
- * edges THROUGH it (slice B wires the DuckDB side of that read — the
- * temp-table persistence and the masked union); nothing here touches global
- * state, and the view is immutable after construction.
- */
-export class ReviewEdgeOverlay {
-  private readonly edgesBySource: ReadonlyMap<string, readonly ReviewFileEdge[]>;
-  private readonly maskedPaths: ReadonlySet<string>;
-  private readonly unsupportedReads: readonly {
-    relPath: string;
-    reason: ReviewEdgeSkipReason;
-    detail?: string;
-  }[];
-
-  constructor(reads: readonly ReviewFileEdgeRead[]) {
-    const edgesBySource = new Map<string, readonly ReviewFileEdge[]>();
-    const unsupported: { relPath: string; reason: ReviewEdgeSkipReason; detail?: string }[] = [];
-    for (const read of reads) {
-      // A diff lists a file once; a repeated relPath keeps the LATER read —
-      // the fresher working-tree state.
-      edgesBySource.set(read.relPath, Object.freeze([...read.edges]));
-      if (read.skip !== undefined) {
-        unsupported.push(Object.freeze({ relPath: read.relPath, ...read.skip }));
-      }
-    }
-    this.edgesBySource = edgesBySource;
-    this.maskedPaths = new Set(reads.map((read) => read.relPath));
-    this.unsupportedReads = Object.freeze(unsupported);
-  }
-
-  /** Every read relPath — the files whose indexed edges the review replaces, whatever the read found. */
-  get masked(): ReadonlySet<string> {
-    return this.maskedPaths;
-  }
-
-  /** The working-tree edges of one file: `[]` for a masked file with no edges, and for any file outside the read. */
-  edgesFrom(relPath: string): readonly ReviewFileEdge[] {
-    return this.edgesBySource.get(relPath) ?? EMPTY_EDGES;
-  }
-
-  /** The skipped reads — the notJudged files upstream must report, never treat as edge-free. */
-  unsupported(): readonly { relPath: string; reason: ReviewEdgeSkipReason; detail?: string }[] {
-    return this.unsupportedReads;
-  }
-}
-
-const EMPTY_EDGES: readonly ReviewFileEdge[] = Object.freeze([]);
 
 /** An unknown thrown value's message, for a skip detail. */
 function messageOf(error: unknown): string {

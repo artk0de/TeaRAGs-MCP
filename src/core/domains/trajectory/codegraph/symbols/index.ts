@@ -68,4 +68,5 @@ export { CODEGRAPH_SYMBOLS_FILE_SIGNALS, CODEGRAPH_SYMBOLS_CHUNK_SIGNALS } from 
 export { codegraphFilters } from "./filters.js";
 export * from "./path-tracing/index.js";
 export * from "./boundary-diagnostics/index.js";
+export * from "./edge-overlay/index.js";
 export * from "./dependency-norms/index.js";
