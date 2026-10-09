@@ -74,7 +74,7 @@ import {
   type LegacyToleratedDaemonOp,
   type StaleClientBuilds,
 } from "./connection-lifecycle.js";
-import type { DaemonHandshakeResult, DaemonOp } from "./protocol.js";
+import type { DaemonHandshakeResult, DaemonOp, DaemonOpParamsMap } from "./protocol.js";
 
 // The connection lifecycle (connect/retry, pending-call settlement, liveness
 // watch, reconnect-and-replay) moved to `connection-lifecycle.ts` (bd
@@ -158,23 +158,27 @@ export class DaemonGraphDbClient implements GraphDbClient {
     this.lifecycle.restrictToReads(builds);
   }
 
-  /** Send one request and await its response — see `DaemonConnectionLifecycle#call`. */
-  private async call(
-    op: DaemonOp,
-    params: Record<string, unknown>,
+  /**
+   * Send one request and await its response — see `DaemonConnectionLifecycle#call`.
+   * `params` is the op's `DaemonOpParamsMap` shape, so the proxy line and the
+   * wire contract cannot drift apart (bd tea-rags-mcp-89k7k.35.6).
+   */
+  private async call<Op extends DaemonOp>(
+    op: Op,
+    params: DaemonOpParamsMap[Op],
     options: { replayable?: boolean } = {},
   ): Promise<unknown> {
-    return this.lifecycle.call(op, params, options);
+    return this.lifecycle.call(op, { ...params }, options);
   }
 
   /** `call` for a tolerated legacy op — see `DaemonConnectionLifecycle#callTolerated`. */
-  private async callTolerated<T>(
-    op: LegacyToleratedDaemonOp,
-    params: Record<string, unknown>,
+  private async callTolerated<T, Op extends LegacyToleratedDaemonOp>(
+    op: Op,
+    params: DaemonOpParamsMap[Op],
     decode: (result: unknown) => T,
     fallback: () => T | Promise<T>,
   ): Promise<T> {
-    return this.lifecycle.callTolerated(op, params, decode, fallback);
+    return this.lifecycle.callTolerated(op, { ...params }, decode, fallback);
   }
 
   // ── build-version handshake (bd tea-rags-mcp-ji56r) ──
@@ -408,7 +412,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
    * tolerated legacy op: a daemon that predates it leaves the file as it is.
    */
   async compactStorage(): Promise<CodegraphStorageCompactionOutcome> {
-    return this.callTolerated<CodegraphStorageCompactionOutcome>(
+    return this.callTolerated<CodegraphStorageCompactionOutcome, "compactStorage">(
       "compactStorage",
       {},
       (result) => result as CodegraphStorageCompactionOutcome,
