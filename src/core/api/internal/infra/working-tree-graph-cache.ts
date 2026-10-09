@@ -1161,8 +1161,8 @@ function buildFailureReason(outcome: Exclude<WorkingTreeGraphBuildOutcome, { kin
  * The contract this rests on: a READ never writes either file. Every read path
  * of the base graph honours it — the graph tools, the reports, `exportSnapshot`
  * (a `COPY FROM DATABASE` out of the live connection, no checkpoint) and
- * `review_changes`, whose per-review scratch tables are connection-scoped TEMP
- * tables (`DuckDbReviewEdgeStore`, bd tea-rags-mcp-xi2r9 D4). A read path that
+ * `review_changes`, which writes no table at all (its working-tree edges live in
+ * memory, bd tea-rags-mcp-xi2r9 D4). A read path that
  * wrote — a persistent scratch table, a CHECKPOINT on a read — would move the
  * version and orphan every tree graph and snapshot of the collection.
  */

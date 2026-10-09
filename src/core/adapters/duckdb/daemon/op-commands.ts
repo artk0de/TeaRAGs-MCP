@@ -244,17 +244,6 @@ const DAEMON_OP_COMMAND_DEFINITIONS: DaemonOpCommandDefinitions = {
   deleteTemporalSymbolCommitFiles: write(async (graphDb, p) =>
     graphDb.deleteTemporalSymbolCommitFiles([...p.relPaths]),
   ),
-  // Per-review working-tree file-edge temp tables (bd tea-rags-mcp-89k7k.1.2);
-  // JSON-shaped on the wire.
-  putReviewFileEdges: write(async (graphDb, p) => graphDb.putReviewFileEdges(p.reviewId, p.edges)),
-  dropReviewFileEdges: write(async (graphDb, p) => graphDb.dropReviewFileEdges(p.reviewId)),
-  // A write that answers with its OUTCOME — the dropped table names — instead
-  // of the `null` ack (same shape as compactStorage): the caller logs what the
-  // sweep collected, and the null ack would throw the contract away.
-  sweepExpiredReviewFileEdges: {
-    access: "write",
-    run: async (graphDb, p) => graphDb.sweepExpiredReviewFileEdges(p.nowEpochSeconds, p.maxAgeSeconds),
-  },
   checkpoint: write(async (graphDb) => graphDb.checkpoint()),
   rebuildEdgeFileTargetIndex: write(async (graphDb) => graphDb.rebuildEdgeFileTargetIndex()),
   recordRunStats: write(async (graphDb, p) => graphDb.recordRunStats(p.rows)),

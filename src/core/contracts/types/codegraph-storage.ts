@@ -1464,35 +1464,6 @@ export interface GraphDbClient {
   /** One file's symbol-commit rows, `commitShas` parsed. */
   readTemporalSymbolCommits: (relPath: RelPath) => Promise<TemporalSymbolCommitFileSnapshot>;
 
-  // ── Per-review working-tree file edges (bd tea-rags-mcp-89k7k.1.2) ──
-  //
-  // One throwaway `cg_review_file_edges_<reviewId>` table per review — the
-  // review id embeds its epoch, so the age sweep reads it off the NAME.
-  // Deliberately outside the migration catalog: the DDL is issued at runtime
-  // and the table is dropped the moment the review ends. The table is a
-  // connection-scoped TEMP table: a review never writes the database file, so
-  // it never moves the base graph's version (bd tea-rags-mcp-xi2r9, D4).
-
-  /**
-   * Create this review's table when absent and APPEND the edges to it, in one
-   * transaction. An empty `edges` still creates the table, so "review with no
-   * edges" stays distinguishable from "review never written". Reviews write
-   * once; a second put to the same id appends — the retry contract, never a
-   * replace.
-   */
-  putReviewFileEdges: (reviewId: string, edges: readonly ReviewFileEdge[]) => Promise<void>;
-
-  /** Drop this review's table. Idempotent — a table already gone is fine. */
-  dropReviewFileEdges: (reviewId: string) => Promise<void>;
-
-  /**
-   * Drop every `cg_review_file_edges_*` table whose embedded epoch is at least
-   * `maxAgeSeconds` behind `nowEpochSeconds`, plus every malformed-named one —
-   * a crashed process's tables die on the next review anywhere. Returns the
-   * dropped table names.
-   */
-  sweepExpiredReviewFileEdges: (nowEpochSeconds: number, maxAgeSeconds: number) => Promise<string[]>;
-
   /**
    * The `cg_symbols_edges_file` rows whose TARGET is `relPath` — the files
    * importing it — each weighted like {@link readFileDependencyGraph}'s edges.

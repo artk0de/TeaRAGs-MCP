@@ -21,18 +21,12 @@ import type { ReviewEdgeExtractionDeps } from "../review-edge-overlay.js";
 
 /**
  * The indexed graph reads a review section may perform: the temporal
- * sub-graph's two reads, the whole file dependency graph (the `architecture`
- * section's indexed side), and the per-review temp table's write lifecycle
- * (`architecture`, F3 slice 2 — put once, drop in the finally).
+ * sub-graph's two reads and the whole file dependency graph (the
+ * `architecture` section's indexed side).
  */
 export type ReviewGraphDb = Pick<
   GraphDbClient,
-  | "readTemporalCochangeGraph"
-  | "readTemporalSymbolCommits"
-  | "readFileDependencyGraph"
-  | "putReviewFileEdges"
-  | "dropReviewFileEdges"
-  | "sweepExpiredReviewFileEdges"
+  "readTemporalCochangeGraph" | "readTemporalSymbolCommits" | "readFileDependencyGraph"
 >;
 
 /** The naming lexicon operations, as a review section needs them. */

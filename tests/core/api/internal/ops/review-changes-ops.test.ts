@@ -88,9 +88,6 @@ interface GraphStub {
   readTemporalCochangeGraph: ReturnType<typeof vi.fn>;
   readTemporalSymbolCommits: ReturnType<typeof vi.fn>;
   readFileDependencyGraph: ReturnType<typeof vi.fn>;
-  putReviewFileEdges: ReturnType<typeof vi.fn>;
-  dropReviewFileEdges: ReturnType<typeof vi.fn>;
-  sweepExpiredReviewFileEdges: ReturnType<typeof vi.fn>;
 }
 
 function graphDbStub(overrides: Partial<GraphStub> = {}): GraphStub {
@@ -137,9 +134,6 @@ function graphDbStub(overrides: Partial<GraphStub> = {}): GraphStub {
       ],
       edges: [],
     })),
-    putReviewFileEdges: vi.fn(async () => undefined),
-    dropReviewFileEdges: vi.fn(async () => undefined),
-    sweepExpiredReviewFileEdges: vi.fn(async () => []),
     ...overrides,
   };
   return stub;
@@ -223,16 +217,11 @@ describe("ReviewChangesOps", () => {
     expect(result.review.sections.cohesion).toMatchObject({ analyzedFiles: 1, nullReports: 0 });
     // architecture judged the change over an empty indexed graph: the one
     // finding the fixture can make is silentCoupling (the co-change partner
-    // outside the diff, no structural edge anywhere) — and its temp table was
-    // minted, put and dropped exactly once.
+    // outside the diff, no structural edge anywhere).
     expect(result.review.sections.architecture).toMatchObject({
       built: true,
       findings: [{ detector: "silentCoupling", subject: `${CHANGED} ~ ${PARTNER}` }],
     });
-    expect(graph.putReviewFileEdges).toHaveBeenCalledTimes(1);
-    expect(graph.dropReviewFileEdges).toHaveBeenCalledTimes(1);
-    expect(graph.putReviewFileEdges.mock.calls[0]?.[0]).toMatch(/^\d{10}-\d{1,7}-[a-z0-9]{6}$/);
-    expect(graph.dropReviewFileEdges.mock.calls[0]?.[0]).toBe(graph.putReviewFileEdges.mock.calls[0]?.[0]);
     // the reader is released after the review
     expect(graph.close).toHaveBeenCalledTimes(1);
   });
