@@ -467,7 +467,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "unstable+abstract; A from walker type census, D > max(0.5, Otsu cut); components whose language " +
       "rarely declares abstractions excluded (unobservableAbstractness); census needs codegraph recompute; pain " +
       "also needs volatility (mean git.file.commitCount per file > max(median file, log-scale Otsu cut)), calm ones " +
-      "counted as stableConcreteCalm; evidence entryPoint:true = declared cli/mcp entry surface — its distance is " +
+      "counted as stableConcreteCalm; evidence entryPoint:true = component holds a facade nothing imports (an entry) — its distance is " +
       "placement, not defect (triage data, never suppression). hubLikeDependency: component with BOTH Ca and Ce " +
       "above adaptive cuts (per axis: > median and >= log-scale Otsu cut when bimodal; Ca+Ce floor as SDP) AND " +
       "balanced (|Ca-Ce|/(Ca+Ce) < 1/4, Arcan; lopsided = excluded.imbalanced) — I near 0.5, so SDP misses it; evidence = top dependents/dependencies, transitiveImpact (components reaching it), " +

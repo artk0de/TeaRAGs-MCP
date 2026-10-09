@@ -46,7 +46,7 @@ const REVIEW_CHANGES_DESCRIPTION =
   "classes is not a clean pass; silentCoupling pairs sharing an endpoint list as ONE finding (partners[] = every " +
   "pair, evidence.topPartners = 3 strongest with expected support λ, drillDown = ready find_co_changed call) — its row's " +
   "findingCount counts pairs, groupedFindingCount the findings (= listed + truncated); foundationTerminal:true on a D-delta finding = every contributing edge ends in " +
-  "an abstract L0 foundation, entryPoint:true = touched component is a declared cli/mcp entry surface — placement, not defect, " +
+  "an abstract L0 foundation, entryPoint:true = touched component holds a facade nothing imports (an entry) — placement, not defect, " +
   "preExisting:true on a cycles/leakingAbstraction finding = the index already holds that edge — the diff touches " +
   "a file on it, did not add it (all triage data, never suppression). scopeSkippedFiles rides section envelopes (incompleteChange, " +
   "cohesion) and architecture detector rows = files the 200-cap skipped while judged; present = verdict PARTIAL — " +

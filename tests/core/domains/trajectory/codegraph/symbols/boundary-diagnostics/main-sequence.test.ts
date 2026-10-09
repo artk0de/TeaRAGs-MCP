@@ -165,9 +165,11 @@ describe("detectMainSequenceDeviations", () => {
  * the unstable end of the main sequence BY DESIGN — the layer rule makes it the
  * entry surface nothing imports, so its instability is placement, not defect.
  * A distance reported for one carries `entryPoint: true` as triage data, never
- * a suppression — the same spirit r8hme.51 gave SDP's `compositionRoot`. The
- * entries are the DECLARED ones (`DECLARED_ENTRY_POINT_COMPONENTS`), fixtures
- * use the real component dirs.
+ * a suppression — the same spirit r8hme.51 gave SDP's `compositionRoot`. Since
+ * bd tea-rags-mcp-r8hme.52.4 the entry is MEASURED — a component holding an
+ * entry facade (`ArchitectureComponent.entryFacade`) — and the declared path
+ * list is retired: a component at a former declared dir carries nothing by its
+ * name alone.
  */
 describe("detectMainSequenceDeviations — entry-point annotation (bd tea-rags-mcp-zh3l0)", () => {
   /** `graph()` plus one abstract, outward-only component at `entryDir` — uselessness at D 1. */
@@ -180,15 +182,21 @@ describe("detectMainSequenceDeviations — entry-point annotation (bd tea-rags-m
     return g;
   }
 
-  it("stamps entryPoint: true on a violation whose component is a declared entry point", () => {
-    const report = judge(entryGraph("src/cli/call"));
+  it("stamps entryPoint: true on a violation whose component holds an entry facade", () => {
+    const g = entryGraph("tool");
+    const components = buildComponentGraph(g, []);
+    const tool = components.components.get("tool");
+    if (!tool) throw new Error("fixture: tool component missing");
+    components.components.set("tool", { ...tool, entryFacade: true });
 
-    expect(report.violations.find((v) => v.component === "src/cli/call")?.entryPoint).toBe(true);
+    const report = detectMainSequenceDeviations(components, g.files);
+
+    expect(report.violations.find((v) => v.component === "tool")?.entryPoint).toBe(true);
     // Annotated, never excluded: the distance is still reported.
     expect(report.summary.violationCount).toBe(3);
   });
 
-  it("annotates a component nested anywhere under a declared entry — the mcp surface included", () => {
+  it("names no entry by path: components at the retired declared cli/mcp dirs carry no annotation", () => {
     const g = entryGraph("src/cli/commands");
     for (let i = 1; i <= 5; i++) {
       g.files.push(file(`src/mcp/tools/t${i}.ts`, census(1, 0)));
@@ -197,8 +205,10 @@ describe("detectMainSequenceDeviations — entry-point annotation (bd tea-rags-m
 
     const report = judge(g);
 
-    expect(report.violations.find((v) => v.component === "src/cli/commands")?.entryPoint).toBe(true);
-    expect(report.violations.find((v) => v.component === "src/mcp/tools")?.entryPoint).toBe(true);
+    const cli = report.violations.find((v) => v.component === "src/cli/commands");
+    const mcp = report.violations.find((v) => v.component === "src/mcp/tools");
+    expect(cli && "entryPoint" in cli).toBe(false);
+    expect(mcp && "entryPoint" in mcp).toBe(false);
   });
 
   it("leaves the field absent on a non-entry component — not undefined-valued noise", () => {

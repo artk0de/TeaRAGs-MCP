@@ -342,3 +342,27 @@ describe("isMarkedlyLessStableBySdpBand", () => {
     expect(isMarkedlyLessStableBySdpBand(DEFAULT_SDP_TOLERANCE, 0)).toBe(false);
   });
 });
+
+/**
+ * The measured entry (bd tea-rags-mcp-r8hme.52.4): the diff run annotates
+ * `entryPoint` / `compositionRoot` from the catalog, so the catalog serves the
+ * report's own `entryFacade` fact — on the adoption partition too, where a
+ * facade with too few importers to be judged is no module, yet still an entry.
+ */
+describe("ArchitectureFactsCatalog — entry facade", () => {
+  it("serves entryFacade for a component holding a facade nothing imports, and omits it elsewhere", () => {
+    const graph = graphOf(
+      [file("src/tool/index.ts"), file("src/tool/run.ts"), file("src/lib/b.ts")],
+      [edge("src/tool/index.ts", "src/tool/run.ts"), edge("src/tool/run.ts", "src/lib/b.ts")],
+    );
+    const facts = deriveArchitectureComponentFacts(graph);
+    const catalog = new ArchitectureFactsCatalog(
+      facts,
+      distanceFromMainSequenceByComponent(facts.components, graph.files),
+      measureLayeringFoundationFiles(graph, facts),
+    );
+
+    expect(catalog.componentOf("src/tool/run.ts")?.entryFacade).toBe(true);
+    expect(catalog.componentOf("src/lib/b.ts")).not.toHaveProperty("entryFacade");
+  });
+});

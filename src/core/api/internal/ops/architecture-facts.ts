@@ -278,6 +278,7 @@ export class ArchitectureFactsCatalog implements DiffDetectorCatalog {
         connectionCount: number;
         afferentCount?: number;
         efferentCount?: number;
+        entryFacade?: true;
       }
     | undefined {
     const name = this.componentOfRelPath.get(relPath);
@@ -291,6 +292,7 @@ export class ArchitectureFactsCatalog implements DiffDetectorCatalog {
       connectionCount: component.connectionCount,
       afferentCount: component.afferentCount,
       efferentCount: component.efferentCount,
+      ...(component.entryFacade ? { entryFacade: true as const } : {}),
     };
   }
 

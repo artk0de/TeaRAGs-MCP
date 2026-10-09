@@ -1008,3 +1008,42 @@ describe("detectLayeringViolations — islands reached through a facade (bd tea-
     expect(islandsOf(aggregated())).toEqual(["proto"]);
   });
 });
+
+/**
+ * A composition root above its own foundation (bd tea-rags-mcp-r8hme.52.4):
+ * `root/index.ts` is a facade nothing imports; `root/boot` wires the `dom`
+ * domain; `root/infra` is the foundation both `root/boot` and `dom` use. Were
+ * the entry facade to own its subtree, `root` would hold the wiring AND the
+ * foundation, `dom` would depend on it while it depends on `dom` — a knot of
+ * the composition root with the domain it composes.
+ */
+describe("detectLayeringViolations — an entry facade over its foundation (bd tea-rags-mcp-r8hme.52.4)", () => {
+  function compositionRootOverFoundation(): FileDependencyGraph {
+    return {
+      files: [
+        file("root/index.ts"),
+        file("root/boot/w.ts"),
+        file("root/infra/f.ts"),
+        file("dom/index.ts"),
+        file("dom/d.ts"),
+      ],
+      edges: [
+        edge("root/index.ts", "root/boot/w.ts"),
+        edge("root/boot/w.ts", "dom/index.ts"),
+        edge("root/boot/w.ts", "root/infra/f.ts"),
+        edge("dom/index.ts", "dom/d.ts"),
+        edge("dom/d.ts", "root/infra/f.ts"),
+      ],
+    };
+  }
+
+  it("yields no knot and no back edge", () => {
+    const g = compositionRootOverFoundation();
+    const report = detectLayeringViolations(
+      buildComponentGraph(g, [facadeModule("root", 0), facadeModule("dom", 1)]),
+      g.files,
+    );
+
+    expect(report.violations.filter((v) => v.kind === "knot" || v.kind === "backEdge")).toEqual([]);
+  });
+});

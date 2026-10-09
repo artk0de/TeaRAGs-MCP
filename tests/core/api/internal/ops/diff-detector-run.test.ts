@@ -307,26 +307,30 @@ describe("stableDependencies", () => {
 
   // bd tea-rags-mcp-hbceb (parity with the whole-repo detector's
   // tea-rags-mcp-r8hme.51): the composition root assembles unstable
-  // concretes — that is its JOB — so an SDP finding sourced from a declared
-  // root carries the annotation as triage data, never a suppression. The
-  // roots are the DECLARED ones the whole-repo detector reads
-  // (`isDeclaredCompositionRoot`), fixtures use the real component dirs.
-  it("stamps compositionRoot: true on a finding whose source component is a declared composition root", () => {
-    const bootstrapOnVolatile = new Map([
-      ["src/bootstrap/main.ts", { name: "src/bootstrap", instability: 0.2, distanceFromMainSequence: 0.4 }],
-      ["src/lib/b.ts", { name: "lib", instability: 0.9, distanceFromMainSequence: 0.2 }],
+  // concretes — that is its JOB — so an SDP finding sourced from a root
+  // carries the annotation as triage data, never a suppression. Since bd
+  // tea-rags-mcp-r8hme.52.4 the root is the MEASURED one the catalog serves
+  // (`entryFacade`: the component holds a facade nothing imports); the
+  // declared path list is retired, so a former declared dir carries nothing.
+  it("stamps compositionRoot: true on a finding whose source component holds an entry facade", () => {
+    const rootOnVolatile = new Map<string, ComponentFact>([
+      [
+        "root/main.ts",
+        { name: "root", instability: 0.2, distanceFromMainSequence: 0.4, connectionCount: 10, entryFacade: true },
+      ],
+      ["src/lib/b.ts", { name: "lib", instability: 0.9, distanceFromMainSequence: 0.2, connectionCount: 10 }],
     ]);
     const result = runWith(
-      { catalog: catalogOf(bootstrapOnVolatile) },
-      ["src/bootstrap/main.ts"],
-      [["src/bootstrap/main.ts", "src/lib/b.ts"]],
+      { catalog: catalogOf(rootOnVolatile) },
+      ["root/main.ts"],
+      [["root/main.ts", "src/lib/b.ts"]],
     );
     const finding = result.findings.find((f) => f.detector === "stableDependencies");
-    expect(finding?.subject).toBe("src/bootstrap/main.ts -> src/lib/b.ts");
+    expect(finding?.subject).toBe("root/main.ts -> src/lib/b.ts");
     expect(finding?.compositionRoot).toBe(true);
   });
 
-  it("annotates a source component nested inside a declared root", () => {
+  it("names no root by path: a source under the retired declared root's dir stays unannotated", () => {
     const nested = new Map([
       [
         "src/bootstrap/wiring/main.ts",
@@ -340,7 +344,8 @@ describe("stableDependencies", () => {
       [["src/bootstrap/wiring/main.ts", "src/lib/b.ts"]],
     );
     const finding = result.findings.find((f) => f.detector === "stableDependencies");
-    expect(finding?.compositionRoot).toBe(true);
+    expect(finding?.subject).toBe("src/bootstrap/wiring/main.ts -> src/lib/b.ts");
+    expect("compositionRoot" in (finding ?? {})).toBe(false);
   });
 
   it("leaves a finding whose source is no declared root unannotated — and never annotates the target side", () => {
@@ -616,32 +621,28 @@ describe("mainSequence", () => {
     expect(finding?.foundationTerminal).toBeUndefined();
   });
 
-  // bd tea-rags-mcp-zh3l0 (parity with the whole-repo detector's
-  // DECLARED_ENTRY_POINT_COMPONENTS): a cli/mcp component is the unstable END
-  // of the main sequence by design — nothing imports the entry surface — so a
-  // diff-window D-delta on one is inherent to that placement, not a placement
-  // defect. The finding carries the annotation as triage data, never a
-  // suppression. The entries are the DECLARED ones the whole-repo detector
-  // reads (`isDeclaredEntryPoint`), fixtures use the real component dirs.
-  it("stamps entryPoint: true on a D-delta whose touched component is a declared entry point", () => {
-    const cliEntry = new Map<string, ComponentFact>([
+  // bd tea-rags-mcp-zh3l0 (parity with the whole-repo detector): an entry
+  // component is the unstable END of the main sequence by design — nothing
+  // imports the entry surface — so a diff-window D-delta on one is inherent
+  // to that placement, not a placement defect. The finding carries the
+  // annotation as triage data, never a suppression. Since bd
+  // tea-rags-mcp-r8hme.52.4 the entry is the MEASURED one the catalog serves
+  // (`entryFacade`); the declared path list is retired.
+  it("stamps entryPoint: true on a D-delta whose touched component holds an entry facade", () => {
+    const entry = new Map<string, ComponentFact>([
       [
-        "src/cli/call/call.ts",
-        { name: "src/cli/call", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 9 },
+        "tool/call.ts",
+        { name: "tool", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 9, entryFacade: true },
       ],
       ["src/lib/b.ts", { name: "lib", instability: 0.2, distanceFromMainSequence: 0.1, connectionCount: 9 }],
     ]);
-    const result = runWith(
-      { catalog: catalogOf(cliEntry) },
-      ["src/cli/call/call.ts"],
-      [["src/cli/call/call.ts", "src/lib/b.ts"]],
-    );
+    const result = runWith({ catalog: catalogOf(entry) }, ["tool/call.ts"], [["tool/call.ts", "src/lib/b.ts"]]);
     const finding = result.findings.find((f) => f.detector === "mainSequence");
-    expect(finding?.subject).toBe("src/cli/call");
+    expect(finding?.subject).toBe("tool");
     expect(finding?.entryPoint).toBe(true);
   });
 
-  it("annotates a component nested inside a declared entry — the mcp surface included", () => {
+  it("names no entry by path: a component under the retired declared mcp dir stays unannotated", () => {
     const nested = new Map<string, ComponentFact>([
       [
         "src/mcp/tools/register.ts",
@@ -656,7 +657,7 @@ describe("mainSequence", () => {
     );
     const finding = result.findings.find((f) => f.detector === "mainSequence");
     expect(finding?.subject).toBe("src/mcp/tools");
-    expect(finding?.entryPoint).toBe(true);
+    expect("entryPoint" in (finding ?? {})).toBe(false);
   });
 
   it("leaves a finding whose component is no declared entry unannotated", () => {

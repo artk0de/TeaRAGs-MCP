@@ -560,6 +560,21 @@
   kernel keeps its skips. Cost: skips past a wrapping kernel straight into the
   leaf it wraps (`language/<lang> → infra/symbolid`) leave the layering view.
 
+- **Composition roots and entry surfaces are MEASURED too, and an entry owns no
+  subtree.** `buildComponentGraph` (symbols/boundary-diagnostics/
+  component-graph.ts) marks `ArchitectureComponent.entryFacade` on the component
+  holding a module facade no file edge and no external file reaches — over every
+  module, whatever its adoption status — and stops the ownership walk there, so
+  files below an entry fall to their own directory. That one mark is the only
+  source of `compositionRoot` (SDP, hubLike, the diff run's stableDependencies)
+  and `entryPoint` (mainSequence, both pipelines); the diff run reads it through
+  `DiffDetectorCatalog#componentOf`. Why: the entry `src/index.ts` owned 105
+  files (bootstrap, both adapters, the infra root), reached Ca 244 and sat in a
+  52-member knot that hid the real ingest, explore/dto and bootstrap knots; and
+  the path lists that preceded the mark named this repo's directories in a
+  generic detector (bd tea-rags-mcp-r8hme.52.4). Never reintroduce a list — a
+  component the measurement misses stays unannotated.
+
 ## Gotchas
 
 - **`codegraph.file.instability` is sampled over the files the graph actually

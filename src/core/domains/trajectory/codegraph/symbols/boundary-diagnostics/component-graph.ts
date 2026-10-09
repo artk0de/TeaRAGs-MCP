@@ -22,7 +22,10 @@ import type {
  * component made `src` (it has `src/index.ts`) a catch-all owning every file
  * below it that no nearer facade claimed — `src/cli/**`, `src/bootstrap/**` —
  * with 131 dependents, which put it on the stable side of 14 of the 38
- * violations it produced.
+ * violations it produced. That catch-all was an ENTRY facade owning a
+ * subtree; entries no longer own one under any status set (bd
+ * tea-rags-mcp-r8hme.52.4, {@link buildComponentGraph}), so what keeps this set
+ * narrow now is only the adoption evidence a judged boundary needs.
  */
 export const COMPONENT_MODULE_STATUSES: ReadonlySet<FacadeModuleStatus> = new Set(["active", "facade-not-adopted"]);
 
@@ -33,9 +36,11 @@ export const COMPONENT_MODULE_STATUSES: ReadonlySet<FacadeModuleStatus> = new Se
  * declares itself a unit. A language vertical's `<lang>/index.ts` is its
  * domain even where the factory is the only importer; a Go package is a
  * domain its compiler drew. The adoption-stable SDP / main-sequence detectors
- * keep {@link COMPONENT_MODULE_STATUSES} — the `src` catch-all that this
- * wider set allows is what those must not judge (see above); layers have no
- * such risk, they are read off the dependency direction, not off instability.
+ * keep {@link COMPONENT_MODULE_STATUSES}: their instability is judged per
+ * boundary, and a facade too few importers adopted is no measured boundary.
+ * The `src` catch-all this wider set once allowed was an entry facade owning
+ * its subtree — it put the composition root and the foundation into one
+ * 52-member knot — and entries own no subtree since bd tea-rags-mcp-r8hme.52.4.
  */
 export const DOMAIN_MODULE_STATUSES: ReadonlySet<FacadeModuleStatus> = new Set([
   "active",
@@ -64,6 +69,16 @@ export const COMPONENT_CONTAINMENT_REASON =
  * raised the judged component edges from 8962 to 13768 and the violations
  * from 267 to 390 without making any of them more specific).
  *
+ * ENTRIES. A module whose facade file no file edge reaches and no external
+ * file reaches (`isEntryFacade`, measured over every module whatever its
+ * status) is a process or package root, not a domain boundary: it owns only
+ * its OWN directory's files, which form the component marked `entryFacade`
+ * (a module component where `statuses` admits it, a directory one otherwise).
+ * The files below it fall as if it were absent, minus any enclosing module —
+ * the walk stops at the entry (bd tea-rags-mcp-r8hme.52.4). Measured on the
+ * self-index: `src/index.ts` owned 105 files (bootstrap, both adapters, the
+ * infra root) with Ca 244 and sat in a 52-member layering knot.
+ *
  * EDGES. A file edge becomes part of a component dependency unless it is a
  * self-edge, has an endpoint the walk never extracted, stays inside one
  * component, or is facade aggregation (`isFacadeAggregationEdge` — the child's
@@ -81,14 +96,21 @@ export function buildComponentGraph(
   modules: readonly FacadeModuleAssessment[],
   statuses: ReadonlySet<FacadeModuleStatus> = COMPONENT_MODULE_STATUSES,
 ): ComponentGraph {
+  // Entries are measured over EVERY module, whatever its status: the predicate
+  // reads the graph, not the adoption verdict (bd tea-rags-mcp-r8hme.52.4).
+  const importedFiles = importedFileSet(graph.edges);
+  const entryModules = new Map<string, FacadeModuleAssessment>();
+  for (const m of modules) if (isEntryFacade(m, importedFiles)) entryModules.set(m.moduleDir, m);
   const componentModules = new Map<string, FacadeModuleAssessment>();
-  for (const m of modules) if (statuses.has(m.status)) componentModules.set(m.moduleDir, m);
+  for (const m of modules) {
+    if (statuses.has(m.status) && !entryModules.has(m.moduleDir)) componentModules.set(m.moduleDir, m);
+  }
 
   const namespaceOf = deriveConstantNamespaceComponents(graph.files);
   const componentOf = new Map<RelPath, string>();
   const members = new Map<string, number>();
   for (const f of graph.files) {
-    const component = owningComponent(f.relPath, componentModules, namespaceOf);
+    const component = owningComponent(f.relPath, componentModules, entryModules, namespaceOf);
     componentOf.set(f.relPath, component);
     members.set(component, (members.get(component) ?? 0) + 1);
   }
@@ -98,11 +120,9 @@ export function buildComponentGraph(
   const efferent = new Map<string, Set<RelPath>>();
   const carried = new Map<string, FileDependencyEdge[]>();
   const aggregations = new Map<string, ComponentFacadeAggregation>();
-  const importedFiles = new Set<RelPath>();
   for (const edge of graph.edges) {
     const source = componentOf.get(edge.sourceRelPath);
     const target = componentOf.get(edge.targetRelPath);
-    if (edge.sourceRelPath !== edge.targetRelPath) importedFiles.add(edge.targetRelPath);
     if (edge.sourceRelPath === edge.targetRelPath) excluded.selfEdges++;
     else if (source === undefined || target === undefined) excluded.unwalkedEndpoints++;
     else if (source === target) excluded.intraComponent++;
@@ -121,7 +141,10 @@ export function buildComponentGraph(
 
   const components = new Map<string, ArchitectureComponent>();
   for (const [componentDir, fileCount] of [...members].sort(([a], [b]) => compareCodePoints(a, b))) {
-    const module = componentModules.get(componentDir);
+    // An entry stays a module component where the statuses admit it — it only
+    // gives up the subtree below its own directory.
+    const entry = entryModules.get(componentDir);
+    const module = componentModules.get(componentDir) ?? (entry && statuses.has(entry.status) ? entry : undefined);
     const afferentCount = afferent.get(componentDir)?.size ?? 0;
     const efferentCount = efferent.get(componentDir)?.size ?? 0;
     const connectionCount = afferentCount + efferentCount;
@@ -134,7 +157,7 @@ export function buildComponentGraph(
       efferentCount,
       connectionCount,
       instability: connectionCount === 0 ? 0 : efferentCount / connectionCount,
-      ...(module && isEntryFacade(module, importedFiles) ? { entryFacade: true as const } : {}),
+      ...(entry ? { entryFacade: true as const } : {}),
     });
   }
 
@@ -168,12 +191,20 @@ export function buildComponentGraph(
  * An entry module (bd tea-rags-mcp-r8hme.52.2): its facade file is the target
  * of no file edge — facade aggregation included, so a nested facade its parent
  * re-exports is NOT an entry — and no file outside the module reaches it. A
- * process or package entry, measured; no path or file name decides it.
+ * process or package entry, measured; no path or file name decides it. A Go
+ * package (no facade file) is never one.
  */
 function isEntryFacade(module: FacadeModuleAssessment, importedFiles: ReadonlySet<RelPath>): boolean {
   return (
     module.facadeRelPath !== null && module.externalImporterCount === 0 && !importedFiles.has(module.facadeRelPath)
   );
+}
+
+/** Every file some OTHER file has an edge into — facade aggregation included. */
+function importedFileSet(edges: readonly FileDependencyEdge[]): ReadonlySet<RelPath> {
+  const imported = new Set<RelPath>();
+  for (const edge of edges) if (edge.sourceRelPath !== edge.targetRelPath) imported.add(edge.targetRelPath);
+  return imported;
 }
 
 /**
@@ -197,18 +228,24 @@ export function buildDomainComponentGraph(
 
 /**
  * The innermost component module containing `relPath`, else the constant
- * namespace its path spells, else the file's own directory.
+ * namespace its path spells, else the file's own directory. An entry module
+ * (bd tea-rags-mcp-r8hme.52.4) owns only the files of its own directory: the
+ * walk stops at it, so a file below it that no nearer module claims falls to
+ * its namespace or own directory, never to the entry and never past it to an
+ * enclosing module.
  */
 function owningComponent(
   relPath: RelPath,
   componentModules: ReadonlyMap<string, FacadeModuleAssessment>,
+  entryModules: ReadonlyMap<string, FacadeModuleAssessment>,
   namespaceOf: ReadonlyMap<RelPath, string>,
 ): string {
   const ownDir = directoryOf(relPath);
+  if (entryModules.has(ownDir)) return ownDir;
   let dir = ownDir;
   for (;;) {
     if (componentModules.has(dir)) return dir;
-    if (dir === "") return namespaceOf.get(relPath) ?? ownDir;
+    if (dir === "" || entryModules.has(dir)) return namespaceOf.get(relPath) ?? ownDir;
     dir = directoryOf(dir);
   }
 }
