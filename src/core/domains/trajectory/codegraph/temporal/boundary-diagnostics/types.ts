@@ -15,12 +15,12 @@
  * drift — the one signal worth keeping.
  */
 import type {
+  ArchitectureDirectoryRelation,
   CochangeSignificanceSummary,
   SilentCouplingBuildSummary,
   SilentCouplingStructuralVisibility,
 } from "../../../../../contracts/types/architecture-report.js";
 import type { FileDependencyEdge, RelPath } from "../../../../../contracts/types/codegraph.js";
-import type { DependencyDirectoryRelation } from "../../symbols/boundary-diagnostics/index.js";
 import type { CochangeSignificance } from "./cochange-significance.js";
 
 export interface SilentCouplingOptions {
@@ -98,7 +98,7 @@ export interface SilentCouplingViolation {
   sampleCommits: string[];
   structuralVisibility: SilentCouplingStructuralVisibility;
   /** Where `relPathB`'s directory sits relative to `relPathA`'s. */
-  directoryRelation: DependencyDirectoryRelation;
+  directoryRelation: ArchitectureDirectoryRelation;
   /**
    * Set only on a pair in {@link SilentCouplingReport.explained}: the heaviest
    * shared neighbour, whose weight cleared the explanation cut. A flagged pair

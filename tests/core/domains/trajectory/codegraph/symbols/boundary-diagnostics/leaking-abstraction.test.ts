@@ -20,13 +20,13 @@ import type {
   FileDependencyGraph,
   FileDependencyGraphFile,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
+import { MODULE_ENTRY_FILE_NAMES } from "../../../../../../../src/core/domains/trajectory/codegraph/component-geometry/index.js";
 import {
   detectLeakingAbstractions,
   FACADE_ADOPTION_MAJORITY,
   FACADE_MIN_EXTERNAL_IMPORTERS,
   FACADE_MODULE_EXCLUSION_REASONS,
   FACADE_OTSU_MIN_POPULATION,
-  MODULE_ENTRY_FILE_NAMES,
   resolveFacadeAdoptionThreshold,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
 

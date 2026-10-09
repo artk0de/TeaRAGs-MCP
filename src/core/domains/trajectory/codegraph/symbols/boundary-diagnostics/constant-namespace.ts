@@ -1,19 +1,12 @@
 import type { FileDependencyGraphFile, RelPath } from "../../../../../contracts/types/codegraph.js";
-import { classifyDirectoryRelation } from "./directory-relation.js";
+import {
+  classifyDirectoryRelation,
+  CONSTANT_PATH_SEPARATOR,
+  constantSegments,
+  isNamespaceComponent,
+  NAMESPACE_COMPONENT_PREFIX,
+} from "../../component-geometry/index.js";
 import type { DependencyDirectoryRelation } from "./types.js";
-
-/**
- * The constant-path separator a qualified scope name nests by (`Billing::Invoice`).
- * `.` is not one: a symbol id uses it for class-level members.
- */
-const CONSTANT_PATH_SEPARATOR = "::";
-
-/**
- * Prefix of a namespace component's name — Ruby's root-anchored constant
- * spelling (`::Billing`), which no repo-relative directory takes, so a
- * namespace and a directory component never share a key.
- */
-export const NAMESPACE_COMPONENT_PREFIX = "::";
 
 /**
  * The constant NAMESPACE each file belongs to, as a component name
@@ -65,11 +58,6 @@ export function deriveConstantNamespaceComponents(
   return namespaceOf;
 }
 
-/** Whether a component name is a constant namespace, not a directory. */
-export function isNamespaceComponent(component: string): boolean {
-  return component.startsWith(NAMESPACE_COMPONENT_PREFIX);
-}
-
 /**
  * How two components nest. Two namespaces nest by constant path
  * (`::Billing` holds `::Billing::Refunds`), two directories by path; a
@@ -81,21 +69,6 @@ export function classifyComponentRelation(source: string, target: string): Depen
   if (sourceIsNamespace !== isNamespaceComponent(target)) return "disjoint";
   if (!sourceIsNamespace) return classifyDirectoryRelation(`${source}/_`, `${target}/_`);
   return classifyDirectoryRelation(`${namespacePath(source)}/_`, `${namespacePath(target)}/_`);
-}
-
-/**
- * A component's chain in its own tree, outermost first and itself last: a
- * namespace's enclosing namespaces by constant path (`::Billing`,
- * `::Billing::Refunds`), a directory's enclosing directories by path. The
- * two trees share no node — the nesting {@link classifyComponentRelation}
- * judges — and the repository root (`""`) is no node of either.
- */
-export function componentAncestry(component: string): string[] {
-  const namespace = isNamespaceComponent(component);
-  const segments = namespace ? constantSegments(component) : component.split("/").filter((s) => s.length > 0);
-  const separator = namespace ? CONSTANT_PATH_SEPARATOR : "/";
-  const prefix = namespace ? NAMESPACE_COMPONENT_PREFIX : "";
-  return segments.map((_, i) => `${prefix}${segments.slice(0, i + 1).join(separator)}`);
 }
 
 /** `::Billing::Refunds` → `Billing/Refunds`, so nesting reads like a path. */
@@ -130,11 +103,6 @@ function longestSpelledPrefix(constant: readonly string[], path: readonly string
     if (tail.every((segment, i) => segment === normalizeSegment(constant[i]))) return constant.slice(0, k);
   }
   return undefined;
-}
-
-/** `::Billing::Invoice` and `Billing::Invoice` → `["Billing", "Invoice"]`. */
-function constantSegments(name: string): string[] {
-  return name.split(CONSTANT_PATH_SEPARATOR).filter((segment) => segment.length > 0);
 }
 
 /** Case- and word-separator-insensitive: `charge_service` = `ChargeService`, `api` = `API`. */

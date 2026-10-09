@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { componentAncestry } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
+import { componentAncestry } from "../../../../../../src/core/domains/trajectory/codegraph/component-geometry/index.js";
 
 describe("componentAncestry", () => {
   it("lists a directory component's enclosing directories, outermost first, itself last", () => {

@@ -1,9 +1,6 @@
 import type { FileDependencyEdge, FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
-import {
-  classifyComponentRelation,
-  deriveConstantNamespaceComponents,
-  isNamespaceComponent,
-} from "./constant-namespace.js";
+import { isNamespaceComponent } from "../../component-geometry/index.js";
+import { classifyComponentRelation, deriveConstantNamespaceComponents } from "./constant-namespace.js";
 import { isFacadeAggregationEdge } from "./facade-aggregation.js";
 import type {
   ArchitectureComponent,

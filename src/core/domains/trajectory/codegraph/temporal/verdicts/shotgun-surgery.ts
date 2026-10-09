@@ -115,7 +115,7 @@ import {
   poissonBinomialUpperTail,
   seedFromKey,
 } from "../../../../../infra/statistics/index.js";
-import { componentAncestry } from "../../symbols/boundary-diagnostics/index.js";
+import { componentAncestry } from "../../component-geometry/index.js";
 import {
   benjaminiHochbergRejectionCount,
   COCHANGE_SIGNIFICANCE_FDR_Q,
