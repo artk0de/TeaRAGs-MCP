@@ -514,6 +514,17 @@
   lost 8 TRUE findings on taxdome; dating by the change's first commit anywhere
   kept a spread the touching-commit rule retires, and an oldest retirement
   (taxdome SG51's TD-92214) retires nothing the spread saw.
+- **A shotgun chain join passes only through the GENUINE changes' footprint,
+  directed, with no degree cut.** `ShotgunSurgeryStructure#chainedThrough` joins
+  members a and b on a → x → b (or reversed) when x is in the footprint
+  `detectShotgunSurgery` builds from `genuineChanges` — every supporting unit
+  when the retirement stage did not run. Three things an edit must keep: a
+  discounted retiring change's components stay out of the footprint (else a flag
+  removal that touched the link explains the spread it was discounted from); a
+  common dependency or common dependent is never a chain (a specific shared
+  dependency is the shotgun mechanism); and no fan-in fence on x — one lost a
+  sweep's removal on taxdome (SG79, x fan-in 44) without saving SG46, the TRUE
+  finding the join costs by owner decision (bd tea-rags-mcp-zf9yz.3).
 - **The shotgun list's order is the detector's, and nothing downstream re-sorts
   it.** `compareSpreads` (temporal/verdicts/shotgun-surgery.ts) ranks by
   `ShotgunSurgerySpread.familyEvidence`, and `ArchitectureReportOps#build`

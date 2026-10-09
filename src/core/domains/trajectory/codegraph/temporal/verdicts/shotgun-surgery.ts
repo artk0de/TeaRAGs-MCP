@@ -329,6 +329,12 @@ export interface ShotgunSurgerySummary {
   /** Maximal spreads the admitted k-sets merge into — the judged findings before explanation. */
   spreadCount: number;
   explainedCount: number;
+  /**
+   * Explained spreads only a dependency chain through a genuine supporting
+   * change's footprint joins (see {@link ShotgunSurgeryStructure}) — without
+   * that join they would be findings. Part of `explainedCount`.
+   */
+  chainExplainedCount: number;
   violationCount: number;
   sharedNeighbourThreshold?: number;
   /** `none` = the neighbour weights allowed no Otsu cut; only direct dependencies explained. */
@@ -467,22 +473,26 @@ export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgery
       : undefined;
   const inScope = compilePathPatternMatcher(input.sourcePathPattern);
   let outOfScopeSetCount = 0;
+  let chainExplainedCount = 0;
   const findings: ShotgunSurgerySpread[] = [];
   const explained: ShotgunSurgerySpread[] = [];
   const retired: ShotgunSurgerySpread[] = [];
   for (const spread of closed) {
+    const genuine = retirement ? genuineChanges(spread, retirement.units, chronology) : undefined;
+    const footprint = changeFootprint(genuine ? genuine.flat() : spread.supporting);
     const shaped = shapeSpread(
       spread,
       changes,
       changedTwice,
-      islandsOf.islands(spread.components),
+      islandsOf.islands(spread.components, footprint),
       input.bundleCommits,
     );
-    if (retirement && genuineSupport(spread, retirement.units, chronology) < TEMPORAL_COCHANGE_MIN_SUPPORT) {
+    if (genuine && genuine.length < TEMPORAL_COCHANGE_MIN_SUPPORT) {
       retired.push(shaped);
       continue;
     }
     if (shaped.islands.length <= 1) {
+      if (islandsOf.islands(spread.components, NO_FOOTPRINT).length > 1) chainExplainedCount++;
       explained.push(shaped);
       continue;
     }
@@ -532,6 +542,7 @@ export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgery
       admittedSetCount: admitted.length,
       spreadCount: closed.length,
       explainedCount: explained.length,
+      chainExplainedCount,
       violationCount: findings.length,
       ...(islandsOf.neighbourThreshold === undefined
         ? { sharedNeighbourThresholdMethod: "none" as const }
@@ -921,11 +932,11 @@ export function shotgunSurgeryRetirementMinFiles(netNegativeShare: number, q: nu
  * here is its oldest commit touching the spread: a task whose first commit
  * edited elsewhere still reached the spread when that commit did.
  */
-function genuineSupport(
+function genuineChanges(
   spread: AdmittedSpread,
   retiring: ReadonlySet<ShotgunSurgeryUnit>,
   history: ShotgunSurgeryChronology,
-): number {
+): ShotgunSurgeryUnit[][] {
   const members = new Set(spread.components);
   const touchedAt = (unit: ShotgunSurgeryUnit): number =>
     Math.min(
@@ -937,11 +948,24 @@ function genuineSupport(
     spread.supporting,
     spread.supporting.map((_, index) => index),
   ).map((group) => ({
+    units: group.map((index) => spread.supporting[index]),
     retiring: group.every((index) => retiring.has(spread.supporting[index])),
     oldest: Math.min(...group.map((index) => touchedAt(spread.supporting[index]))),
   }));
   const oldest = Math.min(...groups.map((group) => group.oldest));
-  return groups.filter((group) => !group.retiring || group.oldest === oldest).length;
+  return groups.filter((group) => !group.retiring || group.oldest === oldest).map((group) => group.units);
+}
+
+/**
+ * The components a spread's genuine supporting changes touched — every
+ * supporting unit's whole component set, the {@link genuineChanges} only when
+ * the retirement stage ran. What {@link ShotgunSurgeryStructure} lets a chain
+ * pass through.
+ */
+function changeFootprint(units: readonly ShotgunSurgeryUnit[]): Set<string> {
+  const footprint = new Set<string>();
+  for (const unit of units) for (const component of unit.components) footprint.add(component);
+  return footprint;
 }
 
 /** Commits the uniformity test calls mechanical, and the family it tested. */
@@ -1910,12 +1934,33 @@ class ShotgunSurgeryFeatureSubtrees {
   }
 }
 
+/** No change footprint: islands under the direct, shared-neighbour and feature-subtree joins alone. */
+const NO_FOOTPRINT: ReadonlySet<string> = new Set();
+
 /**
  * The links among components that explain a spread: direct dependencies,
- * specific shared neighbours, and one feature subtree.
+ * specific shared neighbours, one feature subtree, and a dependency chain
+ * through the change's own footprint.
+ *
+ * CHAIN THROUGH THE FOOTPRINT (bd tea-rags-mcp-zf9yz.3) — members a and b
+ * join when a directed chain a → x → b or b → x → a exists and x lies in the
+ * footprint of the spread's genuine supporting changes (every component they
+ * touched, retiring changes the spread discounts left out). The change walked
+ * a render or call chain and edited the link in between: a page, the panel it
+ * renders through a non-member, and the card that panel renders. No constant
+ * and no degree cut — a fan-in fence on x lost a sweep's removal on taxdome
+ * (SG79's x has fan-in 44) without saving the one TRUE finding the join costs
+ * (SG46, a sidebar registry joined through `GlobalSidebarsRegister`, accepted
+ * by the owner). A common dependency or a common dependent is no chain: a
+ * specific shared dependency is the shotgun mechanism itself. Measured on
+ * taxdome's gold with the retirement discount: AP 0.782 → 0.806, labelled
+ * precision 18/35 → 17/29, five FALSE spreads explained (SG47, SG60, SG65,
+ * SG75, SG79).
  */
 class ShotgunSurgeryStructure {
   private readonly linked = new Set<string>();
+  private readonly dependsOn = new Map<string, Set<string>>();
+  private readonly dependedOnBy = new Map<string, Set<string>>();
   private readonly neighbours: SilentCouplingNeighbourIndex;
 
   constructor(
@@ -1927,7 +1972,10 @@ class ShotgunSurgeryStructure {
     for (const { sourceComponent, targetComponent } of dependencies) {
       componentIds.add(sourceComponent);
       componentIds.add(targetComponent);
-      if (sourceComponent !== targetComponent) this.linked.add(pairKey(sourceComponent, targetComponent));
+      if (sourceComponent === targetComponent) continue;
+      this.linked.add(pairKey(sourceComponent, targetComponent));
+      addDependency(this.dependsOn, sourceComponent, targetComponent);
+      addDependency(this.dependedOnBy, targetComponent, sourceComponent);
     }
     this.neighbours = new SilentCouplingNeighbourIndex(
       dependencies.map((d) => ({ sourceRelPath: d.sourceComponent, targetRelPath: d.targetComponent })),
@@ -1941,7 +1989,8 @@ class ShotgunSurgeryStructure {
    */
   islandResolver(spreads: readonly (readonly string[])[]): {
     neighbourThreshold: number | undefined;
-    islands: (components: readonly string[]) => string[][];
+    /** `footprint` = the components the spread's genuine supporting changes touched; {@link NO_FOOTPRINT} disables the chain join. */
+    islands: (components: readonly string[], footprint: ReadonlySet<string>) => string[][];
   } {
     const heaviest = new Map<string, number>();
     for (const components of spreads) {
@@ -1956,15 +2005,16 @@ class ShotgunSurgeryStructure {
       majority: SILENT_COUPLING_SHARED_NEIGHBOUR_WEIGHT_FLOOR,
       minPopulation: SILENT_COUPLING_OTSU_MIN_POPULATION,
     });
-    const joins = (a: string, b: string): boolean => {
+    const joins = (a: string, b: string, footprint: ReadonlySet<string>): boolean => {
       const key = pairKey(a, b);
       if (this.linked.has(key) || this.featureSubtrees.joins(a, b)) return true;
       const weight = heaviest.get(key);
-      return policy.method === "otsu" && weight !== undefined && policy.admits(weight);
+      if (policy.method === "otsu" && weight !== undefined && policy.admits(weight)) return true;
+      return this.chainedThrough(a, b, footprint) || this.chainedThrough(b, a, footprint);
     };
     return {
       neighbourThreshold: policy.method === "otsu" ? policy.threshold : undefined,
-      islands: (components) => {
+      islands: (components, footprint) => {
         const parent = new Map(components.map((c) => [c, c]));
         const find = (c: string): string => {
           let root = c;
@@ -1973,7 +2023,7 @@ class ShotgunSurgeryStructure {
           return root;
         };
         forEachPair(components, (a, b) => {
-          if (joins(a, b)) parent.set(find(a), find(b));
+          if (joins(a, b, footprint)) parent.set(find(a), find(b));
         });
         const groups = new Map<string, string[]>();
         for (const c of components) {
@@ -1988,6 +2038,23 @@ class ShotgunSurgeryStructure {
       },
     };
   }
+
+  /** Whether some x in `footprint` closes `from → x → to`. */
+  private chainedThrough(from: string, to: string, footprint: ReadonlySet<string>): boolean {
+    if (footprint.size === 0) return false;
+    const out = this.dependsOn.get(from);
+    const into = this.dependedOnBy.get(to);
+    if (!out || !into) return false;
+    const [scan, probe] = out.size <= into.size ? [out, into] : [into, out];
+    for (const link of scan) if (probe.has(link) && footprint.has(link)) return true;
+    return false;
+  }
+}
+
+function addDependency(adjacency: Map<string, Set<string>>, from: string, to: string): void {
+  const targets = adjacency.get(from);
+  if (targets) targets.add(to);
+  else adjacency.set(from, new Set([to]));
 }
 
 function shapeSpread(

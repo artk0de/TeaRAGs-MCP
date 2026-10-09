@@ -449,7 +449,8 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "no persisted bundle membership (pre-042 index), not clean. shotgunSurgery: " +
       "one change (author burst) spanning >=k components (k = Otsu over burst widths, >=3), recurring beyond a " +
       "component-level configuration null (fitted inclusion propensity, Poisson tail, BH q=0.05), components in >=2 " +
-      "structural islands (no dependency, specific shared neighbour, or feature subtree of <= T changed components); " +
+      "structural islands (no dependency, chain a->x->b with x touched by a genuine supporting change " +
+      "(summary.chainExplainedCount), specific shared neighbour, or feature subtree of <= T changed components); " +
       "commits whose per-file (added, deleted) counts repeat beyond chance (mechanical sweep, BH) are left out of the " +
       "history; a revert or flag removal mirroring an earlier commit's per-file net lines (permutation test, BH) joins " +
       "it as one change; a later commit retiring exactly lines an earlier one added (net -x for +x on shared files; " +

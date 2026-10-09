@@ -95,6 +95,7 @@ export function summariseShotgunSurgery(run: ShotgunSurgeryRun): ShotgunSurgeryR
     admittedSetCount: summary.admittedSetCount,
     spreadCount: summary.spreadCount,
     explainedCount: summary.explainedCount,
+    chainExplainedCount: summary.chainExplainedCount,
     violationCount: summary.violationCount,
     ...(summary.sharedNeighbourThreshold === undefined
       ? {}
