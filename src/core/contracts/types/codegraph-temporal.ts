@@ -123,6 +123,19 @@ export interface TemporalCochangeSnapshot {
    * absent = not recorded (bd tea-rags-mcp-09c4m).
    */
   bundleTaskIds?: readonly (readonly string[])[];
+  /**
+   * The +/- line counts each admitted bundle's commit made to each of its
+   * files, aligned with `bundles` and, inside a bundle, with its files; `null`
+   * = git reported no count for that file. Absent = not recorded (bd
+   * tea-rags-mcp-dm61n).
+   */
+  bundleFileLines?: readonly (readonly (CochangeFileLineCounts | null)[])[];
+}
+
+/** The lines one commit added to and deleted from one file — git's numstat pair (bd tea-rags-mcp-dm61n). */
+export interface CochangeFileLineCounts {
+  added: number;
+  deleted: number;
 }
 
 /** A stored co-change pair plus whether the structural graph links its endpoints. */
@@ -169,6 +182,13 @@ export interface TemporalCochangeGraph {
    * back to structure alone.
    */
   bundleTaskIds?: ReadonlyMap<number, readonly string[]>;
+  /**
+   * The +/- line counts each admitted bundle's commit made to its files, keyed
+   * by bundle id then by the file's path (bd tea-rags-mcp-dm61n). A file with
+   * no recorded count is absent from its bundle's map; absent or empty = the
+   * build predates migration 046.
+   */
+  bundleFileLines?: ReadonlyMap<number, ReadonlyMap<RelPath, CochangeFileLineCounts>>;
 }
 
 /**

@@ -6,6 +6,7 @@ import type {
   CalleeEdge,
   CallerEdge,
   ChunkGraphSignals,
+  CochangeFileLineCounts,
   CodegraphPass1FileAggregates,
   CodegraphSignalDrift,
   CodegraphStorageCompactionOutcome,
@@ -754,14 +755,18 @@ export class DaemonGraphDbClient implements GraphDbClient {
     // The server serialises the bundle Map as `[id, paths][]` entries — rebuild
     // it here (same pattern as getFileMetricsBulk). An older daemon's reply
     // carries no `bundles` at all: absence stays absence, never "no bundles".
-    const { bundles, bundleCommits, bundleBursts, bundleTaskIds, ...rest } = (await this.call(
+    const { bundles, bundleCommits, bundleBursts, bundleTaskIds, bundleFileLines, ...rest } = (await this.call(
       "readTemporalCochangeGraph",
       {},
-    )) as Omit<TemporalCochangeGraph, "bundles" | "bundleCommits" | "bundleBursts" | "bundleTaskIds"> & {
+    )) as Omit<
+      TemporalCochangeGraph,
+      "bundles" | "bundleCommits" | "bundleBursts" | "bundleTaskIds" | "bundleFileLines"
+    > & {
       bundles?: [number, readonly RelPath[]][];
       bundleCommits?: [number, readonly string[]][];
       bundleBursts?: [number, number][];
       bundleTaskIds?: [number, readonly string[]][];
+      bundleFileLines?: [number, [RelPath, CochangeFileLineCounts][]][];
     };
     return {
       ...rest,
@@ -769,6 +774,9 @@ export class DaemonGraphDbClient implements GraphDbClient {
       ...(bundleCommits ? { bundleCommits: new Map(bundleCommits) } : {}),
       ...(bundleBursts ? { bundleBursts: new Map(bundleBursts) } : {}),
       ...(bundleTaskIds ? { bundleTaskIds: new Map(bundleTaskIds) } : {}),
+      ...(bundleFileLines
+        ? { bundleFileLines: new Map(bundleFileLines.map(([bundleId, files]) => [bundleId, new Map(files)])) }
+        : {}),
     };
   }
 

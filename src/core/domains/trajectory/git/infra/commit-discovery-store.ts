@@ -17,15 +17,19 @@
  *
  * SCHEMA VERSIONS. v1 persisted `changedFiles: string[]` straight out of
  * `git log --numstat`, so every renamed file sat on disk as git's mangled
- * `pre{old => new}post` column (bd tea-rags-mcp-0dwsn). v2 stores the
- * `CommitChangedPath` pair instead. Per `.claude/rules/migrations.md` a shape
- * change to a persisted store ships with its upgrade path, and since the v1
- * string CONTAINS both paths the transform is computable from the file alone —
- * so a v1 snapshot is upgraded on load and rewritten at v2, never discarded and
- * never turned into "please reindex". This store is keyed by repo IDENTITY, not
- * by collection, so it is deliberately NOT one of the five collection-scoped
- * migration pipelines that rule tabulates; for a store outside them, "the store
- * and its upgrade path land together" means the upgrade lives in this loader.
+ * `pre{old => new}post` column (bd tea-rags-mcp-0dwsn). v2 stored the
+ * `CommitChangedPath` pair instead, and v1 was upgraded on load because the
+ * string carried both paths. v3 (bd tea-rags-mcp-dm61n) adds each row's numstat
+ * `added` / `deleted` line counts, which the co-change build persists per
+ * bundle file. Neither v1 nor v2 holds those counts and they cannot be derived
+ * from the file without git, so `.claude/rules/migrations.md`'s "computable from
+ * what is stored → migrate" does not apply: a v1 or v2 snapshot loads as null
+ * and the discovery runs ONE full `git log --numstat` rebuild, then saves v3.
+ * That costs a git walk, never a reindex. Size: the counts add ~24 bytes per
+ * changed-file row — measured on taxdome's v2 snapshot (26.6 MB, 164k rows)
+ * that is ~+4 MB, well under the 64 MB cap. This
+ * store is keyed by repo IDENTITY, not by collection, so it is deliberately NOT
+ * one of the five collection-scoped migration pipelines that rule tabulates.
  */
 
 import { createHash } from "node:crypto";
@@ -33,7 +37,6 @@ import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSy
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { parseNumstatChangedPath } from "../../../../adapters/vcs/git/git-cli/parsers.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type {
   GitCommitDiscoveryEntry,
@@ -46,14 +49,17 @@ import { pruneSnapshots } from "./snapshot-retention.js";
 
 const DEFAULT_MAX_BYTES = 64 * 1024 * 1024;
 
-/** Schema version this store writes; v1 is accepted and upgraded on load. */
-const CURRENT_VERSION = 2;
+/** Schema version this store writes and the only one it reads. */
+const CURRENT_VERSION = 3;
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((v) => typeof v === "string");
 }
 
-/** The commit half is version-independent — validated once for both shapes. */
+function isOptionalCount(value: unknown): boolean {
+  return value === undefined || (typeof value === "number" && Number.isFinite(value));
+}
+
 function isValidCommit(value: unknown): boolean {
   if (typeof value !== "object" || value === null) return false;
   const commit = value as Record<string, unknown>;
@@ -67,40 +73,19 @@ function isValidCommit(value: unknown): boolean {
   );
 }
 
-/** Cheap structural validation of one v2 matrix row (<5ms at 50k entries). */
+/** Cheap structural validation of one v3 matrix row (<5ms at 50k entries). */
 function isValidEntry(value: unknown): value is GitCommitDiscoveryEntry {
   if (typeof value !== "object" || value === null) return false;
   const entry = value as { commit?: unknown; changedFiles?: unknown };
   if (!Array.isArray(entry.changedFiles)) return false;
   for (const changed of entry.changedFiles) {
     if (typeof changed !== "object" || changed === null) return false;
-    const { path, previousPath } = changed as Record<string, unknown>;
+    const { path, previousPath, added, deleted } = changed as Record<string, unknown>;
     if (typeof path !== "string") return false;
     if (previousPath !== undefined && typeof previousPath !== "string") return false;
+    if (!isOptionalCount(added) || !isOptionalCount(deleted)) return false;
   }
   return isValidCommit(entry.commit);
-}
-
-/**
- * v1 → v2: each raw numstat string becomes a `CommitChangedPath`. Lossless —
- * git's `pre{old => new}post` column carries both paths, so no git call is
- * needed. Deliberately reuses the LIVE parser: a second implementation would
- * drift and upgraded rows would stop matching freshly parsed ones.
- * Returns null when a row is not a valid v1 row, which degrades to a rebuild.
- */
-function upgradeCommitDiscoveryEntries(value: unknown): GitCommitDiscoveryEntry[] | null {
-  if (!Array.isArray(value)) return null;
-  const upgraded: GitCommitDiscoveryEntry[] = [];
-  for (const entry of value) {
-    if (typeof entry !== "object" || entry === null) return null;
-    const { commit, changedFiles } = entry as { commit?: unknown; changedFiles?: unknown };
-    if (!isStringArray(changedFiles) || !isValidCommit(commit)) return null;
-    upgraded.push({
-      commit: commit as GitCommitDiscoveryEntry["commit"],
-      changedFiles: changedFiles.map(parseNumstatChangedPath),
-    });
-  }
-  return upgraded;
 }
 
 export class GitCommitDiscoveryStore implements GitCommitDiscoveryPersistence {
@@ -194,17 +179,6 @@ export class GitCommitDiscoveryStore implements GitCommitDiscoveryPersistence {
     try {
       const parsed: unknown = JSON.parse(readFileSync(filePath, "utf8"));
       const snapshot = this.validate(parsed, repoRoot, mailmap, head);
-      if (!snapshot) return null;
-      // A v1 file was just migrated in memory — persist the v2 form over the
-      // same path so the transform runs once, not on every load. Best-effort:
-      // a read-only cache dir still yields a correct upgraded snapshot.
-      if ((parsed as { version?: unknown }).version !== CURRENT_VERSION) {
-        try {
-          this.writeSnapshot(filePath, snapshot);
-        } catch (error) {
-          this.debugLog("upgrade", error);
-        }
-      }
       return snapshot;
     } catch (error) {
       this.debugLog("load", error);
@@ -215,7 +189,7 @@ export class GitCommitDiscoveryStore implements GitCommitDiscoveryPersistence {
   /**
    * ANY validation failure → null (silent rebuild semantics). The repoRoot
    * equality check guards against sha256-prefix collisions between repos. A v1
-   * payload is UPGRADED here rather than rejected — see the module docblock.
+   * or v2 payload is rejected too — it holds no line counts (module docblock).
    */
   private validate(
     parsed: unknown,
@@ -225,21 +199,14 @@ export class GitCommitDiscoveryStore implements GitCommitDiscoveryPersistence {
   ): PersistedGitCommitDiscovery | null {
     if (typeof parsed !== "object" || parsed === null) return null;
     const snapshot = parsed as Record<string, unknown>;
-    const { version } = snapshot;
-    if (version !== 1 && version !== CURRENT_VERSION) return null;
+    if (snapshot.version !== CURRENT_VERSION) return null;
     if (snapshot.repoRoot !== repoRoot) return null;
     // Authors were read under another .mailmap → stale identities (bd tea-rags-mcp-nsxzh).
     if (!mailmapStampMatches(snapshot.mailmap, mailmap)) return null;
     if (typeof snapshot.head !== "string" || (head !== undefined && snapshot.head !== head)) return null;
     if (typeof snapshot.sinceIso !== "string") return null;
-
-    const entries =
-      version === 1
-        ? upgradeCommitDiscoveryEntries(snapshot.entries)
-        : Array.isArray(snapshot.entries) && snapshot.entries.every(isValidEntry)
-          ? snapshot.entries
-          : null;
-    if (!entries) return null;
+    const { entries } = snapshot;
+    if (!Array.isArray(entries) || !entries.every(isValidEntry)) return null;
 
     return {
       version: CURRENT_VERSION,

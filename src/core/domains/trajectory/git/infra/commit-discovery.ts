@@ -31,11 +31,12 @@ export interface GitCommitDiscoveryEntry {
  *
  * v2 replaced `changedFiles: string[]` with the `CommitChangedPath` pair so a
  * renamed file stops hiding behind git's `{old => new}` column
- * (bd tea-rags-mcp-0dwsn). v1 files are upgraded on load, never discarded —
- * the mangled string carries both paths, so the transform needs no git call.
+ * (bd tea-rags-mcp-0dwsn). v3 adds each row's numstat `added` / `deleted`
+ * (bd tea-rags-mcp-dm61n); older files hold no counts and load as null, so the
+ * matrix rebuilds once from git.
  */
 export interface PersistedGitCommitDiscovery {
-  version: 2;
+  version: 3;
   repoRoot: string;
   head: string;
   sinceIso: string;

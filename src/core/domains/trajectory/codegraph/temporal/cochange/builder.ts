@@ -63,9 +63,10 @@ export const TEMPORAL_COCHANGE_MAX_PARTNERS_PER_FILE = 20;
  * Once per release: 2 covers both per-bundle commit ids (bd
  * tea-rags-mcp-89k7k.1.14) and per-commit bundles with author-burst dedup (bd
  * tea-rags-mcp-3vg0x) and each bundle's commit-message task ids (bd
- * tea-rags-mcp-09c4m), which ship in the same release.
+ * tea-rags-mcp-09c4m), which ship in the same release. 3: each bundle file
+ * carries its commit's +/- line counts (bd tea-rags-mcp-dm61n).
  */
-const COCHANGE_ALGORITHM_REVISION = 2;
+const COCHANGE_ALGORITHM_REVISION = 3;
 
 /** The git trajectory's `chunkTimeoutMs` default. */
 const DEFAULT_GIT_TIMEOUT_MS = 120_000;
@@ -224,6 +225,7 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
       bundleCommits: graph.admittedBundleCommits,
       bundleBursts: graph.admittedBundleBursts,
       bundleTaskIds: graph.admittedBundleTaskIds,
+      bundleFileLines: graph.admittedBundleFileLines,
     });
     await this.flushSymbolCommits(graphDb, live, projectPrefix);
     const t4 = this.now();

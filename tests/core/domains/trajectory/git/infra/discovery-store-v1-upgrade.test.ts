@@ -8,6 +8,10 @@
  * is computable from the file alone — which, per `.claude/rules/migrations.md`,
  * makes it a migration and not a rebuild: a v1 snapshot is transformed on load,
  * used, and rewritten at v2. Nothing is discarded and no reindex is implied.
+ *
+ * The commit matrix has since moved to v3 (bd tea-rags-mcp-dm61n), whose
+ * per-file line counts a v1 string does not hold — its v1 snapshot now loads
+ * as null (one rebuild from git). The file-churn window keeps the upgrade.
  */
 
 import { createHash } from "node:crypto";
@@ -82,25 +86,11 @@ describe("GitCommitDiscoveryStore — v1 snapshot upgrade (bd tea-rags-mcp-0dwsn
     rmSync(baseDir, { recursive: true, force: true });
   });
 
-  it("upgrades a v1 snapshot in place rather than discarding it", () => {
+  // bd tea-rags-mcp-dm61n: v3 carries per-file line counts, which the v1 string
+  // does not hold — so the commit matrix no longer upgrades a v1 snapshot; it
+  // loads as null and the discovery rebuilds once from git.
+  it("loads a v1 snapshot as null — its rows carry no line counts to upgrade into v3", () => {
     writeSnapshot(baseDir, {
-      version: 1,
-      repoRoot: REPO_ROOT,
-      head: HEAD,
-      sinceIso: SINCE_ISO,
-      entries: [{ commit, changedFiles: V1_PATHS }],
-    });
-
-    const loaded = new GitCommitDiscoveryStore(baseDir).load(REPO_ROOT, HEAD);
-
-    expect(loaded).not.toBeNull();
-    expect(loaded?.version).toBe(2);
-    expect(loaded?.sinceIso).toBe(SINCE_ISO);
-    expect(loaded?.entries[0].changedFiles).toEqual(EXPECTED_PAIRS);
-  });
-
-  it("rewrites the upgraded snapshot at v2 so the next load needs no transform", () => {
-    const target = writeSnapshot(baseDir, {
       version: 1,
       repoRoot: REPO_ROOT,
       head: HEAD,
@@ -109,30 +99,12 @@ describe("GitCommitDiscoveryStore — v1 snapshot upgrade (bd tea-rags-mcp-0dwsn
     });
 
     const store = new GitCommitDiscoveryStore(baseDir);
-    store.load(REPO_ROOT, HEAD);
 
-    const onDisk = JSON.parse(readFileSync(target, "utf8")) as { version: number };
-    expect(onDisk.version).toBe(2);
-    // Round trip: reloading the rewritten file yields the same pairs.
-    expect(store.load(REPO_ROOT, HEAD)?.entries[0].changedFiles).toEqual(EXPECTED_PAIRS);
+    expect(store.load(REPO_ROOT, HEAD)).toBeNull();
+    expect(store.loadLatest(REPO_ROOT)).toBeNull();
   });
 
-  it("finds and upgrades a v1 snapshot through loadLatest too", () => {
-    writeSnapshot(baseDir, {
-      version: 1,
-      repoRoot: REPO_ROOT,
-      head: HEAD,
-      sinceIso: SINCE_ISO,
-      entries: [{ commit, changedFiles: V1_PATHS }],
-    });
-
-    const loaded = new GitCommitDiscoveryStore(baseDir).loadLatest(REPO_ROOT);
-
-    expect(loaded?.version).toBe(2);
-    expect(loaded?.entries[0].changedFiles).toEqual(EXPECTED_PAIRS);
-  });
-
-  it("still rejects a snapshot whose version is neither 1 nor 2", () => {
+  it("still rejects a snapshot whose version is unknown", () => {
     writeSnapshot(baseDir, {
       version: 99,
       repoRoot: REPO_ROOT,

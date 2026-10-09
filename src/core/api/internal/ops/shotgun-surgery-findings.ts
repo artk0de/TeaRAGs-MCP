@@ -28,7 +28,8 @@ export type ShotgunSurgeryRun =
 /**
  * Judge the co-change build's bundles over the report's component partition
  * and graph. The bundles' task ids join a burst's commits into logical
- * changes (bd tea-rags-mcp-09c4m).
+ * changes (bd tea-rags-mcp-09c4m); their per-file line counts ride along
+ * (bd tea-rags-mcp-dm61n).
  */
 export function runShotgunSurgery(
   cochange: TemporalCochangeGraph,
@@ -54,6 +55,7 @@ export function runShotgunSurgery(
       ...(cochange.bundleBursts ? { bundleBursts: cochange.bundleBursts } : {}),
       ...(cochange.bundleCommits ? { bundleCommits: cochange.bundleCommits } : {}),
       ...(cochange.bundleTaskIds ? { bundleTaskIds: cochange.bundleTaskIds } : {}),
+      ...(cochange.bundleFileLines ? { bundleFileLines: cochange.bundleFileLines } : {}),
       ...(sourcePathPattern ? { sourcePathPattern } : {}),
     }),
   };

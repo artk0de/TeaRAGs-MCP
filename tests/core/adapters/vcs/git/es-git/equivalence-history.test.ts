@@ -150,7 +150,12 @@ describe.skipIf(!esGitAvailable)("EsGitAdapter ⇄ GitCliAdapter equivalence —
     expect(util?.changedFiles.map((f) => f.path)).toContain("src/util.ts");
     // The rename commit names the file as it left it, plus where it came from.
     const rename = oracle.find((e) => e.commit.sha === fixture.renameSha);
-    expect(rename?.changedFiles).toContainEqual({ path: "src/helper.ts", previousPath: "src/util.ts" });
+    expect(rename?.changedFiles).toContainEqual({
+      path: "src/helper.ts",
+      previousPath: "src/util.ts",
+      added: 0,
+      deleted: 0,
+    });
   });
 
   it("readCommitPathChanges: whole-history path log deep-equal INCLUDING order; merges dropped, rename paired", async () => {

@@ -49,7 +49,7 @@ function fakeStore(overrides: Partial<GitCommitDiscoveryPersistence> = {}): {
 }
 
 function persisted(head: string, sinceIso: string, entries: GitCommitDiscoveryEntry[]): PersistedGitCommitDiscovery {
-  return { version: 2, repoRoot: "/repo", head, sinceIso, entries };
+  return { version: 3, repoRoot: "/repo", head, sinceIso, entries };
 }
 
 /** The exact legacy window formula (walk-commits.ts:105-106). */

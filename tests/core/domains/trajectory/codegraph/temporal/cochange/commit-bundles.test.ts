@@ -81,6 +81,16 @@ describe("bundleCochangeCommits", () => {
     expect(bundles[0].burst).toBe(bundles[1].burst);
   });
 
+  it("carries each commit's per-file line counts onto its bundle (bd tea-rags-mcp-dm61n)", () => {
+    const counted: CochangeCommit = {
+      ...commit("a", "alice", 0, ["b.ts", "a.ts"]),
+      fileLines: new Map([["a.ts", { added: 2, deleted: 1 }]]),
+    };
+    const bundles = bundleCochangeCommits([counted, commit("b", "alice", MIN, ["b.ts"])], 30);
+
+    expect(bundles.map((b) => b.fileLines)).toEqual([new Map([["a.ts", { added: 2, deleted: 1 }]]), undefined]);
+  });
+
   it("carries the task ids the git trajectory reads from each commit's message", () => {
     const tagged = commit("a", "alice", 0, ["a.ts"]);
     tagged.commit.body = "fix(api): TD-1234 keep the cursor (#567)";

@@ -229,5 +229,19 @@ describe("extractCochangeGraph", () => {
 
       expect(graph.admittedBundleTaskIds).toEqual([[], ["TD-1", "#7"]]);
     });
+
+    it("returns each admitted bundle's per-file line counts, aligned with its files, null where none were read (bd tea-rags-mcp-dm61n)", () => {
+      const graph = extractCochangeGraph(
+        [
+          { ...bundle("s1", 1, ["a.ts", "b.ts"]), fileLines: new Map([["b.ts", { added: 4, deleted: 0 }]]) },
+          bundle("s2", 2, ["c.ts"]),
+          { ...bundle("big", 3, ["d.ts", "e.ts", "f.ts"]), fileLines: new Map([["d.ts", { added: 1, deleted: 1 }]]) },
+        ],
+        { ...OPTIONS, maxFilesPerBundle: 2 },
+      );
+
+      expect(graph.admittedBundles).toEqual([["c.ts"], ["a.ts", "b.ts"]]);
+      expect(graph.admittedBundleFileLines).toEqual([[null], [null, { added: 4, deleted: 0 }]]);
+    });
   });
 });

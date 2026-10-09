@@ -20,9 +20,12 @@
  * grafted root of a shallow clone, whose whole-tree diff this rule must keep
  * (bd tea-rags-mcp-12x1y). A true merge arrives with no numstat rows at all,
  * so the parent check is the only arm that fires.
+ *
+ * Each scoped commit also carries the numstat line counts of its files, keyed
+ * by the same project-relative HEAD path (bd tea-rags-mcp-dm61n).
  */
 
-import type { RelPath } from "../../../../../contracts/types/codegraph.js";
+import type { CochangeFileLineCounts, RelPath } from "../../../../../contracts/types/codegraph.js";
 import { resolveHeadPaths, type GitCommitDiscoveryEntry } from "../../../git/index.js";
 import type { CochangeCommit } from "./commit-bundles.js";
 
@@ -57,12 +60,29 @@ export function scopeCochangeHistory(
   entries.forEach(({ commit }, index) => {
     if (commit.parents.length > 1) return;
     const files = new Set<RelPath>();
-    for (const { headPath } of attributed[index]) {
+    const fileLines = new Map<RelPath, CochangeFileLineCounts>();
+    for (const { changed, headPath } of attributed[index]) {
       if (!headPath.startsWith(scope.projectPrefix)) continue;
       const relPath = headPath.slice(scope.projectPrefix.length);
-      if (relPath.length > 0 && existsCached(relPath)) files.add(relPath);
+      if (relPath.length === 0 || !existsCached(relPath)) continue;
+      files.add(relPath);
+      if (changed.added !== undefined && changed.deleted !== undefined) {
+        addFileLines(fileLines, relPath, changed.added, changed.deleted);
+      }
     }
-    if (files.size > 0) scoped.push({ commit, files: [...files] });
+    if (files.size === 0) return;
+    scoped.push({ commit, files: [...files], ...(fileLines.size > 0 ? { fileLines } : {}) });
   });
   return scoped;
+}
+
+/** Two rows meeting on one HEAD path (rename resolution) sum into one count. */
+function addFileLines(
+  fileLines: Map<RelPath, CochangeFileLineCounts>,
+  relPath: RelPath,
+  added: number,
+  deleted: number,
+): void {
+  const prior = fileLines.get(relPath);
+  fileLines.set(relPath, prior ? { added: prior.added + added, deleted: prior.deleted + deleted } : { added, deleted });
 }

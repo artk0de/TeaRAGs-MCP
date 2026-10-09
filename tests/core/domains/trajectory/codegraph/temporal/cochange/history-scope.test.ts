@@ -27,6 +27,38 @@ function entry(
   return { commit, changedFiles: changed };
 }
 
+describe("scopeCochangeHistory — per-file line counts (bd tea-rags-mcp-dm61n)", () => {
+  const info = (sha: string): CommitInfo => ({
+    sha,
+    author: "alice",
+    authorEmail: "a@x",
+    timestamp: 100,
+    body: "feat: x",
+    parents: [],
+  });
+
+  it("keys each file's +/- counts by project-relative HEAD path, summing rows that meet on one path", () => {
+    const entries: GitCommitDiscoveryEntry[] = [
+      { commit: info("s2"), changedFiles: [{ path: "app/new.ts", previousPath: "app/old.ts", added: 3, deleted: 1 }] },
+      {
+        commit: info("s1"),
+        changedFiles: [
+          { path: "app/old.ts", added: 5, deleted: 0 },
+          { path: "app/old.ts", added: 1, deleted: 2 },
+          { path: "app/uncounted.ts" },
+        ],
+      },
+    ];
+
+    const scoped = scopeCochangeHistory(entries, { projectPrefix: "app/", fileExists: () => true });
+
+    expect(scoped.map((c) => [c.commit.sha, c.files, c.fileLines])).toEqual([
+      ["s2", ["new.ts"], new Map([["new.ts", { added: 3, deleted: 1 }]])],
+      ["s1", ["new.ts", "uncounted.ts"], new Map([["new.ts", { added: 6, deleted: 2 }]])],
+    ]);
+  });
+});
+
 describe("scopeCochangeHistory", () => {
   it("attributes pre-rename commits to the HEAD path", () => {
     const entries = [

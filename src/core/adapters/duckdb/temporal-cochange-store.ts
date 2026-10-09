@@ -2,7 +2,9 @@
  * The temporal co-change store (bd tea-rags-mcp-x4rpp) — `cg_temporal_files`,
  * `cg_temporal_edges_cochange`, `cg_temporal_meta` (migration 031) and
  * `cg_temporal_bundle_files` (bd tea-rags-mcp-c3v6o, migration 042) and
- * `cg_temporal_bundle_commits` (bd tea-rags-mcp-89k7k.1.14, migration 043).
+ * `cg_temporal_bundle_commits` (bd tea-rags-mcp-89k7k.1.14, migration 043);
+ * bundle files carry their commit's line counts (bd tea-rags-mcp-dm61n,
+ * migration 046).
  *
  * Pure CRUD, like the analytics store: the extractor that computes the graph
  * and every judgement over it live in `domains/trajectory/codegraph/temporal/`.
@@ -13,6 +15,7 @@
 
 import type {
   CochangeBurstWindowMethod,
+  CochangeFileLineCounts,
   RelPath,
   TemporalCochangeBuildMeta,
   TemporalCochangeEdge,
@@ -84,7 +87,7 @@ export class DuckDbTemporalCochangeStore {
    * generation in the file (`DuckDbGraphSession#recreateEmptyTable`).
    */
   async replace(snapshot: TemporalCochangeSnapshot): Promise<void> {
-    const { meta, files, edges, bundles, bundleCommits, bundleBursts, bundleTaskIds } = snapshot;
+    const { meta, files, edges, bundles, bundleCommits, bundleBursts, bundleTaskIds, bundleFileLines } = snapshot;
     await this.session.transaction(async () => {
       await this.session.recreateEmptyTable("cg_temporal_files");
       await this.session.recreateEmptyTable("cg_temporal_edges_cochange");
@@ -99,8 +102,13 @@ export class DuckDbTemporalCochangeStore {
       await this.session.insertBatched("cg_temporal_edges_cochange", EDGE_COLUMNS, edges.map(edgeRow));
       await this.session.insertBatched(
         "cg_temporal_bundle_files",
-        ["bundle_id", "rel_path"],
-        bundles.flatMap((filesOfBundle, bundleId) => filesOfBundle.map((relPath) => [bundleId, relPath])),
+        ["bundle_id", "rel_path", "lines_added", "lines_deleted"],
+        bundles.flatMap((filesOfBundle, bundleId) =>
+          filesOfBundle.map((relPath, fileIndex) => {
+            const lines = bundleFileLines?.[bundleId]?.[fileIndex] ?? null;
+            return [bundleId, relPath, lines?.added ?? null, lines?.deleted ?? null];
+          }),
+        ),
       );
       await this.session.insertBatched(
         "cg_temporal_bundle_commits",
@@ -248,7 +256,39 @@ export class DuckDbTemporalCochangeStore {
       bundleCommits: await this.readBundleCommits(),
       bundleBursts: await this.readBundleBursts(),
       bundleTaskIds: await this.readBundleTaskIds(),
+      bundleFileLines: await this.readBundleFileLines(),
     };
+  }
+
+  /**
+   * Each admitted bundle's per-file +/- line counts, keyed by bundle id then
+   * path (bd tea-rags-mcp-dm61n); a file whose counts were not recorded is
+   * absent. Empty on a build that predates migration 046 — a READ_ONLY attach
+   * never migrates, so a file without the columns reads as not recorded.
+   */
+  async readBundleFileLines(): Promise<ReadonlyMap<number, ReadonlyMap<RelPath, CochangeFileLineCounts>>> {
+    const columns = await this.columnsOf("cg_temporal_bundle_files", ["lines_added", "lines_deleted"]);
+    if (!columns.has("lines_added") || !columns.has("lines_deleted")) return new Map();
+    const rows = await this.session.queryAll<{
+      bundle_id: number;
+      rel_path: string;
+      lines_added: number;
+      lines_deleted: number;
+    }>(
+      `SELECT bundle_id, rel_path, lines_added, lines_deleted FROM cg_temporal_bundle_files
+        WHERE lines_added IS NOT NULL AND lines_deleted IS NOT NULL ORDER BY bundle_id, rel_path`,
+    );
+    const lines = new Map<number, Map<RelPath, CochangeFileLineCounts>>();
+    for (const row of rows) {
+      const bundleId = Number(row.bundle_id);
+      let files = lines.get(bundleId);
+      if (!files) {
+        files = new Map();
+        lines.set(bundleId, files);
+      }
+      files.set(row.rel_path, { added: Number(row.lines_added), deleted: Number(row.lines_deleted) });
+    }
+    return lines;
   }
 
   /**

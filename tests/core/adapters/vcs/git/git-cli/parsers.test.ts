@@ -78,7 +78,7 @@ describe("parsePathspecOutput (via private method)", () => {
     ].join("\0");
     const result = gitParsers.parsePathspecOutput(stdout);
     expect(result).toHaveLength(1);
-    expect(result[0].changedFiles).toEqual([{ path: "good.ts" }]);
+    expect(result[0].changedFiles).toEqual([{ path: "good.ts", added: 10, deleted: 5 }]);
   });
 });
 

@@ -27,7 +27,15 @@ function commit(sha: string): CommitInfo {
 }
 
 function entries(): GitCommitDiscoveryEntry[] {
-  return [{ commit: commit("c".repeat(40)), changedFiles: [{ path: "a.ts" }, { path: "b.ts" }] }];
+  return [
+    {
+      commit: commit("c".repeat(40)),
+      changedFiles: [
+        { path: "a.ts", added: 4, deleted: 1 },
+        { path: "b.ts", previousPath: "old-b.ts", added: 0, deleted: 2 },
+      ],
+    },
+  ];
 }
 
 function repoDir(baseDir: string): string {
@@ -52,11 +60,46 @@ describe("GitCommitDiscoveryStore (bd tea-rags-mcp-82va1)", () => {
     const loaded = store.load(REPO_ROOT, HEAD_A);
 
     expect(loaded).not.toBeNull();
-    expect(loaded?.version).toBe(2);
+    expect(loaded?.version).toBe(3);
     expect(loaded?.repoRoot).toBe(REPO_ROOT);
     expect(loaded?.head).toBe(HEAD_A);
     expect(loaded?.sinceIso).toBe(SINCE_ISO);
     expect(loaded?.entries).toEqual(entries());
+  });
+
+  it("returns null for a v2 snapshot — it holds no line counts, so the matrix rebuilds once (bd tea-rags-mcp-dm61n)", () => {
+    const store = new GitCommitDiscoveryStore(baseDir);
+    mkdirSync(repoDir(baseDir), { recursive: true });
+    writeFileSync(
+      join(repoDir(baseDir), `${HEAD_A}.json`),
+      JSON.stringify({
+        version: 2,
+        repoRoot: REPO_ROOT,
+        head: HEAD_A,
+        sinceIso: SINCE_ISO,
+        entries: [{ commit: commit("c".repeat(40)), changedFiles: [{ path: "a.ts" }] }],
+      }),
+    );
+
+    expect(store.load(REPO_ROOT, HEAD_A)).toBeNull();
+    expect(store.loadLatest(REPO_ROOT)).toBeNull();
+  });
+
+  it("returns null on a v3 changed path whose line count is not a number", () => {
+    const store = new GitCommitDiscoveryStore(baseDir);
+    mkdirSync(repoDir(baseDir), { recursive: true });
+    writeFileSync(
+      join(repoDir(baseDir), `${HEAD_A}.json`),
+      JSON.stringify({
+        version: 3,
+        repoRoot: REPO_ROOT,
+        head: HEAD_A,
+        sinceIso: SINCE_ISO,
+        entries: [{ commit: commit("c".repeat(40)), changedFiles: [{ path: "a.ts", added: "4", deleted: 1 }] }],
+      }),
+    );
+
+    expect(store.load(REPO_ROOT, HEAD_A)).toBeNull();
   });
 
   it("returns null for a missing file", () => {
@@ -90,7 +133,7 @@ describe("GitCommitDiscoveryStore (bd tea-rags-mcp-82va1)", () => {
     mkdirSync(repoDir(baseDir), { recursive: true });
     writeFileSync(
       join(repoDir(baseDir), `${HEAD_A}.json`),
-      JSON.stringify({ version: 1, repoRoot: "/other/repo", head: HEAD_A, sinceIso: SINCE_ISO, entries: entries() }),
+      JSON.stringify({ version: 3, repoRoot: "/other/repo", head: HEAD_A, sinceIso: SINCE_ISO, entries: entries() }),
     );
 
     expect(store.load(REPO_ROOT, HEAD_A)).toBeNull();
@@ -102,7 +145,7 @@ describe("GitCommitDiscoveryStore (bd tea-rags-mcp-82va1)", () => {
     writeFileSync(
       join(repoDir(baseDir), `${HEAD_A}.json`),
       JSON.stringify({
-        version: 1,
+        version: 3,
         repoRoot: REPO_ROOT,
         head: HEAD_A,
         sinceIso: SINCE_ISO,

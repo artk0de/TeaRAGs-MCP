@@ -70,6 +70,13 @@ export interface CommitChangedPath {
   path: string;
   /** Path at the first parent — set only when this commit renamed the file. */
   previousPath?: string;
+  /**
+   * Lines this commit added / deleted in the file — the numstat counts
+   * (bd tea-rags-mcp-dm61n). Absent = not read (a `--name-status` log, or a
+   * row built without numstat); binary rows never reach here.
+   */
+  added?: number;
+  deleted?: number;
 }
 
 /**

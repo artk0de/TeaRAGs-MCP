@@ -31,7 +31,12 @@
  * is counted. Sample SHAs are collected in a second pass over the survivors only.
  */
 
-import type { RelPath, TemporalCochangeEdge, TemporalCochangeFile } from "../../../../../contracts/types/codegraph.js";
+import type {
+  CochangeFileLineCounts,
+  RelPath,
+  TemporalCochangeEdge,
+  TemporalCochangeFile,
+} from "../../../../../contracts/types/codegraph.js";
 import { compareCodePoints, type CochangeBundle } from "./commit-bundles.js";
 
 export interface CochangeExtractionOptions {
@@ -69,6 +74,12 @@ export interface CochangeGraphExtraction {
   admittedBundleBursts: readonly number[];
   /** Each admitted bundle's commit-message task ids, aligned with `admittedBundles`; `[]` = none (bd tea-rags-mcp-09c4m). */
   admittedBundleTaskIds: readonly (readonly string[])[];
+  /**
+   * Each admitted bundle's per-file +/- line counts, aligned with
+   * `admittedBundles` and with each bundle's files; `null` = no count was read
+   * for that file (bd tea-rags-mcp-dm61n).
+   */
+  admittedBundleFileLines: readonly (readonly (CochangeFileLineCounts | null)[])[];
 }
 
 /** Up to this many sample SHAs per stored pair. */
@@ -194,6 +205,7 @@ export function extractCochangeGraph(
     admittedBundleCommits: admitted.map((bundle) => bundle.shas),
     admittedBundleBursts: bundleBursts,
     admittedBundleTaskIds: admitted.map((bundle) => bundle.taskIds ?? []),
+    admittedBundleFileLines: admitted.map((bundle) => bundle.files.map((file) => bundle.fileLines?.get(file) ?? null)),
   };
 }
 

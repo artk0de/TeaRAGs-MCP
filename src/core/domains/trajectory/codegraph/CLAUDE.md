@@ -474,7 +474,9 @@
   session settings, so flipping `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` moves git
   signals only. Why: 30-minute session unions paired files no commit held and
   chained concurrent agent commits into blobs, while plain per-commit counting
-  is overconfident on WIP sprays (burst-preserving null).
+  is overconfident on WIP sprays (burst-preserving null). Each bundle file also
+  carries its commit's numstat `+/-` line counts, keyed by HEAD path
+  (`cg_temporal_bundle_files.lines_added/lines_deleted`, migration 046).
 
 ## Gotchas
 

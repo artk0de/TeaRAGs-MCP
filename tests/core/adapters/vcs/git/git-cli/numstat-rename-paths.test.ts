@@ -132,8 +132,22 @@ describe("parsePathspecOutput — changed files carry the rename pair", () => {
     );
 
     expect(entry.changedFiles).toEqual([
-      { path: "src/bootstrap/config/env-snapshot.ts", previousPath: "src/bootstrap/config/tuning-snapshot.ts" },
-      { path: "src/bootstrap/factory.ts" },
+      {
+        path: "src/bootstrap/config/env-snapshot.ts",
+        previousPath: "src/bootstrap/config/tuning-snapshot.ts",
+        added: 39,
+        deleted: 14,
+      },
+      { path: "src/bootstrap/factory.ts", added: 3, deleted: 3 },
+    ]);
+  });
+
+  it("keeps each file's +/- line counts and still skips binary rows (bd tea-rags-mcp-dm61n)", () => {
+    const [entry] = parsePathspecOutput(logOutput(["-\t-\tassets/logo.png", "0\t7\tsrc/a.ts", "12\t0\tsrc/b.ts"]));
+
+    expect(entry.changedFiles).toEqual([
+      { path: "src/a.ts", added: 0, deleted: 7 },
+      { path: "src/b.ts", added: 12, deleted: 0 },
     ]);
   });
 });

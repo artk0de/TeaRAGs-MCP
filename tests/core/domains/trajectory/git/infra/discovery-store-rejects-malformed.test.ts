@@ -2,10 +2,12 @@
  * Both persistent git discovery tiers — the commit matrix
  * (`GitCommitDiscoveryStore`) and the file-churn window
  * (`FileChurnDiscoveryStore`) — share one contract for what they find on disk:
- * ANY snapshot that is not exactly a valid v1 or v2 payload for this repo and
- * head loads as null, so the discovery rebuilds instead of trusting a partial
- * row; persistence failures never throw; and a v1 file still upgrades in memory
- * when the cache dir is read-only.
+ * ANY snapshot that is not exactly a valid payload of a version the store
+ * reads, for this repo and head, loads as null, so the discovery rebuilds
+ * instead of trusting a partial row; persistence failures never throw; and
+ * where a store upgrades v1, a v1 file still upgrades in memory when the cache
+ * dir is read-only. The commit matrix (v3, bd tea-rags-mcp-dm61n) no longer
+ * upgrades v1: the line counts it persists are not in a v1 row.
  *
  * Driven over both stores with the same malformed shapes, so a validator that
  * drifts in one of them fails here.
@@ -43,10 +45,14 @@ interface DiscoveryStoreUnderTest {
 interface StoreCase {
   name: string;
   make: (baseDir: string) => DiscoveryStoreUnderTest;
-  validV2Entry: Record<string, unknown>;
+  /** The schema version the store writes. */
+  currentVersion: number;
+  /** Whether a v1 snapshot is upgraded on load (else it loads as null). */
+  upgradesV1: boolean;
+  validEntry: Record<string, unknown>;
   validV1Entry: Record<string, unknown>;
   /** v2 rows that are each wrong in exactly one way. */
-  malformedV2Entries: [string, unknown][];
+  malformedEntries: [string, unknown][];
   /** v1 rows that are each wrong in exactly one way. */
   malformedV1Entries: [string, unknown][];
 }
@@ -61,17 +67,21 @@ const CASES: StoreCase[] = [
   {
     name: "GitCommitDiscoveryStore",
     make: (baseDir) => new GitCommitDiscoveryStore(baseDir),
-    validV2Entry: { commit: COMMIT, changedFiles: [{ path: "a.ts" }] },
+    currentVersion: 3,
+    upgradesV1: false,
+    validEntry: { commit: COMMIT, changedFiles: [{ path: "a.ts", added: 1, deleted: 0 }] },
     validV1Entry: { commit: COMMIT, changedFiles: ["src/{old.ts => new.ts}"] },
-    malformedV2Entries: [
+    malformedEntries: [
       ["a null row", null],
       ["changedFiles that is not an array", { commit: COMMIT, changedFiles: "a.ts" }],
       ["a null changed path", { commit: COMMIT, changedFiles: [null] }],
       ["a changed path without a path", { commit: COMMIT, changedFiles: [{ previousPath: "a.ts" }] }],
       ["a non-string previousPath", { commit: COMMIT, changedFiles: [{ path: "a.ts", previousPath: 3 }] }],
+      ["a string added count", { commit: COMMIT, changedFiles: [{ path: "a.ts", added: "1", deleted: 0 }] }],
+      ["a non-numeric deleted count", { commit: COMMIT, changedFiles: [{ path: "a.ts", added: 1, deleted: null }] }],
       ...sharedMalformedCommits.map(([label, commit]): [string, unknown] => [
         label,
-        { commit, changedFiles: [{ path: "a.ts" }] },
+        { commit, changedFiles: [{ path: "a.ts", added: 1, deleted: 0 }] },
       ]),
     ],
     malformedV1Entries: [
@@ -83,13 +93,15 @@ const CASES: StoreCase[] = [
   {
     name: "FileChurnDiscoveryStore",
     make: (baseDir) => new FileChurnDiscoveryStore(baseDir),
-    validV2Entry: { commit: COMMIT, committerTimestamp: 1000, files: [{ path: "a.ts", added: 1, deleted: 0 }] },
+    currentVersion: 2,
+    upgradesV1: true,
+    validEntry: { commit: COMMIT, committerTimestamp: 1000, files: [{ path: "a.ts", added: 1, deleted: 0 }] },
     validV1Entry: {
       commit: COMMIT,
       committerTimestamp: 1000,
       files: [{ path: "src/{old.ts => new.ts}", added: 1, deleted: 0 }],
     },
-    malformedV2Entries: [
+    malformedEntries: [
       ["a null row", null],
       ["files that is not an array", { commit: COMMIT, committerTimestamp: 1, files: {} }],
       ["a null file row", { commit: COMMIT, committerTimestamp: 1, files: [null] }],
@@ -135,17 +147,17 @@ describe.each(CASES)("$name — what it will not load", (c) => {
     writeFileSync(join(repoDir(baseDir), `${head}.json`), JSON.stringify(payload));
   };
   const envelope = (over: Record<string, unknown>): Record<string, unknown> => ({
-    version: 2,
+    version: c.currentVersion,
     repoRoot: REPO_ROOT,
     head: HEAD,
     sinceIso: SINCE_ISO,
-    entries: [c.validV2Entry],
+    entries: [c.validEntry],
     ...over,
   });
 
-  it("loads the well-formed v2 envelope the malformed cases are cut from", () => {
+  it("loads the well-formed current-version envelope the malformed cases are cut from", () => {
     writeSnapshot(envelope({}));
-    expect(c.make(baseDir).load(REPO_ROOT, HEAD)?.entries).toEqual([c.validV2Entry]);
+    expect(c.make(baseDir).load(REPO_ROOT, HEAD)?.entries).toEqual([c.validEntry]);
   });
 
   it.each([
@@ -153,16 +165,16 @@ describe.each(CASES)("$name — what it will not load", (c) => {
     ["a JSON number", 42],
     ["a non-string head", { head: 7 }],
     ["a non-string sinceIso", { sinceIso: null }],
-    ["v2 entries that are not an array", { entries: {} }],
+    ["current-version entries that are not an array", { entries: {} }],
     ["v1 entries that are not an array", { version: 1, entries: {} }],
   ])("rejects %s", (_label, shape) => {
     writeSnapshot(shape !== null && typeof shape === "object" ? envelope(shape) : shape);
     expect(c.make(baseDir).load(REPO_ROOT, HEAD)).toBeNull();
   });
 
-  it("rejects every v2 row that is wrong in a single way", () => {
-    for (const [label, entry] of c.malformedV2Entries) {
-      writeSnapshot(envelope({ entries: [c.validV2Entry, entry] }));
+  it("rejects every current-version row that is wrong in a single way", () => {
+    for (const [label, entry] of c.malformedEntries) {
+      writeSnapshot(envelope({ entries: [c.validEntry, entry] }));
       expect(c.make(baseDir).load(REPO_ROOT, HEAD), label).toBeNull();
     }
   });
@@ -174,13 +186,18 @@ describe.each(CASES)("$name — what it will not load", (c) => {
     }
   });
 
-  it("still upgrades a v1 snapshot in memory when the cache dir is read-only", () => {
+  it.runIf(!c.upgradesV1)("rejects even a well-formed v1 snapshot it cannot upgrade", () => {
+    writeSnapshot(envelope({ version: 1, entries: [c.validV1Entry] }));
+    expect(c.make(baseDir).load(REPO_ROOT, HEAD)).toBeNull();
+  });
+
+  it.runIf(c.upgradesV1)("still upgrades a v1 snapshot in memory when the cache dir is read-only", () => {
     writeSnapshot(envelope({ version: 1, entries: [c.validV1Entry] }));
     chmodSync(repoDir(baseDir), 0o555);
 
     const loaded = c.make(baseDir).load(REPO_ROOT, HEAD);
 
-    expect(loaded?.version).toBe(2);
+    expect(loaded?.version).toBe(c.currentVersion);
     expect(loaded?.entries).toHaveLength(1);
     expect(JSON.stringify(loaded?.entries)).toContain('"previousPath":"src/old.ts"');
   });

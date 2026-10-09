@@ -19,13 +19,19 @@
  */
 
 import type { CommitInfo } from "../../../../../adapters/vcs/types.js";
-import type { RelPath } from "../../../../../contracts/types/codegraph.js";
+import type { CochangeFileLineCounts, RelPath } from "../../../../../contracts/types/codegraph.js";
 import { extractTaskIds, partitionIntoAuthorSessions } from "../../../git/index.js";
 
 /** One scoped commit: the files it touched, as project-relative HEAD paths, each once. */
 export interface CochangeCommit {
   commit: CommitInfo;
   files: RelPath[];
+  /**
+   * The +/- line counts the commit made to each file, keyed by the same HEAD
+   * path as `files` (bd tea-rags-mcp-dm61n). A file without a count is absent;
+   * absent = no counts were read.
+   */
+  fileLines?: ReadonlyMap<RelPath, CochangeFileLineCounts>;
 }
 
 /** The files one commit changed together, and the author burst it belongs to. */
@@ -44,6 +50,8 @@ export interface CochangeBundle {
    * tea-rags-mcp-09c4m). Absent = the message was not read.
    */
   taskIds?: string[];
+  /** The commit's per-file line counts (`CochangeCommit#fileLines`); absent = none read. */
+  fileLines?: ReadonlyMap<RelPath, CochangeFileLineCounts>;
 }
 
 /**
@@ -62,6 +70,7 @@ export function bundleCochangeCommits(
       files: [...new Set(m.files)].sort(compareCodePoints),
       burst,
       taskIds: extractTaskIds(m.commit.body),
+      ...(m.fileLines ? { fileLines: m.fileLines } : {}),
     })),
   );
   return bundles.sort((a, b) => a.timestamp - b.timestamp || compareCodePoints(a.shas[0], b.shas[0]));

@@ -93,7 +93,47 @@ describe("DuckDbGraphClient — temporal co-change store (bd tea-rags-mcp-x4rpp)
       bundleCommits: new Map(),
       bundleBursts: new Map(),
       bundleTaskIds: new Map(),
+      bundleFileLines: new Map(),
     });
+  });
+
+  // bd tea-rags-mcp-dm61n: each bundle file row carries the commit's +/- line counts for that file.
+  it("round-trips each bundle file's line counts, keyed by bundle then path, omitting files without counts", async () => {
+    await db.replaceTemporalCochange({
+      ...snapshot([edge("a.ts", "b.ts")]),
+      bundles: [["a.ts", "b.ts"], ["a.ts"]],
+      bundleFileLines: [[{ added: 3, deleted: 1 }, null], [{ added: 0, deleted: 9 }]],
+    });
+
+    const graph = await db.readTemporalCochangeGraph();
+    expect(graph.bundles).toEqual(
+      new Map([
+        [0, ["a.ts", "b.ts"]],
+        [1, ["a.ts"]],
+      ]),
+    );
+    expect(graph.bundleFileLines).toEqual(
+      new Map([
+        [0, new Map([["a.ts", { added: 3, deleted: 1 }]])],
+        [1, new Map([["a.ts", { added: 0, deleted: 9 }]])],
+      ]),
+    );
+  });
+
+  it("reads a file a pre-046 build wrote — no line-count columns — as line counts not recorded", async () => {
+    const old = new DuckDbGraphClient({ path: join(dir, "pre046.duckdb") });
+    await old.init();
+    await runMigrations(
+      old,
+      DATABASE_MIGRATIONS.filter((m) => m.filename < "046"),
+    );
+    await old.run("INSERT INTO cg_temporal_bundle_files (bundle_id, rel_path) VALUES (0, 'a.ts')");
+
+    const graph = await old.readTemporalCochangeGraph();
+    await old.close();
+
+    expect(graph.bundles).toEqual(new Map([[0, ["a.ts"]]]));
+    expect(graph.bundleFileLines).toEqual(new Map());
   });
 
   // bd tea-rags-mcp-09c4m: each admitted bundle's commit-message task ids ride beside its commits.

@@ -85,7 +85,7 @@
  * nothing judged, never zeros posing as verdicts.
  */
 
-import type { RelPath } from "../../../../../contracts/types/codegraph.js";
+import type { CochangeFileLineCounts, RelPath } from "../../../../../contracts/types/codegraph.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../../../../../infra/graph/index.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
 import { componentAncestry } from "../../symbols/boundary-diagnostics/index.js";
@@ -135,6 +135,15 @@ export interface ShotgunSurgeryInput {
    * units fall back to structure alone.
    */
   bundleTaskIds?: ReadonlyMap<number, readonly string[]>;
+  /**
+   * The +/- line counts each bundle's commit made to its files, keyed like
+   * `bundles` — by bundle id — then by the file's path, the same `RelPath` the
+   * bundle's membership list and `componentOf` use (bd tea-rags-mcp-dm61n). A
+   * file with no recorded count is absent from its bundle's map; absent or
+   * empty = the build predates migration 046. Carried, not yet read: the
+   * detector does not consult it.
+   */
+  bundleFileLines?: ReadonlyMap<number, ReadonlyMap<RelPath, CochangeFileLineCounts>>;
   /** Picomatch glob: a spread is in scope when an exemplar file of one of its components matches. */
   sourcePathPattern?: string;
 }

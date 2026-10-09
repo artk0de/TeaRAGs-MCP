@@ -68,6 +68,7 @@ const SNAPSHOT: TemporalCochangeSnapshot = {
   bundleCommits: [["s2"]],
   bundleBursts: [0],
   bundleTaskIds: [["TD-1"]],
+  bundleFileLines: [[{ added: 5, deleted: 2 }, null]],
 };
 
 describe("CodegraphDaemonServer.handle — temporal co-change ops", () => {
@@ -99,6 +100,8 @@ describe("CodegraphDaemonServer.handle — temporal co-change ops", () => {
       bundleCommits: [[0, ["s2"]]],
       bundleBursts: [[0, 0]],
       bundleTaskIds: [[0, ["TD-1"]]],
+      // A Map of Maps travels as nested entries; a file without counts is absent.
+      bundleFileLines: [[0, [["a.ts", { added: 5, deleted: 2 }]]]],
     });
     expect((bundleFiles as { result: unknown }).result).toEqual([[0, ["a.ts", "b.yml"]]]);
     await pool.closeAll();

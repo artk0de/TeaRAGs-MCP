@@ -210,7 +210,8 @@ export function parseNumstatOutput(stdout: string): Map<string, FileChurnData> {
 
 /**
  * Parse `git log --numstat --format=%x00...` output with pathspec filtering.
- * Returns commit + changed files pairs.
+ * Returns commit + changed files pairs, each file with its +/- line counts;
+ * binary rows (`-\t-`) are skipped.
  */
 export function parsePathspecOutput(stdout: string): { commit: CommitInfo; changedFiles: CommitChangedPath[] }[] {
   const result: { commit: CommitInfo; changedFiles: CommitChangedPath[] }[] = [];
@@ -250,7 +251,14 @@ export function parsePathspecOutput(stdout: string): { commit: CommitInfo; chang
       if (parts.length < 3) continue;
       // Binary files show "-\t-" — skip them
       if (parts[0] === "-" && parts[1] === "-") continue;
-      changedFiles.push(parseNumstatChangedPath(parts[2]));
+      // Keep the +/- counts beside the path (bd tea-rags-mcp-dm61n): the
+      // co-change build persists them per bundle file.
+      const added = parseInt(parts[0], 10);
+      const deleted = parseInt(parts[1], 10);
+      changedFiles.push({
+        ...parseNumstatChangedPath(parts[2]),
+        ...(Number.isNaN(added) || Number.isNaN(deleted) ? {} : { added, deleted }),
+      });
     }
 
     if (changedFiles.length > 0) {
@@ -264,8 +272,7 @@ export function parsePathspecOutput(stdout: string): { commit: CommitInfo; chang
 /**
  * Parse `git log --numstat --format=%x00%H…%at%x00%ct%x00%B…` output (the
  * committer-augmented format `NUMSTAT_LOG_FORMAT_WITH_COMMITTER`), keeping the
- * PER-FILE +/- counts (`parsePathspecOutput`'s numstat loop keeps only the
- * path, discarding them). Unlike the shared parsers this one also extracts the
+ * PER-FILE +/- counts. Unlike the shared parsers this one also extracts the
  * COMMITTER epoch (`%ct`, section i+5) alongside the author epoch (`%at`,
  * section i+4): the file-churn discovery windows/evicts/sorts by committer
  * date. Binary rows (`-\t-\t<path>`) are SKIPPED, exactly as
