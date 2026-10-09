@@ -26,11 +26,13 @@
  * qualifies a relative constant by the def's lexical nesting. The flat channel
  * passes no owner and answers exactly as before.
  *
- * {@link rubyBodyTailExpression} is the ONE tail selection both port sets use.
+ * {@link rubyBodyTailExpression} (`shared/body-tail.ts`) is the ONE tail
+ * selection both port sets use.
  */
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import { inferReturnTypeName, type ReturnInferencePorts } from "../../kernel/index.js";
 import type { RubyDslCatalogue } from "../dsl/index.js";
+import { rubyBodyTailExpression } from "./shared/body-tail.js";
 import { constInstanceType, isOrAssignment, singletonNewInstanceType } from "./type-sources/ast-inference.js";
 
 /**
@@ -64,26 +66,6 @@ export interface RubyMemberReturnOwner {
   readonly declaredTypes: ReadonlySet<string>;
   /** The owner's own INSTANCE defs by name, for a self-returning sibling call. */
   readonly instanceMethods: ReadonlyMap<string, readonly AstNode[]>;
-}
-
-/**
- * A def body's last value-producing expression: `rescue` / `ensure` / `else`
- * tails skipped so the tail seen is the NORMAL-path value, and an explicit
- * `return EXPR` unwrapped to `EXPR`. `null` when the body produces no value.
- */
-export function rubyBodyTailExpression(method: AstNode): AstNode | null {
-  const body = method.childForFieldName("body");
-  if (!body) return null;
-  const stmts = body.namedChildren.filter((n) => n.type !== "rescue" && n.type !== "ensure" && n.type !== "else");
-  let last = stmts[stmts.length - 1];
-  if (!last) return null;
-  if (last.type === "return") {
-    const arg = last.namedChildren[0];
-    if (!arg) return null;
-    last = arg.type === "argument_list" ? arg.namedChildren[0] : arg;
-    if (!last) return null;
-  }
-  return last;
 }
 
 /** The member channels' port set. Built per file (it closes over the catalogue). */

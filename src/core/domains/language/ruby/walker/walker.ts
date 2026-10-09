@@ -60,7 +60,6 @@
  * re-exported at the bottom, so `walker.js` stays the one address for them.
  */
 
-import type { MaterializedTree } from "../../../../contracts/types/ast.js";
 import type { FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
 import { catalogueFor } from "../dsl/index.js";
 import { collectRubyCalls } from "./call-collection.js";
@@ -69,22 +68,9 @@ import { attachRubyClassHierarchyChannels, collectRubyClassAncestors } from "./c
 import { collectRubyConstantRefs, collectRubyDefinedConstants, collectRubyRequires } from "./constant-refs.js";
 import { buildRubyFileTypeEnv } from "./file-type-env.js";
 import { collectRubyDispatchTables } from "./registry-dispatch.js";
+import type { RubyExtractInput } from "./shared/extract-input.js";
 import { rubyChunkDeclarationIndex } from "./symbol-kind.js";
 import { attachRubyTypeChannels } from "./type-channels.js";
-
-export interface RubyExtractInput {
-  tree: MaterializedTree;
-  code: string;
-  relPath: string;
-  language: string;
-  chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[];
-  /**
-   * The root `Gemfile`'s gems for the run (mirrors `WalkInput.declaredDependencies`).
-   * Extraction consumers gate DSL grammar on it via `catalogueFor`;
-   * undefined → FULL catalogue (bd tea-rags-mcp-adx5p.1b, m99j1.1.8).
-   */
-  declaredDependencies?: ReadonlySet<string>;
-}
 
 export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   // Gem-gated DSL grammar at extraction time (adx5p.1b): compose the catalogue
@@ -123,9 +109,12 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Re-exports — `walker.js` stays the single import address for the resolver,
-// the type-sources and the recall-forensics script. The definitions moved to
-// the sibling modules named in the header; the surface here is unchanged.
+// Re-exports — `walker.js` stays the single import address for the resolver
+// and the recall-forensics script. The definitions moved to the sibling modules
+// named in the header; the surface here is unchanged. The type-sources never
+// import this module: `RubyExtractInput` and the AST helpers they share with
+// the walker live in the `shared/` leaf, so the walker → type-sources edge
+// stays one-way (bd tea-rags-mcp-89k7k.35.15).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export {
@@ -138,3 +127,4 @@ export {
 export { SUPER_RECEIVER_SENTINEL } from "../super-receiver-sentinel.js";
 export { ZEITWERK_PREFIX } from "../zeitwerk-import-marker.js";
 export { isRubyCallbackMacro } from "./dsl-edge-emitters.js";
+export type { RubyExtractInput } from "./shared/extract-input.js";

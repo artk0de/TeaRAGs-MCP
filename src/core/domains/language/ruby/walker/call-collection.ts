@@ -19,7 +19,6 @@ import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { CallRef } from "../../../../contracts/types/codegraph.js";
 import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
 import { SUPER_RECEIVER_SENTINEL } from "../super-receiver-sentinel.js";
-import { readScopeResolution } from "./ast-utils.js";
 import { collectMethodLocalBindings, isBareIdentifierCallSite } from "./bare-call-detection.js";
 import { emitDslEdges } from "./dsl-edge-emitters.js";
 import {
@@ -31,6 +30,7 @@ import {
 } from "./method-signatures.js";
 import { isInsideRubyAssignmentCondition } from "./modifier-conditions.js";
 import { emitRegistryConstantRefs, exprToRubyDispatchRef } from "./registry-dispatch.js";
+import { readScopeResolution } from "./shared/ast-utils.js";
 
 /**
  * Methods that are dynamic-dispatch wrappers — when the first argument

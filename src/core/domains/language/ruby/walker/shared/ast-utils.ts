@@ -1,4 +1,4 @@
-import type { AstNode } from "../../../../contracts/types/ast.js";
+import type { AstNode } from "../../../../../contracts/types/ast.js";
 
 /**
  * Lexical fully-qualified name: prefix `localName` with the enclosing class/module

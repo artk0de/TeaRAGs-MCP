@@ -44,7 +44,7 @@ import type {
   TypeMemberCensus,
 } from "../../../../contracts/types/codegraph.js";
 import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
-import { attachedBlockOf, lexicalScopeFqName, readScopeResolution } from "./ast-utils.js";
+import { attachedBlockOf, lexicalScopeFqName, readScopeResolution } from "./shared/ast-utils.js";
 import { CONSTANT_ASSIGNMENT_NODE_TYPES, symbolKindOf } from "./symbol-kind.js";
 import { rubyBodyMemberCounts, valueClassMemberNames } from "./type-member-census.js";
 

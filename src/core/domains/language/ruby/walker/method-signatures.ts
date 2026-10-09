@@ -24,8 +24,8 @@ import type {
   KwargSignature,
   SendNameTemplate,
 } from "../../../../contracts/types/codegraph.js";
-import { attachedBlockOf, walk } from "./ast-utils.js";
 import { positionalParamNames } from "./param-arg-types.js";
+import { attachedBlockOf, walk } from "./shared/ast-utils.js";
 
 const VISIBILITY_KEYWORDS = new Set<string>(["private", "protected", "public"]);
 

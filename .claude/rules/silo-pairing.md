@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/core/domains/language/ruby/walker/ast-utils.ts"
+  - "src/core/domains/language/ruby/walker/shared/ast-utils.ts"
   - "src/core/domains/language/ruby/walker/local-bindings.ts"
   - "src/core/domains/language/ruby/walker/type-fact-store.ts"
   - "src/core/domains/language/ruby/walker/type-sources/ast-inference.ts"
@@ -40,7 +40,7 @@ file one person happened to write.
 Refreshed 2026-08-08 from `tea-rags:risk-assessment` + an `ownership`-reranked
 file scan. Re-run quarterly.
 
-- `src/core/domains/language/ruby/walker/ast-utils.ts` — fanIn 9 (hub),
+- `src/core/domains/language/ruby/walker/shared/ast-utils.ts` — fanIn 9 (hub),
   transitiveImpact 33
 - `src/core/domains/language/ruby/resolver/type-propagation.ts` — fanIn 10
   (hub), transitiveImpact 30
