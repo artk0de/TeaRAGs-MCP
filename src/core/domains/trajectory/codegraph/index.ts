@@ -8,7 +8,7 @@
  * leaking a `family` marker into the shared contract.
  */
 
-import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
+import type { GraphDbClientPoolPort } from "../../../contracts/types/codegraph-pool.js";
 import type { AmbiguousResolveMode, TemporalSymbolCommitBuffer } from "../../../contracts/types/codegraph.js";
 import type {
   CollectSymbolsFn,
@@ -39,7 +39,7 @@ import {
  * `LanguageFactoryDescriptor` — not threaded as a separate map here.
  */
 export interface CodegraphDeps {
-  pool: GraphDbClientPool;
+  pool: GraphDbClientPoolPort;
   /**
    * Cross-language symbolId mapper injected into the provider's `joinSymbol`
    * (replacing the local `#`/`.`/scopeSeparator convention logic). Typed as

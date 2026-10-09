@@ -31,8 +31,8 @@ import {
   type RelPath,
   type SymbolId,
 } from "../../contracts/types/codegraph.js";
+import { splitMethodSymbol } from "../../infra/symbolid/index.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
-import { splitMethodSymbol } from "./symbol-id-text.js";
 
 /**
  * Source ids per `IN (…)` list on the scoped reads (bd tea-rags-mcp-oxnvl).

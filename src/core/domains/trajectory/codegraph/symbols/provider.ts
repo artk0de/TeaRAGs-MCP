@@ -19,8 +19,8 @@ import { join, dirname as pathDirname } from "node:path";
 
 import type { Ignore } from "ignore";
 
-import type { GraphDbClientPool } from "../../../../adapters/duckdb/pool.js";
 import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../../../contracts/codegraph-payload.js";
+import type { GraphDbClientPoolPort } from "../../../../contracts/types/codegraph-pool.js";
 import type {
   CodegraphPass1FileAggregates,
   FileExtraction,
@@ -127,7 +127,7 @@ export function stripVersionSuffix(collectionName: string): string {
  */
 export interface CodegraphProviderDeps {
   /** Pool mode — per-collection DuckDB files routed via collectionName. */
-  pool?: GraphDbClientPool;
+  pool?: GraphDbClientPoolPort;
   /** Direct mode — pre-opened graph client. Mutually exclusive with `pool`. */
   graphDb?: GraphDbClient;
   /** Direct mode — pre-built symbol table. Mutually exclusive with `pool`. */

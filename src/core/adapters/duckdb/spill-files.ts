@@ -23,25 +23,13 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-/** Suffix of the sibling liveness marker for an output spill. */
-const LIVE_MARKER_SUFFIX = ".live";
+import { SPILL_LIVE_MARKER_SUFFIX, spillLiveMarkerPath } from "../../contracts/types/codegraph-spill.js";
+
+/** Re-exported for the adapter's callers; the naming contract itself lives in contracts. */
+export { spillLiveMarkerPath };
 
 /** Extension of an output spill written by the codegraph extraction sink. */
 const SPILL_EXTENSION = ".ndjson";
-
-/**
- * Sibling liveness marker for `spillPath`: `<spill>.ndjson.live`, holding the
- * decimal pid of the process whose sink owns the spill.
- *
- * The sink creates it BEFORE opening the spill stream and removes it in its
- * cleanup, so "marker present with a live pid" is the only state in which a
- * spill must be left alone. Deriving the marker from the spill path rather than
- * passing it around keeps one owner of the naming — a marker that got out of
- * step with its spill would silently re-open the deletion window.
- */
-export function spillLiveMarkerPath(spillPath: string): string {
-  return `${spillPath}${LIVE_MARKER_SUFFIX}`;
-}
 
 /** Signal-0 liveness probe (`kill` throws ESRCH once the process is gone). */
 function isPidAlive(pid: number): boolean {
@@ -93,7 +81,7 @@ export function purgeStaleSpills(spillDir: string, isAlive: (pid: number) => boo
     let liveOwnerSeen = false;
 
     for (const entry of entries) {
-      if (entry.endsWith(LIVE_MARKER_SUFFIX)) {
+      if (entry.endsWith(SPILL_LIVE_MARKER_SUFFIX)) {
         // A marker whose owner is gone claims nothing. Its spill (if the run
         // got that far) is condemned by the branch below on its own name; the
         // marker has to go by this one, because a run that died between writing
@@ -121,7 +109,7 @@ export function purgeStaleSpills(spillDir: string, isAlive: (pid: number) => boo
     // its own, is still invisible here.
     if (!liveOwnerSeen) {
       for (const entry of entries) {
-        if (!entry.endsWith(SPILL_EXTENSION) && !entry.endsWith(LIVE_MARKER_SUFFIX)) {
+        if (!entry.endsWith(SPILL_EXTENSION) && !entry.endsWith(SPILL_LIVE_MARKER_SUFFIX)) {
           doomed.push(join(spillDir, entry));
         }
       }

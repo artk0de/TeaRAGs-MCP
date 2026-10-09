@@ -21,6 +21,7 @@ import type {
   SymbolId,
   SymbolVisibilityRow,
 } from "../../contracts/types/codegraph.js";
+import { lastNameSegment } from "../../infra/symbolid/index.js";
 import {
   CG_SYMBOLS_DEF_COLUMNS,
   CG_SYMBOLS_KEY_COLUMNS,
@@ -31,7 +32,6 @@ import {
 } from "./cg-symbols-row.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
 import { escapeLikeLiteral } from "./sql-binding.js";
-import { lastNameSegment } from "./symbol-id-text.js";
 
 /**
  * Paths per `IN (…)` list of {@link DuckDbSymbolStore.getSymbolLineRangesBulk}.

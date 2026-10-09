@@ -49,7 +49,6 @@
  * the comparison so `updated=` and `updated` remain distinct.
  */
 
-import { isCodegraphUnavailableError, type CodegraphUnavailableError } from "../../../adapters/duckdb/errors.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import {
   matchesTextIndexed,
@@ -58,6 +57,10 @@ import {
   symbolIdTextToken,
 } from "../../../adapters/qdrant/filters/symbolid-text-token.js";
 import { exactMatchOnTextIndexed } from "../../../adapters/qdrant/filters/text-indexed-exact.js";
+import {
+  isCodegraphUnavailableError,
+  type CodegraphUnavailableError,
+} from "../../../contracts/types/codegraph-unavailable.js";
 import type {
   PersistedSymbolLineRanges,
   SymbolChunkLocation,
