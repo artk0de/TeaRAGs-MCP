@@ -1,13 +1,16 @@
-import type { RelPath } from "../../../../../contracts/types/codegraph.js";
-import type { DependencyDirectoryRelation } from "./types.js";
+import type { ArchitectureDirectoryRelation } from "../../../../contracts/types/architecture-report.js";
+import type { RelPath } from "../../../../contracts/types/codegraph.js";
 
 /**
  * Classify a dependency by where its target's directory sits relative to its
- * source's (see {@link DependencyDirectoryRelation}). Paths are the graph's
+ * source's (see {@link ArchitectureDirectoryRelation}). Paths are the graph's
  * repo-relative, `/`-separated `relPath`s; a root-level file's directory is the
  * repo root, which contains every other directory.
  */
-export function classifyDirectoryRelation(sourceRelPath: RelPath, targetRelPath: RelPath): DependencyDirectoryRelation {
+export function classifyDirectoryRelation(
+  sourceRelPath: RelPath,
+  targetRelPath: RelPath,
+): ArchitectureDirectoryRelation {
   const sourceDir = directoryOf(sourceRelPath);
   const targetDir = directoryOf(targetRelPath);
   if (sourceDir === targetDir) return "same";

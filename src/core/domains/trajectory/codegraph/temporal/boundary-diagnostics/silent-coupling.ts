@@ -28,7 +28,7 @@ import {
   classifyDirectoryRelation,
   MODULE_ENTRY_FILE_NAMES,
   RE_EXPORT_CYCLE_PATH_CAP,
-} from "../../symbols/boundary-diagnostics/index.js";
+} from "../../component-geometry/index.js";
 import { assessGraphCochangeSignificance, type CochangeSignificance } from "./cochange-significance.js";
 import type {
   SilentCouplingExclusionCounts,

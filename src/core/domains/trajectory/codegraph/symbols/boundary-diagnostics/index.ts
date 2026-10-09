@@ -14,8 +14,6 @@ export {
   isDeclaredCompositionRoot,
   isDeclaredEntryPoint,
 } from "./component-stable-dependencies.js";
-export { componentAncestry } from "./constant-namespace.js";
-export { classifyDirectoryRelation } from "./directory-relation.js";
 export { FACADE_AGGREGATION_REASON, isFacadeAggregationEdge } from "./facade-aggregation.js";
 export { computeFileInstabilities } from "./file-instability.js";
 export { domainBoundaryFileEdges, inducedDomainGraph, type DomainBoundaryFileEdges } from "./induced-domain-graph.js";
@@ -25,8 +23,6 @@ export {
   FACADE_MIN_EXTERNAL_IMPORTERS,
   FACADE_MODULE_EXCLUSION_REASONS,
   FACADE_OTSU_MIN_POPULATION,
-  MODULE_ENTRY_FILE_NAMES,
-  RE_EXPORT_CYCLE_PATH_CAP,
   resolveFacadeAdoptionThreshold,
   type FacadeAdoptionThresholdPolicy,
 } from "./leaking-abstraction.js";

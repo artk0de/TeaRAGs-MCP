@@ -1,5 +1,5 @@
 import type { FileDependencyEdge } from "../../../../../contracts/types/codegraph.js";
-import { MODULE_ENTRY_FILE_NAMES } from "./leaking-abstraction.js";
+import { MODULE_ENTRY_FILE_NAMES } from "../../component-geometry/index.js";
 
 /**
  * What the facade-aggregation exclusion catches, named for a report

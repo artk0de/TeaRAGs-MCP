@@ -1,7 +1,7 @@
 import type { FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
+import { classifyDirectoryRelation } from "../../component-geometry/index.js";
 import { CODEGRAPH_SYMBOLS_FILE_SIGNALS, type MartinInstability } from "../payload-signals.js";
-import { classifyDirectoryRelation } from "./directory-relation.js";
 import { isFacadeAggregationEdge } from "./facade-aggregation.js";
 import { computeFileInstabilities } from "./file-instability.js";
 import type {
