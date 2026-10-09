@@ -9,6 +9,7 @@
  */
 import { createHash } from "node:crypto";
 
+import type { TermAlternative } from "../../../contracts/types/naming-lexicon.js";
 import { singularizeIdentifierWord, typeNameWords } from "./casing.js";
 import { isWordAbbreviation } from "./homonyms.js";
 import { typeNameParts, type NameSlots, type TypeNameParser } from "./name-slots.js";
@@ -22,41 +23,6 @@ export interface ModifierUse {
   dirs: ReadonlySet<string>;
   /** Type names carrying the word as a qualifier, project-wide. */
   count: number;
-}
-
-/** An established modifier offered in place of the draft's own qualifier. */
-export interface TermAlternative {
-  word: string;
-  /**
-   * `head`: the project's dominant spelling of the draft's head word
-   * (`doc` for `…Document`) — `heads` is then empty, `domains` the directories
-   * of the types ending in it, `lift` its count over the draft spelling's.
-   * Absent: a qualifier alternative.
-   */
-  slot?: "head";
-  heads: string[];
-  domains: string[];
-  lift: number;
-  /**
-   * The embedding similarity of this word to the draft word it replaces
-   * (bd tea-rags-mcp-433d2) — the head (`numbers` → `metrics`), or the
-   * qualifier / path word named by `replaces` — above the draft's corrected
-   * null floor ({@link correctedSimilarityFloor}). Absent on any alternative
-   * judged without embeddings.
-   */
-  similarity?: number;
-  /** A head alternative found by meaning: project types carrying the word that anchored it (`IndexMetrics`). */
-  examples?: string[];
-  /**
-   * The draft word this one would replace, when judged by meaning
-   * (bd tea-rags-mcp-433d2). On a path-term alternative (`staleness` →
-   * `freshness`) `domains` is then the directory the term names, `heads` empty
-   * and `lift` 0 — no frequency is judged. On a qualifier alternative it is the
-   * draft qualifier the modifier is most similar to (`calculated` →
-   * `predefined`). Absent on a spelling variant and a head found by meaning
-   * (both replace the head), and on any alternative judged without embeddings.
-   */
-  replaces?: string;
 }
 
 /**

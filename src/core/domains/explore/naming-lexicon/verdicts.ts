@@ -14,6 +14,14 @@ import type {
 import type { CallableSymbolKind, SymbolDefinitionKind } from "../../../contracts/types/codegraph-symbols.js";
 import type { FileDependencyEdge } from "../../../contracts/types/codegraph.js";
 import type { IdentifierCasing } from "../../../contracts/types/language.js";
+import type {
+  ConceptTerm,
+  NamingExpectedTypeRole,
+  NamingPreference,
+  NamingShape,
+  NamingVerdict,
+  TermAlternative,
+} from "../../../contracts/types/naming-lexicon.js";
 import {
   detectIdentifierCasing,
   joinIdentifierWords,
@@ -45,7 +53,6 @@ import {
   shapeDistribution,
   spellsTypeName,
   typeTailWords,
-  type NamingShape,
   type NamingShapeDistribution,
   type NamingShapeRow,
 } from "./shapes.js";
@@ -62,9 +69,7 @@ import {
   sharesWordStem,
   type HeadCandidate,
   type ModifierUse,
-  type TermAlternative,
 } from "./term-alignment.js";
-import type { ConceptTerm } from "./terms.js";
 import {
   deriveTypeRoles,
   endsWithWords,
@@ -82,102 +87,7 @@ import {
   type FileDeclaration,
   type TypeNameRow,
   type TypeRoleAssignment,
-  type TypeRoleEvidence,
 } from "./type-roles.js";
-
-/** The role a type draft was expected to carry: its word, the evidence behind it, example type names. */
-export interface NamingExpectedTypeRole {
-  word: string;
-  evidence: TypeRoleEvidence;
-  examples: string[];
-  /** `false`: a dispersed family's kind — what the type IS, never a word its name owes (bd tea-rags-mcp-49fsr). */
-  carriedInName?: boolean;
-  /**
-   * A written-supertype family's multi-word role, in the draft's casing (bd
-   * tea-rags-mcp-1ffi9): the tail its members share, `word` its last word —
-   * `AsyncWorkflow`. Absent: the role is `word` alone.
-   */
-  tail?: string;
-}
-
-/**
- * A type draft's `borderline` (bd tea-rags-mcp-89k7k.1.17): the alternatives
- * whose similarity lies inside the jitter band of the draft's floor
- * (`MEANING_FLOOR_JITTER_MARGIN`) — the embedding backend's run-to-run noise
- * could put them on either side, so they are neither offered as
- * `alternatives` nor dropped, and the verdict is the one it would be without
- * them, whichever side the noise lands. Word order. Absent when none.
- */
-export type NamingBorderline = TermAlternative[];
-
-export type NamingVerdict =
-  | {
-      verdict: "CONFORMS";
-      /**
-       * A type draft conforming by project suffix or lexical alignment alone,
-       * one of whose words the project spells with another, similar word
-       * (bd tea-rags-mcp-433d2) — `EmbeddingBackend` → `provider`. Never on a
-       * name carrying its expected (family / directory) role. CONFORMS judges
-       * vocabulary only, never whether the name fits the behaviour.
-       */
-      alternatives?: TermAlternative[];
-      /**
-       * The role a type draft's CONFORMS rests on (bd tea-rags-mcp-xsxkr): the
-       * expected family / directory role its name carries, or the project
-       * suffix that confirms it. With `carriedInName: false`, the kind a
-       * dispersed family names for the draft (bd tea-rags-mcp-49fsr): its
-       * supertype and directory say what it IS, and the family fixes no head —
-       * `SendFailedPaymentNotification` extending `KindOfService` is a
-       * `service`. Absent: known words alone confirmed the name.
-       */
-      role?: NamingExpectedTypeRole;
-      /**
-       * A method whose name an in-project ancestor of its owner already declares
-       * (bd tea-rags-mcp-bjfa0): the supertype fixed the name, so it is never
-       * novel. `declaredBy` = the nearest ancestor's declaration.
-       */
-      override?: { declaredBy: string };
-      /**
-       * A value draft conforming to its DECLARING FILE's own idiom (bd
-       * tea-rags-mcp-hzrxn): the file's pre-existing bindings of the same role
-       * carry the draft's name by majority — at least {@link MIN_ROLE_MEMBERS}
-       * of them and at least half the role's bindings, the majority idiom the
-       * type roles read. `bindings` = how many prior bindings carry the name.
-       * Absent: known words alone confirmed the name.
-       */
-      fileLocal?: { file: string; bindings: number };
-      borderline?: NamingBorderline;
-    }
-  | { verdict: "MISFIT"; suggestion: string; holder?: string; role?: NamingExpectedTypeRole }
-  | {
-      verdict: "NEW_TERM";
-      topTerms: string[];
-      alternatives?: TermAlternative[];
-      borderline?: NamingBorderline;
-    }
-  /**
-   * A value draft (`param`, `local`, `field`) whose type or call holds no
-   * convention — no name carried by ≥ {@link MIN_ROLE_MEMBERS} owners, or no
-   * rows at all (lexicon friction F3). Not a rename demand and not a free
-   * choice either: the name should be the type's own ({@link NamingPreference.exact})
-   * or read like the names the project gives its relatives
-   * ({@link NamingPreference.analogous}) — a name unlike both is the one to justify.
-   */
-  | { verdict: "NO_CONVENTION"; prefer: NamingPreference }
-  | { verdict: "COLLISION"; existing: { symbolId: string; relPath: string } };
-
-/** What a NO_CONVENTION points to (lexicon friction F3). */
-export interface NamingPreference {
-  /** The type spelled in the draft's casing (`collectionRegistry`), plural for a `many` draft; absent untyped. */
-  exact?: string;
-  /**
-   * Names by analogy, heaviest first, at most 5: the value names the draft's
-   * own thin rows carry, then those of its type family — the types
-   * specializing it (`CallerSymbolId` for `SymbolId`), else its siblings by
-   * head word (`*Registry`) — see {@link withFamilyAnalogues}.
-   */
-  analogous: string[];
-}
 
 /** One `byType` aggregate row: a name bound to the draft's type `n` times. */
 export interface NamingByTypeRow {

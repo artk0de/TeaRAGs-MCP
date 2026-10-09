@@ -16,7 +16,7 @@ import type {
   NamingShapeShare,
   NamingVerdict,
   TypeNameHeadCarriers,
-} from "../../../domains/explore/naming-lexicon/index.js";
+} from "../../../contracts/types/naming-lexicon.js";
 import type { CollectionRef } from "./explore.js";
 import type { WorkingTreeMarker } from "./working-tree.js";
 

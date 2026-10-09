@@ -20,25 +20,12 @@
  * is a type whose values are named, not a word names end in.
  */
 import type { SymbolDefinitionKind } from "../../../contracts/types/codegraph-symbols.js";
+import type { TypeNameHeadCarriers } from "../../../contracts/types/naming-lexicon.js";
 import { singularizeIdentifierWord, typeNameWords } from "./casing.js";
 import { isNamespaceDeclaration, typeNameParser, type TypeNameRow } from "./type-roles.js";
 
 /** Examples listed per head. */
 const MAX_HEAD_CARRIER_EXAMPLES = 3;
-
-/** The declarations one asked word heads. */
-export interface TypeNameHeadCarriers {
-  /** The word as asked. */
-  head: string;
-  /** Declarations carrying it. */
-  n: number;
-  /** Files they are declared in. */
-  files: number;
-  /** Declarations per kind. */
-  kinds: Partial<Record<SymbolDefinitionKind, number>>;
-  /** Up to three carrier short names, in path order. */
-  examples: string[];
-}
 
 /**
  * The carriers of each single-word `words` entry among `rows` (the type

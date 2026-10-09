@@ -41,14 +41,7 @@ export {
   shapeDistribution,
   spellsTypeName,
 } from "./shapes.js";
-export type {
-  NamingShape,
-  NamingShapeContext,
-  NamingShapeDistribution,
-  NamingShapeInput,
-  NamingShapeRow,
-  NamingShapeShare,
-} from "./shapes.js";
+export type { NamingShapeContext, NamingShapeDistribution, NamingShapeInput, NamingShapeRow } from "./shapes.js";
 export {
   alignHead,
   alignQualifiers,
@@ -66,11 +59,11 @@ export {
   sharesWordStem,
   similarityQuantile,
 } from "./term-alignment.js";
-export type { HeadCandidate, ModifierUse, PathTerm, TermAlternative } from "./term-alignment.js";
+export type { HeadCandidate, ModifierUse, PathTerm } from "./term-alignment.js";
 export { extractConceptTerms } from "./terms.js";
-export type { ConceptTerm, ConceptTermHolder } from "./terms.js";
+export type { ConceptTermHolder } from "./terms.js";
 export { typeNameHeadCarriers } from "./type-name-heads.js";
-export type { TypeNameHeadCarriers } from "./type-name-heads.js";
+
 export {
   MIN_ROLE_MEMBERS,
   TYPE_ROLE_THRESHOLDS,
@@ -78,7 +71,7 @@ export {
   expectedRoleFor,
   filePrimaryDeclaration,
 } from "./type-roles.js";
-export type { TypeNameRow, TypeRoleAssignment, TypeRoleEvidence, TypeRoleThresholds } from "./type-roles.js";
+export type { TypeNameRow, TypeRoleAssignment, TypeRoleThresholds } from "./type-roles.js";
 export { buildDependencyNormFilePrimaryTypes, buildDependencyNormFileRoles } from "./file-roles.js";
 export {
   TYPE_DRAFT_KINDS,
@@ -98,8 +91,6 @@ export type {
   DraftNameJudgementInput,
   FileLocalBindings,
   FileLocalRoleBinding,
-  NamingExpectedTypeRole,
-  NamingPreference,
   ReexportTwins,
   TypeDraftJudgementInput,
   TypeDraftPopulation,
@@ -107,5 +98,16 @@ export type {
   NamingByCalleeRow,
   NamingByTypeRow,
   NamingReturnVerbShare,
-  NamingVerdict,
 } from "./verdicts.js";
+export type {
+  ConceptTerm,
+  NamingBorderline,
+  NamingExpectedTypeRole,
+  NamingPreference,
+  NamingShape,
+  NamingShapeShare,
+  NamingVerdict,
+  TermAlternative,
+  TypeNameHeadCarriers,
+  TypeRoleEvidence,
+} from "../../../contracts/types/naming-lexicon.js";

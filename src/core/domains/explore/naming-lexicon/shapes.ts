@@ -10,6 +10,7 @@ import type {
   IdentifierDeclarationKind,
 } from "../../../contracts/types/codegraph-extraction.js";
 import type { IdentifierCasing } from "../../../contracts/types/language.js";
+import type { NamingShape, NamingShapeShare } from "../../../contracts/types/naming-lexicon.js";
 import {
   joinIdentifierWords,
   pluralizeIdentifierWord,
@@ -19,25 +20,6 @@ import {
   stripIdentifierDecorations,
   typeNameWords,
 } from "./casing.js";
-
-/**
- * - `EXACT` — the type rendered in the casing, singular or plural
- *   (`tax_automation_document`, `tax_automation_documents`).
- * - `QUALIFIED` — the type's words plus a qualifier before or after them
- *   (`tax_automation_document_ignored`, `source_tax_automation_document`); in a
- *   distribution, only where the owner binds the type a second time.
- * - `TAIL` — a proper suffix of the type's words, alone or after the name's own
- *   qualifier words (`document`, `source_document`).
- * - `VERB_TYPE` — on a `return`: one verb word plus the type's words
- *   (`find_tax_automation_document!`).
- * - `CALLEE_DERIVED` — a `local` / `field` named after the member it is bound
- *   to, minus a verb prefix and `!` / `?` (`x = find_x!(id)`); needs no type.
- * - `FREE` — none of the above: a role name (`row`).
- *
- * Word comparisons accept the plural of the type's last word throughout, since
- * collection annotations are unwrapped to the element type upstream.
- */
-export type NamingShape = "EXACT" | "QUALIFIED" | "TAIL" | "VERB_TYPE" | "CALLEE_DERIVED" | "FREE";
 
 /**
  * How much of the type a shape spells, strongest first: EXACT > QUALIFIED >
@@ -214,12 +196,6 @@ export function classifyNamingShape(input: NamingShapeInput): NamingShape {
     if (derived.length > 0 && sameWords(nameWords, derived)) return "CALLEE_DERIVED";
   }
   return "FREE";
-}
-
-/** One shape's share of a row set. */
-export interface NamingShapeShare {
-  shape: NamingShape;
-  share: number;
 }
 
 /** Shape shares over a row set, with its total count and a `(n/20)^2` confidence. */
