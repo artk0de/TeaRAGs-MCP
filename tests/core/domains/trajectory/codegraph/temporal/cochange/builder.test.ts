@@ -23,7 +23,7 @@ import {
   TemporalCochangeBuilder,
   type TemporalCochangeHistorySource,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
-import type { GitCommitDiscoveryEntry } from "../../../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
+import type { GitCommitDiscoveryEntry } from "../../../../../../../src/core/domains/trajectory/git/history/commit-discovery.js";
 
 const NOW_MS = 1_760_000_000_000;
 /**

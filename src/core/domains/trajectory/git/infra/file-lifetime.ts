@@ -19,7 +19,7 @@
 
 import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
 import type { CommitPathChanges, FileChurnData } from "../../../../adapters/vcs/types.js";
-import { resolveHeadPaths } from "./rename-following.js";
+import { resolveHeadPaths } from "../history/index.js";
 
 /** A file's whole-history age stamps, unix seconds of the AUTHOR date. */
 export interface FileLifetimeStamps {

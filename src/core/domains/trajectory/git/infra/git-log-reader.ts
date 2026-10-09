@@ -10,12 +10,12 @@
 import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
 import type { FileChurnData } from "../../../../adapters/vcs/types.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
+import { extractTaskIds } from "../history/index.js";
 import type { ChunkChurnOverlay } from "../types.js";
 import { GitEnrichmentCache } from "./cache.js";
 import { buildChunkChurnMap as buildChunkChurnMapImpl } from "./chunk-reader.js";
 import { buildFileSignalMap as buildFileSignalMapImpl, buildFileSignalsForPaths } from "./file-reader.js";
 import { computeChunkSignals, computeFileSignals, overlaps, type ChunkAccumulator } from "./metrics.js";
-import { extractTaskIds } from "./utils.js";
 
 // Re-exports from canonical locations (backward compat for test consumers)
 export { type ChunkAccumulator, computeChunkSignals, computeFileSignals, extractTaskIds, overlaps };

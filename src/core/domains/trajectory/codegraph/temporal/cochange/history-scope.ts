@@ -26,7 +26,7 @@
  */
 
 import type { CochangeFileLineCounts, RelPath } from "../../../../../contracts/types/codegraph.js";
-import { resolveHeadPaths, type GitCommitDiscoveryEntry } from "../../../git/index.js";
+import { resolveHeadPaths, type GitCommitDiscoveryEntry } from "../../../git/history/index.js";
 import type { CochangeCommit } from "./commit-bundles.js";
 
 export interface CochangeHistoryScope {

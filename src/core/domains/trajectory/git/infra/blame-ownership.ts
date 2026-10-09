@@ -1,5 +1,5 @@
 import type { BlameLine } from "../../../../adapters/vcs/types.js";
-import { tallyAuthors } from "./author-identity.js";
+import { tallyAuthors } from "../history/index.js";
 
 export interface BlameOwnership {
   blameDominantAuthor: string;

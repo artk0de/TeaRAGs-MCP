@@ -12,8 +12,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { BlameLine, CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
+import { GitCommitDiscoveryStore } from "../../../../../../src/core/domains/trajectory/git/history/commit-discovery-store.js";
 import { GitBlameStore } from "../../../../../../src/core/domains/trajectory/git/infra/blame-store.js";
-import { GitCommitDiscoveryStore } from "../../../../../../src/core/domains/trajectory/git/infra/commit-discovery-store.js";
 import { FileChurnDiscoveryStore } from "../../../../../../src/core/domains/trajectory/git/infra/file-churn-discovery-store.js";
 
 const HEAD = "a".repeat(40);

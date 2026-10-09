@@ -39,7 +39,15 @@ import type { RerankPreset } from "../../../contracts/types/reranker.js";
 import { isDebug } from "../../../infra/runtime.js";
 import { GIT_TRAJECTORY_ALGORITHM_VERSION } from "./algorithm-version.js";
 import { gitFilters } from "./filters.js";
-import { canonicalizeAuthorNames, type AuthorNameDirectory } from "./infra/author-identity.js";
+import {
+  buildBugFixShaSet,
+  canonicalizeAuthorNames,
+  GitCommitDiscovery,
+  GitCommitDiscoveryStore,
+  resolveHistoryAnchorSec,
+  sliceCommitsFollowingRenames,
+  type AuthorNameDirectory,
+} from "./history/index.js";
 import { GitBlameStore } from "./infra/blame-store.js";
 import { relativizeChunkMap } from "./infra/build-accumulators.js";
 import { GitEnrichmentCache } from "./infra/cache.js";
@@ -48,8 +56,6 @@ import { defaultBlamePoolSize } from "./infra/churn-walk/blame-pool-defaults.js"
 import { BlameWorkerPool } from "./infra/churn-walk/blame-pool.js";
 import type { ChunkChurnWalkOutcome } from "./infra/churn-walk/protocol.js";
 import { ChunkChurnWalkPool } from "./infra/churn-walk/walk-pool.js";
-import { GitCommitDiscoveryStore } from "./infra/commit-discovery-store.js";
-import { GitCommitDiscovery } from "./infra/commit-discovery.js";
 import { FileChurnDiscoveryStore } from "./infra/file-churn-discovery-store.js";
 import { FileChurnDiscovery } from "./infra/file-churn-discovery.js";
 import {
@@ -60,11 +66,8 @@ import {
   type WindowedFileChurn,
 } from "./infra/file-lifetime.js";
 import { buildFileSignalDiscovery, buildFileSignalMap, sliceFileSignalsByPaths } from "./infra/file-reader.js";
-import { resolveHistoryAnchorSec } from "./infra/history-anchor.js";
-import { buildBugFixShaSet } from "./infra/merge-branch-resolver.js";
 import type { SquashOptions } from "./infra/metrics.js";
 import { assembleFileSignals } from "./infra/metrics/file-assembler.js";
-import { sliceCommitsFollowingRenames } from "./infra/rename-following.js";
 import { carryDirtyChunkMapOntoHead, zeroOverlaysOfUncommittedRows } from "./infra/working-rows.js";
 import { gitPayloadSignalDescriptors } from "./payload-signals.js";
 import { gitDerivedSignals } from "./rerank/derived-signals/index.js";
@@ -399,7 +402,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
 
   /**
    * The run's history anchor (`TRAJECTORY_GIT_ANCHOR`, see
-   * `infra/history-anchor.ts`) in unix seconds, or `undefined` for the wall
+   * `history/history-anchor.ts`) in unix seconds, or `undefined` for the wall
    * clock. `now` answers without touching git. `head` reads the HEAD commit's
    * committer time ONCE per (root, HEAD) and run, memoized as a promise like
    * the discovery — every window and age of the run is measured from it. Reset

@@ -34,8 +34,16 @@
 import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
 import type { BlameLine, CommitWithChangedFiles, FileChurnData } from "../../../../adapters/vcs/types.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
+import {
+  buildAuthorNameDirectory,
+  buildBugFixShaSet,
+  canonicalizeAuthorNames,
+  historyWindowSince,
+  resolveHistoryAnchorSec,
+  type AuthorNameDirectory,
+  type GitHistoryAnchorMode,
+} from "../history/index.js";
 import type { ChunkChurnOverlay, GitFileSignals } from "../types.js";
-import { buildAuthorNameDirectory, canonicalizeAuthorNames, type AuthorNameDirectory } from "./author-identity.js";
 import { buildChunkChurnMapUncached, type WalkCommitDiscovery } from "./chunk-reader.js";
 import { FileChurnDiscoveryStore } from "./file-churn-discovery-store.js";
 import { fileChurnWindowOf, type FileChurnDiscoveryPersistence } from "./file-churn-discovery.js";
@@ -46,8 +54,6 @@ import {
   type WindowedFileChurn,
 } from "./file-lifetime.js";
 import { buildFileSignalsForPaths, buildWindowedFileSignalsForPaths } from "./file-reader.js";
-import { historyWindowSince, resolveHistoryAnchorSec, type GitHistoryAnchorMode } from "./history-anchor.js";
-import { buildBugFixShaSet } from "./merge-branch-resolver.js";
 import type { SquashOptions } from "./metrics.js";
 import { computeRelativeChurn } from "./metrics/extractors.js";
 import { assembleFileSignals } from "./metrics/file-assembler.js";

@@ -7,9 +7,9 @@
 import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
 import type { FileChurnData } from "../../../../adapters/vcs/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
+import { aggregateFileChurnFollowingRenames, sliceCommitsFollowingRenames } from "../history/index.js";
 import type { GitEnrichmentCache } from "./cache.js";
 import { aggregateFileChurnWindow, fileChurnWindowOf, type FileChurnDiscovery } from "./file-churn-discovery.js";
-import { aggregateFileChurnFollowingRenames, sliceCommitsFollowingRenames } from "./rename-following.js";
 
 /**
  * Build per-file FileChurnData from git history.

@@ -5,11 +5,11 @@
  * Computes ChunkChurnOverlay from a ChunkAccumulator.
  */
 
+import { groupTimestampsIntoFixSessions } from "../../history/index.js";
 import type { ChunkChurnOverlay } from "../../types.js";
 import type { BlameOwnership } from "../blame-ownership.js";
 import type { ChunkAccumulator, SquashOptions } from "../metrics.js";
 import { historyNowSec } from "./extractors.js";
-import { groupTimestampsIntoFixSessions } from "./sessions.js";
 
 export function assembleChunkSignals(
   acc: ChunkAccumulator,

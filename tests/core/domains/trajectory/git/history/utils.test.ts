@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { extractTaskIds } from "../../../../../../src/core/domains/trajectory/git/infra/utils.js";
+import { extractTaskIds } from "../../../../../../src/core/domains/trajectory/git/history/utils.js";
 
 describe("extractTaskIds", () => {
   it("extracts JIRA-style IDs", () => {

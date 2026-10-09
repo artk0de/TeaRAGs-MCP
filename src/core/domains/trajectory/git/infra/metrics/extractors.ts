@@ -8,8 +8,7 @@
  */
 
 import type { CommitInfo } from "../../../../../adapters/vcs/types.js";
-import { tallyAuthors } from "../author-identity.js";
-import { extractTaskIds, isBugFixCommitOrBranch } from "../utils.js";
+import { extractTaskIds, isBugFixCommitOrBranch, tallyAuthors } from "../../history/index.js";
 
 export interface AuthorshipResult {
   author: string;

@@ -6,6 +6,7 @@
  */
 
 import type { BlameLine, CommitInfo } from "../../../../../adapters/vcs/types.js";
+import { groupIntoSessions } from "../../history/index.js";
 import type { GitFileSignals } from "../../types.js";
 import { computeBlameOwnership } from "../blame-ownership.js";
 import type { WindowedFileChurn } from "../file-lifetime.js";
@@ -21,7 +22,6 @@ import {
   computeTemporalMetrics,
   extractAllTaskIds,
 } from "./extractors.js";
-import { groupIntoSessions } from "./sessions.js";
 
 export function assembleFileSignals(
   churnData: WindowedFileChurn,

@@ -14,8 +14,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
-import { GitCommitDiscoveryStore } from "../../../../../../src/core/domains/trajectory/git/infra/commit-discovery-store.js";
-import type { GitCommitDiscoveryEntry } from "../../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
+import { GitCommitDiscoveryStore } from "../../../../../../src/core/domains/trajectory/git/history/commit-discovery-store.js";
+import type { GitCommitDiscoveryEntry } from "../../../../../../src/core/domains/trajectory/git/history/commit-discovery.js";
 
 const REPO_ROOT = "/some/repo";
 const HEAD_A = "a".repeat(40);

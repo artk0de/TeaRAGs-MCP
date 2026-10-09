@@ -22,9 +22,13 @@
 import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
 import type { CommitFileNumstat, FileChurnData } from "../../../../adapters/vcs/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
-import { buildAuthorNameDirectory, canonicalizeAuthorNames, type AuthorNameDirectory } from "./author-identity.js";
-import { historyWindowSince } from "./history-anchor.js";
-import { aggregateFileChurnFollowingRenames } from "./rename-following.js";
+import {
+  aggregateFileChurnFollowingRenames,
+  buildAuthorNameDirectory,
+  canonicalizeAuthorNames,
+  historyWindowSince,
+  type AuthorNameDirectory,
+} from "../history/index.js";
 
 /**
  * On-disk snapshot shape of a file-churn window (see FileChurnDiscoveryStore).

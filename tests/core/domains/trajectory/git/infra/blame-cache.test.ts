@@ -29,8 +29,8 @@ import { importGitHistory } from "../../../../__helpers__/git-history-import.js"
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import { blameFile } from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 import type { ChunkSignalOverlay } from "../../../../../../src/core/contracts/types/provider.js";
+import { GitCommitDiscovery } from "../../../../../../src/core/domains/trajectory/git/history/commit-discovery.js";
 import { GitBlameStore } from "../../../../../../src/core/domains/trajectory/git/infra/blame-store.js";
-import { GitCommitDiscovery } from "../../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
 import { GitEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/git/provider.js";
 
 // Temp base captured ONCE at module load (realpath-normalised; macOS /var →

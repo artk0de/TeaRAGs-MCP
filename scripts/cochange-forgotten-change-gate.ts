@@ -58,8 +58,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import type { CommitInfo } from "../src/core/adapters/vcs/types.js";
-import { groupIntoSessions } from "../src/core/domains/trajectory/git/infra/metrics/sessions.js";
-import { isBugFixCommit, MERGE_SUBJECT } from "../src/core/domains/trajectory/git/infra/utils.js";
+import { groupIntoSessions, isBugFixCommit, MERGE_SUBJECT } from "../src/core/domains/trajectory/git/history/index.js";
 
 // ---------------------------------------------------------------------------
 // config

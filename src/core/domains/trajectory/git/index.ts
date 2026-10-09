@@ -39,18 +39,21 @@ export {
   resolveIndexHistoryAnchorSec,
   stampedHistoryAnchorMode,
   type GitHistoryAnchorMode,
-} from "./infra/history-anchor.js";
+} from "./history/index.js";
 // Repo-wide history reads shared with the codegraph temporal sub-graph
 // (bd tea-rags-mcp-x4rpp): the run-scoped discovery matrix and its store, the
 // rename-following and merge rules, the ONE author-session grouping rule and
-// the author identity it keys on (bd tea-rags-mcp-3vg0x bursts).
+// the author identity it keys on (bd tea-rags-mcp-3vg0x bursts). Their home is
+// the `history/` facade (bd tea-rags-mcp-89k7k.35.7); a consumer that needs only
+// these imports that facade, not this module root.
 export {
   GitCommitDiscovery,
+  GitCommitDiscoveryStore,
   type GitCommitDiscoveryEntry,
   type GitCommitDiscoveryOptions,
-} from "./infra/commit-discovery.js";
-export { GitCommitDiscoveryStore } from "./infra/commit-discovery-store.js";
-export { resolveHeadPaths } from "./infra/rename-following.js";
-export { extractTaskIds, MERGE_SUBJECT } from "./infra/utils.js";
-export { partitionIntoAuthorSessions } from "./infra/metrics/sessions.js";
-export { authorIdentityKey } from "./infra/author-identity.js";
+  resolveHeadPaths,
+  extractTaskIds,
+  MERGE_SUBJECT,
+  partitionIntoAuthorSessions,
+  authorIdentityKey,
+} from "./history/index.js";

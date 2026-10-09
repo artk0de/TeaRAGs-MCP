@@ -33,7 +33,11 @@ import type {
   TemporalSymbolCommitBuffer,
 } from "../../../../../contracts/types/codegraph.js";
 import { isDebug } from "../../../../../infra/runtime.js";
-import { GitCommitDiscovery, GitCommitDiscoveryStore, type GitCommitDiscoveryEntry } from "../../../git/index.js";
+import {
+  GitCommitDiscovery,
+  GitCommitDiscoveryStore,
+  type GitCommitDiscoveryEntry,
+} from "../../../git/history/index.js";
 import type {
   CodegraphCollectionCompletionContext,
   CodegraphCollectionCompletionHook,

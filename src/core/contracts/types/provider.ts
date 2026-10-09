@@ -189,7 +189,7 @@ export interface ChunkSignalOptions {
   /**
    * Run-scoped commitSha → changedFiles matrix + ONE shared bugFixShaSet
    * (bd tea-rags-mcp-82va1). Structural shape of `GitCommitDiscovery`
-   * (`domains/trajectory/git/infra/commit-discovery.ts`) — declared by value
+   * (`domains/trajectory/git/history/commit-discovery.ts`) — declared by value
    * here, not imported, because contracts is pure.
    *
    * ONE repo-wide `git log --since --numstat` per indexing run replaces the

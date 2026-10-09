@@ -7,9 +7,9 @@
  * burst commits.
  */
 
-import type { CommitInfo } from "../../../../../adapters/vcs/types.js";
-import { authorIdentityKey } from "../author-identity.js";
-import { isBugFixCommit, MERGE_SUBJECT } from "../utils.js";
+import type { CommitInfo } from "../../../../adapters/vcs/types.js";
+import { authorIdentityKey } from "./author-identity.js";
+import { isBugFixCommit, MERGE_SUBJECT } from "./utils.js";
 
 export interface Session {
   author: string;

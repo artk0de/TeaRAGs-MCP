@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   resolveIndexHistoryAnchorSec,
   stampedHistoryAnchorMode,
-} from "../../../../../../src/core/domains/trajectory/git/infra/history-anchor.js";
+} from "../../../../../../src/core/domains/trajectory/git/history/history-anchor.js";
 
 describe("stampedHistoryAnchorMode", () => {
   it("reads head only when the snapshot stamps it explicitly", () => {

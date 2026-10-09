@@ -14,22 +14,22 @@ import type {
   CommitInfo,
   FileChurnData,
 } from "../../../../../../src/core/adapters/vcs/types.js";
-import { assembleOverlays } from "../../../../../../src/core/domains/trajectory/git/infra/assemble-overlays.js";
 import {
   authorIdentityKey,
   buildAuthorNameDirectory,
   canonicalizeAuthorNames,
   tallyAuthors,
-} from "../../../../../../src/core/domains/trajectory/git/infra/author-identity.js";
+} from "../../../../../../src/core/domains/trajectory/git/history/author-identity.js";
+import {
+  groupIntoSessions,
+  partitionIntoAuthorSessions,
+} from "../../../../../../src/core/domains/trajectory/git/history/sessions.js";
+import { assembleOverlays } from "../../../../../../src/core/domains/trajectory/git/infra/assemble-overlays.js";
 import { computeBlameOwnership } from "../../../../../../src/core/domains/trajectory/git/infra/blame-ownership.js";
 import { FileChurnDiscovery } from "../../../../../../src/core/domains/trajectory/git/infra/file-churn-discovery.js";
 import type { ChunkAccumulator } from "../../../../../../src/core/domains/trajectory/git/infra/metrics.js";
 import { computeDominantAuthor } from "../../../../../../src/core/domains/trajectory/git/infra/metrics/extractors.js";
 import { assembleFileSignals } from "../../../../../../src/core/domains/trajectory/git/infra/metrics/file-assembler.js";
-import {
-  groupIntoSessions,
-  partitionIntoAuthorSessions,
-} from "../../../../../../src/core/domains/trajectory/git/infra/metrics/sessions.js";
 
 const BASE_TS = 1_700_000_000;
 const MIN = 60;
