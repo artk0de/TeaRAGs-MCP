@@ -13,8 +13,10 @@
  * logical change is the history's commits joined by a shared task id — across
  * bursts, umbrella ids excepted ({@link joinLogicalChanges},
  * {@link resolveUmbrellaTaskIds}); with nothing joining them it is one commit.
- * Changes sharing an author burst count as one ({@link changeGroups}): the
- * burst still stops a WIP spray of re-commits from counting as many changes.
+ * Changes sharing an author burst count as one when either is taskless
+ * ({@link changeGroups}): the burst still stops a WIP spray of re-commits from
+ * counting as many changes, but it only stands in for a task id — two changes
+ * that each declare their own task stay two (bd tea-rags-mcp-zf9yz.5).
  * A burst's union is never a unit — parallel agent sessions committing under
  * one author chain unrelated commits into it, so a union spread is one no
  * single change ever touched. The units are the changes' component sets,
@@ -369,6 +371,12 @@ interface ShotgunSurgeryUnit {
   newestPosition: number;
   /** The bundles (one commit each) of the change units with this component set, newest first. */
   bundleIds: number[];
+  /**
+   * The non-umbrella task ids the unit's commits declare, ascending. Empty =
+   * a taskless unit: only its burst says which change it belongs to
+   * ({@link changeGroups}).
+   */
+  taskIds: string[];
 }
 
 /** The history in the pair gate's two counts: logical-change sets, and the bursts they fall in. */
@@ -787,6 +795,7 @@ function buildHistory(input: ShotgunSurgeryInput, mechanical: ReadonlySet<number
         newestBundleId: bundleIds[0],
         newestPosition: 0,
         bundleIds: [...bundleIds],
+        taskIds: [],
       });
       return;
     }
@@ -803,7 +812,13 @@ function buildHistory(input: ShotgunSurgeryInput, mechanical: ReadonlySet<number
       .map((bundleId, index) => [bundleId, index]),
   );
   const positionOf = (bundleId: number): number => position.get(bundleId) ?? 0;
+  const taskIdsOf = new Map(commits.map(({ bundleId, taskIds }) => [bundleId, taskIds]));
   for (const unit of units) {
+    const declared = new Set<string>();
+    for (const bundleId of unit.bundleIds) {
+      for (const taskId of taskIdsOf.get(bundleId) ?? []) if (!umbrella.ids.has(taskId)) declared.add(taskId);
+    }
+    unit.taskIds = [...declared].sort(compareCodePoints);
     unit.bundleIds.sort((a, b) => positionOf(b) - positionOf(a));
     unit.newestBundleId = unit.bundleIds[0];
     unit.newestPosition = positionOf(unit.bundleIds[0]);
@@ -1540,19 +1555,33 @@ function recurringKSets(wide: readonly ShotgunSurgeryUnit[], k: number): Shotgun
 }
 
 /**
- * The units at `indices` grouped into distinct changes: units sharing an
- * author burst are one change (a WIP spray, or parallel commits a task id did
- * not join, is one event of that burst), transitively. Units at distinct
- * indices never share a non-umbrella task id — the join already merged those.
+ * The units at `indices` grouped into distinct changes. A task id declares
+ * which logical change a commit belongs to; a shared author burst is only the
+ * stand-in where there is none (bd tea-rags-mcp-zf9yz.5). So two units sharing
+ * a burst are one change only when at least one of them is taskless (a WIP
+ * spray, or a commit nothing declared), transitively — a taskless unit
+ * bridges every unit of its burst. Units that both declare a task are never
+ * fused by the burst: units at distinct indices never share a non-umbrella
+ * task id (the join already merged those), so their ids are disjoint and they
+ * name different changes. Linear: per burst, either every holder joins one
+ * taskless anchor, or none joins.
  */
 function changeGroups(units: readonly ShotgunSurgeryUnit[], indices: readonly number[]): number[][] {
   const joins = new DisjointSets(indices.length);
-  const burstOwner = new Map<number, number>();
+  const tasklessAnchor = new Map<number, number>();
   indices.forEach((index, position) => {
+    if (units[index].taskIds.length > 0) return;
     for (const burst of units[index].bursts) {
-      const owner = burstOwner.get(burst);
-      if (owner === undefined) burstOwner.set(burst, position);
-      else joins.union(owner, position);
+      const anchor = tasklessAnchor.get(burst);
+      if (anchor === undefined) tasklessAnchor.set(burst, position);
+      else joins.union(anchor, position);
+    }
+  });
+  indices.forEach((index, position) => {
+    if (units[index].taskIds.length === 0) return;
+    for (const burst of units[index].bursts) {
+      const anchor = tasklessAnchor.get(burst);
+      if (anchor !== undefined) joins.union(anchor, position);
     }
   });
   const groups = new Map<number, number[]>();
@@ -1567,9 +1596,19 @@ function changeGroups(units: readonly ShotgunSurgeryUnit[], indices: readonly nu
 
 /** Distinct changes among the units at `indices` — the support. */
 function distinctChanges(units: readonly ShotgunSurgeryUnit[], indices: readonly number[]): number {
-  // One burst per unit is the common case: the changes are the distinct bursts.
+  // One burst per unit is the common case: per burst, one change if a taskless
+  // unit holds it, else one per task-declared unit ({@link changeGroups}).
   if (indices.every((index) => units[index].bursts.length === 1)) {
-    return new Set(indices.map((index) => units[index].bursts[0])).size;
+    const perBurst = new Map<number, number>();
+    for (const index of indices) {
+      const [burst] = units[index].bursts;
+      const tasked = perBurst.get(burst) ?? 0;
+      if (tasked < 0) continue;
+      perBurst.set(burst, units[index].taskIds.length === 0 ? -1 : tasked + 1);
+    }
+    let changes = 0;
+    for (const tasked of perBurst.values()) changes += tasked < 0 ? 1 : tasked;
+    return changes;
   }
   return changeGroups(units, indices).length;
 }

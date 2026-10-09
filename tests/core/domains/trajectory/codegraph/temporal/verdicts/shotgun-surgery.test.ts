@@ -534,6 +534,74 @@ describe("detectShotgunSurgery", () => {
     expect(report.findings[0].sampleChanges).toEqual([["b0c0", "b1c0"], ["b2c0"], ["b3c0"]]);
   });
 
+  it("counts two task-declared changes sharing a burst as two, their task ids disjoint", () => {
+    // Each burst: TD-b held {a, b, c}; AB-b held it plus a component of its
+    // own. Two declared changes, one burst — the burst stands in for an id
+    // only where there is none (bd tea-rags-mcp-zf9yz.5).
+    const bursts = [0, 1, 2].map((b) => [
+      { components: ["a", "b", "c"], file: "x", taskIds: [`TD-${b}`] },
+      { components: ["a", "b", "c", `d${b}`], file: "y", taskIds: [`AB-${b}`] },
+    ]);
+    const report = detectShotgunSurgery({
+      ...logicalHistory(background(["a", "b", "c"]), bursts),
+      componentDependencies: [],
+    });
+
+    expect(report.findings.map((f) => `${f.components.join(",")}@${f.support}`)).toEqual(["a,b,c@6"]);
+  });
+
+  it("fuses task-declared changes of a burst that a taskless change of the same burst bridges", () => {
+    const bursts = [0, 1, 2].map((b) => [
+      { components: ["a", "b", "c"], file: "x", taskIds: [`TD-${b}`] },
+      { components: ["a", "b", "c", `d${b}`], file: "y", taskIds: [`AB-${b}`] },
+      { components: ["a", "b", "c", `e${b}`], file: "z" },
+    ]);
+    const report = detectShotgunSurgery({
+      ...logicalHistory(background(["a", "b", "c"]), bursts),
+      componentDependencies: [],
+    });
+
+    expect(report.findings.map((f) => `${f.components.join(",")}@${f.support}`)).toEqual(["a,b,c@3"]);
+  });
+
+  it("still counts taskless changes sharing a burst once", () => {
+    const bursts = [0, 1, 2].map((b) => [
+      { components: ["a", "b", "c"], file: "x" },
+      { components: ["a", "b", "c", `d${b}`], file: "y" },
+    ]);
+    const report = detectShotgunSurgery({
+      ...logicalHistory(background(["a", "b", "c"]), bursts),
+      componentDependencies: [],
+    });
+
+    expect(report.findings.map((f) => `${f.components.join(",")}@${f.support}`)).toEqual(["a,b,c@3"]);
+  });
+
+  it("keeps a task spanning bursts apart from the other task-declared changes of those bursts", () => {
+    // TD-7 held {a, b, c} in bursts 0 and 1 — one change; each burst also
+    // carries a change of its own task. Five declared changes.
+    const bursts = [
+      [
+        { components: ["a", "b", "c"], file: "x", taskIds: ["TD-7"] },
+        { components: ["a", "b", "c", "d0"], file: "y", taskIds: ["AB-0"] },
+      ],
+      [
+        { components: ["a", "b", "c"], file: "x", taskIds: ["TD-7"] },
+        { components: ["a", "b", "c", "d1"], file: "y", taskIds: ["AB-1"] },
+      ],
+      [
+        { components: ["a", "b", "c"], file: "x", taskIds: ["TD-8"] },
+        { components: ["a", "b", "c", "d2"], file: "y", taskIds: ["AB-2"] },
+      ],
+    ];
+    const report = detectShotgunSurgery({
+      ...logicalHistory(background(["a", "b", "c"]), bursts),
+      componentDependencies: [],
+    });
+
+    expect(report.findings.map((f) => `${f.components.join(",")}@${f.support}`)).toEqual(["a,b,c@5"]);
+  });
+
   it("lets no umbrella task id join — an upper outlier of the ids' own breadth", () => {
     // Ordinary ids: each names one or two companions (2 or 3 distinct ids on
     // its commits). EPIC rides on nine sub-tasks' commits — 10 distinct ids,
