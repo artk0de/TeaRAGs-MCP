@@ -12,14 +12,8 @@
  * reaching into the name (`tax_automation_document` off
  * `TaxAutomations::Document`) is kept.
  */
+import type { ConceptTerm } from "../../../contracts/types/naming-lexicon.js";
 import { singularizeIdentifierWord, splitIdentifierWords } from "./casing.js";
-
-/** One concept term: a snake n-gram, its summed holder score, and up to three distinct holder symbols (best first, no `#partN`). */
-export interface ConceptTerm {
-  term: string;
-  score: number;
-  holders: string[];
-}
 
 /** A semantic-search hit a term is read from. */
 export interface ConceptTermHolder {

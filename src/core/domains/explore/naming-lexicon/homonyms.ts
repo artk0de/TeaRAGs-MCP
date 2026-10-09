@@ -9,8 +9,8 @@
  *     types.
  * Pure: the shapes come in already classified by the caller.
  */
+import type { NamingShape } from "../../../contracts/types/naming-lexicon.js";
 import { stripIdentifierDecorations, typeNameLastSegment, typeNameWords } from "./casing.js";
-import type { NamingShape } from "./shapes.js";
 
 /** One type a name is bound to, with the name's row count against it. */
 export interface HomonymTypeCount {

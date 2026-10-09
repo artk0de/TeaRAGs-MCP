@@ -7,7 +7,7 @@ import {
   defaultChunkerPoolSize,
   defaultEnrichmentFilesPerThread,
 } from "../../core/domains/ingest/pipeline/infra/pool-defaults.js";
-import { defaultBlamePoolSize } from "../../core/domains/trajectory/git/infra/churn-walk/blame-pool-defaults.js";
+import { defaultBlamePoolSize } from "../../core/domains/trajectory/git/index.js";
 import {
   booleanFromEnv,
   booleanFromEnvWithDefault,

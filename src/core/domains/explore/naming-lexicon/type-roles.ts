@@ -53,13 +53,12 @@
  * Pure: the rows come in already read (type-level kinds only) by the caller.
  */
 import type { TypeNameRow } from "../../../contracts/types/codegraph.js";
+import type { TypeRoleEvidence } from "../../../contracts/types/naming-lexicon.js";
 import { singularizeIdentifierWord, splitIdentifierWords, typeNameLastSegment, typeNameWords } from "./casing.js";
 import { typeNameParts, type TypeNameParser } from "./name-slots.js";
 
 /** The row shape is owned by the store contract (`GraphDbClient.readTypeNameRows`). */
 export type { TypeNameRow };
-
-export type TypeRoleEvidence = "inheritance" | "directory" | "projectSuffix";
 
 /**
  * A type carrying the role of one evidence scope. A type may carry one

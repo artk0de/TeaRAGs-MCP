@@ -1,5 +1,6 @@
 import type { TypeNameRow } from "../../../contracts/types/codegraph-storage.js";
 import type { DependencyNormFileRole, RelPath } from "../../../contracts/types/codegraph.js";
+import type { TypeRoleEvidence } from "../../../contracts/types/naming-lexicon.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../../../infra/graph/index.js";
 import { singularizeIdentifierWord, splitIdentifierWords, typeNameLastSegment, typeNameWords } from "./casing.js";
 import {
@@ -9,7 +10,6 @@ import {
   TYPE_ROLE_THRESHOLDS,
   typeNameParser,
   type TypeRoleAssignment,
-  type TypeRoleEvidence,
 } from "./type-roles.js";
 
 /**
