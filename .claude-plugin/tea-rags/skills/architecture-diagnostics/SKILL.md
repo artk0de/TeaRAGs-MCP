@@ -322,7 +322,7 @@ by file type or hub size. Knot mode omits it.
 | `familySize` / `q`                          | BH family C(n, k): every set of exactly k components among n changed in ≥ 2 bursts; FDR q — multiple-testing price   |
 | `candidateSetCount` / `admittedSetCount`    | k-sets wide commits of ≥ 2 bursts held whole (tested) / k-sets passing BH over the null                              |
 | `spreadCount`                               | maximal spreads admitted k-sets merge into: closure = components EVERY holding commit touched; support = k-set's     |
-| `explainedCount`                            | spreads dropped: one structural island (dependency or specific neighbour) explains                                   |
+| `explainedCount`                            | spreads dropped: one island (dependency, specific neighbour, or feature subtree ≤ T changed components) explains     |
 | `outOfScopeSetCount`                        | scoped only: unexplained spreads with no exemplar file in `pathPattern`                                              |
 
 Evidence per line:
@@ -331,7 +331,7 @@ Evidence per line:
 | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `support` / `weightedSupport` / `expectedSupport` | distinct changes holding whole spread / Σ their specificity weights / E[weighted] under the null; weighted ≫ expected = real |
 | `strength`                                        | Wilson lower bound of support over component changes                                                                         |
-| `islands`                                         | structurally connected groups (≥ 2) — where the missing link would go                                                        |
+| `islands`                                         | connected groups (≥ 2; dependency, specific neighbour, one feature subtree) — where the missing link would go                |
 | `exemplarFiles`                                   | per component the file the holding commits touched most                                                                      |
 | `carrierFiles`                                    | per component (aligned) files the holding changes touched, most-touched first (≤ 5) — recipe input                           |
 | `sampleCommits`                                   | shas to cite — latest commit of each holding change, one per supporting burst                                                |

@@ -73,8 +73,11 @@
  * {@link SilentCouplingNeighbourIndex} over the component graph, its
  * ln(N / fanIn) weight clearing an Otsu cut drawn over every unlinked pair's
  * heaviest neighbour (Otsu only: under the floor alone every non-universal
- * neighbour would explain). A spread whose components fall into ≥ 2 islands is
- * the violation: the change keeps reaching into parts the code never connects.
+ * neighbour would explain) — or by one FEATURE SUBTREE
+ * ({@link ShotgunSurgeryFeatureSubtrees}): siblings under a directory or
+ * namespace small enough for one typical change to edit whole. A spread whose
+ * components fall into ≥ 2 islands is the violation: the change keeps
+ * reaching into parts the code never connects.
  *
  * STRENGTH is {@link cochangeStrength} over the spread's support and its
  * least- and most-changed components — the larger direction's Wilson lower
@@ -85,6 +88,7 @@
 import type { RelPath } from "../../../../../contracts/types/codegraph.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../../../../../infra/graph/index.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
+import { componentAncestry } from "../../symbols/boundary-diagnostics/index.js";
 import {
   benjaminiHochbergRejectionCount,
   COCHANGE_SIGNIFICANCE_FDR_Q,
@@ -298,7 +302,11 @@ export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgery
     }),
   );
 
-  const structure = new ShotgunSurgeryStructure(input.componentDependencies, input.componentOf);
+  const structure = new ShotgunSurgeryStructure(
+    input.componentDependencies,
+    input.componentOf,
+    new ShotgunSurgeryFeatureSubtrees(changes.keys(), specificity.typicalWidth),
+  );
   const islandsOf = structure.islandResolver(closed.map((spread) => spread.components));
   const inScope = compilePathPatternMatcher(input.sourcePathPattern);
   let outOfScopeSetCount = 0;
@@ -939,12 +947,86 @@ function logSumExp(values: readonly number[]): number {
   return peak + Math.log(values.reduce((total, value) => total + Math.exp(value - peak), 0));
 }
 
-/** The structural links among components: direct dependencies and specific shared neighbours. */
+/**
+ * FEATURE SUBTREES (bd tea-rags-mcp-bvcg4). Components are nodes of a tree —
+ * a directory nests by path, a constant namespace by constant path
+ * ({@link componentAncestry}) — and the independence null knows nothing of
+ * it: siblings under one page or feature directory move together by
+ * construction (a page and its elements, a board and its columns), so their
+ * co-change clears the null without being shotgun surgery.
+ *
+ * A subtree is ONE FEATURE when one typical change can edit all of it: it
+ * holds at most T changed components, T the typical change width
+ * ({@link ShotgunSurgerySpecificity}). A component's feature is its outermost
+ * ancestor that small; two components with the same feature join one island,
+ * which is the same as their lowest common ancestor holding ≤ T changed
+ * components (counts only grow outward). A component whose own subtree is
+ * wider than T, or a pair in different trees — a namespace and a directory,
+ * the backend and frontend halves of one feature — joins nothing here.
+ *
+ * Why T and not a cut over the spreads' own pairs: the owner's candidate was
+ * an Otsu or Tukey cut over the LCA measure of every spread pair. Measured on
+ * taxdome (1508 spreads, 5038 pairs): Otsu fails the 0.8 separability gate on
+ * both the LCA depth (0.63) and log subtree size (0.75), and Tukey's fence
+ * flags the wide tail, not the narrow one. T is itself the temporal family's
+ * Tukey fence, drawn over the history's change widths — the scale at which
+ * "one change" is still ordinary here (taxdome 31, tea-rags 11).
+ *
+ * Why an explanation and not a hierarchy-conditioned null (the other
+ * candidate): refitting each set's propensities inside its LCA's subtree
+ * admitted 913 of the 8965 k-sets the global null admits on taxdome, emptied
+ * nearly every within-tree spread (1224 → 49), recalled 3 of the 7 true gold
+ * findings even as sub-spreads, and left a report dominated by backend +
+ * frontend slices. The explanation removed every sibling-subtree gold finding
+ * and kept 6 of the 7 true ones.
+ */
+class ShotgunSurgeryFeatureSubtrees {
+  private readonly featureOf = new Map<string, string | undefined>();
+  private readonly changedUnder = new Map<string, number>();
+
+  constructor(
+    changedComponents: Iterable<string>,
+    private readonly typicalWidth: number | undefined,
+  ) {
+    for (const component of changedComponents) {
+      for (const node of componentAncestry(component)) {
+        this.changedUnder.set(node, (this.changedUnder.get(node) ?? 0) + 1);
+      }
+    }
+  }
+
+  /** Whether `a` and `b` lie in one subtree a typical change covers whole. */
+  joins(a: string, b: string): boolean {
+    const feature = this.feature(a);
+    return feature !== undefined && feature === this.feature(b);
+  }
+
+  /** The outermost ancestor holding ≤ T changed components; undefined when none does. */
+  private feature(component: string): string | undefined {
+    if (this.featureOf.has(component)) return this.featureOf.get(component);
+    const width = this.typicalWidth;
+    const feature =
+      width === undefined
+        ? undefined
+        : componentAncestry(component).find((node) => (this.changedUnder.get(node) ?? 0) <= width);
+    this.featureOf.set(component, feature);
+    return feature;
+  }
+}
+
+/**
+ * The links among components that explain a spread: direct dependencies,
+ * specific shared neighbours, and one feature subtree.
+ */
 class ShotgunSurgeryStructure {
   private readonly linked = new Set<string>();
   private readonly neighbours: SilentCouplingNeighbourIndex;
 
-  constructor(dependencies: readonly ShotgunSurgeryComponentDependency[], componentOf: ReadonlyMap<RelPath, string>) {
+  constructor(
+    dependencies: readonly ShotgunSurgeryComponentDependency[],
+    componentOf: ReadonlyMap<RelPath, string>,
+    private readonly featureSubtrees: ShotgunSurgeryFeatureSubtrees,
+  ) {
     const componentIds = new Set(componentOf.values());
     for (const { sourceComponent, targetComponent } of dependencies) {
       componentIds.add(sourceComponent);
@@ -980,7 +1062,7 @@ class ShotgunSurgeryStructure {
     });
     const joins = (a: string, b: string): boolean => {
       const key = pairKey(a, b);
-      if (this.linked.has(key)) return true;
+      if (this.linked.has(key) || this.featureSubtrees.joins(a, b)) return true;
       const weight = heaviest.get(key);
       return policy.method === "otsu" && weight !== undefined && policy.admits(weight);
     };

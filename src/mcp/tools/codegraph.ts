@@ -449,7 +449,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "no persisted bundle membership (pre-042 index), not clean. shotgunSurgery: " +
       "one change (author burst) spanning >=k components (k = Otsu over burst widths, >=3), recurring beyond a " +
       "component-level configuration null (fitted inclusion propensity, Poisson tail, BH q=0.05), components in >=2 " +
-      "structural islands (no dependency or specific shared neighbour); evidence support, expectedSupport, strength, " +
+      "structural islands (no dependency, specific shared neighbour, or feature subtree of <= T changed components); evidence support, expectedSupport, strength, " +
       "islands, exemplarFiles, drillDown = find_co_changed; built false = same reasons as splitMerge. mainSequence " +
       "(Stable Abstractions Principle): component far from A+I=1 — pain = stable+concrete, uselessness = " +
       "unstable+abstract; A from walker type census, D > max(0.5, Otsu cut); components whose language " +

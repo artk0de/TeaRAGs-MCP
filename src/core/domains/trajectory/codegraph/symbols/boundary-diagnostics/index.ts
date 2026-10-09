@@ -14,6 +14,7 @@ export {
   isDeclaredCompositionRoot,
   isDeclaredEntryPoint,
 } from "./component-stable-dependencies.js";
+export { componentAncestry } from "./constant-namespace.js";
 export { classifyDirectoryRelation } from "./directory-relation.js";
 export { FACADE_AGGREGATION_REASON, isFacadeAggregationEdge } from "./facade-aggregation.js";
 export { computeFileInstabilities } from "./file-instability.js";

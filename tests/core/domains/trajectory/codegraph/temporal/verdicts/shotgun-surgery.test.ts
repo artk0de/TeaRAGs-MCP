@@ -555,6 +555,56 @@ describe("detectShotgunSurgery", () => {
     expect(specific.summary.admittedSetCount).toBe(1);
   });
 
+  it("explains siblings of one feature subtree that a typical change covers whole", () => {
+    // The only multi-component changes are the three spreads: T = 4. The
+    // subtree `page` holds 4 changed components — one typical change can
+    // edit all of it, so its children are one feature, dependent by
+    // construction, and their co-change is no shotgun surgery.
+    const spread = ["page/a", "page/b", "page/c", "page/d"];
+    const report = detectShotgunSurgery({
+      ...history([...background(spread), spread, spread, spread]),
+      componentDependencies: [],
+    });
+
+    expect(report.summary.typicalChangeWidth).toBe(4);
+    expect(report.findings).toEqual([]);
+    expect(report.explained.map((s) => s.islands)).toEqual([[spread]]);
+    expect(report.summary.violationCount).toBe(0);
+  });
+
+  it("keeps siblings apart when their common subtree is wider than a typical change", () => {
+    // Same spread, but `page` also holds five components changed alone: 9
+    // changed components under it, more than T = 4 — no one change covers
+    // the subtree, so sharing it is no evidence of one feature.
+    const spread = ["page/a", "page/b", "page/c", "page/d"];
+    const others = ["page/e", "page/f", "page/g", "page/h", "page/i"];
+    const report = detectShotgunSurgery({
+      ...history([...background([...spread, ...others]), spread, spread, spread]),
+      componentDependencies: [],
+    });
+
+    expect(report.summary.typicalChangeWidth).toBe(4);
+    expect(report.findings.map((f) => f.islands)).toEqual([spread.map((c) => [c])]);
+  });
+
+  it("groups namespace and directory components by their own trees, never across them", () => {
+    // `::Billing` and `billing` each hold two changed components, inside
+    // T = 4; a namespace and a directory share no ancestor, so the backend
+    // and frontend halves stay two islands and the spread is still reported.
+    const spread = ["::Billing::Charges", "::Billing::Refunds", "billing/form", "billing/table"];
+    const report = detectShotgunSurgery({
+      ...history([...background(spread), spread, spread, spread]),
+      componentDependencies: [],
+    });
+
+    expect(report.findings.map((f) => f.islands)).toEqual([
+      [
+        ["::Billing::Charges", "::Billing::Refunds"],
+        ["billing/form", "billing/table"],
+      ],
+    ]);
+  });
+
   it("judges nothing without bundle membership", () => {
     const report = detectShotgunSurgery({
       componentOf: new Map(),
