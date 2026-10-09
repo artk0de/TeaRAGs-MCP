@@ -198,6 +198,9 @@ export interface ShotgunSurgeryInput {
    * for it. A bundle absent from the map is in no lifecycle pair and no
    * revisit. The whole map absent or empty = not recorded (a build predating
    * migration 047): no lifecycle stage, and its summary fields are absent.
+   * Recency elsewhere (the sample commits) then falls back to the store's
+   * numbering, which `extractCochangeGraph` assigns newest first: the smallest
+   * id is the newest commit (bd tea-rags-mcp-dlvyi).
    */
   bundleTimestamps?: ReadonlyMap<number, number>;
   /** Picomatch glob: a spread is in scope when an exemplar file of one of its components matches. */
@@ -246,11 +249,16 @@ export interface ShotgunSurgerySpread {
    * agent explaining the spread reads and searches across.
    */
   carrierFiles: RelPath[][];
-  /** Commits that held the spread, one per supporting burst, most recent first (≤ {@link SHOTGUN_SURGERY_SAMPLE_COMMITS}). */
+  /**
+   * Commits that held the spread, the newest commit of each of the newest
+   * supporting changes, newest first (≤ {@link SHOTGUN_SURGERY_SAMPLE_COMMITS}).
+   * Recency is `ShotgunSurgeryInput.bundleTimestamps`, else the store's
+   * newest-first bundle numbering.
+   */
   sampleCommits: string[];
   /**
    * The logical change behind each sample commit, aligned with `sampleCommits`:
-   * every commit of the burst's change that held the spread, most recent first.
+   * every commit of the change that held the spread, newest first.
    */
   sampleChanges: string[][];
 }
@@ -321,9 +329,13 @@ interface ShotgunSurgeryUnit {
   bursts: number[];
   components: Set<string>;
   filesByComponent: Map<string, Set<RelPath>>;
-  /** Largest bundle id — the recency order. */
-  order: number;
-  /** The bundles (one commit each) of the change units with this component set, descending. */
+  /** The unit's newest commit ({@link bundleChronology}) — its sample commit. */
+  newestBundleId: number;
+  /** Chronological position of the unit's newest commit (0 = the history's oldest commit). */
+  newestPosition: number;
+  /** Chronological position of the unit's oldest commit. */
+  oldestPosition: number;
+  /** The bundles (one commit each) of the change units with this component set, newest first. */
   bundleIds: number[];
 }
 
@@ -708,22 +720,57 @@ function buildHistory(input: ShotgunSurgeryInput, mechanical: ReadonlySet<number
         bursts: [...bursts],
         components: new Set(filesByComponent.keys()),
         filesByComponent: new Map([...filesByComponent].map(([c, relPaths]) => [c, new Set(relPaths)])),
-        order: Math.max(...bundleIds),
+        newestBundleId: bundleIds[0],
+        newestPosition: 0,
+        oldestPosition: 0,
         bundleIds: [...bundleIds],
       });
       return;
     }
-    unit.order = Math.max(unit.order, ...bundleIds);
     unit.bundleIds.push(...bundleIds);
     unit.bursts.push(...bursts);
     mergeFiles(unit.filesByComponent, filesByComponent);
   });
   const units = [...merged.values()];
+  const chronology = bundleChronology(input);
+  const position = new Map(
+    commits
+      .map(({ bundleId }) => bundleId)
+      .sort(chronology)
+      .map((bundleId, index) => [bundleId, index]),
+  );
+  const positionOf = (bundleId: number): number => position.get(bundleId) ?? 0;
   for (const unit of units) {
-    unit.bundleIds.sort((a, b) => b - a);
+    unit.bundleIds.sort((a, b) => positionOf(b) - positionOf(a));
+    unit.newestBundleId = unit.bundleIds[0];
+    unit.newestPosition = positionOf(unit.bundleIds[0]);
+    unit.oldestPosition = positionOf(unit.bundleIds[unit.bundleIds.length - 1]);
     unit.bursts = [...new Set(unit.bursts)].sort((a, b) => a - b);
   }
   return { units, burstCount, changes, burstWidths, umbrella, echo, lifecycle };
+}
+
+/**
+ * Older-first order of bundles (bd tea-rags-mcp-dlvyi): by `bundleTimestamps`,
+ * the smaller first SHA older on a tie. With no timestamps recorded the store's
+ * numbering stands in — `extractCochangeGraph` numbers bundles newest first, so
+ * the larger id is the older commit. A bundle the recorded map does not date
+ * sorts as time 0, the oldest.
+ */
+function bundleChronology(
+  input: Pick<ShotgunSurgeryInput, "bundleCommits" | "bundleTimestamps">,
+): (a: number, b: number) => number {
+  const timestamps = input.bundleTimestamps;
+  if (!timestamps || timestamps.size === 0) return (a, b) => b - a;
+  return (a, b) =>
+    (timestamps.get(a) ?? 0) - (timestamps.get(b) ?? 0) ||
+    compareCodePoints(bundleSortKey(input, a), bundleSortKey(input, b)) ||
+    b - a;
+}
+
+/** A bundle's first SHA, or `bundle:<id>` when none is recorded — the tie-break key of every chronology and sort. */
+function bundleSortKey(input: Pick<ShotgunSurgeryInput, "bundleCommits">, bundleId: number): string {
+  return input.bundleCommits?.get(bundleId)?.[0] ?? `bundle:${bundleId}`;
 }
 
 /**
@@ -1103,9 +1150,8 @@ export function findShotgunSurgeryLifecyclePairs(
 ): ShotgunSurgeryLifecycleAssessment {
   const timestamps = input.bundleTimestamps ?? new Map<number, number>();
   const lines = input.bundleFileLines ?? new Map<number, ReadonlyMap<RelPath, CochangeFileLineCounts>>();
-  const keyOf = (bundleId: number): string => input.bundleCommits?.get(bundleId)?.[0] ?? `bundle:${bundleId}`;
-  const chronology = (a: number, b: number): number =>
-    (timestamps.get(a) ?? 0) - (timestamps.get(b) ?? 0) || compareCodePoints(keyOf(a), keyOf(b));
+  const keyOf = (bundleId: number): string => bundleSortKey(input, bundleId);
+  const chronology = bundleChronology(input);
   const history = commits
     .filter(({ bundleId }) => timestamps.has(bundleId) && lines.has(bundleId))
     .sort((a, b) => chronology(a.bundleId, b.bundleId))
@@ -1798,20 +1844,21 @@ function shapeSpread(
   const carrierFiles = spread.components.map((c) => carrierFilesOf(spread.supporting, c));
   const fewest = Math.min(...componentChanges);
   const most = Math.max(...componentChanges);
-  // One unit per supporting change — its most recent unit that held the
-  // spread — so every sample is a distinct supporting change, never a burst's
-  // re-commits crowding the others out.
+  // One unit per supporting change — its newest unit that held the spread —
+  // so every sample is a distinct supporting change, never a burst's
+  // re-commits crowding the others out. Recency is the chronology's
+  // ({@link bundleChronology}), never the bundle numbering.
   const supporting = spread.supporting.map((_, index) => index);
   const latestPerChange = changeGroups(spread.supporting, supporting).map((group) =>
     group
       .map((index) => spread.supporting[index])
-      .reduce((latest, unit) => (unit.order > latest.order ? unit : latest)),
+      .reduce((latest, unit) => (unit.newestPosition > latest.newestPosition ? unit : latest)),
   );
   const sampleCommits: string[] = [];
   const sampleChanges: string[][] = [];
-  for (const unit of latestPerChange.sort((a, b) => b.order - a.order)) {
+  for (const unit of latestPerChange.sort((a, b) => b.newestPosition - a.newestPosition)) {
     if (sampleChanges.length >= SHOTGUN_SURGERY_SAMPLE_COMMITS) break;
-    for (const sha of bundleCommits?.get(unit.order) ?? []) {
+    for (const sha of bundleCommits?.get(unit.newestBundleId) ?? []) {
       if (!sampleCommits.includes(sha)) sampleCommits.push(sha);
     }
     const change = unit.bundleIds.flatMap((bundleId) => bundleCommits?.get(bundleId) ?? []);

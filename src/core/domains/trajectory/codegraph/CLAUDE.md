@@ -492,9 +492,12 @@
   (`findShotgunSurgeryLifecyclePairs`, bd tea-rags-mcp-zf9yz) also joins and
   never removes: dropping deletion-dominant commits was measured and lost a TRUE
   finding (taxdome SG06), because retiring a feature flag touches exactly the
-  places it was wired into and is shotgun evidence. Pairs and file revisits are
-  oriented by `ShotgunSurgeryInput.bundleTimestamps`, never by bundle id
-  (`extractCochangeGraph` numbers bundles newest first), and
+  places it was wired into and is shotgun evidence. Pairs, file revisits and
+  every "newer / older" the detector reads (sample commits included) go through
+  `bundleChronology`: `ShotgunSurgeryInput.bundleTimestamps`, else the store's
+  numbering — `extractCochangeGraph` numbers bundles newest first, so the
+  SMALLEST id is the newest. A max-id "recency" listed the oldest commits as the
+  newest on every finding (bd tea-rags-mcp-dlvyi). And
   `ShotgunSurgeryLifecycleNull#mirrorProbability` is max(pooled, per-file)
   because a pooled-only null joins unrelated ±1 edits to a registry file.
 
