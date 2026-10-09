@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   runShotgunSurgery,
+  shotgunSurgeryViolations,
   summariseShotgunSurgery,
 } from "../../../../../src/core/api/internal/ops/shotgun-surgery-findings.js";
 import type { TemporalCochangeGraph } from "../../../../../src/core/contracts/types/codegraph.js";
@@ -14,6 +15,7 @@ import type { ComponentGraph } from "../../../../../src/core/domains/trajectory/
 import type {
   detectShotgunSurgery,
   ShotgunSurgeryInput,
+  ShotgunSurgerySpread,
 } from "../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
 
 const detectorInputs: ShotgunSurgeryInput[] = [];
@@ -156,5 +158,64 @@ describe("shotgun surgery lifecycle stage — commit times reach the detector (b
     const untimed = run();
     expect(untimed).not.toHaveProperty("lifecycleCandidatePairCount");
     expect(untimed).not.toHaveProperty("lifecyclePairCount");
+  });
+});
+
+describe("shotgun surgery retirement stage — counts and the retired bucket (bd tea-rags-mcp-zf9yz.2)", () => {
+  const bundleFileLines = new Map([[0, new Map([["a.ts", { added: 3, deleted: 1 }]])]]);
+  const run = (bundleTimestamps?: ReadonlyMap<number, number>) =>
+    runShotgunSurgery(
+      {
+        meta: META,
+        edges: [],
+        bundles: new Map([[0, ["a.ts", "b.ts"]]]),
+        bundleFileLines,
+        ...(bundleTimestamps ? { bundleTimestamps } : {}),
+      },
+      COMPONENTS,
+      undefined,
+    );
+
+  it("reports the retirement counts with line counts and commit times, and leaves them absent without commit times", () => {
+    expect(summariseShotgunSurgery(run(new Map([[0, 1_760_000_000]])))).toMatchObject({
+      retirementTestedCount: 0,
+      retirementUnitCount: 0,
+      retiredSpreadCount: 0,
+    });
+    const untimed = summariseShotgunSurgery(run());
+    expect(untimed).not.toHaveProperty("retirementTestedCount");
+    expect(untimed).not.toHaveProperty("retirementUnitCount");
+    expect(untimed).not.toHaveProperty("retiredSpreadCount");
+  });
+
+  it("never lists a retired spread as a violation", () => {
+    const built = run(new Map([[0, 1_760_000_000]]));
+    if (!built.built) throw new Error("expected a built run");
+    const spread: ShotgunSurgerySpread = {
+      components: ["A", "B", "C"],
+      componentChanges: [2, 2, 2],
+      support: 2,
+      weightedSupport: 2,
+      expectedSupport: 0.01,
+      strength: 0.5,
+      familyEvidence: 3,
+      islands: [["A"], ["B"], ["C"]],
+      exemplarFiles: ["a.ts", "b.ts", "c.ts"],
+      carrierFiles: [["a.ts"], ["b.ts"], ["c.ts"]],
+      sampleCommits: ["c1"],
+      sampleChanges: [["c1"]],
+    };
+    const retiredRun = {
+      ...built,
+      report: {
+        ...built.report,
+        findings: [],
+        retired: [spread],
+        summary: { ...built.report.summary, retiredSpreadCount: 1 },
+      },
+    };
+
+    expect(shotgunSurgeryViolations(retiredRun, 10)).toEqual([]);
+    expect(summariseShotgunSurgery(retiredRun)).toMatchObject({ retiredSpreadCount: 1, violationCount: 0 });
   });
 });

@@ -1451,6 +1451,12 @@ export interface ShotgunSurgeryReportSummary {
   lifecycleCandidatePairCount?: number;
   /** Lifecycle pairs (the newer commit exactly retires lines the older added) joined into one logical change. Absent = line counts or commit timestamps not recorded. */
   lifecyclePairCount?: number;
+  /** Wide units an all-negative change of their file count could reject — the retirement test's BH family. Absent = line counts or commit timestamps not recorded. */
+  retirementTestedCount?: number;
+  /** Changes called retiring (net-negative files beyond the corpus rate: flag removals, dead-code deletions). Absent = line counts or commit timestamps not recorded. */
+  retirementUnitCount?: number;
+  /** Spreads left below the minimum support once retiring changes newer than another support were discounted — neither violations nor explained. Absent = line counts or commit timestamps not recorded. */
+  retiredSpreadCount?: number;
   /** Logical changes' component sets (commits joined by a non-umbrella task id across bursts; identical sets sharing a burst once) — the width model's population. */
   unitCount?: number;
   /** Tukey fence over log2 of each task id's breadth (distinct ids on its commits): an id above it is an umbrella and joins nothing. */

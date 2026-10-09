@@ -453,10 +453,14 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "commits whose per-file (added, deleted) counts repeat beyond chance (mechanical sweep, BH) are left out of the " +
       "history; a revert or flag removal mirroring an earlier commit's per-file net lines (permutation test, BH) joins " +
       "it as one change; a later commit retiring exactly lines an earlier one added (net -x for +x on shared files; " +
-      "null = max(corpus revisit rate, file's own rate), Poisson-binomial, BH) joins it too; evidence support, " +
+      "null = max(corpus revisit rate, file's own rate), Poisson-binomial, BH) joins it too; a change whose files go " +
+      "net-negative beyond the corpus rate (binomial, BH) counts as support only when it is the spread's oldest — " +
+      "spreads left under 2 genuine changes are retired (summary.retiredSpreadCount; neither violation nor " +
+      "explained); evidence support, " +
       "expectedSupport, strength (cohesion, not severity), familyEvidence = -log10 p - log10 C(n2,m) (list order; cost " +
       "tags only), islands, exemplarFiles, drillDown = find_co_changed; summary mechanicalCommitCount / " +
-      "echoPairCount / lifecyclePairCount absent = line counts or commit timestamps not recorded; built false = same " +
+      "echoPairCount / lifecyclePairCount / retiredSpreadCount absent = line counts or commit timestamps not " +
+      "recorded; built false = same " +
       "reasons as splitMerge. mainSequence " +
       "(Stable Abstractions Principle): component far from A+I=1 — pain = stable+concrete, uselessness = " +
       "unstable+abstract; A from walker type census, D > max(0.5, Otsu cut); components whose language " +

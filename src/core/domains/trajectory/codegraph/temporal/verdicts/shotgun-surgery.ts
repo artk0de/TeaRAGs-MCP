@@ -39,6 +39,22 @@
  * commits still join each other. No line counts recorded → no commit is
  * mechanical, and the summary carries none of the stage's fields.
  *
+ * RETIREMENT (bd tea-rags-mcp-zf9yz.2). A change that retires code — a flag
+ * removal, a dead branch deleted — walks the fan-out an earlier change wired
+ * in. It closes that change's lifecycle and is no independent evidence of the
+ * spread, yet neither the echo nor the lifecycle test joins it, because it
+ * retires the guard and the dead branch, never exactly the lines the feature
+ * added. {@link classifyShotgunSurgeryRetirementUnits} sums each unit's
+ * per-file net over its commits and calls it retiring when its net-negative
+ * files exceed the corpus rate (binomial tail, BH over the wide units an
+ * all-negative change of their size could reject at all). Inside a spread a
+ * retiring change counts only as the spread's OLDEST supporting change — then
+ * it retires nothing the spread saw. A spread left below the build's minimum
+ * support of genuine changes is RETIRED: neither a finding nor an
+ * explanation. Removing such changes from the history instead was measured and
+ * lost 8 TRUE findings on taxdome (it moves T and the umbrella cut). No line
+ * counts or no timestamps → no stage, and none of its summary fields.
+ *
  * WIDE. A unit is wide when it spans ≥ k components. k is the codebase's own:
  * the majority-floored Otsu split over every unit's width
  * ({@link resolveMajorityFlooredOtsuThreshold}), never below
@@ -278,6 +294,12 @@ export interface ShotgunSurgerySummary {
   lifecycleCandidatePairCount?: number;
   /** Pairs BH called lifecycle (the newer exactly retires lines the older added), joined into one logical change. Absent = line counts or commit timestamps not recorded. */
   lifecyclePairCount?: number;
+  /** Wide units an all-negative change of their file count could reject — the retirement BH family. Absent = line counts or commit timestamps not recorded. */
+  retirementTestedCount?: number;
+  /** Units BH called retiring (net-negative files beyond the corpus rate). Absent = line counts or commit timestamps not recorded. */
+  retirementUnitCount?: number;
+  /** Spreads whose genuine support fell below the minimum once newer retiring changes were discounted — {@link ShotgunSurgeryReport.retired}. Absent = line counts or commit timestamps not recorded. */
+  retiredSpreadCount?: number;
   /** Logical changes' component sets (identical sets sharing a burst once) — the width model's population. */
   unitCount: number;
   /**
@@ -320,6 +342,12 @@ export interface ShotgunSurgeryReport {
   findings: ShotgunSurgerySpread[];
   /** Spreads one structural island explains, most surprising first. */
   explained: ShotgunSurgerySpread[];
+  /**
+   * Spreads whose support is a newer change retiring code plus too few genuine
+   * changes (see RETIREMENT in the module docblock), most surprising first —
+   * neither findings nor explanations. Empty when the stage did not run.
+   */
+  retired: ShotgunSurgerySpread[];
   summary: ShotgunSurgerySummary;
 }
 
@@ -333,8 +361,6 @@ interface ShotgunSurgeryUnit {
   newestBundleId: number;
   /** Chronological position of the unit's newest commit (0 = the history's oldest commit). */
   newestPosition: number;
-  /** Chronological position of the unit's oldest commit. */
-  oldestPosition: number;
   /** The bundles (one commit each) of the change units with this component set, newest first. */
   bundleIds: number[];
 }
@@ -353,6 +379,15 @@ interface ShotgunSurgeryHistory {
   echo: ShotgunSurgeryEchoAssessment | undefined;
   /** The lifecycle test's outcome; absent when line counts or commit timestamps were not recorded. */
   lifecycle: ShotgunSurgeryLifecycleAssessment | undefined;
+  chronology: ShotgunSurgeryChronology;
+}
+
+/** The counted commits in time ({@link bundleChronology}) and what each touched. */
+interface ShotgunSurgeryChronology {
+  /** 0 = the history's oldest counted commit. */
+  positionOf: (bundleId: number) => number;
+  /** Whether the commit edited a partitioned file of one of `components`. */
+  touches: (bundleId: number, components: ReadonlySet<string>) => boolean;
 }
 
 interface AdmittedSpread {
@@ -369,7 +404,7 @@ interface AdmittedSpread {
 /** Judge the history's wide changes. See the module docblock for every contract. */
 export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgeryReport {
   const mechanical = lineCountsRecorded(input) ? classifyShotgunSurgeryMechanicalBundles(input) : undefined;
-  const { units, burstCount, changes, burstWidths, umbrella, echo, lifecycle } = buildHistory(
+  const { units, burstCount, changes, burstWidths, umbrella, echo, lifecycle, chronology } = buildHistory(
     input,
     mechanical?.bundleIds ?? new Set(),
   );
@@ -426,10 +461,15 @@ export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgery
     new ShotgunSurgeryFeatureSubtrees(changes.keys(), specificity.typicalWidth),
   );
   const islandsOf = structure.islandResolver(closed.map((spread) => spread.components));
+  const retirement =
+    lineCountsRecorded(input) && timestampsRecorded(input)
+      ? classifyShotgunSurgeryRetirementUnits(units, widthThreshold, input)
+      : undefined;
   const inScope = compilePathPatternMatcher(input.sourcePathPattern);
   let outOfScopeSetCount = 0;
   const findings: ShotgunSurgerySpread[] = [];
   const explained: ShotgunSurgerySpread[] = [];
+  const retired: ShotgunSurgerySpread[] = [];
   for (const spread of closed) {
     const shaped = shapeSpread(
       spread,
@@ -438,6 +478,10 @@ export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgery
       islandsOf.islands(spread.components),
       input.bundleCommits,
     );
+    if (retirement && genuineSupport(spread, retirement.units, chronology) < TEMPORAL_COCHANGE_MIN_SUPPORT) {
+      retired.push(shaped);
+      continue;
+    }
     if (shaped.islands.length <= 1) {
       explained.push(shaped);
       continue;
@@ -450,10 +494,12 @@ export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgery
   }
   findings.sort(compareSpreads);
   explained.sort(compareSpreads);
+  retired.sort(compareSpreads);
 
   return {
     findings,
     explained,
+    retired,
     summary: {
       burstCount,
       ...(mechanical === undefined
@@ -465,6 +511,13 @@ export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgery
       ...(lifecycle === undefined
         ? {}
         : { lifecycleCandidatePairCount: lifecycle.candidatePairCount, lifecyclePairCount: lifecycle.pairs.length }),
+      ...(retirement === undefined
+        ? {}
+        : {
+            retirementTestedCount: retirement.testedCount,
+            retirementUnitCount: retirement.units.size,
+            retiredSpreadCount: retired.length,
+          }),
       unitCount: units.length,
       ...(umbrella.cut === undefined ? {} : { umbrellaTaskIdCut: umbrella.cut }),
       umbrellaTaskIdCount: umbrella.ids.size,
@@ -722,7 +775,6 @@ function buildHistory(input: ShotgunSurgeryInput, mechanical: ReadonlySet<number
         filesByComponent: new Map([...filesByComponent].map(([c, relPaths]) => [c, new Set(relPaths)])),
         newestBundleId: bundleIds[0],
         newestPosition: 0,
-        oldestPosition: 0,
         bundleIds: [...bundleIds],
       });
       return;
@@ -744,10 +796,14 @@ function buildHistory(input: ShotgunSurgeryInput, mechanical: ReadonlySet<number
     unit.bundleIds.sort((a, b) => positionOf(b) - positionOf(a));
     unit.newestBundleId = unit.bundleIds[0];
     unit.newestPosition = positionOf(unit.bundleIds[0]);
-    unit.oldestPosition = positionOf(unit.bundleIds[unit.bundleIds.length - 1]);
     unit.bursts = [...new Set(unit.bursts)].sort((a, b) => a - b);
   }
-  return { units, burstCount, changes, burstWidths, umbrella, echo, lifecycle };
+  const componentsOf = new Map(commits.map(({ bundleId, filesByComponent }) => [bundleId, filesByComponent]));
+  const chronologyOfHistory: ShotgunSurgeryChronology = {
+    positionOf,
+    touches: (bundleId, components) => [...(componentsOf.get(bundleId)?.keys() ?? [])].some((c) => components.has(c)),
+  };
+  return { units, burstCount, changes, burstWidths, umbrella, echo, lifecycle, chronology: chronologyOfHistory };
 }
 
 /**
@@ -785,6 +841,107 @@ function lineCountsRecorded(input: Pick<ShotgunSurgeryInput, "bundleFileLines">)
 /** Whether the build recorded commit timestamps: absent OR empty is a build predating migration 047 — no lifecycle stage. */
 function timestampsRecorded(input: Pick<ShotgunSurgeryInput, "bundleTimestamps">): boolean {
   return (input.bundleTimestamps?.size ?? 0) > 0;
+}
+
+/** The units BH called retiring, and the family it tested. */
+interface ShotgunSurgeryRetirementClassification {
+  units: ReadonlySet<ShotgunSurgeryUnit>;
+  /** Wide units with ≥ {@link shotgunSurgeryRetirementMinFiles} nonzero-net files — the BH family. */
+  testedCount: number;
+}
+
+/**
+ * RETIREMENT — a change whose files go net-negative more often than the
+ * corpus's do. Per unit: its partitioned line-counted files' nets summed over
+ * its commits; n = files with a nonzero net, x = those below zero. p₀ = Σx / Σn
+ * over EVERY unit — the corpus rate. p = P(Bin(n, p₀) ≥ x). Family: the units a
+ * spread can stand on (≥ `widthThreshold` components) whose n reaches
+ * {@link shotgunSurgeryRetirementMinFiles} — below it even an all-negative
+ * change cannot reach p ≤ q, so testing it would only dilute BH. Both cuts are
+ * the corpus's own. BH at {@link COCHANGE_SIGNIFICANCE_FDR_Q}.
+ */
+function classifyShotgunSurgeryRetirementUnits(
+  units: readonly ShotgunSurgeryUnit[],
+  widthThreshold: number,
+  input: Pick<ShotgunSurgeryInput, "bundleFileLines" | "componentOf">,
+): ShotgunSurgeryRetirementClassification {
+  const lines = input.bundleFileLines ?? new Map<number, ReadonlyMap<RelPath, CochangeFileLineCounts>>();
+  let negative = 0;
+  let nonzero = 0;
+  const profiles = units.map((unit) => {
+    const net = new Map<RelPath, number>();
+    for (const bundleId of unit.bundleIds) {
+      for (const [relPath, row] of lines.get(bundleId) ?? []) {
+        if (input.componentOf.get(relPath) === undefined) continue;
+        net.set(relPath, (net.get(relPath) ?? 0) + row.added - row.deleted);
+      }
+    }
+    let files = 0;
+    let retiring = 0;
+    for (const value of net.values()) {
+      if (value === 0) continue;
+      files++;
+      if (value < 0) retiring++;
+    }
+    negative += retiring;
+    nonzero += files;
+    return { unit, files, retiring };
+  });
+  if (nonzero === 0) return { units: new Set(), testedCount: 0 };
+  const share = negative / nonzero;
+  const minFiles = shotgunSurgeryRetirementMinFiles(share, COCHANGE_SIGNIFICANCE_FDR_Q);
+  const tested = profiles
+    .filter(({ unit, files }) => unit.components.size >= widthThreshold && files >= minFiles)
+    .map(({ unit, files, retiring }) => ({ unit, p: binomialUpperTail(retiring, files, share) }));
+  tested.sort((a, b) => a.p - b.p || a.unit.newestPosition - b.unit.newestPosition);
+  const rejected = benjaminiHochbergRejectionCount(
+    tested.map((t) => t.p),
+    tested.length,
+  );
+  return { units: new Set(tested.slice(0, rejected).map((t) => t.unit)), testedCount: tested.length };
+}
+
+/**
+ * The fewest nonzero-net files at which a change retiring on EVERY file can
+ * reach p = `netNegativeShare`ⁿ ≤ `q` — BH rejects nothing above q, so a
+ * smaller change is untestable. Derived from the corpus rate, never a
+ * constant; +∞ when every counted file went net-negative.
+ */
+export function shotgunSurgeryRetirementMinFiles(netNegativeShare: number, q: number): number {
+  if (netNegativeShare >= 1) return Number.POSITIVE_INFINITY;
+  let files = 1;
+  while (netNegativeShare ** files > q) files++;
+  return files;
+}
+
+/**
+ * A spread's distinct supporting changes ({@link changeGroups}) less the
+ * retiring ones newer than another — a change all of whose units retire code
+ * counts only when it is the spread's oldest supporting change. A change's age
+ * here is its oldest commit touching the spread: a task whose first commit
+ * edited elsewhere still reached the spread when that commit did.
+ */
+function genuineSupport(
+  spread: AdmittedSpread,
+  retiring: ReadonlySet<ShotgunSurgeryUnit>,
+  history: ShotgunSurgeryChronology,
+): number {
+  const members = new Set(spread.components);
+  const touchedAt = (unit: ShotgunSurgeryUnit): number =>
+    Math.min(
+      ...unit.bundleIds
+        .filter((bundleId) => history.touches(bundleId, members))
+        .map((bundleId) => history.positionOf(bundleId)),
+    );
+  const groups = changeGroups(
+    spread.supporting,
+    spread.supporting.map((_, index) => index),
+  ).map((group) => ({
+    retiring: group.every((index) => retiring.has(spread.supporting[index])),
+    oldest: Math.min(...group.map((index) => touchedAt(spread.supporting[index]))),
+  }));
+  const oldest = Math.min(...groups.map((group) => group.oldest));
+  return groups.filter((group) => !group.retiring || group.oldest === oldest).length;
 }
 
 /** Commits the uniformity test calls mechanical, and the family it tested. */

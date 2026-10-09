@@ -49,6 +49,7 @@ import {
   shotgunSurgeryLifecyclePValue,
   shotgunSurgeryMirroredNetShare,
   shotgunSurgeryModalUniformityPValue,
+  shotgunSurgeryRetirementMinFiles,
   type ShotgunSurgeryInput,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
 import { binomialUpperTail, mulberry32 } from "../../../../../../../src/core/infra/statistics/index.js";
@@ -1468,6 +1469,118 @@ describe("detectShotgunSurgery — sample commits are the newest changes", () =>
     expect(finding.support).toBe(3);
     expect(finding.sampleCommits).toEqual([sha(9), sha(12), sha(5)]);
     expect(finding.sampleChanges).toEqual([[sha(9), sha(0)], [sha(12)], [sha(5)]]);
+  });
+});
+
+/** 20 one-file commits each deleting lines from a filler component of its own: the corpus's net-negative files. */
+const RETIREMENT_CORPUS: LineCommit[] = Array.from({ length: 20 }, (_, j) => ({
+  sha: `trim${j}`,
+  rows: [[`trim${j}`, "f", [0, 5 + j]] as const],
+}));
+
+/** The changes of SPREAD a retirement fixture lists, two fresh files per component each. */
+const RETIREMENT_CHANGES: Record<string, LineCommit> = {
+  // Adds lines everywhere it touches.
+  feature: { sha: "feature", rows: rowsOver(SPREAD, 2, (row) => [40 + row, 0], "a") },
+  // Deletes lines everywhere it touches: a flag removal, not a mirror of `feature` (other files).
+  removal: { sha: "removal", rows: rowsOver(SPREAD, 2, (row) => [0, 60 + row], "r") },
+  // Deletes on 2 of its 8 files, adds on the rest.
+  partial: { sha: "partial", rows: rowsOver(SPREAD, 2, (row) => (row < 2 ? [0, 80 + row] : [90 + row, 0]), "p") },
+  second: { sha: "second", rows: rowsOver(SPREAD, 2, (row) => [120 + row, 0], "s") },
+  third: { sha: "third", rows: rowsOver(SPREAD, 2, (row) => [140 + row, 0], "t") },
+};
+
+/** The background, {@link RETIREMENT_CORPUS}, then the named changes of SPREAD — dated in the order listed. */
+function retirementHistory(changes: readonly (keyof typeof RETIREMENT_CHANGES)[]): ShotgunSurgeryInput {
+  return timed(lineHistory(background(SPREAD), [...RETIREMENT_CORPUS, ...changes.map((c) => RETIREMENT_CHANGES[c])]));
+}
+
+// bd tea-rags-mcp-zf9yz.2: a change retiring code is no independent evidence of a spread it closes.
+describe("detectShotgunSurgery — retirement changes", () => {
+  it("calls a change retiring code when its files go net-negative beyond the corpus rate", () => {
+    const retiring = detectShotgunSurgery(retirementHistory(["feature", "removal"])).summary;
+    expect(retiring.retirementTestedCount).toBe(2);
+    expect(retiring.retirementUnitCount).toBe(1);
+
+    expect(detectShotgunSurgery(retirementHistory(["feature", "partial"])).summary.retirementUnitCount).toBe(0);
+  });
+
+  it("runs only when line counts and commit timestamps are both recorded", () => {
+    const input = retirementHistory(["feature", "removal"]);
+    for (const subject of [withoutLines(input), untimed(input)]) {
+      const report = detectShotgunSurgery(subject);
+      expect(report.summary).not.toHaveProperty("retirementTestedCount");
+      expect(report.summary).not.toHaveProperty("retirementUnitCount");
+      expect(report.summary).not.toHaveProperty("retiredSpreadCount");
+      expect(report.retired).toEqual([]);
+    }
+  });
+
+  it("retires a spread whose only other support is a newer change retiring code", () => {
+    const input = retirementHistory(["feature", "removal"]);
+    const linked = {
+      ...input,
+      componentDependencies: [
+        { sourceComponent: "a", targetComponent: "b" },
+        { sourceComponent: "b", targetComponent: "c" },
+        { sourceComponent: "c", targetComponent: "d" },
+      ],
+    };
+
+    expect(detectShotgunSurgery(untimed(input)).findings.map((f) => f.components)).toEqual([SPREAD]);
+    const report = detectShotgunSurgery(input);
+    expect(report.findings).toEqual([]);
+    expect(report.retired.map((s) => [s.components, s.support])).toEqual([[SPREAD, 2]]);
+    expect(report.summary.retiredSpreadCount).toBe(1);
+    expect(report.summary.spreadCount).toBe(1);
+    expect(report.summary.violationCount).toBe(0);
+    // Neither a finding nor an explanation, whatever the structure.
+    const explainedAway = detectShotgunSurgery(linked);
+    expect(explainedAway.explained).toEqual([]);
+    expect(explainedAway.retired.map((s) => s.components)).toEqual([SPREAD]);
+  });
+
+  it("counts a retiring change that is the spread's oldest support — it retires nothing the spread saw", () => {
+    const report = detectShotgunSurgery(retirementHistory(["removal", "feature"]));
+
+    expect(report.summary.retirementUnitCount).toBe(1);
+    expect(report.findings.map((f) => [f.components, f.support])).toEqual([[SPREAD, 2]]);
+    expect(report.retired).toEqual([]);
+    expect(report.summary.retiredSpreadCount).toBe(0);
+  });
+
+  it("dates a retiring change by its oldest commit that touched the spread, not by its first commit elsewhere", () => {
+    // The removal's task began before the feature, outside the spread, and reached the spread after it.
+    const start: LineCommit = { sha: "removal-start", rows: [["elsewhere", "f", [0, 30]]], taskIds: ["TD-R"] };
+    const removal: LineCommit = { ...RETIREMENT_CHANGES.removal, taskIds: ["TD-R"] };
+    const input = timed(
+      lineHistory(background(SPREAD), [...RETIREMENT_CORPUS, start, RETIREMENT_CHANGES.feature, removal]),
+    );
+
+    const report = detectShotgunSurgery(input);
+    expect(report.summary.retirementUnitCount).toBe(1);
+    expect(report.findings).toEqual([]);
+    expect(report.retired.map((s) => s.components)).toEqual([SPREAD]);
+  });
+
+  it("keeps a spread its genuine changes still support, the newer retiring change discounted", () => {
+    const report = detectShotgunSurgery(retirementHistory(["feature", "second", "third", "removal"]));
+
+    expect(report.findings.map((f) => [f.components, f.support])).toEqual([[SPREAD, 4]]);
+    expect(report.retired).toEqual([]);
+  });
+});
+
+describe("shotgunSurgeryRetirementMinFiles", () => {
+  it("is the fewest files an all-negative change needs to reach p ≤ q at the corpus rate", () => {
+    // 0.21² = 0.044 ≤ 0.05; 0.5⁵ = 0.031 ≤ 0.05 < 0.5⁴.
+    expect(shotgunSurgeryRetirementMinFiles(0.21, 0.05)).toBe(2);
+    expect(shotgunSurgeryRetirementMinFiles(0.5, 0.05)).toBe(5);
+    expect(shotgunSurgeryRetirementMinFiles(0.04, 0.05)).toBe(1);
+  });
+
+  it("admits no change when every file the corpus counted went net-negative", () => {
+    expect(shotgunSurgeryRetirementMinFiles(1, 0.05)).toBe(Number.POSITIVE_INFINITY);
   });
 });
 

@@ -78,6 +78,9 @@ export function summariseShotgunSurgery(run: ShotgunSurgeryRun): ShotgunSurgeryR
       ? {}
       : { lifecycleCandidatePairCount: summary.lifecycleCandidatePairCount }),
     ...(summary.lifecyclePairCount === undefined ? {} : { lifecyclePairCount: summary.lifecyclePairCount }),
+    ...(summary.retirementTestedCount === undefined ? {} : { retirementTestedCount: summary.retirementTestedCount }),
+    ...(summary.retirementUnitCount === undefined ? {} : { retirementUnitCount: summary.retirementUnitCount }),
+    ...(summary.retiredSpreadCount === undefined ? {} : { retiredSpreadCount: summary.retiredSpreadCount }),
     unitCount: summary.unitCount,
     ...(summary.umbrellaTaskIdCut === undefined ? {} : { umbrellaTaskIdCut: summary.umbrellaTaskIdCut }),
     umbrellaTaskIdCount: summary.umbrellaTaskIdCount,

@@ -501,6 +501,19 @@
   `ShotgunSurgeryLifecycleNull#mirrorProbability` is max(pooled, per-file)
   because a pooled-only null joins unrelated ±1 edits to a registry file.
 
+- **A retiring change is discounted inside a spread, never removed from the
+  shotgun history.** `classifyShotgunSurgeryRetirementUnits` calls a unit
+  retiring when its net-negative files beat the corpus rate, and
+  `genuineSupport` (temporal/verdicts/shotgun-surgery.ts) drops it from a
+  spread's support unless it is that spread's OLDEST supporting change, dated by
+  its oldest commit TOUCHING the spread; a spread left under
+  `TEMPORAL_COCHANGE_MIN_SUPPORT` goes to `ShotgunSurgeryReport.retired`. The
+  family floor is `shotgunSurgeryRetirementMinFiles` — derived from the corpus
+  rate and q, never a constant. Why: removing retiring units from the history
+  (the mechanical treatment) moved T 31 → 19 and the umbrella cut 11 → 5 and
+  lost 8 TRUE findings on taxdome; dating by the change's first commit anywhere
+  kept a spread the touching-commit rule retires, and an oldest retirement
+  (taxdome SG51's TD-92214) retires nothing the spread saw.
 - **The shotgun list's order is the detector's, and nothing downstream re-sorts
   it.** `compareSpreads` (temporal/verdicts/shotgun-surgery.ts) ranks by
   `ShotgunSurgerySpread.familyEvidence`, and `ArchitectureReportOps#build`

@@ -314,7 +314,10 @@ by file type or hub size. Knot mode omits it. Mechanical commits (per-file
 (added, deleted) counts repeating beyond chance — rename/import/flag sweep, BH)
 dropped from whole history: degrees, units, umbrella breadth. Echoes (revert /
 flag removal mirroring earlier commit's per-file net lines, permutation test,
-BH) join original as one change — never zeroed.
+BH) join original as one change — never zeroed. Retiring change (files
+net-negative beyond corpus rate — flag/dead-code removal; binomial, BH) counts
+as support only when spread's OLDEST; spread left < 2 genuine changes = RETIRED:
+neither violation nor explained.
 
 List order = `familyEvidence` desc, most surprising first; `limit` cuts THAT
 order. `maintenanceCost` rides along as a tag only — carrier cost ranked gold no
@@ -330,6 +333,8 @@ re-rank by it.
 | `mechanicalTestedCount` / `mechanicalCommitCount`    | commits tested for line-count uniformity (BH family) / sweeps dropped from history. Absent = line counts not recorded (pre-migration index), not "no sweeps"                                                              |
 | `echoCandidatePairCount` / `echoPairCount`           | wide commit pairs sharing ≥ 3 components (BH family) / echoes joined into one change. Absent = line counts not recorded (pre-migration index), not "no echoes"                                                            |
 | `lifecycleCandidatePairCount` / `lifecyclePairCount` | wide commit pairs sharing ≥ 3 components (BH family, = echo's) / lifecycles (newer exactly retires lines older added) joined into one change. Absent = line counts or commit timestamps not recorded, not "no lifecycles" |
+| `retirementTestedCount` / `retirementUnitCount`      | wide changes testable for retirement (BH family) / retiring changes (net-negative files beyond corpus rate). Absent = line counts or commit timestamps not recorded                                                       |
+| `retiredSpreadCount`                                 | spreads left < 2 genuine changes once retiring support newer than another discounted — neither violation nor explained. Absent = same as above, not "none retired"                                                        |
 | `unitCount` / `wideUnitCount`                        | logical-change component sets (same set sharing a burst once) / those spanning ≥ k — few wide = little evidence                                                                                                           |
 | `umbrellaTaskIdCut` / `umbrellaTaskIdCount`          | breadth fence (distinct ids an id's commits carry) / ids above it, left out of the join                                                                                                                                   |
 | `typicalChangeWidth`                                 | T: Tukey fence over change widths — wider changes weigh C(T,k)/C(w,k)                                                                                                                                                     |
@@ -349,7 +354,7 @@ Evidence per line:
 | `islands`                                         | connected groups (≥ 2; dependency, specific neighbour, one feature subtree) — where the missing link would go                |
 | `exemplarFiles`                                   | per component the file the holding commits touched most                                                                      |
 | `carrierFiles`                                    | per component (aligned) files the holding changes touched, most-touched first (≤ 5) — recipe input                           |
-| `sampleCommits`                                   | shas to cite — latest commit of each holding change, one per supporting burst                                                |
+| `sampleCommits`                                   | shas to cite — latest commit of each holding change, newest change first                                                     |
 | `sampleChanges`                                   | per sample (aligned) every sha of that logical change — `git show` them to see what one change edited                        |
 | `drillDown.hint`                                  | run verbatim (`find_co_changed`) for file-level partners                                                                     |
 
