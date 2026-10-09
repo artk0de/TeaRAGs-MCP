@@ -35,6 +35,13 @@ import {
   CodegraphSpillIoError,
   type CodegraphMetricsStage,
 } from "../../errors.js";
+import {
+  countCappedGraphEdges,
+  countedGraphEdgesByKind,
+  MAX_EDGES_PER_FILE,
+  pathologicalFileGraphEdges,
+} from "./graph-edge-cap-policy.js";
+import { Pass2BulkWriteBuffer } from "./pass2-bulk-write-buffer.js";
 import { CodegraphPhaseTimings } from "./phase-timings.js";
 import type { CallEdgeResolutionRunner, CodegraphResolveVisitPlan } from "./resolution-runner.js";
 import type { CodegraphRunState } from "./run-state.js";
@@ -44,19 +51,6 @@ import { indexSpillLines, SpillLineReader, type SpillLineSpan } from "./spill-li
 const CHECKPOINT_EVERY = 500;
 /** Files between progress logs so a slow run shows where it stalled. */
 const PROGRESS_EVERY = 100;
-/**
- * Cardinality cap per single upsertFile transaction. Minified JS/TS bundles
- * (Vite/Nuxt/Webpack build artefacts that should really live behind .gitignore
- * but sometimes don't) can produce tens of thousands of method edges in one file
- * — DuckDB blows past its memory_limit trying to commit a single transaction
- * with that many INSERTs. Dropping these files' edges is safe: a minified bundle
- * has no resolvable cross-file graph semantics anyway, and letting one
- * pathological row abort pass-2 wipes hours of work for the entire project. The
- * file still gets its row, with an empty edge slice (bd tea-rags-mcp-ihq7y).
- * Cap chosen by inspection of the ugnest failure (file with 96k method edges
- * OOM'd at 1.8GB).
- */
-const MAX_EDGES_PER_FILE = 10000;
 /**
  * Files folded into one bulk upsert transaction (and, on the daemon, one IPC
  * round-trip) instead of one BEGIN/COMMIT + round-trip per file.
@@ -83,6 +77,56 @@ const SNIPPET_MAX_CHARS = 300;
 
 function snippet(line: string): string {
   return line.length > SNIPPET_MAX_CHARS ? `${line.slice(0, SNIPPET_MAX_CHARS)}…(${line.length} bytes total)` : line;
+}
+
+/**
+ * One pass-2 loop's working state: the store it writes to, its write window,
+ * and the position counters every error message reports.
+ */
+interface Pass2LoopRun {
+  readonly graphDb: GraphDbClient;
+  readonly symbolTable: GlobalSymbolTable;
+  readonly writes: Pass2BulkWriteBuffer;
+  /** Files buffered so far — the `#N` every pass-2 error names. */
+  processed: number;
+  lastRelPath: string | null;
+}
+
+/** Parse one spill line, naming the file position and a snippet of the line on failure. */
+function parseSpillLine(line: string, processed: number): FileExtraction {
+  try {
+    return JSON.parse(line) as FileExtraction;
+  } catch (err) {
+    const wrapped = err instanceof Error ? err : new Error(String(err));
+    throw new CodegraphResolveError(
+      processed,
+      Object.assign(wrapped, {
+        message: `JSON.parse failed on spill line at file #${processed + 1}: '${snippet(line)}': ${wrapped.message}`,
+      }),
+    );
+  }
+}
+
+/**
+ * The error a pass-2 loop failure surfaces as. Already-typed pass-2 errors pass
+ * through; anything else is wrapped with the last-seen file, so the propagated
+ * marker tells the operator WHERE the loop tripped.
+ */
+function pass2LoopError(err: unknown, run: Pass2LoopRun): Error {
+  if (
+    err instanceof CodegraphResolveError ||
+    err instanceof CodegraphCheckpointError ||
+    err instanceof CodegraphSpillIoError
+  ) {
+    return err;
+  }
+  const wrapped = err instanceof Error ? err : new Error(String(err));
+  return new CodegraphResolveError(
+    run.processed,
+    Object.assign(wrapped, {
+      message: `loop fatal after ${run.processed} files (last seen: ${run.lastRelPath ?? "<none>"}): ${wrapped.message}`,
+    }),
+  );
 }
 
 /** Resolve the (graphDb, symbolTable) pair for the active collection. */
@@ -198,14 +242,49 @@ export class GraphBuildFinalizer {
    * time. The resolver's working set is the file's own chunks and the global
    * symbol table (already loaded in-memory).
    *
+   * Four steps, one owner each (bd tea-rags-mcp-89k7k.35.17):
+   * {@link GraphBuildFinalizer.prepareResolvePass} sizes the resolvers,
+   * {@link GraphBuildFinalizer.visitSpill} decides the line order,
+   * {@link GraphBuildFinalizer.processSpillLine} turns one line into one
+   * buffered file, and {@link GraphBuildFinalizer.finishPass} lands the
+   * remainder. The write window itself is {@link Pass2BulkWriteBuffer}.
+   */
+  async resolveAndUpsert(spillPath: string, physicalCollectionName?: PhysicalCollectionName): Promise<void> {
+    const { graphDb, symbolTable } = await this.resolveStore(physicalCollectionName);
+    this.prepareResolvePass();
+    const run: Pass2LoopRun = {
+      graphDb,
+      symbolTable,
+      writes: new Pass2BulkWriteBuffer(graphDb, this.timings),
+      processed: 0,
+      lastRelPath: null,
+    };
+    try {
+      await this.visitSpill(spillPath, async (line) => this.processSpillLine(run, line));
+      await this.finishPass(run);
+    } catch (err) {
+      throw pass2LoopError(err, run);
+    } finally {
+      // A dispatched write must never outlive the call that opened it: on the
+      // success path this is a no-op (already settled by `finishPass`), on the
+      // throw path it lets the open transaction finish before the error
+      // propagates, so the daemon is not still committing while the caller
+      // starts tearing the run down. Its own failure is swallowed HERE on
+      // purpose — the resolve error that brought us here is the root cause and
+      // must be the one that surfaces; a flush that fails while nothing is being
+      // torn down still aborts the pass through `dispatch`/`settle` in the loop.
+      await run.writes.settle().catch(() => undefined);
+    }
+  }
+
+  /**
    * The pass opens by declaring its own size to the resolvers
    * (bd tea-rags-mcp-6aytq). Every file this loop will read was counted in
    * pass-1, so a resolver whose run-scoped caches are worth building in one
    * piece can do it here — before the first file, where it is a fixed cost —
    * rather than inferring the same fact from the first few hundred call sites.
    */
-  async resolveAndUpsert(spillPath: string, physicalCollectionName?: PhysicalCollectionName): Promise<void> {
-    const { graphDb, symbolTable } = await this.resolveStore(physicalCollectionName);
+  private prepareResolvePass(): void {
     const preparedAtMs = Date.now();
     this.resolutionRunner.prepareResolvePass();
     // Attributed to pass-2 with a count of ZERO files: whatever a resolver
@@ -213,210 +292,134 @@ export class GraphBuildFinalizer {
     // it on taxdome), but it is not a file, and charging it as one would move
     // the ms/file figure this accumulator exists to report.
     this.timings.record("pass2", Date.now() - preparedAtMs, { count: 0 });
-    let processed = 0;
-    let lastRelPath: string | null = null;
-    let reader: ReturnType<typeof createInterface> | null = null;
-    let buffer: BulkFileUpsertEntry[] = [];
-    // Tracks which relPaths already have a pending entry in `buffer` — a file
-    // can legitimately reach the spill twice (re-walking mid-run is a
-    // supported, tested scenario; symbolTable.upsertFile replaces rather than
-    // appends for exactly this reason). The second entry gets its own
-    // transaction rather than sharing one with its earlier self, so the
-    // batch's LAST edge set for a relPath is unambiguously the one persisted
-    // — `writeFileRowsBulk` would otherwise collapse the pair silently
-    // (tea-rags-mcp-ksfq1: the collapse used to abort the daemon with a native
-    // FatalException; tea-rags-mcp-8l8d3 removed that failure mode at the
-    // writer, which leaves this guard as the ordering statement it always
-    // was). Cleared on every flush alongside the buffer it tracks.
-    let bufferedRelPaths = new Set<string>();
-    /**
-     * The ONE bulk write allowed to be open while the loop keeps resolving
-     * (bd tea-rags-mcp-6aytq). Measured on taxdome: the flush was awaited
-     * inline, costing 44.0s over 42 calls — ~1s of dead wall clock per
-     * BULK_FILES window while the daemon committed and the resolver idled.
-     * Double-buffering hides that behind the next window's resolve work.
-     *
-     * Strictly one in flight, never two: `dispatchFlush` settles the previous
-     * write before opening the next, so the daemon session still sees a single
-     * serialized stream of bulk transactions in submission order — the
-     * DELETE+INSERT interleave inside `upsertFilesBulk` stays untouched, and
-     * so does the (source, target) primary-key invariant that
-     * `bufferedRelPaths` guards. At most two batches are alive: the one being
-     * written and the one being filled.
-     */
-    let inFlightFlush: Promise<void> | null = null;
-    /**
-     * Await the open write, and charge the loop ONLY for what it actually
-     * waited on. `flush` telemetry used to span the whole write; now the
-     * overlapped portion is invisible to it by design — the gap between the
-     * ms recorded here and the write's real duration IS the saving.
-     *
-     * Measured on the accumulator's own clock rather than `Date.now`, so the
-     * duration and the `elapsedMs` it is compared against always come from one
-     * clock — and so a test can inject a manual one and assert the awaited
-     * portion exactly instead of sampling wall clock (bd tea-rags-mcp-lffhl).
-     */
-    const settleFlush = async (): Promise<void> => {
-      const open = inFlightFlush;
-      if (!open) return;
-      inFlightFlush = null;
-      const startedAtMs = this.timings.nowMs();
-      try {
-        await open;
-      } finally {
-        this.timings.record("flush", this.timings.nowMs() - startedAtMs);
-      }
-    };
-    const dispatchFlush = async (): Promise<void> => {
-      if (buffer.length === 0) return;
-      const pending = buffer;
-      const at = processed;
-      buffer = [];
-      bufferedRelPaths = new Set();
-      // Ordering point: the previous batch must have landed before this one is
-      // handed to the session.
-      await settleFlush();
-      const started = this.flushBuffer(graphDb, pending, at);
-      // The rejection is consumed by `settleFlush`; attach a no-op handler so
-      // the window between dispatch and settle cannot raise an unhandled
-      // rejection and kill the process.
-      void started.catch(() => undefined);
-      inFlightFlush = started;
-    };
-    const processLine = async (line: string): Promise<void> => {
-      if (!line) return;
-      let extraction: FileExtraction;
-      try {
-        extraction = JSON.parse(line) as FileExtraction;
-      } catch (err) {
-        const wrapped = err instanceof Error ? err : new Error(String(err));
-        throw new CodegraphResolveError(
-          processed,
-          Object.assign(wrapped, {
-            message: `JSON.parse failed on spill line at file #${processed + 1}: '${snippet(line)}': ${wrapped.message}`,
-          }),
-        );
-      }
-      lastRelPath = extraction.relPath;
-      const resolved = this.resolveOne(extraction, symbolTable, processed, lastRelPath);
-      // Past the cap the file keeps its ROW and loses its edges (bd
-      // tea-rags-mcp-ihq7y): skipping the row entirely left it without a
-      // hashed `cg_symbols_files` row, so the incremental repair diff re-listed
-      // it on every run. The empty slice also retires any edges the file
-      // persisted while it was still under the cap.
-      const edges: GraphEdges = this.exceedsEdgeCap(resolved, extraction, processed)
-        ? { fileEdges: [], methodEdges: [] }
-        : resolved;
-      // A repeat relPath already has an entry pending in this batch — flush
-      // it out first so the repeat starts its own transaction instead of
-      // sharing one with its own earlier self (see `bufferedRelPaths` above).
-      if (bufferedRelPaths.has(extraction.relPath)) await dispatchFlush();
-      // Buffer for the next bulk flush (fired at BULK_FILES / checkpoint / end)
-      // instead of one transaction per file.
-      buffer.push({
-        node: {
-          relPath: extraction.relPath,
-          language: extraction.language,
-          // Stamp the row with the run's hash so the next run can tell a
-          // CURRENT row from one that merely exists (bd tea-rags-mcp-6goqa).
-          // Undefined persists as NULL, which the repair check reads as
-          // "unknown, re-extract" rather than assuming the row is fresh.
-          contentHash: this.runState.contentHashes?.get(extraction.relPath),
-          // The file's type-abstractness census (bd tea-rags-mcp-r8hme.8);
-          // absent persists as NULL — not measured.
-          ...(extraction.typeAbstractness ? { typeAbstractness: extraction.typeAbstractness } : {}),
-        },
-        edges,
-      });
-      bufferedRelPaths.add(extraction.relPath);
-      this.runState.stats.fileEdgeCount += edges.fileEdges.length;
-      this.runState.stats.methodEdgeCount += edges.methodEdges.length;
-      processed += 1;
-      // Per-N debug log so a slow run shows where it stalled — and, since
-      // bd tea-rags-mcp-6aytq, WHAT it stalled in. Emitted as one JSON line
-      // (not an inspected object) for two reasons: the phase split nests
-      // three levels deep, past `console.error`'s default inspect depth, and
-      // a run killed at a wall-clock budget leaves these lines as the only
-      // record of where its time went — they have to be parseable.
-      if (processed % PROGRESS_EVERY === 0 && isDebug()) {
-        const elapsedMs = this.timings.elapsedMs();
-        console.error(
-          "[GitEnrich] PHASE: CODEGRAPH_PASS2_PROGRESS",
-          JSON.stringify({
-            processed,
-            lastRelPath,
-            fileEdges: this.runState.stats.fileEdgeCount,
-            methodEdges: this.runState.stats.methodEdgeCount,
-            elapsedMs,
-            filesPerSec: elapsedMs > 0 ? Math.round((processed / elapsedMs) * 1000 * 10) / 10 : 0,
-            phases: this.timings.toSummary(),
-            // What each language's run-scoped caches are doing, which wall
-            // clock alone cannot say (bd tea-rags-mcp-6aytq): a TypeScript
-            // pass paying per-entry `ts.createProgram` calls and one served
-            // entirely off the whole-project Program differ by 4x and look
-            // identical in every other field of this line.
-            resolvers: this.resolutionRunner.resolverDiagnostics(),
-          }),
-        );
-      }
-      if (buffer.length >= this.bulkFiles) await dispatchFlush();
-      if (processed % this.checkpointEvery === 0) {
-        // Flush the buffered files before the checkpoint so the bounded WAL
-        // reflects the whole processed window. Both steps are needed: the
-        // dispatch settles the PREVIOUS window's write, the settle waits on
-        // this one — a CHECKPOINT issued with a write still open would bound
-        // a WAL that does not yet hold the window it claims to cover.
-        await dispatchFlush();
-        await settleFlush();
-        await this.checkpoint(graphDb);
-      }
-    };
+  }
+
+  /**
+   * Feed every spill line to `processLine`: in the order the runner's visit
+   * plans ask for (bd tea-rags-mcp-vtuu4), or in write order when it has none.
+   */
+  private async visitSpill(spillPath: string, processLine: (line: string) => Promise<void>): Promise<void> {
+    const visitPlans = this.resolutionRunner.resolveVisitPlans?.() ?? [];
+    if (visitPlans.length > 0) {
+      await visitInPlanOrder(spillPath, visitPlans, processLine);
+      return;
+    }
+    const reader = createInterface({
+      input: createReadStream(spillPath, { encoding: "utf8" }),
+      crlfDelay: Number.POSITIVE_INFINITY,
+    });
     try {
-      const visitPlans = this.resolutionRunner.resolveVisitPlans?.() ?? [];
-      if (visitPlans.length === 0) {
-        reader = createInterface({
-          input: createReadStream(spillPath, { encoding: "utf8" }),
-          crlfDelay: Number.POSITIVE_INFINITY,
-        });
-        for await (const line of reader) await processLine(line);
-      } else {
-        await visitInPlanOrder(spillPath, visitPlans, processLine);
-      }
-      // Flush the sub-batch remainder, wait for it to land, then a final
-      // checkpoint for any files written since the last one.
-      await dispatchFlush();
-      await settleFlush();
-      if (processed > 0 && processed % this.checkpointEvery !== 0) {
-        await this.checkpoint(graphDb);
-      }
-    } catch (err) {
-      if (
-        err instanceof CodegraphResolveError ||
-        err instanceof CodegraphCheckpointError ||
-        err instanceof CodegraphSpillIoError
-      ) {
-        throw err;
-      }
-      // Catch-all wrap: include last-seen file in the cause message so
-      // the propagated marker tells the operator WHERE the loop tripped.
-      const wrapped = err instanceof Error ? err : new Error(String(err));
-      throw new CodegraphResolveError(
-        processed,
-        Object.assign(wrapped, {
-          message: `loop fatal after ${processed} files (last seen: ${lastRelPath ?? "<none>"}): ${wrapped.message}`,
-        }),
-      );
+      for await (const line of reader) await processLine(line);
     } finally {
-      reader?.close();
-      // A dispatched write must never outlive the call that opened it: on the
-      // success path this is a no-op (already settled above), on the throw path
-      // it lets the open transaction finish before the error propagates, so the
-      // daemon is not still committing while the caller starts tearing the run
-      // down. Its own failure is swallowed HERE on purpose — the resolve error
-      // that brought us here is the root cause and must be the one that
-      // surfaces; a flush that fails while nothing is being torn down still
-      // aborts the pass through `dispatchFlush`/`settleFlush` above.
-      await settleFlush().catch(() => undefined);
+      reader.close();
+    }
+  }
+
+  /** One spill line → one resolved, capped, buffered file, then the write cadence. */
+  private async processSpillLine(run: Pass2LoopRun, line: string): Promise<void> {
+    if (!line) return;
+    const extraction = parseSpillLine(line, run.processed);
+    run.lastRelPath = extraction.relPath;
+    const edges = this.cappedEdgesOf(extraction, run.symbolTable, run.processed);
+    // A repeat relPath already has an entry pending in this batch — flush it
+    // out first so the repeat starts its own transaction instead of sharing one
+    // with its own earlier self (see `Pass2BulkWriteBuffer#bufferedRelPaths`).
+    if (run.writes.holds(extraction.relPath)) await run.writes.dispatch(run.processed);
+    // Buffer for the next bulk flush (fired at BULK_FILES / checkpoint / end)
+    // instead of one transaction per file.
+    run.writes.add(this.upsertEntryFor(extraction, edges));
+    this.runState.stats.fileEdgeCount += edges.fileEdges.length;
+    this.runState.stats.methodEdgeCount += edges.methodEdges.length;
+    run.processed += 1;
+    this.logProgress(run);
+    await this.flushOnCadence(run);
+  }
+
+  /**
+   * The file's resolved edges, or — past the cap — none. Past the cap the file
+   * keeps its ROW and loses its edges (bd tea-rags-mcp-ihq7y): skipping the row
+   * entirely left it without a hashed `cg_symbols_files` row, so the
+   * incremental repair diff re-listed it on every run. The empty slice also
+   * retires any edges the file persisted while it was still under the cap.
+   */
+  private cappedEdgesOf(extraction: FileExtraction, symbolTable: GlobalSymbolTable, processed: number): GraphEdges {
+    const resolved = this.resolveOne(extraction, symbolTable, processed, extraction.relPath);
+    return this.exceedsEdgeCap(resolved, extraction, processed) ? pathologicalFileGraphEdges() : resolved;
+  }
+
+  private upsertEntryFor(extraction: FileExtraction, edges: GraphEdges): BulkFileUpsertEntry {
+    return {
+      node: {
+        relPath: extraction.relPath,
+        language: extraction.language,
+        // Stamp the row with the run's hash so the next run can tell a CURRENT
+        // row from one that merely exists (bd tea-rags-mcp-6goqa). Undefined
+        // persists as NULL, which the repair check reads as "unknown,
+        // re-extract" rather than assuming the row is fresh.
+        contentHash: this.runState.contentHashes?.get(extraction.relPath),
+        // The file's type-abstractness census (bd tea-rags-mcp-r8hme.8); absent
+        // persists as NULL — not measured.
+        ...(extraction.typeAbstractness ? { typeAbstractness: extraction.typeAbstractness } : {}),
+      },
+      edges,
+    };
+  }
+
+  /**
+   * Per-N debug log so a slow run shows where it stalled — and, since bd
+   * tea-rags-mcp-6aytq, WHAT it stalled in. Emitted as one JSON line (not an
+   * inspected object) for two reasons: the phase split nests three levels deep,
+   * past `console.error`'s default inspect depth, and a run killed at a
+   * wall-clock budget leaves these lines as the only record of where its time
+   * went — they have to be parseable.
+   */
+  private logProgress(run: Pass2LoopRun): void {
+    const { processed } = run;
+    if (processed % PROGRESS_EVERY !== 0 || !isDebug()) return;
+    const elapsedMs = this.timings.elapsedMs();
+    console.error(
+      "[GitEnrich] PHASE: CODEGRAPH_PASS2_PROGRESS",
+      JSON.stringify({
+        processed,
+        lastRelPath: run.lastRelPath,
+        fileEdges: this.runState.stats.fileEdgeCount,
+        methodEdges: this.runState.stats.methodEdgeCount,
+        elapsedMs,
+        filesPerSec: elapsedMs > 0 ? Math.round((processed / elapsedMs) * 1000 * 10) / 10 : 0,
+        phases: this.timings.toSummary(),
+        // What each language's run-scoped caches are doing, which wall clock
+        // alone cannot say (bd tea-rags-mcp-6aytq): a TypeScript pass paying
+        // per-entry `ts.createProgram` calls and one served entirely off the
+        // whole-project Program differ by 4x and look identical in every other
+        // field of this line.
+        resolvers: this.resolutionRunner.resolverDiagnostics(),
+      }),
+    );
+  }
+
+  /** Dispatch a full batch, and on the checkpoint cadence land the window and CHECKPOINT. */
+  private async flushOnCadence(run: Pass2LoopRun): Promise<void> {
+    if (run.writes.size >= this.bulkFiles) await run.writes.dispatch(run.processed);
+    if (run.processed % this.checkpointEvery !== 0) return;
+    // Flush the buffered files before the checkpoint so the bounded WAL
+    // reflects the whole processed window. Both steps are needed: the dispatch
+    // settles the PREVIOUS window's write, the settle waits on this one — a
+    // CHECKPOINT issued with a write still open would bound a WAL that does not
+    // yet hold the window it claims to cover.
+    await run.writes.dispatch(run.processed);
+    await run.writes.settle();
+    await this.checkpoint(run.graphDb);
+  }
+
+  /**
+   * Flush the sub-batch remainder, wait for it to land, then a final checkpoint
+   * for any files written since the last one.
+   */
+  private async finishPass(run: Pass2LoopRun): Promise<void> {
+    await run.writes.dispatch(run.processed);
+    await run.writes.settle();
+    if (run.processed > 0 && run.processed % this.checkpointEvery !== 0) {
+      await this.checkpoint(run.graphDb);
     }
   }
 
@@ -451,50 +454,23 @@ export class GraphBuildFinalizer {
 
   /**
    * True when this file's edge count is pathological (typically a minified JS
-   * bundle). The drop is recorded so operators can surface it via the marker
+   * bundle). What counts is {@link GRAPH_EDGE_CAP_POLICY}'s decision, not this
+   * method's. The drop is recorded so operators can surface it via the marker
    * log; the graph stays consistent because the row lands with NO edges rather
    * than a partial slice.
    */
   private exceedsEdgeCap(edges: GraphEdges, extraction: FileExtraction, processed: number): boolean {
-    const totalEdges = edges.fileEdges.length + edges.methodEdges.length;
-    if (totalEdges <= MAX_EDGES_PER_FILE) return false;
+    if (countCappedGraphEdges(edges) <= MAX_EDGES_PER_FILE) return false;
     if (isDebug()) {
       console.error("[GitEnrich] PHASE: CODEGRAPH_PASS2_SKIPPED_LARGE_FILE", {
         processed: processed + 1,
         relPath: extraction.relPath,
         language: extraction.language,
-        fileEdges: edges.fileEdges.length,
-        methodEdges: edges.methodEdges.length,
+        ...countedGraphEdgesByKind(edges),
         cap: MAX_EDGES_PER_FILE,
       });
     }
     return true;
-  }
-
-  /**
-   * Flush the buffered files as ONE transaction. The per-file edge cap already
-   * dropped pathological files, so no single row can abort a batch. A
-   * batch-level failure surfaces batch size + last file so the marker / stderr
-   * still points near where pass-2 tripped.
-   *
-   * Deliberately NOT timed here: the caller dispatches this without awaiting it
-   * and records the `flush` phase at the point it actually blocks
-   * (`settleFlush`). Timing it here would report the write's full duration and
-   * hide exactly the overlap double-buffering exists to create.
-   */
-  private async flushBuffer(graphDb: GraphDbClient, pending: BulkFileUpsertEntry[], processed: number): Promise<void> {
-    if (pending.length === 0) return;
-    try {
-      await graphDb.upsertFilesBulk(pending);
-    } catch (err) {
-      const wrapped = err instanceof Error ? err : new Error(String(err));
-      throw new CodegraphResolveError(
-        processed,
-        Object.assign(wrapped, {
-          message: `graphDb.upsertFilesBulk failed near file #${processed} (batch=${pending.length}, last=${pending[pending.length - 1]?.node.relPath}): ${wrapped.message}`,
-        }),
-      );
-    }
   }
 
   private async checkpoint(graphDb: GraphDbClient): Promise<void> {
