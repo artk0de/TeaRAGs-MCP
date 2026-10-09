@@ -498,6 +498,18 @@
   `ShotgunSurgeryLifecycleNull#mirrorProbability` is max(pooled, per-file)
   because a pooled-only null joins unrelated ±1 edits to a registry file.
 
+- **The shotgun list's order is the detector's, and nothing downstream re-sorts
+  it.** `compareSpreads` (temporal/verdicts/shotgun-surgery.ts) ranks by
+  `ShotgunSurgerySpread.familyEvidence`, and `ArchitectureReportOps#build`
+  passes the family to `rankFamiliesByMaintenanceCost` with `order: "detector"`,
+  so `maintenanceCost` tags it and still counts toward the shared n₀, but
+  `limit` cuts the detector's order (bd tea-rags-mcp-zf9yz.1). Two things an
+  edit must keep: `strength` stays evidence, never the sort key — it reads
+  cohesion, and on taxdome's gold it ranked at chance (AUC 0.53, cost 0.46,
+  family evidence 0.77); and the tail and C(n₂, m) stay in log space
+  (`compoundPoissonUpperTailLogBound`), because p underflows a double near
+  1e-308 and every spread past it would tie at +∞.
+
 ## Gotchas
 
 - **`codegraph.file.instability` is sampled over the files the graph actually

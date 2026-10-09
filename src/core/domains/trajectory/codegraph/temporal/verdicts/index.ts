@@ -9,6 +9,7 @@ export {
 } from "./split-merge.js";
 export {
   compoundPoissonUpperTailBound,
+  compoundPoissonUpperTailLogBound,
   type CompoundPoissonTerm,
   classifyShotgunSurgeryMechanicalBundles,
   detectShotgunSurgery,

@@ -200,33 +200,52 @@ const NULL_POSITION_MEAN = 0.5;
 /** Variance of one uniform 0…1 position under the null. A property of the position, not a tunable. */
 const NULL_POSITION_VARIANCE = 1 / 12;
 
+/**
+ * How a family's list is ordered: `maintenanceCost` (the default) re-sorts it
+ * costliest first; `detector` keeps the detector's own order and only tags
+ * each item. A family opts out when its detector's order already ranks the
+ * finding itself — shotgun surgery's family evidence (bd tea-rags-mcp-zf9yz.1),
+ * where carrier cost measured no better than chance on gold (AUC 0.46).
+ */
+export type MaintenanceCostFamilyOrder = "maintenanceCost" | "detector";
+
+export interface MaintenanceCostFamilyOptions {
+  readonly order?: MaintenanceCostFamilyOrder;
+}
+
 /** One family's items, read for ranking: each item's carriers and its listed shape. */
 export interface MaintenanceCostFamily<V extends object> {
   readonly size: number;
   readonly carriersAt: (index: number) => readonly RelPath[];
   readonly shapeAt: (index: number) => V;
+  readonly order: MaintenanceCostFamilyOrder;
 }
 
 /** A family of items, its carriers read off each item, shaped for the response by `shape` (the item itself by default). */
 export function maintenanceCostFamily<T extends object>(
   items: readonly T[],
   carriersOf: (item: T) => readonly RelPath[],
+  shape?: undefined,
+  options?: MaintenanceCostFamilyOptions,
 ): MaintenanceCostFamily<T>;
 export function maintenanceCostFamily<T, V extends object>(
   items: readonly T[],
   carriersOf: (item: T) => readonly RelPath[],
   shape: (item: T) => V,
+  options?: MaintenanceCostFamilyOptions,
 ): MaintenanceCostFamily<V>;
 export function maintenanceCostFamily<T, V extends object>(
   items: readonly T[],
   carriersOf: (item: T) => readonly RelPath[],
   shape?: (item: T) => V,
+  options?: MaintenanceCostFamilyOptions,
 ): MaintenanceCostFamily<V> {
   return {
     size: items.length,
     carriersAt: (index) => carriersOf(items[index]),
     // Without `shape` the overload pins T to an object type and V to T.
     shapeAt: (index) => (shape ? shape(items[index]) : (items[index] as unknown as V)),
+    order: options?.order ?? "maintenanceCost",
   };
 }
 
@@ -236,8 +255,10 @@ export function maintenanceCostFamily<T, V extends object>(
  * over every measured item of every family, so a score means the same in
  * each list. Ties: more measured carriers first, then the detector's order.
  * An item whose carrying files are all unmeasured keeps no tag and sinks
- * below every measured one. No model — the git trajectory unavailable —
- * returns each family shaped, in order.
+ * below every measured one. A family ordered by `detector` is tagged the same
+ * and counts toward n₀ the same, but keeps its own order, unmeasured items
+ * where they stand. No model — the git trajectory unavailable — returns each
+ * family shaped, in order.
  */
 export function rankFamiliesByMaintenanceCost<V extends object>(
   families: readonly MaintenanceCostFamily<V>[],
@@ -252,25 +273,29 @@ export function rankFamiliesByMaintenanceCost<V extends object>(
   const shrinkage = MaintenanceCostShrinkage.over(
     measuredFamilies.flatMap((entries) => entries.flatMap(({ measured }) => (measured ? [measured] : []))),
   );
-  return measuredFamilies.map((entries, familyIndex) =>
-    entries
-      .map((entry) => ({ ...entry, score: entry.measured ? shrinkage.scoreOf(entry.measured) : undefined }))
-      .sort((a, b) => compareScored(a, b) || a.index - b.index)
-      .map(({ index, measured, score }) => {
-        const shaped = families[familyIndex].shapeAt(index);
-        if (measured === undefined || score === undefined) return shaped;
-        return {
-          ...shaped,
-          maintenanceCost: {
-            score: round3(score),
-            meanPosition: round3(measured.meanPosition),
-            fileCount: measured.fileCount,
-            measuredFileCount: measured.measuredFileCount,
-            hottestFile: measured.hottestFile,
-          },
-        };
-      }),
-  );
+  return measuredFamilies.map((entries, familyIndex) => {
+    const scored = entries.map((entry) => ({
+      ...entry,
+      score: entry.measured ? shrinkage.scoreOf(entry.measured) : undefined,
+    }));
+    if (families[familyIndex].order === "maintenanceCost") {
+      scored.sort((a, b) => compareScored(a, b) || a.index - b.index);
+    }
+    return scored.map(({ index, measured, score }) => {
+      const shaped = families[familyIndex].shapeAt(index);
+      if (measured === undefined || score === undefined) return shaped;
+      return {
+        ...shaped,
+        maintenanceCost: {
+          score: round3(score),
+          meanPosition: round3(measured.meanPosition),
+          fileCount: measured.fileCount,
+          measuredFileCount: measured.measuredFileCount,
+          hottestFile: measured.hottestFile,
+        },
+      };
+    });
+  });
 }
 
 /** {@link rankFamiliesByMaintenanceCost} over one list — the list is the whole population. */

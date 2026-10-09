@@ -37,6 +37,7 @@ import {
   classifyShotgunSurgeryMechanicalBundles,
   cochangeStrength,
   compoundPoissonUpperTailBound,
+  compoundPoissonUpperTailLogBound,
   detectShotgunSurgery,
   findShotgunSurgeryEchoPairs,
   findShotgunSurgeryLifecyclePairs,
@@ -175,6 +176,44 @@ describe("compoundPoissonUpperTailBound", () => {
   it("is 1 at or below the expected weighted sum", () => {
     expect(compoundPoissonUpperTailBound(0.5, [{ weight: 0.25, mean: 2 }])).toBe(1);
     expect(compoundPoissonUpperTailBound(0, [])).toBe(1);
+  });
+
+  it("is the exponential of the log-space bound wherever the probability is representable", () => {
+    for (const [observed, terms] of [
+      [3, [{ weight: 1, mean: 0.029 }]],
+      [6, [{ weight: 1, mean: 2 }]],
+      [
+        2.5,
+        [
+          { weight: 0.5, mean: 0.4 },
+          { weight: 1, mean: 0.01 },
+        ],
+      ],
+      [
+        0.01,
+        [
+          { weight: 1, mean: 1e-3 },
+          { weight: 0.001, mean: 1e-3 },
+        ],
+      ],
+      [40, [{ weight: 1, mean: 1e-3 }]],
+    ] as const) {
+      expect(compoundPoissonUpperTailLogBound(observed, terms)).toBeCloseTo(
+        Math.log(compoundPoissonUpperTailBound(observed, terms)),
+        9,
+      );
+    }
+    expect(compoundPoissonUpperTailLogBound(0.5, [{ weight: 0.25, mean: 2 }])).toBe(0);
+  });
+
+  it("stays finite in log space where the probability underflows to 0", () => {
+    const terms = [{ weight: 1, mean: 1e-3 }];
+    expect(compoundPoissonUpperTailBound(400, terms)).toBe(0);
+    const logBound = compoundPoissonUpperTailLogBound(400, terms);
+    expect(Number.isFinite(logBound)).toBe(true);
+    // Chernoff at x = 400, μ = 1e-3: −(x·ln(x/μ) − x + μ) ≈ −4762.
+    expect(logBound).toBeCloseTo(-(400 * Math.log(400 / 1e-3) - 400 + 1e-3), 3);
+    expect(compoundPoissonUpperTailLogBound(500, terms)).toBeLessThan(logBound);
   });
 
   it("prices a sum of tiny weights by the chance of one heavy event, not by their count", () => {
@@ -717,6 +756,73 @@ const MECHANICAL_CORPUS: LineCommit[] = Array.from({ length: 49 }, (_, j) => ({
   rows: rowsOver([`corpus${j}`], 12, (row) => [100_000 + 100 * j + row, 0]),
 }));
 
+/** log10 C(n, k). */
+function log10Binomial(n: number, k: number): number {
+  let total = 0;
+  for (let i = 0; i < k; i++) total += Math.log10((n - i) / (i + 1));
+  return total;
+}
+
+describe("detectShotgunSurgery — ranked by family-adjusted evidence (bd tea-rags-mcp-zf9yz.1)", () => {
+  it("is −log10 of the spread's own tail bound less log10 C(n₂, m), the family of sets its width", () => {
+    const spread = ["a", "b", "c"];
+    // a, b, c change 4 times (a lone change + 3 spreads); d and e twice (a lone change + one pair): n₂ = 5.
+    const report = detectShotgunSurgery({
+      ...history([...background(["a", "b", "c", "d", "e"]), ["d", "e"], spread, spread, spread]),
+      componentDependencies: [],
+    });
+
+    const [finding] = report.findings;
+    expect(finding.components).toEqual(spread);
+    // Every supporting change sits within the typical width: unit weights, so the null is one Poisson mean.
+    expect(finding.weightedSupport).toBe(finding.support);
+    const p = compoundPoissonUpperTailBound(finding.weightedSupport, [{ weight: 1, mean: finding.expectedSupport }]);
+    expect(finding.familyEvidence).toBeCloseTo(-Math.log10(p) - log10Binomial(5, 3), 9);
+  });
+
+  it("ranks a recurring spread over long-lived components above a cohesive block born and edited only together", () => {
+    // (a) a 6-component block, each member changed only in its 3 changes: strength at its 3/3 maximum.
+    const block = ["p0", "p1", "p2", "p3", "p4", "p5"];
+    // (b) x, y, z each changed in 10 unrelated changes, and together in 10 more.
+    const spread = ["x", "y", "z"];
+    const bursts: string[][] = [];
+    for (let i = 0; i < 600; i++) bursts.push([`filler${i}`], [`filler${i}`]);
+    for (const c of spread) for (let i = 0; i < 10; i++) bursts.push([c, `${c}mate${i}`]);
+    for (let i = 0; i < 3; i++) bursts.push(block);
+    for (let i = 0; i < 10; i++) bursts.push(spread);
+
+    const report = detectShotgunSurgery({ ...history(bursts), componentDependencies: [] });
+
+    expect(report.findings.map((f) => f.components)).toEqual([spread, block]);
+    const [recurring, cohesive] = report.findings;
+    // Strength reads cohesion — the block wins it — while the evidence after paying for C(n₂, 6) does not.
+    expect(cohesive.strength).toBeGreaterThan(recurring.strength);
+    expect(recurring.familyEvidence).toBeGreaterThan(cohesive.familyEvidence);
+  });
+
+  it("keeps a spread whose tail underflows a double finite, and ranks it above a weaker one", () => {
+    const strong = ["s0", "s1", "s2", "s3"];
+    const weak = ["w0", "w1", "w2"];
+    const bursts: string[][] = Array.from({ length: 3000 }, (_, i) => [`filler${i}`]);
+    for (const c of [...strong, ...weak]) bursts.push([c]);
+    for (let i = 0; i < 200; i++) bursts.push(strong);
+    for (let i = 0; i < 3; i++) bursts.push(weak);
+
+    const report = detectShotgunSurgery({ ...history(bursts), componentDependencies: [] });
+
+    expect(report.findings.map((f) => f.components)).toEqual([strong, weak]);
+    const [overwhelming, weaker] = report.findings;
+    expect(overwhelming.weightedSupport).toBe(overwhelming.support);
+    // The probability itself is 0 in a double; the ranking reads it in log space.
+    expect(
+      compoundPoissonUpperTailBound(overwhelming.weightedSupport, [{ weight: 1, mean: overwhelming.expectedSupport }]),
+    ).toBe(0);
+    expect(Number.isFinite(overwhelming.familyEvidence)).toBe(true);
+    expect(overwhelming.familyEvidence).toBeGreaterThan(320);
+    expect(overwhelming.familyEvidence).toBeGreaterThan(weaker.familyEvidence);
+  });
+});
+
 describe("classifyShotgunSurgeryMechanicalBundles", () => {
   it("calls a commit mechanical when one (added, deleted) pair repeats over all its files beyond chance", () => {
     // 12 rows of (1, 1) among 600: the pair's corpus share is 0.02.
@@ -868,9 +974,9 @@ describe("detectShotgunSurgery — mechanical commits", () => {
       componentDependencies: [],
     });
 
-    expect(report.findings.map((f) => [f.support, f.weightedSupport, f.expectedSupport, f.strength])).toEqual([
-      [3, 3, 0.029184959375878016, 0.30063605244263664],
-    ]);
+    expect(
+      report.findings.map((f) => [f.support, f.weightedSupport, f.expectedSupport, f.strength, f.familyEvidence]),
+    ).toEqual([[3, 3, 0.029184959375878016, 0.30063605244263664, 4.7456779058748175]]);
     expect(report.summary).toEqual({
       burstCount: 37,
       unitCount: 37,

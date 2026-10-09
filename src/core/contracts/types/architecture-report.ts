@@ -1383,8 +1383,19 @@ export interface ShotgunSurgeryArchitectureViolation {
     weightedSupport: number;
     /** E[weightedSupport] under component independence (burst degrees + change widths), 3 decimals. */
     expectedSupport: number;
-    /** Wilson lower bound of support over the least- / most-changed component's changes (larger), 3 decimals. */
+    /**
+     * Wilson lower bound of support over the least- / most-changed component's
+     * changes (larger), 3 decimals. Reads COHESION — highest for members that
+     * never change outside the spread — so it is not severity.
+     */
     strength: number;
+    /**
+     * The list's order: −log10 p − log10 C(n₂, m), p the gate's tail bound for
+     * this spread at its own width m, n₂ the components changed in ≥ 2 bursts.
+     * The spread's surprise after paying for every set of its width; higher
+     * first, 3 decimals.
+     */
+    familyEvidence: number;
     /** Bursts touching each component, aligned with `components`. */
     componentChanges: number[];
     /** Structurally connected groups (dependency or specific shared neighbour), largest first; always ≥ 2. */
