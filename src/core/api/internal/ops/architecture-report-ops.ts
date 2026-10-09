@@ -129,6 +129,7 @@ import {
   rankFamiliesByMaintenanceCost,
   type GitFileMaintenanceSignalLookup,
   type MaintenanceCostFamily,
+  type MaintenanceCostFamilyOptions,
 } from "./architecture-maintenance-cost.js";
 import { ontologyNonProductionPaths } from "./ontology-report-ops.js";
 import {
@@ -504,14 +505,20 @@ export class ArchitectureReportOps {
       (index: ComponentEdgeCarrierIndex | undefined) =>
       (violation: object): RelPath[] =>
         index ? architectureViolationCarrierFiles(violation, index) : [];
-    const family = (violations: readonly ArchitectureViolation[], index: ComponentEdgeCarrierIndex | undefined) =>
-      maintenanceCostFamily(violations, carriersIn(index));
+    const family = (
+      violations: readonly ArchitectureViolation[],
+      index: ComponentEdgeCarrierIndex | undefined,
+      options?: MaintenanceCostFamilyOptions,
+    ) => maintenanceCostFamily(violations, carriersIn(index), undefined, options);
     const families: MaintenanceCostFamily<ArchitectureViolation>[] = [
       family(sdpViolations(findings.sdp, UNCAPPED), adoptionCarriers),
       family(leakViolations(findings.leaks, findings.privacy, UNCAPPED), adoptionCarriers),
       family(silentViolations(findings.silent, UNCAPPED), adoptionCarriers),
       // Knot mode lists the knot's findings only; a spread is not a knot member.
-      ...(runs.knotLookup ? [] : [family(shotgunSurgeryViolations(runs.shotgun, UNCAPPED), adoptionCarriers)]),
+      // Spreads keep the detector's family-evidence order; cost only tags them.
+      ...(runs.knotLookup
+        ? []
+        : [family(shotgunSurgeryViolations(runs.shotgun, UNCAPPED), adoptionCarriers, { order: "detector" })]),
       family(mainSequenceViolations(findings.mainSequence, UNCAPPED), adoptionCarriers),
       family(hubLikeDependencyViolations(findings.hubLikeDependency, UNCAPPED), adoptionCarriers),
       // Ranked on the domain findings: a knot's whole feedback-arc set and a

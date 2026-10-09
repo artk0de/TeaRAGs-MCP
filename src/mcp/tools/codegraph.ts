@@ -412,7 +412,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
     description:
       "Architecture diagnostics: is code laid out correctly (NOT is it risky to touch — use risk-assessment). " +
       "Typed violations with per-line evidence, per detector; scripts/spikes/benchmarks/examples/fixtures excluded. " +
-      "Each detector's violations ranked costliest-first BEFORE limit by maintenanceCost. File cost = " +
+      "Each detector's violations (shotgunSurgery excepted) ranked costliest-first BEFORE limit by maintenanceCost. File cost = " +
       "churn*(1+bugFix+recency)/3, each signal = file's position in collection's own git.file distribution " +
       "(commitCount, bugFixRate, ageDays inverted); costPosition = cost's mid-rank among all files. Carriers = files " +
       "on the edges that make the violation (named files; all file edges of a component edge or knot cut; hub's " +
@@ -454,7 +454,8 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "history; a revert or flag removal mirroring an earlier commit's per-file net lines (permutation test, BH) joins " +
       "it as one change; a later commit retiring exactly lines an earlier one added (net -x for +x on shared files; " +
       "null = max(corpus revisit rate, file's own rate), Poisson-binomial, BH) joins it too; evidence support, " +
-      "expectedSupport, strength, islands, exemplarFiles, drillDown = find_co_changed; summary mechanicalCommitCount / " +
+      "expectedSupport, strength (cohesion, not severity), familyEvidence = -log10 p - log10 C(n2,m) (list order; cost " +
+      "tags only), islands, exemplarFiles, drillDown = find_co_changed; summary mechanicalCommitCount / " +
       "echoPairCount / lifecyclePairCount absent = line counts or commit timestamps not recorded; built false = same " +
       "reasons as splitMerge. mainSequence " +
       "(Stable Abstractions Principle): component far from A+I=1 — pain = stable+concrete, uselessness = " +

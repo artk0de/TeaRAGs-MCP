@@ -9,6 +9,7 @@ import {
   ArchitectureReportOps,
   buildArchitectureKnotMembership,
 } from "../../../../../src/core/api/internal/ops/architecture-report-ops.js";
+import type { ArchitectureViolation } from "../../../../../src/core/api/public/dto/architecture.js";
 import { UnknownArchitectureComponentError } from "../../../../../src/core/api/public/errors.js";
 import type {
   FileDependencyGraph,
@@ -1069,6 +1070,60 @@ describe("ArchitectureReportOps#build — shotgunSurgery (bd tea-rags-mcp-r8hme.
       fileCount: 3,
       hottestFile: { relPath: "app/c1.ts", commitCount: 40 },
     });
+  });
+
+  it("lists the spreads in detector order, cost-tagged but not cost-sorted, while other families stay cost-ordered (bd tea-rags-mcp-zf9yz.1)", async () => {
+    // A second spread, core + users + other, recurring 5 times beside the first.
+    const bundles = new Map<number, readonly string[]>([
+      ...shotgunBundles(),
+      ...Array.from({ length: 5 }, (_, i) => [30 + i, ["core/a.ts", "users/u2.ts", "other/o2.ts"]] as const),
+      ...Array.from({ length: 40 }, (_, i) => [40 + i, [`lib/f${3 + (i % 3)}.ts`]] as const),
+    ]);
+    const cochange: TemporalCochangeGraph = { ...cochangeGraph(), edges: [], bundles };
+    const g = graph();
+    g.files.push(file("other/o2.ts"));
+    const spreadsOf = (violations: readonly ArchitectureViolation[]) =>
+      violations.flatMap((v) => (v.detector === "shotgunSurgery" ? [v] : []));
+    const sdpPairs = (violations: readonly ArchitectureViolation[]) =>
+      violations.flatMap((v) =>
+        v.detector === "stableDependencies" ? [`${v.sourceComponent}->${v.targetComponent}`] : [],
+      );
+
+    const plain = await new ArchitectureReportOps().build(graphDb(g, [], cochange), {});
+    const detectorOrder = spreadsOf(plain.violations);
+    expect(detectorOrder).toHaveLength(2);
+    expect(sdpPairs(plain.violations)).toEqual(["base->lib", "core->lib"]);
+
+    // The LATER spread's carriers are hot, and so are three of SDP core → lib's four.
+    const hot = [...detectorOrder[1].evidence.exemplarFiles, "lib/f1.ts", "core/b.ts", "lib/f2.ts"];
+    const signals = vi.fn(
+      async () =>
+        new Map(
+          g.files.map((f) => [
+            f.relPath,
+            hot.includes(f.relPath)
+              ? { commitCount: 40, bugFixRate: 50, ageDays: 1 }
+              : { commitCount: 1, bugFixRate: 0, ageDays: 300 },
+          ]),
+        ),
+    );
+    const report = await new ArchitectureReportOps().build(graphDb(g, [], cochange), {}, undefined, undefined, signals);
+
+    const spreads = spreadsOf(report.violations);
+    expect(spreads.map((v) => v.components)).toEqual(detectorOrder.map((v) => v.components));
+    const [first, second] = spreads.map((v) => v.maintenanceCost?.score);
+    expect(first).toBeDefined();
+    expect(second).toBeGreaterThan(first ?? 1);
+    expect(sdpPairs(report.violations)).toEqual(["core->lib", "base->lib"]);
+    // limit applies to the detector's order: the first spread stays, the costlier second goes.
+    const capped = await new ArchitectureReportOps().build(
+      graphDb(g, [], cochange),
+      { limit: 1 },
+      undefined,
+      undefined,
+      signals,
+    );
+    expect(spreadsOf(capped.violations).map((v) => v.components)).toEqual([detectorOrder[0].components]);
   });
 
   it("omits the spreads in knot mode", async () => {

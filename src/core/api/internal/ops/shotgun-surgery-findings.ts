@@ -101,7 +101,7 @@ export function summariseShotgunSurgery(run: ShotgunSurgeryRun): ShotgunSurgeryR
   };
 }
 
-/** The unexplained spreads, strongest first, capped at `limit`. */
+/** The unexplained spreads, most surprising first (family evidence), capped at `limit`. */
 export function shotgunSurgeryViolations(run: ShotgunSurgeryRun, limit: number): ShotgunSurgeryArchitectureViolation[] {
   if (!run.built) return [];
   return run.report.findings.slice(0, limit).map(toShotgunSurgeryViolation);
@@ -121,6 +121,7 @@ function toShotgunSurgeryViolation(spread: ShotgunSurgerySpread): ShotgunSurgery
       weightedSupport: roundTo3(spread.weightedSupport),
       expectedSupport: roundTo3(spread.expectedSupport),
       strength: roundTo3(spread.strength),
+      familyEvidence: roundTo3(spread.familyEvidence),
       componentChanges: spread.componentChanges,
       islands: spread.islands,
       exemplarFiles: spread.exemplarFiles,

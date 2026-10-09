@@ -97,8 +97,13 @@
  *
  * STRENGTH is {@link cochangeStrength} over the spread's support and its
  * least- and most-changed components — the larger direction's Wilson lower
- * bound, the severity. Pure: ports in, verdicts out; no bundle membership →
- * nothing judged, never zeros posing as verdicts.
+ * bound. It measures cohesion, so it is evidence and not the order: spreads
+ * rank by FAMILY EVIDENCE, −log10 of the gate's own tail bound at the
+ * spread's width less log10 C(n₂, m) (bd tea-rags-mcp-zf9yz.1). Measured on
+ * taxdome's gold set (44 reproducible items): AUC 0.53 by strength — a block
+ * born and edited only inside one feature tops it — against 0.77 by family
+ * evidence. Pure: ports in, verdicts out; no bundle membership → nothing
+ * judged, never zeros posing as verdicts.
  */
 
 import type { CochangeFileLineCounts, RelPath } from "../../../../../contracts/types/codegraph.js";
@@ -215,8 +220,22 @@ export interface ShotgunSurgerySpread {
   weightedSupport: number;
   /** E[weightedSupport] under component independence: Σ_w units_w · P(spread ⊆ u | w) · weight_w over widths w ≥ m. */
   expectedSupport: number;
-  /** {@link cochangeStrength} over support and the least- / most-changed component. */
+  /**
+   * {@link cochangeStrength} over support and the least- / most-changed
+   * component. It reads COHESION — its maximum goes to a member that never
+   * changed outside the spread — so it is evidence, not the ranking.
+   */
   strength: number;
+  /**
+   * The ranking: −log10 p(S) − log10 C(n₂, m). p(S) is the gate's own
+   * compound-Poisson tail bound for this spread at its own width m, n₂ the
+   * components changed in ≥ 2 bursts — the spread's surprise after paying for
+   * every set of its width, i.e. −log10 of its Bonferroni-adjusted p within m,
+   * unbounded. A block of members that only ever change together earns a tiny
+   * p from its width alone; the C(n₂, m) charge takes that back. Both terms
+   * are computed in log space, so it stays finite where p underflows.
+   */
+  familyEvidence: number;
   /** Structurally connected groups of the spread, largest first; one island = explained. */
   islands: string[][];
   /** Per component (aligned) the file the supporting commits touched most. */
@@ -289,9 +308,9 @@ export interface ShotgunSurgerySummary {
 }
 
 export interface ShotgunSurgeryReport {
-  /** Unexplained recurring wide spreads, strongest first. */
+  /** Unexplained recurring wide spreads, most surprising first ({@link ShotgunSurgerySpread.familyEvidence}). */
   findings: ShotgunSurgerySpread[];
-  /** Spreads one structural island explains, strongest first. */
+  /** Spreads one structural island explains, most surprising first. */
   explained: ShotgunSurgerySpread[];
   summary: ShotgunSurgerySummary;
 }
@@ -329,6 +348,8 @@ interface AdmittedSpread {
   support: number;
   weightedSupport: number;
   expectedSupport: number;
+  /** ln of the gate's tail bound for the spread at its own width — the ranking's p(S), kept in log space. */
+  logTailBound: number;
   /** The commits (per-commit sets) that held the spread. */
   supporting: ShotgunSurgeryUnit[];
 }
@@ -373,13 +394,18 @@ export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgery
   );
   const admitted = tested.slice(0, rejected);
   const closed: AdmittedSpread[] = mergeIntoMaximalSpreads(admitted, wide).map(
-    ({ components, unitIndices, support }) => ({
-      components,
-      support,
-      weightedSupport: weightedSupportOf(wide, unitIndices, components.length, specificity),
-      expectedSupport: expectedWeightedSupport(propensity.weightedNull(components)),
-      supporting: unitIndices.map((index) => wide[index]),
-    }),
+    ({ components, unitIndices, support }) => {
+      const weightedSupport = weightedSupportOf(wide, unitIndices, components.length, specificity);
+      const nullTerms = propensity.weightedNull(components);
+      return {
+        components,
+        support,
+        weightedSupport,
+        expectedSupport: expectedWeightedSupport(nullTerms),
+        logTailBound: compoundPoissonUpperTailLogBound(weightedSupport, nullTerms),
+        supporting: unitIndices.map((index) => wide[index]),
+      };
+    },
   );
 
   const structure = new ShotgunSurgeryStructure(
@@ -393,7 +419,13 @@ export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgery
   const findings: ShotgunSurgerySpread[] = [];
   const explained: ShotgunSurgerySpread[] = [];
   for (const spread of closed) {
-    const shaped = shapeSpread(spread, changes, islandsOf.islands(spread.components), input.bundleCommits);
+    const shaped = shapeSpread(
+      spread,
+      changes,
+      changedTwice,
+      islandsOf.islands(spread.components),
+      input.bundleCommits,
+    );
     if (shaped.islands.length <= 1) {
       explained.push(shaped);
       continue;
@@ -1443,6 +1475,13 @@ export function shotgunSurgeryFamilySize(n: number, k: number): number {
   return Math.min(Math.round(binomial), Number.MAX_VALUE);
 }
 
+/** ln C(n, k), summed term by term so it never overflows where C(n, k) itself would; 0 ≤ k ≤ n. */
+function logBinomial(n: number, k: number): number {
+  let total = 0;
+  for (let i = 0; i < k; i++) total += Math.log((n - i) / (i + 1));
+  return total;
+}
+
 /**
  * The fitted-propensity null: x_c with Σ_w bursts_w·(1 − (1 − x_c)^w) = n_c
  * over the bursts' widths (the pair gate's degrees n_f and M), solved by
@@ -1533,21 +1572,48 @@ const CHERNOFF_TILT_BISECTION_STEPS = 200;
  * Benjamini–Hochberg keeps its FDR guarantee.
  */
 export function compoundPoissonUpperTailBound(observed: number, terms: readonly CompoundPoissonTerm[]): number {
+  const split = splitCompoundPoissonTail(observed, terms);
+  if (split === undefined) return 1;
+  return Math.min(1, split.heavyMean + Math.min(1, Math.exp(split.logChernoff)));
+}
+
+/**
+ * The natural log of {@link compoundPoissonUpperTailBound}, computed in log
+ * space so it stays finite where the probability underflows a double
+ * (≈ 1e-308) — the ranking reads a spread's surprise past that point, the
+ * gate never needs to. 0 where the bound is 1.
+ */
+export function compoundPoissonUpperTailLogBound(observed: number, terms: readonly CompoundPoissonTerm[]): number {
+  const split = splitCompoundPoissonTail(observed, terms);
+  if (split === undefined) return 0;
+  return Math.min(0, logSumExp([Math.log(split.heavyMean), Math.min(0, split.logChernoff)]));
+}
+
+/**
+ * The bound's two halves: the mean count of events at least `observed`
+ * heavy, and the log of Chernoff's bound over the lighter ones (−∞ when none
+ * can contribute). Undefined at or below the expected weighted sum, where the
+ * bound is 1.
+ */
+function splitCompoundPoissonTail(
+  observed: number,
+  terms: readonly CompoundPoissonTerm[],
+): { heavyMean: number; logChernoff: number } | undefined {
   const live = terms.filter(({ weight, mean }) => weight > 0 && mean > 0);
-  if (observed <= expectedWeightedSupport(live)) return 1;
+  if (observed <= expectedWeightedSupport(live)) return undefined;
   let heavyMean = 0;
   const light: CompoundPoissonTerm[] = [];
   for (const term of live) {
     if (term.weight >= observed) heavyMean += term.mean;
     else light.push(term);
   }
-  return Math.min(1, heavyMean + chernoffUpperTail(observed, light));
+  return { heavyMean, logChernoff: chernoffLogUpperTail(observed, light) };
 }
 
-/** Chernoff's bound on P(Σ weight·N ≥ observed); 0 when no term can contribute. */
-function chernoffUpperTail(observed: number, terms: readonly CompoundPoissonTerm[]): number {
-  if (terms.length === 0) return 0;
-  if (observed <= expectedWeightedSupport(terms)) return 1;
+/** log of Chernoff's bound on P(Σ weight·N ≥ observed), unclamped; −∞ when no term can contribute. */
+function chernoffLogUpperTail(observed: number, terms: readonly CompoundPoissonTerm[]): number {
+  if (terms.length === 0) return Number.NEGATIVE_INFINITY;
+  if (observed <= expectedWeightedSupport(terms)) return 0;
   // K'(t) = Σ mean·weight·e^{t·weight}, compared in log space: it overflows long before the tilt is found.
   const logTarget = Math.log(observed);
   const logSlope = (t: number): number =>
@@ -1565,7 +1631,7 @@ function chernoffUpperTail(observed: number, terms: readonly CompoundPoissonTerm
   }
   const tilt = low;
   const cumulant = terms.reduce((total, { weight, mean }) => total + mean * Math.expm1(tilt * weight), 0);
-  return Math.min(1, Math.exp(-(tilt * observed - cumulant)));
+  return -(tilt * observed - cumulant);
 }
 
 function logSumExp(values: readonly number[]): number {
@@ -1724,6 +1790,7 @@ class ShotgunSurgeryStructure {
 function shapeSpread(
   spread: AdmittedSpread,
   changes: ReadonlyMap<string, number>,
+  changedTwice: number,
   islands: string[][],
   bundleCommits: ReadonlyMap<number, readonly string[]> | undefined,
 ): ShotgunSurgerySpread {
@@ -1761,6 +1828,7 @@ function shapeSpread(
       confidenceAB: spread.support / fewest,
       confidenceBA: spread.support / most,
     }),
+    familyEvidence: -(spread.logTailBound + logBinomial(changedTwice, spread.components.length)) / Math.LN10,
     islands,
     exemplarFiles: carrierFiles.map((files) => files[0] ?? ""),
     carrierFiles,
@@ -1794,13 +1862,9 @@ function pairKey(a: string, b: string): string {
   return a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`;
 }
 
+/** Most surprising first ({@link ShotgunSurgerySpread.familyEvidence}), then more support, then the key. */
 function compareSpreads(a: ShotgunSurgerySpread, b: ShotgunSurgerySpread): number {
-  return (
-    b.strength - a.strength ||
-    b.support - a.support ||
-    b.components.length - a.components.length ||
-    compareKeys(a.components, b.components)
-  );
+  return b.familyEvidence - a.familyEvidence || b.support - a.support || compareKeys(a.components, b.components);
 }
 
 function compareKeys(a: readonly string[], b: readonly string[]): number {

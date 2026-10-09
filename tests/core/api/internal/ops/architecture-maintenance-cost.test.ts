@@ -275,6 +275,47 @@ describe("rankByMaintenanceCost", () => {
     expect(rankByMaintenanceCost(knots, (i) => i.files, model)[0].maintenanceCost?.score).toBe(0.509);
   });
 
+  it("keeps a detector-ordered family in its own order, tags every item, and still counts it toward n₀ (bd tea-rags-mcp-zf9yz.1)", () => {
+    const model = graded();
+    const sdp = [
+      { id: "sdpCold", files: ["f10.ts", "f20.ts"] },
+      { id: "sdpHot", files: ["f9990.ts", "f9980.ts"] },
+    ];
+    const spreads = [
+      { id: "first", files: ["f4000.ts"] },
+      { id: "unmeasured", files: ["unknown.ts"] },
+      { id: "hottest", files: ["f9999.ts", "f9998.ts", "f9997.ts"] },
+      { id: "cold", files: ["f1.ts", "f2.ts", "f3.ts"] },
+    ];
+
+    const [rankedSdp, rankedSpreads] = rankFamiliesByMaintenanceCost(
+      [
+        maintenanceCostFamily(sdp, (i) => i.files),
+        maintenanceCostFamily(spreads, (i) => i.files, undefined, { order: "detector" }),
+      ],
+      model,
+    );
+
+    expect(rankedSpreads.map((i) => i.id)).toEqual(["first", "unmeasured", "hottest", "cold"]);
+    expect(rankedSpreads.map((i) => i.maintenanceCost !== undefined)).toEqual([true, false, true, true]);
+    expect(rankedSdp.map((i) => i.id)).toEqual(["sdpHot", "sdpCold"]);
+    // n₀ is drawn over BOTH families: the scores equal those of the same families cost-ordered.
+    const costOrdered = rankFamiliesByMaintenanceCost(
+      [maintenanceCostFamily(sdp, (i) => i.files), maintenanceCostFamily(spreads, (i) => i.files)],
+      model,
+    );
+    expect(rankedSdp).toEqual(costOrdered[0]);
+    const scoreOf = (list: readonly { id: string; maintenanceCost?: { score: number } }[], id: string) =>
+      list.find((i) => i.id === id)?.maintenanceCost?.score;
+    expect(scoreOf(rankedSpreads, "hottest")).toBe(scoreOf(costOrdered[1], "hottest"));
+    expect(scoreOf(rankedSdp, "sdpHot")).not.toBe(
+      scoreOf(
+        rankByMaintenanceCost(sdp, (i) => i.files, model),
+        "sdpHot",
+      ),
+    );
+  });
+
   it("leaves the list untouched without a model — the git trajectory is unavailable", () => {
     const ranked = rankByMaintenanceCost(items, (i) => i.files, undefined);
 

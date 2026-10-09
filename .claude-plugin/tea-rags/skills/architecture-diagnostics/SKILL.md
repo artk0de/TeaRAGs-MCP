@@ -139,18 +139,19 @@ get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>"
   `summary.<detector>` keeps totals (`violationCount`, `rootCauseCount`).
   Totals > returned → say truncated.
 - Each detector's `violations` ranked costliest-first (before `limit`) by
-  `maintenanceCost`. Carriers = files on edges that MAKE violation: named files;
-  all file edges of component edge / knot cut; hub's boundary files;
-  zone-of-pain's depended-on files; island / uselessness = all its files.
-  `score` 0–1 = carriers' `meanPosition` (mean file `costPosition`) shrunk
-  toward 0.5 by `n / (n + n₀)` — n = `measuredFileCount`, n₀ = (1/12) /
-  between-violation variance over the WHOLE report, measured around the null
-  mean 0.5 (empirical Bayes). A 1–2 file pair is pulled toward 0.5, a 7000-file
-  knot keeps its mean, so scores compare ACROSS detectors; 0.5 = typical or
-  unproven, all 0.5 = violations spread no more than noise. Use `meanPosition` +
-  `measuredFileCount` for the raw reading. `hottestFile` = costliest carrier +
-  churn/bugFix/recency positions + raw readings. Lead residual list with highest
-  score. Absent = no git readings → detector order.
+  `maintenanceCost` — except `shotgunSurgery` (Phase 3c2): tagged, not
+  re-sorted. Carriers = files on edges that MAKE violation: named files; all
+  file edges of component edge / knot cut; hub's boundary files; zone-of-pain's
+  depended-on files; island / uselessness = all its files. `score` 0–1 =
+  carriers' `meanPosition` (mean file `costPosition`) shrunk toward 0.5 by
+  `n / (n + n₀)` — n = `measuredFileCount`, n₀ = (1/12) / between-violation
+  variance over the WHOLE report, measured around the null mean 0.5 (empirical
+  Bayes). A 1–2 file pair is pulled toward 0.5, a 7000-file knot keeps its mean,
+  so scores compare ACROSS detectors; 0.5 = typical or unproven, all 0.5 =
+  violations spread no more than noise. Use `meanPosition` + `measuredFileCount`
+  for the raw reading. `hottestFile` = costliest carrier + churn/bugFix/recency
+  positions + raw readings. Lead residual list with highest score. Absent = no
+  git readings → detector order.
 - Every finding carries `detector`: `stableDependencies` (Phases 2–3),
   `leakingAbstraction` (Phase 3b), `silentCoupling` (Phase 3c), `mainSequence`
   (Phase 3d), `hubLikeDependency` (Phase 3d2) or `layering` (Phase 3e). Never
@@ -315,6 +316,12 @@ dropped from whole history: degrees, units, umbrella breadth. Echoes (revert /
 flag removal mirroring earlier commit's per-file net lines, permutation test,
 BH) join original as one change — never zeroed.
 
+List order = `familyEvidence` desc, most surprising first; `limit` cuts THAT
+order. `maintenanceCost` rides along as a tag only — carrier cost ranked gold no
+better than chance. `strength` = cohesion (max for members never changed outside
+the spread, e.g. a page and the panels born with it) — NOT severity; never
+re-rank by it.
+
 | Summary field (`summary.shotgunSurgery`)             | Read as                                                                                                                                                                                                                   |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `built`                                              | `false` = no co-change build / no bundle membership (`reason`, same as splitMerge) → NOT judged, never report "none"                                                                                                      |
@@ -337,7 +344,8 @@ Evidence per line:
 | Evidence                                          | Read as                                                                                                                      |
 | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `support` / `weightedSupport` / `expectedSupport` | distinct changes holding whole spread / Σ their specificity weights / E[weighted] under the null; weighted ≫ expected = real |
-| `strength`                                        | Wilson lower bound of support over component changes                                                                         |
+| `strength`                                        | Wilson lower bound of support over component changes — cohesion, not severity                                                |
+| `familyEvidence`                                  | −log10 p − log10 C(n₂, m): gate's tail bound at the spread's width m, charged for every m-set of the n₂ twice-changed; order |
 | `islands`                                         | connected groups (≥ 2; dependency, specific neighbour, one feature subtree) — where the missing link would go                |
 | `exemplarFiles`                                   | per component the file the holding commits touched most                                                                      |
 | `carrierFiles`                                    | per component (aligned) files the holding changes touched, most-touched first (≤ 5) — recipe input                           |
