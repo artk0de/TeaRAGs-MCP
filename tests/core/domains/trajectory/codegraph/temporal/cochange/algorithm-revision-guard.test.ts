@@ -15,6 +15,7 @@
 import { describe, expect, it } from "vitest";
 
 import { DATABASE_MIGRATIONS } from "../../../../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
+import { isSqlDatabaseMigration } from "../../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { COCHANGE_ALGORITHM_REVISION } from "../../../../../../../src/core/domains/trajectory/codegraph/temporal/cochange/index.js";
 
 const PINNED = {
@@ -33,10 +34,19 @@ const PINNED = {
 
 const TEMPORAL_TABLE = /\bcg_temporal_\w+/;
 
+/**
+ * Only SQL migrations can be classified here: a PROCEDURAL migration
+ * (`{ filename, run }`, bd tea-rags-mcp-bdnfu) has no SQL text to scan, so this
+ * guard cannot see whether it touches `cg_temporal_*`. A procedural migration
+ * that adds or reshapes a persisted `cg_temporal_*` field escapes this pin —
+ * its author must bump `COCHANGE_ALGORITHM_REVISION` by hand and give it its
+ * own guard (e.g. assert its effect on a reused snapshot). The only procedural
+ * migration today, 048, drops `cg_review_file_edges_*` and never touches them.
+ */
 function temporalMigrationFilenames(): string[] {
-  return DATABASE_MIGRATIONS.filter((migration) => TEMPORAL_TABLE.test(migration.sql)).map(
-    (migration) => migration.filename,
-  );
+  return DATABASE_MIGRATIONS.filter(isSqlDatabaseMigration)
+    .filter((migration) => TEMPORAL_TABLE.test(migration.sql))
+    .map((migration) => migration.filename);
 }
 
 describe("COCHANGE_ALGORITHM_REVISION tracks the cg_temporal schema (bd tea-rags-mcp-hzm7g)", () => {

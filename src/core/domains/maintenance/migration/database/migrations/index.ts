@@ -1,8 +1,9 @@
 /**
- * Migration registry — ordered list of SQL migrations applied by the
- * generic `runMigrations` runner. Add new migrations at the bottom with
+ * Migration registry — ordered list of SQL and procedural migrations applied
+ * by the generic `runMigrations` runner. Add new migrations at the bottom with
  * the next numeric prefix.
  */
+import type { DatabaseMigration } from "../runner.js";
 import { SQL_001_CG_SYMBOLS_INIT } from "./001-cg-symbols-init.js";
 import { SQL_002_CG_SYMBOLS_TABLE } from "./002-cg-symbols-table.js";
 import { SQL_003_CG_SYMBOLS_CYCLES } from "./003-cg-symbols-cycles.js";
@@ -50,11 +51,9 @@ import { SQL_044_CG_TEMPORAL_BURSTS } from "./044-cg-temporal-bursts.js";
 import { SQL_045_CG_TEMPORAL_BUNDLE_TASK_IDS } from "./045-cg-temporal-bundle-task-ids.js";
 import { SQL_046_CG_TEMPORAL_BUNDLE_FILE_LINES } from "./046-cg-temporal-bundle-file-lines.js";
 import { SQL_047_CG_TEMPORAL_BUNDLE_COMMITTED_AT } from "./047-cg-temporal-bundle-committed-at.js";
+import { dropLegacyReviewEdgeTables } from "./048-cg-drop-legacy-review-edge-tables.js";
 
-export interface DatabaseMigration {
-  filename: string;
-  sql: string;
-}
+export type { DatabaseMigration } from "../runner.js";
 
 export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "001-cg-symbols-init.sql", sql: SQL_001_CG_SYMBOLS_INIT },
@@ -104,4 +103,6 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "045-cg-temporal-bundle-task-ids.sql", sql: SQL_045_CG_TEMPORAL_BUNDLE_TASK_IDS },
   { filename: "046-cg-temporal-bundle-file-lines.sql", sql: SQL_046_CG_TEMPORAL_BUNDLE_FILE_LINES },
   { filename: "047-cg-temporal-bundle-committed-at.sql", sql: SQL_047_CG_TEMPORAL_BUNDLE_COMMITTED_AT },
+  // Procedural (no `.sql` twin): the ledger key ends in `.ts` because the module IS the migration.
+  { filename: "048-cg-drop-legacy-review-edge-tables.ts", run: dropLegacyReviewEdgeTables },
 ];

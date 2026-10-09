@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -42,6 +42,13 @@ describe("writeMigrationTwins", () => {
 
     expect(writeMigrationTwins(dir, MIGRATIONS)).toEqual(["002-second.sql"]);
     expect(readFileSync(join(dir, "002-second.sql"), "utf8")).toBe(MIGRATIONS[1]?.sql);
+  });
+
+  it("writes no twin for a procedural migration — it has no SQL text", () => {
+    const procedural = { filename: "003-procedural.ts", run: async () => undefined };
+
+    expect(writeMigrationTwins(dir, [...MIGRATIONS, procedural])).toEqual(["001-first.sql", "002-second.sql"]);
+    expect(existsSync(join(dir, procedural.filename))).toBe(false);
   });
 
   it("reports nothing to do when every twin already matches", () => {

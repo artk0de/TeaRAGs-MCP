@@ -8,7 +8,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import { SQL_023_CG_SIGNALS_PREV } from "../../../../../../src/core/domains/maintenance/migration/database/migrations/023-cg-signals-prev.js";
 import { DATABASE_MIGRATIONS } from "../../../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
-import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
+import {
+  isSqlDatabaseMigration,
+  runMigrations,
+} from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const MIGRATIONS_DIR = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -76,7 +79,9 @@ describe("023 cg signals prev migration", () => {
   });
 
   it("is registered in DATABASE_MIGRATIONS with the .ts export as its sql", () => {
-    const entry = DATABASE_MIGRATIONS.find((m) => m.filename === "023-cg-signals-prev.sql");
+    const entry = DATABASE_MIGRATIONS.filter(isSqlDatabaseMigration).find(
+      (m) => m.filename === "023-cg-signals-prev.sql",
+    );
     expect(entry).toBeDefined();
     expect(entry?.sql).toBe(SQL_023_CG_SIGNALS_PREV);
   });
