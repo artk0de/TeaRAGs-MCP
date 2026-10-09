@@ -93,6 +93,82 @@ const FRAMEWORK_ROUTED_CALL_SQL = String.raw`inh.source_rel_path IS NULL AND NOT
   )
 )`;
 
+/**
+ * The CTEs (for a `WITH RECURSIVE` head) ending in `edge_call_weight(source_rel_path,
+ * target_rel_path, call_weight, framework_routed_call_weight)`: the resolved
+ * calls crossing each `cg_symbols_edges_file` row (bd tea-rags-mcp-r8hme.52.1).
+ *
+ * A call lands on the file that DEFINES its target, but an import of a barrel
+ * targets the barrel, so the exact-pair join read every `S → index.ts` edge as
+ * weight 0 while S called through it (562 of tea-rags' 6009 file edges,
+ * 1746 of 5386 call weight unattributed). Each `(S, D)` call aggregate is
+ * therefore credited to EXACTLY ONE file edge of S:
+ *   - the direct edge `S → D` when it exists;
+ *   - otherwise the edge `S → B` whose re-export closure reaches D through the
+ *     fewest re-export hops, code-point order of B breaking a tie (one definer
+ *     reached through two barrels counts once, never twice).
+ * The closure follows rows carrying `reexported_export_names` transitively —
+ * barrels nest — and stops at a file already on the chain, so a re-export
+ * cycle terminates. A call pair no file edge reaches still contributes no
+ * weight anywhere, and routing never adds an edge. An intra-file call is
+ * never routed through a barrel re-exporting its own file.
+ *
+ * `callSourceFilter` narrows the aggregated method edges (alias `m`) to the
+ * sources a single-file lookup needs; it may bind parameters, which come
+ * BEFORE the statement's own.
+ */
+function edgeCallWeightCtes(callSourceFilter: string): string {
+  return `reexport_chain(barrel_rel_path, definer_rel_path, hops, chain) AS (
+      SELECT source_rel_path, target_rel_path, 1, [source_rel_path, target_rel_path]
+      FROM cg_symbols_edges_file
+      WHERE reexported_export_names IS NOT NULL AND source_rel_path <> target_rel_path
+      UNION ALL
+      SELECT r.barrel_rel_path, e.target_rel_path, r.hops + 1, list_append(r.chain, e.target_rel_path)
+      FROM reexport_chain r
+      JOIN cg_symbols_edges_file e ON e.source_rel_path = r.definer_rel_path AND e.reexported_export_names IS NOT NULL
+      WHERE NOT list_contains(r.chain, e.target_rel_path)
+    ),
+    reexport_reach AS (
+      SELECT barrel_rel_path, definer_rel_path, MIN(hops) AS hops FROM reexport_chain GROUP BY 1, 2
+    ),
+    call_pair AS (
+      SELECT m.source_rel_path, m.target_rel_path, SUM(COALESCE(m.confidence, 1.0)) AS call_weight,
+             SUM(CASE WHEN ${FRAMEWORK_ROUTED_CALL_SQL} THEN COALESCE(m.confidence, 1.0) ELSE 0 END)
+               AS framework_routed_call_weight
+      FROM cg_symbols_edges_method m
+      LEFT JOIN (
+        SELECT DISTINCT i.source_rel_path, s.rel_path AS target_rel_path
+        FROM cg_symbols_inheritance i
+        JOIN cg_symbols s ON s.symbol_id = i.ancestor_symbol_id
+      ) inh ON inh.source_rel_path = m.source_rel_path AND inh.target_rel_path = m.target_rel_path
+      WHERE m.target_symbol_id IS NOT NULL ${callSourceFilter}
+      GROUP BY m.source_rel_path, m.target_rel_path
+    ),
+    call_pair_credit AS (
+      SELECT c.source_rel_path, c.target_rel_path AS definer_rel_path, e.target_rel_path AS credited_rel_path, 0 AS hops,
+             c.call_weight, c.framework_routed_call_weight
+      FROM call_pair c
+      JOIN cg_symbols_edges_file e ON e.source_rel_path = c.source_rel_path AND e.target_rel_path = c.target_rel_path
+      UNION ALL
+      SELECT c.source_rel_path, c.target_rel_path, e.target_rel_path, r.hops, c.call_weight, c.framework_routed_call_weight
+      FROM call_pair c
+      JOIN reexport_reach r ON r.definer_rel_path = c.target_rel_path
+      JOIN cg_symbols_edges_file e ON e.source_rel_path = c.source_rel_path AND e.target_rel_path = r.barrel_rel_path
+      WHERE c.source_rel_path <> c.target_rel_path
+    ),
+    edge_call_weight AS (
+      SELECT source_rel_path, credited_rel_path AS target_rel_path, SUM(call_weight) AS call_weight,
+             SUM(framework_routed_call_weight) AS framework_routed_call_weight
+      FROM (
+        SELECT * FROM call_pair_credit
+        QUALIFY ROW_NUMBER() OVER (
+          PARTITION BY source_rel_path, definer_rel_path ORDER BY hops, credited_rel_path COLLATE "binary"
+        ) = 1
+      )
+      GROUP BY source_rel_path, credited_rel_path
+    )`;
+}
+
 /** `rel_path` of a derived row carried over by migration 028 — its file is unknown. */
 const UNKNOWN_REL_PATH = "";
 
@@ -147,6 +223,9 @@ export class DuckDbGraphAnalyticsStore {
    * a re-export barrel, a Ruby call on a typed receiver whose constant the file
    * never names) — so a call pair with no file edge contributes no weight
    * anywhere rather than inventing an edge neither endpoint's fan counted.
+   * A call resolved through a re-export barrel is the exception that HAS an
+   * edge: its weight is credited to the importer's edge into the barrel, one
+   * edge per call pair (`edgeCallWeightCtes`, bd tea-rags-mcp-r8hme.52.1).
    *
    * No endpoint filter: an edge to a file the walk never extracted still counts
    * toward its source's fanOut, exactly as `getFileMetricsBulk` counts it, and
@@ -188,23 +267,12 @@ export class DuckDbGraphAnalyticsStore {
       imported_export_names: string | null;
       reexported_export_names: string | null;
     }>(
-      `SELECT e.source_rel_path, e.target_rel_path, COALESCE(c.call_weight, 0) AS call_weight,
+      `WITH RECURSIVE ${edgeCallWeightCtes("")}
+       SELECT e.source_rel_path, e.target_rel_path, COALESCE(c.call_weight, 0) AS call_weight,
               c.framework_routed_call_weight,
               e.import_text, e.imported_export_names, e.reexported_export_names
        FROM cg_symbols_edges_file e
-       LEFT JOIN (
-         SELECT m.source_rel_path, m.target_rel_path, SUM(COALESCE(m.confidence, 1.0)) AS call_weight,
-                SUM(CASE WHEN ${FRAMEWORK_ROUTED_CALL_SQL} THEN COALESCE(m.confidence, 1.0) ELSE 0 END)
-                  AS framework_routed_call_weight
-         FROM cg_symbols_edges_method m
-         LEFT JOIN (
-           SELECT DISTINCT i.source_rel_path, s.rel_path AS target_rel_path
-           FROM cg_symbols_inheritance i
-           JOIN cg_symbols s ON s.symbol_id = i.ancestor_symbol_id
-         ) inh ON inh.source_rel_path = m.source_rel_path AND inh.target_rel_path = m.target_rel_path
-         WHERE m.target_symbol_id IS NOT NULL
-         GROUP BY m.source_rel_path, m.target_rel_path
-       ) c ON c.source_rel_path = e.source_rel_path AND c.target_rel_path = e.target_rel_path
+       LEFT JOIN edge_call_weight c ON c.source_rel_path = e.source_rel_path AND c.target_rel_path = e.target_rel_path
        ORDER BY e.source_rel_path, e.target_rel_path`,
     );
     return {
@@ -312,14 +380,16 @@ export class DuckDbGraphAnalyticsStore {
       import_text: string | null;
       call_weight: number | string;
     }>(
-      `SELECT e.source_rel_path, e.target_rel_path, e.import_text, COALESCE(c.call_weight, 0) AS call_weight
+      `WITH RECURSIVE ${edgeCallWeightCtes(
+        // Crediting a call needs every file edge of its SOURCE, so an importer
+        // lookup aggregates the calls of each file importing `relPath`.
+        anchor === "source_rel_path"
+          ? "AND m.source_rel_path = ?"
+          : "AND m.source_rel_path IN (SELECT source_rel_path FROM cg_symbols_edges_file WHERE target_rel_path = ?)",
+      )}
+       SELECT e.source_rel_path, e.target_rel_path, e.import_text, COALESCE(c.call_weight, 0) AS call_weight
        FROM cg_symbols_edges_file e
-       LEFT JOIN (
-         SELECT source_rel_path, target_rel_path, SUM(COALESCE(confidence, 1.0)) AS call_weight
-         FROM cg_symbols_edges_method
-         WHERE target_symbol_id IS NOT NULL AND ${anchor} = ?
-         GROUP BY source_rel_path, target_rel_path
-       ) c ON c.source_rel_path = e.source_rel_path AND c.target_rel_path = e.target_rel_path
+       LEFT JOIN edge_call_weight c ON c.source_rel_path = e.source_rel_path AND c.target_rel_path = e.target_rel_path
        WHERE e.${anchor} = ?
        ORDER BY e.source_rel_path, e.target_rel_path`,
       [relPath, relPath],
