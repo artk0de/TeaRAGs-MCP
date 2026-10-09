@@ -1,6 +1,6 @@
 /**
- * SymbolId string surgery used by the DuckDB codegraph reads — the two places
- * this adapter has to take a symbolId apart instead of matching it whole:
+ * SymbolId string surgery for the places that must take a symbolId apart instead of
+ * matching it whole (DuckDB codegraph reads, the graph facade, the codegraph domain):
  * inheritance-driven poly-base expansion (`splitMethodSymbol`) and the
  * `findSymbolChunk` last-segment fallback (`lastNameSegment`).
  *

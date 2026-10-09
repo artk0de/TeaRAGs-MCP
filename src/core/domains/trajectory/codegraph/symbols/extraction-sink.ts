@@ -33,7 +33,7 @@ import { createWriteStream, type WriteStream } from "node:fs";
 import { appendFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname as pathDirname } from "node:path";
 
-import { spillLiveMarkerPath } from "../../../../adapters/duckdb/spill-files.js";
+import { spillLiveMarkerPath } from "../../../../contracts/types/codegraph-spill.js";
 import type {
   CodegraphPass1FileAggregates,
   ExtractionSink,

@@ -11,12 +11,12 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { SchemaMetadataPointStore } from "../../../adapters/qdrant/schema-metadata-point.js";
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import { resolveRateMiss } from "../../../contracts/resolve-rate.js";
+import type { GraphDbClientPoolPort } from "../../../contracts/types/codegraph-pool.js";
 import type { EdgeKindCount, MethodEdgeKind, ResolveRunStatsRow } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { PathCollectionResolver } from "../../../contracts/types/registry.js";
@@ -279,7 +279,7 @@ export class StatusModule {
   constructor(
     private readonly qdrant: QdrantManager,
     private readonly snapshotDir?: string,
-    private readonly codegraphPool?: GraphDbClientPool,
+    private readonly codegraphPool?: GraphDbClientPoolPort,
     /**
      * Provider keys of the running composition — the frame of the enrichment
      * health report (bd tea-rags-mcp-x2u65). Supplied by IndexingOps from the

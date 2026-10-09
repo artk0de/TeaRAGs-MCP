@@ -20,8 +20,8 @@
  * is "no alias" rather than a guess.
  */
 
-import { splitMethodSymbol } from "../../../adapters/duckdb/symbol-id-text.js";
 import type { GraphDbClient, SymbolId } from "../../../contracts/types/codegraph.js";
+import { splitMethodSymbol } from "../../../infra/symbolid/index.js";
 import { compareMroPosition, type MroPosition } from "./hierarchy-view.js";
 
 /** The two graph reads the walk needs — direct ancestors and symbol presence. */

@@ -616,41 +616,16 @@ export class CodegraphDaemonRequestAbortedError extends InfraError {
 }
 
 /**
- * The codegraph store cannot be reached from this process right now: the daemon
- * runs another build (stale / skewed), is wedged or unreachable, or the DuckDB
- * file will not open (lock held, unreadable). One family, so a consumer whose
- * codegraph read is OPTIONAL (find_symbol's collapsed-symbol fallback) degrades
- * exactly on it and lets every other failure propagate (bd tea-rags-mcp-a43tr).
- * A new acquire-failure class belongs in this union and the predicate below.
+ * The codegraph-unavailable family (bd tea-rags-mcp-a43tr) — daemon stale /
+ * skewed / wedged / unreachable, or the DuckDB file will not open. Membership is
+ * decided by `code` in `contracts/types/codegraph-unavailable.ts`, which domain
+ * consumers import without touching this adapter; re-exported for the adapter's
+ * own callers.
  */
-export type CodegraphUnavailableError =
-  | CodegraphDaemonStaleBuildError
-  | CodegraphClientStaleBuildError
-  | CodegraphClientBuildTreeGoneError
-  | CodegraphDaemonBuildSkewError
-  | CodegraphDaemonExitTimeoutError
-  | CodegraphDaemonUnreachableError
-  | CodegraphDaemonUnresponsiveError
-  | CodegraphDaemonDrainRefusedError
-  | CodegraphDaemonBuildUnavailableError
-  | CodegraphDatabaseHeldByForeignDaemonError
-  | DuckDbOpenFailedError;
-
-export function isCodegraphUnavailableError(err: unknown): err is CodegraphUnavailableError {
-  return (
-    err instanceof CodegraphDaemonStaleBuildError ||
-    err instanceof CodegraphClientStaleBuildError ||
-    err instanceof CodegraphClientBuildTreeGoneError ||
-    err instanceof CodegraphDaemonBuildSkewError ||
-    err instanceof CodegraphDaemonExitTimeoutError ||
-    err instanceof CodegraphDaemonUnreachableError ||
-    err instanceof CodegraphDaemonUnresponsiveError ||
-    err instanceof CodegraphDaemonDrainRefusedError ||
-    err instanceof CodegraphDaemonBuildUnavailableError ||
-    err instanceof CodegraphDatabaseHeldByForeignDaemonError ||
-    err instanceof DuckDbOpenFailedError
-  );
-}
+export {
+  isCodegraphUnavailableError,
+  type CodegraphUnavailableError,
+} from "../../contracts/types/codegraph-unavailable.js";
 
 /**
  * A streamed DuckDB result ended before the rows it had to deliver (bd

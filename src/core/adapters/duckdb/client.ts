@@ -124,8 +124,6 @@ import { DuckDbTypeNameStore } from "./type-name-store.js";
 // exposes the primitives (listAdjacency, replaceCycles, replacePageRanks)
 // the domain orchestrator drives.
 
-export { splitMethodSymbol } from "./symbol-id-text.js";
-
 /**
  * Construction options for {@link DuckDbGraphClient}. Everything they configure
  * — the DB file, its access mode, the resource ceiling — belongs to the

@@ -31,6 +31,7 @@
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import type { CollectionGraphHandle, GraphDbClientPoolPort } from "../../contracts/types/codegraph-pool.js";
 import type { CallResolver, GlobalSymbolTable, GraphDbClient } from "../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
 import type { DatabaseMigrationApplier } from "../../contracts/types/migration.js";
@@ -300,12 +301,9 @@ interface DaemonClientEntry {
   symbolTable: GlobalSymbolTable;
 }
 
-export interface CollectionGraphHandle {
-  graphDb: GraphDbClient;
-  symbolTable: GlobalSymbolTable;
-}
+export type { CollectionGraphHandle };
 
-export class GraphDbClientPool {
+export class GraphDbClientPool implements GraphDbClientPoolPort {
   /**
    * Path layout of the per-collection DuckDB files. Delegated rather than
    * duplicated so the purge path — which must NOT construct a pool, see

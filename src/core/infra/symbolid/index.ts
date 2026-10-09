@@ -16,3 +16,4 @@ export {
 } from "./const-bound-function.js";
 export { classExpressionName, enclosingClassScopeNames } from "./class-scope.js";
 export { enclosingFactoryScopeNames } from "./factory-returned-literal.js";
+export { lastNameSegment, splitMethodSymbol } from "./symbol-id-text.js";

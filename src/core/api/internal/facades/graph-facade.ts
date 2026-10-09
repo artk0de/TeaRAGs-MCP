@@ -27,7 +27,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { splitMethodSymbol } from "../../../adapters/duckdb/client.js";
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type {
   PersistedSymbolLineRanges,
@@ -45,6 +44,7 @@ import {
   type InheritedMemberGraph,
 } from "../../../domains/trajectory/codegraph/inherited-member-definer.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
+import { splitMethodSymbol } from "../../../infra/symbolid/index.js";
 import type {
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
