@@ -300,38 +300,43 @@ still miss the edge, so check before claiming "no link".
 
 `detector: "shotgunSurgery"`, SAME components as SDP. ONE logical change
 reaching into ≥ k components, spread recurring beyond chance, components in ≥ 2
-structural islands. Logical change = burst's commits joined by shared task id
-(commit message) ONLY; else one commit. Shared files and dependency edges never
-join (hub files chain whole bursts). Burst supports k-set only if ONE change
-held all k; each burst once. Burst union never unit (parallel sessions chain
-unrelated commits). Silent coupling's N-way sibling: pair = file level, MERGE =
-two components, this = one change's fan-out. Never filtered by file type or hub
-size. Knot mode omits it.
+structural islands. Logical change = commits joined by shared task id (commit
+message) ONLY, across bursts; else one commit. Umbrella/epic ids (breadth =
+distinct ids on their commits above a Tukey fence) join nothing. Shared files
+and dependency edges never join (hub files chain whole bursts). Support =
+distinct changes where ONE change held all k; changes sharing a burst once.
+Burst union never unit (parallel sessions chain unrelated commits). Each change
+weighs 1 up to typical width T, C(T,k)/C(w,k) beyond — sweeps say ~nothing about
+one triple; null = same weighted count. Silent coupling's N-way sibling: pair =
+file level, MERGE = two components, this = one change's fan-out. Never filtered
+by file type or hub size. Knot mode omits it.
 
-| Summary field (`summary.shotgunSurgery`)  | Read as                                                                                                              |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `built`                                   | `false` = no co-change build / no bundle membership (`reason`, same as splitMerge) → NOT judged, never report "none" |
-| `widthThreshold` / `widthThresholdMethod` | k = narrowest spread judged; `otsu` = majority-floored Otsu over per-commit widths, `floor` = 3 (never below 3)      |
-| `burstCount`                              | bursts touching a component — support unit (once per burst)                                                          |
-| `unitCount` / `wideUnitCount`             | per-commit component sets (same set in one burst once) / those spanning ≥ k — few wide = little evidence             |
-| `familySize` / `q`                        | BH family C(n, k): every set of exactly k components among n changed in ≥ 2 bursts; FDR q — multiple-testing price   |
-| `candidateSetCount` / `admittedSetCount`  | k-sets wide commits of ≥ 2 bursts held whole (tested) / k-sets passing BH over the null                              |
-| `spreadCount`                             | maximal spreads admitted k-sets merge into: closure = components EVERY holding commit touched; support = k-set's     |
-| `explainedCount`                          | spreads dropped: one structural island (dependency or specific neighbour) explains                                   |
-| `outOfScopeSetCount`                      | scoped only: unexplained spreads with no exemplar file in `pathPattern`                                              |
+| Summary field (`summary.shotgunSurgery`)    | Read as                                                                                                              |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `built`                                     | `false` = no co-change build / no bundle membership (`reason`, same as splitMerge) → NOT judged, never report "none" |
+| `widthThreshold` / `widthThresholdMethod`   | k = narrowest spread judged; `otsu` = majority-floored Otsu over per-commit widths, `floor` = 3 (never below 3)      |
+| `burstCount`                                | bursts touching a component — the null's degree unit                                                                 |
+| `unitCount` / `wideUnitCount`               | logical-change component sets (same set sharing a burst once) / those spanning ≥ k — few wide = little evidence      |
+| `umbrellaTaskIdCut` / `umbrellaTaskIdCount` | breadth fence (distinct ids an id's commits carry) / ids above it, left out of the join                              |
+| `typicalChangeWidth`                        | T: Tukey fence over change widths — wider changes weigh C(T,k)/C(w,k)                                                |
+| `familySize` / `q`                          | BH family C(n, k): every set of exactly k components among n changed in ≥ 2 bursts; FDR q — multiple-testing price   |
+| `candidateSetCount` / `admittedSetCount`    | k-sets wide commits of ≥ 2 bursts held whole (tested) / k-sets passing BH over the null                              |
+| `spreadCount`                               | maximal spreads admitted k-sets merge into: closure = components EVERY holding commit touched; support = k-set's     |
+| `explainedCount`                            | spreads dropped: one structural island (dependency or specific neighbour) explains                                   |
+| `outOfScopeSetCount`                        | scoped only: unexplained spreads with no exemplar file in `pathPattern`                                              |
 
 Evidence per line:
 
-| Evidence                      | Read as                                                                                                            |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `support` / `expectedSupport` | bursts with a commit holding whole spread vs λ null predicts (burst degrees + commit widths); `support` ≫ λ = real |
-| `strength`                    | Wilson lower bound of support over component changes                                                               |
-| `islands`                     | structurally connected groups (≥ 2) — where the missing link would go                                              |
-| `exemplarFiles`               | per component the file the holding commits touched most                                                            |
-| `carrierFiles`                | per component (aligned) files the holding changes touched, most-touched first (≤ 5) — recipe input                 |
-| `sampleCommits`               | shas to cite — latest commit of each holding change, one per supporting burst                                      |
-| `sampleChanges`               | per sample (aligned) every sha of that logical change — `git show` them to see what one change edited              |
-| `drillDown.hint`              | run verbatim (`find_co_changed`) for file-level partners                                                           |
+| Evidence                                          | Read as                                                                                                                      |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `support` / `weightedSupport` / `expectedSupport` | distinct changes holding whole spread / Σ their specificity weights / E[weighted] under the null; weighted ≫ expected = real |
+| `strength`                                        | Wilson lower bound of support over component changes                                                                         |
+| `islands`                                         | structurally connected groups (≥ 2) — where the missing link would go                                                        |
+| `exemplarFiles`                                   | per component the file the holding commits touched most                                                                      |
+| `carrierFiles`                                    | per component (aligned) files the holding changes touched, most-touched first (≤ 5) — recipe input                           |
+| `sampleCommits`                                   | shas to cite — latest commit of each holding change, one per supporting burst                                                |
+| `sampleChanges`                                   | per sample (aligned) every sha of that logical change — `git show` them to see what one change edited                        |
+| `drillDown.hint`                                  | run verbatim (`find_co_changed`) for file-level partners                                                                     |
 
 Explain EVERY reported spread before recommending (server judges recurrence, not
 meaning — semantics is agent's job). Recipe, per spread:

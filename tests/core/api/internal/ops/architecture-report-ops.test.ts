@@ -975,6 +975,8 @@ describe("ArchitectureReportOps#build — shotgunSurgery (bd tea-rags-mcp-r8hme.
       built: true,
       head: "abc123",
       unitCount: 23,
+      umbrellaTaskIdCount: 0,
+      typicalChangeWidth: expect.any(Number),
       wideUnitCount: 3,
       widthThreshold: 3,
       admittedSetCount: 1,
@@ -989,6 +991,7 @@ describe("ArchitectureReportOps#build — shotgunSurgery (bd tea-rags-mcp-r8hme.
         components: ["app", "other", "users"],
         evidence: expect.objectContaining({
           support: 3,
+          weightedSupport: 3,
           islands: [["app"], ["other"], ["users"]],
           exemplarFiles: ["app/c1.ts", "other/o.ts", "users/u1.ts"],
           drillDown: expect.objectContaining({

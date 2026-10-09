@@ -1377,9 +1377,11 @@ export interface ShotgunSurgeryArchitectureViolation {
   components: string[];
   subject: string;
   evidence: {
-    /** Author bursts with a commit that held the whole spread — each burst once. */
+    /** Distinct logical changes that held the whole spread (changes sharing a burst once). */
     support: number;
-    /** λ the null predicts from the components' burst counts and the commits' widths, 3 decimals. */
+    /** Σ over those changes of their specificity weight (1 up to the typical width T, C(T, m) / C(w, m) beyond), 3 decimals. */
+    weightedSupport: number;
+    /** E[weightedSupport] under component independence (burst degrees + change widths), 3 decimals. */
     expectedSupport: number;
     /** Wilson lower bound of support over the least- / most-changed component's changes (larger), 3 decimals. */
     strength: number;
@@ -1417,10 +1419,16 @@ export interface ShotgunSurgeryReportSummary {
   reason?: ShotgunSurgeryAbsentReason;
   head?: string;
   builtAt?: number;
-  /** Author bursts touching ≥ 1 partitioned component — the support unit: a burst counts once, and only when one of its commits held the whole set. */
+  /** Author bursts touching ≥ 1 partitioned component — the null's degree unit (n_c, burst widths). */
   burstCount?: number;
-  /** Per-commit component sets, identical sets of one burst once — the width model's population. */
+  /** Logical changes' component sets (commits joined by a non-umbrella task id across bursts; identical sets sharing a burst once) — the width model's population. */
   unitCount?: number;
+  /** Tukey fence over log2 of each task id's breadth (distinct ids on its commits): an id above it is an umbrella and joins nothing. */
+  umbrellaTaskIdCut?: number;
+  /** Task ids above `umbrellaTaskIdCut`. */
+  umbrellaTaskIdCount?: number;
+  /** T: Tukey fence over the units' widths — a change up to T components weighs 1, a wider one C(T, m) / C(w, m). */
+  typicalChangeWidth?: number;
   /** Per-commit sets spanning ≥ `widthThreshold` components. */
   wideUnitCount?: number;
   /** k: the narrowest spread judged — Otsu over per-commit widths, never below 3. */
