@@ -156,12 +156,61 @@ describe("detectComponentStableDependencyViolations", () => {
   /**
    * The composition root assembles unstable concretes — that is its JOB — so
    * an SDP delta sourced from one is triage data, not a blind verdict (bd
-   * tea-rags-mcp-r8hme.51, design on tea-rags-mcp-89k7k.9). The roots are the
-   * DECLARED ones (`.claude/rules/domain-boundaries.md`), fixture uses the
-   * real component dirs.
+   * tea-rags-mcp-r8hme.51, design on tea-rags-mcp-89k7k.9). Since bd
+   * tea-rags-mcp-r8hme.52.4 the root is MEASURED — a component holding an
+   * entry facade (`ArchitectureComponent.entryFacade`) — never a declared
+   * path list: the user retired the declared lists, so a component at the
+   * former declared path carries no annotation by its name alone.
    */
-  describe("a violation sourced from a declared composition root carries the annotation", () => {
-    /** Same uphill shape as `stableCoreOnVolatileLib`, source at the real root. */
+  describe("a violation sourced from a component holding an entry facade carries the annotation", () => {
+    /**
+     * Same uphill shape as `stableCoreOnVolatileLib`: `root/` holds a facade
+     * nothing imports (`root/index.ts`) and two wiring files `root/app/` (its
+     * own subtree, so not external to the module) depends on — Ca 6, Ce 2.
+     */
+    function entryRootOnVolatileLib(): FileDependencyGraph {
+      return merge(
+        {
+          files: [file("root/index.ts"), file("root/a.ts"), file("root/b.ts")],
+          edges: [
+            edge("root/index.ts", "root/a.ts"),
+            edge("root/a.ts", "lib/f1.ts", 2),
+            edge("root/b.ts", "lib/f2.ts"),
+          ],
+        },
+        files("root/app", 6, (p) => edge(p, "root/b.ts")),
+        files("lib", 5, (p) => edge(p, "vendor/v.ts")),
+        { files: [file("vendor/v.ts"), file("other/o.ts")], edges: [edge("other/o.ts", "lib/f3.ts")] },
+      );
+    }
+    const entryRoot = {
+      moduleDir: "root",
+      facadeRelPath: "root/index.ts",
+      externalImporterCount: 0,
+      facadeImporterCount: 0,
+      deepImporterCount: 0,
+      adoption: 0,
+      status: "too-few-importers" as const,
+    };
+    const judgeEntry = (graph: FileDependencyGraph) =>
+      detectComponentStableDependencyViolations(buildComponentGraph(graph, [entryRoot]));
+
+    it("stamps compositionRoot: true on the violation", () => {
+      const report = judgeEntry(entryRootOnVolatileLib());
+
+      expect(report.violations).toHaveLength(1);
+      expect(report.violations[0]?.sourceComponent).toBe("root");
+      expect(report.violations[0]?.compositionRoot).toBe(true);
+    });
+
+    it("keeps the violation reported — annotated, never excluded", () => {
+      const report = judgeEntry(entryRootOnVolatileLib());
+
+      expect(report.summary.violationCount).toBe(1);
+      expect(report.summary.judgedEdgeCount).toBeGreaterThan(0);
+    });
+
+    /** The same shape at the path the retired declared list named, with no entry facade. */
     function bootstrapOnVolatileLib(): FileDependencyGraph {
       return merge(
         {
@@ -177,19 +226,12 @@ describe("detectComponentStableDependencyViolations", () => {
       );
     }
 
-    it("stamps compositionRoot: true on the violation", () => {
+    it("names no root by path: the retired declared root's dir without an entry facade carries no annotation", () => {
       const report = judge(bootstrapOnVolatileLib());
 
       expect(report.violations).toHaveLength(1);
       expect(report.violations[0]?.sourceComponent).toBe("src/bootstrap");
-      expect(report.violations[0]?.compositionRoot).toBe(true);
-    });
-
-    it("keeps the violation reported — annotated, never excluded", () => {
-      const report = judge(bootstrapOnVolatileLib());
-
-      expect(report.summary.violationCount).toBe(1);
-      expect(report.summary.judgedEdgeCount).toBeGreaterThan(0);
+      expect("compositionRoot" in (report.violations[0] ?? {})).toBe(false);
     });
 
     it("leaves the field absent on a non-root source — not undefined-valued noise", () => {
@@ -200,9 +242,7 @@ describe("detectComponentStableDependencyViolations", () => {
       expect("compositionRoot" in (violation ?? {})).toBe(false);
     });
 
-    it("annotates a source component nested inside a declared root", () => {
-      // bootstrap/config assembles foundation internals (the config/schemas ->
-      // churn-walk edge of the bead): still the root's job.
+    it("names no root by path for a dir nested under the retired declared root either", () => {
       const graph = merge(
         {
           files: [file("src/bootstrap/config/a.ts"), file("src/bootstrap/config/b.ts")],
@@ -219,7 +259,7 @@ describe("detectComponentStableDependencyViolations", () => {
       const report = judge(graph);
 
       expect(report.violations[0]?.sourceComponent).toBe("src/bootstrap/config");
-      expect(report.violations[0]?.compositionRoot).toBe(true);
+      expect("compositionRoot" in (report.violations[0] ?? {})).toBe(false);
     });
   });
 

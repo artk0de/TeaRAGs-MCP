@@ -394,7 +394,11 @@ export interface ArchitectureComponent {
    * The component holds a module facade nothing in the project imports: no
    * file edge reaches the facade file (facade aggregation included) and no
    * external file reaches the module. A process or package entry — a root by
-   * measurement, never by name (bd tea-rags-mcp-r8hme.52.2). Absent otherwise.
+   * measurement, never by name (bd tea-rags-mcp-r8hme.52.2). Measured over
+   * every module whatever its adoption status, so a directory component can
+   * carry it. The component holds only the entry's OWN directory: an entry
+   * owns no subtree (bd tea-rags-mcp-r8hme.52.4). The one source of the
+   * `compositionRoot` / `entryPoint` annotations. Absent otherwise.
    */
   entryFacade?: true;
 }
@@ -489,9 +493,10 @@ export interface ComponentStableDependencyViolation {
   /** The carrying file edges, heaviest call weight first, capped at `COMPONENT_EVIDENCE_FILE_EDGE_LIMIT`. */
   fileEdges: ComponentDependencyFileEdge[];
   /**
-   * The source component is, or lives inside, a declared composition root
-   * (`DECLARED_COMPOSITION_ROOT_COMPONENTS`, bd tea-rags-mcp-r8hme.51): the
-   * report's `StableDependencyViolationEvidence.compositionRoot` carries the
+   * The source component is a composition root (bd tea-rags-mcp-r8hme.51) —
+   * MEASURED: it holds an entry facade (`ArchitectureComponent.entryFacade`,
+   * bd tea-rags-mcp-r8hme.52.4). The report's
+   * `StableDependencyViolationEvidence.compositionRoot` carries the
    * contract-side meaning. Present only when true.
    */
   compositionRoot?: true;
@@ -602,9 +607,10 @@ export interface MainSequenceViolation {
   /** Present when the volatility gate ran and a file of the component carries a reading. */
   volatility?: MainSequenceComponentVolatility;
   /**
-   * The component is, or lives inside, a declared entry surface
-   * (`DECLARED_ENTRY_POINT_COMPONENTS`, bd tea-rags-mcp-zh3l0): the unstable
-   * end of the main sequence is where an entry component BELONGS, so the
+   * The component is an entry surface (bd tea-rags-mcp-zh3l0) — MEASURED: it
+   * holds an entry facade (`ArchitectureComponent.entryFacade`, bd
+   * tea-rags-mcp-r8hme.52.4). The unstable end of the main sequence is where
+   * an entry component BELONGS, so the
    * distance is placement, not defect. The violation still stands — triage
    * data, never a suppression (the `compositionRoot` spirit). Present only
    * when true.
@@ -704,7 +710,7 @@ export interface HubLikeDependencyViolation {
   /** Components reaching the hub through component dependencies, transitively. */
   transitiveImpact: number;
   churn?: HubLikeDependencyChurn;
-  /** The component is, or lives inside, a declared composition root. Present only when true. */
+  /** The hub holds an entry facade — a composition root by measurement. Present only when true. */
   compositionRoot?: true;
 }
 

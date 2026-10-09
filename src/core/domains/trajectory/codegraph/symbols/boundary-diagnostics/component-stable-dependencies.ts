@@ -18,57 +18,6 @@ export const COMPONENT_EVIDENCE_FILE_EDGE_LIMIT = 5;
 const INSTABILITY_DELTA_EPSILON = 1e-9;
 
 /**
- * The composition roots the layer rule declares — `.claude/rules/domain-boundaries.md`,
- * "Composition roots": `bootstrap/` is the application composition root above
- * `api/` (parses config, builds AppContext, hands the wired `App` to cli/mcp),
- * `core/api/` is the core one (assembles deps from every layer below, wires
- * via DI). Paths are repo-relative, the form a component dir carries.
- *
- * DECLARED, never derived: membership is this list, and the layer rule is its
- * source of truth — no heuristic rediscovers it (bd tea-rags-mcp-r8hme.51,
- * design call on tea-rags-mcp-89k7k.9). Assembling unstable concretes IS the
- * root's job, so an SDP delta sourced from one is annotated
- * (`compositionRoot: true` on the violation) rather than left a blind finding;
- * the violation stays REPORTED — the annotation is triage data, never a
- * suppression, exactly the `foundationTerminal` spirit.
- */
-export const DECLARED_COMPOSITION_ROOT_COMPONENTS: readonly string[] = ["src/bootstrap", "src/core/api"];
-
-/** Whether a component dir is a declared composition root, or lives inside one. */
-export function isDeclaredCompositionRoot(componentDir: string): boolean {
-  return DECLARED_COMPOSITION_ROOT_COMPONENTS.some(
-    (root) => componentDir === root || componentDir.startsWith(`${root}/`),
-  );
-}
-
-/**
- * The entry surfaces the layer rule declares — `.claude/rules/domain-boundaries.md`,
- * layer diagram: `src/cli` (process entry; its commands are composition
- * actors over the api assembly barrel) and `src/mcp` (the tool surface over
- * `core/api/public`). Nothing imports either, so an entry component's
- * instability — and a diff-window delta on it — is placement, not defect: the
- * unstable end of the main sequence is where an entry BELONGS. Paths are
- * repo-relative, the form a component dir carries.
- *
- * DECLARED, never derived, the same rule as
- * `DECLARED_COMPOSITION_ROOT_COMPONENTS` above: membership is this list and
- * the layer rule is its source of truth — no heuristic rediscovers it (bd
- * tea-rags-mcp-zh3l0). Maintenance cost, accepted: a new top-level entry
- * surface (a second binary, a lambda handler) joins this list by hand or
- * stays unannotated. A mainSequence finding for one carries `entryPoint:
- * true` — annotated, still REPORTED, triage data never a suppression, exactly
- * the `foundationTerminal` / `compositionRoot` spirit.
- */
-export const DECLARED_ENTRY_POINT_COMPONENTS: readonly string[] = ["src/cli", "src/mcp"];
-
-/** Whether a component dir is a declared entry surface, or lives inside one. */
-export function isDeclaredEntryPoint(componentDir: string): boolean {
-  return DECLARED_ENTRY_POINT_COMPONENTS.some(
-    (entrySurface) => componentDir === entrySurface || componentDir.startsWith(`${entrySurface}/`),
-  );
-}
-
-/**
  * Stable Dependencies Principle on components (bd tea-rags-mcp-r8hme.7) — the
  * granularity Martin defined it for. File-level instability with Ca + Ce in
  * single digits swung by one edge; a component's counts pool its files.
@@ -93,9 +42,14 @@ export function isDeclaredEntryPoint(componentDir: string): boolean {
  * Coupling is counted over the whole graph; `sourcePathPattern` only decides
  * which dependencies are judged. File-level exclusions (self, unwalked,
  * intra-component, facade aggregation) come from the component graph and are
- * reported alongside. A dependency whose source is a declared composition root
- * is judged like any other — it is ANNOTATED, not excluded (see
- * {@link DECLARED_COMPOSITION_ROOT_COMPONENTS}).
+ * reported alongside. A dependency whose source is a composition root is
+ * judged like any other — it is ANNOTATED (`compositionRoot: true`), not
+ * excluded: assembling unstable concretes IS the root's job, so the delta is
+ * triage data, never a suppression (bd tea-rags-mcp-r8hme.51). The root is
+ * MEASURED — a component holding an entry facade
+ * (`ArchitectureComponent.entryFacade`) — never a declared path list (bd
+ * tea-rags-mcp-r8hme.52.4 retired it: a list of this repo's directories in a
+ * generic detector names nothing on any other corpus).
  */
 export function detectComponentStableDependencyViolations(
   componentGraph: ComponentGraph,
@@ -144,9 +98,9 @@ export function detectComponentStableDependencyViolations(
           directoryRelation: dependency.directoryRelation,
           fileEdgeCount: dependency.fileEdges.length,
           fileEdges: evidenceFileEdges(dependency),
-          // The root assembling unstable concretes is the root's job (see
-          // DECLARED_COMPOSITION_ROOT_COMPONENTS): annotated, still reported.
-          ...(isDeclaredCompositionRoot(source.componentDir) ? { compositionRoot: true as const } : {}),
+          // The root assembling unstable concretes is the root's job; the root
+          // is the measured entry-facade component: annotated, still reported.
+          ...(source.entryFacade ? { compositionRoot: true as const } : {}),
         });
       }
     }

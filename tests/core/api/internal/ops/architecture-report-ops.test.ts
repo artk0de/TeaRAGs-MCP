@@ -217,14 +217,22 @@ describe("ArchitectureReportOps#build", () => {
   });
 
   // The response shape must carry the detector's composition-root annotation:
-  // an SDP delta sourced from the declared composition root is triage data (bd
+  // an SDP delta sourced from a composition root is triage data (bd
   // tea-rags-mcp-r8hme.51) — the mapper dropping it would repeat the 0qaht.45
-  // gap, so the survival is pinned by exact shape.
+  // gap, so the survival is pinned by exact shape. The root is MEASURED (bd
+  // tea-rags-mcp-r8hme.52.4): `src/boot/index.ts` is a facade nothing imports,
+  // and the importers of `src/boot/b.ts` live inside the module's own subtree.
   it("carries the composition-root annotation through to the SDP evidence (tea-rags-mcp-r8hme.51)", async () => {
-    const files = [file("src/bootstrap/a.ts"), file("src/bootstrap/b.ts"), file("vendor/v.ts"), file("other/o.ts")];
+    const files = [
+      file("src/boot/index.ts"),
+      file("src/boot/a.ts"),
+      file("src/boot/b.ts"),
+      file("vendor/v.ts"),
+      file("other/o.ts"),
+    ];
     const edges: FileDependencyGraph["edges"] = [
-      { sourceRelPath: "src/bootstrap/a.ts", targetRelPath: "src/core/lib/f1.ts", callWeight: 2 },
-      { sourceRelPath: "src/bootstrap/b.ts", targetRelPath: "src/core/lib/f2.ts", callWeight: 1 },
+      { sourceRelPath: "src/boot/a.ts", targetRelPath: "src/core/lib/f1.ts", callWeight: 2 },
+      { sourceRelPath: "src/boot/b.ts", targetRelPath: "src/core/lib/f2.ts", callWeight: 1 },
       { sourceRelPath: "src/core/lib/f1.ts", targetRelPath: "vendor/v.ts", callWeight: 1 },
       { sourceRelPath: "src/core/lib/f2.ts", targetRelPath: "vendor/v.ts", callWeight: 1 },
       { sourceRelPath: "src/core/lib/f3.ts", targetRelPath: "vendor/v.ts", callWeight: 1 },
@@ -232,12 +240,12 @@ describe("ArchitectureReportOps#build", () => {
       { sourceRelPath: "src/core/lib/f5.ts", targetRelPath: "vendor/v.ts", callWeight: 1 },
       { sourceRelPath: "other/o.ts", targetRelPath: "src/core/lib/f3.ts", callWeight: 1 },
     ];
-    // Six importers give src/bootstrap the support floor room: Ca 6, Ce 2,
+    // Six importers give src/boot the support floor room: Ca 6, Ce 2,
     // I = 2/8 against the lib's 5/8 — the same uphill shape the detector-level
     // fixture uses.
     for (let i = 1; i <= 6; i++) {
-      files.push(file(`app/c${i}.ts`));
-      edges.push({ sourceRelPath: `app/c${i}.ts`, targetRelPath: "src/bootstrap/b.ts", callWeight: 1 });
+      files.push(file(`src/boot/app/c${i}.ts`));
+      edges.push({ sourceRelPath: `src/boot/app/c${i}.ts`, targetRelPath: "src/boot/b.ts", callWeight: 1 });
     }
     for (let i = 1; i <= 5; i++) files.push(file(`src/core/lib/f${i}.ts`));
     const g: FileDependencyGraph = { files, edges };
@@ -245,7 +253,7 @@ describe("ArchitectureReportOps#build", () => {
     const report = await new ArchitectureReportOps().build(graphDb(g), {});
     const violation = report.violations.find((v) => v.detector === "stableDependencies");
 
-    expect(violation && "sourceComponent" in violation ? violation.sourceComponent : undefined).toBe("src/bootstrap");
+    expect(violation && "sourceComponent" in violation ? violation.sourceComponent : undefined).toBe("src/boot");
     expect(
       violation && "evidence" in violation ? violation.evidence : expect.fail("no stableDependencies violation"),
     ).toEqual({
@@ -261,8 +269,8 @@ describe("ArchitectureReportOps#build", () => {
       fileEdgeCount: 2,
       compositionRoot: true,
       fileEdges: [
-        { sourceRelPath: "src/bootstrap/a.ts", targetRelPath: "src/core/lib/f1.ts", callWeight: 2 },
-        { sourceRelPath: "src/bootstrap/b.ts", targetRelPath: "src/core/lib/f2.ts", callWeight: 1 },
+        { sourceRelPath: "src/boot/a.ts", targetRelPath: "src/core/lib/f1.ts", callWeight: 2 },
+        { sourceRelPath: "src/boot/b.ts", targetRelPath: "src/core/lib/f2.ts", callWeight: 1 },
       ],
     });
   });
@@ -1685,25 +1693,29 @@ describe("ArchitectureReportOps#build — mainSequence (bd tea-rags-mcp-r8hme.8)
   });
 
   // The response shape must carry the detector's entry-point annotation: a
-  // mainSequence distance on a declared cli/mcp entry component is placement,
-  // not defect (bd tea-rags-mcp-zh3l0) — the mapper dropping it would repeat
-  // the 0qaht.45 gap, so the survival is pinned by exact shape.
+  // mainSequence distance on an entry component is placement, not defect (bd
+  // tea-rags-mcp-zh3l0) — the mapper dropping it would repeat the 0qaht.45
+  // gap, so the survival is pinned by exact shape. The entry is MEASURED (bd
+  // tea-rags-mcp-r8hme.52.4): `src/tool/index.ts` is a facade nothing imports.
   it("carries the entry-point annotation through to the mainSequence evidence (tea-rags-mcp-zh3l0)", async () => {
     const g = censusGraph();
+    g.files.push({ ...file("src/tool/index.ts"), typeAbstractness: census(1, 0) });
     for (let i = 1; i <= 5; i++) {
-      g.files.push({ ...file(`src/cli/call/f${i}.ts`), typeAbstractness: census(1, 0) });
-      g.edges.push({ sourceRelPath: `src/cli/call/f${i}.ts`, targetRelPath: "vendor/v.ts", callWeight: 1 });
+      g.files.push({ ...file(`src/tool/f${i}.ts`), typeAbstractness: census(1, 0) });
+      g.edges.push({ sourceRelPath: `src/tool/f${i}.ts`, targetRelPath: "vendor/v.ts", callWeight: 1 });
     }
 
     const report = await new ArchitectureReportOps().build(graphDb(g), {});
 
     const mainSequence = report.violations.filter((v) => v.detector === "mainSequence");
     expect(mainSequence).toHaveLength(3);
-    const cli = mainSequence.find((v) => "component" in v && v.component === "src/cli/call");
-    expect(cli && "evidence" in cli ? cli.evidence : expect.fail("no cli mainSequence violation")).toMatchObject({
+    const entry = mainSequence.find((v) => "component" in v && v.component === "src/tool");
+    expect(
+      entry && "evidence" in entry ? entry.evidence : expect.fail("no entry mainSequence violation"),
+    ).toMatchObject({
       entryPoint: true,
     });
-    for (const violation of mainSequence.filter((v) => !("component" in v && v.component === "src/cli/call"))) {
+    for (const violation of mainSequence.filter((v) => !("component" in v && v.component === "src/tool"))) {
       expect("evidence" in violation && "entryPoint" in violation.evidence).toBe(false);
     }
   });

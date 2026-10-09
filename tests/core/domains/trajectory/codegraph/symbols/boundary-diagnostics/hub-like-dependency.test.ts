@@ -199,7 +199,19 @@ describe("detectHubLikeDependencies", () => {
     expect(judge(graph(), { sourcePathPattern: "hub/**" }).violations.map((v) => v.component)).toEqual(["hub"]);
   });
 
-  it("marks a hub that is a declared composition root, without suppressing it", () => {
+  // bd tea-rags-mcp-r8hme.52.4: the composition root is MEASURED — a component
+  // holding an entry facade — never a declared path list (retired by the user).
+  it("marks a hub that holds an entry facade as a composition root, without suppressing it", () => {
+    const components = buildComponentGraph(graph(), []);
+    const hubComponent = components.components.get("hub");
+    if (!hubComponent) throw new Error("fixture: hub component missing");
+    components.components.set("hub", { ...hubComponent, entryFacade: true });
+
+    const [hub] = detectHubLikeDependencies(components).violations;
+    expect(hub).toMatchObject({ component: "hub", compositionRoot: true });
+  });
+
+  it("names no hub a composition root by path: the retired declared root's dir carries no annotation", () => {
     const g = graph();
     const renamed: FileDependencyGraph = {
       files: g.files.map((f) => ({ ...f, relPath: f.relPath.replace(/^hub\//, "src/core/api/") })),
@@ -210,6 +222,7 @@ describe("detectHubLikeDependencies", () => {
       })),
     };
     const [hub] = judge(renamed).violations;
-    expect(hub).toMatchObject({ component: "src/core/api", compositionRoot: true });
+    expect(hub.component).toBe("src/core/api");
+    expect("compositionRoot" in hub).toBe(false);
   });
 });

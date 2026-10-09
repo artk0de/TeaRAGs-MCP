@@ -340,3 +340,110 @@ describe("buildComponentGraph — facade aggregation record (bd tea-rags-mcp-r8h
     expect(components.components.get("lib/inner")).not.toHaveProperty("entryFacade");
   });
 });
+
+/**
+ * An entry module (bd tea-rags-mcp-r8hme.52.4) is a root, not a domain
+ * boundary: its facade is the target of no file edge and no external file
+ * reaches it. It must not claim the orphan files below it — on the self-index
+ * `src/index.ts` owned bootstrap, both adapters and the infra root, 105 files
+ * with Ca 244, and sat in a 52-member knot. Its own directory's files stay one
+ * component, marked `entryFacade`; the files under it fall to their own
+ * directories (or nearer facades), as if the entry were absent.
+ */
+describe("entry facades do not own a subtree (bd tea-rags-mcp-r8hme.52.4)", () => {
+  function entryModule(moduleDir: string, status: FacadeModuleAssessment["status"]): FacadeModuleAssessment {
+    return { ...module(moduleDir, status), externalImporterCount: 0, facadeImporterCount: 0, adoption: 0 };
+  }
+
+  /** `root/index.ts` imports nothing-imports-it wiring over `root/boot` and `root/infra`. */
+  function entryOverOrphans(): FileDependencyGraph {
+    return {
+      files: [file("root/index.ts"), file("root/main.ts"), file("root/boot/a.ts"), file("root/infra/b.ts")],
+      edges: [
+        edge("root/index.ts", "root/main.ts"),
+        edge("root/main.ts", "root/boot/a.ts"),
+        edge("root/boot/a.ts", "root/infra/b.ts"),
+      ],
+    };
+  }
+
+  it("lets the orphan directories under an entry facade become their own components", () => {
+    const components = buildDomainComponentGraph(entryOverOrphans(), [entryModule("root", "too-few-importers")]);
+
+    expect(Object.fromEntries(components.componentOf)).toEqual({
+      "root/index.ts": "root",
+      "root/main.ts": "root",
+      "root/boot/a.ts": "root/boot",
+      "root/infra/b.ts": "root/infra",
+    });
+    expect(components.components.get("root")).toMatchObject({ kind: "module", entryFacade: true, fileCount: 2 });
+    expect(components.components.get("root/boot")).not.toHaveProperty("entryFacade");
+  });
+
+  it("still lets a nearer facade under the entry own its subtree", () => {
+    const g = entryOverOrphans();
+    g.files.push(file("root/boot/index.ts"), file("root/boot/deep/c.ts"));
+    g.edges.push(edge("root/main.ts", "root/boot/index.ts"), edge("root/boot/index.ts", "root/boot/deep/c.ts"));
+
+    const components = buildDomainComponentGraph(g, [
+      entryModule("root", "too-few-importers"),
+      { ...module("root/boot", "too-few-importers"), externalImporterCount: 1 },
+    ]);
+
+    expect(components.componentOf.get("root/boot/deep/c.ts")).toBe("root/boot");
+    expect(components.componentOf.get("root/infra/b.ts")).toBe("root/infra");
+  });
+
+  it("keeps a facade with no importer of its facade file but deep external importers owning its subtree", () => {
+    const g: FileDependencyGraph = {
+      files: [file("lib/index.ts"), file("lib/deep/x.ts"), file("app/a.ts")],
+      edges: [edge("app/a.ts", "lib/deep/x.ts")],
+    };
+
+    const components = buildDomainComponentGraph(g, [module("lib", "facade-not-adopted")]);
+
+    expect(components.componentOf.get("lib/deep/x.ts")).toBe("lib");
+    expect(components.components.get("lib")).not.toHaveProperty("entryFacade");
+  });
+
+  it("keeps a facade reached only through its parent facade's re-export owning its subtree", () => {
+    const g: FileDependencyGraph = {
+      files: [file("lib/index.ts"), file("lib/inner/index.ts"), file("lib/inner/deep/z.ts"), file("app/a.ts")],
+      edges: [
+        edge("app/a.ts", "lib/index.ts"),
+        edge("lib/index.ts", "lib/inner/index.ts", { reexportedExportNames: ["Z"] }),
+        edge("lib/inner/index.ts", "lib/inner/deep/z.ts"),
+      ],
+    };
+
+    const components = buildDomainComponentGraph(g, [
+      module("lib", "active"),
+      entryModule("lib/inner", "too-few-importers"),
+    ]);
+
+    expect(components.componentOf.get("lib/inner/deep/z.ts")).toBe("lib/inner");
+  });
+
+  it("leaves a package with no facade file (Go) owning its subtree", () => {
+    const g: FileDependencyGraph = {
+      files: [file("pkg/a.go"), file("pkg/sub/b.go")],
+      edges: [edge("pkg/a.go", "pkg/sub/b.go")],
+    };
+    const goPackage: FacadeModuleAssessment = {
+      ...entryModule("pkg", "language-enforced"),
+      facadeRelPath: null,
+    };
+
+    const components = buildDomainComponentGraph(g, [goPackage]);
+
+    expect(components.componentOf.get("pkg/sub/b.go")).toBe("pkg");
+    expect(components.components.get("pkg")).not.toHaveProperty("entryFacade");
+  });
+
+  it("marks the entry on a partition whose statuses do not admit its module — measured, not status-gated", () => {
+    const components = buildComponentGraph(entryOverOrphans(), [entryModule("root", "too-few-importers")]);
+
+    expect(components.components.get("root")).toMatchObject({ kind: "directory", entryFacade: true });
+    expect(components.componentOf.get("root/boot/a.ts")).toBe("root/boot");
+  });
+});

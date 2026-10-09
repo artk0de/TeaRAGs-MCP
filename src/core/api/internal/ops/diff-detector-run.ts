@@ -61,8 +61,6 @@ import {
 } from "../../../contracts/types/diff-detector-finding.js";
 import {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
-  isDeclaredCompositionRoot,
-  isDeclaredEntryPoint,
   type ReviewEdgeOverlay,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import {
@@ -131,6 +129,13 @@ export interface DiffDetectorCatalog {
         afferentCount?: number;
         /** Ce: distinct files inside the component with an edge out — see {@link afferentCount}. */
         efferentCount?: number;
+        /**
+         * The component holds a module facade nothing in the project imports
+         * (the report's own `ArchitectureComponent.entryFacade`, bd
+         * tea-rags-mcp-r8hme.52.4) — the measured composition root / entry
+         * surface the SDP and mainSequence findings annotate. Absent otherwise.
+         */
+        entryFacade?: true;
       }
     | undefined;
   /** The component's facade (undefined = no facade / not adopted). */
@@ -506,9 +511,9 @@ export class DiffDetectorRun {
             `the diff leans on the markedly-less-stable side: ${edge.target}'s component ${targetComponent.name} ` +
             `(I=${format3(targetComponent.instability)}) is markedly less stable than ${edge.source}'s ` +
             `${sourceComponent.name} (I=${format3(sourceComponent.instability)})`,
-          // The root assembling unstable concretes is the root's job (see
-          // DECLARED_COMPOSITION_ROOT_COMPONENTS): annotated, still reported.
-          ...(isDeclaredCompositionRoot(sourceComponent.name) ? { compositionRoot: true as const } : {}),
+          // The root assembling unstable concretes is the root's job; the root
+          // is the measured entry-facade component: annotated, still reported.
+          ...(sourceComponent.entryFacade ? { compositionRoot: true as const } : {}),
         }),
       );
     }
@@ -662,7 +667,13 @@ export class DiffDetectorRun {
   ): { findings: DiffDetectorFinding[]; excludedLowConnectionCount: number } {
     const touched = new Map<
       string,
-      { instability: number; distanceFromMainSequence: number; afferentCount?: number; efferentCount?: number }
+      {
+        instability: number;
+        distanceFromMainSequence: number;
+        afferentCount?: number;
+        efferentCount?: number;
+        entryFacade?: true;
+      }
     >();
     const judgedComponents = new Set<string>();
     let excludedLowConnectionCount = 0;
@@ -679,6 +690,7 @@ export class DiffDetectorRun {
         distanceFromMainSequence: component.distanceFromMainSequence,
         afferentCount: component.afferentCount,
         efferentCount: component.efferentCount,
+        ...(component.entryFacade ? { entryFacade: true as const } : {}),
       });
     }
     const crossingEdges = new Map<string, OverlayEdge[]>();
@@ -729,9 +741,9 @@ export class DiffDetectorRun {
           detail: `the diff moves ${name} off its main-sequence distance: ${newEdgeCount} cross-component outgoing edge(s) raise instability ${format3(fact.instability)} -> ${format3(newInstability)} with abstractness held${recomputeClause}`,
           ...(foundationTerminal ? { foundationTerminal: true as const } : {}),
           // The unstable end of the main sequence is where an entry component
-          // belongs (see DECLARED_ENTRY_POINT_COMPONENTS): annotated, still
+          // belongs (the measured entry-facade component): annotated, still
           // reported.
-          ...(isDeclaredEntryPoint(name) ? { entryPoint: true as const } : {}),
+          ...(fact.entryFacade ? { entryPoint: true as const } : {}),
         }),
       );
     }

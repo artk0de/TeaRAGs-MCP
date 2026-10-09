@@ -8,11 +8,7 @@ export {
 } from "./component-graph.js";
 export {
   COMPONENT_EVIDENCE_FILE_EDGE_LIMIT,
-  DECLARED_COMPOSITION_ROOT_COMPONENTS,
-  DECLARED_ENTRY_POINT_COMPONENTS,
   detectComponentStableDependencyViolations,
-  isDeclaredCompositionRoot,
-  isDeclaredEntryPoint,
 } from "./component-stable-dependencies.js";
 export { FACADE_AGGREGATION_REASON, isFacadeAggregationEdge } from "./facade-aggregation.js";
 export { computeFileInstabilities } from "./file-instability.js";

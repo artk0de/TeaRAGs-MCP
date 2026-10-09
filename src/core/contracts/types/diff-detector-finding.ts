@@ -192,17 +192,19 @@ interface DiffDetectorFindingCommon {
    */
   foundationTerminal?: true;
   /**
-   * stableDependencies only (bd tea-rags-mcp-hbceb): the SOURCE component is,
-   * or lives inside, a declared composition root — assembling unstable
+   * stableDependencies only (bd tea-rags-mcp-hbceb): the SOURCE component is
+   * a composition root, measured — it holds a module facade nothing in the
+   * project imports (bd tea-rags-mcp-r8hme.52.4) — and assembling unstable
    * concretes is its job. Triage data, never a suppression. Present only when
    * true.
    */
   compositionRoot?: true;
   /**
-   * mainSequence only (bd tea-rags-mcp-zh3l0): the touched component is, or
-   * lives inside, a declared cli/mcp entry surface — the unstable end of the
-   * main sequence is where an entry belongs. Triage data, never a
-   * suppression. Present only when true.
+   * mainSequence only (bd tea-rags-mcp-zh3l0): the touched component is an
+   * entry surface, measured — it holds a module facade nothing in the project
+   * imports (bd tea-rags-mcp-r8hme.52.4) — and the unstable end of the main
+   * sequence is where an entry belongs. Triage data, never a suppression.
+   * Present only when true.
    */
   entryPoint?: true;
   /**

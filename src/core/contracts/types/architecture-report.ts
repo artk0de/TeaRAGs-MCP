@@ -91,10 +91,11 @@ export interface StableDependencyViolationEvidence {
   /** The carrying file edges, heaviest call weight first, capped at 5. */
   fileEdges: ArchitectureFileEdge[];
   /**
-   * The source component is, or lives inside, a declared composition root
-   * (`DECLARED_COMPOSITION_ROOT_COMPONENTS` in the boundary-diagnostics
-   * domain, bd tea-rags-mcp-r8hme.51): the root's JOB is assembling unstable
-   * concretes, so an SDP delta sourced from it is inherent to that job. The
+   * The source component is a composition root (bd tea-rags-mcp-r8hme.51),
+   * measured: it holds a module facade nothing in the project imports (bd
+   * tea-rags-mcp-r8hme.52.4 — no path list decides it). The root's JOB is
+   * assembling unstable concretes, so an SDP delta sourced from it is
+   * inherent to that job. The
    * violation still stands — this is triage data for the reader, never a
    * suppression (the `foundationTerminal` spirit). Present only when true.
    */
@@ -349,10 +350,11 @@ export interface MainSequenceViolationEvidence {
    */
   volatility?: MainSequenceComponentVolatilityEvidence;
   /**
-   * The component is, or lives inside, a declared cli/mcp entry surface
-   * (`DECLARED_ENTRY_POINT_COMPONENTS` in the boundary-diagnostics domain, bd
-   * tea-rags-mcp-zh3l0): nothing imports an entry surface, so its distance
-   * from the main sequence is placement, not defect — the unstable end is
+   * The component is an entry surface (bd tea-rags-mcp-zh3l0), measured: it
+   * holds a module facade nothing in the project imports (bd
+   * tea-rags-mcp-r8hme.52.4 — no path list decides it). Nothing imports an
+   * entry surface, so its distance from the main sequence is placement, not
+   * defect — the unstable end is
    * where an entry BELONGS. The violation still stands — triage data for the
    * reader, never a suppression (the `compositionRoot` spirit). Present only
    * when true.
@@ -427,9 +429,10 @@ export interface HubLikeDependencyViolationEvidence {
   /** Present when git data was available and a file of the hub carries a commit count. */
   churn?: HubLikeDependencyChurnEvidence;
   /**
-   * The component is, or lives inside, a declared composition root
-   * (`DECLARED_COMPOSITION_ROOT_COMPONENTS`): wiring many components to many
-   * consumers is its job, so the hub shape is expected there. Triage data,
+   * The component is a composition root, measured: it holds a module facade
+   * nothing in the project imports (bd tea-rags-mcp-r8hme.52.4). Wiring many
+   * components to many consumers is its job, so the hub shape is expected
+   * there. Triage data,
    * never a suppression. Present only when true.
    */
   compositionRoot?: true;
