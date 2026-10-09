@@ -488,7 +488,15 @@
   `joinLogicalChanges` as unions: zeroing a revert drops its original's evidence
   too (echo-zero lost TRUE recall on taxdome). Permutation p-values seed from
   the pair's SHAs (`seedFromKey`), never from evaluation order. An empty
-  line-count map is a pre-046 build: neither stage runs.
+  line-count map is a pre-046 build: neither stage runs. A lifecycle pair
+  (`findShotgunSurgeryLifecyclePairs`, bd tea-rags-mcp-zf9yz) also joins and
+  never removes: dropping deletion-dominant commits was measured and lost a TRUE
+  finding (taxdome SG06), because retiring a feature flag touches exactly the
+  places it was wired into and is shotgun evidence. Pairs and file revisits are
+  oriented by `ShotgunSurgeryInput.bundleTimestamps`, never by bundle id
+  (`extractCochangeGraph` numbers bundles newest first), and
+  `ShotgunSurgeryLifecycleNull#mirrorProbability` is max(pooled, per-file)
+  because a pooled-only null joins unrelated ±1 edits to a registry file.
 
 ## Gotchas
 

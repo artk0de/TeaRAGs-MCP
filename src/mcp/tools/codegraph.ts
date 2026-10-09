@@ -452,9 +452,11 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "structural islands (no dependency, specific shared neighbour, or feature subtree of <= T changed components); " +
       "commits whose per-file (added, deleted) counts repeat beyond chance (mechanical sweep, BH) are left out of the " +
       "history; a revert or flag removal mirroring an earlier commit's per-file net lines (permutation test, BH) joins " +
-      "it as one change; evidence support, expectedSupport, strength, " +
-      "islands, exemplarFiles, drillDown = find_co_changed; summary mechanicalCommitCount / echoPairCount absent = " +
-      "line counts not recorded; built false = same reasons as splitMerge. mainSequence " +
+      "it as one change; a later commit retiring exactly lines an earlier one added (net -x for +x on shared files; " +
+      "null = max(corpus revisit rate, file's own rate), Poisson-binomial, BH) joins it too; evidence support, " +
+      "expectedSupport, strength, islands, exemplarFiles, drillDown = find_co_changed; summary mechanicalCommitCount / " +
+      "echoPairCount / lifecyclePairCount absent = line counts or commit timestamps not recorded; built false = same " +
+      "reasons as splitMerge. mainSequence " +
       "(Stable Abstractions Principle): component far from A+I=1 — pain = stable+concrete, uselessness = " +
       "unstable+abstract; A from walker type census, D > max(0.5, Otsu cut); components whose language " +
       "rarely declares abstractions excluded (unobservableAbstractness); census needs codegraph recompute; pain " +

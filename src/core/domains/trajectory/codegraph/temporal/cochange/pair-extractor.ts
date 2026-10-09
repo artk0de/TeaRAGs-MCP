@@ -80,6 +80,8 @@ export interface CochangeGraphExtraction {
    * for that file (bd tea-rags-mcp-dm61n).
    */
   admittedBundleFileLines: readonly (readonly (CochangeFileLineCounts | null)[])[];
+  /** Each admitted bundle's commit time (unix seconds), aligned with `admittedBundles` (bd tea-rags-mcp-zf9yz). */
+  admittedBundleTimestamps: readonly number[];
 }
 
 /** Up to this many sample SHAs per stored pair. */
@@ -206,6 +208,7 @@ export function extractCochangeGraph(
     admittedBundleBursts: bundleBursts,
     admittedBundleTaskIds: admitted.map((bundle) => bundle.taskIds ?? []),
     admittedBundleFileLines: admitted.map((bundle) => bundle.files.map((file) => bundle.fileLines?.get(file) ?? null)),
+    admittedBundleTimestamps: admitted.map((bundle) => bundle.timestamp),
   };
 }
 

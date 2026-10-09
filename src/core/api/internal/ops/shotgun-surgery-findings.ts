@@ -56,6 +56,7 @@ export function runShotgunSurgery(
       ...(cochange.bundleCommits ? { bundleCommits: cochange.bundleCommits } : {}),
       ...(cochange.bundleTaskIds ? { bundleTaskIds: cochange.bundleTaskIds } : {}),
       ...(cochange.bundleFileLines ? { bundleFileLines: cochange.bundleFileLines } : {}),
+      ...(cochange.bundleTimestamps ? { bundleTimestamps: cochange.bundleTimestamps } : {}),
       ...(sourcePathPattern ? { sourcePathPattern } : {}),
     }),
   };
@@ -73,6 +74,10 @@ export function summariseShotgunSurgery(run: ShotgunSurgeryRun): ShotgunSurgeryR
     ...(summary.mechanicalCommitCount === undefined ? {} : { mechanicalCommitCount: summary.mechanicalCommitCount }),
     ...(summary.echoCandidatePairCount === undefined ? {} : { echoCandidatePairCount: summary.echoCandidatePairCount }),
     ...(summary.echoPairCount === undefined ? {} : { echoPairCount: summary.echoPairCount }),
+    ...(summary.lifecycleCandidatePairCount === undefined
+      ? {}
+      : { lifecycleCandidatePairCount: summary.lifecycleCandidatePairCount }),
+    ...(summary.lifecyclePairCount === undefined ? {} : { lifecyclePairCount: summary.lifecyclePairCount }),
     unitCount: summary.unitCount,
     ...(summary.umbrellaTaskIdCut === undefined ? {} : { umbrellaTaskIdCut: summary.umbrellaTaskIdCut }),
     umbrellaTaskIdCount: summary.umbrellaTaskIdCount,

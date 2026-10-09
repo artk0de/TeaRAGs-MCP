@@ -130,6 +130,11 @@ export interface TemporalCochangeSnapshot {
    * tea-rags-mcp-dm61n).
    */
   bundleFileLines?: readonly (readonly (CochangeFileLineCounts | null)[])[];
+  /**
+   * Each admitted bundle's commit time in unix seconds, aligned with
+   * `bundles`. Absent = not recorded (bd tea-rags-mcp-zf9yz).
+   */
+  bundleTimestamps?: readonly number[];
 }
 
 /** The lines one commit added to and deleted from one file — git's numstat pair (bd tea-rags-mcp-dm61n). */
@@ -189,6 +194,12 @@ export interface TemporalCochangeGraph {
    * build predates migration 046.
    */
   bundleFileLines?: ReadonlyMap<number, ReadonlyMap<RelPath, CochangeFileLineCounts>>;
+  /**
+   * Each admitted bundle's commit time in unix seconds, keyed by bundle id (bd
+   * tea-rags-mcp-zf9yz) — the chronology; bundle ids are a storage order.
+   * Absent or empty = the build predates migration 047.
+   */
+  bundleTimestamps?: ReadonlyMap<number, number>;
 }
 
 /**

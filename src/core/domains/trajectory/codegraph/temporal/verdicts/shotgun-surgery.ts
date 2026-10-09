@@ -104,7 +104,12 @@
 import type { CochangeFileLineCounts, RelPath } from "../../../../../contracts/types/codegraph.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../../../../../infra/graph/index.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
-import { binomialUpperTail, mulberry32, seedFromKey } from "../../../../../infra/statistics/index.js";
+import {
+  binomialUpperTail,
+  mulberry32,
+  poissonBinomialUpperTail,
+  seedFromKey,
+} from "../../../../../infra/statistics/index.js";
 import { componentAncestry } from "../../symbols/boundary-diagnostics/index.js";
 import {
   benjaminiHochbergRejectionCount,
@@ -181,6 +186,15 @@ export interface ShotgunSurgeryInput {
    * summary fields are absent, never zeros.
    */
   bundleFileLines?: ReadonlyMap<number, ReadonlyMap<RelPath, CochangeFileLineCounts>>;
+  /**
+   * Unix seconds of each bundle's commit, keyed by bundle id — the chronology
+   * the lifecycle test orients pairs and file revisits by (bd
+   * tea-rags-mcp-zf9yz). Bundle ids are a storage detail and never stand in
+   * for it. A bundle absent from the map is in no lifecycle pair and no
+   * revisit. The whole map absent or empty = not recorded (a build predating
+   * migration 047): no lifecycle stage, and its summary fields are absent.
+   */
+  bundleTimestamps?: ReadonlyMap<number, number>;
   /** Picomatch glob: a spread is in scope when an exemplar file of one of its components matches. */
   sourcePathPattern?: string;
 }
@@ -233,6 +247,10 @@ export interface ShotgunSurgerySummary {
   echoCandidatePairCount?: number;
   /** Pairs BH called echoes (a revert or flag removal and its original), joined into one logical change. Absent = line counts not recorded. */
   echoPairCount?: number;
+  /** Non-mechanical wide commit pairs sharing ≥ 3 components — the lifecycle BH family m (equals `echoCandidatePairCount`). Absent = line counts or commit timestamps not recorded. */
+  lifecycleCandidatePairCount?: number;
+  /** Pairs BH called lifecycle (the newer exactly retires lines the older added), joined into one logical change. Absent = line counts or commit timestamps not recorded. */
+  lifecyclePairCount?: number;
   /** Logical changes' component sets (identical sets sharing a burst once) — the width model's population. */
   unitCount: number;
   /**
@@ -302,6 +320,8 @@ interface ShotgunSurgeryHistory {
   umbrella: ShotgunSurgeryUmbrellaTaskIds;
   /** The echo test's outcome; absent when no line counts were recorded. */
   echo: ShotgunSurgeryEchoAssessment | undefined;
+  /** The lifecycle test's outcome; absent when line counts or commit timestamps were not recorded. */
+  lifecycle: ShotgunSurgeryLifecycleAssessment | undefined;
 }
 
 interface AdmittedSpread {
@@ -316,7 +336,7 @@ interface AdmittedSpread {
 /** Judge the history's wide changes. See the module docblock for every contract. */
 export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgeryReport {
   const mechanical = lineCountsRecorded(input) ? classifyShotgunSurgeryMechanicalBundles(input) : undefined;
-  const { units, burstCount, changes, burstWidths, umbrella, echo } = buildHistory(
+  const { units, burstCount, changes, burstWidths, umbrella, echo, lifecycle } = buildHistory(
     input,
     mechanical?.bundleIds ?? new Set(),
   );
@@ -398,6 +418,9 @@ export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgery
       ...(echo === undefined
         ? {}
         : { echoCandidatePairCount: echo.candidatePairCount, echoPairCount: echo.pairs.length }),
+      ...(lifecycle === undefined
+        ? {}
+        : { lifecycleCandidatePairCount: lifecycle.candidatePairCount, lifecyclePairCount: lifecycle.pairs.length }),
       unitCount: units.length,
       ...(umbrella.cut === undefined ? {} : { umbrellaTaskIdCut: umbrella.cut }),
       umbrellaTaskIdCount: umbrella.ids.size,
@@ -547,11 +570,24 @@ function resolveUmbrellaTaskIds(commits: readonly ShotgunSurgeryCommit[]): Shotg
  * would drop its original's evidence too. Umbrella ids still never join.
  * Without line counts there are no echo pairs, and an echo without a shared
  * task id counts as a second change.
+ *
+ * LIFECYCLES (bd tea-rags-mcp-zf9yz) — a feature introduced, then retired by a
+ * later commit (a scope cut, a flag removal, a revert-redo) — are one change
+ * too, even when the retirement mirrors only part of the original and so
+ * escapes the echo test. {@link findShotgunSurgeryLifecyclePairs} counts the
+ * shared files where the newer commit's net is exactly the negation of a
+ * positive net the older one added, against a null that is the larger of the
+ * corpus revisit rate and the file's own rate of that value
+ * ({@link ShotgunSurgeryLifecycleNull}), Poisson-binomial, BH. Its pairs union
+ * here exactly like echoes and task ids. A lifecycle JOINS, never removes:
+ * retiring a scattered feature touches exactly the places it was wired into,
+ * so the removal is shotgun evidence, and only counting it as a second change
+ * was wrong.
  */
 function joinLogicalChanges(
   commits: readonly ShotgunSurgeryCommit[],
   umbrella: ShotgunSurgeryUmbrellaTaskIds,
-  echoPairs: readonly ShotgunSurgeryEchoPair[],
+  joinedPairs: readonly ShotgunSurgeryJoinedPair[],
 ): ShotgunSurgeryChangeUnit[] {
   const joins = new DisjointSets(commits.length);
   // A task id first seen in one commit joins every later commit naming it.
@@ -564,9 +600,9 @@ function joinLogicalChanges(
       else joins.union(owner, index);
     }
   });
-  if (echoPairs.length > 0) {
+  if (joinedPairs.length > 0) {
     const indexOf = new Map(commits.map(({ bundleId }, index) => [bundleId, index]));
-    for (const { first, second } of echoPairs) {
+    for (const { first, second } of joinedPairs) {
       const a = indexOf.get(first);
       const b = indexOf.get(second);
       if (a !== undefined && b !== undefined) joins.union(a, b);
@@ -613,7 +649,11 @@ function buildHistory(input: ShotgunSurgeryInput, mechanical: ReadonlySet<number
 
   const umbrella = resolveUmbrellaTaskIds(commits);
   const echo = lineCountsRecorded(input) ? findShotgunSurgeryEchoPairs(commits, input) : undefined;
-  const changeUnits = joinLogicalChanges(commits, umbrella, echo?.pairs ?? []);
+  const lifecycle =
+    lineCountsRecorded(input) && timestampsRecorded(input)
+      ? findShotgunSurgeryLifecyclePairs(commits, umbrella, input)
+      : undefined;
+  const changeUnits = joinLogicalChanges(commits, umbrella, [...(echo?.pairs ?? []), ...(lifecycle?.pairs ?? [])]);
   const sameSet = new DisjointSets(changeUnits.length);
   const firstBySetAndBurst = new Map<string, number>();
   const setKeys = changeUnits.map(({ filesByComponent }) =>
@@ -651,7 +691,7 @@ function buildHistory(input: ShotgunSurgeryInput, mechanical: ReadonlySet<number
     unit.bundleIds.sort((a, b) => b - a);
     unit.bursts = [...new Set(unit.bursts)].sort((a, b) => a - b);
   }
-  return { units, burstCount, changes, burstWidths, umbrella, echo };
+  return { units, burstCount, changes, burstWidths, umbrella, echo, lifecycle };
 }
 
 /**
@@ -661,6 +701,11 @@ function buildHistory(input: ShotgunSurgeryInput, mechanical: ReadonlySet<number
  */
 function lineCountsRecorded(input: Pick<ShotgunSurgeryInput, "bundleFileLines">): boolean {
   return (input.bundleFileLines?.size ?? 0) > 0;
+}
+
+/** Whether the build recorded commit timestamps: absent OR empty is a build predating migration 047 — no lifecycle stage. */
+function timestampsRecorded(input: Pick<ShotgunSurgeryInput, "bundleTimestamps">): boolean {
+  return (input.bundleTimestamps?.size ?? 0) > 0;
 }
 
 /** Commits the uniformity test calls mechanical, and the family it tested. */
@@ -794,43 +839,7 @@ export function findShotgunSurgeryEchoPairs(
   commits: readonly ShotgunSurgeryEchoCommit[],
   input: Pick<ShotgunSurgeryInput, "bundleFileLines" | "bundleCommits">,
 ): ShotgunSurgeryEchoAssessment {
-  const lines = input.bundleFileLines;
-  const nets = new Map<number, Map<RelPath, number>>();
-  const postings = new Map<string, number[]>();
-  const wide: number[] = [];
-  for (const { bundleId, filesByComponent } of commits) {
-    const counts = lines?.get(bundleId);
-    if (!counts || filesByComponent.size < SHOTGUN_SURGERY_MIN_WIDTH) continue;
-    const net = new Map<RelPath, number>();
-    for (const relPaths of filesByComponent.values()) {
-      for (const relPath of relPaths) {
-        const row = counts.get(relPath);
-        if (row) net.set(relPath, row.added - row.deleted);
-      }
-    }
-    nets.set(bundleId, net);
-    wide.push(bundleId);
-  }
-  wide.sort((a, b) => a - b);
-  const componentsOf = new Map(commits.map(({ bundleId, filesByComponent }) => [bundleId, filesByComponent]));
-  for (const bundleId of wide) {
-    for (const component of componentsOf.get(bundleId)?.keys() ?? []) {
-      const list = postings.get(component);
-      if (list) list.push(bundleId);
-      else postings.set(component, [bundleId]);
-    }
-  }
-  const pairs: [number, number][] = [];
-  for (const first of wide) {
-    const shared = new Map<number, number>();
-    for (const component of componentsOf.get(first)?.keys() ?? []) {
-      for (const other of postings.get(component) ?? []) {
-        if (other > first) shared.set(other, (shared.get(other) ?? 0) + 1);
-      }
-    }
-    for (const [second, count] of shared) if (count >= SHOTGUN_SURGERY_MIN_WIDTH) pairs.push([first, second]);
-  }
-
+  const { nets, pairs } = shotgunSurgeryWideCommitPairs(commits, input);
   const m = pairs.length;
   const maxPermutations = Math.ceil(m / COCHANGE_SIGNIFICANCE_FDR_Q);
   const keyOf = (bundleId: number): string => input.bundleCommits?.get(bundleId)?.[0] ?? `bundle:${bundleId}`;
@@ -942,6 +951,247 @@ function factorialAtMost(n: number, limit: number): boolean {
     if (product > limit) return false;
   }
   return true;
+}
+
+/** Two commits the join unions into one logical change — an echo, a lifecycle. */
+export interface ShotgunSurgeryJoinedPair {
+  first: number;
+  second: number;
+}
+
+/** The wide-commit population both line-count pair tests read, and their candidate pairs. */
+export interface ShotgunSurgeryWideCommitPairs {
+  /** Per wide commit: its partitioned files with a recorded count, relPath → added − deleted. */
+  nets: ReadonlyMap<number, ReadonlyMap<RelPath, number>>;
+  /** Pairs sharing ≥ {@link SHOTGUN_SURGERY_MIN_WIDTH} components, the smaller bundle id first. */
+  pairs: readonly (readonly [number, number])[];
+}
+
+/**
+ * The echo and lifecycle tests' shared family: the given (non-mechanical)
+ * commits with recorded line counts spanning ≥ {@link SHOTGUN_SURGERY_MIN_WIDTH}
+ * components — the constant, not k, since k is drawn from the units the join
+ * shapes — and every pair of them sharing ≥ {@link SHOTGUN_SURGERY_MIN_WIDTH}
+ * components. One builder, so the two BH families are the same m.
+ */
+export function shotgunSurgeryWideCommitPairs(
+  commits: readonly ShotgunSurgeryEchoCommit[],
+  input: Pick<ShotgunSurgeryInput, "bundleFileLines">,
+): ShotgunSurgeryWideCommitPairs {
+  const lines = input.bundleFileLines;
+  const nets = new Map<number, Map<RelPath, number>>();
+  const postings = new Map<string, number[]>();
+  const wide: number[] = [];
+  for (const { bundleId, filesByComponent } of commits) {
+    const counts = lines?.get(bundleId);
+    if (!counts || filesByComponent.size < SHOTGUN_SURGERY_MIN_WIDTH) continue;
+    nets.set(bundleId, commitNets(filesByComponent, counts));
+    wide.push(bundleId);
+  }
+  wide.sort((a, b) => a - b);
+  const componentsOf = new Map(commits.map(({ bundleId, filesByComponent }) => [bundleId, filesByComponent]));
+  for (const bundleId of wide) {
+    for (const component of componentsOf.get(bundleId)?.keys() ?? []) {
+      const list = postings.get(component);
+      if (list) list.push(bundleId);
+      else postings.set(component, [bundleId]);
+    }
+  }
+  const pairs: [number, number][] = [];
+  for (const first of wide) {
+    const shared = new Map<number, number>();
+    for (const component of componentsOf.get(first)?.keys() ?? []) {
+      for (const other of postings.get(component) ?? []) {
+        if (other > first) shared.set(other, (shared.get(other) ?? 0) + 1);
+      }
+    }
+    for (const [second, count] of shared) if (count >= SHOTGUN_SURGERY_MIN_WIDTH) pairs.push([first, second]);
+  }
+  return { nets, pairs };
+}
+
+/** A commit's partitioned files with a recorded count, relPath → added − deleted. */
+function commitNets(
+  filesByComponent: ReadonlyMap<string, ReadonlySet<RelPath>>,
+  counts: ReadonlyMap<RelPath, CochangeFileLineCounts>,
+): Map<RelPath, number> {
+  const net = new Map<RelPath, number>();
+  for (const relPaths of filesByComponent.values()) {
+    for (const relPath of relPaths) {
+      const row = counts.get(relPath);
+      if (row) net.set(relPath, row.added - row.deleted);
+    }
+  }
+  return net;
+}
+
+/** A commit as the lifecycle test reads it: the echo commit plus what relates two commits (burst, task ids). */
+export interface ShotgunSurgeryLifecycleCommit extends ShotgunSurgeryEchoCommit {
+  burst: number;
+  taskIds: readonly string[];
+}
+
+/** A lifecycle: an older commit adding lines and a newer one retiring exactly them on its shared files. */
+export interface ShotgunSurgeryLifecyclePair {
+  /** The older commit's bundle — the one that added the lines. */
+  first: number;
+  /** The newer commit's bundle — the one that retired them. */
+  second: number;
+  /** The pair's Poisson-binomial p-value ({@link shotgunSurgeryLifecyclePValue}). */
+  pValue: number;
+}
+
+export interface ShotgunSurgeryLifecycleAssessment {
+  /** The pairs BH admitted at {@link COCHANGE_SIGNIFICANCE_FDR_Q} — the joined lifecycles. */
+  pairs: ShotgunSurgeryLifecyclePair[];
+  /** Every tested pair, by (p, older SHA, newer SHA); `pairs` is its admitted prefix. */
+  candidates: ShotgunSurgeryLifecyclePair[];
+  /** m — the BH family, the echo test's ({@link shotgunSurgeryWideCommitPairs}). */
+  candidatePairCount: number;
+}
+
+/**
+ * LIFECYCLE — a later commit retiring exactly the lines an earlier one added
+ * (bd tea-rags-mcp-zf9yz). Family: {@link shotgunSurgeryWideCommitPairs}, the
+ * echo test's. Each pair is oriented older → newer by `bundleTimestamps`, the
+ * smaller first SHA older on a tie — never by bundle id, a storage detail.
+ * Files: the shared files where the older commit's net x is positive and the
+ * newer's y nonzero (something introduced, then touched again — a removal
+ * followed by an unrelated addition is not the hypothesis). Statistic: k = the
+ * files with y = −x. p = P(≥ k mirrors) over independent files, each mirroring
+ * with {@link ShotgunSurgeryLifecycleNull#mirrorProbability}; k = 0 → 1. BH at
+ * {@link COCHANGE_SIGNIFICANCE_FDR_Q} over all m candidates, sorted by p then
+ * the two SHAs. No RNG: the p-values depend on nets, timestamps and SHAs only.
+ * A pair with a side the timestamps do not date stays in the family at p = 1.
+ */
+export function findShotgunSurgeryLifecyclePairs(
+  commits: readonly ShotgunSurgeryLifecycleCommit[],
+  umbrella: { readonly ids: ReadonlySet<string> },
+  input: Pick<ShotgunSurgeryInput, "bundleFileLines" | "bundleCommits" | "bundleTimestamps">,
+): ShotgunSurgeryLifecycleAssessment {
+  const timestamps = input.bundleTimestamps ?? new Map<number, number>();
+  const lines = input.bundleFileLines ?? new Map<number, ReadonlyMap<RelPath, CochangeFileLineCounts>>();
+  const keyOf = (bundleId: number): string => input.bundleCommits?.get(bundleId)?.[0] ?? `bundle:${bundleId}`;
+  const chronology = (a: number, b: number): number =>
+    (timestamps.get(a) ?? 0) - (timestamps.get(b) ?? 0) || compareCodePoints(keyOf(a), keyOf(b));
+  const history = commits
+    .filter(({ bundleId }) => timestamps.has(bundleId) && lines.has(bundleId))
+    .sort((a, b) => chronology(a.bundleId, b.bundleId))
+    .map((commit) => ({
+      ...commit,
+      nets: commitNets(commit.filesByComponent, lines.get(commit.bundleId) ?? new Map()),
+    }));
+  const mirrorNull = new ShotgunSurgeryLifecycleNull(history, umbrella.ids);
+
+  const { nets, pairs } = shotgunSurgeryWideCommitPairs(commits, input);
+  const candidates: ShotgunSurgeryLifecyclePair[] = pairs.map(([a, b]) => {
+    if (!timestamps.has(a) || !timestamps.has(b)) return { first: a, second: b, pValue: 1 };
+    const [older, newer] = chronology(a, b) <= 0 ? [a, b] : [b, a];
+    const added = nets.get(older) ?? new Map<RelPath, number>();
+    const retired = nets.get(newer) ?? new Map<RelPath, number>();
+    const probabilities: number[] = [];
+    let mirrored = 0;
+    for (const relPath of [...added.keys()].sort(compareCodePoints)) {
+      const x = added.get(relPath) ?? 0;
+      const y = retired.get(relPath) ?? 0;
+      if (x <= 0 || y === 0) continue;
+      probabilities.push(mirrorNull.mirrorProbability(relPath, x, y));
+      if (y === -x) mirrored++;
+    }
+    return { first: older, second: newer, pValue: shotgunSurgeryLifecyclePValue(probabilities, mirrored) };
+  });
+  candidates.sort(
+    (a, b) =>
+      a.pValue - b.pValue ||
+      compareCodePoints(keyOf(a.first), keyOf(b.first)) ||
+      compareCodePoints(keyOf(a.second), keyOf(b.second)),
+  );
+  const rejected = benjaminiHochbergRejectionCount(
+    candidates.map((c) => c.pValue),
+    pairs.length,
+  );
+  return { pairs: candidates.slice(0, rejected), candidates, candidatePairCount: pairs.length };
+}
+
+/**
+ * P(≥ `mirrored` of the files mirror) when each file mirrors independently
+ * with its own probability — {@link poissonBinomialUpperTail}; none mirrored → 1.
+ */
+export function shotgunSurgeryLifecyclePValue(probabilities: readonly number[], mirrored: number): number {
+  return poissonBinomialUpperTail(probabilities, mirrored);
+}
+
+/** A dated commit as the lifecycle null reads it: what relates it to another, and its per-file nets. */
+interface ShotgunSurgeryLifecycleHistoryCommit {
+  burst: number;
+  taskIds: readonly string[];
+  nets: ReadonlyMap<RelPath, number>;
+}
+
+/**
+ * The lifecycle null: how likely a file revisited after a net +x is to come
+ * back with exactly −x by chance. Two estimates, each valid for its own
+ * question, and the test takes the LARGER (the intersection-union bound, so
+ * it is conservative under both):
+ *
+ * - pooled(x) = (M_x + 1) / (E_x + 2) over the corpus of revisits: every
+ *   partitioned file's consecutive nonzero-net commits in time order, a pair
+ *   counted only when the two are unrelated (different bursts, no shared
+ *   non-umbrella task id — what `joinLogicalChanges` joins on). E_x = revisits
+ *   after a net x, M_x = those whose next net is −x. Rare large mirrors (±12)
+ *   are priced here.
+ * - fileRate(f, x, y) = max(0, c_f(−x) − [y = −x]) / (N_f − 2): the file's own
+ *   rate of the value −x among its nonzero-net commits, the pair's own two
+ *   excluded; 0 when N_f ≤ 2. A registry file whose history is full of −1
+ *   edits makes a ±1 mirror there worthless — a pooled-only null joins two
+ *   different features each adding or removing one registry line.
+ */
+export class ShotgunSurgeryLifecycleNull {
+  private readonly revisits = new Map<number, { opportunities: number; mirrors: number }>();
+  private readonly valueCounts = new Map<RelPath, Map<number, number>>();
+  private readonly commitCounts = new Map<RelPath, number>();
+
+  /** `history`: the dated commits with line counts, oldest first. */
+  constructor(history: readonly ShotgunSurgeryLifecycleHistoryCommit[], umbrellaIds: ReadonlySet<string>) {
+    const previous = new Map<RelPath, { index: number; net: number }>();
+    history.forEach((commit, index) => {
+      for (const [relPath, net] of commit.nets) {
+        if (net === 0) continue;
+        const values = this.valueCounts.get(relPath) ?? new Map<number, number>();
+        values.set(net, (values.get(net) ?? 0) + 1);
+        this.valueCounts.set(relPath, values);
+        this.commitCounts.set(relPath, (this.commitCounts.get(relPath) ?? 0) + 1);
+        const prior = previous.get(relPath);
+        if (prior && !lifecycleRelated(history[prior.index], commit, umbrellaIds)) {
+          const tally = this.revisits.get(prior.net) ?? { opportunities: 0, mirrors: 0 };
+          tally.opportunities++;
+          if (net === -prior.net) tally.mirrors++;
+          this.revisits.set(prior.net, tally);
+        }
+        previous.set(relPath, { index, net });
+      }
+    });
+  }
+
+  /** P(the newer commit nets −`added` on `relPath` by chance) — max(pooled, the file's own rate). */
+  mirrorProbability(relPath: RelPath, added: number, retired: number): number {
+    const tally = this.revisits.get(added) ?? { opportunities: 0, mirrors: 0 };
+    const pooled = (tally.mirrors + 1) / (tally.opportunities + 2);
+    const others = (this.commitCounts.get(relPath) ?? 0) - 2;
+    if (others <= 0) return pooled;
+    const mirrorsElsewhere = (this.valueCounts.get(relPath)?.get(-added) ?? 0) - (retired === -added ? 1 : 0);
+    return Math.max(pooled, Math.max(0, mirrorsElsewhere) / others);
+  }
+}
+
+/** Same burst, or a shared task id outside the umbrella ids — the relation `joinLogicalChanges` joins on. */
+function lifecycleRelated(
+  a: ShotgunSurgeryLifecycleHistoryCommit,
+  b: ShotgunSurgeryLifecycleHistoryCommit,
+  umbrellaIds: ReadonlySet<string>,
+): boolean {
+  if (a.burst === b.burst) return true;
+  return a.taskIds.some((taskId) => !umbrellaIds.has(taskId) && b.taskIds.includes(taskId));
 }
 
 /** Add `from`'s files into `into`, component by component. */

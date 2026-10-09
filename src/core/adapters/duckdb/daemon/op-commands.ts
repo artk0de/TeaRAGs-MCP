@@ -442,7 +442,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   readFileDependencyGraph: read(async (graphDb) => graphDb.readFileDependencyGraph()),
   readNonPublicMemberEdges: read(async (graphDb, p) => graphDb.readNonPublicMemberEdges(p.languages as string[])),
   readTemporalCochangeMeta: read(async (graphDb) => graphDb.readTemporalCochangeMeta()),
-  // The graph's bundle membership, commits, bursts and per-file line counts
+  // The graph's bundle membership, commits, bursts, commit times and per-file line counts
   // (a Map of Maps — nested entries) are Maps — entries on
   // the wire, rebuilt by the client. Absent maps (an older daemon's build)
   // travel absent.
@@ -462,6 +462,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
             ]),
           }
         : {}),
+      ...(graph.bundleTimestamps ? { bundleTimestamps: [...graph.bundleTimestamps.entries()] } : {}),
     };
   }),
   readTemporalBundleFiles: read(async (graphDb) => [...(await graphDb.readTemporalBundleFiles()).entries()]),

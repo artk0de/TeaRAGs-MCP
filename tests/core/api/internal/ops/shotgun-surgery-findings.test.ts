@@ -112,3 +112,49 @@ describe("summariseShotgunSurgery — mechanical and echo counts (bd tea-rags-mc
     expect(summary).not.toHaveProperty("echoPairCount");
   });
 });
+
+describe("shotgun surgery lifecycle stage — commit times reach the detector (bd tea-rags-mcp-zf9yz)", () => {
+  beforeEach(() => {
+    detectorInputs.length = 0;
+  });
+
+  const bundleFileLines = new Map([[0, new Map([["a.ts", { added: 3, deleted: 1 }]])]]);
+
+  it("passes the build's bundle commit times through unchanged, and omits them when none were recorded", () => {
+    const bundleTimestamps = new Map([[0, 1_760_000_000]]);
+    runShotgunSurgery(
+      { meta: META, edges: [], bundles: new Map([[0, ["a.ts", "b.ts"]]]), bundleFileLines, bundleTimestamps },
+      COMPONENTS,
+      undefined,
+    );
+    runShotgunSurgery({ meta: META, edges: [], bundles: new Map([[0, ["a.ts", "b.ts"]]]) }, COMPONENTS, undefined);
+
+    expect(detectorInputs[0].bundleTimestamps).toBe(bundleTimestamps);
+    expect(detectorInputs[1]).not.toHaveProperty("bundleTimestamps");
+  });
+
+  it("reports the lifecycle counts with line counts and commit times, and leaves them absent without commit times", () => {
+    const run = (bundleTimestamps?: ReadonlyMap<number, number>) =>
+      summariseShotgunSurgery(
+        runShotgunSurgery(
+          {
+            meta: META,
+            edges: [],
+            bundles: new Map([[0, ["a.ts", "b.ts"]]]),
+            bundleFileLines,
+            ...(bundleTimestamps ? { bundleTimestamps } : {}),
+          },
+          COMPONENTS,
+          undefined,
+        ),
+      );
+
+    expect(run(new Map([[0, 1_760_000_000]]))).toMatchObject({
+      lifecycleCandidatePairCount: 0,
+      lifecyclePairCount: 0,
+    });
+    const untimed = run();
+    expect(untimed).not.toHaveProperty("lifecycleCandidatePairCount");
+    expect(untimed).not.toHaveProperty("lifecyclePairCount");
+  });
+});

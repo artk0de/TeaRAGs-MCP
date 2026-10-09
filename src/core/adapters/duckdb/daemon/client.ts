@@ -755,19 +755,18 @@ export class DaemonGraphDbClient implements GraphDbClient {
     // The server serialises the bundle Map as `[id, paths][]` entries — rebuild
     // it here (same pattern as getFileMetricsBulk). An older daemon's reply
     // carries no `bundles` at all: absence stays absence, never "no bundles".
-    const { bundles, bundleCommits, bundleBursts, bundleTaskIds, bundleFileLines, ...rest } = (await this.call(
-      "readTemporalCochangeGraph",
-      {},
-    )) as Omit<
-      TemporalCochangeGraph,
-      "bundles" | "bundleCommits" | "bundleBursts" | "bundleTaskIds" | "bundleFileLines"
-    > & {
-      bundles?: [number, readonly RelPath[]][];
-      bundleCommits?: [number, readonly string[]][];
-      bundleBursts?: [number, number][];
-      bundleTaskIds?: [number, readonly string[]][];
-      bundleFileLines?: [number, [RelPath, CochangeFileLineCounts][]][];
-    };
+    const { bundles, bundleCommits, bundleBursts, bundleTaskIds, bundleFileLines, bundleTimestamps, ...rest } =
+      (await this.call("readTemporalCochangeGraph", {})) as Omit<
+        TemporalCochangeGraph,
+        "bundles" | "bundleCommits" | "bundleBursts" | "bundleTaskIds" | "bundleFileLines" | "bundleTimestamps"
+      > & {
+        bundles?: [number, readonly RelPath[]][];
+        bundleCommits?: [number, readonly string[]][];
+        bundleBursts?: [number, number][];
+        bundleTaskIds?: [number, readonly string[]][];
+        bundleFileLines?: [number, [RelPath, CochangeFileLineCounts][]][];
+        bundleTimestamps?: [number, number][];
+      };
     return {
       ...rest,
       ...(bundles ? { bundles: new Map(bundles) } : {}),
@@ -777,6 +776,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
       ...(bundleFileLines
         ? { bundleFileLines: new Map(bundleFileLines.map(([bundleId, files]) => [bundleId, new Map(files)])) }
         : {}),
+      ...(bundleTimestamps ? { bundleTimestamps: new Map(bundleTimestamps) } : {}),
     };
   }
 

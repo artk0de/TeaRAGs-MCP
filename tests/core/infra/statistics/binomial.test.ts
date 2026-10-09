@@ -5,7 +5,41 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { binomialLowerTail, binomialUpperTail, signTestPValue } from "../../../../src/core/infra/statistics/index.js";
+import {
+  binomialLowerTail,
+  binomialUpperTail,
+  poissonBinomialUpperTail,
+  signTestPValue,
+} from "../../../../src/core/infra/statistics/index.js";
+
+// bd tea-rags-mcp-zf9yz: the lifecycle test's tail — independent trials, each with its own probability.
+describe("poissonBinomialUpperTail", () => {
+  it("equals the binomial tail when every probability is the same", () => {
+    for (const [k, n, p] of [
+      [3, 4, 0.5],
+      [2, 9, 0.13],
+      [7, 12, 0.4],
+    ] as const) {
+      expect(poissonBinomialUpperTail(Array<number>(n).fill(p), k)).toBeCloseTo(binomialUpperTail(k, n, p), 12);
+    }
+  });
+
+  it("multiplies independent trials: two fair coins both succeed with ¼", () => {
+    expect(poissonBinomialUpperTail([0.5, 0.5], 2)).toBeCloseTo(0.25, 15);
+  });
+
+  it("is 1 at or below zero successes and 0 when more successes are asked than trials", () => {
+    expect(poissonBinomialUpperTail([0.2, 0.3], 0)).toBe(1);
+    expect(poissonBinomialUpperTail([], 0)).toBe(1);
+    expect(poissonBinomialUpperTail([], 1)).toBe(0);
+    expect(poissonBinomialUpperTail([0.2], 2)).toBe(0);
+  });
+
+  it("shifts the tail by one success per certain trial", () => {
+    expect(poissonBinomialUpperTail([1, 0.3, 0.4], 2)).toBeCloseTo(1 - 0.7 * 0.6, 15);
+    expect(poissonBinomialUpperTail([1, 1, 0.3], 3)).toBeCloseTo(0.3, 15);
+  });
+});
 
 describe("binomialUpperTail", () => {
   it("sums the exact terms: P(X ≥ 3 | n = 4, ½) = 5/16", () => {

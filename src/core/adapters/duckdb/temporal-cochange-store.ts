@@ -4,7 +4,8 @@
  * `cg_temporal_bundle_files` (bd tea-rags-mcp-c3v6o, migration 042) and
  * `cg_temporal_bundle_commits` (bd tea-rags-mcp-89k7k.1.14, migration 043);
  * bundle files carry their commit's line counts (bd tea-rags-mcp-dm61n,
- * migration 046).
+ * migration 046), bundle commits their commit time (bd tea-rags-mcp-zf9yz,
+ * migration 047).
  *
  * Pure CRUD, like the analytics store: the extractor that computes the graph
  * and every judgement over it live in `domains/trajectory/codegraph/temporal/`.
@@ -87,7 +88,17 @@ export class DuckDbTemporalCochangeStore {
    * generation in the file (`DuckDbGraphSession#recreateEmptyTable`).
    */
   async replace(snapshot: TemporalCochangeSnapshot): Promise<void> {
-    const { meta, files, edges, bundles, bundleCommits, bundleBursts, bundleTaskIds, bundleFileLines } = snapshot;
+    const {
+      meta,
+      files,
+      edges,
+      bundles,
+      bundleCommits,
+      bundleBursts,
+      bundleTaskIds,
+      bundleFileLines,
+      bundleTimestamps,
+    } = snapshot;
     await this.session.transaction(async () => {
       await this.session.recreateEmptyTable("cg_temporal_files");
       await this.session.recreateEmptyTable("cg_temporal_edges_cochange");
@@ -112,7 +123,7 @@ export class DuckDbTemporalCochangeStore {
       );
       await this.session.insertBatched(
         "cg_temporal_bundle_commits",
-        ["bundle_id", "commit_shas", "burst_id", "task_ids"],
+        ["bundle_id", "commit_shas", "burst_id", "task_ids", "committed_at"],
         (bundleCommits ?? []).map((shas, bundleId) => {
           const taskIds = bundleTaskIds?.[bundleId];
           return [
@@ -120,6 +131,7 @@ export class DuckDbTemporalCochangeStore {
             JSON.stringify(shas),
             bundleBursts?.[bundleId] ?? null,
             taskIds === undefined ? null : JSON.stringify(taskIds),
+            bundleTimestamps?.[bundleId] ?? null,
           ];
         }),
       );
@@ -257,6 +269,7 @@ export class DuckDbTemporalCochangeStore {
       bundleBursts: await this.readBundleBursts(),
       bundleTaskIds: await this.readBundleTaskIds(),
       bundleFileLines: await this.readBundleFileLines(),
+      bundleTimestamps: await this.readBundleTimestamps(),
     };
   }
 
@@ -353,6 +366,21 @@ export class DuckDbTemporalCochangeStore {
       "SELECT bundle_id, task_ids FROM cg_temporal_bundle_commits WHERE task_ids IS NOT NULL ORDER BY bundle_id",
     );
     return new Map(rows.map((row) => [Number(row.bundle_id), JSON.parse(row.task_ids) as string[]]));
+  }
+
+  /**
+   * Each admitted bundle's commit time in unix seconds, keyed by bundle id (bd
+   * tea-rags-mcp-zf9yz) — the chronology the shotgun lifecycle test orients
+   * by; bundle ids are a storage order. Empty on a build that predates
+   * migration 047: a file without the column reads as not recorded, as for
+   * {@link readBundleTaskIds}.
+   */
+  async readBundleTimestamps(): Promise<ReadonlyMap<number, number>> {
+    if (!(await this.columnsOf("cg_temporal_bundle_commits", ["committed_at"])).has("committed_at")) return new Map();
+    const rows = await this.session.queryAll<{ bundle_id: number; committed_at: number | bigint }>(
+      "SELECT bundle_id, committed_at FROM cg_temporal_bundle_commits WHERE committed_at IS NOT NULL ORDER BY bundle_id",
+    );
+    return new Map(rows.map((row) => [Number(row.bundle_id), Number(row.committed_at)]));
   }
 
   /** Which of `columns` the table holds - the guard for columns a later migration added. */

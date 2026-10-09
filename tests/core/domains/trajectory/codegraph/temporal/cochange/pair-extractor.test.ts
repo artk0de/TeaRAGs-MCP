@@ -243,5 +243,12 @@ describe("extractCochangeGraph", () => {
       expect(graph.admittedBundles).toEqual([["c.ts"], ["a.ts", "b.ts"]]);
       expect(graph.admittedBundleFileLines).toEqual([[null], [null, { added: 4, deleted: 0 }]]);
     });
+
+    it("returns each admitted bundle's commit time, aligned with the memberships (bd tea-rags-mcp-zf9yz)", () => {
+      const graph = extractCochangeGraph([bundle("s1", 1, ["a.ts"]), bundle("s2", 2, ["b.ts"])], OPTIONS);
+
+      expect(graph.admittedBundleCommits).toEqual([["s2"], ["s1"]]);
+      expect(graph.admittedBundleTimestamps).toEqual([2, 1]);
+    });
   });
 });

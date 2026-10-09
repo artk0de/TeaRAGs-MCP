@@ -62,6 +62,30 @@ export function binomialUpperTail(successes: number, trials: number, probability
 }
 
 /**
+ * P(X ≥ k), X the number of successes over independent trials of the given
+ * probabilities (Poisson-binomial). Exact O(n²) dynamic programme over the
+ * success-count distribution; the tail is summed from its own terms, never as
+ * 1 − the lower tail, so a tail below double precision does not cancel to 0.
+ * k ≤ 0 → 1, k > n → 0, clamped to 1.
+ */
+export function poissonBinomialUpperTail(probabilities: readonly number[], successes: number): number {
+  if (successes <= 0) return 1;
+  if (successes > probabilities.length) return 0;
+  let distribution = [1];
+  for (const probability of probabilities) {
+    const next = new Array<number>(distribution.length + 1).fill(0);
+    for (let count = 0; count < distribution.length; count++) {
+      next[count] += distribution[count] * (1 - probability);
+      next[count + 1] += distribution[count] * probability;
+    }
+    distribution = next;
+  }
+  let tail = 0;
+  for (let count = successes; count < distribution.length; count++) tail += distribution[count];
+  return Math.min(1, tail);
+}
+
+/**
  * The exact two-sided sign test of `a` against `b` at p = ½: twice the
  * minority's lower tail, capped at 1 — the null is symmetric, so which side is
  * the minority is read off the counts. An empty pair carries no evidence (1).

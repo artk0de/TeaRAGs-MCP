@@ -1158,6 +1158,23 @@ describe("DaemonGraphDbClient — readTemporalCochangeGraph", () => {
     expect(graph).not.toHaveProperty("bundleBursts");
     expect(graph).not.toHaveProperty("bundleTaskIds");
     expect(graph).not.toHaveProperty("bundleFileLines");
+    expect(graph).not.toHaveProperty("bundleTimestamps");
+  });
+
+  // bd tea-rags-mcp-zf9yz: commit times travel as `[id, seconds][]` entries.
+  it("rebuilds the per-bundle commit-time Map from the daemon's entry tuples", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    await echoServer(socketPath, (r) =>
+      r.op === "readTemporalCochangeGraph" ? { meta, edges, bundleTimestamps: [[0, 1_760_000_000]] } : null,
+    );
+
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
+    await client.init();
+    const graph = await client.readTemporalCochangeGraph();
+    await client.close();
+
+    expect(graph.bundleTimestamps).toEqual(new Map([[0, 1_760_000_000]]));
   });
 
   // bd tea-rags-mcp-dm61n: per-file line counts are a Map of Maps — nested entry tuples on the wire.

@@ -1429,6 +1429,10 @@ export interface ShotgunSurgeryReportSummary {
   echoCandidatePairCount?: number;
   /** Echo pairs (a revert / flag removal and its original) joined into one logical change. Absent = line counts not recorded. */
   echoPairCount?: number;
+  /** Non-mechanical wide commit pairs sharing ≥ 3 components — the lifecycle test's BH family (equals `echoCandidatePairCount`). Absent = line counts or commit timestamps not recorded. */
+  lifecycleCandidatePairCount?: number;
+  /** Lifecycle pairs (the newer commit exactly retires lines the older added) joined into one logical change. Absent = line counts or commit timestamps not recorded. */
+  lifecyclePairCount?: number;
   /** Logical changes' component sets (commits joined by a non-umbrella task id across bursts; identical sets sharing a burst once) — the width model's population. */
   unitCount?: number;
   /** Tukey fence over log2 of each task id's breadth (distinct ids on its commits): an id above it is an umbrella and joins nothing. */

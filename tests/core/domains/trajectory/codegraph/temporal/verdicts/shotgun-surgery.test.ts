@@ -39,11 +39,13 @@ import {
   compoundPoissonUpperTailBound,
   detectShotgunSurgery,
   findShotgunSurgeryEchoPairs,
+  findShotgunSurgeryLifecyclePairs,
   poissonUpperTail,
   SHOTGUN_SURGERY_ECHO_EXACT_PERMUTATIONS,
   SHOTGUN_SURGERY_ECHO_EXCEEDANCES,
   shotgunSurgeryEchoPermutationPValue,
   shotgunSurgeryFamilySize,
+  shotgunSurgeryLifecyclePValue,
   shotgunSurgeryMirroredNetShare,
   shotgunSurgeryModalUniformityPValue,
   type ShotgunSurgeryInput,
@@ -1094,5 +1096,198 @@ describe("findShotgunSurgeryEchoPairs", () => {
     // A sampled p, neither the floor nor the no-mirror 1.
     expect(before.candidates[0].pValue).toBeGreaterThan(1 / 21);
     expect(before.candidates[0].pValue).toBeLessThan(1);
+  });
+});
+
+/** The same input with each bundle's commit dated by `order(bundleId)` minutes — by default the bundle order. */
+function timed(input: ShotgunSurgeryInput, order: (bundleId: number) => number = (id) => id): ShotgunSurgeryInput {
+  return {
+    ...input,
+    bundleTimestamps: new Map([...input.bundles.keys()].map((id) => [id, 1_700_000_000 + 60 * order(id)])),
+  };
+}
+
+/** The same input with no commit timestamps recorded. */
+function untimed(input: ShotgunSurgeryInput): ShotgunSurgeryInput {
+  const { bundleTimestamps: _timestamps, ...rest } = input;
+  return rest;
+}
+
+/** The commits as the detector collects them: bundle, burst, partitioned files by component, task ids. */
+function commitsOf(input: ShotgunSurgeryInput) {
+  return [...input.bundles].map(([bundleId, files]) => {
+    const filesByComponent = new Map<string, Set<RelPath>>();
+    for (const relPath of files) {
+      const component = input.componentOf.get(relPath);
+      if (component === undefined) continue;
+      const set = filesByComponent.get(component) ?? new Set<RelPath>();
+      set.add(relPath);
+      filesByComponent.set(component, set);
+    }
+    return {
+      bundleId,
+      burst: input.bundleBursts?.get(bundleId) ?? bundleId,
+      filesByComponent,
+      taskIds: input.bundleTaskIds?.get(bundleId) ?? [],
+    };
+  });
+}
+
+/** The lifecycle's four files, one per SPREAD component, and the lines the feature adds to each. */
+const LIFECYCLE_FILES = SPREAD.map((c) => [c, "lc"] as const);
+const LIFECYCLE_ADDED = [12, 12, 9, 12];
+
+/** 31 commits adding 12 lines to one filler file and 31 adding 9 to another: 60 revisits, none mirrored. */
+const LIFECYCLE_BACKGROUND: LineCommit[] = [12, 9].flatMap((net) =>
+  Array.from({ length: 31 }, (_, j) => ({ sha: `bg${net}-${j}`, rows: [[`bg${net}`, "f", [net, 0]] as const] })),
+);
+
+/**
+ * A feature adding +12/+12/+9/+12 over SPREAD, an unrelated change of the
+ * spread, and a commit retiring exactly those lines — each under its own task
+ * id unless told otherwise, dated in bundle order.
+ */
+function lifecycleHistory(
+  options: { removeFirst?: boolean; taskIds?: readonly [readonly string[], readonly string[]] } = {},
+): ShotgunSurgeryInput {
+  const [addTasks, removeTasks] = options.taskIds ?? [["TD-1"], ["TD-2"]];
+  const add: LineCommit = {
+    sha: "feature-add",
+    rows: LIFECYCLE_FILES.map(([c, f], i) => [c, f, [LIFECYCLE_ADDED[i], 0]] as const),
+    taskIds: addTasks,
+  };
+  const other: LineCommit = { sha: "other", rows: rowsOver(SPREAD, 1, (row) => [700 + row, 0], "h") };
+  const remove: LineCommit = {
+    sha: "feature-remove",
+    rows: LIFECYCLE_FILES.map(([c, f], i) => [c, f, [0, LIFECYCLE_ADDED[i]]] as const),
+    taskIds: removeTasks,
+  };
+  const feature = options.removeFirst ? [remove, other, add] : [add, other, remove];
+  return timed(lineHistory(background(SPREAD), [...LIFECYCLE_BACKGROUND, ...feature]));
+}
+
+/** Four one-file registry components, optionally with a history of ten −1 commits each, then a ±1 pair over all four. */
+function registryHistory(withHistory: boolean): ShotgunSurgeryInput {
+  const registry = ["r0", "r1", "r2", "r3"];
+  const churn: LineCommit[] = withHistory
+    ? registry.flatMap((c) =>
+        Array.from({ length: 10 }, (_, j) => ({ sha: `${c}-churn${j}`, rows: [[c, "registry", [0, 1]] as const] })),
+      )
+    : [];
+  return timed(
+    lineHistory(
+      [],
+      [
+        ...Array.from({ length: 31 }, (_, j) => ({ sha: `bg1-${j}`, rows: [["bg1", "f", [1, 0]] as const] })),
+        ...churn,
+        { sha: "section-add", rows: registry.map((c) => [c, "registry", [1, 0]] as const), taskIds: ["TD-10"] },
+        { sha: "flag-remove", rows: registry.map((c) => [c, "registry", [0, 1]] as const), taskIds: ["TD-20"] },
+      ],
+    ),
+  );
+}
+
+/** Every bundle-keyed map of `input` renumbered by `renumber`. */
+function renumbered(input: ShotgunSurgeryInput, renumber: (bundleId: number) => number): ShotgunSurgeryInput {
+  const remap = <V>(map: ReadonlyMap<number, V> | undefined): Map<number, V> =>
+    new Map([...(map ?? new Map<number, V>())].map(([id, value]) => [renumber(id), value]));
+  return {
+    ...input,
+    bundles: remap(input.bundles),
+    bundleBursts: remap(input.bundleBursts),
+    bundleCommits: remap(input.bundleCommits),
+    bundleTaskIds: remap(input.bundleTaskIds),
+    bundleFileLines: remap(input.bundleFileLines),
+    bundleTimestamps: remap(input.bundleTimestamps),
+  };
+}
+
+// bd tea-rags-mcp-zf9yz: a commit retiring exactly the lines an earlier one added is the same feature's lifecycle.
+describe("detectShotgunSurgery — lifecycle pairs", () => {
+  it("joins a feature to the later commit retiring exactly its lines, under another task id", () => {
+    const input = lifecycleHistory();
+
+    expect(detectShotgunSurgery(untimed(input)).findings.map((f) => f.support)).toEqual([3]);
+    const report = detectShotgunSurgery(input);
+    expect(report.summary.echoPairCount).toBe(0);
+    expect(report.summary.lifecycleCandidatePairCount).toBe(report.summary.echoCandidatePairCount);
+    expect(report.summary.lifecycleCandidatePairCount).toBe(3);
+    expect(report.summary.lifecyclePairCount).toBe(1);
+    expect(report.findings.map((f) => f.support)).toEqual([2]);
+    expect(report.findings[0].sampleChanges).toContainEqual(["feature-remove", "feature-add"]);
+  });
+
+  it("does not join a removal to a later addition of the same magnitudes", () => {
+    const input = lifecycleHistory({ removeFirst: true });
+    const report = detectShotgunSurgery(input);
+
+    expect(report.summary.lifecyclePairCount).toBe(0);
+    expect(report.findings).toEqual(detectShotgunSurgery(untimed(input)).findings);
+  });
+
+  it("reads a ±1 mirror on files whose own history is mostly −1 as no evidence, the same mirror elsewhere as a lifecycle", () => {
+    expect(detectShotgunSurgery(registryHistory(true)).summary.lifecyclePairCount).toBe(0);
+    expect(detectShotgunSurgery(registryHistory(false)).summary.lifecyclePairCount).toBe(1);
+  });
+
+  it("orients pairs by the commit timestamps, never by the bundle numbering", () => {
+    const input = lifecycleHistory();
+    const { size } = input.bundles;
+    const reversed = renumbered(input, (id) => size - 1 - id);
+    const assess = (subject: ShotgunSurgeryInput) => {
+      const sha = (id: number) => subject.bundleCommits?.get(id)?.[0];
+      return findShotgunSurgeryLifecyclePairs(commitsOf(subject), { ids: new Set() }, subject).candidates.map((c) => [
+        sha(c.first),
+        sha(c.second),
+        c.pValue,
+      ]);
+    };
+
+    expect(assess(reversed)).toEqual(assess(input));
+    expect(assess(input)[0].slice(0, 2)).toEqual(["feature-add", "feature-remove"]);
+    expect(detectShotgunSurgery(reversed).summary).toEqual(detectShotgunSurgery(input).summary);
+  });
+
+  it("runs only when line counts and commit timestamps are both recorded", () => {
+    const input = lifecycleHistory();
+    const plain = detectShotgunSurgery(untimed(input));
+
+    expect(plain.summary).not.toHaveProperty("lifecycleCandidatePairCount");
+    expect(plain.summary).not.toHaveProperty("lifecyclePairCount");
+    expect(detectShotgunSurgery({ ...input, bundleTimestamps: new Map() })).toEqual(plain);
+    expect(detectShotgunSurgery(withoutLines(input))).toEqual(detectShotgunSurgery(withoutLines(untimed(input))));
+  });
+
+  it("never tests a pair touching a mechanical commit", () => {
+    const input = timed(
+      lineHistory(
+        [],
+        [
+          ...MECHANICAL_CORPUS,
+          { sha: "sweep", rows: ECHO_FILES.map(([c, f]) => [c, f, [3, 0]] as const) },
+          { sha: "cleanup", rows: ECHO_FILES.map(([c, f], i) => [c, f, [0, ECHO_ADDED[i]]] as const) },
+        ],
+      ),
+    );
+    const report = detectShotgunSurgery(input);
+
+    expect(report.summary.mechanicalCommitCount).toBe(1);
+    expect(report.summary.lifecycleCandidatePairCount).toBe(0);
+  });
+
+  it("leaves a pair a shared task id already joins exactly as it was", () => {
+    const input = lifecycleHistory({ taskIds: [["TD-7"], ["TD-7"]] });
+    const report = detectShotgunSurgery(input);
+
+    expect(report.summary.lifecyclePairCount).toBe(1);
+    expect(report.findings).toEqual(detectShotgunSurgery(untimed(input)).findings);
+  });
+});
+
+describe("shotgunSurgeryLifecyclePValue", () => {
+  it("is the Poisson-binomial tail of the mirrored files, 1 when none mirrored", () => {
+    expect(shotgunSurgeryLifecyclePValue([0.1, 0.2], 2)).toBeCloseTo(0.02, 15);
+    expect(shotgunSurgeryLifecyclePValue([0.1, 0.2], 0)).toBe(1);
+    expect(shotgunSurgeryLifecyclePValue([], 0)).toBe(1);
   });
 });
