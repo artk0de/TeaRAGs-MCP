@@ -18,8 +18,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { importGitHistory } from "../../../../__helpers__/git-history-import.js";
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import type { ChunkSignalOverlay } from "../../../../../../src/core/contracts/types/provider.js";
+import { GitCommitDiscovery } from "../../../../../../src/core/domains/trajectory/git/history/commit-discovery.js";
 import { ChunkChurnWalkPool } from "../../../../../../src/core/domains/trajectory/git/infra/churn-walk/walk-pool.js";
-import { GitCommitDiscovery } from "../../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
 import type { ChunkChurnWalkStats } from "../../../../../../src/core/domains/trajectory/git/infra/walk-commits.js";
 import { GitEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/git/provider.js";
 

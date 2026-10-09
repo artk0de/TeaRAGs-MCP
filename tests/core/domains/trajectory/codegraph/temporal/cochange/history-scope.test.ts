@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CommitInfo } from "../../../../../../../src/core/adapters/vcs/types.js";
 import { scopeCochangeHistory } from "../../../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
-import type { GitCommitDiscoveryEntry } from "../../../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
+import type { GitCommitDiscoveryEntry } from "../../../../../../../src/core/domains/trajectory/git/history/commit-discovery.js";
 
 function entry(
   sha: string,

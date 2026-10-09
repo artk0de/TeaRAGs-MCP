@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
-import { buildBugFixShaSet } from "../../../../../../src/core/domains/trajectory/git/infra/merge-branch-resolver.js";
+import { buildBugFixShaSet } from "../../../../../../src/core/domains/trajectory/git/history/merge-branch-resolver.js";
 
 function commit(sha: string, parents: string[], body: string): CommitInfo {
   return { sha, author: "A", authorEmail: "a@a.com", timestamp: 0, body, parents };
@@ -65,7 +65,11 @@ describe("buildBugFixShaSet", () => {
   });
 
   it("handles feature/ branch with fix in description (not a bug fix)", () => {
-    const M = commit("m000", ["base", "c000"], "Merge branch 'feature/TD-999-fix-badges-in-comparison-page' into 'master'");
+    const M = commit(
+      "m000",
+      ["base", "c000"],
+      "Merge branch 'feature/TD-999-fix-badges-in-comparison-page' into 'master'",
+    );
     const C = commit("c000", ["base"], "[TD-999] Fix badges");
     const result = buildBugFixShaSet([M, C]);
     expect(result.has("c000")).toBe(false);

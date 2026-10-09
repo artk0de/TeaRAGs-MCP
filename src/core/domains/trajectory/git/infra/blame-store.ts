@@ -28,8 +28,7 @@ import { dirname, join } from "node:path";
 
 import type { BlameLine } from "../../../../adapters/vcs/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
-import { mailmapStampMatches, readMailmapFingerprint } from "./mailmap-fingerprint.js";
-import { resolveRepoIdentity } from "./repo-identity.js";
+import { mailmapStampMatches, readMailmapFingerprint, resolveRepoIdentity } from "../history/index.js";
 
 const DEFAULT_MAX_BYTES = 128 * 1024 * 1024;
 

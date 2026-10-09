@@ -6,9 +6,9 @@
  */
 
 import type { FileChurnData } from "../../../../adapters/vcs/types.js";
+import { isBugFixCommit, isBugFixCommitOrBranch, MERGE_SUBJECT } from "../history/index.js";
 import type { ChunkChurnOverlay, GitFileSignals } from "../types.js";
 import { computeDominantAuthor, extractAllTaskIds } from "./metrics/extractors.js";
-import { isBugFixCommit, isBugFixCommitOrBranch, MERGE_SUBJECT } from "./utils.js";
 
 /**
  * Accumulated raw data for a single chunk, collected during hunk mapping.

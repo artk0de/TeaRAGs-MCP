@@ -1,7 +1,20 @@
 # domains/trajectory/git — commit and blame history stamped onto file and chunk payloads
 
-`infra/metrics/` and `infra/churn-walk/` knowledge lives here rather than in
-their own navigators.
+`infra/metrics/`, `infra/churn-walk/` and `history/` knowledge lives here rather
+than in their own navigators.
+
+## Invariants
+
+- **`history/` is a leaf: it imports nothing from `infra/`, `provider.ts` or the
+  module root, and everything outside it imports `history/index.ts`, never a
+  file inside.** It holds the repository-history read primitives — commit
+  discovery and its store, the history anchor, rename following, author identity
+  and sessions, the commit-message rules (`extractTaskIds`, `isBugFixCommit`,
+  `MERGE_SUBJECT`). Why: the codegraph temporal sub-graph consumes exactly
+  these, and reaching them through the git module root made a stable consumer
+  depend on the provider's instability (architecture report
+  `stableDependencies`, bd tea-rags-mcp-89k7k.35.7). One deep import, or one
+  `history/` file reaching back into `infra/`, puts that edge back.
 
 ## Mechanics
 
@@ -43,7 +56,7 @@ their own navigators.
   bare `Date.now()`.** `TRAJECTORY_GIT_ANCHOR` (`trajectoryGitSchema`, default
   `now`) picks it: `GitEnrichmentProvider#getRunHistoryAnchor` resolves `head`
   ONCE per (root, HEAD) and run to the HEAD commit's committer time
-  (`VcsGitAdapter#readHeadCommitTime`, `infra/history-anchor.ts`), and `now`
+  (`VcsGitAdapter#readHeadCommitTime`, `history/history-anchor.ts`), and `now`
   resolves `undefined`, which every reader maps back to the wall clock. It
   reaches the discoveries' `--since` and evict bound (`historyAnchorSec`
   option), the file assembler (`WindowedFileChurn.historyAnchorSec`, stamped by
@@ -79,7 +92,7 @@ their own navigators.
 
 - **The chunk walk follows renames, and the ORDER of the slice is what makes
   that correct.** A commit older than a rename names the file by its old path,
-  so `sliceCommitsFollowingRenames` (`infra/rename-following.ts`) re-queries
+  so `sliceCommitsFollowingRenames` (`history/rename-following.ts`) re-queries
   discovery with every predecessor path a rename row reveals, to a fixpoint;
   `resolveHeadPaths` then walks the slice newest → oldest with an alias map
   rewritten at each rename row. The off-thread path widens its slice in
@@ -91,7 +104,7 @@ their own navigators.
   a commit lands on, not whether it has hunks.
 
 - **The file walk follows renames through the same alias map.**
-  `aggregateFileChurnFollowingRenames` (`infra/rename-following.ts`) folds
+  `aggregateFileChurnFollowingRenames` (`history/rename-following.ts`) folds
   per-commit numstat onto HEAD paths for both `FileChurnDiscovery#fileChurn` and
   the per-path readers `buildFileSignalsForPaths` /
   `buildWindowedFileSignalsForPaths`. The discovery resolves aliases over its
@@ -198,7 +211,7 @@ their own navigators.
 - **An author is an EMAIL, read after `.mailmap`; the payload still carries
   NAMES.** Every git reader asks for `%aN` / `%aE` (`git blame --porcelain` maps
   on its own), and every count, dominant-author pick and session grouping keys
-  by `authorIdentityKey` (`infra/author-identity.ts`, lowercased email); the
+  by `authorIdentityKey` (`history/author-identity.ts`, lowercased email); the
   displayed name is the identity's ONE canonical name for the run: its most
   frequent name over the repository's whole in-window commit discovery, ties by
   code point (`buildAuthorNameDirectory`, built in
@@ -217,7 +230,7 @@ their own navigators.
 - **With squash-aware sessions on, `commitCount` is a SESSION count and only
   some signals follow.** `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS=true` groups
   commits per author (gap ≥ `sessionGapMinutes`, default 30; merge commits
-  dropped — `groupIntoSessions` in `infra/metrics/sessions.ts`) into a synthetic
+  dropped — `groupIntoSessions` in `history/sessions.ts`) into a synthetic
   one-commit-per-session `countSource` (`assembleFileSignals`). `commitCount`,
   `recencyWeightedFreq`, `changeDensity`, `churnVolatility` and `bugFixRate`
   then read sessions, while authorship, `linesAdded` / `linesDeleted` /

@@ -28,8 +28,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { importGitHistory, type GitHistoryCommit } from "../../../../__helpers__/git-history-import.js";
 import { copyGitRepoTemplate } from "../../../../__helpers__/git-repo-template.js";
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
+import { GitCommitDiscovery } from "../../../../../../src/core/domains/trajectory/git/history/commit-discovery.js";
 import { buildChunkChurnMapUncached } from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
-import { GitCommitDiscovery } from "../../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
 import type { ChunkChurnOverlay } from "../../../../../../src/core/domains/trajectory/git/types.js";
 
 vi.setConfig({ testTimeout: 30000 });

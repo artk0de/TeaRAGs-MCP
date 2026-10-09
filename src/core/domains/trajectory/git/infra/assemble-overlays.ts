@@ -8,12 +8,11 @@
 
 import type { BlameLine, FileChurnData } from "../../../../adapters/vcs/types.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
+import { authorIdentityKey, groupIntoSessions } from "../history/index.js";
 import type { ChunkChurnOverlay } from "../types.js";
-import { authorIdentityKey } from "./author-identity.js";
 import { computeBlameOwnership } from "./blame-ownership.js";
 import type { ChunkAccumulator, SquashOptions } from "./metrics.js";
 import { assembleChunkSignals } from "./metrics/chunk-assembler.js";
-import { groupIntoSessions } from "./metrics/sessions.js";
 
 export interface AssembleOverlaysOptions {
   relativeChunkMap: Map<string, ChunkLookupEntry[]>;

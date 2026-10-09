@@ -8,11 +8,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { CommitInfo } from "../../../../../../../src/core/adapters/vcs/types.js";
+import type { CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
 import {
   groupIntoSessions,
   groupTimestampsIntoSessions,
-} from "../../../../../../../src/core/domains/trajectory/git/infra/metrics/sessions.js";
+} from "../../../../../../src/core/domains/trajectory/git/history/sessions.js";
 
 const BASE_TS = 1700000000; // arbitrary fixed timestamp
 const HOUR = 3600;

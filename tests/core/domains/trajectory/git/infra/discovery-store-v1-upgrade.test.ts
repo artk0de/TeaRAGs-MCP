@@ -21,7 +21,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { GitCommitDiscoveryStore } from "../../../../../../src/core/domains/trajectory/git/infra/commit-discovery-store.js";
+import { GitCommitDiscoveryStore } from "../../../../../../src/core/domains/trajectory/git/history/commit-discovery-store.js";
 import { FileChurnDiscoveryStore } from "../../../../../../src/core/domains/trajectory/git/infra/file-churn-discovery-store.js";
 
 const REPO_ROOT = "/some/repo";

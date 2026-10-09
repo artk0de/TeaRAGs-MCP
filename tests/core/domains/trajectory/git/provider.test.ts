@@ -8,9 +8,9 @@ import {
   createCatFileBatchCheck,
   getHead,
 } from "../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import { GitCommitDiscovery } from "../../../../../src/core/domains/trajectory/git/history/commit-discovery.js";
 import { buildChunkChurnMap } from "../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import { ChunkChurnWalkPool } from "../../../../../src/core/domains/trajectory/git/infra/churn-walk/walk-pool.js";
-import { GitCommitDiscovery } from "../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
 import { FileChurnDiscovery } from "../../../../../src/core/domains/trajectory/git/infra/file-churn-discovery.js";
 import {
   buildFileSignalDiscovery,

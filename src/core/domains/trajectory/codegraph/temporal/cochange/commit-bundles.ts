@@ -20,7 +20,7 @@
 
 import type { CommitInfo } from "../../../../../adapters/vcs/types.js";
 import type { CochangeFileLineCounts, RelPath } from "../../../../../contracts/types/codegraph.js";
-import { extractTaskIds, partitionIntoAuthorSessions } from "../../../git/index.js";
+import { extractTaskIds, partitionIntoAuthorSessions } from "../../../git/history/index.js";
 
 /** One scoped commit: the files it touched, as project-relative HEAD paths, each once. */
 export interface CochangeCommit {

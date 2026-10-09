@@ -39,10 +39,8 @@ import { join } from "node:path";
 import { parseNumstatChangedPath } from "../../../../adapters/vcs/git/git-cli/parsers.js";
 import type { CommitFileNumstat } from "../../../../adapters/vcs/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
+import { mailmapStampMatches, pruneSnapshots, readMailmapFingerprint, resolveRepoIdentity } from "../history/index.js";
 import type { FileChurnDiscoveryPersistence, PersistedFileChurnDiscovery } from "./file-churn-discovery.js";
-import { mailmapStampMatches, readMailmapFingerprint } from "./mailmap-fingerprint.js";
-import { resolveRepoIdentity } from "./repo-identity.js";
-import { pruneSnapshots } from "./snapshot-retention.js";
 
 const DEFAULT_MAX_BYTES = 64 * 1024 * 1024;
 

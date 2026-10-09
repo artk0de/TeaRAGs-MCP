@@ -18,13 +18,17 @@ import type {
 import type { CommitDiffHunk, CommitDiffMemoPort } from "../../../../contracts/types/commit-diff-memo.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
-import { authorIdentityKey } from "./author-identity.js";
-import { historyWindowSince } from "./history-anchor.js";
-import { buildBugFixShaSet } from "./merge-branch-resolver.js";
+import {
+  authorIdentityKey,
+  buildBugFixShaSet,
+  extractTaskIds,
+  historyWindowSince,
+  resolveHeadPaths,
+  sliceCommitsFollowingRenames,
+  type HeadAttributedChangedPath,
+} from "../history/index.js";
 import { isBugFixCommitOrBranch, type ChunkAccumulator, type SquashOptions } from "./metrics.js";
 import { applyOffsets, changedRowsInRange, mapHunksToChunks, type AdjustedRange } from "./offset-tracker.js";
-import { resolveHeadPaths, sliceCommitsFollowingRenames, type HeadAttributedChangedPath } from "./rename-following.js";
-import { extractTaskIds } from "./utils.js";
 
 /** Duck type for injected concurrency limiter — matches infra/semaphore.ts Semaphore shape. */
 export interface ChunkConcurrencySemaphore {

@@ -12,7 +12,7 @@ import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/
 import {
   GitCommitDiscovery,
   type GitCommitDiscoveryEntry,
-} from "../../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
+} from "../../../../../../src/core/domains/trajectory/git/history/commit-discovery.js";
 
 vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (importOriginal) => importOriginal());
 
