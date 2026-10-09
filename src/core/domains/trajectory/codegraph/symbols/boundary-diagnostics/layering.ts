@@ -961,14 +961,20 @@ function nestedPairs(
  * foundation. A component at the top level with nothing above it is a
  * composition root; a knot member shares its knot's position and is never
  * judged alone.
+ *
+ * Two depth-0 components are not detached (bd tea-rags-mcp-r8hme.52.2): one a
+ * parent facade re-exports — the aggregation is excluded from the levels, but
+ * the component is reached through the parent's surface — and one holding an
+ * entry facade, a composition root by measurement wherever it sits.
  */
 function islands(componentGraph: ComponentGraph, model: LayeringModel): LayeringIslandViolation[] {
+  const aggregated = new Set(componentGraph.facadeAggregations.map((a) => a.nestedComponent));
   const findings: LayeringIslandViolation[] = [];
   for (const [component, position] of model.positions) {
     if (position.inKnot || position.depth !== 0) continue;
     if (position.level >= model.levelCount - 1) continue;
     const c = componentGraph.components.get(component);
-    if (!c) continue;
+    if (!c || c.entryFacade || aggregated.has(component)) continue;
     findings.push({
       kind: "island",
       component,

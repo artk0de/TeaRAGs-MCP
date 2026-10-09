@@ -5,6 +5,7 @@ import { isFacadeAggregationEdge } from "./facade-aggregation.js";
 import type {
   ArchitectureComponent,
   ComponentDependency,
+  ComponentFacadeAggregation,
   ComponentGraph,
   FacadeModuleAssessment,
   FacadeModuleStatus,
@@ -96,14 +97,19 @@ export function buildComponentGraph(
   const afferent = new Map<string, Set<RelPath>>();
   const efferent = new Map<string, Set<RelPath>>();
   const carried = new Map<string, FileDependencyEdge[]>();
+  const aggregations = new Map<string, ComponentFacadeAggregation>();
+  const importedFiles = new Set<RelPath>();
   for (const edge of graph.edges) {
     const source = componentOf.get(edge.sourceRelPath);
     const target = componentOf.get(edge.targetRelPath);
+    if (edge.sourceRelPath !== edge.targetRelPath) importedFiles.add(edge.targetRelPath);
     if (edge.sourceRelPath === edge.targetRelPath) excluded.selfEdges++;
     else if (source === undefined || target === undefined) excluded.unwalkedEndpoints++;
     else if (source === target) excluded.intraComponent++;
-    else if (isFacadeAggregationEdge(edge)) excluded.facadeAggregations++;
-    else {
+    else if (isFacadeAggregationEdge(edge)) {
+      excluded.facadeAggregations++;
+      aggregations.set(`${source}\u0000${target}`, { parentComponent: source, nestedComponent: target });
+    } else {
       addTo(afferent, target, edge.sourceRelPath);
       addTo(efferent, source, edge.sourceRelPath);
       const key = `${source}\u0000${target}`;
@@ -128,6 +134,7 @@ export function buildComponentGraph(
       efferentCount,
       connectionCount,
       instability: connectionCount === 0 ? 0 : efferentCount / connectionCount,
+      ...(module && isEntryFacade(module, importedFiles) ? { entryFacade: true as const } : {}),
     });
   }
 
@@ -148,7 +155,25 @@ export function buildComponentGraph(
         compareCodePoints(a.targetComponent, b.targetComponent),
     );
 
-  return { components, componentOf, dependencies, excluded, fileEdgeCount: graph.edges.length };
+  const facadeAggregations = [...aggregations.values()].sort(
+    (a, b) =>
+      compareCodePoints(a.parentComponent, b.parentComponent) ||
+      compareCodePoints(a.nestedComponent, b.nestedComponent),
+  );
+
+  return { components, componentOf, dependencies, excluded, facadeAggregations, fileEdgeCount: graph.edges.length };
+}
+
+/**
+ * An entry module (bd tea-rags-mcp-r8hme.52.2): its facade file is the target
+ * of no file edge — facade aggregation included, so a nested facade its parent
+ * re-exports is NOT an entry — and no file outside the module reaches it. A
+ * process or package entry, measured; no path or file name decides it.
+ */
+function isEntryFacade(module: FacadeModuleAssessment, importedFiles: ReadonlySet<RelPath>): boolean {
+  return (
+    module.facadeRelPath !== null && module.externalImporterCount === 0 && !importedFiles.has(module.facadeRelPath)
+  );
 }
 
 /**
