@@ -2,16 +2,15 @@ import { execFile } from "node:child_process";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { isAncestor, resolveRepoRoot } from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import { execFileForPathspec } from "../../../../../../src/core/adapters/vcs/git/git-cli/exec.js";
 import {
   blameFile,
   buildViaCli,
-  execFileForPathspec,
   getCommitsByPathspec,
   getCommitsByPathspecBatched,
   getCommitsInRange,
-  isAncestor,
-  resolveRepoRoot,
-} from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+} from "../../../../../../src/core/adapters/vcs/git/git-cli/history.js";
 import {
   parseBlameOutput,
   parseNumstatOutput,

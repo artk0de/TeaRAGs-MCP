@@ -24,7 +24,7 @@
  * needs live reads the api layer owns (`WorktreeSeedOps`).
  */
 
-import { resolveGitCommonDir } from "../../../adapters/vcs/git/common-dir.js";
+import { resolveGitCommonDir } from "../../../adapters/vcs/index.js";
 import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
 import type { CollectionEntry } from "../../../contracts/types/registry.js";
 import type { WorktreeSeedRejectionReason } from "../../../contracts/types/worktree.js";

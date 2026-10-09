@@ -12,9 +12,9 @@ paths:
 
 Bulk git blob/object reads (chunk-churn walk = two blobs per changed file per
 commit — tens of thousands per index) go through **persistent**
-`createCatFileBatch(repoRoot)` in `src/core/adapters/vcs/git/git-cli/client.ts`.
-One long-lived `git cat-file --batch` process per walk by default; close at walk
-end.
+`createCatFileBatch(repoRoot)` in
+`src/core/adapters/vcs/git/git-cli/cat-file.ts`. One long-lived
+`git cat-file --batch` process per walk by default; close at walk end.
 
 **Run-scoped sharing (kc93).** Streaming index run: git chunk walk runs once
 **per embedding batch** (`buildChunkSignals` per batch). Fresh reader per batch
@@ -54,7 +54,7 @@ e2e confirmed `external` / `arrayBuffers` peak dropped 16–40 GB → **~0.1 GB*
 ## How
 
 ```ts
-import { createCatFileBatch } from "../../adapters/vcs/git/git-cli/client.js";
+import { createCatFileBatch } from "../../adapters/vcs/index.js";
 
 const reader = createCatFileBatch(repoRoot); // lazy: no process until first read()
 try {

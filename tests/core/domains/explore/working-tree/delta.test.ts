@@ -7,14 +7,14 @@ import {
   createGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
 } from "../../../__helpers__/git-working-tree-fixture.js";
-import * as gitClient from "../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import * as gitClient from "../../../../../src/core/adapters/vcs/git/git-cli/working-tree.js";
 import {
   createWorkingTreeDeltaReader,
   type WorkingTreeDeltaRead,
 } from "../../../../../src/core/domains/explore/working-tree/index.js";
 import { FileScanner } from "../../../../../src/core/domains/ingest/pipeline/scanner.js";
 
-vi.mock("../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (importOriginal) => importOriginal());
+vi.mock("../../../../../src/core/adapters/vcs/git/git-cli/working-tree.js", async (importOriginal) => importOriginal());
 
 /**
  * `WorkingTreeDelta` (bd tea-rags-mcp-xi2r9.2): the index is commit A on main,

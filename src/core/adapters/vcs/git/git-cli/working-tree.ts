@@ -10,11 +10,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { buildGitChildProcessEnv, resolveGitExecutable } from "../../../../infra/git-executable.js";
-import { BULK_LOG_STALL_FLOOR_MS } from "./exec.js";
+import { BULK_LOG_STALL_FLOOR_MS, TREE_LISTING_STALL_MS } from "./exec.js";
+import { splitNulTerminated } from "./parsers.js";
 import { execWithStallGuard } from "./stall-guard-exec.js";
-
-/** Silence window for the two tree listings below — one bounded spawn each, never a history walk. */
-export const TREE_LISTING_STALL_MS = 60_000;
 
 /**
  * Every path `commitOid`'s tree tracks, repo-relative, as git spells it
@@ -68,10 +66,6 @@ export async function listWorktreeModifications(
     { stallTimeoutMs: Math.max(timeoutMs, BULK_LOG_STALL_FLOOR_MS) },
   );
   return splitNulTerminated(out);
-}
-
-export function splitNulTerminated(out: string): string[] {
-  return out.split("\0").filter((p) => p.length > 0);
 }
 
 /** Lines of a file the working tree ADDED against a base: 1-based, inclusive on both ends. */

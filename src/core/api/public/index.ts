@@ -263,7 +263,7 @@ export { chunkPointsFilter } from "../../adapters/qdrant/service-points.js";
 export { resolveQdrantUrl, EMBEDDED_MARKER } from "../../adapters/qdrant/embedded/daemon.js";
 // Repo identity — lets the CLI tell that two paths are working trees of ONE
 // repository (a checkout and its linked worktrees), so it can inherit config.
-export { resolveGitCommonDir } from "../../adapters/vcs/git/common-dir.js";
+export { resolveGitCommonDir } from "../../adapters/vcs/index.js";
 
 // ── Language capability ceilings (cli/prime per-index tier lines) ─────
 // Static per-language descriptors, never measured numbers — prime pairs them

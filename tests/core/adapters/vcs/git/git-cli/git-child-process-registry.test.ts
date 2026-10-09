@@ -24,9 +24,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import {
   createCatFileBatch,
   createCatFileBatchCheck,
-  execFileForPathspec,
-  getHead,
-} from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+} from "../../../../../../src/core/adapters/vcs/git/git-cli/cat-file.js";
+import { getHead } from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import { execFileForPathspec } from "../../../../../../src/core/adapters/vcs/git/git-cli/exec.js";
 import {
   reapGitChildProcesses,
   trackGitChildProcess,

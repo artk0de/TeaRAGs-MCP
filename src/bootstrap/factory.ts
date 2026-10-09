@@ -21,8 +21,7 @@ import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { DaemonLock } from "../core/adapters/qdrant/embedded/daemon-lock.js";
 import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
 import type { EmbeddingModelGuard } from "../core/adapters/qdrant/embedding-model-guard.js";
-import { VcsAdapterFactory } from "../core/adapters/vcs/factory.js";
-import { reapGitChildProcesses } from "../core/adapters/vcs/git/git-cli/git-child-process-registry.js";
+import { reapGitChildProcesses, VcsAdapterFactory } from "../core/adapters/vcs/index.js";
 import {
   composeAppOps,
   createApp,

@@ -11,7 +11,7 @@
  * years old still has a populated window.
  */
 
-import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
+import type { VcsGitAdapter } from "../../../../adapters/vcs/index.js";
 import type { TrajectoryGitConfig } from "../../../../contracts/types/config.js";
 import { isDebug } from "../../../../infra/runtime.js";
 

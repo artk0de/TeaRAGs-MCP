@@ -15,7 +15,7 @@
  * are the spec's Phase 2/3.
  */
 
-import type { GitAdapterKind } from "../../../../adapters/vcs/types.js";
+import type { GitAdapterKind } from "../../../../adapters/vcs/index.js";
 import type { TemporalSymbolCommitBuffer } from "../../../../contracts/types/codegraph.js";
 import type { Trajectory } from "../../../../contracts/types/trajectory.js";
 import type { CodegraphCollectionCompletionHook } from "../collection-completion-hook.js";

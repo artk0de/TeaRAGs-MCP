@@ -18,7 +18,7 @@
  * `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS`.
  */
 
-import type { CommitInfo } from "../../../../../adapters/vcs/types.js";
+import type { CommitInfo } from "../../../../../adapters/vcs/index.js";
 import type { CochangeFileLineCounts, RelPath } from "../../../../../contracts/types/codegraph.js";
 import { extractTaskIds, partitionIntoAuthorSessions } from "../../../git/history/index.js";
 

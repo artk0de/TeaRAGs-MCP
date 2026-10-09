@@ -1,4 +1,4 @@
-import type { BlameLine } from "../../../../adapters/vcs/types.js";
+import type { BlameLine } from "../../../../adapters/vcs/index.js";
 import { tallyAuthors } from "../history/index.js";
 
 export interface BlameOwnership {

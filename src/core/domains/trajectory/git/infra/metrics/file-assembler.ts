@@ -5,7 +5,7 @@
  * Replaces the monolithic computeFileSignals() function.
  */
 
-import type { BlameLine, CommitInfo } from "../../../../../adapters/vcs/types.js";
+import type { BlameLine, CommitInfo } from "../../../../../adapters/vcs/index.js";
 import { groupIntoSessions } from "../../history/index.js";
 import type { GitFileSignals } from "../../types.js";
 import { computeBlameOwnership } from "../blame-ownership.js";

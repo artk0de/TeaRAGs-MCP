@@ -160,7 +160,7 @@ export interface ChunkSignalOptions {
   /**
    * Run-scoped git object reader shared across every per-batch chunk-signal
    * call of one indexing run. Structural shape of `CatFileBatchReader`
-   * (`core/adapters/vcs/git/git-cli/client.ts`) — declared by value here, not imported,
+   * (`core/adapters/vcs/git/git-cli/cat-file.ts`) — declared by value here, not imported,
    * because contracts is pure (no `core/` deps per domain-boundaries.md).
    *
    * When present, the git walk reuses this ONE `git cat-file --batch` process

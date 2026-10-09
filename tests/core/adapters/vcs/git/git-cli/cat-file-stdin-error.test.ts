@@ -19,7 +19,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createCatFileBatch,
   createCatFileBatchCheck,
-} from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+} from "../../../../../../src/core/adapters/vcs/git/git-cli/cat-file.js";
 
 // Auto-mock: every export becomes a vi.fn(). Only `spawn` is exercised here
 // (the batch readers' one child_process entry point), so the readers under test

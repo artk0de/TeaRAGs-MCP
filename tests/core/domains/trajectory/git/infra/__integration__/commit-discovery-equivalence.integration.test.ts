@@ -17,13 +17,15 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { GitCliAdapter } from "../../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
-import * as gitClient from "../../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import * as gitClient from "../../../../../../../src/core/adapters/vcs/git/git-cli/history.js";
 import { GitCommitDiscoveryStore } from "../../../../../../../src/core/domains/trajectory/git/history/commit-discovery-store.js";
 import { GitCommitDiscovery } from "../../../../../../../src/core/domains/trajectory/git/history/commit-discovery.js";
 import { buildChunkChurnMapUncached } from "../../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 
 // Enable cross-module CALL-THROUGH spy interception for adapter functions.
-vi.mock("../../../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (importOriginal) => importOriginal());
+vi.mock("../../../../../../../src/core/adapters/vcs/git/git-cli/history.js", async (importOriginal) =>
+  importOriginal(),
+);
 
 const TEST_TIMEOUT = 60000;
 

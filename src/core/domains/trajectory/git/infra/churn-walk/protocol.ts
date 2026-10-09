@@ -15,7 +15,7 @@ import type {
   CommitWithChangedFiles,
   FileChurnData,
   GitAdapterKind,
-} from "../../../../../adapters/vcs/types.js";
+} from "../../../../../adapters/vcs/index.js";
 import type { ChunkLookupEntry } from "../../../../../types.js";
 import type { ChunkChurnOverlay } from "../../types.js";
 import type { SquashOptions } from "../metrics.js";

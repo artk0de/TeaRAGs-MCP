@@ -1,8 +1,10 @@
 /**
  * Reference `VcsGitAdapter` implementation over the git CLI — the equivalence
  * oracle every other git adapter is validated against. Methods delegate to
- * the battle-tested free functions in `client.ts`; this class only binds the
- * repo root and adapts names to the VCS contract vocabulary.
+ * the battle-tested free functions in the sibling git-cli modules (`client.ts`
+ * repo queries, `history.ts` log walks, `cat-file.ts` object reads,
+ * `working-tree.ts` listings); this class only binds the repo root and adapts
+ * names to the VCS contract vocabulary.
  */
 
 import type {
@@ -15,27 +17,20 @@ import type {
   OidBatchResolver,
 } from "../../types.js";
 import { VcsGitAdapter } from "../adapter.js";
+import { createCatFileBatch, createCatFileBatchCheck, readBlobAsString } from "./cat-file.js";
+import { getHead, isAncestor, readHeadCommitTime, writeCommitGraph } from "./client.js";
 import {
   blameFile,
   buildViaCli,
   buildViaCliForPaths,
-  createCatFileBatch,
-  createCatFileBatchCheck,
   getCommitsByPathspec,
   getCommitsInRange,
   getCommitsSince,
-  getHead,
-  isAncestor,
-  listTreePaths,
-  listWorktreeDeletions,
-  listWorktreeModifications,
-  readBlobAsString,
   readCommitFileNumstat,
   readCommitFileNumstatForPaths,
   readCommitPathChanges,
-  readHeadCommitTime,
-  writeCommitGraph,
-} from "./client.js";
+} from "./history.js";
+import { listTreePaths, listWorktreeDeletions, listWorktreeModifications } from "./working-tree.js";
 
 export class GitCliAdapter extends VcsGitAdapter {
   async getHead(): Promise<string> {

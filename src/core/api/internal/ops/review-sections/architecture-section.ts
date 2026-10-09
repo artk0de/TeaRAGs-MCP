@@ -27,7 +27,7 @@
 import { randomInt } from "node:crypto";
 
 import { REVIEW_EDGE_MAX_AGE_SECONDS } from "../../../../adapters/duckdb/review-edge-store.js";
-import { createCatFileBatch, isAncestor } from "../../../../adapters/vcs/git/git-cli/client.js";
+import { createCatFileBatch, isAncestor } from "../../../../adapters/vcs/index.js";
 import type {
   FileDependencyEdge,
   FileDependencyGraphFile,

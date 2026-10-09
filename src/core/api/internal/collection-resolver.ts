@@ -11,7 +11,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
-import { resolveGitCommonDir } from "../../adapters/vcs/git/common-dir.js";
+import { resolveGitCommonDir } from "../../adapters/vcs/index.js";
 import type { CollectionEntry, PathCollectionResolver } from "../../contracts/types/registry.js";
 import type { WorkingTree } from "../../contracts/types/working-tree.js";
 import { CollectionNotFoundError } from "../../domains/explore/index.js";

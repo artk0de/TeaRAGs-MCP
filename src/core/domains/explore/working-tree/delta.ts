@@ -27,11 +27,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
-import {
-  readStatusPorcelain,
-  readWorkingTreeChanges,
-  readWorkingTreeRenames,
-} from "../../../adapters/vcs/git/git-cli/client.js";
+import { readStatusPorcelain, readWorkingTreeChanges, readWorkingTreeRenames } from "../../../adapters/vcs/index.js";
 import { findGitToplevel, gitPathPrefix, rebaseGitPathsOntoRoot } from "../../../infra/repo-git-state.js";
 
 export interface WorkingTreeDelta {

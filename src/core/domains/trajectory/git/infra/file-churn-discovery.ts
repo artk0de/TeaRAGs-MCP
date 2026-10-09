@@ -19,8 +19,7 @@
  * file's `commits[]` matches the cold `parseNumstatOutput` push order.
  */
 
-import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
-import type { CommitFileNumstat, FileChurnData } from "../../../../adapters/vcs/types.js";
+import type { CommitFileNumstat, FileChurnData, VcsGitAdapter } from "../../../../adapters/vcs/index.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import {
   aggregateFileChurnFollowingRenames,

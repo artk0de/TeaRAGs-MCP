@@ -36,8 +36,7 @@ import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSy
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { parseNumstatChangedPath } from "../../../../adapters/vcs/git/git-cli/parsers.js";
-import type { CommitFileNumstat } from "../../../../adapters/vcs/types.js";
+import { parseNumstatChangedPath, type CommitFileNumstat } from "../../../../adapters/vcs/index.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import { mailmapStampMatches, pruneSnapshots, readMailmapFingerprint, resolveRepoIdentity } from "../history/index.js";
 import type { FileChurnDiscoveryPersistence, PersistedFileChurnDiscovery } from "./file-churn-discovery.js";

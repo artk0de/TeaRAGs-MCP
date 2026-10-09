@@ -18,7 +18,7 @@ import {
   type GitWorkingTreeFixture,
   type GitWorkingTreeSeedStep,
 } from "../../../__helpers__/git-working-tree-fixture.js";
-import * as gitCli from "../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import * as gitCli from "../../../../../src/core/adapters/vcs/git/git-cli/history.js";
 import { createWorkingTreeGitSignalStore } from "../../../../../src/core/api/internal/infra/working-tree-git-signal-store.js";
 import { createWorkingTreeGitSignalSource } from "../../../../../src/core/api/internal/infra/working-tree-git-signals.js";
 import type { WorkingTreeGitSignalTarget } from "../../../../../src/core/contracts/types/working-tree.js";
@@ -27,7 +27,7 @@ import * as onDemand from "../../../../../src/core/domains/trajectory/git/infra/
 vi.mock("../../../../../src/core/domains/trajectory/git/infra/on-demand-signals.js", async (importOriginal) =>
   importOriginal(),
 );
-vi.mock("../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (importOriginal) => importOriginal());
+vi.mock("../../../../../src/core/adapters/vcs/git/git-cli/history.js", async (importOriginal) => importOriginal());
 
 const C_V1 = "export function cFn(n: number): number {\n  return n;\n}\n";
 const C_V2 = "export function cFn(n: number): number {\n  return n + 1;\n}\n";

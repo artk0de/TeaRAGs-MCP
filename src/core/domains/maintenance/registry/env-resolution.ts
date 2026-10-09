@@ -16,7 +16,7 @@
  */
 
 import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
-import { resolveGitCommonDir } from "../../../adapters/vcs/git/common-dir.js";
+import { resolveGitCommonDir } from "../../../adapters/vcs/index.js";
 // RegistryLookup is defined in contracts (bd tea-rags-mcp-0qaht.36); this
 // module re-exports it unchanged for its existing consumers.
 import type { CollectionEntry, RegistryLookup } from "../../../contracts/types/registry.js";

@@ -17,8 +17,7 @@
  * `firstCreatedAt` 900 days ago.
  */
 
-import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
-import type { CommitPathChanges, FileChurnData } from "../../../../adapters/vcs/types.js";
+import type { CommitPathChanges, FileChurnData, VcsGitAdapter } from "../../../../adapters/vcs/index.js";
 import { resolveHeadPaths } from "../history/index.js";
 
 /** A file's whole-history age stamps, unix seconds of the AUTHOR date. */

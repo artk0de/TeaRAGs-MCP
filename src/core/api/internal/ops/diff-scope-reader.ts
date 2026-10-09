@@ -12,14 +12,14 @@
 
 import { realpathSync } from "node:fs";
 
-import { listRepoWorkTrees } from "../../../adapters/vcs/git/common-dir.js";
 import {
   listCommitsSince,
+  listRepoWorkTrees,
   readAddedLineRangesOfFiles,
   readMergeBase,
   readWorkingTreeChanges,
   type AddedLineRange,
-} from "../../../adapters/vcs/git/git-cli/client.js";
+} from "../../../adapters/vcs/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import {
   findGitToplevel,

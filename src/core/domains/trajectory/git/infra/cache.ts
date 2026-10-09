@@ -3,8 +3,7 @@
  * Invalidates automatically when HEAD changes.
  */
 
-import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
-import type { FileChurnData } from "../../../../adapters/vcs/types.js";
+import type { FileChurnData, VcsGitAdapter } from "../../../../adapters/vcs/index.js";
 import type { ChunkChurnOverlay } from "../types.js";
 
 export class GitEnrichmentCache {

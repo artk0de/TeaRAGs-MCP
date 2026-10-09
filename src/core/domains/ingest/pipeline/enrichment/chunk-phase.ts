@@ -16,7 +16,7 @@
  *   drives a single runDeferredChunk pass after the graph is finalized.
  */
 
-import type { BlobBatchReader } from "../../../../adapters/vcs/types.js";
+import type { BlobBatchReader } from "../../../../adapters/vcs/index.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkSignalOptions, ChunkSignalOverlay } from "../../../../contracts/types/provider.js";

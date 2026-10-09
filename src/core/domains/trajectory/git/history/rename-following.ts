@@ -20,7 +20,7 @@
  *    commits under the same name follow the renamed file.
  */
 
-import type { CommitChangedPath, CommitFileNumstat, FileChurnData } from "../../../../adapters/vcs/types.js";
+import type { CommitChangedPath, CommitFileNumstat, FileChurnData } from "../../../../adapters/vcs/index.js";
 
 /** Minimal slice row shape: anything carrying the commit's changed-path pairs. */
 interface CommitSliceRow<P extends CommitChangedPath = CommitChangedPath> {

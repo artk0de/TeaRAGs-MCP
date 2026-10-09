@@ -18,7 +18,7 @@ import {
   createGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
 } from "../../../__helpers__/git-working-tree-fixture.js";
-import { readBlobCommitTime } from "../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import { readBlobCommitTime } from "../../../../../src/core/adapters/vcs/git/git-cli/cat-file.js";
 import type { ScrollChunk } from "../../../../../src/core/domains/explore/chunk-grouping/types.js";
 import {
   computeGitBlobId,

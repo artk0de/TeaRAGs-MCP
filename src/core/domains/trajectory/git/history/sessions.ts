@@ -7,7 +7,7 @@
  * burst commits.
  */
 
-import type { CommitInfo } from "../../../../adapters/vcs/types.js";
+import type { CommitInfo } from "../../../../adapters/vcs/index.js";
 import { authorIdentityKey } from "./author-identity.js";
 import { isBugFixCommit, MERGE_SUBJECT } from "./utils.js";
 

@@ -8,13 +8,13 @@
 
 import { structuredPatch } from "diff";
 
-import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
 import type {
   BlobBatchReader,
   CommitInfo,
   CommitWithChangedFiles,
   FileChurnData,
-} from "../../../../adapters/vcs/types.js";
+  VcsGitAdapter,
+} from "../../../../adapters/vcs/index.js";
 import type { CommitDiffHunk, CommitDiffMemoPort } from "../../../../contracts/types/commit-diff-memo.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../types.js";

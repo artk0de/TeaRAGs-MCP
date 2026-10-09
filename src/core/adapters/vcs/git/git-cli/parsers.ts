@@ -12,6 +12,11 @@ import type {
   FileChurnData,
 } from "../../types.js";
 
+/** Split `-z` output (NUL-terminated records) into its non-empty records. */
+export function splitNulTerminated(out: string): string[] {
+  return out.split("\0").filter((p) => p.length > 0);
+}
+
 /** The literal git puts between the two sides of a rename in `--numstat`. */
 const RENAME_SEPARATOR = " => ";
 

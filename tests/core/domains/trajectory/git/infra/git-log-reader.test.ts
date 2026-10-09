@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import * as gitClientHistory from "../../../../../../src/core/adapters/vcs/git/git-cli/history.js";
 import * as gitParsers from "../../../../../../src/core/adapters/vcs/git/git-cli/parsers.js";
 import type { FileChurnData } from "../../../../../../src/core/adapters/vcs/types.js";
 import * as chunkReader from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
@@ -22,6 +23,7 @@ import { GitLogReader } from "../../../../../../src/core/domains/trajectory/git/
 
 // Enable cross-module spy interception for adapter functions
 vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (importOriginal) => importOriginal());
+vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/history.js", async (importOriginal) => importOriginal());
 vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/parsers.js", async (importOriginal) => importOriginal());
 vi.mock("../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js", async (importOriginal) =>
   importOriginal(),
@@ -142,7 +144,7 @@ describe("buildFileSignalMap — timeout and cache", () => {
     vi.spyOn(gitClient, "getHead").mockResolvedValue("h".repeat(40));
 
     // Simulate native child_process.execFile timeout (sends SIGTERM, rejects with error)
-    vi.spyOn(gitClient, "buildViaCli").mockRejectedValue(
+    vi.spyOn(gitClientHistory, "buildViaCli").mockRejectedValue(
       Object.assign(new Error("Command failed: SIGTERM"), { killed: true, signal: "SIGTERM" }),
     );
 
@@ -156,7 +158,7 @@ describe("buildFileSignalMap — timeout and cache", () => {
 
     const mockData = new Map<string, FileChurnData>();
     mockData.set("cached.ts", { commits: [], linesAdded: 5, linesDeleted: 2 });
-    const cliSpy = vi.spyOn(gitClient, "buildViaCli").mockResolvedValue(mockData);
+    const cliSpy = vi.spyOn(gitClientHistory, "buildViaCli").mockResolvedValue(mockData);
 
     // First call — populates cache
     const result1 = await reader.buildFileSignalMap(new GitCliAdapter("/fake/repo"), 12);
@@ -175,7 +177,7 @@ describe("buildFileSignalMap — timeout and cache", () => {
 
     const mockData = new Map<string, FileChurnData>();
     mockData.set("no-cache.ts", { commits: [], linesAdded: 0, linesDeleted: 0 });
-    const cliSpy = vi.spyOn(gitClient, "buildViaCli").mockResolvedValue(mockData);
+    const cliSpy = vi.spyOn(gitClientHistory, "buildViaCli").mockResolvedValue(mockData);
 
     const result = await reader.buildFileSignalMap(new GitCliAdapter("/fake/repo"), 6);
     expect(cliSpy).toHaveBeenCalled();
@@ -190,7 +192,7 @@ describe("buildFileSignalMap — timeout and cache", () => {
 
     try {
       vi.spyOn(gitClient, "getHead").mockResolvedValue("h".repeat(40));
-      const cliSpy = vi.spyOn(gitClient, "buildViaCli").mockResolvedValue(new Map());
+      const cliSpy = vi.spyOn(gitClientHistory, "buildViaCli").mockResolvedValue(new Map());
 
       await reader.buildFileSignalMap(new GitCliAdapter("/fake/repo")); // no maxAgeMonths param
 
@@ -209,7 +211,7 @@ describe("buildFileSignalMap — timeout and cache", () => {
     reader = new GitLogReader();
 
     vi.spyOn(gitClient, "getHead").mockResolvedValue("h".repeat(40));
-    const cliSpy = vi.spyOn(gitClient, "buildViaCli").mockResolvedValue(new Map());
+    const cliSpy = vi.spyOn(gitClientHistory, "buildViaCli").mockResolvedValue(new Map());
 
     await reader.buildFileSignalMap(new GitCliAdapter("/fake/repo"), 0);
 
@@ -280,7 +282,7 @@ describe("buildChunkChurnMap — cache hit", () => {
     vi.spyOn(gitClient, "getHead").mockResolvedValue(headSha);
 
     // Spy on getCommitsByPathspec — verifiable cross-module boundary
-    const pathspecSpy = vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([]);
+    const pathspecSpy = vi.spyOn(gitClientHistory, "getCommitsByPathspec").mockResolvedValue([]);
 
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [

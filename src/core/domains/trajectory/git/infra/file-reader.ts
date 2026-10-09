@@ -4,8 +4,7 @@
  * calls remain here (the CLI specifics live in adapters/vcs/git/git-cli).
  */
 
-import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
-import type { FileChurnData } from "../../../../adapters/vcs/types.js";
+import type { FileChurnData, VcsGitAdapter } from "../../../../adapters/vcs/index.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import { aggregateFileChurnFollowingRenames, sliceCommitsFollowingRenames } from "../history/index.js";
 import type { GitEnrichmentCache } from "./cache.js";
