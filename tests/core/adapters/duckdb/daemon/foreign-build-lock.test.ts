@@ -45,7 +45,10 @@ import {
   readRefs,
   type CodegraphDaemonPaths,
 } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
-import { CodegraphDatabaseHeldByForeignDaemonError } from "../../../../../src/core/adapters/duckdb/errors.js";
+import {
+  CodegraphDatabaseHeldByForeignDaemonError,
+  DuckDbOpenFailedError,
+} from "../../../../../src/core/adapters/duckdb/errors.js";
 import { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.js";
 import { createDatabaseMigrationApplier } from "../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -201,5 +204,49 @@ describe("a foreign-build daemon holding the collection file (hw27k)", () => {
     // Its pid file is gone and the process exited (a zombie still answers signal 0).
     await waitFor(() => foreign.child.exitCode !== null);
     expect(readDaemonPid(foreign.paths)).toBeUndefined();
+  }, 30_000);
+
+  it("names an idle foreign daemon it cannot reach instead of waiting per op, and leaves it running", async () => {
+    makeRoot();
+    const foreign = await spawnForeignDaemon();
+    const client = await foreignOpensCollection(foreign.paths);
+    await client.close();
+    await waitFor(() => readRefs(foreign.paths) === 0);
+    // Idle, so it would be drained — but nothing answers on its socket.
+    rmSync(foreign.paths.socketPath, { force: true });
+
+    const pool = makeLoserPool(1_500);
+    const err = await pool.acquire(COLLECTION).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(CodegraphDatabaseHeldByForeignDaemonError);
+    const held = err as CodegraphDatabaseHeldByForeignDaemonError;
+    expect(held.holderPid).toBe(foreign.pid);
+    expect(held.message).toContain(foreign.paths.buildDir);
+    expect(isDaemonPidAlive(foreign.pid)).toBe(true);
+
+    const again = Date.now();
+    await expect(pool.acquire(COLLECTION)).rejects.toBeInstanceOf(CodegraphDatabaseHeldByForeignDaemonError);
+    expect(Date.now() - again).toBeLessThan(5_000);
+  }, 30_000);
+
+  it("a holder that is no registered daemon fails the open with the lock error once the window runs out", async () => {
+    makeRoot();
+    const foreign = await spawnForeignDaemon();
+    const client = await foreignOpensCollection(foreign.paths);
+    cleanups.push(async () => client.close());
+    // Its key dir no longer records it: to the arbiter it is just another process.
+    rmSync(foreign.paths.pidFile, { force: true });
+
+    const pool = makeLoserPool(1_500);
+    const started = Date.now();
+    const err = await pool.acquire(COLLECTION).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(DuckDbOpenFailedError);
+    expect(err).not.toBeInstanceOf(CodegraphDatabaseHeldByForeignDaemonError);
+    expect((err as DuckDbOpenFailedError).lockContention).toBe(true);
+    expect((err as DuckDbOpenFailedError).lockHolderPid).toBe(foreign.pid);
+    // The plain bounded retry ran its window.
+    expect(Date.now() - started).toBeGreaterThanOrEqual(1_000);
+    expect(isDaemonPidAlive(foreign.pid)).toBe(true);
   }, 30_000);
 });
