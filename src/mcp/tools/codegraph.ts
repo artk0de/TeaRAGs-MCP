@@ -422,7 +422,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "carriers pulled to 0.5, many keep their mean, comparable across families; hottestFile = costliest carrier with raw readings; absent = no git readings, " +
       "detector order kept. " +
       "stableDependencies (Stable Dependencies Principle): stable COMPONENT depending on less stable one — " +
-      "component = module with measured facade, else directory; evidence = instabilities, Ca/Ce, delta, carrying " +
+      "component = facade directory (any adoption), else directory; evidence = instabilities, Ca/Ce, delta, carrying " +
       "file edges; dependency on nested component not judged; rootCauses by unstable target component, " +
       "cycleWithDependents = target depends on own dependents. leakingAbstraction: " +
       "import past a module facade (index.ts/__init__.py/mod.rs) its importers adopted (>=3 importers, " +
@@ -478,8 +478,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "(no evidence of a split either way), else corePeriphery when core > 0, else hierarchical; " +
       "components (top limit by meanReach) carry internal propagationCost. layering: inferred layers without a declared architecture — SCC-condensed " +
       "DOMAIN graph (every facade directory is a unit, adoption notwithstanding — a vertical with an unadopted " +
-      "facade counts once, not once per subdirectory; facadePartition keeps the adoption partition's component/level " +
-      "counts), levels by longest path (L0 = foundation), per-knot greedy weighted feedback arc set " +
+      "facade counts once, not once per subdirectory — the same partition SDP, mainSequence, hubLike and shotgun judge), levels by longest path (L0 = foundation), per-knot greedy weighted feedback arc set " +
       "(cut these N edges -> k levels); knot lists top-20 members by Ca + memberCount, top-10 cut edges by " +
       "weight + cutEdgeCount total, evidence.drillDown names the knotOf handle; a knotOf call returns that knot " +
       "(members with I/Ca/Ce, cut edges with keepCost — recollapsedMemberCount 0 = needless cut, paged) plus only " +

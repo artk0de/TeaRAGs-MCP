@@ -318,3 +318,58 @@ describe("detectComponentStableDependencyViolations", () => {
     });
   });
 });
+
+/**
+ * One partition for every component detector (bd tea-rags-mcp-r8hme.52.7):
+ * SDP judges the DOMAIN partition the layering judges. A kernel whose facade
+ * only its own vertical imports (`too-few-importers`) nested in a vertical
+ * whose importers bypass the facade (`facade-not-adopted`) is its own
+ * component — an edge into it is attributed to the kernel, never to the
+ * volatile parent. On the self-index the narrower set made
+ * `ts/walker → language` an SDP violation whose real target was the kernel.
+ */
+describe("detectComponentStableDependencyViolations — one partition (bd tea-rags-mcp-r8hme.52.7)", () => {
+  function assessed(moduleDir: string, status: "facade-not-adopted" | "too-few-importers") {
+    return {
+      moduleDir,
+      facadeRelPath: `${moduleDir}/index.ts`,
+      externalImporterCount: 2,
+      facadeImporterCount: 1,
+      deepImporterCount: 1,
+      adoption: 0.5,
+      status,
+    };
+  }
+
+  /**
+   * `core/` (Ca 6, Ce 2 → I 1/4) reaches into `lang/kernel/`. `lang/` (5
+   * files, each importing `vendor/`) is volatile; the kernel depends on
+   * nothing — I 0.
+   */
+  function stableCoreOnNestedKernel(): FileDependencyGraph {
+    return merge(
+      {
+        files: [file("core/a.ts"), file("core/b.ts"), file("lang/index.ts")],
+        edges: [edge("core/a.ts", "lang/kernel/k.ts"), edge("core/b.ts", "lang/kernel/index.ts")],
+      },
+      files("app", 6, (p) => edge(p, "core/b.ts")),
+      files("lang", 5, (p) => edge(p, "vendor/v.ts")),
+      {
+        files: [file("lang/kernel/index.ts"), file("lang/kernel/k.ts"), file("vendor/v.ts")],
+        edges: [edge("lang/f1.ts", "lang/kernel/k.ts")],
+      },
+    );
+  }
+  const modules = [assessed("lang", "facade-not-adopted"), assessed("lang/kernel", "too-few-importers")];
+
+  it("attributes an edge into a too-few-importers kernel to the kernel, not to its facade-not-adopted parent", () => {
+    const components = buildComponentGraph(stableCoreOnNestedKernel(), modules);
+
+    expect(components.componentOf.get("lang/kernel/k.ts")).toBe("lang/kernel");
+    expect(components.dependencies.map((d) => `${d.sourceComponent} -> ${d.targetComponent}`)).toContain(
+      "core -> lang/kernel",
+    );
+    const report = detectComponentStableDependencyViolations(components);
+    expect(report.violations.map((v) => v.targetComponent)).not.toContain("lang");
+  });
+});

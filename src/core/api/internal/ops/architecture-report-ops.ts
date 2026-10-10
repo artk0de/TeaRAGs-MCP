@@ -33,7 +33,6 @@ import {
 import { DOCUMENTATION_LANGUAGES, LANGUAGE_MAP } from "../../../domains/ingest/pipeline/chunker/config.js";
 import {
   buildComponentGraph,
-  buildDomainComponentGraph,
   buildLayeringModel,
   buildLayerMap,
   COMPONENT_CONTAINMENT_REASON,
@@ -99,7 +98,6 @@ import type {
   GetArchitectureReportResponse,
   HubLikeDependencyReportSummary,
   LayeringBackEdgeArchitectureViolation,
-  LayeringPartitionCounts,
   LayeringReportSummary,
   LeakingAbstractionReportSummary,
   MainSequenceReportSummary,
@@ -392,34 +390,30 @@ export class ArchitectureReportOps {
     const { cochange } = facts;
     const silent = await detectSilentCouplingSeeingAssetImports(cochange, graph, request, readImportSpecifiers);
     // Shotgun surgery (bd tea-rags-mcp-r8hme.50): the same bundles, over the
-    // adoption partition split/merge judges and its component graph.
+    // partition split/merge judges and its component graph.
     const shotgun = runShotgunSurgery(cochange, components, request.pathPattern);
-    // Inferred layering over the DOMAIN partition (bd tea-rags-mcp-r8hme.30):
-    // every facade directory is a unit whether importers adopted it or not —
-    // the adoption partition levels a language vertical one component per
-    // subdirectory and measures intra-vertical depth, not inter-domain
-    // layering. The adoption partition's counts ride along for comparison.
-    const layeringComponents = buildDomainComponentGraph(graph, leaks.modules);
+    // Inferred layering over the same DOMAIN partition (bd tea-rags-mcp-r8hme.30,
+    // one partition for every component detector since bd tea-rags-mcp-r8hme.52.7).
     // Built once: the knot view reads the same model the detector judges.
-    const layeringModel = buildLayeringModel(layeringComponents);
-    const layering = detectLayeringViolations(layeringComponents, graph.files, {
+    const layeringModel = buildLayeringModel(components);
+    const layering = detectLayeringViolations(components, graph.files, {
       sourcePathPattern: request.pathPattern,
       model: layeringModel,
     });
     const knotLookup =
       request.knotOf === undefined
         ? undefined
-        : lookupLayeringKnot(layeringComponents, layeringModel, request.knotOf, {
+        : lookupLayeringKnot(components, layeringModel, request.knotOf, {
             sourcePathPattern: request.pathPattern,
           });
     if (knotLookup?.kind === "unknownComponent") throw new UnknownArchitectureComponentError(knotLookup.component);
     // Dependency norms (bd tea-rags-mcp-rpx0v), read-time only when asked:
     // roles from each file's primary type, ledgers and verdicts off the graph
-    // already in memory. Same domain partition the layering judges for
-    // sameDomain locality. Findings scope by the request's pathPattern, the
-    // way every other detector scopes (bd tea-rags-mcp-mv8yv).
+    // already in memory. The same partition decides sameDomain locality.
+    // Findings scope by the request's pathPattern, the way every other
+    // detector scopes (bd tea-rags-mcp-mv8yv).
     const norms = facts.typeNameRows
-      ? computeReportNorms(facts.typeNameRows, graph, layeringComponents.componentOf, request.pathPattern)
+      ? computeReportNorms(facts.typeNameRows, graph, components.componentOf, request.pathPattern)
       : undefined;
     return {
       leaks,
@@ -432,7 +426,6 @@ export class ArchitectureReportOps {
       cochange,
       silent,
       shotgun,
-      layeringComponents,
       layeringModel,
       layering,
       knotLookup,
@@ -462,7 +455,7 @@ export class ArchitectureReportOps {
             mainSequence: runs.mainSequence,
             hubLikeDependency: runs.hubLikeDependency,
           },
-          buildArchitectureKnotMembership(domainKnot?.components ?? [], runs.layeringComponents, runs.components),
+          buildArchitectureKnotMembership(domainKnot?.components ?? [], runs.components),
           request.offset ?? 0,
         )
       : {
@@ -475,12 +468,6 @@ export class ArchitectureReportOps {
           layering: runs.layering,
         };
     return {
-      // The adoption partition's own counts, for comparison against the
-      // domain partition the layering judges.
-      facadePartition: {
-        componentCount: runs.components.components.size,
-        levelCount: buildLayeringModel(runs.components).levelCount,
-      },
       limit: request.limit ?? DEFAULT_ARCHITECTURE_REPORT_LIMIT,
       offset: request.offset ?? 0,
       domainKnot,
@@ -497,52 +484,36 @@ export class ArchitectureReportOps {
     costModel?: FileMaintenanceCostModel,
   ): GetArchitectureReportResponse {
     const { production, whole } = scope;
-    const { findings, facadePartition, limit, offset, domainKnot } = view;
+    const { findings, limit, offset, domainKnot } = view;
     // Each family ranked by maintenance cost (bd tea-rags-mcp-r8hme.20)
     // BEFORE its cap, so the cap keeps the costliest; a family's carriers are
     // the files on the edges that make it (bd tea-rags-mcp-afyku), read off
-    // the partition its detector judged. Every family is scored in ONE
+    // the one partition every detector judges. Every family is scored in ONE
     // population — the shrinkage is estimated over all of the report's
     // violations, uncapped. A new family opts in by adding its full list to
     // `families`.
-    const adoptionCarriers = costModel
+    const carrierIndex = costModel
       ? new ComponentEdgeCarrierIndex(runs.components.componentOf, runs.components.dependencies)
       : undefined;
-    const domainCarriers = costModel
-      ? new ComponentEdgeCarrierIndex(runs.layeringComponents.componentOf, runs.layeringComponents.dependencies)
-      : undefined;
-    const carriersIn =
-      (index: ComponentEdgeCarrierIndex | undefined) =>
-      (violation: object): RelPath[] =>
-        index ? architectureViolationCarrierFiles(violation, index) : [];
-    const family = (
-      violations: readonly ArchitectureViolation[],
-      index: ComponentEdgeCarrierIndex | undefined,
-      options?: MaintenanceCostFamilyOptions,
-    ) => maintenanceCostFamily(violations, carriersIn(index), undefined, options);
+    const carriersOf = (violation: object): RelPath[] =>
+      carrierIndex ? architectureViolationCarrierFiles(violation, carrierIndex) : [];
+    const family = (violations: readonly ArchitectureViolation[], options?: MaintenanceCostFamilyOptions) =>
+      maintenanceCostFamily(violations, carriersOf, undefined, options);
     const families: MaintenanceCostFamily<ArchitectureViolation>[] = [
-      family(sdpViolations(findings.sdp, UNCAPPED), adoptionCarriers),
-      family(leakViolations(findings.leaks, findings.privacy, UNCAPPED), adoptionCarriers),
-      family(silentViolations(findings.silent, UNCAPPED), adoptionCarriers),
+      family(sdpViolations(findings.sdp, UNCAPPED)),
+      family(leakViolations(findings.leaks, findings.privacy, UNCAPPED)),
+      family(silentViolations(findings.silent, UNCAPPED)),
       // Knot mode lists the knot's findings only; a spread is not a knot member.
       // Spreads keep the detector's family-evidence order; cost only tags them.
-      ...(runs.knotLookup
-        ? []
-        : [family(shotgunSurgeryViolations(runs.shotgun, UNCAPPED), adoptionCarriers, { order: "detector" })]),
-      family(mainSequenceViolations(findings.mainSequence, UNCAPPED), adoptionCarriers),
-      family(hubLikeDependencyViolations(findings.hubLikeDependency, UNCAPPED), adoptionCarriers),
-      // Ranked on the domain findings: a knot's whole feedback-arc set and a
+      ...(runs.knotLookup ? [] : [family(shotgunSurgeryViolations(runs.shotgun, UNCAPPED), { order: "detector" })]),
+      family(mainSequenceViolations(findings.mainSequence, UNCAPPED)),
+      family(hubLikeDependencyViolations(findings.hubLikeDependency, UNCAPPED)),
+      // Ranked on the layering findings: a knot's whole feedback-arc set and a
       // composition cycle's every nested pair, which the listed form caps.
       ...(findings.layering
-        ? [
-            maintenanceCostFamily(
-              findings.layering.violations,
-              carriersIn(domainCarriers),
-              toLayeringArchitectureViolation,
-            ),
-          ]
+        ? [maintenanceCostFamily(findings.layering.violations, carriersOf, toLayeringArchitectureViolation)]
         : []),
-      ...(runs.norms ? [family(normsViolations(runs.norms, UNCAPPED), domainCarriers)] : []),
+      ...(runs.norms ? [family(normsViolations(runs.norms, UNCAPPED))] : []),
     ];
     const violations = rankFamiliesByMaintenanceCost(families, costModel).flatMap((ranked) => ranked.slice(0, limit));
     return {
@@ -562,7 +533,7 @@ export class ArchitectureReportOps {
         mainSequence: summariseMainSequence(runs.mainSequence),
         hubLikeDependency: summariseHubLikeDependency(runs.hubLikeDependency),
         propagationCost: summarisePropagationCost(runs.propagationCost, limit),
-        layering: summariseLayering(runs.layering, facadePartition),
+        layering: summariseLayering(runs.layering),
       },
       rootCauses: [
         ...sdpRootCauses(findings.sdp, limit),
@@ -571,12 +542,10 @@ export class ArchitectureReportOps {
       ],
       violations,
       // The layer map VIEW only when asked (bd tea-rags-mcp-r8hme.26) — a full
-      // map never bloats an unqualified report. Same DOMAIN partition the
-      // layering detector judges (bd tea-rags-mcp-r8hme.30), so its
+      // map never bloats an unqualified report. Same partition the layering
+      // detector judges (bd tea-rags-mcp-r8hme.30), so its
       // boundary edges carry levels consistent with the summary.
-      ...(request.layerMap
-        ? { layerMap: buildLayerMap(runs.layeringComponents, production.graph, request.layerMap) }
-        : {}),
+      ...(request.layerMap ? { layerMap: buildLayerMap(runs.components, production.graph, request.layerMap) } : {}),
       // The knot VIEW only when asked (bd tea-rags-mcp-r8hme.38), paged here.
       // Keep costs price the page's cut edges on the WHOLE knot (bd
       // tea-rags-mcp-r8hme.40), whatever projection the page shows.
@@ -584,12 +553,12 @@ export class ArchitectureReportOps {
         ? {
             knot: knotView(
               runs.knotLookup,
-              runs.layeringComponents,
+              runs.components,
               domainKnot?.instabilitySpread ?? 0,
               (edges) => {
                 // An inKnot lookup always names a knot of the same model.
                 if (!domainKnot) throw new Error("knotOf lookup found a knot the layering model does not hold");
-                return layeringKnotKeepCosts(runs.layeringComponents, runs.layeringModel, domainKnot, edges);
+                return layeringKnotKeepCosts(runs.components, runs.layeringModel, domainKnot, edges);
               },
               limit,
               offset,
@@ -598,7 +567,7 @@ export class ArchitectureReportOps {
         : {}),
       // The domain block only in domain mode (bd tea-rags-mcp-xb669.1): the
       // domain's own layering counts plus its border against the system.
-      ...(whole ? { domain: domainView(whole, runs.layeringComponents, runs.layering) } : {}),
+      ...(whole ? { domain: domainView(whole, runs.components, runs.layering) } : {}),
       // The norms view only when asked (bd tea-rags-mcp-rpx0v) — the
       // project's own dependency precedents, judged per typed file edge.
       ...(runs.norms ? { norms: normsDto(runs.norms) } : {}),
@@ -657,10 +626,7 @@ export class ArchitectureReportOps {
           detectHubLikeDependencies(buildComponentGraph({ files: [], edges: [] }, [])),
         ),
         propagationCost: summarisePropagationCost(computePropagationCost({ files: [], edges: [] }), 0),
-        layering: summariseLayering(detectLayeringViolations(buildComponentGraph({ files: [], edges: [] }, []), []), {
-          componentCount: 0,
-          levelCount: 0,
-        }),
+        layering: summariseLayering(detectLayeringViolations(buildComponentGraph({ files: [], edges: [] }, []), [])),
       },
       rootCauses: [],
       violations: [],
@@ -687,8 +653,9 @@ interface ScopedArchitectureGraph {
  * mapping in {@link ArchitectureReportOps#shapeResponse}.
  */
 interface ArchitectureDetectorRuns {
-  /** Facade classification + the adoption component partition (bd tea-rags-mcp-r8hme.7). */
+  /** Facade classification + the component partition (bd tea-rags-mcp-r8hme.7). */
   leaks: LeakingAbstractionReport;
+  /** The ONE DOMAIN partition every component detector judges — SDP, main sequence, hub, shotgun, split/merge, layering, norms (bd tea-rags-mcp-r8hme.52.7). */
   components: ComponentGraph;
   sdp: ComponentStableDependenciesReport;
   mainSequence: MainSequenceReport;
@@ -701,8 +668,7 @@ interface ArchitectureDetectorRuns {
   silent: SilentCouplingReport;
   /** Shotgun surgery over the same co-change read (bd tea-rags-mcp-r8hme.50). */
   shotgun: ShotgunSurgeryRun;
-  /** The DOMAIN partition the layering judges (bd tea-rags-mcp-r8hme.30) and its model — the knot view reads the same model. */
-  layeringComponents: ComponentGraph;
+  /** The layering model over `components` — the knot view reads the same model. */
   layeringModel: LayeringModel;
   layering: LayeringReport;
   /**
@@ -724,8 +690,6 @@ interface ArchitectureDetectorRuns {
  * tea-rags-mcp-r8hme.40).
  */
 interface ArchitectureFindingsView {
-  /** The adoption partition's own counts, reported beside the domain partition's for comparison. */
-  facadePartition: LayeringPartitionCounts;
   limit: number;
   offset: number;
   domainKnot: LayeringKnot | undefined;
@@ -784,10 +748,7 @@ function buildWholeGraphPartition(
   domainRoot: string,
   pathPattern: string | undefined,
 ): WholeGraphPartition {
-  const components = buildDomainComponentGraph(
-    production,
-    detectLeakingAbstractions(production, { sourcePathPattern: pathPattern }).modules,
-  );
+  const { components } = deriveArchitectureComponentFacts(production, pathPattern);
   return { domainRoot, graph: production, components, model: buildLayeringModel(components) };
 }
 
@@ -1299,13 +1260,12 @@ function summariseMainSequence(report: MainSequenceReport): MainSequenceReportSu
   };
 }
 
-function summariseLayering(report: LayeringReport, facadePartition: LayeringPartitionCounts): LayeringReportSummary {
+function summariseLayering(report: LayeringReport): LayeringReportSummary {
   const { summary } = report;
   return {
     componentCount: summary.componentCount,
     componentEdgeCount: summary.componentEdgeCount,
     levelCount: summary.levelCount,
-    facadePartition,
     coverage: round3(summary.coverage),
     coherence: round3(summary.coherence),
     knotCount: summary.knotCount,
@@ -1476,12 +1436,9 @@ function knotMember(component: string, layeringPartition: ComponentGraph): Archi
 
 /**
  * Which findings sit inside one knot (bd tea-rags-mcp-r8hme.39). The knot's
- * members are components of the layering (DOMAIN) partition, while SDP and
- * the main sequence judge the adoption partition, so each question is
- * answered through files: a file is inside when its domain component is a
- * member, and an adoption component is inside when it IS a member or every
- * file it holds is inside — a plain directory under an unadopted facade
- * belongs to that facade's domain component.
+ * members are components of the one partition every detector judges (bd
+ * tea-rags-mcp-r8hme.52.7): a component is inside when it IS a member, a file
+ * when its component is.
  */
 export interface ArchitectureKnotMembership {
   holdsFile: (relPath: RelPath) => boolean;
@@ -1490,21 +1447,15 @@ export interface ArchitectureKnotMembership {
 
 export function buildArchitectureKnotMembership(
   members: readonly string[],
-  layeringPartition: ComponentGraph,
-  adoptionPartition: ComponentGraph,
+  partition: ComponentGraph,
 ): ArchitectureKnotMembership {
   const memberSet = new Set(members);
-  const holdsFile = (relPath: RelPath) => {
-    const component = layeringPartition.componentOf.get(relPath);
-    return component !== undefined && memberSet.has(component);
-  };
-  const everyFileInside = new Map<string, boolean>();
-  for (const [relPath, component] of adoptionPartition.componentOf) {
-    everyFileInside.set(component, (everyFileInside.get(component) ?? true) && holdsFile(relPath));
-  }
   return {
-    holdsFile,
-    holdsComponent: (component) => memberSet.has(component) || everyFileInside.get(component) === true,
+    holdsFile: (relPath) => {
+      const component = partition.componentOf.get(relPath);
+      return component !== undefined && memberSet.has(component);
+    },
+    holdsComponent: (component) => memberSet.has(component),
   };
 }
 

@@ -24,7 +24,6 @@ import type {
 } from "../../../contracts/types/codegraph.js";
 import {
   buildComponentGraph,
-  buildDomainComponentGraph,
   buildLayeringModel,
   classifyTestSupportFiles,
   DEFAULT_SDP_TOLERANCE,
@@ -153,14 +152,14 @@ async function classifyIndexedTestSupport(
 export interface ArchitectureComponentFacts {
   /** The facade classification (`leaks.modules`) — which directories are measured modules, which file is each one's facade. */
   leaks: LeakingAbstractionReport;
-  /** The component map (bd tea-rags-mcp-r8hme.7): modules A4 measured, plain directories elsewhere. */
+  /** The component map (bd tea-rags-mcp-r8hme.7): every module A4 assessed, namespaces or plain directories elsewhere — the one partition every component detector judges (bd tea-rags-mcp-r8hme.52.7). */
   components: ComponentGraph;
 }
 
 /**
  * The report's component partition over one graph: facade classification
  * first (adoption always counted over the whole graph handed in), components
- * built from its measured modules. `sourcePathPattern` scopes only the leaks
+ * built from its assessed modules. `sourcePathPattern` scopes only the leaks
  * REPORT's violations, never the partition — the same asymmetry
  * `detectLeakingAbstractions` documents. Moved verbatim from
  * `ArchitectureReportOps#build`; the report passes its request's
@@ -193,26 +192,26 @@ export function distanceFromMainSequenceByComponent(
 
 /**
  * The files of the measured layering foundation (bd tea-rags-mcp-89k7k.35.11):
- * `measureLayeringFoundationComponents` over the SAME domain partition and
- * layering model the report's layering detector judges
- * (`buildDomainComponentGraph` over the facade classification), mapped back to
- * files — the diff run addresses an edge's target by file, and its own
- * component partition is the adoption one. Diff-run-only surface: the report
- * reads the foundation off its layering summary. It carries the
+ * `measureLayeringFoundationComponents` over the SAME partition (`facts.components`
+ * — the one partition every detector judges, bd tea-rags-mcp-r8hme.52.7) and
+ * layering model the report's layering detector judges, mapped back to files —
+ * the diff run addresses an edge's target by file. Diff-run-only surface: the
+ * report reads the foundation off its layering summary. It carries the
  * foundation-terminal components too (bd tea-rags-mcp-r8hme.52.3,
  * `measureLayeringFoundationTerminalComponents`): exactly the set whose layer
- * skips the whole-repo layering exempts.
+ * skips the whole-repo layering exempts. `graph` is the graph `facts` was
+ * derived from.
  */
 export function measureLayeringFoundationFiles(
   graph: FileDependencyGraph,
   facts: ArchitectureComponentFacts,
 ): ReadonlySet<RelPath> {
-  const layeringComponents = buildDomainComponentGraph(graph, facts.leaks.modules);
-  const model = buildLayeringModel(layeringComponents);
-  const foundations = measureLayeringFoundationComponents(layeringComponents, graph.files, model);
-  const terminals = measureLayeringFoundationTerminalComponents(layeringComponents, model, foundations);
+  const { components } = facts;
+  const model = buildLayeringModel(components);
+  const foundations = measureLayeringFoundationComponents(components, graph.files, model);
+  const terminals = measureLayeringFoundationTerminalComponents(components, model, foundations);
   const files = new Set<RelPath>();
-  for (const [relPath, component] of layeringComponents.componentOf) {
+  for (const [relPath, component] of components.componentOf) {
     if (foundations.has(component) || terminals.has(component)) files.add(relPath);
   }
   return files;

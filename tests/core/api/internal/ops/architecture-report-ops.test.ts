@@ -402,19 +402,21 @@ describe("ArchitectureReportOps#build", () => {
     return { files, edges };
   }
 
-  it("judges layering on the domain partition and reports both partitions' counts", async () => {
+  it("judges layering on the domain partition and reports no second partition", async () => {
     const report = await new ArchitectureReportOps().build(graphDb(domainFixture()), {});
 
     // Domain partition: kernel, lang, app — three levels, kernel the foundation.
-    // Facade-adoption partition: kernel, lang, lang/strategies, app — the
-    // intra-domain walker→strategies edge levels strategies below lang, one
-    // level deeper.
-    expect(report.summary.layering).toMatchObject({
-      componentCount: 3,
-      levelCount: 3,
-      violationCount: 0,
-      facadePartition: { componentCount: 4, levelCount: 4 },
-    });
+    // One partition (bd tea-rags-mcp-r8hme.52.7): nothing left to compare.
+    expect(report.summary.layering).toMatchObject({ componentCount: 3, levelCount: 3, violationCount: 0 });
+    expect(report.summary.layering).not.toHaveProperty("facadePartition");
+  });
+
+  it("breaks every component aggregate down by the partition the layering judges (bd tea-rags-mcp-r8hme.52.7)", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(domainFixture()), {});
+
+    // `lang/strategies/` belongs to `lang` for every component detector, not
+    // only for the layering: kernel, lang, app.
+    expect(report.summary.propagationCost.components.map((c) => c.component).sort()).toEqual(["app", "kernel", "lang"]);
   });
 
   it("builds the layer map over the same domain partition the detector judges", async () => {
@@ -2145,27 +2147,21 @@ describe("ArchitectureReportOps#build — knotOf mode scopes the findings to the
     expect(pairs(report.violations)).toEqual([["app/s1.ts", "lib/hub.ts"]]);
   });
 
-  it("places an adoption-partition directory under an unadopted facade inside the knot through its files", () => {
+  it("answers knot membership on the one partition every detector judges (bd tea-rags-mcp-r8hme.52.7)", () => {
     const partition = (componentOf: Record<string, string>) => ({
       components: new Map(),
       componentOf: new Map(Object.entries(componentOf)),
       dependencies: [],
       excluded: { selfEdges: 0, unwalkedEndpoints: 0, intraComponent: 0, facadeAggregations: 0 },
       fileEdgeCount: 0,
+      facadeAggregations: [],
     });
-    // Domain partition: lang/ owns its subtree. Adoption partition: nobody
-    // adopted lang/index.ts, so lang/strategies/ stands as its own directory.
+    // The domain partition: lang/ owns its subtree, adoption notwithstanding.
     const domain = partition({ "lang/index.ts": "lang", "lang/strategies/s.ts": "lang", "kernel/k.ts": "kernel" });
-    const adoption = partition({
-      "lang/index.ts": "lang",
-      "lang/strategies/s.ts": "lang/strategies",
-      "kernel/k.ts": "kernel",
-    });
 
-    const membership = buildArchitectureKnotMembership(["lang"], domain, adoption);
+    const membership = buildArchitectureKnotMembership(["lang"], domain);
 
     expect(membership.holdsComponent("lang")).toBe(true);
-    expect(membership.holdsComponent("lang/strategies")).toBe(true);
     expect(membership.holdsComponent("kernel")).toBe(false);
     expect(membership.holdsFile("lang/strategies/s.ts")).toBe(true);
     expect(membership.holdsFile("kernel/k.ts")).toBe(false);

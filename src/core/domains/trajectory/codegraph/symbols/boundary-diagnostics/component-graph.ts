@@ -8,46 +8,7 @@ import type {
   ComponentFacadeAggregation,
   ComponentGraph,
   FacadeModuleAssessment,
-  FacadeModuleStatus,
 } from "./types.js";
-
-/**
- * Module statuses whose facade makes a COMPONENT (bd tea-rags-mcp-r8hme.7): the
- * modules the leaking-abstraction detector had enough importers to measure —
- * judged boundaries (`active`) and measured-but-bypassed ones
- * (`facade-not-adopted`). A facade with fewer importers than the adoption
- * floor is not evidence of a boundary, and a Go package has no facade file.
- *
- * Measured on the self-index: treating EVERY entry-file directory as a
- * component made `src` (it has `src/index.ts`) a catch-all owning every file
- * below it that no nearer facade claimed — `src/cli/**`, `src/bootstrap/**` —
- * with 131 dependents, which put it on the stable side of 14 of the 38
- * violations it produced. That catch-all was an ENTRY facade owning a
- * subtree; entries no longer own one under any status set (bd
- * tea-rags-mcp-r8hme.52.4, {@link buildComponentGraph}), so what keeps this set
- * narrow now is only the adoption evidence a judged boundary needs.
- */
-export const COMPONENT_MODULE_STATUSES: ReadonlySet<FacadeModuleStatus> = new Set(["active", "facade-not-adopted"]);
-
-/**
- * Every candidate module (bd tea-rags-mcp-r8hme.30): the DOMAIN partition of
- * the layering detector. Whether importers ADOPTED the facade says whether a
- * boundary can be LEAKED PAST — it says nothing about whether the directory
- * declares itself a unit. A language vertical's `<lang>/index.ts` is its
- * domain even where the factory is the only importer; a Go package is a
- * domain its compiler drew. The adoption-stable SDP / main-sequence detectors
- * keep {@link COMPONENT_MODULE_STATUSES}: their instability is judged per
- * boundary, and a facade too few importers adopted is no measured boundary.
- * The `src` catch-all this wider set once allowed was an entry facade owning
- * its subtree — it put the composition root and the foundation into one
- * 52-member knot — and entries own no subtree since bd tea-rags-mcp-r8hme.52.4.
- */
-export const DOMAIN_MODULE_STATUSES: ReadonlySet<FacadeModuleStatus> = new Set([
-  "active",
-  "facade-not-adopted",
-  "too-few-importers",
-  "language-enforced",
-]);
 
 /** What the containment exclusion takes out of SDP judgement, named for a report. */
 export const COMPONENT_CONTAINMENT_REASON =
@@ -57,9 +18,18 @@ export const COMPONENT_CONTAINMENT_REASON =
  * Aggregate the file dependency graph to components (bd tea-rags-mcp-r8hme.7) —
  * the unit Martin defined stability for.
  *
- * PARTITION. A module whose facade `modules` measured
- * ({@link COMPONENT_MODULE_STATUSES}) owns its directory subtree, minus the
- * subtrees of modules nested inside it. A file outside every such module whose
+ * PARTITION — ONE for every component detector (bd tea-rags-mcp-r8hme.52.7):
+ * every module `modules` assessed owns its directory subtree, minus the
+ * subtrees of modules nested inside it, whatever its adoption status (bd
+ * tea-rags-mcp-r8hme.30). Whether importers ADOPTED a facade says whether a
+ * boundary can be LEAKED PAST — the leaking-abstraction detector's question,
+ * which reads modules, not components — never whether the directory declares
+ * itself a unit: a language vertical's `<lang>/index.ts` is its domain where
+ * the factory is the only importer, a Go package is a domain its compiler
+ * drew. A narrower adoption-only partition for SDP / main-sequence / hub /
+ * shotgun once judged a too-few-importers kernel as part of its
+ * facade-not-adopted parent and flagged the parent for the kernel's edges
+ * (`ts/walker → language` on the self-index). A file outside every such module whose
  * path spells the constant it declares belongs to that constant's NAMESPACE
  * (bd tea-rags-mcp-r8hme.11, `deriveConstantNamespaceComponents`):
  * `app/models/billing/*` and `app/services/billing/*` are one `::Billing`.
@@ -73,7 +43,6 @@ export const COMPONENT_CONTAINMENT_REASON =
  * file reaches (`isEntryFacade`, measured over every module whatever its
  * status) is a process or package root, not a domain boundary: it owns only
  * its OWN directory's files, which form the component marked `entryFacade`
- * (a module component where `statuses` admits it, a directory one otherwise).
  * The files below it fall as if it were absent, minus any enclosing module —
  * the walk stops at the entry (bd tea-rags-mcp-r8hme.52.4). Measured on the
  * self-index: `src/index.ts` owned 105 files (bootstrap, both adapters, the
@@ -94,16 +63,15 @@ export const COMPONENT_CONTAINMENT_REASON =
 export function buildComponentGraph(
   graph: FileDependencyGraph,
   modules: readonly FacadeModuleAssessment[],
-  statuses: ReadonlySet<FacadeModuleStatus> = COMPONENT_MODULE_STATUSES,
 ): ComponentGraph {
-  // Entries are measured over EVERY module, whatever its status: the predicate
-  // reads the graph, not the adoption verdict (bd tea-rags-mcp-r8hme.52.4).
+  // Entries are measured over EVERY module: the predicate reads the graph,
+  // not the adoption verdict (bd tea-rags-mcp-r8hme.52.4).
   const importedFiles = importedFileSet(graph.edges);
   const entryModules = new Map<string, FacadeModuleAssessment>();
   for (const m of modules) if (isEntryFacade(m, importedFiles)) entryModules.set(m.moduleDir, m);
   const componentModules = new Map<string, FacadeModuleAssessment>();
   for (const m of modules) {
-    if (statuses.has(m.status) && !entryModules.has(m.moduleDir)) componentModules.set(m.moduleDir, m);
+    if (!entryModules.has(m.moduleDir)) componentModules.set(m.moduleDir, m);
   }
 
   const namespaceOf = deriveConstantNamespaceComponents(graph.files);
@@ -141,10 +109,10 @@ export function buildComponentGraph(
 
   const components = new Map<string, ArchitectureComponent>();
   for (const [componentDir, fileCount] of [...members].sort(([a], [b]) => compareCodePoints(a, b))) {
-    // An entry stays a module component where the statuses admit it — it only
-    // gives up the subtree below its own directory.
+    // An entry stays a module component — it only gives up the subtree below
+    // its own directory.
     const entry = entryModules.get(componentDir);
-    const module = componentModules.get(componentDir) ?? (entry && statuses.has(entry.status) ? entry : undefined);
+    const module = componentModules.get(componentDir) ?? entry;
     const afferentCount = afferent.get(componentDir)?.size ?? 0;
     const efferentCount = efferent.get(componentDir)?.size ?? 0;
     const connectionCount = afferentCount + efferentCount;
@@ -205,25 +173,6 @@ function importedFileSet(edges: readonly FileDependencyEdge[]): ReadonlySet<RelP
   const imported = new Set<RelPath>();
   for (const edge of edges) if (edge.sourceRelPath !== edge.targetRelPath) imported.add(edge.targetRelPath);
   return imported;
-}
-
-/**
- * The DOMAIN partition (bd tea-rags-mcp-r8hme.30): every directory that
- * declares a facade is a component, whether importers adopted it or not —
- * a Go package too. This is the partition the layering detector judges by
- * default and the layer map reads: the A1/A7 partition measures whether a
- * boundary can be leaked past, while levels ask which units the dependency
- * DIRECTION stacks, and a language vertical's `<lang>/index.ts` is such a
- * unit even where the factory is its only importer. Files outside every
- * facade directory still belong to their own directory, and a facade's
- * subtree is still minus the nested facades' subtrees — same rules as
- * {@link buildComponentGraph}, only the module set is wider.
- */
-export function buildDomainComponentGraph(
-  graph: FileDependencyGraph,
-  modules: readonly FacadeModuleAssessment[],
-): ComponentGraph {
-  return buildComponentGraph(graph, modules, DOMAIN_MODULE_STATUSES);
 }
 
 /**
